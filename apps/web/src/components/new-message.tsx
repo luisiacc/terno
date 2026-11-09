@@ -2,7 +2,7 @@ import { AttachButton, DraftAttachments } from "./attachments";
 import { useComposerDrop } from "./composer-drop";
 import { t } from "@terno/i18n";
 import { IconButton } from "@terno/ui/components/icon-button";
-import { isSendLaterKey, openSendLater, SendOrAsk } from "./send-button";
+import { isSendLaterKey, openSendLater, SendButton, SendOrAsk } from "./send-button";
 import { cn } from "@terno/ui/lib/utils";
 import { Trash2 } from "@terno/ui/icons";
 import { useEffect, useId, useRef } from "react";
@@ -17,7 +17,7 @@ import { RichBody } from "./composer/rich";
 import { warmAutocomplete } from "~/lib/autocomplete";
 import { DraftCommandsHost } from "~/lib/draft-commands";
 import { pinDraft } from "~/lib/pinned-draft";
-import { AiDraftButton, SendOrWrite } from "./composer/ai-slot";
+import { AiDraftButton } from "./composer/ai-slot";
 import { aiDraftHooks } from "~/lib/ai-draft-state";
 import { focusSelector } from "~/lib/compose-focus-move";
 import { cancelEmptySend } from "~/lib/send-problem";
@@ -157,7 +157,7 @@ export function NewMessage() {
               {/* wraps: the status can hold a recovery action, and a narrow pane still reaches Discard */}
               <div className="@container/foot flex flex-wrap items-center gap-1 px-2.5 pt-2 pb-2.5">
                 <SendOrAsk d={d} onSend={(at) => void send(at)}>
-                  <SendOrWrite d={d} onSend={(at) => void send(at)} className="mr-1.5" />
+                  <SendButton d={d} onSend={(at) => void send(at)} className="mr-1.5" />
                   <FormatToggle controls={formatId} />
                   <AttachButton d={d} />
                   <LinkButton draftKey={key} disabled={d.sending} />

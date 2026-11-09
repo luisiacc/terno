@@ -1,5 +1,6 @@
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
+import { CloseButton } from "@terno/ui/components/close-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/popover";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
@@ -111,7 +112,9 @@ export function SendOrAsk({ d, onSend, children }: { d: LocalDraft; onSend: (sen
 
 /**
  * Plan 158's question, or (plan 162, after ai162-r04) the same question about a note for AI: "This reads as a note for
- * AI." with Write it first (⌘J's, the default) and Send as it is. Esc, Cancel or typing put it away.
+ * AI, not the email." Plan 164 (the owner: Send is always the primary): **Send as it is** is the primary, as this
+ * question's Send is, and **Generate with AI** the secondary beside it; the keys go to Generate with AI, the safe answer.
+ * Esc, Cancel or typing put it away.
  */
 function EmptySendQuestion({ draftKey, onSend, note = false }: { draftKey: string; onSend: (sendAt?: number) => void; note?: boolean }) {
   const id = useId();
@@ -155,13 +158,16 @@ function EmptySendQuestion({ draftKey, onSend, note = false }: { draftKey: strin
       </span>
       {note ? (
         <>
-          <Button ref={confirm} type="button" size="sm" data-testid="compose-note-write" onClick={() => { clearEmptySend(draftKey); toText(); openAiDraft({ key: draftKey }); }}>
+          <Button type="button" size="sm" data-testid="compose-note-send" onClick={send}>
+            <Send aria-hidden />
+            {t("aiDraft.note.sendAnyway")}
+          </Button>
+          <Button ref={confirm} type="button" size="sm" variant="outline" aria-keyshortcuts="Meta+J" data-testid="compose-note-write" onClick={() => { clearEmptySend(draftKey); toText(); openAiDraft({ key: draftKey }); }}>
             <Sparkles aria-hidden />
             {t("aiDraft.note.write")}
           </Button>
-          <Button type="button" size="sm" variant="outline" data-testid="compose-note-send" onClick={send}>
-            {t("aiDraft.note.sendAnyway")}
-          </Button>
+          {/* the question's way out without the keyboard (Esc and typing are the others) */}
+          <CloseButton label={t("common.cancel")} onClick={cancel} data-testid="compose-note-cancel" />
         </>
       ) : (
         <>

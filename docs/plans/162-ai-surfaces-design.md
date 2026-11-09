@@ -971,6 +971,8 @@ Written before any code. All eight r04 reports, their 682 below-9 reasons, the 1
 
 **What's wrong.** Plan 163's instruction sits in the body in mail type; Send stays the filled primary; the only cue is a grey "Write it" that becomes a bare sparkle under 36 rem of foot. Every report read it as an email ready to send.
 
+*Plan 164 (the owner, 2026-11-09) changed points 2 and 3 and the revising below: Send stays the primary and the AI button is a secondary, Generate with AI; Send's question offers Send as it is (the primary) and Generate with AI; a change to a written draft goes in the strip's field.*
+
 **The design.** One state, "a note for AI", decided on this machine (`readBody`, no model): the body reads as an instruction, or ⌘J opened the composer for AI (`primed`) and what's typed isn't plainly an email (the rules say `unsure`). Plain drafts never enter it.
 1. **The body says so.** A faint AI wash behind the body (the primary at 5%, inset, rounded, no border) and a quiet label at its top-right, "✦ For AI", in the secondary at `text-xs`. The label never takes layout: it floats in the first line's end, which the first paragraph keeps clear while the state lasts. The editor's accessible description names the state ("Your note for AI. Press ⌘J to write the email from it.").
 2. **The primary becomes Write it.** In Send's place, at every width: **✦ Write it** (primary, with its ⌘J keycap), then **Send** as an icon-only secondary (outlined, "Send it as it is" in its name and tooltip). The foot's Sparkles steps out (Write it is it), so the foot's width doesn't change with the state, and nothing changes with the window.

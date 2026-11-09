@@ -361,9 +361,19 @@ test.describe("axe", { tag: "@variant" }, () => {
     await expect(page.getByTestId("compose-body").first()).toBeFocused();
     await page.keyboard.type("say that this works, and tell them thanks");
     await clean(page, "⌘J: an instruction typed in the body", "[data-testid=composer]");
+    // plan 164: Send on a note for AI asks first, at the action row
+    await page.getByTestId("compose-send").first().click();
+    await expect(page.getByTestId("compose-empty-ask")).toBeVisible();
+    await clean(page, "Send asking about a note for AI", "[data-testid=composer]");
+    await page.keyboard.press("Escape");
+    await page.getByTestId("compose-body").first().focus();
     await page.keyboard.press("ControlOrMeta+j");
     await expect(page.getByTestId("ai-strip")).toBeVisible();
     await clean(page, "what the model wrote, and its strip", "[data-testid=composer]");
+    // plan 164: a change typed in the strip's field
+    await page.getByTestId("ai-change-input").fill("shorter, more casual");
+    await clean(page, "a change typed in the strip's field", "[data-testid=composer]");
+    await page.getByTestId("ai-change-input").fill("");
     // plan 161, pass 2: what the AI used (the status's popover), and the strip asking before it replaces an edit
     await page.getByTestId("ai-strip-voice").click();
     await expect(page.getByTestId("ai-voice-popover")).toBeVisible();

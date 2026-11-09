@@ -15,12 +15,12 @@ import { usePinned } from "~/lib/pinned-draft-state";
 import { registerUndo, snack, useSnack } from "~/lib/snack";
 import { setApp, useApp } from "~/state/app";
 import { DraftFieldsForm, DraftPin, focusSoon, Quote, SaveState, SignaturePreview } from "./inline-draft";
-import { isSendLaterKey, openSendLater, SendOrAsk } from "./send-button";
+import { isSendLaterKey, openSendLater, SendButton, SendOrAsk } from "./send-button";
 import { popupOpen } from "./composer/controller";
 import { ComposerFormatBar, FormatToggle, LinkButton } from "./composer/controls";
 import { RichBody } from "./composer/rich";
 import { focusSelector, type InlineFocusMove } from "~/lib/compose-focus-move";
-import { AiDraftButton, SendOrWrite } from "./composer/ai-slot";
+import { AiDraftButton } from "./composer/ai-slot";
 import { aiDraftHooks } from "~/lib/ai-draft-state";
 import { cancelEmptySend } from "~/lib/send-problem";
 
@@ -174,7 +174,7 @@ export function PinnedDraft({ overList }: { /** List's rows show under it (its d
           <ComposerFormatBar draftKey={key} id={formatId} className="px-2 pt-1.5" />
           <div className="@container/foot flex items-center gap-1 px-2.5 pt-2 pb-2.5">
             <SendOrAsk d={d} onSend={(at) => void send(at)}>
-              <SendOrWrite d={d} onSend={(at) => void send(at)} className="mr-1.5" />
+              <SendButton d={d} onSend={(at) => void send(at)} className="mr-1.5" />
               <FormatToggle controls={formatId} />
               <AttachButton d={d} />
               <LinkButton draftKey={key} disabled={d.sending} />

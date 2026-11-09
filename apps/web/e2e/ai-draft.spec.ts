@@ -250,7 +250,7 @@ test.describe("drafting with AI (plan 133)", () => {
       await expect(page.getByTestId("ai-live")).toHaveText(/Draft ready, \d+ words/);
       expect(await page.evaluate(() => getSelection()?.toString())).toBe("[date]");
       await expect(strip(page)).toContainText("Written with AI");
-      await expect(strip(page)).toContainText("Regenerate");
+      await expect(page.getByTestId("ai-strip-regenerate")).toHaveAccessibleName("Regenerate");
 
       // one undo step, autosaved like typing; plan 162 (after ai162-r02): its name says what it takes back
       await expect(page.getByTestId("ai-strip-undo")).toHaveAccessibleName("Undo: remove the AI’s draft");
@@ -373,16 +373,16 @@ test.describe("drafting with AI (plan 133)", () => {
       // an instruction lights the Sparkles, which says what it will do; clicking it writes, as ⌘J does
       await body(page).fill("echo: fine by me, tell him that");
       await expect(page.getByTestId("compose-ai")).toHaveAttribute("data-ready", "true");
-      await expect(page.getByTestId("compose-ai")).toHaveAccessibleName("Write it from your note with AI");
+      await expect(page.getByTestId("compose-ai")).toHaveAccessibleName("Generate with AI");
       await page.getByTestId("compose-ai").click();
       await expect(body(page)).toContainText("fine by me, tell him that");
       await expect(strip(page)).toBeVisible();
       await page.getByTestId("ai-strip-undo").click();
       await expect(body(page)).toHaveText("echo: fine by me, tell him that");
       await expect(body(page)).toBeFocused();
-      // plan 162 (after ai162-r05): Undo gives back the note for AI exactly: its label, and Write it as the primary
+      // plan 162 (after ai162-r05): Undo gives back the note for AI exactly: its label, and Generate with AI (plan 164: Send stays the primary)
       await expect(page.getByTestId("ai-note-label")).toBeVisible();
-      await expect(page.getByTestId("compose-note-actions")).toBeVisible();
+      await expect(page.getByTestId("compose-send-group")).toBeVisible();
       await expect(page.getByTestId("compose-ai")).toHaveAttribute("data-note", "true");
 
       // an ordinary email being typed leaves it quiet
@@ -505,7 +505,7 @@ test.describe("drafting with AI (plan 133)", () => {
       await expect(strip(page)).toBeVisible();
       await expect(page.getByTestId("ai-strip-check")).toContainText("This was cut off.");
     });
-    await scenario("plan 162: a failure before any words leaves the instruction a note for AI: For AI, Write it the primary, Send off, the notice with Try again", async () => {
+    await scenario("plan 162: a failure before any words leaves the instruction a note for AI: For AI, Generate with AI, Send asks, the notice with Try again", async () => {
       await fresh(page, server);
       await openThread(page, /Contract review/);
       await openField(page);
@@ -519,9 +519,9 @@ test.describe("drafting with AI (plan 133)", () => {
       await expect(page.getByTestId("ai-note-label")).toHaveText(/For AI · not sent/);
       await expect(page.locator("[data-ai-note]")).toHaveCount(1);
       await expect(page.getByTestId("compose-ai")).toHaveAttribute("data-note", "true");
-      await expect(page.getByTestId("compose-send")).toHaveAttribute("aria-disabled", "true");
-      await expect(page.getByTestId("compose-send-group")).toHaveCount(0);
-      // Write it writes from the note as it is now (reworded since), not the words that failed
+      // plan 164: Send is the primary still, and asks before mailing the note
+      await expect(page.getByTestId("compose-send-group")).toBeVisible();
+      // Generate with AI writes from the note as it is now (reworded since), not the words that failed
       await body(page).fill("tell him that this is fine by me");
       await page.getByTestId("compose-ai").click();
       await expect(strip(page)).toBeVisible();
@@ -682,7 +682,7 @@ test.describe("drafting with AI (plan 133)", () => {
 
   });
 
-  test("plan 162 (after ai162-r04): a note for AI is visibly one at every width, Send asks before mailing it, and words typed after a draft revise it", async ({ app: page, server }) => {
+  test("plan 164: a note for AI is visibly one at every width with Send the primary, Send asks before mailing it, and a change goes in the strip's field", async ({ app: page, server }) => {
     instant();
     await ready(page, server);
     fakeDraft.text = (instruction) => (/shorter/.test(instruction) ? "Hi Tom,\n\nShort and sweet.\n\nLuis" : /fine by me/.test(instruction) ? "Hi Tom,\n\nThat's fine by me.\n\nLuis" : null);
@@ -693,79 +693,106 @@ test.describe("drafting with AI (plan 133)", () => {
         await openThread(page, /Contract review/);
         await page.getByTestId("quick-ai").click();
         await body(page).fill("fine by me, tell him that");
-        // the body says it's a note for AI (a wash, "For AI"), described to assistive tech; a plain draft has none of it
-        await expect(page.getByTestId("ai-note-label")).toHaveText(/For AI/);
-        await expect(page.locator("[data-ai-note]")).toHaveCount(1);
-        await expect(body(page)).toHaveAccessibleDescription(/Your note for AI/);
-        // Write it is the primary, in Send's place, with its word at every width; Send an icon that steps back
-        const write = page.getByTestId("compose-ai");
-        await expect(write).toHaveAttribute("data-note", "true");
-        await expect(write).toHaveText(/Write it/);
-        await expect(write).toBeInViewport();
-        // plan 162 (after ai162-r05): the label says it isn't sent; the foot is one line at 1100 too (Save and close wrapped)
+        // the body says it's a note for AI (a wash, "For AI · not sent"), described to assistive tech; a plain draft has none of it
         await expect(page.getByTestId("ai-note-label")).toHaveText(/For AI · not sent/);
+        await expect(page.locator("[data-ai-note]")).toHaveCount(1);
+        await expect(body(page)).toHaveAccessibleDescription(/Your note for AI. Press .+ to generate the email from it/);
+        // the owner: Send stays the primary, first, and Generate with AI is a secondary (bordered on the card) in the
+        // Sparkles' own place: its word where the foot holds it on one line (1440), the bordered glyph alone where not
+        const generate = page.getByTestId("compose-ai");
+        await expect(page.getByTestId("compose-send-group")).toBeVisible();
+        await expect(page.getByTestId("compose-send")).not.toHaveAttribute("aria-disabled");
+        await expect(generate).toHaveAttribute("data-note", "true");
+        await expect(generate).toHaveAccessibleName("Generate with AI");
+        await expect(page.getByTestId("compose-ai-word")).toBeVisible({ visible: width === 1440 });
+        expect(await generate.evaluate((el) => getComputedStyle(el).borderTopWidth)).toBe("1px");
+        expect((await page.getByTestId("compose-send").boundingBox())!.x).toBeLessThan((await generate.boundingBox())!.x);
+        // the foot is one line at 1100 too
         const mid = async (id: string) => { const b = (await page.getByTestId(id).boundingBox())!; return b.y + b.height / 2; };
         expect(Math.abs((await mid("compose-collapse")) - (await mid("compose-ai")))).toBeLessThanOrEqual(4);
-        // plan 162 (after ai162-r05): Send is off, its reason in its description and tooltip; a click sends nothing and asks nothing
-        await expect(page.getByTestId("compose-send")).toHaveAccessibleName("Send");
-        await expect(page.getByTestId("compose-send")).toHaveAttribute("aria-disabled", "true");
-        await expect(page.getByTestId("compose-send")).toHaveAccessibleDescription(/Send is off while this is a note for AI/);
-        await expect(page.getByTestId("compose-send-group")).toHaveCount(0);
-        await page.getByTestId("compose-send").click({ force: true });
-        await page.waitForTimeout(200);
-        await expect(page.getByTestId("compose-empty-ask")).toHaveCount(0);
-        await expect(page.getByTestId("composer")).toBeVisible();
-        await expect(body(page)).toHaveText("fine by me, tell him that");
-        const sendBox = (await page.getByTestId("compose-send").boundingBox())!;
-        const writeBox = (await write.boundingBox())!;
-        expect(writeBox.x).toBeLessThan(sendBox.x);
-        // ⌘↵ asks, Esc puts the question away and nothing went
-        await body(page).press("ControlOrMeta+Enter");
-        await expect(page.getByTestId("compose-empty-ask")).toContainText("This reads as a note for AI.");
+        // a click on Send asks, at the action row; the keys go to Generate with AI, the safe answer; Esc puts it away
+        await page.getByTestId("compose-send").click();
+        const ask = page.getByTestId("compose-empty-ask");
+        await expect(ask).toContainText("This reads as a note for AI, not the email.");
+        await expect(page.getByTestId("compose-note-send")).toHaveText("Send as it is");
+        await expect(page.getByTestId("compose-note-write")).toHaveText("Generate with AI");
+        await expect(page.getByTestId("compose-note-write")).toBeFocused();
+        expect((await page.getByTestId("compose-note-send").boundingBox())!.x).toBeLessThan((await page.getByTestId("compose-note-write").boundingBox())!.x);
         // the body still says what it is while it asks
         await expect(page.getByTestId("ai-note-label")).toBeVisible();
         await page.keyboard.press("Escape");
-        await expect(page.getByTestId("compose-empty-ask")).toHaveCount(0);
+        await expect(ask).toHaveCount(0);
+        await expect(page.getByTestId("composer")).toBeVisible();
         await expect(body(page)).toHaveText("fine by me, tell him that");
-        // Send later keeps its picker (Codex review: ⌘⇧↩ did nothing); what it picks asks the same question
+        // ⌘↵ asks the same; its Cancel puts it away without the keyboard
+        await body(page).press("ControlOrMeta+Enter");
+        await expect(ask).toBeVisible();
+        await page.getByTestId("compose-note-cancel").click();
+        await expect(ask).toHaveCount(0);
+        await expect(body(page)).toHaveText("fine by me, tell him that");
+        // Send later keeps its picker; what it picks asks the same question
         await body(page).press("ControlOrMeta+Shift+Enter");
         await expect(page.getByTestId("send-later-popover")).toBeVisible();
         await page.keyboard.press("Escape");
         await expect(page.getByTestId("send-later-popover")).toHaveCount(0);
       }
-      // Write it from the question writes; the note's marks go, Send is the primary again
+      // Generate with AI from the question writes; the note's marks go
       await body(page).press("ControlOrMeta+Enter");
       await page.getByTestId("compose-note-write").click();
       await expect(strip(page)).toBeVisible();
       await expect(body(page)).toContainText("That's fine by me.");
       await expect(page.getByTestId("ai-note-label")).toHaveCount(0);
-      // plan 162 (after ai162-r05): what was asked stays in view on the strip, quoted (it was only in the popover)
-      await expect(page.getByTestId("ai-strip-asked")).toHaveText("“fine by me, tell him that”");
-      // a click opens the provenance, where it's whole with its pencil (Codex review)
-      await page.getByTestId("ai-strip-asked").click();
+      await expect(page.getByTestId("compose-ai")).not.toHaveAttribute("data-ready");
+      // what was asked is whole in the provenance, with its pencil
+      await page.getByTestId("ai-strip-voice").click();
       await expect(page.getByTestId("ai-voice-popover")).toContainText("fine by me, tell him that");
       await page.keyboard.press("Escape");
       await expect(page.getByTestId("ai-voice-popover")).toHaveCount(0);
-      await expect(page.getByTestId("compose-send-group")).toBeVisible();
-      // words typed after the draft are how to change it: the draft is rewritten from them, they don't stay, no copy beside it
+      // words typed after the draft are the user's edits: ⌘J gives the strip's field the keys and rewrites nothing
       await body(page).click();
       await page.keyboard.press(process.platform === "darwin" ? "Meta+ArrowDown" : "Control+End");
-      await page.keyboard.type("make it shorter");
+      await page.keyboard.type(" Mine.");
+      await expect(page.getByTestId("ai-strip-written")).toHaveText("Edited after AI");
       await page.keyboard.press(CMD_J);
+      const field = page.getByTestId("ai-change-input");
+      await expect(field).toBeFocused();
+      await expect(body(page)).toContainText("That's fine by me.");
+      await expect(body(page)).toContainText("Mine.");
+      // the change goes in the field: over the edit it asks first; Keep editing leaves the words where they were typed
+      await field.fill("make it shorter");
+      await expect(page.getByTestId("ai-change-submit")).not.toHaveAttribute("aria-disabled");
+      await field.press("Enter");
+      await expect(page.getByTestId("ai-confirm")).toBeVisible();
+      await page.getByTestId("ai-confirm-keep").click();
+      await expect(field).toHaveValue("make it shorter");
+      // Replace: written again from the draft as it is, and the field is empty for the next change
+      await page.getByTestId("ai-change-submit").click();
+      await page.getByTestId("ai-confirm-replace").click();
       await expect(body(page)).toContainText("Short and sweet.");
-      await expect(body(page)).not.toContainText("make it shorter");
-      await expect(preview(page)).toHaveCount(0);
-      await expect(page.getByTestId("ai-confirm")).toHaveCount(0);
-      // Undo gives back exactly what was there: the draft and the words
+      await expect(field).toHaveValue("");
+      await expect(page.getByTestId("ai-strip-undo")).toHaveAccessibleName("Undo the rewrite");
+      // Undo gives back exactly what was there: the draft and the edit
       await page.getByTestId("ai-strip-undo").click();
       await expect(body(page)).toContainText("That's fine by me.");
-      await expect(body(page)).toContainText("make it shorter");
+      await expect(body(page)).toContainText("Mine.");
+      // Esc in the field with words empties it and nothing else
+      await field.fill("warmer");
+      await field.press("Escape");
+      await expect(field).toHaveValue("");
+      await expect(page.getByTestId("composer")).toBeVisible();
+      // ⌘↵ there makes the change, never the form's Send (Undo left the first draft untouched: it runs at once)
+      await field.fill("shorter again");
+      await field.press("ControlOrMeta+Enter");
+      await expect(body(page)).toContainText("Short and sweet.");
+      await expect(page.getByTestId("compose-empty-ask")).toHaveCount(0);
+      await expect(page.getByTestId("composer")).toBeVisible();
+      await page.getByTestId("ai-strip-undo").click();
       // a plain draft never looks like a note
       await page.getByTestId("ai-strip-undo").click();
       await body(page).fill("Hi Tom,\n\nThat works for me. See you then.");
       await page.waitForTimeout(300);
       await expect(page.locator("[data-ai-note]")).toHaveCount(0);
-      await expect(page.getByTestId("compose-send-group")).toBeVisible();
+      await expect(page.getByTestId("compose-ai")).not.toHaveAttribute("data-ready");
     } finally {
       fakeDraft.text = null;
     }
@@ -811,9 +838,9 @@ test.describe("drafting with AI (plan 133)", () => {
       await page.keyboard.press("Escape");
       await expect(body(page)).toHaveText("say that this is just fine");
       await expect(row(page)).toHaveCount(0);
-      // plan 162: still a note for AI, Send off
+      // plan 162: still a note for AI (plan 164: Generate with AI beside Send, which asks)
       await expect(page.getByTestId("ai-note-label")).toBeVisible();
-      await expect(page.getByTestId("compose-send")).toHaveAttribute("aria-disabled", "true");
+      await expect(page.getByTestId("compose-ai")).toHaveAttribute("data-note", "true");
       fakeDraft.firstTokenMs = 250;
     });
     await scenario("plan 162: words the rules can't place, written from as an instruction and stopped before any, stay a note for AI", async () => {
@@ -830,7 +857,7 @@ test.describe("drafting with AI (plan 133)", () => {
       await expect(row(page)).toHaveCount(0);
       await expect(body(page)).toHaveText("shorter, more casual");
       await expect(page.getByTestId("ai-note-label")).toBeVisible();
-      await expect(page.getByTestId("compose-send")).toHaveAttribute("aria-disabled", "true");
+      await expect(page.getByTestId("compose-ai")).toHaveAttribute("data-note", "true");
       fakeDraft.firstTokenMs = 250;
     });
     await scenario("typing during the stream: it goes on, and ends as a suggestion; a change of recipients says who it was for", async () => {
@@ -1157,7 +1184,8 @@ test.describe("drafting with AI (plan 133)", () => {
       const before = await body(page).innerHTML();
       // the Sparkles lights, named for the gaps
       await expect(page.getByTestId("compose-ai")).toHaveAttribute("data-ready", "true");
-      await expect(page.getByTestId("compose-ai")).toHaveAccessibleName("Fill 2 gaps with AI");
+      await expect(page.getByTestId("compose-ai")).toHaveAccessibleName("Fill in with AI");
+      await expect(page.getByTestId("compose-ai")).not.toHaveAttribute("data-note");
       await page.keyboard.press(CMD_J);
       await expect(page.getByTestId("ai-row-status-text")).toHaveText("Filling 2 gaps…");
       // each fill shows where its gap is, as it comes, before anything is in the document
@@ -1461,16 +1489,17 @@ test.describe("drafting with AI (plan 133)", () => {
       await expect(strip(page)).toBeVisible();
       await expect(body(page)).toHaveText("Thanks, that works.");
     });
-    await scenario("a status and four buttons: the commands have a resting shape at 28 px; the status has none (pass 2: it opens what the AI used)", async () => {
+    await scenario("plan 164: the change field, then Undo and the quick changes, quiet, each 28 px; the status has no edge (pass 2: it opens what the AI used)", async () => {
       await expect(page.getByTestId("ai-strip-written")).toHaveText("Written with AI");
       expect(await page.getByTestId("ai-strip-voice").evaluate((el) => getComputedStyle(el).borderTopColor)).toBe("rgba(0, 0, 0, 0)");
-      // plan 162: the four are one group at 28 px, its 1 px edge at rest (not only on hover), each command filling it
-      const group = page.getByTestId("ai-strip-commands");
-      expect((await group.boundingBox())!.height).toBeGreaterThanOrEqual(28);
-      expect(await group.evaluate((el) => getComputedStyle(el).borderTopWidth)).toBe("1px");
+      await expect(page.getByTestId("ai-change-input")).toHaveAttribute("placeholder", "Ask for a change…");
+      await expect(page.getByTestId("ai-change-input")).toHaveAccessibleName("A change to the draft");
+      await expect(page.getByTestId("ai-change-submit")).toHaveAttribute("aria-disabled", "true");
       for (const id of ["ai-strip-regenerate", "ai-strip-shorter", "ai-strip-warmer", "ai-strip-undo"]) {
         const button = (await page.getByTestId(id).boundingBox())!;
-        expect(button.height, id).toBeGreaterThanOrEqual((await group.boundingBox())!.height - 2);
+        expect(button.height, id).toBe(28);
+        // none has an edge at rest: quiet, the field the one thing that reads as a place to act
+        expect(await page.getByTestId(id).evaluate((el) => getComputedStyle(el).borderTopColor), id).toBe("rgba(0, 0, 0, 0)");
       }
     });
     await scenario("an edit keeps the strip, as Edited after AI, with no jump", async () => {
@@ -1530,7 +1559,7 @@ test.describe("drafting with AI (plan 133)", () => {
     });
   });
 
-  test("plan 162: the instruction on one line with Edit right after it, the four commands one group at every width, folded when narrow; nothing in its menus clipped", { tag: "@design" }, async ({ app: page, server }) => {
+  test("plan 164: the strip on one line at every width: the change field, Undo, the quick changes icon-only, folded when narrow; nothing in its menus clipped", { tag: "@design" }, async ({ app: page, server }) => {
     await ready(page, server);
     instant();
     await openThread(page, /Contract review/);
@@ -1548,8 +1577,10 @@ test.describe("drafting with AI (plan 133)", () => {
         const where = `${scheme} ${size.width}`;
         // plan 163: no instruction line: what was asked is in the provenance's popover, the strip one line at every width
         await expect(page.getByTestId("ai-strip-instruction"), where).toHaveCount(0);
-        // the four commands are one group (one chrome, none heavier), on the provenance's line
-        await expect(page.getByTestId("ai-strip-commands"), where).toHaveAttribute("data-slot", "button-group");
+        // plan 164: the field leads the line, and its text starts where To's name does; Undo keeps its word where it fits
+        await expect(page.getByTestId("ai-strip-commands"), where).toHaveAttribute("role", "group");
+        await expect.poll(async () => Math.abs((await middle("ai-change")) - (await middle("ai-strip-voice"))), where).toBeLessThanOrEqual(1);
+        expect((await box("ai-change")).width, where).toBeGreaterThanOrEqual(110);
         await expect(page.getByTestId("ai-strip-undo"), where).toHaveText("Undo");
         await expect(page.getByTestId("ai-strip-undo"), where).toHaveAccessibleName("Undo: remove the AI’s draft");
         await expect.poll(async () => Math.abs((await middle("ai-strip-undo")) - (await middle("ai-strip-voice"))), where).toBeLessThanOrEqual(1);
@@ -1582,9 +1613,15 @@ test.describe("drafting with AI (plan 133)", () => {
     await expect(body(page)).toBeFocused();
     await page.emulateMedia({ colorScheme: "light" });
     await page.setViewportSize({ width: 1440, height: 900 });
-    // the group's items share one look: the same ink and no edge of their own (the group draws it)
-    const style = (id: string) => page.getByTestId(id).evaluate((el) => { const s = getComputedStyle(el); return { color: s.color, weight: s.fontWeight, height: el.getBoundingClientRect().height }; });
-    expect(await style("ai-strip-regenerate")).toEqual(await style("ai-strip-undo"));
+    // plan 164: the quick changes are icon-only and quiet (muted at rest), each named, its tooltip saying what it does
+    for (const [id, name] of [["ai-strip-regenerate", "Regenerate"], ["ai-strip-shorter", "Shorter"], ["ai-strip-warmer", "Warmer"]] as const) {
+      await expect(page.getByTestId(id)).toHaveText("");
+      await expect(page.getByTestId(id)).toHaveAccessibleName(name);
+      expect((await box(id)).width, id).toBe(28);
+    }
+    await page.getByTestId("ai-strip-shorter").hover();
+    await expect(page.locator("[data-slot=tooltip-content]")).toHaveText("Shorter");
+    await page.mouse.move(0, 0);
     // plan 163: what was asked, in the popover, with an icon-only pencil (the owner, 2026-11-08: the worded button was
     // "way too big"), which turns it into a field named for what it holds
     await page.getByTestId("ai-strip-voice").click();
@@ -1688,7 +1725,18 @@ test.describe("drafting with AI (plan 133)", () => {
     await expect(row(page).locator("label")).toHaveText("IA");
     await expect(page.getByTestId("ai-row-status-text")).toHaveText("Escribiendo…");
     await expect(strip(page)).toContainText("Escrito con IA");
-    await expect(strip(page)).toContainText("Regenerar");
+    // plan 164: the quick changes are icons, named in Spanish; the field asks in Spanish
+    await expect(page.getByTestId("ai-strip-regenerate")).toHaveAccessibleName("Regenerar");
+    await expect(page.getByTestId("ai-change-input")).toHaveAttribute("placeholder", "Pide un cambio…");
+    await expect(page.getByTestId("ai-change-input")).toHaveAccessibleName("Un cambio al borrador");
+    await expect(page.getByTestId("ai-change-submit")).toHaveAccessibleName("Hacer este cambio");
+    // and the note's button and question: Generar con IA, Enviar tal cual
+    await page.getByTestId("ai-strip-undo").click();
+    await body(page).fill("dile que el viernes me va bien");
+    await expect(page.getByTestId("compose-ai")).toHaveAccessibleName("Generar con IA");
+    await page.getByTestId("compose-send").click();
+    await expect(page.getByTestId("compose-empty-ask")).toContainText("Esto parece una nota para la IA, no el correo.");
+    await expect(page.getByTestId("compose-note-send")).toHaveText("Enviar tal cual");
   });
 
   // ── looked at: frames during the stream and across the commit (AI_DRAFT_FRAMES=1), in each project's design

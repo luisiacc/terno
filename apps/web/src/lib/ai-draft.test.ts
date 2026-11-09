@@ -1376,22 +1376,29 @@ describe("what the Codex review found", () => {
 });
 
 describe("the row", () => {
-  it("plan 163: ⌘J over an untouched strip is Regenerate; typed in since, it asks first; Esc on the strip is the form's", async () => {
+  it("plan 164: ⌘J over a strip gives its change field the keys, and makes the change it holds; Esc on the strip is the form's", async () => {
     const { key, c } = await writing();
     last("ai.compose").resolve(done("First."));
     await tick();
+    const asks = session(key)!.focus;
     await store.act(key);
-    expect(session(key)!.phase).toBe("writing");
-    expect(last("ai.compose").params).toMatchObject({ instruction: "" });
-    expect(last("ai.compose").params.previousDraft).toBeUndefined();
-    last("ai.compose").resolve(done("Second."));
-    await tick();
-    expect(aiDraftHooks.escape(key)).toBe(false);
-    // edited inside the draft (words added after it are a revision: plan 162, after ai162-r04)
+    // untouched: nothing runs (it was Regenerate), the field is asked to take the keys
+    expect(session(key)!.phase).toBe("strip");
+    expect(calls("ai.compose")).toHaveLength(1);
+    expect(session(key)!.focus).toBe(asks + 1);
+    // typed in since, with nothing marked: the field again, never a rewrite from the body
     c.text = `Mine. ${c.text}`;
     c.type("");
     await store.act(key);
-    expect(session(key)!.confirm).toEqual({ how: "regenerate" });
+    expect(session(key)!.confirm ?? null).toBeNull();
+    expect(calls("ai.compose")).toHaveLength(1);
+    expect(session(key)!.focus).toBe(asks + 2);
+    // words in the field: ⌘J makes them, asking first over the edit
+    store.setChange(key, "warmer please");
+    await store.act(key);
+    expect(session(key)!.confirm).toEqual({ how: "refine", instruction: "warmer please" });
+    expect(aiDraftHooks.escape(key)).toBe(true);
+    expect(aiDraftHooks.escape(key)).toBe(false);
   });
 
   it("plan 161: the strip stays after a keystroke, as Edited after AI, until the draft goes", async () => {
@@ -2113,39 +2120,86 @@ describe("plan 162 (after ai162-r04): revising a draft, and a note for AI", () =
   };
   const draft = "Hey Arjun!\n\nFriday works for me. Could you send me the address of the flat?\n\nCheers,\nLuis";
 
-  it("words typed after the AI's draft are how to change it: rewritten from them, replacing the draft; Undo gives both back exactly", async () => {
+  it("plan 164: words typed after the AI's draft are the user's edits: ⌘J doesn't rewrite from them, the field does, and Undo gives both back", async () => {
     const { key, c } = reply("");
     await store.act(key);
     last("ai.compose").resolve(done(draft));
     await tick();
     expect(c.text).toBe(draft);
-    // the rater's case: typed straight after the sign-off, no space
+    // the rater's case, typed straight after the sign-off: an edit, never an instruction
     c.type("shorter, more casual");
     await store.act(key);
-    // no "Replace your edits?": the only edit was the instruction
-    expect(session(key)!.confirm ?? null).toBeNull();
-    expect(last("ai.compose").params).toMatchObject({ instruction: "shorter, more casual", previousDraft: draft });
+    expect(calls("ai.compose")).toHaveLength(1);
+    expect(c.text).toBe(`${draft}shorter, more casual`);
+    // the field's change over that edit asks first; Keep editing leaves the words in the field
+    store.setChange(key, "  shorter, more casual  ");
+    store.change(key);
+    expect(session(key)!.confirm).toEqual({ how: "refine", instruction: "shorter, more casual" });
+    expect(calls("ai.compose")).toHaveLength(1);
+    store.keepEdits(key);
+    expect(session(key)!.change).toBe("  shorter, more casual  ");
+    // Replace: the draft as it is now, edits and all, is what's changed; the field is empty while it runs
+    store.change(key);
+    store.confirmReplace(key);
+    expect(session(key)!.phase).toBe("writing");
+    expect(session(key)!.change).toBe("");
+    expect(last("ai.compose").params).toMatchObject({ instruction: "shorter, more casual", previousDraft: `${draft}shorter, more casual` });
     last("ai.compose").resolve(done("Friday's good! Send me the flat's address?\n\nLuis"));
     await tick();
     expect(c.text).toBe("Friday's good! Send me the flat's address?\n\nLuis");
     expect(session(key)!.phase).toBe("strip");
+    expect(session(key)!.change).toBe("");
     store.undoCommit(key);
     expect(c.text).toBe(`${draft}shorter, more casual`);
   });
 
-  it("a new last paragraph is a revision too; an edit inside the draft isn't (it asks before writing again)", async () => {
-    expect(store.revisionOf(draft, `${draft}\n\nmake it warmer`)).toBe("make it warmer");
-    expect(store.revisionOf(draft, draft)).toBeNull();
-    expect(store.revisionOf(draft, draft.replace("Friday", "Saturday") + " shorter")).toBeNull();
-    expect(store.revisionOf(draft, `${draft} ${"x".repeat(1001)}`)).toBeNull();
+  it("plan 164: the field's change runs at once over an untouched draft; nothing for blank words, a run under way or a fill; a stop or a failure gives the words back, Try again takes them", async () => {
     const { key, c } = reply("");
     await store.act(key);
     last("ai.compose").resolve(done(draft));
     await tick();
-    c.text = c.text.replace("Friday", "Saturday");
-    c.type("");
+    store.setChange(key, "   ");
+    store.change(key);
+    expect(calls("ai.compose")).toHaveLength(1);
+    store.setChange(key, "mention the parking");
+    store.change(key);
+    expect(last("ai.compose").params).toMatchObject({ instruction: "mention the parking", previousDraft: draft });
+    // pressed again while it runs: one run
+    store.setChange(key, "again");
+    store.change(key);
+    expect(calls("ai.compose")).toHaveLength(2);
+    store.setChange(key, "");
+    // Stop: the draft as it was, the words back in the field to edit
+    store.stop(key);
+    expect(session(key)!.phase).toBe("strip");
+    expect(c.text).toBe(draft);
+    expect(session(key)!.change).toBe("mention the parking");
+    // a failure: the words back too; Try again asks them again and empties the field
+    store.change(key);
+    last("ai.compose").reject(Object.assign(new Error("Couldn't reach Claude"), { details: { aiErrorKind: "network" } }));
+    await tick();
+    expect(session(key)!.phase).toBe("error");
+    expect(session(key)!.change).toBe("mention the parking");
+    store.retry(key);
+    expect(session(key)!.phase).toBe("writing");
+    expect(last("ai.compose").params).toMatchObject({ instruction: "mention the parking" });
+    expect(session(key)!.change).toBe("");
+    // and a second stop gives them back again
+    store.stop(key);
+    expect(session(key)!.change).toBe("mention the parking");
+  });
+
+  it("plan 164: a fill's strip has no change field: its words do nothing", async () => {
+    const { key, c } = reply("Hi Arjun, see you [day]");
     await store.act(key);
-    expect(session(key)!.confirm).toMatchObject({ how: "regenerate" });
+    last("ai.compose").resolve(done("", { fills: ["Friday"] }));
+    await tick();
+    expect(c.text).toBe("Hi Arjun, see you Friday");
+    const before = calls("ai.compose").length;
+    store.setChange(key, "shorter");
+    store.change(key);
+    expect(calls("ai.compose")).toHaveLength(before);
+    expect(session(key)!.phase).toBe("strip");
   });
 
   it("an answer that says what the body already says is never offered beside it: the strip says so", async () => {

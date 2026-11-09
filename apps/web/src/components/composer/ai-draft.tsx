@@ -1,17 +1,17 @@
 import { parseAddressList } from "@terno/core";
 import { getLocale, t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
-import { ButtonGroup, ButtonGroupItem } from "@terno/ui/components/button-group";
+import { IconButton } from "@terno/ui/components/icon-button";
 import { CloseButton } from "@terno/ui/components/close-button";
 import { Shortcut, shortcutText } from "@terno/ui/components/shortcut";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { Spinner } from "@terno/ui/components/spinner";
-import { ChevronDown, PenLine, TriangleAlert, Undo2 } from "@terno/ui/icons";
+import { ArrowUp, Ellipsis, PenLine, RefreshCw, Shrink, Smile, TriangleAlert, Undo2 } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { modelName, providerLabel, writingTarget } from "~/lib/ai";
-import { answer, closeRow, commitHeld, offersReplace, confirmReplace, discard, discardAndSend, includeEveryone, keepEdits, keepWriting, noteBody, place, placePartial, previewMode, previewText, primed, refine, retry, rewriteFrom, stop, submit, subscribePreview, takeFocusRequest, undoCommit, useAiDraft, type AiSession, type AiStrip } from "~/lib/ai-draft";
+import { answer, change, closeRow, commitHeld, offersReplace, confirmReplace, discard, discardAndSend, includeEveryone, keepEdits, keepWriting, noteBody, place, placePartial, previewMode, previewText, primed, refine, retry, rewriteFrom, setChange, stop, submit, subscribePreview, takeFocusRequest, undoCommit, useAiDraft, type AiSession, type AiStrip } from "~/lib/ai-draft";
 import { keepInView } from "~/lib/reader-scroll";
 import { AiErrorNotice, AiProvenance, aiErrorCopy, aiWritten, errorTarget } from "../ai-card";
 import { useAiDraftUi } from "~/lib/ai-draft-state";
@@ -232,108 +232,170 @@ function StatusPopover({ s, strip, toText }: { s: AiSession; strip: AiStrip; toT
 }
 
 /**
- * The strip's Undo: the AI's last write taken back, first in the strip's group. Plan 162: one chrome for the four commands
- * (BoardUI's button group, as the reader's Reply and Forward), so none outranks another and none is bare text. `alone` is
- * the row's field over a strip, where it's the only command: the group's look on one item.
+ * The strip's Undo: the AI's last write taken back. Plan 164: the one command with its word (recovery leads, plan 161), quiet
+ * as the rest; also on the row's question over a strip.
  */
-function UndoButton({ s, alone }: { s: AiSession; alone?: boolean }) {
+function UndoButton({ s }: { s: AiSession }) {
   // plan 162 (after ai162-r02): what it takes back, in its name and tooltip ("Undo Shorter"; the first draft: "Remove the AI's draft")
   const top = s.strip?.stack.at(-1);
   const what = top?.how === "fill" ? t("aiDraft.undo.fill") : !top || (s.strip?.stack.length ?? 0) <= 1 ? t("aiDraft.undo.draft") : t(`aiDraft.undo.${top.how && top.how !== "draft" ? top.how : "rewrite"}`);
-  const item = (
-    <ButtonGroupItem
-      className="text-foreground"
-      aria-label={what}
-      data-testid="ai-strip-undo"
-      onMouseDown={(e) => e.preventDefault()}
-      onClick={() => {
-        // from the field over a strip: the row goes back to the strip first, so Undo acts on it as it would there
-        if (s.phase !== "strip") closeRow(s.key);
-        undoCommit(s.key);
-      }}
-    />
-  );
-  const button = (
+  return (
     <Tooltip>
-      <TooltipTrigger render={item}>
+      <TooltipTrigger
+        render={
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="px-2 text-foreground @max-[24rem]/strip:w-7 @max-[24rem]/strip:px-0 [&_svg]:text-muted-foreground hover:[&_svg]:text-foreground"
+            aria-label={what}
+            data-testid="ai-strip-undo"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => {
+              // from the row's question over a strip: the row goes back to the strip first, so Undo acts on it as it would there
+              if (s.phase !== "strip") closeRow(s.key);
+              undoCommit(s.key);
+            }}
+          />
+        }
+      >
         <Undo2 aria-hidden />
-        {t("common.undo")}
+        <span className="@max-[24rem]/strip:sr-only">{t("common.undo")}</span>
       </TooltipTrigger>
       <TooltipContent>{what}</TooltipContent>
     </Tooltip>
   );
-  return alone ? <ButtonGroup className="h-7" aria-label={t("aiDraft.commands")}>{button}</ButtonGroup> : button;
 }
 
-/**
- * Shorter and Warmer, folded into one menu where the line can't hold them beside Undo, Regenerate and the status. Plan 162
- * (after ai162-r01): Regenerate, the rewrite most asked for, stays a button of its own at every width.
- */
+const QUICK = { regenerate: RefreshCw, shorter: Shrink, warmer: Smile } as const;
+
+/** Plan 164: Regenerate, Shorter and Warmer, each an icon-only quiet button, named, its tooltip saying what it does. */
+function QuickChange({ s, how, className }: { s: AiSession; how: keyof typeof QUICK; className?: string }) {
+  const Icon = QUICK[how];
+  return (
+    <IconButton label={t(`aiDraft.${how}`)} data-testid={`ai-strip-${how}`} className={cn("[&_svg]:[--icon-line:var(--icon-line-toolbar)]", className)} onMouseDown={(e) => e.preventDefault()} onClick={() => refine(s.key, how)}>
+      <Icon />
+    </IconButton>
+  );
+}
+
+/** Shorter and Warmer, folded into one quiet menu where the line can't hold them (Regenerate stays at every width). */
 function RewriteMenu({ s }: { s: AiSession }) {
   return (
     <DropdownMenu>
-      {/* the group's last item when it shows: no divider after it */}
-      <DropdownMenuTrigger render={<ButtonGroupItem className="hidden text-foreground @max-[30rem]/strip:inline-flex @max-[30rem]/strip:border-e-0" data-testid="ai-strip-rewrite" />}>
-        {t("aiDraft.rewrite")}
-        <ChevronDown aria-hidden />
-      </DropdownMenuTrigger>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <DropdownMenuTrigger render={<Button type="button" variant="ghost" size="icon-sm" aria-label={t("aiDraft.moreChanges")} className="hidden text-muted-foreground hover:text-foreground @max-[30rem]/strip:inline-flex" data-testid="ai-strip-rewrite" />} />
+          }
+        >
+          <Ellipsis aria-hidden />
+        </TooltipTrigger>
+        <TooltipContent>{t("aiDraft.moreChanges")}</TooltipContent>
+      </Tooltip>
       {/* plan 162 (after ai162-r02): a rewrite chosen here gives the keys to the draft, as the wide buttons do; the menu
           handing them back to its trigger lost them (the commands are redrawn while it writes) */}
-      <DropdownMenuContent align="start" className="w-max" data-testid="ai-strip-rewrite-menu" >
-        {(["shorter", "warmer"] as const).map((how) => (
-          <DropdownMenuItem key={how} data-testid={`ai-strip-rewrite-${how}`} onClick={() => refine(s.key, how)}>
-            <span className="whitespace-nowrap">{t(`aiDraft.${how}`)}</span>
-          </DropdownMenuItem>
-        ))}
+      <DropdownMenuContent align="end" className="w-max" data-testid="ai-strip-rewrite-menu">
+        {(["shorter", "warmer"] as const).map((how) => {
+          const Icon = QUICK[how];
+          return (
+            <DropdownMenuItem key={how} data-testid={`ai-strip-rewrite-${how}`} onClick={() => refine(s.key, how)}>
+              <Icon aria-hidden />
+              <span className="whitespace-nowrap">{t(`aiDraft.${how}`)}</span>
+            </DropdownMenuItem>
+          );
+        })}
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+/**
+ * Plan 164 (the owner: "a way to do an instruction in the AI field, like the main branch did"): what to change in the draft,
+ * typed here, never under the draft in the body. A light filled field (BoardUI's, its border on hover and focus) with its
+ * submit at its end; Return makes the change (main's free-form refine), Shift+Return breaks the line, Esc empties it. Its
+ * words live in the session, so they survive the form going and "Keep editing".
+ */
+function ChangeField({ s }: { s: AiSession }) {
+  const value = s.change ?? "";
+  const has = value.trim() !== "";
+  const hint = useId();
+  const send = () => change(s.key);
+  return (
+    <div className="relative -ms-2 flex min-w-0 flex-1 basis-40 items-start rounded-lg border border-transparent bg-field transition-colors hover:border-input has-focus-visible:border-ring has-focus-visible:ring-2 has-focus-visible:ring-ring/20" data-testid="ai-change">
+      <textarea
+        data-ai-default
+        data-testid="ai-change-input"
+        aria-label={t("aiDraft.change.field")}
+        aria-describedby={hint}
+        rows={1}
+        className="field-sizing-content max-h-24 min-h-[26px] w-full resize-none bg-transparent py-[3px] ps-2 pe-8 text-sm leading-5 text-foreground outline-none placeholder:text-muted-foreground"
+        value={value}
+        autoComplete="off"
+        spellCheck
+        placeholder={t("aiDraft.change.placeholder")}
+        onChange={(e) => setChange(s.key, e.target.value)}
+        onKeyDown={(e) => {
+          if (e.nativeEvent.isComposing) return;
+          // Return and ⌘Return make the change, never the form's Send; Shift+Return is a new line, ⌘⇧Return the form's Send later
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            e.stopPropagation();
+            send();
+          } else if (e.key === "Escape" && value) {
+            // the words go, and nothing else: the composer stays
+            e.preventDefault();
+            e.stopPropagation();
+            setChange(s.key, "");
+          }
+        }}
+      />
+      <span id={hint} className="sr-only">{t("aiDraft.change.hint")}</span>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button type="button" variant="ghost" size="icon-xs" aria-label={t("aiDraft.change.submit")} aria-disabled={!has || undefined} data-testid="ai-change-submit" className="absolute end-0.5 top-px text-muted-foreground hover:text-foreground aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[has]:text-foreground [&_svg]:size-3.5" data-has={has || undefined} onMouseDown={(e) => e.preventDefault()} onClick={send} />
+          }
+        >
+          <ArrowUp aria-hidden />
+        </TooltipTrigger>
+        <TooltipContent className="flex items-center gap-2">
+          {t("aiDraft.change.submit")}
+          <Shortcut keys="enter" />
+        </TooltipContent>
+      </Tooltip>
+    </div>
   );
 }
 
 function Strip({ s }: { s: AiSession & { strip: AiStrip } }) {
   const toText = useDrafts((state) => state.drafts[s.key]?.toText ?? "");
   const { strip } = s;
-  // plan 163: a fill's only rewrite is Fill again (Shorter or Warmer would rewrite the user's own words)
+  // plan 163: a fill's only rewrite is Fill again (Shorter, Warmer or a change would rewrite the user's own words)
   const filled = strip.fill !== undefined;
   return (
-    // plan 161, pass 3: the commands, and the provenance at the line's end, as on every AI surface. Plan 162: the commands
-    // are one group; narrow, the rewrites fold into Rewrite ▾ in it. Plan 163: what was asked is in the provenance's popover
+    // plan 161, pass 3: the commands, and the provenance at the line's end, as on every AI surface. Plan 164: a draft's strip
+    // leads with its change field (main's way to ask for a change), then Undo and the quick changes, quiet and icon-only;
+    // narrow, Shorter and Warmer fold into a menu. What was asked is in the provenance's popover, with its pencil
     <div className="@container/strip flex min-w-0 flex-1 flex-col" data-testid="ai-strip" data-edited={strip.edited || undefined} data-stopped={strip.stopped || undefined} data-fill={filled || undefined}>
-      <div className={cn(line, "flex-nowrap py-[5px]")}>
-        <ButtonGroup className="h-7" aria-label={t("aiDraft.commands")} data-testid="ai-strip-commands">
+      <div className={cn(line, "flex-nowrap gap-x-1 py-[5px]")}>
+        {!filled && <ChangeField s={s} />}
+        <div role="group" className="flex shrink-0 items-center gap-0.5" aria-label={t("aiDraft.commands")} data-testid="ai-strip-commands">
           <UndoButton s={s} />
           {filled ? (
-            <ButtonGroupItem className="border-e-0 text-foreground" data-testid="ai-strip-regenerate" onClick={() => refine(s.key, "regenerate")}>
+            <Button type="button" variant="ghost" size="sm" className="px-2 text-foreground" data-testid="ai-strip-regenerate" onClick={() => refine(s.key, "regenerate")}>
+              <RefreshCw aria-hidden className="text-muted-foreground" />
               {t("aiDraft.fillAgain")}
-            </ButtonGroupItem>
+            </Button>
           ) : (
             <>
-              {(["regenerate", "shorter", "warmer"] as const).map((how) => (
-                <ButtonGroupItem key={how} className={cn("text-foreground", how !== "regenerate" && "@max-[30rem]/strip:hidden", how === "warmer" && "border-e-0")} data-testid={`ai-strip-${how}`} onClick={() => refine(s.key, how)}>
-                  {t(`aiDraft.${how}`)}
-                </ButtonGroupItem>
-              ))}
+              <QuickChange s={s} how="regenerate" />
+              <QuickChange s={s} how="shorter" className="@max-[30rem]/strip:hidden" />
+              <QuickChange s={s} how="warmer" className="@max-[30rem]/strip:hidden" />
               <RewriteMenu s={s} />
             </>
           )}
-        </ButtonGroup>
-        {/* plan 162 (after ai162-r05): what was asked stays in view, the user's words, quoted, one line, quiet, the first
-            thing to give way (it was only in the popover: once written, nothing said what you'd asked; two reports) */}
-        {/* a click opens the provenance, which holds it whole with its pencil (Codex review: it was a plain span) */}
-        {strip.instruction && !filled && (
-          <button
-            type="button"
-            className="min-w-0 flex-1 cursor-pointer truncate rounded-md px-1 text-start text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring @max-[30rem]/strip:hidden"
-            title={strip.instruction}
-            aria-label={t("aiDraft.asked", { instruction: strip.instruction })}
-            aria-haspopup="dialog"
-            data-testid="ai-strip-asked"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={(e) => e.currentTarget.parentElement?.querySelector<HTMLElement>("[data-testid=ai-strip-voice]")?.click()}
-          >
-            “{strip.instruction}”
-          </button>
-        )}
+        </div>
         <StatusPopover s={s} strip={strip} toText={toText} />
       </div>
       {s.sameNote && <p className="w-full pb-1.5 text-xs text-muted-foreground" role="status" data-testid="ai-same">{t("aiDraft.choice.same")}</p>}

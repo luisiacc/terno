@@ -2,6 +2,7 @@
 
 - **Status:** built on its own branch (`t3/ai-draft-instruction-flow`), rebased on the redesign branch (plan 162), code-reviewed, run on real models; never merged by the builder. **Consent on first use is superseded** (the owner, 2026-11-08, below): wherever this plan says the fast read or a run asks first, it doesn't.
 - **Builds on:** plan 133 (⌘J), 131 (tasks), 144 (Reply ready), 146/147/150 (the gate), 161 and 162 (the rating, the strip as it is).
+- **Changed by plan 164** (the owner, 2026-11-09): Send is always the primary; the foot's AI button is a secondary, **Generate with AI** (a body with gaps: **Fill in with AI**), never "Write it"; Send on a note asks with Send as it is (the primary) and Generate with AI; and a change to a written draft goes in the strip's own field ("Ask for a change…"), as main had it, not under the draft in the body (plan 162's revise-by-typing is gone). ⌘J over a strip gives that field the keys instead of regenerating. See `164-composer-ai-buttons.md`; the sections below are as plan 163 built them.
 
 ## The request
 

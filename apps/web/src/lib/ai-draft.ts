@@ -225,6 +225,8 @@ export interface AiSession {
   confirmFailed: boolean;
   /** plan 162 (after ai162-r04): the last run came back with what the body already said; the strip says so until the next edit or run */
   sameNote?: boolean;
+  /** plan 164: what's typed in the strip's change field ("shorter, more casual"), kept with the session so it survives the form going */
+  change?: string;
   /** "Looking up contacts…" */
   lookingUp: boolean;
   /** the §5 call in flight, to stop with the row */
@@ -392,6 +394,7 @@ function remove(key: string, endCompose = true) {
   stopWaiting(key);
   clearSlow(key);
   focusAnswered.delete(key);
+  changing.delete(key);
   // plan 163: what was filled stops being tinted with the strip
   controllerFor(key)?.clearFilled();
   if (endCompose && s.lastSpec) void quietly(() => client.call("ai.composeEnd", { session: sessionId(key) }));
@@ -576,24 +579,11 @@ const modelGaps = (s: AiSession | undefined): Set<string> => new Set(s?.strip ? 
 const flat = (text: string) => text.replace(/\s+/g, " ").trim();
 
 /**
- * Plan 162 (after ai162-r04): the words typed after the AI's draft, when that's the only change (at its end, or as a new
- * last paragraph): what to change in it ("shorter, more casual"). Null when the draft was edited anywhere else, or nothing
- * (or too much to be an instruction) was added.
- */
-export function revisionOf(draft: string, body: string): string | null {
-  const was = flat(draft);
-  const now = flat(body);
-  if (!was || !now.startsWith(was)) return null;
-  const added = now.slice(was.length).trim();
-  if (!added || added.length > WRITING_ONE_OFF_MAX) return null;
-  return added;
-}
-
-/**
  * Plan 163: ⌘J or the Sparkles in a draft. What's in the body decides (packages/core `readBody`): nothing is the one-tap
  * draft; an instruction is written from, and the draft replaces it; the user's own email has its gaps filled, or is
- * expanded beside itself. The fast model reads it only when the rules can't tell. Over a strip, untouched,
- * it's Regenerate; typed in since, the gaps the user marked are filled, and anything else writes again (asking first).
+ * expanded beside itself. The fast model reads it only when the rules can't tell. Plan 164: over a strip, it's the strip's
+ * change field: the words in it are made, or it takes the keys; gaps the user typed into the draft since are filled.
+ * Over a fill's strip (no field), untouched it's Fill again; typed in since, gaps are filled, anything else asks first.
  */
 export async function act(key: string): Promise<void> {
   listen();
@@ -620,7 +610,10 @@ export async function act(key: string): Promise<void> {
   const c = controllerFor(key);
   if (!c) return;
   const top = s?.strip?.stack[s.strip.stack.length - 1];
-  if (s?.strip && s.phase === "strip" && !s.strip.edited && top && c.docToken() === top.doc) return refine(key, "regenerate");
+  const untouched = !!s?.strip && !s.strip.edited && !!top && c.docToken() === top.doc;
+  // plan 164 (the owner): a change to the draft goes in the strip's field, as main had it, never under the draft in the body
+  if (s?.strip && s.phase === "strip" && !top?.fill && s.change?.trim()) return change(key);
+  if (s?.strip && s.phase === "strip" && untouched) return top?.fill ? refine(key, "regenerate") : update(key, { focus: s.focus + 1 });
   const b = c.bodyText(BODY_READ_MAX);
   if (b.truncated) {
     if (!s) showRow(key, false);
@@ -633,13 +626,11 @@ export async function act(key: string): Promise<void> {
   const gapsOk = read.gaps.filter(usable).slice(0, FILL_GAPS_MAX);
   const maybeOk = read.maybe.filter(usable).slice(0, FILL_GAPS_MAX);
   const found = { ...read, gaps: gapsOk, maybe: maybeOk };
-  // over a strip typed in since: what they marked is filled; words added after the AI's draft are how to change it (plan
-  // 162, after ai162-r04: they stayed in the body, and a copy of the draft came back as a suggestion); anything else writes
-  // again, asking first
+  // over a strip typed in since: what they marked is filled; otherwise a draft's field takes the keys (plan 164: words
+  // typed in the body are the user's edits, never read as an instruction), and a fill's strip writes again, asking first
   if (s?.strip && s.phase === "strip") {
     if (found.gaps.length) return fillGaps(key, b, found.gaps);
-    const asked = top ? revisionOf(top.text, b.text) : null;
-    if (asked) return startRun(key, { kind: "refine", instruction: asked, previous: top!.text });
+    if (!top?.fill) return update(key, { focus: s.focus + 1 });
     return refine(key, "regenerate");
   }
   if (!s) {
@@ -1182,7 +1173,8 @@ function failed(key: string, error: unknown) {
   // stopped by a provider or model change, or the window closing: nothing was written
   if (e.code === "CANCELLED" || kind === "cancelled") {
     clearStream(key);
-    return update(key, { phase: prior ? "strip" : "input", strip: prior, run: null });
+    update(key, { phase: prior ? "strip" : "input", strip: prior, run: null });
+    return giveBackChange(key, s.run?.requestId);
   }
   if (kind === "not_configured") {
     clearStream(key);
@@ -1197,6 +1189,7 @@ function failed(key: string, error: unknown) {
   // what a screen reader hears is what's shown: never the provider's address (plan 161, pass 2)
   const said = aiErrorCopy({ message, kind, key: e.i18n?.key }, errorTarget(writingTarget(ai).provider, ai)).title;
   update(key, { phase: "error", error: { message, help, kind: kind ?? "other", retry: e.code !== "NOT_FOUND" && kind !== "unsupported", partial, ...(e.i18n?.key ? { key: e.i18n.key } : {}) }, live: said, strip: partial ? s.strip : prior, run: partial ? s.run : null });
+  giveBackChange(key, s.run?.requestId);
 }
 
 // §6.2: never a real answer from a snippet: it waits for the text
@@ -1273,6 +1266,7 @@ export function stop(key: string) {
   if (prior && priorStands(prior, s.run, c)) {
     clearStream(key);
     update(key, { phase: "strip", strip: prior, run: null, choice: null, error: null, guard: null, live: "" });
+    giveBackChange(key, s.run?.requestId);
     return focusEditor(key);
   }
   // the owner's answers: written from text the read has since called an instruction, it stops as an instruction's run
@@ -1532,6 +1526,7 @@ export function confirmReplace(key: string): void {
   const s = session(key);
   if (!s?.strip || !s.confirm) return;
   startRun(key, specOf(s.strip, s.confirm, key));
+  if (s.confirm.how === "refine") changeRuns(key, s.confirm.instruction);
 }
 
 /** "Keep editing", and Esc: nothing runs, and the caret is back in the text. */
@@ -1552,6 +1547,44 @@ export function rewriteFrom(key: string, instruction: string): void {
   if (!s?.strip || !words) return;
   if (words === s.strip.instruction) return refine(key, "regenerate");
   replacing(key, { how: "rewrite", instruction: words });
+}
+
+/** Plan 164: the strip's change field, as it's typed. */
+export function setChange(key: string, text: string): void {
+  if (!session(key)?.strip) return;
+  update(key, { change: text.slice(0, WRITING_ONE_OFF_MAX) });
+}
+
+/**
+ * Plan 164 (the owner): the strip's change field, sent: main's free-form refine of the draft as it is now, asking "Replace
+ * your edits?" first over an edit (whose Keep editing leaves the words in the field). Never a fill's: it would rewrite the
+ * user's own words.
+ */
+export function change(key: string): void {
+  const s = session(key);
+  const words = s?.change?.trim().slice(0, WRITING_ONE_OFF_MAX) ?? "";
+  if (!s?.strip || s.phase !== "strip" || s.confirm || s.strip.stack.at(-1)?.fill || !words) return;
+  replacing(key, { how: "refine", instruction: words });
+  changeRuns(key, words);
+}
+
+/** the field's words while their change runs: a stop or a failure gives them back to the field, never lost */
+const changing = new Map<string, { requestId: string; words: string }>();
+
+/** It runs: the words are the change being made, and the field is empty when the strip comes back. */
+function changeRuns(key: string, words: string): void {
+  const now = session(key);
+  if (now?.phase !== "writing" || !now.run) return;
+  changing.set(key, { requestId: now.run.requestId, words });
+  update(key, { change: "" });
+}
+
+/** A change that stopped or failed: its words back in the (still empty) field. */
+function giveBackChange(key: string, requestId: string | undefined): void {
+  const c = changing.get(key);
+  if (!c || c.requestId !== requestId) return;
+  changing.delete(key);
+  if (session(key) && !session(key)!.change?.trim()) update(key, { change: c.words });
 }
 
 const undoing: { key: string | null } = { key: null };
@@ -1982,6 +2015,8 @@ export function retry(key: string) {
   }
   if (s?.lastSpec) startRun(key, s.lastSpec);
   else if (s) void submit(key);
+  // plan 164: a change from the field asked again: its words, given back to the field by the failure, go with it again
+  if (s?.lastSpec?.kind === "refine" && s.change?.trim() === s.lastSpec.instruction) changeRuns(key, s.lastSpec.instruction);
 }
 
 /** "Include everyone (3)": the reply goes back to its whole conversation; what's being written stays. */
