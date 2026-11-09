@@ -180,13 +180,12 @@ test.describe("drafting with AI (plan 133)", () => {
     await expect(page.getByTestId("style-profile").first()).toContainText(/Usually about \d+ words/, { timeout: 20_000 });
     await inEveryLook(page, async (where) => {
       const page_ = page.getByTestId("writing-style");
-      // plan 162 (after ai162-r04): where the page continues, its foot fades (its text was cut mid-line with no cue); at its end, none
+      // plan 162 (after ai162-r05): where the page continues, nothing fades over its words (a fade read as disabled); it
+      // ends at the dialog's edge as every section does
       const scroller = page.getByTestId("settings-scroller");
       await scroller.evaluate((el) => el.scrollTo({ top: 0 }));
-      if (await scroller.evaluate((el) => el.scrollHeight > el.clientHeight + 2)) await expect(scroller, where).toHaveAttribute("data-more", "true");
-      await scroller.evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
-      await expect(scroller, where).not.toHaveAttribute("data-more");
-      await scroller.evaluate((el) => el.scrollTo({ top: 0 }));
+      expect(await scroller.evaluate((el) => el.scrollHeight > el.clientHeight + 2), where).toBe(true);
+      await expect(scroller, where).toHaveCSS("mask-image", "none");
       expect(await wheelsTo(page, page_, page.getByTestId("style-people")), where).toBe(true);
       await page.getByTestId("style-profile-edit").first().scrollIntoViewIfNeeded();
       await page.getByTestId("style-profile-edit").first().click();
