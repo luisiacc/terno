@@ -207,7 +207,7 @@ Rewrite on a selection (plan 133's "right after"). Filling gaps in mail the AI d
 
 ### The capture and the gallery
 
-`a02` and `a03` shoot the new flow (`docs/ui-rating.md` says exactly what changed); no `a03b`, since adding a shot changes the set every round is gated on. The gallery, on the stub, every design, light and dark, 1440x900 and 1100x700: the opened body with its hint, the instruction typed, writing, written, the popover with the pencil and its field, the pinned card, gaps typed, filled with one left, and the fills' popover (`/tmp/terno-scratch/plan163/gallery/`).
+`a02` and `a03` shoot the new flow (`docs/ui-rating.md` says exactly what changed); no `a03b`, since adding a shot changes the set every round is gated on. The gallery, on real models (see below), every design, light and dark, 1440x900 and 1100x700: the opened body with its hint, the instruction typed, writing, written, the popover with the pencil and its field, the pinned card, gaps typed, filled with one left, and the fills' popover (`/tmp/terno-scratch/plan163/gallery-real/`).
 
 ## The owner's decisions while it was built (2026-11-08)
 
@@ -247,3 +247,25 @@ Rewrite on a selection (plan 133's "right after"). Filling gaps in mail the AI d
 - The first real run wrote "Could you ask him to send the address of the flat?" to him: an instruction's "him" is usually the person written to, and the rules say so now (`WRITING_PROMPT_VERSION` 8). The next runs: "Friday works for me. Could you send me the address of the flat?"
 - Fills used the conversation and the voice ("thanks for turning them around so quickly"), and left "[the date he mentioned]" as typed, since the thread names no date: nothing invented.
 - The smoke spent US$0.026.
+
+### The capture, the gallery and the spend, on real models
+
+- **The frozen capture** (`capture.mjs --screens ai`, Pro's routing) reached every AI state, the new `a02` and `a03` included, in Lumen, Atelier, macOS and Graphite, light and dark: 34 shots each, only Anthropic and OpenAI reached (`/tmp/terno-scratch/plan163/capture-real/`).
+- **The gallery** (`/tmp/terno-scratch/plan163/gallery-real/`, 257 shots): for each of the five designs, light and dark, at 1440x900 and 1100x700: the body opened for AI with its hint, the instruction typed with the Sparkles lit, writing (the instruction dimmed), streaming, written, the popover with the pencil and its field, the pinned card, gaps typed, a fill streaming into its gap, filled with one gap left as typed, the fills' popover, and nothing to fill (a real condition: the conversation has no phone number, so the model leaves the gap and the row says so). The redesign's first-use line was answered before any shot, so none shows it.
+- **What looking changed:** the ready Sparkles' word (it didn't read as lit in Lumen), shown only from 36rem of foot (it wrapped macOS's foot at 1100); a fill's popover no longer offers another language; "nothing to fill" said for one gap or several.
+- **Spend, as the app counted it:** the smoke US$0.026 (a first run that failed on the pronoun, under US$0.01); the gallery US$0.22 and again on the final code US$0.20; the capture US$0.28 and again on the final code US$0.27. About **US$1.00** in all.
+
+### Tests
+
+- Unit: `packages/core` `body.test.ts` (44), `packages/ai` (fill and read, 297 in the package), `packages/backend` `writing.test.ts` and `model-stub.test.ts`, `apps/web` `ai-draft.test.ts` (116) and `composer/fills.test.ts` (9), `packages/ui` `contrast.test.ts`.
+- e2e on the stub: `ai-draft`, `summaries`, `design-axe`, `dev-mode`, `replies-ready`, `followups` in `e2e`, and their tagged flows in Lumen, Atelier, Luma and Graphite: all pass.
+- `pnpm typecheck`, `pnpm lint`: clean. `pnpm test:ui-perf`: 45 passed.
+- Real models: `ai-draft-body.smoke.ts` passes (`TERNO_RATING_REAL=1`); `ai-rating.smoke.ts`'s stub case follows the new ⌘J.
+- Not run, as asked: `pnpm test:all`, `rate.mjs`.
+
+### Left for the owner
+
+- The fast read adds about a second before the first word on text the rules can't place. Whether that's worth it against writing straight away and deciding the placement afterwards (the model writes the same draft for an instruction or a note) is a product call.
+- "sounds good, see you friday" reads as an email (expanded beside it, with Replace) rather than written up in place. Safe, but one more click for someone who meant it as a note.
+- A gap's fill is tinted in the primary's 12% wash: it reads clearly through its underline, the tint itself faintly in Lumen light.
+- No `a03b`: a rated fill state would change the set every round is gated on.
