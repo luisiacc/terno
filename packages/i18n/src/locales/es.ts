@@ -1236,6 +1236,8 @@ const es = {
   "aiDraft.button.write": "Redactarlo con IA a partir de tu nota",
   "aiDraft.button.fill": { one: "Completar el hueco con IA", other: "Completar # huecos con IA" },
   "aiDraft.button.reply": "Redactar una respuesta con IA",
+  "aiDraft.ready.write": "Redactarlo",
+  "aiDraft.ready.fill": { one: "Completar el hueco", other: "Completar # huecos" },
   "aiDraft.reading": "Leyendo lo que escribiste…",
   "aiDraft.filling": { one: "Completando el hueco…", other: "Completando # huecos…" },
   "aiDraft.fillAgain": "Completar de nuevo",

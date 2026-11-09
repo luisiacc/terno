@@ -1,8 +1,10 @@
 import { BODY_GLANCE_MAX, readBody } from "@terno/core";
 import { t } from "@terno/i18n";
+import { Button } from "@terno/ui/components/button";
 import { IconButton } from "@terno/ui/components/icon-button";
+import { Shortcut } from "@terno/ui/components/shortcut";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { Sparkles } from "@terno/ui/icons";
-import { cn } from "@terno/ui/lib/utils";
 import { useEffect, useState } from "react";
 import { useAiDraftUi, useCanDraft } from "~/lib/ai-draft-state";
 import { openAiDraft } from "~/lib/ai-draft";
@@ -74,8 +76,8 @@ export function AiDraftButton({ draftKey, threadId, disabled, testId }: { draftK
   const offered = useCanDraft();
   const glance = useBodyGlance(offered ? draftKey : undefined);
   const reply = useDrafts((s) => (draftKey ? (s.drafts[draftKey]?.mode ?? "new") !== "new" : false));
-  // over a strip, ⌘J is the strip's (Regenerate): nothing here to light up
-  const strip = useAiDraftUi((s) => (draftKey ? s.rows[draftKey] === "open" : false));
+  // working, asking, or over a strip (where ⌘J is Regenerate): nothing here to light up
+  const strip = useAiDraftUi((s) => (draftKey ? s.rows[draftKey] !== undefined && s.rows[draftKey] !== "primed" : false));
   if (!offered) return null;
   const fill = /^fill:(\d+)$/.exec(glance);
   const ready = !strip && (glance === "write" || fill !== null);
@@ -89,8 +91,29 @@ export function AiDraftButton({ draftKey, threadId, disabled, testId }: { draftK
         : glance === "empty" && reply
           ? t("aiDraft.button.reply")
           : t("aiDraft.button");
+  const open = () => openAiDraft({ ...(draftKey ? { key: draftKey } : {}), ...(threadId !== undefined ? { threadId } : {}) });
+  // ready: a word beside the glyph says what ⌘J will do (in Lumen the foot's icons are all near the ink: a darker glyph
+  // alone didn't read as a change), in the reply bar's quiet button style
+  if (ready) {
+    return (
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button type="button" variant="ghost" size="sm" aria-label={label} disabled={disabled} onMouseDown={keepSelection} onClick={open} data-testid={testId} data-ready className="gap-1 px-2 text-foreground-soft hover:text-foreground [&_svg]:size-[1.15em] [&_svg]:text-muted-foreground hover:[&_svg]:text-foreground [&_svg]:[--icon-line:var(--icon-line-toolbar)]" />
+          }
+        >
+          <Sparkles aria-hidden />
+          <span aria-hidden>{fill ? t("aiDraft.ready.fill", { count: Number(fill[1]) }) : t("aiDraft.ready.write")}</span>
+        </TooltipTrigger>
+        <TooltipContent className="flex items-center gap-2">
+          {label}
+          <Shortcut keys="mod+j" />
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
   return (
-    <IconButton label={label} shortcut="mod+j" disabled={disabled} onMouseDown={keepSelection} onClick={() => openAiDraft({ ...(draftKey ? { key: draftKey } : {}), ...(threadId !== undefined ? { threadId } : {}) })} data-testid={testId} data-ready={ready || undefined} className={cn("[&_svg]:[--icon-line:var(--icon-line-toolbar)]", ready && "text-foreground")}>
+    <IconButton label={label} shortcut="mod+j" disabled={disabled} onMouseDown={keepSelection} onClick={open} data-testid={testId} className="[&_svg]:[--icon-line:var(--icon-line-toolbar)]">
       <Sparkles />
     </IconButton>
   );

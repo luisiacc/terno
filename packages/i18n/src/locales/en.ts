@@ -1245,6 +1245,8 @@ const en = {
   "aiDraft.button.write": "Write it from your note with AI",
   "aiDraft.button.fill": { one: "Fill the gap with AI", other: "Fill # gaps with AI" },
   "aiDraft.button.reply": "Draft a reply with AI",
+  "aiDraft.ready.write": "Write it",
+  "aiDraft.ready.fill": { one: "Fill the gap", other: "Fill # gaps" },
   "aiDraft.reading": "Reading what you wrote…",
   "aiDraft.filling": { one: "Filling the gap…", other: "Filling # gaps…" },
   "aiDraft.fillAgain": "Fill again",
