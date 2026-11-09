@@ -2333,6 +2333,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "errors.ai.summaryProvider": "Los resúmenes necesitan un proveedor. Añade una clave de OpenAI en Ajustes → IA o elige tu proveedor actual para ellos.",
   "errors.ai.summaryBlocked": "Esta conversación está en Spam o en la Papelera, así que no se puede resumir. Sácala de ahí y vuelve a intentarlo.",
   "replies.title": "Respuesta lista",
+  "replies.drafted": "Respuesta redactada",
   "replies.writing": "Escribiendo una respuesta…",
   "replies.use": "Usar como borrador",
   "replies.to": "Para {names}",

@@ -2348,6 +2348,7 @@ It contains none of your mail, contacts, settings or keys.
   "errors.ai.summaryProvider": "Summaries need a provider. Add an OpenAI key in Settings → AI, or choose your current provider for them.",
   "errors.ai.summaryBlocked": "This conversation is in Spam or Trash, so it can’t be summarized. Move it out and try again.",
   "replies.title": "Reply ready",
+  "replies.drafted": "Reply drafted",
   "replies.writing": "Writing a reply…",
   "replies.use": "Use as draft",
   "replies.to": "To {names}",

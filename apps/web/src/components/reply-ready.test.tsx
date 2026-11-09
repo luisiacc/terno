@@ -129,7 +129,8 @@ it("plan 161, pass 2: the header counts the gaps still to fill, in the ink, befo
   // each gap once, and only those still in the text
   expect(q("reply-ready-gaps")!.textContent).toBe("2 gaps to fill");
   expect(q("reply-ready-gaps")!.className).toContain("text-foreground");
-  expect(q("reply-ready-header")!.textContent).toBe("Reply ready·2 gaps to fill·To Liam Baker");
+  // plan 162 (after ai162-r03): with a gap left it isn't ready yet: it says drafted, and what's left
+  expect(q("reply-ready-header")!.textContent).toBe("Reply drafted·2 gaps to fill·To Liam Baker");
   act(() => useReplies.setState({ shown: { threadId: 7, phase: "ready", text: "Thanks. [What you think.]", row: gappy } }));
   expect(q("reply-ready-gaps")!.textContent).toBe("1 gap to fill");
   act(() => useReplies.setState({ shown: { threadId: 7, phase: "ready", text: "Thanks.", row: gappy } }));

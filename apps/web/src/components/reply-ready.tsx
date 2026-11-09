@@ -85,7 +85,7 @@ export default function ReplyReady({ threadId }: { threadId: number }) {
     <>
       {/* the spinner keeps its status and name, as before the card */}
       {writing ? <Spinner className={AI_GLYPH} /> : <Sparkles aria-hidden className={AI_GLYPH} />}
-      <span data-testid="reply-ready-title" className={AI_TITLE}>{writing ? t("replies.writing") : t("replies.title")}</span>
+      <span data-testid="reply-ready-title" className={AI_TITLE}>{writing ? t("replies.writing") : toFill > 0 ? t("replies.drafted") : t("replies.title")}</span>
       {/* what's left for the user, said before Use, in the ink */}
       {/* plan 162 (after ai162-r01): in the gap's own mark, so the header points at what's missing in the draft */}
       {toFill > 0 && <><span aria-hidden>·</span><span data-testid="reply-ready-gaps" className={cn(AI_GAP_TINT, "px-1 font-medium")}>{t("replies.gaps", { count: toFill })}</span></>}
@@ -115,7 +115,7 @@ export default function ReplyReady({ threadId }: { threadId: number }) {
   return (
     <section data-testid="reply-ready" data-phase={shown.phase} aria-label={t("replies.title")} className={cn(AI_CARD, "mt-4 px-4 pb-3.5 animate-in fade-in-0 duration-base ease-motion")}>
       {/* once, never the deltas */}
-      <div role="status" aria-live="polite" className="sr-only" data-testid="reply-ready-live">{writing ? "" : t("replies.title")}</div>
+      <div role="status" aria-live="polite" className="sr-only" data-testid="reply-ready-live">{writing ? "" : toFill > 0 ? t("replies.drafted") : t("replies.title")}</div>
       {/* the summary's header: its height, its glyph, its type */}
       {choice ? (
         // owner's decisions (2): the words wrap in their own block, so the switch keeps the first line's end at any width
