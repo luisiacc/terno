@@ -9,6 +9,8 @@ import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+// jsdom has no scrollIntoView: the editor scrolls its top into view a frame after it opens
+Element.prototype.scrollIntoView = function () {};
 vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
 
 const habits = { messages: 10, words: { median: 20, p80: 30 }, sentenceWords: 10, greetings: [], noGreeting: 0, signOffs: [], noSignOff: 0, exclamation: 0.1, emoji: 0, bullets: 0, lowercase: 0 };
