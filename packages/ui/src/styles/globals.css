@@ -516,12 +516,16 @@
 }
 /* plan 161, pass 2: a model's words on the reader (the summary, Reply ready): the card's corners and fill, ringed inside in
    card-edge, a whole pixel in both modes, so it stands off the page however close its fill is (contrast.ts BOUNDARY_STEPS) */
+/* plan 162 (the owner, 2026-11-08: the grey box "feels cheap"): no fill of its own in light, the surface it sits on (the
+   reader, or Lumen's reader card), set off by its hairline and the faintest lift (shadow-xs), so it reads as a card
+   placed on the page, not a grey box drawn in it. In dark a shadow can't show: the ink's wash (--ai-card-wash) lifts it a
+   step, with the same hairline. Text on it is the page's own pairs (contrast.ts) */
 @utility ai-card {
   border-radius: var(--card-radius);
-  background-color: var(--card-bg);
-  box-shadow: inset 0 0 0 1px var(--card-edge);
-  /* plan 161, pass 3: in dark the ring alone read as a hairline: the fill a step up, by a wash of the ink (tint designs) */
+  background-color: transparent;
+  box-shadow: inset 0 0 0 1px var(--card-edge), var(--shadow-xs);
   &:is(.dark *) {
+    box-shadow: inset 0 0 0 1px var(--card-edge);
     background-image: linear-gradient(var(--ai-card-wash), var(--ai-card-wash));
   }
 }

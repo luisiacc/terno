@@ -113,7 +113,7 @@ export default function ReplyReady({ threadId }: { threadId: number }) {
     </ToggleGroup>
   );
   return (
-    <section data-testid="reply-ready" data-phase={shown.phase} aria-label={t("replies.title")} className={cn(AI_CARD, "mt-4 px-3.5 pb-3 animate-in fade-in-0 duration-base ease-motion")}>
+    <section data-testid="reply-ready" data-phase={shown.phase} aria-label={t("replies.title")} className={cn(AI_CARD, "mt-4 px-4 pb-3.5 animate-in fade-in-0 duration-base ease-motion")}>
       {/* once, never the deltas */}
       <div role="status" aria-live="polite" className="sr-only" data-testid="reply-ready-live">{writing ? "" : t("replies.title")}</div>
       {/* the summary's header: its height, its glyph, its type */}

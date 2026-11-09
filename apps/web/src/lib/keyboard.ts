@@ -26,6 +26,7 @@ import { noteOpen, openRemind } from "~/lib/reminders";
 import { toggleAsk, togglePalette, toggleSnippets } from "~/lib/palette-open";
 import { openAiDraft } from "~/lib/ai-draft";
 import { draftCommands, draftKeyOf } from "~/lib/draft-commands";
+import { stopSummary, useSummaries } from "~/lib/summaries";
 
 /** Toggles act once per press: no key repeat, and the desktop menu's echo of a key just handled is dropped. */
 const TOGGLES = new Set<Command>(["nav.back", "nav.forward"]);
@@ -118,6 +119,8 @@ function filterList(filter: "unread" | undefined) {
 /** Esc: Back from a page (List), else a preview's open conversation, else the preview, else the multi-selection ends, else from a search's results to its field (plan 158: the query kept, the field's own Esc leaves). */
 function escape() {
   const s = getApp();
+  // plan 162 (after ai162-r03): a summary being written in the reader stops first, as Esc stops ⌘J and Ask
+  if (s.selectedId !== null && useSummaries.getState().byThread.get(s.selectedId)?.kind === "running") return void stopSummary(s.selectedId);
   // plan 161, pass 2: a newsletter the digest opened goes back to the digest first, as its "Back to the digest" does
   if (backToDigest()) return;
   // plan 162 (after ai162-r02): the digest page gives its keys back to the list, at the digest's way in

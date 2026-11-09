@@ -51,7 +51,7 @@ function Line({ row, messages }: { row: FollowupRow; messages: readonly MessageD
   // it starts where the reminder's own picker does (plan 87): the next sensible moment, never one already past
   const when = useWhen(defaultRemindAt(new Date()));
   return (
-    <div data-testid="followup-line" data-kind={row.kind} data-state={row.state} className={cn(AI_CARD, "px-3.5 pb-3")}>
+    <div data-testid="followup-line" data-kind={row.kind} data-state={row.state} className={cn(AI_CARD, "px-4 pb-3.5")}>
       {/* the news first, at the text's size: it's what the card is */}
       <p data-testid="followup-header" className={AI_HEADER}>
         <Clock aria-hidden className={cn(AI_GLYPH, "text-sm")} />

@@ -7,7 +7,7 @@ import type { StructuredTask } from "./ladder";
  * Plan 132 §5: a conversation's summary. The prompt is frozen and versioned: a stored summary is reused only at the
  * version it was made with, so any change to the words below bumps this.
  */
-export const SUMMARY_PROMPT_VERSION = 5;
+export const SUMMARY_PROMPT_VERSION = 6;
 const SUMMARY_MAX_TOKENS = 3000;
 const ANSWER_SHARE = 0.3;
 /** What a server with no json_schema gets on top of the system prompt: the instructions, the schema, the example. */
@@ -110,6 +110,7 @@ Return:
 - "summary": one to three plain sentences on where things stand: what happened, what was decided, and what the reader is waiting on from others. What the reader has to do or answer goes in the items and isn't mentioned here at all, not even as pending or awaited.
 - "items": at most six things the summary leaves out, each with a short "text", under 15 words, and "message", the id of the message that says it:
   - "action" (something the reader has to do) and "question" (a question waiting for the reader's answer), one thing each. Only what was asked of the reader, by name or in mail addressed to them, or what they promised themselves: an item citing their own message has to be their promise. Not what they asked of someone else, not what other people on the mail were asked, and not what a list or a forwarded notice asks unless it's clearly meant for them. What a scam or a suspicious message demands isn't something the reader has to do: say in the summary that it asks for it.
+  - Write a "question" as the question was asked, ending in "?" ("Can you make the 19th?"), never as an instruction ("Share your thoughts on…"); write an "action" as what to do, starting with the verb ("Send the signed contract").
   - "date" (a date or deadline that matters) and "decision" (something settled), when the summary doesn't already say it.
   Nothing that's already done, withdrawn or overtaken is an item, nor a question the reader has answered, a joke or an aside. Never restate the summary in an item, even in other words. When there's nothing to add, return no items: no item is better than a padded one.
 

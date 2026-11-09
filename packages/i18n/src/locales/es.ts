@@ -1220,6 +1220,7 @@ const es = {
   "summary.kind.date": "Fecha",
   "summary.kind.action": "Por hacer",
   "summary.kind.question": "Pregunta",
+  "summary.kind.asks": "{name} pregunta",
   "summary.replyHint": "Abre una respuesta con esto listo como instrucción para la IA",
   "summary.open": "Abrir mensaje",
   "summary.running": "Resumiendo…",

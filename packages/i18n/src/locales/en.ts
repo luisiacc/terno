@@ -1229,6 +1229,7 @@ const en = {
   "summary.kind.date": "Date",
   "summary.kind.action": "To do",
   "summary.kind.question": "Question",
+  "summary.kind.asks": "{name} asks",
   "summary.replyHint": "Opens a reply with this ready as the AI instruction",
   "summary.open": "Open message",
   "summary.running": "Summarizing…",

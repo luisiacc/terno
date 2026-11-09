@@ -163,15 +163,11 @@ test.describe("summaries (plan 132)", () => {
     // plan 161, pass 3: three Sparkles, three names, each with its key where it has one
     await expect(page.getByTestId("action-summarize")).toHaveAccessibleName("Summarize this conversation");
     await expect(page.getByTestId("quick-ai")).toHaveAccessibleName("Reply with AI");
-    // plan 162 (after ai162-r01): the item's Reply drafts from it: the conversation's reply, with ⌘J's row holding the
-    // item as its instruction and the keys in it, ready for Return. Nothing is written until asked
-    const itemText = (await page.getByTestId("summary-item").first().locator("span.font-medium").innerText()).trim();
+    // plan 162 (after ai162-r03): the item's Reply is the ordinary reply, as R is: nothing in ⌘J (on real models a question
+    // item is their question, and Write drafted a reply with no stance from it)
     await page.getByTestId("summary-item-reply").first().click();
     await expect(page.getByTestId("composer")).toHaveAttribute("data-mode", "reply");
-    await expect(page.getByTestId("ai-row-input")).toBeFocused();
-    await expect(page.getByTestId("ai-row-input")).toHaveValue(itemText);
-    await expect(page.getByTestId("ai-strip")).toHaveCount(0);
-    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("compose-body")).toBeFocused();
     await expect(page.getByTestId("ai-row-input")).toHaveCount(0);
     await expect(page.getByTestId("compose-ai")).toHaveAccessibleName("Write with AI");
     await page.getByTestId("compose-ai").hover();
@@ -193,14 +189,12 @@ test.describe("summaries (plan 132)", () => {
     // tinted, or in Graphite outlined on its surface: never just more of the mail's own page
     const surface = await block.evaluate((el) => { const s = getComputedStyle(el); return { fill: s.backgroundColor, ring: s.boxShadow }; });
     const NONE = "rgba(0, 0, 0, 0)";
-    if (info.project.name === "e2e-graphite") {
-      expect(surface.fill).toBe(NONE);
-    } else {
-      expect(surface.fill).not.toBe(NONE);
-    }
-    // plan 161, pass 2: ringed in every design, inside its fill (its floor is contrast.test.ts's), so it never reads as mail
+    // plan 162 (the owner, 2026-11-08: the grey box "feels cheap"): no fill of its own in light, the page's surface under a
+    // hairline and the faintest lift; dark lifts it by the ink's wash. Ringed in every design (its floor is contrast.test.ts's),
+    // so it never reads as mail
+    expect(surface.fill).toBe(NONE);
     expect(surface.ring).toContain("inset");
-    expect(surface.ring).not.toContain(NONE);
+    expect(surface.ring).not.toMatch(/^rgba\(0, 0, 0, 0\)/);
 
     // on the column: the subject's line and the conversation's ends. The label's icon and the text share the inset
     const box = (await block.boundingBox())!;

@@ -2,6 +2,7 @@ import type { AiSummary, AiSummaryItem, MessageDetail, ThreadDetail } from "@ter
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@terno/ui/components/collapsible";
+import { Shortcut } from "@terno/ui/components/shortcut";
 import { Spinner } from "@terno/ui/components/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { ArrowRight, Reply, Sparkles } from "@terno/ui/icons";
@@ -24,7 +25,17 @@ const ANSWERED = new Set<AiSummaryItem["kind"]>(["action", "question"]);
  * reply opens with ⌘J's row holding the item as its instruction (it opened a blank reply, and the suggestion was lost).
  * On a conversation of one message, that message is the one on screen: no source.
  */
-function Item({ item, from, source, threadId }: { item: AiSummaryItem; from: MessageDetail | undefined; source: string | null; threadId: number }) {
+/**
+ * Plan 162 (after ai162-r03): what an item is, in words: a question is someone's ("Arjun asks"), from the message it cites;
+ * a to-do is the reader's. "Question" read as an instruction beside "Share your thoughts on…".
+ */
+export function itemLabel(item: Pick<AiSummaryItem, "kind">, from: Pick<MessageDetail, "from"> | undefined, mine: readonly string[]): string {
+  if (item.kind !== "question" || !from || mine.some((e) => e.toLowerCase() === from.from.email.toLowerCase())) return t(`summary.kind.${item.kind}`);
+  const name = (from.from.name || from.from.email.split("@")[0] || "").split(/\s+/)[0];
+  return name ? t("summary.kind.asks", { name }) : t("summary.kind.question");
+}
+
+function Item({ item, from, source, mine }: { item: AiSummaryItem; from: MessageDetail | undefined; source: string | null; mine: readonly string[] }) {
   const go = source !== null && (
     <Button variant="ghost" size="sm" data-testid="summary-item-open" className="px-2 text-muted-foreground hover:text-foreground" onClick={() => revealSummaryMessage(item.messageId)}>
       {source}
@@ -35,14 +46,16 @@ function Item({ item, from, source, threadId }: { item: AiSummaryItem; from: Mes
   return (
     <li data-testid="summary-item" data-kind={item.kind} data-message-id={item.messageId} className="py-1 text-sm">
       <p className="wrap-anywhere" data-testid="summary-item-text">
-        <span className="text-muted-foreground">{t(`summary.kind.${item.kind}`)}</span>
+        <span className="text-muted-foreground" data-testid="summary-item-kind">{itemLabel(item, from, mine)}</span>
         <span aria-hidden className="mx-1.5 text-muted-foreground">·</span>
         <span className="font-medium text-foreground">{item.text}</span>
       </p>
       {(answered || go) && (
         <div className="mt-1.5 flex flex-wrap items-center gap-1" data-testid="summary-item-controls">
           {answered && (
-            <Button variant="outline" size="sm" data-testid="summary-item-reply" className="text-foreground" aria-description={t("summary.replyHint")} onClick={() => void replyFromItem(threadId, item.text)}>
+            // plan 162 (after ai162-r03): an ordinary reply, as R is: the item is their question, not the user's answer, so it
+            // isn't put in ⌘J as the instruction (Write would have drafted a reply with no stance)
+            <Button variant="outline" size="sm" data-testid="summary-item-reply" className="text-foreground" onClick={() => replyFromItem()}>
               <Reply aria-hidden />
               {t("actions.reply")}
             </Button>
@@ -67,23 +80,23 @@ export function summaryText(summary: Pick<AiSummary, "summary" | "items">): stri
   return [summary.summary.trim(), ...summary.items.map((i) => `${t(`summary.kind.${i.kind}`)}: ${i.text}`)].join("\n");
 }
 
-function Ready({ summary, messages, threadId }: { summary: AiSummary; messages: readonly MessageDetail[]; threadId: number }) {
+function Ready({ summary, messages }: { summary: AiSummary; messages: readonly MessageDetail[] }) {
   const open = useSummaries((s) => s.open);
   const mine = useApp((s) => s.accounts).map((a) => a.email);
   return (
     <Collapsible open={open} onOpenChange={setSummaryOpen} data-testid="summary-block" data-state="ready" className={CARD}>
-      <CollapsibleTrigger data-testid="summary-toggle" className="h-10 gap-1.5 rounded-[inherit] px-3.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
+      <CollapsibleTrigger data-testid="summary-toggle" className="h-10 gap-1.5 rounded-[inherit] px-4 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
         <Sparkles aria-hidden className={GLYPH} />
         <span className={AI_TITLE}>{t("summary.label")}</span>
       </CollapsibleTrigger>
       <CollapsiblePanel className="mx-0 px-0">
         {/* the padding inside the panel: a padded panel can't ease down to 0 */}
-        <div className="px-3.5 pb-3">
+        <div className="px-4 pb-3.5">
           {/* plain text, never HTML: a model's markup has no way in. Plan 162: the card's width (the measure left a dead column) */}
           <p data-testid="summary-text" className="max-w-(--read-max) text-sm leading-relaxed wrap-anywhere whitespace-pre-line text-pretty">
             {summary.summary}
           </p>
-          {summary.items.length > 0 && <ul className="mt-2 max-w-(--read-max)" data-testid="summary-items">{summary.items.map((item) => <Item key={`${item.messageId}:${item.kind}:${item.text}`} item={item} threadId={threadId} from={messages.find((m) => m.id === item.messageId)} source={messageSource(messages, item.messageId, mine)} />)}</ul>}
+          {summary.items.length > 0 && <ul className="mt-2 max-w-(--read-max)" data-testid="summary-items">{summary.items.map((item) => <Item key={`${item.messageId}:${item.kind}:${item.text}`} item={item} mine={mine} from={messages.find((m) => m.id === item.messageId)} source={messageSource(messages, item.messageId, mine)} />)}</ul>}
           {/* pass 3: the AI's button row: Copy, and who wrote it at its end, the one control every AI surface has */}
           <div className={cn(AI_ACTIONS, "mt-2.5")} data-testid="summary-actions">
             {/* plan 162: Copy is quiet, its glyph on the text's edge */}
@@ -99,7 +112,7 @@ function Ready({ summary, messages, threadId }: { summary: AiSummary; messages: 
 /** The card's other states, its header's size: what's happening, and what the user can do about it. */
 function Line({ state, status, icon, actions, children }: { state: string; status?: boolean; icon?: React.ReactNode; actions?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div data-testid="summary-block" data-state={state} role={status ? "status" : undefined} className={cn(CARD, "flex min-h-10 items-start gap-1.5 px-3.5 py-2.5 text-sm text-muted-foreground")}>
+    <div data-testid="summary-block" data-state={state} role={status ? "status" : undefined} className={cn(CARD, "flex min-h-10 items-start gap-1.5 px-4 py-2.5 text-sm text-muted-foreground")}>
       {/* on the first line, however many the text takes */}
       <span className="flex h-[1lh] shrink-0 items-center">{icon ?? <Sparkles aria-hidden className={GLYPH} />}</span>
       <div className="flex min-w-0 flex-1 flex-wrap gap-x-3 gap-y-1">
@@ -153,7 +166,7 @@ export default function ThreadSummary({ detail }: { detail: ThreadDetail }) {
   const content = (() => {
     switch (ui?.kind) {
       case "ready":
-        return <Ready summary={ui.summary} messages={detail.messages} threadId={threadId} />;
+        return <Ready summary={ui.summary} messages={detail.messages} />;
       case "running":
         return (
           <Line
@@ -161,8 +174,10 @@ export default function ThreadSummary({ detail }: { detail: ThreadDetail }) {
             status
             icon={<Spinner aria-hidden className={GLYPH} />}
             actions={
-              <Button size="sm" variant="ghost" data-testid="summary-stop" onClick={() => stopSummary(threadId)}>
+              // plan 162 (after ai162-r03): Esc stops it, as it stops ⌘J and Ask, and says so
+              <Button size="sm" variant="ghost" data-testid="summary-stop" aria-keyshortcuts="Escape" onClick={() => stopSummary(threadId)}>
                 {t("summary.stop")}
+                <Shortcut keys="escape" className="ms-0.5" />
               </Button>
             }
           >
@@ -194,7 +209,7 @@ export default function ThreadSummary({ detail }: { detail: ThreadDetail }) {
         const target = ai ? summaryTarget(ai) : null;
         const copy = aiErrorCopy({ message: ui.message, kind: ui.errorKind, key: ui.key }, target && target.state !== "none" ? errorTarget(target.provider, ai) : null);
         return (
-          <div data-testid="summary-block" data-state="error" className={cn(CARD, "flex min-h-10 px-3.5 py-2.5")}>
+          <div data-testid="summary-block" data-state="error" className={cn(CARD, "flex min-h-10 px-4 py-2.5")}>
             <AiErrorNotice
               copy={copy}
               textTestId="summary-error"
