@@ -8,7 +8,7 @@ import type { SettingsPatch } from "@terno/core/rpc";
 import type { IncomingMessage } from "@terno/store";
 import { sqlDb } from "../../backend-dev/src/server";
 import { E2E_NOW } from "./constants";
-import { expect, fresh, ingestConversation, test, type DevServerFixture } from "./fixtures";
+import { expect, fresh, ingestConversation, scenario, test, type DevServerFixture } from "./fixtures";
 
 test.use({ backendOptions: { network: true }, today: true });
 
@@ -174,6 +174,61 @@ test.describe("Today (plan 145)", () => {
     await page.getByTestId("nav-inbox").click();
     await page.getByTestId("thread-row").first().click();
     await expect(page.getByTestId("reader")).toBeVisible();
+    await expect(page.getByTestId("back-to-digest")).toHaveCount(0);
+  });
+
+  test("owner's decisions (2): Archive, e, Trash and Spam on a newsletter opened from the digest go back to it, where it was, with Undo", async ({ app: page, server }) => {
+    const { db } = await withMail(server);
+    await settingUp(page, server, { ai: { provider: "fake", model: "demo" }, today: { digest: true, prepareAt: "00:00" } });
+    // short, so the digest scrolls and where it was can be held
+    await page.setViewportSize({ width: 1100, height: 340 });
+    await page.getByTestId("nav-today").click();
+    await expect(page.getByTestId("digest-row")).toContainText("today's digest", { timeout: 15_000 });
+    await page.getByTestId("digest-row").click();
+    await expect(page.getByTestId("digest-title")).toHaveText("Today's digest");
+    const scroller = page.getByTestId("digest-scroller");
+    const item = page.getByTestId("digest-item").filter({ hasText: "Stratechery" });
+    const where = () => db.get<{ in_inbox: number; in_trash: number; in_spam: number }>("SELECT in_inbox, in_trash, in_spam FROM threads WHERE subject = ?", "Stratechery weekly")!;
+    const ways = [
+      { how: "the toolbar's Archive", run: () => page.getByTestId("action-archive").click(), said: /^Archived/, row: "Archived", gone: { in_inbox: 0 } },
+      { how: "e", run: () => page.keyboard.press("e"), said: /^Archived/, row: "Archived", gone: { in_inbox: 0 } },
+      { how: "Trash", run: () => page.getByTestId("action-trash").click(), said: /^Moved to Trash/, row: "Moved to Trash", gone: { in_trash: 1 } },
+      { how: "Spam", run: () => page.getByTestId("action-spam").click(), said: /as spam/, row: "Marked as spam", gone: { in_spam: 1 } },
+    ];
+    for (const way of ways) {
+      await scenario(`${way.how}: back on the digest, scrolled where it was, on the row it came from, and Undo opens it again`, async () => {
+        await scroller.evaluate((el) => (el.scrollTop = el.scrollHeight));
+        const top = await scroller.evaluate((el) => el.scrollTop);
+        expect(top).toBeGreaterThan(0);
+        await item.getByTestId("digest-open").click();
+        await expect(page.getByTestId("back-to-digest")).toBeVisible();
+        await expect(page.getByTestId("reader-subject")).toHaveText("Stratechery weekly");
+        // read, as a person reading it (an unread one comes back unread, and ticked)
+        await expect.poll(() => db.get<{ u: number }>("SELECT unread_count u FROM threads WHERE subject = ?", "Stratechery weekly")!.u).toBe(0);
+        await way.run();
+        // not on to Today's first conversation: the digest, as it was left
+        await expect(page.getByTestId("digest-page")).toBeVisible();
+        await expect(page.getByTestId("reader-subject")).toHaveCount(0);
+        await expect(item.getByTestId("digest-open")).toBeFocused();
+        expect(await scroller.evaluate((el) => el.scrollTop)).toBe(top);
+        // the row says what happened to it, and the snack has the usual Undo
+        await expect(item).toHaveAttribute("data-state", "archived");
+        await expect(item.getByTestId("digest-state")).toHaveText(way.row);
+        await expect(page.getByTestId("snack")).toContainText(way.said);
+        await expect.poll(where).toMatchObject(way.gone);
+        await page.getByTestId("snack-action").click();
+        await expect.poll(where).toMatchObject({ in_inbox: 1, in_trash: 0, in_spam: 0 });
+        // exact: the newsletter open again, still from the digest
+        await expect(page.getByTestId("reader-subject")).toHaveText("Stratechery weekly");
+        await expect(page.getByTestId("back-to-digest")).toBeVisible();
+        await page.getByTestId("back-to-digest").click();
+        await expect(item.getByTestId("digest-open")).toBeFocused();
+        await expect(item).toHaveAttribute("data-state", "opened");
+      });
+    }
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/digest-after-reader-archive.png` });
+    // anything else from there is as before: a conversation of Today's own goes on as it always has
+    await page.getByTestId("thread-row").filter({ hasText: "Can you make the 19th" }).click();
     await expect(page.getByTestId("back-to-digest")).toHaveCount(0);
   });
 

@@ -49,9 +49,11 @@ interface TodayState {
   needsShown: number;
   /** plan 161, pass 2: why a waiting row is here ("Your turn"), a label of its own before its words */
   reasons: ReadonlyMap<number, string>;
+  /** owner's decisions (2): newsletters the reader sent to Trash or Spam on the way back, so their row says so, not "Archived" */
+  movedTo: ReadonlyMap<number, "trash" | "spam">;
 }
 
-export const useToday = create<TodayState>(() => ({ groups: [], more: 0, digest: null, fromDigest: null, pick: null, needsShown: 0, reasons: new Map() }));
+export const useToday = create<TodayState>(() => ({ groups: [], more: 0, digest: null, fromDigest: null, pick: null, needsShown: 0, reasons: new Map(), movedTo: new Map() }));
 
 /** The page's pick for this day: what was left, or nothing toggled. */
 export function digestPick(day: string): DigestPick {
@@ -70,6 +72,34 @@ export function backToDigest(): boolean {
   useToday.setState({ fromDigest: null });
   setApp({ selectedId: DIGEST_ROW_ID });
   return true;
+}
+
+/**
+ * Plan 145, owner's decisions (2): Archive, Trash or Spam on the newsletter the digest opened goes back to the page, not
+ * on to Today's first conversation: its row is shown archived at once (the page's read and the list's refresh confirm
+ * it), and the way back restores where the page was and focus on that row. False when the reader holds anything else.
+ */
+export function leaveToDigest(targets: readonly number[], action: "archive" | "trash" | "spam"): boolean {
+  const back = useToday.getState().fromDigest;
+  const s = getApp();
+  if (back === null || !s.today || s.selectedId !== back || !targets.includes(back)) return false;
+  useToday.setState(({ digest, movedTo }) => {
+    const moved = new Map(movedTo);
+    if (action === "archive") moved.delete(back);
+    else moved.set(back, action);
+    return { movedTo: moved, digest: digest && { ...digest, liveIds: digest.liveIds.filter((id) => id !== back), readIds: digest.readIds?.filter((id) => id !== back) } };
+  });
+  return backToDigest();
+}
+
+/** Its Undo, exact: the newsletter open again from the digest, with its way back and the row it came from. */
+export function reopenFromDigest(threadId: number): void {
+  useToday.setState(({ pick, movedTo }) => {
+    const moved = new Map(movedTo);
+    moved.delete(threadId);
+    return { fromDigest: threadId, pick: pick && { ...pick, opened: threadId }, movedTo: moved };
+  });
+  setApp({ selectedId: threadId });
 }
 
 /** At boot, once there's a connection to listen on. */

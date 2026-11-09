@@ -13,6 +13,7 @@ import { invalidateThreads, useThreads } from "~/state/threads";
 import { closePage, currentPage, listLayout } from "~/lib/page";
 import { placeActions } from "~/lib/places";
 import { showSimilarSnackbar } from "~/components/similar-snackbar";
+import { leaveToDigest, reopenFromDigest, useToday } from "~/state/today";
 
 /** Does a thread still belong in the current list after an action? */
 function staysInView(s: Pick<AppState, "view" | "gmailTab" | "categoryId" | "reviewCategoryId" | "folder" | "query">, action: ThreadAction): boolean {
@@ -157,6 +158,8 @@ function listFilterOfScope(scope: { filter?: ListFilter; unreadOnly?: boolean })
 
 /** On List's page, these are done with the conversation even where its row stays (a search keeps results in place): back to the list. */
 const DONE_READING = new Set<ThreadAction>(["archive", "trash", "spam", "markUnread"]);
+/** Plan 145 (owner's decisions 2): these, on the newsletter the digest opened, go back to the digest. */
+const toDigest = (action: ThreadAction): action is "archive" | "trash" | "spam" => action === "archive" || action === "trash" || action === "spam";
 
 /**
  * Applies a triage action optimistically: the list updates in the same frame,
@@ -236,6 +239,8 @@ interface SelectionBefore {
   left: number | null;
   /** the open row was the app's (plan 158): Undo puts it back as it was, unread until chosen */
   byApp: boolean;
+  /** the open row was the newsletter the digest opened (plan 145): Undo opens it from the digest again */
+  fromDigest: boolean;
   /** the selection the action left, as written: any choice since (even back to the same row, or a check taken off again) is newer */
   revision: number;
   leftChecked: AppState["checked"];
@@ -244,7 +249,7 @@ interface SelectionBefore {
 
 const selectionBefore = (): SelectionBefore => {
   const s = getApp();
-  return { key: listKey(), checked: s.checked, scope: s.scope, selectedId: s.selectedId, anchorId: s.anchorId, left: s.selectedId, byApp: s.selectedId !== null && openedByApp(s.selectedId), revision: -1, leftChecked: s.checked, leftScope: s.scope };
+  return { key: listKey(), checked: s.checked, scope: s.scope, selectedId: s.selectedId, anchorId: s.anchorId, left: s.selectedId, byApp: s.selectedId !== null && openedByApp(s.selectedId), fromDigest: s.selectedId !== null && useToday.getState().fromDigest === s.selectedId, revision: -1, leftChecked: s.checked, leftScope: s.scope };
 };
 
 /** What the action itself left selected: the line a newer choice is measured from. */
@@ -268,7 +273,8 @@ function restoreSelection(before: SelectionBefore, focusAtStart: Element | null 
   // a row opened since and the cursor back on the same one is still a newer choice, as is a check made and taken off
   if (getSelectionWriteRevision() !== before.revision || s.checked !== before.leftChecked || s.scope !== before.leftScope || s.selectedId !== before.left) return;
   setApp({ checked: before.checked, scope: before.scope, anchorId: before.anchorId });
-  if (before.byApp) setAppOpened(before.selectedId);
+  if (before.fromDigest && before.selectedId !== null && s.today) reopenFromDigest(before.selectedId);
+  else if (before.byApp) setAppOpened(before.selectedId);
   else setApp({ selectedId: before.selectedId });
   // the keyboard goes back to the list only from where Undo was asked (or from nowhere, the snack's button gone), never
   // out of a draft, its recipients, or anything being typed in
@@ -307,12 +313,14 @@ export function leaveList(action: ThreadAction, targets: readonly number[], opti
   const reading = unmatches(action, activeFilter(s));
   const leaving = reading || (s.query ? false : !staysInView(s, action));
   const stays = reading ? s.selectedId : null;
+  // plan 145 (owner's decisions 2): the newsletter the digest opened, taken away: back to the digest, on whatever page it is
+  const backToDigest = !options.quiet && toDigest(action) && leaveToDigest(targets, action);
   // List's conversation page (plan 24): an action that takes the open thread away, or marks it unread, is done reading it
-  const backToList = s.selectedId !== null && targets.includes(s.selectedId) && ((leaving && s.selectedId !== stays) || DONE_READING.has(action)) && listLayout() && currentPage() === "thread";
+  const backToList = !backToDigest && s.selectedId !== null && targets.includes(s.selectedId) && ((leaving && s.selectedId !== stays) || DONE_READING.has(action)) && listLayout() && currentPage() === "thread";
 
   // back on the list first (focus with it), then the cursor moves: the page closes even when no thread is left to move to
   if (backToList) closePage({ focus: true });
-  if (leaving && !reading && s.selectedId !== null && targets.includes(s.selectedId)) {
+  if (!backToDigest && leaving && !reading && s.selectedId !== null && targets.includes(s.selectedId)) {
     // Superhuman-style: move to the next thread that isn't being removed. The app opened it, not the user: it isn't
     // read until they choose it (plan 158), so an Undo finds it as it was
     const start = index.get(s.selectedId) ?? 0;

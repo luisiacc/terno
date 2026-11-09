@@ -4,7 +4,7 @@
  * active language), with the undo's accessible name in the same language.
  * With the RPC client mocked.
  */
-import type { ThreadSummary } from "@terno/core";
+import { DIGEST_ROW_ID, type ThreadSummary } from "@terno/core";
 import { setLocale } from "@terno/i18n";
 import en from "@terno/i18n/locales/en";
 import es from "@terno/i18n/locales/es";
@@ -240,6 +240,56 @@ describe("Undo puts the selection back (plan 158)", () => {
     await vi.waitFor(() => expect(fake.handlers["threads.list"]).toHaveBeenCalled());
     await new Promise((r) => setTimeout(r));
     expect(getApp().checked.size).toBe(0);
+  });
+});
+
+describe("plan 145 (owner's decisions 2): a newsletter the digest opened, taken away", () => {
+  const NEWSLETTER = 50;
+  const digest = () => ({ day: "d", state: "ready" as const, items: [], automated: false, liveIds: [], readIds: [NEWSLETTER] });
+  beforeEach(async () => {
+    fake.handlers["threads.act"] = async () => ({ undoId: 9 });
+    fake.handlers["threads.undo"] = async () => ({ restored: 1 });
+    // Today's list holds the digest's row and its conversations; the newsletter isn't one of them
+    const waiting = (id: number) => ({ thread: row(id), why: { kind: "waiting" } });
+    fake.handlers["today.list"] = async () => ({ sections: [{ kind: "needsYou", more: 0, items: [waiting(1), waiting(2)] }], digest: digest(), held: [], now: 0 });
+    const { useToday } = await import("~/state/today");
+    setApp({ view: "all", today: true });
+    await vi.waitFor(() => expect(useList.getState().items.map((t) => t.id)).toEqual([DIGEST_ROW_ID, 1, 2]));
+    setApp({ selectedId: NEWSLETTER });
+    useToday.setState({ fromDigest: NEWSLETTER, pick: { day: "d", toggled: new Set(), scroll: 120, opened: null }, digest: digest() });
+  });
+  afterEach(() => setApp({ today: false }));
+
+  for (const action of ["archive", "trash", "spam"] as const) {
+    it(`${action} goes back to the digest, its row shown gone at once, not on to Today's first conversation`, async () => {
+      const { useToday } = await import("~/state/today");
+      // in the frame of the key, before the backend answers
+      const acting = act(action);
+      expect(getApp().selectedId).toBe(DIGEST_ROW_ID);
+      expect(useToday.getState().fromDigest).toBe(null);
+      expect(useToday.getState().digest?.readIds).toEqual([]);
+      await acting;
+      // the usual snack, with its Undo
+      expect(useSnack.getState().current?.action).toBeTruthy();
+    });
+  }
+
+  it("its Undo is exact: the newsletter open again from the digest, with its way back and the row it came from", async () => {
+    const { useToday } = await import("~/state/today");
+    await act("archive");
+    await runUndo(useSnack.getState().undo!);
+    await vi.waitFor(() => expect(getApp().selectedId).toBe(NEWSLETTER));
+    expect(useToday.getState().fromDigest).toBe(NEWSLETTER);
+    expect(useToday.getState().pick?.opened).toBe(NEWSLETTER);
+  });
+
+  it("anything else, or a conversation not opened from the digest, is as before", async () => {
+    const { useToday } = await import("~/state/today");
+    await act("markUnread");
+    expect(getApp().selectedId).toBe(NEWSLETTER);
+    useToday.setState({ fromDigest: null });
+    await act("trash");
+    expect(getApp().selectedId).toBe(1);
   });
 });
 

@@ -402,6 +402,13 @@ test.describe("axe", { tag: "@variant" }, () => {
       await page.getByTestId("digest-row").click();
       await page.getByTestId("digest-page").waitFor();
       await clean(page, "the digest", "[data-testid=digest-page]");
+      // plan 145, owner's decisions (2): a newsletter opened from it and archived in the reader: back here, its row archived
+      // (the last: the page's own Archive below unticks the first)
+      await page.getByTestId("digest-open").last().click();
+      await page.getByTestId("back-to-digest").waitFor();
+      await page.getByTestId("action-archive").click();
+      await page.locator("[data-testid=digest-item][data-state=archived]").first().waitFor();
+      await clean(page, "the digest, a newsletter archived from the reader", "[data-testid=digest-page]");
       if (await page.getByTestId("digest-archive").isEnabled()) {
         await page.getByTestId("digest-tick").first().click();
         await page.getByTestId("digest-archive").click();

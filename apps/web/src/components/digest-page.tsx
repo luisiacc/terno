@@ -90,6 +90,7 @@ export default function DigestPage() {
     if (row) setLive(new Set(row.liveIds));
   }, [row]);
   const readIds = useMemo(() => new Set(row?.readIds ?? []), [row]);
+  const movedTo = useToday((s) => s.movedTo);
   const live = (i: DigestItem) => liveIds === null || liveIds.has(i.threadId);
   const stateOf = (i: DigestItem): DigestRowState => (live(i) ? (ticked(i) ? "archive" : "keep") : readIds.has(i.threadId) ? "opened" : "archived");
   // pass 2: what this page archived leaves it; what was archived elsewhere stays, muted and said so (plan 145)
@@ -235,7 +236,9 @@ export default function DigestPage() {
         <ul className="border-t border-hairline">
           {shown.map((i) => {
             const state = stateOf(i);
-            const label = automated && state === "keep" ? undefined : STATE_LABEL[state];
+            // owner's decisions (2): one sent to Trash or Spam from the reader says where it went, as its snack did
+            const moved = state === "archived" ? movedTo.get(i.threadId) : undefined;
+            const label = moved ? () => t(moved === "trash" ? "actions.done.trash" : "actions.done.spam") : automated && state === "keep" ? undefined : STATE_LABEL[state];
             const quiet = state === "opened" || state === "archived";
             return (
               <li key={i.threadId} data-testid="digest-item" data-live={live(i)} data-state={state} className="flex items-start gap-1 border-b border-hairline py-1">
