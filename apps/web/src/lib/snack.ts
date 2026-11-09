@@ -94,12 +94,14 @@ interface SnackState {
   inset: number;
   /** what stands at the list's foot under the dock (the drafts strip) */
   lift: number;
+  /** plan 162 (after ai162-r02): what stands at the page's foot under the dock, wherever it is (the digest's decision bar) */
+  pageLift: number;
 }
 
 /** Plan 160: the room a toast of this height takes at a pane's foot: the card and --float-inset on each side of it */
 export const dockReserve = (height: number): number => (height > 0 ? Math.ceil(height) + 2 * FLOAT_INSET : 0);
 
-export const useSnack = create<SnackState>(() => ({ current: null, last: null, countdown: { elapsed: 0, since: null }, paused: [], undo: null, inset: 0, lift: 0 }));
+export const useSnack = create<SnackState>(() => ({ current: null, last: null, countdown: { elapsed: 0, since: null }, paused: [], undo: null, inset: 0, lift: 0, pageLift: 0 }));
 
 let seq = 0;
 let heard = 0;

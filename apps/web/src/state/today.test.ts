@@ -58,20 +58,33 @@ describe("a waiting row says why it needs you (plan 161)", () => {
     const rows = flattenToday(list, []);
     // pass 2: the reason is a label of its own, ahead of the words, not their first words
     expect(rows.map((r) => r.snippet)).toEqual(["the snippet", "A summary."]);
-    expect([...useToday.getState().reasons]).toEqual([[1, "Your turn"], [2, "Unanswered"]]);
+    expect([...useToday.getState().reasons]).toEqual([[1, "They replied"], [2, "You haven't replied"]]);
     expect(useToday.getState().needsShown).toBe(2);
   });
 });
 
-describe("plan 161, pass 2: the digest first", () => {
+describe("plan 161, pass 2: the digest's way in", () => {
   const thread = (id: number) => ({ id, snippet: "s", fromName: "Ana" }) as never;
   const digest = { day: "2026-10-22", state: "ready" as const, automated: false, items: [], liveIds: [1, 2], readIds: [] };
-  it("its row leads the list, and Needs you's heading is on the first conversation; a held row never goes above it", () => {
+  it("plan 162 (after ai162-r02): isn't a row: the list starts with Needs you, and the digest is the header's", () => {
     const list: TodayList = { now: 0, held: [thread(9)], digest, sections: [{ kind: "needsYou", more: 0, items: [{ thread: thread(1), why: { kind: "waiting", wrote: true } }] }] };
     const rows = flattenToday(list, [thread(9)]);
-    expect(rows.map((r) => r.id)).toEqual([DIGEST_ROW_ID, 9, 1]);
-    // plan 162 (after ai162-r01): the digest is a section of its own, Newsletters, over its row; Needs you heads the people
-    expect(useToday.getState().groups.map((g) => [g.kind, g.at])).toEqual([["newsletters", 0], ["needsYou", 1]]);
+    expect(rows.map((r) => r.id)).toEqual([9, 1]);
+    expect(rows.some((r) => r.id === DIGEST_ROW_ID)).toBe(false);
+    expect(useToday.getState().groups.map((g) => [g.kind, g.at])).toEqual([["needsYou", 0]]);
+    expect(useToday.getState().digest).toBe(digest);
+  });
+  it("plan 162 (after ai162-r02): a newsletter opened from the page is kept in its pick at once, beside what was unticked", async () => {
+    const { openFromDigest } = await import("./today");
+    keepDigestPick({ day: "k", toggled: new Set([3]), scroll: 0 });
+    openFromDigest("k", 5, 120, new Set([3]));
+    openFromDigest("k", 6, 80, new Set([3]));
+    expect([...(digestPick("k").opened ?? [])]).toEqual([5, 6]);
+    expect([...digestPick("k").toggled]).toEqual([3]);
+    expect(digestPick("k").from).toBe(6);
+    expect(digestPick("k").scroll).toBe(80);
+    // the next day's page starts afresh
+    expect(digestPick("l").opened ?? null).toBe(null);
   });
   it("Esc's way back: only from the newsletter it opened, while Today shows", async () => {
     const { backToDigest } = await import("./today");

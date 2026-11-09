@@ -23,7 +23,7 @@ async function settingUp(page: Page, server: DevServerFixture, patch: SettingsPa
 }
 
 /** a person waiting, and newsletters the demo's fixture doesn't hold */
-async function withMail(server: DevServerFixture) {
+async function withMail(server: DevServerFixture, more = 0) {
   await ingestConversation(server, { subject: "Can you make the 19th", count: 1, now: E2E_NOW });
   const db = sqlDb(server.backend.store);
   const waiting = db.get<{ id: number }>("SELECT id FROM threads WHERE subject = ?", "Can you make the 19th")!.id;
@@ -32,9 +32,11 @@ async function withMail(server: DevServerFixture) {
   const letter = (i: number, from: string, subject: string): IncomingMessage => ({
     accountId: acct.id, providerMsgId: `nl-${i}`, providerThreadId: `nl-${i}`, rfcMessageId: `<nl-${i}@e2e.test>`, inReplyTo: null, references: [], from: { name: from, email: `news@${from.toLowerCase().replace(/\s/g, "")}.test` }, to: [{ name: "", email: acct.email }], cc: [], bcc: [], subject, date: E2E_NOW - 3600_000 - i, snippet: `Issue ${i}`, bodyText: `Issue ${i} says something.`, bodyHtml: null, bodyState: "full", listId: `list-${i}`, isRead: false, isStarred: false, inInbox: true, isSent: false, isDraft: false, isTrash: false, isSpam: false, hasAttachments: false, size: 2000,
   }) as unknown as IncomingMessage;
-  await server.backend.store.sync.ingest([letter(1, "Stratechery", "Stratechery weekly"), letter(2, "Morning Brew", "Morning Brew digest"), letter(3, "Acme Store", "Sale ends tonight")], { applyFilters: false, now: E2E_NOW, classifier: null });
-  db.run("UPDATE threads SET person = 0 WHERE subject IN ('Stratechery weekly','Morning Brew digest','Sale ends tonight')");
-  db.run("UPDATE messages SET created_at = ? WHERE subject IN ('Stratechery weekly','Morning Brew digest','Sale ends tonight')", E2E_NOW - 3600_000);
+  // plan 162 (after ai162-r02): more newsletters where a test needs a page to scroll and several to open
+  const extra = Array.from({ length: more }, (_, i) => letter(10 + i, `Weekly ${String.fromCharCode(65 + i)}`, `Weekly ${String.fromCharCode(65 + i)} issue`));
+  await server.backend.store.sync.ingest([letter(1, "Stratechery", "Stratechery weekly"), letter(2, "Morning Brew", "Morning Brew digest"), letter(3, "Acme Store", "Sale ends tonight"), ...extra], { applyFilters: false, now: E2E_NOW, classifier: null });
+  db.run("UPDATE threads SET person = 0 WHERE subject IN ('Stratechery weekly','Morning Brew digest','Sale ends tonight') OR subject LIKE 'Weekly % issue'");
+  db.run("UPDATE messages SET created_at = ? WHERE subject IN ('Stratechery weekly','Morning Brew digest','Sale ends tonight') OR subject LIKE 'Weekly % issue'", E2E_NOW - 3600_000);
   return { waiting, db };
 }
 
@@ -72,39 +74,42 @@ test.describe("Today (plan 145)", () => {
     // the app still opens on the Inbox
     await expect(page.getByTestId("list-title").or(page.getByTestId("list-header")).first()).toBeVisible();
     await page.getByTestId("nav-today").click();
-    // plan 162 (after ai162-r01): Newsletters heads the digest's row, Needs you the people, both in the ink at the rows' size
-    await expect(page.getByTestId("today-heading").first()).toHaveAttribute("data-kind", "newsletters");
-    await expect(page.getByTestId("today-heading").nth(1)).toHaveAttribute("data-kind", "needsYou");
-    await expect(page.getByTestId("today-heading").nth(1)).toHaveText("Needs you");
-    expect(await page.getByTestId("today-heading").nth(1).evaluate((el) => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(13);
+    // plan 162 (after ai162-r02): the list starts with Needs you; the digest's way in is the header's, above the fold
+    await expect(page.getByTestId("today-heading").first()).toHaveAttribute("data-kind", "needsYou");
+    await expect(page.getByTestId("today-heading").first()).toHaveText("Needs you");
+    expect(await page.getByTestId("today-heading").first().evaluate((el) => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(13);
     // Codex review: a drawn heading can't sit in a listbox, so each section's first row says its name to assistive tech
-    await expect(page.locator('[data-keep-scroll="list"] [role=option]').nth(1)).toHaveAccessibleName(/^Needs you, /);
-    await expect(page.getByTestId("digest-row")).toHaveAccessibleName(/^Newsletters, /);
+    await expect(page.locator('[data-keep-scroll="list"] [role=option]').first()).toHaveAccessibleName(/^Needs you, /);
+    await expect(page.getByTestId("list-header").getByTestId("digest-row")).toHaveAccessibleName(/^Newsletters, /);
+    await expect(page.locator('[data-keep-scroll="list"]').getByTestId("digest-row")).toHaveCount(0);
     await expect(page.getByTestId("thread-row").filter({ hasText: "Can you make the 19th" })).toBeVisible();
     // plan 161: the row says why it needs you (they've written in it). Pass 2: as a label of its own, not the snippet's first words
-    await expect(page.getByTestId("thread-row").filter({ hasText: "Can you make the 19th" }).getByTestId("row-why")).toHaveText("Your turn");
+    await expect(page.getByTestId("thread-row").filter({ hasText: "Can you make the 19th" }).getByTestId("row-why")).toHaveText("They replied");
     // the header says what each number is: the sidebar's count, then how many of them the list shows if it's capped
     // pass 3: one sentence, never a second total to read against the Inbox's: "9 need you", or when capped (plan 162) "Showing 12 of 41"
     await expect(page.getByTestId("today-needs")).toHaveText(/^(The newest \d+ of \d+ that need you|\d+ needs? you)$/);
     const sidebar = (await page.getByTestId("nav-today").innerText()).match(/\d+/)?.[0];
     if (sidebar) await expect(page.getByTestId("today-needs")).toHaveText(new RegExp(`^(The newest \\d+ of ${sidebar} that need you|${sidebar} needs? you)$`));
     await expect(page.getByTestId("today-line")).not.toContainText(/waiting|\d+ to reply/);
-    // plan 162 (after ai162-r01): the reason is a tag of its own, outlined in the row's ink, apart from the words after
-    // it in the secondary (inline, it read as the mail's first words)
+    // plan 162 (after ai162-r02): the reason is quiet words, the row's secondary at medium weight, no box (the outlined
+    // tag was the loudest thing in every row), then a "·" and the mail's words
     const why = page.getByTestId("thread-row").filter({ hasText: "Can you make the 19th" }).getByTestId("row-why");
     const ink = async (el: typeof why) => el.evaluate((e) => getComputedStyle(e).color);
-    expect(await ink(why)).not.toBe(await ink(page.getByTestId("thread-row").filter({ hasText: "Can you make the 19th" }).getByTestId("row-snippet").locator("span").last()));
-    expect(await why.evaluate((e) => getComputedStyle(e).borderTopWidth)).toBe("1px");
+    expect(await ink(why)).toBe(await ink(page.getByTestId("thread-row").filter({ hasText: "Can you make the 19th" }).getByTestId("row-snippet").locator("span").last()));
+    expect(await why.evaluate((e) => getComputedStyle(e).borderTopWidth)).toBe("0px");
     await expect(why).toHaveCSS("font-weight", "500");
-    // the digest's row is the quietest thing on the list: no ring, its words in the secondary
-    expect(await page.getByTestId("digest-row").evaluate((e) => getComputedStyle(e, "::before").boxShadow)).toBe("none");
-    // pass 2: the digest is the list's first row, in view, a real target; Today still opens on a conversation
+    await expect(page.getByTestId("thread-row").filter({ hasText: "Can you make the 19th" }).getByTestId("row-snippet")).toContainText("They replied · ");
+    // the digest's way in is quieter than any person: its words in the secondary, no ring; in view, a real target
     await expect(page.getByTestId("digest-row")).toContainText("automated");
-    await expect(page.locator('[data-keep-scroll="list"] [role=option]').first()).toHaveAttribute("data-testid", "digest-row");
     await expect(page.getByTestId("digest-row")).toBeInViewport();
     expect((await page.getByTestId("digest-row").boundingBox())!.height).toBeGreaterThanOrEqual(24);
     await expect(page.getByTestId("digest-row")).toHaveCSS("cursor", "pointer");
-    await expect(page.getByTestId("digest-row")).toHaveAttribute("aria-selected", "false");
+    await expect(page.getByTestId("digest-row")).not.toHaveAttribute("aria-current");
+    // above Needs you's first row, and its glyph on the header's text edge
+    expect((await page.getByTestId("digest-row").boundingBox())!.y).toBeLessThan((await page.getByTestId("thread-row").first().boundingBox())!.y);
+    const textEdge = await page.getByTestId("today-line").evaluate((e) => e.getBoundingClientRect().left);
+    const glyph = await page.getByTestId("digest-row").locator("svg").first().evaluate((e) => e.getBoundingClientRect().left);
+    expect(Math.abs(glyph - textEdge)).toBeLessThanOrEqual(1);
     if (SHOTS) {
       await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-light.png` });
       await page.emulateMedia({ colorScheme: "dark" });
@@ -119,7 +124,7 @@ test.describe("Today (plan 145)", () => {
     const left = async (testId: string) => page.getByTestId(testId).first().evaluate((el) => el.getBoundingClientRect().left + parseFloat(getComputedStyle(el).paddingLeft));
     expect(Math.abs((await left("today-heading")) - (await left("thread-row")))).toBeLessThanOrEqual(1);
     await page.getByTestId("digest-row").click();
-    await expect(page.getByTestId("digest-row")).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByTestId("digest-row")).toHaveAttribute("aria-current", "true");
     await expect(page.getByTestId("digest-page")).toBeVisible();
     await expect(page.getByTestId("digest-title")).toHaveText("Automated mail");
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-digest-off.png` });
@@ -265,6 +270,93 @@ test.describe("Today (plan 145)", () => {
     // anything else from there is as before: a conversation of Today's own goes on as it always has
     await page.getByTestId("thread-row").filter({ hasText: "Can you make the 19th" }).click();
     await expect(page.getByTestId("back-to-digest")).toHaveCount(0);
+  });
+
+  test("plan 162 (after ai162-r02): every way back keeps an opened newsletter out of Archive, at once; the page has the list's keys", async ({ app: page, server }) => {
+    const { db } = await withMail(server, 10);
+    await settingUp(page, server, { ai: { provider: "fake", model: "demo" }, today: { digest: true, prepareAt: "00:00" } });
+    await page.setViewportSize({ width: 1100, height: 700 });
+    await page.getByTestId("nav-today").click();
+    await expect(page.getByTestId("digest-row")).toContainText("today's digest", { timeout: 15_000 });
+    // Needs you leads the list; the digest's way in is above the fold, in the header
+    await expect(page.getByTestId("today-heading").first()).toHaveAttribute("data-kind", "needsYou");
+    await expect(page.getByTestId("digest-row")).toBeInViewport();
+    await page.getByTestId("digest-row").click();
+    await expect(page.getByTestId("digest-title")).toHaveText("Today's digest");
+    const items = page.getByTestId("digest-item");
+    const total = await items.count();
+    expect(total).toBeGreaterThanOrEqual(8);
+    // the keys go into the page: its first row is the cursor
+    await expect(page.getByTestId("digest-open").first()).toBeFocused();
+    // j and k move through its rows, never Today's behind it; x ticks the cursor's row
+    await page.keyboard.press("j");
+    await page.keyboard.press("j");
+    await expect(page.getByTestId("digest-open").nth(2)).toBeFocused();
+    await page.keyboard.press("k");
+    await expect(page.getByTestId("digest-open").nth(1)).toBeFocused();
+    await expect(page.getByTestId("digest-page")).toBeVisible();
+    await page.keyboard.press("x");
+    await expect(items.nth(1).getByTestId("digest-tick")).not.toBeChecked();
+    await expect(page.getByTestId("digest-archive")).toHaveText(`Archive ${total - 1}`);
+    await page.keyboard.press("x");
+    await expect(page.getByTestId("digest-archive")).toHaveText(`Archive ${total}`);
+    await expect(page.locator('[data-keep-scroll="list"] [data-checked]')).toHaveCount(0);
+    const unread = (subject: string) => db.get<{ u: number }>("SELECT unread_count u FROM threads WHERE subject = ?", subject)!.u;
+    const subjectOf = async (i: number) => (await items.nth(i).getByTestId("digest-subject").innerText()).trim();
+    // each way back, straight back (under the reader's dwell): the row opened stays, said so, and isn't counted
+    const ways: [string, () => Promise<void>][] = [
+      ["Enter, then Esc", async () => page.keyboard.press("Escape")],
+      ["Back to the digest", async () => page.getByTestId("back-to-digest").click()],
+      ["the digest's way in", async () => page.getByTestId("digest-row").click()],
+    ];
+    let kept = 0;
+    for (const [i, [way, back]] of ways.entries()) {
+      const at = i * 3;
+      const subject = await subjectOf(at);
+      if (i === 0) {
+        await page.getByTestId("digest-open").nth(at).focus();
+        await page.keyboard.press("Enter");
+      } else await page.getByTestId("digest-open").nth(at).click();
+      await expect(page.getByTestId("reader-subject"), way).toHaveText(subject);
+      await back();
+      kept++;
+      await expect(page.getByTestId("digest-page"), way).toBeVisible();
+      await expect(items.nth(at).getByTestId("digest-state"), way).toHaveText("Opened · stays in Inbox");
+      await expect(items.nth(at).getByTestId("digest-tick"), way).not.toBeChecked();
+      await expect(page.getByTestId("digest-archive"), way).toHaveText(`Archive ${total - kept}`);
+      await expect(page.getByTestId("digest-count"), way).toContainText(`${total - kept} to archive · ${kept} ${kept === 1 ? "stays" : "stay"} in Inbox`);
+      // back on the row it was opened from; opened is read (plan 145)
+      await expect(page.getByTestId("digest-open").nth(at), way).toBeFocused();
+      await expect.poll(() => unread(subject), way).toBe(0);
+    }
+    // the page's scroll is kept on the way back, and the cursor stays above the foot bar
+    const scroller = page.getByTestId("digest-scroller");
+    for (let i = 0; i < total; i++) await page.keyboard.press("j");
+    await expect(page.getByTestId("digest-open").last()).toBeFocused();
+    const foot = (await page.getByTestId("digest-actions").boundingBox())!;
+    const lastBox = (await items.last().boundingBox())!;
+    expect(lastBox.y + lastBox.height).toBeLessThanOrEqual(foot.y + 1);
+    const scrolled = await scroller.evaluate((e) => e.scrollTop);
+    expect(scrolled).toBeGreaterThan(0);
+    const lastSubject = await subjectOf(total - 1);
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("reader-subject")).toHaveText(lastSubject);
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("digest-open").last()).toBeFocused();
+    expect(Math.abs((await scroller.evaluate((e) => e.scrollTop)) - scrolled)).toBeLessThanOrEqual(1);
+    kept++;
+    // Esc on the page gives the keys back to the list, at the digest's way in; j then moves Today's list
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("digest-row")).toBeFocused();
+    // Archive takes only the ticked; the snack stands on the page's foot bar, not over it
+    await page.getByTestId("digest-row").click();
+    await page.getByTestId("digest-archive").click();
+    await expect(page.getByTestId("snack")).toContainText(`Archived ${total - kept} newsletters`);
+    const snackBox = (await page.getByTestId("snack").first().boundingBox())!;
+    const footAfter = (await page.getByTestId("digest-actions").boundingBox())!;
+    expect(snackBox.y + snackBox.height).toBeLessThanOrEqual(footAfter.y);
+    await expect(page.getByTestId("digest-item").filter({ hasText: "Opened · stays in Inbox" })).toHaveCount(kept);
+    for (let i = 0; i < 3; i++) expect(db.get<{ n: number }>("SELECT in_inbox n FROM threads WHERE subject = ?", await subjectOf(i))!.n).toBe(1);
   });
 
   test("ai-r03: the digest scrolls in its pane, so its last row and its box are reachable by the wheel in a short window", async ({ app: page, server }) => {

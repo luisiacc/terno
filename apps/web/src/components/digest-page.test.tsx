@@ -5,6 +5,8 @@ import { createRoot } from "react-dom/client";
 import { beforeEach, expect, it, vi } from "vitest";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+Element.prototype.scrollIntoView = function () {};
 vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
 
 // the page reads its row from the backend: whatever the test says it is now
@@ -111,6 +113,41 @@ it("pass 2: each row says what it is; what was opened isn't counted, and the but
   expect(host.querySelector("[data-testid=digest-archive]")!.textContent).toBe("Archive 1");
   // the tick is a 24 px control itself, not a pseudo-element around a 16 px box
   expect(host.querySelector("[data-testid=digest-tick]")!.className).toContain("size-6");
+});
+
+it("plan 162 (after ai162-r02): opening one keeps it at once, before the backend's read mark, and the keys on the page are the list's", async () => {
+  // the backend still calls all three unread and live: the read mark lands after the reader's dwell
+  await show(digestOf("2026-10-22"));
+  // opened afresh, the page has the keys: its first row is the cursor
+  expect(document.activeElement?.getAttribute("data-digest-open")).toBe("1");
+  const { digestKeys } = await import("~/state/today");
+  expect(digestKeys.current!.has()).toBe(true);
+  await act(async () => digestKeys.current!.step(1));
+  expect(document.activeElement?.getAttribute("data-digest-open")).toBe("2");
+  // x unticks the cursor's row, and ticks it again
+  await act(async () => digestKeys.current!.toggle());
+  expect(ticks()).toEqual([true, false, true]);
+  await act(async () => digestKeys.current!.toggle());
+  expect(ticks()).toEqual([true, true, true]);
+  // Enter opens it: read at once (not after the reader's dwell), and kept whichever way the page is come back to
+  calls.length = 0;
+  await act(async () => digestKeys.current!.open());
+  expect(calls.filter((c) => c.method === "threads.act").map((c) => c.params)).toEqual([{ threadIds: [2], action: "markRead" }]);
+  await unmount();
+  await show(digestOf("2026-10-22"));
+  expect(states()).toEqual(["archive:", "opened:Opened · stays in Inbox", "archive:"]);
+  expect(host.querySelector("[data-testid=digest-archive]")!.textContent).toBe("Archive 2");
+  expect(host.querySelector("[data-testid=digest-count]")!.textContent).toContain("2 to archive · 1 stays in Inbox");
+  // back on the row it was opened from; its box can't be ticked again (opened is read and stays, plan 145)
+  expect(document.activeElement?.getAttribute("data-digest-open")).toBe("2");
+  expect(host.querySelectorAll<HTMLElement>("[data-testid=digest-tick]")[1]!.hasAttribute("data-disabled")).toBe(true);
+  await act(async () => digestKeys.current!.toggle());
+  expect(ticks()).toEqual([true, false, true]);
+  // Tick all and Untick all leave it out too
+  await act(async () => host.querySelector<HTMLElement>("[data-testid=digest-tick-all]")!.click());
+  expect(ticks()).toEqual([false, false, false]);
+  await act(async () => host.querySelector<HTMLElement>("[data-testid=digest-tick-all]")!.click());
+  expect(ticks()).toEqual([true, false, true]);
 });
 
 it("pass 2: after Archive, what it archived leaves the page, the rest stays under its own heading, and Undo ends it", async () => {

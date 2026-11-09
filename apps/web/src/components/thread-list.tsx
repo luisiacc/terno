@@ -24,9 +24,8 @@ import { navigate, getApp, setApp, useApp } from "~/state/app";
 import { installDragController } from "~/lib/drag-install";
 import { currentScope, inboxTop, listKey, loadMore, searchOfKey, useList } from "~/state/list";
 import { wantExcerpts } from "~/state/excerpts";
-import { useToday, type TodayGroup } from "~/state/today";
-import { pressRow, releaseRow } from "~/lib/select";
-import { DIGEST_ROW_ID, type ThreadSummary } from "@terno/core";
+import { digestLabel, useToday, type TodayGroup } from "~/state/today";
+import { DIGEST_ROW_ID } from "@terno/core";
 import { clearSelection, selectScope } from "~/lib/select";
 import { scopeLabel } from "~/lib/selection";
 import { SearchHelp } from "./search-help";
@@ -38,7 +37,7 @@ import { DraftsStrip } from "./drafts-strip";
 import { ReviewAlwaysMenu, ReviewButtons } from "./review-actions";
 import { ReviewSwitcher } from "./review-switcher";
 import { reviewTotals } from "~/lib/review";
-import { ROW_SHAPE, ThreadRow } from "./thread-row";
+import { ThreadRow } from "./thread-row";
 import { registerDesignAnchor, useDesign } from "~/lib/design";
 import { LearnedBanner, LearnedSource, useLearnedProposal } from "./learned-banner";
 import { ForwardQuestion } from "./forward-question";
@@ -52,7 +51,7 @@ import { SelectionBar } from "./selection-bar";
 import ActionPreviewHeader from "./action-preview-header";
 import { renderProbe } from "~/lib/render-probe";
 import { LIST_TITLE } from "~/lib/list-title";
-import { listCovered, usePage } from "~/lib/page";
+import { listCovered, openThread, usePage } from "~/lib/page";
 
 /** plan 87: the Inbox top's label and the gap after it (px; a row's height comes from the design) */
 /**
@@ -71,50 +70,42 @@ function TodayHeading({ kind, top }: { kind: TodayGroup["kind"]; top: number }) 
   // quieter than the digest's row above it)
   return (
     <div aria-hidden data-testid="today-heading" data-kind={kind} className="absolute inset-x-0 flex items-end px-5 pb-1 text-sm font-medium text-foreground" style={{ top, height: TOP_LABEL }}>
-      {t(kind === "needsYou" ? "today.needsYou" : kind === "newsletters" ? "today.newsletters" : "today.reminders")}
+      {t(kind === "needsYou" ? "today.needsYou" : "today.reminders")}
     </div>
   );
 }
 
 /** Plan 162 (Codex review): a section's name, said to assistive tech by its first row (the drawn heading is aria-hidden) */
-const sectionName = (kind: TodayGroup["kind"] | undefined): string | undefined => (kind === "needsYou" ? t("today.needsYou") : kind === "reminders" ? t("today.reminders") : kind === "newsletters" ? t("today.newsletters") : undefined);
-
-/** Plan 161, pass 2: the digest's row is Today's first, at a compact height of its own (never taller than a row). */
-const DIGEST_ROW_MAX = 44;
+const sectionName = (kind: TodayGroup["kind"] | undefined): string | undefined => (kind === "needsYou" ? t("today.needsYou") : kind === "reminders" ? t("today.reminders") : undefined);
 
 /**
- * The digest in the list: it takes the cursor as a row does, and nothing else a thread can. Plan 161, pass 2: first in
- * Today, compact, and plainly a way in: a pointer, the row's hover, and an arrow at its end. Pass 3: and a ring at rest.
+ * Plan 162 (after ai162-r02): the digest's way in, in Today's header under its sentence: above the fold and never before a
+ * person (as the list's first row, under a heading of its own, it led a page that says these need you; after them it fell
+ * below the fold, ai-r00). One line on the header's text edge, its glyph first, its words in the secondary, quieter than
+ * any row; the selection's fill while the digest is open. Its test id is the row's it replaces.
  */
-function DigestListRow({ thread, top, height }: { thread: ThreadSummary; top: number; height: number }) {
+export function TodayDigestEntry({ inline }: { /** List's full-width title row: beside the sentence, at its own width */ inline?: boolean }) {
+  const digest = useToday((s) => s.digest);
   const selected = useApp((s) => s.selectedId === DIGEST_ROW_ID);
-  // plan 162 (after ai162-r01): on the rows' lines, quieter than any person: its glyph in the avatars' column (where the
-  // design has one), its words at the names' edge in the secondary, no ring (it outranked the people waiting on you)
-  const avatars = useDesign().variants.row === "large-avatar";
+  if (!digest) return null;
   return (
-    <div
-      role="option"
-      id="thread-digest"
-      aria-selected={selected}
-      data-cursor={selected || undefined}
+    <button
+      type="button"
       data-testid="digest-row"
-      onMouseDown={(e) => e.button === 0 && pressRow(DIGEST_ROW_ID, { meta: false, ctrl: false, shift: false })}
-      onClick={() => releaseRow(DIGEST_ROW_ID)}
-      // hover and the selection fill it as any row
-      className={cn("group/row absolute left-0 flex w-full cursor-pointer items-center px-5 select-none", avatars ? "gap-3" : "gap-2.5", ROW_SHAPE, selected ? "text-row-selected-foreground before:bg-row-selected" : "hover:before:bg-row-hover")}
-      style={{ transform: `translateY(${top}px)`, height }}
-    >
-      {avatars ? (
-        <span aria-hidden className="relative grid size-(--avatar-row) shrink-0 place-items-center">
-          <Newspaper className={cn("size-4", selected ? "" : "text-muted-foreground")} />
-        </span>
-      ) : (
-        <Newspaper aria-hidden className={cn("relative size-4 shrink-0", selected ? "" : "text-muted-foreground")} />
+      aria-current={selected ? "true" : undefined}
+      // every fill starts at 8 px, as a row's selection does; the words on the header's text edge
+      className={cn(
+        "no-drag flex h-7 min-w-0 cursor-pointer items-center gap-1.5 rounded-md ps-3 pe-2 text-start type-list-subtitle transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+        inline ? "max-w-[40cqw] shrink-0" : "-ms-3 w-[calc(100%+0.75rem)]",
+        selected ? "bg-row-selected text-row-selected-foreground" : "text-muted-foreground hover:bg-row-hover hover:text-foreground",
       )}
+      onClick={() => openThread(DIGEST_ROW_ID)}
+    >
+      <Newspaper aria-hidden className="size-[1.15em] shrink-0" />
       <span className="sr-only">{t("today.newsletters")}, </span>
-      <span className={cn("type-row-subject relative min-w-0 flex-1 truncate", selected ? "" : "text-muted-foreground")}>{thread.subject}</span>
-      <ChevronRight aria-hidden className={cn("relative size-4 shrink-0", selected ? "" : "text-muted-foreground")} />
-    </div>
+      <span className="min-w-0 flex-1 truncate">{digestLabel(digest)}</span>
+      <ChevronRight aria-hidden className="size-[1.15em] shrink-0" />
+    </button>
   );
 }
 const TOP_GAP = 9;
@@ -795,7 +786,10 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
           ) : review ? (
             <ReviewSwitcher />
           ) : today ? (
-            <TodayLine />
+            <>
+              <TodayLine />
+              <TodayDigestEntry inline />
+            </>
           ) : (
             kind !== "title" && <Subtitle filter={filter} greeting={kind === "greeting"} />
           )}
@@ -846,7 +840,10 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
                 {searchAll}
               </p>
             ) : today ? (
-              <TodayLine />
+              <>
+                <TodayLine />
+                <TodayDigestEntry />
+              </>
             ) : (
               <Subtitle filter={filter} greeting={kind === "greeting"} />
             )}
@@ -857,6 +854,7 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
       {!oneRow && kind === "title" && today && !searching && (
         <div className="-mt-1.5 pb-2 pl-3">
           <TodayLine />
+          <TodayDigestEntry />
         </div>
       )}
       {/* plan 159: Review's switcher on a line of its own under the title, in every header (it never gives way: it's where you are) */}
@@ -1146,7 +1144,7 @@ export function ThreadList() {
     count: items.length,
     getScrollElement: () => parentRef.current,
     // plan 145: a section's heading is space under the row before it, or above the first
-    estimateSize: (i) => (inToday && items[i]?.id === DIGEST_ROW_ID ? Math.min(height, DIGEST_ROW_MAX) : height) + (i === top - 1 ? topGap : 0) + (todayGroups.some((g) => g.at === i + 1) ? TOP_LABEL : 0),
+    estimateSize: (i) => height + (i === top - 1 ? topGap : 0) + (todayGroups.some((g) => g.at === i + 1) ? TOP_LABEL : 0),
     paddingStart: lead + (top > 0 || todayGroups.some((g) => g.at === 0) ? TOP_LABEL : 0),
     overscan: 10,
     getItemKey,
@@ -1405,7 +1403,6 @@ export function ThreadList() {
               <TodayHeading key={g.kind} kind={g.kind} top={(virtualizer.measurementsCache[g.at]?.start ?? lead + TOP_LABEL) - TOP_LABEL} />
             ))}
             {virtualItems.map((v) => (
-              items[v.index]!.id === DIGEST_ROW_ID ? <DigestListRow key={v.key} thread={items[v.index]!} top={v.start} height={Math.min(height, DIGEST_ROW_MAX)} /> :
               <ThreadRow key={v.key} thread={items[v.index]!} top={v.start} height={height} compact={compact} wide={wide} showAccount={showAccount} icons={icons} layout={layout} review={review} reminderTop={v.index < top} reminderEnd={topGap > 0 && v.index === top - 1} match={match} pick={list} section={sectionName(todayGroups.find((g) => g.at === v.index)?.kind)} />
             ))}
           </div>

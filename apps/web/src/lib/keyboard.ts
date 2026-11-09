@@ -11,7 +11,7 @@ import { loadMore, useList } from "~/state/list";
 import { loadThread, useThreads } from "~/state/threads";
 import { acceptSuggestion, answerReview, rejectSuggestion } from "~/lib/categorize";
 import { leaveReview } from "~/lib/review";
-import { backToDigest } from "~/state/today";
+import { backToDigest, digestHasKeys, digestKeys } from "~/state/today";
 import { conversationKeys } from "~/lib/conversation-keys";
 import { printCommand } from "~/lib/print-open";
 import { checkForUpdates } from "~/lib/updates";
@@ -120,6 +120,8 @@ function escape() {
   const s = getApp();
   // plan 161, pass 2: a newsletter the digest opened goes back to the digest first, as its "Back to the digest" does
   if (backToDigest()) return;
+  // plan 162 (after ai162-r02): the digest page gives its keys back to the list, at the digest's way in
+  if (digestHasKeys()) return void digestKeys.current!.leave();
   if (listLayout() && currentPage() !== "list") { markSelectionIntent(); closePage({ focus: true }); }
   // plan 161, pass 2: a matched conversation open in the reader closes first, back to the rule; then the preview ends
   else if (s.actionPreview) { if (listLayout() || !closePreviewRow()) leavePreview(); }
@@ -155,10 +157,11 @@ export function sendShownDraft(): void {
 }
 
 const HANDLERS: Partial<Record<Command, () => void>> = {
-  "list.next": () => move(1),
-  "list.prev": () => move(-1),
-  "list.open": openCurrent,
-  "list.toggleSelect": toggleCurrent,
+  // plan 162 (after ai162-r02): the digest page has the list's keys while it has the keys: its rows, not Today's behind it
+  "list.next": () => (digestHasKeys() ? digestKeys.current!.step(1) : move(1)),
+  "list.prev": () => (digestHasKeys() ? digestKeys.current!.step(-1) : move(-1)),
+  "list.open": () => (digestHasKeys() ? digestKeys.current!.open() : openCurrent()),
+  "list.toggleSelect": () => (digestHasKeys() ? digestKeys.current!.toggle() : toggleCurrent()),
   "list.selectAll": selectAll,
   "list.selectNone": clearSelection,
   "list.selectRead": () => selectWhere((t) => !t.unread),

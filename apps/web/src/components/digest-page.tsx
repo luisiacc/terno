@@ -6,17 +6,18 @@ import { Spinner } from "@terno/ui/components/spinner";
 import { ChevronRight } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { getApp } from "~/state/app";
 import { digestTarget, modelName } from "~/lib/ai";
 import { listDate } from "~/lib/format";
 import { PANE_TITLE, PANE_TITLE_TOP } from "~/lib/pane-lines";
-import { deferred, trackJob, undoAction, undoActions } from "~/lib/actions";
+import { act, deferred, trackJob, undoAction, undoActions } from "~/lib/actions";
 import { registerUndo, snack, snackPublication, undoNow, useSnack } from "~/lib/snack";
 import { whenDay } from "~/lib/when";
 import { AiErrorNotice, aiErrorCopy, errorTarget } from "~/components/ai-error";
 import { client } from "~/rpc/connection";
 import { setApp, useApp } from "~/state/app";
 import { reloadList } from "~/state/list";
-import { digestPick, keepDigestPick, useToday } from "~/state/today";
+import { digestKeys, digestPick, keepDigestPick, openFromDigest, useToday } from "~/state/today";
 import { AiProvenance } from "~/components/ai-provenance";
 
 /**
@@ -54,10 +55,32 @@ export default function DigestPage() {
   const [toggled, setToggled] = useState<ReadonlySet<number>>(() => digestPick(day).toggled);
   // pass 2: what this page archived (its rows leave, the header says it's done), held with the rest of the pick
   const batches = useToday((s) => (s.pick?.day === day ? (s.pick.done ?? null) : null));
+  // plan 162 (after ai162-r02): what was opened from here, kept the moment it opened, whichever way the page is come back to
+  const openedHere = useToday((s) => (s.pick?.day === day ? s.pick.opened : undefined));
   // plan 162: the snack on screen carries this page's last Undo: the page doesn't show a second one beside it
   const lastUndo = batches?.at(-1)?.undo ?? null;
   const undoInSnack = useSnack((s) => lastUndo !== null && s.current?.action?.undo === lastUndo);
   const scroller = useRef<HTMLDivElement>(null);
+  const foot = useRef<HTMLElement>(null);
+  const [footHeight, setFootHeight] = useState(0);
+  const [atEnd, setAtEnd] = useState(false);
+  useLayoutEffect(() => {
+    const el = foot.current;
+    if (!el) return;
+    const set = () => {
+      setFootHeight(el.offsetHeight);
+      useSnack.setState({ pageLift: el.offsetHeight });
+      const sc = scroller.current;
+      if (sc) setAtEnd(sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 1);
+    };
+    set();
+    const ro = new ResizeObserver(set);
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      useSnack.setState({ pageLift: 0 });
+    };
+  }, [row !== null]);
   const scrollAt = useRef(digestPick(day).scroll);
   // back where it was left, once its rows are there: once a digest
   const restored = useRef<string | null>(null);
@@ -72,11 +95,12 @@ export default function DigestPage() {
     const pick = digestPick(day);
     scrollAt.current = pick.scroll;
     scroller.current.scrollTop = scrollAt.current;
-    // pass 2: back from a newsletter, the row it was opened from has the focus again (a program's focus: no ring)
-    if (pick.opened != null) {
-      scroller.current.querySelector<HTMLElement>(`[data-digest-open="${pick.opened}"]`)?.focus({ preventScroll: true });
-      keepDigestPick({ day, toggled: pick.toggled, scroll: pick.scroll, opened: null });
-    }
+    // pass 2: back from a newsletter, the row it was opened from is the cursor again (a program's focus: no ring). Plan 162
+    // (after ai162-r02): opened afresh, the first row is, so the page has the keys (j moved Today's list behind it)
+    const at = (pick.from != null && scroller.current.querySelector<HTMLElement>(`[data-digest-open="${pick.from}"]`)) || scroller.current.querySelector<HTMLElement>("[data-digest-open]");
+    const elsewhere = document.activeElement && document.activeElement !== document.body && !document.activeElement.closest("[data-testid=list-header], [data-testid=thread-list]");
+    if (at && (pick.from != null || !elsewhere)) at.focus({ preventScroll: true });
+    if (pick.from != null) keepDigestPick({ day, toggled: pick.toggled, scroll: pick.scroll, from: null });
   }, [row, day]);
   useEffect(() => {
     if (day && restored.current === day) keepDigestPick({ day, toggled, scroll: scrollAt.current });
@@ -93,7 +117,10 @@ export default function DigestPage() {
   const readIds = useMemo(() => new Set(row?.readIds ?? []), [row]);
   const movedTo = useToday((s) => s.movedTo);
   const live = (i: DigestItem) => liveIds === null || liveIds.has(i.threadId);
-  const stateOf = (i: DigestItem): DigestRowState => (live(i) ? (ticked(i) ? "archive" : "keep") : readIds.has(i.threadId) ? "opened" : "archived");
+  const opened = (i: DigestItem) => openedHere?.has(i.threadId) === true;
+  // one keep state: unticked or opened stays (plan 145: opened is read), and Archive takes only what's ticked
+  const stateOf = (i: DigestItem): DigestRowState => (live(i) ? (opened(i) ? "opened" : ticked(i) ? "archive" : "keep") : readIds.has(i.threadId) || opened(i) ? "opened" : "archived");
+  const tickable = (i: DigestItem) => live(i) && !opened(i);
   // pass 2: what this page archived leaves it; what was archived elsewhere stays, muted and said so (plan 145)
   const archivedHere = new Set((batches ?? []).flatMap((b) => b.ids));
   const shown = items.filter((i) => !(archivedHere.has(i.threadId) && stateOf(i) === "archived"));
@@ -109,16 +136,64 @@ export default function DigestPage() {
   // plan 162: the ticks reset at once, both ways (Atelier codex): every live row ticked, or none
   const anyTicked = chosen.length > 0;
   const tickAll = (on: boolean) => {
-    const ids = shown.filter(live).map((i) => i.threadId);
+    const ids = shown.filter(tickable).map((i) => i.threadId);
     // a set means the unticked ones in a digest and the ticked ones in automated mail
     setToggled(new Set(on === automated ? ids : []));
   };
   const heading = useRef<HTMLHeadingElement>(null);
   const open = (threadId: number) => {
-    if (day && restored.current === day) keepDigestPick({ day, toggled, scroll: scroller.current?.scrollTop ?? 0, opened: threadId });
-    useToday.setState({ fromDigest: threadId });
-    setApp({ selectedId: threadId });
+    openFromDigest(day, threadId, scroller.current?.scrollTop ?? scrollAt.current, toggled);
+    // plan 162 (after ai162-r02): opened from here is read now (plan 145), not after the reader's dwell: that's for j held
+    // down a list, and back in under it the newsletter stayed unread while the page said it was opened
+    if (liveIds?.has(threadId) !== false) void act("markRead", [threadId], { quiet: true });
   };
+  // plan 162 (after ai162-r02): the page's own keys, the list's: the cursor is the row holding the focus
+  const keys = useRef({ toggle, open });
+  keys.current = { toggle, open };
+  const tickableIds = new Set(shown.filter(tickable).map((i) => i.threadId));
+  const canTick = useRef(tickableIds);
+  canTick.current = tickableIds;
+  useEffect(() => {
+    const rows = () => [...(scroller.current?.querySelectorAll<HTMLElement>("[data-digest-open]") ?? [])];
+    const cursor = () => {
+      const li = document.activeElement?.closest("[data-testid=digest-item]");
+      const at = li?.querySelector<HTMLElement>("[data-digest-open]");
+      return at ? Number(at.dataset.digestOpen) : null;
+    };
+    const go = (el: HTMLElement | undefined) => {
+      if (!el) return;
+      el.focus({ preventScroll: true });
+      // the whole row, its hairline too, above the foot bar (the scroller's padding is the bar's height)
+      (el.closest("li") ?? el).scrollIntoView({ block: "nearest" });
+    };
+    digestKeys.current = {
+      has: () => {
+        const at = document.activeElement;
+        const s = getApp();
+        if (s.dialog !== null || s.menuOpen) return false;
+        return at === null || at === document.body ? true : scroller.current?.contains(at) === true;
+      },
+      step: (delta) => {
+        const all = rows();
+        const id = cursor();
+        const i = id === null ? -1 : all.findIndex((el) => Number(el.dataset.digestOpen) === id);
+        go(all[i < 0 ? 0 : Math.max(0, Math.min(all.length - 1, i + delta))]);
+      },
+      toggle: () => {
+        const id = cursor();
+        if (id !== null && canTick.current.has(id)) keys.current.toggle(id);
+      },
+      open: () => {
+        const id = cursor() ?? (rows()[0] ? Number(rows()[0]!.dataset.digestOpen) : null);
+        if (id !== null) keys.current.open(id);
+      },
+      // where the keys came from: the digest's way in, in Today's header
+      leave: () => document.querySelector<HTMLElement>("[data-testid=digest-row]")?.focus({ preventScroll: true }),
+    };
+    return () => {
+      digestKeys.current = null;
+    };
+  }, []);
   const archive = async () => {
     if (!row || !chosen.length) return;
     const job = trackJob(t("today.digest.archiving"));
@@ -171,9 +246,13 @@ export default function DigestPage() {
     // plan 145); the wheel works anywhere over the pane, and the scrollbar sits at its edge
     <div
       ref={scroller}
-      className="h-full min-h-0 overflow-y-auto"
+      className="group/digest h-full min-h-0 overflow-y-auto [scrollbar-gutter:stable]"
       data-testid="digest-scroller"
+      data-end={atEnd || undefined}
+      style={{ scrollPaddingBottom: footHeight }}
       onScroll={(e) => {
+        const el = e.currentTarget;
+        setAtEnd(el.scrollTop + el.clientHeight >= el.scrollHeight - 1);
         if (restored.current !== day) return;
         scrollAt.current = e.currentTarget.scrollTop;
         keepDigestPick({ day, toggled, scroll: scrollAt.current });
@@ -239,9 +318,9 @@ export default function DigestPage() {
             return (
               <li key={i.threadId} data-testid="digest-item" data-live={live(i)} data-state={state} className="flex items-start gap-1 border-b border-hairline py-1">
                 {/* pass 2: a 24 px box of its own, so a near miss doesn't open the newsletter beside it */}
-                <Checkbox target="quiet" data-testid="digest-tick" aria-label={t("today.digest.tick", { subject: i.subject })} checked={state === "archive"} disabled={!live(i)} className="mt-1.5" onCheckedChange={() => toggle(i.threadId)} />
+                <Checkbox target="quiet" data-testid="digest-tick" aria-label={t("today.digest.tick", { subject: i.subject })} checked={state === "archive"} disabled={!tickable(i)} className="mt-1.5" onCheckedChange={() => toggle(i.threadId)} />
                 {/* plan 161: reading is as plain as archiving: the whole row opens the newsletter, and says so on hover */}
-                <button type="button" data-digest-open={i.threadId} className="group/open -mr-2 flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-row-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none" data-testid="digest-open" onClick={() => open(i.threadId)}>
+                <button type="button" data-digest-open={i.threadId} className="group/open -mr-2 flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-row-hover focus:bg-row-selected focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none" data-testid="digest-open" onClick={() => open(i.threadId)}>
                   <span className="min-w-0 flex-1">
                     <span className="flex items-baseline gap-2 text-xs">
                       <span className={cn("max-w-[60%] shrink-0 font-medium", quiet ? "text-muted-foreground" : "text-foreground")} data-testid="digest-from">{i.from}</span>
@@ -261,7 +340,9 @@ export default function DigestPage() {
       )}
       {/* plan 162 (after ai162-r01): the decision, sticky at the pane's foot: what Archive will do, the reset, then Archive
           last, so the page reads, then acts (Archive led the page, darkest, before anything was read) */}
-      <footer className="sticky bottom-0 z-10 mt-auto flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-hairline bg-background pt-3 pb-4" data-testid="digest-actions">
+      {/* plan 162 (after ai162-r02): rows going on under it fade into its edge (one was cut in half by it, at rest); the
+          list keeps its height as scroll padding, so the cursor and Tab stop above it; and the snack stands on it */}
+      <footer ref={foot} className="sticky bottom-0 z-10 mt-auto flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-hairline bg-background pt-3 pb-4 before:pointer-events-none before:absolute before:inset-x-0 before:bottom-full before:h-6 before:bg-linear-to-t before:from-background before:to-transparent group-data-[end]/digest:before:hidden" data-testid="digest-actions">
         {finished ? (
           <p role="status" className="me-auto text-sm" data-testid="digest-done">
             {t(automated ? "today.digest.archivedSelected" : "today.digest.archived", { count: done.count })}.
