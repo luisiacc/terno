@@ -111,6 +111,13 @@ describe("AI labels and help", () => {
     expect(mailDestinations(full({ provider: "anthropic", tasks: { ask: { provider: "openai", model: "m" }, writing: { provider: "ollama", model: "m" } } }))).toEqual(["Claude (Anthropic)", "OpenAI"]);
     expect(mailDestinations(full({ provider: "anthropic", tasks: { summary: { provider: "anthropic", model: "m" } }, keys: { openai: { hasKey: true, keyHint: null } } }))).toEqual(["Claude (Anthropic)"]);
     expect(mailDestinations(full({ provider: "anthropic", keys: { jev: { hasKey: true, keyHint: null } } }))).toEqual(["Claude (Anthropic)", "JEV"]);
+    // Codex critique: a local kind on another machine isn't local, and a routed profile is named by where it goes
+    expect(mailDestinations(full({ provider: "ollama", local: false, baseURL: "http://gpu.lan:11434/v1" }))).toEqual(["gpu.lan:11434"]);
+    expect(mailDestinations(full({ provider: "ollama", local: true, tasks: { writing: { provider: "lmstudio", model: "m" } }, profiles: { lmstudio: { model: "m", baseURL: "http://studio.lan:1234/v1" } } } as Partial<AiSettings>))).toEqual(["studio.lan:1234"]);
+    expect(mailDestinations(full({ provider: "ollama", local: true, tasks: { writing: { provider: "lmstudio", model: "m" } }, profiles: {} } as Partial<AiSettings>))).toEqual([]);
+    expect(mailDestinations(full({ provider: "ollama", local: true, tasks: { ask: { provider: "compatible", model: "m" } }, profiles: { compatible: { model: "m", preset: "openrouter" } } } as Partial<AiSettings>))).toEqual(["OpenRouter"]);
+    expect(mailDestinations(full({ provider: "ollama", local: true, tasks: { ask: { provider: "compatible", model: "m" } }, profiles: { compatible: { model: "m", preset: "custom", baseURL: "https://ai.example.test/v1" } } } as Partial<AiSettings>))).toEqual(["ai.example.test"]);
+    expect(mailDestinations(full({ provider: "ollama", local: true, tasks: { ask: { provider: "compatible", model: "m" } }, profiles: { compatible: { model: "m", preset: "custom", baseURL: "http://127.0.0.1:8080/v1" } } } as Partial<AiSettings>))).toEqual([]);
     expect(disclosureLine(full({ provider: "none" }))).toBe("AI is off.");
     expect(disclosureLine(full({ provider: "ollama", local: true }))).toBe("Nothing leaves this Mac.");
     expect(disclosureLine(full({ provider: "openai" }))).toBe("OpenAI receives a conversation’s text when you use an AI feature on it, and mail as it comes in or goes out for the background features you turn on below.");

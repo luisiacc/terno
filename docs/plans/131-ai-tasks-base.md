@@ -183,3 +183,12 @@ Each feature's own hint in Settings keeps saying what it sends (drafting, summar
 ### The rating tooling
 
 `scripts/ui-rating/capture.mjs` no longer clicks Continue on the summary, ⌘J's first draft, Ask or the action check: each state is reached straight from the ask, the same shots and states as before. `harness.mjs` had no consent step. The owner's eval scripts in `scripts/ai-real/` lost theirs too. `/tmp/terno-scratch/ai-gallery/gallery.mjs`'s consent sheet is obsolete (not in the repo; left as it is).
+
+### Revisions after the Codex critique
+
+Codex (read-only, against the branch) raised two points, both accepted and fixed in `mailDestinations` (`apps/web/src/lib/ai.ts`), each with a case in `ai.test.ts` that fails without it:
+
+1. **A local kind on another machine isn't local.** Ollama and LM Studio were left out by kind; the backend's `isLocalProvider` judges by endpoint, so one at `http://gpu.lan:11434` sends mail off the Mac. Each target is now resolved as `targetFor`'s `profiled` does (the configured provider as set up, another with its own saved preset and endpoint) and is local only on loopback.
+2. **A routed profile is named by where it goes.** A task on a saved OpenRouter profile while the main provider is Ollama read "OpenAI-compatible", from the main provider's preset. Now a preset is named by its preset ("OpenRouter"), and a server with no fixed name (a custom or Azure endpoint, a local kind elsewhere) by its host ("ai.example.test"). The footer's title still names the main provider's host; the line names all of them.
+
+Also added after the build: `design-axe.spec` reads Settings → AI on a cloud provider (chosen in the window, as a person would) in both modes.

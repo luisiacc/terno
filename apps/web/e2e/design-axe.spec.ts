@@ -156,6 +156,16 @@ test.describe("axe", { tag: "@variant" }, () => {
       await page.getByTestId(`${tab}-tab`).waitFor();
       await clean(page, `Settings, ${tab}`, "[data-testid=settings-dialog]");
     }
+    // plan 131: on a cloud provider the group's footer names where mail goes (no per-use consent)
+    const provider = async (choice: string) => {
+      await page.getByTestId("ai-provider").click();
+      await page.getByTestId(`ai-choice-${choice}`).click();
+    };
+    await page.getByTestId("tab-ai").click();
+    await provider("anthropic");
+    await expect(page.getByTestId("ai-privacy")).toContainText("Claude (Anthropic) receives a conversation’s text");
+    await clean(page, "Settings, AI on a cloud provider", "[data-testid=settings-dialog]");
+    await provider("fake");
     await page.keyboard.press("Escape");
     await page.getByTestId("sidebar").getByRole("button", { name: "Add account", exact: true }).click();
     await clean(page, "add account", "[data-testid=add-account-dialog]");

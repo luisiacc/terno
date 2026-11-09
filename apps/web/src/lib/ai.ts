@@ -195,19 +195,46 @@ export function privacyLine(ai: AiSettings): string {
   return t("ai.privacy.cloud", { host: hostOf(ai) ?? providerName(ai) });
 }
 
+type Target = { provider: AiProviderId; preset: CompatiblePreset | null; baseURL: string | null; local: boolean };
+
 /**
- * Plan 131, the owner's decision (no per-use consent): every cloud provider AI may send mail to, by the backend's
- * rules (`AiService.targetFor`): the configured provider, each task's own choice, OpenAI for summaries and JEV for
- * sorting once they have a key. Named where AI is turned on, since nothing asks again when a feature runs.
+ * A task's target as the backend resolves it (`AiService.targetFor`'s `profiled`): the configured provider as it is set
+ * up, another with its own saved preset and endpoint. Local only on loopback, as `isLocalProvider` says: Ollama or LM
+ * Studio on another machine isn't (Codex critique 1).
+ */
+function targetOf(ai: AiSettings, provider: AiProviderId): Target {
+  if (provider === ai.provider) return { provider, preset: ai.preset ?? null, baseURL: ai.baseURL ?? null, local: ai.local };
+  const profile = ai.profiles?.[provider];
+  const preset = profile?.preset ?? null;
+  const baseURL = profile?.baseURL ?? null;
+  const at = (url: string | null | undefined) => Boolean(url && isLoopbackUrl(url));
+  const local =
+    provider === "fake" ||
+    (provider === "ollama" || provider === "lmstudio" ? at(baseURL ?? DEFAULT_ENDPOINT[provider]) : provider === "compatible" && (!preset || preset === "custom") && at(baseURL));
+  return { provider, preset, baseURL, local };
+}
+
+/** Who receives it, by name: a server of no fixed name (a custom or Azure endpoint, a local kind elsewhere) by its host (Codex critique 2). */
+function destinationName(ai: AiSettings, t: Target): string {
+  const named = t.provider === "compatible" ? !t.preset || t.preset === "custom" || t.preset === "azure" : t.provider === "ollama" || t.provider === "lmstudio";
+  if (named && t.baseURL && URL.canParse(t.baseURL)) return new URL(t.baseURL).host;
+  if (t.provider === "compatible" && t.preset && t.preset !== "custom") return presetLabel(t.preset);
+  return t.provider === ai.provider ? providerName(ai) : providerLabel(t.provider);
+}
+
+/**
+ * Plan 131, the owner's decision (no per-use consent): every place off this Mac AI may send mail to, by the backend's
+ * rules (`AiService.targetFor`): the configured provider, each task's own choice with its own profile, OpenAI for
+ * summaries and JEV for sorting once they have a key. Named where AI is turned on, since nothing asks again when a
+ * feature runs.
  */
 export function mailDestinations(ai: AiSettings): string[] {
-  const out = new Set<AiProviderId>();
-  const cloud = (p: AiProviderId) => p !== "none" && !LOCAL_PROVIDERS.includes(p) && !(p === ai.provider && ai.local);
-  if (cloud(ai.provider)) out.add(ai.provider);
-  for (const target of Object.values(ai.tasks ?? {})) if (target && cloud(target.provider)) out.add(target.provider);
-  if (ai.keys?.openai?.hasKey && !ai.tasks?.summary) out.add("openai");
-  if (ai.keys?.jev?.hasKey && !ai.tasks?.categorize) out.add("jev");
-  return [...out].map((p) => providerLabel(p, ai));
+  const targets: Target[] = [];
+  if (ai.provider !== "none") targets.push(targetOf(ai, ai.provider));
+  for (const chosen of Object.values(ai.tasks ?? {})) if (chosen) targets.push(targetOf(ai, chosen.provider));
+  if (ai.keys?.openai?.hasKey && !ai.tasks?.summary) targets.push(targetOf(ai, "openai"));
+  if (ai.keys?.jev?.hasKey && !ai.tasks?.categorize) targets.push(targetOf(ai, "jev"));
+  return [...new Set(targets.filter((t) => t.provider !== "none" && !t.local).map((t) => destinationName(ai, t)))];
 }
 
 /** A list as the language says it: "Claude (Anthropic) and OpenAI". */
