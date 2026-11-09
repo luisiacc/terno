@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NET_LOG_MAX, netRecorder, offsetClock, testClock, testNetLog } from "./test-hooks";
+import { NET_LOG_MAX, netRecorder, offsetClock, testClock, testDevAi, testNetLog } from "./test-hooks";
 
 describe("plan 161: the rating's test hooks, in the demo mailbox only", () => {
   it("a normal launch reaches neither: no demo, no clock and no log, whatever the environment says", () => {
@@ -8,6 +8,16 @@ describe("plan 161: the rating's test hooks, in the demo mailbox only", () => {
     expect(testNetLog(env, false)).toBeNull();
     expect(testClock(env, true)).toBe(1792683000000);
     expect(testNetLog(env, true)).toBe("/tmp/net.log");
+  });
+
+  it("Dev mode for the rating's real models: the demo mailbox on an unpackaged build, and only when asked", () => {
+    const env = { TERNO_TEST_DEV_AI: "1" };
+    expect(testDevAi(env, false, true)).toBe(true);
+    // a normal launch is a real mailbox; an installed app's keys are the user's own, whatever it's given
+    expect(testDevAi(env, false, false)).toBe(false);
+    expect(testDevAi(env, true, true)).toBe(false);
+    expect(testDevAi({}, false, true)).toBe(false);
+    expect(testDevAi({ TERNO_TEST_DEV_AI: "true" }, false, true)).toBe(false);
   });
 
   it("refuses what isn't an instant or an absolute path", () => {

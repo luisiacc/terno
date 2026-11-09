@@ -41,7 +41,7 @@ import { DB_FILE } from "./legacy-profile";
 import { registerPrint } from "./print";
 import { registerMboxExport } from "./mbox-export";
 import { isTrustedSender, testImapInsecure, testPdfDir, testSmtpPort } from "./print-policy";
-import { testClock, testNetLog } from "./test-hooks";
+import { testClock, testDevAi, testNetLog } from "./test-hooks";
 import { menuTemplate } from "./menu";
 import { readLanguage, switchLanguage, writeLanguage } from "./locale";
 import type { MenuCommand } from "./print-commands";
@@ -336,7 +336,8 @@ function startBackend() {
     dbPath: join(userData, DB_FILE),
     demo,
     dev: isDev,
-    devMode: devModeOf({ devUrl: process.env.TERNO_DEV_URL, packaged: app.isPackaged }),
+    // plan 161: the rating's frozen build runs Pro's AI path too (test-hooks.ts: the demo mailbox, never packaged)
+    devMode: devModeOf({ devUrl: process.env.TERNO_DEV_URL, packaged: app.isPackaged }) || testDevAi(process.env, app.isPackaged, demo),
     ...agentPaths(),
     version: app.getVersion(),
     diag: { session: diagSession(), build: BUILD_ID, channel: mainDiag.channel },
