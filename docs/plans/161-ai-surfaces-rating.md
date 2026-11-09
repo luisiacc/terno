@@ -1271,3 +1271,90 @@ Codex (read-only, `git diff 4c4537f81..HEAD`) raised 7 points, all taken, each w
 - **Commits** on `t3/digest-newsletter-sender-warning`: the plan, then one per answer, then the review's fixes.
 - **Shots,** every design, light and dark: `/tmp/terno-scratch/owner-answers/<design>/` (`today-after-open-*`, `action-sender-*`, `undo-*`, `undo-zoom-*`), and side by side in `/tmp/terno-scratch/owner-answers/sheet-*.png`. In each, the newsletter opened from the digest is in the reader with Back to the digest, and no row of Today's list is it; "Archive receipts from Uber" says the sender line above the rule (the stub's rule reads only subjects and openings, and finds Rappi's, Stripe's and Vercel's receipts too); "Archive shipping notices older than a month" says nothing; the ring's drained stretch reads as a quieter part of a whole outline.
 - **Anything else that treats a newsletter from the digest differently** (the owner asked): only the way back, which stays (`fromDigest`: the reader's "Back to the digest", Esc from the reader and from inside the mail's document, and focus back on the row it was opened from), and the digest page's own "Opened · stays in Inbox" for a read one (plan 145). What follows from not being one of Today's rows is what any conversation open from elsewhere gets: the reader's newer and older buttons are off, j and k start from the list's top, and Archive in the reader goes on to Today's first conversation rather than its neighbour.
+
+## Real models (owner, 2026-11-08)
+
+### The request
+
+> instead of ollama, use actual models from the .env keys on the main path of the app at `/Users/Luis/projects/emailclient/.env`
+
+This reverses the request's point 1 ("AI on in the rating, without real keys") for the rating's default. The stub stays, for tests and the smoke, and by name (`--ai stub`, `ai: "stub"`).
+
+### How the frozen build reaches the main path
+
+The main path is Pro's: Dev mode's Pro AI (plans 146, 147, 150), Pro's routing on the developer's keys, as `pnpm dev:desktop` runs it. Dev mode exists only on a local build run from the dev server (`devModeOf({ devUrl, packaged })`), and the rating's frozen build has no dev server (revision 1 above: it isn't a dev build). No supported switch reaches it there, so this adds one, beside the rating's other test hooks:
+
+- **`TERNO_TEST_DEV_AI=1`** (`apps/desktop/src/test-hooks.ts`, `testDevAi(env, packaged, demo)`): main sends `devMode: true` to the backend only for the demo mailbox on an unpackaged build. A normal launch is a real mailbox and an installed app is packaged, so neither reaches it, whatever its environment says (`test-hooks.test.ts`). From there everything is the app's own path: `backend-entry` reads `devAiKeys(process.env)`, Settings shows Dev mode, and the harness turns **Pro AI** on there with a click (`settings.update`, as a person does), then the four background switches, sender icons off and automatic updates off. The rated launch reads them back (`checkAi`).
+- Nothing is patched: the build is the one the round froze, and the keys go through the overlay plan 146 built (`withDevAi`: an env key goes only to its provider's own endpoint, never saved).
+
+### The providers and models
+
+Pro's routing with all three keys (`AiService.targetFor` over `withDevAi`), recorded in `round.json` as `ai.routing` (`keys.mjs` `PRO_ROUTING`; `keys.test.ts` holds it to `@terno/core`'s and `@terno/ai`'s constants):
+
+| Task | Screen | Provider / model |
+|---|---|---|
+| summary | `a01` | OpenAI `gpt-6-luna` |
+| writing (⌘J), reply (Reply ready's draft), voice | `a02`, `a03`, `a10` | Anthropic `claude-sonnet-5-5` |
+| reply check (`needs_reply`) | `a10` | Anthropic `claude-haiku-5-5` |
+| ask (the answer) | `a04` | Anthropic `claude-sonnet-5-5` |
+| ask plan, action plan and check | `a04`, `a05` | Anthropic `claude-haiku-5-5` |
+| follow-ups (`sent_mail`), digest, intent | `a07`–`a09` | Anthropic `claude-haiku-5-5` |
+| filter | `a11` | Anthropic `claude-opus-5-5` (the provider's default) |
+| categorize | none (smart categories are off in the demo) | JEV `jev-latest` |
+
+`GROQ_API_KEY` is in the owner's file but isn't Pro's (Dev mode reads only `DEV_AI_ENV`), so the harness doesn't read or pass it.
+
+### The keys
+
+- **One file.** `keys.mjs` reads `TERNO_RATING_ENV`, by default `/Users/Luis/projects/emailclient/.env`, so a worktree and the frozen runtime find the same file. It reads only `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` (both required) and `JEV_API_KEY`; an error names the file and the variable, never a value.
+- **Only to Electron.** `launch({ ai: true })` reads the file at launch and puts the keys in the env it hands `electron.launch`, and nowhere else: not this process's env, not a file. `electronEnv()` strips any key the caller's own env had first, so a stub or AI-off launch can't carry one (`keys.test.ts`).
+- **Nothing written holds one.** Belt and braces, since nothing prints them:
+  - once a launch has the keys, its process's stdout and stderr are redacted (`guardOutput`: every write, so `console.*` too), and `capture.mjs` prints its own failure redacted, since Node's report of an uncaught error bypasses the streams;
+  - `rate.mjs` reads the same file only to redact: every child's log (`capture-<design>.log`, `<rater>.log`), `round.json`, the brief, and what leaves a rater's room (`report.json`, `report.md`, `probes/`, text files redacted, images copied) go through `writeRedacted`/`copyRedacted`, which replace the loaded keys and anything shaped like a provider key;
+  - the throwaway profile: the backend's logs, the database and the net log don't hold keys (the keys travel in headers; the net log is URLs). The profile is deleted on close; before that, `close()` scans every file the run wrote there for the keys and fails the run if one holds any (the file is deleted either way). That's cheaper and stronger than redacting the app's own logs, which no key reaches;
+  - `gate.mjs` fails a round whose `round.json` holds anything shaped like a key.
+- **The proof.** `keys.test.ts` runs a child that loads a fake `.env` and then deliberately prints the keys every way a run can (console, raw writes, a buffer, a thrown error), writes them in a round's logs and `round.json`, and copies a room holding them out: stdout, stderr and every file written carry the redaction mark and no key. A second case runs `capture.mjs` itself on a fake `.env` missing a key: it fails naming the variable and prints none of the others.
+
+### The raters' room
+
+Raters launch the harness themselves for hands-on use, and it reaches the keys the same way: the room's `harness.mjs` reads the owner's `.env` at its default path (or the path `TERNO_RATING_ENV` names, which `rate.mjs` passes on when it's set: a path, never a key). No key is set on the rater's process, and the file is never copied into the room. **A rater can technically read that file**: it's on the same machine, and a rater runs with its tools unsandboxed. It is the owner's own file, the brief tells raters not to look outside their folder, and whatever leaves the room is redacted on the way.
+
+### The network check
+
+`netProblems` takes `aiHosts`, the hosts of the providers this launch has keys for (`api.anthropic.com`, `api.openai.com`, and `api.typesafe.ai` with JEV's key; `keys.test.ts` holds them to `@terno/ai`'s endpoints). An AI request may go only there, over https. Anything else fails the capture: another AI host, plain http, a provider's host for another purpose, an AI request on loopback, and anything off loopback that isn't AI (icons and updates are off). The window's fence is unchanged. On real models the setup launch's requests stay in the log and are judged too, since they carried the keys. Each capture prints the hosts it reached; `rate.mjs` keeps them in `round.json`'s `ai.runs[design]`, and the gate fails a run that reached a host no provider has, or a design without a run per mode.
+
+### Real models are slower, and vary
+
+- **Waits.** `capture.mjs`'s model waits are ceilings of 3 minutes for a state asked for and 5 for a background job (the digest, a follow-up), against 30 s and 60 s on the stub. Each still ends at its ready state; there is no sleep.
+- **Consent, as a person gives it.** A cloud model asks once before a conversation goes to it (the summary's Continue, Ask's, the action check's). The capture says yes when it's asked, then waits for the state; the shot is the state after the yes, as on the stub.
+- **Bounded retries** where the state is the model's call: Ask's answer with sources, the action's preview with matches (a plan that finds nothing is a notice, then asked again), the filter it writes, and the follow-up (the question is sent again when the model says it expects no reply). Three tries on real models, one on the stub; then the capture fails naming the state and the last reason. Two can't be asked again from the window and fail at once: Reply ready (`needs_reply` is decided once per conversation as it stands) and the digest (prepared once a day; a digest with no newsletter line fails rather than shooting an empty page).
+- **No byte comparison.** Rounds on real models are not comparable byte for byte with stub rounds, nor with each other: the words differ each run. `round.json` records `ai.models` (`real` or `stub`; an AI round from before has none, and was the stub), `ai.routing` (the model ids), and each capture's run: the hosts reached, the models each surface's provenance says wrote it, and what the app counted it spent. The gate's summary says which models answered.
+- **The demo mailbox is fictional**, so sending it to the providers sends no one's mail.
+- **What a real model's answer can be.** Ask's screen is "an answer and its sources": the model may mark an answer `partial` (it saw only part of the demo's years of mail), which is that state too. The capture takes `answered` or `partial` with at least one source; `not_found`, `failed` and `stopped` are asked again.
+
+### The brief
+
+`brief-ai.md`'s scope paragraph said the model was a fixed local stand-in. It now says: "The app is running real AI models, so their words can differ from one run to the next: rate how the app presents, explains and lets you act on what the model wrote. The words themselves are in scope only where the app could have shown them better." The hands-on section also said `ai: true` ran "the local stand-in; nothing leaves the machine", which is now false, so that clause changed too: "with AI on the same real models as the screenshots (`ai: true`)". Nothing else in it changed; `brief.md` is unchanged.
+
+### Tests
+
+- Unit: `keys.test.ts` (the file and its three names, errors without values, providers and hosts against the app's, the routing, Electron's env, redaction, the leak proof above), `harness.test.ts` (the host allowlist), `test-hooks.test.ts` (the switch), `gate.test.ts` (a real round's record, the stub's, a key-shaped string in `round.json`).
+- Smoke, `ai-rating.smoke.ts`: the stub's case as it was, launched with `ai: "stub"`; a real-model case, skipped unless `TERNO_RATING_REAL=1`, so CI and `pnpm test:all` never spend: the clock, Today's digest on a real model, Ask, the network check with hosts, usage counted, and `close()`'s scan of the profile.
+
+### What the real capture found, and changed
+
+The verification run (`node scripts/ui-rating/capture.mjs lumen /tmp/terno-scratch/real-models/shots light --screens ai`) failed four times before it passed, each on something the stub can't show:
+
+1. **Three consents the stub never asked for.** A cloud model asks once before mail goes to it: ⌘J's first draft ("Each draft sends Claude (Anthropic)…", `ai-telling-continue`), the summary (`summary-continue`) and the action's check (`action-consent-continue`, which also keeps Apply's spinner turning). The capture gives the yes when asked, as a person would; the shot is the state after it.
+2. **Ask's `partial`** (above).
+3. **A bug in the app: follow-ups never noted a wait on Pro's model.** The probe (`scripts/ai-real`'s harness, the owner's own eval tooling, on the capture's exact message) showed Claude Haiku 5.5 answering `"awaiting": ["Arjun Ramírez"]`, the recipient's name, where the prompt asks for the label `r1`. `checkSentMail` looked labels up only, so the row was dropped and no "hasn't replied yet" line was ever written on Pro's routing; the stub always answered with labels, so no test saw it. **Fix** (`packages/backend/src/followups.ts`): a recipient may be named by its label or, failing that, by its exact name when exactly one recipient has it, so a name can't reach anyone the message wasn't sent to. Promises' `to` gets the same. `followups.test.ts` covers the label, the name, a name nobody was sent, and a name two recipients share; it fails without the fix.
+4. **Sender icons on the setup launch.** The window's first paint asks for website icons before the setup turns them off, and the stricter check refused them. On real models the setup now turns icons and updates off first, the harness starts the net log afresh there, and only then turns Pro AI on, so every request that could carry a key is still judged.
+
+### As built: the real capture
+
+- **Every AI state reached**, light, Lumen: `/tmp/terno-scratch/real-models/shots/` (17 shots), all looked at, plus a contact sheet of the small sizes (`/tmp/terno-scratch/real-models/sheet.png`). Each shows its real state: the digest's lines and Archive, the summary with its items and source arrow, ⌘J's strip with Undo and the draft, Ask's answer with numbered citations and sources, the action's rule and its four matches, the Undo snack, the follow-up line with "Draft a nudge", Reply ready with its gap to fill, the filter Claude wrote (domain is uber.com, subject contains "receipt", 66 matches), and Writing style. The words are the models' own; one is worth a note for the raters' scope: ⌘J took "ask him to send the address of the flat" literally ("Could you ask him to send…").
+- **The models each surface says wrote it** (its provenance): the digest `claude-haiku-5-5`, the summary GPT Luna, Ask and Reply ready Claude Sonnet 5.5, as the routing table says.
+- **The network:** AI requests to `api.anthropic.com` and `api.openai.com` only (67 policy decisions for AI, model lists included), nothing else off loopback once icons were off, nothing refused at the window.
+- **Cost, as the app counted it** (its usage book: the providers' reported tokens at `@terno/ai`'s prices): 13 model requests, 38,306 tokens in and 11,283 out, **US$0.047 for one mode of one design**. By task: Ask (plan, answer, action plan and check) $0.017, the filter on Opus $0.008, Reply ready $0.008, ⌘J $0.007, the digest $0.006 (marked an estimate: one price counted high), the summary $0.0006, the follow-up $0.0002. So a round's captures, four designs in light and dark, are about **US$0.40**, and every retry adds its step's share. The raters' hands-on use comes on top; at a similar rate for the flows the brief lists, a full round is roughly **US$1 to 3**. The digest is prepared again on each launch (each has a fresh profile), which is most of its share.
+- **The redaction proof** (`/tmp/terno-scratch/real-probe/leak-check.mjs`, which prints only "found" or "not found"): over the real capture's shots and log, the probes, `scripts/`, `docs/`, the smoke and the branch's diff, no key whole, and no 28-character slice from inside any key, is found. Each key's first 8 characters are found only in `keys.test.ts` and `gate.test.ts`, whose invented keys start with the providers' common prefixes (`sk-ant-…`, `sk-proj-`) on purpose. Each launch's `close()` scanned its throwaway profile (logs, database, net log) and found none.
+- **Smoke:** `ai-rating.smoke.ts`, all three cases, the real one with `TERNO_RATING_REAL=1` (it skips without it).
