@@ -117,6 +117,21 @@ describe("from a question to an answer", () => {
     expect(last()).toMatch(/Write the answer in Spanish/);
   });
 
+  it("a follow-up that doesn't say keeps the conversation's language however far back it was said (Codex review)", async () => {
+    const { model, client, put, ask } = await setup();
+    await client.call("settings.update", { language: "es" });
+    await put({ subject: "Contrato", bodyText: "Tu contrato de alquiler se renueva el 1 de marzo de 2027." });
+    model.plan = () => [query({ terms: ["contrato"] })];
+    const last = () => promptText(model.answers.at(-1)!.messages[0]!.content);
+    const first = done(await ask("When does my lease renew?"));
+    const conversationId = first.turn!.conversationId;
+    // past the three turns the model sees again
+    for (const q of ["Greenway?", "Acme?", "Isabella?", "María?"]) {
+      await ask(q, { conversationId });
+      expect(last()).toMatch(/Write the answer in English/);
+    }
+  });
+
   it("no mail reaches the plan of a first question", async () => {
     const { model, put, ask } = await setup();
     await put({ bodyText: "CANARY-BODY the lease", subject: "CANARY-SUBJECT lease" });
@@ -426,6 +441,17 @@ describe("history", () => {
 });
 
 describe("older mail, on a click (the demo's server)", () => {
+  it("older mail's answer keeps the conversation's language from before the three turns it sees (Codex review)", async () => {
+    const { client, model, ask } = await setup();
+    await client.call("settings.update", { language: "es" });
+    model.plan = () => [query({ terms: ["lease"] })];
+    const first = done(await ask());
+    const conversationId = first.turn!.conversationId;
+    let turn = first.turn!;
+    for (const q of ["Greenway?", "Acme?", "Isabella?"]) turn = done(await ask(q, { conversationId })).turn!;
+    done(await client.call("ai.askOlder", { requestId: crypto.randomUUID(), conversationId, turnId: turn.id, timezone: "UTC" }));
+    expect(promptText(model.answers.at(-1)!.messages[0]!.content)).toMatch(/Write the answer in English/);
+  });
   it("nothing is asked of a server before the click; the click stores old mail and answers from it, cited", async () => {
     const { backend, client, model, ask } = await setup();
     const searches: unknown[] = [];

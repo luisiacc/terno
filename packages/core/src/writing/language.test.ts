@@ -65,6 +65,19 @@ describe("questionLanguage", () => {
     expect(questionLanguage("What did José say?")).toBe("en");
   });
 
+  it("plain questions that open with a verb (Codex review)", () => {
+    expect(questionLanguage("Has Alice replied?")).toBe("en");
+    expect(questionLanguage("Did Ana pay?")).toBe("en");
+    expect(questionLanguage("Puedes decirme si pagaron?")).toBe("es");
+    expect(questionLanguage("Ya pagó Ana?")).toBe("es");
+  });
+
+  it("the mail's words unquoted don't outweigh how the question asks (Codex review)", () => {
+    expect(questionLanguage("When is el pago de la factura?")).toBe("en");
+    expect(questionLanguage("Is there anything from Ana sobre el contrato de la casa?")).toBe("en");
+    expect(questionLanguage("Qué dijo Ana about the payment of the invoice?")).toBe("es");
+  });
+
   it("the mail's words in quotes don't count", () => {
     expect(questionLanguage("When is “la cena de gala de la empresa”?")).toBe("en");
     expect(questionLanguage('Where is "el contrato de la casa"?')).toBe("en");
@@ -72,7 +85,7 @@ describe("questionLanguage", () => {
   });
 
   it("says nothing when the question doesn't say", () => {
-    for (const question of ["", "Isabella?", "Uber 2026", "pago Isabella", "👍", "Acme invoice"]) expect(questionLanguage(question)).toBe("");
+    for (const question of ["", "Isabella?", "Uber 2026", "👍", "Acme invoice", "María?", "Peña?", "José Ramírez"]) expect(questionLanguage(question)).toBe("");
   });
 
   it("short questions that do say", () => {

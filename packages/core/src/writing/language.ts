@@ -71,8 +71,8 @@ export function detectWritingLanguage(text: string): string {
  * same ("me", "no", "has", "son") say nothing.
  */
 const QUESTION_WORDS: Readonly<Record<string, ReadonlySet<string>>> = {
-  en: new Set("what what's whats when when's where where's who who's whom whose why how which did does do is are was were had have the my any anything about say said says tell show find list give get last many much there from of with for this that these those can could should would will ever since before after and or".split(" ")),
-  es: new Set("qué que cuándo cuando dónde donde adónde quién quien quiénes quienes por porqué cómo como cuál cual cuáles cuales cuánto cuanto cuánta cuántos cuantos cuántas dijo dijeron tengo tiene tienen tenía hay hubo algún alguna alguno el la los las mi mis sobre del al de para con una un es fue fueron está están estaba y o desde antes después dime muéstrame busca".split(" ")),
+  en: new Set("what what's whats when when's where where's who who's whom whose why how which did does do is are was were has had have the my any anything about say said says tell show find list give get last many much there from of with for this that these those can could should would will ever since before after and or i it he she they we you your her him his them their our an in on at to reply replied answer answered send sent pay paid owe need know ask asked write wrote book booked sign signed mention mentioned due yet".split(" ")),
+  es: new Set("qué que cuándo cuando dónde donde adónde quién quien quiénes quienes por porqué cómo como cuál cual cuáles cuales cuánto cuanto cuánta cuántos cuantos cuántas dijo dijeron tengo tiene tienen tenía hay hubo algún alguna alguno el la los las mi mis tu tus su sus sobre del al de para con una un es fue fueron está están estaba y o si ya pero también algo nada desde antes después dime muéstrame busca puedes puede decirme saber sé necesito debo ella él ellos ellas le les lo pagaron pagó pagué pago mandó mandaron envió enviaron respondió respondieron contestó contesté escribió escribí".split(" ")),
 };
 
 /** What's in quotation marks is the mail's words, not the question's: "When is “la cena de gala”?" asks in English. */
@@ -91,12 +91,12 @@ export function questionLanguage(question: string): string {
   const score: Record<string, number> = { en: 0, es: 0 };
   for (const [language, list] of Object.entries(QUESTION_WORDS)) {
     for (const word of words) if (list.has(word.replace(/’/g, "'"))) score[language]! += 1;
-    // how it opens is how it asks: "When is la cena?" is English
-    if (words[0] && list.has(words[0])) score[language]! += 1;
+    // how it opens is how it asks: "When is el pago de la factura?" is English, whatever words it borrows from the mail
+    if (words[0] && list.has(words[0])) score[language]! += 3;
   }
   if (/[¿¡]/u.test(text)) score.es! += 3;
-  // é is French's as much: only the others
-  if (/[ñáíóú]/u.test(text.toLowerCase())) score.es! += 1;
+  // é is French's as much: only the others; and with Spanish words, since "María?" is a name, not a language
+  if (score.es && /[ñáíóú]/u.test(text.toLowerCase())) score.es! += 1;
   if (score.en === score.es) return general;
   return score.en! > score.es! ? "en" : "es";
 }

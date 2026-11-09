@@ -177,6 +177,7 @@ export class AskService {
       if (!settings.ask.enabled) throw new AiError(L("errors.ai.askOff"), "not_configured");
       const { ai, planner, destination } = await this.target();
       let earlier: { question: string; answer: string }[] = [];
+      let before: string[] = [];
       if (p.conversationId !== undefined) {
         const count = await store.ask.history.turnCount(p.conversationId);
         if (count === null) throw new RpcError("NOT_FOUND", L("errors.ai.askGone"));
@@ -184,6 +185,7 @@ export class AskService {
         for (const id of await store.ask.history.accountsOf(p.conversationId)) entry.accounts.add(id);
         const turns = await store.ask.history.turns(p.conversationId);
         earlier = turns.slice(-EARLIER_TURNS).map((t) => ({ question: t.question, answer: (t.answer ?? "").slice(0, EARLIER_ANSWER_CHARS) }));
+        before = turns.map((t) => t.question);
       }
       const now = this.b.now();
       const today = dayIn(now, p.timezone);
@@ -226,7 +228,7 @@ export class AskService {
           const turn = await write("not_found", { answer: null, sources: [], checks: { unlinked: false, unsupported: [] } });
           return { status: "done", turn, incomplete: false, older: await this.offer(queries, now) };
         }
-        return await this.answer({ p, clientId, signal, ai, destination, entry, threadIds, searches: valid.map((v) => v.search), first: [], earlier, today, question, queries, clearGeneration, onText: (t) => (text = t), older: () => this.offer(queries, now) });
+        return await this.answer({ p, clientId, signal, ai, destination, entry, threadIds, searches: valid.map((v) => v.search), first: [], earlier, before, today, question, queries, clearGeneration, onText: (t) => (text = t), older: () => this.offer(queries, now) });
       } catch (error) {
         return await this.failed(error, { signal, entry, text, write, ai, queries, now });
       }
@@ -256,11 +258,12 @@ export class AskService {
 
   /**
    * What the answer is written in, named outright: this question's language; when it doesn't say ("Isabella?"), the
-   * newest earlier question that does; else the app's. Read here, with no model: a model told only "the question's
-   * language" answers an English question in Spanish when the mail is Spanish.
+   * newest question before it in the conversation that does, however far back (`before`, oldest first); else the app's.
+   * Read here, with no model: a model told only "the question's language" answers an English question in Spanish when
+   * the mail is Spanish.
    */
-  private async answerLanguage(question: string, earlier: readonly { question: string }[]): Promise<string> {
-    const asked = [question, ...earlier.map((t) => t.question).reverse()].map(questionLanguage).find(Boolean);
+  private async answerLanguage(question: string, before: readonly string[]): Promise<string> {
+    const asked = [question, ...[...before].reverse()].map(questionLanguage).find(Boolean);
     const code = asked || (await this.b.summaries.readerLanguage());
     return languageName(code) ?? code;
   }
@@ -277,6 +280,8 @@ export class AskService {
     searches: readonly ResolvedSearch[];
     first: readonly number[];
     earlier: readonly { question: string; answer: string }[];
+    /** every question before this one in its conversation, oldest first */
+    before: readonly string[];
     today: string;
     question: string;
     queries: AskPlanQuery[];
@@ -288,7 +293,7 @@ export class AskService {
   }): Promise<AiAskResult> {
     const { store } = this.b;
     const { ai, signal, question, today, earlier } = o;
-    const language = await this.answerLanguage(question, earlier);
+    const language = await this.answerLanguage(question, o.before);
     const fixedChars = answerPrompt({ question, language, today, material: [], earlier }).length;
     const budget = askBudget(ai.contextTokens, fixedChars);
     const passages = await store.ask.passages({ threadIds: o.threadIds, queries: o.searches, first: o.first, maxMessages: Math.min(ASK_MESSAGES_MAX, budget.maxMessages), maxChars: Math.min(ASK_MAX_CHARS, budget.passageChars), signal });
@@ -400,11 +405,13 @@ export class AskService {
       if (signal.aborted) throw new AiError(L("errors.ai.cancelled"), "cancelled");
       const threadIds = await this.search(valid.map((v) => v.search), entry);
       const earlier = turns.slice(-EARLIER_TURNS).filter((t) => t.id !== turn.id).map((t) => ({ question: t.question, answer: (t.answer ?? "").slice(0, EARLIER_ANSWER_CHARS) }));
+      // the questions asked before this one: its language may be theirs, however far back
+      const before = turns.slice(0, turns.indexOf(turn)).map((t) => t.question);
       if (!threadIds.length && !fetched.ids.length) {
         const kept = await this.keep({ conversationId: p.conversationId, question: turn.question, status: "not_found", answer: null, sources: [], checks: { unlinked: false, unsupported: [] }, queries: turn.queries, ai, clearGeneration, entry });
         return { status: "done", turn: kept, incomplete: false, older: { kind: "none" }, olderFound: 0, olderPartial: fetched.partial };
       }
-      const answer = await this.answer({ p: { requestId: p.requestId, conversationId: p.conversationId, timezone: p.timezone }, clientId, signal, ai, destination, entry, threadIds, searches: valid.map((v) => v.search), first: fetched.ids, earlier, today: dayIn(now, p.timezone), question: turn.question, queries: turn.queries, clearGeneration, onText: (t) => (text = t), older: async () => ({ kind: "none" }) });
+      const answer = await this.answer({ p: { requestId: p.requestId, conversationId: p.conversationId, timezone: p.timezone }, clientId, signal, ai, destination, entry, threadIds, searches: valid.map((v) => v.search), first: fetched.ids, earlier, before, today: dayIn(now, p.timezone), question: turn.question, queries: turn.queries, clearGeneration, onText: (t) => (text = t), older: async () => ({ kind: "none" }) });
       return answer.status === "done" ? { ...answer, olderFound: fetched.ids.length, olderPartial: fetched.partial } : answer;
     } catch (error) {
       if (signal.aborted || (error instanceof AiError && error.kind === "cancelled")) {
