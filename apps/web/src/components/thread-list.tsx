@@ -17,14 +17,14 @@ import { installScrollHairline } from "~/lib/scroll-hairline";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { create } from "zustand";
-import { formatNumber, t } from "@terno/i18n";
+import { formatNumber, getLocale, t } from "@terno/i18n";
 import { viewLabel } from "~/lib/format";
 import { useActionPreview } from "~/state/action-preview";
 import { navigate, getApp, setApp, useApp } from "~/state/app";
 import { installDragController } from "~/lib/drag-install";
 import { currentScope, inboxTop, listKey, loadMore, searchOfKey, useList } from "~/state/list";
 import { wantExcerpts } from "~/state/excerpts";
-import { digestLabel, useToday, type TodayGroup } from "~/state/today";
+import { digestFrom, digestLabel, useToday, type TodayGroup } from "~/state/today";
 import { DIGEST_ROW_ID } from "@terno/core";
 import { clearSelection, selectScope } from "~/lib/select";
 import { scopeLabel } from "~/lib/selection";
@@ -81,25 +81,26 @@ const sectionName = (kind: TodayGroup["kind"] | undefined): string | undefined =
 
 /**
  * Plan 162 (after ai162-r02): the digest's way in, in Today's header under its sentence: above the fold and never before a
- * person (as the list's first row, under a heading of its own, it led a page that says these need you; after them it fell
- * below the fold, ai-r00). One line on the header's text edge, its glyph first, its words in the secondary, quieter than
- * any row; the selection's fill while the digest is open. Its test id is the row's it replaces.
+ * person (as the list's first row it led a page that says these need you; after them it fell below the fold, ai-r00).
+ * After ai162-r05: a row in the list's anatomy, not a caption (it was the smallest thing on the page: five reports): its
+ * glyph in an avatar's tile, its count line at the sender's size and weight, under it who they're from, a chevron. List's
+ * one-line header holds it on the title's line, one line at the row's size. The selection's fill while the digest is
+ * open; its test id is the row's it replaced.
  */
 export function TodayDigestEntry({ inline }: { /** List's full-width title row: beside the sentence, at its own width */ inline?: boolean }) {
   const digest = useToday((s) => s.digest);
   const selected = useApp((s) => s.selectedId === DIGEST_ROW_ID);
   if (!digest) return null;
+  const from = digestFrom(digest, getLocale());
   return (
     <button
       type="button"
       data-testid="digest-row"
       aria-current={selected ? "true" : undefined}
-      // every fill starts at 8 px, as a row's selection does; the words on the header's text edge
+      // every fill starts at 8 px, as a row's selection does; the tile on the header's text edge
       className={cn(
-        "no-drag flex h-7 min-w-0 cursor-pointer items-center gap-1.5 rounded-md ps-3 pe-2 text-start type-list-subtitle transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-        inline ? "max-w-[40cqw] shrink-0" : "-ms-3 w-[calc(100%+0.75rem)]",
-        // plan 162 (after ai162-r03): its words in the ink (four reports: the quietest line on Today, read as a caption); the
-        // glyph and the chevron stay quiet, so it's still below any person's row in weight
+        "no-drag flex min-w-0 cursor-pointer items-center rounded-lg text-start transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+        inline ? "h-8 max-w-[44cqw] shrink-0 gap-2 ps-2 pe-1.5" : "-ms-3 mt-1.5 w-[calc(100%+0.75rem)] gap-3 py-1.5 ps-3 pe-2",
         selected ? "bg-row-selected text-row-selected-foreground" : "text-foreground hover:bg-row-hover",
       )}
       // the ordinary row's press and release (Codex review): a bulk selection ends, as opening any row ends it
@@ -108,10 +109,15 @@ export function TodayDigestEntry({ inline }: { /** List's full-width title row: 
         releaseRow(DIGEST_ROW_ID);
       }}
     >
-      <Newspaper aria-hidden className={cn("size-[1.15em] shrink-0", !selected && "text-muted-foreground")} />
+      <span aria-hidden data-testid="digest-row-tile" className={cn("grid shrink-0 place-items-center rounded-full bg-muted text-muted-foreground [&_svg]:size-4", inline ? "size-6" : "size-8")}>
+        <Newspaper />
+      </span>
       <span className="sr-only">{t("today.newsletters")}, </span>
-      <span className="min-w-0 flex-1 truncate">{digestLabel(digest)}</span>
-      <ChevronRight aria-hidden className={cn("size-[1.15em] shrink-0", !selected && "text-muted-foreground")} />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate type-row-from font-medium" data-testid="digest-row-title">{digestLabel(digest)}</span>
+        {!inline && from && <span className={cn("block truncate text-xs", selected ? "opacity-80" : "text-muted-foreground")} data-testid="digest-row-from">{from}</span>}
+      </span>
+      <ChevronRight aria-hidden className={cn("size-4 shrink-0", !selected && "text-muted-foreground")} />
     </button>
   );
 }

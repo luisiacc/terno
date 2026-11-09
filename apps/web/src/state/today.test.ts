@@ -58,7 +58,7 @@ describe("a waiting row says why it needs you (plan 161)", () => {
     const rows = flattenToday(list, []);
     // pass 2: the reason is a label of its own, ahead of the words, not their first words
     expect(rows.map((r) => r.snippet)).toEqual(["the snippet", "A summary."]);
-    expect([...useToday.getState().reasons]).toEqual([[1, "They replied"], [2, "You haven't replied"]]);
+    expect([...useToday.getState().reasons]).toEqual([[1, "Your turn: they replied"], [2, "Waiting for your reply"]]);
     expect(useToday.getState().needsShown).toBe(2);
   });
 });

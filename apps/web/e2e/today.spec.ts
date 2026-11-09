@@ -3,7 +3,7 @@
  * under headings; the digest's own row, off and on; Archive all and its Undo.
  */
 import AxeBuilder from "@axe-core/playwright";
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import type { SettingsPatch } from "@terno/core/rpc";
 import type { IncomingMessage } from "@terno/store";
 import { sqlDb } from "../../backend-dev/src/server";
@@ -82,9 +82,18 @@ test.describe("Today (plan 145)", () => {
     await expect(page.locator('[data-keep-scroll="list"] [role=option]').first()).toHaveAccessibleName(/^Needs you, /);
     await expect(page.getByTestId("list-header").getByTestId("digest-row")).toHaveAccessibleName(/^Newsletters, /);
     await expect(page.locator('[data-keep-scroll="list"]').getByTestId("digest-row")).toHaveCount(0);
+    // plan 162 (after ai162-r05): the digest's way in is a row, not a caption: its count at a sender's size and weight, who
+    // they're from under it, as tall as a two-line row; never smaller than the rows under it
+    const entry = page.getByTestId("list-header").getByTestId("digest-row");
+    await expect(entry.getByTestId("digest-row-title")).toContainText(/\d+ /, { timeout: 15_000 });
+    await expect(entry.getByTestId("digest-row-from")).not.toBeEmpty();
+    expect((await entry.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    const size = (l: Locator) => l.evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+    expect(await size(entry.getByTestId("digest-row-title"))).toBeGreaterThanOrEqual(await size(page.getByTestId("thread-row").first().getByTestId("row-subject")));
+    expect(await entry.getByTestId("digest-row-title").evaluate((el) => Number(getComputedStyle(el).fontWeight))).toBeGreaterThanOrEqual(500);
     await expect(page.getByTestId("thread-row").filter({ hasText: "Can you make the 19th" })).toBeVisible();
     // plan 161: the row says why it needs you (they've written in it). Pass 2: as a label of its own, not the snippet's first words
-    await expect(page.getByTestId("thread-row").filter({ hasText: "Can you make the 19th" }).getByTestId("row-why")).toHaveText("They replied");
+    await expect(page.getByTestId("thread-row").filter({ hasText: "Can you make the 19th" }).getByTestId("row-why")).toHaveText("Your turn: they replied");
     // the header says what each number is: the sidebar's count, then how many of them the list shows if it's capped
     // pass 3: one sentence, never a second total to read against the Inbox's: "9 need you", or when capped (plan 162) "Showing 12 of 41"
     await expect(page.getByTestId("today-needs")).toHaveText(/^(The newest \d+ of \d+ that need you|\d+ needs? you)$/);
@@ -98,7 +107,10 @@ test.describe("Today (plan 145)", () => {
     expect(await ink(why)).not.toBe(await ink(page.getByTestId("thread-row").filter({ hasText: "Can you make the 19th" }).getByTestId("row-snippet").locator("span").last()));
     expect(await why.evaluate((e) => getComputedStyle(e).borderTopWidth)).toBe("0px");
     await expect(why).toHaveCSS("font-weight", "500");
-    await expect(page.getByTestId("thread-row").filter({ hasText: "Can you make the 19th" }).getByTestId("row-snippet")).toContainText("They replied · ");
+    // plan 162 (after ai162-r05): the two reasons say the next step and look apart: waiting is the quiet ink, a reply the ink
+    const waiting = page.getByTestId("row-why").filter({ hasText: "Waiting for your reply" }).first();
+    if (await waiting.count()) expect(await ink(waiting)).not.toBe(await ink(why));
+    await expect(page.getByTestId("thread-row").filter({ hasText: "Can you make the 19th" }).getByTestId("row-snippet")).toContainText("Your turn: they replied · ");
     // the digest's way in is quieter than any person: its words in the secondary, no ring; in view, a real target
     await expect(page.getByTestId("digest-row")).toContainText("automated");
     await expect(page.getByTestId("digest-row")).toBeInViewport();
@@ -108,7 +120,7 @@ test.describe("Today (plan 145)", () => {
     // above Needs you's first row, and its glyph on the header's text edge
     expect((await page.getByTestId("digest-row").boundingBox())!.y).toBeLessThan((await page.getByTestId("thread-row").first().boundingBox())!.y);
     const textEdge = await page.getByTestId("today-line").evaluate((e) => e.getBoundingClientRect().left);
-    const glyph = await page.getByTestId("digest-row").locator("svg").first().evaluate((e) => e.getBoundingClientRect().left);
+    const glyph = await page.getByTestId("digest-row-tile").evaluate((e) => e.getBoundingClientRect().left);
     expect(Math.abs(glyph - textEdge)).toBeLessThanOrEqual(1);
     if (SHOTS) {
       await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-light.png` });

@@ -207,7 +207,9 @@ function withReason(reason: string | undefined, quiet: string, ink: string, word
       {/* plan 162 (after ai162-r02): the reason is words, never a box (the outlined tag was the loudest thing in every row),
           then a "·", then the mail's words. After ai162-r04: in the row's ink at medium weight, so it leads the line and
           never reads as the snippet's first words (eight reports: the same grey as the preview) */}
-      <span data-testid="row-why" className={cn(ink, "font-medium")}>{reason}</span>
+      {/* after ai162-r05: the two reasons say the user's next step, and look apart: "Your turn: they replied" in the ink,
+          "Waiting for your reply" in the quiet one, both at medium weight (they were one look: four reports) */}
+      <span data-testid="row-why" className={cn(reason === t("today.why.newFrom") ? quiet : ink, "font-medium")}>{reason}</span>
       <span aria-hidden className={quiet}> · </span>
       <span className={quiet}>{words}</span>
     </>

@@ -151,6 +151,22 @@ const inInbox = (digest: DigestRow): number => digest.liveIds.length + (digest.r
 export const digestLabel = (digest: DigestRow): string =>
   digest.state === "pending" ? t("today.digest.preparing") : digest.state === "failed" ? t("today.digest.failedShort") : digest.automated ? t("today.digest.automatedRow", { count: digest.liveIds.length }) : inInbox(digest) ? t("today.digest.row", { count: inInbox(digest) }) : t("today.digest.archivedRow", { count: Math.max(0, digest.items.length - (digest.readIds?.length ?? 0)) });
 
+/**
+ * Plan 162 (after ai162-r05): the digest's way in is a row, its count line its title; under it, who the newsletters still
+ * in the Inbox are from, the first three by the digest's order and how many more, from the digest's own items (no model).
+ * Nothing while it's preparing, failed, or all gone.
+ */
+export function digestFrom(digest: DigestRow, locale: string): string | null {
+  if (digest.state !== "ready") return null;
+  const live = new Set([...digest.liveIds, ...(digest.readIds ?? [])]);
+  const names: string[] = [];
+  for (const item of digest.items) if (live.has(item.threadId) && item.from && !names.includes(item.from)) names.push(item.from);
+  if (!names.length) return null;
+  const shown = names.slice(0, 3);
+  const rest = names.length - shown.length;
+  return new Intl.ListFormat(locale, { type: "conjunction" }).format(rest > 0 ? [...shown, t("action.found.more", { count: rest })] : shown);
+}
+
 /** Plan 161: why a waiting row is here, from what let it in (`needsYou`'s two reasons): the row shows it as a label */
 const reasonOf = (item: TodayList["sections"][number]["items"][number]): string | null =>
   item.why.kind === "waiting" && item.why.wrote !== undefined ? t(item.why.wrote ? "today.why.yourTurn" : "today.why.newFrom") : null;
