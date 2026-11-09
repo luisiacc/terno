@@ -8,6 +8,7 @@ import type { SettingsPatch } from "@terno/core/rpc";
 import { expect, fresh, focusList, ingestConversation, rows, scenario, test, type DevServerFixture } from "./fixtures";
 import { E2E_NOW } from "./constants";
 import { unclipped } from "./helpers/unclipped";
+import { fakeDraft } from "../../../packages/ai/src/fake";
 
 test.use({ backendOptions: { network: true } });
 
@@ -181,7 +182,21 @@ test.describe("follow-ups (plan 142)", () => {
       await page.clock.setFixedTime(new Date(E2E_NOW));
     });
     await scenario("Write a follow-up, then the line offers that draft; discarded, it's Write a follow-up again", async () => {
-      await page.getByTestId("followup-nudge").click();
+      // plan 162 (after ai162-r05): while it's written, the card's button says so in words, with no spinner of its own:
+      // the composer's is the one working mark
+      fakeDraft.firstTokenMs = 3_000;
+      try {
+        await page.getByTestId("followup-nudge").click();
+        // read at one moment: the card's button and the composer's row, while both say it's writing
+        const seen = await (await page.waitForFunction(() => {
+          const button = document.querySelector('[data-testid="followup-nudging"]');
+          const row = document.querySelector('[data-testid="ai-row-status"]');
+          return button && row && { text: button.textContent, disabled: button.getAttribute("aria-disabled"), buttonSpinners: button.querySelectorAll("[data-slot=spinner]").length, rowSpinners: row.querySelectorAll("[data-slot=spinner]").length };
+        })).jsonValue();
+        expect(seen).toEqual({ text: "Writing your follow-up…", disabled: "true", buttonSpinners: 0, rowSpinners: 1 });
+      } finally {
+        fakeDraft.firstTokenMs = 0;
+      }
       await expect(page.getByTestId("composer")).toBeVisible();
       await expect(page.getByTestId("ai-strip")).toBeVisible();
       await expect(page.getByTestId("followup-nudge")).toHaveCount(0);

@@ -3,7 +3,6 @@ import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuShortcut, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
 import { Popover, PopoverContent } from "@terno/ui/components/popover";
-import { Spinner } from "@terno/ui/components/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { ArrowRight, CalendarClock, ChevronDown, Clock } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
@@ -61,7 +60,8 @@ function Line({ row, messages }: { row: FollowupRow; messages: readonly MessageD
       <div className={cn(AI_ACTIONS, "mt-3")} data-testid="followup-actions">
         {awaiting ? (
           drafted && nudging === "writing" ? (
-            <Button size="sm" variant="outline" className="text-foreground" data-testid="followup-nudging" aria-disabled onClick={() => void openNudge(row.threadId)}><Spinner aria-hidden className="size-3.5" />{t("followup.nudging")}</Button>
+            // plan 162 (after ai162-r05): its words without a spinner: the composer's "Writing…" is the one working mark
+            <Button size="sm" variant="outline" className="text-foreground" data-testid="followup-nudging" aria-disabled onClick={() => void openNudge(row.threadId)}>{t("followup.nudging")}</Button>
           ) : drafted && nudging === "waiting" ? (
             <Button size="sm" data-testid="followup-nudge" onClick={() => void openNudge(row.threadId)}>{t("followup.nudge")}</Button>
           ) : drafted ? (
