@@ -83,6 +83,11 @@ export type AiComposeResult =
       stop: "end" | "length";
       used: WritingUsed;
       checks: WritingChecks;
+      /**
+       * Plan 163, a fill: one per gap, in order. The words; "" where the material didn't hold it (the gap stays); null
+       * where the answer can't be trusted (it never finished, came twice, or isn't a gap's words). `text` is then "".
+       */
+      fills?: (string | null)[];
     }
   /** the message it answers has no text here yet: the row says "Still downloading this message"; ask again when it does */
   | { status: "waitingBody"; messageId: number };
@@ -92,6 +97,18 @@ export interface AiComposeDelta {
   requestId: string;
   text: string;
 }
+
+/** Plan 163: one gap's fill as it grows, whole so far; `done` once its words are all there (an empty one is finished too). */
+export interface AiFillDelta {
+  requestId: string;
+  /** from 1, in the order the gaps were sent */
+  gap: number;
+  text: string;
+  done: boolean;
+}
+
+/** Plan 163: at most this many gaps are filled at a press; the rest stay as typed. */
+export const FILL_GAPS_MAX = 20;
 
 export type IntentSurfaceParam = { kind: "thread"; threadId: number } | { kind: "list" } | { kind: "draft"; recipients: { name: string; email: string }[] };
 

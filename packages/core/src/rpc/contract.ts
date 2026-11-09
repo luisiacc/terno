@@ -28,7 +28,8 @@ import type { DigestRow, TodayList, TodaySetting } from "../today";
 import type { AiPrepareReply, AiReplyEvent, PreparedReply, RepliesSetting } from "../replies";
 import type { ActionPreviewInfo, AiActionApplied, AiActionCheck, AiActionEvent, AiActionStart } from "../actions";
 import { ASK_QUESTION_MAX, ASK_SOURCES_MAX, type AiAskEvent, type AiAskResult, type AskConversationSummary, type AskOlderOffer, type AskSourceView, type AskTurn } from "../ask";
-import { GENERATION_TEXT_MAX, WRITING_INSTRUCTIONS_MAX, WRITING_ONE_OFF_MAX, type AiComposeDelta, type AiComposeResult, type AiIntentResult, type AiStudyProgress, type WritingPrefs, type WritingProfileView, type WritingStatus, type WritingStudyResult } from "../writing/contract";
+import { BODY_READ_MAX } from "../writing/body";
+import { FILL_GAPS_MAX, GENERATION_TEXT_MAX, WRITING_INSTRUCTIONS_MAX, WRITING_ONE_OFF_MAX, type AiComposeDelta, type AiFillDelta, type AiComposeResult, type AiIntentResult, type AiStudyProgress, type WritingPrefs, type WritingProfileView, type WritingStatus, type WritingStudyResult } from "../writing/contract";
 import type { AlwaysScope, CategoryModelStats, Prediction, QuickActions } from "../categorize/bulk";
 import type { I18nRef } from "./envelope";
 import type { AutoCategorize } from "../categorize/policy";
@@ -1250,8 +1251,31 @@ export const contract = {
       attachments: z.array(z.string().max(300)).max(100).optional(),
       /** IANA name, from the renderer: a backend has no idea what day it is for the user */
       timezone: z.string().max(64).default("UTC"),
+      /**
+       * Plan 163: their own email with gaps to fill, not a draft to write: the text as the editor's blocks read, and the
+       * gaps in it (in order, apart). Streams `aiFill` events, and the result has `fills`.
+       */
+      fill: z
+        .object({
+          text: z.string().max(BODY_READ_MAX),
+          gaps: z.array(z.object({ from: z.number().int().min(0), to: z.number().int().min(0) })).min(1).max(FILL_GAPS_MAX),
+        })
+        .refine((f) => f.gaps.every((g, i) => g.from < g.to && g.to <= f.text.length && (i === 0 || f.gaps[i - 1]!.to <= g.from)), { message: "gaps must be in order, apart, and in the text" })
+        .optional(),
     }),
     { timeoutMs: 300_000 },
+  ),
+  /**
+   * Plan 163: what someone typed, read by the fast model when local rules can't tell: an instruction or the email, and
+   * which of the spots that may be gaps are. Sends what they typed and nothing else.
+   */
+  "ai.readDraft": m<{ kind: "instruction" | "email"; gaps: number[] }>()(
+    z.object({
+      requestId,
+      text: z.string().max(WRITING_ONE_OFF_MAX * 4),
+      maybe: z.array(z.object({ from: z.number().int().min(0), to: z.number().int().min(0) })).max(FILL_GAPS_MAX),
+    }),
+    { timeoutMs: 30_000 },
   ),
   /** Lets a session's snapshot go (the draft closed, the strip went). */
   "ai.composeEnd": m<{ ok: true }>()(z.object({ session: z.string().min(1).max(64) })),
@@ -1415,6 +1439,8 @@ export interface Events {
   aiAskGone: { conversationIds: number[] | null };
   /** plan 133: a stream's text so far, only to the connection that asked: append it */
   aiCompose: AiComposeDelta;
+  /** plan 163: one gap's fill so far, whole, and whether it's finished; only to the connection that asked */
+  aiFill: AiFillDelta;
   /** plan 133: the style study's progress, only to the connection that asked */
   aiStudy: AiStudyProgress;
 }

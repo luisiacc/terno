@@ -1,4 +1,4 @@
-import { AiError, COMPOSE_MAX_TOKENS, WRITING_RULES, type AiTasks, type ComposeInput, type ComposeTask } from "@terno/ai";
+import { AiError, COMPOSE_MAX_TOKENS, FILL_RULES, WRITING_RULES, type AiTasks, type ComposeInput, type ComposeTask, type FillPiece } from "@terno/ai";
 import {
   ALL_PARTS,
   canonicalAuthored,
@@ -99,6 +99,9 @@ const STREAM_EVERY_MS = 30;
 
 type ComposeParams = ParsedParamsOf<"ai.compose">;
 type IntentParams = ParsedParamsOf<"ai.resolveIntent">;
+type ReadDraftParams = ParsedParamsOf<"ai.readDraft">;
+/** Plan 163: the fast read is a small question asked before anything is written: it never holds the press up long */
+const READ_DRAFT_DEADLINE_MS = 10_000;
 type EditParams = ParsedParamsOf<"writing.profiles.edit">;
 type PrefsPatch = ParsedParamsOf<"writing.prefs.set">;
 
@@ -180,6 +183,43 @@ function coalescer(send: (text: string) => void): { push(text: string): void; fl
     flush,
     push(text) {
       held += text;
+      const wait = STREAM_EVERY_MS - (performance.now() - last);
+      if (wait <= 0) flush();
+      else timer ??= setTimeout(flush, wait);
+    },
+  };
+}
+
+/**
+ * Plan 163: a fill's events, one gap's latest words at most every STREAM_EVERY_MS; a finished one goes at once, after
+ * whatever of another gap was waiting, so the composer sees them in order.
+ */
+function fillCoalescer(send: (gap: number, text: string, done: boolean) => void): { push(gap: number, text: string, done: boolean): void; flush(): void } {
+  let held: { gap: number; text: string } | null = null;
+  let last = 0;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const flush = () => {
+    if (timer) clearTimeout(timer);
+    timer = null;
+    if (!held) return;
+    const { gap, text } = held;
+    held = null;
+    last = performance.now();
+    send(gap, text, false);
+  };
+  return {
+    flush,
+    push(gap, text, done) {
+      if (held && held.gap !== gap) flush();
+      if (done) {
+        held = null;
+        if (timer) clearTimeout(timer);
+        timer = null;
+        last = performance.now();
+        send(gap, text, true);
+        return;
+      }
+      held = { gap, text };
       const wait = STREAM_EVERY_MS - (performance.now() - last);
       if (wait <= 0) flush();
       else timer ??= setTimeout(flush, wait);
@@ -500,7 +540,8 @@ export class WritingService {
     const voiceText = (v: RenderedVoice) => v.text;
     const general = voice.filter((v) => v.scope === "you" || v.scope === "account");
     const specific = voice.filter((v) => v.scope === "domain" || v.scope === "person");
-    const fixedText = [WRITING_RULES, account.senderName, account.signature, ...instructions, p.instruction, p.draft ?? "", p.previousDraft ?? "", ...addressesOf(p.to), ...addressesOf(p.cc)].join("\n");
+    // plan 163 (Codex review): a fill's own rules and its marked draft, not a draft's
+    const fixedText = [p.fill ? FILL_RULES : WRITING_RULES, account.senderName, account.signature, ...instructions, p.instruction, p.fill ? `${p.fill.text}${'<gap n="20"></gap>'.repeat(p.fill.gaps.length)}` : "", p.draft ?? "", p.previousDraft ?? "", ...addressesOf(p.to), ...addressesOf(p.cc)].join("\n");
     const fitted = fitDraftBudget(
       {
         fixedTokens: estimateTokens(fixedText),
@@ -622,13 +663,15 @@ export class WritingService {
     const { signal: asked, release } = this.b.aiService.begin(p.requestId, clientId);
     const { signal, done: permissionDone } = this.underPermission(p.accountId, asked);
     const stream = coalescer((text) => this.b.server.emitTo(clientId, "aiCompose", { requestId: p.requestId, text }));
+    const fills = fillCoalescer((gap, text, done) => this.b.server.emitTo(clientId, "aiFill", { requestId: p.requestId, gap, text, done }));
     void this.learner.activate().catch(() => {});
     try {
       // foreground: it waits for nothing but a local model's slot (plan 131 revision 3)
       const ai = await this.b.aiService.forTask("writing", { foreground: true });
-      return await this.generate(p, clientId, { ai, signal, onDelta: (text) => stream.push(text), flush: () => stream.flush() });
+      return await this.generate(p, clientId, { ai, signal, onDelta: (text) => stream.push(text), onFill: fills.push, flush: () => (stream.flush(), fills.flush()) });
     } catch (error) {
       stream.flush();
+      fills.flush();
       throw toRpcError(clean(error));
     } finally {
       permissionDone();
@@ -640,7 +683,7 @@ export class WritingService {
    * One draft, from the voice that exists. Who pays and who hears it is the caller's: a person's ⌘J, or plan 144's
    * preparation, which charges its own task and never starts the learner (revisions 1 and 10).
    */
-  async generate(p: ComposeParams, clientId: string, o: { ai: AiTasks; signal: AbortSignal; onDelta(text: string): void; flush(): void; prefs?: WritingPrefs }): Promise<AiComposeResult> {
+  async generate(p: ComposeParams, clientId: string, o: { ai: AiTasks; signal: AbortSignal; onDelta(text: string): void; onFill?: (gap: number, text: string, done: boolean) => void; flush(): void; prefs?: WritingPrefs }): Promise<AiComposeResult> {
     const { store } = this.b;
     const { ai, signal } = o;
     {
@@ -676,6 +719,7 @@ export class WritingService {
       }
       if (signal.aborted) throw new AiError(L("errors.ai.cancelled"), "cancelled");
       const today = dayIn(this.b.now(), p.timezone);
+      if (p.fill) return await this.fillGaps(p, snapshot, reused, today, o);
       const named = languageName(snapshot.used.language);
       const task: ComposeTask = {
         kind: p.kind,
@@ -702,6 +746,60 @@ export class WritingService {
         used: { ...snapshot.used, reused },
         checks: { specifics: checkSpecifics(result.text, { texts: authorized, today }), placeholders: findPlaceholders(result.text) },
       };
+    }
+  }
+
+  /**
+   * Plan 163: their own email, its gaps filled from the same material a draft gets. No language is named: a fill matches
+   * the sentence it's in (Codex review 12). What it couldn't fill stays as they typed it, and is a gap Send asks about.
+   */
+  private async fillGaps(p: ComposeParams, snapshot: Snapshot, reused: boolean, today: string, o: { ai: AiTasks; signal: AbortSignal; onFill?: (gap: number, text: string, done: boolean) => void; flush(): void }): Promise<AiComposeResult> {
+    const fill = p.fill!;
+    const pieces: FillPiece[] = [];
+    let at = 0;
+    fill.gaps.forEach((g, i) => {
+      if (g.from > at) pieces.push({ text: fill.text.slice(at, g.from) });
+      pieces.push({ gap: i + 1, text: fill.text.slice(g.from, g.to) });
+      at = g.to;
+    });
+    if (at < fill.text.length) pieces.push({ text: fill.text.slice(at) });
+    const task: ComposeTask = { kind: p.kind, today, timezone: p.timezone, recipients: [...p.to, ...p.cc].map((a) => (a.name ? `${a.name} <${a.email}>` : a.email)), instruction: "", needsSubject: false, fill: pieces };
+    const result = await o.ai.fill({ ...snapshot.input, task }, { onFill: (n, text, done) => o.onFill?.(n, text, done), signal: o.signal, effort: "low", maxTokens: snapshot.maxTokens });
+    o.flush();
+    if (o.signal.aborted) throw new AiError(L("errors.ai.cancelled"), "cancelled");
+    const authorized = [...snapshot.authorized, fill.text, p.subject, ...[...p.to, ...p.cc].flatMap((a) => [a.email, a.name])];
+    const written = result.fills.filter((f): f is string => !!f).join("\n");
+    return {
+      status: "done",
+      text: "",
+      subject: null,
+      stop: result.stop === "length" ? "length" : "end",
+      used: { ...snapshot.used, reused },
+      // a gap left as typed is theirs to fill before it goes
+      checks: { specifics: checkSpecifics(written, { texts: authorized, today }), placeholders: fill.gaps.filter((_, i) => !result.fills[i]).map((g) => fill.text.slice(g.from, g.to)) },
+      fills: result.fills,
+    };
+  }
+
+  /**
+   * Plan 163: is what they typed an instruction or the email, and which spots are gaps: the fast model, given only their
+   * words (no thread, no recipients, no voice). A small question asked before anything is written, so it has a short leash.
+   */
+  async readDraft(p: ReadDraftParams, clientId: string): Promise<{ kind: "instruction" | "email"; gaps: number[] }> {
+    const { signal: asked, release } = this.b.aiService.begin(p.requestId, clientId);
+    const { signal, done: permissionDone } = this.underPermission(null, asked);
+    try {
+      const prefs = await readPrefs(this.b.store);
+      if (!prefs.global.enabled) throw new AiError(L("errors.ai.draftingOff"), "not_configured");
+      const maybe = p.maybe.filter((g) => g.from < g.to && g.to <= p.text.length);
+      const ai = await this.b.aiService.forTask("intent", { foreground: true });
+      return await ai.readDraft({ text: p.text, maybe }, AbortSignal.any([signal, AbortSignal.timeout(READ_DRAFT_DEADLINE_MS)]));
+    } catch (error) {
+      if (signal.aborted) throw toRpcError(new AiError(L("errors.ai.cancelled"), "cancelled"));
+      throw toRpcError(clean(error));
+    } finally {
+      permissionDone();
+      release();
     }
   }
 

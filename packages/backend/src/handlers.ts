@@ -1525,6 +1525,7 @@ export function createHandlers(b: Backend): Handlers {
       return { ok: true };
     },
     "ai.resolveIntent": (p, ctx) => b.writing.resolveIntent(p, ctx.clientId),
+    "ai.readDraft": (p, ctx) => b.writing.readDraft(p, ctx.clientId),
     "writing.activate": async () => {
       await b.writing.learner.activate();
       return { ok: true };

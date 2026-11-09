@@ -860,3 +860,66 @@ describe("provenance (§8)", () => {
     expect(WRITING_RULES).not.toContain("remove the greeting");
   });
 });
+
+describe("plan 163: filling the gaps in their email", () => {
+  const text = "Hi Arjun, the address is [address from his last mail], see you [day we agreed].";
+  const gaps = [{ from: 25, to: 53 }, { from: 63, to: 78 }];
+
+  it("streams each gap whole so far, with done at its close, to the connection that asked; answers one per gap", async () => {
+    const t = await setup();
+    const other = t.connect("other", "renderer");
+    const mine: { gap: number; text: string; done: boolean }[] = [];
+    const theirs: unknown[] = [];
+    t.client.on("aiFill", (e) => mine.push({ gap: e.gap, text: e.text, done: e.done }));
+    other.on("aiFill", (e) => theirs.push(e));
+    t.mcp.on("aiFill", (e) => theirs.push(e));
+    const { thread } = await t.received({ bodyText: "The flat is at Calle Durango 123." });
+    t.model.stream = () => say('<fill n="1">Calle Durango 123</fill>\n<fill n="2"></fill>');
+    const r = await done(t.compose({ kind: "reply", threadId: thread, instruction: "", fill: { text, gaps } }));
+    expect(r.fills).toEqual(["Calle Durango 123", ""]);
+    expect(r.text).toBe("");
+    expect(mine.filter((e) => e.done)).toEqual([{ gap: 1, text: "Calle Durango 123", done: true }, { gap: 2, text: "", done: true }]);
+    expect(mine.at(-1)).toEqual({ gap: 2, text: "", done: true });
+    expect(theirs).toEqual([]);
+    // what it couldn't fill stays theirs, and Send asks about it
+    expect(r.checks.placeholders).toEqual(["[day we agreed]"]);
+    // the fill's own rules, the draft with its gaps marked, and no language named
+    const req = last(t);
+    expect(textOf(req)).toContain('<gap n="1">[address from his last mail]</gap>');
+    expect(textOf(req)).not.toMatch(/^language:/m);
+    expect(textOf(req)).not.toContain(WRITING_RULES.slice(0, 40));
+  });
+
+  it("a fact not in the sources is flagged; gaps out of order or outside the text are refused", async () => {
+    const t = await setup();
+    t.model.stream = () => say('<fill n="1">Calle Falsa 742</fill><fill n="2">Friday</fill>');
+    const r = await done(t.compose({ instruction: "", fill: { text, gaps } }));
+    expect(r.checks.specifics.map((f) => f.text).join(" ")).toContain("742");
+    expect(await errorOf(t.compose({ instruction: "", fill: { text, gaps: [gaps[1]!, gaps[0]!] } }))).toMatchObject({ code: "BAD_REQUEST" });
+    expect(await errorOf(t.compose({ instruction: "", fill: { text, gaps: [{ from: 70, to: 200 }] } }))).toMatchObject({ code: "BAD_REQUEST" });
+  });
+});
+
+describe("plan 163: ai.readDraft", () => {
+  it("sends what they typed and nothing else: no thread, no recipient, no voice; answers by index", async () => {
+    const t = await setup();
+    const canary = "canary-in-the-thread-body";
+    await t.received({ bodyText: canary });
+    t.model.answer = () => ({ text: JSON.stringify({ kind: "email", gaps: ["m1"] }), stop: "end" });
+    const r = await t.client.call("ai.readDraft", { requestId: t.requestId(), text: "Hi Arjun,\nsee you … at the flat", maybe: [{ from: 18, to: 19 }] });
+    expect(r).toEqual({ kind: "email", gaps: [0] });
+    const prompt = textOf(last(t));
+    expect(prompt).toContain("see you ⟦m1⟧…⟦/m1⟧ at the flat");
+    expect(prompt).not.toContain(canary);
+    expect(prompt).not.toContain(TOM.email);
+    expect(prompt).not.toContain("<voice");
+  });
+
+  it("drafting off is said as such, and an id it wasn't given is refused", async () => {
+    const t = await setup();
+    t.model.answer = () => ({ text: JSON.stringify({ kind: "email", gaps: ["m7"] }), stop: "end" });
+    expect(await errorOf(t.client.call("ai.readDraft", { requestId: t.requestId(), text: "see you … at", maybe: [{ from: 8, to: 9 }] }))).toMatchObject({ details: { aiErrorKind: "invalid_output" } });
+    await t.client.call("writing.prefs.set", { global: { enabled: false } });
+    expect(await errorOf(t.client.call("ai.readDraft", { requestId: t.requestId(), text: "x", maybe: [] }))).toMatchObject({ details: { aiErrorKind: "not_configured" } });
+  });
+});
