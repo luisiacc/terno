@@ -856,7 +856,7 @@ Four findings, all taken, each with a test that fails without its fix:
 - **`pnpm test:ui-perf`:** 45 passed.
 - **The frozen capture on real models** reached every AI state in Lumen, Atelier, macOS and Graphite, light and dark (34 shots each, 67 AI requests each, to api.anthropic.com and api.openai.com only), on the final build (`8fe355896`), with no change to `scripts/ui-rating/`. Shots: `/tmp/terno-scratch/ai-redesign/round3/<design>/`; before and after sheets (r03 against this pass): `/tmp/terno-scratch/ai-redesign/sheets-r3/<design>-<mode>.png`.
 - **The gallery** (`/tmp/terno-scratch/ai-gallery/gallery.mjs`, on `harness.mjs`, frozen runtime of the final build): 12 sheets in `/tmp/terno-scratch/ai-gallery/sheets/`, real models for model output and the stub for errors, empty and working states; nothing skipped but the AI filter's consent, which doesn't exist.
-- **Real-model spend:** about US$0.71 as the app counted it (captures US$0.44 over two runs; gallery US$0.25 with its smokes).
+- **Real-model spend:** about US$0.69 as the app counted it (captures US$0.44 over two runs; the gallery US$0.25 with its smokes).
 
 ### Questions for the owner
 - **The AI filter asks no consent** before its request goes to a cloud provider (it says what's sent under the field). Every other surface asks once. Add the shared consent there?
