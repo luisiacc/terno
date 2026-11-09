@@ -1254,7 +1254,7 @@ const en = {
   "aiDraft.live.reading": "Reading what you wrote",
   "aiDraft.live.filled": { one: "Filled # gap", other: "Filled # gaps" },
   "aiDraft.fill.changed": "Your draft changed while AI was filling it, so nothing was filled. Fill again when you’re ready.",
-  "aiDraft.fill.none": "The conversation doesn’t say what goes in these gaps, so they’re as you wrote them.",
+  "aiDraft.fill.none": { one: "The conversation doesn’t say what goes in this gap, so it’s as you wrote it.", other: "The conversation doesn’t say what goes in these gaps, so they’re as you wrote them." },
   "aiDraft.fill.title": "Filled the gaps you left",
   "aiDraft.fill.pair": "{gap} → {fill}",
   "aiDraft.fill.left": "{gap}: as you wrote it",

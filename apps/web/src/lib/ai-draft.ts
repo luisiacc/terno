@@ -1222,7 +1222,7 @@ function commitFills(key: string, c: NonNullable<ReturnType<typeof controllerFor
     clearStream(key);
     fillTexts.delete(key);
     if (!f.base) c.endFill(f.run);
-    update(key, { phase: "error", error: { message: t("aiDraft.fill.none"), help: null, kind: "other", retry: false, partial: false }, live: t("aiDraft.fill.none"), run: null, strip: prior ?? null });
+    update(key, { phase: "error", error: { message: t("aiDraft.fill.none", { count: f.gaps.length }), help: null, kind: "other", retry: false, partial: false }, live: t("aiDraft.fill.none", { count: f.gaps.length }), run: null, strip: prior ?? null });
     return true;
   }
   // the text as it is just before (typed into meanwhile, it isn't what was sent): Fill again asks from this
@@ -1237,7 +1237,7 @@ function commitFills(key: string, c: NonNullable<ReturnType<typeof controllerFor
   }
   if (!out.applied) {
     // the conversation didn't hold what any gap asks: they stay as typed, marked, and nothing is a version
-    update(key, { phase: "error", error: { message: t("aiDraft.fill.none"), help: null, kind: "other", retry: false, partial: false }, live: t("aiDraft.fill.none"), run: null, strip: prior ?? null });
+    update(key, { phase: "error", error: { message: t("aiDraft.fill.none", { count: f.gaps.length }), help: null, kind: "other", retry: false, partial: false }, live: t("aiDraft.fill.none", { count: f.gaps.length }), run: null, strip: prior ?? null });
     return true;
   }
   const docGaps = "gaps" in out ? (out.gaps as { from: number; to: number }[]) : [];

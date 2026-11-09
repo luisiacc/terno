@@ -1245,7 +1245,7 @@ const es = {
   "aiDraft.live.reading": "Leyendo lo que escribiste",
   "aiDraft.live.filled": { one: "# hueco completado", other: "# huecos completados" },
   "aiDraft.fill.changed": "Tu borrador cambió mientras la IA lo completaba, así que no se completó nada. Completa de nuevo cuando quieras.",
-  "aiDraft.fill.none": "La conversación no dice qué va en estos huecos, así que están como los escribiste.",
+  "aiDraft.fill.none": { one: "La conversación no dice qué va en este hueco, así que está como lo escribiste.", other: "La conversación no dice qué va en estos huecos, así que están como los escribiste." },
   "aiDraft.fill.title": "Completó los huecos que dejaste",
   "aiDraft.fill.pair": "{gap} → {fill}",
   "aiDraft.fill.left": "{gap}: como lo escribiste",
