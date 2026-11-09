@@ -287,6 +287,14 @@ test.describe("ask your mail (plan 141)", () => {
     await scenario("Previous AI questions reopens it with no request", async () => {
       await page.getByTestId("ask-new").click();
       await expect(ask(page)).toBeFocused();
+      // the owner's catch: on the empty page its one row sits centred between the field and the hints, not 8 px low
+      const gaps = await page.evaluate(() => {
+        const row = document.querySelector("[data-testid=ask-history-row]")!.getBoundingClientRect();
+        const field = document.querySelector("[cmdk-input-wrapper], [data-slot=command-input-wrapper]")!.getBoundingClientRect();
+        const hints = document.querySelector("[data-testid=ask-hints]")!.getBoundingClientRect();
+        return { above: row.top - field.bottom, below: hints.top - row.bottom };
+      });
+      expect(Math.abs(gaps.above - gaps.below), `${gaps.above} px above, ${gaps.below} px below`).toBeLessThanOrEqual(1);
       await page.getByTestId("ask-history-row").click();
       // pass 3: no chip whose × reads as close: a way back and a Close, clear of the field's placeholder. Plan 162: one
       // step back, to Ask, where it came from (Ask was opened with ⌘⇧K)

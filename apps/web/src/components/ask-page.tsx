@@ -212,6 +212,20 @@ function CommandNotice({ echo = true }: { /** plan 162: not under the field that
   );
 }
 
+/**
+ * The notice above the empty page's rows, or nothing at all: an empty box was still a sibling, so the first group took the
+ * next group's top gap and sat 8 px low between the field and the hints (the owner's catch).
+ */
+function PaddedNotice() {
+  const notice = useAsk((s) => s.notice);
+  if (!notice) return null;
+  return (
+    <div className="px-[18px] py-2">
+      <CommandNotice echo={false} />
+    </div>
+  );
+}
+
 /** Older mail, on a click, when nothing here answers: the main action. An answer has it quietly, in its scope line. */
 function Older() {
   const offer = useAsk((s) => s.older);
@@ -692,7 +706,7 @@ function Empty({ value, setValue, onBack, onClose }: { value: string; setValue: 
       )}
       {!busy && (
         <CommandList label={t("palette.results")}>
-          <div className="px-[18px] py-2 empty:hidden"><CommandNotice echo={false} /></div>
+          <PaddedNotice />
           {query && (
             <CommandGroup value="ask-go" forceMount>
               <CommandItem forceMount value={`ask\u0000${value}`} data-testid="ask-submit" onSelect={() => { askQuestion(value); setValue(""); }}>
