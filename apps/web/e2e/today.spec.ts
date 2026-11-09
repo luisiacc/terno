@@ -177,8 +177,10 @@ test.describe("Today (plan 145)", () => {
     // read after the reader's dwell, as a person reading it would
     await expect.poll(() => db.get<{ u: number }>("SELECT unread_count u FROM threads WHERE subject = ?", "Stratechery weekly")!.u).toBe(0);
     // the owner (plan 161): a newsletter from the digest is mail like any other. Read, it isn't added to Today's list, nor
-    // pinned there while it's open. (The digest's row counting one fewer says the list has refreshed since the read.)
-    await expect(page.getByTestId("digest-row")).toContainText(new RegExp(`(^|\\D)${count - 1} newsletters? · today's digest`));
+    // pinned there while it's open. Plan 162 (after ai162-r02): the digest's way in counts what's still in the Inbox, read
+    // or not, as its page lists them (it counted the unread: "1 newsletter" beside four)
+    server.backend.notifyChanged([]);
+    await expect(page.getByTestId("digest-row")).toContainText(new RegExp(`(^|\\D)${count} newsletters? · today's digest`));
     await expect(page.locator('[data-keep-scroll="list"]').getByTestId("thread-row").filter({ hasText: "Stratechery weekly" })).toHaveCount(0);
     await expect(page.getByTestId("reader-subject")).toHaveText("Stratechery weekly");
     await page.keyboard.press("Escape");

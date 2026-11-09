@@ -118,3 +118,12 @@ describe("plan 161, pass 2 (Codex review): Esc from inside a newsletter's own do
     expect(getApp().selectedId).toBe(DIGEST_ROW_ID);
   });
 });
+
+describe("plan 162 (after ai162-r02): the digest's way in counts what the page lists", () => {
+  it("counts what's still in the Inbox, read or not", async () => {
+    const { digestLabel } = await import("./today");
+    const digest = { day: "d", state: "ready" as const, automated: false, items: [], liveIds: [1], readIds: [2, 3, 4] };
+    expect(digestLabel(digest as never)).toBe("4 newsletters · today's digest");
+    expect(digestLabel({ ...digest, liveIds: [], readIds: [] } as never)).not.toMatch(/^\d+ newsletters? · today/);
+  });
+});
