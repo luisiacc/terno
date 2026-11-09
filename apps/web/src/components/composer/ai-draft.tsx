@@ -534,7 +534,7 @@ function Guard({ s }: { s: AiSession }) {
   if (s.guard?.gaps?.length) return <GapsGuard s={s} gaps={s.guard.gaps} />;
   const writing = s.phase === "writing" || s.phase === "waitingBody";
   // plan 163: still reading what was typed, working out who it's for, or asking: what's there is the user's own words
-  const working = s.phase === "reading" || s.phase === "resolving" || s.phase === "telling" || s.phase === "question" || s.phase === "input";
+  const working = s.phase === "reading" || s.phase === "resolving" || s.phase === "question" || s.phase === "input";
   return (
     <div className={line} data-testid="ai-guard" role="alert">
       <span className="text-foreground">{t(writing ? "aiDraft.guard.writing" : working ? "aiDraft.guard.working" : "aiDraft.guard.ready")}</span>

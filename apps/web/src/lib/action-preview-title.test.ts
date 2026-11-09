@@ -15,8 +15,8 @@ describe("a preview's count is said once it's final, the same in the header and 
     expect(previewTitle(preview({}), 20, "")).toBe("Archive 40 conversations");
   });
 
-  it("plan 162 (after ai162-r03): while the AI check waits (its consent, or running), they're candidates: no count to act on", () => {
-    // it said "Archive 9", then 3, under the consent
+  it("plan 162 (after ai162-r03): while the AI check waits or runs, they're candidates: no count to act on", () => {
+    // it said "Archive 9", then 3, once the check was done
     expect(previewTitle(preview({ check: "needed", count: 9 }), 9, "")).toBe("Checking 9 matches…");
     expect(previewCount(preview({ check: "needed", count: 9 }), 9)).toBe("Checking 9 matches…");
   });

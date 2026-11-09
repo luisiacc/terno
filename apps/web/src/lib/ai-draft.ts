@@ -656,14 +656,6 @@ function refillSpec(top: AiCommit & { fill: NonNullable<AiCommit["fill"]> }): Ru
   return { kind: "fill", instruction: "", fill: { run: globalThis.crypto.randomUUID(), text: base.text, gaps: base.textGaps, docGaps: [], words, base } };
 }
 
-/** Plan 163: To, Cc and Bcc are still only what Terno filled in. */
-function recipientsAuto(d: LocalDraft): boolean {
-  return (["to", "cc", "bcc"] as const).every((field) => {
-    const auto = d.auto[field].map((email) => email.toLowerCase());
-    return parseAddressList(d[`${field}Text`]).every((a) => auto.includes(a.email.toLowerCase()));
-  });
-}
-
 function surfaceOf(d: LocalDraft, fromBody = false) {
   const thread = threadOf(d);
   // a reply Terno filled in isn't a choice of the user's: the conversation it's on is the surface. Plan 163 (Codex review
