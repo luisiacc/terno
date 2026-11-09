@@ -67,6 +67,31 @@ describe("the model stub (plan 161)", () => {
     expect(result.subject).toBeNull();
   });
 
+  it("plan 163: fills a draft's gaps as a stream, from what the thread says; a fact it doesn't hold stays empty", async () => {
+    const fills: [number, string, boolean][] = [];
+    const result = await ai.fill(
+      {
+        sender: { name: "Luis Cordero", address: "luis@acme.studio" },
+        signature: null,
+        instructions: [],
+        voice: [],
+        messagesToPerson: [],
+        pastConversations: [],
+        thread: THREAD.map(({ from, date, own, text }) => ({ from, date, own, text })),
+        subject: "Ajustes de precios",
+        task: { kind: "reply", today: "2026-10-22", timezone: "UTC", recipients: ["Isabella Torres <isabella.torres@gmail.com>"], instruction: "", needsSubject: false, fill: [{ text: "Hi Isabella, the call works on " }, { gap: 1, text: "[day of the call]" }, { text: ", and the flat is at " }, { gap: 2, text: "[address]" }, { text: ". " }, { gap: 3, text: "[something nice about the meeting]" }] },
+      },
+      { onFill: (n, t, done) => fills.push([n, t, done]), signal: signal() },
+    );
+    expect(result.fills).toEqual(["Thursday 29 October", "", "thanks again for all your help"]);
+    expect(fills.filter(([, , done]) => done).map(([n]) => n)).toEqual([1, 2, 3]);
+  });
+
+  it("plan 163: reads what was typed, in shape: an instruction or an email, and which marked spots are gaps", async () => {
+    expect(await ai.readDraft({ text: "sounds good, see you friday", maybe: [] }, signal())).toEqual({ kind: "instruction", gaps: [] });
+    expect(await ai.readDraft({ text: "Hi Isabella,\nsee you … at the office, well... ok", maybe: [{ from: 21, to: 22 }] }, signal())).toEqual({ kind: "email", gaps: [0] });
+  });
+
   it("Ask: plans searches the store can match, then answers cited with the labels it was given", async () => {
     const plan = await ai.planAsk({ question: "What did Isabella say about the payment?", today: "2026-10-22", timezone: "UTC", accounts: [{ name: "Luis", address: "luis@acme.studio" }], categories: [] }, signal());
     expect(plan.kind).toBe("question");

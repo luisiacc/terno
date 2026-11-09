@@ -499,6 +499,41 @@ function subjectFor(instruction, es) {
   return capital(words.replace(/[.,;:!?]+$/, "")) || (es ? "Hola" : "Hello");
 }
 
+/**
+ * Plan 163: their email's gaps filled from the conversation, one <fill> per gap, empty where it doesn't hold the fact.
+ * A day or a time comes from what the last message says; an address isn't in the demo's mail, so it stays; a gap asking
+ * for wording gets a short line in the draft's language.
+ */
+export function fillGaps(system, prompt) {
+  const thread = blocksOf(prompt, "message").map(({ head, body }) => ({ own: /author="the author"/.test(head), date: dayOf(attr(head, "date")) ?? 0, text: body }));
+  const other = [...thread].reverse().find((m) => !m.own);
+  const draft = /<draft>\n([\s\S]*?)\n<\/draft>/.exec(prompt)?.[1] ?? "";
+  const es = isSpanish(draft.replace(/<gap[^>]*>[\s\S]*?<\/gap>/g, ""));
+  const said = other ? read(other.text, other.date, "") : { asks: [] };
+  const asked = said.asks.find((a) => a.kind === "question" || a.kind === "date" || a.kind === "action");
+  const day = other ? (/\bjueves\b/i.test(other.text) ? longDate(nextWeekday(other.date, 4), es) : /\bviernes|friday\b/i.test(other.text) ? longDate(nextWeekday(other.date, 5), es) : null) : null;
+  const time = other && /\b10 (?:de la mañana|am)\b|\b10am\b/i.test(other.text) ? (es ? "las 10 de la mañana" : "10 in the morning") : null;
+  const fills = [...prompt.matchAll(/<gap n="(\d+)">([\s\S]*?)<\/gap>/g)].map((m) => {
+    const says = m[2].toLowerCase();
+    let fill = "";
+    if (/\b(day|date|when|día|dia|fecha|cuándo|cuando)\b/.test(says)) fill = day ?? (asked && /\d/.test(asked.en) ? "" : "");
+    else if (/\b(time|hour|hora)\b/.test(says)) fill = time ?? "";
+    else if (/\b(address|dirección|direccion|where|dónde)\b/.test(says)) fill = "";
+    else if (/\b(thanks|thank|nice|gracias|algo|something)\b/.test(says)) fill = es ? "gracias de nuevo por todo" : "thanks again for all your help";
+    return `<fill n="${m[1]}">${fill}</fill>`;
+  });
+  return fills.join("\n");
+}
+
+/** Plan 163: what was typed, read: a short line is an instruction; a marked `…`, `...`, `??` or `TBD` between words is a gap. */
+export function readDraft(prompt) {
+  const text = JSON.parse(/^Text: (.*)$/m.exec(prompt)?.[1] ?? '""');
+  const plain = text.replace(/⟦\/?m\d+⟧/g, "").trim();
+  const kind = !/\n\s*\n/.test(plain) && plain.split(/\s+/).filter(Boolean).length <= 30 && !/^(hi|hello|dear|hola)\b/i.test(plain) && !/\?\s*$/.test(plain) ? "instruction" : "email";
+  const gaps = [...text.matchAll(/⟦(m\d+)⟧(.*?)⟦\/m\d+⟧/g)].filter((m) => /^(…|\.{3}|\?{2,}|TBD|TBC|\{[^}]+\}|XX)$/.test(m[2])).map((m) => m[1]);
+  return { kind, gaps };
+}
+
 /** Plan 133 §5: who an instruction is addressed to; a name that's a verb or only mentioned isn't. */
 export function parseIntent(prompt) {
   const instruction = (/^Instruction: (.*)$/m.exec(prompt)?.[1] ?? "").toLowerCase();
@@ -546,6 +581,8 @@ const SYSTEM_STARTS = [
   ["parse_intent", "Someone typed a short instruction for an email"],
   ["classification", "You assign each item exactly one of the given labels"],
   ["compose", "You write email for one person"],
+  ["fill", "You fill the gaps in an email one person is writing"],
+  ["draft_read", "Someone typed in the body of an email they are writing"],
   ["answer", "You answer one person's question about their own email"],
   ["filter", "You turn a user's description of an email filter"],
 ];
@@ -578,6 +615,8 @@ export function answerFor(body) {
     case "parse_intent": return json(parseIntent(prompt));
     case "classification": return json(classify(prompt));
     case "compose": return { task, content: compose(system, prompt) };
+    case "fill": return { task, content: fillGaps(system, prompt) };
+    case "draft_read": return json(readDraft(prompt));
     case "answer": return { task, content: answer(prompt) };
     default: return null;
   }
