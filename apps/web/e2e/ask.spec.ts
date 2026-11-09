@@ -154,6 +154,23 @@ test.describe("ask your mail (plan 141)", () => {
     const p = (await preview.boundingBox())!, m = (await mark.boundingBox())!;
     expect(p.y).toBeGreaterThanOrEqual(m.y + m.height - 1);
     expect(p.x).toBeGreaterThanOrEqual(dialog.x);
+    // Codex review: whichever mark, at either edge of the panel, its preview is inside it
+    for (const at of [mark, page.getByTestId("ask-citation").last()]) {
+      await page.mouse.move(0, 0);
+      await expect(preview).toHaveCount(0);
+      await at.scrollIntoViewIfNeeded();
+      await at.hover();
+      await expect(preview).toBeVisible();
+      const b = (await preview.boundingBox())!;
+      expect(b.x).toBeGreaterThanOrEqual(dialog.x);
+      expect(b.x + b.width).toBeLessThanOrEqual(dialog.x + dialog.width);
+    }
+    // Codex review: Regenerate asks the same question again, and the new answer is headed by it too
+    await page.mouse.move(0, 0);
+    await page.getByTestId("ask-again").click();
+    await expect(page.getByTestId("ask-turn")).toHaveCount(2);
+    await expect(lastTurn(page)).toHaveAttribute("data-status", "answered");
+    await expect(lastTurn(page).getByTestId("ask-question")).toBeVisible();
   });
 
   test("plan 162: Ask's provenance popover is whole, and its answer and sources reach the wheel, in every design, light and dark, 1440 and 1100", { tag: "@design" }, async ({ app: page, server }) => {

@@ -9,7 +9,7 @@ import { Spinner } from "@terno/ui/components/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { ChevronLeft, Clock, ExternalLink, Mail, Plus, RefreshCw, Search, Sparkles, Undo2 } from "@terno/ui/icons";
 import { useCommandState } from "cmdk";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import { askReady, askTarget } from "~/lib/ai";
 import { closePeek, showSource, usePeek, type Peek } from "~/lib/ask-peek";
 import { Marked } from "~/components/match-mark";
@@ -52,6 +52,9 @@ const sourceLine = (source: AskSourceRef) => t("ask.source.from", { from: source
  */
 function AnswerText({ text, sources, queries, chosen = null, unlinked = false }: { text: string; sources: readonly AskSourceRef[]; queries: readonly AskPlanQuery[]; chosen?: number | null; /** unlinked claims are marked (never in a stopped answer) */ unlinked?: boolean }) {
   const views = useAsk((s) => s.sources);
+  // plan 162 (after ai162-r05, Codex review): a citation's preview stays inside Ask's dialog, at either edge
+  const [panel, setPanel] = useState<Element | null>(null);
+  const answerRef = useCallback((el: HTMLElement | null) => setPanel(el?.closest("[role=dialog]") ?? null), []);
   const marker = (n: number, key: number) => {
     const source = sources[n - 1];
     if (!source || views[source.messageId]?.state === "gone") return <span key={key}>[{n}]</span>;
@@ -75,7 +78,7 @@ function AnswerText({ text, sources, queries, chosen = null, unlinked = false }:
         </TooltipTrigger>
         {/* plan 162 (after ai162-r05): below its mark, from its start, inside the panel (above, it covered the question
             and spilled past the panel's edge) */}
-        <TooltipContent side="bottom" align="start" data-testid="ask-citation-preview">
+        <TooltipContent side="bottom" align="start" collisionBoundary={panel ?? undefined} collisionPadding={12} data-testid="ask-citation-preview">
           <span className="block font-medium">{source.subject || t("common.noSubject")}</span>
           <span className="block">{sourceLine(source)}</span>
         </TooltipContent>
@@ -104,7 +107,7 @@ function AnswerText({ text, sources, queries, chosen = null, unlinked = false }:
     });
   // after ai162-r04: the model's "- " and "1. " lines are a list (they showed as raw hyphens); a blank line a paragraph
   return (
-    <div className="space-y-2 break-words text-sm leading-relaxed" data-testid="ask-answer">
+    <div ref={answerRef} className="space-y-2 break-words text-sm leading-relaxed" data-testid="ask-answer">
       {answerBlocks(cleanAnswer(text)).map((b, i) =>
         b.kind === "p" ? (
           <p key={i} className="whitespace-pre-wrap">{sentences(b.text)}</p>
@@ -687,8 +690,8 @@ function Conversation({ onBack, onClose }: { onBack: () => void; onClose: () => 
               1100x700), and nothing fades: the hairline over the sources is the edge */}
           <div ref={area} tabIndex={0} data-testid="ask-area" onWheel={unpin} onPointerDown={unpin} onKeyDown={unpin} className="max-h-[30rem] min-h-0 flex-1 overflow-y-auto outline-none">
             <div className="space-y-4 px-[18px] py-3">
-              {turns.map((turn, i) => (
-                turn.kind === "command" ? <CommandTurn key={turn.id} turn={turn} last={turn === last} /> : <Turn key={turn.id} turn={turn} last={turn === last} repeated={(turns.length === 1 && !running && turn.question === title) || (i > 0 && turn.question === turns[i - 1]!.question)} />
+              {turns.map((turn) => (
+                turn.kind === "command" ? <CommandTurn key={turn.id} turn={turn} last={turn === last} /> : <Turn key={turn.id} turn={turn} last={turn === last} repeated={turns.length === 1 && !running && turn.question === title} />
               ))}
               <Running ref={runningRef} />
               <Failure />

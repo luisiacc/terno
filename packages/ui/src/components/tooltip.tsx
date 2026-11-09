@@ -28,12 +28,14 @@ function TooltipContent({
   sideOffset = 10,
   align = "center",
   alignOffset = 0,
+  collisionBoundary,
+  collisionPadding,
   children,
   ...props
 }: TooltipPrimitive.Popup.Props &
   Pick<
     TooltipPrimitive.Positioner.Props,
-    "align" | "alignOffset" | "side" | "sideOffset"
+    "align" | "alignOffset" | "side" | "sideOffset" | "collisionBoundary" | "collisionPadding"
   >) {
   return (
     <TooltipPrimitive.Portal>
@@ -42,6 +44,9 @@ function TooltipContent({
         alignOffset={alignOffset}
         side={side}
         sideOffset={sideOffset}
+        // a surface of its own (Ask's dialog) can keep its tooltips inside it
+        {...(collisionBoundary ? { collisionBoundary } : {})}
+        {...(collisionPadding !== undefined ? { collisionPadding } : {})}
         className="isolate z-50"
       >
         {/* BoardUI's tooltip (plan 125): medium caption text, at most 240 px wide, 10 px off with a caret at the trigger */}
