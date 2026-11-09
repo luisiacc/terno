@@ -4,7 +4,7 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { redact } from "./keys.mjs";
+import { envFile, holdsKey, PRO_ROUTING, PROVIDERS, readKeys, redact } from "./keys.mjs";
 import { SETS, shotFiles } from "./sets.mjs";
 
 export const BAR = 9;
@@ -89,37 +89,48 @@ export function missingShots(dir, round) {
   return round.designs.flatMap((design) => shots.filter((f) => !existsSync(join(dir, design, "shots", f))).map((f) => `${design}/${f}`));
 }
 
+const PROVIDER_HOSTS = Object.values(PROVIDERS).map((p) => p.host);
+const ROUTE = /^(anthropic|openai|jev)\/\S+$/;
+
 /**
- * Who answered an AI round (plan 161), from round.json: the stub (and every AI round from before real models), or Pro's
- * real models, which a round must record (the model each task ran on, and each capture's run: the hosts it reached,
- * light and dark), since their words vary and rounds compare only at the same models. Never a key: round.json holding
- * anything shaped like one fails, whatever the set.
+ * Who answered an AI round (plan 161), from round.json: the stub, or Pro's real models. A real round must record the
+ * model each task ran on (every task of PRO_ROUTING) and, for every style, a light and a dark run that reached a
+ * provider in use and counted what it spent, since words vary and rounds compare only at the same models. An AI round
+ * with no record passes as the stub only if it froze the stub's hash, as every stub round did. Never a key: round.json
+ * holding a loaded key, or anything shaped like one, fails, whatever the set.
  */
-export function aiProblems(round) {
+export function aiProblems(round, secrets = []) {
   const text = JSON.stringify(round);
-  const problems = redact(text) === text ? [] : ["round.json holds something shaped like an API key"];
+  const problems = holdsKey(text, secrets) || redact(text) !== text ? ["round.json holds something shaped like an API key"] : [];
   if (roundSet(round).set !== "ai") return problems;
-  const ai = round.ai ?? { models: "stub" };
+  if (!round.ai) return round.hashes?.stub ? problems : [...problems, "an AI round without its models' record"];
+  const ai = round.ai;
   if (ai.models === "stub") return problems;
   if (ai.models !== "real") return [...problems, `round.json names unknown models: ${ai.models}`];
-  if (!ai.routing || !Object.keys(ai.routing).length) problems.push("a real-model round without the model each task ran on");
-  if (!ai.hosts?.length) problems.push("a real-model round without its providers' hosts");
+  const routing = ai.routing ?? {};
+  if (Object.keys(PRO_ROUTING).some((task) => !ROUTE.test(routing[task] ?? ""))) problems.push("a real-model round without the model each task ran on");
+  if (!ai.hosts?.length || ai.hosts.some((h) => !PROVIDER_HOSTS.includes(h))) problems.push("a real-model round without its providers' hosts");
   for (const design of round.designs) {
     const runs = ai.runs?.[design] ?? [];
-    for (const mode of ["light", "dark"]) if (!runs.some((r) => r.mode === mode)) problems.push(`${design} ${mode}: no record of the models' run`);
+    for (const mode of ["light", "dark"]) {
+      const run = runs.find((r) => r.mode === mode);
+      if (!run) problems.push(`${design} ${mode}: no record of the models' run`);
+      else if (run.ai !== "real" || !run.reached?.length || !(run.usage?.total?.requests > 0)) problems.push(`${design} ${mode}: the run's record shows no model answering`);
+    }
     for (const r of runs) for (const host of r.reached ?? []) if (!ai.hosts?.includes(host)) problems.push(`${design} ${r.mode}: reached ${host}, not a provider in use`);
   }
   return problems;
 }
 
 /** What answered, said once in the summary: real rounds are compared only with real rounds at the same models. */
-export function modelsLine(round) {
+export function modelsLine(round, secrets = []) {
   if (roundSet(round).set !== "ai") return null;
   const ai = round.ai ?? { models: "stub" };
   if (ai.models !== "real") return "Models: the local stand-in (model-stub.mjs)";
   const ids = [...new Set(Object.values(ai.routing ?? {}))].join(", ");
   const usd = Object.values(ai.runs ?? {}).flat().reduce((sum, r) => sum + (r.usage?.total?.usd ?? 0), 0);
-  return `Models: real, ${ids}; the captures spent US$${usd.toFixed(2)} as the app counted it`;
+  // from round.json, which a person could have edited: what's written is redacted like everything else
+  return redact(`Models: real, ${ids}; the captures spent US$${usd.toFixed(2)} as the app counted it`, secrets);
 }
 
 function readRound(dir) {
@@ -166,14 +177,17 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     result.pass = false;
     result.invalid.push(...shotsMissing.map((f) => `missing evidence: ${f}`));
   }
-  const ai = aiProblems(round);
+  // the loaded keys, when the owner's file is here: a key of a shape nobody knows (JEV's) is caught too
+  let secrets = [];
+  try { secrets = readKeys(envFile()).secrets; } catch { /* no file: shapes only */ }
+  const ai = aiProblems(round, secrets);
   if (ai.length) {
     result.pass = false;
     result.invalid.push(...ai.map((p) => `round.json: ${p}`));
   }
   if (designs.length !== DESIGNS.length || raters.length !== RATERS.length) console.log("a narrowed round: it can't pass the rule");
   console.log(`set: ${set} (${screens.length} screens)`);
-  writeFileSync(join(dir, "summary.md"), summary(found, result, screens, modelsLine(round)));
+  writeFileSync(join(dir, "summary.md"), redact(summary(found, result, screens, modelsLine(round, secrets)), secrets));
   console.log(`${result.pass ? "PASS" : "below the bar"}: ${result.below.length} cells under ${BAR}, ${result.missing.length} reports missing, ${result.invalid.length} problems. ${join(dir, "summary.md")}`);
   process.exit(result.pass ? 0 : 1);
 }

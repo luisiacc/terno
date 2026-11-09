@@ -166,6 +166,14 @@ export function aiMode(ai) {
 }
 
 /**
+ * One capture pass's line in round.json (plan 161): the style, light or dark, who ran, the hosts reached, the model each
+ * surface says wrote it, and what the app counted it spent. Never a key: nothing here has one.
+ */
+export function runRecord({ design, mode, models, net, seen, usage }) {
+  return { design, mode, ai: models.ai, providers: models.providers, hosts: models.hosts, reached: net.hosts, requests: net.ai, seen, usage };
+}
+
+/**
  * What the app spent, as it counted it (its usage book, plan 131): requests, the providers' reported tokens and US
  * dollars, by task, since the profile began. Read-only, while the app runs.
  */
@@ -281,8 +289,8 @@ export async function launch({ design = "lumen", dark = false, width = 1440, hei
   if (layout) await setLayout(page, layout);
   const close = async () => { await quit(app); await stub?.close(); discard(); };
   const network = () => netProblems({ log, blocked, stubPort: stub?.port ?? 0, aiHosts: keys?.hosts ?? null });
-  /** Real models: who ran, never with what key (round.json records it). */
-  const models = keys ? { mode, providers: keys.providers, hosts: keys.hosts } : mode ? { mode } : null;
+  /** Real models: who ran, never with what key (round.json records it). `ai`, not `mode`: a run's mode is light or dark. */
+  const models = keys ? { ai: mode, providers: keys.providers, hosts: keys.hosts } : mode ? { ai: mode } : null;
   const usage = () => readUsage(profile);
   return { app, page, profile, close, stub, network, models, usage };
 }

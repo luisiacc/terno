@@ -11,7 +11,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DESIGNS, RATERS, reportProblems } from "./gate.mjs";
 import { copyRedacted, envFile, guardOutput, PRO_ROUTING, readKeys, writeRedacted } from "./keys.mjs";
-import { aiFlag, SETS, screensFlag, shotFiles } from "./sets.mjs";
+import { aiFlag, briefFor, SETS, screensFlag, shotFiles } from "./sets.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = join(here, "../..");
@@ -138,7 +138,8 @@ const HANDS_ON = {
 
 function brief(design, runtime) {
   const hands = HANDS_ON[set](design === "lumen") + (design === "macos" ? " This style's sidebar is translucent on the real window; the screenshots flatten it onto the window's background." : "");
-  return readFileSync(join(runtime, SETS[set].brief), "utf8").replaceAll("{{DESIGN}}", NAMES[design]).replaceAll("{{DESIGN_ID}}", design).replace("{{HANDS_ON}}", hands);
+  // a stub round's raters hear of the stand-in and try it, never a provider (sets.mjs)
+  return briefFor(readFileSync(join(runtime, SETS[set].brief), "utf8").replaceAll("{{DESIGN}}", NAMES[design]).replaceAll("{{DESIGN_ID}}", design).replace("{{HANDS_ON}}", hands), ai);
 }
 
 async function rate(design, rater, shots, runtime) {

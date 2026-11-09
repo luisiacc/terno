@@ -4,7 +4,7 @@
 //   node scripts/ui-rating/capture.mjs <design> <outDir> [light|dark] [--screens everyday|ai] [--ai real|stub]
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { launch, resize, setLayout, shot } from "./harness.mjs";
+import { launch, resize, runRecord, setLayout, shot } from "./harness.mjs";
 import { redact } from "./keys.mjs";
 import { AI_SMALL, aiFlag, screensFlag, shotFiles } from "./sets.mjs";
 
@@ -353,7 +353,7 @@ async function aiPass(design, mode, dir, ai) {
       const spent = usage();
       console.log(`${design} ${mode}: ${net.ai} AI requests, to ${net.hosts.join(", ")} only; ${spent.total.requests} counted, ${spent.total.inputTokens} tokens in, ${spent.total.outputTokens} out, US$${spent.total.usd.toFixed(4)}`);
       // one line rate.mjs reads into round.json: who ran and what it cost, never a key
-      console.log(`AI_RUN ${JSON.stringify({ design, mode, ...models, reached: net.hosts, requests: net.ai, seen, usage: spent })}`);
+      console.log(`AI_RUN ${JSON.stringify(runRecord({ design, mode, models, net, seen, usage: spent }))}`);
     }
   } catch (error) {
     // what the window showed when a state wasn't reached, beside the shots, for whoever reads the failure

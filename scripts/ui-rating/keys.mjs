@@ -2,7 +2,7 @@
 // the Electron process the harness starts. Nothing here prints, logs or writes a value: what leaves this module is the
 // keys themselves (for that one env), the names of the providers they run, and redaction.
 import { cpSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { extname, join } from "node:path";
+import { join } from "node:path";
 
 /** The owner's file, by default; a worktree or the frozen runtime finds it by this path, or by TERNO_RATING_ENV. */
 export const DEFAULT_ENV_FILE = "/Users/Luis/projects/emailclient/.env";
@@ -91,21 +91,27 @@ export function guardOutput(secrets) {
   }
 }
 
-const TEXT = new Set([".md", ".json", ".txt", ".log", ".mjs", ".js", ".cjs", ".ts", ".html", ".csv", ".yaml", ".yml", ".sh", ""]);
-
 /** A file written for the round, redacted on the way. */
 export function writeRedacted(file, data, secrets) {
   writeFileSync(file, redact(Buffer.isBuffer(data) ? data.toString("utf8") : data, secrets));
 }
 
-/** cpSync, with every text file redacted on the way (a rater's report and probes leave the room through here). */
+/** Whether bytes hold a loaded key or anything shaped like one, whatever the file is called. */
+const tainted = (bytes, secrets) => holdsKey(bytes, secrets) || redact(bytes.toString("latin1"), []) !== bytes.toString("latin1");
+
+/**
+ * cpSync, with every file checked on the way, whatever its name (a rater's report and probes leave the room through
+ * here): one that holds a key, or something shaped like one, is written redacted as text. Anything else is copied as
+ * it is, so a screenshot stays whole; a binary file with a key in it would arrive broken, never with the key.
+ */
 export function copyRedacted(src, dest, secrets) {
   if (statSync(src).isDirectory()) {
     mkdirSync(dest, { recursive: true });
     for (const name of readdirSync(src)) copyRedacted(join(src, name), join(dest, name), secrets);
     return;
   }
-  if (TEXT.has(extname(src).toLowerCase())) writeRedacted(dest, readFileSync(src), secrets);
+  const bytes = readFileSync(src);
+  if (tainted(bytes, secrets)) writeRedacted(dest, bytes, secrets);
   else cpSync(src, dest);
 }
 

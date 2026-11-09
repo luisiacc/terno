@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { aiProblems, belowBar, DESIGNS, FACETS, missingShots, modelsLine, RATERS, reportProblems, roundSet, SCREENS, verdict } from "./gate.mjs";
+import { runRecord } from "./harness.mjs";
 import { PRO_ROUTING } from "./keys.mjs";
 import { SETS, shotFiles } from "./sets.mjs";
 
@@ -104,34 +105,52 @@ describe("plan 161: a round rates the set it froze", () => {
 
   describe("real models: round.json carries the model ids and each run, never a key", () => {
     const hosts = ["api.anthropic.com", "api.openai.com", "api.typesafe.ai"];
-    const run = (mode: string, reached = ["api.anthropic.com", "api.openai.com"]) => ({ design: "lumen", mode, models: "real", reached, usage: { total: { usd: 0.21 } } });
-    const real = (over: object = {}) => ({ set: "ai", screens: AI, shots: shotFiles("ai"), designs: ["lumen"], ai: { models: "real", providers: ["anthropic", "openai", "jev"], hosts, routing: PRO_ROUTING, runs: { lumen: [run("light"), run("dark")] } }, ...over });
+    const models = { ai: "real", providers: ["anthropic", "openai", "jev"], hosts };
+    // the capture's own record (Codex review: a run's mode is light or dark, never the AI's)
+    const run = (mode: string, reached = ["api.anthropic.com", "api.openai.com"]) => runRecord({ design: "lumen", mode, models, net: { hosts: reached, ai: 40 }, seen: {}, usage: { byTask: {}, total: { requests: 13, usd: 0.21 } } });
+    const real = (over: object = {}) => ({ set: "ai", screens: AI, shots: shotFiles("ai"), designs: ["lumen"], hashes: {}, ai: { models: "real", providers: models.providers, hosts, routing: PRO_ROUTING, runs: { lumen: [run("light"), run("dark")] } }, ...over });
 
-    it("a whole record passes, and says which models answered and what they cost", () => {
+    it("a whole record, as the capture writes it, passes, and says which models answered and what they cost", () => {
+      expect(run("dark")).toMatchObject({ mode: "dark", ai: "real" });
       expect(aiProblems(real())).toEqual([]);
-      expect(real().ai.routing).toMatchObject({ summary: "openai/gpt-6-luna", writing: "anthropic/claude-sonnet-5-5" });
       expect(modelsLine(real())).toContain("openai/gpt-6-luna");
       expect(modelsLine(real())).toContain("US$0.42");
     });
 
-    it("an AI round from before real models ran on the stub, and an everyday round has no models", () => {
-      expect(aiProblems({ set: "ai", screens: AI, shots: shotFiles("ai"), designs: ["lumen"] })).toEqual([]);
-      expect(modelsLine({ set: "ai", screens: AI, shots: shotFiles("ai"), designs: ["lumen"] })).toContain("stand-in");
+    it("an AI round with no record is the stub only if it froze the stub's hash; an everyday round has no models", () => {
+      const before = { set: "ai", screens: AI, shots: shotFiles("ai"), designs: ["lumen"] };
+      expect(aiProblems({ ...before, hashes: { stub: "abc" } })).toEqual([]);
+      expect(modelsLine({ ...before, hashes: { stub: "abc" } })).toContain("stand-in");
+      // Codex review: a real round can't pass by losing its record
+      expect(aiProblems({ ...before, hashes: {} })).toEqual(["an AI round without its models' record"]);
       expect(modelsLine({ designs: DESIGNS })).toBeNull();
     });
 
-    it("without its model ids, a run per mode, or with a host no provider has, it fails", () => {
+    it("without every task's model, a run per mode that shows a model answering, or with a host no provider has, it fails", () => {
       const base = real();
-      expect(aiProblems({ ...base, ai: { ...base.ai, routing: {} } })).toEqual(["a real-model round without the model each task ran on"]);
+      expect(aiProblems({ ...base, ai: { ...base.ai, routing: { summary: "openai/gpt-6-luna" } } })).toEqual(["a real-model round without the model each task ran on"]);
+      expect(aiProblems({ ...base, ai: { ...base.ai, hosts: ["evil.example"] } })).toContain("a real-model round without its providers' hosts");
       expect(aiProblems({ ...base, ai: { ...base.ai, runs: { lumen: [run("light")] } } })).toEqual(["lumen dark: no record of the models' run"]);
+      // Codex review: an empty run is no evidence
+      expect(aiProblems({ ...base, ai: { ...base.ai, runs: { lumen: [run("light"), { mode: "dark" }] } } })).toEqual(["lumen dark: the run's record shows no model answering"]);
       expect(aiProblems({ ...base, ai: { ...base.ai, runs: { lumen: [run("light"), run("dark", ["api.groq.com"])] } } })).toEqual(["lumen dark: reached api.groq.com, not a provider in use"]);
       expect(aiProblems({ ...base, ai: { ...base.ai, models: "gpt" } })).toEqual(["round.json names unknown models: gpt"]);
     });
 
-    it("a round.json holding anything shaped like a key fails, in any set", () => {
-      const leaked = real({ note: "sk-ant-api03-ABCDEFGHIJKLMNOPQRSTUV" });
-      expect(aiProblems(leaked)).toContain("round.json holds something shaped like an API key");
+    it("a round.json holding a loaded key, of any shape, or anything shaped like one, fails, and the summary never repeats it", () => {
+      const shaped = "sk-ant-api03-ABCDEFGHIJKLMNOPQRSTUV";
+      expect(aiProblems(real({ note: shaped }))).toContain("round.json holds something shaped like an API key");
       expect(aiProblems({ designs: DESIGNS, note: "sk-proj-ABCDEFGHIJKLMNOPQRSTUVWXYZ012345" })).toEqual(["round.json holds something shaped like an API key"]);
+      // a JEV key has no shape we know: it's caught as the loaded key it is
+      const jev = "jev_FAKEjevKEYforTHEgateTEST0123";
+      expect(aiProblems({ designs: DESIGNS, note: jev })).toEqual([]);
+      expect(aiProblems({ designs: DESIGNS, note: jev }, [jev])).toEqual(["round.json holds something shaped like an API key"]);
+      // Codex review: what the gate writes from round.json is redacted
+      const leaked = real();
+      leaked.ai.routing = { ...PRO_ROUTING, summary: shaped };
+      expect(modelsLine(leaked)).not.toContain(shaped);
+      leaked.ai.routing = { ...PRO_ROUTING, summary: jev };
+      expect(modelsLine(leaked, [jev])).not.toContain(jev);
     });
   });
 });

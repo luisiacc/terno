@@ -42,3 +42,16 @@ export function aiFlag(argv) {
   if (ai !== "real" && ai !== "stub") throw new Error(`--ai takes real or stub, not ${ai}`);
   return ai;
 }
+
+const REAL_WORDS = "The app is running real AI models, so their words can differ from one run to the next: rate how the app presents, explains and lets you act on what the model wrote. The words themselves are in scope only where the app could have shown them better.";
+const STUB_WORDS = "The AI here is a local stand-in model that gives the same answers every time: rate how the app presents, explains and lets you act on what the model wrote, not the model's words themselves.";
+
+/**
+ * The AI brief for the round's models (plan 161, Codex review): brief-ai.md speaks of real models; a stub round says
+ * the stand-in, and its raters launch with `ai: "stub"`, so a hands-on try never reaches a provider or spends.
+ */
+export function briefFor(text, ai) {
+  if (ai !== "stub") return text;
+  if (!text.includes(REAL_WORDS)) throw new Error("brief-ai.md's paragraph on the models changed: briefFor's words must follow it");
+  return text.replace(REAL_WORDS, STUB_WORDS).replace("with AI on the same real models as the screenshots (`ai: true`):", "with AI on the local stand-in (`ai: true`; nothing leaves the machine):").replaceAll("ai: true", 'ai: "stub"');
+}

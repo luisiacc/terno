@@ -42,7 +42,7 @@ test("launch({ ai: true }): Pro's real models on the .env keys, only their provi
   const { page, close, network, stub, models, usage } = await launch({ ai: true });
   try {
     expect(stub).toBeNull();
-    expect(models).toMatchObject({ mode: "real", hosts: expect.arrayContaining(["api.anthropic.com", "api.openai.com"]) });
+    expect(models).toMatchObject({ ai: "real", hosts: expect.arrayContaining(["api.anthropic.com", "api.openai.com"]) });
     expect(await page.evaluate(() => new Date().toISOString())).toBe("2026-10-22T16:00:00.000Z");
     await expect(page.getByTestId("nav-today")).toBeVisible();
     // the digest prepared on its own, on a real model

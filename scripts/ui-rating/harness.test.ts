@@ -1,7 +1,9 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import { aiMode, netProblems } from "./harness.mjs";
+import { briefFor } from "./sets.mjs";
 
 const dir = mkdtempSync("/tmp/net-check-");
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
@@ -80,5 +82,22 @@ describe("the network check on real models (plan 161)", () => {
   it("`ai: true` is real models, the stub is asked for by name", () => {
     expect([aiMode(true), aiMode("real"), aiMode("stub"), aiMode(false), aiMode(undefined)]).toEqual(["real", "real", "stub", null, null]);
     expect(() => aiMode("ollama")).toThrow("ai takes");
+  });
+});
+
+describe("the AI brief follows the round's models (plan 161, Codex review)", () => {
+  const brief = readFileSync(new URL("./brief-ai.md", import.meta.url), "utf8");
+
+  it("a real round's brief is brief-ai.md as written", () => {
+    expect(briefFor(brief, "real")).toBe(brief);
+    expect(brief).toContain("real AI models");
+  });
+
+  it("a stub round's brief speaks of the stand-in, and every launch in it asks for the stub, so a rater never spends", () => {
+    const stub = briefFor(brief + "\nTry it, with `ai: true`, the summary.", "stub");
+    expect(stub).toContain("local stand-in model that gives the same answers every time");
+    expect(stub).not.toContain("real AI models");
+    expect(stub).not.toContain("ai: true");
+    expect(stub).toContain('ai: "stub"');
   });
 });

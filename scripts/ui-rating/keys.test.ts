@@ -116,6 +116,17 @@ describe("plan 161: redaction", () => {
     expect(filesHoldingKeys(room, Object.values(FAKE))).toEqual([join(room, "report.md")]);
   });
 
+  it("checks every file leaving the room, whatever it's called (Codex review: an .env, .jsonl or .har probe)", () => {
+    const room = join(dir, "room-odd");
+    mkdirSync(room, { recursive: true });
+    for (const name of ["debug.env", "requests.jsonl", "trace.har", "noext"]) writeFileSync(join(room, name), `key=${FAKE.JEV_API_KEY}\n`);
+    writeFileSync(join(room, "shaped.bin"), "sk-ant-api03-ANOTHERkeyNOBODYloaded0000");
+    copyRedacted(room, join(dir, "room-odd-out"), Object.values(FAKE));
+    expect(filesHoldingKeys(join(dir, "room-odd-out"), Object.values(FAKE))).toEqual([]);
+    expect(readFileSync(join(dir, "room-odd-out", "debug.env"), "utf8")).toBe(`key=${REDACTED}\n`);
+    expect(readFileSync(join(dir, "room-odd-out", "shaped.bin"), "utf8")).toBe(REDACTED);
+  });
+
   it("a fake key in a fake .env never reaches stdout, stderr or any file a run writes", () => {
     const run = mkdtempSync(join(dir, "run-"));
     const file = fakeEnv(FAKE, "run.env");
