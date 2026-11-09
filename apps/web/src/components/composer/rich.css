@@ -133,7 +133,8 @@
   pointer-events: none;
 }
 [data-ai-note] .rt-body > :first-child {
-  padding-inline-end: 6.5rem;
+  /* plan 162 (after ai162-r05): "For AI · not sent" (es "Para la IA · no se envía") with its glyph */
+  padding-inline-end: 11rem;
 }
 /* plan 163: written from an instruction in the body: the instruction dims while it's read, and the stream takes its place */
 [data-ai-overlay="replacing"] > [data-editor-mount] {

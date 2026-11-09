@@ -643,7 +643,9 @@ export function DraftSlot({ threadId, draftKey, replyTo, replyAll = true, accoun
                 <AttachButton d={d} />
                 <LinkButton draftKey={d.key} disabled={d.sending} />
                 <AiDraftButton draftKey={d.key} disabled={d.sending} testId="compose-ai" />
-                <span className="ml-1.5 flex min-w-0">
+                {/* plan 162 (after ai162-r05): a narrow foot keeps one line (Save and close and the bin wrapped under Send at
+                    1100): the plain "Saved" is said to assistive tech only; a problem saving always shows */}
+                <span className={cn("ml-1.5 flex min-w-0", !d.recovery && d.status !== "error" && "@max-[32rem]/foot:sr-only")} data-testid="draft-status-slot">
                   <SaveState d={d} />
                 </span>
                 <span className="ml-auto flex gap-0.5">

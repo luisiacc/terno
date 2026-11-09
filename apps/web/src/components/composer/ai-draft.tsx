@@ -317,6 +317,13 @@ function Strip({ s }: { s: AiSession & { strip: AiStrip } }) {
             </>
           )}
         </ButtonGroup>
+        {/* plan 162 (after ai162-r05): what was asked stays in view, the user's words, quoted, one line, quiet, the first
+            thing to give way (it was only in the popover: once written, nothing said what you'd asked; two reports) */}
+        {strip.instruction && !filled && (
+          <span className="min-w-0 flex-1 truncate ps-1 text-xs text-muted-foreground @max-[30rem]/strip:hidden" title={strip.instruction} data-testid="ai-strip-asked">
+            “{strip.instruction}”
+          </span>
+        )}
         <StatusPopover s={s} strip={strip} toText={toText} />
       </div>
       {s.sameNote && <p className="w-full pb-1.5 text-xs text-muted-foreground" role="status" data-testid="ai-same">{t("aiDraft.choice.same")}</p>}

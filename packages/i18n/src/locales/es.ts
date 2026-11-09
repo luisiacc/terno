@@ -1237,7 +1237,7 @@ const es = {
   "aiDraft.button.write": "Redactarlo con IA a partir de tu nota",
   "aiDraft.button.fill": { one: "Completar el hueco con IA", other: "Completar # huecos con IA" },
   "aiDraft.button.reply": "Redactar una respuesta con IA",
-  "aiDraft.note.label": "Para la IA",
+  "aiDraft.note.label": "Para la IA · no se envía",
   "aiDraft.note.sendOff": "Enviar está desactivado mientras esto sea una nota para la IA. Escríbelo primero, o pulsa {keys} para enviarlo tal cual.",
   "aiDraft.note.description": "Tu nota para la IA. Pulsa {keys} para redactar el correo a partir de ella.",
   "aiDraft.note.question": "Esto parece una nota para la IA.",

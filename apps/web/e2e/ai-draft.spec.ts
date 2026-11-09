@@ -679,6 +679,10 @@ test.describe("drafting with AI (plan 133)", () => {
         await expect(write).toHaveAttribute("data-note", "true");
         await expect(write).toHaveText(/Write it/);
         await expect(write).toBeInViewport();
+        // plan 162 (after ai162-r05): the label says it isn't sent; the foot is one line at 1100 too (Save and close wrapped)
+        await expect(page.getByTestId("ai-note-label")).toHaveText(/For AI · not sent/);
+        const mid = async (id: string) => { const b = (await page.getByTestId(id).boundingBox())!; return b.y + b.height / 2; };
+        expect(Math.abs((await mid("compose-collapse")) - (await mid("compose-ai")))).toBeLessThanOrEqual(4);
         // plan 162 (after ai162-r05): Send is off, its reason in its description and tooltip; a click sends nothing and asks nothing
         await expect(page.getByTestId("compose-send")).toHaveAccessibleName("Send");
         await expect(page.getByTestId("compose-send")).toHaveAttribute("aria-disabled", "true");
@@ -712,6 +716,8 @@ test.describe("drafting with AI (plan 133)", () => {
       await expect(strip(page)).toBeVisible();
       await expect(body(page)).toContainText("That's fine by me.");
       await expect(page.getByTestId("ai-note-label")).toHaveCount(0);
+      // plan 162 (after ai162-r05): what was asked stays in view on the strip, quoted (it was only in the popover)
+      await expect(page.getByTestId("ai-strip-asked")).toHaveText("“fine by me, tell him that”");
       await expect(page.getByTestId("compose-send-group")).toBeVisible();
       // words typed after the draft are how to change it: the draft is rewritten from them, they don't stay, no copy beside it
       await body(page).click();

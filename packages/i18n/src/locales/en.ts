@@ -1246,7 +1246,7 @@ const en = {
   "aiDraft.button.write": "Write it from your note with AI",
   "aiDraft.button.fill": { one: "Fill the gap with AI", other: "Fill # gaps with AI" },
   "aiDraft.button.reply": "Draft a reply with AI",
-  "aiDraft.note.label": "For AI",
+  "aiDraft.note.label": "For AI · not sent",
   "aiDraft.note.sendOff": "Send is off while this is a note for AI. Write it first, or press {keys} to send it as it is.",
   "aiDraft.note.description": "Your note for AI. Press {keys} to write the email from it.",
   "aiDraft.note.question": "This reads as a note for AI.",
