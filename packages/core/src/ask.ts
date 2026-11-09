@@ -219,7 +219,7 @@ export function answerSentences(text: string): AnswerSentence[] {
   if (start < text.length) parts.push(text.slice(start));
   return parts.map((part) => {
     const words = part.replace(/\[\d+\]/g, " ").trim();
-    return { text: part, claim: tokenize(words).length > 2 && !/:$/.test(words), linked: /\[\d+\]/.test(part) };
+    return { text: part, claim: tokenize(words).length > 2 && !words.endsWith(":"), linked: /\[\d+\]/.test(part) };
   });
 }
 

@@ -26,7 +26,7 @@ import { getApp, setApp, useApp } from "~/state/app";
 import { useList } from "~/state/list";
 
 const Line = ({ children, testId }: { children: ReactNode; testId?: string }) => (
-  <p className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground" data-testid={testId}>
+  <p className="flex flex-wrap items-center gap-x-1.5 text-foreground" data-testid={testId}>
     {children}
   </p>
 );
@@ -248,8 +248,7 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
   );
   // what Apply takes: the ticked rows, when every match is a row here
   const ticked = items.filter((r) => !unticked.has(r.id));
-  const found = variant === "reader" && !waiting && !ruleOnly && count > 0 && ticked.length === count ? foundSummary(ticked, (id) => { const a = accounts.find((x) => x.id === id); return a ? a.displayName || a.email : ""; }) : null;
-  const foundLines = found ? [{ label: t("action.found.from"), text: found.from }, ...(found.dates ? [{ label: t("action.found.dates"), text: found.dates }] : []), ...(found.accounts ? [{ label: t("action.found.accounts"), text: found.accounts }] : [])] : [];
+  const found = !waiting && !ruleOnly && count > 0 && ticked.length === count ? foundSummary(ticked, (id) => { const a = accounts.find((x) => x.id === id); return a ? a.displayName || a.email : ""; }) : null;
   const editLink = plan.action.type !== "createCategory" && (
     // plan 162 (after ai162-r02): a control that looks like one, beside what it edits (grey text, it read as a caption)
     <Button variant="outline" size={reader ? "sm" : "xs"} className="no-drag shrink-0 text-foreground" data-testid="action-edit-filter" onClick={editAsFilter}>
@@ -257,67 +256,37 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
       {t("action.editAsFilter")}
     </Button>
   );
-  const body = (
-    // (the list's header is a window drag area: what's in it takes clicks)
-    <div className={cn("flex flex-col gap-3", reader ? "text-sm" : "no-drag pt-1.5 text-xs")}>
-      {reader ? (
-        <div>
-          {/* plan 161, pass 2: what Apply does is the title; what was asked, the quieter line under it */}
-          <h2 className={cn(PANE_TITLE, "text-pretty")} data-testid="action-rule-title">{previewTitle(preview, shown, folderName)}</h2>
-          {sentence && <p className="mt-1 text-sm text-pretty text-muted-foreground" data-testid="action-rule-request">“{sentence}”</p>}
-          {consequence}
-        </div>
-      ) : (
-        consequence
-      )}
-      {senderLine}
-      {/* plan 162 (after ai162-r02): one grid for both sections, so their values share one column (they started 50 to 70 px
-          apart, every report); what it found is counted from the ticked rows, so an untick recounts it, never hides it */}
-      <div data-testid="action-review" className={cn("grid grid-cols-[minmax(5rem,max-content)_1fr] items-baseline gap-x-4", reader ? "gap-y-2" : "gap-y-1")}>
-        <div className="col-span-full flex min-h-7 items-center justify-between gap-3">
-          {/* plan 162 (after ai162-r01): a heading in the ink; it was a caption smaller than the labels it introduced */}
-          <h3 className="text-sm font-medium text-foreground">{t("action.rule.readAs")}</h3>
-          {editLink}
-        </div>
-        <dl data-testid="action-conditions" className={cn("col-span-full grid grid-cols-subgrid items-baseline", reader ? "gap-y-2" : "gap-y-1")}>
-          {rows.map((r, i) => (
-            <div key={i} className="contents" data-testid="action-rule-row">
-              <dt className="text-muted-foreground">{r.label}</dt>
-              {/* plan 162 (after ai162-r01): the terms as words in the ink, "shipped, delivery or tracking", not chips that
-                  looked removable and wrapped to three lines */}
-              <dd className="min-w-0 text-pretty wrap-anywhere">
-                <span>{r.text}</span>
-                {r.terms && " "}
-                {r.terms && termParts(r.terms).map((part, j) => (part.type === "element" ? <span key={j} data-testid="action-rule-term" className="font-medium">{part.value}</span> : <span key={j}>{part.value}</span>))}
-              </dd>
-            </div>
-          ))}
-        </dl>
-        {found && (
-          <div className="contents" data-testid="action-found">
-            <h3 className="col-span-full mt-3 text-sm font-medium text-foreground">{t("action.found.title")}</h3>
-            <dl className="col-span-full grid grid-cols-subgrid items-baseline gap-y-2">
-              {foundLines.map((l) => (
-                <div key={l.label} className="contents">
-                  <dt className="text-muted-foreground">{l.label}</dt>
-                  <dd className="min-w-0 text-pretty wrap-anywhere" data-testid="action-found-line">{l.text}</dd>
-                </div>
-              ))}
-            </dl>
-          </div>
-        )}
+  // the owner (2026-11-08): "not clear at all, i don't understand what i need to do there, too much text that's very not
+  // important". What will happen leads (the title, then which mail, in one line), then what's kept back when it changes
+  // the decision, then the decision itself; how Terno read the request is one quiet disclosure, closed
+  const foundText = found ? [found.from, found.dates, found.accounts].filter(Boolean).join(" · ") : null;
+  const anyFact = plan.action.type === "createCategory" || preview.hidden || preview.forwards || preview.skipped > 0 || checking || checkError || preview.leftOut + preview.unchecked > 0 || (preview.keep.kind !== "hidden" && !ruleOnly);
+  const reading = (
+    <Collapsible data-testid="action-reading" className="hairline-t pt-2">
+      <div className="flex flex-wrap items-center gap-x-4">
+        <CollapsibleTrigger className="h-7 w-auto gap-1 text-xs font-medium text-muted-foreground hover:text-foreground [&>[data-slot=collapsible-chevron]]:ms-0 [&>[data-slot=collapsible-chevron]]:size-3.5" data-testid="action-reading-toggle">
+          {t("action.reading")}
+        </CollapsibleTrigger>
+        {provenance}
       </div>
-      {details.length > 0 ? (
-        <Collapsible data-testid="action-details">
-          <div className="flex flex-wrap items-center gap-x-4">
-            {/* plan 161, pass 2: named for what it holds, a 24 px target */}
-            <CollapsibleTrigger className="h-6 w-auto gap-1 text-xs font-medium text-muted-foreground hover:text-foreground [&>[data-slot=collapsible-chevron]]:ms-0 [&>[data-slot=collapsible-chevron]]:size-3.5" data-testid="action-details-toggle">
-              {t("action.rule.details")}
-            </CollapsibleTrigger>
-            {provenance}
-          </div>
-          <CollapsiblePanel>
-            {/* the UI's type, not code's: a pattern breaks only after a "|", never inside a word */}
+      <CollapsiblePanel>
+        <div className={cn("flex flex-col gap-3 pt-2 pb-1", reader ? "text-sm" : "text-xs")}>
+          {reader && sentence && <p className="text-pretty text-muted-foreground" data-testid="action-rule-request">“{sentence}”</p>}
+          <dl data-testid="action-conditions" className={cn("grid grid-cols-[minmax(5rem,max-content)_1fr] items-baseline gap-x-4", reader ? "gap-y-2" : "gap-y-1")}>
+            {rows.map((r, i) => (
+              <div key={i} className="contents" data-testid="action-rule-row">
+                <dt className="text-muted-foreground">{r.label}</dt>
+                <dd className="min-w-0 text-pretty wrap-anywhere">
+                  <span>{r.text}</span>
+                  {r.terms && " "}
+                  {r.terms && termParts(r.terms).map((part, j) => (part.type === "element" ? <span key={j} data-testid="action-rule-term" className="font-medium">{part.value}</span> : <span key={j}>{part.value}</span>))}
+                </dd>
+              </div>
+            ))}
+          </dl>
+          {details.length > 0 && (
+            <div data-testid="action-details">
+              <h4 className="text-xs font-medium text-muted-foreground">{t("action.rule.exact")}</h4>
             <dl className="mt-1 grid grid-cols-[minmax(5rem,max-content)_1fr] items-baseline gap-x-4 gap-y-1 text-xs" data-testid="action-details-text">
               {details.map((d, i) => (
                 <div key={i} className="contents">
@@ -329,13 +298,25 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
                 </div>
               ))}
             </dl>
-          </CollapsiblePanel>
-        </Collapsible>
-      ) : (
-        <div className="flex flex-wrap items-center gap-x-4">{provenance}</div>
-      )}
-      {(plan.action.type === "createCategory" || preview.hidden || preview.forwards || preview.skipped > 0 || checking || checkError || preview.leftOut + preview.unchecked > 0 || (preview.keep.kind !== "hidden" && !ruleOnly)) && (
-        <div className="hairline-t flex flex-col gap-1.5 pt-3">
+            </div>
+          )}
+          <div className="flex flex-wrap items-center gap-2">{editLink}</div>
+        </div>
+      </CollapsiblePanel>
+    </Collapsible>
+  );
+  const body = (
+    // (the list's header is a window drag area: what's in it takes clicks)
+    <div className={cn("flex flex-col", reader ? "gap-4 text-sm" : "no-drag gap-2.5 pt-1.5 text-xs")}>
+      <div className="space-y-1">
+        {reader && <h2 className={cn(PANE_TITLE, "text-pretty")} data-testid="action-rule-title">{previewTitle(preview, shown, folderName)}</h2>}
+        {/* which mail, at a glance: who it's from, when, and where (counted from the ticked rows, so an untick recounts it) */}
+        {foundText && <p className="text-pretty text-foreground" data-testid="action-found"><span data-testid="action-found-line">{foundText}</span></p>}
+        {consequence}
+      </div>
+      {senderLine}
+      {anyFact && (
+        <div className="flex flex-col gap-2" data-testid="action-facts">
           {plan.action.type === "createCategory" && <Line testId="action-creates">{t("action.creates", { name: plan.action.name })}</Line>}
           {preview.hidden && <Line testId="action-hidden">{t("action.hidden")}</Line>}
           {preview.forwards && <Line testId="action-forwards">{t("action.forwards")}</Line>}
@@ -384,15 +365,14 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
           )}
         </div>
       )}
-      {/* plan 162 (after ai162-r01): what to do here, said once in words; the keys are the header's buttons' own */}
-      {!ruleOnly && <p className={cn("text-pretty text-muted-foreground", reader ? "text-sm" : "text-xs")} data-testid="action-help">{t("action.rule.keys")}</p>}
-      {/* plan 162 (after ai162-r02): the decision where the reading ends too, the header's own commands (which stay, so
-          nothing moves while a match is read): five reports found Apply a window's width from what it confirms */}
+      {/* the decision, where the reading of the pane ends (the header's own commands, which stay, so nothing moves while a
+          match is read) */}
       {reader && (
-        <div className="no-drag flex flex-wrap items-center justify-end gap-2 pt-1" data-testid="action-rule-decision">
-          <ActionButtons size="sm" at="rule" />
+        <div className="no-drag flex flex-wrap items-center gap-2" data-testid="action-rule-decision">
+          <ActionButtons size="sm" at="rule" order="apply-first" />
         </div>
       )}
+      {!ruleOnly || plan.conditions.length ? reading : null}
     </div>
   );
   // List: under the header, bounded, so a long rule (Details open) scrolls in place and never takes the rows' room

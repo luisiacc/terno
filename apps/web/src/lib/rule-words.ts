@@ -245,7 +245,7 @@ export function patternTerms(pattern: string): string[] | null {
   for (const piece of body.split("|")) {
     // plan 162 (after ai162-r03): what a word list is written with still reads as words: a word's edges (\b) say nothing
     // more, a space is a space, and a letter class of one letter's accents ("env[ií]o") is the accented word
-    const raw = piece.replace(/\\b/g, "").replace(/\\s[+*]?/g, " ").replace(/\[(\p{L}{2,3})\]/gu, (whole, letters: string) => (new Set([...letters].map((l) => l.normalize("NFD")[0]!.toLowerCase())).size === 1 ? ([...letters].find((l) => /[^\x00-\x7f]/.test(l)) ?? letters[0]!) : whole));
+    const raw = piece.replace(/\\b/g, "").replace(/\\s[+*]?/g, " ").replace(/\[(\p{L}{2,3})\]/gu, (whole, letters: string) => (new Set([...letters].map((l) => l.normalize("NFD")[0]!.toLowerCase())).size === 1 ? ([...letters].find((l) => l.charCodeAt(0) > 127) ?? letters[0]!) : whole));
     // escapes of punctuation are the punctuation itself; any other special character is more than a word
     const plain = raw.replace(/\\[\\^$.*+?()[\]{}|/-]/g, "");
     if (/[\\^$.*+?()[\]{}]/.test(plain)) return null;

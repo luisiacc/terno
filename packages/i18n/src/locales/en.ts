@@ -2521,6 +2521,8 @@ It contains none of your mail, contacts, settings or keys.
   "action.undone.moveToFolder": { one: "Moved # conversation back where it was", other: "Moved # conversations back where they were" },
   "action.sender.notLooked": "Your sentence names {name}, but this rule doesn’t look at the sender. Check it below, or edit it as a rule.",
   "action.rule.readAs": "Terno read it as",
+  "action.rule.exact": "The exact search",
+  "action.reading": "How Terno read it",
   "action.found.title": "What it found",
   "action.found.from": "From",
   "action.found.dates": "Dates",

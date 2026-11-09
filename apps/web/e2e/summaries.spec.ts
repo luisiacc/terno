@@ -175,7 +175,7 @@ test.describe("summaries (plan 132)", () => {
     await expect(page.locator("[data-slot=tooltip-content]")).toContainText(/⌘\s*J/);
   });
 
-  test("plan 148: a card in every design, its edges on the column and its text inset; nothing spills out of it", { tag: "@design" }, async ({ app: page, server }, info) => {
+  test("plan 148: a card in every design, its edges on the column and its text inset; nothing spills out of it", { tag: "@design" }, async ({ app: page, server }) => {
     const accountId = await firstAccount(server);
     await settingUp(page, server, { ai: { provider: "fake" } });
     const unbroken = `https://example.test/${"alongpath".repeat(40)}`;
