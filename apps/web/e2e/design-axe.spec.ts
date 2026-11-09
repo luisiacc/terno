@@ -147,8 +147,14 @@ test.describe("axe", { tag: "@variant" }, () => {
     await page.getByTestId("ask-citation").first().click();
     await expect(page.getByTestId("ask-peek")).toHaveAttribute("data-state", "ready");
     await clean(page, "a source shown in Ask", "[role=dialog]");
-    await page.getByTestId("ask-close").click();
+    // plan 165: the answer pinned to the reading pane's corner, a source of it read
+    await page.keyboard.press("Escape");
+    await page.getByTestId("ask-pin").click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
+    await page.getByTestId("pinned-ask-source").first().click();
+    await expect(page.getByTestId("pinned-ask-source").first()).toHaveAttribute("data-visited", "true");
+    await clean(page, "the pinned answer", "[data-testid=pinned-ask]");
+    await page.getByTestId("pinned-ask-close").click();
 
     await page.getByTestId("open-settings").click();
     for (const tab of ["general", "appearance", "accounts", "categories", "filters", "ai", "agents", "data"]) {
