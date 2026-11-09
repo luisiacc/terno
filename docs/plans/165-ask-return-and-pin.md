@@ -52,7 +52,7 @@ The draft keeps the bottom-right corner. The card goes:
 - **Beside it, to its left**, when the pane holds both and 20 rem for the card: its right edge 12 px left of the draft's, its width what's left (up to 24 rem). At 1440 in List layout and on wide Split panes.
 - **Above it** otherwise (a 1100x700 window's reader pane is ~530 px; the draft takes it all): the same right edge, its foot 12 px over the draft's top, its height what's left above the draft (down to its header). Where less than 140 px is left, it shows collapsed (its header), whatever its own choice; Expand there is disabled with the reason in its tooltip. The card never covers the draft.
 - **The snack dock:** the card stands on the dock when they'd meet (the draft's rule), beside the draft or alone.
-- **Moving:** `right`, `bottom` and `max-height` change with `transition-[right,bottom] duration-base ease-motion`; with motion reduced or off the durations are 0 (the `--motion` tokens).
+- **Moving:** it changes place at once, with no transition (Codex critique #12: an animated move went through the draft's corner). Its entrance is the draft's fade and 1 px rise at `duration-base`, none when motion is reduced or off (the `--motion` tokens).
 
 ## Tests
 
@@ -70,3 +70,20 @@ Nothing on a hot path: the card mounts only while pinned; its layout is measured
 - Keeping the card across restarts.
 - More than one pinned answer.
 - A new shortcut to pin, unpin or focus the card.
+
+## Revisions after the Codex review
+
+The critique (12 points, `/tmp/terno-scratch/p164/ask/critique.md`) and what changed:
+
+1. **The card can't reuse Ask's rendering as is** (it reads the active conversation). `AnswerText` takes the conversation, what a citation does (`open`) and the card's own copy of its sources' states; the citation is its own component; the card has its own source rows; `Armed` keys on the message, so it holds for either.
+2. **List's page took focus from the card** (its mount effect focuses the conversation). The reader leaves focus alone while it's in the pinned answer (`reader.tsx`); e2e opens the first source from List's rows and checks focus stayed.
+3. **Pinning's focus handoff.** `focusMessage`'s wait is now `focusAfterDialog` (waits for the dialog to go, yields to a key or a press), used by both.
+4. **Unpin after 30 minutes.** Unpin refreshes `usedAt` before opening Ask (an explicit return, as Back to the answer); the card is cleared before the await, so a late answer can't take a newer pin (unit).
+5. **Scroll restore had competing owners and one slot.** One decision in the existing mount effect; `askPlace` is per conversation (the last 20), with the turn count as its version.
+6. **The chosen source and an unsent follow-up were lost.** Kept in the same place: the sources' scroll, cmdk's chosen row (the palette's `defaultValue` when it opens on Ask, `askChosen`), the follow-up's text.
+7. **Cleanup by the pinned conversation, not the active one.** `aiAskGone` (with its ids), `deleteConversation` and Clear AI data clear the card whichever conversation Ask holds; a source asked for after the card went opens nothing (unit). Ask turned off hides it.
+8. **The dock is centred, with lifts.** The card measures the dock's real card and stands on it only where they meet, while a snack is up (no estimate when none shows).
+9. **The stack must fit.** The card's room is what the draft and the dock leave; under 140 px it's its header alone. The draft's own 70% cap leaves at least ~30% of the pane, so the header fits at every window size Terno opens at; under that (a pane shorter than ~180 px) the header may overlap the draft's top, written down here rather than handled.
+10. **Insets for stacked cards.** Each card publishes its offset plus its height; one helper (`usePinnedInset`, `pinnedInsetNow`) gives the larger to the reader, the list and a new message.
+11. **Keyboard ownership.** Esc is the card's only from its own DOM and not from an open popup; it gives focus back to reading and stops there. Folding with focus inside moves it to the header's toggle; Close and Unpin with focus inside give it back to reading. The answer region is named ("Answer"); the toggle stays reachable while it can't open (`aria-disabled`, with the reason).
+12. **Animating a move crosses the draft.** No transition on moves (above).
