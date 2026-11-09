@@ -65,6 +65,42 @@ export function detectWritingLanguage(text: string): string {
   return first && first[1] >= 2 && first[1] > (second?.[1] ?? 0) && own[first[0]] ? first[0] : "";
 }
 
+/**
+ * A question's small words in the languages Terno ships. A question is short and rarely gives detectWritingLanguage
+ * enough, so it's read by how it asks: its question words and the words around them. Words both languages write the
+ * same ("me", "no", "has", "son") say nothing.
+ */
+const QUESTION_WORDS: Readonly<Record<string, ReadonlySet<string>>> = {
+  en: new Set("what what's whats when when's where where's who who's whom whose why how which did does do is are was were had have the my any anything about say said says tell show find list give get last many much there from of with for this that these those can could should would will ever since before after and or".split(" ")),
+  es: new Set("qué que cuándo cuando dónde donde adónde quién quien quiénes quienes por porqué cómo como cuál cual cuáles cuales cuánto cuanto cuánta cuántos cuantos cuántas dijo dijeron tengo tiene tienen tenía hay hubo algún alguna alguno el la los las mi mis sobre del al de para con una un es fue fueron está están estaba y o desde antes después dime muéstrame busca".split(" ")),
+};
+
+/** What's in quotation marks is the mail's words, not the question's: "When is “la cena de gala”?" asks in English. */
+const QUOTED = /(["“«])[^"”»\n]*["”»]|(^|\s)'[^'\n]*'(?=[\s?.!,;:]|$)/gu;
+
+/**
+ * The language a question to Ask is in, so the answer can be told it outright: a model reading Spanish mail drifts into
+ * Spanish whatever the rules say. "" when the question doesn't say, and the caller falls back.
+ */
+export function questionLanguage(question: string): string {
+  const text = question.replace(QUOTED, " ");
+  // a language Terno doesn't ship is only ever named by the general reading; en and es by how the question asks
+  const general = detectWritingLanguage(text);
+  if (general && general !== "en" && general !== "es" && languageName(general)) return general;
+  const words = text.toLowerCase().match(/\p{L}[\p{L}'’]*/gu) ?? [];
+  const score: Record<string, number> = { en: 0, es: 0 };
+  for (const [language, list] of Object.entries(QUESTION_WORDS)) {
+    for (const word of words) if (list.has(word.replace(/’/g, "'"))) score[language]! += 1;
+    // how it opens is how it asks: "When is la cena?" is English
+    if (words[0] && list.has(words[0])) score[language]! += 1;
+  }
+  if (/[¿¡]/u.test(text)) score.es! += 3;
+  // é is French's as much: only the others
+  if (/[ñáíóú]/u.test(text.toLowerCase())) score.es! += 1;
+  if (score.en === score.es) return general;
+  return score.en! > score.es! ? "en" : "es";
+}
+
 /** The names a person might use in an instruction: "in Spanish", "en inglés". Only ones Terno can also keep a voice for. */
 const NAMED: readonly [RegExp, string][] = [
   [/\b(?:in|en|em|auf|na|lingua)\s+(?:english|ingl[eé]s|anglais|englisch|ingl[eê]s|inglese|engels)\b/iu, "en"],

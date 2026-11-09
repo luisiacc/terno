@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chooseLanguage, detectWritingLanguage, languageName, namedLanguage, voiceForLanguage, type LanguageEvidence } from "./language";
+import { chooseLanguage, detectWritingLanguage, languageName, namedLanguage, questionLanguage, voiceForLanguage, type LanguageEvidence } from "./language";
 import type { VoiceProfile } from "./types";
 
 const none: LanguageEvidence = { instruction: "", threadOwn: [], inbound: "", toPerson: [] };
@@ -39,6 +39,47 @@ describe("detectWritingLanguage", () => {
 
   it("a name in another script doesn't change an English mail", () => {
     expect(detectWritingLanguage("Please thank 田中 for the update and tell him we will have it with the others.")).toBe("en");
+  });
+});
+
+describe("questionLanguage", () => {
+  it.each([
+    ["What did Isabella say about the payment?", "en"],
+    ["When is my flight?", "en"],
+    ["How much did I spend on Uber last month?", "en"],
+    ["Who sent the contract?", "en"],
+    ["¿Qué dijo Isabella sobre el pago?", "es"],
+    ["Qué dijo Isabella sobre el pago", "es"],
+    ["cuándo es mi vuelo", "es"],
+    ["¿Cuánto gasté en Uber el mes pasado?", "es"],
+    ["Quién mandó el contrato", "es"],
+    ["Bonjour, quand est-ce que nous avons la réunion avec vous?", "fr"],
+  ])("%s", (question, language) => {
+    expect(questionLanguage(question)).toBe(language);
+  });
+
+  it("goes by how it asks when it's mixed", () => {
+    expect(questionLanguage("What did Isabella say about the pago de la factura?")).toBe("en");
+    expect(questionLanguage("¿Qué dijo Isabella about the invoice?")).toBe("es");
+    // a name with an accent is a name
+    expect(questionLanguage("What did José say?")).toBe("en");
+  });
+
+  it("the mail's words in quotes don't count", () => {
+    expect(questionLanguage("When is “la cena de gala de la empresa”?")).toBe("en");
+    expect(questionLanguage('Where is "el contrato de la casa"?')).toBe("en");
+    expect(questionLanguage("Who's 'el señor de la tienda'?")).toBe("en");
+  });
+
+  it("says nothing when the question doesn't say", () => {
+    for (const question of ["", "Isabella?", "Uber 2026", "pago Isabella", "👍", "Acme invoice"]) expect(questionLanguage(question)).toBe("");
+  });
+
+  it("short questions that do say", () => {
+    expect(questionLanguage("and when?")).toBe("en");
+    expect(questionLanguage("y cuándo?")).toBe("es");
+    expect(questionLanguage("¿y Juan?")).toBe("es");
+    expect(questionLanguage("What?")).toBe("en");
   });
 });
 

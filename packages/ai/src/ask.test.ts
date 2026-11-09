@@ -35,6 +35,13 @@ describe("the answer (plan 141)", () => {
     expect(prompt.match(/<question>/g)).toHaveLength(1);
   });
 
+  it("names the answer's language last, and the rules defer to it", () => {
+    const prompt = answerPrompt({ question: "What did Isabella say about the payment?", language: "English", today: "2026-11-05", material: [material("Te confirmo el pago.")] });
+    expect(prompt).toMatch(/<\/question>\n\nWrite the answer in English, whatever language the mail is in\.$/);
+    expect(answerPrompt({ question: "q", today: "2026-11-05", material: [] })).not.toContain("Write the answer in");
+    expect(ASK_ANSWER_RULES).toContain("the language the prompt's last line names");
+  });
+
   it("the status never shows as it streams, however it's split", () => {
     let shown = "";
     const f = answerFilter((t) => (shown += t));
@@ -118,7 +125,7 @@ describe("the answer (plan 141)", () => {
 
 describe("what the real-mail panel found (plan 141)", () => {
   it("the language rule isn't left to the mail's language, and a code stays out unless asked", () => {
-    expect(ASK_ANSWER_RULES).toMatch(/English question gets English/);
+    expect(ASK_ANSWER_RULES).toMatch(/when it names English, answer in English even when every message is in Spanish/);
     expect(ASK_ANSWER_RULES).toMatch(/one-time code/);
     expect(ASK_ANSWER_RULES).toMatch(/never correct yourself/);
   });

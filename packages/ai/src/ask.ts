@@ -9,7 +9,7 @@ import { AiError, promptText, type Completion, type Effort, type ModelTransport,
  * Plan 141 §2: from a question to an answer. Prompts are frozen and versioned: any change to the words below bumps
  * ASK_PROMPT_VERSION. There are no tools here, so an instruction in mail can only change text the person reads.
  */
-export const ASK_PROMPT_VERSION = 8;
+export const ASK_PROMPT_VERSION = 9;
 export const ASK_ANSWER_MAX_TOKENS = 2000;
 const PLAN_MAX_TOKENS = 1500;
 const ASK_TIMING = { idleMs: 30_000, firstMs: 60_000 };
@@ -136,7 +136,7 @@ Rules:
 - A time in a mail's stated zone is that zone's time: say whose it is.
 - Write a number once: never correct yourself in the answer. Give one total per currency at most. Speak to the person as "you", never by their name.
 - Never write out a password or a one-time code unless the question asks for exactly that.
-- Answer in the language of the question, whatever language the mail is in: an English question gets English even when every message is in Spanish. That includes saying you found nothing. In Spanish, speak as "tú" unless the question says "usted". Be brief: a sentence or two is usually enough. Plain text, apart from <count> and <sum>: no headings, no tables, no HTML, no links. For three or more separate items, put each on its own line starting with "- ", its citation at the line's end.
+- Answer in the language the prompt's last line names, or without one the language of the question, whatever language the mail is in: when it names English, answer in English even when every message is in Spanish. That includes saying you found nothing. Words you quote from a message stay as written. In Spanish, speak as "tú" unless the question says "usted". Be brief: a sentence or two is usually enough. Plain text, apart from <count> and <sum>: no headings, no tables, no HTML, no links. For three or more separate items, put each on its own line starting with "- ", its citation at the line's end.
 - End with exactly one status tag on its own line: <status>answered</status> when the material answers the question, <status>partial</status> when it answers in part, <status>not_found</status> when it doesn't. With not_found, say in one sentence that you couldn't find it.`;
 
 export interface AskMaterial {
@@ -156,6 +156,8 @@ export interface AnswerFromMailInput {
   /** how many conversations the search found, counted by the machine; `capped`: it stopped there */
   found?: { count: number; capped: boolean };
   question: string;
+  /** what the answer is written in, by name: the question's language, read by the machine (questionLanguage) */
+  language?: string;
   /** YYYY-MM-DD */
   today: string;
   material: readonly AskMaterial[];
@@ -189,14 +191,18 @@ export interface AnswerFromMailResult {
   usage?: Usage;
 }
 
-export function answerPrompt(input: Pick<AnswerFromMailInput, "question" | "today" | "material" | "earlier" | "moreMatch" | "found">): string {
+type AnswerPromptInput = Pick<AnswerFromMailInput, "question" | "language" | "today" | "material" | "earlier" | "moreMatch" | "found">;
+
+export function answerPrompt(input: AnswerPromptInput): string {
   const blocks = input.material.map((m) => `<mail id="${m.label}" from="${attribute(m.from)}" date="${m.date}" subject="${attribute(m.subject)}"${m.own ? ' author="the person asking"' : ""}>\n${askData(m.text)}\n</mail>`);
   const earlier = input.earlier?.length ? `<earlier>\n${input.earlier.map((t) => `<turn>\nQ: ${askData(t.question)}\nA: ${askData(t.answer)}\n</turn>`).join("\n")}\n</earlier>\n\n` : "";
   // whether what's here is everything: a count needs to know, and a model can't tell by reading
   const searched = input.found ? ` The search found ${input.found.count}${input.found.capped ? " or more" : ""} conversations.` : "";
   const oldest = input.material.reduce((min, m) => (m.date < min ? m.date : min), input.material[0]?.date ?? "");
   const shown = input.material.length ? `<shown>${input.material.length} messages, newest first, the oldest from ${oldest}.${searched} ${input.moreMatch ? "More match than these." : "These are all that matched."}</shown>\n\n` : "";
-  return `Today is ${input.today}.\n\n${blocks.join("\n\n")}\n\n${earlier}${shown}<question>${askData(input.question)}</question>`;
+  // said last and outright: the rule alone loses to a page of Spanish mail (plan 162, after ai162-r04)
+  const language = input.language ? `\n\nWrite the answer in ${input.language}, whatever language the mail is in.` : "";
+  return `Today is ${input.today}.\n\n${blocks.join("\n\n")}\n\n${earlier}${shown}<question>${askData(input.question)}</question>${language}`;
 }
 
 /**
@@ -217,11 +223,11 @@ export function askBudget(contextTokens: number | null, fixedChars: number): { o
  * What goes first says least: earlier turns, oldest first; then the last messages; then the words of the one left; then
  * its long headers. A label left out can't be cited, so nothing has a gap. Null: the question alone can't fit.
  */
-export function fitAskPrompt(input: Pick<AnswerFromMailInput, "question" | "today" | "material" | "earlier" | "moreMatch" | "found">, promptChars: number): { material: AskMaterial[]; earlier: { question: string; answer: string }[] } | null {
+export function fitAskPrompt(input: AnswerPromptInput, promptChars: number): { material: AskMaterial[]; earlier: { question: string; answer: string }[] } | null {
   let material = input.material.map((m) => ({ ...m, from: m.from.slice(0, ASK_HEADER_CHARS), subject: m.subject.slice(0, ASK_HEADER_CHARS) }));
   let earlier = [...(input.earlier ?? [])];
   if (promptChars === Infinity) return { material, earlier };
-  const size = () => answerPrompt({ question: input.question, today: input.today, material, earlier }).length;
+  const size = () => answerPrompt({ question: input.question, ...(input.language ? { language: input.language } : {}), today: input.today, material, earlier }).length;
   while (size() > promptChars && earlier.length) earlier = earlier.slice(1);
   while (size() > promptChars && material.length > 1) material = material.slice(0, -1);
   if (size() > promptChars && material[0]) material = [{ ...material[0], text: material[0].text.slice(0, Math.max(0, material[0].text.length - (size() - promptChars))) }];
@@ -400,7 +406,9 @@ export function fakeAnswer(prompt: string): { text: string; stop: Completion["st
   const words = wordsOf(question.replace(/\[\[[a-z0-9-]+\]\]/g, ""));
   const blocks = [...prompt.matchAll(block)].map((m) => ({ label: m[1]!, head: m[2]!, text: m[3]! }));
   const hit = blocks.find((b) => words.some((w) => `${b.head} ${b.text}`.toLowerCase().includes(w)));
-  const spanish = /[¿áéíóúñ]|\b(cuándo|cuando|qué|dónde|mi|el|la)\b/i.test(question);
+  // the language the prompt names, as a real model follows it; without one, a guess from the question
+  const named = /\nWrite the answer in (\w+), whatever/.exec(prompt)?.[1];
+  const spanish = named ? named === "Spanish" : /[¿áéíóúñ]|\b(cuándo|cuando|qué|dónde|mi|el|la)\b/i.test(question);
   if (!hit) return { text: `${spanish ? "No lo encuentro en estos correos." : "I couldn't find that in these messages."}\n<status>not_found</status>`, stop: "end" };
   const sentence = hit.text.split(/(?<=[.!?])\s+/).map((s) => s.trim()).find((s) => words.some((w) => s.toLowerCase().includes(w))) ?? hit.text.slice(0, 120);
   let text = `${spanish ? "Según tu correo: " : ""}${sentence} [${hit.label}]`;

@@ -96,6 +96,27 @@ describe("from a question to an answer", () => {
     expect(list[0]).toMatchObject({ title: "When does my lease renew?", followUps: 1 });
   });
 
+  it("the answer is told the question's language outright, whatever the mail is in (plan 162, after ai162-r04)", async () => {
+    const { model, client, put, ask } = await setup();
+    await put({ subject: "Contrato", bodyText: "Tu contrato de alquiler se renueva el 1 de marzo de 2027." });
+    model.plan = () => [query({ terms: ["contrato"] })];
+    const last = () => promptText(model.answers.at(-1)!.messages[0]!.content);
+    const first = done(await ask("When does my lease renew?"));
+    expect(last()).toMatch(/Write the answer in English, whatever language the mail is in\.$/);
+    // a follow-up by its own question
+    await ask("¿Y cuándo hay que avisar?", { conversationId: first.turn!.conversationId });
+    expect(last()).toMatch(/Write the answer in Spanish/);
+    // one that doesn't say keeps to the newest that did
+    await ask("Greenway?", { conversationId: first.turn!.conversationId });
+    expect(last()).toMatch(/Write the answer in Spanish/);
+    // a new question that doesn't say is in the app's language
+    await ask("Greenway?");
+    expect(last()).toMatch(/Write the answer in English/);
+    await client.call("settings.update", { language: "es" });
+    await ask("Greenway?");
+    expect(last()).toMatch(/Write the answer in Spanish/);
+  });
+
   it("no mail reaches the plan of a first question", async () => {
     const { model, put, ask } = await setup();
     await put({ bodyText: "CANARY-BODY the lease", subject: "CANARY-SUBJECT lease" });

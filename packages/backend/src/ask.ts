@@ -6,6 +6,8 @@ import {
   askSpecifics,
   hasUnlinkedSentence,
   askStreamText,
+  languageName,
+  questionLanguage,
   resolveCitations,
   validAskQueries,
   type AiAskResult,
@@ -252,6 +254,17 @@ export class AskService {
     return { status: "failed", turn, error: { kind: clean.kind as AiErrorKind, message: clean.message, ...(clean.i18n ? { i18n: clean.i18n } : {}) }, older: { kind: "none" } };
   }
 
+  /**
+   * What the answer is written in, named outright: this question's language; when it doesn't say ("Isabella?"), the
+   * newest earlier question that does; else the app's. Read here, with no model: a model told only "the question's
+   * language" answers an English question in Spanish when the mail is Spanish.
+   */
+  private async answerLanguage(question: string, earlier: readonly { question: string }[]): Promise<string> {
+    const asked = [question, ...earlier.map((t) => t.question).reverse()].map(questionLanguage).find(Boolean);
+    const code = asked || (await this.b.summaries.readerLanguage());
+    return languageName(code) ?? code;
+  }
+
   /** From passages to a checked, kept answer. */
   private async answer(o: {
     p: { requestId: string; conversationId?: number; timezone: string };
@@ -275,7 +288,8 @@ export class AskService {
   }): Promise<AiAskResult> {
     const { store } = this.b;
     const { ai, signal, question, today, earlier } = o;
-    const fixedChars = answerPrompt({ question, today, material: [], earlier }).length;
+    const language = await this.answerLanguage(question, earlier);
+    const fixedChars = answerPrompt({ question, language, today, material: [], earlier }).length;
     const budget = askBudget(ai.contextTokens, fixedChars);
     const passages = await store.ask.passages({ threadIds: o.threadIds, queries: o.searches, first: o.first, maxMessages: Math.min(ASK_MESSAGES_MAX, budget.maxMessages), maxChars: Math.min(ASK_MAX_CHARS, budget.passageChars), signal });
     if (signal.aborted) throw new AiError(L("errors.ai.cancelled"), "cancelled");
@@ -283,7 +297,7 @@ export class AskService {
     const drafted = materialOf(passages.messages, o.p.timezone);
     // threads the page didn't reach count too
     const moreMatch = passages.omitted === true || o.threadIds.length > new Set(passages.messages.map((m) => m.threadId)).size;
-    const fitted = fitAskPrompt({ question, today, material: drafted.material, earlier, moreMatch }, budget.promptChars);
+    const fitted = fitAskPrompt({ question, language, today, material: drafted.material, earlier, moreMatch }, budget.promptChars);
     if (!fitted) throw new AiError(L("errors.ai.askTooSmall"), "unsupported");
     const { material } = fitted;
     const labels = new Map(material.map((m, i) => [m.label, i]));
@@ -298,7 +312,7 @@ export class AskService {
     let raw = "";
     let sent = "";
     const result = await ai.answerFromMail(
-      { question, today, material, found: { count: o.threadIds.length, capped: o.threadIds.length >= THREADS_PER_QUERY }, moreMatch: moreMatch || fitted.material.length < drafted.material.length, ...(fitted.earlier.length ? { earlier: fitted.earlier } : {}) },
+      { question, language, today, material, found: { count: o.threadIds.length, capped: o.threadIds.length >= THREADS_PER_QUERY }, moreMatch: moreMatch || fitted.material.length < drafted.material.length, ...(fitted.earlier.length ? { earlier: fitted.earlier } : {}) },
       {
         signal,
         maxTokens: budget.outputTokens,
