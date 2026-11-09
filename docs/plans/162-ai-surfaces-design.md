@@ -527,3 +527,54 @@ Nine findings, all taken, each with a test that fails without its fix:
 - **A palette command "Summarize this conversation"** (Graphite claude, efficiency 6). It's a command, not a shortcut; the brief kept to the existing controls, which are in the Tab order. May it be added?
 - **"Found with AI"** on the follow-up (three Claude reports flag the difference from "Written with AI"). Keep the distinction (the popover explains it), or one label everywhere?
 - **The action preview's empty half** is now partly "What it found". Opening the first match in the reader would fill it, but opening marks mail read. Would a read-only peek of the first match (no read mark) be wanted?
+
+### ai162-r02 (branch at `1c7aa1992`, 2026-11-08)
+
+After the pass that followed ai162-r01, rated blind on the stub as before. All eight reports valid; 673 cells under 9 (ai162-r01: 656), 97 issues (4 high; r01: 96 and 2). The numbers as `gate.mjs` wrote them:
+
+| Style | Rater | Overall | UI | UX | Lowest | Cells below |
+|---|---|---:|---:|---:|---:|---:|
+| atelier | claude | 7 | 7 | 7.5 | 5 | 84/84 |
+| atelier | codex | 7.5 | 7.5 | 7 | 5 | 84/84 |
+| graphite | claude | 7.5 | 7 | 8 | 6.5 | 83/84 |
+| graphite | codex | 7.5 | 8 | 7 | 4.5 | 75/84 |
+| lumen | claude | 7 | 7 | 7.5 | 6 | 84/84 |
+| lumen | codex | 7 | 7.5 | 7 | 5.5 | 83/84 |
+| macos | claude | 7.5 | 7 | 8 | 6.5 | 81/84 |
+| macos | codex | 7.5 | 7.5 | 7.5 | 4 | 75/84 |
+
+#### Screens, each rater's overall
+
+| Screen | atelier claude | atelier codex | graphite claude | graphite codex | lumen claude | lumen codex | macos claude | macos codex |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| summary | 7.5 | 7.5 | 7.5 | 8 | 7.5 | 8 | 7.5 | 8 |
+| ai_draft | 7.5 | 7 | 8 | 7.5 | 7 | 7.5 | 8 | 7.5 |
+| ask | 8 | 8 | 7.5 | 8.5 | 8 | 8 | 8 | 8.5 |
+| actions | 7.5 | 8 | 7.5 | 8.5 | 7 | 7.5 | 7.5 | 8 |
+| today | 6 | 6 | 7.5 | 5.5 | 6.5 | 6.5 | 7 | 6.5 |
+| followups_replies | 8 | 7.5 | 8 | 8 | 7.5 | 8 | 8 | 8.5 |
+| ai_settings | 6.5 | 7.5 | 7.5 | 7.5 | 7 | 7 | 7 | 7 |
+
+#### Facets, mean across screens
+
+| Facet | atelier claude | atelier codex | graphite claude | graphite codex | lumen claude | lumen codex | macos claude | macos codex |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| typography | 7.14 | 7.79 | 7.50 | 8.00 | 7.43 | 7.71 | 7.21 | 7.93 |
+| contrast | 7.36 | 8.29 | 8.14 | 8.29 | 7.00 | 7.36 | 7.93 | 8.29 |
+| placement | 6.86 | 7.43 | 7.43 | 7.86 | 7.29 | 7.50 | 7.29 | 7.50 |
+| hierarchy | 6.79 | 7.36 | 7.07 | 7.57 | 7.29 | 7.21 | 7.00 | 7.50 |
+| controls | 7.21 | 7.86 | 7.21 | 7.93 | 7.21 | 7.93 | 7.29 | 8.07 |
+| density | 7.21 | 7.00 | 7.57 | 7.43 | 7.36 | 7.14 | 7.50 | 7.36 |
+| efficiency | 7.71 | 7.64 | 8.00 | 8.00 | 7.64 | 7.71 | 8.07 | 8.00 |
+| clarity | 7.50 | 7.50 | 8.07 | 7.71 | 7.50 | 7.43 | 7.93 | 7.86 |
+| feedback | 8.14 | 7.86 | 8.00 | 8.21 | 7.29 | 8.29 | 8.21 | 8.43 |
+| consistency | 7.43 | 7.50 | 8.00 | 7.79 | 7.57 | 7.79 | 7.79 | 7.86 |
+| accessibility | 6.79 | 7.71 | 7.00 | 8.14 | 6.64 | 7.21 | 7.14 | 8.00 |
+
+**Against ai162-r01:** every screen but Today held or rose (summary 7.5 to 8, follow-ups 7.5 to 8.5, Ask 7.5 to 8.5); overall 7 to 7.5. **Today fell** (5.5 to 7.5, was 6.5 to 7.5), and every high issue and every cell under 5.5 is Today's.
+
+**High (all Today):** the digest says opened newsletters stay, but returning with Esc leaves an opened one ticked and Archive takes it (Back to the digest unticks it; three Codex reports, both modes); the digest has no keyboard model of its own, so j and x act on the hidden Today list behind it.
+
+**Today's themes:** Newsletters come before Needs you on a page titled "need you" (six reports); the Unanswered and Your turn tags are the loudest things in the rows and unexplained; the digest's last row is cut under its footer, and the Undo snack covers that footer; returning from a newsletter loses the digest's scroll.
+
+**Rounds:** two of three used. The owner asked (2026-11-08) for the last round to use real models from the main checkout's `.env` instead of the stub; that tooling is being built on main.
