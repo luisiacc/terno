@@ -578,3 +578,60 @@ After the pass that followed ai162-r01, rated blind on the stub as before. All e
 **Today's themes:** Newsletters come before Needs you on a page titled "need you" (six reports); the Unanswered and Your turn tags are the loudest things in the rows and unexplained; the digest's last row is cut under its footer, and the Undo snack covers that footer; returning from a newsletter loses the digest's scroll.
 
 **Rounds:** two of three used. The owner asked (2026-11-08) for the last round to use real models from the main checkout's `.env` instead of the stub; that tooling is being built on main.
+
+## Pass after ai162-r02
+
+Written before any code. All eight reports, their 673 below-9 reasons, the 97 issues and the probes were read; the digest's two high issues were reproduced on the round's build before planning (opened, then Esc or Back to the digest: still ticked; j on the page: Today's list moved behind it). One rated round is left, on real models: nothing here depends on the stub's words or speed.
+
+### Why the digest broke its promise
+
+The page learned "opened" only from the backend: a newsletter is read 450 ms after it's shown (the reader's dwell, so holding j doesn't read everything), and the page saw that only when the list refreshed. Back in under the dwell, or before the refresh, and the row was still ticked, whichever way you came back. The fix doesn't race anything: **opening a newsletter from the page is a keep the page records itself**, at the moment it opens, beside the unticks, in the same per-day pick that outlives the page. The backend's read state stays a second source (a newsletter read elsewhere). So every return path (Esc, Back to the digest, the digest's entry, j or k onto it, ⌘[) finds the same rows, count and button, because none of them is involved.
+
+### Changes
+
+**Today (`a07`, `a08`)**
+1. **One keep state.** A row is ticked unless it's unticked or opened; the count and Archive are always the ticked rows; an opened row says "Opened · stays in Inbox", an unticked one "Stays in Inbox", its box empty. An opened row's box is disabled: the owner's rule (plan 145) is that opened mail is read and stays. Tick all and Untick all touch only the rows that can be ticked. e2e: one test per return path that fails without the fix (Esc, the link, the entry, k, ⌘[).
+2. **The digest has its own keys** while it's on screen, the list's own: **j/k** move a cursor through its rows, **x** ticks or unticks the cursor's row, **Enter** opens it, **Esc** gives the keys back to the list, at the digest's entry. No new key (owner). The cursor is the list's: a row with the selection's fill, focus on its open button (a program's focus: no ring, plan 54); it scrolls into view above the footer. **Focus goes into the digest when it opens**: its first row, or the row a newsletter was opened from on the way back.
+3. **Needs you first; the digest above the fold, quieter.** The digest leaves the list for Today's header, under "The newest 12 of 41 that need you": one line, its glyph at the rows' edge, "16 newsletters · today's digest ›", the selection's fill while it's open. The list starts with Needs you. It's in Tab order and in the palette as before. Why not after Needs you: ai-r00/r01 put it below the fold (12 rows fill a 900 px window). In the header it's never scrolled away and never comes before a person.
+4. **The reasons are words in the reason's colour**, never a box: the snippet's line starts with the reason in the secondary at medium weight, then "·", then the snippet. They say what happened in plain words, each its own: **"You haven't replied"** (they wrote; you never answered in this conversation) and **"They replied"** (you wrote; the last word is theirs). The section's name already says it needs you. No tooltip: the words carry it.
+5. **The footer never hides a row or is hidden.** The list reserves the footer's height (`scroll-padding-bottom`, so j/k and Tab stop above it), and while rows continue under it the footer fades them in its top edge. The Undo snack rises above the digest's footer while the page is open (the reader's snack inset, as the composer has).
+6. **Scroll on return** on every path: where the page was, saved when a newsletter opens, restored before paint, and the opened row is the cursor.
+
+**Actions (`a05`, `a06`)**
+7. **One label column** for "Terno read it as" and "What it found" (one grid, two sections; all eight reports measured two).
+8. **What it found counts what's ticked**, so it stays when a row is unticked (it vanished).
+9. **The decision is also where the reading ends:** under the rule, Archive 6 (primary) and Cancel, the same commands as the header's (which stay, so nothing moves while a match is read). Five reports asked for exactly this.
+10. **Edit as a rule is a control**: an outlined 28 px button with its pencil, beside "Terno read it as" (it read as a caption).
+11. **Dates checkable:** Age says its day ("Older than 30 days, before Sep 22"); a range across years gives both years.
+12. **Focus after ⌘Z** on an action: the list's row the cursor is on (it fell to `<body>`).
+
+**⌘J (`a02`, `a03`)**
+13. **The instruction is one line again**, with the whole of it a click away: the quote is a disclosure (`aria-expanded`) when it's cut, opening to every line; Edit instruction stays after it. At 1100 the strip is two 38 px lines (it was about 96 px). All four Codex reports.
+14. **Undo says what it takes back** in its name and tooltip ("Undo Shorter", "Remove the AI's draft"), and **gives the keys to the draft** at every width (from the narrow group they stayed on Rewrite).
+15. **Undoing the first draft keeps the instruction**: the row's field comes back holding it, selected, ready for Return; nothing is retyped.
+16. The row's field is named "Instruction for AI" (it was "AI").
+
+**AI settings (`a11`, `a12`)**
+17. **Writing style is one screen of facts:** the habits once, as three short lines (the sample repeated them in a box, 120 px; four Codex reports); section names in the ink at `text-sm`; the page fades at the dialog's edge where it continues.
+18. **Esc on Style for's menu** closes the menu and stays (it left Writing style).
+19. **The AI filter's choices say their scope:** **Save for new mail** and **Save and apply to 66 conversations**. Edit request is an outlined 28 px button with its pencil. After Save the keys go to the saved rule.
+
+**Shared**
+20. **Every "edit what the AI read" control looks like one** (macOS claude medium, five reports low): Edit instruction, Edit as a rule, Edit request: the pencil and the word in the ink, bounded.
+21. **AI text at the mail's measure:** the summary's paragraph and items, and Reply ready's draft, stop at `--read-max` (six reports: 100 to 110 characters a line); the card keeps the pane's width, so its rows don't move.
+22. **A gap is marked by more than colour:** a dotted underline; the send warning about a gap left is the warning notice, not grey text.
+
+### Not in this pass
+- **Grouping the digest by sender, topics on its entry, preparing progress** (several, low): the digest is normal emails, a line each (owner).
+- **Starting the digest unticked** (Lumen claude): plan 145's rule, all start ticked.
+- **A shortcut for Archive N, Undo, Regenerate, Shorter** (several): the owner's rule.
+- **Tinting AI-written text in a draft** (macOS, Atelier claude): the draft is the user's; Edited after AI already says it.
+- **The rule's name vs its condition** (Atelier codex): the model's words; the round runs on real models.
+- **Citations in the summary's paragraph; "Show all 66"; reply-all for Reply ready**: as before, new model output or backend.
+
+### Tests this pass adds
+- e2e `today`: each return path keeps an opened newsletter out (Esc, link, entry, k, ⌘[); the digest's keys (j/k/x/Enter/Esc) never touch the list behind; focus in the digest on open; Needs you first, the entry in the header and above the fold at 1100x700; the reasons' words and colour; the last row clear of the footer at the end; the snack above the footer; the scroll kept on return.
+- e2e `plain-actions`: one label column; What it found after an untick; the rule's own Archive; focus after ⌘Z.
+- e2e `ai-draft`: one line, expandable; Undo's name; focus after Undo at 1100; the first Undo keeps the instruction.
+- e2e `filters`, Writing style: Save for new mail; focus after Save; Esc on Style for stays.
+- Unit: `foundSummary`'s years; the cutoff's day; the digest's state of a row.
