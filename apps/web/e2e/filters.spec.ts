@@ -42,6 +42,10 @@ test.describe("AI filters and learned filters", () => {
       await expect(page.getByTestId("filter-preview")).not.toContainText(/\d\s?ms\b/);
       await expect(page.getByTestId("filter-preview")).toHaveAttribute("data-ready", "true");
       await expect(page.getByTestId("filter-save-apply")).toHaveText(`Save and apply to ${uberCount} conversations`);
+      // the owner's call: Save is the main button, applying to mail already here the second, before it
+      await expect(page.getByTestId("filter-save")).toHaveClass(/\bbg-primary\b/);
+      await expect(page.getByTestId("filter-save-apply")).not.toHaveClass(/\bbg-primary\b/);
+      expect((await page.getByTestId("filter-save-apply").boundingBox())!.x).toBeLessThan((await page.getByTestId("filter-save").boundingBox())!.x);
       await page.getByTestId("filter-save-apply").click();
       await expect(page.locator("[data-testid=snack]").filter({ hasText: /Rule applied to \d+ conversations/ })).toBeVisible();
       await expect(page.getByTestId("filter-item")).toContainText(["AI"]);

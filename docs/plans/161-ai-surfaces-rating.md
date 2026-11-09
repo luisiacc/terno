@@ -1373,3 +1373,5 @@ Codex (read-only, `git diff 8db2bfa3d..HEAD`, asked for at most 10 points on sec
 8. **A JEV key has no known shape,** so the gate's shape check missed it. The gate also checks against the loaded keys when the owner's file is there.
 
 After the fixes, a second real capture, light and dark (`/tmp/terno-scratch/real-models/shots/`, all 34 shots), reached every state on the first try: US$0.045 light and US$0.035 dark as the app counted it; the gate accepts its two run records and finds no shot missing; the leak check finds no key, and no part of one, in anything it wrote. The smoke passes all three cases, the real one included.
+
+**Save in Rules (owner, 2026-11-08):** Save is the main button for every rule, by hand or by AI; "Save and apply to N conversations" is the outlined second choice, before it. `filters.spec.ts` holds the order and weight; the two `filters-ai` baselines moved.

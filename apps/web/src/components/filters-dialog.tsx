@@ -892,13 +892,15 @@ export function FiltersDialog() {
                 />
               </>
             )}
+            {/* the owner's call (2026-11-08): Save is the main button, for every rule, by hand or by AI; applying it to mail
+                already here is the second choice, its consequence in its words */}
             <div className="ml-auto flex gap-2">
-              <Button variant="outline" data-testid="filter-save" disabled={saving} onClick={() => save(false)}>
-                {t("common.save")}
-              </Button>
-              <Button data-testid="filter-save-apply" disabled={saving} onClick={() => save(true)}>
+              <Button variant="outline" data-testid="filter-save-apply" disabled={saving} onClick={() => save(true)}>
                 {/* pass 2: the consequence in its words: how many it will touch, once counted */}
                 {matches ? t("filters.saveApplyCount", { count: matches }) : t("filters.saveApply")}
+              </Button>
+              <Button data-testid="filter-save" disabled={saving} onClick={() => save(false)}>
+                {t("common.save")}
               </Button>
             </div>
           </div>
