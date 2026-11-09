@@ -8,7 +8,8 @@ import { fakeNeedsReply } from "./replies";
 import { fakeSummary } from "./summarize";
 import { AiError, promptText, type CompletionRequest, type ModelTransport, type StreamEvent } from "./types";
 import type { WireFilter } from "./wire";
-import { fakeComposeScript, fakeIntent, fakeJudgment, isComposeRequest } from "./writing";
+import { fakeComposeScript, fakeFillScript, fakeIntent, fakeJudgment, isComposeRequest, isFillRequest } from "./writing";
+import { fakeReadDraft } from "./draft-read";
 
 function filterFor(prompt: string, categories: { id: number; name: string }[]): WireFilter {
   const p = normalizeText(prompt);
@@ -54,10 +55,11 @@ const jsonLine = <T,>(text: string, label: string, fallback: T): T => {
  * `paceMs` make it stream like a real model; `text` writes the body instead of the echo. `TERNO_FAKE_DRAFT_PACE=1`
  * starts it at a real model's speed, for running the app on it by hand.
  */
-export const fakeDraft: { firstTokenMs: number; paceMs: number; text: ((instruction: string) => string | null) | null } = {
+export const fakeDraft: { firstTokenMs: number; paceMs: number; text: ((instruction: string) => string | null) | null; /** plan 163: the fast read's wait */ readMs: number } = {
   firstTokenMs: 0,
   paceMs: 0,
   text: null,
+  readMs: 0,
 };
 if ((globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.TERNO_FAKE_DRAFT_PACE === "1") {
   fakeDraft.firstTokenMs = 900;
@@ -116,6 +118,10 @@ export function fakeTransport(options: { failFirstAttempt?: boolean } = {}): Mod
       if (schema?.name === "ask_plan") return { text: JSON.stringify(fakeAskPlan(prompt)), stop: "end" };
       if (schema?.name === "voice_judgment") return { text: JSON.stringify(fakeJudgment(prompt)), stop: "end" };
       if (schema?.name === "parse_intent") return { text: JSON.stringify(fakeIntent(prompt)), stop: "end" };
+      if (schema?.name === "draft_read") {
+        if (fakeDraft.readMs) await new Promise((resolve) => setTimeout(resolve, fakeDraft.readMs));
+        return { text: JSON.stringify(fakeReadDraft(prompt)), stop: "end" };
+      }
       if (isAnswerRequest(promptText(system))) return fakeAnswer(prompt);
       if (isComposeRequest(promptText(system))) {
         const script = fakeComposeScript(promptText(system), prompt);
@@ -141,8 +147,10 @@ export function fakeTransport(options: { failFirstAttempt?: boolean } = {}): Mod
         yield { type: "done", stop: answer.stop, usage: { inputTokens: 1, outputTokens: n } };
         return;
       }
+      // plan 163: fills, each gap's words as `filled <what it said>`, at the same pace
+      const fillScript = isFillRequest(promptText(req.system)) ? fakeFillScript(promptText(req.messages[0]?.content ?? "")) : null;
       // scripted by a marker in the instruction, so a flow test reaches each failure through the real path
-      const script = fakeComposeScript(promptText(req.system), promptText(req.messages[0]?.content ?? ""), fakeDraft.text);
+      const script = fillScript ? { ...fillScript, stop: "end" as const } : fakeComposeScript(promptText(req.system), promptText(req.messages[0]?.content ?? ""), fakeDraft.text);
       if (script.slowMs) await new Promise((resolve) => setTimeout(resolve, script.slowMs));
       if (fakeDraft.firstTokenMs) await pause(fakeDraft.firstTokenMs, req.signal);
       let sent = 0;

@@ -14,7 +14,8 @@ import { needsReplyTask } from "./replies";
 import { summarizeTask } from "./summarize";
 import { AiError, type AiTasks, type Capabilities, type ClassifyInput, type ModelInfo, type ModelTransport, type OutputMode, type ProviderConfig } from "./types";
 import { convertWireFilter, EXAMPLE_WIRE_FILTER, systemPrompt, wireFilterSchema } from "./wire";
-import { judgeVoiceTask, parseIntentTask, runCompose } from "./writing";
+import { judgeVoiceTask, parseIntentTask, runCompose, runFill } from "./writing";
+import { readDraftTask } from "./draft-read";
 
 /** Rough size of the filter system prompt + schema, for the context-window warning. */
 export const FILTER_PROMPT_TOKENS = 1500;
@@ -111,6 +112,14 @@ export function createAi(config: ProviderConfig, options: AiOptions = {}): AiTas
 
     parseIntent(input, signal) {
       return run(parseIntentTask(input), signal);
+    },
+
+    readDraft(input, signal) {
+      return run(readDraftTask(input), signal);
+    },
+
+    fill(input, fillOptions) {
+      return runFill(transport, input, fillOptions);
     },
 
     digestNewsletters(input, signal) {

@@ -145,6 +145,14 @@ export function jevTasks(config: ProviderConfig, options: AiOptions = {}): AiTas
       // i18n-ignore: a caller's bug: the settings row never offers JEV for drafting
       throw new AiError("JEV writes no text", "unsupported");
     },
+    readDraft() {
+      // i18n-ignore: a caller's bug: the settings row never offers JEV for drafting
+      throw new AiError("JEV writes no text", "unsupported");
+    },
+    fill() {
+      // i18n-ignore: a caller's bug: the settings row never offers JEV for drafting
+      throw new AiError("JEV writes no text", "unsupported");
+    },
     async classify<K extends string>(input: ClassifyInput<K>, signal?: AbortSignal) {
       if (input.labels.length === 0 || input.labels.length > 254) {
         // i18n-ignore: a caller's bug: the backend caps what it offers

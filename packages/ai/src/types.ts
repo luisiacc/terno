@@ -8,7 +8,8 @@ import type { CheckCandidatesInput, PlanActionInput } from "./actions";
 import type { DigestInput, DigestOutputItem } from "./digest";
 import type { NeedsReplyInput } from "./replies";
 import type { SummarizeInput, ThreadSummaryResult } from "./summarize";
-import type { ComposeInput, ComposeOptions, ComposeResult, JudgeVoiceInput, JudgeVoiceResult, ParseIntentInput, ParseIntentResult } from "./writing";
+import type { ComposeInput, ComposeOptions, ComposeResult, FillOptions, FillResult, JudgeVoiceInput, JudgeVoiceResult, ParseIntentInput, ParseIntentResult } from "./writing";
+import type { ReadDraftInput, ReadDraftResult } from "./draft-read";
 
 export type { AiErrorKind, AiProviderId, Capabilities, CompatiblePreset, ModelInfo, OutputMode, PresetDescriptor, ProviderDescriptor } from "@terno/core";
 
@@ -142,6 +143,10 @@ export interface AiTasks {
   judgeVoice(input: JudgeVoiceInput, signal?: AbortSignal): Promise<JudgeVoiceResult>;
   /** plan 133: who an instruction is for, from the names it matched. Carries no mail. */
   parseIntent(input: ParseIntentInput, signal?: AbortSignal): Promise<ParseIntentResult>;
+  /** plan 163: instruction or email, and which maybe-gaps are gaps, from what they typed alone. Carries no mail. */
+  readDraft(input: ReadDraftInput, signal?: AbortSignal): Promise<ReadDraftResult>;
+  /** plan 163: their email's gaps filled, from the material a draft gets, streamed gap by gap; a refusal throws */
+  fill(input: ComposeInput, options: FillOptions): Promise<FillResult>;
   /** plan 142: what a message you sent promises, who it waits on, what it keeps */
   readSentMail(input: SentMailInput, signal?: AbortSignal): Promise<SentMailResult>;
   /** plan 145: which of these are newsletters, with a line on each */
