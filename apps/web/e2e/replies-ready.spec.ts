@@ -233,6 +233,8 @@ test.describe("replies ready (plan 144)", () => {
       await scenario("the card: who it's to, the gap marked, Use as draft at 28 px, the R hint in words", async () => {
         await expect(page.getByTestId("reply-ready-to")).toContainText("To ");
         await expect(page.getByTestId("reply-ready-gap")).toHaveText("[Whether the 19th works.]");
+        // plan 162 (after ai162-r02): marked by more than its tint
+        await expect(page.getByTestId("reply-ready-gap")).toHaveCSS("text-decoration-style", "dotted");
         await expect(page.getByTestId("reply-ready-use")).toHaveText(/^Use as draft/);
         await expect(page.getByTestId("reply-ready-use")).toHaveAccessibleName(/^Use as draft/);
         // plan 161, pass 2: what's left to fill, said before Use

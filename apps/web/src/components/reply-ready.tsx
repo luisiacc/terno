@@ -13,7 +13,7 @@ import { shownDraftKey, useDrafts } from "~/lib/drafts";
 import { chooseReplyAll, dismissReply, stopReply, useReplies, useReply } from "~/lib/replies";
 import { useApp } from "~/state/app";
 import { useThreads } from "~/state/threads";
-import { AI_ACTIONS, AI_CARD, AI_GAP, AI_GLYPH, AI_HEADER, AI_TITLE, AiProvenance, gapPieces } from "./ai-card";
+import { AI_ACTIONS, AI_CARD, AI_GAP, AI_GAP_TINT, AI_GLYPH, AI_HEADER, AI_TITLE, AiProvenance, gapPieces } from "./ai-card";
 
 /**
  * Plan 161, pass 3: what the provenance says it used, the two facts the composer says too: the style ("In your voice with
@@ -88,7 +88,7 @@ export default function ReplyReady({ threadId }: { threadId: number }) {
       <span data-testid="reply-ready-title" className={AI_TITLE}>{writing ? t("replies.writing") : t("replies.title")}</span>
       {/* what's left for the user, said before Use, in the ink */}
       {/* plan 162 (after ai162-r01): in the gap's own mark, so the header points at what's missing in the draft */}
-      {toFill > 0 && <><span aria-hidden>·</span><span data-testid="reply-ready-gaps" className={cn(AI_GAP, "px-1 font-medium")}>{t("replies.gaps", { count: toFill })}</span></>}
+      {toFill > 0 && <><span aria-hidden>·</span><span data-testid="reply-ready-gaps" className={cn(AI_GAP_TINT, "px-1 font-medium")}>{t("replies.gaps", { count: toFill })}</span></>}
       {/* each "·" its own item, so the gaps either side are the same; the voice is the provenance's to explain (pass 3) */}
       {!writing && to ? <><span aria-hidden>·</span><span data-testid="reply-ready-to" className="min-w-0">{to}</span></> : null}
     </>
@@ -130,7 +130,7 @@ export default function ReplyReady({ threadId }: { threadId: number }) {
         // its place held until the first words: three lines of the text's height
         <SkeletonText data-testid="reply-ready-skeleton" lines={3} className="py-1.5" lineClassName="h-3" />
       ) : (
-        <p data-testid="reply-ready-text" className={cn("text-sm leading-relaxed wrap-anywhere whitespace-pre-wrap", (writing || (long && !all)) && "line-clamp-6")}>
+        <p data-testid="reply-ready-text" className={cn("max-w-(--read-max) text-sm leading-relaxed wrap-anywhere whitespace-pre-wrap", (writing || (long && !all)) && "line-clamp-6")}>
           {/* the gaps the model left, marked so they can't be missed (plan 161); while it writes, the words as they come */}
           {writing ? shown.text : gapPieces(shown.text, gaps).map((p, i) => (p.gap ? <mark key={i} data-testid="reply-ready-gap" className={AI_GAP}>{p.text}</mark> : p.text))}
         </p>

@@ -7,7 +7,7 @@ import { Shortcut } from "@terno/ui/components/shortcut";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { Spinner } from "@terno/ui/components/spinner";
-import { ChevronDown, Pencil, Undo2 } from "@terno/ui/icons";
+import { ChevronDown, PenLine, TriangleAlert, Undo2 } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { modelName, providerLabel, writingTarget } from "~/lib/ai";
@@ -236,7 +236,7 @@ function InstructionLine({ text, onEdit }: { text: string; onEdit: (() => void) 
         data-testid={onEdit ? "ai-strip-edit-instruction" : undefined}
         onClick={onEdit ?? undefined}
       >
-        <Pencil aria-hidden />
+        <PenLine aria-hidden />
         {t("aiDraft.instruction.edit")}
       </Button>
     </p>
@@ -485,7 +485,11 @@ function Choice({ s }: { s: AiSession }) {
 function GapsGuard({ s, gaps }: { s: AiSession; gaps: string[] }) {
   return (
     <div className={line} data-testid="ai-gaps" role="alert">
-      <span className="min-w-0 text-foreground" data-testid="ai-gaps-text">{t("aiDraft.gaps.text", { count: gaps.length, gaps: gaps.join(" ") })}</span>
+      {/* plan 162 (after ai162-r02): said as a warning, its glyph first (it read as grey text) */}
+      <span className="flex min-w-0 items-start gap-1.5 text-foreground" data-testid="ai-gaps-text">
+        <TriangleAlert aria-hidden className="mt-0.5 size-[1.15em] shrink-0" />
+        <span>{t("aiDraft.gaps.text", { count: gaps.length, gaps: gaps.join(" ") })}</span>
+      </span>
       <span className="ml-auto flex shrink-0 flex-wrap items-center gap-1.5">
         <Button type="button" variant="outline" size="sm" data-ai-default data-testid="ai-gaps-fill" onClick={() => keepWriting(s.key)}>
           {t("aiDraft.gaps.fill")}

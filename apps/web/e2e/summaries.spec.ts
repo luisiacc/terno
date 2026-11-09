@@ -107,6 +107,10 @@ test.describe("summaries (plan 132)", () => {
     await expect(block).toBeVisible();
     await expect(block).toHaveAttribute("data-state", "ready");
     await expect(page.getByTestId("summary-text")).toContainText("Ana can't make the 12th and proposes the 19th instead.");
+    // plan 162 (after ai162-r02): the summary reads at the mail's measure (it ran 100 to 110 characters a line), in a card that keeps the pane's width
+    const measure = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--read-max").trim());
+    expect(measure).not.toBe("");
+    expect(await page.getByTestId("summary-text").evaluate((e) => getComputedStyle(e).maxWidth)).not.toBe("none");
     await expect(page.getByTestId("summary-item").first()).toContainText("To do");
     await expect(page.getByTestId("summary-item").first()).toContainText("Please send the signed contract by Friday");
     // plan 161, pass 2: a conversation of one message is that message, on screen: the item is its words, with nowhere to go

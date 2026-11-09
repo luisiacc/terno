@@ -14,7 +14,7 @@ import { useEffect, type ReactNode } from "react";
 import { askTarget } from "~/lib/ai";
 import { listDate } from "~/lib/format";
 import { boundaryDay } from "~/lib/when";
-import { Pencil } from "@terno/ui/icons";
+import { PenLine } from "@terno/ui/icons";
 import { applyPreview, check, inboxOnly, includeSkipped, isDestructive, previewConsequence, previewCount, previewTitle, previewWaiting, showLeftOut, stopApplying, useActionPreview, verbOf } from "~/lib/action-preview";
 import { useAppearance } from "~/lib/appearance";
 import { LIST_TITLE } from "~/lib/list-title";
@@ -253,7 +253,7 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
   const editLink = plan.action.type !== "createCategory" && (
     // plan 162 (after ai162-r02): a control that looks like one, beside what it edits (grey text, it read as a caption)
     <Button variant="outline" size={reader ? "sm" : "xs"} className="no-drag shrink-0 text-foreground" data-testid="action-edit-filter" onClick={editAsFilter}>
-      <Pencil aria-hidden />
+      <PenLine aria-hidden />
       {t("action.editAsFilter")}
     </Button>
   );

@@ -31,7 +31,10 @@ export const aiWritten = (edited: boolean, stopped = false): string => (edited ?
  * Plan 161: a gap the model left (`[What you think.]`), marked wherever its words are shown, in the card and in the
  * composer: the search match's gold wash under the ink (`CONTRAST_PAIRS`, over the card's and the composer's surfaces).
  */
-export const AI_GAP = "rounded-xs bg-star/25 px-px text-foreground";
+/** A gap's tint, where it's named rather than marked (Reply ready's "1 gap to fill") */
+export const AI_GAP_TINT = "rounded-xs bg-star/25 px-px text-foreground";
+/** Plan 162 (after ai162-r02): a gap in the text is marked by more than its tint: a dotted underline survives grey and colour blindness */
+export const AI_GAP = `${AI_GAP_TINT} underline decoration-dotted decoration-1 underline-offset-2`;
 
 /** The text in pieces: each of `gaps` found in it (exactly those strings, never any bracket) as a gap. */
 export function gapPieces(text: string, gaps: readonly string[]): { text: string; gap: boolean }[] {

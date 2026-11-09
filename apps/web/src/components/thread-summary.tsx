@@ -80,10 +80,10 @@ function Ready({ summary, messages, threadId }: { summary: AiSummary; messages: 
         {/* the padding inside the panel: a padded panel can't ease down to 0 */}
         <div className="px-3.5 pb-3">
           {/* plain text, never HTML: a model's markup has no way in. Plan 162: the card's width (the measure left a dead column) */}
-          <p data-testid="summary-text" className="text-sm leading-relaxed wrap-anywhere whitespace-pre-line text-pretty">
+          <p data-testid="summary-text" className="max-w-(--read-max) text-sm leading-relaxed wrap-anywhere whitespace-pre-line text-pretty">
             {summary.summary}
           </p>
-          {summary.items.length > 0 && <ul className="mt-2" data-testid="summary-items">{summary.items.map((item) => <Item key={`${item.messageId}:${item.kind}:${item.text}`} item={item} threadId={threadId} from={messages.find((m) => m.id === item.messageId)} source={messageSource(messages, item.messageId, mine)} />)}</ul>}
+          {summary.items.length > 0 && <ul className="mt-2 max-w-(--read-max)" data-testid="summary-items">{summary.items.map((item) => <Item key={`${item.messageId}:${item.kind}:${item.text}`} item={item} threadId={threadId} from={messages.find((m) => m.id === item.messageId)} source={messageSource(messages, item.messageId, mine)} />)}</ul>}
           {/* pass 3: the AI's button row: Copy, and who wrote it at its end, the one control every AI surface has */}
           <div className={cn(AI_ACTIONS, "mt-2.5")} data-testid="summary-actions">
             {/* plan 162: Copy is quiet, its glyph on the text's edge */}

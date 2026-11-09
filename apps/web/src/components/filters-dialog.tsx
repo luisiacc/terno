@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@terno/ui/components/switch";
 import { Textarea } from "@terno/ui/components/textarea";
 import { cn } from "@terno/ui/lib/utils";
-import { Archive, Check, Folder as FolderIcon, Forward, MailCheck, OctagonAlert, Pencil, Plus, Sparkles, Star, Tag, Trash2 } from "@terno/ui/icons";
+import { Archive, Check, Folder as FolderIcon, Forward, MailCheck, OctagonAlert, PenLine, Plus, Sparkles, Star, Tag, Trash2 } from "@terno/ui/icons";
 import { Fragment, useEffect, useId, useMemo, useRef, useState } from "react";
 import { t, type TextKey } from "@terno/i18n";
 import { richT } from "~/lib/i18n";
@@ -747,7 +747,7 @@ export function FiltersDialog() {
                       </span>
                       <Button ref={editRequestRef} variant="outline" size="sm" className="ml-auto shrink-0 text-foreground" data-testid="ai-edit-request" onClick={() => (setFolded(false), setFocusPrompt(true))}>
                         {/* plan 162 (after ai162-r02): bounded, with its pencil, as every "edit what the AI read" (it read as a caption) */}
-                        <Pencil aria-hidden />
+                        <PenLine aria-hidden />
                         {t("filters.ai.editRequest")}
                       </Button>
                     </div>
