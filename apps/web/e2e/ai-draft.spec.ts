@@ -697,14 +697,18 @@ test.describe("drafting with AI (plan 133)", () => {
         await expect(page.getByTestId("ai-note-label")).toHaveText(/For AI · not sent/);
         await expect(page.locator("[data-ai-note]")).toHaveCount(1);
         await expect(body(page)).toHaveAccessibleDescription(/Your note for AI. Press .+ to generate the email from it/);
-        // the owner: Send stays the primary, first, and Generate with AI is a secondary (bordered on the card) in the
-        // Sparkles' own place: its word where the foot holds it on one line (1440), the bordered glyph alone where not
+        // the owner: Send stays the primary, first, and Generate (named "Generate with AI") is a secondary (bordered on the
+        // card) right after it, its word shown at both widths, the foot on one line
         const generate = page.getByTestId("compose-ai");
         await expect(page.getByTestId("compose-send-group")).toBeVisible();
         await expect(page.getByTestId("compose-send")).not.toHaveAttribute("aria-disabled");
         await expect(generate).toHaveAttribute("data-note", "true");
         await expect(generate).toHaveAccessibleName("Generate with AI");
-        await expect(page.getByTestId("compose-ai-word")).toBeVisible({ visible: width === 1440 });
+        await expect(page.getByTestId("compose-ai-word")).toHaveText("Generate");
+        await expect(page.getByTestId("compose-ai-word")).toBeVisible();
+        // next to Send: nothing between them (plan 164, the owner's second word)
+        const sendRight = (await page.getByTestId("compose-send-group").boundingBox())!;
+        expect((await generate.boundingBox())!.x - (sendRight.x + sendRight.width)).toBeLessThanOrEqual(12);
         expect(await generate.evaluate((el) => getComputedStyle(el).borderTopWidth)).toBe("1px");
         expect((await page.getByTestId("compose-send").boundingBox())!.x).toBeLessThan((await generate.boundingBox())!.x);
         // the foot is one line at 1100 too
@@ -715,7 +719,7 @@ test.describe("drafting with AI (plan 133)", () => {
         const ask = page.getByTestId("compose-empty-ask");
         await expect(ask).toContainText("This reads as a note for AI, not the email.");
         await expect(page.getByTestId("compose-note-send")).toHaveText("Send as it is");
-        await expect(page.getByTestId("compose-note-write")).toHaveText("Generate with AI");
+        await expect(page.getByTestId("compose-note-write")).toHaveText("Generate");
         await expect(page.getByTestId("compose-note-write")).toBeFocused();
         expect((await page.getByTestId("compose-note-send").boundingBox())!.x).toBeLessThan((await page.getByTestId("compose-note-write").boundingBox())!.x);
         // the body still says what it is while it asks

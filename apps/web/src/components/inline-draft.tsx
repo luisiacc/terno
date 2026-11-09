@@ -638,11 +638,11 @@ export function DraftSlot({ threadId, draftKey, replyTo, replyAll = true, accoun
             <ComposerFormatBar draftKey={d.key} id={formatId} className="px-2 pt-1.5" />
             <div className="@container/foot flex flex-wrap items-center gap-1 px-2.5 pt-2 pb-2.5">
               <SendOrAsk d={d} onSend={(at) => void send(at)}>
-                <SendButton d={d} onSend={(at) => void send(at)} className="mr-1.5" />
+                <SendButton d={d} onSend={(at) => void send(at)} className="mr-1.5 @max-[31rem]/foot:mr-0" />
+                <AiDraftButton draftKey={d.key} disabled={d.sending} testId="compose-ai" />
                 <FormatToggle controls={formatId} />
                 <AttachButton d={d} />
                 <LinkButton draftKey={d.key} disabled={d.sending} />
-                <AiDraftButton draftKey={d.key} disabled={d.sending} testId="compose-ai" />
                 {/* plan 162 (after ai162-r05): a narrow foot keeps one line (Save and close and the bin wrapped under Send at
                     1100): the plain "Saved" is said to assistive tech only; a problem saving always shows */}
                 <span className={cn("ml-1.5 flex min-w-0", !d.recovery && d.status !== "error" && "@max-[32rem]/foot:sr-only")} data-testid="draft-status-slot">

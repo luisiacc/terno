@@ -113,7 +113,7 @@ export function SendOrAsk({ d, onSend, children }: { d: LocalDraft; onSend: (sen
 /**
  * Plan 158's question, or (plan 162, after ai162-r04) the same question about a note for AI: "This reads as a note for
  * AI, not the email." Plan 164 (the owner: Send is always the primary): **Send as it is** is the primary, as this
- * question's Send is, and **Generate with AI** the secondary beside it; the keys go to Generate with AI, the safe answer.
+ * question's Send is, and **Generate** the secondary beside it; the keys go to Generate, the safe answer.
  * Esc, Cancel or typing put it away.
  */
 function EmptySendQuestion({ draftKey, onSend, note = false }: { draftKey: string; onSend: (sendAt?: number) => void; note?: boolean }) {

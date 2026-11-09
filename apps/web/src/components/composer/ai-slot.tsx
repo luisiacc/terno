@@ -65,9 +65,10 @@ function useBodyGlance(draftKey: string | undefined): void {
 /**
  * The quiet Sparkles in a draft's footer and on the reply bar. Plan 161, pass 3: each says what it does, beside the reader's
  * own Sparkles (Summarize this conversation): the reply bar's starts a reply ("Reply with AI"), a draft's writes in it.
- * Plan 164 (the owner): when the body is a note for AI it is **Generate with AI**, and when it holds gaps the user marked
- * **Fill in with AI**: BoardUI's secondary (outlined) with the glyph and its word, in the Sparkles' own place, so Send stays
- * the primary and nothing before it moves while the reading flips under typing. An ordinary email leaves it the icon.
+ * Plan 164 (the owner): when the body is a note for AI it is **Generate**, and when it holds gaps the user marked
+ * **Fill in**: BoardUI's secondary (outlined) with the glyph and its word, right after Send (the owner: "next to the send
+ * button, it looks weird in the middle"), so Send stays the primary and the AI's action sits with it. Its name keeps
+ * "with AI". An ordinary email leaves it the Sparkles, in the same place.
  */
 export function AiDraftButton({ draftKey, threadId, disabled, testId }: { draftKey?: string; threadId?: number; disabled?: boolean; testId: string }) {
   const offered = useCanDraft();
@@ -87,14 +88,13 @@ export function AiDraftButton({ draftKey, threadId, disabled, testId }: { draftK
         <TooltipTrigger
           render={
             // the test id and data-ready are the Sparkles' (it is the Sparkles, ready): the rating's capture waits on them
-            <Button type="button" variant="outline" size="sm" aria-label={label} aria-keyshortcuts="Meta+J" disabled={disabled} onMouseDown={keepSelection} onClick={open} data-testid={testId} data-ready data-note={note || undefined} className="gap-1.5 px-2 @max-[31rem]/foot:w-7 @max-[31rem]/foot:px-0 [&_svg]:[--icon-line:var(--icon-line-toolbar)]" />
+            <Button type="button" variant="outline" size="sm" aria-label={label} aria-keyshortcuts="Meta+J" disabled={disabled} onMouseDown={keepSelection} onClick={open} data-testid={testId} data-ready data-note={note || undefined} className="mr-1.5 gap-1.5 px-2 @max-[31rem]/foot:mr-0 @max-[31rem]/foot:px-1 @max-[27rem]/foot:w-7 @max-[27rem]/foot:px-0 [&_svg]:[--icon-line:var(--icon-line-toolbar)]" />
           }
         >
-          <Sparkles aria-hidden />
-          {/* the whole word wherever the foot holds it on one line, its short form a step narrower, and narrower still
-              the same bordered button with the glyph alone: never a foot that wraps */}
-          <span aria-hidden className="@max-[33rem]/foot:hidden" data-testid="compose-ai-word">{gaps ? t("aiDraft.ready.fill") : t("aiDraft.ready.write")}</span>
-          <span aria-hidden className="hidden @min-[31rem]/foot:@max-[33rem]/foot:inline" data-testid="compose-ai-word-short">{gaps ? t("aiDraft.ready.fillShort") : t("aiDraft.ready.writeShort")}</span>
+          {/* the glyph and the word wherever the foot holds both on one line; a step narrower (1100's reply) the word
+              alone, which says more; narrower still the bordered glyph alone: never a foot that wraps */}
+          <Sparkles aria-hidden className="@min-[27rem]/foot:@max-[31rem]/foot:hidden" />
+          <span aria-hidden className="@max-[27rem]/foot:hidden" data-testid="compose-ai-word">{gaps ? t("aiDraft.ready.fill") : t("aiDraft.ready.write")}</span>
           <Shortcut keys="mod+j" className="ml-0.5 @max-[36rem]/foot:hidden" />
         </TooltipTrigger>
         <TooltipContent className="flex max-w-72 items-center gap-2">

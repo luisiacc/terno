@@ -157,11 +157,11 @@ export function NewMessage() {
               {/* wraps: the status can hold a recovery action, and a narrow pane still reaches Discard */}
               <div className="@container/foot flex flex-wrap items-center gap-1 px-2.5 pt-2 pb-2.5">
                 <SendOrAsk d={d} onSend={(at) => void send(at)}>
-                  <SendButton d={d} onSend={(at) => void send(at)} className="mr-1.5" />
+                  <SendButton d={d} onSend={(at) => void send(at)} className="mr-1.5 @max-[31rem]/foot:mr-0" />
+                  <AiDraftButton draftKey={key} disabled={d.sending} testId="compose-ai" />
                   <FormatToggle controls={formatId} />
                   <AttachButton d={d} />
                   <LinkButton draftKey={key} disabled={d.sending} />
-                  <AiDraftButton draftKey={key} disabled={d.sending} testId="compose-ai" />
                   <span className="ml-1.5 flex min-w-0">
                     <SaveState d={d} />
                   </span>
