@@ -225,20 +225,28 @@ function InstructionLine({ text, onEdit }: { text: string; onEdit: (() => void) 
         <span className="min-w-0" title={quoted}>{body}</span>
       )}
       {/* while it writes, its place is held (nothing to edit yet), so the line is the same before and after the commit */}
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        // plan 162 (after ai162-r02): bounded, as every "edit what the AI read" is (grey text, it read as a hint)
-        className={cn("-my-1 shrink-0 text-foreground", !onEdit && "invisible")}
-        aria-hidden={onEdit ? undefined : true}
-        tabIndex={onEdit ? undefined : -1}
-        data-testid={onEdit ? "ai-strip-edit-instruction" : undefined}
-        onClick={onEdit ?? undefined}
-      >
-        <PenLine aria-hidden />
-        {t("aiDraft.instruction.edit")}
-      </Button>
+      {/* the owner (2026-11-08): "the 'edit instruction' is way too big, should be a pencil": an icon button, named and with
+          its tooltip; the rest of the strip waits for plan 163's new ⌘J */}
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              className={cn("-my-1 shrink-0 text-muted-foreground hover:text-foreground", !onEdit && "invisible")}
+              aria-hidden={onEdit ? undefined : true}
+              aria-label={t("aiDraft.instruction.edit")}
+              tabIndex={onEdit ? undefined : -1}
+              data-testid={onEdit ? "ai-strip-edit-instruction" : undefined}
+              onClick={onEdit ?? undefined}
+            />
+          }
+        >
+          <PenLine aria-hidden />
+        </TooltipTrigger>
+        <TooltipContent>{t("aiDraft.instruction.edit")}</TooltipContent>
+      </Tooltip>
     </p>
   );
 }

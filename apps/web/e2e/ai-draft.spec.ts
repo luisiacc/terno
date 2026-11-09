@@ -1359,9 +1359,11 @@ test.describe("drafting with AI (plan 133)", () => {
     // the group's items share one look: the same ink and no edge of their own (the group draws it)
     const style = (id: string) => page.getByTestId(id).evaluate((el) => { const s = getComputedStyle(el); return { color: s.color, weight: s.fontWeight, height: el.getBoundingClientRect().height }; });
     expect(await style("ai-strip-regenerate")).toEqual(await style("ai-strip-undo"));
-    // Edit is named for what it does, a bounded control, and opens the field holding the instruction
+    // Edit is named for what it does, a pencil (the owner, 2026-11-08: the worded button was "way too big"), and opens the
+    // field holding the instruction
     await expect(page.getByTestId("ai-strip-edit-instruction")).toHaveAccessibleName("Edit instruction");
-    expect(await page.getByTestId("ai-strip-edit-instruction").evaluate((e) => getComputedStyle(e).borderTopWidth)).not.toBe("0px");
+    await expect(page.getByTestId("ai-strip-edit-instruction")).toHaveText("");
+    expect((await page.getByTestId("ai-strip-edit-instruction").boundingBox())!.width).toBeLessThanOrEqual(28);
     await page.getByTestId("ai-strip-edit-instruction").click();
     await expect(field(page)).toHaveValue(words);
     // the field is named for what it holds
