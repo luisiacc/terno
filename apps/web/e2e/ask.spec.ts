@@ -63,7 +63,7 @@ async function question(page: Page, text: string) {
 }
 
 test.describe("ask your mail (plan 141)", () => {
-  test("plan 162 (after ai162-r04): a long answer fits a 1100x700 window with its footer whole and every source in reach; no scratch text; a list; unlinked in grey, not underlined; the keys never leave the dialog", async ({ app: page, server }) => {
+  test("plan 162 (after ai162-r04): a long answer fits a 1100x700 window with its footer whole and every source in reach; no scratch text; a list; unlinked marked, not underlined; the keys never leave the dialog", async ({ app: page, server }) => {
     await page.setViewportSize({ width: 1100, height: 700 });
     await withMail(page, server);
     await open(page);
@@ -77,10 +77,9 @@ test.describe("ask your mail (plan 141)", () => {
       expect(box.y + box.height, id).toBeLessThanOrEqual(dialog.y + dialog.height);
     }
     await expect(page.getByTestId("ask-hints")).toContainText("1 source");
-    // the region says there's more below, and scrolls to the last source
-    await expect(page.getByTestId("ask-area")).toHaveAttribute("data-more", "true");
-    await page.getByTestId("ask-area").evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
-    await expect(page.getByTestId("ask-source").last()).toBeInViewport();
+    // plan 162 (after ai162-r05): the sources sit apart from the long answer, whole, without scrolling it; nothing fades
+    await expect(page.getByTestId("ask-source").last()).toBeInViewport({ ratio: 1 });
+    expect(await page.getByTestId("ask-area").evaluate((el) => el.scrollHeight > el.clientHeight && getComputedStyle(el).maskImage === "none")).toBe(true);
     // the model's note to itself never reaches the answer
     await expect(page.getByTestId("ask-answer")).not.toContainText("doesn't mention");
     await expect(page.getByTestId("ask-answer")).not.toContainText("m9");
@@ -89,12 +88,16 @@ test.describe("ask your mail (plan 141)", () => {
     await expect(page.getByTestId("ask-answer-item")).toHaveCount(2);
     await expect(page.getByTestId("ask-answer-item").last().locator("strong")).toHaveText("The second");
     await expect(page.getByTestId("ask-answer")).not.toContainText("**");
-    // not linked: the secondary ink, never an underline (an underline reads as a link)
+    // not linked: never an underline (it reads as a link); after ai162-r05 never grey alone either: in the ink, and a mark
+    // after it that says so in words, where a citation would be
     const unlinked = page.getByTestId("ask-unlinked").filter({ hasText: "This sentence cites nothing at all here." });
     await expect(unlinked).toHaveCount(1);
     expect(await unlinked.evaluate((el) => getComputedStyle(el).textDecorationLine)).toBe("none");
     const ink = await page.getByTestId("ask-answer").evaluate((el) => getComputedStyle(el).color);
-    expect(await unlinked.evaluate((el) => getComputedStyle(el).color)).not.toBe(ink);
+    expect(await unlinked.evaluate((el) => getComputedStyle(el).color)).toBe(ink);
+    await expect(page.getByTestId("ask-unlinked-mark").first()).toHaveText("no source");
+    expect(await page.getByTestId("ask-unlinked-mark").count()).toBe(await page.getByTestId("ask-unlinked").count());
+    await expect(page.getByTestId("ask-check-unlinked")).toHaveCount(0);
     // the keys stay in Ask: after New question and Previous AI questions, Tab never reaches the app behind the scrim
     const behind = () => page.evaluate(() => !!document.activeElement && document.activeElement !== document.body && !!document.getElementById("root")?.contains(document.activeElement));
     const inBody = () => page.evaluate(() => document.activeElement === document.body);
@@ -112,6 +115,45 @@ test.describe("ask your mail (plan 141)", () => {
       expect(await behind(), `Tab ${i + 1} after Previous AI questions`).toBe(false);
       expect(await inBody(), `Tab ${i + 1} after Previous AI questions`).toBe(false);
     }
+  });
+
+  test("plan 162 (after ai162-r05): at 1100x700 a long answer leaves its sources on screen, three whole rows under their count, the rest by ↓; the preview opens under its mark", async ({ app: page, server }) => {
+    await page.setViewportSize({ width: 1100, height: 700 });
+    await ingestConversation(server, { subject: `${WORD} policy`, count: 6, now: E2E_NOW });
+    await settingUp(page, server, { ai: { provider: "fake", model: "demo" } });
+    await open(page);
+    await question(page, `${WORD} [[long]] [[all]]?`);
+    await expect(lastTurn(page)).toHaveAttribute("data-status", "answered");
+    const sources = page.getByTestId("ask-source");
+    expect(await sources.count()).toBeGreaterThanOrEqual(5);
+    // the answer is longer than its region, which rests at its top; the sources are apart from it, not under it
+    expect(await page.getByTestId("ask-area").evaluate((el) => el.scrollHeight > el.clientHeight + 100)).toBe(true);
+    const list = page.getByTestId("ask-sources");
+    const box = (await list.boundingBox())!;
+    const whole = await sources.evaluateAll((rows, b) => rows.filter((r) => { const x = r.getBoundingClientRect(); return x.top >= b.y - 0.5 && x.bottom <= b.y + b.height + 0.5; }).length, box);
+    expect(whole).toBeGreaterThanOrEqual(3);
+    await expect(list).toContainText(`${await sources.count()} sources`);
+    // the dialog is inside the window, its follow-up box under the sources
+    const dialog = (await page.getByRole("dialog").boundingBox())!;
+    expect(dialog.y + dialog.height).toBeLessThanOrEqual(700);
+    expect((await page.getByTestId("ask-follow-up").boundingBox())!.y).toBeGreaterThanOrEqual(box.y + box.height - 1);
+    // every source in reach: ↓ walks to the last, which comes whole into view
+    await followUp(page).focus();
+    for (let i = 0; i < (await sources.count()); i++) await page.keyboard.press("ArrowDown");
+    await expect(sources.last()).toHaveAttribute("data-selected", "true");
+    const last = (await sources.last().boundingBox())!;
+    const after = (await list.boundingBox())!;
+    expect(last.y).toBeGreaterThanOrEqual(after.y - 0.5);
+    expect(last.y + last.height).toBeLessThanOrEqual(after.y + after.height + 0.5);
+    // a citation's preview opens under its mark, inside the panel, never over the question
+    await page.getByTestId("ask-area").evaluate((el) => el.scrollTo({ top: 0 }));
+    const mark = page.getByTestId("ask-citation").first();
+    await mark.hover();
+    const preview = page.getByTestId("ask-citation-preview");
+    await expect(preview).toBeVisible();
+    const p = (await preview.boundingBox())!, m = (await mark.boundingBox())!;
+    expect(p.y).toBeGreaterThanOrEqual(m.y + m.height - 1);
+    expect(p.x).toBeGreaterThanOrEqual(dialog.x);
   });
 
   test("plan 162: Ask's provenance popover is whole, and its answer and sources reach the wheel, in every design, light and dark, 1440 and 1100", { tag: "@design" }, async ({ app: page, server }) => {
@@ -479,7 +521,7 @@ test.describe("ask your mail (plan 141)", () => {
     // asked again: the note shows exactly when a claim is marked (it showed under fully cited answers)
     await page.keyboard.press("Enter");
     await expect(lastTurn(page)).toHaveAttribute("data-status", "answered");
-    expect((await page.getByTestId("ask-check-unlinked").count()) > 0).toBe((await page.getByTestId("ask-unlinked").count()) > 0);
+    expect(await page.getByTestId("ask-unlinked-mark").count()).toBe(await page.getByTestId("ask-unlinked").count());
     // ⌘⇧K on a shown source goes back to its answer (it closed Ask)
     await page.getByTestId("ask-citation").first().click();
     await expect(page.getByTestId("ask-peek")).toBeVisible();
@@ -501,7 +543,10 @@ test.describe("ask your mail (plan 141)", () => {
     fakeDraft.paceMs = 0;
     await expect(lastTurn(page)).toHaveAttribute("data-status", "answered");
     await expect(lastTurn(page).getByTestId("ask-unlinked").last()).toHaveText("This sentence cites nothing at all here.");
-    await expect(lastTurn(page).getByTestId("ask-check-unlinked")).toHaveText("Parts in grey aren’t linked to a message.");
+    await expect(lastTurn(page).getByTestId("ask-unlinked-mark").last()).toHaveText("no source");
+    // plan 162 (after ai162-r05): with more than one turn, each answer is headed by its question, the last one too
+    await expect(lastTurn(page).getByTestId("ask-question")).toBeVisible();
+    await expect(lastTurn(page).getByTestId("ask-question")).toHaveText(`${WORD} [[uncited]]?`);
     // Codex review: a follow-up under a long answer starts at its top, and stays there as it streams and once it's done
     await page.getByTestId("ask-area").evaluate((el) => (el.style.maxHeight = "140px"));
     fakeDraft.paceMs = 40;

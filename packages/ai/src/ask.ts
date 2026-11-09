@@ -419,6 +419,8 @@ export function fakeAnswer(prompt: string): { text: string; stop: Completion["st
   // plan 162 (after ai162-r04): a note the model wrote for itself, a list, and an answer longer than a small window
   if (/\[\[note\]\]/.test(question)) text += ` Under another address [m9 doesn't mention it, so ignore that one].`;
   if (/\[\[list\]\]/.test(question)) text += `\n- The first point, as written [${hit.label}]\n- **The second** point, as written [${hit.label}]`;
+  // plan 162 (after ai162-r05): an answer citing every message it was given, for a sources list longer than three rows
+  if (/\[\[all\]\]/.test(question)) text += ` It comes up in each of them ${blocks.map((b) => `[${b.label}]`).join("")}.`;
   if (/\[\[long\]\]/.test(question)) text += Array.from({ length: 24 }, (_, i) => `\nLine ${i + 1} of a long answer, from the same message [${hit.label}].`).join("");
   return { text: `${text}\n<status>${/\[\[partial\]\]/.test(question) ? "partial" : "answered"}</status>`, stop: "end" };
 }

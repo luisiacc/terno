@@ -50,7 +50,7 @@ const sourceLine = (source: AskSourceRef) => t("ask.source.from", { from: source
  * the field's wash; hover or focus names the source, the source row chosen with ↑↓ lights its number here, and a click
  * shows the message in Ask (`ask-peek.ts`).
  */
-function AnswerText({ text, sources, queries, chosen = null, unlinked = null }: { text: string; sources: readonly AskSourceRef[]; queries: readonly AskPlanQuery[]; chosen?: number | null; /** the note's id, when unlinked claims are marked */ unlinked?: string | null }) {
+function AnswerText({ text, sources, queries, chosen = null, unlinked = false }: { text: string; sources: readonly AskSourceRef[]; queries: readonly AskPlanQuery[]; chosen?: number | null; /** unlinked claims are marked (never in a stopped answer) */ unlinked?: boolean }) {
   const views = useAsk((s) => s.sources);
   const marker = (n: number, key: number) => {
     const source = sources[n - 1];
@@ -73,22 +73,29 @@ function AnswerText({ text, sources, queries, chosen = null, unlinked = null }: 
         >
           <span aria-hidden className={cn(CITE_PILL, "transition-colors duration-fast", lit ? "bg-primary/15" : "bg-field group-hover/cite:bg-muted")}>{n}</span>
         </TooltipTrigger>
-        <TooltipContent data-testid="ask-citation-preview">
+        {/* plan 162 (after ai162-r05): below its mark, from its start, inside the panel (above, it covered the question
+            and spilled past the panel's edge) */}
+        <TooltipContent side="bottom" align="start" data-testid="ask-citation-preview">
           <span className="block font-medium">{source.subject || t("common.noSubject")}</span>
           <span className="block">{sourceLine(source)}</span>
         </TooltipContent>
       </Tooltip>
     );
   };
-  // plan 162 (after ai162-r03): a claim with no citation is marked where it is, so the note under it says which parts.
-  // After ai162-r04: marked in the secondary ink, never underlined (an underline reads as a link: five reports)
+  // plan 162 (after ai162-r03): a claim with no citation is marked where it is. After ai162-r05: in the ink, as every
+  // claim, followed by a mark that says it in words, "no source", where a citation would be (grey alone asked the reader
+  // to compare shades, and grey means secondary everywhere else: six reports; an underline read as a link: five)
   const sentences = (part: string) =>
     answerSentences(part).map((sentence, k) => {
       const runs = boldParts(sentence.text.trimEnd()).map((b, j) => (b.bold ? <strong key={j} className="font-semibold"><Runs text={b.text} marker={marker} /></strong> : <Runs key={j} text={b.text} marker={marker} />));
       const space = sentence.text.slice(sentence.text.trimEnd().length);
       return sentence.claim && !sentence.linked && unlinked ? (
         <span key={k}>
-          <span data-testid="ask-unlinked" aria-describedby={unlinked} className="text-muted-foreground">{runs}</span>
+          <span data-testid="ask-unlinked">{runs}</span>
+          <span className="whitespace-nowrap">
+            {"\u00a0"}
+            <span data-testid="ask-unlinked-mark" title={t("ask.unlinked.tip")} className="inline-flex h-[1.4em] items-center rounded-[0.4em] border border-dashed border-border px-[0.4em] align-[0.05em] text-xs leading-none text-muted-foreground">{t("ask.unlinked.mark")}</span>
+          </span>
           {space}
         </span>
       ) : (
@@ -159,16 +166,14 @@ function SameName({ turn }: { turn: AskTurn }) {
   );
 }
 
-function Checks({ turn, unlinkedId }: { turn: AskTurn; unlinkedId: string }) {
+function Checks({ turn }: { turn: AskTurn }) {
   const { unsupported } = turn.checks;
-  const unlinked = unlinkedClaims(turn);
-  if (!unlinked && !unsupported.length) return null;
+  if (!unsupported.length) return null;
   return (
     <div className="space-y-0.5 text-xs text-muted-foreground" data-testid="ask-checks">
       {unsupported.map((value) => (
         <p key={value} data-testid="ask-check-unsupported" className="text-destructive-ink">{t("ask.check.unsupported", { value })}</p>
       ))}
-      {unlinked && <p id={unlinkedId} data-testid="ask-check-unlinked">{t("ask.check.unlinked")}</p>}
     </div>
   );
 }
@@ -185,7 +190,6 @@ function Armed({ sources }: { sources: readonly AskSourceRef[] }) {
 function Turn({ turn, last, repeated }: { turn: AskTurn; last: boolean; repeated: boolean }) {
   const running = useAsk((s) => s.running !== null);
   const chosen = useChosenSource();
-  const unlinkedId = `ask-unlinked-${turn.id}`;
   if (!turn.answer && !last) return null;
   return (
     <section className="space-y-1.5" data-testid="ask-turn" data-status={turn.status}>
@@ -193,10 +197,10 @@ function Turn({ turn, last, repeated }: { turn: AskTurn; last: boolean; repeated
       {/* plan 161, pass 2: a follow-up reads as a question, as the header's does, not as a caption */}
       <h3 className={repeated ? "sr-only" : "text-sm font-medium"} data-testid="ask-question">{turn.question}</h3>
       {turn.answer && <SameName turn={turn} />}
-      {turn.answer ? <AnswerText text={turn.answer} sources={turn.sources} queries={turn.queries} chosen={last ? chosen : null} unlinked={unlinkedClaims(turn) ? unlinkedId : null} /> : null}
+      {turn.answer ? <AnswerText text={turn.answer} sources={turn.sources} queries={turn.queries} chosen={last ? chosen : null} unlinked={unlinkedClaims(turn)} /> : null}
       <Armed sources={turn.sources} />
       {turn.status === "stopped" && <p className="text-xs text-muted-foreground" data-testid="ask-stopped">{t("ask.stopped")}</p>}
-      <Checks turn={turn} unlinkedId={unlinkedId} />
+      <Checks turn={turn} />
       {turn.answer && (
         // plan 161, pass 2: buttons that look like buttons, their edge on the answer's
         <div className="flex items-center gap-1 pt-0.5 text-xs text-muted-foreground" data-testid="ask-turn-actions">
@@ -325,13 +329,15 @@ function OlderLimit() {
 
 function Running({ ref }: { ref?: React.Ref<HTMLElement> }) {
   const running = useAsk((s) => s.running);
-  const shownTitle = useAsk((s) => s.running?.question ?? s.turns.at(-1)?.question);
+  // plan 162 (after ai162-r05): a follow-up's question heads its answer from the start, as it will once done (the header
+  // holds only the first's place alone)
+  const alone = useAsk((s) => s.turns.length === 0);
   if (!running) return null;
   const { older, searchingOlder, text, chunks, question } = running;
   const looking = searchingOlder && !text ? (older ? t("ask.older.progress", { done: older.done, total: older.total }) : t("ask.older.looking")) : t("ask.looking");
   return (
     <section ref={ref} className="space-y-1.5" data-testid="ask-running">
-      <h3 className={question === shownTitle ? "sr-only" : "text-xs font-medium text-muted-foreground"} data-testid="ask-question">{question}</h3>
+      <h3 className={alone ? "sr-only" : "text-sm font-medium"} data-testid="ask-question">{question}</h3>
       {text ? (
         // plan 162 (after ai162-r03): its citations as the marks they'll be, never "[1]" until the end
         // the owner (2026-11-08): "a nice fading animation that brings the words": each piece fades in as it arrives (CSS on
@@ -640,21 +646,6 @@ function Conversation({ onBack, onClose }: { onBack: () => void; onClose: () => 
     if (!running) toTop(lastTurn());
   }, []);
   const unpin = () => { pinned.current = false; };
-  // plan 162 (after ai162-r04): the region's foot fades while more is below it, so a cut row reads as "more", not as the end
-  const [more, setMore] = useState(false);
-  const measureMore = () => {
-    const box = area.current;
-    if (box) setMore(box.scrollTop + box.clientHeight < box.scrollHeight - 2);
-  };
-  useLayoutEffect(() => {
-    const box = area.current;
-    if (!box) return;
-    measureMore();
-    const watch = new ResizeObserver(measureMore);
-    watch.observe(box);
-    if (box.firstElementChild) watch.observe(box.firstElementChild);
-    return () => watch.disconnect();
-  }, [turns.length, running === null]);
   // back from a shown source: the keys are the follow-up box's again (its words, the place read to and the row chosen
   // were kept: the conversation stays mounted under the source, Codex review (pass 3) #1, #5, #6)
   const peeked = useRef(false);
@@ -691,12 +682,13 @@ function Conversation({ onBack, onClose }: { onBack: () => void; onClose: () => 
       {/* plan 162 (after ai162-r04): the dialog is a column bounded by the window; this part gives up height first, so the
           header, the follow-up box and the keys' line are always whole (it ran past a 1100x700 window) */}
       <div inert={peek !== null} className={cn("flex min-h-0 flex-col", peek && "invisible h-0 overflow-hidden")} data-testid="ask-conversation">
-          {/* tabbable: it scrolls, and a keyboard has to reach what it holds. Plan 162 (after ai162-r03): one scroll region
-              for the answer and its sources (two, each cut, hid sources 5 to 7 under the fold with no count) */}
-          <div ref={area} tabIndex={0} data-testid="ask-area" data-more={more || undefined} onWheel={unpin} onPointerDown={unpin} onKeyDown={unpin} onScroll={measureMore} className="max-h-[30rem] min-h-0 overflow-y-auto outline-none data-more:[mask-image:linear-gradient(to_top,transparent,black_1.5rem)]">
+          {/* tabbable: it scrolls, and a keyboard has to reach what it holds. Plan 162 (after ai162-r05): the answer's
+              region; its sources are apart, under it (one region left a long answer one half-faded source row at
+              1100x700), and nothing fades: the hairline over the sources is the edge */}
+          <div ref={area} tabIndex={0} data-testid="ask-area" onWheel={unpin} onPointerDown={unpin} onKeyDown={unpin} className="max-h-[30rem] min-h-0 flex-1 overflow-y-auto outline-none">
             <div className="space-y-4 px-[18px] py-3">
               {turns.map((turn, i) => (
-                turn.kind === "command" ? <CommandTurn key={turn.id} turn={turn} last={turn === last} /> : <Turn key={turn.id} turn={turn} last={turn === last} repeated={(turn === last && !running && turn.question === title) || (i > 0 && turn.question === turns[i - 1]!.question)} />
+                turn.kind === "command" ? <CommandTurn key={turn.id} turn={turn} last={turn === last} /> : <Turn key={turn.id} turn={turn} last={turn === last} repeated={(turns.length === 1 && !running && turn.question === title) || (i > 0 && turn.question === turns[i - 1]!.question)} />
               ))}
               <Running ref={runningRef} />
               <Failure />
@@ -705,16 +697,18 @@ function Conversation({ onBack, onClose }: { onBack: () => void; onClose: () => 
               {incomplete && <p className="text-xs text-muted-foreground" data-testid="ask-incomplete">{t("ask.incomplete")}</p>}
               <OlderLimit />
             </div>
-            {last && sources && !running && (
-              <CommandList label={t("ask.sources")} className="max-h-none overflow-visible border-t border-border/60 p-1.5 **:[[cmdk-group-heading]]:static">
-                <CommandGroup heading={t("ask.sourcesCount", { count: last.sources.length })} data-group="ask-sources">
-                  {last.sources.map((source, i) => (
-                    <SourceRow key={source.messageId} source={source} n={i + 1} queries={last.queries} />
-                  ))}
-                </CommandGroup>
-              </CommandList>
-            )}
           </div>
+          {last && sources && !running && (
+            // plan 162 (after ai162-r05): always on screen, three whole rows under their count (28 px heading, 32 px rows,
+            // 2 px gaps, 6 px foot); more scroll here, the heading staying, and ↑↓ bring the chosen row whole into view
+            <CommandList label={t("ask.sources")} data-testid="ask-sources" className="max-h-[8.375rem] shrink-0 overflow-y-auto border-t border-border/60 px-1.5 pt-0 pb-1.5 **:[[cmdk-group-heading]]:top-0">
+              <CommandGroup heading={t("ask.sourcesCount", { count: last.sources.length })} data-group="ask-sources">
+                {last.sources.map((source, i) => (
+                  <SourceRow key={source.messageId} source={source} n={i + 1} queries={last.queries} />
+                ))}
+              </CommandGroup>
+            </CommandList>
+          )}
           <FollowUp disabled={atLimit || !enabled} onWalk={setWalking} inputRef={followUp} />
       </div>
       <AskHints where={peek ? "peek" : walking && chosen !== null ? "walking" : "asking"} sources={sourceCount} end={session} />
