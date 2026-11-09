@@ -109,7 +109,7 @@ export function glassAlpha(popover: Oklch, texts: Oklch[]): number {
   return 1;
 }
 
-/** the filled field's least wash of ink (plan 118); plan 160 deepens it per palette until the field stands off the list */
+/** the filled field's wash of ink (plan 118), the same in every palette (the owner's decision in plan 160) */
 export const FIELD_WASH = 0.07;
 /**
  * Plan 160's floors for boundaries that repeat a cue shown another way (contrast.ts BOUNDARY_STEPS): a tint (a
@@ -178,15 +178,9 @@ export function derive(input: Pick<ThemeInput, "mode" | "tokens" | "cats" | "ove
     }
     return o("background");
   });
-  // plan 160: a field's wash of ink, from plan 118's 7% until it stands off the list (TINT_FLOOR), as far as the text in it
-  // still reads on every surface a field sits on
-  def("field", () => {
-    const over = (c: Oklch, k: ThemeToken) => formatOklch(rgbToOklch(composite(oklchToRgb(c), { ...oklchToRgb(o(k)), alpha: 1 })));
-    // (a margin over 4.5: the page blends a translucent wash a step off this math, 8 bits a channel; most on a menu or dialog,
-    // where a key's muted text sits on it and axe read 4.49 on Luma's)
-    const reads = (c: Oklch) => (["background", "pane", "card", "popover", "tint"] as const).every((k) => (["foreground", "muted-foreground"] as const).every((fg) => contrast(o(fg), over(c, k), bg) >= (k === "popover" ? 4.62 : 4.52)));
-    return inkAlpha(o("foreground"), FIELD_WASH, 0.2, (c) => contrast(c, formatOklch(o("pane")), bg) >= TINT_FLOOR || !reads(withAlpha(c, c.alpha + 0.005)));
-  });
+  // plan 118's field: the ink at 7%, in every palette. Plan 160 deepened it per palette until it stood 1.35:1 off the list;
+  // the owner found those fields too dark and chose the lighter wash back (2026-11-08, contrast.ts FIELD_FLOOR)
+  def("field", () => withAlpha(o("foreground"), FIELD_WASH));
   // plan 160: a composer's ring and its field dividers: the hairline's ink, deep enough to separate the form from the reader
   // (and Lumen's card) at HAIRLINE_FLOOR
   def("draft-edge", () => inkAlpha(o("foreground"), 0.11, 0.3, (c) => (["background", "card"] as const).every((k) => contrast(c, formatOklch(o(k)), bg) >= HAIRLINE_FLOOR)));

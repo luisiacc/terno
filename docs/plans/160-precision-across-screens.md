@@ -278,3 +278,14 @@ The review stopped after two rounds (the round cap). Round 2's findings were nar
 The first `pnpm test:all` (after the rebase) failed two e2e tests:
 - **composer-drop.spec** dropped a file on "the empty pane under the card". The card now reaches the pane's foot, so the drop point is the `--float-inset` under it.
 - **ask.spec (Luma, dark)**: axe read a key's muted text on the field's wash over a dialog at 4.49:1. The page blends a translucent wash one 8-bit step off the suite's math. The field derivation now keeps 4.62:1 on popovers (4.52 elsewhere). The secondary ink of six dark palettes went a touch lighter so their fields still reach the floor: terno-dark 0.701 → 0.704, dracula 0.792 → 0.798, gruvbox-dark 0.799 → 0.805, nord 0.836 → 0.842, catppuccin-mocha 0.781 → 0.784, luma-dark 0.72 → 0.726. The table above was measured before this; each palette's muted-on-open-row ratio rose by at most 0.1.
+
+## Owner's decision: fields keep their earlier, lighter fill (2026-11-08)
+
+The owner, on the Rules dialog's fields after this plan: "these fields are very dark, i think the color they had before i liked way more, don't care about color accessibility".
+
+- **The fill goes back.** `field` is plan 118's wash again, the ink at 7 % (`FIELD_WASH`) in every palette, light and dark (it had been deepened to between 10 and 20 %). The token stays, so `--color-field` and the contrast pairs still read it.
+- **The owner accepts the lower step.** At 7 % a field stands 1.11 to 1.23:1 off the list, under the 1.35:1 tint floor. `BOUNDARY_STEPS` holds a field at `FIELD_FLOOR` (1.1) instead, which only keeps a field from vanishing. Graphite's exception for its field (1.32 and 1.20) is gone, because the new floor is under both.
+- **The segmented control goes back with it.** It is drawn in the same token: its track in light, its thumb in dark. Its two steps take the same floor (light 1.11 to 1.18:1, dark 1.16 to 1.23:1). The dark thumb stays the field's wash rather than going back to `muted`: the two are about the same step, and `muted` is weaker in GitHub Dark (1.09).
+- **Everything else drawn in `bg-field` goes back too:** keys (Kbd), chips, the close ×, tabs and the progress track, the alert's icon disc, Ask's citation numbers, and a disabled select's or button's fill.
+- **Unchanged:** the open row, the hover, the sidebar's selection, `draft-edge` (the composer's ring and dividers), `card-edge`, and the secondary ink tuned for the deeper wash. New message's To and Subject rows and the ⌘J row are transparent with dividers, not filled, so they don't change.
+- **Text still holds AA.** The owner's "don't care" is about the fill, not the text. A field's text and placeholder hold 4.5:1 on every surface (`CONTRAST_PAIRS`). The lowest is 4.64:1, Graphite dark's secondary ink on a field over a tint. A lighter wash only raises these ratios.

@@ -86,7 +86,7 @@ Each item says what differs from BoardUI and why.
 - **Context menu edges and columns:** at a window edge it shifts to fit instead of flipping, so its first rows stay by the pointer. The thread list's menu is the exception (plan 160): it stands by the row it's about, below it or flipped above it, so it never covers that row. Every menu, popover and select keeps `--float-inset` (12 px) from the window's edges, not Base UI's 5. A panel with a submenu keeps a chevron's column on every row, so shortcuts and chevrons form separate columns.
 - **Destructive menu rows:** they keep a red wash when highlighted. Red text on `muted` fails AA in six palettes.
 - **Segmented control in dark (plan 160):** the chosen thumb is the field's wash, not `muted`, which sat at 1.2:1 on the track, under the tint floor.
-- **Filled fields (plan 160):** the wash is each palette's `field` token, 7 % of the ink or deeper until the field stands 1.35:1 off the list, not one fixed 7 %.
+- **Filled fields (plans 118, 160):** the wash is the `field` token, the ink at 7 % in every palette. Plan 160 once deepened it until the field stood 1.35:1 off the list; the owner found that too dark and chose the lighter fill back (2026-11-08).
 - **Kbd:** it sits on the field wash, not on `border`. Muted text on `border` fails AA in GitHub Light and Dark.
 - **Links on the tint and in drafts:** these use `link-secondary` (ink), because the accent fails AA there.
 - **Calendar:**

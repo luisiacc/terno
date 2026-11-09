@@ -195,10 +195,13 @@ export interface BoundaryStep {
 }
 
 /**
- * Graphite's blueprint (plan 137) fixes its secondary ink at #5D5D5D and #9E9E9E: a field's placeholder in it reads at 4.5:1
- * on the field (over menus and dialogs too) only up to this wash, so its field, and the thumb drawn in it, stop there
+ * Owner's decision (2026-11-08, plan 160): a field keeps plan 118's lighter fill, the ink at 7 % (FIELD_WASH), not the
+ * deeper wash this suite once tuned it to for 1.35:1 ("these fields are very dark, i think the color they had before i
+ * liked way more, don't care about color accessibility"). The owner accepts the lower step: at 7 % a field stands 1.11 to
+ * 1.23:1 off the list, and the segmented control (its track the field in light, its thumb the field in dark) the same.
+ * This floor only keeps a field from vanishing; the text on it still holds 4.5:1 (CONTRAST_PAIRS).
  */
-const GRAPHITE_FIELD = { "graphite-light": { min: 1.32, why: "the blueprint's #5D5D5D on the field" }, "graphite-dark": { min: 1.2, why: "the blueprint's #9E9E9E on the field over a menu" } };
+export const FIELD_FLOOR = 1.1;
 /** Plan 161, pass 3: an AI card's wash of the ink in dark (generate.ts --ai-card-wash, 4 %) */
 export const AI_CARD_WASH: Layer = { token: "foreground", alpha: 0.04 };
 /**
@@ -216,9 +219,10 @@ export const BOUNDARY_STEPS: readonly BoundaryStep[] = [
   // a hover is under the pointer that made it, and must stay a step under the selection (SURFACE_STEPS): a lower floor
   { edge: ["pane", "row-hover"], behind: ["pane"], min: HOVER_FLOOR, why: "the row under the pointer, on the list" },
   { edge: ["sidebar", "sidebar-accent"], behind: ["sidebar"], min: TINT_FLOOR, why: "the sidebar's selection" },
-  { edge: ["pane", "field"], behind: ["pane"], min: TINT_FLOOR, why: "the search field on the list's header", except: GRAPHITE_FIELD },
-  { edge: ["pane", "field", "card"], behind: ["pane", "field"], min: TINT_FLOOR, why: "the chosen segment's thumb on its track (light)", mode: "light", except: GRAPHITE_FIELD },
-  { edge: ["pane", "background", "field"], behind: ["pane", "background"], min: TINT_FLOOR, why: "the chosen segment's thumb on its track (dark)", mode: "dark", except: GRAPHITE_FIELD },
+  // the owner's decision: a field and the segmented control drawn in it at FIELD_FLOOR, not TINT_FLOOR (their fill is plan 118's)
+  { edge: ["pane", "field"], behind: ["pane"], min: FIELD_FLOOR, why: "the search field on the list's header" },
+  { edge: ["pane", "field", "card"], behind: ["pane", "field"], min: FIELD_FLOOR, why: "the chosen segment's thumb on its track (light)", mode: "light" },
+  { edge: ["pane", "background", "field"], behind: ["pane", "background"], min: FIELD_FLOOR, why: "the chosen segment's thumb on its track (dark)", mode: "dark" },
   { edge: ["background", "draft-edge"], behind: ["background"], min: HAIRLINE_FLOOR, why: "a composer card's ring on the reader" },
   { edge: ["$draft", "draft-edge"], behind: ["$draft"], min: HAIRLINE_FLOOR, why: "a composer's field dividers on its card" },
   // plan 161: the keyboard's place in a menu, the palette and Ask's sources: a hover's step everywhere, and in Graphite,

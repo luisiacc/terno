@@ -65,12 +65,14 @@ describe("WCAG AA in every built-in theme", () => {
 });
 
 describe("the field's wash (plans 118, 160)", () => {
-  it("is the palette's field token, the ink at 7% or deeper", () => {
+  // the owner's decision (plan 160, 2026-11-08): plan 118's lighter fill in every palette, not a wash deepened to TINT_FLOOR
+  it("is the palette's field token, the ink at 7% in every palette", () => {
     const globals = readFileSync(join(import.meta.dirname, "../styles/globals.css"), "utf8");
     expect(globals).toContain("--color-field: var(--field);");
+    expect(FIELD_WASH).toBe(0.07);
     for (const theme of THEMES) {
       const field = parseColor(theme.tokens.field);
-      expect(field.alpha, theme.id).toBeGreaterThanOrEqual(FIELD_WASH);
+      expect(field.alpha, theme.id).toBe(FIELD_WASH);
       expect({ ...field, alpha: 1 }, theme.id).toEqual({ ...parseColor(theme.tokens.foreground), alpha: 1 });
     }
   });
@@ -108,7 +110,7 @@ describe("boundaries as drawn (plan 160)", () => {
   });
 
   it("a custom theme's field keeps its text readable on the list's own surface (Codex review)", () => {
-    // a list a step off white: the field's wash stops where its placeholder still reads on it
+    // a list a step off white: the field's placeholder still reads on it
     const custom = resolveCustomTheme({ id: "custom-x", name: "x", extends: "github-light", mode: "light", tokens: { pane: "oklch(0.96 0 0)" } } as never);
     const t = custom.tokens;
     const fieldOnPane = composite(custom, ["pane", "field"]);
