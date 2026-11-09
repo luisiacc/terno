@@ -318,6 +318,8 @@ function Profile({ initial, onChanged, onEditing, onReset, total, picked, compac
   useEffect(() => {
     if (!reveal) return;
     setExamplesOpen(true);
+    // the notes come after the phrases: all of them, so what the study added is in view
+    setAllExamples(true);
     requestAnimationFrame(() => {
       examplesToggle.current?.scrollIntoView({ block: "nearest" });
       examplesToggle.current?.focus({ preventScroll: true });
@@ -438,15 +440,27 @@ function OwnProfiles({ items, onChanged, onReset, total, reveal }: { items: Writ
   const list = oncePerScope(items);
   const [chosen, setChosen] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
-  const current = list.find((p) => profileKey(p) === chosen) ?? list[0]!;
+  // Codex review: Show the notes opens the profile that holds the study's notes (one merged across languages may be
+  // hidden behind its languages), and only that one
+  const [revealed, setRevealed] = useState<{ key: string; n: number } | null>(null);
+  const picked = list.find((p) => profileKey(p) === chosen) ?? items.find((p) => profileKey(p) === chosen) ?? list[0]!;
+  useEffect(() => {
+    if (!reveal) return;
+    const noted = items.filter((p) => (p.judgment?.notes.length ?? 0) > 0);
+    const target = noted.find((p) => profileKey(p) === profileKey(picked)) ?? noted[0] ?? picked;
+    setChosen(profileKey(target));
+    setRevealed({ key: profileKey(target), n: reveal });
+  }, [reveal]);
+  const current = picked;
+  const shownList = list.includes(current) ? list : [...list, current];
   const label = (p: WritingProfileView) => {
     const language = p.language ? new Intl.DisplayNames([getLocale()], { type: "language" }).of(p.language) : null;
     return language ? `${scopeTitle(p, accounts)} · ${language}` : scopeTitle(p, accounts);
   };
-  const options = list.map((p) => ({ value: profileKey(p), label: label(p) }));
+  const options = shownList.map((p) => ({ value: profileKey(p), label: label(p) }));
   return (
     <>
-      {list.length > 1 && (
+      {shownList.length > 1 && (
         <div className="flex items-center justify-between gap-6 py-2.5">
           <label id="style-scope-label" className="text-sm font-medium">{t("aiDraft.style.showing")}</label>
           <Select value={profileKey(current)} onValueChange={(v) => setChosen(v as string)} items={options} disabled={editing}>
@@ -455,10 +469,10 @@ function OwnProfiles({ items, onChanged, onReset, total, reveal }: { items: Writ
             </SelectTrigger>
             <SelectContent>
               {/* plan 162 (after ai162-r01): grouped by whose, each language under it (ten in one flat list) */}
-              {[...new Set(list.map((p) => scopeTitle(p, accounts)))].map((who) => (
+              {[...new Set(shownList.map((p) => scopeTitle(p, accounts)))].map((who) => (
                 <SelectGroup key={who}>
                   <SelectLabel>{who}</SelectLabel>
-                  {list.filter((p) => scopeTitle(p, accounts) === who).map((p) => (
+                  {shownList.filter((p) => scopeTitle(p, accounts) === who).map((p) => (
                     <SelectItem key={profileKey(p)} value={profileKey(p)}>
                       {label(p)}
                     </SelectItem>
@@ -469,7 +483,7 @@ function OwnProfiles({ items, onChanged, onReset, total, reveal }: { items: Writ
           </Select>
         </div>
       )}
-      <Profile key={profileKey(current)} initial={current} onChanged={onChanged} onEditing={setEditing} onReset={onReset} total={total} picked={list.length > 1} reveal={reveal} />
+      <Profile key={profileKey(current)} initial={current} onChanged={onChanged} onEditing={setEditing} onReset={onReset} total={total} picked={shownList.length > 1} reveal={revealed?.key === profileKey(current) ? revealed.n : 0} />
     </>
   );
 }

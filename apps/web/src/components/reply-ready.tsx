@@ -150,9 +150,10 @@ export default function ReplyReady({ threadId }: { threadId: number }) {
               {t("replies.use")}
               <Shortcut keys="r" className="ml-0.5" />
             </Button>
-            <Button size="sm" variant="outline" className="text-foreground" data-testid="reply-ready-dismiss" onClick={() => {
-              void dismissReply(threadId);
-              // plan 162 (after ai162-r01): the keys go to the reply bar coming back in its place, never to the page
+            <Button size="sm" variant="outline" className="text-foreground" data-testid="reply-ready-dismiss" onClick={async () => {
+              await dismissReply(threadId);
+              // plan 162 (after ai162-r01): the keys go to the reply bar coming back in its place, never to the page; once
+              // the card has gone (Codex review: the dismissal waits for the backend), and only if nothing else took them
               requestAnimationFrame(() => {
                 const at = document.activeElement;
                 if (!at || at === document.body) document.querySelector<HTMLElement>("[data-testid=quick-reply]")?.focus({ preventScroll: true });

@@ -77,6 +77,9 @@ test.describe("Today (plan 145)", () => {
     await expect(page.getByTestId("today-heading").nth(1)).toHaveAttribute("data-kind", "needsYou");
     await expect(page.getByTestId("today-heading").nth(1)).toHaveText("Needs you");
     expect(await page.getByTestId("today-heading").nth(1).evaluate((el) => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(13);
+    // Codex review: a drawn heading can't sit in a listbox, so each section's first row says its name to assistive tech
+    await expect(page.locator('[data-keep-scroll="list"] [role=option]').nth(1)).toHaveAccessibleName(/^Needs you, /);
+    await expect(page.getByTestId("digest-row")).toHaveAccessibleName(/^Newsletters, /);
     await expect(page.getByTestId("thread-row").filter({ hasText: "Can you make the 19th" })).toBeVisible();
     // plan 161: the row says why it needs you (they've written in it). Pass 2: as a label of its own, not the snippet's first words
     await expect(page.getByTestId("thread-row").filter({ hasText: "Can you make the 19th" }).getByTestId("row-why")).toHaveText("Your turn");

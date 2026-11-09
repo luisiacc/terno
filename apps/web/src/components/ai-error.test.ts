@@ -41,6 +41,9 @@ describe("plan 161, pass 2: one AI error, in plain words, never an address", () 
     const copy = aiErrorCopy({ message: "Ollama answered with an error (500).", kind: "unavailable", key: "errors.ai.providerError" }, ollama);
     expect(copy).toEqual({ title: "Ollama answered with an error (500)", help: "It’s running, but this request failed. Try again, or choose another model in AI settings.", settings: true });
     expect(copy.title).not.toMatch(/reach/i);
+    // Codex review: a 404 is an answer too, the model missing
+    const missing = aiErrorCopy({ message: "Ollama: model or endpoint not found (model 'qwen9' not found).", kind: "unavailable", key: "errors.ai.notFound" }, ollama);
+    expect(missing).toEqual({ title: "Ollama doesn’t have that model", help: "It’s running, but the model isn’t there. Choose another in AI settings.", settings: true });
   });
 
   it("the app's own sentence, with no address, is shown as it is", () => {

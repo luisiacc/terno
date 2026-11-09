@@ -309,6 +309,8 @@ export class TodayService {
         return false;
       }
       const kind = error instanceof AiError ? error.kind : "unavailable";
+      // plan 162 (Codex review): stored apart, so the page says the provider answered with an error, not that it was out of reach
+      const said = error instanceof AiError && kind === "unavailable" && (error.i18n?.key === "errors.ai.providerError" || error.i18n?.key === "errors.ai.notFound") ? (error.i18n.key === "errors.ai.notFound" ? "provider_not_found" : "provider_error") : kind;
       if (kind === "cancelled") return false;
       if (!(error instanceof AiError)) captureError(error, { code: "ai.failed" });
       this.b.log("info", "digest failed", { aiKind: kind });
@@ -322,7 +324,7 @@ export class TodayService {
       const attempts = row.attempts + 1;
       // what no retry helps ends here and says so; what may pass gets a few more goes, on the next start or wake
       const final = kind === "invalid_output" || kind === "refused" || kind === "unsupported" || attempts >= TRIES;
-      await digest.write({ ...row, attempts, errorKind: kind, state: final ? "failed" : "pending" }, generation);
+      await digest.write({ ...row, attempts, errorKind: said, state: final ? "failed" : "pending" }, generation);
       if (final) this.ended(day);
       return false;
     }

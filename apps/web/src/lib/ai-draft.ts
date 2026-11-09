@@ -348,13 +348,20 @@ export function openAiDraft(o: { key?: string; threadId?: number } = {}): void {
   void openRow(o);
 }
 
-export async function openRow(o: { key?: string; threadId?: number } = {}): Promise<void> {
+export async function openRow(o: { key?: string; threadId?: number; /** plan 162: the row opens holding this, only once it has really landed */ instruction?: string } = {}): Promise<void> {
   listen();
   const app = getApp();
+  const seed = (key: string) => { if (o.instruction) setInstruction(key, o.instruction); };
   const key = o.key ?? draftKeyOf(document.activeElement) ?? app.compose?.key;
-  if (key) return showRow(key, false);
+  if (key) {
+    showRow(key, false);
+    return seed(key);
+  }
   const threadId = o.threadId ?? threadInFront();
-  const onLanded = (landing: { kind: string; key: string }) => showRow(landing.key, landing.kind === "created");
+  const onLanded = (landing: { kind: string; key: string }) => {
+    showRow(landing.key, landing.kind === "created");
+    seed(landing.key);
+  };
   if (threadId !== null) {
     if (listLayout() && currentPage() === "list") openThread(threadId);
     const drafts = useDrafts.getState().drafts;

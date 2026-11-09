@@ -2612,6 +2612,8 @@ It contains none of your mail, contacts, settings or keys.
   "ai.error.provider": "the AI provider",
   "ai.error.providerError": "{provider} answered with an error",
   "ai.error.help.providerError": "It’s running, but this request failed. Try again, or choose another model in AI settings.",
+  "ai.error.notFound": "{provider} doesn’t have that model",
+  "ai.error.help.notFound": "It’s running, but the model isn’t there. Choose another in AI settings.",
   "ai.error.unavailable": "Couldn’t reach {provider}",
   "ai.error.timeout": "{provider} didn’t answer in time",
   "ai.error.auth": "{provider} didn’t accept the API key",

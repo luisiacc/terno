@@ -205,3 +205,23 @@ describe("plan 144, owner's decisions (2): Reply all on a conversation with othe
     setLocale("en", en);
   });
 });
+
+it("plan 162 (Codex review): Dismiss gives the keys to the reply bar once the dismissal is done, however long the backend takes", async () => {
+  const bar = document.body.appendChild(Object.assign(document.createElement("button"), { textContent: "Reply" }));
+  bar.setAttribute("data-testid", "quick-reply");
+  let finish!: () => void;
+  dismissReply.mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve; }));
+  await act(async () => root.render(<ReplyReady threadId={7} />));
+  act(() => useReplies.setState({ shown: { threadId: 7, phase: "ready", text: "Hey", row } }));
+  q("reply-ready-dismiss")!.focus();
+  act(() => q("reply-ready-dismiss")!.click());
+  // two frames pass while the backend hasn't answered: nothing has moved the keys yet
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  expect(document.activeElement).not.toBe(bar);
+  // it answers, the card goes (focus falls to the page), then the bar takes the keys
+  await act(async () => { finish(); useReplies.setState({ shown: null }); });
+  (document.activeElement as HTMLElement | null)?.blur();
+  await new Promise((r) => requestAnimationFrame(r));
+  expect(document.activeElement).toBe(bar);
+  bar.remove();
+});

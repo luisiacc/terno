@@ -1,4 +1,4 @@
-import { openRow, rowKeyOf, setInstruction } from "~/lib/ai-draft";
+import { openRow } from "~/lib/ai-draft";
 import { snack } from "~/lib/snack";
 
 /**
@@ -8,9 +8,8 @@ import { snack } from "~/lib/snack";
  */
 export async function replyFromItem(threadId: number, text: string): Promise<void> {
   try {
-    await openRow({ threadId });
-    const key = rowKeyOf(threadId);
-    if (key) setInstruction(key, text.trim());
+    // Codex review: seeded where the reply really landed, never into a draft an open that was cancelled found afterwards
+    await openRow({ threadId, instruction: text.trim() });
   } catch (error) {
     snack.error(error instanceof Error ? error.message : String(error));
   }

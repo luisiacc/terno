@@ -167,6 +167,9 @@ test.describe("actions in plain English (plan 143)", () => {
       await expect(page.getByTestId("action-sentence")).toContainText("Archive shipping notices older than a month");
       // the decision didn't move
       expect((await page.getByTestId("action-apply").boundingBox())!).toEqual(decided);
+      // Codex review: while a match is read, Esc goes back to the rule: Cancel doesn't claim it
+      await expect(page.getByTestId("action-cancel")).not.toHaveAttribute("aria-keyshortcuts", "Escape");
+      await expect(page.getByTestId("action-show-rule")).toHaveAttribute("aria-keyshortcuts", "Escape");
       // the rule isn't on screen: the header has Apply again, so it's always there exactly once
       await expect(page.getByTestId("action-preview").getByTestId("action-apply")).toHaveText("Archive 2");
       await expect(page.getByTestId("action-apply")).toHaveCount(1);

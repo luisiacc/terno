@@ -378,6 +378,13 @@ function FollowUp({ disabled, onWalk, inputRef: ref }: { disabled: boolean; onWa
   const [value, setValue] = useState("");
   const running = useAsk((s) => s.running !== null);
   const armed = useRef(false);
+  // plan 162 (Codex review): a follow-up that failed or found nothing keeps its words here too, selected, unless typed over
+  const missed = useAsk((s) => s.error?.question ?? s.notice?.question ?? null);
+  useEffect(() => {
+    if (missed === null || value !== "") return;
+    setValue(missed);
+    requestAnimationFrame(() => ref.current?.select());
+  }, [missed]);
   useLayoutEffect(() => ref.current?.focus(), []);
   const walk = (on: boolean) => {
     armed.current = on;

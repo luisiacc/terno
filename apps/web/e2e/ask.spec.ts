@@ -263,6 +263,15 @@ test.describe("ask your mail (plan 141)", () => {
       await expect(page.getByTestId("ask-turn")).toHaveCount(2);
     });
 
+    await scenario("plan 162 (Codex review): a follow-up that can't be done keeps its words in the follow-up field, selected", async () => {
+      await followUp(page).fill("Forward recruiters to my boss");
+      await followUp(page).press("Enter");
+      await expect(page.getByTestId("ask-command-notice")).toBeVisible();
+      await expect(followUp(page)).toHaveValue("Forward recruiters to my boss");
+      await expect.poll(() => followUp(page).evaluate((el: HTMLInputElement) => el.selectionEnd! - el.selectionStart!)).toBe("Forward recruiters to my boss".length);
+      await followUp(page).fill("");
+    });
+
     await scenario("Enter on Copy and Ask again stays with them, not the list's active row", async () => {
       await page.getByTestId("ask-copy").last().focus();
       await page.keyboard.press("Enter");

@@ -127,7 +127,7 @@ export default function ActionPreviewHeader() {
         </h1>
         {/* plan 162 (after ai162-r01): the decision has one place, here, whether the rule or a match is in the reader (it
             moved from the rule's foot to here when a match opened) */}
-        <ActionButtons size="sm" className="no-drag" />
+        <ActionButtons size="sm" className="no-drag" escCancels={list || ruleInReader} />
       </div>
       {/* the words typed, when the rule (which they head) isn't on screen */}
       {!ruleInReader && sentence && (
@@ -152,7 +152,7 @@ export default function ActionPreviewHeader() {
  * the header otherwise. Apply waits as a quiet button with a spinner (pass 2), and Trash and Spam are BoardUI's
  * destructive button: a batch that takes mail out of view never looks like an Archive.
  */
-function ActionButtons({ size, className, order = "cancel-first" }: { size: "sm" | "default"; className?: string; order?: "cancel-first" | "apply-first" }) {
+function ActionButtons({ size, className, order = "cancel-first", escCancels = true }: { size: "sm" | "default"; className?: string; order?: "cancel-first" | "apply-first"; /** Codex review: while a match is read in Split, Esc goes back to the rule, not Cancel */ escCancels?: boolean }) {
   const preview = useActionPreview((s) => s.preview);
   const checking = useActionPreview((s) => s.checking);
   const applying = useActionPreview((s) => s.applying);
@@ -174,7 +174,7 @@ function ActionButtons({ size, className, order = "cancel-first" }: { size: "sm"
   const cancel = applying ? (
     <Button key="cancel" size={size} variant="secondary" className={className} data-testid="action-stop" onClick={stopApplying}>{t("action.stop")}</Button>
   ) : (
-    keyed(<Button key="cancel" size={size} variant="secondary" className={className} data-testid="action-cancel" aria-keyshortcuts="Escape" onClick={leavePreview}>{t("common.cancel")}</Button>, "escape", t("common.cancel"))
+    escCancels ? keyed(<Button key="cancel" size={size} variant="secondary" className={className} data-testid="action-cancel" aria-keyshortcuts="Escape" onClick={leavePreview}>{t("common.cancel")}</Button>, "escape", t("common.cancel")) : <Button key="cancel" size={size} variant="secondary" className={className} data-testid="action-cancel" onClick={leavePreview}>{t("common.cancel")}</Button>
   );
   const applyButton = (
     <Button key="apply" size={size} variant={variant} className={cn(className, "tabular")} data-testid="action-apply" data-variant={variant} data-waiting={waiting || undefined} aria-keyshortcuts={isMac ? "Meta+Enter" : "Control+Enter"} disabled={waiting || applying || (count === 0 && !ruleOnly)} onClick={() => void applyPreview()}>
@@ -204,7 +204,6 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
   const items = useList((s) => s.items);
   if (!preview) return null;
   const { plan, count } = preview;
-  const verb = verbOf(preview);
   const ruleOnly = savesRuleOnly(preview);
   const waiting = previewWaiting(preview, checking);
   const accountEmail = (id: number) => accounts.find((a) => a.id === id)?.email ?? "";

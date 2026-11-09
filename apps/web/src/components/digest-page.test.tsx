@@ -252,3 +252,12 @@ it("plan 162 (Codex review): a digest that failed for a reason Settings fixes of
   expect(host.querySelector("[data-testid=digest-retry]")).not.toBeNull();
   expect(host.querySelector("[data-testid=digest-error-settings]")).toBeNull();
 });
+
+it("plan 162 (Codex review): a digest whose provider answered with an error says so, not that it couldn't be reached", async () => {
+  await show({ ...digestOf("2026-10-22"), state: "failed", errorKind: "provider_error" } as DigestRow);
+  expect(host.querySelector("[data-testid=digest-failed-text]")!.textContent).toMatch(/answered with an error/);
+  expect(host.querySelector("[data-testid=digest-failed-text]")!.textContent).not.toMatch(/reach/i);
+  await unmount();
+  await show({ ...digestOf("2026-10-22"), state: "failed", errorKind: "provider_not_found" } as DigestRow);
+  expect(host.querySelector("[data-testid=digest-failed-text]")!.textContent).toMatch(/doesn’t have that model/);
+});

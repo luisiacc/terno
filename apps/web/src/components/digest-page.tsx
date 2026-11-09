@@ -162,7 +162,9 @@ export default function DigestPage() {
   if (!row) return <div className="p-8 text-sm text-muted-foreground" data-testid="digest-page">{t("today.digest.none")}</div>;
   const done = batches?.length ? { count: batches.reduce((n, b) => n + b.ids.length, 0), undo: batches.at(-1)!.undo } : null;
   const finished = done !== null;
-  const failure = row.state === "failed" ? aiErrorCopy({ message: t("today.digest.failed"), kind: row.errorKind as never }, ai ? errorTarget(digestTarget(ai).provider, ai) : null) : null;
+  // plan 162 (Codex review): a provider that answered with an error is stored apart from one out of reach
+  const answered = row.errorKind === "provider_error" ? "errors.ai.providerError" : row.errorKind === "provider_not_found" ? "errors.ai.notFound" : undefined;
+  const failure = row.state === "failed" ? aiErrorCopy({ message: answered ? "" : t("today.digest.failed"), kind: (answered ? "unavailable" : row.errorKind) as never, key: answered }, ai ? errorTarget(digestTarget(ai).provider, ai) : null) : null;
   return (
     // ai-r03: the pane scrolls, bounded to the reader's height, and the page is a column in it. The page itself scrolled
     // with no height to scroll in, so it grew past the window and the parent clipped its last rows (every style, since

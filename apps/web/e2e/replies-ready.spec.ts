@@ -206,6 +206,24 @@ test.describe("replies ready (plan 144)", () => {
     });
   });
 
+  test("plan 162 (Codex review): a reply becoming ready never hides the reply bar while it has the keys; it steps aside once they leave", async ({ app: page, server }) => {
+    await withMail(page, server, { replies: { enabled: true } });
+    fakeDraft.firstTokenMs = 1500;
+    try {
+      await row(page).click();
+      await expect(page.getByTestId("reply-ready-skeleton")).toBeVisible({ timeout: 15_000 });
+      await page.getByTestId("quick-reply").focus();
+      fakeDraft.firstTokenMs = 0;
+      await expect(block(page)).toHaveAttribute("data-phase", "ready", { timeout: 15_000 });
+      await expect(page.getByTestId("quick-reply")).toBeFocused();
+      await expect(page.getByTestId("reply-bar")).toBeVisible();
+      await page.getByTestId("reply-ready-use").focus();
+      await expect(page.getByTestId("draft-slot")).toBeHidden();
+    } finally {
+      fakeDraft.firstTokenMs = 0;
+    }
+  });
+
   test("plan 161: the model's gaps are marked in the card and the composer, Use selects the first, and Send asks once, inline", async ({ app: page, server }) => {
     fakeDraft.text = () => "Thanks for asking. [Whether the 19th works.]\n\nLuis";
     try {

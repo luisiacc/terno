@@ -76,6 +76,9 @@ function TodayHeading({ kind, top }: { kind: TodayGroup["kind"]; top: number }) 
   );
 }
 
+/** Plan 162 (Codex review): a section's name, said to assistive tech by its first row (the drawn heading is aria-hidden) */
+const sectionName = (kind: TodayGroup["kind"] | undefined): string | undefined => (kind === "needsYou" ? t("today.needsYou") : kind === "reminders" ? t("today.reminders") : kind === "newsletters" ? t("today.newsletters") : undefined);
+
 /** Plan 161, pass 2: the digest's row is Today's first, at a compact height of its own (never taller than a row). */
 const DIGEST_ROW_MAX = 44;
 
@@ -108,6 +111,7 @@ function DigestListRow({ thread, top, height }: { thread: ThreadSummary; top: nu
       ) : (
         <Newspaper aria-hidden className={cn("relative size-4 shrink-0", selected ? "" : "text-muted-foreground")} />
       )}
+      <span className="sr-only">{t("today.newsletters")}, </span>
       <span className={cn("type-row-subject relative min-w-0 flex-1 truncate", selected ? "" : "text-muted-foreground")}>{thread.subject}</span>
       <ChevronRight aria-hidden className={cn("relative size-4 shrink-0", selected ? "" : "text-muted-foreground")} />
     </div>
@@ -1402,7 +1406,7 @@ export function ThreadList() {
             ))}
             {virtualItems.map((v) => (
               items[v.index]!.id === DIGEST_ROW_ID ? <DigestListRow key={v.key} thread={items[v.index]!} top={v.start} height={Math.min(height, DIGEST_ROW_MAX)} /> :
-              <ThreadRow key={v.key} thread={items[v.index]!} top={v.start} height={height} compact={compact} wide={wide} showAccount={showAccount} icons={icons} layout={layout} review={review} reminderTop={v.index < top} reminderEnd={topGap > 0 && v.index === top - 1} match={match} pick={list} />
+              <ThreadRow key={v.key} thread={items[v.index]!} top={v.start} height={height} compact={compact} wide={wide} showAccount={showAccount} icons={icons} layout={layout} review={review} reminderTop={v.index < top} reminderEnd={topGap > 0 && v.index === top - 1} match={match} pick={list} section={sectionName(todayGroups.find((g) => g.at === v.index)?.kind)} />
             ))}
           </div>
         )}

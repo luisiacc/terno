@@ -2597,6 +2597,8 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "ai.error.provider": "el proveedor de IA",
   "ai.error.providerError": "{provider} respondió con un error",
   "ai.error.help.providerError": "Está en marcha, pero esta petición falló. Vuelve a intentarlo o elige otro modelo en Ajustes de IA.",
+  "ai.error.notFound": "{provider} no tiene ese modelo",
+  "ai.error.help.notFound": "Está en marcha, pero el modelo no está. Elige otro en Ajustes de IA.",
   "ai.error.unavailable": "No se pudo conectar con {provider}",
   "ai.error.timeout": "{provider} no respondió a tiempo",
   "ai.error.auth": "{provider} no aceptó la clave de API",

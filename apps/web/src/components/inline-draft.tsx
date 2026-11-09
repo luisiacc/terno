@@ -448,6 +448,8 @@ export function DraftSlot({ threadId, draftKey, replyTo, replyAll = true, accoun
   // a written draft on its way back to this conversation: nothing for the moment its source takes to check (plan 158)
   const returning = useDraftsReturning((s) => s.threadId === threadId) && !d && !pinned && !recovering;
   const state: "bar" | "open" | "collapsed" | "pinned" | "returning" = pinned ? "pinned" : returning ? "returning" : !d ? "bar" : d.uiState;
+  // Codex review: a bar that has the keys stays until they leave it, so a reply becoming ready never hides the focused control
+  const [barFocused, setBarFocused] = useState(false);
 
   // a conversation is open: its reply may come next, so the editor starts loading (once)
   // and ⌘J may too, on someone who has AI set up: the row answers in the frame of the key
@@ -540,7 +542,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, replyAll = true, accoun
 
   return (
     // short of the composer, it's an invitation: a full line around it in every style, however faint the style's own fill or ring, and it answers the pointer
-    <div ref={rootRef} className={cn("mt-4", DRAFT_SURFACE, "not-data-[state=open]:[box-shadow:0_0_0_1px_var(--border),var(--draft-shadow)] data-[state=bar]:has-[[data-testid=quick-reply]:hover]:bg-muted", state === "returning" && "min-h-10")} data-testid="draft-slot" data-state={state} data-thread={threadId} hidden={stepAside && state === "bar"}>
+    <div ref={rootRef} className={cn("mt-4", DRAFT_SURFACE, "not-data-[state=open]:[box-shadow:0_0_0_1px_var(--border),var(--draft-shadow)] data-[state=bar]:has-[[data-testid=quick-reply]:hover]:bg-muted", state === "returning" && "min-h-10")} data-testid="draft-slot" data-state={state} data-thread={threadId} hidden={stepAside && state === "bar" && !barFocused} onFocus={() => setBarFocused(true)} onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setBarFocused(false); }}>
       <Expand open={state === "bar"}>
         <div className="flex h-10 items-center gap-0.5 pr-1.5" data-testid="reply-bar">
           {/* its words on the messages' name column, the reply glyph in the avatars'; the account it answers from in words, and only when there's a choice (initials read as a person) */}

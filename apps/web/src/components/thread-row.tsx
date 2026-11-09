@@ -50,6 +50,8 @@ interface Props {
   match?: RowMatch | null;
   /** plan 24: List's rows offer the pointer a checkbox, in the avatar's place or the marks' column */
   pick?: boolean;
+  /** plan 162 (Codex review): the first row of a Today section says the section's name to assistive tech (a heading can't sit in a listbox) */
+  section?: string;
 }
 
 /**
@@ -59,7 +61,7 @@ interface Props {
  * checking one re-renders one. The design picks the layout inside it (classic,
  * avatar, large avatar); the shell, roles, ids and handlers are the same in all.
  */
-export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact, wide = false, showAccount, icons, layout, review = null, reminderTop = false, reminderEnd = false, match = null, pick = false }: Props) {
+export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact, wide = false, showAccount, icons, layout, review = null, reminderTop = false, reminderEnd = false, match = null, pick = false, section }: Props) {
   renderProbe("ThreadRow");
   /** the open thread (the cursor; the listbox's active descendant) */
   const selected = useApp((s) => s.selectedId === thread.id);
@@ -120,6 +122,7 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
       match={match}
       excerpt={excerpt}
       pick={pick}
+      section={section}
       interactive
     />
   );
@@ -250,7 +253,7 @@ function RowDate({ thread, reminderTop, fallback, className, title }: { thread: 
   return <span data-testid="row-date" data-due-at={dueAt ?? undefined} title={title} className={className}>{dueAt !== null ? reminderShort(dueAt) : fallback}</span>;
 }
 
-export function ThreadRowView({ thread, top, height, compact, wide, icons, layout, review, reminderTop, reminderEnd, selected, checked, included, inSelection, account, categories, inCategory = null, kept = false, hasDraft, code, reminder, remindersList, interactive, match, excerpt, pick = false }: ViewProps) {
+export function ThreadRowView({ thread, top, height, compact, wide, icons, layout, review, reminderTop, reminderEnd, selected, checked, included, inSelection, account, categories, inCategory = null, kept = false, hasDraft, code, reminder, remindersList, interactive, match, excerpt, pick = false, section }: ViewProps) {
   const cats = thread.categoryIds.length ? categories.filter((c) => c.id !== inCategory && thread.categoryIds.includes(c.id)) : [];
   const classic = layout === "classic";
   const big = layout === "large-avatar";
@@ -492,6 +495,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
       )}
       style={{ transform: `translateY(${top}px)`, height }}
     >
+      {section && <span className="sr-only">{section}, </span>}
       {/* plan 158: the open row's mark, straight inside the selection's rounded edge; none while several are checked */}
       {/* (a checked row's mark is its check, on the same column) */}
       {included !== undefined && (

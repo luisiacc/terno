@@ -1156,6 +1156,8 @@ test.describe("drafting with AI (plan 133)", () => {
     await page.getByTestId("style-study-show").click();
     await expect(page.getByTestId("style-profile-examples-toggle")).toBeFocused();
     await expect(page.getByTestId("style-profile-examples")).toBeVisible();
+    // Codex review: the profile opened is the one holding the study's notes
+    await expect(page.getByTestId("style-profile-examples").getByTestId("style-profile-note").first()).toBeAttached();
 
     // pass 3: Esc on the page goes back to Drafting, focus on the way in; Settings stays
     await page.keyboard.press("Escape");
