@@ -29,6 +29,16 @@ After plan 161's rating rounds, on the questions they left open:
 - **Every newsletter starts ticked,** and Needs you keeps its **12-row cap.**
 - In plan 161 too: the Undo ring's drained part is a faint track; a sender check on plain-English actions only without AI; no new AI shortcuts; the action preview keeps its split; the follow-up stays on the AI card.
 
+## Owner's decisions (2) (2026-11-08)
+
+Asked whether archiving a newsletter opened from the digest should return to the digest: **"yes"**.
+
+- **While the reader holds a newsletter opened from the digest** (the same condition that shows "Back to the digest": `fromDigest` is the open conversation, in Today), **Archive, Trash and Spam go back to the digest page,** by the toolbar, `e`, `#`, `!`, the menu or the palette, rather than on to Today's first conversation. The page is where it was left (its scroll), focus is on the row it came from (a program's focus, so no ring), and the row is shown archived at once, as the page shows anything archived elsewhere: muted, with its state. A row sent to Trash or Spam says so ("Moved to Trash", "Marked as spam", the snack's own words), not "Archived".
+- **The usual Undo,** in the snack and with `z`: it brings the newsletter back, and, as Undo puts back the row that was open anywhere else, opens it again from the digest, with "Back to the digest" and the row it came from.
+- **Everything else stays the same:** another action, a conversation opened from anywhere else, and every list's own way on after an action.
+- **How:** `leaveList` asks `leaveToDigest` (`state/today.ts`) first; it holds only for that newsletter and those three actions, patches the digest's row out of the live and read ids, and goes back through `backToDigest`. Undo's `restoreSelection` remembers that the open row came from the digest and calls `reopenFromDigest`.
+- **Tests:** `actions.test` (each of the three goes back, the row gone in the frame of the key, the snack's Undo; Undo reopens it from the digest; another action, or a conversation not from the digest, is as before); `today.spec` (the toolbar's Archive, `e`, Trash and Spam each come back to the digest scrolled where it was, focus on the row, the row's state, the snack, Undo opening it again); `design-axe` holds the page after it, light and dark, in Lumen and Atelier. Each fails without the change.
+
 ## What exists
 
 - **Inputs, all local:** `waiting_since` and `inboxWaiting` (plan 17), due reminders (`reminders.threads`), and follow-ups (plan 142). Stored summaries (`ai_summaries`, plan 132) when that's on.

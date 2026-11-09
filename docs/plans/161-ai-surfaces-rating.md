@@ -1217,6 +1217,13 @@ To the open decisions above:
 - **No new keyboard shortcuts** for AI.
 - **Keep the split** in the action preview: the row's body opens the mail, the check column includes or leaves it out.
 - **The follow-up stays on the AI card.**
+- **Decided no** (the owner, 2026-11-08, with the two yeses in plans 144 and 145's "Owner's decisions (2)"):
+  - a palette command to summarize;
+  - one provenance label for follow-ups;
+  - a peek at the first match in the action preview;
+  - freezing the Undo ring under Reduce Motion;
+  - re-ticking a newsletter once it has been opened;
+  - raising Settings' group labels.
 
 ## After the owner's answers
 

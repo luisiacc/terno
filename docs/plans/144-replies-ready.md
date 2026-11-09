@@ -235,3 +235,15 @@ This replaces §5's "No card or color: a hairline and type", for the reason plan
 1. The e2e test asserted in light only: it now holds the surface and the geometry in light and dark, at both sizes.
 2. Graphite's check would pass with no outline at all, since equal to a summary that lost it too: it rejects `none`.
 3. The writing spinner had been made `aria-hidden`, which took away its status role and its name: it keeps both, as before the card (`reply-ready.test.tsx` fails without the fix).
+
+## Owner's decisions (2) (2026-11-08)
+
+Asked whether Reply ready should offer Reply all on a group thread: **"yes"**.
+
+- **Where:** only where the reply bar offers Reply all (`reachesSeveral`: Reply all reaches someone Reply doesn't, another person in To or Cc). One-to-one, the card is as it was.
+- **What:** the reply bar's two answers, in its words and glyphs ("Reply", "Reply all", `Reply` and `ReplyAll`), as BoardUI's segmented control (`ToggleGroup variant="segmented"`, the list's All | Unread size) at the end of the card's header, named "Reply or Reply all". Its track sits inside the header's 40 px (`-my-1.5`), so the header doesn't grow, and it shows only once the reply is ready.
+- **The default is the reply bar's:** Reply, its first answer. The choice lasts while the conversation is open (a Use and its Undo keep it) and goes when another one opens.
+- **Who it goes to:** the header says it as the composer will have it: "To Liam Taylor" for Reply, "To Liam Taylor, cc Ana Ruiz and Ben Wu" for Reply all (`autoRecipients("replyAll")`, the reply bar's own).
+- **Use as draft** opens the composer in that mode, with those people. **R is Use** (plan 144 §5: "r on a thread showing a ready block does the same as Use", which the card's hint says), so it answers as the card says; `a` stays Reply all. **No new shortcut.**
+- **No new model call:** the words are the same. The backend still holds Use to the people the words were written for (revision 7's `generation_key`, Reply's), and Reply all adds the rest in Cc, as `a` already did. If the greeting names only the sender, nothing says so: the user edits.
+- **Tests:** `reply-ready.test` (no choice one-to-one; a group: Reply first, Reply all names everyone, the words unchanged, never while it writes; Spanish); `replies.test` (Use with the choice, `a` always Reply all, another conversation's choice isn't this one's, leaving forgets it); `replies-ready.spec` (`@variant`: a group thread switches to Reply all, axe light and dark, Use opens with everyone in To and Cc, the strip's Undo keeps the choice, R follows it both ways; the one-to-one flow has no control and the same header). Each fails without the change.
