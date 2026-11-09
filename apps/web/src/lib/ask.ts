@@ -21,6 +21,8 @@ export interface AskRunning {
   requestId: string;
   question: string;
   text: string;
+  /** plan 162 (the owner, 2026-11-08): the text as it came, a piece per delta, so each fades in on its own */
+  chunks: string[];
   /** still looking through older mail on the server */
   older: { done: number; total: number } | null;
   searchingOlder: boolean;
@@ -129,7 +131,7 @@ export function askQuestion(question: string): void {
   const s = useAsk.getState();
   if (!text || s.running) return;
   const requestId = globalThis.crypto.randomUUID();
-  useAsk.setState({ running: { requestId, question: text, text: "", older: null, searchingOlder: false }, error: null, notice: null, noProvider: false, olderFound: null, olderPartial: false, usedAt: Date.now() });
+  useAsk.setState({ running: { requestId, question: text, text: "", chunks: [], older: null, searchingOlder: false }, error: null, notice: null, noProvider: false, olderFound: null, olderPartial: false, usedAt: Date.now() });
   void settle(client.call("ai.ask", { requestId, question: text, ...(s.conversationId !== null ? { conversationId: s.conversationId } : {}), timezone: timezone() }), requestId, text);
 }
 
@@ -139,7 +141,7 @@ export function searchOlder(): void {
   const turn = s.turns.at(-1);
   if (!turn || s.conversationId === null || s.running) return;
   const requestId = globalThis.crypto.randomUUID();
-  useAsk.setState({ running: { requestId, question: turn.question, text: "", older: null, searchingOlder: true }, error: null, olderFound: null, olderPartial: false, usedAt: Date.now() });
+  useAsk.setState({ running: { requestId, question: turn.question, text: "", chunks: [], older: null, searchingOlder: true }, error: null, olderFound: null, olderPartial: false, usedAt: Date.now() });
   void settle(client.call("ai.askOlder", { requestId, conversationId: s.conversationId, turnId: turn.id, timezone: timezone() }), requestId, turn.question);
 }
 
@@ -195,7 +197,7 @@ export function installAsk(): void {
   client.on("aiAsk", ({ requestId, text, older }) => {
     const { running } = useAsk.getState();
     if (running?.requestId !== requestId) return;
-    useAsk.setState({ running: { ...running, ...(text ? { text: running.text + text } : {}), ...(older ? { older } : {}) } });
+    useAsk.setState({ running: { ...running, ...(text ? { text: running.text + text, chunks: [...running.chunks, text] } : {}), ...(older ? { older } : {}) } });
   });
 
   // another window deleted or cleared it, or its account went

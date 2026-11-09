@@ -284,14 +284,22 @@ function Running({ ref }: { ref?: React.Ref<HTMLElement> }) {
   const running = useAsk((s) => s.running);
   const shownTitle = useAsk((s) => s.running?.question ?? s.turns.at(-1)?.question);
   if (!running) return null;
-  const { older, searchingOlder, text, question } = running;
+  const { older, searchingOlder, text, chunks, question } = running;
   const looking = searchingOlder && !text ? (older ? t("ask.older.progress", { done: older.done, total: older.total }) : t("ask.older.looking")) : t("ask.looking");
   return (
     <section ref={ref} className="space-y-1.5" data-testid="ask-running">
       <h3 className={question === shownTitle ? "sr-only" : "text-xs font-medium text-muted-foreground"} data-testid="ask-question">{question}</h3>
       {text ? (
         // plan 162 (after ai162-r03): its citations as the marks they'll be, never "[1]" until the end
-        <p className="whitespace-pre-wrap break-words text-sm leading-relaxed" data-testid="ask-streaming"><Runs text={text} marker={streamingMark} /></p>
+        // the owner (2026-11-08): "a nice fading animation that brings the words": each piece fades in as it arrives (CSS on
+        // its own span, at the motion cap; none when motion is off or reduced), and what came before stays as it was
+        <p className="whitespace-pre-wrap break-words text-sm leading-relaxed" data-testid="ask-streaming">
+          {chunks.map((chunk, i) => (
+            <span key={i} data-testid="ask-chunk" className="animate-in fade-in-0 duration-slow ease-motion">
+              {chunk.split(/(\[\d+\])/).map((part, j) => (/^\[\d+\]$/.test(part) ? streamingMark(Number(part.slice(1, -1)), j) : part))}
+            </span>
+          ))}
+        </p>
       ) : (
         <p className="flex items-center gap-2 text-sm text-muted-foreground" data-testid="ask-looking">
           <Spinner className="size-3.5" /> {looking}
