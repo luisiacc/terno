@@ -759,6 +759,7 @@ const en = {
   "filters.confirm.saveBody": "Every new conversation like these will be changed by it.",
   "filters.confirm.saveTitle": "Save a rule for nearly all your mail?",
   "filters.confirm.applyBody": "It acts on all of them now, and on new mail like them from now on.",
+  "filters.confirm.applyUncounted": "Apply this rule to mail already here?",
   "filters.confirm.applyTitle": { one: "Apply this rule to # conversation?", other: "Apply this rule to # conversations?" },
   "filters.saveApplyCount": { one: "Save and apply to # conversation", other: "Save and apply to # conversations" },
   "filters.unsaved": "Not saved · written with AI",

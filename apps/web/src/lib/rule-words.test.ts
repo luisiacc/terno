@@ -194,6 +194,9 @@ describe("plan 162 (after ai162-r03): a rule for everything, and what a rule lef
     expect(broadRule(rule([{ field: "listId", op: "matches", value: ".+" }, { field: "fromDomain", op: "equals", value: "substack.com" }]))).toBe(false);
     expect(broadRule(rule([{ field: "subject", op: "matches", value: ".*" }, { field: "fromDomain", op: "equals", value: "substack.com" }], "any"))).toBe(true);
     expect(broadRule(rule([{ field: "listId", op: "matches", value: ".+", negate: true }]))).toBe(false);
+    // Codex review: the same catch-all anchored or grouped
+    for (const value of ["^.+$", "^(?:.+)$", "(.*)", "^[\\s\\S]+$", ".{1,}"]) expect(broadRule(rule([{ field: "listId", op: "matches", value }])), value).toBe(true);
+    expect(broadRule(rule([{ field: "listId", op: "matches", value: "^news.+$" }]))).toBe(false);
   });
   it("names the request's words it left out, and what no rule can see", () => {
     const listRule = rule([{ field: "listId", op: "matches", value: ".+" }]);

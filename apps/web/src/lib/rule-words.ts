@@ -286,7 +286,20 @@ const ANY_FILLED = new Set([".", ".+", "^.", "^.+", "(.+)", "(?:.+)"]);
 const ANY_AT_ALL = new Set([".*", "^", "$", "^.*", ".*$", "^.*$", "(.*)", "(?:.*)"]);
 export function patternBreadth(pattern: string): "filled" | "all" | null {
   const p = pattern.trim();
-  return ANY_FILLED.has(p) ? "filled" : ANY_AT_ALL.has(p) ? "all" : null;
+  if (!p) return null;
+  if (ANY_FILLED.has(p)) return "filled";
+  if (ANY_AT_ALL.has(p)) return "all";
+  // plan 162 (Codex review): the same catch-all anchored or grouped ("^.+$", "^(?:.*)$", "[\s\S]+") says no more
+  let core = p;
+  for (let i = 0; i < 4; i++) {
+    const before = core;
+    core = core.replace(/^\^/, "").replace(/\$$/, "");
+    const group = /^\((?:\?:)?(.*)\)$/s.exec(core);
+    if (group && !/[()|]/.test(group[1]!)) core = group[1]!;
+    if (core === before) break;
+  }
+  core = core.replace(/\[\\s\\S\]|\[\\S\\s\]|\[\^\]/g, ".").replace(/\{1,\}/g, "+").replace(/\{0,\}/g, "*");
+  return core === "." || core === ".+" ? "filled" : core === "" || core === ".*" ? "all" : null;
 }
 export const matchesAnything = (pattern: string): boolean => patternBreadth(pattern) !== null;
 

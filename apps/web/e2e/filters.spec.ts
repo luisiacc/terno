@@ -269,6 +269,8 @@ test.describe("AI filters and learned filters", () => {
       await expect(page.getByTestId("preview-count")).toHaveText(/^[1-9]\d*$/);
       await page.getByTestId("action-toggle-archive").click();
       await page.getByTestId("action-toggle-markRead").click();
+      // plan 162 (Codex review): applied once it's counted (before, Save and apply asks first)
+      await expect(page.getByTestId("filter-save-apply")).toHaveText(/^Save and apply to \d+ conversations?$/);
       await page.getByTestId("filter-save-apply").click();
       // the dialog is free at once; the snack follows the job to its end
       await expect(page.getByTestId("filter-save")).toBeEnabled();

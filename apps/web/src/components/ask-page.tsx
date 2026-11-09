@@ -578,12 +578,23 @@ function Conversation({ onBack, onClose }: { onBack: () => void; onClose: () => 
     const box = area.current;
     if (box && el) box.scrollTop = el.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop - 12;
   };
+  // Codex review: held there as the answer grows (at first the region can't scroll that far: the short "Looking…" under
+  // a long answer), and once it's done, on its turn, until the user scrolls it themselves
+  const pinned = useRef(false);
+  const lastTurn = () => [...(area.current?.querySelectorAll<HTMLElement>("[data-testid=ask-turn]") ?? [])].at(-1) ?? null;
   useLayoutEffect(() => {
-    if (running) toTop(runningRef.current);
+    if (running) {
+      pinned.current = true;
+      toTop(runningRef.current);
+    } else if (pinned.current) toTop(lastTurn());
   }, [running?.requestId]);
   useLayoutEffect(() => {
-    if (!running) toTop([...(area.current?.querySelectorAll<HTMLElement>("[data-testid=ask-turn]") ?? [])].at(-1) ?? null);
+    if (running && pinned.current) toTop(runningRef.current);
+  }, [running?.text.length]);
+  useLayoutEffect(() => {
+    if (!running) toTop(lastTurn());
   }, []);
+  const unpin = () => { pinned.current = false; };
   // back from a shown source: the keys are the follow-up box's again (its words, the place read to and the row chosen
   // were kept: the conversation stays mounted under the source, Codex review (pass 3) #1, #5, #6)
   const peeked = useRef(false);
@@ -619,7 +630,7 @@ function Conversation({ onBack, onClose }: { onBack: () => void; onClose: () => 
       <div inert={peek !== null} className={cn(peek && "invisible h-0 overflow-hidden")} data-testid="ask-conversation">
           {/* tabbable: it scrolls, and a keyboard has to reach what it holds. Plan 162 (after ai162-r03): one scroll region
               for the answer and its sources (two, each cut, hid sources 5 to 7 under the fold with no count) */}
-          <div ref={area} tabIndex={0} data-testid="ask-area" className="max-h-[min(30rem,calc(100vh-15rem))] overflow-y-auto outline-none">
+          <div ref={area} tabIndex={0} data-testid="ask-area" onWheel={unpin} onPointerDown={unpin} onKeyDown={unpin} className="max-h-[min(30rem,calc(100vh-15rem))] overflow-y-auto outline-none">
             <div className="space-y-4 px-[18px] py-3">
               {turns.map((turn, i) => (
                 turn.kind === "command" ? <CommandTurn key={turn.id} turn={turn} last={turn === last} /> : <Turn key={turn.id} turn={turn} last={turn === last} repeated={(turn === last && !running && turn.question === title) || (i > 0 && turn.question === turns[i - 1]!.question)} />

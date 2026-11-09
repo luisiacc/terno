@@ -86,6 +86,9 @@ describe("unlinked claims and one name for several people (plan 162, after ai162
     // what the answer says of itself isn't a claim about the mail (a real model's closing lines)
     expect(hasUnlinkedSentence("Isabella flagged the payment [1]. None of these says what the problem was. I only looked at part of your mail, so there may be more.")).toBe(false);
     expect(hasUnlinkedSentence("Isabella marcó el pago [1]. Solo revisé parte de tu correo.")).toBe(false);
+    // Codex review: only what it says about its own search; a claim that starts with "I" or says "may be more" is still one
+    expect(hasUnlinkedSentence("Isabella flagged it [1]. I found that the contract renews on Friday.")).toBe(true);
+    expect(hasUnlinkedSentence("Isabella flagged it [1]. The renewal fee may be more than $500.")).toBe(true);
   });
 
   it("splits an answer into sentences that join back to it, each knowing whether it's cited", () => {

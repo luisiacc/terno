@@ -514,6 +514,8 @@ export function FiltersDialog() {
   // says so, and each save that would act on it asks once more, Cancel the default
   const vacuous = valid.success && broadRule(valid.data);
   const large = (matches ?? 0) >= BROAD_COUNT;
+  // Codex review: not counted yet (the preview's debounce, or its request) could be any number: applying asks first too
+  const confirmApply = vacuous || large || matches === null;
   const broad = said !== null && (vacuous || large) ? (matches !== null ? t("filters.ai.broadCount", { count: matches }) : t("filters.ai.broad")) : null;
   const [confirming, setConfirming] = useState<"apply" | "save" | null>(null);
   // the rule AI built, not saved yet, in the builder now
@@ -938,7 +940,7 @@ export function FiltersDialog() {
             {/* the owner's call (2026-11-08): Save is the main button, for every rule, by hand or by AI; applying it to mail
                 already here is the second choice, its consequence in its words */}
             <div className="ml-auto flex gap-2">
-              <Button variant="outline" className="text-foreground" data-testid="filter-save-apply" disabled={saving} onClick={() => (vacuous || large ? setConfirming("apply") : save(true))}>
+              <Button variant="outline" className="text-foreground" data-testid="filter-save-apply" disabled={saving} onClick={() => (confirmApply ? setConfirming("apply") : save(true))}>
                 {/* pass 2: the consequence in its words: how many it will touch, once counted */}
                 {matches ? t("filters.saveApplyCount", { count: matches }) : t("filters.saveApply")}
               </Button>
@@ -951,7 +953,7 @@ export function FiltersDialog() {
                 open={confirming !== null}
                 onOpenChange={(open) => !open && setConfirming(null)}
                 testId="filter-broad-confirm"
-                title={confirming === "apply" ? t("filters.confirm.applyTitle", { count: matches ?? 0 }) : t("filters.confirm.saveTitle")}
+                title={confirming === "apply" ? (matches === null ? t("filters.confirm.applyUncounted") : t("filters.confirm.applyTitle", { count: matches })) : t("filters.confirm.saveTitle")}
                 description={confirming === "apply" ? t("filters.confirm.applyBody") : t("filters.confirm.saveBody")}
                 confirm={confirming === "apply" ? (matches ? t("filters.saveApplyCount", { count: matches }) : t("filters.saveApply")) : t("filters.confirm.save")}
                 onConfirm={() => save(confirming === "apply")}

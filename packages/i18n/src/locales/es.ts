@@ -752,6 +752,7 @@ const es = {
   "filters.confirm.saveBody": "Cada conversación nueva parecida cambiará con ella.",
   "filters.confirm.saveTitle": "¿Guardar una regla para casi todo tu correo?",
   "filters.confirm.applyBody": "Actúa sobre todas ahora, y sobre el correo nuevo parecido a partir de ahora.",
+  "filters.confirm.applyUncounted": "¿Aplicar esta regla al correo que ya está aquí?",
   "filters.confirm.applyTitle": { one: "¿Aplicar esta regla a # conversación?", other: "¿Aplicar esta regla a # conversaciones?" },
   "filters.saveApplyCount": { one: "Guardar y aplicar a # conversación", other: "Guardar y aplicar a # conversaciones" },
   "filters.unsaved": "Sin guardar · escrita con IA",

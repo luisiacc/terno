@@ -189,3 +189,12 @@ it("plan 162 (after ai162-r03): a failed request says the one AI error's words, 
   expect(String(said.mock.calls.at(-1)![0])).not.toMatch(/127\.0\.0\.1|61550/);
   said.mockRestore();
 });
+
+it("plan 162 (Codex review): Save and apply asks first while the rule isn't counted yet, however many it may be", async () => {
+  await ask("archive mail from a.com");
+  await answer("filters.generate", rule("a.com"));
+  // the preview's count hasn't come (it's debounced): no number to stand behind, so it asks
+  await click($("filter-save-apply"));
+  expect($("filter-broad-confirm")).not.toBeNull();
+  expect(waiting["filters.save"]?.length ?? 0).toBe(0);
+});

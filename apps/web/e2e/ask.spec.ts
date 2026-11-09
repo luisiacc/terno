@@ -443,6 +443,17 @@ test.describe("ask your mail (plan 141)", () => {
     await expect(lastTurn(page)).toHaveAttribute("data-status", "answered");
     await expect(lastTurn(page).getByTestId("ask-unlinked").last()).toHaveText("This sentence cites nothing at all here.");
     await expect(lastTurn(page).getByTestId("ask-check-unlinked")).toHaveText("Underlined parts aren’t linked to a message.");
+    // Codex review: a follow-up under a long answer starts at its top, and stays there as it streams and once it's done
+    await page.getByTestId("ask-area").evaluate((el) => (el.style.maxHeight = "140px"));
+    fakeDraft.paceMs = 40;
+    await followUp(page).fill(`${WORD} once more?`);
+    await followUp(page).press("Enter");
+    fakeDraft.paceMs = 0;
+    await expect(page.getByTestId("ask-turn")).toHaveCount(3);
+    await expect(lastTurn(page)).toHaveAttribute("data-status", "answered");
+    const offset = async () => (await lastTurn(page).boundingBox())!.y - (await page.getByTestId("ask-area").boundingBox())!.y;
+    await expect.poll(offset).toBeLessThanOrEqual(16);
+    expect(await offset()).toBeGreaterThanOrEqual(-16);
   });
 
   test("the palette's last row asks; Enter on a command that matches still wins", async ({ app: page, server }) => {
