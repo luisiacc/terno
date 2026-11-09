@@ -32,7 +32,7 @@ import { DesktopAttention, OpenRelay } from "./attention";
 import { BUILD_ID, BUILD_VERSION } from "./diag/build-info";
 import { mainDiag } from "./diag/main";
 import { RestartPolicy } from "./diag/supervisor";
-import { devModeOf } from "./dev-mode";
+import { backendEnv, devModeOf, takeDevAiEnv } from "./dev-mode";
 import type { BackendToMain, MainToBackend } from "./ipc";
 import { readLegacySecrets } from "./keychain-helper";
 import { NetworkWatch } from "./network-watch";
@@ -66,6 +66,10 @@ try {
 // main.ts named the app and set userData (profile.ts) before loading this
 const isDev = Boolean(process.env.TERNO_DEV_URL);
 const demo = process.env.TERNO_DEMO === "1" || process.argv.includes("--demo");
+// plan 146's keys, out of main's environment before anything is spawned: only the backend gets them, in Dev mode
+const devAiEnv = takeDevAiEnv(process.env);
+/** plan 146: a local build, whose keys Dev mode may read; plan 161: the rating's frozen build too (test-hooks.ts) */
+const devMode = devModeOf({ devUrl: process.env.TERNO_DEV_URL, packaged: app.isPackaged }) || testDevAi(process.env, app.isPackaged, demo);
 /** Smoke runs open windows behind whatever the person at the machine is doing: never activated, never focused. */
 const background = process.env.TERNO_TEST_BACKGROUND === "1";
 /** Show a window and bring Terno forward, except in a background test run, where it only appears. */
@@ -210,7 +214,7 @@ function startBackend() {
   const startedAt = Date.now();
   engineCache ??= new EngineCache(join(userData, ENGINE_CACHE_DIR), BUILD_VERSION);
   const cache = engineCache;
-  const child = utilityProcess.fork(join(__dirname, "backend-boot.cjs"), cache.args(), { serviceName: "Terno Mail Engine", stdio: "inherit" });
+  const child = utilityProcess.fork(join(__dirname, "backend-boot.cjs"), cache.args(), { serviceName: "Terno Mail Engine", stdio: "inherit", env: backendEnv(process.env, devAiEnv, devMode) });
   const retirement = new BackendRetirement(child);
   backend = child;
   backendRetirement = retirement;
@@ -336,8 +340,7 @@ function startBackend() {
     dbPath: join(userData, DB_FILE),
     demo,
     dev: isDev,
-    // plan 161: the rating's frozen build runs Pro's AI path too (test-hooks.ts: the demo mailbox, never packaged)
-    devMode: devModeOf({ devUrl: process.env.TERNO_DEV_URL, packaged: app.isPackaged }) || testDevAi(process.env, app.isPackaged, demo),
+    devMode,
     ...agentPaths(),
     version: app.getVersion(),
     diag: { session: diagSession(), build: BUILD_ID, channel: mainDiag.channel },
