@@ -391,7 +391,8 @@ function SourceCells({ source, n }: { source: AskSourceRef; n: number }) {
     <>
       {/* the inline marker's look, so a citation and its row read as one number */}
       <span className="w-5 shrink-0"><span data-testid="ask-source-n" className="inline-grid h-[1.4em] min-w-[1.4em] place-items-center rounded-[0.4em] bg-field px-[0.3em] text-2xs leading-none font-semibold text-foreground tabular">{n}</span></span>
-      <span className="w-32 shrink-0 truncate">{source.fromName || source.fromEmail}</span>
+      {/* plan 162 (after ai162-r04): room for a full name where several people share a first one ("Isabella Cruz (Nóm…") */}
+      <span className="w-40 shrink-0 truncate" title={source.fromName || source.fromEmail}>{source.fromName || source.fromEmail}</span>
       <span className="min-w-0 flex-1 truncate text-muted-foreground">{view === "gone" ? t("ask.source.gone") : moved ? t(armed ? "ask.source.pressAgain" : view === "spam" ? "ask.source.spam" : "ask.source.trash") : source.subject}</span>
       <CommandDescription>{listDate(source.date)}</CommandDescription>
     </>
