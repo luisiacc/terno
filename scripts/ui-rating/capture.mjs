@@ -211,15 +211,17 @@ async function aiPass(design, mode, dir, ai) {
     await s("a01-summary");
     await provenance("summary-provenance");
 
-    // --- ⌘J: the instruction, then the draft it wrote ---
+    // --- ⌘J (plan 163): the reply opened for AI, the instruction typed in its body (its Sparkles lit), then the draft
+    // written in its place ---
     await rows.filter({ hasText: "departamento en la Roma" }).first().click(); await subject();
     await blur();
     await page.keyboard.press("Meta+j");
-    await visible("ai-row-input");
-    await page.getByTestId("ai-row-input").fill(AI_INPUTS.draft);
+    await page.locator("[data-testid=compose-body]:focus").waitFor();
+    await page.keyboard.type(AI_INPUTS.draft);
+    await page.locator("[data-testid=compose-ai][data-ready]").waitFor();
     await noReplyReady("⌘J");
     await s("a02-draft-prompt");
-    await page.keyboard.press("Enter");
+    await page.keyboard.press("Meta+j");
     await visible("ai-strip");
     // the strip shows once the writing is done; the draft is in the body (the stub's names the address, a real model's words vary)
     await page.waitForFunction(() => (document.querySelector("[data-testid=compose-body]")?.textContent ?? "").trim().length > 40, null, { timeout: wait.model });

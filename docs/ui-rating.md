@@ -21,7 +21,7 @@ A second set rates the AI features on their own, on Pro's real models: Dev mode'
 | Screen | Shots | Rated region |
 |---|---|---|
 | `summary` | `a01-summary` ◆ | the summary card |
-| `ai_draft` | `a02-draft-prompt` ◆, `a03-draft-written` ◆ | ⌘J's row, its strip and the draft it wrote |
+| `ai_draft` | `a02-draft-prompt` ◆, `a03-draft-written` ◆ | ⌘J: the instruction typed in the reply's body with its Sparkles lit; then the strip and the draft written in its place (plan 163) |
 | `ask` | `a04-ask-answer` ◆ | the Ask panel: answer, citations, sources |
 | `actions` | `a05-actions-preview` ◆, `a06-actions-undo` | an action's preview, then its undo |
 | `today` | `a07-today`, `a08-today-digest` | Today and the newsletter digest |
@@ -29,6 +29,8 @@ A second set rates the AI features on their own, on Pro's real models: Dev mode'
 | `ai_settings` | `a11-filter-ai`, `a12-writing-style` | Create a filter with AI; Writing style |
 
 ◆ also at 1100x700 (`-small`). `scripts/ui-rating/capture.mjs` (`aiPass`) holds the states; each waits for its real ready state, and a state the app can't reach fails the capture.
+
+Plan 163 changed what `a02` and `a03` shoot, as the owner asked for a new ⌘J (the file names are the same, so rounds before it aren't comparable on `ai_draft`): `a02` was ⌘J's row with the instruction typed in its field; it's now the reply ⌘J opened, the instruction ("friday works for me, ask him to send the address of the flat") typed in its body, and the composer's Sparkles lit (`[data-testid=compose-ai][data-ready]`). `a03` is reached by ⌘J again rather than Return, and shows the strip and the draft that replaced the instruction. The instruction reads as one on this machine (it asks him), so neither state waits on the fast model. A gap filled in place isn't a rated state (no `a03b`: adding a shot changes the set every round is gated on); it's in plan 163's gallery.
 
 How it runs:
 
