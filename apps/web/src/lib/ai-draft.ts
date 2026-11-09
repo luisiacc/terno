@@ -1,4 +1,4 @@
-import { BODY_READ_MAX, bodyAction, FILL_GAPS_MAX, formatAddressList, parseAddressList, readBody, settleBody, WRITING_ONE_OFF_MAX, type BodyGap, type BodyVerdict, type AiComposeResult, type AiErrorKind, type PreparedReply, type AiIntentResult, type IntentPerson, type IntentQuestion } from "@terno/core";
+import { BODY_READ_MAX, bodyAction, FILL_GAPS_MAX, formatAddressList, parseAddressList, readBody, settleBody, WRITING_ONE_OFF_MAX, type BodyGap, type BodyRead, type BodyVerdict, type AiComposeResult, type AiErrorKind, type PreparedReply, type AiIntentResult, type IntentPerson, type IntentQuestion } from "@terno/core";
 import { t } from "@terno/i18n";
 import { create } from "zustand";
 import { controllerFor, focusBody } from "~/components/composer/controller";
@@ -133,6 +133,12 @@ interface Run {
   moved: boolean;
   /** what the strip was, for a refinement that ends without text */
   prior?: AiStrip;
+  /**
+   * Plan 163, the owner's answers (2026-11-08): written at once from text the rules couldn't call an instruction or the
+   * user's email, while the fast model reads it. Until it says "instruction", nothing goes over the user's words: an
+   * answer that comes first waits here (`held`), in view.
+   */
+  read?: { state: "pending" | "instruction" | "email"; text: string; doc: unknown; held?: Extract<AiComposeResult, { status: "done" }> };
 }
 
 export interface AiCommit {
@@ -335,7 +341,7 @@ export function previewMode(s: AiSession | undefined): "overlay" | "rewriting" |
   // plan 163: a fill shows in the gaps themselves; Fill again keeps the text, dimmed, until the new fills go in at once
   if (s.run.spec.kind === "fill") return s.run.spec.fill?.base && s.phase !== "error" ? "rewriting" : null;
   // plan 163: written from the instruction in the body: it dims, and the stream takes its place
-  if (s.run.spec.kind === "body") return s.run.typed || s.phase === "choice" || s.phase === "error" ? "below" : "replacing";
+  if (s.run.spec.kind === "body" || s.run.read?.state === "instruction") return s.run.typed || s.phase === "choice" || s.phase === "error" ? "below" : "replacing";
   if (s.run.typed || s.run.spec.kind === "notes" || s.phase === "choice") return "below";
   // plan 161, pass 2: a rewrite leaves the text it rewrites in place, dimmed, until the new one replaces it whole; what
   // came before a failure is offered under it
@@ -596,6 +602,10 @@ export async function act(key: string): Promise<void> {
   let action = bodyAction(found);
   let gaps = found.gaps;
   if (action === "ask") {
+    // the owner's answers (2026-11-08): the rules can't tell an instruction from their email: writing starts now, beside it,
+    // and the fast read says meanwhile whether the draft replaces it (a new message with nobody to write to asks first)
+    const d0 = draftOf(key);
+    if (found.kind === "unsure" && d0 && !(d0.mode === "new" && !validRecipients(d0.toText).length)) return writeWhileReading(key, b, found, doc);
     const verdict = await askRead(key, b.text, found.maybe);
     if (verdict === "stopped") return;
     // typed while it read: start over on what's there now (Codex review 4)
@@ -640,6 +650,56 @@ async function askRead(key: string, text: string, maybe: readonly BodyGap[]): Pr
     update(key, { reading: null, readFailed: true });
     return null;
   }
+}
+
+/**
+ * Plan 163, the owner's answers: the draft is written at once from what was typed, asked as what they want to say (the
+ * rules' notes: said in their voice, nothing added), which is right for an instruction and still their words for an email.
+ * It lands beside them with Replace, unless the fast read, asked alongside, says they were an instruction and nothing was
+ * typed since: then it replaces them. Their email with gaps the read confirms has only the gaps filled instead.
+ */
+function writeWhileReading(key: string, b: BodyText, found: BodyRead, doc: unknown): void {
+  const text = b.text.trim();
+  update(key, { instruction: "", fromBody: false, phase: "input", readFailed: false });
+  // as `notes` with no notes: shown below their words until the read says otherwise, the request the instruction's own
+  startRun(key, { kind: "notes", instruction: text, notes: "" });
+  const run = session(key)?.run;
+  if (!run || run.spec.kind !== "notes") return;
+  update(key, { run: { ...run, read: { state: "pending", text, doc } } });
+  void readAside(key, run.requestId, b, found);
+}
+
+async function readAside(key: string, runId: string, b: BodyText, found: BodyRead): Promise<void> {
+  let verdict: BodyVerdict | null = null;
+  if (b.text.length <= READ_DRAFT_MAX) {
+    const requestId = globalThis.crypto.randomUUID();
+    update(key, { reading: requestId });
+    try {
+      verdict = await client.call("ai.readDraft", { requestId, text: b.text, maybe: found.maybe.map(({ from, to }) => ({ from, to })) });
+    } catch {
+      // it couldn't say: what they typed stays theirs, and the strip says so (a Stop has already ended the run)
+      if (session(key)?.reading === requestId) update(key, { readFailed: true });
+    }
+    if (session(key)?.reading !== requestId) return;
+    update(key, { reading: null });
+  }
+  const run = session(key)?.run;
+  if (!run?.read || run.requestId !== runId) return;
+  // typed into since: whatever the read says, it was about other words
+  const same = controllerFor(key)?.docToken() === run.read.doc;
+  const settled = settleBody(found, verdict);
+  if (settled.action === "fill" && same) {
+    // their email after all, with gaps the read confirmed: only the gaps are filled, and the draft beside it is dropped
+    if (requests.delete(run.requestId)) void quietly(() => client.call("ai.cancel", { requestId: run.requestId }));
+    clearSlow(key);
+    clearStream(key);
+    update(key, { run: null });
+    return fillGaps(key, b, settled.gaps);
+  }
+  const instruction = settled.action === "write" && same;
+  const read = { ...run.read, state: instruction ? ("instruction" as const) : ("email" as const) };
+  update(key, { run: { ...run, read }, ...(instruction ? { fromBody: true } : {}) });
+  if (read.held) finished(key, read.held);
 }
 
 /** Plan 163: their gaps, filled where they are. */
@@ -1009,19 +1069,24 @@ function finished(key: string, result: AiComposeResult) {
     if (!at || at === document.body) focusEditor(key);
     return;
   }
+  // the owner's answers: written before the fast read said what the text was: it waits for that, in view, never over it
+  if (run.read?.state === "pending") return update(key, { run: { ...run, read: { ...run.read, held: result } } });
   if (!result.text.trim()) return failed(key, { message: t("errors.ai.draftFailed") });
   const moved = fieldsMoved(run.binding, d);
+  const asInstruction = run.read?.state === "instruction";
   // plan 163 (Codex review 4): the instruction in the body is compared as a document: a change of formatting counts
   const c0 = controllerFor(key);
   // (bound before its editor existed, as in a draft an answer opened: the words, as the editor reads them now)
-  const unchanged = run.spec.kind === "body" && c0 && run.binding.doc !== null ? c0.docToken() === run.binding.doc : bodyNow(key).trim() === run.binding.text.trim();
-  if (run.spec.kind === "notes" || moved || !unchanged) {
+  const unchanged = (run.spec.kind === "body" || asInstruction) && c0 && run.binding.doc !== null ? c0.docToken() === run.binding.doc : bodyNow(key).trim() === run.binding.text.trim();
+  if ((run.spec.kind === "notes" && !asInstruction) || moved || !unchanged) {
     const writtenFor = moved && run.binding.to !== addresses(d.toText) ? run.binding.who || null : null;
     update(key, { phase: "choice", choice: { reason: run.spec.kind === "notes" && unchanged && !moved ? "notes" : "typed", writtenFor, result }, live: t("aiDraft.live.ready", { count: wordCount(result.text) }), run: { ...run, typed: true } });
     return;
   }
   // the draft can't change right now (the mailbox is handing over): it waits for a choice, never lost
-  if (!commit(key, "replace", result, run.spec, run.prior, run.needsSubject)) return update(key, { phase: "choice", choice: { reason: "typed", writtenFor: null, result }, run: { ...run, typed: true } });
+  // an instruction after all: the draft takes its place, and the strip remembers it as what was asked
+  const spec: RunSpec = asInstruction ? { kind: "body", instruction: run.read!.text } : run.spec;
+  if (!commit(key, "replace", result, spec, run.prior, run.needsSubject)) return update(key, { phase: "choice", choice: { reason: "typed", writtenFor: null, result }, run: { ...run, typed: true } });
   // plan 162 (after ai162-r02): keys lost while it wrote (the narrow Rewrite menu handed them to a trigger it redrew) go
   // to the draft it wrote; wherever else they are, they stay
   const at = document.activeElement;

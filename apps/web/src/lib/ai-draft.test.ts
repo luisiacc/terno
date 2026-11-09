@@ -1706,45 +1706,106 @@ describe("plan 163: ⌘J on what's written in the body", () => {
     expect(c.text).toBe(body);
   });
 
-  it("unsure: the fast model reads only what was typed; what it calls an instruction is written from, an email is expanded beside itself", async () => {
-    const text = "I'm happy to go ahead with the contract as it is. Nothing in it changes what we agreed, so the 19th is fine.";
-    const a = reply(text);
-    void store.act(a.key);
-    await tick();
-    expect(session(a.key)!.phase).toBe("reading");
-    expect(last("ai.readDraft").params).toEqual({ requestId: expect.any(String), text, maybe: [] });
-    last("ai.readDraft").resolve({ kind: "instruction", gaps: [] });
-    await tick();
-    last("ai.resolveIntent").resolve(keepDraft);
-    await tick();
-    expect(session(a.key)!.run!.spec.kind).toBe("body");
-    const b = reply(text);
-    void store.act(b.key);
-    await tick();
-    last("ai.readDraft").resolve({ kind: "email", gaps: [] });
-    await tick();
-    expect(session(b.key)!.run!.spec.kind).toBe("notes");
-    expect(last("ai.compose").params).toMatchObject({ instruction: "", draft: text });
-  });
+  // the owner's answers (2026-11-08): text the rules can't call an instruction or an email starts writing at once
+  const UNSURE = "I'm happy to go ahead with the contract as it is. Nothing in it changes what we agreed, so the 19th is fine.";
 
-  it("the fast read failing takes it as their email, and the strip says so; typed into while it reads, it starts over", async () => {
-    const text = "I'm happy to go ahead with the contract as it is. Nothing in it changes what we agreed, so the 19th is fine.";
-    const { key, c } = reply(text);
+  it("unsure: writing starts at once, beside the text, with the fast read asked alongside about only what was typed", async () => {
+    const { key, c } = reply(UNSURE);
     void store.act(key);
     await tick();
-    c.type(" Thanks!");
+    expect(session(key)!.phase).toBe("writing");
+    // asked as what they want to say: right for an instruction, still their words for an email
+    expect(last("ai.compose").params).toMatchObject({ instruction: UNSURE });
+    expect(last("ai.compose").params.draft).toBeUndefined();
+    expect(last("ai.readDraft").params).toEqual({ requestId: expect.any(String), text: UNSURE, maybe: [] });
+    // nobody asked who it's for: it's their words, kept where they are
+    expect(calls("ai.resolveIntent")).toHaveLength(0);
+    expect(store.previewMode(session(key))).toBe("below");
+    expect(c.text).toBe(UNSURE);
+  });
+
+  it("the read says instruction before the answer: the stream takes the text's place, and the answer replaces it in one step", async () => {
+    const { key, c } = reply(UNSURE);
+    void store.act(key);
+    await tick();
     last("ai.readDraft").resolve({ kind: "instruction", gaps: [] });
     await tick();
-    // started over on what's there now
-    expect(calls("ai.readDraft")).toHaveLength(2);
-    expect(last("ai.readDraft").params.text).toBe(`${text} Thanks!`);
-    last("ai.readDraft").reject(new Error("down"));
+    expect(store.previewMode(session(key))).toBe("replacing");
+    // still nothing over their words until the answer is whole
+    expect(c.text).toBe(UNSURE);
+    last("ai.compose").resolve(done("Hi Arjun,\n\nThe 19th is fine.\n\nLuis"));
     await tick();
-    expect(session(key)!.run!.spec.kind).toBe("notes");
+    expect(c.text).toBe("Hi Arjun,\n\nThe 19th is fine.\n\nLuis");
+    expect(session(key)!.strip!.instruction).toBe(UNSURE);
+    store.undoCommit(key);
+    expect(c.text).toBe(UNSURE);
+  });
+
+  it("the answer comes before the read: it waits in view, over nothing, and the read decides where it lands", async () => {
+    const a = reply(UNSURE);
+    void store.act(a.key);
+    await tick();
+    const readA = last("ai.readDraft");
     last("ai.compose").resolve(done("A fuller version."));
     await tick();
-    store.place(key, "replace");
-    expect(session(key)!.strip!.readFailed).toBe(true);
+    expect(session(a.key)!.phase).toBe("writing");
+    expect(a.c.text).toBe(UNSURE);
+    readA.resolve({ kind: "email", gaps: [] });
+    await tick();
+    expect(session(a.key)!.phase).toBe("choice");
+    expect(session(a.key)!.choice!.reason).toBe("notes");
+    expect(a.c.text).toBe(UNSURE);
+
+    const b = reply(UNSURE);
+    void store.act(b.key);
+    await tick();
+    const readB = last("ai.readDraft");
+    last("ai.compose").resolve(done("Hi Arjun, the 19th is fine."));
+    await tick();
+    expect(b.c.text).toBe(UNSURE);
+    readB.resolve({ kind: "instruction", gaps: [] });
+    await tick();
+    expect(b.c.text).toBe("Hi Arjun, the 19th is fine.");
+    expect(session(b.key)!.phase).toBe("strip");
+  });
+
+  it("the read failing, or typed into meanwhile, leaves it beside with Replace, never over their words", async () => {
+    const a = reply(UNSURE);
+    void store.act(a.key);
+    await tick();
+    last("ai.readDraft").reject(new Error("down"));
+    await tick();
+    last("ai.compose").resolve(done("A fuller version."));
+    await tick();
+    expect(session(a.key)!.phase).toBe("choice");
+    expect(a.c.text).toBe(UNSURE);
+    store.place(a.key, "replace");
+    expect(session(a.key)!.strip!.readFailed).toBe(true);
+
+    const b = reply(UNSURE);
+    void store.act(b.key);
+    await tick();
+    b.c.type(" Thanks!");
+    last("ai.readDraft").resolve({ kind: "instruction", gaps: [] });
+    await tick();
+    last("ai.compose").resolve(done("Hi Arjun, the 19th is fine."));
+    await tick();
+    expect(session(b.key)!.phase).toBe("choice");
+    expect(b.c.text).toBe(`${UNSURE} Thanks!`);
+  });
+
+  it("a read that confirms a gap in their email stops the draft beside it and fills only the gap", async () => {
+    const text = "I'm happy to go ahead with the contract as it is. Nothing in it changes what we agreed, so the 19th at ?? is fine.";
+    const { key } = reply(text);
+    void store.act(key);
+    await tick();
+    const speculative = last("ai.compose").params.requestId;
+    expect(last("ai.readDraft").params.maybe).toHaveLength(1);
+    last("ai.readDraft").resolve({ kind: "email", gaps: [0] });
+    await tick();
+    expect(calls("ai.cancel").map((c) => (c.params as { requestId: string }).requestId)).toContain(speculative);
+    const asked = last("ai.compose").params as { fill: { text: string; gaps: { from: number; to: number }[] } };
+    expect(asked.fill.gaps.map((g) => asked.fill.text.slice(g.from, g.to))).toEqual(["??"]);
   });
 
   it("Send while it reads, works out who it's for, or asks, stops: it would mail the instruction (Codex review 6)", async () => {

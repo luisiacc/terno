@@ -30,13 +30,8 @@ const times = (page: Page) => page.evaluate(() => (window as unknown as { __t: R
 
 async function press(page: Page) {
   await watch(page);
+  // nothing is asked first (plan 131: no per-use consent): the clock runs from the press
   await page.keyboard.press("Meta+j");
-  // a cloud model's first use says once what goes to it: the person's yes, and the clock starts again there
-  const told = page.getByTestId("ai-telling-continue");
-  if (await told.isVisible({ timeout: 1500 }).catch(() => false)) {
-    await watch(page);
-    await told.click();
-  }
   await page.locator("[data-testid=ai-strip], [data-testid=ai-choice], [data-testid=ai-error]").first().waitFor({ timeout: 3 * 60_000 });
   await expect.poll(async () => (await times(page)).done, { timeout: 10_000 }).toBeGreaterThan(0);
   return times(page);
@@ -83,7 +78,8 @@ test("plan 163 on real models: write, fill, and the fast read, timed", async () 
       const fills = await page.getByTestId("compose-fill").allInnerTexts();
       out[`fill ${round}`] = { ...t, text, fills, left: await page.getByTestId("compose-gap").allInnerTexts() };
     }
-    // the rules can't tell: the fast model reads it (Haiku on Pro), then it writes or expands
+    // the rules can't tell: it writes at once, and the fast model's read (Haiku on Pro) says meanwhile whether the draft
+    // replaces the text ("write") or lands beside it with Replace ("expand"; the owner's answers, 2026-11-08)
     const unsure: [string, "write" | "expand"][] = [
       ["sounds good, see you friday", "write"],
       ["Friday works for me. Can you send me the address of the flat?", "expand"],
