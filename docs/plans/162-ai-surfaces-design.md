@@ -798,3 +798,24 @@ Written before any code. All eight r03 reports, their 662 below-9 reasons, the 1
 
 ### The gallery
 `/tmp/terno-scratch/ai-gallery/gallery.mjs` (on `scripts/ui-rating/harness.mjs`): every AI feature and its main states, Lumen light and dark at 1440x900, macOS light for each main state; real models where a state shows model output, the stub for errors and empty states; one labelled sheet per feature.
+
+### The owner's feedback on the branch (2026-11-08, verbatim), folded into this pass
+
+1. The summary card: "i don't like the feeling color/bg/border for this card for the summary, it feels cheap where i want a premium, clean and modern feeling."
+2. ⌘J: "the 'edit instruction' is way too big, should be a pencil." (The whole ⌘J flow is being replaced by plan 163 in another worktree: writing the instruction in the draft box, then a subtle AI button.)
+3. Ask: "when text streams, lets have a nice fading animation that brings the words, that would be a nice feeling."
+4. The action preview's right side: "i find the right section not clear at all, i don't understand what i need to do there, too much text that's very not important, that needs a full redesign with the actual valuable important information with more protagonism."
+5. The rule and filter fields are too dark: the shared field fill (plan 160), fixed on main by another engineer; not touched here.
+
+**What it changes in this pass:**
+- **The AI card** (`ai-card`, shared by the summary, Reply ready and the follow-up) is redesigned: no grey fill and no drawn box. It's the page's own surface with a faint lift (`shadow-xs`-weight, the palette's own shadow), a hairline only in dark where a shadow can't show, more air (`px-4 py-3`), and the header's glyph and title as its only mark of AI. Still a card, so AI text never reads as the mail's (the owner's rule). Checked in Lumen, Atelier, macOS and Graphite, light and dark.
+- **⌘J:** Edit instruction is an icon-only pencil (named, with its tooltip). Nothing else in ⌘J changes in this pass (item 20 above, the rewrite segment's pressed state, is dropped), so plan 163 doesn't collide: `components/composer/ai-draft.tsx` is untouched after `ebb645e22`.
+- **Ask:** each chunk that streams in fades in (opacity, `--motion`, ≤ 100 ms), on the appended span only (CSS, no state per word), and not at all when motion is reduced or off.
+- **The action preview's reader pane** is redesigned (below, replacing items 17 and 18's look): it leads with what will happen and the one decision.
+- **Fields:** untouched.
+
+**The action preview's pane, redesigned.** Top to bottom:
+1. **What will happen**, the title: "Archive 3 conversations" (destructive ink for Trash and Spam, as now), and under it, in the ink, who they're from and when, in one line ("From UPS, DHL and 2 more · Sep 2 to Oct 20").
+2. **What's kept back, only when it changes the decision**, as plain facts with their one control each: "6 left out by the check · Show" and "3 starred or replied are skipped · Include". The sender warning stays here, first.
+3. **The decision:** Archive 3 (primary, or destructive) and Cancel.
+4. **"How Terno read it"**, one quiet disclosure, closed: the request quoted, the rule's rows, the exact search, Edit as a rule, the provenance. The help line ("Untick any you want to keep…") goes: the ticks say it.
