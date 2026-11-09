@@ -90,6 +90,8 @@ describe("unlinked claims and one name for several people (plan 162, after ai162
     const parts = answerSentences(text);
     expect(parts.map((p) => p.text).join("")).toBe(text);
     expect(parts.map((p) => [p.claim, p.linked])).toEqual([[true, true], [true, false], [false, false]]);
+    // a citation with no stop before it ends its sentence when the next one starts
+    expect(answerSentences("Isabella reported the payment [1] This sentence cites nothing at all.").map((p) => p.linked)).toEqual([true, false]);
   });
 
   it("names a first name the sources hold for several people, only when it's used", () => {

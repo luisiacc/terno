@@ -312,12 +312,11 @@ test.describe("replies ready (plan 144)", () => {
       const [mine, summary] = await Promise.all([card, page.getByTestId("summary-block")].map((el) => el.evaluate((n) => { const s = getComputedStyle(n); return { fill: s.backgroundColor, ring: s.boxShadow, radius: s.borderTopLeftRadius }; })));
       expect(mine).toEqual(summary);
       const NONE = "rgba(0, 0, 0, 0)";
-      // an outline that is really drawn, never "none" on both (review 2)
-      if (info.project.name === "e2e-graphite") {
-        expect(mine!.fill, `${mode}`).toBe(NONE);
-        expect(mine!.ring, `${mode}`).not.toBe("none");
-        expect(mine!.ring, `${mode}`).not.toContain(NONE);
-      } else expect(mine!.fill, `${mode}`).not.toBe(NONE);
+      // an outline that is really drawn, never "none" (review 2). Plan 162 (the owner, 2026-11-08): no fill of its own in
+      // any design, the page's surface under its hairline (dark lifts it with the ink's wash, an image, not a fill)
+      expect(mine!.fill, `${mode}`).toBe(NONE);
+      expect(mine!.ring, `${mode}`).not.toBe("none");
+      expect(mine!.ring, `${mode}`).toContain("inset");
 
       // one column: the summary above shares the card's ends (plan 162: the reply bar steps aside while it shows)
       const box = (await card.boundingBox())!;

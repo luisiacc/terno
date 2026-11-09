@@ -44,6 +44,12 @@ async function say(page: Page, sentence: string) {
 
 const rows = (page: Page) => page.getByTestId("thread-row");
 
+/** plan 162 (the owner, 2026-11-08): how Terno read the request is a disclosure, closed: opened to check what's in it */
+async function openReading(page: Page) {
+  const toggle = page.getByTestId("action-reading-toggle").first();
+  if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();
+}
+
 test.describe("actions in plain English (plan 143)", () => {
   test("plan 162: the rule's provenance and its Exact pattern are whole, and the rule's end reaches the wheel, in every design, light and dark, 1440 and 1100", { tag: "@design" }, async ({ app: page, server }) => {
     await withMail(page, server);
@@ -57,12 +63,11 @@ test.describe("actions in plain English (plan 143)", () => {
       await page.keyboard.press("Escape");
       await expect(popover, where).toHaveCount(0);
       await expect(page.getByTestId("action-rule"), where).toBeVisible();
-      // plan 162 (after ai162-r01): a list of words has no exact search to show; where there is one, it's whole
-      const details = (await page.getByTestId("action-details-toggle").count()) > 0;
-      if (details) await page.getByTestId("action-details-toggle").click();
-      if (details) expect(await unclipped(page.getByTestId("action-details-text")), where).toEqual([]);
-      expect(await wheelsTo(page, page.getByTestId("action-rule"), page.getByTestId("action-help")), where).toBe(true);
-      if (details) await page.getByTestId("action-details-toggle").click();
+      // plan 162 (after ai162-r01): a list of words has no exact search to show; where there is one, it's whole. The owner
+      // (2026-11-08): it's in How Terno read it, whose end is in reach of the wheel when open
+      await openReading(page);
+      if ((await page.getByTestId("action-details").count()) > 0) expect(await unclipped(page.getByTestId("action-details-text")), where).toEqual([]);
+      expect(await wheelsTo(page, page.getByTestId("action-rule"), page.getByTestId("action-edit-filter")), where).toBe(true);
     });
   });
 
@@ -114,10 +119,12 @@ test.describe("actions in plain English (plan 143)", () => {
       await expect(page.getByTestId("action-preview")).toBeVisible();
       // the rule found three; the check took out the one that isn't about shipping, and says so
       await expect(page.getByTestId("action-title")).toHaveText("2 conversations");
+      await openReading(page);
       await expect(page.getByTestId("action-conditions")).toContainText("Inbox");
       await expect(page.getByRole("dialog")).toHaveCount(0);
       await expect(rows(page)).toHaveCount(2);
-      await expect(page.getByTestId("action-left-out")).toContainText("Left out by AI (1)");
+      // plan 162 (after ai162-r03): what the check left out is a fact in the ink, beside its Show
+      await expect(page.getByTestId("action-left-out")).toContainText("1 left out by the check");
       const seen = await page.evaluate(() => (window as unknown as { previewRows: string[] }).previewRows);
       expect(seen.length).toBeGreaterThan(0);
       expect(seen.filter((text) => !/shipping|delivery|tracking/i.test(text))).toEqual([]);
@@ -137,18 +144,19 @@ test.describe("actions in plain English (plan 143)", () => {
       await expect(rule.getByTestId("action-apply-rule")).toHaveText("Archive 2");
       await expect(rule.getByTestId("action-apply-rule")).toHaveAttribute("data-variant", "default");
       await expect(rule.getByTestId("action-cancel-rule")).toBeVisible();
-      expect((await rule.getByTestId("action-apply-rule").boundingBox())!.y).toBeGreaterThan((await rule.getByTestId("action-help").boundingBox())!.y);
-      // one label column for both sections (they started 50 to 70 px apart)
-      const valueLefts = await rule.locator("[data-testid=action-review] dd").evaluateAll((dds) => [...new Set(dds.map((d) => Math.round(d.getBoundingClientRect().left)))]);
+      // the owner (2026-11-08): what will happen and the decision lead; how Terno read it is one disclosure under them, closed
+      expect((await rule.getByTestId("action-apply-rule").boundingBox())!.y).toBeGreaterThan((await rule.getByTestId("action-rule-title").boundingBox())!.y);
+      expect((await rule.getByTestId("action-apply-rule").boundingBox())!.y).toBeLessThan((await rule.getByTestId("action-reading-toggle").boundingBox())!.y);
+      await expect(rule.getByTestId("action-reading-toggle")).toHaveAttribute("aria-expanded", "true");
+      // the rule's rows share one value column; Edit as a rule is a bordered control in the reading
+      const valueLefts = await rule.locator("[data-testid=action-conditions] dd").evaluateAll((dds) => [...new Set(dds.map((d) => Math.round(d.getBoundingClientRect().left)))]);
       expect(valueLefts).toHaveLength(1);
-      // Edit as a rule is a bordered control beside the heading it edits
       expect(await rule.getByTestId("action-edit-filter").evaluate((e) => getComputedStyle(e).borderTopWidth)).not.toBe("0px");
-      expect(Math.abs((await rule.getByTestId("action-edit-filter").boundingBox())!.y - (await rule.getByText("Terno read it as").boundingBox())!.y)).toBeLessThan(12);
       await expect(page.getByTestId("action-decision")).toHaveCount(0);
       const decided = (await page.getByTestId("action-apply").boundingBox())!;
-      // the keys are the buttons' own: no line under the rule repeats them; x is said as what it does, on the one being read
+      // the keys are the buttons' own, and the ticks say what to do: no help line
       await expect(page.getByTestId("action-keys")).toHaveCount(0);
-      await expect(rule.getByTestId("action-help")).toHaveText("Untick any you want to keep, or press X on the one you’re reading. Click one to read it.");
+      await expect(rule.getByTestId("action-help")).toHaveCount(0);
       // a small archive needs no words about what it'll do
       await expect(rule.getByTestId("action-consequence")).toHaveCount(0);
       // plan 161, pass 2: what Apply does is the title, what was asked the line under it
@@ -162,10 +170,10 @@ test.describe("actions in plain English (plan 143)", () => {
       expect(await rule.getByTestId("action-rule-term").first().evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgba(0, 0, 0, 0)");
       // the pattern is never in the rows, and a list of words has no exact search to show: it says nothing more
       await expect(rule.getByTestId("action-conditions")).not.toContainText("|");
-      await expect(rule.getByTestId("action-details-toggle")).toHaveCount(0);
-      // and what it found, from the rows, to check before Apply: who sent them, and when
-      await expect(rule.getByTestId("action-found")).toContainText("What it found");
-      await expect(rule.getByTestId("action-found-line").first()).not.toBeEmpty();
+      await expect(rule.getByTestId("action-details")).toHaveCount(0);
+      // and which mail, from the rows, in one line under the title: who sent them, and when
+      await expect(rule.getByTestId("action-found-line")).not.toBeEmpty();
+      expect((await rule.getByTestId("action-found").boundingBox())!.y).toBeLessThan((await rule.getByTestId("action-apply-rule").boundingBox())!.y);
       // checkboxes to assistive tech: the column's check, and the row's checked state (the cursor stays aria-selected)
       await expect(page.getByRole("checkbox", { name: /^Include / })).toHaveCount(2);
       await expect(page.getByRole("checkbox", { name: /^Include / }).first()).toHaveAttribute("aria-checked", "true");
@@ -192,7 +200,7 @@ test.describe("actions in plain English (plan 143)", () => {
       await expect(rows(page).first()).toHaveAttribute("data-included", "false");
       await expect(page.getByTestId("action-apply")).toHaveText("Archive 1");
       // plan 162 (after ai162-r02): what it found counts what's ticked, so an untick recounts it, never hides it
-      await expect(rule.getByTestId("action-found")).toContainText("What it found");
+      await expect(rule.getByTestId("action-found-line")).not.toBeEmpty();
       await expect(rule.getByTestId("action-apply-rule")).toHaveText("Archive 1");
       await include.click();
       await expect(page.getByTestId("action-apply")).toHaveText("Archive 2");
@@ -351,6 +359,7 @@ test.describe("actions in plain English (plan 143)", () => {
     await expect(page.getByTestId("action-title")).toHaveText("2 conversaciones");
     await expect(page.getByTestId("action-rule-title")).toHaveText("Archivar 2 conversaciones");
     await expect(page.getByTestId("action-apply")).toHaveText("Archivar 2");
+    await openReading(page);
     await expect(page.getByTestId("action-conditions")).toContainText("Recibidos");
   });
 
@@ -404,6 +413,7 @@ test.describe("actions in plain English (plan 143)", () => {
     await withMail(page, server);
     // a name the mailbox doesn't have isn't one (the same rule, the same rows)
     await say(page, "Archive receipts from Zyxwbank");
+    await openReading(page);
     await expect(page.getByTestId("action-conditions")).toBeVisible();
     await page.waitForTimeout(500);
     await expect(page.getByTestId("action-sender")).toHaveCount(0);
@@ -413,8 +423,8 @@ test.describe("actions in plain English (plan 143)", () => {
     await say(page, "Archive receipts from Uber");
     const said = page.getByTestId("action-rule").getByTestId("action-sender");
     await expect(said).toHaveText("Your sentence names Uber, but this rule doesn’t look at the sender. Check it below, or edit it as a rule.");
-    // beside the rule: above what Terno read it as
-    expect((await said.boundingBox())!.y).toBeLessThan((await page.getByTestId("action-conditions").boundingBox())!.y);
+    // beside what will happen, above the decision
+    expect((await said.boundingBox())!.y).toBeLessThan((await page.getByTestId("action-apply-rule").boundingBox())!.y);
     await expect(page.getByTestId("action-apply")).toBeEnabled();
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/sender-split-light.png` });
     await page.getByTestId("action-apply").click();
@@ -423,6 +433,7 @@ test.describe("actions in plain English (plan 143)", () => {
     // the demo's own sentence names nobody: nothing said
     await say(page, "Archive shipping notices older than a month");
     await expect(page.getByTestId("action-apply")).toHaveText("Archive 2");
+    await openReading(page);
     await expect(page.getByTestId("action-conditions")).toBeVisible();
     await expect(page.getByTestId("action-sender")).toHaveCount(0);
     await page.keyboard.press("Escape");
@@ -484,6 +495,7 @@ test.describe("actions in plain English, List layout (plan 161)", () => {
     await say(page, "Archive shipping notices older than a month");
     await expect(page.getByTestId("action-apply")).toHaveText("Archive 2");
     const rule = page.getByTestId("action-rule");
+    await openReading(page);
     await expect(rule.getByTestId("action-rule-term").first()).toBeVisible();
     expect(await rule.evaluate((el) => [getComputedStyle(el).overflowY, getComputedStyle(el).maxHeight !== "none"])).toEqual(["auto", true]);
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/list-layout-light.png` });
@@ -512,6 +524,7 @@ test.describe("actions in plain English at 1100 × 700 (plan 161, pass 2)", () =
     await expect(apply).toHaveText("Archive 2");
     await page.setViewportSize({ width: 1100, height: 320 });
     // the rule is longer than its pane, and the pane rests at its top
+    await openReading(page);
     const pane = page.getByTestId("action-rule").locator("> div");
     expect(await pane.evaluate((el) => el.scrollHeight > el.clientHeight + 40 && el.scrollTop === 0)).toBe(true);
     await expect(apply).toBeInViewport({ ratio: 1 });
@@ -526,9 +539,8 @@ test.describe("actions in plain English at 1100 × 700 (plan 161, pass 2)", () =
     const lines = (testId: string) => page.getByTestId(testId).evaluate((el) => { const box = el.firstElementChild ?? el; const lh = parseFloat(getComputedStyle(box).lineHeight); return Math.round(box.getBoundingClientRect().height / lh); });
     expect(await lines("action-title")).toBe(1);
     expect(await lines("action-rule-title")).toBe(1);
-    // the help is its own line, whole. Plan 162 (after ai162-r01): the keys are the header buttons' own; no line repeats them
-    await expect(page.getByTestId("action-help")).toHaveText("Untick any you want to keep, or press X on the one you’re reading. Click one to read it.");
-    expect(await lines("action-help")).toBeLessThanOrEqual(2);
+    // the owner (2026-11-08): no help line (the ticks say it); the keys are the header buttons' own; no line repeats them
+    await expect(page.getByTestId("action-help")).toHaveCount(0);
     await expect(page.getByTestId("action-keys")).toHaveCount(0);
     await expect(page.getByTestId("action-rule")).not.toContainText("brings you back");
     // the one provenance control every AI result has, at the rule's line's end: what it did and how to check it

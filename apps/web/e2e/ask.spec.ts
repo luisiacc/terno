@@ -110,7 +110,8 @@ test.describe("ask your mail (plan 141)", () => {
       await expect(page.getByRole("dialog", { name: "Ask your mail" })).toBeVisible();
       await expect(page.getByTestId("ask-answer").last()).toBeVisible();
       // how far back it looked, beside the way past it
-      await expect(page.getByTestId("ask-scope")).toContainText("Searched mail on this Mac back to");
+      // plan 162 (after ai162-r03): what was searched, and what the date means (it read as a bound beside older sources)
+      await expect(page.getByTestId("ask-scope")).toContainText("Searched all mail on this Mac · complete since");
       await expect(page.getByTestId("ask-scope").getByTestId("ask-older")).toHaveText("Search older mail on your servers");
     });
 
@@ -201,16 +202,17 @@ test.describe("ask your mail (plan 141)", () => {
       await followUp(page).fill("half a thought");
       await page.getByTestId("ask-area").evaluate((el) => {
         el.style.maxHeight = "40px";
-        el.scrollTop = 7;
       });
-      // (a source row: a click on a marker scrolls it into view first, as any focus does)
+      // (a source row: a click on it scrolls it into view first, as any focus does; plan 162 after ai162-r03: the sources
+      // are in the answer's one scroll region, so that's the place kept)
       await page.getByTestId("ask-source").first().click();
       await expect(peek).toBeVisible();
+      const kept = await page.getByTestId("ask-area").evaluate((el) => el.scrollTop);
       await page.getByTestId("ask-peek-back").click();
       await expect(peek).toHaveCount(0);
       await expect(followUp(page)).toBeFocused();
       await expect(followUp(page)).toHaveValue("half a thought");
-      expect(await page.getByTestId("ask-area").evaluate((el) => { const top = el.scrollTop; el.style.maxHeight = ""; return top; })).toBe(7);
+      expect(await page.getByTestId("ask-area").evaluate((el) => { const top = el.scrollTop; el.style.maxHeight = ""; return top; })).toBe(kept);
       await followUp(page).fill("");
       await page.getByTestId("ask-citation").first().click();
       await expect(peek).toBeVisible();
@@ -251,6 +253,9 @@ test.describe("ask your mail (plan 141)", () => {
       await expect(page.getByTestId("ask-title")).toHaveText(`and ${word} again?`);
       await expect(first.getByTestId("ask-question")).toBeVisible();
       await expect(first.getByTestId("ask-question")).not.toHaveText(`and ${word} again?`);
+      // plan 162 (after ai162-r03): folded to their count, so they never stand alone at the top
+      await expect(first.getByTestId("ask-turn-sources-toggle")).toHaveText(`${cited} source${cited === 1 ? "" : "s"}`);
+      await first.getByTestId("ask-turn-sources-toggle").click();
       await expect(first.getByTestId("ask-turn-source")).toHaveCount(cited);
       // only the last answer offers to answer again
       await expect(first.getByTestId("ask-again")).toHaveCount(0);
@@ -397,6 +402,47 @@ test.describe("ask your mail (plan 141)", () => {
     await expect(page.getByRole("dialog")).toHaveCount(0);
     // the keys back where they were before ⌘⇧K: the list (never the page)
     await expect.poll(() => page.evaluate(() => document.activeElement?.getAttribute("data-keep-scroll"))).toBe("list");
+  });
+
+  test("plan 162 (after ai162-r03): Esc before a word keeps the question; ⌘⇧K on a source returns to the answer; an unlinked claim is marked, and only then said; the stream's pieces fade in", async ({ app: page, server }) => {
+    await withMail(page, server);
+    await open(page);
+    // stopped before a word came: the question stays in the field, selected, and says it stopped (it was thrown away)
+    fakeDraft.firstTokenMs = 4000;
+    await question(page, `${WORD}?`);
+    await expect(page.getByTestId("ask-running")).toBeVisible();
+    await page.keyboard.press("Escape");
+    fakeDraft.firstTokenMs = 0;
+    await expect(page.getByTestId("ask-running")).toHaveCount(0);
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await expect(page.getByTestId("ask-command-notice")).toContainText("Stopped before an answer");
+    await expect(ask(page)).toHaveValue(`${WORD}?`);
+    // asked again: the note shows exactly when a claim is marked (it showed under fully cited answers)
+    await page.keyboard.press("Enter");
+    await expect(lastTurn(page)).toHaveAttribute("data-status", "answered");
+    expect((await page.getByTestId("ask-check-unlinked").count()) > 0).toBe((await page.getByTestId("ask-unlinked").count()) > 0);
+    // ⌘⇧K on a shown source goes back to its answer (it closed Ask)
+    await page.getByTestId("ask-citation").first().click();
+    await expect(page.getByTestId("ask-peek")).toBeVisible();
+    await page.keyboard.press("ControlOrMeta+Shift+k");
+    await expect(page.getByTestId("ask-peek")).toHaveCount(0);
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await expect(followUp(page)).toBeFocused();
+    // a claim with no citation is marked where it is, and the note says the underlined parts are the ones
+    fakeDraft.paceMs = 60;
+    await followUp(page).fill(`${WORD} [[uncited]]?`);
+    await followUp(page).press("Enter");
+    const chunk = page.getByTestId("ask-chunk").first();
+    await expect(chunk).toBeAttached();
+    // the owner (2026-11-08): each piece fades in, at the motion cap (duration-slow, 100 ms); e2e asks for reduced motion,
+    // and then nothing animates
+    await expect(chunk).toHaveClass(/fade-in-0/);
+    await expect(chunk).toHaveClass(/duration-slow/);
+    expect(await chunk.evaluate((el) => getComputedStyle(el).animationName)).toBe("none");
+    fakeDraft.paceMs = 0;
+    await expect(lastTurn(page)).toHaveAttribute("data-status", "answered");
+    await expect(lastTurn(page).getByTestId("ask-unlinked").last()).toHaveText("This sentence cites nothing at all here.");
+    await expect(lastTurn(page).getByTestId("ask-check-unlinked")).toHaveText("Underlined parts aren’t linked to a message.");
   });
 
   test("the palette's last row asks; Enter on a command that matches still wins", async ({ app: page, server }) => {

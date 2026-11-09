@@ -148,9 +148,6 @@ export async function check(o: { skip?: boolean }): Promise<void> {
     const r = await client.call("ai.actionCheck", { previewId: preview.previewId, requestId: globalThis.crypto.randomUUID(), ...o });
     if (getApp().actionPreview !== preview.previewId) return;
     useActionPreview.setState({ checking: false, preview: r.preview, future: useActionPreview.getState().future && r.preview.keep.kind === "ok" });
-    // plan 162 (after ai162-r03): what the check left out is listed under what it kept, unticked, to put back with a tick
-    // (it was one grey "Show", the faintest line on the page)
-    if (r.preview.leftOut > 0) useActionRows.setState({ showLeftOut: true });
     await reloadList({ keepSelection: true, window: true });
   } catch (error) {
     if (getApp().actionPreview !== preview.previewId) return;

@@ -211,7 +211,8 @@ export interface AnswerSentence {
 export function answerSentences(text: string): AnswerSentence[] {
   const parts: string[] = [];
   let start = 0;
-  for (const m of text.matchAll(/[.!?…]+(?:\s*\[\d+\])*(?:\s+|$)|\n+/g)) {
+  // a citation with no stop before it still ends its sentence when the next one starts ("… payment [1] Isabella …")
+  for (const m of text.matchAll(/[.!?…]+(?:\s*\[\d+\])*(?:\s+|$)|\n+|(?<=\[\d+\])\s+(?=[\p{Lu}¿¡])/gu)) {
     const end = m.index + m[0].length;
     parts.push(text.slice(start, end));
     start = end;
