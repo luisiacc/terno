@@ -114,6 +114,26 @@ describe("readBody: instruction or email (plan 163)", () => {
   });
 });
 
+describe("readBody: the Codex review of the code", () => {
+  it("8: someone's own sentence about asking or telling isn't an instruction", () => {
+    expect(kind("I will ask him to send the address tomorrow.")).not.toBe("instruction");
+    expect(kind("I promised to tell Tom that Friday works.")).not.toBe("instruction");
+    expect(kind("Mañana le voy a decir que sí, ya lo hablamos.")).not.toBe("instruction");
+    // still an instruction where the verb opens a clause
+    expect(kind("friday works for me. ask him to send the address")).toBe("instruction");
+    expect(kind("ok and tell Tom it's fine")).toBe("instruction");
+    expect(kind("el viernes me sirve; pídele la dirección")).toBe("instruction");
+  });
+
+  it("12: a body full of gaps is read in linear time, its gaps capped", () => {
+    const text = `Hi,\n${"[a] ".repeat(20_000)}`;
+    const t0 = performance.now();
+    const read = readBody(text);
+    expect(performance.now() - t0).toBeLessThan(60);
+    expect(read.gaps.length).toBe(200);
+  });
+});
+
 describe("readBody: what counts as a gap (plan 163)", () => {
   it("brackets with words or nothing, never a link, a footnote or a task box", () => {
     expect(gapsOf("Hi, see you [day] at [ ] or […] or [...] with [NAME]")).toEqual(["[day]", "[ ]", "[…]", "[...]", "[NAME]"]);

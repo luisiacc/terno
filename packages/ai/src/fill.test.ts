@@ -78,6 +78,11 @@ describe("fillFilter", () => {
     expect(fills.size).toBe(0);
   });
 
+  it("Codex review 10: a fill completion would refuse finishes as nothing, and a second one for a gap takes the first back", () => {
+    const { events } = run([`<fill n="1">${"a".repeat(301)}</fill><fill n="2">x\n\ny</fill><fill n="3">ok</fill><fill n="3">again</fill>`]);
+    expect(events.filter(([, , done]) => done)).toEqual([[1, "", true], [2, "", true], [3, "ok", true], [3, "", true]]);
+  });
+
   it("an unterminated fill is never finished; a gap answered twice isn't trusted", () => {
     expect(run(['<fill n="1">Calle']).fills.get(1)).toMatchObject({ done: false });
     expect(run(['<fill n="1">a</fill><fill n="1">b</fill>']).fills.get(1)).toMatchObject({ twice: true });

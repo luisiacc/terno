@@ -479,16 +479,27 @@ export function setInstruction(key: string, instruction: string) {
   update(key, { instruction: instruction.slice(0, WRITING_ONE_OFF_MAX), who: false, fromBody: false });
 }
 
-/** Plan 163: words in an empty body, as if typed: a summary item's Reply. Never over what's there. */
-function seedBody(key: string, text: string) {
+/**
+ * Plan 163: words in an empty body, as if typed. Never over what's there: false when the body already held something
+ * (Codex review 3: an answer landing in a reply with words of its own must not replace them).
+ */
+function seedBody(key: string, text: string): boolean {
   const c = controllerFor(key);
   // in the editor that's there, at once (a run bound right after reads these words); else in the draft it will open with
   if (c) {
-    if (c.empty()) c.insertGenerated(text, "replace");
-    return;
+    if (!c.empty()) return false;
+    c.insertGenerated(text, "replace");
+    return true;
   }
-  if (bodyNow(key).trim()) return;
+  if (bodyNow(key).trim()) return false;
   editDraft(key, { bodyHtml: toEmailHtml(fromPlainText(text)), bodyText: text });
+  return true;
+}
+
+/** Plan 163 (Codex review 9): what's typed, as the editor's blocks read it (as `act` read it), not the serialized email. */
+function typedNow(key: string): string {
+  const c = controllerFor(key);
+  return (c ? c.bodyText(BODY_READ_MAX).text : bodyNow(key)).trim();
 }
 
 /** Back to the text, from the row or from nowhere: someone who moved on to To, or to the list, stays there. */
@@ -735,7 +746,7 @@ async function resolve(key: string, instruction: string, d: LocalDraft) {
   if (`${current.accountId}|${addresses(current.toText)}|${addresses(current.ccText)}` !== on) return resolve(key, instruction, current);
   // plan 163 (Codex review 4): the instruction is the body: changed meanwhile, it starts over on what's there now
   const s0 = session(key);
-  if (s0?.fromBody && bodyNow(key).trim() !== instruction) {
+  if (s0?.fromBody && typedNow(key) !== instruction) {
     update(key, { phase: "input", intentRequest: null });
     return void act(key);
   }
@@ -800,11 +811,18 @@ export async function answer(key: string, choice: AiAnswer): Promise<void> {
   };
   // plan 163 (Codex review 3): the instruction typed in the body goes with the answer into the draft it lands in, so its
   // Undo gives it back there; the draft it was typed in goes if it held nothing else
-  const onlyInstruction = fromBody && bodyNow(key).trim() === instruction && !d.subjectEdited && !d.attachments?.length;
+  // Codex review 7: rewritten while it asked, it starts over on what's there now: an answer to an old instruction would
+  // write over the new words
+  if (fromBody && typedNow(key) !== instruction) {
+    update(key, { phase: "input", question: null });
+    return void act(key);
+  }
+  const onlyInstruction = fromBody && typedNow(key) === instruction && !d.subjectEdited && !d.attachments?.length;
   const moveTo = (next: string): RunSpec => {
     if (!fromBody) return { kind: "draft", instruction };
-    seedBody(next, instruction);
-    return { kind: "body", instruction };
+    if (seedBody(next, instruction)) return { kind: "body", instruction };
+    // Codex review 3: it landed in a draft with words of its own: they're notes, and the draft ends beside them
+    return { kind: "notes", instruction, notes: bodyNow(next) };
   };
   if (choice === "add") addRecipient(key, to);
   if (choice === "add" || choice === "justWrite") return startRun(key, runFor(key, instruction));
@@ -846,16 +864,17 @@ export async function answer(key: string, choice: AiAnswer): Promise<void> {
   if (question.type !== "new-or-reply") return;
   const threadId = question.thread.threadId;
   remove(key, false);
-  if (d.mode === "new" && (!authored(d) || onlyInstruction)) {
-    if (getApp().compose?.key === key) leaveNewDraft();
-    // what held only the instruction was saved as they typed it: it goes from the store too
-    if (authored(d)) void discardDraft(key);
-    else if (getApp().compose?.key !== key) forgetDraft(key);
-  }
+  const gone = d.mode === "new" && (!authored(d) || onlyInstruction);
+  if (gone && getApp().compose?.key === key) leaveNewDraft();
+  if (gone && !authored(d) && getApp().compose?.key !== key) forgetDraft(key);
   openThread(threadId);
   const landed = await composeLanding("reply", threadId, 0, undefined, undefined, { target: "ai", onLanded: (l) => carry(l.key) });
+  // nothing opened: the message holding the instruction stays, saved, with its words (plan 163)
   if (landed.kind === "none") return;
-  await addressReply(landed.key, threadId, to, { keepBody: fromBody });
+  // what held only the instruction was saved as they typed it: once the answer has landed, it goes from the store too
+  if (gone && authored(d)) void discardDraft(key);
+  // a reply with words of its own keeps its recipients too: only one Terno filled in is narrowed (Codex review 3)
+  await addressReply(landed.key, threadId, to);
   return startRun(landed.key, fromBody ? moveTo(landed.key) : runFor(landed.key, instruction));
 }
 
@@ -989,7 +1008,10 @@ function finished(key: string, result: AiComposeResult) {
   for (const l of stream.listeners) l();
   // plan 163: fills go into their gaps, whatever was typed elsewhere meanwhile; moved recipients apply nothing on their own
   if (run.spec.kind === "fill") {
-    if (fieldsMoved(run.binding, d)) return fillLost(key, run);
+    // Codex review 6: Fill again puts the whole text back: anything typed meanwhile would go, so nothing changes
+    const c1 = controllerFor(key);
+    const typedOver = run.spec.fill?.base !== undefined && c1 !== null && run.binding.doc !== null && c1.docToken() !== run.binding.doc;
+    if (fieldsMoved(run.binding, d) || typedOver) return fillLost(key, run);
     commit(key, "replace", result, run.spec, run.prior, false);
     const at = document.activeElement;
     if (!at || at === document.body) focusEditor(key);
@@ -1072,7 +1094,14 @@ function waitForBody(key: string, messageId: number) {
     const message = state.details.get(thread)?.messages.find((m) => m.id === messageId);
     if (message?.bodyState !== "full") return;
     stopWaiting(key);
-    if (session(key)?.phase === "waitingBody") startRun(key, spec);
+    if (session(key)?.phase !== "waitingBody") return;
+    // Codex review 4: a first fill's gaps may have moved while it waited: read the body again, rather than its old places
+    if (spec.kind === "fill" && spec.fill && !spec.fill.base) {
+      controllerFor(key)?.endFill(spec.fill.run);
+      update(key, { phase: s.strip ? "strip" : "input", run: null });
+      return void act(key);
+    }
+    startRun(key, spec);
   });
   waiting.set(key, off);
   // the reader is fetching it if it's open; this asks for the thread as it is now
@@ -1123,7 +1152,10 @@ export function stop(key: string) {
     // over the instruction it was written from, or an empty body; below the user's notes (or an image) as Insert puts
     // what came before a failure
     const result: Extract<AiComposeResult, { status: "done" }> = { status: "done", text, subject: null, stop: "end", used: emptyUsed(), checks: { specifics: [], placeholders: [] } };
-    if (commit(key, spec.kind === "body" || c.empty() ? "replace" : "below", result, spec, undefined, false, { stopped: true })) return focusEditor(key);
+    // Codex review 5: an instruction typed over while it wrote is theirs now: what came goes below it, never over it
+    const run = s.run!;
+    const over = spec.kind === "body" ? (run.binding.doc !== null ? c.docToken() === run.binding.doc : typedNow(key) === run.binding.text.trim()) : c.empty();
+    if (commit(key, over ? "replace" : "below", result, spec, undefined, false, { stopped: true })) return focusEditor(key);
   }
   clearStream(key);
   // plan 163: nothing came: the body is as it was, the instruction still in it (it never left)
@@ -1185,6 +1217,14 @@ function commit(key: string, how: "replace" | "below", result: Extract<AiCompose
  */
 function commitFills(key: string, c: NonNullable<ReturnType<typeof controllerFor>>, result: Extract<AiComposeResult, { status: "done" }>, f: FillSpec, prior: AiStrip | undefined, o: { stopped?: boolean }): boolean {
   const fills = result.fills ?? [];
+  // Codex review 11: nothing accepted, nothing changes (Fill again would otherwise put the placeholders back first)
+  if (!fills.some(Boolean)) {
+    clearStream(key);
+    fillTexts.delete(key);
+    if (!f.base) c.endFill(f.run);
+    update(key, { phase: "error", error: { message: t("aiDraft.fill.none"), help: null, kind: "other", retry: false, partial: false }, live: t("aiDraft.fill.none"), run: null, strip: prior ?? null });
+    return true;
+  }
   // the text as it is just before (typed into meanwhile, it isn't what was sent): Fill again asks from this
   const pre = f.base ? null : c.bodyText(BODY_READ_MAX);
   const out = f.base ? c.refill(f.base.doc, f.base.gaps, fills) : c.commitFill(f.run, fills, { onlyDone: o.stopped === true });

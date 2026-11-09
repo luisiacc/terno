@@ -56,9 +56,12 @@ const MAYBE_QUESTIONS = /(?<![\p{L}\p{N}?])\?{2,}(?![\p{L}\p{N}?])/gu;
 const MAYBE_TBD = /(?<![\p{L}\p{N}])(?:TBD|TBC)(?![\p{L}\p{N}])/gu;
 const MAYBE_XX = /(?<![\p{L}\p{N}])x{2,}(?![\p{L}\p{N}])/gu;
 
+/** What's read of a body's gaps: far more than a press fills (20), far fewer than a pathological draft holds. */
+const GAPS_READ = 200;
+
 function certainGaps(text: string): BodyGap[] {
   const out: BodyGap[] = [];
-  const add = (from: number, to: number) => out.push({ from, to, text: text.slice(from, to) });
+  const add = (from: number, to: number) => { if (out.length < GAPS_READ) out.push({ from, to, text: text.slice(from, to) }); };
   for (const m of text.matchAll(SQUARE)) {
     const inside = m[1]!.trim();
     // a footnote's number, or a task box in a list
@@ -86,6 +89,7 @@ function maybeGaps(text: string, certain: readonly BodyGap[]): BodyGap[] {
       // a single pair of braces holding a short name (`{address}`; never `{"a": 1}`), and a bare `XX`
       if (re === CURLY && !(/^[\p{L}\p{N}_-](?:[\p{L}\p{N} _-]*[\p{L}\p{N}_-])?$/u.test(m[1]!) && /\p{L}/u.test(m[1]!))) continue;
       if (re === XS && m[0] !== "XX") continue;
+      if (out.length >= GAPS_READ) break;
       // kisses on the last line ("Bea xx") are a sign-off, not a hole
       if (re === MAYBE_XX && from >= lastLineAt) continue;
       if (certain.some((g) => from < g.to && to > g.from)) continue;
@@ -99,7 +103,13 @@ function maybeGaps(text: string, certain: readonly BodyGap[]): BodyGap[] {
 function dedupe(gaps: BodyGap[]): BodyGap[] {
   const sorted = [...gaps].sort((a, b) => a.from - b.from || b.to - a.to);
   const out: BodyGap[] = [];
-  for (const g of sorted) if (!out.some((o) => g.from < o.to && g.to > o.from)) out.push(g);
+  // a sweep: sorted by start, a gap that begins before the last kept one ends overlaps it (Codex review 12: it was quadratic)
+  let end = -1;
+  for (const g of sorted) {
+    if (g.from < end) continue;
+    out.push(g);
+    end = g.to;
+  }
   return out;
 }
 
@@ -111,6 +121,12 @@ const GREETING = /^(?:hi|hello|hey|dear|hiya|greetings|good (?:morning|afternoon
 const SIGNOFF = /^(?:thanks|thank you|thx|many thanks|best|best regards|all the best|regards|kind regards|warm regards|warmly|cheers|sincerely|yours|love|take care|saludos|un saludo|saludos cordiales|un abrazo|abrazos|un beso|besos|atentamente|cordialmente|gracias|muchas gracias|mil gracias)[ \t]*[,.!]?(?:[ \t]+[\p{L}.'-]+){0,3}$/u;
 
 /** An imperative to write or say something, at a sentence's start, and not to the reader ("tell me", "thank you"). */
+/**
+ * Codex review 8: an instruction's verb opens a clause (the text's start, after punctuation, or "and", "then", "also"),
+ * so "I will ask him to send it" and "I promised to tell Tom" are someone's own sentences, not instructions.
+ */
+const CLAUSE = String.raw`(?:^|[,;:.!?\n(]\s*|\b(?:and|then|also|but|so|pls|please)\s+)`;
+const CLAUSE_ES = String.raw`(?:^|[,;:.!?¿¡\n(]\s*|\b(?:y|luego|tambien|pero|asi que)\s+)`;
 /** A name as an object: "tell Tom", "ask Ana" (capitalised, as people type names; "tell tom" is lower case but a reply's to him) */
 const NAME = String.raw`[\p{Lu}][\p{L}'-]+`;
 /**
@@ -118,13 +134,13 @@ const NAME = String.raw`[\p{Lu}][\p{L}'-]+`;
  * "decline politely") can be said to the reader, so it decides nothing.
  */
 const DIRECTIVE_EN = new RegExp(
-  String.raw`(?:^|[\s,;(])(?:please +|pls +)?(?:(?:ask|tell|remind|thank) +(?:him|her|them|${NAME})\b|let +(?:him|her|them|${NAME}) +know\b|(?:say|reply|answer|respond|write back) +(?:that|yes|no)\b)`,
+  String.raw`${CLAUSE}(?:please +|pls +)?(?:(?:ask|tell|remind|thank) +(?:him|her|them|${NAME})\b|let +(?:him|her|them|${NAME}) +know\b|(?:say|reply|answer|respond|write back) +(?:that|yes|no)\b)`,
   "u",
 );
 /** "tell tom that…", lower case: a verb at the very start, then a word, then what to say */
 const DIRECTIVE_EN_START = /^(?:please +|pls +)?(?:tell|ask|remind|thank) +(?!me\b|us\b|you\b|everyone\b)[\p{L}'-]+ +(?:that|to|if|whether|about|for|the|i|we|it's|its)\b/u;
 /** Spanish, accents folded: the clitic says it's to someone else (dile, pregúntale…), or "di que", "responde que" */
-const DIRECTIVE_ES = /(?:^|[\s,;(])(?:por favor +)?(?:dile|digale|diles|diganle|preguntale|preguntele|preguntales|pidele|pidale|pideles|avisale|avisales|contestale|contestales|respondele|respondeles|agradecele|agradeceles|recuerdale|recuerdales|escribele|escribeles|di que|responde que|contesta que|dile a|preguntale a)\b/u;
+const DIRECTIVE_ES = new RegExp(String.raw`${CLAUSE_ES}(?:por favor +)?(?:dile|digale|diles|diganle|preguntale|preguntele|preguntales|pidele|pidale|pideles|avisale|avisales|contestale|contestales|respondele|respondeles|agradecele|agradeceles|recuerdale|recuerdales|escribele|escribeles|di que|responde que|contesta que|dile a|preguntale a)\b`, "u");
 /** The reader's words: an instruction never has them, an email to them often does */
 const READER = /\b(?:you|your|yours|you're|you'll|you've)\b|(?:^|[\s¿¡,])(?:tu|tus|te|usted|ustedes|puedes|podrias|podria|pudieras|me pasas|me mandas|me envias|me dices|sabes|tienes|quieres)\b/u;
 

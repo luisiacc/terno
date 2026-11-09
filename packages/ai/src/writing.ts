@@ -395,9 +395,11 @@ export function fillFilter(onFill: (n: number, text: string, done: boolean) => v
   let current: number | null = null;
   const open = (n: number) => {
     const was = fills.get(n);
-    // a second fill for one gap: neither is trusted
-    if (was) was.twice = true;
-    else fills.set(n, { text: "", done: false, twice: false });
+    // a second fill for one gap: neither is trusted, and the composer hears so (Codex review 10)
+    if (was) {
+      if (!was.twice) onFill(n, "", true);
+      was.twice = true;
+    } else fills.set(n, { text: "", done: false, twice: false });
   };
   const grow = (n: number, text: string) => {
     const f = fills.get(n)!;
@@ -412,7 +414,8 @@ export function fillFilter(onFill: (n: number, text: string, done: boolean) => v
     if (f.twice) return;
     f.text = f.text.trim();
     f.done = true;
-    onFill(n, f.text, true);
+    // what completion would refuse (too long, a blank line) is finished as nothing: a Stop can't keep it either
+    onFill(n, acceptedFill(f) ?? "", true);
   };
   const step = () => {
     for (;;) {

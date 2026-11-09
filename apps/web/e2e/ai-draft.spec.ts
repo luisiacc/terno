@@ -476,14 +476,14 @@ test.describe("drafting with AI (plan 133)", () => {
       await fresh(page, server);
       await openThread(page, /Contract review/);
       await openField(page);
-      await body(page).fill("[fake:refusal] tell him nope");
+      await body(page).fill("tell him nope [fake:refusal]");
       await page.keyboard.press(CMD_J);
       await expect(page.getByTestId("ai-error-text")).toContainText("The model declined to write this.");
       await expect(page.getByTestId("ai-error-insert")).toHaveCount(0);
       await page.getByTestId("ai-error-close").click();
 
       await openField(page);
-      await body(page).fill("[fake:fail:3] tell him it drops");
+      await body(page).fill("tell him it drops [fake:fail:3]");
       await page.keyboard.press(CMD_J);
       await expect(page.getByTestId("ai-error-text")).toBeVisible();
       await expect(page.getByTestId("ai-error-insert")).toBeVisible();
@@ -567,6 +567,29 @@ test.describe("drafting with AI (plan 133)", () => {
         await expect(page.getByTestId("reader-subject")).toContainText("Contract review");
         await expect.poll(() => recipientEmails(page, "compose-to")).toEqual(["tom@acme.example"]);
         await expect(strip(page)).toBeVisible();
+      });
+      await scenario("Codex review 3: an answer landing in a reply with words of its own never writes over them; nothing typed is lost", async () => {
+        await fresh(page, server);
+        await openThread(page, /Contract review/);
+        await page.keyboard.press("r");
+        await expect(body(page)).toBeFocused();
+        await page.keyboard.type("Hi Ana, my own words");
+        await page.getByTestId("compose-collapse").click();
+        await page.getByTestId("thread-list").locator("[data-keep-scroll=list]").focus();
+        await page.keyboard.press("c");
+        await openField(page);
+        await ask(page, "tell tom that this is just fine");
+        await page.getByTestId("ai-choice-reply").click();
+        await expect(page.getByTestId("reader-subject")).toContainText("Contract review");
+        // the reply keeps its words and its recipient; the instruction is still a draft of its own until it lands somewhere
+        const saved = async () => ((await server.backend.server.invoke("drafts.list", {}, dev)) as { bodyText: string }[]).map((d) => d.bodyText).sort();
+        await expect.poll(saved).toContain("Hi Ana, my own words");
+        await page.waitForTimeout(1000);
+        const kept = await saved();
+        expect(kept.some((t) => t.includes("Hi Ana, my own words") && !t.includes("This is just fine"))).toBe(true);
+        expect(kept.some((t) => t.includes("tell tom that this is just fine") || t.includes("That works for me"))).toBe(true);
+        // neither is on screen to discard: they go from the store, so the next scenario starts clean
+        for (const d of (await server.backend.server.invoke("drafts.list", {}, dev)) as { id: number; generation: string }[]) await server.backend.server.invoke("drafts.delete", { id: d.id, generation: d.generation }, dev);
       });
       await scenario("the list, no recent thread: a new message to them", async () => {
         await fresh(page, server);
@@ -1635,7 +1658,7 @@ test.describe("drafting with AI (plan 133)", () => {
     await page.keyboard.press("Backspace");
     // a failure, with what came kept
     await openField(page);
-    await body(page).fill("[fake:fail:8] tell him it drops");
+    await body(page).fill("tell him it drops [fake:fail:8]");
     fakeDraft.paceMs = 20;
     await page.keyboard.press(CMD_J);
     await page.getByTestId("ai-error").waitFor();

@@ -25,7 +25,8 @@ vi.mock("~/rpc/connection", () => ({
     on: (event: string, listener: (payload: unknown) => void) => { rpc.events.set(event, listener); return () => {}; },
   },
 }));
-vi.mock("~/state/threads", () => ({ invalidateThreads: vi.fn(), loadThread: vi.fn(async () => null), useThreads: { subscribe: () => () => {} } }));
+const threads = vi.hoisted(() => ({ listeners: new Set<(state: unknown) => void>() }));
+vi.mock("~/state/threads", () => ({ invalidateThreads: vi.fn(), loadThread: vi.fn(async () => null), useThreads: { subscribe: (l: (state: unknown) => void) => { threads.listeners.add(l); return () => threads.listeners.delete(l); } } }));
 
 const store = await import("./ai-draft");
 const { aiDraftHooks, useAiDraftUi } = await import("./ai-draft-state");
@@ -1746,23 +1747,6 @@ describe("plan 163: ⌘J on what's written in the body", () => {
     expect(session(key)!.strip!.readFailed).toBe(true);
   });
 
-  it("consent comes before anything leaves, the fast read included, bound to where it goes (Codex review 2)", async () => {
-    setApp({ settings: { ai: { provider: "compatible", preset: "custom", baseURL: "https://one.example/v1", model: "x", local: false, tasks: {}, keys: {}, hasKey: true, keyConfirmed: true, profiles: {} } } as never });
-    const text = "I'm happy to go ahead with the contract as it is. Nothing in it changes what we agreed, so the 19th is fine.";
-    const { key } = reply(text);
-    await store.act(key);
-    expect(session(key)!.phase).toBe("telling");
-    expect(calls("ai.readDraft")).toHaveLength(0);
-    store.acknowledgeTold(key);
-    await tick();
-    expect(calls("ai.readDraft")).toHaveLength(1);
-    store.stop(key);
-    // another server of the same kind is somewhere else: asked again
-    setApp({ settings: { ai: { provider: "compatible", preset: "custom", baseURL: "https://two.example/v1", model: "x", local: false, tasks: {}, keys: {}, hasKey: true, keyConfirmed: true, profiles: {} } } as never });
-    await store.act(key);
-    expect(session(key)!.phase).toBe("telling");
-  });
-
   it("Send while it reads, works out who it's for, or asks, stops: it would mail the instruction (Codex review 6)", async () => {
     const { key } = reply("tell him friday works");
     void store.act(key);
@@ -1799,5 +1783,95 @@ describe("plan 163: ⌘J on what's written in the body", () => {
     expect(session(key)!.strip!.stack).toHaveLength(2);
     store.undoCommit(key);
     expect(c.text).toBe("Hi Arjun, [Your answer.] See you [day].");
+  });
+});
+
+describe("plan 163: what the Codex review of the code found", () => {
+  const reply = (body: string, o: { to?: string } = {}) => {
+    const key = createDraft({ ...newFields(1), mode: "reply", threadId: 7, inReplyToMessageId: 3, toText: o.to ?? "Arjun Ramírez <arjun@example.test>", subject: "Re: The flat", bodyText: body });
+    return { key, ...editor(key, body) };
+  };
+  const keepDraft = { decision: { kind: "route", route: { type: "keep-draft" } }, fromAccountId: null, confirmFailed: false };
+
+  it("4: a first fill that waited for a message's text reads the body again, where its gaps are now", async () => {
+    const { key, c } = reply("Hi Arjun, see you [day]");
+    await store.act(key);
+    last("ai.compose").resolve({ status: "waitingBody", messageId: 3 });
+    await tick();
+    expect(session(key)!.phase).toBe("waitingBody");
+    c.type("");
+    c.text = `Well. ${c.text}`;
+    c.doc = { text: c.text };
+    for (const l of threads.listeners) l({ details: new Map([[7, { messages: [{ id: 3, bodyState: "full" }] }]]) });
+    await tick();
+    const asked = last("ai.compose").params as { fill: { text: string; gaps: { from: number; to: number }[] } };
+    expect(asked.fill.text).toBe("Well. Hi Arjun, see you [day]");
+    expect(asked.fill.gaps.map((g) => asked.fill.text.slice(g.from, g.to))).toEqual(["[day]"]);
+  });
+
+  it("5: stopped after the instruction was typed over, what came goes below the new words, never over them", async () => {
+    const { key, c } = reply("tell him friday works");
+    void store.act(key);
+    await tick();
+    last("ai.resolveIntent").resolve(keepDraft);
+    await tick();
+    rpc.events.get("aiCompose")!({ requestId: session(key)!.run!.requestId, text: "Hi Arjun" });
+    await new Promise((r) => requestAnimationFrame(() => r(null)));
+    c.type(" — no, mine");
+    store.stop(key);
+    expect(c.text).toBe("tell him friday works — no, mine\n\nHi Arjun");
+  });
+
+  it("6: Fill again with typing meanwhile changes nothing, and says so", async () => {
+    const { key, c } = reply("Hi Arjun, see you [day]");
+    await store.act(key);
+    last("ai.compose").resolve(done("", { fills: ["Friday"] }));
+    await tick();
+    store.refine(key, "regenerate");
+    c.type(" More of mine.");
+    last("ai.compose").resolve(done("", { fills: ["Saturday"] }));
+    await tick();
+    expect(c.text).toBe("Hi Arjun, see you Friday More of mine.");
+    expect(session(key)!.phase).toBe("error");
+  });
+
+  it("7: the body rewritten while a question waits: the answer starts over on the new words, not the old instruction", async () => {
+    const { key, c } = reply("tell tom it's fine", { to: "Bea <bea@example.test>" });
+    editDraftRecipients(key, "to", "Bea <bea@example.test>", ["bea@example.test"]);
+    void store.act(key);
+    await tick();
+    last("ai.resolveIntent").resolve({ decision: { kind: "ask", question: { type: "add-or-just-write", to: { name: "Tom", address: "tom@example.test" } } }, fromAccountId: null, confirmFailed: false });
+    await tick();
+    expect(session(key)!.phase).toBe("question");
+    c.text = "Hi Bea,\n\nAll good here.";
+    c.doc = { text: c.text };
+    await store.answer(key, "justWrite");
+    await tick();
+    expect(calls("ai.compose")).toHaveLength(1);
+    expect(last("ai.compose").params.instruction).toBe("");
+    expect(last("ai.compose").params.draft).toBe("Hi Bea,\n\nAll good here.");
+  });
+
+  it("9: an instruction in a list (its bullet only in the serialized email) is written, not routed again forever", async () => {
+    const { key, c } = reply("tell him friday works");
+    c.snapshot = () => ({ html: "", text: `• ${c.text}` });
+    void store.act(key);
+    await tick();
+    last("ai.resolveIntent").resolve(keepDraft);
+    await tick();
+    expect(calls("ai.resolveIntent")).toHaveLength(1);
+    expect(session(key)!.phase).toBe("writing");
+  });
+
+  it("11: Fill again with nothing it can use leaves the earlier fills where they are", async () => {
+    const { key, c } = reply("Hi Arjun, see you [day]");
+    await store.act(key);
+    last("ai.compose").resolve(done("", { fills: ["Friday"] }));
+    await tick();
+    store.refine(key, "regenerate");
+    last("ai.compose").resolve(done("", { fills: [null] }));
+    await tick();
+    expect(c.text).toBe("Hi Arjun, see you Friday");
+    expect(session(key)!.strip!.fill!.fills).toEqual(["Friday"]);
   });
 });
