@@ -99,12 +99,12 @@ export function AiDraftButton({ draftKey, threadId, disabled, testId }: { draftK
       <Tooltip>
         <TooltipTrigger
           render={
-            <Button type="button" variant="ghost" size="sm" aria-label={label} disabled={disabled} onMouseDown={keepSelection} onClick={open} data-testid={testId} data-ready className="gap-1 px-2 text-foreground-soft hover:text-foreground [&_svg]:size-[1.15em] [&_svg]:text-foreground [&_svg]:[--icon-line:var(--icon-line-toolbar)] @min-[48rem]/foot:[&_svg]:text-muted-foreground @min-[48rem]/foot:hover:[&_svg]:text-foreground" />
+            <Button type="button" variant="ghost" size="sm" aria-label={label} disabled={disabled} onMouseDown={keepSelection} onClick={open} data-testid={testId} data-ready className="gap-1 px-2 text-foreground-soft hover:text-foreground [&_svg]:size-[1.15em] [&_svg]:text-foreground [&_svg]:[--icon-line:var(--icon-line-toolbar)] @min-[36rem]/foot:[&_svg]:text-muted-foreground @min-[36rem]/foot:hover:[&_svg]:text-foreground" />
           }
         >
           <Sparkles aria-hidden />
           {/* only where the foot has room for it: a word that wrapped the foot onto a second line would move it while typing */}
-          <span aria-hidden className="hidden @min-[48rem]/foot:inline" data-testid="compose-ai-word">{fill ? t("aiDraft.ready.fill", { count: Number(fill[1]) }) : t("aiDraft.ready.write")}</span>
+          <span aria-hidden className="hidden @min-[36rem]/foot:inline" data-testid="compose-ai-word">{fill ? t("aiDraft.ready.fill", { count: Number(fill[1]) }) : t("aiDraft.ready.write")}</span>
         </TooltipTrigger>
         <TooltipContent className="flex items-center gap-2">
           {label}
