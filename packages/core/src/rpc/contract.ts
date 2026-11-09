@@ -1260,6 +1260,7 @@ export const contract = {
           text: z.string().max(BODY_READ_MAX),
           gaps: z.array(z.object({ from: z.number().int().min(0), to: z.number().int().min(0) })).min(1).max(FILL_GAPS_MAX),
         })
+        // i18n-ignore: a malformed request from our own renderer, refused at the boundary; never shown to the user
         .refine((f) => f.gaps.every((g, i) => g.from < g.to && g.to <= f.text.length && (i === 0 || f.gaps[i - 1]!.to <= g.from)), { message: "gaps must be in order, apart, and in the text" })
         .optional(),
     }),
