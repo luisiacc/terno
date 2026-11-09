@@ -609,7 +609,8 @@ export async function act(key: string): Promise<void> {
   // reworded since): the row's question was only "try again?"
   if (s?.phase === "error" && !s.error?.partial && !s.strip && isNote(key)) {
     clearStream(key);
-    update(key, { phase: "input", error: null, run: null, live: "" });
+    // and Try again after it asks for these words, never the run that failed (Codex review)
+    update(key, { phase: "input", error: null, run: null, live: "", lastSpec: null });
     s = session(key);
   }
   // the row is asking something: its own default answers it, as Return would

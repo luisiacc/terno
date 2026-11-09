@@ -477,6 +477,34 @@ describe("§10.4: binding and races", () => {
     expect(useAiDraftUi.getState().rows[over.key]).toBe("open");
   });
 
+  it("plan 162 (Codex review): Write it over a failure writes the reworded note; failing again before it runs, Try again asks for that, never the old words", async () => {
+    const key = createDraft({ ...newFields(1), mode: "reply", threadId: 7, inReplyToMessageId: 3, toText: "Ana Pérez <ana@example.test>", subject: "Re: Contract", bodyText: "ask her for the address" });
+    const { c } = editor(key, "ask her for the address");
+    const route = { decision: { kind: "route", route: { type: "keep-draft" } }, fromAccountId: null, confirmFailed: false };
+    void store.act(key);
+    await tick();
+    last("ai.resolveIntent").resolve(route);
+    await tick();
+    last("ai.compose").reject({ code: "AI", message: "Couldn't reach Claude.", details: { aiErrorKind: "unavailable" } });
+    await tick();
+    expect(session(key)!.phase).toBe("error");
+    c.text = "ask her for the phone number";
+    c.doc = { text: c.text };
+    // Write it: the note as it is now
+    void store.act(key);
+    await tick();
+    last("ai.resolveIntent").reject({ code: "AI", message: "Couldn't reach Claude.", details: { aiErrorKind: "unavailable" } });
+    await tick();
+    expect(session(key)!.phase).toBe("error");
+    const composes = calls("ai.compose").length;
+    store.retry(key);
+    await tick();
+    last("ai.resolveIntent").resolve(route);
+    await tick();
+    expect(calls("ai.compose")).toHaveLength(composes + 1);
+    expect(last("ai.compose").params.instruction).toBe("ask her for the phone number");
+  });
+
   it("plan 161, pass 3 (Codex review): a stopped write edited, then its Undo: the snack's Undo brings the edit and the stopped strip back", async () => {
     const { key, c } = await writing();
     delta(key, "Hi");
