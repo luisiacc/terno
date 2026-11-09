@@ -100,6 +100,48 @@ function editor(key: string, initial = "") {
     dom: document.createElement("div"),
     getState: () => ({}),
     subscribe: () => () => {},
+    // plan 163: the body as one block (a document position is its offset plus one), and fills as text
+    bodyText: () => ({ text: c.text, images: false, truncated: false, runs: c.text ? [{ at: 0, pos: 1, len: c.text.length }] : [], quoted: [] }),
+    fill: null as null | { run: string; gaps: { from: number; to: number; text: string; spoiled: boolean }[]; streamed: Map<number, { text: string; done: boolean }> },
+    filled: [] as string[],
+    startFill(run: string, gaps: readonly { from: number; to: number }[]) {
+      c.fill = { run, gaps: gaps.map((g) => ({ ...g, text: c.text.slice(g.from - 1, g.to - 1), spoiled: false })), streamed: new Map() };
+      return true;
+    },
+    streamFill(run: string, n: number, text: string, done: boolean) { if (c.fill?.run === run) c.fill.streamed.set(n, { text, done }); },
+    fillRun: () => c.fill?.run ?? null,
+    fillsSoFar(run: string) { return c.fill?.run === run ? c.fill.gaps.map((_, i) => { const f = c.fill!.streamed.get(i + 1); return f?.done ? f.text : null; }) : []; },
+    endFill(run: string) { if (c.fill?.run === run) c.fill = null; },
+    clearFilled() { c.filled = []; },
+    commitFill(run: string, fills: readonly (string | null)[], o: { onlyDone?: boolean } = {}) {
+      if (c.fill?.run !== run) return null;
+      const before = { text: c.text };
+      const gaps = c.fill.gaps.map((g) => ({ ...g, spoiled: g.spoiled || !c.text.includes(g.text) }));
+      const chosen = gaps.filter((g, i) => !g.spoiled && fills[i] && (!o.onlyDone || c.fill!.streamed.get(i + 1)?.done));
+      const left = gaps.filter((g) => !g.spoiled && !chosen.includes(g)).map((g) => g.text);
+      history.push({ text: c.text, doc: c.doc });
+      let text = c.text;
+      for (const g of chosen) text = text.replace(g.text, fills[gaps.indexOf(g)]!);
+      c.text = text;
+      c.doc = { text: c.text };
+      c.filled = chosen.map((g) => fills[gaps.indexOf(g)]!);
+      c.gaps = left;
+      c.fill = null;
+      for (const l of listeners) l();
+      return { doc: c.doc, before, gaps: gaps.filter((g) => !g.spoiled).map(({ from, to }) => ({ from, to })), applied: chosen.length, left };
+    },
+    refill(base: unknown, gaps: readonly { from: number; to: number }[], fills: readonly (string | null)[]) {
+      const b = (base as { text: string }).text;
+      const before = { text: c.text };
+      let text = b;
+      const words = gaps.map((g) => b.slice(g.from - 1, g.to - 1));
+      words.forEach((w, i) => { if (fills[i]) text = text.replace(w, fills[i]!); });
+      history.push({ text: c.text, doc: c.doc });
+      c.text = text;
+      c.doc = { text: c.text };
+      for (const l of listeners) l();
+      return { doc: c.doc, before, applied: fills.filter(Boolean).length, left: words.filter((_, i) => !fills[i]) };
+    },
   };
   const stop = registerController(key, c as never);
   const unsub = c.subscribeDoc(() => store.noteBody(key));
@@ -360,10 +402,9 @@ describe("§10.4: binding and races", () => {
     expect(aiDraftHooks.escape(key)).toBe(false);
     store.undoCommit(key);
     expect(c.text).toBe("");
-    // the field again, for Return: its instruction (none here) is the user's, not thrown away
-    expect(session(key)!.phase).toBe("input");
-    expect(aiDraftHooks.escape(key)).toBe(true);
+    // plan 163: no row: the body is as it was (empty here), and Esc is the form's
     expect(session(key)).toBeUndefined();
+    expect(aiDraftHooks.escape(key)).toBe(false);
 
     await store.openRow({ key });
     await store.submit(key);
@@ -392,21 +433,18 @@ describe("§10.4: binding and races", () => {
     expect(shorter.previousDraft).toBe("First.");
   });
 
-  it("plan 161, pass 3: stopped before any words, the field holds the instruction again; Return asks it once more", async () => {
-    const key = createDraft({ ...newFields(1), mode: "reply", threadId: 7, inReplyToMessageId: 3, toText: "Ana Pérez <ana@example.test>", subject: "Re: Contract", bodyText: "" });
-    const { c } = editor(key, "");
-    await store.openRow({ key });
-    store.setInstruction(key, "ask her for the address");
-    void store.submit(key);
+  it("plan 163: stopped before any words, the body is as it was, the instruction in it; ⌘J asks it once more", async () => {
+    const key = createDraft({ ...newFields(1), mode: "reply", threadId: 7, inReplyToMessageId: 3, toText: "Ana Pérez <ana@example.test>", subject: "Re: Contract", bodyText: "ask her for the address" });
+    const { c } = editor(key, "ask her for the address");
+    void store.act(key);
     await tick();
     last("ai.resolveIntent").resolve({ decision: { kind: "route", route: { type: "keep-draft" } }, fromAccountId: null, confirmFailed: false });
     await tick();
+    expect(session(key)!.phase).toBe("writing");
     store.stop(key);
-    expect(session(key)!.phase).toBe("input");
-    expect(session(key)!.instruction).toBe("ask her for the address");
-    expect(session(key)!.live).toBe("Stopped. Your instruction is still here.");
-    expect(c.text).toBe("");
-    void store.submit(key);
+    expect(session(key)).toBeUndefined();
+    expect(c.text).toBe("ask her for the address");
+    void store.act(key);
     await tick();
     last("ai.resolveIntent").resolve({ decision: { kind: "route", route: { type: "keep-draft" } }, fromAccountId: null, confirmFailed: false });
     await tick();
@@ -422,7 +460,7 @@ describe("§10.4: binding and races", () => {
     expect(session(key)!.strip!.edited).toBe(true);
     store.undoCommit(key);
     expect(c.text).toBe("");
-    expect(session(key)!.phase).toBe("input");
+    expect(session(key)).toBeUndefined();
     const { useSnack, runUndo } = await import("./snack");
     await runUndo(useSnack.getState().undo!);
     expect(c.text).toBe("Hi mine");
@@ -431,7 +469,7 @@ describe("§10.4: binding and races", () => {
     expect(session(key)!.strip!.edited).toBe(true);
   });
 
-  it("plan 161, pass 3 (Codex review): a stopped write rewritten, then Undo: it's the stopped version again, and Undo once more gives the field back", async () => {
+  it("plan 161, pass 3 (Codex review): a stopped write rewritten, then Undo: it's the stopped version again, and Undo once more gives the body back", async () => {
     const { key, c } = await writing();
     delta(key, "Hi");
     await new Promise((r) => requestAnimationFrame(() => r(null)));
@@ -445,7 +483,7 @@ describe("§10.4: binding and races", () => {
     expect(session(key)!.strip!.stopped).toBe(true);
     store.undoCommit(key);
     expect(c.text).toBe("");
-    expect(session(key)!.phase).toBe("input");
+    expect(session(key)).toBeUndefined();
   });
 
   it("plan 161, pass 3 (Codex review): a stopped write names the writing task's own model, not Settings' first row's", async () => {
@@ -457,19 +495,18 @@ describe("§10.4: binding and races", () => {
     expect(session(key)!.strip!.used.model).toBe("chosen-writing-model");
   });
 
-  it("plan 161, pass 3 (second review): after a stopped write's edited Undo, a new instruction in the field retires the old snack's Undo", async () => {
+  it("plan 163: after a stopped write's edited Undo, new words typed in the body retire the old snack's Undo", async () => {
     const { key, c } = await writing();
     delta(key, "Hi");
     await new Promise((r) => requestAnimationFrame(() => r(null)));
     store.stop(key);
     c.type(" mine");
     store.undoCommit(key);
-    store.setInstruction(key, "something else");
+    c.type("something else");
     const { useSnack, runUndo } = await import("./snack");
     await runUndo(useSnack.getState().undo!);
-    expect(c.text).toBe("");
-    expect(session(key)!.phase).toBe("input");
-    expect(session(key)!.instruction).toBe("something else");
+    expect(c.text).toBe("something else");
+    expect(session(key)).toBeUndefined();
   });
 
   it("plan 161, pass 3 (second review): on Claude with no choice, a stopped write names the model drafts run on there", async () => {
@@ -500,8 +537,7 @@ describe("§10.4: binding and races", () => {
     expect(session(key)!.strip!.instruction).toBe("make these a reply");
     store.undoCommit(key);
     expect(c.text).toBe("my notes");
-    expect(session(key)!.phase).toBe("input");
-    expect(session(key)!.instruction).toBe("make these a reply");
+    expect(session(key)).toBeUndefined();
   });
 });
 
@@ -629,8 +665,8 @@ describe("the subject: §10.3's compound undo", () => {
     expect(c.text).toBe("");
     expect(useDrafts.getState().drafts[key]!.subject).toBe("");
     expect(useDrafts.getState().drafts[key]!.subjectEdited).toBe(false);
-    // plan 162 (after ai162-r02): the first write taken back leaves the row's field with what was asked, for Return
-    expect(session(key)).toMatchObject({ phase: "input", strip: null, instruction: "" });
+    // plan 163: the first write taken back leaves the body as it was, and no row
+    expect(session(key)).toBeUndefined();
   });
 
   it("neither overwrites a subject edited since", async () => {
@@ -666,8 +702,8 @@ describe("the subject: §10.3's compound undo", () => {
     store.undoCommit(key);
     expect(c.text).toBe("");
     expect(useDrafts.getState().drafts[key]!.subject).toBe("");
-    // plan 162 (after ai162-r02, Codex review): the first write taken back, edited or not, leaves the field with what was asked
-    expect(session(key)).toMatchObject({ phase: "input", strip: null });
+    // plan 163: the first write taken back, edited or not, leaves the body as it was, and no row
+    expect(session(key)).toBeUndefined();
     // the draft stays, blank: what was typed is one Undo away
     expect(useDrafts.getState().drafts[key]).toBeDefined();
     const { useSnack, runUndo } = await import("./snack");
@@ -685,8 +721,8 @@ describe("the subject: §10.3's compound undo", () => {
     await tick();
     c.type(" Mine.");
     store.undoCommit(key);
-    // plan 162 (after ai162-r02, Codex review): the first write taken back, edited or not, leaves the field with what was asked
-    expect(session(key)).toMatchObject({ phase: "input", strip: null });
+    // plan 163: the first write taken back, edited or not, leaves the body as it was, and no row
+    expect(session(key)).toBeUndefined();
     expect(useDrafts.getState().drafts[key]!.subject).toBe("");
     // the editor's own undo of the restore, not the snack's
     c.undoGenerated(c.doc);
@@ -728,12 +764,11 @@ describe("the subject: §10.3's compound undo", () => {
     await store.openRow({ key });
     await store.submit(key);
     store.stop(key);
-    // pass 3: stopped with nothing written, the row's field is back (with its instruction), not gone
-    expect(session(key)!.phase).toBe("input");
+    // plan 163: stopped with nothing written, the body is as it was, and no row
+    expect(session(key)).toBeUndefined();
     await runUndo(old);
     expect(c.text).toBe("");
-    expect(session(key)!.phase).toBe("input");
-    expect(session(key)!.strip).toBeNull();
+    expect(session(key)).toBeUndefined();
   });
 
   it("Codex review 2: going back to an earlier version brings back its own checks, and its gaps are guarded", async () => {
@@ -819,8 +854,8 @@ describe("the subject: §10.3's compound undo", () => {
     // and that version's own Undo goes back exactly too, never through the restore's step
     store.undoCommit(key);
     expect(c.text).toBe("");
-    // plan 162 (after ai162-r02, Codex review): the first write taken back, edited or not, leaves the field with what was asked
-    expect(session(key)).toMatchObject({ phase: "input", strip: null });
+    // plan 163: the first write taken back, edited or not, leaves the body as it was, and no row
+    expect(session(key)).toBeUndefined();
   });
 
   it("a subject the user wrote before is never touched", async () => {
@@ -976,19 +1011,17 @@ describe("existing text, and what goes wrong", () => {
     expect(calls("ai.compose")).toHaveLength(1);
   });
 
-  it("↑ recalls the last instruction", async () => {
-    const key = createDraft({ ...newFields(1), toText: "ana@example.test" });
+  it("plan 163: a summary item's Reply puts its words in an empty body; nothing runs until ⌘J, and never over what's there", async () => {
+    const key = createDraft({ ...newFields(1), mode: "reply", threadId: 7, inReplyToMessageId: 3, toText: "ana@example.test" });
     editor(key);
-    await store.openRow({ key });
-    store.setInstruction(key, "say it plainly");
-    void store.submit(key);
-    await tick();
-    last("ai.resolveIntent").resolve({ decision: { kind: "route", route: { type: "keep-draft" } }, fromAccountId: null, confirmFailed: false });
-    await tick();
-    store.stop(key);
-    await store.openRow({ key });
-    expect(store.recallInstruction(key)).toBe(true);
-    expect(session(key)!.instruction).toBe("say it plainly");
+    await store.openRow({ key, instruction: "Review the document before Friday" });
+    expect(useDrafts.getState().drafts[key]!.bodyText).toBe("Review the document before Friday");
+    expect(calls("ai.compose")).toHaveLength(0);
+    expect(calls("ai.resolveIntent")).toHaveLength(0);
+    const typed = createDraft({ ...newFields(1), mode: "reply", threadId: 8, inReplyToMessageId: 4, toText: "ana@example.test", bodyText: "mine" });
+    editor(typed, "mine");
+    await store.openRow({ key: typed, instruction: "something else" });
+    expect(useDrafts.getState().drafts[typed]!.bodyText).toBe("mine");
   });
 });
 
@@ -1198,8 +1231,8 @@ describe("what the Codex review found", () => {
     store.undoCommit(key);
     expect(useDrafts.getState().drafts[key]!.bodyText).toBe("");
     expect(useDrafts.getState().drafts[key]!.subject).toBe("");
-    // plan 162 (after ai162-r02, Codex review): the first write taken back, edited or not, leaves the field with what was asked
-    expect(session(key)).toMatchObject({ phase: "input", strip: null });
+    // plan 163: the first write taken back, edited or not, leaves the body as it was, and no row
+    expect(session(key)).toBeUndefined();
     rebuilt.unmount();
   });
 
@@ -1213,8 +1246,8 @@ describe("what the Codex review found", () => {
     store.undoCommit(key);
     expect(c.text).toBe("");
     expect(useDrafts.getState().drafts[key]!.subject).toBe("");
-    // plan 162 (after ai162-r02, Codex review): the first write taken back, edited or not, leaves the field with what was asked
-    expect(session(key)).toMatchObject({ phase: "input", strip: null });
+    // plan 163: the first write taken back, edited or not, leaves the body as it was, and no row
+    expect(session(key)).toBeUndefined();
     const { useSnack, runUndo } = await import("./snack");
     await runUndo(useSnack.getState().undo!);
     expect(c.text).toBe("Body, and more of mine.");
@@ -1284,19 +1317,20 @@ describe("what the Codex review found", () => {
 });
 
 describe("the row", () => {
-  it("⌘J over the strip refines; Esc there puts the strip back", async () => {
-    const { key } = await writing();
+  it("plan 163: ⌘J over an untouched strip is Regenerate; typed in since, it asks first; Esc on the strip is the form's", async () => {
+    const { key, c } = await writing();
     last("ai.compose").resolve(done("First."));
     await tick();
-    await store.openRow({ key });
-    expect(session(key)!.phase).toBe("input");
-    expect(session(key)!.strip).not.toBeNull();
-    expect(aiDraftHooks.escape(key)).toBe(true);
-    expect(session(key)!.phase).toBe("strip");
-    await store.openRow({ key });
-    store.setInstruction(key, "mention Friday");
-    await store.submit(key);
-    expect(last("ai.compose").params).toMatchObject({ instruction: "mention Friday", previousDraft: "First." });
+    await store.act(key);
+    expect(session(key)!.phase).toBe("writing");
+    expect(last("ai.compose").params).toMatchObject({ instruction: "" });
+    expect(last("ai.compose").params.previousDraft).toBeUndefined();
+    last("ai.compose").resolve(done("Second."));
+    await tick();
+    expect(aiDraftHooks.escape(key)).toBe(false);
+    c.type(" Mine.");
+    await store.act(key);
+    expect(session(key)!.confirm).toEqual({ how: "regenerate" });
   });
 
   it("plan 161: the strip stays after a keystroke, as Edited after AI, until the draft goes", async () => {
@@ -1388,12 +1422,13 @@ describe("plan 161, pass 2: never losing the user's work", () => {
     expect(last("ai.compose").params.previousDraft).toBe("First. Mine.");
   });
 
-  it("Esc in a row ⌘J opened on an empty reply closes the row and keeps the reply; ⌘J again still takes both", async () => {
+  it("Esc on a reply ⌘J opened ends the session and leaves Esc to the form; closing the row takes an empty reply it opened", async () => {
     const key = createDraft({ ...newFields(1), mode: "reply", threadId: 7, inReplyToMessageId: 3, toText: "Ana <ana@example.test>", subject: "Re: Contract" });
     editor(key);
     await store.openRow({ key });
     store.useAiDraft.setState(({ sessions }) => ({ sessions: { ...sessions, [key]: { ...sessions[key]!, opened: true } } }));
-    expect(aiDraftHooks.escape(key)).toBe(true);
+    // plan 163: opened for AI and nothing more: Esc is the form's (it closes an empty reply), and the session goes first
+    expect(aiDraftHooks.escape(key)).toBe(false);
     expect(session(key)).toBeUndefined();
     expect(useDrafts.getState().drafts[key]).toBeDefined();
     await store.openRow({ key });
@@ -1411,11 +1446,8 @@ describe("plan 161, pass 2: the instruction stays, and can be asked again", () =
     store.setInstruction(key, "");
     last("ai.compose").resolve(done("First."));
     await tick();
-    store.editInstruction(key);
-    expect(session(key)!.phase).toBe("input");
-    expect(session(key)!.rewrite).toBe(true);
-    store.setInstruction(key, "say friday works");
-    await store.submit(key);
+    // plan 163: the popover's pencil
+    store.rewriteFrom(key, "say friday works");
     const asked = last("ai.compose").params;
     expect(asked.instruction).toBe("say friday works");
     expect(asked.previousDraft).toBeUndefined();
@@ -1435,9 +1467,7 @@ describe("plan 161, pass 2: the instruction stays, and can be asked again", () =
     const { key } = await writing();
     last("ai.compose").resolve(done("First."));
     await tick();
-    store.editInstruction(key);
-    store.setInstruction(key, "say saturday");
-    await store.submit(key);
+    store.rewriteFrom(key, "say saturday");
     last("ai.compose").resolve(done("Saturday."));
     await tick();
     expect(session(key)!.strip!.instruction).toBe("say saturday");
@@ -1447,13 +1477,12 @@ describe("plan 161, pass 2: the instruction stays, and can be asked again", () =
     expect(last("ai.compose").params.instruction).toBe("");
   });
 
-  it("Undo from the field opened over a strip acts on the strip", async () => {
+  it("plan 163: opening the draft for AI again over a strip keeps the strip and its Undo", async () => {
     const { key, c } = await writing();
     last("ai.compose").resolve(done("First."));
     await tick();
     await store.openRow({ key });
-    expect(session(key)!.phase).toBe("input");
-    store.closeRow(key);
+    expect(session(key)!.phase).toBe("strip");
     store.undoCommit(key);
     expect(c.text).toBe("");
   });
@@ -1551,5 +1580,219 @@ describe("plan 162 (after ai162-r02): what made a version, for Undo's name", () 
     expect(commitHow({ kind: "refine", instruction: SHORTER })).toBe("shorter");
     expect(commitHow({ kind: "refine", instruction: WARMER })).toBe("warmer");
     expect(commitHow({ kind: "refine", instruction: "make it formal" })).toBe("rewrite");
+  });
+});
+
+describe("plan 163: ⌘J on what's written in the body", () => {
+  const reply = (body: string, o: { to?: string } = {}) => {
+    const key = createDraft({ ...newFields(1), mode: "reply", threadId: 7, inReplyToMessageId: 3, toText: o.to ?? "Arjun Ramírez <arjun@example.test>", subject: "Re: The flat", bodyText: body });
+    return { key, ...editor(key, body) };
+  };
+  const keepDraft = { decision: { kind: "route", route: { type: "keep-draft" } }, fromAccountId: null, confirmFailed: false };
+  const fill = (key: string, gap: number, text: string, done: boolean) => rpc.events.get("aiFill")!({ requestId: session(key)!.run!.requestId, gap, text, done });
+
+  it("an instruction is written from, and the draft replaces it in one step; Undo puts the instruction back exactly, with no row", async () => {
+    const { key, c } = reply("friday works for me, ask him to send the address of the flat");
+    void store.act(key);
+    await tick();
+    // who it's for is still worked out, from the conversation: the reply's recipients are Terno's, though the body was typed in
+    expect(last("ai.resolveIntent").params.surface).toEqual({ kind: "thread", threadId: 7 });
+    last("ai.resolveIntent").resolve(keepDraft);
+    await tick();
+    expect(session(key)!.run!.spec.kind).toBe("body");
+    expect(last("ai.compose").params).toMatchObject({ instruction: "friday works for me, ask him to send the address of the flat" });
+    expect(last("ai.compose").params.draft).toBeUndefined();
+    // the instruction dims, then the stream takes its place
+    expect(store.previewMode(session(key))).toBe("replacing");
+    last("ai.compose").resolve(done("Hi Arjun,\n\nFriday works for me. Could you send me the address of the flat?\n\nLuis"));
+    await tick();
+    expect(c.text).toBe("Hi Arjun,\n\nFriday works for me. Could you send me the address of the flat?\n\nLuis");
+    expect(session(key)!.strip!.instruction).toBe("friday works for me, ask him to send the address of the flat");
+    store.undoCommit(key);
+    expect(c.text).toBe("friday works for me, ask him to send the address of the flat");
+    expect(session(key)).toBeUndefined();
+  });
+
+  it("typed into while it writes, the draft is offered beside it with Replace, never put over it", async () => {
+    const { key, c } = reply("tell him friday works");
+    void store.act(key);
+    await tick();
+    last("ai.resolveIntent").resolve(keepDraft);
+    await tick();
+    c.type(" and saturday");
+    last("ai.compose").resolve(done("Friday works."));
+    await tick();
+    expect(session(key)!.phase).toBe("choice");
+    expect(session(key)!.choice!.reason).toBe("notes");
+    expect(c.text).toBe("tell him friday works and saturday");
+  });
+
+  it("their email with gaps: only the gaps are filled, as each comes, in one step; Undo gives every placeholder back", async () => {
+    const body = "Hi Arjun, the flat's address is [address from his last mail], see you [day we agreed]";
+    const { key, c } = reply(body);
+    await store.act(key);
+    expect(calls("ai.resolveIntent")).toHaveLength(0);
+    const asked = last("ai.compose").params as { fill: { text: string; gaps: { from: number; to: number }[] }; instruction: string };
+    expect(asked.instruction).toBe("");
+    expect(asked.fill.gaps.map((g) => asked.fill.text.slice(g.from, g.to))).toEqual(["[address from his last mail]", "[day we agreed]"]);
+    expect(store.previewMode(session(key))).toBeNull();
+    fill(key, 1, "Calle Du", false);
+    fill(key, 1, "Calle Durango 123", true);
+    expect(c.fill!.streamed.get(1)).toEqual({ text: "Calle Durango 123", done: true });
+    // nothing in the document yet
+    expect(c.text).toBe(body);
+    last("ai.compose").resolve(done("", { fills: ["Calle Durango 123", "Friday"] }));
+    await tick();
+    expect(c.text).toBe("Hi Arjun, the flat's address is Calle Durango 123, see you Friday");
+    expect(session(key)!.strip!.fill).toEqual({ words: ["[address from his last mail]", "[day we agreed]"], fills: ["Calle Durango 123", "Friday"] });
+    store.undoCommit(key);
+    expect(c.text).toBe(body);
+    expect(session(key)).toBeUndefined();
+  });
+
+  it("a gap the conversation doesn't answer stays as typed and Send asks about it; nothing answered, nothing changes", async () => {
+    const { key, c } = reply("Hi Arjun, see you [day] at [place]");
+    await store.act(key);
+    last("ai.compose").resolve(done("", { fills: ["Friday", ""] }));
+    await tick();
+    expect(c.text).toBe("Hi Arjun, see you Friday at [place]");
+    expect(store.gapsLeft(key)).toEqual(["[place]"]);
+    expect(aiDraftHooks.blocksSend(key, undefined)).toBe(true);
+    const other = reply("Hi Arjun, see you [day]");
+    await store.act(other.key);
+    last("ai.compose").resolve(done("", { fills: [""] }));
+    await tick();
+    expect(other.c.text).toBe("Hi Arjun, see you [day]");
+    expect(session(other.key)!.phase).toBe("error");
+    expect(session(other.key)!.strip).toBeNull();
+  });
+
+  it("stopped part-way, the fills that finished go in and the rest stay as typed", async () => {
+    const { key, c } = reply("Hi Arjun, see you [day] at [place]");
+    await store.act(key);
+    fill(key, 1, "Friday", true);
+    fill(key, 2, "the fl", false);
+    store.stop(key);
+    expect(c.text).toBe("Hi Arjun, see you Friday at [place]");
+    expect(session(key)!.strip!.stopped).toBe(true);
+  });
+
+  it("Fill again asks from the text as it was before the first fill, and puts it back filled anew in one step", async () => {
+    const body = "Hi Arjun, see you [day]";
+    const { key, c } = reply(body);
+    await store.act(key);
+    last("ai.compose").resolve(done("", { fills: ["Friday"] }));
+    await tick();
+    store.refine(key, "regenerate");
+    const asked = last("ai.compose").params as { fill: { text: string; gaps: { from: number; to: number }[] } };
+    expect(asked.fill.text).toBe(body);
+    expect(asked.fill.gaps.map((g) => asked.fill.text.slice(g.from, g.to))).toEqual(["[day]"]);
+    expect(store.previewMode(session(key))).toBe("rewriting");
+    last("ai.compose").resolve(done("", { fills: ["Saturday"] }));
+    await tick();
+    expect(c.text).toBe("Hi Arjun, see you Saturday");
+    // Shorter and Warmer would rewrite their words: they do nothing on a fill
+    store.refine(key, "shorter");
+    expect(session(key)!.phase).toBe("strip");
+    store.undoCommit(key);
+    expect(c.text).toBe("Hi Arjun, see you Friday");
+    store.undoCommit(key);
+    expect(c.text).toBe(body);
+  });
+
+  it("unsure: the fast model reads only what was typed; what it calls an instruction is written from, an email is expanded beside itself", async () => {
+    const text = "I'm happy to go ahead with the contract as it is. Nothing in it changes what we agreed, so the 19th is fine.";
+    const a = reply(text);
+    void store.act(a.key);
+    await tick();
+    expect(session(a.key)!.phase).toBe("reading");
+    expect(last("ai.readDraft").params).toEqual({ requestId: expect.any(String), text, maybe: [] });
+    last("ai.readDraft").resolve({ kind: "instruction", gaps: [] });
+    await tick();
+    last("ai.resolveIntent").resolve(keepDraft);
+    await tick();
+    expect(session(a.key)!.run!.spec.kind).toBe("body");
+    const b = reply(text);
+    void store.act(b.key);
+    await tick();
+    last("ai.readDraft").resolve({ kind: "email", gaps: [] });
+    await tick();
+    expect(session(b.key)!.run!.spec.kind).toBe("notes");
+    expect(last("ai.compose").params).toMatchObject({ instruction: "", draft: text });
+  });
+
+  it("the fast read failing takes it as their email, and the strip says so; typed into while it reads, it starts over", async () => {
+    const text = "I'm happy to go ahead with the contract as it is. Nothing in it changes what we agreed, so the 19th is fine.";
+    const { key, c } = reply(text);
+    void store.act(key);
+    await tick();
+    c.type(" Thanks!");
+    last("ai.readDraft").resolve({ kind: "instruction", gaps: [] });
+    await tick();
+    // started over on what's there now
+    expect(calls("ai.readDraft")).toHaveLength(2);
+    expect(last("ai.readDraft").params.text).toBe(`${text} Thanks!`);
+    last("ai.readDraft").reject(new Error("down"));
+    await tick();
+    expect(session(key)!.run!.spec.kind).toBe("notes");
+    last("ai.compose").resolve(done("A fuller version."));
+    await tick();
+    store.place(key, "replace");
+    expect(session(key)!.strip!.readFailed).toBe(true);
+  });
+
+  it("consent comes before anything leaves, the fast read included, bound to where it goes (Codex review 2)", async () => {
+    setApp({ settings: { ai: { provider: "compatible", preset: "custom", baseURL: "https://one.example/v1", model: "x", local: false, tasks: {}, keys: {}, hasKey: true, keyConfirmed: true, profiles: {} } } as never });
+    const text = "I'm happy to go ahead with the contract as it is. Nothing in it changes what we agreed, so the 19th is fine.";
+    const { key } = reply(text);
+    await store.act(key);
+    expect(session(key)!.phase).toBe("telling");
+    expect(calls("ai.readDraft")).toHaveLength(0);
+    store.acknowledgeTold(key);
+    await tick();
+    expect(calls("ai.readDraft")).toHaveLength(1);
+    store.stop(key);
+    // another server of the same kind is somewhere else: asked again
+    setApp({ settings: { ai: { provider: "compatible", preset: "custom", baseURL: "https://two.example/v1", model: "x", local: false, tasks: {}, keys: {}, hasKey: true, keyConfirmed: true, profiles: {} } } as never });
+    await store.act(key);
+    expect(session(key)!.phase).toBe("telling");
+  });
+
+  it("Send while it reads, works out who it's for, or asks, stops: it would mail the instruction (Codex review 6)", async () => {
+    const { key } = reply("tell him friday works");
+    void store.act(key);
+    await tick();
+    expect(session(key)!.phase).toBe("resolving");
+    expect(await sendDraft(key)).toBe(false);
+    expect(calls("compose.send")).toHaveLength(0);
+    expect(session(key)!.guard).toEqual({ sendAt: undefined });
+    store.discardAndSend(key);
+    await tick();
+    expect(calls("compose.send")).toHaveLength(1);
+  });
+
+  it("a reply whose recipients someone chose is a draft surface, even from the body (Codex review 3)", async () => {
+    const { key } = reply("tell tom it's fine");
+    editDraftRecipients(key, "to", "Bea <bea@example.test>", []);
+    void store.act(key);
+    await tick();
+    expect(last("ai.resolveIntent").params.surface).toMatchObject({ kind: "draft" });
+  });
+
+  it("over a strip typed in since, gaps they marked are filled on top of it; the model's own gaps are left for them", async () => {
+    const { key, c } = reply("");
+    await store.act(key);
+    last("ai.compose").resolve(done("Hi Arjun, [Your answer.]", { checks: { specifics: [], placeholders: ["[Your answer.]"] } }));
+    await tick();
+    c.type(" See you [day].");
+    await store.act(key);
+    const asked = last("ai.compose").params as { fill: { text: string; gaps: { from: number; to: number }[] } };
+    expect(asked.fill.gaps.map((g) => asked.fill.text.slice(g.from, g.to))).toEqual(["[day]"]);
+    last("ai.compose").resolve(done("", { fills: ["Friday"] }));
+    await tick();
+    expect(c.text).toBe("Hi Arjun, [Your answer.] See you Friday.");
+    expect(session(key)!.strip!.stack).toHaveLength(2);
+    store.undoCommit(key);
+    expect(c.text).toBe("Hi Arjun, [Your answer.] See you [day].");
   });
 });

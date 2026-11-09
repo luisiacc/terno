@@ -3,15 +3,15 @@ import { getLocale, t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { ButtonGroup, ButtonGroupItem } from "@terno/ui/components/button-group";
 import { CloseButton } from "@terno/ui/components/close-button";
-import { Shortcut } from "@terno/ui/components/shortcut";
+import { Shortcut, shortcutText } from "@terno/ui/components/shortcut";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { Spinner } from "@terno/ui/components/spinner";
 import { ChevronDown, PenLine, TriangleAlert, Undo2 } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { modelName, providerLabel, writingTarget } from "~/lib/ai";
-import { answer, closeRow, commitHeld, confirmReplace, discard, discardAndSend, editInstruction, includeEveryone, keepEdits, keepWriting, noteBody, place, placePartial, previewMode, previewText, recallInstruction, refine, retry, setInstruction, stop, submit, subscribePreview, takeFocusRequest, undoCommit, useAiDraft, type AiSession, type AiStrip } from "~/lib/ai-draft";
+import { answer, closeRow, commitHeld, confirmReplace, discard, discardAndSend, includeEveryone, keepEdits, keepWriting, noteBody, place, placePartial, previewMode, previewText, primed, refine, retry, rewriteFrom, stop, submit, subscribePreview, takeFocusRequest, undoCommit, useAiDraft, type AiSession, type AiStrip } from "~/lib/ai-draft";
 import { keepInView } from "~/lib/reader-scroll";
 import { AiErrorNotice, AiProvenance, aiErrorCopy, aiWritten, errorTarget } from "../ai-card";
 import { useAiDraftUi } from "~/lib/ai-draft-state";
@@ -100,11 +100,89 @@ function voiceLines(strip: AiStrip, who: string, domain: string): string[] {
 }
 
 /**
+ * Plan 163: what was asked, in the user's words, in the popover (the owner: no instruction row, no big labelled button):
+ * a quiet line with an icon-only pencil, which turns it into a field; Return writes the draft again from the new words.
+ */
+function Asked({ s, text }: { s: AiSession; text: string }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(text);
+  const field = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    if (editing) field.current?.focus({ preventScroll: true });
+  }, [editing]);
+  if (editing) {
+    return (
+      <div className="flex flex-col gap-1">
+        <textarea
+          ref={field}
+          data-testid="ai-asked-input"
+          aria-label={t("aiDraft.asked.field")}
+          rows={2}
+          className="field-sizing-content min-h-9 w-full resize-none rounded-md bg-field px-2 py-1.5 text-sm leading-5 text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          value={value}
+          spellCheck
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.nativeEvent.isComposing) return;
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              e.stopPropagation();
+              setEditing(false);
+              rewriteFrom(s.key, value);
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              e.stopPropagation();
+              setValue(text);
+              setEditing(false);
+            }
+          }}
+        />
+        <p className="text-xs text-muted-foreground">{t("aiDraft.asked.hint")}</p>
+      </div>
+    );
+  }
+  return (
+    <p className="flex min-w-0 items-start gap-1" data-testid="ai-asked">
+      <span className="min-w-0 wrap-anywhere" data-testid="ai-asked-text">{t("aiDraft.asked", { instruction: text })}</span>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button type="button" variant="ghost" size="icon-xs" className="-my-0.5 shrink-0 text-muted-foreground hover:text-foreground" aria-label={t("aiDraft.asked.edit")} data-testid="ai-asked-edit" onClick={() => { setValue(text); setEditing(true); }} />
+          }
+        >
+          <PenLine aria-hidden />
+        </TooltipTrigger>
+        <TooltipContent>{t("aiDraft.asked.edit")}</TooltipContent>
+      </Tooltip>
+    </p>
+  );
+}
+
+/** Plan 163: each gap and what went in it, or that it's as they wrote it. */
+function Fills({ fill }: { fill: NonNullable<AiStrip["fill"]> }) {
+  return (
+    <div data-testid="ai-fills">
+      <p className="mb-1 font-medium">{t("aiDraft.fill.title")}</p>
+      <ul className="flex flex-col gap-1">
+        {fill.words.map((gap, i) => {
+          const value = fill.fills[i];
+          return (
+            <li key={`${i}-${gap}`} className="wrap-anywhere" data-testid="ai-fill-pair">
+              {value ? t("aiDraft.fill.pair", { gap, fill: value }) : t("aiDraft.fill.left", { gap })}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+/**
  * Plan 161, pass 2: the strip's status is the one way into what the AI used. Pass 3: it is the one provenance control every AI
  * surface has (`AiProvenance`), at the command line's end: "Written with AI ▾" opens the voice ("In your voice with Arjun"),
- * what it read, and the model; the instruction has its own line now, so the popover doesn't hold it.
+ * what it read, and the model. Plan 163: and what was asked, with its pencil; for a fill, what went in each gap.
  */
-function StatusPopover({ strip, toText }: { strip: AiStrip; toText: string }) {
+function StatusPopover({ s, strip, toText }: { s: AiSession; strip: AiStrip; toText: string }) {
   const ai = useApp((state) => state.settings?.ai);
   const who = whoOf(toText);
   // a stopped write's use was never reported: it says that, not a voice it may not have used
@@ -120,6 +198,8 @@ function StatusPopover({ strip, toText }: { strip: AiStrip; toText: string }) {
       popoverTestId="ai-voice-popover"
       className="-me-1.5 ms-auto"
     >
+      {strip.instruction && !strip.fill && <Asked s={s} text={strip.instruction} />}
+      {strip.fill && <Fills fill={strip.fill} />}
       {strip.stopped ? (
         <p data-testid="ai-voice-label">{t("aiDraft.stoppedDetail")}</p>
       ) : (
@@ -158,7 +238,7 @@ function StatusPopover({ strip, toText }: { strip: AiStrip; toText: string }) {
 function UndoButton({ s, alone }: { s: AiSession; alone?: boolean }) {
   // plan 162 (after ai162-r02): what it takes back, in its name and tooltip ("Undo Shorter"; the first draft: "Remove the AI's draft")
   const top = s.strip?.stack.at(-1);
-  const what = !top || (s.strip?.stack.length ?? 0) <= 1 ? t("aiDraft.undo.draft") : t(`aiDraft.undo.${top.how && top.how !== "draft" ? top.how : "rewrite"}`);
+  const what = top?.how === "fill" ? t("aiDraft.undo.fill") : !top || (s.strip?.stack.length ?? 0) <= 1 ? t("aiDraft.undo.draft") : t(`aiDraft.undo.${top.how && top.how !== "draft" ? top.how : "rewrite"}`);
   const item = (
     <ButtonGroupItem
       className="text-foreground"
@@ -182,81 +262,6 @@ function UndoButton({ s, alone }: { s: AiSession; alone?: boolean }) {
     </Tooltip>
   );
   return alone ? <ButtonGroup className="h-7" aria-label={t("aiDraft.commands")}>{button}</ButtonGroup> : button;
-}
-
-/**
- * Plan 161, pass 3: what was asked, in the user's words, on its own line above the commands: where it was typed, while
- * it's written, and after. Plan 162 (after ai162-r02): one line again (two lines and the commands took ~96 px over a short
- * draft at 1100, all four Codex reports), and the whole of it a click away: cut, the words are a disclosure that opens to
- * every line (its title and name hold them too). "Edit instruction" stays right after them, a 28 px control.
- */
-function InstructionLine({ text, onEdit }: { text: string; onEdit: (() => void) | null }) {
-  const quoted = t("aiDraft.instruction.quoted", { instruction: text });
-  const line = useRef<HTMLParagraphElement>(null);
-  const words = useRef<HTMLSpanElement>(null);
-  const [open, setOpen] = useState(false);
-  const [cut, setCut] = useState(false);
-  // the line is the one element that stays (the words move into a button once they're cut): it's what's watched, and the
-  // words are read as they are when it changes
-  useLayoutEffect(() => {
-    const at = line.current;
-    if (!at || open) return;
-    const measure = () => {
-      const el = words.current;
-      if (el) setCut(el.scrollWidth > el.clientWidth + 1);
-    };
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(at);
-    return () => ro.disconnect();
-  }, [text, open]);
-  const body = (
-    <span ref={words} className={cn("block min-w-0 text-start", open ? "wrap-anywhere whitespace-normal" : "truncate")} data-testid="ai-strip-instruction-text">
-      {quoted}
-    </span>
-  );
-  return (
-    <p ref={line} className="flex min-h-[38px] min-w-0 items-start gap-1.5 py-[9px] text-sm leading-5 text-foreground" data-testid="ai-strip-instruction" data-open={open || undefined}>
-      {cut || open ? (
-        <button type="button" className="min-w-0 cursor-pointer rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none" title={open ? undefined : quoted} aria-expanded={open} aria-label={open ? undefined : quoted} data-testid="ai-strip-instruction-toggle" onClick={() => setOpen((o) => !o)}>
-          {body}
-        </button>
-      ) : (
-        <span className="min-w-0" title={quoted}>{body}</span>
-      )}
-      {/* while it writes, its place is held (nothing to edit yet), so the line is the same before and after the commit */}
-      {/* the owner (2026-11-08): "the 'edit instruction' is way too big, should be a pencil": an icon button, named and with
-          its tooltip; the rest of the strip waits for plan 163's new ⌘J */}
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              className={cn("-my-1 shrink-0 text-muted-foreground hover:text-foreground", !onEdit && "invisible")}
-              aria-hidden={onEdit ? undefined : true}
-              aria-label={t("aiDraft.instruction.edit")}
-              tabIndex={onEdit ? undefined : -1}
-              data-testid={onEdit ? "ai-strip-edit-instruction" : undefined}
-              onClick={onEdit ?? undefined}
-            />
-          }
-        >
-          <PenLine aria-hidden />
-        </TooltipTrigger>
-        <TooltipContent>{t("aiDraft.instruction.edit")}</TooltipContent>
-      </Tooltip>
-    </p>
-  );
-}
-
-/** The instruction a run is writing from, as its strip will show it: a rewrite keeps the strip's own (Shorter isn't the user's words). */
-function runInstruction(s: AiSession): string {
-  const spec = s.run?.spec ?? s.lastSpec;
-  if (!spec) return "";
-  if (spec.kind === "refine" && !spec.regenerate) return s.run?.prior?.instruction ?? "";
-  return spec.instruction;
 }
 
 /**
@@ -287,22 +292,31 @@ function RewriteMenu({ s }: { s: AiSession }) {
 function Strip({ s }: { s: AiSession & { strip: AiStrip } }) {
   const toText = useDrafts((state) => state.drafts[s.key]?.toText ?? "");
   const { strip } = s;
+  // plan 163: a fill's only rewrite is Fill again (Shorter or Warmer would rewrite the user's own words)
+  const filled = strip.fill !== undefined;
   return (
-    // plan 161, pass 3: the instruction on its own line, then the commands, and the provenance at the line's end, as on
-    // every AI surface. Plan 162: the commands are one group; narrow, the rewrites fold into Rewrite ▾ in it
-    <div className="@container/strip flex min-w-0 flex-1 flex-col" data-testid="ai-strip" data-edited={strip.edited || undefined} data-stopped={strip.stopped || undefined}>
-      {strip.instruction && <InstructionLine text={strip.instruction} onEdit={() => editInstruction(s.key)} />}
+    // plan 161, pass 3: the commands, and the provenance at the line's end, as on every AI surface. Plan 162: the commands
+    // are one group; narrow, the rewrites fold into Rewrite ▾ in it. Plan 163: what was asked is in the provenance's popover
+    <div className="@container/strip flex min-w-0 flex-1 flex-col" data-testid="ai-strip" data-edited={strip.edited || undefined} data-stopped={strip.stopped || undefined} data-fill={filled || undefined}>
       <div className={cn(line, "flex-nowrap py-[5px]")}>
         <ButtonGroup className="h-7" aria-label={t("aiDraft.commands")} data-testid="ai-strip-commands">
           <UndoButton s={s} />
-          {(["regenerate", "shorter", "warmer"] as const).map((how) => (
-            <ButtonGroupItem key={how} className={cn("text-foreground", how !== "regenerate" && "@max-[30rem]/strip:hidden", how === "warmer" && "border-e-0")} data-testid={`ai-strip-${how}`} onClick={() => refine(s.key, how)}>
-              {t(`aiDraft.${how}`)}
+          {filled ? (
+            <ButtonGroupItem className="border-e-0 text-foreground" data-testid="ai-strip-regenerate" onClick={() => refine(s.key, "regenerate")}>
+              {t("aiDraft.fillAgain")}
             </ButtonGroupItem>
-          ))}
-          <RewriteMenu s={s} />
+          ) : (
+            <>
+              {(["regenerate", "shorter", "warmer"] as const).map((how) => (
+                <ButtonGroupItem key={how} className={cn("text-foreground", how !== "regenerate" && "@max-[30rem]/strip:hidden", how === "warmer" && "border-e-0")} data-testid={`ai-strip-${how}`} onClick={() => refine(s.key, how)}>
+                  {t(`aiDraft.${how}`)}
+                </ButtonGroupItem>
+              ))}
+              <RewriteMenu s={s} />
+            </>
+          )}
         </ButtonGroup>
-        <StatusPopover strip={strip} toText={toText} />
+        <StatusPopover s={s} strip={strip} toText={toText} />
       </div>
       {/* the same notes the Status had, in the same place: the row keeps its height across the commit */}
       {s.confirmFailed && <p className="w-full pb-1.5 text-xs text-muted-foreground">{t("aiDraft.confirmFailed")}</p>}
@@ -317,10 +331,13 @@ function Strip({ s }: { s: AiSession & { strip: AiStrip } }) {
 
 function stripChecks(strip: AiStrip): string[] {
   const specifics = strip.checks.specifics.map((f) => f.text);
+  const left = strip.fill ? strip.fill.fills.filter((f) => !f).length : 0;
   return [
     ...(specifics.length ? [t("aiDraft.check.specifics", { items: specifics.slice(0, 3).join(", "), count: specifics.length })] : []),
+    ...(left ? [t("aiDraft.check.fillLeft", { count: left })] : []),
     ...(strip.cutOff ? [t("aiDraft.check.cutOff")] : []),
     ...(strip.oneTap ? [t("aiDraft.check.oneTap")] : []),
+    ...(strip.readFailed ? [t("aiDraft.check.readFailed")] : []),
   ];
 }
 
@@ -329,12 +346,12 @@ function Status({ s }: { s: AiSession }) {
   const run = s.run;
   // plan 161, pass 2: a rewrite says so, over the text it keeps in place until the new one is in
   const rewriting = run?.spec.kind === "refine";
-  const text = run?.slow ? (local && !run.streaming ? t("aiDraft.loadingModel") : t("aiDraft.stillWriting")) : rewriting ? t("aiDraft.rewriting") : t("aiDraft.writing");
-  const instruction = runInstruction(s);
+  // plan 163: reading what was typed (the fast model), filling its gaps, or writing
+  const filling = run?.spec.kind === "fill" ? run.spec.fill?.gaps.length ?? 0 : 0;
+  const text = s.phase === "reading" ? t("aiDraft.reading") : run?.slow ? (local && !run.streaming ? t("aiDraft.loadingModel") : t("aiDraft.stillWriting")) : filling ? t("aiDraft.filling", { count: filling }) : rewriting ? t("aiDraft.rewriting") : t("aiDraft.writing");
   return (
-    // plan 161, pass 3: the instruction stays where it was typed, above what's happening, as the strip will have it
+    // plan 163: what was asked is in the body (dimmed while it's read), not in a line here
     <div className="flex min-w-0 flex-1 flex-col">
-      {instruction && <InstructionLine text={instruction} onEdit={null} />}
       <div className={line} data-testid="ai-row-status" data-state={s.phase}>
         <Spinner aria-hidden className="size-[1.15em] text-muted-foreground" />
         <span data-testid="ai-row-status-text">{s.phase === "waitingBody" ? t("aiDraft.downloading") : text}</span>
@@ -528,54 +545,19 @@ function Guard({ s }: { s: AiSession }) {
   );
 }
 
-function Field({ s, id }: { s: AiSession; id: string }) {
-  // the editor's, as it is now: the draft's copy lags it until the next save
-  const notes = useController(s.key)?.empty() === false;
-  const threaded = useDrafts((state) => (state.drafts[s.key]?.mode ?? "new") !== "new");
-  const working = s.phase === "resolving";
-  const fresh = threaded ? t("aiDraft.placeholder.reply") : t("aiDraft.placeholder.new");
-  // over a strip: what should change, or (its instruction, to edit) what the draft should say
-  const placeholder = s.strip ? (s.rewrite ? fresh : t("aiDraft.placeholder.refine")) : notes ? t("aiDraft.placeholder.notes") : fresh;
+/** Plan 163: the row asks who it's for (nothing to write to yet): Write, or ⌘J, once someone's in To. */
+function Who({ s }: { s: AiSession }) {
   return (
-    <>
-      {/* one line that grows to show all it holds (plan 161: a long instruction was cut mid-word); Return still writes */}
-      <textarea
-        id={id}
-        data-testid="ai-row-input"
-        // plan 162 (after ai162-r02): named for what it holds (its label, "AI", said only whose)
-        aria-label={t("aiDraft.fieldName")}
-        rows={1}
-        className="field-sizing-content min-h-9 min-w-0 flex-1 resize-none bg-transparent py-[9px] text-sm leading-5 outline-none placeholder:text-muted-foreground"
-        value={s.instruction}
-        readOnly={working}
-        autoComplete="off"
-        spellCheck
-        placeholder={placeholder}
-        onChange={(e) => setInstruction(s.key, e.target.value)}
-        onKeyDown={(e) => {
-          if (e.nativeEvent.isComposing) return;
-          if (e.key === "Enter") {
-            // Enter drafts; ⌘Enter here means the same, never the form's Send
-            e.preventDefault();
-            e.stopPropagation();
-            if (!working) void submit(s.key);
-          } else if (e.key === "ArrowUp" && e.currentTarget.selectionStart === 0 && !s.instruction) {
-            if (recallInstruction(s.key)) e.preventDefault();
-          }
-        }}
-      />
-      {working ? <Spinner aria-hidden className="size-[1.15em] shrink-0 text-muted-foreground" /> : s.who ? (
-        <Button type="button" variant="outline" size="sm" className="mt-[5px] shrink-0 self-start" data-testid="ai-who-write" onClick={() => void submit(s.key)}>
+    <div className={line} data-testid="ai-who-row">
+      {s.who && <span data-testid="ai-who">{t("aiDraft.who")}</span>}
+      {s.lookingUp && <span data-testid="ai-looking-up">{t("aiDraft.lookingUp")}</span>}
+      {s.who && (
+        <Button type="button" variant="outline" size="sm" className="ml-auto shrink-0" data-ai-default data-testid="ai-who-write" onMouseDown={(e) => e.preventDefault()} onClick={() => void submit(s.key)}>
           {t("aiDraft.whoWrite")}
-        </Button>
-      ) : (
-        // a named button, not a bare ↵: what Return does, said
-        <Button type="button" variant="outline" size="sm" className="mt-[5px] shrink-0 self-start" data-testid="ai-row-write" onMouseDown={(e) => e.preventDefault()} onClick={() => void submit(s.key)}>
-          {t("aiDraft.submit")}
-          <Shortcut keys="enter" className="ml-0.5" />
+          <Shortcut keys="mod+j" className="ml-0.5" />
         </Button>
       )}
-    </>
+    </div>
   );
 }
 
@@ -583,7 +565,6 @@ function Field({ s, id }: { s: AiSession; id: string }) {
 export function AiRow({ draftKey }: { draftKey: string }) {
   const s = useAiDraft((state) => state.sessions[draftKey]);
   const c = useController(draftKey);
-  const inputId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   // the text's changes, once there's an editor to listen to
   useEffect(() => c?.subscribeDoc(() => noteBody(draftKey)), [c, draftKey]);
@@ -631,7 +612,7 @@ export function AiRow({ draftKey }: { draftKey: string }) {
   const focus = s?.focus ?? 0;
   useLayoutEffect(() => {
     if (!takeFocusRequest(draftKey, focus)) return;
-    rootRef.current?.querySelector<HTMLElement>("[data-ai-default], [data-testid=ai-row-input]")?.focus({ preventScroll: true });
+    rootRef.current?.querySelector<HTMLElement>("[data-ai-default]")?.focus({ preventScroll: true });
   }, [draftKey, focus]);
   if (!s) return null;
   const content = (() => {
@@ -639,16 +620,13 @@ export function AiRow({ draftKey }: { draftKey: string }) {
     if (s.confirm && s.strip) return <Confirm s={s} />;
     switch (s.phase) {
       case "input":
+        // plan 163: opened for AI and nothing more: no row (the body says what to do); over a strip, the strip
+        if (s.strip) return <Strip s={s as AiSession & { strip: AiStrip }} />;
+        return s.who || s.lookingUp ? <Who s={s} /> : null;
       case "resolving":
-        return (
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2.5">
-            <Field s={s} id={inputId} />
-            {/* plan 161, pass 2: over a strip, its Undo stays in reach while the field is open */}
-            {s.strip && s.phase === "input" && <span className="mt-[5px] shrink-0 self-start"><UndoButton s={s} alone /></span>}
-            {s.who && <p className="mb-1.5 w-full text-xs text-muted-foreground" data-testid="ai-who">{t("aiDraft.who")}</p>}
-            {s.lookingUp && <p className="mb-1.5 w-full text-xs text-muted-foreground" data-testid="ai-looking-up">{t("aiDraft.lookingUp")}</p>}
-          </div>
-        );
+        return s.lookingUp ? <Who s={s} /> : <Status s={s} />;
+      case "reading":
+        return <Status s={s} />;
       case "question":
         return <Question s={s} />;
       case "writing":
@@ -668,9 +646,7 @@ export function AiRow({ draftKey }: { draftKey: string }) {
   })();
   return (
     <div ref={rootRef}>
-      <Frame draftKey={draftKey} htmlFor={s.phase === "input" || s.phase === "resolving" ? inputId : undefined}>
-        {content}
-      </Frame>
+      {content && <Frame draftKey={draftKey}>{content}</Frame>}
       {/* never the deltas: "Writing draft", then "Draft ready, 84 words" */}
       <span role="status" aria-live="polite" aria-atomic="true" className="sr-only" data-testid="ai-live">
         {s.live}
@@ -703,6 +679,28 @@ export function AiPreview({ draftKey, className }: { draftKey: string; className
   const mode = previewMode(s);
   const rootRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLDivElement>(null);
+  const hintRef = useRef<HTMLSpanElement>(null);
+  // plan 163: ⌘J opened this composer for AI: the empty body says what to do here (its own placeholder otherwise)
+  const isNew = useDrafts((state) => state.drafts[draftKey]?.mode === "new");
+  const hint = primed(s) ? t(isNew ? "aiDraft.bodyHint.new" : "aiDraft.bodyHint.reply", { keys: shortcutText("mod+j") }) : null;
+  useLayoutEffect(() => {
+    const host = hintRef.current?.parentElement;
+    if (!host || !hint) return;
+    host.setAttribute("data-ai-hint", "");
+    host.style.setProperty("--ai-hint", JSON.stringify(hint));
+    return () => {
+      host.removeAttribute("data-ai-hint");
+      host.style.removeProperty("--ai-hint");
+    };
+  }, [hint]);
+  // plan 163: the instruction in the body gives way to the stream once its first words are in
+  const streaming = mode === "replacing" && s?.run?.streaming === true;
+  useLayoutEffect(() => {
+    const host = rootRef.current?.parentElement;
+    if (!host || !streaming) return;
+    host.setAttribute("data-ai-streaming", "");
+    return () => host.removeAttribute("data-ai-streaming");
+  }, [streaming]);
   useLayoutEffect(() => {
     const el = textRef.current;
     if (!el) return;
@@ -726,6 +724,7 @@ export function AiPreview({ draftKey, className }: { draftKey: string; className
   }, [mode]);
   // under the text, not in the row: a line added above the body at commit would move every word it just wrote
   const checks = s?.phase === "strip" && s.strip ? stripChecks(s.strip) : [];
+  if (hint) return <span ref={hintRef} hidden data-testid="ai-body-hint" />;
   if (!mode) {
     if (!checks.length) return null;
     return (

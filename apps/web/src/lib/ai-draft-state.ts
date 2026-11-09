@@ -8,8 +8,11 @@ import { getApp, useApp } from "~/state/app";
  * the send path): whether it's on, which drafts have its row up, and the hooks `lib/ai-draft.ts` fills in.
  */
 
-/** `open`: the row or strip is up; `writing`: a draft is on its way; `ready`: one waits for the draft to be opened again */
-export type AiDraftBadge = "open" | "writing" | "ready";
+/**
+ * `open`: the row or strip is up; `writing`: a draft is on its way; `ready`: one waits for the draft to be opened again;
+ * `primed` (plan 163): ⌘J opened it for AI, and nothing has run: no work to keep a blank draft for
+ */
+export type AiDraftBadge = "open" | "writing" | "ready" | "primed";
 
 export const useAiDraftUi = create<{ enabled: boolean; rows: Readonly<Record<string, AiDraftBadge>>; stylePage: boolean }>(() => ({ enabled: true, rows: {}, stylePage: false }));
 

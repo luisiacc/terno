@@ -481,7 +481,9 @@ export function DraftSlot({ threadId, draftKey, replyTo, replyAll = true, accoun
   const collapse = () => {
     if (!d) return;
     // put away with nothing in it, it isn't a draft: it goes, and the reply bar is back (plan 158)
-    if (!aiBadge && closesEmpty(d.key)) { void discard(true); return; }
+    // plan 163: read now (Esc's hook may just have ended a primed ⌘J, which leaves nothing to keep a blank draft for)
+    const badge = useAiDraftUi.getState().rows[d.key];
+    if ((!badge || badge === "primed") && closesEmpty(d.key)) { void discard(true); return; }
     const valid = collapseInlineDraft(d.key);
     if (!valid || !valid()) return;
     focusSoon("[data-testid=draft-collapsed]", rootRef.current, 12, () => true, valid, (cancel) => {

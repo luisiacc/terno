@@ -619,7 +619,8 @@ async function openLanding(mode: DraftMode, threadId: number | null, attempt: nu
   if (mode !== "new" && threadId !== null && pinnedFor(threadId, state.draftShown)) {
     finish();
     const pinned = pinnedKey();
-    if (options?.target !== "ai") focusPinned();
+    // plan 163: ⌘J's row has no field any more: the card's body takes the keys, as for r / a / f
+    focusPinned();
     if (pinned) land(cell, "pinned", pinned);
     return cell.landing;
   }
@@ -717,7 +718,7 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
   if (existing && !sameStoredDraft(existing)) return;
   // plan 115: a pinned draft is answered in its card, never opened (or converted) a second time
   if (existing && existing.key === pinnedKey()) {
-    if (cell.options?.target !== "ai") focusPinned();
+    focusPinned();
     land(cell, "pinned", existing.key);
     return;
   }

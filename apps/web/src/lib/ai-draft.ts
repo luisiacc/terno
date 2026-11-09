@@ -1,7 +1,9 @@
-import { formatAddressList, parseAddressList, WRITING_ONE_OFF_MAX, type AiComposeResult, type AiErrorKind, type PreparedReply, type AiIntentResult, type IntentPerson, type IntentQuestion } from "@terno/core";
+import { BODY_READ_MAX, bodyAction, FILL_GAPS_MAX, formatAddressList, parseAddressList, readBody, settleBody, WRITING_ONE_OFF_MAX, type BodyGap, type BodyVerdict, type AiComposeResult, type AiErrorKind, type PreparedReply, type AiIntentResult, type IntentPerson, type IntentQuestion } from "@terno/core";
 import { t } from "@terno/i18n";
 import { create } from "zustand";
 import { controllerFor, focusBody } from "~/components/composer/controller";
+import { docRange, textAt, type BodyText } from "~/components/composer/body-text";
+import { fromPlainText, toEmailHtml } from "@terno/richtext";
 import { aiErrorCopy, errorTarget } from "~/components/ai-error";
 import { client } from "~/rpc/connection";
 import { getApp, useApp } from "~/state/app";
@@ -23,8 +25,13 @@ import { registerUndo, snack } from "./snack";
  */
 
 export type AiPhase =
-  /** the field, waiting for words */
+  /**
+   * Plan 163: nothing running: ⌘J opened this composer for AI (the body says what to do here), or the row asks who it's
+   * for (`who`). There's no instruction field any more: what to write is typed in the body.
+   */
   | "input"
+  /** plan 163: the fast model is reading what was typed (only when local rules can't tell) */
+  | "reading"
   /** working out where it goes (§5) */
   | "resolving"
   /** §5.2's questions */
@@ -58,7 +65,36 @@ export interface AiBinding {
   who: string;
 }
 
-type RunKind = "draft" | "notes" | "refine";
+/**
+ * `draft`: over an empty body (or from an instruction nobody typed there: the Nudge); `notes`: the body expanded beside
+ * itself; `refine`: the strip's rewrites. Plan 163: `body`: the instruction typed in the body, which the draft replaces;
+ * `fill`: the gaps in the user's own email.
+ */
+type RunKind = "draft" | "notes" | "refine" | "body" | "fill";
+
+/** Plan 163: what a fill asks: the text as the editor's blocks read it, and its gaps there. */
+export interface FillSpec {
+  /** the fill plugin's run (composer/fills.ts) */
+  run: string;
+  text: string;
+  gaps: { from: number; to: number }[];
+  /** where they are in the document, for the plugin to map */
+  docGaps: { from: number; to: number }[];
+  /** what each gap said, for the popover */
+  words: string[];
+  /** Fill again: the document before the first fill, and the gaps' places in it: it's put back with the new fills */
+  base?: FillBase;
+}
+
+/** Plan 163: what Fill again starts from: the document before the first fill, its text, and the gaps in both. */
+export interface FillBase {
+  doc: unknown;
+  /** document positions */
+  gaps: { from: number; to: number }[];
+  text: string;
+  /** the same gaps in `text` */
+  textGaps: { from: number; to: number }[];
+}
 
 /** What a run was asked, so Try again asks the same. */
 export interface PreparedRef {
@@ -78,6 +114,8 @@ export interface RunSpec {
   regenerate?: boolean;
   /** plan 162 (after ai162-r02, Codex review): that fresh take is from an edited instruction, not Regenerate's same one */
   edited?: boolean;
+  /** plan 163 */
+  fill?: FillSpec;
 }
 
 interface Run {
@@ -115,13 +153,15 @@ export interface AiCommit {
   /** plan 162 (after ai162-r02): what made this version, so Undo can say what it takes back */
   how?: CommitHow;
   text: string;
+  /** plan 163: a fill: what Fill again starts from, what each gap said and what went in it */
+  fill?: { base: FillBase; words: string[]; fills: (string | null)[] };
 }
 
-export type CommitHow = "draft" | "regenerate" | "shorter" | "warmer" | "rewrite";
+export type CommitHow = "draft" | "regenerate" | "shorter" | "warmer" | "rewrite" | "fill";
 
 /** What a run made, from what it was asked: a first draft, a fresh take, or a rewrite of the text that was there. */
 export const commitHow = (spec: Pick<RunSpec, "kind" | "instruction" | "regenerate" | "edited">): CommitHow =>
-  spec.kind !== "refine" ? "draft" : spec.regenerate ? (spec.edited ? "rewrite" : "regenerate") : spec.instruction === SHORTER ? "shorter" : spec.instruction === WARMER ? "warmer" : "rewrite";
+  spec.kind === "fill" ? "fill" : spec.kind !== "refine" ? "draft" : spec.regenerate ? (spec.edited ? "rewrite" : "regenerate") : spec.instruction === SHORTER ? "shorter" : spec.instruction === WARMER ? "warmer" : "rewrite";
 
 export interface AiStrip {
   used: Extract<AiComposeResult, { status: "done" }>["used"];
@@ -138,6 +178,10 @@ export interface AiStrip {
   edited?: boolean;
   /** plan 161, pass 3: its last write is what came before Esc or Stop: "Stopped part-way", and its use isn't known */
   stopped?: boolean;
+  /** plan 163: the last write filled gaps: what each said and what went in (null or "": left as typed) */
+  fill?: { words: string[]; fills: (string | null)[] };
+  /** plan 163: the fast model couldn't say what the text was, so it was taken as the user's email */
+  readFailed?: boolean;
 }
 
 export interface AiChoice {
@@ -192,14 +236,21 @@ export interface AiSession {
   confirm: Replacement | null;
   /** plan 161, pass 2: the row's field holds the strip's own instruction, to write the draft again from new words */
   rewrite: boolean;
+  /**
+   * Plan 163: what this works from was typed in the body (an instruction, or the user's email with gaps): Send stops while
+   * it works, routing reads the recipients rather than whether the draft was written in, and it moves with the answer.
+   */
+  fromBody: boolean;
+  /** plan 163: the fast read in flight, to stop with the row */
+  reading: string | null;
+  /** plan 163: the fast read failed: what was typed was taken as the user's email */
+  readFailed: boolean;
 }
 
 /** What replaces an edited draft, built when it's answered, from the text as it is then. */
 export type Replacement = { how: "regenerate" | "shorter" | "warmer" } | { how: "refine" | "rewrite"; instruction: string } | { how: "retry"; spec: RunSpec };
 
 export const useAiDraft = create<{ sessions: Readonly<Record<string, AiSession>> }>(() => ({ sessions: {} }));
-
-const memory: { last: string } = { last: "" };
 
 // ── the stream's text: per draft, outside the store
 
@@ -258,13 +309,33 @@ function listen() {
     paint(stream);
     if (!s.run.streaming) update(key, { run: { ...s.run, streaming: true } });
   });
+  // plan 163: a gap's fill as it comes: in its place in the body (a decoration), or held for Fill again's one step
+  client.on("aiFill", ({ requestId, gap, text, done }) => {
+    const key = requests.get(requestId);
+    if (!key) return;
+    const s = useAiDraft.getState().sessions[key];
+    const f = s?.run?.requestId === requestId ? s.run.spec.fill : undefined;
+    if (!s?.run || !f) return;
+    let held = fillTexts.get(key);
+    if (!held) fillTexts.set(key, (held = new Map()));
+    held.set(gap, { text, done });
+    if (!f.base) controllerFor(key)?.streamFill(f.run, gap, text, done);
+    if (!s.run.streaming) update(key, { run: { ...s.run, streaming: true } });
+  });
 }
 
+/** Plan 163: each gap's fill as it came, by draft: what a stopped Fill again keeps, and what the status counts. */
+const fillTexts = new Map<string, Map<number, { text: string; done: boolean }>>();
+
 /** Where the preview stands, if it shows at all: over the empty body, over the text it will replace, or under what's there. */
-export function previewMode(s: AiSession | undefined): "overlay" | "rewriting" | "below" | null {
+export function previewMode(s: AiSession | undefined): "overlay" | "rewriting" | "replacing" | "below" | null {
   if (!s?.run) return null;
   const showing = s.phase === "writing" || s.phase === "waitingBody" || s.phase === "choice" || (s.phase === "error" && s.error?.partial === true);
   if (!showing) return null;
+  // plan 163: a fill shows in the gaps themselves; Fill again keeps the text, dimmed, until the new fills go in at once
+  if (s.run.spec.kind === "fill") return s.run.spec.fill?.base && s.phase !== "error" ? "rewriting" : null;
+  // plan 163: written from the instruction in the body: it dims, and the stream takes its place
+  if (s.run.spec.kind === "body") return s.run.typed || s.phase === "choice" || s.phase === "error" ? "below" : "replacing";
   if (s.run.typed || s.run.spec.kind === "notes" || s.phase === "choice") return "below";
   // plan 161, pass 2: a rewrite leaves the text it rewrites in place, dimmed, until the new one replaces it whole; what
   // came before a failure is offered under it
@@ -274,11 +345,14 @@ export function previewMode(s: AiSession | undefined): "overlay" | "rewriting" |
 
 // ── the store
 
-const BADGE: Partial<Record<AiPhase, AiDraftBadge>> = { writing: "writing", waitingBody: "writing", resolving: "writing", choice: "ready", held: "ready" };
+const BADGE: Partial<Record<AiPhase, AiDraftBadge>> = { writing: "writing", waitingBody: "writing", resolving: "writing", reading: "writing", choice: "ready", held: "ready" };
+
+/** Plan 163: opened for AI and nothing more: no work to come back to, nothing to keep a blank draft for */
+export const primed = (s: AiSession | undefined): boolean => !!s && s.phase === "input" && !s.who && !s.lookingUp && !s.strip;
 
 function publishBadges() {
   const rows: Record<string, AiDraftBadge> = {};
-  for (const [key, s] of Object.entries(useAiDraft.getState().sessions)) rows[key] = BADGE[s.phase] ?? "open";
+  for (const [key, s] of Object.entries(useAiDraft.getState().sessions)) rows[key] = primed(s) ? "primed" : (BADGE[s.phase] ?? "open");
   useAiDraftUi.setState({ rows });
 }
 
@@ -300,9 +374,12 @@ function remove(key: string, endCompose = true) {
   publishBadges();
   clearStream(key);
   streams.delete(key);
+  fillTexts.delete(key);
   stopWaiting(key);
   clearSlow(key);
   focusAnswered.delete(key);
+  // plan 163: what was filled stops being tinted with the strip
+  controllerFor(key)?.clearFilled();
   if (endCompose && s.lastSpec) void quietly(() => client.call("ai.composeEnd", { session: sessionId(key) }));
 }
 
@@ -317,7 +394,7 @@ async function quietly(call: () => Promise<unknown>): Promise<void> {
 }
 
 function newSession(key: string, o: { opened: boolean; phase: AiPhase }): AiSession {
-  return { key, phase: o.phase, instruction: "", focus: 1, opened: o.opened, who: false, question: null, fromAccountId: null, confirmFailed: false, lookingUp: false, intentRequest: null, everyone: 0, run: null, lastSpec: null, choice: null, held: null, error: null, strip: null, guard: null, live: "", confirm: null, rewrite: false };
+  return { key, phase: o.phase, instruction: "", focus: 1, opened: o.opened, who: false, question: null, fromAccountId: null, confirmFailed: false, lookingUp: false, intentRequest: null, everyone: 0, run: null, lastSpec: null, choice: null, held: null, error: null, strip: null, guard: null, live: "", confirm: null, rewrite: false, fromBody: false, reading: null, readFailed: false };
 }
 
 // ── the row opens
@@ -330,11 +407,6 @@ const threadInFront = (): number | null => {
   return listLayout() && currentPage() === "list" ? null : app.selectedId;
 };
 
-function rowFieldFocused(key: string): boolean {
-  const active = document.activeElement;
-  return active instanceof HTMLElement && active.dataset.testid === "ai-row-input" && draftKeyOf(active) === key;
-}
-
 function showRow(key: string, opened: boolean) {
   const s = session(key);
   if (!s) {
@@ -343,25 +415,36 @@ function showRow(key: string, opened: boolean) {
     publishBadges();
     return;
   }
-  // ⌘J again in the field: it closes, as it opened
-  if (s.phase === "input" && !s.strip && !s.instruction && rowFieldFocused(key)) return closeRow(key);
-  if (s.phase === "strip") return update(key, { phase: "input", instruction: "", focus: s.focus + 1, who: false, rewrite: false, confirm: null });
   update(key, { focus: s.focus + 1 });
 }
 
-/** ⌘J, the buttons and the palette: the row on the draft named, or the one in front of the user, or the draft §5.2 opens. */
-/** ⌘J, the Sparkles buttons and the palette: the row, on `key` if named, else on what's in front of the user (§5.3). */
+/**
+ * Plan 163: ⌘J, the Sparkles and the palette. In a draft, it acts on what's written there (`act`); anywhere else, it opens
+ * the draft §5.2 opens (a reply, a new message) with the caret in its body, ready for words.
+ */
 export function openAiDraft(o: { key?: string; threadId?: number } = {}): void {
   if (!canDraft()) return;
   const app = getApp();
   if (app.dialog !== null || app.menuOpen) return;
+  const key = o.key ?? draftKeyOf(document.activeElement) ?? app.compose?.key;
+  if (key && draftOf(key)) {
+    void act(key);
+    return;
+  }
   void openRow(o);
 }
 
-export async function openRow(o: { key?: string; threadId?: number; /** plan 162: the row opens holding this, only once it has really landed */ instruction?: string } = {}): Promise<void> {
+/**
+ * The draft opened for AI (plan 163: no row until there's work; the empty body says what to do). `instruction`: words to
+ * put in the body (a summary item's Reply), nothing run until ⌘J; only once it has really landed (plan 162).
+ */
+export async function openRow(o: { key?: string; threadId?: number; instruction?: string } = {}): Promise<void> {
   listen();
   const app = getApp();
-  const seed = (key: string) => { if (o.instruction) setInstruction(key, o.instruction); };
+  // the keys are the open's own business (the body, plan 163): this only puts words there
+  const seed = (key: string) => {
+    if (o.instruction) seedBody(key, o.instruction);
+  };
   const key = o.key ?? draftKeyOf(document.activeElement) ?? app.compose?.key;
   if (key) {
     showRow(key, false);
@@ -388,15 +471,16 @@ export function rowKeyOf(threadId: number): string | null {
   return shownDraftKey(useDrafts.getState().drafts, threadId, getApp().draftShown) ?? null;
 }
 
+/** An instruction nobody typed in the body (the Nudge's): `submit` writes from it over what's there. */
 export function setInstruction(key: string, instruction: string) {
-  update(key, { instruction: instruction.slice(0, WRITING_ONE_OFF_MAX), who: false });
+  update(key, { instruction: instruction.slice(0, WRITING_ONE_OFF_MAX), who: false, fromBody: false });
 }
 
-/** ↑ in an empty field. */
-export function recallInstruction(key: string): boolean {
-  if (!memory.last) return false;
-  update(key, { instruction: memory.last });
-  return true;
+/** Plan 163: words in an empty body, as if typed: a summary item's Reply. Never over what's there. */
+function seedBody(key: string, text: string) {
+  const c = controllerFor(key);
+  if (c ? !c.empty() : bodyNow(key).trim()) return;
+  editDraft(key, { bodyHtml: toEmailHtml(fromPlainText(text)), bodyText: text });
 }
 
 /** Back to the text, from the row or from nowhere: someone who moved on to To, or to the list, stays there. */
@@ -435,25 +519,155 @@ export function closeRow(key: string, o: { keepDraft?: boolean } = {}) {
   focusEditor(key);
 }
 
-function surfaceOf(d: LocalDraft) {
+// ── plan 163: ⌘J on what's written
+
+const WORKING: readonly AiPhase[] = ["reading", "resolving", "writing", "waitingBody"];
+/** the fast read gets at most this much: longer, a maybe-gap stays as typed */
+const READ_DRAFT_MAX = WRITING_ONE_OFF_MAX * 4;
+
+/** The model's own gaps in the strip's versions: facts only the user knows, never filled for them. */
+const modelGaps = (s: AiSession | undefined): Set<string> => new Set(s?.strip ? [...s.strip.checks.placeholders, ...s.strip.stack.flatMap((v) => v.checks.placeholders)] : []);
+
+/**
+ * Plan 163: ⌘J or the Sparkles in a draft. What's in the body decides (packages/core `readBody`): nothing is the one-tap
+ * draft; an instruction is written from, and the draft replaces it; the user's own email has its gaps filled, or is
+ * expanded beside itself. The fast model reads it only when the rules can't tell. Over a strip, untouched,
+ * it's Regenerate; typed in since, the gaps the user marked are filled, and anything else writes again (asking first).
+ */
+export async function act(key: string): Promise<void> {
+  listen();
+  const d = materialize(key);
+  if (!d) return;
+  let s = session(key);
+  if (s && WORKING.includes(s.phase)) return;
+  if (!draftingOffered(getApp())) {
+    if (!s) showRow(key, false);
+    return update(key, { phase: "noProvider" });
+  }
+  // the row is asking something: its own default answers it, as Return would
+  if (s && (s.phase === "question" || s.phase === "choice" || s.phase === "error" || s.phase === "noProvider" || s.phase === "held" || s.confirm || s.guard)) return update(key, { focus: s.focus + 1 });
+  // the row asks who it's for: ⌘J is its Write
+  if (s?.who) return submit(key);
+  const c = controllerFor(key);
+  if (!c) return;
+  const top = s?.strip?.stack[s.strip.stack.length - 1];
+  if (s?.strip && s.phase === "strip" && !s.strip.edited && top && c.docToken() === top.doc) return refine(key, "regenerate");
+  const b = c.bodyText(BODY_READ_MAX);
+  if (b.truncated) {
+    if (!s) showRow(key, false);
+    return update(key, { phase: "error", error: { message: t("errors.ai.draftTooLarge"), help: null, kind: "unsupported", retry: false, partial: false }, live: t("errors.ai.draftTooLarge") });
+  }
+  const read = readBody(b.text, { images: b.images });
+  // a gap is a place in the document (never across a break, an image, a block, never in a quote); never the model's own
+  const theirs = modelGaps(s);
+  const usable = (g: BodyGap) => !theirs.has(g.text) && docRange(b, g.from, g.to) !== null;
+  const gapsOk = read.gaps.filter(usable).slice(0, FILL_GAPS_MAX);
+  const maybeOk = read.maybe.filter(usable).slice(0, FILL_GAPS_MAX);
+  const found = { ...read, gaps: gapsOk, maybe: maybeOk };
+  // over a strip typed in since: what they marked is filled; anything else writes again, asking first
+  if (s?.strip && s.phase === "strip") {
+    if (found.gaps.length) return fillGaps(key, b, found.gaps);
+    return refine(key, "regenerate");
+  }
+  if (!s) {
+    showRow(key, false);
+    s = session(key)!;
+  }
+  const doc = c.docToken();
+  let action = bodyAction(found);
+  let gaps = found.gaps;
+  if (action === "ask") {
+    const verdict = await askRead(key, b.text, found.maybe);
+    if (verdict === "stopped") return;
+    // typed while it read: start over on what's there now (Codex review 4)
+    if (controllerFor(key)?.docToken() !== doc) {
+      update(key, { phase: "input" });
+      return act(key);
+    }
+    ({ action, gaps } = settleBody(found, verdict));
+  }
+  switch (action) {
+    case "write":
+      update(key, { instruction: b.text.trim(), fromBody: true, phase: "input" });
+      return submit(key);
+    case "fill":
+      return fillGaps(key, b, gaps);
+    case "oneTap":
+    case "expand":
+      // the one-tap draft over an empty body; the user's own email expanded beside it (plan 133's notes)
+      update(key, { instruction: "", fromBody: false, phase: "input" });
+      return submit(key);
+  }
+}
+
+/** The fast model's read: null when it can't be asked or can't say; "stopped" when Stop or Esc ended it. */
+async function askRead(key: string, text: string, maybe: readonly BodyGap[]): Promise<BodyVerdict | null | "stopped"> {
+  if (text.length > READ_DRAFT_MAX) return null;
+  const requestId = globalThis.crypto.randomUUID();
+  update(key, { phase: "reading", reading: requestId, readFailed: false, live: t("aiDraft.live.reading") });
+  try {
+    const r = await client.call("ai.readDraft", { requestId, text, maybe: maybe.map(({ from, to }) => ({ from, to })) });
+    if (session(key)?.reading !== requestId) return "stopped";
+    update(key, { reading: null });
+    return r;
+  } catch (error) {
+    if (session(key)?.reading !== requestId) return "stopped";
+    const e = error as { code?: string; details?: { aiErrorKind?: AiErrorKind } };
+    if (e.code === "CANCELLED" || e.details?.aiErrorKind === "cancelled") {
+      update(key, { phase: "input", reading: null });
+      return "stopped";
+    }
+    // it couldn't say: what they typed is taken as their email, and the strip says so
+    update(key, { reading: null, readFailed: true });
+    return null;
+  }
+}
+
+/** Plan 163: their gaps, filled where they are. */
+function fillGaps(key: string, b: BodyText, gaps: readonly BodyGap[]): void {
+  const docGaps = gaps.map((g) => docRange(b, g.from, g.to)!);
+  update(key, { fromBody: true });
+  startRun(key, { kind: "fill", instruction: "", fill: { run: globalThis.crypto.randomUUID(), text: b.text, gaps: gaps.map(({ from, to }) => ({ from, to })), docGaps, words: gaps.map((g) => g.text) } });
+}
+
+/** Fill again: the text as it was before the first fill, its gaps where they were; it's put back with new fills at once. */
+function refillSpec(top: AiCommit & { fill: NonNullable<AiCommit["fill"]> }): RunSpec | null {
+  const { base, words } = top.fill;
+  if (!base.textGaps.length) return null;
+  return { kind: "fill", instruction: "", fill: { run: globalThis.crypto.randomUUID(), text: base.text, gaps: base.textGaps, docGaps: [], words, base } };
+}
+
+/** Plan 163: To, Cc and Bcc are still only what Terno filled in. */
+function recipientsAuto(d: LocalDraft): boolean {
+  return (["to", "cc", "bcc"] as const).every((field) => {
+    const auto = d.auto[field].map((email) => email.toLowerCase());
+    return parseAddressList(d[`${field}Text`]).every((a) => auto.includes(a.email.toLowerCase()));
+  });
+}
+
+function surfaceOf(d: LocalDraft, fromBody = false) {
   const thread = threadOf(d);
-  // a reply Terno filled in isn't a choice of the user's: the conversation it's on is the surface
-  if ((d.mode === "reply" || d.mode === "replyAll") && thread !== null && !authored(d)) return { kind: "thread" as const, threadId: thread };
+  // a reply Terno filled in isn't a choice of the user's: the conversation it's on is the surface. Plan 163 (Codex review
+  // 3): with the instruction typed in the body the draft is "written in", so what decides is whether they chose anyone
+  const unchosen = !authored(d) || (fromBody && recipientsAuto(d));
+  if ((d.mode === "reply" || d.mode === "replyAll") && thread !== null && unchosen) return { kind: "thread" as const, threadId: thread };
   const recipients = validRecipients(d.toText);
-  if (d.mode === "new" && !recipients.length && !authored(d)) return { kind: "list" as const };
+  if (d.mode === "new" && !recipients.length && unchosen) return { kind: "list" as const };
   return { kind: "draft" as const, recipients };
 }
 
 const threadOf = (d: LocalDraft): number | null => draftPresentationThread(d) ?? d.threadId;
 
-/** The row's Enter. */
+/**
+ * Writes from `instruction` (an instruction typed in the body, plan 163, or one nobody typed: the Nudge's), or with none,
+ * the one-tap draft over an empty body or the body's words expanded beside them.
+ */
 export async function submit(key: string): Promise<void> {
   const s = session(key);
   const d = materialize(key);
   if (!s || !d) return;
   const instruction = s.instruction.trim();
   if (!draftingOffered(getApp())) return update(key, { phase: "noProvider" });
-  if (instruction) memory.last = instruction;
   update(key, { error: null, confirmFailed: false, question: null, who: false });
   // the strip's own instruction, edited: the draft written again from the new words (plan 161, pass 2)
   if (s.strip && s.rewrite) return replacing(key, { how: "rewrite", instruction });
@@ -467,6 +681,8 @@ export async function submit(key: string): Promise<void> {
 }
 
 function runFor(key: string, instruction: string): RunSpec {
+  // plan 163: the instruction is the body: the draft replaces it
+  if (instruction && session(key)?.fromBody) return { kind: "body", instruction };
   const notes = bodyNow(key);
   if (notes.trim()) return { kind: "notes", instruction, notes };
   // an image alone has no words for the model, but it's the user's: nothing goes over it without a choice
@@ -482,7 +698,7 @@ function askWho(key: string) {
 }
 
 async function resolve(key: string, instruction: string, d: LocalDraft) {
-  const surface = surfaceOf(d);
+  const surface = surfaceOf(d, session(key)?.fromBody === true);
   const requestId = globalThis.crypto.randomUUID();
   const asked = () => { const now = session(key); return now?.phase === "resolving" && now.intentRequest === requestId; };
   update(key, { phase: "resolving", lookingUp: false, intentRequest: requestId });
@@ -509,6 +725,12 @@ async function resolve(key: string, instruction: string, d: LocalDraft) {
   if (!current) return;
   update(key, { intentRequest: null, lookingUp: false, confirmFailed: result.confirmFailed, fromAccountId: result.fromAccountId });
   if (`${current.accountId}|${addresses(current.toText)}|${addresses(current.ccText)}` !== on) return resolve(key, instruction, current);
+  // plan 163 (Codex review 4): the instruction is the body: changed meanwhile, it starts over on what's there now
+  const s0 = session(key);
+  if (s0?.fromBody && bodyNow(key).trim() !== instruction) {
+    update(key, { phase: "input", intentRequest: null });
+    return void act(key);
+  }
   const { decision } = result;
   if (decision.kind === "ask") {
     if (decision.question.type === "who") return askWho(key);
@@ -561,12 +783,20 @@ export async function answer(key: string, choice: AiAnswer): Promise<void> {
   const s = session(key);
   const d = draftOf(key);
   if (!s?.question || !d || s.question.type === "who") return;
-  const { question, fromAccountId } = s;
+  const { question, fromAccountId, fromBody } = s;
   const instruction = s.instruction.trim();
   const to = question.to;
   const carry = (next: string) => {
-    useAiDraft.setState(({ sessions }) => ({ sessions: { ...sessions, [next]: { ...newSession(next, { opened: true, phase: "resolving" }), instruction, fromAccountId, confirmFailed: s.confirmFailed } } }));
+    useAiDraft.setState(({ sessions }) => ({ sessions: { ...sessions, [next]: { ...newSession(next, { opened: true, phase: "resolving" }), instruction, fromAccountId, confirmFailed: s.confirmFailed, fromBody } } }));
     publishBadges();
+  };
+  // plan 163 (Codex review 3): the instruction typed in the body goes with the answer into the draft it lands in, so its
+  // Undo gives it back there; the draft it was typed in goes if it held nothing else
+  const onlyInstruction = fromBody && bodyNow(key).trim() === instruction && !d.subjectEdited && !d.attachments?.length;
+  const moveTo = (next: string): RunSpec => {
+    if (!fromBody) return { kind: "draft", instruction };
+    seedBody(next, instruction);
+    return { kind: "body", instruction };
   };
   if (choice === "add") addRecipient(key, to);
   if (choice === "add" || choice === "justWrite") return startRun(key, runFor(key, instruction));
@@ -579,6 +809,10 @@ export async function answer(key: string, choice: AiAnswer): Promise<void> {
     if (landed.key !== key) {
       remove(key, false);
       carry(landed.key);
+      addRecipient(landed.key, to);
+      const spec = moveTo(landed.key);
+      if (onlyInstruction) forgetDraft(key);
+      return startRun(landed.key, spec);
     }
     addRecipient(landed.key, to);
     return startRun(landed.key, runFor(landed.key, instruction));
@@ -591,18 +825,18 @@ export async function answer(key: string, choice: AiAnswer): Promise<void> {
       return startRun(key, runFor(key, instruction));
     }
     const prefill = () => ({ toText: formatAddressList([{ name: to.name, email: to.address }]), auto: NO_AUTO });
-    const wasEmpty = !authored(d);
+    const wasEmpty = !authored(d) || onlyInstruction;
     remove(key, false);
     const landed = await composeLanding("new", null, 0, prefill, fromAccountId ?? d.accountId, { target: "ai", onLanded: (l) => carry(l.key) });
     if (landed.kind === "none") return;
     if (wasEmpty) forgetDraft(key);
-    return startRun(landed.key, { kind: "draft", instruction });
+    return startRun(landed.key, moveTo(landed.key));
   }
   // Reply on the recent thread
   if (question.type !== "new-or-reply") return;
   const threadId = question.thread.threadId;
   remove(key, false);
-  if (d.mode === "new" && !authored(d)) {
+  if (d.mode === "new" && (!authored(d) || onlyInstruction)) {
     if (getApp().compose?.key === key) leaveNewDraft();
     else forgetDraft(key);
   }
@@ -610,7 +844,7 @@ export async function answer(key: string, choice: AiAnswer): Promise<void> {
   const landed = await composeLanding("reply", threadId, 0, undefined, undefined, { target: "ai", onLanded: (l) => carry(l.key) });
   if (landed.kind === "none") return;
   await addressReply(landed.key, threadId, to);
-  return startRun(landed.key, runFor(landed.key, instruction));
+  return startRun(landed.key, fromBody ? moveTo(landed.key) : runFor(landed.key, instruction));
 }
 
 // ── a run
@@ -685,6 +919,9 @@ function startRun(key: string, spec: RunSpec): void {
     run: { requestId, spec, binding, needsSubject, streaming: false, slow: false, typed: false, moved: false, ...(prior ? { prior } : {}) },
   });
   controllerFor(key)?.dismissGhost();
+  // plan 163: a fill's gaps, from now on mapped in the editor and showing their fills
+  fillTexts.delete(key);
+  if (spec.kind === "fill" && spec.fill && !spec.fill.base) controllerFor(key)?.startFill(spec.fill.run, spec.fill.docGaps);
   focusEditor(key);
   clearSlow(key);
   slowTimers.set(key, setTimeout(() => {
@@ -704,10 +941,11 @@ function startRun(key: string, spec: RunSpec): void {
     to,
     cc,
     subject: d.subject,
-    needsSubject,
+    needsSubject: spec.kind === "fill" ? false : needsSubject,
     instruction: spec.instruction,
     ...(spec.notes?.trim() ? { draft: spec.notes } : {}),
     ...(spec.previous !== undefined ? { previousDraft: spec.previous } : {}),
+    ...(spec.fill ? { fill: { text: spec.fill.text, gaps: spec.fill.gaps } } : {}),
     attachments: (d.attachments ?? []).map((a) => a.filename),
     timezone: timezone(),
   }).then(
@@ -737,12 +975,24 @@ function finished(key: string, result: AiComposeResult) {
   if (stream.frame) cancelAnimationFrame(stream.frame);
   stream.frame = 0;
   for (const l of stream.listeners) l();
+  // plan 163: fills go into their gaps, whatever was typed elsewhere meanwhile; moved recipients apply nothing on their own
+  if (run.spec.kind === "fill") {
+    if (fieldsMoved(run.binding, d)) return fillLost(key, run);
+    commit(key, "replace", result, run.spec, run.prior, false);
+    const at = document.activeElement;
+    if (!at || at === document.body) focusEditor(key);
+    return;
+  }
   if (!result.text.trim()) return failed(key, { message: t("errors.ai.draftFailed") });
   const moved = fieldsMoved(run.binding, d);
-  const unchanged = bodyNow(key) === run.binding.text;
+  // plan 163 (Codex review 4): the instruction in the body is compared as a document: a change of formatting counts
+  const c0 = controllerFor(key);
+  const unchanged = run.spec.kind === "body" && c0 && run.binding.doc !== null ? c0.docToken() === run.binding.doc : bodyNow(key) === run.binding.text;
   if (run.spec.kind === "notes" || moved || !unchanged) {
     const writtenFor = moved && run.binding.to !== addresses(d.toText) ? run.binding.who || null : null;
-    update(key, { phase: "choice", choice: { reason: run.spec.kind === "notes" && unchanged && !moved ? "notes" : "typed", writtenFor, result }, live: t("aiDraft.live.ready", { count: wordCount(result.text) }), run: { ...run, typed: true } });
+    // over an instruction typed into since, Replace is offered too: it's the instruction's place
+    const reason = (run.spec.kind === "notes" && unchanged && !moved) || run.spec.kind === "body" ? "notes" : "typed";
+    update(key, { phase: "choice", choice: { reason, writtenFor, result }, live: t("aiDraft.live.ready", { count: wordCount(result.text) }), run: { ...run, typed: true } });
     return;
   }
   // the draft can't change right now (the mailbox is handing over): it waits for a choice, never lost
@@ -753,10 +1003,21 @@ function finished(key: string, result: AiComposeResult) {
   if (!at || at === document.body) focusEditor(key);
 }
 
+/** Plan 163: a fill that can't go in as asked (the editor was rebuilt, or who it's for moved): nothing changes. */
+function fillLost(key: string, run: Run) {
+  if (run.spec.fill) controllerFor(key)?.endFill(run.spec.fill.run);
+  clearStream(key);
+  fillTexts.delete(key);
+  update(key, { phase: "error", error: { message: t("aiDraft.fill.changed"), help: null, kind: "other", retry: true, partial: false }, live: t("aiDraft.fill.changed"), run: null, strip: run.prior ?? null });
+}
+
 function failed(key: string, error: unknown) {
   const s = session(key);
   if (!s) return;
   clearSlow(key);
+  // a fill applies nothing on a failure: its gaps go back to being gaps
+  if (s.run?.spec.fill && !s.run.spec.fill.base) controllerFor(key)?.endFill(s.run.spec.fill.run);
+  fillTexts.delete(key);
   const e = (error ?? {}) as { code?: string; message?: string; details?: { aiErrorKind?: AiErrorKind }; i18n?: { key: string; params?: Readonly<Record<string, string | number>> } };
   const kind = e.details?.aiErrorKind;
   const prior = s.run?.prior ?? null;
@@ -829,6 +1090,16 @@ export function stop(key: string) {
   stopWaiting(key);
   const prior = s.run?.prior;
   const c = controllerFor(key);
+  const fill = s.run?.spec.kind === "fill" ? s.run.spec.fill : undefined;
+  // plan 163: a first fill stopped: the gaps whose fill had finished are filled, the rest stay as typed
+  if (fill && !fill.base && c && s.phase === "writing") {
+    const done = c.fillsSoFar(fill.run);
+    if (done.some(Boolean)) {
+      const result: Extract<AiComposeResult, { status: "done" }> = { status: "done", text: "", subject: null, stop: "end", used: emptyUsed(), checks: { specifics: [], placeholders: [] }, fills: done };
+      if (commit(key, "replace", result, s.run!.spec, prior, false, { stopped: true })) return focusEditor(key);
+    }
+    c.endFill(fill.run);
+  }
   if (prior && priorStands(prior, s.run, c)) {
     clearStream(key);
     update(key, { phase: "strip", strip: prior, run: null, choice: null, error: null, guard: null, live: "" });
@@ -837,16 +1108,15 @@ export function stop(key: string) {
   const spec = s.run?.spec;
   const text = previewText(key).trim();
   // a rewrite keeps the text it rewrites where it is, and its own words aren't a draft: only a first write's are kept
-  if (spec && spec.kind !== "refine" && text && c && s.phase === "writing") {
-    // below the user's notes (or an image) as Insert puts what came before a failure; over an empty body, the draft
+  if (spec && spec.kind !== "refine" && spec.kind !== "fill" && text && c && s.phase === "writing") {
+    // over the instruction it was written from, or an empty body; below the user's notes (or an image) as Insert puts
+    // what came before a failure
     const result: Extract<AiComposeResult, { status: "done" }> = { status: "done", text, subject: null, stop: "end", used: emptyUsed(), checks: { specifics: [], placeholders: [] } };
-    if (commit(key, c.empty() ? "replace" : "below", result, spec, undefined, false, { stopped: true })) return focusEditor(key);
+    if (commit(key, spec.kind === "body" || c.empty() ? "replace" : "below", result, spec, undefined, false, { stopped: true })) return focusEditor(key);
   }
   clearStream(key);
-  if (spec && spec.kind !== "refine") {
-    update(key, { phase: "input", instruction: spec.instruction, run: null, choice: null, error: null, guard: null, strip: null, rewrite: false, live: spec.instruction ? t("aiDraft.live.stoppedEmpty") : "", focus: s.focus + 1 });
-    return;
-  }
+  // plan 163: nothing came: the body is as it was, the instruction still in it (it never left)
+  if (spec && spec.kind !== "refine") update(key, { live: spec.instruction ? t("aiDraft.live.stoppedEmpty") : "" });
   remove(key);
   focusEditor(key);
 }
@@ -856,6 +1126,9 @@ function cancel(s: AiSession) {
   if (requestId && requests.delete(requestId)) void quietly(() => client.call("ai.cancel", { requestId }));
   const intent = s.intentRequest;
   if (intent) void quietly(() => client.call("ai.cancel", { requestId: intent }));
+  // plan 163: the fast read, too
+  const reading = s.reading;
+  if (reading) void quietly(() => client.call("ai.cancel", { requestId: reading }));
   clearSlow(s.key);
 }
 
@@ -868,6 +1141,7 @@ function commit(key: string, how: "replace" | "below", result: Extract<AiCompose
     update(key, { phase: "held", held: { how, result, spec, prior, needsSubject }, run: null, live: "" });
     return true;
   }
+  if (spec.kind === "fill" && spec.fill) return commitFills(key, c, result, spec.fill, prior, o);
   const before = c.snapshot();
   const inserted = c.insertGenerated(result.text, how, result.checks.placeholders[0], result.checks.placeholders);
   if (!inserted) {
@@ -888,14 +1162,51 @@ function commit(key: string, how: "replace" | "below", result: Extract<AiCompose
   // what the draft holds now, as a send will compare it: a replace is all of the text, an insert only what it wrote
   recordProvenance(key, how === "replace" ? c.snapshot().text : result.text);
   clearStream(key);
-  const strip: AiStrip = { used: result.used, checks: result.checks, cutOff: result.stop === "length", oneTap: refined ? prior.oneTap : !spec.instruction && spec.kind === "draft", instruction, ...(spec.prepared ?? prior?.prepared ? { prepared: (spec.prepared ?? prior?.prepared)! } : {}), ...(notes !== undefined ? { notes } : {}), ...(o.stopped ? { stopped: true } : {}), stack };
+  const strip: AiStrip = { used: result.used, checks: result.checks, cutOff: result.stop === "length", oneTap: refined ? prior.oneTap : !spec.instruction && spec.kind === "draft", ...(session(key)?.readFailed && !refined ? { readFailed: true } : {}), instruction, ...(spec.prepared ?? prior?.prepared ? { prepared: (spec.prepared ?? prior?.prepared)! } : {}), ...(notes !== undefined ? { notes } : {}), ...(o.stopped ? { stopped: true } : {}), stack };
   update(key, { phase: "strip", strip, run: null, choice: null, held: null, error: null, guard: null, instruction: "", live: o.stopped ? t("aiDraft.live.stopped") : t("aiDraft.live.ready", { count: wordCount(result.text) }) });
   return true;
 }
 
-/** What going back to a version brings with it: its checks, and what it was asked (plan 161, pass 2). */
-function versionOf(v: AiCommit): Pick<AiStrip, "checks" | "stopped"> & Partial<Pick<AiStrip, "instruction" | "notes">> {
-  return { checks: v.checks, stopped: v.stopped === true, ...(v.instruction !== undefined ? { instruction: v.instruction } : {}), ...(v.notes !== undefined ? { notes: v.notes } : {}) };
+/**
+ * Plan 163: a fill goes in: every gap nobody touched gets its finished fill, as one undo step (Fill again: the text as it
+ * was before the first fill, filled anew). Nothing filled, nothing changes; the editor rebuilt without the fill, the row
+ * says the draft changed.
+ */
+function commitFills(key: string, c: NonNullable<ReturnType<typeof controllerFor>>, result: Extract<AiComposeResult, { status: "done" }>, f: FillSpec, prior: AiStrip | undefined, o: { stopped?: boolean }): boolean {
+  const fills = result.fills ?? [];
+  // the text as it is just before (typed into meanwhile, it isn't what was sent): Fill again asks from this
+  const pre = f.base ? null : c.bodyText(BODY_READ_MAX);
+  const out = f.base ? c.refill(f.base.doc, f.base.gaps, fills) : c.commitFill(f.run, fills, { onlyDone: o.stopped === true });
+  clearStream(key);
+  fillTexts.delete(key);
+  if (!out) {
+    if (!f.base) c.endFill(f.run);
+    update(key, { phase: "error", error: { message: t("aiDraft.fill.changed"), help: null, kind: "other", retry: true, partial: false }, live: t("aiDraft.fill.changed"), run: null, strip: prior ?? null });
+    return true;
+  }
+  if (!out.applied) {
+    // the conversation didn't hold what any gap asks: they stay as typed, marked, and nothing is a version
+    update(key, { phase: "error", error: { message: t("aiDraft.fill.none"), help: null, kind: "other", retry: false, partial: false }, live: t("aiDraft.fill.none"), run: null, strip: prior ?? null });
+    return true;
+  }
+  const docGaps = "gaps" in out ? (out.gaps as { from: number; to: number }[]) : [];
+  const textGaps = pre ? docGaps.map((g) => ({ from: textAt(pre, g.from), to: textAt(pre, g.to) })) : [];
+  const base: FillBase = f.base ?? { doc: out.before, gaps: docGaps, text: pre?.text ?? "", textGaps: textGaps.every((g) => g.from !== null && g.to !== null) ? (textGaps as { from: number; to: number }[]) : [] };
+  const checks = { specifics: result.checks.specifics, placeholders: out.left };
+  const instruction = prior?.instruction ?? "";
+  const text = c.snapshot().text;
+  const entry: AiCommit = { doc: out.doc, subject: null, before: { html: "", text: "" }, beforeDoc: out.before, checks, text, instruction, how: "fill", fill: { base, words: f.words, fills }, ...(prior?.notes !== undefined ? { notes: prior.notes } : {}), ...(o.stopped ? { stopped: true } : {}) };
+  restores.delete(key);
+  recordProvenance(key, text);
+  const s = session(key);
+  const strip: AiStrip = { used: result.used, checks, cutOff: result.stop === "length", oneTap: false, instruction, ...(prior?.notes !== undefined ? { notes: prior.notes } : {}), ...(prior?.prepared ? { prepared: prior.prepared } : {}), ...(o.stopped ? { stopped: true } : {}), fill: { words: f.words, fills }, ...(s?.readFailed ? { readFailed: true } : {}), stack: [...(prior?.stack ?? []), entry] };
+  update(key, { phase: "strip", strip, run: null, choice: null, held: null, error: null, guard: null, instruction: "", live: o.stopped ? t("aiDraft.live.stopped") : t("aiDraft.live.filled", { count: out.applied }) });
+  return true;
+}
+
+/** What going back to a version brings with it: its checks, and what it was asked (plan 161, pass 2); plan 163: its fills. */
+function versionOf(v: AiCommit): Pick<AiStrip, "checks" | "stopped" | "fill"> & Partial<Pick<AiStrip, "instruction" | "notes">> {
+  return { checks: v.checks, stopped: v.stopped === true, fill: v.fill ? { words: v.fill.words, fills: v.fill.fills } : undefined, ...(v.instruction !== undefined ? { instruction: v.instruction } : {}), ...(v.notes !== undefined ? { notes: v.notes } : {}) };
 }
 
 /** Replace, Insert below, Insert: the suggestion goes in, one undo step. */
@@ -982,11 +1293,20 @@ export const SHORTER = "Shorter. Keep every fact and commitment.";
 export const WARMER = "Warmer, the way this person would be. Keep every fact and commitment.";
 
 export function refine(key: string, how: "regenerate" | "shorter" | "warmer") {
+  // plan 163: a fill's only rewrite is Fill again: Shorter or Warmer would rewrite the user's own words
+  const top = session(key)?.strip?.stack.at(-1);
+  if (top?.fill && how !== "regenerate") return;
   replacing(key, { how });
 }
 
 /** What a replacement asks, from the strip and the text as they are now. */
 function specOf(strip: AiStrip, r: Replacement, key: string): RunSpec {
+  // plan 163: Regenerate on a fill is Fill again, from the text as it was before the first fill
+  const top = strip.stack[strip.stack.length - 1];
+  if (r.how === "regenerate" && top?.fill) {
+    const again = refillSpec(top as AiCommit & { fill: NonNullable<AiCommit["fill"]> });
+    if (again) return again;
+  }
   switch (r.how) {
     case "regenerate":
     case "rewrite": {
@@ -1034,11 +1354,16 @@ export function keepEdits(key: string): void {
   focusEditor(key);
 }
 
-/** The strip's instruction, to write the draft again from new words: the row's field, holding it. */
-export function editInstruction(key: string): void {
+/**
+ * Plan 163: the strip's instruction, changed in its popover (the pencil): the draft written again from the new words, as
+ * plan 162's rewrite, asking first over an edit.
+ */
+export function rewriteFrom(key: string, instruction: string): void {
   const s = session(key);
-  if (!s?.strip) return;
-  update(key, { phase: "input", instruction: s.strip.instruction, rewrite: true, confirm: null, who: false, focus: s.focus + 1 });
+  const words = instruction.trim().slice(0, WRITING_ONE_OFF_MAX);
+  if (!s?.strip || !words) return;
+  if (words === s.strip.instruction) return refine(key, "regenerate");
+  replacing(key, { how: "rewrite", instruction: words });
 }
 
 const undoing: { key: string | null } = { key: null };
@@ -1063,7 +1388,11 @@ export function undoCommit(key: string) {
       remove(key);
       return focusEditor(key);
     }
-    editDraft(key, { bodyHtml: top.before.html, bodyText: top.before.text });
+    // plan 163 (Codex review 9): the document itself, images and all; its text only where there's no editor
+    undoing.key = key;
+    const back = c?.restoreGenerated(top.beforeDoc) ?? null;
+    undoing.key = null;
+    if (!back) editDraft(key, { bodyHtml: top.before.html, bodyText: top.before.text });
   }
   const d = draftOf(key);
   if (top.subject !== null && d?.subject === top.subject) editDraft(key, { subject: "", subjectEdited: false });
@@ -1075,16 +1404,8 @@ export function undoCommit(key: string) {
     recordProvenance(key, bodyNow(key));
     return focusEditor(key);
   }
-  // plan 161, pass 3: a stopped write taken back gives the field its instruction again (it's the user's too), for Return.
-  // Plan 162 (after ai162-r02): so does the first draft taken back: the row stays with what was asked, ready to change or
-  // ask again (it went, row and words, and the words had to be typed again)
-  if (!preparedDrafts.has(key)) {
-    update(key, { phase: "input", instruction: s.strip.instruction, strip: null, rewrite: false, live: "", focus: s.focus + 1 });
-    // a reply this ⌘J opened, with nothing left in it: no blank draft stays in the list (the composer and the row stay)
-    const left = draftOf(key);
-    if (s.opened && left && !bodyNow(key).trim() && !left.attachments?.length) void Promise.resolve(provenance.get(key)?.run).finally(() => unsaveDraft(key));
-    return;
-  }
+  // plan 163: the first write taken back leaves the body as it was before it: the instruction typed there, as typed, ready
+  // to change and ⌘J again; no row (it had a field for that, and the words had to be typed twice)
   remove(key);
   if (preparedDrafts.has(key)) return backToNothing(key);
   focusEditor(key);
@@ -1121,9 +1442,8 @@ function undoEdited(key: string, s: AiSession & { strip: AiStrip }, top: AiCommi
     update(key, { strip: left });
     recordProvenance(key, bodyNow(key));
   } else if (!preparedDrafts.has(key)) {
-    // plan 161, pass 3: a stopped write gives the field its instruction back, as its unedited Undo does. Plan 162 (after
-    // ai162-r02, Codex review): so does any first write taken back after an edit, the keys in the field with it
-    update(key, { phase: "input", instruction: was.instruction, strip: null, rewrite: false, live: "", focus: s.focus + 1 });
+    // plan 163: the body is back as it was before the first write, the instruction in it
+    remove(key);
   } else {
     remove(key);
     // the draft stays, even blank: what was typed is one Undo away (the unedited Undo forgets a blank one)
@@ -1150,8 +1470,6 @@ function retake(key: string, r: Restore): void {
   r.back = false;
   if (r.subject !== null && draftOf(key)?.subject === r.subject) editDraft(key, { subject: "", subjectEdited: false });
   if (r.left) update(key, { phase: "strip", strip: r.left });
-  // plan 161, pass 3: a stopped write's Undo, again: the field with its instruction, as the first time
-  else if (r.strip.stopped) update(key, { phase: "input", instruction: r.strip.instruction, strip: null, rewrite: false });
   else remove(key);
   recordProvenance(key, bodyNow(key));
 }
@@ -1178,9 +1496,8 @@ function stillOurs(key: string, r: Restore): boolean {
   const s = session(key);
   if (restores.get(key) !== r) return false;
   const shown = r.back ? r.strip : r.left;
-  // plan 161, pass 3: a stopped write's Undo leaves the field with its instruction, not nothing (Codex review)
-  // and only while the field holds what the Undo left there: a new instruction is newer work (second review)
-  if (s && shown === null) return s.phase === "input" && !s.run && s.strip === null && s.instruction === r.strip.instruction;
+  // plan 163: an Undo that left no strip left no session: one there now is newer work
+  if (s && shown === null) return primed(s);
   return s ? s.phase === "strip" && !s.run && s.strip === shown : shown === null;
 }
 
@@ -1320,8 +1637,13 @@ export function noteBody(key: string) {
 
 // ── send guard, Esc
 
-const UNDECIDED: readonly AiPhase[] = ["writing", "waitingBody", "choice", "held"];
-const undecided = (s: AiSession) => UNDECIDED.includes(s.phase) || (s.phase === "error" && s.error?.partial === true);
+const UNDECIDED: readonly AiPhase[] = ["writing", "waitingBody", "choice", "held", "reading"];
+/**
+ * Plan 163 (Codex review 6): with what it works from typed in the body, Send before it's done would mail the instruction
+ * itself: working out who it's for, a question and the row asking who all stop it too.
+ */
+const undecided = (s: AiSession) =>
+  UNDECIDED.includes(s.phase) || (s.phase === "error" && s.error?.partial === true) || (s.fromBody && (s.phase === "resolving" || s.phase === "question" || (s.phase === "input" && s.who)));
 
 aiDraftHooks.blocksSend = (key, sendAt) => {
   const s = session(key);
@@ -1362,10 +1684,10 @@ export function takeFocusRequest(key: string, seq: number): boolean {
   return true;
 }
 
-aiDraftHooks.working = (key) => session(key) !== undefined;
+aiDraftHooks.working = (key) => session(key) !== undefined && !primed(session(key));
 aiDraftHooks.busy = (key) => {
   const s = session(key);
-  return !!s && (s.phase === "writing" || s.phase === "waitingBody" || s.phase === "choice" || s.phase === "resolving");
+  return !!s && (s.phase === "writing" || s.phase === "waitingBody" || s.phase === "choice" || s.phase === "resolving" || s.phase === "reading");
 };
 
 aiDraftHooks.escape = (key) => {
@@ -1379,7 +1701,13 @@ aiDraftHooks.escape = (key) => {
     keepEdits(key);
     return true;
   }
+  // plan 163: opened for AI and nothing more: the form's Esc, as if it hadn't been (an empty reply closes)
+  if (primed(s)) {
+    remove(key);
+    return false;
+  }
   switch (s.phase) {
+    case "reading":
     case "writing":
     case "waitingBody":
       stop(key);
@@ -1426,6 +1754,11 @@ export function discardAndSend(key: string) {
 /** Try again: what it was asked, with no automatic retry. */
 export function retry(key: string) {
   const s = session(key);
+  // plan 163: a first fill asks again of the body as it is now (its gaps may have moved)
+  if (s?.lastSpec?.kind === "fill" && !s.lastSpec.fill?.base) {
+    update(key, { phase: s.strip ? "strip" : "input", error: null });
+    return void act(key);
+  }
   // a rewrite that failed, over text typed in since: Try again asks first, as the rewrite did (Codex review). A failure
   // part-way keeps its strip in the run (what came is offered with Insert); Try again sets that aside and asks the same
   if (s?.lastSpec?.kind === "refine") {
