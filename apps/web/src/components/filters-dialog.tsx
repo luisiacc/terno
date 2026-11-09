@@ -822,7 +822,7 @@ export function FiltersDialog() {
 
             {/* plan 162 (after ai162-r05): while the AI writes the rule, its fields wait, dimmed and out of reach: the
                 defaults under it read as the rule being proposed */}
-            <div inert={generating} aria-busy={generating || undefined} data-testid="filter-fields" className={cn("space-y-4 transition-opacity duration-fast", generating && "opacity-50")}>
+            <div inert={generating} aria-busy={generating || undefined} data-testid="filter-fields" className="space-y-4 transition-opacity duration-fast aria-busy:opacity-50">
               {/* pass 3: the name's label beside its field, a line less above the matches */}
               <div className="flex items-center gap-3">
                 <label className="shrink-0 text-xs font-medium text-muted-foreground" htmlFor="filter-name">

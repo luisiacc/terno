@@ -156,7 +156,7 @@ export function SendOrWrite({ d, onSend, className }: { d: LocalDraft; onSend: (
       <Tooltip>
         <TooltipTrigger
           render={
-            <Button ref={sendRef} type="button" variant="outline" size="icon-sm" aria-label={t("common.send")} aria-disabled aria-describedby={offId} data-testid="compose-send" data-note onClick={(e) => e.preventDefault()} className="text-muted-foreground opacity-60 hover:bg-transparent aria-disabled:cursor-default" />
+            <Button ref={sendRef} type="button" variant="outline" size="icon-sm" aria-label={t("common.send")} aria-disabled aria-describedby={offId} data-testid="compose-send" data-note onClick={(e) => e.preventDefault()} className="text-muted-foreground hover:bg-transparent aria-disabled:cursor-default aria-disabled:opacity-60" />
           }
         >
           <Send />

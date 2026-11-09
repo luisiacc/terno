@@ -115,7 +115,7 @@ export function TodayDigestEntry({ inline }: { /** List's full-width title row: 
       <span className="sr-only">{t("today.newsletters")}, </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate type-row-from font-medium" data-testid="digest-row-title">{digestLabel(digest)}</span>
-        {!inline && from && <span className={cn("block truncate text-xs", selected ? "opacity-80" : "text-muted-foreground")} data-testid="digest-row-from">{from}</span>}
+        {!inline && from && <span className={cn("block truncate text-xs", !selected && "text-muted-foreground")} data-testid="digest-row-from">{from}</span>}
       </span>
       <ChevronRight aria-hidden className={cn("size-4 shrink-0", !selected && "text-muted-foreground")} />
     </button>
