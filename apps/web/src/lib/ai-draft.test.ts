@@ -1900,6 +1900,39 @@ describe("plan 163: what the Codex review of the code found", () => {
     expect(c.text).toBe("Hi Arjun, the 19th is fine.");
   });
 
+  it("answers 5: a read that answered while the message's text downloaded decides for the run started after it", async () => {
+    const { key, c } = reply(UNSURE_TEXT);
+    void store.act(key);
+    await tick();
+    const read = last("ai.readDraft");
+    last("ai.compose").resolve({ status: "waitingBody", messageId: 3 });
+    await tick();
+    read.resolve({ kind: "instruction", gaps: [] });
+    await tick();
+    for (const l of threads.listeners) l({ details: new Map([[7, { messages: [{ id: 3, bodyState: "full" }] }]]) });
+    await tick();
+    last("ai.compose").resolve(done("Hi Arjun, the 19th is fine."));
+    await tick();
+    expect(c.text).toBe("Hi Arjun, the 19th is fine.");
+  });
+
+  it("answers 6: words typed while the message's text downloaded are never replaced on the strength of the earlier read", async () => {
+    const { key, c } = reply(UNSURE_TEXT);
+    void store.act(key);
+    await tick();
+    last("ai.readDraft").resolve({ kind: "instruction", gaps: [] });
+    await tick();
+    last("ai.compose").resolve({ status: "waitingBody", messageId: 3 });
+    await tick();
+    c.type(" Thanks!");
+    for (const l of threads.listeners) l({ details: new Map([[7, { messages: [{ id: 3, bodyState: "full" }] }]]) });
+    await tick();
+    last("ai.compose").resolve(done("Hi Arjun, the 19th is fine."));
+    await tick();
+    expect(c.text).toBe(`${UNSURE_TEXT} Thanks!`);
+    expect(session(key)!.phase).toBe("choice");
+  });
+
   it("answers 4: stopped after the read called it an instruction, what came takes its place, never beside it", async () => {
     const { key, c } = reply(UNSURE_TEXT);
     void store.act(key);

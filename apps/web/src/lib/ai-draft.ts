@@ -1085,7 +1085,8 @@ function finished(key: string, result: AiComposeResult) {
   // plan 163 (Codex review 4): the instruction in the body is compared as a document: a change of formatting counts
   const c0 = controllerFor(key);
   // (bound before its editor existed, as in a draft an answer opened: the words, as the editor reads them now)
-  const unchanged = (run.spec.kind === "body" || asInstruction) && c0 && run.binding.doc !== null ? c0.docToken() === run.binding.doc : bodyNow(key).trim() === run.binding.text.trim();
+  // (the read's instruction is the text it judged: a run started again binds later words, which it never saw)
+  const unchanged = asInstruction ? c0?.docToken() === run.read!.doc : run.spec.kind === "body" && c0 && run.binding.doc !== null ? c0.docToken() === run.binding.doc : bodyNow(key).trim() === run.binding.text.trim();
   if ((run.spec.kind === "notes" && !asInstruction) || moved || !unchanged) {
     const writtenFor = moved && run.binding.to !== addresses(d.toText) ? run.binding.who || null : null;
     update(key, { phase: "choice", choice: { reason: run.spec.kind === "notes" && unchanged && !moved ? "notes" : "typed", writtenFor, result }, live: t("aiDraft.live.ready", { count: wordCount(result.text) }), run: { ...run, typed: true } });
@@ -1166,8 +1167,9 @@ function waitForBody(key: string, messageId: number) {
       update(key, { phase: s.strip ? "strip" : "input", run: null });
       return void act(key);
     }
-    // the owner's answers (Codex review 3): the read, asked or answered, goes with the run started again
-    const read = s.run?.read;
+    // the owner's answers (Codex review 3): the read, asked or answered, goes with the run started again, as it stands
+    // now (it may have answered while the text downloaded)
+    const read = session(key)?.run?.read;
     startRun(key, spec);
     const again = session(key)?.run;
     if (read && again) update(key, { run: { ...again, read: { ...read, held: undefined } } });
@@ -1228,7 +1230,7 @@ export function stop(key: string) {
     const result: Extract<AiComposeResult, { status: "done" }> = { status: "done", text, subject: null, stop: "end", used: emptyUsed(), checks: { specifics: [], placeholders: [] } };
     // Codex review 5: an instruction typed over while it wrote is theirs now: what came goes below it, never over it
     const run = s.run!;
-    const over = spec.kind === "body" ? (run.binding.doc !== null ? c.docToken() === run.binding.doc : typedNow(key) === run.binding.text.trim()) : c.empty();
+    const over = read?.state === "instruction" ? c.docToken() === read.doc : spec.kind === "body" ? (run.binding.doc !== null ? c.docToken() === run.binding.doc : typedNow(key) === run.binding.text.trim()) : c.empty();
     if (commit(key, over ? "replace" : "below", result, spec, undefined, false, { stopped: true })) return focusEditor(key);
   }
   clearStream(key);
