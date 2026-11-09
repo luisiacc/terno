@@ -11,6 +11,7 @@ import {
   languageName,
   NOT_NEWSLETTER_NAME_MAX,
   NOT_NEWSLETTERS_MAX,
+  NOT_NEWSLETTERS_OVER,
   todayKey,
   nextPrepareAt,
   prepareTimeToday,
@@ -45,6 +46,9 @@ const TRIES = 3;
 const SUMMARY_LINE_CHARS = 160;
 /** plan 166: the senders the user said aren't newsletters, in the store's own small values (both stores), never AppSettings */
 const NOT_NEWSLETTERS_KEY = "today:notNewsletters";
+
+/** An entry stored before entries had an id (Codex review, round 2) is named by its address: one entry a sender. */
+const entries = (list: readonly NotNewsletter[]): NotNewsletter[] => list.map((e) => (e.id ? e : { ...e, id: `key:${addressKey(e.email)}` }));
 
 export interface TodayOps {
   archive(ids: number[], narrow: (chunk: number[]) => Promise<number[]>, progress: (done: number) => void): Promise<{ undoId: number | null }>;
@@ -363,8 +367,8 @@ export class TodayService {
 
   // ─── not a newsletter (plan 166) ─────────────────────────────────────────
 
-  private readNotNewsletters(): Promise<NotNewsletter[]> {
-    return this.b.store.settings.get<NotNewsletter[]>(NOT_NEWSLETTERS_KEY, []);
+  private async readNotNewsletters(): Promise<NotNewsletter[]> {
+    return entries(await this.b.store.settings.get<NotNewsletter[]>(NOT_NEWSLETTERS_KEY, []));
   }
 
   private async excludedKeys(): Promise<Set<string>> {
@@ -380,12 +384,16 @@ export class TodayService {
   async notNewsletter(p: { email: string; name: string }): Promise<{ added: NotNewsletter | null; evicted: NotNewsletter[] }> {
     const key = addressKey(p.email);
     const now = this.b.now();
-    const r = await this.b.store.settings.update<NotNewsletter[], { added: NotNewsletter | null; evicted: NotNewsletter[] }>(NOT_NEWSLETTERS_KEY, [], (list) => {
+    const r = await this.b.store.settings.update<NotNewsletter[], { added: NotNewsletter | null; evicted: NotNewsletter[] }>(NOT_NEWSLETTERS_KEY, [], (stored) => {
+      const list = entries(stored);
       if (list.some((e) => addressKey(e.email) === key)) return { value: list, result: { added: null, evicted: [] } };
-      const added: NotNewsletter = { id: globalThis.crypto.randomUUID(), email: p.email.trim(), name: p.name.trim().slice(0, NOT_NEWSLETTER_NAME_MAX), at: now };
+      // after every other (Codex review, round 2): the list's order holds within a millisecond and through a clock set back,
+      // so the cap never drops the one just said
+      const at = Math.max(now, ...list.map((e) => e.at + 1));
+      const added: NotNewsletter = { id: globalThis.crypto.randomUUID(), email: p.email.trim(), name: p.name.trim().slice(0, NOT_NEWSLETTER_NAME_MAX), at };
       const value = [...list, added];
       const evicted: NotNewsletter[] = [];
-      // the oldest first (an Undo's restore may have left it one over)
+      // the oldest first (Undos putting entries back may have left it up to NOT_NEWSLETTERS_OVER over)
       while (value.length > NOT_NEWSLETTERS_MAX) {
         const oldest = value.reduce((a, e) => (e.at < a.at ? e : a));
         evicted.push(oldest);
@@ -400,7 +408,8 @@ export class TodayService {
   /** A sender back in. With `id`, only that entry. */
   async newsletterAgain(p: { email: string; id?: string }): Promise<{ removed: NotNewsletter | null }> {
     const key = addressKey(p.email);
-    const r = await this.b.store.settings.update<NotNewsletter[], NotNewsletter | null>(NOT_NEWSLETTERS_KEY, [], (list) => {
+    const r = await this.b.store.settings.update<NotNewsletter[], NotNewsletter | null>(NOT_NEWSLETTERS_KEY, [], (stored) => {
+      const list = entries(stored);
       const found = list.find((e) => addressKey(e.email) === key && (p.id === undefined || e.id === p.id)) ?? null;
       return { value: found ? list.filter((e) => e !== found) : list, result: found };
     });
@@ -413,12 +422,16 @@ export class TodayService {
    * back what it took off or the cap dropped, as they were. A sender listed again meanwhile isn't listed twice.
    */
   async notNewslettersUndo(p: { remove?: { email: string; id: string }; restore: readonly NotNewsletter[] }): Promise<{ restored: number }> {
-    const r = await this.b.store.settings.update<NotNewsletter[], { changed: boolean; restored: number }>(NOT_NEWSLETTERS_KEY, [], (list) => {
+    const r = await this.b.store.settings.update<NotNewsletter[], { changed: boolean; restored: number }>(NOT_NEWSLETTERS_KEY, [], (stored) => {
+      const list = entries(stored);
       let value = p.remove ? list.filter((e) => e.id !== p.remove!.id) : [...list];
       let changed = value.length !== list.length;
       let restored = 0;
       for (const e of p.restore) {
         if (value.some((x) => addressKey(x.email) === addressKey(e.email))) continue;
+        // bounded (Codex review, round 2): Undos racing other windows can't grow it past the cap by more than this, so what
+        // the next addition drops always fits its own Undo
+        if (value.length >= NOT_NEWSLETTERS_MAX + NOT_NEWSLETTERS_OVER) break;
         value = [...value, { ...e, name: e.name.slice(0, NOT_NEWSLETTER_NAME_MAX) }];
         restored++;
         changed = true;

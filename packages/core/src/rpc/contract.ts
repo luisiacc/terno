@@ -24,7 +24,7 @@ import {
   type DevAiProvider,
 } from "../ai";
 import type { FollowupRow, FollowupsSetting, FollowupsSnapshot } from "../followups";
-import type { DigestRow, NotNewsletter, TodayList, TodaySetting } from "../today";
+import { NOT_NEWSLETTERS_OVER, type DigestRow, type NotNewsletter, type TodayList, type TodaySetting } from "../today";
 import type { AiPrepareReply, AiReplyEvent, PreparedReply, RepliesSetting } from "../replies";
 import type { ActionPreviewInfo, ActionRowTag, AiActionApplied, AiActionCheck, AiActionEvent, AiActionStart } from "../actions";
 import { ASK_QUESTION_MAX, ASK_SOURCES_MAX, type AiAskEvent, type AiAskResult, type AskConversationSummary, type AskOlderOffer, type AskSourceView, type AskTurn } from "../ask";
@@ -1193,12 +1193,12 @@ export const contract = {
    */
   "today.notNewsletter": m<{ added: NotNewsletter | null; evicted: NotNewsletter[] }>()(z.object({ email: z.string().trim().min(3).max(320), /** kept to its first 200 characters */ name: z.string().max(2000) })),
   /** Plan 166: let a sender back in. `id`: only that entry */
-  "today.newsletterAgain": m<{ removed: NotNewsletter | null }>()(z.object({ email: z.string().trim().min(3).max(320), id: z.string().min(1).max(64).optional() })),
+  "today.newsletterAgain": m<{ removed: NotNewsletter | null }>()(z.object({ email: z.string().trim().min(3).max(320), id: z.string().min(1).max(400).optional() })),
   /**
    * Plan 166: an Undo, in one unit (Codex review): take off the entry it added (that one only, by `id`) and put back
    * what it took off or the cap dropped, each as it was. Putting back may go past the cap by what it restores.
    */
-  "today.notNewslettersUndo": m<{ restored: number }>()(z.object({ remove: z.object({ email: z.string().max(320), id: z.string().min(1).max(64) }).optional(), restore: z.array(z.object({ id: z.string().min(1).max(64), email: z.string().trim().min(3).max(320), name: z.string().max(2000), at: z.number().int() })).max(10).default([]) })),
+  "today.notNewslettersUndo": m<{ restored: number }>()(z.object({ remove: z.object({ email: z.string().max(320), id: z.string().min(1).max(400) }).optional(), restore: z.array(z.object({ id: z.string().min(1).max(400), email: z.string().trim().min(3).max(320), name: z.string().max(2000), at: z.number().int() })).max(NOT_NEWSLETTERS_OVER + 1).default([]) })),
   /** Plan 166: the senders kept out, newest first: Settings → AI → Newsletter digest */
   "today.notNewsletters": m<{ senders: NotNewsletter[] }>()(empty),
   /**

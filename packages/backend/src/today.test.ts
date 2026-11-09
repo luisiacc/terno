@@ -549,12 +549,42 @@ describe("the digest", () => {
       // Settings' Remove, then said again from the digest, the clock unmoved
       await t.client.call("today.newsletterAgain", { email: "a@x.test", id: first.added!.id });
       const again = await t.client.call("today.notNewsletter", { email: "a@x.test", name: "A" });
-      expect(again.added!.at).toBe(first.added!.at);
       expect(again.added!.id).not.toBe(first.added!.id);
       await t.client.call("today.notNewslettersUndo", { remove: { email: "a@x.test", id: first.added!.id }, restore: [] });
       expect((await t.client.call("today.notNewsletters", {})).senders.map((e) => e.id)).toEqual([again.added!.id]);
       // and a Remove's Undo doesn't list a sender twice
       expect(await t.client.call("today.notNewslettersUndo", { restore: [first.added!] })).toEqual({ restored: 0 });
+    });
+
+    it("Codex review, round 2: one millisecond keeps the order, a clock set back can't drop the one just said, Undos can't grow it without bound, and an entry stored without an id still has one", async () => {
+      const t = await setup();
+      const a = await t.client.call("today.notNewsletter", { email: "a@x.test", name: "A" });
+      const b = await t.client.call("today.notNewsletter", { email: "b@x.test", name: "B" });
+      expect(b.added!.at).toBeGreaterThan(a.added!.at);
+      // a full list whose times are all after now (the clock set back): the new one is the newest, never the one dropped
+      const ahead = Array.from({ length: 500 }, (_, i) => ({ id: `f${i}`, email: `f${i}@x.test`, name: `F${i}`, at: NOW + 1_000_000 + i }));
+      await t.backend.store.settings.set("today:notNewsletters", ahead);
+      const late = await t.client.call("today.notNewsletter", { email: "late@x.test", name: "Late" });
+      expect(late.evicted.map((e) => e.id)).toEqual(["f0"]);
+      expect((await t.client.call("today.notNewsletters", {})).senders[0]!.email).toBe("late@x.test");
+      // window A says X (S dropped); window B lets X back in and says Y; A's Undo puts S back: 501, at most NOT_NEWSLETTERS_OVER over
+      for (let i = 0; i < 15; i++) {
+        const x = await t.client.call("today.notNewsletter", { email: `x${i}@x.test`, name: "X" });
+        await t.client.call("today.newsletterAgain", { email: `x${i}@x.test` });
+        await t.client.call("today.notNewsletter", { email: `y${i}@x.test`, name: "Y" });
+        await t.client.call("today.notNewslettersUndo", { remove: { email: x.added!.email, id: x.added!.id }, restore: x.evicted });
+      }
+      expect((await t.client.call("today.notNewsletters", {})).senders.length).toBeLessThanOrEqual(510);
+      // the next addition trims it back, and its Undo still passes the RPC's check
+      const next = await t.client.call("today.notNewsletter", { email: "next@x.test", name: "Next" });
+      expect((await t.client.call("today.notNewsletters", {})).senders).toHaveLength(500);
+      await expect(t.client.call("today.notNewslettersUndo", { remove: { email: "next@x.test", id: next.added!.id }, restore: next.evicted })).resolves.toBeDefined();
+      // stored before ids: named by the address, removable, and its Undo accepted
+      await t.backend.store.settings.set("today:notNewsletters", [{ email: "Old@x.test", name: "Old", at: 5 }]);
+      const [old] = (await t.client.call("today.notNewsletters", {})).senders;
+      expect(old!.id).toBe("key:old@x.test");
+      const gone = await t.client.call("today.newsletterAgain", { email: "old@x.test", id: old!.id });
+      expect(await t.client.call("today.notNewslettersUndo", { restore: [gone.removed!] })).toEqual({ restored: 1 });
     });
 
     it("two said at once are both kept; a name past 200 characters is kept to 200", async () => {

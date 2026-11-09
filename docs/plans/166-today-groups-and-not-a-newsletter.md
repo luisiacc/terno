@@ -135,3 +135,11 @@ Codex (read-only, `git diff 023d22b61..HEAD`, `/tmp/terno-scratch/p164/today/rev
 3. **An entry's time isn't its identity.** Removed and said again in the same millisecond, an old Undo took off the new entry. Each entry has an `id` (a UUID); Undo and Remove name it (`today.test`).
 4. **A name past 200 characters was refused,** so the control failed on it. The page sends the first 200, and the RPC takes up to 2,000 and keeps 200 (`today.test`, `digest-page.test`).
 5. **Removing the last sender lost the keys** to the dialog. They go to the digest's switch above (`today.spec`, by keyboard).
+
+Round two, on those fixes (`review-2.out`, 3 points, all fixed, in one `today.test` that fails without each):
+
+6. **An entry stored without an `id`** (none should exist: the list is new in this series) is named by its address at every read and change (`key:<address>`), so Remove and its Undo take it.
+7. **The list's order is monotonic again:** a new entry's time is after every other's, so two in one millisecond keep their order through an Undo, and a clock set back can't make the cap drop the one just said.
+8. **Undos can't grow the list without bound:** racing windows could leave it one over the cap per cycle until an addition dropped more than an Undo accepts. Putting back stops at `NOT_NEWSLETTERS_OVER` (10) past the cap, and the Undo accepts that many plus one.
+
+Two rounds, as the owner's cap on review rounds asks; nothing left open from them.

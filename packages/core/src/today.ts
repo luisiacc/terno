@@ -131,6 +131,9 @@ export const NOT_NEWSLETTER_NAME_MAX = 200;
 /** Plan 166: the list keeps this many; past it, the oldest goes (and its Undo brings it back). */
 export const NOT_NEWSLETTERS_MAX = 500;
 
+/** Plan 166 (Codex review): how far Undos putting entries back may take the list past its cap; the next addition trims it. */
+export const NOT_NEWSLETTERS_OVER = 10;
+
 export type DigestState = "pending" | "ready" | "failed";
 
 export interface DigestRow {
