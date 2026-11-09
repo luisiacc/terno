@@ -214,12 +214,19 @@ function targetOf(ai: AiSettings, provider: AiProviderId): Target {
   return { provider, preset, baseURL, local };
 }
 
-/** Who receives it, by name: a server of no fixed name (a custom or Azure endpoint, a local kind elsewhere) by its host (Codex critique 2). */
+/**
+ * Who receives it, by name: a server of no fixed name (a custom or Azure endpoint, a local kind elsewhere) by its host
+ * (Codex critique 2); a named one by its name, with the host beside it when its endpoint isn't its own (a relay in front
+ * of OpenAI: Codex code review).
+ */
 function destinationName(ai: AiSettings, t: Target): string {
+  const host = t.baseURL && URL.canParse(t.baseURL) ? new URL(t.baseURL).host : null;
   const named = t.provider === "compatible" ? !t.preset || t.preset === "custom" || t.preset === "azure" : t.provider === "ollama" || t.provider === "lmstudio";
-  if (named && t.baseURL && URL.canParse(t.baseURL)) return new URL(t.baseURL).host;
-  if (t.provider === "compatible" && t.preset && t.preset !== "custom") return presetLabel(t.preset);
-  return t.provider === ai.provider ? providerName(ai) : providerLabel(t.provider);
+  if (named && host) return host;
+  const name = t.provider === "compatible" && t.preset && t.preset !== "custom" ? presetLabel(t.preset) : t.provider === ai.provider ? providerName(ai) : providerLabel(t.provider);
+  const own = t.provider === "compatible" ? (t.preset ? PRESET_ENDPOINT[t.preset] : undefined) : CLOUD_HOST[t.provider] ? `https://${CLOUD_HOST[t.provider]}` : undefined;
+  const ownHost = own && URL.canParse(own) ? new URL(own).host : null;
+  return host && host !== ownHost ? `${name} (${host})` : name;
 }
 
 /**

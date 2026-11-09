@@ -192,3 +192,7 @@ Codex (read-only, against the branch) raised two points, both accepted and fixed
 2. **A routed profile is named by where it goes.** A task on a saved OpenRouter profile while the main provider is Ollama read "OpenAI-compatible", from the main provider's preset. Now a preset is named by its preset ("OpenRouter"), and a server with no fixed name (a custom or Azure endpoint, a local kind elsewhere) by its host ("ai.example.test"). The footer's title still names the main provider's host; the line names all of them.
 
 Also added after the build: `design-axe.spec` reads Settings → AI on a cloud provider (chosen in the window, as a person would) in both modes.
+
+### What the Codex code review changed
+
+One finding, fixed with a case in `ai.test.ts` that fails without it: **a named provider at an endpoint that isn't its own was named without it.** With Ollama as the main provider and drafting routed to an OpenAI profile saved at `https://relay.example.test/v1`, mail goes to the relay, but the line said only "OpenAI". A named provider or preset whose saved endpoint isn't its own default is now named with that host: "OpenAI (relay.example.test)", "OpenRouter (proxy.example.test)". Its default endpoint written out still reads "OpenAI". `ai-no-consent.spec` reads it on the stub, which is such an endpoint.

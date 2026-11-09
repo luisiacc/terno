@@ -65,7 +65,8 @@ test("on a cloud provider every AI surface runs on the first ask; Settings → A
       await page.getByTestId("open-settings").click();
       await page.getByTestId("tab-ai").click();
       const note = page.getByTestId("ai-privacy");
-      await expect(note).toContainText("OpenAI receives a conversation’s text when you use an AI feature on it, and mail as it comes in or goes out for the background features you turn on below.");
+      // OpenAI at an endpoint that isn't its own (the stub) is named with where it is
+      await expect(note).toContainText(`OpenAI (${new URL(stub.url).host}) receives a conversation’s text when you use an AI feature on it, and mail as it comes in or goes out for the background features you turn on below.`);
       expect((await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=ai-privacy]").analyze()).violations).toEqual([]);
       if (SHOTS) await page.screenshot({ path: `${SHOTS}/settings-ai-light.png` });
       await closeSettings(page);

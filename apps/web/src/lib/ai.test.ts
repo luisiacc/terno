@@ -118,6 +118,10 @@ describe("AI labels and help", () => {
     expect(mailDestinations(full({ provider: "ollama", local: true, tasks: { ask: { provider: "compatible", model: "m" } }, profiles: { compatible: { model: "m", preset: "openrouter" } } } as Partial<AiSettings>))).toEqual(["OpenRouter"]);
     expect(mailDestinations(full({ provider: "ollama", local: true, tasks: { ask: { provider: "compatible", model: "m" } }, profiles: { compatible: { model: "m", preset: "custom", baseURL: "https://ai.example.test/v1" } } } as Partial<AiSettings>))).toEqual(["ai.example.test"]);
     expect(mailDestinations(full({ provider: "ollama", local: true, tasks: { ask: { provider: "compatible", model: "m" } }, profiles: { compatible: { model: "m", preset: "custom", baseURL: "http://127.0.0.1:8080/v1" } } } as Partial<AiSettings>))).toEqual([]);
+    // Codex code review: a named provider at an endpoint that isn't its own says where
+    expect(mailDestinations(full({ provider: "ollama", local: true, tasks: { writing: { provider: "openai", model: "m" } }, profiles: { openai: { model: "m", baseURL: "https://relay.example.test/v1" } } } as Partial<AiSettings>))).toEqual(["OpenAI (relay.example.test)"]);
+    expect(mailDestinations(full({ provider: "ollama", local: true, tasks: { ask: { provider: "compatible", model: "m" } }, profiles: { compatible: { model: "m", preset: "openrouter", baseURL: "https://proxy.example.test/v1" } } } as Partial<AiSettings>))).toEqual(["OpenRouter (proxy.example.test)"]);
+    expect(mailDestinations(full({ provider: "openai", baseURL: "https://api.openai.com/v1" }))).toEqual(["OpenAI"]);
     expect(disclosureLine(full({ provider: "none" }))).toBe("AI is off.");
     expect(disclosureLine(full({ provider: "ollama", local: true }))).toBe("Nothing leaves this Mac.");
     expect(disclosureLine(full({ provider: "openai" }))).toBe("OpenAI receives a conversation’s text when you use an AI feature on it, and mail as it comes in or goes out for the background features you turn on below.");
