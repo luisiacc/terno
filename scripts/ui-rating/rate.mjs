@@ -1,23 +1,34 @@
 // One round of the UI rating (plan 158): freeze this commit's build, capture every style, and have Claude and Codex rate each
 // one in a clean room. A rater starts in an empty, randomly named folder outside the repo, in a new session that keeps nothing:
 // no project instructions, no memory, no earlier round, no idea how many rounds there were or what changed.
-// `--screens ai` rates plan 161's AI screens with their own brief, on the local model stub.
-//   node scripts/ui-rating/rate.mjs --out <dir> [--screens everyday|ai] [--designs lumen,macos] [--raters claude,codex] [--parallel 6] [--allow-dirty]
+// `--screens ai` rates plan 161's AI screens with their own brief, on Pro's real models (keys from the owner's .env,
+// keys.mjs), or on the local stand-in with `--ai stub`.
+//   node scripts/ui-rating/rate.mjs --out <dir> [--screens everyday|ai] [--ai real|stub] [--designs lumen,macos] [--raters claude,codex] [--parallel 6] [--allow-dirty]
 import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DESIGNS, RATERS, reportProblems } from "./gate.mjs";
-import { SETS, screensFlag, shotFiles } from "./sets.mjs";
+import { copyRedacted, envFile, guardOutput, PRO_ROUTING, readKeys, writeRedacted } from "./keys.mjs";
+import { aiFlag, SETS, screensFlag, shotFiles } from "./sets.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = join(here, "../..");
 const flag = (name, fallback) => { const i = process.argv.indexOf(`--${name}`); return i < 0 ? fallback : process.argv[i + 1]; };
 
 const out = flag("out");
-if (!out) throw new Error("usage: rate.mjs --out <dir> [--screens everyday|ai] [--designs a,b] [--raters claude,codex] [--parallel n] [--allow-dirty]");
+if (!out) throw new Error("usage: rate.mjs --out <dir> [--screens everyday|ai] [--ai real|stub] [--designs a,b] [--raters claude,codex] [--parallel n] [--allow-dirty]");
 const set = screensFlag(process.argv);
+const ai = set === "ai" ? aiFlag(process.argv) : null;
+/**
+ * Real models: the keys are read here only to fail early and to redact. This process never passes them on: each
+ * capture's harness reads the same file and hands them to its Electron alone. Every log, report and probe this round
+ * writes goes through redaction (keys.mjs), and so does this process's own output.
+ */
+const keys = ai === "real" ? readKeys(envFile()) : null;
+const secrets = keys?.secrets ?? [];
+if (keys) guardOutput(secrets);
 const designs = flag("designs", DESIGNS.join(",")).split(",");
 const raters = flag("raters", RATERS.join(",")).split(",");
 const parallel = Number(flag("parallel", "6"));
@@ -37,7 +48,11 @@ mkdirSync(out, { recursive: true });
  * report's own list. The demo mailbox comes from its generator and seed: no AI screen adds mail of its own.
  */
 const hash = (...files) => createHash("sha256").update(files.map((f) => readFileSync(join(repo, f))).join("\0")).digest("hex").slice(0, 16);
-writeFileSync(join(out, "round.json"), JSON.stringify({
+/**
+ * Who answers (plan 161): the stub, or Pro's providers and the model each task runs on. Real rounds aren't byte-comparable
+ * with stub rounds, or with each other at other models; each capture adds what it reached, saw and spent (`runs`).
+ */
+const round = {
   sha,
   at: new Date().toISOString(),
   designs,
@@ -47,11 +62,14 @@ writeFileSync(join(out, "round.json"), JSON.stringify({
   shots: shotFiles(set),
   hashes: {
     brief: hash(`scripts/ui-rating/${SETS[set].brief}`),
-    capture: hash("scripts/ui-rating/capture.mjs", "scripts/ui-rating/harness.mjs", "scripts/ui-rating/sets.mjs"),
-    ...(set === "ai" ? { stub: hash("scripts/ui-rating/model-stub.mjs") } : {}),
+    capture: hash("scripts/ui-rating/capture.mjs", "scripts/ui-rating/harness.mjs", "scripts/ui-rating/sets.mjs", "scripts/ui-rating/keys.mjs"),
+    ...(ai === "stub" ? { stub: hash("scripts/ui-rating/model-stub.mjs") } : {}),
     demo: hash("packages/mock-data/src/generate.ts", "packages/mock-data/src/banks.ts", "packages/backend/src/demo.ts"),
   },
-}, null, 2));
+  ...(ai === "real" ? { ai: { models: "real", providers: keys.providers, hosts: keys.hosts, routing: PRO_ROUTING, runs: {} } } : ai === "stub" ? { ai: { models: "stub" } } : {}),
+};
+const writeRound = () => writeRedacted(join(out, "round.json"), JSON.stringify(round, null, 2), secrets);
+writeRound();
 
 /**
  * What the whole round runs, frozen now and apart from the checkout and the round's folder: the build, Electron, Playwright,
@@ -70,7 +88,7 @@ function freeze() {
   const pnpmDir = join(repo, "node_modules/.pnpm");
   const core = readdirSync(pnpmDir).find((d) => d.startsWith("playwright-core@"));
   cpSync(join(pnpmDir, core, "node_modules/playwright-core"), join(app, "node_modules/playwright-core"), { recursive: true, dereference: true });
-  for (const f of ["harness.mjs", "capture.mjs", "sets.mjs", "model-stub.mjs", "brief.md", "brief-ai.md"]) cpSync(join(here, f), join(runtime, f));
+  for (const f of ["harness.mjs", "capture.mjs", "sets.mjs", "model-stub.mjs", "keys.mjs", "brief.md", "brief-ai.md"]) cpSync(join(here, f), join(runtime, f));
   return runtime;
 }
 
@@ -84,16 +102,20 @@ function run(cmd, args, { cwd, env, stdin, log, timeout }) {
     const timer = setTimeout(() => child.kill("SIGTERM"), timeout);
     child.on("close", (code) => {
       clearTimeout(timer);
-      if (log) writeFileSync(log, Buffer.concat(chunks));
+      // a child's output can't carry a key into the round (keys.mjs)
+      if (log) writeRedacted(log, Buffer.concat(chunks), secrets);
       resolve(code);
     });
   });
 }
 
-/** The rater's world: only what a shell needs, so nothing of the session that started it comes along. */
+/**
+ * The rater's world: only what a shell needs, so nothing of the session that started it comes along. No key: a rater's
+ * harness reads the owner's .env itself (keys.mjs), at its default path or the one TERNO_RATING_ENV names.
+ */
 function cleanEnv(runtime) {
   const env = { UI_RATING_RUNTIME: runtime };
-  for (const k of ["PATH", "HOME", "USER", "LOGNAME", "SHELL", "TMPDIR", "LANG", "LC_ALL", "TERM"]) if (process.env[k]) env[k] = process.env[k];
+  for (const k of ["PATH", "HOME", "USER", "LOGNAME", "SHELL", "TMPDIR", "LANG", "LC_ALL", "TERM", "TERNO_RATING_ENV"]) if (process.env[k]) env[k] = process.env[k];
   return env;
 }
 
@@ -125,9 +147,9 @@ async function rate(design, rater, shots, runtime) {
   try {
     cpSync(shots, join(room, "shots"), { recursive: true });
     mkdirSync(join(room, "probes"));
-    writeFileSync(join(room, "brief.md"), brief(design, runtime));
+    writeRedacted(join(room, "brief.md"), brief(design, runtime), secrets);
     // the harness and what it and the example import
-    for (const f of ["harness.mjs", "model-stub.mjs", "sets.mjs"]) cpSync(join(runtime, f), join(room, f));
+    for (const f of ["harness.mjs", "model-stub.mjs", "sets.mjs", "keys.mjs"]) cpSync(join(runtime, f), join(room, f));
     cpSync(join(runtime, "capture.mjs"), join(room, "capture-example.mjs"));
     const { cmd, args, cwd, stdin } = COMMANDS[rater](room);
     const started = Date.now();
@@ -138,9 +160,10 @@ async function rate(design, rater, shots, runtime) {
       try { problems = reportProblems(JSON.parse(readFileSync(file, "utf8")), SETS[set].screens); } catch (e) { problems = [`bad JSON: ${e.message}`]; }
     }
     console.log(`${design}/${rater}: ${problems.length ? `${problems.length} problems: ${problems.slice(0, 3).join("; ")}` : "ok"} (${Math.round((Date.now() - started) / 60_000)} min)`);
-    if (existsSync(file)) cpSync(file, join(dest, `${rater}.json`));
-    if (existsSync(join(room, "report.md"))) cpSync(join(room, "report.md"), join(dest, `${rater}.md`));
-    cpSync(join(room, "probes"), join(dest, `${rater}-probes`), { recursive: true });
+    // what leaves the room is redacted on the way: a rater can read the owner's .env, and the brief can't make sure it doesn't
+    if (existsSync(file)) copyRedacted(file, join(dest, `${rater}.json`), secrets);
+    if (existsSync(join(room, "report.md"))) copyRedacted(join(room, "report.md"), join(dest, `${rater}.md`), secrets);
+    copyRedacted(join(room, "probes"), join(dest, `${rater}-probes`), secrets);
   } finally { rmSync(room, { recursive: true, force: true }); }
 }
 
@@ -148,8 +171,14 @@ const runtime = freeze();
 console.log(`round ${sha}: frozen`);
 try {
   for (const design of designs) {
-    const code = await run(process.execPath, [join(runtime, "capture.mjs"), design, join(out, design, "shots"), "--screens", set], { env: cleanEnv(runtime), log: join(out, `capture-${design}.log`), timeout: 0.2 * HOURS });
-    if (code !== 0) throw new Error(`capture ${design} failed: ${readFileSync(join(out, `capture-${design}.log`), "utf8").slice(-800)}`);
+    // real models take minutes a state, and a step the model decides may be tried again
+    const code = await run(process.execPath, [join(runtime, "capture.mjs"), design, join(out, design, "shots"), "--screens", set, ...(ai ? ["--ai", ai] : [])], { env: cleanEnv(runtime), log: join(out, `capture-${design}.log`), timeout: (ai === "real" ? 1.5 : 0.2) * HOURS });
+    const captured = readFileSync(join(out, `capture-${design}.log`), "utf8");
+    if (code !== 0) throw new Error(`capture ${design} failed: ${captured.slice(-800)}`);
+    if (ai === "real") {
+      round.ai.runs[design] = captured.split("\n").filter((l) => l.startsWith("AI_RUN ")).map((l) => JSON.parse(l.slice(7)));
+      writeRound();
+    }
     const missing = shotFiles(set).filter((f) => !existsSync(join(out, design, "shots", f)));
     if (missing.length) throw new Error(`capture ${design} is missing ${missing.join(", ")}`);
     console.log(`${design}: captured`);

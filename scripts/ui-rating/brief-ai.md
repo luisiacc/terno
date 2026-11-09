@@ -6,7 +6,7 @@ You are an outside senior product designer rating this app. Be honest and specif
 
 Terno is a minimalist macOS email client (Electron) with AI features: summaries, drafting, questions about your mail, actions described in plain English, a daily digest, follow-ups and prepared replies. The app offers several visual styles; **you are rating the style called "{{DESIGN}}"**. The screenshots come from the real build, in a 1440x900 window on a Retina display (the `-small` ones in 1100x700), with a fictional demo mailbox. The demo text is generated and partly repetitive, and mixes Spanish and English: don't rate the wording of the fake mail. App copy (labels, buttons, hints) is in scope.
 
-**You are rating only the AI parts of each screen**: the region each row of the table below names. The rest of the window is context, not rated. The AI here is a local stand-in model that gives the same answers every time: rate how the app presents, explains and lets you act on what the model wrote, not the model's words themselves.
+**You are rating only the AI parts of each screen**: the region each row of the table below names. The rest of the window is context, not rated. The app is running real AI models, so their words can differ from one run to the next: rate how the app presents, explains and lets you act on what the model wrote. The words themselves are in scope only where the app could have shown them better.
 
 Screenshots are in `shots/`, each as `-light.png` and `-dark.png`:
 
@@ -29,7 +29,7 @@ Screenshots are in `shots/`, each as `-light.png` and `-dark.png`:
 
 ## Try it yourself
 
-Static shots can't show flow. `harness.mjs` in this folder launches the real app on a throwaway demo profile, behind the owner's windows, with AI on the local stand-in (`ai: true`; nothing leaves the machine):
+Static shots can't show flow. `harness.mjs` in this folder launches the real app on a throwaway demo profile, behind the owner's windows, with AI on the same real models as the screenshots (`ai: true`):
 
 ```js
 import { launch, shot } from "./harness.mjs";

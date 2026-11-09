@@ -16,7 +16,7 @@ Most flows are shared between styles, so raters don't repeat them. Lumen, the de
 
 ## The AI set (plan 161)
 
-A second set rates the AI features on their own, with AI on a local model stand-in (`scripts/ui-rating/model-stub.mjs`): no keys, no cloud, the same answers every round, nothing leaving the Mac. Rounds of this set run only these screens, and raters score only the AI part of each (the brief names the region); the rest of the window is context. The model's words are fixed and out of scope: what's rated is how the app presents them and lets you act on them.
+A second set rates the AI features on their own, on Pro's real models: Dev mode's Pro AI on the keys in the owner's `.env` (plan 161, "Real models"). The local stand-in (`scripts/ui-rating/model-stub.mjs`) stays for tests and the smoke, and by name (`--ai stub`). Rounds of this set run only these screens, and raters score only the AI part of each (the brief names the region); the rest of the window is context. What's rated is how the app presents the model's words and lets you act on them; the words themselves only where the app could have shown them better. Real rounds aren't byte-comparable with stub rounds or with each other: `round.json` records the models.
 
 | Screen | Shots | Rated region |
 |---|---|---|
@@ -32,13 +32,13 @@ A second set rates the AI features on their own, with AI on a local model stand-
 
 How it runs:
 
-- `launch({ ai: true })` starts the stub on a free loopback port. Its first launch sets AI up in Settings as a person would (Ollama at the stub, its model, Test, Summarize new mail, follow-ups, Prepare a reply, the daily digest), and turns sender icons and automatic updates off; the rated launch checks those settings survived.
+- `launch({ ai: true })` reads `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` and `JEV_API_KEY` from `TERNO_RATING_ENV` (default `/Users/Luis/projects/emailclient/.env`) and hands them only to the Electron it starts, with `TERNO_TEST_DEV_AI=1` (Dev mode on the frozen build: the demo mailbox, never packaged). Its first launch turns on Settings → Dev mode → Pro AI, then Summarize new mail, follow-ups, Prepare a reply and the daily digest, and turns sender icons and automatic updates off; the rated launch checks those settings survived. `launch({ ai: "stub" })` sets up the stub instead (Ollama at it, its model, Test). No key is printed or written: output, logs, `round.json` and what leaves a rater's room are redacted, and `close()` fails if the throwaway profile held one.
 - The clock: the backend starts at the demo's own instant, 22 October 2026 16:00 UTC, and runs on (`TERNO_TEST_NOW`, honored only in the demo mailbox); the window reads the same fixed instant, in UTC. Every round sees the same days.
-- Nothing leaves loopback: the backend logs every network decision (`TERNO_TEST_NET_LOG`, demo mailbox only), and the capture fails on any request off loopback, any AI request not to the stub, any request the window's fence refused, or a task the stub doesn't know.
+- Only the model's own requests leave: the backend logs every network decision (`TERNO_TEST_NET_LOG`, demo mailbox only). On real models the capture fails on any AI request not to a provider in use over https (Anthropic, OpenAI, JEV with its key), anything else off loopback, or any request the window's fence refused; on the stub, on anything off loopback, any AI request not to the stub, or a task the stub doesn't know.
 - The demo mailbox is unchanged: every AI screen reaches its state on the mail the everyday set already rates.
 
 ```sh
-pnpm ui:rate --screens ai --out /tmp/terno-scratch/rating/ai-r00   # the AI set, with brief-ai.md
+pnpm ui:rate --screens ai --out /tmp/terno-scratch/rating/ai-r04   # the AI set on real models, with brief-ai.md (--ai stub: the stand-in)
 pnpm ui:gate /tmp/terno-scratch/rating/ai-r00
 node scripts/ui-rating/capture.mjs lumen /tmp/shots --screens ai   # the shots alone
 ```

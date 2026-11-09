@@ -34,3 +34,11 @@ export function screensFlag(argv) {
   if (!SETS[set]) throw new Error(`--screens takes ${Object.keys(SETS).join(" or ")}, not ${set}`);
   return set;
 }
+
+/** `--ai real|stub` from argv (plan 161): the AI set runs Pro's real models unless told to use the local stand-in. */
+export function aiFlag(argv) {
+  const i = argv.indexOf("--ai");
+  const ai = i < 0 ? "real" : argv[i + 1];
+  if (ai !== "real" && ai !== "stub") throw new Error(`--ai takes real or stub, not ${ai}`);
+  return ai;
+}

@@ -4,6 +4,7 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { redact } from "./keys.mjs";
 import { SETS, shotFiles } from "./sets.mjs";
 
 export const BAR = 9;
@@ -88,6 +89,39 @@ export function missingShots(dir, round) {
   return round.designs.flatMap((design) => shots.filter((f) => !existsSync(join(dir, design, "shots", f))).map((f) => `${design}/${f}`));
 }
 
+/**
+ * Who answered an AI round (plan 161), from round.json: the stub (and every AI round from before real models), or Pro's
+ * real models, which a round must record (the model each task ran on, and each capture's run: the hosts it reached,
+ * light and dark), since their words vary and rounds compare only at the same models. Never a key: round.json holding
+ * anything shaped like one fails, whatever the set.
+ */
+export function aiProblems(round) {
+  const text = JSON.stringify(round);
+  const problems = redact(text) === text ? [] : ["round.json holds something shaped like an API key"];
+  if (roundSet(round).set !== "ai") return problems;
+  const ai = round.ai ?? { models: "stub" };
+  if (ai.models === "stub") return problems;
+  if (ai.models !== "real") return [...problems, `round.json names unknown models: ${ai.models}`];
+  if (!ai.routing || !Object.keys(ai.routing).length) problems.push("a real-model round without the model each task ran on");
+  if (!ai.hosts?.length) problems.push("a real-model round without its providers' hosts");
+  for (const design of round.designs) {
+    const runs = ai.runs?.[design] ?? [];
+    for (const mode of ["light", "dark"]) if (!runs.some((r) => r.mode === mode)) problems.push(`${design} ${mode}: no record of the models' run`);
+    for (const r of runs) for (const host of r.reached ?? []) if (!ai.hosts?.includes(host)) problems.push(`${design} ${r.mode}: reached ${host}, not a provider in use`);
+  }
+  return problems;
+}
+
+/** What answered, said once in the summary: real rounds are compared only with real rounds at the same models. */
+export function modelsLine(round) {
+  if (roundSet(round).set !== "ai") return null;
+  const ai = round.ai ?? { models: "stub" };
+  if (ai.models !== "real") return "Models: the local stand-in (model-stub.mjs)";
+  const ids = [...new Set(Object.values(ai.routing ?? {}))].join(", ");
+  const usd = Object.values(ai.runs ?? {}).flat().reduce((sum, r) => sum + (r.usage?.total?.usd ?? 0), 0);
+  return `Models: real, ${ids}; the captures spent US$${usd.toFixed(2)} as the app counted it`;
+}
+
 function readRound(dir) {
   const found = [];
   for (const design of readdirSync(dir)) for (const rater of RATERS) {
@@ -97,8 +131,9 @@ function readRound(dir) {
   return found;
 }
 
-function summary(found, result, SCREENS) {
+function summary(found, result, SCREENS, models) {
   const lines = [`# ${result.pass ? "PASS" : "BELOW THE BAR"}: every score at least ${BAR}\n`];
+  if (models) lines.push(`${models}\n`);
   if (result.missing.length) lines.push(`Missing: ${result.missing.join(", ")}\n`);
   if (result.invalid.length) lines.push(`Invalid:\n${result.invalid.map((p) => `- ${p}`).join("\n")}\n`);
   const avg = (ns) => (ns.reduce((a, b) => a + b, 0) / ns.length).toFixed(2);
@@ -131,9 +166,14 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     result.pass = false;
     result.invalid.push(...shotsMissing.map((f) => `missing evidence: ${f}`));
   }
+  const ai = aiProblems(round);
+  if (ai.length) {
+    result.pass = false;
+    result.invalid.push(...ai.map((p) => `round.json: ${p}`));
+  }
   if (designs.length !== DESIGNS.length || raters.length !== RATERS.length) console.log("a narrowed round: it can't pass the rule");
   console.log(`set: ${set} (${screens.length} screens)`);
-  writeFileSync(join(dir, "summary.md"), summary(found, result, screens));
+  writeFileSync(join(dir, "summary.md"), summary(found, result, screens, modelsLine(round)));
   console.log(`${result.pass ? "PASS" : "below the bar"}: ${result.below.length} cells under ${BAR}, ${result.missing.length} reports missing, ${result.invalid.length} problems. ${join(dir, "summary.md")}`);
   process.exit(result.pass ? 0 : 1);
 }

@@ -1,7 +1,8 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { belowBar, DESIGNS, FACETS, missingShots, RATERS, reportProblems, roundSet, SCREENS, verdict } from "./gate.mjs";
+import { aiProblems, belowBar, DESIGNS, FACETS, missingShots, modelsLine, RATERS, reportProblems, roundSet, SCREENS, verdict } from "./gate.mjs";
+import { PRO_ROUTING } from "./keys.mjs";
 import { SETS, shotFiles } from "./sets.mjs";
 
 function report(score = 9, screens: readonly string[] = SCREENS) {
@@ -99,5 +100,38 @@ describe("plan 161: a round rates the set it froze", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  describe("real models: round.json carries the model ids and each run, never a key", () => {
+    const hosts = ["api.anthropic.com", "api.openai.com", "api.typesafe.ai"];
+    const run = (mode: string, reached = ["api.anthropic.com", "api.openai.com"]) => ({ design: "lumen", mode, models: "real", reached, usage: { total: { usd: 0.21 } } });
+    const real = (over: object = {}) => ({ set: "ai", screens: AI, shots: shotFiles("ai"), designs: ["lumen"], ai: { models: "real", providers: ["anthropic", "openai", "jev"], hosts, routing: PRO_ROUTING, runs: { lumen: [run("light"), run("dark")] } }, ...over });
+
+    it("a whole record passes, and says which models answered and what they cost", () => {
+      expect(aiProblems(real())).toEqual([]);
+      expect(real().ai.routing).toMatchObject({ summary: "openai/gpt-6-luna", writing: "anthropic/claude-sonnet-5-5" });
+      expect(modelsLine(real())).toContain("openai/gpt-6-luna");
+      expect(modelsLine(real())).toContain("US$0.42");
+    });
+
+    it("an AI round from before real models ran on the stub, and an everyday round has no models", () => {
+      expect(aiProblems({ set: "ai", screens: AI, shots: shotFiles("ai"), designs: ["lumen"] })).toEqual([]);
+      expect(modelsLine({ set: "ai", screens: AI, shots: shotFiles("ai"), designs: ["lumen"] })).toContain("stand-in");
+      expect(modelsLine({ designs: DESIGNS })).toBeNull();
+    });
+
+    it("without its model ids, a run per mode, or with a host no provider has, it fails", () => {
+      const base = real();
+      expect(aiProblems({ ...base, ai: { ...base.ai, routing: {} } })).toEqual(["a real-model round without the model each task ran on"]);
+      expect(aiProblems({ ...base, ai: { ...base.ai, runs: { lumen: [run("light")] } } })).toEqual(["lumen dark: no record of the models' run"]);
+      expect(aiProblems({ ...base, ai: { ...base.ai, runs: { lumen: [run("light"), run("dark", ["api.groq.com"])] } } })).toEqual(["lumen dark: reached api.groq.com, not a provider in use"]);
+      expect(aiProblems({ ...base, ai: { ...base.ai, models: "gpt" } })).toEqual(["round.json names unknown models: gpt"]);
+    });
+
+    it("a round.json holding anything shaped like a key fails, in any set", () => {
+      const leaked = real({ note: "sk-ant-api03-ABCDEFGHIJKLMNOPQRSTUV" });
+      expect(aiProblems(leaked)).toContain("round.json holds something shaped like an API key");
+      expect(aiProblems({ designs: DESIGNS, note: "sk-proj-ABCDEFGHIJKLMNOPQRSTUVWXYZ012345" })).toEqual(["round.json holds something shaped like an API key"]);
+    });
   });
 });
