@@ -22,6 +22,7 @@ import { focusPinned, pinnedKey, usePinned } from "./pinned-draft-state";
 import { prepareEarlyComposeInput, prepareInlineFocusMove, type ComposeFocusTarget, type EarlyComposeInput } from "./compose-focus-move";
 import { aiDraftHooks } from "./ai-draft-state";
 import { fromPlainText, parseHtml, toEmailHtml, toPlainText } from "@terno/richtext";
+import { parseAddressList } from "@terno/core";
 import { controllerFor } from "~/components/composer/controller";
 import { heldSendSnack, scheduledSnack, sendingSnack } from "./scheduled";
 
@@ -978,10 +979,13 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
  * whatever Reply-To that message names (a Cc'd person with no message keeps the reply's source). Only for a draft Terno
  * filled in: a person's own recipients are never replaced. False when nothing changed.
  */
-export async function addressReply(key: string, threadId: number, person: { name: string; address: string }): Promise<boolean> {
+export async function addressReply(key: string, threadId: number, person: { name: string; address: string }, o: { keepBody?: boolean } = {}): Promise<boolean> {
   const detail = await loadThread(threadId);
   const d = materialize(key);
-  if (!detail || !d || d.sending || d.mode === "new" || d.mode === "forward" || authored(d)) return false;
+  // plan 163: the instruction typed in the body makes the draft "written", but not its recipients: while they're still the
+  // ones Terno filled in, it's addressed as an untouched reply would be, and the body stays as it is
+  const chosen = !!d && authored(d) && !(o.keepBody && recipientsUnchosen(d));
+  if (!detail || !d || d.sending || d.mode === "new" || d.mode === "forward" || chosen) return false;
   const accounts = getApp().accounts;
   const account = accounts.find((a) => a.id === detail.thread.accountId) ?? accounts.find((a) => a.id === d.accountId);
   if (!account) return false;
@@ -989,8 +993,21 @@ export async function addressReply(key: string, threadId: number, person: { name
   const source = [...detail.messages].reverse().find((m) => !m.isSent && m.from.email.toLowerCase() === address);
   const fields = replyFields("reply", detail, account, { identities: accounts.map((a) => a.email), ...(source ? { sourceId: source.id } : {}) });
   const to = { name: source?.from.name || person.name, email: source?.from.email ?? person.address };
-  const patch: DraftFields = { ...fields, showSourceContext: true, toText: formatAddressList([to]), ccText: "", auto: { to: [to.email], cc: [], bcc: [] } };
+  const patch: Partial<DraftFields> = { ...fields, showSourceContext: true, toText: formatAddressList([to]), ccText: "", auto: { to: [to.email], cc: [], bcc: [] } };
+  // the body is left alone: it holds what they typed
+  if (o.keepBody) {
+    delete patch.bodyText;
+    delete patch.bodyHtml;
+  }
   return editDraft(key, patch);
+}
+
+/** To, Cc and Bcc are still only what Terno filled in (plan 163). */
+export function recipientsUnchosen(d: LocalDraft): boolean {
+  return (["to", "cc", "bcc"] as const).every((field) => {
+    const auto = d.auto[field].map((email) => email.toLowerCase());
+    return parseAddressList(d[`${field}Text`]).every((a) => auto.includes(a.email.toLowerCase()));
+  });
 }
 
 /** Opened again, a draft resumes in its text (where the editor kept the caret); To only while a recipient still needs attention (plan 158). */

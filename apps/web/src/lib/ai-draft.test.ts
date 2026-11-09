@@ -1013,15 +1013,20 @@ describe("existing text, and what goes wrong", () => {
 
   it("plan 163: a summary item's Reply puts its words in an empty body; nothing runs until ⌘J, and never over what's there", async () => {
     const key = createDraft({ ...newFields(1), mode: "reply", threadId: 7, inReplyToMessageId: 3, toText: "ana@example.test" });
-    editor(key);
+    const { c } = editor(key);
     await store.openRow({ key, instruction: "Review the document before Friday" });
-    expect(useDrafts.getState().drafts[key]!.bodyText).toBe("Review the document before Friday");
+    // in the editor that's there, at once
+    expect(c.text).toBe("Review the document before Friday");
     expect(calls("ai.compose")).toHaveLength(0);
     expect(calls("ai.resolveIntent")).toHaveLength(0);
     const typed = createDraft({ ...newFields(1), mode: "reply", threadId: 8, inReplyToMessageId: 4, toText: "ana@example.test", bodyText: "mine" });
-    editor(typed, "mine");
+    const other = editor(typed, "mine");
     await store.openRow({ key: typed, instruction: "something else" });
-    expect(useDrafts.getState().drafts[typed]!.bodyText).toBe("mine");
+    expect(other.c.text).toBe("mine");
+    // no editor yet: in the draft it will open with
+    const later = createDraft({ ...newFields(1), mode: "reply", threadId: 9, inReplyToMessageId: 5, toText: "ana@example.test" });
+    await store.openRow({ key: later, instruction: "Say thanks" });
+    expect(useDrafts.getState().drafts[later]!.bodyText).toBe("Say thanks");
   });
 });
 
@@ -1623,7 +1628,7 @@ describe("plan 163: ⌘J on what's written in the body", () => {
     last("ai.compose").resolve(done("Friday works."));
     await tick();
     expect(session(key)!.phase).toBe("choice");
-    expect(session(key)!.choice!.reason).toBe("notes");
+    expect(session(key)!.choice!.reason).toBe("typed");
     expect(c.text).toBe("tell him friday works and saturday");
   });
 

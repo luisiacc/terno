@@ -479,12 +479,14 @@ function Choice({ s }: { s: AiSession }) {
   const c = s.choice;
   if (!c) return null;
   const notes = c.reason === "notes";
+  // plan 163: over an instruction typed into while it wrote, Replace is offered too: the draft was meant for its place
+  const replaceable = notes || s.run?.spec.kind === "body";
   return (
     <div className={line} data-testid="ai-choice" data-reason={c.reason}>
       <span data-testid="ai-choice-text">{t(notes ? "aiDraft.choice.notes" : "aiDraft.choice.ready")}</span>
       {c.writtenFor && <span data-testid="ai-written-for">{t("aiDraft.choice.writtenFor", { name: c.writtenFor })}</span>}
       <span className="ml-auto flex shrink-0 flex-wrap items-center gap-x-1">
-        {notes ? (
+        {replaceable ? (
           <>
             <Button type="button" variant="outline" size="xs" className="font-normal" data-ai-default data-testid="ai-choice-replace" onClick={() => place(s.key, "replace")}>
               {t("aiDraft.replace")}
@@ -530,12 +532,14 @@ function GapsGuard({ s, gaps }: { s: AiSession; gaps: string[] }) {
 function Guard({ s }: { s: AiSession }) {
   if (s.guard?.gaps?.length) return <GapsGuard s={s} gaps={s.guard.gaps} />;
   const writing = s.phase === "writing" || s.phase === "waitingBody";
+  // plan 163: still reading what was typed, working out who it's for, or asking: what's there is the user's own words
+  const working = s.phase === "reading" || s.phase === "resolving" || s.phase === "telling" || s.phase === "question" || s.phase === "input";
   return (
     <div className={line} data-testid="ai-guard" role="alert">
-      <span className="text-foreground">{t(writing ? "aiDraft.guard.writing" : "aiDraft.guard.ready")}</span>
+      <span className="text-foreground">{t(writing ? "aiDraft.guard.writing" : working ? "aiDraft.guard.working" : "aiDraft.guard.ready")}</span>
       <span className="ml-auto flex shrink-0 flex-wrap items-center gap-x-1">
         <Button type="button" variant="outline" size="xs" className="font-normal" data-ai-default data-testid="ai-guard-send" onClick={() => discardAndSend(s.key)}>
-          {t(writing ? "aiDraft.guard.stopSend" : "aiDraft.guard.discardSend")}
+          {t(writing || working ? "aiDraft.guard.stopSend" : "aiDraft.guard.discardSend")}
         </Button>
         <Button type="button" variant="ghost" size="xs" className={quiet} data-testid="ai-guard-keep" onClick={() => keepWriting(s.key)}>
           {t("aiDraft.guard.keep")}

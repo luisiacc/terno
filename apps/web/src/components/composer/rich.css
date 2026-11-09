@@ -126,8 +126,9 @@
 [data-ai-overlay="replacing"] > [data-editor-mount] {
   opacity: 0.55;
 }
+/* (transparent, not hidden: the editor keeps the keys, and typing there makes the draft a suggestion beside it) */
 [data-ai-overlay="replacing"][data-ai-streaming] > [data-editor-mount] {
-  visibility: hidden;
+  opacity: 0;
 }
 
 /* plan 18: ghost text, the rest of a sentence the user often writes. A layer beside the editor (never in its DOM),

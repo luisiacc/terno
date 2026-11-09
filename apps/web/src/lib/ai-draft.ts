@@ -10,7 +10,7 @@ import { getApp, useApp } from "~/state/app";
 import { loadThread, useThreads } from "~/state/threads";
 import { draftingOffered, errorHelp, writingModel, writingTarget } from "./ai";
 import { aiDraftHooks, canDraft, useAiDraftUi, type AiDraftBadge } from "./ai-draft-state";
-import { addressReply, composeLanding, composeOpening, leaveNewDraft, sendDraft } from "./compose";
+import { addressReply, composeLanding, recipientsUnchosen, composeOpening, leaveNewDraft, sendDraft } from "./compose";
 import { focusSoon } from "./compose-focus-move";
 import { draftCommands, draftKeyOf } from "./draft-commands";
 import { discardDraft, discardListeners, authored, draftPresentationThread, editDraft, editDraftRecipients, flushDraft, forgetDraft, loseDraftHome, materialize, NO_AUTO, shownDraftKey, unsaveDraft, useDrafts, validateDraftPresentation, validRecipients, type LocalDraft } from "./drafts";
@@ -394,7 +394,8 @@ async function quietly(call: () => Promise<unknown>): Promise<void> {
 }
 
 function newSession(key: string, o: { opened: boolean; phase: AiPhase }): AiSession {
-  return { key, phase: o.phase, instruction: "", focus: 1, opened: o.opened, who: false, question: null, fromAccountId: null, confirmFailed: false, lookingUp: false, intentRequest: null, everyone: 0, run: null, lastSpec: null, choice: null, held: null, error: null, strip: null, guard: null, live: "", confirm: null, rewrite: false, fromBody: false, reading: null, readFailed: false };
+  // plan 163: no focus asked at first: the keys stay where they are (the body, or To); a question asks for them
+  return { key, phase: o.phase, instruction: "", focus: 0, opened: o.opened, who: false, question: null, fromAccountId: null, confirmFailed: false, lookingUp: false, intentRequest: null, everyone: 0, run: null, lastSpec: null, choice: null, held: null, error: null, strip: null, guard: null, live: "", confirm: null, rewrite: false, fromBody: false, reading: null, readFailed: false };
 }
 
 // ── the row opens
@@ -479,7 +480,12 @@ export function setInstruction(key: string, instruction: string) {
 /** Plan 163: words in an empty body, as if typed: a summary item's Reply. Never over what's there. */
 function seedBody(key: string, text: string) {
   const c = controllerFor(key);
-  if (c ? !c.empty() : bodyNow(key).trim()) return;
+  // in the editor that's there, at once (a run bound right after reads these words); else in the draft it will open with
+  if (c) {
+    if (c.empty()) c.insertGenerated(text, "replace");
+    return;
+  }
+  if (bodyNow(key).trim()) return;
   editDraft(key, { bodyHtml: toEmailHtml(fromPlainText(text)), bodyText: text });
 }
 
@@ -649,7 +655,7 @@ function surfaceOf(d: LocalDraft, fromBody = false) {
   const thread = threadOf(d);
   // a reply Terno filled in isn't a choice of the user's: the conversation it's on is the surface. Plan 163 (Codex review
   // 3): with the instruction typed in the body the draft is "written in", so what decides is whether they chose anyone
-  const unchosen = !authored(d) || (fromBody && recipientsAuto(d));
+  const unchosen = !authored(d) || (fromBody && recipientsUnchosen(d));
   if ((d.mode === "reply" || d.mode === "replyAll") && thread !== null && unchosen) return { kind: "thread" as const, threadId: thread };
   const recipients = validRecipients(d.toText);
   if (d.mode === "new" && !recipients.length && unchosen) return { kind: "list" as const };
@@ -746,7 +752,7 @@ async function resolve(key: string, instruction: string, d: LocalDraft) {
   switch (route.type) {
     case "reply": {
       const thread = threadOf(d);
-      if (route.to && thread !== null) await addressReply(key, thread, route.to);
+      if (route.to && thread !== null) await addressReply(key, thread, route.to, { keepBody: session(key)?.fromBody === true });
       if (session(key)?.phase !== "resolving") return;
       update(key, { everyone: route.to && route.includeEveryone > 1 ? route.includeEveryone : 0 });
       return startRun(key, runFor(key, instruction));
@@ -811,7 +817,8 @@ export async function answer(key: string, choice: AiAnswer): Promise<void> {
       carry(landed.key);
       addRecipient(landed.key, to);
       const spec = moveTo(landed.key);
-      if (onlyInstruction) forgetDraft(key);
+      // it was saved as they typed it: it goes from the store too
+      if (onlyInstruction) void discardDraft(key);
       return startRun(landed.key, spec);
     }
     addRecipient(landed.key, to);
@@ -825,11 +832,12 @@ export async function answer(key: string, choice: AiAnswer): Promise<void> {
       return startRun(key, runFor(key, instruction));
     }
     const prefill = () => ({ toText: formatAddressList([{ name: to.name, email: to.address }]), auto: NO_AUTO });
-    const wasEmpty = !authored(d) || onlyInstruction;
+    const wasEmpty = !authored(d);
     remove(key, false);
     const landed = await composeLanding("new", null, 0, prefill, fromAccountId ?? d.accountId, { target: "ai", onLanded: (l) => carry(l.key) });
     if (landed.kind === "none") return;
     if (wasEmpty) forgetDraft(key);
+    else if (onlyInstruction) void discardDraft(key);
     return startRun(landed.key, moveTo(landed.key));
   }
   // Reply on the recent thread
@@ -838,12 +846,14 @@ export async function answer(key: string, choice: AiAnswer): Promise<void> {
   remove(key, false);
   if (d.mode === "new" && (!authored(d) || onlyInstruction)) {
     if (getApp().compose?.key === key) leaveNewDraft();
-    else forgetDraft(key);
+    // what held only the instruction was saved as they typed it: it goes from the store too
+    if (authored(d)) void discardDraft(key);
+    else if (getApp().compose?.key !== key) forgetDraft(key);
   }
   openThread(threadId);
   const landed = await composeLanding("reply", threadId, 0, undefined, undefined, { target: "ai", onLanded: (l) => carry(l.key) });
   if (landed.kind === "none") return;
-  await addressReply(landed.key, threadId, to);
+  await addressReply(landed.key, threadId, to, { keepBody: fromBody });
   return startRun(landed.key, fromBody ? moveTo(landed.key) : runFor(landed.key, instruction));
 }
 
@@ -987,12 +997,11 @@ function finished(key: string, result: AiComposeResult) {
   const moved = fieldsMoved(run.binding, d);
   // plan 163 (Codex review 4): the instruction in the body is compared as a document: a change of formatting counts
   const c0 = controllerFor(key);
-  const unchanged = run.spec.kind === "body" && c0 && run.binding.doc !== null ? c0.docToken() === run.binding.doc : bodyNow(key) === run.binding.text;
+  // (bound before its editor existed, as in a draft an answer opened: the words, as the editor reads them now)
+  const unchanged = run.spec.kind === "body" && c0 && run.binding.doc !== null ? c0.docToken() === run.binding.doc : bodyNow(key).trim() === run.binding.text.trim();
   if (run.spec.kind === "notes" || moved || !unchanged) {
     const writtenFor = moved && run.binding.to !== addresses(d.toText) ? run.binding.who || null : null;
-    // over an instruction typed into since, Replace is offered too: it's the instruction's place
-    const reason = (run.spec.kind === "notes" && unchanged && !moved) || run.spec.kind === "body" ? "notes" : "typed";
-    update(key, { phase: "choice", choice: { reason, writtenFor, result }, live: t("aiDraft.live.ready", { count: wordCount(result.text) }), run: { ...run, typed: true } });
+    update(key, { phase: "choice", choice: { reason: run.spec.kind === "notes" && unchanged && !moved ? "notes" : "typed", writtenFor, result }, live: t("aiDraft.live.ready", { count: wordCount(result.text) }), run: { ...run, typed: true } });
     return;
   }
   // the draft can't change right now (the mailbox is handing over): it waits for a choice, never lost
@@ -1614,7 +1623,8 @@ export function noteBody(key: string) {
   }
   if (!s || !c) return;
   if (s.run && (s.phase === "writing" || s.phase === "waitingBody" || s.phase === "error")) {
-    const typed = s.run.spec.kind === "draft" ? !c.empty() : c.docToken() !== s.run.binding.doc;
+    // plan 163: a run bound before its editor existed (a draft an answer opened) compares the words, not a document
+    const typed = s.run.spec.kind === "draft" ? !c.empty() : s.run.binding.doc === null ? bodyNow(key).trim() !== s.run.binding.text.trim() : c.docToken() !== s.run.binding.doc;
     if (typed !== s.run.typed) update(key, { run: { ...s.run, typed } });
     return;
   }
