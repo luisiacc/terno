@@ -408,5 +408,9 @@ export function fakeAnswer(prompt: string): { text: string; stop: Completion["st
   if (/\[\[cite99\]\]/.test(question)) text += " And more. [m99]";
   if (/\[\[url\]\]/.test(question)) text += " See https://evil.test/login now. [m1]";
   if (/\[\[uncited\]\]/.test(question)) text += " This sentence cites nothing at all here.";
+  // plan 162 (after ai162-r04): a note the model wrote for itself, a list, and an answer longer than a small window
+  if (/\[\[note\]\]/.test(question)) text += ` Under another address [m9 doesn't mention it, so ignore that one].`;
+  if (/\[\[list\]\]/.test(question)) text += `\n- The first point, as written [${hit.label}]\n- **The second** point, as written [${hit.label}]`;
+  if (/\[\[long\]\]/.test(question)) text += Array.from({ length: 24 }, (_, i) => `\nLine ${i + 1} of a long answer, from the same message [${hit.label}].`).join("");
   return { text: `${text}\n<status>${/\[\[partial\]\]/.test(question) ? "partial" : "answered"}</status>`, stop: "end" };
 }

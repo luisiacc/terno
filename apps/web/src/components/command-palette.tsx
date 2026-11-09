@@ -154,6 +154,8 @@ function TargetHeading({ row }: { row: ThreadSummary }) {
  */
 const ASK_FITS = "flex flex-col max-h-[calc(82dvh-1rem)]";
 
+const TABBABLE = "button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]";
+
 /** The dialog's own field (the palette's input, or Ask's follow-up box), else its first control. */
 const paletteHome = (): HTMLElement | null => {
   const dialog = document.querySelector<HTMLElement>("[data-slot=dialog-content]");
@@ -172,12 +174,21 @@ function useKeysInPalette(open: boolean): void {
     const onFocus = (e: FocusEvent) => {
       if (behind(e.target)) paletteHome()?.focus({ preventScroll: true });
     };
+    // Tab and ⇧Tab go round the dialog's own controls: past its last, its first (it stepped out to <body>, then the app)
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Tab" || (document.activeElement && document.activeElement !== document.body)) return;
-      const home = paletteHome();
-      if (!home) return;
+      if (e.key !== "Tab" || e.defaultPrevented) return;
+      const dialog = document.querySelector<HTMLElement>("[data-slot=dialog-content]");
+      if (!dialog) return;
+      const stops = [...dialog.querySelectorAll<HTMLElement>(TABBABLE)].filter((el) => el.tabIndex >= 0 && !el.closest("[inert]") && el.getClientRects().length > 0);
+      const at = document.activeElement;
+      const inside = at instanceof HTMLElement && dialog.contains(at);
+      const first = stops[0];
+      const last = stops.at(-1);
+      if (!first || !last) return;
+      const to = !inside ? (e.shiftKey ? last : first) : e.shiftKey && at === first ? last : !e.shiftKey && at === last ? first : null;
+      if (!to) return;
       e.preventDefault();
-      home.focus({ preventScroll: true });
+      to.focus({ preventScroll: true });
     };
     document.addEventListener("focusin", onFocus, true);
     document.addEventListener("keydown", onKey, true);

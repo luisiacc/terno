@@ -63,6 +63,57 @@ async function question(page: Page, text: string) {
 }
 
 test.describe("ask your mail (plan 141)", () => {
+  test("plan 162 (after ai162-r04): a long answer fits a 1100x700 window with its footer whole and every source in reach; no scratch text; a list; unlinked in grey, not underlined; the keys never leave the dialog", async ({ app: page, server }) => {
+    await page.setViewportSize({ width: 1100, height: 700 });
+    await withMail(page, server);
+    await open(page);
+    await question(page, `${WORD} [[long]] [[list]] [[note]] [[uncited]]?`);
+    await expect(lastTurn(page)).toHaveAttribute("data-status", "answered");
+    // the dialog, its follow-up box and its keys are inside the window (it ran 6 px past it, its sources cut)
+    const dialog = (await page.getByRole("dialog").boundingBox())!;
+    expect(dialog.y + dialog.height).toBeLessThanOrEqual(700);
+    for (const id of ["ask-follow-up", "ask-hints", "ask-header"]) {
+      const box = (await page.getByTestId(id).boundingBox())!;
+      expect(box.y + box.height, id).toBeLessThanOrEqual(dialog.y + dialog.height);
+    }
+    await expect(page.getByTestId("ask-hints")).toContainText("1 source");
+    // the region says there's more below, and scrolls to the last source
+    await expect(page.getByTestId("ask-area")).toHaveAttribute("data-more", "true");
+    await page.getByTestId("ask-area").evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+    await expect(page.getByTestId("ask-source").last()).toBeInViewport();
+    // the model's note to itself never reaches the answer
+    await expect(page.getByTestId("ask-answer")).not.toContainText("doesn't mention");
+    await expect(page.getByTestId("ask-answer")).not.toContainText("m9");
+    // a list is a list, **bold** is bold, and no raw marker shows
+    await expect(page.getByTestId("ask-answer-list")).toHaveCount(1);
+    await expect(page.getByTestId("ask-answer-item")).toHaveCount(2);
+    await expect(page.getByTestId("ask-answer-item").last().locator("strong")).toHaveText("The second");
+    await expect(page.getByTestId("ask-answer")).not.toContainText("**");
+    // not linked: the secondary ink, never an underline (an underline reads as a link)
+    const unlinked = page.getByTestId("ask-unlinked").filter({ hasText: "This sentence cites nothing at all here." });
+    await expect(unlinked).toHaveCount(1);
+    expect(await unlinked.evaluate((el) => getComputedStyle(el).textDecorationLine)).toBe("none");
+    const ink = await page.getByTestId("ask-answer").evaluate((el) => getComputedStyle(el).color);
+    expect(await unlinked.evaluate((el) => getComputedStyle(el).color)).not.toBe(ink);
+    // the keys stay in Ask: after New question and Previous AI questions, Tab never reaches the app behind the scrim
+    const behind = () => page.evaluate(() => !!document.activeElement && document.activeElement !== document.body && !!document.getElementById("root")?.contains(document.activeElement));
+    const inBody = () => page.evaluate(() => document.activeElement === document.body);
+    await page.getByTestId("ask-new").click();
+    for (let i = 0; i < 12; i++) {
+      await page.keyboard.press("Tab");
+      expect(await behind(), `Tab ${i + 1} after New question`).toBe(false);
+    }
+    await question(page, `what about ${WORD}?`);
+    await expect(lastTurn(page)).toHaveAttribute("data-status", "answered");
+    await page.getByTestId("ask-history-row").click();
+    await expect(page.getByTestId("palette-input")).toBeVisible();
+    for (let i = 0; i < 12; i++) {
+      await page.keyboard.press("Tab");
+      expect(await behind(), `Tab ${i + 1} after Previous AI questions`).toBe(false);
+      expect(await inBody(), `Tab ${i + 1} after Previous AI questions`).toBe(false);
+    }
+  });
+
   test("plan 162: Ask's provenance popover is whole, and its answer and sources reach the wheel, in every design, light and dark, 1440 and 1100", { tag: "@design" }, async ({ app: page, server }) => {
     await withMail(page, server);
     await open(page);
@@ -161,7 +212,7 @@ test.describe("ask your mail (plan 141)", () => {
       const hints = page.getByTestId("ask-hints");
       await expect(hints).toHaveAttribute("data-where", "asking");
       await expect(hints).toContainText("Ask");
-      await expect(hints).toContainText("Sources");
+      await expect(hints).toContainText(/\d+ sources?/);
       await expect(hints).toContainText("Close");
       await expect(hints).not.toContainText("Navigate");
       await followUp(page).press("ArrowDown");
@@ -450,7 +501,7 @@ test.describe("ask your mail (plan 141)", () => {
     fakeDraft.paceMs = 0;
     await expect(lastTurn(page)).toHaveAttribute("data-status", "answered");
     await expect(lastTurn(page).getByTestId("ask-unlinked").last()).toHaveText("This sentence cites nothing at all here.");
-    await expect(lastTurn(page).getByTestId("ask-check-unlinked")).toHaveText("Underlined parts aren’t linked to a message.");
+    await expect(lastTurn(page).getByTestId("ask-check-unlinked")).toHaveText("Parts in grey aren’t linked to a message.");
     // Codex review: a follow-up under a long answer starts at its top, and stays there as it streams and once it's done
     await page.getByTestId("ask-area").evaluate((el) => (el.style.maxHeight = "140px"));
     fakeDraft.paceMs = 40;
