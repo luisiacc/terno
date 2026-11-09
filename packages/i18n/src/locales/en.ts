@@ -1390,6 +1390,7 @@ const en = {
   "aiDraft.style.length": { one: "Usually about # word", other: "Usually about # words" },
   "aiDraft.style.greeting": "Often opens with “{text}”",
   "aiDraft.style.greetingName": "Often opens with just their name",
+  "aiDraft.style.greetingWithName": "Often opens with “{text}” and their name",
   "aiDraft.style.noGreeting": "Often starts with no greeting",
   "aiDraft.style.signOff": "Often signs off with “{text}”",
   "aiDraft.style.noSignOff": "Often ends with no sign-off",

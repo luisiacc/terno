@@ -1381,6 +1381,7 @@ const es = {
   "aiDraft.style.length": { one: "Normalmente unas # palabra", other: "Normalmente unas # palabras" },
   "aiDraft.style.greeting": "Suele empezar con «{text}»",
   "aiDraft.style.greetingName": "Suele empezar solo con su nombre",
+  "aiDraft.style.greetingWithName": "Suele empezar con «{text}» y su nombre",
   "aiDraft.style.noGreeting": "Suele empezar sin saludo",
   "aiDraft.style.signOff": "Suele despedirse con «{text}»",
   "aiDraft.style.noSignOff": "Suele terminar sin despedida",

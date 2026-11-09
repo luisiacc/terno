@@ -98,7 +98,9 @@ export function TodayDigestEntry({ inline }: { /** List's full-width title row: 
       className={cn(
         "no-drag flex h-7 min-w-0 cursor-pointer items-center gap-1.5 rounded-md ps-3 pe-2 text-start type-list-subtitle transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
         inline ? "max-w-[40cqw] shrink-0" : "-ms-3 w-[calc(100%+0.75rem)]",
-        selected ? "bg-row-selected text-row-selected-foreground" : "text-muted-foreground hover:bg-row-hover hover:text-foreground",
+        // plan 162 (after ai162-r03): its words in the ink (four reports: the quietest line on Today, read as a caption); the
+        // glyph and the chevron stay quiet, so it's still below any person's row in weight
+        selected ? "bg-row-selected text-row-selected-foreground" : "text-foreground hover:bg-row-hover",
       )}
       // the ordinary row's press and release (Codex review): a bulk selection ends, as opening any row ends it
       onClick={() => {
@@ -106,10 +108,10 @@ export function TodayDigestEntry({ inline }: { /** List's full-width title row: 
         releaseRow(DIGEST_ROW_ID);
       }}
     >
-      <Newspaper aria-hidden className="size-[1.15em] shrink-0" />
+      <Newspaper aria-hidden className={cn("size-[1.15em] shrink-0", !selected && "text-muted-foreground")} />
       <span className="sr-only">{t("today.newsletters")}, </span>
       <span className="min-w-0 flex-1 truncate">{digestLabel(digest)}</span>
-      <ChevronRight aria-hidden className="size-[1.15em] shrink-0" />
+      <ChevronRight aria-hidden className={cn("size-[1.15em] shrink-0", !selected && "text-muted-foreground")} />
     </button>
   );
 }

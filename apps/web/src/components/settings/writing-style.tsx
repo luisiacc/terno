@@ -38,7 +38,9 @@ export function habitLines(h: Habits): string[] {
   if (h.words.median > 0) lines.push(t("aiDraft.style.length", { count: h.words.median }));
   const greeting = h.greetings[0];
   // "{name}," alone is someone who opens with just the name: said in words, not as a lone mark in quotes
-  if (greeting && greeting.share >= 0.15) lines.push(/^\{name\}\W*$/.test(greeting.text) ? t("aiDraft.style.greetingName") : t("aiDraft.style.greeting", { text: shown(greeting.text) }));
+  // plan 162 (after ai162-r03): "Hello {name}," is "Hello" and their name, in words (the template's "Hello …," read as a placeholder)
+  const opener = greeting?.text.includes("{name}") ? greeting.text.replace(/\{name\}/g, "").replace(/[\s,.!:;]+$/u, "").trim() : null;
+  if (greeting && greeting.share >= 0.15) lines.push(/^\{name\}\W*$/.test(greeting.text) ? t("aiDraft.style.greetingName") : opener ? t("aiDraft.style.greetingWithName", { text: opener }) : t("aiDraft.style.greeting", { text: shown(greeting.text) }));
   else if (h.noGreeting >= 0.6) lines.push(t("aiDraft.style.noGreeting"));
   const signOff = h.signOffs[0];
   if (signOff && signOff.share >= 0.15) lines.push(t("aiDraft.style.signOff", { text: shown(signOff.text) }));
