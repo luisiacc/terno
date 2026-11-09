@@ -158,6 +158,11 @@ test.describe("back to the answer, and the answer pinned (plan 165)", () => {
       await expect(toggle).toBeFocused();
       await toggle.click();
       await expect(page.getByTestId("pinned-ask-body")).toBeVisible();
+      // folded from the answer by a click that doesn't move focus (Safari's): the header keeps it (Codex code review)
+      await page.getByTestId("pinned-ask-body").focus();
+      await toggle.evaluate((el: HTMLElement) => el.click());
+      await expect(toggle).toBeFocused();
+      await toggle.click();
       await page.getByTestId("pinned-ask-body").focus();
       await page.keyboard.press("Escape");
       await expect(card(page)).toBeVisible();

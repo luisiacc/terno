@@ -12,7 +12,7 @@ import { discardDraft, restoreDiscarded, useDrafts } from "~/lib/drafts";
 import { DraftCommandsHost } from "~/lib/draft-commands";
 import { warmAutocomplete } from "~/lib/autocomplete";
 import { focusReading, pinDraft, unpinDraft } from "~/lib/pinned-draft";
-import { usePinned } from "~/lib/pinned-draft-state";
+import { draftMaxHeight, usePinned } from "~/lib/pinned-draft-state";
 import { usePinnedAsk } from "~/lib/pinned-ask-state";
 import { registerUndo, snack, useSnack } from "~/lib/snack";
 import { setApp, useApp } from "~/state/app";
@@ -131,9 +131,9 @@ export function PinnedDraft({ overList, beside }: {
       aria-label={t("compose.pinnedLabel", { name: what })}
       data-testid="pinned-draft"
       data-draft-key={key}
-      style={bottom !== GAP ? { bottom } : undefined}
+      style={{ bottom, maxHeight: draftMaxHeight(bottom) }}
       // beside a pinned answer, 28.5 rem: its foot (27.25 rem) still holds Generate's word on one line (composer/ai-slot)
-      className={cn("absolute right-3 bottom-3 z-[6] flex max-h-[min(70%,40rem)] flex-col", beside ? "w-[min(28.5rem,calc(100%-1.5rem))]" : "w-[min(32rem,calc(100%-1.5rem))]", "overflow-hidden rounded-xl bg-popover text-popover-foreground shadow-popover animate-in fade-in-0 slide-in-from-bottom-1 duration-base")}
+      className={cn("absolute right-3 z-[6] flex flex-col", beside ? "w-[min(28.5rem,calc(100%-1.5rem))]" : "w-[min(32rem,calc(100%-1.5rem))]", "overflow-hidden rounded-xl bg-popover text-popover-foreground shadow-popover animate-in fade-in-0 slide-in-from-bottom-1 duration-base")}
     >
       <form
         ref={rootRef}

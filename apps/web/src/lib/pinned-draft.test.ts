@@ -15,7 +15,7 @@ vi.mock("~/rpc/connection", () => ({ client: { call: () => Promise.reject(new Er
 const { createDraft, editDraft, setDraftTransport, useDrafts } = await import("./drafts");
 const { newFields } = await import("./compose-fields");
 const { pinDraft, unpinDraft } = await import("./pinned-draft");
-const { usePinned } = await import("./pinned-draft-state");
+const { draftMaxHeight, usePinned } = await import("./pinned-draft-state");
 const { useSnack, resetSnacks } = await import("./snack");
 const { setApp } = await import("~/state/app");
 const { useDraftRecovery } = await import("./draft-recovery-ui");
@@ -121,5 +121,12 @@ describe("unpinning away from its conversation", () => {
     await settle(); await settle();
     expect(useDrafts.getState().drafts[key]).toBeDefined();
     expect(useSnack.getState().current?.message).toBe("Draft kept, but not saved yet");
+  });
+});
+
+describe("its height (Codex code review, plan 165)", () => {
+  it("never reaches past the pane's top, however high a snack under the pinned answer lifts it", () => {
+    expect(draftMaxHeight(12)).toBe("min(70%, 40rem, calc(100% - 24px))");
+    expect(draftMaxHeight(300)).toBe("min(70%, 40rem, calc(100% - 312px))");
   });
 });

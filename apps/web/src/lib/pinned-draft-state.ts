@@ -24,6 +24,12 @@ export const usePinned = create<PinnedState>(() => ({ key: null, threadId: null,
 
 export const pinnedKey = (): string | null => usePinned.getState().key;
 
+/**
+ * The draft's tallest: 70% of its pane and 40 rem, and never past the pane's top however high it stands (plan 165: a
+ * snack under the pinned answer beside it lifts both, onto one line).
+ */
+export const draftMaxHeight = (bottom: number): string => `min(70%, 40rem, calc(100% - ${bottom + 12}px))`;
+
 /** What pads a scroll end at the bottom right: the snack dock's or the card's, whichever is taller. */
 export const bottomInset = (snackInset: number, pinnedInset: number): number => Math.max(snackInset, pinnedInset);
 

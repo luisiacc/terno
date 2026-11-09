@@ -145,3 +145,10 @@ The critique (7 points, `/tmp/terno-scratch/p164/ask-left/critique.md`) and what
 5. **No header-only mode, but never shorter than the header:** the card's `maxHeight` has a 40 px floor, so a very short window pushes it up rather than clipping its controls (unit).
 6. **Over the list, its header stays clear** (its title line, a selection's toolbar at `z-20`): reaching over Split's list, the card's top room is also bounded by the list's scroller top.
 7. **Generate's word shows only for a note or gaps.** The List flow pins a reply that is a note for AI and checks the word beside the card; every flow checks Send, Generate and Discard on one line inside the card. Spanish's "Generar" is shorter than "Generate", so English is the binding case.
+
+### What the Codex code review changed
+
+One round (`/tmp/terno-scratch/p164/ask-left/review-1.md`), two findings, both fixed:
+
+1. **A draft lifted onto the answer's floor could pass the pane's top** (a short window, a snack meeting only the answer and growing): its height kept the 70% cap whatever its bottom. Its tallest is now also the pane less its bottom and a gap (`draftMaxHeight`, unit).
+2. **Folding with focus in the answer lost it in Safari** (a click doesn't focus a button there, and the answer unmounted under it), which removing the header-only mode's handoff had exposed. Collapse from inside the answer gives focus to the toggle first (e2e: a click that doesn't move focus).

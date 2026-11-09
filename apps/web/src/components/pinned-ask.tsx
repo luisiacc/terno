@@ -177,7 +177,11 @@ export function PinnedAsk() {
             label={collapsed ? t("ask.pinned.expand") : t("ask.pinned.collapse")}
             testId="pinned-ask-toggle"
             expanded={!collapsed}
-            onClick={() => usePinnedAsk.setState({ collapsed: !collapsed })}
+            onClick={() => {
+              // folding with focus in the answer: the header keeps it (Safari doesn't focus a button on a click)
+              if (!collapsed && bodyRef.current?.contains(document.activeElement)) toggleRef.current?.focus({ preventScroll: true });
+              usePinnedAsk.setState({ collapsed: !collapsed });
+            }}
           >
             {collapsed ? <ChevronUp /> : <ChevronDown />}
           </HeaderButton>
