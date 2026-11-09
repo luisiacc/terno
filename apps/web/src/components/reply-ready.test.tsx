@@ -178,6 +178,7 @@ describe("plan 144, owner's decisions (2): Reply all on a conversation with othe
     expect(group.getAttribute("aria-label")).toBe("Reply or Reply all");
     // the reply bar's words, in the header, after who it's to
     expect(group.parentElement).toBe(q("reply-ready-header"));
+    expect(group.previousElementSibling!.contains(q("reply-ready-title"))).toBe(true);
     expect(q("reply-ready-mode-reply")!.textContent).toBe(" Reply");
     expect(q("reply-ready-mode-all")!.textContent).toBe(" Reply all");
     expect(q("reply-ready-mode-reply")!.getAttribute("aria-pressed")).toBe("true");

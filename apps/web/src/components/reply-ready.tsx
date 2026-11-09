@@ -92,39 +92,50 @@ export default function ReplyReady({ threadId }: { threadId: number }) {
   const to = toAll ? everyone : shown.row ? replyTo(shown.row) : null;
   const gaps = shown.row?.checks?.placeholders ?? [];
   const toFill = writing ? 0 : gapsToFill(shown.text, gaps);
+  const lead = (
+    <>
+      {/* the spinner keeps its status and name, as before the card */}
+      {writing ? <Spinner className={AI_GLYPH} /> : <Sparkles aria-hidden className={AI_GLYPH} />}
+      <span data-testid="reply-ready-title" className={AI_TITLE}>{writing ? t("replies.writing") : t("replies.title")}</span>
+      {/* what's left for the user, said before Use, in the ink */}
+      {toFill > 0 && <><span aria-hidden>·</span><span data-testid="reply-ready-gaps" className="font-medium text-foreground">{t("replies.gaps", { count: toFill })}</span></>}
+      {/* each "·" its own item, so the gaps either side are the same; the voice is the provenance's to explain (pass 3) */}
+      {!writing && to ? <><span aria-hidden>·</span><span data-testid="reply-ready-to" className="min-w-0">{to}</span></> : null}
+    </>
+  );
+  // owner's decisions (2): the reply bar's two answers in its words and glyphs, at the header's end, once it's ready; its
+  // track sits in the header's 40 px without growing it. The words stay as written: if they greet only the sender, the user edits
+  const choice = !writing && everyone !== null && (
+    <ToggleGroup
+      data-testid="reply-ready-mode"
+      aria-label={t("replies.mode")}
+      variant="segmented"
+      className="-my-1.5 shrink-0"
+      value={[toAll ? "replyAll" : "reply"]}
+      onValueChange={(v: string[]) => v[0] && chooseReplyAll(threadId, v[0] === "replyAll")}
+    >
+      <ToggleGroupItem value="reply" data-testid="reply-ready-mode-reply" className="h-6 px-2 text-xs">
+        <Reply aria-hidden /> {t("actions.reply")}
+      </ToggleGroupItem>
+      <ToggleGroupItem value="replyAll" data-testid="reply-ready-mode-all" className="h-6 px-2 text-xs">
+        <ReplyAll aria-hidden /> {t("compose.bar.replyAll")}
+      </ToggleGroupItem>
+    </ToggleGroup>
+  );
   return (
     <section data-testid="reply-ready" data-phase={shown.phase} aria-label={t("replies.title")} className={cn(AI_CARD, "mt-4 px-3.5 pb-3 animate-in fade-in-0 duration-base ease-motion")}>
       {/* once, never the deltas */}
       <div role="status" aria-live="polite" className="sr-only" data-testid="reply-ready-live">{writing ? "" : t("replies.title")}</div>
       {/* the summary's header: its height, its glyph, its type */}
-      <div data-testid="reply-ready-header" className={cn(AI_HEADER, "flex-wrap gap-y-0")}>
-        {/* the spinner keeps its status and name, as before the card */}
-        {writing ? <Spinner className={AI_GLYPH} /> : <Sparkles aria-hidden className={AI_GLYPH} />}
-        <span data-testid="reply-ready-title" className={AI_TITLE}>{writing ? t("replies.writing") : t("replies.title")}</span>
-        {/* what's left for the user, said before Use, in the ink */}
-        {toFill > 0 && <><span aria-hidden>·</span><span data-testid="reply-ready-gaps" className="font-medium text-foreground">{t("replies.gaps", { count: toFill })}</span></>}
-        {/* each "·" its own item, so the gaps either side are the same; the voice is the provenance's to explain (pass 3) */}
-        {!writing && to ? <><span aria-hidden>·</span><span data-testid="reply-ready-to" className="min-w-0">{to}</span></> : null}
-        {/* the reply bar's two answers in its words and glyphs, on the header's end; the track sits in the header's
-            40 px without growing it. The words stay as written: if they greet only the sender, the user edits */}
-        {!writing && everyone !== null && (
-          <ToggleGroup
-            data-testid="reply-ready-mode"
-            aria-label={t("replies.mode")}
-            variant="segmented"
-            className="ms-auto -my-1.5"
-            value={[toAll ? "replyAll" : "reply"]}
-            onValueChange={(v: string[]) => v[0] && chooseReplyAll(threadId, v[0] === "replyAll")}
-          >
-            <ToggleGroupItem value="reply" data-testid="reply-ready-mode-reply" className="h-6 px-2 text-xs">
-              <Reply aria-hidden /> {t("actions.reply")}
-            </ToggleGroupItem>
-            <ToggleGroupItem value="replyAll" data-testid="reply-ready-mode-all" className="h-6 px-2 text-xs">
-              <ReplyAll aria-hidden /> {t("compose.bar.replyAll")}
-            </ToggleGroupItem>
-          </ToggleGroup>
-        )}
-      </div>
+      {choice ? (
+        // owner's decisions (2): the words wrap in their own block, so the switch keeps the first line's end at any width
+        <div data-testid="reply-ready-header" className={cn(AI_HEADER, "gap-3")}>
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-0">{lead}</div>
+          {choice}
+        </div>
+      ) : (
+        <div data-testid="reply-ready-header" className={cn(AI_HEADER, "flex-wrap gap-y-0")}>{lead}</div>
+      )}
       {writing && !shown.text.trim() ? (
         // its place held until the first words: three lines of the text's height
         <SkeletonText data-testid="reply-ready-skeleton" lines={3} className="py-1.5" lineClassName="h-3" />

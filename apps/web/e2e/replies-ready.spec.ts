@@ -144,10 +144,9 @@ test.describe("replies ready (plan 144)", () => {
     await row(page).click();
     await expect(block(page)).toHaveAttribute("data-phase", "ready", { timeout: 15_000 });
     const words = await page.getByTestId("reply-ready-text").innerText();
-    const mode = page.getByTestId("reply-ready-mode");
     // Reply first, as the reply bar's first; the reply bar offers Reply all here too
     await expect(page.getByTestId("quick-reply-all")).toBeVisible();
-    await expect(mode).toBeVisible();
+    await expect(page.getByTestId("reply-ready-mode")).toBeVisible();
     await expect(page.getByTestId("reply-ready-mode-reply")).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByTestId("reply-ready-to")).toHaveText("To Yuki Gutiérrez");
     // in the header, which it doesn't grow
@@ -155,6 +154,14 @@ test.describe("replies ready (plan 144)", () => {
     await page.getByTestId("reply-ready-mode-all").click();
     await expect(page.getByTestId("reply-ready-mode-all")).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByTestId("reply-ready-to")).toHaveText("To Yuki Gutiérrez, cc Ana Ruiz and Ben Wu");
+    // narrow, the people wrap in their own place: the switch stays on the title's line, never pushed under them
+    await page.setViewportSize({ width: 1100, height: 700 });
+    const middle = async (id: string) => { const b = (await page.getByTestId(id).boundingBox())!; return b.y + b.height / 2; };
+    const to = (await page.getByTestId("reply-ready-to").boundingBox())!;
+    const mode = (await page.getByTestId("reply-ready-mode").boundingBox())!;
+    expect(mode.x).toBeGreaterThanOrEqual(to.x + to.width);
+    expect(Math.abs((await middle("reply-ready-mode")) - (await middle("reply-ready-title")))).toBeLessThanOrEqual(to.height / 2 + 2);
+    await page.setViewportSize({ width: 1440, height: 900 });
     // the same words, and nothing asked again
     await expect(page.getByTestId("reply-ready-text")).toHaveText(words);
     expect(asked()).toBe(1);
