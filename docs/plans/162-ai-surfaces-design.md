@@ -819,3 +819,47 @@ Written before any code. All eight r03 reports, their 662 below-9 reasons, the 1
 2. **What's kept back, only when it changes the decision**, as plain facts with their one control each: "6 left out by the check · Show" and "3 starred or replied are skipped · Include". The sender warning stays here, first.
 3. **The decision:** Archive 3 (primary, or destructive) and Cancel.
 4. **"How Terno read it"**, one quiet disclosure, closed: the request quoted, the rule's rows, the exact search, Edit as a rule, the provenance. The help line ("Untick any you want to keep…") goes: the ticks say it.
+
+### As built (pass after ai162-r03)
+
+Where the build differs from the two sections above:
+- **Ask's scope:** "Searched all mail on this Mac · complete since Apr 25, 2026". The date is the sync window's (`offer()`): where this Mac's copy is complete from; the search reads older mail on this Mac too.
+- **Unlinked claims:** `answerSentences` also ends a sentence at a citation followed by a capitalised word (the fake model's "… [1] This sentence …"), and leaves unmarked what an answer says of its own search ("I only looked at part of your mail", "None of these says…", "there may be more"), found on real models in Graphite. Only those forms: a claim starting with "I", or "may be more than $500", is still marked (Codex review).
+- **The same-name note** shows only when the answer doesn't name each person in full; real models usually do ("Isabella Álvarez … Isabella Rivera").
+- **Esc before a word** leaves the question in the field with "Stopped before an answer. Press Return to ask again." (a notice, as a request that found nothing has).
+- **The streaming fade** is `animate-in fade-in-0 duration-slow` on each delta's span (`running.chunks`); the global reduced/off rule stops it.
+- **The action check's left-out rows stay behind Show** (with Show a bordered control and the fact in the ink). Listing them by default put three rows under a title of two.
+- **The action pane:** the request, quoted, sits under the title (the redesign hid it); "How Terno read it" holds the rule's rows, "The exact search", Edit as a rule; the provenance sits on the disclosure's line. The rule's rows say "matches the exact search below".
+- **The AI filter:** Save and apply also asks while the rule isn't counted yet (Codex review); `patternBreadth` sees anchored and grouped catch-alls (`^.+$`, `(?:.*)`, `[\s\S]+`, `.{1,}`). Its failure snack is the one AI error's words, never an address (found by the gallery: "Couldn't connect to Ollama (127.0.0.1:61550)").
+- **Reply ready with a gap** says "Reply drafted".
+- **Today's digest way in:** words in the ink, glyph and chevron quiet. **Writing style:** "Often opens with “Hello” and their name".
+- **⌘J:** only Edit instruction changed (`c4ea54cdb`, an icon button with its name and tooltip). The consent commit (`5afbfb404`) is the only other change to `components/composer/ai-draft.tsx` in this pass; nothing in `composer/` or `lib/ai-draft.ts` changes after `c4ea54cdb`.
+- **Not done:** item 20 (⌘J's pressed segment), because ⌘J waits for plan 163; the summary's "Summarizing…" shows for a moment before a cloud provider's consent (the gallery saw it); a scrim change (everyday screens).
+
+### Rebased on main (owner's decisions 2)
+
+Rebased onto `9f0c517ca`: archiving an opened newsletter returns to the digest; Reply ready offers Reply | Reply all on group threads; the field fill fix. Conflicts resolved keeping both: Reply ready keeps main's switch and header structure with this branch's gap mark, "Reply drafted" and the card that takes the reply bar's place (so Reply all is the card's switch, the bar's is hidden while it shows); main's "Save is the main button" is the branch's own order; the digest's Undo reopens a newsletter with the branch's pick (`from`, and `opened` kept). Main's tests were moved to the branch's digest (its way in is in Today's header) and its place on return (held within the row's focus nudge, 10 px).
+
+### The Codex review of this pass
+
+Four findings, all taken, each with a test that fails without its fix:
+1. **Save and apply could run before the rule was counted** (`matches` null meant "not large"). It asks first until counted (`filters-dialog.test.tsx`).
+2. **An anchored catch-all slipped past the guard** (`^.+$`). `patternBreadth` normalises anchors, groups and `[\s\S]` (`rule-words.test.ts`).
+3. **The caveat exemption was too broad** ("I found that…", "may be more than $500"). Only what an answer says of its own search (`ask.test.ts`).
+4. **A follow-up under a long answer didn't start at its top** (the scroll was clamped while it said "Looking…", and never set again). It's held at its top as it streams and once it's done, until the user scrolls (`ask.spec.ts`; 86 px off without the fix).
+
+### Results (pass after ai162-r03)
+
+- **Typecheck and lint:** clean.
+- **e2e, macOS (`e2e`):** `ask`, `summaries`, `plain-actions`, `filters`, `followups`, `replies-ready`, `today`, `ai-draft`, `snack`, `i18n`, `palette`: 94 passed (after the fixes above). **Lumen, Atelier, Graphite and Luma** (their flows of the same specs, `design-axe`, `visual`, `designs`, `controls`, `menu-corners`): 88 passed. **macOS** `visual`, `design-axe`, `motion`, `designs`: 27 passed. No baseline moved.
+- **Unit:** the touched files pass. Across `apps/web/src`: `floating-restoration-lifetime` fails at HEAD as on earlier commits; `command-palette` fails only in the full run (passes alone); `diag-local` and `account-folders.perf` as before.
+- **`pnpm test:ui-perf`:** 45 passed.
+- **The frozen capture on real models** reached every AI state in Lumen, Atelier, macOS and Graphite, light and dark (34 shots each, 67 AI requests each, to api.anthropic.com and api.openai.com only), on the final build (`8fe355896`), with no change to `scripts/ui-rating/`. Shots: `/tmp/terno-scratch/ai-redesign/round3/<design>/`; before and after sheets (r03 against this pass): `/tmp/terno-scratch/ai-redesign/sheets-r3/<design>-<mode>.png`.
+- **The gallery** (`/tmp/terno-scratch/ai-gallery/gallery.mjs`, on `harness.mjs`, frozen runtime of the final build): 12 sheets in `/tmp/terno-scratch/ai-gallery/sheets/`, real models for model output and the stub for errors, empty and working states; nothing skipped but the AI filter's consent, which doesn't exist.
+- **Real-model spend:** about US$0.71 as the app counted it (captures US$0.44 over two runs; gallery US$0.25 with its smokes).
+
+### Questions for the owner
+- **The AI filter asks no consent** before its request goes to a cloud provider (it says what's sent under the field). Every other surface asks once. Add the shared consent there?
+- **Showing the AI check's left-out rows by default** in the list (unticked, under the kept ones). Clearer to review, but the list then holds more rows than its title counts. Kept behind Show for now.
+- **The summary prompt (v6)** now asks for a question as asked and a to-do as a verb phrase, so real models write "What do you think about the pricing-page changes?". It's the same call; cached summaries are refreshed once by the version bump. Keep?
+- Still open from before: Save as the primary in Rules is now main's (the owner's call), so that one is settled.
