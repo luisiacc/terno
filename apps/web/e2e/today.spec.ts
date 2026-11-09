@@ -252,7 +252,9 @@ test.describe("Today (plan 145)", () => {
         await expect(page.getByTestId("digest-page")).toBeVisible();
         await expect(page.getByTestId("reader-subject")).toHaveCount(0);
         await expect(item.getByTestId("digest-open")).toBeFocused();
-        expect(await scroller.evaluate((el) => el.scrollTop)).toBe(top);
+        // plan 162 (after ai162-r02): the page keeps its place as the newsletter opens, once the row's focus has cleared the
+        // foot bar (scroll-padding-bottom), so where it was is held within that nudge
+        expect(Math.abs((await scroller.evaluate((el) => el.scrollTop)) - top)).toBeLessThanOrEqual(12);
         // the row says what happened to it, and the snack has the usual Undo
         await expect(item).toHaveAttribute("data-state", "archived");
         await expect(item.getByTestId("digest-state")).toHaveText(way.row);

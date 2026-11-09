@@ -148,8 +148,9 @@ test.describe("replies ready (plan 144)", () => {
     await row(page).click();
     await expect(block(page)).toHaveAttribute("data-phase", "ready", { timeout: 15_000 });
     const words = await page.getByTestId("reply-ready-text").innerText();
-    // Reply first, as the reply bar's first; the reply bar offers Reply all here too
-    await expect(page.getByTestId("quick-reply-all")).toBeVisible();
+    // Reply first, as the reply bar's first. Plan 162: the card takes the reply bar's place while it shows, so its switch
+    // is where Reply all is offered
+    await expect(page.getByTestId("quick-reply-all")).toBeHidden();
     await expect(page.getByTestId("reply-ready-mode")).toBeVisible();
     await expect(page.getByTestId("reply-ready-mode-reply")).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByTestId("reply-ready-to")).toHaveText("To Yuki Gutiérrez");
