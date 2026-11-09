@@ -59,7 +59,12 @@ export function bodyText(doc: PMNode, limit = Infinity): BodyText {
       if (text.length > limit) truncated = true;
     });
   };
-  doc.forEach((child, offset) => walk(child, offset));
+  // stops at the limit: a glance at a 10 MB draft never walks its whole length
+  for (let i = 0, offset = 0; i < doc.childCount && !truncated; i++) {
+    const child = doc.child(i);
+    walk(child, offset);
+    offset += child.nodeSize;
+  }
   return { text, images, truncated, runs, quoted };
 }
 

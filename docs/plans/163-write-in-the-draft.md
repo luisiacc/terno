@@ -192,3 +192,19 @@ Rewrite on a selection (plan 133's "right after"). Filling gaps in mail the AI d
 10. **Gap grammar tightened:** `[sic]`, single braces and a bare `XX` are maybes, not certain. A model's own gaps are told from the user's by their text (a user typing the model's exact words, `[Your answer.]`, would have theirs left too: the safe side). Fill again works from the first fill's `before` and its gap positions.
 11. **Bounded where it costs:** the glance reads the editor's blocks up to its limit without serializing; past 100,000 characters nothing is read; at most 20 gaps and 300 characters a fill; a 10 MB typing gate.
 12. **A fill's language is its sentence's,** not the conversation's; the budget counts the fill's own rules.
+
+## What building it changed
+
+- **The ready Sparkles says what it will do.** A darker glyph alone didn't read as a change in Lumen, where the foot's icons are all close to the ink. Ready, it's a quiet ghost button with a word beside the glyph ("Write it", "Fill 2 gaps"; `aiDraft.ready.*`), the reply bar's style; its name and tooltip say the rest ("Write it from your note with AI ⌘J"). At rest, and while AI works or a strip is up, it's the icon it was.
+- **The state machine kept its phases.** `input` now means "opened for AI and nothing more" (`primed`: no row, the body's hint) or "the row asks who it's for"; `reading` is new. The Nudge still writes from an instruction nobody typed (`setInstruction` + `submit`); everything typed goes through `act`. A primed session leaves Esc to the form, so an empty reply ⌘J opened closes on the first Esc (the collapse reads the badge fresh, and `primed` is a badge of its own).
+- **A reply narrowed to the person named keeps the body.** `addressReply` refused any written-in reply, and the instruction typed in the body made every one written-in: "tell Tom" never narrowed. With `keepBody` it addresses a reply whose recipients are still Terno's, and leaves the body alone.
+- **A draft that held only the instruction leaves the store** when the answer lands in another draft (Forward, New message, Reply on a recent thread): it was saved as it was typed, and `forgetDraft` alone left it in the list.
+- **Words go into the editor that's there, at once** (`seedBody` through the controller): a run bound right after read the editor's document from before the words arrived and ended as a suggestion. A run bound before its editor existed compares the words, not a document.
+- **A new session asks for no focus.** The old field took the keys when the row appeared; the who-row's Write button did the same and pulled them out of To. Questions and consent still ask (`focus + 1`). An explicit open (a click on a summary item's Reply, the palette, the reply bar) gives the body the keys; the pinned card is focused for ⌘J as for r / a / f.
+- **The instruction under the stream goes transparent, not hidden:** `visibility: hidden` could take the keys away, and typing there is how a person says "keep mine" (the draft then ends beside it, with Replace).
+- **The guard says what's happening:** "AI is still working on what you wrote." for reading, routing, a question and consent, with Stop and send what's here.
+- **The fill tint** is the primary at 12% under the ink with a solid underline; it holds AA on a composer's card, tint and background in every palette (`CONTRAST_PAIRS`, three pairs).
+
+### The capture and the gallery
+
+`a02` and `a03` shoot the new flow (`docs/ui-rating.md` says exactly what changed); no `a03b`, since adding a shot changes the set every round is gated on. The gallery, on the stub, every design, light and dark, 1440x900 and 1100x700: the opened body with its hint, the instruction typed, writing, written, the popover with the pencil and its field, the pinned card, gaps typed, filled with one left, and the fills' popover (`/tmp/terno-scratch/plan163/gallery/`).

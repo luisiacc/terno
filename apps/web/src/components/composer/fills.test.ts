@@ -55,6 +55,18 @@ describe("the body as the editor's blocks read it (Codex review 5)", () => {
   });
 });
 
+describe("a glance at a 10 MB draft (plan 163, perf)", () => {
+  it("reads its first 20,000 characters and stops, in well under a frame", () => {
+    const line = "x".repeat(199);
+    const doc = schema.nodes.doc.create(null, Array.from({ length: 50_000 }, () => schema.nodes.paragraph.create(null, schema.text(line))));
+    expect(doc.content.size).toBeGreaterThan(10_000_000);
+    bodyText(doc, 20_000);
+    const t0 = performance.now();
+    for (let i = 0; i < 20; i++) bodyText(doc, 20_000);
+    expect((performance.now() - t0) / 20).toBeLessThan(2);
+  });
+});
+
 describe("filling the gaps (plan 163)", () => {
   it("fills only the gaps, keeps every other word and the gaps' marks, in one undo step that gives every placeholder back", () => {
     let s = start(state("<p>Hi Arjun, the address is <b>[address from his last mail]</b>, see you [day we agreed].</p><p>Luis</p>"));
