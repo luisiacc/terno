@@ -81,10 +81,12 @@ test("on a cloud provider every AI surface runs on the first ask; Settings → A
 
     await scenario("⌘J: the first draft is written at once", async () => {
       await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+      // plan 163: ⌘J opens a draft for AI with the keys in its body; the instruction typed there, ⌘J writes from it
       await page.keyboard.press("ControlOrMeta+j");
-      await expect(page.getByTestId("ai-row-input")).toBeFocused();
-      await page.getByTestId("ai-row-input").fill("say yes");
-      await page.keyboard.press("Enter");
+      const body = page.getByTestId("compose-body");
+      await expect(body).toBeFocused();
+      await page.keyboard.type("say yes");
+      await page.keyboard.press("ControlOrMeta+j");
       await expect(page.getByTestId("ai-strip")).toBeVisible();
       await ran("compose");
       await page.getByTestId("compose-discard").click();
