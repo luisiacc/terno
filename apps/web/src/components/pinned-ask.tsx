@@ -8,10 +8,12 @@ import { cn } from "@terno/ui/lib/utils";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { focusAfterDialog, useAsk, useVisited } from "~/lib/ask";
 import { listDate } from "~/lib/format";
-import { openPinnedSource, unpinAnswer } from "~/lib/pinned-ask";
-import { CARD_GAP, clearPinnedAnswer, pinnedAskPlace, usePinnedAsk, type PinnedAnswer } from "~/lib/pinned-ask-state";
+import { closePinnedAnswer, openPinnedSource, unpinAnswer } from "~/lib/pinned-ask";
+import { CARD_GAP, pinnedAskPlace, usePinnedAsk, type PinnedAnswer } from "~/lib/pinned-ask-state";
 import { focusReading } from "~/lib/pinned-draft";
 import { usePinned } from "~/lib/pinned-draft-state";
+import { usePage } from "~/lib/page";
+import { useApp } from "~/state/app";
 import { useSnack } from "~/lib/snack";
 import { AiCopyButton, AiProvenance } from "./ai-provenance";
 import { AnswerText, Armed, Checks, SameName, unlinkedClaims, Visited } from "./ask-page";
@@ -32,14 +34,17 @@ export function PinnedAsk() {
   const draftWidth = usePinned((s) => (s.key ? s.width : 0));
   const draftInset = usePinned((s) => s.inset);
   const draft = draftWidth ? { width: draftWidth, inset: draftInset } : null;
-  const snackUp = useSnack((s) => s.inset > 0);
+  const snackInset = useSnack((s) => s.inset);
+  const snackLift = useSnack((s) => s.lift + s.pageLift);
+  // what the pane shows (a conversation, List's page, a new message): the reader's toolbar comes and goes with it
+  const shows = useApp((s) => `${s.selectedId}:${s.readerOpen}:${s.compose?.key ?? ""}`);
+  const page = usePage();
   const cardRef = useRef<HTMLElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
   const titleId = useId();
   const [pane, setPane] = useState({ width: 0, height: 0 });
   const [floor, setFloor] = useState(0);
-  // the reader's toolbar stays clear: what's above its scroller (none over a list or a new message)
   const [top, setTop] = useState(0);
   const place = pinnedAskPlace(pane, draft, floor, top);
   const collapsed = chose || place.squeezed;
@@ -48,27 +53,46 @@ export function PinnedAsk() {
   useLayoutEffect(() => {
     const el = cardRef.current?.parentElement;
     if (!el) return;
-    const measure = () => {
-      setPane((was) => (was.width === el.clientWidth && was.height === el.clientHeight ? was : { width: el.clientWidth, height: el.clientHeight }));
-      const scroller = el.querySelector<HTMLElement>("[data-reader-scroller]");
-      setTop(scroller ? Math.max(0, Math.round(scroller.getBoundingClientRect().top - el.getBoundingClientRect().top)) : 0);
-    };
+    const measure = () => setPane((was) => (was.width === el.clientWidth && was.height === el.clientHeight ? was : { width: el.clientWidth, height: el.clientHeight }));
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  // the snack dock, where it would meet the card: the card stands on it (its own lifts included: it's measured)
-  const base = pinnedAskPlace(pane, draft, 0);
+  // the reader's toolbar stays clear: what's above its scroller (none over the list or a new message), measured whenever
+  // what the pane shows changes, and as the toolbar's own size does
   useLayoutEffect(() => {
     const el = cardRef.current?.parentElement;
-    const dock = snackUp ? el?.querySelector<HTMLElement>(":scope > [data-testid=snack-dock] [data-snack-card]")?.getBoundingClientRect() : undefined;
-    if (!el || !dock?.width) return setFloor(0);
-    const box = el.getBoundingClientRect();
-    const right = box.right - base.right;
-    const meets = dock.right + CARD_GAP > right - base.width && dock.left - CARD_GAP < right;
-    setFloor(meets ? Math.ceil(box.bottom - dock.top) + CARD_GAP : 0);
-  }, [snackUp, base.right, base.width, pane.width, pane.height]);
+    if (!el) return;
+    const scroller = el.querySelector<HTMLElement>("[data-reader-scroller]");
+    const measure = () => setTop(scroller?.isConnected ? Math.max(0, Math.round(scroller.getBoundingClientRect().top - el.getBoundingClientRect().top)) : 0);
+    measure();
+    if (!scroller) return;
+    const ro = new ResizeObserver(measure);
+    if (scroller.previousElementSibling) ro.observe(scroller.previousElementSibling);
+    ro.observe(scroller);
+    return () => ro.disconnect();
+  }, [shows, page, pane.height]);
+  // the snack dock, where it would meet the card: the card stands on it (its own lifts included: it's measured), and
+  // follows it as it grows (a snack's More) or moves
+  const base = pinnedAskPlace(pane, draft, 0, top);
+  useLayoutEffect(() => {
+    const el = cardRef.current?.parentElement;
+    const dockCard = snackInset > 0 ? el?.querySelector<HTMLElement>(":scope > [data-testid=snack-dock] [data-snack-card]") : null;
+    if (!el || !dockCard) return setFloor(0);
+    const measure = () => {
+      const dock = dockCard.getBoundingClientRect();
+      if (!dock.width) return setFloor(0);
+      const box = el.getBoundingClientRect();
+      const right = box.right - base.right;
+      const meets = dock.right + CARD_GAP > right - base.width && dock.left - CARD_GAP < right;
+      setFloor(meets ? Math.ceil(box.bottom - dock.top) + CARD_GAP : 0);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(dockCard);
+    return () => ro.disconnect();
+  }, [snackInset, snackLift, base.right, base.width, pane.width, pane.height]);
   // how much of the pane's foot it covers: its offset and its height, for what scrolls under it
   useLayoutEffect(() => {
     const card = cardRef.current;
@@ -96,10 +120,10 @@ export function PinnedAsk() {
   if (!pinned) return null;
   const { turn } = pinned;
   /** the card going with focus in it: reading goes on where it was */
-  const away = (go: () => void) => {
+  const away = async (go: () => unknown) => {
     const had = cardRef.current?.contains(document.activeElement) ?? false;
-    go();
-    if (had) queueMicrotask(() => focusReading(false));
+    await go();
+    if (had && !usePinnedAsk.getState().pinned) focusReading(false);
   };
 
   return (
@@ -138,13 +162,13 @@ export function PinnedAsk() {
           >
             {collapsed ? <ChevronUp /> : <ChevronDown />}
           </HeaderButton>
-          <HeaderButton label={t("ask.unpin")} tip={t("ask.unpinTip")} testId="pinned-ask-unpin" pressed onClick={() => away(() => void unpinAnswer())}>
+          <HeaderButton label={t("ask.unpin")} tip={t("ask.unpinTip")} testId="pinned-ask-unpin" pressed onClick={() => void away(unpinAnswer)}>
             <Pin />
           </HeaderButton>
-          <CloseButton size="sm" className="ms-1" label={t("ask.pinned.close")} data-testid="pinned-ask-close" onClick={() => away(clearPinnedAnswer)} />
+          <CloseButton size="sm" className="ms-1" label={t("ask.pinned.close")} data-testid="pinned-ask-close" onClick={() => void away(closePinnedAnswer)} />
         </span>
       </div>
-      {!collapsed && <PinnedBody pinned={pinned} bodyRef={bodyRef} />}
+      {!collapsed && <PinnedBody key={turn.id} pinned={pinned} bodyRef={bodyRef} />}
     </section>
   );
 }
@@ -187,7 +211,7 @@ function PinnedBody({ pinned, bodyRef }: { pinned: PinnedAnswer; bodyRef: React.
   const { turn, conversationId, views } = pinned;
   const open = (source: AskSourceRef) => openPinnedSource(source);
   return (
-    <div ref={bodyRef} tabIndex={0} aria-label={t("ask.pinned.answer")} data-testid="pinned-ask-body" className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3.5 pt-2.5 pb-2 outline-none">
+    <div ref={bodyRef} tabIndex={0} role="region" aria-label={t("ask.pinned.answer")} data-testid="pinned-ask-body" className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3.5 pt-2.5 pb-2 outline-none">
       <SameName turn={turn} />
       <AnswerText text={turn.answer ?? ""} sources={turn.sources} queries={turn.queries} unlinked={unlinkedClaims(turn)} conversationId={conversationId} open={open} views={views} />
       <Armed sources={turn.sources} />

@@ -2739,6 +2739,7 @@ It contains none of your mail, contacts, settings or keys.
   "ask.pinned.collapse": "Collapse",
   "ask.pinned.noRoom": "There's no room above the pinned draft. Make the window taller, or unpin the draft.",
   "ask.pinned.close": "Close pinned answer",
+  "ask.pinned.unpinFailed": "That answer couldn’t be opened in Ask. It’s still pinned: try again in a moment.",
   "palette.askRow": "Ask AI: “{query}”",
   "palette.alias.ask": "ask, question",
   "shortcuts.ask": "Ask your mail",

@@ -279,11 +279,11 @@ export function installAsk(): void {
 export const atTurnLimit = (s: Pick<AskState, "turns">): boolean => s.turns.length >= ASK_TURNS_MAX;
 
 /** A saved conversation: no request. */
-export async function openConversation(conversationId: number): Promise<boolean> {
+export async function openConversation(conversationId: number, current: () => boolean = () => true): Promise<boolean> {
   const gone = useAsk.getState().gone;
   const saved = await client.call("ai.askConversation", { conversationId });
-  // it was read before something went: this copy may be what's gone
-  if (!saved || useAsk.getState().gone !== gone) return false;
+  // it was read before something went: this copy may be what's gone (plan 165: or what asked for it moved on)
+  if (!saved || useAsk.getState().gone !== gone || !current()) return false;
   stopAsking();
   useAsk.setState({ ...EMPTY, conversationId, turns: saved.turns, sources: saved.sources, older: saved.older, usedAt: Date.now() });
   return true;

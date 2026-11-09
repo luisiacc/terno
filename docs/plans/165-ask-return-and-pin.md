@@ -87,3 +87,17 @@ The critique (12 points, `/tmp/terno-scratch/p164/ask/critique.md`) and what cha
 10. **Insets for stacked cards.** Each card publishes its offset plus its height; one helper (`usePinnedInset`, `pinnedInsetNow`) gives the larger to the reader, the list and a new message.
 11. **Keyboard ownership.** Esc is the card's only from its own DOM and not from an open popup; it gives focus back to reading and stops there. Folding with focus inside moves it to the header's toggle; Close and Unpin with focus inside give it back to reading. The answer region is named ("Answer"); the toggle stays reachable while it can't open (`aria-disabled`, with the reason).
 12. **Animating a move crosses the draft.** No transition on moves (above).
+
+## What the Codex code review changed
+
+Review 1 (`/tmp/terno-scratch/p164/ask/review-1.md`), seven findings, all fixed:
+
+1. **A slow unpin could overwrite newer work** (unpin A, pin B meanwhile, A's read lands). Unpin now keeps the card until its conversation is open, `openConversation` takes a `current` check before it commits, and a pin or close since wins (unit: "a read that's slow while a newer pin comes").
+2. **An older source answering last took the reader back.** Each source asked for from the card has a sequence; only the last opens (unit: "the first answering last").
+3. **A snack growing (its More) or moving covered the card.** The card follows the dock card's size (a ResizeObserver on it) and its lifts, not only whether one's up. No regression test: the dock's growth is a category snack's, far from this flow; the measurement is the same one as when it appears, which the axe sweep and e2e reach.
+4. **The toolbar went unmeasured when List's page opened** (the pane didn't change size). Remeasured when what the pane shows changes, and as the toolbar's size does (e2e, List at 900x800: fails without the fix).
+5. **A failed unpin silently lost the card.** It stays, and a warning says so with what to do ("try again in a moment"), en and es (unit).
+6. **A new answer pinned in place kept the last one's scroll.** The body is keyed by its turn (e2e).
+7. **The focused answer was a generic `div` with a name.** It's `role="region"`, "Answer" (e2e asserts its role and name).
+
+Real-model shots also moved two things: the card never covers the reader's toolbar (what's above the reader's scroller is kept clear), and above a draft it's 20 rem at most, so the conversation still reads beside the two cards.

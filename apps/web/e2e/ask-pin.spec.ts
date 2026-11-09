@@ -92,6 +92,7 @@ test.describe("back to the answer, and the answer pinned (plan 165)", () => {
       await expect(card(page)).toHaveAccessibleName(`Pinned answer: ${question}`);
       await expect(page.getByTestId("pinned-ask-title")).toContainText(question);
       await expect(page.getByTestId("pinned-ask-body")).toBeFocused();
+      await expect(card(page).getByRole("region", { name: "Answer" })).toBeFocused();
       // the corner of the reading pane, 12 px in
       const reader = await box(page.locator("main"));
       const pinned = await box(card(page));
@@ -162,8 +163,16 @@ test.describe("back to the answer, and the answer pinned (plan 165)", () => {
       await expect(card(page)).toHaveCount(0);
       await expect(page.getByRole("dialog", { name: "Ask your mail" })).toBeVisible();
       await expect(page.getByTestId("ask-title")).toHaveText(question);
+      // scrolled to its end, then another answer pinned in its place: that one starts at its top
       await page.getByTestId("ask-pin").click();
-      await expect(card(page)).toBeVisible();
+      await page.getByTestId("pinned-ask-body").evaluate((el) => (el.scrollTop = el.scrollHeight));
+      await page.getByTestId("pinned-ask-unpin").click();
+      await page.getByTestId("ask-follow-up").fill(`${WORD} once more?`);
+      await page.keyboard.press("Enter");
+      await expect(page.getByTestId("ask-turn").last()).toHaveAttribute("data-status", "answered");
+      await page.getByTestId("ask-pin").click();
+      await expect(page.getByTestId("pinned-ask-title")).toContainText(`${WORD} once more?`);
+      expect(await page.getByTestId("pinned-ask-body").evaluate((el) => el.scrollTop)).toBe(0);
       await page.getByTestId("pinned-ask-close").click();
       await expect(card(page)).toHaveCount(0);
       // the scroll ends lose its room
@@ -193,5 +202,18 @@ test.describe("back to the answer, and the answer pinned (plan 165)", () => {
     const c = await box(card(page));
     expect(c.x + c.width).toBeLessThanOrEqual(d.x - 11);
     expect(Math.round(c.y + c.height)).toBe(Math.round(d.y + d.height));
+    // a narrow window: above the draft, and never over the toolbar of the page that opened under it (Codex review: the
+    // pane didn't change size when List's page came, so the toolbar went unmeasured)
+    await page.getByTestId("pinned-draft").getByTestId("compose-body").click();
+    await page.keyboard.type(Array.from({ length: 12 }, (_, i) => `line ${i}`).join("\n"));
+    await page.setViewportSize({ width: 900, height: 800 });
+    await expect(card(page)).toHaveAttribute("data-where", "above");
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("list-page")).toHaveCount(0);
+    await page.getByTestId("pinned-ask-source").first().click();
+    await expect(page.getByTestId("list-page")).toBeVisible();
+    const scroller = await box(page.getByTestId("list-page").locator("[data-reader-scroller]"));
+    await expect.poll(async () => (await box(card(page))).y).toBeGreaterThanOrEqual(scroller.y);
   });
 });

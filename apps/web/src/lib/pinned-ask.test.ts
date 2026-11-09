@@ -26,6 +26,7 @@ vi.mock("~/lib/palette-open", () => ({ toggleAsk: () => void opened.asks++ }));
 const { askChosen, askPlace, forgetAsk, installAsk, keepAskPlace, markVisited, openSource, useAsk, useAskVisited } = await import("./ask");
 const { openPinnedSource, pinAnswer, unpinAnswer } = await import("./pinned-ask");
 const { CARD_GAP, pinnedAskPlace, usePinnedAsk } = await import("./pinned-ask-state");
+const { useSnack } = await import("./snack");
 const { getApp, setApp } = await import("~/state/app");
 installAsk();
 
@@ -125,6 +126,22 @@ describe("pinning an answer", () => {
     expect(visited(8)).toEqual([]);
   });
 
+  it("two sources asked for, the first answering last: the reader shows the second", async () => {
+    showing();
+    pinAnswer();
+    const other: AskSourceRef = { ...source, messageId: 6, threadId: 3 };
+    const answers: ((v: unknown) => void)[] = [];
+    rpc.answer.set("ai.askSources", new Promise((r) => answers.push(r)));
+    openPinnedSource(source);
+    rpc.answer.set("ai.askSources", new Promise((r) => answers.push(r)));
+    openPinnedSource(other);
+    answers[1]!({ 6: { state: "ok", threadId: 3 } });
+    await flush();
+    answers[0]!({ 5: { state: "ok", threadId: 2 } });
+    await flush();
+    expect(opened.threads).toEqual([3]);
+  });
+
   it("a source asked for after the card went opens nothing", async () => {
     showing();
     pinAnswer();
@@ -158,6 +175,33 @@ describe("unpin and close", () => {
     await unpinAnswer();
     expect(useAsk.getState().conversationId).toBe(7);
     expect(opened.asks).toBe(1);
+  });
+
+  it("a read that's slow while a newer pin comes: the newer card stays, and Ask isn't taken over", async () => {
+    showing();
+    pinAnswer();
+    useAsk.setState({ conversationId: 8, turns: [turnOf(3, 8)] });
+    let answer!: (v: unknown) => void;
+    rpc.answer.set("ai.askConversation", new Promise((r) => (answer = r)));
+    const unpinning = unpinAnswer();
+    expect(usePinnedAsk.getState().pinned?.conversationId).toBe(7);
+    pinAnswer();
+    answer({ turns: [turnOf(1)], sources: {}, older: { kind: "none" } });
+    await unpinning;
+    expect(usePinnedAsk.getState().pinned?.conversationId).toBe(8);
+    expect(useAsk.getState().conversationId).toBe(8);
+    expect(opened.asks).toBe(0);
+  });
+
+  it("a read that fails keeps the card, and says so", async () => {
+    showing();
+    pinAnswer();
+    useAsk.setState({ conversationId: 8, turns: [turnOf(3, 8)] });
+    rpc.answer.set("ai.askConversation", Promise.reject(new Error("down")));
+    await unpinAnswer();
+    expect(usePinnedAsk.getState().pinned?.conversationId).toBe(7);
+    expect(opened.asks).toBe(0);
+    expect(useSnack.getState().current?.message).toBe("That answer couldn’t be opened in Ask. It’s still pinned: try again in a moment.");
   });
 
   it("deleted meanwhile: nothing opens", async () => {
