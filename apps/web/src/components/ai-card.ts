@@ -69,12 +69,26 @@ export function messageSource(messages: readonly Pick<MessageDetail, "id" | "fro
   if (messages.length <= 1) return null;
   const m = messages.find((x) => x.id === messageId);
   if (!m) return t("summary.open");
-  // plan 162: two of this person's messages on one day ("Yesterday" twice) are told apart by the time
-  const day = listDate(m.date, now);
-  const twin = messages.some((x) => x.id !== m.id && x.from.email.toLowerCase() === m.from.email.toLowerCase() && listDate(x.date, now) === day);
-  const date = twin ? messageDate(m.date, now) : day;
+  const date = sourceDate(messages, m, now);
   if (mine.some((e) => e.toLowerCase() === m.from.email.toLowerCase())) return t("ai.source.yours", { date });
   return t("ai.source.label", { who: (m.from.name || m.from.email.split("@")[0] || m.from.email).split(/\s+/)[0]!, date });
+}
+
+/** plan 162: two of this person's messages on one day ("Yesterday" twice) are told apart by the time */
+function sourceDate(messages: readonly Pick<MessageDetail, "id" | "from" | "date">[], m: Pick<MessageDetail, "id" | "from" | "date">, now: number): string {
+  const day = listDate(m.date, now);
+  const twin = messages.some((x) => x.id !== m.id && x.from.email.toLowerCase() === m.from.email.toLowerCase() && listDate(x.date, now) === day);
+  return twin ? messageDate(m.date, now) : day;
+}
+
+/**
+ * Plan 162 (after ai162-r05): the source's words where the item's label already names the person ("Arjun asks"): its date
+ * alone ("Yesterday, 8:24 AM"), since "Arjun's message" said the name twice on one line. Its accessible name stays whole.
+ */
+export function messageSourceShort(messages: readonly Pick<MessageDetail, "id" | "from" | "date">[], messageId: number, now = Date.now()): string | null {
+  if (messages.length <= 1) return null;
+  const m = messages.find((x) => x.id === messageId);
+  return m ? sourceDate(messages, m, now) : null;
 }
 
 /** Plan 161, pass 3: who wrote it and Copy, one of each on every AI surface (ai-provenance.tsx). */

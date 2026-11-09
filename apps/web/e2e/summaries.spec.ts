@@ -224,19 +224,32 @@ test.describe("summaries (plan 132)", () => {
       if (!(await item.count())) break;
       expect(Math.abs((await item.boundingBox())!.x - (await page.getByTestId("summary-text").boundingBox())!.x)).toBeLessThanOrEqual(1);
     }
-    // plan 162: an item's controls are a line of their own under its words at every width, starting at the words' edge;
-    // Reply leads its line in the ink, Copy a quiet utility
+    // plan 162 (after ai162-r05): an item's controls end its own line when they fit (a line of their own under every item
+    // took half the reader at 1100), and wrap under its words, at their edge, when they don't; Reply leads them in the ink
     for (const width of [980, 1100, 1440]) {
       await page.setViewportSize({ width, height: 900 });
       const controls = page.getByTestId("summary-item-controls").first();
       if (!(await controls.count())) break;
       const words = (await page.getByTestId("summary-item-text").first().boundingBox())!;
       const row = (await controls.boundingBox())!;
-      expect(row.y).toBeGreaterThanOrEqual(words.y + words.height - 1);
-      expect(Math.abs(row.x - words.x)).toBeLessThanOrEqual(1);
-      const reply = page.getByTestId("summary-item-reply").first();
-      // its glyph on the words' edge, its shape reaching past it
-      if (await reply.count()) expect(Math.abs((await reply.boundingBox())!.x + 8 - words.x)).toBeLessThanOrEqual(1);
+      const inline = row.y < words.y + words.height - 1;
+      if (inline) expect(row.x).toBeGreaterThanOrEqual(words.x + words.width);
+      else {
+        expect(row.y).toBeGreaterThanOrEqual(words.y + words.height - 1);
+        expect(Math.abs(row.x - words.x)).toBeLessThanOrEqual(1);
+        // its glyph on the words' edge, its shape reaching past it
+        const reply = page.getByTestId("summary-item-reply").first();
+        if (await reply.count()) expect(Math.abs((await reply.boundingBox())!.x + 8 - words.x)).toBeLessThanOrEqual(1);
+      }
+    }
+    // a short item at a wide window: its controls on its own line's end, not under it
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const short = page.getByTestId("summary-item-text").first();
+    if (await short.count()) {
+      await short.evaluate((el) => { el.querySelector("span.font-medium")!.textContent = "Short?"; });
+      const words = (await short.boundingBox())!;
+      const row = (await page.getByTestId("summary-item-controls").first().boundingBox())!;
+      expect(Math.abs(row.y + row.height / 2 - (words.y + words.height / 2))).toBeLessThanOrEqual(4);
     }
     // every button keeps a 1 px border; a quiet one's is clear
     const edge = (testId: string) => page.getByTestId(testId).first().evaluate((el) => getComputedStyle(el).borderTopColor);
@@ -309,7 +322,9 @@ test.describe("summaries (plan 132)", () => {
       expect((await page.getByTestId("summary-toggle").boundingBox())!.height).toBe(running.height);
 
       // plan 161, pass 3: the source is named for where it goes, whose message and when; its name is what it shows
-      await expect(page.getByTestId("summary-item-open")).toHaveText(/^Yuki’s message, /);
+      // plan 162 (after ai162-r05): beside "Yuki asks" it says only when; its name stays whole
+      await expect(page.getByTestId("summary-item-kind")).toHaveText("Yuki asks");
+      await expect(page.getByTestId("summary-item-open")).not.toContainText("Yuki");
       await expect(page.getByTestId("summary-item-open")).toHaveAccessibleName(/^Yuki’s message, /);
       // it unfolds and goes to the message it names, and the toolbar's button stays where it is
       await page.getByTestId("summary-item-open").click();

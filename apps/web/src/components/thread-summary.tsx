@@ -13,7 +13,7 @@ import { messageDate } from "~/lib/format";
 import { bodyArrivedForSummary, dismissSummary, loadSummary, revealSummaryMessage, setSummaryOpen, stopSummary, summarizable, summarize, useSummaries } from "~/lib/summaries";
 import { replyFromItem } from "~/lib/summary-reply";
 import { setApp, useApp } from "~/state/app";
-import { AI_ACTIONS, AI_CARD, AI_GLYPH, AI_TITLE, AiCopyButton, AiErrorNotice, AiProvenance, aiErrorCopy, errorTarget, messageSource } from "./ai-card";
+import { AI_ACTIONS, AI_CARD, AI_GLYPH, AI_TITLE, AiCopyButton, AiErrorNotice, AiProvenance, aiErrorCopy, errorTarget, messageSource, messageSourceShort } from "./ai-card";
 
 /** Pass 3: what an item asks of the user, answered with the conversation's ordinary reply. */
 const ANSWERED = new Set<AiSummaryItem["kind"]>(["action", "question"]);
@@ -35,23 +35,28 @@ export function itemLabel(item: Pick<AiSummaryItem, "kind">, from: Pick<MessageD
   return name ? t("summary.kind.asks", { name }) : t("summary.kind.question");
 }
 
-function Item({ item, from, source, mine }: { item: AiSummaryItem; from: MessageDetail | undefined; source: string | null; mine: readonly string[] }) {
+function Item({ item, from, source, short, mine }: { item: AiSummaryItem; from: MessageDetail | undefined; source: string | null; /** the date alone, when the label names the person */ short: string | null; mine: readonly string[] }) {
+  const label = itemLabel(item, from, mine);
+  // plan 162 (after ai162-r05): "Arjun asks · …  Reply  Yesterday, 8:24 AM →": the label already says whose it is
+  const named = short !== null && label !== t(`summary.kind.${item.kind}`);
   const go = source !== null && (
-    <Button variant="ghost" size="sm" data-testid="summary-item-open" className="px-2 text-muted-foreground hover:text-foreground" onClick={() => revealSummaryMessage(item.messageId)}>
-      {source}
+    <Button variant="ghost" size="sm" data-testid="summary-item-open" aria-label={source} className="px-2 text-muted-foreground hover:text-foreground" onClick={() => revealSummaryMessage(item.messageId)}>
+      {named ? short : source}
       <ArrowRight aria-hidden />
     </Button>
   );
   const answered = ANSWERED.has(item.kind);
   return (
-    <li data-testid="summary-item" data-kind={item.kind} data-message-id={item.messageId} className="py-1 text-sm">
-      <p className="wrap-anywhere" data-testid="summary-item-text">
-        <span className="text-muted-foreground" data-testid="summary-item-kind">{itemLabel(item, from, mine)}</span>
+    // plan 162 (after ai162-r05): the controls end the item's own line when they fit, and wrap under its words, at their
+    // edge, when they don't (a line of their own under every item took half the reader at 1100: three reports)
+    <li data-testid="summary-item" data-kind={item.kind} data-message-id={item.messageId} className="flex flex-wrap items-center gap-x-3 py-0.5 text-sm">
+      <p className="min-w-0 wrap-anywhere" data-testid="summary-item-text">
+        <span className="text-muted-foreground" data-testid="summary-item-kind">{label}</span>
         <span aria-hidden className="mx-1.5 text-muted-foreground">·</span>
         <span className="font-medium text-foreground">{item.text}</span>
       </p>
       {(answered || go) && (
-        <div className="mt-1.5 flex flex-wrap items-center gap-1" data-testid="summary-item-controls">
+        <div className="flex flex-wrap items-center gap-1" data-testid="summary-item-controls">
           {answered && (
             // plan 162 (after ai162-r03): an ordinary reply, as R is: the item is their question, not the user's answer, so it
             // isn't put in ⌘J as the instruction (Write would have drafted a reply with no stance)
@@ -99,9 +104,9 @@ function Ready({ summary, messages }: { summary: AiSummary; messages: readonly M
           <p data-testid="summary-text" className="max-w-(--read-max) text-sm leading-relaxed wrap-anywhere whitespace-pre-line text-pretty">
             {summary.summary}
           </p>
-          {summary.items.length > 0 && <ul className="mt-2 max-w-(--read-max)" data-testid="summary-items">{summary.items.map((item) => <Item key={`${item.messageId}:${item.kind}:${item.text}`} item={item} mine={mine} from={messages.find((m) => m.id === item.messageId)} source={messageSource(messages, item.messageId, mine)} />)}</ul>}
+          {summary.items.length > 0 && <ul className="mt-2 max-w-(--read-max)" data-testid="summary-items">{summary.items.map((item) => <Item key={`${item.messageId}:${item.kind}:${item.text}`} item={item} mine={mine} from={messages.find((m) => m.id === item.messageId)} source={messageSource(messages, item.messageId, mine)} short={messageSourceShort(messages, item.messageId)} />)}</ul>}
           {/* pass 3: the AI's button row: Copy, and who wrote it at its end, the one control every AI surface has */}
-          <div className={cn(AI_ACTIONS, "mt-2.5")} data-testid="summary-actions">
+          <div className={cn(AI_ACTIONS, "mt-1.5")} data-testid="summary-actions">
             {/* plan 162: Copy is quiet, its glyph on the text's edge */}
             <AiCopyButton className="-ms-2" text={() => summaryText(summary)} failed={t("summary.copyFailed")} testId="summary-copy" />
             <AiProvenance model={summary.model} at={summary.generatedAt} testId="summary-provenance" className="-me-1.5 ms-auto" />
