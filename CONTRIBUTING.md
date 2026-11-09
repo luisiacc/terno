@@ -12,7 +12,7 @@ What tends to land:
 
 - Focused bug fixes, especially anything that loses mail, drafts, position or focus.
 - Performance and resource improvements (with numbers).
-- Accessibility fixes, and translations (see [Adding a language](README.md#adding-a-language)).
+- Accessibility fixes, and translations (see [Adding a language](docs/DEVELOPMENT.md#adding-a-language)).
 - Small maintenance: dependency bumps that pass every check, broken docs.
 
 Big unplanned features, redesigns, rewrites and new dependencies are much harder to take on, so
@@ -24,7 +24,7 @@ why compose is inline, why mail frames never scroll) are written down there.
 
 ## Developer setup
 
-[Quick start](README.md#quick-start) and [Tests](README.md#tests) in the README cover the checkout,
+[Development](docs/DEVELOPMENT.md) covers the checkout,
 the dev commands and the test suites. [AGENTS.md](AGENTS.md) is the working agreement (principles,
 non-negotiables, how a feature is built) for people and agents alike, and it's a good read before
 changing anything.
