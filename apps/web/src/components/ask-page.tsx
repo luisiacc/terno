@@ -129,7 +129,7 @@ function Checks({ turn, unlinkedId }: { turn: AskTurn; unlinkedId: string }) {
   const { unsupported } = turn.checks;
   const unlinked = unlinkedClaims(turn);
   // plan 162 (after ai162-r03): one first name for several people among the sources, said from their senders
-  const people = sameNamePeople(turn.sources, `${turn.question} ${turn.answer ?? ""}`);
+  const people = sameNamePeople(turn.sources, turn.question, turn.answer ?? "");
   if (!unlinked && !unsupported.length && !people.length) return null;
   const list = new Intl.ListFormat(getLocale(), { type: "conjunction" });
   return (

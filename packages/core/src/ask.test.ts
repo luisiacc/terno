@@ -97,6 +97,8 @@ describe("unlinked claims and one name for several people (plan 162, after ai162
     expect(sameNamePeople(sources, "What did Isabella say about the venue?")).toEqual([{ name: "Isabella", people: ["Isabella Álvarez", "Isabella Rivera", "Isabella Cruz"] }]);
     expect(sameNamePeople(sources, "What did Arjun say?")).toEqual([]);
     expect(sameNamePeople([{ fromName: "Isabella Álvarez" }, { fromName: "Isabella Álvarez" }], "Isabella")).toEqual([]);
+    // an answer that names each in full has told them apart already
+    expect(sameNamePeople(sources.slice(0, 2), "What did Isabella say?", "Isabella Álvarez asks… Isabella Rivera raised…")).toEqual([]);
   });
 });
 

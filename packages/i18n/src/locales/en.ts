@@ -2589,7 +2589,7 @@ It contains none of your mail, contacts, settings or keys.
   "ask.sourcesCount": { one: "# source", other: "# sources" },
   "ask.citation": "Source {n}: {subject}",
   "ask.check.unlinked": "Underlined parts aren’t linked to a message.",
-  "ask.sameName": "{name} here is {count} people: {people}.",
+  "ask.sameName": "“{name}” here is {count} people: {people}.",
   "ask.unlinked": "Not linked to a message",
   "ask.check.unsupported": "Check: {value} isn’t in these messages.",
   "ask.incomplete": "Some of this mail is still downloading.",

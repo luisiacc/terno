@@ -271,7 +271,6 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
       </div>
       <CollapsiblePanel>
         <div className={cn("flex flex-col gap-3 pt-2 pb-1", reader ? "text-sm" : "text-xs")}>
-          {reader && sentence && <p className="text-pretty text-muted-foreground" data-testid="action-rule-request">“{sentence}”</p>}
           <dl data-testid="action-conditions" className={cn("grid grid-cols-[minmax(5rem,max-content)_1fr] items-baseline gap-x-4", reader ? "gap-y-2" : "gap-y-1")}>
             {rows.map((r, i) => (
               <div key={i} className="contents" data-testid="action-rule-row">
@@ -310,6 +309,8 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
     <div className={cn("flex flex-col", reader ? "gap-4 text-sm" : "no-drag gap-2.5 pt-1.5 text-xs")}>
       <div className="space-y-1">
         {reader && <h2 className={cn(PANE_TITLE, "text-pretty")} data-testid="action-rule-title">{previewTitle(preview, shown, folderName)}</h2>}
+        {/* what was asked, in the user's words: the one line the outcome answers to */}
+        {reader && sentence && <p className="text-pretty text-muted-foreground" data-testid="action-rule-request">“{sentence}”</p>}
         {/* which mail, at a glance: who it's from, when, and where (counted from the ticked rows, so an untick recounts it) */}
         {foundText && <p className="text-pretty text-foreground" data-testid="action-found"><span data-testid="action-found-line">{foundText}</span></p>}
         {consequence}

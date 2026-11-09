@@ -2574,7 +2574,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "ask.sourcesCount": { one: "# fuente", other: "# fuentes" },
   "ask.citation": "Fuente {n}: {subject}",
   "ask.check.unlinked": "Lo subrayado no está enlazado a ningún mensaje.",
-  "ask.sameName": "{name} aquí son {count} personas: {people}.",
+  "ask.sameName": "«{name}» aquí son {count} personas: {people}.",
   "ask.unlinked": "No enlazado a ningún mensaje",
   "ask.check.unsupported": "Comprueba: {value} no aparece en estos mensajes.",
   "ask.incomplete": "Parte de este correo aún se está descargando.",

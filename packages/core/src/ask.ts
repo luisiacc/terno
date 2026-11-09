@@ -233,10 +233,13 @@ const foldName = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowe
 
 /**
  * Plan 162 (after ai162-r03): one first name that is several people among an answer's sources, when the question or the
- * answer uses it ("Isabella" for Isabella Álvarez, Rivera and Cruz). From the senders' names, no model: the answer
+ * answer uses it and the answer doesn't name each in full ("Isabella" for Isabella Álvarez, Rivera and Cruz). From the senders' names, no model: the answer
  * may have run them together, and the reader should know.
  */
-export function sameNamePeople(sources: readonly Pick<AskSourceRef, "fromName">[], said: string): { name: string; people: string[] }[] {
+export function sameNamePeople(sources: readonly Pick<AskSourceRef, "fromName">[], question: string, answer = ""): { name: string; people: string[] }[] {
+  const said = `${question} ${answer}`;
+  // an answer that names each of them in full already tells them apart
+  const told = (people: string[]) => people.every((p) => foldName(answer).includes(foldName(p)));
   const byFirst = new Map<string, { name: string; people: string[] }>();
   for (const s of sources) {
     const full = s.fromName.trim().replace(/\s+/g, " ");
@@ -248,7 +251,7 @@ export function sameNamePeople(sources: readonly Pick<AskSourceRef, "fromName">[
     byFirst.set(key, group);
   }
   const words = new Set(foldName(said).split(/[^\p{L}\p{N}]+/u));
-  return [...byFirst.entries()].filter(([key, g]) => g.people.length > 1 && words.has(key)).map(([, g]) => g);
+  return [...byFirst.entries()].filter(([key, g]) => g.people.length > 1 && words.has(key) && !told(g.people)).map(([, g]) => g);
 }
 
 /** A number whatever way it's written: 120,50 and 120.50 and 120.5 are one amount. */
