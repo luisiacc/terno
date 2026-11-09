@@ -256,6 +256,9 @@ test.describe("actions in plain English (plan 143)", () => {
       await page.getByTestId("action-show-left-out").click();
       await expect(rows(page)).toHaveCount(3);
       await expect(rows(page).last()).toHaveAttribute("data-included", "false");
+      // plan 162 (after ai162-r05): why it's there, on the row, where Today says its reasons; a match says nothing
+      await expect(rows(page).last().getByTestId("row-why")).toHaveText("Didn’t fit");
+      await expect(rows(page).first().getByTestId("row-why")).toHaveCount(0);
       await rows(page).last().getByTestId("row-include").click();
       await expect(page.getByTestId("action-title")).toHaveText("3 conversations");
       await rows(page).first().click();
@@ -267,6 +270,8 @@ test.describe("actions in plain English (plan 143)", () => {
       await expect(page.getByTestId("snack")).toContainText("Archived 2 conversations");
       // plan 162: the result says what it was for, under the count
       await expect(page.getByTestId("snack")).toContainText("You asked: “Archive shipping notices older than a month”");
+      // plan 162 (after ai162-r05): its Undo stays 20 s, the ring's own time (8 s was gone before a big batch was looked over)
+      expect(await page.evaluate(() => document.getAnimations().find((a) => a.id === "snack-countdown")?.effect?.getTiming().duration)).toBe(20_000);
       // plan 161: back on the list you came from, its keys yours
       await expect.poll(() => page.evaluate(() => document.activeElement?.getAttribute("data-keep-scroll"))).toBe("list");
       // the first row stayed out of it; the rest left

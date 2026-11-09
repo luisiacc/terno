@@ -26,7 +26,7 @@ import {
 import type { FollowupRow, FollowupsSetting, FollowupsSnapshot } from "../followups";
 import type { DigestRow, TodayList, TodaySetting } from "../today";
 import type { AiPrepareReply, AiReplyEvent, PreparedReply, RepliesSetting } from "../replies";
-import type { ActionPreviewInfo, AiActionApplied, AiActionCheck, AiActionEvent, AiActionStart } from "../actions";
+import type { ActionPreviewInfo, ActionRowTag, AiActionApplied, AiActionCheck, AiActionEvent, AiActionStart } from "../actions";
 import { ASK_QUESTION_MAX, ASK_SOURCES_MAX, type AiAskEvent, type AiAskResult, type AskConversationSummary, type AskOlderOffer, type AskSourceView, type AskTurn } from "../ask";
 import { BODY_READ_MAX } from "../writing/body";
 import { FILL_GAPS_MAX, GENERATION_TEXT_MAX, WRITING_INSTRUCTIONS_MAX, WRITING_ONE_OFF_MAX, type AiComposeDelta, type AiFillDelta, type AiComposeResult, type AiIntentResult, type AiStudyProgress, type WritingPrefs, type WritingProfileView, type WritingStatus, type WritingStudyResult } from "../writing/contract";
@@ -1206,7 +1206,7 @@ export const contract = {
   "senders.named": m<{ named: string[]; ready: boolean }>()(z.object({ phrases: z.array(z.string().trim().min(1).max(100)).min(1).max(4) }), { timeoutMs: 5000 }),
   /** Plan 143: a sentence into a preview. It only reads: nothing changes until `ai.actionApply`, from the connection that saw it. */
   "ai.actionStart": m<AiActionStart>()(z.object({ requestId, sentence: z.string().trim().min(1).max(ASK_QUESTION_MAX), conversationId: id.optional(), timezone: z.string().min(1).max(100) }), { timeoutMs: 300_000 }),
-  "ai.actionPage": m<{ items: ThreadSummary[]; total: number; unticked: number[] }>()(z.object({ previewId: z.string().min(1).max(64), offset: z.number().int().min(0), limit: z.number().int().min(1).max(500), leftOut: z.boolean() })),
+  "ai.actionPage": m<{ items: ThreadSummary[]; total: number; unticked: number[]; tags: [number, ActionRowTag][] }>()(z.object({ previewId: z.string().min(1).max(64), offset: z.number().int().min(0), limit: z.number().int().min(1).max(500), leftOut: z.boolean() })),
   "ai.actionToggle": m<ActionPreviewInfo>()(z.object({ previewId: z.string().min(1).max(64), threadId: id, included: z.boolean() })),
   "ai.actionIncludeSkipped": m<ActionPreviewInfo>()(z.object({ previewId: z.string().min(1).max(64), included: z.boolean() })),
   /** Senders and subjects, never a body, to see which rows don't fit: it can only remove. */

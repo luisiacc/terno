@@ -691,6 +691,8 @@ describe("the check", () => {
     const all = await client.call("ai.actionPage", { previewId: p.previewId, offset: 0, limit: 10, leftOut: true });
     expect(all.items.map((t) => t.id)).toEqual([keep, drop]);
     expect(all.unticked).toEqual([drop]);
+    // plan 162 (after ai162-r05): the row says why it's there once shown; a match says nothing
+    expect(all.tags).toEqual([[drop, "leftOut"]]);
     expect((await client.call("ai.actionToggle", { previewId: p.previewId, threadId: drop, included: true })).count).toBe(2);
     await client.call("ai.actionToggle", { previewId: p.previewId, threadId: drop, included: false });
     await apply(p);

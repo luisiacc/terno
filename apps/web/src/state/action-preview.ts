@@ -1,4 +1,4 @@
-import type { ActionPreviewInfo, AiErrorKind } from "@terno/core";
+import type { ActionPreviewInfo, ActionRowTag, AiErrorKind } from "@terno/core";
 import { client } from "~/rpc/connection";
 import { focusIntent } from "~/lib/focus-intent";
 import type { SendersNamed } from "~/lib/rule-words";
@@ -18,6 +18,8 @@ type From = Pick<AppState, "view" | "accountId" | "categoryId" | "reviewCategory
 
 interface ActionRows {
   unticked: ReadonlySet<number>;
+  /** plan 162 (after ai162-r05): why a shown row isn't plainly a match (its tag on the row) */
+  tags: ReadonlyMap<number, ActionRowTag>;
   showLeftOut: boolean;
   from: From | null;
 }
@@ -38,16 +40,23 @@ interface ActionPreviewState {
 
 export const useActionPreview = create<ActionPreviewState>(() => ({ preview: null, sentence: "", future: false, checking: false, checkError: null, applying: false, senders: null }));
 
-export const useActionRows = create<ActionRows>(() => ({ unticked: new Set(), showLeftOut: false, from: null }));
+export const useActionRows = create<ActionRows>(() => ({ unticked: new Set(), tags: new Map(), showLeftOut: false, from: null }));
 
-/** Rows the backend says aren't ticked, as a page of them arrives. */
-export function noteRows(ids: readonly number[], unticked: readonly number[]): void {
+/** Rows the backend says aren't ticked, and why a row isn't plainly a match, as a page of them arrives. */
+export function noteRows(ids: readonly number[], unticked: readonly number[], tags: readonly (readonly [number, ActionRowTag])[] = []): void {
   const off = new Set(unticked);
+  const why = new Map(tags);
   useActionRows.setState((s) => {
     const next = new Set(s.unticked);
-    for (const id of ids) if (off.has(id)) next.add(id);
-    else next.delete(id);
-    return { unticked: next };
+    const nextTags = new Map(s.tags);
+    for (const id of ids) {
+      if (off.has(id)) next.add(id);
+      else next.delete(id);
+      const tag = why.get(id);
+      if (tag) nextTags.set(id, tag);
+      else nextTags.delete(id);
+    }
+    return { unticked: next, tags: nextTags };
   });
 }
 
@@ -62,6 +71,7 @@ export function enterPreview(previewId: string, view: "inbox" | "all" = "all"): 
   const { key, itemsKey, items, index, nextCursor } = useList.getState();
   useActionRows.setState({
     unticked: new Set(),
+    tags: new Map(),
     showLeftOut: false,
     from: { view: s.view, accountId: s.accountId, categoryId: s.categoryId, reviewCategoryId: s.reviewCategoryId, folder: s.folder, gmailTab: s.gmailTab, reminders: s.reminders, followups: s.followups, today: s.today, query: s.query, selectedId: s.selectedId, readerOpen: s.readerOpen, scrollTop: listEl()?.scrollTop ?? 0, rows: { key, itemsKey, items, index, nextCursor } },
   });
@@ -129,7 +139,7 @@ export function closePreviewRow(): boolean {
 export function leavePreview(): void {
   const { from } = useActionRows.getState();
   if (!getApp().actionPreview) return;
-  useActionRows.setState({ unticked: new Set(), from: null });
+  useActionRows.setState({ unticked: new Set(), tags: new Map(), from: null });
   if (!from) return setApp({ actionPreview: null });
   const { scrollTop, rows, ...place } = from;
   useList.setState({ ...rows, loading: false, loadingMore: false, error: null });
@@ -173,5 +183,5 @@ useApp.subscribe((s, prev) => {
   if (!prev.actionPreview || s.actionPreview === prev.actionPreview) return;
   void client.call("ai.actionCancel", { previewId: prev.actionPreview }).catch(() => {});
   // the rows it kept to come back to hold mail: nothing keeps them once it's over, however it ended
-  if (!s.actionPreview) useActionRows.setState({ from: null, unticked: new Set() });
+  if (!s.actionPreview) useActionRows.setState({ from: null, unticked: new Set(), tags: new Map() });
 });

@@ -196,7 +196,11 @@ function matchLine(match: RowMatch | null | undefined, text: string, lead: numbe
  */
 function useReason(thread: Pick<ThreadSummary, "id">): string | undefined {
   const inToday = useApp((s) => s.today);
-  return useToday((s) => (inToday ? s.reasons.get(thread.id) : undefined));
+  const today = useToday((s) => (inToday ? s.reasons.get(thread.id) : undefined));
+  // plan 162 (after ai162-r05): in an action's preview, why a shown row isn't plainly a match, in the same place and
+  // look as Today's reason (the left-out and the starred or replied rows read as the matches: two reports)
+  const tag = useActionRows((s) => s.tags.get(thread.id));
+  return today ?? (tag ? t(`action.row.${tag}`) : undefined);
 }
 
 /** The row's words, with Today's reason ahead of them when there is one: the reason keeps its place, the words truncate. */
@@ -209,7 +213,7 @@ function withReason(reason: string | undefined, quiet: string, ink: string, word
           never reads as the snippet's first words (eight reports: the same grey as the preview) */}
       {/* after ai162-r05: the two reasons say the user's next step, and look apart: "Your turn: they replied" in the ink,
           "Waiting for your reply" in the quiet one, both at medium weight (they were one look: four reports) */}
-      <span data-testid="row-why" className={cn(reason === t("today.why.newFrom") ? quiet : ink, "font-medium")}>{reason}</span>
+      <span data-testid="row-why" className={cn(reason === t("today.why.newFrom") || reason === t("action.row.leftOut") ? quiet : ink, "font-medium")}>{reason}</span>
       <span aria-hidden className={quiet}> · </span>
       <span className={quiet}>{words}</span>
     </>

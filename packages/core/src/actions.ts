@@ -27,6 +27,9 @@ export interface ActionPlan {
 /** Whether "+ new mail too" can be offered, and why not. */
 export type ActionKeep = { kind: "ok" } | { kind: "hidden" } | { kind: "disabled"; reason: "forwarding" | "exceptions" };
 
+/** Plan 162 (after ai162-r05): why a shown row isn't plainly a match: the check's verdict, unchecked, or starred or replied */
+export type ActionRowTag = "leftOut" | "unchecked" | "protected";
+
 export interface ActionPreviewInfo {
   previewId: string;
   plan: ActionPlan;

@@ -10,6 +10,7 @@ import {
   CATEGORY_COLORS,
   type ActionKeep,
   type ActionPlan,
+  type ActionRowTag,
   type ActionPreviewInfo,
   type AiActionApplied,
   type AiActionCheck,
@@ -447,7 +448,7 @@ export class ActionsService {
     p.skipped = orderByDate(p.skipped, p.stamps);
   }
 
-  async page(previewId: string, offset: number, limit: number, showLeftOut: boolean, clientId: string): Promise<{ items: ThreadSummary[]; total: number; unticked: number[] }> {
+  async page(previewId: string, offset: number, limit: number, showLeftOut: boolean, clientId: string): Promise<{ items: ThreadSummary[]; total: number; unticked: number[]; tags: [number, ActionRowTag][] }> {
     const p = this.held(previewId, clientId);
     const rows = this.rows(p);
     const main = rows.filter((id) => !p.leftOut.has(id) && !p.unchecked.has(id));
@@ -457,7 +458,11 @@ export class ActionsService {
     const still = new Set((await this.b.store.filters.actionFacts(ids, targetCategory(p.plan))).filter((f) => eligible(p.plan, f)).map((f) => f.id));
     const found = new Map((await this.b.store.threads.summaries(ids.filter((id) => still.has(id)))).map((t) => [t.id, t]));
     const items = ids.flatMap((id) => found.get(id) ?? []);
-    return { items, total: ordered.length, unticked: ids.filter((id) => !this.ticked(p, id)) };
+    // plan 162 (after ai162-r05): why a row that isn't plainly a match is in the list, so the kinds read apart once shown
+    // (the check's verdict, not checked yet, or starred or replied brought in by Include)
+    const skipped = new Set(p.skipped);
+    const tags = items.flatMap((t): [number, ActionRowTag][] => (p.leftOut.has(t.id) ? [[t.id, "leftOut"]] : p.unchecked.has(t.id) ? [[t.id, "unchecked"]] : skipped.has(t.id) || p.held.has(t.id) ? [[t.id, "protected"]] : []));
+    return { items, total: ordered.length, unticked: ids.filter((id) => !this.ticked(p, id)), tags };
   }
 
   toggle(previewId: string, threadId: number, included: boolean, clientId: string): ActionPreviewInfo {

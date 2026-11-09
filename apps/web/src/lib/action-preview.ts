@@ -10,6 +10,12 @@ import { registerUndo, snack } from "./snack";
 import { installFocusIntent } from "./focus-intent";
 import { sendersInSentence } from "./rule-words";
 
+/**
+ * Plan 162 (after ai162-r05): an action's result and its Undo stay 20 s (it was 8: gone before a batch of dozens could be
+ * looked over; Graphite claude). Any other snack keeps the app's own time.
+ */
+export const ACTION_UNDO_MS = 20_000;
+
 export { useActionPreview };
 
 /** where the rule looks: the Inbox, or all mail but Spam and Trash */
@@ -210,7 +216,7 @@ export async function applyPreview(): Promise<void> {
     const asked = s.sentence ? t("action.asked", { sentence: s.sentence }) : null;
     // what happened first (a partial apply, what changed or was spared, the rule), then what was asked
     const description = [ruleOnly ? undefined : notes(r), asked].filter(Boolean).join(" ") || undefined;
-    snack.success(r.stopped ? t("action.outcome.stopped", { outcome: message }) : message, { id: job.snackId, duration: 8000, description, action: r.undoToken !== null ? undoAction(undo, t("action.undoName", { outcome: message })) : undefined });
+    snack.success(r.stopped ? t("action.outcome.stopped", { outcome: message }) : message, { id: job.snackId, duration: ACTION_UNDO_MS, description, action: r.undoToken !== null ? undoAction(undo, t("action.undoName", { outcome: message })) : undefined });
   } catch (error) {
     undoToken.resolve(null);
     useActionPreview.setState({ applying: false });
