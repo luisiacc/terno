@@ -1115,3 +1115,68 @@ Models: real, openai/gpt-6-luna, anthropic/claude-sonnet-5-5, anthropic/claude-h
 | r05 | real | 7.36 | 681 | 6 |
 
 No screen reached 9 from both raters. The branch is not merged and waits for the owner.
+
+## Pass after ai162-r05
+
+### The request (2026-11-09, verbatim)
+
+> "Fix the five issues found on round five, and the other medium issues found as well. For the model error, just do whatever, it doesn't matter."
+
+No more rated rounds: a fix pass. Written before the rest of the code (the ⌘J Undo case was reproduced first, below). All eight r05 reports were read: 6 high and 51 medium issues. Where several reports name one problem it's fixed once. Nothing here adds a shortcut, a model call, a check that uses AI or a consent prompt; nothing changes `scripts/ui-rating/` or the demo data.
+
+### The five high issues
+
+1. **Ask's sources at 1100x700** (Atelier claude; medium in seven more reports). The answer and its sources shared one scroll region, so a long answer left one half-faded row under "5 sources". **A split:** the answer scrolls; the last turn's sources sit under it in a region of their own that is always on screen, sized to show **three whole rows** (and the heading with the count); more than three scroll inside it, and ↓↑ bring the chosen row whole into view. Every source stays reachable by pointer, wheel and keys. No text fades at the edge any more (three reports: a fade over words reads as disabled); the hairline over the sources is the edge. e2e: at 1100x700 with a long answer, three source rows are whole inside the dialog and the last row is reachable by ↓.
+2. **⌘J: Send one click away from a note** (Atelier claude). In the note state Send is **off**: an outlined icon, `aria-disabled`, dimmed, a click does nothing; its tooltip and its description say why ("Send is off while this is a note for AI. Write it first, or press ⌘↵ to send it as it is."). ⌘↵, Send later and the palette still ask "This reads as a note for AI.", whose **Send as it is** is the one way to mail the note. e2e: Send is `aria-disabled` with the reason, and a click asks nothing and sends nothing.
+3. **⌘J: Undo drops the note state** (Atelier codex). Reproduced: the body's glance (instruction or email) follows changes with a 150 ms throttle, so for that moment after Undo the foot read the body as the AI's email (Send primary, no "For AI"); the raters' probes shot exactly then. **The glance is read again in the same moment the row goes** (`refreshGlance` in `remove`), so Undo gives back the note, its label and Write it as the primary together. Unit: the note state holds synchronously after Undo (fails without the fix); e2e: the label and Write it after Undo.
+4. **Today's digest is the smallest thing on the page** (macOS and Lumen claude, high; three more medium). The way in was a 12 px caption line. It becomes **a row**, in the list's row anatomy: the newspaper glyph in a tile the size of an avatar, "Today's digest" in the row's ink at the sender's weight, under it its count line ("16 newsletters · ready to review"), and a chevron; one hairline under it, at the header's foot. It stays in Today's header, after the sentence, before Needs you's people (no reordering; owner: newsletters are normal emails, Today shows 12, Needs you is about people). e2e: the entry is at least the rows' type size and 44 px tall at 1440 and 1100.
+5. **The action preview's decision split from its explanation** (macOS claude, high; five more medium). In Split, while the rule is shown, the decision moves to **the reader pane's foot, sticky**: a bar on the pane's surface with a hairline, "Archive 3" (primary or destructive) and Cancel, right-aligned as the digest's bar is, their keys in their tooltips. The list header then holds only the request and the count. While a match is read (the pane is the message) the header holds the pair, as now. One pair on screen at a time, so the test ids stay (`action-apply`, `action-cancel`; the capture waits on them). It never scrolls: the rule scrolls above it. The existing "a long rule never scrolls Apply out of reach" test now holds the foot's Apply in view at 1100x700; a new test holds Apply below the explanation, in the reader.
+
+### The medium issues, by screen
+
+**Ask (14)**
+- Sources squeezed (seven reports): the split above.
+- **Grey as the only mark of "not linked"** (six reports: Atelier claude and codex, Graphite claude and codex, Lumen claude and codex, macOS codex). Unlinked claims are set in the ink again, and each is followed by a small textual mark, "no source" (a dashed outline, the citation's size, `text-xs`), with a tooltip "Not linked to a message: check it before you rely on it". It's real text, so a screen reader hears it where it applies. With the mark at each claim, the legend under the answer goes.
+- **A follow-up loses its question label** (Atelier claude): with more than one turn, every turn shows its question above its answer, the last one too (it was hidden because the header repeats it).
+- **The citation preview covers the question and spills off the panel** (Atelier claude): the preview opens below the mark, aligned to its start, kept inside the dialog. The marks are already 24 px focusable buttons.
+- Copy · Regenerate · Written with AI and the scope stay where they are: with the sources apart they no longer take the sources' room.
+
+**⌘J (4 medium)**
+- **The composer's foot wraps at 1100** (Atelier claude): Save and close becomes its icon (with its name and tooltip) when the foot is narrow, so the foot is one line. The sticky "Reply to…" bar is opaque.
+- **The instruction disappears once ⌘J writes** (Lumen and macOS claude): the strip quotes it, after the commands and before Written with AI, one line, truncated, muted; a click opens the provenance popover that holds it whole with its pencil (plan 163). It gives way first when narrow.
+- **Instruction mode needs an explicit label** (Lumen codex, with high #2's fix): the body's label says "For AI · not sent".
+- Not built: showing the AI row as soon as ⌘J opens the reply (macOS claude): plan 163's design is no row until something runs; the body's hint says what to do.
+
+**Today (11)**
+- The digest: high #4.
+- **"They replied" under "Needs you" reads like nothing is needed** (Lumen, macOS, Atelier claude; three codex). The reasons say the user's next step: **"Your turn: they replied"** and **"Waiting for your reply"**; es "Te toca: respondieron", "Esperan tu respuesta".
+- **Both reasons look the same** (four reports): the one where they wrote back keeps the ink at medium weight; "Waiting for your reply" is the row's secondary ink at medium weight. No colour carries it alone: the words differ at their first word.
+- Not built (owner rules): continuing past the newest 12 inside Today (Lumen and Atelier codex: Today shows 12, See all in Inbox is the way); grouping or reordering Needs you by reason or importance (Graphite and macOS codex, Lumen claude: a reordering; **a question for the owner**); grouping duplicate newsletters (macOS claude: normal emails, a line each).
+- **Focus after j/k on Today and after a digest item** (macOS claude): j/k move the list's cursor, whose keys stay with the list (plan 52: no focus on a list or pane; the listbox's active descendant says it). Opening a digest item keeps its row as the cursor on the way back (pass after r02). Not changed: it's the app-wide list model.
+
+**Actions (8)**
+- The decision's place: high #5.
+- **Excluded rows mix into the matches when shown** (Graphite claude) and **don't say why** (macOS codex): each row the check left out, and each starred or replied row Include added unticked, carries a short muted tag on its row, "Didn't fit" or "Starred" / "Replied", so the two kinds are told apart. A per-row reason in the model's words isn't built: the check returns groups, not reasons (a new model output).
+- **The bulk-action Undo is gone in under 9 seconds** (Graphite claude): the action's snack stays for 20 s (the app's default is shorter), since it can hold dozens of conversations.
+- Not built: showing the action's preview inside Ask first (macOS claude): the preview is the list's (plan 143); the panel says "Looking through your mail…" until the model has read the request, so a command can't be told from a question before then.
+
+**AI settings (7)**
+- **Writing style fades its learning explanation** (four reports): no fade over text; the page ends at the dialog's edge as every Settings page does.
+- **An edited greeting doesn't show in the read view** (Graphite codex): the profile shows what a draft will use, the user's own value first ("Opens with “Hi”", marked Edited).
+- **The AI filter's working state looks like a result** (macOS claude): while Create with AI writes, the rule's fields below are dimmed and inert, and the box says "Writing the rule…".
+- **Which fields the AI filled** (Lumen claude): the fields the request filled carry the AI tint's edge until edited. Starting the actions empty isn't built: the Rules dialog's defaults are everyday behaviour.
+
+**Summary (4)**
+- **The card dominates the reader at 1100** (Graphite claude and codex, macOS claude). An item's Reply and its source sit at the end of the item's own line when they fit (they wrap under it, at the text's edge, when they don't); the source says only the time when the item's label already names the person ("Yesterday, 8:24 AM"); the action row sits closer. The summary's wording doesn't change (owner).
+- Not built: source links for the recap's claims (Atelier codex): a new model output.
+
+**Follow-ups and Reply ready (3)**
+- **Two spinners while a follow-up is written** (Lumen claude): the card's button says "Writing your follow-up…" without a spinner; the composer's is the one indicator.
+- Not built: a "Preparing a reply…" state before the backend starts (Atelier and Graphite claude, Lumen claude): whether a reply will come is a model's check that may say no, so a card for every conversation opened would flash and go (as decided after ai162-r01). Once the backend is writing, the card shows from the moment the conversation opens.
+
+### The model error (owner: "do whatever")
+
+A 403, or a provider's `permission_error` / `permission_denied` / `PERMISSION_DENIED`, reads: "{Provider} refused this request for your key: it doesn't have permission." with "Check the key's access in {provider}'s console, or pick another model in Settings → AI." (en and es), with AI settings offered. A 401 keeps "key rejected". Where the providers document it: Anthropic (`permission_error`, 403), OpenAI and the OpenAI-compatible path (403, `permission_denied` / `insufficient_permissions`), Gemini (`PERMISSION_DENIED`, 403); `sdk-errors.ts`, `openai-chat.ts` and `jev.ts` as they apply. Contract tests in `packages/ai`.
+
+### Questions for the owner
+- **Grouping Today's Needs you by reason** (three reports): "Your turn" and "Waiting for your reply" as two groups, or by importance, would reorder Today. Wanted?
