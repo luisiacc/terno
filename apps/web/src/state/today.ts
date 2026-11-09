@@ -121,7 +121,7 @@ export function reopenFromDigest(threadId: number, was?: "trash" | "spam"): void
     const moved = new Map(movedTo);
     if (was) moved.set(threadId, was);
     else moved.delete(threadId);
-    return { fromDigest: threadId, pick: pick && { ...pick, opened: threadId }, movedTo: moved };
+    return { fromDigest: threadId, pick: pick && { ...pick, from: threadId, opened: new Set([...(pick.opened ?? []), threadId]) }, movedTo: moved };
   });
   setApp({ selectedId: threadId });
 }
