@@ -13,6 +13,8 @@ import { AiErrorNotice, aiErrorCopy, errorTarget } from "./ai-error";
 import { useEffect, type ReactNode } from "react";
 import { askTarget } from "~/lib/ai";
 import { listDate } from "~/lib/format";
+import { boundaryDay } from "~/lib/when";
+import { Pencil } from "@terno/ui/icons";
 import { applyPreview, check, inboxOnly, includeSkipped, isDestructive, previewConsequence, previewCount, previewTitle, previewWaiting, showLeftOut, stopApplying, useActionPreview, verbOf } from "~/lib/action-preview";
 import { useAppearance } from "~/lib/appearance";
 import { LIST_TITLE } from "~/lib/list-title";
@@ -48,8 +50,11 @@ export function foundSummary(rows: readonly Pick<ThreadSummary, "fromName" | "fr
   const list = new Intl.ListFormat(getLocale(), { type: "conjunction" });
   const from = list.format(rest > 0 ? [...named, t("action.found.more", { count: rest })] : named);
   const dates = rows.map((r) => r.lastDate).filter((d) => d > 0);
-  const lo = dates.length ? listDate(Math.min(...dates), now) : null;
-  const hi = dates.length ? listDate(Math.max(...dates), now) : null;
+  // plan 162 (after ai162-r02): a span across years says both ("May 11, 2025 to Aug 28, 2026"), never one end's
+  const [first, last] = dates.length ? [Math.min(...dates), Math.max(...dates)] : [0, 0];
+  const years = dates.length > 0 && new Date(first).getFullYear() !== new Date(last).getFullYear();
+  const lo = dates.length ? (years ? boundaryDay(first) : listDate(first, now)) : null;
+  const hi = dates.length ? (years ? boundaryDay(last) : listDate(last, now)) : null;
   const accounts = [...new Set(rows.map((r) => r.accountId))].map(accountName).filter(Boolean);
   return { from, dates: lo && hi ? (lo === hi ? lo : t("action.found.range", { from: lo, to: hi })) : null, accounts: accounts.length > 1 ? list.format(accounts) : null };
 }
@@ -152,7 +157,8 @@ export default function ActionPreviewHeader() {
  * the header otherwise. Apply waits as a quiet button with a spinner (pass 2), and Trash and Spam are BoardUI's
  * destructive button: a batch that takes mail out of view never looks like an Archive.
  */
-function ActionButtons({ size, className, order = "cancel-first", escCancels = true }: { size: "sm" | "default"; className?: string; order?: "cancel-first" | "apply-first"; /** Codex review: while a match is read in Split, Esc goes back to the rule, not Cancel */ escCancels?: boolean }) {
+function ActionButtons({ size, className, order = "cancel-first", escCancels = true, at }: { size: "sm" | "default"; className?: string; order?: "cancel-first" | "apply-first"; /** Codex review: while a match is read in Split, Esc goes back to the rule, not Cancel */ escCancels?: boolean; /** plan 162 (after ai162-r02): the rule's own copy, its test ids its own */ at?: "rule" }) {
+  const id = (name: string) => (at ? `${name}-${at}` : name);
   const preview = useActionPreview((s) => s.preview);
   const checking = useActionPreview((s) => s.checking);
   const applying = useActionPreview((s) => s.applying);
@@ -172,13 +178,13 @@ function ActionButtons({ size, className, order = "cancel-first", escCancels = t
     </Tooltip>
   );
   const cancel = applying ? (
-    <Button key="cancel" size={size} variant="secondary" className={className} data-testid="action-stop" onClick={stopApplying}>{t("action.stop")}</Button>
+    <Button key="cancel" size={size} variant="secondary" className={className} data-testid={id("action-stop")} onClick={stopApplying}>{t("action.stop")}</Button>
   ) : (
-    escCancels ? keyed(<Button key="cancel" size={size} variant="secondary" className={className} data-testid="action-cancel" aria-keyshortcuts="Escape" onClick={leavePreview}>{t("common.cancel")}</Button>, "escape", t("common.cancel")) : <Button key="cancel" size={size} variant="secondary" className={className} data-testid="action-cancel" onClick={leavePreview}>{t("common.cancel")}</Button>
+    escCancels ? keyed(<Button key="cancel" size={size} variant="secondary" className={className} data-testid={id("action-cancel")} aria-keyshortcuts="Escape" onClick={leavePreview}>{t("common.cancel")}</Button>, "escape", t("common.cancel")) : <Button key="cancel" size={size} variant="secondary" className={className} data-testid={id("action-cancel")} onClick={leavePreview}>{t("common.cancel")}</Button>
   );
   const applyButton = (
-    <Button key="apply" size={size} variant={variant} className={cn(className, "tabular")} data-testid="action-apply" data-variant={variant} data-waiting={waiting || undefined} aria-keyshortcuts={isMac ? "Meta+Enter" : "Control+Enter"} disabled={waiting || applying || (count === 0 && !ruleOnly)} onClick={() => void applyPreview()}>
-      {waiting && <Spinner data-testid="action-finding" className="size-3.5" />}
+    <Button key="apply" size={size} variant={variant} className={cn(className, "tabular")} data-testid={id("action-apply")} data-variant={variant} data-waiting={waiting || undefined} aria-keyshortcuts={isMac ? "Meta+Enter" : "Control+Enter"} disabled={waiting || applying || (count === 0 && !ruleOnly)} onClick={() => void applyPreview()}>
+      {waiting && <Spinner data-testid={id("action-finding")} className="size-3.5" />}
       {label}
     </Button>
   );
@@ -198,6 +204,8 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
   const checkError = useActionPreview((s) => s.checkError);
   const senders = useActionPreview((s) => s.senders);
   const leftOutShown = useActionRows((s) => s.showLeftOut);
+  const unticked = useActionRows((s) => s.unticked);
+  const ai = useApp((s) => s.settings?.ai);
   const accounts = useApp((s) => s.accounts);
   const folderName = useFolderName();
   const shown = useList((s) => s.items.length);
@@ -238,8 +246,16 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
       {t("action.sender.notLooked", { name: notLooked })}
     </p>
   );
+  // what Apply takes: the ticked rows, when every match is a row here
+  const ticked = items.filter((r) => !unticked.has(r.id));
+  const found = variant === "reader" && !waiting && !ruleOnly && count > 0 && ticked.length === count ? foundSummary(ticked, (id) => { const a = accounts.find((x) => x.id === id); return a ? a.displayName || a.email : ""; }) : null;
+  const foundLines = found ? [{ label: t("action.found.from"), text: found.from }, ...(found.dates ? [{ label: t("action.found.dates"), text: found.dates }] : []), ...(found.accounts ? [{ label: t("action.found.accounts"), text: found.accounts }] : [])] : [];
   const editLink = plan.action.type !== "createCategory" && (
-    <Button variant="link-secondary" size="xs" className="no-drag h-6 font-medium text-muted-foreground hover:text-foreground" data-testid="action-edit-filter" onClick={editAsFilter}>{t("action.editAsFilter")}</Button>
+    // plan 162 (after ai162-r02): a control that looks like one, beside what it edits (grey text, it read as a caption)
+    <Button variant="outline" size={reader ? "sm" : "xs"} className="no-drag shrink-0 text-foreground" data-testid="action-edit-filter" onClick={editAsFilter}>
+      <Pencil aria-hidden />
+      {t("action.editAsFilter")}
+    </Button>
   );
   const body = (
     // (the list's header is a window drag area: what's in it takes clicks)
@@ -255,10 +271,15 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
         consequence
       )}
       {senderLine}
-      <div>
-        {/* plan 162 (after ai162-r01): a heading in the ink; it was a caption smaller than the labels it introduced */}
-        <h3 className="text-sm font-medium text-foreground">{t("action.rule.readAs")}</h3>
-        <dl data-testid="action-conditions" className={cn("mt-1.5 grid grid-cols-[minmax(5rem,max-content)_1fr] items-baseline gap-x-4", reader ? "gap-y-2" : "gap-y-1")}>
+      {/* plan 162 (after ai162-r02): one grid for both sections, so their values share one column (they started 50 to 70 px
+          apart, every report); what it found is counted from the ticked rows, so an untick recounts it, never hides it */}
+      <div data-testid="action-review" className={cn("grid grid-cols-[minmax(5rem,max-content)_1fr] items-baseline gap-x-4", reader ? "gap-y-2" : "gap-y-1")}>
+        <div className="col-span-full flex min-h-7 items-center justify-between gap-3">
+          {/* plan 162 (after ai162-r01): a heading in the ink; it was a caption smaller than the labels it introduced */}
+          <h3 className="text-sm font-medium text-foreground">{t("action.rule.readAs")}</h3>
+          {editLink}
+        </div>
+        <dl data-testid="action-conditions" className={cn("col-span-full grid grid-cols-subgrid items-baseline", reader ? "gap-y-2" : "gap-y-1")}>
           {rows.map((r, i) => (
             <div key={i} className="contents" data-testid="action-rule-row">
               <dt className="text-muted-foreground">{r.label}</dt>
@@ -272,16 +293,27 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
             </div>
           ))}
         </dl>
+        {found && (
+          <div className="contents" data-testid="action-found">
+            <h3 className="col-span-full mt-3 text-sm font-medium text-foreground">{t("action.found.title")}</h3>
+            <dl className="col-span-full grid grid-cols-subgrid items-baseline gap-y-2">
+              {foundLines.map((l) => (
+                <div key={l.label} className="contents">
+                  <dt className="text-muted-foreground">{l.label}</dt>
+                  <dd className="min-w-0 text-pretty wrap-anywhere" data-testid="action-found-line">{l.text}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        )}
       </div>
       {details.length > 0 ? (
         <Collapsible data-testid="action-details">
-          {/* plan 161, pass 3: Edit as a rule is a quiet link on this line, so the only buttons near the rule are the decision */}
           <div className="flex flex-wrap items-center gap-x-4">
             {/* plan 161, pass 2: named for what it holds, a 24 px target */}
             <CollapsibleTrigger className="h-6 w-auto gap-1 text-xs font-medium text-muted-foreground hover:text-foreground [&>[data-slot=collapsible-chevron]]:ms-0 [&>[data-slot=collapsible-chevron]]:size-3.5" data-testid="action-details-toggle">
               {t("action.rule.details")}
             </CollapsibleTrigger>
-            {editLink}
             {provenance}
           </div>
           <CollapsiblePanel>
@@ -300,29 +332,8 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
           </CollapsiblePanel>
         </Collapsible>
       ) : (
-        <div className="flex flex-wrap items-center gap-x-4">
-          {editLink}
-          {provenance}
-        </div>
+        <div className="flex flex-wrap items-center gap-x-4">{provenance}</div>
       )}
-      {variant === "reader" && !waiting && !ruleOnly && items.length === count && count > 0 && (() => {
-        const found = foundSummary(items, (id) => { const a = accounts.find((x) => x.id === id); return a ? a.displayName || a.email : ""; });
-        if (!found) return null;
-        const lines = [{ label: t("action.found.from"), text: found.from }, ...(found.dates ? [{ label: t("action.found.dates"), text: found.dates }] : []), ...(found.accounts ? [{ label: t("action.found.accounts"), text: found.accounts }] : [])];
-        return (
-          <div data-testid="action-found">
-            <h3 className="text-sm font-medium text-foreground">{t("action.found.title")}</h3>
-            <dl className="mt-1.5 grid grid-cols-[minmax(5rem,max-content)_1fr] items-baseline gap-x-4 gap-y-2">
-              {lines.map((l) => (
-                <div key={l.label} className="contents">
-                  <dt className="text-muted-foreground">{l.label}</dt>
-                  <dd className="min-w-0 text-pretty wrap-anywhere" data-testid="action-found-line">{l.text}</dd>
-                </div>
-              ))}
-            </dl>
-          </div>
-        );
-      })()}
       {(plan.action.type === "createCategory" || preview.hidden || preview.forwards || preview.skipped > 0 || checking || checkError || preview.leftOut + preview.unchecked > 0 || (preview.keep.kind !== "hidden" && !ruleOnly)) && (
         <div className="hairline-t flex flex-col gap-1.5 pt-3">
           {plan.action.type === "createCategory" && <Line testId="action-creates">{t("action.creates", { name: plan.action.name })}</Line>}
@@ -374,6 +385,13 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
       )}
       {/* plan 162 (after ai162-r01): what to do here, said once in words; the keys are the header's buttons' own */}
       {!ruleOnly && <p className={cn("text-pretty text-muted-foreground", reader ? "text-sm" : "text-xs")} data-testid="action-help">{t("action.rule.keys")}</p>}
+      {/* plan 162 (after ai162-r02): the decision where the reading ends too, the header's own commands (which stay, so
+          nothing moves while a match is read): five reports found Apply a window's width from what it confirms */}
+      {reader && (
+        <div className="no-drag flex flex-wrap items-center justify-end gap-2 pt-1" data-testid="action-rule-decision">
+          <ActionButtons size="sm" at="rule" />
+        </div>
+      )}
     </div>
   );
   // List: under the header, bounded, so a long rule (Details open) scrolls in place and never takes the rows' room

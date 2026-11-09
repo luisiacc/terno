@@ -2499,6 +2499,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "action.found.dates": "Fechas",
   "action.found.accounts": "Cuentas",
   "action.found.range": "{from} a {to}",
+  "action.rule.before": "{rule}, antes del {date}",
   "action.found.more": { one: "# más", other: "# más" },
   "action.rule.where": "Dónde",
   "action.rule.anyOf": { one: "menciona", other: "menciona alguna de" },

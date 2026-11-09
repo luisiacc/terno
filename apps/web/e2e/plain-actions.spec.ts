@@ -129,11 +129,21 @@ test.describe("actions in plain English (plan 143)", () => {
       await expect(page.getByTestId("nav-inbox")).toHaveAttribute("data-active");
       await expect(page.locator("#app-sidebar [data-active]")).toHaveCount(1);
       const rule = page.getByTestId("action-rule");
-      // plan 162 (after ai162-r01): Apply and Cancel have one place, the list's header, while the rule shows and while a
-      // match is read; the rule holds none. An Archive is the primary
+      // plan 162 (after ai162-r01): Apply and Cancel stay in the list's header, while the rule shows and while a match is
+      // read. After ai162-r02: and the rule ends with the same two, where its reading ends
       await expect(page.getByTestId("action-preview").getByTestId("action-apply")).toHaveAttribute("data-variant", "default");
       await expect(page.getByTestId("action-preview").getByTestId("action-cancel")).toBeVisible();
       await expect(rule.getByTestId("action-apply")).toHaveCount(0);
+      await expect(rule.getByTestId("action-apply-rule")).toHaveText("Archive 2");
+      await expect(rule.getByTestId("action-apply-rule")).toHaveAttribute("data-variant", "default");
+      await expect(rule.getByTestId("action-cancel-rule")).toBeVisible();
+      expect((await rule.getByTestId("action-apply-rule").boundingBox())!.y).toBeGreaterThan((await rule.getByTestId("action-help").boundingBox())!.y);
+      // one label column for both sections (they started 50 to 70 px apart)
+      const valueLefts = await rule.locator("[data-testid=action-review] dd").evaluateAll((dds) => [...new Set(dds.map((d) => Math.round(d.getBoundingClientRect().left)))]);
+      expect(valueLefts).toHaveLength(1);
+      // Edit as a rule is a bordered control beside the heading it edits
+      expect(await rule.getByTestId("action-edit-filter").evaluate((e) => getComputedStyle(e).borderTopWidth)).not.toBe("0px");
+      expect(Math.abs((await rule.getByTestId("action-edit-filter").boundingBox())!.y - (await rule.getByText("Terno read it as").boundingBox())!.y)).toBeLessThan(12);
       await expect(page.getByTestId("action-decision")).toHaveCount(0);
       const decided = (await page.getByTestId("action-apply").boundingBox())!;
       // the keys are the buttons' own: no line under the rule repeats them; x is said as what it does, on the one being read
@@ -145,7 +155,7 @@ test.describe("actions in plain English (plan 143)", () => {
       await expect(rule.getByTestId("action-rule-title")).toHaveText("Archive 2 conversations");
       await expect(rule.getByTestId("action-rule-request")).toHaveText("“Archive shipping notices older than a month”");
       expect(await rule.getByTestId("action-rule-title").evaluate((el) => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThan(await rule.getByTestId("action-rule-request").evaluate((el) => parseFloat(getComputedStyle(el).fontSize)));
-      await expect(rule.getByTestId("action-conditions")).toContainText("Older than 30 days");
+      await expect(rule.getByTestId("action-conditions")).toContainText("Older than 30 days, before ");
       // plan 162 (after ai162-r01): the terms are words in the ink, "shipping, delivery or tracking", not chips
       await expect(rule.getByTestId("action-rule-term")).toHaveText(["shipping", "delivery", "tracking"]);
       await expect(rule.getByTestId("action-conditions")).toContainText("shipping, delivery, or tracking");
@@ -181,6 +191,9 @@ test.describe("actions in plain English (plan 143)", () => {
       await include.click({ position: { x: 10, y: 4 } });
       await expect(rows(page).first()).toHaveAttribute("data-included", "false");
       await expect(page.getByTestId("action-apply")).toHaveText("Archive 1");
+      // plan 162 (after ai162-r02): what it found counts what's ticked, so an untick recounts it, never hides it
+      await expect(rule.getByTestId("action-found")).toContainText("What it found");
+      await expect(rule.getByTestId("action-apply-rule")).toHaveText("Archive 1");
       await include.click();
       await expect(page.getByTestId("action-apply")).toHaveText("Archive 2");
     });
@@ -255,9 +268,11 @@ test.describe("actions in plain English (plan 143)", () => {
       // the first row stayed out of it; the rest left
       await inInbox("Your shipping notice 4411").toBe(1);
       await inInbox("Tracking your delivery 2231").toBe(0);
-      await page.keyboard.press("ControlOrMeta+z");
+      // plan 162 (after ai162-r02): the snack's own Undo (⌘Z is below): the keys go back to the list, not to <body>
+      await page.getByTestId("snack").filter({ hasText: "Archived 2 conversations" }).getByTestId("snack-action").click();
       // a result, not a command
       await expect(page.getByTestId("snack").filter({ hasText: "Moved 2 conversations back to the Inbox" })).toBeVisible();
+      await expect.poll(() => page.evaluate(() => document.activeElement?.getAttribute("data-keep-scroll"))).toBe("list");
       await inInbox("Tracking your delivery 2231").toBe(1);
       await inInbox("Shipping delivery tracking 9921").toBe(1);
     });

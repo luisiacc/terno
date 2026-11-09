@@ -22,4 +22,8 @@ describe("plan 162 (after ai162-r01): what an action's search found, from its ro
     expect(found.accounts).toBeNull();
     expect(foundSummary([], name, NOW)).toBeNull();
   });
+  it("plan 162 (after ai162-r02): a span across years says both years, never one end's", () => {
+    const old = { ...row("A", 11, 1), lastDate: new Date(2025, 4, 11, 9).getTime() };
+    expect(foundSummary([old, row("B", 28, 1)], name, NOW)!.dates).toBe("May 11, 2025 to Aug 28, 2026");
+  });
 });

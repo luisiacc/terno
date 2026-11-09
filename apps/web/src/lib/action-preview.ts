@@ -187,7 +187,11 @@ export async function applyPreview(): Promise<void> {
     const r = await client.call("ai.actionUndo", { token });
     // plan 161: a result, said for what it undid
     snack.success(ruleOnly ? t("action.rule.undone") : t(`action.undone.${verb}`, { count: r.restored, category: preview.categoryName ?? "" }));
-    void reloadList({ keepSelection: true });
+    await reloadList({ keepSelection: true });
+    // plan 162 (after ai162-r02): the keys go back to the list the mail came back to, unless something took them (it
+    // fell to <body> when the snack's button went)
+    const at = document.activeElement;
+    if (!at || at === document.body) document.querySelector<HTMLElement>("[data-testid=thread-list] [data-keep-scroll=list]")?.focus({ preventScroll: true });
   });
   try {
     const r = await client.call("ai.actionApply", { previewId: preview.previewId, jobId: job.jobId, future: s.future });

@@ -2514,6 +2514,7 @@ It contains none of your mail, contacts, settings or keys.
   "action.found.dates": "Dates",
   "action.found.accounts": "Accounts",
   "action.found.range": "{from} to {to}",
+  "action.rule.before": "{rule}, before {date}",
   "action.found.more": { one: "# more", other: "# more" },
   "action.rule.where": "Where",
   "action.rule.anyOf": { one: "mentions", other: "mentions any of" },

@@ -75,7 +75,10 @@ describe("a sentence's rule in words (plan 161)", () => {
     const opening: Condition = { field: "opening", op: "matches", value: "shipped|delivery", negate: false };
     expect(ruleRow(opening, email)).toEqual({ label: "Subject and first lines", text: "mentions any of", terms: ["shipped", "delivery"] });
     expect(ruleRow({ ...opening, negate: true }, email)).toMatchObject({ text: "mentions none of" });
-    expect(ruleRow({ field: "ageDays", op: "gt", value: 30, negate: false } as Condition, email)).toEqual({ label: "Age", text: "Older than 30 days" });
+    // plan 162 (after ai162-r02): an age says the day it means, to check against the rows' dates
+    const now = new Date(2026, 9, 22, 16).getTime();
+    expect(ruleRow({ field: "ageDays", op: "gt", value: 30, negate: false } as Condition, email, now)).toEqual({ label: "Age", text: "Older than 30 days, before Sep 22" });
+    expect(ruleRow({ field: "ageDays", op: "lt", value: 7, negate: false } as Condition, email, now)).toEqual({ label: "Age", text: "Newer than 7 days" });
     expect(ruleRow({ field: "fromDomain", op: "equals", value: "amazon.com", negate: true }, email)).toEqual({ label: "Domain", text: "Isn’t “amazon.com”" });
     expect(ruleRow({ field: "text", op: "contains", value: "recruiter", negate: false }, email)).toEqual({ label: "Anywhere", text: "mentions", terms: ["recruiter"] });
     // a generated template reads as its template; any other pattern doesn't print its syntax

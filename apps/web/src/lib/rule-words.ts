@@ -1,6 +1,7 @@
 import { patternTemplate, type Condition, type FilterAction, type FilterRule } from "@terno/core";
 import { getLocale, t, type TextKey } from "@terno/i18n";
 import { conditionText } from "./rule-text";
+import { listDate } from "./format";
 
 /**
  * Plan 161: what a rule does, said from its own fields, so what AI built and what was asked can be compared (the model's
@@ -217,9 +218,11 @@ export function patternTerms(pattern: string): string[] | null {
 }
 
 /** Plan 161: a condition as a row of the preview's rule. */
-export function ruleRow(c: Condition, accountEmail: (id: number) => string): RuleRow {
+export function ruleRow(c: Condition, accountEmail: (id: number) => string, now = Date.now()): RuleRow {
   const label = t(FIELD[c.field]);
   const not = Boolean(c.negate);
+  // plan 162 (after ai162-r02): an age says the day it means, to check against the rows' dates ("…, before Sep 22")
+  if (c.field === "ageDays" && c.op === "gt" && !not && Number(c.value) > 0) return { label, text: t("action.rule.before", { rule: upperFirst(conditionText(c, accountEmail)), date: listDate(now - Number(c.value) * 86_400_000, now) }) };
   if (c.field === "hasAttachment" || c.field === "account" || c.field === "ageDays") return { label, text: upperFirst(conditionText(c, accountEmail)) };
   if (c.field === "text") return { label, text: t(not ? "action.rule.noneOf" : "action.rule.anyOf", { count: 1 }), terms: [c.value] };
   if (c.op === "matches") {
