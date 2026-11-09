@@ -201,8 +201,9 @@ it("plan 162 (Codex review): Save and apply asks first while the rule isn't coun
 
 it("plan 162 (after ai162-r05): while the AI writes the rule, its fields wait, dimmed and out of reach, and the box says so; done or failed, they're back", async () => {
   const fields = () => $("filter-fields")!;
-  const waits = () => [fields().hasAttribute("inert"), fields().getAttribute("aria-busy"), fields().classList.contains("opacity-50"), $("ai-writing")!.textContent, ($("filter-save") as HTMLButtonElement).disabled];
-  expect(waits()).toEqual([false, null, false, "", false]);
+  // the dimming is a state variant (aria-busy:), so it's there exactly while aria-busy is
+  const waits = () => [fields().hasAttribute("inert"), fields().getAttribute("aria-busy"), fields().classList.contains("aria-busy:opacity-50"), $("ai-writing")!.textContent, ($("filter-save") as HTMLButtonElement).disabled];
+  expect(waits()).toEqual([false, null, true, "", false]);
   await ask("archive mail from a.com");
   expect(waits()).toEqual([true, "true", true, "Writing the rule…", true]);
   await answer("filters.generate", rule("a.com"));
@@ -213,5 +214,5 @@ it("plan 162 (after ai162-r05): while the AI writes the rule, its fields wait, d
   await ask("archive mail from a.com, older than a week");
   expect(waits()).toEqual([true, "true", true, "Writing the rule…", true]);
   await refuse("filters.generate");
-  expect(waits()).toEqual([false, null, false, "", false]);
+  expect(waits()).toEqual([false, null, true, "", false]);
 });
