@@ -97,5 +97,6 @@ Each item says what differs from BoardUI and why.
 - **Radio card:** BoardUI's radio has no card variant, so Terno's is the radio drawn as a bordered card.
 - **Progress:** plain markup rather than Base UI's.
 - **Search clear:** out of the tab order, as BoardUI's.
-- **A composer's header rows (plan 161):** To, Subject and ⌘J's instruction are bare fields on the row's hairline, Apple Mail's form, not the filled Input or Textarea: the row is the field, and its label and text sit on To's lines. ⌘J's instruction is a one-line textarea that grows (`field-sizing: content`), so a long one shows whole.
+- **A composer's header rows (plan 161):** To and Subject are bare fields on the row's hairline, Apple Mail's form, not the filled Input or Textarea: the row is the field, and its label and text sit on To's lines.
+- **The AI strip's change field (plan 164):** the input group (a textarea and an icon-only submit as its inline-end addon) at the strip's 28 px instead of 32, one line that grows (`field-sizing: content`), its focus ring 2 px at a fifth of the ring color rather than 3 px solid: it sits on a 38 px row between quiet icons, where the full ring read as an alert.
 - **Announcement's `wrap` (plan 159):** an inline announcement may wrap its title instead of truncating it, so a learned rule's condition is read whole before it's accepted. BoardUI's inline announcement truncates.

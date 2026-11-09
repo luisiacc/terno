@@ -1494,6 +1494,9 @@ test.describe("drafting with AI (plan 133)", () => {
       expect(await page.getByTestId("ai-strip-voice").evaluate((el) => getComputedStyle(el).borderTopColor)).toBe("rgba(0, 0, 0, 0)");
       await expect(page.getByTestId("ai-change-input")).toHaveAttribute("placeholder", "Ask for a change…");
       await expect(page.getByTestId("ai-change-input")).toHaveAccessibleName("A change to the draft");
+      // BoardUI's input group, never a hand-built field (Codex code review)
+      await expect(page.getByTestId("ai-change")).toHaveAttribute("data-slot", "input-group");
+      await expect(page.getByTestId("ai-change-input")).toHaveAttribute("data-slot", "input-group-control");
       await expect(page.getByTestId("ai-change-submit")).toHaveAttribute("aria-disabled", "true");
       for (const id of ["ai-strip-regenerate", "ai-strip-shorter", "ai-strip-warmer", "ai-strip-undo"]) {
         const button = (await page.getByTestId(id).boundingBox())!;

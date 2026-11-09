@@ -2189,6 +2189,63 @@ describe("plan 162 (after ai162-r04): revising a draft, and a note for AI", () =
     expect(session(key)!.change).toBe("mention the parking");
   });
 
+  it("Codex code review: a change stopped after the draft was typed into keeps the strip, as edited, and gives its words back", async () => {
+    const { key, c } = reply("");
+    await store.act(key);
+    last("ai.compose").resolve(done(draft));
+    await tick();
+    store.setChange(key, "mention the parking");
+    store.change(key);
+    expect(session(key)!.phase).toBe("writing");
+    c.type(" Mine.");
+    store.stop(key);
+    expect(session(key)!.phase).toBe("strip");
+    expect(session(key)!.strip!.edited).toBe(true);
+    expect(session(key)!.change).toBe("mention the parking");
+    expect(c.text).toBe(`${draft} Mine.`);
+  });
+
+  it("Codex code review: a failed change asked again over an edit runs once: its words leave the field when Replace runs it", async () => {
+    const { key, c } = reply("");
+    await store.act(key);
+    last("ai.compose").resolve(done(draft));
+    await tick();
+    c.type(" Mine.");
+    store.setChange(key, "mention the parking");
+    store.change(key);
+    store.confirmReplace(key);
+    last("ai.compose").reject(Object.assign(new Error("Couldn't reach Claude"), { details: { aiErrorKind: "network" } }));
+    await tick();
+    expect(session(key)!.change).toBe("mention the parking");
+    // Try again over the edit asks first, then Replace runs it: the field is empty, and stays so once it lands
+    store.retry(key);
+    expect(session(key)!.confirm).toMatchObject({ how: "retry" });
+    store.confirmReplace(key);
+    expect(session(key)!.phase).toBe("writing");
+    expect(session(key)!.change).toBe("");
+    last("ai.compose").resolve(done("Friday works. Is there parking?\n\nLuis"));
+    await tick();
+    expect(session(key)!.phase).toBe("strip");
+    expect(session(key)!.change).toBe("");
+    // ⌘J now gives the field the keys, nothing runs again
+    const runs = calls("ai.compose").length;
+    await store.act(key);
+    expect(calls("ai.compose")).toHaveLength(runs);
+  });
+
+  it("Codex code review: a change that fails as not configured gives its words back", async () => {
+    const { key } = reply("");
+    await store.act(key);
+    last("ai.compose").resolve(done(draft));
+    await tick();
+    store.setChange(key, "mention the parking");
+    store.change(key);
+    last("ai.compose").reject(Object.assign(new Error("No provider"), { details: { aiErrorKind: "not_configured" } }));
+    await tick();
+    expect(session(key)!.phase).toBe("noProvider");
+    expect(session(key)!.change).toBe("mention the parking");
+  });
+
   it("plan 164: a fill's strip has no change field: its words do nothing", async () => {
     const { key, c } = reply("Hi Arjun, see you [day]");
     await store.act(key);

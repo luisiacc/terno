@@ -1178,7 +1178,8 @@ function failed(key: string, error: unknown) {
   }
   if (kind === "not_configured") {
     clearStream(key);
-    return update(key, { phase: "noProvider", run: null, strip: prior });
+    update(key, { phase: "noProvider", run: null, strip: prior });
+    return giveBackChange(key, s.run?.requestId);
   }
   const refused = kind === "refused";
   const message = refused ? t("aiDraft.refused") : localized(e.message ?? "", e.i18n);
@@ -1267,6 +1268,14 @@ export function stop(key: string) {
     clearStream(key);
     update(key, { phase: "strip", strip: prior, run: null, choice: null, error: null, guard: null, live: "" });
     giveBackChange(key, s.run?.requestId);
+    return focusEditor(key);
+  }
+  // a rewrite stopped after the text was typed into: nothing of it went in, so the strip stays as it was, edited since,
+  // and a change from the field has its words back (Codex code review: the strip and the words went)
+  if (prior && s.run?.spec.kind === "refine" && s.phase === "writing") {
+    clearStream(key);
+    update(key, { phase: "strip", strip: { ...prior, edited: true }, run: null, choice: null, error: null, guard: null, live: "" });
+    giveBackChange(key, s.run.requestId);
     return focusEditor(key);
   }
   // the owner's answers: written from text the read has since called an instruction, it stops as an instruction's run
@@ -1526,7 +1535,9 @@ export function confirmReplace(key: string): void {
   const s = session(key);
   if (!s?.strip || !s.confirm) return;
   startRun(key, specOf(s.strip, s.confirm, key));
-  if (s.confirm.how === "refine") changeRuns(key, s.confirm.instruction);
+  // the field's words are what runs: a change, or (Codex code review) a failed change asked again over an edit
+  const asked = s.confirm.how === "refine" ? s.confirm.instruction : s.confirm.how === "retry" && s.confirm.spec.kind === "refine" ? s.confirm.spec.instruction : null;
+  if (asked !== null && (s.confirm.how === "refine" || s.change?.trim() === asked)) changeRuns(key, asked);
 }
 
 /** "Keep editing", and Esc: nothing runs, and the caret is back in the text. */

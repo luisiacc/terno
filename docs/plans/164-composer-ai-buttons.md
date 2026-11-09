@@ -103,3 +103,12 @@ The popover's pencil (rewrite from new words) stays as plan 163 left it. The bod
 10. **Tests that break:** the old accessible names, `compose-note-actions`, "Fill 2 gaps with AI", visible "Regenerar", ⌘J-as-Regenerate in `ai-draft.test.ts`: all updated; Spanish now covers the field, the icon names and the note's question.
 11. **Undo after a field change:** covered over an edit (Replace, then Undo gives back the draft and the edit) in unit and e2e; a fill's strip has no field.
 12. **Completion:** the Codex code review and its fixes are recorded below. `pnpm test:all` and the rating are the lead's (they batch them across this round's branches).
+
+## What the Codex review of the code changed
+
+`codex exec -s read-only` on `git diff 023d22b61..HEAD` (the prompt of `codex-review.sh`, which isn't in this checkout's scratch), four findings, all taken, each with a regression test that fails without the fix:
+
+1. **A change stopped after the body was typed into lost the strip and its words** (Stop fell through to removing the session). A rewrite stopped then keeps the strip as it was, marked edited, and gives the field its words back (`ai-draft.test.ts`).
+2. **A failed change asked again over an edit could run twice:** Try again went through "Replace your edits?", whose Replace consumed the field's words only for a fresh change, so they stayed and ⌘J ran them again. Replace on a retried change from the field empties it too (`ai-draft.test.ts`).
+3. **A change that failed as "not configured" lost its words** (that branch returned before giving them back) (`ai-draft.test.ts`).
+4. **The field was hand-built** beside BoardUI's input group. It is `InputGroup` with `InputGroupTextarea` and an `InputGroupButton` addon now, at the strip's size; the deviation (28 px, the lighter ring) is written in `packages/ui/BOARDUI.md`, which also no longer calls ⌘J's instruction a header row (`ai-draft.spec.ts` checks the slots).

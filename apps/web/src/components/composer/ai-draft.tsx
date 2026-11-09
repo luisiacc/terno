@@ -2,6 +2,7 @@ import { parseAddressList } from "@terno/core";
 import { getLocale, t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { IconButton } from "@terno/ui/components/icon-button";
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from "@terno/ui/components/input-group";
 import { CloseButton } from "@terno/ui/components/close-button";
 import { Shortcut, shortcutText } from "@terno/ui/components/shortcut";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
@@ -312,8 +313,8 @@ function RewriteMenu({ s }: { s: AiSession }) {
 
 /**
  * Plan 164 (the owner: "a way to do an instruction in the AI field, like the main branch did"): what to change in the draft,
- * typed here, never under the draft in the body. A light filled field (BoardUI's, its border on hover and focus) with its
- * submit at its end; Return makes the change (main's free-form refine), Shift+Return breaks the line, Esc empties it. Its
+ * typed here, never under the draft in the body. BoardUI's input group (a light filled field, its border on hover and focus)
+ * with its submit at its end; Return makes the change (main's free-form refine), Shift+Return breaks the line, Esc empties it. Its
  * words live in the session, so they survive the form going and "Keep editing".
  */
 function ChangeField({ s }: { s: AiSession }) {
@@ -322,14 +323,15 @@ function ChangeField({ s }: { s: AiSession }) {
   const hint = useId();
   const send = () => change(s.key);
   return (
-    <div className="relative -ms-2 flex min-w-0 flex-1 basis-40 items-start rounded-lg border border-transparent bg-field transition-colors hover:border-input has-focus-visible:border-ring has-focus-visible:ring-2 has-focus-visible:ring-ring/20" data-testid="ai-change">
-      <textarea
+    // BoardUI's input group (packages/ui/BOARDUI.md): at the strip's 28 px, its focus ring a step lighter (the line is 38 px)
+    <InputGroup className="-ms-2 min-h-7 flex-1 basis-40 items-start has-[[data-slot=input-group-control]:focus-visible]:ring-2 has-[[data-slot=input-group-control]:focus-visible]:ring-ring/20" data-testid="ai-change">
+      <InputGroupTextarea
         data-ai-default
         data-testid="ai-change-input"
         aria-label={t("aiDraft.change.field")}
         aria-describedby={hint}
         rows={1}
-        className="field-sizing-content max-h-24 min-h-[26px] w-full resize-none bg-transparent py-[3px] ps-2 pe-8 text-sm leading-5 text-foreground outline-none placeholder:text-muted-foreground"
+        className="max-h-24 min-h-[26px] py-[3px] ps-2 pe-1 text-sm leading-5 text-foreground"
         value={value}
         autoComplete="off"
         spellCheck
@@ -351,20 +353,22 @@ function ChangeField({ s }: { s: AiSession }) {
         }}
       />
       <span id={hint} className="sr-only">{t("aiDraft.change.hint")}</span>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button type="button" variant="ghost" size="icon-xs" aria-label={t("aiDraft.change.submit")} aria-disabled={!has || undefined} data-testid="ai-change-submit" className="absolute end-0.5 top-px text-muted-foreground hover:text-foreground aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[has]:text-foreground [&_svg]:size-3.5" data-has={has || undefined} onMouseDown={(e) => e.preventDefault()} onClick={send} />
-          }
-        >
-          <ArrowUp aria-hidden />
-        </TooltipTrigger>
-        <TooltipContent className="flex items-center gap-2">
-          {t("aiDraft.change.submit")}
-          <Shortcut keys="enter" />
-        </TooltipContent>
-      </Tooltip>
-    </div>
+      <InputGroupAddon align="inline-end" className="py-px">
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <InputGroupButton size="icon-xs" aria-label={t("aiDraft.change.submit")} aria-disabled={!has || undefined} data-testid="ai-change-submit" className="text-muted-foreground hover:text-foreground aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[has]:text-foreground" data-has={has || undefined} onMouseDown={(e) => e.preventDefault()} onClick={send} />
+            }
+          >
+            <ArrowUp aria-hidden />
+          </TooltipTrigger>
+          <TooltipContent className="flex items-center gap-2">
+            {t("aiDraft.change.submit")}
+            <Shortcut keys="enter" />
+          </TooltipContent>
+        </Tooltip>
+      </InputGroupAddon>
+    </InputGroup>
   );
 }
 
