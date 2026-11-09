@@ -349,12 +349,13 @@ test.describe("axe", { tag: "@variant" }, () => {
     await page.getByTestId("pinned-draft").getByTestId("compose-unpin").click();
     await expect(page.getByTestId("pinned-draft")).toHaveCount(0);
 
-    // ⌘J: the row, then the model writing into the draft (kept going long enough to read)
+    // ⌘J (plan 163): the draft opened for AI, an instruction typed in its body, then the model writing in its place
     await openRow(page, 1);
     await page.keyboard.press("ControlOrMeta+j");
-    await expect(page.getByTestId("ai-row-input")).toBeFocused();
-    await clean(page, "⌘J's row", "[data-testid=composer]");
-    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("compose-body").first()).toBeFocused();
+    await page.keyboard.type("say that this works, and tell them thanks");
+    await clean(page, "⌘J: an instruction typed in the body", "[data-testid=composer]");
+    await page.keyboard.press("ControlOrMeta+j");
     await expect(page.getByTestId("ai-strip")).toBeVisible();
     await clean(page, "what the model wrote, and its strip", "[data-testid=composer]");
     // plan 161, pass 2: what the AI used (the status's popover), and the strip asking before it replaces an edit
@@ -368,6 +369,17 @@ test.describe("axe", { tag: "@variant" }, () => {
     await expect(page.getByTestId("ai-confirm")).toBeVisible();
     await clean(page, "the strip asking before it replaces an edit", "[data-testid=composer]");
     await page.getByTestId("ai-confirm-keep").click();
+    // plan 163: the user's own email with gaps, filled in place and tinted for review, and what went in each
+    await page.getByTestId("compose-body").first().fill("");
+    await page.getByTestId("compose-body").first().focus();
+    await page.keyboard.type("Hi,\nsee you on [day we agreed] at {{place}}");
+    await page.keyboard.press("ControlOrMeta+j");
+    await expect(page.getByTestId("compose-fill").first()).toBeVisible();
+    await clean(page, "gaps filled, under review", "[data-testid=composer]");
+    await page.getByTestId("ai-strip-voice").click();
+    await expect(page.getByTestId("ai-fills")).toBeVisible();
+    await clean(page, "what went in each gap", "[data-testid=ai-voice-popover]");
+    await page.keyboard.press("Escape");
 
     // a new message: chips (an invalid one, a selected one), the list of suggestions, many collapsed
     await focusList(page);

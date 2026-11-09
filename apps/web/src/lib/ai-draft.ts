@@ -455,6 +455,8 @@ export async function openRow(o: { key?: string; threadId?: number; instruction?
   const onLanded = (landing: { kind: string; key: string }) => {
     showRow(landing.key, landing.kind === "created");
     seed(landing.key);
+    // an explicit open (a click, the palette): the keys go to its body, where what's typed is what's written
+    focusBody(landing.key, "end");
   };
   if (threadId !== null) {
     if (listLayout() && currentPage() === "list") openThread(threadId);

@@ -168,10 +168,11 @@ test.describe("summaries (plan 132)", () => {
     await page.getByTestId("summary-item-reply").first().click();
     await expect(page.getByTestId("composer")).toHaveAttribute("data-mode", "reply");
     await expect(page.getByTestId("compose-body")).toBeFocused();
-    await expect(page.getByTestId("ai-row-input")).toHaveCount(0);
-    await expect(page.getByTestId("compose-ai")).toHaveAccessibleName("Write with AI");
+    await expect(page.getByTestId("ai-row")).toHaveCount(0);
+    // plan 163: over an empty reply, the Sparkles is named for what ⌘J does there
+    await expect(page.getByTestId("compose-ai")).toHaveAccessibleName("Draft a reply with AI");
     await page.getByTestId("compose-ai").hover();
-    await expect(page.locator("[data-slot=tooltip-content]")).toContainText("Write with AI");
+    await expect(page.locator("[data-slot=tooltip-content]")).toContainText("with AI");
     await expect(page.locator("[data-slot=tooltip-content]")).toContainText(/⌘\s*J/);
   });
 
@@ -531,9 +532,11 @@ test.describe("summaries (plan 132)", () => {
     await expect(page.getByTestId("summary-error-settings")).toHaveText("AI settings");
     expect((await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=summary-block]").analyze()).violations).toEqual([]);
     // ⌘J says it the same way
+    // plan 163: the reply opened for AI, the instruction typed in its body, ⌘J
     await page.keyboard.press("ControlOrMeta+j");
-    await page.getByTestId("ai-row-input").fill("say thanks");
-    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("compose-body").first()).toBeFocused();
+    await page.keyboard.type("tell them thanks");
+    await page.keyboard.press("ControlOrMeta+j");
     const row = page.getByTestId("ai-error");
     await expect(row).toBeVisible();
     await expect(page.getByTestId("ai-error-text")).toContainText("Couldn’t reach Ollama");

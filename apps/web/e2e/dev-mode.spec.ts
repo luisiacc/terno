@@ -67,7 +67,7 @@ test("Plan 147: the switch off, no AI feature shows, whatever the profile has sa
     await page.keyboard.press("Meta+j");
     await page.keyboard.press("Meta+Shift+k");
     await page.waitForTimeout(100);
-    await expect(page.getByTestId("ai-row-input")).toHaveCount(0);
+    await expect(page.getByTestId("ai-row")).toHaveCount(0);
     await expect(page.getByRole("dialog")).toHaveCount(0);
   };
   const toggle = async () => {
