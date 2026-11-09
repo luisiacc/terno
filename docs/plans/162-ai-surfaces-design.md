@@ -497,3 +497,33 @@ Written before any code. All eight reports, their 656 below-9 reasons, the 96 is
 - Unit: `aiErrorCopy` for `errors.ai.providerError`; `mapSdkError` for a 500; the summary item's reply instruction; `ruleTerms` words; the source's time when ambiguous; Today's reason copy; the style sample.
 - e2e (macOS): `summaries` (one edge; Reply opens ⌘J with the item); `ai-draft` (two lines, Edit instruction, narrow group); `ask` (header follows the turn; a miss keeps the text); `plain-actions` (the decision stays in the header while reading; no keys line; x only while reading; plain words); `today` (header, link, headings, tag, the digest's foot bar); `replies-ready` (the bar steps aside and returns on Dismiss; R in the button); `filters` and `ai-draft`'s Writing style part (order, sample, Show the notes).
 - The clip and wheel tests stay, with the digest's foot bar in view at 1100x700.
+
+### As built (pass after ai162-r01)
+
+Where the build differs from the section above:
+- **Actions:** the reader's rule panel gained **What it found**: the senders with their counts, the dates' span and the accounts, from the preview's rows (no model; only when every match is a row here), so the panel's space holds something to check. **x** is said in the help ("Untick any you want to keep, or press X on the one you're reading. Click one to read it."): a hint beside Show the rule cut the request to "Archiv…" at 1100. Cancel claims Esc only where Esc cancels (not while a match is read, where Esc is Show the rule's).
+- **Summary:** the item's Reply seeds ⌘J's row through `openRow`'s landing (`instruction`), so an open that didn't land seeds nothing.
+- **Reply ready:** the reply bar steps aside only once it doesn't have the keys; Dismiss gives them to the bar after the dismissal is done. Use as draft's R keycap is outlined in the button's own ink (the field's wash vanished on the primary).
+- **Today:** a drawn heading can't sit in a listbox, so each section's first row starts with the section's name for assistive tech ("Needs you, …", "Newsletters, …"); the headings stay drawn and `aria-hidden`.
+- **The digest:** a provider that answered with an error is stored as `provider_error` (or `provider_not_found`) in the digest's `errorKind`, a string column, so the page says so; the backend treats both as `unavailable`.
+- **Errors:** a 404 is "{provider} doesn't have that model", with "Choose another in AI settings".
+- **Writing style:** "Show the notes" opens the profile holding the study's notes (a profile merged across languages is shown in the picker when it's the one) and all of its examples, notes after phrases.
+- **The AI filter:** the chosen category and folder selects are outlined in the ink as the chosen actions are.
+
+### The Codex review of this pass
+
+Nine findings, all taken, each with a test that fails without its fix:
+1. **A cancelled summary Reply could overwrite newer typing** (it looked for the draft after the open). The instruction is seeded only where the reply landed (`summary-reply.test.ts`).
+2. **Dismiss lost focus when the backend took more than a frame.** It waits for the dismissal, then gives the keys to the bar (`reply-ready.test.tsx`, a dismissal held open).
+3. **A reply becoming ready hid the focused reply bar.** The bar stays while it has the keys (`replies-ready.spec.ts`).
+4. **A failed follow-up cleared its words** (only the empty page kept them). The follow-up field keeps them, selected (`ask.spec.ts`).
+5. **Show the notes could open a profile without the study's notes.** It opens the one holding them, and all of them (`ai-draft.spec.ts`; the demo has no language split, so the merged-profile case is covered by the code path, not a fixture).
+6. **A 404 still said "Couldn't reach".** It says the model is missing (`ai-error.test.ts`).
+7. **The digest couldn't say its provider answered with an error.** Stored apart, said so (`digest-page.test.tsx`).
+8. **Today's headings weren't in the accessibility tree.** The first row of each section says its name (`today.spec.ts`).
+9. **Cancel advertised Esc while Esc went back to the rule.** It doesn't, there (`plain-actions.spec.ts`).
+
+### Not in this pass (questions for the owner)
+- **A palette command "Summarize this conversation"** (Graphite claude, efficiency 6). It's a command, not a shortcut; the brief kept to the existing controls, which are in the Tab order. May it be added?
+- **"Found with AI"** on the follow-up (three Claude reports flag the difference from "Written with AI"). Keep the distinction (the popover explains it), or one label everywhere?
+- **The action preview's empty half** is now partly "What it found". Opening the first match in the reader would fill it, but opening marks mail read. Would a read-only peek of the first match (no read mark) be wanted?
