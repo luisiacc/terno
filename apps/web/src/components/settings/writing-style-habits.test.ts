@@ -27,3 +27,9 @@ it("plan 162 (after ai162-r05): a greeting typed over another keeps its place's 
   // an emptied field between doesn't shift the places
   expect(editedShares(counted, ["", "Yo,"])).toEqual([{ text: "Yo,", share: 0.2 }]);
 });
+
+it("Codex review: a rare greeting or sign-off typed over is never saved below what a draft uses", () => {
+  const rare = [{ text: "Hello {name},", share: 0.05 }];
+  expect(editedShares(rare, ["Hi {name},"])).toEqual([{ text: "Hi {name},", share: 0.1 }]);
+  expect(editedShares([{ text: "Best,", share: 0.04 }], ["Cheers,"])).toEqual([{ text: "Cheers,", share: 0.1 }]);
+});

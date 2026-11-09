@@ -101,7 +101,8 @@ export function editedShares(list: readonly { text: string; share: number }[], i
     const kept = list.find((x) => x.text === text);
     if (kept) return { text, share: kept.share };
     const replaced = list[at];
-    return { text, share: replaced && !texts.includes(replaced.text) ? replaced.share : DRAFT_SHARE };
+    // a replaced value keeps its place, never below what a draft uses (Codex review: a 5% one dropped out of both)
+    return { text, share: replaced && !texts.includes(replaced.text) ? Math.max(replaced.share, DRAFT_SHARE) : DRAFT_SHARE };
   });
 }
 
