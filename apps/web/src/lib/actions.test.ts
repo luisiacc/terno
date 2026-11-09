@@ -283,6 +283,36 @@ describe("plan 145 (owner's decisions 2): a newsletter the digest opened, taken 
     expect(useToday.getState().pick?.opened).toBe(NEWSLETTER);
   });
 
+  it("Codex review: an Undo of something else (a star) leaves its Spam label, and Trash's Undo brings Spam's back", async () => {
+    const { useToday } = await import("~/state/today");
+    useToday.setState({ movedTo: new Map([[NEWSLETTER, "spam"]]) });
+    await act("star");
+    await runUndo(useSnack.getState().undo!);
+    await new Promise((r) => setTimeout(r));
+    expect(useToday.getState().movedTo.get(NEWSLETTER)).toBe("spam");
+    expect(getApp().selectedId).toBe(NEWSLETTER);
+    await act("trash");
+    expect(useToday.getState().movedTo.get(NEWSLETTER)).toBe("trash");
+    await runUndo(useSnack.getState().undo!);
+    await vi.waitFor(() => expect(getApp().selectedId).toBe(NEWSLETTER));
+    expect(useToday.getState().movedTo.get(NEWSLETTER)).toBe("spam");
+  });
+
+  it("Codex review: in List, with the reader closed by Back, an action is the list's: it doesn't go to the digest", async () => {
+    const { useToday } = await import("~/state/today");
+    const { useAppearance } = await import("~/lib/appearance");
+    const layout = useAppearance.getState().layout;
+    useAppearance.setState({ layout: "list" });
+    try {
+      setApp({ readerOpen: false });
+      await act("trash");
+      expect(getApp().selectedId).not.toBe(DIGEST_ROW_ID);
+      expect(useToday.getState().fromDigest).toBe(NEWSLETTER);
+    } finally {
+      useAppearance.setState({ layout });
+    }
+  });
+
   it("anything else, or a conversation not opened from the digest, is as before", async () => {
     const { useToday } = await import("~/state/today");
     await act("markUnread");

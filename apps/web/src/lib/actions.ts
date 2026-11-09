@@ -1,5 +1,5 @@
 import { breadcrumb, captureUi } from "~/lib/diag";
-import { isCategoryAction, parseAddressList, TAB_ACTION, TAB_CODE, type SimilarAction, type ThreadAction, type ThreadSummary } from "@terno/core";
+import { DIGEST_ROW_ID, isCategoryAction, parseAddressList, TAB_ACTION, TAB_CODE, type SimilarAction, type ThreadAction, type ThreadSummary } from "@terno/core";
 import { t } from "@terno/i18n";
 import { reflowRemoval } from "~/lib/flash";
 import { client } from "~/rpc/connection";
@@ -10,7 +10,7 @@ import type { ListFilter } from "@terno/core";
 import { getApp, getSelectionWriteRevision, inPlainInbox, inSeparateTab, openedByApp, setApp, setAppOpened, type AppState, type ScopeSelection } from "~/state/app";
 import { listKey, onlyOnTop, patchRows, reloadList, useList } from "~/state/list";
 import { invalidateThreads, useThreads } from "~/state/threads";
-import { closePage, currentPage, listLayout } from "~/lib/page";
+import { closePage, currentPage, listLayout, readerShown } from "~/lib/page";
 import { placeActions } from "~/lib/places";
 import { showSimilarSnackbar } from "~/components/similar-snackbar";
 import { leaveToDigest, reopenFromDigest, useToday } from "~/state/today";
@@ -239,8 +239,10 @@ interface SelectionBefore {
   left: number | null;
   /** the open row was the app's (plan 158): Undo puts it back as it was, unread until chosen */
   byApp: boolean;
-  /** the open row was the newsletter the digest opened (plan 145): Undo opens it from the digest again */
+  /** the open row was the newsletter the digest opened (plan 145): an action that went back to the digest is undone by opening it from there again */
   fromDigest: boolean;
+  /** what the digest's row said it went to before (Trash, Spam): Undo says it again (Codex review) */
+  movedTo: "trash" | "spam" | undefined;
   /** the selection the action left, as written: any choice since (even back to the same row, or a check taken off again) is newer */
   revision: number;
   leftChecked: AppState["checked"];
@@ -249,7 +251,7 @@ interface SelectionBefore {
 
 const selectionBefore = (): SelectionBefore => {
   const s = getApp();
-  return { key: listKey(), checked: s.checked, scope: s.scope, selectedId: s.selectedId, anchorId: s.anchorId, left: s.selectedId, byApp: s.selectedId !== null && openedByApp(s.selectedId), fromDigest: s.selectedId !== null && useToday.getState().fromDigest === s.selectedId, revision: -1, leftChecked: s.checked, leftScope: s.scope };
+  return { key: listKey(), checked: s.checked, scope: s.scope, selectedId: s.selectedId, anchorId: s.anchorId, left: s.selectedId, byApp: s.selectedId !== null && openedByApp(s.selectedId), fromDigest: s.selectedId !== null && useToday.getState().fromDigest === s.selectedId, movedTo: s.selectedId === null ? undefined : useToday.getState().movedTo.get(s.selectedId), revision: -1, leftChecked: s.checked, leftScope: s.scope };
 };
 
 /** What the action itself left selected: the line a newer choice is measured from. */
@@ -273,7 +275,8 @@ function restoreSelection(before: SelectionBefore, focusAtStart: Element | null 
   // a row opened since and the cursor back on the same one is still a newer choice, as is a check made and taken off
   if (getSelectionWriteRevision() !== before.revision || s.checked !== before.leftChecked || s.scope !== before.leftScope || s.selectedId !== before.left) return;
   setApp({ checked: before.checked, scope: before.scope, anchorId: before.anchorId });
-  if (before.fromDigest && before.selectedId !== null && s.today) reopenFromDigest(before.selectedId);
+  // only an action that went back to the digest: a star undone on the open newsletter leaves it as it is (Codex review)
+  if (before.fromDigest && before.left === DIGEST_ROW_ID && before.selectedId !== null && s.today) reopenFromDigest(before.selectedId, before.movedTo);
   else if (before.byApp) setAppOpened(before.selectedId);
   else setApp({ selectedId: before.selectedId });
   // the keyboard goes back to the list only from where Undo was asked (or from nowhere, the snack's button gone), never
@@ -314,7 +317,8 @@ export function leaveList(action: ThreadAction, targets: readonly number[], opti
   const leaving = reading || (s.query ? false : !staysInView(s, action));
   const stays = reading ? s.selectedId : null;
   // plan 145 (owner's decisions 2): the newsletter the digest opened, taken away: back to the digest, on whatever page it is
-  const backToDigest = !options.quiet && toDigest(action) && leaveToDigest(targets, action);
+  // (only while the reader shows it: List's Back keeps the selection with the reader closed, and an action there is the list's, Codex review)
+  const backToDigest = !options.quiet && toDigest(action) && readerShown() && leaveToDigest(targets, action);
   // List's conversation page (plan 24): an action that takes the open thread away, or marks it unread, is done reading it
   const backToList = !backToDigest && s.selectedId !== null && targets.includes(s.selectedId) && ((leaving && s.selectedId !== stays) || DONE_READING.has(action)) && listLayout() && currentPage() === "thread";
 

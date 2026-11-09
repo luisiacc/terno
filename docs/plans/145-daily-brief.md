@@ -38,6 +38,10 @@ Asked whether archiving a newsletter opened from the digest should return to the
 - **Everything else stays the same:** another action, a conversation opened from anywhere else, and every list's own way on after an action.
 - **How:** `leaveList` asks `leaveToDigest` (`state/today.ts`) first; it holds only for that newsletter and those three actions, patches the digest's row out of the live and read ids, and goes back through `backToDigest`. Undo's `restoreSelection` remembers that the open row came from the digest and calls `reopenFromDigest`.
 - **Tests:** `actions.test` (each of the three goes back, the row gone in the frame of the key, the snack's Undo; Undo reopens it from the digest; another action, or a conversation not from the digest, is as before); `today.spec` (the toolbar's Archive, `e`, Trash and Spam each come back to the digest scrolled where it was, focus on the row, the row's state, the snack, Undo opening it again); `design-axe` holds the page after it, light and dark, in Lumen and Atelier. Each fails without the change.
+- **Screenshots,** every design, light and dark, on the stub: `/tmp/terno-scratch/owner-answers-2/<design>/digest-after-archive-*.png` and `sheet-digest-after-archive.png`. In each, the page is where it was left, the row opened is muted and says "Archived", and the snack has Undo.
+- **What the Codex review changed** (read-only, `eb95cdbbe..HEAD`, 2 points, both fixed, each with a test in `actions.test` that fails without it):
+  1. Undoing something else on the newsletter (a star) went through the digest's reopening and lost its row's "Marked as spam"; and Trash after Spam, undone, lost "Marked as spam" too. Only an action that went back to the digest reopens it on Undo, and Undo puts back what the row said before.
+  2. In List, Back closes the reader but keeps the selection, so `#` on Today's list still went to the digest. It goes back only while the reader shows the newsletter (`readerShown`).
 
 ## What exists
 

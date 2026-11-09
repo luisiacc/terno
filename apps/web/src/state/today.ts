@@ -92,11 +92,12 @@ export function leaveToDigest(targets: readonly number[], action: "archive" | "t
   return backToDigest();
 }
 
-/** Its Undo, exact: the newsletter open again from the digest, with its way back and the row it came from. */
-export function reopenFromDigest(threadId: number): void {
+/** Its Undo, exact: the newsletter open again from the digest, with its way back, the row it came from, and what that row said before. */
+export function reopenFromDigest(threadId: number, was?: "trash" | "spam"): void {
   useToday.setState(({ pick, movedTo }) => {
     const moved = new Map(movedTo);
-    moved.delete(threadId);
+    if (was) moved.set(threadId, was);
+    else moved.delete(threadId);
     return { fromDigest: threadId, pick: pick && { ...pick, opened: threadId }, movedTo: moved };
   });
   setApp({ selectedId: threadId });
