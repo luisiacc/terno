@@ -2322,6 +2322,8 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "replies.writing": "Escribiendo una respuesta…",
   "replies.use": "Usar como borrador",
   "replies.to": "Para {names}",
+  "replies.toAll": "Para {names}, cc {cc}",
+  "replies.mode": "Responder o Responder a todos",
   "replies.dismiss": "Descartar",
   "replies.stop": "Detener",
   "replies.hint": "Pulsa {key} para responder con este borrador",

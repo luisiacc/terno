@@ -104,8 +104,8 @@ export function focusSearchField(): void {
 export function reply(mode: DraftMode) {
   const id = getApp().selectedId;
   if (listLayout() && currentPage() === "list" && id !== null) openThread(id);
-  // plan 144: a reply ready here is what reply means
-  if (id !== null && mode !== "forward" && replyReady(id)) return void useReply(id, mode);
+  // plan 144: a reply ready here is what reply means. R is Use, so it answers as the card's Reply | Reply all says (owner's decisions 2); `a` is Reply all
+  if (id !== null && mode !== "forward" && replyReady(id)) return void useReply(id, mode === "reply" ? undefined : mode);
   void openCompose(mode);
 }
 

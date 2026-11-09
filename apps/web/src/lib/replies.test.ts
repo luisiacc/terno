@@ -14,8 +14,10 @@ const detail = { thread: { id: 7, accountId: 1, waitingSince: Date.now() - 1000,
 const useThreads = create<{ details: Map<number, typeof detail> }>(() => ({ details: new Map([[7, detail]]) }));
 vi.mock("~/state/threads", () => ({ loadThread: async () => detail, useThreads, invalidateThreads: vi.fn() }));
 vi.mock("~/lib/page", async (real) => ({ ...(await real<object>()), readerShown: () => true }));
+const composeLanding = vi.fn(async () => ({ kind: "none" }));
+vi.mock("~/lib/compose", async (real) => ({ ...(await real<object>()), composeLanding }));
 
-const { installReplies, replyReady, useReplies } = await import("./replies");
+const { chooseReplyAll, installReplies, replyChoice, replyReady, useReplies, useReply } = await import("./replies");
 installReplies();
 const { noteExplicitOpen } = await import("./open-dwell");
 const { setApp } = await import("~/state/app");
@@ -54,5 +56,37 @@ describe("what a window shows of a prepared reply (plan 144)", () => {
     event({ threadId: 7, phase: "writing", text: "Hola Ana" });
     frames.splice(0).forEach((f) => f());
     expect(useReplies.getState().shown).toBeNull();
+  });
+});
+
+describe("plan 144, owner's decisions (2): the card's Reply | Reply all", () => {
+  beforeEach(() => {
+    call.mockClear();
+    composeLanding.mockClear();
+    useReplies.setState({ shown: null, all: null });
+  });
+
+  it("Reply unless Reply all is chosen; Use (and R, which is Use) answers with the choice, `a` always with everyone", async () => {
+    expect(replyChoice(7)).toBe("reply");
+    useReplies.setState({ shown: { threadId: 7, phase: "ready", text: "Hola", row: { rowId: "r", revision: 0, to: [] } as never } });
+    await useReply(7);
+    expect(composeLanding).toHaveBeenLastCalledWith("reply", 7);
+    chooseReplyAll(7, true);
+    expect(replyChoice(7)).toBe("replyAll");
+    // another conversation's choice isn't this one's
+    expect(replyChoice(8)).toBe("reply");
+    useReplies.setState({ shown: { threadId: 7, phase: "ready", text: "Hola", row: { rowId: "r", revision: 0, to: [] } as never } });
+    await useReply(7);
+    expect(composeLanding).toHaveBeenLastCalledWith("replyAll", 7);
+    useReplies.setState({ shown: { threadId: 7, phase: "ready", text: "Hola", row: { rowId: "r", revision: 0, to: [] } as never } });
+    await useReply(7, "reply");
+    expect(composeLanding).toHaveBeenLastCalledWith("reply", 7);
+  });
+
+  it("leaving the conversation forgets it: the next one starts on Reply", async () => {
+    await opened();
+    chooseReplyAll(7, true);
+    setApp({ selectedId: 8 });
+    expect(useReplies.getState().all).toBeNull();
   });
 });

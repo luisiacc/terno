@@ -1,25 +1,31 @@
 // @vitest-environment jsdom
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, expect, it, vi } from "vitest";
+import { setLocale } from "@terno/i18n";
+import en from "@terno/i18n/locales/en";
+import es from "@terno/i18n/locales/es";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { create } from "zustand";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 // what's shown, without the backend behind it
-const useReplies = create<{ shown: unknown }>(() => ({ shown: null }));
+const useReplies = create<{ shown: unknown; all: number | null }>(() => ({ shown: null, all: null }));
 const useReply = vi.fn();
 const dismissReply = vi.fn();
 const stopReply = vi.fn();
-vi.mock("~/lib/replies", () => ({ useReplies, useReply, dismissReply, stopReply }));
+const chooseReplyAll = vi.fn((threadId: number, all: boolean) => useReplies.setState({ all: all ? threadId : null }));
+vi.mock("~/lib/replies", () => ({ useReplies, useReply, dismissReply, stopReply, chooseReplyAll }));
 
 const { default: ReplyReady } = await import("./reply-ready");
 const { AI_CARD } = await import("./ai-card");
+const { setApp } = await import("~/state/app");
+const { useThreads } = await import("~/state/threads");
 
 const host = document.createElement("div");
 document.body.append(host);
 const root = createRoot(host);
-afterEach(() => act(() => useReplies.setState({ shown: null })));
+afterEach(() => act(() => useReplies.setState({ shown: null, all: null })));
 
 const row = { rowId: "r1", threadId: 7, to: [{ name: "Liam Baker", email: "liam@x.test" }], used: { learning: false, levels: ["person"], examples: 1 } };
 const q = (id: string) => host.querySelector<HTMLElement>(`[data-testid="${id}"]`);
@@ -140,4 +146,59 @@ it("plan 161, pass 2: preparing holds its place: skeleton lines until words come
   expect(q("reply-ready-text")!.className).toContain("line-clamp-6");
   // it fades in within --motion, never more
   expect(q("reply-ready")!.className).toContain("duration-base");
+});
+
+describe("plan 144, owner's decisions (2): Reply all on a conversation with others in it", () => {
+  const me = { name: "Luis Cordero", email: "me@x.test" };
+  const liam = { name: "Liam Baker", email: "liam@x.test" };
+  const ana = { name: "Ana Ruiz", email: "ana@x.test" };
+  const ben = { name: "Ben Wu", email: "ben@x.test" };
+  const detail = (cc: { name: string; email: string }[], to = [me]) =>
+    ({ thread: { id: 7, accountId: 1, subject: "Plans" }, messages: [{ id: 1, from: liam, to, cc, replyTo: [], isSent: false, date: 1 }] }) as never;
+  beforeEach(() => {
+    setApp({ accounts: [{ id: 1, email: me.email }] as never });
+  });
+  afterEach(() => useThreads.setState({ details: new Map() }));
+
+  it("one-to-one: no choice, the header as it was", async () => {
+    useThreads.setState({ details: new Map([[7, detail([])]]) });
+    await act(async () => root.render(<ReplyReady threadId={7} />));
+    act(() => useReplies.setState({ shown: { threadId: 7, phase: "ready", text: "Hey Liam!", row } }));
+    expect(q("reply-ready-mode")).toBeNull();
+    expect(q("reply-ready-header")!.textContent).toBe("Reply ready·To Liam Baker");
+  });
+
+  it("a group: Reply first, as the reply bar; Reply all names everyone and Use answers with it; never while it writes", async () => {
+    useThreads.setState({ details: new Map([[7, detail([ana, ben])]]) });
+    await act(async () => root.render(<ReplyReady threadId={7} />));
+    act(() => useReplies.setState({ shown: { threadId: 7, phase: "writing", text: "Hey", row: null } }));
+    expect(q("reply-ready-mode")).toBeNull();
+    act(() => useReplies.setState({ shown: { threadId: 7, phase: "ready", text: "Hey Liam!", row } }));
+    const group = q("reply-ready-mode")!;
+    expect(group.getAttribute("aria-label")).toBe("Reply or Reply all");
+    // the reply bar's words, in the header, after who it's to
+    expect(group.parentElement).toBe(q("reply-ready-header"));
+    expect(q("reply-ready-mode-reply")!.textContent).toBe(" Reply");
+    expect(q("reply-ready-mode-all")!.textContent).toBe(" Reply all");
+    expect(q("reply-ready-mode-reply")!.getAttribute("aria-pressed")).toBe("true");
+    expect(q("reply-ready-to")!.textContent).toBe("To Liam Baker");
+    act(() => q("reply-ready-mode-all")!.click());
+    expect(chooseReplyAll).toHaveBeenCalledWith(7, true);
+    expect(q("reply-ready-mode-all")!.getAttribute("aria-pressed")).toBe("true");
+    expect(q("reply-ready-to")!.textContent).toBe("To Liam Baker, cc Ana Ruiz and Ben Wu");
+    // the words are the same: no request, nothing rewritten
+    expect(q("reply-ready-text")!.textContent).toBe("Hey Liam!");
+    act(() => q("reply-ready-mode-reply")!.click());
+    expect(q("reply-ready-to")!.textContent).toBe("To Liam Baker");
+  });
+
+  it("someone else in To counts, as the reply bar's Reply all does", async () => {
+    const { replyAllTo } = await import("./reply-ready");
+    expect(replyAllTo(detail([], [me, ana]), [me.email])).toBe("To Liam Baker, cc Ana Ruiz");
+    expect(replyAllTo(detail([]), [me.email])).toBeNull();
+    // Spanish too
+    setLocale("es", es);
+    expect(replyAllTo(detail([ana, ben]), [me.email])).toBe("Para Liam Baker, cc Ana Ruiz y Ben Wu");
+    setLocale("en", en);
+  });
 });

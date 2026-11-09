@@ -2337,6 +2337,8 @@ It contains none of your mail, contacts, settings or keys.
   "replies.writing": "Writing a reply…",
   "replies.use": "Use as draft",
   "replies.to": "To {names}",
+  "replies.toAll": "To {names}, cc {cc}",
+  "replies.mode": "Reply or Reply all",
   "replies.dismiss": "Dismiss",
   "replies.stop": "Stop",
   "replies.hint": "Press {key} to reply with this draft",

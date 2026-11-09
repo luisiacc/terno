@@ -1,15 +1,18 @@
-import type { PreparedReply } from "@terno/core";
+import type { Address, PreparedReply, ThreadDetail } from "@terno/core";
 import { getLocale, t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { SkeletonText } from "@terno/ui/components/skeleton";
 import { Spinner } from "@terno/ui/components/spinner";
-import { Sparkles } from "@terno/ui/icons";
+import { ToggleGroup, ToggleGroupItem } from "@terno/ui/components/toggle-group";
+import { Reply, ReplyAll, Sparkles } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { useState } from "react";
+import { autoRecipients, reachesSeveral } from "~/lib/compose-fields";
 import { shownDraftKey, useDrafts } from "~/lib/drafts";
-import { dismissReply, stopReply, useReplies, useReply } from "~/lib/replies";
+import { chooseReplyAll, dismissReply, stopReply, useReplies, useReply } from "~/lib/replies";
 import { useApp } from "~/state/app";
+import { useThreads } from "~/state/threads";
 import { AI_ACTIONS, AI_CARD, AI_GAP, AI_GLYPH, AI_HEADER, AI_TITLE, AiProvenance, gapPieces } from "./ai-card";
 
 /**
@@ -29,11 +32,22 @@ export function replyVoice(row: Pick<PreparedReply, "used" | "to">): string[] {
   return [style, t("aiDraft.content.alone")];
 }
 
+const named = (list: readonly Address[]): string => new Intl.ListFormat(getLocale(), { type: "conjunction" }).format(list.map((a) => a.name || a.email).filter(Boolean));
+
 /** Plan 161: who Use writes to, as the composer will have them: "To Liam Taylor", "To Liam Taylor and Ana Ruiz". */
 export function replyTo(row: PreparedReply): string | null {
-  const names = row.to.map((a) => a.name || a.email).filter(Boolean);
-  if (!names.length) return null;
-  return t("replies.to", { names: new Intl.ListFormat(getLocale(), { type: "conjunction" }).format(names) });
+  if (!row.to.some((a) => a.name || a.email)) return null;
+  return t("replies.to", { names: named(row.to) });
+}
+
+/**
+ * Plan 144, owner's decisions (2): on a conversation with others in it, Reply all's people, as the reply bar's Reply all
+ * puts them in the composer: "To Liam Taylor, cc Ana Ruiz and Ben Wu". Null where Reply all reaches no one Reply doesn't.
+ */
+export function replyAllTo(detail: ThreadDetail, mine: readonly string[]): string | null {
+  if (!reachesSeveral(detail, mine)) return null;
+  const { to, cc } = autoRecipients("replyAll", detail, mine);
+  return cc.length ? t("replies.toAll", { names: named(to), cc: named(cc) }) : t("replies.to", { names: named(to) });
 }
 
 /** "Press R to reply with this draft", the key a keycap in the sentence, wherever the language puts it. */
@@ -66,11 +80,16 @@ export default function ReplyReady({ threadId }: { threadId: number }) {
   // a draft open here is the reply (the discard snack's Undo brings one back while the reply is offered again)
   const drafted = useDrafts((s) => shownDraftKey(s.drafts, threadId, useApp.getState().draftShown) !== null);
   const [all, setAll] = useState(false);
+  // owner's decisions (2): Reply or Reply all, offered where the reply bar offers Reply all; Reply first, as there
+  const detail = useThreads((s) => s.details.get(threadId));
+  const accounts = useApp((s) => s.accounts);
+  const everyone = detail ? replyAllTo(detail, accounts.map((a) => a.email)) : null;
+  const toAll = useReplies((s) => s.all === threadId) && everyone !== null;
   if (!shown || drafted) return null;
   const writing = shown.phase === "writing";
   const lines = shown.text.split("\n").length;
   const long = lines > 6 || shown.text.length > 480;
-  const to = shown.row ? replyTo(shown.row) : null;
+  const to = toAll ? everyone : shown.row ? replyTo(shown.row) : null;
   const gaps = shown.row?.checks?.placeholders ?? [];
   const toFill = writing ? 0 : gapsToFill(shown.text, gaps);
   return (
@@ -78,7 +97,7 @@ export default function ReplyReady({ threadId }: { threadId: number }) {
       {/* once, never the deltas */}
       <div role="status" aria-live="polite" className="sr-only" data-testid="reply-ready-live">{writing ? "" : t("replies.title")}</div>
       {/* the summary's header: its height, its glyph, its type */}
-      <p data-testid="reply-ready-header" className={cn(AI_HEADER, "flex-wrap gap-y-0")}>
+      <div data-testid="reply-ready-header" className={cn(AI_HEADER, "flex-wrap gap-y-0")}>
         {/* the spinner keeps its status and name, as before the card */}
         {writing ? <Spinner className={AI_GLYPH} /> : <Sparkles aria-hidden className={AI_GLYPH} />}
         <span data-testid="reply-ready-title" className={AI_TITLE}>{writing ? t("replies.writing") : t("replies.title")}</span>
@@ -86,7 +105,26 @@ export default function ReplyReady({ threadId }: { threadId: number }) {
         {toFill > 0 && <><span aria-hidden>·</span><span data-testid="reply-ready-gaps" className="font-medium text-foreground">{t("replies.gaps", { count: toFill })}</span></>}
         {/* each "·" its own item, so the gaps either side are the same; the voice is the provenance's to explain (pass 3) */}
         {!writing && to ? <><span aria-hidden>·</span><span data-testid="reply-ready-to" className="min-w-0">{to}</span></> : null}
-      </p>
+        {/* the reply bar's two answers in its words and glyphs, on the header's end; the track sits in the header's
+            40 px without growing it. The words stay as written: if they greet only the sender, the user edits */}
+        {!writing && everyone !== null && (
+          <ToggleGroup
+            data-testid="reply-ready-mode"
+            aria-label={t("replies.mode")}
+            variant="segmented"
+            className="ms-auto -my-1.5"
+            value={[toAll ? "replyAll" : "reply"]}
+            onValueChange={(v: string[]) => v[0] && chooseReplyAll(threadId, v[0] === "replyAll")}
+          >
+            <ToggleGroupItem value="reply" data-testid="reply-ready-mode-reply" className="h-6 px-2 text-xs">
+              <Reply aria-hidden /> {t("actions.reply")}
+            </ToggleGroupItem>
+            <ToggleGroupItem value="replyAll" data-testid="reply-ready-mode-all" className="h-6 px-2 text-xs">
+              <ReplyAll aria-hidden /> {t("compose.bar.replyAll")}
+            </ToggleGroupItem>
+          </ToggleGroup>
+        )}
+      </div>
       {writing && !shown.text.trim() ? (
         // its place held until the first words: three lines of the text's height
         <SkeletonText data-testid="reply-ready-skeleton" lines={3} className="py-1.5" lineClassName="h-3" />

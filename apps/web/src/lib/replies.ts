@@ -25,7 +25,14 @@ interface Shown {
   row: PreparedReply | null;
 }
 
-export const useReplies = create<{ shown: Shown | null }>(() => ({ shown: null }));
+/** `all`: the conversation whose card has Reply all chosen (plan 144, owner's decisions 2); Reply, as the reply bar's first, otherwise */
+export const useReplies = create<{ shown: Shown | null; all: number | null }>(() => ({ shown: null, all: null }));
+
+/** Plan 144, owner's decisions (2): the card's Reply | Reply all, on a conversation with others in it. */
+export const chooseReplyAll = (threadId: number, all: boolean): void => useReplies.setState({ all: all ? threadId : null });
+
+/** What Use (and R, which is Use while a reply is ready) answers with on this conversation. */
+export const replyChoice = (threadId: number): "reply" | "replyAll" => (useReplies.getState().all === threadId ? "replyAll" : "reply");
 
 /** the conversation this window has asked about, and told the backend it's reading */
 let reading: number | null = null;
@@ -60,7 +67,7 @@ function leave(): void {
   pending = null;
   const id = reading;
   reading = null;
-  useReplies.setState({ shown: null });
+  useReplies.setState({ shown: null, all: null });
   if (id !== null) void client.call("ai.replyLeave", { threadId: id }).catch(() => {});
 }
 
@@ -109,7 +116,7 @@ export function installReplies(): void {
       // nothing stays on screen, and anything still on its way is nobody's
       reading = null;
       stopWaitingBody();
-      useReplies.setState({ shown: null });
+      useReplies.setState({ shown: null, all: null });
       return;
     }
     if (event.threadId !== reading) return;
@@ -176,8 +183,11 @@ export const replyReady = (threadId: number): boolean => {
   return on() && shown?.threadId === threadId && shown.phase === "ready" && shown.row !== null;
 };
 
-/** Use, `r` and `a`: the words go in, one undo step, and no request is made. Nothing can send but the composer's Send. */
-export async function useReply(threadId: number, mode: Exclude<Parameters<typeof composeLanding>[0], undefined> = "reply"): Promise<void> {
+/**
+ * Use, `r` and `a`: the words go in, one undo step, and no request is made. Nothing can send but the composer's Send.
+ * Without a mode, the card's choice (owner's decisions 2): Reply all lands with everyone, the same words.
+ */
+export async function useReply(threadId: number, mode: Exclude<Parameters<typeof composeLanding>[0], undefined> = replyChoice(threadId)): Promise<void> {
   const { shown } = useReplies.getState();
   const row = shown?.threadId === threadId ? shown.row : null;
   if (!row) return;
@@ -185,6 +195,7 @@ export async function useReply(threadId: number, mode: Exclude<Parameters<typeof
   if (!detail) return;
   const landing = await composeLanding(mode, threadId);
   if (landing.kind === "none") return;
+  // the words were written for Reply's people: the backend holds Use to them, and Reply all adds the rest in Cc
   const { to, cc } = autoRecipients("reply", detail, mine());
   const used = await client.call("ai.replyAct", { threadId, rowId: row.rowId, revision: row.revision, action: "use", to, cc, timezone: timezone() }).catch(() => null);
   useReplies.setState({ shown: null });

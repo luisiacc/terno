@@ -8,7 +8,7 @@ import type { SettingsPatch } from "@terno/core/rpc";
 import { fakeDraft } from "../../../packages/ai/src/fake";
 import { sqlDb } from "../../backend-dev/src/server";
 import { E2E_NOW } from "./constants";
-import { expect, fresh, ingestConversation, scenario, test, type DevServerFixture } from "./fixtures";
+import { expect, fresh, ingestConversation, recipientEmails, scenario, test, type DevServerFixture } from "./fixtures";
 
 test.use({ backendOptions: { network: true } });
 
@@ -22,8 +22,8 @@ async function settingUp(page: Page, server: DevServerFixture, patch: SettingsPa
 
 const SUBJECT = "Can you make the 19th";
 
-async function withMail(page: Page, server: DevServerFixture, patch: SettingsPatch = {}) {
-  await ingestConversation(server, { subject: SUBJECT, count: 1, now: E2E_NOW });
+async function withMail(page: Page, server: DevServerFixture, patch: SettingsPatch = {}, cc?: { name: string; email: string }[]) {
+  await ingestConversation(server, { subject: SUBJECT, count: 1, now: E2E_NOW, cc });
   const db = sqlDb(server.backend.store);
   const t = db.get<{ id: number }>("SELECT id FROM threads WHERE subject = ?", SUBJECT)!;
   // the fact plan 17 computes from people's mail: waiting on you
@@ -58,6 +58,9 @@ test.describe("replies ready (plan 144)", () => {
       await expect(block(page)).toHaveAttribute("data-phase", "ready", { timeout: 15_000 });
       // one R on screen: the card's; the reply bar's keycap steps aside
       await expect(page.getByTestId("reply-ready-hint")).toBeVisible();
+      // one-to-one (owner's decisions 2): no Reply | Reply all, as the reply bar offers none
+      await expect(page.getByTestId("reply-ready-mode")).toHaveCount(0);
+      await expect(page.getByTestId("reply-ready-to")).toHaveText("To Yuki Gutiérrez");
       await expect(page.getByTestId("quick-reply-key")).toHaveCount(0);
       await expect(page.getByTestId("reply-ready-text")).not.toBeEmpty();
       expect(state()).toBe("ready");
@@ -130,6 +133,65 @@ test.describe("replies ready (plan 144)", () => {
       await page.getByTestId("snack-action").click();
       await expect(page.getByTestId("composer")).toBeVisible();
       await expect(block(page)).toHaveCount(0);
+    });
+  });
+
+  test("owner's decisions (2): a group thread offers Reply | Reply all; Reply all names everyone, and Use and R open with them, the same words", { tag: "@variant" }, async ({ app: page, server }) => {
+    const others = [{ name: "Ana Ruiz", email: "ana.ruiz@acme.studio" }, { name: "Ben Wu", email: "ben.wu@acme.studio" }];
+    const thread = await withMail(page, server, { replies: { enabled: true } }, others);
+    const state = () => sqlDb(server.backend.store).get<{ state: string }>("SELECT state FROM ai_prepared_replies WHERE thread_id = ?", thread)?.state;
+    const asked = () => sqlDb(server.backend.store).get<{ n: number }>("SELECT count(*) n FROM ai_prepared_replies")!.n;
+    await row(page).click();
+    await expect(block(page)).toHaveAttribute("data-phase", "ready", { timeout: 15_000 });
+    const words = await page.getByTestId("reply-ready-text").innerText();
+    const mode = page.getByTestId("reply-ready-mode");
+    // Reply first, as the reply bar's first; the reply bar offers Reply all here too
+    await expect(page.getByTestId("quick-reply-all")).toBeVisible();
+    await expect(mode).toBeVisible();
+    await expect(page.getByTestId("reply-ready-mode-reply")).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId("reply-ready-to")).toHaveText("To Yuki Gutiérrez");
+    // in the header, which it doesn't grow
+    expect((await page.getByTestId("reply-ready-header").boundingBox())!.height).toBeLessThanOrEqual(40);
+    await page.getByTestId("reply-ready-mode-all").click();
+    await expect(page.getByTestId("reply-ready-mode-all")).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId("reply-ready-to")).toHaveText("To Yuki Gutiérrez, cc Ana Ruiz and Ben Wu");
+    // the same words, and nothing asked again
+    await expect(page.getByTestId("reply-ready-text")).toHaveText(words);
+    expect(asked()).toBe(1);
+    for (const scheme of ["dark", "light"] as const) {
+      await page.emulateMedia({ colorScheme: scheme });
+      const results = await new AxeBuilder({ page }).include('[data-testid="reply-ready"]').analyze();
+      expect(results.violations.map((v) => `${scheme} ${v.id}`)).toEqual([]);
+    }
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-group.png` });
+
+    await scenario("Use opens the composer with everyone, and the words", async () => {
+      await page.getByTestId("reply-ready-use").click();
+      await expect(block(page)).toHaveCount(0);
+      await expect(page.getByTestId("composer")).toHaveAttribute("data-mode", "replyAll");
+      expect(await recipientEmails(page, "compose-to")).toEqual(["yuki.gutierrez@acme.studio"]);
+      expect((await recipientEmails(page, "compose-cc")).sort()).toEqual(others.map((o) => o.email).sort());
+      await expect(page.locator("[contenteditable=true]").first()).toContainText(words.split("\n")[0]!.slice(0, 20));
+      await expect.poll(state).toBe("used");
+      // the strip's Undo: the card again, still on Reply all
+      await page.getByTestId("ai-strip-undo").click();
+      await expect(block(page)).toBeVisible();
+      await expect(page.getByTestId("reply-ready-mode-all")).toHaveAttribute("aria-pressed", "true");
+    });
+
+    await scenario("R is Use: with Reply all chosen it answers everyone; with Reply, the sender alone", async () => {
+      await page.locator('[data-keep-scroll="list"]').focus();
+      await page.keyboard.press("r");
+      await expect(page.getByTestId("composer")).toHaveAttribute("data-mode", "replyAll");
+      await page.getByTestId("ai-strip-undo").click();
+      await expect(block(page)).toBeVisible();
+      await page.getByTestId("reply-ready-mode-reply").click();
+      await expect(page.getByTestId("reply-ready-to")).toHaveText("To Yuki Gutiérrez");
+      await page.locator('[data-keep-scroll="list"]').focus();
+      await page.keyboard.press("r");
+      await expect(page.getByTestId("composer")).toHaveAttribute("data-mode", "reply");
+      expect(await recipientEmails(page, "compose-to")).toEqual(["yuki.gutierrez@acme.studio"]);
+      await expect(page.getByTestId("compose-cc")).toHaveCount(0);
     });
   });
 

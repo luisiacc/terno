@@ -521,7 +521,8 @@ export async function isolateLocalDiscovery(server: DevServer, ollamaUrl?: strin
  * aren't), so all but the last start collapsed. `mineFirst`: the owner writes
  * first. Returns the thread id.
  */
-export async function ingestConversation(server: DevServer, o: { subject: string; count: number; html?: number; unread?: number; mineFirst?: boolean; now: number }): Promise<number> {
+/** `cc`: others on the conversation, copied on every message (a group thread) */
+export async function ingestConversation(server: DevServer, o: { subject: string; count: number; html?: number; unread?: number; mineFirst?: boolean; cc?: { name: string; email: string }[]; now: number }): Promise<number> {
   const db = sqlDb(server.backend.store);
   const acct = db.get<{ id: number; email: string }>("SELECT id, email FROM accounts ORDER BY id LIMIT 1")!;
   const key = o.subject.toLowerCase().replace(/[^a-z0-9]+/g, "-");
@@ -539,7 +540,7 @@ export async function ingestConversation(server: DevServer, o: { subject: string
       references: Array.from({ length: i }, (_, j) => `<${key}-${j}@e2e.test>`),
       from: mine ? me : yuki,
       to: [mine ? yuki : me],
-      cc: [],
+      cc: o.cc ?? [],
       bcc: [],
       subject: i ? `Re: ${o.subject}` : o.subject,
       date: o.now - (o.count - i) * 3_600_000,
