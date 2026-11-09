@@ -689,6 +689,11 @@ test.describe("drafting with AI (plan 133)", () => {
         await page.keyboard.press("Escape");
         await expect(page.getByTestId("compose-empty-ask")).toHaveCount(0);
         await expect(body(page)).toHaveText("fine by me, tell him that");
+        // Send later keeps its picker (Codex review: ⌘⇧↩ did nothing); what it picks asks the same question
+        await body(page).press("ControlOrMeta+Shift+Enter");
+        await expect(page.getByTestId("send-later-popover")).toBeVisible();
+        await page.keyboard.press("Escape");
+        await expect(page.getByTestId("send-later-popover")).toHaveCount(0);
       }
       // Write it from the question writes; the note's marks go, Send is the primary again
       await body(page).press("ControlOrMeta+Enter");

@@ -1,4 +1,3 @@
-import { BODY_GLANCE_MAX, readBody } from "@terno/core";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { IconButton } from "@terno/ui/components/icon-button";
@@ -7,12 +6,13 @@ import { cn } from "@terno/ui/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { Send, Sparkles } from "@terno/ui/icons";
 import { useEffect, useId, useLayoutEffect, useRef } from "react";
-import { setGlance, useAiDraftUi, useCanDraft, useNote, type BodyGlance } from "~/lib/ai-draft-state";
+import { glanceNow, setGlance, useAiDraftUi, useCanDraft, useNote } from "~/lib/ai-draft-state";
 import { openAiDraft } from "~/lib/ai-draft";
 import { useDrafts, type LocalDraft } from "~/lib/drafts";
-import { SendButton } from "../send-button";
+import { Popover, PopoverContent } from "@terno/ui/components/popover";
+import { SendButton, useSendLater } from "../send-button";
+import { SendLaterPicker } from "../send-later-picker";
 import { AiPreview, AiRow } from "./ai-draft";
-import { docRange } from "./body-text";
 import { useController } from "./controller";
 
 /**
@@ -50,13 +50,9 @@ function useBodyGlance(draftKey: string | undefined): void {
     let timer: ReturnType<typeof setTimeout> | null = null;
     const look = () => {
       timer = null;
-      const b = c.bodyText(BODY_GLANCE_MAX);
-      const read = readBody(b.text, { images: b.images, limit: BODY_GLANCE_MAX });
-      const gaps = read.kind === "email" ? read.gaps.filter((g) => docRange(b, g.from, g.to) !== null).length : 0;
-      const next: BodyGlance = read.kind === "empty" ? "empty" : read.kind === "instruction" ? "write" : gaps ? `fill:${gaps}` : read.kind === "unsure" ? "unsure" : "";
       // plan 162 (after ai162-r04): published, so the body, the foot and Send read one glance (the note for AI), kept by
       // the body (always there with its editor), not by a button the foot can swap out
-      setGlance(draftKey, next);
+      setGlance(draftKey, glanceNow(draftKey) ?? "");
     };
     look();
     const off = c.subscribeDoc(() => {
@@ -133,6 +129,8 @@ export function AiDraftButton({ draftKey, threadId, disabled, testId }: { draftK
  */
 export function SendOrWrite({ d, onSend, className }: { d: LocalDraft; onSend: (sendAt?: number) => void; className?: string }) {
   const note = useNote(d.key);
+  const later = useSendLater((s) => s.open === d.key);
+  const sendRef = useRef<HTMLButtonElement>(null);
   if (!note) return <SendButton d={d} onSend={onSend} className={className} />;
   const disabled = d.sending || Boolean(d.recovery);
   return (
@@ -150,9 +148,15 @@ export function SendOrWrite({ d, onSend, className }: { d: LocalDraft; onSend: (
         </TooltipTrigger>
         <TooltipContent>{t("aiDraft.button.write")}</TooltipContent>
       </Tooltip>
-      <IconButton label={t("aiDraft.note.send")} type="submit" variant="secondary" disabled={disabled} data-testid="compose-send" data-note className="text-foreground">
+      <IconButton ref={sendRef} label={t("aiDraft.note.send")} type="submit" variant="secondary" disabled={disabled} data-testid="compose-send" data-note className="text-foreground">
         <Send />
       </IconButton>
+      {/* Send later (⌘⇧↩) keeps its picker, at Send's place; what it picks goes through Send's question (Codex review) */}
+      <Popover open={later} onOpenChange={(o) => useSendLater.setState({ open: o ? d.key : null })}>
+        <PopoverContent anchor={sendRef} side="top" align="start" sideOffset={6} className="w-72 gap-2 rounded-menu p-1.5" data-testid="send-later-popover" aria-label={t("sendLater.title")}>
+          <SendLaterPicker sendKeys="mod+enter" done={() => useSendLater.setState({ open: null })} onPick={(at) => onSend(at === "now" ? undefined : at)} />
+        </PopoverContent>
+      </Popover>
     </span>
   );
 }

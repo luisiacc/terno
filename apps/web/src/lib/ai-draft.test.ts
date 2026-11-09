@@ -2091,6 +2091,21 @@ describe("plan 162 (after ai162-r04): revising a draft, and a note for AI", () =
     expect(session(key)!.sameNote).toBe(false);
   });
 
+  it("Codex review: an instruction pasted and sent at once asks first: Send reads the body, not the glance behind it", async () => {
+    const { useEmptySend } = await import("./send-problem");
+    const { key } = reply("ask him to send the address of the flat");
+    // nothing has published a glance yet (the body's glance follows typing by up to 150 ms)
+    expect(useAiDraftUi.getState().glances[key]).toBeUndefined();
+    expect(await sendDraft(key)).toBe(false);
+    expect(useEmptySend.getState()).toMatchObject({ key, reason: "note" });
+    expect(calls("send.send")).toHaveLength(0);
+    // the answer to the question sends it as it is
+    useEmptySend.setState({ key: null, reason: undefined });
+    const plain = reply("Hi Arjun, Friday works for me. See you then.");
+    await sendDraft(plain.key);
+    expect(useEmptySend.getState().reason).not.toBe("note");
+  });
+
   it("a rewrite typed over while it ran offers Replace, not only Insert below", async () => {
     const { key, c } = reply("");
     await store.act(key);

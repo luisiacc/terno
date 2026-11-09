@@ -5,6 +5,7 @@ import {
   askOperandsMissing,
   askSpecifics,
   hasUnlinkedSentence,
+  askStreamText,
   resolveCitations,
   validAskQueries,
   type AiAskResult,
@@ -307,7 +308,7 @@ export class AskService {
           if (signal.aborted) return;
           raw += delta;
           // a citation still arriving waits for its end
-          const shown = resolveCitations(raw.replace(/\s*\[m?\d*$/, ""), labels).text;
+          const shown = askStreamText(raw, labels);
           o.onText(shown);
           if (shown.length > sent.length) {
             emit.push(shown.slice(sent.length));

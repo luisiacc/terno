@@ -472,6 +472,14 @@ export class ActionsService {
 
   async includeSkipped(previewId: string, included: boolean, clientId: string): Promise<ActionPreviewInfo> {
     const p = this.held(previewId, clientId);
+    // Codex review: held (unticked) before anything waits, so an Apply meanwhile never takes one the check rejected; and
+    // left out again, nothing of theirs is counted (Show counted rows it no longer listed)
+    for (const id of p.skipped) {
+      p.leftOut.delete(id);
+      p.back.delete(id);
+      if (included) p.held.add(id);
+      else p.held.delete(id);
+    }
     p.includeSkipped = included;
     if (included) await this.sortSkipped(p);
     return this.info(p);
@@ -483,30 +491,40 @@ export class ActionsService {
    * out, and one it never saw is held, unticked, for the user to tick. With no check (the rule was certain), all are ticked.
    */
   private async sortSkipped(p: Preview): Promise<void> {
-    for (const id of p.skipped) {
+    const skipped = p.skipped;
+    // held, unticked, while this works: what it decides is put in at once, at the end (Codex review)
+    for (const id of skipped) {
       p.leftOut.delete(id);
-      p.held.delete(id);
       p.back.delete(id);
+      p.held.add(id);
     }
-    if (p.check === "none" || p.check === "skipped") return;
-    if (p.check === "needed" || !p.groups) {
-      // the check hasn't said yet: held until it has (check() sorts them then)
-      for (const id of p.skipped) p.held.add(id);
+    if (p.check === "none" || p.check === "skipped") {
+      for (const id of skipped) p.held.delete(id);
       return;
     }
+    // the check hasn't said yet: held until it has (check() sorts them then)
+    if (p.check === "needed" || !p.groups) return;
     const kept = new Set(p.keptGroups.map(groupKey));
     const dropped = new Set(p.droppedGroups.map(groupKey));
-    for (let i = 0; i < p.skipped.length; i += 1000) {
-      const slice = p.skipped.slice(i, i + 1000);
+    const ticked: number[] = [];
+    const out: number[] = [];
+    for (let i = 0; i < skipped.length; i += 1000) {
+      const slice = skipped.slice(i, i + 1000);
       const facts = new Map((await this.b.store.filters.actionFacts(slice)).map((f) => [f.id, f]));
       for (const id of slice) {
         const f = facts.get(id);
         const key = f ? groupKey(groupOf(f)) : null;
-        if (key !== null && kept.has(key)) continue;
-        if (key !== null && dropped.has(key)) p.leftOut.add(id);
-        else p.held.add(id);
+        if (key !== null && kept.has(key)) ticked.push(id);
+        else if (key !== null && dropped.has(key)) out.push(id);
       }
       await this.b.yieldTurn();
+    }
+    // left out again (Skip them) while it worked: nothing of it applies
+    if (!p.includeSkipped || p.dead) return;
+    for (const id of ticked) p.held.delete(id);
+    for (const id of out) {
+      p.held.delete(id);
+      p.leftOut.add(id);
     }
   }
 

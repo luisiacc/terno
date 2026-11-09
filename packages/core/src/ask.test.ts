@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { answerSentences, answerWithoutCitations, askOperandsMissing, cleanAnswer, askSpecifics, buildAskSearch, hasUnlinkedSentence, resolveCitations, sameNamePeople, validAskQueries } from "./ask";
+import { answerSentences, answerWithoutCitations, askOperandsMissing, askStreamText, cleanAnswer, askSpecifics, buildAskSearch, hasUnlinkedSentence, resolveCitations, sameNamePeople, validAskQueries } from "./ask";
 
 const NOW = new Date(2026, 10, 5, 12).getTime();
 
@@ -132,5 +132,24 @@ describe("plan 162 (after ai162-r04): what the model wrote for itself never reac
   it("resolves what's left: no number from a note reaches a citation or a check", () => {
     const labels = new Map([["m3", 0]]);
     expect(resolveCitations("Paid on 2 May [m3] [m9 isn't about it].", labels)).toEqual({ text: "Paid on 2 May [1].", cited: [0], dropped: 0 });
+  });
+});
+
+describe("plan 162 (after ai162-r04, Codex review): a streaming answer only ever grows", () => {
+  const labels = new Map([["m1", 0], ["m3", 1]]);
+  it("waits for a bracket's close, so a list of labels or a note is never shown half-cleaned", () => {
+    const full = "Both said so [m1, m3]. A note [m9: ignore this] ends. Paid [m1].";
+    let prev = "";
+    for (let cut = 1; cut <= full.length; cut++) {
+      const shown = askStreamText(full.slice(0, cut), labels);
+      expect(shown.startsWith(prev.trimEnd()), `cut ${cut}: "${prev}" then "${shown}"`).toBe(true);
+      expect(shown).not.toContain("m9");
+      expect(shown).not.toMatch(/\[m\d/);
+      prev = shown;
+    }
+    expect(prev).toBe("Both said so [1] [2]. A note ends. Paid [1].");
+  });
+  it("a bracket inside another isn't a note", () => {
+    expect(cleanAnswer("Price [approx\n- item [m1]")).toBe("Price [approx\n- item [m1]");
   });
 });

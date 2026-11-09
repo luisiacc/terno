@@ -1,4 +1,7 @@
+import { BODY_GLANCE_MAX, readBody } from "@terno/core";
 import { create } from "zustand";
+import { docRange } from "~/components/composer/body-text";
+import { controllerFor } from "~/components/composer/controller";
 import { client } from "~/rpc/connection";
 import { draftingOffered } from "./ai";
 import { getApp, useApp } from "~/state/app";
@@ -31,9 +34,23 @@ export function noteState(row: AiDraftBadge | undefined, glance: BodyGlance | un
   return glance === "write" || (row === "primed" && glance === "unsure");
 }
 
+/** What ⌘J would do with the body as it is now (rules only, up to the glance's limit); null with no editor. */
+export function glanceNow(key: string): BodyGlance | null {
+  const c = controllerFor(key);
+  if (!c) return null;
+  const b = c.bodyText(BODY_GLANCE_MAX);
+  const read = readBody(b.text, { images: b.images, limit: BODY_GLANCE_MAX });
+  const gaps = read.kind === "email" ? read.gaps.filter((g) => docRange(b, g.from, g.to) !== null).length : 0;
+  return read.kind === "empty" ? "empty" : read.kind === "instruction" ? "write" : gaps ? `fill:${gaps}` : read.kind === "unsure" ? "unsure" : "";
+}
+
+/**
+ * Send's question: read from the body at the moment of the send, never the glance (it follows typing by up to 150 ms, so
+ * an instruction pasted and sent at once would go as the email: Codex review).
+ */
 export const isNote = (key: string): boolean => {
   const s = useAiDraftUi.getState();
-  return canDraft() && noteState(s.rows[key], s.glances[key]);
+  return canDraft() && noteState(s.rows[key], glanceNow(key) ?? s.glances[key]);
 };
 
 export function useNote(key: string | undefined): boolean {

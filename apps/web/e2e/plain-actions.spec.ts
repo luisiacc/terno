@@ -132,6 +132,9 @@ test.describe("actions in plain English (plan 143)", () => {
     await scenario("the rule in words in the reader, one count, the sidebar on its scope, the keys on the list (plan 161)", async () => {
       // the same number on the title and the button, and only once the search is done
       await expect(page.getByTestId("action-apply")).toHaveText("Archive 2");
+      // ready, the keys are the list's (plan 161): ⌘↩ applies, Esc cancels in one press. Plan 162 (after ai162-r04, Codex
+      // review 6): Archive holding them opened its tooltip, which took the first Esc
+      await expect.poll(() => page.evaluate(() => document.activeElement?.getAttribute("data-keep-scroll"))).toBe("list");
       await expect(page.getByTestId("nav-inbox")).toHaveAttribute("data-active");
       await expect(page.locator("#app-sidebar [data-active]")).toHaveCount(1);
       const rule = page.getByTestId("action-rule");

@@ -176,7 +176,7 @@ export function validAskQueries(plans: readonly AskPlanQuery[], now: number): { 
 /** "[m1, m3]" or "[m1; m3]": labels only, as citations ("[m1][m3]"). */
 const LABEL_LIST = /\[\s*(m\d+(?:\s*[,;]\s*m\d+)+)\s*\]/g;
 /** a bracket's words, short of a line */
-const BRACKET = /\s*\[([^\]\n]{0,400})\]/g;
+const BRACKET = /\s*\[([^\][\n]{0,400})\]/g;
 /** a message label in words that aren't only it: "m9 doesn't mention it" */
 const LABEL_IN_WORDS = /(?<![\p{L}\d])m\d+(?![\p{L}\d])/u;
 
@@ -211,6 +211,15 @@ export function resolveCitations(text: string, labels: ReadonlyMap<string, numbe
     })
     .trim();
   return { text: out, cited, dropped };
+}
+
+/**
+ * Plan 162 (after ai162-r04, Codex review): what a streaming answer shows so far. A bracket still open at the end waits for
+ * its close (a citation "[m3", a list "[m1, m3", a note "[m9: …"): what's shown only ever grows, since the backend sends the
+ * new part by its length, and nothing a later chunk would clean up is shown first.
+ */
+export function askStreamText(raw: string, labels: ReadonlyMap<string, number>): string {
+  return resolveCitations(raw.replace(/\s*\[[^\][\n]*$/, ""), labels).text;
 }
 
 /** One sentence of an answer, as written (its trailing space included, so the parts join back to the answer). */

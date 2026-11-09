@@ -629,6 +629,32 @@ describe("the check", () => {
     void rows;
   });
 
+  it("plan 162 (after ai162-r04, Codex review): an Apply while Include sorts takes none of them; Skip them counts none of them", async () => {
+    const { backend, client, model, put, preview, check, fact } = await setup();
+    await put({ subject: "Invoice one", from: { name: "Ana", email: "ana@acme.test" } });
+    await put({ subject: "Invoice two", from: { name: "Bob", email: "bob@other.test" } });
+    const likeBob = await put({ subject: "Invoice two", from: { name: "Bob", email: "bob@other.test" }, providerThreadId: "s2" });
+    const unseen = await put({ subject: "Invoice planning", from: { name: "Cleo", email: "cleo@team.test" }, providerThreadId: "s3" });
+    await backend.store.threads.act({ threadIds: [likeBob, unseen], action: "star", signal: null, now: NOW });
+    model.check = (req) => JSON.stringify({ drop: [/<group id="(g\d+)"[^>]*>Bob/.exec(promptText(req.messages[0]!.content))![1]] });
+    const p = await preview(meaning);
+    await check(p);
+    // Include, and Apply at once, before Include has answered
+    const including = client.call("ai.actionIncludeSkipped", { previewId: p.previewId, included: true });
+    const applied = client.call("ai.actionApply", { previewId: p.previewId, future: false });
+    await including;
+    expect((await applied).done).toBe(1);
+    expect((await fact(likeBob)).inInbox).toBe(true);
+    expect((await fact(unseen)).inInbox).toBe(true);
+    const q = await preview(meaning);
+    await check(q);
+    const before = (await client.call("ai.actionToggle", { previewId: q.previewId, threadId: 1e9, included: true })).leftOut;
+    await client.call("ai.actionIncludeSkipped", { previewId: q.previewId, included: true });
+    const skipped = await client.call("ai.actionIncludeSkipped", { previewId: q.previewId, included: false });
+    expect(skipped.leftOut).toBe(before);
+    expect((await client.call("ai.actionPage", { previewId: q.previewId, offset: 0, limit: 10, leftOut: true })).total).toBe(skipped.count + skipped.leftOut);
+  });
+
   it("plan 162 (after ai162-r04): included before the check, they wait unticked, then go as it decides; with the check skipped, all are ticked", async () => {
     const { backend, client, model, put, preview, check } = await setup();
     await put({ subject: "Invoice one", from: { name: "Ana", email: "ana@acme.test" } });
