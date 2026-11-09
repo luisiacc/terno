@@ -48,7 +48,6 @@ exports[`model discovery > an unprobed compatible server is asked for json_objec
               "subject",
               "body",
               "listId",
-              "text",
               "opening",
               "hasAttachment",
               "account",

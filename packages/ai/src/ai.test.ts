@@ -4,7 +4,8 @@ import { fakeTransport } from "./fake";
 import { extractJsonObject } from "./json";
 import { createAi, probe } from "./tasks";
 import { AiError, type CompletionRequest, type FilterGenerationContext, type ModelTransport, type ProviderConfig } from "./types";
-import { convertWireFilter, wireFilterSchema, type WireFilter } from "./wire";
+import { TEXT_FIELDS } from "@terno/core";
+import { convertWireFilter, MODEL_TEXT_FIELDS, systemPrompt, wireFilterSchema, type WireFilter } from "./wire";
 
 const ctx: FilterGenerationContext = {
   now: Date.UTC(2026, 9, 22),
@@ -77,6 +78,18 @@ describe("wire schema", () => {
     const schema = z.toJSONSchema(wireFilterSchema);
     expect(JSON.stringify(schema)).not.toMatch(/"(minimum|maximum|exclusiveMinimum|exclusiveMaximum|format|pattern)"/);
     expect(schema).toMatchSnapshot();
+  });
+
+  it("plan 162: offers the model only fields its prompt describes: no whole-word “Anywhere” (it wrote one for receipts and matched none)", () => {
+    const fields = wireFilterSchema.shape.conditions.element.shape.field.options;
+    expect(fields).not.toContain("text");
+    expect([...MODEL_TEXT_FIELDS, "text"].sort()).toEqual([...TEXT_FIELDS].sort());
+    const prompt = systemPrompt(ctx);
+    for (const field of fields) expect(prompt).toMatch(new RegExp(`\\b${field}\\b`));
+    for (const op of wireFilterSchema.shape.conditions.element.shape.op.options) expect(prompt).toMatch(new RegExp(`\\b${op}\\b`));
+    // what each kind of text condition finds is said where the model chooses it
+    expect(prompt).toContain('body (whole words/phrases only: "receipt" doesn\'t find "receipts")');
+    expect(prompt).toContain('subject contains "receipt" finds "Receipts"');
   });
 
   it("rejects fractional ids and days that the schema now lets through", () => {

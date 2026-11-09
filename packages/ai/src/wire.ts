@@ -1,4 +1,4 @@
-import { filterRuleSchema, TEXT_FIELDS, TEXT_OPS, type FilterRule } from "@terno/core";
+import { filterRuleSchema, TEXT_OPS, type FilterRule, type TextField } from "@terno/core";
 import { z } from "zod";
 import type { FilterGenerationContext } from "./types";
 
@@ -8,13 +8,20 @@ import type { FilterGenerationContext } from "./types";
  * Primitive types only: `.int()` would emit minimum/maximum, which some local
  * grammar engines reject in strict mode, so integers are checked in convertWireFilter.
  */
+/**
+ * The text fields a model may write: every one but `text` (plan 89's search word, "Anywhere mentions"), which matches
+ * whole words only and is named in no prompt. A real model reached for it anyway ("Anywhere mentions “receipt”") and
+ * matched none of the Uber receipts ("Receipts"); the subject's `contains` finds them (plan 162).
+ */
+export const MODEL_TEXT_FIELDS = ["from", "fromDomain", "recipients", "subject", "body", "listId", "opening"] as const satisfies readonly TextField[];
+
 export const wireFilterSchema = z.object({
   name: z.string().describe("Short human name for the filter, in the user's language"),
   explanation: z.string().describe("One sentence explaining what the filter does, in the user's language"),
   match: z.enum(["all", "any"]),
   conditions: z.array(
     z.object({
-      field: z.enum([...TEXT_FIELDS, "hasAttachment", "account", "ageDays"]),
+      field: z.enum([...MODEL_TEXT_FIELDS, "hasAttachment", "account", "ageDays"]),
       op: z.enum([...TEXT_OPS, "is", "gt", "lt"]),
       value: z.string().describe("Text value; 'true'/'false' for hasAttachment; account id for account; days for ageDays"),
       negate: z.boolean(),
@@ -82,8 +89,9 @@ export const EXAMPLE_WIRE_FILTER: WireFilter = {
 export function systemPrompt(ctx: FilterGenerationContext): string {
   return [
     "You turn a user's description of an email filter into a structured rule for the Terno email client.",
-    "Fields: from (sender name or address), fromDomain, recipients, subject, body (whole words/phrases), listId (mailing list id), hasAttachment, account, ageDays.",
-    "Text ops: contains, equals, startsWith, endsWith. hasAttachment and account use op 'is'. ageDays uses 'gt' (older than N days) or 'lt' (newer than).",
+    "Fields: from (sender name or address), fromDomain, recipients, subject, opening (the subject and the message's first lines), body (whole words/phrases only: \"receipt\" doesn't find \"receipts\"), listId (mailing list id), hasAttachment, account, ageDays.",
+    "Text ops: contains (part of the text: subject contains \"receipt\" finds \"Receipts\"), equals, startsWith, endsWith, matches (a regular expression, for alternatives and a word's forms: \"receipt|recibo\"). body can't use matches; opening only uses matches and has no negate. hasAttachment and account use op 'is'. ageDays uses 'gt' (older than N days) or 'lt' (newer than).",
+    "For a kind of mail named by a word (receipts, invoices), look for the word in the subject, not the body.",
     "Actions: archive, trash, spam, markRead, star, addCategory (with categoryId). Use at most one of archive/trash/spam.",
     "Prefer precise conditions (exact sender address or domain, list id) over broad words. Use negate for exclusions.",
     "Write name and explanation in the same language as the user's request.",
