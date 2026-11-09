@@ -1,5 +1,5 @@
 import { CheckboxMark } from "@terno/ui/components/checkbox";
-import { toggleRow, useActionRows } from "~/state/action-preview";
+import { toggleRow, useActionPreview, useActionRows } from "~/state/action-preview";
 import { listFilterOf, matchesFilter, matchFocus, mostUrgent, type CategoryColor, type RowMatch, type ThreadSummary } from "@terno/core";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { cn } from "@terno/ui/lib/utils";
@@ -92,6 +92,8 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
   /** plan 143: in a sentence's preview, whether this row is in it (only this row renders when it changes) */
   const previewing = useApp((s) => s.actionPreview !== null);
   const unticked = useActionRows((s) => previewing && s.unticked.has(thread.id));
+  /** plan 162 (after ai162-r03): while the AI check waits, a row is a candidate, not yet what Apply takes */
+  const pending = useActionPreview((s) => previewing && s.preview?.check === "needed");
   /** plan 158: the sentence it matched in, when its own words don't show it (one Map read: only this row renders when it comes) */
   const excerpt = useExcerpts((s) => (match && s.match === match ? s.byThread.get(thread.id) : undefined));
   return (
@@ -108,6 +110,7 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
       selected={selected}
       checked={checked}
       included={previewing ? !unticked : undefined}
+      pending={pending || undefined}
       inSelection={inSelection}
       account={account}
       categories={categories}
@@ -138,6 +141,8 @@ type ViewProps = Omit<Props, "showAccount" | "wide" | "review" | "reminderTop" |
   checked: boolean;
   /** plan 143: the row of a preview, in or out; its check is its own */
   included?: boolean;
+  /** plan 162 (after ai162-r03): a preview's row the AI check hasn't decided yet: quiet, as a left-out row */
+  pending?: boolean;
   inSelection: boolean;
   account: AccountLabel | undefined;
   categories: AppState["categories"];
@@ -253,7 +258,7 @@ function RowDate({ thread, reminderTop, fallback, className, title }: { thread: 
   return <span data-testid="row-date" data-due-at={dueAt ?? undefined} title={title} className={className}>{dueAt !== null ? reminderShort(dueAt) : fallback}</span>;
 }
 
-export function ThreadRowView({ thread, top, height, compact, wide, icons, layout, review, reminderTop, reminderEnd, selected, checked, included, inSelection, account, categories, inCategory = null, kept = false, hasDraft, code, reminder, remindersList, interactive, match, excerpt, pick = false, section }: ViewProps) {
+export function ThreadRowView({ thread, top, height, compact, wide, icons, layout, review, reminderTop, reminderEnd, selected, checked, included, pending, inSelection, account, categories, inCategory = null, kept = false, hasDraft, code, reminder, remindersList, interactive, match, excerpt, pick = false, section }: ViewProps) {
   const cats = thread.categoryIds.length ? categories.filter((c) => c.id !== inCategory && thread.categoryIds.includes(c.id)) : [];
   const classic = layout === "classic";
   const big = layout === "large-avatar";
@@ -469,6 +474,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
       data-messages={thread.messageCount > 1 ? thread.messageCount : undefined}
       data-checked={checked || undefined}
       data-included={included}
+      data-pending={pending || undefined}
       data-layout={layout}
       data-wide={(wide && !compact) || undefined}
       onMouseDown={interactive ? (e) => e.button === 0 && pressRow(thread.id, { meta: e.metaKey, ctrl: e.ctrlKey, shift: e.shiftKey }) : undefined}
@@ -491,7 +497,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
         // the check takes the gutter, and the content line moves over as one
         included !== undefined && "pl-10",
         // left out: quiet, without going under the contrast a row's text must hold
-        included === false && "[&>*:not([data-slot=checkbox])_*]:text-muted-foreground",
+        (included === false || pending) && "[&>*:not([data-slot=checkbox])_*]:text-muted-foreground",
       )}
       style={{ transform: `translateY(${top}px)`, height }}
     >

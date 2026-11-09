@@ -362,14 +362,15 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
             </div>
           )}
           {preview.leftOut + preview.unchecked > 0 && (
-            <Line testId="action-left-out">
-              {preview.leftOut > 0 && <span>{t("action.leftOut", { count: preview.leftOut })}</span>}
+            // plan 162 (after ai162-r03): what the check left out is a decision too: said in the ink, its rows listed
+            // (unticked, under the kept ones) once the check is done, and Hide or Show a bordered control
+            <p className={cn("flex flex-wrap items-center gap-x-1.5 gap-y-1 text-foreground", reader ? "text-sm" : "text-xs")} data-testid="action-left-out">
+              {preview.leftOut > 0 && <span className="font-medium">{t("action.leftOut", { count: preview.leftOut })}</span>}
               {preview.leftOut > 0 && preview.unchecked > 0 && <Dot />}
               {preview.unchecked > 0 && <span data-testid="action-unchecked">{t("action.unchecked", { count: preview.unchecked })}</span>}
               {preview.unchecked > 0 && !checking && <Button variant="link-secondary" size="xs" className="no-drag" data-testid="action-check-more" onClick={() => void check({})}>{t("action.checkMore")}</Button>}
-              <Dot />
-              <Button variant="link-secondary" size="xs" className="no-drag" data-testid="action-show-left-out" aria-expanded={leftOutShown} onClick={() => showLeftOut(!leftOutShown)}>{t(leftOutShown ? "action.leftOut.hide" : "action.leftOut.show")}</Button>
-            </Line>
+              <Button variant="outline" size="xs" className="no-drag ms-1 text-foreground" data-testid="action-show-left-out" aria-expanded={leftOutShown} onClick={() => showLeftOut(!leftOutShown)}>{t(leftOutShown ? "action.leftOut.hide" : "action.leftOut.show")}</Button>
+            </p>
           )}
           {preview.keep.kind !== "hidden" && !ruleOnly && (
             <div>

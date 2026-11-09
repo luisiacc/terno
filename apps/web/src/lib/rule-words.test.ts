@@ -67,6 +67,9 @@ describe("a sentence's rule in words (plan 161)", () => {
     expect(patternTerms("(?:invoice|receipt)")).toEqual(["invoice", "receipt"]);
     // an escaped dot is a dot, said as written
     expect(patternTerms("amazon\\.com|ups")).toEqual(["amazon.com", "ups"]);
+    // plan 162 (after ai162-r03): a real model's word list, with accents and word edges, reads as words, not "a pattern"
+    expect(patternTerms("shipping|delivery|env[ií]o|\\benviado\\b|en\\s+camino")).toEqual(["shipping", "delivery", "envío", "enviado", "en camino"]);
+    expect(patternTerms("gr[ae]y")).toBeNull();
     // anything more than words isn't a list of them
     for (const p of ["ship.*ped", "^order", "a|b+", "[0-9]+", "x|", "(a|b)c"]) expect(patternTerms(p)).toBeNull();
   });

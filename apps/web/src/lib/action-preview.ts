@@ -46,6 +46,9 @@ export function previewConsequence(preview: ActionPreviewInfo, folderName: strin
 export function previewTitle(preview: ActionPreviewInfo, shown: number, folderName: string): string {
   if (savesRuleOnly(preview)) return preview.plan.summary;
   if (preview.scanning) return shown > 0 ? t("action.findingSoFar", { count: shown }) : t("action.finding");
+  // plan 162 (after ai162-r03): while the check waits (or runs) these are candidates: no count to act on
+  // is said until it's done (it said "Archive 9", then 3)
+  if (preview.check === "needed") return t("action.checkingCount", { count: preview.count });
   return t(`action.title.${verbOf(preview)}`, { count: preview.count, category: preview.categoryName ?? "", folder: folderName });
 }
 
@@ -54,7 +57,7 @@ export function previewTitle(preview: ActionPreviewInfo, shown: number, folderNa
  * verb is the button's, the outcome the reader's title). The same wait for a final number as `previewTitle`.
  */
 export function previewCount(preview: ActionPreviewInfo, shown: number): string {
-  if (savesRuleOnly(preview) || preview.scanning) return previewTitle(preview, shown, "");
+  if (savesRuleOnly(preview) || preview.scanning || preview.check === "needed") return previewTitle(preview, shown, "");
   return t("action.count", { count: preview.count });
 }
 
@@ -145,6 +148,9 @@ export async function check(o: { skip?: boolean }): Promise<void> {
     const r = await client.call("ai.actionCheck", { previewId: preview.previewId, requestId: globalThis.crypto.randomUUID(), ...o });
     if (getApp().actionPreview !== preview.previewId) return;
     useActionPreview.setState({ checking: false, preview: r.preview, future: useActionPreview.getState().future && r.preview.keep.kind === "ok" });
+    // plan 162 (after ai162-r03): what the check left out is listed under what it kept, unticked, to put back with a tick
+    // (it was one grey "Show", the faintest line on the page)
+    if (r.preview.leftOut > 0) useActionRows.setState({ showLeftOut: true });
     await reloadList({ keepSelection: true, window: true });
   } catch (error) {
     if (getApp().actionPreview !== preview.previewId) return;
