@@ -225,7 +225,7 @@ test.describe("summaries (plan 132)", () => {
       expect(Math.abs((await item.boundingBox())!.x - (await page.getByTestId("summary-text").boundingBox())!.x)).toBeLessThanOrEqual(1);
     }
     // plan 162: an item's controls are a line of their own under its words at every width, starting at the words' edge;
-    // Reply is the card's one secondary (bordered), Copy a quiet utility
+    // Reply leads its line in the ink, Copy a quiet utility
     for (const width of [980, 1100, 1440]) {
       await page.setViewportSize({ width, height: 900 });
       const controls = page.getByTestId("summary-item-controls").first();
@@ -235,11 +235,17 @@ test.describe("summaries (plan 132)", () => {
       expect(row.y).toBeGreaterThanOrEqual(words.y + words.height - 1);
       expect(Math.abs(row.x - words.x)).toBeLessThanOrEqual(1);
       const reply = page.getByTestId("summary-item-reply").first();
-      if (await reply.count()) expect(Math.abs((await reply.boundingBox())!.x - words.x)).toBeLessThanOrEqual(1);
+      // its glyph on the words' edge, its shape reaching past it
+      if (await reply.count()) expect(Math.abs((await reply.boundingBox())!.x + 8 - words.x)).toBeLessThanOrEqual(1);
     }
     // every button keeps a 1 px border; a quiet one's is clear
     const edge = (testId: string) => page.getByTestId(testId).first().evaluate((el) => getComputedStyle(el).borderTopColor);
-    if (await page.getByTestId("summary-item-reply").count()) expect(await edge("summary-item-reply")).not.toBe("rgba(0, 0, 0, 0)");
+    // plan 162 (after ai162-r04): Reply is quiet too, told apart by its ink (two bordered Replies outweighed the summary)
+    if (await page.getByTestId("summary-item-reply").count()) {
+      expect(await edge("summary-item-reply")).toBe("rgba(0, 0, 0, 0)");
+      const color = (testId: string) => page.getByTestId(testId).first().evaluate((el) => getComputedStyle(el).color);
+      expect(await color("summary-item-reply")).not.toBe(await color("summary-copy"));
+    }
     expect(await edge("summary-copy")).toBe("rgba(0, 0, 0, 0)");
     await page.setViewportSize({ width: 980, height: 600 });
 

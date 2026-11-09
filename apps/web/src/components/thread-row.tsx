@@ -200,13 +200,14 @@ function useReason(thread: Pick<ThreadSummary, "id">): string | undefined {
 }
 
 /** The row's words, with Today's reason ahead of them when there is one: the reason keeps its place, the words truncate. */
-function withReason(reason: string | undefined, quiet: string, words: React.ReactNode): React.ReactNode {
+function withReason(reason: string | undefined, quiet: string, ink: string, words: React.ReactNode): React.ReactNode {
   if (!reason) return words;
   return (
     <>
-      {/* plan 162 (after ai162-r02): the reason is words in the row's secondary at medium weight, then a "·", then the mail's
-          words: quiet (the outlined tag was the loudest thing in every row) and still never the mail's first words */}
-      <span data-testid="row-why" className={cn(quiet, "font-medium")}>{reason}</span>
+      {/* plan 162 (after ai162-r02): the reason is words, never a box (the outlined tag was the loudest thing in every row),
+          then a "·", then the mail's words. After ai162-r04: in the row's ink at medium weight, so it leads the line and
+          never reads as the snippet's first words (eight reports: the same grey as the preview) */}
+      <span data-testid="row-why" className={cn(ink, "font-medium")}>{reason}</span>
       <span aria-hidden className={quiet}> · </span>
       <span className={quiet}>{words}</span>
     </>
@@ -218,7 +219,7 @@ function RowSnippet({ thread, reminderTop, ink, quiet, match, excerpt, lead }: {
   const reason = useReason(thread);
   return (
     <span data-testid="row-snippet" data-followup={line ? true : undefined} data-excerpt={!line && excerpt ? true : undefined} className={cn("type-row-snippet min-w-0 truncate", line ? ink : reason ? undefined : quiet)}>
-      {line ?? withReason(reason, quiet, matchLine(match, excerpt ?? thread.snippet, lead))}
+      {line ?? withReason(reason, quiet, ink, matchLine(match, excerpt ?? thread.snippet, lead))}
     </span>
   );
 }
@@ -229,7 +230,7 @@ function WideSnippet({ thread, reminderTop, ink, quiet, match, excerpt }: { thre
   const reason = useReason(thread);
   return (
     <span data-testid="row-snippet" data-followup={line ? true : undefined} data-excerpt={!line && excerpt ? true : undefined} className={cn("min-w-0 flex-1 truncate text-xs", line ? ink : reason ? undefined : quiet)}>
-      {line ?? withReason(reason, quiet, matchLine(match, excerpt ?? thread.snippet, LEAD.wide))}
+      {line ?? withReason(reason, quiet, ink, matchLine(match, excerpt ?? thread.snippet, LEAD.wide))}
     </span>
   );
 }
@@ -238,7 +239,7 @@ function WideSnippet({ thread, reminderTop, ink, quiet, match, excerpt }: { thre
 function RowTail({ thread, reminderTop, ink, quiet, match, excerpt }: { thread: ThreadSummary; reminderTop?: boolean; ink: string; quiet: string; match?: RowMatch | null; excerpt?: string }) {
   const { line } = useOwed(thread, reminderTop);
   const reason = useReason(thread);
-  return <span data-testid="row-snippet" data-followup={line ? true : undefined} className={cn("type-row-snippet min-w-0 flex-1 truncate", line ? ink : reason ? undefined : quiet)}>{line ?? withReason(reason, quiet, matchLine(match, excerpt ?? thread.snippet, LEAD.wide))}</span>;
+  return <span data-testid="row-snippet" data-followup={line ? true : undefined} className={cn("type-row-snippet min-w-0 flex-1 truncate", line ? ink : reason ? undefined : quiet)}>{line ?? withReason(reason, quiet, ink, matchLine(match, excerpt ?? thread.snippet, LEAD.wide))}</span>;
 }
 
 /**

@@ -375,7 +375,9 @@ function Profile({ initial, onChanged, onEditing, onReset, total, picked, compac
         {p.edited && p.newSince > 0 ? (
           <Button size="sm" variant="outline" className="text-foreground" data-testid="style-profile-update" onClick={reset}>{t("aiDraft.style.update", { count: p.newSince })}</Button>
         ) : (
-          <Button size="sm" variant="outline" className="text-foreground" aria-label={t("aiDraft.style.resetName", { name: title })} data-testid="style-profile-reset" onClick={reset}>{t("aiDraft.style.resetThis")}</Button>
+          // plan 162 (after ai162-r04): quiet, and apart from Edit: it undoes the user's edits (it has its own Undo), so it
+          // never sits at Edit's weight one misclick away (three reports)
+          <Button size="sm" variant="ghost" className="ms-2 text-muted-foreground hover:text-foreground" aria-label={t("aiDraft.style.resetName", { name: title })} data-testid="style-profile-reset" onClick={reset}>{t("aiDraft.style.resetThis")}</Button>
         )}
       </div>
     </div>

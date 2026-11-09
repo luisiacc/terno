@@ -141,7 +141,7 @@ export function SendOrWrite({ d, onSend, className }: { d: LocalDraft; onSend: (
         <TooltipTrigger
           render={
             // the test id and data-ready are the Sparkles' (it is the Sparkles, ready): the rating's capture waits on them
-            <Button type="button" size="sm" data-testid="compose-ai" data-ready data-note aria-keyshortcuts="Meta+J" disabled={disabled} onMouseDown={keepSelection} onClick={() => openAiDraft({ key: d.key })} className="gap-1.5 [&_kbd]:bg-transparent [&_kbd]:text-current [&_kbd]:shadow-[inset_0_0_0_1px_color-mix(in_oklab,currentColor_45%,transparent)]" />
+            <Button type="button" size="sm" data-testid="compose-ai" data-ready data-note aria-label={t("aiDraft.button.write")} aria-keyshortcuts="Meta+J" disabled={disabled} onMouseDown={keepSelection} onClick={() => openAiDraft({ key: d.key })} className="gap-1.5 [&_kbd]:bg-transparent [&_kbd]:text-current [&_kbd]:shadow-[inset_0_0_0_1px_color-mix(in_oklab,currentColor_45%,transparent)]" />
           }
         >
           <Sparkles aria-hidden />

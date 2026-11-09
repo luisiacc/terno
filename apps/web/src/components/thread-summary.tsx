@@ -55,7 +55,9 @@ function Item({ item, from, source, mine }: { item: AiSummaryItem; from: Message
           {answered && (
             // plan 162 (after ai162-r03): an ordinary reply, as R is: the item is their question, not the user's answer, so it
             // isn't put in ⌘J as the instruction (Write would have drafted a reply with no stance)
-            <Button variant="outline" size="sm" data-testid="summary-item-reply" className="text-foreground" onClick={() => replyFromItem()}>
+            // plan 162 (after ai162-r04): quiet, in the ink, its glyph on the words' edge: two bordered Replies outweighed the
+            // summary itself (six reports); it still leads its line, the source after it muted
+            <Button variant="ghost" size="sm" data-testid="summary-item-reply" className="-ms-2 px-2 text-foreground" onClick={() => replyFromItem()}>
               <Reply aria-hidden />
               {t("actions.reply")}
             </Button>
@@ -89,7 +91,8 @@ function Ready({ summary, messages }: { summary: AiSummary; messages: readonly M
         <Sparkles aria-hidden className={GLYPH} />
         <span className={AI_TITLE}>{t("summary.label")}</span>
       </CollapsibleTrigger>
-      <CollapsiblePanel className="mx-0 px-0">
+      {/* plan 162 (after ai162-r04): closing, the words fade as the card closes, so no half-cut line shows on the way */}
+      <CollapsiblePanel className="mx-0 px-0 transition-[height,opacity] data-ending-style:opacity-0 data-starting-style:opacity-0">
         {/* the padding inside the panel: a padded panel can't ease down to 0 */}
         <div className="px-4 pb-3.5">
           {/* plain text, never HTML: a model's markup has no way in. Plan 162: the card's width (the measure left a dead column) */}

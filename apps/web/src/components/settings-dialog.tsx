@@ -1,6 +1,6 @@
 import { Dialog, DialogContent, DialogTitle } from "@terno/ui/components/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@terno/ui/components/tabs";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { installScrollHairline } from "~/lib/scroll-hairline";
 import { snack } from "~/lib/snack";
 import { imeKey } from "~/lib/ime-escape";
@@ -53,6 +53,23 @@ function SettingsPane({ title, back, children }: { title: string; /** a page ins
     const [root, sentinel, header] = [scrollerRef.current, sentinelRef.current, headerRef.current];
     return root && sentinel && header ? installScrollHairline(root, sentinel, header) : undefined;
   }, []);
+  // plan 162 (after ai162-r04): a page inside a section (Writing style) fades at its foot while it continues: its text was
+  // cut mid-line at the dialog's edge with nothing saying there was more (four reports). Sections themselves are as they were
+  const [more, setMore] = useState(false);
+  useEffect(() => {
+    const root = scrollerRef.current;
+    if (!back || !root) return;
+    const measure = () => setMore(root.scrollTop + root.clientHeight < root.scrollHeight - 2);
+    measure();
+    root.addEventListener("scroll", measure, { passive: true });
+    const watch = new ResizeObserver(measure);
+    watch.observe(root);
+    if (root.lastElementChild) watch.observe(root.lastElementChild);
+    return () => {
+      root.removeEventListener("scroll", measure);
+      watch.disconnect();
+    };
+  }, [back !== undefined]);
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div ref={headerRef} data-testid="settings-header" data-dialog-handle className="scroll-hairline shrink-0 px-6 pt-5 pb-2">
@@ -66,7 +83,7 @@ function SettingsPane({ title, back, children }: { title: string; /** a page ins
         )}
       </div>
       {/* plan 161: on the popover in dark, a tint card's edge is a ring */}
-      <div ref={scrollerRef} className="relative min-h-0 flex-1 overflow-y-auto px-6 pt-2 pb-4 dark:[--card-ring:var(--card-ring-dialog)]">
+      <div ref={scrollerRef} data-more={(back && more) || undefined} data-testid="settings-scroller" className="relative min-h-0 flex-1 overflow-y-auto px-6 pt-2 pb-4 data-more:[mask-image:linear-gradient(to_top,transparent,black_2.5rem)] dark:[--card-ring:var(--card-ring-dialog)]">
         <div ref={sentinelRef} aria-hidden className="absolute top-0 h-px w-px" />
         {children}
       </div>

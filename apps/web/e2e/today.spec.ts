@@ -91,11 +91,11 @@ test.describe("Today (plan 145)", () => {
     const sidebar = (await page.getByTestId("nav-today").innerText()).match(/\d+/)?.[0];
     if (sidebar) await expect(page.getByTestId("today-needs")).toHaveText(new RegExp(`^(The newest \\d+ of ${sidebar} that need you|${sidebar} needs? you)$`));
     await expect(page.getByTestId("today-line")).not.toContainText(/waiting|\d+ to reply/);
-    // plan 162 (after ai162-r02): the reason is quiet words, the row's secondary at medium weight, no box (the outlined
-    // tag was the loudest thing in every row), then a "·" and the mail's words
+    // plan 162 (after ai162-r02): the reason is words, no box (the outlined tag was the loudest thing in every row), then a
+    // "·" and the mail's words. After ai162-r04: in the row's ink, apart from the snippet's grey
     const why = page.getByTestId("thread-row").filter({ hasText: "Can you make the 19th" }).getByTestId("row-why");
     const ink = async (el: typeof why) => el.evaluate((e) => getComputedStyle(e).color);
-    expect(await ink(why)).toBe(await ink(page.getByTestId("thread-row").filter({ hasText: "Can you make the 19th" }).getByTestId("row-snippet").locator("span").last()));
+    expect(await ink(why)).not.toBe(await ink(page.getByTestId("thread-row").filter({ hasText: "Can you make the 19th" }).getByTestId("row-snippet").locator("span").last()));
     expect(await why.evaluate((e) => getComputedStyle(e).borderTopWidth)).toBe("0px");
     await expect(why).toHaveCSS("font-weight", "500");
     await expect(page.getByTestId("thread-row").filter({ hasText: "Can you make the 19th" }).getByTestId("row-snippet")).toContainText("They replied · ");

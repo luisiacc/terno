@@ -180,6 +180,13 @@ test.describe("drafting with AI (plan 133)", () => {
     await expect(page.getByTestId("style-profile").first()).toContainText(/Usually about \d+ words/, { timeout: 20_000 });
     await inEveryLook(page, async (where) => {
       const page_ = page.getByTestId("writing-style");
+      // plan 162 (after ai162-r04): where the page continues, its foot fades (its text was cut mid-line with no cue); at its end, none
+      const scroller = page.getByTestId("settings-scroller");
+      await scroller.evaluate((el) => el.scrollTo({ top: 0 }));
+      if (await scroller.evaluate((el) => el.scrollHeight > el.clientHeight + 2)) await expect(scroller, where).toHaveAttribute("data-more", "true");
+      await scroller.evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+      await expect(scroller, where).not.toHaveAttribute("data-more");
+      await scroller.evaluate((el) => el.scrollTo({ top: 0 }));
       expect(await wheelsTo(page, page_, page.getByTestId("style-people")), where).toBe(true);
       await page.getByTestId("style-profile-edit").first().scrollIntoViewIfNeeded();
       await page.getByTestId("style-profile-edit").first().click();
@@ -647,6 +654,71 @@ test.describe("drafting with AI (plan 133)", () => {
       });
     });
 
+  });
+
+  test("plan 162 (after ai162-r04): a note for AI is visibly one at every width, Send asks before mailing it, and words typed after a draft revise it", async ({ app: page, server }) => {
+    instant();
+    await ready(page, server);
+    fakeDraft.text = (instruction) => (/shorter/.test(instruction) ? "Hi Tom,\n\nShort and sweet.\n\nLuis" : /fine by me/.test(instruction) ? "Hi Tom,\n\nThat's fine by me.\n\nLuis" : null);
+    try {
+      for (const width of [1100, 1440]) {
+        await page.setViewportSize({ width, height: width === 1100 ? 700 : 900 });
+        await fresh(page, server);
+        await openThread(page, /Contract review/);
+        await page.getByTestId("quick-ai").click();
+        await body(page).fill("fine by me, tell him that");
+        // the body says it's a note for AI (a wash, "For AI"), described to assistive tech; a plain draft has none of it
+        await expect(page.getByTestId("ai-note-label")).toHaveText(/For AI/);
+        await expect(page.locator("[data-ai-note]")).toHaveCount(1);
+        await expect(body(page)).toHaveAccessibleDescription(/Your note for AI/);
+        // Write it is the primary, in Send's place, with its word at every width; Send an icon that steps back
+        const write = page.getByTestId("compose-ai");
+        await expect(write).toHaveAttribute("data-note", "true");
+        await expect(write).toHaveText(/Write it/);
+        await expect(write).toBeInViewport();
+        await expect(page.getByTestId("compose-send")).toHaveAccessibleName("Send it as it is");
+        await expect(page.getByTestId("compose-send-group")).toHaveCount(0);
+        const sendBox = (await page.getByTestId("compose-send").boundingBox())!;
+        const writeBox = (await write.boundingBox())!;
+        expect(writeBox.x).toBeLessThan(sendBox.x);
+        // ⌘↵ asks, Esc puts the question away and nothing went
+        await body(page).press("ControlOrMeta+Enter");
+        await expect(page.getByTestId("compose-empty-ask")).toContainText("This reads as a note for AI.");
+        // the body still says what it is while it asks
+        await expect(page.getByTestId("ai-note-label")).toBeVisible();
+        await page.keyboard.press("Escape");
+        await expect(page.getByTestId("compose-empty-ask")).toHaveCount(0);
+        await expect(body(page)).toHaveText("fine by me, tell him that");
+      }
+      // Write it from the question writes; the note's marks go, Send is the primary again
+      await body(page).press("ControlOrMeta+Enter");
+      await page.getByTestId("compose-note-write").click();
+      await expect(strip(page)).toBeVisible();
+      await expect(body(page)).toContainText("That's fine by me.");
+      await expect(page.getByTestId("ai-note-label")).toHaveCount(0);
+      await expect(page.getByTestId("compose-send-group")).toBeVisible();
+      // words typed after the draft are how to change it: the draft is rewritten from them, they don't stay, no copy beside it
+      await body(page).click();
+      await page.keyboard.press(process.platform === "darwin" ? "Meta+ArrowDown" : "Control+End");
+      await page.keyboard.type("make it shorter");
+      await page.keyboard.press(CMD_J);
+      await expect(body(page)).toContainText("Short and sweet.");
+      await expect(body(page)).not.toContainText("make it shorter");
+      await expect(preview(page)).toHaveCount(0);
+      await expect(page.getByTestId("ai-confirm")).toHaveCount(0);
+      // Undo gives back exactly what was there: the draft and the words
+      await page.getByTestId("ai-strip-undo").click();
+      await expect(body(page)).toContainText("That's fine by me.");
+      await expect(body(page)).toContainText("make it shorter");
+      // a plain draft never looks like a note
+      await page.getByTestId("ai-strip-undo").click();
+      await body(page).fill("Hi Tom,\n\nThat works for me. See you then.");
+      await page.waitForTimeout(300);
+      await expect(page.locator("[data-ai-note]")).toHaveCount(0);
+      await expect(page.getByTestId("compose-send-group")).toBeVisible();
+    } finally {
+      fakeDraft.text = null;
+    }
   });
 
   test("during the stream: Esc, typing, collapsing, switching", async ({ app: page, server }) => {
