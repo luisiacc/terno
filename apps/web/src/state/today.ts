@@ -1,5 +1,5 @@
 import { todayAvailable } from "~/lib/ai";
-import { addressKey, DIGEST_ROW_ID, NEEDS_GROUPS, needsGroup, type DigestItem, type DigestRow, type NeedsGroup, type TodayList, type ThreadSummary } from "@terno/core";
+import { addressKey, DIGEST_ROW_ID, type DigestItem, type DigestRow, type TodayList, type ThreadSummary } from "@terno/core";
 import { t } from "@terno/i18n";
 import { create } from "zustand";
 import { listDate } from "~/lib/format";
@@ -13,8 +13,8 @@ import { reloadList } from "./list";
  * thread rows, with what they say in the snippet's place.
  */
 export interface TodayGroup {
-  /** plan 166: Needs you is two groups, Your turn and Waiting for your reply, under the page's "N need you" */
-  kind: NeedsGroup | "reminders";
+  /** plan 166, after the owner's second look: Needs you is one group again ("they're really the same") */
+  kind: "needsYou" | "reminders";
   /** the row it begins at */
   at: number;
 }
@@ -204,7 +204,7 @@ const whyLine = (item: TodayList["sections"][number]["items"][number]): string =
   return summary ?? thread.snippet;
 };
 
-const GROUP_ORDER: readonly TodayGroup["kind"][] = [...NEEDS_GROUPS, "reminders"];
+const GROUP_ORDER: readonly TodayGroup["kind"][] = ["needsYou", "reminders"];
 
 /** The sections as one list; held rows stay where they were until the selection lets go (revision 9). */
 export function flattenToday(list: TodayList, before: readonly ThreadSummary[]): ThreadSummary[] {
@@ -218,16 +218,6 @@ export function flattenToday(list: TodayList, before: readonly ThreadSummary[]):
     if (section.kind === "needsYou") {
       more = section.more;
       needsShown = section.items.length;
-      // plan 166: two groups, each in the backend's order; the 12 are still the backend's, shared. The heading says what
-      // the row's reason said ("Your turn: they replied"), so the row leads with its own words; a promise's "You said" and
-      // a nudge's "No reply from" say more than the heading and stay
-      for (const kind of NEEDS_GROUPS) {
-        const mine = section.items.filter((item) => needsGroup(item.why) === kind);
-        if (!mine.length) continue;
-        groups.push({ kind, at: items.length });
-        for (const item of mine) items.push({ ...item.thread, snippet: whyLine(item) });
-      }
-      continue;
     }
     if (!section.items.length) continue;
     groups.push({ kind: section.kind, at: items.length });

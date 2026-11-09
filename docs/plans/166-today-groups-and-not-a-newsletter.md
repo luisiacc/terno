@@ -143,3 +143,9 @@ Round two, on those fixes (`review-2.out`, 3 points, all fixed, in one `today.te
 8. **Undos can't grow the list without bound:** racing windows could leave it one over the cap per cycle until an addition dropped more than an Undo accepts. Putting back stops at `NOT_NEWSLETTERS_OVER` (10) past the cap, and the Undo accepts that many plus one.
 
 Two rounds, as the owner's cap on review rounds asks; nothing left open from them.
+
+## Owner, after seeing the two groups (2026-11-09)
+
+> "your turn and waiting for a reply are really the same, just put them back together"
+
+Needs you is one group again, under its old heading ("Needs you" / "Te necesitan"), in the backend's order with its shared cap of 12. Rows keep leading with their own words: the "Your turn: they replied ·" and "Waiting for your reply ·" prefixes stay gone, since the owner sees no difference between them; a promise's "You said" and a nudge's "No reply from" lines stay. The held-row logic keeps working per section (Needs you, Reminders). Part two ("Not a newsletter") is unchanged.

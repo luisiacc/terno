@@ -76,8 +76,8 @@ function TodayHeading({ kind, top }: { kind: TodayGroup["kind"]; top: number }) 
   );
 }
 
-/** Plan 166: Needs you's two groups each have a heading of their own, in the sections' style. */
-const SECTION_NAME = { yourTurn: "today.group.yourTurn", waitingForYou: "today.group.waitingForYou", reminders: "today.reminders" } as const satisfies Record<TodayGroup["kind"], string>;
+/** Each of Today's sections has a heading of its own, in the sections' style. */
+const SECTION_NAME = { needsYou: "today.needsYou", reminders: "today.reminders" } as const satisfies Record<TodayGroup["kind"], string>;
 
 /** Plan 162 (Codex review): a section's name, said to assistive tech by its first row (the drawn heading is aria-hidden) */
 function sectionName(kind: TodayGroup["kind"]): string;
