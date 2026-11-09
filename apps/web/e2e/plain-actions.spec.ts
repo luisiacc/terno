@@ -138,14 +138,13 @@ test.describe("actions in plain English (plan 143)", () => {
       await expect(page.getByTestId("nav-inbox")).toHaveAttribute("data-active");
       await expect(page.locator("#app-sidebar [data-active]")).toHaveCount(1);
       const rule = page.getByTestId("action-rule");
-      // plan 162 (after ai162-r04): one decision on screen, the header's (the rule's pane had a second pair, in the other
-      // order: every report); how Terno read it is shown, not folded (its conditions decide what Apply takes)
-      await expect(page.getByTestId("action-preview").getByTestId("action-apply")).toHaveAttribute("data-variant", "default");
+      // plan 162 (after ai162-r04): one decision on screen; after ai162-r05, the rule pane's, at its foot, with what it
+      // decides (the header's was 600 px from it); how Terno read it is shown, not folded
+      await expect(rule.getByTestId("action-apply")).toHaveAttribute("data-variant", "default");
       await expect(page.getByTestId("action-apply")).toHaveCount(1);
       await expect(page.getByTestId("action-cancel")).toHaveCount(1);
-      await expect(rule.getByTestId("action-apply")).toHaveCount(0);
+      await expect(page.getByTestId("action-preview").getByTestId("action-apply")).toHaveCount(0);
       await expect(rule.getByTestId("action-conditions")).toBeVisible();
-      const decided = (await page.getByTestId("action-apply").boundingBox())!;
       // the rule's rows share one value column; Edit as a rule is a bordered control in the reading
       const valueLefts = await rule.locator("[data-testid=action-conditions] dd").evaluateAll((dds) => [...new Set(dds.map((d) => Math.round(d.getBoundingClientRect().left)))]);
       expect(valueLefts).toHaveLength(1);
@@ -180,8 +179,8 @@ test.describe("actions in plain English (plan 143)", () => {
       await expect(page.getByTestId("reader-subject")).toBeVisible();
       await expect(rows(page).first()).toHaveAttribute("data-included", "true");
       await expect(page.getByTestId("action-sentence")).toContainText("Archive shipping notices older than a month");
-      // the decision didn't move
-      expect((await page.getByTestId("action-apply").boundingBox())!).toEqual(decided);
+      // the pane is the message now: the decision is the header's
+      await expect(page.getByTestId("action-preview").getByTestId("action-apply")).toBeVisible();
       // Codex review: while a match is read, Esc goes back to the rule: Cancel doesn't claim it
       await expect(page.getByTestId("action-cancel")).not.toHaveAttribute("aria-keyshortcuts", "Escape");
       await expect(page.getByTestId("action-show-rule")).toHaveAttribute("aria-keyshortcuts", "Escape");
@@ -522,10 +521,37 @@ test.describe("actions in plain English at 1100 × 700 (plan 161, pass 2)", () =
     await page.setViewportSize({ width: 1100, height: 320 });
     // the rule is longer than its pane, and the pane rests at its top
     await openReading(page);
-    const pane = page.getByTestId("action-rule").locator("> div");
+    const pane = page.getByTestId("action-rule").locator("> div").first();
     expect(await pane.evaluate((el) => el.scrollHeight > el.clientHeight + 40 && el.scrollTop === 0)).toBe(true);
     await expect(apply).toBeInViewport({ ratio: 1 });
-    await expect(page.getByTestId("action-preview").getByTestId("action-cancel")).toBeInViewport({ ratio: 1 });
+    await expect(page.getByTestId("action-foot").getByTestId("action-cancel")).toBeInViewport({ ratio: 1 });
+  });
+
+  test("plan 162 (after ai162-r05): the decision sits with its explanation, at the rule pane's foot; reading a match, it's the header's", async ({ app: page, server }) => {
+    await withMail(page, server);
+    await say(page, "Archive shipping notices older than a month");
+    const rule = page.getByTestId("action-rule");
+    const apply = page.getByTestId("action-apply");
+    await expect(apply).toHaveText("Archive 2");
+    // one pair on screen, in the reader, under the explanation and on its column (it was the list header's, 600 px away)
+    await expect(page.getByTestId("action-apply")).toHaveCount(1);
+    await expect(rule.getByTestId("action-apply")).toBeVisible();
+    await expect(rule.getByTestId("action-cancel")).toBeVisible();
+    await expect(page.getByTestId("action-preview").getByTestId("action-apply")).toHaveCount(0);
+    const title = (await page.getByTestId("action-rule-title").boundingBox())!;
+    const box = (await apply.boundingBox())!;
+    expect(box.y).toBeGreaterThan(title.y);
+    expect(box.x).toBeGreaterThan(title.x);
+    // its keys still work from the list, and Esc still cancels in one press
+    await expect(apply).toHaveAttribute("aria-keyshortcuts", /Enter/);
+    // reading a match, the pane is the message: the pair is the header's
+    await rows(page).first().getByTestId("row-subject").click();
+    await expect(page.getByTestId("action-preview").getByTestId("action-apply")).toBeVisible();
+    await expect(page.getByTestId("action-apply")).toHaveCount(1);
+    await page.keyboard.press("Escape");
+    await expect(rule.getByTestId("action-apply")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("action-preview")).toHaveCount(0);
   });
 
   test("Split's header is one line beside its buttons, and the outcome reads whole in the reader", async ({ app: page, server }) => {

@@ -10,7 +10,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/to
 import { cn } from "@terno/ui/lib/utils";
 import { AiProvenance } from "./ai-provenance";
 import { AiErrorNotice, aiErrorCopy, errorTarget } from "./ai-error";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
 import { askTarget } from "~/lib/ai";
 import { listDate } from "~/lib/format";
 import { boundaryDay } from "~/lib/when";
@@ -24,6 +24,7 @@ import { isMac } from "~/lib/select";
 import { closePreviewRow, focusWhenReady, leavePreview, useActionRows } from "~/state/action-preview";
 import { getApp, setApp, useApp } from "~/state/app";
 import { useList } from "~/state/list";
+import { useSnack } from "~/lib/snack";
 
 const Line = ({ children, testId }: { children: ReactNode; testId?: string }) => (
   <p className="flex flex-wrap items-center gap-x-1.5 text-foreground" data-testid={testId}>
@@ -130,10 +131,10 @@ export default function ActionPreviewHeader() {
         <h1 data-testid="action-title" className={cn("flex min-w-0 flex-1 items-center gap-2", LIST_TITLE.title)} aria-live="polite">
           <span className={cn("min-w-0", !list && "truncate")} title={heading === title ? undefined : title}>{heading}</span>
         </h1>
-        {/* plan 162 (after ai162-r04): one decision on screen, never two (the rule's pane had a second pair, in the other
-            order: every report). Here, in every state: it never moves when a match is read, and a short window never
-            scrolls it out of reach (Codex review, pass 3, #4) */}
-        <ActionButtons size="sm" className="no-drag" escCancels={list || ruleInReader} />
+        {/* plan 162 (after ai162-r04): one decision on screen, never two. After ai162-r05: beside its explanation, at the
+            rule pane's foot, while the rule is shown (it sat here, 600 px from what it decides: six reports); here while a
+            match is read, where the pane is the message, and in List, which has no pane */}
+        {!ruleInReader && <ActionButtons size="sm" className="no-drag" escCancels={list} />}
       </div>
       {/* the words typed, when the rule (which they head) isn't on screen */}
       {!ruleInReader && sentence && (
@@ -388,10 +389,39 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
   // (the request it reads is the header's line above it)
   if (!reader) return <div data-testid="action-rule" className="-mx-5 max-h-[min(40vh,18rem)] overflow-y-auto px-5 pb-0.5">{body}</div>;
   return (
-    <section data-testid="action-rule" aria-label={t("action.rule.region")} className="@container h-full min-h-0 bg-background">
-      <div className="h-full overflow-y-auto [scrollbar-gutter:stable]">
-        <div data-reader-column className={cn(READING_COLUMN, PANE_TITLE_TOP, "pb-16")}>{body}</div>
+    <section data-testid="action-rule" aria-label={t("action.rule.region")} className="@container flex h-full min-h-0 flex-col bg-background">
+      <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
+        <div data-reader-column className={cn(READING_COLUMN, PANE_TITLE_TOP, "pb-8")}>{body}</div>
       </div>
+      <RuleFoot />
     </section>
+  );
+}
+
+/**
+ * Plan 162 (after ai162-r05): the decision where its explanation is, at the rule pane's foot: Cancel and Archive 3 on a
+ * bar that never scrolls (the rule scrolls above it), as the digest's is, so a short window keeps it in reach. The
+ * snack stands on it while it's there.
+ */
+function RuleFoot() {
+  const foot = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = foot.current;
+    if (!el) return;
+    const set = () => useSnack.setState({ pageLift: el.offsetHeight });
+    set();
+    const ro = new ResizeObserver(set);
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      useSnack.setState({ pageLift: 0 });
+    };
+  }, []);
+  return (
+    <div ref={foot} className="shrink-0 border-t border-hairline bg-background [scrollbar-gutter:stable] overflow-hidden" data-testid="action-foot">
+      <div className={cn(READING_COLUMN, "flex items-center justify-end gap-2 pt-3 pb-4")}>
+        <ActionButtons size="sm" />
+      </div>
+    </div>
   );
 }
