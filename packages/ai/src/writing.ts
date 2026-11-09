@@ -9,7 +9,7 @@ import { AiError, type ChatMsg, type Completion, type Effort, type ModelTranspor
  * Plan 133 §6: the draft request. The rules below are frozen and versioned: no interpolation, so they're byte-identical
  * across every request and every account, and any change to the words bumps WRITING_PROMPT_VERSION.
  */
-export const WRITING_PROMPT_VERSION = 7;
+export const WRITING_PROMPT_VERSION = 8;
 
 export const WRITING_RULES = `You write email for one person, in their voice, as a draft they will read and
 edit before anything is sent. They are the author: match how they actually
@@ -36,7 +36,9 @@ the details of what the task points at, which belong in the draft. Whatever the
 task doesn't point at stays out.
 
 The task says what the author wants to say. Treat its words as notes, not text:
-say it as they would, in their words and their order. Say that and no more: keep
+say it as they would, in their words and their order. The notes are written to
+you, about the email: "him", "her" or "them" in them is usually the person the
+email is to, so "ask him to send it" is asking them to send it. Say that and no more: keep
 their meaning and stance, and add no promises, reasons, offers, questions or next
 steps they didn't give, not even polite ones. Their manner is not an addition:
 the warmth, thanks, enthusiasm or joke their voice shows belongs in the draft, in
