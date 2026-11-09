@@ -100,6 +100,8 @@ export function aiErrorCopy(error: AiErrorInput, ai: Ai): AiErrorCopy {
   // plan 162: the provider answered, with an error: said as that, never as "Couldn't reach", and its status kept
   // Codex review: a 404 is an answer too, the model missing, never "Couldn't reach"
   if (error.key === "errors.ai.notFound") return { title: t("ai.error.notFound", { provider }), help: t("ai.error.help.notFound"), settings: true };
+  // a key without permission isn't a rejected key: its fix is the key's access, or another model
+  if (error.key === "errors.ai.noPermission") return { title: t("ai.error.noPermission", { provider }), help: t("ai.error.help.noPermission", { provider }), settings: true };
   if (error.key === "errors.ai.providerError") return { title: message && !hasAddress(message) ? message.replace(/[.。]$/, "") : t("ai.error.providerError", { provider }), help: t("ai.error.help.providerError"), settings: true };
   const title = own ? message.replace(/[.。]$/, "") : byKind ? t(byKind as "ai.error.unavailable", { provider }) : t("ai.error.other");
   const help = helpOf(kind, ai, provider) ?? (own ? null : t("ai.error.help.other"));

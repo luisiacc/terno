@@ -317,7 +317,8 @@ export class TodayService {
       // plan 132's table: a key or a setting pauses it, spending no attempt, until Settings move
       if (kind === "auth" || kind === "not_configured" || kind === "blocked") {
         this.paused = true;
-        await digest.write({ ...row, errorKind: kind }, generation);
+        // a key without permission is stored apart from a rejected one, so the page says which
+        await digest.write({ ...row, errorKind: kind === "auth" && error instanceof AiError && error.i18n?.key === "errors.ai.noPermission" ? "provider_no_permission" : kind }, generation);
         this.ended(day);
         return false;
       }

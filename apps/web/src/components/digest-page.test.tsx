@@ -310,4 +310,9 @@ it("plan 162 (Codex review): a digest whose provider answered with an error says
   await unmount();
   await show({ ...digestOf("2026-10-22"), state: "failed", errorKind: "provider_not_found" } as DigestRow);
   expect(host.querySelector("[data-testid=digest-failed-text]")!.textContent).toMatch(/doesn’t have that model/);
+  await unmount();
+  // a key without permission isn't a rejected key, and Settings fix it
+  await show({ ...digestOf("2026-10-22"), state: "failed", errorKind: "provider_no_permission" } as DigestRow);
+  expect(host.querySelector("[data-testid=digest-failed-text]")!.textContent).toMatch(/refused this request for your key: it doesn’t have permission/);
+  expect(host.querySelector("[data-testid=digest-error-settings]")).not.toBeNull();
 });

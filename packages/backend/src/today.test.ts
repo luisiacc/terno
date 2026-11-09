@@ -260,6 +260,18 @@ describe("the digest", () => {
     await vi.waitFor(async () => expect((await t.backend.store.today.digest.get(day()))?.state).toBe("ready"));
   });
 
+  it("plan 162: a key without permission pauses it as a bad key does, stored apart so the page says which", async () => {
+    const t = await setup();
+    await t.letter("One");
+    const { AiError } = await import("@terno/ai");
+    const { L } = await import("@terno/i18n");
+    t.model.failWith = new AiError(L("errors.ai.noPermission", { provider: "OpenAI" }), "auth");
+    await on(t);
+    await vi.waitFor(async () => expect((await t.client.call("today.digest", {}))?.errorKind).toBe("provider_no_permission"));
+    expect(await t.client.call("today.digest", {})).toMatchObject({ state: "failed" });
+    expect((await t.backend.store.today.digest.get(day()))).toMatchObject({ state: "pending", attempts: 0 });
+  });
+
   it("what fails for good says so, and Try again goes on", async () => {
     const t = await setup();
     await t.letter("One");

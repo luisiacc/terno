@@ -46,6 +46,13 @@ describe("plan 161, pass 2: one AI error, in plain words, never an address", () 
     expect(missing).toEqual({ title: "Ollama doesn’t have that model", help: "It’s running, but the model isn’t there. Choose another in AI settings.", settings: true });
   });
 
+  it("plan 162: a key without permission says so, with where to fix it, never as a rejected key", () => {
+    const copy = aiErrorCopy({ message: "OpenAI refused this request for your key: it doesn’t have permission.", kind: "auth", key: "errors.ai.noPermission" }, cloud);
+    expect(copy).toEqual({ title: "OpenAI refused this request for your key: it doesn’t have permission", help: "Check the key’s access in OpenAI’s console, or pick another model in Settings → AI.", settings: true });
+    setLocale("es", es as never);
+    expect(aiErrorCopy({ message: "x", kind: "auth", key: "errors.ai.noPermission" }, cloud)).toEqual({ title: "OpenAI rechazó esta petición para tu clave: no tiene permiso", help: "Revisa el acceso de la clave en la consola de OpenAI o elige otro modelo en Ajustes → IA.", settings: true });
+  });
+
   it("the app's own sentence, with no address, is shown as it is", () => {
     expect(aiErrorCopy({ message: "The model declined to write this.", kind: "refused" }, ollama)).toMatchObject({ title: "The model declined to write this", help: "Rephrase it, or try another model." });
     expect(aiErrorCopy({ message: "This conversation keeps changing. Try again in a moment.", kind: undefined }, ollama)).toMatchObject({ title: "This conversation keeps changing. Try again in a moment", help: null, settings: false });

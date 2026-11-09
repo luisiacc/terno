@@ -239,8 +239,8 @@ export default function DigestPage() {
   const done = batches?.length ? { count: batches.reduce((n, b) => n + b.ids.length, 0), undo: batches.at(-1)!.undo } : null;
   const finished = done !== null;
   // plan 162 (Codex review): a provider that answered with an error is stored apart from one out of reach
-  const answered = row.errorKind === "provider_error" ? "errors.ai.providerError" : row.errorKind === "provider_not_found" ? "errors.ai.notFound" : undefined;
-  const failure = row.state === "failed" ? aiErrorCopy({ message: answered ? "" : t("today.digest.failed"), kind: (answered ? "unavailable" : row.errorKind) as never, key: answered }, ai ? errorTarget(digestTarget(ai).provider, ai) : null) : null;
+  const answered = row.errorKind === "provider_error" ? "errors.ai.providerError" : row.errorKind === "provider_not_found" ? "errors.ai.notFound" : row.errorKind === "provider_no_permission" ? "errors.ai.noPermission" : undefined;
+  const failure = row.state === "failed" ? aiErrorCopy({ message: answered ? "" : t("today.digest.failed"), kind: (answered ? (answered === "errors.ai.noPermission" ? "auth" : "unavailable") : row.errorKind) as never, key: answered }, ai ? errorTarget(digestTarget(ai).provider, ai) : null) : null;
   return (
     // ai-r03: the pane scrolls, bounded to the reader's height, and the page is a column in it. The page itself scrolled
     // with no height to scroll in, so it grew past the window and the parent clipped its last rows (every style, since

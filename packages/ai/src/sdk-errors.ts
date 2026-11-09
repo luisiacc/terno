@@ -16,6 +16,18 @@ function causes(error: unknown): unknown[] {
   return chain;
 }
 
+/**
+ * The key is valid but may not do this (plan 162): Anthropic's `permission_error`, OpenAI's `permission_denied` and
+ * `insufficient_permissions`, Gemini's `PERMISSION_DENIED` (on its OpenAI-compatible endpoint), each as its docs name it.
+ */
+const NO_PERMISSION = /\b(?:permission_error|permission_denied|insufficient_permissions)\b/i;
+
+/** the codes a Stainless APIError carries: OpenAI's `code` and `type`, Anthropic's `type`, and the body's own `status` (Gemini) */
+function codesOf(error: { code?: unknown; type?: unknown; error?: unknown }): string {
+  const body = (error.error ?? {}) as { type?: unknown; status?: unknown; error?: { type?: unknown; status?: unknown } };
+  return [error.code, error.type, body.type, body.status, body.error?.type, body.error?.status].filter((c) => typeof c === "string").join(" ");
+}
+
 /** A schema the server can't (or won't) honour: the ladder downgrades instead of failing. */
 const UNSUPPORTED_OUTPUT = /response_format|json_schema|json_object|structured output|schema|grammar/i;
 
@@ -74,7 +86,10 @@ export function mapSdkError(error: unknown, sdk: SdkErrors, info: ErrorInfo): Ai
   if (error instanceof sdk.APIConnectionError) return connectionError(chain, info);
   if (error instanceof sdk.APIError) {
     const status = error.status;
-    if (status === 401 || status === 403) return new AiError(L("errors.ai.keyRejected", { provider: info.label }), "auth");
+    // a key without permission is told apart from a rejected one: its fix is the key's access or another model. The kind
+    // stays auth, so what pauses on a bad key still does; the words have their own key
+    if (status === 403 || NO_PERMISSION.test(codesOf(error as never))) return new AiError(L("errors.ai.noPermission", { provider: info.label }), "auth");
+    if (status === 401) return new AiError(L("errors.ai.keyRejected", { provider: info.label }), "auth");
     // out of credit reads like a rate limit, but waiting won't help: automatic work must stop, and the user needs to know
     if (status === 429 && /insufficient_quota|credit_balance|credit balance|billing/i.test(`${(error as { code?: string }).code ?? ""} ${(error as { type?: string }).type ?? ""} ${error.message}`)) return new AiError(L("errors.ai.noCredit", { provider: info.label }), "auth");
     if (status === 400 && /credit balance/i.test(error.message)) return new AiError(L("errors.ai.noCredit", { provider: info.label }), "auth");

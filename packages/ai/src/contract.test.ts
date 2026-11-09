@@ -90,7 +90,7 @@ const openaiDialect = (chatPath: string): Dialect => ({
     choices: [{ index: 0, finish_reason: stop === "length" ? "length" : "stop", message: { role: "assistant", content: stop === "refusal" ? null : text, refusal: stop === "refusal" ? "I can't help with that." : null } }],
     usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
   }),
-  error: (status, message) => ({ error: { message, type: status === 401 ? "invalid_request_error" : "error", code: null } }),
+  error: (status, message) => ({ error: { message, type: status === 401 ? "invalid_request_error" : "error", code: status === 403 ? "permission_denied" : null } }),
   system: (b) => b.messages[0].content,
   structured: (b) => b.response_format?.type === "json_schema",
   lastUser: (b) => b.messages.at(-1).content,
@@ -108,7 +108,7 @@ const anthropicDialect: Dialect = {
     stop_sequence: null,
     usage: { input_tokens: 10, output_tokens: 10 },
   }),
-  error: (status, message) => ({ type: "error", error: { type: status === 401 ? "authentication_error" : status === 429 ? "rate_limit_error" : "invalid_request_error", message } }),
+  error: (status, message) => ({ type: "error", error: { type: status === 401 ? "authentication_error" : status === 403 ? "permission_error" : status === 429 ? "rate_limit_error" : "invalid_request_error", message } }),
   system: (b) => b.system,
   structured: (b) => b.output_config?.format?.type === "json_schema",
   lastUser: (b) => b.messages.at(-1).content,
@@ -163,7 +163,12 @@ function describeProviderContract(c: Contract) {
 
     it("maps 401 to auth", async () => {
       chat(() => ({ status: 401, json: c.dialect.error(401, "bad key") }));
-      await expect(createAi(config()).generateFilter("x", ctx)).rejects.toMatchObject({ kind: "auth" });
+      await expect(createAi(config()).generateFilter("x", ctx)).rejects.toMatchObject({ kind: "auth", i18n: { key: "errors.ai.keyRejected" } });
+    });
+
+    it("maps 403 to a key without permission, still auth (plan 162)", async () => {
+      chat(() => ({ status: 403, json: c.dialect.error(403, "not allowed") }));
+      await expect(createAi(config()).generateFilter("x", ctx)).rejects.toMatchObject({ kind: "auth", i18n: { key: "errors.ai.noPermission" } });
     });
 
     it("maps 429 to rate_limited after honouring retry-after", async () => {

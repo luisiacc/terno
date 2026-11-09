@@ -175,6 +175,39 @@ describe("plan 162: an error the server answered with", () => {
   });
 });
 
+describe("plan 162: a key without permission", () => {
+  const anthropic = { label: "Claude (Anthropic)", local: false, host: "api.anthropic.com" };
+  const openai = { label: "OpenAI", local: false, host: "api.openai.com" };
+  const map = async (sdk: "anthropic" | "openai", status: number, body: unknown) => {
+    const { mapSdkError } = await import("./sdk-errors");
+    const Sdk = sdk === "anthropic" ? (await import("@anthropic-ai/sdk")).default : (await import("openai")).default;
+    return mapSdkError(Sdk.APIError.generate(status, body as never, undefined, new Headers()), Sdk as never, sdk === "anthropic" ? anthropic : openai);
+  };
+
+  it("a 403 says the key may not do this, kept an auth error so what pauses on a bad key still does", async () => {
+    const e = await map("openai", 403, { error: { message: "nope", type: "invalid_request_error", code: null } });
+    expect(e.kind).toBe("auth");
+    expect(e.i18n?.key).toBe("errors.ai.noPermission");
+    expect(e.message).toBe("OpenAI refused this request for your key: it doesn’t have permission.");
+    expect((await map("anthropic", 403, { type: "error", error: { type: "permission_error", message: "nope" } })).i18n?.key).toBe("errors.ai.noPermission");
+  });
+
+  it("each provider's documented permission code says so, whatever the status", async () => {
+    expect((await map("anthropic", 401, { type: "error", error: { type: "permission_error", message: "nope" } })).i18n?.key).toBe("errors.ai.noPermission");
+    expect((await map("openai", 401, { error: { message: "nope", type: "invalid_request_error", code: "permission_denied" } })).i18n?.key).toBe("errors.ai.noPermission");
+    expect((await map("openai", 401, { error: { message: "Missing scopes: model.request", type: "insufficient_permissions", code: null } })).i18n?.key).toBe("errors.ai.noPermission");
+    // Gemini's OpenAI-compatible endpoint: its own error, `status` PERMISSION_DENIED
+    expect((await map("openai", 400, { error: { code: 403, message: "nope", status: "PERMISSION_DENIED" } })).i18n?.key).toBe("errors.ai.noPermission");
+  });
+
+  it("a 401 is still a rejected key", async () => {
+    const e = await map("openai", 401, { error: { message: "Incorrect API key provided", type: "invalid_request_error", code: "invalid_api_key" } });
+    expect(e).toMatchObject({ kind: "auth", message: "OpenAI rejected the API key." });
+    expect(e.i18n?.key).toBe("errors.ai.keyRejected");
+    expect((await map("anthropic", 401, { type: "error", error: { type: "authentication_error", message: "invalid x-api-key" } })).i18n?.key).toBe("errors.ai.keyRejected");
+  });
+});
+
 describe("prices", () => {
   it("knows what the defaults cost, and says nothing about what it doesn't know", () => {
     expect(costOf("gpt-6-luna", { inputTokens: 1_000_000, outputTokens: 0 })).toBeCloseTo(0.1, 6);
