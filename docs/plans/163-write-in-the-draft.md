@@ -269,3 +269,24 @@ Rewrite on a selection (plan 133's "right after"). Filling gaps in mail the AI d
 - "sounds good, see you friday" reads as an email (expanded beside it, with Replace) rather than written up in place. Safe, but one more click for someone who meant it as a note.
 - A gap's fill is tinted in the primary's 12% wash: it reads clearly through its underline, the tint itself faintly in Lumen light.
 - No `a03b`: a rated fill state would change the set every round is gated on.
+
+## Owner's answers (2026-11-08)
+
+The owner answered "Left for the owner" above:
+
+1. **Unclear text starts writing at once.** When the rules can't tell an instruction from the user's own email, ⌘J no longer waits for the fast model's read before the first word.
+   - **Design.** The draft is asked at once, as the instruction's own request (`instruction` = what was typed: the rules' notes, said in their voice with nothing added). That request is right if the text is an instruction, and still their words if it's an email. Asking it as `draft` would be wrong: the rules keep a draft's words "as close as you can", so an instruction would come back as itself. The read (`ai.readDraft`) is asked alongside. The stream shows below their words (`notes`, so nothing is dimmed or replaced) until the read answers.
+   - **Where it lands:** an instruction with nothing typed since is replaced in one step, and the strip keeps it as what was asked. An email, a failed read, or text typed meanwhile gets the draft beside it with Replace (the safe default). An answer that comes before the read waits in view, over nothing. A read that confirms a gap in their email drops the draft and fills only the gap.
+   - The intent step ("who is it for") isn't asked on this path: unsure text names nobody by the rules.
+   - **Where:** `writeWhileReading` and `readAside` in `apps/web/src/lib/ai-draft.ts`; `finished` and `stop` read `run.read`.
+   - **On real models** (`ai-draft-body.smoke.ts`, Pro's routing, times from the press): first visible change on unsure text **0.62 to 0.88 s** over two runs, the second on the final code (was 1.38 to 2.11 s with the read first), done 1.15 to 1.55 s. Instructions 0.67 to 0.69 s, fills 0.54 to 0.66 s, as before. The readings didn't change: "please decline politely, I'm away that week" replaced; "sounds good, see you friday", "Friday works for me. Can you send me the address of the flat?" and the longer note landed beside, with Replace. The smoke spent US$0.021 and US$0.026.
+   - **Tests** (`ai-draft.test.ts`, each failing without the change): writing starts at once with the read alongside; the read says instruction before the answer, which then replaces the text; the answer comes before the read and waits, then lands as the read says, in both orders; a failed read or typing meanwhile leaves it beside; a confirmed gap stops the draft and fills only the gap.
+   - **Codex review** (two rounds, every finding fixed with a regression test):
+     1. Stop on a held answer inserted a copy without its checks.
+     2. A typed-into choice lost Replace.
+     3. A run started again once the message's text arrived dropped the read.
+     4. Stop after an instruction verdict put what came below the instruction.
+     5. A read that answered while the text downloaded was copied back as pending.
+     6. A restarted run compared against its own document, not the one the read judged, so words typed while downloading could be replaced.
+2. **"sounds good, see you friday" read as an email,** drafted beside with Replace: the owner says that's fine. No change.
+3. **The fill's tint, a step stronger:** the primary at **15%** (the wash the date picker and Ask already use), underline kept. The contrast suite's pair moved with it: the ink holds on a composer's card, tint and background in every palette (`contrast.test.ts`). Looked at, filled, in all five designs, light and dark, on the stub (`/tmp/terno-scratch/ai-redesign/fill-tint/sheet-stub.png`), and on real models in Lumen light and dark (`lumen-{light,dark}-real-filled*.png`, US$0.022). It reads as filled without shouting.

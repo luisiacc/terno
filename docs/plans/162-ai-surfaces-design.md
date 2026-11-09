@@ -863,3 +863,47 @@ Four findings, all taken, each with a test that fails without its fix:
 - **Showing the AI check's left-out rows by default** in the list (unticked, under the kept ones). Clearer to review, but the list then holds more rows than its title counts. Kept behind Show for now.
 - **The summary prompt (v6)** now asks for a question as asked and a to-do as a verb phrase, so real models write "What do you think about the pricing-page changes?". It's the same call; cached summaries are refreshed once by the version bump. Keep?
 - Still open from before: Save as the primary in Rules is now main's (the owner's call), so that one is settled.
+
+### Rebased onto main (owner's decisions 3: no per-use consent)
+
+Rebased onto `154b31225`. Main's six commits win wherever they overlap: no per-use consent on any AI surface (plan 131), with Settings → AI and Dev mode saying where mail goes, and "Write a follow-up" for "Draft a nudge".
+
+- **Dropped: `5afbfb404`** ("one consent on every AI surface"). With nothing left to ask, the shared `AiConsent` (`ai-consent.tsx`) goes, with every use of it:
+  - the summary's, ⌘J's "telling" line, Ask's, the action check's, and Study my style's;
+  - `e2e/helpers/consent.ts` and the consent-shape tests (`4a7d4236b` keeps only its "no count while the check waits" test);
+  - the keys `ai.consent.*`, `*.consentShort`, `aiDraft.tellingShort`, `aiDraft.telling`, `aiDraft.study.{question,consent,tokens,cost,drafts,confirm,decline,agreed}`, `summary.consent`, `ask.consent` and `action.consent*`, in en and es.
+- **How the conflicts went:**
+  - **Kept the redesign** in Ask (the one error, the scope line, one scroll region), the action pane (the one error, What it found, the folded reading), the summary card, and Writing style (Show the notes).
+  - **Dropped the consent blocks** from those surfaces, with `consent` state in `useAsk` and `useActionPreview`, `acknowledge` on `check`, and plan 163's first-use step in ⌘J's body flow (`telling`, `pendingAct`, the per-endpoint "told" key).
+  - **Study my style:** main's row (no consent; its hint says what goes, mail to other people included, so the redesign's shorter hint gives way), with the redesign's Show the notes after it.
+  - **The follow-up card:** the redesign's states ("Writing your follow-up…", es "Escribiendo tu seguimiento…") in main's words ("Open your follow-up").
+  - **The capture:** main's no-Continue flow, with plan 163's `a02`/`a03` (the instruction typed in the body, ⌘J).
+- **Fixed after the rebase:**
+  - ⌘J's send guard read a `telling` phase that no longer exists;
+  - plan 163's `recipientsAuto` came back and went again;
+  - main's `ai-no-consent.spec` drove the old ⌘J row, and now types in the body;
+  - main's `local-ai.spec` still read the old privacy line;
+  - plan 163's fill schema message lacked its `i18n-ignore`;
+  - the v6 summary prompt overflowed a 2000-token window (the conversation's floor is 200 tokens now; the version test says 6);
+  - the `ai-draft-body` smoke still clicked the first-use prompt.
+- **Leftovers searched** (`rg -n -i consent apps packages scripts`, plus `telling|acknowledge…|AiConsent|ai-draft-told`): what remains is unrelated (Google sign-in, remote images, error reports) or asserts that the prompts are gone (`ai-no-consent.spec`'s selectors).
+- **Codex review** of the rebased diff against the old head and main (consent leftovers, lost changes, copy): no findings.
+- **Results:**
+  - Typecheck and lint clean.
+  - The touched units pass.
+  - e2e on the stub passes in `e2e` and the four designs' tagged flows: `ai-no-consent`, `ai-draft`, `summaries`, `ask`, `plain-actions`, `followups`, `replies-ready`, `today`, `filters`, `dev-mode`, `design-axe`, `visual`, `local-ai`.
+  - `test:ui-perf` 45 passed.
+  - The real-model smoke and the build pass.
+  - The frozen capture on real models (Lumen and Graphite, light and dark, 34 shots each, no consent anywhere, US$0.145): `/tmp/terno-scratch/ai-redesign/rebased/`.
+  - **`pnpm test:all`** (837 s): lint, build, typecheck, db-wasm, web, smoke, ui-perf and startup passed. Three gates failed:
+    - **unit:** the two summary tests above, fixed since;
+    - **e2e:** `local-ai`, main's own miss, fixed since. `print`, `review-row-actions` and Luma's `icons` failed only on the crowded first pass: flaky;
+    - **perf:** `idb.perf`'s 500,000-thread export and `incoming-inline` failed under a load average of about 12 from other sessions, and pass alone. Flaky on a busy machine.
+
+### Owner's answers (2026-11-08)
+
+- **Left-out rows stay behind Show** ("no"). No change.
+- **The summary's new wording (v6) stays** ("yes"), though every conversation is summarized again once. No change; its prompt now fits a 2000-token window again (above).
+- **The AI filter's consent** (the open question above) is moot: no surface asks first now (plan 131).
+- **The model the key can't use:** not built; see plan 161's "Owner's answers".
+- ⌘J on unclear text, "sounds good" read as an email, and the fill's tint: plan 163's "Owner's answers".

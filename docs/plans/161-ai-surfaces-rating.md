@@ -1384,3 +1384,16 @@ After the fixes, a second real capture, light and dark (`/tmp/terno-scratch/real
 **Save in Rules (owner, 2026-11-08):** Save is the main button for every rule, by hand or by AI; "Save and apply to N conversations" is the outlined second choice, before it. `filters.spec.ts` holds the order and weight; the two `filters-ai` baselines moved.
 
 **"Draft a nudge" renamed (owner, 2026-11-08):** "i don't think anybody knows what 'draft a nudge' is." The follow-up's button is "Write a follow-up" (es "Escribir un seguimiento"); once drafted, "Open your follow-up" ("Abrir tu seguimiento"); the AI setting "Nudge after" is "Bring it back after" ("Volver a mostrar tras"); the tip says the same. Test ids and keys keep "nudge".
+
+## Owner's answers (2026-11-08)
+
+1. **⌘J on text the rules can't place** writes at once, and the fast read decides alongside whether the draft replaces it or goes beside it with Replace. Never over the user's words without an "instruction" verdict. Plan 163's "Owner's answers" has the design, the numbers (first word 0.62 to 0.88 s, was 1.38 to 2.11 s) and the tests.
+2. **"sounds good, see you friday" drafted beside, with Replace:** fine as it is.
+3. **A fill's tint** a step stronger: the primary's 15% wash, underline kept, in every design (plan 163).
+4. **"<Provider> doesn't have <model> on your account. Pick another model in Settings → AI."** for a model the key can't use: **not built**, because the providers' documentation doesn't say what it would build on, and the owner's rule is never to build on undocumented behaviour.
+   - **OpenAI's** error-code page (developers.openai.com/api/docs/guides/error-codes) lists no 404 and no `model_not_found`. That code and its "does not exist or you do not have access to it" message appear only in community posts.
+   - **Anthropic's** errors page (platform.claude.com/docs/en/api/errors) documents 403 `permission_error` as "Your API key does not have permission to use the specified resource", and 404 `not_found_error` as "The requested resource was not found. Check the endpoint path and any resource IDs". Neither says model access.
+   - So a 401 still says the key was rejected, and a 404 still says "model or endpoint not found" with the provider's own detail.
+   - What would let it be built: a documented code for model access (OpenAI's API reference, or a model's own page saying the key's project can't use it). Or the owner's call to word the documented 403 as what the docs say: "<Provider> says your key doesn't have permission for this request. Check your account's access, or pick another model in Settings → AI".
+5. **Left-out rows stay behind Show.** No change.
+6. **The summary's new wording stays.** No change (plan 162).
