@@ -14,13 +14,16 @@ let served: DigestRow | null = null;
 // the archive's answer, when the page asks for one
 let archived = { undoId: 5 as number | null, archived: 0, archivedIds: [] as number[], changed: 0, spared: 0 };
 let undoFails = false;
+// plan 166: what the list's cap dropped, when the page says a sender isn't a newsletter
+let evicted: { id: string; email: string; name: string; at: number }[] = [];
 const calls: { method: string; params: unknown }[] = [];
 vi.mock("~/rpc/connection", () => ({
   client: {
     call: vi.fn(async (method: string, params: unknown) => {
       calls.push({ method, params });
       if (method === "today.digestArchive") return archived;
-      if (method === "today.notNewsletter") return { added: { ...(params as object), at: 7 }, evicted: null };
+      if (method === "today.notNewsletter") return { added: { ...(params as object), id: "e7", at: 7 }, evicted: evicted };
+      if (method === "today.notNewslettersUndo") return { restored: 1 };
       if (method === "today.newsletterAgain") return { removed: { email: (params as { email: string }).email, name: "x", at: 7 } };
       if (method === "threads.undo") {
         if (undoFails) throw new Error("That can no longer be undone.");
@@ -350,7 +353,7 @@ describe("plan 166: Not a newsletter", () => {
     await act(async () => host.querySelector<HTMLElement>("[data-testid=digest-tick-all]")!.click());
     expect(useSnack.getState().current!.message).toBe("Sender 2 won't be in your digest");
     await undoSnack();
-    expect(calls.find((c) => c.method === "today.newsletterAgain")!.params).toEqual({ email: "news@sender2.test", at: 7 });
+    expect(calls.find((c) => c.method === "today.notNewslettersUndo")!.params).toEqual({ remove: { email: "news@sender2.test", id: "e7" }, restore: [] });
     await act(async () => useToday.setState({ digest: digestOf("2026-10-22") }));
     expect(senders()).toEqual(["Sender 1", "Sender 2", "Sender 3"]);
     expect(ticks()).toEqual([true, false, true]);
@@ -374,6 +377,24 @@ describe("plan 166: Not a newsletter", () => {
     expect(getApp().menuOpen).toBe(false);
     await act(async () => new Promise<void>((r) => requestAnimationFrame(() => r())));
     expect(document.activeElement).toBe(host.querySelector("[data-digest-open='2']"));
+  });
+
+  it("Codex review: a sender the cap dropped isn't hidden here any more, Undo hides it again; a long name is kept to 200", async () => {
+    await show(digestOf("2026-10-22"));
+    useToday.setState({ notNewsletters: new Set(["news@sender3.test"]) });
+    evicted = [{ id: "e3", email: "news@sender3.test", name: "Sender 3", at: 1 }];
+    try {
+      await act(async () => useToday.setState({ digest: { ...digestOf("2026-10-22"), items: [1, 2, 3].map((id) => ({ ...item(id), from: id === 1 ? "N".repeat(300) : `Sender ${id}` })) } }));
+      calls.length = 0;
+      await act(async () => host.querySelectorAll<HTMLElement>("[data-testid=digest-not-newsletter]")[0]!.click());
+      expect((calls.find((c) => c.method === "today.notNewsletter")!.params as { name: string }).name).toHaveLength(200);
+      expect([...useToday.getState().notNewsletters]).toEqual(["news@sender1.test"]);
+      await undoSnack();
+      expect(calls.find((c) => c.method === "today.notNewslettersUndo")!.params).toEqual({ remove: { email: "news@sender1.test", id: "e7" }, restore: evicted });
+      expect([...useToday.getState().notNewsletters]).toEqual(["news@sender3.test"]);
+    } finally {
+      evicted = [];
+    }
   });
 
   it("automated mail has neither: nothing there has said these are newsletters", async () => {

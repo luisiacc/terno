@@ -1481,6 +1481,7 @@ export function createHandlers(b: Backend): Handlers {
     "today.digestArchive": (p) => b.today.archive(p),
     "today.notNewsletter": (p) => b.today.notNewsletter(p),
     "today.newsletterAgain": (p) => b.today.newsletterAgain(p),
+    "today.notNewslettersUndo": (p) => b.today.notNewslettersUndo(p),
     "today.notNewsletters": async () => ({ senders: await b.today.notNewsletters() }),
     "ai.prepareReply": (p, ctx) => b.replies.prepare(p, ctx.clientId),
     "ai.replyLeave": async (p, ctx) => {

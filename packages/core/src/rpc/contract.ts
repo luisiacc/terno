@@ -1191,9 +1191,14 @@ export const contract = {
    * Plan 166: "Not a newsletter": this sender stays out of every digest and Automated mail, on this machine. No model,
    * no check. `at` puts back an entry an Undo took off, where it was. `evicted`: the oldest, dropped at the cap.
    */
-  "today.notNewsletter": m<{ added: NotNewsletter | null; evicted: NotNewsletter | null }>()(z.object({ email: z.string().trim().min(3).max(320), name: z.string().max(200), at: z.number().int().optional() })),
-  /** Plan 166: let a sender back in. `at`: only that entry (an Undo's), so an old Undo can't take off one said again since */
-  "today.newsletterAgain": m<{ removed: NotNewsletter | null }>()(z.object({ email: z.string().trim().min(3).max(320), at: z.number().int().optional() })),
+  "today.notNewsletter": m<{ added: NotNewsletter | null; evicted: NotNewsletter[] }>()(z.object({ email: z.string().trim().min(3).max(320), /** kept to its first 200 characters */ name: z.string().max(2000) })),
+  /** Plan 166: let a sender back in. `id`: only that entry */
+  "today.newsletterAgain": m<{ removed: NotNewsletter | null }>()(z.object({ email: z.string().trim().min(3).max(320), id: z.string().min(1).max(64).optional() })),
+  /**
+   * Plan 166: an Undo, in one unit (Codex review): take off the entry it added (that one only, by `id`) and put back
+   * what it took off or the cap dropped, each as it was. Putting back may go past the cap by what it restores.
+   */
+  "today.notNewslettersUndo": m<{ restored: number }>()(z.object({ remove: z.object({ email: z.string().max(320), id: z.string().min(1).max(64) }).optional(), restore: z.array(z.object({ id: z.string().min(1).max(64), email: z.string().trim().min(3).max(320), name: z.string().max(2000), at: z.number().int() })).max(10).default([]) })),
   /** Plan 166: the senders kept out, newest first: Settings → AI → Newsletter digest */
   "today.notNewsletters": m<{ senders: NotNewsletter[] }>()(empty),
   /**

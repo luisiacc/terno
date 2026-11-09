@@ -213,8 +213,11 @@ test.describe("Today (plan 145)", () => {
       const results = await new AxeBuilder({ page }).include("[data-testid=ai-digest]").analyze();
       expect(results.violations.map((v) => `${mode} ${v.id}: ${v.nodes[0]?.html.slice(0, 120)}`)).toEqual([]);
     }
-    await excluded.getByTestId("ai-digest-excluded-remove").click();
+    // by keyboard: the last one gone, the keys land on the digest's switch, not the dialog (Codex review)
+    await excluded.getByTestId("ai-digest-excluded-remove").focus();
+    await page.keyboard.press("Enter");
     await expect(page.getByTestId("ai-digest-excluded")).toHaveCount(0);
+    await expect(page.getByTestId("ai-digest-switch")).toBeFocused();
     await expect(page.getByTestId("snack").filter({ hasText: "Morning Brew can be in the digest again" })).toBeVisible();
   });
 

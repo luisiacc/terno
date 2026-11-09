@@ -117,11 +117,16 @@ export interface DigestItem {
 
 /** Plan 166: a sender the user said isn't a newsletter. Kept on this machine, out of every digest and Automated mail. */
 export interface NotNewsletter {
+  /** this entry, never another's: what an Undo names (a time can repeat, Codex review) */
+  id: string;
   email: string;
   name: string;
-  /** when it was said: the list's order, and which entry an Undo is for */
+  /** when it was said: the list's order */
   at: number;
 }
+
+/** Plan 166: how much of a sender's name the list keeps. */
+export const NOT_NEWSLETTER_NAME_MAX = 200;
 
 /** Plan 166: the list keeps this many; past it, the oldest goes (and its Undo brings it back). */
 export const NOT_NEWSLETTERS_MAX = 500;

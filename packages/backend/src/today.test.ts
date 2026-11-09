@@ -433,7 +433,7 @@ describe("the digest", () => {
       // any case, any +tag: one sender
       const r = await t.client.call("today.notNewsletter", { email: "News+weekly@Stratechery.test", name: "Stratechery" });
       expect(r.added).toMatchObject({ email: "News+weekly@Stratechery.test", name: "Stratechery" });
-      expect(r.evicted).toBeNull();
+      expect(r.evicted).toEqual([]);
       const after = (await t.client.call("today.digest", {}))!;
       expect(after.items.map((i) => i.threadId)).toEqual([brew]);
       expect(after.liveIds).toEqual([brew]);
@@ -442,9 +442,9 @@ describe("the digest", () => {
       // said twice, it's one entry, and the second adds nothing for its Undo to take
       expect((await t.client.call("today.notNewsletter", { email: "news@stratechery.test", name: "S" })).added).toBeNull();
       expect((await t.client.call("today.notNewsletters", {})).senders.map((e) => e.email)).toEqual(["News+weekly@Stratechery.test"]);
-      // an Undo for another entry (an older one, said again since) takes nothing off
-      expect((await t.client.call("today.newsletterAgain", { email: "news@stratechery.test", at: r.added!.at - 1 })).removed).toBeNull();
-      expect((await t.client.call("today.newsletterAgain", { email: "news@stratechery.test", at: r.added!.at })).removed).toMatchObject({ name: "Stratechery" });
+      // the snack's Undo, by the entry's id
+      await t.client.call("today.notNewslettersUndo", { remove: { email: r.added!.email, id: r.added!.id }, restore: [] });
+      expect((await t.client.call("today.notNewsletters", {})).senders).toEqual([]);
       expect((await t.client.call("today.digest", {}))!.items.map((i) => i.threadId)).toEqual([strat, brew]);
       // no model was asked about any of it
       expect(t.model.reqs).toHaveLength(1);
@@ -520,25 +520,49 @@ describe("the digest", () => {
       expect((await t.backend.store.filters.actionFacts([b]))[0]!.inInbox).toBe(true);
     });
 
-    it("at the cap the oldest goes and is said, so Undo can put it back; two at once lose neither", async () => {
+    it("at the cap the oldest goes and is said; Undo, in one unit, puts it back even if the slot was filled meanwhile (Codex review)", async () => {
       const t = await setup();
-      const full = Array.from({ length: 500 }, (_, i) => ({ email: `s${i}@x.test`, name: `S${i}`, at: 1000 + i }));
+      const full = Array.from({ length: 500 }, (_, i) => ({ id: `e${i}`, email: `s${i}@x.test`, name: `S${i}`, at: 1000 + i }));
       await t.backend.store.settings.set("today:notNewsletters", full);
       const r = await t.client.call("today.notNewsletter", { email: "new@x.test", name: "New" });
-      expect(r.evicted).toEqual(full[0]);
+      expect(r.evicted).toEqual([full[0]]);
       let list = (await t.client.call("today.notNewsletters", {})).senders;
       expect(list).toHaveLength(500);
       expect(list[0]!.email).toBe("new@x.test");
-      // the snack's Undo: off what it added, back what it dropped, where it was
-      await t.client.call("today.newsletterAgain", { email: "new@x.test", at: r.added!.at });
-      await t.client.call("today.notNewsletter", r.evicted!);
+      // another window says another sender meanwhile: it takes the slot New will free
+      const other = await t.client.call("today.notNewsletter", { email: "other@x.test", name: "Other" });
+      expect(other.evicted).toEqual([full[1]]);
+      // the snack's Undo: off what it added, back what it dropped, as it was, in one unit: S0 isn't dropped again
+      expect(await t.client.call("today.notNewslettersUndo", { remove: { email: "new@x.test", id: r.added!.id }, restore: r.evicted })).toEqual({ restored: 1 });
       list = (await t.client.call("today.notNewsletters", {})).senders;
-      expect(list.map((e) => e.email).sort()).toEqual(full.map((e) => e.email).sort());
-      expect(list.at(-1)).toEqual(full[0]);
-      // one unit each: two said at once are both kept
-      await t.backend.store.settings.set("today:notNewsletters", []);
+      expect(list.some((e) => e.email === "new@x.test")).toBe(false);
+      expect(list.find((e) => e.email === "s0@x.test")).toEqual(full[0]);
+      expect(list).toHaveLength(500);
+      // the next one said trims back to the cap, the oldest first
+      const next = await t.client.call("today.notNewsletter", { email: "next@x.test", name: "Next" });
+      expect(next.evicted).toEqual([full[0]]);
+    });
+
+    it("an old Undo can't take off a sender removed and said again since, even within one millisecond (Codex review)", async () => {
+      const t = await setup();
+      const first = await t.client.call("today.notNewsletter", { email: "a@x.test", name: "A" });
+      // Settings' Remove, then said again from the digest, the clock unmoved
+      await t.client.call("today.newsletterAgain", { email: "a@x.test", id: first.added!.id });
+      const again = await t.client.call("today.notNewsletter", { email: "a@x.test", name: "A" });
+      expect(again.added!.at).toBe(first.added!.at);
+      expect(again.added!.id).not.toBe(first.added!.id);
+      await t.client.call("today.notNewslettersUndo", { remove: { email: "a@x.test", id: first.added!.id }, restore: [] });
+      expect((await t.client.call("today.notNewsletters", {})).senders.map((e) => e.id)).toEqual([again.added!.id]);
+      // and a Remove's Undo doesn't list a sender twice
+      expect(await t.client.call("today.notNewslettersUndo", { restore: [first.added!] })).toEqual({ restored: 0 });
+    });
+
+    it("two said at once are both kept; a name past 200 characters is kept to 200", async () => {
+      const t = await setup();
       await Promise.all([t.client.call("today.notNewsletter", { email: "a@x.test", name: "A" }), t.client.call("today.notNewsletter", { email: "b@x.test", name: "B" })]);
       expect((await t.client.call("today.notNewsletters", {})).senders.map((e) => e.email).sort()).toEqual(["a@x.test", "b@x.test"]);
+      const long = await t.client.call("today.notNewsletter", { email: "c@x.test", name: "N".repeat(400) });
+      expect(long.added!.name).toHaveLength(200);
     });
 
     it("with the digest off, Automated mail leaves it too, and a scan begun before isn't kept", async () => {

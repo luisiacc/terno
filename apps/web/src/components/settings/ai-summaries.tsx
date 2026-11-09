@@ -305,18 +305,19 @@ function NotNewslettersRow() {
     const key = senderKey({ fromEmail: e.email });
     // the keys go to the next sender's Remove (else the one before): the row they were on is gone
     const buttons = [...(list.current?.querySelectorAll<HTMLElement>("[data-testid=ai-digest-excluded-remove]") ?? [])];
-    const next = buttons[at + 1] ?? buttons[at - 1];
+    // the last one gone, the list goes with it: the digest's switch above it (Codex review: focus fell to the dialog)
+    const next = buttons[at + 1] ?? buttons[at - 1] ?? document.querySelector<HTMLElement>("[data-testid=ai-digest-switch]");
     setSenders((held) => held && held.filter((x) => x !== e));
     next?.focus({ preventScroll: true });
     try {
-      const r = await client.call("today.newsletterAgain", { email: e.email, at: e.at });
+      const r = await client.call("today.newsletterAgain", { email: e.email, id: e.id });
       letBackIn(key);
       void reloadList({ keepSelection: true });
       if (!r.removed) return;
       const removed = r.removed;
       const undo = registerUndo(async () => {
-        // back where it was: its own time, so the list's order is as before
-        await client.call("today.notNewsletter", removed);
+        // back as it was (its own time, so the list's order is as before), in one unit
+        await client.call("today.notNewslettersUndo", { restore: [removed] });
         leaveOut(key);
         await reloadList({ keepSelection: true });
       });
@@ -331,7 +332,7 @@ function NotNewslettersRow() {
       {(a) => (
         <ul ref={list} aria-labelledby={a["aria-labelledby"]} aria-describedby={a["aria-describedby"]} className="flex flex-col">
           {senders.map((e, i) => (
-            <li key={`${e.email}-${e.at}`} className="flex min-h-9 items-center gap-3 border-b border-hairline py-1 last:border-b-0" data-testid="ai-digest-excluded-item">
+            <li key={e.id} className="flex min-h-9 items-center gap-3 border-b border-hairline py-1 last:border-b-0" data-testid="ai-digest-excluded-item">
               <span className="min-w-0 flex-1 truncate text-sm">
                 <span className="font-medium">{nameOf(e)}</span>
                 {e.name && e.name !== e.email && <span className="ml-2 text-xs text-muted-foreground">{e.email}</span>}

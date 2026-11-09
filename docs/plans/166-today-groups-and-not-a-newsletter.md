@@ -1,6 +1,6 @@
 # Plan 166: Today's two groups, and "Not a newsletter"
 
-- **Status:** planned (on the AI redesign branch, `t3/ai-surfaces-redesign`).
+- **Status:** built on the AI redesign branch (`t3/ai-surfaces-redesign`), code-reviewed (see the last sections). "Revisions after the Codex review" and "What the code review changed" override the sections before them.
 - **Builds on:** plan 145 (Today and the digest), plan 161 and 162 (the redesigned Today and digest page), plan 17 (waiting), plan 142 (follow-ups).
 
 ## The request
@@ -114,3 +114,24 @@ Codex (read-only, `/tmp/terno-scratch/p164/today/critique.out`) raised 11 points
 9. **The control isn't inside the open button.** The row's first line is laid out with Open and the control as siblings; the control's click neither opens nor marks read (tested).
 10. **Not taken: holding a live row's group.** A row still in Needs you that changes group while open (a due promise on a waiting thread) moves, as a live row already moves when its order changes (a newer message); revision 9 holds rows that leave. Rare, and holding it would put a row under a heading that no longer says why it's there.
 11. **Perf:** the list is read once per scan and checked with a set. The new `senders` read is in the `today-perf` conformance gate at 50k in both stores.
+
+## What building it changed
+
+- **No `today.perf.test.ts` exists:** Today's gate is `measureToday` in both stores' `workloads.perf.test.ts` (plan 145). It holds: at 50k, waitingPage p95 5.9 ms (SQL) and 3.8 ms (IDB); `senders` 0.04 and 0.01 ms.
+- **A held row stays in its own group.** A row left at a group's first place sat under the next group's heading; one whose group emptied had none. `flattenToday` places it inside its group's range, and gives a gone group its heading back for it (`today.test`).
+- **Automated mail isn't emptied for a moment by a change:** its cached scan stays, filtered at read, and is marked stale (found by the backend test: the row vanished until the rescan).
+- **The row's menu** is a `ContextMenu` per row (`data-context-menu`, so ⇧F10 on the row opens it). Its "Not a newsletter" removes the row and the menu with it, so it gives the page's keys back itself (`menuOpen`), and "Open" has the envelope beside it so the two labels share a column (seen in the shots).
+- **The control** sits over the date's place at the chevron's inset (`top-1.5 right-8`), the date `invisible` while it shows; the row keeps its hover fill while the pointer is on the control.
+- **Settings:** the list is a stacked row in the Newsletter digest group, each sender a name, its address quiet, and a `CloseButton`.
+- **Strings:** `today.needsYou`, `today.why.yourTurn` and `today.why.newFrom` went (unused); `today.group.*`, `today.digest.notNewsletter*` and `today.digest.excluded.*` came, en and es.
+- **Shots** on real models (Lumen and macOS, light and dark): `/tmp/terno-scratch/p164/today/shots/`, with `index.md`.
+
+## What the code review changed
+
+Codex (read-only, `git diff 023d22b61..HEAD`, `/tmp/terno-scratch/p164/today/review-1.out`): 5 points, all fixed, each with a test that fails without it.
+
+1. **Undo at the cap wasn't one unit.** Two calls (take off, put back) let another window fill the freed slot between them, and the restored entry was dropped again. `today.notNewslettersUndo` does both in one `settings.update`; putting back may go past the cap by what it restores, and the next addition trims back, oldest first (`today.test`, the interleaving).
+2. **A sender the cap dropped stayed hidden in the renderer.** The page lets it back in (`letBackIn`) when the backend says it was dropped, and its Undo hides it again (`digest-page.test`).
+3. **An entry's time isn't its identity.** Removed and said again in the same millisecond, an old Undo took off the new entry. Each entry has an `id` (a UUID); Undo and Remove name it (`today.test`).
+4. **A name past 200 characters was refused,** so the control failed on it. The page sends the first 200, and the RPC takes up to 2,000 and keeps 200 (`today.test`, `digest-page.test`).
+5. **Removing the last sender lost the keys** to the dialog. They go to the digest's switch above (`today.spec`, by keyboard).

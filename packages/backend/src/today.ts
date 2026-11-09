@@ -9,6 +9,7 @@ import {
   DIGEST_WINDOW_MS,
   findCode,
   languageName,
+  NOT_NEWSLETTER_NAME_MAX,
   NOT_NEWSLETTERS_MAX,
   todayKey,
   nextPrepareAt,
@@ -375,20 +376,20 @@ export class TodayService {
     return [...(await this.readNotNewsletters())].sort((a, b) => b.at - a.at);
   }
 
-  /** A sender out of every digest. One unit, so two at once can't lose one; at the cap the oldest goes, and is said. */
-  async notNewsletter(p: { email: string; name: string; at?: number }): Promise<{ added: NotNewsletter | null; evicted: NotNewsletter | null }> {
+  /** A sender out of every digest. One unit, so two at once can't lose one; at the cap the oldest go, and are said. */
+  async notNewsletter(p: { email: string; name: string }): Promise<{ added: NotNewsletter | null; evicted: NotNewsletter[] }> {
     const key = addressKey(p.email);
     const now = this.b.now();
-    const r = await this.b.store.settings.update<NotNewsletter[], { added: NotNewsletter | null; evicted: NotNewsletter | null }>(NOT_NEWSLETTERS_KEY, [], (list) => {
-      if (list.some((e) => addressKey(e.email) === key)) return { value: list, result: { added: null, evicted: null } };
-      // `at` names the entry for its Undo: never one another entry has
-      const at = p.at ?? Math.max(now, ...list.map((e) => e.at + 1));
-      const added: NotNewsletter = { email: p.email.trim(), name: p.name.trim().slice(0, 200), at };
-      let value = [...list, added];
-      let evicted: NotNewsletter | null = null;
-      if (value.length > NOT_NEWSLETTERS_MAX) {
-        evicted = value.reduce((oldest, e) => (e.at < oldest.at ? e : oldest));
-        value = value.filter((e) => e !== evicted);
+    const r = await this.b.store.settings.update<NotNewsletter[], { added: NotNewsletter | null; evicted: NotNewsletter[] }>(NOT_NEWSLETTERS_KEY, [], (list) => {
+      if (list.some((e) => addressKey(e.email) === key)) return { value: list, result: { added: null, evicted: [] } };
+      const added: NotNewsletter = { id: globalThis.crypto.randomUUID(), email: p.email.trim(), name: p.name.trim().slice(0, NOT_NEWSLETTER_NAME_MAX), at: now };
+      const value = [...list, added];
+      const evicted: NotNewsletter[] = [];
+      // the oldest first (an Undo's restore may have left it one over)
+      while (value.length > NOT_NEWSLETTERS_MAX) {
+        const oldest = value.reduce((a, e) => (e.at < a.at ? e : a));
+        evicted.push(oldest);
+        value.splice(value.indexOf(oldest), 1);
       }
       return { value, result: { added, evicted } };
     });
@@ -396,15 +397,36 @@ export class TodayService {
     return r;
   }
 
-  /** A sender back in. With `at`, only that entry: an old Undo can't take off a sender said again since. */
-  async newsletterAgain(p: { email: string; at?: number }): Promise<{ removed: NotNewsletter | null }> {
+  /** A sender back in. With `id`, only that entry. */
+  async newsletterAgain(p: { email: string; id?: string }): Promise<{ removed: NotNewsletter | null }> {
     const key = addressKey(p.email);
     const r = await this.b.store.settings.update<NotNewsletter[], NotNewsletter | null>(NOT_NEWSLETTERS_KEY, [], (list) => {
-      const found = list.find((e) => addressKey(e.email) === key && (p.at === undefined || e.at === p.at)) ?? null;
+      const found = list.find((e) => addressKey(e.email) === key && (p.id === undefined || e.id === p.id)) ?? null;
       return { value: found ? list.filter((e) => e !== found) : list, result: found };
     });
     if (r) this.exclusionsChanged();
     return { removed: r };
+  }
+
+  /**
+   * An Undo, whole in one unit: off what it added (only that entry, an old Undo can't take off one said again since), and
+   * back what it took off or the cap dropped, as they were. A sender listed again meanwhile isn't listed twice.
+   */
+  async notNewslettersUndo(p: { remove?: { email: string; id: string }; restore: readonly NotNewsletter[] }): Promise<{ restored: number }> {
+    const r = await this.b.store.settings.update<NotNewsletter[], { changed: boolean; restored: number }>(NOT_NEWSLETTERS_KEY, [], (list) => {
+      let value = p.remove ? list.filter((e) => e.id !== p.remove!.id) : [...list];
+      let changed = value.length !== list.length;
+      let restored = 0;
+      for (const e of p.restore) {
+        if (value.some((x) => addressKey(x.email) === addressKey(e.email))) continue;
+        value = [...value, { ...e, name: e.name.slice(0, NOT_NEWSLETTER_NAME_MAX) }];
+        restored++;
+        changed = true;
+      }
+      return { value, result: { changed, restored } };
+    });
+    if (r.changed) this.exclusionsChanged();
+    return { restored: r.restored };
   }
 
   /** What's shown reads the list again: the page, Today's header and Settings follow the event. */

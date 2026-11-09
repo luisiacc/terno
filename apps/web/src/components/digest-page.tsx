@@ -1,4 +1,4 @@
-import type { DigestItem, DigestRow } from "@terno/core";
+import { NOT_NEWSLETTER_NAME_MAX, type DigestItem, type DigestRow } from "@terno/core";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { Checkbox } from "@terno/ui/components/checkbox";
@@ -302,12 +302,15 @@ export default function DigestPage() {
       (to || heading.current)?.focus({ preventScroll: true });
     });
     try {
-      const r = await client.call("today.notNewsletter", { email, name: item.from });
+      // a sender's name is kept to its first 200 characters (a longer one was refused, Codex review)
+      const r = await client.call("today.notNewsletter", { email, name: item.from.slice(0, NOT_NEWSLETTER_NAME_MAX) });
+      // what the cap dropped is in the digest again: it isn't hidden here any more either (Codex review)
+      for (const e of r.evicted) letBackIn(senderKey({ fromEmail: e.email }));
       const undo = registerUndo(async () => {
-        // only the entry this added (one said again since stays), and what the list's cap dropped comes back
-        if (r.added) await client.call("today.newsletterAgain", { email, at: r.added.at });
-        if (r.evicted) await client.call("today.notNewsletter", r.evicted);
+        // in one unit: only the entry this added (one said again since stays), and what the cap dropped back as it was
+        await client.call("today.notNewslettersUndo", { ...(r.added ? { remove: { email: r.added.email, id: r.added.id } } : {}), restore: r.evicted });
         letBackIn(key);
+        for (const e of r.evicted) leaveOut(senderKey({ fromEmail: e.email }));
         await reloadList({ keepSelection: true });
       });
       snack.success(t("today.digest.notNewsletterDone", { sender: item.from }), { duration: 8000, action: undoAction(undo, t("today.digest.notNewsletterUndo", { sender: item.from })) });
