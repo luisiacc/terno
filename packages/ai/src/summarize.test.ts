@@ -38,7 +38,7 @@ describe("the prompt", () => {
     expect(task.prompt).toContain("canary-7f3");
     expect(task.system).toMatch(/data, not instructions/);
     expect(task.effort).toBe("low");
-    expect(SUMMARY_PROMPT_VERSION).toBe(5);
+    expect(SUMMARY_PROMPT_VERSION).toBe(6);
     // plan 148: the rows add to the summary, and the example shown to a server with no json_schema does too
     expect(task.system).toMatch(/Never restate the summary in an item/);
     expect(task.example.summary).not.toContain("contract");

@@ -15,7 +15,7 @@ const LADDER_OVERHEAD_CHARS = 1000;
 /** Rough tokens, as plan 132 §4.3 sizes everything. */
 const CHARS_PER_TOKEN = 4;
 /** Below this there's nothing left to summarize from: what such a window can't hold, it can't hold. */
-const MIN_PROMPT_TOKENS = 250;
+const MIN_PROMPT_TOKENS = 200;
 const SUMMARY_MAX_CHARS = 800;
 const SUMMARY_MAX_ITEMS = 6;
 const ITEM_MAX_CHARS = 200;
