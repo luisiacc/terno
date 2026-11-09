@@ -624,6 +624,7 @@ const es = {
   "filters.ai.fromRequest": "De tu petición",
   "filters.ai.provenance": "Convirtió tu petición en la regla de abajo, y puede equivocarse. Revisa las condiciones y las coincidencias antes de guardar.",
   "filters.ai.editRequest": "Cambiar la petición",
+  "filters.ai.writing": "Escribiendo la regla…",
   "filters.say.rule": "{conditions} → {actions}.",
   "filters.say.archive": "archivar",
   "filters.say.trash": "borrar",

@@ -170,6 +170,39 @@ test.describe("AI filters and learned filters", () => {
       await page.keyboard.press("Escape");
       await page.setViewportSize({ width: 1440, height: 900 });
     });
+    await scenario("plan 162 (after ai162-r05): while Create with AI writes, the rule's fields wait, dimmed and inert, and the box says so", async () => {
+      await freshStart(page);
+      // the model held, so its working state stays on screen
+      const handlers = (server.backend.server as unknown as { handlers: Record<string, (...a: unknown[]) => unknown> }).handlers;
+      const original = handlers["filters.generate"]!;
+      let release!: () => void;
+      const gate = new Promise<void>((r) => (release = r));
+      handlers["filters.generate"] = async (...args: unknown[]) => (await gate, original(...args));
+      try {
+        await page.getByTestId("open-filters").click();
+        await page.getByTestId("ai-prompt").fill("archiva los correos de uber.com");
+        await page.getByTestId("ai-generate").click();
+        const fields = page.getByTestId("filter-fields");
+        await expect(page.getByTestId("ai-writing")).toHaveText("Writing the rule…");
+        await expect(fields).toHaveAttribute("aria-busy", "true");
+        await expect(fields).toHaveAttribute("inert", "");
+        await expect(fields).toHaveCSS("opacity", "0.5");
+        await expect(page.getByTestId("filter-save")).toBeDisabled();
+        // inert: a click on the defaults under it reaches nothing
+        await page.getByTestId("action-toggle-star").click({ force: true });
+        await expect(page.getByTestId("action-toggle-star")).toHaveAttribute("aria-pressed", "false");
+        release();
+        await expect(page.getByTestId("ai-explanation")).toBeVisible();
+        await expect(fields).not.toHaveAttribute("inert");
+        await expect(fields).not.toHaveAttribute("aria-busy");
+        await expect(fields).toHaveCSS("opacity", "1");
+        await expect(page.getByTestId("filter-save")).toBeEnabled();
+      } finally {
+        release();
+        handlers["filters.generate"] = original;
+      }
+      await page.keyboard.press("Escape");
+    });
     await scenario("with AI off there is no AI box: rules are built by hand", async () => {
       await freshStart(page);
       await server.backend.server.invoke("settings.update", { ai: { provider: "none" } }, { clientId: "setup", origin: "dev" });

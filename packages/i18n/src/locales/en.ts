@@ -631,6 +631,7 @@ const en = {
   "filters.ai.fromRequest": "From your request",
   "filters.ai.provenance": "It turned your request into the rule below, and can misread it. Check the conditions and the matches before you save.",
   "filters.ai.editRequest": "Edit request",
+  "filters.ai.writing": "Writing the rule…",
   "filters.say.rule": "{conditions} → {actions}.",
   "filters.say.archive": "archive",
   "filters.say.trash": "delete",

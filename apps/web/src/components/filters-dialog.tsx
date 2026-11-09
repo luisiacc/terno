@@ -782,10 +782,13 @@ export function FiltersDialog() {
                   </>
                 ) : (
                   <>
-                    <label className={AI_HEADER} htmlFor="ai-prompt">
+                    <div className={AI_HEADER}>
                       <Sparkles aria-hidden className={AI_GLYPH} />
-                      <span className={AI_TITLE}>{t("filters.ai.label")}</span>
-                    </label>
+                      <label className={AI_TITLE} htmlFor="ai-prompt">{t("filters.ai.label")}</label>
+                      {/* plan 162 (after ai162-r05): while it writes, the box says so in words (the rule's fields below wait);
+                          the button's spinner stays the one moving mark */}
+                      <span role="status" className="ms-auto truncate" data-testid="ai-writing">{generating ? t("filters.ai.writing") : ""}</span>
+                    </div>
                     <div className="flex gap-2">
                       <Textarea
                         ref={promptRef}
@@ -817,102 +820,106 @@ export function FiltersDialog() {
               </div>
             )}
 
-            {/* pass 3: the name's label beside its field, a line less above the matches */}
-            <div className="flex items-center gap-3">
-              <label className="shrink-0 text-xs font-medium text-muted-foreground" htmlFor="filter-name">
-                {t("filters.name")}
-              </label>
-              <Input id="filter-name" data-testid="filter-name" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder={t("filters.name.placeholder")} />
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 text-sm">
-                <span>{t("filters.match.before")}</span>
-                <Select value={rule.match} onValueChange={(m) => setRule({ ...rule, match: m as "all" | "any" })} items={[{ value: "all", label: t("filters.match.all") }, { value: "any", label: t("filters.match.any") }]}>
-                  <SelectTrigger size="sm" className="w-24" aria-label={t("filters.match.label")}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">{t("filters.match.all")}</SelectItem>
-                    <SelectItem value="any">{t("filters.match.any")}</SelectItem>
-                  </SelectContent>
-                </Select>
-                <span>{t("filters.match.after")}</span>
+            {/* plan 162 (after ai162-r05): while the AI writes the rule, its fields wait, dimmed and out of reach: the
+                defaults under it read as the rule being proposed */}
+            <div inert={generating} aria-busy={generating || undefined} data-testid="filter-fields" className={cn("space-y-4 transition-opacity duration-fast", generating && "opacity-50")}>
+              {/* pass 3: the name's label beside its field, a line less above the matches */}
+              <div className="flex items-center gap-3">
+                <label className="shrink-0 text-xs font-medium text-muted-foreground" htmlFor="filter-name">
+                  {t("filters.name")}
+                </label>
+                <Input id="filter-name" data-testid="filter-name" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder={t("filters.name.placeholder")} />
               </div>
-              <div className="space-y-1.5 rounded-lg border border-border p-2.5">
-                {rule.conditions.map((c, i) => (
-                  <ConditionRow
-                    key={i}
-                    c={c}
-                    onChange={(next) => setRule({ ...rule, conditions: rule.conditions.map((x, j) => (j === i ? next : x)) })}
-                    onRemove={rule.conditions.length > 1 ? () => setRule({ ...rule, conditions: rule.conditions.filter((_, j) => j !== i) }) : undefined}
-                  />
-                ))}
-                <Button variant="ghost" size="xs" className="text-muted-foreground" data-testid="add-condition" onClick={() => setRule({ ...rule, conditions: [...rule.conditions, { field: "subject", op: "contains", value: "" }] })}>
-                  <Plus /> {t("filters.addCondition")}
-                </Button>
-              </div>
-            </div>
 
-            <div className="space-y-2">
-              <p className="text-sm">{t("filters.then")}</p>
-              <div className="flex flex-wrap items-center gap-1.5">
-                {ACTIONS.map(({ type, label, icon: Icon }) => (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-sm">
+                  <span>{t("filters.match.before")}</span>
+                  <Select value={rule.match} onValueChange={(m) => setRule({ ...rule, match: m as "all" | "any" })} items={[{ value: "all", label: t("filters.match.all") }, { value: "any", label: t("filters.match.any") }]}>
+                    <SelectTrigger size="sm" className="w-24" aria-label={t("filters.match.label")}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">{t("filters.match.all")}</SelectItem>
+                      <SelectItem value="any">{t("filters.match.any")}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <span>{t("filters.match.after")}</span>
+                </div>
+                <div className="space-y-1.5 rounded-lg border border-border p-2.5">
+                  {rule.conditions.map((c, i) => (
+                    <ConditionRow
+                      key={i}
+                      c={c}
+                      onChange={(next) => setRule({ ...rule, conditions: rule.conditions.map((x, j) => (j === i ? next : x)) })}
+                      onRemove={rule.conditions.length > 1 ? () => setRule({ ...rule, conditions: rule.conditions.filter((_, j) => j !== i) }) : undefined}
+                    />
+                  ))}
+                  <Button variant="ghost" size="xs" className="text-muted-foreground" data-testid="add-condition" onClick={() => setRule({ ...rule, conditions: [...rule.conditions, { field: "subject", op: "contains", value: "" }] })}>
+                    <Plus /> {t("filters.addCondition")}
+                  </Button>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-sm">{t("filters.then")}</p>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {ACTIONS.map(({ type, label, icon: Icon }) => (
+                    <button
+                      key={type}
+                      type="button"
+                      data-testid={`action-toggle-${type}`}
+                      aria-pressed={hasAction(type)}
+                      onClick={() => toggleAction(type)}
+                      className={cn(
+                        "inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-xs transition-colors",
+                        // plan 162 (after ai162-r01): chosen is outlined in the ink, medium (a faint tint was 1.1:1 in Graphite)
+                        hasAction(type) ? "border-foreground font-medium text-foreground" : "border-border text-muted-foreground hover:bg-muted",
+                      )}
+                    >
+                      {/* plan 161: chosen says so with a check, not only a fill (Graphite's sat at 1.2:1) */}
+                      {hasAction(type) ? <Check className="size-3.5" data-testid="action-chosen" /> : <Icon className="size-3.5" />} {t(label)}
+                    </button>
+                  ))}
                   <button
-                    key={type}
                     type="button"
-                    data-testid={`action-toggle-${type}`}
-                    aria-pressed={hasAction(type)}
-                    onClick={() => toggleAction(type)}
+                    data-testid="action-toggle-forward"
+                    aria-pressed={Boolean(forwardAction)}
+                    onClick={() => setForward(forwardAction ? null : [])}
                     className={cn(
                       "inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-xs transition-colors",
-                      // plan 162 (after ai162-r01): chosen is outlined in the ink, medium (a faint tint was 1.1:1 in Graphite)
-                      hasAction(type) ? "border-foreground font-medium text-foreground" : "border-border text-muted-foreground hover:bg-muted",
+                      forwardAction ? "border-foreground font-medium text-foreground" : "border-border text-muted-foreground hover:bg-muted",
                     )}
                   >
-                    {/* plan 161: chosen says so with a check, not only a fill (Graphite's sat at 1.2:1) */}
-                    {hasAction(type) ? <Check className="size-3.5" data-testid="action-chosen" /> : <Icon className="size-3.5" />} {t(label)}
+                    {forwardAction ? <Check className="size-3.5" data-testid="action-chosen" /> : <Forward className="size-3.5" />} {t("filters.action.forward")}
                   </button>
-                ))}
-                <button
-                  type="button"
-                  data-testid="action-toggle-forward"
-                  aria-pressed={Boolean(forwardAction)}
-                  onClick={() => setForward(forwardAction ? null : [])}
-                  className={cn(
-                    "inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-xs transition-colors",
-                    forwardAction ? "border-foreground font-medium text-foreground" : "border-border text-muted-foreground hover:bg-muted",
-                  )}
-                >
-                  {forwardAction ? <Check className="size-3.5" data-testid="action-chosen" /> : <Forward className="size-3.5" />} {t("filters.action.forward")}
-                </button>
-                <Select
-                  value={categoryAction ? String(categoryAction.categoryId) : "none"}
-                  onValueChange={(v) =>
-                    setRule({ ...rule, actions: [...rule.actions.filter((a) => a.type !== "addCategory"), ...(v === "none" ? [] : [{ type: "addCategory" as const, categoryId: Number(v) }])] })
-                  }
-                  items={[{ value: "none", label: t("filters.noCategory") }, ...categories.map((c) => ({ value: String(c.id), label: c.name }))]}
-                >
-                  <SelectTrigger size="sm" className={cn("h-7 text-xs", categoryAction && "border-foreground font-medium")} data-testid="action-category-select" aria-label={t("filters.category.label")}>
-                    <Tag className="size-3.5" />
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">{t("filters.noCategory")}</SelectItem>
-                    {categories.map((c) => (
-                      <SelectItem key={c.id} value={String(c.id)}>
-                        <CategoryDot color={c.color as CategoryColor} /> {c.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  <Select
+                    value={categoryAction ? String(categoryAction.categoryId) : "none"}
+                    onValueChange={(v) =>
+                      setRule({ ...rule, actions: [...rule.actions.filter((a) => a.type !== "addCategory"), ...(v === "none" ? [] : [{ type: "addCategory" as const, categoryId: Number(v) }])] })
+                    }
+                    items={[{ value: "none", label: t("filters.noCategory") }, ...categories.map((c) => ({ value: String(c.id), label: c.name }))]}
+                  >
+                    <SelectTrigger size="sm" className={cn("h-7 text-xs", categoryAction && "border-foreground font-medium")} data-testid="action-category-select" aria-label={t("filters.category.label")}>
+                      <Tag className="size-3.5" />
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">{t("filters.noCategory")}</SelectItem>
+                      {categories.map((c) => (
+                        <SelectItem key={c.id} value={String(c.id)}>
+                          <CategoryDot color={c.color as CategoryColor} /> {c.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <FolderAction action={folderAction} rule={rule} onChange={setFolder} />
+                {forwardAction && <ForwardTo key={loads} to={forwardAction.to} onChange={(to) => setForward(to)} paused={Boolean(filters.find((f) => f.id === draft.id)?.forwardPaused)} />}
+                {attempted && !valid.success && <p role="alert" className="text-xs text-destructive-ink" data-testid="filter-invalid">{t(filterIssueKey(valid.error.issues))}</p>}
               </div>
-              <FolderAction action={folderAction} rule={rule} onChange={setFolder} />
-              {forwardAction && <ForwardTo key={loads} to={forwardAction.to} onChange={(to) => setForward(to)} paused={Boolean(filters.find((f) => f.id === draft.id)?.forwardPaused)} />}
-              {attempted && !valid.success && <p role="alert" className="text-xs text-destructive-ink" data-testid="filter-invalid">{t(filterIssueKey(valid.error.issues))}</p>}
-            </div>
 
-            <Preview rule={rule} note={note} onCount={setMatches} />
+              <Preview rule={rule} note={note} onCount={setMatches} />
+            </div>
           </div>
           <div className="flex shrink-0 items-center gap-2 border-t border-border px-6 py-3">
             {/* the AI card says who wrote it while it shows the rule; a saved AI rule says it here */}
@@ -938,15 +945,15 @@ export function FiltersDialog() {
               </>
             )}
             {/* the owner's call (2026-11-08): Save is the main button, for every rule, by hand or by AI; applying it to mail
-                already here is the second choice, its consequence in its words */}
+                already here is the second choice, its consequence in its words. Both wait while the AI writes the rule */}
             <div className="ml-auto flex gap-2">
-              <Button variant="outline" className="text-foreground" data-testid="filter-save-apply" disabled={saving} onClick={() => (confirmApply ? setConfirming("apply") : save(true))}>
+              <Button variant="outline" className="text-foreground" data-testid="filter-save-apply" disabled={saving || generating} onClick={() => (confirmApply ? setConfirming("apply") : save(true))}>
                 {/* pass 2: the consequence in its words: how many it will touch, once counted */}
                 {matches ? t("filters.saveApplyCount", { count: matches }) : t("filters.saveApply")}
               </Button>
               {/* plan 162 (after ai162-r02): each says its scope (Save's, new mail only, was left to be inferred). After
                   ai162-r03: a rule for everything has no primary, and asks once more */}
-              <Button variant={vacuous ? "outline" : "default"} className={cn(vacuous && "text-foreground")} data-testid="filter-save" disabled={saving} onClick={() => (vacuous ? setConfirming("save") : save(false))}>
+              <Button variant={vacuous ? "outline" : "default"} className={cn(vacuous && "text-foreground")} data-testid="filter-save" disabled={saving || generating} onClick={() => (vacuous ? setConfirming("save") : save(false))}>
                 {t("filters.saveNew")}
               </Button>
               <ConfirmDialog
