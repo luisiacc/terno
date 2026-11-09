@@ -51,7 +51,8 @@ import { SelectionBar } from "./selection-bar";
 import ActionPreviewHeader from "./action-preview-header";
 import { renderProbe } from "~/lib/render-probe";
 import { LIST_TITLE } from "~/lib/list-title";
-import { listCovered, openThread, usePage } from "~/lib/page";
+import { listCovered, usePage } from "~/lib/page";
+import { pressRow, releaseRow } from "~/lib/select";
 
 /** plan 87: the Inbox top's label and the gap after it (px; a row's height comes from the design) */
 /**
@@ -99,7 +100,11 @@ export function TodayDigestEntry({ inline }: { /** List's full-width title row: 
         inline ? "max-w-[40cqw] shrink-0" : "-ms-3 w-[calc(100%+0.75rem)]",
         selected ? "bg-row-selected text-row-selected-foreground" : "text-muted-foreground hover:bg-row-hover hover:text-foreground",
       )}
-      onClick={() => openThread(DIGEST_ROW_ID)}
+      // the ordinary row's press and release (Codex review): a bulk selection ends, as opening any row ends it
+      onClick={() => {
+        pressRow(DIGEST_ROW_ID, { meta: false, ctrl: false, shift: false });
+        releaseRow(DIGEST_ROW_ID);
+      }}
     >
       <Newspaper aria-hidden className="size-[1.15em] shrink-0" />
       <span className="sr-only">{t("today.newsletters")}, </span>

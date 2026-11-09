@@ -76,6 +76,8 @@ export interface RunSpec {
   notes?: string;
   /** Regenerate: replaces what the strip's run wrote, as a fresh take */
   regenerate?: boolean;
+  /** plan 162 (after ai162-r02, Codex review): that fresh take is from an edited instruction, not Regenerate's same one */
+  edited?: boolean;
 }
 
 interface Run {
@@ -118,8 +120,8 @@ export interface AiCommit {
 export type CommitHow = "draft" | "regenerate" | "shorter" | "warmer" | "rewrite";
 
 /** What a run made, from what it was asked: a first draft, a fresh take, or a rewrite of the text that was there. */
-export const commitHow = (spec: Pick<RunSpec, "kind" | "instruction" | "regenerate">): CommitHow =>
-  spec.kind !== "refine" ? "draft" : spec.regenerate ? "regenerate" : spec.instruction === SHORTER ? "shorter" : spec.instruction === WARMER ? "warmer" : "rewrite";
+export const commitHow = (spec: Pick<RunSpec, "kind" | "instruction" | "regenerate" | "edited">): CommitHow =>
+  spec.kind !== "refine" ? "draft" : spec.regenerate ? (spec.edited ? "rewrite" : "regenerate") : spec.instruction === SHORTER ? "shorter" : spec.instruction === WARMER ? "warmer" : "rewrite";
 
 export interface AiStrip {
   used: Extract<AiComposeResult, { status: "done" }>["used"];
@@ -989,7 +991,8 @@ function specOf(strip: AiStrip, r: Replacement, key: string): RunSpec {
     case "regenerate":
     case "rewrite": {
       const instruction = r.how === "rewrite" ? r.instruction : strip.instruction;
-      return strip.notes !== undefined ? { kind: "refine", instruction, notes: strip.notes, regenerate: true } : { kind: "refine", instruction, regenerate: true };
+      const edited = r.how === "rewrite" ? { edited: true } : {};
+      return strip.notes !== undefined ? { kind: "refine", instruction, notes: strip.notes, regenerate: true, ...edited } : { kind: "refine", instruction, regenerate: true, ...edited };
     }
     case "shorter":
     case "warmer":
@@ -1117,15 +1120,16 @@ function undoEdited(key: string, s: AiSession & { strip: AiStrip }, top: AiCommi
     left = { ...was, stack, ...versionOf(under), edited: !c.sameDoc(under.doc) };
     update(key, { strip: left });
     recordProvenance(key, bodyNow(key));
-  } else if (was.stopped && !preparedDrafts.has(key)) {
-    // plan 161, pass 3: a stopped write gives the field its instruction back, as its unedited Undo does
-    update(key, { phase: "input", instruction: was.instruction, strip: null, rewrite: false, live: "" });
+  } else if (!preparedDrafts.has(key)) {
+    // plan 161, pass 3: a stopped write gives the field its instruction back, as its unedited Undo does. Plan 162 (after
+    // ai162-r02, Codex review): so does any first write taken back after an edit, the keys in the field with it
+    update(key, { phase: "input", instruction: was.instruction, strip: null, rewrite: false, live: "", focus: s.focus + 1 });
   } else {
     remove(key);
     // the draft stays, even blank: what was typed is one Undo away (the unedited Undo forgets a blank one)
-    if (preparedDrafts.has(key)) backToNothing(key);
+    backToNothing(key);
   }
-  focusEditor(key);
+  if (left || preparedDrafts.has(key) || !session(key)) focusEditor(key);
   // nothing typed (an editor rebuilt without its history, or ⌘Z already past it): nothing to bring back
   if (!typed) return;
   const r: Restore = { edited, restored: restored.doc, strip: { ...was, edited: true }, left, subject, opened: s.opened, lastSpec: s.lastSpec, back: false };

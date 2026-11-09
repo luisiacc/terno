@@ -359,6 +359,19 @@ test.describe("Today (plan 145)", () => {
     for (let i = 0; i < 3; i++) expect(db.get<{ n: number }>("SELECT in_inbox n FROM threads WHERE subject = ?", await subjectOf(i))!.n).toBe(1);
   });
 
+  test("plan 162 (after ai162-r02, Codex review): the digest's way in ends a bulk selection, as opening any row does", async ({ app: page, server }) => {
+    await withMail(server);
+    await settingUp(page, server, { ai: { provider: "fake", model: "demo" }, today: { digest: true, prepareAt: "00:00" } });
+    await page.getByTestId("nav-today").click();
+    await expect(page.getByTestId("digest-row")).toContainText("today's digest", { timeout: 15_000 });
+    await page.getByTestId("thread-row").nth(0).click({ modifiers: ["ControlOrMeta"] });
+    await page.getByTestId("thread-row").nth(1).click({ modifiers: ["ControlOrMeta"] });
+    await expect(page.locator('[data-keep-scroll="list"] [data-checked]')).not.toHaveCount(0);
+    await page.getByTestId("digest-row").click();
+    await expect(page.getByTestId("digest-page")).toBeVisible();
+    await expect(page.locator('[data-keep-scroll="list"] [data-checked]')).toHaveCount(0);
+  });
+
   test("ai-r03: the digest scrolls in its pane, so its last row and its box are reachable by the wheel in a short window", async ({ app: page, server }) => {
     await withMail(server);
     await settingUp(page, server, { ai: { provider: "fake", model: "demo" }, today: { digest: true, prepareAt: "00:00" } });
@@ -399,5 +412,24 @@ test.describe("Today (plan 145)", () => {
     await page.locator('[data-keep-scroll="list"]').focus();
     await page.keyboard.press("ControlOrMeta+a");
     await expect(page.getByTestId("digest-row")).not.toHaveAttribute("data-checked");
+  });
+});
+
+test.describe("Today in List (plan 162, after ai162-r02, Codex review)", () => {
+  test.use({ layout: "list" });
+  test("the digest is a page over the list: Esc closes it, back to the list at its way in", async ({ app: page, server }) => {
+    await withMail(server);
+    await settingUp(page, server, { ai: { provider: "fake", model: "demo" }, today: { digest: true, prepareAt: "00:00" } });
+    await page.getByTestId("nav-today").click();
+    await expect(page.getByTestId("digest-row")).toContainText("today's digest", { timeout: 15_000 });
+    await page.getByTestId("digest-row").click();
+    await expect(page.getByTestId("digest-page")).toBeVisible();
+    // its keys while it's open: j moves its cursor, not the list under it
+    await expect(page.getByTestId("digest-open").first()).toBeFocused();
+    await page.keyboard.press("j");
+    await expect(page.getByTestId("digest-open").nth(1)).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("digest-page")).toHaveCount(0);
+    await expect(page.getByTestId("digest-row")).toBeVisible();
   });
 });

@@ -119,7 +119,8 @@ export default function DigestPage() {
   const live = (i: DigestItem) => liveIds === null || liveIds.has(i.threadId);
   const opened = (i: DigestItem) => openedHere?.has(i.threadId) === true;
   // one keep state: unticked or opened stays (plan 145: opened is read), and Archive takes only what's ticked
-  const stateOf = (i: DigestItem): DigestRowState => (live(i) ? (opened(i) ? "opened" : ticked(i) ? "archive" : "keep") : readIds.has(i.threadId) || opened(i) ? "opened" : "archived");
+  // (out of the Inbox is archived whatever was opened here: the backend's read state says which stayed, Codex review)
+  const stateOf = (i: DigestItem): DigestRowState => (live(i) ? (opened(i) ? "opened" : ticked(i) ? "archive" : "keep") : readIds.has(i.threadId) ? "opened" : "archived");
   const tickable = (i: DigestItem) => live(i) && !opened(i);
   // pass 2: what this page archived leaves it; what was archived elsewhere stays, muted and said so (plan 145)
   const archivedHere = new Set((batches ?? []).flatMap((b) => b.ids));

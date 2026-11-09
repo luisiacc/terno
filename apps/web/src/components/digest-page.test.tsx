@@ -150,6 +150,19 @@ it("plan 162 (after ai162-r02): opening one keeps it at once, before the backend
   expect(ticks()).toEqual([true, false, true]);
 });
 
+it("plan 162 (after ai162-r02, Codex review): opened here, then archived elsewhere, it says archived, not that it stays", async () => {
+  await show(digestOf("2026-10-22"));
+  const { digestKeys } = await import("~/state/today");
+  await act(async () => digestKeys.current!.step(1));
+  await act(async () => digestKeys.current!.open());
+  await unmount();
+  // archived in another window meanwhile: out of the Inbox, and not among the read ones still there
+  await show({ ...digestOf("2026-10-22"), liveIds: [1, 3], readIds: [] });
+  expect(states()).toEqual(["archive:", "archived:Archived", "archive:"]);
+  expect(host.querySelector("[data-testid=digest-count]")!.textContent).toContain("2 to archive");
+  expect(host.querySelector("[data-testid=digest-count]")!.textContent).not.toContain("stay");
+});
+
 it("pass 2: after Archive, what it archived leaves the page, the rest stays under its own heading, and Undo ends it", async () => {
   calls.length = 0;
   archived = { undoId: 5, archived: 2, archivedIds: [1, 3], changed: 0, spared: 0 };

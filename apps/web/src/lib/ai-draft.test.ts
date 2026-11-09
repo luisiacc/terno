@@ -666,7 +666,8 @@ describe("the subject: §10.3's compound undo", () => {
     store.undoCommit(key);
     expect(c.text).toBe("");
     expect(useDrafts.getState().drafts[key]!.subject).toBe("");
-    expect(session(key)).toBeUndefined();
+    // plan 162 (after ai162-r02, Codex review): the first write taken back, edited or not, leaves the field with what was asked
+    expect(session(key)).toMatchObject({ phase: "input", strip: null });
     // the draft stays, blank: what was typed is one Undo away
     expect(useDrafts.getState().drafts[key]).toBeDefined();
     const { useSnack, runUndo } = await import("./snack");
@@ -684,7 +685,8 @@ describe("the subject: §10.3's compound undo", () => {
     await tick();
     c.type(" Mine.");
     store.undoCommit(key);
-    expect(session(key)).toBeUndefined();
+    // plan 162 (after ai162-r02, Codex review): the first write taken back, edited or not, leaves the field with what was asked
+    expect(session(key)).toMatchObject({ phase: "input", strip: null });
     expect(useDrafts.getState().drafts[key]!.subject).toBe("");
     // the editor's own undo of the restore, not the snack's
     c.undoGenerated(c.doc);
@@ -817,7 +819,8 @@ describe("the subject: §10.3's compound undo", () => {
     // and that version's own Undo goes back exactly too, never through the restore's step
     store.undoCommit(key);
     expect(c.text).toBe("");
-    expect(session(key)).toBeUndefined();
+    // plan 162 (after ai162-r02, Codex review): the first write taken back, edited or not, leaves the field with what was asked
+    expect(session(key)).toMatchObject({ phase: "input", strip: null });
   });
 
   it("a subject the user wrote before is never touched", async () => {
@@ -1195,7 +1198,8 @@ describe("what the Codex review found", () => {
     store.undoCommit(key);
     expect(useDrafts.getState().drafts[key]!.bodyText).toBe("");
     expect(useDrafts.getState().drafts[key]!.subject).toBe("");
-    expect(session(key)).toBeUndefined();
+    // plan 162 (after ai162-r02, Codex review): the first write taken back, edited or not, leaves the field with what was asked
+    expect(session(key)).toMatchObject({ phase: "input", strip: null });
     rebuilt.unmount();
   });
 
@@ -1209,7 +1213,8 @@ describe("what the Codex review found", () => {
     store.undoCommit(key);
     expect(c.text).toBe("");
     expect(useDrafts.getState().drafts[key]!.subject).toBe("");
-    expect(session(key)).toBeUndefined();
+    // plan 162 (after ai162-r02, Codex review): the first write taken back, edited or not, leaves the field with what was asked
+    expect(session(key)).toMatchObject({ phase: "input", strip: null });
     const { useSnack, runUndo } = await import("./snack");
     await runUndo(useSnack.getState().undo!);
     expect(c.text).toBe("Body, and more of mine.");
@@ -1534,5 +1539,17 @@ describe("plan 161, pass 2: what the Codex review found", () => {
     await tick();
     expect(session(key)!.live).not.toMatch(/127\.0\.0\.1|60512/);
     expect(session(key)!.live).toMatch(/^Couldn’t reach /);
+  });
+});
+
+describe("plan 162 (after ai162-r02): what made a version, for Undo's name", () => {
+  it("tells Regenerate from an edited instruction's fresh take, and the rewrites apart", async () => {
+    const { commitHow, SHORTER, WARMER } = await import("./ai-draft");
+    expect(commitHow({ kind: "draft", instruction: "x" })).toBe("draft");
+    expect(commitHow({ kind: "refine", instruction: "x", regenerate: true })).toBe("regenerate");
+    expect(commitHow({ kind: "refine", instruction: "y", regenerate: true, edited: true })).toBe("rewrite");
+    expect(commitHow({ kind: "refine", instruction: SHORTER })).toBe("shorter");
+    expect(commitHow({ kind: "refine", instruction: WARMER })).toBe("warmer");
+    expect(commitHow({ kind: "refine", instruction: "make it formal" })).toBe("rewrite");
   });
 });

@@ -121,7 +121,8 @@ function escape() {
   // plan 161, pass 2: a newsletter the digest opened goes back to the digest first, as its "Back to the digest" does
   if (backToDigest()) return;
   // plan 162 (after ai162-r02): the digest page gives its keys back to the list, at the digest's way in
-  if (digestHasKeys()) return void digestKeys.current!.leave();
+  // (List's digest is a page over the list: Esc closes it as any page, back to the list, Codex review)
+  if (!(listLayout() && currentPage() !== "list") && digestHasKeys()) return void digestKeys.current!.leave();
   if (listLayout() && currentPage() !== "list") { markSelectionIntent(); closePage({ focus: true }); }
   // plan 161, pass 2: a matched conversation open in the reader closes first, back to the rule; then the preview ends
   else if (s.actionPreview) { if (listLayout() || !closePreviewRow()) leavePreview(); }
