@@ -1,5 +1,10 @@
 import { contextBridge, ipcRenderer } from "electron";
 import { MENU_COMMANDS, type MenuCommand } from "./print-commands";
+import { clockShiftOf, shiftClock } from "./window-clock";
+
+// plan 167: the demo's fixed clock, before any of the page's scripts run (main passes it only then)
+const clockShift = clockShiftOf(process.argv);
+if (clockShift !== null) contextBridge.executeInMainWorld({ func: shiftClock, args: [clockShift] });
 
 /**
  * Sandboxed preload. Only two things cross into the page: a MessagePort to the

@@ -42,6 +42,7 @@ import { registerPrint } from "./print";
 import { registerMboxExport } from "./mbox-export";
 import { isTrustedSender, testImapInsecure, testPdfDir, testSmtpPort } from "./print-policy";
 import { testClock, testDevAi, testNetLog } from "./test-hooks";
+import { clockArgs } from "./window-clock";
 import { menuTemplate } from "./menu";
 import { readLanguage, switchLanguage, writeLanguage } from "./locale";
 import type { MenuCommand } from "./print-commands";
@@ -72,6 +73,12 @@ const devAiEnv = takeDevAiEnv(process.env);
 const devMode = devModeOf({ devUrl: process.env.TERNO_DEV_URL, packaged: app.isPackaged }) || testDevAi(process.env, app.isPackaged, demo);
 /** Smoke runs open windows behind whatever the person at the machine is doing: never activated, never focused. */
 const background = process.env.TERNO_TEST_BACKGROUND === "1";
+/**
+ * Plan 161/167: the demo's fixed clock, as a shift from the real one taken once, so the backend (on every start, a restart
+ * too) and each window read the same instant and run on together. Null on every normal launch.
+ */
+const testNow = testClock(process.env, demo);
+const clockShift = testNow === null ? null : testNow - Date.now();
 /** Show a window and bring Terno forward, except in a background test run, where it only appears. */
 function present(win: BrowserWindow, focus = true): void {
   if (background) return win.showInactive();
@@ -346,7 +353,7 @@ function startBackend() {
     diag: { session: diagSession(), build: BUILD_ID, channel: mainDiag.channel },
     testSmtpPort: testSmtpPort(process.env, app.isPackaged, demo) ?? undefined,
     testImapInsecure: testImapInsecure(process.env, demo) || undefined,
-    testNow: testClock(process.env, demo) ?? undefined,
+    testNow: clockShift === null ? undefined : Date.now() + clockShift,
     testNetLog: testNetLog(process.env, demo) ?? undefined,
     // a restarted backend starts from what the network is now
     online: net.isOnline(),
@@ -678,6 +685,8 @@ function createWindow() {
       spellcheck: true,
       // render at full speed while hidden so first paint is ready when shown (t3code)
       backgroundThrottling: false,
+      // plan 167: the demo's fixed clock in the page too (window-clock.ts); nothing on a normal launch
+      additionalArguments: clockArgs(clockShift),
     },
   });
   windows.add(win);

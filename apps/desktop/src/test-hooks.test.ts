@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { NET_LOG_MAX, netRecorder, offsetClock, testClock, testDevAi, testNetLog } from "./test-hooks";
+import { demoCodeWanted, NET_LOG_MAX, netRecorder, offsetClock, testClock, testDevAi, testNetLog } from "./test-hooks";
+import { clockArgs, clockShiftOf, shiftClock } from "./window-clock";
 
 describe("plan 161: the rating's test hooks, in the demo mailbox only", () => {
   it("a normal launch reaches neither: no demo, no clock and no log, whatever the environment says", () => {
@@ -43,5 +44,53 @@ describe("plan 161: the rating's test hooks, in the demo mailbox only", () => {
     for (let i = 0; i < NET_LOG_MAX + 5; i++) record({ purpose: "icons", url: "https://x.test/", allowed: false });
     expect(lines).toHaveLength(NET_LOG_MAX + 1);
     expect(lines.at(-1)).toBe('{"overflow":true}\n');
+  });
+});
+
+describe("plan 167: the demo's fixed clock in the window", () => {
+  it("an argument only when there's a shift, read back as it was given", () => {
+    expect(clockArgs(null)).toEqual([]);
+    expect(clockShiftOf(["electron", ...clockArgs(-1_555_200_123.4)])).toBe(-1_555_200_123);
+    expect(clockShiftOf(["electron", ...clockArgs(42)])).toBe(42);
+    // a normal window has none; anything that isn't a whole number of ms is no shift
+    expect(clockShiftOf(["electron", "--type=renderer"])).toBeNull();
+    expect(clockShiftOf(["--terno-test-clock-shift=soon"])).toBeNull();
+    expect(clockShiftOf(["--terno-test-clock-shift="])).toBeNull();
+  });
+
+  it("Date and Date.now() read the shifted clock and run on; a date given stays that date", () => {
+    let real = 1_800_000_000_000;
+    class FakeReal extends Date {
+      constructor(...args: [] | [number]) {
+        super(args.length ? args[0]! : real);
+      }
+      static override now = () => real;
+    }
+    const scope = { Date: FakeReal as unknown as DateConstructor };
+    shiftClock(-1_000, scope);
+    const D = scope.Date;
+    expect(D.now()).toBe(real - 1_000);
+    expect(new D().getTime()).toBe(real - 1_000);
+    real += 5_000;
+    expect(D.now()).toBe(real - 1_000);
+    expect(new D(0).getTime()).toBe(0);
+    expect(D.UTC(2026, 9, 22)).toBe(Date.UTC(2026, 9, 22));
+    expect(new D()).toBeInstanceOf(FakeReal);
+    expect(typeof (D as unknown as () => string)()).toBe("string");
+  });
+
+  it("the shift is self-contained: it still works serialized, as executeInMainWorld sends it", () => {
+    const scope = { Date };
+    const revived = new Function(`return (${shiftClock.toString()})`)() as typeof shiftClock;
+    revived(86_400_000, scope);
+    expect(scope.Date.now() - Date.now()).toBeGreaterThan(86_399_000);
+    expect(new scope.Date().getTime() - Date.now()).toBeGreaterThan(86_399_000);
+  });
+
+  it("no sign-in code under a fixed clock: it would be a message from weeks ahead atop the Inbox", () => {
+    expect(demoCodeWanted({ demo: true, dev: true })).toBe(true);
+    expect(demoCodeWanted({ demo: true, dev: true, testNow: 1_792_683_000_000 })).toBe(false);
+    expect(demoCodeWanted({ demo: true, dev: false })).toBe(false);
+    expect(demoCodeWanted({ demo: false, dev: true })).toBe(false);
   });
 });

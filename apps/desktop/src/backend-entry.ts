@@ -14,7 +14,7 @@ import { createRegistry } from "@terno/mail/registry";
 import { loopbackInsecure } from "./imap-seam";
 import type { BackendToMain, MainToBackend } from "./ipc";
 import { Preparation } from "./mailbox/preparing";
-import { netRecorder, offsetClock } from "./test-hooks";
+import { demoCodeWanted, netRecorder, offsetClock } from "./test-hooks";
 import { settleRestored } from "./mailbox/restore";
 
 type PortMain = {
@@ -199,7 +199,7 @@ async function initialize(msg: Extract<MainToBackend, { type: "init" }>, signal:
     }
     if (signal.aborted) return;
     // `pnpm dev:demo`: a fresh verification code every launch, to try the list's code chip (plan 72); not in smokes
-    if (msg.demo && msg.dev) await seedDemoCode(backend.store, Date.now());
+    if (demoCodeWanted(msg)) await seedDemoCode(backend.store, Date.now());
     if (signal.aborted) return;
     await backend.publishPolicy();
     if (signal.aborted) return;

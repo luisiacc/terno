@@ -45,3 +45,11 @@ export function netRecorder(path: string, write: (path: string, line: string) =>
     write(path, `${JSON.stringify(written++ < NET_LOG_MAX ? decision : { overflow: true })}\n`);
   };
 }
+
+/**
+ * Plan 72's sign-in code on every dev demo launch is dated the real clock. Under the fixed one (plan 167's `dev:demo-ai`,
+ * the rating) it would be a message from weeks ahead at the top of the Inbox, so it isn't added there.
+ */
+export function demoCodeWanted(msg: { demo: boolean; dev: boolean; testNow?: number }): boolean {
+  return msg.demo && msg.dev && msg.testNow === undefined;
+}
