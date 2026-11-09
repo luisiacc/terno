@@ -629,7 +629,8 @@ describe("the subject: §10.3's compound undo", () => {
     expect(c.text).toBe("");
     expect(useDrafts.getState().drafts[key]!.subject).toBe("");
     expect(useDrafts.getState().drafts[key]!.subjectEdited).toBe(false);
-    expect(session(key)).toBeUndefined();
+    // plan 162 (after ai162-r02): the first write taken back leaves the row's field with what was asked, for Return
+    expect(session(key)).toMatchObject({ phase: "input", strip: null, instruction: "" });
   });
 
   it("neither overwrites a subject edited since", async () => {

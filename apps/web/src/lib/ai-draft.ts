@@ -110,8 +110,16 @@ export interface AiCommit {
   notes?: string;
   /** plan 161, pass 3: this version is what came before a Stop */
   stopped?: boolean;
+  /** plan 162 (after ai162-r02): what made this version, so Undo can say what it takes back */
+  how?: CommitHow;
   text: string;
 }
+
+export type CommitHow = "draft" | "regenerate" | "shorter" | "warmer" | "rewrite";
+
+/** What a run made, from what it was asked: a first draft, a fresh take, or a rewrite of the text that was there. */
+export const commitHow = (spec: Pick<RunSpec, "kind" | "instruction" | "regenerate">): CommitHow =>
+  spec.kind !== "refine" ? "draft" : spec.regenerate ? "regenerate" : spec.instruction === SHORTER ? "shorter" : spec.instruction === WARMER ? "warmer" : "rewrite";
 
 export interface AiStrip {
   used: Extract<AiComposeResult, { status: "done" }>["used"];
@@ -869,7 +877,7 @@ function commit(key: string, how: "replace" | "below", result: Extract<AiCompose
   const refined = spec.kind === "refine" && !spec.regenerate && prior !== undefined;
   const instruction = refined ? prior.instruction : spec.instruction;
   const notes = refined ? prior.notes : spec.notes;
-  const stack = [...(prior?.stack ?? []), { doc: inserted.doc, subject, before, beforeDoc: inserted.before, checks: result.checks, text: c.snapshot().text, instruction, ...(notes !== undefined ? { notes } : {}), ...(o.stopped ? { stopped: true } : {}) }];
+  const stack = [...(prior?.stack ?? []), { doc: inserted.doc, subject, before, beforeDoc: inserted.before, checks: result.checks, text: c.snapshot().text, instruction, how: prior ? commitHow(spec) : "draft", ...(notes !== undefined ? { notes } : {}), ...(o.stopped ? { stopped: true } : {}) }];
   restores.delete(key);
   // what the draft holds now, as a send will compare it: a replace is all of the text, an insert only what it wrote
   recordProvenance(key, how === "replace" ? c.snapshot().text : result.text);
@@ -1060,9 +1068,14 @@ export function undoCommit(key: string) {
     recordProvenance(key, bodyNow(key));
     return focusEditor(key);
   }
-  // plan 161, pass 3: a stopped write taken back gives the field its instruction again (it's the user's too), for Return
-  if (s.strip.stopped && !preparedDrafts.has(key)) {
+  // plan 161, pass 3: a stopped write taken back gives the field its instruction again (it's the user's too), for Return.
+  // Plan 162 (after ai162-r02): so does the first draft taken back: the row stays with what was asked, ready to change or
+  // ask again (it went, row and words, and the words had to be typed again)
+  if (!preparedDrafts.has(key)) {
     update(key, { phase: "input", instruction: s.strip.instruction, strip: null, rewrite: false, live: "", focus: s.focus + 1 });
+    // a reply this ⌘J opened, with nothing left in it: no blank draft stays in the list (the composer and the row stay)
+    const left = draftOf(key);
+    if (s.opened && left && !bodyNow(key).trim() && !left.attachments?.length) void Promise.resolve(provenance.get(key)?.run).finally(() => unsaveDraft(key));
     return;
   }
   remove(key);

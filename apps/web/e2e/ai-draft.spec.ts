@@ -231,14 +231,18 @@ test.describe("drafting with AI (plan 133)", () => {
       await expect(strip(page)).toContainText("Written with AI");
       await expect(strip(page)).toContainText("Regenerate");
 
-      // one undo step, autosaved like typing
+      // one undo step, autosaved like typing; plan 162 (after ai162-r02): its name says what it takes back
+      await expect(page.getByTestId("ai-strip-undo")).toHaveAccessibleName("Undo: remove the AI’s draft");
       await page.getByTestId("ai-strip-undo").click();
       await expect(strip(page)).toHaveCount(0);
       await expect(body(page)).toHaveText("");
-      await expect(body(page)).toBeFocused();
+      // the first draft taken back leaves the row with what was asked, its keys there, ready for Return
+      await expect(field(page)).toBeFocused();
+      await expect(field(page)).toHaveValue(/\S/);
       // nothing was there before: no blank draft stays in the list, and writing still saves
       const saved = async () => ((await server.backend.server.invoke("drafts.list", {}, dev)) as { bodyText: string }[]).map((d) => d.bodyText);
       await expect.poll(saved).toEqual([]);
+      await body(page).click();
       await body(page).pressSequentially("my own words");
       await expect.poll(saved).toEqual(["my own words"]);
       expect(design === null || typeof design === "string").toBe(true);
@@ -346,14 +350,17 @@ test.describe("drafting with AI (plan 133)", () => {
       await expect(strip(page)).toBeVisible();
       await expect(page.getByTestId("ai-strip-check")).toContainText("From the conversation alone, with no instruction from you");
 
+      // plan 162 (after ai162-r02): Undo of the first draft keeps the row, holding what was asked (here nothing)
       await page.getByTestId("ai-strip-undo").click();
-      await openField(page);
+      await expect(field(page)).toBeFocused();
+      await expect(field(page)).toHaveValue("");
       await field(page).fill("echo: fine by me");
       await page.keyboard.press("Enter");
       await expect(body(page)).toContainText("fine by me");
       await page.getByTestId("ai-strip-undo").click();
-      await openField(page);
-      await expect(field(page)).toHaveValue("");
+      await expect(field(page)).toBeFocused();
+      await expect(field(page)).toHaveValue("echo: fine by me");
+      await field(page).fill("");
       await page.keyboard.press("ArrowUp");
       await expect(field(page)).toHaveValue("echo: fine by me");
       await page.keyboard.press("Escape");
@@ -421,7 +428,8 @@ test.describe("drafting with AI (plan 133)", () => {
       await page.getByTestId("ai-strip-undo").click();
       await expect(body(page)).toHaveText("fine with the 19th");
 
-      await openField(page);
+      // plan 162 (after ai162-r02): the first write taken back leaves the row open, its field with the keys
+      await expect(field(page)).toBeFocused();
       await page.keyboard.press("Enter");
       await page.getByTestId("ai-choice-discard").click();
       await expect(body(page)).toHaveText("fine with the 19th");
@@ -1287,13 +1295,21 @@ test.describe("drafting with AI (plan 133)", () => {
       for (const size of [{ width: 1440, height: 900 }, { width: 1100, height: 700 }]) {
         await page.setViewportSize(size);
         const where = `${scheme} ${size.width}`;
-        // ai-r03: Edit wrapped onto a line of its own at 1100. Plan 162 (after ai162-r01): the instruction takes up to two
-        // lines, so this one is whole at 1100 too (one line cut it), its text in its tooltip; Edit instruction is right after
-        // it, on its first line
+        // ai-r03: Edit wrapped onto a line of its own at 1100. Plan 162 (after ai162-r02): the instruction is one line (two
+        // and the commands took ~96 px over a short draft); cut, the words are a disclosure that opens to all of them
         const instruction = page.getByTestId("ai-strip-instruction-text");
-        await expect(instruction, where).toHaveAttribute("title", `“${words}”`);
-        expect(await instruction.evaluate((el) => el.scrollHeight <= el.clientHeight + 1), where).toBe(true);
-        expect((await box("ai-strip-instruction")).height, where).toBeLessThanOrEqual(60);
+        expect((await box("ai-strip-instruction")).height, where).toBeLessThanOrEqual(40);
+        const toggle = page.getByTestId("ai-strip-instruction-toggle");
+        if (await toggle.count()) {
+          await expect(toggle, where).toHaveAttribute("title", `“${words}”`);
+          await expect(toggle, where).toHaveAttribute("aria-expanded", "false");
+          await toggle.click();
+          await expect(toggle, where).toHaveAttribute("aria-expanded", "true");
+          await expect(instruction, where).toHaveText(`“${words}”`);
+          expect(await instruction.evaluate((el) => el.scrollWidth <= el.clientWidth + 1), where).toBe(true);
+          await toggle.click();
+          await expect(toggle, where).toHaveAttribute("aria-expanded", "false");
+        } else expect(await instruction.evaluate((el) => el.scrollWidth <= el.clientWidth + 1), where).toBe(true);
         const text = await box("ai-strip-instruction-text");
         expect(Math.abs((await middle("ai-strip-edit-instruction")) - (text.y + 10)), where).toBeLessThanOrEqual(1.5);
         expect((await box("ai-strip-edit-instruction")).x, where).toBeGreaterThanOrEqual(text.x + text.width - 1);
@@ -1301,9 +1317,10 @@ test.describe("drafting with AI (plan 133)", () => {
         // the four commands are one group (one chrome, none heavier), on the provenance's line
         await expect(page.getByTestId("ai-strip-commands"), where).toHaveAttribute("data-slot", "button-group");
         await expect(page.getByTestId("ai-strip-undo"), where).toHaveText("Undo");
+        await expect(page.getByTestId("ai-strip-undo"), where).toHaveAccessibleName("Undo: remove the AI’s draft");
         await expect.poll(async () => Math.abs((await middle("ai-strip-undo")) - (await middle("ai-strip-voice"))), where).toBeLessThanOrEqual(1);
-        // the instruction and the commands, nothing on a line of its own
-        expect((await box("ai-row")).height, where).toBeLessThanOrEqual(100);
+        // the instruction and the commands, two lines and nothing on one of its own
+        expect((await box("ai-row")).height, where).toBeLessThanOrEqual(80);
         const wide = size.width === 1440;
         // plan 162 (after ai162-r01): Regenerate stays direct at every width; narrow, Shorter and Warmer fold into Rewrite ▾
         await expect(page.getByTestId("ai-strip-regenerate"), where).toBeVisible();
@@ -1325,10 +1342,13 @@ test.describe("drafting with AI (plan 133)", () => {
     // the group's items share one look: the same ink and no edge of their own (the group draws it)
     const style = (id: string) => page.getByTestId(id).evaluate((el) => { const s = getComputedStyle(el); return { color: s.color, weight: s.fontWeight, height: el.getBoundingClientRect().height }; });
     expect(await style("ai-strip-regenerate")).toEqual(await style("ai-strip-undo"));
-    // Edit is named for what it does, and opens the field holding the instruction
+    // Edit is named for what it does, a bounded control, and opens the field holding the instruction
     await expect(page.getByTestId("ai-strip-edit-instruction")).toHaveAccessibleName("Edit instruction");
+    expect(await page.getByTestId("ai-strip-edit-instruction").evaluate((e) => getComputedStyle(e).borderTopWidth)).not.toBe("0px");
     await page.getByTestId("ai-strip-edit-instruction").click();
     await expect(field(page)).toHaveValue(words);
+    // the field is named for what it holds
+    await expect(field(page)).toHaveAccessibleName("Instruction for AI");
   });
 
   test("plan 161, pass 2: nothing the user wrote is lost, the instruction stays", async ({ app: page, server }) => {

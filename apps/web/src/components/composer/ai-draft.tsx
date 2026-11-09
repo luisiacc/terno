@@ -7,9 +7,9 @@ import { Shortcut } from "@terno/ui/components/shortcut";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { Spinner } from "@terno/ui/components/spinner";
-import { ChevronDown, Undo2 } from "@terno/ui/icons";
+import { ChevronDown, Pencil, Undo2 } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
-import { useEffect, useId, useLayoutEffect, useRef } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { modelName, providerLabel, writingTarget } from "~/lib/ai";
 import { answer, closeRow, commitHeld, confirmReplace, discard, discardAndSend, editInstruction, includeEveryone, keepEdits, keepWriting, noteBody, place, placePartial, previewMode, previewText, recallInstruction, refine, retry, setInstruction, stop, submit, subscribePreview, takeFocusRequest, undoCommit, useAiDraft, type AiSession, type AiStrip } from "~/lib/ai-draft";
 import { keepInView } from "~/lib/reader-scroll";
@@ -156,9 +156,13 @@ function StatusPopover({ strip, toText }: { strip: AiStrip; toText: string }) {
  * the row's field over a strip, where it's the only command: the group's look on one item.
  */
 function UndoButton({ s, alone }: { s: AiSession; alone?: boolean }) {
+  // plan 162 (after ai162-r02): what it takes back, in its name and tooltip ("Undo Shorter"; the first draft: "Remove the AI's draft")
+  const top = s.strip?.stack.at(-1);
+  const what = !top || (s.strip?.stack.length ?? 0) <= 1 ? t("aiDraft.undo.draft") : t(`aiDraft.undo.${top.how && top.how !== "draft" ? top.how : "rewrite"}`);
   const item = (
     <ButtonGroupItem
       className="text-foreground"
+      aria-label={what}
       data-testid="ai-strip-undo"
       onMouseDown={(e) => e.preventDefault()}
       onClick={() => {
@@ -174,7 +178,7 @@ function UndoButton({ s, alone }: { s: AiSession; alone?: boolean }) {
         <Undo2 aria-hidden />
         {t("common.undo")}
       </TooltipTrigger>
-      <TooltipContent>{t("aiDraft.undoTip")}</TooltipContent>
+      <TooltipContent>{what}</TooltipContent>
     </Tooltip>
   );
   return alone ? <ButtonGroup className="h-7" aria-label={t("aiDraft.commands")}>{button}</ButtonGroup> : button;
@@ -182,26 +186,57 @@ function UndoButton({ s, alone }: { s: AiSession; alone?: boolean }) {
 
 /**
  * Plan 161, pass 3: what was asked, in the user's words, on its own line above the commands: where it was typed, while
- * it's written, and after. Plan 162 (after ai162-r01): up to two lines, then an ellipsis (all of it in its tooltip and its
- * name), so a long request can be checked against the draft at 1100 (one line cut it mid-word); "Edit instruction" stays
- * right after its words at every width, a 28 px target.
+ * it's written, and after. Plan 162 (after ai162-r02): one line again (two lines and the commands took ~96 px over a short
+ * draft at 1100, all four Codex reports), and the whole of it a click away: cut, the words are a disclosure that opens to
+ * every line (its title and name hold them too). "Edit instruction" stays right after them, a 28 px control.
  */
 function InstructionLine({ text, onEdit }: { text: string; onEdit: (() => void) | null }) {
   const quoted = t("aiDraft.instruction.quoted", { instruction: text });
+  const line = useRef<HTMLParagraphElement>(null);
+  const words = useRef<HTMLSpanElement>(null);
+  const [open, setOpen] = useState(false);
+  const [cut, setCut] = useState(false);
+  // the line is the one element that stays (the words move into a button once they're cut): it's what's watched, and the
+  // words are read as they are when it changes
+  useLayoutEffect(() => {
+    const at = line.current;
+    if (!at || open) return;
+    const measure = () => {
+      const el = words.current;
+      if (el) setCut(el.scrollWidth > el.clientWidth + 1);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(at);
+    return () => ro.disconnect();
+  }, [text, open]);
+  const body = (
+    <span ref={words} className={cn("block min-w-0 text-start", open ? "wrap-anywhere whitespace-normal" : "truncate")} data-testid="ai-strip-instruction-text">
+      {quoted}
+    </span>
+  );
   return (
-    <p className="flex min-h-[38px] min-w-0 items-start gap-1.5 py-[9px] text-sm leading-5 text-foreground" data-testid="ai-strip-instruction">
-      <span className="line-clamp-2 min-w-0 wrap-anywhere" title={quoted} data-testid="ai-strip-instruction-text">{quoted}</span>
+    <p ref={line} className="flex min-h-[38px] min-w-0 items-start gap-1.5 py-[9px] text-sm leading-5 text-foreground" data-testid="ai-strip-instruction" data-open={open || undefined}>
+      {cut || open ? (
+        <button type="button" className="min-w-0 cursor-pointer rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none" title={open ? undefined : quoted} aria-expanded={open} aria-label={open ? undefined : quoted} data-testid="ai-strip-instruction-toggle" onClick={() => setOpen((o) => !o)}>
+          {body}
+        </button>
+      ) : (
+        <span className="min-w-0" title={quoted}>{body}</span>
+      )}
       {/* while it writes, its place is held (nothing to edit yet), so the line is the same before and after the commit */}
       <Button
         type="button"
-        variant="ghost"
+        variant="outline"
         size="sm"
-        className={cn(quiet, "-my-1 shrink-0 px-2", !onEdit && "invisible")}
+        // plan 162 (after ai162-r02): bounded, as every "edit what the AI read" is (grey text, it read as a hint)
+        className={cn("-my-1 shrink-0 text-foreground", !onEdit && "invisible")}
         aria-hidden={onEdit ? undefined : true}
         tabIndex={onEdit ? undefined : -1}
         data-testid={onEdit ? "ai-strip-edit-instruction" : undefined}
         onClick={onEdit ?? undefined}
       >
+        <Pencil aria-hidden />
         {t("aiDraft.instruction.edit")}
       </Button>
     </p>
@@ -493,6 +528,8 @@ function Field({ s, id }: { s: AiSession; id: string }) {
       <textarea
         id={id}
         data-testid="ai-row-input"
+        // plan 162 (after ai162-r02): named for what it holds (its label, "AI", said only whose)
+        aria-label={t("aiDraft.fieldName")}
         rows={1}
         className="field-sizing-content min-h-9 min-w-0 flex-1 resize-none bg-transparent py-[9px] text-sm leading-5 outline-none placeholder:text-muted-foreground"
         value={s.instruction}
