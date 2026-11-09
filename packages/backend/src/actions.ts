@@ -96,6 +96,11 @@ interface Preview {
   unchecked: Set<number>;
   /** rows of those two the user ticked back */
   back: Set<number>;
+  /**
+   * Plan 162 (after ai162-r04): starred or replied rows included that the check never saw (or hasn't yet): shown, unticked,
+   * for the user to tick one by one (Include took them all, past the check)
+   */
+  held: Set<number>;
   check: ActionPreviewInfo["check"];
   groups: Group[] | null;
   nextGroup: number;
@@ -114,6 +119,13 @@ interface Preview {
   controller: AbortController;
 }
 
+/** A conversation as the check sees it: its last sender's name and domain, and its subject (never an address or a body). */
+const groupOf = (f: ActionThreadFacts) => ({
+  name: redactAddresses(f.lastFromName).slice(0, CHECK_NAME_CHARS),
+  domain: domainOf(f.lastFromEmail),
+  subject: subjectKey(normalizeText(baseSubject(redactAddresses(f.subject)))).slice(0, CHECK_SUBJECT_CHARS),
+});
+const groupKey = (g: { name: string; domain: string; subject: string }) => `${g.name}\u0000${g.domain}\u0000${g.subject}`;
 const stampOf = (f: ActionThreadFacts) => ({ lastDate: f.lastDate, messageCount: f.messageCount });
 const domainOf = (email: string) => email.slice(email.lastIndexOf("@") + 1).toLowerCase();
 const targetCategory = (plan: ActionPlan) => (plan.action.type === "moveToCategory" ? plan.action.categoryId : undefined);
@@ -215,7 +227,7 @@ export class ActionsService {
   }
 
   private ticked(p: Preview, id: number): boolean {
-    if (p.leftOut.has(id) || p.unchecked.has(id)) return p.back.has(id);
+    if (p.leftOut.has(id) || p.unchecked.has(id) || p.held.has(id)) return p.back.has(id);
     return !p.unticked.has(id);
   }
 
@@ -267,6 +279,7 @@ export class ActionsService {
       found: p.ids.length + p.skipped.length,
       skipped: p.skipped.length,
       skippedIncluded: p.includeSkipped,
+      skippedTicked: p.includeSkipped ? p.skipped.filter((id) => this.ticked(p, id)).length : 0,
       leftOut: p.leftOut.size,
       unchecked: p.unchecked.size,
       check: p.check,
@@ -328,6 +341,7 @@ export class ActionsService {
         leftOut: new Set(),
         unchecked: new Set(),
         back: new Set(),
+        held: new Set(),
         check: plan.meaning ? "needed" : "none",
         groups: null,
         nextGroup: 0,
@@ -448,7 +462,7 @@ export class ActionsService {
 
   toggle(previewId: string, threadId: number, included: boolean, clientId: string): ActionPreviewInfo {
     const p = this.held(previewId, clientId);
-    if (p.leftOut.has(threadId) || p.unchecked.has(threadId)) {
+    if (p.leftOut.has(threadId) || p.unchecked.has(threadId) || p.held.has(threadId)) {
       if (included) p.back.add(threadId);
       else p.back.delete(threadId);
     } else if (included) p.unticked.delete(threadId);
@@ -456,10 +470,44 @@ export class ActionsService {
     return this.info(p);
   }
 
-  includeSkipped(previewId: string, included: boolean, clientId: string): ActionPreviewInfo {
+  async includeSkipped(previewId: string, included: boolean, clientId: string): Promise<ActionPreviewInfo> {
     const p = this.held(previewId, clientId);
     p.includeSkipped = included;
+    if (included) await this.sortSkipped(p);
     return this.info(p);
+  }
+
+  /**
+   * Plan 162 (after ai162-r04): the starred or replied conversations Include brings in go past what the check decided, by
+   * its own groups (a sender and a subject; no model): one in a group it kept is ticked, one in a group it left out is left
+   * out, and one it never saw is held, unticked, for the user to tick. With no check (the rule was certain), all are ticked.
+   */
+  private async sortSkipped(p: Preview): Promise<void> {
+    for (const id of p.skipped) {
+      p.leftOut.delete(id);
+      p.held.delete(id);
+      p.back.delete(id);
+    }
+    if (p.check === "none" || p.check === "skipped") return;
+    if (p.check === "needed" || !p.groups) {
+      // the check hasn't said yet: held until it has (check() sorts them then)
+      for (const id of p.skipped) p.held.add(id);
+      return;
+    }
+    const kept = new Set(p.keptGroups.map(groupKey));
+    const dropped = new Set(p.droppedGroups.map(groupKey));
+    for (let i = 0; i < p.skipped.length; i += 1000) {
+      const slice = p.skipped.slice(i, i + 1000);
+      const facts = new Map((await this.b.store.filters.actionFacts(slice)).map((f) => [f.id, f]));
+      for (const id of slice) {
+        const f = facts.get(id);
+        const key = f ? groupKey(groupOf(f)) : null;
+        if (key !== null && kept.has(key)) continue;
+        if (key !== null && dropped.has(key)) p.leftOut.add(id);
+        else p.held.add(id);
+      }
+      await this.b.yieldTurn();
+    }
   }
 
   /** Where senders and subjects go: the check's first destination, checked again before each dispatch (revision 7), so a provider changed meanwhile gets nothing. */
@@ -483,10 +531,8 @@ export class ActionsService {
       for (const id of slice) {
         const f = facts.get(id);
         if (!f) continue;
-        const domain = domainOf(f.lastFromEmail);
-        const name = redactAddresses(f.lastFromName).slice(0, CHECK_NAME_CHARS);
-        const subject = subjectKey(normalizeText(baseSubject(redactAddresses(f.subject)))).slice(0, CHECK_SUBJECT_CHARS);
-        const key = `${name}\u0000${domain}\u0000${subject}`;
+        const { name, domain, subject } = groupOf(f);
+        const key = groupKey({ name, domain, subject });
         let g = byKey.get(key);
         if (!g) byKey.set(key, (g = { label: `g${byKey.size + 1}`, name, domain, subject, count: 0, ids: [] }));
         g.count++;
@@ -510,6 +556,7 @@ export class ActionsService {
         p.unchecked.clear();
         p.groups = null;
         p.nextGroup = 0;
+        if (p.includeSkipped) await this.sortSkipped(p);
       }
       return { status: "done", preview: this.info(p) };
     }
@@ -545,6 +592,7 @@ export class ActionsService {
       }
       if (p.dead) throw new AiError(L("errors.ai.cancelled"), "cancelled");
       p.check = "done";
+      if (p.includeSkipped) await this.sortSkipped(p);
       this.touch(p);
       return { status: "done", preview: this.info(p) };
     } finally {

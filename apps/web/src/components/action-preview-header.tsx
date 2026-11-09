@@ -130,9 +130,9 @@ export default function ActionPreviewHeader() {
         <h1 data-testid="action-title" className={cn("flex min-w-0 flex-1 items-center gap-2", LIST_TITLE.title)} aria-live="polite">
           <span className={cn("min-w-0", !list && "truncate")} title={heading === title ? undefined : title}>{heading}</span>
         </h1>
-        {/* plan 162 (after ai162-r01): the decision has one place, here, whether the rule or a match is in the reader (it
-            moved from the rule's foot to here when a match opened) */}
-        <ActionButtons size="sm" className="no-drag" escCancels={list || ruleInReader} />
+        {/* plan 162 (after ai162-r04): one decision on screen, never two. Here in List, and in Split while a match is read
+            (the reader is that mail); while the rule shows in the reader, its foot holds it, where the reading ends */}
+        {!ruleInReader && <ActionButtons size="sm" className="no-drag" escCancels={list} />}
       </div>
       {/* the words typed, when the rule (which they head) isn't on screen */}
       {!ruleInReader && sentence && (
@@ -261,48 +261,50 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
   // the decision, then the decision itself; how Terno read the request is one quiet disclosure, closed
   const foundText = found ? [found.from, found.dates, found.accounts].filter(Boolean).join(" · ") : null;
   const anyFact = plan.action.type === "createCategory" || preview.hidden || preview.forwards || preview.skipped > 0 || checking || checkError || preview.leftOut + preview.unchecked > 0 || (preview.keep.kind !== "hidden" && !ruleOnly);
+  // plan 162 (after ai162-r04): the rule is shown, not folded: where it looks and each condition decide what Apply takes
+  // (every report asked to see them before Archive). Only the exact search waits behind its disclosure
   const reading = (
-    <Collapsible data-testid="action-reading" className="hairline-t pt-2">
-      <div className="flex flex-wrap items-center gap-x-4">
-        <CollapsibleTrigger className="h-7 w-auto gap-1 text-xs font-medium text-muted-foreground hover:text-foreground [&>[data-slot=collapsible-chevron]]:ms-0 [&>[data-slot=collapsible-chevron]]:size-3.5" data-testid="action-reading-toggle">
-          {t("action.reading")}
-        </CollapsibleTrigger>
+    <section data-testid="action-reading" className="hairline-t pt-3" aria-labelledby="action-reading-title">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <h3 id="action-reading-title" className="text-xs font-medium text-muted-foreground">{t("action.reading")}</h3>
         {provenance}
       </div>
-      <CollapsiblePanel>
-        <div className={cn("flex flex-col gap-3 pt-2 pb-1", reader ? "text-sm" : "text-xs")}>
-          <dl data-testid="action-conditions" className={cn("grid grid-cols-[minmax(5rem,max-content)_1fr] items-baseline gap-x-4", reader ? "gap-y-2" : "gap-y-1")}>
-            {rows.map((r, i) => (
-              <div key={i} className="contents" data-testid="action-rule-row">
-                <dt className="text-muted-foreground">{r.label}</dt>
-                <dd className="min-w-0 text-pretty wrap-anywhere">
-                  <span>{r.text}</span>
-                  {r.terms && " "}
-                  {r.terms && termParts(r.terms).map((part, j) => (part.type === "element" ? <span key={j} data-testid="action-rule-term" className="font-medium">{part.value}</span> : <span key={j}>{part.value}</span>))}
-                </dd>
-              </div>
-            ))}
-          </dl>
-          {details.length > 0 && (
-            <div data-testid="action-details">
-              <h4 className="text-xs font-medium text-muted-foreground">{t("action.rule.exact")}</h4>
-            <dl className="mt-1 grid grid-cols-[minmax(5rem,max-content)_1fr] items-baseline gap-x-4 gap-y-1 text-xs" data-testid="action-details-text">
-              {details.map((d, i) => (
-                <div key={i} className="contents">
-                  <dt className="text-muted-foreground">{d.field}</dt>
-                  <dd className="min-w-0 overflow-x-auto break-normal text-foreground" data-testid="action-details-pattern">
-                    {d.negate && <span className="text-muted-foreground">{t("filters.op.notMatches")} </span>}
-                    {breakAtBars(d.pattern)}
-                  </dd>
-                </div>
-              ))}
-            </dl>
+      <div className={cn("flex flex-col gap-3 pt-2 pb-1", reader ? "text-sm" : "text-xs")}>
+        <dl data-testid="action-conditions" className={cn("grid grid-cols-[minmax(5rem,max-content)_1fr] items-baseline gap-x-4", reader ? "gap-y-2" : "gap-y-1")}>
+          {rows.map((r, i) => (
+            <div key={i} className="contents" data-testid="action-rule-row">
+              <dt className="text-muted-foreground">{r.label}</dt>
+              <dd className="min-w-0 text-pretty wrap-anywhere">
+                <span>{r.text}</span>
+                {r.terms && " "}
+                {r.terms && termParts(r.terms).map((part, j) => (part.type === "element" ? <span key={j} data-testid="action-rule-term" className="font-medium">{part.value}</span> : <span key={j}>{part.value}</span>))}
+              </dd>
             </div>
-          )}
-          <div className="flex flex-wrap items-center gap-2">{editLink}</div>
-        </div>
-      </CollapsiblePanel>
-    </Collapsible>
+          ))}
+        </dl>
+        {details.length > 0 && (
+          <Collapsible data-testid="action-details">
+            <CollapsibleTrigger className="h-7 w-auto gap-1 text-xs font-medium text-muted-foreground hover:text-foreground [&>[data-slot=collapsible-chevron]]:ms-0 [&>[data-slot=collapsible-chevron]]:size-3.5" data-testid="action-details-toggle">
+              {t("action.rule.exact")}
+            </CollapsibleTrigger>
+            <CollapsiblePanel>
+              <dl className="mt-1 grid grid-cols-[minmax(5rem,max-content)_1fr] items-baseline gap-x-4 gap-y-1 text-xs" data-testid="action-details-text">
+                {details.map((d, i) => (
+                  <div key={i} className="contents">
+                    <dt className="text-muted-foreground">{d.field}</dt>
+                    <dd className="min-w-0 overflow-x-auto break-normal text-foreground" data-testid="action-details-pattern">
+                      {d.negate && <span className="text-muted-foreground">{t("filters.op.notMatches")} </span>}
+                      {breakAtBars(d.pattern)}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </CollapsiblePanel>
+          </Collapsible>
+        )}
+        {editLink && <div className="flex flex-wrap items-center gap-2">{editLink}</div>}
+      </div>
+    </section>
   );
   const body = (
     // (the list's header is a window drag area: what's in it takes clicks)
@@ -322,9 +324,19 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
           {preview.hidden && <Line testId="action-hidden">{t("action.hidden")}</Line>}
           {preview.forwards && <Line testId="action-forwards">{t("action.forwards")}</Line>}
           {preview.skipped > 0 && (
+            // plan 162 (after ai162-r04): what's true, always: they stay; or how many of them are in (Include brings in only
+            // what the check kept; the rest wait unticked in the list), with the same bordered control as Show
             <Line testId="action-skipped">
-              {t("action.skipped", { count: preview.skipped })} <Dot />
-              <Button variant="link-secondary" size="xs" className="no-drag" data-testid="action-include-skipped" onClick={() => void includeSkipped(!preview.skippedIncluded)}>{t(preview.skippedIncluded ? "action.skipped.leave" : "action.skipped.include")}</Button>
+              <span data-testid="action-skipped-text">
+                {!preview.skippedIncluded
+                  ? t("action.skipped", { count: preview.skipped })
+                  : preview.skippedTicked === preview.skipped
+                    ? t("action.skipped.including", { count: preview.skipped })
+                    : preview.skippedTicked === 0
+                      ? t("action.skipped.includingNone", { count: preview.skipped })
+                      : t("action.skipped.includingSome", { ticked: preview.skippedTicked, total: preview.skipped })}
+              </span>
+              <Button variant="outline" size="xs" className="no-drag ms-1 text-foreground" data-testid="action-include-skipped" aria-pressed={preview.skippedIncluded} onClick={() => void includeSkipped(!preview.skippedIncluded)}>{preview.skippedIncluded ? t("action.skipped.leave") : t("action.skipped.include", { count: preview.skipped })}</Button>
             </Line>
           )}
           {checking && <Line testId="action-checking"><Spinner className="size-3" /> {t("action.checking")}</Line>}
@@ -369,8 +381,9 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
       {/* the decision, where the reading of the pane ends (the header's own commands, which stay, so nothing moves while a
           match is read) */}
       {reader && (
+        // plan 162 (after ai162-r04): the only Cancel and Archive on screen while the rule shows, in the header's order
         <div className="no-drag flex flex-wrap items-center gap-2" data-testid="action-rule-decision">
-          <ActionButtons size="sm" at="rule" order="apply-first" />
+          <ActionButtons size="sm" order="apply-first" />
         </div>
       )}
       {!ruleOnly || plan.conditions.length ? reading : null}

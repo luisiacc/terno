@@ -44,10 +44,9 @@ async function say(page: Page, sentence: string) {
 
 const rows = (page: Page) => page.getByTestId("thread-row");
 
-/** plan 162 (the owner, 2026-11-08): how Terno read the request is a disclosure, closed: opened to check what's in it */
+/** plan 162 (after ai162-r04): how Terno read the request is shown, open; only its exact search is a disclosure */
 async function openReading(page: Page) {
-  const toggle = page.getByTestId("action-reading-toggle").first();
-  if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();
+  await expect(page.getByTestId("action-conditions").first()).toBeVisible();
 }
 
 test.describe("actions in plain English (plan 143)", () => {
@@ -124,7 +123,7 @@ test.describe("actions in plain English (plan 143)", () => {
       await expect(page.getByRole("dialog")).toHaveCount(0);
       await expect(rows(page)).toHaveCount(2);
       // plan 162 (after ai162-r03): what the check left out is a fact in the ink, beside its Show
-      await expect(page.getByTestId("action-left-out")).toContainText("1 left out by the check");
+      await expect(page.getByTestId("action-left-out")).toContainText("1 matched but doesn’t fit what you asked");
       const seen = await page.evaluate(() => (window as unknown as { previewRows: string[] }).previewRows);
       expect(seen.length).toBeGreaterThan(0);
       expect(seen.filter((text) => !/shipping|delivery|tracking/i.test(text))).toEqual([]);
@@ -136,24 +135,23 @@ test.describe("actions in plain English (plan 143)", () => {
       await expect(page.getByTestId("nav-inbox")).toHaveAttribute("data-active");
       await expect(page.locator("#app-sidebar [data-active]")).toHaveCount(1);
       const rule = page.getByTestId("action-rule");
-      // plan 162 (after ai162-r01): Apply and Cancel stay in the list's header, while the rule shows and while a match is
-      // read. After ai162-r02: and the rule ends with the same two, where its reading ends
-      await expect(page.getByTestId("action-preview").getByTestId("action-apply")).toHaveAttribute("data-variant", "default");
-      await expect(page.getByTestId("action-preview").getByTestId("action-cancel")).toBeVisible();
-      await expect(rule.getByTestId("action-apply")).toHaveCount(0);
-      await expect(rule.getByTestId("action-apply-rule")).toHaveText("Archive 2");
-      await expect(rule.getByTestId("action-apply-rule")).toHaveAttribute("data-variant", "default");
-      await expect(rule.getByTestId("action-cancel-rule")).toBeVisible();
-      // the owner (2026-11-08): what will happen and the decision lead; how Terno read it is one disclosure under them, closed
-      expect((await rule.getByTestId("action-apply-rule").boundingBox())!.y).toBeGreaterThan((await rule.getByTestId("action-rule-title").boundingBox())!.y);
-      expect((await rule.getByTestId("action-apply-rule").boundingBox())!.y).toBeLessThan((await rule.getByTestId("action-reading-toggle").boundingBox())!.y);
-      await expect(rule.getByTestId("action-reading-toggle")).toHaveAttribute("aria-expanded", "true");
+      // plan 162 (after ai162-r04): one decision on screen: while the rule shows, it's the rule's (the header had a second
+      // pair, in the other order: every report)
+      await expect(page.getByTestId("action-preview").getByTestId("action-apply")).toHaveCount(0);
+      await expect(page.getByTestId("action-apply")).toHaveCount(1);
+      await expect(page.getByTestId("action-cancel")).toHaveCount(1);
+      await expect(rule.getByTestId("action-apply")).toHaveText("Archive 2");
+      await expect(rule.getByTestId("action-apply")).toHaveAttribute("data-variant", "default");
+      await expect(rule.getByTestId("action-cancel")).toBeVisible();
+      // what will happen and the decision lead; how Terno read it follows, shown, not folded (its conditions decide Apply)
+      expect((await rule.getByTestId("action-apply").boundingBox())!.y).toBeGreaterThan((await rule.getByTestId("action-rule-title").boundingBox())!.y);
+      expect((await rule.getByTestId("action-apply").boundingBox())!.y).toBeLessThan((await rule.getByTestId("action-conditions").boundingBox())!.y);
+      await expect(rule.getByTestId("action-conditions")).toBeVisible();
       // the rule's rows share one value column; Edit as a rule is a bordered control in the reading
       const valueLefts = await rule.locator("[data-testid=action-conditions] dd").evaluateAll((dds) => [...new Set(dds.map((d) => Math.round(d.getBoundingClientRect().left)))]);
       expect(valueLefts).toHaveLength(1);
       expect(await rule.getByTestId("action-edit-filter").evaluate((e) => getComputedStyle(e).borderTopWidth)).not.toBe("0px");
       await expect(page.getByTestId("action-decision")).toHaveCount(0);
-      const decided = (await page.getByTestId("action-apply").boundingBox())!;
       // the keys are the buttons' own, and the ticks say what to do: no help line
       await expect(page.getByTestId("action-keys")).toHaveCount(0);
       await expect(rule.getByTestId("action-help")).toHaveCount(0);
@@ -173,7 +171,7 @@ test.describe("actions in plain English (plan 143)", () => {
       await expect(rule.getByTestId("action-details")).toHaveCount(0);
       // and which mail, from the rows, in one line under the title: who sent them, and when
       await expect(rule.getByTestId("action-found-line")).not.toBeEmpty();
-      expect((await rule.getByTestId("action-found").boundingBox())!.y).toBeLessThan((await rule.getByTestId("action-apply-rule").boundingBox())!.y);
+      expect((await rule.getByTestId("action-found").boundingBox())!.y).toBeLessThan((await rule.getByTestId("action-apply").boundingBox())!.y);
       // checkboxes to assistive tech: the column's check, and the row's checked state (the cursor stays aria-selected)
       await expect(page.getByRole("checkbox", { name: /^Include / })).toHaveCount(2);
       await expect(page.getByRole("checkbox", { name: /^Include / }).first()).toHaveAttribute("aria-checked", "true");
@@ -183,8 +181,6 @@ test.describe("actions in plain English (plan 143)", () => {
       await expect(page.getByTestId("reader-subject")).toBeVisible();
       await expect(rows(page).first()).toHaveAttribute("data-included", "true");
       await expect(page.getByTestId("action-sentence")).toContainText("Archive shipping notices older than a month");
-      // the decision didn't move
-      expect((await page.getByTestId("action-apply").boundingBox())!).toEqual(decided);
       // Codex review: while a match is read, Esc goes back to the rule: Cancel doesn't claim it
       await expect(page.getByTestId("action-cancel")).not.toHaveAttribute("aria-keyshortcuts", "Escape");
       await expect(page.getByTestId("action-show-rule")).toHaveAttribute("aria-keyshortcuts", "Escape");
@@ -201,7 +197,7 @@ test.describe("actions in plain English (plan 143)", () => {
       await expect(page.getByTestId("action-apply")).toHaveText("Archive 1");
       // plan 162 (after ai162-r02): what it found counts what's ticked, so an untick recounts it, never hides it
       await expect(rule.getByTestId("action-found-line")).not.toBeEmpty();
-      await expect(rule.getByTestId("action-apply-rule")).toHaveText("Archive 1");
+      await expect(rule.getByTestId("action-apply")).toHaveText("Archive 1");
       await include.click();
       await expect(page.getByTestId("action-apply")).toHaveText("Archive 2");
     });
@@ -424,7 +420,7 @@ test.describe("actions in plain English (plan 143)", () => {
     const said = page.getByTestId("action-rule").getByTestId("action-sender");
     await expect(said).toHaveText("Your sentence names Uber, but this rule doesn’t look at the sender. Check it below, or edit it as a rule.");
     // beside what will happen, above the decision
-    expect((await said.boundingBox())!.y).toBeLessThan((await page.getByTestId("action-apply-rule").boundingBox())!.y);
+    expect((await said.boundingBox())!.y).toBeLessThan((await page.getByTestId("action-apply").boundingBox())!.y);
     await expect(page.getByTestId("action-apply")).toBeEnabled();
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/sender-split-light.png` });
     await page.getByTestId("action-apply").click();

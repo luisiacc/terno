@@ -37,6 +37,8 @@ export interface ActionPreviewInfo {
   /** starred or replied in: spared unless they're included */
   skipped: number;
   skippedIncluded: boolean;
+  /** plan 162 (after ai162-r04): of those included, how many are ticked (the ones the check didn't keep wait unticked) */
+  skippedTicked: number;
   /** the model said these don't fit: unticked, at the end */
   leftOut: number;
   /** past what the check could look at: left out, and said */

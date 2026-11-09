@@ -603,6 +603,50 @@ describe("the check", () => {
     expect(model.checks).toEqual([]);
   });
 
+  it("plan 162 (after ai162-r04): Include brings in the starred or replied only as the check decided: kept ticked, left out left out, unseen unticked", async () => {
+    const { backend, client, model, put, preview, check, rows, apply, fact } = await setup();
+    const plain = await put({ subject: "Invoice one", from: { name: "Ana", email: "ana@acme.test" }, date: NOW - DAY });
+    await put({ subject: "Invoice two", from: { name: "Bob", email: "bob@other.test" }, date: NOW - 2 * DAY });
+    // starred, each like one of those groups, and one the check never saw
+    const likeAna = await put({ subject: "Invoice one", from: { name: "Ana", email: "ana@acme.test" }, date: NOW - 3 * DAY, providerThreadId: "s1" });
+    const likeBob = await put({ subject: "Invoice two", from: { name: "Bob", email: "bob@other.test" }, date: NOW - 4 * DAY, providerThreadId: "s2" });
+    const unseen = await put({ subject: "Invoice planning", from: { name: "Cleo", email: "cleo@team.test" }, date: NOW - 5 * DAY, providerThreadId: "s3" });
+    await backend.store.threads.act({ threadIds: [likeAna, likeBob, unseen], action: "star", signal: null, now: NOW });
+    model.check = (req) => JSON.stringify({ drop: [/<group id="(g\d+)"[^>]*>Bob/.exec(promptText(req.messages[0]!.content))![1]] });
+    const p = await preview(meaning);
+    expect(p.skipped).toBe(3);
+    await check(p);
+    const withThem = await client.call("ai.actionIncludeSkipped", { previewId: p.previewId, included: true });
+    // Include took all three past the check (a rater's 21 sprint plannings): now only Ana's
+    expect(withThem).toMatchObject({ count: 2, skippedIncluded: true, skippedTicked: 1, leftOut: 2 });
+    const page = await client.call("ai.actionPage", { previewId: p.previewId, offset: 0, limit: 10, leftOut: false });
+    expect(page.items.map((t) => t.id)).toEqual([plain, likeAna, unseen]);
+    expect(page.unticked).toEqual([unseen]);
+    expect((await client.call("ai.actionToggle", { previewId: p.previewId, threadId: unseen, included: true })).skippedTicked).toBe(2);
+    expect((await apply(p)).done).toBe(3);
+    expect((await fact(likeBob)).inInbox).toBe(true);
+    expect((await fact(unseen)).inInbox).toBe(false);
+    void rows;
+  });
+
+  it("plan 162 (after ai162-r04): included before the check, they wait unticked, then go as it decides; with the check skipped, all are ticked", async () => {
+    const { backend, client, model, put, preview, check } = await setup();
+    await put({ subject: "Invoice one", from: { name: "Ana", email: "ana@acme.test" } });
+    const likeAna = await put({ subject: "Invoice one", from: { name: "Ana", email: "ana@acme.test" }, providerThreadId: "s1" });
+    await backend.store.threads.act({ threadIds: [likeAna], action: "star", signal: null, now: NOW });
+    model.check = () => JSON.stringify({ drop: [] });
+    const p = await preview(meaning);
+    expect(await client.call("ai.actionIncludeSkipped", { previewId: p.previewId, included: true })).toMatchObject({ skippedTicked: 0 });
+    const r = await check(p);
+    if (r.status !== "done") throw new Error(r.status);
+    expect(r.preview).toMatchObject({ count: 2, skippedTicked: 1 });
+    const q = await preview(meaning);
+    await client.call("ai.actionIncludeSkipped", { previewId: q.previewId, included: true });
+    const skipped = await check(q, { skip: true });
+    if (skipped.status !== "done") throw new Error(skipped.status);
+    expect(skipped.preview).toMatchObject({ count: 2, skippedTicked: 1 });
+  });
+
   it("only drop removes; an unknown label is ignored; left-out rows come last, unticked, and can be ticked back", async () => {
     const { client, model, put, preview, check, rows, apply, fact } = await setup();
     const keep = await put({ subject: "Invoice one", from: { name: "Ana", email: "ana@acme.test" }, date: NOW - DAY });
