@@ -718,6 +718,11 @@ test.describe("drafting with AI (plan 133)", () => {
       await expect(page.getByTestId("ai-note-label")).toHaveCount(0);
       // plan 162 (after ai162-r05): what was asked stays in view on the strip, quoted (it was only in the popover)
       await expect(page.getByTestId("ai-strip-asked")).toHaveText("“fine by me, tell him that”");
+      // a click opens the provenance, where it's whole with its pencil (Codex review)
+      await page.getByTestId("ai-strip-asked").click();
+      await expect(page.getByTestId("ai-voice-popover")).toContainText("fine by me, tell him that");
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("ai-voice-popover")).toHaveCount(0);
       await expect(page.getByTestId("compose-send-group")).toBeVisible();
       // words typed after the draft are how to change it: the draft is rewritten from them, they don't stay, no copy beside it
       await body(page).click();

@@ -319,10 +319,20 @@ function Strip({ s }: { s: AiSession & { strip: AiStrip } }) {
         </ButtonGroup>
         {/* plan 162 (after ai162-r05): what was asked stays in view, the user's words, quoted, one line, quiet, the first
             thing to give way (it was only in the popover: once written, nothing said what you'd asked; two reports) */}
+        {/* a click opens the provenance, which holds it whole with its pencil (Codex review: it was a plain span) */}
         {strip.instruction && !filled && (
-          <span className="min-w-0 flex-1 truncate ps-1 text-xs text-muted-foreground @max-[30rem]/strip:hidden" title={strip.instruction} data-testid="ai-strip-asked">
+          <button
+            type="button"
+            className="min-w-0 flex-1 cursor-pointer truncate rounded-md px-1 text-start text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring @max-[30rem]/strip:hidden"
+            title={strip.instruction}
+            aria-label={t("aiDraft.asked", { instruction: strip.instruction })}
+            aria-haspopup="dialog"
+            data-testid="ai-strip-asked"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={(e) => e.currentTarget.parentElement?.querySelector<HTMLElement>("[data-testid=ai-strip-voice]")?.click()}
+          >
             “{strip.instruction}”
-          </span>
+          </button>
         )}
         <StatusPopover s={s} strip={strip} toText={toText} />
       </div>
