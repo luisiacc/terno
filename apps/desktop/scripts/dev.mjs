@@ -5,16 +5,20 @@
 //   pnpm dev:desktop --seeded   → a profile pre-seeded with 8 accounts / ~20k messages
 //                                 (reused on later runs; add --reseed to start over;
 //                                  TERNO_SEED_ACCOUNTS / TERNO_SEED_THREADS to tune)
+//   pnpm dev:desktop --demo-ai  → plan 167: its own profile with the demo mailbox and every AI feature holding something,
+//                                 on real models (Dev mode); the first launch prepares it (add --fresh to start over).
+//                                 docs/AI-DEMO.md
 //   add --cleandb to any of these → that profile (database, settings, first-run progress)
 //                                 goes to the Trash first, so the app starts as a fresh install
 import { spawn, spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { withDotEnv } from "../../../scripts/release-env.mjs";
 import { dirname, join } from "node:path";
-import { existsSync, renameSync } from "node:fs";
+import { existsSync, readFileSync, renameSync } from "node:fs";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_DEV_PORT, devPort, viteLocalUrl } from "../src/dev-port.ts";
+import { DEMO_AI_PROFILE, demoAiArgs, demoAiClock, demoAiEnv, demoAiProfileProblem, keyFiles, MARKER_FILE, missingKeysMessage, readMarker, resolveKeys, stepsToRun } from "../src/demo-ai.ts";
 import { DB_FILE, LegacyProfileConflictError, LegacyProfileInUseError, migrateLegacyProfile, profileInUse, resolveProfile } from "../src/legacy-profile.ts";
 
 // For one release UNICA_* variables still work (the same rule as @terno/core/legacy-env).
@@ -33,6 +37,7 @@ const repo = join(root, "..", "..");
 const demo = process.argv.includes("--demo");
 const seeded = process.argv.includes("--seeded");
 const cleandb = process.argv.includes("--cleandb");
+const demoAi = process.argv.includes("--demo-ai");
 
 /**
  * The dev profile (TERNO_USER_DATA wins, as is), with its legacy files renamed
@@ -74,7 +79,28 @@ function cleanProfile(profile) {
   console.log(`[dev] --cleandb: moved ${profile} to the Trash`);
 }
 
-if (cleandb) cleanProfile(seeded ? devProfile("Terno-dev-seeded") : demo ? devProfile("Terno-dev-demo") : devProfile("Terno"));
+/**
+ * Plan 167: before anything builds, what --demo-ai needs: its arguments, its keys (this checkout's .env, then the main
+ * checkout's, under the shell's), and what its profile still has to prepare. No key value is ever printed.
+ */
+let demoAiPlan = null;
+if (demoAi) {
+  let args;
+  try { args = demoAiArgs(process.argv.slice(2)); } catch (error) { console.error(`[demo-ai] ${error.message}`); process.exit(1); }
+  const common = spawnSync("git", ["rev-parse", "--git-common-dir"], { cwd: repo, encoding: "utf8" });
+  const files = keyFiles(repo, common.status === 0 ? common.stdout.trim() : null);
+  const read = (path) => { try { return readFileSync(path, "utf8"); } catch { return null; } };
+  const { keys, from, missing } = resolveKeys(process.env, files.map((path) => ({ path, text: read(path) })));
+  if (missing.length) { console.error(missingKeysMessage(missing, files)); process.exit(1); }
+  const profile = devProfile(DEMO_AI_PROFILE);
+  const problem = demoAiProfileProblem({ path: profile, hasDb: existsSync(join(profile, DB_FILE)), hasMarker: existsSync(join(profile, MARKER_FILE)) });
+  if (problem) { console.error(`[demo-ai] ${problem}`); process.exit(1); }
+  if (args.fresh) cleanProfile(profile);
+  const steps = stepsToRun(readMarker(read(join(profile, MARKER_FILE))), args);
+  console.log(`[demo-ai] keys: ${Object.entries(from).map(([k, f]) => `${k} (${f})`).join(", ")}`);
+  console.log(steps.length ? `[demo-ai] ${profile}: preparing ${steps.join(", ")} on real models before the window opens (a few minutes, once)` : `[demo-ai] ${profile}: prepared (pnpm dev:demo-ai --fresh starts over)`);
+  demoAiPlan = { profile, keys, steps, read };
+} else if (cleandb) cleanProfile(seeded ? devProfile("Terno-dev-seeded") : demo ? devProfile("Terno-dev-demo") : devProfile("Terno"));
 
 if (seeded) {
   const profile = (process.env.TERNO_USER_DATA = devProfile("Terno-dev-seeded"));
@@ -126,8 +152,11 @@ const localUrl = new Promise((resolve, reject) => {
 });
 
 let electron;
+/** plan 167: the Electron that prepares the AI demo, while it runs */
+let preparing = null;
 const shutdown = (code = 0) => {
   electron?.kill();
+  if (preparing) { try { process.kill(preparing, "SIGTERM"); } catch { /* gone */ } }
   killVite();
   process.exit(code);
 };
@@ -140,7 +169,7 @@ vite.on("exit", (code) => {
 const url = await localUrl;
 const require = createRequire(join(root, "package.json"));
 const electronBin = require("electron"); // the electron package exports the binary path
-const env = { ...process.env, TERNO_DEV_URL: url };
+let env = { ...process.env, TERNO_DEV_URL: url };
 // Some hosts (IDEs, agent shells) export this; it makes Electron run as plain Node.
 delete env.ELECTRON_RUN_AS_NODE;
 // plan 146: Dev mode's keys (DEV_AI_ENV), and nothing else of the repo's .env
@@ -150,7 +179,30 @@ if (demo) {
   env.TERNO_DEMO = "1";
   env.TERNO_USER_DATA = devProfile("Terno-dev-demo");
 }
-console.log(`\n[dev] launching Electron → ${url}${demo ? " (demo profile)" : ""}\n`);
+if (demoAiPlan) {
+  const { profile, keys, steps, read } = demoAiPlan;
+  if (steps.length) {
+    // plan 167: the real AI jobs once, behind your windows, then the window you use on the same profile
+    const { prepare, readSpend } = await import("./demo-ai-prepare.mjs");
+    const started = Date.now();
+    const failed = await prepare({
+      electronBin,
+      main: join(root, "dist/main.cjs"),
+      env: (now) => demoAiEnv({ base: process.env, profile, keys, devUrl: url, background: true, now }),
+      profile,
+      steps,
+      // Ctrl-C while it prepares stops that Electron too, by its PID
+      onPid: (pid) => (preparing = pid),
+    });
+    preparing = null;
+    const spend = Object.entries(readSpend(profile));
+    const total = spend.reduce((a, [, t]) => ({ requests: a.requests + t.requests, usd: a.usd + t.usd }), { requests: 0, usd: 0 });
+    console.log(`[demo-ai] prepared in ${Math.round((Date.now() - started) / 1000)} s: ${total.requests} model requests, about US$${total.usd.toFixed(2)} (${spend.map(([task, t]) => `${task} ${t.requests}`).join(", ")})`);
+    if (failed.length) console.log(`[demo-ai] ${failed.join(", ")} didn't finish: they run again on the next launch (a screenshot of each is in the profile)`);
+  }
+  env = demoAiEnv({ base: process.env, profile, keys, devUrl: url, background: false, now: demoAiClock(readMarker(read(join(profile, MARKER_FILE)))) });
+}
+console.log(`\n[dev] launching Electron → ${url}${demoAiPlan ? ` (the AI demo, ${new Date(Number(env.TERNO_TEST_NOW)).toISOString().slice(0, 16).replace("T", " ")} UTC; docs/AI-DEMO.md)` : demo ? " (demo profile)" : ""}\n`);
 const args = [join(root, "dist/main.cjs")];
 // optional: attach DevTools/Playwright over CDP (used by the dev-mode smoke check)
 if (process.env.TERNO_REMOTE_DEBUGGING_PORT) args.unshift(`--remote-debugging-port=${process.env.TERNO_REMOTE_DEBUGGING_PORT}`);

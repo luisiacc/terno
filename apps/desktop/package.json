@@ -15,6 +15,7 @@
     "test:startup": "playwright test -c playwright.startup.config.ts",
     "typecheck": "tsc -p tsconfig.json",
     "dev:demo": "node scripts/dev.mjs --demo",
+    "dev:demo-ai": "node scripts/dev.mjs --demo-ai",
     "dev:seeded": "node scripts/dev.mjs --seeded"
   },
   "dependencies": {
