@@ -66,6 +66,9 @@ describe("where the card goes", () => {
   it("narrower: above the draft, as tall as the room left, and its header alone under 140 px", () => {
     const above = pinnedAskPlace({ width: 530, height: 650 }, { width: 506, inset: 400 });
     expect(above).toMatchObject({ where: "above", right: CARD_GAP, bottom: 400, maxHeight: 650 - 400 - CARD_GAP, squeezed: false });
+    // the reader's toolbar stays clear, and over a draft it's 20 rem at most
+    expect(pinnedAskPlace({ width: 530, height: 650 }, { width: 506, inset: 400 }, 0, 52).maxHeight).toBe(650 - 400 - 52 - CARD_GAP);
+    expect(pinnedAskPlace({ width: 770, height: 900 }, { width: 512, inset: 300 }).maxHeight).toBe(320);
     const squeezed = pinnedAskPlace({ width: 530, height: 520 }, { width: 506, inset: 400 });
     expect(squeezed).toMatchObject({ where: "above", squeezed: true });
   });

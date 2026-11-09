@@ -39,14 +39,20 @@ export function PinnedAsk() {
   const titleId = useId();
   const [pane, setPane] = useState({ width: 0, height: 0 });
   const [floor, setFloor] = useState(0);
-  const place = pinnedAskPlace(pane, draft, floor);
+  // the reader's toolbar stays clear: what's above its scroller (none over a list or a new message)
+  const [top, setTop] = useState(0);
+  const place = pinnedAskPlace(pane, draft, floor, top);
   const collapsed = chose || place.squeezed;
 
   // the pane's size, as it changes (no polling)
   useLayoutEffect(() => {
     const el = cardRef.current?.parentElement;
     if (!el) return;
-    const measure = () => setPane((was) => (was.width === el.clientWidth && was.height === el.clientHeight ? was : { width: el.clientWidth, height: el.clientHeight }));
+    const measure = () => {
+      setPane((was) => (was.width === el.clientWidth && was.height === el.clientHeight ? was : { width: el.clientWidth, height: el.clientHeight }));
+      const scroller = el.querySelector<HTMLElement>("[data-reader-scroller]");
+      setTop(scroller ? Math.max(0, Math.round(scroller.getBoundingClientRect().top - el.getBoundingClientRect().top)) : 0);
+    };
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);

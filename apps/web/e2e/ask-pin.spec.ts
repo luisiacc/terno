@@ -152,7 +152,7 @@ test.describe("back to the answer, and the answer pinned (plan 165)", () => {
       const s = await box(card(page));
       expect(s.y + s.height).toBeLessThanOrEqual((await box(draftCard(page))).y - 11);
       await expect(page.getByTestId("pinned-ask-toggle")).toHaveAttribute("aria-disabled", "true");
-      await page.setViewportSize({ width: 1100, height: 700 });
+      await page.setViewportSize({ width: 1100, height: 900 });
       await expect(card(page)).not.toHaveAttribute("data-collapsed", "true");
     });
 
