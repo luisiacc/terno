@@ -556,6 +556,10 @@ function FollowUp({ disabled, onWalk, inputRef: ref }: { disabled: boolean; onWa
     setTyped(text);
     keepAskPlace(conversationId, { followUp: text });
   };
+  // typed while the first answer came (no conversation yet): kept once there is one (Codex review, round 2)
+  useEffect(() => {
+    if (conversationId !== null && value) keepAskPlace(conversationId, { followUp: value });
+  }, [conversationId]);
   const running = useAsk((s) => s.running !== null);
   const armed = useRef(false);
   // plan 162 (Codex review): a follow-up that failed or found nothing keeps its words here too, selected, unless typed over

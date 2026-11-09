@@ -19,12 +19,14 @@ vi.mock("~/rpc/connection", () => ({
     },
   },
 }));
-const opened = vi.hoisted(() => ({ threads: [] as number[], asks: 0 }));
+const opened = vi.hoisted(() => ({ threads: [] as number[], asks: 0, leftDraft: 0 }));
 vi.mock("~/lib/page", () => ({ openThread: (id: number) => opened.threads.push(id), readerShown: () => true, listLayout: () => false }));
 vi.mock("~/lib/palette-open", () => ({ toggleAsk: () => void opened.asks++ }));
+vi.mock("~/lib/compose", () => ({ leaveNewDraft: () => { opened.leftDraft++; setAppLater({ compose: null }); } }));
+const setAppLater = (patch: object) => void import("~/state/app").then(({ setApp }) => setApp(patch));
 
 const { askChosen, askPlace, forgetAsk, installAsk, keepAskPlace, markVisited, openSource, useAsk, useAskVisited } = await import("./ask");
-const { openPinnedSource, pinAnswer, unpinAnswer } = await import("./pinned-ask");
+const { closePinnedAnswer, openPinnedSource, pinAnswer, unpinAnswer } = await import("./pinned-ask");
 const { CARD_GAP, pinnedAskPlace, usePinnedAsk } = await import("./pinned-ask-state");
 const { useSnack } = await import("./snack");
 const { getApp, setApp } = await import("~/state/app");
@@ -41,6 +43,8 @@ beforeEach(() => {
   rpc.answer.clear();
   opened.threads.length = 0;
   opened.asks = 0;
+  opened.leftDraft = 0;
+  setApp({ compose: null, checked: new Set(), scope: null });
   usePinnedAsk.setState({ pinned: null, collapsed: false, inset: 0 });
   forgetAsk();
   setApp({ dialog: null });
@@ -142,6 +146,40 @@ describe("pinning an answer", () => {
     expect(opened.threads).toEqual([3]);
   });
 
+  it("closed while a source was asked for, then the same answer pinned again: the old request opens nothing", async () => {
+    showing();
+    pinAnswer();
+    let answer!: (v: unknown) => void;
+    rpc.answer.set("ai.askSources", new Promise((r) => (answer = r)));
+    openPinnedSource(source);
+    closePinnedAnswer();
+    pinAnswer();
+    answer({ 5: { state: "ok", threadId: 2 } });
+    await flush();
+    expect(opened.threads).toEqual([]);
+  });
+
+  it("over a new message or a selection (Split), the source is what shows: the new message is put away, the selection ends", async () => {
+    showing();
+    pinAnswer();
+    rpc.answer.set("ai.askSources", { 5: { state: "ok", threadId: 2 } });
+    setApp({ compose: { key: "new:1", mode: "new" } as never, checked: new Set([1, 2]) });
+    openPinnedSource(source);
+    await flush();
+    expect(opened.leftDraft).toBe(1);
+    expect(getApp().checked.size).toBe(0);
+    expect(opened.threads).toEqual([2]);
+  });
+
+  it("a Back to the answer from an earlier Ask source, on the same conversation, goes: the card is the way back", async () => {
+    showing({ returnTo: { threadId: 2, messageId: 5, conversationId: 3 } });
+    pinAnswer();
+    rpc.answer.set("ai.askSources", { 5: { state: "ok", threadId: 2 } });
+    openPinnedSource(source);
+    await flush();
+    expect(useAsk.getState().returnTo).toBeNull();
+  });
+
   it("a source asked for after the card went opens nothing", async () => {
     showing();
     pinAnswer();
@@ -191,6 +229,22 @@ describe("unpin and close", () => {
     expect(usePinnedAsk.getState().pinned?.conversationId).toBe(8);
     expect(useAsk.getState().conversationId).toBe(8);
     expect(opened.asks).toBe(0);
+  });
+
+  it("a read that's slow while Ask moves on (a new question): Ask isn't taken over", async () => {
+    showing();
+    pinAnswer();
+    useAsk.setState({ conversationId: 8, turns: [turnOf(3, 8)] });
+    let answer!: (v: unknown) => void;
+    rpc.answer.set("ai.askConversation", new Promise((r) => (answer = r)));
+    const unpinning = unpinAnswer();
+    useAsk.setState({ running: { requestId: "r2", question: "new", text: "", chunks: [], older: null, searchingOlder: false } });
+    answer({ turns: [turnOf(1)], sources: {}, older: { kind: "none" } });
+    await unpinning;
+    expect(useAsk.getState().running?.requestId).toBe("r2");
+    expect(useAsk.getState().conversationId).toBe(8);
+    expect(opened.asks).toBe(0);
+    expect(usePinnedAsk.getState().pinned?.conversationId).toBe(7);
   });
 
   it("a read that fails keeps the card, and says so", async () => {

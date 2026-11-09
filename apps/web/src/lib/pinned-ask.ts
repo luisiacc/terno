@@ -24,6 +24,7 @@ export function pinAnswer(): boolean {
     if (view) views[source.messageId] = view;
   }
   seq.card++;
+  seq.source++;
   usePinnedAsk.setState((p) => ({ pinned: { conversationId: s.conversationId!, turn, views }, collapsed: false, focus: p.focus + 1 }));
   if (getApp().dialog === "palette") setApp({ dialog: null });
   return true;
@@ -38,10 +39,17 @@ export async function unpinAnswer({ toAsk = true }: { toAsk?: boolean } = {}): P
   const pinned = usePinnedAsk.getState().pinned;
   if (!pinned) return;
   const mine = ++seq.card;
-  const current = () => seq.card === mine && usePinnedAsk.getState().pinned === pinned;
+  // and Ask as it was: a question asked or another conversation opened meanwhile isn't taken over (Codex review, round 2)
+  const ask = useAsk.getState();
+  const card = () => seq.card === mine && usePinnedAsk.getState().pinned === pinned;
+  const current = () => {
+    const now = useAsk.getState();
+    return card() && now.conversationId === ask.conversationId && now.running === ask.running && now.turns === ask.turns;
+  };
   if (toAsk && useAsk.getState().conversationId !== pinned.conversationId) {
+    // checked before it commits; once it has, Ask holds this answer by our own hand
     const opened = await openConversation(pinned.conversationId, current).catch(() => null);
-    if (!current()) return;
+    if (opened ? !card() : !current()) return;
     if (opened === null) return void snack.warning(t("ask.pinned.unpinFailed"));
     // deleted meanwhile (another window): there's nothing to go back to
     if (!opened) return clearPinnedAnswer();
@@ -55,6 +63,7 @@ export async function unpinAnswer({ toAsk = true }: { toAsk?: boolean } = {}): P
 /** The card's ×: it goes (the conversation stays in Previous AI questions). */
 export function closePinnedAnswer(): void {
   seq.card++;
+  seq.source++;
   clearPinnedAnswer();
 }
 
@@ -64,6 +73,6 @@ export function openPinnedSource(source: AskSourceRef): void {
   if (!pinned) return;
   // the last one asked for wins: an earlier one answering late doesn't take the reader back
   const mine = ++seq.source;
-  const still = () => seq.source === mine && usePinnedAsk.getState().pinned?.turn.id === pinned.turn.id;
+  const still = () => seq.source === mine && usePinnedAsk.getState().pinned === pinned;
   void openSource(source, undefined, still, { conversationId: pinned.conversationId });
 }

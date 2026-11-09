@@ -101,3 +101,12 @@ Review 1 (`/tmp/terno-scratch/p164/ask/review-1.md`), seven findings, all fixed:
 7. **The focused answer was a generic `div` with a name.** It's `role="region"`, "Answer" (e2e asserts its role and name).
 
 Real-model shots also moved two things: the card never covers the reader's toolbar (what's above the reader's scroller is kept clear), and above a draft it's 20 rem at most, so the conversation still reads beside the two cards.
+
+Review 2 (`review-2.md`), six findings, all fixed; the rounds stop here (the owner's cap):
+
+1. **A follow-up typed while the first answer came was lost** (no conversation yet to keep it under). Kept once the conversation has its id. No page test: the offline model answers before a key can be typed; the fix is one effect beside the one the e2e covers.
+2. **A slow unpin could still take over Ask** (a question asked meanwhile). The unpin's read commits only while Ask is as it was (conversation, turns, the answer running); once it has committed, only the card's own check applies (unit: "while Ask moves on").
+3. **Over a new message or a selection (Split), a source opened but didn't show.** Opening a source (from the card or from Ask) puts a new message away, as a row's click does, and ends a selection (unit).
+4. **Leaving a selection didn't remeasure the toolbar.** The selection is part of what the pane shows, so it's remeasured. No page test of its own: the same measurement as #4 of round 1, which e2e fails without.
+5. **Close, then pin the same answer again, revived a waiting source.** A pin or a close ends every source asked for before it, and the check is the card itself, not its turn's id (unit).
+6. **A Back to the answer from an earlier Ask source stayed on the same conversation.** Opening a source from the card clears it (unit).

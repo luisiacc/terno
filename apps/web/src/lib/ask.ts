@@ -11,6 +11,7 @@ import { toggleAsk } from "~/lib/palette-open";
 import { useAppearance } from "~/lib/appearance";
 import { focusIntent, installFocusIntent } from "~/lib/focus-intent";
 import { forgetPinnedAnswer } from "~/lib/pinned-ask-state";
+import { leaveNewDraft } from "~/lib/compose";
 
 /**
  * Plan 141: the conversation, in a small store outside the palette: closing it doesn't stop an answer, and ⌘⇧K comes
@@ -322,10 +323,16 @@ export async function openSource(source: AskSourceRef, approved?: Shown, current
   const at = await sourceThread(source, approved, current);
   if (at === null || !current()) return;
   setApp({ dialog: null });
+  // plan 165 (Codex review): Split's reader shows a new message or a selection over the conversation; a source asked to
+  // be seen leaves them (the new message saved and put away, as a row's click leaves it)
+  const app = getApp();
+  if (app.compose) leaveNewDraft();
+  if (app.checked.size >= 2 || app.scope !== null) setApp({ checked: new Set(), scope: null });
   openThread(at.threadId);
   revealSummaryMessage(source.messageId);
   markVisited(pinned ? pinned.conversationId : useAsk.getState().conversationId, source.messageId);
-  if (pinned) return;
+  // the card is the way back: a link to an earlier answer, kept on this same conversation, would be another's
+  if (pinned) return void useAsk.setState({ returnTo: null });
   useAsk.setState({ returnTo: { threadId: at.threadId, messageId: source.messageId, conversationId: useAsk.getState().conversationId } });
   focusMessage(source.messageId);
 }
