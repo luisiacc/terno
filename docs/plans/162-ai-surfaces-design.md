@@ -958,3 +958,56 @@ Models: real, openai/gpt-6-luna, anthropic/claude-sonnet-5-5, anthropic/claude-h
 **High:** plan 163's instruction in the body reads as an email ready to send, with Send still primary and "Write it" a grey word, or only a sparkle at 1100 (four reports); revising a draft is muddled (a Suggestion pane identical to the draft, your words left in the body); Ask's panel runs past a 1100x700 window and cuts its own sources (two); the model's scratch text ("[m9 doesn't mention it…]") reaches the answer; focus escapes Ask to the app behind; "Include" adds every protected conversation past the check, and the line still says "Skips 3".
 
 **Themes:** Ask's dotted underline for unlinked parts reads as a link (five reports); list answers as raw hyphens; same-name people explained after the merged answer; ⌘J's controls change with the window's width.
+
+## Pass after ai162-r04
+
+Written before any code. All eight r04 reports, their 682 below-9 reasons, the 103 issues (10 high), the praise and the probes were read; the revise probe (`atelier/claude-probes/*-cmdj-revised`) and the Ask overflow (a dialog at y=126, 581 px tall in a 700 px window) were reproduced from the reports' own numbers. This is the pass before the last rated round (ai162-r05). Nothing here adds a shortcut, a model call, a check that uses AI or a consent prompt.
+
+### ⌘J: the instruction is visibly one (four high reports)
+
+**What's wrong.** Plan 163's instruction sits in the body in mail type; Send stays the filled primary; the only cue is a grey "Write it" that becomes a bare sparkle under 36 rem of foot. Every report read it as an email ready to send.
+
+**The design.** One state, "a note for AI", decided on this machine (`readBody`, no model): the body reads as an instruction, or ⌘J opened the composer for AI (`primed`) and what's typed isn't plainly an email (the rules say `unsure`). Plain drafts never enter it.
+1. **The body says so.** A faint AI wash behind the body (the primary at 5%, inset, rounded, no border) and a quiet label at its top-right, "✦ For AI", in the secondary at `text-xs`. The label never takes layout: it floats in the first line's end, which the first paragraph keeps clear while the state lasts. The editor's accessible description names the state ("Your note for AI. Press ⌘J to write the email from it.").
+2. **The primary becomes Write it.** In Send's place, at every width: **✦ Write it** (primary, with its ⌘J keycap), then **Send** as an icon-only secondary (outlined, "Send it as it is" in its name and tooltip). The foot's Sparkles steps out (Write it is it), so the foot's width doesn't change with the state, and nothing changes with the window.
+3. **Send asks first.** Send, ⌘↵, Send later or the palette on a note for AI ask once, at the action row (plan 158's question): "This reads as a note for AI." **Write it** (default) · **Send as it is** · Esc cancels. A note is never mailed by a reflex.
+4. When the draft lands, the wash and the label go, Send is the primary again: the transition is the change of the foot.
+
+**Revising.** Words typed after the AI's draft ("Luis" + "shorter, more casual") stayed in the body, and ⌘J gave a Suggestion identical to the draft. Now:
+- Over a strip, when the body is the AI's last version with words added at its end (or a new last paragraph), those words are **the revision**: ⌘J rewrites the draft with them (the strip's free-form refine, one call as before), the words leave the body with the old version, and the strip's Undo brings back exactly what was there (draft and words). No "Replace your edits?" for it: the only edit was the instruction.
+- A suggestion that says what the body already says (compared without whitespace) is never shown: the row says "No change: the draft already says that." and the strip stays.
+- A rewrite over a strip that was typed into while it ran offers Replace (undoable) before Insert below: a whole second draft under the first was never the useful choice.
+
+### Ask (6 to 7.5)
+
+1. **It always fits the window.** The dialog is bounded to the window (top 18%, a 16 px margin under it) and is a column: header, the one scroll region (answer and sources) taking what's left, the follow-up box and the keys' line always whole. The scroll region fades its edge while more is below. The keys' line says how many sources there are ("↓ 7 sources").
+2. **Scratch text never reaches the answer.** Locally, before anything is shown or stored: a bracket that holds a message label and words ("[m9 doesn't mention it, so ignore that one]") is dropped; a bracket of labels only ("[m1, m3]") becomes citations. The prompt (v8) says it plainly: no notes to yourself, in brackets or otherwise. No new call.
+3. **Focus stays in Ask.** In every Ask state, Tab can't reach the app behind the dimmed backdrop: New question and Previous AI questions give the keys to the page's field, and the palette keeps any focus that lands in the app behind (the main window's root) inside the dialog.
+4. **Not linked looks like not linked.** No underline. A claim with no source is set in the secondary ink, and the note under the answer says which: "Parts in grey aren't linked to a message." Links stay the numbered marks.
+5. **Lists and bold render.** The model's "- " and "1. " lines are a real list (hanging indent), "**…**" is bold; plain text only, nothing else of markdown, no HTML. The prompt allows a list for several items.
+6. **Same-name people first.** "Isabella here is 3 people: …" sits between the question and the answer; source rows give the sender column room for the full name.
+
+### Actions
+
+1. **Include respects the check.** Including the starred or replied conversations runs them past what the check already decided, by the same sender-and-subject groups (no model): a protected conversation in a kept group is ticked, one in a left-out group stays left out, and one the check never saw is added **unticked**, a row to tick by hand. The line always says what's true: "Including 3 starred or replied", "Including 1 of 3 starred or replied · tick the rest to add them", with Skip them; with no check (the rule was certain), Include ticks them as before.
+2. **One decision on screen.** In Split, the rule's pane holds the decision (Archive N, Cancel) and the list header shows only the request and count; while a match is read the header holds it (the pane is the message). Never two pairs, never two orders.
+3. **The rule is shown, not folded.** "Terno read it as": where it looks and each condition, in the ink, open, with Edit as a rule beside the heading; only the exact search stays behind its disclosure. Its age says its day.
+4. **Plain words for what's kept back:** "6 don't look like shipping notices · Show" (the check's verdict said as what it is), "3 you starred or replied to stay · Include them", both the same small bordered control.
+5. Focus goes to Archive N when the preview is ready (it sat on the list's container).
+
+### Everything else below 9, by cells lifted
+- **Summary:** collapsed is the header alone (half a line showed, three reports); the items' Reply quiet (ghost with its glyph), the source a quiet link; the card says what it covers ("From 3 messages").
+- **Today:** the reasons in the ink at medium weight, apart from the snippet (eight reports); the digest's selected row stays inside its column.
+- **Writing style:** the page fades at its foot when it continues; Reset this style is quiet and apart from Edit.
+- **Reply ready and follow-ups:** unchanged (7.5 to 8.5); the Reply / Reply all switch moves beside Use as draft only if it costs nothing elsewhere.
+
+### Not in this pass
+- **Per-row reasons for what the check left out:** the check returns kept and dropped groups, not reasons; a reason would be a new model output.
+- **Grouping or merging the digest's issues:** the digest is normal emails (owner).
+- **A shortcut for Write it other than ⌘J, for Shorter, Warmer, Regenerate or Summarize:** the owner's rule.
+- **Deadline-aware follow-up dates** (one report): the date is plan 145's rule; reading a deadline would be a model call.
+- **Citations for the summary's paragraph:** new model output.
+
+### Tests this pass adds
+- Unit: the note state (`noteState`); `revisionOf` (suffix, new paragraph, edits elsewhere: none); an identical suggestion dropped; `cleanAnswer` (scratch dropped, label lists kept); the answer's blocks (lists, bold, nothing else); the backend's Include by group (kept, left out, unseen unticked; the line's counts).
+- e2e: `ai-draft` (the wash, the label and Write it as the primary at 1100 and 1440; Send asks; revise replaces and Undo restores); `ask` (the dialog inside 1100x700 with a long answer, the footer whole, every source reachable; Tab never leaves the dialog after New question and Previous questions; no underline, grey unlinked; a list renders); `plain-actions` (one decision; Include's line; focus on Archive).
