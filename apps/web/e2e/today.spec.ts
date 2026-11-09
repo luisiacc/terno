@@ -37,6 +37,11 @@ async function withMail(server: DevServerFixture, more = 0) {
   await server.backend.store.sync.ingest([letter(1, "Stratechery", "Stratechery weekly"), letter(2, "Morning Brew", "Morning Brew digest"), letter(3, "Acme Store", "Sale ends tonight"), ...extra], { applyFilters: false, now: E2E_NOW, classifier: null });
   db.run("UPDATE threads SET person = 0 WHERE subject IN ('Stratechery weekly','Morning Brew digest','Sale ends tonight') OR subject LIKE 'Weekly % issue'");
   db.run("UPDATE messages SET created_at = ? WHERE subject IN ('Stratechery weekly','Morning Brew digest','Sale ends tonight') OR subject LIKE 'Weekly % issue'", E2E_NOW - 3600_000);
+  // plan 166: a new conversation from someone you write to, not answered: "Waiting for your reply"
+  await server.backend.store.sync.ingest([{ ...letter(90, "Marta Ruiz", "Lunch on Friday?"), from: { name: "Marta Ruiz", email: "marta@ruiz.test" }, listId: null, snippet: "Are you free on Friday?", bodyText: "Are you free on Friday?" } as unknown as IncomingMessage], { applyFilters: false, now: E2E_NOW, classifier: null });
+  const fresh = db.get<{ id: number }>("SELECT id FROM threads WHERE subject = ?", "Lunch on Friday?")!.id;
+  db.run("UPDATE threads SET waiting_since = ?, last_date = ?, has_sent = 0, person = 1 WHERE id = ?", E2E_NOW - 2000, E2E_NOW + 30_000, fresh);
+  db.run("INSERT INTO correspondents (email, own, written) VALUES ('marta@ruiz.test', 0, 1) ON CONFLICT(email) DO UPDATE SET written = 1, own = 0");
   return { waiting, db };
 }
 
@@ -74,12 +79,12 @@ test.describe("Today (plan 145)", () => {
     // the app still opens on the Inbox
     await expect(page.getByTestId("list-title").or(page.getByTestId("list-header")).first()).toBeVisible();
     await page.getByTestId("nav-today").click();
-    // plan 162 (after ai162-r02): the list starts with Needs you; the digest's way in is the header's, above the fold
-    await expect(page.getByTestId("today-heading").first()).toHaveAttribute("data-kind", "needsYou");
-    await expect(page.getByTestId("today-heading").first()).toHaveText("Needs you");
+    // plan 166: Needs you is two groups, Your turn first; the digest's way in is the header's, above the fold
+    await expect(page.getByTestId("today-heading").first()).toHaveAttribute("data-kind", "yourTurn");
+    await expect(page.getByTestId("today-heading").first()).toHaveText("Your turn");
     expect(await page.getByTestId("today-heading").first().evaluate((el) => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(13);
-    // Codex review: a drawn heading can't sit in a listbox, so each section's first row says its name to assistive tech
-    await expect(page.locator('[data-keep-scroll="list"] [role=option]').first()).toHaveAccessibleName(/^Needs you, /);
+    // Codex review: a drawn heading can't sit in a listbox, so each group's first row says its name to assistive tech
+    await expect(page.locator('[data-keep-scroll="list"] [role=option]').first()).toHaveAccessibleName(/^Your turn, /);
     await expect(page.getByTestId("list-header").getByTestId("digest-row")).toHaveAccessibleName(/^Newsletters, /);
     await expect(page.locator('[data-keep-scroll="list"]').getByTestId("digest-row")).toHaveCount(0);
     // plan 162 (after ai162-r05): the digest's way in is a row, not a caption: its count at a sender's size and weight, who
@@ -92,25 +97,29 @@ test.describe("Today (plan 145)", () => {
     expect(await size(entry.getByTestId("digest-row-title"))).toBeGreaterThanOrEqual(await size(page.getByTestId("thread-row").first().getByTestId("row-subject")));
     expect(await entry.getByTestId("digest-row-title").evaluate((el) => Number(getComputedStyle(el).fontWeight))).toBeGreaterThanOrEqual(500);
     await expect(page.getByTestId("thread-row").filter({ hasText: "Can you make the 19th" })).toBeVisible();
-    // plan 161: the row says why it needs you (they've written in it). Pass 2: as a label of its own, not the snippet's first words
-    await expect(page.getByTestId("thread-row").filter({ hasText: "Can you make the 19th" }).getByTestId("row-why")).toHaveText("Your turn: they replied");
+    // plan 166: the heading says why, so the row leads with its own words: no "Your turn: they replied ·" before them
+    await expect(page.getByTestId("thread-row").filter({ hasText: "Can you make the 19th" }).getByTestId("row-why")).toHaveCount(0);
     // the header says what each number is: the sidebar's count, then how many of them the list shows if it's capped
     // pass 3: one sentence, never a second total to read against the Inbox's: "9 need you", or when capped (plan 162) "Showing 12 of 41"
     await expect(page.getByTestId("today-needs")).toHaveText(/^(The newest \d+ of \d+ that need you|\d+ needs? you)$/);
     const sidebar = (await page.getByTestId("nav-today").innerText()).match(/\d+/)?.[0];
     if (sidebar) await expect(page.getByTestId("today-needs")).toHaveText(new RegExp(`^(The newest \\d+ of ${sidebar} that need you|${sidebar} needs? you)$`));
     await expect(page.getByTestId("today-line")).not.toContainText(/waiting|\d+ to reply/);
-    // plan 162 (after ai162-r02): the reason is words, no box (the outlined tag was the loudest thing in every row), then a
-    // "·" and the mail's words. After ai162-r04: in the row's ink, apart from the snippet's grey
-    const why = page.getByTestId("thread-row").filter({ hasText: "Can you make the 19th" }).getByTestId("row-why");
-    const ink = async (el: typeof why) => el.evaluate((e) => getComputedStyle(e).color);
-    expect(await ink(why)).not.toBe(await ink(page.getByTestId("thread-row").filter({ hasText: "Can you make the 19th" }).getByTestId("row-snippet").locator("span").last()));
-    expect(await why.evaluate((e) => getComputedStyle(e).borderTopWidth)).toBe("0px");
-    await expect(why).toHaveCSS("font-weight", "500");
-    // plan 162 (after ai162-r05): the two reasons say the next step and look apart: waiting is the quiet ink, a reply the ink
-    const waiting = page.getByTestId("row-why").filter({ hasText: "Waiting for your reply" }).first();
-    if (await waiting.count()) expect(await ink(waiting)).not.toBe(await ink(why));
-    await expect(page.getByTestId("thread-row").filter({ hasText: "Can you make the 19th" }).getByTestId("row-snippet")).toContainText("Your turn: they replied · ");
+    // plan 166: each group's heading is the sections' heading; "Waiting for your reply" follows "Your turn" when it has rows
+    const headings = page.getByTestId("today-heading");
+    await expect(headings.nth(1)).toHaveAttribute("data-kind", "waitingForYou");
+    await expect(headings.nth(1)).toHaveText("Waiting for your reply");
+    await expect(page.getByTestId("thread-row").filter({ hasText: "Can you make the 19th" }).getByTestId("row-snippet")).not.toContainText("Your turn");
+    // the new conversation is under the second heading, its line its own words, and it says its group's name first
+    const lunch = page.getByTestId("thread-row").filter({ hasText: "Lunch on Friday?" });
+    await expect(lunch).toBeVisible();
+    await expect(lunch.getByTestId("row-snippet")).toHaveText("Are you free on Friday?");
+    const under = async (l: Locator) => (await l.boundingBox())!.y;
+    expect(await under(lunch)).toBeGreaterThan(await under(headings.nth(1)));
+    expect(await under(page.getByTestId("thread-row").filter({ hasText: "Can you make the 19th" }))).toBeLessThan(await under(headings.nth(1)));
+    await expect(page.locator('[data-keep-scroll="list"] [role=option]').filter({ hasText: "Lunch on Friday?" })).toHaveAccessibleName(/^Waiting for your reply, /);
+    // the heading is the same heading, on the rows' line
+    expect(await headings.nth(1).evaluate((el) => getComputedStyle(el).fontWeight)).toBe(await headings.first().evaluate((el) => getComputedStyle(el).fontWeight));
     // the digest's way in is quieter than any person: its words in the secondary, no ring; in view, a real target
     await expect(page.getByTestId("digest-row")).toContainText("automated");
     await expect(page.getByTestId("digest-row")).toBeInViewport();
@@ -295,7 +304,7 @@ test.describe("Today (plan 145)", () => {
     await page.getByTestId("nav-today").click();
     await expect(page.getByTestId("digest-row")).toContainText("today's digest", { timeout: 15_000 });
     // Needs you leads the list; the digest's way in is above the fold, in the header
-    await expect(page.getByTestId("today-heading").first()).toHaveAttribute("data-kind", "needsYou");
+    await expect(page.getByTestId("today-heading").first()).toHaveAttribute("data-kind", "yourTurn");
     await expect(page.getByTestId("digest-row")).toBeInViewport();
     await page.getByTestId("digest-row").click();
     await expect(page.getByTestId("digest-title")).toHaveText("Today's digest");

@@ -23,7 +23,6 @@ import { useThreadCode } from "~/lib/codes";
 import { reminderShort, useReminders } from "~/lib/reminders";
 import { rowLine } from "~/lib/followups";
 import { useFollowups } from "~/state/followups";
-import { useToday } from "~/state/today";
 import { onlyOnTop } from "~/state/list";
 import { useExcerpts } from "~/state/excerpts";
 
@@ -190,22 +189,18 @@ function matchLine(match: RowMatch | null | undefined, text: string, lead: numbe
 }
 
 /**
- * Plan 161, pass 2: why Today lists a waiting row ("Your turn"), a label of its own before the row's words, so it doesn't
- * read as the mail's first words. Pass 3: in the row's secondary ink at medium weight. Plan 162: in the ink at the row's
- * own weight, under the subject (medium) in strength and over the snippet in colour. One Map read.
+ * Plan 162 (after ai162-r05): in an action's preview, why a shown row isn't plainly a match, a label of its own before
+ * the row's words (the left-out and the starred or replied rows read as the matches: two reports), in the ink at the
+ * row's own weight. Only inside a preview: a page that answers after Cancel can't put a tag on an ordinary mailbox's row
+ * (Codex review). Plan 166: Today's reasons were here too, until its groups' headings said them. One Map read.
  */
 function useReason(thread: Pick<ThreadSummary, "id">): string | undefined {
-  const inToday = useApp((s) => s.today);
-  const today = useToday((s) => (inToday ? s.reasons.get(thread.id) : undefined));
-  // plan 162 (after ai162-r05): in an action's preview, why a shown row isn't plainly a match, in the same place and
-  // look as Today's reason (the left-out and the starred or replied rows read as the matches: two reports)
-  // only inside a preview: a page that answers after Cancel can't put a tag on an ordinary mailbox's row (Codex review)
   const previewing = useApp((s) => s.actionPreview !== null);
   const tag = useActionRows((s) => (previewing ? s.tags.get(thread.id) : undefined));
-  return today ?? (tag ? t(`action.row.${tag}`) : undefined);
+  return tag ? t(`action.row.${tag}`) : undefined;
 }
 
-/** The row's words, with Today's reason ahead of them when there is one: the reason keeps its place, the words truncate. */
+/** The row's words, with an action preview's reason ahead of them when there is one: the reason keeps its place, the words truncate. */
 function withReason(reason: string | undefined, quiet: string, ink: string, words: React.ReactNode): React.ReactNode {
   if (!reason) return words;
   return (
@@ -213,9 +208,7 @@ function withReason(reason: string | undefined, quiet: string, ink: string, word
       {/* plan 162 (after ai162-r02): the reason is words, never a box (the outlined tag was the loudest thing in every row),
           then a "·", then the mail's words. After ai162-r04: in the row's ink at medium weight, so it leads the line and
           never reads as the snippet's first words (eight reports: the same grey as the preview) */}
-      {/* after ai162-r05: the two reasons say the user's next step, and look apart: "Your turn: they replied" in the ink,
-          "Waiting for your reply" in the quiet one, both at medium weight (they were one look: four reports) */}
-      <span data-testid="row-why" className={cn(reason === t("today.why.newFrom") || reason === t("action.row.leftOut") ? quiet : ink, "font-medium")}>{reason}</span>
+      <span data-testid="row-why" className={cn(reason === t("action.row.leftOut") ? quiet : ink, "font-medium")}>{reason}</span>
       <span aria-hidden className={quiet}> · </span>
       <span className={quiet}>{words}</span>
     </>

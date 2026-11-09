@@ -46,20 +46,70 @@ describe("Back to the digest (plan 161)", () => {
   });
 });
 
-describe("a waiting row says why it needs you (plan 161)", () => {
-  const thread = (id: number) => ({ id, snippet: "the snippet", fromName: "Ana" }) as never;
-  it("leads with needsYou's reason, then the summary or the snippet", () => {
+describe("plan 166: Needs you is two groups", () => {
+  const thread = (id: number) => ({ id, snippet: `snippet ${id}`, fromName: "Ana" }) as never;
+  const waiting = (id: number, wrote: boolean, summary?: string) => ({ thread: thread(id), why: { kind: "waiting" as const, wrote }, ...(summary ? { summary } : {}) });
+  const groups = () => useToday.getState().groups.map((g) => [g.kind, g.at]);
+
+  it("Your turn, then Waiting for your reply, each in the backend's order; the row leads with its own words", () => {
     const list: TodayList = {
       now: 0,
       held: [],
       digest: null,
-      sections: [{ kind: "needsYou", more: 3, items: [{ thread: thread(1), why: { kind: "waiting", wrote: true } }, { thread: thread(2), why: { kind: "waiting", wrote: false }, summary: "A summary." }] }],
+      sections: [
+        {
+          kind: "needsYou",
+          more: 3,
+          items: [
+            { thread: thread(5), why: { kind: "promise", text: "send the contract" } },
+            waiting(1, false, "A summary."),
+            waiting(2, true),
+            waiting(3, false),
+            { thread: thread(6), why: { kind: "nudge", personName: "Tom", sentAt: Date.now() - 5 * 86_400_000 } },
+            waiting(4, true),
+          ],
+        },
+        { kind: "reminders", items: [{ thread: thread(7), why: { kind: "reminder" } }] },
+      ],
     };
     const rows = flattenToday(list, []);
-    // pass 2: the reason is a label of its own, ahead of the words, not their first words
-    expect(rows.map((r) => r.snippet)).toEqual(["the snippet", "A summary."]);
-    expect([...useToday.getState().reasons]).toEqual([[1, "Your turn: they replied"], [2, "Waiting for your reply"]]);
-    expect(useToday.getState().needsShown).toBe(2);
+    expect(rows.map((r) => r.id)).toEqual([5, 2, 6, 4, 1, 3, 7]);
+    expect(groups()).toEqual([["yourTurn", 0], ["waitingForYou", 4], ["reminders", 6]]);
+    // the heading says "Your turn" and "Waiting for your reply"; what it doesn't say (a promise, a nudge) stays on the row
+    expect(rows.map((r) => r.snippet)).toEqual(["You said: send the contract", "snippet 2", "No reply from Tom in 5 days", "snippet 4", "A summary.", "snippet 3", "snippet 7"]);
+    expect("reasons" in useToday.getState()).toBe(false);
+    // the cap is the backend's, shared: the header counts both groups
+    expect(useToday.getState().needsShown).toBe(6);
+    expect(useToday.getState().more).toBe(3);
+  });
+
+  it("a group with no rows has no heading", () => {
+    flattenToday({ now: 0, held: [], digest: null, sections: [{ kind: "needsYou", more: 0, items: [waiting(1, false), waiting(2, false)] }] }, []);
+    expect(groups()).toEqual([["waitingForYou", 0]]);
+    flattenToday({ now: 0, held: [], digest: null, sections: [{ kind: "needsYou", more: 0, items: [waiting(1, true)] }] }, []);
+    expect(groups()).toEqual([["yourTurn", 0]]);
+  });
+
+  it("a held row stays in its own group: never under the next group's heading", () => {
+    const before = flattenToday({ now: 0, held: [], digest: null, sections: [{ kind: "needsYou", more: 0, items: [waiting(1, true), waiting(2, true), waiting(3, false), waiting(4, false)] }] }, []);
+    expect(groups()).toEqual([["yourTurn", 0], ["waitingForYou", 2]]);
+    // 2, the last of Your turn, was replied to while open: it stays at its place, above "Waiting for your reply"
+    const rows = flattenToday({ now: 0, held: [thread(2)], digest: null, sections: [{ kind: "needsYou", more: 0, items: [waiting(1, true), waiting(3, false), waiting(4, false)] }] }, before);
+    expect(rows.map((r) => r.id)).toEqual([1, 2, 3, 4]);
+    expect(groups()).toEqual([["yourTurn", 0], ["waitingForYou", 2]]);
+  });
+
+  it("a held row whose group has gone keeps that group's heading, where the group was", () => {
+    const before = flattenToday({ now: 0, held: [], digest: null, sections: [{ kind: "needsYou", more: 0, items: [waiting(1, true), waiting(2, true), waiting(3, false), waiting(4, false)] }] }, []);
+    // 2 is open; 1 and 2 both left Your turn
+    const rows = flattenToday({ now: 0, held: [thread(2)], digest: null, sections: [{ kind: "needsYou", more: 0, items: [waiting(3, false), waiting(4, false)] }] }, before);
+    expect(rows.map((r) => r.id)).toEqual([2, 3, 4]);
+    expect(groups()).toEqual([["yourTurn", 0], ["waitingForYou", 1]]);
+    // and the first of Waiting for your reply, held, stays under its own heading
+    const again = flattenToday({ now: 0, held: [], digest: null, sections: [{ kind: "needsYou", more: 0, items: [waiting(1, true), waiting(3, false), waiting(4, false)] }] }, []);
+    const held = flattenToday({ now: 0, held: [thread(3)], digest: null, sections: [{ kind: "needsYou", more: 0, items: [waiting(1, true), waiting(4, false)] }] }, again);
+    expect(held.map((r) => r.id)).toEqual([1, 3, 4]);
+    expect(groups()).toEqual([["yourTurn", 0], ["waitingForYou", 1]]);
   });
 });
 
@@ -71,7 +121,7 @@ describe("plan 161, pass 2: the digest's way in", () => {
     const rows = flattenToday(list, [thread(9)]);
     expect(rows.map((r) => r.id)).toEqual([9, 1]);
     expect(rows.some((r) => r.id === DIGEST_ROW_ID)).toBe(false);
-    expect(useToday.getState().groups.map((g) => [g.kind, g.at])).toEqual([["needsYou", 0]]);
+    expect(useToday.getState().groups.map((g) => [g.kind, g.at])).toEqual([["yourTurn", 0]]);
     expect(useToday.getState().digest).toBe(digest);
   });
   it("plan 162 (after ai162-r02): a newsletter opened from the page is kept in its pick at once, beside what was unticked", async () => {

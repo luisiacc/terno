@@ -1,5 +1,5 @@
 import { todayAvailable } from "~/lib/ai";
-import { DIGEST_ROW_ID, type DigestRow, type TodayList, type ThreadSummary } from "@terno/core";
+import { DIGEST_ROW_ID, NEEDS_GROUPS, needsGroup, type DigestRow, type NeedsGroup, type TodayList, type ThreadSummary } from "@terno/core";
 import { t } from "@terno/i18n";
 import { create } from "zustand";
 import { listDate } from "~/lib/format";
@@ -13,7 +13,8 @@ import { reloadList } from "./list";
  * thread rows, with what they say in the snippet's place.
  */
 export interface TodayGroup {
-  kind: "needsYou" | "reminders";
+  /** plan 166: Needs you is two groups, Your turn and Waiting for your reply, under the page's "N need you" */
+  kind: NeedsGroup | "reminders";
   /** the row it begins at */
   at: number;
 }
@@ -53,13 +54,11 @@ interface TodayState {
   pick: DigestPick | null;
   /** the rows Needs you shows (the sidebar's count can be more) */
   needsShown: number;
-  /** plan 161, pass 2: why a waiting row is here ("Your turn"), a label of its own before its words */
-  reasons: ReadonlyMap<number, string>;
   /** owner's decisions (2): newsletters the reader sent to Trash or Spam on the way back, so their row says so, not "Archived" */
   movedTo: ReadonlyMap<number, "trash" | "spam">;
 }
 
-export const useToday = create<TodayState>(() => ({ groups: [], more: 0, digest: null, fromDigest: null, pick: null, needsShown: 0, reasons: new Map(), movedTo: new Map() }));
+export const useToday = create<TodayState>(() => ({ groups: [], more: 0, digest: null, fromDigest: null, pick: null, needsShown: 0, movedTo: new Map() }));
 
 /** The page's pick for this day: what was left, or nothing toggled. */
 export function digestPick(day: string): DigestPick {
@@ -167,10 +166,6 @@ export function digestFrom(digest: DigestRow, locale: string): string | null {
   return new Intl.ListFormat(locale, { type: "conjunction" }).format(rest > 0 ? [...shown, t("action.found.more", { count: rest })] : shown);
 }
 
-/** Plan 161: why a waiting row is here, from what let it in (`needsYou`'s two reasons): the row shows it as a label */
-const reasonOf = (item: TodayList["sections"][number]["items"][number]): string | null =>
-  item.why.kind === "waiting" && item.why.wrote !== undefined ? t(item.why.wrote ? "today.why.yourTurn" : "today.why.newFrom") : null;
-
 const whyLine = (item: TodayList["sections"][number]["items"][number]): string => {
   const { why, thread, summary } = item;
   if (why.kind === "promise") return t("today.why.promise", { text: why.text ?? "" });
@@ -179,33 +174,59 @@ const whyLine = (item: TodayList["sections"][number]["items"][number]): string =
   return summary ?? thread.snippet;
 };
 
+const GROUP_ORDER: readonly TodayGroup["kind"][] = [...NEEDS_GROUPS, "reminders"];
+
 /** The sections as one list; held rows stay where they were until the selection lets go (revision 9). */
 export function flattenToday(list: TodayList, before: readonly ThreadSummary[]): ThreadSummary[] {
   const groups: TodayGroup[] = [];
   const items: ThreadSummary[] = [];
-  const reasons = new Map<number, string>();
   let more = 0;
   let needsShown = 0;
   // plan 162 (after ai162-r02): the digest isn't a row: its way in is Today's header (TodayDigestEntry), above the fold and
   // never before a person (it led the list, under its own heading, on a page that says these need you)
   for (const section of list.sections) {
-    groups.push({ kind: section.kind, at: items.length });
     if (section.kind === "needsYou") {
       more = section.more;
       needsShown = section.items.length;
+      // plan 166: two groups, each in the backend's order; the 12 are still the backend's, shared. The heading says what
+      // the row's reason said ("Your turn: they replied"), so the row leads with its own words; a promise's "You said" and
+      // a nudge's "No reply from" say more than the heading and stay
+      for (const kind of NEEDS_GROUPS) {
+        const mine = section.items.filter((item) => needsGroup(item.why) === kind);
+        if (!mine.length) continue;
+        groups.push({ kind, at: items.length });
+        for (const item of mine) items.push({ ...item.thread, snippet: whyLine(item) });
+      }
+      continue;
     }
-    for (const item of section.items) {
-      const reason = reasonOf(item);
-      if (reason) reasons.set(item.thread.id, reason);
-      items.push({ ...item.thread, snippet: whyLine(item) });
-    }
+    if (!section.items.length) continue;
+    groups.push({ kind: section.kind, at: items.length });
+    for (const item of section.items) items.push({ ...item.thread, snippet: whyLine(item) });
   }
+  // plan 166: a held row stays in the group it was in. At a group's first place it sits above that group's heading (it
+  // went under the next one's), and a group it was the last of keeps its heading for it
+  const prior = useToday.getState().groups;
   for (const thread of list.held) {
     const was = before.findIndex((t) => t.id === thread.id);
-    const at = was < 0 ? items.length : Math.min(was, items.length);
+    const kind = was < 0 ? undefined : prior.filter((g) => g.at <= was).at(-1)?.kind;
+    let at = was < 0 ? items.length : Math.min(was, items.length);
+    if (kind !== undefined) {
+      const mine = groups.findIndex((g) => g.kind === kind);
+      if (mine >= 0) at = Math.max(groups[mine]!.at, Math.min(at, groups[mine + 1]?.at ?? items.length));
+      else {
+        // its group has gone: where that group would be, under its own heading again
+        const next = groups.find((g) => GROUP_ORDER.indexOf(g.kind) > GROUP_ORDER.indexOf(kind));
+        at = next?.at ?? items.length;
+      }
+    }
     items.splice(at, 0, thread);
-    for (const g of groups) if (g.at > at && was >= 0) g.at++;
+    if (was < 0) continue;
+    for (const g of groups) if (g.at > at || (g.at === at && g.kind !== kind)) g.at++;
+    if (kind !== undefined && !groups.some((g) => g.kind === kind)) {
+      groups.push({ kind, at });
+      groups.sort((a, b) => a.at - b.at);
+    }
   }
-  useToday.setState({ groups, more, digest: list.digest, needsShown, reasons });
+  useToday.setState({ groups, more, digest: list.digest, needsShown });
   return items;
 }

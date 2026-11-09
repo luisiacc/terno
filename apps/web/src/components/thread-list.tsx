@@ -71,13 +71,20 @@ function TodayHeading({ kind, top }: { kind: TodayGroup["kind"]; top: number }) 
   // quieter than the digest's row above it)
   return (
     <div aria-hidden data-testid="today-heading" data-kind={kind} className="absolute inset-x-0 flex items-end px-5 pb-1 text-sm font-medium text-foreground" style={{ top, height: TOP_LABEL }}>
-      {t(kind === "needsYou" ? "today.needsYou" : "today.reminders")}
+      {sectionName(kind)}
     </div>
   );
 }
 
+/** Plan 166: Needs you's two groups each have a heading of their own, in the sections' style. */
+const SECTION_NAME = { yourTurn: "today.group.yourTurn", waitingForYou: "today.group.waitingForYou", reminders: "today.reminders" } as const satisfies Record<TodayGroup["kind"], string>;
+
 /** Plan 162 (Codex review): a section's name, said to assistive tech by its first row (the drawn heading is aria-hidden) */
-const sectionName = (kind: TodayGroup["kind"] | undefined): string | undefined => (kind === "needsYou" ? t("today.needsYou") : kind === "reminders" ? t("today.reminders") : undefined);
+function sectionName(kind: TodayGroup["kind"]): string;
+function sectionName(kind: TodayGroup["kind"] | undefined): string | undefined;
+function sectionName(kind: TodayGroup["kind"] | undefined): string | undefined {
+  return kind ? t(SECTION_NAME[kind]) : undefined;
+}
 
 /**
  * Plan 162 (after ai162-r02): the digest's way in, in Today's header under its sentence: above the fold and never before a

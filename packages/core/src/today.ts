@@ -90,6 +90,17 @@ export interface TodayItem {
 
 export type TodaySection = { kind: "needsYou"; items: TodayItem[]; more: number } | { kind: "reminders"; items: TodayItem[] };
 
+/**
+ * Plan 166: Needs you's two groups. "Your turn": the conversation is yours to move (a promise or nudge due, or they
+ * replied in one you've written in). "Waiting for your reply": a new one from someone you write to, not answered yet.
+ */
+export type NeedsGroup = "yourTurn" | "waitingForYou";
+
+export const needsGroup = (why: TodayWhy): NeedsGroup => (why.kind === "waiting" && why.wrote === false ? "waitingForYou" : "yourTurn");
+
+/** Plan 166: Your turn first: a conversation you're already in, or a promise you made, is the stronger call on you. */
+export const NEEDS_GROUPS: readonly NeedsGroup[] = ["yourTurn", "waitingForYou"];
+
 export interface DigestItem {
   threadId: number;
   messageId: number;
