@@ -10,6 +10,8 @@ pnpm brand              # every icon (app, Tahoe, DMG, favicons, the in-app mark
 
 pnpm dev:desktop         # Electron + Vite HMR on your real profile
 pnpm dev:desktop:demo    # separate profile with the ~3k-thread demo mailbox
+pnpm dev:demo-ai         # the demo mailbox with every AI feature already holding something, on real models (Dev mode);
+                         # the first launch prepares it (~2 min, ~US$0.15), --fresh starts over: docs/AI-DEMO.md
 pnpm dev:desktop:seeded  # 8 accounts / ~21k messages, seeded once (--reseed to regenerate)
 pnpm dev:desktop --cleandb  # any of the three, from a fresh install: its profile goes to the Trash first
                          # (the renderer runs on localhost:5847, or the next free port; TERNO_VITE_PORT picks one)
