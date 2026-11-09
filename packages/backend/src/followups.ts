@@ -58,7 +58,14 @@ const norm = (text: string) => normalizeText(text).replace(/\s+/g, " ").trim();
  */
 export function checkSentMail(result: SentMailResult, input: { ownText: string; recipients: readonly { label: string; name: string; email: string }[]; open: ReadonlyMap<string, FollowupRow>; sentAt: number; nudgeAfterDays: number }): { rows: FollowupWrite[]; kept: { id: number; revision: number }[] } {
   const own = norm(input.ownText);
-  const person = new Map(input.recipients.map((r) => [r.label, r]));
+  const byLabel = new Map(input.recipients.map((r) => [r.label, r]));
+  // plan 161, real models: Haiku names who it means ("Arjun Ramírez") where the prompt asks for a label ("r1"). A name
+  // counts only when exactly one recipient has it, so it can't reach anyone the message wasn't sent to
+  const named = (who: string) => {
+    const matches = input.recipients.filter((r) => norm(r.name) === norm(who));
+    return matches.length === 1 ? matches[0] : undefined;
+  };
+  const person = { get: (who: string) => byLabel.get(who) ?? named(who) };
   const rows: FollowupWrite[] = [];
   result.promises.forEach((p, item) => {
     if (!own.includes(norm(p.quote))) return;

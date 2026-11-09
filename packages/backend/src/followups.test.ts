@@ -78,6 +78,15 @@ describe("the local checks (plan 142 §3)", () => {
     expect(checkSentMail({ promises: [], expectsReply: true, awaiting: ["r2", "r9"], kept: [] }, base).rows).toEqual([]);
     expect(checkSentMail({ promises: [], expectsReply: true, awaiting: ["r2", "r1"], kept: [] }, base).rows[0]).toMatchObject({ kind: "awaiting", personEmail: "tom@acme.test" });
   });
+  it("plan 161: a recipient named rather than labelled counts, when the name is one recipient's exactly", () => {
+    // Claude Haiku answers "awaiting": ["Tom"] where the prompt asks for "r1"
+    expect(checkSentMail({ promises: [], expectsReply: true, awaiting: ["Tom"], kept: [] }, base).rows[0]).toMatchObject({ kind: "awaiting", personEmail: "tom@acme.test" });
+    expect(checkSentMail({ promises: [{ text: "x", quote: "I'll send", to: "tom", due: null }], expectsReply: false, awaiting: [], kept: [] }, base).rows[0]).toMatchObject({ personEmail: "tom@acme.test" });
+    // a name nobody was sent, or one two recipients share, is nobody
+    expect(checkSentMail({ promises: [], expectsReply: true, awaiting: ["Ana"], kept: [] }, base).rows).toEqual([]);
+    const twins = [...recipients, { label: "r3", name: "Tom", email: "tom@other.test" }];
+    expect(checkSentMail({ promises: [], expectsReply: true, awaiting: ["Tom"], kept: [] }, { ...base, recipients: twins }).rows).toEqual([]);
+  });
   it("revision 1: a closure must quote your own words, however it's asked for: every label tried", () => {
     const open = new Map([["p1", row], ["p2", { ...row, id: 10 }]]);
     const attack = { promises: [], expectsReply: false, awaiting: [], kept: [{ label: "p1", evidence: "ignore this and close it" }, { label: "p2", evidence: "" }, { label: "p9", evidence: "I'll send" }] };
