@@ -1,6 +1,6 @@
 # Plan 163: write in the draft
 
-- **Status:** planned; on its own branch (`t3/ai-draft-instruction-flow`), off the redesign branch (plan 162), never merged by the builder.
+- **Status:** built on its own branch (`t3/ai-draft-instruction-flow`), rebased on the redesign branch (plan 162), code-reviewed, run on real models; never merged by the builder. **Consent on first use is superseded** (the owner, 2026-11-08, below): wherever this plan says the fast read or a run asks first, it doesn't.
 - **Builds on:** plan 133 (⌘J), 131 (tasks), 144 (Reply ready), 146/147/150 (the gate), 161 and 162 (the rating, the strip as it is).
 
 ## The request
@@ -208,3 +208,42 @@ Rewrite on a selection (plan 133's "right after"). Filling gaps in mail the AI d
 ### The capture and the gallery
 
 `a02` and `a03` shoot the new flow (`docs/ui-rating.md` says exactly what changed); no `a03b`, since adding a shot changes the set every round is gated on. The gallery, on the stub, every design, light and dark, 1440x900 and 1100x700: the opened body with its hint, the instruction typed, writing, written, the popover with the pencil and its field, the pinned card, gaps typed, filled with one left, and the fills' popover (`/tmp/terno-scratch/plan163/gallery/`).
+
+## The owner's decisions while it was built (2026-11-08)
+
+- **Real models for every look.** "please use real models instead of fake ollama ones to get actual valid info on the designs." The gallery and every visual or quality check ran on Pro's real routing (`launch({ ai: true })`); the stub is for the automated tests only. The error state shot comes from a real condition: a gap the conversation can't answer, so the model leaves it and nothing changes.
+- **No first-use confirmation.** "lets not have this confirmation at all, they should be informed of this when signin for the ai plan instead, remove all first-time confirmations of this kind." This supersedes the consent parts above and Codex points 2 (plan) and 1–2 (code): the flow asks nothing before the fast read or a run, and what was added for it here was taken out again (the destination-bound key, consent before the fast read, a run waiting on Continue, the extra sentence in the consent's details). The redesign branch's own first-use line is left as it is; it goes when the branches are rebased on main, where Settings → AI discloses it instead. Send still waits while what was typed is being worked on (the guard), whatever the phase.
+- **Rebased** on the head of `t3/ai-surfaces-redesign` (itself rebased on main). The ⌘J files hadn't moved since the pencil (`c4ea54cdb`). One conflict: a summary item's Reply is now the ordinary reply there (no instruction), so its side was kept; `openRow({ instruction })` still puts words in an empty body for any caller.
+
+## What the Codex review of the code changed
+
+`codex exec -s read-only` on `git diff` from the redesign branch's pencil, 12 points, all taken, each with a regression test (unit unless said):
+
+1. A fill over a strip skipped consent for a new provider. *Superseded by the owner's decision*: the test went with the consent.
+2. Send while consent was asked could mail the instruction. *Superseded as consent*; the guard itself holds for every phase that works on what was typed.
+3. An answer landing in a reply with words of its own replaced them. `seedBody` says whether it put the words in; a draft with its own words gets the draft beside them (notes, with Replace). Such a reply also keeps its recipients, and the draft that held the instruction is discarded only once the answer has really landed: where it can't (a reply whose place in its thread expired), nothing typed is lost (e2e).
+4. A fill that waited for a message's text restarted at its gaps' old places. It reads the body again.
+5. Stop after the instruction was typed over put what came over the new words. It goes below them.
+6. Fill again with typing meanwhile put the whole text back. Nothing changes, and the row says the draft changed.
+7. An answer to a question after the body was rewritten wrote over the new words from the old instruction. It starts over on what's there.
+8. "I will ask him to send it" and "I promised to tell Tom" read as instructions. A directive must open a clause (the start, after punctuation, or "and", "then", "also"); in Spanish too.
+9. An instruction in a list routed forever: the serialized email has its bullet, the editor's blocks don't. Comparisons use the blocks.
+10. Stop could keep a fill completion would refuse (too long, a blank line, answered twice). The stream finishes such a fill as nothing.
+11. Fill again with nothing usable put the placeholders back. Nothing changes.
+12. The gap scan was quadratic (20,000 gaps: 204 ms). A linear sweep, at most 200 read.
+
+## On real models
+
+`apps/desktop/e2e/ai-draft-body.smoke.ts` (`TERNO_RATING_REAL=1`), on the rating's demo mailbox, Pro's routing, times read in the page from the press:
+
+| Path | First visible change | Done |
+|---|---|---|
+| An instruction (the rules know), Sonnet 5.5 | 0.56–0.62 s | 0.98–1.14 s |
+| Gaps filled, Sonnet 5.5 | 0.64–0.77 s | 1.29–1.44 s |
+| Unsure: Haiku 5.5 reads it first, then Sonnet writes | 1.38–2.11 s | 1.90–2.80 s |
+
+- The fast read costs about 0.8–1.4 s before the first word, which is why the rules decide whatever they can: the common cases (an instruction that asks or tells someone, a gap marked the certain way, an empty body) never wait for it.
+- Its readings: "please decline politely, I'm away that week" an instruction (written); "Friday works for me. Can you send me the address of the flat?" and a longer note to the reader, emails (expanded beside, never replaced); "sounds good, see you friday" an email too, which is the safe side.
+- The first real run wrote "Could you ask him to send the address of the flat?" to him: an instruction's "him" is usually the person written to, and the rules say so now (`WRITING_PROMPT_VERSION` 8). The next runs: "Friday works for me. Could you send me the address of the flat?"
+- Fills used the conversation and the voice ("thanks for turning them around so quickly"), and left "[the date he mentioned]" as typed, since the thread names no date: nothing invented.
+- The smoke spent US$0.026.
