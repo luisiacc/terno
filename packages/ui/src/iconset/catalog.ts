@@ -13,6 +13,8 @@ export const ICONS = {
   ArrowLeft: "ArrowLeft02Icon",
   // plan 125: Pagination's Next
   ArrowRight: "ArrowRight02Icon",
+  // plan 164: the AI strip's change field, its submit
+  ArrowUp: "ArrowUp02Icon",
   AtSign: "AtIcon",
   BadgeCheck: "CheckmarkBadge01Icon",
   Baseline: "TextColorIcon",
@@ -120,7 +122,10 @@ export const ICONS = {
   Send: "SentIcon",
   Settings2: "Settings02Icon",
   ShieldCheck: "SecurityCheckIcon",
+  // plan 164: the AI strip's Shorter and Warmer, icon-only
+  Shrink: "ArrowShrink02Icon",
   SlidersHorizontal: "SlidersHorizontalIcon",
+  Smile: "SmileIcon",
   Sparkles: "SparklesIcon",
   /** plan 162: Summarize, apart from the sparkle that marks AI cards and ⌘J */
   SummaryDoc: "AiContentGenerator01Icon",
