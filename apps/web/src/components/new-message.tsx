@@ -155,7 +155,7 @@ export function NewMessage() {
             <div className="mt-auto shrink-0">
               <ComposerFormatBar draftKey={key} id={formatId} className="px-2 pt-1.5" />
               {/* wraps: the status can hold a recovery action, and a narrow pane still reaches Discard */}
-              <div className="flex flex-wrap items-center gap-1 px-2.5 pt-2 pb-2.5">
+              <div className="@container/foot flex flex-wrap items-center gap-1 px-2.5 pt-2 pb-2.5">
                 <SendOrAsk d={d} onSend={(at) => void send(at)}>
                   <SendButton d={d} onSend={(at) => void send(at)} className="mr-1.5" />
                   <FormatToggle controls={formatId} />

@@ -636,7 +636,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, replyAll = true, accoun
             {/* Send stays on screen however long the draft or the conversation is (plan 158); what's written fades under it. Sticky stops at the scroller's padding: that's what clears a pinned card */}
             <div data-draft-foot className="sticky bottom-0 z-[1] rounded-b-xl bg-(--draft-bg) before:pointer-events-none before:absolute before:inset-x-0 before:-top-3 before:h-3 before:bg-linear-to-t before:from-(--draft-bg) before:to-transparent">
             <ComposerFormatBar draftKey={d.key} id={formatId} className="px-2 pt-1.5" />
-            <div className="flex flex-wrap items-center gap-1 px-2.5 pt-2 pb-2.5">
+            <div className="@container/foot flex flex-wrap items-center gap-1 px-2.5 pt-2 pb-2.5">
               <SendOrAsk d={d} onSend={(at) => void send(at)}>
                 <SendButton d={d} onSend={(at) => void send(at)} className="mr-1.5" />
                 <FormatToggle controls={formatId} />

@@ -213,7 +213,8 @@ function StatusPopover({ s, strip, toText }: { s: AiSession; strip: AiStrip; toT
         </div>
       )}
       {strip.oneTap && <p className="text-xs text-muted-foreground" data-testid="ai-voice-content">{t("aiDraft.content.alone")}</p>}
-      <p className="text-xs text-muted-foreground">{t("aiDraft.language.change")}</p>
+      {/* a fill matches its sentence's language: asking for another is a draft's, not a fill's */}
+      {!strip.fill && <p className="text-xs text-muted-foreground">{t("aiDraft.language.change")}</p>}
       <Button
         type="button"
         variant="link-secondary"
