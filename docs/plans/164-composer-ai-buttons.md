@@ -112,3 +112,7 @@ The popover's pencil (rewrite from new words) stays as plan 163 left it. The bod
 2. **A failed change asked again over an edit could run twice:** Try again went through "Replace your edits?", whose Replace consumed the field's words only for a fresh change, so they stayed and ⌘J ran them again. Replace on a retried change from the field empties it too (`ai-draft.test.ts`).
 3. **A change that failed as "not configured" lost its words** (that branch returned before giving them back) (`ai-draft.test.ts`).
 4. **The field was hand-built** beside BoardUI's input group. It is `InputGroup` with `InputGroupTextarea` and an `InputGroupButton` addon now, at the strip's size; the deviation (28 px, the lighter ring) is written in `packages/ui/BOARDUI.md`, which also no longer calls ⌘J's instruction a header row (`ai-draft.spec.ts` checks the slots).
+
+Second round, on the fixes alone (`git diff c4ed14dfe..HEAD`), one finding, taken:
+
+5. **⌘Z while a change ran, back past the draft to the note, then Stop, kept the strip,** so Send no longer asked about the note. The strip is kept only when the body isn't a note for AI again; otherwise the session goes, as before, and Send asks (`ai-draft.test.ts`, fails without the fix). The field's words go with the strip in that one case. No third round.

@@ -1271,8 +1271,9 @@ export function stop(key: string) {
     return focusEditor(key);
   }
   // a rewrite stopped after the text was typed into: nothing of it went in, so the strip stays as it was, edited since,
-  // and a change from the field has its words back (Codex code review: the strip and the words went)
-  if (prior && s.run?.spec.kind === "refine" && s.phase === "writing") {
+  // and a change from the field has its words back (Codex code review: the strip and the words went). Not when the body
+  // is a note for AI again (⌘Z took it back past the draft): the strip would keep Send from asking (second round)
+  if (prior && s.run?.spec.kind === "refine" && s.phase === "writing" && glanceNow(key) !== "write") {
     clearStream(key);
     update(key, { phase: "strip", strip: { ...prior, edited: true }, run: null, choice: null, error: null, guard: null, live: "" });
     giveBackChange(key, s.run.requestId);

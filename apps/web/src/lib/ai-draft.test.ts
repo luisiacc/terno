@@ -2205,6 +2205,27 @@ describe("plan 162 (after ai162-r04): revising a draft, and a note for AI", () =
     expect(c.text).toBe(`${draft} Mine.`);
   });
 
+  it("Codex code review, second round: a change stopped after ⌘Z took the body back to the note leaves no strip: Send asks", async () => {
+    const { useEmptySend } = await import("./send-problem");
+    const { key, c } = reply("ask him to send the address of the flat");
+    void store.act(key);
+    await tick();
+    last("ai.resolveIntent").resolve({ decision: { kind: "route", route: { type: "keep-draft" } }, fromAccountId: null, confirmFailed: false });
+    await tick();
+    last("ai.compose").resolve(done(draft));
+    await tick();
+    store.setChange(key, "mention the parking");
+    store.change(key);
+    // ⌘Z while it rewrites: the note is back in the body
+    c.text = "ask him to send the address of the flat";
+    c.type("");
+    store.stop(key);
+    expect(session(key)?.strip ?? null).toBeNull();
+    expect(await sendDraft(key)).toBe(false);
+    expect(useEmptySend.getState()).toMatchObject({ key, reason: "note" });
+    useEmptySend.setState({ key: null, reason: undefined });
+  });
+
   it("Codex code review: a failed change asked again over an edit runs once: its words leave the field when Replace runs it", async () => {
     const { key, c } = reply("");
     await store.act(key);
