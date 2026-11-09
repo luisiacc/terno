@@ -127,3 +127,15 @@ describe("plan 162 (after ai162-r02): the digest's way in counts what the page l
     expect(digestLabel({ ...digest, liveIds: [], readIds: [] } as never)).not.toMatch(/^\d+ newsletters? · today/);
   });
 });
+
+describe("plan 162 (after ai162-r05): the digest's row says who the newsletters are from", () => {
+  it("the first three still in the Inbox, each once, then how many more; nothing until it's ready or once all are gone", async () => {
+    const { digestFrom } = await import("./today");
+    const item = (threadId: number, from: string) => ({ threadId, messageId: threadId, lastDate: 0, messageCount: 1, from, subject: "", line: null });
+    const digest = { day: "d", state: "ready" as const, automated: false, items: [item(1, "Xataka"), item(2, "Figma"), item(3, "Xataka"), item(4, "Morning Brew"), item(5, "Substack"), item(6, "Gone")], liveIds: [1, 2, 3, 4], readIds: [5] };
+    expect(digestFrom(digest as never, "en")).toBe("Xataka, Figma, Morning Brew, and 1 more");
+    expect(digestFrom({ ...digest, liveIds: [2], readIds: [] } as never, "en")).toBe("Figma");
+    expect(digestFrom({ ...digest, liveIds: [], readIds: [] } as never, "en")).toBeNull();
+    expect(digestFrom({ ...digest, state: "pending" } as never, "en")).toBeNull();
+  });
+});
