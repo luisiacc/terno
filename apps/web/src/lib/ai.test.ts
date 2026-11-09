@@ -95,7 +95,8 @@ describe("AI labels and help", () => {
   it("says what leaves the machine", () => {
     expect(privacyLine(ai({ provider: "none" }))).toBe("AI is off.");
     expect(privacyLine(ai({ provider: "ollama", local: true }))).toBe("Nothing leaves this Mac.");
-    expect(privacyLine(ai({ provider: "anthropic" }))).toMatch(/^Sent to api\.anthropic\.com: .* Never the content of your messages\.$/);
+    // plan 162 (after ai162-r03): the provider by name, as every other AI surface says it, never its host
+    expect(privacyLine(ai({ provider: "anthropic" }))).toMatch(/^Sent to Claude \(Anthropic\): .* Never the content of your messages\.$/);
     setLocale("es", es);
     expect(privacyLine(ai({ provider: "ollama", local: true }))).toBe("Nada sale de este Mac.");
   });

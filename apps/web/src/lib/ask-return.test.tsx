@@ -109,7 +109,7 @@ describe("the search's boundary", () => {
     expect(host.querySelector("[data-testid=ask-older-downloading]")?.textContent).toBe("Older mail is still downloading. Ask again when it’s done.");
     useAsk.setState({ older: { kind: "offer", since: Date.UTC(2026, 3, 25) } });
     act(() => root.render(<Scope />));
-    expect(host.querySelector("[data-testid=ask-scope]")?.textContent).toMatch(/^Searched mail on this Mac back to .+Search older mail on your servers$/);
+    expect(host.querySelector("[data-testid=ask-scope]")?.textContent).toMatch(/^Searched all mail on this Mac · complete since .+Search older mail on your servers$/);
     act(() => root.unmount());
   });
 });
