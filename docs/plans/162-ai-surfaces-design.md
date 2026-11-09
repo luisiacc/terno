@@ -635,3 +635,42 @@ The page learned "opened" only from the backend: a newsletter is read 450 ms aft
 - e2e `ai-draft`: one line, expandable; Undo's name; focus after Undo at 1100; the first Undo keeps the instruction.
 - e2e `filters`, Writing style: Save for new mail; focus after Save; Esc on Style for stays.
 - Unit: `foundSummary`'s years; the cutoff's day; the digest's state of a row.
+
+### As built (pass after ai162-r02)
+
+Where the build differs from the section above, and what it found on the way:
+- **The digest marks a newsletter read when it opens** (an `act("markRead")`, not the reader's 450 ms dwell): the owner's rule is that opened is read, and back in under the dwell it stayed unread while the page said "Opened". The page's own record of what it opened is what makes every return path the same; the read mark is so the Inbox agrees.
+- **The digest's keys** are `digestKeys` in `state/today.ts` (as `conversationKeys` is for the reader); `keyboard.ts` routes `list.next`, `list.prev`, `list.toggleSelect`, `list.open` and Esc to it while the page has the keys (focus in the page, or nowhere with no dialog or menu open). The cursor is the focused row's open button, filled with `row-selected`; j/k scroll its whole row into view above the foot bar (`scroll-padding-bottom` is the bar's height, measured).
+- **The digest's way in** keeps the row's test id (`digest-row`) and its words; it's a button in Today's header under the sentence (all three header shapes), `aria-current` while open. The list has no digest row and no Newsletters heading any more.
+- **The snack's lift** is a new `pageLift` in the snack store, set by the digest's foot bar while it's mounted; the dock stands on it in Split and List.
+- **The reasons**: "They replied" (wrote) and "You haven't replied" (never wrote), es "Te respondieron" and "No has respondido".
+- **The digest's way in counts what's still in the Inbox, read or not** (found hands-on: after Archive it said "1 newsletter" beside four listed, the macOS Claude report's drift).
+- **Actions:** the rule's own decision repeats the header's `ActionButtons` with their own test ids (`action-apply-rule`, `action-cancel-rule`), so the frozen capture's `action-apply` is still the header's. The provenance now sits on the Exact pattern line, or alone at the reading's end.
+- **⌘J:** the instruction is measured from the line (the words move into a button once cut, so the line is what's observed). Undo's name comes from what made the version on top (`AiCommit.how`). A rewrite chosen from the narrow Rewrite menu lost the keys to `<body>` (the menu returned them to a trigger the strip redrew); the run's commit now gives keys found nowhere to the draft (found hands-on at 1100).
+- **Writing style:** the section names stay Settings' (`SettingsGroup` is every Settings page's; changing it here would change the everyday screens), and with the sample gone How it learns is whole in the first screen at 1440x900, so no fade was needed.
+- **Edit controls:** the pencil-with-a-line glyph (`PenLine`); the plain pencil read as a nib at 16 px.
+
+### The Codex review of this pass
+
+Five findings, all taken, each with a test that fails without its fix:
+1. **List's digest is a page; Esc didn't leave it** (the digest's own Esc focused an entry under the covered list). In List, Esc closes the page as any page (`today.spec.ts`, "Today in List").
+2. **The digest's way in kept a bulk selection** in Split (the selection bar stayed in the reader). It's the ordinary row's press and release (`today.spec.ts`).
+3. **Opened here, then archived elsewhere, said it stays.** Out of the Inbox is archived, whatever was opened (`digest-page.test.tsx`).
+4. **The first write taken back after an edit still dropped the instruction.** It leaves the field with it too (`ai-draft.test.ts`, five cases updated).
+5. **An edited instruction's fresh take said "Undo Regenerate".** It says "Undo the rewrite" (`ai-draft.test.ts`, `commitHow`).
+
+### Not in this pass (questions for the owner)
+Still open from before: Save as primary in Rules; a palette command "Summarize this conversation"; one provenance label for follow-ups ("Found with AI"); a read-only peek of the first match in the action preview; whether archiving an opened newsletter returns to the digest; whether Reduce Motion freezes the Undo ring. New:
+- **The digest's opened newsletters can't be ticked again.** The owner's rule keeps them in the Inbox; one Codex report (Lumen) wanted reading and the tick kept apart. Keep it?
+- **Settings' group labels** (12 px semibold grey, every Settings page) were called too quiet by three Claude reports on Writing style. Raise them app-wide?
+- **Reply ready answers only the sender** on a group thread ("To Liam Taylor"; two Claude reports). Reply all, or saying "only Liam"?
+
+### Results (pass after ai162-r02)
+
+- **Typecheck and lint:** clean.
+- **e2e, macOS (`e2e`):** `today` (13 with the List case), `plain-actions` (15), `ai-draft` (16), `filters`, `summaries`, `replies-ready`, `followups`, `ask`, `snack`, `i18n`, `palette`: passed. **In Lumen, Atelier, Graphite and Luma** (their flows of the same specs): 60 passed. **`design-axe`** in Lumen and Atelier: 10 passed. **`visual`**: passed after the AI filter's two baselines moved (`filters-ai`, `filters-ai-dark`; looked at, light and dark).
+- **Unit:** the touched files pass (`digest-page`, `today`, `ai-draft`, `rule-words`, `action-found`, `reply-ready`). Across `apps/web/src`, four files fail that this pass doesn't touch: `command-palette` and `floating-restoration-lifetime` fail on `f9c41536c` too; `diag-local` expects the app's version to be 0.0.0 (the build says 0.1.0); `account-folders.perf` is a timing test that was run beside the capture.
+- **`pnpm test:ui-perf`:** 45 passed.
+- **The frozen capture**, on the final build, reached every AI state in Lumen, Atelier, macOS and Graphite, light and dark: 136 shots, 56 AI requests each, all to the stub, with no change to `scripts/ui-rating/`.
+- **Hands-on** (`harness.mjs`, macOS light 1440x900 and Atelier dark 1100x700): the digest (open, j/k/x, Enter then Esc, Back to the digest, the way in, Esc to the list, Archive, the snack above the bar, Undo), ⌘J at 1100 (one line, Rewrite ▾ then Undo twice: keys in the draft, then the field holding the instruction), Writing style's Style for and Esc.
+- **Shots:** `/tmp/terno-scratch/ai-redesign/round2/<design>/`; before and after sheets in `/tmp/terno-scratch/ai-redesign/sheets-r2/`.
