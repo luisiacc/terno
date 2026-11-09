@@ -122,3 +122,64 @@ The user's fear outranks convenience here: "i don't want to wake up to hundreds 
 - **An unknown cloud price counts dear.** $10 per million input and $50 per million output, for the ceiling and the figure alike; a local model is $0. `ai.usage` says `estimated` and Settings shows "about". A server reporting zero tokens counts as not having reported.
 - **A key taken back stops spending.** Everything built under a key aborts what it has in flight and refuses what comes next when the key is replaced or removed, before workers resume: clearing the client cache revokes nothing a worker already holds.
 - **Real-model runs share one ledger.** `@terno/ai/file-ledger`: append-only `reserve` and `settle` lines under a mkdir lock, unsettled reservations counted as spent, used by the harness and the real-app factory. A stuck lock or a torn line refuses rather than guesses. It reproduced $0.020 against a $0.015 cap; five real processes now hold one reservation. The real-app factory forces `maxRetries: 0`, and the browser proof needs `TERNO_AI_REAL=1` before it reads `.env` and a live backend's guard marker before it types a key.
+
+## Owner's decision: no per-use consent (2026-11-08)
+
+> "lets not have this confirmation at all, they should be informed of this when signin for the ai plan instead, remove all first-time confirmations of this kind"
+
+(Said over a screenshot of the summary card's first-use line: "This sends the text of this conversation to OpenAI. Continue · AI settings".)
+
+This overrides every per-use or first-use consent in plans 132, 133, 141 and 143. An AI feature runs as soon as the user asks for it. Where mail goes is said once, where the user turns cloud AI on.
+
+### What goes
+
+| Surface | The prompt that's gone | Its backend gate, gone too |
+|---|---|---|
+| Summary (plan 132) | "This sends the text of this conversation to {provider}." · Continue · Settings | `ai.summarize` answered `consent` until the provider was in `summaries.acknowledged` (`acknowledge: true`) |
+| ⌘J, and everything that writes through it: Write a follow-up (plan 142), an AI reply on any surface (plan 133) | "Each draft sends {provider} the conversation, your draft…" · Continue · Settings (the `telling` phase) | none: a renderer-only line remembered in `localStorage` (`terno:ai-draft-told:<provider>`) |
+| Ask your mail (plan 141) | "This sends your question, your account names and addresses…" · Continue · Settings | `ai.ask` and `ai.askOlder` answered `consent` until the destination was in `ask.acknowledged`; each dispatch checked it again |
+| An action in plain English (plan 143) | its sentence, through Ask's consent; then its check's "This sends up to 600 groups of senders and subjects…" · Continue · Skip the check | `ai.actionStart` answered `consent` on Ask's agreement; `ai.actionCheck` on `ask.checkAcknowledged`, before each request too |
+| Study my style (plan 133 §4) | "Learn how you write? …about N messages… About N tokens… About $N." · Learn my style · Not now | `writing.studyStyle` answered `consent` with the counts until called again with `confirm` naming the provider, destination and accounts |
+
+Reply ready, the digest, summaries of new mail, follow-ups and categorization never had a per-use prompt: each has its own switch in Settings, and that is unchanged. Create with AI (filters) had none either.
+
+The `acknowledge` and `confirm` parameters and the `consent` results are gone from the RPC contract. "Skip the check" stays where a check failed (`action.skipCheck`, renamed from `action.consent.skip`). "Study my style" loses its ellipsis, since nothing follows the click; its hint now says the samples include mail to other people and that it repeats as you send more, which the consent used to say.
+
+### What stays
+
+- **The one gate (plans 147 and 150) is untouched.** `aiAllowed`, `forTask`'s refusal with Dev mode's switch off, each feature's own switch and `summaryTarget`'s "ask" (no paid provider by default) decide what is offered and what runs, as before.
+- **A request goes only where it started.** Ask's planning and answering are still bound to one destination (`destinationOf`), checked again before each dispatch, and so is the action check: Settings moving mid-request cancels it and sends nothing further. This was never consent; it stays.
+- **Study my style still records where it went.** `writing:study` holds the provider, destination and accounts of the study the user started (`StudyRecord`, formerly `StudyConsent`, same shape and key). Its refreshes go only to that destination and those accounts, so a later provider change or a new account sends nothing until the user studies again. Clear and the switches still withdraw it.
+
+### Stored consent: left in place, unused
+
+No migration. `settings.app.summaries.acknowledged`, `settings.app.ask.acknowledged` and `settings.app.ask.checkAcknowledged` stay in existing profiles; they are no longer in the type, no code reads or writes them, and `app.bootstrap` passes them through as it passes any stored field. The `localStorage` key `terno:ai-draft-told:<provider>` stays in existing windows, read by nothing. A new profile has none of them.
+
+### Where the user is told: Settings → AI and Dev mode
+
+The words, under the provider group in Settings → AI (the group's footer, with the shield, where the old privacy line was), whenever mail could leave the Mac:
+
+> **Privacy · {host}.** {providers} receives a conversation's text when you use an AI feature on it, and mail as it comes in or goes out for the background features you turn on below.
+
+`{providers}` is every cloud provider AI may send mail to, by the backend's own rules (`mailDestinations` in `apps/web/src/lib/ai.ts`, after `AiService.targetFor`): the configured provider, each task's own choice, OpenAI once it has a key (summaries default to it) and JEV once it has a key (sorting), joined as the language lists them ("Claude (Anthropic) and OpenAI"; "receive" for more than one). It shows as soon as a cloud provider is chosen or a key is added; a local provider keeps "Nothing leaves this Mac." and none keeps "AI is off.". While Dev mode's Pro AI runs, the AI tab shows the same line for the providers it routes to.
+
+In Dev mode, under the Pro AI switch, before it's turned on, naming the providers whose keys are set:
+
+> **Privacy.** With Pro AI on, {providers} receives a conversation's text when you use an AI feature on it, and mail as it comes in or goes out for the background features you turn on in Settings → AI.
+
+Spanish: "{providers} recibe(n) el texto de una conversación cuando usas una función de IA en ella, y el correo que llega o envías para las funciones en segundo plano que actives abajo." and "Con la IA de Pro activada, {providers} recibe(n) … que actives en Ajustes → IA."
+
+`privacyLine` (the old "Sent to {host}: your description… Never the content of your messages.") stays the AI filter dialog's, where it is still true: a rule from a description sends no mail.
+
+Each feature's own hint in Settings keeps saying what it sends (drafting, summaries, Ask, follow-ups, the digest, Reply ready), so the detail the prompts held is still one look away.
+
+**Pro's sign-up, when it's built (plan 85), must carry the same disclosure**, naming Pro's providers, before the plan is bought: that is the moment the owner means. Until then, Settings → AI and Dev mode are where a user turns cloud AI on.
+
+### Tests
+
+- Removed: `ask.test.ts` "consent is for a destination" (three cases), `actions.test.ts` "consent is once a destination…" and "the sentence itself needs the question's agreement first", `summaries.test.ts`'s told-once case (rewritten), `voice-learner.test.ts` "sends nothing and stores no consent until confirmed…" and "a confirm that names only the provider isn't agreement…", `ai-draft.test.ts` "a cloud provider's first draft says what it sends, once…", `ask.test.ts` (web) "Continue sends the destination that was read"; e2e: `ask.spec` "a cloud destination says where it goes before anything leaves…", `ai-draft.spec` "the first draft on a cloud provider says what it sends, once", and the consent steps of `summaries.spec`.
+- Added: each backend surface on a cloud provider runs with nothing asked first (ask, actions and its check, summaries, the study, which records its destination); a stored `acknowledged` from an older profile changes nothing; ⌘J's first draft on a cloud provider goes at once; `mailDestinations` and the disclosure line (`ai.test.ts`). e2e `ai-no-consent.spec.ts`: OpenAI on the model stub, one page: the disclosure in Settings → AI (axe), a summary, ⌘J, Write a follow-up, Ask, an action and its check, Study my style, each reaching its result with the stub's request recorded and no prompt in the page. `dev-mode.spec` reads the Dev mode line before the switch and the AI tab's after.
+
+### The rating tooling
+
+`scripts/ui-rating/capture.mjs` no longer clicks Continue on the summary, ⌘J's first draft, Ask or the action check: each state is reached straight from the ask, the same shots and states as before. `harness.mjs` had no consent step. The owner's eval scripts in `scripts/ai-real/` lost theirs too. `/tmp/terno-scratch/ai-gallery/gallery.mjs`'s consent sheet is obsolete (not in the repo; left as it is).

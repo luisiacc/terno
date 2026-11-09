@@ -133,7 +133,7 @@ Any thread that isn't in spam or trash can be summarized on request, whatever it
 - **Staleness:** a new message hides the old summary as usual. With the setting on, the new message queues as new mail. With it off, the button reads "Update summary".
 - **A worker row already running** for the thread is reused, not duplicated.
 - **A body that isn't here yet:** the block says "Still downloading this message" and continues when it arrives, as the reader is already fetching what's open.
-- **First use on a cloud provider:** one line in the block before sending, shown once per provider: "This sends the text of this conversation to {provider}." · **Continue** · Settings.
+- **First use on a cloud provider:** one line in the block before sending, shown once per provider: "This sends the text of this conversation to {provider}." · **Continue** · Settings. *Removed by the owner's decision of 2026-11-08 (plan 131, "no per-use consent"): a summary runs on the click, and Settings → AI says where mail goes.*
 - **Errors** appear in the block with `errorHelp(kind)` and Try again. **No provider for summaries:** the block points to the row in Settings → AI.
 
 ## Tests
@@ -187,7 +187,7 @@ Codex (`gpt-6.1-sol`, high, read-only, against `f787771c`) raised 5 points on th
 - **`AiLimiter` counts by-hand summaries apart.** They used to land in the same day's tally as the worker's, which would have counted toward the daily cap. They now go under `byHand`, in the usage report but outside both ceilings.
 - **`forTask("summary")` with no provider** now says `errors.ai.summaryProvider`, not the filter-worded message.
 - **`AiTasks` gained `endpoint`** for revision 5's comparison.
-- **The consent line is the backend's.** `ai.summarize` answers `{ status: "consent" }` unless the provider is in `settings.summaries.acknowledged`, and `acknowledge: true` records it. A hash match asks nothing, since nothing would be sent.
+- *(Removed 2026-11-08, plan 131 "no per-use consent": `acknowledge` and `consent` are gone.)* **The consent line was the backend's.** `ai.summarize` answers `{ status: "consent" }` unless the provider is in `settings.summaries.acknowledged`, and `acknowledge: true` records it. A hash match asks nothing, since nothing would be sent.
 - **A waiting body is the renderer's to retry.** `ai.summarize` answers `waitingBody` and holds no state; the block asks again when the thread's messages change.
 - **An import never turns summaries on:** `summaries` isn't in the import's settings keys.
 - **The toolbar button gives way at the narrowest reader,** as Mark as unread does; the palette keeps it. Pressed while a summary shows, it opens the disclosure.

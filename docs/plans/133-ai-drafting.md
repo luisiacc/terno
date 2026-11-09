@@ -124,6 +124,8 @@ The same person writes differently when declining, apologizing or writing to a g
 
 ## 4. Consent and privacy
 
+> **Owner's decision, 2026-11-08 (plan 131, "no per-use consent"):** the first-draft line and the study's question below are gone. ⌘J writes at once and "Study my style" starts on the click; Settings → AI says which provider receives mail. The study still records its destination and accounts, and refreshes follow only those.
+
 **Asked at first use or in Settings, inline, never a modal:**
 
 > **Learn how you write?** Terno works out your style on this Mac, then sends samples of your sent mail, about {n} messages including mail to other people, to {provider}. It repeats this in smaller amounts as you send more, and includes drafts you edited, so it keeps learning. It keeps short style notes here, which you can read and edit. They should describe how you write, not what you wrote, but a model writes them, so they aren't guaranteed free of details. About {tokens} tokens to start{, about {cost}}.

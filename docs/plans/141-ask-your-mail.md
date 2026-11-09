@@ -51,7 +51,7 @@
 question → plan (cheap, no mail) → local search → passages → answer (streamed) → local checks
 ```
 
-**Consent, once per cloud provider,** inline on the page: "This sends your question, then the text of the matching mail, to {provider}." · **Continue** · Settings. A local provider doesn't ask. The backend answers `{ status: "consent" }` until the provider is in `settings.ask.acknowledged`, as `ai.summarize` does.
+*(Removed 2026-11-08: plan 131, "no per-use consent".)* **Consent, once per cloud provider,** inline on the page: "This sends your question, then the text of the matching mail, to {provider}." · **Continue** · Settings. A local provider doesn't ask. The backend answers `{ status: "consent" }` until the provider is in `settings.ask.acknowledged`, as `ai.summarize` does.
 
 **The plan.** `AiTasks.planAsk`, on the planning model. It receives the question, today, the time zone, account names and addresses, category names, and for a follow-up the earlier questions and answers. **It receives no mail.** It returns:
 
