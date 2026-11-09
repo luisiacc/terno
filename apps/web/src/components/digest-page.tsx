@@ -5,7 +5,7 @@ import { Checkbox } from "@terno/ui/components/checkbox";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@terno/ui/components/context-menu";
 import { IconButton } from "@terno/ui/components/icon-button";
 import { Spinner } from "@terno/ui/components/spinner";
-import { Ban, ChevronRight } from "@terno/ui/icons";
+import { Ban, ChevronRight, Mail } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { getApp } from "~/state/app";
@@ -41,7 +41,9 @@ function DigestRowMenu({ on, onOpen, onNotNewsletter, children }: { on: boolean;
     <ContextMenu onOpenChange={(open) => setApp({ menuOpen: open })}>
       <ContextMenuTrigger data-context-menu render={children} />
       <ContextMenuContent className="w-52" data-testid="digest-item-menu">
+        {/* each row with its icon, so the labels share one column */}
         <ContextMenuItem data-testid="digest-menu-open" onClick={onOpen}>
+          <Mail />
           {t("common.open")}
         </ContextMenuItem>
         <ContextMenuSeparator />
