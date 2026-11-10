@@ -5,10 +5,10 @@ export const es: SiteCopy = {
   meta: {
     title: "Terno: correo instantáneo y privado para Mac",
     description:
-      "Terno es un cliente de correo rápido para Mac, pensado para el teclado. Todas tus cuentas en una bandeja. Búsqueda instantánea. Totalmente local, sin cuenta.",
+      "Terno es un cliente de correo rápido para Mac, pensado para el teclado. Todas tus cuentas en una bandeja. Búsqueda instantánea. Totalmente local, sin cuenta. Terno Pro añade IA que redacta tus respuestas y encuentra lo que te necesita.",
   },
   skip: "Ir al contenido",
-  nav: { features: "Funciones", privacy: "Privacidad", source: "Código", download: "Descargar", language: "English", languageHref: "/", home: "Inicio de Terno" },
+  nav: { features: "Funciones", pro: "Pro", privacy: "Privacidad", source: "Código", download: "Descargar", language: "English", languageHref: "/", home: "Inicio de Terno" },
   hero: {
     title: "El último cliente de correo que probarás.",
     subtitle: "Todas tus cuentas en una bandeja. Búsqueda instantánea. Archiva un correo y todos los parecidos se archivan también. Totalmente local, sin cuenta.",
@@ -28,7 +28,7 @@ export const es: SiteCopy = {
     },
     local: {
       title: "Sin cuenta. Sin nube. Solo tu Mac.",
-      body: "Tu correo va de tu Mac a tus servidores de correo, nunca por los nuestros. Tu correo, tus contactos y el índice de búsqueda viven en tu Mac.",
+      body: "Tu correo se sincroniza entre tu Mac y tus servidores de correo, nunca a través de los nuestros. Tu correo, tus contactos y el índice de búsqueda viven en tu Mac.",
       points: ["Privado desde el primer momento", "Imágenes remotas solo si las pides", "Cero rastreo"],
     },
     search: {
@@ -78,6 +78,40 @@ export const es: SiteCopy = {
       cta: "Leer el código en GitHub",
     },
   },
+  pro: {
+    eyebrow: "Terno Pro",
+    status: "Próximamente",
+    title: "Menos tiempo en el correo.",
+    body: "Pro redacta tus respuestas, resume los hilos largos y encuentra lo que te necesita hoy. Tú decides: ningún correo sale hasta que lo envías.",
+    price: "Previsto: US$12 al mes o US$108 al año, con una prueba gratis de 14 días.",
+    reply: {
+      title: "Respuestas ya redactadas.",
+      body: "Cuando alguien espera tu respuesta, la tienes lista bajo su mensaje, con tu forma de escribir. Completa lo que falta y envía.",
+      points: ["Aprende del correo que has enviado", "Marca lo que solo tú puedes decidir", "Convierte unas notas en un correo con ⌘J"],
+    },
+    ask: {
+      title: "Pregunta a tu correo.",
+      body: "Deja de buscar ese correo. Pregunta con tus palabras y obtén una respuesta, con enlaces a los mensajes de donde sale.",
+      points: ["Haz otra pregunta sobre lo mismo", "O pídele que archive correo antiguo, y revisa la vista previa antes"],
+    },
+    today: {
+      title: "Lo que te necesita hoy.",
+      body: "Promesas que hiciste, respuestas que debes, gente que no ha contestado. Una lista corta para el día.",
+      points: ["Doce como máximo, para que siga siendo corta", "Los seguimientos vuelven cuando toca"],
+    },
+    digest: {
+      title: "Todos los boletines, en una página.",
+      body: "Los boletines de hoy reunidos en una página, una línea cada uno. Lee lo que importa y luego archívalos todos de una vez.",
+      points: [],
+    },
+    summaries: {
+      title: "Lo esencial, antes de leer.",
+      body: "El correo nuevo, salvo el spam, trae un resumen breve, y una tarea por hacer cuando te pide algo. Cualquier conversación anterior, a un clic.",
+      points: [],
+    },
+    privacy: "La IA está desactivada hasta que la activas. Con Pro, cada función envía a Claude u OpenAI solo los datos del correo que necesita, a través del servidor intermediario de Terno, que no guarda nada. Terno nunca envía un correo por ti.",
+    ownKey: "Pro es IA sin claves que configurar. También puedes usar estas funciones sin Pro, con tu propia clave de Claude u OpenAI o con un modelo en tu Mac. Tu proveedor puede cobrarte por el uso.",
+  },
   keys: [
     { keys: ["J", "K"], label: "Siguiente, anterior" },
     { keys: ["E"], label: "Archivar" },
@@ -90,7 +124,7 @@ export const es: SiteCopy = {
   ],
   stats: [
     { value: "Al instante", label: "búsqueda en todas tus cuentas" },
-    { value: "0", label: "servidores de Terno entre tú y tu correo" },
+    { value: "0", label: "servidores de Terno que guardan tu correo" },
     { value: "18", label: "temas de color, en tres diseños" },
   ],
   closing: {
@@ -136,6 +170,11 @@ export const es: SiteCopy = {
     "palette-solarized": "Terno con Solarized en modo claro y Tokyo Night en modo oscuro",
     "palette-catppuccin": "Terno con el tema de color Catppuccin, Latte en modo claro y Mocha en modo oscuro",
     "palette-gruvbox": "Terno con el tema de color Gruvbox",
+    "ai-reply": "Una conversación abierta en Terno, con una respuesta ya redactada bajo el último mensaje y un hueco marcado para completar",
+    "ai-ask": "Pregunta a tu correo respondiendo a «What did Isabella say about the payment?», con enlaces numerados a los correos de donde sale",
+    "ai-today": "La lista Hoy: una promesa que hiciste, personas que no han contestado y un correo que espera tu respuesta",
+    "ai-digest": "Los boletines de hoy en una página, una línea cada uno, con un botón para archivarlos todos",
+    "ai-summary": "Un resumen breve sobre una conversación, con una tarea por hacer y un botón Responder",
   },
   pages: {
     download: {

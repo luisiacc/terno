@@ -4,10 +4,10 @@ export const en = {
   meta: {
     title: "Terno: instant, private email for Mac",
     description:
-      "Terno is a fast, keyboard-first email client for Mac. Every account in one inbox. Instant search. Fully local, no account needed.",
+      "Terno is a fast, keyboard-first email client for Mac. Every account in one inbox. Instant search. Fully local, no account needed. Terno Pro adds AI that drafts your replies and finds what needs you.",
   },
   skip: "Skip to content",
-  nav: { features: "Features", privacy: "Privacy", source: "Source", download: "Download", language: "Español", languageHref: "/es/", home: "Terno home" },
+  nav: { features: "Features", pro: "Pro", privacy: "Privacy", source: "Source", download: "Download", language: "Español", languageHref: "/es/", home: "Terno home" },
   hero: {
     title: "The last email client you’ll try.",
     subtitle: "Every account in one inbox. Instant search. Archive one email, and every similar one is archived too. Fully local, no account needed.",
@@ -27,7 +27,7 @@ export const en = {
     },
     local: {
       title: "No account. No cloud. Just your Mac.",
-      body: "Your mail goes between your Mac and your mail servers, never through ours. Your mail, contacts and search index live on your Mac.",
+      body: "Your mail syncs between your Mac and your mail servers, never through ours. Your mail, contacts and search index live on your Mac.",
       points: ["Private from the first launch", "Remote images only when you ask", "Zero tracking"],
     },
     search: {
@@ -77,6 +77,41 @@ export const en = {
       cta: "Read the source on GitHub",
     },
   },
+  /** Terno Pro (plan 97): the AI features, coming soon. Its own key so `features` keeps one shape. */
+  pro: {
+    eyebrow: "Terno Pro",
+    status: "Coming soon",
+    title: "Less time on email.",
+    body: "Pro drafts your replies, sums up long threads and finds what needs you today. You stay in charge: no email goes out until you send it.",
+    price: "Planned: US$12 a month or $108 a year, with a 14-day free trial.",
+    reply: {
+      title: "Replies, already drafted.",
+      body: "When someone is waiting on you, a reply is ready under their message, in your voice. Fill the gaps, then send.",
+      points: ["Learned from the mail you’ve sent", "Marks what only you can decide", "Turn rough notes into an email with ⌘J"],
+    },
+    ask: {
+      title: "Ask your mail.",
+      body: "Stop digging for that one email. Ask in plain words and get an answer, with links to the messages it came from.",
+      points: ["Ask a follow-up", "Or ask it to archive old mail, and check the preview first"],
+    },
+    today: {
+      title: "What needs you today.",
+      body: "Promises you made, replies you owe, people who haven’t answered. One short list for the day.",
+      points: ["Twelve at most, so it stays short", "Follow-ups come back when they’re due"],
+    },
+    digest: {
+      title: "Every newsletter, one page.",
+      body: "Today’s newsletters folded into one page, a line each. Read what matters, then archive them all at once.",
+      points: [],
+    },
+    summaries: {
+      title: "The gist, before you read.",
+      body: "New mail, except spam, gets a short summary, plus a to-do when it asks something of you. Any older conversation, one click.",
+      points: [],
+    },
+    privacy: "AI is off until you turn it on. With Pro, each feature sends only the mail details it needs to Claude or OpenAI, through Terno’s relay, which stores none of it. Terno never sends an email for you.",
+    ownKey: "Pro is AI with no keys to set up. These features also work without Pro, on your own Claude or OpenAI key or a model on your Mac. Your provider may charge for use.",
+  },
   keys: [
     { keys: ["J", "K"], label: "Next, previous" },
     { keys: ["E"], label: "Archive" },
@@ -89,7 +124,7 @@ export const en = {
   ],
   stats: [
     { value: "Instant", label: "search across every account" },
-    { value: "0", label: "Terno servers between you and your mail" },
+    { value: "0", label: "Terno servers storing your mail" },
     { value: "18", label: "color themes, in three designs" },
   ],
   closing: {
@@ -135,6 +170,11 @@ export const en = {
     "palette-solarized": "Terno with Solarized in light mode and Tokyo Night in dark mode",
     "palette-catppuccin": "Terno with the Catppuccin color theme, Latte in light mode and Mocha in dark mode",
     "palette-gruvbox": "Terno with the Gruvbox color theme",
+    "ai-reply": "A conversation open in Terno, with a reply already drafted under the last message and one gap marked to fill in",
+    "ai-ask": "Ask your mail answering “What did Isabella say about the payment?”, with numbered links to the emails it came from",
+    "ai-today": "The Today list: a promise you made, people who haven’t replied and an email waiting for your answer",
+    "ai-digest": "Today’s newsletters on one page, one line each, with a button to archive them all",
+    "ai-summary": "A short summary above a conversation, with a to-do and a Reply button",
   },
   pages: {
     download: {
