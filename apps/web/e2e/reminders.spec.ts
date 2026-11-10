@@ -155,6 +155,18 @@ test.describe("remind me", () => {
       await dialog.getByTestId("remind-set").click();
       await expect(snackWith(page, "if they don't answer")).toBeVisible();
     });
+    await scenario("the bell's picker open, the title bands aren't the window's drag area: a click on one closes it on desktop (plan 169)", async () => {
+      // (Electron takes a click on a drag area for the window before the page sees it; a popover has no layer of its own over them)
+      const region = (testId: string) => page.getByTestId(testId).evaluate((el) => getComputedStyle(el).getPropertyValue("-webkit-app-region") || getComputedStyle(el).getPropertyValue("app-region"));
+      await openRow(page, 1);
+      expect(await region("list-header")).toBe("drag");
+      await page.getByTestId("action-remind").click();
+      await expect(page.getByTestId("remind-popover")).toBeVisible();
+      expect(await region("list-header")).toBe("no-drag");
+      await page.getByTestId("list-title").click();
+      await expect(page.getByTestId("remind-popover")).toHaveCount(0);
+      expect(await region("list-header")).toBe("drag");
+    });
   });
 
   test("the picker and the menu are axe-clean, in light and dark", async ({ app: page }) => {

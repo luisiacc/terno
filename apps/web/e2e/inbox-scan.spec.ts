@@ -206,10 +206,13 @@ test.describe("the filters and the suggestions", () => {
         return getComputedStyle(el).getPropertyValue("-webkit-app-region") || getComputedStyle(el).getPropertyValue("app-region");
       }, [x, y]);
     const title = await box(page.getByTestId("list-title"));
-    expect(await header.evaluate((el) => getComputedStyle(el).getPropertyValue("-webkit-app-region") || getComputedStyle(el).getPropertyValue("app-region"))).toBe("drag");
+    const headerRegion = () => header.evaluate((el) => getComputedStyle(el).getPropertyValue("-webkit-app-region") || getComputedStyle(el).getPropertyValue("app-region"));
+    expect(await headerRegion()).toBe("no-drag");
     expect(await region(title.x + 4, title.y + title.height / 2)).toBe("no-drag");
     await page.mouse.click(title.x + 4, title.y + title.height / 2);
     await expect(page.getByTestId("filter-option-attachments")).toHaveCount(0);
+    // and a drag area again once it's closed
+    expect(await headerRegion()).toBe("drag");
     await more.click();
     await page.getByTestId("filter-option-attachments").click();
     await expectFilter(page, "attachments", "With attachments");

@@ -521,6 +521,11 @@
 [data-base-ui-inert][role="presentation"] {
   -webkit-app-region: no-drag;
 }
+/* a popover has no such layer: while one (or a menu, a select) is open, the title bands aren't drag areas, so a click on
+   one reaches the page and closes it (plan 169); a tooltip leaves them as they are */
+:root:has(:is([data-slot="popover-content"], [data-slot$="menu-content"], [data-slot$="menu-sub-content"], [data-slot="select-content"])[data-open]) .drag-region {
+  -webkit-app-region: no-drag;
+}
 /* a dialog the user can drag (plan 129): its margin and its handles say so, the rest doesn't inherit it */
 [data-slot="dialog-content"][data-movable] {
   cursor: grab;
