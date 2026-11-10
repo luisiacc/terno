@@ -185,12 +185,11 @@ test.describe("plan 158: the reader's masthead, measure and reply controls", () 
       glyph: bar[0]!.querySelector("svg")!.getBoundingClientRect().left,
       end: Math.max(...bar.map((b) => (b.closest("[data-slot=button-group]") ?? b.querySelector("svg")!).getBoundingClientRect().right)),
       overflow: bar.some((b) => b.getBoundingClientRect().right > document.querySelector("[data-testid=reader]")!.getBoundingClientRect().right),
-      firstLine: body.getBoundingClientRect().top,
       chars: body.getBoundingClientRect().width / (ctx2d.measureText(sample).width / sample.length),
     };
   });
 
-  test("in every design and layout, the toolbar is on the column, lines are readable and the mail starts in the upper third", { tag: "@design" }, async ({ app: page, server }) => {
+  test("in every design and layout, the toolbar is on the column, and lines are readable", { tag: "@design" }, async ({ app: page, server }) => {
     const id = await ingestConversation(server, { subject: "Una conversación con un asunto de longitud bastante normal", count: 3, now: E2E_NOW });
     const check = async (where: string) => {
       await page.locator("[data-testid=message][data-expanded] .type-body").last().waitFor();
@@ -206,7 +205,6 @@ test.describe("plan 158: the reader's masthead, measure and reply controls", () 
     await page.setViewportSize({ width: 1440, height: 900 });
     await selectThread(page, id, 'subject:"Una conversación con un asunto"');
     const wide = await check("split, 1440");
-    expect(wide.firstLine).toBeLessThan(300);
     expect(wide.chars).toBeGreaterThanOrEqual(65);
     await page.setViewportSize({ width: 1100, height: 700 });
     await expect.poll(async () => (await geometry(page)).right - (await geometry(page)).left).toBeLessThan(600);
@@ -219,8 +217,7 @@ test.describe("plan 158: the reader's masthead, measure and reply controls", () 
     await search(page, 'subject:"Una conversación con un asunto"');
     await page.getByTestId("thread-row").first().click();
     await page.getByTestId("reader-back").waitFor();
-    const list = await check("list, 1440");
-    expect(list.firstLine).toBeLessThan(300);
+    await check("list, 1440");
     // Back starts the column and the steps end it (the checks above): the same form at every width, saying where to
     const where = (await page.getByTestId("reader-back").innerText()).trim();
     expect(where.length).toBeGreaterThan(0);

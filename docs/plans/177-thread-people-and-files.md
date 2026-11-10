@@ -87,6 +87,6 @@ Three findings, all fixed with a test that fails without the fix:
 2. **No test held the avatar rules as they change**: a conversation turning spam (or no longer with people) with the same messages now re-asks each avatar without icons (`thread-overview.test.tsx`).
 3. **"Surname, Given" read wrong** for surnames of several words ("García López, Ana" said "García") and for companies ("Acme, Inc." said "Inc."). The given name is whatever follows the comma unless it's a company's ending.
 
-## Open: the mail's first line (plan 158)
+## The mail's first line (plan 158): rule dropped
 
-`reader.spec` "the mail starts in the upper third" now fails in Atelier and Graphite at 1440 × 900: the people line (34 px) puts the first message's first line at 328–332 px against the 300 px bar (macOS and Lumen still pass). The owner decides: keep the line and move the bar, tighten the header, or show people elsewhere in those designs.
+`reader.spec` held the first message's first line in the reader's upper third (under 300 px at 1440 × 900). The people line (34 px) put it at 328–332 px in Atelier and Graphite. The owner: "that's fine, you can remove that strict rule". The assertion is gone; the test keeps the toolbar on the column and the measure.
