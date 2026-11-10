@@ -155,30 +155,32 @@ export const Midnight: HomeDesign = ({ copy, route }) => {
         <a href="#main" className="site-skip">
           {copy.skip}
         </a>
-        <div className={`${wrap} grid h-14 grid-cols-[1fr_auto_1fr] items-center gap-4`}>
-          <a href={home} className="flex items-center gap-2.5 justify-self-start rounded-md font-semibold tracking-tight" aria-label={copy.nav.home}>
+        <div className={`${wrap} flex h-14 items-center justify-between gap-4`}>
+          <a href={home} className="flex items-center gap-2.5 rounded-md font-semibold tracking-tight" aria-label={copy.nav.home}>
             <Logo size={24} />
             <span aria-hidden="true">Terno</span>
           </a>
-          <nav aria-label={copy.nav.home} className="flex items-center gap-6 text-sm max-sm:hidden">
-            <a href="#features" className={link}>
-              {copy.nav.features}
-            </a>
-            <a href="#pro" className={link}>
-              {copy.nav.pro}
-            </a>
-            <a href={privacy} className={link}>
-              {copy.nav.privacy}
-            </a>
-          </nav>
-          <div className="col-start-3 flex items-center gap-1 justify-self-end">
-            <a href={GITHUB} aria-label={copy.nav.sourceOnGithub} title={copy.nav.sourceOnGithub} className="mn-iconbtn">
-              <Github size={16} />
-            </a>
-            <LanguageMenu copy={copy} route={route} />
-            <a href="/download/mac" className="mn-btn mn-btn-primary ml-2 h-8 px-3 text-[0.8rem]">
-              {copy.nav.download}
-            </a>
+          <div className="flex items-center gap-5">
+            <nav aria-label={copy.nav.home} className="flex items-center gap-5 text-sm max-sm:hidden">
+              <a href="#features" className={link}>
+                {copy.nav.features}
+              </a>
+              <a href="#pro" className={link}>
+                {copy.nav.pro}
+              </a>
+              <a href={privacy} className={link}>
+                {copy.nav.privacy}
+              </a>
+            </nav>
+            <div className="flex items-center gap-1">
+              <a href={GITHUB} aria-label={copy.nav.sourceOnGithub} title={copy.nav.sourceOnGithub} className="mn-iconbtn">
+                <Github size={16} />
+              </a>
+              <LanguageMenu copy={copy} route={route} />
+              <a href="/download/mac" className="mn-btn mn-btn-primary ml-2 h-8 px-3 text-[0.8rem]">
+                {copy.nav.download}
+              </a>
+            </div>
           </div>
         </div>
       </header>
