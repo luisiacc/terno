@@ -16,6 +16,7 @@ import { IncomingPipeline, ProviderIdentityError, ProviderCooldownError, Provide
 import { Autocomplete, DESKTOP_AUTOCOMPLETE_PEAK, DESKTOP_CONTACT_CAPS, DESKTOP_PHRASE_CAPS, WEB_AUTOCOMPLETE_PEAK, WEB_CONTACT_CAPS, WEB_PHRASE_CAPS } from "@terno/store/autocomplete";
 import { AiService, defaultAiFactory, type AiFactory } from "./ai-service";
 import { Connectivity, type ConnectivityOptions, type NetReason } from "./connectivity";
+import { QuickChecks, type QuickCheckOptions } from "./quick-checks";
 import { AiAssist } from "./ai-assist";
 import { ActionsService } from "./actions";
 import { ReplyService } from "./replies";
@@ -123,6 +124,8 @@ export interface BackendCoreOptions {
   onNetworkReset?: () => void;
   /** tests: the retry schedule, the offline probe and the settle delay (see connectivity.ts) */
   connectivity?: Pick<ConnectivityOptions, "delays" | "offlineRetryMs" | "settleMs" | "random">;
+  /** tests: how often and how long accounts without push are checked after a focus (plan 176, quick-checks.ts) */
+  quickChecks?: Pick<QuickCheckOptions, "everyMs" | "forMs">;
   /** plan 22: how website icons are fetched (Node: node-transport.ts); none: this host shows no website icons (the web) */
   iconTransport?: IconTransport | null;
   /** plan 96: how a one-click unsubscribe is POSTed (Node: unsubscribe-node.ts; the web: a no-cors fetch); null: never, its page opens instead */
@@ -291,6 +294,8 @@ export class BackendCore {
   readonly tabs: TabsBackfill;
   /** plan 20: retries, offline and network changes */
   readonly connectivity: Connectivity;
+  /** plan 176: the minute after a window gains focus, accounts without push are checked every 5 s */
+  readonly quickChecks: QuickChecks;
   /** plan 22: sender icons (website icons and Google photos), idle until the first lookup */
   readonly icons: IconService;
   /** plan 41: the Dock badge and notifications for important new mail */
@@ -409,6 +414,7 @@ export class BackendCore {
       },
       { online: options.online, now: () => this.now(), retries: options.autoSync !== false, ...options.connectivity },
     );
+    this.quickChecks = new QuickChecks({ check: () => void this.quickCheck() }, { now: () => this.now(), ...options.quickChecks });
     this.icons = new IconService({
       transport: options.iconTransport ?? null,
       files: this.platform.files,
@@ -457,6 +463,7 @@ export class BackendCore {
         this.writing.disconnected(ctx.clientId);
         this.actions.disconnected(ctx.clientId);
         this.replies.disconnected(ctx.clientId);
+        this.quickChecks.disconnected(ctx.clientId);
       },
     });
   }
@@ -679,6 +686,34 @@ export class BackendCore {
     }
   }
 
+  /**
+   * Plan 176: a window gained or lost focus (a renderer's own on the web; on desktop, main's word for every window,
+   * which a mail frame's focus doesn't hide). With autoSync off nothing syncs by itself, so nothing starts here.
+   */
+  windowFocus(clientId: string, focused: boolean): void {
+    if (this.options.autoSync !== false) this.quickChecks.focus(clientId, focused);
+  }
+
+  /**
+   * Plan 176: one quick check, the minute after a window gained focus. Only accounts whose provider takes quick passes
+   * (`quickChecks`: Gmail; Outlook's when it comes) and that are synced and healthy: one in a first sync, a backfill
+   * or a pass, one that failed (it waits for its retry or the poll; a failure that isn't retried isn't repeated every
+   * 5 s) or that needs a sign-in is left alone. Push accounts (IMAP) already hear of new mail.
+   */
+  private async quickCheck(): Promise<void> {
+    // the poll not running yet (before start) or at all (autoSync off): nothing to hurry
+    const admitted = (accountId: number) => !this.stopped && this.syncTimer !== null && this.quickChecks.running
+      && !this.syncing.has(accountId) && this.connectivity.canSync(accountId);
+    for (const account of await this.store.accounts.list()) {
+      if (!admitted(account.id)) continue;
+      const s = (await this.accountStatus(account.id)).project();
+      if (s.status !== "idle" || s.lastSyncAt === null || s.lastError || s.connection || s.authRequired || s.progress) continue;
+      const provider = await this.provider(account.id).catch(() => null);
+      // admitted again: a blur, offline or another pass may have come while those were read
+      if (provider?.quickChecks && admitted(account.id)) void this.syncAccount(account.id, undefined, { quick: true });
+    }
+  }
+
   // ───────────────────────────── network (plan 20) ─────────────────────────────
 
   /** The host's word on the network: desktop's main (a route or address change, a wake), the web page (online/offline). */
@@ -894,6 +929,7 @@ export class BackendCore {
       return failed;
     })();
     this.connectivity.stop();
+    this.quickChecks.stop();
     const accountsClosed = Promise.allSettled([...this.lifetimes.values()].map((life) => this.dropAccount(life.id, { remove: life.removing })));
     if (this.syncTimer) clearInterval(this.syncTimer);
     if (this.idleTimer) clearInterval(this.idleTimer);
@@ -1823,11 +1859,17 @@ export class BackendCore {
     } finally { body.release(); }
   }
 
-  syncAccount(accountId: number, captureRetry?: { locator: import("@terno/core").CaptureLocator; revision: number; check(): void }): Promise<void> {
+  /**
+   * One sync pass. `quick` (plan 176): a quick check, only new mail and changes (SyncSink.quick), quietly: it says
+   * nothing of itself in the account's status (no "syncing", no new "synced at"), so a check with nothing new writes
+   * and publishes nothing. One already running isn't followed by another: the running pass reads the same mail.
+   */
+  syncAccount(accountId: number, captureRetry?: { locator: import("@terno/core").CaptureLocator; revision: number; check(): void }, o: { quick?: boolean } = {}): Promise<void> {
     if (this.stopped || this.google.get(accountId)?.paused) return Promise.resolve();
     const life = this.lifetime(accountId);
     if (!this.current(life)) return Promise.resolve();
     const running = this.syncing.get(accountId);
+    if (running && o.quick) return Promise.resolve();
     if (running && !captureRetry) {
       // Don't drop the notification (IDLE/push during a long sync): schedule one more pass.
       this.syncAgain.add(accountId);
@@ -1871,6 +1913,7 @@ export class BackendCore {
       let backfillFinished = false;
       const sink: SyncSink = {
         ...(captureRetry && { captureRetry: { locator: captureRetry.locator, revision: captureRetry.revision } }),
+        ...(o.quick && { quick: true as const }),
         signal: life.abort.signal,
         blockCapture: async (locator, reason, revision) => {
           checkCurrent();
@@ -1985,7 +2028,7 @@ export class BackendCore {
         // plan 41: the pass is over (done or failed): what it stored as live mail is looked at now
         try {
           checkCurrent();
-          await setState({ status: "syncing", ...(wasDown && { connection: { state: "reconnecting", retryAt: null } }) });
+          if (!o.quick) await setState({ status: "syncing", ...(wasDown && { connection: { state: "reconnecting", retryAt: null } }) });
           checkCurrent();
           observation = await this.accountWrite(life, () => this.store.sync.beginObservation(accountId, { authoritativeFlags: provider.flagSnapshots === true, signal: life.abort.signal }));
           checkCurrent();
@@ -1993,7 +2036,8 @@ export class BackendCore {
           checkCurrent();
           // plan 68: the account's own folders (Gmail's labels), only when they may have changed; a failure waits for the next pass
           try {
-            await provider.folders?.(sink);
+            // plan 176: a quick check leaves the folders (labels met and unknown) to the ordinary pass
+            if (!o.quick) await provider.folders?.(sink);
           } catch (error) {
             // the provider's own failure (offline, a malformed answer) waits; a sign-in to redo or a store failure doesn't
             if (!(error instanceof ProviderError) || error instanceof ProviderAuthError || error instanceof ProviderCooldownError || (accountKind === "gmail" && (error.httpResponse?.status === 429 || (error.httpResponse?.status === 403 && (error.retryable || this.google.get(accountId)?.paused))))) throw error;
@@ -2018,7 +2062,9 @@ export class BackendCore {
         const firstChunk = more && before?.syncState.lastSyncAt === null;
         // plan 103: a chunk leaves its latest progress; a sync that's done leaves none
         const kept = more || (backfill && !backfillFinished) ? (progress ?? before?.syncState.progress ?? null) : null;
-        await statusRun.end({ ...(firstChunk ? { status: "syncing" as const } : { status: "idle" as const, lastSyncAt: this.now() }), lastError: null, lastErrorI18n: null, connection: null, progress: kept });
+        // plan 176: a quick check only ever runs on a synced, healthy account, which it leaves as it found it
+        if (o.quick) await statusRun.end({ status: "idle", lastError: null, lastErrorI18n: null, connection: null });
+        else await statusRun.end({ ...(firstChunk ? { status: "syncing" as const } : { status: "idle" as const, lastSyncAt: this.now() }), lastError: null, lastErrorI18n: null, connection: null, progress: kept });
         // the card hears the end too (a sync done: nothing left to show)
         // (only an account that showed some: a regular poll sends nothing)
         if (progress !== null || before?.syncState.progress) this.server.emit("syncProgress", { accountId, progress: kept });

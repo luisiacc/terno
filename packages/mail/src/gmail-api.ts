@@ -1245,6 +1245,24 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
     return { historyId: state.refreshFrom ?? state.baseline };
   }
 
+  /**
+   * Plan 176: a quick check: history since the cursor and nothing else (one /history read when nothing is new). A
+   * first sync or catch-up under way, or history that expired or overflowed, is the ordinary pass's: asked for, then left.
+   */
+  async function quickPass(sink: SyncPass) {
+    const cursor = await ctx.loadCursor<unknown>();
+    sink.check();
+    // the cursor's backfill progress rides along on the save, as in every pass (never dropped)
+    backfillProgress = sink.backfill && isRecord(cursor) ? readBackfill(cursor.backfill, sink.backfill) : undefined;
+    const completed = isRecord(cursor) && historyId(cursor.historyId) ? cursor.historyId : undefined;
+    if (completed === undefined || Object.hasOwn(cursor as object, "reconciliation")) return void sink.again?.();
+    try { await incremental(sink, { historyId: completed }); }
+    catch (error) {
+      if (error instanceof ExpiredHistory || error instanceof HistoryOverflow) return void sink.again?.();
+      throw error;
+    }
+  }
+
   async function incremental(sink: SyncPass, cursor: Cursor) {
     const added = new Set<string>();
     const changed = new Set<string>();
@@ -1389,6 +1407,8 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
 
   return {
     flagSnapshots: true,
+    // plan 176: a quick pass is one /history read when nothing is new
+    quickChecks: true,
     /**
      * Plan 141: Google documents `q` as the search box's own format and that `includeSpamTrash` defaults to false. The
      * list isn't documented to have an order, so each new id's date is read from its metadata (no body).
@@ -1459,6 +1479,7 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         setBody: (...args) => effect(() => outer.setBody(...args)),
       };
       sink.check();
+      if (outer.quick) return quickPass(sink);
       // Explicit source admission must not wait behind an expired/full reconciliation.
       const requested = sink.captureRetry;
       if (requested?.locator.kind === "gmail") {

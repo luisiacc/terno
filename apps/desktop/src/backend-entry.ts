@@ -120,6 +120,10 @@ function portTransport(port: PortMain): Transport {
 }
 
 let backend: Backend | null = null;
+/** plan 176: whether a Terno window has focus (main's word, kept from init on) */
+let focused = false;
+/** the focus main reports isn't a renderer's: one name for it among the clients (quick-checks.ts) */
+const MAIN_CLIENT = "main";
 let opening: { abort: AbortController; done: Promise<void> } | null = null;
 
 parentPort.on("message", async (event) => {
@@ -141,6 +145,11 @@ parentPort.on("message", async (event) => {
     if (port && backend) backend.connect(portTransport(port), { clientId: msg.clientId, origin: "renderer" });
     return;
   }
+  if (msg.type === "focus") {
+    focused = msg.focused;
+    backend?.windowFocus(MAIN_CLIENT, focused);
+    return;
+  }
   if (msg.type === "network") {
     // before init there is nothing to tell (init carries the state); after a stop, nothing to do
     backend?.networkChanged(msg.online, msg.reason);
@@ -148,6 +157,7 @@ parentPort.on("message", async (event) => {
   }
   if (msg.type === "init") {
     if (opening || backend || closing) return;
+    focused = msg.focused;
     const abort = new AbortController();
     const current = { abort, done: initialize(msg, abort.signal) };
     opening = current;
@@ -205,6 +215,7 @@ async function initialize(msg: Extract<MainToBackend, { type: "init" }>, signal:
     if (signal.aborted) return;
     await backend.start();
     if (signal.aborted) return;
+    backend.windowFocus(MAIN_CLIENT, focused);
     await startAgentSocket(backend, msg.socketPath, msg.tokenPath).catch((e) => log.warn("agents.socket_failed", { errno: (e as { code?: string }).code }));
     if (signal.aborted) return;
     const b = backend;

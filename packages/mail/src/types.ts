@@ -160,6 +160,12 @@ export interface SyncSink {
   backfillMore?(): void;
   /** plan 102: more of this account's sync remains (a first sync's next chunk): another pass soon */
   again?(): void;
+  /**
+   * Plan 176: a quick check (only to a provider with `quickChecks`): new mail and changes since the cursor, nothing
+   * else. Repairs, flag snapshots, attachment captures, backfill and a first sync or catch-up wait for an ordinary
+   * pass; one that can't go on from its cursor (history expired) asks for one with `again()` and stops.
+   */
+  quick?: true;
   /** plan 103: how far a first sync or a backfill has got (the host throttles what it writes) */
   progress?(progress: import("@terno/core").SyncProgress): void;
   backfillDone?(request: import("@terno/core").BackfillRequest): Promise<void>;
@@ -301,8 +307,17 @@ export interface MailProvider {
   execute(op: ProviderOp): Promise<{ providerMsgId?: string; providerThreadId?: string; warning?: string | Localized } | void>;
   /** Deliberate copy-only recovery. Never submits a message to SMTP. */
   repairSentCopy?(input: { raw: Uint8Array; messageId: string; mailbox: string | null }, hooks: import("./sent-copy").SentCopyHooks): Promise<void>;
-  /** Push notifications (IMAP IDLE, Gmail push). Calls onChange when a sync is worthwhile. */
+  /** Push notifications (IMAP IDLE). Calls onChange when a sync is worthwhile. */
   watch?(onChange: () => void): () => void;
+  /**
+   * Plan 176: the provider honours `SyncSink.quick`, and a quick pass with nothing new is one small request (Gmail:
+   * one /history read, 2 of its 6,000 quota units a minute). Such an account is checked every 5 s for a minute after
+   * a Terno window gains focus, since someone coming to Terno is often waiting for a code or a link. A provider with
+   * push (`watch`) hears of new mail anyway and leaves it unset. A new provider without push (Outlook over Microsoft
+   * Graph, whose change notifications need a public webhook) sets it once its quick pass is that cheap (Graph: a
+   * delta query on the Inbox); until then it is only polled. docs/plans/176-quick-checks-on-focus.md.
+   */
+  readonly quickChecks?: true;
   /**
    * The network changed (plan 20): every socket the provider holds is presumed dead. Drop them
    * now without waiting on them; requests safe to repeat fail fast (retryable), a send in flight

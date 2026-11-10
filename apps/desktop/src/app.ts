@@ -36,6 +36,7 @@ import { backendEnv, devModeOf, takeDevAiEnv } from "./dev-mode";
 import type { BackendToMain, MainToBackend } from "./ipc";
 import { readLegacySecrets } from "./keychain-helper";
 import { NetworkWatch } from "./network-watch";
+import { FocusReporter } from "./window-focus";
 import { backstopAllows, originOf, requestFrame } from "./network-backstop";
 import { DB_FILE } from "./legacy-profile";
 import { registerPrint } from "./print";
@@ -181,6 +182,21 @@ const networkWatch = new NetworkWatch({
   onChange: (change) => !backendRetirement?.retiring && backend?.postMessage({ type: "network", ...change } satisfies MainToBackend),
   onFailure: (f) => diagLog.warn("net.watch_failed", { attempt: f.attempt, ...(f.errno && { errno: f.errno }), ...(f.exitCode !== null && { exitCode: f.exitCode }) }),
 });
+
+/** Plan 176: a Terno window's focus, told to the backend as it changes (window-focus.ts); a hidden print window never has it. */
+const windowFocus = new FocusReporter({
+  focused: () => {
+    const w = BrowserWindow.getFocusedWindow();
+    return Boolean(w && windows.has(w));
+  },
+  tell: (focused) => {
+    if (backendRetirement?.retiring || !backend) return false;
+    backend.postMessage({ type: "focus", focused } satisfies MainToBackend);
+    return true;
+  },
+});
+app.on("browser-window-focus", () => windowFocus.changed());
+app.on("browser-window-blur", () => windowFocus.changed());
 
 /** Plan 95: the mailbox gate (being upgraded, or why it can't open), pushed to every window. */
 const mailbox = new MailboxHost({
@@ -359,6 +375,8 @@ function startBackend() {
     testNetLog: testNetLog(process.env, demo) ?? undefined,
     // a restarted backend starts from what the network is now
     online: net.isOnline(),
+    // a restarted backend starts from whether a window has focus now; later changes are told as they happen
+    focused: windowFocus.current(),
     ...flags,
   } satisfies MainToBackend);
 }

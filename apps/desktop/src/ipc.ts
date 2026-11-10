@@ -2,10 +2,12 @@ import type { MailboxGate } from "@terno/core/mailbox";
 
 /** Messages between main and the backend utility process (parent port). */
 export type MainToBackend =
-  | { type: "init"; dbPath: string; demo: boolean; dev: boolean; /** plan 146: a local build, whose environment Dev mode may read */ devMode: boolean; socketPath: string; tokenPath: string; version: string; diag: { session: string; build: string; channel: "production" | "dev" | "test" | "demo" }; testSmtpPort?: number; testImapInsecure?: boolean; /** plan 161, the demo mailbox only (test-hooks.ts) */ testNow?: number; testNetLog?: string; online: boolean; /** plan 95: "Update Without a Backup" (this start only) */ skipBackup?: boolean }
+  | { type: "init"; dbPath: string; demo: boolean; dev: boolean; /** plan 146: a local build, whose environment Dev mode may read */ devMode: boolean; socketPath: string; tokenPath: string; version: string; diag: { session: string; build: string; channel: "production" | "dev" | "test" | "demo" }; testSmtpPort?: number; testImapInsecure?: boolean; /** plan 161, the demo mailbox only (test-hooks.ts) */ testNow?: number; testNetLog?: string; online: boolean; /** plan 176: a Terno window has focus now */ focused: boolean; /** plan 95: "Update Without a Backup" (this start only) */ skipBackup?: boolean }
   | { type: "port"; clientId: string }
   /** plan 20: the network changed (network-watch.ts), or the Mac woke up */
   | { type: "network"; online: boolean; reason: "network" | "wake" | "online" | "offline" }
+  /** plan 176: a Terno window has focus, or none has any more (the OS's word: a mail frame's focus is still the window's) */
+  | { type: "focus"; focused: boolean }
   /**
    * Quitting or updating: stop starting ops, give a send in flight until the
    * deadline, close the database (its WAL checkpointed) and answer. `force`

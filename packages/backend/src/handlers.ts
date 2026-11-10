@@ -1601,6 +1601,10 @@ export function createHandlers(b: Backend): Handlers {
       await b.retryNow(accountId ?? null, reason);
       return { ok: true as const };
     },
+    "sync.focus": ({ focused }, ctx) => {
+      b.windowFocus(ctx.clientId, focused);
+      return { ok: true as const };
+    },
     "icons.lookup": ({ emails }) => b.icons.lookup(emails),
     "icons.data": ({ ids }) => b.icons.data(ids),
     "icons.forget": async () => {

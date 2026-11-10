@@ -1370,6 +1370,11 @@ export const contract = {
    * every 15 s (plan 20).
    */
   "sync.now": m<{ ok: true }>()(z.object({ accountId: id.optional(), reason: z.enum(["user", "focus"]).default("user") })),
+  /**
+   * Plan 176: this window gained or lost focus. For a minute after a focus, accounts without push (Gmail) are
+   * checked every 5 s while a Terno window has focus.
+   */
+  "sync.focus": m<{ ok: true }>()(z.object({ focused: z.boolean() })),
   /** the web page's online/offline events (desktop's main tells the backend directly) */
   "sync.network": m<{ ok: true }>()(z.object({ online: z.boolean() })),
 
