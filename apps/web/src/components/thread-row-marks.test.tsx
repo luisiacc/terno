@@ -17,7 +17,7 @@ const thread: ThreadSummary = {
   id: 1, accountId: 1, subject: "Homepage concepts", snippet: "We looked at the revised C", lastDate: Date.UTC(2026, 10, 9, 9, 6), fromName: "Priya Natarajan", fromEmail: "priya@example.com",
   messageCount: 3, unread: true, starred: true, hasAttachments: true, categoryIds: [7],
 };
-const categories = [{ id: 7, name: "Clients", color: "green" }] as unknown as Category[];
+const categories = [{ id: 7, name: "Clients", color: "green" }, { id: 8, name: "Travel", color: "teal" }, { id: 9, name: "Reading", color: "purple" }] as unknown as Category[];
 
 let host: HTMLDivElement | null = null;
 let unmount = async () => {};
@@ -94,4 +94,21 @@ it("in Review the answers have the preview's line, and the marks stay by the dat
   expect(fromLine.querySelector("[data-cat-dot='7']")).not.toBeNull();
   expect(fromLine.querySelectorAll("svg")).toHaveLength(2); // the clip and the star
   expect(el.querySelector("[data-testid=row-marks]")).toBeNull();
+});
+
+it("the preview's line holds two category dots at most, every name in its title; Trash's word stays by the date (plan 173, Codex review)", async () => {
+  Object.assign(thread, { categoryIds: [7, 8, 9], inTrash: true });
+  try {
+    const { el } = await row();
+    const marks = el.querySelector("[data-testid=row-marks]")!;
+    expect(marks.querySelectorAll("[data-cat-dot]")).toHaveLength(2);
+    expect(marks.getAttribute("title")).toBe("Clients, Travel, Reading");
+    expect(marks.querySelector("[data-testid=row-place]")).toBeNull();
+    const fromLine = el.querySelector("[data-testid=row-from]")!.parentElement!;
+    expect(fromLine.querySelector("[data-testid=row-place]")).not.toBeNull();
+    // every category is still said
+    expect(el.querySelector(".sr-only")!.textContent).toContain("Reading");
+  } finally {
+    Object.assign(thread, { categoryIds: [7], inTrash: undefined });
+  }
 });

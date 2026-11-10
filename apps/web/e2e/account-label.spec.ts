@@ -89,6 +89,34 @@ test.describe("the receiving account on rows", () => {
     await setDensity(page, server, "comfortable");
   });
 
+  test("a crowded row at the narrowest list keeps its marks and its account inside it, the account ending where the date ends (plan 173, Codex review)", async ({ app: page, server }) => {
+    // a row with a clip, a star and three categories, beside its account's label
+    const row = rows(page).filter({ hasText: "Björn Peña" }).first();
+    const id = Number(await row.getAttribute("data-thread-id"));
+    sqlDb(server.backend.store).run("INSERT OR IGNORE INTO thread_categories (thread_id, category_id) SELECT ?, id FROM categories ORDER BY position LIMIT 3", id);
+    await page.reload();
+    await page.locator("[data-ready]").waitFor();
+    await page.setViewportSize({ width: 1100, height: 700 });
+    // the list at its narrowest
+    await page.getByTestId("pane-handle-list").focus();
+    let width = 0;
+    for (let i = 0; i < 80; i++) {
+      await page.keyboard.press("ArrowLeft");
+      const w = (await rows(page).first().boundingBox())!.width;
+      if (w === width) break;
+      width = w;
+    }
+    const crowded = page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`);
+    await expect(crowded.getByTestId("row-marks").locator("[data-cat-dot]")).toHaveCount(2);
+    const [label, date, marks, snippet] = await Promise.all(["account-label", "row-date", "row-marks", "row-snippet"].map(async (t) => (await crowded.getByTestId(t).boundingBox())!));
+    expect(Math.abs(label.x + label.width - (date.x + date.width))).toBeLessThanOrEqual(1.5);
+    expect(marks.x + marks.width).toBeLessThanOrEqual(label.x + 0.5);
+    // the preview keeps its first words
+    expect(snippet.width).toBeGreaterThan(40);
+    await expectContained(page);
+    await page.setViewportSize({ width: 1440, height: 900 });
+  });
+
   test("an account's own mailbox shows none, and neither does a single account", async ({ app: page, server }) => {
     await expect(labels(page).first()).toBeVisible();
     const accounts = await server.backend.store.accounts.list();

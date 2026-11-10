@@ -105,4 +105,9 @@ Codex read the plan against the code (ten points). What changed:
 ## Built
 
 - GitHub Light's open row is `#DAF1FC`, its hover `#F5F7F9`, the sidebar's selection `#E6EAEE` (the owner's first screenshot). Graphite, which has no tint, is `#EAEAEA` open and `#F7F7F7` under the pointer: the first try (`#EDEDED`/`#F8F8F8`) read as one grey in its screenshot.
-- Unrelated and left alone: Atelier's `send-group-rest.png` (the composer's Send group is 2 px taller than its baseline) fails on main without this series.
+- Unrelated and left alone: Atelier's `send-group-rest.png` fails here (the composer's Send group is 2 px taller than its baseline); this series doesn't touch the composer, and its baseline wasn't updated.
+
+## What the Codex code review changed
+
+One finding: at the narrowest list, a row with an account label, three or more categories, a clip, a star and a reminder bell could push the label past the date's edge, since the marks and the label don't shrink and the preview held 35 %. Now the preview's line draws two category dots at most (every name in the marks' title and said to a screen reader, as the wide row does), the words Spam, Trash and Opened stay on the first line by the date, and the preview's floor is `min(8rem, 25%)`. Regression: `account-label.spec.ts` ("a crowded row at the narrowest list") fails on the old row at its dot count; its geometry checks (the label ending at the date, the marks before it, nothing outside the row) passed on the old row too with three dots, a clip and a star, so the dot bound is what it pins. `thread-row-marks.test.tsx` holds the bound, the title and Trash's word on the first line.
+

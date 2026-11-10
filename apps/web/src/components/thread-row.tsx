@@ -220,7 +220,7 @@ function RowSnippet({ thread, reminderTop, ink, quiet, match, excerpt, lead }: {
   const reason = useReason(thread);
   return (
     // plan 173: the marks share its line, so it keeps its first words (a search's match stands near them, LEAD)
-    <span data-testid="row-snippet" data-followup={line ? true : undefined} data-excerpt={!line && excerpt ? true : undefined} className={cn("type-row-snippet min-w-[min(8rem,35%)] truncate", line ? ink : reason ? undefined : quiet)}>
+    <span data-testid="row-snippet" data-followup={line ? true : undefined} data-excerpt={!line && excerpt ? true : undefined} className={cn("type-row-snippet min-w-[min(8rem,25%)] truncate", line ? ink : reason ? undefined : quiet)}>
       {line ?? withReason(reason, quiet, ink, matchLine(match, excerpt ?? thread.snippet, lead))}
     </span>
   );
@@ -294,8 +294,21 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
     </span>
   );
   const keptTag = kept && <span data-testid="row-kept" className="shrink-0 text-2xs text-muted-foreground">{t("list.kept")}</span>;
-  /** how many marks the row draws (plan 173: on the preview's line they share it with the account) */
-  const markCount = dots.length + Number(!!clip) + Number(!!star) + Number(!!bell && !reminderTop) + Number(!!placeTag) + Number(!!keptTag);
+  /**
+   * Plan 173: a three-line row's marks on its preview's line, bounded so they never crowd it out at the narrowest list
+   * (Codex review): two category dots at most (every name is said to a screen reader and in the title), the glyphs; the
+   * words (Spam, Trash, Opened) stay on the first line by the date, where the sender gives way
+   */
+  const lineDots = dots.slice(0, 2);
+  const lineMarks = (
+    <>
+      {lineDots}
+      {clip}
+      {star}
+      {!reminderTop && bell}
+    </>
+  );
+  const markCount = lineDots.length + Number(!!clip) + Number(!!star) + Number(!!bell && !reminderTop);
   const marks = (
     <>
       {dots}
@@ -446,7 +459,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
       {count}
       <span className="ml-auto flex shrink-0 items-center gap-1.5 pl-1">
         {chip}
-        {answer && marks}
+        {answer ? marks : <>{placeTag}{keptTag}</>}
         {date}
       </span>
     </div>
@@ -456,8 +469,8 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
   // under the date (the names one column down the list), and without one the marks take that edge
   const accountShown = !answer && accountTag;
   const rowMarks = markCount > 0 && (
-    <span data-testid="row-marks" className="ml-auto flex shrink-0 items-center gap-1.5 self-center pl-2">
-      {marks}
+    <span data-testid="row-marks" title={cats.length > 2 ? cats.map((c) => c.name).join(", ") : undefined} className="ml-auto flex shrink-0 items-center gap-1.5 self-center pl-2">
+      {lineMarks}
     </span>
   );
   const lines = (
