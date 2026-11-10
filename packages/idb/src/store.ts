@@ -188,6 +188,7 @@ import { attemptSummary, clearNewMail, clearSummaries, consumeNewMail, dropPendi
 import { cancelWaiting, filesReady, waitingCount, forwardRuleGone, forwardWork, approveRule, cancelForwards, claimForward, eligiblePage, failForward, forwardHolds, forwardSendOpen, forwardsActive, getForward, linkForwardSend, listForwards, markEligible, nextForwardDue, planForwards, pruneForwards, retryForward, setCategoryForward, stopRule, waitForFiles } from "./forwards";
 import { deleteScheduled, failScheduled, getScheduled, listScheduled, putScheduled, rescheduleScheduled, stillScheduled } from "./scheduled";
 import { answeredReminders, deleteExactReminders, deleteReminders, listReminders, putReminders } from "./reminders";
+import { addPins, deleteExactPins, deletePins, listPins } from "./pins";
 import { startTabsBackfill, tabsIdle, tabsSlice } from "./tabs";
 import { answeredThreads, arrivalRows, backfillSlice, FactsQueue, factsReady, ownMailChanged, referencesOfOwn, resetFacts, startRescan } from "./facts";
 import { sameRevision, SearchCancelledError, type AutocompleteSource, type ContactBatch, type ContactMessage, type SentText } from "@terno/store";
@@ -1947,6 +1948,13 @@ export class IdbMailStore implements MailStore {
     deleteExact: (rows) => this.command(() => deleteExactReminders(this.c, rows), { early: true }),
     // reads messages: waits for them
     answered: (rows) => this.read(() => answeredReminders(this.c, rows)),
+  };
+
+  readonly pins: MailStore["pins"] = {
+    list: () => this.early(() => listPins(this.c)),
+    add: (rows, cap) => this.command(() => addPins(this.c, rows, cap), { early: true }),
+    delete: (threadIds) => this.command(() => deletePins(this.c, threadIds), { early: true }),
+    deleteExact: (rows) => this.command(() => deleteExactPins(this.c, rows), { early: true }),
   };
 
   // plans 131, 132: they read messages, so they wait for them

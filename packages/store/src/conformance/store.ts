@@ -14,6 +14,7 @@ import { defineDraftRecoveryConformance } from "./draft-recovery";
 import { defineAttachmentConformance } from "./attachments";
 import { defineFactsConformance } from "./facts";
 import { defineReminderConformance } from "./reminders";
+import { definePinConformance } from "./pins";
 import { defineScheduledConformance } from "./scheduled";
 import { defineForwardsConformance } from "./forwards";
 import { defineAiSummariesConformance } from "./ai-summaries";
@@ -98,6 +99,11 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
       return next;
     });
     defineReminderConformance(fresh, async (s) => {
+      const next = await harness.reopen(s);
+      open.push(next);
+      return next;
+    });
+    definePinConformance(fresh, async (s) => {
       const next = await harness.reopen(s);
       open.push(next);
       return next;

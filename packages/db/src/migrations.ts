@@ -1411,6 +1411,12 @@ CREATE TABLE ai_digests (
   generated_at INTEGER
 ) WITHOUT ROWID;
 ` },
+  { version: 55, name: "pinned conversations (plan 177)", sql: `
+CREATE TABLE pins (
+  thread_id INTEGER PRIMARY KEY REFERENCES threads(id) ON DELETE CASCADE,
+  pinned_at INTEGER NOT NULL
+) WITHOUT ROWID;
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

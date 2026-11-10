@@ -24,6 +24,7 @@ import type {
   Prediction,
   QuickActions,
   Reason,
+  Pin,
   Reminder,
   SimilarTarget,
   SimilarOffers,
@@ -655,6 +656,26 @@ export interface MailStore {
      * one of your addresses.
      */
     answered(rows: readonly Reminder[]): Promise<number[]>;
+  };
+
+  /**
+   * Plan 177: conversations pinned to the Inbox's top (one row per thread). A
+   * thread that goes takes its pin with it; a merge keeps the survivor's pin,
+   * or the vanished one's when the survivor had none.
+   */
+  pins: {
+    /** every pin (at most PINS_MAX), by thread id */
+    list(): Promise<Pin[]>;
+    /**
+     * Pins these, all or nothing: refused (`ok: false`) when the pins now plus
+     * the new ones would pass `cap`. A thread already pinned keeps its pin (and
+     * isn't counted twice); threads that are gone are skipped. `added`: the rows written.
+     */
+    add(rows: readonly Pin[], cap: number): Promise<{ ok: true; added: Pin[] } | { ok: false }>;
+    /** unpins these threads; what it removed */
+    delete(threadIds: readonly number[]): Promise<Pin[]>;
+    /** removes these pins only if they are still exactly these (one made again since stays) */
+    deleteExact(rows: readonly Pin[]): Promise<Pin[]>;
   };
 
   /**

@@ -78,6 +78,7 @@ import type { MemDb, Row, Table } from "./mem";
 import { hiddenCategories, tabHiddenTest } from "./inbox-hidden";
 import { answeredThreads, factsReady, noteSentMail, ownAddresses, ownMailChanged, recomputeContext, referencesOfOwn, type FactsQueue } from "./facts";
 import { mergeReminder } from "./reminders";
+import { mergePin } from "./pins";
 import { mergeFollowups } from "./followups";
 import { mergeSummaries } from "./ai-summaries";
 
@@ -755,6 +756,7 @@ export function mergeThreads(c: Ctx, into: number, from: number, result: IngestR
   const decisions = T(c, "cls_decisions");
   for (const d of decisions.by("fk_thread_id", from)) if (!decisions.has(into, d.category_id)) decisions.update(d, { thread_id: into });
   mergeReminder(c, into, from);
+  mergePin(c, into, from);
   mergeSummaries(c, into, from);
   mergeFollowups(c, into, from);
   T(c, "threads").delete(from);

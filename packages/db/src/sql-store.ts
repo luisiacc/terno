@@ -99,6 +99,7 @@ import { attemptSummary, clearNewMail, clearSummaries, consumeNewMail, dropPendi
 import { cancelWaiting, filesReady, waitingCount, forwardRuleGone, forwardWork, approveRule, cancelForwards, claimForward, eligiblePage, failForward, forwardHolds, forwardSendOpen, forwardsActive, getForward, linkForwardSend, listForwards, markEligible, nextForwardDue, planForwards, pruneForwards, retryForward, setCategoryForward, stopRule, waitForFiles } from "./forwards";
 import { deleteScheduled, failScheduled, getScheduled, listScheduled, putScheduled, rescheduleScheduled, stillScheduled } from "./scheduled";
 import { answeredReminders, deleteExactReminders, deleteReminders, listReminders, putReminders } from "./reminders";
+import { addPins, deleteExactPins, deletePins, listPins } from "./pins";
 import { COMPACT_KEY, compactPages, footprint, incrementalVacuum, removeStorage, storageThreads } from "./storage";
 import { autoReasons, categoryStats, countScope, pendingSuggestions, predictThread, quickActions, resolveScope } from "./categorize-bulk";
 import { startCheckpointWorker, type CheckpointWorker } from "./checkpoint";
@@ -1428,6 +1429,13 @@ export class SqlMailStore implements MailStore {
     answered: async (rows) => answeredReminders(this.db, rows),
   };
 
+  readonly pins: MailStore["pins"] = {
+    list: async () => listPins(this.db),
+    add: async (rows, cap) => addPins(this.db, rows, cap),
+    delete: async (threadIds) => deletePins(this.db, threadIds),
+    deleteExact: async (rows) => deleteExactPins(this.db, rows),
+  };
+
   readonly scheduled: MailStore["scheduled"] = {
     list: async () => listScheduled(this.db),
     get: async (draftId) => getScheduled(this.db, draftId),
@@ -1865,7 +1873,7 @@ export function openingSqlStore(open: (signal: AbortSignal) => Promise<SqlMailSt
       return Reflect.apply(method, object, args);
     };
   } });
-  const names = new Set(["feed", "threads", "sync", "ops", "attachments", "recipientReceipts", "sendCopies", "compose", "filters", "folders", "categories", "reminders", "similar", "storage", "categorize", "accounts", "owner", "drafts", "providerCooldown", "settings", "secrets", "learning", "facts", "debug", "dev", "autocomplete", "captureRepairs", "tabs"]);
+  const names = new Set(["feed", "threads", "sync", "ops", "attachments", "recipientReceipts", "sendCopies", "compose", "filters", "folders", "categories", "reminders", "pins", "similar", "storage", "categorize", "accounts", "owner", "drafts", "providerCooldown", "settings", "secrets", "learning", "facts", "debug", "dev", "autocomplete", "captureRepairs", "tabs"]);
   const namespaces = new Map<PropertyKey, object>();
   const facade = new Proxy({} as MailStore, { get(object, member) {
     if (Object.hasOwn(object, member)) return Reflect.get(object, member);
