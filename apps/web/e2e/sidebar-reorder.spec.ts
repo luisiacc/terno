@@ -131,6 +131,58 @@ test.describe("sorting the sidebar (plan 169)", () => {
     });
   });
 
+  test("everywhere categories and accounts are listed, they're in the sidebar's order", async ({ app: page, server }) => {
+    const db = sqlDb(server.backend.store);
+    const categories = page.getByTestId("nav-categories");
+    const accounts = page.locator("[data-sort-group]:has(> [data-account-id])");
+    // an order that isn't the one they were made in: the last of each first
+    const cats = await shown(categories);
+    const people = await shown(accounts);
+    await page.getByTestId(`nav-category-${cats.at(-1)}`).focus();
+    for (let i = 1; i < cats.length; i++) await page.keyboard.press("Alt+ArrowUp");
+    await page.getByTestId(`nav-account-${people.at(-1)}`).focus();
+    for (let i = 1; i < people.length; i++) await page.keyboard.press("Alt+ArrowUp");
+    const wantCats = [cats.at(-1)!, ...cats.slice(0, -1)];
+    const wantPeople = [people.at(-1)!, ...people.slice(0, -1)];
+    await expect.poll(() => db.all<{ id: number }>("SELECT id FROM categories ORDER BY position, id").map((r) => r.id)).toEqual(wantCats);
+    await expect.poll(() => db.all<{ id: number }>("SELECT id FROM accounts ORDER BY position, id").map((r) => r.id)).toEqual(wantPeople);
+    await fresh(page);
+    expect(await shown(categories)).toEqual(wantCats);
+    expect(await shown(accounts)).toEqual(wantPeople);
+
+    await scenario("the category picker", async () => {
+      await rows(page).first().dispatchEvent("mousedown");
+      await page.keyboard.press("l");
+      const picker = page.getByTestId("category-picker");
+      await expect(picker).toBeVisible();
+      const listed = await picker.locator("[data-testid^=pick-category-]").evaluateAll((els) => els.map((el) => Number(el.getAttribute("data-testid")!.slice("pick-category-".length))));
+      expect(listed).toEqual(wantCats);
+      await page.keyboard.press("Escape");
+    });
+
+    await scenario("Settings: Categories and Accounts", async () => {
+      await page.getByTestId("open-settings").click();
+      await page.getByRole("tab", { name: "Categories" }).click();
+      expect(await page.locator("[data-testid^=category-stats-]").evaluateAll((els) => els.map((el) => Number((el as HTMLElement).dataset.categoryId)))).toEqual(wantCats);
+      await page.getByRole("tab", { name: "Accounts" }).click();
+      expect(await page.getByTestId("settings-account").evaluateAll((els) => els.map((el) => Number((el as HTMLElement).dataset.accountId)))).toEqual(wantPeople);
+      await page.keyboard.press("Escape");
+    });
+
+    await scenario("a conversation's categories in its row", async () => {
+      // two categories the Inbox shows, filed on its first row in the opposite order to the sidebar's
+      const inInbox = new Set(db.all<{ id: number }>("SELECT id FROM categories WHERE show_in_inbox = 1").map((r) => r.id));
+      const [first, second] = wantCats.filter((c) => inInbox.has(c)) as [number, number];
+      const thread = Number(await rows(page).first().getAttribute("data-thread-id"));
+      db.run("DELETE FROM thread_categories WHERE thread_id = ?", thread);
+      for (const c of [second, first]) db.run("INSERT INTO thread_categories (thread_id, category_id, added_by) VALUES (?, ?, 'user')", thread, c);
+      await fresh(page);
+      const row = page.locator(`[data-testid=thread-row][data-thread-id="${thread}"]`);
+      await expect(row.locator("[data-cat-dot]")).toHaveCount(2);
+      expect(await row.locator("[data-cat-dot]").evaluateAll((els) => els.map((el) => Number(el.getAttribute("data-cat-dot"))))).toEqual([first, second]);
+    });
+  });
+
   test.describe("with motion (Codex code review)", () => {
     test.use({ reducedMotion: "no-preference", viewport: { width: 1280, height: 520 } });
 

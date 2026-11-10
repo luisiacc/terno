@@ -97,3 +97,11 @@ Three findings, each fixed with a scenario in `sidebar-reorder.spec.ts` ("with m
 1. **A drag started while the last one settled left that row lifted.** A new drag clears every row's lift as well as its settle.
 2. **Scrolling with the pointer still let the row drift away from it.** While dragging, the sidebar's scroll and a resize of More's rows above schedule a frame that places the row again.
 3. **A drop mid-slide made the neighbour jump.** Where each row is seen is recorded before the drag's transitions are taken away, so a neighbour still sliding settles from where it was.
+
+## One order everywhere
+
+The owner, after the first commits:
+
+> since now they will be ordered, whenever accounts or categories are shown, they should show on the same order always
+
+Already so by construction: both stores list them `ORDER BY position, id`, the app keeps that order (an order on its way too), and every surface iterates those lists: the category picker, the palette (with no query; while typing it ranks by match, ties in this order), a row's dots and the reader's chips (the categories filtered by the thread's ids, never the ids' own order), From, the filters dialog, Settings → Categories and Accounts, Ask's context. What isn't shown (the search index, id maps, snapshots) keeps its own order. `sidebar-reorder.spec.ts` ("everywhere…") holds the picker, both Settings tabs and a row's dots against the sidebar after a reorder and a reload.
