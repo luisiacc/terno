@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { askFinished, conversationDone, replyOutcome, DEMO_AI_NOW, DEMO_AI_STEPS, demoAiArgs, demoAiClock, demoAiEnv, demoAiProfileProblem, MAX_ATTEMPTS, partialVerdict, devKeysIn, keyFiles, MARKER_VERSION, missingKeysMessage, readMarker, resolveKeys, stepsToRun } from "./demo-ai";
+import { askFinished, conversationDone, replyOutcome, replyStillComing, DEMO_AI_NOW, DEMO_AI_STEPS, demoAiArgs, demoAiClock, demoAiEnv, demoAiProfileProblem, MAX_ATTEMPTS, partialVerdict, devKeysIn, keyFiles, MARKER_VERSION, missingKeysMessage, readMarker, resolveKeys, stepsToRun } from "./demo-ai";
 
 describe("plan 167: pnpm dev:demo-ai", () => {
   it("takes --fresh (and dev.mjs's --cleandb), and refuses anything else so a typo isn't a silent no-op", () => {
@@ -124,6 +124,17 @@ describe("plan 167: pnpm dev:demo-ai", () => {
     // no row because nothing is owed, or the wait is past Reply ready's 30 days
     expect(replyOutcome({ cardReady: false, stored: null, waitingSince: null, now })).toBe("none");
     expect(replyOutcome({ cardReady: false, stored: null, waitingSince: now - 31 * day, now })).toBe("none");
+  });
+
+  it("the settle waits only for a reply that was writing when its conversation was left", () => {
+    const o = { reply: "unfinished" as const, stored: null, waited: 1000, limit: 180_000 };
+    expect(replyStillComing({ ...o, writing: true })).toBe(true);
+    // left before its first words: leaving stopped it, and nothing more will be stored (Codex review)
+    expect(replyStillComing({ ...o, writing: false })).toBe(false);
+    expect(replyStillComing({ ...o, writing: true, stored: "failed" })).toBe(false);
+    expect(replyStillComing({ ...o, writing: true, waited: 180_001 })).toBe(false);
+    expect(replyStillComing({ ...o, writing: true, reply: "ready" })).toBe(false);
+    expect(replyStillComing({ ...o, writing: true, reply: "none" })).toBe(false);
   });
 
   it("a step with something missing runs again, and after MAX_ATTEMPTS keeps what's there", () => {

@@ -174,6 +174,15 @@ export function replyOutcome(o: { cardReady: boolean; stored: string | null; wai
   return "unfinished";
 }
 
+/**
+ * The conversations step's settle: whether to keep waiting for a reply it left. Only one that was writing goes on (its
+ * first words were in); one left before them was stopped by leaving (the backend's `replies.leave`) and stores nothing
+ * more, so what's stored is all there is.
+ */
+export function replyStillComing(o: { reply: "ready" | "none" | "unfinished"; stored: string | null; writing: boolean; waited: number; limit: number }): boolean {
+  return o.reply === "unfinished" && o.stored !== "failed" && o.writing && o.waited <= o.limit;
+}
+
 /** What a step that left things missing does: fail (and run again next launch), or, on its last try, keep what's there. */
 export function partialVerdict(missing: readonly string[], attempt: number): "done" | "again" | "keep" {
   return missing.length === 0 ? "done" : attempt >= MAX_ATTEMPTS ? "keep" : "again";

@@ -7,7 +7,7 @@ import { createRequire } from "node:module";
 import { DatabaseSync } from "node:sqlite";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { askFinished, conversationDone, replyOutcome, DEMO_AI_STEPS, demoAiClock, MARKER_FILE, MARKER_VERSION, partialVerdict, readMarker } from "../src/demo-ai.ts";
+import { askFinished, conversationDone, replyOutcome, replyStillComing, DEMO_AI_STEPS, demoAiClock, MARKER_FILE, MARKER_VERSION, partialVerdict, readMarker } from "../src/demo-ai.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const { _electron: electron } = createRequire(join(root, "package.json"))("@playwright/test");
@@ -54,6 +54,7 @@ const replyStored = (profile, threadId) => readStored(profile, (db) => ({
   stored: db.prepare("SELECT state FROM ai_prepared_replies WHERE thread_id = ?").get(threadId)?.state ?? null,
   waitingSince: db.prepare("SELECT waiting_since FROM threads WHERE id = ?").get(threadId)?.waiting_since ?? null,
 }));
+const summaryStored = (profile, threadId) => readStored(profile, (db) => db.prepare("SELECT state FROM ai_summaries WHERE thread_id = ?").get(threadId)?.state === "ready");
 const aiRules = (profile) => readStored(profile, (db) => db.prepare("SELECT name FROM filters WHERE source = 'ai'").all().map((r) => r.name));
 
 export function readSpend(profile) {
@@ -104,6 +105,52 @@ function driver(page, log) {
   };
   d.log = log;
   return d;
+}
+
+/**
+ * The conversations step's second half: each conversation it left with work underway, settled. Replies first, from what
+ * the app stored (a reply that was writing has the model's time; one that wasn't is read once); by then most summaries are
+ * stored too, and only one that isn't is opened again, where its block says running, ready or failed.
+ */
+async function settleConversations(d, progress, started) {
+  const { page } = d;
+  const counts = { summaries: 0, replies: 0 };
+  const missing = [];
+  const from = Date.now();
+  for (const c of started) {
+    if (c.note) continue;
+    for (;; await page.waitForTimeout(500)) {
+      const stored = replyStored(d.profile, c.threadId);
+      c.reply = replyOutcome({ cardReady: false, ...stored, now: await page.evaluate(() => Date.now()) });
+      if (!replyStillComing({ reply: c.reply, stored: stored.stored, writing: c.writing, waited: Date.now() - from, limit: MODEL_MS })) break;
+    }
+  }
+  for (const c of started) {
+    if (c.note) { d.log(`  ${c.where}: ${c.title}, ${c.note}`); continue; }
+    c.summary = !c.summarized ? "none" : summaryStored(d.profile, c.threadId) ? "ready" : await summaryShown(d, c);
+    if (c.summary === "ready") counts.summaries++;
+    if (c.reply === "ready") counts.replies++;
+    if (conversationDone(c)) progress.add(c.title);
+    else missing.push(c.title);
+    d.log(`  ${c.where}: ${c.title}${c.summary === "none" ? "" : c.summary === "ready" ? ", summary" : `, summary ${c.summary}`}${c.reply === "ready" ? ", Reply ready" : c.reply === "unfinished" ? ", Reply ready didn't finish" : ""}`);
+  }
+  d.log(`  ${counts.summaries} summaries, ${counts.replies} prepared replies this launch`);
+  return missing;
+}
+
+/** A summary not stored yet: its conversation opened again, and its block waited for (the window keeps its state). */
+async function summaryShown(d, c) {
+  const { page } = d;
+  await d.go(c.view);
+  const row = page.locator(`[data-testid=thread-row][data-thread-id="${c.threadId}"]`).first();
+  if (!(await shows(row, 10_000))) return "timeout";
+  await row.click();
+  // its own block, not the one of the conversation open before it
+  return page.waitForFunction((title) => {
+    if (document.querySelector("[data-testid=reader-subject]")?.innerText?.trim() !== title) return null;
+    const s = document.querySelector("[data-testid=summary-block]")?.getAttribute("data-state");
+    return s === "ready" || s === "error" ? s : null;
+  }, c.title, { timeout: MODEL_MS }).then((h) => h.jsonValue(), () => "timeout");
 }
 
 const STEPS = {
@@ -162,59 +209,54 @@ const STEPS = {
   /**
    * The Inbox's top conversations, then the ones Today says need you: each opened, so Reply ready prepares where it
    * applies (a conversation waiting for your reply), and summarized. Both are kept and show again on the next open.
+   *
+   * The model's work overlaps: a conversation is left as soon as both are underway for good (a summary goes on without
+   * its reader; a reply does once its first words are in, before that leaving stops it), and every one is settled at
+   * the end. A conversation that owes no reply moves on at once, with no wait for a card that never comes.
    */
   async conversations(d, progress) {
     const { page } = d;
     const opened = new Set();
-    const counts = { summaries: 0, replies: 0 };
-    const missing = [];
-    const visit = async (row, where) => {
+    const started = [];
+    const visit = async (row, where, view) => {
       const threadId = Number(await row.getAttribute("data-thread-id"));
       await row.click();
       await page.getByTestId("reader-subject").waitFor();
       const title = (await page.getByTestId("reader-subject").innerText()).trim();
-      if (opened.has(title)) return d.log(`  ${where}: ${title}, opened above`);
+      // logged in its place once everything is settled
+      if (opened.has(title)) return started.push({ where, title, note: "opened above" });
       opened.add(title);
       // done on an earlier launch: both are kept, opening it again shows them
-      if (progress.has(title)) return d.log(`  ${where}: ${title}, done earlier`);
+      if (progress.has(title)) return started.push({ where, title, note: "done earlier" });
       // Reply ready starts as a conversation that waits for your reply opens; the summary is asked for meanwhile
-      let summary = "none";
       const summarize = page.getByTestId("action-summarize");
-      if (await summarize.isVisible().catch(() => false)) {
+      const summarized = await summarize.isVisible().catch(() => false);
+      if (summarized) {
         await summarize.click();
         await page.getByTestId("summary-block").first().waitFor({ timeout: 15_000 });
-        summary = await page.waitForFunction(() => {
-          const s = document.querySelector("[data-testid=summary-block]")?.getAttribute("data-state");
-          return s === "ready" || s === "error" ? s : null;
-        }, null, { timeout: MODEL_MS }).then((h) => h.jsonValue(), () => "timeout");
-        if (summary === "ready") counts.summaries++;
       }
-      // the card shows once the model said a reply is wanted; what the app stored settles it either way (replyOutcome)
-      let cardReady = false;
-      if (await shows(page.getByTestId("reply-ready"), 20_000)) cardReady = await shows(page.locator("[data-testid=reply-ready][data-phase=ready]"), MODEL_MS);
-      let reply = "unfinished";
-      for (const until = Date.now() + 60_000; ; await page.waitForTimeout(2000)) {
+      // stay until the reply is settled or writing (its first words in); what the app stored settles it (replyOutcome)
+      // a model still deciding has a minute, as before; its card (the model said yes) gives it the model's time
+      let writing = false;
+      for (const since = Date.now(); ; await page.waitForTimeout(250)) {
+        if ((writing = await d.isVisible("[data-testid=reply-ready-text]"))) break;
         const stored = replyStored(d.profile, threadId);
-        reply = replyOutcome({ cardReady, ...stored, now: await page.evaluate(() => Date.now()) });
-        // no row yet on a conversation that waits for a reply: the model may still be deciding
-        if (reply !== "unfinished" || stored.stored === "failed" || Date.now() > until) break;
+        const reply = replyOutcome({ cardReady: false, ...stored, now: await page.evaluate(() => Date.now()) });
+        if (reply !== "unfinished" || stored.stored === "failed") break;
+        if (Date.now() - since > ((await d.isVisible("[data-testid=reply-ready]")) ? MODEL_MS : 60_000)) break;
       }
-      if (reply === "ready") counts.replies++;
-      if (conversationDone({ summary, reply })) progress.add(title);
-      else missing.push(title);
-      d.log(`  ${where}: ${title}${summary === "none" ? "" : summary === "ready" ? ", summary" : `, summary ${summary}`}${reply === "ready" ? ", Reply ready" : reply === "unfinished" ? ", Reply ready didn't finish" : ""}`);
+      started.push({ threadId, title, where, view, summarized, writing });
     };
     await d.go("inbox");
-    for (let i = 0; i < TOP; i++) await visit(d.rows.nth(i), `Inbox #${i + 1}`);
+    for (let i = 0; i < TOP; i++) await visit(d.rows.nth(i), `Inbox #${i + 1}`, "inbox");
     await d.go("today");
     const todayRows = page.locator("[data-testid=thread-row]");
     const n = Math.min(TODAY_ROWS, await todayRows.count());
     for (let i = 0; i < n; i++) {
       await d.go("today");
-      await visit(todayRows.nth(i), `Today #${i + 1}`);
+      await visit(todayRows.nth(i), `Today #${i + 1}`, "today");
     }
-    d.log(`  ${counts.summaries} summaries, ${counts.replies} prepared replies this launch`);
-    return missing;
+    return settleConversations(d, progress, started);
   },
 
   /**

@@ -122,3 +122,16 @@ It confirmed 1, 3, 6 and 9, called 2, 4, 5, 7 and 8 partial, and found four new 
 - **Ctrl-C could still leave work ahead of the clock** between checkpoints. dev.mjs's shutdown writes the preparation's checkpoint before it stops it (`onSave`).
 
 Run 4 after these: 245 s, 82 requests, US$0.16. The Japanese conversation's summary came back as the provider's error; the next launch prepared only that one (24 s, one request) and opened.
+
+## A faster preparation (the owner: "right now is very slow to seed that data")
+
+Run 1 on main took 217 s, 168 of them in the conversations step. Each conversation was finished one by one: the summary waited for, then up to 20 s for a Reply ready card, which never comes on a conversation that owes no reply (four of the ten), then the reply written to its end.
+
+The step now overlaps the model's work, still through the app's own UI:
+
+- **A conversation is left once its work goes on without it.** A summary does from its click (`ai.summarize` runs to its end without its reader). A reply does once its first words are in (`replies.leave` stops one only before that), so the step stays until `reply-ready-text` shows, or what the app stored settles it (`replyOutcome`): no row is needed for a conversation that owes no reply, so it moves on at once.
+- **Everything is settled at the end** (`settleConversations`): each reply from its stored row (the model's time for one that was writing; one that never wrote is read once, since leaving it before its first words stopped it), then each summary from `ai_summaries`, and a summary not stored yet is opened again so its block says ready or failed. A conversation counts only as before (`conversationDone`).
+
+Run 2: **105 s** (conversations 51 s), 71 requests, US$0.16; 9 summaries, 6 prepared replies. The follow-up step now often finds the scan of the month's sent mail still going (2 conversations listed, not 9): the scan is a durable queue and finishes in your window within a minute or two, and AI-DEMO.md says so.
+
+Codex review: a reply left before its first words (the visit's minute ran out) is stopped by leaving and never stores a row, yet the settle waited a minute more for it. Only a reply that was writing is waited for now; any other is read once.
