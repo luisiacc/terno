@@ -179,6 +179,11 @@ export function opSummary(kind: string, subject: string, count: number): Pick<Op
 const AUTO_NOTICE_GATHER_MS = 1500;
 /** plan 25: a window's focus rechecks a refused saved password at most this often (a refused login, again and again, locks accounts out) */
 const RECHECK_FOCUS_MS = 10 * 60_000;
+
+/** plan 176: synced and healthy: no first sync or backfill under way, no failure, nothing waiting on the user or the network */
+function quickHealthy(s: AccountSyncState): boolean {
+  return s.status === "idle" && s.lastSyncAt !== null && !s.lastError && !s.connection && !s.authRequired && !s.progress;
+}
 const AUTO_NOTICE_EVERY_MS = 30_000;
 
 const DESTRUCTIVE_OR_SIGNAL: Partial<Record<ThreadAction, "archive" | "trash" | "spam" | "star">> = {
@@ -701,17 +706,22 @@ export class BackendCore {
    * 5 s) or that needs a sign-in is left alone. Push accounts (IMAP) already hear of new mail.
    */
   private async quickCheck(): Promise<void> {
-    // the poll not running yet (before start) or at all (autoSync off): nothing to hurry
-    const admitted = (accountId: number) => !this.stopped && this.syncTimer !== null && this.quickChecks.running
-      && !this.syncing.has(accountId) && this.connectivity.canSync(accountId);
+    const admitted = (accountId: number) => !this.syncing.has(accountId) && this.quickAdmitted(accountId);
     for (const account of await this.store.accounts.list()) {
-      if (!admitted(account.id)) continue;
-      const s = (await this.accountStatus(account.id)).project();
-      if (s.status !== "idle" || s.lastSyncAt === null || s.lastError || s.connection || s.authRequired || s.progress) continue;
+      if (!admitted(account.id) || !quickHealthy((await this.accountStatus(account.id)).project())) continue;
       const provider = await this.provider(account.id).catch(() => null);
       // admitted again: a blur, offline or another pass may have come while those were read
       if (provider?.quickChecks && admitted(account.id)) void this.syncAccount(account.id, undefined, { quick: true });
     }
+  }
+
+  /**
+   * Plan 176: a quick pass may go now: a window has focus within the minute and the account may sync. The poll not
+   * running yet (before start) or at all (autoSync off) has nothing to hurry. Asked again as the pass starts (it can
+   * wait behind a folder change) and just before the provider, so a blur or offline meanwhile drops it quietly.
+   */
+  private quickAdmitted(accountId: number): boolean {
+    return !this.stopped && this.syncTimer !== null && this.quickChecks.running && this.connectivity.canSync(accountId);
   }
 
   // ───────────────────────────── network (plan 20) ─────────────────────────────
@@ -1884,6 +1894,8 @@ export class BackendCore {
       const credentials = this.credentialsOf(accountId);
       status = await this.accountStatus(accountId);
       if (status.signInRequired || !this.current(life)) return;
+      // plan 176: a quick pass that waited (a folder change) goes only if it still may, on an account still healthy
+      if (o.quick && (!this.quickAdmitted(accountId) || !quickHealthy(status.project()))) return;
       const authority = this.statusAuthority(life);
       statusRun = status.begin(authority);
       const provider = await this.provider(accountId);
@@ -2028,6 +2040,8 @@ export class BackendCore {
         // plan 41: the pass is over (done or failed): what it stored as live mail is looked at now
         try {
           checkCurrent();
+          // plan 176: the last moment to drop a quick pass whose focus or network went while it set up (nothing written)
+          if (o.quick && !this.quickAdmitted(accountId)) return void (await statusRun.end({}));
           if (!o.quick) await setState({ status: "syncing", ...(wasDown && { connection: { state: "reconnecting", retryAt: null } }) });
           checkCurrent();
           observation = await this.accountWrite(life, () => this.store.sync.beginObservation(accountId, { authoritativeFlags: provider.flagSnapshots === true, signal: life.abort.signal }));

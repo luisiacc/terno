@@ -74,3 +74,7 @@ Nothing on a hot path. A check reads the account list and, per eligible account,
 6. **Eligibility as an absent `watch` couldn't say "not yet"** for a polling provider whose check isn't cheap. It is now the explicit `quickChecks` capability.
 
 Found while building, not by the review: on desktop the page can't see the window's focus once a click went into a mail frame, so desktop's focus comes from main (the OS), and only the web build sends `sync.focus` from the page.
+
+## Revisions after the Codex code review
+
+1. **A quick pass could start after the user left.** `quickCheck` admitted the account, but `syncAccount` can wait behind a folder change (`afterFolderChange`) and awaits more setup before the provider. A blur or going offline in that time still let the pass run. The pass now asks `quickAdmitted` again as it starts (with the account's health) and once more just before the provider, and drops itself quietly, with nothing written. Regression test: a folder change holds the pass, then a blur or offline, then the change ends, and no quick pass runs (`quick-checks-sync.test.ts`; it fails without the fix).

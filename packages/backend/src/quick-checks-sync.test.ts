@@ -172,6 +172,27 @@ describe("plan 176: quick checks after a focus", () => {
     expect(p.passes.slice(0, 2)).toEqual(["full", "full"]);
   });
 
+  it("a quick pass held behind a folder change is dropped if the focus or the network went meanwhile (Codex code review)", async () => {
+    for (const leave of ["blur", "offline"] as const) {
+      const t = await started(["quick"]);
+      const [a] = t.ids as [number];
+      let release!: () => void;
+      const held = new Promise<void>((r) => (release = r));
+      const change = t.backend.runForAccount(a, () => held);
+      await t.client.call("sync.focus", { focused: true });
+      // the first check queued its pass behind the change
+      await tick(2 * EVERY);
+      if (leave === "blur") await t.client.call("sync.focus", { focused: false });
+      else t.backend.networkChanged(false, "offline");
+      release();
+      await change;
+      await tick(4 * EVERY);
+      expect(t.quick(a)).toBe(0);
+      // nothing of the dropped pass in the status (offline says offline, as going offline does)
+      expect(t.state(a).status).toBe(leave === "blur" ? "idle" : "offline");
+    }
+  });
+
   it("with autoSync off nothing starts", async () => {
     const t = await setup(["quick"], { autoSync: false });
     await t.backend.start();
