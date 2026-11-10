@@ -129,3 +129,9 @@ The sidebar footer's "AI: Claude (Anthropic) (cloud)" pill (`CloudAiPill`, plan 
 > here this 'Similar...' i think people will not understand it at all, we need a wording with an action there
 
 The owner chose the verb of what was just done, out of four options: **Move similar…**, **Add similar…** (the category picker adds; a drag moves), **Archive similar…**, **Delete similar…**, **Spam similar…** (es: Mover, Añadir, Archivar, Eliminar parecidos…; Marcar parecidos…). `SnackMore` takes the action; its tooltip still says it does the same for similar mail and for new mail like it. Checked in `snack.spec.ts` (archive), `offers.spec.ts` (the picker) and `dnd.spec.ts` (a drag).
+
+## Follow-up: the styles' order (the owner)
+
+> switch position of graphite and macos, wherever they show, actually put graphite 2nd, then macos last
+
+`DESIGNS` is Lumen, Graphite, Atelier, Luma, macOS; Settings → Appearance, first run and the palette read it. The site's `DESIGN_SHOTS` follows the same order (its second, larger tile is now Graphite). `designs.generated.css` only reorders its blocks. The Appearance baselines are updated.

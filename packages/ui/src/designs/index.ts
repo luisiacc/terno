@@ -8,8 +8,11 @@ import type { DesignDefinition } from "./types";
 
 export type { DesignDefinition, DesignVariants, TypeRole } from "./types";
 
-/** Every design, in the order Settings shows them. A test keeps it in sync with @terno/core DESIGN_IDS. */
-export const DESIGNS: readonly DesignDefinition[] = [lumen, atelier, macos, luma, graphite];
+/**
+ * Every design, in the order Settings, first run and the palette show them (plan 173, the owner: Graphite second, macOS
+ * last). A test keeps it in sync with @terno/core DESIGN_IDS.
+ */
+export const DESIGNS: readonly DesignDefinition[] = [lumen, graphite, atelier, luma, macos];
 
 const BY_ID = new Map<string, DesignDefinition>(DESIGNS.map((d) => [d.id, d]));
 
