@@ -4,7 +4,7 @@
  * open, and runs of collapsed messages folded into "N more messages".
  */
 import { E2E_NOW } from "./constants";
-import { expect, focusList, ingestConversation, openRow, recipientEmails, respond, search, selectThread, test, fresh, scenario } from "./fixtures";
+import { axeBothModes, expect, focusList, ingestConversation, openRow, recipientEmails, respond, search, selectThread, test, fresh, scenario } from "./fixtures";
 import type { Locator, Page } from "@playwright/test";
 import { sqlDb } from "../../backend-dev/src/server";
 
@@ -86,6 +86,25 @@ test.describe("reader conversation", () => {
       await expect(reply).toBeFocused();
       await page.keyboard.press("Shift+Tab");
       await expect(download).toBeFocused();
+    });
+    await scenario("plan 177: a conversation names who's on it under its subject and gathers every message's files above the first", async () => {
+      const cc = [{ name: "Mei Nakamura", email: "mei@acme.studio" }, { name: "Ben Ito", email: "ben@acme.studio" }];
+      const files = { 0: [{ filename: "brief.pdf", mime: "application/pdf", size: 1_572_864 }], 2: [{ filename: "mockups.fig", mime: "application/octet-stream", size: 21_000_000 }] };
+      const id = await ingestConversation(server, { subject: "Revisión del brief", count: 4, cc, files, now: E2E_NOW });
+      await selectThread(page, id, 'subject:"Revisión del brief"');
+      const people = page.getByRole("list", { name: "People in this conversation" });
+      // who wrote first, then who was only written to; never the user
+      await expect(people.getByTestId("thread-person")).toHaveText(["Yuki", "Mei", "Ben"].map((n) => new RegExp(`^\\S*${n}`)));
+      const strip = page.getByTestId("thread-attachments");
+      const disclosure = strip.getByRole("button", { name: "Attachments 2" });
+      await expect(disclosure).toHaveAttribute("aria-expanded", "true");
+      // the file in a folded message is right there: the same name as its message's tile
+      const fig = page.getByRole("list", { name: "Every file in this conversation" }).getByRole("button", { name: "Download mockups.fig 20.0 MB · Unavailable offline", exact: true });
+      await expect(fig).toBeVisible();
+      await axeBothModes(page, "[data-testid=thread-people]", "[data-testid=thread-attachments]");
+      await disclosure.click();
+      await expect(disclosure).toHaveAttribute("aria-expanded", "false");
+      await expect(fig).toBeHidden();
     });
     await scenario("the reply bar after the last message starts a reply to who wrote last", async () => {
       await fresh(page);

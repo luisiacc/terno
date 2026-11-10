@@ -2,7 +2,8 @@ import { DIGEST_ROW_ID } from "@terno/core";
 import { backToDigest, useToday } from "~/state/today";
 import "~/lib/replies";
 import { folderName } from "~/lib/account-folders";
-import { ReaderAttachments } from "./attachments";
+import { ReaderAttachments, ThreadAttachments } from "./attachments";
+import { ThreadPeople } from "./thread-people";
 import type { Account, Category, CategoryColor, MatchNeedle, MessageDetail, Reason, ThreadDetail } from "@terno/core";
 import { Button } from "@terno/ui/components/button";
 import { ButtonGroup, ButtonGroupItem } from "@terno/ui/components/button-group";
@@ -920,6 +921,7 @@ function ReaderHeader({ detail, account, cats, fold }: { detail: ThreadDetail; a
   const design = useDesign();
   const subject = detail.thread.subject || t("common.noSubject");
   const marks = useSearchMarks()?.subject;
+  const myEmails = useApp((s) => s.accounts).map((a) => a.email);
   // its top edge marked: the context line watches that, not the whole heading (a wrapped subject taller than the view is never wholly in it)
   const heading = <h2 id="reader-subject" data-testid="reader-subject" className={cn("relative min-w-0", PANE_TITLE)}><span aria-hidden data-subject-top className="pointer-events-none absolute top-0 left-0 h-px w-px" /><Marked text={subject} needles={marks} testId="reader-subject-match" /></h2>;
   // on the subject's line, at the dates' edge, while they fit; on a line of their own when they don't
@@ -929,20 +931,23 @@ function ReaderHeader({ detail, account, cats, fold }: { detail: ThreadDetail; a
       <ThreadChips detail={detail} account={account} cats={cats} fold={fold} />
     </div>
   );
+  // plan 177: two or more messages, who's on it closes the header, in every design, on the subject's line start
+  const people = <ThreadPeople detail={detail} myEmails={myEmails} icons={iconsFor(detail.thread)} personOf={(m) => personFor(m, detail.thread.person === true)} className="mt-2.5" />;
   return variant(design.variants.readerHeader, {
-    classic: <div className={HEADER}>{titled}</div>,
+    classic: <div className={HEADER}>{titled}{people}</div>,
     "chips-display": (
       <div className={HEADER}>
         {/* plan 160: one chips line, 20 px at rest whatever it holds (a line with a category's chip takes its 24), so the titles
             of panes without chips keep the subject's line (--pane-title-lead); no taller than it was */}
         <ThreadChips detail={detail} account={account} cats={cats} fold={fold} className="mb-1 min-h-5" />
         {heading}
+        {people}
       </div>
     ),
     "sender-card": (() => {
       // one message: the card is its header (who wrote it, to whom, when), so the message shows no second one (plan 59). More: each message has its own, and a card would say one of them twice
       const one = detail.messages.length === 1 ? detail.messages[0]! : null;
-      if (!one) return <div className={HEADER}>{titled}</div>;
+      if (!one) return <div className={HEADER}>{titled}{people}</div>;
       const name = one.from.name || one.from.email;
       return (
         <div className={HEADER}>
@@ -1045,6 +1050,7 @@ function Thread({ detail, account, cats, summaryShown }: { detail: ThreadDetail;
         <ReaderHeader detail={detail} account={account} cats={cats} fold={fold} />
         <ThreadFollowups detail={detail} />
         {summaryShown && <ThreadSummary detail={detail} />}
+        <ThreadAttachments messages={detail.messages} />
         <Conversation threadId={detail.thread.id} messages={detail.messages} fold={fold} icons={iconsFor(detail.thread)} people={detail.thread.person === true} headless={cardHeader} />
       </div>
     </MessageMenu>
