@@ -104,10 +104,20 @@ describe("Settings → AI", () => {
     const asked = calls().filter(([method]) => method === "ai.test").map(([, p]) => p);
     expect(asked).toEqual([
       { provider: "anthropic", model: "claude-sonnet-5-5", baseURL: undefined, preset: undefined },
-      { provider: "openai", model: "gpt-6-sol", baseURL: undefined, preset: undefined },
+      // with both keys OpenAI runs only Luna, so that's what its key is tested on (Codex review)
+      { provider: "openai", model: "gpt-6-luna", baseURL: undefined, preset: undefined },
     ]);
     expect($(host, "ai-test-result")!.textContent!.trim()).toMatch(/^Claude \(Anthropic\): Connected · 120 ms/);
     expect($(host, "ai-test-error")!.textContent).toMatch(/^OpenAI: That key was refused/);
+  });
+
+  it("with only an OpenAI key, its test is on Sol, drafting's model there", async () => {
+    answer({});
+    const s = settings({ hasKey: false, keys: { openai: key } });
+    useApp.setState({ devAi: null, settings: s } as never);
+    const host = await render(<AiTab settings={s} update={vi.fn() as never} />);
+    await act(async () => $(host, "ai-test")!.click());
+    expect(calls().filter(([method]) => method === "ai.test").map(([, p]) => (p as { model: string }).model)).toEqual(["gpt-6-sol"]);
   });
 
   it("a key confirmed for its endpoint makes an old test's failure stale (Codex code review)", async () => {

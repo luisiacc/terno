@@ -108,6 +108,17 @@ const LOCAL_PROVIDERS: readonly AiProviderId[] = ["ollama", "lmstudio", "fake"];
 /** A provider that runs on this Mac (plan 161, pass 2: what an error tells the user to do differs). */
 export const localProvider = (provider: AiProviderId): boolean => LOCAL_PROVIDERS.includes(provider);
 
+/**
+ * Plan 168 (Codex review): where a feature's helper job goes when it isn't where the feature itself runs (with both keys,
+ * Reply ready's check and ⌘J's reading of what you typed go to OpenAI while drafting goes to Claude): its provider's
+ * name, for the disclosure; null when it goes with the feature, nowhere, or stays on this Mac.
+ */
+export function helperElsewhere(helper: AiJob, main: AiJob, ai: AiSettings): string | null {
+  const route = routeFor(helper, ai);
+  if (!route || route.provider === routeFor(main, ai)?.provider || targetOf(ai, route.provider).local) return null;
+  return providerLabel(route.provider, ai);
+}
+
 /** The model drafts run on, as the backend picks it (plan 168's `routeFor`). */
 export function writingModel(ai: AiSettings): string {
   return routeOf("writing", ai).model;

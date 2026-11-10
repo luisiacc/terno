@@ -4,7 +4,7 @@ import { setLocale, t } from "@terno/i18n";
 import en from "@terno/i18n/locales/en";
 import es from "@terno/i18n/locales/es";
 import { afterEach, describe, expect, it } from "vitest";
-import { aiReady, askOffered, choiceLabel, choiceOf, disclosureLine, draftingOffered, errorHelp, mailDestinations, followupsOffered, OUTPUT_LABEL, presetLabel, privacyLine, providerName, repliesOffered, routeOf, routingLine, summariesOffered, todayOffered, writingModel, writingTarget } from "./ai";
+import { aiReady, askOffered, choiceLabel, choiceOf, disclosureLine, draftingOffered, errorHelp, mailDestinations, followupsOffered, helperElsewhere, OUTPUT_LABEL, presetLabel, privacyLine, providerName, repliesOffered, routeOf, routingLine, summariesOffered, todayOffered, writingModel, writingTarget } from "./ai";
 
 const ai = (over: Partial<AiSettings>) => ({ provider: "none", preset: null, baseURL: null, local: false, ...over }) as AiSettings;
 
@@ -55,6 +55,14 @@ describe("what runs, by plan 168's routing", () => {
   const set = (over: Partial<AiSettings>) => ai({ model: "m", keys: {}, hasKey: false, keyConfirmed: true, keyUnreadable: false, profiles: {}, ...over });
   const claude = { hasKey: true, keyHint: null };
   const openai = { hasKey: true, keyHint: null };
+
+  it("Codex review: a helper job on another provider than its feature is named for the disclosure, and only then", () => {
+    const both = set({ provider: "anthropic", hasKey: true, keys: { anthropic: claude, openai } });
+    expect(helperElsewhere("replyCheck", "reply", both)).toBe("OpenAI");
+    expect(helperElsewhere("intent", "writing", both)).toBe("OpenAI");
+    expect(helperElsewhere("replyCheck", "reply", set({ provider: "anthropic", hasKey: true, keys: { anthropic: claude } }))).toBeNull();
+    expect(helperElsewhere("intent", "writing", set({ provider: "ollama", local: true }))).toBeNull();
+  });
 
   it("summaries: wherever AI runs, a paid provider the user set up included; a model on this Mac keeps them here", () => {
     expect(aiCanRun("summary", set({}))).toBe(false);

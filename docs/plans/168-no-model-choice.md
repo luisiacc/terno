@@ -133,3 +133,9 @@ Round 2: spec PASS, one point, fixed. **The chosen key removed while it was bein
 2. Summaries on Haiku with only a Claude key: "yes", as built.
 3. "they can use both, if possible use claude sonnet for drafting luna for small things": with both keys (and so Pro and Dev mode's Pro AI), Sonnet drafts and answers Ask, and Luna takes the small jobs (`SMALL_JOBS`: summaries, follow-ups, the digest, Reply ready's check, reading a drafting instruction). Ask's planner stays on Claude Haiku with its answer: plan 141 §6 keeps a question with one company. Filters and categories stay on Opus (JEV with its key). The rating's `PRO_ROUTING` follows, held to `routeFor` by its test; Settings' line now reads "Drafting, Ask your mail and rules run on Claude (Anthropic); summaries, follow-ups and the digest on OpenAI."
 4. The pinned Ask card's 12 px over the list at 1440: "keep that".
+
+### Codex review of the owner's routing
+
+1. With both keys Reply ready's check reads the mail on OpenAI while the reply is written on Claude: Settings' Reply ready hint now adds "First, OpenAI reads the sender, subject and newest messages to tell whether a reply is needed." (`helperElsewhere`, tested).
+2. ⌘J's reading of what you typed (and of who it's for) goes to OpenAI with both keys: Drafting's note adds a line naming it.
+3. Test connection tried OpenAI's key on Sol with both keys, where OpenAI only runs Luna: a key now tests on a model it runs (drafting's first), Sol only when OpenAI drafts.

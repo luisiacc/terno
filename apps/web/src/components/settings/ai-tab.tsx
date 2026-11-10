@@ -1,7 +1,7 @@
 import { localized } from "~/lib/i18n";
 import type { AiProviderId, CompatiblePreset, ModelInfo, PresetDescriptor, ProviderDescriptor } from "@terno/core";
 import type { AiSettings, AiTestResult, AppSettings } from "@terno/core/rpc";
-import { aiFeaturesAvailable, routeFor } from "@terno/core";
+import { AI_JOBS, aiFeaturesAvailable, routeFor } from "@terno/core";
 import { AiUseGroup, AskGroup, DigestGroup, FollowupsGroup, SummariesGroup } from "./ai-summaries";
 import { DraftingGroup } from "./ai-drafting";
 import { useAiDraftUi } from "~/lib/ai-draft-state";
@@ -46,8 +46,13 @@ import WritingStyle from "./writing-style";
 const keyState = (k: AppSettings["ai"]["keys"][AiProviderId]) => [k?.hasKey, k?.keyHint, k?.keyUnreadable, k?.keyConfirmed, k?.keyOrigin].join(":");
 const targetKey = (ai: AppSettings["ai"]) => [ai.provider, ai.preset ?? "", ai.baseURL ?? "", ai.model, ai.hasKey, ai.keyConfirmed, ai.keyUnreadable, ...KEYED.map((p) => keyState(ai.keys[p]))].join("|");
 
-/** Plan 168: the model a key is tested with: the one drafting would run on with only that key. */
-const keyedModel = (provider: "anthropic" | "openai") => routeFor("writing", { provider, model: "", keys: { [provider]: { hasKey: true, keyHint: null } } })!.model;
+/**
+ * Plan 168: the model a key is tested with: one it runs now, drafting's first (Codex review: with both keys OpenAI runs
+ * only Luna, so testing Sol could fail a key that works), else drafting's with only that key.
+ */
+const keyedModel = (ai: AiSettings, provider: "anthropic" | "openai") =>
+  (["writing", ...AI_JOBS] as const).map((job) => routeFor(job, ai)).find((r) => r?.provider === provider)?.model ??
+  routeFor("writing", { provider, model: "", keys: { [provider]: { hasKey: true, keyHint: null } } })!.model;
 
 /** One key's state, the configured provider's as `ai` has it, the other's from `ai.keys` (plan 168: both can be saved here). */
 function keyStateOf(ai: AiSettings, provider: AiProviderId) {
@@ -201,7 +206,7 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
     setTesting(false);
   }, [target]);
   const testTargets = keyed
-    ? KEYED.filter((p) => keyStateOf(ai, p).hasKey).map((p) => ({ provider: p as AiProviderId, model: keyedModel(p), baseURL: ai.profiles[p]?.baseURL, preset: undefined }))
+    ? KEYED.filter((p) => keyStateOf(ai, p).hasKey).map((p) => ({ provider: p as AiProviderId, model: keyedModel(ai, p), baseURL: ai.profiles[p]?.baseURL, preset: undefined }))
     : [{ provider: ai.provider, model: ai.model, baseURL: ai.baseURL ?? undefined, preset: ai.preset ?? undefined }];
   const runTest = async () => {
     const seq = ++testSeq.current;

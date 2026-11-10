@@ -4,7 +4,7 @@ import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { Switch } from "@terno/ui/components/switch";
 import { useEffect, useState } from "react";
-import { draftingOffered, modelName, providerLabel, writingModel, writingTarget } from "~/lib/ai";
+import { draftingOffered, helperElsewhere, modelName, providerLabel, writingModel, writingTarget } from "~/lib/ai";
 import { useAiDraftUi } from "~/lib/ai-draft-state";
 import { shortcutText } from "@terno/ui/components/shortcut";
 import { snack } from "~/lib/snack";
@@ -37,6 +37,9 @@ export function DraftingGroup({ settings, update }: { settings: AppSettings; upd
   const [prefs, save] = usePrefs();
   const target = writingTarget(ai);
   const offered = useApp(draftingOffered);
+  // plan 168 (Codex review): with both keys these helpers run on OpenAI while drafting runs on Claude: both are named
+  const checkElsewhere = helperElsewhere("replyCheck", "reply", ai);
+  const readElsewhere = helperElsewhere("intent", "writing", ai);
   return (
     <SettingsGroup title={t("aiDraft.settings.title")} testId="ai-drafting">
       <SettingsRow label={t("aiDraft.settings.enabled")} hint={t("aiDraft.settings.enabledHint", { key: shortcutText("mod+j") })}>
@@ -53,7 +56,7 @@ export function DraftingGroup({ settings, update }: { settings: AppSettings; upd
               {(a) => <Switch {...a} checked={prefs?.global.useSentMail ?? true} data-testid="ai-drafting-sent-mail" onCheckedChange={(useSentMail) => void save({ global: { useSentMail } }).catch(failed)} />}
             </SettingsRow>
           )}
-          <SettingsRow label={t("replies.settings.switch")} hint={target.provider === "none" ? t("replies.settings.noProvider") : t("replies.settings.hint", { provider: providerLabel(target.provider, ai) })} testId="replies-setting">
+          <SettingsRow label={t("replies.settings.switch")} hint={target.provider === "none" ? t("replies.settings.noProvider") : [t("replies.settings.hint", { provider: providerLabel(target.provider, ai) }), checkElsewhere && t("replies.settings.check", { provider: checkElsewhere })].filter(Boolean).join(" ")} testId="replies-setting">
             {(a) => <Switch {...a} checked={repliesOn} disabled={target.provider === "none"} data-testid="replies-switch" onCheckedChange={(enabled) => void update({ replies: { enabled } })} />}
           </SettingsRow>
           <SettingsRow label={t("aiDraft.style.title")} hint={t("aiDraft.settings.styleHint")} testId="ai-drafting-style">
@@ -67,6 +70,7 @@ export function DraftingGroup({ settings, update }: { settings: AppSettings; upd
             <SettingsNote testId="ai-drafting-model">
               {t("aiDraft.settings.model", { model: modelName(writingModel(ai)), provider: providerLabel(target.provider, ai) })}
               {target.local ? "" : ` ${t("aiDraft.settings.sends", { provider: providerLabel(target.provider, ai) })}`}
+              {readElsewhere ? ` ${t("aiDraft.settings.reads", { provider: readElsewhere })}` : ""}
             </SettingsNote>
           )}
         </>
