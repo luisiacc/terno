@@ -153,6 +153,16 @@ export function removeAccount(db: Db, id: number): void {
   });
 }
 
+/** Plan 169: positions in the given order; accounts it leaves out keep their order after those. */
+export function reorderAccounts(db: Db, ids: readonly number[]): Account[] {
+  return db.tx(() => {
+    const current = listAccounts(db).map((a) => a.id);
+    const order = [...new Set(ids.filter((id) => current.includes(id))), ...current.filter((id) => !ids.includes(id))];
+    order.forEach((id, position) => db.run("UPDATE accounts SET position = ? WHERE id = ?", position, id));
+    return listAccounts(db);
+  });
+}
+
 // ───────────────────────────── categories ─────────────────────────────
 
 export function listCategories(db: Db): Category[] {

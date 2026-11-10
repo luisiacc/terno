@@ -885,6 +885,8 @@ export interface MailStore {
     }): Promise<{ account: Account; claimed: boolean }>;
     /** name and color in their columns; sender name, signature and sync window in the provider config, in one unit */
     update(id: number, patch: AccountPatch): Promise<Account | null>;
+    /** plan 169: positions in the given order, in one unit; accounts it leaves out keep their order after those */
+    reorder(ids: readonly number[]): Promise<Account[]>;
     /** the account, its mail and its secrets; the owner row survives with account_id cleared */
     remove(id: number): Promise<void>;
     setSyncState(id: number, patch: Partial<AccountSyncState>): Promise<void>;

@@ -1550,6 +1550,15 @@ export function updateAccount(c: Ctx, id: number, patch: AccountPatch): Account 
   return getAccount(c, id);
 }
 
+/** Plan 169: positions in the given order; accounts it leaves out keep their order after those. */
+export function reorderAccounts(c: Ctx, ids: readonly number[]): Account[] {
+  const accounts = T(c, "accounts");
+  const current = listAccounts(c).map((x) => x.id);
+  const order = [...new Set(ids.filter((id) => current.includes(id))), ...current.filter((id) => !ids.includes(id))];
+  order.forEach((id, position) => accounts.update(accounts.get(id)!, { position }));
+  return listAccounts(c);
+}
+
 export function listCategories(c: Ctx): Category[] {
   return [...T(c, "categories").all()].sort(byPosition).map((r) => {
     const forward = readRuleState(r.forward_json);

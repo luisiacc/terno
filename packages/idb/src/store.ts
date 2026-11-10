@@ -174,6 +174,7 @@ import {
   updateAccount,
   updateCategory,
   reorderCategories,
+  reorderAccounts,
   type ActionResult,
   type Ctx,
   type R,
@@ -2462,6 +2463,7 @@ export class IdbMailStore implements MailStore {
         return { account, claimed };
       }),
     update: (id, patch) => this.command(() => updateAccount(this.c, id, patch)),
+    reorder: (ids) => this.command(() => reorderAccounts(this.c, ids)),
     remove: async (id) => {
       for (const row of await this.early(() => idbRecipientReceipts(this.db).all().filter((r) => r.accountId === id))) while (await this.recipientReceipts.retireSlice(row.opId, true)) await this.o.platform.yield();
       for (const row of await this.early(() => idbSendCopies(this.db).all().filter((r) => r.accountId === id))) while (await this.sendCopies.forgetSlice(row.opId, true)) await this.o.platform.yield();

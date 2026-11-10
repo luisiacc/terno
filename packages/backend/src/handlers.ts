@@ -1339,6 +1339,13 @@ export function createHandlers(b: Backend): Handlers {
       return (await b.accountViews([result]))[0]!;
     },
 
+    "accounts.reorder": async ({ ids }) => {
+      await store.accounts.reorder(ids);
+      await b.emitAccounts();
+      // with their sync state, as the broadcast carries them
+      return b.accountViews(await store.accounts.list());
+    },
+
     "accounts.remove": async ({ id }) => {
       const wasOwner = (await store.owner.get())?.accountId === id;
       const before = await store.accounts.get(id);

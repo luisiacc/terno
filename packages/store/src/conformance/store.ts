@@ -2081,6 +2081,21 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
       });
     });
 
+    describe("accounts in the sidebar's order (plan 169)", () => {
+      it("reorder sets every position in one unit, keeps unlisted ones after, ignores unknown ids, and survives a reopen", async () => {
+        let store = await fresh();
+        const [a, b, c] = (await withAccounts(store, 3)) as [number, number, number];
+        expect((await store.accounts.reorder([c, a, 9999])).map((x) => x.id)).toEqual([c, a, b]);
+        await store.accounts.reorder([b, c]);
+        store = await harness.reopen(store);
+        open.push(store);
+        expect((await store.accounts.list()).map((x) => x.id)).toEqual([b, c, a]);
+        // a new one goes last
+        const { account: d } = await store.accounts.create({ kind: "imap", email: "new@example.com", displayName: "New", color: "indigo", now: 0 });
+        expect((await store.accounts.list()).at(-1)!.id).toBe(d.id);
+      });
+    });
+
     describe("durability and migrations", () => {
       it("what a command committed survives a reopen", async () => {
         let store = await fresh();

@@ -159,6 +159,7 @@ import {
   setAccountSyncState,
   setSetting,
   updateAccount,
+  reorderAccounts,
   updateCategory,
   reorderCategories,
 } from "./repos";
@@ -1563,6 +1564,7 @@ export class SqlMailStore implements MailStore {
         return { account, claimed };
       }),
     update: async (id, patch) => updateAccount(this.db, id, patch),
+    reorder: async (ids) => reorderAccounts(this.db, ids),
     remove: async (id) => {
       for (const row of sqlRecipientReceipts(this.db).all().filter((r) => r.accountId === id)) while (await this.recipientReceipts.retireSlice(row.opId, true)) await this.yieldTo();
       for (const row of sqlSendCopies(this.db).all().filter((r) => r.accountId === id)) while (await this.sendCopies.forgetSlice(row.opId, true)) await this.yieldTo();

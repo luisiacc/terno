@@ -1058,6 +1058,8 @@ export const contract = {
       followups: z.boolean().optional(),
     }),
   ),
+  /** plan 169: the sidebar's order (dragged); accounts left out keep theirs after the given ones */
+  "accounts.reorder": m<Account[]>()(z.object({ ids: z.array(id).min(1).max(1000) })),
   /**
    * Signs a connected mailbox in again (a revoked Gmail grant, a changed IMAP
    * password): Google for the same address, or the password verified with a

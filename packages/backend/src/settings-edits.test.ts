@@ -157,6 +157,22 @@ describe("accounts.reconnect", () => {
   });
 });
 
+describe("accounts in the sidebar's order (plan 169)", () => {
+  it("reorder is announced to every window, with the accounts' sync state; agents can't reorder", async () => {
+    const { client, mcp } = setup();
+    const a = await client.call("accounts.addImap", imap("luis@fastmail.com"));
+    const b = await client.call("accounts.addImap", imap("ana@fastmail.com"));
+    const events: { email: string; syncState?: unknown }[][] = [];
+    client.on("accounts", (list) => events.push(list));
+    const reply = await client.call("accounts.reorder", { ids: [b.id, a.id] });
+    expect(reply.map((x) => x.email)).toEqual(["ana@fastmail.com", "luis@fastmail.com"]);
+    expect(reply[0]!.syncState).toBeDefined();
+    await until(() => events.some((list) => list[0]?.email === "ana@fastmail.com"));
+    expect((await client.call("app.bootstrap", {})).accounts.map((x) => x.email)).toEqual(["ana@fastmail.com", "luis@fastmail.com"]);
+    expect(await errorOf(mcp.call("accounts.reorder", { ids: [a.id, b.id] }))).toMatchObject({ code: "FORBIDDEN" });
+  });
+});
+
 describe("categories from Ajustes", () => {
   it("rename, recolor, reorder and delete are announced to every window; agents can't reorder or delete", async () => {
     const { client, mcp } = setup();
