@@ -169,3 +169,4 @@ The owner, verbatim, on the built chevron:
 - The menu is unchanged (Reply to *name* with R, Reply all with A and who it reaches), aligned to Reply's end; Esc gives Reply its focus back. `R` and `A` still act at once from the keyboard.
 - `reader.replyOptions` ("Reply options") went with the chevron.
 - Tests: `reader.spec.ts` checks Reply and Forward stand where they do on a one-to-one, Reply has the popup, opens the menu, gets focus back on Esc, and Reply all from it; the e2e `respond(page, "reply")` helper picks Reply to *name* where Reply is a menu (reply-identity, reply-subject, reply-to).
+- **Codex review** (one point): Reply swaps between a plain button and a menu trigger when Reply all comes or goes, so a focused Reply lost its focus to the page when new mail added a Cc. The button's ref now hands focus from the old button (still in the page as React detaches it) to the new one (`reader-compose-focus.test.tsx`, both directions).

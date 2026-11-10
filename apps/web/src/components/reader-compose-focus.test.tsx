@@ -463,3 +463,25 @@ it.each(["ordinary", "control", "successor", "hold", "inert"] as const)("Reader 
     else expect(document.activeElement).not.toBe(editor);
   } finally { off(); release(); load.resolve(h.detail); await h.cleanup(); }
 });
+
+it("Reply keeps the keyboard's focus when new mail makes it a menu's trigger, and when it stops being one (Codex review)", async () => {
+  const h = await setup();
+  try {
+    await act(async () => { h.publish(); }); await h.flushFrame();
+    const plain = h.host.querySelector<HTMLButtonElement>('[data-testid="action-reply"]')!;
+    expect(plain.getAttribute("aria-haspopup")).toBeNull();
+    plain.focus(); expect(document.activeElement).toBe(plain);
+    // someone is copied in: Reply all now reaches someone Reply doesn't, so Reply opens a menu
+    const [message] = h.detail.messages;
+    const group = { ...h.detail, messages: [{ ...message, to: [{ name: "Me", email: "me@example.test" }], cc: [{ name: "Ana", email: "ana@example.test" }] }] } as unknown as ThreadDetail;
+    const { useThreads } = await import("~/state/threads");
+    await act(async () => { useThreads.setState({ details: new Map([[7, group]]) }); });
+    const trigger = h.host.querySelector<HTMLButtonElement>('[data-testid="action-reply"]')!;
+    expect(trigger.getAttribute("aria-haspopup")).toBe("menu");
+    expect(document.activeElement).toBe(trigger);
+    await act(async () => { h.publish(); });
+    const back = h.host.querySelector<HTMLButtonElement>('[data-testid="action-reply"]')!;
+    expect(back.getAttribute("aria-haspopup")).toBeNull();
+    expect(document.activeElement).toBe(back);
+  } finally { await h.cleanup(); }
+});

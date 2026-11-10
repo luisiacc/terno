@@ -17,7 +17,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/to
 import { cn } from "@terno/ui/lib/utils";
 import { useReplies } from "~/lib/replies";
 import { Archive, Bell, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Ellipsis, FileDown, Forward, Inbox, Layers, Mail, OctagonAlert, Printer, Reply, ReplyAll, SquarePen, Star, SummaryDoc, Tag, Trash2 } from "@terno/ui/icons";
-import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { type ReactNode, type RefCallback, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/popover";
 import { reminderShort, useReminders, useRemindPopover } from "~/lib/reminders";
 import { installScrollHairline } from "~/lib/scroll-hairline";
@@ -201,17 +201,30 @@ function ReplyGroup({ replyTo, everyone }: { replyTo: string; everyone: string |
     </>
   );
   const replyClass = item(1, pill ? "pl-3" : undefined);
+  // Reply becomes a menu's trigger (and back) when Reply all comes or goes, as new mail adds a Cc: the old button, still in
+  // the page while React detaches it, hands its focus to the new one, so a keyboard user's place survives the swap
+  const replyFocus = useRef(false);
+  const replyRef = useCallback((el: HTMLButtonElement | null) => {
+    if (!el) return;
+    if (replyFocus.current) {
+      replyFocus.current = false;
+      el.focus({ preventScroll: true });
+    }
+    return () => {
+      replyFocus.current = document.activeElement === el;
+    };
+  }, []);
   return (
     <ButtonGroup aria-label={t("reader.group.respond")} className={cn("no-drag ml-auto shrink-0 [&_svg]:[--icon-line:var(--icon-line-toolbar)]", pill && "rounded-full")}>
       {everyone !== null ? (
-        <ReplyChoices replyTo={replyTo} everyone={everyone} keys={!replyReady} className={replyClass}>
+        <ReplyChoices replyTo={replyTo} everyone={everyone} keys={!replyReady} className={replyClass} buttonRef={replyRef}>
           {replyFace}
         </ReplyChoices>
       ) : (
         <Tooltip>
           <TooltipTrigger
             render={
-              <ButtonGroupItem data-testid="action-reply" onClick={() => void openCompose("reply")} className={replyClass}>
+              <ButtonGroupItem ref={replyRef} data-testid="action-reply" onClick={() => void openCompose("reply")} className={replyClass}>
                 {replyFace}
               </ButtonGroupItem>
             }
@@ -245,9 +258,13 @@ function ReplyGroup({ replyTo, everyone }: { replyTo: string; everyone: string |
  * bar's words, Reply all saying who it reaches. A choice hands focus to the draft, so the closing menu restores none;
  * refused, Reply takes it back. While a reply is ready its card owns R and A, so the menu shows no keys (as the button).
  */
-function ReplyChoices({ replyTo, everyone, keys, className, children }: { replyTo: string; everyone: string; keys: boolean; className: string; children: ReactNode }) {
+function ReplyChoices({ replyTo, everyone, keys, className, buttonRef, children }: { replyTo: string; everyone: string; keys: boolean; className: string; buttonRef: RefCallback<HTMLButtonElement>; children: ReactNode }) {
   const handedOff = useRef(false);
-  const triggerRef = useRef<HTMLButtonElement>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const ref = useCallback((el: HTMLButtonElement | null) => {
+    triggerRef.current = el;
+    return buttonRef(el);
+  }, [buttonRef]);
   const respond = (mode: "reply" | "replyAll") => {
     handedOff.current = true;
     void composeLanding(mode).then((landing) => {
@@ -264,7 +281,7 @@ function ReplyChoices({ replyTo, everyone, keys, className, children }: { replyT
       }}
     >
       <Tooltip>
-        <TooltipTrigger render={<DropdownMenuTrigger render={<ButtonGroupItem ref={triggerRef} data-testid="action-reply" className={className} />} />}>
+        <TooltipTrigger render={<DropdownMenuTrigger render={<ButtonGroupItem ref={ref} data-testid="action-reply" className={className} />} />}>
           {children}
         </TooltipTrigger>
         <TooltipContent className="flex items-center gap-2">
