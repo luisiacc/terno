@@ -35,11 +35,17 @@ function useDraftLine(key: string): DraftLine | null {
   );
 }
 
+/** A draft's first recipient as its line names them (the name, else the address), or "" with none. */
+function firstRecipient(toText: string): string {
+  const comma = toText.indexOf(",");
+  const first = (comma < 0 ? toText : toText.slice(0, comma)).trim();
+  return first && (first.replace(/<.*$/, "").replace(/"/g, "").trim() || first.replace(/[<>]/g, ""));
+}
+
 /** Who a draft goes to, for its one line. */
 function recipientsLine(toText: string): string {
-  const first = toText.split(",")[0]?.trim();
-  if (!first) return t("compose.strip.none");
-  const name = first.replace(/<.*$/, "").replace(/"/g, "").trim() || first.replace(/[<>]/g, "");
+  const name = firstRecipient(toText);
+  if (!name) return t("compose.strip.none");
   const more = toText.split(",").length - 1;
   return t("compose.strip.to", { recipients: more > 0 ? t("compose.strip.andMore", { name, count: more }) : name });
 }
@@ -84,6 +90,40 @@ function useDraftKeys(): string[] {
         .sort((a, b) => b.d.updatedAt - a.d.updatedAt || b.i - a.i)
         .map(({ d }) => d.key),
     ),
+  );
+}
+
+// more than one line holds: the rest would only be cut off
+const PEOPLE_SHOWN = 8;
+
+// a draft's first recipient, kept for as long as the draft is unchanged: a keystroke reads one draft's anew
+const firstOf = new WeakMap<LocalDraft, string>();
+const firstOfDraft = (d: LocalDraft): string => {
+  let name = firstOf.get(d);
+  if (name === undefined) firstOf.set(d, (name = firstRecipient(d.toText)));
+  return name;
+};
+
+/**
+ * Who the several drafts go to, for the row that counts them: each one's first recipient, newest draft first, each
+ * person once. One pass, no sort, on every change to the drafts; typing renders nothing unless it changes who's first.
+ */
+function useDraftPeople(): string[] {
+  const uploads = useAttachmentUploads((s) => s);
+  return useDrafts(
+    useShallow((s) => {
+      // each person's newest draft (of two from the same moment, the one begun later)
+      const newest = new Map<string, { at: number; i: number }>();
+      let i = 0;
+      for (const d of Object.values(s.drafts)) {
+        i++;
+        if (d.toText === "" || !counted(d, uploads)) continue;
+        const name = firstOfDraft(d);
+        const was = name ? newest.get(name) : undefined;
+        if (name && (!was || d.updatedAt > was.at || (d.updatedAt === was.at && i > was.i))) newest.set(name, { at: d.updatedAt, i });
+      }
+      return [...newest].sort(([, a], [, b]) => b.at - a.at || b.i - a.i).slice(0, PEOPLE_SHOWN).map(([name]) => name);
+    }),
   );
 }
 
@@ -202,6 +242,8 @@ function Several({ drafts, scheduled, handOver }: { drafts: number; scheduled: r
   const rowRef = useRef<HTMLButtonElement>(null);
   useHandsOver(rowRef, handOver);
   const handOff = useRef(false);
+  const draftPeople = useDraftPeople();
+  const people = [...new Set([...draftPeople, ...scheduled.map((s) => s.to[0]?.name || s.to[0]?.email || "").filter(Boolean)])].slice(0, PEOPLE_SHOWN);
   const [picked, setPicked] = useState<number | null>(null);
   const pickedSend = picked === null ? undefined : scheduled.find((s) => s.draftId === picked);
   // sent, cancelled or moved elsewhere meanwhile: its Send later goes with it, and doesn't come back if it does
@@ -232,6 +274,7 @@ function Several({ drafts, scheduled, handOver }: { drafts: number; scheduled: r
           {drafts > 0 && <span className="relative shrink-0 font-medium">{t("compose.strip.count", { count: drafts })}</span>}
           {drafts > 0 && scheduled.length > 0 && <span aria-hidden className="relative text-muted-foreground">·</span>}
           {scheduled.length > 0 && <span className={cn("relative shrink-0", drafts > 0 ? "text-muted-foreground" : "font-medium")}>{t("compose.strip.scheduled", { count: scheduled.length })}</span>}
+          {people.length > 0 && <span className="relative min-w-0 flex-1 truncate text-muted-foreground" data-testid="strip-summary-people">{t("compose.strip.to", { recipients: people.join(", ") })}</span>}
           <ChevronDown className="relative ms-auto size-3.5 shrink-0 text-muted-foreground" aria-hidden />
         </DropdownMenuTrigger>
         <DropdownMenuContent

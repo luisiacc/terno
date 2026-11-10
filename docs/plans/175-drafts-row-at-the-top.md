@@ -67,3 +67,11 @@ Round 1 raised four points, all taken, each with a test that fails without its f
 2. **A draft that didn't open gave focus back to the row even after `j` meanwhile,** and Enter then opened the dropdown rather than the conversation. The row takes it back only when the selection hasn't moved since the open began.
 3. **The 2,000-draft arrow gate passed with keys that moved nothing.** Each step checks, outside the timing, that it landed on the next draft.
 4. **The scheduled send's test didn't show Send later following it.** It moves to another time while open, and the popover says the new one.
+
+## Who they go to (the owner, after shipping)
+
+> that '2' drafts there looks pretty plain, lets include the persons to where the drafts are for too, still a singel line, truncate them if they pass the width of the line
+
+The row of several says who after the count, as the one draft's row does: "2 drafts — To Isabella Álvarez, Liam Taylor", muted, on the same line, cut off with an ellipsis where the line ends (the chevron stays at its end). Each draft is named by its first recipient, as its item is; newest draft first, each person once, then scheduled sends' first recipients; at most eight (more never fit). Drafts with no one in To add nobody, and with nobody at all the row is the count alone.
+
+Re-rendering: the row follows that list of names, not the drafts' order, so typing renders nothing unless it changes who's first (typing in an older draft to someone else moves them to the front once). The names come from one pass over the drafts with each draft's first recipient kept per draft object (a keystroke reads one anew), and a sort of the people alone: the 2,000-draft typing gate stays at p95 3.8 ms.
