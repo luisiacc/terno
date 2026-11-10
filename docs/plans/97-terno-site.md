@@ -68,7 +68,7 @@ Title and description per page, canonical, Open Graph and Twitter card (a 1200×
 `scripts/shots.ts` (Playwright, run on demand, outputs committed):
 
 - Starts the real backend (`startDevServer`, `seed: false`) and seeds `shots/showcase.ts`: a curated **English** mailbox for a fictional person (four accounts across Gmail and IMAP, categories, a fresh verification code, snippets, newsletters to file), with the clock frozen.
-- Serves a production build of `apps/web` and captures, at 2×, in light and dark: the unified inbox, search with results and timing, ⌘K, the snippets page, the "everything similar" snackbar after a filing, the code chip, the three designs and a few palettes, and the shortcuts sheet.
+- Serves a production build of `apps/web` and captures, at 2×, in light and dark: the unified inbox, search with results and timing, ⌘K, the snippets page, the "everything similar" snackbar after a filing, the code chip, the five designs and a few palettes, and the shortcuts sheet.
 - Converts to WebP (1× and 2×) with `cwebp`, into `apps/site/public/shots/`, plus the OG image.
 - These pictures are the app without Pro: no AI card in any of them, the hero included.
 
@@ -182,6 +182,15 @@ The owner, on Midnight's "Sign-in codes, one click." card: "the sign in code sec
 - **Designs:** Lumen, Midnight and Letter show them whole, at the frame's width; the offset CSS and the `Crop` components are gone, and so is Lumen's ring around the code, which was placed by offsets too. Each has its own alt text.
 - **Phones:** a section wider than about 470 px (⌘K, ⌘;, the sidebar and list) keeps that width on a phone and its frame shows its start, or its end for the list, where the account names are (`site-wide` in `styles.css`). Shown at the card's width it would be under half size and unreadable. The enlarge button shows it whole.
 - **Test:** `render.test.ts` checks which section pictures each design shows, that no `crop` class comes back, and that each picture exists in both modes.
+
+## Five designs, twenty-two palettes
+
+The owner, on Midnight's themes card: "this section needs to be updated since there are more styles and palettes now". The app has five designs (`DESIGN_IDS`: Lumen, Atelier, macOS, Luma, Graphite) and 22 palettes (10 light, 12 dark).
+
+- **Copy (en, es):** "Five designs. Twenty-two palettes.", the body names all five, and the stat reads 22 color themes in five designs. A top-level `designs` key names them as the app's Settings do (es: Grafito).
+- **Pictures:** `inbox-luma` and `inbox-graphite`, each in its own palette, framed like `inbox-macos`. `DESIGN_SHOTS` (`parts/shot.tsx`) lists the five in one order for every design.
+- **Layouts:** Lumen shows two over three (Lumen and macOS large), and on a phone Lumen across with the others two by two. Midnight shows five named thumbnails above the palette strip. Letter shows three by two (the five and Apple · Dracula), and two by three on a phone.
+- **Test:** `render.test.ts` checks that every design shows all five, in both modes.
 
 ## Deploying from GitHub
 

@@ -52,8 +52,8 @@ export const es: SiteCopy = {
       points: [],
     },
     themes: {
-      title: "Tres diseños. Dieciocho paletas.",
-      body: "Lumen cálido, Atelier editorial o macOS al estilo de Apple Mail, con cualquier tema de color, de Solarized a Dracula. O trae el tuyo.",
+      title: "Cinco diseños. Veintidós paletas.",
+      body: "Lumen cálido, Atelier editorial, macOS al estilo de Apple Mail, Luma redondeado o Grafito sobrio, con cualquier tema de color, de Solarized a Dracula. O trae el tuyo.",
       points: ["Claro y oscuro en todos", "Todos revisados en contraste", "Animaciones que puedes reducir o quitar"],
     },
     snippets: {
@@ -125,7 +125,7 @@ export const es: SiteCopy = {
   stats: [
     { value: "Al instante", label: "búsqueda en todas tus cuentas" },
     { value: "0", label: "servidores de Terno que guardan tu correo" },
-    { value: "18", label: "temas de color, en tres diseños" },
+    { value: "22", label: "temas de color, en cinco diseños" },
   ],
   closing: {
     title: "Recupera tu bandeja de entrada.",
@@ -154,10 +154,14 @@ export const es: SiteCopy = {
     license: "Licencia",
     copyright: "© 2026 Terno",
   },
+  /** los diseños de la app por su nombre, como los llaman sus Ajustes */
+  designs: { lumen: "Lumen", atelier: "Atelier", macos: "macOS", luma: "Luma", graphite: "Grafito" },
   alt: {
     inbox: "La bandeja unificada de Terno: conversaciones de cuatro cuentas en una lista, con una conversación abierta al lado",
     "inbox-macos": "Terno con el diseño macOS, compacto y al estilo de Apple Mail",
     "inbox-atelier": "Terno con el diseño Atelier, títulos con serifa sobre papel",
+    "inbox-luma": "Terno con el diseño Luma, entre Lumen y macOS: Inter, formas redondeadas, un acento azul",
+    "inbox-graphite": "Terno con el diseño Grafito, sobrio y neutro: grises, líneas finas y botones de píldora",
     code: "Un código de verificación en su mensaje de la lista, con un botón para copiarlo",
     search: "Resultados de búsqueda de «hopper ride»: más de 100 resultados, al instante",
     palette: "La paleta de comandos abierta, con los comandos de archivar que coinciden con lo escrito",

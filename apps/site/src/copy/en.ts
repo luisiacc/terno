@@ -51,8 +51,8 @@ export const en = {
       points: [],
     },
     themes: {
-      title: "Three designs. Eighteen palettes.",
-      body: "Warm Lumen, editorial Atelier or Apple-Mail-like macOS, in any color theme from Solarized to Dracula. Or bring your own.",
+      title: "Five designs. Twenty-two palettes.",
+      body: "Warm Lumen, editorial Atelier, Apple-Mail-like macOS, rounded Luma or quiet Graphite, in any color theme from Solarized to Dracula. Or bring your own.",
       points: ["Light and dark in every one", "All checked for contrast", "Motion you can turn down or off"],
     },
     snippets: {
@@ -125,7 +125,7 @@ export const en = {
   stats: [
     { value: "Instant", label: "search across every account" },
     { value: "0", label: "Terno servers storing your mail" },
-    { value: "18", label: "color themes, in three designs" },
+    { value: "22", label: "color themes, in five designs" },
   ],
   closing: {
     title: "Take back your inbox.",
@@ -154,10 +154,14 @@ export const en = {
     license: "License",
     copyright: "© 2026 Terno",
   },
+  /** the app's designs by name, as its Settings call them */
+  designs: { lumen: "Lumen", atelier: "Atelier", macos: "macOS", luma: "Luma", graphite: "Graphite" },
   alt: {
     inbox: "Terno’s unified inbox: conversations from four accounts in one list, a conversation open beside it",
     "inbox-macos": "Terno in the macOS design, compact and Apple-Mail-like",
     "inbox-atelier": "Terno in the Atelier design, with serif titles on paper",
+    "inbox-luma": "Terno in the Luma design, between Lumen and macOS: Inter, rounded shapes, a blue accent",
+    "inbox-graphite": "Terno in the Graphite design, quiet and neutral: greys, hairlines and pill buttons",
     code: "A verification code shown on its message in the list, with a copy button",
     search: "Search results for “hopper ride”: more than 100 results, instantly",
     palette: "The command palette open, with archive commands matching what was typed",

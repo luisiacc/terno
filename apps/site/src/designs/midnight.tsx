@@ -5,7 +5,7 @@ import { Check, ChevronRight, Github, Mails } from "../parts/icons";
 import { Kbd } from "../parts/kbd";
 import { Logo } from "../parts/logo";
 import { PRO_LEAD, PRO_MORE, Peek, ProLeadShot, proPrivacyLink } from "../parts/pro";
-import { Shot, type ShotName } from "../parts/shot";
+import { DESIGN_SHOTS, Shot, type ShotName } from "../parts/shot";
 import { Waitlist } from "../parts/waitlist";
 import { Window } from "../parts/window";
 import { GITHUB, LICENSE_URL } from "../site";
@@ -239,13 +239,19 @@ export const Midnight: HomeDesign = ({ copy }) => {
               </a>
             </Card>
             <Card f={f.themes} className="md:col-span-2 lg:col-span-6">
-              <div className="grid gap-3 sm:grid-cols-3">
-                {(["inbox", "inbox-macos", "inbox-atelier"] as const).map((s) => (
-                  <div key={s} className="mn-thumb relative overflow-hidden rounded-lg border border-(--mn-line)">
-                    <Shot name={s} copy={copy} sizes="(min-width: 1024px) 340px, (min-width: 640px) 30vw, 90vw" />
-                  </div>
+              {/* the five designs, named, above the palettes; on a phone Lumen across, the others two by two */}
+              <ul className="grid grid-cols-2 gap-x-3 gap-y-4 sm:grid-cols-5">
+                {DESIGN_SHOTS.map(([design, s], i) => (
+                  <li key={s} className={i === 0 ? "max-sm:col-span-2" : ""}>
+                    <figure>
+                      <div className="mn-thumb relative overflow-hidden rounded-lg border border-(--mn-line)">
+                        <Shot name={s} copy={copy} sizes="(min-width: 1024px) 200px, (min-width: 640px) 18vw, 90vw" />
+                      </div>
+                      <figcaption className="mt-2.5 font-mono text-[0.75rem] text-(--mn-muted)">{copy.designs[design]}</figcaption>
+                    </figure>
+                  </li>
                 ))}
-              </div>
+              </ul>
               <div className="-mt-5 grid grid-cols-3 gap-3 sm:grid-cols-5">
                 {(["palette-dracula", "palette-nord", "palette-gruvbox", "palette-solarized", "palette-catppuccin"] as const).map((s) => (
                   <div key={s} className="mn-thumb relative overflow-hidden rounded-md border border-(--mn-line)">

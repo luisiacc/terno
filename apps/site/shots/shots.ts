@@ -15,6 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium, type Page } from "@playwright/test";
 import { startDevServer } from "@terno/backend-dev/src/server";
+import type { DesignId } from "@terno/core";
 import { around, type Box, ctx, dispose, encode, fencedPage, openApp, out, pictureSettings, seedProfile, serveWeb, site } from "./lib";
 import { SHOWCASE_NOW } from "./showcase";
 
@@ -23,7 +24,7 @@ const only = process.argv.find((a) => a.startsWith("--only="))?.slice(7).split("
 
 interface Shot {
   name: string;
-  design?: "lumen" | "macos" | "atelier";
+  design?: DesignId;
   /** a palette id for both modes, or per mode */
   palette?: { light?: string; dark?: string };
   modes?: readonly ("light" | "dark")[];
@@ -68,6 +69,8 @@ const SHOTS: Shot[] = [
   },
   { name: "inbox-macos", design: "macos", setup: (p) => open(p, "Homepage concepts, round two") },
   { name: "inbox-atelier", design: "atelier", setup: (p) => open(p, "Homepage concepts, round two") },
+  { name: "inbox-luma", design: "luma", setup: (p) => open(p, "Homepage concepts, round two") },
+  { name: "inbox-graphite", design: "graphite", setup: (p) => open(p, "Homepage concepts, round two") },
   // color themes, each a light and dark pair, in a design that isn't theirs: any palette works with any design
   { name: "palette-dracula", design: "macos", palette: { light: "apple-light", dark: "dracula" }, setup: (p) => open(p, "Lisbon offsite: flights and the plan") },
   { name: "palette-nord", design: "lumen", palette: { light: "terno-light", dark: "nord" }, setup: (p) => open(p, "Lisbon offsite: flights and the plan") },

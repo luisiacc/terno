@@ -3,6 +3,16 @@ import type { SiteCopy } from "../copy";
 import { Maximize, Moon, Sun } from "./icons";
 
 export type ShotName = keyof SiteCopy["alt"];
+
+/** The app's five designs and their pictures (plan 97), in the order the site shows them: Lumen, the app's default, first. */
+export const DESIGN_SHOTS = [
+  ["lumen", "inbox"],
+  ["macos", "inbox-macos"],
+  ["atelier", "inbox-atelier"],
+  ["luma", "inbox-luma"],
+  ["graphite", "inbox-graphite"],
+] as const satisfies readonly (readonly [keyof SiteCopy["designs"], ShotName])[];
+
 const size = (name: string) => (manifest as Record<string, { width: number; height: number }>)[name];
 
 /**

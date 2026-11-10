@@ -5,7 +5,7 @@ import { Github } from "../parts/icons";
 import { Kbd } from "../parts/kbd";
 import { Logo } from "../parts/logo";
 import { PRO_LEAD, PRO_MORE, Peek, ProLeadShot, proPrivacyLink } from "../parts/pro";
-import { Shot, type ShotName } from "../parts/shot";
+import { DESIGN_SHOTS, Shot, type ShotName } from "../parts/shot";
 import { Waitlist } from "../parts/waitlist";
 import { Window } from "../parts/window";
 import { GITHUB, LICENSE_URL } from "../site";
@@ -200,12 +200,13 @@ export const Letter: HomeDesign = ({ copy }) => {
           <Detail copy={copy} name="code-detail" />
         </Feature>
         <Feature copy={copy} id="themes">
-          <ul className="letter-wide mt-14 grid gap-6 sm:grid-cols-3 sm:gap-5">
-            {(["inbox-atelier", "inbox-macos", "palette-dracula"] as const).map((name) => (
+          {/* the five designs and one palette pair: three by two, two by three on a phone */}
+          <ul className="letter-wide mt-14 grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3 sm:gap-5">
+            {[...DESIGN_SHOTS.map(([, name]) => name), "palette-dracula" as const].map((name) => (
               <li key={name}>
                 <figure>
                   <Window className="letter-window letter-window-small">
-                    <Shot name={name} copy={copy} sizes="(min-width: 1180px) 350px, (min-width: 640px) 31vw, calc(100vw - 2.5rem)" />
+                    <Shot name={name} copy={copy} sizes="(min-width: 1180px) 350px, (min-width: 640px) 31vw, 45vw" />
                   </Window>
                   <figcaption className="letter-caption">{copy.alt[name]}</figcaption>
                 </figure>

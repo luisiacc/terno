@@ -262,5 +262,21 @@
   "unified-detail-light": {
     "width": 647,
     "height": 646
+  },
+  "inbox-graphite-dark": {
+    "width": 1440,
+    "height": 900
+  },
+  "inbox-graphite-light": {
+    "width": 1440,
+    "height": 900
+  },
+  "inbox-luma-dark": {
+    "width": 1440,
+    "height": 900
+  },
+  "inbox-luma-light": {
+    "width": 1440,
+    "height": 900
   }
 }
