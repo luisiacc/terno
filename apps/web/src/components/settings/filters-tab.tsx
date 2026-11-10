@@ -1,5 +1,6 @@
 import { type Category, type Filter } from "@terno/core";
-import { Button } from "@terno/ui/components/button";
+import { Button, GHOST_DANGER_PRESS } from "@terno/ui/components/button";
+import { cn } from "@terno/ui/lib/utils";
 import { Switch } from "@terno/ui/components/switch";
 import { Pencil, Plus, Trash2 } from "@terno/ui/icons";
 import { t } from "@terno/i18n";
@@ -57,7 +58,7 @@ function FilterItem({ filter, onChange }: { filter: Filter; onChange: () => void
       <Button variant="ghost" size="icon-sm" aria-label={t("filters.edit", { name })} data-testid="settings-filter-edit" onClick={() => edit(filter)}>
         <Pencil />
       </Button>
-      <Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-destructive-ink" aria-label={t("filters.deleteNamed", { name })} data-testid="settings-filter-delete" onClick={() => setDeleting(true)}>
+      <Button variant="ghost" size="icon-sm" className={cn("text-muted-foreground hover:text-destructive-ink", GHOST_DANGER_PRESS)} aria-label={t("filters.deleteNamed", { name })} data-testid="settings-filter-delete" onClick={() => setDeleting(true)}>
         <Trash2 />
       </Button>
       <ConfirmDialog

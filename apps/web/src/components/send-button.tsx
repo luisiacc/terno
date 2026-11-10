@@ -51,8 +51,9 @@ export function SendButton({ d, onSend, className }: { d: LocalDraft; onSend: (s
   const half = cn(
     "border-0 shadow-none focus-visible:outline-none focus-visible:ring-0 active:not-aria-[haspopup]:scale-100",
     outlined
-      ? // (Send still takes the click that says why, so it presses too, as the clock does)
-        "text-inherit hover:text-foreground aria-expanded:text-foreground unavailable:opacity-100 active:bg-[color-mix(in_oklab,var(--muted),var(--foreground)_6%)] dark:active:bg-muted focus-visible:shadow-[inset_0_0_0_2px_var(--ring)]"
+      ? // (Send still takes the click that says why, so it presses too, as the clock does; the halves keep the group's
+        // corners, so a focus ring isn't clipped where the group is rounder than a ghost: Codex review)
+        "rounded-[max(var(--cta-floor),min(var(--ds-radius-md),12px))] text-inherit hover:text-foreground aria-expanded:text-foreground unavailable:opacity-100 active:bg-[color-mix(in_oklab,var(--muted),var(--foreground)_6%)] dark:active:bg-muted focus-visible:shadow-[inset_0_0_0_2px_var(--ring)]"
       : "bg-transparent bg-none text-inherit focus-visible:shadow-[inset_0_0_0_2px_var(--primary),inset_0_0_0_3.5px_var(--primary-foreground)]",
   );
   const variant = outlined ? "ghost" : "default";

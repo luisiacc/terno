@@ -1,6 +1,7 @@
 import { CATEGORY_COLORS, JEV_DEFAULT_MODEL, type Category, type CategoryColor, type CategoryModelStats } from "@terno/core";
 import type { AiTestResult, AppSettings } from "@terno/core/rpc";
-import { Button } from "@terno/ui/components/button";
+import { Button, GHOST_DANGER_PRESS } from "@terno/ui/components/button";
+import { cn } from "@terno/ui/lib/utils";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@terno/ui/components/collapsible";
 import { Input } from "@terno/ui/components/input";
@@ -125,7 +126,7 @@ function CategoryItem({ category, stats, index, count, autoMode }: { category: C
           <SettingsRow label={t("settings.categories.delete")} hint={t("settings.categories.delete.hint")}>
             {({ id: _id, "aria-labelledby": _l, ...a }) => (
               <>
-                <Button {...a} variant="ghost" size="sm" className="text-destructive-ink" data-testid="category-delete" onClick={() => setDeleting(true)}>
+                <Button {...a} variant="ghost" size="sm" className={cn("text-destructive-ink", GHOST_DANGER_PRESS)} data-testid="category-delete" onClick={() => setDeleting(true)}>
                   <Trash2 /> {t("settings.categories.delete.button")}
                 </Button>
                 <ConfirmDialog

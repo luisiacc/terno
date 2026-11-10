@@ -118,6 +118,16 @@ test.describe("send later", () => {
     });
   });
 
+  test("with nobody to send to, the outlined halves keep the group's corners, so a focus ring inside one isn't clipped (plan 173, Codex review)", { tag: "@design" }, async ({ app: page }) => {
+    await focusList(page);
+    await page.keyboard.press("c");
+    const corners = await page.getByTestId("compose-send-group").evaluate((g) => {
+      const r = (el: Element, k: string) => getComputedStyle(el).getPropertyValue(k);
+      return [r(g, "border-top-left-radius"), r(g.querySelector("[data-testid=compose-send]")!, "border-top-left-radius"), r(g.querySelector("[data-testid=compose-send-later]")!, "border-top-right-radius")];
+    });
+    expect(new Set(corners).size, corners.join(" ")).toBe(1);
+  });
+
   test("Send and the clock are one filled shape: no seam, a hairline that hides on hover or open, a ring Tab can see", { tag: "@design" }, async ({ app: page }) => {
     await newMessage(page, "Seam");
     const group = page.getByTestId("compose-send-group");

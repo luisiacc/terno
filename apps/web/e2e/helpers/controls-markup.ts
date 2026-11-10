@@ -2,7 +2,8 @@
 // same worker can switch NODE_ENV between React's and react-dom/server's loads, and the two must match)
 import { Avatar, AvatarFallback } from "@terno/ui/components/avatar";
 import { Announcement } from "@terno/ui/components/announcement";
-import { Button } from "@terno/ui/components/button";
+import { Button, GHOST_DANGER_PRESS } from "@terno/ui/components/button";
+import { cn } from "@terno/ui/lib/utils";
 import { ButtonGroup, ButtonGroupItem } from "@terno/ui/components/button-group";
 import { Accordion, AccordionItem, AccordionPanel, AccordionTrigger } from "@terno/ui/components/accordion";
 import { CategoryDot } from "@terno/ui/components/category-dot";
@@ -44,6 +45,7 @@ process.stdout.write(
         h(Button, { variant: "destructive", "data-testid": "state-danger" }, "Delete"),
         h(ButtonGroup, { "aria-label": "Group" }, h(ButtonGroupItem, { "data-testid": "state-group-item" }, "Reply"), h(ButtonGroupItem, null, "Forward")),
         h(Button, { "aria-disabled": true, "data-testid": "state-primary-unavailable" }, "Send"),
+        h(Button, { variant: "ghost", className: cn("text-muted-foreground hover:text-destructive-ink", GHOST_DANGER_PRESS), "data-testid": "state-ghost-danger" }, "Delete"),
       ),
       h(Input, { disabled: true, "data-testid": "disabled-input", defaultValue: "180" }),
       h(InputGroup, { "data-testid": "group" }, h(InputGroupInput, { "data-testid": "group-input", placeholder: "Search" })),

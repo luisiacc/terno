@@ -34,6 +34,11 @@ const PROBES: [string, Probe][] = [
     expect(await css(page, "invalid-outline", "border-top-color")).toBe(want);
     await page.getByTestId("invalid-outline").hover();
     expect(await css(page, "invalid-outline", "border-top-color")).toBe(want);
+    // and pressed (plan 173, Codex review)
+    await page.mouse.down();
+    expect(await css(page, "invalid-outline", "border-top-color"), "pressed").toBe(want);
+    await page.mouse.move(1, 1);
+    await page.mouse.up();
   }],
 
   ["a focused field group keeps its focus border while hovered", async (page, mode, expect) => {
@@ -266,6 +271,13 @@ const PROBES: [string, Probe][] = [
     await page.mouse.down();
     expect(await bg(off), "an unavailable primary, pressed").toBe(rest);
     expect(rest).toBe(await css(page, "probe-muted", "background-color"));
+    await page.mouse.move(1, 1);
+    await page.mouse.up();
+    // a ghost in the danger ink presses to its hover fill: red on anything deeper fails AA (Codex review)
+    await page.getByTestId("state-ghost-danger").hover();
+    const hovered = await bg("state-ghost-danger");
+    await page.mouse.down();
+    expect(await bg("state-ghost-danger"), "a danger-ink ghost, pressed").toBe(hovered);
     await page.mouse.move(1, 1);
     await page.mouse.up();
   }],

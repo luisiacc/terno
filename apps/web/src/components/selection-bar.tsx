@@ -21,7 +21,8 @@ const SHOWN_ROWS = 8;
 
 /** The menu's destructive row, on a secondary button: red text and icon, the red's wash under the pointer */
 const DANGER =
-  "text-destructive hover:bg-destructive/10 hover:text-destructive active:bg-destructive/10 aria-expanded:text-destructive dark:hover:bg-destructive/20 dark:active:bg-destructive/20 [&_svg:not([class*='text-'])]:text-destructive hover:[&_svg:not([class*='text-'])]:text-destructive unavailable:text-muted-foreground unavailable:[&_svg:not([class*='text-'])]:text-muted-foreground";
+  // (pressed through `press`, as the button's own press: plan 173, so the base's neutral press doesn't win over the red)
+  "text-destructive hover:bg-destructive/10 hover:text-destructive press:bg-destructive/10 aria-expanded:text-destructive dark:hover:bg-destructive/20 dark:press:bg-destructive/20 [&_svg:not([class*='text-'])]:text-destructive hover:[&_svg:not([class*='text-'])]:text-destructive unavailable:text-muted-foreground unavailable:[&_svg:not([class*='text-'])]:text-muted-foreground";
 /** A key on the primary, as on Send */
 const LEAD = "[&_kbd]:bg-primary-foreground/15 [&_kbd]:text-primary-foreground [&_svg:not([class*='text-'])]:text-primary-foreground";
 

@@ -21,7 +21,7 @@ const buttonVariants = cva(
         // The secondary: its own 1 px border (no size change) firming up on hover, over a contact shadow, on the muted fill;
         // pressed, a step of the ink deeper (plan 173); unavailable, the field wash under its border, flat (plan 125)
         outline:
-          "border-border bg-card shadow-xs hover:border-input hover:bg-muted hover:text-foreground press:border-input press:bg-[color-mix(in_oklab,var(--muted),var(--foreground)_6%)] aria-expanded:border-input aria-expanded:bg-muted aria-expanded:text-foreground [&_svg:not([class*='text-'])]:text-muted-foreground hover:[&_svg:not([class*='text-'])]:text-foreground aria-expanded:[&_svg:not([class*='text-'])]:text-foreground unavailable:border-border unavailable:bg-field unavailable:text-muted-foreground unavailable:shadow-none",
+          "border-border bg-card shadow-xs hover:border-input hover:bg-muted hover:text-foreground press:not-aria-invalid:border-input press:bg-[color-mix(in_oklab,var(--muted),var(--foreground)_6%)] aria-expanded:border-input aria-expanded:bg-muted aria-expanded:text-foreground [&_svg:not([class*='text-'])]:text-muted-foreground hover:[&_svg:not([class*='text-'])]:text-foreground aria-expanded:[&_svg:not([class*='text-'])]:text-foreground unavailable:border-border unavailable:bg-field unavailable:text-muted-foreground unavailable:shadow-none",
         secondary:
           "bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] press:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_10%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground unavailable:bg-muted unavailable:text-muted-foreground",
         // Terno's quiet toolbar button (BoardUI has no transparent one): its icons are muted at rest, so unavailable it fades;
@@ -114,4 +114,11 @@ function Button({
   )
 }
 
-export { Button, buttonVariants }
+/**
+ * Plan 173 (Codex review): a ghost button whose text is the danger ink (Delete in Settings, a snippet's, a filter's) presses
+ * to its hover fill, not a step deeper: red ink on anything past `muted` fails AA in most light palettes. The press still
+ * shows, in the button's 2 % shrink.
+ */
+const GHOST_DANGER_PRESS = "press:bg-muted dark:press:bg-muted/50"
+
+export { Button, buttonVariants, GHOST_DANGER_PRESS }

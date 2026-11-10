@@ -105,6 +105,14 @@ test("a batch: every row shows it's in, Delete reads as the menu's, Undo puts th
   // the same red as the menu's Delete
   const red = (l: Locator) => l.evaluate((el) => getComputedStyle(el).color);
   const barRed = await red(page.getByTestId("bar-trash"));
+  // plan 173 (Codex review): pressed, Delete keeps the red's wash, never the base's neutral press
+  const trash = page.getByTestId("bar-trash");
+  await trash.hover();
+  const washed = await trash.evaluate((el) => getComputedStyle(el).backgroundColor);
+  await page.mouse.down();
+  await expect.poll(() => trash.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(washed);
+  await page.mouse.move(1, 1);
+  await page.mouse.up();
   await rightClick(page, row(page, ids[0]!));
   expect(await red(item(page, "menu-trash"))).toBe(barRed);
   await page.keyboard.press("Escape");

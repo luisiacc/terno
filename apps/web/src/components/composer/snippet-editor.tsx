@@ -1,7 +1,7 @@
 import { SNIPPET_HTML_MAX, SNIPPET_TEXT_MAX, SNIPPET_VARIABLES, type Snippet, type SnippetFields } from "@terno/core";
 import { schema } from "@terno/richtext";
 import { t } from "@terno/i18n";
-import { Button } from "@terno/ui/components/button";
+import { Button, GHOST_DANGER_PRESS } from "@terno/ui/components/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@terno/ui/components/collapsible";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
 import { Input } from "@terno/ui/components/input";
@@ -328,7 +328,7 @@ export default function SnippetEditor({ id, fresh, selectName }: { id: string; f
           <Button
             variant="ghost"
             size="sm"
-            className="-ml-2 text-muted-foreground hover:text-destructive-ink"
+            className={cn("-ml-2 text-muted-foreground hover:text-destructive-ink", GHOST_DANGER_PRESS)}
             data-testid="snippet-delete"
             onClick={() => {
               closeSnippetEditor();

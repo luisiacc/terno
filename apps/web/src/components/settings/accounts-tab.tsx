@@ -4,7 +4,7 @@ import { localized } from "~/lib/i18n";
 import { separatesTabs, type Account, type CategoryColor } from "@terno/core";
 import type { AppSettings } from "@terno/core/rpc";
 import { Accordion, AccordionItem, AccordionPanel, AccordionTrigger } from "@terno/ui/components/accordion";
-import { Button } from "@terno/ui/components/button";
+import { Button, GHOST_DANGER_PRESS } from "@terno/ui/components/button";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Input } from "@terno/ui/components/input";
 import { Switch } from "@terno/ui/components/switch";
@@ -206,7 +206,7 @@ function AccountEditor({ account, generalWindow, isOwner }: { account: Account; 
       <SettingsRow label={t("account.remove")} hint={isOwner ? t("account.remove.hintOwner") : t("account.remove.hint")}>
         {({ id: _id, "aria-labelledby": _l, ...a }) => (
           <>
-            <Button {...a} variant="ghost" size="sm" className="text-destructive-ink" data-testid="account-remove" onClick={() => setRemoving(true)}>
+            <Button {...a} variant="ghost" size="sm" className={cn("text-destructive-ink", GHOST_DANGER_PRESS)} data-testid="account-remove" onClick={() => setRemoving(true)}>
               <Trash2 /> {t("account.remove.button")}
             </Button>
             <AccountRemoveDialog account={account} open={removing} onOpenChange={setRemoving} from="settings" />

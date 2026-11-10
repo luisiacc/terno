@@ -1,6 +1,7 @@
 import { snippetPreview, type Snippet } from "@terno/core";
 import { formatList, t } from "@terno/i18n";
-import { Button } from "@terno/ui/components/button";
+import { Button, GHOST_DANGER_PRESS } from "@terno/ui/components/button";
+import { cn } from "@terno/ui/lib/utils";
 import { Pencil, Plus, Trash2 } from "@terno/ui/icons";
 import { useEffect } from "react";
 import { shortcutText } from "@terno/ui/components/shortcut";
@@ -40,7 +41,7 @@ function SnippetRow({ snippet }: { snippet: Snippet }) {
       <Button variant="ghost" size="icon-sm" aria-label={t("snippets.edit", { name })} data-testid="settings-snippet-edit" onClick={() => openSnippetEditor(snippet.id)}>
         <Pencil />
       </Button>
-      <Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-destructive-ink" aria-label={t("snippets.deleteNamed", { name })} data-testid="settings-snippet-delete" onClick={() => void removeSnippet(snippet)}>
+      <Button variant="ghost" size="icon-sm" className={cn("text-muted-foreground hover:text-destructive-ink", GHOST_DANGER_PRESS)} aria-label={t("snippets.deleteNamed", { name })} data-testid="settings-snippet-delete" onClick={() => void removeSnippet(snippet)}>
         <Trash2 />
       </Button>
     </div>

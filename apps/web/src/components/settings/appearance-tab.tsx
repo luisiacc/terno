@@ -1,6 +1,6 @@
 import { CUSTOM_PREFIX, DESIGN_PALETTE, customThemeSchema, MAX_CUSTOM_THEMES, type CustomTheme, type ThemeMode } from "@terno/core";
 import type { AppSettings } from "@terno/core/rpc";
-import { Button } from "@terno/ui/components/button";
+import { Button, GHOST_DANGER_PRESS } from "@terno/ui/components/button";
 import { RadioCard, RadioGroup } from "@terno/ui/components/radio-group";
 import { Textarea } from "@terno/ui/components/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@terno/ui/components/toggle-group";
@@ -199,7 +199,7 @@ function CustomThemeItem({ theme, all }: { theme: CustomTheme; all: readonly Cus
         <Button variant="ghost" size="sm" aria-expanded={editing} aria-label={t("settings.appearance.editTheme", { name: theme.name })} data-testid={`theme-edit-${CUSTOM_PREFIX}${theme.id}`} onClick={() => setEditing((e) => !e)}>
           <Pencil /> {t("common.edit")}
         </Button>
-        <Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-destructive-ink" aria-label={t("settings.appearance.deleteTheme", { name: theme.name })} data-testid={`theme-delete-${CUSTOM_PREFIX}${theme.id}`} onClick={() => setDeleting(true)}>
+        <Button variant="ghost" size="icon-sm" className={cn("text-muted-foreground hover:text-destructive-ink", GHOST_DANGER_PRESS)} aria-label={t("settings.appearance.deleteTheme", { name: theme.name })} data-testid={`theme-delete-${CUSTOM_PREFIX}${theme.id}`} onClick={() => setDeleting(true)}>
           <Trash2 />
         </Button>
       </div>
