@@ -118,5 +118,85 @@
   "palette-solarized-dark": {
     "width": 1440,
     "height": 900
+  },
+  "ai-action-dark": {
+    "width": 1191,
+    "height": 470
+  },
+  "ai-action-light": {
+    "width": 1191,
+    "height": 470
+  },
+  "ai-ask-dark": {
+    "width": 680,
+    "height": 441
+  },
+  "ai-ask-light": {
+    "width": 680,
+    "height": 441
+  },
+  "ai-digest-dark": {
+    "width": 704,
+    "height": 745
+  },
+  "ai-digest-light": {
+    "width": 704,
+    "height": 745
+  },
+  "ai-followups-dark": {
+    "width": 1191,
+    "height": 900
+  },
+  "ai-followups-light": {
+    "width": 1191,
+    "height": 900
+  },
+  "ai-generate-dark": {
+    "width": 1440,
+    "height": 900
+  },
+  "ai-generate-light": {
+    "width": 1440,
+    "height": 900
+  },
+  "ai-generated-dark": {
+    "width": 1440,
+    "height": 900
+  },
+  "ai-generated-light": {
+    "width": 1440,
+    "height": 900
+  },
+  "ai-reply-dark": {
+    "width": 1440,
+    "height": 900
+  },
+  "ai-reply-light": {
+    "width": 1440,
+    "height": 900
+  },
+  "ai-rule-dark": {
+    "width": 1080,
+    "height": 800
+  },
+  "ai-rule-light": {
+    "width": 1080,
+    "height": 800
+  },
+  "ai-summary-dark": {
+    "width": 696,
+    "height": 476
+  },
+  "ai-summary-light": {
+    "width": 696,
+    "height": 476
+  },
+  "ai-today-dark": {
+    "width": 398,
+    "height": 570
+  },
+  "ai-today-light": {
+    "width": 398,
+    "height": 570
   }
 }
