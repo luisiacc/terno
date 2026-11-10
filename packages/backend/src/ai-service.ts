@@ -254,7 +254,12 @@ export class AiService {
     const settings = await readSettings(this.b.store);
     const target = await this.targetFor(task, settings);
     const lease = this.keyLease(keySecretName(target.provider, target.preset));
-    const stored = await this.config(target);
+    // a key removed while this read it fails here: when that moved the job to the other key, it starts over there (Codex code review)
+    const stored = await this.config(target).catch((error: unknown) => {
+      if (routing.aborted || lease.signal.aborted || epoch.aborted) return null;
+      throw error;
+    });
+    if (!stored) return this.forTask(task, o);
     const capabilities = (await capabilitiesFor(this.b.store, target)) ?? undefined;
     // the limiter counts every request, so the SDK's own retries (unseen by it) stay off for these tasks
     const config: ProviderConfig = { ...stored, capabilities, maxRetries: task === "filter" ? stored.maxRetries : 0 };

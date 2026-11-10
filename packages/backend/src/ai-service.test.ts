@@ -76,6 +76,23 @@ describe("plan 168: the keys decide where a job goes", () => {
     expect(ai.model).toBe("claude-sonnet-5-5");
   });
 
+  it("the chosen key removed while it's being read: the job goes to the other key, not to an error (Codex code review, round 2)", async () => {
+    const t = await setup();
+    await t.client.call("settings.update", { ai: { provider: "openai", baseURL: "http://127.0.0.1:9/v1" } });
+    await t.client.call("settings.update", { ai: { provider: "anthropic", baseURL: "http://127.0.0.1:9" } });
+    await t.client.call("ai.setKey", { provider: "openai", value: "sk-openai-not-a-real-key-0000" });
+    await t.client.call("ai.setKey", { provider: "anthropic", value: FAKE_KEY });
+    let release!: (v: string | null) => void;
+    const reading = new Promise<string | null>((r) => (release = r));
+    vi.spyOn(t.backend, "getSecret").mockImplementationOnce(() => reading);
+    const building = t.backend.aiService.forTask("writing", { foreground: true });
+    await new Promise((r) => setTimeout(r, 5));
+    await t.client.call("ai.setKey", { provider: "anthropic", value: "" });
+    release(null);
+    const ai = await building;
+    expect(ai.providerId).toBe("openai");
+  });
+
   it("a local server with no model set: refused before anything is built or sent (Codex critique)", async () => {
     const t = await setup();
     await t.client.call("settings.update", { ai: { provider: "ollama", baseURL: "http://127.0.0.1:9/v1", model: "" } });

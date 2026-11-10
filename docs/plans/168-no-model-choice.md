@@ -113,6 +113,8 @@ Round 1 (`git diff 7aa0d0c67..HEAD`, read-only) raised 5 points:
 4. A JEV key's exact-equality expectation in `smart-categorization.test.ts` didn't allow the new key fields; it now matches the fields it means.
 5. **Not changed:** a keychain decryption failure other than the Única migration's isn't recorded as `keyUnreadable`, so routing would still prefer that key. That's true of the configured key before this plan too, it needs a keychain that fails after saving, and the backend still refuses with a clear error; it's left for the keychain's own plan (rare finding, per the review-round cap).
 
+Round 2: spec PASS, one point, fixed. **The chosen key removed while it was being read** made the request fail on `keyMissing` though the other key still worked: the routing generation was only checked after a successful build. A build that fails while the routing, the key's lease or Dev mode changed now starts over. Regression in `ai-service.test.ts` (fails without it). Two rounds, per the review-round cap.
+
 ## What changes for existing setups
 
 - A task's saved provider and model, and a saved Claude or OpenAI model, are ignored. Nothing is deleted.
