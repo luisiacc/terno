@@ -96,11 +96,12 @@ await step("settings", async () => {
   await page.getByTestId("open-settings").click();
   await page.getByTestId("tab-ai").click();
   await page.getByTestId("ai-provider").click();
-  await page.getByRole("option", { name: /Claude/ }).click();
+  await page.getByTestId("ai-choice-keys").click();
   assertGuarded();
-  await page.getByTestId("ai-key").fill(env.ANTHROPIC_API_KEY);
+  // plan 168: both keys under one item; Terno picks the model for each feature
+  await page.getByTestId("ai-key-anthropic").fill(env.ANTHROPIC_API_KEY);
   await page.keyboard.press("Enter");
-  await page.getByTestId("ai-key").waitFor({ state: "detached", timeout: 10_000 }).catch(() => {});
+  await page.getByTestId("ai-key-anthropic").waitFor({ state: "detached", timeout: 10_000 }).catch(() => {});
   await page.waitForTimeout(400);
   await shot("settings-ai");
   await page.getByTestId("tab-categories").click();
@@ -192,10 +193,8 @@ await step("summary", async () => {
   await page.getByTestId("open-settings").click();
   await page.getByTestId("tab-ai").click();
   await page.getByTestId("ai-summaries").scrollIntoViewIfNeeded();
+  // plan 168: with only Claude's key they run on Haiku there; nothing to choose
   await shot("settings-summaries");
-  await page.getByTestId("ai-summaries-use").click();
-  await page.waitForTimeout(500);
-  await shot("settings-summaries-chosen");
   await page.keyboard.press("Escape");
   await page.waitForTimeout(400);
   await openThread("staging migration");

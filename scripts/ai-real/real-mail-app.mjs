@@ -92,17 +92,16 @@ await step("settings", async () => {
   await page.getByTestId("open-settings").click();
   await page.getByTestId("tab-ai").click();
   await page.getByTestId("ai-provider").click();
-  await page.getByRole("option", { name: /Claude/ }).click();
+  await page.getByTestId("ai-choice-keys").click();
   assertGuarded();
-  await page.getByTestId("ai-key").fill(env.ANTHROPIC_API_KEY);
+  // plan 168: both keys under one item; Terno picks the model for each feature
+  await page.getByTestId("ai-key-anthropic").fill(env.ANTHROPIC_API_KEY);
   await page.keyboard.press("Enter");
-  await page.getByTestId("ai-key").waitFor({ state: "detached", timeout: 10_000 }).catch(() => {});
+  await page.getByTestId("ai-key-anthropic").waitFor({ state: "detached", timeout: 10_000 }).catch(() => {});
   await page.waitForTimeout(400);
-  await page.getByTestId("ai-summaries").scrollIntoViewIfNeeded();
-  await page.getByTestId("ai-summaries-add-key").click();
   assertGuarded();
-  await page.getByTestId("ai-summaries-key").fill(env.OPENAI_API_KEY);
-  await page.getByTestId("ai-summaries-key-save").click();
+  await page.getByTestId("ai-key-openai").fill(env.OPENAI_API_KEY);
+  await page.keyboard.press("Enter");
   await page.waitForTimeout(800);
   await shot("03-settings-ai");
   log("settings", { ok: true });

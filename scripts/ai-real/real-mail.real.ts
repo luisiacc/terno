@@ -61,7 +61,8 @@ async function open(dbName: string) {
   const keys = realKeys();
   await client.call("ai.setKey", { provider: "anthropic", value: keys.anthropic });
   await client.call("ai.setKey", { provider: "openai", value: keys.openai });
-  await client.call("settings.update", { ai: { provider: "anthropic", tasks: { writing: { provider: "anthropic", model: "claude-sonnet-5-5" }, summary: { provider: "openai", model: "gpt-6-luna" } } } });
+  // plan 168: both keys is Pro's routing: Sonnet drafts, Luna summarizes
+  await client.call("settings.update", { ai: { provider: "anthropic" } });
   return { backend, client, clock, sent, openMs };
 }
 

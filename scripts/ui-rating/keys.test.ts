@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
 import { DEFAULT_ANTHROPIC_MODEL, PROVIDERS as AI_PROVIDERS } from "../../packages/ai/src/providers";
 import { ASK_CLAUDE_MODEL, ASK_PLAN_CLAUDE_MODEL, DEV_AI_ENV, DIGEST_CLAUDE_MODEL, FOLLOWUP_CLAUDE_MODEL, INTENT_CLAUDE_MODEL, JEV_DEFAULT_MODEL, REPLY_CHECK_CLAUDE_MODEL, SUMMARY_DEFAULT_MODEL, WRITING_CLAUDE_MODEL } from "../../packages/core/src/ai";
+import { AI_JOBS, routeFor } from "../../packages/core/src/ai-routing";
 import { electronEnv } from "./harness.mjs";
 import { copyRedacted, envFile, filesHoldingKeys, PRO_ROUTING, PROVIDERS, readKeys, redact, REDACTED } from "./keys.mjs";
 
@@ -71,6 +72,9 @@ describe("plan 161: the AI rating's keys", () => {
       voice: `anthropic/${WRITING_CLAUDE_MODEL}`,
       categorize: `jev/${JEV_DEFAULT_MODEL}`,
     });
+    // plan 168: it's `routeFor`'s with all three keys, the one rule the backend runs
+    const all = { anthropic: { hasKey: true, keyHint: null }, openai: { hasKey: true, keyHint: null }, jev: { hasKey: true, keyHint: null } };
+    expect(Object.fromEntries(AI_JOBS.map((job) => [job, `${routeFor(job, { provider: "anthropic", model: "", keys: all })!.provider}/${routeFor(job, { provider: "anthropic", model: "", keys: all })!.model}`]))).toEqual(PRO_ROUTING);
   });
 });
 

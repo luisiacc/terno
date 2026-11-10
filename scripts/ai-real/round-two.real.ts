@@ -200,7 +200,7 @@ ${recent.map((m) => `${m.sent ? "(sent) " : ""}${m.s} | ${m.f} <${m.e.replace(/^
 
   it.runIf(PHASE === "digest")("the digest, day by day", { timeout: 1_200_000 }, async () => {
     const t = await open("digest");
-    await t.client.call("settings.update", { ai: { tasks: { digest: { provider: "anthropic", model: "claude-haiku-5-5" } } } } as never);
+    // plan 168: the digest is Haiku's on Claude by routing, nothing to choose
     await t.client.call("settings.update", { today: { digest: true, prepareAt: "00:00" } });
     const latest = t.clock.now;
     for (const back of [6, 4, 2, 0]) {
@@ -217,7 +217,6 @@ ${recent.map((m) => `${m.sent ? "(sent) " : ""}${m.s} | ${m.f} <${m.e.replace(/^
   // most of a real mailbox is already read, so a day's digest sees little: the classifier on what's automated, read or not
   it.runIf(PHASE === "digestwide")("the digest's reading, on more mail", { timeout: 600_000 }, async () => {
     const t = await open("digestwide");
-    await t.client.call("settings.update", { ai: { tasks: { digest: { provider: "anthropic", model: "claude-haiku-5-5" } } } } as never);
     const rows = t.raw.all<{ id: number; thread_id: number; from_name: string; from_email: string; subject: string; snippet: string }>("SELECT m.id, m.thread_id, m.from_name, m.from_email, m.subject, m.snippet FROM messages m WHERE (m.list_id IS NOT NULL OR m.is_bulk = 1) AND m.is_sent = 0 AND m.is_spam = 0 AND m.is_trash = 0 GROUP BY m.from_email ORDER BY max(m.date) DESC LIMIT 80");
     const ai = await t.backend.aiService.forTask("digest", { foreground: true });
     for (let i = 0; i < rows.length; i += 20) {
