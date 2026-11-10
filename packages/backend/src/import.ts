@@ -27,6 +27,8 @@ const GENERAL_KEYS = [
   "language",
   // plan 41: the badge's switch (notifications and their preview only ever go off: settingsFrom)
   "dockBadge",
+  // plan 170 (Codex critique #1): a sound turned off stays off on a new store
+  "sendSound",
 ] as const;
 
 // the same limit drafts are saved with (plan 34, Codex review 6): an export always imports back

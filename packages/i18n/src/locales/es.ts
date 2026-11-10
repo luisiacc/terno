@@ -304,6 +304,8 @@ const es = {
   "settings.general.suggestions.hint": "Completa frases a partir del correo que has enviado. Se aprende y se guarda en este dispositivo.",
   "settings.general.undoSend": "Deshacer el envío",
   "settings.general.undoSend.hint": "Espera {seconds} segundos después de pulsar Enviar, para que puedas recuperar un mensaje.",
+  "settings.general.sendSound": "Sonido al enviar",
+  "settings.general.sendSound.hint": "Reproduce un sonido suave cuando sale un mensaje.",
   // plan 41
   "settings.general.notifications": "Ajustes de notificaciones",
   "settings.general.notify": "Notificaciones del sistema",

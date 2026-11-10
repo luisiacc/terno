@@ -310,6 +310,8 @@ const en = {
   "settings.general.suggestions.hint": "Completes sentences from mail you've sent. It's learned and kept on this device.",
   "settings.general.undoSend": "Undo send",
   "settings.general.undoSend.hint": "Waits {seconds} seconds after you press Send, so you can take a message back.",
+  "settings.general.sendSound": "Send sound",
+  "settings.general.sendSound.hint": "Plays a soft whoosh when a message goes.",
   // plan 41
   "settings.general.notifications": "Notification settings",
   "settings.general.notify": "System notifications",

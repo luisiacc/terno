@@ -792,6 +792,11 @@ test("Undo send (plan 158): a spinner, not a check, while it's held; Undo brings
   await expect(page.getByTestId("undo-send-switch")).toHaveAttribute("aria-checked", "true");
   await page.getByTestId("undo-send-switch").click();
   await expect(page.getByTestId("undo-send-switch")).toHaveAttribute("aria-checked", "false");
+  // plan 170: the send sound beside it, on until turned off
+  await expect(page.getByTestId("send-sound-switch")).toHaveAttribute("aria-checked", "true");
+  await page.getByTestId("send-sound-switch").click();
+  await expect(page.getByTestId("send-sound-switch")).toHaveAttribute("aria-checked", "false");
+  await expect.poll(async () => (await server.backend.server.invoke("app.bootstrap", {}, dev)).settings.sendSound).toBe(false);
 });
 
 test("a send with no message asks first, in Send's row: Send or Cancel, ⌘↵ the same, Undo send after (plan 158)", async ({ app: page, server }) => {

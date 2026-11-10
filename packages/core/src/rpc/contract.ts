@@ -205,6 +205,8 @@ export interface AppSettings {
   composeSuggestions: boolean;
   /** plan 158: Send holds a message for a few seconds in the backend's own queue, with Undo */
   undoSend: boolean;
+  /** plan 170: a soft whoosh once a message goes (Send now or held; never Send later) */
+  sendSound: boolean;
   /**
    * Plan 22: website icons for senders, loaded from each sender's own site. Unset it follows the
    * mode (on in connected mode, off in local mode); the user's choice sticks.
@@ -502,6 +504,7 @@ const settingsPatch = z.object({
   language: z.enum(LANGUAGE_SETTINGS).optional(),
   composeSuggestions: z.boolean().optional(),
   undoSend: z.boolean().optional(),
+  sendSound: z.boolean().optional(),
   senderIcons: z.boolean().optional(),
   dockBadge: z.boolean().optional(),
   notifications: z.boolean().optional(),

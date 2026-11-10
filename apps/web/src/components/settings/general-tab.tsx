@@ -297,6 +297,9 @@ export function GeneralTab({ settings, update }: { settings: AppSettings; update
         <SettingsRow label={t("settings.general.undoSend")} hint={t("settings.general.undoSend.hint", { seconds: UNDO_SEND_MS / 1000 })} testId="undo-send-row">
           {(a) => <Switch {...a} data-testid="undo-send-switch" checked={settings.undoSend} onCheckedChange={(on) => void update({ undoSend: on })} />}
         </SettingsRow>
+        <SettingsRow label={t("settings.general.sendSound")} hint={t("settings.general.sendSound.hint")} testId="send-sound-row">
+          {(a) => <Switch {...a} data-testid="send-sound-switch" checked={settings.sendSound} onCheckedChange={(on) => void update({ sendSound: on })} />}
+        </SettingsRow>
       </SettingsGroup>
 
       <SettingsGroup title={t("settings.general.keyboard")}>

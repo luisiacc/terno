@@ -9,6 +9,7 @@ import { pinnedKey, pinning } from "~/lib/pinned-draft-state";
 import { forgetHeldSend, revealHeldSend } from "~/lib/sent-reveal";
 import { getApp, getSelectionWriteRevision, setApp, useApp } from "~/state/app";
 import { openStoredDraft } from "~/lib/compose";
+import { playSendSound, primeSendSound } from "~/lib/sounds";
 
 /**
  * Plan 94: the scheduled sends as the windows see them (the backend's
@@ -115,6 +116,7 @@ export async function editScheduled(draftId: number): Promise<boolean> {
 /** A new moment (Send now: this one); a snack says when, with Undo back to the one before. */
 export async function rescheduleScheduled(draftId: number, sendAt: number, now = false): Promise<void> {
   const before = useScheduled.getState().byDraft.get(draftId)?.sendAt;
+  if (now) primeSendSound();
   try {
     await client.call("scheduled.reschedule", { draftId, sendAt });
   } catch (error) {
@@ -122,6 +124,8 @@ export async function rescheduleScheduled(draftId: number, sendAt: number, now =
     return;
   }
   if (now) {
+    // plan 170 (Codex critique #4): Send now is a send
+    playSendSound();
     sendingSnack();
     return;
   }

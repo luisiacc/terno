@@ -261,6 +261,16 @@ describe("app.import", () => {
     expect((await to.client.call("app.bootstrap", {})).settings).toMatchObject({ notifications: false, notificationPreview: false, dockBadge: true });
   });
 
+  it("plan 170 (Codex critique #1): the send sound's switch travels both ways, so a store switch keeps it off", async () => {
+    const from = setup();
+    const to = setup();
+    for (const sendSound of [false, true]) {
+      await from.client.call("settings.update", { sendSound });
+      await to.client.call("app.import", { data: await from.client.call("app.export", {}) });
+      expect((await to.client.call("app.bootstrap", {})).settings.sendSound).toBe(sendSound);
+    }
+  });
+
   it("carries the language; an old export without one, or with one Terno doesn't ship, leaves it alone", async () => {
     const from = setup();
     await from.client.call("settings.update", { language: "es" });

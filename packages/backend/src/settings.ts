@@ -162,6 +162,8 @@ export const DEFAULT_SETTINGS: General = {
   composeSuggestions: true,
   // plan 158: on until turned off: a send is the action people regret most
   undoSend: true,
+  // plan 170: like Mail's, on until turned off
+  sendSound: true,
   // plan 22: website icons are on in either mode until turned off
   senderIcons: true,
   googlePhotos: {},

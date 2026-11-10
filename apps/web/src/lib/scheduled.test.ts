@@ -6,6 +6,8 @@ const mocks = vi.hoisted(() => ({ call: vi.fn() }));
 vi.mock("~/rpc/connection", () => ({ client: { call: mocks.call, on: vi.fn() } }));
 const compose = vi.hoisted(() => ({ openStoredDraft: vi.fn(async () => {}) }));
 vi.mock("~/lib/compose", () => compose);
+const sound = vi.hoisted(() => ({ playSendSound: vi.fn(), primeSendSound: vi.fn() }));
+vi.mock("~/lib/sounds", () => sound);
 
 const { applyScheduled, useScheduled } = await import("./scheduled");
 const { useDrafts } = await import("./drafts");
@@ -99,4 +101,17 @@ it("Undo send waiting on the backend: the draft comes back opened only if nothin
     resetSnacks();
     usePinned.setState({ key: null });
   }
+});
+
+it("plan 170 (Codex critique #4): a scheduled message's Send now is a send, so it sounds; a new time or a failure doesn't", async () => {
+  const { rescheduleScheduled } = await import("./scheduled");
+  mocks.call.mockImplementation(async () => ({ ok: true }));
+  await rescheduleScheduled(5, 1000);
+  expect(sound.playSendSound).not.toHaveBeenCalled();
+  await rescheduleScheduled(5, 1, true);
+  expect(sound.primeSendSound).toHaveBeenCalledOnce();
+  expect(sound.playSendSound).toHaveBeenCalledOnce();
+  mocks.call.mockImplementation(async () => { throw new Error("offline"); });
+  await rescheduleScheduled(5, 1, true);
+  expect(sound.playSendSound).toHaveBeenCalledOnce();
 });

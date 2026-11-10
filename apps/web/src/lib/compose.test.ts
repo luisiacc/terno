@@ -15,6 +15,8 @@ vi.mock("~/rpc/connection", () => ({
   }) },
 }));
 vi.mock("~/state/threads", () => ({ invalidateThreads: vi.fn(), loadThread: vi.fn() }));
+const sound = vi.hoisted(() => ({ play: vi.fn(), prime: vi.fn() }));
+vi.mock("./sounds", () => ({ playSendSound: sound.play, primeSendSound: sound.prime }));
 
 const { bodyParts, sendDraft } = await import("./compose");
 const { createDraft, discardDraft, editDraft, markDraftMissing, useDrafts } = await import("./drafts");
@@ -28,6 +30,7 @@ beforeEach(async () => {
   (await import("./send-problem")).useEmptySend.setState({ key: null });
   setApp({ accounts: [{ id: 1, email: "me@example.test" } as import("@terno/core").Account] });
   rpc.calls.length = 0; rpc.autoSave = true;
+  sound.play.mockClear(); sound.prime.mockClear();
   useDrafts.setState({ drafts: {} });
 });
 
@@ -185,6 +188,47 @@ describe("what sending says", () => {
     rpc.calls.find((c) => c.method === "compose.send")!.resolve({ opId: "o", threadId: 1 });
     await q;
     expect(useSnack.getState().current?.message).toBe("Enviando…");
+  });
+});
+
+describe("the send sound (plan 170)", () => {
+  afterEach(() => setApp({ settings: null }));
+  const settle = (method: string, value: unknown) => rpc.calls.find((c) => c.method === method)!.resolve(value);
+
+  it("plays once a message goes now, not before the backend has it; primed in the gesture itself", async () => {
+    const p = sendDraft(createDraft({ ...newFields(1), toText: "ana@example.com", bodyText: "Hola" }));
+    // (nothing awaited yet: still the click or the key)
+    expect(sound.prime).toHaveBeenCalledOnce();
+    await tick();
+    expect(sound.play).not.toHaveBeenCalled();
+    settle("compose.send", { opId: "o", threadId: 1 });
+    expect(await p).toBe(true);
+    expect(sound.play).toHaveBeenCalledOnce();
+  });
+
+  it("plays when Undo send holds it, and when the backend sends it at once instead", async () => {
+    setApp({ settings: { undoSend: true } as import("@terno/core/rpc").AppSettings });
+    for (const held of [true, false]) {
+      sound.play.mockClear(); rpc.calls.length = 0;
+      const p = sendDraft(createDraft({ ...newFields(1), toText: "ana@example.com", bodyText: "Hola" }));
+      await tick();
+      settle("compose.hold", { held, opId: "o", threadId: 1 });
+      expect(await p).toBe(true);
+      expect(sound.play).toHaveBeenCalledOnce();
+    }
+  });
+
+  it("stays quiet for Send later, a failed send and a refused recipient", async () => {
+    const later = sendDraft(createDraft({ ...newFields(1), toText: "ana@example.com", bodyText: "Hola" }), Date.now() + 60_000);
+    await tick();
+    settle("compose.schedule", { id: 7, sendAt: 1 });
+    expect(await later).toBe(true);
+    const failing = sendDraft(createDraft({ ...newFields(1), toText: "ana@example.com", bodyText: "Hola" }));
+    await tick();
+    rpc.calls.find((c) => c.method === "compose.send")!.reject(new Error("offline"));
+    expect(await failing).toBe(false);
+    expect(await sendDraft(createDraft({ ...newFields(1), toText: "ana@" }))).toBe(false);
+    expect(sound.play).not.toHaveBeenCalled();
   });
 });
 

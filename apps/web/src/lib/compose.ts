@@ -25,6 +25,7 @@ import { fromPlainText, parseHtml, toEmailHtml, toPlainText } from "@terno/richt
 import { parseAddressList } from "@terno/core";
 import { controllerFor } from "~/components/composer/controller";
 import { heldSendSnack, scheduledSnack, sendingSnack } from "./scheduled";
+import { playSendSound, primeSendSound } from "./sounds";
 
 /**
  * Writing mail: which draft a reply, reply-all, forward or new message opens,
@@ -1165,6 +1166,8 @@ async function send(key: string, sendAt?: number): Promise<boolean> {
     return false;
   }
   clearEmptySend(key);
+  // plan 170 (Codex critique #2): still in the click or the key, where WebKit lets an element play later
+  primeSendSound();
   // read-only from here: nothing typed while the save in flight settles can fall between it and the send
   markSending(key, true);
   let preparing = true;
@@ -1230,6 +1233,8 @@ async function send(key: string, sendAt?: number): Promise<boolean> {
     if (getApp().settings?.undoSend === true) {
       const hold = await client.call("compose.hold", { ...params, draftId: d.id!, draftGeneration: d.generation!, draftRevision: d.revision });
       // (no room to hold it: the backend queued it as a plain send)
+      // plan 170: the whoosh as it leaves the composer, held or not
+      playSendSound();
       if (hold.held) {
         const pinned = pinnedKey() === key;
         forgetDraft(key);
@@ -1240,7 +1245,9 @@ async function send(key: string, sendAt?: number): Promise<boolean> {
       sentAway(key, d, hold);
       return true;
     }
-    sentAway(key, d, await client.call("compose.send", params));
+    const sent = await client.call("compose.send", params);
+    playSendSound();
+    sentAway(key, d, sent);
     return true;
   } catch (error) {
     markSending(key, false);
