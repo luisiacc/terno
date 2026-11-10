@@ -4,7 +4,7 @@
  * open, and runs of collapsed messages folded into "N more messages".
  */
 import { E2E_NOW } from "./constants";
-import { expect, focusList, ingestConversation, openRow, respond, search, selectThread, test, fresh, scenario } from "./fixtures";
+import { expect, focusList, ingestConversation, openRow, recipientEmails, respond, search, selectThread, test, fresh, scenario } from "./fixtures";
 import type { Locator, Page } from "@playwright/test";
 import { sqlDb } from "../../backend-dev/src/server";
 
@@ -214,21 +214,24 @@ test.describe("plan 158: the reader's masthead, measure and reply controls", () 
     await expect(page.getByTestId("compose-title")).toBeVisible();
   });
 
-  test("one way to reply: Reply and Forward in the toolbar in every conversation, Reply all in the bar where it applies, words as they fit, and nothing moves", async ({ app: page, server }) => {
+  test("one way to reply: Reply and Forward in the toolbar in every conversation, Reply all in the bar and Reply's menu where it applies, words as they fit, and Forward never moves", async ({ app: page, server }) => {
     const store = server.backend.store;
     const id = await ingestConversation(server, { subject: "Solo con Yuki", count: 1, now: E2E_NOW });
     const replyAt = async () => (await page.getByTestId("action-reply").boundingBox())!.x;
+    const forwardAt = async () => (await page.getByTestId("action-forward").boundingBox())!.x;
     let solo = 0;
+    let soloForward = 0;
     const order = () => page.getByTestId("action-reply").locator("xpath=..").locator("button").evaluateAll((items) => items.map((i) => i.getAttribute("data-testid")));
-    await scenario("one other person: no Reply all anywhere, never a dimmed one; no menu; a still works", async () => {
+    await scenario("one other person: no Reply all anywhere, never a dimmed one; no Reply menu; a still works", async () => {
       await selectThread(page, id, 'subject:"Solo con Yuki"');
       await expect(page.getByTestId("action-reply")).toContainText("Reply");
       await expect(page.getByTestId("action-forward")).toHaveAccessibleName("Forward");
       await expect(page.getByTestId("quick-reply-all")).toHaveCount(0);
-      await expect(page.getByTestId("action-reply-menu")).toHaveCount(0);
-      // plan 158: the toolbar's reply group is Reply and Forward, whoever's on the conversation
+      // plan 173: Reply's menu only where Reply all reaches someone Reply doesn't
+      await expect(page.getByTestId("action-reply-options")).toHaveCount(0);
       expect(await order()).toEqual(["action-reply", "action-forward"]);
       solo = await replyAt();
+      soloForward = await forwardAt();
       // the only message never folds: nothing would be left to read, so its header is no button, has no chevron and opens nothing
       await expect(page.getByTestId("message").getByTestId("message-toggle")).toHaveCount(0);
       const only = page.getByTestId("message").getByTestId("message-header");
@@ -254,13 +257,13 @@ test.describe("plan 158: the reader's masthead, measure and reply controls", () 
       await expect(page.getByTestId("compose-body")).toBeFocused();
       await page.getByTestId("compose-discard").click();
     });
-    await scenario("someone else on it: Reply all in the bar, the toolbar the same, in words on a full column, and Reply stays put", async () => {
+    await scenario("someone else on it: Reply all in the bar and in Reply's menu, words on a full column, Forward where it was", async () => {
       const account = (await store.accounts.list())[0]!;
       const yuki = { name: "Yuki", email: "yuki@acme.studio" };
       const { touched } = await store.sync.ingest([{ accountId: account.id, providerMsgId: "three-people", providerThreadId: "three-people", rfcMessageId: "<three-people@e2e.test>", inReplyTo: null, references: [], from: yuki, replyTo: [], to: [{ name: "", email: account.email }], cc: [{ name: "Ana", email: "ana@x.test" }], bcc: [], subject: "Con Ana también", date: E2E_NOW, snippet: "Hola a los dos", bodyText: "Hola a los dos", bodyHtml: null, bodyState: "full", listId: null, isRead: true, isStarred: false, inInbox: true, isSent: false, isDraft: false, isTrash: false, isSpam: false, hasAttachments: false, size: 100 }], { applyFilters: false, now: E2E_NOW, classifier: null });
       await selectThread(page, touched[0]!, 'subject:"Con Ana también"');
       await expect(page.getByTestId("quick-reply-all")).toBeVisible();
-      expect(await order()).toEqual(["action-reply", "action-forward"]);
+      expect(await order()).toEqual(["action-reply", "action-reply-options", "action-forward"]);
       const words = (id: string) => page.getByTestId(id).locator("span").first().evaluate((el) => el.getBoundingClientRect().width);
       // a full column: Reply and Forward in words; triage is icons at every width, named for screen readers and in tooltips
       for (const id of ["action-reply", "action-forward"]) expect(await words(id), id).toBeGreaterThan(20);
@@ -268,7 +271,31 @@ test.describe("plan 158: the reader's masthead, measure and reply controls", () 
         await expect(page.getByTestId(id)).toHaveAccessibleName(name);
         await expect(page.getByTestId(id)).not.toContainText(name);
       }
-      expect(Math.abs((await replyAt()) - solo)).toBeLessThanOrEqual(0.5);
+      // plan 173: Forward holds the toolbar's end; Reply makes room for the chevron, by its width exactly
+      const chevron = page.getByTestId("action-reply-options");
+      expect(Math.abs((await forwardAt()) - soloForward)).toBeLessThanOrEqual(0.5);
+      expect(Math.abs(solo - (await replyAt()) - (await chevron.boundingBox())!.width)).toBeLessThanOrEqual(0.5);
+      await expect(chevron).toHaveAccessibleName("Reply options");
+      // the menu: Reply to the sender, then Reply all saying who it reaches; Esc gives the chevron its focus back
+      await chevron.click();
+      const menu = page.getByTestId("reply-options-menu");
+      await expect(menu.getByRole("menuitem")).toHaveCount(2);
+      await expect(page.getByTestId("reply-options-reply")).toContainText("Reply to Yuki");
+      await expect(page.getByTestId("reply-options-all")).toContainText("Reply all");
+      await expect(page.getByTestId("reply-options-all-who")).toHaveText("To Yuki, cc Ana");
+      await page.keyboard.press("Escape");
+      await expect(menu).toHaveCount(0);
+      await expect(chevron).toBeFocused();
+      // by the keyboard: Reply all opens a draft to everyone, and the draft has the keys
+      await page.keyboard.press("Enter");
+      await expect(page.getByTestId("reply-options-all")).toBeVisible();
+      await page.getByTestId("reply-options-all").click();
+      await expect(page.getByTestId("compose-body")).toBeFocused();
+      expect(await recipientEmails(page, "compose-to")).toEqual(["yuki@acme.studio"]);
+      expect(await recipientEmails(page, "compose-cc")).toEqual(["ana@x.test"]);
+      await page.keyboard.type("Probe.");
+      await expect(page.getByTestId("compose-body")).toContainText("Probe.");
+      await page.getByTestId("compose-discard").click();
       // a narrower reader lets words go by priority (Forward's first, Reply's last), never a control off the column;
       // a word that goes keeps its name for screen readers
       await page.setViewportSize({ width: 1100, height: 700 });

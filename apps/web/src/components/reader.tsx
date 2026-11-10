@@ -16,7 +16,7 @@ import { TernoMark } from "@terno/ui/brand/terno-mark";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
 import { useReplies } from "~/lib/replies";
-import { Archive, Bell, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Ellipsis, FileDown, Forward, Inbox, Layers, Mail, OctagonAlert, Printer, Reply, SquarePen, Star, SummaryDoc, Tag, Trash2 } from "@terno/ui/icons";
+import { Archive, Bell, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Ellipsis, FileDown, Forward, Inbox, Layers, Mail, OctagonAlert, Printer, Reply, ReplyAll, SquarePen, Star, SummaryDoc, Tag, Trash2 } from "@terno/ui/icons";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/popover";
 import { reminderShort, useReminders, useRemindPopover } from "~/lib/reminders";
@@ -62,7 +62,7 @@ import { aiAllowed, repliesOffered, summariesOffered } from "~/lib/ai";
 import { summarizable, summarize, useSummaries } from "~/lib/summaries";
 import { RemindPicker } from "./remind-picker";
 import DigestPage from "./digest-page";
-import ReplyReady from "./reply-ready";
+import ReplyReady, { replyAllTo } from "./reply-ready";
 import ThreadFollowups from "./thread-followups";
 import ThreadSummary from "./thread-summary";
 
@@ -175,11 +175,13 @@ function ToolbarMore({ threadId }: { threadId: number }) {
 }
 
 /**
- * One way to reply: Reply and Forward, the same in every conversation, so nothing moves or sits dimmed for no reason. Reply all
- * is where it applies: the bar at the conversation's end, the message's ⋯ menu, the row menu, the palette and `a`. No menu.
+ * One way to reply: Reply and Forward, the same in every conversation, so nothing moves or sits dimmed for no reason.
+ * Plan 173 (the owner): where Reply all reaches someone Reply doesn't, a chevron between them opens Reply to *name* and
+ * Reply all (with who it reaches); Reply itself still answers at once. Reply all is also in the bar at the conversation's
+ * end, the message's ⋯ menu, the row menu, the palette and `a`.
  * Their words show as the toolbar has room for them (`fitWords`): Reply's first, Forward's last. The pill also shows Reply's key.
  */
-function ReplyGroup() {
+function ReplyGroup({ replyTo, everyone }: { replyTo: string; everyone: string | null }) {
   const pill = useDesign().variants.replyAction === "pill";
   // a choice hands focus to the draft; refused (a forward's files, say), the button that asked keeps it
   const choose = (mode: "forward", button: HTMLElement) => {
@@ -208,6 +210,7 @@ function ReplyGroup() {
           {!replyReady && <Shortcut keys="r" />}
         </TooltipContent>
       </Tooltip>
+      {everyone !== null && <ReplyChoices replyTo={replyTo} everyone={everyone} keys={!replyReady} />}
       <Tooltip>
         <TooltipTrigger
           render={
@@ -223,6 +226,61 @@ function ReplyGroup() {
         </TooltipContent>
       </Tooltip>
     </ButtonGroup>
+  );
+}
+
+/**
+ * Plan 173: Reply's chevron, on a conversation with others in it: Reply to *name* or Reply all, the reply bar's words, Reply
+ * all saying who it reaches. A choice hands focus to the draft, so the closing menu restores none; refused, the chevron
+ * takes it back. While a reply is ready its card owns R and A, so the menu shows no keys (as the button).
+ */
+function ReplyChoices({ replyTo, everyone, keys }: { replyTo: string; everyone: string; keys: boolean }) {
+  const handedOff = useRef(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const respond = (mode: "reply" | "replyAll") => {
+    handedOff.current = true;
+    void composeLanding(mode).then((landing) => {
+      if (landing.kind !== "none") return;
+      handedOff.current = false;
+      if (document.activeElement === document.body && triggerRef.current?.isConnected) triggerRef.current.focus();
+    });
+  };
+  return (
+    <DropdownMenu
+      onOpenChange={(open) => {
+        if (open) handedOff.current = false;
+        setApp({ menuOpen: open });
+      }}
+    >
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <DropdownMenuTrigger
+              render={<ButtonGroupItem ref={triggerRef} iconOnly aria-label={t("reader.replyOptions")} data-testid="action-reply-options" className="aspect-auto w-6 px-0" />}
+            />
+          }
+        >
+          <ChevronDown className="size-3.5" />
+        </TooltipTrigger>
+        <TooltipContent>{t("reader.replyOptions")}</TooltipContent>
+      </Tooltip>
+      <DropdownMenuContent align="end" sideOffset={6} className="w-max min-w-56 max-w-96" finalFocus={() => !handedOff.current} data-testid="reply-options-menu">
+        <DropdownMenuItem data-testid="reply-options-reply" onClick={() => respond("reply")}>
+          <Reply />
+          <span className="min-w-0 flex-1 truncate">{replyTo ? t("compose.bar.reply", { name: replyTo }) : t("actions.reply")}</span>
+          {keys && <DropdownMenuShortcut><Shortcut keys="r" /></DropdownMenuShortcut>}
+        </DropdownMenuItem>
+        {/* two lines: the action, then who it reaches in the quiet ink (the shortcut stays on the first) */}
+        <DropdownMenuItem data-testid="reply-options-all" onClick={() => respond("replyAll")} title={everyone} className="h-auto min-h-7 items-start py-1">
+          <ReplyAll className="mt-[0.2em]" />
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span>{t("actions.replyAll")}</span>
+            <span data-testid="reply-options-all-who" className="truncate text-xs font-normal text-muted-foreground">{everyone}</span>
+          </span>
+          {keys && <DropdownMenuShortcut><Shortcut keys="a" /></DropdownMenuShortcut>}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -1068,7 +1126,10 @@ function ReaderContent() {
   // what the fit itself resizes is skipped
   const toolbarRowRef = useRef<HTMLDivElement>(null);
   const listTitle = useListTitle();
-  const toolbarSet = `${page}|${design.id}|${t("actions.archive")}|${detail?.thread.inTrash || detail?.thread.inSpam}|${!!detail && inSeparateTab(detail.thread, accounts)}|${summarizeOffered && summarizable(detail?.thread)}|${listTitle}`;
+  const myEmails = accounts.map((a) => a.email);
+  const replyAll = detail ? reachesSeveral(detail, myEmails) : false;
+  // plan 173: Reply's chevron comes and goes with Reply all, so the words are measured again
+  const toolbarSet = `${page}|${design.id}|${t("actions.archive")}|${detail?.thread.inTrash || detail?.thread.inSpam}|${!!detail && inSeparateTab(detail.thread, accounts)}|${summarizeOffered && summarizable(detail?.thread)}|${listTitle}|${replyAll}`;
   useLayoutEffect(() => {
     const row = toolbarRowRef.current;
     if (!row) return;
@@ -1090,8 +1151,8 @@ function ReaderContent() {
   const thread = detail?.thread;
   const cats = thread ? categories.filter((c) => thread.categoryIds.includes(c.id)) : [];
   const account = thread ? accounts.find((a) => a.id === thread.accountId) : undefined;
-  const myEmails = accounts.map((a) => a.email);
-  const replyAll = detail ? reachesSeveral(detail, myEmails) : false;
+  // plan 173: who Reply all reaches, for Reply's menu (null: no one Reply doesn't, so no menu)
+  const everyone = replyAll && detail ? replyAllTo(detail, myEmails) : null;
   const tabbed = !!thread && !thread.inTrash && !thread.inSpam && inSeparateTab(thread, accounts);
   const summarize = summarizeOffered && summarizable(thread);
 
@@ -1151,7 +1212,7 @@ function ReaderContent() {
         {summarize && <SummarizeButton threadId={selectedId} />}
         <ToolbarMore threadId={selectedId} />
         </div>
-        <ReplyGroup />
+        <ReplyGroup replyTo={detail ? replyName(detail, myEmails) : ""} everyone={everyone} />
         {page && <ToolbarDivider />}
         {page && <StepButtons id={selectedId} />}
         </div>
