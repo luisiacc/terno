@@ -17,7 +17,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/to
 import { cn } from "@terno/ui/lib/utils";
 import { useReplies } from "~/lib/replies";
 import { Archive, Bell, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Ellipsis, FileDown, Forward, Inbox, Layers, Mail, OctagonAlert, Printer, Reply, ReplyAll, SquarePen, Star, SummaryDoc, Tag, Trash2 } from "@terno/ui/icons";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/popover";
 import { reminderShort, useReminders, useRemindPopover } from "~/lib/reminders";
 import { installScrollHairline } from "~/lib/scroll-hairline";
@@ -176,9 +176,9 @@ function ToolbarMore({ threadId }: { threadId: number }) {
 
 /**
  * One way to reply: Reply and Forward, the same in every conversation, so nothing moves or sits dimmed for no reason.
- * Plan 173 (the owner): where Reply all reaches someone Reply doesn't, a chevron between them opens Reply to *name* and
- * Reply all (with who it reaches); Reply itself still answers at once. Reply all is also in the bar at the conversation's
- * end, the message's ⋯ menu, the row menu, the palette and `a`.
+ * Plan 173 (the owner, revised): where Reply all reaches someone Reply doesn't, Reply itself opens a menu of Reply to *name* and
+ * Reply all (with who it reaches), so the group keeps its two buttons; R still replies at once. Reply all is also in the bar
+ * at the conversation's end, the message's ⋯ menu, the row menu, the palette and `a`.
  * Their words show as the toolbar has room for them (`fitWords`): Reply's first, Forward's last. The pill also shows Reply's key.
  */
 function ReplyGroup({ replyTo, everyone }: { replyTo: string; everyone: string | null }) {
@@ -191,26 +191,37 @@ function ReplyGroup({ replyTo, everyone }: { replyTo: string; everyone: string |
   };
   const replyReady = useReplies((r) => r.shown?.phase === "ready");
   const item = (tier: 1 | 3, pad?: string) => cn("px-2.5", pad, SQUARE_ITEM[tier]);
+  const replyFace = (
+    <>
+      <Reply />
+      {/* the name is the visible label (still read when the icon shows alone); the key is decoration */}
+      <span className={WORDS[1]}>{t("actions.reply")}</span>
+      {/* plan 162: one R on screen: while a reply is ready, R is its (the card says so), not this button's */}
+      {pill && !replyReady && <span aria-hidden className={cn("inline-flex", HIDE[1])}><Shortcut keys="r" /></span>}
+    </>
+  );
+  const replyClass = item(1, pill ? "pl-3" : undefined);
   return (
     <ButtonGroup aria-label={t("reader.group.respond")} className={cn("no-drag ml-auto shrink-0 [&_svg]:[--icon-line:var(--icon-line-toolbar)]", pill && "rounded-full")}>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <ButtonGroupItem data-testid="action-reply" onClick={() => void openCompose("reply")} className={item(1, pill ? "pl-3" : undefined)}>
-              <Reply />
-              {/* the name is the visible label (still read when the icon shows alone); the key is decoration */}
-              <span className={WORDS[1]}>{t("actions.reply")}</span>
-              {/* plan 162: one R on screen: while a reply is ready, R is its (the card says so), not this button's */}
-              {pill && !replyReady && <span aria-hidden className={cn("inline-flex", HIDE[1])}><Shortcut keys="r" /></span>}
-            </ButtonGroupItem>
-          }
-        />
-        <TooltipContent className="flex items-center gap-2">
-          {t("actions.reply")}
-          {!replyReady && <Shortcut keys="r" />}
-        </TooltipContent>
-      </Tooltip>
-      {everyone !== null && <ReplyChoices replyTo={replyTo} everyone={everyone} keys={!replyReady} />}
+      {everyone !== null ? (
+        <ReplyChoices replyTo={replyTo} everyone={everyone} keys={!replyReady} className={replyClass}>
+          {replyFace}
+        </ReplyChoices>
+      ) : (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <ButtonGroupItem data-testid="action-reply" onClick={() => void openCompose("reply")} className={replyClass}>
+                {replyFace}
+              </ButtonGroupItem>
+            }
+          />
+          <TooltipContent className="flex items-center gap-2">
+            {t("actions.reply")}
+            {!replyReady && <Shortcut keys="r" />}
+          </TooltipContent>
+        </Tooltip>
+      )}
       <Tooltip>
         <TooltipTrigger
           render={
@@ -230,11 +241,11 @@ function ReplyGroup({ replyTo, everyone }: { replyTo: string; everyone: string |
 }
 
 /**
- * Plan 173: Reply's chevron, on a conversation with others in it: Reply to *name* or Reply all, the reply bar's words, Reply
- * all saying who it reaches. A choice hands focus to the draft, so the closing menu restores none; refused, the chevron
- * takes it back. While a reply is ready its card owns R and A, so the menu shows no keys (as the button).
+ * Plan 173: Reply, on a conversation with others in it, is the trigger of a menu: Reply to *name* or Reply all, the reply
+ * bar's words, Reply all saying who it reaches. A choice hands focus to the draft, so the closing menu restores none;
+ * refused, Reply takes it back. While a reply is ready its card owns R and A, so the menu shows no keys (as the button).
  */
-function ReplyChoices({ replyTo, everyone, keys }: { replyTo: string; everyone: string; keys: boolean }) {
+function ReplyChoices({ replyTo, everyone, keys, className, children }: { replyTo: string; everyone: string; keys: boolean; className: string; children: ReactNode }) {
   const handedOff = useRef(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const respond = (mode: "reply" | "replyAll") => {
@@ -253,16 +264,13 @@ function ReplyChoices({ replyTo, everyone, keys }: { replyTo: string; everyone: 
       }}
     >
       <Tooltip>
-        <TooltipTrigger
-          render={
-            <DropdownMenuTrigger
-              render={<ButtonGroupItem ref={triggerRef} iconOnly aria-label={t("reader.replyOptions")} data-testid="action-reply-options" className="aspect-auto w-6 px-0" />}
-            />
-          }
-        >
-          <ChevronDown className="size-3.5" />
+        <TooltipTrigger render={<DropdownMenuTrigger render={<ButtonGroupItem ref={triggerRef} data-testid="action-reply" className={className} />} />}>
+          {children}
         </TooltipTrigger>
-        <TooltipContent>{t("reader.replyOptions")}</TooltipContent>
+        <TooltipContent className="flex items-center gap-2">
+          {t("actions.reply")}
+          {keys && <Shortcut keys="r" />}
+        </TooltipContent>
       </Tooltip>
       <DropdownMenuContent align="end" sideOffset={6} className="w-max min-w-56 max-w-96" finalFocus={() => !handedOff.current} data-testid="reply-options-menu">
         <DropdownMenuItem data-testid="reply-options-reply" onClick={() => respond("reply")}>
@@ -1128,8 +1136,7 @@ function ReaderContent() {
   const listTitle = useListTitle();
   const myEmails = accounts.map((a) => a.email);
   const replyAll = detail ? reachesSeveral(detail, myEmails) : false;
-  // plan 173: Reply's chevron comes and goes with Reply all, so the words are measured again
-  const toolbarSet = `${page}|${design.id}|${t("actions.archive")}|${detail?.thread.inTrash || detail?.thread.inSpam}|${!!detail && inSeparateTab(detail.thread, accounts)}|${summarizeOffered && summarizable(detail?.thread)}|${listTitle}|${replyAll}`;
+  const toolbarSet = `${page}|${design.id}|${t("actions.archive")}|${detail?.thread.inTrash || detail?.thread.inSpam}|${!!detail && inSeparateTab(detail.thread, accounts)}|${summarizeOffered && summarizable(detail?.thread)}|${listTitle}`;
   useLayoutEffect(() => {
     const row = toolbarRowRef.current;
     if (!row) return;

@@ -227,8 +227,8 @@ test.describe("plan 158: the reader's masthead, measure and reply controls", () 
       await expect(page.getByTestId("action-reply")).toContainText("Reply");
       await expect(page.getByTestId("action-forward")).toHaveAccessibleName("Forward");
       await expect(page.getByTestId("quick-reply-all")).toHaveCount(0);
-      // plan 173: Reply's menu only where Reply all reaches someone Reply doesn't
-      await expect(page.getByTestId("action-reply-options")).toHaveCount(0);
+      // plan 173: Reply opens a menu only where Reply all reaches someone Reply doesn't; here it replies at once
+      await expect(page.getByTestId("action-reply")).not.toHaveAttribute("aria-haspopup");
       expect(await order()).toEqual(["action-reply", "action-forward"]);
       solo = await replyAt();
       soloForward = await forwardAt();
@@ -263,7 +263,7 @@ test.describe("plan 158: the reader's masthead, measure and reply controls", () 
       const { touched } = await store.sync.ingest([{ accountId: account.id, providerMsgId: "three-people", providerThreadId: "three-people", rfcMessageId: "<three-people@e2e.test>", inReplyTo: null, references: [], from: yuki, replyTo: [], to: [{ name: "", email: account.email }], cc: [{ name: "Ana", email: "ana@x.test" }], bcc: [], subject: "Con Ana también", date: E2E_NOW, snippet: "Hola a los dos", bodyText: "Hola a los dos", bodyHtml: null, bodyState: "full", listId: null, isRead: true, isStarred: false, inInbox: true, isSent: false, isDraft: false, isTrash: false, isSpam: false, hasAttachments: false, size: 100 }], { applyFilters: false, now: E2E_NOW, classifier: null });
       await selectThread(page, touched[0]!, 'subject:"Con Ana también"');
       await expect(page.getByTestId("quick-reply-all")).toBeVisible();
-      expect(await order()).toEqual(["action-reply", "action-reply-options", "action-forward"]);
+      expect(await order()).toEqual(["action-reply", "action-forward"]);
       const words = (id: string) => page.getByTestId(id).locator("span").first().evaluate((el) => el.getBoundingClientRect().width);
       // a full column: Reply and Forward in words; triage is icons at every width, named for screen readers and in tooltips
       for (const id of ["action-reply", "action-forward"]) expect(await words(id), id).toBeGreaterThan(20);
@@ -271,13 +271,13 @@ test.describe("plan 158: the reader's masthead, measure and reply controls", () 
         await expect(page.getByTestId(id)).toHaveAccessibleName(name);
         await expect(page.getByTestId(id)).not.toContainText(name);
       }
-      // plan 173: Forward holds the toolbar's end; Reply makes room for the chevron, by its width exactly
-      const chevron = page.getByTestId("action-reply-options");
+      // plan 173 (revised): no extra button; Reply and Forward stand exactly where they do on a one-to-one
+      const reply = page.getByTestId("action-reply");
       expect(Math.abs((await forwardAt()) - soloForward)).toBeLessThanOrEqual(0.5);
-      expect(Math.abs(solo - (await replyAt()) - (await chevron.boundingBox())!.width)).toBeLessThanOrEqual(0.5);
-      await expect(chevron).toHaveAccessibleName("Reply options");
-      // the menu: Reply to the sender, then Reply all saying who it reaches; Esc gives the chevron its focus back
-      await chevron.click();
+      expect(Math.abs((await replyAt()) - solo)).toBeLessThanOrEqual(0.5);
+      await expect(reply).toHaveAttribute("aria-haspopup", "menu");
+      // Reply itself opens the menu: Reply to the sender, then Reply all saying who it reaches; Esc gives Reply its focus back
+      await reply.click();
       const menu = page.getByTestId("reply-options-menu");
       await expect(menu.getByRole("menuitem")).toHaveCount(2);
       await expect(page.getByTestId("reply-options-reply")).toContainText("Reply to Yuki");
@@ -285,7 +285,7 @@ test.describe("plan 158: the reader's masthead, measure and reply controls", () 
       await expect(page.getByTestId("reply-options-all-who")).toHaveText("To Yuki, cc Ana");
       await page.keyboard.press("Escape");
       await expect(menu).toHaveCount(0);
-      await expect(chevron).toBeFocused();
+      await expect(reply).toBeFocused();
       // by the keyboard: Reply all opens a draft to everyone, and the draft has the keys
       await page.keyboard.press("Enter");
       await expect(page.getByTestId("reply-options-all")).toBeVisible();

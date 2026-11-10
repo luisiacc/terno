@@ -47,7 +47,7 @@ for (const [mode, scenario] of [["reply", "changed"], ["reply", "normalized"], [
       await page.reload();
       await page.locator("[data-ready]").waitFor();
       await selectThread(page, touched[0]!, 'in:inbox subject:"W09 own follow-up"');
-      if (mode === "reply") await page.getByTestId("action-reply").click();
+      if (mode === "reply") await respond(page, "reply");
       else await respond(page, mode === "replyAll" ? "reply-all" : "forward");
       if (mode === "forward") {
         await expect(chipsOf(page, "compose-to")).toHaveCount(0);
@@ -132,7 +132,7 @@ test("saved reply uses its original baseline after the thread subject changes an
   const threadId = ingested.touched[0]!;
   await page.reload(); await page.locator("[data-ready]").waitFor();
   await selectThread(page, threadId, 'in:inbox subject:"Baseline topic"');
-  await page.getByTestId("action-reply").click();
+  await respond(page, "reply");
   await page.getByTestId("compose-show-subject").click();
   await page.getByTestId("compose-subject").fill("Re: Baseline topic");
   await page.getByTestId("compose-body").fill("Preserved author text");
@@ -143,7 +143,7 @@ test("saved reply uses its original baseline after the thread subject changes an
   expect(detail.thread.subject).toBe("Changed current topic");
   await page.reload(); await page.locator("[data-ready]").waitFor();
   await selectThread(page, mergedId, 'in:inbox subject:"Changed current topic"');
-  await page.getByTestId("action-reply").click();
+  await respond(page, "reply");
   await page.getByTestId("compose-show-subject").click();
   await expect(page.getByTestId("compose-subject")).toHaveValue("Re: Baseline topic");
   await expect(page.getByTestId("compose-body")).toContainText("Preserved author text");
@@ -170,7 +170,7 @@ for (const theme of ["light", "dark"] as const) {
     await page.addInitScript((locale) => localStorage.setItem("terno:language", locale), language);
     await page.reload(); await page.locator("[data-ready]").waitFor();
     await selectThread(page, result.touched[0]!, 'in:inbox subject:"Lost source"');
-    await page.getByTestId("action-reply").click();
+    await respond(page, "reply");
     await page.getByTestId("compose-show-subject").click();
     await page.getByTestId("compose-subject").fill("New topic");
     await page.getByTestId("compose-body").fill("Keep my work");
@@ -204,7 +204,7 @@ test("edited automatic recipient survives Undo, Forward conversion, reload and s
   const result = await server.backend.store.sync.ingest([source], { applyFilters: false, now: E2E_NOW, classifier: null });
   await page.reload(); await page.locator("[data-ready]").waitFor();
   await selectThread(page, result.touched[0]!, 'in:inbox subject:"F2 subject"');
-  await page.getByTestId("action-reply").click();
+  await respond(page, "reply");
   const toInput = page.getByTestId("compose-to");
   await toInput.focus(); await toInput.press("Home"); await toInput.press("Backspace");
   await page.keyboard.press("F2"); await toInput.press("Enter");
@@ -237,7 +237,7 @@ test("untouched Reply to Reply all keeps its original source when new mail arriv
   const first = await server.backend.store.sync.ingest([source], { applyFilters: false, now: E2E_NOW, classifier: null });
   await page.reload(); await page.locator("[data-ready]").waitFor();
   await selectThread(page, first.touched[0]!, 'in:inbox subject:"Untouched reply"');
-  await page.getByTestId("action-reply").click();
+  await respond(page, "reply");
   await expect(chipsOf(page, "compose-to")).toHaveText([client.name]);
   const next = await server.backend.store.sync.ingest([{ ...source, providerMsgId: "untouched-newer", rfcMessageId: "untouched-newer@example.test", inReplyTo: source.rfcMessageId, references: [source.rfcMessageId!], from: old, bodyText: "new source", snippet: "new source", date: E2E_NOW }], { applyFilters: false, now: E2E_NOW, classifier: null });
   server.backend.notifyChanged(next.touched);

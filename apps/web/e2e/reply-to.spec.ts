@@ -25,7 +25,7 @@ for (const mode of ["reply", "replyAll"] as const) {
       await page.reload();
       await page.locator("[data-ready]").waitFor();
       await selectThread(page, touched[0]!, 'in:inbox subject:"Helpdesk session"');
-      if (mode === "reply") await page.getByTestId("action-reply").click();
+      if (mode === "reply") await respond(page, "reply");
       else await respond(page, "reply-all");
       // as chips (plan 34): the quoted comma name is one recipient
       await expect(chipsOf(page, "compose-to")).toHaveText(["Support, Session", "List"]);

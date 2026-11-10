@@ -36,7 +36,7 @@ for (const mode of ["reply", "replyAll", "forward"] as const) {
       await page.reload();
       await page.locator("[data-ready]").waitFor();
       await selectThread(page, touched[0]!, 'in:inbox subject:"W09 own follow-up"');
-      if (mode === "reply") await page.getByTestId("action-reply").click();
+      if (mode === "reply") await respond(page, "reply");
       else await respond(page, mode === "replyAll" ? "reply-all" : "forward");
       if (mode === "forward") {
         await expect(chipsOf(page, "compose-to")).toHaveCount(0);

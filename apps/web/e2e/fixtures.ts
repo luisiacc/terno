@@ -15,11 +15,19 @@ import { iconStub, type IconStub } from "./icon-stub";
 export { expect };
 
 /**
- * Forward from the reader's toolbar; Reply all, which isn't in the toolbar (plan 158), from the bar at the conversation's end,
- * or with a draft open (no bar then) from the palette, which converts it.
+ * Reply and Forward from the reader's toolbar (where Reply all applies, Reply opens a menu and Reply to *name* is its first
+ * item, plan 173); Reply all, which isn't a toolbar button (plan 158), from the bar at the conversation's end, or with a draft
+ * open (no bar then) from the palette, which converts it.
  */
-export async function respond(page: Page, mode: "reply-all" | "forward"): Promise<void> {
+export async function respond(page: Page, mode: "reply" | "reply-all" | "forward"): Promise<void> {
   if (mode === "forward") return page.getByTestId("action-forward").click();
+  if (mode === "reply") {
+    const reply = page.getByTestId("action-reply");
+    const menu = (await reply.getAttribute("aria-haspopup")) === "menu";
+    await reply.click();
+    if (menu) await page.getByTestId("reply-options-reply").click();
+    return;
+  }
   const bar = page.getByTestId("quick-reply-all");
   if (await bar.isVisible()) return bar.click();
   await page.keyboard.press("ControlOrMeta+k");

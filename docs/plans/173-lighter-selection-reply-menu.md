@@ -158,3 +158,14 @@ What changed:
 2. **The selection bar's Delete** lost its red pressed wash: `press:` is more specific than its `active:`. Its overrides are `press:` now (`selection.spec.ts`).
 3. **An invalid outline button pressed** lost its red border to `press:border-input`; the border firms only where it isn't invalid (`press:not-aria-invalid`), and the invalid probe presses too.
 4. **The outlined Send's halves** had a ghost's corners inside a rounder group (Graphite: 8 against 14 px), so a focus ring inside one was clipped at the corners; they take the group's radius (`send-later.spec.ts`, every style; it fails in Graphite without the fix).
+
+## Revised: Reply is the menu (the owner)
+
+The owner, verbatim, on the built chevron:
+
+> here we're showing this ugly arrow, not what i wanted, instead the reply button itself becomes the button that triggers the dropdown when there are more to reply, not a new button
+
+- No chevron segment. Where Reply all reaches someone Reply doesn't, **Reply itself** is the menu's trigger (`aria-haspopup="menu"`); elsewhere it replies at once, as before. The group is always `[↩ Reply R | ↪ Forward]`, so Reply never moves between conversations and `toolbarSet` no longer measures again on Reply all.
+- The menu is unchanged (Reply to *name* with R, Reply all with A and who it reaches), aligned to Reply's end; Esc gives Reply its focus back. `R` and `A` still act at once from the keyboard.
+- `reader.replyOptions` ("Reply options") went with the chevron.
+- Tests: `reader.spec.ts` checks Reply and Forward stand where they do on a one-to-one, Reply has the popup, opens the menu, gets focus back on Esc, and Reply all from it; the e2e `respond(page, "reply")` helper picks Reply to *name* where Reply is a menu (reply-identity, reply-subject, reply-to).

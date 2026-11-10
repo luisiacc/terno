@@ -1115,7 +1115,6 @@ const en = {
   "codes.sr": "Verification code {code}",
   "reader.account": "In {name} ({email})",
   "reader.more": "More actions",
-  "reader.replyOptions": "Reply options",
   "reader.markSpam": "Mark as spam",
   "reader.messageCount": { one: "# message", other: "# messages" },
   "reader.expandAll": "Expand all",
