@@ -84,7 +84,7 @@ A pin ends when:
 One verb, **toggle**: pin the targets unless all of them are pinned, then unpin them.
 
 - **Key:** `p` (`thread.pin`) on the selection (or the checked rows). Listed in the Shortcuts sheet beside Star.
-- **The context menu:** after Star/Unstar, **Pin to top** (Pin) when any target isn't pinned, **Unpin** (PinOff) when any is, each with its key hint. A "select all N" scope disables them (pins need ids; at most 100).
+- **The context menu:** after Star/Unstar, **Pin to top** (Pin) when any target isn't pinned, **Unpin** (PinOff) when any is, each with its key hint. With a "select all N" scope they aren't offered (pins need ids; at most 100); P and the palette say to pick the conversations.
 - **The reader:** the More menu (`ToolbarMore`) starts with **Pin to top** / **Unpin** and its key. The toolbar itself gets no new button (it's full, and the owner prefers it quiet).
 - **The palette:** "Pin to top" / "Unpin" in the conversation group.
 - **Snack:** "Pinned to the top" / "# conversations pinned to the top", "Unpinned" / "# conversations unpinned", each with Undo (and `z`), which puts back exactly what was there (`pins.restore`). Over the cap: an error snack, "You can pin up to 100 conversations. Unpin one to pin this." Nothing changes.
@@ -100,7 +100,7 @@ One verb, **toggle**: pin the targets unless all of them are pinned, then unpin 
 - **Migrations:** v55 in `migrations.test.ts` and its hash in `migrations-shipped.test.ts`; the IndexedDB upgrade from 32 creates the store.
 - **Backend** (`pins.test.ts` and `actions.test.ts`): add/remove/restore round trip and the event; the cap; `pins.threads` leaves out Trash and Spam, narrows by account, newest pin first; archive, trash and spam end the pin and `threads.undo` brings it back; a folder move out of the Inbox and filing into a hidden category end it and their Undo restores it; a reminder and a follow-up still end and come back as before (existing tests).
 - **Web unit:** `withTop` puts pins first, then due reminders without the pinned ones, and leaves all of them out of later pages; `row-offsets` with two top headings and Today's; `togglePin` pins the unpinned among mixed targets, unpins when all are pinned, and its Undo calls `pins.restore` with exactly what changed; the row shows the mark outside the section and not inside it.
-- **e2e** (`pins.spec.ts`, `@design`, one `scenario`): pin a row with `p`: the snack, the row moves under "Pinned" at the top with the hairline after it; pin one from the menu; unpin with Undo; a pinned row in a search shows the pin mark; archive a pinned row, Undo, it's back under Pinned; the Pinned heading's text lines up with the rows' text; with a due reminder too, both headings in order. `design-axe.spec.ts` gets a line for the Inbox with a pinned section.
+- **e2e** (`pins.spec.ts`, `@design`, one `scenario`): pin a row with `p`: the snack, the row moves under "Pinned" at the top with the hairline after it; pin one from the menu; unpin with Undo; a pinned row in a search shows the pin mark; archive a pinned row, Undo, it's back under Pinned; the Pinned heading's text lines up with the rows' text; with a due reminder too, both headings in order. The spec runs axe on the list with Pinned (and Reminders) on top in light and dark, in every style (`@design`), so `design-axe.spec.ts` needs no line of its own.
 - **Visual:** screenshots of the Inbox with Pinned (and with Pinned and Reminders) in light and dark, in macOS, Lumen and Graphite.
 
 ## Performance
@@ -108,7 +108,7 @@ One verb, **toggle**: pin the targets unless all of them are pinned, then unpin 
 - The list queries don't change. The Inbox's first page adds one RPC only while any pin exists, bounded by 100 summaries (`threads.summaries` by id).
 - Rows read their pin from a renderer store (`usePins`, a set of ids) by a selector that returns a boolean: a pin elsewhere renders no row, and the j-key and theme gates are unchanged.
 - No timer, no polling. The look after a `changed` flush runs only while pins exist, at most once a second.
-- A perf test in each store: `pins.list` and `threads.summaries` of 100 pins over 50k threads.
+- No store perf test of its own: `pins.list` reads at most 100 rows by primary key and `pins.threads` is `threads.summaries` of them, which the existing gates already time. The sustained j-key gate holds two pins, so crossing the Pinned section is measured (2.8 to 2.9 row renders a move, under 3.5).
 
 ## Out of scope
 

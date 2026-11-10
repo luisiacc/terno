@@ -7,7 +7,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import { E2E_NOW } from "./constants";
-import { expect, focusList, fresh, openRow, rows, scenario, searchBox, test } from "./fixtures";
+import { expect, focusList, fresh, menuPath, openRow, rows, scenario, searchBox, test } from "./fixtures";
 
 const snackWith = (page: Page, text: string | RegExp) => page.locator("[data-testid=snack]").filter({ hasText: text });
 const rowOf = (page: Page, id: string | number) => page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`);
@@ -39,13 +39,16 @@ test.describe("pinned conversations", () => {
       pinned.push(id);
     });
 
-    await scenario("from the row menu: Pin to top; the newest pin leads", async () => {
+    await scenario("from the row menu: More ▸ Pin to top (the top level stays short); the newest pin leads", async () => {
       const id = await idAt(page, 5);
       await rowOf(page, id).click({ button: "right" });
-      const items = await page.locator("[role=menu] > [data-testid^=menu-]").evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.testid));
-      // with Star, before the reminders
-      expect(items.indexOf("menu-pin")).toBeGreaterThan(items.indexOf("menu-star"));
-      await page.getByTestId("menu-pin").click();
+      await menuPath(page, "menu-more");
+      const more = page.getByTestId("menu-more-list");
+      // first under More, with its key
+      const first = more.locator("> [role=menuitem]").first();
+      await expect(first).toHaveAttribute("data-testid", "menu-pin");
+      await expect(first).toContainText("Pin to top");
+      await first.click();
       await expect(snackWith(page, "Pinned to the top")).toBeVisible();
       await expect(rows(page).nth(0)).toHaveAttribute("data-thread-id", id);
       await expect(rows(page).nth(1)).toHaveAttribute("data-thread-id", pinned[0]!);
