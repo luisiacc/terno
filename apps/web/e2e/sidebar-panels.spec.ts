@@ -13,7 +13,7 @@ import { sqlDb } from "../../backend-dev/src/server";
 import { expect, focusList, navTo, openRow, selectedRow, test, scenario, openReview } from "./fixtures";
 
 // plan 87: Reminders too (shown closed only while one is due)
-const HIDDEN = ["reminders", "sent", "archive", "all", "spam", "trash"] as const;
+const HIDDEN = ["reminders", "archive", "all", "spam", "trash"] as const;
 const designOf = async (page: Page): Promise<DesignDefinition> => {
   const id = await page.locator("html").getAttribute("data-design");
   return DESIGNS.find((d) => d.id === id)!;
@@ -31,13 +31,16 @@ const moreClosed = async (page: Page) => {
 test.describe("Part A: More", () => {
   const more = (page: Page) => page.getByTestId("nav-more");
   const slot = (page: Page, view: string) => page.locator(`[data-more-slot="${view}"]`);
-  /** the rows behind More: Reminders (plan 87) and the five folders */
-  const MORE_ROWS = 6;
+  /** the rows behind More: Reminders (plan 87) and the four folders (Sent is pinned, plan 173) */
+  const MORE_ROWS = 5;
 
   test("More: closed, open, remembered, a compositor layer of its own, the same frame under reduced motion", async ({ app: page }) => {
-    await scenario("closed by default: Inbox and Starred shown, the six hidden and out of the Tab order, More a disclosure", async () => {
+    await scenario("closed by default: Inbox, Starred and Sent shown, the five hidden and out of the Tab order, More a disclosure", async () => {
       await expect(page.getByTestId("nav-inbox")).toBeVisible();
       await expect(page.getByTestId("nav-starred")).toBeVisible();
+      // plan 173: Sent is pinned, never behind More
+      await expect(page.getByTestId("nav-sent")).toBeVisible();
+      await expect(page.locator('[data-more-slot="sent"]')).toHaveCount(0);
       await expect(more(page)).toHaveAttribute("aria-expanded", "false");
       await expect(more(page)).toHaveAttribute("aria-controls", "sidebar-more-folders");
       await expect(more(page)).toHaveAccessibleName("More");
@@ -46,8 +49,10 @@ test.describe("Part A: More", () => {
         await expect(page.getByTestId(`nav-${v}`)).toBeHidden();
         await expect(slot(page, v)).toHaveAttribute("inert", "");
       }
-      // Tab: Starred → More → the Categories section's + (the first control after it), never a hidden folder
+      // Tab: Starred → Sent → More → the Categories section's + (the first control after it), never a hidden folder
       await page.getByTestId("nav-starred").focus();
+      await page.keyboard.press("Tab");
+      await expect(page.getByTestId("nav-sent")).toBeFocused();
       await page.keyboard.press("Tab");
       await expect(more(page)).toBeFocused();
       await page.keyboard.press("Tab");
@@ -132,7 +137,7 @@ test.describe("Part A: More", () => {
       };
     });
 
-  test("closed, the group takes no space: Categories sit under More at the gap between sections; open, under Trash, six rows lower (plan 40, 87)", { tag: "@design" }, async ({ app: page }) => {
+  test("closed, the group takes no space: Categories sit under More at the gap between sections; open, under Trash, five rows lower (plan 40, 87, 173)", { tag: "@design" }, async ({ app: page }) => {
     const closed = await layout(page);
     // the design's gap between sections: the same as between the last category and Accounts
     const gap = closed.accountsTop - closed.lastCategoryBottom;
@@ -266,7 +271,8 @@ test.describe("Part A: More", () => {
       await expect(page.getByTestId("nav-trash")).toBeVisible();
       await expect(page.getByTestId("nav-trash")).toHaveAttribute("data-active");
       await expect(slot(page, "trash")).not.toHaveAttribute("inert");
-      for (const v of ["sent", "archive", "all", "spam"]) await expect(page.getByTestId(`nav-${v}`)).toBeHidden();
+      for (const v of ["archive", "all", "spam"]) await expect(page.getByTestId(`nav-${v}`)).toBeHidden();
+      await expect(page.getByTestId("nav-sent")).toBeVisible();
       expect((await layout(page)).firstCategoryTop).toBeCloseTo(closed.firstCategoryTop + closed.rowH, 0);
       // the shortcuts keep working with More closed
       for (const [key, title] of [["t", "Sent"], ["a", "Archive"]] as const) {
@@ -326,11 +332,12 @@ test.describe("Part A: More", () => {
       await page.locator("[data-testid^=nav-category-]").first().click();
       await expect(page.getByTestId("nav-trash")).toBeVisible();
       await more(page).click();
-      await expect(page.getByTestId("nav-sent")).toBeVisible();
+      await expect(page.getByTestId("nav-archive")).toBeVisible();
       await more(page).click();
-      // the pointer is still on the sidebar, and Trash is gone with the rest
+      // the pointer is still on the sidebar, and Trash is gone with the rest (Sent is pinned: it stays)
       await expect(page.getByTestId("nav-trash")).toBeHidden();
-      await expect(page.getByTestId("nav-sent")).toBeHidden();
+      await expect(page.getByTestId("nav-archive")).toBeHidden();
+      await expect(page.getByTestId("nav-sent")).toBeVisible();
       // the folder you're in stays through a close
       await intoTrash(page);
       await more(page).click();

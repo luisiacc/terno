@@ -669,7 +669,7 @@ test("resizing panes (plan 21): dragging either edge keeps frames smooth with fi
   expect(rowRenders).toBe(0);
 });
 
-test("toggling More (plan 40) with 80 more categories: what's below slides within the cap with smooth frames, no long frame, and only the six rows behind More render", async ({ app: page, server }) => {
+test("toggling More (plan 40) with 80 more categories: what's below slides within the cap with smooth frames, no long frame, and only the five rows behind More render", async ({ app: page, server }) => {
   const db = sqlDb(server.backend.store);
   // a fresh id above the category counter: deleted ones stay retired (w02 stable action targets)
   for (let i = 0; i < 80; i++) db.run("INSERT INTO categories (id, name, color, position) VALUES ((SELECT last_id + 1 FROM category_counter WHERE id = 1), ?, 'cyan', ?)", `Long ${String(i).padStart(2, "0")}`, 100 + i);
@@ -682,6 +682,8 @@ test("toggling More (plan 40) with 80 more categories: what's below slides withi
   const rowH = (await page.getByTestId("nav-more").boundingBox())!.height;
   await page.waitForTimeout(300);
   const TOGGLES = 10;
+  /** Reminders and the four folders behind More (Sent is pinned, plan 173) */
+  const MORE_ROWS = 5;
   const folders0 = await renders(page, "NavItem:folder");
   const below0 = await renders(page, "NavItem:below");
   await startFrames(page);
@@ -713,8 +715,8 @@ test("toggling More (plan 40) with 80 more categories: what's below slides withi
   // it slid: frames between the two ends, and every frame from the cap on (plus the frame it starts in, and one) at its end
   let between = 0;
   toggles.forEach(({ samples }, i) => {
-    const to = i % 2 === 0 ? closed + 6 * rowH : closed;
-    if (samples.some((s) => s.top > closed + 1 && s.top < closed + 6 * rowH - 1)) between++;
+    const to = i % 2 === 0 ? closed + MORE_ROWS * rowH : closed;
+    if (samples.some((s) => s.top > closed + 1 && s.top < closed + MORE_ROWS * rowH - 1)) between++;
     for (const s of samples.filter((s) => s.t >= 100 + 34)) expect(s.top, `toggle ${i} at ${s.t.toFixed(0)} ms`).toBeCloseTo(to, 0);
   });
   stats.push({ name: `More toggles: slid through frames between in ${between}/${TOGGLES}`, budgetMs: 0, p50: 0, p95: 0, max: 0, iterations: 1 });
@@ -722,9 +724,9 @@ test("toggling More (plan 40) with 80 more categories: what's below slides withi
   frameGate("toggling More with ~95 rows below", f);
   expect(between, "toggles that slid through frames between").toBeGreaterThanOrEqual(TOGGLES - 1);
   expect(f.loaf, "long animation frames").toBe(0);
-  // the six rows behind More (Reminders, plan 87, and the five folders: their slots change); never the ~90 category and account rows below, which only slide
+  // the five rows behind More (Reminders, plan 87, and the four folders: their slots change); never the ~90 category and account rows below, which only slide
   expect(belowRenders).toBe(0);
-  expect(folderRenders / TOGGLES).toBeLessThanOrEqual(6);
+  expect(folderRenders / TOGGLES).toBeLessThanOrEqual(MORE_ROWS);
 });
 
 test("opening and closing an account (plans 67, 68): smooth frames, no long frame; only its own rows render, nothing below", async ({ app: page, server }) => {

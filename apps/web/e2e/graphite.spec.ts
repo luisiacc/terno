@@ -84,11 +84,12 @@ test.describe("Graphite (plan 137)", () => {
       const inbox = await box(row(/^Inbox/));
       expect(inbox.x - aside.x).toBe(12);
       expect(aside.x + aside.width - (inbox.x + inbox.width)).toBe(12);
-      const y = await Promise.all([page.getByTestId("compose-button"), row(/^Inbox/), row(/^Starred/), page.getByTestId("nav-more")].map(middle));
-      expect(y.slice(1).map((v, i) => v - y[i]!)).toEqual([28, 28, 28]);
+      // plan 173: Sent pinned under Starred, on the same pitch
+      const y = await Promise.all([page.getByTestId("compose-button"), row(/^Inbox/), row(/^Starred/), row(/^Sent/), page.getByTestId("nav-more")].map(middle));
+      expect(y.slice(1).map((v, i) => v - y[i]!)).toEqual([28, 28, 28, 28]);
       // a section: 47 px from the row above to its label, 29 px from the label to its first row
       const first = page.locator('[data-testid^="nav-category-"]').first();
-      expect((await middle(label)) - y[3]!).toBeCloseTo(47, 0);
+      expect((await middle(label)) - y[4]!).toBeCloseTo(47, 0);
       expect((await middle(first)) - (await middle(label))).toBeCloseTo(29, 0);
       await expect(row(/^Starred/)).toHaveCSS("font-size", "13px");
       await expect(page.getByTestId("compose-button")).toHaveCSS("font-size", "13px");

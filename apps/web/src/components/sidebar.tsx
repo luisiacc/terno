@@ -48,8 +48,8 @@ const VIEWS: { view: View; icon: typeof Inbox; keys?: string }[] = [
   { view: "spam", icon: OctagonAlert },
   { view: "trash", icon: Trash2, keys: "g #" },
 ];
-/** always shown; the rest wait behind More (plan 21) */
-const PINNED = 2;
+/** always shown (Inbox, Starred, Sent: plan 173), the rest wait behind More (plan 21) */
+const PINNED = 3;
 const MORE_VIEWS = VIEWS.slice(PINNED).map((f) => f.view);
 
 // ── More: open or closed, remembered on this device (like the format bar)
@@ -362,7 +362,7 @@ function ReviewRow({ categories, suggestions, reviewing }: { categories: readonl
 }
 
 /**
- * Sent, Archive, All Mail, Spam and Trash behind a quiet More (plan 21). Closed,
+ * Archive, All Mail, Spam and Trash behind a quiet More (plan 21; Sent is pinned since plan 173). Closed,
  * the group takes no space (plan 40): each slot is a 0fr grid row that grows to
  * its row when shown, and what's below slides with it (CSS transitions only;
  * the content below sits on its own layer, so the slide re-records nothing).
@@ -375,7 +375,7 @@ function ReviewRow({ categories, suggestions, reviewing }: { categories: readonl
 type MoreSlot = View | "reminders" | "followups";
 
 /**
- * Plan 107: favorite folders, right below Starred: an account's own folder or one of its standard rows, each a way
+ * Plan 107: favorite folders, right below the pinned folders (Sent since plan 173): an account's own folder or one of its standard rows, each a way
  * there with its unread count where the sidebar has one, its menu, and (with several accounts) whose it is.
  * One that's gone (deleted elsewhere, its account removed) isn't drawn.
  */
