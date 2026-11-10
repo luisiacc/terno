@@ -25,6 +25,7 @@ import { RpcError, type ParsedParamsOf } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import type { ActionThreadFacts } from "@terno/store";
 import type { BackendCore as Backend } from "./core";
+import type { TopLeft } from "./inbox-top";
 import { SCOPE_CAP, progressReporter } from "./scope";
 import { readSettings } from "./settings";
 import { destinationOf } from "./voice-learner";
@@ -64,8 +65,8 @@ export interface ActionOps {
 type Narrow = (chunk: number[]) => Promise<number[]>;
 export interface MoveStep {
   batchId: number;
-  ended: unknown[];
-  tops: unknown[];
+  /** what the Inbox's top held that the move ended (a category hidden from the Inbox) */
+  left: TopLeft;
 }
 
 type UndoStep = { kind: "acts"; undoId: number } | { kind: "moves"; steps: MoveStep[] } | { kind: "filter"; filterUndo: number } | { kind: "category"; made: Category };

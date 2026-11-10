@@ -30,6 +30,7 @@ import { hydrateSendAttachments } from "./attachments";
 import { Categorizer } from "./categorizer";
 import { FactsBackfill } from "./facts";
 import { Reminders } from "./reminders";
+import { Pins } from "./pins";
 import { TabsBackfill } from "./tabs";
 import { ScheduledSends, type ComposeSendParams } from "./scheduled";
 import { Forwarding } from "./forwarding";
@@ -307,6 +308,8 @@ export class BackendCore {
   readonly attention: Attention;
   /** plan 87: reminders: one timer for the next one, a snapshot to the windows when they change */
   readonly reminders: Reminders;
+  /** plan 177: conversations pinned to the Inbox's top: a snapshot to the windows when they change */
+  readonly pins: Pins;
   /** plan 94: scheduled sends: one timer for the next one, sent through compose.send's own path */
   readonly scheduled: ScheduledSends;
   /** plan 116: forwards of new mail: one timer for the next one, sent through compose's own durable path */
@@ -373,6 +376,7 @@ export class BackendCore {
       runBudgeted: (items, work) => this.runBudgeted(items, work),
       log: (level, message, extra) => this.log(level, message, extra),
     });
+    this.pins = new Pins({ store: this.store, now: () => this.now(), emit: (snapshot) => this.server.emit("pins", snapshot) });
     this.tabs = new TabsBackfill(this);
     this.scheduled = new ScheduledSends({
       store: this.store,
@@ -622,6 +626,11 @@ export class BackendCore {
     void this.today.start().catch((error: unknown) => captureError(error, { code: "ai.failed" }));
     // plan 87: reminders come due whether or not mail syncs (what came due while it was closed shows at once)
     this.refreshReminders();
+    // plan 177: what's pinned (a change to mail looks again only while something is)
+    this.pins.refresh().catch((error: unknown) => {
+      captureError(error, { code: "pins.failed" });
+      this.log("warn", "pins couldn't be read", error instanceof Error ? error.message : error);
+    });
     // plan 86: the Gmail tabs of mail stored before them, once (and again whenever what's yours changes)
     this.tabs.start();
     // plan 94: what came due while Terno was closed goes now
@@ -946,6 +955,7 @@ export class BackendCore {
     if (this.countsTimer) clearTimeout(this.countsTimer);
     this.attention.stop();
     this.reminders.stop();
+    this.pins.stop();
     await this.today.stop();
     // plan 94: no new scheduled send starts; the one in flight finishes before the store closes (awaited below)
     const scheduledStopped = this.scheduled.stop();
@@ -1099,6 +1109,7 @@ export class BackendCore {
       this.pendingViews = false;
       this.server.emit("changed", { threadIds, views });
       this.reminders.touched();
+      this.pins.touched();
       this.followups.touched();
       this.scheduled.touched();
       this.emitCounts();

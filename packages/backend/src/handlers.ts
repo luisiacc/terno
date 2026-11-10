@@ -1,7 +1,7 @@
 import { RpcError, type Draft, type DraftAddress, type Handlers } from "@terno/core/rpc";
-import { capFilterName, categoryRule, folderRule, isFilterable, similarValue, COUNT_CAP, type AlwaysScope, LEARNED_FILTER_NAME, messageOf, proposeLearnedFilters, listFilterOf, LIST_FILTERS, matchExcerpt, parseSearch, resolveSearch, rowMatchOf, searchWithFilter, type ThreadAction, type AccountPrefs, type Reminder, REMINDERS_MAX, SCHEDULED_MAX, UNDO_SEND_MS, FORWARD_ADDRESSES_MAX_CHARS } from "@terno/core";
+import { capFilterName, categoryRule, folderRule, isFilterable, similarValue, COUNT_CAP, type AlwaysScope, LEARNED_FILTER_NAME, messageOf, proposeLearnedFilters, listFilterOf, LIST_FILTERS, matchExcerpt, parseSearch, resolveSearch, rowMatchOf, searchWithFilter, type ThreadAction, type AccountPrefs, PINS_MAX, REMINDERS_MAX, SCHEDULED_MAX, UNDO_SEND_MS, FORWARD_ADDRESSES_MAX_CHARS } from "@terno/core";
 import { L } from "@terno/i18n";
-import { movedNothing, SearchCancelledError, StaleCursorError, type AddedBy, type DraftRow, type FolderMoved, type FollowupSnapshot, type MessageState } from "@terno/store";
+import { movedNothing, SearchCancelledError, StaleCursorError, type AddedBy, type DraftRow, type FolderMoved, type MessageState } from "@terno/store";
 import { GMAIL_SCOPES } from "@terno/mail/portable";
 import type { GmailAccountConfig, ImapAccountConfig } from "@terno/mail";
 import { BackendCore as Backend } from "./core";
@@ -13,6 +13,7 @@ import { countThreadScope, progressReporter, resolveThreadScope, SCOPE_CAP, Undo
 import { followFolderFilters, SimilarFilters } from "./similar";
 import { UI_LOCALE_KEY } from "./forwarding";
 import { findUnsubscribe, runUnsubscribe } from "./unsubscribe";
+import { gather, leaveTop, leftNothing, nothingLeft, returnTop, type TopLeft } from "./inbox-top";
 import { StorageMaintenance } from "./storage";
 import { FolderExports } from "./folder-export";
 import { deleteSnippet, listSnippets, saveSnippet } from "./snippets";
@@ -29,8 +30,8 @@ const SENDERS_WAIT_MS = 2000;
 
 /** More ids than this and a bulk command runs in time-budgeted slices (plan 02 §6, plan 06). */
 const ONE_GO = 20;
-/** plan 87: what ends a due reminder (the conversation put away; reading or starring it doesn't) */
-const ENDS_REMINDER: ReadonlySet<ThreadAction> = new Set(["archive", "trash", "spam"]);
+/** plans 87, 142, 177: what ends what the Inbox's top holds (the conversation put away; reading or starring it doesn't) */
+const ENDS_TOP: ReadonlySet<ThreadAction> = new Set(["archive", "trash", "spam"]);
 /** Messages a similar sweep reads per page while resolving its scope (plan 63). */
 const SIMILAR_PAGE = 2000;
 
@@ -96,26 +97,20 @@ export function createHandlers(b: Backend): Handlers {
    * what changed for undo. Above ONE_GO ids it runs in time slices (one
    * batch, several transactions) so interactive RPCs keep flowing.
    */
-  /** plan 87: the due reminders a filing into a category hidden from the Inbox ended (it leaves the Inbox), by batch, for its undo */
-  const filedReminders = new Map<number, Reminder[]>();
-  const filedTops = new Map<number, FollowupSnapshot[]>();
-  const endDueIfHidden = async (categoryId: number, threadIds: readonly number[], batchId: number | null) => {
+  /** plans 87, 142, 177: what the Inbox's top held for what a filing into a category hidden from the Inbox took out of it, by batch, for its undo */
+  const filedTop = new Map<number, TopLeft>();
+  const endTopIfHidden = async (categoryId: number, threadIds: readonly number[], batchId: number | null) => {
     if (batchId === null || !(await store.categories.list()).some((c) => c.id === categoryId && !c.showInInbox)) return;
-    const tops = await b.followups.endTop(threadIds);
-    if (tops.length) filedTops.set(batchId, tops);
-    for (const key of filedTops.keys()) if (filedTops.size > 16) filedTops.delete(key);
-    const ended = await b.reminders.endDue(threadIds);
-    if (ended.length === 0) return;
-    filedReminders.set(batchId, ended);
-    for (const key of filedReminders.keys()) if (filedReminders.size > 16) filedReminders.delete(key);
+    const left = await leaveTop(b, threadIds);
+    if (leftNothing(left)) return;
+    filedTop.set(batchId, left);
+    for (const key of filedTop.keys()) if (filedTop.size > 16) filedTop.delete(key);
   };
-  /** Its undo puts them back first: refused (the cap), nothing is taken back */
-  const restoreFiled = async (batchId: number) => {
-    const ended = filedReminders.get(batchId);
-    if (ended && !(await b.reminders.restore([], ended))) throw new RpcError("BAD_REQUEST", L("errors.remindersFull", { max: REMINDERS_MAX }));
-    filedReminders.delete(batchId);
-    await b.followups.putBack(filedTops.get(batchId) ?? []);
-    filedTops.delete(batchId);
+  /** Its undo, around the filing's: what the top held first (refused by a cap, nothing is taken back) */
+  const undoFiled = async <R,>(batchId: number, filing: () => Promise<R>): Promise<R> => {
+    const r = await returnTop(b, filedTop.get(batchId) ?? nothingLeft(), filing);
+    filedTop.delete(batchId);
+    return r;
   };
   /** Plan 116: an agent sets up no filing into a category that forwards, unless agents may send. */
   const agentMayFile = async (categoryIds: readonly number[]) => {
@@ -135,7 +130,7 @@ export function createHandlers(b: Backend): Handlers {
       b.notifyChanged(chunk);
       progress?.((done += chunk.length));
     });
-    await endDueIfHidden(categoryId, added, added.length ? batchId : null);
+    await endTopIfHidden(categoryId, added, added.length ? batchId : null);
     // plan 116: new mail filed here may go (one conversation by hand, a suggestion, an agent; never a bulk filing)
     if (added.length && addedBy !== "bulk" && !(addedBy === "user" && threadIds.length > 1)) b.planForwards({ threadIds: added, filed: addedBy === "user" ? added : [] });
     return { added: added.length, addedIds: added, batchId: added.length ? batchId : null };
@@ -155,9 +150,8 @@ export function createHandlers(b: Backend): Handlers {
   ) => {
     const changed = new Set<number>();
     const before: MessageState[] = [];
-    // plan 87: a due reminder ends when its conversation is put away (else the Inbox's top brings it back); Undo restores it
-    const ended: Reminder[] = [];
-    const tops: FollowupSnapshot[] = [];
+    // plans 87, 142, 177: what the Inbox's top held ends when its conversation is put away (else the top brings it back); Undo restores it
+    const left = nothingLeft();
     let done = 0;
     const run = async (slice: number[]) => {
       // a sweep re-reads what it may still touch, in the same turn as the act (plan 63: a star added meanwhile wins)
@@ -168,11 +162,7 @@ export function createHandlers(b: Backend): Handlers {
       b.opsQueued(r.opIds);
       b.reconcileFlags(r.flagReconcileAccounts);
       b.notifyChanged(r.threadIds);
-      if (ENDS_REMINDER.has(action)) {
-        for (const x of await b.reminders.endDue(chunk)) ended.push(x);
-        // plan 142: a follow-up leaves the Inbox's top the same way; the list keeps it
-        for (const x of await b.followups.endTop(chunk)) tops.push(x);
-      }
+      if (ENDS_TOP.has(action)) gather(left, await leaveTop(b, chunk));
       progress?.((done += slice.length));
     };
     try {
@@ -181,24 +171,21 @@ export function createHandlers(b: Backend): Handlers {
       else await b.runBudgeted([...threadIds], run);
     } catch (error) {
       // the slices that committed stay undoable: the error carries their undo
-      if (!o.partialUndo || (before.length === 0 && ended.length === 0 && tops.length === 0)) throw error;
-      const undoId = remember(before, ended, tops);
+      if (!o.partialUndo || (before.length === 0 && leftNothing(left))) throw error;
+      const undoId = remember(before, left);
       if (error instanceof RpcError) throw new RpcError(error.code, error.message, { undoId }, { expected: error.expected, diag: error.diag, i18n: error.i18n, cause: error });
       throw new RpcError("INTERNAL", error instanceof Error ? error.message : String(error), { undoId }, { expected: false, cause: error });
     }
     // what an undo puts back: these messages, exactly as they were
-    return { threads: [...changed], undoId: before.length || ended.length || tops.length ? remember(before, ended, tops) : null };
+    return { threads: [...changed], undoId: before.length || !leftNothing(left) ? remember(before, left) : null };
   };
   const undoJournal = new UndoJournal();
-  /** plan 87: the reminders an action ended, by its undo id (as many as the journal keeps) */
-  const endedReminders = new Map<number, Reminder[]>();
-  const endedTops = new Map<number, FollowupSnapshot[]>();
-  const remember = (before: MessageState[], ended: Reminder[], tops: FollowupSnapshot[] = []) => {
+  /** plans 87, 142, 177: what the Inbox's top held that an action ended, by its undo id (as many as the journal keeps) */
+  const endedTop = new Map<number, TopLeft>();
+  const remember = (before: MessageState[], left: TopLeft = nothingLeft()) => {
     const id = undoJournal.remember(before);
-    if (tops.length) endedTops.set(id, tops);
-    for (const key of endedTops.keys()) if (endedTops.size > 16) endedTops.delete(key);
-    if (ended.length) endedReminders.set(id, ended);
-    for (const key of endedReminders.keys()) if (endedReminders.size > 16) endedReminders.delete(key);
+    if (!leftNothing(left)) endedTop.set(id, left);
+    for (const key of endedTop.keys()) if (endedTop.size > 16) endedTop.delete(key);
     return id;
   };
   /** Puts these messages back as they were: one store command (transaction, ops per account) per slice, like the action. */
@@ -238,14 +225,13 @@ export function createHandlers(b: Backend): Handlers {
     const source = from !== null && from !== folder && listed.some((f) => f.key === from) ? from : null;
     const moved: FolderMoved[] = [];
     const before: MessageState[] = [];
-    const ended: Reminder[] = [];
+    const left = nothingLeft();
     const changed = new Set<number>();
     let kept = 0;
     let done = 0;
-    const tops: FollowupSnapshot[] = [];
     const save = () => {
-      if (!moved.length && !before.length && !ended.length && !tops.length) return null;
-      const id = remember(before, ended, tops);
+      if (!moved.length && !before.length && leftNothing(left)) return null;
+      const id = remember(before, left);
       folderMoves.set(id, moved);
       for (const key of folderMoves.keys()) if (folderMoves.size > 16) folderMoves.delete(key);
       return id;
@@ -263,9 +249,8 @@ export function createHandlers(b: Backend): Handlers {
         b.opsQueued(r.opIds);
         b.reconcileFlags(r.flagReconcileAccounts);
         b.notifyChanged(r.threadIds);
-        // a due reminder ends when its conversation is put away, as an archive's does
-        if (r.leftInbox.length) for (const x of await b.reminders.endDue(r.leftInbox)) ended.push(x);
-        if (r.leftInbox.length) for (const x of await b.followups.endTop(r.leftInbox)) tops.push(x);
+        // what the Inbox's top held ends when its conversation leaves the Inbox, as an archive's does (one the Inbox keeps, its pin stays)
+        if (r.leftInbox.length) gather(left, await leaveTop(b, r.leftInbox));
         progress?.((done += slice.length));
       });
     } catch (error) {
@@ -281,24 +266,23 @@ export function createHandlers(b: Backend): Handlers {
     const before = undoJournal.take(undoId);
     if (!before) throw new RpcError("NOT_FOUND", L("errors.undoGone"));
     try {
-      // the reminders it ended first: refused (the cap), nothing is taken back and the Undo stays for a retry
-      const ended = endedReminders.get(undoId);
-      if (ended && !(await b.reminders.restore([], ended))) throw new RpcError("BAD_REQUEST", L("errors.remindersFull", { max: REMINDERS_MAX }));
-      // plan 127: out of the folder first: the moveToInbox the restore queues then finds each message in place
-      const left = new Set<number>();
-      for (const m of folderMoves.get(undoId) ?? []) {
-        const r = await store.threads.leaveFolder({ moved: m, now: b.now() });
-        for (const t of r.threadIds) left.add(t);
-        b.opsQueued(r.opIds);
-        b.notifyChanged(r.threadIds);
-        await b.yieldTurn();
-      }
-      folderMoves.delete(undoId);
-      const restored = before.length ? await restore(before, jobId) : new Set<number>();
-      endedReminders.delete(undoId);
-      await b.followups.putBack(endedTops.get(undoId) ?? []);
-      endedTops.delete(undoId);
-      return new Set([...left, ...restored]).size;
+      // what the top held first: refused (a cap), nothing is taken back and the Undo stays for a retry
+      const count = await returnTop(b, endedTop.get(undoId) ?? nothingLeft(), async () => {
+        // plan 127: out of the folder first: the moveToInbox the restore queues then finds each message in place
+        const left = new Set<number>();
+        for (const m of folderMoves.get(undoId) ?? []) {
+          const r = await store.threads.leaveFolder({ moved: m, now: b.now() });
+          for (const t of r.threadIds) left.add(t);
+          b.opsQueued(r.opIds);
+          b.notifyChanged(r.threadIds);
+          await b.yieldTurn();
+        }
+        folderMoves.delete(undoId);
+        const restored = before.length ? await restore(before, jobId) : new Set<number>();
+        return new Set([...left, ...restored]).size;
+      });
+      endedTop.delete(undoId);
+      return count;
     } catch (error) {
       // restoring is idempotent: a retry repeats all of it
       undoJournal.putBack(undoId, before);
@@ -353,23 +337,14 @@ export function createHandlers(b: Backend): Handlers {
         await store.categories.abandonMove(batchId);
       }
       if (!threadIds.length) return;
-      const step = { batchId, ended: [] as unknown[], tops: [] as unknown[] };
-      if ((await store.categories.list()).some((c) => c.id === categoryId && !c.showInInbox)) {
-        step.ended = await b.reminders.endDue(threadIds);
-        step.tops = await b.followups.endTop(threadIds);
-      }
+      const hidden = (await store.categories.list()).some((c) => c.id === categoryId && !c.showInInbox);
       // committed: it counts and has its Undo, whatever training does next (revision 5). A failed training resumes at the next start.
-      record(step);
+      record({ batchId, left: hidden ? await leaveTop(b, threadIds) : nothingLeft() });
       await b.finishMove(batchId);
     },
     undoActs,
-    undoMove: async ({ batchId, ended, tops }) => {
-      // the reminders first: refused (the cap), nothing is taken back and the Undo stays for a retry
-      if (ended.length && !(await b.reminders.restore([], ended as Reminder[]))) throw new RpcError("BAD_REQUEST", L("errors.remindersFull", { max: REMINDERS_MAX }));
-      await b.followups.putBack(tops as FollowupSnapshot[]);
-      const r = await undoMove(batchId);
-      return r.restored + r.removed;
-    },
+    // what the top held first: refused (a cap), nothing is taken back and the Undo stays for a retry
+    undoMove: ({ batchId, left }) => returnTop(b, left, () => undoMove(batchId)).then((r) => r.restored + r.removed),
     ensureFilter: async (rule, name) => {
       const f = await similarFilters.ensureRule(rule, name, undefined, { asked: true });
       return { filterUndo: f.filterUndo };
@@ -576,6 +551,26 @@ export function createHandlers(b: Backend): Handlers {
       return { items };
     },
 
+    "pins.list": () => b.pins.refresh(),
+    "pins.add": async ({ threadIds }) => {
+      const added = await b.pins.add([...new Set(threadIds)]);
+      if (!added) throw new RpcError("BAD_REQUEST", L("errors.pinsFull", { max: PINS_MAX }));
+      return { added };
+    },
+    "pins.remove": async ({ threadIds }) => ({ removed: await b.pins.remove([...new Set(threadIds)]) }),
+    "pins.restore": async ({ drop, put }) => {
+      if (!(await b.pins.restore(drop, put))) throw new RpcError("BAD_REQUEST", L("errors.pinsFull", { max: PINS_MAX }));
+      return { ok: true as const };
+    },
+    "pins.threads": async ({ accountId }) => {
+      const at = new Map((await b.pins.refresh()).pins.map((p) => [p.threadId, p.pinnedAt]));
+      // spam reaches nothing, and the trash is put away: neither shows on the top (they come back with their conversation)
+      const items = (await store.threads.summaries([...at.keys()])).filter((t) => !t.inTrash && !t.inSpam && (accountId === undefined || t.accountId === accountId));
+      // the newest pin first
+      items.sort((x, y) => at.get(y.id)! - at.get(x.id)! || y.id - x.id);
+      return { items };
+    },
+
     "folders.moveThreads": ({ accountId, folder, from, threadIds, jobId }) => {
       const progress = progressReporter(b, jobId, threadIds.length);
       return moveToFolder(accountId, folder, from, threadIds, progress);
@@ -718,7 +713,7 @@ export function createHandlers(b: Backend): Handlers {
       const { batchId } = await store.categories.beginMove({ to, threadIds, addedBy: ctx.origin === "mcp" ? "agent" : ADDED_BY[source], now: b.now(), source });
       await b.finishMove(batchId);
       const r = await store.categories.moveOutcome(batchId);
-      await endDueIfHidden(to, threadIds, batchId);
+      await endTopIfHidden(to, threadIds, batchId);
       // plan 116: one conversation dragged here by hand may go (a drag of several never)
       if (r.added.length && threadIds.length === 1) b.planForwards({ threadIds: r.added, filed: ctx.origin === "mcp" ? [] : r.added });
       return { added: r.added.length, addedIds: r.added, batchId, moved: r.moved };
@@ -894,22 +889,22 @@ export function createHandlers(b: Backend): Handlers {
       return { ok: true as const };
     },
     "categorize.stats": () => store.categorize.stats(),
-    "categorize.undo": async ({ batchId }) => {
-      await restoreFiled(batchId);
-      if ((await store.categories.movePhase(batchId)) !== null) {
-        const { removed, restored } = await undoMove(batchId);
-        return { removed, restored };
-      }
-      let removed = 0;
-      await sliced(await store.categories.batchThreads(batchId), async (chunk) => {
-        const r = await store.categories.undoBatchPart(batchId, chunk, b.now());
-        b.categorizer.apply(r.deltas);
-        removed += r.removed.length;
-        b.notifyChanged(r.removed);
-      });
-      await store.categories.finishUndo(batchId, b.now());
-      return { removed };
-    },
+    "categorize.undo": ({ batchId }) =>
+      undoFiled(batchId, async (): Promise<{ removed: number; restored?: number }> => {
+        if ((await store.categories.movePhase(batchId)) !== null) {
+          const { removed, restored } = await undoMove(batchId);
+          return { removed, restored };
+        }
+        let removed = 0;
+        await sliced(await store.categories.batchThreads(batchId), async (chunk) => {
+          const r = await store.categories.undoBatchPart(batchId, chunk, b.now());
+          b.categorizer.apply(r.deltas);
+          removed += r.removed.length;
+          b.notifyChanged(r.removed);
+        });
+        await store.categories.finishUndo(batchId, b.now());
+        return { removed };
+      }),
 
     "counts.get": async () => b.today.withCount(await store.threads.counts(b.now())),
 

@@ -44,8 +44,10 @@ import {
   FOLDER_VIEWS,
   REMINDER_KINDS,
   REMINDERS_MAX,
+  PINS_MAX,
   VIEWS,
   type Account,
+  type Pin,
   type Reminder,
   type Category,
   type Folder,
@@ -632,6 +634,13 @@ export interface RemindersSnapshot {
   reminders: ReminderInfo[];
 }
 
+const pinSchema = z.object({ threadId: id, pinnedAt: z.number().int().nonnegative() });
+
+/** Plan 177: every pin, as the windows hear of them */
+export interface PinsSnapshot {
+  pins: Pin[];
+}
+
 /** Plan 94: a scheduled send as the renderer sees it (who and what from its draft; `error`: why the last try didn't go) */
 export interface ScheduledInfo {
   draftId: number;
@@ -778,6 +787,17 @@ export const contract = {
   "reminders.restore": m<{ ok: true }>()(z.object({ drop: z.array(reminderSchema).max(REMINDERS_MAX), put: z.array(reminderSchema).max(REMINDERS_MAX) })),
   /** plan 87: the reminders' conversations, none in Trash or Spam. `dueOnly`: the due ones (newest due first, the Inbox's top); otherwise all (soonest first) */
   "reminders.threads": m<{ items: ThreadSummary[] }>()(z.object({ dueOnly: z.boolean(), accountId: id.optional() })),
+
+  /** plan 177: every pinned conversation */
+  "pins.list": m<PinsSnapshot>()(empty),
+  /** plan 177: pins these (one already pinned keeps its pin); refused past PINS_MAX. `added`: what it pinned (Undo) */
+  "pins.add": m<{ added: Pin[] }>()(z.object({ threadIds: z.array(id).min(1).max(PINS_MAX) })),
+  /** plan 177: unpins these; what it removed (Undo) */
+  "pins.remove": m<{ removed: Pin[] }>()(z.object({ threadIds: z.array(id).min(1).max(PINS_MAX) })),
+  /** plan 177: Undo: drops these pins if they are still exactly these, and puts those back where nothing is pinned since */
+  "pins.restore": m<{ ok: true }>()(z.object({ drop: z.array(pinSchema).max(PINS_MAX), put: z.array(pinSchema).max(PINS_MAX) })),
+  /** plan 177: the pinned conversations, newest pin first, none in Trash or Spam (the Inbox's top) */
+  "pins.threads": m<{ items: ThreadSummary[] }>()(z.object({ accountId: id.optional() })),
 
   /** Plan 93: snippets, by name. */
   "snippets.list": m<Snippet[]>()(empty),
@@ -1428,6 +1448,8 @@ export interface Events {
   notify: MailNotice;
   /** plan 87: the reminders changed, or one came due */
   reminders: RemindersSnapshot;
+  /** plan 177: the pins changed (pinned, unpinned, put away, merged or gone with their conversation) */
+  pins: PinsSnapshot;
   /** plan 94: the scheduled sends changed (scheduled, sent, failed) */
   scheduled: ScheduledSnapshot;
   /** plan 116: the forwards changed (made, cancelled, held, sent, failed) */
