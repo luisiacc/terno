@@ -40,7 +40,7 @@ export function installSortable(group: HTMLElement, o: SortableOptions): Sortabl
   const scroller = group.closest<HTMLElement>("[data-drop-scroll]");
   // the group's own top: a scroll, or More's held rows letting go above it, moves every block alike (Codex plan review #5)
   const groupTop = () => group.getBoundingClientRect().top;
-  const state: { phase: Phase; frame: number; flip: Map<HTMLElement, number> | null; focus: HTMLElement | null; done: number } = { phase: { kind: "idle" }, frame: 0, flip: null, focus: null, done: 0 };
+  const state: { phase: Phase; frame: number; flip: Map<HTMLElement, number> | null; focus: HTMLElement | null; done: number; resized: ResizeObserver | null } = { phase: { kind: "idle" }, frame: 0, flip: null, focus: null, done: 0, resized: null };
   const items = () => [...group.querySelectorAll<HTMLElement>(":scope > [data-sort-id]")];
 
   const listen = (on: boolean) => {
@@ -75,7 +75,15 @@ export function installSortable(group: HTMLElement, o: SortableOptions): Sortabl
     if (state.frame) cancelAnimationFrame(state.frame);
     state.frame = 0;
     listen(false);
+    scroller?.removeEventListener("scroll", onShift);
+    state.resized?.disconnect();
+    state.resized = null;
   };
+
+  /** the sidebar scrolled (a wheel, the edge) or More's rows above let go, with the pointer still: the row stays under it (Codex code review #2) */
+  function onShift() {
+    if (state.phase.kind === "dragging" && !state.frame) state.frame = requestAnimationFrame(tick);
+  }
 
   /** the dragged item under the pointer, its neighbours out of its way */
   const place = () => {
@@ -114,8 +122,10 @@ export function installSortable(group: HTMLElement, o: SortableOptions): Sortabl
     const from = els.indexOf(p.el);
     if (from < 0 || els.length < 2) return void (state.phase = { kind: "idle" });
     window.clearTimeout(state.done);
+    // a row still settling from the last drag is a row again (Codex code review #1: it kept its lift)
     for (const el of els) {
       el.removeAttribute("data-settling");
+      el.removeAttribute("data-lifted");
       el.style.transform = "";
     }
     const blocks = els.map((el) => {
@@ -126,6 +136,9 @@ export function installSortable(group: HTMLElement, o: SortableOptions): Sortabl
     p.el.setAttribute("data-lifted", "");
     group.setAttribute("data-sorting", "");
     html().setAttribute("data-sorting", "");
+    scroller?.addEventListener("scroll", onShift, { passive: true });
+    const more = document.getElementById("sidebar-more-folders");
+    if (more) (state.resized = new ResizeObserver(onShift)).observe(more);
     try {
       group.setPointerCapture(p.pointerId);
     } catch {
@@ -207,17 +220,19 @@ export function installSortable(group: HTMLElement, o: SortableOptions): Sortabl
     // the last move, if its frame hasn't run yet
     place();
     state.phase = { kind: "idle" };
-    end();
-    if (p.kind !== "dragging") return;
+    if (p.kind !== "dragging") return end();
     swallowNextClick();
     const lifted = p.els[p.from]!;
     if (p.to === p.from) {
+      end();
       // back into its own place
       lifted.setAttribute("data-settling", "");
       lifted.style.transform = "";
       return finish(p.els);
     }
+    // where each row is seen, a neighbour mid-slide too, before end() takes the slide's transition away (Codex code review #3)
     remember(p.els);
+    end();
     const ids = moved(p.els.map(idOf), p.from, p.to);
     o.commit(ids);
     o.announce(idOf(lifted), p.to + 1, ids.length);

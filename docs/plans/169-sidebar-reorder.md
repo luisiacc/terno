@@ -89,3 +89,11 @@ Twelve points against the plan; what changed:
 10. **Thread drops** onto a moved category are in the e2e; pressing a folder row under an open account drags nothing (the handle is the account's own row).
 11. **Every ending cleans up**: drop in place, Esc, pointer loss, blur, unmount: the lifted and settling marks and transforms go after the settle (at once with motion off), and a double-frame fallback settles if no render comes.
 12. **The first account is the default sender** for a new message outside an account (`compose.ts`). That's intended: the account you put first is your main one. Existing drafts keep their account.
+
+## What the Codex code review changed
+
+Three findings, each fixed with a scenario in `sidebar-reorder.spec.ts` ("with motion") that fails without it:
+
+1. **A drag started while the last one settled left that row lifted.** A new drag clears every row's lift as well as its settle.
+2. **Scrolling with the pointer still let the row drift away from it.** While dragging, the sidebar's scroll and a resize of More's rows above schedule a frame that places the row again.
+3. **A drop mid-slide made the neighbour jump.** Where each row is seen is recorded before the drag's transitions are taken away, so a neighbour still sliding settles from where it was.

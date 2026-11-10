@@ -130,4 +130,77 @@ test.describe("sorting the sidebar (plan 169)", () => {
       await expect(rows(page).first()).toBeVisible();
     });
   });
+
+  test.describe("with motion (Codex code review)", () => {
+    test.use({ reducedMotion: "no-preference", viewport: { width: 1280, height: 520 } });
+
+    test("a drag over a settling one, a drop mid-slide, a scroll with the pointer still", async ({ app: page }) => {
+      const categories = page.getByTestId("nav-categories");
+      const ids = await shown(categories);
+      /** pointer events dispatched in one task, as fast as a hand can't, so the timing is the code's alone */
+      const press = (steps: { row: number; dy: number; up?: boolean }[]) =>
+        page.evaluate(async (steps) => {
+          const fire = (type: string, x: number, y: number) =>
+            (type === "pointerdown" ? document.elementFromPoint(x, y)! : window).dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, pointerId: 1, isPrimary: true }));
+          for (const { row, dy, up } of steps) {
+            const r = document.querySelector(`[data-testid=nav-categories] > [data-sort-id="${row}"] [data-sort-handle]`)!.getBoundingClientRect();
+            const x = r.left + 40;
+            const y = r.top + r.height / 2;
+            fire("pointerdown", x, y);
+            fire("pointermove", x, y + Math.sign(dy) * 6);
+            fire("pointermove", x, y + dy);
+            if (up) fire("pointerup", x, y + dy);
+          }
+          // the render that shows a new order runs before the frame
+          await Promise.resolve();
+          const items = [...document.querySelectorAll<HTMLElement>("[data-testid=nav-categories] > [data-sort-id]")];
+          return { lifted: items.filter((el) => el.hasAttribute("data-lifted")).map((el) => Number(el.dataset.sortId)), settling: items.filter((el) => el.hasAttribute("data-settling")).map((el) => Number(el.dataset.sortId)) };
+        }, steps);
+      const release = async () => {
+        await page.evaluate(() => window.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, clientX: 0, clientY: 0, pointerId: 1 })));
+        await expect(page.locator("[data-lifted], [data-settling]")).toHaveCount(0);
+      };
+
+      await scenario("a row dropped in place and another dragged while it settles: only the new one is lifted", async () => {
+        const state = await press([{ row: ids[0]!, dy: 8, up: true }, { row: ids[2]!, dy: 10 }]);
+        expect(state.lifted).toEqual([ids[2]]);
+        await release();
+      });
+
+      await scenario("dropped the moment it passes a neighbour: the neighbour slides from where it was, it doesn't jump", async () => {
+        const pitch = (await page.getByTestId(`nav-category-${ids[0]}`).boundingBox())!.height;
+        const state = await press([{ row: ids[0]!, dy: pitch, up: true }]);
+        expect(await shown(categories)).toEqual([ids[1], ids[0], ...ids.slice(2)]);
+        expect(state.settling).toContain(ids[1]);
+        await expect(page.locator("[data-lifted], [data-settling]")).toHaveCount(0);
+      });
+
+      await scenario("the sidebar scrolled under a still pointer: the row stays under it", async () => {
+        const nav = page.locator("nav[data-drop-scroll]");
+        const order = await shown(categories);
+        const row = page.getByTestId(`nav-category-${order[1]}`);
+        // the row in the sidebar's middle, far from the edges that scroll it on their own, with room to scroll 20 px more
+        const top = await nav.evaluate((el, id) => {
+          const r = el.querySelector(`[data-testid="nav-category-${id}"]`)!.getBoundingClientRect();
+          const n = el.getBoundingClientRect();
+          el.scrollTop = Math.min(Math.max(0, el.scrollTop + r.top + r.height / 2 - (n.top + n.height / 2)), el.scrollHeight - el.clientHeight - 20);
+          return el.scrollTop;
+        }, order[1]!);
+        const n = (await nav.boundingBox())!;
+        const b = (await row.boundingBox())!;
+        expect(b.y - n.y, "away from the top edge").toBeGreaterThan(60);
+        expect(n.y + n.height - (b.y + b.height), "away from the bottom edge").toBeGreaterThan(60);
+        await press([{ row: order[1]!, dy: 10 }]);
+        const pointer = b.y + b.height / 2 + 10;
+        // the move's own frame has placed it: from here only the scroll can move anything
+        await frame(page);
+        await nav.evaluate((el, top) => (el.scrollTop = top + 20), top);
+        await expect.poll(async () => {
+          const r = (await row.boundingBox())!;
+          return Math.round(r.y + r.height / 2 - pointer);
+        }).toBe(0);
+        await release();
+      });
+    });
+  });
 });
