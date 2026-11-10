@@ -51,3 +51,9 @@ Codex's critique of the plan (six points), all taken:
 4. **Scheduled Send now** bypasses `sendDraft`. It plays the sound too (primed in its click).
 5. **What the sound means** is now stated precisely: queued to go, not delivered. Delivery has its own snack.
 6. **The web's service worker** precaches every emitted asset, so the WAV is fetched at install (30 KB). That's accepted and stated, and it lets the first send play offline.
+
+## Codex code review
+
+No material findings (send paths, the player's state, Settings, import and export, en/es, the scheme's privileges, the background mute, the tests).
+
+The packaged smoke suite passed, except `migration.smoke.ts:125` and `native-reload.smoke.ts:293`, which failed only on the first crowded pass (a Codex run shared the machine). Both passed when run again on their own, with every test in their files.
