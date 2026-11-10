@@ -160,7 +160,7 @@ function useHandsOver(ref: React.RefObject<HTMLElement | null>, handOver: React.
 const openFromRow = async (key: string): Promise<void> => { if (!focusDraftOnScreen(key)) await openStoredDraft(key); };
 
 // on the rows' lines: the icon where their text starts, the hover shape where theirs is
-const ROW = cn("relative flex h-9 min-w-0 flex-1 items-center gap-2 px-5 text-left text-sm", "before:absolute before:inset-x-2 before:inset-y-px before:rounded-md focus-visible:outline-none focus-visible:before:ring-2 focus-visible:before:ring-ring");
+const ROW = cn("relative flex h-8 min-w-0 flex-1 items-center gap-2 px-5 text-left text-sm", "before:absolute before:inset-x-2 before:inset-y-px before:rounded-md focus-visible:outline-none focus-visible:before:ring-2 focus-visible:before:ring-ring");
 
 /** The one draft: the row is it, said as a row says it, the pen and a Draft tag in the draft ink (plan 158). */
 function DraftRow({ draftKey, handOver }: { draftKey: string; handOver: React.RefObject<boolean> }) {
@@ -350,7 +350,9 @@ export function DraftsStrip() {
   }, [shape]);
   if (total === 0) return null;
   return (
-    <div ref={rootRef} className="hairline-b flex shrink-0 items-center py-1" data-testid="drafts-strip" role="group" aria-label={t("compose.strip.label")}>
+    // close under the header (its own 6 px are the gap), and the header's 6 px again under the line, so the first row's
+    // selection never touches it
+    <div ref={rootRef} className="hairline-b mb-1.5 flex shrink-0 items-center pb-1" data-testid="drafts-strip" role="group" aria-label={t("compose.strip.label")}>
       {total > 1 ? (
         <Several drafts={count} scheduled={scheduled} handOver={handOver} />
       ) : typeof drafts === "string" ? (
