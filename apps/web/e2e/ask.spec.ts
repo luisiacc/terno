@@ -603,6 +603,22 @@ test.describe("ask your mail (plan 141)", () => {
     await expect(page.getByTestId("ask-not-found").or(page.getByTestId("ask-answer")).first()).toBeVisible();
   });
 
+  test("⌘K, \"ask\", Ask your mail, Esc: back on all commands with the keys in its field (the owner)", async ({ app: page, server }) => {
+    // Ask's own field had the focus, and the commands' field came back without it: typing went nowhere
+    await settingUp(page, server, { ai: { provider: "fake", model: "demo" } });
+    await focusList(page);
+    await page.keyboard.press("ControlOrMeta+k");
+    await page.keyboard.type("ask");
+    await page.getByTestId("palette-ask").click();
+    await expect(page.getByTestId("palette-back")).toHaveText("All commands");
+    await expect(ask(page)).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("palette-back")).toHaveCount(0);
+    await expect(ask(page)).toBeFocused();
+    await page.keyboard.type("inbox");
+    await expect(ask(page)).toHaveValue("inbox");
+  });
+
   test("no provider shows nothing; one that goes from under it says what it needs; off removes the rows and the shortcut", async ({ app: page, server }) => {
     // plan 147: a free install: no row, no shortcut
     await settingUp(page, server, { ai: { provider: "none" } });

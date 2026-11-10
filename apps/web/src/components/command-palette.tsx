@@ -8,7 +8,7 @@ import { cn } from "@terno/ui/lib/utils";
 import { Chip } from "@terno/ui/components/chip";
 import { Command, CommandDescription, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from "@terno/ui/components/command";
 import { Archive, AtSign, Bell, BellOff, ListChecks, BookmarkPlus, CalendarClock, CheckCheck, Clock, Copy, FileDown, Focus, FolderInput, Forward, Keyboard, Link, Mail, MailOpen, Moon, OctagonAlert, Palette, Paperclip, Pin, PinOff, Inbox, Layers, ListFilter, Mails, PenLine, Plus, Printer, RefreshCw, Reply, ReplyAll, RotateCw, Search, Send, Sparkles, Star, Sun, Tag, NotepadText, Trash2, Undo2, Users } from "@terno/ui/icons";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { fitWholeRows, markMore } from "@terno/ui/lib/whole-rows";
 import { act, openCompose, targetRows, toggleStar, undoLast } from "~/lib/actions";
 import { addScopeToCategory, addToCategory, isExclusivelyIn, moveToCategory } from "~/lib/categorize";
@@ -270,6 +270,13 @@ export function CommandPalette() {
     returnPaletteFocus();
   };
   const listRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  // Ask's pages bring their own field (ask-page.tsx focuses it): coming back from them mounts this one afresh, which
+  // nothing focused, so Esc out of Ask left the keys on the dialog (the owner). The palette's other pages share it.
+  const askPage = page === "ask" || page === "askHistory";
+  useLayoutEffect(() => {
+    if (open && !askPage) inputRef.current?.focus({ preventScroll: true });
+  }, [open, askPage]);
   const goTo = (next: PalettePage) => {
     setPage(next);
     setValue("");
@@ -676,6 +683,7 @@ export function CommandPalette() {
           placeholder={placeholder}
           value={value}
           onValueChange={setValue}
+          ref={inputRef}
           data-testid="palette-input"
           addon={
             page !== "root" && (
