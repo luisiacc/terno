@@ -10,7 +10,7 @@ import { fakeDraft } from "../../../packages/ai/src/fake";
 import { E2E_NOW } from "./constants";
 import { inEveryLook, wheelsTo } from "./helpers/looks";
 import { unclipped } from "./helpers/unclipped";
-import { expect, fresh, focusList, ingestConversation, scenario, test, type DevServerFixture } from "./fixtures";
+import { expect, fresh, focusList, ingestConversation, openRow, scenario, test, type DevServerFixture } from "./fixtures";
 import { englishLeaks } from "./i18n-leaks";
 import { sqlDb } from "../../backend-dev/src/server";
 
@@ -603,20 +603,51 @@ test.describe("ask your mail (plan 141)", () => {
     await expect(page.getByTestId("ask-not-found").or(page.getByTestId("ask-answer")).first()).toBeVisible();
   });
 
-  test("⌘K, \"ask\", Ask your mail, Esc: back on all commands with the keys in its field (the owner)", async ({ app: page, server }) => {
-    // Ask's own field had the focus, and the commands' field came back without it: typing went nowhere
+  test("in ⌘K, coming back to any page puts the keys in its field, whatever was done there (the owner)", async ({ app: page, server }) => {
+    // Esc out of Ask left the keys on the dialog: Ask's own field had them, and the commands' came back without them;
+    // a row or the chip's × clicked with the mouse did the same
     await settingUp(page, server, { ai: { provider: "fake", model: "demo" } });
-    await focusList(page);
+    await openRow(page, 0);
+    const field = ask(page);
     await page.keyboard.press("ControlOrMeta+k");
+    await expect(field).toBeFocused();
+    await page.getByTestId("palette-move").click();
+    await expect(field).toBeFocused();
+    await page.getByTestId("palette-back").click();
+    await expect(field).toBeFocused();
+    await page.keyboard.type("remind");
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("palette-page")).toBeVisible();
+    await expect(field).toBeFocused();
+    await page.keyboard.press("Backspace");
+    await expect(page.getByTestId("palette-page")).toHaveCount(0);
+    await expect(field).toBeFocused();
     await page.keyboard.type("ask");
     await page.getByTestId("palette-ask").click();
     await expect(page.getByTestId("palette-back")).toHaveText("All commands");
-    await expect(ask(page)).toBeFocused();
+    await expect(field).toBeFocused();
     await page.keyboard.press("Escape");
     await expect(page.getByTestId("palette-back")).toHaveCount(0);
-    await expect(ask(page)).toBeFocused();
+    await expect(field).toBeFocused();
     await page.keyboard.type("inbox");
-    await expect(ask(page)).toHaveValue("inbox");
+    await expect(field).toHaveValue("inbox");
+    // Ask's own pages: the history and back, an answer (its follow-up box), a new question, All commands
+    await field.fill("");
+    await page.getByTestId("palette-ask").click();
+    await page.getByTestId("ask-history-row").first().click();
+    await expect(field).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(field).toBeFocused();
+    await page.getByTestId("palette-ask").click();
+    await page.keyboard.type(`anything about ${WORD}?`);
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("ask-not-found").or(page.getByTestId("ask-answer")).first()).toBeVisible();
+    await expect(followUp(page)).toBeFocused();
+    await page.getByTestId("ask-new").click();
+    await expect(field).toBeFocused();
+    await page.getByTestId("palette-back").click();
+    await expect(page.getByTestId("palette-back")).toHaveCount(0);
+    await expect(field).toBeFocused();
   });
 
   test("no provider shows nothing; one that goes from under it says what it needs; off removes the rows and the shortcut", async ({ app: page, server }) => {

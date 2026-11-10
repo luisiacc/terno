@@ -29,7 +29,7 @@ import { getApp, navigate, setApp, useApp } from "~/state/app";
 import { openRemind, presetLabel, presetWhen, setReminder, clearReminder, useReminders } from "~/lib/reminders";
 import { draftCommands, type DraftCommands } from "~/lib/draft-commands";
 import { isInstruction } from "~/lib/imperative";
-import { askFrom, paletteBack, paletteFrom, paletteKeys, paletteReturn, returnPaletteFocus, setPalettePage, usePalettePage } from "~/lib/palette-open";
+import { askFrom, paletteBack, handBackKeysNow, paletteFrom, paletteKeys, paletteReturn, returnPaletteFocus, setPalettePage, usePalettePage } from "~/lib/palette-open";
 import { askChosen } from "~/lib/ask";
 import { loadSnippets, newSnippetId, useSnippets } from "~/lib/snippets";
 import { insertSnippetInto, newMessageFromSnippet, saveDraftAsSnippet } from "~/lib/snippet-insert";
@@ -173,6 +173,8 @@ function useKeysInPalette(open: boolean): void {
     if (!open) return;
     const behind = (el: EventTarget | null) => el instanceof Node && document.getElementById("root")?.contains(el) === true;
     const onFocus = (e: FocusEvent) => {
+      // the store's state now, not this effect's: closing hands the keys back at once, before React removes this (Codex review)
+      if (getApp().dialog !== "palette") return;
       if (behind(e.target)) paletteHome()?.focus({ preventScroll: true });
     };
     // Tab and ⇧Tab go round the dialog's own controls: past its last, its first (it stepped out to <body>, then the app)
@@ -271,12 +273,13 @@ export function CommandPalette() {
   };
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  // Ask's pages bring their own field (ask-page.tsx focuses it): coming back from them mounts this one afresh, which
-  // nothing focused, so Esc out of Ask left the keys on the dialog (the owner). The palette's other pages share it.
+  // the owner: whatever was done in the palette, coming back to a page puts the keys in its field. Ask's pages bring their
+  // own field (ask-page.tsx focuses it on mount); this one comes back afresh from them, and a row or the chip's ×
+  // clicked with the mouse leaves the focus on the dialog, so every page change focuses it again
   const askPage = page === "ask" || page === "askHistory";
   useLayoutEffect(() => {
     if (open && !askPage) inputRef.current?.focus({ preventScroll: true });
-  }, [open, askPage]);
+  }, [open, page]);
   const goTo = (next: PalettePage) => {
     setPage(next);
     setValue("");
@@ -626,8 +629,10 @@ export function CommandPalette() {
   // plan 162: one step back, to where the palette was opened from: Ask opened with ⌘⇧K closes (it was two presses)
   const back = () => {
     const to = paletteBack(page, usePalettePage.getState().entry);
-    if (to === null) close();
-    else goTo(to);
+    if (to === null) {
+      close();
+      handBackKeysNow();
+    } else goTo(to);
   };
   const pageName: Record<Exclude<PalettePage, "root">, string> = {
     move: t("category.picker.moveTitle"),
@@ -640,7 +645,7 @@ export function CommandPalette() {
   const placeholder = page === "root" ? t("palette.placeholder") : page === "remind" ? t("palette.remindPlaceholder") : page === "snippets" ? t("palette.snippetsPlaceholder") : t("category.picker.placeholder");
 
   return (
-    <CommandDialog open={open} onOpenChange={(o) => !o && close()} finalFocus={() => { const own = tookFocus.current; tookFocus.current = false; return own ? false : paletteReturn(); }} title={page === "ask" ? t("ask.dialog.title") : page === "askHistory" ? t("palette.askHistory") : t("palette.title")} description={page === "ask" || page === "askHistory" ? t("ask.dialog.description") : t("palette.description")} hints={page !== "ask"} className={page === "ask" || page === "askHistory" ? ASK_FITS : undefined}>
+    <CommandDialog open={open} onOpenChange={(o) => { if (!o) { close(); handBackKeysNow(); } }} finalFocus={() => { const own = tookFocus.current; tookFocus.current = false; return own ? false : paletteReturn(); }} title={page === "ask" ? t("ask.dialog.title") : page === "askHistory" ? t("palette.askHistory") : t("palette.title")} description={page === "ask" || page === "askHistory" ? t("ask.dialog.description") : t("palette.description")} hints={page !== "ask"} className={page === "ask" || page === "askHistory" ? ASK_FITS : undefined}>
       {/* CommandDialog (base-nova) doesn't provide the cmdk root itself */}
       <Command
         className="min-h-0"

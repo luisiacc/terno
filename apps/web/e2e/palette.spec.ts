@@ -400,6 +400,21 @@ test.describe("palette", () => {
     });
   });
 
+  test.describe("with motion", () => {
+    // the dialog fades out: what's typed during its exit must reach the app
+    test.use({ reducedMotion: "no-preference" });
+    test("closed, the keys leave it at once: ⌘K, Esc, R replies (no wait for its exit)", async ({ app: page }) => {
+      // every page focuses its field (the owner), so while the dialog faded out a key pressed right after Esc went into it;
+      // and the palette's own focus guard, still listening until React commits, pulled the handed-back keys in again (Codex review)
+      await openRow(page, 0);
+      await focusList(page);
+      await palette(page);
+      await page.keyboard.press("Escape");
+      await page.keyboard.press("r");
+      await expect(page.getByTestId("compose-body")).toBeFocused();
+    });
+  });
+
   test("a page and the draft group are axe-clean, in light and dark", async ({ app: page }) => {
     for (const mode of ["light", "dark"] as const) {
       await scenario(mode, async () => {

@@ -11,6 +11,20 @@ import type { PalettePage } from "./palette-commands";
 export const paletteFrom: { draftKey: string | null; focus: HTMLElement | null } = { draftKey: null, focus: null };
 
 /** Plan 162: closed, the keys go back where they were when it opened, unless something since took them (a source opened). */
+/**
+ * Dismissed (Esc, ×, a click outside: nothing run), the keys leave it at once, not at the end of the dialog's exit: a key
+ * pressed right after Esc (⌘K, Esc, R) is the app's, never the closing field's (the owner: every page focuses its field, so
+ * the keys were still in it while it faded). Not when a command closes it: one places the caret itself (a snippet selects
+ * its first gap), and an early focus would put it back where it was.
+ */
+export function handBackKeysNow(): void {
+  const at = document.activeElement;
+  if (!(at instanceof HTMLElement) || !at.closest("[data-slot=dialog-content], [role=dialog]")) return;
+  const to = paletteFrom.focus;
+  if (to?.isConnected) to.focus({ preventScroll: true });
+  else at.blur();
+}
+
 export function returnPaletteFocus(): void {
   const to = paletteFrom.focus;
   // the dialog's own return (`finalFocus`) reads it first; this catches a close it doesn't see through
