@@ -68,7 +68,19 @@ The language then appears in Settings → General, "System" picks it on systems 
 
 ## Styles (designs)
 
-A style is one file in [`packages/ui/src/designs/`](../packages/ui/src/designs) (`lumen.ts`, `atelier.ts`, `macos.ts`, `luma.ts`, `graphite.ts`): fonts, the text scale, the radius ladder, type roles (list title, greeting, section labels, rows, the reader's subject…), icon stroke, layout widths, row heights, avatar sizes, surfaces and a closed set of structural variants (where compose lives, the list header, search, filters, the row, the category review, the reader header, the reply control). Its type has no optional member. `pnpm --filter @terno/ui gen:designs` writes the `[data-design]` CSS; colors stay in the palettes (`themes/registry.ts`), and a style only names the pair "Style colors" uses. See [AGENTS.md](../AGENTS.md) → "Designs" to change or add one.
+A style is one file in [`packages/ui/src/designs/`](../packages/ui/src/designs) (`lumen.ts`, `atelier.ts`, `macos.ts`, `luma.ts`, `graphite.ts`): fonts, the text scale, the radius ladder, type roles (list title, greeting, section labels, rows, the reader's subject…), icon stroke, layout widths, row heights, avatar sizes, surfaces and a closed set of structural variants (where compose lives, the list header, search, filters, the row, the category review, the reader header, the reply control). Its type has no optional member. `pnpm --filter @terno/ui gen:designs` writes the `[data-design]` CSS; colors stay in the palettes (`themes/registry.ts`), and a style only names the pair "Style colors" uses. The rules every style keeps are in [AGENTS.md](../AGENTS.md) → "Designs".
+
+- **Change a style:** edit its file, run `pnpm --filter @terno/ui gen:designs`, update that style's baselines only (`pnpm --filter @terno/web exec playwright test --project=e2e-lumen --update-snapshots`), and look at them in light and dark.
+- **Add a style:** add its id to `DESIGN_IDS` (`packages/core/src/themes.ts`) and `theme.js`'s list, copy the closest definition (its type forces every value and variant), give it a palette pair (new palettes go in the registry and must pass the contrast suite), add its `en`/`es` name and description (`design.<id>`, `design.<id>.description`), add it to `DESIGNS` and a Playwright project (with its line in `FLOWS`).
+- **Add a variant value:** add it to the union in `designs/types.ts`; the compiler then points at every `variant(…)` map that must implement it. Keep roles, names, test ids and shortcuts identical across values (`designs.spec.ts` checks the shared parts in every style).
+
+### What runs where (plan 139)
+
+`e2e` runs every flow once, in macOS. A flow repeats in another style only if that style can change its result (`e2e/designs.spec.ts` holds the same):
+
+- **`@design`, all five styles:** what type, shape, density or a palette can change: `designs.spec`'s first part, the baselines, icon and corner checks, the List round trip.
+- **`@variant`, Lumen and Atelier:** a flow through a structural variant macOS doesn't hold (search behind a button, chips, the sender card, the reply pill, a sidebar compose, a display or greeting header, avatar rows, the inline badge), the axe sweep (`e2e/design-axe.spec.ts`: a new surface is a line there, not a tag on its flow) and motion. **`@variant-graphite`** also runs in Graphite, for its compose row. Luma adds no value, so it has no flow of its own.
+- **No tag** for everything else; a flow about one style says `test.use({ design })`. A style holding a new variant value adds a `@variant` flow and its project's line in `FLOWS` (`playwright.config.ts`).
 
 ## See also
 

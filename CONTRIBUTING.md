@@ -52,6 +52,8 @@ plan or README when behavior changes.
 
 These come from [AGENTS.md](AGENTS.md), and every change needs to keep them:
 
+- **Clean architecture.** Build modularly, with proper separation of concerns; never bolt a feature
+  on. If it only fits after a refactor, propose the refactor first.
 - **Privacy.** Mail content, addresses, names, subjects, tokens and keys never leave the machine
   except to the user's own mail and AI providers. No analytics, telemetry or new third-party
   services. In local mode the only traffic is to the mail servers.

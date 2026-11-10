@@ -14,6 +14,7 @@ Terno's shared controls (`src/components/`) are BoardUI's free **Base** componen
    - **Icons:** Hugeicons from `@terno/ui/icons`, at one line weight; tune it with `--icon-line`.
    - **Focus:** `focus-visible:` rings.
    - **Motion:** within `--motion`, and none when motion is reduced or off.
+   - **The house look:** filled fields (`bg-field`, the border only on hover, focus and error); the secondary as a 1 px border on `card` over `shadow-xs`; the primary lit from the top, between `primary-hover` and `primary`; floating panels solid on `popover` with `shadow-menu`, menu rows highlighted in `muted` (`[--accent:var(--muted)]`); a choice of a few is `ToggleGroup variant="segmented"` (a track with a thumb, never separate outlined buttons); a panel of rows is `rounded-menu` at `p-1.5` (`rounded-palette` for command lists), anything else the inner radius plus the gap. Check it in every design, light and dark (`e2e/controls.spec.ts`, `e2e/menu-corners.spec.ts`).
 4. Write any deviation, with its reason, under "Deliberate deviations" below and in the plan.
 5. Probe its resting look in `apps/web/e2e/helpers/controls-markup.ts` + `controls.spec.ts` (every design, light and dark). Test its open or floating parts through a real caller.
 
