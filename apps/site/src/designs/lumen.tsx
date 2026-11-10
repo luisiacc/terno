@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import type { SiteCopy } from "../copy";
 import { DownloadMac, WaitlistLink } from "../parts/download";
-import { Check, ChevronRight, ExternalLink, Github, ShieldCheck, Sparkles } from "../parts/icons";
+import { Check, ChevronRight, ExternalLink, Github, ShieldCheck } from "../parts/icons";
 import { Kbd } from "../parts/kbd";
 import { Logo } from "../parts/logo";
 import { PRO_LEAD, PRO_MORE, Peek, ProLeadShot, proPrivacyLink } from "../parts/pro";
@@ -88,10 +88,7 @@ function Pro({ copy }: { copy: SiteCopy }) {
       <div className={wrap}>
         <div className="mx-auto max-w-3xl text-center">
           <p className="flex items-center justify-center gap-3 text-[0.95rem] font-semibold">
-            <span className="lumen-pro-mark flex items-center gap-1.5">
-              <Sparkles size="1.15em" />
-              {p.eyebrow}
-            </span>
+            <span className="lumen-pro-mark">{p.eyebrow}</span>
             <span className="lumen-pro-chip rounded-full px-2.5 py-1 text-[0.78rem] leading-none font-medium">{p.status}</span>
           </p>
           <h2 id="pro-title" className={`mt-5 ${h2}`}>

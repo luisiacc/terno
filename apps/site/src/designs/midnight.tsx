@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import type { SiteCopy } from "../copy";
 import { DownloadMac, WaitlistLink } from "../parts/download";
-import { Check, ChevronRight, Github, Mails, Sparkles } from "../parts/icons";
+import { Check, ChevronRight, Github, Mails } from "../parts/icons";
 import { Kbd } from "../parts/kbd";
 import { Logo } from "../parts/logo";
 import { PRO_LEAD, PRO_MORE, Peek, ProLeadShot, proPrivacyLink } from "../parts/pro";
@@ -71,10 +71,7 @@ function Pro({ copy }: { copy: SiteCopy }) {
     <section id="pro" className={`${wrap} mt-28 scroll-mt-20 sm:mt-36`} aria-labelledby="mn-pro">
       <div className="max-w-2xl">
         <p className="flex flex-wrap items-center gap-3">
-          <span className={`${mono} mn-pro-mark flex items-center gap-2`}>
-            <Sparkles size="1.4em" />
-            {p.eyebrow}
-          </span>
+          <span className={`${mono} mn-pro-mark`}>{p.eyebrow}</span>
           <span className={`${mono} mn-pro-chip rounded-full px-2.5 py-1 text-[0.66rem] leading-none`}>{p.status}</span>
         </p>
         <h2 id="mn-pro" className="mt-5 text-3xl font-semibold tracking-[-0.03em] text-balance sm:text-5xl">
