@@ -30,7 +30,7 @@ Terno's shared controls (`src/components/`) are BoardUI's free **Base** componen
 | Badge | `badge.tsx` | |
 | Breadcrumb | port on first use | |
 | Button | `button.tsx` | primary, `outline` (BoardUI's secondary), `destructive` (danger), `link`, `link-secondary`, `loading` |
-| Button Group | `button-group.tsx` | the reader's Reply and its menu (plan 158). Send's filled split button is still a one-off (`send-button.tsx`) |
+| Button Group | `button-group.tsx` | the reader's Reply and its menu (plan 158). Send's filled split button is still a one-off (`send-button.tsx`): filled, its halves are the primary's states; with nobody to send to, ghost halves under an outline drawn over them (plan 173) |
 | Carousel | port on first use | |
 | Checkbox | `checkbox.tsx` | with `indeterminate`; `CheckboxMark` is the same box as a picture, for a row that is itself the control (an option's children can't be focusable, plan 143). Deviation: `target` draws the 16 px box inside a 24 px control of its own, with a hover fill its size, for a box beside a larger button (the digest, plan 161), where a near miss would hit the button; `target="quiet"` outlines the box when ticked too (the ink's mark on the card, the edge at the hover's), for a long column that starts ticked, where solid squares outshout the rows (plan 161, pass 3) |
 | Chip | `chip.tsx` | an optional named remove |
@@ -81,6 +81,7 @@ Terno's own, with no BoardUI counterpart: `card.tsx`, `scroll-area.tsx`, `toolba
 Each item says what differs from BoardUI and why.
 
 - **Ghost button:** stays transparent with a `muted` hover. BoardUI's ghost is an accent wash and it has no transparent button, but Terno's toolbars are Apple Mail's quiet icons.
+- **Pressed is a step past hover (plan 173):** every button kind (primary, outline, secondary, ghost, danger, a group's item) has a pressed fill a step beyond its hover, and the primary's hover is its `primary-hover` stop, flat (a step toward the ink did nothing where the primary is the ink). Pressed uses the `press` variant, which never applies to an unavailable control: an `aria-disabled` button still takes the click that says why, without flashing a colour.
 - **Ghost and link when unavailable:** they fade with opacity. Their glyphs are muted at rest, so a muted colour alone would leave a disabled icon looking live.
 - **Danger:** it runs from the red to a darker shade, not to a lighter top. White on anything lighter than the red fails AA.
 - **Shortcuts are keycaps everywhere (plan 158):** a menu row's shortcut is `Shortcut`'s keycap, as in the palette, tooltips and buttons, not BoardUI's plain menu text: one chord is one keycap in Apple's modifier order (⌃⌥⇧⌘), so the same key never reads three ways.

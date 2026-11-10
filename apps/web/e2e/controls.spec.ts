@@ -243,6 +243,33 @@ const PROBES: [string, Probe][] = [
     expect(await css(page, "snack-surface", "background-color")).toBe(await css(page, "probe-popover", "background-color"));
   }],
 
+  // plan 173 (the owner): every kind of button answers the pointer twice, a step on hover and a step further pressed, in
+  // every style and mode; an unavailable one (aria-disabled, it still takes the click that says why) never presses to a colour
+  ["every kind of button: hover a step, press a step further; an unavailable one presses to no colour", async (page, mode, expect) => {
+    await page.addStyleTag({ content: "#controls-probe *{transition:none!important}" });
+    const bg = (id: string) => css(page, id, "background-color");
+    for (const id of ["state-primary", "state-outline", "state-secondary", "state-ghost", "state-danger", "state-group-item"]) {
+      const rest = await bg(id);
+      await page.getByTestId(id).hover();
+      const hover = await bg(id);
+      await page.mouse.down();
+      const press = await bg(id);
+      await page.mouse.move(1, 1);
+      await page.mouse.up();
+      expect(hover, `${id}: hover`).not.toBe(rest);
+      expect(press, `${id}: pressed`).not.toBe(hover);
+      expect(press, `${id}: pressed`).not.toBe(rest);
+    }
+    const off = "state-primary-unavailable";
+    const rest = await bg(off);
+    await page.getByTestId(off).hover();
+    await page.mouse.down();
+    expect(await bg(off), "an unavailable primary, pressed").toBe(rest);
+    expect(rest).toBe(await css(page, "probe-muted", "background-color"));
+    await page.mouse.move(1, 1);
+    await page.mouse.up();
+  }],
+
   ["the primary's gradient runs between primary-hover and primary, the fills its text is checked on", async (page, mode, expect) => {
     const stops = [await css(page, "primary", "--tw-gradient-from"), await css(page, "primary", "--tw-gradient-to")].map((s) => s.trim());
     const fills = [await css(page, "probe-primary-hover", "background-color"), await css(page, "probe-primary", "background-color")];
@@ -335,6 +362,34 @@ for (const mode of ["light", "dark"] as const) {
         await baseExpect(page.getByTestId("compose-send-later")).toHaveAttribute("aria-expanded", "true");
         baseExpect(await css(page, "compose-send-later", "background-image")).toBe("none");
         baseExpect(await css(page, "compose-send-later", "background-color")).toBe(await css(page, "probe-primary-hover", "background-color"));
+      });
+      await scenario("Send with nobody to send to is an outlined pair: each half hovers and presses in the quiet fill, never the primary, the outline over a hovered half (plan 173)", async () => {
+        await freshNoDrafts(page, server);
+        await probes(page);
+        await focusList(page);
+        await page.keyboard.press("c");
+        await page.addStyleTag({ content: "[data-testid=compose-send-group] *{transition:none!important}" });
+        const primary = await css(page, "probe-primary", "background-color");
+        const outline = () => page.getByTestId("compose-send-group").evaluate((el) => getComputedStyle(el, "::after").boxShadow);
+        const atRest = await outline();
+        for (const id of ["compose-send", "compose-send-later"]) {
+          const rest = await css(page, id, "background-color");
+          await page.getByTestId(id).hover();
+          const hover = await css(page, id, "background-color");
+          await page.mouse.down();
+          const press = await css(page, id, "background-color");
+          await page.mouse.move(1, 1);
+          await page.mouse.up();
+          baseExpect(hover, `${id}: hover`).not.toBe(rest);
+          baseExpect(press, `${id}: pressed`).not.toBe(hover);
+          baseExpect([hover, press], `${id}: never the primary`).not.toContain(primary);
+        }
+        // the outline is drawn over the halves, and firms up while one is under the pointer
+        baseExpect(atRest).toMatch(/inset/);
+        await page.getByTestId("compose-send-later").hover();
+        baseExpect(await outline()).not.toBe(atRest);
+        await page.mouse.move(1, 1);
+        // (Escape would put the draft away; the next scenario starts fresh)
       });
       await scenario("the draft's From selector fills on hover", async () => {
         await freshNoDrafts(page, server);

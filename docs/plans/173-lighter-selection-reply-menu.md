@@ -135,3 +135,19 @@ The owner chose the verb of what was just done, out of four options: **Move simi
 > switch position of graphite and macos, wherever they show, actually put graphite 2nd, then macos last
 
 `DESIGNS` is Lumen, Graphite, Atelier, Luma, macOS; Settings → Appearance, first run and the palette read it. The site's `DESIGN_SHOTS` follows the same order (its second, larger tile is now Graphite). `designs.generated.css` only reorders its blocks. The Appearance baselines are updated.
+
+## Follow-up: button states (the owner)
+
+> look at this button here color, this is the hover color, i think it looks very weird, lets have a better hover color there, and check of course if this happens on the base buttons if so fix it at the root. also when the button is pressed, it becomes blue, which is awful, in graphite it becomes blue for the millisecond that is pressed when doing a click, lets have good states for hovers on those outlined buttons, also there is no hover effect at all on the 'send' button when its outlined, lets fix these, also look at the dark palettes to make sure all button styles have nice states for hover, pressed and other states, please look thru the buttons bases and make sure this is fixed.
+
+Measured in every style, light and dark, before changing anything:
+
+- **The outlined Send (nobody to send to yet)**: its Send half had no hover and no press (the unavailable rule beat them); its clock half hovered to `muted` painted over the group's outline (an inset shadow on the group, drawn under its children), so a hovered half broke out of the pill; pressing either half ran the filled primary's press colour (blue in Terno and Luma, near black in Graphite).
+- **The base buttons**: outline, secondary, ghost and a group's item had no pressed state apart from hover; the primary's and danger's press also ran on an `aria-disabled` button (the flash of the primary on an unavailable one); the primary's hover, a step toward the ink, changed nothing where the primary is the ink (Lumen, Graphite).
+
+What changed:
+
+- **`press` variant** (globals.css): `:active`, never on a `:disabled` or `aria-disabled` control.
+- **Button** (`button.tsx`): primary hover and open are `primary-hover`, flat; pressed is `primary-hover` a quarter of the way to the ink (its label only gains contrast). Outline, ghost and a group's item press to `muted` with 6 % of the ink (ghost in dark: `muted`, its hover being half of it); secondary 10 % of the ink; danger presses to its shade; links press as before, through `press`.
+- **Send** (`send-button.tsx`): filled, its halves are the primary's own states. Outlined (not ready, or sending), each half is a ghost button with its hover and press (Send presses too: it takes the click that says why), and the outline is drawn over the halves (`::after`), firming to `input` while one is hovered or open, as an outline button's border does.
+- **Tests**: `controls.spec.ts` hovers and presses every kind in every style and mode (each step differs; an unavailable primary pressed stays `muted`), and the outlined Send's halves (hover, a deeper press, never the primary, the outline over a hovered half). Both fail on the old buttons. Atelier's Send baselines (2 px taller since an earlier change) and the Spanish Appearance baseline (the styles' new order) are updated.

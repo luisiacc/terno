@@ -40,27 +40,39 @@ export function SendButton({ d, onSend, className }: { d: LocalDraft; onSend: (s
   const uploading = useFilesOnTheirWay(d.key);
   const ready = canSendTo(d) && !uploading;
   const invalid = firstInvalid(d.toText) ?? firstInvalid(d.ccText) ?? firstInvalid(d.bccText);
-  // the group owns the fill (a primary button's, plan 118), radius and shadow, so the halves meet with no seam; each half
-  // only tints on hover (bg-none: a half's own gradient would hide that), and keeps the group's look when unavailable (the
-  // group fades instead).
-  // The group clips, so focus is a ring inside each half, 2 px in so it doesn't read as the half's edge, in the
-  // text's color (the ring token is primary itself, 1:1 here).
-  const half =
-    "border-0 bg-transparent bg-none shadow-none hover:bg-primary-hover aria-expanded:bg-primary-hover focus-visible:outline-none focus-visible:ring-0 focus-visible:shadow-[inset_0_0_0_2px_var(--primary),inset_0_0_0_3.5px_var(--primary-foreground)] active:not-aria-[haspopup]:scale-100 text-inherit unavailable:bg-transparent unavailable:text-inherit";
+  // Ready, the group owns the fill (a primary button's, plan 118), radius and shadow, so the halves meet with no seam;
+  // each half is the primary's own hover, open and press over it (bg-none: a half's own gradient would hide them).
+  // Not ready (plan 118's unavailable: a click still says why), it reads as an outlined pair of quiet buttons (plan 173,
+  // the owner): each half a ghost with its hover and press, the outline drawn over them (::after), so a hovered half
+  // stays inside the pill and never covers its edge. Sending (disabled), the same outline, still.
+  // The group clips, so focus is a ring inside each half: filled, 2 px in and in the text's color (the ring token is
+  // primary itself, 1:1 there); outlined, the ring's own.
+  const outlined = !ready || disabled;
+  const half = cn(
+    "border-0 shadow-none focus-visible:outline-none focus-visible:ring-0 active:not-aria-[haspopup]:scale-100",
+    outlined
+      ? // (Send still takes the click that says why, so it presses too, as the clock does)
+        "text-inherit hover:text-foreground aria-expanded:text-foreground unavailable:opacity-100 active:bg-[color-mix(in_oklab,var(--muted),var(--foreground)_6%)] dark:active:bg-muted focus-visible:shadow-[inset_0_0_0_2px_var(--ring)]"
+      : "bg-transparent bg-none text-inherit focus-visible:shadow-[inset_0_0_0_2px_var(--primary),inset_0_0_0_3.5px_var(--primary-foreground)]",
+  );
+  const variant = outlined ? "ghost" : "default";
   return (
     <div
       className={cn(
-        "flex shrink-0 items-stretch overflow-hidden rounded-[max(var(--cta-floor),min(var(--ds-radius-md),12px))] bg-primary bg-linear-to-b from-primary-hover to-primary text-primary-foreground dark:from-primary dark:to-primary-hover shadow-[inset_0_1px_var(--highlight),0_1px_2px_var(--shadow-color)]",
-        // what a primary reads as when it can't go yet (plan 118's unavailable), in a color its label stays readable on; a click still says why
-        "has-disabled:bg-none has-disabled:bg-transparent has-disabled:text-muted-foreground has-disabled:shadow-[inset_0_0_0_1px_var(--border)] has-[[aria-disabled=true]]:bg-none has-[[aria-disabled=true]]:bg-transparent has-[[aria-disabled=true]]:text-muted-foreground has-[[aria-disabled=true]]:shadow-[inset_0_0_0_1px_var(--border)]",
+        "relative flex shrink-0 items-stretch overflow-hidden rounded-[max(var(--cta-floor),min(var(--ds-radius-md),12px))]",
+        outlined
+          ? // the outline over the halves; firmer while either is under the pointer or open, as an outline button's border
+            "text-muted-foreground after:pointer-events-none after:absolute after:inset-0 after:rounded-[inherit] after:shadow-[inset_0_0_0_1px_var(--border)] hover:after:shadow-[inset_0_0_0_1px_var(--input)] has-aria-expanded:after:shadow-[inset_0_0_0_1px_var(--input)]"
+          : "bg-primary bg-linear-to-b from-primary-hover to-primary text-primary-foreground dark:from-primary dark:to-primary-hover shadow-[inset_0_1px_var(--highlight),0_1px_2px_var(--shadow-color)]",
         className,
       )}
       data-testid="compose-send-group"
+      data-ready={ready || undefined}
     >
       <Tooltip>
         <TooltipTrigger
           render={
-            <Button type="submit" size="sm" data-testid="compose-send" aria-busy={d.sending} aria-disabled={!disabled && !ready ? true : undefined} disabled={disabled} className={cn(half, !ready && "hover:bg-muted", "peer gap-2 rounded-r-none pr-2")}>
+            <Button type="submit" size="sm" variant={variant} data-testid="compose-send" aria-busy={d.sending} aria-disabled={!disabled && !ready ? true : undefined} disabled={disabled} className={cn(half, "peer gap-2 rounded-r-none pr-2")}>
               <Send /> {t("common.send")}
             </Button>
           }
@@ -76,7 +88,7 @@ export function SendButton({ d, onSend, className }: { d: LocalDraft; onSend: (s
             render={
               <PopoverTrigger
                 render={
-                  <Button type="button" size="sm" aria-label={t("sendLater.button")} data-testid="compose-send-later" disabled={disabled} className={cn(half, !ready && "hover:bg-muted aria-expanded:bg-muted", "relative gap-0.5 rounded-l-none px-2 before:absolute before:inset-y-1.5 before:left-0 before:w-(--hairline-w) before:bg-current/25 peer-hover:before:opacity-0 hover:before:opacity-0 aria-expanded:before:opacity-0")} />
+                  <Button type="button" size="sm" variant={variant} aria-label={t("sendLater.button")} data-testid="compose-send-later" disabled={disabled} className={cn(half, "relative gap-0.5 rounded-l-none px-2 before:absolute before:inset-y-1.5 before:left-0 before:w-(--hairline-w) before:bg-current/25 peer-hover:before:opacity-0 hover:before:opacity-0 aria-expanded:before:opacity-0")} />
                 }
               />
             }

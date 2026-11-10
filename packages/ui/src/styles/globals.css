@@ -28,6 +28,8 @@
 @custom-variant focus-reveal (&:focus-visible);
 /* plan 125: a control that can't be used now, natively or kept focusable (aria-disabled); a busy one keeps its look */
 @custom-variant unavailable (&:is(:disabled, [aria-disabled="true"]):not([aria-busy="true"]));
+/* plan 173: a control being pressed, never one that can't be used now (an aria-disabled one still takes the click that says why, without a press colour) */
+@custom-variant press (&:active:not(:is(:disabled, [aria-disabled="true"])));
 @custom-variant focus-visible (&:focus-visible:where(:root[data-focus-ring] *, input:not([type="checkbox"], [type="radio"], [type="range"], [type="button"], [type="submit"], [type="reset"], [type="file"], [type="color"]), textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"]));
 
 @theme inline {

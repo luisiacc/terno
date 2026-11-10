@@ -30,7 +30,7 @@ function ButtonGroupItem({ className, selected, iconOnly, type = "button", ...pr
       type={type}
       aria-pressed={selected}
       className={cn(
-        "inline-flex items-center justify-center gap-1.5 text-[length:var(--ds-text-control)] font-medium whitespace-nowrap outline-none transition-colors select-none hover:bg-muted active:bg-muted aria-expanded:bg-muted aria-pressed:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[1.15em] [&_svg:not([class*='text-'])]:text-muted-foreground hover:[&_svg:not([class*='text-'])]:text-foreground aria-expanded:[&_svg:not([class*='text-'])]:text-foreground",
+        "inline-flex items-center justify-center gap-1.5 text-[length:var(--ds-text-control)] font-medium whitespace-nowrap outline-none transition-colors select-none hover:bg-muted press:bg-[color-mix(in_oklab,var(--muted),var(--foreground)_6%)] aria-expanded:bg-muted aria-pressed:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[1.15em] [&_svg:not([class*='text-'])]:text-muted-foreground hover:[&_svg:not([class*='text-'])]:text-foreground aria-expanded:[&_svg:not([class*='text-'])]:text-foreground",
         iconOnly ? "aspect-square" : "px-2.5",
         className,
       )}

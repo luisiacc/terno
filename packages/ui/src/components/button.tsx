@@ -13,23 +13,26 @@ const buttonVariants = cva(
     variants: {
       variant: {
         // The primary (plan 118): lit from the top between two fills its text is checked on (primary-hover is the
-        // lighter of the two in light palettes, the darker in dark ones); hover and press drop the gradient for a darker fill.
-        // Unavailable (plan 125, BoardUI): the muted fill and its text, flat
-        default: "bg-primary bg-linear-to-b from-primary-hover to-primary text-primary-foreground shadow-[inset_0_1px_var(--highlight),0_1px_2px_var(--shadow-color)] dark:from-primary dark:to-primary-hover hover:bg-[color-mix(in_oklab,var(--primary)_90%,var(--foreground))] hover:bg-none active:bg-[color-mix(in_oklab,var(--primary)_90%,var(--foreground))] active:bg-none unavailable:bg-muted unavailable:bg-none unavailable:text-muted-foreground unavailable:shadow-none",
-        // The secondary: its own 1 px border (no size change) firming up on hover, over a contact shadow; pressed, the
-        // muted fill and the input border; unavailable, the field wash under its border, flat (plan 125)
+        // lighter of the two in light palettes, the darker in dark ones). Plan 173: hover and open are primary-hover, flat
+        // (its text checked on it; a step toward the ink did nothing where the primary is the ink, Lumen's and Graphite's),
+        // and press is a step of the ink beyond it, which only takes its label further off it. Unavailable (plan 125,
+        // BoardUI): the muted fill and its text, flat, and no press colour (`press` skips it)
+        default: "bg-primary bg-linear-to-b from-primary-hover to-primary text-primary-foreground shadow-[inset_0_1px_var(--highlight),0_1px_2px_var(--shadow-color)] dark:from-primary dark:to-primary-hover hover:bg-primary-hover hover:bg-none aria-expanded:bg-primary-hover aria-expanded:bg-none press:bg-[color-mix(in_oklab,var(--primary-hover)_75%,var(--foreground))] press:bg-none unavailable:bg-muted unavailable:bg-none unavailable:text-muted-foreground unavailable:shadow-none",
+        // The secondary: its own 1 px border (no size change) firming up on hover, over a contact shadow, on the muted fill;
+        // pressed, a step of the ink deeper (plan 173); unavailable, the field wash under its border, flat (plan 125)
         outline:
-          "border-border bg-card shadow-xs hover:border-input hover:bg-muted hover:text-foreground active:border-input active:bg-muted aria-expanded:border-input aria-expanded:bg-muted aria-expanded:text-foreground [&_svg:not([class*='text-'])]:text-muted-foreground hover:[&_svg:not([class*='text-'])]:text-foreground aria-expanded:[&_svg:not([class*='text-'])]:text-foreground unavailable:border-border unavailable:bg-field unavailable:text-muted-foreground unavailable:shadow-none",
+          "border-border bg-card shadow-xs hover:border-input hover:bg-muted hover:text-foreground press:border-input press:bg-[color-mix(in_oklab,var(--muted),var(--foreground)_6%)] aria-expanded:border-input aria-expanded:bg-muted aria-expanded:text-foreground [&_svg:not([class*='text-'])]:text-muted-foreground hover:[&_svg:not([class*='text-'])]:text-foreground aria-expanded:[&_svg:not([class*='text-'])]:text-foreground unavailable:border-border unavailable:bg-field unavailable:text-muted-foreground unavailable:shadow-none",
         secondary:
-          "bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground unavailable:bg-muted unavailable:text-muted-foreground",
-        // Terno's quiet toolbar button (BoardUI has no transparent one): its icons are muted at rest, so unavailable it fades
+          "bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] press:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_10%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground unavailable:bg-muted unavailable:text-muted-foreground",
+        // Terno's quiet toolbar button (BoardUI has no transparent one): its icons are muted at rest, so unavailable it fades;
+        // pressed, a step deeper than its hover (plan 173)
         ghost:
-          "hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 unavailable:opacity-50",
+          "hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 press:bg-[color-mix(in_oklab,var(--muted),var(--foreground)_6%)] dark:press:bg-muted unavailable:opacity-50",
         // BoardUI's danger (plan 125): solid, lit from the top from the red to its shade, its own text (contrast.ts)
-        destructive: "bg-destructive bg-linear-to-b from-destructive to-destructive-shade text-destructive-foreground shadow-xs hover:bg-[color-mix(in_oklab,var(--destructive)_90%,var(--foreground))] hover:bg-none active:bg-[color-mix(in_oklab,var(--destructive)_90%,var(--foreground))] active:bg-none focus-visible:ring-destructive/40 unavailable:bg-muted unavailable:bg-none unavailable:text-muted-foreground unavailable:shadow-none",
-        link: "text-primary underline-offset-3 hover:underline active:text-[color-mix(in_oklab,var(--primary)_80%,var(--foreground))] unavailable:opacity-50",
+        destructive: "bg-destructive bg-linear-to-b from-destructive to-destructive-shade text-destructive-foreground shadow-xs hover:bg-[color-mix(in_oklab,var(--destructive)_90%,var(--foreground))] hover:bg-none press:bg-destructive-shade press:bg-none focus-visible:ring-destructive/40 unavailable:bg-muted unavailable:bg-none unavailable:text-muted-foreground unavailable:shadow-none",
+        link: "text-primary underline-offset-3 hover:underline press:text-[color-mix(in_oklab,var(--primary)_80%,var(--foreground))] unavailable:opacity-50",
         // BoardUI's secondary link, in the ink: for surfaces the accent isn't checked on (the tint, a draft)
-        "link-secondary": "text-foreground underline-offset-3 hover:underline active:text-muted-foreground unavailable:opacity-50",
+        "link-secondary": "text-foreground underline-offset-3 hover:underline press:text-muted-foreground unavailable:opacity-50",
       },
       size: {
         default:
