@@ -68,3 +68,11 @@ The owner, verbatim (with the list and a paragraph of searchbrowser.app, black l
 > i think there needs to be abit more contrast on the blacks to look like what we intended like this
 
 The reference measures #171717 ink over #8A8A8A grey. Graphite light's ink goes from #292929 to #171717 everywhere it was (foreground, primary, accent and selected-row text, the sidebar's selection, drafts). The grey stays #5D5D5D: #8A8A8A is 3.5:1 on white, under AA, and the grey has to hold 4.5:1 on the selected row's #DCDCDC too (#5D5D5D is 4.8:1 there, about the lightest that does). Dark is unchanged. `designs.test.ts` holds the new hex; the contrast suite passes; Graphite's light baselines are rewritten.
+
+## Follow-up: a tad more weight
+
+The owner, verbatim:
+
+> i think not only darker but als oa tad more font weight
+
+SF is variable, so a half step draws as one (measured in Chromium on macOS: 400, 450 and 500 set different widths). Graphite's roles in the ink go half a step up: regular 450 (subject, body, compose), medium 550 (sender, list title, reader subject, sender name, the selected sidebar item); an unread sender 650, its subject 550, so unread stays a step above read. Grey text keeps 400 and 500 (the preview, labels, the sidebar at rest), so the ink stands further off it, as the reference's lead-in does. Plan 137's two-weight rule becomes this one in `designs.test.ts` and `graphite.spec.ts`; Graphite's baselines are rewritten.

@@ -4,28 +4,36 @@ import type { DesignDefinition, TypeRole, TypeSpec } from "./types";
 const SF = '-apple-system, BlinkMacSystemFont, "Geist Variable", ui-sans-serif, system-ui, sans-serif';
 const TRACKING = "-0.15px";
 
-/** [size, leading, weight, strong]: the only sizes are 12, 13, 14 and 24, the only weights 400 and 500 (an unread sender's 600 aside) */
-const role = (size: string, leading: string, weight: 400 | 500, strong: 400 | 500): TypeSpec => ({ family: "sans", size, leading, weight, strong, tracking: TRACKING, style: "normal" });
+/** [size, leading, weight, strong]: the only sizes are 12, 13, 14 and 24 */
+const role = (size: string, leading: string, weight: number, strong: number): TypeSpec => ({ family: "sans", size, leading, weight, strong, tracking: TRACKING, style: "normal" });
+
+/**
+ * Weights: grey text in regular and medium (400, 500); words in the ink half a step heavier (450, 550; plan 169, the
+ * owner: black reads blacker beside the grey, as the reference's does). SF is variable, so the half steps draw as such.
+ */
+const INK = 450;
+const INK_MEDIUM = 550;
 
 const TYPE: Record<TypeRole, TypeSpec> = {
-  listTitle: role("0.875rem", "1.25rem", 500, 500),
-  greeting: role("0.875rem", "1.25rem", 500, 500),
+  listTitle: role("0.875rem", "1.25rem", INK_MEDIUM, INK_MEDIUM),
+  greeting: role("0.875rem", "1.25rem", INK_MEDIUM, INK_MEDIUM),
   listSubtitle: role("0.75rem", "1rem", 400, 500),
   sectionLabel: role("0.75rem", "1rem", 400, 400),
-  nav: role("0.8125rem", "1.25rem", 400, 500),
-  // plan 158: a read row's sender is its anchor at 500, so an unread one needs a step above it to stay the stronger
+  // grey at rest; the selected item is in the ink
+  nav: role("0.8125rem", "1.25rem", 400, INK_MEDIUM),
+  // plan 158: a read row's sender is its anchor at medium, so an unread one needs a step above it to stay the stronger
   // (plan 169: 20 px lines, so a row's three read as lines rather than a block)
-  rowFrom: { ...role("0.8125rem", "1.25rem", 500, 500), strong: 600 },
-  rowSubject: role("0.8125rem", "1.25rem", 400, 500),
+  rowFrom: role("0.8125rem", "1.25rem", INK_MEDIUM, 650),
+  rowSubject: role("0.8125rem", "1.25rem", INK, INK_MEDIUM),
   rowSnippet: role("0.8125rem", "1.25rem", 400, 400),
-  readerSubject: role("1.5rem", "2rem", 500, 500),
-  senderName: role("0.875rem", "1.25rem", 500, 500),
-  body: role("0.875rem", "1.6", 400, 500),
-  compose: role("0.875rem", "1.25rem", 400, 500),
+  readerSubject: role("1.5rem", "2rem", INK_MEDIUM, INK_MEDIUM),
+  senderName: role("0.875rem", "1.25rem", INK_MEDIUM, INK_MEDIUM),
+  body: role("0.875rem", "1.6", INK, INK_MEDIUM),
+  compose: role("0.875rem", "1.25rem", INK, INK_MEDIUM),
 };
 
 /**
- * Graphite (plan 137): a simple system. SF in regular and medium at -0.15px; type at 12, 13, 14 and 24; #171717,
+ * Graphite (plan 137): a simple system. SF in regular and medium at -0.15px (the ink half a step heavier, plan 169); type at 12, 13, 14 and 24; #171717,
  * #5D5D5D and #9E9E9E; 8 px navigation, 16 px cards, pill buttons. White panes divided by hairlines, no avatars in rows,
  * and "New message" as a plain row, so the only filled pills are real calls to action.
  */

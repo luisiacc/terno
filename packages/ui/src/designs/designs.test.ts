@@ -73,15 +73,16 @@ describe("designs (plan 15)", () => {
       return `#${[r, green, b].map((v) => Math.round(v * 255).toString(16).padStart(2, "0")).join("")}`.toUpperCase();
     };
 
-    it("type: 12, 13, 14 and 24 px, regular and medium (an unread sender's 600 aside, plan 158), -0.15px", () => {
+    it("type: 12, 13, 14 and 24 px; grey in regular and medium, the ink half a step heavier (plan 169); -0.15px", () => {
       for (const step of TEXT_STEPS) expect([12, 13, 14, 24]).toContain(px(g.text[step][0]));
       expect([12, 13, 14, 24]).toContain(px(g.controlText));
+      const grey = ["listSubtitle", "sectionLabel", "nav", "rowSnippet"];
       for (const role of TYPE_ROLES) {
         const spec = g.type[role];
         expect([12, 13, 14, 24], role).toContain(px(spec.size));
-        expect([400, 500], role).toContain(spec.weight);
-        // a read sender is 500, so an unread one needs the step above it
-        expect(role === "rowFrom" ? [600] : [400, 500], role).toContain(spec.strong);
+        expect(grey.includes(role) ? [400] : [450, 550], role).toContain(spec.weight);
+        // a read sender is 550, so an unread one needs the step above it
+        expect(role === "rowFrom" ? [650] : [400, 500, 550], role).toContain(spec.strong);
         expect(spec.tracking, role).toBe("-0.15px");
       }
       expect(g.weights).toEqual({ semibold: 500, bold: 500 });
