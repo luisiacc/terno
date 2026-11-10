@@ -1,4 +1,6 @@
 import { folderName } from "~/lib/account-folders";
+import { anchorAt, anchoredOffset, rowStart, TOP_LABEL } from "~/lib/row-offsets";
+import type { RowSpacing } from "~/lib/row-offsets";
 import { SearchField } from "@terno/ui/components/search-field";
 import { Skeleton } from "@terno/ui/components/skeleton";
 import { useVirtualizer } from "@tanstack/react-virtual";
@@ -65,7 +67,6 @@ const pinnedOver = (snack: number, pinned: number): number => Math.max(0, bottom
 const askOverList = (): number => (usePinnedAsk.getState().overList ? usePinnedAsk.getState().inset : 0);
 const listInset = (): number => (useAppearance.getState().layout === "list" ? pinnedOver(listCovered() ? 0 : useSnack.getState().inset, pinnedInsetNow()) : askOverList());
 
-const TOP_LABEL = 28;
 const EMPTY_GROUPS: readonly TodayGroup[] = [];
 
 /** Plan 145: what the rows under it are, drawn in space the row above leaves. Not a stop for arrow keys: a listbox holds only its options. */
@@ -132,28 +133,6 @@ export function TodayDigestEntry({ inline }: { /** List's full-width title row: 
   );
 }
 const TOP_GAP = 9;
-
-/** What sits between the rows at a fixed height whatever theirs: the Reminders label and its gap, Today's headings (plan 169) */
-interface RowSpacing { lead: number; top: number; topGap: number; groups: readonly number[] }
-/** Where row `i` starts in the scroller, as the virtualizer lays it out (its estimateSize and paddingStart) */
-function rowStart(i: number, h: number, s: RowSpacing): number {
-  const head = s.top > 0 || s.groups.includes(0) ? TOP_LABEL : 0;
-  return s.lead + head + i * h + (s.topGap > 0 && i >= s.top ? s.topGap : 0) + TOP_LABEL * s.groups.filter((at) => at >= 1 && at <= i).length;
-}
-/** The last row starting at or above `y` (-1: `y` is above the rows) */
-function rowAtOffset(y: number, count: number, h: number, s: RowSpacing): number {
-  let lo = 0;
-  let hi = count - 1;
-  let found = -1;
-  while (lo <= hi) {
-    const mid = (lo + hi) >> 1;
-    if (rowStart(mid, h, s) <= y) {
-      found = mid;
-      lo = mid + 1;
-    } else hi = mid - 1;
-  }
-  return found;
-}
 
 export const searchInputRef: { current: HTMLInputElement | null } = { current: null };
 export const listScroller: { scrollToIndex?: (i: number) => void } = {};
@@ -1243,20 +1222,18 @@ export function ThreadList() {
         const spacing = (): RowSpacing => ({ lead: leadRef.current, ...spacingRef.current });
         const was = spacing();
         const y = el.scrollTop;
-        // (above the first row, it's the anchor: what arrives above it stays out of view)
-        const first = Math.max(0, rowAtOffset(y, rows.length, oldH, was));
-        // how far into that row the viewport starts: its share of the row kept; any space above or below it as it is
-        const into = y - rowStart(first, oldH, was);
+        // the first row on screen (above the first row, that one: what arrives above it stays out of view)
+        const anchor = anchorAt(y, rows.length, oldH, was);
         const id = getApp().selectedId;
         const sel = id === null ? undefined : useList.getState().index.get(id);
         const selVisible = sel !== undefined && rowStart(sel, oldH, was) < el.scrollTop + el.clientHeight && rowStart(sel, oldH, was) + oldH > el.scrollTop;
-        const anchorId = rows[first]!.id;
+        const anchorId = rows[anchor.index]!.id;
         return () => {
           const i = useList.getState().index.get(anchorId);
           if (i === undefined) return;
           const h = measuredHeight.current;
           const now = spacing();
-          el.scrollTop = Math.max(0, rowStart(i, h, now) + (into <= 0 ? into : into <= oldH ? into * (h / oldH) : h + into - oldH));
+          el.scrollTop = anchoredOffset({ index: i, into: anchor.into }, oldH, h, now);
           // where the open thread is now (rows may have arrived above it since the capture)
           const sel = id === null ? undefined : useList.getState().index.get(id);
           // the open thread was on screen: if the new heights carried it out of view, it comes back (set directly: the

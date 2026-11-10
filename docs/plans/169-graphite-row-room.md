@@ -46,3 +46,7 @@ None: one number the virtualizer already reads. Taller rows mean fewer rows moun
 One finding, fixed with a test that fails without the fix:
 
 - **A style switch could land on the next row.** The list keeps its first visible row through a switch by scaling the scroll offset by the new row height over the old. That scaled the Reminders label and its gap (and Today's headings) too, which keep their height. With a due reminder on top, macOS (64) to Atelier (76) moved the viewport 9% of a row deeper, and Graphite's 84 px rows made it worse. The anchor now measures from each row's real start (`rowStart`, as the virtualizer lays it out): only the rows scale, and space above or below the anchor row stays as it is. `designs.spec.ts`'s live switch now runs with a due reminder on top (it failed at 0.094 against 0.06).
+
+A second round, on that fix, found one more, also fixed with a test that fails without it:
+
+- **A viewport starting in the gap under a row anchored that row,** already off screen. If a refresh then took it away (a reminder that ended), the restore gave up and the mail on screen moved a row. A viewport in the space under a row now anchors the next row, the one on screen, with the space above it kept. The math moved to `lib/row-offsets.ts` (`rowStart`, `anchorAt`, `anchoredOffset`) with a unit test.
