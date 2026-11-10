@@ -209,3 +209,33 @@ html[data-design="midnight"] .mn-pro-stage {
 html[data-design="midnight"] .mn-pro-frame {
   box-shadow: 0 0 0 1px rgb(255 255 255 / 0.1), 0 24px 60px -24px rgb(0 0 0 / 0.9);
 }
+
+/* the header's icon buttons (GitHub, the language menu): quiet until hovered or open */
+html[data-design="midnight"] .mn-iconbtn {
+  display: inline-grid; place-items: center; width: 2rem; height: 2rem; border-radius: 8px; cursor: pointer;
+  color: var(--mn-muted); list-style: none;
+  transition: color 100ms ease, background-color 100ms ease;
+}
+html[data-design="midnight"] .mn-iconbtn::-webkit-details-marker { display: none; }
+html[data-design="midnight"] .mn-iconbtn:hover,
+html[data-design="midnight"] .mn-menu[open] > .mn-iconbtn { color: var(--mn-fg); background: color-mix(in srgb, var(--mn-fg) 7%, transparent); }
+
+/* the language menu: a raised hairline card under its button */
+html[data-design="midnight"] .mn-menu-list {
+  z-index: 50; border-radius: 12px; background: var(--mn-raised);
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.1), 0 16px 40px -12px rgb(0 0 0 / 0.8);
+}
+html[data-design="midnight"] .mn-menu-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem; height: 2rem; padding: 0 0.625rem;
+  border-radius: 8px; font-size: 0.875rem; color: var(--mn-muted);
+  transition: color 100ms ease, background-color 100ms ease;
+}
+html[data-design="midnight"] .mn-menu-item:hover { color: var(--mn-fg); background: color-mix(in srgb, var(--mn-fg) 7%, transparent); }
+html[data-design="midnight"] .mn-menu-item[aria-current] { color: var(--mn-fg); }
+html[data-design="midnight"] .mn-menu-item:focus-visible { outline-offset: -2px; border-radius: 8px; }
+@media (prefers-reduced-motion: no-preference) {
+  html[data-design="midnight"] .mn-menu[open] > .mn-menu-list { transition: opacity 100ms ease, transform 100ms ease; }
+  @starting-style {
+    html[data-design="midnight"] .mn-menu[open] > .mn-menu-list { opacity: 0; transform: translateY(-4px); }
+  }
+}

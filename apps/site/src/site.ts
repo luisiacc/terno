@@ -10,6 +10,11 @@ export const DESIGN_NAMES: Record<SiteDesign, string> = { lumen: "Lumen", midnig
 export const SITE_DESIGN: SiteDesign = "midnight";
 
 export type Lang = "en" | "es";
+/** the site's languages, each named in itself (the language menu lists them so on every page) */
+export const LANGUAGES: readonly { lang: Lang; name: string }[] = [
+  { lang: "en", name: "English" },
+  { lang: "es", name: "Español" },
+];
 export type PageKind = "home" | "privacy" | "download" | "waitlist" | "404";
 export interface Route {
   path: string;
@@ -25,6 +30,8 @@ export interface Route {
 
 const prefix = (lang: Lang) => (lang === "es" ? "/es" : "");
 const pagePath = (page: Exclude<PageKind, "404">) => (page === "home" ? "/" : `/${page}/`);
+/** the same page in `lang` */
+export const pathIn = (lang: Lang, page: Exclude<PageKind, "404">) => `${prefix(lang)}${pagePath(page)}`;
 
 export function routes(): Route[] {
   const list: Route[] = [];

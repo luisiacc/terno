@@ -1,14 +1,14 @@
 import type { ReactNode } from "react";
 import type { SiteCopy } from "../copy";
 import { DownloadMac, WaitlistLink } from "../parts/download";
-import { Check, ChevronRight, Github, Mails } from "../parts/icons";
+import { Check, ChevronRight, Github, Languages, Mails } from "../parts/icons";
 import { Kbd } from "../parts/kbd";
 import { Logo } from "../parts/logo";
 import { PRO_LEAD, PRO_MORE, Peek, ProLeadShot, proPrivacyLink } from "../parts/pro";
 import { DESIGN_SHOTS, Shot, type ShotName } from "../parts/shot";
 import { Waitlist } from "../parts/waitlist";
 import { Window } from "../parts/window";
-import { GITHUB, LICENSE_URL } from "../site";
+import { GITHUB, LANGUAGES, LICENSE_URL, pathIn, type Route } from "../site";
 import type { HomeDesign } from "./types";
 
 /**
@@ -22,6 +22,34 @@ type Feature = Pick<SiteCopy["features"][FeatureId], "title" | "body" | "points"
 const wrap = "mx-auto w-full max-w-6xl px-5 sm:px-8";
 const mono = "font-mono text-[0.72rem] uppercase tracking-[0.14em]";
 const link = "rounded-md text-(--mn-muted) transition-colors duration-100 hover:text-(--mn-fg)";
+
+/**
+ * The header's language menu: a disclosure (complete without the script, which only adds Esc and a click outside to
+ * close it) listing every language by its own name, the current one checked.
+ */
+function LanguageMenu({ copy, route }: { copy: SiteCopy; route: Route }) {
+  const page = route.page === "404" ? "home" : route.page;
+  return (
+    <details data-menu className="mn-menu relative">
+      <summary aria-label={copy.nav.languageMenu} title={copy.nav.languageMenu} className="mn-iconbtn">
+        <Languages size={16} />
+      </summary>
+      <ul className="mn-menu-list absolute top-full right-0 mt-2 min-w-40 p-1">
+        {LANGUAGES.map(({ lang, name }) => {
+          const current = lang === copy.lang;
+          return (
+            <li key={lang}>
+              <a href={pathIn(lang, page)} lang={lang} hrefLang={lang} aria-current={current ? "page" : undefined} className="mn-menu-item">
+                {name}
+                {current && <Check size={16} className="text-(--mn-accent)" />}
+              </a>
+            </li>
+          );
+        })}
+      </ul>
+    </details>
+  );
+}
 
 /** A key as a keycap; `big` is the closing section's. */
 function Cap({ k, big }: { k: string; big?: boolean }) {
@@ -111,7 +139,7 @@ function Pro({ copy }: { copy: SiteCopy }) {
   );
 }
 
-export const Midnight: HomeDesign = ({ copy }) => {
+export const Midnight: HomeDesign = ({ copy, route }) => {
   const f = copy.features;
   const privacy = copy.lang === "es" ? "/es/privacy/" : "/privacy/";
   const home = copy.lang === "es" ? "/es/" : "/";
@@ -127,31 +155,31 @@ export const Midnight: HomeDesign = ({ copy }) => {
         <a href="#main" className="site-skip">
           {copy.skip}
         </a>
-        <div className={`${wrap} flex h-14 items-center justify-between gap-4`}>
-          <a href={home} className="flex items-center gap-2.5 rounded-md font-semibold tracking-tight" aria-label={copy.nav.home}>
+        <div className={`${wrap} grid h-14 grid-cols-[1fr_auto_1fr] items-center gap-4`}>
+          <a href={home} className="flex items-center gap-2.5 justify-self-start rounded-md font-semibold tracking-tight" aria-label={copy.nav.home}>
             <Logo size={24} />
             <span aria-hidden="true">Terno</span>
           </a>
-          <nav aria-label={copy.nav.home} className="flex items-center gap-5 text-sm">
-            <a href="#features" className={`${link} hidden sm:inline`}>
+          <nav aria-label={copy.nav.home} className="flex items-center gap-6 text-sm max-sm:hidden">
+            <a href="#features" className={link}>
               {copy.nav.features}
             </a>
-            <a href="#pro" className={`${link} hidden sm:inline`}>
+            <a href="#pro" className={link}>
               {copy.nav.pro}
             </a>
-            <a href={privacy} className={`${link} hidden sm:inline`}>
+            <a href={privacy} className={link}>
               {copy.nav.privacy}
             </a>
-            <a href={GITHUB} className={`${link} hidden md:inline`}>
-              {copy.nav.source}
+          </nav>
+          <div className="col-start-3 flex items-center gap-1 justify-self-end">
+            <a href={GITHUB} aria-label={copy.nav.sourceOnGithub} title={copy.nav.sourceOnGithub} className="mn-iconbtn">
+              <Github size={16} />
             </a>
-            <a href={copy.nav.languageHref} className={link} lang={copy.lang === "en" ? "es" : "en"}>
-              {copy.nav.language}
-            </a>
-            <a href="/download/mac" className="mn-btn mn-btn-primary h-8 px-3 text-[0.8rem]">
+            <LanguageMenu copy={copy} route={route} />
+            <a href="/download/mac" className="mn-btn mn-btn-primary ml-2 h-8 px-3 text-[0.8rem]">
               {copy.nav.download}
             </a>
-          </nav>
+          </div>
         </div>
       </header>
 

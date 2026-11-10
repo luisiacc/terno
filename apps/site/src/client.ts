@@ -30,6 +30,18 @@ for (const form of document.querySelectorAll<HTMLFormElement>("form[data-waitlis
   });
 }
 
+// a header menu (<details data-menu>) works without this; with it, Esc and a click anywhere else close it too
+const menus = [...document.querySelectorAll<HTMLDetailsElement>("details[data-menu]")];
+document.addEventListener("click", (e) => {
+  for (const menu of menus) if (menu.open && !menu.contains(e.target as Node)) menu.open = false;
+});
+document.addEventListener("keydown", (e) => {
+  const menu = menus.find((m) => m.open);
+  if (e.key !== "Escape" || !menu) return;
+  menu.open = false;
+  menu.querySelector("summary")?.focus();
+});
+
 // screenshots (parts/shot.tsx): the light/dark switch and the enlarged view; their tools show once this runs
 document.documentElement.classList.add("js");
 const systemDark = matchMedia("(prefers-color-scheme: dark)");

@@ -8,7 +8,7 @@ export const es: SiteCopy = {
       "Terno es un cliente de correo rápido para Mac, pensado para el teclado. Todas tus cuentas en una bandeja. Búsqueda instantánea. Totalmente local, sin cuenta. Terno Pro añade IA que redacta tus respuestas y encuentra lo que te necesita.",
   },
   skip: "Ir al contenido",
-  nav: { features: "Funciones", pro: "Pro", privacy: "Privacidad", source: "Código", download: "Descargar", language: "English", languageHref: "/", home: "Inicio de Terno" },
+  nav: { features: "Funciones", pro: "Pro", privacy: "Privacidad", source: "Código", download: "Descargar", language: "English", languageHref: "/", languageMenu: "Idioma", sourceOnGithub: "Código fuente en GitHub", home: "Inicio de Terno" },
   hero: {
     title: "El último cliente de correo que probarás.",
     subtitle: "Todas tus cuentas en una bandeja. Búsqueda instantánea. Archiva un correo y todos los parecidos se archivan también. Totalmente local, sin cuenta.",

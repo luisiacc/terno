@@ -69,6 +69,8 @@ export const ICONS = {
   Italic: "TextItalicIcon",
   Keyboard: "KeyboardIcon",
   KeyRound: "Key02Icon",
+  // terno.app: the language menu
+  Languages: "TranslateIcon",
   Laptop: "LaptopIcon",
   LaptopMinimalCheck: "LaptopMinimalCheckIcon",
   Layers: "Layers01Icon",

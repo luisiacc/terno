@@ -7,7 +7,7 @@ export const en = {
       "Terno is a fast, keyboard-first email client for Mac. Every account in one inbox. Instant search. Fully local, no account needed. Terno Pro adds AI that drafts your replies and finds what needs you.",
   },
   skip: "Skip to content",
-  nav: { features: "Features", pro: "Pro", privacy: "Privacy", source: "Source", download: "Download", language: "Español", languageHref: "/es/", home: "Terno home" },
+  nav: { features: "Features", pro: "Pro", privacy: "Privacy", source: "Source", download: "Download", language: "Español", languageHref: "/es/", languageMenu: "Language", sourceOnGithub: "Source code on GitHub", home: "Terno home" },
   hero: {
     title: "The last email client you’ll try.",
     subtitle: "Every account in one inbox. Instant search. Archive one email, and every similar one is archived too. Fully local, no account needed.",

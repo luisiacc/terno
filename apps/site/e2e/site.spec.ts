@@ -182,3 +182,25 @@ test("the Pro link lands on Terno Pro in every design, clear of a sticky header 
       expect(chip, `${design} ${width}`).toBeGreaterThanOrEqual(bar);
     }
 });
+
+test("Midnight's header: GitHub and the language menu are named icons; the menu closes on Esc and a click outside, and switches language", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("link", { name: "Source code on GitHub" })).toHaveAttribute("href", /github\.com/);
+  const menu = page.locator("header details[data-menu]");
+  const button = menu.locator("summary");
+  await expect(button).toHaveAccessibleName("Language");
+  await button.click();
+  await expect(menu.locator('a[aria-current="page"]')).toHaveText("English");
+  await page.keyboard.press("Escape");
+  await expect(menu).not.toHaveAttribute("open");
+  await expect(button).toBeFocused();
+  await button.click();
+  await page.locator("h1").click();
+  await expect(menu).not.toHaveAttribute("open");
+  await button.click();
+  await menu.getByRole("link", { name: "Español" }).click();
+  await expect(page).toHaveURL(/\/es\/$/);
+  await page.locator("header summary").click();
+  await expect(page.locator('header a[aria-current="page"]')).toHaveText("Español");
+  await expect(page.getByRole("link", { name: "Código fuente en GitHub" })).toBeVisible();
+});

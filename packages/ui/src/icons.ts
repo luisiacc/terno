@@ -56,6 +56,7 @@ export { Info } from "./iconset/generated/Info";
 export { Italic } from "./iconset/generated/Italic";
 export { KeyRound } from "./iconset/generated/KeyRound";
 export { Keyboard } from "./iconset/generated/Keyboard";
+export { Languages } from "./iconset/generated/Languages";
 export { Laptop } from "./iconset/generated/Laptop";
 export { LaptopMinimalCheck } from "./iconset/generated/LaptopMinimalCheck";
 export { Layers } from "./iconset/generated/Layers";
