@@ -198,6 +198,19 @@ test.describe("the filters and the suggestions", () => {
     await more.click();
     for (const f of ["people", "attachments", "starred"]) await expect(page.getByTestId(`filter-option-${f}`)).toBeVisible();
     await expect(page.getByTestId("filter-option-unread")).toHaveCount(0);
+    // the header is the window's drag area on desktop, where Electron takes a click before the page sees it: what lies over
+    // it while the menu is open isn't, so a click above the menu closes it (the owner's report)
+    const region = (x: number, y: number) =>
+      page.evaluate(([x, y]) => {
+        const el = document.elementFromPoint(x!, y!)!;
+        return getComputedStyle(el).getPropertyValue("-webkit-app-region") || getComputedStyle(el).getPropertyValue("app-region");
+      }, [x, y]);
+    const title = await box(page.getByTestId("list-title"));
+    expect(await header.evaluate((el) => getComputedStyle(el).getPropertyValue("-webkit-app-region") || getComputedStyle(el).getPropertyValue("app-region"))).toBe("drag");
+    expect(await region(title.x + 4, title.y + title.height / 2)).toBe("no-drag");
+    await page.mouse.click(title.x + 4, title.y + title.height / 2);
+    await expect(page.getByTestId("filter-option-attachments")).toHaveCount(0);
+    await more.click();
     await page.getByTestId("filter-option-attachments").click();
     await expectFilter(page, "attachments", "With attachments");
     expect(await shape()).toBe(before);

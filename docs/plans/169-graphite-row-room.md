@@ -50,3 +50,11 @@ One finding, fixed with a test that fails without the fix:
 A second round, on that fix, found one more, also fixed with a test that fails without it:
 
 - **A viewport starting in the gap under a row anchored that row,** already off screen. If a refresh then took it away (a reminder that ended), the restore gave up and the mail on screen moved a row. A viewport in the space under a row now anchors the next row, the one on screen, with the space above it kept. The math moved to `lib/row-offsets.ts` (`rowStart`, `anchorAt`, `anchoredOffset`) with a unit test.
+
+## Follow-up: a click above an open menu closes it
+
+The owner, verbatim (with a screenshot of the filter menu open, an arrow on the list's title above it):
+
+> when that menmu is open, clicking above should close it
+
+The list header is the window's drag area on desktop (`drag-region`), and Electron takes a click there for the window before the page sees it, so the menu never heard of it. Base UI lays a full-window layer behind an open menu, select or popover to catch a click outside (`InternalBackdrop`, `[data-base-ui-inert][role=presentation]`); `globals.css` now makes that layer `no-drag`, as the floating panels already were. While a menu is open the window can't be dragged by its title band, as with a native menu. `inbox-scan.spec.ts` checks the header is a drag area, the point over the title isn't while the menu is open, and a click there closes it (it failed at `none` without the fix).

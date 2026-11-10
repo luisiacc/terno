@@ -516,6 +516,11 @@
 [data-slot="tooltip-content"] {
   -webkit-app-region: no-drag;
 }
+/* and the layer an open menu, select or popover lays over the window to catch a click outside it: over a title-bar strip
+   Electron would take that click for the window drag, and the menu would stay open */
+[data-base-ui-inert][role="presentation"] {
+  -webkit-app-region: no-drag;
+}
 /* a dialog the user can drag (plan 129): its margin and its handles say so, the rest doesn't inherit it */
 [data-slot="dialog-content"][data-movable] {
   cursor: grab;
