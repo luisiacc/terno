@@ -17,7 +17,7 @@ import { TernoMark } from "@terno/ui/brand/terno-mark";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
 import { useReplies } from "~/lib/replies";
-import { Archive, Bell, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Ellipsis, FileDown, Forward, Inbox, Layers, Mail, OctagonAlert, Pin, PinOff, Printer, Reply, ReplyAll, SquarePen, Star, SummaryDoc, Tag, Trash2 } from "@terno/ui/icons";
+import { Archive, Bell, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Ellipsis, FileDown, Forward, Inbox, Layers, Mail, OctagonAlert, Pin, PinOff, Printer, Reply, ReplyAll, SquarePen, Star, SummaryDoc, Trash2 } from "@terno/ui/icons";
 import { type ReactNode, type RefCallback, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/popover";
 import { reminderShort, useReminders, useRemindPopover } from "~/lib/reminders";
@@ -1242,10 +1242,8 @@ function ReaderContent() {
         </IconButton>
         </div>
         <ToolbarDivider />
+        {/* the owner: no Category button here; L, the row menu and the palette file a conversation */}
         <div className="flex items-center gap-0.5" role="group" aria-label={t("reader.group.mark")}>
-        <IconButton className={cn(tool, "group-data-tight/tb:hidden")} label={t("actions.category")} shortcut="l" onClick={() => setApp({ dialog: "categoryPicker", pickerMode: "toggle" })} data-testid="action-category">
-          <Tag />
-        </IconButton>
         {/* keyed by thread: moving to a starred thread swaps the button instead of fading its color (navigation never animates) */}
         <IconButton key={thread?.id ?? "none"} label={thread?.starred ? t("actions.unstar") : t("actions.star")} shortcut="s" onClick={() => toggleStar()} data-testid="action-star" className={cn(tool, thread?.starred && "text-star hover:text-star")}>
           <Star className={cn(thread?.starred && "fill-star")} />

@@ -369,7 +369,7 @@ test.describe("context menu on one thread", () => {
       await expect(page.getByTestId("snackbar-title")).toHaveText("Moved to Viajes");
       await expect.poll(cats).toEqual([viajes]);
     });
-    await scenario("after v (Move to…) is dismissed, the reader's Category button toggles again: picking C keeps A and B", async () => {
+    await scenario("after v (Move to…) is dismissed, l toggles again: picking C keeps A and B", async () => {
       await fresh(page);
       const [lecturas, clientes, viajes] = ["Lecturas", "Clientes", "Viajes"].map((n) => db(server).get<{ id: number }>("SELECT id FROM categories WHERE name = ?", n)!.id) as [number, number, number];
       const id = Number(await page.locator("[data-testid=thread-row]:not(:has([data-cat-dot]))").first().getAttribute("data-thread-id"));
@@ -381,7 +381,8 @@ test.describe("context menu on one thread", () => {
       await expect(page.getByTestId("category-picker")).toHaveAttribute("data-mode", "move");
       await page.keyboard.press("Escape");
       await expect(page.getByTestId("category-picker")).toBeHidden();
-      await page.getByTestId("action-category").click();
+      await focusList(page);
+      await page.keyboard.press("l");
       await expect(page.getByTestId("category-picker")).toHaveAttribute("data-mode", "toggle");
       await page.getByTestId(`pick-category-${viajes}`).click();
       await expect(page.getByTestId("snackbar-title")).toHaveText("Added to Viajes");
