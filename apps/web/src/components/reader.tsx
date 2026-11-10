@@ -289,18 +289,19 @@ function ReplyChoices({ replyTo, everyone, keys, className, buttonRef, children 
           {keys && <Shortcut keys="r" />}
         </TooltipContent>
       </Tooltip>
-      <DropdownMenuContent align="end" sideOffset={6} className="w-max min-w-56 max-w-96" finalFocus={() => !handedOff.current} data-testid="reply-options-menu">
+      <DropdownMenuContent align="end" sideOffset={6} className="w-max min-w-44 max-w-64" finalFocus={() => !handedOff.current} data-testid="reply-options-menu">
         <DropdownMenuItem data-testid="reply-options-reply" onClick={() => respond("reply")}>
           <Reply />
           <span className="min-w-0 flex-1 truncate">{replyTo ? t("compose.bar.reply", { name: replyTo }) : t("actions.reply")}</span>
           {keys && <DropdownMenuShortcut><Shortcut keys="r" /></DropdownMenuShortcut>}
         </DropdownMenuItem>
-        {/* two lines: the action, then who it reaches in the quiet ink (the shortcut stays on the first) */}
+        {/* the action, then who it reaches in the quiet ink, wrapping to two lines at most so the menu stays narrow (the owner);
+            the shortcut stays on the first */}
         <DropdownMenuItem data-testid="reply-options-all" onClick={() => respond("replyAll")} title={everyone} className="h-auto min-h-7 items-start py-1">
           <ReplyAll className="mt-[0.2em]" />
           <span className="flex min-w-0 flex-1 flex-col">
             <span>{t("actions.replyAll")}</span>
-            <span data-testid="reply-options-all-who" className="truncate text-xs font-normal text-muted-foreground">{everyone}</span>
+            <span data-testid="reply-options-all-who" className="line-clamp-2 text-xs font-normal text-muted-foreground">{everyone}</span>
           </span>
           {keys && <DropdownMenuShortcut><Shortcut keys="a" /></DropdownMenuShortcut>}
         </DropdownMenuItem>

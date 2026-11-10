@@ -93,7 +93,7 @@ Codex read the plan against the code (ten points). What changed:
 
 1. **Reply all's rule.** `reachesSeveral` counted Reply all's people, so "my own message to two" and several Reply-To addresses offered Reply all although it reaches the same people as Reply. Reply all's To is always Reply's, so the rule is now "Reply all has a Cc". This also fixes the reply bar, the message's ⋯ menu, the row menu and the palette, whose comments already said "reaches someone Reply doesn't" (`reply-all.test.ts`: the row flipped, two rows added).
 2. **"Reply to …" names everyone Reply reaches.** `replyName` lists every first name in Reply's To ("Bob and Cara"); with To left empty (a Reply-To that is only me), the menu and the bar say "Reply".
-3. **The two-line menu item** overrides the 28 px row (`h-auto min-h-7 py-1`); the menu sizes to its words (`w-max`, 224 to 384 px), the people truncating with their whole text in the item's title.
+3. **The two-line menu item** overrides the 28 px row (`h-auto min-h-7 py-1`); the menu sizes to its words (`w-max`, 176 to 256 px since the owner found 384 too wide), the people wrapping to two lines at most, their whole text in the item's title.
 4. **Light-only floors** are mode-aware in both lists (`SurfaceStep.mode`; the test filters by mode). Dark keeps plan 160's floors exactly. A new test holds every light palette's selections under 1.22:1, so they don't drift back.
 5. **The More perf gate** counts five rows (`MORE_ROWS`); measured 4 renders a toggle.
 6. **`sidebar-panels.spec.ts`**: Sent visible with More closed, Tab Starred → Sent → More, Archive in place of Sent where the closing is checked.
