@@ -77,3 +77,10 @@ Facts are one pass over the dragged rows at drag start (≤ the loaded rows); a 
 5. **Closed More**: the targets follow what's on screen (inert rows aren't measured), including a held or current row; the decision above says so.
 6. **The measuring test asserts the selector**: its fake ignored it, so a missing `[data-drop-action]` would have passed.
 7. **E2E covers a working drop** on an account's row and on a favorite, not only a refusal.
+
+## What the Codex code review changed
+
+1. **A row on the Inbox's top for a due reminder or follow-up** (plans 87, 142) fits Archive wherever it lives: the Archive button ends its reminder, so the drop does too (it read "Already here" before).
+2. **Spam already in Trash** is ✓ on Spam: marking it again changes nothing, and `act()` would have announced it and taken the last Undo's place.
+
+Each has a unit test that fails without the fix.

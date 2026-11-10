@@ -3,13 +3,14 @@ import { describe, expect, it } from "vitest";
 import { folderRef } from "@terno/core";
 import { actionDropState, actionFacts, actionRef, actionRefusal, parseActionRef } from "./action-drop";
 
-const row = (id: number, place: "inbox" | "archive" | "spam" | "trash" | "unknown", o: { starred?: boolean; accountId?: number } = {}) => ({
+const row = (id: number, place: "inbox" | "archive" | "spam" | "trash" | "unknown", o: { starred?: boolean; accountId?: number; hasSpam?: boolean } = {}) => ({
   id,
   accountId: o.accountId ?? 1,
   starred: o.starred ?? false,
   inInbox: place === "unknown" ? undefined : place === "inbox",
   inSpam: place === "unknown" ? undefined : place === "spam",
   inTrash: place === "unknown" ? undefined : place === "trash",
+  hasSpam: o.hasSpam ?? place === "spam",
 });
 const all = (view: "starred" | "archive" | "spam" | "trash") => ({ view, accountId: null });
 
@@ -54,6 +55,18 @@ describe("a drop's state", () => {
     expect(actionDropState(spam, all("spam"))).toBe("refused");
     expect(actionRefusal(spam, all("spam"))).toMatch(/Trash/);
     expect(actionDropState(actionFacts([row(1, "trash")]), all("spam"))).toBe("over");
+  });
+
+  it("Codex review: spam already in Trash is ✓ on Spam (marking it again would change nothing, and take Undo's place)", () => {
+    expect(actionDropState(actionFacts([row(1, "trash", { hasSpam: true })]), all("spam"))).toBe("already");
+    expect(actionFacts([row(1, "trash", { hasSpam: true }), row(2, "trash")]).fits.spam).toEqual([2]);
+  });
+
+  it("Codex review: an archived row on the Inbox's top for a due reminder fits Archive (its button ends the reminder)", () => {
+    const f = actionFacts([row(1, "archive"), row(2, "archive")], undefined, (id) => id === 1);
+    expect(f.fits.archive).toEqual([1]);
+    expect(actionDropState(f, all("archive"))).toBe("over");
+    expect(actionDropState(actionFacts([row(1, "archive")]), all("archive"))).toBe("already");
   });
 
   it("an account's place takes that account's mail only", () => {

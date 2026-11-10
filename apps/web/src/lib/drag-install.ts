@@ -20,7 +20,7 @@ import { factsOf, listingFolder, parseFolderRef, refusalText, refusesFolder, typ
 import { snack } from "~/lib/snack";
 import { getApp } from "~/state/app";
 import { useDrag } from "~/state/drag";
-import { useList } from "~/state/list";
+import { inboxTop, useList } from "~/state/list";
 
 const folderName = (accountId: number, key: string) => getApp().folders.find((f) => f.accountId === accountId && f.key === key)?.path.at(-1) ?? key;
 
@@ -173,7 +173,8 @@ export function installDragController(list: HTMLElement): () => void {
   const readFacts = () => {
     const rows = dragged.flatMap((id) => row(id) ?? []);
     facts = factsOf(rows);
-    places = actionFacts(rows, fitting);
+    const top = new Set(inboxTop.ids);
+    places = actionFacts(rows, fitting, (id) => top.has(id));
   };
   const ctl = new DragController({
     payload: (id) => {

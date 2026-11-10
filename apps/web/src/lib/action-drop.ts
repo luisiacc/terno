@@ -28,7 +28,7 @@ export function parseActionRef(ref: string): { view: DropView; accountId: number
   return account !== "" && Number.isInteger(accountId) ? { view: view as DropView, accountId } : null;
 }
 
-type Row = Pick<ThreadSummary, "id" | "accountId" | "starred" | "inInbox" | "inSpam" | "inTrash">;
+type Row = Pick<ThreadSummary, "id" | "accountId" | "starred" | "inInbox" | "inSpam" | "inTrash" | "hasSpam">;
 
 /** What about the dragged rows decides each target. */
 export interface ActionFacts {
@@ -45,25 +45,24 @@ export type Narrow = (action: ThreadAction, ids: number[]) => number[];
 /**
  * What a drop on each place would do to these rows: the ones not there yet (Archive: the ones in the Inbox, all its
  * action changes), narrowed as the action's own button would. A row whose place isn't known (an older backend) is
- * never there yet: the backend decides.
+ * never there yet: the backend decides. `onTop`: on the Inbox's top for a due reminder or follow-up (plans 87, 142),
+ * which Archive ends wherever the row lives.
  */
-export function actionFacts(rows: readonly Row[], narrow: Narrow = (_, ids) => ids): ActionFacts {
-  const known = rows.every((r) => r.inInbox !== undefined);
-  const notYet = (there: (r: Row) => boolean) => rows.filter((r) => r.inInbox === undefined || !there(r)).map((r) => r.id);
+export function actionFacts(rows: readonly Row[], narrow: Narrow = (_, ids) => ids, onTop: (id: number) => boolean = () => false): ActionFacts {
+  const there: Record<DropView, (r: Row) => boolean> = {
+    starred: (r) => r.starred,
+    archive: (r) => r.inInbox !== undefined && placeOf(r) !== "inbox" && !onTop(r.id),
+    // spam already in Trash stays there marked; marking it again changes nothing
+    spam: (r) => r.inInbox !== undefined && (placeOf(r) === "spam" || (!!r.inTrash && !!r.hasSpam)),
+    trash: (r) => r.inInbox !== undefined && placeOf(r) === "trash",
+  };
+  const notYet = (view: DropView) => narrow(DROP_ACTIONS[view], rows.filter((r) => !there[view](r)).map((r) => r.id));
+  // ✓ only where it's truly in that place (Archive refuses what's in Spam or Trash: it can't take it there)
+  const all = (view: DropView, place: ReturnType<typeof placeOf> | null) => rows.length > 0 && rows.every((r) => there[view](r) && (place === null || placeOf(r) === place));
   return {
     accounts: new Set(rows.map((r) => r.accountId)),
-    fits: {
-      starred: narrow("star", rows.filter((r) => !r.starred).map((r) => r.id)),
-      archive: narrow("archive", notYet((r) => placeOf(r) !== "inbox")),
-      spam: narrow("spam", notYet((r) => placeOf(r) === "spam")),
-      trash: narrow("trash", notYet((r) => placeOf(r) === "trash")),
-    },
-    already: {
-      starred: rows.length > 0 && rows.every((r) => r.starred),
-      archive: known && rows.every((r) => placeOf(r) === "archive"),
-      spam: known && rows.every((r) => placeOf(r) === "spam"),
-      trash: known && rows.every((r) => placeOf(r) === "trash"),
-    },
+    fits: { starred: notYet("starred"), archive: notYet("archive"), spam: notYet("spam"), trash: notYet("trash") },
+    already: { starred: all("starred", null), archive: all("archive", "archive"), spam: all("spam", null), trash: all("trash", null) },
   };
 }
 
