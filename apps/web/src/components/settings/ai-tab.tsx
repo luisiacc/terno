@@ -41,8 +41,10 @@ import { reconcileSettings } from "~/lib/appearance";
 import WritingStyle from "./writing-style";
 
 
-// the keys too: on Claude or OpenAI they decide what a test reaches (plan 168)
-const targetKey = (ai: AppSettings["ai"]) => [ai.provider, ai.preset ?? "", ai.baseURL ?? "", ai.model, ...KEYED.map((p) => `${ai.keys[p]?.hasKey}:${ai.keys[p]?.keyHint}`)].join("|");
+// the keys too, as they can be sent: on Claude or OpenAI they decide what a test reaches (plan 168); a key confirmed for
+// its endpoint makes an old failure stale (Codex code review)
+const keyState = (k: AppSettings["ai"]["keys"][AiProviderId]) => [k?.hasKey, k?.keyHint, k?.keyUnreadable, k?.keyConfirmed, k?.keyOrigin].join(":");
+const targetKey = (ai: AppSettings["ai"]) => [ai.provider, ai.preset ?? "", ai.baseURL ?? "", ai.model, ai.hasKey, ai.keyConfirmed, ai.keyUnreadable, ...KEYED.map((p) => keyState(ai.keys[p]))].join("|");
 
 /** Plan 168: the model a key is tested with: the one drafting would run on with only that key. */
 const keyedModel = (provider: "anthropic" | "openai") => routeFor("writing", { provider, model: "", keys: { [provider]: { hasKey: true, keyHint: null } } })!.model;

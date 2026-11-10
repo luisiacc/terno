@@ -103,6 +103,16 @@ Codex (read-only, against the redesign branch's head) raised 8 points on this pl
 
 Also: Claude or OpenAI chosen with no key yet makes `targetFor` fall back to the stored provider, so the error still says which key to save; the sidebar's cloud pill names where drafting goes (or "Claude or OpenAI" before a key).
 
+## What the Codex code review changed
+
+Round 1 (`git diff 7aa0d0c67..HEAD`, read-only) raised 5 points:
+
+1. **Categorizing's switch named the stored provider** (Claude stored, only OpenAI's key: it said Claude), and an unreadable JEV key was still named. The hint and the switch's availability now come from the `categorize` route. Regression: `categories-ai-hint.test.tsx` (fails on the old code).
+2. **A key confirmed for its endpoint left an old test failure on screen.** The test result's identity now includes every key's readable, confirmed and origin state. Regression in `ai-tab.test.tsx`.
+3. **Today's gate stayed weaker than the backend for local servers** (an Ollama with no model showed Today and the digest switch). `aiFeaturesAvailable` is now `aiReady` for every provider, as this plan said. Regression in `today.test.ts`.
+4. A JEV key's exact-equality expectation in `smart-categorization.test.ts` didn't allow the new key fields; it now matches the fields it means.
+5. **Not changed:** a keychain decryption failure other than the Única migration's isn't recorded as `keyUnreadable`, so routing would still prefer that key. That's true of the configured key before this plan too, it needs a keychain that fails after saving, and the backend still refuses with a clear error; it's left for the keychain's own plan (rare finding, per the review-round cap).
+
 ## What changes for existing setups
 
 - A task's saved provider and model, and a saved Claude or OpenAI model, are ignored. Nothing is deleted.

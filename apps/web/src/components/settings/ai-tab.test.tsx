@@ -110,6 +110,25 @@ describe("Settings → AI", () => {
     expect($(host, "ai-test-error")!.textContent).toMatch(/^OpenAI: That key was refused/);
   });
 
+  it("a key confirmed for its endpoint makes an old test's failure stale (Codex code review)", async () => {
+    answer({ anthropic: { ok: false, latencyMs: 80, error: { kind: "not_configured", message: "Saved for another endpoint" } } });
+    const moved = settings({ keyConfirmed: false, keys: { anthropic: { ...key, keyConfirmed: false, keyOrigin: "https://old.example.test" } } });
+    useApp.setState({ devAi: null, settings: moved } as never);
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    await act(async () => root.render(<AiTab settings={moved} update={vi.fn() as never} />));
+    cleanup = () => {
+      act(() => root.unmount());
+      host.remove();
+    };
+    await act(async () => $(host, "ai-test")!.click());
+    expect($(host, "ai-test-error")).not.toBeNull();
+    const confirmed = settings({ keys: { anthropic: { ...key, keyOrigin: "https://api.anthropic.com" } } });
+    await act(async () => root.render(<AiTab settings={confirmed} update={vi.fn() as never} />));
+    expect($(host, "ai-test-error")).toBeNull();
+  });
+
   it("a local server keeps its model field and the list of what's installed: Terno can't know it", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const s = settings({ provider: "ollama", model: "qwen3:8b", local: true, hasKey: false, keyHint: null, baseURL: null, keys: {} });

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { aiFeaturesAvailable, nextPrepareAt, prepareTimeToday, todayKey } from "./today";
 
-const settings = (provider: string, over = {}) => ({ ai: { provider, needsKey: false, hasKey: false, keyConfirmed: false, keyUnreadable: false, ...over } }) as never;
+const settings = (provider: string, over = {}) => ({ ai: { provider, model: "m", needsKey: false, hasKey: false, keyConfirmed: false, keyUnreadable: false, keys: {}, ...over } }) as never;
 
 describe("who sees Today (plan 145)", () => {
   it("a provider set up, or the entitlement Pro will bring; nothing without either", () => {
@@ -16,6 +16,12 @@ describe("who sees Today (plan 145)", () => {
     expect(aiFeaturesAvailable(settings("compatible", { preset: "groq", needsKey: true }))).toBe(false);
     expect(aiFeaturesAvailable(settings("compatible", { preset: "groq", needsKey: true, hasKey: true, keyConfirmed: true }))).toBe(true);
     expect(aiFeaturesAvailable(settings("compatible", { preset: "groq", needsKey: true, hasKey: true, keyConfirmed: true, keyUnreadable: true }))).toBe(false);
+  });
+
+  it("plan 168: the one rule, so Today never shows where the digest can't run (Codex code review)", () => {
+    expect(aiFeaturesAvailable(settings("ollama", { model: "" }))).toBe(false);
+    expect(aiFeaturesAvailable(settings("compatible", { preset: "custom", baseURL: null }))).toBe(false);
+    expect(aiFeaturesAvailable(settings("compatible", { preset: "custom", baseURL: "http://127.0.0.1:8080/v1" }))).toBe(true);
   });
 
   it("plan 168: on Claude or OpenAI, a usable key for either, whichever of the two is stored", () => {

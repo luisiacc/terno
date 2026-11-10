@@ -543,7 +543,7 @@ describe("a JEV key (plan 134)", () => {
     t.on();
     const secret = "jev-synthetic-key-1234";
     const saved = await t.client.call("ai.setKey", { provider: "jev", value: secret });
-    expect(saved.ai.keys.jev).toEqual({ hasKey: true, keyHint: "1234" });
+    expect(saved.ai.keys.jev).toMatchObject({ hasKey: true, keyHint: "1234" });
     expect(JSON.stringify(saved)).not.toContain(secret);
     const ai = await t.backend.ai();
     expect(ai).toMatchObject({ providerId: "jev", calibrated: true, local: false });

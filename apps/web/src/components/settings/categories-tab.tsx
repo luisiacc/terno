@@ -9,7 +9,7 @@ import { Switch } from "@terno/ui/components/switch";
 import { ChevronDown, ChevronUp, CircleCheck, Plus, Trash2 } from "@terno/ui/icons";
 import { t } from "@terno/i18n";
 import { useEffect, useId, useState } from "react";
-import { providerLabel } from "~/lib/ai";
+import { providerLabel, routeOf } from "~/lib/ai";
 import { reconcileSettings } from "~/lib/appearance";
 import { localized } from "~/lib/i18n";
 import { snack } from "~/lib/snack";
@@ -265,7 +265,9 @@ export function CategoriesTab({ settings, update }: { settings: AppSettings; upd
     void client.call("categorize.stats", {}).then(setStats).catch(() => {});
   }, [categories]);
   const jev = settings.ai.keys.jev;
-  const noAi = settings.ai.provider === "none" && !jev?.hasKey;
+  // plan 168: where categorizing really goes (JEV with a usable key, else the provider routing picks), as the backend sends it
+  const categorizer = routeOf("categorize", settings.ai).provider;
+  const noAi = categorizer === "none";
   // plan 134: said once, on the first look after it happened; it stays for that visit
   const [widened] = useState(settings.aiCategorizeWidened);
   useEffect(() => {
@@ -293,7 +295,7 @@ export function CategoriesTab({ settings, update }: { settings: AppSettings; upd
         </SettingsRow>
         <SettingsRow
           label={t("settings.categories.askAi")}
-          hint={noAi ? t("settings.categories.askAi.noAi") : t("settings.categories.askAi.hint", { provider: jev?.hasKey ? "JEV" : providerLabel(settings.ai.provider, settings.ai) })}
+          hint={noAi ? t("settings.categories.askAi.noAi") : t("settings.categories.askAi.hint", { provider: providerLabel(categorizer, settings.ai) })}
         >
           {(a) => <Switch {...a} data-testid="ai-categorize-switch" checked={settings.aiCategorize} disabled={noAi && !settings.aiCategorize} onCheckedChange={(on) => void update({ aiCategorize: on })} />}
         </SettingsRow>

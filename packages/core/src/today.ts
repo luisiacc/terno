@@ -1,6 +1,6 @@
 import type { AppSettings } from "./rpc/contract";
 import type { ThreadSummary } from "./types";
-import { aiReady, routedByKeys } from "./ai-routing";
+import { aiReady } from "./ai-routing";
 
 /** Plan 145: what needs you today, and newsletters folded into one digest. Local but for the digest, which is its own opt-in. */
 
@@ -30,13 +30,8 @@ export const DEFAULT_TODAY: TodaySetting = { show: true, prepareAt: "08:00", not
  */
 export function aiFeaturesAvailable(settings: Pick<AppSettings, "ai"> | null | undefined, entitlement?: { active: boolean } | null): boolean {
   if (entitlement?.active === true) return true;
-  const ai = settings?.ai;
-  if (!ai) return false;
-  // plan 168: on keys, either usable one will do, whichever of the two is the one stored
-  if (routedByKeys(ai.provider)) return aiReady(ai);
-  if (ai.provider === "none" || ai.keyUnreadable) return false;
-  // a key removed leaves the provider chosen: without one, it can't run. A model here needs none.
-  return !ai.needsKey || (ai.hasKey && ai.keyConfirmed);
+  // plan 168: what can run, by the one rule (on keys, either usable one; elsewhere a model, its endpoint, its key)
+  return aiReady(settings?.ai);
 }
 
 export interface TodayWhy {
