@@ -70,6 +70,18 @@ Title and description per page, canonical, Open Graph and Twitter card (a 1200×
 - Starts the real backend (`startDevServer`, `seed: false`) and seeds `shots/showcase.ts`: a curated **English** mailbox for a fictional person (four accounts across Gmail and IMAP, categories, a fresh verification code, snippets, newsletters to file), with the clock frozen.
 - Serves a production build of `apps/web` and captures, at 2×, in light and dark: the unified inbox, search with results and timing, ⌘K, the snippets page, the "everything similar" snackbar after a filing, the code chip, the three designs and a few palettes, and the shortcuts sheet.
 - Converts to WebP (1× and 2×) with `cwebp`, into `apps/site/public/shots/`, plus the OG image.
+- These pictures are the app without Pro: no AI card in any of them, the hero included.
+
+### AI pictures (`pnpm --filter @terno/site shots:ai`)
+
+The owner's rule: every AI picture comes from real models on Pro's routing, never the stub or canned text, and no word of it is edited by hand. `shots/ai-shots.ts` shares the seed, the web build, the network fence and the encoder with `shots.ts` (`shots/lib.ts`).
+
+- **Keys:** read from the owner's `.env` through `scripts/ui-rating/keys.mjs` (`readKeys`), held in memory and handed to the backend in memory (Dev mode's `devAi`, plan 146); never printed (the process's output is redacted too), written or committed. Before the throwaway profile is deleted, it's checked for them (`filesHoldingKeys`). The page reaches only the two local servers; the backend reaches only the providers.
+- **Mailbox:** `showcaseDataset({ ai: true })` adds what the AI states read, kept out of the free pictures: Isabella Grant (a client) moving next Thursday's walkthrough and asking for the address; her payment, split in two halves, across two archived conversations; Elena's phase-two scope decision; a promise ("I'll call you tomorrow to go over the details") and an unanswered request in sent mail; six more newsletters; old shipping notices still in the Inbox.
+- **How it runs:** AI is turned on in Settings as a person does (Dev mode → Pro AI, then the background switches and the offer to read the last 30 days of sent mail). The clock starts at `SHOWCASE_NOW` and runs; the window's agrees. Every state is shot light, then dark, on the same page (the system appearance, flipped), so both show the same words.
+- **The bar:** where a model's words decide whether the picture is good, the script checks them and asks again the way a person would, a bounded number of times: Ask (every sentence cited, both sources, short; New question), the rule (it matches mail; Edit request), the digest (it found newsletters; the switch off and on). Reply ready (one short blank, not a question) and the summary (about two lines, with a To do) can't be asked again in place, so a run whose words fall short keeps the previous run's picture (`.shots-raw-ai/` is kept unless `--fresh`).
+- **States:** `ai-reply` (the window: Isabella's message, the drafted reply with one gap), `ai-summary` (the card and the message's first lines), `ai-ask` (the panel), `ai-today` (the list), `ai-digest` (the page, in a shorter window so its foot sits under the lines), `ai-generate` and `ai-generated` (⌘J), `ai-action` (the preview's list and how Terno read it), `ai-rule` (the dialog), `ai-followups` (the window).
+- **Cost:** about 20 requests and US$0.02 to 0.04 a run, by the app's usage book, which the script prints.
 
 ### Deploying
 

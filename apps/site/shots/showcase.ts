@@ -37,6 +37,8 @@ interface Msg {
   ago: number;
   body: string;
   html?: string;
+  /** this message's files; else the thread's go on its last message */
+  attachments?: { filename: string; mime: string; size: number }[];
 }
 interface Thread {
   account: number;
@@ -49,6 +51,8 @@ interface Thread {
   bulk?: boolean;
   attachments?: { filename: string; mime: string; size: number }[];
   inInbox?: boolean;
+  /** whom a thread you started is to (a message only you wrote has no one else to answer) */
+  to?: Address;
 }
 
 const me = (account: number): Address => ({ name: ME, email: ACCOUNTS[account]!.email });
@@ -87,11 +91,12 @@ const CURATED: Thread[] = [
     subject: "Homepage concepts, round two",
     tag: "client",
     starred: true,
-    attachments: [{ filename: "homepage-concepts-v2.pdf", mime: "application/pdf", size: 4_812_000 }],
     messages: [
       {
         from: me(2),
         ago: 26 * HOUR,
+        // on Sam's message, which the reader shows collapsed: a showcase file has no bytes, so its card would say so
+        attachments: [{ filename: "homepage-concepts-v2.pdf", mime: "application/pdf", size: 4_812_000 }],
         body: "Hi Priya,\n\nAttached are three directions for the new homepage. A is the calm one, B leans on photography, C is the bold type-led version. Happy to walk you through them on a call.\n\nSam",
       },
       {
@@ -127,9 +132,8 @@ const CURATED: Thread[] = [
     subject: "Lisbon offsite: flights and the plan",
     tag: "travel",
     starred: true,
-    attachments: [{ filename: "lisbon-itinerary.pdf", mime: "application/pdf", size: 312_000 }],
     messages: [
-      { from: jonah, ago: 70 * MIN, body: "Flights are booked for everyone. We land Tuesday at 11:40, hotel is ten minutes from the studio. Itinerary attached, shout if anything looks off." },
+      { from: jonah, ago: 70 * MIN, body: "Flights are booked for everyone. We land Tuesday at 11:40, hotel is ten minutes from the studio. The full itinerary is in the shared folder, shout if anything looks off." },
     ],
   },
   {
@@ -229,12 +233,166 @@ const CURATED: Thread[] = [
   },
 ];
 
+const isabella = { name: "Isabella Grant", email: "isabella@larchandpine.com" };
+const daniel = { name: "Daniel Brooks", email: "daniel@brookspress.co" };
+const leo = { name: "Leo Martins", email: "leo@leomartins.photo" };
+
+const letter = (from: Address, list: string, subject: string, ago: number, paragraphs: string[]): Thread => ({
+  account: 0,
+  subject,
+  tag: "newsletter",
+  list,
+  bulk: true,
+  messages: [{ from, ago, body: paragraphs.join("\n\n"), html: html(paragraphs) }],
+});
+
+/** What the AI pictures read (`showcaseDataset({ ai: true })`): every word the models write about them is their own. */
+const AI_EXTRAS: Thread[] = [
+  // Reply ready: a client moves next Thursday's walkthrough and asks for the address, which Sam's own message holds
+  {
+    account: 2,
+    subject: "Thursday’s walkthrough",
+    tag: "client",
+    messages: [
+      {
+        from: me(2),
+        ago: 3 * DAY,
+        body: "Hi Isabella,\n\nHere are the details for next Thursday’s walkthrough of the product pages.\n\nWhen: Thursday, November 5, 2 PM\nWhere: our studio, 418 Alder Street, Suite 3\nParking: the lot behind the building\n\nSam",
+      },
+      {
+        from: isabella,
+        ago: 25 * MIN,
+        body: "Hi Sam,\n\nI’m so sorry, I just found out I’ll be at a furniture fair in Milan that week. Could we move Thursday’s walkthrough to the week after? Any afternoon works for me, so just tell me which day suits you.\n\nAnd could you send me the studio’s address again? I’d like to forward it to Marco, who’s joining us.\n\nThanks,\nIsabella",
+      },
+    ],
+  },
+  // Ask: what Isabella said about the payment, across two conversations already out of the Inbox
+  {
+    account: 2,
+    subject: "Invoice 2026-044",
+    tag: "client",
+    read: true,
+    inInbox: false,
+    attachments: [{ filename: "invoice-2026-044.pdf", mime: "application/pdf", size: 96_000 }],
+    messages: [
+      { from: me(2), ago: 12 * DAY, body: "Hi Isabella,\n\nAttached is the invoice for the homepage and the product pages: $8,400, net 30 as agreed.\n\nThanks again,\nSam" },
+      {
+        from: isabella,
+        ago: 11 * DAY + 3 * HOUR,
+        body: "Thanks, Sam! We’ll pay it in two halves: $4,200 this month and the rest once the product pages are live. I hope that works for you.\n\nIsabella",
+      },
+    ],
+  },
+  {
+    account: 2,
+    subject: "First payment is on its way",
+    tag: "client",
+    read: true,
+    inInbox: false,
+    messages: [
+      {
+        from: isabella,
+        ago: 2 * DAY + 2 * HOUR,
+        body: "Hi Sam,\n\nThe first $4,200 went out this morning by bank transfer, so you should see it by Friday. The second half follows when the product pages go live.\n\nIsabella",
+      },
+    ],
+  },
+  // a summary: a scope decision, a deadline and a question for Sam
+  {
+    account: 2,
+    subject: "Phase two: scope and timeline",
+    tag: "client",
+    messages: [
+      {
+        from: me(2),
+        ago: 2 * DAY + 5 * HOUR,
+        body: "Hi Elena,\n\nFor phase two I’d suggest the journal first, since your stories are ready, then the store locator. The careers page could wait. Does that order work for you?\n\nSam",
+      },
+      {
+        from: elena,
+        ago: 50 * MIN,
+        body: "Hi Sam,\n\nWe talked it over this morning and we agree: the journal first, and the careers page can wait until spring.\n\nOne firm date: the store locator has to be live by December 10, for our holiday launch. Could you send the estimate by Monday?\n\nThanks,\nElena",
+        html: html([
+          "Hi Sam,",
+          "We talked it over this morning and we agree: the journal first, and the careers page can wait until spring.",
+          "One firm date: the store locator has to be live by December 10, for our holiday launch. Could you send the estimate by Monday?",
+          "Thanks,<br>Elena",
+        ]),
+      },
+    ],
+  },
+  // a promise in sent mail (Today: "You said: call to go over the details")
+  {
+    account: 2,
+    subject: "Quote: letterpress cards",
+    tag: "work",
+    read: true,
+    inInbox: false,
+    messages: [
+      { from: daniel, ago: 3 * DAY + 2 * HOUR, body: "Hi Sam,\n\nHere’s the quote for 500 two-color letterpress cards on cotton stock: $640, ready ten working days after you approve the proof.\n\nDaniel\nBrooks Press" },
+      { from: me(2), ago: 2 * DAY + 3 * HOUR, body: "Thanks, Daniel, this looks good. I have a couple of questions about the paper and the second color. I’ll call you tomorrow to go over the details.\n\nSam" },
+    ],
+  },
+  // a question no one has answered (Today and Follow-ups: "No reply from Leo Martins")
+  {
+    account: 2,
+    subject: "Raw files from the workshop shoot",
+    tag: "work",
+    read: true,
+    inInbox: false,
+    to: leo,
+    messages: [
+      { from: me(2), ago: 6 * DAY + 2 * HOUR, body: "Hi Leo,\n\nCould you send over the raw files from the workshop shoot? Priya would like one of them for the new homepage, ideally by the end of next week.\n\nThanks!\nSam" },
+    ],
+  },
+  // an action in plain English ("Archive shipping notices older than a month"): old notices nobody archived
+  ...[
+    { ago: 34 * DAY, subject: "Your package is on its way", body: "Your order from Pantry Market has shipped. Tracking number PP4471 8820 9135. Estimated delivery: Friday." },
+    { ago: 41 * DAY, subject: "Delivered: your package from Ember & Oak", body: "Your package was delivered at 2:14 PM and left at the front door." },
+    { ago: 52 * DAY, subject: "Out for delivery today", body: "Your package from Pantry Market is out for delivery and should arrive by 6 PM." },
+    { ago: 67 * DAY, subject: "Your package is on its way", body: "Your order from Northside Books has shipped. Tracking number PP4471 6203 1178. Estimated delivery: Tuesday." },
+    { ago: 88 * DAY, subject: "Delivered: your package from Pantry Market", body: "Your package was delivered at 11:02 AM and handed to a resident." },
+  ].map((n): Thread => ({ account: 0, subject: n.subject, tag: "shipping", read: true, messages: [{ from: { name: "Parcelpoint", email: "track@parcelpoint.com" }, ago: n.ago, body: n.body }] })),
+  // the week's newsletters, for the digest (Fieldnotes and The Margin are in the curated inbox)
+  letter({ name: "The Weekly Loop", email: "hello@weeklyloop.news" }, "weeklyloop.news", "Issue 88: Batteries, browsers and a very small phone", 110 * MIN, [
+    "Good morning! Three things worth your coffee this week.",
+    "A pilot line for solid-state batteries started shipping cells to two carmakers, the first outside a lab. Range claims are modest, but charging to 80% in twelve minutes is not.",
+    "Two of the big browsers agreed on a shared format for saved tab groups, so a group made on one opens on the other.",
+    "And a four-inch phone made it past its crowdfunding goal in a day. Small phones are back, at least for 40,000 people.",
+  ]),
+  letter({ name: "Kiln Notes", email: "studio@kilnnotes.com" }, "kilnnotes.com", "Winter glazes, and open studio nights are back", 5 * HOUR, [
+    "The kilns are warm again. This month we’re testing three winter glazes: a smoky celadon, an iron red and a matte white that breaks brown on the edges.",
+    "Open studio nights return on Wednesdays from November 4, 6 to 9 PM. Bring a piece to finish or just come and throw.",
+    "Members get first pick of the new glaze tiles.",
+  ]),
+  letter({ name: "Small Batch", email: "letters@smallbatch.kitchen" }, "smallbatch.kitchen", "Five soups for the first cold week", 11 * HOUR, [
+    "The first proper cold week calls for soup. Here are five we make on repeat, all under an hour.",
+    "A roasted squash and miso soup, a white bean and rosemary one, a quick ribollita, a Thai-style carrot soup and a creamy potato and leek with crispy shallots.",
+    "Each recipe makes four bowls and freezes well.",
+  ]),
+  letter({ name: "Type Tuesday", email: "news@typetuesday.xyz" }, "typetuesday.xyz", "Three new grotesques worth a look", 19 * HOUR, [
+    "This week: three new grotesques from independent foundries, each with a different idea of warmth.",
+    "One has ink traps that only show at small sizes, one comes with a true italic instead of a slanted roman, and one ships in twelve weights with a variable axis for optical size.",
+    "We also look at how to pair them with a serif for long reading.",
+  ]),
+  letter({ name: "The Bridge Letter", email: "editor@bridgeletter.org" }, "bridgeletter.org", "New bike lanes on Alder, and the riverfront plan", 30 * HOUR, [
+    "The protected bike lanes on Alder Street open next Monday, between 3rd and 12th.",
+    "The city also published its draft plan for the riverfront: a wider path, two new piers and a night market on summer weekends. Comments are open until November 20.",
+    "Plus: the library’s late hours are back for the winter.",
+  ]),
+  letter({ name: "Runway Weekly", email: "hi@runwayweekly.co" }, "runwayweekly.co", "How to price your first product", 40 * HOUR, [
+    "Most first products are priced too low. This week we walk through three ways to set a price: from cost, from competitors and from the value to the customer.",
+    "Our advice: start from value, test two prices on real buyers, and raise it before you think you should.",
+    "Also inside: a pricing page checklist and five mistakes we see every week.",
+  ]),
+];
+
 /** Senders whose older mail fills the archive (and the counts of "everything from …"). */
 const BULK: { from: Address; tag: ThreadTag; list?: string; subjects: string[]; account: number; share: number }[] = [
   { from: fieldnotes, tag: "newsletter", list: "fieldnotes.email", account: 0, share: 3, subjects: ["Issue {n}: Small software", "Issue {n}: The case for less", "Issue {n}: Tools that last", "Issue {n}: Notes on focus"] },
   { from: outfitter, tag: "promo", list: "news.outfitter.co", account: 0, share: 4, subjects: ["Weekend only: free shipping", "New arrivals for the trail", "You left something in your cart", "{n}% off ends tonight"] },
   { from: { name: "Lumière Candles", email: "hello@lumierecandles.com" }, tag: "promo", list: "hello.lumierecandles.com", account: 0, share: 2, subjects: ["Back in stock: Fig & Cedar", "A gift guide for slow evenings", "{n}% off sitewide"] },
-  { from: { name: "Hopper Rides", email: "receipts@hopperrides.com" }, tag: "receipt", account: 0, share: 4, subjects: ["Your Monday morning ride with Hopper", "Your Friday evening ride with Hopper", "Your Sunday afternoon ride with Hopper"] },
+  { from: { name: "Hopper Rides", email: "receipts@hopperrides.com" }, tag: "receipt", account: 0, share: 4, subjects: ["Your {weekday} morning ride with Hopper", "Your {weekday} evening ride with Hopper", "Your {weekday} afternoon ride with Hopper"] },
   { from: { name: "Pantry Market", email: "orders@pantrymarket.com" }, tag: "receipt", account: 0, share: 3, subjects: ["Your Pantry Market order #{n}"] },
   { from: { name: "Parcelpoint", email: "track@parcelpoint.com" }, tag: "shipping", account: 0, share: 2, subjects: ["Your package is on its way", "Delivered: your package from Pantry Market"] },
   { from: { name: "Harbor Bank", email: "statements@harborbank.com" }, tag: "bank", account: 3, share: 1, subjects: ["Your statement is ready", "Payment received, thank you"] },
@@ -267,6 +425,8 @@ function prng(seed: number) {
   };
 }
 
+const files = (t: Thread, i: number) => t.messages[i]!.attachments ?? (i === t.messages.length - 1 ? (t.attachments ?? []) : []);
+
 function messagesOf(t: Thread, key: string, now: number): MockMessage[] {
   const rfc = (i: number) => `<${key}-${i}@showcase.terno.test>`;
   return t.messages.map((m, i): MockMessage => {
@@ -280,7 +440,7 @@ function messagesOf(t: Thread, key: string, now: number): MockMessage[] {
       inReplyTo: i ? rfc(i - 1) : null,
       references: Array.from({ length: i }, (_, j) => rfc(j)),
       from: m.from,
-      to: [sent ? other : me(t.account)],
+      to: [sent ? (t.to ?? other) : me(t.account)],
       cc: [],
       bcc: [],
       subject: i ? `Re: ${t.subject}` : t.subject,
@@ -298,31 +458,47 @@ function messagesOf(t: Thread, key: string, now: number): MockMessage[] {
       isDraft: false,
       isTrash: false,
       isSpam: false,
-      hasAttachments: Boolean(t.attachments?.length) && i === t.messages.length - 1,
+      hasAttachments: files(t, i).length > 0,
       size: m.body.length + (m.html?.length ?? 0),
-      attachments: i === t.messages.length - 1 ? (t.attachments ?? []) : [],
+      attachments: files(t, i),
       tag: t.tag,
       tags: [t.tag],
     };
   });
 }
 
-export function showcaseDataset(o: { now?: number; older?: number } = {}): MockDataset {
+/**
+ * `ai`: also the conversations the AI pictures need (shots/ai-shots.ts). Kept out of the other pictures, which show the
+ * app without Pro: a client's change of plans and her payment, a scope decision, a promise and an unanswered question in
+ * sent mail, and the week's newsletters.
+ */
+export function showcaseDataset(o: { now?: number; older?: number; ai?: boolean } = {}): MockDataset {
   const now = o.now ?? SHOWCASE_NOW;
   const random = prng(96);
   const messages: MockMessage[] = CURATED.flatMap((t, i) => messagesOf(t, `cur${i}`, now));
+  if (o.ai) messages.push(...AI_EXTRAS.flatMap((t, i) => messagesOf(t, `ai${i}`, now)));
   const total = BULK.reduce((s, b) => s + b.share, 0);
   const older = o.older ?? 4000;
+  const sameDay = new Set<string>();
   for (let i = 0; i < older; i++) {
     let pick = random() * total;
     const b = BULK.find((x) => (pick -= x.share) < 0) ?? BULK[0]!;
-    const subject = b.subjects[Math.floor(random() * b.subjects.length)]!.replace("{n}", String(Math.floor(random() * 380) + 20));
+    const template = b.subjects[Math.floor(random() * b.subjects.length)]!.replace("{n}", String(Math.floor(random() * 380) + 20));
     // two days to two years back; most of it read and out of the inbox, as a tended mailbox is
     const ago = 2 * DAY + Math.floor(random() * random() * 730 * DAY);
+    // a ride's receipt names the day it was taken (the day it's dated, in the shots' timezone)
+    const day = new Date(now - ago).toLocaleDateString("en-US", { weekday: "long", timeZone: "America/Los_Angeles" });
+    const subject = template.replace("{weekday}", day);
     const people = !b.list && !["receipt", "shipping", "bank", "travel"].includes(b.tag);
+    const inInbox = random() < 0.04;
+    // one of each a day: three "Sunday evening rides" on one Sunday reads as made up (the draws above still happen, so
+    // what follows is as it was)
+    const once = `${b.from.email} ${subject} ${new Date(now - ago).toLocaleDateString("en-US", { timeZone: "America/Los_Angeles" })}`;
+    if (sameDay.has(once)) continue;
+    sameDay.add(once);
     messages.push(
       ...messagesOf(
-        { account: b.account, subject, tag: b.tag, list: b.list, bulk: Boolean(b.list), read: true, inInbox: random() < 0.04, messages: [{ from: b.from, ago, body: people ? FILLER[i % FILLER.length]! : `${subject}. ${FILLER[i % FILLER.length]}` }] },
+        { account: b.account, subject, tag: b.tag, list: b.list, bulk: Boolean(b.list), read: true, inInbox, messages: [{ from: b.from, ago, body: people ? FILLER[i % FILLER.length]! : `${subject}. ${FILLER[i % FILLER.length]}` }] },
         `old${i}`,
         now,
       ),

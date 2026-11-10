@@ -5,47 +5,17 @@
  * (1× and 2×) into public/shots/ plus the Open Graph image; the outputs are committed, so run it only when the app
  * changes in a way the pictures should show. `--only=<name,…>` retakes a few.
  */
-import { execFileSync, spawn, type ChildProcess } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { createServer } from "node:net";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { chromium, type Page } from "@playwright/test";
 import { startDevServer } from "@terno/backend-dev/src/server";
-import { SHOWCASE_NOW, SNIPPETS, showcaseDataset } from "./showcase";
+import { ctx, dispose, encode, fencedPage, openApp, out, pictureSettings, seedProfile, serveWeb, site } from "./lib";
+import { SHOWCASE_NOW } from "./showcase";
 
-const here = dirname(fileURLToPath(import.meta.url));
-const site = join(here, "..");
-const repo = join(site, "..", "..");
-const web = join(repo, "apps", "web");
-const out = join(site, "public", "shots");
 const raw = join(site, ".shots-raw");
 const only = process.argv.find((a) => a.startsWith("--only="))?.slice(7).split(",");
-const ctx = { clientId: "shots", origin: "dev" as const };
-
-const freePort = () =>
-  new Promise<number>((resolve) => {
-    const s = createServer().listen(0, "127.0.0.1", () => {
-      const port = (s.address() as { port: number }).port;
-      s.close(() => resolve(port));
-    });
-  });
-
-async function seedProfile(dir: string): Promise<void> {
-  const server = await startDevServer({ port: 0, dataDir: dir, token: "seed", seed: false, autoSync: false, now: () => SHOWCASE_NOW });
-  try {
-    const { backend } = server;
-    const data = showcaseDataset();
-    const seeded = await backend.store.dev.seed(data, { now: SHOWCASE_NOW, learningSignals: true });
-    // as seedDemo does: demo accounts sync from nothing and need no secret
-    for (const [i, id] of seeded.accountIds.entries()) await backend.store.accounts.setProviderConfig(id, { demo: true, senderName: data.accounts[i]!.ownerName });
-    await backend.categorizer.rebuildNow();
-    for (const s of SNIPPETS) await backend.server.invoke("snippets.save", { ...s, base: null }, ctx);
-  } finally {
-    await server.close();
-  }
-}
 
 interface Shot {
   name: string;
@@ -124,6 +94,8 @@ const SHOTS: Shot[] = [
       await open(p, "Last chance: 30% off all outerwear");
       await blur(p);
       await p.keyboard.press("e");
+      // plan 158: a success is one line, and what could follow opens on Similar…
+      await p.getByTestId("snackbar-similar").click();
       await p.locator("[data-testid=snack-dock]").getByText(/Outfitter/).first().waitFor();
       await p.waitForTimeout(600);
     },
@@ -137,6 +109,8 @@ const SHOTS: Shot[] = [
       await p.getByTestId("category-picker").waitFor();
       await p.getByTestId("category-picker").getByText("Reading", { exact: true }).click();
       await p.getByTestId("category-snackbar").waitFor();
+      await p.getByTestId("snackbar-similar").click();
+      await p.locator("[data-testid=snack-dock]").getByText(/Fieldnotes/).first().waitFor();
       await blur(p);
       await p.waitForTimeout(800);
     },
@@ -156,28 +130,15 @@ async function main() {
   rmSync(raw, { recursive: true, force: true });
   mkdirSync(raw, { recursive: true });
   mkdirSync(out, { recursive: true });
-  execFileSync(process.execPath, [join(repo, "packages/backend/scripts/build-incoming-worker.mjs")], { stdio: "inherit" });
-
-  // every resource registers its disposal before it's acquired, and each disposal is tried on its own (Codex review 3)
   const cleanup: (() => unknown)[] = [];
   const blocked = new Set<string>();
   try {
     const template = mkdtempSync(join(tmpdir(), "terno-shots-template-"));
     cleanup.push(() => rmSync(template, { recursive: true, force: true }));
     await seedProfile(template);
-    const webPort = await freePort();
-    const dist = `dist-shots-${webPort}`;
-    cleanup.push(() => rmSync(join(web, dist), { recursive: true, force: true }));
-    execFileSync("pnpm", ["vite", "build", "--outDir", dist], { cwd: web, stdio: "inherit" });
-    const preview: ChildProcess = spawn("pnpm", ["vite", "preview", "--outDir", dist, "--port", String(webPort), "--strictPort", "--host", "127.0.0.1"], { cwd: web, stdio: "ignore" });
-    cleanup.push(() => preview.kill());
+    const webPort = await serveWeb(cleanup);
     const browser = await chromium.launch();
     cleanup.push(() => browser.close());
-    for (let i = 0; i < 100; i++) {
-      const up = await fetch(`http://127.0.0.1:${webPort}`).then((r) => r.ok, () => false);
-      if (up) break;
-      await new Promise((r) => setTimeout(r, 200));
-    }
     for (const shot of SHOTS) {
       if (only && !only.includes(shot.name)) continue;
       for (const mode of shot.modes ?? (["light", "dark"] as const)) {
@@ -187,24 +148,10 @@ async function main() {
         try {
           execFileSync("cp", ["-R", `${template}/.`, dir]);
           server = await startDevServer({ port: 0, dataDir: dir, token: "shots", autoSync: false, now: () => SHOWCASE_NOW });
-          // the feature shots are Lumen with the GitHub palettes, light and dark (plan 97)
-          const palette = shot.palette ?? (shot.design ? {} : { light: "github-light", dark: "github-dark" });
-          const settings = { design: shot.design ?? "lumen", theme: mode, localMode: true, senderIcons: false, motionMs: 0, ...(palette.light && { lightTheme: palette.light }), ...(palette.dark && { darkTheme: palette.dark }) };
-          await server.backend.server.invoke("settings.update", settings as never, ctx);
-          const backendPort = new URL(server.url).port;
-          const page = await browser.newPage({ viewport: shot.viewport ?? { width: 1440, height: 900 }, deviceScaleFactor: 2, locale: "en-US", timezoneId: "America/Los_Angeles", colorScheme: mode, reducedMotion: "reduce" });
-          await page.route("**/*", (route) => {
-            const url = new URL(route.request().url());
-            const local = url.hostname === "127.0.0.1" && (url.port === String(webPort) || url.port === backendPort);
-            if (local || url.protocol === "data:" || url.protocol === "blob:") return route.continue();
-            blocked.add(url.origin);
-            return route.abort();
-          });
+          await server.backend.server.invoke("settings.update", pictureSettings(mode, shot) as never, ctx);
+          const page = await fencedPage(browser, { webPort, backendUrl: server.url, mode, blocked, viewport: shot.viewport });
           await page.clock.setFixedTime(new Date(SHOWCASE_NOW));
-          await page.goto(`http://127.0.0.1:${webPort}/?backend=${encodeURIComponent(server.url)}&token=shots`);
-          await page.locator("[data-ready]").waitFor();
-          await page.getByTestId("thread-row").first().waitFor();
-          await page.waitForTimeout(500);
+          await openApp(page, webPort, server.url, "shots");
           const target = await shot.setup?.(page);
           await page.addStyleTag({ content: "*{caret-color:transparent!important}" });
           await page.mouse.move(1439, 899);
@@ -220,39 +167,10 @@ async function main() {
       }
     }
   } finally {
-    for (const dispose of cleanup.reverse()) {
-      try {
-        await dispose();
-      } catch (e) {
-        console.error(e);
-      }
-    }
+    await dispose(cleanup);
   }
   if (blocked.size) console.log(`(aborted requests to: ${[...blocked].join(", ")})`);
-  encode();
-}
-
-/** WebP at 2× (the capture) and 1×; the Open Graph image from the dark inbox (Midnight, the site's design, is dark). */
-function encode() {
-  const manifest: Record<string, { width: number; height: number }> = {};
-  for (const png of execFileSync("ls", [raw], { encoding: "utf8" }).trim().split("\n").filter((f) => f.endsWith(".png"))) {
-    const base = png.slice(0, -4);
-    const src = join(raw, png);
-    const [w, h] = execFileSync("magick", ["identify", "-format", "%w %h", src], { encoding: "utf8" }).split(" ").map(Number) as [number, number];
-    execFileSync("cwebp", ["-quiet", "-q", "82", "-m", "6", src, "-o", join(out, `${base}@2x.webp`)]);
-    execFileSync("cwebp", ["-quiet", "-q", "86", "-m", "6", "-resize", String(Math.round(w / 2)), "0", src, "-o", join(out, `${base}.webp`)]);
-    manifest[base] = { width: Math.round(w / 2), height: Math.round(h / 2) };
-  }
-  if (!only || only.includes("inbox")) {
-    execFileSync("magick", [join(raw, "inbox-dark.png"), "-resize", "1200x", "-gravity", "north", "-crop", "1200x630+0+0", "+repage", "-quality", "86", join(site, "public", "og.jpg")]);
-  }
-  const path = join(site, "src", "shots.json");
-  let previous: Record<string, unknown> = {};
-  try {
-    previous = JSON.parse(execFileSync("cat", [path], { encoding: "utf8" }));
-  } catch {}
-  writeFileSync(path, `${JSON.stringify({ ...previous, ...manifest }, null, 2)}\n`);
-  console.log(`wrote ${Object.keys(manifest).length} pictures to ${out}`);
+  encode(raw, { og: !only || only.includes("inbox") });
 }
 
 await main();

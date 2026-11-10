@@ -12,6 +12,7 @@
     "deploy": "node scripts/deploy.mjs",
     "deploy:preview": "node scripts/deploy.mjs --preview",
     "shots": "tsx shots/shots.ts",
+    "shots:ai": "tsx shots/ai-shots.ts",
     "test:site": "playwright test",
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.worker.json",
     "waitlist:csv": "node scripts/waitlist-csv.mjs"

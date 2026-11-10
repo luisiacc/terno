@@ -1,4 +1,5 @@
 .shots-raw/
+.shots-raw-ai/
 .ssr/
 dist/
 .wrangler/
