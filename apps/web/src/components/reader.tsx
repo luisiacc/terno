@@ -592,8 +592,9 @@ function Conversation({ threadId, messages, fold, icons, people, headless }: { t
     }
   }
   return (
-    // the stronger hairline: these lines are what tell one message from the next
-    <div className="hairline-t [--hairline-color:var(--border)]">
+    // the stronger hairline: these lines are what tell one message from the next. Under the summary's card none: the card's
+    // own edge already ends what's above (the owner, plan 162)
+    <div data-testid="conversation" className="hairline-t [--hairline-color:var(--border)] [[data-summary-card]+&]:border-t-0">
       {items.map((it) =>
         it.kind === "message" ? (
           // the only one is open whatever it was before the others went (folded, nothing would open it again)

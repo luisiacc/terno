@@ -242,5 +242,5 @@ export default function ThreadSummary({ detail }: { detail: ThreadDetail }) {
     }
   })();
   if (!content) return null;
-  return <div ref={block} onFocusCapture={onFocusCapture} onBlurCapture={onBlurCapture}>{content}</div>;
+  return <div ref={block} data-summary-card onFocusCapture={onFocusCapture} onBlurCapture={onBlurCapture}>{content}</div>;
 }

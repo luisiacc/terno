@@ -100,6 +100,8 @@ test.describe("summaries (plan 132)", () => {
     await page.waitForTimeout(100);
     await expect(page.getByTestId("summary-block")).toHaveCount(0);
     expect(await server.backend.store.aiSummaries.get(Number(old))).toBeNull();
+    // with no card, the divider ends the header
+    expect(await page.getByTestId("conversation").evaluate((el) => getComputedStyle(el).borderTopWidth)).not.toBe("0px");
 
     await deliver(page, server, incoming(accountId, "The contract, new date"));
     await openSubject(page, "The contract, new date");
@@ -203,6 +205,8 @@ test.describe("summaries (plan 132)", () => {
     expect(box.x).toBe((await page.getByTestId("reader-subject").boundingBox())!.x);
     expect(box.x).toBe(message.x);
     expect(box.width).toBe(message.width);
+    // the owner: no divider between the card and the first message, the card's edge already ends what's above
+    expect(await page.getByTestId("conversation").evaluate((el) => getComputedStyle(el).borderTopWidth)).toBe("0px");
     const inset = (await page.getByTestId("summary-text").boundingBox())!.x - box.x;
     expect(inset).toBeGreaterThanOrEqual(12);
     expect((await page.getByTestId("summary-toggle").locator("svg").first().boundingBox())!.x - box.x).toBe(inset);
