@@ -547,6 +547,16 @@ test.describe("the new message", () => {
       await expect(page.getByTestId("format-toggle")).toBeVisible();
       await expect(page.getByTestId("compose-link")).toBeVisible();
     });
+    await scenario("the owner: an empty message's card is as tall as it holds, not the pane; it grows as the message does", async () => {
+      await freshNoDrafts(page, server);
+      await compose(page);
+      const pane = await box(page.getByTestId("composer")), empty = await box(card(page));
+      expect(pane.y + pane.height - (empty.y + empty.height)).toBeGreaterThan(150);
+      expect((await box(body(page))).height).toBeGreaterThanOrEqual(180);
+      await body(page).click();
+      for (let i = 0; i < 14; i++) { await page.keyboard.type(`línea ${i}`); await page.keyboard.press("Enter"); }
+      expect((await box(card(page))).height).toBeGreaterThan(empty.height);
+    });
     await scenario("plan 130: a message longer than the pane scrolls inside the card; the bar and Send stay, the line being typed shows above them", async () => {
       await freshNoDrafts(page, server);
       await compose(page);
@@ -650,15 +660,14 @@ test.describe("the new message", () => {
     });
   });
 
-  test("plan 160: a card to the pane's foot: Send pinned there, a click below the words writes at their end", { tag: "@variant" }, async ({ app: page }) => {
+  test("the new message's card holds its text, Send at its foot; a click below the words writes at their end", { tag: "@variant" }, async ({ app: page }) => {
     await compose(page);
     await body(page).click();
     await page.keyboard.type("Hola");
     const bar = await box(page.getByTestId("format-bar")), c = await box(card(page)), pane = await box(page.getByTestId("composer")), text = await box(body(page));
-    // room to write (a third of the window); plan 160: the card reaches the pane's foot (--float-inset under it), its foot
-    // pinned there (plan 158's card that hugged its text left half the pane empty under it)
-    expect(text.height).toBeGreaterThanOrEqual(0.3 * page.viewportSize()!.height);
-    expect(pane.y + pane.height - (c.y + c.height), "the card reaches the pane's foot").toBeLessThanOrEqual(13);
+    // room to write; the owner (after plan 160): the card is as tall as it holds, not the pane's foot ("too tall")
+    expect(text.height).toBeGreaterThanOrEqual(180);
+    expect(pane.y + pane.height - (c.y + c.height), "the card ends above the pane's foot").toBeGreaterThan(150);
     expect(c.y + c.height - (bar.y + bar.height)).toBeLessThan(60);
     // a click in the empty text below the words goes on writing where they end
     await page.getByTestId("compose-to").click();
@@ -666,14 +675,8 @@ test.describe("the new message", () => {
     await expect(body(page)).toBeFocused();
     await page.keyboard.type(" mundo");
     await expect(body(page)).toHaveText("Hola mundo");
-    // and so does a click in the card's room under the text, above its foot
-    if (bar.y - (text.y + text.height) > 24) {
-      await page.getByTestId("compose-to").click();
-      await page.mouse.click(c.x + 40, (text.y + text.height + bar.y) / 2);
-      await expect(body(page)).toBeFocused();
-      await page.keyboard.type("!");
-      await expect(body(page)).toHaveText("Hola mundo!");
-    }
+    // the card has no room of its own under the text now (it holds its text): the body's own space is where a click lands
+    expect(bar.y - (text.y + text.height)).toBeLessThan(24);
     for (const id of ["compose-send", "compose-send-later", "compose-pin", "compose-discard", "compose-collapse", "format-toggle", "compose-link"]) await expect(card(page).getByTestId(id)).toBeVisible();
     // nothing left in the strip above it: the only controls are the card's
     expect(await page.getByTestId("composer").locator("button").count()).toBe(await card(page).locator("button").count());

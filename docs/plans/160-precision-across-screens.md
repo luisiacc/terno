@@ -291,3 +291,9 @@ The owner, on the Rules dialog's fields after this plan: "these fields are very 
 - **Text still holds AA.** The owner's "don't care" is about the fill, not the text. A field's text and placeholder hold 4.5:1 on every surface (`CONTRAST_PAIRS`). The lowest is 4.64:1, Graphite dark's secondary ink on a field over a tint. A lighter wash only raises these ratios.
 - **Codex review.** No runtime regressions. Codex confirmed the generated CSS matches the registry and the lowest text pair on a field is 4.64:1. It found one stale comment, which is fixed: the comment on `TINT_FLOOR` still listed fields and the segmented thumb under 1.35.
 - **Baselines.** Every screen with a field, key, chip, close button or segmented control was re-baselined in all five designs and looked at. Both the old and new fill sit inside the comparator's tolerance, so a few baselines also catch up with earlier changes it had absorbed: the open row's removed rail, and the wording of the learned-rule banner and of Appearance.
+
+## The owner, after the AI redesign landed (2026-11-09)
+
+> "this composer for a new message is too tall, it looks bad like this"
+
+The new message's card no longer reaches the pane's foot. It is as tall as what it holds: the fields, a body of at least `max(180px, 28vh)` to write in, the format bar and Send. It grows as the message does, up to the pane, and past that the message scrolls inside the card with the bar and Send in view (plan 130, unchanged). `composer.spec.ts` holds both: an empty card ends well above the pane's foot, and a long one stays inside the pane.

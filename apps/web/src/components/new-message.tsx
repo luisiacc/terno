@@ -130,24 +130,14 @@ export function NewMessage() {
       <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
         {/* pt-0.5: the card's ring is drawn outside it, so the scroller's top edge would cut it (plan 158); pb: its foot keeps the floating inset */}
         <div className={cn(READING_COLUMN, "flex h-full flex-col pt-0.5 pb-(--float-inset)")}>
-          {/* plan 158: a card that holds its text, Send just under it. Plan 160: it reaches the pane's foot (no empty pane under a
-              short card), the format bar and Send pinned there; a long message scrolls inside it */}
-          {/* a press in the room under the text (the card's own, between it and the foot) writes at its end */}
-          <div className={cn("relative flex min-h-60 flex-1 cursor-text flex-col", DRAFT_SURFACE)} data-testid="composer-card" onMouseDown={(e) => {
-            if (e.target !== e.currentTarget || e.button !== 0) return;
-            e.preventDefault();
-            const text = e.currentTarget.querySelector<HTMLElement>("[data-testid=compose-body]");
-            if (!text) return;
-            text.focus();
-            // at the end of what's written, as a press under the last line of a page puts it
-            const at = getSelection();
-            at?.selectAllChildren(text);
-            at?.collapseToEnd();
-          }}>
+          {/* plan 158: a card that holds its text, Send just under it. The owner (after plan 160, which stretched it to the
+              pane's foot: "too tall, it looks bad"): it's as tall as what it holds, from a comfortable empty body, and
+              grows as you write up to the pane; past that a long message scrolls inside it, the bar and Send in view */}
+          <div className={cn("relative flex min-h-60 cursor-text flex-col", DRAFT_SURFACE)} data-testid="composer-card">
             {/* pt-0.5: the first row's text field keeps its whole focus ring */}
             <div className="min-h-0 overflow-y-auto pt-0.5" data-draft-scroll>
               <DraftFieldsForm d={d} accounts={accounts} showSubject />
-              <RichBody draftKey={key} placeholder={t("compose.bodyPlaceholder.new")} className="rt-measure block min-h-[max(132px,34vh)] w-full px-3.5 pt-3 pb-3" />
+              <RichBody draftKey={key} placeholder={t("compose.bodyPlaceholder.new")} className="rt-measure block min-h-[max(180px,28vh)] w-full px-3.5 pt-3 pb-3" />
               <DraftAttachments d={d} />
               <SignaturePreview accountId={d.accountId} className="px-3.5 pb-2" />
               <Quote d={d} />
