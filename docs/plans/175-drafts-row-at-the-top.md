@@ -85,3 +85,9 @@ Re-rendering: the row follows that list of names, not the drafts' order, so typi
 > i think the 1st item needs a bit more padding top, its super close to the line of drafts, and the line of drafts needs a bit less margin top, it looks super far from the buttons above and too close to the emails, make sure this looks good on all styles. also in graphite it has a weird background that's different from what's behind
 
 The row sat under the header's own 6 px with 4 px more above it, and the first row (its selection fill) started on its hairline: in Graphite, whose selection is a flat grey, the selected first row read as the strip's own background. Now the strip has no padding above (the header's 6 px are the gap) and its line is 32 px (from 36), 4 px under it, then the hairline, and the header's 6 px again under the hairline before the first row. The text sits ~12 px under the controls above, and every style's first selection stands clear of the line (checked in Lumen, macOS, Graphite, Atelier and Luma, light and dark). The strip and the list have the same background in every style; nothing else changed there.
+
+## No dash (the owner)
+
+> remove that ridiculous em dash there
+
+`compose.strip.to`, `.none` and `.invalid` lose their leading "— " (en and es): every line of the strip, its items and the count of several say "To …" after the gap that already separates their parts.

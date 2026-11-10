@@ -67,7 +67,7 @@ describe("the drafts row (plan 175)", () => {
     const older = written("Primera nota", 1), newer = written("Segunda nota", 2);
     await render();
     expect(all("[data-testid=strip-item]")).toHaveLength(0);
-    expect(q("[data-testid=strip-summary]")!.textContent).toBe("2 drafts— To Ana Torres");
+    expect(q("[data-testid=strip-summary]")!.textContent).toBe("2 draftsTo Ana Torres");
     await openMenu();
     expect(all("[data-testid=strip-item]").map((el) => el.dataset.key)).toEqual([newer, older]);
     await act(async () => q(`[data-testid=strip-item][data-key="${older}"]`)!.click());
@@ -78,7 +78,7 @@ describe("the drafts row (plan 175)", () => {
     written("Borrador", 1);
     useScheduled.setState({ items: [scheduled(90, "Programado")], byDraft: new Map() });
     await render();
-    expect(q("[data-testid=strip-summary]")!.textContent).toBe("1 draft·1 scheduled— To Ana Torres");
+    expect(q("[data-testid=strip-summary]")!.textContent).toBe("1 draft·1 scheduledTo Ana Torres");
     await openMenu();
     expect(all("[data-testid=strip-item], [data-testid=strip-scheduled]").map((el) => el.dataset.testid)).toEqual(["strip-item", "strip-scheduled"]);
   });
@@ -88,7 +88,7 @@ describe("the drafts row (plan 175)", () => {
     await render();
     expect(q("[data-testid=strip-scheduled]")!.textContent).toContain("Programado");
     await act(async () => useScheduled.setState({ items: [scheduled(90, "Programado"), scheduled(91, "Otro")], byDraft: new Map() }));
-    expect(q("[data-testid=strip-summary]")!.textContent).toBe("2 scheduled— To Ana");
+    expect(q("[data-testid=strip-summary]")!.textContent).toBe("2 scheduledTo Ana");
   });
 
   it("a send in flight stays until it's sent: it can be opened again (plan 158)", async () => {
@@ -117,7 +117,7 @@ describe("the drafts row (plan 175)", () => {
     await render();
     const people = q("[data-testid=strip-summary-people]")!;
     // a person is their address, named as their newest draft names them: Liam's bare address is Liam once (Codex review)
-    expect(people.textContent).toBe("— To Alex, Liam Taylor, Isabella Álvarez, Alex");
+    expect(people.textContent).toBe("To Alex, Liam Taylor, Isabella Álvarez, Alex");
     expect(people.className).toContain("truncate");
   });
 
@@ -133,10 +133,10 @@ describe("the drafts row (plan 175)", () => {
     const older = written("Primera", 1, { toText: "Liam Taylor <liam@example.com>" });
     written("Segunda", 2);
     await act(async () => root.render(<Profiler id="strip" onRender={() => { commits++; }}><DraftsStrip /></Profiler>));
-    expect(q("[data-testid=strip-summary-people]")!.textContent).toBe("— To Ana Torres, Liam Taylor");
+    expect(q("[data-testid=strip-summary-people]")!.textContent).toBe("To Ana Torres, Liam Taylor");
     commits = 0;
     await act(async () => editDraft(older, { bodyText: "a" }));
-    expect(q("[data-testid=strip-summary-people]")!.textContent).toBe("— To Liam Taylor, Ana Torres");
+    expect(q("[data-testid=strip-summary-people]")!.textContent).toBe("To Liam Taylor, Ana Torres");
     const once = commits;
     expect(once).toBeGreaterThan(0);
     await act(async () => editDraft(older, { bodyText: "ab" }));
@@ -156,7 +156,7 @@ describe("the drafts row (plan 175)", () => {
     // Ana Torres, so who the row names first doesn't change)
     const newer = written("Otro", 2);
     await act(async () => useDrafts.setState((s) => ({ drafts: { ...s.drafts, [older]: { ...s.drafts[older]!, updatedAt: 1 } } })));
-    expect(q("[data-testid=strip-summary]")!.textContent).toBe("2 drafts— To Ana Torres");
+    expect(q("[data-testid=strip-summary]")!.textContent).toBe("2 draftsTo Ana Torres");
     commits = 0;
     await act(async () => editDraft(older, { bodyText: "aún más texto" }));
     await act(async () => editDraft(older, { bodyText: "y más" }));

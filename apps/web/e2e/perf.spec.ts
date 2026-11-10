@@ -215,7 +215,7 @@ for (const { design: id, density } of LIST_GATES) {
       await server.backend.server.invoke("drafts.save", { accountId: target.account_id, to: [{ name: "", email: "ana@example.com" }], cc: [], subject: "Nuevo", bodyText: "Para después" }, ctx);
       await setDensity(page, server, density);
       // both in the drafts row's count (plan 175), the reply also on its row
-      await expect(page.getByTestId("strip-summary")).toHaveText("2 drafts— To ana@example.com");
+      await expect(page.getByTestId("strip-summary")).toHaveText("2 draftsTo ana@example.com");
       await expect(page.locator(`[data-testid=thread-row][data-thread-id="${target.thread_id}"]`)).toContainText("Draft");
       const rendersBefore = await renders(page, "ThreadRow");
       await expect(page.locator(`[data-testid=thread-row]`).first()).toHaveCSS("height", `${design.rows[density]}px`);
@@ -523,7 +523,7 @@ test("typing in a draft with 2,000 drafts around: each keystroke is handled and 
   // subscription for all of them saved 10 ms of 300); drafts are only ever written here, so a real count is tens, a
   // few ms. This holds the ceiling where it is; moving through it stays within two frames.
   await page.keyboard.press("Escape");
-  await expect(page.getByTestId("strip-summary")).toHaveText(/^2,?000 drafts— To ana@example\.com$/);
+  await expect(page.getByTestId("strip-summary")).toHaveText(/^2,?000 draftsTo ana@example\.com$/);
   const open: number[] = [], step: number[] = [];
   for (let i = 0; i < 3; i++) {
     await page.getByTestId("strip-summary").focus();

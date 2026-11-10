@@ -971,7 +971,7 @@ test("the composer's states: unavailable Send, Saving and Saved, an invalid addr
   // put away like that, the strip still says it won't go (plan 158: it read "To bad-addr", as if it were fine)
   await to.focus();
   await page.keyboard.press("Escape");
-  await expect(page.getByTestId("strip-item-recipients")).toHaveText("— “bad-addr” isn’t an email address");
+  await expect(page.getByTestId("strip-item-recipients")).toHaveText("“bad-addr” isn’t an email address");
   await page.getByTestId("strip-item").click();
   await expect(note).toBeVisible();
   // fixed: it goes, and Send is ready again
