@@ -26,11 +26,17 @@ test("launch({ ai: \"stub\" }): settings survive the relaunch, the AI entry poin
     await page.keyboard.press("Meta+Shift+k");
     // plan 161, pass 3: Ask's page names its dialog (its chip became "‹ All commands")
     await expect(page.getByRole("dialog", { name: "Ask your mail" })).toBeVisible();
+    // plan 168: the rated launch asks for itself (Settings no longer lists a local server's models for each feature,
+    // which was the request it used to make), so the log has this launch's own AI requests to judge
+    await page.getByTestId("palette-input").fill("What did Isabella say about the payment?");
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("ask-answer").first()).not.toBeEmpty({ timeout: 30_000 });
     await page.keyboard.press("Escape");
     const net = network();
     expect(net.problems).toEqual([]);
     expect(net.ai).toBeGreaterThan(0);
     expect(stub!.tasks).toContain("newsletter_digest");
+    expect(stub!.tasks).toContain("answer");
     expect(stub!.unknown).toEqual([]);
   } finally {
     await close();

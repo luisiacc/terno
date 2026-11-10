@@ -589,8 +589,9 @@ test.describe("summaries (plan 132)", () => {
       await status.scrollIntoViewIfNeeded();
       await expect(status).toContainText("Check the API key");
       await expect(page.getByTestId("ai-usage-value")).toContainText(/1 request|\d requests/);
-      // the models the provider lists, to choose from
-      await expect(page.getByTestId("ai-summaries-model")).toContainText("qwen3:8b");
+      // plan 168: a local server's model is chosen once, in the provider group; Summaries has no model row of its own
+      await expect(page.getByTestId("ai-model")).toHaveValue("qwen3:8b");
+      await expect(page.getByTestId("ai-summaries-model")).toHaveCount(0);
       const limit = page.getByTestId("ai-limit-input");
       await expect(limit).toHaveValue("$10");
       await limit.fill("25");
