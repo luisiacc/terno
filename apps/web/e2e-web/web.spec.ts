@@ -157,7 +157,6 @@ test("plan 37: in local mode the browser loads a newsletter's images on “Load 
   const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
   await page.route((url) => url.protocol === "https:" && url.pathname.endsWith("/pixel.gif"), (route) => (hits.push(route.request().url()), route.fulfill({ contentType: "image/png", body: png })));
   await boot(page);
-  await expect(page.getByTestId("cloud-ai-pill")).toHaveCount(0);
   await (await searchBox(page)).fill("Unsubscribe");
   await expect(rows(page).nth(1)).toBeVisible();
   await rows(page).first().dispatchEvent("mousedown");

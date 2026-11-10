@@ -24,7 +24,6 @@ import type { DropId } from "~/lib/drag";
 import { useDropState } from "~/state/drag";
 import { installSortable, type Sortable } from "~/lib/sortable-install";
 import { reorderAccounts, reorderCategories } from "~/lib/reorder";
-import { CloudAiPill } from "./cloud-ai-pill";
 import { FirstSyncPill } from "./first-sync-pill";
 import { ConnectionPill } from "./connection-pill";
 import { SignInMarker, SignInNotice } from "./sign-in-notice";
@@ -1560,7 +1559,6 @@ export function Sidebar() {
         <Button data-testid="open-filters" variant="ghost" size="sm" className="flex-1 justify-start gap-2 text-sidebar-foreground" onClick={() => setApp({ dialog: "filters" })}>
           <Route className="text-sidebar-glyph" /> {t("sidebar.filters")}
         </Button>
-        <CloudAiPill />
         <Tooltip>
           <TooltipTrigger
             render={

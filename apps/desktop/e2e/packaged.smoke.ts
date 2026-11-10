@@ -165,7 +165,6 @@ test("plan 22: the packaged backend can fetch website icons, and they're on unti
 });
 
 test("main cancels the renderer's remote requests, for everyone (plan 97: not a local-mode setting)", async () => {
-  await expect(page.getByTestId("cloud-ai-pill")).toHaveCount(0);
   // observe cancellations in main itself, so a failure for any other reason (offline, CSP) doesn't count
   await app.evaluate(({ session }) => {
     const g = globalThis as unknown as { blocked: string[] };

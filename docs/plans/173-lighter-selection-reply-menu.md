@@ -117,3 +117,9 @@ One finding: at the narrowest list, a row with an account label, three or more c
 > i think this padding here padding left when an email is selected, should be like 2px more
 
 The open (and checked, and hovered) row's fill starts 6 px into the list instead of 4 (`ROW_SHAPE` `before:left-1.5`); its right edge stays 8 px in. The text line stays at 20 px, so the marks' column moves 1 px right to stay centred in the gutter (13 px in): the unread dot keeps air on both sides, and a checked row's 12 px check keeps 1 px either side of its box instead of 2 (its glyph is drawn inset). `selection.spec.ts` checks the fill at 6 px and the check's new air.
+
+## Follow-up: no AI pill in the sidebar (the owner)
+
+> also remove this pill here completely that says if ai ise used and which
+
+The sidebar footer's "AI: Claude (Anthropic) (cloud)" pill (`CloudAiPill`, plan 97) is gone, with its three strings. Where a cloud AI sends a conversation's text is still said where it's chosen: Settings → AI's privacy line (plan 131) and the filter builder's notice. `local-ai.spec.ts` now checks that no pill shows while a cloud AI is chosen; the smoke tests and the web spec that used the pill's absence as a stand-in for "no cloud AI" drop that line (it would hold by construction).

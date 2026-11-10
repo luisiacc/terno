@@ -18,10 +18,9 @@ test.describe("local mode and AI providers", () => {
       await expect(page.getByTestId("ai-endpoint")).toHaveValue("http://127.0.0.1:11434/v1");
 
       // an endpoint on another machine (a GPU box on the LAN) is the user's to choose, and said where it goes
-      // (Codex review R2): the pill names it and the footer no longer says nothing leaves
+      // (Codex review R2): the footer no longer says nothing leaves
       await page.getByTestId("ai-endpoint").fill("http://192.168.1.20:11434/v1");
       await expect(page.getByTestId("ai-endpoint-error")).toHaveCount(0);
-      await expect(page.getByTestId("cloud-ai-pill")).toHaveText("AI: Ollama (cloud)");
       await expect(page.getByTestId("ai-privacy")).not.toContainText("Nothing leaves this Mac.");
 
       await page.getByTestId("ai-endpoint").fill(`${ollama.url}/v1`);
@@ -52,8 +51,8 @@ test.describe("local mode and AI providers", () => {
     }
   });
 
-  test("no local-mode wording; a cloud AI's pill; a slow test can't touch the next provider", async ({ app: page, server }) => {
-    await scenario("no local-mode wording anywhere; a cloud AI shows in the sidebar while it's chosen, and its pill opens the AI tab", async () => {
+  test("no local-mode wording; no AI pill in the sidebar; a slow test can't touch the next provider", async ({ app: page, server }) => {
+    await scenario("no local-mode wording anywhere; Settings → AI says where a cloud AI sends text, and the sidebar shows no AI pill (plan 173, the owner)", async () => {
       const pill = page.getByTestId("cloud-ai-pill");
       await expect(pill).toHaveCount(0);
       await page.getByTestId("open-settings").click();
@@ -80,16 +79,9 @@ test.describe("local mode and AI providers", () => {
       await expect(page.locator("body")).not.toContainText("sk-proj-e2e-secret");
       await expect(page.getByTestId("ai-privacy")).toContainText("OpenAI receives a conversation’s text when you use an AI feature on it");
       await expect(page.getByTestId("ai-routing")).toHaveText("Every AI feature runs on OpenAI. Terno picks the model for each.");
-      // where the mail it's asked about goes, said where the user looks
-      await expect(pill).toHaveText("AI: OpenAI (cloud)");
-
-      // its pill opens the AI tab
+      // plan 173 (the owner): the sidebar's footer names no AI, cloud or not; Settings → AI is where it's said
       await page.keyboard.press("Escape");
-      await pill.click();
-      await expect(page.getByTestId("ai-tab")).toBeVisible();
-      // a model on this Mac again: nothing to say
-      await page.getByTestId("ai-provider").click();
-      await page.getByTestId("ai-choice-ollama").click();
+      await expect(page.getByTestId("open-settings")).toBeVisible();
       await expect(pill).toHaveCount(0);
     });
     await scenario("a slow connection test that finishes after switching provider doesn't touch the new one", async () => {
@@ -130,7 +122,6 @@ test.describe("local mode and AI providers", () => {
         await expect(page.getByTestId("ai-test-result")).toHaveCount(0);
         await expect(page.getByTestId("ai-privacy")).toContainText("OpenAI receives");
         await expect(page.getByTestId("ai-privacy")).not.toContainText("Nothing leaves this Mac");
-        await expect(page.getByTestId("cloud-ai-pill")).toHaveText("AI: OpenAI (cloud)");
       } finally {
         await ollama.close();
       }
@@ -139,7 +130,6 @@ test.describe("local mode and AI providers", () => {
 
   test("remote images: “Load content”, “Always load”; an HTML mail fits its frame", async ({ app: page }) => {
     await scenario("plan 37: in local mode “Load content” loads the message's remote images, for the session", async () => {
-      await expect(page.getByTestId("cloud-ai-pill")).toHaveCount(0);
       const hits: string[] = [];
       const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
       await page.route(remote, (route) => (hits.push(route.request().url()), route.fulfill({ contentType: "image/png", body: png })));

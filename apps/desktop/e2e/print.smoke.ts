@@ -196,7 +196,6 @@ const fence = () =>
   });
 
 test("plan 37: in local mode the print window loads the job's approved images and nothing else", async () => {
-  await expect(page.getByTestId("cloud-ai-pill")).toHaveCount(0);
   await watchFence("terno-print");
   const listed = `https://example.com/print-smoke.png?${Date.now()}`;
   const unlisted = `https://example.com/print-smoke-unlisted.png?${Date.now()}`;
@@ -216,7 +215,6 @@ test("plan 37: in local mode the print window loads the job's approved images an
 });
 
 test("plan 37: in local mode “Load content” gets a newsletter's images past main's backstop; the app's own frame still can't", async () => {
-  await expect(page.getByTestId("cloud-ai-pill")).toHaveCount(0);
   await watchFence(null);
   await openThread("newsletter");
   await page.waitForTimeout(300);
