@@ -819,7 +819,7 @@ const en = {
   "ai.key.removedSnack": "API key removed",
   "ai.keys.hint": "Add either key, or both. Terno picks the model for each feature.",
   "ai.route.one": "Every AI feature runs on {provider}. Terno picks the model for each.",
-  "ai.route.split": "Summaries run on {summaries}, every other feature on {rest}. Terno picks the model for each.",
+  "ai.route.split": "Drafting, Ask your mail and rules run on {rest}; summaries, follow-ups and the digest on {summaries}. Terno picks the model for each.",
   "ai.route.jev": "Smart categories run on JEV.",
   "ai.model": "Model",
   "ai.model.needsKey": "Save the API key to see the available models.",

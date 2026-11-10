@@ -84,8 +84,8 @@ describe("what runs, by plan 168's routing", () => {
 
   it("a key that can't be sent leaves the job to the other one, and with neither nothing is ready", () => {
     const both = (over: object) => set({ provider: "anthropic", hasKey: true, keys: { anthropic: { ...claude, ...over }, openai } });
-    expect(routeOf("writing", both({ keyUnreadable: true }))).toEqual({ provider: "openai", model: "gpt-6-luna" });
-    expect(routeOf("writing", both({ keyConfirmed: false }))).toEqual({ provider: "openai", model: "gpt-6-luna" });
+    expect(routeOf("writing", both({ keyUnreadable: true }))).toEqual({ provider: "openai", model: "gpt-6-sol" });
+    expect(routeOf("writing", both({ keyConfirmed: false }))).toEqual({ provider: "openai", model: "gpt-6-sol" });
     expect(aiCanRun("writing", set({ provider: "anthropic", keys: { anthropic: { ...claude, keyUnreadable: true } } }))).toBe(false);
   });
 
@@ -101,9 +101,9 @@ describe("what runs, by plan 168's routing", () => {
     expect(routingLine(set({ provider: "anthropic" }))).toBeNull();
     expect(routingLine(set({ provider: "anthropic", keys: { anthropic: claude } }))).toBe("Every AI feature runs on Claude (Anthropic). Terno picks the model for each.");
     expect(routingLine(set({ provider: "anthropic", keys: { openai } }))).toBe("Every AI feature runs on OpenAI. Terno picks the model for each.");
-    expect(routingLine(set({ provider: "anthropic", keys: { anthropic: claude, openai, jev: claude } }))).toBe("Summaries run on OpenAI, every other feature on Claude (Anthropic). Terno picks the model for each. Smart categories run on JEV.");
+    expect(routingLine(set({ provider: "anthropic", keys: { anthropic: claude, openai, jev: claude } }))).toBe("Drafting, Ask your mail and rules run on Claude (Anthropic); summaries, follow-ups and the digest on OpenAI. Terno picks the model for each. Smart categories run on JEV.");
     setLocale("es", es);
-    expect(routingLine(set({ provider: "anthropic", keys: { anthropic: claude, openai } }))).toBe("Los resúmenes usan OpenAI y las demás funciones, Claude (Anthropic). Terno elige el modelo para cada una.");
+    expect(routingLine(set({ provider: "anthropic", keys: { anthropic: claude, openai } }))).toBe("Redactar, Pregunta a tu correo y las reglas usan Claude (Anthropic); los resúmenes, los seguimientos y el resumen de boletines, OpenAI. Terno elige el modelo para cada una.");
     setLocale("en", en);
   });
 });

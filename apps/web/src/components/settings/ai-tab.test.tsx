@@ -72,7 +72,7 @@ describe("Settings → AI", () => {
     expect($(host, "ai-key-row-openai")).not.toBeNull();
     expect($(host, "ai-model")).toBeNull();
     expect($(host, "ai-models")).toBeNull();
-    expect($(host, "ai-routing")!.textContent).toBe("Summaries run on OpenAI, every other feature on Claude (Anthropic). Terno picks the model for each.");
+    expect($(host, "ai-routing")!.textContent).toBe("Drafting, Ask your mail and rules run on Claude (Anthropic); summaries, follow-ups and the digest on OpenAI. Terno picks the model for each.");
     // nothing asks which models exist there: Terno doesn't offer them
     await act(async () => new Promise((r) => setTimeout(r, 450)));
     expect(calls().some(([method]) => method === "ai.listModels")).toBe(false);
@@ -104,7 +104,7 @@ describe("Settings → AI", () => {
     const asked = calls().filter(([method]) => method === "ai.test").map(([, p]) => p);
     expect(asked).toEqual([
       { provider: "anthropic", model: "claude-sonnet-5-5", baseURL: undefined, preset: undefined },
-      { provider: "openai", model: "gpt-6-luna", baseURL: undefined, preset: undefined },
+      { provider: "openai", model: "gpt-6-sol", baseURL: undefined, preset: undefined },
     ]);
     expect($(host, "ai-test-result")!.textContent!.trim()).toMatch(/^Claude \(Anthropic\): Connected · 120 ms/);
     expect($(host, "ai-test-error")!.textContent).toMatch(/^OpenAI: That key was refused/);
@@ -147,7 +147,7 @@ describe("Settings → AI", () => {
     useApp.setState({ devAi: { anthropic: true, openai: true, jev: true }, settings: { ...s, devAi: true } } as never);
     const host = await render(<AiTab settings={{ ...s, devAi: true }} update={vi.fn() as never} />);
     for (const id of ["ai-provider", "ai-model", "ai-key-anthropic", "ai-key-openai", "ai-test"]) expect($(host, id), id).toBeNull();
-    expect($(host, "ai-routing")!.textContent).toBe("Summaries run on OpenAI, every other feature on Claude (Anthropic). Terno picks the model for each. Smart categories run on JEV.");
+    expect($(host, "ai-routing")!.textContent).toBe("Drafting, Ask your mail and rules run on Claude (Anthropic); summaries, follow-ups and the digest on OpenAI. Terno picks the model for each. Smart categories run on JEV.");
     expect(host.querySelector('[data-testid$="-target"]')).toBeNull();
   });
 });

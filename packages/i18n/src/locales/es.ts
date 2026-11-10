@@ -812,7 +812,7 @@ const es = {
   "ai.key.removedSnack": "API key eliminada",
   "ai.keys.hint": "Añade una de las dos claves, o ambas. Terno elige el modelo para cada función.",
   "ai.route.one": "Todas las funciones de IA usan {provider}. Terno elige el modelo para cada una.",
-  "ai.route.split": "Los resúmenes usan {summaries} y las demás funciones, {rest}. Terno elige el modelo para cada una.",
+  "ai.route.split": "Redactar, Pregunta a tu correo y las reglas usan {rest}; los resúmenes, los seguimientos y el resumen de boletines, {summaries}. Terno elige el modelo para cada una.",
   "ai.route.jev": "Las categorías inteligentes usan JEV.",
   "ai.model": "Modelo",
   "ai.model.needsKey": "Guarda la API key para ver los modelos disponibles.",

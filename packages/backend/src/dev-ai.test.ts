@@ -186,7 +186,7 @@ describe("on a local build", () => {
     expect(routed).toMatchObject({ summary: `openai/${SUMMARY_DEFAULT_MODEL}`, writing: `anthropic/${WRITING_CLAUDE_MODEL}`, categorize: `jev/${JEV_DEFAULT_MODEL}` });
   });
 
-  it("with only an Anthropic key everything runs on Claude, summaries on Haiku; with only OpenAI's, everything on Luna", async () => {
+  it("with only an Anthropic key everything runs on Claude, summaries on Haiku; with only OpenAI's, drafting on Sol and the rest on Luna", async () => {
     const anthropic = await start({ anthropic: "env-anthropic" });
     await anthropic.on();
     await anthropic.backend.aiService.forTask("summary");
@@ -197,7 +197,7 @@ describe("on a local build", () => {
     expect(aiOf(await openai.on())).toMatchObject({ provider: "openai", hasKey: true });
     for (const job of AI_JOBS) {
       await openai.backend.aiService.forTask(job);
-      expect(openai.built.at(-1), job).toMatchObject({ id: "openai", model: SUMMARY_DEFAULT_MODEL, apiKey: "env-openai" });
+      expect(openai.built.at(-1), job).toMatchObject({ id: "openai", model: ["writing", "voice", "reply"].includes(job) ? "gpt-6-sol" : SUMMARY_DEFAULT_MODEL, apiKey: "env-openai" });
     }
   });
 

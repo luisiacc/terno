@@ -13,6 +13,7 @@ const HAIKU = "anthropic/claude-haiku-5-5";
 const SONNET = "anthropic/claude-sonnet-5-5";
 const OPUS = "anthropic/claude-opus-5-5";
 const LUNA = "openai/gpt-6-luna";
+const SOL = "openai/gpt-6-sol";
 
 describe("on keys (Claude, OpenAI, Pro, Dev mode's Pro AI)", () => {
   it("both keys, and JEV: Pro's routing, as the rating records it", () => {
@@ -21,12 +22,13 @@ describe("on keys (Claude, OpenAI, Pro, Dev mode's Pro AI)", () => {
       writing: SONNET,
       voice: SONNET,
       reply: SONNET,
-      intent: HAIKU,
-      replyCheck: HAIKU,
+      // the owner: Sonnet drafts, Luna does the small things; Ask's planner stays with its answer (plan 141 §6)
+      intent: LUNA,
+      replyCheck: LUNA,
       ask: SONNET,
       askPlan: HAIKU,
-      followup: HAIKU,
-      digest: HAIKU,
+      followup: LUNA,
+      digest: LUNA,
       filter: OPUS,
       categorize: "jev/jev-latest",
     });
@@ -36,8 +38,8 @@ describe("on keys (Claude, OpenAI, Pro, Dev mode's Pro AI)", () => {
     expect(table(ai({ provider: "anthropic", keys: { anthropic: key() } }))).toEqual({ summary: HAIKU, writing: SONNET, voice: SONNET, reply: SONNET, intent: HAIKU, replyCheck: HAIKU, ask: SONNET, askPlan: HAIKU, followup: HAIKU, digest: HAIKU, filter: OPUS, categorize: OPUS });
   });
 
-  it("only OpenAI: every job on Luna, the one OpenAI model Terno knows the price of", () => {
-    for (const route of Object.values(table(ai({ provider: "anthropic", keys: { openai: key() } })))) expect(route).toBe(LUNA);
+  it("only OpenAI: drafting on Sol, every other job on Luna (the owner)", () => {
+    for (const [job, route] of Object.entries(table(ai({ provider: "anthropic", keys: { openai: key() } })))) expect(route, job).toBe(["writing", "voice", "reply"].includes(job) ? SOL : LUNA);
   });
 
   it("which of the two is stored decides nothing, and neither does a saved model", () => {
@@ -58,7 +60,7 @@ describe("on keys (Claude, OpenAI, Pro, Dev mode's Pro AI)", () => {
 
   it("a key that can't be read, or is saved for another endpoint, leaves its jobs to the other key (Codex critique)", () => {
     expect(routeFor("summary", ai({ provider: "anthropic", keys: { anthropic: key(), openai: key({ keyUnreadable: true }) } }))).toEqual({ provider: "anthropic", model: "claude-haiku-5-5" });
-    expect(routeFor("writing", ai({ provider: "anthropic", keys: { anthropic: key({ keyConfirmed: false }), openai: key() } }))).toEqual({ provider: "openai", model: "gpt-6-luna" });
+    expect(routeFor("writing", ai({ provider: "anthropic", keys: { anthropic: key({ keyConfirmed: false }), openai: key() } }))).toEqual({ provider: "openai", model: "gpt-6-sol" });
     expect(routeFor("categorize", ai({ provider: "anthropic", keys: { anthropic: key(), jev: key({ keyUnreadable: true }) } }))).toEqual({ provider: "anthropic", model: "claude-opus-5-5" });
     expect(aiReady(ai({ provider: "anthropic", keys: { anthropic: key({ keyUnreadable: true }) } }))).toBe(false);
     expect(aiReady(ai({ provider: "anthropic", keyUnreadable: true, keys: { anthropic: key({ keyUnreadable: true }), openai: key() } }))).toBe(true);

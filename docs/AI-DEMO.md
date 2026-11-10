@@ -20,11 +20,11 @@ Measured on four runs: **about 80 model requests, US$0.12 to 0.16**, counted by 
 
 | Feature | Requests | Model (Pro's routing) |
 | --- | --- | --- |
-| Follow-ups: the last 30 days of sent mail (195 messages, the app says about $0.03) | 35 to 50 | Claude Haiku |
+| Follow-ups: the last 30 days of sent mail (195 messages, the app says about $0.03) | 35 to 50 | GPT Luna |
 | Summaries of 7 or 8 conversations | 7 to 8 | GPT Luna |
-| Reply ready on 4 or 5 conversations (the model decides whether a reply is needed, then writes one) | 9 to 11 | Claude Sonnet and Haiku |
+| Reply ready on 4 or 5 conversations (the model decides whether a reply is needed, then writes one) | 9 to 11 | GPT Luna (whether a reply is needed) and Claude Sonnet |
 | Ask: 4 questions and a follow-up (a plan and an answer each) | 10 | Claude Haiku and Sonnet |
-| The newsletter digest | 1 | Claude Haiku |
+| The newsletter digest | 1 | GPT Luna |
 | A rule made with AI | 1 | Claude Opus |
 
 Anything you try afterwards (⌘J, a new question, an action) is billed as usual.

@@ -126,3 +126,10 @@ Round 2: spec PASS, one point, fixed. **The chosen key removed while it was bein
 
 1. **OpenAI on its own:** which model should draft, answer Ask and write filters when OpenAI is the only key? This plan runs everything there on `gpt-6-luna`, as Dev mode already did, because it's the only OpenAI model Terno knows the price of.
 2. **Summaries with only a Claude key** now run on Haiku without asking (the switch is on by default since plan 157; the monthly limit still applies). Before, they waited for "Use Claude". Keep?
+
+## The owner's answers (2026-11-09)
+
+1. "for openai only users, drafting runs on sol, others on luna": with only an OpenAI key, drafting (`writing`, `voice`, `reply`) runs on `gpt-6-sol` (`OPENAI_DRAFT_MODEL`), every other job on `gpt-6-luna`. Terno has no price for Sol, so the usage book counts it dear (`UNKNOWN_CLOUD_PRICE`) until one is added to `prices.ts`.
+2. Summaries on Haiku with only a Claude key: "yes", as built.
+3. "they can use both, if possible use claude sonnet for drafting luna for small things": with both keys (and so Pro and Dev mode's Pro AI), Sonnet drafts and answers Ask, and Luna takes the small jobs (`SMALL_JOBS`: summaries, follow-ups, the digest, Reply ready's check, reading a drafting instruction). Ask's planner stays on Claude Haiku with its answer: plan 141 §6 keeps a question with one company. Filters and categories stay on Opus (JEV with its key). The rating's `PRO_ROUTING` follows, held to `routeFor` by its test; Settings' line now reads "Drafting, Ask your mail and rules run on Claude (Anthropic); summaries, follow-ups and the digest on OpenAI."
+4. The pinned Ask card's 12 px over the list at 1440: "keep that".

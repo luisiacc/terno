@@ -10,6 +10,7 @@ import {
   INTENT_CLAUDE_MODEL,
   JEV_DEFAULT_MODEL,
   OPENAI_DEFAULT_MODEL,
+  OPENAI_DRAFT_MODEL,
   REPLY_CHECK_CLAUDE_MODEL,
   SUMMARY_CLAUDE_MODEL,
   SUMMARY_DEFAULT_MODEL,
@@ -52,9 +53,9 @@ const MODELS: Record<KeyedProvider, Record<AiJob, string>> = {
   },
   openai: {
     summary: SUMMARY_DEFAULT_MODEL,
-    writing: OPENAI_DEFAULT_MODEL,
-    voice: OPENAI_DEFAULT_MODEL,
-    reply: OPENAI_DEFAULT_MODEL,
+    writing: OPENAI_DRAFT_MODEL,
+    voice: OPENAI_DRAFT_MODEL,
+    reply: OPENAI_DRAFT_MODEL,
     intent: OPENAI_DEFAULT_MODEL,
     replyCheck: OPENAI_DEFAULT_MODEL,
     ask: OPENAI_DEFAULT_MODEL,
@@ -66,6 +67,13 @@ const MODELS: Record<KeyedProvider, Record<AiJob, string>> = {
   },
 };
 
+/**
+ * The owner (plan 168): with both keys, Sonnet drafts and Luna does the small things: summaries, follow-ups, the digest,
+ * Reply ready's check and reading a drafting instruction. Ask's planner isn't one: it never leaves the answer's provider
+ * (plan 141 §6), so a question goes to one company. Filters and categories stay on Opus.
+ */
+const SMALL_JOBS: ReadonlySet<AiJob> = new Set(["summary", "followup", "digest", "replyCheck", "intent"]);
+
 /** A saved key that can be sent: readable, and for the endpoint it would go to. One that can't leaves the job to the other key. */
 const usable = (key: AiSettings["keys"][AiProviderId]): boolean => key?.hasKey === true && key.keyUnreadable !== true && key.keyConfirmed !== false;
 
@@ -75,8 +83,9 @@ export type RouteFields = Pick<AiSettings, "provider" | "model"> & { keys?: AiSe
 /**
  * Plan 168: the one rule for what runs a job, read by the backend (`AiService.targetFor`), the core gates and Settings.
  *
- * - Claude or OpenAI configured: the saved keys decide, never a saved model. Summaries on OpenAI when it has a key,
- *   everything else on Claude when it has one; each on the other when only that one has a key. Both keys is Pro.
+ * - Claude or OpenAI configured: the saved keys decide, never a saved model. The small jobs (`SMALL_JOBS`) on OpenAI when
+ *   it has a key, everything else on Claude when it has one; each on the other when only that one has a key. On OpenAI,
+ *   drafting runs on Sol and the rest on Luna. Both keys is Pro.
  * - A local server or an OpenAI-compatible service: the configured provider and the model the user set, for every job:
  *   Terno can't know which models exist there.
  * - Categorizing on JEV whenever it has a key (plan 134). Null: nothing can run it.
@@ -87,7 +96,7 @@ export function routeFor(job: AiJob, ai: RouteFields): AiRoute | null {
     const claude = usable(ai.keys?.anthropic);
     const openai = usable(ai.keys?.openai);
     if (!claude && !openai) return null;
-    const provider: KeyedProvider = job === "summary" ? (openai ? "openai" : "anthropic") : claude ? "anthropic" : "openai";
+    const provider: KeyedProvider = SMALL_JOBS.has(job) ? (openai ? "openai" : "anthropic") : claude ? "anthropic" : "openai";
     return { provider, model: MODELS[provider][job] };
   }
   if (ai.provider === "none" || ai.provider === "jev") return null;
