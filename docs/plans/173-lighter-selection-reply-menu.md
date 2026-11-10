@@ -123,3 +123,9 @@ The open (and checked, and hovered) row's fill starts 6 px into the list instead
 > also remove this pill here completely that says if ai ise used and which
 
 The sidebar footer's "AI: Claude (Anthropic) (cloud)" pill (`CloudAiPill`, plan 97) is gone, with its three strings. Where a cloud AI sends a conversation's text is still said where it's chosen: Settings → AI's privacy line (plan 131) and the filter builder's notice. `local-ai.spec.ts` now checks that no pill shows while a cloud AI is chosen; the smoke tests and the web spec that used the pill's absence as a stand-in for "no cloud AI" drop that line (it would hold by construction).
+
+## Follow-up: the toast's "Similar…" says what it does (the owner)
+
+> here this 'Similar...' i think people will not understand it at all, we need a wording with an action there
+
+The owner chose the verb of what was just done, out of four options: **Move similar…**, **Add similar…** (the category picker adds; a drag moves), **Archive similar…**, **Delete similar…**, **Spam similar…** (es: Mover, Añadir, Archivar, Eliminar parecidos…; Marcar parecidos…). `SnackMore` takes the action; its tooltip still says it does the same for similar mail and for new mail like it. Checked in `snack.spec.ts` (archive), `offers.spec.ts` (the picker) and `dnd.spec.ts` (a drag).

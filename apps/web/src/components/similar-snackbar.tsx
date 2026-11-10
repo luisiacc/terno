@@ -182,7 +182,7 @@ function SimilarSnackbar({ id, action, targets, offers: first, undo, undoName, a
         <p className={cn("line-clamp-2 min-w-0 flex-1 text-sm", def && "font-medium")} data-testid="snack-message" title={title}>
           {title}
         </p>
-        {lines.length > 0 && <SnackMore open={offersOpen} onToggle={() => setOffersOpen((o) => !o)} controls={offersId} />}
+        {lines.length > 0 && <SnackMore open={offersOpen} onToggle={() => setOffersOpen((o) => !o)} controls={offersId} action={action} />}
         {token.state === "ready" && <SnackPill testId="snack-action" label={t("common.undo")} name={undoName} shortcut={z ? "z" : undefined} disabled={def?.status === "running" || busy} onClick={doUndo} />}
         <SnackClose onClick={close} />
       </div>

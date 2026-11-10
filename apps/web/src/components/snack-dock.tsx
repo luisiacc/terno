@@ -149,8 +149,9 @@ export function SnackClose({ onClick = () => dismissSnack() }: { onClick?: () =>
 /**
  * Plan 158: a success is one line. What could follow from it (the same for similar mail, a rule for new mail) waits
  * behind this, and while it's open the countdown waits: those lines take reading. No mail is touched by opening it.
+ * Plan 173 (the owner): named by what was just done ("Move similar…", "Archive similar…"), so it reads as an action.
  */
-export function SnackMore({ open, onToggle, controls }: { open: boolean; onToggle: () => void; controls: string }) {
+export function SnackMore({ open, onToggle, controls, action }: { open: boolean; onToggle: () => void; controls: string; action: "move" | "add" | "archive" | "trash" | "spam" }) {
   useEffect(() => {
     if (!open) return;
     pause("expanded");
@@ -159,7 +160,7 @@ export function SnackMore({ open, onToggle, controls }: { open: boolean; onToggl
   return (
     <Tooltip>
       <TooltipTrigger render={<Button variant="ghost" size="xs" data-testid="snackbar-similar" aria-expanded={open} aria-controls={open ? controls : undefined} onClick={onToggle} className={SNACK_QUIET} />}>
-        {t("offers.similar")}
+        {t(`offers.similar.${action}`)}
       </TooltipTrigger>
       <TooltipContent>{t("offers.similarHelp")}</TooltipContent>
     </Tooltip>

@@ -71,6 +71,8 @@ test.describe("drag and drop to a category", () => {
 
     await expect(page.getByTestId("category-snackbar")).toBeVisible();
     await expect(page.getByTestId("snackbar-title")).toHaveText(movedTo("Viajes"));
+    // plan 173 (the owner): a drag moves, and the way to more says so
+    await expect(page.getByTestId("category-snackbar").getByTestId("snackbar-similar")).toHaveText("Move similar…");
     const dropped = page.locator(`[data-thread-id="${id}"]`);
     await expect(dropped.locator(`[data-cat-dot="${viajes}"]`)).toHaveCount(1);
     await expect(dropped.locator("[data-cat-dot]")).toHaveCount(1);

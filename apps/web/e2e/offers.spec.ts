@@ -74,6 +74,8 @@ test.describe("one line first (plan 158)", () => {
     const snack = page.getByTestId("category-snackbar");
     const more = snack.getByTestId("snackbar-similar");
     await expect(more).toHaveAttribute("aria-expanded", "false");
+    // plan 173 (the owner): named by what was just done (the picker adds the category; a drag moves)
+    await expect(more).toHaveText("Add similar…");
     await expect(snack.getByTestId("snackbar-offers")).toHaveCount(0);
     expect((await snack.boundingBox())!.height).toBeLessThanOrEqual(48);
     await page.keyboard.press("1");

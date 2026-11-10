@@ -57,7 +57,7 @@ const DEFAULT_SOURCES = new Set<CategorizeSource>(["dnd", "picker"]);
 let filings = 0;
 /**
  * After any categorization (picker, accepted suggestion, drag and drop): one
- * line and Undo; the offers it makes obvious, one per line, behind Similar….
+ * line and Undo; the offers it makes obvious, one per line, behind "Move similar…" (plan 173: named by its action).
  * Its Undo and its z run `undo`, the same token as the global z.
  */
 export function showCategorySnackbar(filed: Filed, undo: Undo, source: CategorizeSource = "picker"): void {
@@ -421,7 +421,7 @@ function CategorySnackbar({ id, filed, undo, source }: { id: string; filed: File
         <span className={cn("line-clamp-2 min-w-0 flex-1", failed ? "text-destructive-ink" : "font-medium")} data-testid="snackbar-title" title={title}>
           {title}
         </span>
-        {(lines.length > 0 || stops) && <SnackMore open={offersOpen} onToggle={() => setOffersOpen((o) => !o)} controls={offersId} />}
+        {(lines.length > 0 || stops) && <SnackMore open={offersOpen} onToggle={() => setOffersOpen((o) => !o)} controls={offersId} action={filed.moved ? "move" : "add"} />}
         {(filed.batchId !== null || def) && (
           <SnackPill
             testId="snackbar-undo"

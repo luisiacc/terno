@@ -33,8 +33,10 @@ test.describe("the docked snackbar", () => {
       const listbox = page.getByRole("listbox", { name: "Conversations" });
       const room = await listbox.evaluate((el) => el.scrollHeight);
       await archiveOne(page);
-      // plan 63: one line, what could follow behind Similar… (plan 158); plan 91: open, one compact line each, as the category snackbar's
+      // plan 63: one line, what could follow behind "Archive similar…" (plan 158; named by its action since plan 173); plan 91: open, one compact line each, as the category snackbar's
       await expect(dock(page).getByTestId("similar-snackbar")).toBeVisible();
+      // plan 173 (the owner): the way to more is named by what was just done
+      await expect(dock(page).getByTestId("snackbar-similar")).toHaveText("Archive similar…");
       expect((await dock(page).boundingBox())!.height).toBeLessThanOrEqual(40);
       await openOffers(page);
       await page.mouse.move(1300, 100);
