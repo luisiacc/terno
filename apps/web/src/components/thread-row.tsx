@@ -219,7 +219,8 @@ function RowSnippet({ thread, reminderTop, ink, quiet, match, excerpt, lead }: {
   const { line } = useOwed(thread, reminderTop);
   const reason = useReason(thread);
   return (
-    <span data-testid="row-snippet" data-followup={line ? true : undefined} data-excerpt={!line && excerpt ? true : undefined} className={cn("type-row-snippet min-w-0 truncate", line ? ink : reason ? undefined : quiet)}>
+    // plan 173: the marks share its line, so it keeps its first words (a search's match stands near them, LEAD)
+    <span data-testid="row-snippet" data-followup={line ? true : undefined} data-excerpt={!line && excerpt ? true : undefined} className={cn("type-row-snippet min-w-[min(8rem,35%)] truncate", line ? ink : reason ? undefined : quiet)}>
       {line ?? withReason(reason, quiet, ink, matchLine(match, excerpt ?? thread.snippet, lead))}
     </span>
   );
@@ -293,6 +294,8 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
     </span>
   );
   const keptTag = kept && <span data-testid="row-kept" className="shrink-0 text-2xs text-muted-foreground">{t("list.kept")}</span>;
+  /** how many marks the row draws (plan 173: on the preview's line they share it with the account) */
+  const markCount = dots.length + Number(!!clip) + Number(!!star) + Number(!!bell && !reminderTop) + Number(!!placeTag) + Number(!!keptTag);
   const marks = (
     <>
       {dots}
@@ -322,7 +325,8 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
       className={cn(
         "flex min-w-0 shrink-0 items-center self-center text-xs",
         quiet,
-        wide ? "w-20 @max-[58rem]/rows:hidden" : line ? "max-w-[min(7rem,32%)]" : "ml-auto max-w-[min(8rem,40%)] pl-2",
+        // (three lines, plan 173: with marks beside it a smaller share, so the preview keeps its first words at the narrowest list)
+        wide ? "w-20 @max-[58rem]/rows:hidden" : line ? "max-w-[min(7rem,32%)]" : cn("pl-2", markCount ? "max-w-[min(8rem,30%)]" : "ml-auto max-w-[min(8rem,40%)]"),
       )}
     >
       {account.local !== undefined ? (
@@ -434,19 +438,28 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
   );
   /** the marks' column, or the slot that holds them */
   const lead = slot || dot;
-  // a three-line row's first line: its marks and date hold the right edge
+  // a three-line row's first line: who, how many, when (plan 173: the marks went to the preview's line, so the name and the
+  // time read clean); a code stays beside the time, the one mark acted on at a glance; in Review the marks stay here
   const firstLine = (
     <div className="flex min-w-0 items-center gap-1.5">
       {from}
       {count}
       <span className="ml-auto flex shrink-0 items-center gap-1.5 pl-1">
         {chip}
-        {marks}
+        {answer && marks}
         {date}
       </span>
     </div>
   );
-  // Apple Mail's three lines: who, what about, how it starts (plan 80: in Review, the answers take the preview's place, so they have the width)
+  // Apple Mail's three lines: who, what about, how it starts (plan 80: in Review, the answers take the preview's place, so they have the width).
+  // Plan 173: the marks end the preview's line, centred on it so no line moves; the account after them keeps the right edge
+  // under the date (the names one column down the list), and without one the marks take that edge
+  const accountShown = !answer && accountTag;
+  const rowMarks = markCount > 0 && (
+    <span data-testid="row-marks" className="ml-auto flex shrink-0 items-center gap-1.5 self-center pl-2">
+      {marks}
+    </span>
+  );
   const lines = (
     <>
       {firstLine}
@@ -456,7 +469,9 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
       </div>
       <div className="flex min-w-0 items-baseline">
         {answer || snippet}
-        {!answer && accountTag}
+        {/* (in Review the answers have the line's width: the marks stay by the date) */}
+        {!answer && rowMarks}
+        {accountShown}
       </div>
     </>
   );
