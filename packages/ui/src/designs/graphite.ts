@@ -14,9 +14,10 @@ const TYPE: Record<TypeRole, TypeSpec> = {
   sectionLabel: role("0.75rem", "1rem", 400, 400),
   nav: role("0.8125rem", "1.25rem", 400, 500),
   // plan 158: a read row's sender is its anchor at 500, so an unread one needs a step above it to stay the stronger
-  rowFrom: { ...role("0.8125rem", "1.125rem", 500, 500), strong: 600 },
-  rowSubject: role("0.8125rem", "1.125rem", 400, 500),
-  rowSnippet: role("0.8125rem", "1.125rem", 400, 400),
+  // (plan 169: 20 px lines, so a row's three read as lines rather than a block)
+  rowFrom: { ...role("0.8125rem", "1.25rem", 500, 500), strong: 600 },
+  rowSubject: role("0.8125rem", "1.25rem", 400, 500),
+  rowSnippet: role("0.8125rem", "1.25rem", 400, 400),
   readerSubject: role("1.5rem", "2rem", 500, 500),
   senderName: role("0.875rem", "1.25rem", 500, 500),
   body: role("0.875rem", "1.6", 400, 500),
@@ -51,7 +52,8 @@ export const graphite: DesignDefinition = {
   type: TYPE,
   icon: { stroke: 1.5, toolbar: 1.5, nav: 14 },
   layout: { sidebar: "216px", listMin: "340px", listMax: "min(400px, 32vw)", readerMin: 348, readerMax: "704px", readerPadX: "2rem", rowRadius: "0.5rem", navRadius: "0.5rem", navHeight: "1.75rem", sidebarPad: "0.75rem", navSectionGap: "1.25rem", navSectionHeight: "1.625rem", cardRadius: "1rem", commandRadius: "0.5rem" },
-  rows: { comfortable: 64, compact: 32, wide: 36, results: 64 },
+  // plan 169: room around the three lines (12 px above and below), as Mail and Search's sidebar have; compact stays the dense choice
+  rows: { comfortable: 84, compact: 32, wide: 40, results: 76 },
   avatar: { row: 0, rowCompact: 0, rowWide: 0, message: 28, collapsed: 28, senderCard: 0 },
   surfaces: { draft: "outline", inboxCount: "muted", cta: "pill", card: "outline" },
   variants: {
