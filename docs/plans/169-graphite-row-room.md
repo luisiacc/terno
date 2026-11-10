@@ -60,3 +60,11 @@ The owner, verbatim (with a screenshot of the filter menu open, an arrow on the 
 The list header is the window's drag area on desktop (`drag-region`), and Electron takes a click there for the window before the page sees it, so the menu never heard of it. Base UI lays a full-window layer behind an open menu, select or popover to catch a click outside (`InternalBackdrop`, `[data-base-ui-inert][role=presentation]`); `globals.css` now makes that layer `no-drag`, as the floating panels already were. While a menu is open the window can't be dragged by its title band, as with a native menu. `inbox-scan.spec.ts` checks the header is a drag area, the point over the title isn't while the menu is open, and a click there closes it (it failed at `none` without the fix).
 
 The Codex review of that fix found a popover has no such layer (Base UI's `Popover` is non-modal), so the reader's reminder picker still stayed open after a click on a title band. Fixed with a test that fails without it (`reminders.spec.ts`): while a popover, a menu or a select is open, `.drag-region` is `no-drag` (`:root:has(…[data-open])`); a tooltip leaves the bands alone, so the window still drags under one.
+
+## Follow-up: blacker ink
+
+The owner, verbatim (with the list and a paragraph of searchbrowser.app, black lead-in over grey text):
+
+> i think there needs to be abit more contrast on the blacks to look like what we intended like this
+
+The reference measures #171717 ink over #8A8A8A grey. Graphite light's ink goes from #292929 to #171717 everywhere it was (foreground, primary, accent and selected-row text, the sidebar's selection, drafts). The grey stays #5D5D5D: #8A8A8A is 3.5:1 on white, under AA, and the grey has to hold 4.5:1 on the selected row's #DCDCDC too (#5D5D5D is 4.8:1 there, about the lightest that does). Dark is unchanged. `designs.test.ts` holds the new hex; the contrast suite passes; Graphite's light baselines are rewritten.

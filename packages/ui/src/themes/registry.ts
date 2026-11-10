@@ -572,12 +572,12 @@ export const THEMES: readonly Theme[] = [
     name: "Graphite",
     mode: "light",
     vibrancy: false,
-    // Graphite (plan 137): white panes, #292929 ink, #5D5D5D for everything secondary, light selections (plan 173: the owner's lighter step, the sidebar's and the list's alike); a sky blue is the
+    // Graphite (plan 137): white panes, #171717 ink (plan 174: the owner's reference, searchbrowser.app; first #292929, too close to the greys), #5D5D5D for everything secondary, light selections (plan 173: the owner's lighter step, the sidebar's and the list's alike); a sky blue is the
     // one color. #9E9E9E is 2.7:1 on white, below AA for text and for marks, so unchecked boxes and off switches take #949494,
     // the nearest grey that holds 3:1
     tokens: {
       background: "1 0 0",
-      foreground: "#292929",
+      foreground: "#171717",
       pane: "1 0 0",
       card: "1 0 0",
       popover: "1 0 0",
@@ -585,10 +585,10 @@ export const THEMES: readonly Theme[] = [
       muted: "#EDEDED",
       "muted-foreground": "#5D5D5D",
       accent: "#F4F4F4",
-      "accent-foreground": "#292929",
+      "accent-foreground": "#171717",
       border: "0 0 0 / 14%",
       input: "0 0 0 / 16%",
-      primary: "#292929",
+      primary: "#171717",
       "primary-foreground": "1 0 0",
       destructive: "0.577 0.215 27",
       success: "0.54 0.13 150",
@@ -596,12 +596,12 @@ export const THEMES: readonly Theme[] = [
       star: "0.65 0.16 66",
       "row-hover": "#F7F7F7",
       "row-selected": "#EAEAEA",
-      "row-selected-foreground": "#292929",
+      "row-selected-foreground": "#171717",
       "sidebar-accent": "0.957 0 0",
     },
     cats: cats(".645 .17 16 | .64 .13 66 | .62 .13 131 | .61 .11 163 | .61 .1 205 | .54 .15 262 | .6 .17 322 | .56 .01 257"),
     // plan 161: a state is only ever grey here, so the keyboard's place in a menu, the palette and Ask is the selection's grey
-    overrides: { "sidebar-foreground": "#5D5D5D", "sidebar-glyph": "#5D5D5D", "sidebar-accent-foreground": "#292929", "control-edge": "#949494", "control-edge-hover": "#5D5D5D", "draft-foreground": "#292929", "menu-highlight": "#DCDCDC" },
+    overrides: { "sidebar-foreground": "#5D5D5D", "sidebar-glyph": "#5D5D5D", "sidebar-accent-foreground": "#171717", "control-edge": "#949494", "control-edge-hover": "#5D5D5D", "draft-foreground": "#171717", "menu-highlight": "#DCDCDC" },
   }),
   defineTheme({
     id: "terno-dark",
