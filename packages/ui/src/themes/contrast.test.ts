@@ -33,7 +33,7 @@ describe("WCAG AA in every built-in theme", () => {
 
   it.each(RATED_PALETTES)("%s keeps its states apart (plan 158)", (id) => {
     const theme = THEMES.find((t) => t.id === id)!;
-    for (const { a, b, min, why } of SURFACE_STEPS) expect(surfaceStep(theme, a, b), `${id} ${a} / ${b}: ${why}`).toBeGreaterThanOrEqual(min);
+    for (const { a, b, min, why } of SURFACE_STEPS.filter((s) => !s.mode || s.mode === theme.mode)) expect(surfaceStep(theme, a, b), `${id} ${a} / ${b}: ${why}`).toBeGreaterThanOrEqual(min);
   });
 
   it("checks the pairs the plan requires", () => {
@@ -122,7 +122,17 @@ describe("boundaries as drawn (plan 160)", () => {
 
   it("a broken palette fails its floor with the ratio", () => {
     const theme = { tokens: { ...THEMES.find((t) => t.id === "graphite-light")!.tokens, "row-selected": "oklch(0.98 0 0)" } };
-    const step = BOUNDARY_STEPS.find((s) => s.why.startsWith("the open row"))!;
+    const step = BOUNDARY_STEPS.find((s) => s.mode === "light" && s.why.startsWith("the open row"))!;
     expect(boundaryStep(theme, step)).toBeLessThan(step.min);
+  });
+
+  // the owner's decision (plan 173): light's selections are a soft step, so none drifts back to plan 160's heavy fill
+  it.each(THEMES.filter((t) => t.mode === "light").map((t) => t.id))("%s keeps its selections soft (plan 173)", (id) => {
+    const theme = THEMES.find((t) => t.id === id)!;
+    const ceiling = 1.22;
+    for (const why of ["the open row", "the sidebar's selection"]) {
+      const step = BOUNDARY_STEPS.find((s) => s.mode === "light" && s.why.startsWith(why))!;
+      expect(boundaryStep(theme, step), `${id}: ${step.why}`).toBeLessThanOrEqual(ceiling);
+    }
   });
 });

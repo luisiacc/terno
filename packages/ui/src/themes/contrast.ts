@@ -121,11 +121,16 @@ export interface SurfaceStep {
   b: ThemeToken;
   min: number;
   why: string;
+  /** a mode where it's held this way (plan 173: light's selection is the owner's lighter step) */
+  mode?: "light" | "dark";
 }
 export const RATED_PALETTES = ["lumen-light", "lumen-dark", "atelier-light", "atelier-dark", "terno-light", "terno-dark", "graphite-light", "graphite-dark"] as const;
 export const SURFACE_STEPS: readonly SurfaceStep[] = [
-  { a: "row-selected", b: "background", min: 1.18, why: "the open row stands out from the list" },
-  { a: "row-selected", b: "row-hover", min: 1.1, why: "a row under the pointer doesn't look open" },
+  { a: "row-selected", b: "background", min: 1.18, mode: "dark", why: "the open row stands out from the list" },
+  { a: "row-selected", b: "row-hover", min: 1.1, mode: "dark", why: "a row under the pointer doesn't look open" },
+  // the owner's decision (plan 173): light's selection is a soft step, its hover a softer one, still in that order
+  { a: "row-selected", b: "background", min: 1.15, mode: "light", why: "the open row stands out from the list (light: the owner's softer step)" },
+  { a: "row-selected", b: "row-hover", min: 1.08, mode: "light", why: "a row under the pointer doesn't look open (light)" },
   { a: "menu-highlight", b: "popover", min: 1.18, why: "the keyboard's place in a menu or the palette" },
   { a: "input", b: "background", min: 1.35, why: "a composer's and a field's edge" },
   { a: "border", b: "background", min: 1.25, why: "a hairline that still separates" },
@@ -218,11 +223,22 @@ export const SNACK_TRACK_FLOOR = 1.8;
 export const SNACK_PILL: readonly Layer[] = ["popover", "card"];
 /** Plan 160: the row under the pointer; the selection a step above it */
 export const HOVER_FLOOR = 1.15;
+/**
+ * Owner's decision (2026-11-09, plan 173): in light mode the open row and the sidebar's selection are a soft tint again
+ * ("at least in light mode the selected-item whether is row or sidebar items should be lighter, it looks ugly now"), at
+ * about 1.17:1 off the list and 1.13:1 off the sidebar, the hover a step under it. The owner accepts the lower step: the
+ * selection is also what the reader shows. Dark keeps plan 160's floors; the text on these fills still holds AA.
+ */
+export const SELECTION_FLOOR_LIGHT = 1.12;
+export const HOVER_FLOOR_LIGHT = 1.05;
 export const BOUNDARY_STEPS: readonly BoundaryStep[] = [
-  { edge: ["pane", "row-selected"], behind: ["pane"], min: TINT_FLOOR, why: "the open row, on the list" },
+  { edge: ["pane", "row-selected"], behind: ["pane"], min: TINT_FLOOR, mode: "dark", why: "the open row, on the list" },
+  { edge: ["pane", "row-selected"], behind: ["pane"], min: SELECTION_FLOOR_LIGHT, mode: "light", why: "the open row, on the list (light)" },
   // a hover is under the pointer that made it, and must stay a step under the selection (SURFACE_STEPS): a lower floor
-  { edge: ["pane", "row-hover"], behind: ["pane"], min: HOVER_FLOOR, why: "the row under the pointer, on the list" },
-  { edge: ["sidebar", "sidebar-accent"], behind: ["sidebar"], min: TINT_FLOOR, why: "the sidebar's selection" },
+  { edge: ["pane", "row-hover"], behind: ["pane"], min: HOVER_FLOOR, mode: "dark", why: "the row under the pointer, on the list" },
+  { edge: ["pane", "row-hover"], behind: ["pane"], min: HOVER_FLOOR_LIGHT, mode: "light", why: "the row under the pointer, on the list (light)" },
+  { edge: ["sidebar", "sidebar-accent"], behind: ["sidebar"], min: TINT_FLOOR, mode: "dark", why: "the sidebar's selection" },
+  { edge: ["sidebar", "sidebar-accent"], behind: ["sidebar"], min: SELECTION_FLOOR_LIGHT, mode: "light", why: "the sidebar's selection (light)" },
   // the owner's decision: a field and the segmented control drawn in it at FIELD_FLOOR, not TINT_FLOOR (their fill is plan 118's)
   { edge: ["pane", "field"], behind: ["pane"], min: FIELD_FLOOR, why: "the search field on the list's header" },
   { edge: ["pane", "field", "card"], behind: ["pane", "field"], min: FIELD_FLOOR, why: "the chosen segment's thumb on its track (light)", mode: "light" },
