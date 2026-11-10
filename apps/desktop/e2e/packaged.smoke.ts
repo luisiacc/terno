@@ -127,7 +127,21 @@ test("plan 16: a formatted reply is sent as multipart/alternative through the pa
   if ((await page.getByTestId("format-toggle").getAttribute("aria-expanded")) === "false") await page.getByTestId("format-toggle").click();
   await page.getByTestId("format-bulleted").click();
   await expect(body.locator("ul li b")).toHaveText("negrita");
+  // plan 170 (Codex critique #3): the send sound is media served over app:// (MIME, CSP, the scheme's stream): it must really play
+  await page.evaluate(() => {
+    const plays: { src: string; ok: boolean; duration?: number; error?: string }[] = ((window as any).__plays = []);
+    const play = HTMLMediaElement.prototype.play;
+    HTMLMediaElement.prototype.play = function (this: HTMLMediaElement) {
+      const p = play.call(this);
+      p.then(() => plays.push({ src: this.currentSrc, ok: true, duration: this.duration }), (e: unknown) => plays.push({ src: this.currentSrc, ok: false, error: String(e) }));
+      return p;
+    };
+  });
   await page.keyboard.press("Meta+Enter");
+  await expect.poll(() => page.evaluate(() => (window as any).__plays.length), { timeout: 10_000 }).toBe(1);
+  const [played] = await page.evaluate(() => (window as any).__plays);
+  expect(played).toMatchObject({ ok: true, src: expect.stringMatching(/^app:\/\/terno\/assets\/sent-[\w-]+\.wav$/) });
+  expect(played.duration).toBeCloseTo(0.34, 1);
   await expect.poll(() => smtpReceived.length, { timeout: 20_000 }).toBe(1);
   const raw = smtpReceived[0]!;
   expect(raw).toMatch(/^Content-Type: multipart\/alternative;/m);

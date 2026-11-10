@@ -88,7 +88,8 @@ function present(win: BrowserWindow, focus = true): void {
 
 // Privileged scheme: standard + secure origin and, crucially, V8 code cache for renderer scripts (file:// has none).
 protocol.registerSchemesAsPrivileged([
-  { scheme: "app", privileges: { standard: true, secure: true, supportFetchAPI: true, codeCache: true } },
+  // stream: the send sound (plan 170) is media, which Electron reads from a custom scheme only with it
+  { scheme: "app", privileges: { standard: true, secure: true, supportFetchAPI: true, codeCache: true, stream: true } },
 ]);
 
 const RENDERER_DIR = join(__dirname, "renderer");
@@ -117,6 +118,7 @@ const MIME: Record<string, string> = {
   ".woff": "font/woff",
   ".svg": "image/svg+xml",
   ".png": "image/png",
+  ".wav": "audio/wav",
   ".json": "application/json",
 };
 
@@ -690,6 +692,8 @@ function createWindow() {
     },
   });
   windows.add(win);
+  // plan 170: a smoke run sends mail behind the person at the machine: its send sound stays silent too
+  if (background) win.webContents.setAudioMuted(true);
   bindReloadKeys(win.webContents, win.webContents);
   win.webContents.on("devtools-opened", () => { const tools = win.webContents.devToolsWebContents; if (tools) bindReloadKeys(tools, win.webContents); });
   win.webContents.on("devtools-reload-page", () => {
