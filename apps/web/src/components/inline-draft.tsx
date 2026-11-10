@@ -45,8 +45,9 @@ const shortcutAria = (keys: string) => keys.split("+").map((k) => (k === "mod" ?
 /** A borderless field row: a real label, the control, hairline below. */
 function Row({ label, htmlFor, children, hidden, note }: { label: string; htmlFor?: string; children: React.ReactNode; hidden?: boolean; note?: React.ReactNode }) {
   if (hidden) return null;
+  // no focus line under the row (the owner: "remove it"): the caret says where you are
   return (
-    <div className="hairline-b group/row relative after:pointer-events-none after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:bg-ring after:opacity-0 has-[input:focus]:after:opacity-100">
+    <div className="hairline-b group/row relative">
       <div className="flex min-h-[38px] items-center gap-2.5 px-3.5" data-recipient-row>
         {/* on the first line when the chips wrap */}
         <label htmlFor={htmlFor} className="w-14 shrink-0 self-start text-xs leading-[38px] text-muted-foreground">
