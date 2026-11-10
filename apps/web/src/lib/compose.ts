@@ -19,7 +19,7 @@ import { ensureForwardFiles, fetchForwardFiles, setForwardOpenProbe } from "./fo
 export { answered, autoRecipients, convertFields, newFields, quoteFor, replyFields, subjectFor } from "./compose-fields";
 import { beginDraftAckRead, beginComposeBodyAckRead, beginForwardEmptyOwnerRead, sealForwardEmptyOwnerRead, readDraftAck, endDraftAckRead, beginDraftWork, comingHome, draftIndex, invalidateDraftPresentation, loseDraftHome, returnDraftToThread, draftPresentationThread, expireDraftPresentation, validateDraftPresentation, draftEditsHeld, draftHoldRevision, authored, createDraft, createDraftWithReceipt, discardIfEmpty, draftForSend, editDraft, emptyMessage, fieldsOf, flushDraft, forgetDraft, markDraftMissing, markSending, materialize, nothingWrittenIn, resumeDraft, validRecipients, sendBody, sendHtml, setDraftUi, shownDraftKey, useDrafts, validBodyCheckpoint, type BodyCheckpoint, type DraftAckRead, type DraftFields, type LocalDraft } from "./drafts";
 import { focusPinned, pinnedKey, usePinned } from "./pinned-draft-state";
-import { focusSelector, prepareEarlyComposeInput, prepareInlineFocusMove, type ComposeFocusTarget, type EarlyComposeInput } from "./compose-focus-move";
+import { focusField, focusSelector, prepareEarlyComposeInput, prepareInlineFocusMove, type ComposeFocusTarget, type EarlyComposeInput } from "./compose-focus-move";
 import { aiDraftHooks, isNote } from "./ai-draft-state";
 import { fromPlainText, parseHtml, toEmailHtml, toPlainText } from "@terno/richtext";
 import { parseAddressList } from "@terno/core";
@@ -486,7 +486,7 @@ export function focusDraftOnScreen(key: string): boolean {
   if (!el) return false;
   markSelectionIntent();
   ++intent;
-  el.focus();
+  focusField(el);
   return true;
 }
 

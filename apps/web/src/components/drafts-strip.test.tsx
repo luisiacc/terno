@@ -14,6 +14,7 @@ const { DraftsStrip } = await import("./drafts-strip");
 const { createDraft, editDraft, forgetDraft, markSending, useDrafts } = await import("~/lib/drafts");
 const { newFields } = await import("~/lib/compose-fields");
 const { useScheduled } = await import("~/lib/scheduled");
+const { markSelectionIntent } = await import("~/state/app");
 
 let host: HTMLDivElement, root: ReturnType<typeof createRoot>;
 const written = (subject: string, at: number, fields: Partial<Parameters<typeof createDraft>[0]> = {}) => {
@@ -158,6 +159,24 @@ describe("focus as the row changes shape (plan 175)", () => {
   });
 });
 
+describe("a draft chosen in the dropdown that doesn't open (plan 175)", () => {
+  it.each([false, true])("gives focus back to the row, unless the selection moved meanwhile (%s)", async (moved) => {
+    written("Primera", 1); const second = written("Segunda", 2);
+    let finish!: () => void;
+    mocks.open.mockImplementationOnce(() => new Promise<void>((done) => { finish = done; }));
+    await render();
+    await openMenu();
+    await act(async () => q(`[data-testid=strip-item][data-key="${second}"]`)!.click());
+    await act(async () => {});
+    (document.activeElement as HTMLElement | null)?.blur();
+    // j meanwhile (Codex review): what it did has the focus, not the drafts row
+    if (moved) markSelectionIntent();
+    await act(async () => finish());
+    if (moved) expect(document.activeElement).toBe(document.body);
+    else expect(document.activeElement).toBe(q("[data-testid=strip-summary]"));
+  });
+});
+
 describe("a scheduled send chosen in the dropdown (plan 175)", () => {
   it("opens Send later under the row, follows its send, and goes with it", async () => {
     // two drafts besides: the row stays the count of several when the send leaves
@@ -168,6 +187,10 @@ describe("a scheduled send chosen in the dropdown (plan 175)", () => {
     await act(async () => q("[data-testid=strip-menu] [data-testid=strip-scheduled]")!.click());
     await act(async () => {});
     expect(q("[data-testid=scheduled-popover]")).not.toBeNull();
+    // moved to another time meanwhile (Codex review): it says the new one
+    const said = q("[data-testid=scheduled-popover]")!.textContent;
+    await act(async () => useScheduled.setState({ items: [{ ...scheduled(90, "Programado"), sendAt: Date.now() + 3 * 86_400_000 } as ScheduledInfo], byDraft: new Map() }));
+    expect(q("[data-testid=scheduled-popover]")!.textContent).not.toBe(said);
     // sent elsewhere: its Send later goes, and doesn't come back if a send with its id does
     await act(async () => useScheduled.setState({ items: [], byDraft: new Map() }));
     await act(async () => {});

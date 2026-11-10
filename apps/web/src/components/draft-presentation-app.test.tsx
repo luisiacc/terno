@@ -173,3 +173,19 @@ it("plan 175: a draft open on screen, chosen in the drafts row, is focused where
     expect(h.app.getApp().selectedId).toBe(selected); expect(h.app.getApp().checked).toBe(checked);
   } finally { await h.cleanup(); }
 });
+
+it("plan 175 (Codex review): a rich body open on screen takes focus through its own focuser, so its kept caret is back at once", async () => {
+  const h = await setup("split", true);
+  const { focusers } = await import("~/lib/compose-focus-move");
+  try {
+    await act(async () => { h.drafts.editDraft(h.key, { toText: "ana@example.com" }); });
+    for (let i = 0; i < 3; i++) await h.flush();
+    const body = h.host.querySelector<HTMLElement>(`form[data-draft-key="${h.key}"] [data-testid="compose-body"]`)!;
+    let own = 0;
+    focusers.set(body, () => { own++; body.focus(); });
+    const button = h.host.querySelector<HTMLButtonElement>('[data-testid="strip-item"]')!; button.focus();
+    await act(async () => button.click());
+    expect(own).toBe(1);
+    expect(document.activeElement).toBe(body);
+  } finally { await h.cleanup(); }
+});

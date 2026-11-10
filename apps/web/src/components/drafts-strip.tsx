@@ -9,7 +9,7 @@ import { useShallow } from "zustand/react/shallow";
 import { useAttachmentUploads } from "~/lib/attachments";
 import { composeIntent, focusDraftOnScreen, openStoredDraft } from "~/lib/compose";
 import { pinnedKey } from "~/lib/pinned-draft-state";
-import { getApp } from "~/state/app";
+import { getApp, getSelectionWriteRevision } from "~/state/app";
 import { authored, useDrafts, type LocalDraft } from "~/lib/drafts";
 import { reminderShort, reminderWhen } from "~/lib/when";
 import { firstInvalid } from "~/lib/recipient-field";
@@ -209,10 +209,13 @@ function Several({ drafts, scheduled, handOver }: { drafts: number; scheduled: r
   const chooseDraft = (key: string) => {
     handOff.current = true;
     const before = composeIntent();
-    void openFromRow(key).then(() => {
-      // one that didn't open (gone, refused) leaves focus nowhere: back to the row, unless a later open (a key
-      // pressed meanwhile) is on its way with focus
-      if (!draftOpened(key) && composeIntent() <= before + 1 && document.activeElement === document.body) rowRef.current?.focus({ preventScroll: true });
+    const opening = openFromRow(key);
+    // (read after the open's own first step, which marks the selection)
+    const selection = getSelectionWriteRevision();
+    void opening.then(() => {
+      // one that didn't open (gone, refused) leaves focus nowhere: back to the row, unless anything happened
+      // meanwhile (a later open, a key that moved the selection: what that did has the focus)
+      if (!draftOpened(key) && composeIntent() <= before + 1 && getSelectionWriteRevision() === selection && document.activeElement === document.body) rowRef.current?.focus({ preventScroll: true });
     });
   };
   const chooseScheduled = (s: ScheduledInfo) => {

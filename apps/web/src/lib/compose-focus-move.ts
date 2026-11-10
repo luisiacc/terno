@@ -86,10 +86,15 @@ const focusable = (el: HTMLElement | null): el is HTMLElement => el !== null && 
  */
 export const focusers = new WeakMap<HTMLElement, () => void>();
 
-function place(el: HTMLElement, input: EarlyText | undefined = undefined, current: () => boolean = () => true) {
+/** Focuses a draft's field as its own code does (a rich body puts its kept caret back at once), without scrolling. */
+export function focusField(el: HTMLElement): void {
   const own = focusers.get(el);
   if (own) own();
   else el.focus({ preventScroll: true });
+}
+
+function place(el: HTMLElement, input: EarlyText | undefined = undefined, current: () => boolean = () => true) {
+  focusField(el);
   if (el instanceof HTMLTextAreaElement) el.setSelectionRange(el.value.length, el.value.length);
   if (!input?.text) return;
   const field = el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement;

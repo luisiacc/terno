@@ -35,7 +35,9 @@ Plan 158 moved the drafts strip (`components/drafts-strip.tsx`) from above the r
 
 ## Performance
 
-The selector was already a pass over the drafts on each store change; it now returns primitives, so the 2,000-draft typing gate (`perf.spec.ts`) gains rather than loses. The j-key gate holds the drafts it already sets up; the strip no longer depends on the list's index, so `j` can't render it. The menu isn't virtualized, as the expanded strip wasn't: it renders only while open.
+The selector was already a pass over the drafts on each store change; it now returns the count, so the 2,000-draft typing gate (`perf.spec.ts`) gains rather than loses (p95 3.6 ms a keystroke). The j-key gate holds the drafts it already sets up; the strip no longer depends on the list's index, so `j` can't render it.
+
+The dropdown isn't virtualized, as the expanded strip wasn't: it renders only while open, and BoardUI's menu (Base UI) wants every item for its arrows and typeahead. Measured with 2,000 drafts: opening takes ~300 ms (p95 ~390), almost all the menu's own registration of its items (one subscription for all the items instead of one each saved 10 ms); an arrow step stays within a frame (p95 16 ms). Drafts are only ever written in Terno (provider drafts aren't synced, plan 44), so a real count is tens and opening costs a few ms. The gate holds the 2,000 ceiling at 450 ms and checks every arrow step lands on the next draft. Virtualizing it would mean a menu of our own, outside the BoardUI catalog: not done without the owner's say.
 
 ## Out of scope
 
@@ -56,3 +58,12 @@ Nine points, all taken:
 7. **The dropdown isn't virtualized.** Measured instead: see Performance.
 8. **Send later opened from the dropdown** follows the live scheduled send by its id, and closes (for good) if it's sent, cancelled or moved meanwhile.
 9. **Fixtures.** The j-key gate's two drafts are now a count, the 2,000-draft gate waits for the row, and the menu is exercised for real (jsdom and e2e, pointer and keyboard).
+
+## Revisions after the Codex code review
+
+Round 1 raised four points, all taken, each with a test that fails without its fix:
+
+1. **An open rich body was focused natively,** so its kept caret came back only with ProseMirror's handler 20 ms later, and the focus could scroll. `focusDraftOnScreen` focuses through the editor's own focuser (`focusField`, which `place` now shares), without scrolling.
+2. **A draft that didn't open gave focus back to the row even after `j` meanwhile,** and Enter then opened the dropdown rather than the conversation. The row takes it back only when the selection hasn't moved since the open began.
+3. **The 2,000-draft arrow gate passed with keys that moved nothing.** Each step checks, outside the timing, that it landed on the next draft.
+4. **The scheduled send's test didn't show Send later following it.** It moves to another time while open, and the popover says the new one.
