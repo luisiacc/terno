@@ -1403,6 +1403,8 @@ export function ThreadList() {
       {/* List has no reader pane for a multi-selection: its actions are a toolbar over the header's line (plan 24); no row moves for it (plan 158) */}
       {list && many && !previewing && <SelectionBar variant="toolbar" />}
       {!previewing && <SelectAllBanner />}
+      {/* plan 175: whatever's written and not sent, one row over the rows; nothing with the results that isn't one (plan 158) */}
+      {!previewing && !searching && <DraftsStrip />}
       {/* the listbox is one Tab stop and restores focus when a page closes */}
       {/* the list's scroll timeline reaches what lies over it from outside (globals.css, data-scroll-follow) */}
       <div className="relative flex min-h-0 flex-1 flex-col [timeline-scope:--list-scroll]">
@@ -1449,8 +1451,6 @@ export function ThreadList() {
       {filter && !loading && items.length === 0 && itemsKey === listKey() && <UnreadEmptyState filter={filter} />}
       {coverage && items.length > 0 && <CoverageNote className="pointer-events-none absolute inset-x-0 px-5 pt-3" style={{ top: virtualizer.getTotalSize() }} />}
       </div>
-      {/* plan 158: nothing with the results that isn't one */}
-      {!previewing && !searching && <DraftsStrip />}
     </section>
   );
 }

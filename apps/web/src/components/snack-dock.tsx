@@ -248,11 +248,9 @@ export function SnackDock({ over }: { /** what it stands over: List's rows, or a
   /** the snack focus came into */
   const focusedSeq = useRef<number | undefined>(undefined);
   const inert = useWatchers(cardRef);
-  // plan 158: Split's dock is over the reader; List's over its one pane, standing on the drafts strip while the list
-  // shows (a page over the list covers the strip)
-  // (List's rows: standing on the drafts strip at their foot)
-  // plan 162 (after ai162-r02): and on a page's own foot bar (the digest's Archive), so neither hides the other
-  const lift = useSnack((s) => Math.max(over === "list" ? s.lift : 0, s.pageLift));
+  // plan 158: Split's dock is over the reader; List's over its one pane. Plan 162 (after ai162-r02): it stands on a
+  // page's own foot bar (the digest's Archive), so neither hides the other
+  const lift = useSnack((s) => s.pageLift);
   /** over a conversation or a new message (Split's reader, List's page): on its column, its background */
   const overReader = over === "reader";
   // a confirmation with nothing to offer is about the list it was said in: another one makes it stale (plan 158). The

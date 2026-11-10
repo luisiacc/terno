@@ -207,14 +207,15 @@ for (const { design: id, density } of LIST_GATES) {
   const flings = id !== "lumen";
   test(`sustained j at key-repeat rate (${id}, ${density}): frames stay smooth and the selection keeps up across a page load, with drafts around${flings ? "; then a fling across 1,000 threads: frames stay smooth, the DOM stays bounded" : ""}`, async ({ app: page, server }) => {
     await scenario("holding j", async () => {
-      // a collapsed reply draft on a listed thread and a new draft in the strip, both restored by the reload below
+      // a collapsed reply draft on a listed thread and a new draft, both restored by the reload below
       const ctx = { clientId: "setup", origin: "dev" as const };
       const db = sqlDb(server.backend.store);
       const target = db.get<{ id: number; thread_id: number; account_id: number }>("SELECT m.id, m.thread_id, m.account_id FROM messages m JOIN threads t ON t.id = m.thread_id WHERE t.in_inbox = 1 ORDER BY t.last_date DESC LIMIT 1 OFFSET 3")!;
       await server.backend.server.invoke("drafts.save", { accountId: target.account_id, to: [], cc: [], subject: "Re: x", bodyText: "Borrador a medias", inReplyToMessageId: target.id, uiState: "collapsed" }, ctx);
       await server.backend.server.invoke("drafts.save", { accountId: target.account_id, to: [{ name: "", email: "ana@example.com" }], cc: [], subject: "Nuevo", bodyText: "Para después" }, ctx);
       await setDensity(page, server, density);
-      await expect(page.getByTestId("strip-item")).toHaveCount(1);
+      // both in the drafts row's count (plan 175), the reply also on its row
+      await expect(page.getByTestId("strip-summary")).toHaveText("2 drafts");
       await expect(page.locator(`[data-testid=thread-row][data-thread-id="${target.thread_id}"]`)).toContainText("Draft");
       const rendersBefore = await renders(page, "ThreadRow");
       await expect(page.locator(`[data-testid=thread-row]`).first()).toHaveCSS("height", `${design.rows[density]}px`);
@@ -478,7 +479,7 @@ test("inline reply: keypress → first frame showing the draft ≤ 50 ms; from t
 });
 
 test("typing in a draft with 2,000 drafts around: each keystroke is handled and rendered within a frame", async ({ app: page, server }) => {
-  // 2,000 reply drafts, one per conversation (most of them outside the loaded list, so all in the strip's reach)
+  // 2,000 reply drafts, one per conversation, all counted in the drafts row
   const db = sqlDb(server.backend.store);
   const targets = db.all<{ id: number; thread_id: number; account_id: number }>("SELECT max(id) AS id, thread_id, account_id FROM messages GROUP BY thread_id ORDER BY thread_id DESC LIMIT 2000");
   expect(targets.length).toBe(2000);
@@ -489,7 +490,7 @@ test("typing in a draft with 2,000 drafts around: each keystroke is handled and 
   await page.reload();
   await page.locator("[data-ready]").waitFor();
   await rows(page).first().waitFor();
-  await expect(page.getByTestId("strip-more")).toBeVisible();
+  await expect(page.getByTestId("strip-summary")).toBeVisible();
   await rows(page).nth(5).dispatchEvent("mousedown");
   await expect(page.getByTestId("reader-subject")).toBeVisible();
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
@@ -516,6 +517,34 @@ test("typing in a draft with 2,000 drafts around: each keystroke is handled and 
   const handled = stat("draft typing (2,000 drafts): keystroke → handled and rendered", 16, r.handled);
   stat("draft typing (2,000 drafts): keystroke → next frame", 0, r.frame);
   expect(handled.p95).toBeLessThanOrEqual(16 * MULT);
+
+  // plan 175: the drafts row's dropdown holds all 2,000 (it renders only while open, and isn't virtualized): opening it
+  // and moving through it stay quick. Drafts are only ever written here, so a real count is far smaller.
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("strip-summary")).toHaveText(/^2,?000 drafts$/);
+  const open: number[] = [], step: number[] = [];
+  for (let i = 0; i < 3; i++) {
+    await page.getByTestId("strip-summary").focus();
+    open.push(await page.evaluate(() => new Promise<number>((done) => {
+      const t0 = performance.now();
+      (document.querySelector("[data-testid=strip-summary]") as HTMLElement).click();
+      const ready = () => (document.querySelectorAll("[data-testid=strip-menu] [data-testid=strip-item]").length === 2000 ? requestAnimationFrame(() => done(performance.now() - t0)) : requestAnimationFrame(ready));
+      ready();
+    })));
+    for (let k = 0; k < 5; k++) {
+      step.push(await page.evaluate(() => new Promise<number>((done) => {
+        const t0 = performance.now();
+        document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+        requestAnimationFrame(() => done(performance.now() - t0));
+      })));
+    }
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("strip-menu")).toHaveCount(0);
+  }
+  const opened = stat("drafts row (2,000 drafts): click → dropdown painted", 250, open);
+  const moved = stat("drafts row (2,000 drafts): ArrowDown → next frame", 33, step);
+  expect(opened.p95).toBeLessThanOrEqual(250 * MULT);
+  expect(moved.p95).toBeLessThanOrEqual(33 * MULT);
 });
 
 test("typing a search: each keystroke renders its results fast", async ({ app: page }) => {

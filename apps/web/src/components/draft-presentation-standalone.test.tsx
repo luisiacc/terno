@@ -50,7 +50,8 @@ describe("standalone Escape", () => {
         if (scenario === "successor") { expect(newer).toBeDefined(); expect(composeFocusPending(7)).toBe(true); }
         await h.flush();
         if (scenario === "successor") { expect(composeFocusPending(7)).toBe(true); await act(async () => { gate.load.mockResolvedValue(h.detail); waiting.resolve(h.detail); await newer; }); for (let i = 0; i < 5; i++) await h.flush(); expect(document.activeElement).toBe(h.host.querySelector('[data-testid="compose-to"]')); }
-        else expect(document.activeElement).toBe(h.host.querySelector(`[data-testid="strip-item"][data-key="${key}"]`));
+        // two drafts (the harness's and this one): one drafts row that counts them, and Esc lands on it (plan 175)
+        else expect(document.activeElement).toBe(h.host.querySelector('[data-testid="strip-summary"]'));
         expect(h.drafts.useDrafts.getState().drafts[key]).toMatchObject({ id: 82, generation: "standalone", bodyText: "standalone work" });
       } finally { off(); }
     } finally { waiting.resolve(h.detail); if (newer) await newer; save.resolve(); if (key) await act(async () => { await h.drafts.flushDraft(key); }); h.drafts.setDraftTransport((method, p) => gate.call(method, p)); await h.cleanup(); }
@@ -308,6 +309,8 @@ describe("stored origin", () => {
       }
     });
     try {
+      // its place expired, it isn't on screen (plan 44): the drafts row opens it, rather than focusing it where it is (plan 175)
+      await act(async () => { h.drafts.expireDraftPresentation(7); });
       const button = h.host.querySelector<HTMLButtonElement>('[data-testid="strip-item"]')!; button.focus(); await act(async () => button.click());
       for (let i = 0; i < 15; i++) await h.flush();
       if (kind === "control") expect(document.activeElement).toBe(h.other);
@@ -323,6 +326,8 @@ describe("stored origin", () => {
       off(); h.drafts.editDraft(h.key, { inReplyToMessageId: 4, showSourceContext: true, bodyText: "newer source work" });
     });
     try {
+      // its place expired, it isn't on screen (plan 44): the drafts row opens it, rather than focusing it where it is (plan 175)
+      await act(async () => { h.drafts.expireDraftPresentation(7); });
       const button = h.host.querySelector<HTMLButtonElement>('[data-testid="strip-item"]')!; button.focus(); await act(async () => button.click());
       for (let i = 0; i < 15; i++) await h.flush();
       expect(document.activeElement?.closest('[data-testid="composer"]')).toBeNull();
@@ -413,6 +418,8 @@ describe("list destination intent", () => {
           await act(async () => { await openCompose("new", null); });
           expect(h.app.getApp().compose?.key).toBeDefined();
         } else if (scenario === "stored standalone") {
+          // its place expired, it isn't on screen (plan 44): the drafts row opens it, rather than focusing it where it is (plan 175)
+          await act(async () => { h.drafts.expireDraftPresentation(7); });
           const button = h.host.querySelector<HTMLButtonElement>('[data-testid="strip-item"]')!;
           expect(button).not.toBeNull(); button.focus(); await act(async () => button.click());
           expect(h.app.getApp().compose?.key).toBe(h.key);

@@ -2,18 +2,23 @@ import type { ScheduledInfo } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/popover";
 import { Clock } from "@terno/ui/icons";
-import { useState } from "react";
+import { useState, type RefObject } from "react";
 import { reminderShort, reminderWhen } from "~/lib/when";
 import { editScheduled, rescheduleScheduled, useScheduled } from "~/lib/scheduled";
 import { SendLaterPicker } from "./send-later-picker";
 
-/** Plan 94: Send later on a scheduled send (Send now, a new time, Edit message), around the trigger `children` renders. */
-export function ScheduledPopover({ s, align, children }: { s: ScheduledInfo; align: "start" | "end"; children: (open: boolean) => React.ReactNode }) {
-  const [open, setOpen] = useState(false);
+/**
+ * Plan 94: Send later on a scheduled send (Send now, a new time, Edit message), around the trigger `children` renders.
+ * Plan 175: or opened by its owner (`open`), under `anchor`, when what was clicked was a menu's item that has gone.
+ */
+export function ScheduledPopover({ s, align, children, open: given, onOpenChange, anchor, finalFocus }: { s: ScheduledInfo; align: "start" | "end"; children?: (open: boolean) => React.ReactNode; open?: boolean; onOpenChange?: (open: boolean) => void; anchor?: RefObject<HTMLElement | null>; finalFocus?: RefObject<HTMLElement | null> }) {
+  const [own, setOwn] = useState(false);
+  const open = given ?? own;
+  const setOpen = (next: boolean) => (onOpenChange ?? setOwn)(next);
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      {children(open)}
-      <PopoverContent side="bottom" align={align} sideOffset={4} className="w-72 gap-2 rounded-menu p-1.5" data-testid="scheduled-popover" aria-label={t("sendLater.title")}>
+      {children?.(open)}
+      <PopoverContent side="bottom" align={align} sideOffset={4} anchor={anchor} finalFocus={finalFocus} className="w-72 gap-2 rounded-menu p-1.5" data-testid="scheduled-popover" aria-label={t("sendLater.title")}>
         <SendLaterPicker
           current={s}
           done={() => setOpen(false)}

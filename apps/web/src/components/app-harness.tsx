@@ -92,3 +92,8 @@ export async function setup(layout: "list" | "split", reader = false, options: {
 }
 
 export { gate };
+/** Plan 175: several drafts are one row; its dropdown (in a portal, not in the host) holds them. */
+export async function openStrip() {
+  const summary = document.querySelector<HTMLElement>('[data-testid="strip-summary"]')!;
+  await act(async () => summary.click());
+}

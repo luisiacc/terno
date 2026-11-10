@@ -307,6 +307,16 @@ export async function freshStart(page: Page): Promise<void> {
   await fresh(page);
 }
 
+/**
+ * Plan 175: a draft in the drafts row: the row itself while it's the only thing there, else an item of the row's
+ * dropdown, which this opens.
+ */
+export async function stripItem(page: Page, text: string | RegExp): Promise<Locator> {
+  const summary = page.getByTestId("strip-summary");
+  if ((await summary.count()) && (await summary.getAttribute("aria-expanded")) !== "true") await summary.click();
+  return page.getByTestId("strip-item").filter({ hasText: text });
+}
+
 /** And no drafts: a draft left open is discarded through its own control (a reload would save it again), what's left in the store goes. */
 export async function freshNoDrafts(page: Page, server: DevServer): Promise<void> {
   const discard = page.getByTestId("compose-discard");

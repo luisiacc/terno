@@ -23,17 +23,20 @@ import { focusSelector } from "~/lib/compose-focus-move";
 import { cancelEmptySend } from "~/lib/send-problem";
 import { PANE_TITLE, PANE_TITLE_AFTER, PANE_TITLE_TOP, READING_COLUMN } from "~/lib/pane-lines";
 
-/** Esc, Collapse and sending leave the new message; focus goes to its strip item (kept) or back to the list. */
+/**
+ * Esc, Collapse and sending leave the new message; focus goes to its strip item (kept), or to the drafts row that
+ * counts it among others (plan 175), or back to the list.
+ */
 function leave(key: string) {
   const request = leaveNewDraftWithFocus(key);
-  if (request?.valid()) focusSoon(`[data-testid=strip-item][data-key="${key}"]`, null, 12, () => true, request.valid, request.watch);
+  if (request?.valid()) focusSoon(`[data-testid=strip-item][data-key="${key}"], [data-testid=strip-summary]`, null, 12, () => true, request.valid, request.watch);
 }
 
 /**
  * A new message, written in the reader pane as a conversation's draft is
  * (plan 130): a title that mirrors the subject over the same card, which hugs
  * its text so the format bar and Send stay next to it. A long message scrolls
- * inside the card, under its fixed foot. The draft stays in the strip above
+ * inside the card, under its fixed foot. The draft stays in the drafts row above
  * the list while another conversation is read.
  */
 export function NewMessage() {

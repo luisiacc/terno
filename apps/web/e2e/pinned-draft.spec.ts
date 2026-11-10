@@ -81,8 +81,11 @@ test.describe("a pinned draft", () => {
       await openRow(page, 0);
       await expect(card(page)).toBeVisible();
       await footClearsCard(page);
-      // the strip doesn't list it (it's on screen)
-      await expect(page.locator(`[data-testid=strip-item][data-key="${await card(page).getAttribute("data-draft-key")}"]`)).toHaveCount(0);
+      // the drafts row counts it too (plan 175), and choosing it there goes to the card
+      const pinnedItem = page.locator(`[data-testid=strip-item][data-key="${await card(page).getAttribute("data-draft-key")}"]`);
+      await expect(pinnedItem).toHaveCount(1);
+      await pinnedItem.click();
+      await expect(cardBody(page)).toBeFocused();
       // back on its conversation, r goes to the card instead of opening another reply
       await openRow(page, 1);
       await focusList(page);

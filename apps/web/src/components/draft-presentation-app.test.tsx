@@ -3,7 +3,7 @@ import { presentationOwnedRpc } from "./draft-presentation-owned-rpc";
 import { act } from "react";
 import { expect, it } from "vitest";
 import type { ThreadDetail } from "@terno/core";
-import { setup, gate, deferred } from "./app-harness";
+import { setup, gate, deferred, openStrip } from "./app-harness";
 it.each([false, true])("Strip coordinates the real Reader frame (later user control %s)", async (competing) => {
   const h = await setup("list"), load = deferred<ThreadDetail>(); gate.load.mockReturnValue(load.promise);
   try {
@@ -25,7 +25,9 @@ it("an older strip lookup cannot override a newer actual keyboard Reply", async 
   gate.call.mockImplementation((method: string, p: { messageId: number }) => method === "drafts.sourceContext" ? p.messageId === 4 ? older.promise : newer.promise : Promise.resolve({}));
   try {
     await act(async () => {});
-    const button = h.host.querySelector<HTMLButtonElement>(`[data-key="${oldKey}"]`)!; button.focus();
+    // two drafts: the drafts row's dropdown holds them (plan 175)
+    await openStrip();
+    const button = document.querySelector<HTMLElement>(`[data-testid="strip-item"][data-key="${oldKey}"]`)!; button.focus();
     await act(async () => button.click());
     await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "r", bubbles: true })));
     expect(gate.call).toHaveBeenCalledWith("drafts.sourceContext", { messageId: 3 });
@@ -91,6 +93,8 @@ it.each(["matched", "no selection", "newer", "control", "same key", "same key ma
   const h = await setup("split", scenario !== "no selection"), waiting = deferred<ThreadDetail>(), newerContext = deferred<null>();
   gate.call.mockImplementation(async (method: string) => method === "drafts.sourceContext" ? null : {});
   try {
+    // its place expired, it isn't on screen (plan 44): the drafts row opens it, rather than focusing it where it is (plan 175)
+    await act(async () => { h.drafts.expireDraftPresentation(7); });
     const button = h.host.querySelector<HTMLButtonElement>('[data-testid="strip-item"]')!; button.focus(); await act(async () => button.click());
     const before = h.drafts.useDrafts.getState().drafts[h.key]!;
     expect(h.app.getApp().compose?.key).toBe(h.key);
@@ -150,4 +154,22 @@ it("stored lookup materializes its baseline and preserves later coalesced editor
     expect(h.app.getApp().selectedId).toBeNull(); expect(h.app.getApp().compose).toBeNull();
     expect(h.drafts.materialize(h.key)).toMatchObject({ bodyText: text, bodyHtml: `<div>${text}</div>`, localRev: revision, id: 81, generation: "stable" });
   } finally { context.resolve({ threadId: 7, accountId: 1 }); await h.cleanup(); source.dispose(); }
+});
+
+it("plan 175: a draft open on screen, chosen in the drafts row, is focused where it is: nothing is looked up or opened again", async () => {
+  const h = await setup("split", true);
+  try {
+    for (let i = 0; i < 3; i++) await h.flush();
+    // where it resumes: no recipient yet, so To
+    const to = h.host.querySelector<HTMLElement>(`form[data-draft-key="${h.key}"] [data-testid="compose-to"]`);
+    expect(to).not.toBeNull();
+    const selected = h.app.getApp().selectedId, checked = h.app.getApp().checked;
+    gate.call.mockClear(); gate.load.mockClear();
+    const button = h.host.querySelector<HTMLButtonElement>('[data-testid="strip-item"]')!; button.focus();
+    await act(async () => button.click());
+    expect(document.activeElement).toBe(to);
+    expect(gate.call).not.toHaveBeenCalledWith("drafts.sourceContext", expect.anything());
+    expect(gate.load).not.toHaveBeenCalled();
+    expect(h.app.getApp().selectedId).toBe(selected); expect(h.app.getApp().checked).toBe(checked);
+  } finally { await h.cleanup(); }
 });

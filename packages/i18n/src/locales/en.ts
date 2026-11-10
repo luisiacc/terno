@@ -1837,7 +1837,8 @@ const en = {
   "compose.strip.invalid": "— “{entry}” isn’t an email address",
   "compose.strip.none": "— No recipients yet",
   "compose.strip.andMore": "{name} and {count} more",
-  "compose.strip.more": { one: "+# draft", other: "+# drafts" },
+  "compose.strip.count": { one: "# draft", other: "# drafts" },
+  "compose.strip.scheduled": { one: "# scheduled", other: "# scheduled" },
   // written into a draft when it is created (in that moment's language; from then on it is the draft's text)
   "compose.prefix.reply": "Re: {subject}",
   "compose.prefix.forward": "Fwd: {subject}",

@@ -425,6 +425,10 @@ test.describe("axe", { tag: "@variant" }, () => {
     await page.getByTestId("compose-body").fill("Mañana.");
     await page.getByTestId("compose-send-later").click();
     await page.getByTestId("send-later-popover").getByTestId("send-later-tomorrow").click();
+    // plan 175: with the draft above, the drafts row is a count; its dropdown holds both
+    await page.getByTestId("strip-summary").click();
+    await expect(page.getByTestId("strip-menu")).toBeVisible();
+    await clean(page, "the drafts row's dropdown", "[data-testid=strip-menu]");
     await page.getByTestId("strip-scheduled").click();
     await expect(page.getByTestId("scheduled-popover")).toBeVisible();
     await clean(page, "a scheduled message", "[data-testid=scheduled-popover]");

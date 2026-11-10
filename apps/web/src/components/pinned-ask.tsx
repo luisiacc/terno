@@ -35,7 +35,7 @@ export function PinnedAsk() {
   const draftBottom = usePinned((s) => s.bottom);
   const draft = draftWidth ? { width: draftWidth, bottom: draftBottom || CARD_GAP } : null;
   const snackInset = useSnack((s) => s.inset);
-  const snackLift = useSnack((s) => s.lift + s.pageLift);
+  const snackLift = useSnack((s) => s.pageLift);
   // what the pane shows (a conversation, List's page, a new message): the reader's toolbar comes and goes with it
   const shows = useApp((s) => `${s.selectedId}:${s.readerOpen}:${s.compose?.key ?? ""}:${s.checked.size >= 2 || s.scope !== null}`);
   const page = usePage();

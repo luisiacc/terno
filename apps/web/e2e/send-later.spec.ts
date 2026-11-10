@@ -15,6 +15,11 @@ test.use({ deviceScaleFactor: 2 });
 const snackWith = (page: Page, text: string | RegExp) => page.locator("[data-testid=snack]").filter({ hasText: text });
 const body = (page: Page) => page.getByTestId("compose-body");
 const scheduled = (page: Page) => page.getByTestId("strip-scheduled");
+/** Plan 175: the scheduled send in the drafts row: the row itself while it's alone there, else in the row's dropdown. */
+const openScheduled = async (page: Page) => {
+  if (await page.getByTestId("strip-summary").count()) await page.getByTestId("strip-summary").click();
+  await scheduled(page).click();
+};
 const wcag = (page: Page, root: string) => new AxeBuilder({ page }).setLegacyMode().include(root).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]);
 
 async function newMessage(page: Page, subject: string) {
@@ -84,7 +89,7 @@ test.describe("send later", () => {
       await expect(page.getByTestId("reader-scheduled")).toContainText("Reply scheduled");
       await expect(page.getByTestId("reader-scheduled")).toContainText("Tomorrow 10:15 AM");
 
-      await scheduled(page).click();
+      await openScheduled(page);
       const strip = page.getByTestId("scheduled-popover");
       await expect(strip.getByTestId("send-later-current")).toHaveText("Sends tomorrow at 10:15 AM");
       expect((await wcag(page, "[data-testid=scheduled-popover]").analyze()).violations).toEqual([]);
@@ -109,8 +114,8 @@ test.describe("send later", () => {
 
       await page.getByTestId("compose-send-later").click();
       await page.getByTestId("send-later-popover").getByTestId("send-later-tomorrow").click();
-      await expect(scheduled(page)).toHaveCount(1);
-      await scheduled(page).click();
+      await expect(page.getByTestId("drafts-strip")).toContainText(/scheduled|Budget/);
+      await openScheduled(page);
       await page.getByTestId("scheduled-popover").getByTestId("send-later-edit").click();
       await expect(scheduled(page)).toHaveCount(0);
       await expect(page.getByTestId("composer")).toBeVisible();

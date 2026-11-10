@@ -9,7 +9,7 @@ const saves = () => gate.call.mock.calls.filter(([method]) => method === "drafts
 const listed = async (ids: number[]) => { const { useList } = await import("~/state/list"); useList.setState({ index: new Map(ids.map((id, i) => [id, i])) }); };
 
 describe("away and back", () => {
-  it("keeps its row's mark and stays out of the strip while away, then shows the same draft, one line, saving nothing", async () => {
+  it("keeps its row's mark and its place in the drafts row while away, then shows the same draft, one line, saving nothing", async () => {
     const h = await setup("split", true);
     try {
       await listed([7, 8]);
@@ -18,10 +18,11 @@ describe("away and back", () => {
       const saved = saves();
       await act(async () => h.app.setApp({ selectedId: 8 }));
       const { draftIndex, shownDraftKey, useDrafts } = h.drafts;
-      // the row and the strip follow the conversation it left; its text doesn't show anywhere until the check (plan 44)
+      // the row follows the conversation it left; its text doesn't show anywhere until the check (plan 44). The drafts
+      // row counts every draft (plan 175): its subject and recipients, never its text
       expect(draftIndex(useDrafts.getState().drafts).written.has(7)).toBe(true);
       expect(shownDraftKey(useDrafts.getState().drafts, 7, null)).toBeNull();
-      expect(h.host.querySelector('[data-testid="strip-item"]')).toBeNull();
+      expect(h.host.querySelector(`[data-testid="strip-item"][data-key="${h.key}"]`)?.textContent).not.toContain("exact authored work");
       await act(async () => h.app.setApp({ selectedId: 7 }));
       for (let i = 0; i < 3; i++) await h.flush();
       expect(state(h)).toBe("collapsed");
@@ -84,14 +85,14 @@ describe("away and back", () => {
     } finally { waiting.resolve({ threadId: 7, accountId: 1 }); await h.cleanup(); }
   });
 
-  it("isn't in the strip while its conversation is in the list, and is while it isn't", async () => {
+  it("is in the drafts row whether its conversation is in the list or not (plan 175)", async () => {
     const h = await setup("split", true);
     try {
       await listed([8]);
       await act(async () => h.app.setApp({ selectedId: 8 }));
       expect(h.host.querySelector(`[data-testid="strip-item"][data-key="${h.key}"]`)).not.toBeNull();
       await act(async () => { await listed([7, 8]); });
-      expect(h.host.querySelector(`[data-testid="strip-item"][data-key="${h.key}"]`)).toBeNull();
+      expect(h.host.querySelector(`[data-testid="strip-item"][data-key="${h.key}"]`)).not.toBeNull();
     } finally { await h.cleanup(); }
   });
 

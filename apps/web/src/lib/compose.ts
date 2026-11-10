@@ -19,7 +19,7 @@ import { ensureForwardFiles, fetchForwardFiles, setForwardOpenProbe } from "./fo
 export { answered, autoRecipients, convertFields, newFields, quoteFor, replyFields, subjectFor } from "./compose-fields";
 import { beginDraftAckRead, beginComposeBodyAckRead, beginForwardEmptyOwnerRead, sealForwardEmptyOwnerRead, readDraftAck, endDraftAckRead, beginDraftWork, comingHome, draftIndex, invalidateDraftPresentation, loseDraftHome, returnDraftToThread, draftPresentationThread, expireDraftPresentation, validateDraftPresentation, draftEditsHeld, draftHoldRevision, authored, createDraft, createDraftWithReceipt, discardIfEmpty, draftForSend, editDraft, emptyMessage, fieldsOf, flushDraft, forgetDraft, markDraftMissing, markSending, materialize, nothingWrittenIn, resumeDraft, validRecipients, sendBody, sendHtml, setDraftUi, shownDraftKey, useDrafts, validBodyCheckpoint, type BodyCheckpoint, type DraftAckRead, type DraftFields, type LocalDraft } from "./drafts";
 import { focusPinned, pinnedKey, usePinned } from "./pinned-draft-state";
-import { prepareEarlyComposeInput, prepareInlineFocusMove, type ComposeFocusTarget, type EarlyComposeInput } from "./compose-focus-move";
+import { focusSelector, prepareEarlyComposeInput, prepareInlineFocusMove, type ComposeFocusTarget, type EarlyComposeInput } from "./compose-focus-move";
 import { aiDraftHooks, isNote } from "./ai-draft-state";
 import { fromPlainText, parseHtml, toEmailHtml, toPlainText } from "@terno/richtext";
 import { parseAddressList } from "@terno/core";
@@ -245,6 +245,8 @@ async function keepStrandedWords(threadId: number): Promise<void> {
 }
 
 /** Reader's passive focus must wait for this conversation's explicit compose focus. */
+/** How many opens have begun: one begun after a given count supersedes those before it (plan 175's drafts row). */
+export const composeIntent = (): number => intent;
 export const composeFocusPending = (threadId: number | null, key?: string, focusSeq?: number): boolean => focusLease?.threadId === threadId && focusLease.valid && focusLease.selectionRevision === getSelectionWriteRevision() && (threadId === null ? getApp().compose?.key === focusLease.key && getApp().compose?.seq === focusLease.composeSeq : getApp().selectedId === threadId) && (key === undefined || (focusLease.key === key && focusLease.seq === focusSeq));
 export const subscribeComposeFocus = (listener: (threadId: number, fallback: boolean) => void): (() => void) => {
   focusLeaseListeners.add(listener);
@@ -470,6 +472,22 @@ function showStoredStandalone(key: string, owner: number, allowed: () => boolean
     unsubscribe();
     if (typeof document !== "undefined") document.removeEventListener?.("focusin", observe, true);
   }
+}
+
+/**
+ * Plan 175: the drafts row counts drafts that are open on screen too. One of those is focused where it is (the
+ * editor keeps its caret, the pane its scroll), as a later choice than any open still on its way; nothing is looked
+ * up or opened again. False when it isn't open on screen: then it's for `openStoredDraft`.
+ */
+export function focusDraftOnScreen(key: string): boolean {
+  if (typeof document === "undefined" || useDrafts.getState().drafts[key]?.uiState !== "open") return false;
+  const form = document.querySelector<HTMLElement>(`form[data-testid=composer][data-draft-key="${CSS.escape(key)}"]`);
+  const el = form && !form.closest("[inert]") ? form.querySelector<HTMLElement>(focusSelector(resumeTarget(key))) : null;
+  if (!el) return false;
+  markSelectionIntent();
+  ++intent;
+  el.focus();
+  return true;
 }
 
 /** Open stored work under the same private intent and destination ownership as Reply/Forward. */

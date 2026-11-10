@@ -8,7 +8,7 @@
 import type { Page } from "@playwright/test";
 import { UNDO_SEND_MS } from "@terno/core";
 import { E2E_NOW } from "./constants";
-import { axeBothModes, addRecipients, chipsOf, expect, navTo, focusList, ingestConversation, openRow, recipientEmails, rows, selectThread, stabilize, test, scenario, freshNoDrafts, respond } from "./fixtures";
+import { axeBothModes, addRecipients, chipsOf, expect, navTo, focusList, ingestConversation, openRow, recipientEmails, rows, selectThread, stabilize, test, scenario, freshNoDrafts, respond, stripItem } from "./fixtures";
 import { sqlDb } from "../../backend-dev/src/server";
 
 const composer = (page: Page) => page.getByTestId("reader").getByTestId("composer");
@@ -173,7 +173,8 @@ test.describe("drafts are kept", () => {
       await expect(page.getByTestId("draft-slot")).toHaveAttribute("data-state", "collapsed");
       await expect(page.getByTestId("draft-collapsed")).toContainText("Lo pienso y te digo.");
       await expect(page.getByTestId("compose-body")).toHaveCount(0);
-      await expect(page.getByTestId("strip-item")).toHaveCount(0);
+      // plan 175: the drafts row counts it too, wherever it is
+      await expect(page.getByTestId("strip-item")).toHaveCount(1);
       await expect(page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`)).toContainText("Draft");
       await page.keyboard.press("r");
       await expect(page.getByTestId("compose-body")).toBeFocused();
@@ -428,7 +429,7 @@ test.describe("new message, in the reader pane", () => {
     await page.keyboard.press("Meta+Enter");
     await expect(page.getByTestId("compose-send")).toBeDisabled();
     await page.keyboard.press("Escape");
-    await page.getByTestId("strip-item").filter({ hasText: "Una sola vez" }).click();
+    await (await stripItem(page, "Una sola vez")).click();
     await page.getByTestId("compose-body").focus();
     await page.keyboard.press("Meta+Enter");
     await expect(page.getByTestId("compose-send")).toBeDisabled();
@@ -477,11 +478,11 @@ test.describe("new message, in the reader pane", () => {
       await page.locator("[data-ready]").waitFor();
       await page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`).dispatchEvent("mousedown");
       await expect(page.getByTestId("draft-collapsed").or(page.getByTestId("composer"))).toContainText(/Versión nueva/);
-      await page.getByTestId("strip-item").filter({ hasText: "Fwd: x" }).click();
+      await (await stripItem(page, "Fwd: x")).click();
       await expect(composer(page)).toHaveAttribute("data-mode", "forward");
       await expect(page.getByTestId("compose-body")).toHaveText("Versión vieja");
-      // the newest is untouched, and now waits in the strip
-      await expect(page.getByTestId("strip-item").filter({ hasText: "Re: x" })).toBeVisible();
+      // the newest is untouched, and waits in the drafts row
+      await expect(await stripItem(page, "Re: x")).toBeVisible();
       expect(db.get<{ c: number }>("SELECT count(*) AS c FROM drafts WHERE body_text = 'Versión nueva' AND mode = 'reply'")!.c).toBe(1);
     });
     await scenario("new drafts come back to the strip after a reload", async () => {
@@ -579,9 +580,9 @@ test.describe("the composer at rest and at its limits (plan 158)", () => {
     });
   });
 
-  test("a saved reply stays with its conversation; the strip takes what isn't on a row, and no row moves for it", async ({ app: page, server }) => {
+  test("a saved reply stays with its conversation; the drafts row counts every draft, and no row moves for it", async ({ app: page, server }) => {
     const row = (id: string) => page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`);
-    await scenario("away and back, by j/k and by clicks: the same Draft line, the same mark, nothing in the strip, the same words", async () => {
+    await scenario("away and back, by j/k and by clicks: the same Draft line, the same mark, the same drafts row, the same words", async () => {
       await reply(page);
       await page.keyboard.type("Lo veo mañana.");
       await page.keyboard.press("Escape");
@@ -591,8 +592,8 @@ test.describe("the composer at rest and at its limits (plan 158)", () => {
       await page.keyboard.press("j");
       await expect(page.locator("[data-cursor]")).not.toHaveAttribute("data-thread-id", id);
       await expect(row(id)).toContainText("Draft");
-      await expect(page.getByTestId("strip-item")).toHaveCount(0);
-      // j/k never moves a row: there's nothing above the list to come and go
+      await expect(page.getByTestId("strip-item")).toHaveCount(1);
+      // j/k never moves a row: the drafts row over the list counts the draft wherever the reader is (plan 175)
       expect((await page.getByTestId("thread-row").nth(1).boundingBox())!.y).toBe(y);
       await page.keyboard.press("k");
       await expect(page.getByTestId("draft-collapsed")).toContainText("Lo veo mañana.");
@@ -618,42 +619,47 @@ test.describe("the composer at rest and at its limits (plan 158)", () => {
       await page.getByRole("button", { name: /undo/i }).click();
       await expect(page.getByTestId("compose-body")).toHaveText("Lo veo mañana.");
     });
-    await scenario("the strip is one line and a count at the list's foot: opening it, writing a new message and putting it away move no row", async () => {
+    await scenario("plan 175: the drafts row is one line at the top of the list whatever the count; once it's there no row moves; its dropdown lists the drafts and opens them, by pointer and by keyboard", async () => {
       await freshNoDrafts(page, server);
+      await expect(page.getByTestId("drafts-strip")).toHaveCount(0);
       const y = async () => (await page.getByTestId("thread-row").nth(1).boundingBox())!.y;
-      const before = await y();
-      for (const subject of ["Primera nota", "Segunda nota", "Tercera nota"]) {
+      let before = 0;
+      for (const [i, subject] of ["Primera nota", "Segunda nota", "Tercera nota"].entries()) {
         await focusList(page);
         await page.keyboard.press("c");
         await expect(page.getByTestId("compose-to")).toBeFocused();
         await page.getByTestId("compose-subject").fill(subject);
-        expect(await y()).toBe(before);
-        // being written, it's on screen: not in the strip as well
-        await expect(page.locator("[data-testid=strip-item]").filter({ hasText: subject })).toHaveCount(0);
+        // the first thing written brings the row; from then on nothing moves a row
+        if (i === 0) {
+          await expect(page.getByTestId("strip-item").filter({ hasText: subject })).toBeVisible();
+          before = await y();
+        } else expect(await y()).toBe(before);
         await page.keyboard.press("Escape");
-        // and Esc lands on it, on the one line
-        await expect(page.locator("[data-testid=strip-item]").filter({ hasText: subject })).toBeFocused();
+        // Esc lands on the row: the draft itself while it's the only one, else the count of them
+        await expect(i === 0 ? page.getByTestId("strip-item").filter({ hasText: subject }) : page.getByTestId("strip-summary")).toBeFocused();
         expect(await y()).toBe(before);
       }
-      await expect(page.getByTestId("strip-item")).toHaveCount(1);
-      await expect(page.getByTestId("strip-more")).toHaveText("+2 drafts");
-      const strip = (await page.getByTestId("drafts-strip").boundingBox())!, list = (await page.getByTestId("thread-list").boundingBox())!;
-      expect(strip.y + strip.height).toBeCloseTo(list.y + list.height, 0);
-      await page.getByTestId("strip-more").click();
-      await expect(page.getByTestId("strip-item")).toHaveCount(3);
+      await expect(page.getByTestId("strip-summary")).toHaveText("3 drafts");
+      const strip = (await page.getByTestId("drafts-strip").boundingBox())!, first = (await page.getByTestId("thread-row").first().boundingBox())!;
+      expect(strip.y + strip.height).toBeLessThanOrEqual(first.y + 1);
+      await page.getByTestId("strip-summary").click();
+      await expect(page.getByTestId("strip-menu")).toBeVisible();
+      await expect(page.getByTestId("strip-item")).toHaveText([/Tercera nota/, /Segunda nota/, /Primera nota/]);
       expect(await y()).toBe(before);
       await page.getByTestId("strip-item").filter({ hasText: "Primera nota" }).click();
       await expect(page.getByTestId("compose-subject")).toHaveValue("Primera nota");
+      await expect(page.getByTestId("compose-to")).toBeFocused();
       await page.keyboard.press("Escape");
-      await expect(page.locator("[data-testid=strip-item]").filter({ hasText: "Primera nota" })).toBeFocused();
-      await page.getByTestId("strip-more").click();
-      await expect(page.getByTestId("strip-item")).toHaveCount(1);
-    });
-    await scenario("a snack never covers the strip (plan 158: Split's is over the reader)", async () => {
-      await page.getByTestId("strip-item").first().click();
-      await page.getByTestId("compose-discard").click();
-      const strip = (await page.getByTestId("drafts-strip").boundingBox())!, snack = (await page.getByTestId("snack").boundingBox())!;
-      expect(snack.x).toBeGreaterThanOrEqual(strip.x + strip.width);
+      await expect(page.getByTestId("strip-summary")).toBeFocused();
+      // the keyboard: Enter opens it on its first item, the arrows move, Enter opens that draft
+      await page.keyboard.press("Enter");
+      await expect(page.getByTestId("strip-menu")).toBeVisible();
+      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("Enter");
+      await expect(page.getByTestId("strip-menu")).toHaveCount(0);
+      await expect(page.getByTestId("compose-subject")).toHaveValue("Segunda nota");
+      await expect(page.getByTestId("compose-to")).toBeFocused();
+      expect(await y()).toBe(before);
     });
   });
 

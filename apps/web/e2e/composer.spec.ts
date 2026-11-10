@@ -6,7 +6,7 @@
  */
 import type { Locator, Page } from "@playwright/test";
 import { sqlDb } from "../../backend-dev/src/server";
-import { expect, focusList, openRow, test, scenario, freshNoDrafts } from "./fixtures";
+import { expect, focusList, openRow, test, scenario, freshNoDrafts, stripItem } from "./fixtures";
 
 // the format bar's controls are what this drives (plan 158: closed by default)
 test.use({ formatBar: true });
@@ -714,7 +714,8 @@ test.describe("the new message", () => {
     await body(page).click();
     await page.keyboard.type("Sin destinatario");
     await page.keyboard.press("Escape");
-    await page.getByTestId("strip-item").first().click();
+    // two drafts now: the one with nobody to send to, from the drafts row's dropdown (plan 175)
+    await (await stripItem(page, "No recipients yet")).click();
     await expect(page.getByTestId("compose-to")).toBeFocused();
   });
 

@@ -42,7 +42,7 @@ const answered = { focus: 0 };
  * its height so the reader's end scrolls clear of it.
  */
 export function PinnedDraft({ overList, beside }: {
-  /** List's rows show under it (its dock stands on the drafts strip) */
+  /** List's rows show under it (the dock moves to the reader's column with List's page, and back) */
   overList: boolean;
   /** plan 165: an answer is pinned to its left: the draft is a little narrower, and stands where the answer must */
   beside: boolean;
@@ -64,11 +64,8 @@ export function PinnedDraft({ overList, beside }: {
   useEffect(warmAutocomplete, []);
   useEffect(() => () => move.current?.cancel(), []);
 
-  // the snack dock is at the bottom left; where the pane is too narrow for both, the card stands on it, and on what the
-  // dock stands on (List's drafts strip, while the list shows: snack-dock)
-  const stripLift = useSnack((s) => s.lift);
-  const dockLift = overList ? stripLift : 0;
-  const lift = narrow ? snackInset + dockLift : 0;
+  // the snack dock is at the bottom left; where the pane is too narrow for both, the card stands on it
+  const lift = narrow ? snackInset : 0;
   // feet on one line with the pinned answer: where the dock meets that card, the draft stands there too
   const askFloor = usePinnedAsk((s) => (beside ? s.floor : 0));
   const bottom = Math.max(GAP + lift, askFloor);

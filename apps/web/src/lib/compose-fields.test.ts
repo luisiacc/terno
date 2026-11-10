@@ -78,12 +78,12 @@ describe("quote headers", () => {
 
 describe("drafts strip copy", () => {
   it("counts drafts and extra recipients in both languages", () => {
-    expect(t("compose.strip.more", { count: 1 })).toBe("+1 draft");
-    expect(t("compose.strip.more", { count: 4 })).toBe("+4 drafts");
+    expect(t("compose.strip.count", { count: 1 })).toBe("1 draft");
+    expect(t("compose.strip.count", { count: 4 })).toBe("4 drafts");
     expect(t("compose.strip.andMore", { name: "Ana", count: 2 })).toBe("Ana and 2 more");
     setLocale("es", es);
-    expect(t("compose.strip.more", { count: 1 })).toBe("+1 borrador");
-    expect(t("compose.strip.more", { count: 4 })).toBe("+4 borradores");
+    expect(t("compose.strip.count", { count: 1 })).toBe("1 borrador");
+    expect(t("compose.strip.count", { count: 4 })).toBe("4 borradores");
     expect(t("compose.strip.andMore", { name: "Ana", count: 2 })).toBe("Ana y 2 más");
   });
 });
