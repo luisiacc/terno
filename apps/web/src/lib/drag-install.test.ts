@@ -15,8 +15,8 @@ interface Box {
 }
 const fake = vi.hoisted(() => {
   const g = globalThis as Record<string, unknown>;
-  const state = { targets: [] as unknown[] };
-  document.querySelectorAll = (() => state.targets) as never;
+  const state = { targets: [] as unknown[], selector: "" };
+  document.querySelectorAll = ((selector: string) => ((state.selector = selector), state.targets)) as never;
   g.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
   g.requestAnimationFrame = () => 0;
   return state;
@@ -50,5 +50,12 @@ describe("measuring drop targets", () => {
       el(4, { left: 400, right: 480, top: 124, bottom: 156 }, strip, true),
     ];
     expect(measureTargets()).toEqual([]);
+  });
+
+  it("plan 178: a place (Archive…) is measured by its ref", () => {
+    const r = { left: 8, right: 232, top: 400, bottom: 428 };
+    fake.targets = [{ ...el(0, r, nav), dataset: { dropAction: "view:archive:2" } }];
+    expect(measureTargets()).toEqual([{ id: "view:archive:2", at: 0, ...r }]);
+    expect(fake.selector.split(",").map((x) => x.trim())).toContain("[data-drop-action]");
   });
 });

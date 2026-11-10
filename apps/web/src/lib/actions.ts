@@ -222,7 +222,7 @@ const UNDONE_MS = 2500;
 const FITS = { archive: "archive", trash: "trash", spam: "spam", notSpam: "notSpam", moveToInbox: "toInbox" } as const;
 
 /** In a search, the rows a place action fits (Restore the trashed ones…); elsewhere, all of them (the view's own rule). */
-function fitting(action: ThreadAction, ids: number[]): number[] {
+export function fitting(action: ThreadAction, ids: number[]): number[] {
   const kind = FITS[action as keyof typeof FITS];
   if (!kind || !getApp().query.trim()) return ids;
   const places = placeActions(targetRows(ids), tabbedTest());

@@ -21,6 +21,7 @@ import { ACCOUNT_VIEWS, SOLO_VIEWS, listedByAccount, useFolderRows, toggleAccoun
 import { renderProbe } from "~/lib/render-probe";
 import { enterReview, reviewTotals } from "~/lib/review";
 import type { DropId } from "~/lib/drag";
+import { actionRef, parseActionRef, takesDrop } from "~/lib/action-drop";
 import { useDropState } from "~/state/drag";
 import { installSortable, type Sortable } from "~/lib/sortable-install";
 import { reorderAccounts, reorderCategories } from "~/lib/reorder";
@@ -159,7 +160,7 @@ function NavItem({
   /** the inbox's count in the unread color (the design decides) */
   countTone?: "muted" | "unread";
   testId?: string;
-  /** rows can be dropped on it: a category's id, or (plan 127) a folder's `folderRef` */
+  /** rows can be dropped on it: a category's id, (plan 127) a folder's `folderRef`, or (plan 178) a place's `actionRef` */
   dropTarget?: DropId;
   /** room at the end for a control drawn over the row (a review badge; "icon": the sign-in key, plan 25) */
   reserveEnd?: boolean | "icon";
@@ -200,7 +201,8 @@ function NavItem({
       aria-expanded={expanded}
       aria-controls={controls}
       data-drop-target={typeof dropTarget === "number" ? dropTarget : undefined}
-      data-drop-folder={typeof dropTarget === "string" ? dropTarget : undefined}
+      data-drop-folder={typeof dropTarget === "string" && !parseActionRef(dropTarget) ? dropTarget : undefined}
+      data-drop-action={typeof dropTarget === "string" && parseActionRef(dropTarget) ? dropTarget : undefined}
       data-drop-state={drop ?? undefined}
       data-sort-handle={sortHandle || undefined}
       aria-keyshortcuts={sortHandle ? "Alt+ArrowUp Alt+ArrowDown" : undefined}
@@ -443,7 +445,7 @@ function FavoriteRows() {
             <div>
               <NavItem
                 testId={`nav-fav-${f.accountId}-${f.folder ?? f.view}`}
-                dropTarget={f.folder !== null ? folderRef(f.accountId, f.folder) : undefined}
+                dropTarget={f.folder !== null ? folderRef(f.accountId, f.folder) : takesDrop(f.view) ? actionRef(f.view, f.accountId) : undefined}
                 active={active}
                 onClick={() => (f.folder !== null ? navigate({ accountId: f.accountId, folder: f.folder }) : navigate({ accountId: f.accountId, view: f.view! }))}
                 icon={icon}
@@ -865,6 +867,7 @@ function AccountFolders({
             const item = (
               <NavItem
                 testId={`nav-folder-${account.id}-${v}`}
+                dropTarget={takesDrop(v) ? actionRef(v, account.id) : undefined}
                 inset={!solo}
                 active={active === v}
                 onClick={() => navigate({ accountId: account.id, view: v })}
@@ -1347,6 +1350,7 @@ export function Sidebar() {
     <NavItem
       key={v}
       testId={`nav-${v}`}
+      dropTarget={takesDrop(v) ? actionRef(v) : undefined}
       active={folderView === v}
       onClick={() => navigate({ view: v, accountId: null })}
       icon={<Icon className="size-(--icon-nav)" />}

@@ -2,13 +2,15 @@
  * Binds the drag controller to the DOM: one delegated pointerdown on the
  * listbox (it stays mounted while rows virtualize away) and pointer capture on
  * it once the drag starts; the ghost moves imperatively in rAF; targets are
- * the sidebar's [data-drop-target] categories and [data-drop-folder] folders
- * (plan 127), measured at drag start. A drop on a category is an exclusive
+ * the sidebar's [data-drop-target] categories, [data-drop-folder] folders
+ * (plan 127) and [data-drop-action] places (plan 178), measured at drag start. A drop on a category is an exclusive
  * move (the threads end up in that category only). During a
  * drag no row renders: the dimming is a keyed CSS rule (lib/flash.ts) and only
  * the two NavItems whose state changes re-render.
  */
 import { formatNumber, t } from "@terno/i18n";
+import { actionDropState, actionFacts, actionRefusal, DROP_ACTIONS, parseActionRef, type ActionFacts } from "~/lib/action-drop";
+import { act, fitting } from "~/lib/actions";
 import { motionMs } from "~/lib/appearance";
 import { isExclusivelyIn, moveToCategory } from "~/lib/categorize";
 import { DragController, newIds, payloadFor, type DropId, type PointerLike, type TargetRect } from "~/lib/drag";
@@ -52,7 +54,7 @@ let measured: HTMLElement[] = [];
 export function measureTargets(): TargetRect[] {
   const out: TargetRect[] = [];
   measured = [];
-  for (const el of document.querySelectorAll<HTMLElement>("[data-drop-target], [data-drop-folder]")) {
+  for (const el of document.querySelectorAll<HTMLElement>("[data-drop-target], [data-drop-folder], [data-drop-action]")) {
     if (el.closest("[inert]")) continue;
     const r = el.getBoundingClientRect();
     const clip = el.closest<HTMLElement>("[data-drop-scroll]")?.getBoundingClientRect();
@@ -61,7 +63,7 @@ export function measureTargets(): TargetRect[] {
     const left = Math.max(r.left, clip?.left ?? -Infinity);
     const right = Math.min(r.right, clip?.right ?? Infinity);
     if (bottom - top < 4 || right - left < 4) continue; // scrolled out of its container
-    out.push({ id: el.dataset.dropFolder ?? Number(el.dataset.dropTarget), at: measured.length, left, right, top, bottom });
+    out.push({ id: el.dataset.dropAction ?? el.dataset.dropFolder ?? Number(el.dataset.dropTarget), at: measured.length, left, right, top, bottom });
     measured.push(el);
   }
   return out;
@@ -164,6 +166,15 @@ function tick() {
 export function installDragController(list: HTMLElement): () => void {
   /** plan 127: what the dragged rows are, read once: pointer moves never walk them for a folder */
   let facts: DragFacts = factsOf([]);
+  /** plan 178: what a drop on Starred, Archive, Spam or Trash would do, read at the same time */
+  let places: ActionFacts = actionFacts([]);
+  let dragged: readonly number[] = [];
+  /** read at the start, and again at the release: the rows may have changed meanwhile (a sync starred one) */
+  const readFacts = () => {
+    const rows = dragged.flatMap((id) => row(id) ?? []);
+    facts = factsOf(rows);
+    places = actionFacts(rows, fitting);
+  };
   const ctl = new DragController({
     payload: (id) => {
       const checked = getApp().checked;
@@ -173,17 +184,26 @@ export function installDragController(list: HTMLElement): () => void {
     // a drop moves exclusively: it changes nothing only when every thread is in that category alone; a folder: its own list
     isAlready: (target, ids) => {
       if (typeof target === "number") return isExclusivelyIn(target, ids);
+      const place = parseActionRef(target);
+      if (place) return actionDropState(places, place) === "already";
       const { accountId, key } = parseFolderRef(target);
       return listingFolder(getApp(), accountId, key);
     },
-    refuses: (target) => typeof target === "string" && refusesFolder(facts, parseFolderRef(target).accountId),
+    refuses: (target) => {
+      if (typeof target === "number") return false;
+      const place = parseActionRef(target);
+      return place ? actionDropState(places, place) === "refused" : refusesFolder(facts, parseFolderRef(target).accountId);
+    },
     refused: (target) => {
       if (typeof target !== "string") return;
+      const place = parseActionRef(target);
+      if (place) return void snack(actionRefusal(places, place));
       const { accountId, key } = parseFolderRef(target);
       snack(refusalText(facts, folderName(accountId, key)));
     },
     start: (ids, at) => {
-      facts = factsOf(ids.flatMap((id) => row(id) ?? []));
+      dragged = ids;
+      readFacts();
       html().setAttribute("data-dragging", "");
       dimRows(ids);
       showGhost(ids, at);
@@ -197,6 +217,9 @@ export function installDragController(list: HTMLElement): () => void {
     drop: (target, ids, at) => {
       flyGhost(target, at);
       end();
+      const place = typeof target === "string" ? parseActionRef(target) : null;
+      // plan 178: the place's own action, on the rows it changes, as its button would
+      if (place) return void act(DROP_ACTIONS[place.view], [...places.fits[place.view]]);
       if (typeof target === "string") {
         const { accountId, key } = parseFolderRef(target);
         void moveToFolder({ accountId, key, name: folderName(accountId, key) }, ids);
@@ -261,7 +284,10 @@ export function installDragController(list: HTMLElement): () => void {
     if (ctl.dragging) e.preventDefault();
   }
   function onUp(e: PointerEvent) {
-    if (ctl.dragging) swallowNextClick();
+    if (ctl.dragging) {
+      swallowNextClick();
+      readFacts();
+    }
     ctl.up(point(e));
     cleanup();
   }
