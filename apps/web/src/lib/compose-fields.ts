@@ -1,6 +1,6 @@
 import { attachmentMessageBudget, type AttachmentRef, formatAddressList, forwardQuote, forwardSubject, type ForwardWording, parseAddressList, repairAddress, repairAddresses, type Account, type Address, type MessageDetail, type ThreadDetail } from "@terno/core";
 import type { DraftMode } from "@terno/core/rpc";
-import { t } from "@terno/i18n";
+import { formatList, t } from "@terno/i18n";
 import type { DraftFields } from "./drafts";
 import { fullDate } from "./format";
 
@@ -86,17 +86,18 @@ export function autoRecipients(mode: Exclude<DraftMode, "new">, detail: ThreadDe
   return { to, cc };
 }
 
-/** Would Reply all reach more than one other person? (With one, it's just Reply.) */
+/**
+ * Would Reply all reach someone Reply doesn't? Its To is Reply's, so that's anyone in its Cc. (Plan 173, Codex review: my
+ * own message to two, or several Reply-To addresses, reach the same people either way, so Reply is all there is.)
+ */
 export function reachesSeveral(detail: ThreadDetail, mine: Mine | string | readonly string[]): boolean {
   if (detail.messages.length === 0) return false;
-  const { to, cc } = autoRecipients("replyAll", detail, mine);
-  return to.length + cc.length > 1;
+  return autoRecipients("replyAll", detail, mine).cc.length > 0;
 }
 
-/** The first name a reply goes to, for "Reply to Ana…": who autoRecipients puts in To. */
+/** The first names a reply goes to, for "Reply to Ana" ("Ana and Ben" with several): who autoRecipients puts in To. */
 export function replyName(detail: ThreadDetail, mine: Mine | string | readonly string[]): string {
-  const to = autoRecipients("reply", detail, mine).to[0];
-  return to ? (to.name || to.email).split(/\s+/)[0]! : "";
+  return formatList(autoRecipients("reply", detail, mine).to.map((a) => (a.name || a.email).split(/\s+/)[0]!));
 }
 
 /** The composer's words for a forward (plan 116: the backend's forwards write the same, in a given locale). */

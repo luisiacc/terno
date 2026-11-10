@@ -25,7 +25,11 @@ describe("Reply all is offered only when it reaches someone Reply doesn't", () =
     ["someone else in To", [m({ from: ana, to: [me, bob] })], true],
     ["someone else in Cc", [m({ from: ana, to: [me], cc: [cara] })], true],
     ["my own message to one person", [m({ from: me, isSent: true, to: [bob] })], false],
-    ["my own message to two", [m({ from: me, isSent: true, to: [bob, cara] })], true],
+    // plan 173 (Codex review): Reply already answers both, so Reply all adds no one
+    ["my own message to two", [m({ from: me, isSent: true, to: [bob, cara] })], false],
+    ["my own message to two, someone else in Cc", [m({ from: me, isSent: true, to: [bob, cara], cc: [ana] })], true],
+    ["several Reply-To addresses and no one else", [m({ from: ana, replyTo: [bob, cara], to: [me] })], false],
+    ["a Reply-To that is only me, someone else in Cc", [m({ from: ana, replyTo: [me], cc: [bob] })], true],
   ])("%s", (_, messages, offered) => {
     expect(reachesSeveral(thread(...messages), me.email)).toBe(offered);
   });
@@ -83,6 +87,11 @@ describe("reply and reply-all recipients", () => {
     expect(fields.toText).toBe("Bob <bob@y.com>");
     expect(fields.inReplyToMessageId).toBe(detail.messages[1]!.id);
     expect(replyName(detail, [me.email])).toBe("Bob");
+  });
+
+  it("Reply names everyone it goes to, and no one when To is left empty (plan 173)", () => {
+    expect(replyName(thread(m({ replyTo: [A("Bob Wu", "bob@y.com"), cara] })), [me.email])).toBe("Bob and Cara");
+    expect(replyName(thread(m({ replyTo: [me], cc: [bob] })), [me.email])).toBe("");
   });
 
   it("Bcc never goes anywhere", () => {

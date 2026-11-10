@@ -551,7 +551,7 @@ export function DraftSlot({ threadId, draftKey, replyTo, replyAll = true, accoun
           {/* its words on the messages' name column, the reply glyph in the avatars'; the account it answers from in words, and only when there's a choice (initials read as a person) */}
           <button type="button" onClick={() => void openCompose("reply", threadId)} title={me ? t("compose.bar.from", { name: me }) : undefined} data-testid="quick-reply" className="group/qr flex h-full min-w-0 flex-1 items-center gap-[7px] rounded-xl pl-[7px] text-left text-sm text-foreground-soft outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring">
             <span aria-hidden className="flex size-6 shrink-0 items-center justify-center text-muted-foreground group-hover/qr:text-foreground"><Reply className="size-4" /></span>
-            <span className="truncate">{t("compose.bar.reply", { name: replyTo })}</span>
+            <span className="truncate">{replyTo ? t("compose.bar.reply", { name: replyTo }) : t("actions.reply")}</span>
             {me && accounts.length > 1 && <span data-testid="quick-reply-from" className="shrink-[3] truncate text-muted-foreground">{t("compose.fromLabel", { name: me })}</span>}
             {/* plan 161, pass 2: while a reply is ready, R uses it, and the card says so: one R on screen */}
             {!replyWaiting && <span aria-hidden data-testid="quick-reply-key" className="inline-flex @max-[560px]:hidden"><Shortcut keys="r" /></span>}
