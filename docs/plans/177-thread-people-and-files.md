@@ -90,3 +90,7 @@ Three findings, all fixed with a test that fails without the fix:
 ## The mail's first line (plan 158): rule dropped
 
 `reader.spec` held the first message's first line in the reader's upper third (under 300 px at 1440 × 900). The people line (34 px) put it at 328–332 px in Atelier and Graphite. The owner: "that's fine, you can remove that strict rule". The assertion is gone; the test keeps the toolbar on the column and the measure.
+
+## After the owner looked (demo)
+
+"The attachments need a bit more margin on the top", and with an AI summary above them it must look good too. The strip has `mt-5`: its margin collapses with the header's (12 px) or a card's (16 px), so the gap above "Attachments" is 20 px whichever is there. The people line has 4 px of padding under it (a margin would collapse into the header's), so its chips sit 16 px off a summary card's edge instead of 12. Looked at with and without a summary, light and dark, in macOS, Lumen and Atelier.

@@ -931,8 +931,9 @@ function ReaderHeader({ detail, account, cats, fold }: { detail: ThreadDetail; a
       <ThreadChips detail={detail} account={account} cats={cats} fold={fold} />
     </div>
   );
-  // plan 177: two or more messages, who's on it closes the header, in every design, on the subject's line start
-  const people = <ThreadPeople detail={detail} myEmails={myEmails} icons={iconsFor(detail.thread)} personOf={(m) => personFor(m, detail.thread.person === true)} className="mt-2.5" />;
+  // plan 177: two or more messages, who's on it closes the header, in every design, on the subject's line start; its 4 px
+  // under it (padding: a margin would collapse into the header's) keep the chips off a summary card's edge
+  const people = <ThreadPeople detail={detail} myEmails={myEmails} icons={iconsFor(detail.thread)} personOf={(m) => personFor(m, detail.thread.person === true)} className="mt-2.5 pb-1" />;
   return variant(design.variants.readerHeader, {
     classic: <div className={HEADER}>{titled}{people}</div>,
     "chips-display": (

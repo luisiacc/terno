@@ -117,7 +117,8 @@ export function ThreadAttachments({ messages }: { messages: readonly MessageDeta
   if (!files.length) return null;
   const shown = all ? files : files.slice(0, FILES_SHOWN);
   return (
-    <Collapsible defaultOpen data-testid="thread-attachments" className="mb-4">
+    // 20 px above, whatever is there: its margin and the header's (12) or a card's (16) collapse into one gap
+    <Collapsible defaultOpen data-testid="thread-attachments" className="mt-5 mb-4">
       <CollapsibleTrigger className="w-auto gap-1.5 rounded-sm text-xs font-medium text-foreground-soft hover:text-foreground [&_[data-slot=collapsible-chevron]]:ms-0 [&_[data-slot=collapsible-chevron]]:size-3.5">
         {t("reader.attachments")}<span className="font-normal text-muted-foreground tabular">{files.length}</span>
       </CollapsibleTrigger>
