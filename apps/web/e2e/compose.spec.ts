@@ -654,6 +654,8 @@ test.describe("the composer at rest and at its limits (plan 158)", () => {
       // the keyboard: Enter opens it on its first item, the arrows move, Enter opens that draft
       await page.keyboard.press("Enter");
       await expect(page.getByTestId("strip-menu")).toBeVisible();
+      // the menu takes focus a moment after it opens: an arrow before that is the trigger's, and lands on the first item
+      await expect(page.getByTestId("strip-item").first()).toBeFocused();
       await page.keyboard.press("ArrowDown");
       await page.keyboard.press("Enter");
       await expect(page.getByTestId("strip-menu")).toHaveCount(0);
