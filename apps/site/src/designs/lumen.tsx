@@ -1,9 +1,10 @@
 import type { ReactNode } from "react";
 import type { SiteCopy } from "../copy";
 import { DownloadMac, WaitlistLink } from "../parts/download";
-import { Check, ExternalLink, Github, ShieldCheck } from "../parts/icons";
+import { Check, ChevronRight, ExternalLink, Github, ShieldCheck, Sparkles } from "../parts/icons";
 import { Kbd } from "../parts/kbd";
 import { Logo } from "../parts/logo";
+import { PRO_LEAD, PRO_MORE, Peek, ProLeadShot, proPrivacyLink } from "../parts/pro";
 import { Shot, type ShotName } from "../parts/shot";
 import { Waitlist } from "../parts/waitlist";
 import { Window } from "../parts/window";
@@ -19,15 +20,16 @@ type Feature = SiteCopy["features"][keyof SiteCopy["features"]];
 
 const wrap = "mx-auto w-full max-w-6xl px-6 sm:px-8";
 const h2 = "text-[2rem] leading-[1.1] font-semibold tracking-[-0.025em] text-balance sm:text-[2.6rem]";
+const h3 = "text-[1.3rem] leading-[1.2] font-semibold tracking-[-0.02em] text-balance sm:text-[1.45rem]";
 const lead = "text-lg leading-relaxed text-(--l-muted) text-pretty";
 const card = "lumen-card overflow-hidden rounded-2xl";
 /** a soft tinted stage that a detail sits on, like a product photo */
 const stage = "lumen-stage rounded-3xl p-3 sm:p-10";
 
-function Points({ points }: { points: readonly string[] }) {
+function Points({ points, className = "mt-7" }: { points: readonly string[]; className?: string }) {
   if (!points.length) return null;
   return (
-    <ul className="mt-7 grid gap-3 border-t border-(--l-line) pt-6">
+    <ul className={`grid gap-3 border-t border-(--l-line) pt-6 ${className}`}>
       {points.map((p) => (
         <li key={p} className="flex items-start gap-3 text-[0.98rem] text-(--l-fg)">
           <Check size="1.15em" className="mt-[0.2em] shrink-0 text-(--l-accent)" />
@@ -72,6 +74,74 @@ function Crop({ name, copy, crop, className = "" }: { name: ShotName; copy: Site
   );
 }
 
+/**
+ * Terno Pro (plan 97), right after the privacy band so the promise comes first: the header with its "Coming soon"
+ * chip and the planned price, the drafted reply large, the other four as tiles with their pictures peeking up from
+ * the bottom, then what AI sends and the own-key note. A quiet violet marks it as Pro; no button, it isn't for sale yet.
+ */
+function Pro({ copy }: { copy: SiteCopy }) {
+  const p = copy.pro;
+  const reply = p[PRO_LEAD.id];
+  const privacyAi = proPrivacyLink(copy);
+  return (
+    <section id="pro" aria-labelledby="pro-title" className="py-24 sm:py-32">
+      <div className={wrap}>
+        <div className="mx-auto max-w-3xl text-center">
+          <p className="flex items-center justify-center gap-3 text-[0.95rem] font-semibold">
+            <span className="lumen-pro-mark flex items-center gap-1.5">
+              <Sparkles size="1.15em" />
+              {p.eyebrow}
+            </span>
+            <span className="lumen-pro-chip rounded-full px-2.5 py-1 text-[0.78rem] leading-none font-medium">{p.status}</span>
+          </p>
+          <h2 id="pro-title" className={`mt-5 ${h2}`}>
+            {p.title}
+          </h2>
+          <p className={`mx-auto mt-5 max-w-2xl ${lead}`}>{p.body}</p>
+          <p className="mt-5 text-sm text-(--l-muted)">{p.price}</p>
+        </div>
+
+        <div className="mx-auto mt-14 max-w-5xl">
+          <Window className="lumen-window site-pro-lead-window rounded-xl">
+            <ProLeadShot copy={copy} sizes="(min-width: 1024px) 1024px, (min-width: 640px) 92vw, 200vw" />
+          </Window>
+          <div className="mt-12 grid gap-8 lg:grid-cols-2 lg:gap-16">
+            <div>
+              <h3 className={`${h3} sm:text-[1.75rem]`}>{reply.title}</h3>
+              <p className={`mt-4 ${lead}`}>{reply.body}</p>
+            </div>
+            <Points points={reply.points} className="lg:mt-1.5" />
+          </div>
+        </div>
+
+        <ul className="mx-auto mt-16 grid max-w-5xl gap-6 md:grid-cols-2">
+          {PRO_MORE.map(({ id, shot }) => (
+            <li key={id} className="lumen-tile lumen-pro-tile flex flex-col overflow-hidden rounded-2xl">
+              <div className="p-7 sm:p-8">
+                <h3 className={h3}>{p[id].title}</h3>
+                <p className="mt-3 text-[0.98rem] leading-relaxed text-pretty text-(--l-muted)">{p[id].body}</p>
+                <Points points={p[id].points} className="mt-5 pt-5" />
+              </div>
+              <Peek name={shot} copy={copy} sizes="(min-width: 768px) 470px, 88vw" className="mt-auto" frameClassName="lumen-pro-frame" />
+            </li>
+          ))}
+        </ul>
+
+        <div className="mx-auto mt-16 max-w-2xl text-center">
+          <p className="text-[1.05rem] leading-relaxed text-pretty">{p.privacy}</p>
+          <p className="mt-4 text-sm leading-relaxed text-pretty text-(--l-muted)">
+            {p.ownKey}{" "}
+            <a href={privacyAi.href} className="lumen-link inline-flex items-center gap-0.5 whitespace-nowrap">
+              {privacyAi.label}
+              <ChevronRight size="1.15em" />
+            </a>
+          </p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 const PALETTES = [
   ["palette-dracula", "Apple · Dracula"],
   ["palette-nord", "Terno · Nord"],
@@ -98,6 +168,9 @@ export const Lumen: HomeDesign = ({ copy }) => {
         <nav className="flex items-center gap-1 text-[0.95rem]">
           <a href="#features" className="lumen-navlink max-sm:hidden">
             {copy.nav.features}
+          </a>
+          <a href="#pro" className="lumen-navlink max-sm:hidden">
+            {copy.nav.pro}
           </a>
           <a href={privacy} className="lumen-navlink max-sm:hidden">
             {copy.nav.privacy}
@@ -219,6 +292,8 @@ export const Lumen: HomeDesign = ({ copy }) => {
             </p>
           </div>
         </section>
+
+        <Pro copy={copy} />
 
         <Row id="palette" f={f.palette}>
           <div className={stage}>

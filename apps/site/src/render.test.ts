@@ -61,6 +61,53 @@ describe("screenshots", () => {
   });
 });
 
+describe("Terno Pro (plan 97)", () => {
+  const homes = routes().filter((r) => r.page === "home");
+  const doc = (path: string) => new JSDOM(render(routes().find((r) => r.path === path)!).body).window.document;
+
+  it("every home design has the section, its nav link, the five pictures with alt text, and no way to buy", () => {
+    for (const route of homes) {
+      const copy = COPY[route.lang];
+      const page = new JSDOM(render(route).body).window.document;
+      const pro = page.querySelector("section#pro")!;
+      expect(pro, route.path).not.toBeNull();
+      expect(page.querySelector('header a[href="#pro"]')?.textContent, route.path).toBe(copy.nav.pro);
+      const title = page.getElementById(pro.getAttribute("aria-labelledby")!)!;
+      expect(title.tagName).toBe("H2");
+      expect(title.textContent).toBe(copy.pro.title);
+      expect(pro.textContent).toContain(copy.pro.status);
+      expect(pro.textContent).toContain(copy.pro.price);
+      expect(pro.textContent).toContain(copy.pro.ownKey);
+      for (const name of ["ai-reply", "ai-ask", "ai-today", "ai-digest", "ai-summary"] as const) {
+        const imgs = [...pro.querySelectorAll(`img[src^="/shots/${name}-"]`)];
+        expect(imgs.map((i) => i.getAttribute("data-mode")), `${route.path} ${name}`).toEqual(["light", "dark"]);
+        for (const img of imgs) expect(img.getAttribute("alt")).toBe(copy.alt[name]);
+      }
+      // coming soon: nothing to download, buy or start
+      expect(pro.querySelectorAll('a[href^="/download"], form'), route.path).toHaveLength(0);
+      expect([...pro.querySelectorAll("button")].every((b) => b.closest(".site-shot-tools")), route.path).toBe(true);
+    }
+  });
+
+  it("the own-key note links to the privacy page's AI section, which exists in both languages", () => {
+    for (const route of homes) {
+      const privacy = route.lang === "es" ? "/es/privacy/" : "/privacy/";
+      expect(new JSDOM(render(route).body).window.document.querySelector(`#pro a[href="${privacy}#ai"]`), route.path).not.toBeNull();
+      expect(doc(privacy).querySelector("section#ai"), privacy).not.toBeNull();
+    }
+  });
+
+  it("is in Spanish on /es/, and the honesty fixes are in both languages", () => {
+    const es = doc("/es/");
+    expect(es.querySelector("#pro h2")?.textContent).toBe("Menos tiempo en el correo.");
+    expect(es.querySelector("#pro")!.textContent).not.toContain(COPY.en.pro.body);
+    expect(COPY.en.stats[1]!.label).toBe("Terno servers storing your mail");
+    expect(COPY.en.features.local.body).toContain("syncs between your Mac and your mail servers");
+    expect(COPY.es.stats[1]!.label).toBe("servidores de Terno que guardan tu correo");
+    for (const lang of ["en", "es"] as const) expect(COPY[lang].meta.description).toContain("Terno Pro");
+  });
+});
+
 describe("the main design", () => {
   it("/ and /es/ render Midnight, without the hero keycaps", () => {
     for (const path of ["/", "/es/"]) {

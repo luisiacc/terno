@@ -1,9 +1,10 @@
 import type { ReactNode } from "react";
 import type { SiteCopy } from "../copy";
 import { DownloadMac, WaitlistLink } from "../parts/download";
-import { Check, ChevronRight, Github, Mails } from "../parts/icons";
+import { Check, ChevronRight, Github, Mails, Sparkles } from "../parts/icons";
 import { Kbd } from "../parts/kbd";
 import { Logo } from "../parts/logo";
+import { PRO_LEAD, PRO_MORE, Peek, ProLeadShot, proPrivacyLink } from "../parts/pro";
 import { Shot, type ShotName } from "../parts/shot";
 import { Waitlist } from "../parts/waitlist";
 import { Window } from "../parts/window";
@@ -16,7 +17,7 @@ import type { HomeDesign } from "./types";
  */
 
 type FeatureId = keyof SiteCopy["features"];
-type Feature = SiteCopy["features"][FeatureId];
+type Feature = Pick<SiteCopy["features"][FeatureId], "title" | "body" | "points">;
 
 const wrap = "mx-auto w-full max-w-6xl px-5 sm:px-8";
 const mono = "font-mono text-[0.72rem] uppercase tracking-[0.14em]";
@@ -58,6 +59,61 @@ function Card({ f, className = "", children }: { f: Feature; className?: string;
   );
 }
 
+/**
+ * Terno Pro (plan 97), its own section after the features: the header with a "Coming soon" chip and the planned
+ * price, the same hairline grid as the features with the drafted reply across it and the other four two by two,
+ * then what AI sends and the own-key note. Violet marks it as Pro, as quietly as the blue marks the rest.
+ */
+function Pro({ copy }: { copy: SiteCopy }) {
+  const p = copy.pro;
+  const privacyAi = proPrivacyLink(copy);
+  return (
+    <section id="pro" className={`${wrap} mt-28 scroll-mt-20 sm:mt-36`} aria-labelledby="mn-pro">
+      <div className="max-w-2xl">
+        <p className="flex flex-wrap items-center gap-3">
+          <span className={`${mono} mn-pro-mark flex items-center gap-2`}>
+            <Sparkles size="1.4em" />
+            {p.eyebrow}
+          </span>
+          <span className={`${mono} mn-pro-chip rounded-full px-2.5 py-1 text-[0.66rem] leading-none`}>{p.status}</span>
+        </p>
+        <h2 id="mn-pro" className="mt-5 text-3xl font-semibold tracking-[-0.03em] text-balance sm:text-5xl">
+          {p.title}
+        </h2>
+        <p className="mt-5 max-w-xl text-lg leading-relaxed text-pretty text-(--mn-muted)">{p.body}</p>
+        <p className="mt-4 font-mono text-[0.78rem] leading-relaxed text-(--mn-dim)">{p.price}</p>
+      </div>
+
+      <div className="mn-grid mt-12 grid gap-px overflow-hidden rounded-2xl border border-(--mn-line) bg-(--mn-line) md:grid-cols-2">
+        <Card f={p[PRO_LEAD.id]} className="md:col-span-2">
+          <div className="relative mt-2">
+            <div className="mn-glow mn-pro-glow" aria-hidden="true" />
+            <div className="relative overflow-hidden rounded-xl border border-(--mn-line) bg-(--mn-shot)">
+              <ProLeadShot copy={copy} sizes="(min-width: 1200px) 1024px, (min-width: 640px) 90vw, 200vw" />
+            </div>
+          </div>
+        </Card>
+        {PRO_MORE.map(({ id, shot }) => (
+          <Card key={id} f={p[id]}>
+            <Peek name={shot} copy={copy} sizes="(min-width: 768px) 440px, 84vw" className="mn-pro-stage mt-auto rounded-xl border border-(--mn-line) pt-[6%]" frameClassName="mn-pro-frame" />
+          </Card>
+        ))}
+      </div>
+
+      <div className="mt-10 max-w-3xl">
+        <p className="text-[1.05rem] leading-relaxed text-pretty text-(--mn-fg)">{p.privacy}</p>
+        <p className="mt-3 text-sm leading-relaxed text-pretty text-(--mn-dim)">
+          {p.ownKey}{" "}
+          <a href={privacyAi.href} className="inline-flex items-center gap-0.5 rounded-md whitespace-nowrap text-(--mn-muted) underline decoration-(--mn-line) underline-offset-4 transition-colors duration-100 hover:text-(--mn-fg) hover:decoration-(--mn-muted)">
+            {privacyAi.label}
+            <ChevronRight size="1.15em" />
+          </a>
+        </p>
+      </div>
+    </section>
+  );
+}
+
 export const Midnight: HomeDesign = ({ copy }) => {
   const f = copy.features;
   const privacy = copy.lang === "es" ? "/es/privacy/" : "/privacy/";
@@ -80,6 +136,9 @@ export const Midnight: HomeDesign = ({ copy }) => {
           <nav aria-label={copy.nav.home} className="flex items-center gap-5 text-sm">
             <a href="#features" className={`${link} hidden sm:inline`}>
               {copy.nav.features}
+            </a>
+            <a href="#pro" className={`${link} hidden sm:inline`}>
+              {copy.nav.pro}
             </a>
             <a href={privacy} className={`${link} hidden sm:inline`}>
               {copy.nav.privacy}
@@ -200,6 +259,8 @@ export const Midnight: HomeDesign = ({ copy }) => {
             </Card>
           </div>
         </section>
+
+        <Pro copy={copy} />
 
         {/* keyboard: the cheat sheet */}
         <section className={`${wrap} mt-28 sm:mt-36`} aria-labelledby="mn-keyboard">

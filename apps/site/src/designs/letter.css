@@ -162,3 +162,19 @@ html[data-design="letter"] .letter-field {
 }
 html[data-design="letter"] .letter-field::placeholder { color: var(--l-muted); }
 html[data-design="letter"] .letter-field:focus-visible { outline-offset: 1px; border-color: transparent; }
+
+/* Terno Pro (plan 97): violet on the name only; the stages are the keycaps' quiet grey */
+html[data-design="letter"] {
+  --l-pro: #6a3fe0;
+  --l-pro-soft: rgb(106 63 224 / 0.08);
+}
+@media (prefers-color-scheme: dark) {
+  html[data-design="letter"] {
+    --l-pro: #b9a3ff;
+    --l-pro-soft: rgb(185 163 255 / 0.12);
+  }
+}
+html[data-design="letter"] .letter-pro { color: var(--l-pro); }
+html[data-design="letter"] .letter-pro-chip { color: var(--l-soft); background: var(--l-pro-soft); }
+html[data-design="letter"] .letter-pro-stage { border-radius: 12px; background: var(--l-key); box-shadow: inset 0 0 0 1px var(--l-line); }
+html[data-design="letter"] .letter-pro-frame { box-shadow: var(--l-shadow); }

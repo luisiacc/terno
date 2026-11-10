@@ -149,3 +149,23 @@ html[data-design="midnight"] .site-shot-modes button:not([aria-pressed="true"]):
 .site-lightbox .site-lightbox-close:hover { background: rgb(255 255 255 / 0.24); }
 /* thumbnails: the same tools tucked into the corner (still 24 px targets, WCAG 2.2) */
 .lumen-thumb .site-shot-tools, .mn-thumb .site-shot-tools, .letter-window-small .site-shot-tools { --tools-bottom: 6px; --tools-right: 6px; }
+
+/* Terno Pro (parts/pro.tsx, plan 97). The lead picture: whole, or on a phone the reading pane with the drafted
+   reply (x 700–1380, y 50–800 of the 1440×900 shot), where the whole window would be too small to read */
+.site-pro-lead img { display: block; width: 100%; height: auto; }
+@media (max-width: 639px) {
+  .site-pro-lead { position: relative; overflow: hidden; aspect-ratio: 680 / 750; }
+  .site-pro-lead img { position: absolute; max-width: none; width: calc(1440 / 680 * 100%); left: calc(-700 / 680 * 100%); top: calc(-50 / 750 * 100%); }
+  .site-pro-lead-window .site-window-bar { display: none; }
+}
+/* the smaller pictures: a window peeking into a stage, all at one scale (frame width = the shot's width / 760 of
+   the stage; cqw: the stage's width) */
+.site-peek { overflow: hidden; aspect-ratio: 16 / 10; container-type: inline-size; }
+.site-peek-frame { position: relative; overflow: hidden; margin-inline: auto; border-radius: 10px 10px 0 0; }
+.site-peek-frame img { display: block; width: 100%; height: auto; }
+/* Ask's shot has the dimmed list around its panel: the frame is the panel (x 20–660, y 20–420), corners and all */
+.site-peek-ai-ask { width: calc(640 / 760 * 100%); aspect-ratio: 640 / 400; border-radius: calc(20 * 100cqw / 760); }
+.site-peek-frame.site-peek-ai-ask img { max-width: none; width: calc(680 / 640 * 100%); margin: calc(-20 / 640 * 100%) 0 0 calc(-20 / 640 * 100%); }
+.site-peek-ai-summary { width: calc(696 / 760 * 100%); }
+.site-peek-ai-digest { width: calc(704 / 760 * 100%); }
+.site-peek-ai-today { width: calc(398 / 760 * 100%); }

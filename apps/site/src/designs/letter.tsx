@@ -4,6 +4,7 @@ import { DownloadMac, WaitlistLink } from "../parts/download";
 import { Github } from "../parts/icons";
 import { Kbd } from "../parts/kbd";
 import { Logo } from "../parts/logo";
+import { PRO_LEAD, PRO_MORE, Peek, ProLeadShot, proPrivacyLink } from "../parts/pro";
 import { Shot, type ShotName } from "../parts/shot";
 import { Waitlist } from "../parts/waitlist";
 import { Window } from "../parts/window";
@@ -15,8 +16,8 @@ import type { HomeDesign } from "./types";
  * Shots are figures that break out of the column (`.letter-wide`); crops stay in it. Layout and colors: letter.css.
  */
 
-// the shortcuts the copy mentions in passing (⌘; ⌘K and a lone ?) become keycaps where they stand
-const KEY_RE = /(⌘;|⌘K|(?<=\s)\?(?=\s))/;
+// the shortcuts the copy mentions in passing (⌘; ⌘K ⌘J and a lone ?) become keycaps where they stand
+const KEY_RE = /(⌘;|⌘K|⌘J|(?<=\s)\?(?=\s))/;
 const withKeys = (text: string) => text.split(KEY_RE).map((part, i) => (i % 2 ? <Kbd key={i} className="letter-kbd">{part}</Kbd> : part));
 
 const link = "text-(--l-link) underline decoration-(--l-link)/30 underline-offset-[0.22em] transition-colors duration-100 hover:decoration-(--l-link)";
@@ -70,6 +71,72 @@ function Detail({ copy, name, crop, sizes }: { copy: SiteCopy; name: ShotName; c
   );
 }
 
+/** A Pro feature in the letter's voice: a smaller heading than the features', its words, its points. */
+function ProFeature({ f, children }: { f: SiteCopy["pro"]["reply"] | SiteCopy["pro"]["digest"]; children: ReactNode }) {
+  return (
+    <>
+      <h3 className="mt-20 text-[1.375rem] leading-[1.2] font-semibold tracking-[-0.02em] text-balance sm:mt-24 sm:text-[1.625rem]">{withKeys(f.title)}</h3>
+      <p className="letter-prose mt-4">{withKeys(f.body)}</p>
+      {f.points.length > 0 && (
+        <ul className="letter-points mt-6">
+          {f.points.map((p) => (
+            <li key={p}>{withKeys(p)}</li>
+          ))}
+        </ul>
+      )}
+      {children}
+    </>
+  );
+}
+
+/**
+ * Terno Pro (plan 97), after the features: a new part of the letter with a "Coming soon" chip and the planned
+ * price, the drafted reply as a wide figure, the other four in the column, each picture peeking up into a quiet
+ * stage, then what AI sends and the own-key note. Violet marks the name, nothing louder.
+ */
+function Pro({ copy }: { copy: SiteCopy }) {
+  const p = copy.pro;
+  const privacyAi = proPrivacyLink(copy);
+  return (
+    <section id="pro" aria-labelledby="pro-title" className="letter-sub mt-28 scroll-mt-20 sm:mt-36">
+      <p className="flex flex-wrap items-center gap-3 text-[15px]">
+        <span className="letter-pro font-semibold">{p.eyebrow}</span>
+        <span className="letter-pro-chip rounded-full px-2.5 py-1 text-[12.5px] leading-none font-medium">{p.status}</span>
+      </p>
+      <h2 id="pro-title" className="mt-4 text-[2.25rem] leading-[1.06] font-semibold tracking-[-0.03em] text-balance sm:text-[3rem]">
+        {p.title}
+      </h2>
+      <p className="letter-prose letter-lead mt-6">{p.body}</p>
+      <p className="mt-4 text-[14px] text-(--l-muted)">{p.price}</p>
+
+      <ProFeature f={p[PRO_LEAD.id]}>
+        <figure className="letter-wide mt-14">
+          <Window className="letter-window site-pro-lead-window">
+            <ProLeadShot copy={copy} sizes="(min-width: 1180px) 1088px, (min-width: 640px) calc(100vw - 2.5rem), 200vw" />
+          </Window>
+          <figcaption className="letter-caption">{copy.alt[PRO_LEAD.shot]}</figcaption>
+        </figure>
+      </ProFeature>
+      {PRO_MORE.map(({ id, shot }) => (
+        <ProFeature key={id} f={p[id]}>
+          <figure className="mt-10">
+            <Peek name={shot} copy={copy} sizes="(min-width: 700px) 600px, 92vw" className="letter-pro-stage pt-[6%]" frameClassName="letter-pro-frame" />
+            <figcaption className="letter-caption">{copy.alt[shot]}</figcaption>
+          </figure>
+        </ProFeature>
+      ))}
+
+      <p className="letter-prose mt-20 sm:mt-24">{p.privacy}</p>
+      <p className="mt-4 text-[14px] leading-relaxed text-(--l-muted)">
+        {p.ownKey}{" "}
+        <a href={privacyAi.href} className={`whitespace-nowrap ${link}`}>
+          {privacyAi.label}
+        </a>
+      </p>
+    </section>
+  );
+}
+
 export const Letter: HomeDesign = ({ copy }) => {
   const privacy = copy.lang === "es" ? "/es/privacy/" : "/privacy/";
   const home = copy.lang === "es" ? "/es/" : "/";
@@ -87,6 +154,9 @@ export const Letter: HomeDesign = ({ copy }) => {
             <span aria-hidden="true">Terno</span>
           </a>
           <nav className="flex items-center gap-5 text-[14px]">
+            <a href="#pro" className={quiet}>
+              {copy.nav.pro}
+            </a>
             <a href={copy.nav.languageHref} hrefLang={copy.lang === "en" ? "es" : "en"} className={quiet}>
               {copy.nav.language}
             </a>
@@ -173,6 +243,8 @@ export const Letter: HomeDesign = ({ copy }) => {
             </a>
           </p>
         </Feature>
+
+        <Pro copy={copy} />
 
         <section aria-labelledby="closing" className="letter-sub mt-28 sm:mt-36">
           <hr className="mb-14 w-12 border-(--l-ink) sm:mb-20" />

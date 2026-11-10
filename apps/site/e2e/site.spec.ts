@@ -161,3 +161,24 @@ for (const path of ["/privacy/", "/es/privacy/"])
       await page.locator('nav a[href="#google"]').click();
       await expect(page.locator("section#google h2")).toBeInViewport();
     });
+
+test("the Pro link lands on Terno Pro in every design, clear of a sticky header (plan 97)", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  for (const design of DESIGNS)
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`/designs/${design}/`);
+      const link = page.locator('header a[href="#pro"]');
+      // Lumen and Midnight keep the phone's bar to Download and the language
+      if (!(await link.isVisible())) continue;
+      await link.click();
+      await expect(page).toHaveURL(/#pro$/);
+      const title = page.locator("#pro h2");
+      await expect(title).toBeInViewport();
+      const [chip, bar] = await page.evaluate(() => [
+        document.querySelector("#pro p")!.getBoundingClientRect().top,
+        getComputedStyle(document.querySelector("header")!).position === "sticky" ? document.querySelector("header")!.getBoundingClientRect().bottom : 0,
+      ]);
+      expect(chip, `${design} ${width}`).toBeGreaterThanOrEqual(bar);
+    }
+});

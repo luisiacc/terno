@@ -142,3 +142,22 @@ html[data-design="lumen"] .lumen-field {
 html[data-design="lumen"] .lumen-field::placeholder { color: var(--l-muted); }
 html[data-design="lumen"] .lumen-field:focus-visible { outline: 2px solid var(--l-accent); outline-offset: 1px; border-radius: 0.75rem; }
 html[data-design="lumen"] :focus-visible { outline-color: var(--l-accent); }
+
+/* Terno Pro (plan 97): a quiet violet beside Lumen's blue, only on the mark, the chip and the stages */
+html[data-design="lumen"] {
+  --l-pro: #6a3fe0;
+  --l-pro-soft: rgb(106 63 224 / 0.09);
+}
+@media (prefers-color-scheme: dark) {
+  html[data-design="lumen"] {
+    --l-pro: #b9a3ff;
+    --l-pro-soft: rgb(185 163 255 / 0.12);
+  }
+}
+html[data-design="lumen"] .lumen-pro-mark { color: var(--l-pro); }
+html[data-design="lumen"] .lumen-pro-chip { color: var(--l-fg); background: var(--l-pro-soft); box-shadow: inset 0 0 0 1px rgb(106 63 224 / 0.16); }
+/* each tile is the stage its picture peeks into: the band's warmth with a faint violet light from the top */
+html[data-design="lumen"] .lumen-pro-tile {
+  background: radial-gradient(120% 60% at 50% 100%, var(--l-pro-soft), transparent 70%), var(--l-raise);
+}
+html[data-design="lumen"] .lumen-pro-frame { box-shadow: 0 0 0 1px var(--l-ring), var(--l-shadow); }

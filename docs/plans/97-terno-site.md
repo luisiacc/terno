@@ -156,6 +156,23 @@ Codex reviewed `af09e9e6..610a2284` and raised 7 points; all are fixed, each wit
 Five points, all fixed with tests (`e2e/site.spec.ts`): the tools move in to the visible part of a frame wider than the screen (Lumen's hero on a phone); the hero's two modes are both lazy so only the shown one downloads (a network assertion); Midnight's inactive switch stays light on hover; the interaction test scrolls the picture, not its box-less wrapper; previews are checked for a 200 and `noindex`, and the dropped designs for a 404.
 - Third round: the feature pictures are Lumen with **GitHub light** and a new **GitHub Dark** palette (`packages/ui/src/themes/registry.ts`, now 18 palettes). GitHub's button blue (#1f6feb) with white text reads at 4.1:1 as text on its canvas, below AA, so GitHub Dark's primary is Apple's dark-mode blue (#0a84ff, vivid like GitHub Light's) with dark text on buttons, as every dark palette does.
 
+## Terno Pro section
+
+The AI features as **Terno Pro, coming soon**. The copy was decided by a council (Claude Opus and GPT Sol, three rounds). It is used word for word, and `es.ts` is written in the same plain voice.
+
+- **Copy:** a top-level `pro` key, so `features` keeps one shape; a "Pro" nav link to `#pro`. Two honesty fixes outside the section: the stat now reads "Terno servers storing your mail", and `features.local.body` says your mail *syncs* between your Mac and your mail servers. The meta description gains one sentence.
+- **What it shows:** Reply ready leads, with its picture large (`ai-reply`). Ask, Today, the newsletter digest and Summaries follow, smaller. Then what AI sends, and the own-key note linking to the privacy page's `#ai`. The header has the eyebrow, a "Coming soon" chip and the planned price in small muted text. There is no buy or trial button.
+- **Shared part:** `parts/pro.tsx` lists the features and their pictures and holds two frames, with their geometry in `styles.css`:
+  - **The lead** is the whole window. On a phone it is cropped to the reading pane, so the drafted reply stays legible.
+  - **A peek** shows a smaller picture rising into a 16:10 stage, cut off by the stage's bottom edge. Every peek uses one scale (frame width = shot width / 760), so the four read as a set. Ask's frame is cropped to the panel itself, without the dimmed list around it.
+- **Per design:** each design colors these frames itself. A quiet violet marks Pro, and nothing louder.
+  - **Lumen:** right after the `#local` band. A centered header, the reply in a window, its words beside its points, then four tiles with their pictures peeking up from the bottom.
+  - **Midnight:** its own section after the features grid. The same hairline grid, with the reply across it and the four two by two.
+  - **Letter:** a new part of the letter after the features. The reply is a wide figure, the four are in-column figures with captions, and `⌘J` becomes a keycap.
+- **Tests:**
+  - `render.test.ts`: every design and language has the section, its nav link, the five pictures in both modes with their alt text, no download link, form or button beyond the picture tools, and the `#ai` link; plus the Spanish and the honesty fixes.
+  - `e2e/site.spec.ts`: the Pro link lands on the section clear of a sticky header. Letter's needed `scroll-mt`, and the test fails without it. The existing axe runs cover the section in every design, light and dark, desktop and phone.
+
 ## Deploying from GitHub
 
 `.github/workflows/deploy-site.yml` runs `pnpm deploy:site` on every push to main that touches `apps/site/**`, the app's icon set (`packages/ui/src/icons.ts`, `packages/ui/src/iconset/**`) or the workflow itself, and by hand from the Actions tab. One deploy at a time, in push order. A failing test, build or migration stops it before the Worker changes.
