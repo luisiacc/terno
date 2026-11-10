@@ -104,6 +104,11 @@ export class Pins {
   /** the newest pin's time (a new one is always later) */
   private last = 0;
 
+  /** The pinned ones among these, as of the last look */
+  among(threadIds: readonly number[]): number[] {
+    return this.ids.size ? [...new Set(threadIds)].filter((id) => this.ids.has(id)) : [];
+  }
+
   /** These conversations were put away (archived, trashed, marked as spam, filed out of the Inbox): their pins end. */
   async end(threadIds: readonly number[]): Promise<Pin[]> {
     if (this.ids.size === 0 || !threadIds.some((id) => this.ids.has(id))) return [];

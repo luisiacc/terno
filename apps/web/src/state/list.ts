@@ -223,14 +223,6 @@ function heldInReminders(selectedId: number | null, pinnedIds: ReadonlySet<numbe
   return row ? { row, at: at - inboxTop.pinned } : null;
 }
 
-/** A first page joined with the pages after it: the top's rows once, at its front. */
-function topOnce<P extends Paged>(page: P, top: InboxTop): P {
-  if (top.ids.length === 0) return page;
-  const ids = new Set(top.ids);
-  const n = top.ids.length;
-  return { ...page, items: [...page.items.slice(0, n), ...page.items.slice(n).filter((t) => !ids.has(t.id))] };
-}
-
 async function fetchPage(cursor?: { lastDate: number; id: number }, limit = PAGE) {
   const s = getApp();
   if (s.reminders) {
@@ -322,7 +314,7 @@ function pruneSelection(index: Map<number, number>): void {
 }
 
 /** (Re)loads the first page for the current view/search. Latest call wins. */
-export async function reloadList(options: { keepSelection?: boolean; grow?: boolean; window?: boolean } = {}): Promise<void> {
+export async function reloadList(options: { keepSelection?: boolean; grow?: boolean; window?: boolean; keepWindow?: boolean } = {}): Promise<void> {
   const key = listKey();
   const mine = ++seq;
   const connection = client.connectionVersion;
@@ -349,9 +341,15 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
   try {
     let page = await fetchPage(undefined, limit);
     if (mine !== seq || connection !== client.connectionVersion) return;
+    // the top this answer brings (none but the plain Inbox's): published with its rows below, never before. Pages joined to
+    // it leave its rows out as they arrive, so what the window counts is rows it shows (Codex review)
+    const top = ("top" in page && page.top) || NO_TOP;
+    const onTop = new Set(top.ids);
+    const join = (more: Paged) => ({ ...page, items: [...page.items, ...(onTop.size ? more.items.filter((t) => !onTop.has(t.id)) : more.items)], nextCursor: more.nextCursor });
     // plan 24, R4: the whole loaded window, however deep, in pieces (a refresh that waited behind a page must not shrink the list
-    // under the cursor). In List every refresh of the same list does it (an undo, a bulk result, new mail); Split keeps its cap.
-    const windowed = sameView && (options.window || refreshPolicy.keepWindow());
+    // under the cursor). In List every refresh of the same list does it (an undo, a bulk result, new mail); Split keeps its cap,
+    // unless asked to keep it (`keepWindow`: the window, without moving to its anchor)
+    const windowed = sameView && (options.window || options.keepWindow || refreshPolicy.keepWindow());
     if (windowed) {
       const want = current.items.length + (options.grow ? PAGE : 0);
       // the first row on screen and the cursor must be in it: mail that arrived above them pushed them further down
@@ -360,7 +358,7 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
       while ((page.items.length < want || missing()) && page.nextCursor && page.items.length < want + REACH) {
         const more = await fetchPage(page.nextCursor, page.items.length < want ? Math.min(WINDOW_PAGE, want - page.items.length) : WINDOW_PAGE);
         if (mine !== seq || connection !== client.connectionVersion) return;
-        page = { ...page, items: [...page.items, ...more.items], nextCursor: more.nextCursor };
+        page = join(more);
       }
     }
     if (place) {
@@ -369,7 +367,7 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
       while (left.some((id) => !page.items.some((t) => t.id === id)) && page.nextCursor && page.items.length < place.rows + REACH) {
         const more = await fetchPage(page.nextCursor, WINDOW_PAGE);
         if (mine !== seq || connection !== client.connectionVersion) return;
-        page = { ...page, items: [...page.items, ...more.items], nextCursor: more.nextCursor };
+        page = join(more);
       }
     }
     if (edits !== editsAtStart) {
@@ -384,9 +382,6 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
       void reloadList({ ...options, keepSelection: true });
       return;
     }
-    // the top this answer brings (none but the plain Inbox's): published with its rows below, never before
-    const top = ("top" in page && page.top) || NO_TOP;
-    page = topOnce(page, top);
     if (scope?.kind === "search" && scope.filter && (sameView || options.keepSelection)) page = keepSearchRows(page, current.items);
     if (scope?.filter) page = { ...page, items: heldOnly(page.items, top.ids) };
     // the window refresh keeps the first visible row where it was (new mail above it doesn't push it down): always after a page

@@ -133,3 +133,17 @@ Twelve points; eleven taken, one recorded as accepted. These replace the matchin
 10. **Pinned is not Reminders.** Rows in Pinned get no `reminderTop`: their date is the mail's, a due reminder shows its bell among the marks. `reminderTop` is only for the Reminders part.
 11. **IndexedDB upgrade, fully.** The upgraded-store image (`idb.uncertain-upgrade.test.ts`) includes the empty `pins` store; a test upgrades a version-32 database holding mail and a reminder and finds an empty `pins` store with everything else kept; the guarded creation skips an existing store. The historical SQL fixture (`capture-repair-upgrade`) drops `pins` as it drops every later table.
 12. **Gates.** This changes a migration and the store contract: `pnpm test:all` runs before it's done, with the migration budget and the load and UI perf gates. A main screen changes: `pnpm ui:rate` and `pnpm ui:gate`. The j-key render gate runs with pins present, and a unit test checks that a pin elsewhere renders no row.
+
+## Revisions after the Codex code review
+
+Five findings, all taken, each with a test that fails without its fix:
+
+1. **A window refresh counted the top's rows twice.** Pages after the first arrive as they are, and the refresh measured its window before leaving the top's rows out, so it stopped short (700 loaded, pins whose dates fall at 501–600: 600 shown, a checked row beyond them dropped). Each page is now joined without the top's rows as it arrives (`join` in `reloadList`), so the window counts rows it shows. Test: `list-pins.test.ts`, a 700-row window with the pins coming again by date.
+2. **A pin refreshed Split's list to 500 rows when it sat at the top.** Keeping the window depended on being scrolled. `reloadList` takes `keepWindow`: the whole loaded window in both layouts, with the anchor still only when scrolled. The pins event uses it. Same test.
+3. **Unpin on more than 100 selected conversations was refused** by the RPC's limit. Unpin sends only the pinned among the targets, Pin only the unpinned, and a pin past the cap is refused before asking. Tests: `pins.test.ts`, 150 selected with three pinned (checked against the contract's own schema), and a pin past the cap.
+4. **Filing into a hidden category ended the pin of a conversation already out of the Inbox** (archived, or in another hidden category). The pinned ones the Inbox shows are read before the filing (`pinsShown`), and only theirs end (`leaveTop`'s `pinIds`); reminders and follow-ups end as before. Test: `backend/pins.test.ts`, archived and hidden pinned conversations filed and moved.
+5. **The palette's one command toggled,** so "Unpin" on a mixed selection pinned the rest. It offers Pin to top and Unpin separately, each when it applies; only P toggles. Test: `command-palette.test.tsx`.
+
+## The row menu (after the e2e)
+
+The row menu keeps at most eleven items at its top level (plan 158). Pin to top and Unpin made twelve, so they go first under **More ▸**, as Pin sits under the reader's More menu; P and the palette reach them in one step.

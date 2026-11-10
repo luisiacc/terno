@@ -105,3 +105,29 @@ it("the open row the Reminders part held stays there once its reminder ended; an
   expect(ids().indexOf(7)).toBe(6);
   expect(getApp().selectedId).toBe(7);
 });
+
+it("a refresh keeps the whole loaded window in Split, counting each row once when the pinned ones come again by date (Codex review)", async () => {
+  // mail 1…1000 by date, 501 and 502 pinned: they come again in the page after the first
+  usePins.setState({ ids: new Set([501, 502]), loaded: true });
+  useReminders.setState({ byThread: new Map(), due: 0, loaded: true });
+  const after = (p: Params) => (p.cursor as { id?: number } | undefined)?.id ?? 0;
+  answer = async (p, method) => {
+    if (method === "pins.threads") return { items: [row(501), row(502)] };
+    if (method !== "threads.list") return {};
+    const from = after(p) + 1;
+    const items = Array.from({ length: Math.min(p.limit ?? 100, 1001 - from) }, (_, i) => row(from + i));
+    const last = items.at(-1);
+    return { items, nextCursor: last && last.id < 1000 ? { lastDate: last.lastDate, id: last.id } : null };
+  };
+  setApp({ selectedId: null, accountId: null });
+  await reloadList({ keepSelection: true });
+  // 700 rows loaded (scrolled down and back): the pins, then 1…698
+  const loaded = [row(501), row(502), ...Array.from({ length: 698 }, (_, i) => row(i + 1))];
+  useList.setState({ items: loaded, index: new Map(loaded.map((t, i) => [t.id, i])) });
+  await reloadList({ keepSelection: true, keepWindow: true });
+  const shown = ids();
+  expect(new Set(shown).size).toBe(shown.length);
+  expect(shown.length).toBeGreaterThanOrEqual(700);
+  expect(shown.slice(0, 2)).toEqual([501, 502]);
+  expect(shown).toContain(698);
+});

@@ -1,4 +1,4 @@
-import type { Pin } from "@terno/core";
+import { PINS_MAX, type Pin } from "@terno/core";
 import type { PinsSnapshot } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 import { client } from "~/rpc/connection";
@@ -6,7 +6,7 @@ import { registerUndo, snack } from "~/lib/snack";
 import { listCovered } from "~/lib/page";
 import { currentTargets } from "~/lib/select";
 import { getApp, inPlainInbox } from "~/state/app";
-import { listAnchor, refreshList, reloadList, useList } from "~/state/list";
+import { refreshList, reloadList, useList } from "~/state/list";
 import { usePins } from "~/state/pins";
 
 /**
@@ -18,13 +18,13 @@ import { usePins } from "~/state/pins";
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 /**
- * The Inbox's top follows its pins: refreshed as mail changing refreshes it (the selection and checked rows stay); its
- * loaded window and first row on screen are kept unless the list sits at its very top, where the section shows coming.
+ * The Inbox's top follows its pins: its whole loaded window is kept, in both layouts (the selection and checked rows
+ * stay); its first row on screen is kept too, unless the list sits at its very top, where the section shows coming.
  */
 function refreshTop(): void {
   if (!inPlainInbox(getApp())) return;
   if (listCovered()) refreshList(true);
-  else void reloadList({ keepSelection: true, ...(listAnchor.scrolled?.() ? { window: true } : {}) });
+  else void reloadList({ keepSelection: true, keepWindow: true });
 }
 
 export function applyPins(snapshot: PinsSnapshot): void {
@@ -66,8 +66,14 @@ function pinTargets(ids?: readonly number[]): number[] | null {
 
 /** Pins these (default: the selection); a snack with Undo, which takes away exactly what it pinned. */
 export async function pinThreads(ids?: readonly number[]): Promise<boolean> {
-  const targets = pinTargets(ids);
+  const pinned = usePins.getState().ids;
+  // only what isn't pinned yet goes (a large selection with a few pinned in it); past the cap, said before asking
+  const targets = pinTargets(ids)?.filter((id) => !pinned.has(id));
   if (!targets?.length) return false;
+  if (pinned.size + targets.length > PINS_MAX) {
+    snack.error(t("pins.failed"), { description: t("errors.pinsFull", { max: PINS_MAX }) });
+    return false;
+  }
   let added: Pin[];
   try {
     added = (await client.call("pins.add", { threadIds: targets })).added;
@@ -82,7 +88,9 @@ export async function pinThreads(ids?: readonly number[]): Promise<boolean> {
 
 /** Unpins these (default: the selection); its Undo puts back exactly what it took. */
 export async function unpinThreads(ids?: readonly number[]): Promise<boolean> {
-  const targets = pinTargets(ids);
+  // only the pinned ones go (at most PINS_MAX, however large the selection: Codex review)
+  const pinned = usePins.getState().ids;
+  const targets = pinTargets(ids)?.filter((id) => pinned.has(id));
   if (!targets?.length) return false;
   let removed: Pin[];
   try {

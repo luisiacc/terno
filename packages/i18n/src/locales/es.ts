@@ -1873,6 +1873,7 @@ const es = {
   "palette.alias.markUnread": "no visto",
   "palette.alias.star": "destacar, favorito, importante",
   "palette.alias.pin": "anclar, chincheta, arriba, mantener arriba",
+  "palette.alias.unpin": "desanclar, quitar de arriba, desfijar",
   "palette.alias.move": "carpeta, etiqueta, clasificar",
   "palette.alias.remind": "posponer, más tarde, seguimiento",
   "palette.alias.compose": "redactar, componer, nuevo, escribir, correo",

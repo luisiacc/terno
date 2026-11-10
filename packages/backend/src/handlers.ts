@@ -99,9 +99,22 @@ export function createHandlers(b: Backend): Handlers {
    */
   /** plans 87, 142, 177: what the Inbox's top held for what a filing into a category hidden from the Inbox took out of it, by batch, for its undo */
   const filedTop = new Map<number, TopLeft>();
-  const endTopIfHidden = async (categoryId: number, threadIds: readonly number[], batchId: number | null) => {
+  /**
+   * Plan 177 (Codex review): the pinned ones among these that the Inbox shows now (in it, and in no category hidden from
+   * it), read before a filing into a hidden category: only those leave the Inbox by it, so only their pins end.
+   */
+  const pinsShown = async (categoryId: number, threadIds: readonly number[]): Promise<number[]> => {
+    const pinned = b.pins.among(threadIds);
+    if (!pinned.length) return [];
+    const categories = await store.categories.list();
+    if (!categories.some((c) => c.id === categoryId && !c.showInInbox)) return [];
+    const hidden = new Set(categories.filter((c) => !c.showInInbox).map((c) => c.id));
+    return (await store.threads.summaries(pinned)).filter((t) => t.inInbox !== false && !t.inTrash && !t.inSpam && !t.categoryIds.some((id) => hidden.has(id))).map((t) => t.id);
+  };
+  const endTopIfHidden = async (categoryId: number, threadIds: readonly number[], batchId: number | null, shownPins: readonly number[]) => {
     if (batchId === null || !(await store.categories.list()).some((c) => c.id === categoryId && !c.showInInbox)) return;
-    const left = await leaveTop(b, threadIds);
+    const filed = new Set(threadIds);
+    const left = await leaveTop(b, threadIds, shownPins.filter((id) => filed.has(id)));
     if (leftNothing(left)) return;
     filedTop.set(batchId, left);
     for (const key of filedTop.keys()) if (filedTop.size > 16) filedTop.delete(key);
@@ -120,6 +133,7 @@ export function createHandlers(b: Backend): Handlers {
   };
   const fileThreads = async (categoryId: number, threadIds: readonly number[], addedBy: AddedBy, source: string, progress?: (done: number) => void) => {
     await requireCategory(categoryId);
+    const shownPins = await pinsShown(categoryId, threadIds);
     const batchId = await store.categories.createBatch(categoryId, source, { kind: "threads" }, b.now());
     const added: number[] = [];
     let done = 0;
@@ -130,7 +144,7 @@ export function createHandlers(b: Backend): Handlers {
       b.notifyChanged(chunk);
       progress?.((done += chunk.length));
     });
-    await endTopIfHidden(categoryId, added, added.length ? batchId : null);
+    await endTopIfHidden(categoryId, added, added.length ? batchId : null, shownPins);
     // plan 116: new mail filed here may go (one conversation by hand, a suggestion, an agent; never a bulk filing)
     if (added.length && addedBy !== "bulk" && !(addedBy === "user" && threadIds.length > 1)) b.planForwards({ threadIds: added, filed: addedBy === "user" ? added : [] });
     return { added: added.length, addedIds: added, batchId: added.length ? batchId : null };
@@ -322,6 +336,7 @@ export function createHandlers(b: Backend): Handlers {
     },
     toCategory: async (categoryId, slice, narrow, record) => {
       await requireCategory(categoryId);
+      const shownPins = await pinsShown(categoryId, slice);
       // `bulk`, and nothing planned: a sentence never forwards (revision 1)
       const { batchId } = await store.categories.beginMove({ to: categoryId, threadIds: slice, addedBy: "bulk", now: b.now(), source: "sentence" });
       // read after the batch is written, and committed in that same turn (revision 10): nothing can arrive or Stop between them, in either store
@@ -339,7 +354,8 @@ export function createHandlers(b: Backend): Handlers {
       if (!threadIds.length) return;
       const hidden = (await store.categories.list()).some((c) => c.id === categoryId && !c.showInInbox);
       // committed: it counts and has its Undo, whatever training does next (revision 5). A failed training resumes at the next start.
-      record({ batchId, left: hidden ? await leaveTop(b, threadIds) : nothingLeft() });
+      const moved = new Set(threadIds);
+      record({ batchId, left: hidden ? await leaveTop(b, threadIds, shownPins.filter((id) => moved.has(id))) : nothingLeft() });
       await b.finishMove(batchId);
     },
     undoActs,
@@ -709,11 +725,12 @@ export function createHandlers(b: Backend): Handlers {
       await requireCategory(to);
       // don't add the move to the turn that parsed 5,000 ids, nor to what that turn scheduled
       await b.yieldTurn();
+      const shownPins = await pinsShown(to, threadIds);
       // recorded at once; memberships move in slices (every other category left, each row journaled), then the training
       const { batchId } = await store.categories.beginMove({ to, threadIds, addedBy: ctx.origin === "mcp" ? "agent" : ADDED_BY[source], now: b.now(), source });
       await b.finishMove(batchId);
       const r = await store.categories.moveOutcome(batchId);
-      await endTopIfHidden(to, threadIds, batchId);
+      await endTopIfHidden(to, threadIds, batchId, shownPins);
       // plan 116: one conversation dragged here by hand may go (a drag of several never)
       if (r.added.length && threadIds.length === 1) b.planForwards({ threadIds: r.added, filed: ctx.origin === "mcp" ? [] : r.added });
       return { added: r.added.length, addedIds: r.added, batchId, moved: r.moved };

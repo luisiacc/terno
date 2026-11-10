@@ -11,7 +11,7 @@ import { Archive, AtSign, Bell, BellOff, ListChecks, BookmarkPlus, CalendarClock
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { fitWholeRows, markMore } from "@terno/ui/lib/whole-rows";
 import { act, openCompose, targetRows, toggleStar, undoLast } from "~/lib/actions";
-import { togglePin } from "~/lib/pins";
+import { pinThreads, unpinThreads } from "~/lib/pins";
 import { usePins } from "~/state/pins";
 import { addScopeToCategory, addToCategory, isExclusivelyIn, moveToCategory } from "~/lib/categorize";
 import { currentTargets, isMac, selectAll } from "~/lib/select";
@@ -420,7 +420,8 @@ export function CommandPalette() {
       const starKey = allStarred ? "actions.unstar" : "actions.star";
       // plan 177: the selection's pins (a "select all N" has no ids to pin)
       const pinnedIds = usePins.getState().ids;
-      const allPinned = rows.length > 0 && rows.every((r) => pinnedIds.has(r.id));
+      const anyPinned = rows.some((r) => pinnedIds.has(r.id));
+      const anyUnpinned = rows.some((r) => !pinnedIds.has(r.id));
       const inHand: PaletteGroup = "conversation";
       // in the order they lead an empty root (CONVERSATION_LEAD)
       add({ id: "thread.archive", group: inHand, label: t("actions.archive"), icon: <Archive />, shortcut: keysOf("thread.archive"), ...withEnglish(english("palette.archive", { count: targets }), "palette.alias.archive"), run: () => void act("archive") });
@@ -434,7 +435,9 @@ export function CommandPalette() {
         add({ id: "compose.forward", group: inHand, label: t("palette.forward"), icon: <Forward />, shortcut: keysOf("compose.forward"), testId: "palette-forward", ...synonyms("palette.alias.forward", english("palette.forward")), takesFocus: true, run: () => reply("forward") });
       }
       add({ id: "thread.star", group: inHand, label: t(starKey), icon: <Star />, shortcut: keysOf("thread.star"), ...withEnglish([t("actions.star"), t("actions.unstar"), ...english("actions.star"), ...english("actions.unstar")], "palette.alias.star"), run: () => toggleStar(undefined, { announce: true }) });
-      if (!scoped) add({ id: "thread.pin", group: inHand, label: t(allPinned ? "actions.unpin" : "actions.pin"), icon: allPinned ? <PinOff /> : <Pin />, shortcut: keysOf("thread.pin"), testId: "palette-pin", ...withEnglish([t("actions.pin"), t("actions.unpin"), ...english("actions.pin"), ...english("actions.unpin")], "palette.alias.pin"), run: () => togglePin() });
+      // each does what it says on a mixed selection (P alone toggles): the key shows on the one P would do
+      if (!scoped && anyUnpinned) add({ id: "thread.pin", group: inHand, label: t("actions.pin"), icon: <Pin />, shortcut: keysOf("thread.pin"), testId: "palette-pin", ...withEnglish([t("actions.pin"), ...english("actions.pin")], "palette.alias.pin"), run: () => void pinThreads() });
+      if (!scoped && anyPinned) add({ id: "thread.unpin", group: inHand, label: t("actions.unpin"), icon: <PinOff />, ...(anyUnpinned ? {} : { shortcut: keysOf("thread.pin") }), testId: "palette-unpin", ...withEnglish([t("actions.unpin"), ...english("actions.unpin")], "palette.alias.unpin"), run: () => void unpinThreads() });
       if (scoped || rows.some((r) => r.unread)) add({ id: "thread.markRead", group: inHand, label: t("palette.markRead"), icon: <MailOpen />, shortcut: keysOf("thread.markRead"), ...withEnglish(english("palette.markRead"), "palette.alias.markRead"), run: () => void act("markRead", undefined, { announce: true }) });
       if (scoped || rows.some((r) => !r.unread)) add({ id: "thread.markUnread", group: inHand, label: t("palette.markUnread"), icon: <Mail />, shortcut: keysOf("thread.toggleRead"), ...withEnglish(english("palette.markUnread"), "palette.alias.markUnread"), run: () => void act("markUnread", undefined, { announce: true }) });
       if (!scoped) add({ id: "thread.remind", group: inHand, label: t("palette.remind"), icon: <Bell />, shortcut: keysOf("thread.remind"), testId: "palette-remind", ...withEnglish(english("palette.remind"), "palette.alias.remind"), page: "remind" });

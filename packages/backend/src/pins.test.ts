@@ -194,6 +194,23 @@ describe("pins (plan 177)", () => {
     expect(await pinnedIds(client)).toEqual([a, b].sort((x, y) => x - y));
   });
 
+  it("filing into a hidden category ends only the pins of conversations the Inbox showed: an archived or already hidden one keeps its pin (Codex review)", async () => {
+    const { client, a, b, c } = await setup();
+    const hidden = await client.call("categories.create", { name: "Quiet", color: "slate" });
+    const hidden2 = await client.call("categories.create", { name: "Later", color: "slate" });
+    await client.call("pins.remove", { threadIds: [a, b, c] });
+    // a archived, then pinned from Archive; b already in a hidden category; c in the Inbox
+    await client.call("threads.act", { threadIds: [a], action: "archive" });
+    await client.call("categories.addThreads", { categoryId: hidden2.id, threadIds: [b], source: "picker" });
+    await client.call("pins.add", { threadIds: [a, b, c] });
+    await client.call("categories.addThreads", { categoryId: hidden.id, threadIds: [a, b, c], source: "picker" });
+    expect(await pinnedIds(client)).toEqual([a, b].sort((x, y) => x - y));
+    // a move into one does the same
+    await client.call("pins.add", { threadIds: [c] });
+    await client.call("categories.moveThreads", { to: hidden2.id, threadIds: [a, c], source: "picker" });
+    expect(await pinnedIds(client)).toEqual([a, b, c].sort((x, y) => x - y));
+  });
+
   it("a conversation that goes takes its pin, and the windows hear of it without a thread named", async () => {
     const { backend, client, db, a, events } = await setup();
     await client.call("pins.add", { threadIds: [a] });

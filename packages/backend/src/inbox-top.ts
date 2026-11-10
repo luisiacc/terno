@@ -36,12 +36,15 @@ export function gather(into: TopLeft, more: TopLeft): void {
   into.pins.push(...more.pins);
 }
 
-/** These conversations left the Inbox: what the top held for them ends. */
-export async function leaveTop(b: TopHost, threadIds: readonly number[]): Promise<TopLeft> {
+/**
+ * These conversations were put away: what the top held for them ends. A pin ends only for those that left the Inbox by
+ * it (`pinIds`; a filing into a hidden category of one already archived or hidden leaves its pin).
+ */
+export async function leaveTop(b: TopHost, threadIds: readonly number[], pinIds: readonly number[] = threadIds): Promise<TopLeft> {
   return {
     reminders: await b.reminders.endDue(threadIds),
     followups: await b.followups.endTop(threadIds),
-    pins: await b.pins.end(threadIds),
+    pins: pinIds.length ? await b.pins.end(pinIds) : [],
   };
 }
 

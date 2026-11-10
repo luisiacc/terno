@@ -31,12 +31,21 @@ vi.mock("~/lib/categorize", async (original) => ({
   ...(await original<typeof import("~/lib/categorize")>()),
   moveToCategory: (categoryId: number, ids: readonly number[]) => (moves.push({ categoryId, ids }), Promise.resolve(null)),
 }));
+const pinCalls = vi.hoisted(() => [] as string[]);
+vi.mock("~/lib/pins", async (original) => ({
+  ...(await original<typeof import("~/lib/pins")>()),
+  pinThreads: () => (pinCalls.push("pin"), Promise.resolve(true)),
+  unpinThreads: () => (pinCalls.push("unpin"), Promise.resolve(true)),
+  togglePin: () => void pinCalls.push("toggle"),
+}));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 // cmdk measures and scrolls the selected item
 Element.prototype.scrollIntoView = () => {};
 globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} } as unknown as typeof ResizeObserver;
 
 const { CommandPalette } = await import("./command-palette");
+const { useList } = await import("~/state/list");
+const { usePins } = await import("~/state/pins");
 
 const categories = (n: number): Category[] => Array.from({ length: n }, (_, i) => ({ id: i + 1, name: `Category ${i + 1}`, color: "indigo", position: i, autoApply: false, showInInbox: true }) as Category);
 
@@ -107,4 +116,18 @@ it("a category that can't be created says so (no unhandled rejection) and moves 
   await act(async () => rpc.fail!(new Error("name taken")));
   expect(errors).toEqual(["Couldn’t add: name taken"]);
   expect(moves).toEqual([]);
+});
+
+it("plan 177 (Codex review): a mixed selection offers Pin to top and Unpin, and each does what it says (only P toggles)", async () => {
+  const row = (id: number) => ({ id, lastDate: 1e9 - id, unread: false, starred: false, hasAttachments: false, categoryIds: [] }) as never;
+  await act(async () => setApp({ dialog: null }));
+  useList.setState({ items: [row(7), row(8)], index: new Map([[7, 0], [8, 1]]) });
+  usePins.setState({ ids: new Set([7]), loaded: true });
+  await act(async () => setApp({ selectedId: 7, checked: new Set([7, 8]), scope: null, dialog: "palette" }));
+  const pin = document.querySelector<HTMLElement>("[data-testid=palette-pin]");
+  const unpin = document.querySelector<HTMLElement>("[data-testid=palette-unpin]");
+  expect(pin?.textContent).toContain("Pin to top");
+  expect(unpin?.textContent).toContain("Unpin");
+  await act(async () => unpin!.click());
+  expect(pinCalls).toEqual(["unpin"]);
 });
