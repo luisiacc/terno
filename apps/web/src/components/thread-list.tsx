@@ -133,6 +133,28 @@ export function TodayDigestEntry({ inline }: { /** List's full-width title row: 
 }
 const TOP_GAP = 9;
 
+/** What sits between the rows at a fixed height whatever theirs: the Reminders label and its gap, Today's headings (plan 169) */
+interface RowSpacing { lead: number; top: number; topGap: number; groups: readonly number[] }
+/** Where row `i` starts in the scroller, as the virtualizer lays it out (its estimateSize and paddingStart) */
+function rowStart(i: number, h: number, s: RowSpacing): number {
+  const head = s.top > 0 || s.groups.includes(0) ? TOP_LABEL : 0;
+  return s.lead + head + i * h + (s.topGap > 0 && i >= s.top ? s.topGap : 0) + TOP_LABEL * s.groups.filter((at) => at >= 1 && at <= i).length;
+}
+/** The last row starting at or above `y` (-1: `y` is above the rows) */
+function rowAtOffset(y: number, count: number, h: number, s: RowSpacing): number {
+  let lo = 0;
+  let hi = count - 1;
+  let found = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (rowStart(mid, h, s) <= y) {
+      found = mid;
+      lo = mid + 1;
+    } else hi = mid - 1;
+  }
+  return found;
+}
+
 export const searchInputRef: { current: HTMLInputElement | null } = { current: null };
 export const listScroller: { scrollToIndex?: (i: number) => void } = {};
 
@@ -1164,6 +1186,9 @@ export function ThreadList() {
   leadRef.current = lead;
   const inToday = useApp((s) => s.today);
   const todayGroups = useToday((s) => (inToday ? s.groups : EMPTY_GROUPS));
+  // (read by the design switch's anchor, before and after the new heights)
+  const spacingRef = useRef<Omit<RowSpacing, "lead">>({ top, topGap, groups: [] });
+  spacingRef.current = { top, topGap, groups: todayGroups.map((g) => g.at) };
   const virtualizer = useVirtualizer({
     count: items.length,
     getScrollElement: () => parentRef.current,
@@ -1213,28 +1238,31 @@ export function ThreadList() {
         const rows = useList.getState().items;
         if (!el || rows.length === 0) return;
         const oldH = measuredHeight.current;
-        // the offer above the rows keeps its height whatever theirs: only what's past it is measured in rows
-        const lead = leadRef.current;
-        const above = Math.min(el.scrollTop, lead);
-        const y = el.scrollTop - above;
-        const first = Math.min(rows.length - 1, Math.floor(y / oldH));
-        // how far into that row the viewport starts (≥ 0), kept as the same share of the new height
-        const into = y - first * oldH;
+        // the offer above the rows, the Reminders label and gap and Today's headings keep their heights whatever the rows'
+        // (plan 169): only the rows themselves scale
+        const spacing = (): RowSpacing => ({ lead: leadRef.current, ...spacingRef.current });
+        const was = spacing();
+        const y = el.scrollTop;
+        // (above the first row, it's the anchor: what arrives above it stays out of view)
+        const first = Math.max(0, rowAtOffset(y, rows.length, oldH, was));
+        // how far into that row the viewport starts: its share of the row kept; any space above or below it as it is
+        const into = y - rowStart(first, oldH, was);
         const id = getApp().selectedId;
         const sel = id === null ? undefined : useList.getState().index.get(id);
-        const selVisible = sel !== undefined && lead + sel * oldH < el.scrollTop + el.clientHeight && lead + (sel + 1) * oldH > el.scrollTop;
+        const selVisible = sel !== undefined && rowStart(sel, oldH, was) < el.scrollTop + el.clientHeight && rowStart(sel, oldH, was) + oldH > el.scrollTop;
         const anchorId = rows[first]!.id;
         return () => {
           const i = useList.getState().index.get(anchorId);
           if (i === undefined) return;
           const h = measuredHeight.current;
-          el.scrollTop = Math.max(0, above + i * h + into * (h / oldH));
+          const now = spacing();
+          el.scrollTop = Math.max(0, rowStart(i, h, now) + (into <= 0 ? into : into <= oldH ? into * (h / oldH) : h + into - oldH));
           // where the open thread is now (rows may have arrived above it since the capture)
           const sel = id === null ? undefined : useList.getState().index.get(id);
           // the open thread was on screen: if the new heights carried it out of view, it comes back (set directly: the
           // virtualizer's own scroll would land on positions measured before this switch)
           if (selVisible && sel !== undefined) {
-            const top = leadRef.current + sel * h;
+            const top = rowStart(sel, h, now);
             const bottom = el.scrollTop + el.clientHeight - listInset();
             if (top + h <= el.scrollTop) el.scrollTop = top;
             else if (top >= bottom) el.scrollTop = top + h - (el.clientHeight - listInset());

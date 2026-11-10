@@ -19,6 +19,7 @@ import es from "@terno/i18n/locales/es";
 import { DESIGNS } from "../../../packages/ui/src/designs/index";
 import type { DesignDefinition } from "../../../packages/ui/src/designs/types";
 import { sqlDb } from "../../backend-dev/src/server";
+import { E2E_NOW } from "./constants";
 import { expect, focusList, forgetOffer, openRow, rows, scenario, selectedRow, stabilize, test, openReview } from "./fixtures";
 
 const ctx = { clientId: "setup", origin: "dev" as const };
@@ -203,7 +204,11 @@ test.describe("in every design", { tag: "@design" }, () => {
 });
 
 test.describe("switching designs", () => {
-  test("live, from Settings: one frame, nothing lost (selection, the list's place, an open message, a draft, the filter), focus stays", async ({ app: page }) => {
+  test("live, from Settings: one frame, nothing lost (selection, the list's place, an open message, a draft, the filter), focus stays", async ({ app: page, server }) => {
+    // plan 169 (Codex review): a due reminder on top, so a label and a gap of fixed height sit above the rows, and keep theirs
+    const due = Number(await rows(page).nth(6).getAttribute("data-thread-id"));
+    await server.backend.server.invoke("reminders.set", { threadIds: [due], dueAt: E2E_NOW, kind: "always" }, ctx);
+    await expect(rows(page).first()).toHaveAttribute("data-thread-id", String(due));
     // a place in the list, a thread open, an older message expanded, a draft written, the filter on
     await page.getByRole("listbox").evaluate((el) => el.scrollTo(0, 900));
     const anchorBefore = await page.evaluate(() => {

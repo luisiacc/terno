@@ -40,3 +40,9 @@ None: one number the virtualizer already reads. Taller rows mean fewer rows moun
 
 - The hairline between rows (Search Browser has none): a structural change to the classic row, shared with macOS; for the owner to decide.
 - The sidebar's spacing (plan 137 measured it from its reference) and the other styles.
+
+## What the Codex review changed
+
+One finding, fixed with a test that fails without the fix:
+
+- **A style switch could land on the next row.** The list keeps its first visible row through a switch by scaling the scroll offset by the new row height over the old. That scaled the Reminders label and its gap (and Today's headings) too, which keep their height. With a due reminder on top, macOS (64) to Atelier (76) moved the viewport 9% of a row deeper, and Graphite's 84 px rows made it worse. The anchor now measures from each row's real start (`rowStart`, as the virtualizer lays it out): only the rows scale, and space above or below the anchor row stays as it is. `designs.spec.ts`'s live switch now runs with a due reminder on top (it failed at 0.094 against 0.06).
