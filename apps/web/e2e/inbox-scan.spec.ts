@@ -95,8 +95,9 @@ test.describe("the inbox list", { tag: "@design" }, () => {
       const before = await inList();
       await list.evaluate((el) => el.scrollTo(0, 12));
       await expect.poll(async () => before.row - (await inList()).row).toBe(12);
-      // (it follows the scroll event, which comes with the next frame)
       await expect.poll(async () => before.banner - (await inList()).banner).toBe(12);
+      // moved by the list's scroll timeline, on the compositor with the rows, never a frame after them as a scroll event would
+      expect(await banner.evaluate((el) => el.closest("[data-scroll-follow]")!.getAnimations().map((a) => a.timeline?.constructor.name))).toEqual(["ScrollTimeline"]);
       await list.evaluate((el) => el.scrollTo(0, 300));
       await expect(banner).toBeHidden();
       // its room above the rows takes no pointer once it's gone: what's there is a row (Codex review)

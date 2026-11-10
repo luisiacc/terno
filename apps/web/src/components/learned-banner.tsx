@@ -42,8 +42,9 @@ export function useLearnedProposal() {
  * with the rows as they scroll. It says the rule whole ("Always archive mail from anyone at x.com?"), wrapping in a
  * narrow list rather than cutting it, its button right after it at the text's own weight, and why on hover. It lies
  * over the room the list leaves above its first row, outside the listbox (which holds only options), as tall as it's
- * laid out (measured: a wrapped line makes room), and follows the scroller's offset: a plain transform, not an
- * animation, so it holds with motion off. Shown in the Inbox once (lib/learned): seen as it first shows, kept while you
+ * laid out (measured: a wrapped line makes room), and follows the scroller's offset on its scroll timeline
+ * (`data-scroll-follow`): the compositor moves it in the frame the rows move, where a scroll event comes a frame late
+ * and the line trailed them. That holds with motion off too; without scroll timelines, the scroll event moves it. Shown in the Inbox once (lib/learned): seen as it first shows, kept while you
  * stay, not offered in a list again. The × and a rule made end it at once; Undo (or z) takes the rule back and brings
  * the offer back, while you're still there.
  */
@@ -55,9 +56,12 @@ export function LearnedBanner({ proposal, scroller }: { proposal: LearnedProposa
     const el = scroller.current;
     const self = ref.current;
     if (!el || !self) return;
+    const linked = typeof CSS !== "undefined" && CSS.supports?.("animation-timeline: scroll()");
     // past its own height there's nothing to move: it's gone, out of the keyboard's way too
     const follow = () => {
       const h = self.offsetHeight;
+      self.style.setProperty("--follow-h", `${h}px`);
+      if (linked) return;
       const y = Math.min(el.scrollTop, h);
       self.style.transform = y ? `translateY(${-y}px)` : "";
       self.style.visibility = y >= h ? "hidden" : "";
@@ -69,7 +73,7 @@ export function LearnedBanner({ proposal, scroller }: { proposal: LearnedProposa
     });
     ro.observe(self);
     follow();
-    el.addEventListener("scroll", follow, { passive: true });
+    if (!linked) el.addEventListener("scroll", follow, { passive: true });
     return () => {
       ro.disconnect();
       el.removeEventListener("scroll", follow);
@@ -82,6 +86,7 @@ export function LearnedBanner({ proposal, scroller }: { proposal: LearnedProposa
     <div className="pointer-events-none absolute inset-x-0 top-0 z-10 overflow-hidden" onWheel={(e) => forwardWheel(e, scroller.current)}>
     <div
       ref={ref}
+      data-scroll-follow
       className="pointer-events-auto"
       // reached by Tab while partly scrolled away: the list comes back to its top, so what has the focus shows whole
       onFocus={() => {

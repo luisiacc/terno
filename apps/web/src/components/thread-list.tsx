@@ -1395,11 +1395,12 @@ export function ThreadList() {
       {list && many && !previewing && <SelectionBar variant="toolbar" />}
       {!previewing && <SelectAllBanner />}
       {/* the listbox is one Tab stop and restores focus when a page closes */}
-      <div className="relative flex min-h-0 flex-1 flex-col">
+      {/* the list's scroll timeline reaches what lies over it from outside (globals.css, data-scroll-follow) */}
+      <div className="relative flex min-h-0 flex-1 flex-col [timeline-scope:--list-scroll]">
       <LearnedSource />
       {learned.proposal && lead > 0 && <LearnedBanner proposal={learned.proposal} scroller={parentRef} />}
       <ThreadMenu>
-      <div ref={parentRef} data-keep-scroll="list" role={items.length > 0 ? "listbox" : "group"} tabIndex={items.length > 0 ? 0 : -1} onFocus={(e) => empty && e.target === e.currentTarget && leaveEmptyList()} aria-label={t("list.label")} aria-multiselectable={items.length > 0 ? true : undefined} className="@container/rows relative min-h-0 flex-1 overflow-y-auto overscroll-contain outline-none [contain:strict]" style={toastRoom ? { marginBottom: toastRoom } : undefined}>
+      <div ref={parentRef} data-keep-scroll="list" role={items.length > 0 ? "listbox" : "group"} tabIndex={items.length > 0 ? 0 : -1} onFocus={(e) => empty && e.target === e.currentTarget && leaveEmptyList()} aria-label={t("list.label")} aria-multiselectable={items.length > 0 ? true : undefined} className="@container/rows relative min-h-0 flex-1 overflow-y-auto overscroll-contain outline-none [contain:strict] [scroll-timeline:--list-scroll_y]" style={toastRoom ? { marginBottom: toastRoom } : undefined}>
         <div ref={sentinelRef} aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-px" />
         {loading && items.length === 0 ? (
           <div className="space-y-3 p-4" style={lead ? { marginTop: lead } : undefined}>

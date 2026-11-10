@@ -350,6 +350,29 @@
     transition: none !important;
   }
 }
+/*
+ * Laid over a scroller from outside it, going with its content (the learned offer over the list): moved by the
+ * scroller's timeline (--list-scroll), so the compositor moves it in the frame the content moves; a scroll event comes
+ * a frame later, and what it moved trailed the rows. Gone (hidden, no Tab stop) once scrolled past its height
+ * (--follow-h). It tracks the scroll, it isn't motion: it holds with motion off, so it outranks the rules above.
+ */
+@keyframes scroll-follow {
+  to {
+    transform: translateY(calc(-1 * var(--follow-h)));
+    visibility: hidden;
+  }
+}
+@supports (animation-timeline: scroll()) {
+  :root [data-scroll-follow][data-scroll-follow][data-scroll-follow] {
+    /* longhands: a shorthand holding the timeline (the build folds them into one) is dropped by the browser */
+    animation-name: scroll-follow !important;
+    animation-duration: auto !important;
+    animation-timing-function: linear !important;
+    animation-fill-mode: both !important;
+    animation-timeline: --list-scroll !important;
+    animation-range: 0px var(--follow-h) !important;
+  }
+}
 /* dragging rows onto categories: no hover in the list, a grabbing cursor everywhere */
 :root[data-dragging],
 :root[data-dragging] * {

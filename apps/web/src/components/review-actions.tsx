@@ -20,29 +20,37 @@ const listbox = () => document.querySelector<HTMLElement>("[data-testid=thread-l
 type Offers = { senderName: string | null; offers: { scope: AlwaysScope; count: number; capped: boolean }[] };
 
 const PILL = "inline-flex h-6 min-w-0 cursor-pointer items-center gap-1 rounded-full px-2.5 text-xs font-medium whitespace-nowrap transition-colors duration-fast";
-const ACCEPT = "border border-primary/25 bg-accent text-accent-foreground hover:border-primary/40 hover:bg-[color-mix(in_oklab,var(--accent)_85%,var(--primary))]";
-const ALWAYS = "shrink-0 border border-border bg-background text-foreground hover:bg-muted";
+const ACCEPT = "border border-primary/25 bg-accent text-accent-foreground";
+const ALWAYS = "shrink-0 border border-border bg-background text-foreground";
+// lit when its button is hovered: the button's own state, drawn by the pill in the row (data-hover), which is what shows
+const ACCEPT_HOT = "hover:border-primary/40 hover:bg-[color-mix(in_oklab,var(--accent)_85%,var(--primary))] data-hover:border-primary/40 data-hover:bg-[color-mix(in_oklab,var(--accent)_85%,var(--primary))]";
+const ALWAYS_HOT = "hover:bg-muted data-hover:bg-muted";
 
 /**
  * Plan 80: a Review row's two answers, in words: "Add to C" (it belongs) and "Add similar ▾" (the same subject or
  * everything from the sender, now and in the future), in place of the row's preview line. A row is an option, which can't
- * hold a button, so the row keeps only their room and their look, hidden (this); the buttons themselves are
- * `ReviewButtons`, laid over it from outside the list (plan 158). y / n and the thread menu answer too.
+ * hold a button, so the row draws them (this, hidden from assistive tech) and the buttons themselves are `ReviewButtons`,
+ * laid over it from outside the list (plan 158). Drawn here, they scroll with their row in the very frame it moves: a
+ * layer outside the scroller is placed again only after the scroll, so what it drew trailed the rows. y / n and the
+ * thread menu answer too.
  */
 export function ReviewControls({ threadId, category }: { threadId: number; category: string }) {
   return (
-    <span aria-hidden data-review-slot={threadId} className="invisible flex min-w-0 items-center gap-1.5">
-      <span className={`${PILL} ${ACCEPT}`}>
+    <span aria-hidden data-review-slot={threadId} className="flex min-w-0 items-center gap-1.5">
+      <span className={`${PILL} ${ACCEPT} ${ACCEPT_HOT}`}>
         <Check className="size-3.5 shrink-0" />
         <span className="truncate">{t("review.accept", { category })}</span>
       </span>
-      <span className={`${PILL} ${ALWAYS}`}>
+      <span className={`${PILL} ${ALWAYS} ${ALWAYS_HOT}`}>
         {t("review.similar")}
         <ChevronDown className="size-3.5" />
       </span>
     </span>
   );
 }
+
+/** A button over its pill: clear, the pill under it shows; drawn only when focused (looking like it), with Tab's ring. */
+const CLEAR = "pointer-events-auto absolute opacity-0 outline-none focus-reveal:opacity-100 focus-visible:ring-2 focus-visible:ring-ring";
 
 type Box = { left: number; top: number; width: number; height: number };
 type Spot = { id: number; accept: Box; always: Box };
@@ -54,15 +62,37 @@ const boxOf = (el: Element, base: DOMRect): Box => {
 
 /**
  * Plan 158: the Review rows' answers as real buttons, named and reachable by Tab (the open row's; the others by y / n
- * once open), each laid exactly over its row's room for it (`ReviewControls`). Outside the listbox, in a layer clipped
- * to it, so the list stays a list of options. Measured again whenever the list renders (`tick`: a scroll, a resize, the
- * rows changing), and only in a Review list.
+ * once open), each laid exactly over its row's pill (`ReviewControls`). Outside the listbox, in a layer clipped to it,
+ * so the list stays a list of options. Measured again whenever the list renders (`tick`: a scroll, a resize, the rows
+ * changing), and only in a Review list. That comes a frame or more after the rows scroll, so the buttons are clear and
+ * the pills in the rows are what shows: a hovered button lights its pill, and only a focus ring from Tab shows the
+ * button itself.
  */
 export function ReviewButtons({ scroller, tick }: { scroller: React.RefObject<HTMLDivElement | null>; tick: string }) {
   const layer = useRef<HTMLDivElement>(null);
   const [laid, setLaid] = useState<{ clip: Box; spots: Spot[] } | null>(null);
   const category = useApp((s) => s.categories.find((c) => c.id === s.reviewCategoryId));
   const open = useApp((s) => s.selectedId);
+  // the button under the pointer, by row and part: its pill in the row draws its hover
+  const hot = useRef<{ id: number; part: number } | null>(null);
+  const light = () => {
+    const list = scroller.current;
+    if (!list) return;
+    for (const pill of list.querySelectorAll("[data-review-slot] > [data-hover]")) pill.removeAttribute("data-hover");
+    const h = hot.current;
+    // a row scrolled away or answered takes its hover with it; a row drawn again (scrolled back) gets it back
+    if (h) list.querySelector(`[data-review-slot="${h.id}"]`)?.children[h.part]?.setAttribute("data-hover", "");
+  };
+  const hover = (id: number, part: number) => ({
+    onPointerEnter: () => {
+      hot.current = { id, part };
+      light();
+    },
+    onPointerLeave: () => {
+      if (hot.current?.id === id && hot.current.part === part) hot.current = null;
+      light();
+    },
+  });
   useLayoutEffect(() => {
     const list = scroller.current, host = layer.current?.parentElement;
     if (!list || !host) return;
@@ -75,6 +105,8 @@ export function ReviewButtons({ scroller, tick }: { scroller: React.RefObject<HT
     });
     const next = { clip, spots };
     setLaid((was) => (JSON.stringify(was) === JSON.stringify(next) ? was : next));
+    if (hot.current && !spots.some((s) => s.id === hot.current!.id)) hot.current = null;
+    light();
   }, [tick, scroller]);
   const name = category?.name ?? "";
   // only a row of the list on screen now: never one a layer not yet measured again kept from another list
@@ -98,12 +130,13 @@ export function ReviewButtons({ scroller, tick }: { scroller: React.RefObject<HT
               title={t("review.accept", { category: name })}
               // a press doesn't take focus from the list (j / k go on from there)
               onMouseDown={(e) => e.preventDefault()}
+              {...hover(spot.id, 0)}
               onClick={(e) => {
                 if (!live(spot.id)) return;
                 answered(e);
                 void answerReview(spot.id, category.id, true);
               }}
-              className={`${PILL} ${ACCEPT} pointer-events-auto absolute outline-none focus-visible:ring-2 focus-visible:ring-ring`}
+              className={`${PILL} ${ACCEPT} ${ACCEPT_HOT} ${CLEAR}`}
               style={at(spot.accept)}
             >
               <Check aria-hidden className="size-3.5 shrink-0" />
@@ -117,8 +150,9 @@ export function ReviewButtons({ scroller, tick }: { scroller: React.RefObject<HT
               aria-haspopup="menu"
               title={t("review.similar.title", { category: name })}
               onMouseDown={(e) => e.preventDefault()}
+              {...hover(spot.id, 1)}
               onClick={(e) => live(spot.id) && useAlwaysMenu.setState({ threadId: spot.id, anchor: e.currentTarget })}
-              className={`${PILL} ${ALWAYS} pointer-events-auto absolute outline-none focus-visible:ring-2 focus-visible:ring-ring`}
+              className={`${PILL} ${ALWAYS} ${ALWAYS_HOT} ${CLEAR}`}
               style={at(spot.always)}
             >
               {t("review.similar")}
