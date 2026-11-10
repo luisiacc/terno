@@ -84,8 +84,11 @@ test("a batch: every row shows it's in, Delete reads as the menu's, Undo puts th
     return { fill, left: check.left, right: check.right, centre: check.left + check.width / 2, text: Math.min(text, avatar ?? text), size: check.width };
   });
   expect(geometry.size).toBeGreaterThanOrEqual(12);
-  expect(geometry.left - geometry.fill).toBeGreaterThanOrEqual(2);
-  expect(geometry.text - geometry.right).toBeGreaterThanOrEqual(2);
+  // plan 173: the fill starts 6 px in (the owner's 2 px more off the pane's edge), so the 12 px check's box keeps 1 px
+  // either side (its glyph is drawn inset in it); the fill is where it should be
+  expect(geometry.fill - (await checked(page).first().evaluate((el) => el.getBoundingClientRect().left))).toBeCloseTo(6, 0);
+  expect(geometry.left - geometry.fill).toBeGreaterThanOrEqual(1);
+  expect(geometry.text - geometry.right).toBeGreaterThanOrEqual(1);
   expect(Math.abs((await column("[data-testid=row-unread-dot]")) - geometry.centre)).toBeLessThanOrEqual(1);
   // j among them: the cursor gets a mark of its own, only by keys, and only while there's a selection
   const list = page.getByTestId("thread-list");

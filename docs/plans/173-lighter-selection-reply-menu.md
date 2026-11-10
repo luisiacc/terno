@@ -111,3 +111,9 @@ Codex read the plan against the code (ten points). What changed:
 
 One finding: at the narrowest list, a row with an account label, three or more categories, a clip, a star and a reminder bell could push the label past the date's edge, since the marks and the label don't shrink and the preview held 35 %. Now the preview's line draws two category dots at most (every name in the marks' title and said to a screen reader, as the wide row does), the words Spam, Trash and Opened stay on the first line by the date, and the preview's floor is `min(8rem, 25%)`. Regression: `account-label.spec.ts` ("a crowded row at the narrowest list") fails on the old row at its dot count; its geometry checks (the label ending at the date, the marks before it, nothing outside the row) passed on the old row too with three dots, a clip and a star, so the dot bound is what it pins. `thread-row-marks.test.tsx` holds the bound, the title and Trash's word on the first line.
 
+
+## Follow-up: 2 px more off the pane's edge (the owner)
+
+> i think this padding here padding left when an email is selected, should be like 2px more
+
+The open (and checked, and hovered) row's fill starts 6 px into the list instead of 4 (`ROW_SHAPE` `before:left-1.5`); its right edge stays 8 px in. The text line stays at 20 px, so the marks' column moves 1 px right to stay centred in the gutter (13 px in): the unread dot keeps air on both sides, and a checked row's 12 px check keeps 1 px either side of its box instead of 2 (its glyph is drawn inset). `selection.spec.ts` checks the fill at 6 px and the check's new air.

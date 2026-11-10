@@ -172,11 +172,15 @@ function useOwed(thread: Pick<ThreadSummary, "id">, reminderTop?: boolean) {
 }
 
 /**
- * Plan 158, one selection language. Every chosen row has the same fill (`ROW_SHAPE`, from 4 px: the gutter it leaves
- * before the 20 px text line is the marks' column). The marks share that column, centred 12 px in: the unread dot or a
- * checked row's check, never both. The open row is its fill alone (no rail: the owner's call). What keys or a menu act on is outlined in the focus ring.
+ * Plan 158, one selection language. Every chosen row has the same fill (`ROW_SHAPE`, from 6 px, plan 173: the owner's
+ * extra 2 px off the pane's edge; the gutter it leaves before the 20 px text line is the marks' column). The marks share
+ * that column, centred 13 px in: the unread dot or a checked row's check, never both. The open row is its fill alone (no rail: the owner's call). What keys or a menu act on is outlined in the focus ring.
  */
-export const ROW_SHAPE = "before:absolute before:inset-y-px before:right-2 before:left-1 before:rounded-(--row-radius)";
+export const ROW_SHAPE = "before:absolute before:inset-y-px before:right-2 before:left-1.5 before:rounded-(--row-radius)";
+/** plan 24: the avatar (or the unread dot) and List's pointer checkbox trading places; the box keeps its colour change */
+const SWAP = "transition-[opacity,scale,visibility,color,background-color,border-color] duration-slow";
+/** what gives way to the box while a selection is being made (the list's data-many) */
+const SWAP_AWAY = "group-data-many/list:invisible group-data-many/list:scale-50 group-data-many/list:opacity-0 group-data-many/list:ease-exit";
 /** j/k's place among several checked rows, and the row a menu is for: the focus ring, inside the shape */
 export const ROW_OUTLINE = "inset 0 0 0 2px var(--ring)";
 
@@ -380,15 +384,17 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
   const answer = reviewed && <ReviewControls threadId={thread.id} category={reviewed.name} />;
   // plan 24: List gives the pointer a checkbox. It takes the avatar's place while the avatar is under the pointer, and on
   // every row once one is checked (the list's data-many: CSS, so starting a selection re-renders only the row checked);
-  // with no avatar, a slot of the avatar's size under a hovered row. Instant, nothing moves. The row is the option and `x` its key:
-  // this is for the pointer, and says nothing the row doesn't (no control inside an option)
+  // with no avatar, a slot of the avatar's size under a hovered row. Nothing moves: the two trade places where they stand,
+  // what leaves shrinking and fading as what arrives pops in on the spring, within --motion-slow (composite only; motion
+  // off makes it instant). Visibility rides the transition, so the leaving one stays drawn until it has faded. The row is the
+  // option and `x` its key: this is for the pointer, and says nothing the row doesn't (no control inside an option)
   const picking = pick && interactive && included === undefined;
   const pickBox = (className: string) => (
     <CheckboxMark
       data-testid="row-pick"
       data-row-control
       checked={checked}
-      className={cn("invisible group-data-many/list:visible", className)}
+      className={cn(SWAP, "invisible scale-50 opacity-0 ease-exit group-data-many/list:visible group-data-many/list:scale-100 group-data-many/list:opacity-100 group-data-many/list:ease-spring", className)}
       // no row press (no cursor move, no drag), no text selected by ⇧; the keys go to the list, as a row's press sends
       // them (x and Esc act on what was checked, not on a search field), without scrolling it
       onMouseDown={(e) => {
@@ -423,30 +429,30 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
             : wide
               ? "size-(--avatar-row-wide) text-[length:calc(var(--avatar-row-wide)*0.38)]"
               : "size-(--avatar-row) text-[length:calc(var(--avatar-row)*0.34)]",
-          picking && "group-hover/pick:invisible group-data-many/list:invisible",
+          picking && cn(SWAP, "ease-spring group-hover/pick:invisible group-hover/pick:scale-50 group-hover/pick:opacity-0 group-hover/pick:ease-exit", SWAP_AWAY),
         )}
       />
       {/* (the box's hit area runs past it, never as far as the sender) */}
-      {picking && pickBox("absolute inset-0 m-auto group-hover/pick:visible")}
+      {picking && pickBox("absolute inset-0 m-auto group-hover/pick:visible group-hover/pick:scale-100 group-hover/pick:opacity-100 group-hover/pick:ease-spring")}
     </span>
   );
-  // one mark in every design and layout: on the marks' column (12 px into the row, 8 before the text), on the sender's
+  // one mark in every design and layout: on the marks' column (13 px into the row, 7 before the text), on the sender's
   // line, never on an avatar. A check takes the dot's place, moving nothing (the row's weight still says unread)
   const onSenderLine = line ? "top-1/2" : "top-[calc(var(--type-row-from-leading)/2)]";
   // List's checkbox says checked, so it needs no check beside it
   const dot =
     checked && included === undefined && !picking ? (
-      <Check aria-hidden data-testid="row-check" className={cn("absolute -left-[14px] size-3 -translate-y-1/2 text-row-selected-foreground [--icon-line:1.5px]", onSenderLine)} />
+      <Check aria-hidden data-testid="row-check" className={cn("absolute -left-[13px] size-3 -translate-y-1/2 text-row-selected-foreground [--icon-line:1.5px]", onSenderLine)} />
     ) : (
-      thread.unread && included === undefined && <span data-testid="row-unread-dot" className={cn("absolute -left-[12px] size-2 -translate-y-1/2 rounded-full bg-unread", onSenderLine)} />
+      thread.unread && included === undefined && <span data-testid="row-unread-dot" className={cn("absolute -left-[11px] size-2 -translate-y-1/2 rounded-full bg-unread", onSenderLine)} />
     );
   // With no avatar, List's rows keep a slot of Lumen's wide avatar's size where one would be, at rest too, so nothing
   // moves for the box: the unread dot sits in it, and over a hovered row or while a selection is made the full box
   // takes its place (one mark per slot)
   const slot = picking && classic && (
     <span data-testid="row-pick-slot" className={cn("relative flex w-6 shrink-0 items-center justify-center", line ? "self-stretch" : "h-(--type-row-from-leading) self-start")}>
-      {thread.unread && <span data-testid="row-unread-dot" className="size-2 rounded-full bg-unread group-hover/row:invisible group-data-many/list:invisible" />}
-      {pickBox("absolute inset-0 m-auto group-hover/row:visible")}
+      {thread.unread && <span data-testid="row-unread-dot" className={cn("size-2 rounded-full bg-unread", SWAP, "ease-spring group-hover/row:invisible group-hover/row:scale-50 group-hover/row:opacity-0 group-hover/row:ease-exit", SWAP_AWAY)} />}
+      {pickBox("absolute inset-0 m-auto group-hover/row:visible group-hover/row:scale-100 group-hover/row:opacity-100 group-hover/row:ease-spring")}
     </span>
   );
   /** the marks' column, or the slot that holds them */
