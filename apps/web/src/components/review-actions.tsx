@@ -22,9 +22,11 @@ type Offers = { senderName: string | null; offers: { scope: AlwaysScope; count: 
 const PILL = "inline-flex h-6 min-w-0 cursor-pointer items-center gap-1 rounded-full px-2.5 text-xs font-medium whitespace-nowrap transition-colors duration-fast";
 const ACCEPT = "border border-primary/25 bg-accent text-accent-foreground";
 const ALWAYS = "shrink-0 border border-border bg-background text-foreground";
-// lit when its button is hovered: the button's own state, drawn by the pill in the row (data-hover), which is what shows
-const ACCEPT_HOT = "hover:border-primary/40 hover:bg-[color-mix(in_oklab,var(--accent)_85%,var(--primary))] data-hover:border-primary/40 data-hover:bg-[color-mix(in_oklab,var(--accent)_85%,var(--primary))]";
-const ALWAYS_HOT = "hover:bg-muted data-hover:bg-muted";
+// its button's states, drawn by the pill in the row, which is what shows: hovered (data-hover), and Tab's ring (data-focus,
+// gated as focus-visible: is)
+const ACCEPT_HOT = "data-hover:border-primary/40 data-hover:bg-[color-mix(in_oklab,var(--accent)_85%,var(--primary))]";
+const ALWAYS_HOT = "data-hover:bg-muted";
+const RING = "[:root[data-focus-ring]_&[data-focus]]:ring-2 [:root[data-focus-ring]_&[data-focus]]:ring-ring";
 
 /**
  * Plan 80: a Review row's two answers, in words: "Add to C" (it belongs) and "Add similar ▾" (the same subject or
@@ -37,11 +39,11 @@ const ALWAYS_HOT = "hover:bg-muted data-hover:bg-muted";
 export function ReviewControls({ threadId, category }: { threadId: number; category: string }) {
   return (
     <span aria-hidden data-review-slot={threadId} className="flex min-w-0 items-center gap-1.5">
-      <span className={`${PILL} ${ACCEPT} ${ACCEPT_HOT}`}>
+      <span className={`${PILL} ${ACCEPT} ${ACCEPT_HOT} ${RING}`}>
         <Check className="size-3.5 shrink-0" />
         <span className="truncate">{t("review.accept", { category })}</span>
       </span>
-      <span className={`${PILL} ${ALWAYS} ${ALWAYS_HOT}`}>
+      <span className={`${PILL} ${ALWAYS} ${ALWAYS_HOT} ${RING}`}>
         {t("review.similar")}
         <ChevronDown className="size-3.5" />
       </span>
@@ -49,9 +51,10 @@ export function ReviewControls({ threadId, category }: { threadId: number; categ
   );
 }
 
-/** A button over its pill: clear, the pill under it shows; drawn only when focused (looking like it), with Tab's ring. */
-const CLEAR = "pointer-events-auto absolute opacity-0 outline-none focus-reveal:opacity-100 focus-visible:ring-2 focus-visible:ring-ring";
+/** A button over its pill: clear, focused too (the pill under it shows, ringed: a button shown here would trail it). */
+const CLEAR = "pointer-events-auto absolute opacity-0 outline-none";
 
+type Mark = { id: number; part: number };
 type Box = { left: number; top: number; width: number; height: number };
 type Spot = { id: number; accept: Box; always: Box };
 
@@ -65,33 +68,38 @@ const boxOf = (el: Element, base: DOMRect): Box => {
  * once open), each laid exactly over its row's pill (`ReviewControls`). Outside the listbox, in a layer clipped to it,
  * so the list stays a list of options. Measured again whenever the list renders (`tick`: a scroll, a resize, the rows
  * changing), and only in a Review list. That comes a frame or more after the rows scroll, so the buttons are clear and
- * the pills in the rows are what shows: a hovered button lights its pill, and only a focus ring from Tab shows the
- * button itself.
+ * the pills in the rows are what shows: a hovered button lights its pill, and a focused one rings it.
  */
 export function ReviewButtons({ scroller, tick }: { scroller: React.RefObject<HTMLDivElement | null>; tick: string }) {
   const layer = useRef<HTMLDivElement>(null);
   const [laid, setLaid] = useState<{ clip: Box; spots: Spot[] } | null>(null);
   const category = useApp((s) => s.categories.find((c) => c.id === s.reviewCategoryId));
   const open = useApp((s) => s.selectedId);
-  // the button under the pointer, by row and part: its pill in the row draws its hover
-  const hot = useRef<{ id: number; part: number } | null>(null);
+  // the button under the pointer and the one focused, by row and part: their pills in the rows draw them
+  const marks = useRef<Record<"hover" | "focus", Mark | null>>({ hover: null, focus: null });
   const light = () => {
     const list = scroller.current;
     if (!list) return;
-    for (const pill of list.querySelectorAll("[data-review-slot] > [data-hover]")) pill.removeAttribute("data-hover");
-    const h = hot.current;
-    // a row scrolled away or answered takes its hover with it; a row drawn again (scrolled back) gets it back
-    if (h) list.querySelector(`[data-review-slot="${h.id}"]`)?.children[h.part]?.setAttribute("data-hover", "");
+    for (const kind of ["hover", "focus"] as const) {
+      for (const pill of list.querySelectorAll(`[data-review-slot] > [data-${kind}]`)) pill.removeAttribute(`data-${kind}`);
+      const m = marks.current[kind];
+      // a row scrolled away or answered takes its mark with it; a row drawn again (scrolled back) gets it back
+      if (m) list.querySelector(`[data-review-slot="${m.id}"]`)?.children[m.part]?.setAttribute(`data-${kind}`, "");
+    }
   };
-  const hover = (id: number, part: number) => ({
-    onPointerEnter: () => {
-      hot.current = { id, part };
-      light();
-    },
-    onPointerLeave: () => {
-      if (hot.current?.id === id && hot.current.part === part) hot.current = null;
-      light();
-    },
+  const mark = (kind: "hover" | "focus", m: Mark | null) => {
+    marks.current[kind] = m;
+    light();
+  };
+  const unmark = (kind: "hover" | "focus", id: number, part: number) => {
+    const m = marks.current[kind];
+    if (m?.id === id && m.part === part) mark(kind, null);
+  };
+  const states = (id: number, part: number) => ({
+    onPointerEnter: () => mark("hover", { id, part }),
+    onPointerLeave: () => unmark("hover", id, part),
+    onFocus: () => mark("focus", { id, part }),
+    onBlur: () => unmark("focus", id, part),
   });
   useLayoutEffect(() => {
     const list = scroller.current, host = layer.current?.parentElement;
@@ -105,7 +113,7 @@ export function ReviewButtons({ scroller, tick }: { scroller: React.RefObject<HT
     });
     const next = { clip, spots };
     setLaid((was) => (JSON.stringify(was) === JSON.stringify(next) ? was : next));
-    if (hot.current && !spots.some((s) => s.id === hot.current!.id)) hot.current = null;
+    for (const kind of ["hover", "focus"] as const) if (!spots.some((s) => s.id === marks.current[kind]?.id)) marks.current[kind] = null;
     light();
   }, [tick, scroller]);
   const name = category?.name ?? "";
@@ -130,13 +138,13 @@ export function ReviewButtons({ scroller, tick }: { scroller: React.RefObject<HT
               title={t("review.accept", { category: name })}
               // a press doesn't take focus from the list (j / k go on from there)
               onMouseDown={(e) => e.preventDefault()}
-              {...hover(spot.id, 0)}
+              {...states(spot.id, 0)}
               onClick={(e) => {
                 if (!live(spot.id)) return;
                 answered(e);
                 void answerReview(spot.id, category.id, true);
               }}
-              className={`${PILL} ${ACCEPT} ${ACCEPT_HOT} ${CLEAR}`}
+              className={`${PILL} ${CLEAR}`}
               style={at(spot.accept)}
             >
               <Check aria-hidden className="size-3.5 shrink-0" />
@@ -150,9 +158,9 @@ export function ReviewButtons({ scroller, tick }: { scroller: React.RefObject<HT
               aria-haspopup="menu"
               title={t("review.similar.title", { category: name })}
               onMouseDown={(e) => e.preventDefault()}
-              {...hover(spot.id, 1)}
+              {...states(spot.id, 1)}
               onClick={(e) => live(spot.id) && useAlwaysMenu.setState({ threadId: spot.id, anchor: e.currentTarget })}
-              className={`${PILL} ${ALWAYS} ${ALWAYS_HOT} ${CLEAR}`}
+              className={`${PILL} ${CLEAR}`}
               style={at(spot.always)}
             >
               {t("review.similar")}

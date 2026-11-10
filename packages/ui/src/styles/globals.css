@@ -359,13 +359,18 @@
 @keyframes scroll-follow {
   to {
     transform: translateY(calc(-1 * var(--follow-h)));
+  }
+}
+/* apart: an effect animating visibility runs on the main thread, and it would take the transform with it */
+@keyframes scroll-follow-gone {
+  to {
     visibility: hidden;
   }
 }
 @supports (animation-timeline: scroll()) {
   :root [data-scroll-follow][data-scroll-follow][data-scroll-follow] {
     /* longhands: a shorthand holding the timeline (the build folds them into one) is dropped by the browser */
-    animation-name: scroll-follow !important;
+    animation-name: scroll-follow, scroll-follow-gone !important;
     animation-duration: auto !important;
     animation-timing-function: linear !important;
     animation-fill-mode: both !important;

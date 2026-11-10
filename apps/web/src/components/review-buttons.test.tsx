@@ -44,7 +44,7 @@ it("pixels as they are, lines and pages in the list's own measure", async () => 
   host.remove();
 });
 
-it("the row draws the pills; its buttons are clear over them, and a hovered one lights its pill", async () => {
+it("the row draws the pills; its buttons are clear over them, and a hovered or focused one marks its pill", async () => {
   setApp({ categories: [{ id: 4, name: "Facturas" } as never], reviewCategoryId: 4 });
   const host = document.createElement("div");
   document.body.append(host);
@@ -84,6 +84,13 @@ it("the row draws the pills; its buttons are clear over them, and a hovered one 
   expect(slot.firstElementChild!.hasAttribute("data-hover")).toBe(true);
   await move("pointerout", accept!);
   expect(pills.map((p) => p.hasAttribute("data-hover"))).toEqual([false, false]);
+  // focused (by Tab): the pill rings, the button stays clear (shown, it would trail its row on a scroll)
+  await act(() => always!.focus());
+  expect(pills.map((p) => p.hasAttribute("data-focus"))).toEqual([false, true]);
+  expect(always!.className).toMatch(/\bopacity-0\b/);
+  expect(always!.className).not.toMatch(/focus-(visible|reveal):/);
+  await act(() => always!.blur());
+  expect(pills.map((p) => p.hasAttribute("data-focus"))).toEqual([false, false]);
   await act(async () => root.unmount());
   host.remove();
 });
