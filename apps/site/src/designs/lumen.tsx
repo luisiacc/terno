@@ -69,7 +69,7 @@ function Framed({ name, copy }: { name: ShotName; copy: SiteCopy }) {
 function Section({ name, copy, wide = "" }: { name: ShotName; copy: SiteCopy; wide?: string }) {
   return (
     <div className={`relative ${wide}`}>
-      <Shot name={name} copy={copy} sizes="(min-width: 1024px) 620px, 92vw" className="block h-auto w-full" />
+      <Shot name={name} copy={copy} sizes={`(min-width: 1024px) 620px, ${wide ? "(min-width: 640px) 92vw, 470px" : "92vw"}`} className="block h-auto w-full" />
     </div>
   );
 }
@@ -356,7 +356,7 @@ export const Lumen: HomeDesign = ({ copy }) => {
               {DESIGN_SHOTS.map(([design, name], i) => (
                 <figure key={name} className={i === 0 ? "col-span-2 md:col-span-3" : i === 1 ? "md:col-span-3" : "md:col-span-2"}>
                   <Window className="lumen-window rounded-xl">
-                    <Shot name={name} copy={copy} sizes={i < 2 ? "(min-width: 1024px) 530px, (min-width: 768px) 46vw, 92vw" : "(min-width: 1024px) 350px, (min-width: 768px) 30vw, 45vw"} />
+                    <Shot name={name} copy={copy} sizes={i === 0 ? "(min-width: 1024px) 530px, (min-width: 768px) 46vw, 92vw" : i === 1 ? "(min-width: 1024px) 530px, (min-width: 768px) 46vw, 45vw" : "(min-width: 1024px) 350px, (min-width: 768px) 30vw, 45vw"} />
                   </Window>
                   <figcaption className="mt-3 text-center text-sm font-medium text-(--l-muted)">{copy.designs[design]}</figcaption>
                 </figure>

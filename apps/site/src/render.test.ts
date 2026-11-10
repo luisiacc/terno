@@ -2,6 +2,7 @@ import { JSDOM } from "jsdom";
 import { describe, expect, it } from "vitest";
 import { COPY } from "./copy";
 import { render, routes } from "./entry-server";
+import { DESIGN_IDS } from "@terno/core";
 import { DESIGN_SHOTS } from "./parts/shot";
 import shots from "./shots.json";
 
@@ -74,8 +75,14 @@ describe("screenshots", () => {
       expect(used.sort(), path).toEqual([...names].sort());
       // the pictures framed by pixel offsets (plan 97) went stale whenever the app moved; none may come back
       expect(page.querySelectorAll('[class*="crop"]'), path).toHaveLength(0);
+      // a wide section keeps 470px on a phone (site-wide), so that's the width it asks the browser for (Codex review)
+      for (const img of page.querySelectorAll(".site-wide img")) expect(img.getAttribute("sizes"), `${path} ${img.getAttribute("src")}`).toMatch(/, 470px$/);
+      // on a phone only Lumen's picture spans the designs' two columns; the others ask for half the width
+      for (const [, name] of DESIGN_SHOTS.slice(1)) for (const img of page.querySelectorAll(`img[src="/shots/${name}-light.webp"]`)) expect(img.getAttribute("sizes"), `${path} ${name}`).toMatch(/, 45vw$/);
     }
-    // every design shows the app's five designs (the owner: "there are more styles and palettes now")
+    // every design shows each of the app's designs (the owner: "there are more styles and palettes now"): the list
+    // that renders them is checked against the app's own, so a design added to or left out of either fails here
+    expect(DESIGN_SHOTS.map(([d]) => d).sort()).toEqual([...DESIGN_IDS].sort());
     for (const path of Object.keys(parts)) {
       const page = new JSDOM(render(routes().find((r) => r.path === path)!).body).window.document;
       for (const [, name] of DESIGN_SHOTS) for (const mode of ["light", "dark"]) expect(page.querySelector(`img[src="/shots/${name}-${mode}.webp"]`), `${path} ${name}`).not.toBeNull();

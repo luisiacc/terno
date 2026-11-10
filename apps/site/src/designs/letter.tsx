@@ -64,7 +64,7 @@ function Detail({ copy, name, wide = "" }: { copy: SiteCopy; name: ShotName; wid
   return (
     <figure className="mt-12">
       <div className={`letter-detail ${wide}`}>
-        <Shot name={name} copy={copy} sizes="(min-width: 700px) 640px, calc(100vw - 2.5rem)" className="block h-auto w-full" />
+        <Shot name={name} copy={copy} sizes={`(min-width: 700px) 640px, ${wide ? "(min-width: 640px) calc(100vw - 2.5rem), 470px" : "calc(100vw - 2.5rem)"}`} className="block h-auto w-full" />
       </div>
       <figcaption className="letter-caption">{copy.alt[name]}</figcaption>
     </figure>

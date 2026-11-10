@@ -192,6 +192,13 @@ The owner, on Midnight's themes card: "this section needs to be updated since th
 - **Layouts:** Lumen shows two over three (Lumen and macOS large), and on a phone Lumen across with the others two by two. Midnight shows five named thumbnails above the palette strip. Letter shows three by two (the five and Apple · Dracula), and two by three on a phone.
 - **Test:** `render.test.ts` checks that every design shows all five, in both modes.
 
+### What the Codex review of the pictures changed
+
+Codex reviewed `751dba9d4..3d66d4725` and raised three points. All three are fixed, and `render.test.ts` checks each one:
+1. A wide section is 470 px on a phone, but its `sizes` said 92vw, so the browser could pick a picture too small and blurry. Its `sizes` now ends in `470px`.
+2. On a phone only Lumen's picture spans both columns of the designs, but macOS (Lumen) and every thumbnail (Midnight) asked for the full width. They now ask for 45vw.
+3. The "all five designs" check compared the list with itself. `DESIGN_SHOTS` is now checked against the app's `DESIGN_IDS`.
+
 ## Deploying from GitHub
 
 `.github/workflows/deploy-site.yml` runs `pnpm deploy:site` on every push to main that touches `apps/site/**`, the app's icon set (`packages/ui/src/icons.ts`, `packages/ui/src/iconset/**`) or the workflow itself, and by hand from the Actions tab. One deploy at a time, in push order. A failing test, build or migration stops it before the Worker changes.

@@ -117,6 +117,8 @@ export const Midnight: HomeDesign = ({ copy }) => {
   const home = copy.lang === "es" ? "/es/" : "/";
   // the hero's keys: ⌘K, E, L, /
   const half = "(min-width: 1024px) 512px, (min-width: 768px) 45vw, 90vw";
+  // a wide section keeps 470px on a phone (site-wide)
+  const halfWide = "(min-width: 1024px) 512px, (min-width: 768px) 45vw, (min-width: 640px) 90vw, 470px";
 
   return (
     <div className="mn min-h-dvh bg-(--mn-bg) font-geist text-(--mn-fg)">
@@ -202,7 +204,7 @@ export const Midnight: HomeDesign = ({ copy }) => {
           </h2>
           <div className="mn-grid grid gap-px overflow-hidden rounded-2xl border border-(--mn-line) bg-(--mn-line) md:grid-cols-2 lg:grid-cols-6">
             <Card f={f.unified} className="md:col-span-2 lg:col-span-4">
-              <Section name="unified-detail" copy={copy} sizes="(min-width: 1024px) 700px, 90vw" className="site-wide site-wide-end mt-auto" />
+              <Section name="unified-detail" copy={copy} sizes="(min-width: 1024px) 700px, (min-width: 640px) 90vw, 470px" className="site-wide site-wide-end mt-auto" />
             </Card>
             <Card f={f.local} className="md:col-span-2 lg:col-span-2">
               <div className="mn-local mt-auto flex items-center justify-between gap-3 rounded-xl border border-(--mn-line) bg-(--mn-raised) px-5 py-6" aria-hidden="true">
@@ -222,10 +224,10 @@ export const Midnight: HomeDesign = ({ copy }) => {
               <Section name="triage-detail" copy={copy} sizes={half} />
             </Card>
             <Card f={f.palette} className="lg:col-span-3">
-              <Section name="palette-detail" copy={copy} sizes={half} className="site-wide mt-auto" />
+              <Section name="palette-detail" copy={copy} sizes={halfWide} className="site-wide mt-auto" />
             </Card>
             <Card f={f.snippets} className="lg:col-span-3">
-              <Section name="snippets-detail" copy={copy} sizes={half} className="site-wide mt-auto" />
+              <Section name="snippets-detail" copy={copy} sizes={halfWide} className="site-wide mt-auto" />
             </Card>
             <Card f={f.codes} className="lg:col-span-2">
               <Section name="code-detail" copy={copy} sizes="(min-width: 1024px) 320px, (min-width: 768px) 45vw, 90vw" />
@@ -245,7 +247,7 @@ export const Midnight: HomeDesign = ({ copy }) => {
                   <li key={s} className={i === 0 ? "max-sm:col-span-2" : ""}>
                     <figure>
                       <div className="mn-thumb relative overflow-hidden rounded-lg border border-(--mn-line)">
-                        <Shot name={s} copy={copy} sizes="(min-width: 1024px) 200px, (min-width: 640px) 18vw, 90vw" />
+                        <Shot name={s} copy={copy} sizes={`(min-width: 1024px) 200px, (min-width: 640px) 18vw, ${i === 0 ? "90vw" : "45vw"}`} />
                       </div>
                       <figcaption className="mt-2.5 font-mono text-[0.75rem] text-(--mn-muted)">{copy.designs[design]}</figcaption>
                     </figure>
