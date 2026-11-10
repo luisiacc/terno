@@ -8,7 +8,7 @@ const TRACKING = "-0.15px";
 const role = (size: string, leading: string, weight: number, strong: number): TypeSpec => ({ family: "sans", size, leading, weight, strong, tracking: TRACKING, style: "normal" });
 
 /**
- * Weights: grey text in regular and medium (400, 500); words in the ink half a step heavier (450, 550; plan 169, the
+ * Weights: grey text in regular and medium (400, 500); words in the ink half a step heavier (450, 550; plan 174, the
  * owner: black reads blacker beside the grey, as the reference's does). SF is variable, so the half steps draw as such.
  */
 const INK = 450;
@@ -22,7 +22,7 @@ const TYPE: Record<TypeRole, TypeSpec> = {
   // grey at rest; the selected item is in the ink
   nav: role("0.8125rem", "1.25rem", 400, INK_MEDIUM),
   // plan 158: a read row's sender is its anchor at medium, so an unread one needs a step above it to stay the stronger
-  // (plan 169: 20 px lines, so a row's three read as lines rather than a block)
+  // (plan 174: 20 px lines, so a row's three read as lines rather than a block)
   rowFrom: role("0.8125rem", "1.25rem", INK_MEDIUM, 650),
   rowSubject: role("0.8125rem", "1.25rem", INK, INK_MEDIUM),
   rowSnippet: role("0.8125rem", "1.25rem", 400, 400),
@@ -33,7 +33,7 @@ const TYPE: Record<TypeRole, TypeSpec> = {
 };
 
 /**
- * Graphite (plan 137): a simple system. SF in regular and medium at -0.15px (the ink half a step heavier, plan 169); type at 12, 13, 14 and 24; #171717,
+ * Graphite (plan 137): a simple system. SF in regular and medium at -0.15px (the ink half a step heavier, plan 174); type at 12, 13, 14 and 24; #171717,
  * #5D5D5D and #9E9E9E; 8 px navigation, 16 px cards, pill buttons. White panes divided by hairlines, no avatars in rows,
  * and "New message" as a plain row, so the only filled pills are real calls to action.
  */
@@ -60,7 +60,7 @@ export const graphite: DesignDefinition = {
   type: TYPE,
   icon: { stroke: 1.5, toolbar: 1.5, nav: 14 },
   layout: { sidebar: "216px", listMin: "340px", listMax: "min(400px, 32vw)", readerMin: 348, readerMax: "704px", readerPadX: "2rem", rowRadius: "0.5rem", navRadius: "0.5rem", navHeight: "1.75rem", sidebarPad: "0.75rem", navSectionGap: "1.25rem", navSectionHeight: "1.625rem", cardRadius: "1rem", commandRadius: "0.5rem" },
-  // plan 169: room around the three lines (12 px above and below), as Mail and Search's sidebar have; compact stays the dense choice
+  // plan 174: room around the three lines (12 px above and below), as Mail and Search Browser's sidebar have; compact stays the dense choice
   rows: { comfortable: 84, compact: 32, wide: 40, results: 76 },
   avatar: { row: 0, rowCompact: 0, rowWide: 0, message: 28, collapsed: 28, senderCard: 0 },
   surfaces: { draft: "outline", inboxCount: "muted", cta: "pill", card: "outline" },

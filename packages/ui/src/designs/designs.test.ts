@@ -73,7 +73,7 @@ describe("designs (plan 15)", () => {
       return `#${[r, green, b].map((v) => Math.round(v * 255).toString(16).padStart(2, "0")).join("")}`.toUpperCase();
     };
 
-    it("type: 12, 13, 14 and 24 px; grey in regular and medium, the ink half a step heavier (plan 169); -0.15px", () => {
+    it("type: 12, 13, 14 and 24 px; grey in regular and medium, the ink half a step heavier (plan 174); -0.15px", () => {
       for (const step of TEXT_STEPS) expect([12, 13, 14, 24]).toContain(px(g.text[step][0]));
       expect([12, 13, 14, 24]).toContain(px(g.controlText));
       const grey = ["listSubtitle", "sectionLabel", "nav", "rowSnippet"];

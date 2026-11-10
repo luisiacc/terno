@@ -155,7 +155,7 @@ test.describe("remind me", () => {
       await dialog.getByTestId("remind-set").click();
       await expect(snackWith(page, "if they don't answer")).toBeVisible();
     });
-    await scenario("the bell's picker open, the title bands aren't the window's drag area: a click on one closes it on desktop (plan 169)", async () => {
+    await scenario("the bell's picker open, the title bands aren't the window's drag area: a click on one closes it on desktop (plan 174)", async () => {
       // (Electron takes a click on a drag area for the window before the page sees it; a popover has no layer of its own over them)
       const region = (testId: string) => page.getByTestId(testId).evaluate((el) => getComputedStyle(el).getPropertyValue("-webkit-app-region") || getComputedStyle(el).getPropertyValue("app-region"));
       await openRow(page, 1);

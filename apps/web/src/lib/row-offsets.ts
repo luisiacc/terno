@@ -1,6 +1,6 @@
 /**
  * Where the list's rows sit in its scroller, as its virtualizer lays them out (thread-list.tsx's estimateSize and
- * paddingStart): rows of one height, and between them space of a fixed height whatever theirs (plan 169).
+ * paddingStart): rows of one height, and between them space of a fixed height whatever theirs (plan 174).
  */
 
 /** A section label's line: the Reminders label above the due ones, Today's headings */

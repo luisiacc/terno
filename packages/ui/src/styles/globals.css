@@ -522,7 +522,7 @@
   -webkit-app-region: no-drag;
 }
 /* a popover has no such layer: while one (or a menu, a select) is open, the title bands aren't drag areas, so a click on
-   one reaches the page and closes it (plan 169); a tooltip leaves them as they are */
+   one reaches the page and closes it (plan 174); a tooltip leaves them as they are */
 :root:has(:is([data-slot="popover-content"], [data-slot$="menu-content"], [data-slot$="menu-sub-content"], [data-slot="select-content"])[data-open]) .drag-region {
   -webkit-app-region: no-drag;
 }

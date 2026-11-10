@@ -30,7 +30,7 @@ const strays = (page: Page) =>
       // words only: the quote toggle's ••• is a drawn mark
       if (!text || !/[\p{L}\p{N}]/u.test(text) || !el || el.closest(exempt) || el.closest("script, style") || !el.checkVisibility({ visibilityProperty: true, opacityProperty: true })) continue;
       const s = getComputedStyle(el);
-      // grey and controls in 400 and 500, the ink's roles half a step heavier (plan 169), an unread sender a step above
+      // grey and controls in 400 and 500, the ink's roles half a step heavier (plan 174), an unread sender a step above
       // its read 550 (plan 158): designs.test holds the same
       const weights = el.closest("[data-unread] [data-testid=row-from]") ? ["650"] : ["400", "450", "500", "550"];
       if (![...micro, "12px", "13px", "14px", "24px"].includes(s.fontSize) || !weights.includes(s.fontWeight) || s.letterSpacing !== "-0.15px") {

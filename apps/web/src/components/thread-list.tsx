@@ -1218,7 +1218,7 @@ export function ThreadList() {
         if (!el || rows.length === 0) return;
         const oldH = measuredHeight.current;
         // the offer above the rows, the Reminders label and gap and Today's headings keep their heights whatever the rows'
-        // (plan 169): only the rows themselves scale
+        // (plan 174): only the rows themselves scale
         const spacing = (): RowSpacing => ({ lead: leadRef.current, ...spacingRef.current });
         const was = spacing();
         const y = el.scrollTop;

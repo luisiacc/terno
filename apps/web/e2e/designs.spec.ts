@@ -205,7 +205,7 @@ test.describe("in every design", { tag: "@design" }, () => {
 
 test.describe("switching designs", () => {
   test("live, from Settings: one frame, nothing lost (selection, the list's place, an open message, a draft, the filter), focus stays", async ({ app: page, server }) => {
-    // plan 169 (Codex review): a due reminder on top, so a label and a gap of fixed height sit above the rows, and keep theirs
+    // plan 174 (Codex review): a due reminder on top, so a label and a gap of fixed height sit above the rows, and keep theirs
     const due = Number(await rows(page).nth(6).getAttribute("data-thread-id"));
     await server.backend.server.invoke("reminders.set", { threadIds: [due], dueAt: E2E_NOW, kind: "always" }, ctx);
     await expect(rows(page).first()).toHaveAttribute("data-thread-id", String(due));

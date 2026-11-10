@@ -4,7 +4,7 @@ import { anchorAt, anchoredOffset, rowStart, TOP_LABEL } from "./row-offsets";
 // two due reminders on top, the Reminders label above them and a 9 px gap after them; no offer
 const spacing = { lead: 0, top: 2, topGap: 9, groups: [] as number[] };
 
-describe("row offsets (plan 169)", () => {
+describe("row offsets (plan 174)", () => {
   it("lays rows out as the virtualizer does: the label, the reminders, the gap, Today's headings", () => {
     expect(rowStart(0, 64, spacing)).toBe(TOP_LABEL);
     expect(rowStart(2, 64, spacing)).toBe(TOP_LABEL + 128 + 9);

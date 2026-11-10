@@ -1,4 +1,6 @@
-# Plan 169: Graphite's rows get room
+# Plan 174: Graphite's rows get room
+
+(Written as plan 169; renumbered when it landed, as 169 to 173 were taken on main.)
 
 ## The request
 
@@ -67,7 +69,7 @@ The owner, verbatim (with the list and a paragraph of searchbrowser.app, black l
 
 > i think there needs to be abit more contrast on the blacks to look like what we intended like this
 
-The reference measures #171717 ink over #8A8A8A grey. Graphite light's ink goes from #292929 to #171717 everywhere it was (foreground, primary, accent and selected-row text, the sidebar's selection, drafts). The grey stays #5D5D5D: #8A8A8A is 3.5:1 on white, under AA, and the grey has to hold 4.5:1 on the selected row's #DCDCDC too (#5D5D5D is 4.8:1 there, about the lightest that does). Dark is unchanged. `designs.test.ts` holds the new hex; the contrast suite passes; Graphite's light baselines are rewritten.
+The reference measures #171717 ink over #8A8A8A grey. Graphite light's ink goes from #292929 to #171717 everywhere it was (foreground, primary, accent and selected-row text, the sidebar's selection, drafts). The grey stays #5D5D5D: #8A8A8A is 3.5:1 on white, under AA, and the grey has to hold 4.5:1 on the selected row too (written against #DCDCDC, where #5D5D5D was about the lightest that did; plan 173 has since lightened it to #EAEAEA, which would allow about #6A6A6A). Dark is unchanged. `designs.test.ts` holds the new hex; the contrast suite passes; Graphite's light baselines are rewritten.
 
 ## Follow-up: a tad more weight
 
