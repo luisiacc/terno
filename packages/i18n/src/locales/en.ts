@@ -894,6 +894,9 @@ const en = {
   "sidebar.categoryHelp.suggested": { one: "# suggested for this category", other: "# suggested for this category" },
   "sidebar.categoryHelp.both": "{unread}, {suggested}",
   "sidebar.categories": "Categories",
+  // plan 169: a category or account moved in the sidebar (dragged, or ⌥↑ ⌥↓), as a screen reader hears it
+  "sidebar.reorder.moved": "{name}, {position} of {total}",
+  "sidebar.reorder.failed": "Couldn’t save the new order, so it’s back as it was. Try again.",
   "sidebar.newCategory": "New category",
   "sidebar.categoryName": "Category name",
   "sidebar.categoriesEmpty": "Group mail from all your accounts.",
@@ -1927,6 +1930,10 @@ const en = {
   "shortcuts.section.actions": "Actions",
   "shortcuts.section.formatting": "Formatting, while writing",
   "shortcuts.pastePlain": "Paste as plain text",
+  // plan 169: a focused category or account row, moved within its group
+  "shortcuts.section.sidebar": "Sidebar",
+  "shortcuts.sortUp": "Move a category or account up",
+  "shortcuts.sortDown": "Move a category or account down",
   "shortcuts.section.compose": "Compose",
   "shortcuts.next": "Next conversation",
   "shortcuts.prev": "Previous conversation",

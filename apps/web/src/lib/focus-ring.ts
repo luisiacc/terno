@@ -16,6 +16,8 @@ export function installFocusRing(win: Window = window): void {
   // capture: a handler that stops a key (the list's j/k, the composer's shortcuts) must not hide it from here
   win.addEventListener("keydown", (e) => {
     if (MODIFIERS.has(e.key)) return;
+    // plan 169: ⌥↑ ⌥↓ move a sidebar row the keyboard is on: it's still the keyboard's, the ring stays as it was
+    if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown") && (e.target as Element | null)?.closest?.("[data-sort-handle]")) return;
     // a chord is a shortcut (Cmd+Enter sends, Cmd+Tab leaves the app), never navigation
     if (e.metaKey || e.ctrlKey || e.altKey) set(false);
     else if (MOVES.has(e.key)) set(true);

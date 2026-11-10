@@ -1,4 +1,4 @@
-import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { create } from "zustand";
 import { COUNTED_VIEWS, FOLDER_VIEWS, folderRef, separatesTabs, tabRef, TABS, viewRef, type Account, type Category, type CategoryColor, type CountedView, type Folder, type FolderView, type Tab, type View } from "@terno/core";
 import { Button } from "@terno/ui/components/button";
@@ -22,6 +22,8 @@ import { renderProbe } from "~/lib/render-probe";
 import { enterReview, reviewTotals } from "~/lib/review";
 import type { DropId } from "~/lib/drag";
 import { useDropState } from "~/state/drag";
+import { installSortable, type Sortable } from "~/lib/sortable-install";
+import { reorderAccounts, reorderCategories } from "~/lib/reorder";
 import { CloudAiPill } from "./cloud-ai-pill";
 import { FirstSyncPill } from "./first-sync-pill";
 import { ConnectionPill } from "./connection-pill";
@@ -88,6 +90,36 @@ function insetOf(depth: number, solo: boolean): string {
   return at < 0 ? "" : (INSET[at] ?? INSET.at(-1)!);
 }
 
+/**
+ * Plan 169: the sidebar's two sortable groups, bound when their element mounts (a stable ref callback: a render never
+ * binds them again, so one mid-drag never ends it) and settled when their order changes (`Sidebar`'s layout effect).
+ */
+const sortables: { categories: Sortable | null; accounts: Sortable | null } = { categories: null, accounts: null };
+function announceMove(text: string): void {
+  const live = document.querySelector("[data-testid=sidebar-reorder-live]");
+  if (live) live.textContent = text;
+}
+function sortableGroup(kind: "categories" | "accounts") {
+  return (el: HTMLElement | null) => {
+    if (!el) return;
+    const bound = installSortable(el, {
+      commit: (ids) => void (kind === "categories" ? reorderCategories(ids) : reorderAccounts(ids)),
+      announce: (id, position, total) => {
+        const s = getApp();
+        const name = kind === "categories" ? s.categories.find((c) => c.id === id)?.name : s.accounts.find((a) => a.id === id)?.displayName;
+        if (name) announceMove(t("sidebar.reorder.moved", { name, position, total }));
+      },
+    });
+    sortables[kind] = bound;
+    return () => {
+      bound.dispose();
+      if (sortables[kind] === bound) sortables[kind] = null;
+    };
+  };
+}
+const categoriesGroup = sortableGroup("categories");
+const accountsGroup = sortableGroup("accounts");
+
 export const useSidebarMore = create<{ open: boolean }>(() => ({ open: readMore() }));
 function toggleMore(): void {
   const open = !useSidebarMore.getState().open;
@@ -118,6 +150,7 @@ function NavItem({
   note,
   hoverAction,
   tip,
+  sortHandle,
 }: {
   active: boolean;
   onClick: () => void;
@@ -148,6 +181,8 @@ function NavItem({
   /** plan 159: the row's whole sentence as its tooltip, where the label and count say it in parts (its name stays the
    * label and count, as the other rows': a name that doesn't start with what's shown is one a voice user can't say) */
   tip?: string;
+  /** plan 169: the row that drags its block within its group (a category, an account), and moves it with ⌥↑ ⌥↓ */
+  sortHandle?: boolean;
 }) {
   renderProbe("NavItem");
   // the perf gates tell the rows below More (which only slide when it toggles) from the folders
@@ -168,6 +203,8 @@ function NavItem({
       data-drop-target={typeof dropTarget === "number" ? dropTarget : undefined}
       data-drop-folder={typeof dropTarget === "string" ? dropTarget : undefined}
       data-drop-state={drop ?? undefined}
+      data-sort-handle={sortHandle || undefined}
+      aria-keyshortcuts={sortHandle ? "Alt+ArrowUp Alt+ArrowDown" : undefined}
       onClick={onClick}
       className={cn(
         "group type-nav flex h-(--nav-h) w-full items-center gap-2.5 rounded-(--nav-radius) px-2 text-left text-sidebar-foreground transition-colors",
@@ -1085,7 +1122,7 @@ const AccountEntry = memo(function AccountEntry({
   // plan 106: Rename puts a field where the name is
   const [renaming, setRenaming] = useState(false);
   return (
-    <div data-account-id={a.id}>
+    <div data-account-id={a.id} data-sort-id={a.id}>
       {/* the row and its sign-in key together (plan 25), apart from the folders below; its menu (plan 106) */}
       <AccountMenu account={a} unread={unread ?? 0} onRename={() => setRenaming(true)}>
         <div className="group/row relative">
@@ -1094,6 +1131,7 @@ const AccountEntry = memo(function AccountEntry({
           ) : (
             <NavItem
               testId={`nav-account-${a.id}`}
+              sortHandle
               // closed over where you are, the account is what's selected
               active={here && !childActive}
               expanded={open}
@@ -1253,7 +1291,16 @@ export function Sidebar() {
   const unreadByAccount = useFolderUnreadByAccount(counts.folderUnread);
   const viewTotals = useViewUnreadTotals(counts.viewUnread);
   // a focused account that's removed hands focus to the row now in its place (or Add account), not to the document
-  const accountsRef = useRef<HTMLDivElement>(null);
+  const accountsRef = useRef<HTMLDivElement | null>(null);
+  // plan 169: the same element is the accounts' sortable group (bound once, as it mounts)
+  const accountsGroupRef = useCallback((el: HTMLDivElement | null) => {
+    accountsRef.current = el;
+    const unbind = accountsGroup(el);
+    return () => {
+      accountsRef.current = null;
+      unbind?.();
+    };
+  }, []);
   const focusedAccount = useRef<number | null>(null);
   const rememberFocus = (e: React.FocusEvent) => {
     const id = (e.target as HTMLElement).closest<HTMLElement>("[data-account-id]")?.dataset.accountId;
@@ -1267,6 +1314,11 @@ export function Sidebar() {
       if (left.isConnected && !accountsRef.current?.contains(document.activeElement)) focusedAccount.current = null;
     });
   };
+  // plan 169: a new order shown (dragged, ⌥↑ ⌥↓, another window), or a list changed under a drag: each group settles
+  const categoryOrder = categories.map((c) => c.id).join();
+  const accountOrder = accounts.map((a) => a.id).join();
+  useLayoutEffect(() => sortables.categories?.settle(), [categoryOrder]);
+  useLayoutEffect(() => sortables.accounts?.settle(), [accountOrder]);
   const lastAccounts = useRef(accounts);
   useLayoutEffect(() => {
     const before = lastAccounts.current;
@@ -1385,16 +1437,18 @@ export function Sidebar() {
           {t("sidebar.categories")}
         </SectionTitle>
         <ReviewRow categories={categories} suggestions={counts.categorySuggestions} reviewing={reviewCategoryId !== null && !searching} />
+        <div ref={categoriesGroup} data-sort-group data-testid="nav-categories">
         {categories.map((c) => {
           const help = categoryHelp(counts.categoryUnread[c.id] ?? 0, counts.categorySuggestions[c.id] ?? 0);
           const suggested = counts.categorySuggestions[c.id] ?? 0;
           return (
             <CategoryMenu key={c.id} category={c} suggested={suggested}>
-            <div className="relative" data-suggested={suggested || undefined}>
+            <div className="relative" data-suggested={suggested || undefined} data-sort-id={c.id}>
               {help && <span id={`sidebar-count-category-${c.id}`} className="sr-only">{help}</span>}
               <NavItem
                 testId={`nav-category-${c.id}`}
                 dropTarget={c.id}
+                sortHandle
                 // categories are cross-account: inside an account, a category tab is a filter of its Inbox (plan 67)
                 active={categoryId === c.id && reviewCategoryId === null && accountId === null && !searching}
                 onClick={() => navigate({ categoryId: c.id, accountId: null })}
@@ -1430,6 +1484,7 @@ export function Sidebar() {
             </CategoryMenu>
           );
         })}
+        </div>
         {creating && (
           <input
             autoFocus
@@ -1447,7 +1502,7 @@ export function Sidebar() {
       <CategoryTip />
 
         <SectionTitle>{t("sidebar.accounts")}</SectionTitle>
-        <div ref={accountsRef} onFocus={rememberFocus} onBlur={forgetFocus}>
+        <div ref={accountsGroupRef} data-sort-group onFocus={rememberFocus} onBlur={forgetFocus}>
           {accounts.map((a) => (
             <AccountEntry
               key={a.id}
@@ -1486,6 +1541,8 @@ export function Sidebar() {
   return (
     <aside id="app-sidebar" data-testid="sidebar" className="flex h-full min-h-0 w-full flex-col bg-sidebar text-sidebar-foreground">
       <div className="drag-region h-(--pane-bar) shrink-0" />
+      {/* plan 169: where a moved category or account now is, for a screen reader */}
+      <div role="status" aria-live="polite" aria-atomic className="sr-only" data-testid="sidebar-reorder-live" />
       {variant(design.variants.compose, { "list-header": null, "sidebar-outline": <ComposeOutline />, "sidebar-pill": <ComposePill />, "sidebar-row": <ComposeRow /> })}
       <nav ref={navRef} data-drop-scroll aria-label={soloAccount ? t("sidebar.solo.nav", { account: soloAccount.displayName }) : undefined} className="min-h-0 flex-1 overflow-y-auto px-(--sidebar-pad) pb-3">
         {/* keyed: another account focused is another sidebar (Codex code review #1: never the last one's rows) */}

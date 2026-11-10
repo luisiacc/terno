@@ -15,6 +15,7 @@ import { localized } from "~/lib/i18n";
 import { snack } from "~/lib/snack";
 import { deleteCategory, setShowInInbox } from "~/lib/categorize";
 import { offerTip } from "~/lib/tips";
+import { reorderCategories } from "~/lib/reorder";
 import { client } from "~/rpc/connection";
 import { getApp, setApp, useApp } from "~/state/app";
 import { ColorPicker, CommitInput, ConfirmDialog, SettingsGroup, SettingsNote, SettingsRow, type SettingsUpdate } from "./parts";
@@ -36,21 +37,14 @@ async function updateCategory(id: number, patch: { name?: string; color?: Catego
   replace(await client.call("categories.update", { id, ...patch }));
 }
 
-/** Moves a category one place; the list changes at once and the backend's order follows (and wins). */
+/** Moves a category one place, as the sidebar's ⌥↑ ⌥↓ do (plan 169: at once, the backend's order wins, back on failure). */
 async function move(id: number, by: -1 | 1) {
-  const list = getApp().categories;
-  const i = list.findIndex((c) => c.id === id);
+  const ids = getApp().categories.map((c) => c.id);
+  const i = ids.indexOf(id);
   const j = i + by;
-  if (i < 0 || j < 0 || j >= list.length) return;
-  const next = [...list];
-  [next[i], next[j]] = [next[j]!, next[i]!];
-  setApp({ categories: next });
-  try {
-    setApp({ categories: await client.call("categories.reorder", { ids: next.map((c) => c.id) }) });
-  } catch (e) {
-    setApp({ categories: list });
-    snack.error(errorText(e));
-  }
+  if (i < 0 || j < 0 || j >= ids.length) return;
+  [ids[i], ids[j]] = [ids[j]!, ids[i]!];
+  await reorderCategories(ids);
 }
 
 function statsLine(s: CategoryModelStats | undefined): React.ReactNode {

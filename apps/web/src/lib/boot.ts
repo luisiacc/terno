@@ -26,6 +26,7 @@ import { setBridgeForTests, startUpdates } from "~/lib/updates";
 import { supportedFilters } from "~/lib/unread-filter";
 import { accountsChanged, announceParkedSend } from "~/lib/sign-in";
 import { withPendingEdits } from "~/lib/accounts";
+import { withPendingOrder } from "~/lib/reorder";
 import { acceptNextFavorites, applyFavoriteFolders, applyFolderRenames } from "~/lib/folders";
 import { installNativeReload } from "~/lib/native-reload";
 import { openFromNotice, startAttention } from "~/lib/notify";
@@ -105,12 +106,13 @@ export async function boot(): Promise<void> {
     installQueryRecovery({ covered: listCovered, readerShown });
     client.on("accounts", (accounts) => {
       // plan 106: a rename or color still on its way stays shown
-      setAccounts(withPendingEdits(accounts));
+      // plan 169: and an order still on its way stays shown
+      setAccounts(withPendingOrder("accounts", withPendingEdits(accounts)));
       reconcileAccounts(accounts);
       // plan 25: an account that works again ends what was said about its sign-in
       accountsChanged(accounts);
     });
-    client.on("categories", (categories) => setCategories(categories));
+    client.on("categories", (categories) => setCategories(withPendingOrder("categories", categories)));
     // plan 103: live sync progress, for the sync card alone
     client.on("syncProgress", ({ accountId, progress }) => setSyncProgress(accountId, progress));
     // plan 107: a rename's mapping first, so the list you're in follows it before the new catalog lands

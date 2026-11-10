@@ -359,6 +359,31 @@
 :root[data-dragging] [role="listbox"] [data-thread-id]:not([aria-selected="true"], [data-checked]):hover {
   background-color: transparent;
 }
+/* plan 169: a category or account dragged within its group lifts onto a solid card; the others slide out of its way,
+   and on release it settles into its place */
+:root[data-sorting],
+:root[data-sorting] * {
+  cursor: grabbing !important;
+  user-select: none;
+}
+/* a row's tooltip (its counts in words) would cover its neighbours as they slide */
+:root[data-sorting] [data-slot="tooltip-content"] {
+  display: none;
+}
+[data-sort-group] > [data-sort-id] {
+  border-radius: var(--nav-radius);
+  transition: box-shadow var(--motion-base) var(--motion-ease), background-color var(--motion-base) var(--motion-ease);
+}
+[data-sort-group][data-sorting] > [data-sort-id]:not([data-lifted]),
+[data-sort-group] > [data-sort-id][data-settling] {
+  transition: transform var(--motion-base) var(--motion-ease), box-shadow var(--motion-base) var(--motion-ease), background-color var(--motion-base) var(--motion-ease);
+}
+[data-sort-group] > [data-sort-id][data-lifted] {
+  position: relative;
+  z-index: 10;
+  background-color: var(--popover);
+  box-shadow: var(--shadow-menu);
+}
 /* a new message in the reader pane is what's open: the list's last open row is a row again, fill and rail (half of the
    open look read as a second open item, plan 158); it answers the pointer as any row does */
 [data-composing] [data-thread-id][data-cursor]:not(:hover)::before {

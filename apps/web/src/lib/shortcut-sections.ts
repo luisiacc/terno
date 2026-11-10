@@ -96,6 +96,12 @@ export const FORMATTING: [keys: string, label: Label][] = [
   ["mod+shift+v", "shortcuts.pastePlain"],
 ];
 
+/** Plan 169: a focused category or account row's own keys (the sidebar takes them), listed by their keys. */
+export const SIDEBAR: [keys: string, label: Label][] = [
+  ["alt+arrowup", "shortcuts.sortUp"],
+  ["alt+arrowdown", "shortcuts.sortDown"],
+];
+
 /** Bindings that exist but the dialog doesn't list (the snackbar's own keys are shown on it). */
 export const UNLISTED: ReadonlySet<Command> = new Set<Command>(["snackbar.action1", "snackbar.action2", "snackbar.action3", "snackbar.action4", "snackbar.action5", "snackbar.only", "snackbar.undo", "snackbar.close", "suggestion.accept", "suggestion.reject"]);
 

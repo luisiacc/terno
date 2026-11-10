@@ -40,6 +40,15 @@ describe("focus rings only while moving with Tab (plan 54)", () => {
     }
   });
 
+  it("⌥↑ ⌥↓ on a sidebar row being sorted keep them as they were (plan 169)", () => {
+    const row = document.body.appendChild(document.createElement("button"));
+    row.setAttribute("data-sort-handle", "");
+    key("Tab");
+    row.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", altKey: true, bubbles: true }));
+    expect(flagged()).toBe(true);
+    row.remove();
+  });
+
   it("F6, moving between regions, turns them on like Tab", () => {
     key("j");
     key("F6");

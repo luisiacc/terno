@@ -345,7 +345,8 @@ export function inSeparateTab(t: { accountId?: number; tab?: number }, accounts:
  * tabs apart takes you from one of them to its Inbox, and a "select all N" of the Inbox counted other threads.
  */
 export function setAccounts(accounts: Account[]): void {
-  const separated = (list: readonly Account[]) => list.filter(separatesTabs).map((a) => a.id).join();
+  // which accounts, not their order (plan 169: a reorder regroups nothing)
+  const separated = (list: readonly Account[]) => list.filter(separatesTabs).map((a) => a.id).sort((a, b) => a - b).join();
   const regrouped = separated(getApp().accounts) !== separated(accounts) && getApp().scope !== null && (inPlainInbox(getApp()) || getApp().gmailTab !== null);
   setApp({ accounts, ...(regrouped ? { scope: null, checked: new Set<number>() } : {}) });
   const { gmailTab, accountId } = getApp();
@@ -359,7 +360,7 @@ export function setAccounts(accounts: Account[]): void {
  * inbox instead of querying nothing.
  */
 export function setCategories(categories: Category[]): void {
-  const hidden = (list: readonly Category[]) => list.filter((c) => !c.showInInbox).map((c) => c.id).join();
+  const hidden = (list: readonly Category[]) => list.filter((c) => !c.showInInbox).map((c) => c.id).sort((a, b) => a - b).join();
   // plan 83: what the Inbox shows changed (here or in another window): a "select all N" of it counted other threads
   const regrouped = hidden(getApp().categories) !== hidden(categories) && inPlainInbox(getApp()) && getApp().scope !== null;
   setApp({ categories, ...(regrouped ? { scope: null, checked: new Set<number>() } : {}) });

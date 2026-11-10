@@ -5,7 +5,7 @@ import { Shortcut } from "@terno/ui/components/shortcut";
 import { askOffered } from "~/lib/ai";
 import { useCanDraft } from "~/lib/ai-draft-state";
 import { isMac } from "~/lib/select";
-import { FORMATTING, SECTIONS } from "~/lib/shortcut-sections";
+import { FORMATTING, SECTIONS, SIDEBAR } from "~/lib/shortcut-sections";
 import { setApp, useApp } from "~/state/app";
 
 export function ShortcutsDialog() {
@@ -46,6 +46,17 @@ export function ShortcutsDialog() {
             <div className="space-y-1.5">
               {FORMATTING.map(([keys, label]) => (
                 <div key={keys} className="flex items-center justify-between gap-3 text-sm" data-testid={`shortcut-format-${label}`}>
+                  <span className="text-muted-foreground">{t(label)}</span>
+                  <Shortcut keys={keys} />
+                </div>
+              ))}
+            </div>
+          </section>
+          <section>
+            <h3 className="mb-1.5 text-2xs font-medium tracking-wide text-muted-foreground uppercase">{t("shortcuts.section.sidebar")}</h3>
+            <div className="space-y-1.5">
+              {SIDEBAR.map(([keys, label]) => (
+                <div key={keys} className="flex items-center justify-between gap-3 text-sm" data-testid={`shortcut-sidebar-${label}`}>
                   <span className="text-muted-foreground">{t(label)}</span>
                   <Shortcut keys={keys} />
                 </div>
