@@ -239,9 +239,17 @@ test.describe("follow-ups (plan 142)", () => {
     await tracked(server, "The contract", "promise", true);
     await fresh(page);
     await expect(rows(page).first()).toContainText("You told Tom Reed you’d send the contract");
+    // one owed: the row sits above More, not behind it
+    const top = async (id: string) => (await page.getByTestId(id).boundingBox())!.y;
+    expect(await top("nav-followups")).toBeLessThan(await top("nav-more"));
+    expect(await top("nav-followups")).toBeGreaterThan(await top("nav-sent"));
     await page.getByTestId("nav-followups").click();
     await expect(rows(page)).toHaveCount(1);
     await expect(rows(page).first().getByTestId("row-date")).toHaveAttribute("data-due-at", /\d+/);
+    // Follow-ups is "all" underneath, but All Mail isn't where you are: it stays behind More
+    await expect(page.getByTestId("nav-followups")).toHaveAttribute("aria-current", "page");
+    await expect(page.locator('[data-more-slot="all"]')).toHaveAttribute("inert", "");
+    await expect(page.getByTestId("nav-all")).toBeHidden();
     await page.getByTestId("open-settings").click();
     await page.getByTestId("tab-ai").click();
     await page.getByTestId("ai-followups-switch").click();

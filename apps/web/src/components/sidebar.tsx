@@ -372,7 +372,7 @@ function ReviewRow({ categories, suggestions, reviewing }: { categories: readonl
  * under the pointer. A hidden slot is inert: not focusable, not clickable, not
  * in the accessibility tree.
  */
-/** A row behind More: one of the views, or Reminders (plan 87) */
+/** A row behind More: one of the views, Reminders (plan 87), or Follow-ups while none is owed (above More once one is) */
 type MoreSlot = View | "reminders" | "followups";
 
 /**
@@ -541,6 +541,8 @@ function MoreFolders({ view, folder, reminders, followups }: { view: View | null
   }, [open, view, held]);
   return (
     <>
+      {/* follow-ups owed sit above More, never behind it: they're work waiting, like a due reminder */}
+      {followupsDue && followups}
       <button
         ref={toggleRef}
         type="button"
@@ -574,8 +576,8 @@ function MoreFolders({ view, folder, reminders, followups }: { view: View | null
             </div>
           );
         })()}
-        {followups && (() => {
-          const shown = open || inFollowups || followupsDue || held.includes("followups");
+        {followups && !followupsDue && (() => {
+          const shown = open || inFollowups || held.includes("followups");
           return (
             <div
               data-more-slot="followups"
@@ -1345,7 +1347,8 @@ export function Sidebar() {
   };
 
   // the folder you're in at the top: none in a category or its suggestions (both are "all" underneath), none inside an account (plan 67)
-  const folderView = accountId === null && categoryId === null && reviewCategoryId === null && !inReminders && !inToday && !searching ? view : null;
+  // (Follow-ups is "all" underneath too: All Mail isn't where you are there)
+  const folderView = accountId === null && categoryId === null && reviewCategoryId === null && !inReminders && !inFollowups && !inToday && !searching ? view : null;
   const folder = ({ view: v, icon: Icon, keys }: (typeof VIEWS)[number]) => (
     <NavItem
       key={v}
