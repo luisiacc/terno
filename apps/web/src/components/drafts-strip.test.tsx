@@ -74,11 +74,11 @@ describe("the drafts row (plan 175)", () => {
     expect(mocks.open).toHaveBeenCalledWith(older);
   });
 
-  it("counts scheduled sends beside the drafts, and lists them after", async () => {
+  it("counts scheduled sends beside the drafts, and lists them after (who they go to once: the draft's Ana is the send's)", async () => {
     written("Borrador", 1);
     useScheduled.setState({ items: [scheduled(90, "Programado")], byDraft: new Map() });
     await render();
-    expect(q("[data-testid=strip-summary]")!.textContent).toBe("1 draft·1 scheduled— To Ana Torres, Ana");
+    expect(q("[data-testid=strip-summary]")!.textContent).toBe("1 draft·1 scheduled— To Ana Torres");
     await openMenu();
     expect(all("[data-testid=strip-item], [data-testid=strip-scheduled]").map((el) => el.dataset.testid)).toEqual(["strip-item", "strip-scheduled"]);
   });
@@ -105,15 +105,19 @@ describe("the drafts row (plan 175)", () => {
     expect(all("[data-testid=strip-item]").map((el) => el.dataset.key)).toEqual([third, second, first]);
   });
 
-  it("several also say who they go to: each one's first recipient, newest first, each person once, on the one line", async () => {
+  it("several also say who they go to: each one's first recipient, newest first, each address once, on the one line", async () => {
     written("Primera", 1, { toText: "Liam Taylor <liam@example.com>, Ana Torres <ana@example.com>" });
     written("Segunda", 2, { toText: "" });
     written("Tercera", 3, { toText: "\"Isabella Álvarez\" <isa@example.com>" });
     written("Cuarta", 4, { toText: "liam@example.com" });
     written("Quinta", 5, { toText: "Liam Taylor <liam@example.com>" });
+    // the same name at two addresses is two people (Codex review)
+    written("Sexta", 6, { toText: "Alex <alex@work.example>" });
+    written("Séptima", 0, { toText: "Alex <alex@home.example>" });
     await render();
     const people = q("[data-testid=strip-summary-people]")!;
-    expect(people.textContent).toBe("— To Liam Taylor, liam@example.com, Isabella Álvarez");
+    // a person is their address, named as their newest draft names them: Liam's bare address is Liam once (Codex review)
+    expect(people.textContent).toBe("— To Alex, Liam Taylor, Isabella Álvarez, Alex");
     expect(people.className).toContain("truncate");
   });
 

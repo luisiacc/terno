@@ -1,5 +1,6 @@
 import { t } from "@terno/i18n";
 import { cn } from "@terno/ui/lib/utils";
+import { parseAddressList } from "@terno/core";
 import type { ScheduledInfo } from "@terno/core/rpc";
 import { PopoverTrigger } from "@terno/ui/components/popover";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
@@ -35,17 +36,11 @@ function useDraftLine(key: string): DraftLine | null {
   );
 }
 
-/** A draft's first recipient as its line names them (the name, else the address), or "" with none. */
-function firstRecipient(toText: string): string {
-  const comma = toText.indexOf(",");
-  const first = (comma < 0 ? toText : toText.slice(0, comma)).trim();
-  return first && (first.replace(/<.*$/, "").replace(/"/g, "").trim() || first.replace(/[<>]/g, ""));
-}
-
 /** Who a draft goes to, for its one line. */
 function recipientsLine(toText: string): string {
-  const name = firstRecipient(toText);
-  if (!name) return t("compose.strip.none");
+  const first = toText.split(",")[0]?.trim();
+  if (!first) return t("compose.strip.none");
+  const name = first.replace(/<.*$/, "").replace(/"/g, "").trim() || first.replace(/[<>]/g, "");
   const more = toText.split(",").length - 1;
   return t("compose.strip.to", { recipients: more > 0 ? t("compose.strip.andMore", { name, count: more }) : name });
 }
@@ -96,35 +91,58 @@ function useDraftKeys(): string[] {
 // more than one line holds: the rest would only be cut off
 const PEOPLE_SHOWN = 8;
 
-// a draft's first recipient, kept for as long as the draft is unchanged: a keystroke reads one draft's anew
-const firstOf = new WeakMap<LocalDraft, string>();
-const firstOfDraft = (d: LocalDraft): string => {
-  let name = firstOf.get(d);
-  if (name === undefined) firstOf.set(d, (name = firstRecipient(d.toText)));
-  return name;
+/** A person on the row of several: who (their address, any case) and how the line names them (the name, else the address). */
+interface Person { who: string; label: string }
+const person = (name: string, email: string): Person | null => (email || name ? { who: (email || name).toLowerCase(), label: name || email } : null);
+
+// a To field's first recipient, kept by the field's text (a draft's object is new with every edit to any draft's
+// state, its To rarely is); bounded, cleared when full
+const firstOf = new Map<string, Person | null>();
+const firstOfDraft = (d: LocalDraft): Person | null => {
+  let p = firstOf.get(d.toText);
+  if (p === undefined) {
+    if (firstOf.size >= 4096) firstOf.clear();
+    const a = parseAddressList(d.toText)[0];
+    firstOf.set(d.toText, (p = a ? person(a.name.trim(), a.email.trim()) : null));
+  }
+  return p;
 };
 
 /**
  * Who the several drafts go to, for the row that counts them: each one's first recipient, newest draft first, each
- * person once. One pass, no sort, on every change to the drafts; typing renders nothing unless it changes who's first.
+ * person (address) once, named as their newest draft names them. One pass over the drafts and a sort of the people
+ * alone, on every change to the drafts; typing renders nothing unless it changes who's first. Flat (who, label, who,
+ * label …) so equal lists compare equal.
  */
 function useDraftPeople(): string[] {
   const uploads = useAttachmentUploads((s) => s);
   return useDrafts(
     useShallow((s) => {
       // each person's newest draft (of two from the same moment, the one begun later)
-      const newest = new Map<string, { at: number; i: number }>();
+      const newest = new Map<string, { label: string; at: number; i: number }>();
       let i = 0;
       for (const d of Object.values(s.drafts)) {
         i++;
         if (d.toText === "" || !counted(d, uploads)) continue;
-        const name = firstOfDraft(d);
-        const was = name ? newest.get(name) : undefined;
-        if (name && (!was || d.updatedAt > was.at || (d.updatedAt === was.at && i > was.i))) newest.set(name, { at: d.updatedAt, i });
+        const p = firstOfDraft(d);
+        const was = p ? newest.get(p.who) : undefined;
+        if (p && (!was || d.updatedAt > was.at || (d.updatedAt === was.at && i > was.i))) newest.set(p.who, { label: p.label, at: d.updatedAt, i });
       }
-      return [...newest].sort(([, a], [, b]) => b.at - a.at || b.i - a.i).slice(0, PEOPLE_SHOWN).map(([name]) => name);
+      return [...newest]
+        .sort(([, a], [, b]) => b.at - a.at || b.i - a.i)
+        .slice(0, PEOPLE_SHOWN)
+        .flatMap(([who, { label }]) => [who, label]);
     }),
   );
+}
+
+/** The drafts' people, then the scheduled sends' first recipients not already there: the labels the row shows. */
+function peopleLine(drafts: readonly string[], scheduled: readonly ScheduledInfo[]): string[] {
+  const seen = new Set<string>(), labels: string[] = [];
+  const add = (p: Person | null) => { if (p && !seen.has(p.who) && labels.length < PEOPLE_SHOWN) { seen.add(p.who); labels.push(p.label); } };
+  for (let i = 0; i < drafts.length; i += 2) add({ who: drafts[i]!, label: drafts[i + 1]! });
+  for (const s of scheduled) add(s.to[0] ? person(s.to[0].name.trim(), s.to[0].email.trim()) : null);
+  return labels;
 }
 
 /**
@@ -242,8 +260,7 @@ function Several({ drafts, scheduled, handOver }: { drafts: number; scheduled: r
   const rowRef = useRef<HTMLButtonElement>(null);
   useHandsOver(rowRef, handOver);
   const handOff = useRef(false);
-  const draftPeople = useDraftPeople();
-  const people = [...new Set([...draftPeople, ...scheduled.map((s) => s.to[0]?.name || s.to[0]?.email || "").filter(Boolean)])].slice(0, PEOPLE_SHOWN);
+  const people = peopleLine(useDraftPeople(), scheduled);
   const [picked, setPicked] = useState<number | null>(null);
   const pickedSend = picked === null ? undefined : scheduled.find((s) => s.draftId === picked);
   // sent, cancelled or moved elsewhere meanwhile: its Send later goes with it, and doesn't come back if it does

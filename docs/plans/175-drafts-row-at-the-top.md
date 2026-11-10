@@ -74,4 +74,8 @@ Round 1 raised four points, all taken, each with a test that fails without its f
 
 The row of several says who after the count, as the one draft's row does: "2 drafts — To Isabella Álvarez, Liam Taylor", muted, on the same line, cut off with an ellipsis where the line ends (the chevron stays at its end). Each draft is named by its first recipient, as its item is; newest draft first, each person once, then scheduled sends' first recipients; at most eight (more never fit). Drafts with no one in To add nobody, and with nobody at all the row is the count alone.
 
-Re-rendering: the row follows that list of names, not the drafts' order, so typing renders nothing unless it changes who's first (typing in an older draft to someone else moves them to the front once). The names come from one pass over the drafts with each draft's first recipient kept per draft object (a keystroke reads one anew), and a sort of the people alone: the 2,000-draft typing gate stays at p95 3.8 ms.
+Re-rendering: the row follows that list of names, not the drafts' order, so typing renders nothing unless it changes who's first (typing in an older draft to someone else moves them to the front once). The names come from one pass over the drafts, with each To field's first recipient kept by its text, and a sort of the people alone: the 2,000-draft typing gate stays where it was (median 0.6 ms, p95 ~4 ms a keystroke). Kept per draft object instead, it cost three times that: a draft's object is new more often than its To.
+
+### Revisions after the Codex code review
+
+1. **A person was their text, not their address:** "Liam Taylor <liam@…>" and a bare "liam@…" were two people, two people both called Alex one. A person is now their address (any case), named as their newest draft names them, and a scheduled send to someone a draft already names doesn't name them again.
