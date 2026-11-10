@@ -17,7 +17,7 @@ import { TernoMark } from "@terno/ui/brand/terno-mark";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
 import { useReplies } from "~/lib/replies";
-import { Archive, Bell, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Ellipsis, FileDown, Forward, Inbox, Layers, Mail, OctagonAlert, Printer, Reply, ReplyAll, SquarePen, Star, SummaryDoc, Tag, Trash2 } from "@terno/ui/icons";
+import { Archive, Bell, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Ellipsis, FileDown, Forward, Inbox, Layers, Mail, OctagonAlert, Pin, PinOff, Printer, Reply, ReplyAll, SquarePen, Star, SummaryDoc, Tag, Trash2 } from "@terno/ui/icons";
 import { type ReactNode, type RefCallback, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/popover";
 import { reminderShort, useReminders, useRemindPopover } from "~/lib/reminders";
@@ -36,6 +36,8 @@ import { comingHomeKey, shownDraftKey, useDrafts } from "~/lib/drafts";
 import { reachesSeveral, replyName } from "~/lib/compose-fields";
 import { composeFocusPending, composeLanding, registerReaderFocusDestination, returnDraftsTo, subscribeComposeFocus } from "~/lib/compose";
 import { act, cancelMarkRead, openCompose, readChosenThread, scheduleMarkRead, toggleStar } from "~/lib/actions";
+import { pinThreads, unpinThreads } from "~/lib/pins";
+import { usePins } from "~/state/pins";
 import { acceptSuggestion, answerReview, rejectSuggestion, removeFromCategory } from "~/lib/categorize";
 import { t } from "@terno/i18n";
 import { fullDate, listDate, messageDate, messageTime } from "~/lib/format";
@@ -132,8 +134,10 @@ const COLUMN = READING_COLUMN;
 /** Between the toolbar's groups; a narrow reader has no room for it. */
 const ToolbarDivider = ({ className }: { className?: string }) => <Separator orientation="vertical" className={cn("my-auto h-4 @max-[420px]:hidden", className)} />;
 
-/** What's done to a whole conversation less often than triage: mark as unread, print, export, copy. Their keys and the palette still reach them. */
+/** What's done to a whole conversation less often than triage: pin, mark as unread, print, export, copy. Their keys and the palette still reach them. */
 function ToolbarMore({ threadId }: { threadId: number }) {
+  // plan 177: this conversation's pin (one boolean: only this toolbar renders when it changes)
+  const pinned = usePins((s) => s.ids.has(threadId));
   return (
     <DropdownMenu onOpenChange={(open) => setApp({ menuOpen: open })}>
       <Tooltip>
@@ -149,6 +153,11 @@ function ToolbarMore({ threadId }: { threadId: number }) {
         <TooltipContent>{t("reader.more")}</TooltipContent>
       </Tooltip>
       <DropdownMenuContent align="start" sideOffset={6} className="w-64" data-testid="reader-more-menu">
+        <DropdownMenuItem data-testid="action-pin" onClick={() => void (pinned ? unpinThreads([threadId]) : pinThreads([threadId]))}>
+          {pinned ? <PinOff /> : <Pin />}
+          <span className="flex-1">{t(pinned ? "actions.unpin" : "actions.pin")}</span>
+          <DropdownMenuShortcut><Shortcut keys="p" /></DropdownMenuShortcut>
+        </DropdownMenuItem>
         <DropdownMenuItem data-testid="action-unread" onClick={() => act("markUnread")}>
           <Mail />
           <span className="flex-1">{t("actions.markUnread")}</span>

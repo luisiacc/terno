@@ -1,10 +1,9 @@
 import { folderName } from "~/lib/account-folders";
-import { anchorAt, anchoredOffset, rowStart, TOP_LABEL } from "~/lib/row-offsets";
-import type { RowSpacing } from "~/lib/row-offsets";
+import { anchorAt, anchoredOffset, rowStart, TOP_GAP, TOP_LABEL, topSections, type RowSpacing, type TopSectionKind } from "~/lib/row-offsets";
 import { SearchField } from "@terno/ui/components/search-field";
 import { Skeleton } from "@terno/ui/components/skeleton";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Bell, ChevronDown, ChevronRight, Inbox, ListFilter, Newspaper, Search, SquarePen, Sun, ListChecks, Tags } from "@terno/ui/icons";
+import { Bell, ChevronDown, ChevronRight, Inbox, ListFilter, Newspaper, Pin, Search, SquarePen, Sun, ListChecks, Tags } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { activeFilter } from "~/lib/unread-filter";
 import { setListFilter } from "~/lib/unread";
@@ -57,7 +56,6 @@ import { LIST_TITLE } from "~/lib/list-title";
 import { listCovered, usePage } from "~/lib/page";
 import { pressRow, releaseRow } from "~/lib/select";
 
-/** plan 87: the Inbox top's label and the gap after it (px; a row's height comes from the design) */
 /**
  * What covers the list's last rows now: List's pinned draft (Split's is over the reader, plan 158), and Split's pinned
  * answer where it reaches over the list (plan 165). Plan 160: List's toast covers none, the list's viewport ends above it;
@@ -76,6 +74,19 @@ function TodayHeading({ kind, top }: { kind: TodayGroup["kind"]; top: number }) 
   return (
     <div aria-hidden data-testid="today-heading" data-kind={kind} className="absolute inset-x-0 flex items-end px-5 pb-1 text-sm font-medium text-foreground" style={{ top, height: TOP_LABEL }}>
       {sectionName(kind)}
+    </div>
+  );
+}
+
+/**
+ * Plans 87, 177: what the Inbox top's rows under it are, quiet (the glyph and the name, muted, on the rows' text edge),
+ * so Pinned and Reminders read as one family above the mail. Each row says what it is to a screen reader itself.
+ */
+function TopHeading({ kind, top }: { kind: TopSectionKind; top: number }) {
+  return (
+    <div aria-hidden data-testid={kind === "pinned" ? "inbox-pinned-label" : "inbox-reminders-label"} className="absolute inset-x-0 flex items-end gap-1.5 px-5 pb-1 text-xs font-medium text-muted-foreground" style={{ top, height: TOP_LABEL }}>
+      {kind === "pinned" ? <Pin className="size-3" /> : <Bell className="size-3" />}
+      {t(kind === "pinned" ? "list.pinned" : "view.reminders")}
     </div>
   );
 }
@@ -132,7 +143,6 @@ export function TodayDigestEntry({ inline }: { /** List's full-width title row: 
     </button>
   );
 }
-const TOP_GAP = 9;
 
 export const searchInputRef: { current: HTMLInputElement | null } = { current: null };
 export const listScroller: { scrollToIndex?: (i: number) => void } = {};
@@ -1150,12 +1160,10 @@ export function ThreadList() {
   const askOver = usePinnedAsk((s) => (!over && s.overList ? s.inset : 0));
   const dock = pinnedOver(toastRoom, Math.max(usePinnedInset(over), askOver));
   const getItemKey = useCallback((i: number) => items[i]!.id, [items]);
-  // plan 87: the Inbox's top (due reminders) under a "Reminders" label, a hairline gap before the rest
-  const top = useMemo(() => {
-    let n = 0;
-    while (n < items.length && inboxTop.ids.includes(items[n]!.id)) n++;
-    return n;
-  }, [items]);
+  // plans 87, 177: the Inbox's top, Pinned then Reminders, each under its heading, a hairline gap before the rest
+  // (the top is published with the rows it came with: read beside them)
+  const sections = useMemo(() => topSections(items, inboxTop), [items]);
+  const { top, pinned: pinnedTop } = sections;
   const topGap = top > 0 && top < items.length ? TOP_GAP : 0;
   // plan 158: the rule offer is the list's first item: room above the first row, and it goes up with them
   const learned = useLearnedProposal();
@@ -1165,15 +1173,18 @@ export function ThreadList() {
   leadRef.current = lead;
   const inToday = useApp((s) => s.today);
   const todayGroups = useToday((s) => (inToday ? s.groups : EMPTY_GROUPS));
+  // every heading the rows have, by the row each stands above: the top's sections, or Today's (never both)
+  const headingsKey = [...sections.headings.map((h) => h.at), ...todayGroups.map((g) => g.at)].join();
+  const headingAt = useMemo(() => new Set(headingsKey ? headingsKey.split(",").map(Number) : []), [headingsKey]);
   // (read by the design switch's anchor, before and after the new heights)
   const spacingRef = useRef<Omit<RowSpacing, "lead">>({ top, topGap, groups: [] });
-  spacingRef.current = { top, topGap, groups: todayGroups.map((g) => g.at) };
+  spacingRef.current = { top, topGap, groups: [...headingAt] };
   const virtualizer = useVirtualizer({
     count: items.length,
     getScrollElement: () => parentRef.current,
     // plan 145: a section's heading is space under the row before it, or above the first
-    estimateSize: (i) => height + (i === top - 1 ? topGap : 0) + (todayGroups.some((g) => g.at === i + 1) ? TOP_LABEL : 0),
-    paddingStart: lead + (top > 0 || todayGroups.some((g) => g.at === 0) ? TOP_LABEL : 0),
+    estimateSize: (i) => height + (i === top - 1 ? topGap : 0) + (headingAt.has(i + 1) ? TOP_LABEL : 0),
+    paddingStart: lead + (headingAt.has(0) ? TOP_LABEL : 0),
     overscan: 10,
     getItemKey,
     paddingEnd: dock,
@@ -1183,7 +1194,7 @@ export function ThreadList() {
   // the top came or went (or grew), or the offer above it: positions recomputed before paint
   useLayoutEffect(() => {
     virtualizer.measure();
-  }, [top, topGap, todayGroups, lead]);
+  }, [top, topGap, headingAt, lead]);
   // the offer came or went while the list was scrolled: what's on screen stays where it is (at the top, it's the first item arriving)
   const shownLead = useRef(lead);
   // the offset as last scrolled: by the time the change is laid out, a shorter list has already clamped the element's own (at its end)
@@ -1426,20 +1437,17 @@ export function ThreadList() {
           !filter && <EmptyState />
         ) : (
           <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
-            {top > 0 && (
-              // what the rows under it are (each row says "Reminder" to a screen reader itself)
-              <div aria-hidden data-testid="inbox-reminders-label" className="absolute inset-x-0 flex items-end gap-1.5 px-5 pb-1 text-xs font-medium text-muted-foreground" style={{ top: lead, height: TOP_LABEL }}>
-                <Bell className="size-3" />
-                {t("view.reminders")}
-              </div>
-            )}
-            {topGap > 0 && <div aria-hidden data-testid="inbox-reminders-end" className="absolute inset-x-5 h-(--hairline-w) bg-hairline" style={{ top: lead + TOP_LABEL + top * height + topGap / 2 }} />}
+            {/* plans 87, 177: each of the top's headings above its first row; the hairline in the gap after its last */}
+            {sections.headings.map((h) => (
+              <TopHeading key={h.kind} kind={h.kind} top={(virtualizer.measurementsCache[h.at]?.start ?? lead + TOP_LABEL) - TOP_LABEL} />
+            ))}
+            {topGap > 0 && <div aria-hidden data-testid="inbox-top-end" className="absolute inset-x-5 h-(--hairline-w) bg-hairline" style={{ top: (virtualizer.measurementsCache[top - 1]?.end ?? 0) - topGap / 2 }} />}
             {/* plan 161, pass 2: each heading from its row's real offset (the digest's row is shorter than the rest) */}
             {todayGroups.map((g) => (
               <TodayHeading key={g.kind} kind={g.kind} top={(virtualizer.measurementsCache[g.at]?.start ?? lead + TOP_LABEL) - TOP_LABEL} />
             ))}
             {virtualItems.map((v) => (
-              <ThreadRow key={v.key} thread={items[v.index]!} top={v.start} height={height} compact={compact} wide={wide} showAccount={showAccount} icons={icons} layout={layout} review={review} reminderTop={v.index < top} reminderEnd={topGap > 0 && v.index === top - 1} match={match} pick={list} section={sectionName(todayGroups.find((g) => g.at === v.index)?.kind)} />
+              <ThreadRow key={v.key} thread={items[v.index]!} top={v.start} height={height} compact={compact} wide={wide} showAccount={showAccount} icons={icons} layout={layout} review={review} pinnedTop={v.index < pinnedTop} reminderTop={v.index >= pinnedTop && v.index < top} reminderEnd={topGap > 0 && v.index === top - 1} match={match} pick={list} section={sectionName(todayGroups.find((g) => g.at === v.index)?.kind)} />
             ))}
           </div>
         )}

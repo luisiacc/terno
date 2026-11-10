@@ -70,7 +70,9 @@ describe("resolveKey", () => {
       expect(resolveKey(key("P", { meta: true, shift: true }), c, null).command).toBe("thread.exportPdf");
     }
     expect(resolveKey(key("p", { ctrl: true }), ctx, null, undefined, false).command).toBe("thread.print");
-    expect(resolveKey(key("p"), ctx, null).command).toBe(null);
+    // a bare P never prints: it pins (plan 177), and only outside a field
+    expect(resolveKey(key("p"), ctx, null).command).toBe("thread.pin");
+    expect(resolveKey(key("p"), { ...ctx, editable: true }, null).command).toBe(null);
   });
 
   it("⌘L is no app command (it is the composer's link), ⌘K is the palette's in a draft too; l and ⇧⌘L unchanged", () => {

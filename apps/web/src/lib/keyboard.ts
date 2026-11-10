@@ -3,6 +3,7 @@ import { closePreviewRow, leavePreview } from "~/state/action-preview";
 import { goToFolder } from "~/lib/account-folders";
 import { resolveKey, type Command } from "@terno/core";
 import { act, openCompose, toggleRead, toggleStar, undoLast } from "~/lib/actions";
+import { togglePin } from "~/lib/pins";
 import { focusDock } from "~/components/snack-dock";
 import { clearSelection, extendSelection, isMac, selectAll, selectWhere, toggleCurrent } from "~/lib/select";
 import { openFocusedMenu, openMenuForSelection } from "~/components/thread-menu";
@@ -187,6 +188,7 @@ const HANDLERS: Partial<Record<Command, () => void>> = {
   "thread.trash": () => void act("trash"),
   "thread.spam": () => void act("spam"),
   "thread.star": () => toggleStar(),
+  "thread.pin": () => hasTargets() && togglePin(),
   "thread.markRead": () => void act("markRead"),
   "thread.markUnread": () => void act("markUnread"),
   "thread.toggleRead": () => toggleRead(),

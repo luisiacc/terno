@@ -124,7 +124,8 @@ onExplicitOpen({
 
 /** The selection left a conversation the Inbox's top held only because it was open (its reminder ended): it goes to its place. */
 useApp.subscribe((s, prev) => {
-  if (prev.selectedId === null || s.selectedId === prev.selectedId || !inboxTop.ids.includes(prev.selectedId)) return;
+  // (only the Reminders part holds an opened row: Pinned's rows stay where they are, plan 177)
+  if (prev.selectedId === null || s.selectedId === prev.selectedId || inboxTop.ids.indexOf(prev.selectedId) < inboxTop.pinned) return;
   if (useReminders.getState().byThread.get(prev.selectedId)?.due) return;
   if (useFollowups.getState().byThread.get(prev.selectedId)?.some((r) => r.inboxState === "onTop")) return;
   if (inPlainInbox(s)) void reloadList({ keepSelection: true });

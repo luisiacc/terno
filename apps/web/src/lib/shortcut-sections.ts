@@ -57,6 +57,7 @@ export const SECTIONS: { title: Label; rows: [Command, Label][] }[] = [
       ["thread.markRead", "shortcuts.markRead"],
       ["thread.toggleRead", "shortcuts.toggleRead"],
       ["thread.star", "shortcuts.star"],
+      ["thread.pin", "shortcuts.pin"],
       ["thread.category", "shortcuts.categories"],
       ["thread.move", "shortcuts.move"],
       ["thread.remind", "shortcuts.remind"],

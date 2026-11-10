@@ -3,16 +3,51 @@
  * paddingStart): rows of one height, and between them space of a fixed height whatever theirs (plan 174).
  */
 
-/** A section label's line: the Reminders label above the due ones, Today's headings */
+/** A section heading's line: the Inbox top's (Pinned, Reminders), Today's */
 export const TOP_LABEL = 28;
 
-/** The fixed space: the offer above the rows (`lead`), the due reminders on top and the gap after them, Today's groups */
+/** The hairline's gap after the Inbox's top (px) */
+export const TOP_GAP = 9;
+
+/**
+ * The fixed space: the offer above the rows (`lead`), the Inbox's top and the gap after it, and the section headings,
+ * each the index of the row it stands above (`groups`: the top's sections, or Today's).
+ */
 export interface RowSpacing { lead: number; top: number; topGap: number; groups: readonly number[] }
 
 /** Where row `i` starts */
 export function rowStart(i: number, h: number, s: RowSpacing): number {
-  const head = s.top > 0 || s.groups.includes(0) ? TOP_LABEL : 0;
-  return s.lead + head + i * h + (s.topGap > 0 && i >= s.top ? s.topGap : 0) + TOP_LABEL * s.groups.filter((at) => at >= 1 && at <= i).length;
+  return s.lead + i * h + (s.topGap > 0 && i >= s.top ? s.topGap : 0) + TOP_LABEL * s.groups.filter((at) => at <= i).length;
+}
+
+export type TopSectionKind = "pinned" | "reminders";
+
+/** The Inbox's top as the rows show it: how many lead, how many of them are pinned, and each section's heading */
+export interface TopSections {
+  top: number;
+  pinned: number;
+  headings: readonly { kind: TopSectionKind; at: number }[];
+}
+
+export const NO_SECTIONS: TopSections = { top: 0, pinned: 0, headings: [] };
+
+/**
+ * Plan 177: the top's sections over the rows on screen (an optimistic edit may have taken some out since the top was
+ * read): the leading rows among its pins, then the leading rows among the rest of it. Pinned first, then Reminders.
+ */
+export function topSections(rows: readonly { id: number }[], top: { ids: readonly number[]; pinned: number }): TopSections {
+  if (top.ids.length === 0) return NO_SECTIONS;
+  const pins = new Set(top.ids.slice(0, top.pinned));
+  const rest = new Set(top.ids.slice(top.pinned));
+  let pinned = 0;
+  while (pinned < rows.length && pins.has(rows[pinned]!.id)) pinned++;
+  let end = pinned;
+  while (end < rows.length && rest.has(rows[end]!.id)) end++;
+  if (end === 0) return NO_SECTIONS;
+  const headings: { kind: TopSectionKind; at: number }[] = [];
+  if (pinned > 0) headings.push({ kind: "pinned", at: 0 });
+  if (end > pinned) headings.push({ kind: "reminders", at: pinned });
+  return { top: end, pinned, headings };
 }
 
 /**

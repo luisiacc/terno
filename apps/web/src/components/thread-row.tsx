@@ -3,7 +3,7 @@ import { toggleRow, useActionPreview, useActionRows } from "~/state/action-previ
 import { listFilterOf, matchesFilter, matchFocus, mostUrgent, type CategoryColor, type RowMatch, type ThreadSummary } from "@terno/core";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { cn } from "@terno/ui/lib/utils";
-import { Bell, Check, Paperclip, Star } from "@terno/ui/icons";
+import { Bell, Check, Paperclip, Pin, Star } from "@terno/ui/icons";
 import { memo } from "react";
 import { formatList, formatNumber, t } from "@terno/i18n";
 import { listDate } from "~/lib/format";
@@ -21,6 +21,7 @@ import { Marked } from "./match-mark";
 import { ReviewControls } from "./review-actions";
 import { useThreadCode } from "~/lib/codes";
 import { reminderShort, useReminders } from "~/lib/reminders";
+import { usePins } from "~/state/pins";
 import { rowLine } from "~/lib/followups";
 import { useFollowups } from "~/state/followups";
 import { onlyOnTop } from "~/state/list";
@@ -40,7 +41,9 @@ interface Props {
   layout: DesignVariants["row"];
   /** plan 80: the category whose suggestions this list reviews (its rows answer them) */
   review?: number | null;
-  /** plan 87: one of the Inbox's top (its reminder is due): its time slot says so */
+  /** plan 177: one of the Inbox top's Pinned rows: its heading says it's pinned, so no mark does */
+  pinnedTop?: boolean;
+  /** plan 87: one of the Inbox top's Reminders rows (its reminder is due): its time slot says so */
   reminderTop?: boolean;
   /** the top's last row: the hairline under the top replaces its own separator */
   reminderEnd?: boolean;
@@ -59,7 +62,7 @@ interface Props {
  * checking one re-renders one. The design picks the layout inside it (classic,
  * avatar, large avatar); the shell, roles, ids and handlers are the same in all.
  */
-export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact, wide = false, showAccount, icons, layout, review = null, reminderTop = false, reminderEnd = false, match = null, pick = false, section }: Props) {
+export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact, wide = false, showAccount, icons, layout, review = null, pinnedTop = false, reminderTop = false, reminderEnd = false, match = null, pick = false, section }: Props) {
   renderProbe("ThreadRow");
   /** the open thread (the cursor; the listbox's active descendant) */
   const selected = useApp((s) => s.selectedId === thread.id);
@@ -86,6 +89,8 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
   const code = useThreadCode(thread);
   /** plan 87: its reminder (one Map read; a row without one never re-renders for them) */
   const reminder = useReminders((s) => s.byThread.get(thread.id));
+  /** plan 177: pinned (one boolean: a pin elsewhere renders no row) */
+  const pinned = usePins((s) => s.ids.has(thread.id));
   /** the Reminders list's date is the reminder's */
   const remindersList = useApp((s) => s.reminders);
   /** plan 143: in a sentence's preview, whether this row is in it (only this row renders when it changes) */
@@ -104,6 +109,8 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
       wide={wide}
       icons={icons}
       layout={layout}
+      pinned={pinned}
+      pinnedTop={pinnedTop}
       reminderTop={reminderTop}
       reminderEnd={reminderEnd}
       selected={selected}
@@ -130,6 +137,8 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
 });
 
 type ViewProps = Omit<Props, "showAccount" | "wide" | "review" | "reminderTop" | "reminderEnd" | "match"> & {
+  /** plan 177: pinned to the Inbox's top */
+  pinned?: boolean;
   match?: RowMatch | null;
   excerpt?: string;
   wide: boolean;
@@ -265,7 +274,7 @@ function RowDate({ thread, reminderTop, fallback, className, title }: { thread: 
   return <span data-testid="row-date" data-due-at={dueAt ?? undefined} title={title} className={className}>{dueAt !== null ? reminderShort(dueAt) : fallback}</span>;
 }
 
-export function ThreadRowView({ thread, top, height, compact, wide, icons, layout, review, reminderTop, reminderEnd, selected, checked, included, pending, inSelection, account, categories, inCategory = null, kept = false, hasDraft, code, reminder, remindersList, interactive, match, excerpt, pick = false, section }: ViewProps) {
+export function ThreadRowView({ thread, top, height, compact, wide, icons, layout, review, pinned = false, pinnedTop = false, reminderTop, reminderEnd, selected, checked, included, pending, inSelection, account, categories, inCategory = null, kept = false, hasDraft, code, reminder, remindersList, interactive, match, excerpt, pick = false, section }: ViewProps) {
   const cats = thread.categoryIds.length ? categories.filter((c) => c.id !== inCategory && thread.categoryIds.includes(c.id)) : [];
   const classic = layout === "classic";
   const big = layout === "large-avatar";
@@ -288,6 +297,8 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
   const count = thread.messageCount > 1 && <span className="text-xs text-muted-foreground tabular">{formatNumber(thread.messageCount)}</span>;
   const clip = thread.hasAttachments && <Paperclip className="size-3 text-muted-foreground" />;
   const star = thread.starred && <Star className="size-3 fill-star text-star" />;
+  // plan 177: pinned, quiet (in the Inbox's Pinned section its heading says it)
+  const pin = pinned && !pinnedTop && <Pin aria-hidden data-testid="row-pin" className={cn("size-3 shrink-0", opened || checked ? "" : "text-muted-foreground")} />;
   const dots = cats.map((c) => <CategoryDot key={c.id} data-cat-dot={c.id} color={c.color as CategoryColor} title={c.name} />);
   // plan 87: due, in the accent (the Inbox's top); set, quiet
   const bell = reminder && <Bell aria-hidden data-testid="row-reminder" data-due={reminder.due || undefined} className={cn("size-3 shrink-0", opened || checked ? "" : reminder.due ? "text-primary" : "text-muted-foreground")} />;
@@ -309,15 +320,17 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
       {lineDots}
       {clip}
       {star}
+      {pin}
       {!reminderTop && bell}
     </>
   );
-  const markCount = lineDots.length + Number(!!clip) + Number(!!star) + Number(!!bell && !reminderTop);
+  const markCount = lineDots.length + Number(!!clip) + Number(!!star) + Number(!!pin) + Number(!!bell && !reminderTop);
   const marks = (
     <>
       {dots}
       {clip}
       {star}
+      {pin}
       {!reminderTop && bell}
       {placeTag}
       {keptTag}
@@ -571,6 +584,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
                 {draft}
                 {keptTag}
                 {placeTag}
+                {pin}
                 {reminder && !reminderTop && bell}
               </span>
             </span>
@@ -631,6 +645,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
       {/* what the dot, the star and the clip show, said as well (plan 158) */}
       {thread.unread && <span className="sr-only">{t("list.state.unread.sr")}</span>}
       {thread.starred && <span className="sr-only">{t("list.state.starred.sr")}</span>}
+      {pinned && <span className="sr-only">{t("list.state.pinned.sr")}</span>}
       {thread.hasAttachments && <span className="sr-only">{t("list.state.attachments.sr")}</span>}
       {account && <span className="sr-only">{t("list.accountLabel.sr", { account: account.text })}</span>}
       {code && <span className="sr-only">{t("codes.sr", { code })}</span>}

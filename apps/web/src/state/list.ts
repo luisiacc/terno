@@ -13,6 +13,7 @@ import { noteRows, useActionRows } from "./action-preview";
 import { flattenToday } from "./today";
 import { useFollowups } from "./followups";
 import { anyDue } from "./reminders";
+import { anyPinned } from "./pins";
 
 interface ListState {
   key: string;
@@ -148,12 +149,22 @@ export function keptIds(s = getApp()): number[] {
 }
 
 /**
- * Plan 87: the plain Inbox's top, the conversations whose reminder is due
- * (newest due first), wherever they live. They lead the first page and every
- * later page leaves them out. One the user opened stays there while it's
- * open (its reminder ended), so it doesn't jump away under the reader.
+ * The plain Inbox's top: first the pinned conversations (plan 177, newest pin
+ * first), then those whose reminder is due (plan 87, newest due first) and the
+ * follow-ups on top (plan 142), wherever they live. They lead the first page
+ * and every later page leaves them out. One the user opened stays in the
+ * Reminders part while it's open (its reminder ended), so it doesn't jump away
+ * under the reader. `pinned`: how many of `ids` lead as pins.
  */
-export const inboxTop: { ids: readonly number[] } = { ids: [] };
+export interface InboxTop {
+  ids: readonly number[];
+  pinned: number;
+}
+
+/** The top of the list on screen: written only with the page it came with, once that page is the one shown. */
+export const inboxTop: InboxTop = { ids: [], pinned: 0 };
+
+const NO_TOP: InboxTop = { ids: [], pinned: 0 };
 
 /**
  * A top row the Inbox shows only for its reminder (archived, or in a category
@@ -167,30 +178,57 @@ export function onlyOnTop(t: { id: number; inInbox?: boolean; categoryIds: reado
   return t.categoryIds.some((id) => hidden.includes(id));
 }
 
-async function withTop<P extends { items: ThreadSummary[]; nextCursor: { lastDate: number; id: number } | null }>(page: Promise<P>, first: boolean): Promise<P> {
+type Paged = { items: ThreadSummary[]; nextCursor: { lastDate: number; id: number } | null };
+
+/**
+ * The plain Inbox's first page with its top in front (`top` says what it is); the reader of the answer publishes it
+ * (`inboxTop`) only if it shows that answer. Later pages come as they are: whoever joins them leaves the top's rows out.
+ */
+async function withTop<P extends Paged>(page: Promise<P>, first: boolean): Promise<P & { top?: InboxTop }> {
   const s = getApp();
-  if (!inPlainInbox(s)) {
-    inboxTop.ids = [];
-    return page;
-  }
-  if (!first) {
-    const top = new Set(inboxTop.ids);
-    const p = await page;
-    return top.size ? { ...p, items: p.items.filter((t) => !top.has(t.id)) } : p;
-  }
-  const held = s.selectedId !== null && inboxTop.ids.includes(s.selectedId) ? useList.getState().items.find((t) => t.id === s.selectedId) : undefined;
-  const due = anyDue() ? client.call("reminders.threads", { dueOnly: true, accountId: s.accountId ?? undefined }).then((r) => r.items, () => []) : Promise.resolve([]);
+  if (!first) return page;
+  if (!inPlainInbox(s)) return { ...(await page), top: NO_TOP };
+  const accountId = s.accountId ?? undefined;
+  const pinning = anyPinned() ? client.call("pins.threads", { accountId }).then((r) => r.items, () => []) : Promise.resolve([]);
+  const due = anyDue() ? client.call("reminders.threads", { dueOnly: true, accountId }).then((r) => r.items, () => []) : Promise.resolve([]);
   // plan 142: follow-ups have their own way onto the top, one row a thread under the same heading
-  const following = followupsOffered(getApp()) && useFollowups.getState().onTop > 0 ? client.call("followups.threads", { onTop: true, accountId: s.accountId ?? undefined }).then((r) => r.items, () => []) : Promise.resolve([]);
-  const [p, dueRows, followRows] = await Promise.all([page, due, following]);
-  const top = [...dueRows, ...followRows.filter((t) => !dueRows.some((d) => d.id === t.id))];
-  if (held && !top.some((t) => t.id === held.id)) top.splice(Math.min(inboxTop.ids.indexOf(held.id), top.length), 0, held);
-  inboxTop.ids = top.map((t) => t.id);
-  if (top.length === 0) return p;
-  const ids = new Set(inboxTop.ids);
-  // the row as the page has it, when it's there (fresher than the reminder's read)
+  const following = followupsOffered(getApp()) && useFollowups.getState().onTop > 0 ? client.call("followups.threads", { onTop: true, accountId }).then((r) => r.items, () => []) : Promise.resolve([]);
+  const [p, pinRows, dueRows, followRows] = await Promise.all([page, pinning, due, following]);
+  // a pinned one is in Pinned only, whatever else it has
+  const pinnedIds = new Set(pinRows.map((t) => t.id));
+  const reminding = [...dueRows, ...followRows.filter((t) => !dueRows.some((d) => d.id === t.id))].filter((t) => !pinnedIds.has(t.id));
+  const held = heldInReminders(s.selectedId, pinnedIds);
+  if (held && !reminding.some((t) => t.id === held.row.id)) reminding.splice(Math.min(held.at, reminding.length), 0, held.row);
+  const rows = [...pinRows, ...reminding];
+  const top: InboxTop = { ids: rows.map((t) => t.id), pinned: pinRows.length };
+  if (rows.length === 0) return { ...p, top };
+  const ids = new Set(top.ids);
+  // the row as the page has it, when it's there (fresher than the top's read)
   const fresh = new Map(p.items.filter((t) => ids.has(t.id)).map((t) => [t.id, t]));
-  return { ...p, items: [...top.map((t) => fresh.get(t.id) ?? t), ...p.items.filter((t) => !ids.has(t.id))] };
+  return { ...p, items: [...rows.map((t) => fresh.get(t.id) ?? t), ...p.items.filter((t) => !ids.has(t.id))], top };
+}
+
+/**
+ * The open conversation the Reminders part held (its reminder ended by opening it, plan 87), and where in that part:
+ * only on the list on screen (never carried to another account's Inbox), and never once pinned (Pinned has it).
+ * A row that left Pinned is never held: unpinning takes it to its place.
+ */
+function heldInReminders(selectedId: number | null, pinnedIds: ReadonlySet<number>): { row: ThreadSummary; at: number } | null {
+  if (selectedId === null || pinnedIds.has(selectedId)) return null;
+  const st = useList.getState();
+  if (st.itemsKey !== listKey()) return null;
+  const at = inboxTop.ids.indexOf(selectedId);
+  if (at < inboxTop.pinned) return null;
+  const row = st.items.find((t) => t.id === selectedId);
+  return row ? { row, at: at - inboxTop.pinned } : null;
+}
+
+/** A first page joined with the pages after it: the top's rows once, at its front. */
+function topOnce<P extends Paged>(page: P, top: InboxTop): P {
+  if (top.ids.length === 0) return page;
+  const ids = new Set(top.ids);
+  const n = top.ids.length;
+  return { ...page, items: [...page.items.slice(0, n), ...page.items.slice(n).filter((t) => !ids.has(t.id))] };
 }
 
 async function fetchPage(cursor?: { lastDate: number; id: number }, limit = PAGE) {
@@ -240,11 +278,11 @@ async function fetchPage(cursor?: { lastDate: number; id: number }, limit = PAGE
  * A filtered answer's read rows, against who holds them now: asked for while
  * a thread was open, it may arrive after the selection moved off it.
  */
-function heldOnly(items: ThreadSummary[]): ThreadSummary[] {
+function heldOnly(items: ThreadSummary[], top: readonly number[] = inboxTop.ids): ThreadSummary[] {
   const filter = activeFilter(getApp());
   if (items.every((t) => matchesFilter(filter, t))) return items;
-  // plan 87: the Inbox's top stays under any quick filter
-  const held = new Set([...keptIds(), ...inboxTop.ids]);
+  // plans 87, 177: the Inbox's top stays under any quick filter
+  const held = new Set([...keptIds(), ...top]);
   return items.filter((t) => matchesFilter(filter, t) || held.has(t.id));
 }
 
@@ -346,26 +384,33 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
       void reloadList({ ...options, keepSelection: true });
       return;
     }
+    // the top this answer brings (none but the plain Inbox's): published with its rows below, never before
+    const top = ("top" in page && page.top) || NO_TOP;
+    page = topOnce(page, top);
     if (scope?.kind === "search" && scope.filter && (sameView || options.keepSelection)) page = keepSearchRows(page, current.items);
-    if (scope?.filter) page = { ...page, items: heldOnly(page.items) };
+    if (scope?.filter) page = { ...page, items: heldOnly(page.items, top.ids) };
     // the window refresh keeps the first visible row where it was (new mail above it doesn't push it down): always after a page
     // (Back finds what it left), and on the list unless it's at the very top (there, new mail shows as it arrives)
     const restore = windowed && (options.window || listAnchor.scrolled?.()) ? listAnchor.capture?.() : undefined;
     // another list starts where it was left, or at its top, in the commit that shows it
     const arrives = !sameView && !options.keepSelection;
     const commit = (fn: () => void) => (restore || arrives ? flushSync(fn) : fn());
-    commit(() => useList.setState({
-      key,
-      itemsKey: key,
-      items: page.items,
-      index: indexOf(page.items),
-      nextCursor: page.nextCursor,
-      loading: false,
-      error: null,
-      searchMs: "tookMs" in page ? (page.tookMs as number) : null,
-      complete: "complete" in page ? (page.complete as boolean) : true,
-      ...(counting ? {} : { unreadTotal: null }),
-    }));
+    commit(() => {
+      inboxTop.ids = top.ids;
+      inboxTop.pinned = top.pinned;
+      useList.setState({
+        key,
+        itemsKey: key,
+        items: page.items,
+        index: indexOf(page.items),
+        nextCursor: page.nextCursor,
+        loading: false,
+        error: null,
+        searchMs: "tookMs" in page ? (page.tookMs as number) : null,
+        complete: "complete" in page ? (page.complete as boolean) : true,
+        ...(counting ? {} : { unreadTotal: null }),
+      });
+    });
     restore?.();
     if (arrives) listAnchor.scrollTo?.(place?.scroll ?? null);
     if (counting)

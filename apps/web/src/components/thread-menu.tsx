@@ -36,6 +36,8 @@ import {
   MessageSquareReply,
   OctagonAlert,
   Plus,
+  Pin,
+  PinOff,
   Printer,
   Repeat,
   Reply,
@@ -55,6 +57,8 @@ import { snack } from "~/lib/snack";
 import { openLink } from "~/lib/open-link";
 import { create } from "zustand";
 import { act, openCompose, tabbedTest, targetRows } from "~/lib/actions";
+import { pinThreads, unpinThreads } from "~/lib/pins";
+import { usePins } from "~/state/pins";
 import { addScopeToCategory, addToCategory, answerReview, fileAlways, filterNameOf, isExclusivelyIn, moveToCategory, removeFromCategory, removeSenderFromCategory } from "~/lib/categorize";
 import { rowSelector, setRule } from "~/lib/flash";
 import { renderProbe } from "~/lib/render-probe";
@@ -666,6 +670,10 @@ function MenuItems() {
   const anyRead = scope !== null || rows.some((t) => !t.unread);
   const anyStarred = scope !== null || rows.some((t) => t.starred);
   const anyPlain = scope !== null || rows.some((t) => !t.starred);
+  // plan 177: pins need ids (a "select all N" has none, and pins are a few): offered only for picked rows
+  const pins = usePins((s) => s.ids);
+  const anyPinned = !scope && rows.some((t) => pins.has(t.id));
+  const anyUnpinned = !scope && rows.some((t) => !pins.has(t.id));
   const sender = scope ? null : sharedSender(rows);
   const filedIn = sender ? categories.filter((c) => rows.some((r) => r.categoryIds.includes(c.id))) : [];
   const fileTo = categories.filter((c) => !filedIn.includes(c));
@@ -747,6 +755,8 @@ function MenuItems() {
       {anyRead && <Item icon={<Mail />} label={t("actions.markUnread")} command="thread.toggleRead" onClick={() => run("markUnread")} testId="menu-unread" />}
       {anyPlain && <Item icon={<Star />} label={t("actions.star")} command="thread.star" onClick={() => run("star")} testId="menu-star" />}
       {anyStarred && <Item icon={<StarOff />} label={t("actions.unstar")} command={anyPlain ? undefined : "thread.star"} onClick={() => run("unstar")} testId="menu-unstar" />}
+      {anyUnpinned && <Item icon={<Pin />} label={t("actions.pin")} command="thread.pin" onClick={() => void pinThreads(ids)} testId="menu-pin" />}
+      {anyPinned && <Item icon={<PinOff />} label={t("actions.unpin")} command={anyUnpinned ? undefined : "thread.pin"} onClick={() => void unpinThreads(ids)} testId="menu-unpin" />}
       <ContextMenuSeparator />
       {/* plan 87: a "select all N" has no ids to set them on */}
       <RemindSub ids={ids} disabled={scope !== null} />

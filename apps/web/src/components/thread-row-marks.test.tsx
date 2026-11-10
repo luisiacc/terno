@@ -112,3 +112,33 @@ it("the preview's line holds two category dots at most, every name in its title;
     Object.assign(thread, { categoryIds: [7], inTrash: undefined });
   }
 });
+
+async function pinnedRow(opts: { pinnedTop: boolean; layout?: DesignVariants["row"]; compact?: boolean }) {
+  host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  unmount = () => act(async () => root.unmount());
+  await act(async () =>
+    root.render(
+      <ThreadRowView
+        thread={thread} top={0} height={72} compact={opts.compact ?? false} wide={false} icons={false} layout={opts.layout ?? "avatar"} review={null}
+        pinned pinnedTop={opts.pinnedTop} reminderTop={false} reminderEnd={false} selected={false} checked={false} inSelection={false}
+        account={undefined} categories={categories} hasDraft={false} code={null} reminder={undefined} remindersList={false} interactive={false}
+      />,
+    ),
+  );
+  return host.querySelector<HTMLElement>("[data-testid=thread-row]")!;
+}
+
+it.each([["avatar", false], ["classic", false], ["large-avatar", false], ["avatar", true]] as const)("a pinned %s row (compact %s) shows a quiet pin among its marks outside the Pinned section, none inside, and says it either way (plan 177)", async (layout, compact) => {
+  const outside = await pinnedRow({ pinnedTop: false, layout, compact });
+  const pin = outside.querySelector("[data-testid=row-pin]");
+  expect(pin).not.toBeNull();
+  expect(pin!.getAttribute("class")).toContain("text-muted-foreground");
+  expect(outside.textContent).toContain(", pinned");
+  await unmount();
+  host?.remove();
+  const inside = await pinnedRow({ pinnedTop: true, layout, compact });
+  expect(inside.querySelector("[data-testid=row-pin]")).toBeNull();
+  expect(inside.textContent).toContain(", pinned");
+});

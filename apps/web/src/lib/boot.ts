@@ -32,6 +32,7 @@ import { installNativeReload } from "~/lib/native-reload";
 import { openFromNotice, startAttention } from "~/lib/notify";
 import { applyFollowups, loadFollowups } from "~/lib/followups";
 import { applyReminders, loadReminders } from "~/lib/reminders";
+import { applyPins, loadPins } from "~/lib/pins";
 import { snippetsSaved } from "~/lib/snippets";
 import { applyForwards, loadForwards, shareLocale } from "~/lib/forwards";
 import { summaryReady } from "~/lib/summaries";
@@ -131,6 +132,9 @@ export async function boot(): Promise<void> {
     const followups = loadFollowups().catch((error) => console.warn("[followups] could not load", error));
     // before the first list, so the Inbox opens with its due ones on top (one local call)
     const reminders = loadReminders().catch((error) => console.warn("[reminders] could not load", error));
+    // plan 177: the pinned conversations, before the first list too (the Inbox opens with Pinned on top)
+    client.on("pins", applyPins);
+    const pins = loadPins().catch((error) => console.warn("[pins] could not load", error));
     // plan 94: scheduled sends (the strip, the reader's line; drafts scheduled elsewhere leave the composers)
     client.on("scheduled", applyScheduled);
     void loadScheduled().catch((error) => console.warn("[scheduled] could not load", error));
@@ -167,7 +171,7 @@ export async function boot(): Promise<void> {
     // plan 24: history and pages; a reload on a conversation (List) reopens it before the list's first answer can pick row 0
     installPage();
     const reopened = bootPage();
-    await Promise.all([reminders, followups]);
+    await Promise.all([reminders, followups, pins]);
     await reloadList({ keepSelection: reopened !== null });
     // the frame that paints the first rows, if there are any: what a launch is measured to (startup.perf.ts)
     requestAnimationFrame(() => {
