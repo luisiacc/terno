@@ -70,7 +70,7 @@ const boxOf = (el: Element, base: DOMRect): Box => {
  * changing), and only in a Review list. That comes a frame or more after the rows scroll, so the buttons are clear and
  * the pills in the rows are what shows: a hovered button lights its pill, and a focused one rings it.
  */
-export function ReviewButtons({ scroller, tick }: { scroller: React.RefObject<HTMLDivElement | null>; tick: string }) {
+export function ReviewButtons({ scroller, tick, show }: { scroller: React.RefObject<HTMLDivElement | null>; tick: string; show?: (threadId: number) => void }) {
   const layer = useRef<HTMLDivElement>(null);
   const [laid, setLaid] = useState<{ clip: Box; spots: Spot[] } | null>(null);
   const category = useApp((s) => s.categories.find((c) => c.id === s.reviewCategoryId));
@@ -98,7 +98,11 @@ export function ReviewButtons({ scroller, tick }: { scroller: React.RefObject<HT
   const states = (id: number, part: number) => ({
     onPointerEnter: () => mark("hover", { id, part }),
     onPointerLeave: () => unmark("hover", id, part),
-    onFocus: () => mark("focus", { id, part }),
+    // Tab reaches the open row's even scrolled out of sight: it comes into view, so its ring shows
+    onFocus: () => {
+      mark("focus", { id, part });
+      show?.(id);
+    },
     onBlur: () => unmark("focus", id, part),
   });
   useLayoutEffect(() => {
@@ -119,6 +123,16 @@ export function ReviewButtons({ scroller, tick }: { scroller: React.RefObject<HT
   const name = category?.name ?? "";
   // only a row of the list on screen now: never one a layer not yet measured again kept from another list
   const live = (id: number) => scroller.current?.querySelector(`[data-review-slot="${id}"]`) != null;
+  // the row a press answers: the one whose pill is under the pointer now (the pills move with a scroll, their buttons
+  // only once measured again); from the keyboard (no pointer), the focused button's own
+  const pressed = (e: React.MouseEvent, id: number, part: number): number | null => {
+    if (e.detail === 0) return live(id) ? id : null;
+    for (const slot of scroller.current?.querySelectorAll<HTMLElement>("[data-review-slot]") ?? []) {
+      const r = slot.children[part]?.getBoundingClientRect();
+      if (r && e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) return Number(slot.dataset.reviewSlot);
+    }
+    return null;
+  };
   const answered = (e: React.MouseEvent<HTMLButtonElement>) => {
     // answered from the keyboard: the row goes with its buttons, so the list takes focus back
     if (document.activeElement === e.currentTarget) requestAnimationFrame(() => listbox()?.focus({ preventScroll: true }));
@@ -140,9 +154,10 @@ export function ReviewButtons({ scroller, tick }: { scroller: React.RefObject<HT
               onMouseDown={(e) => e.preventDefault()}
               {...states(spot.id, 0)}
               onClick={(e) => {
-                if (!live(spot.id)) return;
+                const id = pressed(e, spot.id, 0);
+                if (id === null) return;
                 answered(e);
-                void answerReview(spot.id, category.id, true);
+                void answerReview(id, category.id, true);
               }}
               className={`${PILL} ${CLEAR}`}
               style={at(spot.accept)}
@@ -159,7 +174,11 @@ export function ReviewButtons({ scroller, tick }: { scroller: React.RefObject<HT
               title={t("review.similar.title", { category: name })}
               onMouseDown={(e) => e.preventDefault()}
               {...states(spot.id, 1)}
-              onClick={(e) => live(spot.id) && useAlwaysMenu.setState({ threadId: spot.id, anchor: e.currentTarget })}
+              onClick={(e) => {
+                const id = pressed(e, spot.id, 1);
+                const anchor = id === spot.id ? e.currentTarget : layer.current?.querySelector<HTMLElement>(`[data-testid=row-review-always][data-thread-id="${id}"]`);
+                if (id !== null && anchor) useAlwaysMenu.setState({ threadId: id, anchor });
+              }}
               className={`${PILL} ${CLEAR}`}
               style={at(spot.always)}
             >

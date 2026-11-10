@@ -1359,6 +1359,10 @@ export function ThreadList() {
   }, [itemsKey]);
 
   const virtualItems = virtualizer.getVirtualItems();
+  const showRow = useCallback((id: number) => {
+    const i = useList.getState().index.get(id);
+    if (i !== undefined) listScroller.scrollToIndex?.(i);
+  }, []);
   useLayoutEffect(() => {
     pointListCursor(parentRef.current, getApp().selectedId);
   }, [virtualItems]);
@@ -1435,7 +1439,7 @@ export function ThreadList() {
       </div>
       </ThreadMenu>
       {/* plan 158: the Review rows' answers as buttons, outside the listbox (a row is an option, which holds none) */}
-      {review !== null && items.length > 0 && <ReviewButtons scroller={parentRef} tick={`${itemsKey}|${virtualItems.map((v) => v.key).join()}|${virtualizer.scrollOffset}|${virtualItems.length}|${virtualItems[0]?.index}|${items.length}|${virtualizer.getTotalSize()}|${height}|${wide}|${virtualizer.scrollRect?.width}|${virtualizer.scrollRect?.height}`} />}
+      {review !== null && items.length > 0 && <ReviewButtons scroller={parentRef} show={showRow} tick={`${itemsKey}|${virtualItems.map((v) => v.key).join()}|${virtualizer.scrollOffset}|${virtualItems.length}|${virtualItems[0]?.index}|${items.length}|${virtualizer.getTotalSize()}|${height}|${wide}|${virtualizer.scrollRect?.width}|${virtualizer.scrollRect?.height}`} />}
       {review !== null && <ReviewAlwaysMenu />}
       {filter && !loading && items.length === 0 && itemsKey === listKey() && <UnreadEmptyState filter={filter} />}
       {coverage && items.length > 0 && <CoverageNote className="pointer-events-none absolute inset-x-0 px-5 pt-3" style={{ top: virtualizer.getTotalSize() }} />}
