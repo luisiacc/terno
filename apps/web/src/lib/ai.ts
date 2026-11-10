@@ -1,12 +1,17 @@
-import { aiFeaturesAvailable, aiReady, ASK_CLAUDE_MODEL, chosenTargetReady, DIGEST_CLAUDE_MODEL, DIGEST_OPENAI_MODEL, FOLLOWUP_CLAUDE_MODEL, FOLLOWUP_OPENAI_MODEL, SUMMARY_DEFAULT_MODEL, WRITING_CLAUDE_MODEL, type AiErrorKind, type AiProviderId, type CompatiblePreset, type OutputMode } from "@terno/core";
+import { aiCanRun, aiFeaturesAvailable, aiReady, AI_JOBS, routedByKeys, routeFor, SUMMARY_DEFAULT_MODEL, WRITING_CLAUDE_MODEL, type AiErrorKind, type AiJob, type AiProviderId, type AiRoute, type CompatiblePreset, type OutputMode } from "@terno/core";
 import type { AiSettings, AppSettings } from "@terno/core/rpc";
 import { getLocale, t } from "@terno/i18n";
 
-/** What the AI tab's selector shows: compatible appears twice (a server on this Mac, or a cloud API). */
-export type ProviderChoice = Exclude<AiProviderId, "compatible" | "jev"> | "local-server" | "compatible";
+/**
+ * What the AI tab's selector shows: compatible appears twice (a server on this Mac, or a cloud API), and Claude and
+ * OpenAI are one item, `keys` (plan 168: the keys saved decide what runs, so which of the two is stored chooses nothing).
+ */
+export type ProviderChoice = Exclude<AiProviderId, "compatible" | "jev"> | "local-server" | "compatible" | "keys";
 
 export const LOCAL_CHOICES: ProviderChoice[] = ["ollama", "lmstudio", "local-server"];
-export const CLOUD_CHOICES: ProviderChoice[] = ["anthropic", "openai", "compatible"];
+export const CLOUD_CHOICES: ProviderChoice[] = ["keys", "compatible"];
+/** Plan 168: the providers reached by key, in the order their key rows show. */
+export const KEYED: readonly ("anthropic" | "openai")[] = ["anthropic", "openai"];
 
 // brand names stay as they are; the rest is read in the current language
 const CHOICE_LABEL = {
@@ -16,6 +21,7 @@ const CHOICE_LABEL = {
   anthropic: "Claude (Anthropic)",
   openai: "OpenAI",
   compatible: "ai.choice.compatible",
+  keys: "ai.choice.keys",
   fake: "ai.choice.fake",
   none: "ai.choice.none",
 } as const satisfies Record<ProviderChoice, string>;
@@ -47,6 +53,7 @@ const CLOUD_HOST: Partial<Record<AiProviderId, string>> = { anthropic: "api.anth
 
 export function choiceOf(ai: Pick<AiSettings, "provider" | "preset" | "local">): ProviderChoice {
   if (ai.provider === "compatible") return ai.preset === "custom" && ai.local ? "local-server" : "compatible";
+  if (routedByKeys(ai.provider)) return "keys";
   // JEV is never the main provider (the contract refuses it): it only categorizes
   return ai.provider === "jev" ? "none" : ai.provider;
 }
@@ -82,79 +89,35 @@ export function hostOf(ai: Pick<AiSettings, "provider" | "preset" | "baseURL" | 
 
 export function providerName(ai: Pick<AiSettings, "provider" | "preset" | "local">): string {
   if (ai.provider === "compatible" && ai.preset && ai.preset !== "custom") return presetLabel(ai.preset);
+  // the provider itself, never the item that holds both
+  if (routedByKeys(ai.provider)) return choiceLabel(ai.provider);
   return choiceLabel(choiceOf(ai));
 }
 
 export { aiReady };
 
-/**
- * Plan 131 §2 and plan 132 §2: what summaries run on, by the same rule as the backend's `AiService.targetFor`. A
- * default never moves mail to a paid provider the user didn't pick: with only another cloud provider set up, it asks.
- */
-export type SummaryTarget = { state: "ready"; provider: AiProviderId; model: string } | { state: "ask"; provider: AiProviderId } | { state: "none" };
-
-export function summaryTarget(ai: AiSettings): SummaryTarget {
-  const chosen = ai.tasks.summary;
-  if (chosen) return { state: "ready", provider: chosen.provider, model: chosen.model };
-  if (ai.keys.openai?.hasKey) return { state: "ready", provider: "openai", model: SUMMARY_DEFAULT_MODEL };
-  if (ai.provider === "none") return { state: "none" };
-  return ai.local ? { state: "ready", provider: ai.provider, model: ai.model } : { state: "ask", provider: ai.provider };
+/** Plan 168: what runs a job, by `routeFor` (the backend's rule); provider "none" when nothing can. */
+export function routeOf(job: AiJob, ai: AiSettings): AiRoute {
+  return routeFor(job, ai) ?? { provider: "none", model: "" };
 }
 
-/** Plan 141 §6: where a question goes, by the backend's rule: the task's own choice, else the configured provider (Sonnet on Claude). */
-export function askTarget(ai: AiSettings): { provider: AiProviderId; model: string } {
-  const chosen = ai.tasks.ask;
-  if (chosen) return chosen;
-  return { provider: ai.provider, model: ai.provider === "anthropic" ? ASK_CLAUDE_MODEL : ai.model };
-}
-
-/** Plan 142: by the backend's rule: its own choice, the summaries' row, else a small model on the configured provider. */
-export function followupTarget(ai: AiSettings): { provider: AiProviderId; model: string } {
-  const chosen = ai.tasks.followup ?? ai.tasks.summary;
-  if (chosen) return chosen;
-  return { provider: ai.provider, model: ai.provider === "anthropic" ? FOLLOWUP_CLAUDE_MODEL : ai.provider === "openai" ? FOLLOWUP_OPENAI_MODEL : ai.model };
-}
-
-/** Plan 145: the digest's own row, else the summaries', else the small model on what's set up. */
-export function digestTarget(ai: AiSettings): { provider: AiProviderId; model: string } {
-  const chosen = ai.tasks.digest ?? ai.tasks.summary;
-  if (chosen) return chosen;
-  return { provider: ai.provider, model: ai.provider === "anthropic" ? DIGEST_CLAUDE_MODEL : ai.provider === "openai" ? DIGEST_OPENAI_MODEL : ai.model };
-}
-
-/** Whether a question can go: Ask's own target if it has one, whatever the main provider is. */
-export function askReady(ai: AiSettings | null | undefined): boolean {
-  if (!ai) return false;
-  const chosen = ai.tasks.ask;
-  return chosen ? chosenTargetReady(ai, chosen) : aiReady(ai);
-}
-
-/** Whether a summary has somewhere to go, or a provider to ask about (`summaryTarget`'s "ask": the block then says where). */
-export function summaryReady(ai: AiSettings | null | undefined): boolean {
-  if (!ai) return false;
-  const chosen = ai.tasks.summary;
-  return chosen ? chosenTargetReady(ai, chosen) : ai.keys.openai?.hasKey === true || aiReady(ai);
-}
+export const askReady = (ai: AiSettings | null | undefined): boolean => aiCanRun("ask", ai);
+export const summaryReady = (ai: AiSettings | null | undefined): boolean => aiCanRun("summary", ai);
 
 const LOCAL_PROVIDERS: readonly AiProviderId[] = ["ollama", "lmstudio", "fake"];
 /** A provider that runs on this Mac (plan 161, pass 2: what an error tells the user to do differs). */
 export const localProvider = (provider: AiProviderId): boolean => LOCAL_PROVIDERS.includes(provider);
 
-/**
- * Plan 133: what drafts run on, by the backend's rule (`AiService.targetFor`): the task's own choice, else the
- * configured provider. Whether asking can work, and whether mail would leave this Mac; the backend has the last word.
- */
-/** The model drafts run on, as the backend picks it (ai-service targetFor): Sonnet 5.5 on Claude unless the user chose another (plan 133 §6.6). */
-export function writingModel(ai: Pick<AiSettings, "tasks" | "provider" | "model">): string {
-  return ai.tasks.writing?.model ?? (ai.provider === "anthropic" ? WRITING_CLAUDE_MODEL : ai.model);
+/** The model drafts run on, as the backend picks it (plan 168's `routeFor`). */
+export function writingModel(ai: AiSettings): string {
+  return routeOf("writing", ai).model;
 }
 
+/** Plan 133: where drafts go, by the backend's rule: whether it can run, and whether mail would leave this Mac. */
 export function writingTarget(ai: AiSettings | null | undefined): { ready: boolean; provider: AiProviderId; local: boolean } {
   if (!ai) return { ready: false, provider: "none", local: true };
-  const chosen = ai.tasks.writing;
-  if (!chosen) return { ready: aiReady(ai), provider: ai.provider, local: ai.local };
-  const local = LOCAL_PROVIDERS.includes(chosen.provider) || (chosen.provider === ai.provider && ai.local);
-  return { ready: local || chosen.provider === "compatible" || ai.keys[chosen.provider]?.hasKey === true, provider: chosen.provider, local };
+  const { provider } = routeOf("writing", ai);
+  return { ready: aiCanRun("writing", ai), provider, local: provider === "none" || targetOf(ai, provider).local };
 }
 
 /** What the AI features' gates read of the app: its state, as `useApp` and `getApp` both give it. */
@@ -190,11 +153,14 @@ export const modelName = (id: string): string => MODEL_NAME[id] ?? id;
 
 /** One line on what leaves the Mac when generating a filter. Never message content. */
 export function privacyLine(ai: AiSettings): string {
-  if (ai.provider === "none") return t("ai.privacy.off");
-  if (ai.local) return t("ai.privacy.local");
+  // plan 168: where a filter's description goes, which on keys may be the other provider than the one stored
+  const { provider } = routeOf("filter", ai);
+  if (provider === "none") return ai.provider === "none" ? t("ai.privacy.off") : t("ai.privacy.cloud", { host: providerName(ai) });
+  const target = targetOf(ai, provider);
+  if (target.local) return t("ai.privacy.local");
   // plan 162 (after ai162-r03): the provider by name, as every other AI surface says it ("Claude (Anthropic)", never
   // api.anthropic.com); only a server of the user's own is said by its address
-  return t("ai.privacy.cloud", { host: ai.provider === "compatible" ? (hostOf(ai) ?? providerName(ai)) : providerName(ai) });
+  return t("ai.privacy.cloud", { host: destinationName(ai, target) });
 }
 
 type Target = { provider: AiProviderId; preset: CompatiblePreset | null; baseURL: string | null; local: boolean };
@@ -233,17 +199,32 @@ function destinationName(ai: AiSettings, t: Target): string {
 
 /**
  * Plan 131, the owner's decision (no per-use consent): every place off this Mac AI may send mail to, by the backend's
- * rules (`AiService.targetFor`): the configured provider, each task's own choice with its own profile, OpenAI for
- * summaries and JEV for sorting once they have a key. Named where AI is turned on, since nothing asks again when a
- * feature runs.
+ * rule (plan 168's `routeFor` over every job), each with its own profile. On keys before one is saved, both: whichever
+ * key comes first receives it. Named where AI is turned on, since nothing asks again when a feature runs.
  */
 export function mailDestinations(ai: AiSettings): string[] {
-  const targets: Target[] = [];
-  if (ai.provider !== "none") targets.push(targetOf(ai, ai.provider));
-  for (const chosen of Object.values(ai.tasks ?? {})) if (chosen) targets.push(targetOf(ai, chosen.provider));
-  if (ai.keys?.openai?.hasKey && !ai.tasks?.summary) targets.push(targetOf(ai, "openai"));
-  if (ai.keys?.jev?.hasKey && !ai.tasks?.categorize) targets.push(targetOf(ai, "jev"));
+  const providers = new Set<AiProviderId>();
+  // drafting's first: the provider most of it goes to is named first
+  for (const job of ["writing", ...AI_JOBS] as const) {
+    const route = routeFor(job, ai);
+    if (route) providers.add(route.provider);
+  }
+  if (routedByKeys(ai.provider) && !KEYED.some((p) => providers.has(p))) for (const p of KEYED) providers.add(p);
+  const targets = [...providers].map((p) => targetOf(ai, p));
   return [...new Set(targets.filter((t) => t.provider !== "none" && !t.local).map((t) => destinationName(ai, t)))];
+}
+
+/**
+ * Plan 168's one quiet line: who runs what, from `routeFor`, so it can't drift from what runs. On keys, the only split
+ * the table has is summaries; JEV sorts with its key. Null where it would only repeat the provider row (one local model).
+ */
+export function routingLine(ai: AiSettings): string | null {
+  if (!routedByKeys(ai.provider)) return null;
+  const summary = routeFor("summary", ai);
+  const writing = routeFor("writing", ai);
+  if (!summary || !writing) return null;
+  const main = summary.provider === writing.provider ? t("ai.route.one", { provider: providerLabel(writing.provider) }) : t("ai.route.split", { summaries: providerLabel(summary.provider), rest: providerLabel(writing.provider) });
+  return routeFor("categorize", ai)?.provider === "jev" ? `${main} ${t("ai.route.jev")}` : main;
 }
 
 /** A list as the language says it: "Claude (Anthropic) and OpenAI". */

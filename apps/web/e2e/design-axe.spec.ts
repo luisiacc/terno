@@ -168,8 +168,10 @@ test.describe("axe", { tag: "@variant" }, () => {
       await page.getByTestId(`ai-choice-${choice}`).click();
     };
     await page.getByTestId("tab-ai").click();
-    await provider("anthropic");
-    await expect(page.getByTestId("ai-privacy")).toContainText("Claude (Anthropic) receives a conversation’s text");
+    // plan 168: Claude or OpenAI, two key rows and the routing line, no model
+    await provider("keys");
+    await expect(page.getByTestId("ai-privacy")).toContainText("Claude (Anthropic) and OpenAI receive a conversation’s text");
+    await expect(page.getByTestId("ai-key-row-openai")).toBeVisible();
     await clean(page, "Settings, AI on a cloud provider", "[data-testid=settings-dialog]");
     await provider("fake");
     await page.keyboard.press("Escape");

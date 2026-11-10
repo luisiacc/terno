@@ -109,13 +109,13 @@ describe("a source opens as it is now", () => {
 });
 
 describe("where a question can go", () => {
-  const ai = (over: Partial<AiSettings>) => ({ provider: "none", model: "", tasks: {}, keys: {}, hasKey: false, keyConfirmed: false, local: false, ...over }) as unknown as AiSettings;
+  const ai = (over: Partial<AiSettings>) => ({ provider: "none", model: "", keys: {}, hasKey: false, keyConfirmed: false, local: false, ...over }) as unknown as AiSettings;
 
-  it("Ask's own target counts, whatever the main provider is", () => {
+  it("by plan 168's routing: either key on Claude or OpenAI, a model on a local server; an old task choice counts for nothing", () => {
     expect(askReady(ai({}))).toBe(false);
-    expect(askReady(ai({ tasks: { ask: { provider: "openai", model: "m" } } }))).toBe(false);
-    expect(askReady(ai({ tasks: { ask: { provider: "openai", model: "m" } }, keys: { openai: { hasKey: true, keyHint: null } } }))).toBe(true);
-    expect(askReady(ai({ tasks: { ask: { provider: "ollama", model: "m" } } }))).toBe(true);
+    expect(askReady(ai({ tasks: { ask: { provider: "ollama", model: "m" } } } as Partial<AiSettings>))).toBe(false);
+    expect(askReady(ai({ provider: "anthropic", keys: { openai: { hasKey: true, keyHint: null } } }))).toBe(true);
+    expect(askReady(ai({ provider: "ollama", model: "m" }))).toBe(true);
   });
 
   it("a key added lifts what said it had nowhere to go", () => {

@@ -13,9 +13,17 @@ describe("who sees Today (plan 145)", () => {
   });
 
   it("a provider that needs a key, without one, is none", () => {
-    expect(aiFeaturesAvailable(settings("anthropic", { needsKey: true }))).toBe(false);
-    expect(aiFeaturesAvailable(settings("anthropic", { needsKey: true, hasKey: true, keyConfirmed: true }))).toBe(true);
-    expect(aiFeaturesAvailable(settings("anthropic", { needsKey: true, hasKey: true, keyConfirmed: true, keyUnreadable: true }))).toBe(false);
+    expect(aiFeaturesAvailable(settings("compatible", { preset: "groq", needsKey: true }))).toBe(false);
+    expect(aiFeaturesAvailable(settings("compatible", { preset: "groq", needsKey: true, hasKey: true, keyConfirmed: true }))).toBe(true);
+    expect(aiFeaturesAvailable(settings("compatible", { preset: "groq", needsKey: true, hasKey: true, keyConfirmed: true, keyUnreadable: true }))).toBe(false);
+  });
+
+  it("plan 168: on Claude or OpenAI, a usable key for either, whichever of the two is stored", () => {
+    const key = (over = {}) => ({ hasKey: true, keyHint: null, ...over });
+    expect(aiFeaturesAvailable(settings("anthropic", { needsKey: true, keys: {} }))).toBe(false);
+    expect(aiFeaturesAvailable(settings("anthropic", { needsKey: true, keys: { openai: key() } }))).toBe(true);
+    expect(aiFeaturesAvailable(settings("openai", { needsKey: true, keyUnreadable: true, keys: { openai: key({ keyUnreadable: true }), anthropic: key() } }))).toBe(true);
+    expect(aiFeaturesAvailable(settings("anthropic", { needsKey: true, keys: { anthropic: key({ keyConfirmed: false }) } }))).toBe(false);
   });
 });
 

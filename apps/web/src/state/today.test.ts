@@ -9,7 +9,7 @@ const { digestPick, flattenToday, installToday, keepDigestPick, useToday } = awa
 installToday();
 const { setApp } = await import("./app");
 
-const ai = { provider: "ollama", model: "m", local: true, needsKey: false, tasks: {}, keys: {} };
+const ai = { provider: "ollama", model: "m", local: true, needsKey: false, keys: {} };
 
 describe("the digest page's pick (plan 161)", () => {
   it("what was unticked, and where it was, outlive the page; a new day starts afresh", () => {

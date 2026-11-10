@@ -33,7 +33,7 @@ afterEach(async () => {
 it("a pre-existing Settings modal relinquishes its focus scope while the fatal dialog owns the native actions", async () => {
   useApp.setState({ dialog: "settings", settingsTab: "general", settings: {
     ...DEFAULT_SETTINGS,
-    ai: { provider: "none", model: "", baseURL: null, preset: null, hasKey: false, keyUnreadable: false, keyHint: null, keyOrigin: null, keyConfirmed: true, local: true, capabilities: null, profiles: {}, tasks: {}, keys: {}, monthlyLimitUsd: 10 },
+    ai: { provider: "none", model: "", baseURL: null, preset: null, hasKey: false, keyUnreadable: false, keyHint: null, keyOrigin: null, keyConfirmed: true, local: true, capabilities: null, profiles: {}, keys: {}, monthlyLimitUsd: 10 },
   } });
   useDiag.setState({ view: { ...useDiag.getState().view!, engine: "running" } });
   const root = document.createElement("div"); root.id = "root"; document.body.append(root); mounted = createRoot(root);

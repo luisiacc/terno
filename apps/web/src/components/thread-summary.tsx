@@ -8,7 +8,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/to
 import { ArrowRight, Reply, Sparkles } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { useEffect, useLayoutEffect, useRef } from "react";
-import { summaryTarget } from "~/lib/ai";
+import { routeOf } from "~/lib/ai";
 import { messageDate } from "~/lib/format";
 import { bodyArrivedForSummary, dismissSummary, loadSummary, revealSummaryMessage, setSummaryOpen, stopSummary, summarizable, summarize, useSummaries } from "~/lib/summaries";
 import { replyFromItem } from "~/lib/summary-reply";
@@ -214,8 +214,8 @@ export default function ThreadSummary({ detail }: { detail: ThreadDetail }) {
       case "error": {
         // plan 161, pass 2: the one AI error (ai-card): plain words, never an address, Try again and AI settings
         // the summary's own provider (a task choice, or OpenAI's default), not always Settings' first row (Codex review)
-        const target = ai ? summaryTarget(ai) : null;
-        const copy = aiErrorCopy({ message: ui.message, kind: ui.errorKind, key: ui.key }, target && target.state !== "none" ? errorTarget(target.provider, ai) : null);
+        const target = ai ? routeOf("summary", ai) : null;
+        const copy = aiErrorCopy({ message: ui.message, kind: ui.errorKind, key: ui.key }, target && target.provider !== "none" ? errorTarget(target.provider, ai) : null);
         return (
           <div data-testid="summary-block" data-state="error" className={cn(CARD, "flex min-h-10 px-4 py-2.5")}>
             <AiErrorNotice

@@ -4,10 +4,11 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { client } from "~/rpc/connection";
-import { AiUseGroup, SummariesGroup } from "./ai-summaries";
+import { useApp } from "~/state/app";
+import { AiUseGroup, AskGroup, DigestGroup, FollowupsGroup, SummariesGroup } from "./ai-summaries";
 
 vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-vi.mock("~/rpc/connection", () => ({ client: { call: vi.fn() } }));
+vi.mock("~/rpc/connection", () => ({ client: { call: vi.fn(), on: vi.fn(() => () => {}) } }));
 vi.hoisted(() => Object.assign(globalThis, { matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) }));
 
 let cleanup: (() => void) | null = null;
@@ -26,23 +27,36 @@ async function render(node: React.ReactNode) {
 }
 
 const settings = (over: Partial<AppSettings["ai"]> = {}) =>
-  ({ summaries: { enabled: false }, ai: { provider: "anthropic", model: "claude-sonnet-5-5", local: false, keys: {}, profiles: {}, tasks: {}, monthlyLimitUsd: 20, ...over } }) as unknown as AppSettings;
+  ({ summaries: { enabled: true }, ask: { enabled: true }, followups: { enabled: true, nudgeAfterDays: 3, scanAnswered: true }, today: { digest: true }, devAi: false, ai: { provider: "anthropic", model: "claude-sonnet-5-5", local: false, hasKey: true, keyConfirmed: true, keyUnreadable: false, keys: { anthropic: { hasKey: true, keyHint: null }, openai: { hasKey: true, keyHint: null } }, profiles: {}, monthlyLimitUsd: 20, ...over } }) as unknown as AppSettings;
 
-describe("summaries on Claude", () => {
-  beforeEach(() => void vi.mocked(client.call).mockResolvedValue({} as never));
-
-  it("Use Claude picks Haiku: this runs on every new mail, so never the model drafts use", async () => {
-    const update = vi.fn(async () => {});
-    const host = await render(<SummariesGroup settings={settings()} update={update as never} />);
-    await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="ai-summaries-use"]')!.click());
-    expect(update).toHaveBeenCalledWith({ ai: { tasks: { summary: { provider: "anthropic", model: "claude-haiku-5-5" } } } });
+describe("plan 168: no feature chooses its provider or model", () => {
+  beforeEach(() => {
+    vi.mocked(client.call).mockImplementation((async (method: string) => (method === "today.notNewsletters" ? { senders: [] } : method === "followups.scanOffer" ? { count: 0, usd: null } : {})) as never);
+    useApp.setState({ devAi: null, settings: settings() } as never);
   });
 
-  it("another cloud provider keeps the model it's set to", async () => {
-    const update = vi.fn(async () => {});
-    const host = await render(<SummariesGroup settings={settings({ provider: "compatible", model: "some-model" })} update={update as never} />);
-    await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="ai-summaries-use"]')!.click());
-    expect(update).toHaveBeenCalledWith({ ai: { tasks: { summary: { provider: "compatible", model: "some-model" } } } });
+  it("summaries, Ask, follow-ups and the digest show their switch and name where they run, with no select and no model field", async () => {
+    const s = settings();
+    const host = await render(
+      <>
+        <SummariesGroup settings={s} update={vi.fn() as never} />
+        <AskGroup settings={s} update={vi.fn() as never} />
+        <FollowupsGroup settings={s} update={vi.fn() as never} />
+        <DigestGroup settings={s} update={vi.fn() as never} />
+      </>,
+    );
+    for (const id of ["ai-summaries-switch", "ai-ask-switch", "ai-followups-switch", "ai-digest-switch"]) expect(host.querySelector(`[data-testid="${id}"]`), id).not.toBeNull();
+    expect(host.querySelectorAll('[role="combobox"]')).toHaveLength(1); // the nudge's days, which chooses no model
+    expect(host.querySelector('[data-testid$="-target"], [data-testid$="-model"], [data-testid$="-model-input"], [data-testid$="-provider"]')).toBeNull();
+    expect(host.textContent).toContain("Sends the text of each new conversation to OpenAI");
+    expect(vi.mocked(client.call).mock.calls.some(([method]) => method === "ai.listModels")).toBe(false);
+  });
+
+  it("without AI, summaries' group isn't there: the provider group above is the way in", async () => {
+    const off = settings({ provider: "none", hasKey: false, keys: {} });
+    useApp.setState({ settings: off } as never);
+    const host = await render(<SummariesGroup settings={off} update={vi.fn() as never} />);
+    expect(host.querySelector('[data-testid="ai-summaries"]')).toBeNull();
   });
 });
 

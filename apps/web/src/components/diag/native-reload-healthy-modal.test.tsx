@@ -23,7 +23,7 @@ it.each([["settings","missing"],["settings","unknown"],["shortcuts","missing"],[
  if(state==="unknown"){setDraftTransport(async()=>{throw{code:"TIMEOUT"};});await copyDraft(key);}
  const root=document.createElement("div");root.id="root";document.body.append(root);const mounted=createRoot(root);
  try{
-  useApp.setState({dialog,settingsTab:"general",settings:{...DEFAULT_SETTINGS,ai:{provider:"none",model:"",baseURL:null,preset:null,hasKey:false,keyUnreadable:false,keyHint:null,keyOrigin:null,keyConfirmed:true,local:true,capabilities:null,profiles: {}, tasks: {}, keys: {}, monthlyLimitUsd: 10}}});
+  useApp.setState({dialog,settingsTab:"general",settings:{...DEFAULT_SETTINGS,ai:{provider:"none",model:"",baseURL:null,preset:null,hasKey:false,keyUnreadable:false,keyHint:null,keyOrigin:null,keyConfirmed:true,local:true,capabilities:null,profiles: {}, keys: {}, monthlyLimitUsd: 10}}});
   await act(async()=>mounted.render(createElement(ModalHostProvider,null,createElement(Fragment,null,createElement(dialog==="settings"?SettingsDialog:ShortcutsDialog),createElement(EngineStopped),createElement(NativeReloadNotice)))));
   expect(document.querySelector(`[data-testid="${dialog}-dialog"][data-open]`)).not.toBeNull();
   const prior=document.querySelector<HTMLButtonElement>(`[data-testid="${dialog}-dialog"] button`)!; prior.focus();

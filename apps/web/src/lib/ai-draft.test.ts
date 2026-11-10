@@ -184,7 +184,7 @@ beforeEach(() => {
   useAiDraftUi.setState({ rows: {}, enabled: true });
   setApp({
     accounts: [{ id: 1, email: "me@example.test" } as Account, { id: 2, email: "work@example.test" } as Account],
-    settings: { ai: { provider: "fake", model: "demo", local: true, tasks: {}, keys: {}, hasKey: false, keyConfirmed: false, profiles: {} } } as never,
+    settings: { ai: { provider: "fake", model: "demo", local: true, keys: {}, hasKey: false, keyConfirmed: false, profiles: {} } } as never,
     compose: null,
   });
   globalThis.localStorage?.clear?.();
@@ -540,13 +540,13 @@ describe("§10.4: binding and races", () => {
     expect(session(key)).toBeUndefined();
   });
 
-  it("plan 161, pass 3 (Codex review): a stopped write names the writing task's own model, not Settings' first row's", async () => {
-    setApp({ settings: { ai: { provider: "fake", model: "demo", local: true, tasks: { writing: { provider: "fake", model: "chosen-writing-model" } }, keys: {}, hasKey: false, keyConfirmed: false, profiles: {} } } as never });
+  it("plan 168: a stopped write names the model routing picks, never an old task choice or the profile's", async () => {
+    setApp({ settings: { ai: { provider: "openai", model: "", local: false, tasks: { writing: { provider: "openai", model: "chosen-writing-model" } }, keys: { anthropic: { hasKey: true }, openai: { hasKey: true } }, hasKey: true, keyConfirmed: true, profiles: {} } } as never });
     const { key } = await writing();
     delta(key, "Hi");
     await new Promise((r) => requestAnimationFrame(() => r(null)));
     store.stop(key);
-    expect(session(key)!.strip!.used.model).toBe("chosen-writing-model");
+    expect(session(key)!.strip!.used).toMatchObject({ provider: "anthropic", model: "claude-sonnet-5-5" });
   });
 
   it("plan 163: after a stopped write's edited Undo, new words typed in the body retire the old snack's Undo", async () => {
@@ -565,7 +565,7 @@ describe("§10.4: binding and races", () => {
 
   it("plan 161, pass 3 (second review): on Claude with no choice, a stopped write names the model drafts run on there", async () => {
     const { WRITING_CLAUDE_MODEL } = await import("@terno/core");
-    setApp({ settings: { ai: { provider: "anthropic", model: "claude-opus-5-5", local: false, tasks: {}, keys: { anthropic: { hasKey: true } }, hasKey: true, keyConfirmed: true, profiles: {} } } as never });
+    setApp({ settings: { ai: { provider: "anthropic", model: "claude-opus-5-5", local: false, keys: { anthropic: { hasKey: true } }, hasKey: true, keyConfirmed: true, profiles: {} } } as never });
     const { key } = await writing();
     delta(key, "Hi");
     await new Promise((r) => requestAnimationFrame(() => r(null)));
@@ -1026,7 +1026,7 @@ describe("existing text, and what goes wrong", () => {
   });
 
   it("no provider: the row says so, and asks nothing", async () => {
-    setApp({ settings: { ai: { provider: "none", model: "", local: true, tasks: {}, keys: {}, hasKey: false, keyConfirmed: false, profiles: {} } } as never });
+    setApp({ settings: { ai: { provider: "none", model: "", local: true, keys: {}, hasKey: false, keyConfirmed: false, profiles: {} } } as never });
     const key = createDraft({ ...newFields(1), toText: "ana@example.test" });
     await store.openRow({ key });
     expect(session(key)!.phase).toBe("noProvider");
@@ -1055,7 +1055,7 @@ describe("existing text, and what goes wrong", () => {
   });
 
   it("a cloud provider's first draft goes at once, with nothing asked first (plan 131: no per-use consent)", async () => {
-    setApp({ settings: { ai: { provider: "anthropic", model: "x", local: false, tasks: {}, keys: {}, hasKey: true, keyConfirmed: true, profiles: {} } } as never });
+    setApp({ settings: { ai: { provider: "anthropic", model: "x", local: false, keys: { anthropic: { hasKey: true } }, hasKey: true, keyConfirmed: true, profiles: {} } } as never });
     const key = createDraft({ ...newFields(1), toText: "ana@example.test" });
     editor(key);
     await store.openRow({ key });

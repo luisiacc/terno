@@ -9,6 +9,7 @@ export * from "./keybindings";
 export * from "./address";
 export { decodeEncodedWords } from "./encoded-words";
 export * from "./ai";
+export * from "./ai-routing";
 export * from "./ask";
 export * from "./actions";
 export * from "./replies";

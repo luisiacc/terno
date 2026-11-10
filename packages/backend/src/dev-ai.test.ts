@@ -3,7 +3,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AiError, createAi, DEFAULT_ANTHROPIC_MODEL, type CompletionRequest, type ModelTransport, type ProviderConfig } from "@terno/ai";
-import { devAiKeys, JEV_DEFAULT_MODEL, SUMMARY_DEFAULT_MODEL, WRITING_CLAUDE_MODEL, type DevAiKeys } from "@terno/core";
+import { AI_JOBS, ASK_CLAUDE_MODEL, devAiKeys, routeFor, JEV_DEFAULT_MODEL, SUMMARY_CLAUDE_MODEL, SUMMARY_DEFAULT_MODEL, WRITING_CLAUDE_MODEL, type DevAiKeys } from "@terno/core";
+
 import { createMemoryTransportPair, RpcClient, type AppSettings } from "@terno/core/rpc";
 import { demoRegistry } from "@terno/mail";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -164,31 +165,40 @@ describe("on a local build", () => {
 
     const overlaid = aiOf(await on());
     expect(overlaid).toMatchObject({ fromEnv: true, provider: "anthropic", model: DEFAULT_ANTHROPIC_MODEL, hasKey: true, keyConfirmed: true, local: false, baseURL: null, keyHint: null });
-    expect(overlaid.keys.openai).toEqual({ hasKey: true, keyHint: null });
-    expect(overlaid.keys.jev).toEqual({ hasKey: true, keyHint: null });
+    expect(overlaid.keys.openai).toEqual({ hasKey: true, keyHint: null, keyUnreadable: false, keyOrigin: null, keyConfirmed: true });
+    expect(overlaid.keys.jev).toEqual({ hasKey: true, keyHint: null, keyUnreadable: false, keyOrigin: null, keyConfirmed: true });
 
     expect(aiOf(await client.call("settings.update", { devAi: false }))).toEqual(saved);
   });
 
-  it("routes each task the way Pro will, on the environment's keys", async () => {
+  it("routes every job the way Pro will, on the environment's keys: plan 168's `routeFor` (held to the rating's PRO_ROUTING in keys.test)", async () => {
     const { backend, built, on } = await start(ALL);
     await on();
-    const target = async (task: Parameters<typeof backend.aiService.forTask>[0]) => {
-      await backend.aiService.forTask(task);
+    const routed: Record<string, string> = {};
+    for (const job of AI_JOBS) {
+      await backend.aiService.forTask(job);
       const { id, model, apiKey } = built.at(-1)!;
-      return { id, model, apiKey };
-    };
-    expect(await target("writing")).toEqual({ id: "anthropic", model: WRITING_CLAUDE_MODEL, apiKey: "env-anthropic" });
-    expect(await target("summary")).toEqual({ id: "openai", model: SUMMARY_DEFAULT_MODEL, apiKey: "env-openai" });
-    expect(await target("categorize")).toEqual({ id: "jev", model: JEV_DEFAULT_MODEL, apiKey: "env-jev" });
+      expect(apiKey, job).toBe(`env-${id}`);
+      routed[job] = `${id}/${model}`;
+      const route = routeFor(job, { provider: "anthropic", model: "", keys: { anthropic: { hasKey: true, keyHint: null }, openai: { hasKey: true, keyHint: null }, jev: { hasKey: true, keyHint: null } } });
+      expect(routed[job], job).toBe(`${route!.provider}/${route!.model}`);
+    }
+    expect(routed).toMatchObject({ summary: `openai/${SUMMARY_DEFAULT_MODEL}`, writing: `anthropic/${WRITING_CLAUDE_MODEL}`, categorize: `jev/${JEV_DEFAULT_MODEL}` });
   });
 
-  it("falls to OpenAI with no Anthropic key, and refuses summaries' default with no OpenAI one", async () => {
-    const openai = await start({ openai: "env-openai" });
-    expect(aiOf(await openai.on())).toMatchObject({ provider: "openai", model: SUMMARY_DEFAULT_MODEL, hasKey: true });
+  it("with only an Anthropic key everything runs on Claude, summaries on Haiku; with only OpenAI's, everything on Luna", async () => {
     const anthropic = await start({ anthropic: "env-anthropic" });
     await anthropic.on();
-    await expect(anthropic.backend.aiService.forTask("summary")).rejects.toThrow();
+    await anthropic.backend.aiService.forTask("summary");
+    expect(anthropic.built.at(-1)).toMatchObject({ id: "anthropic", model: SUMMARY_CLAUDE_MODEL, apiKey: "env-anthropic" });
+    await anthropic.backend.aiService.forTask("writing");
+    expect(anthropic.built.at(-1)).toMatchObject({ id: "anthropic", model: WRITING_CLAUDE_MODEL });
+    const openai = await start({ openai: "env-openai" });
+    expect(aiOf(await openai.on())).toMatchObject({ provider: "openai", hasKey: true });
+    for (const job of AI_JOBS) {
+      await openai.backend.aiService.forTask(job);
+      expect(openai.built.at(-1), job).toMatchObject({ id: "openai", model: SUMMARY_DEFAULT_MODEL, apiKey: "env-openai" });
+    }
   });
 
   it("with only JEV, categorizes and offers nothing that writes", async () => {
@@ -210,12 +220,14 @@ describe("on a local build", () => {
     expect((await backend.aiService.config({ provider: "anthropic", model: "m", baseURL: "https://elsewhere.example/v1" })).baseURL).not.toContain("elsewhere");
   });
 
-  it("drops a task's choice on a provider the environment doesn't hold, and keeps one it does", async () => {
-    const { client, on } = await start({ anthropic: "env-anthropic" });
-    await client.call("settings.update", { ai: { tasks: { summary: { provider: "ollama", model: "local" }, ask: { provider: "anthropic", model: "chosen" } } } });
-    const { tasks } = aiOf(await on());
-    expect(tasks.summary).toBeUndefined();
-    expect(tasks.ask).toEqual({ provider: "anthropic", model: "chosen" });
+  it("a task's choice saved before plan 168 sends nothing anywhere: a local model chosen for summaries included", async () => {
+    const { backend, built, on } = await start({ anthropic: "env-anthropic" });
+    await backend.store.settings.update<{ ai?: object }, void>("app", {}, (raw) => ({ value: { ...raw, ai: { ...raw.ai, tasks: { summary: { provider: "ollama", model: "local" }, ask: { provider: "anthropic", model: "chosen" } } } }, result: undefined }));
+    expect(aiOf(await on())).not.toHaveProperty("tasks");
+    await backend.aiService.forTask("summary");
+    expect(built.at(-1)).toMatchObject({ id: "anthropic", model: SUMMARY_CLAUDE_MODEL });
+    await backend.aiService.forTask("ask");
+    expect(built.at(-1)).toMatchObject({ id: "anthropic", model: ASK_CLAUDE_MODEL });
   });
 
   it("won't save a key around the overlay, and leaves the saved one alone", async () => {

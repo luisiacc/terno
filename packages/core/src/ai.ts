@@ -46,6 +46,13 @@ export const FOLLOWUP_OPENAI_MODEL = "gpt-6-luna";
 export const ASK_CLAUDE_MODEL = "claude-sonnet-5-5";
 export const ASK_PLAN_CLAUDE_MODEL = "claude-haiku-5-5";
 export const ASK_PLAN_OPENAI_MODEL = "gpt-6-luna";
+/** Plan 168: filters and categorizing on Claude, as they ran on its default profile (`@terno/ai`'s DEFAULT_ANTHROPIC_MODEL). */
+export const FILTER_CLAUDE_MODEL = "claude-opus-5-5";
+/**
+ * Plan 168: OpenAI's model for everything else. The only OpenAI model Terno knows the price of (the owner's figure); a
+ * stronger one for drafting and Ask is the owner's call (the plan's open question).
+ */
+export const OPENAI_DEFAULT_MODEL = "gpt-6-luna";
 
 /** Plan 132: what a summary can point out. */
 export const SUMMARY_ITEM_KINDS = ["decision", "date", "action", "question"] as const;

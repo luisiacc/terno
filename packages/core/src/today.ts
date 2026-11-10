@@ -1,5 +1,6 @@
 import type { AppSettings } from "./rpc/contract";
 import type { ThreadSummary } from "./types";
+import { aiReady, routedByKeys } from "./ai-routing";
 
 /** Plan 145: what needs you today, and newsletters folded into one digest. Local but for the digest, which is its own opt-in. */
 
@@ -25,50 +26,17 @@ export const DEFAULT_TODAY: TodaySetting = { show: true, prepareAt: "08:00", not
 
 /**
  * Who sees Today: a provider set up, or (once plan 85's Pro exists) an active entitlement. One helper, so Pro joins in one
- * line. It reads no provider's id but "none".
+ * line.
  */
 export function aiFeaturesAvailable(settings: Pick<AppSettings, "ai"> | null | undefined, entitlement?: { active: boolean } | null): boolean {
   if (entitlement?.active === true) return true;
   const ai = settings?.ai;
-  if (!ai || ai.provider === "none" || ai.keyUnreadable) return false;
+  if (!ai) return false;
+  // plan 168: on keys, either usable one will do, whichever of the two is the one stored
+  if (routedByKeys(ai.provider)) return aiReady(ai);
+  if (ai.provider === "none" || ai.keyUnreadable) return false;
   // a key removed leaves the provider chosen: without one, it can't run. A model here needs none.
   return !ai.needsKey || (ai.hasKey && ai.keyConfirmed);
-}
-
-type AiFields = AppSettings["ai"];
-
-const LOCAL_PROVIDERS: readonly AppSettings["ai"]["provider"][] = ["ollama", "lmstudio", "fake"];
-
-/**
- * The AI can really run: a provider and a model chosen, and its key saved (readable, for this endpoint) when it needs
- * one. AI features are offered only then; otherwise they could only fail.
- */
-export function aiReady(ai: AiFields | null | undefined): ai is AiFields {
-  if (!ai || ai.provider === "none" || !ai.model.trim() || ai.keyUnreadable) return false;
-  const preset = ai.preset ?? "custom";
-  // custom and Azure have no endpoint of their own: they need the one saved
-  if (ai.provider === "compatible" && !ai.baseURL && (!ai.preset || preset === "custom" || preset === "azure")) return false;
-  const keyed = ai.provider === "anthropic" || ai.provider === "openai" || (ai.provider === "compatible" && preset !== "custom");
-  return !keyed || (ai.hasKey && ai.keyConfirmed);
-}
-
-/** A task's own choice can go: the backend never falls back from one to anything else. */
-export const chosenTargetReady = (ai: AiFields, chosen: { provider: AiFields["provider"] }): boolean => chosen.provider !== "none" && (LOCAL_PROVIDERS.includes(chosen.provider) || chosen.provider === "compatible" || ai.keys[chosen.provider]?.hasKey === true);
-
-/** Plan 157: where drafting can go, by `AiService.targetFor`'s rule. */
-export function writingCanRun(ai: AiFields): boolean {
-  const chosen = ai.tasks.writing;
-  return chosen ? chosenTargetReady(ai, chosen) : aiReady(ai);
-}
-
-/**
- * Plan 157: whether summaries can run with no one asking, by `AiService.targetFor`'s rule. A paid provider nobody picked
- * for them isn't one (plan 132 §2): that's the question Settings asks.
- */
-export function summaryCanRun(ai: AiFields): boolean {
-  const chosen = ai.tasks.summary;
-  if (chosen) return chosenTargetReady(ai, chosen);
-  return ai.keys.openai?.hasKey === true || (ai.local && aiReady(ai));
 }
 
 export interface TodayWhy {

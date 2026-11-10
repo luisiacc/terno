@@ -469,31 +469,28 @@ test.describe("summaries (plan 132)", () => {
       await page.getByTestId("open-settings").click();
       await page.getByTestId("tab-ai").click();
       await expect(page.getByTestId("ai-tab")).toBeVisible();
-      const target = page.getByTestId("ai-summaries-target");
-      await target.scrollIntoViewIfNeeded();
-      await expect(target.getByTestId("ai-summaries-add-key")).toHaveText("Add an OpenAI key");
-      await expect(target.getByTestId("ai-summaries-use")).toHaveCount(0);
+      // plan 168: the provider group above is the way in; nothing here chooses where summaries run
+      await expect(page.getByTestId("ai-summaries")).toHaveCount(0);
       // plan 157: they do nothing without AI, so they aren't here
       await expect(page.getByTestId("ai-summaries-switch")).toHaveCount(0);
       await expect(page.getByTestId("ai-drafting-sent-mail")).toHaveCount(0);
 
-      // only another provider's key: it asks, with both ways, and sends nothing to anyone
-      await server.backend.server.invoke("settings.update", { ai: { provider: "anthropic", baseURL: `${stub.url}`, model: "claude-sonnet-5-5" } }, dev);
+      // a Claude key alone: they're Claude's (Terno picks the model), said in the switch's hint, with nothing to choose
+      await server.backend.server.invoke("settings.update", { ai: { provider: "anthropic", baseURL: `${stub.url}` } }, dev);
       await server.backend.server.invoke("ai.setKey", { provider: "anthropic", value: "sk-ant-e2e-not-a-real-key" }, dev);
       await page.reload();
       await page.locator("[data-ready]").waitFor();
       await page.getByTestId("open-settings").click();
       await page.getByTestId("tab-ai").click();
-      await target.scrollIntoViewIfNeeded();
-      await expect(target.getByTestId("ai-summaries-add-key")).toBeVisible();
-      await expect(target.getByTestId("ai-summaries-use")).toHaveText(/Use Claude/);
-      await target.getByTestId("ai-summaries-add-key").click();
-      await expect(target.getByTestId("ai-summaries-key")).toBeVisible();
+      await page.getByTestId("ai-summaries").scrollIntoViewIfNeeded();
+      await expect(page.getByTestId("ai-summaries")).toContainText("Sends the text of each new conversation to Claude (Anthropic)");
+      await expect(page.getByTestId("ai-tab").locator('[data-testid$="-target"], [data-testid="ai-model"]')).toHaveCount(0);
       await page.keyboard.press("Escape");
       expect(stub.summaries).toEqual([]);
 
-      // OpenAI (on the stub, never the real one): it goes at once, with nothing to agree to (plan 131: no per-use consent)
-      await server.backend.server.invoke("settings.update", { ai: { provider: "openai", baseURL: `${stub.url}/v1`, model: "gpt-6-luna" } }, dev);
+      // an OpenAI key too (on the stub, never the real one): summaries move to it, at once, with nothing to agree to
+      // (plan 131: no per-use consent; plan 168: both keys is Pro's routing)
+      await server.backend.server.invoke("settings.update", { ai: { provider: "openai", baseURL: `${stub.url}/v1` } }, dev);
       await server.backend.server.invoke("ai.setKey", { provider: "openai", value: "sk-openai-e2e-not-a-real-key" }, dev);
       await page.reload();
       await page.locator("[data-ready]").waitFor();

@@ -7,7 +7,7 @@ import {
   type Capabilities,
   type CompatiblePreset,
 } from "@terno/ai";
-import { AI_PROVIDER_IDS, canonicalThemeId, COMPATIBLE_PRESETS, DEFAULT_DESIGN, DESIGN_IDS, DESIGN_PALETTE, DEV_AI_PROVIDERS, fitsMode, isDesignId, isDevAiProvider, JEV_DEFAULT_MODEL, SUMMARY_DEFAULT_MODEL, textRef, type DevAiKeys, themeMode, type AiTaskName, type AiTaskTarget, type CustomTheme, type TextRef, type ThemeMode } from "@terno/core";
+import { AI_PROVIDER_IDS, canonicalThemeId, COMPATIBLE_PRESETS, DEFAULT_DESIGN, DESIGN_IDS, DESIGN_PALETTE, DEV_AI_PROVIDERS, fitsMode, isDesignId, JEV_DEFAULT_MODEL, SUMMARY_DEFAULT_MODEL, textRef, type DevAiKeys, themeMode, type AiTaskName, type AiTaskTarget, type CustomTheme, type TextRef, type ThemeMode } from "@terno/core";
 import type { AiProfile, AiSettings, AppSettings, SettingsPatch } from "@terno/core/rpc";
 import { DEFAULT_TODAY, FAVORITES_MAX, NUDGE_DEFAULT, type FavoriteFolder } from "@terno/core";
 import { isLanguageSetting, L, type Localized } from "@terno/i18n";
@@ -26,7 +26,7 @@ interface StoredSettings extends Partial<General> {
     profiles?: Partial<Record<AiProviderId, AiProfile>>;
     /** observed by Test connection (or a ladder downgrade), per provider + endpoint + model */
     capabilities?: Record<string, Capabilities>;
-    /** plan 131 */
+    /** plan 131's per-task choice: kept as it was stored, read by nothing since plan 168 */
     tasks?: Partial<Record<AiTaskName, AiTaskTarget>>;
     monthlyLimitUsd?: number;
   };
@@ -433,12 +433,14 @@ function resolveThemes(g: General): General {
 }
 
 /** The named providers' keys, for rows that offer another provider than the current one. */
-async function keySummary(store: SettingsStore): Promise<AiSettings["keys"]> {
+async function keySummary(store: SettingsStore, profiles: Partial<Record<AiProviderId, AiProfile>>, origins: Record<string, string>, unreadable: Set<string>): Promise<AiSettings["keys"]> {
   const hints = await store.settings.get<Record<string, string>>(KEY_HINTS, {});
   const out: AiSettings["keys"] = {};
   for (const provider of ["anthropic", "openai", "jev"] as const) {
     const secret = keySecretName(provider);
-    out[provider] = { hasKey: await store.secrets.has(secret), keyHint: hints[secret] ?? null };
+    const bound = origins[secret] ?? null;
+    // plan 168: each key's own state, since any of them may be the one a job routes to (as the configured one's below)
+    out[provider] = { hasKey: await store.secrets.has(secret), keyHint: hints[secret] ?? null, keyUnreadable: unreadable.has(secret), keyOrigin: bound, keyConfirmed: bound === null || bound === endpointOrigin(provider, profiles[provider]) };
   }
   return out;
 }
@@ -487,7 +489,7 @@ export async function activeDevAi(store: SettingsStore): Promise<DevAiKeys | nul
   return keys && (await stored(store)).devAi === true ? keys : null;
 }
 
-/** Plan 146 §1: Pro's routing on the environment's keys, over the saved settings, which it leaves as they are. */
+/** Plan 146 §1: the environment's keys over the saved settings, which it leaves as they are; `routeFor` routes them as Pro's (plan 168). */
 function withDevAi(ai: AiSettings, keys: DevAiKeys): AiSettings {
   const provider = keys.anthropic ? "anthropic" : keys.openai ? "openai" : "none";
   const profiles = { ...ai.profiles };
@@ -495,9 +497,7 @@ function withDevAi(ai: AiSettings, keys: DevAiKeys): AiSettings {
   for (const id of DEV_AI_PROVIDERS) if (profiles[id]) profiles[id] = { model: profiles[id].model };
   profiles.anthropic = { model: profiles.anthropic?.model || DEFAULT_ANTHROPIC_MODEL };
   profiles.openai = { model: profiles.openai?.model || SUMMARY_DEFAULT_MODEL };
-  // a row may choose among what the environment holds; a choice from before can't send mail elsewhere
-  const tasks = Object.fromEntries(Object.entries(ai.tasks).filter(([, target]) => target && isDevAiProvider(target.provider) && keys[target.provider]));
-  const summary = (id: (typeof DEV_AI_PROVIDERS)[number]) => ({ hasKey: Boolean(keys[id]), keyHint: null });
+  const summary = (id: (typeof DEV_AI_PROVIDERS)[number]) => ({ hasKey: Boolean(keys[id]), keyHint: null, keyUnreadable: false, keyOrigin: null, keyConfirmed: true });
   return {
     ...ai,
     fromEnv: true,
@@ -514,7 +514,6 @@ function withDevAi(ai: AiSettings, keys: DevAiKeys): AiSettings {
     local: false,
     capabilities: null,
     profiles,
-    tasks,
     keys: { anthropic: summary("anthropic"), openai: summary("openai"), jev: summary("jev") },
   };
 }
@@ -551,8 +550,7 @@ export async function readStoredSettings(store: SettingsStore): Promise<AppSetti
     local: isLocalProvider({ id: provider, baseURL: profile.baseURL, preset: profile.preset }),
     capabilities: capabilities[capabilityKey(provider, profile)] ?? null,
     profiles,
-    tasks: s.ai?.tasks ?? {},
-    keys: await keySummary(store),
+    keys: await keySummary(store, profiles, origins, unreadable),
     monthlyLimitUsd: s.ai?.monthlyLimitUsd ?? DEFAULT_MONTHLY_LIMIT_USD,
   };
   return { ...resolveThemes({ ...DEFAULT_SETTINGS, ...general, language: languageOf(s) }), ai };
@@ -626,13 +624,9 @@ function patchedSettings(s: StoredSettings, patch: SettingsPatch, hasLegacyKey: 
     if (id !== undefined && !fitsMode(id, mode, custom)) throw new SettingsError(L(mode === "light" ? "errors.themeUnknownLight" : "errors.themeUnknownDark", { id }));
   }
   const { aiProvider: _p, aiModel: _m, ...kept } = s;
-  const tasks = { ...s.ai?.tasks };
-  for (const [task, target] of Object.entries(aiPatch?.tasks ?? {}) as [AiTaskName, AiTaskTarget | null | undefined][]) {
-    if (target === null) delete tasks[task];
-    else if (target) tasks[task] = target;
-  }
   const monthlyLimitUsd = aiPatch?.monthlyLimitUsd ?? s.ai?.monthlyLimitUsd;
-  return { ...kept, ...general, ...(patch.aiCategorize !== undefined ? { smartCategorizeVersion: 1 } : {}), ai: { ...s.ai, provider, profiles, tasks, ...(monthlyLimitUsd !== undefined ? { monthlyLimitUsd } : {}) } };
+  // plan 168: a task's old choice (`s.ai.tasks`) rides along as it was: nothing writes or reads it, and nothing deletes it
+  return { ...kept, ...general, ...(patch.aiCategorize !== undefined ? { smartCategorizeVersion: 1 } : {}), ai: { ...s.ai, provider, profiles, ...(monthlyLimitUsd !== undefined ? { monthlyLimitUsd } : {}) } };
 }
 
 /** What was observed for a provider, endpoint and model (plan 131: a task's model isn't the configured one's). */

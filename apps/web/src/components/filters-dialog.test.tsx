@@ -63,7 +63,7 @@ const names = () => $$("filter-unsaved").map((r) => r.querySelector("span")!.tex
 
 beforeEach(async () => {
   for (const k of Object.keys(waiting)) delete waiting[k];
-  setApp({ settings: { ai: { provider: "ollama", model: "m", local: true, needsKey: false, tasks: {}, keys: {} } } as never, accounts: [], categories: [], folders: [] } as never);
+  setApp({ settings: { ai: { provider: "ollama", model: "m", local: true, needsKey: false, keys: {} } } as never, accounts: [], categories: [], folders: [] } as never);
   await open();
   // what an earlier test kept, gone
   while ($("filter-unsaved-discard")) await click($("filter-unsaved-discard"));

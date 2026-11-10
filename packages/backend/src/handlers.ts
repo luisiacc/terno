@@ -1386,7 +1386,7 @@ export function createHandlers(b: Backend): Handlers {
             void b.writing.learner.aiChanged();
           }
           b.aiAssist.settingsChanged(patch);
-          if (patch.ai && (patch.ai.provider !== undefined || patch.ai.model !== undefined || patch.ai.baseURL !== undefined || patch.ai.preset !== undefined || patch.ai.tasks)) b.aiService.configChanged();
+          if (patch.ai && (patch.ai.provider !== undefined || patch.ai.model !== undefined || patch.ai.baseURL !== undefined || patch.ai.preset !== undefined)) b.aiService.configChanged();
           // plan 132: turned off, nothing further goes; a change may unblock what was paused
           if (patch.ai || patch.summaries) b.summaries.settingsChanged(next);
           if (patch.ai) void b.writing.learner.aiChanged();

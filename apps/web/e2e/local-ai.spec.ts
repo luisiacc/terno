@@ -12,7 +12,7 @@ test.describe("local mode and AI providers", () => {
       await page.getByTestId("tab-ai").click();
       await expect(page.getByTestId("ai-local-banner")).toHaveCount(0);
       await page.getByTestId("ai-provider").click();
-      for (const cloud of ["anthropic", "openai", "compatible"]) await expect(page.getByTestId(`ai-choice-${cloud}`)).not.toHaveAttribute("data-disabled", "");
+      for (const cloud of ["keys", "compatible"]) await expect(page.getByTestId(`ai-choice-${cloud}`)).not.toHaveAttribute("data-disabled", "");
       await page.getByTestId("ai-choice-ollama").click();
       await expect(page.getByTestId("ai-provider")).toContainText("Ollama");
       await expect(page.getByTestId("ai-endpoint")).toHaveValue("http://127.0.0.1:11434/v1");
@@ -62,19 +62,26 @@ test.describe("local mode and AI providers", () => {
 
       await page.getByTestId("tab-ai").click();
       await page.getByTestId("ai-provider").click();
-      await page.getByTestId("ai-choice-openai").click();
-      await expect(page.getByTestId("ai-key")).toBeVisible();
-      await expect(page.getByTestId("ai-privacy")).toContainText("api.openai.com");
-      // plan 131 (no per-use consent): Settings → AI says that a conversation's text goes there when AI is used on it
-      await expect(page.getByTestId("ai-privacy")).toContainText("OpenAI receives a conversation’s text when you use an AI feature on it");
-      // where the mail it's asked about goes, said where the user looks
-      await expect(pill).toHaveText("AI: OpenAI (cloud)");
+      await page.getByTestId("ai-choice-keys").click();
+      // plan 168: Claude's key and OpenAI's, and no model to choose: Terno picks it
+      await expect(page.getByTestId("ai-key-anthropic")).toBeVisible();
+      await expect(page.getByTestId("ai-key-openai")).toBeVisible();
+      await expect(page.getByTestId("ai-model")).toHaveCount(0);
+      await expect(page.getByTestId("ai-routing")).toHaveText("Add either key, or both. Terno picks the model for each feature.");
+      // plan 131 (no per-use consent): Settings → AI says that a conversation's text goes there when AI is used on it;
+      // before a key, whichever comes first may
+      await expect(page.getByTestId("ai-privacy")).toContainText("Claude (Anthropic) and OpenAI receive a conversation’s text when you use an AI feature on it");
 
       // the key field is never pre-filled; once saved only the last 4 characters are shown
-      await page.getByTestId("ai-key").fill("sk-proj-e2e-secret-key-a1b2");
-      await page.getByRole("button", { name: "Save" }).click();
-      await expect(page.getByTestId("ai-key-saved")).toHaveText(/Saved · …a1b2/);
+      const openai = page.getByTestId("ai-key-row-openai");
+      await openai.getByTestId("ai-key-openai").fill("sk-proj-e2e-secret-key-a1b2");
+      await openai.getByRole("button", { name: "Save" }).click();
+      await expect(openai.getByTestId("ai-key-saved")).toHaveText(/Saved · …a1b2/);
       await expect(page.locator("body")).not.toContainText("sk-proj-e2e-secret");
+      await expect(page.getByTestId("ai-privacy")).toContainText("OpenAI receives a conversation’s text when you use an AI feature on it");
+      await expect(page.getByTestId("ai-routing")).toHaveText("Every AI feature runs on OpenAI. Terno picks the model for each.");
+      // where the mail it's asked about goes, said where the user looks
+      await expect(pill).toHaveText("AI: OpenAI (cloud)");
 
       // its pill opens the AI tab
       await page.keyboard.press("Escape");
@@ -109,20 +116,19 @@ test.describe("local mode and AI providers", () => {
         await page.locator("[data-ready]").waitFor();
         await page.getByTestId("open-settings").click();
         await page.getByTestId("tab-ai").click();
-        // on this Mac, with no host in the title (plan 131's disclosure still names OpenAI: the key saved above sends summaries there)
-        await expect(page.getByTestId("ai-privacy")).toContainText("Privacy.");
-        await expect(page.getByTestId("ai-privacy")).not.toContainText("api.openai.com");
+        // on this Mac: plan 168, the OpenAI key saved above sends nothing while a local model is chosen
+        await expect(page.getByTestId("ai-privacy")).toHaveText("Privacy. Nothing leaves this Mac.");
         await page.getByTestId("ai-test").click();
         await page.getByTestId("ai-provider").click();
-        await page.getByTestId("ai-choice-openai").click();
-        await expect(page.getByTestId("ai-privacy")).toContainText("api.openai.com");
+        await page.getByTestId("ai-choice-keys").click();
+        await expect(page.getByTestId("ai-privacy")).toContainText("OpenAI receives");
         // let the Ollama probe finish, and its answer reach the page
         await expect.poll(() => ollama.requests.filter((r) => r === "POST /v1/chat/completions").length).toBe(1);
         answer();
         await arrived;
         await page.evaluate(() => new Promise((r) => setTimeout(r)));
         await expect(page.getByTestId("ai-test-result")).toHaveCount(0);
-        await expect(page.getByTestId("ai-privacy")).toContainText("api.openai.com");
+        await expect(page.getByTestId("ai-privacy")).toContainText("OpenAI receives");
         await expect(page.getByTestId("ai-privacy")).not.toContainText("Nothing leaves this Mac");
         await expect(page.getByTestId("cloud-ai-pill")).toHaveText("AI: OpenAI (cloud)");
       } finally {

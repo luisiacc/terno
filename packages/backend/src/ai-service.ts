@@ -22,7 +22,7 @@ import {
   type ProviderConfig,
   type StreamEvent,
 } from "@terno/ai";
-import { isDevAiProvider, DIGEST_CLAUDE_MODEL, DIGEST_OPENAI_MODEL, REPLY_CHECK_CLAUDE_MODEL, FOLLOWUP_CLAUDE_MODEL, FOLLOWUP_OPENAI_MODEL, ASK_CLAUDE_MODEL, ASK_PLAN_CLAUDE_MODEL, ASK_PLAN_OPENAI_MODEL, INTENT_CLAUDE_MODEL, JEV_DEFAULT_MODEL, messageOf, SUMMARY_DEFAULT_MODEL, textRef, WRITING_CLAUDE_MODEL, type AiTaskName } from "@terno/core";
+import { isDevAiProvider, messageOf, routeFor, textRef, type AiJob } from "@terno/core";
 import { RpcError, type AiTestResult, type AppSettings } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import type { BackendCore as Backend } from "./core";
@@ -89,6 +89,8 @@ export class AiService {
   private readonly keyLeases = new Map<string, AbortController>();
   /** plan 146: replaced when Dev mode's switch moves: what began before that is stopped, or starts over */
   private devAiEpoch = new AbortController();
+  /** plan 168: replaced when a key comes or goes, which can move a job to the other provider: what's being built starts over */
+  private routing = new AbortController();
   readonly limiter: AiLimiter;
 
   constructor(
@@ -131,6 +133,12 @@ export class AiService {
   configChanged(): void {
     for (const entry of this.requests.values()) entry.controller.abort();
     this.clients.clear();
+  }
+
+  /** Plan 168: a key decides where a job goes, so one coming, going or confirmed restarts what's being built. */
+  private rerouted(): void {
+    this.routing.abort();
+    this.routing = new AbortController();
   }
 
   /** Plan 146: every key changed at once: also what filters run, and the transports workers already hold. */
@@ -213,56 +221,20 @@ export class AiService {
     return { provider: ai.provider, model: ai.model, baseURL: ai.baseURL ?? undefined, preset: ai.preset ?? undefined };
   }
 
-  /** What a task runs on: the user's choice, else its default. Never another provider without the user having set it up. */
-  private async targetFor(task: AiTaskName | "filter" | "voice" | "intent" | "askPlan" | "reply" | "replyCheck", settings: AppSettings): Promise<Target> {
-    // plan 141 §6: a cheap model writes the searches, on the provider that answers: a question never reaches one the row doesn't name
-    if (task === "askPlan") {
-      const answer = await this.targetFor("ask", settings);
-      return { ...answer, model: answer.provider === "anthropic" ? ASK_PLAN_CLAUDE_MODEL : answer.provider === "openai" ? ASK_PLAN_OPENAI_MODEL : answer.model };
-    }
-    // plan 144 §2: on the drafting provider, so this adds no second place mail goes
-    if (task === "reply") return this.targetFor("writing", settings);
-    if (task === "replyCheck") {
-      const writing = await this.targetFor("writing", settings);
-      return writing.provider === "anthropic" ? { ...writing, model: REPLY_CHECK_CLAUDE_MODEL } : writing;
-    }
-    // who a sentence is for is a tiny question with no mail in it, asked before the first word: speed is all that matters
-    if (task === "intent" && settings.ai.provider === "anthropic" && !settings.ai.tasks.writing) return { ...this.currentTarget(settings), model: INTENT_CLAUDE_MODEL };
-    const name = task === "voice" || task === "intent" ? "writing" : (task as AiTaskName | "filter");
-    const chosen = name === "filter" ? undefined : settings.ai.tasks[name];
-    const configured = this.currentTarget(settings);
-    const profiled = (provider: AiProviderId, model: string): Target => {
-      const profile = settings.ai.profiles[provider];
-      return { provider, model, baseURL: profile?.baseURL, preset: profile?.preset };
-    };
-    if (chosen) return profiled(chosen.provider, chosen.model);
-    if (name === "writing" && configured.provider === "anthropic") return { ...configured, model: WRITING_CLAUDE_MODEL };
-    if (name === "ask" && configured.provider === "anthropic") return { ...configured, model: ASK_CLAUDE_MODEL };
-    // plan 142: the summaries' row if one is set; a default never moves mail to a provider the user didn't set up
-    if (name === "followup") {
-      const summary = settings.ai.tasks.summary;
-      if (summary) return profiled(summary.provider, summary.model);
-      if (configured.provider === "anthropic") return { ...configured, model: FOLLOWUP_CLAUDE_MODEL };
-      if (configured.provider === "openai") return { ...configured, model: FOLLOWUP_OPENAI_MODEL };
-      return configured;
-    }
-    // plan 145: the summaries' row if one is set; a default never moves mail to a provider the user didn't set up
-    if (name === "digest") {
-      const summary = settings.ai.tasks.summary;
-      if (summary) return profiled(summary.provider, summary.model);
-      if (configured.provider === "anthropic") return { ...configured, model: DIGEST_CLAUDE_MODEL };
-      if (configured.provider === "openai") return { ...configured, model: DIGEST_OPENAI_MODEL };
-      return configured;
-    }
-    if (name === "categorize" && settings.ai.keys.jev?.hasKey) return profiled("jev", JEV_DEFAULT_MODEL);
-    if (name === "summary") {
-      if (settings.ai.keys.openai?.hasKey) return profiled("openai", SUMMARY_DEFAULT_MODEL);
-      // a local model costs nothing and stays here; a paid one is the user's call, since this runs on every new mail
-      if (!isLocalProvider({ id: configured.provider, baseURL: configured.baseURL, preset: configured.preset }) || configured.provider === "none") {
-        throw new AiError(L("errors.ai.summaryProvider"), "not_configured");
-      }
-    }
-    return configured;
+  /**
+   * What a job runs on: plan 168's `routeFor`, the one rule Settings and the gates read too, with the profile it runs
+   * under (the configured provider as set up, another with its own saved endpoint). Never another provider without the
+   * user having set it up: a key or the configured provider.
+   */
+  private async targetFor(job: AiJob, settings: AppSettings): Promise<Target> {
+    const route = routeFor(job, settings.ai);
+    // Claude or OpenAI chosen with no key yet: config says which key to save, not that nothing is set up
+    if (!route) return this.currentTarget(settings);
+    // a local server or a service with no model set: nothing to ask (Settings says so too: `aiCanRun`)
+    if (!route.model.trim()) throw new AiError(L("errors.ai.modelMissing"), "not_configured");
+    if (route.provider === settings.ai.provider) return { ...this.currentTarget(settings), model: route.model };
+    const profile = settings.ai.profiles[route.provider];
+    return { provider: route.provider, model: route.model, baseURL: profile?.baseURL, preset: profile?.preset };
   }
 
   /**
@@ -270,8 +242,9 @@ export class AiService {
    * immutable for their configuration: a change in Settings gives the next
    * caller others, and aborts what's in flight (configChanged).
    */
-  async forTask(task: AiTaskName | "filter" | "voice" | "intent" | "askPlan" | "reply" | "replyCheck", o: { foreground?: boolean } = {}): Promise<AiTasks> {
+  async forTask(task: AiJob, o: { foreground?: boolean } = {}): Promise<AiTasks> {
     const epoch = this.devAiEpoch.signal;
+    const routing = this.routing.signal;
     // plan 150: what's offered is what runs. Filters are Free and asked for by a click (plan 85)
     if (task !== "filter" && !(await aiAllowed(this.b.store))) {
       // a toggle while this read: a late no mustn't pause what the toggle just woke
@@ -289,7 +262,8 @@ export class AiService {
     const foreground = o.foreground ?? (task === "filter" || task === "writing");
     const key = await sha256Hex(JSON.stringify({ ...hashed, task, foreground }));
     // the key changed while this was reading it: what it holds may be the one taken back
-    if (lease.signal.aborted || epoch.aborted) return this.forTask(task, o);
+    // or a key came or went meanwhile, and the job may belong to the other provider now
+    if (lease.signal.aborted || epoch.aborted || routing.aborted) return this.forTask(task, o);
     let ai = this.clients.get(key);
     if (!ai) {
       if (this.clients.size > 16) this.clients.clear();
@@ -398,6 +372,7 @@ export class AiService {
   async confirmKey(provider: AiProviderId, preset: CompatiblePreset | undefined): Promise<AppSettings> {
     const name = keySecretName(provider, preset);
     if (await this.b.store.secrets.has(name)) await bindKeyOrigin(this.b.store, name, await this.profileOrigin(provider, preset));
+    this.rerouted();
     this.clients.clear();
     this.models.clear();
     return readSettings(this.b.store);
@@ -419,6 +394,7 @@ export class AiService {
     }
     // written first, so nothing built from here on can read the old one; done before the caller lets workers resume
     this.keyLeases.get(name)?.abort();
+    this.rerouted();
     this.keyLeases.delete(name);
     this.clients.clear();
     this.models.clear();

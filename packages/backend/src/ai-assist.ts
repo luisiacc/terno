@@ -40,7 +40,7 @@ const dayOf = (ms: number) => new Date(ms).toDateString();
 const clip = (text: string, chars: number) => (text.length > chars ? text.slice(0, chars) : text);
 const providerName = (ai: AiTasks) => (ai.providerId === "jev" ? "JEV" : ai.providerId);
 /** Which settings decide where the mail goes: a change sends nothing further to the old place. */
-const targetChanged = (ai: SettingsPatch["ai"]) => !!ai && (ai.provider !== undefined || ai.model !== undefined || ai.baseURL !== undefined || ai.preset !== undefined || ai.tasks !== undefined);
+const targetChanged = (ai: SettingsPatch["ai"]) => !!ai && (ai.provider !== undefined || ai.model !== undefined || ai.baseURL !== undefined || ai.preset !== undefined);
 
 /** The stable labels and what each stands for: samples go before any category does (plan 134 revision 4). */
 function choices(rows: readonly CategoryEvidence[], contextTokens: number | null): { labels: string[]; evidence: Record<string, LabelEvidence>; byLabel: Map<string, CategoryEvidence> } {

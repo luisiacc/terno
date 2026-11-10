@@ -7,15 +7,12 @@ import { TABS } from "../tabs";
 import { FORWARD_ADDRESSES_MAX_CHARS } from "../forwarding";
 import {
   AI_PROVIDER_IDS,
-  AI_TASK_NAMES,
   COMPATIBLE_PRESETS,
   type AiErrorKind,
   type AiSummarizeResult,
   type AiSummariesStatus,
   type AiSummaryRead,
   type AiProviderId,
-  type AiTaskName,
-  type AiTaskTarget,
   type Capabilities,
   type CompatiblePreset,
   type ModelInfo,
@@ -123,10 +120,11 @@ export interface AiSettings {
   local: boolean;
   capabilities: Capabilities | null;
   profiles: Partial<Record<AiProviderId, AiProfile>>;
-  /** plan 131: what a task runs on when the user chose; absent: its default */
-  tasks: Partial<Record<AiTaskName, AiTaskTarget>>;
-  /** whether a provider other than the current one has a key, for the task rows */
-  keys: Partial<Record<AiProviderId, { hasKey: boolean; keyHint: string | null }>>;
+  /**
+   * whether each keyed provider has a key, the current one too: on Claude or OpenAI they decide what runs (plan 168's
+   * `routeFor`). A task's own choice (plan 131) is no longer read or written: a stored one stays where it is, unused.
+   */
+  keys: Partial<Record<AiProviderId, { hasKey: boolean; keyHint: string | null; keyUnreadable?: boolean; keyOrigin?: string | null; keyConfirmed?: boolean }>>;
   /** a ceiling on what background AI may spend in a calendar month, in US dollars; 0: none */
   monthlyLimitUsd: number;
 }
@@ -455,7 +453,6 @@ const endpointUrl = z
   .max(500)
   .url()
   .refine((u) => /^https?:\/\//i.test(u), "Must be an http(s) URL");
-const aiTaskTarget = z.object({ provider: z.enum(AI_PROVIDER_IDS), model: z.string().trim().min(1).max(200) }).strict();
 const aiTarget = z.object({
   provider: z.enum(AI_PROVIDER_IDS),
   baseURL: endpointUrl.optional(),
@@ -485,11 +482,6 @@ const settingsPatch = z.object({
       model: z.string().trim().max(200).optional(),
       baseURL: endpointUrl.nullable().optional(),
       preset: z.enum(COMPATIBLE_PRESETS).nullable().optional(),
-      /** null clears a task's choice, back to its default */
-      tasks: z
-        .object(Object.fromEntries(AI_TASK_NAMES.map((t) => [t, aiTaskTarget.nullable().optional()])) as Record<AiTaskName, z.ZodOptional<z.ZodNullable<typeof aiTaskTarget>>>)
-        .strict()
-        .optional(),
       monthlyLimitUsd: z.number().min(0).max(100_000).optional(),
     })
     .strict()

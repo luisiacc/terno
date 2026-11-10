@@ -10,7 +10,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/to
 import { Check, ChevronLeft, Clock, ExternalLink, Mail, Pin, Plus, RefreshCw, Search, Sparkles, Undo2 } from "@terno/ui/icons";
 import { useCommandState } from "cmdk";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
-import { askReady, askTarget } from "~/lib/ai";
+import { askReady, routeOf } from "~/lib/ai";
 import { closePeek, showSource, usePeek, type Peek } from "~/lib/ask-peek";
 import { Marked } from "~/components/match-mark";
 import { answerBlocks, boldParts, citationRuns } from "~/lib/ask-citations";
@@ -387,7 +387,7 @@ function Running({ ref }: { ref?: React.Ref<HTMLElement> }) {
 
 /** Plan 162: Ask's failure in the one AI error's words, from the task's own provider, its catalog key kept (Codex review). */
 export function askErrorCopy(error: { message: string; kind: AiErrorKind | undefined; key?: string | undefined }, ai: AiSettings | null | undefined): AiErrorCopy {
-  return aiErrorCopy({ message: error.message, kind: error.kind, key: error.key }, ai ? errorTarget(askTarget(ai).provider, ai) : null);
+  return aiErrorCopy({ message: error.message, kind: error.kind, key: error.key }, ai ? errorTarget(routeOf("ask", ai).provider, ai) : null);
 }
 
 function Failure() {

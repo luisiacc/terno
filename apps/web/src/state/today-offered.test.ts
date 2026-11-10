@@ -9,7 +9,7 @@ installToday();
 const { getApp, setApp } = await import("./app");
 
 const keys = { anthropic: true, openai: false, jev: false };
-const ai = { provider: "ollama", model: "m", local: true, needsKey: false, tasks: {}, keys: {} };
+const ai = { provider: "ollama", model: "m", local: true, needsKey: false, keys: {} };
 const settings = (devAi: boolean) => ({ ai, devAi, today: { show: true } }) as never;
 
 describe("Today with Dev mode's switch off (plan 147)", () => {

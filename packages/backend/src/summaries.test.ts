@@ -508,7 +508,7 @@ describe("the queue's states", () => {
     model.answer = (req, n) => (n === 0 ? held(req, g.opened) : replying());
     const { thread } = await arrive();
     await until(() => expect(model.requests).toHaveLength(1));
-    await client.call("settings.update", { ai: { tasks: { summary: { provider: "fake", model: "another" } } } });
+    await client.call("settings.update", { ai: { model: "another" } });
     await until(async () => expect((await row(thread))?.state).toBe("ready"));
     expect(await row(thread)).toMatchObject({ model: "another", attempts: 0 });
   });
@@ -686,7 +686,7 @@ describe("by hand", () => {
     const { client, model, thread } = await old();
     await go(client, thread);
     expect(model.requests).toHaveLength(1);
-    await client.call("settings.update", { ai: { tasks: { summary: { provider: "fake", model: "another" } } } });
+    await client.call("settings.update", { ai: { model: "another" } });
     await expect(go(client, thread)).resolves.toMatchObject({ status: "ready", summary: { model: "another", generatedAt: START } });
     expect(model.requests).toHaveLength(2);
   });
@@ -758,21 +758,32 @@ describe("by hand", () => {
       expect(model.requests).toHaveLength(0);
     });
 
-    it("only another provider's key: it asks, and sends nothing to anyone", async () => {
+    it("only a Claude key: Haiku, since this runs on every new mail (plan 168: Terno picks, nothing asks)", async () => {
       const { client, backend, thread, model } = await cloud();
       await client.call("settings.update", { ai: { provider: "anthropic", baseURL: "http://127.0.0.1:9" } });
       await backend.setSecret("ai:anthropic:apiKey", "sk-ant-not-a-real-key-0000");
-      const e = await errorOf(go(client, thread));
-      expect(e).toMatchObject({ code: "UNAVAILABLE", details: { aiErrorKind: "not_configured" } });
-      expect(e?.message).toMatch(/Summaries need a provider/);
-      expect(model.requests).toHaveLength(0);
+      await expect(go(client, thread)).resolves.toMatchObject({ status: "ready", summary: { provider: "anthropic", model: "claude-haiku-5-5" } });
+      expect(model.requests).toHaveLength(1);
+    });
+
+    it("AI off with a key still saved: nothing goes anywhere", async () => {
+      const { client, backend, thread, model } = await cloud();
+      await backend.setSecret("ai:openai:apiKey", "sk-openai-not-a-real-key-0000");
+      expect(await errorOf(go(client, thread))).toMatchObject({ code: "UNAVAILABLE", details: { aiErrorKind: "not_configured" } });
       expect(model.configs).toHaveLength(0);
+    });
+
+    it("a local model keeps them here, whatever OpenAI key is saved", async () => {
+      const { client, backend, thread, model } = await cloud();
+      await backend.setSecret("ai:openai:apiKey", "sk-openai-not-a-real-key-0000");
+      await client.call("settings.update", { ai: { provider: "ollama", baseURL: "http://127.0.0.1:9/v1", model: "qwen" } });
+      await expect(go(client, thread)).resolves.toMatchObject({ status: "ready", summary: { provider: "ollama", model: "qwen" } });
+      expect(model.configs.every((c) => c.id === "ollama")).toBe(true);
     });
 
     it("with an OpenAI key: GPT Luna, at once, with nothing asked first (plan 131: no per-use consent)", async () => {
       const { client, backend, thread, arrive, model } = await cloud();
       await client.call("settings.update", { ai: { provider: "openai", baseURL: "http://127.0.0.1:9/v1" } });
-      await client.call("settings.update", { ai: { provider: "none" } });
       await backend.setSecret("ai:openai:apiKey", "sk-openai-not-a-real-key-0000");
       await expect(go(client, thread)).resolves.toMatchObject({ status: "ready", summary: { provider: "openai", model: "gpt-6-luna" } });
       expect(model.requests).toHaveLength(1);
@@ -781,15 +792,16 @@ describe("by hand", () => {
       expect(model.requests).toHaveLength(2);
     });
 
-    it("\"Use {provider}\" points summaries at it, and a later key doesn't move them", async () => {
+    it("a Claude key, then an OpenAI one: summaries move to Luna, the rest stays on Claude", async () => {
       const { client, backend, thread, model } = await cloud();
-      await client.call("settings.update", { ai: { provider: "anthropic", baseURL: "http://127.0.0.1:9", model: "claude-sonnet-5-5" } });
+      await client.call("settings.update", { ai: { provider: "anthropic", baseURL: "http://127.0.0.1:9" } });
       await backend.setSecret("ai:anthropic:apiKey", "sk-ant-not-a-real-key-0000");
-      await client.call("settings.update", { ai: { tasks: { summary: { provider: "anthropic", model: "claude-sonnet-5-5" } } } });
-      await expect(go(client, thread)).resolves.toMatchObject({ status: "ready", summary: { provider: "anthropic", model: "claude-sonnet-5-5" } });
+      await expect(go(client, thread)).resolves.toMatchObject({ status: "ready", summary: { provider: "anthropic", model: "claude-haiku-5-5" } });
+      await client.call("settings.update", { ai: { provider: "openai", baseURL: "http://127.0.0.1:9/v1" } });
+      await client.call("settings.update", { ai: { provider: "anthropic" } });
       await backend.setSecret("ai:openai:apiKey", "sk-openai-not-a-real-key-0000");
       await client.call("ai.summaries.clear", {});
-      await expect(go(client, thread)).resolves.toMatchObject({ status: "ready", summary: { provider: "anthropic", model: "claude-sonnet-5-5" } });
+      await expect(go(client, thread)).resolves.toMatchObject({ status: "ready", summary: { provider: "openai", model: "gpt-6-luna" } });
       expect(model.requests).toHaveLength(2);
     });
   });
@@ -940,15 +952,16 @@ describe("settings", () => {
       await until(async () => expect(await row(waiting.thread)).toBeNull());
     });
 
-    it("a paid provider nobody picked for summaries isn't where they go: nothing queues until someone picks it", async () => {
+    it("plan 168: a Claude key alone brings them, on Haiku: Terno picks, nothing waits for a choice; AI off stops them", async () => {
       const { client, backend, arrive, row } = await setup({ enabled: "default", provider: "none" });
       await client.call("settings.update", { ai: { provider: "anthropic", baseURL: "http://127.0.0.1:9" } });
       await backend.setSecret("ai:anthropic:apiKey", "sk-ant-not-a-real-key-0000");
       backend.summaries.settingsChanged((await client.call("app.bootstrap", {})).settings as never);
-      expect(backend.summaries.isActive).toBe(false);
+      expect(backend.summaries.isActive).toBe(true);
       const { thread } = await arrive();
-      await settle();
-      expect(await row(thread)).toBeNull();
+      await until(async () => expect(await row(thread)).toMatchObject({ state: "ready", provider: "anthropic", model: "claude-haiku-5-5" }));
+      await client.call("settings.update", { ai: { provider: "none" } });
+      expect(backend.summaries.isActive).toBe(false);
     });
 
     it("someone's own off stays off, through AI coming and going", async () => {

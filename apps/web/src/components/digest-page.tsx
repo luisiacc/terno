@@ -9,7 +9,7 @@ import { Ban, ChevronRight, Mail } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { getApp } from "~/state/app";
-import { digestTarget, modelName } from "~/lib/ai";
+import { modelName, routeOf } from "~/lib/ai";
 import { listDate } from "~/lib/format";
 import { PANE_TITLE, PANE_TITLE_TOP } from "~/lib/pane-lines";
 import { act, deferred, trackJob, undoAction, undoActions } from "~/lib/actions";
@@ -325,7 +325,7 @@ export default function DigestPage() {
   const finished = done !== null;
   // plan 162 (Codex review): a provider that answered with an error is stored apart from one out of reach
   const answered = row.errorKind === "provider_error" ? "errors.ai.providerError" : row.errorKind === "provider_not_found" ? "errors.ai.notFound" : row.errorKind === "provider_no_permission" ? "errors.ai.noPermission" : undefined;
-  const failure = row.state === "failed" ? aiErrorCopy({ message: answered ? "" : t("today.digest.failed"), kind: (answered ? (answered === "errors.ai.noPermission" ? "auth" : "unavailable") : row.errorKind) as never, key: answered }, ai ? errorTarget(digestTarget(ai).provider, ai) : null) : null;
+  const failure = row.state === "failed" ? aiErrorCopy({ message: answered ? "" : t("today.digest.failed"), kind: (answered ? (answered === "errors.ai.noPermission" ? "auth" : "unavailable") : row.errorKind) as never, key: answered }, ai ? errorTarget(routeOf("digest", ai).provider, ai) : null) : null;
   return (
     // ai-r03: the pane scrolls, bounded to the reader's height, and the page is a column in it. The page itself scrolled
     // with no height to scroll in, so it grew past the window and the parent clipped its last rows (every style, since

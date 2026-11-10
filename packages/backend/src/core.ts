@@ -6,7 +6,7 @@ import { COOLDOWN_TICKETS, copyOpAdmission, rejectedRecipients, type CooldownSta
 import { prepareCopyWire, readCopyWire } from "./sent-copy";
 import type { PendingGmailRenewal } from "./identity";
 import type { AiTasks } from "@terno/ai";
-import { asciiEmail, canonicalAuthored, decodeText, encodeText, messageOf, summaryCanRun, textRef, type Account, type AccountPrefs, type DevAiKeys, type FavoriteFolder, type FavoriteFoldersSnapshot, type AccountSyncState, type SyncProgress, type OpState, type ThreadAction } from "@terno/core";
+import { asciiEmail, canonicalAuthored, decodeText, encodeText, messageOf, aiCanRun, textRef, type Account, type AccountPrefs, type DevAiKeys, type FavoriteFolder, type FavoriteFoldersSnapshot, type AccountSyncState, type SyncProgress, type OpState, type ThreadAction } from "@terno/core";
 import { breadcrumb, captureError, log, type FieldValueOf } from "@terno/core/diag";
 import { RpcError, RpcServer, type AppSettings, type CallContext, type HostInfo, type MethodName, type OpInfo, type ResultOf, type Transport } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
@@ -327,7 +327,7 @@ export class BackendCore {
       now: () => this.now(),
       settings: () => readSettings(this.store),
       // readSettings says `devAi` only on a local build
-      runs: (s) => s.summaries.enabled && (!options.devAi || s.devAi) && summaryCanRun(s.ai),
+      runs: (s) => s.summaries.enabled && (!options.devAi || s.devAi) && aiCanRun("summary", s.ai),
       forTask: (o) => this.aiService.forTask("summary", o),
       begin: (requestId, clientId) => this.aiService.begin(requestId, clientId),
       ready: (threadId) => this.server.emit("aiSummary", { threadId }, { origins: ["renderer", "dev"] }),

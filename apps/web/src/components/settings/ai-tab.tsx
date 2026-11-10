@@ -1,11 +1,11 @@
 import { localized } from "~/lib/i18n";
-import type { CompatiblePreset, ModelInfo, PresetDescriptor, ProviderDescriptor } from "@terno/core";
-import type { AiTestResult, AppSettings } from "@terno/core/rpc";
-import { aiFeaturesAvailable } from "@terno/core";
+import type { AiProviderId, CompatiblePreset, ModelInfo, PresetDescriptor, ProviderDescriptor } from "@terno/core";
+import type { AiSettings, AiTestResult, AppSettings } from "@terno/core/rpc";
+import { aiFeaturesAvailable, routeFor } from "@terno/core";
 import { AiUseGroup, AskGroup, DigestGroup, FollowupsGroup, SummariesGroup } from "./ai-summaries";
 import { DraftingGroup } from "./ai-drafting";
 import { useAiDraftUi } from "~/lib/ai-draft-state";
-import { openSettingsTab, PrivacyNote, SettingsGroup, SettingsRow, type RowA11y, type SettingsUpdate } from "./parts";
+import { openSettingsTab, PrivacyNote, SettingsGroup, SettingsNote, SettingsRow, type RowA11y, type SettingsUpdate } from "./parts";
 import { Button } from "@terno/ui/components/button";
 import { Input } from "@terno/ui/components/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue } from "@terno/ui/components/select";
@@ -23,12 +23,15 @@ import {
   errorHelp,
   hostOf,
   isLoopbackUrl,
+  KEYED,
   LOCAL_CHOICES,
   OUTPUT_LABEL,
   PRESET_ENDPOINT,
   presetLabel,
   PRESETS,
+  providerLabel,
   providerName,
+  routingLine,
   type ProviderChoice,
 } from "~/lib/ai";
 import { formatBytes } from "~/lib/format";
@@ -38,7 +41,87 @@ import { reconcileSettings } from "~/lib/appearance";
 import WritingStyle from "./writing-style";
 
 
-const targetKey = (ai: AppSettings["ai"]) => [ai.provider, ai.preset ?? "", ai.baseURL ?? "", ai.model].join("|");
+// the keys too: on Claude or OpenAI they decide what a test reaches (plan 168)
+const targetKey = (ai: AppSettings["ai"]) => [ai.provider, ai.preset ?? "", ai.baseURL ?? "", ai.model, ...KEYED.map((p) => `${ai.keys[p]?.hasKey}:${ai.keys[p]?.keyHint}`)].join("|");
+
+/** Plan 168: the model a key is tested with: the one drafting would run on with only that key. */
+const keyedModel = (provider: "anthropic" | "openai") => routeFor("writing", { provider, model: "", keys: { [provider]: { hasKey: true, keyHint: null } } })!.model;
+
+/** One key's state, the configured provider's as `ai` has it, the other's from `ai.keys` (plan 168: both can be saved here). */
+function keyStateOf(ai: AiSettings, provider: AiProviderId) {
+  if (provider === ai.provider) return { hasKey: ai.hasKey, hint: ai.keyHint, unreadable: ai.keyUnreadable, confirmed: ai.keyConfirmed, origin: ai.keyOrigin, host: hostOf(ai) };
+  const key = ai.keys[provider];
+  const profile = ai.profiles[provider];
+  return { hasKey: key?.hasKey === true, hint: key?.keyHint ?? null, unreadable: key?.keyUnreadable === true, confirmed: key?.keyConfirmed !== false, origin: key?.keyOrigin ?? null, host: hostOf({ provider, preset: profile?.preset ?? null, baseURL: profile?.baseURL ?? null, local: false }) };
+}
+
+/** A provider's API key: saved, removed, confirmed for a moved endpoint, or saved again when it can't be read. */
+function KeyRow({ ai, provider, label, name, placeholder, testId }: { ai: AiSettings; provider: AiProviderId; label: string; name: string; placeholder: string; testId: string }) {
+  const [key, setKey] = useState("");
+  const state = keyStateOf(ai, provider);
+  const preset = provider === ai.provider ? (ai.preset ?? undefined) : undefined;
+  const saveKey = async (value: string) => {
+    try {
+      const next = await client.call("ai.setKey", { provider, preset, value });
+      setApp({ settings: reconcileSettings(next) });
+      setKey("");
+      snack.success(value ? t("ai.key.savedSnack") : t("ai.key.removedSnack"));
+    } catch (error) {
+      snack.error(error instanceof Error ? error.message : String(error));
+    }
+  };
+  const keyForm = (a: RowA11y) => (
+    <form
+      className="flex gap-2"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (key.trim()) void saveKey(key.trim());
+      }}
+    >
+      <Input {...a} data-testid={testId} type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} placeholder={placeholder} className="h-7 bg-background dark:bg-input/30" />
+      <Button type="submit" size="sm" disabled={!key.trim()}>
+        {t("common.save")}
+      </Button>
+    </form>
+  );
+  return (
+    <SettingsRow stacked labelFor label={label} hint={t("ai.key.hint")} testId={`ai-key-row-${provider}`}>
+      {(a) =>
+        state.unreadable ? (
+          <div className="space-y-1.5" data-testid="ai-key-unreadable">
+            <p role="alert" className="text-xs text-destructive-ink">
+              {t("ai.key.unreadable", { provider: name })}
+            </p>
+            {keyForm(a)}
+          </div>
+        ) : state.hasKey && !state.confirmed ? (
+          <div className="space-y-1.5 text-sm" data-testid="ai-key-unconfirmed">
+            <p role="alert" className="text-xs text-destructive-ink">
+              {state.host ? t("ai.key.unconfirmed", { origin: state.origin ?? "", host: state.host }) : t("ai.key.unconfirmedOther", { origin: state.origin ?? "" })}
+            </p>
+            <div className="flex gap-2">
+              <Button variant="outline" size="xs" data-testid="ai-key-confirm" onClick={() => void client.call("ai.confirmKey", { provider, preset }).then((next) => setApp({ settings: reconcileSettings(next) }), (e: unknown) => snack.error(String(e)))}>
+                {t("ai.key.confirm")}
+              </Button>
+              <Button variant="ghost" size="xs" aria-label={t("ai.key.remove", { provider: name })} onClick={() => void saveKey("")}>
+                {t("common.remove")}
+              </Button>
+            </div>
+          </div>
+        ) : state.hasKey ? (
+          <div className="flex items-center gap-2 text-sm" data-testid="ai-key-saved">
+            <span className="text-success-ink">{state.hint ? t("ai.key.savedHint", { hint: state.hint }) : t("ai.key.saved")}</span>
+            <Button variant="ghost" size="xs" aria-label={t("ai.key.remove", { provider: name })} onClick={() => void saveKey("")}>
+              {t("common.remove")}
+            </Button>
+          </div>
+        ) : (
+          keyForm(a)
+        )
+      }
+    </SettingsRow>
+  );
+}
 
 type Catalog = { providers: ProviderDescriptor[]; presets: PresetDescriptor[] };
 type Discovery = { state: "idle" } | { state: "loading" } | { state: "done"; models: ModelInfo[] } | { state: "error"; message: string };
@@ -50,7 +133,11 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
   const presetNeedsKey = ai.provider === "compatible" && (catalog?.presets.find((p) => p.id === ai.preset)?.needsKey ?? ai.preset !== "custom");
   const descriptor = catalog?.providers.find((p) => p.id === ai.provider);
   const needsKey = ai.provider === "compatible" ? presetNeedsKey : (descriptor?.needsKey ?? false);
-  const showsKey = needsKey || (ai.provider === "compatible" && choice === "compatible");
+  const keyed = choice === "keys";
+  // plan 168: one key row for a service of the user's choosing; Claude's and OpenAI's are both shown under `keys`
+  const showsKey = !keyed && (needsKey || (ai.provider === "compatible" && choice === "compatible"));
+  // plan 168: a model is chosen only where Terno can't know which exist: a server on this Mac or a compatible service
+  const showsModel = LOCAL_CHOICES.includes(choice) || choice === "compatible";
   // any endpoint set is shown (an imported one included), so it can be seen and changed
   const showsEndpoint = LOCAL_CHOICES.includes(choice) || (ai.provider === "compatible" && (ai.preset === "custom" || ai.preset === "azure")) || Boolean(ai.baseURL);
 
@@ -77,7 +164,7 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
   // ── model discovery: when the tab opens and whenever provider or endpoint change (debounced)
   const [discovery, setDiscovery] = useState<Discovery>({ state: "idle" });
   const discoverySeq = useRef(0);
-  const canDiscover = !ai.fromEnv && ai.provider !== "none" && (!needsKey || (ai.hasKey && ai.keyConfirmed));
+  const canDiscover = !ai.fromEnv && showsModel && (!needsKey || (ai.hasKey && ai.keyConfirmed));
   const discover = async () => {
     const seq = ++discoverySeq.current;
     setDiscovery({ state: "loading" });
@@ -100,25 +187,29 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [ai.provider, ai.baseURL, ai.preset, ai.hasKey, ai.model, canDiscover]);
 
-  // ── test connection: a result only counts for the exact target it tested
+  // ── test connection: a result only counts for the exact target it tested. On keys, each saved key with the model
+  // drafting would run on there (plan 168); otherwise the provider as set up.
   const [testing, setTesting] = useState(false);
-  const [test, setTest] = useState<AiTestResult | null>(null);
+  const [tests, setTests] = useState<{ provider: AiProviderId; result: AiTestResult }[] | null>(null);
   const testSeq = useRef(0);
   const target = targetKey(ai);
   useEffect(() => {
     testSeq.current++;
-    setTest(null);
+    setTests(null);
     setTesting(false);
   }, [target]);
+  const testTargets = keyed
+    ? KEYED.filter((p) => keyStateOf(ai, p).hasKey).map((p) => ({ provider: p as AiProviderId, model: keyedModel(p), baseURL: ai.profiles[p]?.baseURL, preset: undefined }))
+    : [{ provider: ai.provider, model: ai.model, baseURL: ai.baseURL ?? undefined, preset: ai.preset ?? undefined }];
   const runTest = async () => {
     const seq = ++testSeq.current;
     setTesting(true);
     try {
-      const result = await client.call("ai.test", { provider: ai.provider, model: ai.model, baseURL: ai.baseURL ?? undefined, preset: ai.preset ?? undefined });
-      // the user may have switched provider meanwhile: a late answer must not touch the new one
+      const results = await Promise.all(testTargets.map(async (asked) => ({ provider: asked.provider, result: await client.call("ai.test", asked) })));
+      // the user may have switched provider or key meanwhile: a late answer must not touch the new one
       if (seq !== testSeq.current) return;
-      setTest(result);
-      const capabilities = result.ok ? result.capabilities : undefined;
+      setTests(results);
+      const capabilities = !keyed && results[0]?.result.ok ? results[0].result.capabilities : undefined;
       if (capabilities) {
         setApp((state) => (state.settings && targetKey(state.settings.ai) === target ? { settings: { ...state.settings, ai: { ...state.settings.ai, capabilities } } } : {}));
       }
@@ -126,29 +217,6 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
       if (seq === testSeq.current) setTesting(false);
     }
   };
-
-  // ── key
-  const [key, setKey] = useState("");
-  const saveKey = async (value: string) => {
-    const next = await client.call("ai.setKey", { provider: ai.provider, preset: ai.preset ?? undefined, value });
-    setApp({ settings: reconcileSettings(next) });
-    setKey("");
-    snack.success(value ? t("ai.key.savedSnack") : t("ai.key.removedSnack"));
-  };
-  const keyForm = (a: RowA11y) => (
-    <form
-      className="flex gap-2"
-      onSubmit={(e) => {
-        e.preventDefault();
-        if (key.trim()) void saveKey(key.trim());
-      }}
-    >
-      <Input {...a} data-testid="ai-key" type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} placeholder={ai.provider === "anthropic" ? "sk-ant-…" : "sk-…"} className="h-7 bg-background dark:bg-input/30" />
-      <Button type="submit" size="sm" disabled={!key.trim()}>
-        {t("common.save")}
-      </Button>
-    </form>
-  );
 
   const select = async (value: ProviderChoice) => {
     try {
@@ -160,6 +228,9 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
         const current = ai.profiles.compatible;
         const keep = current?.preset && current.preset !== "custom" ? current.preset : "openrouter";
         await update({ ai: { provider: "compatible", preset: keep, baseURL: keep === "azure" ? (current?.baseURL ?? null) : null } });
+      } else if (value === "keys") {
+        // which of the two is stored decides nothing (plan 168); the one with a key reads best in an error
+        await update({ ai: { provider: ai.keys.openai?.hasKey && !ai.keys.anthropic?.hasKey ? "openai" : "anthropic" } });
       } else {
         await update({ ai: { provider: value } });
       }
@@ -199,6 +270,7 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
               </Button>
             )}
           </SettingsRow>
+          {routingLine(ai) && <SettingsNote testId="ai-routing">{routingLine(ai)}</SettingsNote>}
         </SettingsGroup>
         {features}
       </div>
@@ -209,7 +281,7 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
     <div data-testid="ai-tab">
       <SettingsGroup
         footer={
-          <PrivacyNote testId="ai-privacy" title={ai.provider !== "none" && !ai.local && hostOf(ai) ? t("ai.privacyHost", { host: hostOf(ai)! }) : t("ai.privacy")}>
+          <PrivacyNote testId="ai-privacy" title={!keyed && ai.provider !== "none" && !ai.local && hostOf(ai) ? t("ai.privacyHost", { host: hostOf(ai)! }) : t("ai.privacy")}>
             {disclosureLine(ai)}
           </PrivacyNote>
         }
@@ -297,45 +369,18 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
           </SettingsRow>
         )}
 
-        {showsKey && (
-          <SettingsRow stacked labelFor label={t(needsKey ? "ai.key.label" : "ai.key.labelOptional", { provider: providerName(ai) })} hint={t("ai.key.hint")}>
-            {(a) =>
-              ai.keyUnreadable ? (
-                <div className="space-y-1.5" data-testid="ai-key-unreadable">
-                  <p role="alert" className="text-xs text-destructive-ink">
-                    {t("ai.key.unreadable", { provider: providerName(ai) })}
-                  </p>
-                  {keyForm(a)}
-                </div>
-              ) : ai.hasKey && !ai.keyConfirmed ? (
-                <div className="space-y-1.5 text-sm" data-testid="ai-key-unconfirmed">
-                  <p role="alert" className="text-xs text-destructive-ink">
-                    {hostOf(ai) ? t("ai.key.unconfirmed", { origin: ai.keyOrigin ?? "", host: hostOf(ai)! }) : t("ai.key.unconfirmedOther", { origin: ai.keyOrigin ?? "" })}
-                  </p>
-                  <div className="flex gap-2">
-                    <Button variant="outline" size="xs" data-testid="ai-key-confirm" onClick={() => void client.call("ai.confirmKey", { provider: ai.provider, preset: ai.preset ?? undefined }).then((next) => setApp({ settings: reconcileSettings(next) }), (e: unknown) => snack.error(String(e)))}>
-                      {t("ai.key.confirm")}
-                    </Button>
-                    <Button variant="ghost" size="xs" aria-label={t("ai.key.remove", { provider: providerName(ai) })} onClick={() => void saveKey("")}>
-                      {t("common.remove")}
-                    </Button>
-                  </div>
-                </div>
-              ) : ai.hasKey ? (
-                <div className="flex items-center gap-2 text-sm" data-testid="ai-key-saved">
-                  <span className="text-success-ink">{ai.keyHint ? t("ai.key.savedHint", { hint: ai.keyHint }) : t("ai.key.saved")}</span>
-                  <Button variant="ghost" size="xs" aria-label={t("ai.key.remove", { provider: providerName(ai) })} onClick={() => void saveKey("")}>
-                    {t("common.remove")}
-                  </Button>
-                </div>
-              ) : (
-                keyForm(a)
-              )
-            }
-          </SettingsRow>
+        {showsKey && <KeyRow ai={ai} provider={ai.provider} label={t(needsKey ? "ai.key.label" : "ai.key.labelOptional", { provider: providerName(ai) })} name={providerName(ai)} placeholder="sk-…" testId="ai-key" />}
+
+        {/* plan 168: either key, or both; Terno picks the model for each feature, and says in one line who runs what */}
+        {keyed && (
+          <>
+            <KeyRow ai={ai} provider="anthropic" label={t("ai.key.label", { provider: providerLabel("anthropic") })} name={providerLabel("anthropic")} placeholder="sk-ant-…" testId="ai-key-anthropic" />
+            <KeyRow ai={ai} provider="openai" label={t("ai.key.label", { provider: providerLabel("openai") })} name={providerLabel("openai")} placeholder="sk-…" testId="ai-key-openai" />
+            <SettingsNote testId="ai-routing">{routingLine(ai) ?? t("ai.keys.hint")}</SettingsNote>
+          </>
         )}
 
-        {ai.provider !== "none" && ai.provider !== "fake" && (
+        {showsModel && (
           <SettingsRow stacked labelFor label={t("ai.model")} hint={needsKey && !ai.hasKey ? t("ai.model.needsKey") : undefined}>
             {(a) => (
               <div className="space-y-2">
@@ -392,28 +437,38 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
         {ai.provider !== "none" && (
           <div className="space-y-2 py-3">
             <div className="flex items-center gap-3">
-              <Button variant="outline" size="sm" data-testid="ai-test" disabled={ai.provider !== "fake" && !ai.model} loading={testing} onClick={() => void runTest()}>
+              <Button variant="outline" size="sm" data-testid="ai-test" disabled={keyed ? testTargets.length === 0 : ai.provider !== "fake" && !ai.model} loading={testing} onClick={() => void runTest()}>
                 {t("ai.test")}
               </Button>
-              <span role="status" aria-live="polite" className="text-xs">
-                {test?.ok && (
-                  <span className="flex items-center gap-1.5 text-success-ink" data-testid="ai-test-result">
-                    <CircleCheck className="size-3.5" aria-hidden /> {t("ai.test.connected")} · <span data-testid="ai-test-latency">{test.latencyMs} ms</span> · {t(OUTPUT_LABEL[test.capabilities!.output])}
-                  </span>
+              <span role="status" aria-live="polite" className="flex flex-col gap-0.5 text-xs">
+                {tests?.map(({ provider, result }) =>
+                  result.ok ? (
+                    <span key={provider} className="flex items-center gap-1.5 text-success-ink" data-testid="ai-test-result">
+                      <CircleCheck className="size-3.5" aria-hidden /> {tests.length > 1 && `${providerLabel(provider)}: `}
+                      {t("ai.test.connected")} · <span data-testid="ai-test-latency">{result.latencyMs} ms</span> · {t(OUTPUT_LABEL[result.capabilities!.output])}
+                    </span>
+                  ) : null,
                 )}
-                {!test && ai.capabilities?.probedAt && <span className="text-muted-foreground">{t("ai.test.last", { output: t(OUTPUT_LABEL[ai.capabilities.output]) })}</span>}
+                {!tests && !keyed && ai.capabilities?.probedAt && <span className="text-muted-foreground">{t("ai.test.last", { output: t(OUTPUT_LABEL[ai.capabilities.output]) })}</span>}
               </span>
             </div>
-            {test?.warning && (
-              <p className="flex items-center gap-1.5 text-xs text-muted-foreground" data-testid="ai-test-warning">
-                <CircleAlert className="size-3.5 shrink-0" aria-hidden /> {localized(test.warning, test.warningI18n)}
-              </p>
+            {tests?.map(({ provider, result }) =>
+              result.warning ? (
+                <p key={provider} className="flex items-center gap-1.5 text-xs text-muted-foreground" data-testid="ai-test-warning">
+                  <CircleAlert className="size-3.5 shrink-0" aria-hidden /> {localized(result.warning, result.warningI18n)}
+                </p>
+              ) : null,
             )}
-            {test && !test.ok && (
-              <div role="alert" className="text-xs" data-testid="ai-test-error">
-                <p className="text-destructive-ink">{localized(test.error?.message, test.error?.i18n)}</p>
-                {errorHelp(test.error?.kind, ai) && <p className="mt-0.5 text-muted-foreground">{errorHelp(test.error?.kind, ai)}</p>}
-              </div>
+            {tests?.map(({ provider, result }) =>
+              result.ok ? null : (
+                <div key={provider} role="alert" className="text-xs" data-testid="ai-test-error">
+                  <p className="text-destructive-ink">
+                    {tests.length > 1 && `${providerLabel(provider)}: `}
+                    {localized(result.error?.message, result.error?.i18n)}
+                  </p>
+                  {errorHelp(result.error?.kind, { provider, preset: provider === ai.provider ? ai.preset : null, local: provider === ai.provider && ai.local }) && <p className="mt-0.5 text-muted-foreground">{errorHelp(result.error?.kind, { provider, preset: provider === ai.provider ? ai.preset : null, local: provider === ai.provider && ai.local })}</p>}
+                </div>
+              ),
             )}
           </div>
         )}

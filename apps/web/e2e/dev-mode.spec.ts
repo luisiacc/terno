@@ -30,7 +30,9 @@ test("names its variables, and Pro AI turns the AI features on and gives the sav
   await expect(page.getByTestId("ai-dev-note")).toBeVisible();
   await expect(page.getByTestId("ai-privacy")).toContainText("Claude (Anthropic) and JEV receive a conversation’s text");
   await expect(page.getByTestId("ai-provider")).toHaveCount(0);
-  await expect(page.getByTestId("ai-summaries-add-key")).toHaveCount(0);
+  // plan 168: Pro's routing is Terno's: no model or per-feature provider anywhere, and one line says who runs what
+  await expect(page.getByTestId("ai-tab").locator('[data-testid="ai-model"], [data-testid$="-target"], [data-testid$="-provider"]')).toHaveCount(0);
+  await expect(page.getByTestId("ai-routing")).toHaveText("Every AI feature runs on Claude (Anthropic). Terno picks the model for each. Smart categories run on JEV.");
   await page.getByTestId("tab-categories").click();
   await expect(page.getByTestId("ai-categorize-switch")).toBeEnabled();
   await expect(page.getByTestId("jev-key-row")).toHaveCount(0);

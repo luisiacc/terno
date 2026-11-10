@@ -1,7 +1,8 @@
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { Cloud } from "@terno/ui/icons";
 import { t } from "@terno/i18n";
-import { providerName } from "~/lib/ai";
+import { choiceLabel, providerLabel, providerName, routeOf } from "~/lib/ai";
+import { routedByKeys } from "@terno/core";
 import { setApp, useApp } from "~/state/app";
 
 /**
@@ -11,7 +12,9 @@ import { setApp, useApp } from "~/state/app";
 export function CloudAiPill() {
   const ai = useApp((s) => s.settings?.ai);
   if (!ai || ai.provider === "none" || ai.local) return null;
-  const label = t("sidebar.cloudAi", { provider: providerName(ai) });
+  // plan 168: on keys, where drafting goes now, which needn't be the one stored; either, before a key is saved
+  const routed = routedByKeys(ai.provider) ? routeOf("writing", ai).provider : null;
+  const label = t("sidebar.cloudAi", { provider: routed === null ? providerName(ai) : routed === "none" ? choiceLabel("keys") : providerLabel(routed) });
   const tip = t("sidebar.cloudTip");
   return (
     <Tooltip>

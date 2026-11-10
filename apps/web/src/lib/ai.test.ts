@@ -1,19 +1,19 @@
-import { summaryCanRun, writingCanRun } from "@terno/core";
+import { aiCanRun } from "@terno/core";
 import type { AiSettings, AppSettings } from "@terno/core/rpc";
 import { setLocale, t } from "@terno/i18n";
 import en from "@terno/i18n/locales/en";
 import es from "@terno/i18n/locales/es";
 import { afterEach, describe, expect, it } from "vitest";
-import { aiReady, askOffered, choiceLabel, disclosureLine, draftingOffered, errorHelp, mailDestinations, followupsOffered, OUTPUT_LABEL, presetLabel, privacyLine, providerName, repliesOffered, summariesOffered, todayOffered } from "./ai";
+import { aiReady, askOffered, choiceLabel, choiceOf, disclosureLine, draftingOffered, errorHelp, mailDestinations, followupsOffered, OUTPUT_LABEL, presetLabel, privacyLine, providerName, repliesOffered, routeOf, routingLine, summariesOffered, todayOffered, writingModel, writingTarget } from "./ai";
 
 const ai = (over: Partial<AiSettings>) => ({ provider: "none", preset: null, baseURL: null, local: false, ...over }) as AiSettings;
 
 describe("what the AI features offer (plan 147)", () => {
-  const set = (over: Partial<AiSettings> = {}) => ({ provider: "none", model: "", preset: null, baseURL: null, local: false, hasKey: false, keyConfirmed: false, keyUnreadable: false, keys: {}, tasks: {}, ...over }) as AiSettings;
+  const set = (over: Partial<AiSettings> = {}) => ({ provider: "none", model: "", preset: null, baseURL: null, local: false, hasKey: false, keyConfirmed: false, keyUnreadable: false, keys: {}, ...over }) as AiSettings;
   const settings = (ai: AiSettings, over: Partial<AppSettings> = {}) => ({ ai, ask: { enabled: true }, followups: { enabled: true }, replies: { enabled: true }, devAi: false, ...over }) as AppSettings;
   const writing = [summariesOffered, draftingOffered, askOffered, todayOffered];
   const every = [...writing, followupsOffered, repliesOffered];
-  const ownKey = set({ provider: "anthropic", model: "m", hasKey: true, keyConfirmed: true });
+  const ownKey = set({ provider: "anthropic", model: "m", hasKey: true, keyConfirmed: true, keys: { anthropic: { hasKey: true, keyHint: null } } });
 
   it("a free install with nothing set up sees no writing feature", () => {
     for (const offered of writing) expect(offered({ devAi: null, settings: settings(set()) })).toBe(false);
@@ -38,12 +38,10 @@ describe("what the AI features offer (plan 147)", () => {
     for (const offered of writing) expect(offered({ devAi, settings: settings(set({ keys: { jev: { hasKey: true, keyHint: null } } }), { devAi: true }) })).toBe(false);
   });
 
-  it("summaries: an OpenAI key alone is enough, and a task's own choice never falls back", () => {
+  it("plan 168: on Claude or OpenAI, either key is enough, whichever of the two is stored; AI off with a key stays off", () => {
     const openai = { hasKey: true, keyHint: null };
-    expect(summariesOffered({ devAi: null, settings: settings(set({ keys: { openai } })) })).toBe(true);
-    const gone = { ...ownKey, tasks: { summary: { provider: "openai", model: "m" } } } as AiSettings;
-    expect(summariesOffered({ devAi: null, settings: settings(gone) })).toBe(false);
-    expect(summariesOffered({ devAi: null, settings: settings({ ...gone, keys: { openai } }) })).toBe(true);
+    for (const offered of every) expect(offered({ devAi: null, settings: settings(set({ provider: "anthropic", keys: { openai } })) })).toBe(true);
+    for (const offered of writing) expect(offered({ devAi: null, settings: settings(set({ keys: { openai } })) })).toBe(false);
   });
 
   it("each feature's own switch still holds", () => {
@@ -53,27 +51,60 @@ describe("what the AI features offer (plan 147)", () => {
   });
 });
 
-describe("what runs with no one asking (plan 157)", () => {
-  const set = (over: Partial<AiSettings>) => ai({ model: "m", tasks: {}, keys: {}, hasKey: false, keyConfirmed: true, ...over });
-  it("summaries: a task's own choice answers for itself, then an OpenAI key, then a local model; a paid provider nobody picked isn't one", () => {
-    expect(summaryCanRun(set({}))).toBe(false);
-    expect(summaryCanRun(set({ provider: "anthropic", hasKey: true }))).toBe(false);
-    expect(summaryCanRun(set({ provider: "ollama", local: true }))).toBe(true);
+describe("what runs, by plan 168's routing", () => {
+  const set = (over: Partial<AiSettings>) => ai({ model: "m", keys: {}, hasKey: false, keyConfirmed: true, keyUnreadable: false, profiles: {}, ...over });
+  const claude = { hasKey: true, keyHint: null };
+  const openai = { hasKey: true, keyHint: null };
+
+  it("summaries: wherever AI runs, a paid provider the user set up included; a model on this Mac keeps them here", () => {
+    expect(aiCanRun("summary", set({}))).toBe(false);
+    expect(aiCanRun("summary", set({ provider: "anthropic", hasKey: true, keys: { anthropic: claude } }))).toBe(true);
+    expect(routeOf("summary", set({ provider: "anthropic", keys: { anthropic: claude } }))).toEqual({ provider: "anthropic", model: "claude-haiku-5-5" });
+    expect(aiCanRun("summary", set({ provider: "ollama", local: true }))).toBe(true);
     // chosen, with no model picked yet: nothing to run on
-    expect(summaryCanRun(set({ provider: "ollama", local: true, model: "" }))).toBe(false);
-    expect(summaryCanRun(set({ keys: { openai: { hasKey: true, keyHint: null } } }))).toBe(true);
-    expect(summaryCanRun(set({ tasks: { summary: { provider: "anthropic", model: "m" } }, keys: { anthropic: { hasKey: true, keyHint: null } } }))).toBe(true);
-    // its key went: an OpenAI key isn't where the user said this goes
-    expect(summaryCanRun(set({ tasks: { summary: { provider: "anthropic", model: "m" } }, keys: { openai: { hasKey: true, keyHint: null } } }))).toBe(false);
+    expect(aiCanRun("summary", set({ provider: "ollama", local: true, model: "" }))).toBe(false);
+    // an OpenAI key under Ollama isn't where the user said mail goes
+    expect(routeOf("summary", set({ provider: "ollama", local: true, keys: { openai } }))).toEqual({ provider: "ollama", model: "m" });
+    // AI off: a key left saved runs nothing
+    expect(aiCanRun("summary", set({ keys: { openai } }))).toBe(false);
   });
-  it("drafting: as the row's rule: a model chosen, its key, or a task's own choice", () => {
-    expect(writingCanRun(set({}))).toBe(false);
-    expect(writingCanRun(set({ provider: "ollama", local: true, model: " " }))).toBe(false);
-    expect(writingCanRun(set({ provider: "ollama", local: true }))).toBe(true);
-    expect(writingCanRun(set({ provider: "anthropic" }))).toBe(false);
-    expect(writingCanRun(set({ provider: "anthropic", hasKey: true }))).toBe(true);
-    expect(writingCanRun(set({ provider: "compatible", preset: "custom" }))).toBe(false);
-    expect(writingCanRun(set({ tasks: { writing: { provider: "anthropic", model: "m" } }, provider: "ollama", local: true }))).toBe(false);
+
+  it("drafting: a model on a local server or a service; on keys, Terno's model, whatever was saved", () => {
+    expect(aiCanRun("writing", set({}))).toBe(false);
+    expect(aiCanRun("writing", set({ provider: "ollama", local: true, model: " " }))).toBe(false);
+    expect(aiCanRun("writing", set({ provider: "ollama", local: true }))).toBe(true);
+    expect(aiCanRun("writing", set({ provider: "anthropic" }))).toBe(false);
+    expect(aiCanRun("writing", set({ provider: "anthropic", hasKey: true, keys: { anthropic: claude } }))).toBe(true);
+    expect(aiCanRun("writing", set({ provider: "compatible", preset: "custom" }))).toBe(false);
+    const both = set({ provider: "openai", model: "", keys: { anthropic: claude, openai } });
+    expect(writingModel(both)).toBe("claude-sonnet-5-5");
+    expect(writingTarget(both)).toEqual({ ready: true, provider: "anthropic", local: false });
+    expect(writingModel(set({ provider: "anthropic", model: "claude-fable-5-1", keys: { anthropic: claude } }))).toBe("claude-sonnet-5-5");
+  });
+
+  it("a key that can't be sent leaves the job to the other one, and with neither nothing is ready", () => {
+    const both = (over: object) => set({ provider: "anthropic", hasKey: true, keys: { anthropic: { ...claude, ...over }, openai } });
+    expect(routeOf("writing", both({ keyUnreadable: true }))).toEqual({ provider: "openai", model: "gpt-6-luna" });
+    expect(routeOf("writing", both({ keyConfirmed: false }))).toEqual({ provider: "openai", model: "gpt-6-luna" });
+    expect(aiCanRun("writing", set({ provider: "anthropic", keys: { anthropic: { ...claude, keyUnreadable: true } } }))).toBe(false);
+  });
+
+  it("the Claude or OpenAI item holds both, and names each by itself where it's named", () => {
+    expect(choiceOf(set({ provider: "anthropic" }))).toBe("keys");
+    expect(choiceOf(set({ provider: "openai" }))).toBe("keys");
+    expect(providerName(set({ provider: "openai" }))).toBe("OpenAI");
+    expect(choiceLabel("keys")).toBe("Claude or OpenAI");
+  });
+
+  it("says in one line who runs what, from the routing", () => {
+    expect(routingLine(set({ provider: "ollama", local: true }))).toBeNull();
+    expect(routingLine(set({ provider: "anthropic" }))).toBeNull();
+    expect(routingLine(set({ provider: "anthropic", keys: { anthropic: claude } }))).toBe("Every AI feature runs on Claude (Anthropic). Terno picks the model for each.");
+    expect(routingLine(set({ provider: "anthropic", keys: { openai } }))).toBe("Every AI feature runs on OpenAI. Terno picks the model for each.");
+    expect(routingLine(set({ provider: "anthropic", keys: { anthropic: claude, openai, jev: claude } }))).toBe("Summaries run on OpenAI, every other feature on Claude (Anthropic). Terno picks the model for each. Smart categories run on JEV.");
+    setLocale("es", es);
+    expect(routingLine(set({ provider: "anthropic", keys: { anthropic: claude, openai } }))).toBe("Los resúmenes usan OpenAI y las demás funciones, Claude (Anthropic). Terno elige el modelo para cada una.");
+    setLocale("en", en);
   });
 });
 
@@ -97,38 +128,43 @@ describe("AI labels and help", () => {
     expect(privacyLine(ai({ provider: "ollama", local: true }))).toBe("Nothing leaves this Mac.");
     // plan 162 (after ai162-r03): the provider by name, as every other AI surface says it, never its host
     expect(privacyLine(ai({ provider: "anthropic" }))).toMatch(/^Sent to Claude \(Anthropic\): .* Never the content of your messages\.$/);
+    // plan 168 (Codex critique): where a filter's description really goes, OpenAI stored and only Claude's key saved
+    expect(privacyLine(ai({ provider: "openai", keys: { anthropic: { hasKey: true, keyHint: null } }, profiles: {} } as Partial<AiSettings>))).toMatch(/^Sent to Claude \(Anthropic\): /);
     setLocale("es", es);
     expect(privacyLine(ai({ provider: "ollama", local: true }))).toBe("Nada sale de este Mac.");
   });
 
   it("plan 131: Settings → AI names every cloud provider mail may go to, by the backend's rules, and what goes", () => {
-    const full = (over: Partial<AiSettings>) => ai({ tasks: {}, keys: {}, ...over });
+    const full = (over: Partial<AiSettings>) => ai({ keys: {}, model: "m", profiles: {}, ...over });
+    const key = { hasKey: true, keyHint: null };
     expect(mailDestinations(full({ provider: "none" }))).toEqual([]);
     expect(mailDestinations(full({ provider: "ollama", local: true }))).toEqual([]);
-    expect(mailDestinations(full({ provider: "anthropic" }))).toEqual(["Claude (Anthropic)"]);
-    // summaries go to OpenAI by default once it has a key, whatever the main provider is (AiService.targetFor)
-    expect(mailDestinations(full({ provider: "ollama", local: true, keys: { openai: { hasKey: true, keyHint: null } } }))).toEqual(["OpenAI"]);
-    // a task's own choice counts; one on this Mac doesn't; a chosen summary row means OpenAI's key alone sends nothing
-    expect(mailDestinations(full({ provider: "anthropic", tasks: { ask: { provider: "openai", model: "m" }, writing: { provider: "ollama", model: "m" } } }))).toEqual(["Claude (Anthropic)", "OpenAI"]);
-    expect(mailDestinations(full({ provider: "anthropic", tasks: { summary: { provider: "anthropic", model: "m" } }, keys: { openai: { hasKey: true, keyHint: null } } }))).toEqual(["Claude (Anthropic)"]);
-    expect(mailDestinations(full({ provider: "anthropic", keys: { jev: { hasKey: true, keyHint: null } } }))).toEqual(["Claude (Anthropic)", "JEV"]);
+    // on keys before one is saved: whichever comes first receives it
+    expect(mailDestinations(full({ provider: "anthropic" }))).toEqual(["Claude (Anthropic)", "OpenAI"]);
+    expect(mailDestinations(full({ provider: "anthropic", keys: { anthropic: key } }))).toEqual(["Claude (Anthropic)"]);
+    expect(mailDestinations(full({ provider: "anthropic", keys: { anthropic: key, openai: key } }))).toEqual(["Claude (Anthropic)", "OpenAI"]);
+    // plan 168: OpenAI's key under a local model sends nothing; AI off with keys saved sends nothing
+    expect(mailDestinations(full({ provider: "ollama", local: true, keys: { openai: key } }))).toEqual([]);
+    expect(mailDestinations(full({ provider: "none", keys: { openai: key, anthropic: key } }))).toEqual([]);
+    expect(mailDestinations(full({ provider: "anthropic", keys: { anthropic: key, jev: key } }))).toEqual(["Claude (Anthropic)", "JEV"]);
+    expect(mailDestinations(full({ provider: "ollama", local: true, keys: { jev: key } }))).toEqual(["JEV"]);
+    // a stored task choice (plan 131) names nothing: nothing runs on it
+    expect(mailDestinations(full({ provider: "ollama", local: true, tasks: { ask: { provider: "openai", model: "m" } } } as Partial<AiSettings>))).toEqual([]);
     // Codex critique: a local kind on another machine isn't local, and a routed profile is named by where it goes
     expect(mailDestinations(full({ provider: "ollama", local: false, baseURL: "http://gpu.lan:11434/v1" }))).toEqual(["gpu.lan:11434"]);
-    expect(mailDestinations(full({ provider: "ollama", local: true, tasks: { writing: { provider: "lmstudio", model: "m" } }, profiles: { lmstudio: { model: "m", baseURL: "http://studio.lan:1234/v1" } } } as Partial<AiSettings>))).toEqual(["studio.lan:1234"]);
-    expect(mailDestinations(full({ provider: "ollama", local: true, tasks: { writing: { provider: "lmstudio", model: "m" } }, profiles: {} } as Partial<AiSettings>))).toEqual([]);
-    expect(mailDestinations(full({ provider: "ollama", local: true, tasks: { ask: { provider: "compatible", model: "m" } }, profiles: { compatible: { model: "m", preset: "openrouter" } } } as Partial<AiSettings>))).toEqual(["OpenRouter"]);
-    expect(mailDestinations(full({ provider: "ollama", local: true, tasks: { ask: { provider: "compatible", model: "m" } }, profiles: { compatible: { model: "m", preset: "custom", baseURL: "https://ai.example.test/v1" } } } as Partial<AiSettings>))).toEqual(["ai.example.test"]);
-    expect(mailDestinations(full({ provider: "ollama", local: true, tasks: { ask: { provider: "compatible", model: "m" } }, profiles: { compatible: { model: "m", preset: "custom", baseURL: "http://127.0.0.1:8080/v1" } } } as Partial<AiSettings>))).toEqual([]);
-    // Codex code review: a named provider at an endpoint that isn't its own says where
-    expect(mailDestinations(full({ provider: "ollama", local: true, tasks: { writing: { provider: "openai", model: "m" } }, profiles: { openai: { model: "m", baseURL: "https://relay.example.test/v1" } } } as Partial<AiSettings>))).toEqual(["OpenAI (relay.example.test)"]);
-    expect(mailDestinations(full({ provider: "ollama", local: true, tasks: { ask: { provider: "compatible", model: "m" } }, profiles: { compatible: { model: "m", preset: "openrouter", baseURL: "https://proxy.example.test/v1" } } } as Partial<AiSettings>))).toEqual(["OpenRouter (proxy.example.test)"]);
-    expect(mailDestinations(full({ provider: "openai", baseURL: "https://api.openai.com/v1" }))).toEqual(["OpenAI"]);
+    expect(mailDestinations(full({ provider: "compatible", preset: "openrouter" }))).toEqual(["OpenRouter"]);
+    expect(mailDestinations(full({ provider: "compatible", preset: "custom", baseURL: "https://ai.example.test/v1" }))).toEqual(["ai.example.test"]);
+    expect(mailDestinations(full({ provider: "compatible", preset: "custom", baseURL: "http://127.0.0.1:8080/v1", local: true }))).toEqual([]);
+    // Codex code review: a named provider at an endpoint that isn't its own says where, the other key's profile too
+    expect(mailDestinations(full({ provider: "anthropic", keys: { anthropic: key, openai: key }, profiles: { openai: { model: "", baseURL: "https://relay.example.test/v1" } } }))).toEqual(["Claude (Anthropic)", "OpenAI (relay.example.test)"]);
+    expect(mailDestinations(full({ provider: "compatible", preset: "openrouter", baseURL: "https://proxy.example.test/v1" }))).toEqual(["OpenRouter (proxy.example.test)"]);
+    expect(mailDestinations(full({ provider: "openai", baseURL: "https://api.openai.com/v1", keys: { openai: key } }))).toEqual(["OpenAI"]);
     expect(disclosureLine(full({ provider: "none" }))).toBe("AI is off.");
     expect(disclosureLine(full({ provider: "ollama", local: true }))).toBe("Nothing leaves this Mac.");
-    expect(disclosureLine(full({ provider: "openai" }))).toBe("OpenAI receives a conversation’s text when you use an AI feature on it, and mail as it comes in or goes out for the background features you turn on below.");
-    expect(disclosureLine(full({ provider: "anthropic", keys: { openai: { hasKey: true, keyHint: null } } }))).toMatch(/^Claude \(Anthropic\) and OpenAI receive a conversation’s text/);
+    expect(disclosureLine(full({ provider: "openai", keys: { openai: key } }))).toBe("OpenAI receives a conversation’s text when you use an AI feature on it, and mail as it comes in or goes out for the background features you turn on below.");
+    expect(disclosureLine(full({ provider: "anthropic", keys: { anthropic: key, openai: key } }))).toMatch(/^Claude \(Anthropic\) and OpenAI receive a conversation’s text/);
     setLocale("es", es);
-    expect(disclosureLine(full({ provider: "anthropic", keys: { openai: { hasKey: true, keyHint: null } } }))).toMatch(/^Claude \(Anthropic\) y OpenAI reciben el texto de una conversación/);
+    expect(disclosureLine(full({ provider: "anthropic", keys: { anthropic: key, openai: key } }))).toMatch(/^Claude \(Anthropic\) y OpenAI reciben el texto de una conversación/);
   });
 
   it("helps by the kind of failure, naming a local provider", () => {
@@ -141,6 +177,7 @@ describe("AI labels and help", () => {
 
   it("counts the AI as ready only when it can really run: a model, and its key where one is needed", () => {
     const keyed = { model: "m", hasKey: true, keyConfirmed: true, keyUnreadable: false };
+    const key = (over = {}) => ({ hasKey: true, keyHint: null, ...over });
     expect(aiReady(undefined)).toBe(false);
     expect(aiReady(ai({ provider: "none", model: "m" }))).toBe(false);
     // a local server needs only a model
@@ -148,19 +185,21 @@ describe("AI labels and help", () => {
     expect(aiReady(ai({ provider: "ollama", model: "qwen3:8b", hasKey: false }))).toBe(true);
     expect(aiReady(ai({ provider: "compatible", preset: "custom", baseURL: "http://127.0.0.1:8080/v1", model: "m", hasKey: false }))).toBe(true);
     expect(aiReady(ai({ provider: "compatible", preset: null, baseURL: "http://127.0.0.1:8080/v1", model: "m", hasKey: false }))).toBe(true);
+    // Codex critique: an optional key bound elsewhere is dropped by the backend, which runs without it
+    expect(aiReady(ai({ provider: "compatible", preset: "custom", baseURL: "http://127.0.0.1:8080/v1", model: "m", hasKey: true, keyConfirmed: false }))).toBe(true);
     // a compatible server without its address can't be reached (Codex review)
     expect(aiReady(ai({ provider: "compatible", preset: "custom", model: "m", hasKey: false }))).toBe(false);
     expect(aiReady(ai({ provider: "compatible", preset: "azure", model: "m", hasKey: true, keyConfirmed: true, keyUnreadable: false }))).toBe(false);
     expect(aiReady(ai({ provider: "compatible", preset: "azure", baseURL: "https://x.openai.azure.com/openai/v1", model: "m", hasKey: true, keyConfirmed: true, keyUnreadable: false }))).toBe(true);
     // a saved key that can't be opened fails even where a key is optional (Codex review)
     expect(aiReady(ai({ provider: "ollama", model: "qwen3:8b", hasKey: true, keyUnreadable: true }))).toBe(false);
-    // a cloud provider needs its key, readable and confirmed for this endpoint
-    expect(aiReady(ai({ provider: "anthropic", model: "claude-opus-5-5", hasKey: false }))).toBe(false);
-    expect(aiReady(ai({ provider: "anthropic", ...keyed }))).toBe(true);
-    expect(aiReady(ai({ provider: "openai", ...keyed, model: " " }))).toBe(false);
-    expect(aiReady(ai({ provider: "openai", ...keyed, keyConfirmed: false }))).toBe(false);
-    expect(aiReady(ai({ provider: "openai", ...keyed, keyUnreadable: true }))).toBe(false);
-    expect(aiReady(ai({ provider: "compatible", preset: "groq", model: "m", hasKey: false }))).toBe(false);
+    // on keys: a key, readable and confirmed for its endpoint; no model needed, since Terno picks it (plan 168)
+    expect(aiReady(ai({ provider: "anthropic", model: "claude-opus-5-5", hasKey: false, keys: {} }))).toBe(false);
+    expect(aiReady(ai({ provider: "anthropic", ...keyed, keys: { anthropic: key() } }))).toBe(true);
+    expect(aiReady(ai({ provider: "openai", ...keyed, model: " ", keys: { openai: key() } }))).toBe(true);
+    expect(aiReady(ai({ provider: "openai", ...keyed, keys: { openai: key({ keyConfirmed: false }) } }))).toBe(false);
+    expect(aiReady(ai({ provider: "openai", ...keyed, keys: { openai: key({ keyUnreadable: true }) } }))).toBe(false);
+    expect(aiReady(ai({ provider: "compatible", preset: "groq", model: "m", hasKey: false }))).toBe(false);    expect(aiReady(ai({ provider: "compatible", preset: "groq", model: "m", hasKey: false }))).toBe(false);
     expect(aiReady(ai({ provider: "compatible", preset: "groq", ...keyed }))).toBe(true);
   });
 });

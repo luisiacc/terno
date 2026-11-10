@@ -11,7 +11,7 @@ import { cn } from "@terno/ui/lib/utils";
 import { AiProvenance } from "./ai-provenance";
 import { AiErrorNotice, aiErrorCopy, errorTarget } from "./ai-error";
 import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
-import { askTarget } from "~/lib/ai";
+import { routeOf } from "~/lib/ai";
 import { listDate } from "~/lib/format";
 import { boundaryDay } from "~/lib/when";
 import { PenLine } from "@terno/ui/icons";
@@ -346,7 +346,7 @@ export function ActionRule({ variant }: { variant: "reader" | "list" }) {
             // plan 162: the one AI error (ai-error.tsx), keeping the way past a check that keeps failing
             <div className="pt-0.5" data-testid="action-check-error">
               <AiErrorNotice
-                copy={aiErrorCopy(checkError, ai ? errorTarget(askTarget(ai).provider, ai) : null)}
+                copy={aiErrorCopy(checkError, ai ? errorTarget(routeOf("askPlan", ai).provider, ai) : null)}
                 textTestId="action-check-error-text"
                 actions={
                   <>
