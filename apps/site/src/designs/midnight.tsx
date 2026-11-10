@@ -28,11 +28,11 @@ function Cap({ k, big }: { k: string; big?: boolean }) {
   return <Kbd className={big ? "mn-cap mn-cap-big" : "mn-cap"}>{k}</Kbd>;
 }
 
-/** A cropped detail of a shot; the crop itself is a class in midnight.css (`mn-crop-<crop>`). */
-function Crop({ name, copy, crop, sizes }: { name: ShotName; copy: SiteCopy; crop: string; sizes: string }) {
+/** One part of the app (the list, a snackbar, ⌘K), from its own section picture (`<part>-detail`), shown whole. */
+function Section({ name, copy, sizes, className = "mt-auto" }: { name: ShotName; copy: SiteCopy; sizes: string; className?: string }) {
   return (
-    <div className={`mn-crop mn-crop-${crop} mt-auto overflow-hidden rounded-xl border border-(--mn-line) bg-(--mn-shot)`}>
-      <Shot name={name} copy={copy} sizes={sizes} />
+    <div className={`relative overflow-hidden rounded-xl border border-(--mn-line) bg-(--mn-shot) ${className}`}>
+      <Shot name={name} copy={copy} sizes={sizes} className="block h-auto w-full" />
     </div>
   );
 }
@@ -116,7 +116,7 @@ export const Midnight: HomeDesign = ({ copy }) => {
   const privacy = copy.lang === "es" ? "/es/privacy/" : "/privacy/";
   const home = copy.lang === "es" ? "/es/" : "/";
   // the hero's keys: ⌘K, E, L, /
-  const crop = "(min-width: 1024px) 1800px, 360vw";
+  const half = "(min-width: 1024px) 512px, (min-width: 768px) 45vw, 90vw";
 
   return (
     <div className="mn min-h-dvh bg-(--mn-bg) font-geist text-(--mn-fg)">
@@ -202,7 +202,7 @@ export const Midnight: HomeDesign = ({ copy }) => {
           </h2>
           <div className="mn-grid grid gap-px overflow-hidden rounded-2xl border border-(--mn-line) bg-(--mn-line) md:grid-cols-2 lg:grid-cols-6">
             <Card f={f.unified} className="md:col-span-2 lg:col-span-4">
-              <Crop name="inbox" copy={copy} crop="unified" sizes="(min-width: 1024px) 1150px, 160vw" />
+              <Section name="unified-detail" copy={copy} sizes="(min-width: 1024px) 700px, 90vw" className="site-wide site-wide-end mt-auto" />
             </Card>
             <Card f={f.local} className="md:col-span-2 lg:col-span-2">
               <div className="mn-local mt-auto flex items-center justify-between gap-3 rounded-xl border border-(--mn-line) bg-(--mn-raised) px-5 py-6" aria-hidden="true">
@@ -216,19 +216,19 @@ export const Midnight: HomeDesign = ({ copy }) => {
               </div>
             </Card>
             <Card f={f.search} className="lg:col-span-3">
-              <Crop name="search" copy={copy} crop="search" sizes={crop} />
+              <Section name="search-detail" copy={copy} sizes={half} />
             </Card>
             <Card f={f.triage} className="lg:col-span-3">
-              <Crop name="file-similar" copy={copy} crop="triage" sizes={crop} />
+              <Section name="triage-detail" copy={copy} sizes={half} />
             </Card>
             <Card f={f.palette} className="lg:col-span-3">
-              <Crop name="palette" copy={copy} crop="palette" sizes="(min-width: 1024px) 1150px, 225vw" />
+              <Section name="palette-detail" copy={copy} sizes={half} className="site-wide mt-auto" />
             </Card>
             <Card f={f.snippets} className="lg:col-span-3">
-              <Crop name="snippets" copy={copy} crop="snippets" sizes="(min-width: 1024px) 1150px, 225vw" />
+              <Section name="snippets-detail" copy={copy} sizes={half} className="site-wide mt-auto" />
             </Card>
             <Card f={f.codes} className="lg:col-span-2">
-              <Crop name="code" copy={copy} crop="code" sizes={crop} />
+              <Section name="code-detail" copy={copy} sizes="(min-width: 1024px) 320px, (min-width: 768px) 45vw, 90vw" />
             </Card>
             <Card f={f.speed} className="lg:col-span-2" />
             <Card f={f.open} className="md:col-span-2 lg:col-span-2">
@@ -282,9 +282,7 @@ export const Midnight: HomeDesign = ({ copy }) => {
             </div>
             <div className="relative hidden sm:block">
               <div className="mn-glow mn-glow-soft" aria-hidden="true" />
-              <div className="mn-crop mn-crop-shortcuts relative overflow-hidden rounded-xl border border-(--mn-line) bg-(--mn-shot) shadow-2xl">
-                <Shot name="shortcuts" copy={copy} sizes="(min-width: 1024px) 1250px, 190vw" />
-              </div>
+              <Section name="shortcuts-detail" copy={copy} sizes="(min-width: 1024px) 640px, 55vw" className="shadow-2xl" />
             </div>
           </div>
         </section>

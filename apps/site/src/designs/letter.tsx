@@ -13,7 +13,7 @@ import type { HomeDesign } from "./types";
 
 /**
  * Letter (plan 97, design 5): one narrow reading column, written like a letter about mail that stays yours.
- * Shots are figures that break out of the column (`.letter-wide`); crops stay in it. Layout and colors: letter.css.
+ * Shots are figures that break out of the column (`.letter-wide`); section pictures stay in it. Layout and colors: letter.css.
  */
 
 // the shortcuts the copy mentions in passing (⌘; ⌘K ⌘J and a lone ?) become keycaps where they stand
@@ -59,12 +59,12 @@ function Figure({ copy, name, eager, className = "" }: { copy: SiteCopy; name: S
   );
 }
 
-/** A detail of a screenshot, set in the column like a quotation. `crop` names the frame in letter.css. */
-function Detail({ copy, name, crop, sizes }: { copy: SiteCopy; name: ShotName; crop: string; sizes: string }) {
+/** One part of the app from its own section picture (`<part>-detail`), set in the column like a quotation. */
+function Detail({ copy, name, wide = "" }: { copy: SiteCopy; name: ShotName; wide?: string }) {
   return (
     <figure className="mt-12">
-      <div className={`letter-crop letter-crop-${crop}`}>
-        <Shot name={name} copy={copy} sizes={sizes} />
+      <div className={`letter-detail ${wide}`}>
+        <Shot name={name} copy={copy} sizes="(min-width: 700px) 640px, calc(100vw - 2.5rem)" className="block h-auto w-full" />
       </div>
       <figcaption className="letter-caption">{copy.alt[name]}</figcaption>
     </figure>
@@ -181,7 +181,7 @@ export const Letter: HomeDesign = ({ copy }) => {
         <Feature copy={copy} id="unified" />
         <Feature copy={copy} id="local" />
         <Feature copy={copy} id="search">
-          <Detail copy={copy} name="search" crop="search" sizes="(min-width: 700px) 2304px, 360vw" />
+          <Detail copy={copy} name="search-detail" />
         </Feature>
         <Feature copy={copy} id="speed">
           <ul className="letter-stats mt-14">
@@ -197,7 +197,7 @@ export const Letter: HomeDesign = ({ copy }) => {
           <Figure copy={copy} name="file-similar" className="mt-14" />
         </Feature>
         <Feature copy={copy} id="codes">
-          <Detail copy={copy} name="code" crop="code" sizes="(min-width: 700px) 2400px, 375vw" />
+          <Detail copy={copy} name="code-detail" />
         </Feature>
         <Feature copy={copy} id="themes">
           <ul className="letter-wide mt-14 grid gap-6 sm:grid-cols-3 sm:gap-5">
@@ -217,7 +217,7 @@ export const Letter: HomeDesign = ({ copy }) => {
           <Figure copy={copy} name="snippets" className="mt-14" />
         </Feature>
         <Feature copy={copy} id="palette">
-          <Detail copy={copy} name="palette" crop="palette" sizes="(min-width: 700px) 1360px, 212vw" />
+          <Detail copy={copy} name="palette-detail" wide="site-wide" />
         </Feature>
         <Feature copy={copy} id="keyboard">
           <dl className="letter-keys mt-10">

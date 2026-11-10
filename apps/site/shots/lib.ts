@@ -8,7 +8,7 @@ import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Browser, Page } from "@playwright/test";
+import type { Browser, Locator, Page } from "@playwright/test";
 import { startDevServer } from "@terno/backend-dev/src/server";
 import { SHOWCASE_NOW, SNIPPETS, showcaseDataset } from "./showcase";
 
@@ -90,6 +90,30 @@ export async function fencedPage(browser: Browser, o: { webPort: number; backend
     return route.abort();
   });
   return page;
+}
+
+export interface Box {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * The union of these elements' boxes, `pad` around, held inside the window: how a picture of one part of the app is
+ * framed, from the real elements at capture time (never offsets that go stale when the app changes). `x` takes the
+ * frame's sides as given (a pane's edges, no pad), `top` its top (the window's, 0); `below` extends it down.
+ */
+export async function around(targets: Locator[], o: { pad?: number; below?: number; x?: [number, number]; top?: number; window?: { width: number; height: number } } = {}): Promise<Box> {
+  const pad = o.pad ?? 24;
+  const window = o.window ?? VIEWPORT;
+  const boxes = (await Promise.all(targets.map((t) => t.boundingBox()))).filter((b): b is Box => b !== null);
+  if (!boxes.length) throw new Error("nothing to frame");
+  const left = Math.max(0, o.x ? o.x[0] : Math.min(...boxes.map((b) => b.x)) - pad);
+  const top = Math.max(0, o.top ?? Math.min(...boxes.map((b) => b.y)) - pad);
+  const right = Math.min(window.width, o.x ? o.x[1] : Math.max(...boxes.map((b) => b.x + b.width)) + pad);
+  const bottom = Math.min(window.height, Math.max(...boxes.map((b) => b.y + b.height)) + (o.below ?? 0) + pad);
+  return { x: Math.round(left), y: Math.round(top), width: Math.round(right - left), height: Math.round(bottom - top) };
 }
 
 /** The app at its first paint, ready: the list has rows. */

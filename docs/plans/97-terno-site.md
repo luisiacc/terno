@@ -173,6 +173,16 @@ The AI features as **Terno Pro, coming soon**. The copy was decided by a council
   - `render.test.ts`: every design and language has the section, its nav link, the five pictures in both modes with their alt text, no download link, form or button beyond the picture tools, and the `#ai` link; plus the Spanish and the honesty fixes.
   - `e2e/site.spec.ts`: the Pro link lands on the section clear of a sticky header. Letter's needed `scroll-mt`, and the test fails without it. The existing axe runs cover the section in every design, light and dark, desktop and phone.
 
+## Section pictures
+
+The owner, on Midnight's "Sign-in codes, one click." card: "the sign in code section doesn't show the code, that picture needs to be cut i believe to only show that section, for the parts we only show sections, no need to have a full picture".
+
+- **Why it broke:** the small feature pictures were the full 1440×900 windows, moved behind a frame by pixel offsets in each design's CSS. Retaking the windows with today's app left the offsets pointing at the wrong place.
+- **Now:** `shots.ts` takes a **section picture** of each part a design shows, on the same page as its window, framed from the real elements' boxes (`around` in `shots/lib.ts`, shared with the AI pictures). Rows end where a row ends, dialogs sit on the app's plain background, and floating parts (the snackbars, the dialogs) get a 16 px margin. Pictures: `unified-detail` (the accounts in the sidebar and seven rows with their account names), `code-detail` (the code row and the two under it), `search-detail` (the field, the count and four results), `triage-detail` and `archive-detail` (the "everything similar" offers), `palette-detail` (⌘K with "arch"), `snippets-detail` (⌘;), `shortcuts-detail` (the sheet). `--only=<name>-detail` retakes one.
+- **Designs:** Lumen, Midnight and Letter show them whole, at the frame's width; the offset CSS and the `Crop` components are gone, and so is Lumen's ring around the code, which was placed by offsets too. Each has its own alt text.
+- **Phones:** a section wider than about 470 px (⌘K, ⌘;, the sidebar and list) keeps that width on a phone and its frame shows its start, or its end for the list, where the account names are (`site-wide` in `styles.css`). Shown at the card's width it would be under half size and unreadable. The enlarge button shows it whole.
+- **Test:** `render.test.ts` checks which section pictures each design shows, that no `crop` class comes back, and that each picture exists in both modes.
+
 ## Deploying from GitHub
 
 `.github/workflows/deploy-site.yml` runs `pnpm deploy:site` on every push to main that touches `apps/site/**`, the app's icon set (`packages/ui/src/icons.ts`, `packages/ui/src/iconset/**`) or the workflow itself, and by hand from the Actions tab. One deploy at a time, in push order. A failing test, build or migration stops it before the Worker changes.

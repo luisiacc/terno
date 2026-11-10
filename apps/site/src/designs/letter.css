@@ -113,23 +113,13 @@ html[data-design="letter"] .letter-caption {
 html[data-design="letter"] .letter-wide > .letter-caption { margin-inline: auto; text-align: center; }
 html[data-design="letter"] li > figure > .letter-caption { text-align: left; }
 
-/* a detail of a 1440×900 shot: aspect = the frame, img sized and moved so the frame shows */
-html[data-design="letter"] .letter-crop {
+/* a section picture of the app, in the column: whole, rounded, lifted */
+html[data-design="letter"] .letter-detail {
   position: relative;
   overflow: hidden;
   border-radius: 12px;
   box-shadow: var(--l-shadow);
 }
-html[data-design="letter"] .letter-crop img { position: absolute; max-width: none; height: auto; }
-/* search: x 248–648, y 0–292 */
-html[data-design="letter"] .letter-crop-search { aspect-ratio: 400 / 292; }
-html[data-design="letter"] .letter-crop-search img { width: 360%; left: -62%; top: 0; }
-/* the code chip: x 256–640, y 138–298 */
-html[data-design="letter"] .letter-crop-code { aspect-ratio: 384 / 160; }
-html[data-design="letter"] .letter-crop-code img { width: 375%; left: -66.6667%; top: -86.25%; }
-/* ⌘K: x 384–1056, y 148–442 */
-html[data-design="letter"] .letter-crop-palette { aspect-ratio: 672 / 294; }
-html[data-design="letter"] .letter-crop-palette img { width: 214.2857%; left: -57.1429%; top: -50.3401%; }
 
 /* stats: three figures under a hairline */
 html[data-design="letter"] .letter-stats { display: grid; gap: 2rem; border-top: 1px solid var(--l-line); padding-top: 2rem; }

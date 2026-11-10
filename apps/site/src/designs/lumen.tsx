@@ -65,11 +65,11 @@ function Framed({ name, copy }: { name: ShotName; copy: SiteCopy }) {
   );
 }
 
-/** A detail of a screenshot (the list column, a snackbar, the code chip); lumen.css holds each crop's geometry. */
-function Crop({ name, copy, crop, className = "" }: { name: ShotName; copy: SiteCopy; crop: string; className?: string }) {
+/** One part of the app (the list, a snackbar, ⌘K), from its own section picture (`<part>-detail`), shown whole. */
+function Section({ name, copy, wide = "" }: { name: ShotName; copy: SiteCopy; wide?: string }) {
   return (
-    <div className={`lumen-crop lumen-crop-${crop} ${className}`}>
-      <Shot name={name} copy={copy} sizes="(min-width: 1024px) 1800px, 300vw" />
+    <div className={`relative ${wide}`}>
+      <Shot name={name} copy={copy} sizes="(min-width: 1024px) 620px, 92vw" className="block h-auto w-full" />
     </div>
   );
 }
@@ -235,7 +235,7 @@ export const Lumen: HomeDesign = ({ copy }) => {
         <div id="features">
           <Row id="unified" f={f.unified}>
             <div className={`${card}`}>
-              <Crop name="inbox" copy={copy} crop="unified" />
+              <Section name="unified-detail" copy={copy} wide="site-wide site-wide-end" />
             </div>
           </Row>
 
@@ -246,18 +246,17 @@ export const Lumen: HomeDesign = ({ copy }) => {
           <Row id="triage" f={f.triage}>
             <div className={`${stage} grid gap-5`}>
               <div className={`${card} sm:mr-10`}>
-                <Crop name="file-similar" copy={copy} crop="file" />
+                <Section name="triage-detail" copy={copy} />
               </div>
               <div className={`${card} sm:ml-10`}>
-                <Crop name="archive-similar" copy={copy} crop="archive" />
+                <Section name="archive-detail" copy={copy} />
               </div>
             </div>
           </Row>
 
           <Row id="codes" f={f.codes} flip>
-            <div className={`${card} relative`}>
-              <Crop name="code" copy={copy} crop="code" />
-              <span className="lumen-ring" aria-hidden="true" />
+            <div className={card}>
+              <Section name="code-detail" copy={copy} />
             </div>
           </Row>
         </div>
@@ -295,7 +294,7 @@ export const Lumen: HomeDesign = ({ copy }) => {
         <Row id="palette" f={f.palette}>
           <div className={stage}>
             <div className={card}>
-              <Crop name="palette" copy={copy} crop="palette" />
+              <Section name="palette-detail" copy={copy} wide="site-wide" />
             </div>
           </div>
         </Row>
@@ -303,7 +302,7 @@ export const Lumen: HomeDesign = ({ copy }) => {
         <Row id="snippets" f={f.snippets} flip>
           <div className={stage}>
             <div className={card}>
-              <Crop name="snippets" copy={copy} crop="overlay" />
+              <Section name="snippets-detail" copy={copy} wide="site-wide" />
             </div>
           </div>
         </Row>

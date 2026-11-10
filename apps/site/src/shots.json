@@ -198,5 +198,69 @@
   "ai-today-light": {
     "width": 398,
     "height": 570
+  },
+  "archive-detail-dark": {
+    "width": 512,
+    "height": 98
+  },
+  "archive-detail-light": {
+    "width": 512,
+    "height": 98
+  },
+  "code-detail-dark": {
+    "width": 398,
+    "height": 228
+  },
+  "code-detail-light": {
+    "width": 398,
+    "height": 228
+  },
+  "palette-detail-dark": {
+    "width": 672,
+    "height": 298
+  },
+  "palette-detail-light": {
+    "width": 672,
+    "height": 298
+  },
+  "search-detail-dark": {
+    "width": 398,
+    "height": 446
+  },
+  "search-detail-light": {
+    "width": 398,
+    "height": 446
+  },
+  "shortcuts-detail-dark": {
+    "width": 800,
+    "height": 797
+  },
+  "shortcuts-detail-light": {
+    "width": 800,
+    "height": 797
+  },
+  "snippets-detail-dark": {
+    "width": 672,
+    "height": 332
+  },
+  "snippets-detail-light": {
+    "width": 672,
+    "height": 332
+  },
+  "triage-detail-dark": {
+    "width": 512,
+    "height": 174
+  },
+  "triage-detail-light": {
+    "width": 512,
+    "height": 174
+  },
+  "unified-detail-dark": {
+    "width": 647,
+    "height": 646
+  },
+  "unified-detail-light": {
+    "width": 647,
+    "height": 646
   }
 }

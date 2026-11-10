@@ -58,34 +58,6 @@ html[data-design="lumen"] .lumen-card { background: var(--l-raise); box-shadow: 
 html[data-design="lumen"] .lumen-thumb { box-shadow: 0 0 0 1px var(--l-ring), 0 12px 30px -16px rgb(60 45 20 / 0.3); }
 html[data-design="lumen"] .lumen-thumb img { display: block; width: 100%; height: auto; }
 
-/* crops of a 1440×900 shot: the wrapper's aspect is the region, the image is scaled and moved to show it */
-html[data-design="lumen"] .lumen-crop { position: relative; overflow: hidden; }
-html[data-design="lumen"] .lumen-crop img { display: block; max-width: none; height: auto; }
-/* the sidebar and list: x 0–645, y 0–640 */
-html[data-design="lumen"] .lumen-crop-unified { aspect-ratio: 645 / 640; }
-html[data-design="lumen"] .lumen-crop-unified img { width: 223.26%; }
-/* the "everything like it" snackbar after filing, edge to edge: x 258–639, y 747–891 */
-html[data-design="lumen"] .lumen-crop-file { aspect-ratio: 381 / 144; }
-html[data-design="lumen"] .lumen-crop-file img { width: 377.95%; transform: translate(-17.917%, -83%); }
-/* the snackbar after archiving: x 258–639, y 823–891 */
-html[data-design="lumen"] .lumen-crop-archive { aspect-ratio: 381 / 68; }
-html[data-design="lumen"] .lumen-crop-archive img { width: 377.95%; transform: translate(-17.917%, -91.444%); }
-/* the snippets list, edge to edge: x 402–1038, y 164–438 */
-html[data-design="lumen"] .lumen-crop-overlay { aspect-ratio: 636 / 274; }
-html[data-design="lumen"] .lumen-crop-overlay img { width: 226.42%; transform: translate(-27.917%, -18.222%); }
-/* the palette is shorter: y 164–425 */
-html[data-design="lumen"] .lumen-crop-palette { aspect-ratio: 636 / 261; }
-html[data-design="lumen"] .lumen-crop-palette img { width: 226.42%; transform: translate(-27.917%, -18.222%); }
-/* the first two rows of the list, the code chip in the first: x 250–645, y 132–300 */
-html[data-design="lumen"] .lumen-crop-code { aspect-ratio: 395 / 168; }
-html[data-design="lumen"] .lumen-crop-code img { width: 364.56%; transform: translate(-17.361%, -14.667%); }
-/* a soft ring around the chip (x 495–574, y 147–168) */
-html[data-design="lumen"] .lumen-ring {
-  position: absolute; left: 61.4%; top: 7.6%; width: 21.2%; height: 15.2%;
-  border-radius: 999px; pointer-events: none;
-  box-shadow: 0 0 0 2px var(--l-accent), 0 0 0 8px var(--l-accent-soft);
-}
-
 /* surfaces */
 html[data-design="lumen"] .lumen-stage {
   background: radial-gradient(120% 90% at 30% 0%, rgb(255 214 170 / 0.35), transparent 60%), radial-gradient(100% 80% at 100% 100%, rgb(47 91 255 / 0.1), transparent 60%), var(--l-band);

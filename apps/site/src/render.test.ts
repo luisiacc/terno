@@ -2,6 +2,7 @@ import { JSDOM } from "jsdom";
 import { describe, expect, it } from "vitest";
 import { COPY } from "./copy";
 import { render, routes } from "./entry-server";
+import shots from "./shots.json";
 
 describe("prerendered pages", () => {
   for (const route of routes()) {
@@ -58,6 +59,29 @@ describe("screenshots", () => {
       expect(shot.querySelector("button[data-zoom]")).not.toBeNull();
     }
     expect(doc.querySelector("dialog[data-lightbox]")).not.toBeNull();
+  });
+
+  it("a design that shows one part of the app shows a section picture of it, never a window moved behind a frame", () => {
+    const parts: Record<string, string[]> = {
+      "/designs/lumen/": ["unified", "triage", "archive", "code", "palette", "snippets"],
+      "/designs/midnight/": ["unified", "search", "triage", "palette", "snippets", "code", "shortcuts"],
+      "/designs/letter/": ["search", "code", "palette"],
+    };
+    for (const [path, names] of Object.entries(parts)) {
+      const page = new JSDOM(render(routes().find((r) => r.path === path)!).body).window.document;
+      const used = [...new Set([...page.querySelectorAll('img[src*="-detail-"]')].map((i) => i.getAttribute("src")!.match(/\/shots\/(.+)-detail-/)![1]))];
+      expect(used.sort(), path).toEqual([...names].sort());
+      // the pictures framed by pixel offsets (plan 97) went stale whenever the app moved; none may come back
+      expect(page.querySelectorAll('[class*="crop"]'), path).toHaveLength(0);
+    }
+    // each is a part of the 1440×900 window, framed when it was taken, in both modes
+    for (const name of Object.values(parts).flat()) {
+      for (const mode of ["light", "dark"]) {
+        const size = (shots as Record<string, { width: number; height: number }>)[`${name}-detail-${mode}`];
+        expect(size, `${name}-detail-${mode}`).toBeDefined();
+        expect(size!.width < 1440 || size!.height < 900, name).toBe(true);
+      }
+    }
   });
 });
 

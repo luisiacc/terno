@@ -29,7 +29,7 @@ import { chromium, type Locator, type Page } from "@playwright/test";
 import { startDevServer } from "@terno/backend-dev/src/server";
 import { devAiKeys } from "@terno/core";
 import { filesHoldingKeys, guardOutput, readKeys, redact } from "../../../scripts/ui-rating/keys.mjs";
-import { ctx, dispose, encode, fencedPage, openApp, out, pictureSettings, seedProfile, serveWeb, site, VIEWPORT } from "./lib";
+import { around, type Box, ctx, dispose, encode, fencedPage, openApp, out, pictureSettings, seedProfile, serveWeb, site, VIEWPORT } from "./lib";
 import { SHOWCASE_NOW } from "./showcase";
 
 const raw = join(site, ".shots-raw-ai");
@@ -50,25 +50,6 @@ export const AI_INPUTS = {
 };
 
 type Mode = "light" | "dark";
-interface Box {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
-/** The union of these elements' boxes, `pad` around, held inside the window. `below` extends it down. */
-async function around(targets: Locator[], o: { pad?: number; below?: number; x?: [number, number] } = {}): Promise<Box> {
-  const pad = o.pad ?? 24;
-  const boxes = (await Promise.all(targets.map((t) => t.boundingBox()))).filter((b): b is Box => b !== null);
-  if (!boxes.length) throw new Error("nothing to frame");
-  const left = Math.max(0, (o.x?.[0] ?? Math.min(...boxes.map((b) => b.x))) - pad);
-  const top = Math.max(0, Math.min(...boxes.map((b) => b.y)) - pad);
-  const right = Math.min(VIEWPORT.width, (o.x?.[1] ?? Math.max(...boxes.map((b) => b.x + b.width))) + pad);
-  const bottom = Math.min(VIEWPORT.height, Math.max(...boxes.map((b) => b.y + b.height)) + (o.below ?? 0) + pad);
-  return { x: Math.round(left), y: Math.round(top), width: Math.round(right - left), height: Math.round(bottom - top) };
-}
-
 async function main() {
   // read before anything starts: a missing key fails here, and from now on this process's output can't carry one
   const keys = readKeys();
