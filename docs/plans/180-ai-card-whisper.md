@@ -116,3 +116,17 @@ The code review raised five points, all small (P3), and all are fixed.
 3. **Copy on a closed card.** A closed summary's Copy now has a test: it copies the whole summary and leaves the card closed.
 4. **Copy's tooltip.** The icon-only Copy's tooltip shows "Copy" on hover and on keyboard focus (e2e). The button is named, is the row's 28 px square, and says "Copied" in its name (unit).
 5. **Stale comments.** Comments still describing a ring or a 40 px header are corrected (`reply-ready.tsx`, `registry.ts`, `replies-ready.spec.ts`).
+
+## Rating
+
+A round of the AI set (`pnpm ui:rate --screens ai`, at `048daefcc`) did not run: its capture stopped before any rater, twice.
+
+- **Where it stops:** Today, waiting for the digest's row to read "N newsletters · today's digest". On real models the digest came back with no newsletters, so the row reads "0 archived" (`state/today.ts` `digestLabel`), and the frozen capture's wait (`capture.mjs:193`) never ends.
+- **Not this change:** nothing here touches Today, the digest or the backend.
+- **Not worked around:** the capture may only have a wait changed to an equivalent ready signal, and a capture with no digest isn't one.
+
+The AI set's last full round (ai162-r05) scored 7 to 7.5 overall, so it was below the bar before this plan too. What stands in for the round here:
+
+- the cards as the owner chose them, in light and dark, in macOS and Lumen
+- the e2e above in all five designs
+- the contrast suite
