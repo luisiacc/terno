@@ -156,6 +156,7 @@ A written card has no mark. Its title ("Summary", "Reply drafted", Filters' "Fro
   - The `ai` colour, which both of them take (`AI_GLYPH`).
 - **The summary's other states:** the waiting and no-provider lines start with their words.
 - **Tests:** the e2e checks the title sits on the text's inset with only its chevron after it, and Reply ready's title on its draft's line. The unit test checks Reply ready's header starts with its title.
+- **Codex review:** with the spinner in front, a card's title jumped about 23 px left when the spinner went. The spinner now follows the words, in Reply ready while it writes and in the summary's "Summarizing…", so the words keep their place. The e2e checks Reply ready's title doesn't move from writing to written, and the summary's words start on the card's inset. Comments that still named the dot now say the AI colour.
 
 ## Rating
 

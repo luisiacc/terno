@@ -66,8 +66,11 @@ test.describe("replies ready (plan 144)", () => {
       await row(page).click();
       await expect(page.getByTestId("reply-ready-skeleton")).toBeVisible({ timeout: 15_000 });
       await expect(block(page)).toHaveAttribute("data-phase", "writing");
+      // plan 181 (Codex review): its spinner follows its words, so the title keeps its place once it's written
+      const writing = (await page.getByTestId("reply-ready-title").boundingBox())!.x;
       fakeDraft.firstTokenMs = 0;
       await expect(block(page)).toHaveAttribute("data-phase", "ready", { timeout: 15_000 });
+      expect((await page.getByTestId("reply-ready-title").boundingBox())!.x).toBe(writing);
       // one R on screen: the card's, in Use as draft. Plan 162 (after ai162-r01): the card takes the reply bar's place
       await expect(page.getByTestId("reply-ready-use").locator("[data-slot=shortcut]")).toBeVisible();
       // one-to-one (owner's decisions 2): no Reply | Reply all, as the reply bar offers none

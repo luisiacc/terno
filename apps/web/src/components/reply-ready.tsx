@@ -83,10 +83,10 @@ export default function ReplyReady({ threadId }: { threadId: number }) {
   const toFill = writing ? 0 : gapsToFill(shown.text, gaps);
   const lead = (
     <>
-      {/* the spinner keeps its status and name, as before the card */}
-      {/* plan 181 (the owner): no mark once it's written; the spinner while it writes */}
-      {writing && <Spinner className={AI_GLYPH} />}
       <span data-testid="reply-ready-title" className={AI_TITLE}>{writing ? t("replies.writing") : toFill > 0 ? t("replies.drafted") : t("replies.title")}</span>
+      {/* plan 181 (the owner): no mark; while it writes, the spinner after its words (its status and name, as before the
+          card), so the title keeps its place when it's written (Codex review) */}
+      {writing && <Spinner className={AI_GLYPH} />}
       {/* what's left for the user, said before Use, in the ink */}
       {/* plan 162 (after ai162-r01): in the gap's own mark, so the header points at what's missing in the draft */}
       {toFill > 0 && <><span aria-hidden>·</span><span data-testid="reply-ready-gaps" className={cn(AI_GAP_TINT, "px-1 font-medium")}>{t("replies.gaps", { count: toFill })}</span></>}

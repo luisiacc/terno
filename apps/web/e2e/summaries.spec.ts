@@ -362,6 +362,9 @@ test.describe("summaries (plan 132)", () => {
       const block = page.getByTestId("summary-block");
       await expect(block).toHaveAttribute("data-state", "running");
       await expect(block).toContainText("Summarizing…");
+      // plan 181 (Codex review): no mark; its words start on the card's inset, where the summary's title will, the spinner after them
+      const words = (await block.getByText("Summarizing…").boundingBox())!.x - (await block.boundingBox())!.x;
+      expect(words).toBeCloseTo(parseFloat(await block.evaluate((el) => getComputedStyle(el).paddingLeft)), 0);
       // plan 148: at the minimum window a short status keeps its action on the row, the height of the card's header
       await page.setViewportSize({ width: 980, height: 600 });
       expect((await block.boundingBox())!.height).toBe(44);

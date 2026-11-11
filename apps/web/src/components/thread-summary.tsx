@@ -124,11 +124,13 @@ function Ready({ summary, messages }: { summary: AiSummary; messages: readonly M
 function Line({ state, status, icon, actions, children }: { state: string; status?: boolean; icon?: React.ReactNode; actions?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div data-testid="summary-block" data-state={state} role={status ? "status" : undefined} className={cn(CARD, AI_INSET, "flex min-h-11 items-start gap-2 py-3 text-sm text-muted-foreground")}>
-      {/* on the first line, however many the text takes; plan 181 (the owner): only a working card has a glyph, its spinner */}
-      {icon && <span className="flex h-[1lh] shrink-0 items-center">{icon}</span>}
       <div className="flex min-w-0 flex-1 flex-wrap gap-x-3 gap-y-1">
-        {/* its own width: a short status keeps its action on the row, and a long one sends it below */}
-        <span className="min-w-0 flex-auto wrap-anywhere">{children}</span>
+        {/* its own width: a short status keeps its action on the row, and a long one sends it below. Plan 181 (the owner): no
+            mark; a working card's spinner follows its words, so they start where the summary's title will (Codex review) */}
+        <span className="min-w-0 flex-auto wrap-anywhere">
+          {children}
+          {icon && <span className="ms-2 inline-flex align-[-0.2em]">{icon}</span>}
+        </span>
         {/* the 28 px buttons (plan 161: the AI suggestions' one height) reach 4 px past the 20 px line, as the header's height holds them */}
         {actions && <span className="-my-1 ms-auto flex shrink-0 items-center gap-1.5 text-foreground">{actions}</span>}
       </div>

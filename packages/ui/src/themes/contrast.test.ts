@@ -153,12 +153,12 @@ describe("boundaries as drawn (plan 160)", () => {
     }
   });
 
-  // plan 181 (the owner: "nice colors for the icon, instead of just black and white"): the AI mark has colour in every palette
-  it.each(THEMES.map((t) => t.id))("%s gives the AI mark a colour, never an ink or a grey (plan 181)", (id) => {
+  // plan 181 (the owner: "nice colors for the icon, instead of just black and white"): the AI colour has colour in every palette
+  it.each(THEMES.map((t) => t.id))("%s gives AI its own colour, never an ink or a grey (plan 181)", (id) => {
     const tokens = THEMES.find((t) => t.id === id)!.tokens;
     const ai = parseColor(tokens.ai);
     expect(ai.c).toBeGreaterThanOrEqual(AI_MIN_CHROMA);
-    // the accent itself where it has colour, so a palette's mark matches its own
+    // the accent itself where it has colour, so a palette's AI matches its own
     if (parseColor(tokens.primary).c >= AI_MIN_CHROMA) expect(tokens.ai).toBe(tokens.primary);
   });
 

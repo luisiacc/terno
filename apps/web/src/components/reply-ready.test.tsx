@@ -75,15 +75,18 @@ it("plan 144's addendum: ready, it's the summary's card, the label its header, t
   expect(q("reply-ready")).toBeNull();
 });
 
-it("while it writes: the same card, the spinner in the glyph's place, Stop in the footer and nothing to use yet", async () => {
+it("while it writes: the same card, the spinner after its words, Stop in the footer and nothing to use yet", async () => {
   await act(async () => root.render(<ReplyReady threadId={7} />));
   act(() => useReplies.setState({ shown: { threadId: 7, phase: "writing", text: "Hey", row: null } }));
   const card = q("reply-ready")!;
   expect(card.dataset.phase).toBe("writing");
   expect(card.className.split(" ")).toContain(AI_CARD);
   expect(q("reply-ready-title")!.textContent).toBe("Writing a reply…");
-  // the spinner is still a status with its name, as it was before the card (review 3)
-  const spinner = q("reply-ready-header")!.firstElementChild!;
+  // the spinner is still a status with its name, as it was before the card (review 3); plan 181: after the title, so the title
+  // keeps its place when it's written
+  const header = q("reply-ready-header")!;
+  expect(header.firstElementChild).toBe(q("reply-ready-title"));
+  const spinner = q("reply-ready-title")!.nextElementSibling!;
   expect(spinner.getAttribute("role")).toBe("status");
   expect(spinner.getAttribute("aria-label")).toBe("Loading");
   expect(spinner.getAttribute("aria-hidden")).toBeNull();
