@@ -27,7 +27,8 @@ export function AgentSession({ copy, s, className = "" }: { copy: SiteCopy; s: S
       <Window className={s.window}>
         <div className={`grid gap-5 p-5 pt-10 font-mono text-[0.8rem] leading-relaxed sm:p-6 sm:pt-11 ${s.body}`}>
           <p className={`[overflow-wrap:anywhere] ${s.dim}`}>
-            <span aria-hidden="true">$ </span>claude mcp add terno -- /Applications/Terno.app/…/<wbr />terno-mcp
+            <span aria-hidden="true">$ </span>claude mcp add terno -- /Applications/Terno.app/…/<wbr />
+            <span className="whitespace-nowrap">terno-mcp</span>
           </p>
           <div>
             <p className={s.who}>{d.you}</p>
