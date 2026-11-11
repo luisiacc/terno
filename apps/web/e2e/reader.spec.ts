@@ -162,6 +162,12 @@ test.describe("reader conversation", () => {
       expect(await recipientEmails(page, "compose-to")).toEqual([mei.email]);
       await page.getByTestId("snack-action").click();
       await expect.poll(() => recipientEmails(page, "compose-to")).toEqual([mei.email, ben.email]);
+      // pinned, the draft is answered in its card (plan 115): it keeps Ben, and says so rather than quietly writing to both
+      await page.getByTestId("compose-pin").click();
+      await chip("Mei Nakamura").click();
+      await menu.getByTestId("person-reply-only").click();
+      await expect(page.getByTestId("snack-message")).toHaveText("Your pinned draft keeps who it goes to: change them there to write to Mei Nakamura alone");
+      expect((await draft(id))!.toText).toContain(ben.email);
 
       // her conversations: the address, sent or received, everywhere
       await chip("Mei Nakamura").click();
@@ -172,8 +178,7 @@ test.describe("reader conversation", () => {
       // a new message to her, from the conversation's account
       await chip("Mei Nakamura").click();
       await menu.getByTestId("person-new-message").click();
-      await expect.poll(() => draft()).toMatchObject({ mode: "new" });
-      expect(await recipientEmails(page, "compose-to")).toEqual([mei.email]);
+      await expect.poll(() => draft()).toMatchObject({ mode: "new", toText: `${mei.name} <${mei.email}>` });
       // the menu went with the reader: shortcuts aren't left waiting on it
       expect(await page.evaluate(() => (window as unknown as { __terno: { getApp(): { menuOpen: boolean } } }).__terno.getApp().menuOpen)).toBe(false);
     });

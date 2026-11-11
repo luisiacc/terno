@@ -1853,6 +1853,7 @@ const en = {
   "compose.undoConvert.message": "Undo changing the message",
   "compose.onlyTo.message": "The draft now goes only to {name}",
   "compose.undoOnlyTo": "Undo changing who it goes to",
+  "compose.pinnedKeepsRecipients": "Your pinned draft keeps who it goes to: change them there to write to {name} alone",
   "compose.undoConvert.reply": "Undo convert to reply",
   "compose.undoConvert.replyAll": "Undo convert to reply all",
   "compose.undoConvert.forward": "Undo convert to forward",

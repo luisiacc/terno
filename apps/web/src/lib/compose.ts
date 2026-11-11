@@ -647,6 +647,9 @@ async function openLanding(mode: DraftMode, threadId: number | null, attempt: nu
     // plan 163: ⌘J's row has no field any more: the card's body takes the keys, as for r / a / f
     focusPinned();
     if (pinned) land(cell, "pinned", pinned);
+    // plan 180 (Codex code review): "Reply to Mei only" never quietly sends to more: the pinned draft keeps its own, and says so
+    const only = options?.only, held = pinned ? useDrafts.getState().drafts[pinned] : undefined;
+    if (only && held && !goesOnlyTo(held, only.email)) snack(t("compose.pinnedKeepsRecipients", { name: only.name || only.email }));
     return cell.landing;
   }
   const wantsLease = mode !== "new" && threadId !== null && state.selectedId === threadId && state.scope === null && state.checked.size < 2;

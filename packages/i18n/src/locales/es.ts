@@ -1838,6 +1838,7 @@ const es = {
   "compose.undoConvert.message": "Deshacer el cambio de mensaje",
   "compose.onlyTo.message": "El borrador ahora va solo a {name}",
   "compose.undoOnlyTo": "Deshacer el cambio de destinatarios",
+  "compose.pinnedKeepsRecipients": "Tu borrador fijado conserva sus destinatarios: cámbialos ahí para escribir solo a {name}",
   "compose.undoConvert.reply": "Deshacer convertir en Responder",
   "compose.undoConvert.replyAll": "Deshacer convertir en Responder a todos",
   "compose.undoConvert.forward": "Deshacer convertir en Reenviar",

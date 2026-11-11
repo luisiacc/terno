@@ -83,3 +83,9 @@ Eleven points; ten taken:
 9. Not taken: a browser run of the person menu's "File all their mail" submenu. The thread menu's specs cover those rows and the parts are typed; the e2e checks the sender rows show only for someone who wrote.
 10. **The e2e proves the source**: Mei wrote twice, Yuki last; Reply to Mei only answers Mei's newest message (`inReplyToMessageId`), To = Mei, no Cc. Plus an untouched Reply all converted, and a reply with an added recipient readdressed with Undo.
 11. **A real button** wraps the chip (hover and open on the chip's surface); the menu is as wide as its words, not the chip.
+
+## Revisions after the Codex code review
+
+One finding, fixed with a test that fails without it:
+
+1. **A pinned draft kept its other recipients silently.** With the conversation's draft pinned, Reply goes to its card and never converts it (plan 115), so "Reply to Mei only" focused a Reply all still addressed to Yuki and Ben, and nothing said so. Plan 115's rule stands; compose now says "Your pinned draft keeps who it goes to: change them there to write to Mei Nakamura alone" when the pinned draft goes to anyone but her (`reader.spec`: pin the reply with Ben added, ask again, the note shows and Ben stays).
