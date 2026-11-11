@@ -225,10 +225,10 @@ test.describe("summaries (plan 132)", () => {
     const inset = (await page.getByTestId("summary-text").boundingBox())!.x - box.x;
     expect(inset).toBeGreaterThanOrEqual(12);
     expect((await page.getByTestId("summary-toggle").locator("[data-slot=ai-mark]").boundingBox())!.x - box.x).toBe(inset);
-    // plan 181 (the owner): the AI mark is a glowing dot in the accent, not a sparkle: solid, round, haloed
+    // plan 181 (the owner): the AI mark is a glowing dot in its own colour (--ai), not a sparkle: solid, round, haloed
     const mark = await page.getByTestId("summary-toggle").locator("[data-slot=ai-mark] > span").evaluate((el) => {
       const probe = document.createElement("div");
-      probe.style.backgroundColor = "var(--primary)";
+      probe.style.backgroundColor = "var(--ai)";
       document.body.append(probe);
       const primary = getComputedStyle(probe).backgroundColor;
       probe.remove();

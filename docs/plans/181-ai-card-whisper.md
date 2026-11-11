@@ -132,6 +132,17 @@ The owner picked round 3's **glowing dot**. It replaces Sparkles on these header
 - **What stays:** the spinner while a card works, and the follow-up line's clock, which is its task glyph. The Sparkles on buttons stay too (⌘J, Ask, the palette, Filters' Create with AI): a dot is no button glyph.
 - **Tests:** the unit test checks Reply ready's header starts with the mark and has no glyph. The e2e checks the mark sits on the text's inset in every design and is the accent's solid round dot with two shadows.
 
+### Its colour (the owner, 2026-11-11)
+
+> lets have this nice colors for the icon please, instead of just black and white
+
+The dot was the palette's accent. In Lumen and Graphite that accent is an ink (black in light, white in dark); Atelier's is a dark navy, and Gruvbox and Nord have muted accents. So the mark now has its own palette token, `ai` (`packages/core` `THEME_TOKENS`, derived in `registry.ts`):
+
+- **Where the accent has colour:** the accent itself, at chroma 0.1 or more (`AI_MIN_CHROMA`). Terno, Apple, GitHub, Luma, Catppuccin, Solarized, Dracula, Monokai and Tokyo Night all keep their own colour.
+- **Where it doesn't:** Terno's own indigo, oklch(0.56 0.19 268) in light and (0.7 0.16 268) in dark. That is the blue the owner pointed at.
+
+The colour is defined in the palettes and the CSS only reads the token, per AGENTS.md's rule that colours stay in palettes. A unit test checks every palette's mark has colour and matches its accent where the accent has one. The e2e reads the dot's fill against `var(--ai)` in every design.
+
 ## Rating
 
 A round of the AI set (`pnpm ui:rate --screens ai`, at `048daefcc`) did not run: its capture stopped before any rater, twice.

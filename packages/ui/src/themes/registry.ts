@@ -2,6 +2,9 @@ import { t } from "@terno/i18n";
 import { DEFAULT_THEME, THEME_TOKENS, type BuiltinThemeId, type CustomTheme, type ThemeMode, type ThemeToken } from "@terno/core";
 import { composite, contrast, formatOklch, mixOklab, oklchToRgb, parseColor, rgbToOklch, withAlpha, type Oklch } from "./color";
 
+/** plan 181: the least chroma an accent needs to be the AI mark's colour; under it the mark is Terno's indigo */
+export const AI_MIN_CHROMA = 0.1;
+
 /**
  * The theme registry: the source of truth for every color in the app.
  * `themes.generated.css` is generated from it (see generate.ts); a test keeps
@@ -152,6 +155,9 @@ export function derive(input: Pick<ThemeInput, "mode" | "tokens" | "cats" | "ove
   def("sidebar-primary-foreground", () => o("primary-foreground"));
   def("sidebar-border", () => o("border"));
   def("row-rail", () => o("primary"));
+  // plan 181 (the owner: "nice colors for the icon, instead of just black and white"): the AI mark is the accent where the
+  // accent has colour, and Terno's own indigo where it's an ink or a grey (Lumen, Graphite, Atelier, muted Gruvbox and Nord)
+  def("ai", () => (o("primary").c >= AI_MIN_CHROMA ? o("primary") : light ? "0.56 0.19 268" : "0.7 0.16 268"));
   const bg = formatOklch(o("background"));
   def("chart-1", () => o("primary"));
   def("chart-2", () => o("cat-emerald"));

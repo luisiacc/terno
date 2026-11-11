@@ -590,14 +590,14 @@
     background-color: color-mix(in oklab, var(--primary) 5%, transparent);
   }
 }
-/* plan 181 (the owner): the AI mark, a glowing dot in the accent: a solid dot half the text's size, a faint ring of the
+/* plan 181 (the owner): the AI mark, a glowing dot in its own colour (--ai: the accent, or Terno's indigo where the accent is an ink): a solid dot half the text's size, a faint ring of the
    accent and a soft halo; sized in em so it follows the header's type. Decorative: the card's title names it */
 @utility ai-mark {
   width: 0.5em;
   height: 0.5em;
   border-radius: 9999px;
-  background-color: var(--primary);
-  box-shadow: 0 0 0 0.2em color-mix(in oklab, var(--primary) 22%, transparent), 0 0 0.7em 0.15em color-mix(in oklab, var(--primary) 35%, transparent);
+  background-color: var(--ai);
+  box-shadow: 0 0 0 0.2em color-mix(in oklab, var(--ai) 22%, transparent), 0 0 0.7em 0.15em color-mix(in oklab, var(--ai) 35%, transparent);
   /* Codex review: forced colours drop a fill and every shadow, so the dot would vanish: there it's the system's text colour */
   @media (forced-colors: active) {
     forced-color-adjust: none;

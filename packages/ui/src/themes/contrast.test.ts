@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { contrast, parseColor, withAlpha } from "./color";
 import { AI_CARD_FILL_DARK, AI_CARD_FILL_LIGHT, BOUNDARY_STEPS, boundaryStep, composite, contrastFailures, CONTRAST_PAIRS, CONTROL_EDGES, FIELD_WASH, RATED_PALETTES, SNACK_PILL, SNACK_TRACK, SNACK_TRACK_FLOOR, STAR_ON_ROWS, SURFACE_STEPS, surfaceStep } from "./contrast";
 import { DESIGNS } from "../designs/index";
-import { resolveCustomTheme, THEMES } from "./registry";
+import { AI_MIN_CHROMA, resolveCustomTheme, THEMES } from "./registry";
 
 describe("WCAG AA in every built-in theme", () => {
   it.each(THEMES.map((t) => [t.id, t] as const))("%s passes every pair", (_id, theme) => {
@@ -151,6 +151,15 @@ describe("boundaries as drawn (plan 160)", () => {
     for (const step of BOUNDARY_STEPS.filter((s) => s.why.startsWith("an AI card's fill") && s.mode === theme.mode)) {
       expect(boundaryStep(theme, step), `${id}: ${step.why}`).toBeLessThanOrEqual(1.16);
     }
+  });
+
+  // plan 181 (the owner: "nice colors for the icon, instead of just black and white"): the AI mark has colour in every palette
+  it.each(THEMES.map((t) => t.id))("%s gives the AI mark a colour, never an ink or a grey (plan 181)", (id) => {
+    const tokens = THEMES.find((t) => t.id === id)!.tokens;
+    const ai = parseColor(tokens.ai);
+    expect(ai.c).toBeGreaterThanOrEqual(AI_MIN_CHROMA);
+    // the accent itself where it has colour, so a palette's mark matches its own
+    if (parseColor(tokens.primary).c >= AI_MIN_CHROMA) expect(tokens.ai).toBe(tokens.primary);
   });
 
   // the owner's decision (plan 173): light's selections are a soft step, so none drifts back to plan 160's heavy fill

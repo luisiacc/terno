@@ -73,6 +73,8 @@ export const THEME_TOKENS = [
   // plan 158: the keyboard's place in a menu or the palette; an enabled control's quieter ink
   "menu-highlight",
   "foreground-soft",
+  // plan 181: the AI mark's colour (the glowing dot), the accent where it has colour
+  "ai",
   "sidebar-glyph",
   "control-edge",
   "control-edge-hover",
