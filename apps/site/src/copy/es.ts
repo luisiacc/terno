@@ -265,7 +265,7 @@ export const es: SiteCopy = {
           id: "agents",
           title: "Herramientas de IA en tu Mac",
           body: [
-            "Terno incluye un conector (MCP) que las herramientas de IA de tu Mac, como Claude, pueden usar para buscar, leer, organizar y redactar tu correo cuando lo añades a ellas. No se puede alcanzar desde la red: solo pueden usarlo los programas que se ejecutan con tu usuario en tu Mac y tienen una clave guardada en tu carpeta de Terno, los mismos programas que podrían abrir directamente tus archivos de correo. Lo que esas herramientas hagan con tu correo depende de ellas y de su proveedor. Enviar correo a través de ellas necesita su propio interruptor, desactivado por defecto.",
+            "Terno incluye un conector (MCP) que las herramientas de IA de tu Mac, como Claude, pueden usar para llegar a tu correo. Está desactivado hasta que lo activas en Ajustes → Agentes, donde también eliges qué pueden hacer esas herramientas: solo leer, también organizar (archivar, categorizar, filtros y borradores) o también enviar. Mientras está desactivado, nada las espera. No se puede alcanzar desde la red: solo pueden usarlo los programas que se ejecutan con tu usuario en tu Mac y tienen una clave guardada en tu carpeta de Terno, los mismos programas que podrían abrir directamente tus archivos de correo. Lo que esas herramientas hagan con tu correo depende de ellas y de su proveedor.",
           ],
         },
         {

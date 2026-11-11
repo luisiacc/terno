@@ -265,7 +265,7 @@ export const en = {
           id: "agents",
           title: "AI tools on your Mac",
           body: [
-            "Terno includes a connector (MCP) that AI tools on your Mac, such as Claude, can use to search, read, organize and draft your mail once you add it to them. It can’t be reached from the network: only programs running as you on your Mac, holding a key kept in your Terno folder, can use it, the same programs that could open your mail files directly. What those tools do with your mail is up to them and their provider. Sending mail through them needs its own switch, off by default.",
+            "Terno includes a connector (MCP) that AI tools on your Mac, such as Claude, can use to reach your mail. It is off until you turn it on in Settings → Agents, where you also choose what those tools may do: only read, also organize (archive, categorize, filters and drafts), or also send. While it is off, nothing listens for them. It can’t be reached from the network: only programs running as you on your Mac, holding a key kept in your Terno folder, can use it, the same programs that could open your mail files directly. What those tools do with your mail is up to them and their provider.",
           ],
         },
         {
