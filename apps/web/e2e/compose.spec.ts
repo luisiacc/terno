@@ -1010,6 +1010,50 @@ test("the To row: Tab goes To, Subject, text; Cc and Bcc by key or button; the s
     await expect(page.getByTestId("compose-from")).toBeFocused();
     await expect(label).toHaveCount(0);
   });
+  await scenario("a row opened by its button has a light × on hover that takes it away again; Cc's addresses come back with Undo (plan 186)", async () => {
+    // still the reply, From open: it's the conversation's account, so it can go
+    const hideFrom = page.getByTestId("compose-hide-from");
+    await expect(hideFrom).toHaveAccessibleName("Hide From");
+    await hideFrom.click();
+    await expect(page.getByTestId("compose-from")).toHaveCount(0);
+    await expect(page.getByTestId("compose-from-label")).toBeVisible();
+    await expect(page.getByTestId("compose-body")).toBeFocused();
+
+    await page.getByTestId("compose-show-cc").click();
+    await expect(page.getByTestId("compose-cc")).toBeFocused();
+    await page.keyboard.type("bea@example.com,");
+    const remove = page.getByTestId("compose-remove-cc");
+    await expect(remove).toHaveAccessibleName("Remove Cc");
+    // light: not there at rest, there on the row's hover
+    await page.getByTestId("compose-body").focus();
+    await page.mouse.move(1, 1);
+    await expect(remove).toHaveCSS("opacity", "0");
+    await page.getByTestId("compose-cc").hover();
+    await expect(remove).toHaveCSS("opacity", "1");
+    await remove.click();
+    await expect(page.getByTestId("compose-cc")).toHaveCount(0);
+    await expect(page.getByTestId("compose-show-cc")).toBeVisible();
+    await expect(page.getByTestId("compose-body")).toBeFocused();
+    await toast(page, "Cc removed").getByTestId("snack-action").click();
+    await expect(page.locator("[data-recipient-row]", { has: page.getByTestId("compose-cc") }).getByTestId("recipient-chip")).toHaveAttribute("data-email", "bea@example.com");
+
+    // empty, it just goes
+    await page.getByTestId("compose-show-bcc").click();
+    await page.getByTestId("compose-remove-bcc").click();
+    await expect(page.getByTestId("compose-bcc")).toHaveCount(0);
+    await expect(page.locator("[data-testid=snack]").filter({ hasText: "Bcc removed" })).toHaveCount(0);
+
+    // a subject opened and untouched can go; changed, it stays in sight
+    await page.getByTestId("compose-to").hover();
+    await page.getByTestId("compose-show-subject").click();
+    await page.getByTestId("compose-hide-subject").click();
+    await expect(page.getByTestId("compose-subject")).toHaveCount(0);
+    await page.getByTestId("compose-to").hover();
+    await page.getByTestId("compose-show-subject").click();
+    await page.getByTestId("compose-subject").fill("Otra cosa");
+    await expect(page.getByTestId("compose-hide-subject")).toHaveCount(0);
+    await page.getByTestId("compose-discard").click();
+  });
 });
 
 test("the composer's states: unavailable Send, Saving and Saved, an invalid address in words (plan 158)", async ({ app: page }) => {

@@ -14,7 +14,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { quoteFor } from "./compose-fields";
 import { sendBody } from "./drafts";
 import { validRecipients } from "./drafts";
-import { chipLabel, chipName, chipNoReply, commit, derive, edit, EMPTY, firstInvalid, insert, remove, serialize, type FieldState } from "./recipient-field";
+import { chipLabel, chipName, chipNoReply, commit, derive, edit, EMPTY, firstInvalid, insert, remove, restoreRemoved, serialize, type FieldState } from "./recipient-field";
 import { emailsIn, highlight, pastedAddresses, tokenAt } from "./recipients";
 
 afterEach(() => setLocale("en", en));
@@ -27,6 +27,16 @@ describe("the token at the caret", () => {
     expect(tokenAt(text, 5).query).toBe("");
     expect(tokenAt("ana@x.io; bo, cy", 11)).toEqual({ start: 9, end: 12, query: "bo" });
     expect(tokenAt("", 0).query).toBe("");
+  });
+});
+
+describe("a removed field brought back (plan 186)", () => {
+  it("is what it was when nothing went in since", () => {
+    expect(restoreRemoved("Ana <ana@x.com>, bob@y.com", "")).toBe("Ana <ana@x.com>, bob@y.com");
+  });
+  it("goes before what went in since, an address in both once, nothing lost", () => {
+    expect(restoreRemoved("Ana <ana@x.com>, bob@y.com", "BOB@y.com, cy@z.com")).toBe("Ana <ana@x.com>, BOB@y.com, cy@z.com");
+    expect(restoreRemoved("ana@x.com", "not-an-address")).toBe("ana@x.com, not-an-address");
   });
 });
 

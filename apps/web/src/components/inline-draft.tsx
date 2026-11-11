@@ -3,6 +3,7 @@ import { useComposerDrop } from "./composer-drop";
 import type { Account } from "@terno/core";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
+import { CloseButton } from "@terno/ui/components/close-button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { IconButton } from "@terno/ui/components/icon-button";
 import { cn } from "@terno/ui/lib/utils";
@@ -15,6 +16,7 @@ import { closesEmpty, collapseInlineDraft, composeFocusPending, finishComposeFoc
 import { attachmentUploading } from "~/lib/attachments";
 import { authored, copyDraft, discardDraft, discardIfEmpty, draftEditsHeld, draftSenderLocked, editDraft, editDraftRecipients, restoreDiscarded, retryDraft, signatureBlock, useDrafts, type BodyCheckpoint, type DraftFields, type LocalDraft } from "~/lib/drafts";
 import { RecipientInput, recipientSummary } from "./recipient-input";
+import { restoreRemoved } from "~/lib/recipient-field";
 import { warmAutocomplete } from "~/lib/autocomplete";
 import { richT } from "~/lib/i18n";
 import { keepInView } from "~/lib/reader-scroll";
@@ -42,8 +44,11 @@ import { focusSelector, focusSoon, focusMoveGeneration, type InlineFocusMove } f
 /** "mod+shift+c" as `aria-keyshortcuts` writes it. */
 const shortcutAria = (keys: string) => keys.split("+").map((k) => (k === "mod" ? (isMac ? "Meta" : "Control") : k === "shift" ? "Shift" : k.toUpperCase())).join("+");
 
+/** A row the user opened with its button can be taken away again (plan 186): `label` names its × */
+type RowRemove = { label: string; testId: string; disabled?: boolean; onRemove: () => void };
+
 /** A borderless field row: a real label, the control, hairline below. */
-function Row({ label, htmlFor, children, hidden, note }: { label: string; htmlFor?: string; children: React.ReactNode; hidden?: boolean; note?: React.ReactNode }) {
+function Row({ label, htmlFor, children, hidden, note, remove }: { label: string; htmlFor?: string; children: React.ReactNode; hidden?: boolean; note?: React.ReactNode; remove?: RowRemove }) {
   if (hidden) return null;
   // no focus line under the row (the owner: "remove it"): the caret says where you are
   return (
@@ -54,6 +59,17 @@ function Row({ label, htmlFor, children, hidden, note }: { label: string; htmlFo
           {label}
         </label>
         {children}
+        {remove && (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                // light: there on the row's hover or while you're in it, on the first line's centre, on the far right beside a short From; its glyph ends where the To row's Bcc does
+                <CloseButton label={remove.label} data-testid={remove.testId} disabled={remove.disabled} onClick={remove.onRemove} className="-mr-0.5 mt-[9px] ml-auto self-start opacity-0 transition-opacity duration-fast group-focus-within/row:opacity-100 group-hover/row:opacity-100 focus-reveal:opacity-100" />
+              }
+            />
+            <TooltipContent>{remove.label}</TooltipContent>
+          </Tooltip>
+        )}
       </div>
       {note}
     </div>
@@ -193,10 +209,33 @@ export function DraftFieldsForm({ d, accounts, showSubject, threadAccountId }: {
   // with several accounts the one sending always shows, in a word, in the To row: a reply from the wrong address is a costly, invisible error
   const sender = accounts.find((a) => a.id === d.accountId);
   const senderName = sender?.displayName || sender?.email || "";
+  /** The × took its row and itself away: the caret goes back to the text, where it was */
+  const backToText = () => controllerFor(d.key)?.focus("keep");
+  /** Cc's or Bcc's ×: the field empties and goes; what was in it comes back with Undo, before anything typed there since */
+  const removeRecipients = (field: "cc" | "bcc", close: (v: boolean) => void) => () => {
+    const before = useDrafts.getState().drafts[d.key]?.[`${field}Text`] ?? "";
+    if (!canEditRecipients() || (before !== "" && !recipients(field, "", []))) return;
+    close(false);
+    setBadChips((was) => (was[field] ? { ...was, [field]: null } : was));
+    backToText();
+    if (!before.trim()) return;
+    const was = useDrafts.getState().drafts[d.key]!;
+    const undo = registerUndo(() => {
+      const now = useDrafts.getState().drafts[d.key];
+      // still the draft it came out of (a first save may give it its id), or there's nowhere for it to go back to
+      if (!now || now.mode !== was.mode || now.accountId !== was.accountId || now.threadId !== was.threadId || now.inReplyToMessageId !== was.inReplyToMessageId || now.forwardOfMessageId !== was.forwardOfMessageId || (was.id !== null && now.id !== was.id)) return;
+      // a send or a hold is only for now: the undo stays ready, with a retry
+      if (now.sending || draftEditsHeld() || !editDraftRecipients(d.key, field, restoreRemoved(before, now[`${field}Text`]), [])) throw new Error(t("compose.cantChangeNow"));
+    });
+    snack(t(field === "cc" ? "compose.ccRemoved" : "compose.bccRemoved"), { action: { label: t("common.undo"), name: t(field === "cc" ? "compose.undoRemoveCc" : "compose.undoRemoveBcc"), undo } });
+  };
+  // only where taking it away hides it: a subject that's been changed or that the mode needs, and another account than the conversation's, stay in sight
+  const subjectRemovable = subjectOpen && !showSubject && !d.subjectEdited;
+  const fromRemovable = fromOpen && threadAccountId !== undefined && d.accountId === threadAccountId;
   return (
     <div data-draft-key={d.key}>
       {fromRow && (
-        <Row label={t("compose.from")}>
+        <Row label={t("compose.from")} remove={fromRemovable ? { label: t("compose.hideFrom"), testId: "compose-hide-from", disabled: d.sending, onRemove: () => (setFromOpen(false), backToText()) } : undefined}>
           <Select disabled={d.sending || draftSenderLocked(d)} value={String(d.accountId)} onValueChange={(v) => update({ accountId: Number(v) })} items={accounts.map((a) => ({ value: String(a.id), label: `${a.displayName} · ${a.email}` }))}>
             <SelectTrigger id={`${id}-from`} size="sm" aria-label={t("compose.from")} className="-ml-2.5 h-7 min-w-0 border-0 bg-transparent shadow-none dark:bg-transparent dark:hover:bg-muted" data-testid="compose-from" title={draftSenderLocked(d) ? t("attachments.senderLocked") : undefined}>
               {/* a long address truncates in a narrow pane: the corner's Pin stays in the row */}
@@ -222,13 +261,13 @@ export function DraftFieldsForm({ d, accounts, showSubject, threadAccountId }: {
           {severalFrom && toggle(fromRow, setFromOpen, <span className="block truncate" data-testid="compose-from-label">{t("compose.fromLabel", { name: senderName })}</span>, "from", "compose-show-from", { tip: t("compose.fromTip", { email: sender?.email ?? "" }), name: t("compose.fromName", { name: senderName, email: sender?.email ?? "" }), className: "ml-1 max-w-40 min-w-0" })}
         </span>
       </Row>
-      <Row label={t("compose.cc")} htmlFor={`${id}-cc`} hidden={!cc} note={problemNote("cc")}>
+      <Row label={t("compose.cc")} htmlFor={`${id}-cc`} hidden={!cc} note={problemNote("cc")} remove={{ label: t("compose.removeCc"), testId: "compose-remove-cc", disabled: d.sending, onRemove: removeRecipients("cc", setCc) }}>
         <RecipientInput id={`${id}-cc`} testId="compose-cc" label={t("compose.cc")} readOnly={d.sending} canEdit={canEditRecipients} className={input} value={d.ccText} onChange={(v, a) => (setCc(true), recipients("cc", v, a))} accountId={d.accountId} others={[d.toText, d.bccText]} describedBy={problemId("cc")} onInvalid={noteBadChip("cc")} />
       </Row>
-      <Row label={t("compose.bcc")} htmlFor={`${id}-bcc`} hidden={!bcc} note={problemNote("bcc")}>
+      <Row label={t("compose.bcc")} htmlFor={`${id}-bcc`} hidden={!bcc} note={problemNote("bcc")} remove={{ label: t("compose.removeBcc"), testId: "compose-remove-bcc", disabled: d.sending, onRemove: removeRecipients("bcc", setBcc) }}>
         <RecipientInput id={`${id}-bcc`} testId="compose-bcc" label={t("compose.bcc")} readOnly={d.sending} canEdit={canEditRecipients} className={input} value={d.bccText} onChange={(v, a) => (setBcc(true), recipients("bcc", v, a))} accountId={d.accountId} others={[d.toText, d.ccText]} describedBy={problemId("bcc")} onInvalid={noteBadChip("bcc")} />
       </Row>
-      <Row label={t("compose.subject")} htmlFor={`${id}-subject`} hidden={!subject}>
+      <Row label={t("compose.subject")} htmlFor={`${id}-subject`} hidden={!subject} remove={subjectRemovable ? { label: t("compose.hideSubject"), testId: "compose-hide-subject", disabled: d.sending, onRemove: () => (setSubject(false), backToText()) } : undefined}>
         <input id={`${id}-subject`} data-testid="compose-subject" className={input} value={d.subject} onChange={(e) => update({ subject: e.target.value, subjectEdited: true })} />
       </Row>
       <AiRowSlot draftKey={d.key} />

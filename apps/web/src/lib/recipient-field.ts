@@ -124,6 +124,15 @@ export function edit(s: FieldState, key: number): FieldState {
   return { chips: first.chips.filter((c) => c.key !== key), text: chipEditText(first.chips[i]!), at: i };
 }
 
+/**
+ * A field taken away and brought back with Undo (plan 186): what it held goes first, and what was put in since
+ * stays as it was, after it; an address in both is there once.
+ */
+export function restoreRemoved(removed: string, current: string): string {
+  if (!current.trim()) return removed;
+  return serialize(insert({ ...derive(current, false), at: 0 }, parseAddressList(removed)).state);
+}
+
 /** The first entry that isn't an address, for Send's message. */
 export function firstInvalid(text: string): string | null {
   const bad = parseAddressList(text).find((a) => !isValidEmail(a.email));
