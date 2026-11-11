@@ -239,6 +239,30 @@ test.describe("summaries (plan 132)", () => {
     expect(mark.radius).toBe("9999px");
     // two shadows: a faint ring and the halo
     expect(mark.glow).toMatch(/px, .+px$/);
+    // half the text's size, in the glyph's 1.15em box, centred on the title's line (Codex review)
+    const geometry = await page.getByTestId("summary-toggle").evaluate((toggle) => {
+      const box = toggle.querySelector("[data-slot=ai-mark]")!.getBoundingClientRect();
+      const dot = toggle.querySelector("[data-slot=ai-mark] > span")!.getBoundingClientRect();
+      const title = [...toggle.querySelectorAll("span")].find((s) => s.textContent === "Summary")!.getBoundingClientRect();
+      const em = parseFloat(getComputedStyle(toggle).fontSize);
+      return { em, box: box.width, boxH: box.height, dot: dot.width, dotH: dot.height, dotMid: dot.top + dot.height / 2, titleMid: title.top + title.height / 2 };
+    });
+    expect(geometry.dot).toBeCloseTo(geometry.em * 0.5, 0);
+    expect(geometry.dotH).toBeCloseTo(geometry.em * 0.5, 0);
+    expect(geometry.box).toBeCloseTo(geometry.em * 1.15, 0);
+    expect(Math.abs(geometry.dotMid - geometry.titleMid)).toBeLessThanOrEqual(1);
+    // forced colours keep it: the system's text colour, never a fill and shadows they'd drop
+    await page.emulateMedia({ forcedColors: "active" });
+    const forced = await page.getByTestId("summary-toggle").locator("[data-slot=ai-mark] > span").evaluate((el) => {
+      const probe = document.createElement("div");
+      probe.style.backgroundColor = "CanvasText";
+      document.body.append(probe);
+      const text = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      return { fill: getComputedStyle(el).backgroundColor, text };
+    });
+    expect(forced.fill).toBe(forced.text);
+    await page.emulateMedia({ forcedColors: "none" });
 
     // the minimum window: a long link wraps, inside the card
     await page.setViewportSize({ width: 980, height: 600 });

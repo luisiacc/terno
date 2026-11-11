@@ -598,6 +598,12 @@
   border-radius: 9999px;
   background-color: var(--primary);
   box-shadow: 0 0 0 0.2em color-mix(in oklab, var(--primary) 22%, transparent), 0 0 0.7em 0.15em color-mix(in oklab, var(--primary) 35%, transparent);
+  /* Codex review: forced colours drop a fill and every shadow, so the dot would vanish: there it's the system's text colour */
+  @media (forced-colors: active) {
+    forced-color-adjust: none;
+    background-color: CanvasText;
+    box-shadow: none;
+  }
 }
 /* the same for a command list (the palette, the category picker): the design's command rows, 2 in (the list's p-2) */
 @utility rounded-palette {

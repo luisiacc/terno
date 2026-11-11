@@ -145,3 +145,8 @@ The AI set's last full round (ai162-r05) scored 7 to 7.5 overall, so it was belo
 - the cards as the owner chose them, in light and dark, in macOS and Lumen
 - the e2e above in all five designs
 - the contrast suite
+
+## What the Codex review of the mark changed
+
+1. **Forced colours.** Under forced colours (Windows' and macOS's high-contrast modes), the dot was only a fill and two shadows, both of which those modes drop, so it vanished. It is now the system's text colour there (`CanvasText`, no shadows). The e2e checks it under `forcedColors: "active"`.
+2. **The mark's geometry.** The e2e now checks the dot is half the text's size in a 1.15em box, centred on the title's line within 1 px.
