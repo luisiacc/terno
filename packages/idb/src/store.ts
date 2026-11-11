@@ -33,7 +33,7 @@ import { mergeBefore, sameImapLocations, reaffirmSavedFlagIntent, acceptFlagObse
 import { bindIdbPromotedFlags, idbFlags, idbFlagSnapshots, prepareIdbFlagPage } from "./flag-intents";
 import { appendAsset, assetError, assetRef, assetRow, createAsset, ASSET_CLEANUP_STEPS, cleanupAssets, validateAssetCreation, linkAssets, sealAsset, stageAttachments, validateAssets } from "@terno/store";
 import { idbAssets, replaceAttachments } from "./attachments";
-import { categoryOf, COUNT_CAP, filterState, LIST_FILTERS, sameFilterState, parseSearch, searchTerms, resolvable, resolveSearch, senderVetoed, type Address, type FilterAction, type ResolvedSearch, type FilterRule, type ListFilter, type ThreadAction, type ThreadFilter, type ThreadSummary } from "@terno/core";
+import { categoryOf, COUNT_CAP, filterState, LIST_FILTERS, sameFilterState, parseSearch, searchTerms, resolvable, resolveSearch, senderVetoed, type Address, type FilterAction, type ResolvedSearch, type FilterRule, type ListFilter, type SearchView, type ThreadAction, type ThreadFilter, type ThreadSummary } from "@terno/core";
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import type { MockDataset } from "@terno/mock-data";
@@ -1034,7 +1034,7 @@ export class IdbMailStore implements MailStore {
     return { items: page.items, nextCursor: page.nextCursor, revision, strategy: page.strategy, complete: true, pendingBodies };
   }
 
-  private resolve(p: { query: string; accountId?: number; categoryId?: number; threadAttachments?: boolean; threadFilter?: ThreadFilter; now?: number }) {
+  private resolve(p: { query: string; accountId?: number; categoryId?: number; threadAttachments?: boolean; threadFilter?: ThreadFilter; now?: number; place?: SearchView }) {
     const lookup = {
       accounts: [...T(this.c, "accounts").all()].map((a) => ({ id: a.id as number, email: a.email as string, display_name: a.display_name as string })),
       categories: [...T(this.c, "categories").all()].map((x) => ({ id: x.id as number, name: x.name as string })),

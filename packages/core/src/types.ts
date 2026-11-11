@@ -220,6 +220,9 @@ export interface MessageDetail {
   isStarred: boolean;
   isSent: boolean;
   hasAttachments: boolean;
+  /** plan 185: where this message lives, which can differ from its conversation's place (absent from an older backend) */
+  isSpam?: boolean;
+  isTrash?: boolean;
   rfcMessageId: string | null;
   references: string[];
   listId: string | null;

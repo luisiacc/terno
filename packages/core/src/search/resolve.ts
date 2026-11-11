@@ -11,7 +11,7 @@ export interface ScopeLookup {
 /** account:/category: tokens resolved to ids, so every engine scopes a query identically. */
 export interface ResolvedSearch {
   query: SearchQuery;
-  /** plan 64: anywhere unless the query says in:… */
+  /** plan 64: anywhere unless the query says in:… (or the caller's `place`, plan 185) */
   view: SearchView;
   /** null = any account */
   accountIds: readonly number[] | null;
@@ -36,14 +36,16 @@ function categoryMatch(lookup: ScopeLookup, token: string): number | undefined {
   )?.id;
 }
 
-export function searchKey(text: string, scope: { accountId?: number; categoryId?: number }): string {
-  return JSON.stringify([text, scope.accountId ?? null, scope.categoryId ?? null]);
+export function searchKey(text: string, scope: { accountId?: number; categoryId?: number; place?: SearchView }): string {
+  // plan 185: a place only when one is set, so the keys (and cursors) of a search that has none never change
+  return JSON.stringify(scope.place === undefined ? [text, scope.accountId ?? null, scope.categoryId ?? null] : [text, scope.accountId ?? null, scope.categoryId ?? null, scope.place]);
 }
 
 export function resolveSearch(
   query: SearchQuery,
   text: string,
-  scope: { accountId?: number; categoryId?: number; threadAttachments?: boolean; threadFilter?: ThreadFilter; now?: number },
+  /** `place` (plan 185): where a query that names none looks; anywhere unless set (an agent's search: `all`) */
+  scope: { accountId?: number; categoryId?: number; threadAttachments?: boolean; threadFilter?: ThreadFilter; now?: number; place?: SearchView },
   lookup: ScopeLookup,
 ): ResolvedSearch {
   // the list's thread filters (plan 15's attachments, plan 17's people and waiting): thread-level, applied by the
@@ -81,7 +83,7 @@ export function resolveSearch(
   }
   return {
     query,
-    view: query.view ?? "anywhere",
+    view: query.view ?? scope.place ?? "anywhere",
     accountIds: accountIds.size > 0 ? [...accountIds] : null,
     excludeAccountIds: [...excludeAccountIds],
     categoryIds: [...categoryIds],

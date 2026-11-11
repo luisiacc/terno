@@ -183,7 +183,7 @@ export function compileSearch(r: ResolvedSearch): Compiled {
 }
 
 /** Parses and scopes a query the way every engine sees it. */
-export function resolveQuery(db: Db, params: { query: string; accountId?: number; categoryId?: number; threadAttachments?: boolean; threadFilter?: ThreadFilter; now?: number }): ResolvedSearch {
+export function resolveQuery(db: Db, params: { query: string; accountId?: number; categoryId?: number; threadAttachments?: boolean; threadFilter?: ThreadFilter; now?: number; place?: SearchView }): ResolvedSearch {
   return resolveSearch(parseSearch(params.query, params.now), params.query, params, loadScope(db));
 }
 

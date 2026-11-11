@@ -162,6 +162,15 @@ describe("plan 64: a search looks everywhere", () => {
     // todo keeps meaning All Mail (es)
     expect(parseSearch("en:todo x", NOW).view).toBe("all");
   });
+  it("plan 185: a caller's place is where a query that names none looks; a named place still wins", () => {
+    const at = (q: string) => resolveSearch(parseSearch(q, NOW), q, { place: "all" }, lookup).view;
+    expect(at("factura")).toBe("all");
+    expect([at("in:spam factura"), at("in:trash factura"), at("in:anywhere factura")]).toEqual(["spam", "trash", "anywhere"]);
+    // a search without one keeps its key (cursors minted before stay valid); with one, it's another query
+    const key = (scope: { place?: "all" }) => resolveSearch(parseSearch("factura", NOW), "factura", scope, lookup).key;
+    expect(key({})).toBe(JSON.stringify(["factura", null, null]));
+    expect(key({ place: "all" })).not.toBe(key({}));
+  });
 });
 
 describe("a comma means any of (plan 140)", () => {

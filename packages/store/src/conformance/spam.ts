@@ -97,5 +97,24 @@ export function defineSpamConformance(fresh: () => Promise<MailStore>): void {
       const junk = await put({ ...spam, unsubscribe: "https://spam.test/out" } as Partial<IncomingMessage>);
       expect(await store.threads.unsubscribeSource(junk.thread)).toBeNull();
     });
+
+    it("plan 185: an agent's search leaves Spam and Trash out unless it names them; a message says where it lives", async () => {
+      const { store, put } = await setup();
+      const kept = await put({ subject: "quarterly report", providerThreadId: "kept" });
+      const junk = await put({ subject: "quarterly report 2", providerThreadId: "junk", ...spam });
+      const binned = await put({ subject: "quarterly report 3", providerThreadId: "binned", isTrash: true, inInbox: false });
+      const found = async (query: string, place?: "all") => (await store.threads.searchText({ query, ...(place ? { place } : {}), limit: 10, now: NOW })).items.map((t) => t.id).sort();
+      expect(await found("quarterly", "all")).toEqual([kept.thread]);
+      expect(await found("in:spam quarterly", "all")).toEqual([junk.thread]);
+      expect(await found("in:trash quarterly", "all")).toEqual([binned.thread]);
+      // the user's own search still looks everywhere (plan 64)
+      expect(await found("quarterly")).toEqual([kept.thread, junk.thread, binned.thread].sort());
+      // a conversation outside Spam can hold a message in it: the message says so
+      await put({ subject: "Re: quarterly report", providerThreadId: "kept", ...spam });
+      const detail = (await store.threads.get(kept.thread))!;
+      expect(detail.thread.inSpam).toBe(false);
+      expect(detail.messages.map((m) => [m.isSpam, m.isTrash])).toEqual([[false, false], [true, false]]);
+      expect((await store.threads.get(binned.thread))!.messages[0]).toMatchObject({ isSpam: false, isTrash: true });
+    });
   });
 }

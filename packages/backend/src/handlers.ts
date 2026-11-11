@@ -463,7 +463,8 @@ export function createHandlers(b: Backend): Handlers {
       b.searchAborts.set(ctx.clientId, abort);
       try {
         // attachments, people, waiting are the conversation's: the engine keeps those threads before paging
-        const page = await store.threads.searchText({ ...p, query, threadFilter, now: b.now(), signal: abort.signal });
+        // plan 185 (the owner's call): an agent's search leaves Spam and Trash out unless it names them (in:spam, in:trash)
+        const page = await store.threads.searchText({ ...p, query, threadFilter, ...(ctx.origin === "mcp" ? { place: "all" as const } : {}), now: b.now(), signal: abort.signal });
         return {
           items: page.items,
           nextCursor: page.nextCursor,

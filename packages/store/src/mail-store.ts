@@ -398,7 +398,8 @@ export interface MailStore {
     /** an RPC cursor without revision/key (older renderers) continues this query */
     /** `signal`: the caller no longer wants the answer (a newer search); a slow path may stop and reject with SearchCancelledError */
     /** `threadFilter` (`threadAttachments`: its plan 15 name for attachments): the list's thread filters, applied by the engine before paging; waiting reads `now` */
-    searchText(p: { query: string; accountId?: number; categoryId?: number; threadAttachments?: boolean; threadFilter?: ThreadFilter; cursor?: Cursor & Partial<Pick<SearchCursor, "revision" | "queryKey">>; limit: number; now: number; signal?: { readonly aborted: boolean } }): Promise<StoreSearchPage>;
+    /** `place` (plan 185): where a query that names none looks (an agent's: `all`, Spam and Trash only when named) */
+    searchText(p: { query: string; accountId?: number; categoryId?: number; place?: import("@terno/core").SearchView; threadAttachments?: boolean; threadFilter?: ThreadFilter; cursor?: Cursor & Partial<Pick<SearchCursor, "revision" | "queryKey">>; limit: number; now: number; signal?: { readonly aborted: boolean } }): Promise<StoreSearchPage>;
     /** local optimistic change + learning signal + provider ops, atomically; `before`: each changed message as it was */
     act(c: { threadIds: readonly number[]; action: ThreadAction; signal: UserActionKind | null; now: number }): Promise<{ threadIds: number[]; opIds: string[]; before: MessageState[] } & FlagReconciliation>;
     /**
