@@ -5,9 +5,10 @@ import { t } from "@terno/i18n"
 import { X } from "@terno/ui/icons"
 
 // BoardUI's close button (plan 125): round, on the field wash, the glyph muted until hovered. The × is the iconset's,
-// sized so its bars span what BoardUI's do, at a 1.5 px line whatever the size
+// sized so its bars span what BoardUI's do, at a 1.5 px line whatever the size. The field is the ink at 7%: hovered it
+// deepens to 12%, pressed to 16%, in every palette and both modes (plan 186: it answered the pointer with its glyph alone)
 const closeButtonVariants = cva(
-  "inline-flex shrink-0 items-center justify-center rounded-full bg-field text-muted-foreground transition-colors outline-none select-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:[--icon-line:1.5px]",
+  "inline-flex shrink-0 items-center justify-center rounded-full bg-field text-muted-foreground transition-colors outline-none select-none hover:bg-foreground/12 hover:text-foreground press:bg-foreground/16 focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:[--icon-line:1.5px]",
   {
     variants: {
       size: {

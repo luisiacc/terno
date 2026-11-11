@@ -81,4 +81,10 @@ describe("CloseButton (plan 125)", () => {
     // the glyph is decorative: the label is the name
     expect(named!.querySelector("svg")!.getAttribute("aria-hidden")).toBe("true");
   });
+
+  it("plan 186: its wash answers the pointer, in the component, so every close button does", async () => {
+    const host = await render(<CloseButton className="ml-auto" />);
+    const classes = host.querySelector("button")!.className.split(" ");
+    expect(classes).toEqual(expect.arrayContaining(["bg-field", "hover:bg-foreground/12", "press:bg-foreground/16"]));
+  });
 });

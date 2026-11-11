@@ -65,3 +65,9 @@ None on a hot path: one button per open row, no state beyond what exists.
 ## What the Codex code review changed
 
 1. The Undo's guards had no test: `recipient-draft-ownership.test.tsx` now removes Cc, refuses the Undo while sending (it stays ready), retries it after the first save gave the draft its id (it goes back), and refuses it once the draft sends from another account (nothing goes back). Each half fails without its guard.
+
+## Follow-up: the × answers the pointer (the owner, 2026-11-11)
+
+> that little button needs a hover effect, just a slight change on the background should work,make sure buttons like that also have hover effects and they are not inlined so it affects all buttons like that
+
+`CloseButton` itself (not the call site) deepens its wash on hover: the field is the ink at 7%, hovered 12%, pressed 16%, in every palette and both modes. Every close button in the app is this component and none overrides its background, so all of them (chips, dialogs, the snack, Ask, the filter rows, settings lists, the search field) answer the same way. `button.test.tsx` holds the classes on the component.
