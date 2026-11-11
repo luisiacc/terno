@@ -26,7 +26,10 @@ export function AddFolderButton({ accountId, parent, label, testId }: { accountI
             tabIndex={-1}
             aria-label={label}
             data-testid={testId}
-            onClick={() => startCreate(accountId, parent)}
+            onClick={(e) => {
+              // an account's + appears under the pointer as a click opens it: the double click's second click isn't a press of it
+              if (e.detail < 2) startCreate(accountId, parent);
+            }}
             className="absolute top-1/2 right-1.5 flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground opacity-0 outline-none group-hover/row:opacity-100 hover:bg-sidebar-accent hover:text-sidebar-foreground"
           />
         }

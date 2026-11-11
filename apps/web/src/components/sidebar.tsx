@@ -1150,7 +1150,7 @@ const AccountEntry = memo(function AccountEntry({
               active={here && !childActive}
               expanded={open}
               controls={`account-folders-${a.id}`}
-              onClick={(e) => pressAccount(a.id, accountPress(e))}
+              onClick={(e) => pressAccount(a.id, accountPress(e), here)}
               // syncing stays quiet here: the first-sync and connection pills speak for it
               icon={<CategoryDot color={a.color as CategoryColor} />}
               label={a.displayName}

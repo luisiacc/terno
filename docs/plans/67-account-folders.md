@@ -153,3 +153,8 @@ The account's own folders: Gmail labels and IMAP folders, listed under its stand
 - **A click right on the chevron** opens or closes it and nothing else: you stay where you are. The chevron's target is the glyph itself, with no padding, so a click on a short name beside it still selects.
 - **Enter and Space** toggle, as before (a keyboard press has no click count, so it's told apart from a click).
 - The rule lives in `pressAccount` (`lib/account-folders.ts`); the row only says what kind of press it was. Tests: unit (`account-folders.test.ts`), e2e (`account-folders.spec.ts`, every design), and the specs that opened an account with one click now double-click it.
+
+**Codex code review of the change (2026-11-10):**
+1. **A double click at the row's end started a new folder.** On a selected, closed account the first click opens it, and the account's "+" appears under the pointer, so the second click pressed it. The "+" now ignores the second click of a double click. Test: e2e, which fails without the fix.
+2. **A click during a search counted the account as already selected.** The rule asked whether you were in one of the account's places, but during a search the sidebar selects nothing. `pressAccount` now takes the row's own idea of selected (the row's `here`, already false during a search or on a favorite's row), so a click there selects (the search ends) and leaves the account closed. Test: unit.
+3. **No keyboard equivalent for the chevron's open-without-going.** Not taken: the row is the disclosure for the keyboard and screen readers (`aria-expanded`, Enter and Space), as before this change. A separate tab stop per account for this would add noise to every account.

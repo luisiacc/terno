@@ -56,16 +56,17 @@ export function toggleAccount(id: number): void {
 export type AccountPress = "key" | "chevron" | "click" | "double";
 
 /**
- * Plan 67, the owner's change (2026-11-10): a click only selects an account (its Inbox) and leaves it closed; a click on
- * it once it's selected, a double click or its chevron opens it. Enter and Space toggle, as before. A click on the open
- * account you're in closes it, and you stay; the second click of a double click only ever opens.
+ * Plan 67, the owner's change (2026-11-10): a click on an account that isn't selected selects it (its Inbox) and leaves
+ * it closed; a click on it once it's selected (it or one of its places is the current row), a double click or its
+ * chevron opens it. Enter and Space toggle, as before. A click on the open account you're in closes it, and you stay;
+ * the second click of a double click only ever opens.
  */
-export function pressAccount(id: number, how: AccountPress): void {
+export function pressAccount(id: number, how: AccountPress, selected: boolean): void {
   const open = useOpenAccount.getState().id === id;
   if (how === "chevron") return setOpenAccount(open ? null : id);
   if (how === "double") {
     if (!open) toggleAccount(id);
-  } else if (how === "key" || inside(id)) toggleAccount(id);
+  } else if (how === "key" || selected) toggleAccount(id);
   else navigate({ accountId: id, view: "inbox" });
 }
 

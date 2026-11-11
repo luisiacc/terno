@@ -74,6 +74,15 @@ test.describe("accounts open into their folders", () => {
     await expect(page.getByTestId("nav-inbox")).toHaveAttribute("aria-current", "page");
     await chevron.click();
     await expect(row(page, a!)).toHaveAttribute("aria-expanded", "false");
+
+    // selected and closed, a double click at the row's end: the first click opens it and its + appears under the
+    // pointer; the second isn't a press of the + (Codex code review #1)
+    await row(page, a!).click();
+    await expect(row(page, a!)).toHaveAttribute("aria-current", "page");
+    const box = (await row(page, a!).boundingBox())!;
+    await row(page, a!).dblclick({ position: { x: box.width - 14, y: box.height / 2 } });
+    await expect(row(page, a!)).toHaveAttribute("aria-expanded", "true");
+    await expect(page.getByTestId(`folder-new-${a}`)).toHaveCount(0);
   });
 
   test("the scope: top folders, counts, shortcuts, the palette, what's remembered", async ({ app: page, server }) => {
