@@ -121,11 +121,11 @@
   },
   "ai-action-dark": {
     "width": 1191,
-    "height": 470
+    "height": 450
   },
   "ai-action-light": {
     "width": 1191,
-    "height": 470
+    "height": 450
   },
   "ai-ask-dark": {
     "width": 680,
@@ -185,11 +185,11 @@
   },
   "ai-summary-dark": {
     "width": 696,
-    "height": 476
+    "height": 486
   },
   "ai-summary-light": {
     "width": 696,
-    "height": 476
+    "height": 486
   },
   "ai-today-dark": {
     "width": 398,
