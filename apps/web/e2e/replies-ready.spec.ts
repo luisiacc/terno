@@ -10,7 +10,7 @@ import { sqlDb } from "../../backend-dev/src/server";
 import { E2E_NOW } from "./constants";
 import { expect, fresh, ingestConversation, recipientEmails, scenario, test, type DevServerFixture } from "./fixtures";
 
-/** plan 180 (Codex review): what the AI card's fill computes to here, in this mode: the same mix, painted on a probe */
+/** plan 181 (Codex review): what the AI card's fill computes to here, in this mode: the same mix, painted on a probe */
 const aiFill = (page: Page, mode: "light" | "dark") =>
   page.evaluate((m) => {
     const probe = document.createElement("div");
@@ -168,7 +168,7 @@ test.describe("replies ready (plan 144)", () => {
     await expect(page.getByTestId("reply-ready-to")).toHaveText("To Yuki Gutiérrez");
     // in the header, which it doesn't grow
     expect((await page.getByTestId("reply-ready-header").boundingBox())!.height).toBeLessThanOrEqual(44);
-    // Codex review (plan 180): the title sits the header's 8 px from its glyph here too, as on every AI card
+    // Codex review (plan 181): the title sits the header's 8 px from its glyph here too, as on every AI card
     const glyph = (await page.getByTestId("reply-ready-header").locator("[data-slot=ai-mark]").boundingBox())!;
     expect(Math.round((await page.getByTestId("reply-ready-title").boundingBox())!.x - (glyph.x + glyph.width))).toBe(8);
     await page.getByTestId("reply-ready-mode-all").click();
@@ -327,7 +327,7 @@ test.describe("replies ready (plan 144)", () => {
       const card = block(page);
       const [mine, summary] = await Promise.all([card, page.getByTestId("summary-block")].map((el) => el.evaluate((n) => { const s = getComputedStyle(n); return { fill: s.backgroundColor, ring: s.boxShadow, radius: s.borderTopLeftRadius }; })));
       expect(mine).toEqual(summary);
-      // plan 180 (the owner's "Whisper"): no ring, a breath of fill: Settings' tint at 65% in light, the accent's 5% in dark
+      // plan 181 (the owner's "Whisper"): no ring, a breath of fill: Settings' tint at 65% in light, the accent's 5% in dark
       expect(mine!.fill, `${mode}`).toBe(await aiFill(page, mode));
       expect(mine!.fill, `${mode}`).toMatch(mode === "light" ? /\/ 0\.65\)$/ : /\/ 0\.05\)$/);
       expect(mine!.ring, `${mode}`).toBe("none");

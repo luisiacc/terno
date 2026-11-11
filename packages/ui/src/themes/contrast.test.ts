@@ -54,7 +54,7 @@ describe("WCAG AA in every built-in theme", () => {
     // plan 161: a model's gap, the match's wash over an AI card and a composer
     // plan 163: a fill, the primary's wash, on a composer's three surfaces
     // plan 162 (after ai162-r04): a note for AI's words and its label, on the primary's 5% wash, on the same three
-    // plan 180: an AI card's two inks on its two fills (light's, dark's) over the reader, Lumen's card and a dialog
+    // plan 181: an AI card's two inks on its two fills (light's, dark's) over the reader, Lumen's card and a dialog
     expect(CONTRAST_PAIRS).toHaveLength(2 + 4 + 49 + 2 + 4 + 2 + 6 + 4 + 3 + 3 + 4 + 40 + 2 + 5 + 1 + 1 + 1 + 8 + 1 + 2 + 1 + 2 + 2 + 2 + 2 + 3 + 6 + 12);
   });
 
@@ -127,8 +127,8 @@ describe("boundaries as drawn (plan 160)", () => {
     expect(boundaryStep(theme, step)).toBeLessThan(step.min);
   });
 
-  // the owner's decision (plan 180): an AI card is a breath of fill, drawn with the layers checked here, and never deepened
-  it("draws an AI card with the fills the suite checks (plan 180)", () => {
+  // the owner's decision (plan 181): an AI card is a breath of fill, drawn with the layers checked here, and never deepened
+  it("draws an AI card with the fills the suite checks (plan 181)", () => {
     const globals = readFileSync(join(import.meta.dirname, "../styles/globals.css"), "utf8");
     const card = globals.slice(globals.indexOf("@utility ai-card {"), globals.indexOf("@utility", globals.indexOf("@utility ai-card {") + 1));
     const mix = (l: typeof AI_CARD_FILL_LIGHT) => typeof l === "object" && `color-mix(in oklab, var(--${l.token}) ${l.alpha * 100}%, transparent)`;
@@ -136,8 +136,8 @@ describe("boundaries as drawn (plan 160)", () => {
     expect(card.split("&:is(.dark *)")[0]).toContain(`background-color: ${mix(AI_CARD_FILL_LIGHT)};`);
     expect(card.split("&:is(.dark *)")[1]).toContain(`background-color: ${mix(AI_CARD_FILL_DARK)};`);
   });
-  // Codex review of plan 180: what's painted on the card is over its translucent fill, itself over the reader's surface
-  it.each(THEMES.map((t) => t.id))("%s holds AA for a model's gap on an AI card (plan 180)", (id) => {
+  // Codex review of plan 181: what's painted on the card is over its translucent fill, itself over the reader's surface
+  it.each(THEMES.map((t) => t.id))("%s holds AA for a model's gap on an AI card (plan 181)", (id) => {
     const theme = THEMES.find((t) => t.id === id)!;
     const fill = theme.mode === "light" ? AI_CARD_FILL_LIGHT : AI_CARD_FILL_DARK;
     // gaps are Reply ready's, in the reader: on its background, or Lumen's reader card
@@ -146,7 +146,7 @@ describe("boundaries as drawn (plan 160)", () => {
       expect(contrast(theme.tokens.foreground, gap, theme.tokens.background), `${id}: a gap on the card over ${under}`).toBeGreaterThanOrEqual(4.5);
     }
   });
-  it.each(THEMES.map((t) => t.id))("%s keeps its AI cards soft (plan 180)", (id) => {
+  it.each(THEMES.map((t) => t.id))("%s keeps its AI cards soft (plan 181)", (id) => {
     const theme = THEMES.find((t) => t.id === id)!;
     for (const step of BOUNDARY_STEPS.filter((s) => s.why.startsWith("an AI card's fill") && s.mode === theme.mode)) {
       expect(boundaryStep(theme, step), `${id}: ${step.why}`).toBeLessThanOrEqual(1.16);

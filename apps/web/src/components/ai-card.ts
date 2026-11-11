@@ -10,20 +10,20 @@ import { provenanceLabel } from "../lib/provenance";
  * Plan 161: one anatomy for every suggestion (the summary, Reply ready, the follow-up line, ⌘J's strip): a header (glyph,
  * a title in the ink, then what it's about), the body, and a row of BoardUI buttons at one height.
  */
-/** Plan 180 (the owner's "Whisper"): no ring, a breath of fill: Settings' tint at 65% in light, the accent's 5% in dark (globals.css `ai-card`). */
+/** Plan 181 (the owner's "Whisper"): no ring, a breath of fill: Settings' tint at 65% in light, the accent's 5% in dark (globals.css `ai-card`). */
 export const AI_CARD = "ai-card";
-/** Plan 180: its contents' inset, and with the room under them, every card the same (the owner's airy over dense) */
+/** Plan 181: its contents' inset, and with the room under them, every card the same (the owner's airy over dense) */
 export const AI_INSET = "px-5";
 export const AI_PAD = `${AI_INSET} pb-4`;
 /**
  * The header's glyph, the size of the header's text: the spinner while a card works, and a card's own task glyph (the
- * follow-up's clock). Plan 180: in the accent, as the AI mark (`AiMark`, the glowing dot) is (the owner's exception to
+ * follow-up's clock). Plan 181: in the accent, as the AI mark (`AiMark`, the glowing dot) is (the owner's exception to
  * AGENTS.md's muted icon beside a label)
  */
 export const AI_GLYPH = "size-[1.15em] shrink-0 text-primary";
 /**
  * The header: one line of the secondary type, its glyph on the first line. Plan 162: at the body's size on every card (the
- * summary's was 12 px, the follow-up's 13.5, Reply ready's larger again), the facts in the secondary. Plan 180: 44 px.
+ * summary's was 12 px, the follow-up's 13.5, Reply ready's larger again), the facts in the secondary. Plan 181: 44 px.
  */
 export const AI_HEADER = "flex min-h-11 items-center gap-2 py-3 text-sm text-muted-foreground";
 /** The header's title: in the ink, so a card's name isn't its quietest word. */

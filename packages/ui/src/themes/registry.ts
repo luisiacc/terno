@@ -186,7 +186,7 @@ export function derive(input: Pick<ThemeInput, "mode" | "tokens" | "cats" | "ove
   // (and Lumen's card) at HAIRLINE_FLOOR
   def("draft-edge", () => inkAlpha(o("foreground"), 0.11, 0.3, (c) => (["background", "card"] as const).every((k) => contrast(c, formatOklch(o(k)), bg) >= HAIRLINE_FLOOR)));
   // plan 161: the same hairline for a tint card in a dialog, where the tint is a step off the popover at most (dark), and
-  // Today's digest row; a hairline's step from a tint inside it and from the page outside it (plan 180: AI cards have no ring)
+  // Today's digest row; a hairline's step from a tint inside it and from the page outside it (plan 181: AI cards have no ring)
   def("card-edge", () => {
     const onTint = (c: Oklch) => formatOklch(rgbToOklch(composite(oklchToRgb(c), { ...oklchToRgb(o("tint")), alpha: 1 })));
     return inkAlpha(o("foreground"), 0.11, 0.3, (c) =>

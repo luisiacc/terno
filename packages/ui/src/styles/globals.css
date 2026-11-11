@@ -580,7 +580,7 @@
   box-shadow: 0 0 0 var(--hairline-w) var(--card-ring);
 }
 /* a model's words (the summary, Reply ready, the follow-up line, Filters' AI box). Plans 161 and 162 ringed it in
-   card-edge; plan 180 (the owner picked "Whisper" from four looks): no ring, no shadow, a breath of fill. In light, Settings' tint
+   card-edge; plan 181 (the owner picked "Whisper" from four looks): no ring, no shadow, a breath of fill. In light, Settings' tint
    thinned to 65% over whatever it sits on (the reader, Lumen's reader card, a dialog); in dark, the accent's 5% wash. Its
    step off the page is the owner's (contrast.ts AI_CARD_FLOOR); text on it holds AA (CONTRAST_PAIRS) */
 @utility ai-card {
@@ -590,7 +590,7 @@
     background-color: color-mix(in oklab, var(--primary) 5%, transparent);
   }
 }
-/* plan 180 (the owner): the AI mark, a glowing dot in the accent: a solid dot half the text's size, a faint ring of the
+/* plan 181 (the owner): the AI mark, a glowing dot in the accent: a solid dot half the text's size, a faint ring of the
    accent and a soft halo; sized in em so it follows the header's type. Decorative: the card's title names it */
 @utility ai-mark {
   width: 0.5em;

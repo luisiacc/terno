@@ -80,7 +80,7 @@ function Item({ item, from, source, short, mine }: { item: AiSummaryItem; from: 
   );
 }
 
-/** plan 180: 20 px before the conversation */
+/** plan 181: 20 px before the conversation */
 const CARD = `${AI_CARD} mb-5`;
 const GLYPH = AI_GLYPH;
 
@@ -94,7 +94,7 @@ function Ready({ summary, messages }: { summary: AiSummary; messages: readonly M
   const mine = useApp((s) => s.accounts).map((a) => a.email);
   return (
     <Collapsible open={open} onOpenChange={setSummaryOpen} data-testid="summary-block" data-state="ready" className={CARD}>
-      {/* plan 180: one row, open or closed: the name (its chevron beside it, the trigger as wide as its words), then who
+      {/* plan 181: one row, open or closed: the name (its chevron beside it, the trigger as wide as its words), then who
           wrote it and Copy at its end, where a footer row of their own used to be */}
       <div className={cn(AI_HEADER, AI_INSET, "py-0")}>
         <CollapsibleTrigger data-testid="summary-toggle" className="h-11 w-auto gap-2 rounded-sm px-0 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground [&_[data-slot=collapsible-chevron]]:ms-0">
@@ -103,7 +103,7 @@ function Ready({ summary, messages }: { summary: AiSummary; messages: readonly M
         </CollapsibleTrigger>
         <div className="-me-1.5 ms-auto flex items-center gap-0.5" data-testid="summary-tools">
           <AiProvenance model={summary.model} at={summary.generatedAt} testId="summary-provenance" />
-          {/* plan 162: Copy is quiet; plan 180: its glyph alone, named, with a tooltip */}
+          {/* plan 162: Copy is quiet; plan 181: its glyph alone, named, with a tooltip */}
           <AiCopyButton iconOnly text={() => summaryText(summary)} failed={t("summary.copyFailed")} testId="summary-copy" />
         </div>
       </div>

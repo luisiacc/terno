@@ -39,7 +39,7 @@ it("plan 144's addendum: ready, it's the summary's card, the label its header, t
   expect(card.getAttribute("aria-label")).toBe("Reply ready");
   // the summary's surface: the one class both use, so an AI suggestion looks one way in every style
   expect(card.className.split(" ")).toContain(AI_CARD);
-  // the header: the AI mark (plan 180: the glowing dot, hidden from screen readers), then the label and who it's to
+  // the header: the AI mark (plan 181: the glowing dot, hidden from screen readers), then the label and who it's to
   const header = q("reply-ready-header")!;
   expect(header.parentElement).toBe(card);
   expect((header.firstElementChild as HTMLElement | null)?.dataset.slot).toBe("ai-mark");

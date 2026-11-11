@@ -44,7 +44,7 @@ it("plan 161, pass 3: Copy says Copied in place, to a screen reader too, and goe
   expect(button.dataset.copied).toBeUndefined();
 });
 
-it("plan 180: Copy as its glyph alone is named, the row's 28 px square, and says Copied in its name", async () => {
+it("plan 181: Copy as its glyph alone is named, the row's 28 px square, and says Copied in its name", async () => {
   vi.useFakeTimers();
   const writeText = vi.fn(async () => {});
   Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });

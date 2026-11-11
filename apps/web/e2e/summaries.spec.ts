@@ -14,7 +14,7 @@ import { englishLeaks } from "./i18n-leaks";
 import { answerFor } from "../../../scripts/ui-rating/model-stub.mjs";
 import { startOllamaStub } from "./ollama-stub";
 
-/** plan 180 (Codex review): what the AI card's fill computes to here, in this mode: the same mix, painted on a probe */
+/** plan 181 (Codex review): what the AI card's fill computes to here, in this mode: the same mix, painted on a probe */
 const aiFill = (page: Page, mode: "light" | "dark") =>
   page.evaluate((m) => {
     const probe = document.createElement("div");
@@ -201,7 +201,7 @@ test.describe("summaries (plan 132)", () => {
     await expect(block).toHaveAttribute("data-state", "ready");
     await expect(page.getByTestId("summary-text")).toContainText("alongpath");
 
-    // plan 180 (the owner's "Whisper"): never just more of the mail's own page, and no ring: a breath of fill, Settings' tint
+    // plan 181 (the owner's "Whisper"): never just more of the mail's own page, and no ring: a breath of fill, Settings' tint
     // at 65% in light, the accent's 5% wash in dark (their floors are contrast.test.ts's), in every design
     for (const mode of ["light", "dark"] as const) {
       await page.emulateMedia({ colorScheme: mode });
@@ -225,7 +225,7 @@ test.describe("summaries (plan 132)", () => {
     const inset = (await page.getByTestId("summary-text").boundingBox())!.x - box.x;
     expect(inset).toBeGreaterThanOrEqual(12);
     expect((await page.getByTestId("summary-toggle").locator("[data-slot=ai-mark]").boundingBox())!.x - box.x).toBe(inset);
-    // plan 180 (the owner): the AI mark is a glowing dot in the accent, not a sparkle: solid, round, haloed
+    // plan 181 (the owner): the AI mark is a glowing dot in the accent, not a sparkle: solid, round, haloed
     const mark = await page.getByTestId("summary-toggle").locator("[data-slot=ai-mark] > span").evaluate((el) => {
       const probe = document.createElement("div");
       probe.style.backgroundColor = "var(--primary)";
@@ -319,7 +319,7 @@ test.describe("summaries (plan 132)", () => {
     expect(await edge("summary-copy")).toBe("rgba(0, 0, 0, 0)");
     await page.setViewportSize({ width: 980, height: 600 });
 
-    // plan 180: who wrote it and Copy (its glyph alone, named) end the header's row, open or closed: no footer row of their own
+    // plan 181: who wrote it and Copy (its glyph alone, named) end the header's row, open or closed: no footer row of their own
     const onHeader = async () => {
       const toggle = (await page.getByTestId("summary-toggle").boundingBox())!;
       for (const id of ["summary-provenance", "summary-copy"]) {

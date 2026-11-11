@@ -94,7 +94,7 @@ export const CONTRAST_PAIRS: readonly ContrastPair[] = [
   ...(["card", "tint", "background"] as const).map((over): ContrastPair => ({ fg: "foreground", bg: "primary", alpha: 0.15, min: 4.5, overToken: over })),
   // plan 162 (after ai162-r04): a note for AI in a composer's body, its words and its "For AI" label on the primary's 5% wash
   ...(["foreground", "muted-foreground"] as const).flatMap((fg) => (["card", "tint", "background"] as const).map((over): ContrastPair => ({ fg, bg: "primary", alpha: 0.05, min: 4.5, overToken: over }))),
-  // plan 180: the words on an AI card, on its fill (the tint at 65 % in light, the primary's 5 % in dark, globals.css
+  // plan 181: the words on an AI card, on its fill (the tint at 65 % in light, the primary's 5 % in dark, globals.css
   // `ai-card`) over the reader, Lumen's reader card and a dialog; each pair is checked in every palette, both modes
   ...(["foreground", "muted-foreground"] as const).flatMap((fg) =>
     (["background", "card", "popover"] as const).flatMap((over): ContrastPair[] => [
@@ -220,7 +220,7 @@ export interface BoundaryStep {
  */
 export const FIELD_FLOOR = 1.1;
 /**
- * Owner's decision (2026-11-10, plan 180: "Whisper", picked from four looks): an AI card has no ring, only a breath of fill:
+ * Owner's decision (2026-11-10, plan 181: "Whisper", picked from four looks): an AI card has no ring, only a breath of fill:
  * Settings' tint at 65 % in light (globals.css `ai-card`), the accent's 5 % wash in dark. The owner accepts the soft step:
  * as built it stands 1.05 to 1.09:1 off the page in light and 1.05 to 1.14:1 in dark. This floor only keeps the card from
  * vanishing; its header (the accent's glyph, the title in the ink) marks it too, and the text on it holds AA (CONTRAST_PAIRS).
@@ -266,7 +266,7 @@ export const BOUNDARY_STEPS: readonly BoundaryStep[] = [
   { edge: ["popover", "menu-highlight"], behind: ["popover"], min: TINT_FLOOR, why: "Graphite: the keyboard's place, at the selection's floor", only: ["graphite-light", "graphite-dark"], except: { "graphite-dark": { min: 1.26, why: "the blueprint's #9E9E9E on it at 4.5:1" } } },
   // plan 161: a tint card in a dialog (Settings) is ringed in dark, where its tint is 1.01 to 1.05:1 off the popover
   { edge: ["popover", "card-edge"], behind: ["popover"], min: HAIRLINE_FLOOR, why: "a tint card's ring in a dialog (dark)", mode: "dark" },
-  // plan 180: an AI card's fill, on the reader (its background, or Lumen's reader card) and in a dialog (Filters' AI box)
+  // plan 181: an AI card's fill, on the reader (its background, or Lumen's reader card) and in a dialog (Filters' AI box)
   ...(["background", "card", "popover"] as const).flatMap((under): BoundaryStep[] => [
     { edge: [under, AI_CARD_FILL_LIGHT], behind: [under], min: AI_CARD_FLOOR, mode: "light", why: `an AI card's fill on ${under} (light)` },
     { edge: [under, AI_CARD_FILL_DARK], behind: [under], min: AI_CARD_FLOOR, mode: "dark", why: `an AI card's fill on ${under} (dark)` },
