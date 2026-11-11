@@ -5,7 +5,7 @@ import { databaseName, LOGICAL_SCHEMA } from "./schema";
 import { IdbMailStore } from "./store";
 import { legacyBodyUpgrade, physicalImage } from "./test/legacy-stores";
 
-/** Plan 177: version 33 adds `pins`. A version-32 mailbox (mail and a reminder in it) opens with an empty one, the rest kept. */
+/** Plan 179: version 33 adds `pins`. A version-32 mailbox (mail and a reminder in it) opens with an empty one, the rest kept. */
 
 const platform = { uuid: () => crypto.randomUUID(), yield: async () => {} };
 const request = <T,>(r: IDBRequest<T>) => new Promise<T>((resolve, reject) => { r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });

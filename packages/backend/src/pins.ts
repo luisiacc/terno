@@ -3,7 +3,7 @@ import type { PinsSnapshot } from "@terno/core/rpc";
 import type { MailStore } from "@terno/store";
 
 /**
- * Plan 177's pins, on the backend: the snapshot to the windows whenever it
+ * Plan 179's pins, on the backend: the snapshot to the windows whenever it
  * changed (pinned, unpinned, put away, merged or gone with its conversation).
  * No timer: while nothing is pinned, nothing runs; while something is, a
  * change to mail looks again, at most once a second.

@@ -30,7 +30,7 @@ const SENDERS_WAIT_MS = 2000;
 
 /** More ids than this and a bulk command runs in time-budgeted slices (plan 02 §6, plan 06). */
 const ONE_GO = 20;
-/** plans 87, 142, 177: what ends what the Inbox's top holds (the conversation put away; reading or starring it doesn't) */
+/** plans 87, 142, 179: what ends what the Inbox's top holds (the conversation put away; reading or starring it doesn't) */
 const ENDS_TOP: ReadonlySet<ThreadAction> = new Set(["archive", "trash", "spam"]);
 /** Messages a similar sweep reads per page while resolving its scope (plan 63). */
 const SIMILAR_PAGE = 2000;
@@ -97,10 +97,10 @@ export function createHandlers(b: Backend): Handlers {
    * what changed for undo. Above ONE_GO ids it runs in time slices (one
    * batch, several transactions) so interactive RPCs keep flowing.
    */
-  /** plans 87, 142, 177: what the Inbox's top held for what a filing into a category hidden from the Inbox took out of it, by batch, for its undo */
+  /** plans 87, 142, 179: what the Inbox's top held for what a filing into a category hidden from the Inbox took out of it, by batch, for its undo */
   const filedTop = new Map<number, TopLeft>();
   /**
-   * Plan 177 (Codex review): the pinned ones among these that the Inbox shows now (in it, and in no category hidden from
+   * Plan 179 (Codex review): the pinned ones among these that the Inbox shows now (in it, and in no category hidden from
    * it), read before a filing into a hidden category: only those leave the Inbox by it, so only their pins end.
    */
   const pinsShown = async (categoryId: number, threadIds: readonly number[]): Promise<number[]> => {
@@ -164,7 +164,7 @@ export function createHandlers(b: Backend): Handlers {
   ) => {
     const changed = new Set<number>();
     const before: MessageState[] = [];
-    // plans 87, 142, 177: what the Inbox's top held ends when its conversation is put away (else the top brings it back); Undo restores it
+    // plans 87, 142, 179: what the Inbox's top held ends when its conversation is put away (else the top brings it back); Undo restores it
     const left = nothingLeft();
     let done = 0;
     const run = async (slice: number[]) => {
@@ -194,7 +194,7 @@ export function createHandlers(b: Backend): Handlers {
     return { threads: [...changed], undoId: before.length || !leftNothing(left) ? remember(before, left) : null };
   };
   const undoJournal = new UndoJournal();
-  /** plans 87, 142, 177: what the Inbox's top held that an action ended, by its undo id (as many as the journal keeps) */
+  /** plans 87, 142, 179: what the Inbox's top held that an action ended, by its undo id (as many as the journal keeps) */
   const endedTop = new Map<number, TopLeft>();
   const remember = (before: MessageState[], left: TopLeft = nothingLeft()) => {
     const id = undoJournal.remember(before);

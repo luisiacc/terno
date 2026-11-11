@@ -1,6 +1,6 @@
-# Plan 177: pinned conversations
+# Plan 179: pinned conversations
 
-- **Status:** being built on `feat/177-pinned`.
+- **Status:** shipped (built on `feat/177-pinned`; renumbered 179 on landing, as main had taken 177 and 178).
 - **Builds on:** plan 87 (Remind me: a local per-thread table, the Inbox's top), 142 (follow-ups on the top), 145/166 (headings in the list), 174 (the list's fixed spacing), 158 (marks and their screen-reader words).
 
 ## The request

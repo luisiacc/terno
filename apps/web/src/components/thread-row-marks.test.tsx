@@ -130,7 +130,7 @@ async function pinnedRow(opts: { pinnedTop: boolean; layout?: DesignVariants["ro
   return host.querySelector<HTMLElement>("[data-testid=thread-row]")!;
 }
 
-it.each([["avatar", false], ["classic", false], ["large-avatar", false], ["avatar", true]] as const)("a %s row (compact %s) draws no pin; in the Pinned section a screen reader hears it's pinned (plan 177, the owner)", async (layout, compact) => {
+it.each([["avatar", false], ["classic", false], ["large-avatar", false], ["avatar", true]] as const)("a %s row (compact %s) draws no pin; in the Pinned section a screen reader hears it's pinned (plan 179, the owner)", async (layout, compact) => {
   const outside = await pinnedRow({ pinnedTop: false, layout, compact });
   expect(outside.querySelector("svg.lucide-pin, [data-testid=row-pin]")).toBeNull();
   expect(outside.textContent).not.toContain(", pinned");

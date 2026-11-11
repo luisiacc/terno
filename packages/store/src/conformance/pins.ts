@@ -9,12 +9,12 @@ const addr = (email: string, name = "") => ({ name, email });
 const byThread = (a: Pin, b: Pin) => a.threadId - b.threadId;
 
 /**
- * Plan 177: conversations pinned to the Inbox's top. Added all or nothing
+ * Plan 179: conversations pinned to the Inbox's top. Added all or nothing
  * under a cap (a pinned one keeps its pin), removed (or only when unchanged),
  * kept through a merge, gone with its thread, and durable.
  */
 export function definePinConformance(fresh: () => Promise<MailStore>, reopen: (store: MailStore) => Promise<MailStore>): void {
-  describe("pins (plan 177)", () => {
+  describe("pins (plan 179)", () => {
     async function setup() {
       const store = await fresh();
       const [a] = await withAccounts(store, 1);

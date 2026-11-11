@@ -1,6 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 
-/** Plan 177: pin and unpin, the toggle for P, the "select all N" guard, and an Undo that puts back exactly what changed. */
+/** Plan 179: pin and unpin, the toggle for P, the "select all N" guard, and an Undo that puts back exactly what changed. */
 
 const calls: { method: string; params: Record<string, unknown> }[] = [];
 let answer: (method: string, params: Record<string, unknown>) => unknown = () => ({});

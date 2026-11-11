@@ -109,7 +109,7 @@ export const ICONS = {
   // plan 115: pin a draft to the reading area's corner
   Pin: "PinIcon",
   PinOff: "PinOffIcon",
-  // plan 177: a conversation pinned to the top of the Inbox (upright, the owner)
+  // plan 179: a conversation pinned to the top of the Inbox (upright, the owner)
   PinTop: "Pin02Icon",
   Play: "PlayIcon",
   Plus: "Add01Icon",

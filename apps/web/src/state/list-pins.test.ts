@@ -1,7 +1,7 @@
 import type { ThreadSummary } from "@terno/core";
 import { beforeEach, expect, it, vi } from "vitest";
 
-/** Plan 177: the Inbox's top with Pinned in front of Reminders, published only with the page it came with. */
+/** Plan 179: the Inbox's top with Pinned in front of Reminders, published only with the page it came with. */
 
 type Params = { cursor?: unknown; limit?: number; accountId?: number; dueOnly?: boolean; scope?: { accountId?: number } };
 const calls: { method: string; params: Params }[] = [];

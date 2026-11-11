@@ -80,7 +80,7 @@ async function setup() {
 const pinnedIds = async (client: RpcClient) => (await client.call("pins.list", {})).pins.map((p) => p.threadId).sort((x, y) => x - y);
 const inInbox = (db: ReturnType<typeof sqlDb>, id: number) => db.get<{ in_inbox: number }>("SELECT in_inbox FROM threads WHERE id = ?", id)!.in_inbox;
 
-describe("pins (plan 177)", () => {
+describe("pins (plan 179)", () => {
   it("pins, unpins and puts back exactly; every change reaches the windows", async () => {
     const { client, a, b, events } = await setup();
     const { added } = await client.call("pins.add", { threadIds: [a, b, a] });

@@ -135,7 +135,7 @@ export const DEFAULT_BINDINGS: readonly Binding[] = [
   { keys: "mod+shift+j", command: "thread.spam" },
   { keys: "s", command: "thread.star" },
   { keys: "mod+shift+l", command: "thread.star" },
-  // plan 177: pin to the Inbox's top (P, as ⇧P is the previous message)
+  // plan 179: pin to the Inbox's top (P, as ⇧P is the previous message)
   { keys: "p", command: "thread.pin" },
   { keys: "shift+i", command: "thread.markRead" },
   { keys: "mod+shift+u", command: "thread.toggleRead" },

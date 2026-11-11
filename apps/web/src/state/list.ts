@@ -149,7 +149,7 @@ export function keptIds(s = getApp()): number[] {
 }
 
 /**
- * The plain Inbox's top: first the pinned conversations (plan 177, newest pin
+ * The plain Inbox's top: first the pinned conversations (plan 179, newest pin
  * first), then those whose reminder is due (plan 87, newest due first) and the
  * follow-ups on top (plan 142), wherever they live. They lead the first page
  * and every later page leaves them out. One the user opened stays in the
@@ -159,7 +159,7 @@ export function keptIds(s = getApp()): number[] {
 export interface InboxTop {
   ids: readonly number[];
   pinned: number;
-  /** plan 177: how many conversations the Inbox holds, for its heading under the top (null: no top, or not counted) */
+  /** plan 179: how many conversations the Inbox holds, for its heading under the top (null: no top, or not counted) */
   total: { n: number; capped: boolean } | null;
 }
 
@@ -196,7 +196,7 @@ async function withTop<P extends Paged>(page: Promise<P>, first: boolean): Promi
   // plan 142: follow-ups have their own way onto the top, one row a thread under the same heading
   const followsOnTop = followupsOffered(getApp()) && useFollowups.getState().onTop > 0;
   const following = followsOnTop ? client.call("followups.threads", { onTop: true, accountId }).then((r) => r.items, () => []) : Promise.resolve([]);
-  // plan 177: the Inbox's own count for its heading under the top, as "select all N" counts it; asked only when a top may lead
+  // plan 179: the Inbox's own count for its heading under the top, as "select all N" counts it; asked only when a top may lead
   const scope = currentScope();
   const counting = (anyPinned() || anyDue() || followsOnTop) && scope ? client.call("threads.scopeCount", { scope }).then((r) => ({ n: r.count, capped: r.capped }), () => null) : Promise.resolve(null);
   const [p, pinRows, dueRows, followRows, total] = await Promise.all([page, pinning, due, following, counting]);
@@ -279,7 +279,7 @@ async function fetchPage(cursor?: { lastDate: number; id: number }, limit = PAGE
 function heldOnly(items: ThreadSummary[], top: readonly number[] = inboxTop.ids): ThreadSummary[] {
   const filter = activeFilter(getApp());
   if (items.every((t) => matchesFilter(filter, t))) return items;
-  // plans 87, 177: the Inbox's top stays under any quick filter
+  // plans 87, 179: the Inbox's top stays under any quick filter
   const held = new Set([...keptIds(), ...top]);
   return items.filter((t) => matchesFilter(filter, t) || held.has(t.id));
 }

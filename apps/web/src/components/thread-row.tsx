@@ -40,7 +40,7 @@ interface Props {
   layout: DesignVariants["row"];
   /** plan 80: the category whose suggestions this list reviews (its rows answer them) */
   review?: number | null;
-  /** plan 177: one of the Inbox top's Pinned rows (the list shows no mark for a pin: the heading says it, and a screen reader hears it) */
+  /** plan 179: one of the Inbox top's Pinned rows (the list shows no mark for a pin: the heading says it, and a screen reader hears it) */
   pinnedTop?: boolean;
   /** plan 87: one of the Inbox top's Reminders rows (its reminder is due): its time slot says so */
   reminderTop?: boolean;

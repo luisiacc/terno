@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-/** Plan 177: the pinned conversations, as the backend last said (lib/pins keeps it and acts on it). No imports of the app: rows read it. */
+/** Plan 179: the pinned conversations, as the backend last said (lib/pins keeps it and acts on it). No imports of the app: rows read it. */
 interface PinsState {
   ids: ReadonlySet<number>;
   loaded: boolean;

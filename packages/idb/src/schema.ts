@@ -29,7 +29,7 @@ import { assertCertain, UNCERTAINTY_KEY, UncertainWriteError } from "./uncertain
  * Version 28 adds writing profiles and generations (SQL v50, plan 133); SQL v49 is an index with no persisted shape here.
  * Version 29 adds Ask your mail's conversations and turns (SQL v51, plan 141).
  * Version 30 adds sent-mail marks and follow-ups (SQL v52, plan 142).
- * Version 33 adds pinned conversations (SQL v55, plan 177).
+ * Version 33 adds pinned conversations (SQL v55, plan 179).
  */
 export { IDB_VERSION };
 /** the SQL schema this one mirrors (migration ids are shared across adapters) */
@@ -81,7 +81,7 @@ export const TABLES: readonly (TableSpec & { memoryOnly?: boolean; early?: boole
   { name: "thread_categories", early: true, key: ["thread_id", "category_id"], indexes: { ...fk("thread_id"), ...fk("category_id"), batch: ["batch_id"] } },
   // plan 87: a thread's reminder (a handful; the renderer reads them at startup)
   { name: "reminders", early: true, key: ["thread_id"] },
-  // plan 177: a conversation pinned to the Inbox's top (a handful; the renderer reads them at startup)
+  // plan 179: a conversation pinned to the Inbox's top (a handful; the renderer reads them at startup)
   { name: "pins", early: true, key: ["thread_id"] },
   { name: "filters", early: true, key: ["id"], autoId: true },
   { name: "filter_applications", key: ["filter_id", "message_id"], indexes: { ...fk("filter_id"), ...fk("message_id") } },
@@ -381,7 +381,7 @@ export async function openIdb(factory: IDBFactory, name: string): Promise<IDBDat
       // plan 141 (likewise)
       // plan 145 (likewise)
       if (event.oldVersion >= 1 && event.oldVersion < 32 && !db.objectStoreNames.contains("ai_digests")) db.createObjectStore("ai_digests");
-      // plan 177 (likewise)
+      // plan 179 (likewise)
       if (event.oldVersion >= 1 && event.oldVersion < 33 && !db.objectStoreNames.contains("pins")) db.createObjectStore("pins");
       // plan 144 (likewise)
       if (event.oldVersion >= 1 && event.oldVersion < 31 && !db.objectStoreNames.contains("ai_prepared_replies")) db.createObjectStore("ai_prepared_replies");

@@ -1,7 +1,7 @@
 import type { Pin } from "@terno/core";
 import { T, type Ctx, type R } from "./mail";
 
-/** Plan 177: conversations pinned to the Inbox's top, like SQL's `pins` (packages/db/src/pins.ts). */
+/** Plan 179: conversations pinned to the Inbox's top, like SQL's `pins` (packages/db/src/pins.ts). */
 
 const toPin = (r: R): Pin => ({ threadId: r.thread_id, pinnedAt: r.pinned_at });
 

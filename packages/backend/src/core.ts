@@ -308,7 +308,7 @@ export class BackendCore {
   readonly attention: Attention;
   /** plan 87: reminders: one timer for the next one, a snapshot to the windows when they change */
   readonly reminders: Reminders;
-  /** plan 177: conversations pinned to the Inbox's top: a snapshot to the windows when they change */
+  /** plan 179: conversations pinned to the Inbox's top: a snapshot to the windows when they change */
   readonly pins: Pins;
   /** plan 94: scheduled sends: one timer for the next one, sent through compose.send's own path */
   readonly scheduled: ScheduledSends;
@@ -626,7 +626,7 @@ export class BackendCore {
     void this.today.start().catch((error: unknown) => captureError(error, { code: "ai.failed" }));
     // plan 87: reminders come due whether or not mail syncs (what came due while it was closed shows at once)
     this.refreshReminders();
-    // plan 177: what's pinned (a change to mail looks again only while something is)
+    // plan 179: what's pinned (a change to mail looks again only while something is)
     this.pins.refresh().catch((error: unknown) => {
       captureError(error, { code: "pins.failed" });
       this.log("warn", "pins couldn't be read", error instanceof Error ? error.message : error);

@@ -669,7 +669,7 @@ function MenuItems() {
   const anyRead = scope !== null || rows.some((t) => !t.unread);
   const anyStarred = scope !== null || rows.some((t) => t.starred);
   const anyPlain = scope !== null || rows.some((t) => !t.starred);
-  // plan 177: pins need ids (a "select all N" has none, and pins are a few): offered only for picked rows
+  // plan 179: pins need ids (a "select all N" has none, and pins are a few): offered only for picked rows
   const pins = usePins((s) => s.ids);
   const anyPinned = !scope && rows.some((t) => pins.has(t.id));
   const anyUnpinned = !scope && rows.some((t) => !pins.has(t.id));
@@ -754,7 +754,7 @@ function MenuItems() {
       {anyRead && <Item icon={<Mail />} label={t("actions.markUnread")} command="thread.toggleRead" onClick={() => run("markUnread")} testId="menu-unread" />}
       {anyPlain && <Item icon={<Star />} label={t("actions.star")} command="thread.star" onClick={() => run("star")} testId="menu-star" />}
       {anyStarred && <Item icon={<StarOff />} label={t("actions.unstar")} command={anyPlain ? undefined : "thread.star"} onClick={() => run("unstar")} testId="menu-unstar" />}
-      {/* plan 177 (the owner): beside Star, at the top level */}
+      {/* plan 179 (the owner): beside Star, at the top level */}
       {anyUnpinned && <Item icon={<PinTop />} label={t("actions.pin")} command="thread.pin" onClick={() => void pinThreads(ids)} testId="menu-pin" />}
       {anyPinned && <Item icon={<PinTop className="fill-star text-star" />} label={t("actions.unpin")} command={anyUnpinned ? undefined : "thread.pin"} onClick={() => void unpinThreads(ids)} testId="menu-unpin" />}
       <ContextMenuSeparator />

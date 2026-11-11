@@ -35,7 +35,7 @@ describe("row offsets (plan 174)", () => {
   });
 });
 
-describe("the Inbox's top sections (plan 177)", () => {
+describe("the Inbox's top sections (plan 179)", () => {
   const rows = (...ids: number[]) => ids.map((id) => ({ id }));
 
   it("pins only, reminders only, both, nothing; the rest of the Inbox under its own heading once either leads", () => {

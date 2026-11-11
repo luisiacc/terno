@@ -1,5 +1,5 @@
 /**
- * Plan 177: pinned conversations. P, the row menu or the reader's Pin button
+ * Plan 179: pinned conversations. P, the row menu or the reader's Pin button
  * pins one to the Inbox's top, under "Pinned (N)" above the due reminders and
  * the rest of the Inbox under its own name and count; putting it away (archive)
  * ends the pin and its Undo brings it back. Only Inboxes show pins, each

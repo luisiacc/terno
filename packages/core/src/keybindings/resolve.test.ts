@@ -70,7 +70,7 @@ describe("resolveKey", () => {
       expect(resolveKey(key("P", { meta: true, shift: true }), c, null).command).toBe("thread.exportPdf");
     }
     expect(resolveKey(key("p", { ctrl: true }), ctx, null, undefined, false).command).toBe("thread.print");
-    // a bare P never prints: it pins (plan 177), and only outside a field
+    // a bare P never prints: it pins (plan 179), and only outside a field
     expect(resolveKey(key("p"), ctx, null).command).toBe("thread.pin");
     expect(resolveKey(key("p"), { ...ctx, editable: true }, null).command).toBe(null);
   });

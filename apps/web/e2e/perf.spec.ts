@@ -213,7 +213,7 @@ for (const { design: id, density } of LIST_GATES) {
       const target = db.get<{ id: number; thread_id: number; account_id: number }>("SELECT m.id, m.thread_id, m.account_id FROM messages m JOIN threads t ON t.id = m.thread_id WHERE t.in_inbox = 1 ORDER BY t.last_date DESC LIMIT 1 OFFSET 3")!;
       await server.backend.server.invoke("drafts.save", { accountId: target.account_id, to: [], cc: [], subject: "Re: x", bodyText: "Borrador a medias", inReplyToMessageId: target.id, uiState: "collapsed" }, ctx);
       await server.backend.server.invoke("drafts.save", { accountId: target.account_id, to: [{ name: "", email: "ana@example.com" }], cc: [], subject: "Nuevo", bodyText: "Para después" }, ctx);
-      // plan 177: two conversations pinned, so j crosses the Pinned section into the mail
+      // plan 179: two conversations pinned, so j crosses the Pinned section into the mail
       const pinned = db.all<{ id: number }>("SELECT id FROM threads WHERE in_inbox = 1 ORDER BY last_date DESC LIMIT 2 OFFSET 6").map((r) => r.id);
       await server.backend.server.invoke("pins.add", { threadIds: pinned }, ctx);
       await setDensity(page, server, density);

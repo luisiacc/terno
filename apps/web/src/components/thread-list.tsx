@@ -81,7 +81,7 @@ function TodayHeading({ kind, top }: { kind: TodayGroup["kind"]; top: number }) 
 const TOP_HEADING_ID = { pinned: "inbox-pinned-label", reminders: "inbox-reminders-label", inbox: "inbox-rest-label" } as const satisfies Record<TopSectionKind, string>;
 
 /**
- * Plans 87, 177: what the Inbox's rows under it are: Pinned, Reminders and, once either leads, the rest of the Inbox
+ * Plans 87, 179: what the Inbox's rows under it are: Pinned, Reminders and, once either leads, the rest of the Inbox
  * under its own name (the account's, in one account's Inbox). Words only, at Today's headings' size in the softer ink (the owner), and how many in
  * the quiet ink (the owner). Each row says what it is to a screen reader itself.
  */
@@ -1163,7 +1163,7 @@ export function ThreadList() {
   const askOver = usePinnedAsk((s) => (!over && s.overList ? s.inset : 0));
   const dock = pinnedOver(toastRoom, Math.max(usePinnedInset(over), askOver));
   const getItemKey = useCallback((i: number) => items[i]!.id, [items]);
-  // plans 87, 177: the Inbox's top, Pinned then Reminders, then the rest of the Inbox, each under its heading
+  // plans 87, 179: the Inbox's top, Pinned then Reminders, then the rest of the Inbox, each under its heading
   // (the top and its count are published with the rows they came with: read beside them)
   const sections = useMemo(() => ({ ...topSections(items, inboxTop), total: inboxTop.total }), [items]);
   const { top, pinned: pinnedTop } = sections;
@@ -1442,7 +1442,7 @@ export function ThreadList() {
           !filter && <EmptyState />
         ) : (
           <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
-            {/* plans 87, 177: each of the Inbox's headings above its first row */}
+            {/* plans 87, 179: each of the Inbox's headings above its first row */}
             {sections.headings.map((h) => (
               <TopHeading
                 key={h.kind}

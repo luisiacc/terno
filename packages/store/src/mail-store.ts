@@ -659,7 +659,7 @@ export interface MailStore {
   };
 
   /**
-   * Plan 177: conversations pinned to the Inbox's top (one row per thread). A
+   * Plan 179: conversations pinned to the Inbox's top (one row per thread). A
    * thread that goes takes its pin with it; a merge keeps the survivor's pin,
    * or the vanished one's when the survivor had none.
    */

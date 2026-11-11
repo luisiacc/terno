@@ -9,7 +9,7 @@ import { RpcError } from "@terno/core/rpc";
 /**
  * What the Inbox's top held for conversations that were put away (archived,
  * trashed, marked as spam, moved to a folder or filed out of the Inbox): their
- * due reminders (plan 87), follow-ups on top (142) and pins (177). Each would
+ * due reminders (plan 87), follow-ups on top (142) and pins (179). Each would
  * bring the conversation straight back to the top, so putting it away ends
  * them, and the action's Undo puts them back exactly.
  */

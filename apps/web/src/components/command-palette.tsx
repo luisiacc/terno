@@ -418,7 +418,7 @@ export function CommandPalette() {
       const rows = targetRows();
       const allStarred = rows.length > 0 && rows.every((r) => r.starred);
       const starKey = allStarred ? "actions.unstar" : "actions.star";
-      // plan 177: the selection's pins (a "select all N" has no ids to pin)
+      // plan 179: the selection's pins (a "select all N" has no ids to pin)
       const pinnedIds = usePins.getState().ids;
       const anyPinned = rows.some((r) => pinnedIds.has(r.id));
       const anyUnpinned = rows.some((r) => !pinnedIds.has(r.id));

@@ -1,7 +1,7 @@
 import type { Pin } from "@terno/core";
 import type { Db } from "./sqlite";
 
-/** Plan 177: conversations pinned to the Inbox's top (`pins`, v55). */
+/** Plan 179: conversations pinned to the Inbox's top (`pins`, v55). */
 
 interface Row {
   thread_id: number;

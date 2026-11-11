@@ -134,7 +134,7 @@ const COLUMN = READING_COLUMN;
 /** Between the toolbar's groups; a narrow reader has no room for it. */
 const ToolbarDivider = ({ className }: { className?: string }) => <Separator orientation="vertical" className={cn("my-auto h-4 @max-[420px]:hidden", className)} />;
 
-/** Plan 177 (the owner): Pin beside Star, upright; filled in Star's yellow while pinned. One boolean: only this button renders when it changes. */
+/** Plan 179 (the owner): Pin beside Star, upright; filled in Star's yellow while pinned. One boolean: only this button renders when it changes. */
 function PinButton({ threadId }: { threadId: number }) {
   const pinned = usePins((s) => s.ids.has(threadId));
   return (

@@ -10,7 +10,7 @@ import { refreshList, reloadList, useList } from "~/state/list";
 import { usePins } from "~/state/pins";
 
 /**
- * Plan 177: conversations pinned to the Inbox's top. The backend keeps them
+ * Plan 179: conversations pinned to the Inbox's top. The backend keeps them
  * (`pins.*`, the `pins` event); this keeps the renderer's set, pins and unpins
  * with an exact Undo, and moves rows into or out of the Pinned section.
  */

@@ -6,7 +6,7 @@
 /** Today's section heading's line */
 export const TOP_LABEL = 28;
 
-/** Plan 177: the Inbox's section heading's line (Pinned, Reminders, the Inbox under them): more room above its words (the owner) */
+/** Plan 179: the Inbox's section heading's line (Pinned, Reminders, the Inbox under them): more room above its words (the owner) */
 export const INBOX_LABEL = 36;
 
 /**
@@ -20,7 +20,7 @@ export function rowStart(i: number, h: number, s: RowSpacing): number {
   return s.lead + i * h + s.label * s.groups.filter((at) => at <= i).length;
 }
 
-/** Plan 177: Pinned, Reminders, and (once either leads) the rest of the Inbox under its own name */
+/** Plan 179: Pinned, Reminders, and (once either leads) the rest of the Inbox under its own name */
 export type TopSectionKind = "pinned" | "reminders" | "inbox";
 
 /** The Inbox's top as the rows show it: how many lead, how many of them are pinned, and each section's heading */
@@ -33,7 +33,7 @@ export interface TopSections {
 export const NO_SECTIONS: TopSections = { top: 0, pinned: 0, headings: [] };
 
 /**
- * Plan 177: the top's sections over the rows on screen (an optimistic edit may have taken some out since the top was
+ * Plan 179: the top's sections over the rows on screen (an optimistic edit may have taken some out since the top was
  * read): the leading rows among its pins, then the leading rows among the rest of it. Pinned first, then Reminders,
  * then the rest of the Inbox under a heading of its own (the owner: it replaced the hairline that closed the top).
  */

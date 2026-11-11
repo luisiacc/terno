@@ -118,7 +118,7 @@ it("a category that can't be created says so (no unhandled rejection) and moves 
   expect(moves).toEqual([]);
 });
 
-it("plan 177 (Codex review): a mixed selection offers Pin to top and Unpin, and each does what it says (only P toggles)", async () => {
+it("plan 179 (Codex review): a mixed selection offers Pin to top and Unpin, and each does what it says (only P toggles)", async () => {
   const row = (id: number) => ({ id, lastDate: 1e9 - id, unread: false, starred: false, hasAttachments: false, categoryIds: [] }) as never;
   await act(async () => setApp({ dialog: null }));
   useList.setState({ items: [row(7), row(8)], index: new Map([[7, 0], [8, 1]]) });

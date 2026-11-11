@@ -114,7 +114,7 @@ export const CODES = {
   "notify.failed": c("errorClass"),
   // reminders (plan 87): a failed read, never a thread or a time
   "reminders.failed": c("errorClass"),
-  // pins (plan 177): a failed read, never a thread
+  // pins (plan 179): a failed read, never a thread
   "pins.failed": c("errorClass"),
   // scheduled sends (plan 94): a failed read, a send that will be tried again or given back; never a subject or an address
   "scheduled.failed": c("errorClass"),

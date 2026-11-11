@@ -132,7 +132,7 @@ export async function boot(): Promise<void> {
     const followups = loadFollowups().catch((error) => console.warn("[followups] could not load", error));
     // before the first list, so the Inbox opens with its due ones on top (one local call)
     const reminders = loadReminders().catch((error) => console.warn("[reminders] could not load", error));
-    // plan 177: the pinned conversations, before the first list too (the Inbox opens with Pinned on top)
+    // plan 179: the pinned conversations, before the first list too (the Inbox opens with Pinned on top)
     client.on("pins", applyPins);
     const pins = loadPins().catch((error) => console.warn("[pins] could not load", error));
     // plan 94: scheduled sends (the strip, the reader's line; drafts scheduled elsewhere leave the composers)
