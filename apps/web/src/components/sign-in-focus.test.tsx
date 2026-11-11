@@ -66,3 +66,23 @@ it("plan 184 (code review #3): a sign-in finishing after its panel closed leaves
     expect(document.activeElement).toBe(input);
   } finally { await act(async () => root.unmount()); host.remove(); home.remove(); }
 });
+
+it("plan 184 (code review round 2): a section gone with focus on its popup (Base UI's restore): the next account's action gets it", async () => {
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host);
+  const google = { ...account(1), kind: "gmail" } as Account, imap = account(2);
+  const render = async (accounts: Account[]) => act(async () => root.render(
+    <StrictMode><Popover open><PopoverTrigger render={<button>Open</button>} /><PopoverContent data-testid="popup"><SignInPanel accounts={accounts} onLater={() => {}} /></PopoverContent></Popover></StrictMode>,
+  ));
+  try {
+    await render([google, imap]);
+    await act(async () => document.querySelector<HTMLButtonElement>('[data-testid="sign-in-google"]')!.click());
+    await render([imap]);
+    const popup = document.querySelector<HTMLElement>('[data-testid="popup"]')!;
+    if (!popup.hasAttribute("tabindex")) popup.tabIndex = -1;
+    await act(async () => popup.focus());
+    expect(document.activeElement).toBe(popup);
+    await act(async () => { pending.finish!(true); await new Promise((r) => setTimeout(r, 50)); });
+    expect(document.activeElement).toBe(document.querySelector('[data-account-id="2"] [data-sign-in-action]'));
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});

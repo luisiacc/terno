@@ -68,13 +68,15 @@ export default function SignInPanel({ accounts, onLater, home = sidebarRow }: { 
 
 /**
  * Focus was on what just went away (this panel, its section, the notice it was in): the next account's action in
- * this panel, else where the panel came from (the account's row). Focus anywhere else stays, another sign-in panel
+ * this panel, else where the panel came from (the account's row). Focus that fell to the popup around this panel
+ * (Base UI's restore when a focused section goes) counts as fallen. Focus anywhere else stays, another sign-in panel
  * included (a password typed there while this account's Google page finished: plan 184's code review #3).
  */
 function settleFocus(accountId: number, scope: React.ContextType<typeof Scope>): void {
   const active = document.activeElement;
   const panel = scope.root.current?.isConnected ? scope.root.current : null;
-  if (active && active !== document.body && !panel?.contains(active)) return;
+  const fell = !active || active === document.body || (panel !== null && (panel.contains(active) || active.contains(panel)));
+  if (!fell) return;
   const next = panel?.querySelector<HTMLElement>(`[data-sign-in-action]:not([data-account-id="${accountId}"])`);
   (next ?? scope.home(accountId))?.focus();
 }

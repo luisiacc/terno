@@ -1,6 +1,6 @@
 # Plan 184: every refusal a sign-in fixes asks for one
 
-- **Status:** planned; the refactor in §2.0 waits for the owner's go-ahead (AGENTS.md: a refactor is asked about before it is built).
+- **Status:** done (the owner approved the §2.0 refactor on 2026-11-11; see "Implementation notes" and "What the Codex code review changed").
 - **Builds on:** `e2e69fec3` (main), plan 25 (signing in again, gently).
 - **Request (verbatim):** "lets make sure whe na sign-in fails for whatever reason, for any email providern ow and in the future, we mark it somehow as needing a new signing or something also on settings, so the user can reconnect it easiliy"
 
@@ -105,3 +105,23 @@ Codex (read-only, against `e2e69fec3`) made 12 points; all were checked against 
 10. Race tests for the new branch. §3.
 11. Readiness and preparation go through the sign-in table too. §2.2.
 12. The onboarding test exercises public identity inspection, not this path: left unchanged. §3.
+
+## Implementation notes
+
+- **Commits:** the plan and critique; the boundary (`feat(backend)`: `refusals.ts`, `ProviderContext.refused`, Gmail's scope); the sign-in table (`feat(core)`); Settings (`feat(settings)`); the code review's fixes (`fix(sign-in)`).
+- **The boundary is a Proxy** around what `providers.create` returns (`observeRefusals`): a method's rejection is looked at and passed on unchanged; values, getters and synchronous results pass through. `backend.provider()` returns the wrapper, so a test comparing it with the registry's object compares a property instead (`account-lifecycle.test.ts`).
+- **A sync still fails when its refusal couldn't be saved** (`gmail-policy-admission`, "one failed auth persistence write"): each reported refusal keeps the account's write of it, and the sync awaits that one. Callers that only need the hold (an action, a search) don't.
+- **Scope-insufficient tests moved, not dropped:** the policy-pause case that used `insufficientPermissions` uses `SERVICE_DISABLED` (still a pause); the parallel-download case expects a sign-in for it; new cases cover sign-in vs Retry now, quota precedence, a stale body after a sign-in, and the hold landing before a sibling request is admitted (checked to fail with the order reversed).
+- **Settings, as built:** the row's "Sign in again" sits under the account's text at the text column (`pl-5`, the open section's inset), opens the sidebar's panel (`side="bottom"`), and hides while the section is open. The nav entry's name is set with `aria-label` ("Accounts, 1 needs a sign-in"): an sr-only span read as "Accounts , 1…".
+- **Checked visually** in macOS, Lumen, Atelier, Luma and Graphite, light and dark: the row, the nav key and the open panel. Element baselines `e2e/__screenshots__/{,lumen/,atelier/,luma/,graphite/}resign-in.spec.ts/settings-row-{light,dark}.png`.
+- **Not from this series:** `scan.test.ts` (hard-coded strings in `apps/site/src/parts/agents.tsx`) and `settings-pass.spec.ts` ("Allow agents to send mail", a switch plan 183 removed) fail on main from other work.
+
+## What the Codex code review changed
+
+Codex reviewed `3a3761ea3..a39c7f72c` and made 3 findings; each is fixed with a regression test that fails without the fix (`14291edcf`).
+
+1. **Medium: a recheck lifting a refusal while the refused action was being parked left it parked.** The refusal is now published before the park; a saved-password recheck in between cleared it and resumed nothing, and the park's own check (`parkedAcrossSignIn`) only looks at a changed generation. After the park the action goes if the account no longer holds it. To keep that from looping, the boundary reports every refusal with its call's generation again (it had skipped one `tokenResult` already reported, possibly fenced out as stale). Test: `resign-in.test.ts`, "a recheck lifting the refusal while the refused action is still being parked" (the recheck's sync held, so only the fix lets it go).
+2. **Medium: web Gmail's photos swallowed a missing token.** `collectGooglePhotos` catches the token error and carries on, so no method rejected. The broker reports it where the token is looked for (`ctx.refused`), and the context's refusals use the account's current generation (a web renewal keeps the provider; a sign-in that replaces it ends its lifetime). Test: `gmail-token-lifecycle.test.ts`.
+3. **Medium: a sign-in finishing after its panel closed took focus from another panel.** Focus settles only from body or from inside its own panel. Test: `sign-in-focus.test.tsx` (two keyed popovers; fails with the old rule).
+
+**Second round** (`14291edcf`, the fixes only): one finding. Focus that Base UI restores to the popup when a focused section goes (several accounts, one signed in) was refused by the new "inside this panel" rule, so it stayed on the popup. Focus on this panel's own popup counts as fallen too (the panel's ancestors and descendants, never another panel). Test: `sign-in-focus.test.tsx`, "a section gone with focus on its popup" (fails without it). Nothing else substantiated; review rounds stop here (memory: bounded rounds).
