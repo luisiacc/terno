@@ -10,6 +10,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Browser, Locator, Page } from "@playwright/test";
 import { startDevServer } from "@terno/backend-dev/src/server";
+import { DESIGN_PALETTE } from "@terno/core";
 import { SHOWCASE_NOW, SNIPPETS, showcaseDataset } from "./showcase";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -124,9 +125,13 @@ export async function openApp(page: Page, webPort: number, backendUrl: string, t
   await page.waitForTimeout(500);
 }
 
-/** The settings every picture is taken in: Lumen with the GitHub palettes unless a shot says otherwise (plan 97). */
+/**
+ * The settings every picture is taken in: Lumen with the GitHub palettes unless a shot says otherwise (plan 97). A design
+ * shot without a palette is in the design's own colors, named outright: the shots share one page, and an earlier
+ * shot's palette would otherwise stay.
+ */
 export const pictureSettings = (mode: "light" | "dark", o: { design?: string; palette?: { light?: string; dark?: string } } = {}) => {
-  const palette = o.palette ?? (o.design ? {} : { light: "github-light", dark: "github-dark" });
+  const palette = o.palette ?? (o.design ? { light: DESIGN_PALETTE, dark: DESIGN_PALETTE } : { light: "github-light", dark: "github-dark" });
   return { design: o.design ?? "lumen", theme: mode, senderIcons: false, motionMs: 0, ...(palette.light && { lightTheme: palette.light }), ...(palette.dark && { darkTheme: palette.dark }) };
 };
 
