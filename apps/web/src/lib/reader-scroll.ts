@@ -103,11 +103,20 @@ export function keepInView(el: HTMLElement, scroller: HTMLElement | null = el.cl
 export const topCover = (scroller: HTMLElement): number => parseFloat(getComputedStyle(scroller).scrollPaddingTop) || 0;
 
 export function revealMessage(id: number, pad = 16): void {
+  reveal(`[data-reader-scroller] article[data-message-id="${id}"]`, pad);
+}
+
+/** Plan 182: a message just sent, still in its Undo window: the reader goes to it as it would to its copy. */
+export function revealHeld(draftId: number, pad = 16): void {
+  reveal(`[data-reader-scroller] article[data-held-send="${draftId}"]`, pad);
+}
+
+function reveal(selector: string, pad: number): void {
   cancelReaderScroll();
   let frame = 0;
   let left = 6;
   const step = () => {
-    const el = document.querySelector<HTMLElement>(`[data-reader-scroller] article[data-message-id="${id}"]`);
+    const el = document.querySelector<HTMLElement>(selector);
     const scroller = el?.closest<HTMLElement>("[data-reader-scroller]");
     if (!el || !scroller) {
       if (--left > 0) frame = requestAnimationFrame(step);

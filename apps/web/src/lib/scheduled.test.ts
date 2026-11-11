@@ -28,34 +28,23 @@ it("a draft no longer scheduled (unscheduled in another window, given back) is l
   await vi.waitFor(() => expect(Object.values(useDrafts.getState().drafts).some((d) => d.id === 5)).toBe(true));
 });
 
-it("the hold's end (plan 158): Undo goes and the spinner stays; a result already waiting behind the Undo takes the dock instead", async () => {
-  const { heldSendSnack } = await import("./scheduled");
-  const { resetSnacks, snack, useSnack } = await import("./snack");
-  vi.useFakeTimers();
+it("plan 182 (Codex critique #4): a hold that couldn't go (listed now, or given back) has nothing coming: its card goes", async () => {
+  const { holdSend, heldById, resetHeldSends } = await import("./held-sends");
+  const add = (draftId: number) => holdSend({ draftId, accountId: 1, threadId: 3, mode: "reply", subject: "Budget", to: [], cc: [], bodyHtml: null, bodyText: "x", attachments: [], goesAt: Date.now() + 5000, cancel: async () => true });
   try {
-    resetSnacks();
-    heldSendSnack(7, null, 5000);
-    expect(useSnack.getState().current).toMatchObject({ tone: "loading", duration: 5000, action: { label: expect.any(String) } });
-    expect(useSnack.getState().undo).not.toBeNull();
-    vi.advanceTimersByTime(5000);
-    expect(useSnack.getState().current).toMatchObject({ tone: "loading" });
-    expect(useSnack.getState().current?.action).toBeUndefined();
-    expect(useSnack.getState().undo).toBeNull();
-
-    resetSnacks();
-    heldSendSnack(8, null, 5000);
-    snack.success("Message sent", { background: true });
-    expect(useSnack.getState().current?.tone).toBe("loading");
-    vi.advanceTimersByTime(5000);
-    expect(useSnack.getState().current?.message).toBe("Message sent");
+    add(31);
+    add(32);
+    applyScheduled({ items: [{ ...item(31), error: "Offline" }], failed: [{ id: "f", draftId: 32, subject: "Budget", message: "Gone", at: 1 }] });
+    expect(heldById(31)).toBeUndefined();
+    expect(heldById(32)).toBeUndefined();
   } finally {
-    vi.useRealTimers();
-    resetSnacks();
+    resetHeldSends();
   }
 });
 
 it("Undo send waiting on the backend: the draft comes back opened only if nothing newer took its place (series review)", async () => {
-  const { heldSendSnack } = await import("./scheduled");
+  const { cancelHeldSend } = await import("./scheduled");
+  const { holdSend } = await import("./held-sends");
   const { resetSnacks, runUndo, useSnack } = await import("./snack");
   const { pinning, usePinned } = await import("./pinned-draft-state");
   const { setApp } = await import("~/state/app");
@@ -66,7 +55,7 @@ it("Undo send waiting on the backend: the draft comes back opened only if nothin
     let answer!: () => void;
     mocks.call.mockImplementation((method: string) => method === "scheduled.cancel" ? new Promise((r) => (answer = () => r({ ok: true }))) : Promise.resolve(method === "drafts.list" ? [stored(draftId)] : { ok: true }));
     resetSnacks();
-    heldSendSnack(draftId, null, 5000, pinned);
+    holdSend({ draftId, accountId: 1, threadId: null, mode: "new", subject: "Budget", to: [], cc: [], bodyHtml: null, bodyText: "x", attachments: [], goesAt: Date.now() + 5000, cancel: (cancelled) => cancelHeldSend(draftId, pinned, cancelled) });
     const undoing = runUndo(useSnack.getState().undo!);
     await vi.waitFor(() => expect(answer).toBeTypeOf("function"));
     meanwhile();

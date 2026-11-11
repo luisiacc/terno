@@ -24,7 +24,8 @@ import { aiDraftHooks, isNote } from "./ai-draft-state";
 import { fromPlainText, parseHtml, toEmailHtml, toPlainText } from "@terno/richtext";
 import { parseAddressList } from "@terno/core";
 import { controllerFor } from "~/components/composer/controller";
-import { heldSendSnack, scheduledSnack, sendingSnack } from "./scheduled";
+import { cancelHeldSend, scheduledSnack, sendingSnack } from "./scheduled";
+import { holdSend } from "./held-sends";
 import { playSendSound, primeSendSound } from "./sounds";
 
 /**
@@ -1268,15 +1269,34 @@ async function send(key: string, sendAt?: number): Promise<boolean> {
     }
     // plan 158: Send's Undo window is a schedule of a few seconds: the backend holds it, durably, and the draft stays until it goes
     if (getApp().settings?.undoSend === true) {
+      // plan 182: taken before the backend's clock starts, so the window shown here never outlasts its own
+      const goesAt = Date.now() + UNDO_SEND_MS;
       const hold = await client.call("compose.hold", { ...params, draftId: d.id!, draftGeneration: d.generation!, draftRevision: d.revision });
       // (no room to hold it: the backend queued it as a plain send)
       // plan 170: the whoosh as it leaves the composer, held or not
       playSendSound();
       if (hold.held) {
         const pinned = pinnedKey() === key;
+        // plan 182: a new message written in the pane shows there, sent, through its window; from the pinned card it doesn't take the pane
+        const inPane = getApp().compose?.key === key;
         forgetDraft(key);
-        if (getApp().compose?.key === key) setApp({ compose: null });
-        heldSendSnack(d.id!, d.mode === "new" ? null : d.threadId, UNDO_SEND_MS, pinned);
+        const draftId = d.id!;
+        holdSend({
+          draftId,
+          accountId: d.accountId,
+          threadId: d.mode === "new" ? null : d.threadId,
+          mode: d.mode,
+          subject: d.subject,
+          to,
+          cc,
+          bodyHtml: bodyHtml ?? null,
+          bodyText: params.bodyText,
+          attachments,
+          goesAt,
+          cancel: (cancelled) => cancelHeldSend(draftId, pinned, cancelled),
+        });
+        // one change, so List's page never passes through the list on its way from the message to the sent view
+        if (inPane) setApp({ compose: null, ...(d.mode === "new" && !pinned ? { heldView: draftId } : {}) });
         return true;
       }
       sentAway(key, d, hold);

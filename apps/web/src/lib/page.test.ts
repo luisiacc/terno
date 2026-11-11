@@ -54,8 +54,10 @@ describe("the page (plan 24)", () => {
     expect(currentPage()).toBe("list");
     setApp({ readerOpen: true });
     expect(currentPage()).toBe("thread");
-    expect(pageOf({ compose: { key: "d", seq: 1 }, readerOpen: true, selectedId: 1 })).toBe("compose");
-    expect(pageOf({ compose: null, readerOpen: true, selectedId: null })).toBe("list");
+    expect(pageOf({ compose: { key: "d", seq: 1 }, heldView: null, readerOpen: true, selectedId: 1 })).toBe("compose");
+    expect(pageOf({ compose: null, heldView: null, readerOpen: true, selectedId: null })).toBe("list");
+    // plan 182: a new message just sent keeps its page through its Undo window
+    expect(pageOf({ compose: null, heldView: 7, readerOpen: false, selectedId: 1 })).toBe("compose");
     layout("split");
     expect(currentPage()).toBe("list");
   });
@@ -152,6 +154,18 @@ describe("the page (plan 24)", () => {
     closePage();
     expect(getApp().compose).toBeNull();
     expect(currentPage()).toBe("list");
+  });
+
+  it("plan 182 (Codex critique #6): a new message just sent is a page Back closes, and opening a conversation replaces", () => {
+    setApp({ selectedId: 2, readerOpen: false, compose: null, heldView: 9 });
+    expect(currentPage()).toBe("compose");
+    closePage();
+    expect(getApp().heldView).toBeNull();
+    expect(currentPage()).toBe("list");
+    setApp({ heldView: 9 });
+    openThread(3);
+    expect(getApp().heldView).toBeNull();
+    expect(currentPage()).toBe("thread");
   });
 });
 

@@ -22,7 +22,7 @@ const { bodyParts, sendDraft } = await import("./compose");
 const { createDraft, discardDraft, editDraft, markDraftMissing, useDrafts } = await import("./drafts");
 const { newFields } = await import("./compose-fields");
 const { useSnack } = await import("./snack");
-const { setApp } = await import("~/state/app");
+const { getApp, setApp } = await import("~/state/app");
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
@@ -215,6 +215,38 @@ describe("the send sound (plan 170)", () => {
       settle("compose.hold", { held, opId: "o", threadId: 1 });
       expect(await p).toBe(true);
       expect(sound.play).toHaveBeenCalledOnce();
+    }
+  });
+
+  it("plan 182: a held send shows as sent at once: a new message in its own pane (the pane's only if it was writing it)", async () => {
+    const { resetHeldSends, useHeldSends } = await import("./held-sends");
+    setApp({ settings: { undoSend: true } as import("@terno/core/rpc").AppSettings });
+    try {
+      const key = createDraft({ ...newFields(1), toText: "ana@example.com", subject: "Lunch", bodyText: "Hola" });
+      setApp({ compose: { key, seq: 1 } });
+      const p = sendDraft(key);
+      await tick();
+      settle("compose.hold", { held: true });
+      expect(await p).toBe(true);
+      const [held] = useHeldSends.getState().holds;
+      expect(held).toMatchObject({ threadId: null, mode: "new", subject: "Lunch", phase: "holding", to: [{ email: "ana@example.com" }] });
+      expect(held!.bodyText).toContain("Hola");
+      expect(getApp()).toMatchObject({ compose: null, heldView: held!.draftId });
+      // written elsewhere meanwhile: the pane stays theirs, and the hold shows in the dock instead
+      resetHeldSends();
+      rpc.calls.length = 0;
+      const other = createDraft({ ...newFields(1), toText: "ana@example.com", bodyText: "Hola" });
+      setApp({ compose: { key: other, seq: 2 } });
+      const q = sendDraft(other);
+      setApp({ compose: { key: "someone-else", seq: 3 } });
+      await tick();
+      settle("compose.hold", { held: true });
+      expect(await q).toBe(true);
+      expect(getApp()).toMatchObject({ compose: { key: "someone-else" }, heldView: null });
+      expect(useHeldSends.getState().holds).toHaveLength(1);
+    } finally {
+      resetHeldSends();
+      setApp({ compose: null, heldView: null });
     }
   });
 

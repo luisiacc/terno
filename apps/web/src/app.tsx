@@ -16,6 +16,7 @@ import { showCategorySnackbar } from "./components/category-snackbar";
 import { CommandPalette } from "./components/command-palette";
 import { DragGhost } from "./components/drag-ghost";
 import { NewMessage } from "./components/new-message";
+import { HeldNewMessage } from "./components/held-message";
 import { PinnedDraft } from "./components/pinned-draft";
 import { bottomInset, usePinned, usePinnedInset } from "~/lib/pinned-draft-state";
 import { PinnedAsk } from "./components/pinned-ask";
@@ -93,6 +94,12 @@ function Fatal({ message }: { message: string }) {
  * as it was. Keyed by nothing: moving between conversations never remounts it
  * (and never animates); only coming from the list fades it in.
  */
+/** List's compose page: the new message, or (plan 182) the one just sent from it, through its Undo window */
+function ComposePage() {
+  const composing = useApp((s) => s.compose !== null);
+  return composing ? <NewMessage /> : <HeldNewMessage />;
+}
+
 function PageLayer({ page }: { page: "thread" | "compose" }) {
   const selectedId = useApp((s) => s.selectedId);
   // a new message keeps its foot (the format bar) clear of the dock
@@ -103,7 +110,7 @@ function PageLayer({ page }: { page: "thread" | "compose" }) {
   return (
     <div data-testid="list-page" data-page={page} className="absolute inset-0 z-[5] flex flex-col bg-background animate-in fade-in-0 slide-in-from-right-1 duration-base" style={inset ? { paddingBottom: inset } : undefined}>
       <PaneBoundary area="reader" resetKey={selectedId} readerThreadId={page === "thread" ? selectedId : null}>
-        {page === "compose" ? <NewMessage /> : <Reader />}
+        {page === "compose" ? <ComposePage /> : <Reader />}
       </PaneBoundary>
     </div>
   );
@@ -116,6 +123,8 @@ export function App() {
   const fresh = useApp((s) => s.ready && s.accounts.length === 0 && !s.owner && !s.demo);
   const many = useApp((s) => s.scope !== null || s.checked.size >= 2);
   const composing = useApp((s) => s.compose !== null);
+  // plan 182: a new message just sent, in its pane through its Undo window
+  const heldView = useApp((s) => s.heldView !== null);
   const selectedId = useApp((s) => s.selectedId);
   const list = useAppearance((s) => s.layout) === "list";
   // keyed by draft: another pinned draft never inherits the last one's form state (revealed rows, recipient undo)
@@ -189,8 +198,8 @@ export function App() {
         {!list && (
           <main className="relative min-h-0" style={composeInset ? { paddingBottom: composeInset } : undefined}>
             {/* the reader pane: a bulk selection, else a new message being written, else the conversation; one that fails to render is that pane only */}
-            <PaneBoundary area="reader" resetKey={selectedId} readerThreadId={!many && !composing ? selectedId : null}>
-              {many ? <SelectionBar /> : composing ? <NewMessage /> : <Reader />}
+            <PaneBoundary area="reader" resetKey={selectedId} readerThreadId={!many && !composing && !heldView ? selectedId : null}>
+              {many ? <SelectionBar /> : composing ? <NewMessage /> : heldView ? <HeldNewMessage /> : <Reader />}
             </PaneBoundary>
             {pinnedAsk && <PinnedAsk />}
             {pinned && <PinnedDraft key={pinned} overList={false} beside={pinnedAsk} />}

@@ -738,7 +738,7 @@ test.describe("the composer in List (plan 158)", () => {
   });
 });
 
-test("Undo send (plan 158): a spinner, not a check, while it's held; Undo brings the draft back exactly; too late says so", async ({ app: page, server }) => {
+test("Undo send (plans 158, 182): the reply shows at once where its copy will be, counting down; Undo brings the draft back exactly; it becomes its copy in place", async ({ app: page, server }) => {
   const dev = { clientId: "setup", origin: "dev" as const };
   await server.backend.server.invoke("settings.update", { undoSend: true }, dev);
   await page.reload();
@@ -754,46 +754,80 @@ test("Undo send (plan 158): a spinner, not a check, while it's held; Undo brings
   await body.click();
   await page.keyboard.press("ControlOrMeta+Enter");
 
-  const snack = page.locator("[data-testid=snack]").filter({ hasText: "Sending…" });
-  await expect(snack).toBeVisible();
-  await expect(snack.locator("[data-slot=spinner]")).toBeVisible();
-  await expect(snack.locator("svg.text-success-ink")).toHaveCount(0);
-  await expect(snack.getByTestId("snack-action")).toHaveAccessibleName("Undo send");
-  await expect(page.getByTestId("composer")).toHaveCount(0);
-  // not a thing the user scheduled, and nothing has gone
-  await expect(page.getByTestId("strip-scheduled")).toHaveCount(0);
-  expect(await page.getByTestId("message").count()).toBe(before);
+  const held = page.getByTestId("held-message");
+  const dock = page.locator("[data-testid=snack]").filter({ hasText: "Sending…" });
+  await scenario("sent: the message at the conversation's end at once, in view, saying it hasn't gone, with Undo; nothing in the dock", async () => {
+    // (the window is five seconds of the page's clock, which runs: this part is quick)
+    await expect(held).toBeVisible();
+    await expect(held).toBeInViewport();
+    await expect(held.getByTestId("held-status")).toHaveText(/Sending in [2-5]s/);
+    await expect(held.getByTestId("held-undo")).toHaveAccessibleName("Undo send");
+    await expect(page.getByTestId("composer")).toHaveCount(0);
+    await expect(dock).toHaveCount(0);
+    // not a thing the user scheduled, and nothing has gone
+    await expect(page.getByTestId("strip-scheduled")).toHaveCount(0);
+    expect(await page.getByTestId("message").count()).toBe(before);
+  });
 
-  await snack.getByTestId("snack-action").click();
-  await expect(page.getByTestId("composer")).toBeVisible();
-  await expect(body).toHaveText("Exactly these words");
-  await expect(body).toBeFocused();
-  expect(await recipientEmails(page, "compose-cc")).toEqual(["copy@example.com"]);
-  expect(await page.getByTestId("message").count()).toBe(before);
+  await scenario("Undo: the draft back exactly, where it was written, and nothing sent", async () => {
+    await held.getByTestId("held-undo").click();
+    await expect(page.getByTestId("composer")).toBeVisible();
+    await expect(held).toHaveCount(0);
+    await expect(body).toHaveText("Exactly these words");
+    await expect(body).toBeFocused();
+    expect(await recipientEmails(page, "compose-cc")).toEqual(["copy@example.com"]);
+    expect(await page.getByTestId("message").count()).toBe(before);
+  });
 
-  // again, and past its moment on the backend's clock (fixed here): Undo finds it gone, and says so
-  await page.keyboard.press("ControlOrMeta+Enter");
-  await expect(snack.getByTestId("snack-action")).toBeVisible();
-  await expect.poll(async () => (await server.backend.store.scheduled.list()).length).toBe(1);
-  const { draftId } = (await server.backend.store.scheduled.list())[0]!;
-  await server.backend.server.invoke("scheduled.reschedule", { draftId, sendAt: E2E_NOW - 1 }, dev);
-  await expect(page.getByTestId("message")).toHaveCount(before + 1);
-  // the reader goes to its copy
-  await expect(page.getByTestId("message").last()).toBeInViewport();
-  await snack.getByTestId("snack-action").click();
-  await expect(page.locator("[data-testid=snack]").filter({ hasText: "Too late to undo" })).toBeVisible();
-  await expect(page.getByTestId("composer")).toHaveCount(0);
+  await scenario("left to go: it becomes its copy in place, open, and nothing else stays", async () => {
+    await page.keyboard.press("ControlOrMeta+Enter");
+    await expect(held).toBeVisible();
+    // the counter counts, then the window ends here; the backend's clock is fixed, so it waits for the test to send it
+    const first = Number((await held.getByTestId("held-status").textContent())!.match(/\d+/)![0]);
+    await expect.poll(async () => Number((await held.getByTestId("held-status").textContent())!.match(/\d+/)?.[0] ?? 0)).toBeLessThan(first);
+    await expect(held.getByTestId("held-status")).toHaveText("Sending…", { timeout: 8000 });
+    // the body as it will go (its HTML, in the mail frame the copy will have), and to whom
+    await expect(held.frameLocator("iframe").locator("body")).toContainText("Exactly these words");
+    await expect(held.getByTestId("recipients")).toContainText("copy@example.com");
+    await expect.poll(async () => (await server.backend.store.scheduled.list()).length).toBe(1);
+    const { draftId } = (await server.backend.store.scheduled.list())[0]!;
+    await server.backend.server.invoke("scheduled.reschedule", { draftId, sendAt: E2E_NOW - 1 }, dev);
+    await expect(page.getByTestId("message")).toHaveCount(before + 1);
+    await expect(held).toHaveCount(0);
+    const copy = page.getByTestId("message").last();
+    await expect(copy).toBeInViewport();
+    await expect(copy).toHaveAttribute("data-expanded", "true");
+    await expect(copy.frameLocator("iframe").locator("body")).toContainText("Exactly these words");
+  });
 
-  // the hold's end on this side: the spinner goes on, the Undo's gone, and z no longer reaches it
-  await page.keyboard.press("r");
-  await expect(body).toBeFocused();
-  await page.keyboard.type("Second");
-  await page.keyboard.press("ControlOrMeta+Enter");
-  await expect(snack.getByTestId("snack-action")).toBeVisible();
-  await page.clock.fastForward(UNDO_SEND_MS);
-  await expect(snack).toBeVisible();
-  await expect(snack.locator("[data-slot=spinner]")).toBeVisible();
-  await expect(snack.getByTestId("snack-action")).toHaveCount(0);
+  await scenario("the window's end on this side: Sending…, the Undo gone, and z no longer reaches it", async () => {
+    await page.keyboard.press("r");
+    await expect(body).toBeFocused();
+    await page.keyboard.type("Second");
+    await page.keyboard.press("ControlOrMeta+Enter");
+    await expect(held.getByTestId("held-undo")).toBeVisible();
+    await page.clock.fastForward(UNDO_SEND_MS);
+    await expect(held.getByTestId("held-status")).toHaveText("Sending…");
+    await expect(held.locator("[data-slot=spinner]")).toBeVisible();
+    await expect(held.getByTestId("held-undo")).toHaveCount(0);
+    await expect.poll(async () => (await server.backend.store.scheduled.list()).length).toBe(1);
+    const { draftId } = (await server.backend.store.scheduled.list())[0]!;
+    await server.backend.server.invoke("scheduled.reschedule", { draftId, sendAt: E2E_NOW - 1 }, dev);
+    await expect(held).toHaveCount(0);
+  });
+
+  await scenario("another conversation opened during the window: the dock offers Undo for the rest of it, and it works", async () => {
+    await page.keyboard.press("r");
+    await expect(body).toBeFocused();
+    await page.keyboard.type("Third");
+    await page.keyboard.press("ControlOrMeta+Enter");
+    await expect(held).toBeVisible();
+    await openRow(page, 1);
+    await expect(held).toHaveCount(0);
+    await expect(dock.getByTestId("snack-action")).toHaveAccessibleName("Undo send");
+    await dock.getByTestId("snack-action").click();
+    await expect.poll(async () => (await server.backend.store.scheduled.list()).length).toBe(0);
+  });
 
   // and Settings turns it off
   await page.getByTestId("open-settings").click();
@@ -815,7 +849,7 @@ test("a send with no message asks first, in Send's row: Send or Cancel, ⌘↵ t
   await page.keyboard.press("r");
   const body = page.getByTestId("compose-body");
   const ask = page.getByTestId("compose-empty-ask");
-  const sending = page.locator("[data-testid=snack]").filter({ hasText: "Sending…" });
+  const sending = page.getByTestId("held-message");
   await expect(body).toBeFocused();
   await scenario("⌘↵ with nothing written: the question in the row, in words, nothing sent, the caret where it was", async () => {
     await page.keyboard.press("ControlOrMeta+Enter");
@@ -853,7 +887,7 @@ test("a send with no message asks first, in Send's row: Send or Cancel, ⌘↵ t
     await page.keyboard.press("ControlOrMeta+Enter");
     await expect(sending).toBeVisible();
     await expect(page.getByTestId("composer")).toHaveCount(0);
-    await sending.getByTestId("snack-action").click();
+    await sending.getByTestId("held-undo").click();
     await expect(page.getByTestId("composer")).toBeVisible();
     await expect(ask).toHaveCount(0);
     await expect(page.getByTestId("compose-send")).toBeVisible();
@@ -862,7 +896,7 @@ test("a send with no message asks first, in Send's row: Send or Cancel, ⌘↵ t
     await page.getByTestId("compose-send").click();
     await page.getByTestId("compose-empty-send").click();
     await expect(sending).toBeVisible();
-    await sending.getByTestId("snack-action").click();
+    await sending.getByTestId("held-undo").click();
     await page.getByTestId("compose-discard").click();
     await focusList(page);
     await page.keyboard.press("c");
@@ -892,6 +926,34 @@ test("Undo send from the pinned card: back on the card, with the reader where it
   await page.locator("[data-testid=snack]").filter({ hasText: "Sending…" }).getByTestId("snack-action").click();
   await expect(card.getByTestId("compose-body")).toHaveText("Pinned words");
   await expect(page.getByTestId("reader-subject")).toHaveText(reading!);
+});
+
+test("Undo send of a new message (plan 182): it shows in its pane at once, under its subject; once gone, its conversation opens on the copy", async ({ app: page, server }) => {
+  const dev = { clientId: "setup", origin: "dev" as const };
+  await server.backend.server.invoke("settings.update", { undoSend: true }, dev);
+  await page.reload();
+  await page.locator("[data-ready]").waitFor();
+  await focusList(page);
+  await page.keyboard.press("c");
+  await addRecipients(page, "compose-to", "ana@example.com");
+  await page.getByTestId("compose-subject").fill("Quarterly plan");
+  await page.getByTestId("compose-body").click();
+  await page.keyboard.type("Here is the plan.");
+  await page.keyboard.press("ControlOrMeta+Enter");
+  const view = page.getByTestId("held-view");
+  const held = view.getByTestId("held-message");
+  await expect(view).toBeVisible();
+  await expect(view.getByTestId("held-title")).toHaveText("Quarterly plan");
+  await expect(held.frameLocator("iframe").locator("body")).toContainText("Here is the plan.");
+  await expect(held.getByTestId("held-status")).toHaveText(/Sending in [1-5]s/);
+  await expect(page.locator("[data-testid=snack]").filter({ hasText: "Sending…" })).toHaveCount(0);
+  await axeBothModes(page, "[data-testid=held-view]");
+  await expect.poll(async () => (await server.backend.store.scheduled.list()).length).toBe(1);
+  const { draftId } = (await server.backend.store.scheduled.list())[0]!;
+  await server.backend.server.invoke("scheduled.reschedule", { draftId, sendAt: E2E_NOW - 1 }, dev);
+  await expect(view).toHaveCount(0);
+  await expect(page.getByTestId("reader-subject")).toHaveText("Quarterly plan");
+  await expect(page.getByTestId("message").last().frameLocator("iframe").locator("body")).toContainText("Here is the plan.");
 });
 
 test("the To row: Tab goes To, Subject, text; Cc and Bcc by key or button; the sending account shows (plan 158)", async ({ app: page }) => {

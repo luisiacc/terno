@@ -86,6 +86,8 @@ export interface AppState {
   readerOpen: boolean;
 
   compose: ComposeState | null;
+  /** plan 182: a new message just sent, shown in the pane (its draft id) through its Undo window, until it opens as its conversation */
+  heldView: number | null;
   /** an inline draft to focus (set when one is opened explicitly; seq makes each request distinct) */
   draftFocus: { key: string; target: "body" | "to" | "ai"; seq: number; readonly leased?: true; readonly move?: import("~/lib/compose-focus-move").InlineFocusMove } | null;
   /** a conversation's draft opened explicitly (from the strip): shown inline instead of its newest one */
@@ -144,6 +146,7 @@ export const useApp = create<AppState>(() => ({
   // List starts on its list: only an explicit open (or a reload on a conversation) shows one (plan 24, R7)
   readerOpen: false,
   compose: null,
+  heldView: null,
   draftFocus: null,
   draftShown: null,
   dialog: null,

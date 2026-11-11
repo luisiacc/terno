@@ -16,6 +16,7 @@ import { flushDeferredRefresh, followedRename, listKey, refreshPolicy, soloSearc
 import { noteOpen } from "~/lib/reminders";
 import { closePreviewRow } from "~/state/action-preview";
 import { backToDigest } from "~/state/today";
+import { setHeldThreadOpener } from "~/lib/held-sends";
 
 export type { Page };
 
@@ -23,9 +24,10 @@ const EMPTY: ReadonlySet<number> = new Set();
 
 export const listLayout = (): boolean => useAppearance.getState().layout === "list";
 
-export function pageOf(s: Pick<AppState, "compose" | "readerOpen" | "selectedId">, layout = useAppearance.getState().layout): Page {
+export function pageOf(s: Pick<AppState, "compose" | "heldView" | "readerOpen" | "selectedId">, layout = useAppearance.getState().layout): Page {
   if (layout !== "list") return "list";
-  return s.compose ? "compose" : s.readerOpen && s.selectedId !== null ? "thread" : "list";
+  // plan 182: a new message just sent stays on its page through its Undo window
+  return s.compose || s.heldView !== null ? "compose" : s.readerOpen && s.selectedId !== null ? "thread" : "list";
 }
 
 export const currentPage = (): Page => pageOf(getApp());
@@ -50,10 +52,14 @@ export function openThread(id: number): void {
   const s = getApp();
   // plan 87: the user opened it (a due reminder ends after the dwell)
   noteOpen(id);
-  if (!listLayout()) return void setApp({ selectedId: id, readerOpen: true });
+  // plan 182: a new message's sent view gives way to what was opened (its own conversation, once it went)
+  if (!listLayout()) return void setApp({ selectedId: id, readerOpen: true, heldView: null });
   if (s.compose) leaveNewDraft();
-  setApp({ selectedId: id, readerOpen: true, anchorId: id, ...(s.checked.size || s.scope ? { checked: EMPTY, scope: null } : {}) });
+  setApp({ selectedId: id, readerOpen: true, anchorId: id, heldView: null, ...(s.checked.size || s.scope ? { checked: EMPTY, scope: null } : {}) });
 }
+
+// plan 182: a new message's pane opens the conversation it started, once it went
+setHeldThreadOpener(openThread);
 
 /** focus goes back to the list once it shows again (Esc, Back, an action that took the thread away; not a sidebar click) */
 let restoreFocus = false;
@@ -64,12 +70,13 @@ let returnTo: HTMLElement | null = null;
 export function closePage(options: { focus?: boolean } = {}): void {
   const s = getApp();
   // what's open, not what the page says: the cursor may already be gone (the list's last thread just archived)
-  if (!listLayout() || (!s.readerOpen && !s.compose)) return;
+  if (!listLayout() || (!s.readerOpen && !s.compose && s.heldView === null)) return;
   if (options.focus) restoreFocus = true;
   // an r / a / f still waiting for its conversation opens nothing once the page is gone (no draft, no focus later)
   supersedeCompose();
   if (s.draftFocus) setApp({ draftFocus: null });
   if (s.compose) leaveNewDraft();
+  if (getApp().heldView !== null) setApp({ heldView: null });
   if (getApp().readerOpen) setApp({ readerOpen: false });
 }
 
@@ -94,7 +101,7 @@ useApp.subscribe((s, p) => {
   const renamed = s.folder !== p.folder && followedRename.from === p.folder && followedRename.to === s.folder;
   // a folder of the same account is another list too (plan 68, Codex R5)
   const otherList = !renamed && (s.query !== p.query || s.view !== p.view || s.categoryId !== p.categoryId || s.accountId !== p.accountId || s.folder !== p.folder || s.gmailTab !== p.gmailTab || s.reviewCategoryId !== p.reviewCategoryId || s.reminders !== p.reminders || s.followups !== p.followups || s.today !== p.today || soloSearch(s) !== soloSearch(p));
-  if (otherList && (s.readerOpen || s.compose) && listLayout()) closePage();
+  if (otherList && (s.readerOpen || s.compose || s.heldView !== null) && listLayout()) closePage();
 });
 // Split → List lands on the list (the cursor kept): Split's open thread is its cursor, not a page.
 useAppearance.subscribe((s, p) => {
@@ -174,7 +181,7 @@ export function installPage(): () => void {
       }
     }
   };
-  const offApp = useApp.subscribe((s, p) => (s.compose !== p.compose || s.readerOpen !== p.readerOpen || s.selectedId !== p.selectedId ? onChange() : undefined));
+  const offApp = useApp.subscribe((s, p) => (s.compose !== p.compose || s.heldView !== p.heldView || s.readerOpen !== p.readerOpen || s.selectedId !== p.selectedId ? onChange() : undefined));
   const offLayout = useAppearance.subscribe((s, p) => (s.layout !== p.layout ? onChange() : undefined));
   const onPop = (e: PopStateEvent) => h.onPop(e.state, listKey());
   window.addEventListener("popstate", onPop);

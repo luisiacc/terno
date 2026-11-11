@@ -23,7 +23,9 @@ import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/po
 import { reminderShort, useReminders, useRemindPopover } from "~/lib/reminders";
 import { installScrollHairline } from "~/lib/scroll-hairline";
 import { cancelReaderScroll, keepInView, revealMessage } from "~/lib/reader-scroll";
-import { takeHeldSent, takeSent } from "~/lib/sent-reveal";
+import { takeSent } from "~/lib/sent-reveal";
+import { OpenHead, Recipients } from "./message-head";
+import { HeldMessages } from "./held-message";
 import { Expand } from "./expand";
 import { DraftSlot, draftTitle } from "./inline-draft";
 import { bottomInset, usePinnedInset } from "~/lib/pinned-draft-state";
@@ -392,16 +394,6 @@ function Reasons({ title, reasons, hint }: { title: string; reasons: Reason[]; h
 
 
 /** Who a message went to: "To: …" and, when there are any, "· Cc: …" (one truncated line). */
-function Recipients({ m, className }: { m: MessageDetail; className?: string }) {
-  const people = (list: typeof m.to) => list.map((a) => a.name || a.email).join(", ");
-  return (
-    <span data-testid="recipients" className={cn("block truncate text-xs text-muted-foreground", className)}>
-      {t("reader.to")} {people(m.to)}
-      {m.cc.length > 0 && ` · ${t("reader.cc")} ${people(m.cc)}`}
-    </span>
-  );
-}
-
 /** That a header opens and closes: the quoted text's chevron, on the dates' edge. The button says it (aria-expanded). */
 const Disclosure = ({ open }: { open: boolean }) => <ChevronRight aria-hidden data-testid="message-disclosure" className={cn("size-3.5 shrink-0 self-center text-muted-foreground", open && "rotate-90")} />;
 
@@ -442,18 +434,17 @@ function Message({ m, threadId, expanded, onToggle, icons, person, headless, sol
             )}
           >
             {expanded ? (
-              <>
-                <SenderAvatar name={name} email={m.from.email} icon={icons} person={person} className="mt-px size-(--avatar-message) text-2xs" />
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-baseline gap-2">
-                    <span className="type-sender-name min-w-0 truncate">{name}</span>
-                    {m.from.name && <span className="min-w-0 flex-1 basis-0 truncate text-xs text-muted-foreground">{m.from.email}</span>}
-                    <span className="ml-auto shrink-0 text-xs text-muted-foreground tabular">{date}</span>
-                    {!solo && <Disclosure open />}
-                  </span>
-                  <Recipients m={m} className="mt-px pr-8" />
-                </span>
-              </>
+              <OpenHead
+                from={m.from}
+                to={m.to}
+                cc={m.cc}
+                icon={icons}
+                person={person}
+                trailing={<>
+                  <span className="ml-auto shrink-0 text-xs text-muted-foreground tabular">{date}</span>
+                  {!solo && <Disclosure open />}
+                </>}
+              />
             ) : (
               <>
                 <SenderAvatar name={name} email={m.from.email} icon={icons} person={person} className="size-(--avatar-collapsed) text-2xs" />
@@ -507,7 +498,7 @@ function useFold(messages: MessageDetail[]) {
     const unseen = messages.filter((m) => !shown.has(m.id));
     if (!unseen.length) return;
     // a reply just sent from here: the reader goes to it, open (newer mail can follow it, never folds it away)
-    const sent = takeSent(unseen.map((m) => m.id)) ?? takeHeldSent(unseen);
+    const sent = takeSent(unseen.map((m) => m.id));
     setShown(new Map([...shown, ...unseen.map((m) => [m.id, m.id === sent || opensAt(m)] as const)]));
     if (sent !== null) revealMessage(sent);
   }, [messages]);
@@ -1065,6 +1056,8 @@ function Thread({ detail, account, cats, summaryShown }: { detail: ThreadDetail;
         {summaryShown && <ThreadSummary detail={detail} />}
         <ThreadAttachments messages={detail.messages} />
         <Conversation threadId={detail.thread.id} messages={detail.messages} fold={fold} icons={iconsFor(detail.thread)} people={detail.thread.person === true} headless={cardHeader} />
+        {/* plan 182: what was just sent from here, where its copy will be, through its Undo window */}
+        <HeldMessages threadId={detail.thread.id} messages={detail.messages} icons={iconsFor(detail.thread)} />
       </div>
     </MessageMenu>
   );

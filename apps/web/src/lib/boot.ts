@@ -38,6 +38,7 @@ import { applyForwards, loadForwards, shareLocale } from "~/lib/forwards";
 import { summaryReady } from "~/lib/summaries";
 import { loadDraftingEnabled } from "~/lib/ai-draft-state";
 import { applyScheduled, loadScheduled } from "~/lib/scheduled";
+import { heldWent, settleOverdue } from "~/lib/held-sends";
 
 export async function boot(): Promise<void> {
   startDiag();
@@ -144,6 +145,9 @@ export async function boot(): Promise<void> {
     const pins = loadPins().catch((error) => console.warn("[pins] could not load", error));
     // plan 94: scheduled sends (the strip, the reader's line; drafts scheduled elsewhere leave the composers)
     client.on("scheduled", applyScheduled);
+    // plan 182: a held send went: its card gives way to the copy
+    client.on("scheduledSent", heldWent);
+    client.onAttach(settleOverdue);
     void loadScheduled().catch((error) => console.warn("[scheduled] could not load", error));
     // plan 116: forwards (the notice with Cancel, the reader's line, the cap's question)
     client.on("forwards", applyForwards);

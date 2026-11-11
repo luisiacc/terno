@@ -20,23 +20,6 @@ export function revealSent(messageId: number): void {
   else awaiting.set(messageId, now + WAIT_MS);
 }
 
-/** Plan 158: a send held for its Undo has no message yet: the reader goes to the copy that arrives in this conversation. */
-const awaitingIn = new Map<number, number>();
-export function revealHeldSend(threadId: number, holdMs: number): void {
-  const now = performance.now();
-  for (const [id, until] of awaitingIn) if (until <= now) awaitingIn.delete(id);
-  awaitingIn.set(threadId, now + holdMs + WAIT_MS);
-}
-export const forgetHeldSend = (threadId: number): void => void awaitingIn.delete(threadId);
-/** The newest of these just-shown messages, if it's the copy of a held send (once). */
-export function takeHeldSent(messages: readonly { id: number; threadId: number; isSent: boolean }[]): number | null {
-  const sent = messages.findLast((m) => m.isSent && awaitingIn.has(m.threadId));
-  if (!sent) return null;
-  const until = awaitingIn.get(sent.threadId)!;
-  awaitingIn.delete(sent.threadId);
-  return until > performance.now() ? sent.id : null;
-}
-
 /** The newest of these just-shown messages that a send asked to reveal (each once). */
 export function takeSent(ids: number[]): number | null {
   let found: number | null = null;
