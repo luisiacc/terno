@@ -35,7 +35,7 @@ export function DevTab({ settings, update }: { settings: AppSettings; update: Se
         <SettingsRow label={t("settings.dev.aiLook")} hint={t("settings.dev.aiLook.hint")}>
           {({ id: _id, "aria-describedby": described }) => (
             <Select value={look} onValueChange={(v) => setAiLook(v as AiLook)} items={AI_LOOKS.map((l) => ({ value: l, label: t(`settings.dev.aiLook.${l}`) }))}>
-              <SelectTrigger aria-label={t("settings.dev.aiLook")} aria-describedby={described} size="sm" className="w-32" data-testid="dev-ai-look">
+              <SelectTrigger aria-label={t("settings.dev.aiLook")} aria-describedby={described} size="sm" className="w-40" data-testid="dev-ai-look">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

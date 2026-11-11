@@ -48,21 +48,27 @@ const CURRENT: AiLookSpec = {
 /** roomier rows: the owner's airy over dense */
 const ROOMY_HEADER = "flex min-h-11 items-center gap-2 py-3 text-sm text-muted-foreground";
 
+const WHISPER: AiLookSpec = {
+  ...CURRENT,
+  card: "ai-whisper",
+  inset: "px-5",
+  bottom: "pb-4",
+  header: ROOMY_HEADER,
+  trigger: "h-11 px-5",
+  glyph: "size-[1.15em] shrink-0 text-primary",
+  tools: "header",
+  copyIcon: true,
+  after: "mb-5",
+};
+
 export const AI_LOOK_SPECS: Record<AiLook, AiLookSpec> = {
   current: CURRENT,
   // 1 · a breath of the accent instead of a line: no edge, no shadow, the glyph in the accent
-  whisper: {
-    ...CURRENT,
-    card: "ai-whisper",
-    inset: "px-5",
-    bottom: "pb-4",
-    header: ROOMY_HEADER,
-    trigger: "h-11 px-5",
-    glyph: "size-[1.15em] shrink-0 text-primary",
-    tools: "header",
-    copyIcon: true,
-    after: "mb-5",
-  },
+  whisper: WHISPER,
+  // 1b · Whisper in dark as it is (the owner liked it); in light, a neutral grey from the palette instead of the accent's blue
+  whisperTint: { ...WHISPER, card: "ai-whisper-tint" },
+  whisperMuted: { ...WHISPER, card: "ai-whisper-muted" },
+  whisperField: { ...WHISPER, card: "ai-whisper-field" },
   // 2 · Mail's banner: no box, hairlines above and below, every line on the conversation's own left edge
   ledger: {
     ...CURRENT,

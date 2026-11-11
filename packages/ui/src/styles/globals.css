@@ -604,6 +604,29 @@
   border-radius: calc(var(--card-radius) + 4px);
   background-color: color-mix(in oklab, var(--primary) 5%, transparent);
 }
+/* 1b · Whisper with a neutral fill in light (the owner: the accent's blue there didn't sit right); dark keeps the accent's
+   wash. Each fill is a surface text already reads on (contrast.ts): the tint (Settings' groups), muted, the field's ink */
+@utility ai-whisper-tint {
+  border-radius: calc(var(--card-radius) + 4px);
+  background-color: var(--tint);
+  &:is(.dark *) {
+    background-color: color-mix(in oklab, var(--primary) 5%, transparent);
+  }
+}
+@utility ai-whisper-muted {
+  border-radius: calc(var(--card-radius) + 4px);
+  background-color: var(--muted);
+  &:is(.dark *) {
+    background-color: color-mix(in oklab, var(--primary) 5%, transparent);
+  }
+}
+@utility ai-whisper-field {
+  border-radius: calc(var(--card-radius) + 4px);
+  background-color: var(--field);
+  &:is(.dark *) {
+    background-color: color-mix(in oklab, var(--primary) 5%, transparent);
+  }
+}
 /* 2 · Ledger: Mail's banner, a hairline above and below, no box, on the conversation's edge */
 @utility ai-ledger {
   border-block: var(--hairline-w) solid var(--hairline);
