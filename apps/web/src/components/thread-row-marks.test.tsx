@@ -151,9 +151,10 @@ describe("plan 187: the preview's lines", () => {
     expect(marks).not.toBeNull();
     expect(marks.nextElementSibling).toBe(subjectLine.querySelector("[data-testid=account-label]"));
     expect(subjectLine.lastElementChild!.getAttribute("data-testid")).toBe("account-label");
-    // the owner: the subject takes the preview's quiet ink; unread keeps its weight
+    // the owner: the subject reads as the preview did, its quiet ink and its weight, unread too (the thread is unread)
     expect(subject.className).toContain("text-muted-foreground");
-    expect(subject.className).toContain("type-row-subject-strong");
+    expect(subject.className).toContain("[font-weight:var(--type-row-snippet-weight)]");
+    expect(subject.className).not.toContain("type-row-subject-strong");
     // two lines: who, then what about (classic's unread dot is a sibling span)
     expect([...subjectLine.parentElement!.children].filter((c) => c.tagName === "DIV")).toHaveLength(2);
   });

@@ -377,9 +377,10 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
     );
   // a small tag at the row's own scale: its line box is no taller than the subject's, so no line moves for it
   const draft = hasDraft && <span data-testid="row-draft" className="shrink-0 text-xs leading-none font-medium text-draft-foreground">{t("list.draft")}</span>;
-  // the row's own ink (the open row's on its fill), so sender and subject never drift apart; plan 187, the owner: with no
-  // preview the subject is in the preview's quiet ink (unread keeps its weight)
-  const subjectInk = cn(thread.unread ? "type-row-subject-strong" : "type-row-subject", noPreview && !line && quiet);
+  // the row's own ink (the open row's on its fill), so sender and subject never drift apart. Plan 187, the owner: with no
+  // preview the subject reads as the preview did, its quiet ink and its weight (read or unread), at the subject's size;
+  // unread still shows by the sender's weight, the dot and the date
+  const subjectInk = noPreview && !line ? cn("type-row-subject [font-weight:var(--type-row-snippet-weight)]", quiet) : thread.unread ? "type-row-subject-strong" : "type-row-subject";
   // its own line: only a very long subject truncates
   const subject = (
     <span data-testid="row-subject" className={cn("min-w-0 truncate", subjectInk)}>

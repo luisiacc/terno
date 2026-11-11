@@ -161,6 +161,19 @@ test.describe("in every design", { tag: "@design" }, () => {
       await reload(page);
       const none = await page.evaluate(() => document.querySelectorAll("[data-testid=row-snippet]").length);
       expect(none).toBe(0);
+      // the owner: the subject in the preview's ink and weight, unread too, at the subject's own size
+      const unread = page.locator("[data-testid=thread-row][data-unread]").first().getByTestId("row-subject");
+      const muted = await page.evaluate(() => {
+        const probe = document.createElement("span");
+        probe.className = "text-muted-foreground";
+        document.body.append(probe);
+        const c = getComputedStyle(probe).color;
+        probe.remove();
+        return c;
+      });
+      await expect(unread).toHaveCSS("color", muted);
+      await expect(unread).toHaveCSS("font-weight", String(d.type.rowSnippet.weight));
+      await expect(unread).toHaveCSS("font-size", `${parseFloat(d.type.rowSubject.size) * 16}px`);
       const row = page.locator("[data-testid=thread-row]", { has: page.getByTestId("row-marks") }).filter({ has: page.getByTestId("account-label") }).first();
       const subject = (await row.getByTestId("row-subject").boundingBox())!;
       for (const id of ["row-marks", "account-label"]) {

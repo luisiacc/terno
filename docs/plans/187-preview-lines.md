@@ -90,7 +90,7 @@ No new work per row: one prop, the same fixed-height virtualizer (heights stay u
 
 > when 'no preview' option is selected the color of the subject should be the color of what the preview would be
 
-With no preview, the subject line is drawn in the preview's quiet ink (`text-muted-foreground`, as `RowSnippet` is, the open row included). An unread subject keeps its stronger weight, so unread still reads by weight, the dot and the date.
+With no preview, the subject line is drawn in the preview's quiet ink (`text-muted-foreground`, as `RowSnippet` is, the open row included).
 
 ## Revisions after the Codex review (plan)
 
@@ -107,3 +107,9 @@ With no preview, the subject line is drawn in the preview's quiet ink (`text-mut
 1. `thread-list-work.test.tsx` changed density through `useApp`'s settings; the list now reads the painted appearance (`useAppearance`), so the test goes through it, restores it, and also checks a change of the preview's lines recomputes every position (a line less, then back).
 2. The Appearance baselines (every design's `design-settings-appearance`, `themes.spec`'s light and dark, Spanish) gain the Preview row; looked at and updated. (`es-settings-general.png` was already stale before this series and is left as it was.)
 3. The two-line and no-preview checks were class strings in jsdom. `designs.spec.ts` now measures them in the browser in every design (classic, avatar, large avatar): two lines are two leadings tall and clamped, the marks and the account centred on the preview's first line; with none, no preview and both centred on the subject's line.
+
+## Follow-up: the subject reads as the preview did (the owner, 2026-11-11)
+
+> the subject line when no preview should have this style, same size as now, but should have this color and font weight
+
+With no preview the subject takes the preview's weight as well as its ink (`--type-row-snippet-weight`), read or unread, at the subject's own size, leading and tracking. Unread still shows by the sender's weight, the dot and the date. `designs.spec.ts` checks an unread subject's computed color, weight and size in every design.
