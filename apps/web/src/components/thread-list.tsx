@@ -82,12 +82,12 @@ const TOP_HEADING_ID = { pinned: "inbox-pinned-label", reminders: "inbox-reminde
 
 /**
  * Plans 87, 177: what the Inbox's rows under it are: Pinned, Reminders and, once either leads, the rest of the Inbox
- * under its own name (the account's, in one account's Inbox). Words only, in Today's headings' style, and how many in
+ * under its own name (the account's, in one account's Inbox). Words only, at Today's headings' size in the softer ink (the owner), and how many in
  * the quiet ink (the owner). Each row says what it is to a screen reader itself.
  */
 function TopHeading({ kind, top, name, count }: { kind: TopSectionKind; top: number; name: string; count: string | null }) {
   return (
-    <div aria-hidden data-testid={TOP_HEADING_ID[kind]} className="absolute inset-x-0 flex items-end gap-1 px-5 pb-1 text-sm font-medium text-foreground" style={{ top, height: TOP_LABEL }}>
+    <div aria-hidden data-testid={TOP_HEADING_ID[kind]} className="absolute inset-x-0 flex items-end gap-1 px-5 pb-1 text-sm font-medium text-foreground-soft" style={{ top, height: TOP_LABEL }}>
       <span className="min-w-0 truncate">{name}</span>
       {count !== null && <span data-testid="inbox-section-count" className="shrink-0 font-normal text-muted-foreground tabular-nums">({count})</span>}
     </div>
