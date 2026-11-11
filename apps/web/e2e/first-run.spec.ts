@@ -91,13 +91,13 @@ test.describe("first-run setup", () => {
     await expect(page.getByTestId("first-run-layout-split")).toHaveAttribute("aria-checked", "true");
 
     // plan 187: with Split, how much preview the rows show, at once in the preview (Lumen: 76 px rows, 18 px a line; none
-    // keeps 6 px between the sender and the subject)
+    // keeps 4 px between the sender and the subject)
     const lines = page.getByTestId("first-run-preview-lines");
     const row = preview(page).getByTestId("thread-row").first();
     await expect(page.getByTestId("first-run-preview-1")).toHaveAttribute("aria-pressed", "true");
     await expect(row).toHaveCSS("height", "76px");
     await page.getByTestId("first-run-preview-0").click();
-    await expect(row).toHaveCSS("height", "64px");
+    await expect(row).toHaveCSS("height", "62px");
     await expect(preview(page).getByTestId("row-snippet")).toHaveCount(0);
     await expect.poll(async () => (await settings(server)).previewLines).toBe(0);
     await page.getByTestId("first-run-preview-2").click();

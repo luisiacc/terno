@@ -38,8 +38,8 @@ describe("plan 187: the preview's lines and a list's row height", () => {
 
   it("the table in the plan", () => {
     const h = (id: string, lines: 0 | 1 | 2) => rowHeight(designById(id), { compact: false, wide: false, results: false, lines });
-    expect([h("lumen", 0), h("lumen", 1), h("lumen", 2)]).toEqual([64, 76, 94]);
-    expect([h("graphite", 0), h("graphite", 1), h("graphite", 2)]).toEqual([70, 84, 104]);
-    expect([h("macos", 0), h("macos", 1), h("macos", 2)]).toEqual([52, 64, 82]);
+    expect([h("lumen", 0), h("lumen", 1), h("lumen", 2)]).toEqual([62, 76, 94]);
+    expect([h("graphite", 0), h("graphite", 1), h("graphite", 2)]).toEqual([68, 84, 104]);
+    expect([h("macos", 0), h("macos", 1), h("macos", 2)]).toEqual([50, 64, 82]);
   });
 });

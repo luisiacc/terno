@@ -496,7 +496,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
     <>
       {firstLine}
       {/* (with no preview, NO_PREVIEW_GAP above it: two lines read as one block otherwise, the owner) */}
-      <div className={cn("flex min-w-0 items-baseline gap-1.5", noPreview && !answer && "mt-1.5")}>
+      <div className={cn("flex min-w-0 items-baseline gap-1.5", noPreview && !answer && "mt-1")}>
         {subject}
         {draft}
         {noPreview && !answer && rowMarks}

@@ -41,11 +41,11 @@ Some lists use the preview line for something that is not the preview. They keep
 
 | Design | none | 1 line | 2 lines |
 | --- | --- | --- | --- |
-| Lumen | 64 | 76 | 94 |
-| Graphite | 70 | 84 | 104 |
-| Atelier | 64 | 76 | 94 |
-| Luma | 56 | 68 | 86 |
-| macOS | 52 | 64 | 82 |
+| Lumen | 62 | 76 | 94 |
+| Graphite | 68 | 84 | 104 |
+| Atelier | 62 | 76 | 94 |
+| Luma | 54 | 68 | 86 |
+| macOS | 50 | 64 | 82 |
 
 `designs.test.ts`: with no preview, every design's two remaining lines still have 5 px above and below and the avatar still fits (`avatar.row + 16 ≤ height`).
 
@@ -118,4 +118,4 @@ With no preview the subject takes the preview's weight as well as its ink (`--ty
 
 > lets have a bit more spacing between the sender and the subject when there is no preview, its look super close now
 
-With no preview the subject's line sits `NO_PREVIEW_GAP` (6 px, `mt-1.5`) below the sender's, and `rowHeight` adds the same 6 px, so the padding above and below is a one-line row's (the table above includes it). `designs.spec.ts` measures the gap in every design.
+With no preview the subject's line sits `NO_PREVIEW_GAP` (6 px at first; 4 px, `mt-1`, after the owner's "reduce the gap by 2px") below the sender's, and `rowHeight` adds the same, so the padding above and below is a one-line row's (the table above includes it). `designs.spec.ts` measures the gap in every design.

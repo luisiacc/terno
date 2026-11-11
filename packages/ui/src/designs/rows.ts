@@ -4,10 +4,10 @@ import type { DesignDefinition } from "./types";
 export type RowLines = 0 | 1 | 2;
 
 /**
- * Plan 187 (the owner): with no preview, the sender's and the subject's lines sit this far apart (the row's `mt-1.5`),
+ * Plan 187 (the owner): with no preview, the sender's and the subject's lines sit this far apart (the row's `mt-1`),
  * and the row is that much taller, so its padding is a one-line row's.
  */
-export const NO_PREVIEW_GAP = 6;
+export const NO_PREVIEW_GAP = 4;
 
 /** A rem leading in px (the root is 16 px; designs.test.ts keeps rowSnippet's leading in rem). */
 const remPx = (rem: string) => parseFloat(rem) * 16;
