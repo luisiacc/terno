@@ -770,7 +770,7 @@ test.describe("Part B: resizable panes", () => {
       await moreClosed(page);
       // two neighbors under an open account (plan 67): its Inbox selected, its Sent hovered
       const account = page.locator('[data-testid^="nav-account-"]').first();
-      await account.click();
+      await account.dblclick();
       const id = (await account.getAttribute("data-testid"))!.slice("nav-account-".length);
       const [selected, hovered] = [page.getByTestId(`nav-folder-${id}-inbox`), page.getByTestId(`nav-folder-${id}-sent`)];
       await expect(selected).toHaveAttribute("data-active", "true");

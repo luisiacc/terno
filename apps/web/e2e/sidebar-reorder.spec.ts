@@ -94,7 +94,7 @@ test.describe("sorting the sidebar (plan 169)", () => {
       const people = await shown(accounts);
       const open = people[0]!;
       const row = page.getByTestId(`nav-account-${open}`);
-      await row.click();
+      await row.dblclick();
       await expect(row).toHaveAttribute("aria-expanded", "true");
       const folder = accounts.locator(`[data-sort-id="${open}"] [data-testid^="nav-"]:not([data-sort-handle])`).first();
       await drag(page, folder, 60, { release: false });

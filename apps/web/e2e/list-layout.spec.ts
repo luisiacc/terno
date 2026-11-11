@@ -581,7 +581,7 @@ test.describe("the List layout: what stays put", () => {
     await scenario("plan 68 (Codex R5): writing in one folder, choosing another of the same account shows that list; the draft is kept", async () => {
       await fresh();
       const acme = sqlDb(server.backend.store).get<{ id: number }>("SELECT id FROM accounts WHERE display_name = 'Acme Studio'")!.id;
-      await page.getByTestId(`nav-account-${acme}`).click();
+      await page.getByTestId(`nav-account-${acme}`).dblclick();
       await page.getByTestId(`nav-own-${acme}-Label_21`).click();
       await focusList(page);
       await page.keyboard.press("c");

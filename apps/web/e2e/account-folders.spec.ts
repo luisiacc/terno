@@ -24,15 +24,21 @@ const selected = (page: Page) => page.locator("#app-sidebar [aria-current=page]"
 const count = (l: Locator) => l.locator("[data-slot=nav-count]");
 
 test.describe("accounts open into their folders", () => {
-  test("a click opens an account into its Inbox; another closes it; clicking an open one closes it and you stay", { tag: "@variant" }, async ({ app: page, design }) => {
+  test("a click selects an account and leaves it closed; a click on it then, a double click or its chevron opens it; a click on the open one you're in closes it (plan 67, the owner, 2026-11-10)", { tag: "@variant" }, async ({ app: page, design }) => {
     const [a, b] = await accountIds(page);
     await expect(group(page, a!)).toHaveAttribute("inert", "");
+    // one click: its Inbox, and it stays closed
+    await row(page, a!).click();
+    await expect.poll(() => listFor(page)).toEqual(["inbox", a, null, null, null, ""]);
+    await expect(row(page, a!)).toHaveAttribute("aria-expanded", "false");
+    await expect(row(page, a!)).toHaveAttribute("aria-current", "page");
+    await expect(selected(page)).toHaveCount(1);
+    // again, now that it's selected: it opens
     await row(page, a!).click();
     await expect(row(page, a!)).toHaveAttribute("aria-expanded", "true");
     for (const v of ["inbox", "sent", "archive", "spam", "trash"]) await expect(child(page, a!, v)).toBeVisible();
     // Starred and All Mail are cross-account: at the top only
     await expect(group(page, a!).locator('[data-testid$="-starred"], [data-testid$="-all"]')).toHaveCount(0);
-    await expect.poll(() => listFor(page)).toEqual(["inbox", a, null, null, null, ""]);
     await expect(selected(page)).toHaveCount(1);
     await expect(child(page, a!, "inbox")).toHaveAttribute("aria-current", "page");
     const name = (await row(page, a!).textContent())!.trim();
@@ -44,19 +50,30 @@ test.describe("accounts open into their folders", () => {
     await expect(selected(page)).toHaveCount(1);
     await expect(child(page, a!, "sent")).toHaveAttribute("aria-current", "page");
 
-    // another account: the first closes
-    await row(page, b!).click();
+    // another account, by double click: it opens at its Inbox, and the first closes
+    await row(page, b!).dblclick();
+    await expect(row(page, b!)).toHaveAttribute("aria-expanded", "true");
     await expect(row(page, a!)).toHaveAttribute("aria-expanded", "false");
     await expect(group(page, a!)).toHaveAttribute("inert", "");
     await expect.poll(() => listFor(page)).toEqual(["inbox", b, null, null, null, ""]);
 
-    // the open one: it closes, you stay, and its row is what's selected
+    // the open one you're in: a click closes it, you stay, and its row is what's selected
     await child(page, b!, "trash").click();
     await row(page, b!).click();
     await expect(row(page, b!)).toHaveAttribute("aria-expanded", "false");
     await expect.poll(() => listFor(page)).toEqual(["trash", b, null, null, null, ""]);
     await expect(selected(page)).toHaveCount(1);
     await expect(row(page, b!)).toHaveAttribute("aria-current", "page");
+
+    // the chevron only opens and closes: you stay where you are
+    await page.getByTestId("nav-inbox").click();
+    const chevron = row(page, a!).locator("[data-slot=nav-disclosure]");
+    await chevron.click();
+    await expect(row(page, a!)).toHaveAttribute("aria-expanded", "true");
+    await expect.poll(() => listFor(page)).toEqual(["inbox", null, null, null, null, ""]);
+    await expect(page.getByTestId("nav-inbox")).toHaveAttribute("aria-current", "page");
+    await chevron.click();
+    await expect(row(page, a!)).toHaveAttribute("aria-expanded", "false");
   });
 
   test("the scope: top folders, counts, shortcuts, the palette, what's remembered", async ({ app: page, server }) => {
@@ -64,7 +81,7 @@ test.describe("accounts open into their folders", () => {
       const [a] = await accountIds(page);
       const unread = await count(row(page, a!)).textContent();
       expect(Number(unread)).toBeGreaterThan(0);
-      await row(page, a!).click();
+      await row(page, a!).dblclick();
       await expect(count(row(page, a!))).toHaveCount(0);
       await expect(count(child(page, a!, "inbox"))).toHaveText(unread!);
 
@@ -92,7 +109,7 @@ test.describe("accounts open into their folders", () => {
       const ARCHIVE = "in_inbox = 0 AND in_trash = 0 AND in_spam = 0";
       const SPAM = "in_spam = 1 AND in_trash = 0";
       expect(unread(ARCHIVE, a)).toBeGreaterThan(0);
-      await row(page, a!).click();
+      await row(page, a!).dblclick();
       await shown(child(page, a!, "archive"), unread(ARCHIVE, a));
       await shown(child(page, a!, "spam"), unread(SPAM, a));
       await expect(count(child(page, a!, "sent"))).toHaveCount(0);
@@ -110,7 +127,7 @@ test.describe("accounts open into their folders", () => {
     await scenario("shortcuts keep the scope for the folders an account lists; Starred goes to all accounts", async () => {
       await freshStart(page);
       const [a] = await accountIds(page);
-      await row(page, a!).click();
+      await row(page, a!).dblclick();
       await child(page, a!, "sent").click();
       await page.getByRole("listbox").focus();
       await page.keyboard.press("g");
@@ -139,7 +156,7 @@ test.describe("accounts open into their folders", () => {
     await scenario("the open account is remembered; the scope isn't", async () => {
       await freshStart(page);
       const [a] = await accountIds(page);
-      await row(page, a!).click();
+      await row(page, a!).dblclick();
       await page.reload();
       await page.locator("[data-ready]").waitFor();
       await expect(row(page, a!)).toHaveAttribute("aria-expanded", "true");
@@ -149,7 +166,7 @@ test.describe("accounts open into their folders", () => {
     await scenario("the palette's account command lands in its Inbox even from inside it (Codex R1)", async () => {
       await freshStart(page);
       const [a] = await accountIds(page);
-      await row(page, a!).click();
+      await row(page, a!).dblclick();
       await child(page, a!, "sent").click();
       const name = (await row(page, a!).textContent())!.replace(/\d+$/, "").trim();
       await page.keyboard.press("ControlOrMeta+k");
@@ -162,7 +179,7 @@ test.describe("accounts open into their folders", () => {
   test("the rows: a new category, the keyboard, drops, what's mounted, an update after focus left", async ({ app: page, server }) => {
     await scenario("a category made with the sidebar's + opens for all accounts, even from inside one (Codex R2)", async () => {
       const [a] = await accountIds(page);
-      await row(page, a!).click();
+      await row(page, a!).dblclick();
       await child(page, a!, "sent").click();
       await page.getByText("Categories").first().hover();
       await page.getByTestId("new-category").click();
@@ -186,6 +203,7 @@ test.describe("accounts open into their folders", () => {
       await page.keyboard.press("Tab");
       await expect(child(page, a!, "inbox")).not.toBeFocused();
 
+      // you're in it (Enter took you there): a click opens it
       await row(page, a!).click();
       await child(page, a!, "sent").focus();
       // a scripted click doesn't move focus: it's still on the folder as the folders close
@@ -195,7 +213,7 @@ test.describe("accounts open into their folders", () => {
     await scenario("dropping on a category still works with an account open; accounts and their folders take no drops", async () => {
       await freshStart(page);
       const [a] = await accountIds(page);
-      await row(page, a!).click();
+      await row(page, a!).dblclick();
       await expect(page.locator(`#app-sidebar [data-testid^="nav-account-"][data-drop-target], #app-sidebar [data-testid^="nav-folder-"][data-drop-target]`)).toHaveCount(0);
       const viajes = sqlDb(server.backend.store).get<{ id: number }>("SELECT id FROM categories WHERE name = 'Viajes'")!.id;
       const target = page.getByTestId(`nav-category-${viajes}`);
@@ -216,10 +234,10 @@ test.describe("accounts open into their folders", () => {
       await freshStart(page);
       const ids = await accountIds(page);
       await expect(page.locator('[data-testid^="nav-folder-"]')).toHaveCount(0);
-      await row(page, ids[0]!).click();
+      await row(page, ids[0]!).dblclick();
       await expect(page.locator('[data-testid^="nav-folder-"]')).toHaveCount(5);
       await expect(page.locator(`[data-testid^="nav-folder-${ids[0]}-"]`)).toHaveCount(5);
-      await row(page, ids[1]!).click();
+      await row(page, ids[1]!).dblclick();
       await expect(page.locator(`[data-testid^="nav-folder-${ids[0]}-"]`)).toHaveCount(0);
       await expect(page.locator('[data-testid^="nav-folder-"]')).toHaveCount(5);
     });
@@ -239,7 +257,7 @@ test.describe("accounts open into their folders", () => {
   test("accounts going away: where you are, and who keeps focus", async ({ app: page, server }) => {
     await scenario("an account that's removed stops being where you are", async () => {
       const [a, b] = await accountIds(page);
-      await row(page, b!).click();
+      await row(page, b!).dblclick();
       await child(page, b!, "sent").click();
       await server.backend.server.invoke("accounts.remove", { id: b }, ctx);
       await expect(row(page, b!)).toHaveCount(0);
@@ -251,7 +269,7 @@ test.describe("accounts open into their folders", () => {
       const ids = await accountIds(page);
       for (const id of ids.slice(2)) await server.backend.server.invoke("accounts.remove", { id }, ctx);
       await expect(page.locator('[data-testid^="nav-account-"]')).toHaveCount(2);
-      await row(page, ids[0]!).click();
+      await row(page, ids[0]!).dblclick();
       await child(page, ids[0]!, "sent").focus();
       await server.backend.server.invoke("accounts.remove", { id: ids[1] }, ctx);
       await expect(page.locator('[data-testid^="nav-account-"]')).toHaveCount(1);
@@ -271,7 +289,7 @@ test("with one account it opens to its Inbox, Sent, Archive, Spam and Trash like
   await expect(page.locator('[data-testid^="nav-account-"]')).toHaveCount(1);
   const only = row(page, ids[0]!);
   await expect(only).toHaveAttribute("aria-expanded", "false");
-  await only.click();
+  await only.dblclick();
   await expect(only).toHaveAttribute("aria-expanded", "true");
   await expect.poll(() => listFor(page)).toEqual(["inbox", ids[0], null, null, null, ""]);
   for (const v of ["inbox", "sent", "archive", "spam", "trash"]) await expect(child(page, ids[0]!, v)).toBeVisible();

@@ -19,7 +19,7 @@ const fake = vi.hoisted(() => {
 
 vi.mock("~/rpc/connection", () => ({ client: { call: () => Promise.resolve({ items: [], nextCursor: null }), on: () => () => {} } }));
 
-const { folderName, folderRows, folderRowSteps, goToAccount, goToFolder, reconcileAccounts, setOpenAccount, toggleAccount, useOpenAccount } = await import("./account-folders");
+const { folderName, folderRows, folderRowSteps, goToAccount, goToFolder, pressAccount, reconcileAccounts, setOpenAccount, toggleAccount, useOpenAccount } = await import("./account-folders");
 const { getApp, navigate, setApp, setFolders } = await import("~/state/app");
 const { currentScope, listKey } = await import("~/state/list");
 
@@ -76,6 +76,53 @@ describe("an account's row", () => {
     toggleAccount(2);
     expect(useOpenAccount.getState().id).toBeNull();
     expect(where()).toEqual({ view: "sent", accountId: 2, categoryId: null });
+  });
+});
+
+describe("a press on an account's row (plan 67, the owner, 2026-11-10)", () => {
+  it("a click selects a closed account: its Inbox, and it stays closed (the open one too)", () => {
+    setOpenAccount(1);
+    at({ view: "starred" });
+    pressAccount(2, "click");
+    expect(where()).toEqual({ view: "inbox", accountId: 2, categoryId: null });
+    expect(useOpenAccount.getState().id).toBe(1);
+  });
+
+  it("a click on the account you're in opens it, and you stay; once open, it closes", () => {
+    setOpenAccount(null);
+    at({ view: "sent", accountId: 2 });
+    pressAccount(2, "click");
+    expect(useOpenAccount.getState().id).toBe(2);
+    pressAccount(2, "click");
+    expect(useOpenAccount.getState().id).toBeNull();
+    expect(where()).toEqual({ view: "sent", accountId: 2, categoryId: null });
+  });
+
+  it("a double click: the first click selects, the second opens; never closes", () => {
+    setOpenAccount(null);
+    pressAccount(2, "click");
+    pressAccount(2, "double");
+    expect(useOpenAccount.getState().id).toBe(2);
+    expect(where()).toEqual({ view: "inbox", accountId: 2, categoryId: null });
+    pressAccount(2, "double");
+    expect(useOpenAccount.getState().id).toBe(2);
+  });
+
+  it("the chevron opens and closes it without moving you", () => {
+    setOpenAccount(null);
+    at({ view: "starred" });
+    pressAccount(2, "chevron");
+    expect(useOpenAccount.getState().id).toBe(2);
+    pressAccount(2, "chevron");
+    expect(useOpenAccount.getState().id).toBeNull();
+    expect(where()).toEqual({ view: "starred", accountId: null, categoryId: null });
+  });
+
+  it("Enter or Space toggles, as before: a closed one opens and lands in its Inbox", () => {
+    setOpenAccount(null);
+    pressAccount(2, "key");
+    expect(useOpenAccount.getState().id).toBe(2);
+    expect(where()).toEqual({ view: "inbox", accountId: 2, categoryId: null });
   });
 });
 

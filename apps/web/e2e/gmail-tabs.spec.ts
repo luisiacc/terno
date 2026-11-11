@@ -41,7 +41,7 @@ test.describe("Gmail's Promotions and Social (plan 86)", () => {
     await expect(row(page, promo)).toHaveCount(0);
     await expect(row(page, social)).toHaveCount(0);
 
-    await page.getByTestId(`nav-account-${personal}`).click();
+    await page.getByTestId(`nav-account-${personal}`).dblclick();
     const group = page.locator(`#account-folders-${personal}`);
     const order = () => group.locator("[data-testid^=nav-folder-], [data-testid^=nav-tab-]").evaluateAll((els) => els.map((el) => el.getAttribute("data-testid")));
     await expect.poll(order).toEqual([...["inbox", "sent", "archive", "spam", "trash"].map((v) => `nav-folder-${personal}-${v}`), `nav-tab-${personal}-promotions`, `nav-tab-${personal}-social`]);
@@ -66,7 +66,7 @@ test.describe("Gmail's Promotions and Social (plan 86)", () => {
     const members = new Set(sqlDb(server.backend.store).all<{ id: number }>("SELECT id FROM threads WHERE account_id = ? AND in_inbox = 1 AND tab = 1", personal).map((r) => r.id));
     expect((await rowIds(page)).every((id) => members.has(id))).toBe(true);
 
-    await page.getByTestId(`nav-account-${freelance}`).click();
+    await page.getByTestId(`nav-account-${freelance}`).dblclick();
     await expect(page.locator(`#account-folders-${freelance} [data-testid^=nav-tab-]`)).toHaveCount(0);
     expect((await new AxeBuilder({ page }).setLegacyMode().include("#app-sidebar").analyze()).violations).toEqual([]);
   });
@@ -79,7 +79,7 @@ test.describe("Gmail's Promotions and Social (plan 86)", () => {
     await expect(page.locator('[data-testid^="nav-account-"]')).toHaveCount(1);
     const only = page.getByTestId(`nav-account-${personal}`);
     await expect(only).toHaveAttribute("aria-expanded", "false");
-    await only.click();
+    await only.dblclick();
     const promotions = page.getByTestId(`nav-tab-${personal}-promotions`);
     await expect(promotions).toBeVisible();
     await promotions.click();
@@ -95,7 +95,7 @@ test.describe("Gmail's Promotions and Social (plan 86)", () => {
 
   test("a focused Promotions row that goes (the setting off elsewhere) hands focus to the account's Inbox row", async ({ app: page, server }) => {
     const personal = accountOf(server, "Personal");
-    await page.getByTestId(`nav-account-${personal}`).click();
+    await page.getByTestId(`nav-account-${personal}`).dblclick();
     const promotions = page.getByTestId(`nav-tab-${personal}-promotions`);
     await promotions.focus();
     await expect(promotions).toBeFocused();
@@ -107,7 +107,7 @@ test.describe("Gmail's Promotions and Social (plan 86)", () => {
   test("Move to Inbox takes a promotion out of its tab into the Inbox; Undo puts it back", async ({ app: page, server }) => {
     const personal = accountOf(server, "Personal");
     const { promo } = await seedTabs(page, server, personal);
-    await page.getByTestId(`nav-account-${personal}`).click();
+    await page.getByTestId(`nav-account-${personal}`).dblclick();
     await page.getByTestId(`nav-tab-${personal}-promotions`).click();
     await row(page, promo).click();
     await page.getByTestId("action-inbox").click();
@@ -126,7 +126,7 @@ test.describe("Gmail's Promotions and Social (plan 86)", () => {
 
   test("right-click in the Inbox → Move to Promotions; in Promotions → Move to Inbox", async ({ app: page, server }) => {
     const personal = accountOf(server, "Personal");
-    await page.getByTestId(`nav-account-${personal}`).click();
+    await page.getByTestId(`nav-account-${personal}`).dblclick();
     const first = rows(page).first();
     const id = Number(await first.getAttribute("data-thread-id"));
     await first.click({ button: "right" });
@@ -158,7 +158,7 @@ test.describe("Gmail's Promotions and Social (plan 86)", () => {
     await page.keyboard.press("Escape");
     await expect(row(page, promo)).toBeVisible();
     await expect(page.getByTestId("nav-inbox").locator("[data-slot=nav-count]")).toHaveText(String(inboxUnread(server)));
-    await page.getByTestId(`nav-account-${personal}`).click();
+    await page.getByTestId(`nav-account-${personal}`).dblclick();
     await expect(page.getByTestId(`nav-tab-${personal}-promotions`)).toHaveCount(0);
 
     await page.getByTestId("open-settings").click();

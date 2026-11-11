@@ -207,7 +207,7 @@ test.describe("focus on one account", () => {
       await freshStart(page);
       const acme = accountOf(server, "Acme Studio");
       const other = (await accountIds(page)).find((id) => id !== acme)!;
-      await page.getByTestId(`nav-account-${other}`).click();
+      await page.getByTestId(`nav-account-${other}`).dblclick();
       await expect(page.getByTestId(`nav-account-${other}`)).toHaveAttribute("aria-expanded", "true");
       await focusFromMenu(page, acme);
       await page.getByTestId("solo-folders").hover();

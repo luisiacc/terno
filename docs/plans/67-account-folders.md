@@ -139,3 +139,17 @@ The account's own folders: Gmail labels and IMAP folders, listed under its stand
 5. **A background account update could pull focus back to the sidebar.** The last focused account was remembered after focus left on purpose. Focus that leaves is now forgotten once the next frame shows the row is still in the page, and recovery runs only when rows actually went away (an account removed, or two accounts down to one). Test: e2e, with the account's IDs unchanged and an account update.
 
 **Superseded (2026-11-01):** rule 10 is reversed at the user's request: a lone account opens to its standard folders too (see plan 68's note of that date).
+
+**Changed (2026-11-10), at the owner's request:** clicking an account no longer opens it straight away.
+
+> when clicking on accounts
+> - do not expand when clicking only once, unless they click on the little caret directly
+> - do open on double click
+> - do open when clicking again once its selected already, no matter where they click in the item
+
+- **A click on a closed account** selects it: you go to its Inbox (or stay, if you're already in one of its places), and it stays closed. Any other open account stays open too.
+- **A click on the account you're in** opens it, wherever on the row it lands. Once it's open, a click there closes it and you stay where you are, as before.
+- **A double click** opens it. Its first click selects; the second only ever opens, so a double click never leaves it closed.
+- **A click right on the chevron** opens or closes it and nothing else: you stay where you are. The chevron's target is the glyph itself, with no padding, so a click on a short name beside it still selects.
+- **Enter and Space** toggle, as before (a keyboard press has no click count, so it's told apart from a click).
+- The rule lives in `pressAccount` (`lib/account-folders.ts`); the row only says what kind of press it was. Tests: unit (`account-folders.test.ts`), e2e (`account-folders.spec.ts`, every design), and the specs that opened an account with one click now double-click it.

@@ -86,7 +86,7 @@ test.describe("dragging mail onto a place does its action", () => {
     const freelance = accountOf(server, "Freelance");
     await server.backend.server.invoke("folders.favorite", { accountId: freelance, folder: null, view: "trash", on: true }, { clientId: "setup", origin: "dev" });
     // its places open, the list every account's
-    await page.getByTestId(`nav-account-${freelance}`).click();
+    await page.getByTestId(`nav-account-${freelance}`).dblclick();
     await page.getByTestId("nav-inbox").click();
     const trash = page.getByTestId(`nav-folder-${freelance}-trash`);
     await expect(trash).toBeVisible();

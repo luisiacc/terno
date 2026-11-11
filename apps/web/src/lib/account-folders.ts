@@ -52,6 +52,23 @@ export function toggleAccount(id: number): void {
   if (!inside(id)) navigate({ accountId: id, view: "inbox" });
 }
 
+/** How an account's row was pressed: Enter or Space, its chevron, a click, or the second click of a double click. */
+export type AccountPress = "key" | "chevron" | "click" | "double";
+
+/**
+ * Plan 67, the owner's change (2026-11-10): a click only selects an account (its Inbox) and leaves it closed; a click on
+ * it once it's selected, a double click or its chevron opens it. Enter and Space toggle, as before. A click on the open
+ * account you're in closes it, and you stay; the second click of a double click only ever opens.
+ */
+export function pressAccount(id: number, how: AccountPress): void {
+  const open = useOpenAccount.getState().id === id;
+  if (how === "chevron") return setOpenAccount(open ? null : id);
+  if (how === "double") {
+    if (!open) toggleAccount(id);
+  } else if (how === "key" || inside(id)) toggleAccount(id);
+  else navigate({ accountId: id, view: "inbox" });
+}
+
 /** A folder by shortcut or palette: in the scope you're in when the account lists it, otherwise for all accounts. */
 export function goToFolder(view: View): void {
   // plan 108: focused, every folder is the account's (its Starred and All Mail too)

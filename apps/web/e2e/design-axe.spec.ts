@@ -258,14 +258,14 @@ test.describe("axe", { tag: "@variant" }, () => {
 
     const acme = id(server, "accounts", "display_name", "Acme Studio");
     const freelance = id(server, "accounts", "display_name", "Freelance");
-    await page.getByTestId(`nav-account-${freelance}`).click();
+    await page.getByTestId(`nav-account-${freelance}`).dblclick();
     await page.getByTestId(`nav-own-${freelance}-Facturación/2026`).click();
     await page.getByTestId(`nav-own-${freelance}-Clientes antiguos`).hover();
     await clean(page, "an account open, its folders", "#app-sidebar");
     await page.getByTestId(`nav-folder-${freelance}-sent`).hover();
     await clean(page, "an account's Sent, under the pointer", "#app-sidebar");
 
-    await page.getByTestId(`nav-account-${acme}`).click();
+    await page.getByTestId(`nav-account-${acme}`).dblclick();
     await page.getByTestId(`nav-own-${acme}-Label_21`).click({ button: "right" });
     await page.getByTestId("folder-menu-favorite").click();
     await page.getByTestId(`nav-own-${acme}-Label_21`).click({ button: "right" });

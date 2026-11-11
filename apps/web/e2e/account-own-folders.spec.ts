@@ -19,7 +19,7 @@ test.describe("an account's own folders", () => {
   test("an account's own folders: listed, counted, reached by keyboard", async ({ app: page, server }) => {
     await scenario("an open account lists its own folders under its standard ones, nested, with unread counts; one lists its threads", async () => {
       const acme = accountOf(server, "Acme Studio");
-      await page.getByTestId(`nav-account-${acme}`).click();
+      await page.getByTestId(`nav-account-${acme}`).dblclick();
       const group = page.locator(`#account-folders-${acme}`);
       // standard ones, a hairline, then its own, by name (Equipo, Proyectos › Rediseño web)
       const order = await group.locator("[data-testid^=nav-folder-], [role=separator], [data-testid^=nav-own-]").evaluateAll((els) => els.map((el) => el.getAttribute("data-testid") ?? "separator"));
@@ -44,7 +44,7 @@ test.describe("an account's own folders", () => {
     await scenario("reading a thread in a folder drops its count; select all is the folder's threads", async () => {
       await freshStart(page);
       const acme = accountOf(server, "Acme Studio");
-      await page.getByTestId(`nav-account-${acme}`).click();
+      await page.getByTestId(`nav-account-${acme}`).dblclick();
       await own(page, acme, "Label_21").click();
       const count = own(page, acme, "Label_21").locator("[data-slot=nav-count]");
       const before = Number(await count.textContent());
@@ -58,7 +58,7 @@ test.describe("an account's own folders", () => {
     await scenario("a parent that only groups (IMAP \\Noselect) isn't a place to go; its child is", async () => {
       await freshStart(page);
       const freelance = accountOf(server, "Freelance");
-      await page.getByTestId(`nav-account-${freelance}`).click();
+      await page.getByTestId(`nav-account-${freelance}`).dblclick();
       const group = page.locator(`#account-folders-${freelance}`).getByTestId("nav-own-group");
       await expect(group).toHaveText("Facturación");
       expect(await group.evaluate((el) => el.tagName)).toBe("DIV");
@@ -68,7 +68,7 @@ test.describe("an account's own folders", () => {
     await scenario("keyboard: Tab reaches its folders, Enter goes to one", async () => {
       await freshStart(page);
       const acme = accountOf(server, "Acme Studio");
-      await page.getByTestId(`nav-account-${acme}`).click();
+      await page.getByTestId(`nav-account-${acme}`).dblclick();
       await page.getByTestId(`nav-folder-${acme}-trash`).focus();
       // plan 86: its Gmail tabs come first
       await page.keyboard.press("Tab");
@@ -84,7 +84,7 @@ test.describe("an account's own folders", () => {
   test("folders taken away on the server", async ({ app: page, server }) => {
     await scenario("a folder that's gone (deleted on the server) sends you to its account's Inbox", async () => {
       const acme = accountOf(server, "Acme Studio");
-      await page.getByTestId(`nav-account-${acme}`).click();
+      await page.getByTestId(`nav-account-${acme}`).dblclick();
       await own(page, acme, "Label_23").click();
       await expect.poll(() => listFor(page)).toEqual(["all", acme, null, null, null, "Label_23", ""]);
       const left = (await server.backend.store.folders.list()).filter((f) => f.accountId === acme && f.key !== "Label_23").map(({ key, path, selectable }) => ({ key, path, selectable }));
@@ -96,7 +96,7 @@ test.describe("an account's own folders", () => {
     await scenario("Codex R22: the focused folder taken away on the server hands focus to the one in its place, the last to the account", async () => {
       await freshStart(page);
       const acme = accountOf(server, "Acme Studio");
-      await page.getByTestId(`nav-account-${acme}`).click();
+      await page.getByTestId(`nav-account-${acme}`).dblclick();
       const mine = (await server.backend.store.folders.list()).filter((f) => f.accountId === acme && f.selectable);
       const rows = page.locator(`[data-testid^="nav-own-${acme}-"]`);
       const order = await rows.evaluateAll((els) => els.map((el) => (el as HTMLElement).dataset.testid!));
@@ -127,7 +127,7 @@ test("2,000 folders: mounting, focus, renames past what's shown", async ({ app: 
     const many = Array.from({ length: 2000 }, (_, i) => ({ key: `Label_m${i}`, path: [`Folder ${String(i).padStart(4, "0")}`], selectable: true }));
     await server.backend.store.folders.replace(acme, many);
     server.backend.server.emit("folders", await server.backend.store.folders.list());
-    await page.getByTestId(`nav-account-${acme}`).click();
+    await page.getByTestId(`nav-account-${acme}`).dblclick();
     const rows = page.locator(`#account-folders-${acme} [data-testid^="nav-own-${acme}-"]`);
     await expect(rows).toHaveCount(250);
     const more = page.getByTestId(`nav-own-more-${acme}`);
@@ -147,7 +147,7 @@ test("2,000 folders: mounting, focus, renames past what's shown", async ({ app: 
     const many = (n: number) => Array.from({ length: n }, (_, i) => ({ key: `Label_m${i}`, path: [`Folder ${String(i).padStart(4, "0")}`], selectable: true }));
     await server.backend.store.folders.replace(acme, many(300));
     server.backend.server.emit("folders", await server.backend.store.folders.list());
-    await page.getByTestId(`nav-account-${acme}`).click();
+    await page.getByTestId(`nav-account-${acme}`).dblclick();
     const more = page.getByTestId(`nav-own-more-${acme}`);
     await expect(more).toHaveText("50 more folders");
     await more.focus();
@@ -163,7 +163,7 @@ test("2,000 folders: mounting, focus, renames past what's shown", async ({ app: 
     const many = Array.from({ length: 2000 }, (_, i) => ({ key: `Label_m${i}`, path: [`Folder ${String(i).padStart(4, "0")}`], selectable: true }));
     await server.backend.store.folders.replace(acme, many);
     server.backend.server.emit("folders", await server.backend.store.folders.list());
-    await page.getByTestId(`nav-account-${acme}`).click();
+    await page.getByTestId(`nav-account-${acme}`).dblclick();
     await own(page, acme, "Label_m3").click();
     await server.backend.store.folders.replace(acme, many.map((f) => (f.key === "Label_m3" ? { ...f, path: ["Zzz renamed"] } : f)));
     server.backend.server.emit("folders", await server.backend.store.folders.list());
@@ -177,7 +177,7 @@ test("2,000 folders: mounting, focus, renames past what's shown", async ({ app: 
     const many = Array.from({ length: 300 }, (_, i) => ({ key: `Label_f${i}`, path: [`Folder ${String(i).padStart(3, "0")}`], selectable: true }));
     await server.backend.store.folders.replace(acme, many);
     server.backend.server.emit("folders", await server.backend.store.folders.list());
-    await page.getByTestId(`nav-account-${acme}`).click();
+    await page.getByTestId(`nav-account-${acme}`).dblclick();
     await own(page, acme, "Label_f4").focus();
     await server.backend.store.folders.replace(acme, many.map((f) => (f.key === "Label_f4" ? { ...f, path: ["Zzz renamed"] } : f)));
     server.backend.server.emit("folders", await server.backend.store.folders.list());
@@ -189,7 +189,7 @@ test("2,000 folders: mounting, focus, renames past what's shown", async ({ app: 
 
 test("Codex R9: a focused label renamed on Gmail keeps the focus (the same row, by its label)", async ({ app: page, server }) => {
   const acme = accountOf(server, "Acme Studio");
-  await page.getByTestId(`nav-account-${acme}`).click();
+  await page.getByTestId(`nav-account-${acme}`).dblclick();
   await own(page, acme, "Label_23").focus();
   const renamed = (await server.backend.store.folders.list()).filter((f) => f.accountId === acme).map(({ key, path, selectable }) => ({ key, path: key === "Label_23" ? ["Equipo de diseño"] : path, selectable }));
   await server.backend.store.folders.replace(acme, renamed);
@@ -203,7 +203,7 @@ test("Codex R23: with one account, its last own folder taken away while focused 
   for (const a of await server.backend.store.accounts.list()) if (a.id !== acme) await server.backend.server.invoke("accounts.remove", { id: a.id }, ctx);
   // plan 86: its Gmail tabs would keep the group: kept in the Inbox, its own folders are all it lists
   await server.backend.server.invoke("accounts.update", { id: acme, separateTabs: false }, ctx);
-  await page.getByTestId(`nav-account-${acme}`).click();
+  await page.getByTestId(`nav-account-${acme}`).dblclick();
   const rows = page.locator(`[data-testid^="nav-own-${acme}-"]`);
   await expect(rows.first()).toBeVisible();
   await rows.first().focus();
@@ -221,7 +221,7 @@ test("with one account, its row opens onto its standard folders, then its own (a
   const row = page.getByTestId(`nav-account-${acme}`);
   await expect(page.locator('[data-testid^="nav-account-"]')).toHaveCount(1);
   await expect(row).toHaveAttribute("aria-expanded", "false");
-  await row.click();
+  await row.dblclick();
   await expect(row).toHaveAttribute("aria-expanded", "true");
   // the account's Inbox, as with several accounts
   await expect.poll(() => listFor(page)).toEqual(["inbox", acme, null, null, null, ""]);

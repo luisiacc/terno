@@ -771,9 +771,9 @@ test("opening and closing an account (plans 67, 68): smooth frames, no long fram
   const row = page.getByTestId(`nav-account-${acme}`);
   // its five standard folders and its three own ones
   const OWN_ROWS = 8;
-  // the first open goes to its Inbox (a list load, gated elsewhere); from then on opening and closing stay put
+  // the first click selects it, its Inbox (a list load, gated elsewhere); from then on each click opens or closes it, and you stay
   await row.click();
-  await row.click();
+  await expect(row).toHaveAttribute("aria-current", "page");
   await expect(row).toHaveAttribute("aria-expanded", "false");
   await page.waitForTimeout(600);
   // a long frame on any toggle fails: each one is a chance, and the first of each direction is the one that mounts
@@ -802,7 +802,7 @@ test("counts while an account with 300 folders is open (plan 68, Codex R2): an u
   const acme = sqlDb(server.backend.store).get<{ id: number }>("SELECT id FROM accounts WHERE display_name = 'Acme Studio'")!.id;
   await server.backend.store.folders.replace(acme, Array.from({ length: 300 }, (_, i) => ({ key: `Label_c${i}`, path: [`Folder ${String(i).padStart(3, "0")}`], selectable: true })));
   server.backend.server.emit("folders", await server.backend.store.folders.list());
-  await page.getByTestId(`nav-account-${acme}`).click();
+  await page.getByTestId(`nav-account-${acme}`).dblclick();
   await expect(page.locator(`[data-testid^="nav-own-${acme}-"]`)).toHaveCount(250);
   await page.waitForTimeout(300);
   const counts = await server.backend.store.threads.counts(Date.now());

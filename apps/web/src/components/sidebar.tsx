@@ -17,7 +17,7 @@ import { followupsOffered, todayOffered } from "~/lib/ai";
 import { useFollowups } from "~/state/followups";
 import { createCategory as createNamedCategory } from "~/lib/new-category";
 import { offerTip, usePendingTip } from "~/lib/tips";
-import { ACCOUNT_VIEWS, SOLO_VIEWS, listedByAccount, useFolderRows, toggleAccount, useOpenAccount, type FolderRow } from "~/lib/account-folders";
+import { ACCOUNT_VIEWS, SOLO_VIEWS, listedByAccount, useFolderRows, pressAccount, useOpenAccount, type AccountPress, type FolderRow } from "~/lib/account-folders";
 import { renderProbe } from "~/lib/render-probe";
 import { enterReview, reviewTotals } from "~/lib/review";
 import type { DropId } from "~/lib/drag";
@@ -131,6 +131,14 @@ function toggleMore(): void {
   }
 }
 
+/** plan 67 (the owner, 2026-11-10): what a press on an account's row was (a keyboard press has no click count) */
+function accountPress(e: React.MouseEvent<HTMLElement>): AccountPress {
+  if (e.detail === 0) return "key";
+  // a double click opens wherever it lands, the chevron too
+  if (e.detail >= 2) return "double";
+  return (e.target as Element).closest("[data-slot=nav-disclosure]") ? "chevron" : "click";
+}
+
 function NavItem({
   active,
   onClick,
@@ -153,7 +161,7 @@ function NavItem({
   sortHandle,
 }: {
   active: boolean;
-  onClick: () => void;
+  onClick: (e: React.MouseEvent<HTMLButtonElement>) => void;
   icon: React.ReactNode;
   label: string;
   count?: number;
@@ -230,11 +238,13 @@ function NavItem({
           <span className="min-w-0 flex-1 truncate">{label}</span>
         )
       ) : (
-        // the disclosure's mark beside the name: shown while open, and on hover or focus while closed
+        // the disclosure's mark beside the name: shown while open, and on hover or focus while closed. A click right
+        // on it only opens or closes (plan 67, the owner, 2026-11-10); no padding, so a click on the name beside it still selects
         <span className="flex min-w-0 flex-1 items-center gap-1">
           <span className="truncate">{label}</span>
           <ChevronRight
             aria-hidden
+            data-slot="nav-disclosure"
             className={cn(
               "size-3 shrink-0 text-muted-foreground transition-[transform,opacity] duration-fast ease-motion",
               expanded ? "rotate-90" : "opacity-0 group-hover:opacity-100 group-focus-reveal:opacity-100",
@@ -1140,7 +1150,7 @@ const AccountEntry = memo(function AccountEntry({
               active={here && !childActive}
               expanded={open}
               controls={`account-folders-${a.id}`}
-              onClick={() => toggleAccount(a.id)}
+              onClick={(e) => pressAccount(a.id, accountPress(e))}
               // syncing stays quiet here: the first-sync and connection pills speak for it
               icon={<CategoryDot color={a.color as CategoryColor} />}
               label={a.displayName}

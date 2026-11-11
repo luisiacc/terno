@@ -17,7 +17,7 @@ const listFor = (page: Page) => page.getByTestId("thread-list").getAttribute("da
 
 async function openAccount(page: Page, id: number) {
   const row = page.getByTestId(`nav-account-${id}`);
-  if ((await row.getAttribute("aria-expanded")) !== "true") await row.click();
+  if ((await row.getAttribute("aria-expanded")) !== "true") await row.dblclick();
   await expect(row).toHaveAttribute("aria-expanded", "true");
 }
 
@@ -448,7 +448,7 @@ test.describe("folder actions", () => {
     await page.getByTestId(`folder-new-${acme}`).fill("Pendiente");
     // another account: the blur submits, this one closes
     const other = (await server.backend.store.accounts.list()).find((a) => a.id !== acme)!.id;
-    await page.getByTestId(`nav-account-${other}`).click();
+    await page.getByTestId(`nav-account-${other}`).dblclick();
     await expect(page.getByTestId("snack").filter({ hasText: "Couldn’t save the folder “Pendiente”: the server said no" })).toBeVisible();
     await openAccount(page, acme);
     await expect(page.getByTestId(`folder-new-${acme}`)).toHaveValue("Pendiente");

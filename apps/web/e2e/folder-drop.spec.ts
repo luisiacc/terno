@@ -31,7 +31,7 @@ async function dragTo(page: Page, row: Locator, target: Locator) {
 }
 /** an account's Inbox on screen, its folders open; the rows there aren't in `folder` yet */
 async function openAccount(page: Page, accountId: number) {
-  await page.getByTestId(`nav-account-${accountId}`).click();
+  await page.getByTestId(`nav-account-${accountId}`).dblclick();
   await page.getByTestId(`nav-folder-${accountId}-inbox`).click();
   await expect(page.locator("[data-testid=thread-row]").first()).toBeVisible();
 }
@@ -162,7 +162,7 @@ test.describe("dragging mail onto a folder", () => {
     await scenario("a thread goes from one folder to another", async () => {
       await freshStart(page);
       const account = accountOf(server, "Acme Studio");
-      await page.getByTestId(`nav-account-${account}`).click();
+      await page.getByTestId(`nav-account-${account}`).dblclick();
       await own(page, account, "Label_21").click();
       const members = inFolder(server, account, "Label_21");
       await expect.poll(async () => members.has(Number(await page.locator("[data-testid=thread-row]").first().getAttribute("data-thread-id")))).toBe(true);
@@ -180,7 +180,7 @@ test.describe("dragging mail onto a folder", () => {
     await scenario("the folder you're in shows a check and ignores the drop", async () => {
       await freshStart(page);
       const account = accountOf(server, "Acme Studio");
-      await page.getByTestId(`nav-account-${account}`).click();
+      await page.getByTestId(`nav-account-${account}`).dblclick();
       const target = own(page, account, "Label_21");
       await target.click();
       const first = page.locator("[data-testid=thread-row]").first();
