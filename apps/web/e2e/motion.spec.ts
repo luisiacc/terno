@@ -23,7 +23,7 @@ async function startSampler(page: Page) {
     const tick = () => {
       for (const a of document.getAnimations()) {
         // and what tracks a scroller (the learned offer over the list) isn't motion: it moves only as the list does
-        if (a.id === "snack-countdown" || a.timeline instanceof ScrollTimeline) continue;
+        if (a.id === "pill-countdown" || a.timeline instanceof ScrollTimeline) continue;
         const t = a.effect?.getTiming();
         if (!t) continue;
         const el = (a.effect as KeyframeEffect | null)?.target as Element | null;
@@ -104,7 +104,7 @@ async function exercise(page: Page) {
   await rows(page).first().dispatchEvent("mousedown");
   await page.keyboard.press("e");
   await expect(page.locator("[data-testid=snack]").first()).toBeVisible();
-  await expect(page.getByTestId("snack-ring")).toBeVisible();
+  await expect(page.getByTestId("countdown-ring")).toBeVisible();
   await frames(page);
 }
 
@@ -162,13 +162,13 @@ test.describe("motion", () => {
       const r = await sampled(page);
       expect({ finite: r.finite, loops: r.loops }, r.names.join(",")).toEqual({ finite: 0, loops: 0 });
       expect(await page.getByTestId("compose-button").evaluate((b) => getComputedStyle(b).transitionDuration)).toBe("0s");
-      expect(await page.evaluate(() => document.getAnimations().filter((a) => a.id !== "snack-countdown" && !(a.timeline instanceof ScrollTimeline)).length)).toBe(0);
+      expect(await page.evaluate(() => document.getAnimations().filter((a) => a.id !== "pill-countdown" && !(a.timeline instanceof ScrollTimeline)).length)).toBe(0);
       // the snack's lifetime still shows, stepping instead of flowing
       await rows(page).first().dispatchEvent("mousedown");
       await focusList(page);
       await page.keyboard.press("e");
-      await expect(page.getByTestId("snack-ring")).toBeVisible();
-      const easing = await page.evaluate(() => document.getAnimations().find((a) => a.id === "snack-countdown")?.effect?.getTiming().easing);
+      await expect(page.getByTestId("countdown-ring")).toBeVisible();
+      const easing = await page.evaluate(() => document.getAnimations().find((a) => a.id === "pill-countdown")?.effect?.getTiming().easing);
       expect(easing).toMatch(/^steps\(/);
     });
     await scenario("the OS's reduced motion overrides the setting: nothing animates", async () => {
@@ -183,7 +183,7 @@ test.describe("motion", () => {
       const r = await sampled(page);
       expect({ finite: r.finite, loops: r.loops }, r.names.join(",")).toEqual({ finite: 0, loops: 0 });
       expect(await page.getByTestId("compose-button").evaluate((b) => getComputedStyle(b).transitionDuration)).toBe("0s");
-      expect(await page.evaluate(() => document.getAnimations().filter((a) => a.id !== "snack-countdown" && !(a.timeline instanceof ScrollTimeline)).length)).toBe(0);
+      expect(await page.evaluate(() => document.getAnimations().filter((a) => a.id !== "pill-countdown" && !(a.timeline instanceof ScrollTimeline)).length)).toBe(0);
     });
   });
 

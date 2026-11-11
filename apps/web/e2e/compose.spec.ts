@@ -760,8 +760,9 @@ test("Undo send (plans 158, 182): the reply shows at once where its copy will be
     // (the window is five seconds of the page's clock, which runs: this part is quick)
     await expect(held).toBeVisible();
     await expect(held).toBeInViewport();
-    await expect(held.getByTestId("held-status")).toHaveText(/Sending in [2-5]s/);
+    // where a message has its date: Undo send, its border the countdown
     await expect(held.getByTestId("held-undo")).toHaveAccessibleName("Undo send");
+    await expect(held.getByTestId("held-undo").getByTestId("countdown-ring")).toBeVisible();
     await expect(page.getByTestId("composer")).toHaveCount(0);
     await expect(dock).toHaveCount(0);
     // not a thing the user scheduled, and nothing has gone
@@ -782,10 +783,12 @@ test("Undo send (plans 158, 182): the reply shows at once where its copy will be
   await scenario("left to go: it becomes its copy in place, open, and nothing else stays", async () => {
     await page.keyboard.press("ControlOrMeta+Enter");
     await expect(held).toBeVisible();
-    // the counter counts, then the window ends here; the backend's clock is fixed, so it waits for the test to send it
-    const first = Number((await held.getByTestId("held-status").textContent())!.match(/\d+/)![0]);
-    await expect.poll(async () => Number((await held.getByTestId("held-status").textContent())!.match(/\d+/)?.[0] ?? 0)).toBeLessThan(first);
+    // the border drains, then the window ends here; the backend's clock is fixed, so it waits for the test to send it
+    const drained = () => held.getByTestId("countdown-ring").evaluate((p) => -parseFloat(getComputedStyle(p).strokeDashoffset));
+    const first = await drained();
+    await expect.poll(drained).toBeGreaterThan(first);
     await expect(held.getByTestId("held-status")).toHaveText("Sending…", { timeout: 8000 });
+    await expect(held.getByTestId("held-undo")).toHaveCount(0);
     // the body as it will go (its HTML, in the mail frame the copy will have), and to whom
     await expect(held.frameLocator("iframe").locator("body")).toContainText("Exactly these words");
     await expect(held.getByTestId("recipients")).toContainText("copy@example.com");
@@ -948,7 +951,7 @@ test("Undo send of a new message (plan 182): it shows in its pane at once, under
   await expect(view).toBeVisible();
   await expect(view.getByTestId("held-title")).toHaveText("Quarterly plan");
   await expect(held.frameLocator("iframe").locator("body")).toContainText("Here is the plan.");
-  await expect(held.getByTestId("held-status")).toHaveText(/Sending in [1-5]s/);
+  await expect(held.getByTestId("held-undo")).toBeVisible();
   await expect(page.locator("[data-testid=snack]").filter({ hasText: "Sending…" })).toHaveCount(0);
   await axeBothModes(page, "[data-testid=held-view]");
   await expect.poll(async () => (await server.backend.store.scheduled.list()).length).toBe(1);

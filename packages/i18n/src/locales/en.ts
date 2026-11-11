@@ -1843,7 +1843,6 @@ const en = {
   "compose.undoSend": "Undo send",
   "compose.undoSendTooLate": "Too late to undo: this message has already gone.",
   "compose.undoSendKept": "Not sent. It’s back in your drafts.",
-  "compose.held.sendingIn": "Sending in {seconds}s",
   "compose.held.status": "Not sent yet. You can undo it for a few seconds.",
   "compose.held.label": "Your message, not sent yet",
   "compose.held.elsewhere": "Your message started a conversation of its own.",

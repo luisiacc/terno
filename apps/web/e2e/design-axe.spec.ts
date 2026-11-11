@@ -25,7 +25,7 @@ const TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"];
 /** What's on screen now, or one part of it. The list is a listbox driven by the window's keys (j/k, aria-activedescendant), so its scroller isn't a tab stop. */
 async function clean(page: Page, surface: string, scope?: string | string[], outside?: string) {
   // a popover still fading in would be read at partial opacity (a loop never ends, and doesn't change what it paints)
-  await expect.poll(() => page.evaluate(() => document.getAnimations().filter((a) => a.playState === "running" && a.effect?.getTiming().iterations !== Infinity && a.id !== "snack-countdown").length), { message: `${surface}: settled` }).toBe(0);
+  await expect.poll(() => page.evaluate(() => document.getAnimations().filter((a) => a.playState === "running" && a.effect?.getTiming().iterations !== Infinity && a.id !== "pill-countdown").length), { message: `${surface}: settled` }).toBe(0);
   const scopes = [scope ?? []].flat();
   for (const s of scopes) await expect(page.locator(s).first(), `${surface} is on screen`).toBeAttached();
   // legacy: every scope leaves frames out, and the default mode opens a blank page per call to merge what frames found

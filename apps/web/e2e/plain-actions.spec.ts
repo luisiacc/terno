@@ -271,7 +271,7 @@ test.describe("actions in plain English (plan 143)", () => {
       // plan 162: the result says what it was for, under the count
       await expect(page.getByTestId("snack")).toContainText("You asked: “Archive shipping notices older than a month”");
       // plan 162 (after ai162-r05): its Undo stays 20 s, the ring's own time (8 s was gone before a big batch was looked over)
-      expect(await page.evaluate(() => document.getAnimations().find((a) => a.id === "snack-countdown")?.effect?.getTiming().duration)).toBe(20_000);
+      expect(await page.evaluate(() => document.getAnimations().find((a) => a.id === "pill-countdown")?.effect?.getTiming().duration)).toBe(20_000);
       // plan 161: back on the list you came from, its keys yours
       await expect.poll(() => page.evaluate(() => document.activeElement?.getAttribute("data-keep-scroll"))).toBe("list");
       // the first row stayed out of it; the rest left

@@ -100,3 +100,9 @@ Round 1 found six, all fixed, each with a test that fails without the fix:
 6. **A card left after its window, before it was queued, showed nothing anywhere.** The dock says "Sending…" (no Undo), bounded by the hold's own deadline (`held-sends.test.ts`).
 
 Stopped after one round. Perf gate (`test:ui-perf`, load average 3 to 5 from other sessions): "holding j" counts two animations, and it fails the same way on the commit before this series; the 250 KB paragraph's editor plugin (54 ms against 50) is the composer's, untouched here. Both are outside this change.
+
+## The owner's change: Undo send with the border as the countdown
+
+> lets have an 'undo sent' button with the border progress instead of a 'sending in xs' thing
+
+The words "Sending in 4s" and the separate Undo button are gone. Where a message has its date, the held message has **Undo send**: the dock's own countdown pill, its border draining over the window, with the `⌘Z` keycap while `z` runs it, and its spinner while the cancel is out. After the window, "Sending…" with the spinner, as before. So the pill can serve both, it moved out of `snack-dock.tsx` into `components/countdown-pill.tsx`, timed by props (`duration`, `elapsed()`, `paused`, `sync`) instead of the snack store; `SnackPill` is a wrapper that passes the snack's lifetime. Its colours moved from `snack-surface` to the pill's own `countdown-pill` utility (`--countdown-track`, `--countdown-ring`), since their contrast is checked against the pill's card fill wherever it sits; the animation's id is `pill-countdown` and the ring's test id `countdown-ring` (the specs that skip or read it follow). With motion off the border steps once a second, as the dock's does. `compose.held.sendingIn` is gone from both locales.

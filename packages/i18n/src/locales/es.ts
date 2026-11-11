@@ -1828,7 +1828,6 @@ const es = {
   "compose.undoSend": "Deshacer el envío",
   "compose.undoSendTooLate": "Demasiado tarde para deshacer: este mensaje ya salió.",
   "compose.undoSendKept": "No se envió. Está de nuevo en tus borradores.",
-  "compose.held.sendingIn": "Se envía en {seconds} s",
   "compose.held.status": "Aún no se ha enviado. Puedes deshacerlo durante unos segundos.",
   "compose.held.label": "Tu mensaje, aún sin enviar",
   "compose.held.elsewhere": "Tu mensaje inició una conversación propia.",

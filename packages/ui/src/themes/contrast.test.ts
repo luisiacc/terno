@@ -89,10 +89,10 @@ describe("boundaries as drawn (plan 160)", () => {
       for (const step of BOUNDARY_STEPS.filter((s) => (!s.mode || s.mode === theme.mode) && (!s.only || s.only.includes(id)))) expect(boundaryStep(theme, step, draft), `${id} (draft on ${draft}): ${step.why}`).toBeGreaterThanOrEqual(step.except?.[id]?.min ?? step.min);
   });
 
-  it("the Undo ring's track is what the dock draws, at its floor and well under the ring itself, in every palette (plan 161)", () => {
+  it("the Undo ring's track is what the countdown pill draws (the dock's, a sent message's), at its floor and well under the ring itself, in every palette (plan 161)", () => {
     const globals = readFileSync(join(import.meta.dirname, "../styles/globals.css"), "utf8");
     const layer = SNACK_TRACK as { token: string; alpha: number };
-    expect(/@utility snack-surface \{[^}]*--snack-track: ([^;]+);/.exec(globals)?.[1]).toBe(`color-mix(in oklab, var(--${layer.token}) ${Math.round(layer.alpha * 100)}%, transparent)`);
+    expect(/@utility countdown-pill \{[^}]*--countdown-track: ([^;]+);/.exec(globals)?.[1]).toBe(`color-mix(in oklab, var(--${layer.token}) ${Math.round(layer.alpha * 100)}%, transparent)`);
     for (const theme of THEMES) {
       const track = boundaryStep(theme, { edge: [...SNACK_PILL, SNACK_TRACK], behind: SNACK_PILL });
       const ring = boundaryStep(theme, { edge: [...SNACK_PILL, "primary"], behind: SNACK_PILL });

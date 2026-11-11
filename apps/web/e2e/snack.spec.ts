@@ -10,9 +10,9 @@ import { UNDO_KEYS } from "./constants";
 
 const dock = (page: Page) => page.getByTestId("snack");
 /** How much of the ring has drained (0–100; the dash moves from 0 to −100). */
-const drained = (page: Page) => page.getByTestId("snack-ring").first().evaluate((p) => -parseFloat(getComputedStyle(p).strokeDashoffset));
+const drained = (page: Page) => page.getByTestId("countdown-ring").first().evaluate((p) => -parseFloat(getComputedStyle(p).strokeDashoffset));
 /** The ring's Web Animation: paused whenever the store's countdown is (the unit tests hold what that does to the lifetime). */
-const ringState = (page: Page) => page.evaluate(() => document.getAnimations().find((a) => a.id === "snack-countdown")?.playState);
+const ringState = (page: Page) => page.evaluate(() => document.getAnimations().find((a) => a.id === "pill-countdown")?.playState);
 const renders = (page: Page, name: string) => page.evaluate((n) => (window as unknown as { __renders?: Record<string, number> }).__renders?.[n] ?? 0, name);
 
 async function archiveOne(page: Page, index = 1) {
@@ -190,13 +190,13 @@ test.describe("the docked snackbar", () => {
   test("the ring's drained part is a faint track on the pill, in light and dark (plan 161, the owner)", { tag: "@design" }, async ({ app: page }) => {
     await page.mouse.move(1300, 100);
     await archiveOne(page);
-    await expect(page.getByTestId("snack-ring")).toBeVisible();
+    await expect(page.getByTestId("countdown-ring")).toBeVisible();
     // held while focused (a program's focus: no ring), so both modes are read on the same snack
     await dock(page).getByTestId("snack-action").focus();
     for (const mode of ["light", "dark"] as const) {
       await page.emulateMedia({ colorScheme: mode });
       // what the eye sees: the track painted over the pill's card over the dock, against the card alone; and the ring
-      const [track, ring] = await page.getByTestId("snack-ring").evaluate((ringPath) => {
+      const [track, ring] = await page.getByTestId("countdown-ring").evaluate((ringPath) => {
         const pill = ringPath.closest("button")!;
         const surface = pill.closest<HTMLElement>(".snack-surface")!;
         const trackPath = ringPath.previousElementSibling as SVGPathElement;

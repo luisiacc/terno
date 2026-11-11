@@ -615,14 +615,20 @@
   }
 }
 /*
+ * A pill whose border is a countdown (the dock's Undo, plan 13; a sent
+ * message's Undo send, plan 182): the time left in primary, the drained part a
+ * faint track of the secondary ink (plan 161, the owner: a countdown, never a
+ * broken outline; contrast.ts SNACK_TRACK, over the pill's own card fill).
+ */
+@utility countdown-pill {
+  --countdown-track: color-mix(in oklab, var(--muted-foreground) 40%, transparent);
+  --countdown-ring: var(--primary);
+}
+/*
  * The docked snackbar (plan 13) on BoardUI's toast surface (plan 125): solid
- * popover, the menus' edge and lift. Its countdown ring: the time left in
- * primary, the drained part a faint track of the secondary ink (plan 161, the
- * owner: a countdown, never a broken outline; contrast.ts SNACK_TRACK).
+ * popover, the menus' edge and lift.
  */
 @utility snack-surface {
-  --snack-track: color-mix(in oklab, var(--muted-foreground) 40%, transparent);
-  --snack-ring: var(--primary);
   background-color: var(--popover);
   color: var(--popover-foreground);
   box-shadow: var(--shadow-menu);

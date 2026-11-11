@@ -53,7 +53,7 @@ const still = (l: Locator) =>
   );
 
 /** Every opening animation inside it finished (a zoom would scale the rects) */
-const settled = (l: Locator) => l.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).filter((a) => a.effect?.getTiming().iterations !== Infinity && a.id !== "snack-countdown").map((a) => a.finished))).catch(() => {});
+const settled = (l: Locator) => l.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).filter((a) => a.effect?.getTiming().iterations !== Infinity && a.id !== "pill-countdown").map((a) => a.finished))).catch(() => {});
 
 const near = (a: number, b: number, tolerance: number) => Math.abs(a - b) <= tolerance;
 /** What was measured, in the report (the plan's before and after) */

@@ -370,7 +370,7 @@ test.describe("everything about X and Y", () => {
       const added = page.getByTestId("snack").filter({ hasText: /added to Facturas/ });
       await expect(added).toBeVisible();
       // (its countdown starts once the keyboard's focus has left the bar it replaced: the ring runs with it)
-      await expect.poll(() => page.evaluate(() => document.getAnimations().find((a) => a.id === "snack-countdown")?.playState)).toBe("running");
+      await expect.poll(() => page.evaluate(() => document.getAnimations().find((a) => a.id === "pill-countdown")?.playState)).toBe("running");
       await page.clock.fastForward(15_000);
       await expect(added).toHaveCount(0);
     });

@@ -229,8 +229,8 @@ export const AI_CARD_FLOOR = 1.04;
 export const AI_CARD_FILL_LIGHT: Layer = { token: "tint", alpha: 0.65 };
 export const AI_CARD_FILL_DARK: Layer = { token: "primary", alpha: 0.05 };
 /**
- * Plan 161 (the owner): the Undo ring's drained part, a faint track of the secondary ink (globals.css `--snack-track`), so
- * the whole outline is always there and a little drained reads as a countdown, not a gap. Over the pill's card on the dock.
+ * Plan 161 (the owner): the Undo ring's drained part, a faint track of the secondary ink (globals.css `--countdown-track`), so
+ * the whole outline is always there and a little drained reads as a countdown, not a gap. Over the pill's own card fill, on the dock or a sent message (plan 182).
  */
 export const SNACK_TRACK: Layer = { token: "muted-foreground", alpha: 0.4 };
 /** the floor it holds, and the ring's own step above it (a track never reads as the time left) */

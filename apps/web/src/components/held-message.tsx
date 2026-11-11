@@ -1,11 +1,8 @@
-import type { AttachmentInfo, MessageDetail } from "@terno/core";
+import { UNDO_SEND_MS, type AttachmentInfo, type MessageDetail } from "@terno/core";
 import { t } from "@terno/i18n";
-import { Button } from "@terno/ui/components/button";
-import { Shortcut } from "@terno/ui/components/shortcut";
 import { Spinner } from "@terno/ui/components/spinner";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { cardLeaving, copyShown, firstReveal, heldIn, undoHeld, useHeldCard, useHeldSends, type HeldSend } from "~/lib/held-sends";
 import { revealHeld } from "~/lib/reader-scroll";
 import { useSnack, zHolds } from "~/lib/snack";
@@ -15,6 +12,7 @@ import { ReaderAttachments } from "./attachments";
 import { HtmlBody, TextBody } from "./mail-body";
 import { MailReaderView, useMailReaderView } from "./mail-reader-view";
 import { OpenHead } from "./message-head";
+import { CountdownPill } from "./countdown-pill";
 
 /**
  * Plan 182: a message just sent, shown at once where its copy will be (the end of its conversation, or a new message's
@@ -42,11 +40,10 @@ export function HeldMessage({ held, icons }: { held: HeldSend; icons: boolean })
       <div className="relative">
         {/* an open message's header, at its place and height: nothing to open or fold yet */}
         <div className="-mx-2 flex w-[calc(100%+1rem)] items-start gap-2.5 px-2 pt-3 pb-1.5">
-          <OpenHead from={from} to={held.to} cc={held.cc} icon={icons} person trailing={<HeldStatus held={held} />} recipientsClass="pr-20" />
+          <OpenHead from={from} to={held.to} cc={held.cc} icon={icons} person trailing={<HeldStatus held={held} />} />
         </div>
         {/* said once as it changes (never each second): that it hasn't gone and can be taken back, then that it's going */}
         <span role="status" className="sr-only">{sending ? t("compose.sending") : t("compose.held.status")}</span>
-        {!sending && <HeldUndo held={held} />}
       </div>
       <div className="pt-2 pb-4">
         {held.bodyHtml ? (
@@ -60,68 +57,31 @@ export function HeldMessage({ held, icons }: { held: HeldSend; icons: boolean })
   );
 }
 
-/** The seconds left, counted on the window's own end (a tick a second, only while it shows), then "Sending…". */
+/**
+ * Where a message has its date: Undo send, its border draining over the window (the dock's own countdown pill, so the
+ * two read as one control), busy while it's taken back; then "Sending…" until the copy takes the card's place.
+ */
 function HeldStatus({ held }: { held: HeldSend }) {
-  const seconds = useSecondsLeft(held.phase === "sending" ? null : held.goesAt);
-  return (
-    <span data-testid="held-status" className="ml-auto flex shrink-0 items-center gap-1.5 self-center text-xs text-muted-foreground">
-      {held.phase === "sending" ? (
-        <>
-          <Spinner aria-hidden className="size-3 text-muted-foreground" />
-          <span>{t("compose.sending")}</span>
-        </>
-      ) : (
-        <span aria-hidden className="tabular">{t("compose.held.sendingIn", { seconds })}</span>
-      )}
-    </span>
-  );
-}
-
-function useSecondsLeft(until: number | null): number {
-  const left = () => (until === null ? 0 : Math.max(1, Math.ceil((until - Date.now()) / 1000)));
-  const [seconds, setSeconds] = useState(left);
-  useEffect(() => {
-    if (until === null) return;
-    let timer: ReturnType<typeof setTimeout>;
-    const tick = () => {
-      setSeconds(left());
-      const rest = until - Date.now();
-      // the next whole second, so the figure turns when the time does
-      if (rest > 1000) timer = setTimeout(tick, ((rest - 1) % 1000) + 1);
-    };
-    tick();
-    return () => clearTimeout(timer);
-  }, [until]);
-  return seconds;
-}
-
-/** Undo, under the status on the column's edge: the same token z and the dock's snack run; busy while it's taken back. */
-function HeldUndo({ held }: { held: HeldSend }) {
   const z = useSnack((s) => zHolds(s, held.undo));
-  const undoing = held.phase === "undoing";
+  if (held.phase === "sending") {
+    return (
+      <span data-testid="held-status" className="ml-auto flex shrink-0 items-center gap-1.5 self-center text-xs text-muted-foreground">
+        <Spinner aria-hidden className="size-3 text-muted-foreground" />
+        <span>{t("compose.sending")}</span>
+      </span>
+    );
+  }
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            variant="outline"
-            size="xs"
-            data-testid="held-undo"
-            aria-label={t("compose.undoSend")}
-            aria-busy={undoing || undefined}
-            onClick={() => undoHeld(held.draftId)}
-            className={cn("absolute right-0 bottom-0", undoing && "text-muted-foreground")}
-          />
-        }
-      >
-        {undoing && <Spinner aria-hidden />}
-        {t("common.undo")}
-      </TooltipTrigger>
-      <TooltipContent>
-        {t("compose.undoSend")}
-        {z && <Shortcut keys="z" />}
-      </TooltipContent>
-    </Tooltip>
+    // the pill's 24 px kept within the name's line: the header is a message's, at its height
+    <CountdownPill
+      testId="held-undo"
+      label={t("compose.undoSend")}
+      shortcut={z ? "z" : undefined}
+      busy={held.phase === "undoing"}
+      onClick={() => undoHeld(held.draftId)}
+      className="-my-1 ml-auto self-center"
+      countdown={{ duration: UNDO_SEND_MS, elapsed: () => UNDO_SEND_MS - (held.goesAt - Date.now()), paused: false, sync: held.goesAt }}
+    />
   );
 }
 
