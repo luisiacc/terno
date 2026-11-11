@@ -594,6 +594,56 @@
     background-image: linear-gradient(var(--ai-card-wash), var(--ai-card-wash));
   }
 }
+/*
+ * Exploration (branch explore/ai-card-variations), removed with Dev mode's switch once the owner picks a look: the four
+ * other surfaces for the reader's AI cards (apps/web/src/components/ai-looks.ts). Tokens only; text on them is the page's
+ * pairs, or the primary's 5% wash (contrast.ts, plan 162's "For AI" note).
+ */
+/* 1 · Whisper: the accent's 5% wash, no edge, no shadow */
+@utility ai-whisper {
+  border-radius: calc(var(--card-radius) + 4px);
+  background-color: color-mix(in oklab, var(--primary) 5%, transparent);
+}
+/* 2 · Ledger: Mail's banner, a hairline above and below, no box, on the conversation's edge */
+@utility ai-ledger {
+  border-block: var(--hairline-w) solid var(--hairline);
+}
+/* Ledger's reply, under the last message: that message's hairline is its top rule */
+@utility ai-ledger-tail {
+  border-bottom: var(--hairline-w) solid var(--hairline);
+}
+/* Ledger's reply: its words in a hairline well, as the draft they'd become, never a grey box */
+@utility ai-well {
+  border-radius: var(--radius-lg);
+  box-shadow: inset 0 0 0 var(--hairline-w) var(--border);
+}
+/* 3 · Float: lifted off the page by a soft shadow; in dark, where a shadow can't show, the card's step up and a top light */
+@utility ai-float {
+  border-radius: calc(var(--card-radius) + 4px);
+  background-color: var(--card);
+  box-shadow: 0 0 0 var(--hairline-w) color-mix(in oklab, var(--foreground) 5%, transparent), 0 1px 2px color-mix(in oklab, var(--shadow-color) 60%, transparent), 0 8px 24px -10px var(--shadow-color);
+  &:is(.dark *) {
+    box-shadow: inset 0 1px 0 var(--highlight), 0 0 0 var(--hairline-w) var(--hairline), 0 8px 24px -10px var(--shadow-color);
+  }
+}
+/* 4 · Edge light: a hairline that catches the accent at its top corner and fades to the card's edge, a breath of it inside */
+@utility ai-edge {
+  position: relative;
+  border-radius: calc(var(--card-radius) + 4px);
+  background-image: radial-gradient(120% 140% at 0 0, color-mix(in oklab, var(--primary) 4%, transparent), transparent 55%);
+  &::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(120deg, color-mix(in oklab, var(--primary) 55%, transparent), var(--card-edge) 38%, var(--hairline) 100%);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+    pointer-events: none;
+  }
+}
 /* the same for a command list (the palette, the category picker): the design's command rows, 2 in (the list's p-2) */
 @utility rounded-palette {
   border-radius: calc(var(--command-radius) + var(--spacing) * 2);

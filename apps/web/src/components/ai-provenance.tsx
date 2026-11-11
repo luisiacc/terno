@@ -1,6 +1,7 @@
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/popover";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { Check, ChevronDown, Copy } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { useEffect, useRef, useState } from "react";
@@ -77,7 +78,7 @@ const COPIED_MS = 1500;
  * Plan 161, pass 3: Copy, one button on every AI surface, at the row's 28 px, its glyph and word (plan 162: quiet); done,
  * it says Copied in place for a moment (and to a screen reader), and a failure says what to do.
  */
-export function AiCopyButton({ text, failed, testId, className, onKeyDown }: { text: () => string; failed: string; testId: string; className?: string; onKeyDown?: React.KeyboardEventHandler }) {
+export function AiCopyButton({ text, failed, testId, className, onKeyDown, iconOnly = false }: { text: () => string; failed: string; testId: string; className?: string; onKeyDown?: React.KeyboardEventHandler; /** exploration (ai-looks): its glyph alone, named for screen readers */ iconOnly?: boolean }) {
   const [copied, setCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
@@ -91,18 +92,28 @@ export function AiCopyButton({ text, failed, testId, className, onKeyDown }: { t
       snack.error(failed);
     }
   };
-  return (
-    <>
-      {/* plan 162: a quiet utility (tier 3), never heavier than what the surface suggests doing: the summary's Reply was
-          drawn lighter than this */}
-      <Button type="button" variant="ghost" size="sm" className={cn("px-2 text-muted-foreground hover:text-foreground data-copied:text-foreground", className)} data-testid={testId} data-copied={copied || undefined} onKeyDown={onKeyDown} onClick={() => void copy()}>
-        {copied ? <Check aria-hidden /> : <Copy aria-hidden />}
-        {/* the wider word holds the width, so nothing after it moves when it changes */}
+  const button = (
+    <Button type="button" variant="ghost" size={iconOnly ? "icon-sm" : "sm"} aria-label={iconOnly ? t(copied ? "ai.copied" : "ai.copy") : undefined} className={cn(!iconOnly && "px-2", "text-muted-foreground hover:text-foreground data-copied:text-foreground", className)} data-testid={testId} data-copied={copied || undefined} onKeyDown={onKeyDown} onClick={() => void copy()}>
+      {copied ? <Check aria-hidden /> : <Copy aria-hidden />}
+      {/* the wider word holds the width, so nothing after it moves when it changes */}
+      {!iconOnly && (
         <span className="grid">
           <span className="col-start-1 row-start-1">{t(copied ? "ai.copied" : "ai.copy")}</span>
           <span aria-hidden className="invisible col-start-1 row-start-1">{t(copied ? "ai.copy" : "ai.copied")}</span>
         </span>
-      </Button>
+      )}
+    </Button>
+  );
+  return (
+    <>
+      {/* plan 162: a quiet utility (tier 3), never heavier than what the surface suggests doing: the summary's Reply was
+          drawn lighter than this */}
+      {iconOnly ? (
+        <Tooltip>
+          <TooltipTrigger render={button} />
+          <TooltipContent side="bottom">{t(copied ? "ai.copied" : "ai.copy")}</TooltipContent>
+        </Tooltip>
+      ) : button}
       <span role="status" className="sr-only" data-testid={`${testId}-status`}>{copied ? t("ai.copied") : ""}</span>
     </>
   );
