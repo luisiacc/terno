@@ -106,3 +106,13 @@ The plan's review raised nine points.
 7. **The keyboard.** By keyboard, the name, then "Written with AI", then Copy. Enter copies, says Copied, and leaves the card open. Escape returning focus to the provenance was already covered (`summaries.spec.ts`, plan 162).
 8. **The design CSS.** It is regenerated (`gen:designs`), and `designs.test.ts` passes.
 9. **The rating.** The rating is the AI set (`--screens ai`), not the everyday screens.
+
+## What the Codex code review changed
+
+The code review raised five points, all small (P3), and all are fixed.
+
+1. **Reply ready's title gap.** With Reply | Reply all, Reply ready's title sat 6 px from its glyph, where every other AI card has 8 px (its own `gap-x-1.5`). It is `gap-x-2` now, and `replies-ready.spec.ts` checks the 8 px.
+2. **The fill checks.** The e2e checks compared only the fill's alpha. They now compare the card's computed fill with the same mix painted on a probe, in each mode.
+3. **Copy on a closed card.** A closed summary's Copy now has a test: it copies the whole summary and leaves the card closed.
+4. **Copy's tooltip.** The icon-only Copy's tooltip shows "Copy" on hover and on keyboard focus (e2e). The button is named, is the row's 28 px square, and says "Copied" in its name (unit).
+5. **Stale comments.** Comments still describing a ring or a 40 px header are corrected (`reply-ready.tsx`, `registry.ts`, `replies-ready.spec.ts`).

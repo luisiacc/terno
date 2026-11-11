@@ -94,7 +94,7 @@ export default function ReplyReady({ threadId }: { threadId: number }) {
     </>
   );
   // owner's decisions (2): the reply bar's two answers in its words and glyphs, at the header's end, once it's ready; its
-  // track sits in the header's 40 px without growing it. The words stay as written: if they greet only the sender, the user edits
+  // track sits in the header's 44 px without growing it. The words stay as written: if they greet only the sender, the user edits
   const choice = !writing && everyone !== null && (
     <ToggleGroup
       data-testid="reply-ready-mode"
@@ -120,7 +120,7 @@ export default function ReplyReady({ threadId }: { threadId: number }) {
       {choice ? (
         // owner's decisions (2): the words wrap in their own block, so the switch keeps the first line's end at any width
         <div data-testid="reply-ready-header" className={cn(AI_HEADER, "gap-3")}>
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-0">{lead}</div>
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-0">{lead}</div>
           {choice}
         </div>
       ) : (

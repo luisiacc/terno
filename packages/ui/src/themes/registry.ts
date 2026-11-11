@@ -185,9 +185,8 @@ export function derive(input: Pick<ThemeInput, "mode" | "tokens" | "cats" | "ove
   // plan 160: a composer's ring and its field dividers: the hairline's ink, deep enough to separate the form from the reader
   // (and Lumen's card) at HAIRLINE_FLOOR
   def("draft-edge", () => inkAlpha(o("foreground"), 0.11, 0.3, (c) => (["background", "card"] as const).every((k) => contrast(c, formatOklch(o(k)), bg) >= HAIRLINE_FLOOR)));
-  // plan 161: the same hairline for a tint card in a dialog, where the tint is a step off the popover at most (dark); pass 2:
-  // and an AI card's inset ring on the reader, drawn over its tint (or over the page, where a design's cards are outlined),
-  // a hairline's step from the fill inside it and from the page outside it
+  // plan 161: the same hairline for a tint card in a dialog, where the tint is a step off the popover at most (dark), and
+  // Today's digest row; a hairline's step from a tint inside it and from the page outside it (plan 180: AI cards have no ring)
   def("card-edge", () => {
     const onTint = (c: Oklch) => formatOklch(rgbToOklch(composite(oklchToRgb(c), { ...oklchToRgb(o("tint")), alpha: 1 })));
     return inkAlpha(o("foreground"), 0.11, 0.3, (c) =>

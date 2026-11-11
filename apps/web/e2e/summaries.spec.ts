@@ -14,6 +14,18 @@ import { englishLeaks } from "./i18n-leaks";
 import { answerFor } from "../../../scripts/ui-rating/model-stub.mjs";
 import { startOllamaStub } from "./ollama-stub";
 
+/** plan 180 (Codex review): what the AI card's fill computes to here, in this mode: the same mix, painted on a probe */
+const aiFill = (page: Page, mode: "light" | "dark") =>
+  page.evaluate((m) => {
+    const probe = document.createElement("div");
+    probe.style.backgroundColor = m === "light" ? "color-mix(in oklab, var(--tint) 65%, transparent)" : "color-mix(in oklab, var(--primary) 5%, transparent)";
+    document.body.append(probe);
+    const fill = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return fill;
+  }, mode);
+
+
 test.use({ backendOptions: { network: true } });
 
 const dev = { clientId: "setup", origin: "dev" as const };
@@ -174,8 +186,8 @@ test.describe("summaries (plan 132)", () => {
     // plan 163: over an empty reply, the Sparkles is named for what ⌘J does there
     await expect(page.getByTestId("compose-ai")).toHaveAccessibleName("Draft a reply with AI");
     await page.getByTestId("compose-ai").hover();
-    await expect(page.locator("[data-slot=tooltip-content]")).toContainText("with AI");
-    await expect(page.locator("[data-slot=tooltip-content]")).toContainText(/⌘\s*J/);
+    await expect(page.locator("[data-slot=tooltip-content][data-open]")).toContainText("with AI");
+    await expect(page.locator("[data-slot=tooltip-content][data-open]")).toContainText(/⌘\s*J/);
   });
 
   test("plan 148: a card in every design, its edges on the column and its text inset; nothing spills out of it", { tag: "@design" }, async ({ app: page, server }) => {
@@ -195,6 +207,7 @@ test.describe("summaries (plan 132)", () => {
       await page.emulateMedia({ colorScheme: mode });
       await page.waitForFunction((dark) => document.documentElement.classList.contains("dark") === dark, mode === "dark");
       const surface = await block.evaluate((el) => { const s = getComputedStyle(el); return { fill: s.backgroundColor, ring: s.boxShadow, border: s.borderTopWidth }; });
+      expect(surface.fill, mode).toBe(await aiFill(page, mode));
       expect(surface.fill, mode).toMatch(mode === "light" ? /\/ 0\.65\)$/ : /\/ 0\.05\)$/);
       expect(surface.ring, mode).toBe("none");
       expect(surface.border, mode).toBe("0px");
@@ -287,8 +300,10 @@ test.describe("summaries (plan 132)", () => {
     await expect(page.getByTestId("summary-provenance")).toBeFocused();
     await page.keyboard.press("Tab");
     await expect(page.getByTestId("summary-copy")).toBeFocused();
+    await expect(page.locator("[data-slot=tooltip-content][data-open]")).toHaveText("Copy");
     await page.keyboard.press("Enter");
     await expect(page.getByTestId("summary-copy")).toHaveAttribute("data-copied", "true");
+    // done, its glyph turns to a check and its name says so (the tooltip closes on a press, as every tooltip does)
     await expect(page.getByTestId("summary-copy")).toHaveAccessibleName("Copied");
     await expect(page.getByTestId("summary-toggle")).toHaveAttribute("aria-expanded", "true");
     // the minimum window: the one row holds the name and both tools inside the card, in every design
@@ -300,11 +315,24 @@ test.describe("summaries (plan 132)", () => {
     expect(await page.getByTestId("summary-tools").evaluate((el) => el.parentElement!.scrollWidth <= el.parentElement!.clientWidth)).toBe(true);
     await page.setViewportSize({ width: 1440, height: 900 });
 
-    // closed, the card is its one row
+    // its glyph alone, so its name is in a tooltip too, on hover and on focus
+    await expect(page.getByTestId("summary-copy")).not.toHaveAttribute("data-copied", "true");
+    await page.getByTestId("summary-copy").hover();
+    await expect(page.locator("[data-slot=tooltip-content][data-open]")).toHaveText("Copy");
+    await page.mouse.move(0, 0);
+    await expect(page.locator("[data-slot=tooltip-content][data-open]")).toHaveCount(0);
+
+    // closed, the card is its one row, and Copy still copies the whole summary, leaving it closed
     await page.getByTestId("summary-toggle").click();
     await expect(page.getByTestId("summary-text")).toHaveCount(0);
     expect((await block.boundingBox())!.height).toBe((await page.getByTestId("summary-toggle").boundingBox())!.height);
     await onHeader();
+    await page.evaluate(() => navigator.clipboard.writeText(""));
+    await expect(page.getByTestId("summary-copy")).not.toHaveAttribute("data-copied", "true");
+    await page.getByTestId("summary-copy").click();
+    await expect(page.getByTestId("summary-copy")).toHaveAttribute("data-copied", "true");
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toContain("alongpath");
+    await expect(page.getByTestId("summary-toggle")).toHaveAttribute("aria-expanded", "false");
   });
 
   test("by hand on an old conversation: appears at once, can be stopped, and its arrow goes to the message", async ({ app: page, server }) => {

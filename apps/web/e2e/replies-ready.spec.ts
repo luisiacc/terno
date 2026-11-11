@@ -10,6 +10,18 @@ import { sqlDb } from "../../backend-dev/src/server";
 import { E2E_NOW } from "./constants";
 import { expect, fresh, ingestConversation, recipientEmails, scenario, test, type DevServerFixture } from "./fixtures";
 
+/** plan 180 (Codex review): what the AI card's fill computes to here, in this mode: the same mix, painted on a probe */
+const aiFill = (page: Page, mode: "light" | "dark") =>
+  page.evaluate((m) => {
+    const probe = document.createElement("div");
+    probe.style.backgroundColor = m === "light" ? "color-mix(in oklab, var(--tint) 65%, transparent)" : "color-mix(in oklab, var(--primary) 5%, transparent)";
+    document.body.append(probe);
+    const fill = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return fill;
+  }, mode);
+
+
 test.use({ backendOptions: { network: true } });
 
 const dev = { clientId: "setup", origin: "dev" as const };
@@ -156,6 +168,9 @@ test.describe("replies ready (plan 144)", () => {
     await expect(page.getByTestId("reply-ready-to")).toHaveText("To Yuki Gutiérrez");
     // in the header, which it doesn't grow
     expect((await page.getByTestId("reply-ready-header").boundingBox())!.height).toBeLessThanOrEqual(44);
+    // Codex review (plan 180): the title sits the header's 8 px from its glyph here too, as on every AI card
+    const glyph = (await page.getByTestId("reply-ready-header").locator("svg").first().boundingBox())!;
+    expect(Math.round((await page.getByTestId("reply-ready-title").boundingBox())!.x - (glyph.x + glyph.width))).toBe(8);
     await page.getByTestId("reply-ready-mode-all").click();
     await expect(page.getByTestId("reply-ready-mode-all")).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByTestId("reply-ready-to")).toHaveText("To Yuki Gutiérrez, cc Ana Ruiz and Ben Wu");
@@ -308,11 +323,12 @@ test.describe("replies ready (plan 144)", () => {
       await page.waitForFunction((dark) => document.documentElement.classList.contains("dark") === dark, mode === "dark");
       await block(page).scrollIntoViewIfNeeded();
 
-      // the summary's own surface: tinted, or in Graphite outlined on no fill
+      // the summary's own surface, in every design
       const card = block(page);
       const [mine, summary] = await Promise.all([card, page.getByTestId("summary-block")].map((el) => el.evaluate((n) => { const s = getComputedStyle(n); return { fill: s.backgroundColor, ring: s.boxShadow, radius: s.borderTopLeftRadius }; })));
       expect(mine).toEqual(summary);
       // plan 180 (the owner's "Whisper"): no ring, a breath of fill: Settings' tint at 65% in light, the accent's 5% in dark
+      expect(mine!.fill, `${mode}`).toBe(await aiFill(page, mode));
       expect(mine!.fill, `${mode}`).toMatch(mode === "light" ? /\/ 0\.65\)$/ : /\/ 0\.05\)$/);
       expect(mine!.ring, `${mode}`).toBe("none");
 

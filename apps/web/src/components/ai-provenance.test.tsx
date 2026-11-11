@@ -44,6 +44,25 @@ it("plan 161, pass 3: Copy says Copied in place, to a screen reader too, and goe
   expect(button.dataset.copied).toBeUndefined();
 });
 
+it("plan 180: Copy as its glyph alone is named, the row's 28 px square, and says Copied in its name", async () => {
+  vi.useFakeTimers();
+  const writeText = vi.fn(async () => {});
+  Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+  act(() => root.render(<AiCopyButton iconOnly text={() => "the words"} failed="Couldn't copy." testId="x-copy" />));
+  const button = q("x-copy")!;
+  expect(button.getAttribute("aria-label")).toBe("Copy");
+  expect(button.textContent).toBe("");
+  expect(button.className).toContain("size-7");
+  // its tooltip's trigger: the words it can't show
+  expect(button.dataset.slot).toBe("tooltip-trigger");
+  await act(async () => button.click());
+  expect(writeText).toHaveBeenCalledWith("the words");
+  expect(button.getAttribute("aria-label")).toBe("Copied");
+  expect(q("x-copy-status")!.textContent).toBe("Copied");
+  await act(async () => vi.advanceTimersByTime(1500));
+  expect(button.getAttribute("aria-label")).toBe("Copy");
+});
+
 it("plan 161, pass 3: who wrote it is a button (it was a span that took focus and did nothing), opening what it used and the model", async () => {
   act(() => root.render(<AiProvenance model="qwen3:8b" at={new Date(2026, 10, 8, 9, 41).getTime()} lines={["In your voice with Liam: it learned from how you write to Liam."]} testId="x-prov" />));
   const trigger = q("x-prov")!;
