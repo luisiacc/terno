@@ -143,6 +143,20 @@ The dot was the palette's accent. In Lumen and Graphite that accent is an ink (b
 
 The header's other glyphs (the spinner while a card writes, the follow-up's clock) take the same colour (`AI_GLYPH`, `text-ai`), so the spinner turns into the dot without changing colour; this came from the Codex review. The colour is defined in the palettes and the CSS only reads the token, per AGENTS.md's rule that colours stay in palettes. A unit test checks every palette's mark has colour and matches its accent where the accent has one. The e2e reads the dot's fill against `var(--ai)` in every design.
 
+### No mark (the owner, 2026-11-11)
+
+> lets  remove the icon
+
+A written card has no mark. Its title ("Summary", "Reply drafted", Filters' "From your request") starts the header, on the same left edge as the text under it. The card's fill and "Written with AI" say a model wrote it, as round 3's "Nothing" direction proposed.
+
+- **Removed:** `AiMark` and the `ai-mark` utility.
+- **What remains:**
+  - The spinner while a card writes, because it shows progress.
+  - The follow-up line's clock, its task glyph.
+  - The `ai` colour, which both of them take (`AI_GLYPH`).
+- **The summary's other states:** the waiting and no-provider lines start with their words.
+- **Tests:** the e2e checks the title sits on the text's inset with only its chevron after it, and Reply ready's title on its draft's line. The unit test checks Reply ready's header starts with its title.
+
 ## Rating
 
 A round of the AI set (`pnpm ui:rate --screens ai`, at `048daefcc`) did not run: its capture stopped before any rater, twice.

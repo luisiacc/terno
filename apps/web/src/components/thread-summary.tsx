@@ -14,7 +14,6 @@ import { bodyArrivedForSummary, dismissSummary, loadSummary, revealSummaryMessag
 import { replyFromItem } from "~/lib/summary-reply";
 import { setApp, useApp } from "~/state/app";
 import { AI_CARD, AI_GLYPH, AI_HEADER, AI_INSET, AI_PAD, AI_TITLE, AiCopyButton, AiErrorNotice, AiProvenance, aiErrorCopy, errorTarget, messageSource, messageSourceShort } from "./ai-card";
-import { AiMark } from "./ai-mark";
 
 /** Pass 3: what an item asks of the user, answered with the conversation's ordinary reply. */
 const ANSWERED = new Set<AiSummaryItem["kind"]>(["action", "question"]);
@@ -98,7 +97,6 @@ function Ready({ summary, messages }: { summary: AiSummary; messages: readonly M
           wrote it and Copy at its end, where a footer row of their own used to be */}
       <div className={cn(AI_HEADER, AI_INSET, "py-0")}>
         <CollapsibleTrigger data-testid="summary-toggle" className="h-11 w-auto gap-2 rounded-sm px-0 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground [&_[data-slot=collapsible-chevron]]:ms-0">
-          <AiMark />
           <span className={AI_TITLE}>{t("summary.label")}</span>
         </CollapsibleTrigger>
         <div className="-me-1.5 ms-auto flex items-center gap-0.5" data-testid="summary-tools">
@@ -126,8 +124,8 @@ function Ready({ summary, messages }: { summary: AiSummary; messages: readonly M
 function Line({ state, status, icon, actions, children }: { state: string; status?: boolean; icon?: React.ReactNode; actions?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div data-testid="summary-block" data-state={state} role={status ? "status" : undefined} className={cn(CARD, AI_INSET, "flex min-h-11 items-start gap-2 py-3 text-sm text-muted-foreground")}>
-      {/* on the first line, however many the text takes */}
-      <span className="flex h-[1lh] shrink-0 items-center">{icon ?? <AiMark />}</span>
+      {/* on the first line, however many the text takes; plan 181 (the owner): only a working card has a glyph, its spinner */}
+      {icon && <span className="flex h-[1lh] shrink-0 items-center">{icon}</span>}
       <div className="flex min-w-0 flex-1 flex-wrap gap-x-3 gap-y-1">
         {/* its own width: a short status keeps its action on the row, and a long one sends it below */}
         <span className="min-w-0 flex-auto wrap-anywhere">{children}</span>

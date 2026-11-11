@@ -17,9 +17,8 @@ export const AI_INSET = "px-5";
 export const AI_PAD = `${AI_INSET} pb-4`;
 /**
  * The header's glyph, the size of the header's text: the spinner while a card works, and a card's own task glyph (the
- * follow-up's clock). Plan 181: in the AI mark's colour (`--ai`: the accent, or Terno's indigo where the accent is an ink),
- * so the spinner turns into the glowing dot (`AiMark`) without changing colour (the owner's exception to AGENTS.md's muted
- * icon beside a label)
+ * follow-up's clock). Plan 181: in the AI colour (`--ai`: the accent, or Terno's indigo where the accent is an ink or a grey;
+ * the owner's exception to AGENTS.md's muted icon beside a label). A written card has no mark: its title starts it (the owner)
  */
 export const AI_GLYPH = "size-[1.15em] shrink-0 text-ai";
 /**

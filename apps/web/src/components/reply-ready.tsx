@@ -14,7 +14,6 @@ import { chooseReplyAll, dismissReply, stopReply, useReplies, useReply } from "~
 import { useApp } from "~/state/app";
 import { useThreads } from "~/state/threads";
 import { AI_ACTIONS, AI_CARD, AI_GAP, AI_GAP_TINT, AI_GLYPH, AI_HEADER, AI_PAD, AI_TITLE, AiProvenance, gapPieces } from "./ai-card";
-import { AiMark } from "./ai-mark";
 
 /**
  * Plan 161, pass 3: what the provenance says it used, the two facts the composer says too: the style ("In your voice with
@@ -85,7 +84,8 @@ export default function ReplyReady({ threadId }: { threadId: number }) {
   const lead = (
     <>
       {/* the spinner keeps its status and name, as before the card */}
-      {writing ? <Spinner className={AI_GLYPH} /> : <AiMark />}
+      {/* plan 181 (the owner): no mark once it's written; the spinner while it writes */}
+      {writing && <Spinner className={AI_GLYPH} />}
       <span data-testid="reply-ready-title" className={AI_TITLE}>{writing ? t("replies.writing") : toFill > 0 ? t("replies.drafted") : t("replies.title")}</span>
       {/* what's left for the user, said before Use, in the ink */}
       {/* plan 162 (after ai162-r01): in the gap's own mark, so the header points at what's missing in the draft */}

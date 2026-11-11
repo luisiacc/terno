@@ -168,9 +168,8 @@ test.describe("replies ready (plan 144)", () => {
     await expect(page.getByTestId("reply-ready-to")).toHaveText("To Yuki Gutiérrez");
     // in the header, which it doesn't grow
     expect((await page.getByTestId("reply-ready-header").boundingBox())!.height).toBeLessThanOrEqual(44);
-    // Codex review (plan 181): the title sits the header's 8 px from its glyph here too, as on every AI card
-    const glyph = (await page.getByTestId("reply-ready-header").locator("[data-slot=ai-mark]").boundingBox())!;
-    expect(Math.round((await page.getByTestId("reply-ready-title").boundingBox())!.x - (glyph.x + glyph.width))).toBe(8);
+    // plan 181 (the owner): no mark here either: the title starts on the draft's line
+    expect(Math.abs((await page.getByTestId("reply-ready-title").boundingBox())!.x - (await page.getByTestId("reply-ready-text").boundingBox())!.x)).toBeLessThanOrEqual(0.5);
     await page.getByTestId("reply-ready-mode-all").click();
     await expect(page.getByTestId("reply-ready-mode-all")).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByTestId("reply-ready-to")).toHaveText("To Yuki Gutiérrez, cc Ana Ruiz and Ben Wu");
@@ -346,7 +345,7 @@ test.describe("replies ready (plan 144)", () => {
       const footer = (await page.getByTestId("reply-ready-footer").boundingBox())!;
       const inset = text.x - box.x;
       expect(inset).toBeGreaterThanOrEqual(12);
-      expect((await page.getByTestId("reply-ready-header").locator("[data-slot=ai-mark]").boundingBox())!.x - box.x).toBe(inset);
+      expect((await page.getByTestId("reply-ready-title").boundingBox())!.x - box.x).toBe(inset);
       expect((await page.getByTestId("reply-ready-use").boundingBox())!.x - box.x).toBe(inset);
       expect(text.x + text.width).toBeLessThanOrEqual(box.x + box.width - inset + 0.5);
       expect(header.y).toBeGreaterThanOrEqual(box.y);

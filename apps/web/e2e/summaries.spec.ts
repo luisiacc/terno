@@ -224,54 +224,11 @@ test.describe("summaries (plan 132)", () => {
     expect(await page.getByTestId("conversation").evaluate((el) => getComputedStyle(el).borderTopWidth)).toBe("0px");
     const inset = (await page.getByTestId("summary-text").boundingBox())!.x - box.x;
     expect(inset).toBeGreaterThanOrEqual(12);
-    expect((await page.getByTestId("summary-toggle").locator("[data-slot=ai-mark]").boundingBox())!.x - box.x).toBe(inset);
-    // plan 181 (the owner): the AI mark is a glowing dot in its own colour (--ai), not a sparkle: solid, round, haloed
-    const mark = await page.getByTestId("summary-toggle").locator("[data-slot=ai-mark] > span").evaluate((el) => {
-      const probe = document.createElement("div");
-      probe.style.backgroundColor = "var(--ai)";
-      document.body.append(probe);
-      const primary = getComputedStyle(probe).backgroundColor;
-      probe.remove();
-      const s = getComputedStyle(el);
-      return { fill: s.backgroundColor, primary, radius: s.borderTopLeftRadius, glow: s.boxShadow };
-    });
-    expect(mark.fill).toBe(mark.primary);
-    // the header's other glyphs (the spinner, a task's glyph) share its colour, so the spinner becomes the dot unchanged
-    expect(await page.evaluate(() => {
-      const probe = document.createElement("span");
-      probe.className = "text-ai";
-      document.body.append(probe);
-      const color = getComputedStyle(probe).color;
-      probe.remove();
-      return color;
-    })).toBe(mark.primary);
-    expect(mark.radius).toBe("9999px");
-    // two shadows: a faint ring and the halo
-    expect(mark.glow).toMatch(/px, .+px$/);
-    // half the text's size, in the glyph's 1.15em box, centred on the title's line (Codex review)
-    const geometry = await page.getByTestId("summary-toggle").evaluate((toggle) => {
-      const box = toggle.querySelector("[data-slot=ai-mark]")!.getBoundingClientRect();
-      const dot = toggle.querySelector("[data-slot=ai-mark] > span")!.getBoundingClientRect();
-      const title = [...toggle.querySelectorAll("span")].find((s) => s.textContent === "Summary")!.getBoundingClientRect();
-      const em = parseFloat(getComputedStyle(toggle).fontSize);
-      return { em, box: box.width, boxH: box.height, dot: dot.width, dotH: dot.height, dotMid: dot.top + dot.height / 2, titleMid: title.top + title.height / 2 };
-    });
-    expect(geometry.dot).toBeCloseTo(geometry.em * 0.5, 0);
-    expect(geometry.dotH).toBeCloseTo(geometry.em * 0.5, 0);
-    expect(geometry.box).toBeCloseTo(geometry.em * 1.15, 0);
-    expect(Math.abs(geometry.dotMid - geometry.titleMid)).toBeLessThanOrEqual(1);
-    // forced colours keep it: the system's text colour, never a fill and shadows they'd drop
-    await page.emulateMedia({ forcedColors: "active" });
-    const forced = await page.getByTestId("summary-toggle").locator("[data-slot=ai-mark] > span").evaluate((el) => {
-      const probe = document.createElement("div");
-      probe.style.backgroundColor = "CanvasText";
-      document.body.append(probe);
-      const text = getComputedStyle(probe).backgroundColor;
-      probe.remove();
-      return { fill: getComputedStyle(el).backgroundColor, text };
-    });
-    expect(forced.fill).toBe(forced.text);
-    await page.emulateMedia({ forcedColors: "none" });
+    // plan 181 (the owner, 2026-11-11): no mark: the title starts the card, on the text's inset, with only its chevron after it
+    const title = page.getByTestId("summary-toggle").getByText("Summary", { exact: true });
+    expect((await title.boundingBox())!.x - box.x).toBe(inset);
+    expect(await page.getByTestId("summary-toggle").evaluate((el) => el.firstElementChild?.textContent)).toBe("Summary");
+    expect(await page.getByTestId("summary-toggle").locator("svg").count()).toBe(1);
 
     // the minimum window: a long link wraps, inside the card
     await page.setViewportSize({ width: 980, height: 600 });
