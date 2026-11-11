@@ -101,3 +101,9 @@ With no preview, the subject line is drawn in the preview's quiet ink (`text-mut
 5. **Tests** (#3, #5, #6): the e2e scroll check of `designs.spec.ts` is extended: partway into the list, Preview 1 → 0 → 2 keeps the same first row and the open conversation on screen. An e2e geometry check that at 2 lines the marks sit on the preview's first line. Review keeps its one-line row and its answers under Preview = None (e2e, the answers clicked).
 6. **Perf** (#8): one ui-perf run at Preview = None and one at 2 lines, in the default design, with the existing frame and render-count assertions.
 7. Not taken: #1 (Preview changed in Settings while an action's preview is open, then Cancel): an action preview's saved offset is a raw `scrollTop`; changing an appearance setting in the middle of an action's preview is rare enough to leave (the codex-review-round-cap rule), and the same is true today of a design switch.
+
+## What the Codex code review changed
+
+1. `thread-list-work.test.tsx` changed density through `useApp`'s settings; the list now reads the painted appearance (`useAppearance`), so the test goes through it, restores it, and also checks a change of the preview's lines recomputes every position (a line less, then back).
+2. The Appearance baselines (every design's `design-settings-appearance`, `themes.spec`'s light and dark, Spanish) gain the Preview row; looked at and updated. (`es-settings-general.png` was already stale before this series and is left as it was.)
+3. The two-line and no-preview checks were class strings in jsdom. `designs.spec.ts` now measures them in the browser in every design (classic, avatar, large avatar): two lines are two leadings tall and clamped, the marks and the account centred on the preview's first line; with none, no preview and both centred on the subject's line.

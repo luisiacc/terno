@@ -135,6 +135,40 @@ test.describe("in every design", { tag: "@design" }, () => {
       await expect(rows(page).first()).toHaveCSS("height", `${d.rows.compact}px`);
       await server.backend.server.invoke("settings.update", { density: "comfortable" }, ctx);
     });
+    await scenario("plan 187: two preview lines wrap and clamp, the marks and account on the first; with none they end the subject's line", async () => {
+      const d = await designOf(page);
+      const leading = parseFloat(d.type.rowSnippet.leading) * 16;
+      /** a row with marks, an account and a preview long enough for two lines: its parts' boxes */
+      const geometry = () =>
+        page.evaluate(() => {
+          const row = [...document.querySelectorAll<HTMLElement>("[data-testid=thread-row]")].find((r) => r.querySelector("[data-testid=row-marks]") && r.querySelector("[data-testid=account-label]") && (r.querySelector("[data-testid=row-snippet]")?.textContent ?? "").length > 120)!;
+          const box = (id: string) => {
+            const b = row.querySelector(`[data-testid=${id}]`)?.getBoundingClientRect();
+            return b ? { top: b.top, bottom: b.bottom, mid: (b.top + b.bottom) / 2 } : null;
+          };
+          const snippet = row.querySelector<HTMLElement>("[data-testid=row-snippet]");
+          return { id: row.dataset.threadId!, snippet: box("row-snippet"), clamped: snippet ? snippet.scrollHeight > snippet.clientHeight + 1 : false, subject: box("row-subject")!, marks: box("row-marks")!, account: box("account-label")! };
+        });
+      await server.backend.server.invoke("settings.update", { previewLines: 2 }, ctx);
+      await reload(page);
+      const two = await geometry();
+      // two lines tall, and more text than fits: clamped, not one nowrap line
+      expect(two.snippet!.bottom - two.snippet!.top).toBeCloseTo(2 * leading, 0);
+      expect(two.clamped).toBe(true);
+      // the marks and the account centred on the preview's first line
+      for (const part of [two.marks, two.account]) expect(Math.abs(part.mid - (two.snippet!.top + leading / 2))).toBeLessThanOrEqual(2);
+      await server.backend.server.invoke("settings.update", { previewLines: 0 }, ctx);
+      await reload(page);
+      const none = await page.evaluate(() => document.querySelectorAll("[data-testid=row-snippet]").length);
+      expect(none).toBe(0);
+      const row = page.locator("[data-testid=thread-row]", { has: page.getByTestId("row-marks") }).filter({ has: page.getByTestId("account-label") }).first();
+      const subject = (await row.getByTestId("row-subject").boundingBox())!;
+      for (const id of ["row-marks", "account-label"]) {
+        const b = (await row.getByTestId(id).boundingBox())!;
+        expect(Math.abs(b.y + b.height / 2 - (subject.y + subject.height / 2)), id).toBeLessThanOrEqual(2);
+      }
+      await server.backend.server.invoke("settings.update", { previewLines: 1 }, ctx);
+    });
     await scenario("a category's suggestions are reachable from the sidebar in every design", async () => {
       const db = sqlDb(server.backend.store);
       const facturas = db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Facturas'")!.id;

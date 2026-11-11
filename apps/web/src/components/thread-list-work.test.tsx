@@ -8,6 +8,7 @@ import { skipToList, ThreadList } from "./thread-list";
 import { listKey, useList } from "~/state/list";
 import { client } from "~/rpc/connection";
 import { useApp } from "~/state/app";
+import { useAppearance } from "~/lib/appearance";
 
 const row = (id: number): ThreadSummary => ({ id, accountId: 1, subject: "Synthetic", snippet: "", fromName: "Sender", fromEmail: "sender@example.test", messageCount: 1, hasAttachments: false, starred: false, categoryIds: [], unread: false, lastDate: 1000 - id });
 
@@ -38,7 +39,7 @@ vi.mock("~/lib/web-parts", () => ({ DesktopBanner: null }));
 vi.mock("./thread-row", () => ({ ThreadRow: ({ thread, top, height }: { thread: ThreadSummary; top: number; height: number }) => <div id={`thread-${thread.id}`} data-testid="thread-row" data-thread-id={thread.id} style={{ transform: `translateY(${top}px)`, height }} /> }));
 
 it("scrolling a 50k loaded list reuses measurements; replacements and density still remeasure", async () => {
-  const app = useApp.getState(), list = useList.getState();
+  const app = useApp.getState(), list = useList.getState(), appearance = useAppearance.getState();
   const host = document.createElement("div"); document.body.append(host);
   const root = createRoot(host);
   const items = Array.from({ length: 50_000 }, (_, i) => row(i + 1));
@@ -83,8 +84,18 @@ it("scrolling a 50k loaded list reuses measurements; replacements and density st
     await act(async () => probe.scroll!(0, false));
     expect(host.querySelector('[data-thread-id="50001"]')).toBeNull();
     expect(host.querySelector('[data-testid="thread-row"]')?.getAttribute("data-thread-id")).toBe("50000");
+    // plan 187: the preview's lines are the rows' shape too: a line less, every position recomputed, then back
+    const shown = probe.estimates;
+    await act(async () => useAppearance.setState({ previewLines: 0 }));
+    expect(probe.estimates).toBeGreaterThan(shown);
+    const none = host.querySelector<HTMLElement>('[data-testid="thread-row"]')!;
+    expect(Number.parseFloat(none.style.height)).toBeLessThan(Number.parseFloat(oldHeight));
+    expect(none.parentElement!.style.height).toBe(`${100 * Number.parseFloat(none.style.height)}px`);
+    await act(async () => useAppearance.setState({ previewLines: 1 }));
+    expect(host.querySelector<HTMLElement>('[data-testid="thread-row"]')!.style.height).toBe(oldHeight);
     const replacementCount = probe.estimates;
-    await act(async () => useApp.setState({ settings: { ...app.settings!, density: "compact" } }));
+    // (the painted appearance's, as applyAppearance sets it: plan 187)
+    await act(async () => useAppearance.setState({ density: "compact" }));
     expect(probe.estimates).toBeGreaterThan(replacementCount);
     const compact = host.querySelector<HTMLElement>('[data-testid="thread-row"]')!;
     expect(compact.style.height).not.toBe(oldHeight);
@@ -97,7 +108,7 @@ it("scrolling a 50k loaded list reuses measurements; replacements and density st
     expect(compactFirst.style.transform).toBe(`translateY(${15 * compactHeight}px)`);
   } finally {
     await act(async () => root.unmount());
-    useApp.setState(app, true); useList.setState(list, true); host.remove();
+    useApp.setState(app, true); useList.setState(list, true); useAppearance.setState(appearance, true); host.remove();
   }
 });
 
