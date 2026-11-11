@@ -29,6 +29,12 @@ interface Scripted extends MailProvider {
   opGate: Promise<void> | null;
   /** while set, a sync waits for it */
   syncGate: Promise<void> | null;
+  /** plan 184: push's own login is refused (sync's session may still work) */
+  refuseWatch: boolean;
+  /** plan 184: a send goes through SMTP, then its Sent copy's IMAP login is refused */
+  refuseCopy: boolean;
+  /** while set, a server search waits for it */
+  searchGate: Promise<void> | null;
 }
 
 const cleanups: (() => Promise<unknown> | unknown)[] = [];
@@ -45,7 +51,7 @@ async function setup(o: { syncIntervalMs?: number; kinds?: ("imap" | "gmail")[] 
   let verifyGate: Promise<void> | null = null;
   let clock = Date.now();
   /** what the next provider of an account starts with (a test sets it before a sign-in) */
-  const script = new Map<number, Partial<Pick<Scripted, "refuseSync" | "refuseOps">>>();
+  const script = new Map<number, Partial<Pick<Scripted, "refuseSync" | "refuseOps" | "refuseWatch">>>();
   const registry: ProviderRegistry = {
     create(ctx) {
       const p: Scripted = {
@@ -58,9 +64,23 @@ async function setup(o: { syncIntervalMs?: number; kinds?: ("imap" | "gmail")[] 
         refuseOps: new Set(),
         opGate: null,
         syncGate: null,
+        refuseWatch: false,
+        refuseCopy: false,
+        searchGate: null,
         ...script.get(ctx.account.id),
         async verify() { p.verifies++; },
-        watch() { p.watches++; return () => {}; },
+        watch() {
+          p.watches++;
+          // push's login, refused: it stops and says so (the IMAP watcher's way)
+          if (p.refuseWatch) queueMicrotask(() => ctx.refused?.(new ProviderAuthError("IMAP login failed: Invalid credentials")));
+          return () => {};
+        },
+        async search() {
+          const refuse = p.refuseSync;
+          if (p.searchGate) await p.searchGate;
+          if (refuse) throw new ProviderAuthError("IMAP login failed: Invalid credentials");
+          return { hits: [], partial: false };
+        },
         async sync() {
           p.syncs++;
           // what the server answers is decided as the pass starts (a gate only delays the answer)
@@ -73,6 +93,8 @@ async function setup(o: { syncIntervalMs?: number; kinds?: ("imap" | "gmail")[] 
           if (p.opGate) await p.opGate;
           p.executed.push(op.kind);
           if (refuse) throw new ProviderAuthError("SMTP authentication failed: 535");
+          // SMTP took it; the copy's IMAP login didn't (the IMAP provider's appendCopy)
+          if (op.kind === "send" && p.refuseCopy) ctx.refused?.(new ProviderAuthError("IMAP login failed: Invalid credentials"));
           if (op.kind === "send") return { providerMsgId: `sent-${op.id}` };
         },
         async close() {},
@@ -437,5 +459,79 @@ describe("plan 25: an account that needs a sign-in", () => {
     await pass;
     await expect.poll(() => p.syncs).toBe(3);
     await expect.poll(() => t.state(id)).toMatchObject({ status: "idle", authRequired: false });
+  });
+});
+
+describe("plan 184: whichever call a refused sign-in comes out of, the account says so", () => {
+  const search = (t: Awaited<ReturnType<typeof setup>>, id: number) => t.backend.runForAccount(id, (provider) => provider.search!({ queries: [{ terms: ["x"] }], before: Date.now(), limit: 10, signal: new AbortController().signal }));
+
+  it("a server search refused: the account needs a sign-in before the search's caller hears of it", async () => {
+    const t = await setup();
+    const [id, other] = t.ids as [number, number];
+    await t.backend.start();
+    await expect.poll(() => t.state(id).status).toBe("idle");
+    t.providers.get(id)!.refuseSync = true;
+    await expect(search(t, id)).rejects.toBeInstanceOf(ProviderAuthError);
+    // IMAP refused it: IMAP taking the password again can lift it (a recheck), as a sync's refusal
+    expect(t.state(id)).toMatchObject({ status: "error", authRequired: true, authScope: null });
+    expect(t.state(other)).toMatchObject({ authRequired: false });
+    // and what it holds: actions park without reaching the server
+    const parked = t.op(id, "archive");
+    await t.backend.runWorker();
+    expect(t.opRow(parked)).toEqual({ state: "queued", attempts: 0 });
+    expect(t.providers.get(id)!.executed).toEqual([]);
+  });
+
+  it("push's login refused while sync's session works: the account says so (no silent account without new mail)", async () => {
+    const t = await setup();
+    const [id] = t.ids as [number];
+    t.script.set(id, { refuseWatch: true });
+    await t.backend.start();
+    await expect.poll(() => t.state(id)).toMatchObject({ status: "error", authRequired: true, authScope: null });
+    expect(t.providers.get(id)!.watches).toBe(1);
+  });
+
+  it("a Sent copy's login refused after SMTP took the message: the account says so, the message is sent once", async () => {
+    const t = await setup();
+    const [id] = t.ids as [number];
+    await t.backend.start();
+    await expect.poll(() => t.state(id).status).toBe("idle");
+    const p = t.providers.get(id)!;
+    p.refuseCopy = true;
+    const sent = t.op(id, "send");
+    await t.backend.runWorker();
+    expect(t.opRow(sent).state).toBe("succeeded");
+    expect(t.state(id)).toMatchObject({ authRequired: true, authScope: null });
+    await t.backend.runWorker();
+    expect(p.executed).toEqual(["send"]);
+  });
+
+  it("a search refused with credentials a sign-in has since replaced says nothing", async () => {
+    const t = await setup();
+    const [id] = t.ids as [number];
+    await t.backend.start();
+    await expect.poll(() => t.state(id).status).toBe("idle");
+    const p = t.providers.get(id)!;
+    let release!: () => void;
+    p.searchGate = new Promise<void>((r) => (release = r));
+    p.refuseSync = true;
+    const searching = search(t, id);
+    await tick(20);
+    // the renew path: new credentials, same provider
+    await t.backend.signedIn(id);
+    release();
+    await expect(searching).rejects.toBeInstanceOf(ProviderAuthError);
+    expect(t.state(id)).toMatchObject({ authRequired: false });
+  });
+
+  it("an IMAP send refused by SMTP is only its sending, wherever it's reported", async () => {
+    const t = await setup();
+    const [id] = t.ids as [number];
+    await t.backend.start();
+    await expect.poll(() => t.state(id).status).toBe("idle");
+    t.providers.get(id)!.refuseOps.add("send");
+    t.op(id, "send");
+    await t.backend.runWorker();
+    expect(t.state(id)).toMatchObject({ authRequired: true, authScope: "send" });
   });
 });

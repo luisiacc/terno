@@ -369,7 +369,7 @@ describe("plan 20: the IMAP provider's own connections", () => {
   const fixtures = new Map<number, Awaited<ReturnType<typeof startImap>>>();
   const probes = new WeakMap<ReturnType<typeof createImapProvider>, () => Promise<void>>();
 
-  async function provider(port: number, o: { secret?: () => Promise<void>; timeouts?: Partial<ImapTimeouts> } = {}) {
+  async function provider(port: number, o: { secret?: () => Promise<void>; timeouts?: Partial<ImapTimeouts>; refused?: ProviderContext["refused"]; smtpPort?: number } = {}) {
     const fixture = fixtures.get(port);
     const dir = mkdtempSync(join(tmpdir(), "terno-net-session-"));
     const backend = new Backend({ dbPath: join(dir, "t.db"), version: "t", cipher: plaintextCipher,
@@ -396,7 +396,8 @@ describe("plan 20: the IMAP provider's own connections", () => {
     const store = new SqlProviderStore(sqlDb(backend.store), account.id);
     const ctx = {
       account,
-      config: { imap: { host: "127.0.0.1", port, secure: false, user: "testuser" }, smtp: { host: "127.0.0.1", port: 1, secure: false, user: "t" }, senderName: "", appendToSent: false },
+      config: { imap: { host: "127.0.0.1", port, secure: false, user: "testuser" }, smtp: { host: "127.0.0.1", port: o.smtpPort ?? 1, secure: false, user: "t" }, senderName: "", appendToSent: o.smtpPort !== undefined },
+      refused: o.refused,
       getSecret: async () => {
         await o.secret?.();
         return "testpass";
@@ -443,10 +444,14 @@ describe("plan 20: the IMAP provider's own connections", () => {
     cleanups.push(() => proxy.close());
     // the password was changed on the server
     imap.server.control.updateUser("testuser", { password: "changed" });
-    const p = await provider(proxy.port, { timeouts: { reconnectMs: 50, reconnectMaxMs: 200 } });
+    const refused = vi.fn();
+    const p = await provider(proxy.port, { timeouts: { reconnectMs: 50, reconnectMaxMs: 200 }, refused });
     const stop = p.watch!(() => {});
     cleanups.push(() => stop());
     await expect.poll(() => proxy.accepted).toBe(1);
+    // plan 184: push's refusal reaches the account (sync's session could still be logged in)
+    await expect.poll(() => refused.mock.calls.length).toBe(1);
+    expect(refused.mock.calls[0]![0]).toBeInstanceOf((await import("@terno/mail")).ProviderAuthError);
     // with the old loop: 50, 100, 200, 200 … ms, four more logins in this window
     await new Promise((r) => setTimeout(r, 600));
     expect(proxy.accepted).toBe(1);
@@ -456,6 +461,21 @@ describe("plan 20: the IMAP provider's own connections", () => {
     expect(proxy.accepted).toBe(2);
     // and a sync says it's a sign-in to redo
     await expect(p.sync({ signal: new AbortController().signal } as never)).rejects.toBeInstanceOf((await import("@terno/mail")).ProviderAuthError);
+  });
+
+  it("plan 184: a Sent copy whose IMAP login is refused after SMTP took the message reports it, and the send still succeeds once", async () => {
+    const imap = await startImap();
+    const smtp = await startSmtp();
+    imap.server.control.updateUser("testuser", { password: "changed" });
+    const refused = vi.fn();
+    const p = await provider(imap.port, { refused, smtpPort: smtp.port });
+    cleanups.push(() => p.close());
+    const payload = { from: { name: "", email: "luis@test.local" }, to: [{ name: "", email: "someone@example.test" }], cc: [], bcc: [], subject: "Copy refused", text: "Synthetic body", messageId: "copy-refused@test.local", inReplyTo: null, references: [], providerThreadId: null };
+    const result = await p.execute({ id: "send-copy", kind: "send", target: {}, payload });
+    expect(result).toMatchObject({ providerMsgId: expect.any(String), warning: { key: expect.stringMatching(/^errors\.sentCopy\./) } });
+    expect(smtp.received).toHaveLength(1);
+    expect(refused).toHaveBeenCalledOnce();
+    expect(refused.mock.calls[0]![0]).toBeInstanceOf((await import("@terno/mail")).ProviderAuthError);
   });
 
   const markRead = (p: Awaited<ReturnType<typeof provider>>) => probes.get(p)!();

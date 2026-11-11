@@ -561,7 +561,8 @@ describe.each(["SQL", "IndexedDB"] as const)("%s account lifetime: X06 / S16 / S
     await t.backend.syncAccount(t.ids[0]!);
     expect(fresh.syncs).toBe(2);
     expect(fresh.sink.signal.aborted).toBe(false);
-    expect(await t.backend.provider(t.ids[0]!)).toBe(fresh);
+    // the backend's provider is the fresh one, seen through the refusal boundary (plan 184): same context, same calls
+    expect(((await t.backend.provider(t.ids[0]!)) as unknown as typeof fresh).ctx).toBe(fresh.ctx);
   });
 
   it("removal owns its closed generation and cancels a pending verified sign-in", async () => {

@@ -1738,6 +1738,8 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
       await hooks?.record("saved", { mailbox: sent, ...(result.uidValidity && { uidValidity: String(result.uidValidity) }), ...(result.uid && { uid: result.uid }) });
       return "saved";
     } catch (error) {
+      // plan 184: the message went; its copy's login was refused: the account asks for a sign-in (copy repair follows it)
+      if (error instanceof ProviderAuthError) ctx.refused?.(error);
       const status = (error as { responseStatus?: string })?.responseStatus;
       const copy = !issued || status === "NO" || status === "BAD" ? "rejected" : "unknown";
       // The SMTP latch already owns this outcome, even when local receipt storage fails.
@@ -2711,7 +2713,13 @@ export function createImapProvider(ctx: ProviderContext, options: ImapProviderOp
           markLost();
           // plan 25: a refused sign-in isn't knocked on every minute (servers lock accounts out for that); a
           // network change tries once more, and signing in again starts a new provider
-          if (toProviderError(error) instanceof ProviderAuthError) { refusedLogin = true; return; }
+          const refusal = toProviderError(error);
+          if (refusal instanceof ProviderAuthError) {
+            refusedLogin = true;
+            // plan 184: sync's session may still be logged in: the account says so anyway
+            ctx.refused?.(refusal);
+            return;
+          }
           schedule();
         }
       };

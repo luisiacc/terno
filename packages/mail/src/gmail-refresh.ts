@@ -112,7 +112,8 @@ export async function exchangeGmailRefresh(options: {
     const expiresAt = receivedAt + duration;
     if (!Number.isFinite(duration) || duration > Number.MAX_SAFE_INTEGER || !Number.isFinite(expiresAt) || expiresAt > Number.MAX_SAFE_INTEGER || expiresAt <= receivedAt) throw invalid();
     const grantedScopes = typeof value.scope === "string" ? value.scope.split(/\s+/).filter(Boolean) : undefined;
-    if (grantedScopes && !grantedScopes.includes("https://www.googleapis.com/auth/gmail.modify") && !grantedScopes.includes("https://mail.google.com/")) throw invalid();
+    // plan 184: a grant without mail (granular consent) is renewed by signing in again, not a bad response
+    if (grantedScopes && !grantedScopes.includes("https://www.googleapis.com/auth/gmail.modify") && !grantedScopes.includes("https://mail.google.com/")) throw new ProviderAuthError(L("errors.gmail.permissionRequired"));
     return {
       accessToken: value.access_token,
       refreshToken: typeof value.refresh_token === "string" ? value.refresh_token : options.refreshToken,

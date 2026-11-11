@@ -226,7 +226,7 @@ for (const kind of ["SQL", "IDB"] as const) describe(`${kind} W05 saved-account 
 
   sqlite("credential replacement retires the policy pause on a retained provider", async () => {
     const h = await setup(false, kind);
-    h.answer((r) => new URL(r.url).pathname === "/gmail/profile" ? failure(403, "insufficientPermissions") : undefined);
+    h.answer((r) => new URL(r.url).pathname === "/gmail/profile" ? failure(403, "SERVICE_DISABLED") : undefined);
     await h.backend.syncAccount(h.account.id);
     const provider = await h.backend.provider(h.account.id);
     const { opId } = await h.send();
@@ -238,7 +238,7 @@ for (const kind of ["SQL", "IDB"] as const) describe(`${kind} W05 saved-account 
     expect(await h.backend.store.ops.get(opId)).toMatchObject({ state: "succeeded", attempts: 1 });
   });
 
-  sqlite.each(["SERVICE_DISABLED", "userRateLimitExceeded"])("stale %s body cannot publish after credential replacement", async (reason) => {
+  sqlite.each(["SERVICE_DISABLED", "userRateLimitExceeded", "insufficientPermissions"])("stale %s body cannot publish after credential replacement", async (reason) => {
     const h = await setup(false, kind);
     await (await h.backend.provider(h.account.id))!.verify();
     let release!: () => void, entered!: () => void;
@@ -280,6 +280,61 @@ for (const kind of ["SQL", "IDB"] as const) describe(`${kind} W05 saved-account 
     const { opId } = await h.send();
     expect(await h.backend.runWorker()).toBe(1);
     expect(await h.backend.store.ops.get(opId)).toMatchObject({ state: "succeeded", attempts: 1 });
+  });
+
+  sqlite.each(["insufficientPermissions", "ACCESS_TOKEN_SCOPE_INSUFFICIENT"])("plan 184: a mail 403 %s asks for a sign-in, not Retry now: nothing more goes, sends wait, signing in again sends", async (reason) => {
+    const h = await setup(false, kind);
+    await (await h.backend.provider(h.account.id))!.verify();
+    await h.backend.store.accounts.setCursor(h.account.id, { historyId: "9" });
+    h.answer((r) => new URL(r.url).pathname === "/gmail/history" ? failure(403, reason) : healthySync(r));
+    await h.backend.syncAccount(h.account.id);
+    const state = (await h.rpc.call("app.bootstrap", {})).accounts[0]!.syncState;
+    expect(state).toMatchObject({ status: "error", authRequired: true, authScope: null, lastErrorI18n: { key: "errors.gmail.permissionRequired" } });
+    expect(JSON.stringify(state)).not.toContain(privateMarker);
+    // a sign-in, not a pause: Retry now's policy recovery can't lift it, nothing else knocks
+    const calls = h.paths().slice();
+    const { opId } = await h.send();
+    await h.backend.runWorker();
+    await h.backend.retryNow(h.account.id, "user");
+    await h.backend.syncAccount(h.account.id);
+    expect(h.paths()).toEqual(calls);
+    expect(await h.backend.store.ops.get(opId)).toMatchObject({ state: "queued", attempts: 0 });
+    expect((await h.rpc.call("app.bootstrap", {})).accounts[0]!.syncState).toMatchObject({ authRequired: true });
+    h.answer(healthySync);
+    await h.backend.signedIn(h.account.id);
+    await h.backend.runWorker();
+    expect(await h.backend.store.ops.get(opId)).toMatchObject({ state: "succeeded", attempts: 1 });
+    expect(h.paths().filter((path) => path === "/gmail/messages/send")).toHaveLength(1);
+  });
+
+  sqlite("plan 184: quota keeps precedence over a missing scope in one 403 (a wait, never a sign-in)", async () => {
+    const h = await setup(false, kind);
+    await (await h.backend.provider(h.account.id))!.verify();
+    await h.backend.store.accounts.setCursor(h.account.id, { historyId: "9" });
+    const both = { error: { code: 403, message: privateMarker, errors: [{ reason: "insufficientPermissions" }, { reason: "rateLimitExceeded" }], details: [{ reason: "ACCESS_TOKEN_SCOPE_INSUFFICIENT" }] } };
+    h.answer((r) => new URL(r.url).pathname === "/gmail/history" ? Response.json(both, { status: 403, headers: { "retry-after": "120" } }) : healthySync(r));
+    await h.backend.syncAccount(h.account.id);
+    expect((await h.rpc.call("app.bootstrap", {})).accounts[0]!.syncState.authRequired).not.toBe(true);
+  });
+
+  sqlite("plan 184: a missing scope refusal holds the account before its ticket admits a sibling request", async () => {
+    const h = await setup(false, kind);
+    await (await h.backend.provider(h.account.id))!.verify();
+    await h.backend.store.accounts.setCursor(h.account.id, { historyId: "9" });
+    const scope = heldJson(403, { error: { code: 403, errors: [{ reason: "insufficientPermissions" }] } });
+    h.answer((r) => new URL(r.url).pathname === "/gmail/history" ? scope.response : healthySync(r));
+    const syncing = h.backend.syncAccount(h.account.id);
+    try {
+      await vi.waitFor(() => expect(scope.entered).toBe(true));
+      const { opId } = await h.send();
+      const sending = h.backend.runWorker();
+      scope.release();
+      await syncing;
+      await sending;
+      await h.backend.runWorker();
+      expect(h.paths()).not.toContain("/gmail/messages/send");
+      expect(await h.backend.store.ops.get(opId)).toMatchObject({ state: "queued", attempts: 0 });
+    } finally { scope.release(); await syncing; }
   });
 
   sqlite("contradictory disabled-service reason in a503 remains transient and does not pause admission", async () => {
@@ -431,7 +486,9 @@ for (const kind of ["SQL", "IDB"] as const) describe(`${kind} W05 saved-account 
       const key = reason === "SERVICE_DISABLED" ? "errors.gmail.serviceDisabled" : reason === "domainPolicy" ? "errors.gmail.adminPolicy" : reason === "insufficientPermissions" ? "errors.gmail.permissionRequired" : "errors.gmail.requestFailed";
       const state = (await h.rpc.call("app.bootstrap", {})).accounts[0]!.syncState;
       expect(state).toMatchObject({ status: "error", connection: null, lastErrorI18n: { key, ...(reason === "badRequest" && { params: { status: 400 } }) } });
-      expect(state.authRequired).not.toBe(true);
+      // plan 184: a grant without mail's scope asks for a sign-in; the others are a pause, never a sign-in
+      if (reason === "insufficientPermissions") expect(state).toMatchObject({ authRequired: true, authScope: null });
+      else expect(state.authRequired).not.toBe(true);
       expect(JSON.stringify(state)).not.toContain(privateMarker);
       expect(h.paths().filter((path) => path.startsWith("/gmail/messages/"))).toEqual(["/gmail/messages/first", "/gmail/messages/later"]);
       const sibling = await h.send();
@@ -441,14 +498,21 @@ for (const kind of ["SQL", "IDB"] as const) describe(`${kind} W05 saved-account 
       if (reason !== "badRequest") {
         await h.backend.syncAccount(h.account.id);
         await h.backend.retryNow(h.account.id, "focus");
-        expect(await h.backend.runWorker()).toBe(0);
+        // a pause leaves the send unclaimed; a sign-in parks it until one (attempt given back)
+        if (reason === "insufficientPermissions") {
+          await h.backend.runWorker();
+          expect(await h.backend.store.ops.get(sibling.opId)).toMatchObject({ state: "queued", attempts: 0, payload_json: queued!.payload_json });
+        } else {
+          expect(await h.backend.runWorker()).toBe(0);
+          expect(await h.backend.store.ops.get(sibling.opId)).toEqual(queued);
+        }
         expect(h.paths()).toEqual(calls);
-        expect(await h.backend.store.ops.get(sibling.opId)).toEqual(queued);
         expect(await h.backend.store.providerCooldown.read()).toBe(ledger);
         expect((await h.rpc.call("app.bootstrap", {})).accounts[0]!.syncState).toEqual(state);
       }
       h.answer(healthySync);
-      if (reason !== "badRequest") await h.rpc.call("sync.now", { accountId: h.account.id, reason: "user" });
+      if (reason === "insufficientPermissions") await h.backend.signedIn(h.account.id);
+      else if (reason !== "badRequest") await h.rpc.call("sync.now", { accountId: h.account.id, reason: "user" });
       await h.backend.syncAccount(h.account.id);
       expect((await h.rpc.call("app.bootstrap", {})).accounts[0]!.syncState).toMatchObject({ status: "idle", lastError: null, lastErrorI18n: null });
       expect(await h.backend.runWorker()).toBe(1);

@@ -179,6 +179,15 @@ describe("durable Gmail refresh", () => {
     expect(h.replace).not.toHaveBeenCalled();
   });
 
+  it.each(["openid email", ""])("plan 184: a renewed grant without mail (scope %j) asks for a sign-in, stores nothing", async (scope) => {
+    const h = harness(() => json({ ...valid, scope }));
+    const error = await h.provider.verify().catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ProviderAuthError);
+    expect(error).toMatchObject({ i18n: { key: "errors.gmail.permissionRequired" } });
+    expect(h.api).toEqual([]);
+    expect(h.replace).not.toHaveBeenCalled();
+  });
+
   it.each(["https://www.googleapis.com/auth/gmail.modify", "openid https://mail.google.com/ email"])("accepts explicit mail grant %s and mixed-case Bearer", async (scope) => {
     const h = harness(() => json({ ...valid, token_type: "bEaReR", scope }));
     await h.provider.verify();

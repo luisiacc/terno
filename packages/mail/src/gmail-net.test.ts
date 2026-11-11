@@ -83,7 +83,6 @@ describe("Gmail requests and the network (plan 20)", () => {
   it.each([
     ["userRateLimitExceeded", true],
     ["rateLimitExceeded", true],
-    ["insufficientPermissions", false],
     ["domainPolicy", false],
     ["dailyLimitExceeded", false],
     ["failedPrecondition", false],
@@ -93,6 +92,13 @@ describe("Gmail requests and the network (plan 20)", () => {
     expect(error).toBeInstanceOf(ProviderError);
     expect(error).not.toBeInstanceOf(ProviderAuthError);
     expect(error).toMatchObject({ status: 403, retryable, ambiguous: false, network: false });
+  });
+
+  it.each(["insufficientPermissions", "ACCESS_TOKEN_SCOPE_INSUFFICIENT", "SCOPE_INSUFFICIENT"])("plan 184: Gmail 403 %s (the token lacks mail's scope) asks for a sign-in", async (reason) => {
+    const fetch = (async () => json({ error: { code: 403, errors: [{ reason }] } }, 403)) as typeof globalThis.fetch;
+    const error = await provider(fetch).verify().catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ProviderAuthError);
+    expect(error).toMatchObject({ retryable: false, i18n: { key: "errors.gmail.permissionRequired" } });
   });
 
   it.each([[403, "userRateLimitExceeded"], [403, "rateLimitExceeded"], [429, "unknown"]] as const)("a quota-rejected send (%i, %s) is safely retryable, never uncertain", async (status, reason) => {

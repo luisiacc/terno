@@ -1,4 +1,5 @@
 import { AccountStatus, type StatusAuthority } from "./account-status";
+import { observeRefusals } from "./refusals";
 import { captureLocator } from "@terno/store";
 import { ProviderCooldown } from "./provider-cooldown";
 import { savedGoogleRequests, type SavedGoogleRequests } from "./google-requests";
@@ -6,7 +7,7 @@ import { COOLDOWN_TICKETS, copyOpAdmission, rejectedRecipients, type CooldownSta
 import { prepareCopyWire, readCopyWire } from "./sent-copy";
 import type { PendingGmailRenewal } from "./identity";
 import type { AiTasks } from "@terno/ai";
-import { accessAllows, AGENT_METHODS, agentRefusal, agentsMaySend, asciiEmail, canonicalAuthored, decodeText, encodeText, messageOf, aiCanRun, textRef, type Account, type AccountPrefs, type DevAiKeys, type FavoriteFolder, type FavoriteFoldersSnapshot, type AccountSyncState, type SyncProgress, type OpState, type ThreadAction } from "@terno/core";
+import { accessAllows, AGENT_METHODS, agentRefusal, agentsMaySend, asciiEmail, canonicalAuthored, decodeText, encodeText, messageOf, aiCanRun, textRef, type Account, type AccountKind, type AccountPrefs, type DevAiKeys, type FavoriteFolder, type FavoriteFoldersSnapshot, type AccountSyncState, type SyncProgress, type OpState, type ThreadAction } from "@terno/core";
 import { breadcrumb, captureError, log, type FieldValueOf } from "@terno/core/diag";
 import { RpcError, RpcServer, type AppSettings, type CallContext, type HostInfo, type MethodName, type OpInfo, type ResultOf, type Transport } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
@@ -218,6 +219,11 @@ export class BackendCore {
   private readonly providers = new Map<number, Promise<MailProvider | null>>();
   private readonly lifetimes = new Map<number, AccountLifetime>();
   private readonly statuses = new Map<number, AccountStatus>();
+  /**
+   * plan 184: sign-in refusals already reported to their account (each once, by whoever knows its generation best),
+   * with the account's write of it: a sync still fails when that couldn't be saved
+   */
+  private readonly refusals = new WeakMap<ProviderAuthError, Promise<void>>();
   private readonly statusLoads = new Map<number, Promise<AccountStatus>>();
   /** plan 25: when each IMAP account's refused saved password was last rechecked, and those being rechecked now */
   private readonly rechecked = new Map<number, number>();
@@ -1658,11 +1664,16 @@ export class BackendCore {
       }) : undefined;
       if (!this.current(life)) { google?.close(); return null; }
       if (google) this.google.set(accountId, google);
-      const provider = this.options.providers.create({
+      // plan 184: IMAP's own refusals (push, a Sent copy) are of the credentials this provider was made with
+      const madeWith = this.credentialsOf(accountId);
+      const created = this.options.providers.create({
         yield: () => this.platform.yield(),
         google,
         tokenResult: (generation, error) => {
-          if (error instanceof ProviderAuthError) void status.refuse({ ...authority, generation }, error);
+          if (error instanceof ProviderAuthError) this.reportRefusal(error, status.refuse({ ...authority, generation }, error));
+        },
+        refused: (error) => {
+          if (!this.refusals.has(error)) this.reportRefusal(error, this.refused(accountId, account.kind, life, madeWith, error, false));
         },
         flagObservation: true,
         store: this.providerStore(life), account, config: cfg.config,
@@ -1695,6 +1706,12 @@ export class BackendCore {
           if (!this.current(life) || google) throw new RequestNotDispatchedError(L("errors.accountGone"));
           return this.net.fetchFor("mail")(input, init);
         },
+      });
+      // plan 184: whichever method a refusal comes out of, the account says so before its caller hears of it
+      const provider = observeRefusals(created, {
+        generation: () => this.credentialsOf(accountId),
+        reported: (error) => this.refusals.has(error),
+        refused: ({ error, generation, send }) => this.reportRefusal(error, this.refused(accountId, account.kind, life, generation, error, send)),
       });
       life.provider = provider;
       return provider;
@@ -1854,13 +1871,8 @@ export class BackendCore {
     const provider = await this.provider(message.accountId);
     check();
     if (!provider?.readBody) return { changed: false };
-    const body = await this.afterFolderChange(message.accountId, () => provider.readBody!({ id: messageId, providerMsgId }, AbortSignal.any([life.abort.signal, this.abort.signal]))).catch(async (error: unknown) => {
-      if (error instanceof ProviderAuthError) {
-        check();
-        await this.needsSignIn(message.accountId, "read", error, credentials, life);
-      }
-      throw error;
-    });
+    // a refused sign-in marks the account at the provider's boundary (plan 184)
+    const body = await this.afterFolderChange(message.accountId, () => provider.readBody!({ id: messageId, providerMsgId }, AbortSignal.any([life.abort.signal, this.abort.signal])));
     if (!body) { check(); return { changed: false, unavailable: true }; }
     try {
       check();
@@ -2140,7 +2152,8 @@ export class BackendCore {
           // run, so it keeps its 5-minute probe (some refusals pass: Gmail's 403 rate limits). A refused sign-in
           // (plan 25) waits for the user: no probe, no poll (a start and a network change still try it).
           this.connectivity.succeeded(accountId);
-          if (auth) await status.refuse(authority, error as ProviderAuthError, null, before?.kind === "imap" ? "incoming" : "account");
+          // the provider's boundary marked the account (plan 184); a sync fails as before if that couldn't be saved
+          if (auth) await this.refusals.get(error as ProviderAuthError);
           if (!this.connectivity.online && !auth) this.connectivity.probeLater(accountId);
           // anything else proves nothing about the sign-in: a request for one stays
           await statusRun.end({ status: "error", lastError: message, lastErrorI18n, connection: null, ...(auth && { authRequired: true, authScope: null }) });
@@ -2720,8 +2733,9 @@ export class BackendCore {
           await this.store.ops.release(op.id, this.now());
           this.kickWorker();
         } else if (error instanceof ProviderAuthError) {
+          // the account already says so (the provider's boundary, plan 184): this only parks the action
           await this.store.ops.awaitAuth(op.id, message, this.now());
-          if (this.current(life) && !(await this.parkedAcrossSignIn(op.account_id, credentials))) await this.needsSignIn(op.account_id, op.kind, error, credentials, life);
+          if (this.current(life)) await this.parkedAcrossSignIn(op.account_id, credentials);
         } else if (error instanceof ProviderError && error.ambiguous) {
           await this.store.ops.markUnknown(op.id, message, this.now());
           if (isFolderOp(op.kind)) this.notifyChanged([]);
@@ -2744,17 +2758,24 @@ export class BackendCore {
   }
 
   /**
-   * Plan 25: an action was refused for a sign-in (an SMTP login, an expired grant): the account says so now, even
-   * if no sync has run into it yet. Once: an account that already says so isn't written or announced again.
+   * Plans 25 and 184: a provider's sign-in was refused (by a sync, an action, a search, push…): the account says so
+   * now, even if no sync has run into it yet. Fenced to the credentials the refused work ran on: a sign-in landing
+   * meanwhile isn't undone. Once: an account that already says so isn't announced again.
    */
-  private async needsSignIn(accountId: number, opKind: string, error: ProviderAuthError, credentials: number, life: AccountLifetime): Promise<void> {
-    const account = await this.store.accounts.get(accountId);
-    // a sign-in landed meanwhile: this refusal was of the credentials it replaced
-    if (!account || !this.store.isOpen || !this.current(life) || credentials !== this.credentialsOf(accountId)) return;
-    // an IMAP account's send goes through SMTP: refused there, it's only its sending (Codex review #2)
-    const scope = account.kind === "imap" && opKind === "send" ? "send" : null;
+  private reportRefusal(error: ProviderAuthError, saving: Promise<void>): Promise<void> {
+    // kept rejected for whoever awaits it (a sync), never an unhandled rejection when nobody does
+    void saving.catch(() => {});
+    this.refusals.set(error, saving);
+    return saving;
+  }
+
+  private async refused(accountId: number, kind: AccountKind, life: AccountLifetime, generation: number, error: ProviderAuthError, send: boolean): Promise<void> {
+    if (!this.store.isOpen || !this.current(life) || generation !== this.credentialsOf(accountId)) return;
+    // an IMAP account's send goes through SMTP: refused there, it's only its sending (plan 25, Codex review #2);
+    // anything else IMAP refused can be lifted by IMAP taking the password again (a recheck)
+    const scope = kind === "imap" && send ? "send" : null;
     const status = await this.accountStatus(accountId);
-    await status.refuse({ generation: credentials, live: () => this.current(life) }, error, scope, account.kind === "imap" && scope === null ? "incoming" : "account");
+    await status.refuse({ generation, live: () => this.current(life) }, error, scope, kind === "imap" && scope === null ? "incoming" : "account");
   }
 
   /**

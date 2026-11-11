@@ -738,6 +738,15 @@ export function createGmailApiProvider(ctx: ProviderContext, options: GmailApiOp
         const text = await readResponseText(res, 65_536, deadline.signal).catch(() => "");
         const quota = res.status === 403 && isRateLimit(text);
         const reason = res.status === 403 ? googleFailureReason(text) : undefined;
+        // plan 184: a token without mail's scope is a grant to renew (Google: the token lacks the scope): a sign-in,
+        // never a policy pause. Mail only (People's and userinfo's are photos'), and quota keeps precedence. The
+        // refusal holds the account before the forbidden ticket admits another request.
+        if (reason === "ACCESS_TOKEN_SCOPE_INSUFFICIENT" && !quota && context.endpoint === "gmail-api") {
+          const error = new ProviderAuthError(L("errors.gmail.permissionRequired"), httpResponse);
+          await ctx.tokenResult?.(generation ?? 0, error);
+          await settleForbidden?.("none");
+          throw error;
+        }
         const retryable = res.status === 429 || res.status >= 500 || quota;
         const failure = new GmailApiError(path, res.status, retryable, Boolean(sending && res.status >= 500), reason, httpResponse);
         failure.googleReason = googleReasonOf(text);

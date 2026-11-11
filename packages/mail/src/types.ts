@@ -119,6 +119,13 @@ export class ProviderIdentityError extends ProviderError {
  * The user has to sign in again (expired or revoked authorization). Ops
  * wait for it without spending attempts and resume when the account works
  * again (a successful sync, a reconnect).
+ *
+ * Plan 184, the contract for every provider kind: a refusal the user fixes by signing in again (a wrong or
+ * changed password, an expired, revoked or under-scoped grant, a secret the keychain won't open) is this
+ * error, and nothing else is (a temporary refusal is retryable; one a sign-in can't fix, such as an
+ * administrator's block, is a plain ProviderError). Throw it from any method: the backend marks the account
+ * as needing a sign-in wherever it came from. Work the provider does on its own (push, a Sent copy) that
+ * swallows it reports it through `ProviderContext.refused`.
  */
 export class ProviderAuthError extends ProviderError {
   constructor(message: string | Localized, httpResponse?: HttpResponseEvidence) {
@@ -204,6 +211,12 @@ export interface ProviderContext {
   google?: GoogleRequests;
   /** One result from the shared refresh, qualified to its issuing credentials. */
   tokenResult?(generation: number, error?: ProviderAuthError): void | Promise<void>;
+  /**
+   * Plan 184: the account's sign-in was refused by work no caller sees fail (push, a Sent copy after SMTP
+   * accepted). The backend marks the account as a thrown ProviderAuthError would; the provider keeps its own
+   * outcome (push stops knocking, the copy is recorded as it ended).
+   */
+  refused?(error: ProviderAuthError): void;
   /** The backend owns durable flag observations and committed snapshot paging. */
   flagObservation?: true;
   /** Shared by this backend; standalone provider callers may retain their own read limit. */

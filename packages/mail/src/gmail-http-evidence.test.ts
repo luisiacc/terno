@@ -91,13 +91,21 @@ function expected(endpoint: string, purpose: string, status: number, retryAfter 
 const send = { id: "synthetic-op", kind: "send", target: {}, payload: { providerThreadId: null } };
 
 describe("failed HTTP evidence through public Gmail boundaries", () => {
-  it.each([[429, undefined, true], [503, undefined, true], [403, "userRateLimitExceeded", true], [403, "rateLimitExceeded", true], [403, "insufficientPermissions", false], [403, "accessNotConfigured", false], [403, "dailyLimitExceeded", false], [404, undefined, false]] as const)("retains headers without changing API status %i / %s", async (status, reason, retryable) => {
+  it.each([[429, undefined, true], [503, undefined, true], [403, "userRateLimitExceeded", true], [403, "rateLimitExceeded", true], [403, "accessNotConfigured", false], [403, "dailyLimitExceeded", false], [404, undefined, false]] as const)("retains headers without changing API status %i / %s", async (status, reason, retryable) => {
     const t = await wire((_path, response) => reply(response, status, JSON.stringify({ error: { errors: reason ? [{ reason }] : [] } })));
     const error = await failure(api(t.fetch).verify());
     expect(error).toMatchObject({ status, retryable, ambiguous: false, network: false });
     expect(error).not.toBeInstanceOf(ProviderAuthError);
     expect(t.requests).toEqual(["/mail/profile"]);
     expect(evidence(error)).toEqual(expected("gmail-api", "mail", status));
+  });
+
+  it("plan 184: a 403 without mail's scope is a sign-in that keeps its HTTP evidence", async () => {
+    const t = await wire((_path, response) => reply(response, 403, JSON.stringify({ error: { errors: [{ reason: "insufficientPermissions" }] } })));
+    const error = await failure(api(t.fetch).verify());
+    expect(error).toBeInstanceOf(ProviderAuthError);
+    expect(t.requests).toEqual(["/mail/profile"]);
+    expect(evidence(error)).toEqual(expected("gmail-api", "mail", 403));
   });
 
   it.each([429, 503])("send HTTP %i keeps definitive versus ambiguous precedence", async (status) => {
