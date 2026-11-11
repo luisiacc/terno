@@ -90,7 +90,22 @@ test.describe("first-run setup", () => {
     await expect(preview(page)).toContainText("Dinner on Friday?");
     await expect(page.getByTestId("first-run-layout-split")).toHaveAttribute("aria-checked", "true");
 
+    // plan 187: with Split, how much preview the rows show, at once in the preview (Lumen: 76 px rows, 18 px a line)
+    const lines = page.getByTestId("first-run-preview-lines");
+    const row = preview(page).getByTestId("thread-row").first();
+    await expect(page.getByTestId("first-run-preview-1")).toHaveAttribute("aria-pressed", "true");
+    await expect(row).toHaveCSS("height", "76px");
+    await page.getByTestId("first-run-preview-0").click();
+    await expect(row).toHaveCSS("height", "58px");
+    await expect(preview(page).getByTestId("row-snippet")).toHaveCount(0);
+    await expect.poll(async () => (await settings(server)).previewLines).toBe(0);
+    await page.getByTestId("first-run-preview-2").click();
+    await expect(row).toHaveCSS("height", "94px");
+    await expect.poll(async () => (await settings(server)).previewLines).toBe(2);
+
     await page.getByTestId("first-run-layout-list").click();
+    // List's rows are one line: no preview to choose
+    await expect(lines).toHaveCount(0);
     await expect(page.locator("html")).toHaveAttribute("data-layout", "list");
     await expect(preview(page)).toHaveAttribute("data-layout", "list");
     // List's full-width rows, and no conversation beside them
@@ -134,6 +149,15 @@ test.describe("first-run setup", () => {
     await page.getByTestId("first-run-back").click();
     await expect(step(page)).toHaveAttribute("data-step", "layout");
     await expect(page.getByTestId("first-run-layout-list")).toHaveAttribute("aria-checked", "true");
+    // Split again: the preview's choice is as it was left
+    await page.getByTestId("first-run-layout-split").click();
+    await expect(page.getByTestId("first-run-preview-2")).toHaveAttribute("aria-pressed", "true");
+    // Compact rows are one line: the choice stays, off, and says why (Codex review #7)
+    await server.backend.server.invoke("settings.update", { density: "compact" }, ctx);
+    await page.reload();
+    await expect(step(page)).toHaveAttribute("data-step", "layout");
+    await expect(page.getByTestId("first-run-preview-0")).toBeDisabled();
+    await expect(page.getByTestId("first-run-preview-lines")).toContainText("Compact rows are one line");
   });
 
   test("the account step adds the first mailbox in the same window; what's typed survives Back", async ({ app: page, server }) => {

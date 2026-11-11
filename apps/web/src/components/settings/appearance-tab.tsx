@@ -280,7 +280,7 @@ export function AppearanceTab({ settings, update }: { settings: AppSettings; upd
 
   return (
     <div data-testid="appearance-tab">
-      <ListSettings settings={settings} update={update} />
+      <ListSettings settings={settings} />
 
       <SettingsGroup>
         <SettingsRow stacked label={t("settings.appearance.style")} hint={t("settings.appearance.style.hint")}>

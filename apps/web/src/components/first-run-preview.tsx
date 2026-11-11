@@ -1,6 +1,7 @@
 import { CUSTOM_PREFIX, THEME_TOKENS, type ThemeMode } from "@terno/core";
 import type { AppSettings } from "@terno/core/rpc";
 import type { DesignDefinition } from "@terno/ui/designs/index";
+import { rowHeight, type RowLines } from "@terno/ui/designs/rows";
 import type { Theme } from "@terno/ui/themes/registry";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Kbd } from "@terno/ui/components/kbd";
@@ -32,6 +33,8 @@ interface Props {
   mode: ThemeMode;
   layout: AppSettings["layout"];
   density: AppSettings["density"];
+  /** plan 187 */
+  previewLines: AppSettings["previewLines"];
   sample: SampleMailbox;
 }
 
@@ -44,7 +47,7 @@ interface Props {
  * Header and reader.tsx's ReaderHeader (same classes, same design variants):
  * a change there should be made here too. No store, no backend, no icons.
  */
-export function FirstRunPreview({ design, theme, base, mode, layout, density, sample }: Props) {
+export function FirstRunPreview({ design, theme, base, mode, layout, density, previewLines, sample }: Props) {
   const frame = useRef<HTMLDivElement>(null);
   const [fit, setFit] = useState({ scale: 0, h: CANVAS_H.min });
   useLayoutEffect(() => {
@@ -75,7 +78,7 @@ export function FirstRunPreview({ design, theme, base, mode, layout, density, sa
       >
         <div className="grid h-full" style={{ gridTemplateColumns: split ? "var(--sidebar-w) max(var(--list-min), var(--list-max)) minmax(0, 1fr)" : "var(--sidebar-w) minmax(0, 1fr)" }}>
           <Sidebar design={design} sample={sample} />
-          <List design={design} sample={sample} wide={!split} compact={density === "compact"} selected={split ? sample.open.thread.id : null} />
+          <List design={design} sample={sample} wide={!split} compact={density === "compact"} lines={previewLines} selected={split ? sample.open.thread.id : null} />
           {split && <Reader design={design} sample={sample} />}
         </div>
       </div>
@@ -142,13 +145,13 @@ function Sidebar({ design, sample }: { design: DesignDefinition; sample: SampleM
   );
 }
 
-function List({ design, sample, wide, compact, selected }: { design: DesignDefinition; sample: SampleMailbox; wide: boolean; compact: boolean; selected: number | null }) {
+function List({ design, sample, wide, compact, lines, selected }: { design: DesignDefinition; sample: SampleMailbox; wide: boolean; compact: boolean; lines: RowLines; selected: number | null }) {
   const v = design.variants;
   const quick = v.quickFilters;
   const kind = v.listHeader;
   const behindButton = v.search === "button";
   const unread = sample.threads.filter((x) => x.unread).length;
-  const height = wide && !compact ? design.rows.wide : design.rows[compact ? "compact" : "comfortable"];
+  const height = rowHeight(design, { compact, wide, results: false, lines });
   const icon = (glyph: React.ReactNode) => <span className="flex size-7 items-center justify-center rounded-md text-muted-foreground">{glyph}</span>;
   const filters = quick === "menu" && (
     // the header's All | Unread and its More filters (plan 158), drawn
@@ -237,6 +240,7 @@ function List({ design, sample, wide, compact, selected }: { design: DesignDefin
             height={height}
             compact={compact}
             wide={wide}
+            lines={lines}
             icons={false}
             layout={v.row}
             review={null}

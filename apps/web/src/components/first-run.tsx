@@ -1,5 +1,5 @@
 import { DESIGN_PALETTE, type AiProviderId, type ThemeMode } from "@terno/core";
-import type { AppSettings } from "@terno/core/rpc";
+import type { AppSettings, PreviewLines } from "@terno/core/rpc";
 import { Button } from "@terno/ui/components/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@terno/ui/components/dialog";
 import { RadioCard, RadioDot, RadioGroup } from "@terno/ui/components/radio-group";
@@ -19,6 +19,7 @@ import { designDescription, designName } from "~/lib/design";
 import { OnboardingNudge } from "~/lib/web-parts";
 import { AddAccountForm, EMPTY_ACCOUNT_DRAFT } from "./add-account-dialog";
 import { ThemeCard } from "./settings/appearance-cards";
+import { previewChoices } from "./settings/list-settings";
 import { FirstRunPreview } from "./first-run-preview";
 import { sampleMailbox } from "./first-run-sample";
 
@@ -143,6 +144,7 @@ export function FirstRun() {
   /** the modes whose colors step 2 offers: both while following the system, else the one chosen */
   const modes: ThemeMode[] = following ? ["light", "dark"] : [settings.theme as ThemeMode];
   const pick = (patch: Partial<AppSettings>) => void updateAppearance(patch);
+  const compact = settings.density === "compact";
 
   const titles: Record<Step, [string, string]> = {
     layout: [t("firstRun.layout.title"), t("firstRun.layout.description")],
@@ -152,10 +154,37 @@ export function FirstRun() {
 
   const body = {
     layout: (
-      <RadioGroup aria-label={t("firstRun.layout.label")} value={settings.layout} onValueChange={(layout) => pick({ layout: layout as AppSettings["layout"] })}>
-        <Choice testId="first-run-layout-split" value="split" mark={<Columns2 className="size-5 shrink-0" />} title={t("settings.appearance.layout.split")} body={t("firstRun.layout.split.body")} />
-        <Choice testId="first-run-layout-list" value="list" mark={<Rows3 className="size-5 shrink-0" />} title={t("settings.appearance.layout.list")} body={t("firstRun.layout.list.body")} />
-      </RadioGroup>
+      <>
+        <RadioGroup aria-label={t("firstRun.layout.label")} value={settings.layout} onValueChange={(layout) => pick({ layout: layout as AppSettings["layout"] })}>
+          <Choice testId="first-run-layout-split" value="split" mark={<Columns2 className="size-5 shrink-0" />} title={t("settings.appearance.layout.split")} body={t("firstRun.layout.split.body")} />
+          <Choice testId="first-run-layout-list" value="list" mark={<Rows3 className="size-5 shrink-0" />} title={t("settings.appearance.layout.list")} body={t("firstRun.layout.list.body")} />
+        </RadioGroup>
+        {/* plan 187: Split's rows show a preview under the subject: how much, drawn at once on the right (as the Look step's
+            mode, a label and a segmented control on one line, the hint under them); off under Compact, which says why */}
+        {settings.layout === "split" && (
+          <div className="mt-5" data-testid="first-run-preview-lines">
+            <div className="flex items-center justify-between gap-2">
+              <h3 id="first-run-preview-label" className="type-section-label text-muted-foreground">{t("settings.appearance.preview")}</h3>
+              <ToggleGroup
+                aria-labelledby="first-run-preview-label"
+                aria-describedby="first-run-preview-hint"
+                variant="segmented"
+                disabled={compact}
+                value={[String(settings.previewLines)]}
+                onValueChange={(v: string[]) => v[0] && pick({ previewLines: Number(v[0]) as PreviewLines })}
+                data-testid="first-run-preview-toggle"
+              >
+                {previewChoices().map((c) => (
+                  <ToggleGroupItem key={c.value} value={String(c.value)} data-testid={`first-run-preview-${c.value}`}>
+                    {c.label}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+            </div>
+            <p id="first-run-preview-hint" className="mt-2 text-xs text-muted-foreground">{t(compact ? "settings.appearance.preview.compactHint" : "firstRun.layout.preview.hint")}</p>
+          </div>
+        )}
+      </>
     ),
     look: (
       // the styles stay put and the palettes scroll (the one in use scrolled into view); a window too short for a row of them scrolls as a whole
@@ -294,8 +323,8 @@ export function FirstRun() {
         </div>
         <div className="relative min-h-0 bg-tint p-6 max-[760px]:hidden">
           {/* each choice comes in the same way the steps do: one --motion-base fade (colors swap in one frame underneath) */}
-          <div key={`${settings.layout} ${design.id} ${theme.id} ${previewMode}`} className="size-full animate-in fade-in-0 duration-base ease-motion">
-            <FirstRunPreview design={design} theme={theme} base={baseId(theme, settings)} mode={previewMode} layout={settings.layout} density={settings.density} sample={sample} />
+          <div key={`${settings.layout} ${settings.previewLines} ${design.id} ${theme.id} ${previewMode}`} className="size-full animate-in fade-in-0 duration-base ease-motion">
+            <FirstRunPreview design={design} theme={theme} base={baseId(theme, settings)} mode={previewMode} layout={settings.layout} density={settings.density} previewLines={settings.previewLines} sample={sample} />
           </div>
         </div>
       </DialogContent>
