@@ -1,5 +1,5 @@
 import { CUSTOM_PREFIX, DEFAULT_DESIGN, DEFAULT_THEME, DESIGN_PALETTE, isDesignId, switchDesign, type DesignId, type ThemeMode } from "@terno/core";
-import type { AppSettings, SettingsPatch } from "@terno/core/rpc";
+import type { AppSettings, PreviewLines, SettingsPatch } from "@terno/core/rpc";
 import { applyCustomTheme, clampMotion, motionOff, motionVars, opaqueBackground } from "@terno/ui/themes/apply";
 import { toHex } from "@terno/ui/themes/color";
 import { builtinTheme, resolveCustomTheme, type Theme } from "@terno/ui/themes/registry";
@@ -12,7 +12,7 @@ import { create } from "zustand";
 import { client } from "~/rpc/connection";
 import { getApp, setApp } from "~/state/app";
 
-type Appearance = Pick<AppSettings, "theme" | "design" | "lightTheme" | "darkTheme" | "motionMs" | "customThemes"> & { layout?: AppSettings["layout"] };
+type Appearance = Pick<AppSettings, "theme" | "design" | "lightTheme" | "darkTheme" | "motionMs" | "customThemes"> & Partial<Pick<AppSettings, "layout" | "density" | "previewLines">>;
 export type Layout = AppSettings["layout"];
 export const isLayout = (v: unknown): v is Layout => v === "split" || v === "list";
 
@@ -35,12 +35,15 @@ export interface CachedAppearance {
 }
 
 /** The resolved mode (anything that needs "light" | "dark"). */
-export const useAppearance = create<{ mode: ThemeMode; design: DesignId; layout: Layout; reducedMotion: boolean; motionMs: number; themeKey: string }>(() => ({
+export const useAppearance = create<{ mode: ThemeMode; design: DesignId; layout: Layout; density: AppSettings["density"]; previewLines: PreviewLines; reducedMotion: boolean; motionMs: number; themeKey: string }>(() => ({
   mode: document.documentElement.classList.contains("dark") ? "dark" : "light",
   /** what theme.js painted, so the first render matches it */
   design: isDesignId(document.documentElement.dataset.design) ? document.documentElement.dataset.design : DEFAULT_DESIGN,
   /** plan 24: what theme.js painted too */
   layout: isLayout(document.documentElement.dataset.layout) ? document.documentElement.dataset.layout : "split",
+  /** plan 187: the rows' shape, set with the settings (nothing draws rows before them) */
+  density: "comfortable",
+  previewLines: 1,
   /** changes whenever the painted colors change (theme id or custom tokens) */
   themeKey: "",
   reducedMotion: matchMedia("(prefers-reduced-motion: reduce)").matches,
@@ -105,16 +108,20 @@ export function applyAppearance(a: Appearance): void {
   const custom = theme.id.startsWith(CUSTOM_PREFIX);
   const design = designById(a.design);
   const layout: Layout = a.layout ?? "split";
+  const density = a.density ?? "comfortable";
+  const previewLines = a.previewLines ?? 1;
   // the design may keep its sidebar opaque (Atelier's and Lumen's paper) whatever the palette allows
   const vibrancy = sidebarVibrancy(isMacDesktop(), theme.vibrancy && design.vibrancy, matchMedia(REDUCED_TRANSPARENCY).matches);
-  const key = JSON.stringify([mode, design.id, theme.id, custom ? theme.tokens : null, ms, reduced, vibrancy, layout]);
+  const key = JSON.stringify([mode, design.id, theme.id, custom ? theme.tokens : null, ms, reduced, vibrancy, layout, density, previewLines]);
   const designChanged = useAppearance.getState().design !== design.id || html.dataset.design !== design.id;
   // a layout switch (plan 24) changes the list's width and row heights: the same capture and restore as a design switch
   const layoutChanged = useAppearance.getState().layout !== layout || html.dataset.layout !== layout;
+  // plan 187: so do density and the preview's lines (the first row on screen and the open one stay put)
+  const rowsChanged = useAppearance.getState().density !== density || useAppearance.getState().previewLines !== previewLines;
   if (key !== applied) {
     applied = key;
     // what must stay put across a design switch is measured before anything changes (plan 15, R3)
-    const restore = designChanged || layoutChanged ? captureDesignAnchors() : null;
+    const restore = designChanged || layoutChanged || rowsChanged ? captureDesignAnchors() : null;
     html.setAttribute("data-theme-switching", "");
     // CSS first, so the structure React commits below is measured with its own tokens
     html.dataset.design = design.id;
@@ -131,7 +138,7 @@ export function applyAppearance(a: Appearance): void {
     else html.removeAttribute("data-vibrancy");
     if (restore) {
       // the variants' structure commits in this same task, before paint: one frame, styles and structure in agreement
-      flushSync(() => useAppearance.setState({ design: design.id, layout }));
+      flushSync(() => useAppearance.setState({ design: design.id, layout, density, previewLines }));
       restore();
     }
     // the first frame paints the new colors with transitions off; the next re-enables them
@@ -142,7 +149,7 @@ export function applyAppearance(a: Appearance): void {
   }
 
   // after the DOM: listeners (the mail iframe) read the painted colors
-  useAppearance.setState({ mode, design: design.id, layout, reducedMotion: reduced, motionMs: ms, themeKey: `${theme.id}:${custom ? JSON.stringify(theme.tokens) : ""}` });
+  useAppearance.setState({ mode, design: design.id, layout, density, previewLines, reducedMotion: reduced, motionMs: ms, themeKey: `${theme.id}:${custom ? JSON.stringify(theme.tokens) : ""}` });
 
   const light = resolveTheme(a, "light");
   const dark = resolveTheme(a, "dark");
@@ -200,8 +207,8 @@ export function installAppearanceListeners(): () => void {
   };
 }
 
-type AppearancePatch = Pick<SettingsPatch, "theme" | "design" | "lightTheme" | "darkTheme" | "designPalettes" | "motionMs" | "customThemes" | "htmlMailAppearance" | "layout">;
-const APPEARANCE_FIELDS = ["theme", "design", "lightTheme", "darkTheme", "designPalettes", "motionMs", "customThemes", "htmlMailAppearance", "layout"] as const;
+type AppearancePatch = Pick<SettingsPatch, "theme" | "design" | "lightTheme" | "darkTheme" | "designPalettes" | "motionMs" | "customThemes" | "htmlMailAppearance" | "layout" | "density" | "previewLines">;
+const APPEARANCE_FIELDS = ["theme", "design", "lightTheme", "darkTheme", "designPalettes", "motionMs", "customThemes", "htmlMailAppearance", "layout", "density", "previewLines"] as const;
 
 /** Appearance changes not yet acknowledged, oldest first (each one is sent after the previous answered). */
 const pending: { patch: AppearancePatch }[] = [];

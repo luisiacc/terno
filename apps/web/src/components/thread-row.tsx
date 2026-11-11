@@ -2,6 +2,7 @@ import { CheckboxMark } from "@terno/ui/components/checkbox";
 import { toggleRow, useActionPreview, useActionRows } from "~/state/action-preview";
 import { listFilterOf, matchesFilter, matchFocus, mostUrgent, type CategoryColor, type RowMatch, type ThreadSummary } from "@terno/core";
 import { CategoryDot } from "@terno/ui/components/category-dot";
+import type { RowLines } from "@terno/ui/designs/rows";
 import { cn } from "@terno/ui/lib/utils";
 import { Bell, Check, Paperclip, Star } from "@terno/ui/icons";
 import { memo } from "react";
@@ -46,6 +47,8 @@ interface Props {
   reminderTop?: boolean;
   /** plan 158: in a search's results, what to mark on the row (one object per search) */
   match?: RowMatch | null;
+  /** plan 187: a three-line row's lines of preview under its subject (the list works them out: previewLinesFor) */
+  lines?: RowLines;
   /** plan 24: List's rows offer the pointer a checkbox, in the avatar's place or the marks' column */
   pick?: boolean;
   /** plan 162 (Codex review): the first row of a Today section says the section's name to assistive tech (a heading can't sit in a listbox) */
@@ -59,7 +62,7 @@ interface Props {
  * checking one re-renders one. The design picks the layout inside it (classic,
  * avatar, large avatar); the shell, roles, ids and handlers are the same in all.
  */
-export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact, wide = false, showAccount, icons, layout, review = null, pinnedTop = false, reminderTop = false, match = null, pick = false, section }: Props) {
+export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact, wide = false, showAccount, icons, layout, review = null, pinnedTop = false, reminderTop = false, match = null, lines = 1, pick = false, section }: Props) {
   renderProbe("ThreadRow");
   /** the open thread (the cursor; the listbox's active descendant) */
   const selected = useApp((s) => s.selectedId === thread.id);
@@ -122,6 +125,7 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
       review={review}
       match={match}
       excerpt={excerpt}
+      lines={lines}
       pick={pick}
       section={section}
       interactive
@@ -218,12 +222,13 @@ function withReason(reason: string | undefined, quiet: string, ink: string, word
   );
 }
 
-function RowSnippet({ thread, reminderTop, ink, quiet, match, excerpt, lead }: { thread: ThreadSummary; reminderTop?: boolean; ink: string; quiet: string; match?: RowMatch | null; excerpt?: string; lead: number }) {
+function RowSnippet({ thread, reminderTop, ink, quiet, match, excerpt, lead, two }: { thread: ThreadSummary; reminderTop?: boolean; ink: string; quiet: string; match?: RowMatch | null; excerpt?: string; lead: number; two: boolean }) {
   const { line } = useOwed(thread, reminderTop);
   const reason = useReason(thread);
   return (
-    // plan 173: the marks share its line, so it keeps its first words (a search's match stands near them, LEAD)
-    <span data-testid="row-snippet" data-followup={line ? true : undefined} data-excerpt={!line && excerpt ? true : undefined} className={cn("type-row-snippet min-w-[min(8rem,25%)] truncate", line ? ink : reason ? undefined : quiet)}>
+    // plan 173: the marks share its line, so it keeps its first words (a search's match stands near them, LEAD); plan 187:
+    // two lines wrap and clamp, a long word broken rather than overflowing
+    <span data-testid="row-snippet" data-followup={line ? true : undefined} data-excerpt={!line && excerpt ? true : undefined} className={cn("type-row-snippet min-w-[min(8rem,25%)]", two ? "line-clamp-2 wrap-anywhere" : "truncate", line ? ink : reason ? undefined : quiet)}>
       {line ?? withReason(reason, quiet, ink, matchLine(match, excerpt ?? thread.snippet, lead))}
     </span>
   );
@@ -264,7 +269,7 @@ function RowDate({ thread, reminderTop, fallback, className, title }: { thread: 
   return <span data-testid="row-date" data-due-at={dueAt ?? undefined} title={title} className={className}>{dueAt !== null ? reminderShort(dueAt) : fallback}</span>;
 }
 
-export function ThreadRowView({ thread, top, height, compact, wide, icons, layout, review, pinnedTop = false, reminderTop, selected, checked, included, pending, inSelection, account, categories, inCategory = null, kept = false, hasDraft, code, reminder, remindersList, interactive, match, excerpt, pick = false, section }: ViewProps) {
+export function ThreadRowView({ thread, top, height, compact, wide, icons, layout, review, pinnedTop = false, reminderTop, selected, checked, included, pending, inSelection, account, categories, inCategory = null, kept = false, hasDraft, code, reminder, remindersList, interactive, match, excerpt, lines: previewLines = 1, pick = false, section }: ViewProps) {
   const cats = thread.categoryIds.length ? categories.filter((c) => c.id !== inCategory && thread.categoryIds.includes(c.id)) : [];
   const classic = layout === "classic";
   const big = layout === "large-avatar";
@@ -272,6 +277,10 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
   const opened = selected;
   /** one line: compact density, or a wide list */
   const line = compact || wide;
+  /** plan 187: a three-line row's preview: none (its marks go to the subject's line), one line, or two */
+  const noPreview = previewLines === 0;
+  /** what ends the marks' line sits on its first line: centred on one line, at the top of two, one line tall */
+  const onMarksLine = previewLines === 2 ? "self-start h-(--type-row-snippet-leading)" : "self-center";
   /** where it lives when that isn't where mail usually is (Trash wins: trashed spam is in the trash) */
   const place = thread.inTrash ? "trash" : thread.inSpam ? "spam" : null;
 
@@ -339,7 +348,8 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
       data-testid="account-label"
       title={account.email}
       className={cn(
-        "flex min-w-0 shrink-0 items-center self-center text-xs",
+        "flex min-w-0 shrink-0 items-center text-xs",
+        line ? "self-center" : onMarksLine,
         quiet,
         // (three lines, plan 173: with marks beside it a smaller share, so the preview keeps its first words at the narrowest list)
         wide ? "w-20 @max-[58rem]/rows:hidden" : line ? "max-w-[min(7rem,32%)]" : cn("pl-2", markCount ? "max-w-[min(8rem,30%)]" : "ml-auto max-w-[min(8rem,40%)]"),
@@ -367,8 +377,9 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
     );
   // a small tag at the row's own scale: its line box is no taller than the subject's, so no line moves for it
   const draft = hasDraft && <span data-testid="row-draft" className="shrink-0 text-xs leading-none font-medium text-draft-foreground">{t("list.draft")}</span>;
-  // the row's own ink (the open row's on its fill), so sender and subject never drift apart
-  const subjectInk = thread.unread ? "type-row-subject-strong" : "type-row-subject";
+  // the row's own ink (the open row's on its fill), so sender and subject never drift apart; plan 187, the owner: with no
+  // preview the subject is in the preview's quiet ink (unread keeps its weight)
+  const subjectInk = cn(thread.unread ? "type-row-subject-strong" : "type-row-subject", noPreview && !line && quiet);
   // its own line: only a very long subject truncates
   const subject = (
     <span data-testid="row-subject" className={cn("min-w-0 truncate", subjectInk)}>
@@ -377,7 +388,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
   );
   // plan 142: gated on the row's every state, as Draft's ink is (contrast.ts)
   const owedInk = "text-draft-foreground";
-  const snippet = <RowSnippet thread={thread} reminderTop={reminderTop} ink={owedInk} quiet={quiet} match={match} excerpt={excerpt} lead={LEAD.own} />;
+  const snippet = <RowSnippet thread={thread} reminderTop={reminderTop} ink={owedInk} quiet={quiet} match={match} excerpt={excerpt} lead={LEAD.own} two={previewLines === 2} />;
   const chip = code && <CodeChip threadId={thread.id} code={code} />;
   const reviewed = review !== null ? categories.find((c) => c.id === review) : undefined;
   const answer = reviewed && <ReviewControls threadId={thread.id} category={reviewed.name} />;
@@ -474,23 +485,29 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
   // under the date (the names one column down the list), and without one the marks take that edge
   const accountShown = !answer && accountTag;
   const rowMarks = markCount > 0 && (
-    <span data-testid="row-marks" title={cats.length > 2 ? cats.map((c) => c.name).join(", ") : undefined} className="ml-auto flex shrink-0 items-center gap-1.5 self-center pl-2">
+    <span data-testid="row-marks" title={cats.length > 2 ? cats.map((c) => c.name).join(", ") : undefined} className={cn("ml-auto flex shrink-0 items-center gap-1.5 pl-2", onMarksLine)}>
       {lineMarks}
     </span>
   );
+  // plan 187: with no preview the marks and the account end the subject's line instead (Review always has its line); two
+  // lines keep their height when the words fit in one, so no row's text sits off its neighbours'
   const lines = (
     <>
       {firstLine}
       <div className="flex min-w-0 items-baseline gap-1.5">
         {subject}
         {draft}
+        {noPreview && !answer && rowMarks}
+        {noPreview && !answer && accountShown}
       </div>
-      <div className="flex min-w-0 items-baseline">
-        {answer || snippet}
-        {/* (in Review the answers have the line's width: the marks stay by the date) */}
-        {!answer && rowMarks}
-        {accountShown}
-      </div>
+      {(!noPreview || answer) && (
+        <div className={cn("flex min-w-0", previewLines === 2 ? "min-h-[calc(var(--type-row-snippet-leading)*2)] items-start" : "items-baseline")}>
+          {answer || snippet}
+          {/* (in Review the answers have the line's width: the marks stay by the date) */}
+          {!answer && rowMarks}
+          {accountShown}
+        </div>
+      )}
     </>
   );
 

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 // the app's stores read the motion preference as they load
 vi.hoisted(() => {
@@ -26,7 +26,7 @@ afterEach(async () => {
   host?.remove();
 });
 
-async function row(opts: { layout?: DesignVariants["row"]; compact?: boolean; account?: boolean; review?: number } = {}) {
+async function row(opts: { layout?: DesignVariants["row"]; compact?: boolean; account?: boolean; review?: number; lines?: 0 | 1 | 2 } = {}) {
   host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
@@ -37,7 +37,7 @@ async function row(opts: { layout?: DesignVariants["row"]; compact?: boolean; ac
         thread={thread} top={0} height={72} compact={opts.compact ?? false} wide={false} icons={false} layout={opts.layout ?? "avatar"} review={opts.review ?? null}
         reminderTop={false} selected={false} checked={false} inSelection={false}
         account={opts.account ? { text: "Studio", email: "me@studio.example" } as never : undefined}
-        categories={categories} hasDraft={false} code={null} reminder={undefined} remindersList={false} interactive={false}
+        categories={categories} hasDraft={false} code={null} reminder={undefined} remindersList={false} interactive={false} lines={opts.lines}
       />,
     ),
   );
@@ -139,4 +139,60 @@ it.each([["avatar", false], ["classic", false], ["large-avatar", false], ["avata
   const inside = await pinnedRow({ pinnedTop: true, layout, compact });
   expect(inside.querySelector("[data-testid=row-pin]")).toBeNull();
   expect(inside.textContent).toContain(", pinned");
+});
+
+describe("plan 187: the preview's lines", () => {
+  it.each(["avatar", "classic", "large-avatar"] as const)("with none, a %s row has no preview; its marks and account end the subject's line, the subject in the preview's ink", async (layout) => {
+    const { el } = await row({ layout, account: true, lines: 0 });
+    expect(el.querySelector("[data-testid=row-snippet]")).toBeNull();
+    const subject = el.querySelector("[data-testid=row-subject]")!;
+    const subjectLine = subject.parentElement!;
+    const marks = subjectLine.querySelector("[data-testid=row-marks]")!;
+    expect(marks).not.toBeNull();
+    expect(marks.nextElementSibling).toBe(subjectLine.querySelector("[data-testid=account-label]"));
+    expect(subjectLine.lastElementChild!.getAttribute("data-testid")).toBe("account-label");
+    // the owner: the subject takes the preview's quiet ink; unread keeps its weight
+    expect(subject.className).toContain("text-muted-foreground");
+    expect(subject.className).toContain("type-row-subject-strong");
+    // two lines: who, then what about (classic's unread dot is a sibling span)
+    expect([...subjectLine.parentElement!.children].filter((c) => c.tagName === "DIV")).toHaveLength(2);
+  });
+
+  it("with one, the row is as it was: one truncated line, the subject in the row's ink", async () => {
+    const { el } = await row({ lines: 1 });
+    const snippet = el.querySelector("[data-testid=row-snippet]")!;
+    expect(snippet.className).toContain("truncate");
+    expect(snippet.className).not.toContain("line-clamp-2");
+    expect(el.querySelector("[data-testid=row-subject]")!.className).not.toContain("text-muted-foreground");
+    expect(snippet.parentElement!.querySelector("[data-testid=row-marks]")!.className).toContain("self-center");
+  });
+
+  it("with two, the preview wraps and clamps (never nowrap), its line is two lines tall, and the marks sit on its first line", async () => {
+    const { el } = await row({ lines: 2, account: true });
+    const snippet = el.querySelector("[data-testid=row-snippet]")!;
+    expect(snippet.className).toContain("line-clamp-2");
+    expect(snippet.className).not.toContain("truncate");
+    const line = snippet.parentElement!;
+    expect(line.className).toContain("min-h-[calc(var(--type-row-snippet-leading)*2)]");
+    expect(line.className).toContain("items-start");
+    for (const id of ["row-marks", "account-label"]) {
+      const c = line.querySelector(`[data-testid=${id}]`)!.className;
+      expect(c, id).toContain("self-start");
+      expect(c, id).toContain("h-(--type-row-snippet-leading)");
+      expect(c, id).not.toContain("self-center");
+    }
+  });
+
+  it("a compact row ignores it (one line by design)", async () => {
+    const { el } = await row({ compact: true, lines: 0 });
+    expect(el.querySelector("[data-testid=row-snippet]")).not.toBeNull();
+    expect(el.querySelector("[data-testid=row-subject]")!.className).not.toContain("text-muted-foreground");
+  });
+
+  it("Review keeps its answers' line even with none", async () => {
+    const { el } = await row({ review: 7, lines: 0 });
+    expect(el.querySelector("[data-testid=row-marks]")).toBeNull();
+    // who, what about, and the answers' line
+    expect(el.querySelector("[data-testid=row-subject]")!.parentElement!.nextElementSibling).not.toBeNull();
+  });
 });

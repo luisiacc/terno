@@ -47,6 +47,7 @@ import { ReportRow } from "./diag/report-row";
 import { DesktopBanner } from "~/lib/web-parts";
 import { iconsAllowed, iconsAllowedForList } from "~/lib/sender-icons";
 import { useAppearance } from "~/lib/appearance";
+import { previewLinesFor, rowHeight } from "@terno/ui/designs/rows";
 import { fitStrip } from "~/lib/fit-strip";
 import { listAnchor } from "~/state/list";
 import { SelectionBar } from "./selection-bar";
@@ -1115,7 +1116,9 @@ export function ThreadList() {
   const scanning = useActionPreview((s) => s.preview?.scanning === true);
   const loading = useList((s) => s.loading) || (inPreview && scanning && items.length === 0);
   const itemsKey = useList((s) => s.itemsKey);
-  const compact = useApp((s) => s.settings?.density === "compact");
+  // plan 187: the rows' shape is the painted appearance's (a change keeps the first row on screen: applyAppearance)
+  const compact = useAppearance((s) => s.density === "compact");
+  const previewSetting = useAppearance((s) => s.previewLines);
   const composing = useApp((s) => s.compose !== null);
   // results can span accounts: any search (it looks everywhere), or a mailbox of every account
   const showAccount = useApp((s) => (s.accountId === null || (s.query.trim() !== "" && s.reviewCategoryId === null)) && s.accounts.length > 1);
@@ -1133,13 +1136,15 @@ export function ThreadList() {
   const wide = list && wideEnough;
   // plan 158: the search these rows answer, not what's being typed by now (the row height and marks change with the rows they're for)
   const resultsOf = searchOfKey(itemsKey);
-  const height = wide && !compact ? design.rows.wide : design.rows[compact ? "compact" : resultsOf ? "results" : "comfortable"];
   const layout = design.variants.row;
   // List has no pane to say a row is checked: the toolbar comes with the first (one conversation, as with x)
   const many = useApp((s) => s.scope !== null || s.checked.size >= (list ? 1 : 2));
   const previewing = useApp((s) => s.actionPreview !== null);
   // plan 80: a category's Review list, whose rows answer its suggestions
   const review = useApp((s) => s.reviewCategoryId);
+  // plan 187: where the preview's line says why a row is there, it stays
+  const lines = previewLinesFor(previewSetting, { review: review !== null, results: !!resultsOf, previewing });
+  const height = rowHeight(design, { compact, wide, results: !!resultsOf, lines });
   const parentRef = useRef<HTMLDivElement>(null);
   // a Tab stop only with rows to carry the focus (a loading skeleton has none); handed on only once truly empty
   const empty = !loading && items.length === 0;
@@ -1457,7 +1462,7 @@ export function ThreadList() {
               <TodayHeading key={g.kind} kind={g.kind} top={(virtualizer.measurementsCache[g.at]?.start ?? lead + TOP_LABEL) - TOP_LABEL} />
             ))}
             {virtualItems.map((v) => (
-              <ThreadRow key={v.key} thread={items[v.index]!} top={v.start} height={height} compact={compact} wide={wide} showAccount={showAccount} icons={icons} layout={layout} review={review} pinnedTop={v.index < pinnedTop} reminderTop={v.index >= pinnedTop && v.index < top} match={match} pick={list} section={sectionName(todayGroups.find((g) => g.at === v.index)?.kind)} />
+              <ThreadRow key={v.key} thread={items[v.index]!} top={v.start} height={height} compact={compact} wide={wide} showAccount={showAccount} icons={icons} layout={layout} review={review} pinnedTop={v.index < pinnedTop} reminderTop={v.index >= pinnedTop && v.index < top} match={match} lines={lines} pick={list} section={sectionName(todayGroups.find((g) => g.at === v.index)?.kind)} />
             ))}
           </div>
         )}

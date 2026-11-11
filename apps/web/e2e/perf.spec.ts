@@ -11,6 +11,7 @@ import { TEMPLATE_ENV } from "./constants";
 import { expect, focusOn, navTo, ingestConversation, readerShown, rows, scenario, selectThread, test } from "./fixtures";
 import { sqlDb } from "../../backend-dev/src/server";
 import { DESIGNS } from "../../../packages/ui/src/designs/index";
+import { rowHeight } from "../../../packages/ui/src/designs/rows";
 
 const MULT = Number(process.env.PERF_BUDGET_MULTIPLIER ?? "1");
 interface Stat { name: string; budgetMs: number; p50: number; p95: number; max: number; iterations: number }
@@ -145,8 +146,8 @@ function frameGate(label: string, f: { deltas: number[]; loaf: number }) {
   expect(s.p95, `${label} frame p95`).toBeLessThanOrEqual(20 * MULT);
   expect(s.max, `${label} longest frame`).toBeLessThanOrEqual(50 * MULT);
 }
-async function setDensity(page: import("@playwright/test").Page, server: import("../../backend-dev/src/server").DevServer, density: "comfortable" | "compact") {
-  await server.backend.server.invoke("settings.update", { density }, { clientId: "setup", origin: "dev" as const });
+async function setDensity(page: import("@playwright/test").Page, server: import("../../backend-dev/src/server").DevServer, density: "comfortable" | "compact", previewLines: 0 | 1 | 2 = 1) {
+  await server.backend.server.invoke("settings.update", { density, previewLines }, { clientId: "setup", origin: "dev" as const });
   await page.reload();
   await page.locator("[data-ready]").waitFor();
   await rows(page).first().waitFor();
@@ -193,19 +194,26 @@ const fling = (page: import("@playwright/test").Page, rowH: number) =>
  * and "scrolling 2,000 threads deep" below.
  */
 const LIST_GATES = [
-  { design: "macos", density: "compact" },
-  { design: "atelier", density: "compact" },
-  { design: "lumen", density: "comfortable" },
+  { design: "macos", density: "compact", lines: 1 },
+  { design: "atelier", density: "compact", lines: 1 },
+  { design: "lumen", density: "comfortable", lines: 1 },
+  // plan 187 (Codex critique #8): no preview mounts the most three-line rows (macOS's 46 px), two lines clamp text on every
+  // row (Lumen's, the largest row)
+  { design: "macos", density: "comfortable", lines: 0 },
+  { design: "lumen", density: "comfortable", lines: 2 },
 ] as const;
 const designOf = (id: string) => DESIGNS.find((d) => d.id === id)!;
 
-for (const { design: id, density } of LIST_GATES) {
+for (const { design: id, density, lines } of LIST_GATES) {
  test.describe(id, () => {
   const design = designOf(id);
+  const rowH = rowHeight(design, { compact: density === "compact", wide: false, results: false, lines });
+  /** the run's name: density, and the preview's lines where they aren't the default */
+  const run = lines === 1 ? density : `${density}, ${lines === 0 ? "no preview" : "2 preview lines"}`;
   test.use({ design: id });
   // Lumen comfortable's fling is the one with icons arriving below: the same rows, with more to do
-  const flings = id !== "lumen";
-  test(`sustained j at key-repeat rate (${id}, ${density}): frames stay smooth and the selection keeps up across a page load, with drafts around${flings ? "; then a fling across 1,000 threads: frames stay smooth, the DOM stays bounded" : ""}`, async ({ app: page, server }) => {
+  const flings = id !== "lumen" || lines !== 1;
+  test(`sustained j at key-repeat rate (${id}, ${run}): frames stay smooth and the selection keeps up across a page load, with drafts around${flings ? "; then a fling across 1,000 threads: frames stay smooth, the DOM stays bounded" : ""}`, async ({ app: page, server }) => {
     await scenario("holding j", async () => {
       // a collapsed reply draft on a listed thread and a new draft, both restored by the reload below
       const ctx = { clientId: "setup", origin: "dev" as const };
@@ -216,13 +224,13 @@ for (const { design: id, density } of LIST_GATES) {
       // plan 179: two conversations pinned, so j crosses the Pinned section into the mail
       const pinned = db.all<{ id: number }>("SELECT id FROM threads WHERE in_inbox = 1 ORDER BY last_date DESC LIMIT 2 OFFSET 6").map((r) => r.id);
       await server.backend.server.invoke("pins.add", { threadIds: pinned }, ctx);
-      await setDensity(page, server, density);
+      await setDensity(page, server, density, lines);
       await expect(page.getByTestId("inbox-pinned-label")).toBeVisible();
       // both in the drafts row's count (plan 175), the reply also on its row
       await expect(page.getByTestId("strip-summary")).toHaveText("2 draftsTo ana@example.com");
       await expect(page.locator(`[data-testid=thread-row][data-thread-id="${target.thread_id}"]`)).toContainText("Draft");
       const rendersBefore = await renders(page, "ThreadRow");
-      await expect(page.locator(`[data-testid=thread-row]`).first()).toHaveCSS("height", `${design.rows[density]}px`);
+      await expect(page.locator(`[data-testid=thread-row]`).first()).toHaveCSS("height", `${rowH}px`);
       const loaded = () => page.evaluate(() => (window as unknown as { __terno: { loadedIds(): number[] } }).__terno.loadedIds().length);
       const loadedBefore = await loaded();
       await page.evaluate(() => {
@@ -253,7 +261,7 @@ for (const { design: id, density } of LIST_GATES) {
       const moves = await page.evaluate(() => (window as unknown as { __moves: number }).__moves);
       const perMove = ((await renders(page, "ThreadRow")) - rendersBefore) / moves;
       const loadedAfter = await loaded();
-      stats.push({ name: `j at key repeat (${id}, ${density}): selection moves ${moves}, row renders per move ${perMove.toFixed(2)}, rows loaded ${loadedBefore} → ${loadedAfter}`, budgetMs: 0, p50: 0, p95: 0, max: 0, iterations: 1 });
+      stats.push({ name: `j at key repeat (${id}, ${run}): selection moves ${moves}, row renders per move ${perMove.toFixed(2)}, rows loaded ${loadedBefore} → ${loadedAfter}`, budgetMs: 0, p50: 0, p95: 0, max: 0, iterations: 1 });
       expect(moves).toBeGreaterThanOrEqual(PRESSES);
       // the window has to hold a page load, or its cost is never measured
       expect(loadedAfter, "a page loaded while j was held").toBeGreaterThan(loadedBefore);
@@ -261,20 +269,19 @@ for (const { design: id, density } of LIST_GATES) {
       // drafts and pins add none
       expect(perMove).toBeLessThanOrEqual(3.5);
       expect(await rows(page).count()).toBeLessThanOrEqual(60);
-      frameGate(`j at key repeat (${id}, ${density})`, f);
+      frameGate(`j at key repeat (${id}, ${run})`, f);
     });
     if (!flings) return;
     await scenario("the fling", async () => {
       await navTo(page, "all");
       await expect(page.getByTestId("list-title")).toHaveText("All Mail");
-      const rowH = design.rows[density];
       await expect(rows(page).first()).toHaveCSS("height", `${rowH}px`);
       await startFrames(page);
       const r = await fling(page, rowH);
       const f = await stopFrames(page);
-      stats.push({ name: `scroll 1,000 (${id}, ${density}): ${Math.round(r.ms)} ms, max DOM rows ${r.maxRows}`, budgetMs: 0, p50: 0, p95: 0, max: 0, iterations: 1 });
+      stats.push({ name: `scroll 1,000 (${id}, ${run}): ${Math.round(r.ms)} ms, max DOM rows ${r.maxRows}`, budgetMs: 0, p50: 0, p95: 0, max: 0, iterations: 1 });
       expect(r.maxRows).toBeLessThanOrEqual(80);
-      frameGate(`continuous scroll (${id}, ${density})`, f);
+      frameGate(`continuous scroll (${id}, ${run})`, f);
     });
   });
  });

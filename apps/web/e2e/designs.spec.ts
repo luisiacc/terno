@@ -272,6 +272,33 @@ test.describe("switching designs", () => {
       await page.waitForTimeout(400);
       expect(await page.evaluate(() => (window as unknown as { __shifts: number }).__shifts)).toBeLessThan(0.01);
     }
+    // plan 187 (Codex review #2, #3): the preview's lines and the density change the rows' height the same way, and keep
+    // the same row at the top at the same depth, the open one on screen (in macOS, where the loop ended)
+    const leading = parseFloat(DESIGNS.find((x) => x.id === "macos")!.type.rowSnippet.leading) * 16;
+    const choose = async (select: string, option: string) => {
+      const before = await anchor();
+      await page.getByTestId(select).click();
+      await page.getByTestId(option).click();
+      return before;
+    };
+    for (const [option, height] of [["preview-0", 64 - leading], ["preview-2", 64 + leading], ["preview-1", 64]] as const) {
+      const before = await choose("preview-select", option);
+      await expect(rows(page).first()).toHaveCSS("height", `${height}px`);
+      const after = await anchor();
+      expect(after.id, `the same row at the top after ${option}`).toBe(before.id);
+      expect(Math.abs(after.into - before.into), `as deep into it after ${option}`).toBeLessThan(0.06);
+      await expect(selectedRow(page)).toHaveAttribute("data-thread-id", open);
+      await expect(selectedRow(page)).toBeInViewport();
+    }
+    // Compact: the Preview row stays, off, and says why; the top row stays put through density too
+    const before = await choose("density-select", "density-compact");
+    await expect(rows(page).first()).toHaveCSS("height", "32px");
+    expect((await anchor()).id).toBe(before.id);
+    await expect(page.getByTestId("preview-select")).toBeDisabled();
+    await expect(page.getByTestId("preview-row")).toContainText(en["settings.appearance.preview.compactHint"]);
+    await choose("density-select", "density-comfortable");
+    await expect(rows(page).first()).toHaveCSS("height", "64px");
+    await expect(page.getByTestId("compose-body")).toHaveText("Half a sentence");
   });
 
   test("the faces, and the design a load paints", async ({ app: page, server }) => {
