@@ -15,6 +15,7 @@ import { UI_LOCALE_KEY } from "./forwarding";
 import { findUnsubscribe, runUnsubscribe } from "./unsubscribe";
 import { gather, leaveTop, leftNothing, nothingLeft, returnTop, type TopLeft } from "./inbox-top";
 import { StorageMaintenance } from "./storage";
+import { AGENT_ATTACHMENT, locateForAgent } from "./agent-attachments";
 import { FolderExports } from "./folder-export";
 import { deleteSnippet, listSnippets, saveSnippet } from "./snippets";
 import { followFavoriteFolders, readAgents, readAutoCategorize, readSettings, setGooglePhotoState, SettingsError, updateSettings } from "./settings";
@@ -83,6 +84,25 @@ export function createHandlers(b: Backend): Handlers {
     if (origin !== "renderer" || attachmentCalls >= 2) throw new RpcError("UNAVAILABLE", L("attachments.busy"));
     attachmentCalls++;
     try { return await work(); } finally { attachmentCalls--; }
+  };
+  // plan 185: agents read files on their own budget (two calls, one download of a message), never taking the user's
+  let agentAttachmentCalls = 0;
+  let agentHydrating = false;
+  const agentAttachmentCall = async <T,>(origin: string, work: () => Promise<T>): Promise<T> => {
+    if (origin !== "mcp") throw new RpcError("FORBIDDEN", L("attachments.unavailable"));
+    if (agentAttachmentCalls >= 2) throw new RpcError("UNAVAILABLE", AGENT_ATTACHMENT.busy);
+    agentAttachmentCalls++;
+    try { return await work(); } finally { agentAttachmentCalls--; }
+  };
+  const agentHydrate = async (work: () => Promise<unknown>) => {
+    if (agentHydrating) throw new RpcError("UNAVAILABLE", AGENT_ATTACHMENT.busy);
+    agentHydrating = true;
+    try { await work(); }
+    catch (error) {
+      // the reader's two body jobs are full: the user comes first
+      if (error instanceof RpcError && error.code === "UNAVAILABLE") throw new RpcError("UNAVAILABLE", AGENT_ATTACHMENT.busy);
+      throw error;
+    } finally { agentHydrating = false; }
   };
   const requireCategory = async (id: number) => {
     if (!(await store.categories.exists(id))) throw new RpcError("NOT_FOUND", L("errors.categoryGone"));
@@ -1113,8 +1133,16 @@ export function createHandlers(b: Backend): Handlers {
     "attachments.create": (p, ctx) => attachmentCall(ctx.origin, () => store.attachments.create({ ...p, now: b.now() })),
     "attachments.append": (p, ctx) => attachmentCall(ctx.origin, async () => { await store.attachments.append(p.accountId, p.assetId, p.index, p.dataBase64); return { ok: true as const }; }),
     "attachments.seal": (p, ctx) => attachmentCall(ctx.origin, async () => { await store.attachments.seal(p.accountId, p.assetId); return { ok: true as const }; }),
-    "attachments.info": (p, ctx) => attachmentCall(ctx.origin, () => store.attachments.info(p.accountId, p.assetId)),
-    "attachments.read": (p, ctx) => attachmentCall(ctx.origin, async () => ({ dataBase64: await store.attachments.read(p.accountId, p.assetId, p.index) })),
+    "attachments.info": (p, ctx) => (ctx.origin === "mcp" ? agentAttachmentCall : attachmentCall)(ctx.origin, () => store.attachments.info(p.accountId, p.assetId)),
+    "attachments.read": (p, ctx) => (ctx.origin === "mcp" ? agentAttachmentCall : attachmentCall)(ctx.origin, async () => ({ dataBase64: await store.attachments.read(p.accountId, p.assetId, p.index) })),
+    "attachments.agentLocate": (p, ctx) => agentAttachmentCall(ctx.origin, () => locateForAgent(b, p, agentHydrate)),
+    "attachments.agentFile": (p, ctx) => agentAttachmentCall(ctx.origin, async () => {
+      const files = b.agents?.files;
+      if (!files) throw new RpcError("UNAVAILABLE", L("errors.agentsNeedDesktop"));
+      const found = await locateForAgent(b, p, agentHydrate);
+      const ref = await store.attachments.info(found.accountId, found.assetId);
+      return { ...found, path: await files.write(store, found.accountId, ref, () => b.platform.yield()) };
+    }),
     "attachments.discard": (p, ctx) => attachmentCall(ctx.origin, async () => { await store.attachments.discard(p.accountId, p.assetId); return { ok: true as const }; }),
 
     "drafts.save": async (p, ctx) => {

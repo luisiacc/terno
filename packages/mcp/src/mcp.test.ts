@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
@@ -8,6 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AppConnection } from "./connection";
 import { createMcpServer } from "./server";
 import { sqlDb } from "@terno/db";
+import { msg } from "@terno/store/conformance";
 
 let dir: string;
 let backend: Backend;
@@ -57,9 +58,10 @@ describe("terno MCP server", () => {
   it("exposes the documented tools with annotations", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual(
-      ["categorize", "create_draft", "create_filter", "get_thread", "list_accounts", "list_filters", "list_threads", "search_emails", "send_email", "update_threads"].sort(),
+      ["categorize", "create_draft", "create_filter", "get_attachment", "get_thread", "list_accounts", "list_filters", "list_threads", "search_emails", "send_email", "update_threads"].sort(),
     );
     expect(tools.find((t) => t.name === "search_emails")!.annotations?.readOnlyHint).toBe(true);
+    expect(tools.find((t) => t.name === "get_attachment")!.annotations?.readOnlyHint).toBe(true);
     expect(tools.find((t) => t.name === "send_email")!.annotations?.destructiveHint).toBe(true);
   });
 
@@ -73,18 +75,140 @@ describe("terno MCP server", () => {
     expect(res.json.results[0]).toMatchObject({ threadId: expect.any(Number), subject: expect.any(String), date: expect.stringMatching(/^\d{4}-/) });
   });
 
-  it("searches everywhere, Spam and Trash too, and says where each result lives (plan 64)", async () => {
+  it("plan 185: Spam and Trash only when the agent names them, and a thread there only when it asks (the owner's call)", async () => {
     const all = await call("search_emails", { query: "factura", limit: 100 });
     const [spam, trash] = all.json.results.slice(0, 2).map((r: { threadId: number }) => r.threadId);
     await backend.store.threads.act({ threadIds: [spam], action: "spam", signal: null, now: Date.now() });
     await backend.store.threads.act({ threadIds: [trash], action: "trash", signal: null, now: Date.now() });
-    const res = await call("search_emails", { query: "factura", limit: 100 });
-    const placeOf = (id: number) => res.json.results.find((r: { threadId: number }) => r.threadId === id)?.place;
-    expect([placeOf(spam), placeOf(trash)]).toEqual(["spam", "trash"]);
-    // in:all still means everything but Spam and Trash
-    const scoped = await call("search_emails", { query: "in:all factura", limit: 100 });
-    expect(scoped.json.results.map((r: { threadId: number }) => r.threadId)).not.toContain(spam);
-    await backend.store.threads.act({ threadIds: [spam, trash], action: "moveToInbox", signal: null, now: Date.now() });
+    try {
+      const ids = async (query: string) => (await call("search_emails", { query, limit: 100 })).json.results.map((r: { threadId: number }) => r.threadId);
+      expect(await ids("factura")).not.toEqual(expect.arrayContaining([spam]));
+      expect(await ids("factura")).not.toContain(trash);
+      const named = await call("search_emails", { query: "in:spam factura", limit: 100 });
+      expect(named.json.results.find((r: { threadId: number }) => r.threadId === spam)?.place).toBe("spam");
+      expect(await ids("in:trash factura")).toContain(trash);
+      expect((await call("list_threads", { view: "spam", limit: 100 })).json.threads.map((t: { threadId: number }) => t.threadId)).toContain(spam);
+      // by id too: a thread can move to Spam after it was listed
+      const refused = await call("get_thread", { threadId: spam });
+      expect(refused.isError).toBe(true);
+      expect(refused.raw).toMatch(/includeSpamTrash: true/);
+      expect((await call("get_thread", { threadId: spam, includeSpamTrash: true })).json.place).toBe("spam");
+      // the user's own search still looks everywhere (plan 64)
+      const mine = await backend.server.invoke("threads.search", { query: "factura", limit: 100 }, { clientId: "renderer", origin: "renderer" });
+      expect(mine.items.map((t) => t.id)).toEqual(expect.arrayContaining([spam, trash]));
+    } finally {
+      await backend.store.threads.act({ threadIds: [spam, trash], action: "moveToInbox", signal: null, now: Date.now() });
+    }
+  });
+
+  describe("plan 185: files", () => {
+    const png = Uint8Array.from(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64"));
+    const pdf = new Uint8Array(Buffer.from("%PDF-1.4\n%âãÏÓ\n1 0 obj << >> endobj\ntrailer << >>\n%%EOF\n", "latin1"));
+    // longer than a page: ~70k characters
+    const notes = Array.from({ length: 7000 }, (_, i) => `line ${String(i).padStart(4, "0")}`).join("\n");
+    let threadId: number;
+    let messageId: number;
+    let files: Record<string, { attachmentId: string; mime: string; size: number; inline?: true; unavailable?: string }>;
+
+    beforeAll(async () => {
+      const accountId = (await call("list_accounts")).json.accounts[0].id;
+      const bytes = new TextEncoder().encode(notes);
+      await backend.store.sync.ingest(
+        [
+          msg({
+            accountId, providerMsgId: "files-1", providerThreadId: "files", subject: "Quarterly files", date: Date.now() - 60_000, hasAttachments: true,
+            bodyText: "See attached.", bodyHtml: '<p>See attached.</p><!-- <img src="cid:pdf@x"> --><img src="cid:LOGO%40x" alt="">',
+            attachments: [
+              { filename: "logo.png", mime: "image/png", size: png.byteLength, contentId: "logo@x", bytes: png },
+              { filename: "notes.txt", mime: "text/plain", size: bytes.byteLength, bytes },
+              { filename: "invoice.pdf", mime: "application/pdf", size: pdf.byteLength, contentId: "pdf@x", bytes: pdf },
+            ],
+          }),
+          // a message of the conversation that is in Spam
+          msg({ accountId, providerMsgId: "files-2", providerThreadId: "files", subject: "Re: Quarterly files", date: Date.now() - 30_000, isSpam: true, inInbox: false }),
+        ],
+        { applyFilters: false, now: Date.now(), classifier: null },
+      );
+      threadId = (await call("search_emails", { query: "subject:quarterly", limit: 5 })).json.results[0].threadId;
+      const thread = await call("get_thread", { threadId });
+      expect(thread.json.messages).toHaveLength(1);
+      expect(thread.json.leftOut).toMatch(/1 message\(s\) in Spam or Trash/);
+      messageId = thread.json.messages[0].messageId;
+      files = Object.fromEntries(thread.json.messages[0].attachments.map((a: { filename: string }) => [a.filename, a]));
+    });
+
+    it("get_thread lists each file's id, type and size, and which show in the body", () => {
+      expect(files["logo.png"]).toMatchObject({ mime: "image/png", size: png.byteLength, inline: true });
+      expect(files["invoice.pdf"]).toMatchObject({ mime: "application/pdf", size: pdf.byteLength });
+      // a reference inside a comment isn't one
+      expect(files["invoice.pdf"]!.inline).toBeUndefined();
+      expect(files["notes.txt"]!.attachmentId).toMatch(/^[0-9a-f-]{36}$/);
+    });
+
+    it("reads text a page at a time, an image as an image, anything else as a private copy", async () => {
+      const read = (attachmentId: string, extra: Record<string, unknown> = {}) =>
+        client.callTool({ name: "get_attachment", arguments: { threadId, messageId, attachmentId, ...extra } }) as Promise<{ content: { type: string; text?: string; data?: string; mimeType?: string }[]; isError?: boolean }>;
+      let text = "";
+      let offset: number | null = 0;
+      let pages = 0;
+      while (offset !== null) {
+        const r = await read(files["notes.txt"]!.attachmentId, { offset });
+        const meta = JSON.parse(r.content[0]!.text!);
+        expect(r.content[1]!.text!.length).toBeLessThanOrEqual(32_000);
+        text += r.content[1]!.text!;
+        offset = meta.nextOffset;
+        pages++;
+      }
+      expect(text).toBe(notes);
+      expect(pages).toBeGreaterThan(2);
+      const past = await read(files["notes.txt"]!.attachmentId, { offset: notes.length + 1 });
+      expect(past.isError).toBe(true);
+
+      const image = await read(files["logo.png"]!.attachmentId);
+      expect(image.content[1]).toMatchObject({ type: "image", mimeType: "image/png", data: Buffer.from(png).toString("base64") });
+
+      const copy = JSON.parse((await read(files["invoice.pdf"]!.attachmentId)).content[0]!.text!);
+      expect(copy.path.endsWith("/invoice.pdf")).toBe(true);
+      expect(new Uint8Array(readFileSync(copy.path))).toEqual(pdf);
+      expect(statSync(copy.path).mode & 0o777).toBe(0o600);
+      const asFile = JSON.parse((await read(files["logo.png"]!.attachmentId, { asFile: true })).content[0]!.text!);
+      expect(new Uint8Array(readFileSync(asFile.path))).toEqual(png);
+      // turning agents off takes the copies back
+      await setAgents({ enabled: false });
+      try {
+        expect(existsSync(copy.path)).toBe(false);
+      } finally {
+        await setAgents({ enabled: true });
+      }
+    });
+
+    it("refuses a file in Spam unless asked, and says plainly when ids are stale or a file isn't kept", async () => {
+      await backend.store.threads.act({ threadIds: [threadId], action: "spam", signal: null, now: Date.now() });
+      try {
+        const refused = await call("get_attachment", { threadId, messageId, attachmentId: files["notes.txt"]!.attachmentId });
+        expect(refused.isError).toBe(true);
+        expect(refused.raw).toMatch(/includeSpamTrash: true/);
+        expect((await call("get_attachment", { threadId, messageId, attachmentId: files["logo.png"]!.attachmentId, includeSpamTrash: true })).json.place).toBe("spam");
+      } finally {
+        await backend.store.threads.act({ threadIds: [threadId], action: "moveToInbox", signal: null, now: Date.now() });
+      }
+      const stale = await call("get_attachment", { threadId, messageId: messageId + 1000, attachmentId: files["notes.txt"]!.attachmentId });
+      expect(stale.raw).toMatch(/get_thread/);
+      const accountId = (await call("list_accounts")).json.accounts[0].id;
+      await backend.store.sync.ingest(
+        [msg({ accountId, providerMsgId: "huge-1", subject: "Huge scans", bodyState: "partial", bodyText: null })],
+        { applyFilters: false, now: Date.now(), classifier: null },
+      );
+      const huge = (await call("search_emails", { query: "subject:huge", limit: 1 })).json.results[0].threadId;
+      // captured past Terno's limits: the part is listed, its bytes weren't kept
+      const id = (await call("get_thread", { threadId: huge })).json.messages[0].messageId;
+      await backend.store.sync.setBody(id, "Scans", null, { now: Date.now(), classifier: null, attachments: [{ filename: "scan.zip", mime: "application/zip", size: 19_000_000 }] });
+      const message = (await call("get_thread", { threadId: huge })).json.messages[0];
+      expect(message.attachments[0]).toMatchObject({ attachmentId: expect.stringMatching(/^row-\d+$/), unavailable: expect.any(String) });
+      const tooBig = await call("get_attachment", { threadId: huge, messageId: message.messageId, attachmentId: message.attachments[0].attachmentId });
+      expect(tooBig.isError).toBe(true);
+      expect(tooBig.raw).toMatch(/didn't keep a copy of this file/);
+    });
   });
 
   it("reads HTML-only mail as plain text", async () => {

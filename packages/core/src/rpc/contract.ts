@@ -81,6 +81,25 @@ const attachmentRefs = z.array(attachmentRefSchema).max(100);
 const assetRequest = z.object({ accountId: id, assetId: z.string().uuid() }).strict();
 const draftAddress = z.object({ name: z.string().max(300), email: z.string().max(320), auto: z.literal(true).optional() });
 
+/** Plan 185: a kept file an agent may read (its place checked), by the asset the sidecar reads it with. */
+export interface AgentAttachment {
+  accountId: number;
+  assetId: string;
+  filename: string;
+  mime: string;
+  size: number;
+  place: "inbox" | "archive" | "spam" | "trash";
+}
+
+const agentAttachmentRequest = z.object({
+  threadId: id,
+  messageId: id,
+  /** get_thread's: an asset id once kept, `row-<id>` before */
+  attachmentId: z.string().max(80),
+  /** the owner's rule: Spam and Trash only when the agent asks */
+  includeSpamTrash: z.boolean().default(false),
+}).strict();
+
 export interface ThreadPage {
   items: ThreadSummary[];
   nextCursor: { lastDate: number; id: number } | null;
@@ -1001,6 +1020,10 @@ export const contract = {
   "attachments.seal": m<{ ok: true }>()(assetRequest),
   "attachments.info": m<AttachmentRef>()(assetRequest),
   "attachments.read": m<{ dataBase64: string | null }>()(assetRequest.extend({ index: z.number().int().min(0).max(384) }).strict()),
+  /** plan 185, agents only: which kept file that is (downloading its message once if it isn't stored yet) */
+  "attachments.agentLocate": m<AgentAttachment>()(agentAttachmentRequest, { timeoutMs: 120_000 }),
+  /** plan 185, agents only: the same, plus a copy for the agent to read with its own tools */
+  "attachments.agentFile": m<AgentAttachment & { path: string }>()(agentAttachmentRequest, { timeoutMs: 120_000 }),
   "attachments.discard": m<{ ok: true }>()(assetRequest),
 
   "drafts.save": m<Draft | null>()(

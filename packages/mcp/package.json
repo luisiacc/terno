@@ -15,6 +15,7 @@
     "@types/node": "catalog:",
     "@terno/backend": "workspace:*",
     "@terno/db": "workspace:*",
-    "@terno/mail": "workspace:*"
+    "@terno/mail": "workspace:*",
+    "@terno/store": "workspace:*"
   }
 }

@@ -41,6 +41,27 @@ export function attachmentCidUri(value: string): string | null {
   try { return attachmentCid(decodeURIComponent(value.slice(4))); } catch { return null; }
 }
 
+const ENTITIES: Record<string, string> = { amp: "&", quot: '"', apos: "'", lt: "<", gt: ">" };
+
+/**
+ * Plan 185: the Content-IDs an HTML body shows as images (`src="cid:…"`), normalized like `attachmentCid`, without a
+ * DOM: comments are skipped, character references in the attribute decoded, the URI once (as the reader does).
+ */
+export function cidReferences(html: string): Set<string> {
+  const found = new Set<string>();
+  const live = html.replace(/<!--[\s\S]*?-->/g, "");
+  for (const m of live.matchAll(/<[a-z][^>]*?\ssrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>"']+))/gi)) {
+    const raw = (m[1] ?? m[2] ?? m[3] ?? "").trim().replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (whole, ref: string) => {
+      if (ref[0] !== "#") return ENTITIES[ref.toLowerCase()] ?? whole;
+      const code = ref[1] === "x" || ref[1] === "X" ? parseInt(ref.slice(2), 16) : parseInt(ref.slice(1), 10);
+      return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : whole;
+    });
+    const cid = attachmentCidUri(raw);
+    if (cid) found.add(cid);
+  }
+  return found;
+}
+
 export function bytesBase64(bytes: Uint8Array): string {
   let binary = "";
   for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode(...bytes.subarray(i, i + 8192));

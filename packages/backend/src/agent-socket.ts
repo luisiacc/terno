@@ -1,6 +1,7 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { chmodSync, existsSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
+import { AgentFiles, agentFilesDir } from "./agent-files";
 import type { BackendCore } from "./core";
 import { socketTransport } from "./transports";
 
@@ -14,6 +15,8 @@ export interface AgentEndpoint {
   /** a new token in the file; every connected agent is cut off (it must read the new one to come back) */
   rotate(): { disconnected: number; tokenSince: number };
   close(): Promise<void>;
+  /** plan 185: copies of files handed to agents, gone when the endpoint closes or the token changes */
+  files: AgentFiles;
 }
 
 /**
@@ -79,6 +82,9 @@ export async function startAgentSocket(backend: BackendCore, socketPath: string,
       if (!authed) socket.destroy();
     }, 5000).unref();
   });
+  const files = new AgentFiles(agentFilesDir(tokenPath));
+  // what a crash or an older run left
+  await files.clear();
   writeToken();
   if (existsSync(socketPath)) rmSync(socketPath);
   try {
@@ -91,6 +97,7 @@ export async function startAgentSocket(backend: BackendCore, socketPath: string,
     // nothing left behind that says agents can connect (Codex review #9)
     server.close();
     removeFiles();
+    await files.clear();
     throw error;
   }
   const endpoint: AgentEndpoint = {
@@ -98,8 +105,11 @@ export async function startAgentSocket(backend: BackendCore, socketPath: string,
     tokenPath,
     connected: () => live.size,
     tokenSince: () => since,
+    files,
     rotate: () => {
       writeToken();
+      // cutting every agent off takes back the copies they were given
+      void files.clear().catch(() => {});
       const cut = [...live];
       for (const socket of cut) socket.destroy();
       live.clear();
@@ -110,8 +120,9 @@ export async function startAgentSocket(backend: BackendCore, socketPath: string,
         closing = true;
         if (backend.agents === endpoint) backend.agents = null;
         for (const socket of accepted) socket.destroy();
-        server.close(() => resolve());
         removeFiles();
+        // the copies go after the writes in flight see they were cut off
+        void Promise.all([new Promise<void>((done) => server.close(() => done())), files.close().catch(() => {})]).then(() => resolve());
       }),
   };
   backend.agents = endpoint;

@@ -1,6 +1,7 @@
 import { rmSync } from "node:fs";
 import { log } from "@terno/core/diag";
 import { startAgentSocket, type AgentEndpoint } from "./agent-socket";
+import { agentFilesDir } from "./agent-files";
 import type { BackendCore } from "./core";
 import { readAgents } from "./settings";
 
@@ -70,6 +71,8 @@ export class AgentConnector implements NonNullable<BackendCore["agentConnector"]
       // off: files an older build or a crash left must not suggest agents can connect
       rmSync(this.paths.tokenPath, { force: true });
       rmSync(this.paths.socketPath, { force: true });
+      // plan 185: and copies of files handed to agents
+      rmSync(agentFilesDir(this.paths.tokenPath), { recursive: true, force: true });
     }
   }
 }

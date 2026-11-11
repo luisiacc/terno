@@ -491,7 +491,13 @@ export class BackendCore {
   readonly ready: Promise<void>;
 
   /** the MCP socket while it listens, set by startAgentSocket */
-  agents: { connected(): number; tokenSince(): number; rotate(): { disconnected: number; tokenSince: number } } | null = null;
+  agents: {
+    connected(): number;
+    tokenSince(): number;
+    rotate(): { disconnected: number; tokenSince: number };
+    /** plan 185: copies of files handed to agents (Node only: the socket is) */
+    files: { write(store: MailStore, accountId: number, ref: import("@terno/core").AttachmentRef, yieldTo: () => Promise<void>): Promise<string> };
+  } | null = null;
   /** plan 183: opens and closes that socket as the user turns agents on and off; on hosts that have one (Node) */
   agentConnector: {
     /** listens while agents are on, nothing exists while they're off */
