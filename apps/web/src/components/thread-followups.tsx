@@ -19,7 +19,7 @@ import { useAiDraft } from "~/lib/ai-draft";
 import { offerTip, usePendingTip } from "~/lib/tips";
 import { useApp } from "~/state/app";
 import { useFollowups } from "~/state/followups";
-import { AI_ACTIONS, AI_CARD, AI_GLYPH, AI_HEADER, AI_TITLE, AiProvenance, messageSource } from "./ai-card";
+import { AI_ACTIONS, AI_CARD, AI_GLYPH, AI_HEADER, AI_PAD, AI_TITLE, AiProvenance, messageSource } from "./ai-card";
 import FollowupsTip from "./followups-tip";
 import { useWhen, WhenFields } from "./when-fields";
 
@@ -50,7 +50,7 @@ function Line({ row, messages }: { row: FollowupRow; messages: readonly MessageD
   // it starts where the reminder's own picker does (plan 87): the next sensible moment, never one already past
   const when = useWhen(defaultRemindAt(new Date()));
   return (
-    <div data-testid="followup-line" data-kind={row.kind} data-state={row.state} className={cn(AI_CARD, "px-4 pb-3.5")}>
+    <div data-testid="followup-line" data-kind={row.kind} data-state={row.state} className={cn(AI_CARD, AI_PAD)}>
       {/* the news first, at the text's size: it's what the card is */}
       <p data-testid="followup-header" className={AI_HEADER}>
         <Clock aria-hidden className={cn(AI_GLYPH, "text-sm")} />

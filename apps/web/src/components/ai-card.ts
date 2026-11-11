@@ -10,15 +10,21 @@ import { provenanceLabel } from "../lib/provenance";
  * Plan 161: one anatomy for every suggestion (the summary, Reply ready, the follow-up line, ⌘J's strip): a header (glyph,
  * a title in the ink, then what it's about), the body, and a row of BoardUI buttons at one height.
  */
-/** Plan 161, pass 2: ringed inside in card-edge (globals.css `ai-card`), so it never reads as part of the mail in any palette. */
+/** Plan 180 (the owner's "Whisper"): no ring, a breath of fill: Settings' tint at 65% in light, the accent's 5% in dark (globals.css `ai-card`). */
 export const AI_CARD = "ai-card";
-/** The header's glyph (Sparkles, or the spinner while it works), the size of the header's text. */
-export const AI_GLYPH = "size-[1.15em] shrink-0 text-muted-foreground";
+/** Plan 180: its contents' inset, and with the room under them, every card the same (the owner's airy over dense) */
+export const AI_INSET = "px-5";
+export const AI_PAD = `${AI_INSET} pb-4`;
+/**
+ * The header's glyph (Sparkles, or the spinner while it works), the size of the header's text. Plan 180: in the accent, the
+ * one mark a model's words carry (AGENTS.md mutes an icon beside a label; this one is the owner's exception)
+ */
+export const AI_GLYPH = "size-[1.15em] shrink-0 text-primary";
 /**
  * The header: one line of the secondary type, its glyph on the first line. Plan 162: at the body's size on every card (the
- * summary's was 12 px, the follow-up's 13.5, Reply ready's larger again), the facts in the secondary.
+ * summary's was 12 px, the follow-up's 13.5, Reply ready's larger again), the facts in the secondary. Plan 180: 44 px.
  */
-export const AI_HEADER = "flex min-h-10 items-center gap-1.5 py-2.5 text-sm text-muted-foreground";
+export const AI_HEADER = "flex min-h-11 items-center gap-2 py-3 text-sm text-muted-foreground";
 /** The header's title: in the ink, so a card's name isn't its quietest word. */
 export const AI_TITLE = "font-medium text-foreground";
 /** The button row: the same gaps on every surface. Its buttons are `size="sm"` (28 px). */

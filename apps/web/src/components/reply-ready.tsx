@@ -13,9 +13,7 @@ import { shownDraftKey, useDrafts } from "~/lib/drafts";
 import { chooseReplyAll, dismissReply, stopReply, useReplies, useReply } from "~/lib/replies";
 import { useApp } from "~/state/app";
 import { useThreads } from "~/state/threads";
-import { AI_ACTIONS, AI_GAP, AI_GAP_TINT, AiProvenance, gapPieces } from "./ai-card";
-import { AI_LOOK_SPECS } from "./ai-looks";
-import { useAiLook } from "~/lib/ai-look";
+import { AI_ACTIONS, AI_CARD, AI_GAP, AI_GAP_TINT, AI_GLYPH, AI_HEADER, AI_PAD, AI_TITLE, AiProvenance, gapPieces } from "./ai-card";
 
 /**
  * Plan 161, pass 3: what the provenance says it used, the two facts the composer says too: the style ("In your voice with
@@ -76,7 +74,6 @@ export default function ReplyReady({ threadId }: { threadId: number }) {
   const accounts = useApp((s) => s.accounts);
   const everyone = detail ? replyAllTo(detail, accounts.map((a) => a.email)) : null;
   const toAll = useReplies((s) => s.all === threadId) && everyone !== null;
-  const spec = AI_LOOK_SPECS[useAiLook()];
   if (!shown || drafted) return null;
   const writing = shown.phase === "writing";
   const lines = shown.text.split("\n").length;
@@ -87,8 +84,8 @@ export default function ReplyReady({ threadId }: { threadId: number }) {
   const lead = (
     <>
       {/* the spinner keeps its status and name, as before the card */}
-      {writing ? <Spinner className={spec.glyph} /> : <Sparkles aria-hidden className={spec.glyph} />}
-      <span data-testid="reply-ready-title" className={spec.title}>{writing ? t("replies.writing") : toFill > 0 ? t("replies.drafted") : t("replies.title")}</span>
+      {writing ? <Spinner className={AI_GLYPH} /> : <Sparkles aria-hidden className={AI_GLYPH} />}
+      <span data-testid="reply-ready-title" className={AI_TITLE}>{writing ? t("replies.writing") : toFill > 0 ? t("replies.drafted") : t("replies.title")}</span>
       {/* what's left for the user, said before Use, in the ink */}
       {/* plan 162 (after ai162-r01): in the gap's own mark, so the header points at what's missing in the draft */}
       {toFill > 0 && <><span aria-hidden>·</span><span data-testid="reply-ready-gaps" className={cn(AI_GAP_TINT, "px-1 font-medium")}>{t("replies.gaps", { count: toFill })}</span></>}
@@ -116,24 +113,24 @@ export default function ReplyReady({ threadId }: { threadId: number }) {
     </ToggleGroup>
   );
   return (
-    <section data-testid="reply-ready" data-phase={shown.phase} aria-label={t("replies.title")} className={cn(spec.reply ?? `${spec.card} mt-4`, spec.inset, spec.bottom, "animate-in fade-in-0 duration-base ease-motion")}>
+    <section data-testid="reply-ready" data-phase={shown.phase} aria-label={t("replies.title")} className={cn(AI_CARD, AI_PAD, "mt-4 animate-in fade-in-0 duration-base ease-motion")}>
       {/* once, never the deltas */}
       <div role="status" aria-live="polite" className="sr-only" data-testid="reply-ready-live">{writing ? "" : toFill > 0 ? t("replies.drafted") : t("replies.title")}</div>
       {/* the summary's header: its height, its glyph, its type */}
       {choice ? (
         // owner's decisions (2): the words wrap in their own block, so the switch keeps the first line's end at any width
-        <div data-testid="reply-ready-header" className={cn(spec.header, "gap-3")}>
+        <div data-testid="reply-ready-header" className={cn(AI_HEADER, "gap-3")}>
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-0">{lead}</div>
           {choice}
         </div>
       ) : (
-        <div data-testid="reply-ready-header" className={cn(spec.header, "flex-wrap gap-y-0")}>{lead}</div>
+        <div data-testid="reply-ready-header" className={cn(AI_HEADER, "flex-wrap gap-y-0")}>{lead}</div>
       )}
       {writing && !shown.text.trim() ? (
         // its place held until the first words: three lines of the text's height
         <SkeletonText data-testid="reply-ready-skeleton" lines={3} className="py-1.5" lineClassName="h-3" />
       ) : (
-        <p data-testid="reply-ready-text" className={cn("max-w-(--read-max) text-sm leading-relaxed wrap-anywhere whitespace-pre-wrap", spec.draft === "well" && "ai-well max-w-none px-4 py-3", (writing || (long && !all)) && "line-clamp-6")}>
+        <p data-testid="reply-ready-text" className={cn("max-w-(--read-max) text-sm leading-relaxed wrap-anywhere whitespace-pre-wrap", (writing || (long && !all)) && "line-clamp-6")}>
           {/* the gaps the model left, marked so they can't be missed (plan 161); while it writes, the words as they come */}
           {writing ? shown.text : gapPieces(shown.text, gaps).map((p, i) => (p.gap ? <mark key={i} data-testid="reply-ready-gap" className={AI_GAP}>{p.text}</mark> : p.text))}
         </p>

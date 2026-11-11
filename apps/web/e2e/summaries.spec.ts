@@ -189,15 +189,17 @@ test.describe("summaries (plan 132)", () => {
     await expect(block).toHaveAttribute("data-state", "ready");
     await expect(page.getByTestId("summary-text")).toContainText("alongpath");
 
-    // tinted, or in Graphite outlined on its surface: never just more of the mail's own page
-    const surface = await block.evaluate((el) => { const s = getComputedStyle(el); return { fill: s.backgroundColor, ring: s.boxShadow }; });
-    const NONE = "rgba(0, 0, 0, 0)";
-    // plan 162 (the owner, 2026-11-08: the grey box "feels cheap"): no fill of its own in light, the page's surface under a
-    // hairline and the faintest lift; dark lifts it by the ink's wash. Ringed in every design (its floor is contrast.test.ts's),
-    // so it never reads as mail
-    expect(surface.fill).toBe(NONE);
-    expect(surface.ring).toContain("inset");
-    expect(surface.ring).not.toMatch(/^rgba\(0, 0, 0, 0\)/);
+    // plan 180 (the owner's "Whisper"): never just more of the mail's own page, and no ring: a breath of fill, Settings' tint
+    // at 65% in light, the accent's 5% wash in dark (their floors are contrast.test.ts's), in every design
+    for (const mode of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme: mode });
+      await page.waitForFunction((dark) => document.documentElement.classList.contains("dark") === dark, mode === "dark");
+      const surface = await block.evaluate((el) => { const s = getComputedStyle(el); return { fill: s.backgroundColor, ring: s.boxShadow, border: s.borderTopWidth }; });
+      expect(surface.fill, mode).toMatch(mode === "light" ? /\/ 0\.65\)$/ : /\/ 0\.05\)$/);
+      expect(surface.ring, mode).toBe("none");
+      expect(surface.border, mode).toBe("0px");
+    }
+    await page.emulateMedia({ colorScheme: "light" });
 
     // on the column: the subject's line and the conversation's ends. The label's icon and the text share the inset
     const box = (await block.boundingBox())!;
@@ -266,10 +268,43 @@ test.describe("summaries (plan 132)", () => {
     expect(await edge("summary-copy")).toBe("rgba(0, 0, 0, 0)");
     await page.setViewportSize({ width: 980, height: 600 });
 
+    // plan 180: who wrote it and Copy (its glyph alone, named) end the header's row, open or closed: no footer row of their own
+    const onHeader = async () => {
+      const toggle = (await page.getByTestId("summary-toggle").boundingBox())!;
+      for (const id of ["summary-provenance", "summary-copy"]) {
+        const b = (await page.getByTestId(id).boundingBox())!;
+        expect(Math.abs(b.y + b.height / 2 - (toggle.y + toggle.height / 2)), id).toBeLessThanOrEqual(1);
+        expect(b.x, id).toBeGreaterThan(toggle.x + toggle.width);
+      }
+    };
+    await onHeader();
+    await expect(page.getByTestId("summary-copy")).toHaveAccessibleName("Copy");
+    await expect(page.getByTestId("summary-copy")).toHaveText("");
+    // by keyboard: the name, who wrote it, then Copy; Copy copies and leaves the card as it was
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+    await page.getByTestId("summary-toggle").focus();
+    await page.keyboard.press("Tab");
+    await expect(page.getByTestId("summary-provenance")).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(page.getByTestId("summary-copy")).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("summary-copy")).toHaveAttribute("data-copied", "true");
+    await expect(page.getByTestId("summary-copy")).toHaveAccessibleName("Copied");
+    await expect(page.getByTestId("summary-toggle")).toHaveAttribute("aria-expanded", "true");
+    // the minimum window: the one row holds the name and both tools inside the card, in every design
+    await page.setViewportSize({ width: 980, height: 600 });
+    await onHeader();
+    const card = (await block.boundingBox())!;
+    const copy = (await page.getByTestId("summary-copy").boundingBox())!;
+    expect(copy.x + copy.width).toBeLessThanOrEqual(card.x + card.width);
+    expect(await page.getByTestId("summary-tools").evaluate((el) => el.parentElement!.scrollWidth <= el.parentElement!.clientWidth)).toBe(true);
+    await page.setViewportSize({ width: 1440, height: 900 });
+
     // closed, the card is its one row
     await page.getByTestId("summary-toggle").click();
     await expect(page.getByTestId("summary-text")).toHaveCount(0);
     expect((await block.boundingBox())!.height).toBe((await page.getByTestId("summary-toggle").boundingBox())!.height);
+    await onHeader();
   });
 
   test("by hand on an old conversation: appears at once, can be stopped, and its arrow goes to the message", async ({ app: page, server }) => {
@@ -297,7 +332,7 @@ test.describe("summaries (plan 132)", () => {
       await expect(block).toContainText("Summarizing…");
       // plan 148: at the minimum window a short status keeps its action on the row, the height of the card's header
       await page.setViewportSize({ width: 980, height: 600 });
-      expect((await block.boundingBox())!.height).toBe(40);
+      expect((await block.boundingBox())!.height).toBe(44);
       await page.setViewportSize({ width: 1440, height: 900 });
       await page.getByTestId("summary-stop").click();
       await expect(block).toHaveCount(0);

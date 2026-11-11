@@ -155,7 +155,7 @@ test.describe("replies ready (plan 144)", () => {
     await expect(page.getByTestId("reply-ready-mode-reply")).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByTestId("reply-ready-to")).toHaveText("To Yuki Gutiérrez");
     // in the header, which it doesn't grow
-    expect((await page.getByTestId("reply-ready-header").boundingBox())!.height).toBeLessThanOrEqual(40);
+    expect((await page.getByTestId("reply-ready-header").boundingBox())!.height).toBeLessThanOrEqual(44);
     await page.getByTestId("reply-ready-mode-all").click();
     await expect(page.getByTestId("reply-ready-mode-all")).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByTestId("reply-ready-to")).toHaveText("To Yuki Gutiérrez, cc Ana Ruiz and Ben Wu");
@@ -312,12 +312,9 @@ test.describe("replies ready (plan 144)", () => {
       const card = block(page);
       const [mine, summary] = await Promise.all([card, page.getByTestId("summary-block")].map((el) => el.evaluate((n) => { const s = getComputedStyle(n); return { fill: s.backgroundColor, ring: s.boxShadow, radius: s.borderTopLeftRadius }; })));
       expect(mine).toEqual(summary);
-      const NONE = "rgba(0, 0, 0, 0)";
-      // an outline that is really drawn, never "none" (review 2). Plan 162 (the owner, 2026-11-08): no fill of its own in
-      // any design, the page's surface under its hairline (dark lifts it with the ink's wash, an image, not a fill)
-      expect(mine!.fill, `${mode}`).toBe(NONE);
-      expect(mine!.ring, `${mode}`).not.toBe("none");
-      expect(mine!.ring, `${mode}`).toContain("inset");
+      // plan 180 (the owner's "Whisper"): no ring, a breath of fill: Settings' tint at 65% in light, the accent's 5% in dark
+      expect(mine!.fill, `${mode}`).toMatch(mode === "light" ? /\/ 0\.65\)$/ : /\/ 0\.05\)$/);
+      expect(mine!.ring, `${mode}`).toBe("none");
 
       // one column: the summary above shares the card's ends (plan 162: the reply bar steps aside while it shows)
       const box = (await card.boundingBox())!;

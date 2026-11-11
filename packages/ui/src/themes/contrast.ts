@@ -94,6 +94,14 @@ export const CONTRAST_PAIRS: readonly ContrastPair[] = [
   ...(["card", "tint", "background"] as const).map((over): ContrastPair => ({ fg: "foreground", bg: "primary", alpha: 0.15, min: 4.5, overToken: over })),
   // plan 162 (after ai162-r04): a note for AI in a composer's body, its words and its "For AI" label on the primary's 5% wash
   ...(["foreground", "muted-foreground"] as const).flatMap((fg) => (["card", "tint", "background"] as const).map((over): ContrastPair => ({ fg, bg: "primary", alpha: 0.05, min: 4.5, overToken: over }))),
+  // plan 180: the words on an AI card, on its fill (the tint at 65 % in light, the primary's 5 % in dark, globals.css
+  // `ai-card`) over the reader, Lumen's reader card and a dialog; each pair is checked in every palette, both modes
+  ...(["foreground", "muted-foreground"] as const).flatMap((fg) =>
+    (["background", "card", "popover"] as const).flatMap((over): ContrastPair[] => [
+      { fg, bg: "tint", alpha: 0.65, min: 4.5, overToken: over },
+      { fg, bg: "primary", alpha: 0.05, min: 4.5, overToken: over },
+    ]),
+  ),
   // translucent menus: their text over anything (black or white) behind them
   ...GLASS_TEXT.flatMap((fg) => GLASS_BACKDROPS.map((over): ContrastPair => ({ fg, bg: "popover-glass", min: 4.5, over: `oklch(${over})` }))),
 ];
@@ -211,8 +219,15 @@ export interface BoundaryStep {
  * This floor only keeps a field from vanishing; the text on it still holds 4.5:1 (CONTRAST_PAIRS).
  */
 export const FIELD_FLOOR = 1.1;
-/** Plan 161, pass 3: an AI card's wash of the ink in dark (generate.ts --ai-card-wash, 4 %) */
-export const AI_CARD_WASH: Layer = { token: "foreground", alpha: 0.04 };
+/**
+ * Owner's decision (2026-11-10, plan 180: "Whisper", picked from four looks): an AI card has no ring, only a breath of fill:
+ * Settings' tint at 65 % in light (globals.css `ai-card`), the accent's 5 % wash in dark. The owner accepts the soft step:
+ * as built it stands 1.05 to 1.09:1 off the page in light and 1.05 to 1.14:1 in dark. This floor only keeps the card from
+ * vanishing; its header (the accent's glyph, the title in the ink) marks it too, and the text on it holds AA (CONTRAST_PAIRS).
+ */
+export const AI_CARD_FLOOR = 1.04;
+export const AI_CARD_FILL_LIGHT: Layer = { token: "tint", alpha: 0.65 };
+export const AI_CARD_FILL_DARK: Layer = { token: "primary", alpha: 0.05 };
 /**
  * Plan 161 (the owner): the Undo ring's drained part, a faint track of the secondary ink (globals.css `--snack-track`), so
  * the whole outline is always there and a little drained reads as a countdown, not a gap. Over the pill's card on the dock.
@@ -251,24 +266,15 @@ export const BOUNDARY_STEPS: readonly BoundaryStep[] = [
   { edge: ["popover", "menu-highlight"], behind: ["popover"], min: TINT_FLOOR, why: "Graphite: the keyboard's place, at the selection's floor", only: ["graphite-light", "graphite-dark"], except: { "graphite-dark": { min: 1.26, why: "the blueprint's #9E9E9E on it at 4.5:1" } } },
   // plan 161: a tint card in a dialog (Settings) is ringed in dark, where its tint is 1.01 to 1.05:1 off the popover
   { edge: ["popover", "card-edge"], behind: ["popover"], min: HAIRLINE_FLOOR, why: "a tint card's ring in a dialog (dark)", mode: "dark" },
-  // plan 161, pass 2: an AI card (the summary, Reply ready) ringed inside in card-edge, so it never reads as part of the
-  // mail (ai-r01 measured its fill alone at 1.08 to 1.13:1): the ring against the fill inside it, and against the reader
-  // outside it (its background, or Lumen's card); where a design outlines its cards, the ring on the reader itself
-  { edge: ["tint", "card-edge"], behind: ["tint"], min: HAIRLINE_FLOOR, why: "an AI card's ring against its tint fill" },
-  { edge: ["tint", "card-edge"], behind: ["background"], min: HAIRLINE_FLOOR, why: "an AI card's ring against the reader" },
-  { edge: ["tint", "card-edge"], behind: ["card"], min: HAIRLINE_FLOOR, why: "an AI card's ring against Lumen's reader card" },
-  { edge: ["background", "card-edge"], behind: ["background"], min: HAIRLINE_FLOOR, why: "an outlined AI card's ring on the reader" },
-  { edge: ["card", "card-edge"], behind: ["card"], min: HAIRLINE_FLOOR, why: "an outlined AI card's ring on a reader card" },
+  // plan 180: an AI card's fill, on the reader (its background, or Lumen's reader card) and in a dialog (Filters' AI box)
+  ...(["background", "card", "popover"] as const).flatMap((under): BoundaryStep[] => [
+    { edge: [under, AI_CARD_FILL_LIGHT], behind: [under], min: AI_CARD_FLOOR, mode: "light", why: `an AI card's fill on ${under} (light)` },
+    { edge: [under, AI_CARD_FILL_DARK], behind: [under], min: AI_CARD_FLOOR, mode: "dark", why: `an AI card's fill on ${under} (dark)` },
+  ]),
   // pass 3: Today's digest row, ringed at rest in the same edge so it reads as a row to open, on the list
   { edge: ["pane", "card-edge"], behind: ["pane"], min: HAIRLINE_FLOOR, why: "the digest's row, ringed on Today's list" },
   // plan 161, the owner: the Undo ring's drained track on its pill (--border was 1.00 to 1.61:1, and read as a broken outline)
   { edge: [...SNACK_PILL, SNACK_TRACK], behind: SNACK_PILL, min: SNACK_TRACK_FLOOR, why: "the Undo ring's drained track on its pill" },
-  // plan 161, pass 3: ai-r02 still read the dark card as a hairline (its tint 1.11 to 1.15:1 off the reader): in dark, a tint
-  // card's fill carries a wash of the ink (generate.ts --ai-card-wash), a step off the reader, and off Lumen's reader card;
-  // the ring holds against the washed fill
-  { edge: ["tint", AI_CARD_WASH], behind: ["background"], min: 1.2, mode: "dark", why: "an AI card's washed fill on the reader (dark)" },
-  { edge: ["tint", AI_CARD_WASH], behind: ["card"], min: 1.1, mode: "dark", why: "an AI card's washed fill on Lumen's reader card (dark)", except: { nord: { min: 1.05, why: "Nord's tint sits a step under its card: the ring (1.5:1) bounds the card there" } } },
-  { edge: ["tint", AI_CARD_WASH, "card-edge"], behind: ["tint", AI_CARD_WASH], min: HAIRLINE_FLOOR, mode: "dark", why: "an AI card's ring against its washed fill (dark)", except: { monokai: { min: 1.48, why: "its washed fill stands off the reader by itself at 1.33:1" } } },
 ];
 
 /** The contrast across a boundary as drawn. */

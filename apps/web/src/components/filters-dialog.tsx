@@ -25,7 +25,7 @@ import { learnedRule } from "~/lib/learned";
 import { BROAD_COUNT, broadRule, describeRule, ruleGaps, ruleMisses, sensedOp, withSensedOp, type SensedOp } from "~/lib/rule-words";
 import { getApp, setApp, useApp } from "~/state/app";
 import { ConfirmDialog } from "./settings/parts";
-import { AI_CARD, AI_GLYPH, AI_HEADER, AI_TITLE } from "./ai-card";
+import { AI_CARD, AI_GLYPH, AI_HEADER, AI_PAD, AI_TITLE } from "./ai-card";
 import { AiProvenance } from "./ai-provenance";
 import { imeKey } from "~/lib/ime-escape";
 import { RecipientInput } from "./recipient-input";
@@ -754,7 +754,7 @@ export function FiltersDialog() {
             {/* only offered once an AI can really run (a model, and its key when it needs one); otherwise it could only fail */}
             {aiReady(ai) && (
               // pass 2: the shared AI card (ai-card.ts), its one attribution in the header, not a look of its own
-              <div className={cn(AI_CARD, "px-4 pb-3.5")} data-testid="ai-box" data-folded={folded && said !== null ? true : undefined}>
+              <div className={cn(AI_CARD, AI_PAD)} data-testid="ai-box" data-folded={folded && said !== null ? true : undefined}>
                 {folded && said !== null ? (
                   // plan 161: built, the box is the rule in a line: what it does, said from its fields
                   <>

@@ -78,7 +78,7 @@ const COPIED_MS = 1500;
  * Plan 161, pass 3: Copy, one button on every AI surface, at the row's 28 px, its glyph and word (plan 162: quiet); done,
  * it says Copied in place for a moment (and to a screen reader), and a failure says what to do.
  */
-export function AiCopyButton({ text, failed, testId, className, onKeyDown, iconOnly = false }: { text: () => string; failed: string; testId: string; className?: string; onKeyDown?: React.KeyboardEventHandler; /** exploration (ai-looks): its glyph alone, named for screen readers */ iconOnly?: boolean }) {
+export function AiCopyButton({ text, failed, testId, className, onKeyDown, iconOnly = false }: { text: () => string; failed: string; testId: string; className?: string; onKeyDown?: React.KeyboardEventHandler; /** plan 180: its glyph alone, named for screen readers and in a tooltip */ iconOnly?: boolean }) {
   const [copied, setCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
