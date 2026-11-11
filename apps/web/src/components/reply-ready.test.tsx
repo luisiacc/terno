@@ -39,11 +39,12 @@ it("plan 144's addendum: ready, it's the summary's card, the label its header, t
   expect(card.getAttribute("aria-label")).toBe("Reply ready");
   // the summary's surface: the one class both use, so an AI suggestion looks one way in every style
   expect(card.className.split(" ")).toContain(AI_CARD);
-  // the header: the summary's glyph, then the label and who it's to
+  // the header: the AI mark (plan 180: the glowing dot, hidden from screen readers), then the label and who it's to
   const header = q("reply-ready-header")!;
   expect(header.parentElement).toBe(card);
-  expect(header.firstElementChild?.tagName.toLowerCase()).toBe("svg");
+  expect((header.firstElementChild as HTMLElement | null)?.dataset.slot).toBe("ai-mark");
   expect(header.firstElementChild?.getAttribute("aria-hidden")).toBe("true");
+  expect(header.querySelector("svg")).toBeNull();
   // plan 161: who Use writes to; pass 3: the voice is the provenance's, which explains it
   expect(header.textContent).toBe("Reply ready·To Liam Baker");
   // the separators are items of their own: the same gap either side

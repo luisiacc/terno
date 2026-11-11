@@ -117,6 +117,21 @@ The code review raised five points, all small (P3), and all are fixed.
 4. **Copy's tooltip.** The icon-only Copy's tooltip shows "Copy" on hover and on keyboard focus (e2e). The button is named, is the row's 28 px square, and says "Copied" in its name (unit).
 5. **Stale comments.** Comments still describing a ring or a 40 px header are corrected (`reply-ready.tsx`, `registry.ts`, `replies-ready.spec.ts`).
 
+## The AI mark (the owner, 2026-11-10)
+
+The owner disliked the sparkle ("so over used") and went through three rounds of options, published on one page:
+- **Round 1:** ten Hugeicons marks.
+- **Round 2:** ten star shapes.
+- **Round 3:** research on how careful products mark AI. Apple Intelligence uses its own loop mark and a glow, and Mail's summaries use a task glyph. OpenAI uses a plain dot, and Notion a face. NN/g and Shape of AI advise naming the task.
+- **Round 4:** the single sparkle, larger and filled.
+
+The owner picked round 3's **glowing dot**. It replaces Sparkles on these headers: the summary (ready, and its waiting and no-provider states), Reply ready, and Filters' AI box.
+
+- **How it's drawn:** `AiMark` (`components/ai-mark.tsx`) puts the `ai-mark` utility in the glyph's 1.15em box, so every title starts where it did. The dot is half the text's size, solid in the accent, with a faint ring of the accent and a soft halo. It is sized in em and decorative (`aria-hidden`), since the title names the card.
+- **In Lumen:** its accent is the ink, so the dot is a grey-haloed ink dot there.
+- **What stays:** the spinner while a card works, and the follow-up line's clock, which is its task glyph. The Sparkles on buttons stay too (⌘J, Ask, the palette, Filters' Create with AI): a dot is no button glyph.
+- **Tests:** the unit test checks Reply ready's header starts with the mark and has no glyph. The e2e checks the mark sits on the text's inset in every design and is the accent's solid round dot with two shadows.
+
 ## Rating
 
 A round of the AI set (`pnpm ui:rate --screens ai`, at `048daefcc`) did not run: its capture stopped before any rater, twice.

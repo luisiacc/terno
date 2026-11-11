@@ -224,7 +224,21 @@ test.describe("summaries (plan 132)", () => {
     expect(await page.getByTestId("conversation").evaluate((el) => getComputedStyle(el).borderTopWidth)).toBe("0px");
     const inset = (await page.getByTestId("summary-text").boundingBox())!.x - box.x;
     expect(inset).toBeGreaterThanOrEqual(12);
-    expect((await page.getByTestId("summary-toggle").locator("svg").first().boundingBox())!.x - box.x).toBe(inset);
+    expect((await page.getByTestId("summary-toggle").locator("[data-slot=ai-mark]").boundingBox())!.x - box.x).toBe(inset);
+    // plan 180 (the owner): the AI mark is a glowing dot in the accent, not a sparkle: solid, round, haloed
+    const mark = await page.getByTestId("summary-toggle").locator("[data-slot=ai-mark] > span").evaluate((el) => {
+      const probe = document.createElement("div");
+      probe.style.backgroundColor = "var(--primary)";
+      document.body.append(probe);
+      const primary = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      const s = getComputedStyle(el);
+      return { fill: s.backgroundColor, primary, radius: s.borderTopLeftRadius, glow: s.boxShadow };
+    });
+    expect(mark.fill).toBe(mark.primary);
+    expect(mark.radius).toBe("9999px");
+    // two shadows: a faint ring and the halo
+    expect(mark.glow).toMatch(/px, .+px$/);
 
     // the minimum window: a long link wraps, inside the card
     await page.setViewportSize({ width: 980, height: 600 });

@@ -16,8 +16,9 @@ export const AI_CARD = "ai-card";
 export const AI_INSET = "px-5";
 export const AI_PAD = `${AI_INSET} pb-4`;
 /**
- * The header's glyph (Sparkles, or the spinner while it works), the size of the header's text. Plan 180: in the accent, the
- * one mark a model's words carry (AGENTS.md mutes an icon beside a label; this one is the owner's exception)
+ * The header's glyph, the size of the header's text: the spinner while a card works, and a card's own task glyph (the
+ * follow-up's clock). Plan 180: in the accent, as the AI mark (`AiMark`, the glowing dot) is (the owner's exception to
+ * AGENTS.md's muted icon beside a label)
  */
 export const AI_GLYPH = "size-[1.15em] shrink-0 text-primary";
 /**

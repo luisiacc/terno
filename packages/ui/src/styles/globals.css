@@ -590,6 +590,15 @@
     background-color: color-mix(in oklab, var(--primary) 5%, transparent);
   }
 }
+/* plan 180 (the owner): the AI mark, a glowing dot in the accent: a solid dot half the text's size, a faint ring of the
+   accent and a soft halo; sized in em so it follows the header's type. Decorative: the card's title names it */
+@utility ai-mark {
+  width: 0.5em;
+  height: 0.5em;
+  border-radius: 9999px;
+  background-color: var(--primary);
+  box-shadow: 0 0 0 0.2em color-mix(in oklab, var(--primary) 22%, transparent), 0 0 0.7em 0.15em color-mix(in oklab, var(--primary) 35%, transparent);
+}
 /* the same for a command list (the palette, the category picker): the design's command rows, 2 in (the list's p-2) */
 @utility rounded-palette {
   border-radius: calc(var(--command-radius) + var(--spacing) * 2);

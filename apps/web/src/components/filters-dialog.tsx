@@ -25,7 +25,8 @@ import { learnedRule } from "~/lib/learned";
 import { BROAD_COUNT, broadRule, describeRule, ruleGaps, ruleMisses, sensedOp, withSensedOp, type SensedOp } from "~/lib/rule-words";
 import { getApp, setApp, useApp } from "~/state/app";
 import { ConfirmDialog } from "./settings/parts";
-import { AI_CARD, AI_GLYPH, AI_HEADER, AI_PAD, AI_TITLE } from "./ai-card";
+import { AI_CARD, AI_HEADER, AI_PAD, AI_TITLE } from "./ai-card";
+import { AiMark } from "./ai-mark";
 import { AiProvenance } from "./ai-provenance";
 import { imeKey } from "~/lib/ime-escape";
 import { RecipientInput } from "./recipient-input";
@@ -760,7 +761,7 @@ export function FiltersDialog() {
                   <>
                     {/* plan 162: what was asked, quoted, so the rule under it can be checked against it (it was hidden) */}
                     <div className={AI_HEADER}>
-                      <Sparkles aria-hidden className={AI_GLYPH} />
+                      <AiMark />
                       <span className="flex min-w-0 items-baseline gap-1" data-testid="ai-request">
                         <span className={cn(AI_TITLE, "shrink-0")}>{t("filters.ai.fromRequest")}</span>
                         {/* the request this rule was built from, not the field's words since (Edit request, then Esc, keeps an unsent edit) */}
@@ -783,7 +784,7 @@ export function FiltersDialog() {
                 ) : (
                   <>
                     <div className={AI_HEADER}>
-                      <Sparkles aria-hidden className={AI_GLYPH} />
+                      <AiMark />
                       <label className={AI_TITLE} htmlFor="ai-prompt">{t("filters.ai.label")}</label>
                       {/* plan 162 (after ai162-r05): while it writes, the box says so in words (the rule's fields below wait);
                           the button's spinner stays the one moving mark */}
