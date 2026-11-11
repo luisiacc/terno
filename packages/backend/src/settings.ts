@@ -165,6 +165,8 @@ export const DEFAULT_SETTINGS: General = {
   density: "comfortable",
   // plan 24: nothing changes for anyone who doesn't choose List
   layout: "split",
+  // plan 187: one line, as before
+  previewLines: 1,
   remoteImages: "ask",
   // plan 183: no connector until the user turns agents on
   agents: DEFAULT_AGENTS,

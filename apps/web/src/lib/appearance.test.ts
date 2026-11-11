@@ -67,6 +67,7 @@ const SERVER: AppSettings = {
   htmlMailAppearance: "auto",
   customThemes: [],
   density: "comfortable",
+  previewLines: 1,
   layout: "split",
   remoteImages: "ask",
   agents: { enabled: false, access: "read" },

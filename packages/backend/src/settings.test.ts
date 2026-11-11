@@ -44,6 +44,15 @@ describe("appearance settings", () => {
     expect(s).toMatchObject({ theme: "dark", density: "compact", design: "lumen", lightTheme: "design", darkTheme: "design", previousLightTheme: null, motionMs: 75, htmlMailAppearance: "auto", customThemes: [] });
     // plan 24: an install from before the layout setting is Split
     expect(s.layout).toBe("split");
+    // plan 187: and one line of preview, as before
+    expect(s.previewLines).toBe(1);
+  });
+
+  it("the preview's lines take none, one or two, and nothing else (plan 187)", async () => {
+    const { client } = await setup();
+    for (const n of [0, 2, 1] as const) expect((await client.call("settings.update", { previewLines: n })).previewLines).toBe(n);
+    for (const bad of [3, -1, 1.5, "1"]) expect(await errorOf(client.call("settings.update", { previewLines: bad as never }))).toMatchObject({ code: "BAD_REQUEST" });
+    expect((await client.call("app.bootstrap", {})).settings.previewLines).toBe(1);
   });
 
   it("every new field round-trips", async () => {

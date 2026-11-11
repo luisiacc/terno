@@ -175,6 +175,10 @@ export interface AiUsageReport {
   estimated: boolean;
 }
 
+/** Plan 187: none, one or two lines of preview under a three-line row's subject. */
+export const PREVIEW_LINES = [0, 1, 2] as const;
+export type PreviewLines = (typeof PREVIEW_LINES)[number];
+
 export interface AppSettings {
   /** plan 146: Dev mode's Pro AI switch; always false outside a local build */
   devAi: boolean;
@@ -200,6 +204,8 @@ export interface AppSettings {
   density: "comfortable" | "compact";
   /** plan 24: the conversation beside the list (split), or the list full width with the conversation opening in its place (list) */
   layout: "split" | "list";
+  /** plan 187: how many lines of each message a three-line row shows under its subject */
+  previewLines: PreviewLines;
   remoteImages: "ask" | "always";
   ai: AiSettings;
   /** plan 183: off until the user turns it on; what connected agents may do */
@@ -498,6 +504,7 @@ const settingsPatch = z.object({
   customThemes: customThemesSchema.optional(),
   density: z.enum(["comfortable", "compact"]).optional(),
   layout: z.enum(["split", "list"]).optional(),
+  previewLines: z.union([z.literal(0), z.literal(1), z.literal(2)]).optional(),
   remoteImages: z.enum(["ask", "always"]).optional(),
   devAi: z.boolean().optional(),
   ai: z

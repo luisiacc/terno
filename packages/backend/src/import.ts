@@ -22,6 +22,7 @@ const GENERAL_KEYS = [
   "customThemes",
   "density",
   "layout",
+  "previewLines",
   "syncWindowDays",
   "autoCategorize",
   "language",
