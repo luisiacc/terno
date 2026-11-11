@@ -7,6 +7,7 @@ import { oklchToRgb, parseColor } from "../themes/color";
 import { builtinTheme } from "../themes/registry";
 import { designVars, generateDesignsCss, generateTypeRolesCss } from "./generate";
 import { designById, DESIGNS } from "./index";
+import { rowHeight } from "./rows";
 import { TEXT_STEPS, TYPE_ROLES } from "./types";
 
 const styles = join(import.meta.dirname, "../styles");
@@ -51,6 +52,17 @@ describe("designs (plan 15)", () => {
       // 5 px above and below at least, or the text sits against the selection's edges
       expect(d.rows.comfortable, d.id).toBeGreaterThanOrEqual(lines + 10);
       expect(d.rows.results, d.id).toBeGreaterThanOrEqual(lines + 10);
+    }
+  });
+
+  it("with no preview, a row still has room for its two lines and its avatar (plan 187)", () => {
+    for (const d of DESIGNS) {
+      // rowHeight reads the preview's leading in px: it must be rem
+      expect(d.type.rowSnippet.leading, d.id).toMatch(/^\d+(\.\d+)?rem$/);
+      const px = (leading: string) => parseFloat(leading) * 16;
+      const none = rowHeight(d, { compact: false, wide: false, results: false, lines: 0 });
+      expect(none, d.id).toBeGreaterThanOrEqual(px(d.type.rowFrom.leading) + px(d.type.rowSubject.leading) + 10);
+      expect(d.avatar.row + 16, d.id).toBeLessThanOrEqual(none);
     }
   });
 
