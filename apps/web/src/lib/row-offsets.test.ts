@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { anchorAt, anchoredOffset, rowStart, TOP_LABEL, topSections } from "./row-offsets";
+import { anchorAt, anchoredOffset, INBOX_LABEL, rowStart, TOP_LABEL, topSections } from "./row-offsets";
 
 // two due reminders on top, the Reminders heading above them and the Inbox's under them; no offer
-const spacing = { lead: 0, groups: [0, 2] as number[] };
+const spacing = { lead: 0, label: TOP_LABEL, groups: [0, 2] as number[] };
 
 describe("row offsets (plan 174)", () => {
   it("lays rows out as the virtualizer does: the heading, the reminders, the Inbox's heading, Today's headings", () => {
     expect(rowStart(0, 64, spacing)).toBe(TOP_LABEL);
     expect(rowStart(2, 64, spacing)).toBe(2 * TOP_LABEL + 128);
-    expect(rowStart(3, 64, { lead: 40, groups: [0, 2] })).toBe(40 + TOP_LABEL + 192 + TOP_LABEL);
+    expect(rowStart(3, 64, { lead: 40, label: TOP_LABEL, groups: [0, 2] })).toBe(40 + TOP_LABEL + 192 + TOP_LABEL);
   });
 
   it("a style switch keeps the first visible row at the same depth: only the rows scale, the headings don't", () => {
@@ -55,9 +55,9 @@ describe("the Inbox's top sections (plan 177)", () => {
 
   it("lays the sections out: Pinned's heading, its rows, Reminders' heading, its rows, the Inbox's heading, the mail", () => {
     const { headings } = topSections(rows(1, 2, 3, 9), { ids: [1, 2, 3], pinned: 2 });
-    const s = { lead: 0, groups: headings.map((h) => h.at) };
-    expect(rowStart(0, 64, s)).toBe(TOP_LABEL);
-    expect(rowStart(2, 64, s)).toBe(TOP_LABEL + 128 + TOP_LABEL);
-    expect(rowStart(3, 64, s)).toBe(3 * TOP_LABEL + 192);
+    const s = { lead: 0, label: INBOX_LABEL, groups: headings.map((h) => h.at) };
+    expect(rowStart(0, 64, s)).toBe(INBOX_LABEL);
+    expect(rowStart(2, 64, s)).toBe(INBOX_LABEL + 128 + INBOX_LABEL);
+    expect(rowStart(3, 64, s)).toBe(3 * INBOX_LABEL + 192);
   });
 });

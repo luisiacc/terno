@@ -3,18 +3,21 @@
  * paddingStart): rows of one height, and between them space of a fixed height whatever theirs (plan 174).
  */
 
-/** A section heading's line: the Inbox's (Pinned, Reminders, the Inbox under them), Today's */
+/** Today's section heading's line */
 export const TOP_LABEL = 28;
 
+/** Plan 177: the Inbox's section heading's line (Pinned, Reminders, the Inbox under them): more room above its words (the owner) */
+export const INBOX_LABEL = 36;
+
 /**
- * The fixed space: the offer above the rows (`lead`) and the section headings, each the index of the row it stands
- * above (`groups`: the Inbox's sections, or Today's).
+ * The fixed space: the offer above the rows (`lead`) and the section headings, each `label` tall and the index of the
+ * row it stands above (`groups`: the Inbox's sections, or Today's; never both).
  */
-export interface RowSpacing { lead: number; groups: readonly number[] }
+export interface RowSpacing { lead: number; label: number; groups: readonly number[] }
 
 /** Where row `i` starts */
 export function rowStart(i: number, h: number, s: RowSpacing): number {
-  return s.lead + i * h + TOP_LABEL * s.groups.filter((at) => at <= i).length;
+  return s.lead + i * h + s.label * s.groups.filter((at) => at <= i).length;
 }
 
 /** Plan 177: Pinned, Reminders, and (once either leads) the rest of the Inbox under its own name */

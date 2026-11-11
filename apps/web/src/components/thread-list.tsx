@@ -1,5 +1,5 @@
 import { folderName } from "~/lib/account-folders";
-import { anchorAt, anchoredOffset, rowStart, TOP_LABEL, topSections, type RowSpacing, type TopSectionKind } from "~/lib/row-offsets";
+import { anchorAt, anchoredOffset, INBOX_LABEL, rowStart, TOP_LABEL, topSections, type RowSpacing, type TopSectionKind } from "~/lib/row-offsets";
 import { SearchField } from "@terno/ui/components/search-field";
 import { Skeleton } from "@terno/ui/components/skeleton";
 import { useVirtualizer } from "@tanstack/react-virtual";
@@ -87,7 +87,7 @@ const TOP_HEADING_ID = { pinned: "inbox-pinned-label", reminders: "inbox-reminde
  */
 function TopHeading({ kind, top, name, count }: { kind: TopSectionKind; top: number; name: string; count: string | null }) {
   return (
-    <div aria-hidden data-testid={TOP_HEADING_ID[kind]} className="absolute inset-x-0 flex items-end gap-1 px-5 pb-1 text-sm font-medium text-foreground-soft" style={{ top, height: TOP_LABEL }}>
+    <div aria-hidden data-testid={TOP_HEADING_ID[kind]} className="absolute inset-x-0 flex items-end gap-1 px-5 pb-1 text-sm font-medium text-foreground-soft" style={{ top, height: INBOX_LABEL }}>
       <span className="min-w-0 truncate">{name}</span>
       {count !== null && <span data-testid="inbox-section-count" className="shrink-0 font-normal text-muted-foreground tabular-nums">({count})</span>}
     </div>
@@ -1179,15 +1179,17 @@ export function ThreadList() {
   // every heading the rows have, by the row each stands above: the top's sections, or Today's (never both)
   const headingsKey = [...sections.headings.map((h) => h.at), ...todayGroups.map((g) => g.at)].join();
   const headingAt = useMemo(() => new Set(headingsKey ? headingsKey.split(",").map(Number) : []), [headingsKey]);
+  // the Inbox's headings have more room above their words than Today's
+  const label = sections.headings.length ? INBOX_LABEL : TOP_LABEL;
   // (read by the design switch's anchor, before and after the new heights)
-  const spacingRef = useRef<Omit<RowSpacing, "lead">>({ groups: [] });
-  spacingRef.current = { groups: [...headingAt] };
+  const spacingRef = useRef<Omit<RowSpacing, "lead">>({ label, groups: [] });
+  spacingRef.current = { label, groups: [...headingAt] };
   const virtualizer = useVirtualizer({
     count: items.length,
     getScrollElement: () => parentRef.current,
     // plan 145: a section's heading is space under the row before it, or above the first
-    estimateSize: (i) => height + (headingAt.has(i + 1) ? TOP_LABEL : 0),
-    paddingStart: lead + (headingAt.has(0) ? TOP_LABEL : 0),
+    estimateSize: (i) => height + (headingAt.has(i + 1) ? label : 0),
+    paddingStart: lead + (headingAt.has(0) ? label : 0),
     overscan: 10,
     getItemKey,
     paddingEnd: dock,
@@ -1197,7 +1199,7 @@ export function ThreadList() {
   // the top came or went (or grew), or the offer above it: positions recomputed before paint
   useLayoutEffect(() => {
     virtualizer.measure();
-  }, [headingAt, lead]);
+  }, [headingAt, label, lead]);
   // the offer came or went while the list was scrolled: what's on screen stays where it is (at the top, it's the first item arriving)
   const shownLead = useRef(lead);
   // the offset as last scrolled: by the time the change is laid out, a shorter list has already clamped the element's own (at its end)
@@ -1445,7 +1447,7 @@ export function ThreadList() {
               <TopHeading
                 key={h.kind}
                 kind={h.kind}
-                top={(virtualizer.measurementsCache[h.at]?.start ?? lead + TOP_LABEL) - TOP_LABEL}
+                top={(virtualizer.measurementsCache[h.at]?.start ?? lead + INBOX_LABEL) - INBOX_LABEL}
                 name={h.kind === "pinned" ? t("list.pinned") : h.kind === "reminders" ? t("view.reminders") : (inboxName ?? t("view.inbox"))}
                 count={h.kind === "pinned" ? formatNumber(pinnedTop) : h.kind === "reminders" ? formatNumber(top - pinnedTop) : sections.total ? `${formatNumber(sections.total.n)}${sections.total.capped ? "+" : ""}` : null}
               />
