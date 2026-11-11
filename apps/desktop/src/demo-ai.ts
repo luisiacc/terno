@@ -129,13 +129,16 @@ export function demoAiClock(marker: DemoAiMarker | null): number {
 /**
  * Plan 167: TERNO_USER_DATA may move the profile, but never onto anything that isn't this demo's: the preparation turns
  * cloud AI on and --fresh puts the folder in the Trash. Checked before anything opens or renames a file in it. A real
- * profile's folder (Terno, Unica, without -dev) is refused, and so is any folder with something in it but no marker of
- * ours (another dev profile, Application Support itself); a folder that doesn't exist yet or is empty is fine.
+ * profile's folder (Terno, Unica, without -dev, in Application Support: the only place the app keeps one) is refused,
+ * and so is any folder with something in it but no marker of ours (another dev profile, Application Support itself); a
+ * folder that doesn't exist yet or is empty is fine. Elsewhere the name says nothing: /tmp/terno-demo-ai is fine.
  * `entries`: the folder's names, or null when there's no folder.
  */
 export function demoAiProfileProblem(o: { path: string; entries: readonly string[] | null }): string | null {
-  const name = o.path.replace(/\/+$/, "").split("/").pop() ?? "";
-  if (/^(Terno|Unica|Única)( .*)?$/i.test(name) || /^(Terno|Unica|Única)-(?!dev)/i.test(name)) return `${o.path} looks like a real Terno profile: dev:demo-ai uses its own (unset TERNO_USER_DATA)`;
+  const parts = o.path.replace(/\/+$/, "").split("/");
+  const name = parts.at(-1) ?? "";
+  const inAppSupport = /^application support$/i.test(parts.at(-2) ?? "");
+  if (inAppSupport && (/^(Terno|Unica|Única)( .*)?$/i.test(name) || /^(Terno|Unica|Única)-(?!dev)/i.test(name))) return `${o.path} looks like a real Terno profile: dev:demo-ai uses its own (unset TERNO_USER_DATA)`;
   const entries = (o.entries ?? []).filter((e) => e !== ".DS_Store");
   if (entries.length && !entries.includes(MARKER_FILE)) return `${o.path} holds something that isn't the AI demo's: dev:demo-ai won't turn AI on in it or clear it (unset TERNO_USER_DATA, or point it at a new folder)`;
   return null;

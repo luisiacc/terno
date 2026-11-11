@@ -90,6 +90,10 @@ describe("plan 167: pnpm dev:demo-ai", () => {
     expect(ok("/Users/x/Library/Application Support/Terno", null)).toMatch(/real Terno profile/);
     expect(ok("/Users/x/Library/Application Support/Unica/", null)).toMatch(/real Terno profile/);
     expect(ok("/Users/x/Library/Application Support/Terno-beta/", ["demo-ai.json"])).toMatch(/real Terno profile/);
+    // outside Application Support the name says nothing (run.sh's /tmp/terno-demo-ai); the contents still decide
+    expect(ok("/tmp/terno-demo-ai", null)).toBeNull();
+    expect(ok("/tmp/Terno", ["demo-ai.json", "terno.db"])).toBeNull();
+    expect(ok("/tmp/terno-demo-ai", ["terno.db"])).toMatch(/isn't the AI demo's/);
   });
 
   it("a question counts only once every turn finished with an answer of some kind", () => {
