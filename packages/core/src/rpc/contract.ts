@@ -665,6 +665,12 @@ export interface ScheduledSnapshot {
   items: ScheduledInfo[];
   failed: ScheduledFailure[];
 }
+/** Plan 182: a scheduled send (or Send's Undo window) went: the copy it was queued as */
+export interface ScheduledSent {
+  draftId: number;
+  threadId: number;
+  messageId: number;
+}
 
 function m<R>() {
   return <P extends z.ZodType>(params: P, options: { timeoutMs?: number } = {}) => ({
@@ -1452,6 +1458,8 @@ export interface Events {
   pins: PinsSnapshot;
   /** plan 94: the scheduled sends changed (scheduled, sent, failed) */
   scheduled: ScheduledSnapshot;
+  /** plan 182: one went (a hold's end, a scheduled moment): the copy it became; never MCP */
+  scheduledSent: ScheduledSent;
   /** plan 116: the forwards changed (made, cancelled, held, sent, failed) */
   forwards: import("../forwarding").ForwardSnapshot;
   /**

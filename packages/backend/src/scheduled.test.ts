@@ -95,6 +95,23 @@ describe("scheduled sends (plan 94)", () => {
       expect(backend.scheduled.nextAt).toBeNull();
     });
 
+    it("plan 182: when it goes, the windows hear which copy it became, once; a cancelled one says nothing", async () => {
+      const { backend, client, account, advance, draft } = await setup();
+      const went: { draftId: number; threadId: number; messageId: number }[] = [];
+      client.on("scheduledSent", (e) => went.push(e));
+      const kept = await draft("Kept");
+      await hold(client, account, kept);
+      await client.call("scheduled.cancel", { draftId: kept.id });
+      const d = await draft();
+      await hold(client, account, d);
+      await advance(UNDO_SEND_MS);
+      await advance(UNDO_SEND_MS * 2);
+      expect(went).toHaveLength(1);
+      expect(went[0]!.draftId).toBe(d.id);
+      const copy = (await backend.store.threads.get(went[0]!.threadId))?.messages.find((m) => m.id === went[0]!.messageId);
+      expect(copy).toMatchObject({ isSent: true });
+    });
+
     it("Undo puts the draft back exactly and nothing goes, and tells the other windows; once gone, Undo finds nothing", async () => {
       const { backend, client, account, drafts, advance, draft, sends } = await setup();
       const d = await draft();
@@ -168,7 +185,7 @@ describe("scheduled sends (plan 94)", () => {
       await settle();
       clock.now += UNDO_SEND_MS;
       // what starting up does, with nothing of the hold in memory (a new ScheduledSends over the same store)
-      const restarted = new ScheduledSends({ store: backend.store, now: () => clock.now, emit: () => {}, send: async (p) => void (await backend.queueComposeSend(p, { renderer: true, scheduledAt: p.scheduledAt })), draftsBack: () => {}, log: () => {} });
+      const restarted = new ScheduledSends({ store: backend.store, now: () => clock.now, emit: () => {}, send: (p) => backend.queueComposeSend(p, { renderer: true, scheduledAt: p.scheduledAt }), sent: () => {}, draftsBack: () => {}, log: () => {} });
       await restarted.refresh();
       await restarted.refresh();
       await backend.scheduled.refresh();

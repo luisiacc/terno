@@ -1,6 +1,6 @@
 import { SCHEDULED_BYTES_MAX, SCHEDULED_MAX } from "@terno/core";
 import { captureError } from "@terno/core/diag";
-import { contract, RpcError, type ParsedParamsOf, type ScheduledFailure, type ScheduledInfo, type ScheduledSnapshot } from "@terno/core/rpc";
+import { contract, RpcError, type ParsedParamsOf, type ScheduledFailure, type ScheduledInfo, type ScheduledSent, type ScheduledSnapshot } from "@terno/core/rpc";
 import type { MailStore, ScheduledSend } from "@terno/store";
 
 /**
@@ -42,8 +42,10 @@ export interface ScheduledHost {
   readonly store: MailStore;
   now(): number;
   emit(snapshot: ScheduledSnapshot): void;
-  /** compose.send's durable part (throws when nothing was queued) and its effects */
-  send(params: ComposeSendParams & { scheduledAt: number }): Promise<void>;
+  /** compose.send's durable part (throws when nothing was queued) and its effects: the queued copy */
+  send(params: ComposeSendParams & { scheduledAt: number }): Promise<{ threadId: number; messageId: number }>;
+  /** plan 182: it went: which copy it became, for the window that held it (its card gives way to that copy) */
+  sent(info: ScheduledSent): void;
   /** a draft is a draft again: the windows load it */
   draftsBack(): void;
   log(level: "info" | "warn" | "error", message: string, extra?: unknown): void;
@@ -233,8 +235,11 @@ export class ScheduledSends {
       return this.giveBack(s, error);
     }
     try {
-      await this.host.send({ ...params, scheduledAt: row.sendAt });
+      const { threadId, messageId } = await this.host.send({ ...params, scheduledAt: row.sendAt });
       this.host.log("info", "scheduled send queued");
+      // queued: nothing after this can fail the send
+      try { this.host.sent({ draftId: s.draftId, threadId, messageId }); } catch (error) { captureError(error, { code: "scheduled.failed" }); }
+      return;
     } catch (error) {
       // a cancel or a new time won the race: nothing to say
       if (error instanceof RpcError && error.code === "STALE" && (error.details as { reason?: string } | undefined)?.reason === "unscheduled") return;

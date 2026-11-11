@@ -382,7 +382,11 @@ export class BackendCore {
       store: this.store,
       now: () => this.now(),
       emit: (snapshot) => this.server.emit("scheduled", snapshot),
-      send: async (p) => void (await this.queueComposeSend(p, { renderer: true, scheduledAt: p.scheduledAt })),
+      send: async (p) => {
+        const { threadId, messageId } = await this.queueComposeSend(p, { renderer: true, scheduledAt: p.scheduledAt });
+        return { threadId, messageId };
+      },
+      sent: (info) => this.server.emit("scheduledSent", info, { origins: ["renderer", "dev"] }),
       draftsBack: () => this.server.emit("drafts", { reason: "scheduled" }),
       log: (level, message, extra) => this.log(level, message, extra),
     });
