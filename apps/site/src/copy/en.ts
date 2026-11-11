@@ -67,8 +67,8 @@ export const en = {
     },
     agents: {
       title: "Your AI agents, every inbox.",
-      body: "Connect Claude Code, Codex, Cursor or any app that speaks MCP, and it can search and read all your accounts through Terno. It’s off until you turn it on, and you decide whether agents may only read, also organize, or also send.",
-      points: ["Claude Code, Codex, Cursor, any MCP app", "Off until you turn it on", "Read only, organize or send: your call"],
+      body: "Connect Claude Code, Codex, Cursor or another app on your Mac that runs local MCP servers, and it can search and read all your accounts through Terno. It’s off until you turn it on, and you decide whether agents may only read, also organize, or also send.",
+      points: ["Claude Code, Codex, Cursor, other local MCP apps", "Off until you turn it on", "Read only, organize or send: your call"],
       /** the example session beside it: the setup line, a question, Terno's tool at work, the answer */
       demo: {
         you: "You",

@@ -166,6 +166,12 @@ describe("AI agents over MCP (plan 97)", () => {
     }
   });
 
+  it("promises only what the connector is: a local (stdio) MCP server, for apps on the same Mac (Codex review)", () => {
+    expect(COPY.en.features.agents.body).toContain("on your Mac that runs local MCP servers");
+    expect(COPY.es.features.agents.body).toContain("de tu Mac que use servidores MCP locales");
+    for (const lang of ["en", "es"] as const) expect(JSON.stringify(COPY[lang].features.agents)).not.toMatch(/any (app|MCP)|cualquier app/);
+  });
+
   it("is in Spanish on /es/", () => {
     const es = new JSDOM(render(routes().find((r) => r.path === "/es/")!).body).window.document;
     expect(es.body.textContent).toContain(COPY.es.features.agents.demo.ask);

@@ -68,8 +68,8 @@ export const es: SiteCopy = {
     },
     agents: {
       title: "Tus agentes de IA, en todos tus buzones.",
-      body: "Conecta Claude Code, Codex, Cursor o cualquier app compatible con MCP, y podrá buscar y leer todas tus cuentas a través de Terno. Está desactivado hasta que lo activas, y tú decides si los agentes solo pueden leer, también organizar o también enviar.",
-      points: ["Claude Code, Codex, Cursor, cualquier app MCP", "Desactivado hasta que lo activas", "Solo leer, organizar o enviar: tú eliges"],
+      body: "Conecta Claude Code, Codex, Cursor u otra app de tu Mac que use servidores MCP locales, y podrá buscar y leer todas tus cuentas a través de Terno. Está desactivado hasta que lo activas, y tú decides si los agentes solo pueden leer, también organizar o también enviar.",
+      points: ["Claude Code, Codex, Cursor y otras apps MCP locales", "Desactivado hasta que lo activas", "Solo leer, organizar o enviar: tú eliges"],
       demo: {
         you: "Tú",
         agent: "Agente",
