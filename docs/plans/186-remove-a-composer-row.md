@@ -61,3 +61,7 @@ None on a hot path: one button per open row, no state beyond what exists.
 7. Restoring resets that field's own chip history, as any outside change does (a conversion); accepted.
 8. The reply-all lifetime: recorded as out of scope, consistent with deleting chips by hand.
 9. The data part has a unit test now.
+
+## What the Codex code review changed
+
+1. The Undo's guards had no test: `recipient-draft-ownership.test.tsx` now removes Cc, refuses the Undo while sending (it stays ready), retries it after the first save gave the draft its id (it goes back), and refuses it once the draft sends from another account (nothing goes back). Each half fails without its guard.

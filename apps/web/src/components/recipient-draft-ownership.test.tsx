@@ -67,3 +67,36 @@ it("forwards a same-value authored commit once and ignores an empty commit", asy
     expect(document.activeElement).toBe(input);
   } finally { await act(async () => root.unmount()); host.remove(); }
 });
+
+it("plan 186: Cc's × undoes into the same draft only, after its first save too; a send or a hold leaves the undo ready to retry", async () => {
+  const { runUndo, resetSnacks, useSnack } = await import("~/lib/snack");
+  const key = createDraft({ ...newFields(1), ccText: "bea@example.test" });
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host);
+  function Form() { const d = useDrafts((s) => s.drafts[key]!); return <DraftFieldsForm d={d} accounts={[]} showSubject={false} />; }
+  const patch = (p: Partial<import("~/lib/drafts").LocalDraft>) => useDrafts.setState((s) => ({ drafts: { ...s.drafts, [key]: { ...s.drafts[key]!, ...p } } }));
+  const cc = () => useDrafts.getState().drafts[key]!.ccText;
+  const remove = async () => {
+    await act(async () => host.querySelector<HTMLElement>('[data-testid="compose-remove-cc"]')!.click());
+    expect(cc()).toBe("");
+    expect(host.querySelector('[data-testid="compose-cc"]')).toBeNull();
+    return useSnack.getState().undo!;
+  };
+  try {
+    await act(async () => root.render(<Form />));
+    // sending: refused, and still ready; once it's back, Retry puts it back (and the first save's id doesn't make it another draft)
+    let undo = await remove();
+    patch({ sending: true });
+    await expect(act(() => runUndo(undo))).rejects.toThrow("The draft can’t change");
+    expect(undo.state).toBe("ready");
+    patch({ sending: false, id: 41 });
+    await act(() => runUndo(undo));
+    expect(cc()).toBe("bea@example.test");
+    expect(host.querySelector('[data-testid="compose-cc"]')).not.toBeNull();
+    // the draft has become another (another account): nothing goes back into it
+    undo = await remove();
+    patch({ accountId: 2 });
+    await act(() => runUndo(undo));
+    expect(cc()).toBe("");
+  } finally { await act(async () => root.unmount()); forgetDraft(key); resetSnacks(); host.remove(); }
+});
