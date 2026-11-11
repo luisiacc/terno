@@ -129,7 +129,12 @@ describe("terno MCP server", () => {
         ],
         { applyFilters: false, now: Date.now(), classifier: null },
       );
-      threadId = (await call("search_emails", { query: "subject:quarterly", limit: 5 })).json.results[0].threadId;
+      const result = (await call("search_emails", { query: "subject:quarterly", limit: 5 })).json.results[0];
+      threadId = result.threadId;
+      // its summary's sender and lines could be the message in Spam's (Codex review #2)
+      expect(result).toMatchObject({ subject: "Quarterly files", note: expect.stringMatching(/in Spam/) });
+      expect(result.from).toBeUndefined();
+      expect(result.snippet).toBeUndefined();
       const thread = await call("get_thread", { threadId });
       expect(thread.json.messages).toHaveLength(1);
       expect(thread.json.leftOut).toMatch(/1 message\(s\) in Spam or Trash/);
@@ -182,6 +187,15 @@ describe("terno MCP server", () => {
       }
     });
 
+    it("a message not downloaded yet says its files are on the way; nothing is fetched for an agent", async () => {
+      const accountId = (await call("list_accounts")).json.accounts[0].id;
+      await backend.store.sync.ingest([msg({ accountId, providerMsgId: "late-1", subject: "Late invoice", bodyState: "none", bodyText: null, hasAttachments: true })], { applyFilters: false, now: Date.now(), classifier: null });
+      const late = (await call("search_emails", { query: "subject:late", limit: 1 })).json.results[0].threadId;
+      const message = (await call("get_thread", { threadId: late })).json.messages[0];
+      expect(message.attachments).toEqual([]);
+      expect(message.filesPending).toMatch(/next sync/);
+    });
+
     it("refuses a file in Spam unless asked, and says plainly when ids are stale or a file isn't kept", async () => {
       await backend.store.threads.act({ threadIds: [threadId], action: "spam", signal: null, now: Date.now() });
       try {
@@ -204,10 +218,7 @@ describe("terno MCP server", () => {
       const id = (await call("get_thread", { threadId: huge })).json.messages[0].messageId;
       await backend.store.sync.setBody(id, "Scans", null, { now: Date.now(), classifier: null, attachments: [{ filename: "scan.zip", mime: "application/zip", size: 19_000_000 }] });
       const message = (await call("get_thread", { threadId: huge })).json.messages[0];
-      expect(message.attachments[0]).toMatchObject({ attachmentId: expect.stringMatching(/^row-\d+$/), unavailable: expect.any(String) });
-      const tooBig = await call("get_attachment", { threadId: huge, messageId: message.messageId, attachmentId: message.attachments[0].attachmentId });
-      expect(tooBig.isError).toBe(true);
-      expect(tooBig.raw).toMatch(/didn't keep a copy of this file/);
+      expect(message.attachments[0]).toEqual({ filename: "scan.zip", mime: "application/zip", size: 19_000_000, unavailable: expect.stringMatching(/past Terno's limits/) });
     });
   });
 

@@ -496,7 +496,7 @@ export class BackendCore {
     tokenSince(): number;
     rotate(): { disconnected: number; tokenSince: number };
     /** plan 185: copies of files handed to agents (Node only: the socket is) */
-    files: { write(store: MailStore, accountId: number, ref: import("@terno/core").AttachmentRef, yieldTo: () => Promise<void>): Promise<string> };
+    files: { ticket(): number; write(store: MailStore, accountId: number, ref: import("@terno/core").AttachmentRef, yieldTo: () => Promise<void>, ticket: number): Promise<string> };
   } | null = null;
   /** plan 183: opens and closes that socket as the user turns agents on and off; on hosts that have one (Node) */
   agentConnector: {

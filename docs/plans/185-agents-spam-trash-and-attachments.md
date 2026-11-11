@@ -206,3 +206,41 @@ Codex (read-only, against the code) made 12 points. What changed:
 - `get_attachment` → `attachments.agentLocate` (which checks placement, and hydrates once when needed).
 - For text and images, the sidecar reads chunks with `attachments.read`.
 - For everything else, `attachments.agentFile` writes a copy.
+
+## What the build changed
+
+- **Renumbered 184 → 185.** Another plan took 184 on `main` first.
+- **Rebased onto plan 183**, which landed first:
+  - the new methods are in `AGENT_METHODS` at `read`, not `MCP_ALLOWED`;
+  - the server calls `app.call`;
+  - `AgentFiles` belongs to the endpoint that plan 183's `AgentConnector` opens and closes. The connector's "off" path also removes the folder that a crash left.
+- **No download for agents, and no `row-` ids** (this supersedes the Design's hydration and revision 8). The build showed that a message not downloaded yet has **no attachment rows at all**: ingest writes rows only when it captures parts (`packages/db/src/ingest.ts`, `capture`). The files of such a message arrive with the account's background body sync. So:
+  - a row without an asset is only ever a file Terno chose not to keep (over the limits, or stored by a build before plan 29);
+  - downloading the body again wouldn't bring it, and a `row-` id would only lead to an error.
+
+  What changed as a result:
+  - `get_thread` gives an `attachmentId`, which is the asset id, only to kept files. The others carry `unavailable` with the reason.
+  - A message whose files haven't been downloaded yet says so with `filesPending`.
+  - `attachments.agentLocate` accepts asset ids only. Its 120 s timeout and the `reader.hydrate` budget are gone.
+  - The feature uses no network at all.
+
+## Revisions after the Codex code review
+
+Codex reviewed the two commits and made 6 findings:
+
+1. **A copy could come back after agents were cut off.** The handler held the endpoint while it located the file. Fix:
+   - `AgentFiles.ticket()` is taken when the request starts;
+   - a write on an older ticket, or after `close()`, is refused, and `close()` is permanent.
+
+   Tested in `agent-files.test.ts`.
+2. **A conversation outside Spam with a message in it.** Its summary's sender and snippet can come from the spam message (`ingest.ts`: the latest message's snippet, the latest received sender), and its subject from the first message. Fix:
+   - for those conversations (`hasSpam`, not in Spam or Trash) the summary leaves out `from` and `snippet` and says why;
+   - `get_thread`'s subject is the first shown message's when one is left out.
+
+   Tested end to end. **Residual**: a message in Trash inside a conversation outside Trash isn't flagged on summaries (there's no `hasTrash`). Its sender or snippet can show in a summary, but never its body. Adding the flag means a store change in both engines; left for a follow-up if the owner wants it.
+3. **Declined: a search term found only in a message in Spam, inside a conversation outside Spam, still matches the conversation.** Fixing it means message-level eligibility in both search engines (SQL and IDB, negative queries included), on the perf-gated search path. What leaks is only that the conversation matched, never the message's text, and reading the message still needs `includeSpamTrash`. Recorded here for the owner.
+4. **Bounds under concurrent writes.**
+   - Copies are now written one at a time (a queue in `AgentFiles`), so the 64-file and 256 MB bounds hold. Tested with two at once.
+   - The agents' call budget is **two** at once, not the one the revision said. Reads of 48 KB chunks are short, and two agents shouldn't wait on each other. The test now holds two calls and proves a third is refused while the user's own download still goes through.
+5. **A pending PDF got a stale-id error after downloading.** That path is gone: there is no download (see above).
+6. **Short writes.** A write that takes fewer bytes than given is continued, counting what landed. Tested with a file handle that takes at most 1,000 bytes a call.

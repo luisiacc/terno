@@ -4,7 +4,7 @@ import { AGENT_ACCESS_LABEL, ATTACHMENT_CHUNK, base64Bytes, filterRuleSchema, VI
 import { RpcError, type Bootstrap } from "@terno/core/rpc";
 import { z } from "zod";
 import type { AppConnection } from "./connection";
-import { contentKind, decodeText, inlineParts, textPage } from "./attachment-content";
+import { contentKind, decodeText, inlineParts, textPage, unkeptReason } from "./attachment-content";
 
 const MAX_BODY = 20_000;
 
@@ -69,21 +69,25 @@ export function createMcpServer(app: AppConnection, version = "0.1.0"): McpServe
     const b = await bootstrap();
     const accounts = new Map(b.accounts.map((a) => [a.id, a.email]));
     const categories = new Map(b.categories.map((c) => [c.id, c.name]));
-    return items.map((t) => ({
-      threadId: t.id,
-      account: accounts.get(t.accountId),
-      from: t.fromName === t.fromEmail ? t.fromEmail : `${t.fromName} <${t.fromEmail}>`,
-      subject: t.subject,
-      snippet: t.snippet,
-      date: new Date(t.lastDate).toISOString(),
-      messages: t.messageCount,
-      unread: t.unread,
-      starred: t.starred,
-      attachments: t.hasAttachments,
-      categories: t.categoryIds.map((id) => categories.get(id)).filter(Boolean),
-      // plan 64: a search looks everywhere; where each result lives
-      place: t.inTrash ? "trash" : t.inSpam ? "spam" : t.inInbox === undefined ? undefined : t.inInbox ? "inbox" : "archive",
-    }));
+    return items.map((t) => {
+      // plan 185 (Codex review #2): a conversation outside Spam with a message in it may show that message's sender and
+      // lines in its summary; those stay out (get_thread reads the rest)
+      const mixed = t.hasSpam === true && !t.inSpam && !t.inTrash;
+      return {
+        threadId: t.id,
+        account: accounts.get(t.accountId),
+        ...(mixed ? { note: "Part of this conversation is in Spam: get_thread reads the rest." } : { from: t.fromName === t.fromEmail ? t.fromEmail : `${t.fromName} <${t.fromEmail}>`, snippet: t.snippet }),
+        subject: t.subject,
+        date: new Date(t.lastDate).toISOString(),
+        messages: t.messageCount,
+        unread: t.unread,
+        starred: t.starred,
+        attachments: t.hasAttachments,
+        categories: t.categoryIds.map((id) => categories.get(id)).filter(Boolean),
+        // plan 64: a search looks everywhere; where each result lives
+        place: t.inTrash ? "trash" : t.inSpam ? "spam" : t.inInbox === undefined ? undefined : t.inInbox ? "inbox" : "archive",
+      };
+    });
   };
   const threadIds = z.array(z.number().int().positive()).min(1).max(500).describe("Thread ids from search_emails/list_threads");
 
@@ -165,7 +169,8 @@ export function createMcpServer(app: AppConnection, version = "0.1.0"): McpServe
         const shown = includeSpamTrash ? d.messages : d.messages.filter((m) => !m.isSpam && !m.isTrash);
         return text({
           threadId,
-          subject: d.thread.subject,
+          // the conversation's subject is its first message's: when that one is left out, the first shown says it
+          subject: shown.length < d.messages.length && shown[0] ? shown[0].subject : d.thread.subject,
           place: placeOf(d.thread, {}),
           ...(shown.length < d.messages.length ? { leftOut: `${d.messages.length - shown.length} message(s) in Spam or Trash (includeSpamTrash: true to read them)` } : {}),
           messages: shown.map((m) => {
@@ -180,15 +185,17 @@ export function createMcpServer(app: AppConnection, version = "0.1.0"): McpServe
               sentByUser: m.isSent,
               ...(includeSpamTrash ? { place: placeOf(d.thread, m) } : {}),
               body: body.length > MAX_BODY ? `${body.slice(0, MAX_BODY)}\n…[truncated]` : body,
+              // only a kept file has an id (its asset: immutable); the others say why there's nothing to read
               attachments: m.attachments.map((a) => ({
-                attachmentId: a.assetId ?? `row-${a.id}`,
+                ...(a.assetId ? { attachmentId: a.assetId } : { unavailable: unkeptReason(m) }),
                 filename: a.filename,
                 mime: a.mime,
                 size: a.size,
                 // shown in the body (a pasted picture, a logo): often not worth opening
                 ...(inline.has(a.id) ? { inline: true } : {}),
-                ...(!a.assetId && (m.bodyUnavailable || m.attachmentState === "unavailable") ? { unavailable: "not kept on this Mac (past Terno's limits for attachments)" } : {}),
               })),
+              // a message not downloaded yet lists no files: they come with the account's background sync
+              ...(m.hasAttachments && m.attachments.length === 0 && m.attachmentState === "pending" ? { filesPending: "This message has files Terno hasn't downloaded yet; they will be after the account's next sync." } : {}),
             };
           }),
         });

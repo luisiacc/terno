@@ -15,7 +15,7 @@ import { UI_LOCALE_KEY } from "./forwarding";
 import { findUnsubscribe, runUnsubscribe } from "./unsubscribe";
 import { gather, leaveTop, leftNothing, nothingLeft, returnTop, type TopLeft } from "./inbox-top";
 import { StorageMaintenance } from "./storage";
-import { AGENT_ATTACHMENT, locateForAgent } from "./agent-attachments";
+import { AGENT_ATTACHMENT, AgentFileCancelled, locateForAgent } from "./agent-attachments";
 import { FolderExports } from "./folder-export";
 import { deleteSnippet, listSnippets, saveSnippet } from "./snippets";
 import { followFavoriteFolders, readAgents, readAutoCategorize, readSettings, setGooglePhotoState, SettingsError, updateSettings } from "./settings";
@@ -85,24 +85,13 @@ export function createHandlers(b: Backend): Handlers {
     attachmentCalls++;
     try { return await work(); } finally { attachmentCalls--; }
   };
-  // plan 185: agents read files on their own budget (two calls, one download of a message), never taking the user's
+  // plan 185: agents read files on their own budget (two calls at once), never taking the user's
   let agentAttachmentCalls = 0;
-  let agentHydrating = false;
   const agentAttachmentCall = async <T,>(origin: string, work: () => Promise<T>): Promise<T> => {
     if (origin !== "mcp") throw new RpcError("FORBIDDEN", L("attachments.unavailable"));
     if (agentAttachmentCalls >= 2) throw new RpcError("UNAVAILABLE", AGENT_ATTACHMENT.busy);
     agentAttachmentCalls++;
     try { return await work(); } finally { agentAttachmentCalls--; }
-  };
-  const agentHydrate = async (work: () => Promise<unknown>) => {
-    if (agentHydrating) throw new RpcError("UNAVAILABLE", AGENT_ATTACHMENT.busy);
-    agentHydrating = true;
-    try { await work(); }
-    catch (error) {
-      // the reader's two body jobs are full: the user comes first
-      if (error instanceof RpcError && error.code === "UNAVAILABLE") throw new RpcError("UNAVAILABLE", AGENT_ATTACHMENT.busy);
-      throw error;
-    } finally { agentHydrating = false; }
   };
   const requireCategory = async (id: number) => {
     if (!(await store.categories.exists(id))) throw new RpcError("NOT_FOUND", L("errors.categoryGone"));
@@ -1135,13 +1124,21 @@ export function createHandlers(b: Backend): Handlers {
     "attachments.seal": (p, ctx) => attachmentCall(ctx.origin, async () => { await store.attachments.seal(p.accountId, p.assetId); return { ok: true as const }; }),
     "attachments.info": (p, ctx) => (ctx.origin === "mcp" ? agentAttachmentCall : attachmentCall)(ctx.origin, () => store.attachments.info(p.accountId, p.assetId)),
     "attachments.read": (p, ctx) => (ctx.origin === "mcp" ? agentAttachmentCall : attachmentCall)(ctx.origin, async () => ({ dataBase64: await store.attachments.read(p.accountId, p.assetId, p.index) })),
-    "attachments.agentLocate": (p, ctx) => agentAttachmentCall(ctx.origin, () => locateForAgent(b, p, agentHydrate)),
+    "attachments.agentLocate": (p, ctx) => agentAttachmentCall(ctx.origin, () => locateForAgent(b, p)),
     "attachments.agentFile": (p, ctx) => agentAttachmentCall(ctx.origin, async () => {
       const files = b.agents?.files;
       if (!files) throw new RpcError("UNAVAILABLE", L("errors.agentsNeedDesktop"));
-      const found = await locateForAgent(b, p, agentHydrate);
+      // taken before locating: agents cut off meanwhile get no copy (Codex review #1)
+      const ticket = files.ticket();
+      const found = await locateForAgent(b, p);
       const ref = await store.attachments.info(found.accountId, found.assetId);
-      return { ...found, path: await files.write(store, found.accountId, ref, () => b.platform.yield()) };
+      try {
+        return { ...found, path: await files.write(store, found.accountId, ref, () => b.platform.yield(), ticket) };
+      } catch (error) {
+        // i18n-ignore: for the agent
+        if (error instanceof AgentFileCancelled) throw new RpcError("UNAVAILABLE", "Agents were cut off in Terno (turned off, or the token changed).");
+        throw error;
+      }
     }),
     "attachments.discard": (p, ctx) => attachmentCall(ctx.origin, async () => { await store.attachments.discard(p.accountId, p.assetId); return { ok: true as const }; }),
 

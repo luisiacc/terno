@@ -94,7 +94,7 @@ export interface AgentAttachment {
 const agentAttachmentRequest = z.object({
   threadId: id,
   messageId: id,
-  /** get_thread's: an asset id once kept, `row-<id>` before */
+  /** get_thread's: the kept file's asset id */
   attachmentId: z.string().max(80),
   /** the owner's rule: Spam and Trash only when the agent asks */
   includeSpamTrash: z.boolean().default(false),
@@ -1020,8 +1020,8 @@ export const contract = {
   "attachments.seal": m<{ ok: true }>()(assetRequest),
   "attachments.info": m<AttachmentRef>()(assetRequest),
   "attachments.read": m<{ dataBase64: string | null }>()(assetRequest.extend({ index: z.number().int().min(0).max(384) }).strict()),
-  /** plan 185, agents only: which kept file that is (downloading its message once if it isn't stored yet) */
-  "attachments.agentLocate": m<AgentAttachment>()(agentAttachmentRequest, { timeoutMs: 120_000 }),
+  /** plan 185, agents only: which kept file that is, its place checked */
+  "attachments.agentLocate": m<AgentAttachment>()(agentAttachmentRequest),
   /** plan 185, agents only: the same, plus a copy for the agent to read with its own tools */
   "attachments.agentFile": m<AgentAttachment & { path: string }>()(agentAttachmentRequest, { timeoutMs: 120_000 }),
   "attachments.discard": m<{ ok: true }>()(assetRequest),

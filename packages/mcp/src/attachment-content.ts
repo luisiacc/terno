@@ -1,4 +1,4 @@
-import { attachmentCid, cidReferences, type AttachmentInfo } from "@terno/core";
+import { attachmentCid, cidReferences, type AttachmentInfo, type MessageDetail } from "@terno/core";
 
 /**
  * Plan 185: how an agent gets a file. Text and images come inline when every client shows them and they fit its
@@ -69,4 +69,11 @@ export function inlineParts(html: string | null, attachments: readonly Attachmen
     if (cid && refs.has(cid) && cids.filter((c) => c === cid).length === 1) inline.add(a.id);
   }
   return inline;
+}
+
+/** Why a listed file has no bytes on this Mac. A message not downloaded yet lists no files at all: see `filesPending`. */
+export function unkeptReason(message: Pick<MessageDetail, "bodyUnavailable" | "attachmentState">): string {
+  if (message.bodyUnavailable) return "not kept on this Mac: the message is over 75 MB, so its files stay on the mail server";
+  if (message.attachmentState === "unavailable") return "not kept on this Mac: past Terno's limits for attachments (18 MB of files in one message, 100 files, or 256 MB for the account)";
+  return "not kept on this Mac (stored by an older Terno): the user can download it from the message in Terno";
 }
