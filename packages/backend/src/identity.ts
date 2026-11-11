@@ -1,4 +1,4 @@
-import { isValidEmail, messageOf, type Account } from "@terno/core";
+import { isValidEmail, messageOf, signInMethod, unhandled, type Account } from "@terno/core";
 import { RpcError, type OwnerIdentity } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import type { GoogleAdmission, OwnerClaim, OwnerDecision, SecretIntent } from "@terno/store";
@@ -222,18 +222,23 @@ export async function reconnectAccount(b: Backend, accountId: number, password: 
     const account = await b.store.accounts.get(accountId), stamp = await b.store.accounts.stamp(accountId);
     b.assertSignIn(accountId, flow);
     if (!account || !stamp) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
-    const admission = account.kind === "gmail" ? await googleAdmission(b, accountId, flow) : undefined;
+    // plan 184: each kind's way, named in SIGN_IN (a new kind can't compile without one)
+    const method = signInMethod(account.kind);
+    const admission = method === "google" ? await googleAdmission(b, accountId, flow) : undefined;
     let result: GmailConnectResult | undefined;
     let blob: Uint8Array | undefined;
     let photos = false;
-    if (account.kind === "imap") {
+    switch (method) {
+    case "password": {
       if (!b.host.capabilities.imap) throw new RpcError("UNAVAILABLE", L("errors.imapNeedsDesktop"));
       if (!password) throw new RpcError("BAD_REQUEST", L("errors.passwordRequired"));
       const config = (await b.store.accounts.config<ImapAccountConfig>(accountId))!.config;
       try { await b.options.providers.verifyImap(config, password); } catch (error) { throw loginFailed("errors.couldNotConnectAccount", account.email, error); }
       b.assertSignIn(accountId, flow);
       blob = await encryptCredential(b, password);
-    } else {
+      break;
+    }
+    case "google":
       // plan 74: photos switched on to come with this sign-in: Google asks for the contacts scopes too
       photos = await googlePhotosPending(b.store, accountId);
       b.assertSignIn(accountId, flow);
@@ -241,6 +246,8 @@ export async function reconnectAccount(b: Backend, accountId: number, password: 
       result = await connectExistingGoogle(b, account, flow, photos ? [...GMAIL_SCOPES, CONTACTS_SCOPE, OTHER_CONTACTS_SCOPE] : undefined);
       if (admission!.expectedSubject !== null && admission!.expectedSubject !== result.sub) throw invalidRenewal();
       if (result.refreshToken !== null) blob = await encryptCredential(b, result.refreshToken);
+      break;
+    default: unhandled(method);
     }
     b.assertSignIn(accountId, flow);
     return await b.credentialFlow(accountId, flow, async () => {
@@ -303,20 +310,25 @@ export async function changeOwnerTo(b: Backend, accountId: number, password: str
     b.assertSignIn(accountId, flow);
     if (current?.accountId === accountId) throw new RpcError("BAD_REQUEST", L("errors.alreadyOwner", { email: account.email }));
     let claim: Omit<OwnerClaim, "accountId" | "email">;
-    const admission = account.kind === "gmail" ? await googleAdmission(b, accountId, flow) : undefined;
+    const method = signInMethod(account.kind);
+    const admission = method === "google" ? await googleAdmission(b, accountId, flow) : undefined;
     let result: GmailConnectResult | undefined;
     let blob: Uint8Array | undefined;
-    if (account.kind === "imap") {
+    switch (method) {
+    case "password":
       if (!password) throw new RpcError("BAD_REQUEST", L("errors.passwordToVerify"));
       try { await b.options.providers.verifyImap(config as unknown as ImapAccountConfig, password); } catch (error) { throw loginFailed("errors.couldNotVerifyAccount", account.email, error); }
       b.assertSignIn(accountId, flow);
       blob = await encryptCredential(b, password);
       claim = imapClaim(account, config as unknown as ImapAccountConfig, (config as unknown as ImapAccountConfig).senderName || account.displayName);
-    } else {
+      break;
+    case "google":
       result = await connectExistingGoogle(b, account, flow);
       if (admission!.expectedSubject !== null && admission!.expectedSubject !== result.sub) throw invalidRenewal();
       if (result.refreshToken !== null) blob = await encryptCredential(b, result.refreshToken);
       claim = gmailClaim({ ...result, name: result.name || (config as unknown as GmailAccountConfig).senderName });
+      break;
+    default: unhandled(method);
     }
     b.assertSignIn(accountId, flow);
     return await b.credentialFlow(accountId, flow, async () => {

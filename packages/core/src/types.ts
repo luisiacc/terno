@@ -8,6 +8,18 @@ export type FilterId = number;
 
 export type AccountKind = "imap" | "gmail";
 
+/**
+ * Plan 184: how an account of each kind signs in again (accounts.reconnect, the sign-in panel, Settings). A new
+ * kind fails the type check until it names its way; a new way fails every `switch` on it until it's handled there.
+ */
+export type SignInMethod = "password" | "google";
+export const SIGN_IN = { imap: "password", gmail: "google" } as const satisfies Record<AccountKind, SignInMethod>;
+export const signInMethod = (kind: AccountKind): SignInMethod => SIGN_IN[kind];
+/** an exhaustive switch's default: a value no case handles is a type error */
+export function unhandled(value: never): never {
+  throw new Error(`Unhandled: ${String(value)}`);
+}
+
 export interface Account {
   id: AccountId;
   kind: AccountKind;
