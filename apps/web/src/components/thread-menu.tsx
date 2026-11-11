@@ -25,7 +25,6 @@ import {
   CheckCheck,
   Copy,
   Ellipsis,
-  Filter,
   Forward,
   Folder as FolderIcon,
   FolderInput,
@@ -58,7 +57,7 @@ import { create } from "zustand";
 import { act, openCompose, tabbedTest, targetRows } from "~/lib/actions";
 import { pinThreads, unpinThreads } from "~/lib/pins";
 import { usePins } from "~/state/pins";
-import { addScopeToCategory, addToCategory, answerReview, fileAlways, filterNameOf, isExclusivelyIn, moveToCategory, removeFromCategory, removeSenderFromCategory } from "~/lib/categorize";
+import { addScopeToCategory, addToCategory, answerReview, fileAlways, filterNameOf, isExclusivelyIn, moveToCategory, removeFromCategory } from "~/lib/categorize";
 import { rowSelector, setRule } from "~/lib/flash";
 import { renderProbe } from "~/lib/render-probe";
 import { isMac, scopeRows, selectAll } from "~/lib/select";
@@ -73,7 +72,8 @@ import { getApp, inSeparateTab, setApp, useApp, type ScopeSelection } from "~/st
 import { shownDraftKey, useDrafts } from "~/lib/drafts";
 import { listKey, useList } from "~/state/list";
 import { actionView, placeActions } from "~/lib/places";
-import { applyScope, formatCount } from "./category-snackbar";
+import { formatCount } from "./category-snackbar";
+import { copyAddress, SenderItems, type MenuParts } from "./sender-menu-items";
 import { actSimilar, offerSentence, scopeLabel, visibleOffers } from "~/lib/similar";
 import { orderOffers } from "~/lib/offers";
 import { client } from "~/rpc/connection";
@@ -675,7 +675,6 @@ function MenuItems() {
   const anyUnpinned = !scope && rows.some((t) => !pins.has(t.id));
   const sender = scope ? null : sharedSender(rows);
   const filedIn = sender ? categories.filter((c) => rows.some((r) => r.categoryIds.includes(c.id))) : [];
-  const fileTo = categories.filter((c) => !filedIn.includes(c));
   const reply = (mode: "reply" | "replyAll" | "forward") => {
     if (!single) return;
     // the menu's own thread, passed explicitly (the selection follows, it isn't read back); the composer takes focus
@@ -819,15 +818,17 @@ function MenuItems() {
         </ContextMenuSubTrigger>
         {/* plan 158: everything else, under small labels; a row with several answers opens them beside it */}
         <ContextMenuSubContent className="w-80" data-testid="menu-more-list">
-          <MoreItems spam={spam} single={single} code={code} view={view} ids={ids} scope={scope !== null} sender={sender} categories={categories} fileTo={fileTo} filedIn={filedIn} />
+          <MoreItems spam={spam} single={single} code={code} view={view} ids={ids} scope={scope !== null} sender={sender} categories={categories} filedIn={filedIn} />
         </ContextMenuSubContent>
       </ContextMenuSub>
     </>
   );
 }
 
+const CONTEXT_PARTS: MenuParts = { Item: ContextMenuItem, Sub: ContextMenuSub, SubTrigger: ContextMenuSubTrigger, SubContent: ContextMenuSubContent };
+
 /** "More ▸": what a row is rarely right-clicked for; a row with several answers opens them beside it. */
-function MoreItems({ spam, single, code, view, ids, scope, sender, categories, fileTo, filedIn }: { spam: MenuEntry | undefined; single: ThreadSummary | undefined; code: string | null; view: View; ids: number[]; scope: boolean; sender: { email: string; name: string } | null; categories: readonly Category[]; fileTo: readonly Category[]; filedIn: readonly Category[] }) {
+function MoreItems({ spam, single, code, view, ids, scope, sender, categories, filedIn }: { spam: MenuEntry | undefined; single: ThreadSummary | undefined; code: string | null; view: View; ids: number[]; scope: boolean; sender: { email: string; name: string } | null; categories: readonly Category[]; filedIn: readonly Category[] }) {
   return (
     <>
       {spam && <Item {...spam} />}
@@ -851,41 +852,9 @@ function MoreItems({ spam, single, code, view, ids, scope, sender, categories, f
       {!scope && ids.length <= 200 && <SimilarSection view={view} ids={ids} />}
       {sender && (
         <Section label={t("threadMenu.from", { name: sender.name })} testId="menu-sender">
-          {categories.length > 0 && (
-            <SubRow icon={<Tag />} label={t("threadMenu.fileAll")} testId="menu-sender-file">
-              {fileTo.map((c) => (
-                <ContextMenuItem key={c.id} data-testid={`menu-sender-file-${c.id}`} onClick={() => void applyScope(c.id, { kind: "sender", email: sender.email })}>
-                  <CategoryDot color={c.color as CategoryColor} className="mx-1" />
-                  <span className="truncate">{t("threadMenu.toCategory", { category: c.name })}</span>
-                </ContextMenuItem>
-              ))}
-              {/* plan 77: the categories this mail is in offer the way out instead */}
-              {filedIn.map((c) => (
-                <ContextMenuItem key={c.id} data-testid={`menu-sender-out-${c.id}`} onClick={() => void removeSenderFromCategory(c.id, sender.email)}>
-                  <CategoryDot color={c.color as CategoryColor} className="mx-1" />
-                  <span className="truncate">{t("threadMenu.outOfCategory", { category: c.name })}</span>
-                </ContextMenuItem>
-              ))}
-            </SubRow>
-          )}
-          <Item
-            icon={<Filter />}
-            label={t("threadMenu.createFilter")}
-            testId="menu-filter"
-            onClick={() => setApp({ dialog: "filters", filterPrefill: { name: t("threadMenu.filterName", { name: sender.name }), rule: { match: "all", conditions: [{ field: "from", op: "equals", value: sender.email }], actions: [{ type: "archive" }] } } })}
-          />
+          <SenderItems sender={sender} categories={categories} filedIn={filedIn} parts={CONTEXT_PARTS} />
           <Item icon={<Search />} label={t("threadMenu.searchSender")} testId="menu-search-sender" onClick={() => setApp({ query: `from:${sender.email}`, view: "all", categoryId: null, reviewCategoryId: null, checked: new Set(), scope: null })} />
-          <Item
-            icon={<Copy />}
-            label={t("threadMenu.copyAddress")}
-            testId="menu-copy"
-            onClick={() =>
-              void navigator.clipboard.writeText(sender.email).then(
-                () => snack(t("threadMenu.copied", { email: sender.email }), { duration: 2000 }),
-                () => snack.error(t("threadMenu.copyFailed")),
-              )
-            }
-          />
+          <Item icon={<Copy />} label={t("threadMenu.copyAddress")} testId="menu-copy" onClick={() => copyAddress(sender.email)} />
           {/* keyed: a menu moved onto another row never shows (or opens) the last row's offer while its own loads */}
           {single && <UnsubscribeItem key={single.id} threadId={single.id} />}
         </Section>
