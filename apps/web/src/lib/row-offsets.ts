@@ -3,24 +3,22 @@
  * paddingStart): rows of one height, and between them space of a fixed height whatever theirs (plan 174).
  */
 
-/** A section heading's line: the Inbox top's (Pinned, Reminders), Today's */
+/** A section heading's line: the Inbox's (Pinned, Reminders, the Inbox under them), Today's */
 export const TOP_LABEL = 28;
 
-/** The hairline's gap after the Inbox's top (px) */
-export const TOP_GAP = 9;
-
 /**
- * The fixed space: the offer above the rows (`lead`), the Inbox's top and the gap after it, and the section headings,
- * each the index of the row it stands above (`groups`: the top's sections, or Today's).
+ * The fixed space: the offer above the rows (`lead`) and the section headings, each the index of the row it stands
+ * above (`groups`: the Inbox's sections, or Today's).
  */
-export interface RowSpacing { lead: number; top: number; topGap: number; groups: readonly number[] }
+export interface RowSpacing { lead: number; groups: readonly number[] }
 
 /** Where row `i` starts */
 export function rowStart(i: number, h: number, s: RowSpacing): number {
-  return s.lead + i * h + (s.topGap > 0 && i >= s.top ? s.topGap : 0) + TOP_LABEL * s.groups.filter((at) => at <= i).length;
+  return s.lead + i * h + TOP_LABEL * s.groups.filter((at) => at <= i).length;
 }
 
-export type TopSectionKind = "pinned" | "reminders";
+/** Plan 177: Pinned, Reminders, and (once either leads) the rest of the Inbox under its own name */
+export type TopSectionKind = "pinned" | "reminders" | "inbox";
 
 /** The Inbox's top as the rows show it: how many lead, how many of them are pinned, and each section's heading */
 export interface TopSections {
@@ -33,7 +31,8 @@ export const NO_SECTIONS: TopSections = { top: 0, pinned: 0, headings: [] };
 
 /**
  * Plan 177: the top's sections over the rows on screen (an optimistic edit may have taken some out since the top was
- * read): the leading rows among its pins, then the leading rows among the rest of it. Pinned first, then Reminders.
+ * read): the leading rows among its pins, then the leading rows among the rest of it. Pinned first, then Reminders,
+ * then the rest of the Inbox under a heading of its own (the owner: it replaced the hairline that closed the top).
  */
 export function topSections(rows: readonly { id: number }[], top: { ids: readonly number[]; pinned: number }): TopSections {
   if (top.ids.length === 0) return NO_SECTIONS;
@@ -47,6 +46,7 @@ export function topSections(rows: readonly { id: number }[], top: { ids: readonl
   const headings: { kind: TopSectionKind; at: number }[] = [];
   if (pinned > 0) headings.push({ kind: "pinned", at: 0 });
   if (end > pinned) headings.push({ kind: "reminders", at: pinned });
+  if (end < rows.length) headings.push({ kind: "inbox", at: end });
   return { top: end, pinned, headings };
 }
 

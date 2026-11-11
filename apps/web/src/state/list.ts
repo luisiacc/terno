@@ -159,12 +159,14 @@ export function keptIds(s = getApp()): number[] {
 export interface InboxTop {
   ids: readonly number[];
   pinned: number;
+  /** plan 177: how many conversations the Inbox holds, for its heading under the top (null: no top, or not counted) */
+  total: { n: number; capped: boolean } | null;
 }
 
 /** The top of the list on screen: written only with the page it came with, once that page is the one shown. */
-export const inboxTop: InboxTop = { ids: [], pinned: 0 };
+export const inboxTop: InboxTop = { ids: [], pinned: 0, total: null };
 
-const NO_TOP: InboxTop = { ids: [], pinned: 0 };
+const NO_TOP: InboxTop = { ids: [], pinned: 0, total: null };
 
 /**
  * A top row the Inbox shows only for its reminder (archived, or in a category
@@ -192,15 +194,19 @@ async function withTop<P extends Paged>(page: Promise<P>, first: boolean): Promi
   const pinning = anyPinned() ? client.call("pins.threads", { accountId }).then((r) => r.items, () => []) : Promise.resolve([]);
   const due = anyDue() ? client.call("reminders.threads", { dueOnly: true, accountId }).then((r) => r.items, () => []) : Promise.resolve([]);
   // plan 142: follow-ups have their own way onto the top, one row a thread under the same heading
-  const following = followupsOffered(getApp()) && useFollowups.getState().onTop > 0 ? client.call("followups.threads", { onTop: true, accountId }).then((r) => r.items, () => []) : Promise.resolve([]);
-  const [p, pinRows, dueRows, followRows] = await Promise.all([page, pinning, due, following]);
+  const followsOnTop = followupsOffered(getApp()) && useFollowups.getState().onTop > 0;
+  const following = followsOnTop ? client.call("followups.threads", { onTop: true, accountId }).then((r) => r.items, () => []) : Promise.resolve([]);
+  // plan 177: the Inbox's own count for its heading under the top, as "select all N" counts it; asked only when a top may lead
+  const scope = currentScope();
+  const counting = (anyPinned() || anyDue() || followsOnTop) && scope ? client.call("threads.scopeCount", { scope }).then((r) => ({ n: r.count, capped: r.capped }), () => null) : Promise.resolve(null);
+  const [p, pinRows, dueRows, followRows, total] = await Promise.all([page, pinning, due, following, counting]);
   // a pinned one is in Pinned only, whatever else it has
   const pinnedIds = new Set(pinRows.map((t) => t.id));
   const reminding = [...dueRows, ...followRows.filter((t) => !dueRows.some((d) => d.id === t.id))].filter((t) => !pinnedIds.has(t.id));
   const held = heldInReminders(s.selectedId, pinnedIds);
   if (held && !reminding.some((t) => t.id === held.row.id)) reminding.splice(Math.min(held.at, reminding.length), 0, held.row);
   const rows = [...pinRows, ...reminding];
-  const top: InboxTop = { ids: rows.map((t) => t.id), pinned: pinRows.length };
+  const top: InboxTop = { ids: rows.map((t) => t.id), pinned: pinRows.length, total: rows.length ? total : null };
   if (rows.length === 0) return { ...p, top };
   const ids = new Set(top.ids);
   // the row as the page has it, when it's there (fresher than the top's read)
@@ -393,6 +399,7 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
     commit(() => {
       inboxTop.ids = top.ids;
       inboxTop.pinned = top.pinned;
+      inboxTop.total = top.total;
       useList.setState({
         key,
         itemsKey: key,

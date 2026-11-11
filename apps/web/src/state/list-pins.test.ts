@@ -3,7 +3,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 
 /** Plan 177: the Inbox's top with Pinned in front of Reminders, published only with the page it came with. */
 
-type Params = { cursor?: unknown; limit?: number; accountId?: number; dueOnly?: boolean };
+type Params = { cursor?: unknown; limit?: number; accountId?: number; dueOnly?: boolean; scope?: { accountId?: number } };
 const calls: { method: string; params: Params }[] = [];
 let answer: (params: Params, method: string) => Promise<unknown> = async () => ({});
 vi.mock("~/rpc/connection", () => ({
@@ -31,6 +31,7 @@ function mailbox(over: Partial<Record<string, (p: Params) => Promise<unknown>>> 
     if (method === "pins.threads") return Promise.resolve({ items: [row(7), row(5)] });
     if (method === "reminders.threads") return Promise.resolve({ items: [row(5), row(9)] });
     if (method === "threads.list") return Promise.resolve({ items: Array.from({ length: 12 }, (_, i) => row(i + 1)), nextCursor: null });
+    if (method === "threads.scopeCount") return Promise.resolve({ count: 12, capped: false });
     return Promise.resolve({});
   };
 }
@@ -48,6 +49,22 @@ it("Pinned leads, newest pin first; then the due reminders that aren't pinned; e
   expect(ids().slice(0, 4)).toEqual([7, 5, 9, 1]);
   expect(ids().filter((id) => id === 5 || id === 7 || id === 9)).toHaveLength(3);
   expect({ ids: inboxTop.ids, pinned: inboxTop.pinned }).toEqual({ ids: [7, 5, 9], pinned: 2 });
+});
+
+it("the rest of the Inbox is counted for its heading, as \"select all\" counts it, in the account shown; nothing on top, nothing counted (the owner)", async () => {
+  mailbox();
+  setApp({ accountId: 3 });
+  await vi.waitFor(() => expect(useList.getState().itemsKey).toContain(",3,"));
+  expect(inboxTop.total).toEqual({ n: 12, capped: false });
+  expect(calls.find((c) => c.method === "threads.scopeCount")!.params.scope).toMatchObject({ kind: "view", view: "inbox", accountId: 3 });
+  calls.length = 0;
+  usePins.setState({ ids: new Set(), loaded: true });
+  useReminders.setState({ byThread: new Map(), due: 0, loaded: true });
+  setApp({ accountId: null });
+  await reloadList({ keepSelection: true });
+  expect(calls.some((c) => c.method === "threads.list")).toBe(true);
+  expect(calls.some((c) => c.method === "threads.scopeCount")).toBe(false);
+  expect(inboxTop.total).toBeNull();
 });
 
 it("nothing pinned: no pins asked for, and the top is the reminders' alone", async () => {

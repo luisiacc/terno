@@ -91,6 +91,7 @@ export { PenLine } from "./iconset/generated/PenLine";
 export { Pencil } from "./iconset/generated/Pencil";
 export { Pin } from "./iconset/generated/Pin";
 export { PinOff } from "./iconset/generated/PinOff";
+export { PinTop } from "./iconset/generated/PinTop";
 export { Play } from "./iconset/generated/Play";
 export { Plus } from "./iconset/generated/Plus";
 export { Printer } from "./iconset/generated/Printer";

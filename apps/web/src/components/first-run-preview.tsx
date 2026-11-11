@@ -241,7 +241,6 @@ function List({ design, sample, wide, compact, selected }: { design: DesignDefin
             layout={v.row}
             review={null}
             reminderTop={false}
-            reminderEnd={false}
             selected={thread.id === selected}
             checked={false}
             inSelection={thread.id === selected}

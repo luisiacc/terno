@@ -17,7 +17,7 @@ import { TernoMark } from "@terno/ui/brand/terno-mark";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
 import { useReplies } from "~/lib/replies";
-import { Archive, Bell, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Ellipsis, FileDown, Forward, Inbox, Layers, Mail, OctagonAlert, Pin, Printer, Reply, ReplyAll, SquarePen, Star, SummaryDoc, Trash2 } from "@terno/ui/icons";
+import { Archive, Bell, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Ellipsis, FileDown, Forward, Inbox, Layers, Mail, OctagonAlert, PinTop, Printer, Reply, ReplyAll, SquarePen, Star, SummaryDoc, Trash2 } from "@terno/ui/icons";
 import { type ReactNode, type RefCallback, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/popover";
 import { reminderShort, useReminders, useRemindPopover } from "~/lib/reminders";
@@ -134,12 +134,12 @@ const COLUMN = READING_COLUMN;
 /** Between the toolbar's groups; a narrow reader has no room for it. */
 const ToolbarDivider = ({ className }: { className?: string }) => <Separator orientation="vertical" className={cn("my-auto h-4 @max-[420px]:hidden", className)} />;
 
-/** Plan 177 (the owner): Pin beside Star; filled while this conversation is pinned. One boolean: only this button renders when it changes. */
+/** Plan 177 (the owner): Pin beside Star, upright; filled in Star's yellow while pinned. One boolean: only this button renders when it changes. */
 function PinButton({ threadId }: { threadId: number }) {
   const pinned = usePins((s) => s.ids.has(threadId));
   return (
-    <IconButton label={t(pinned ? "actions.unpin" : "actions.pin")} shortcut="p" aria-pressed={pinned} onClick={() => void (pinned ? unpinThreads([threadId]) : pinThreads([threadId]))} data-testid="action-pin" className={cn(tool, pinned && "text-foreground")}>
-      <Pin className={cn(pinned && "fill-current")} />
+    <IconButton label={t(pinned ? "actions.unpin" : "actions.pin")} shortcut="p" aria-pressed={pinned} onClick={() => void (pinned ? unpinThreads([threadId]) : pinThreads([threadId]))} data-testid="action-pin" className={cn(tool, pinned && "text-star hover:text-star")}>
+      <PinTop className={cn(pinned && "fill-star")} />
     </IconButton>
   );
 }

@@ -35,7 +35,7 @@ async function row(opts: { layout?: DesignVariants["row"]; compact?: boolean; ac
     root.render(
       <ThreadRowView
         thread={thread} top={0} height={72} compact={opts.compact ?? false} wide={false} icons={false} layout={opts.layout ?? "avatar"} review={opts.review ?? null}
-        reminderTop={false} reminderEnd={false} selected={false} checked={false} inSelection={false}
+        reminderTop={false} selected={false} checked={false} inSelection={false}
         account={opts.account ? { text: "Studio", email: "me@studio.example" } as never : undefined}
         categories={categories} hasDraft={false} code={null} reminder={undefined} remindersList={false} interactive={false}
       />,
@@ -122,7 +122,7 @@ async function pinnedRow(opts: { pinnedTop: boolean; layout?: DesignVariants["ro
     root.render(
       <ThreadRowView
         thread={thread} top={0} height={72} compact={opts.compact ?? false} wide={false} icons={false} layout={opts.layout ?? "avatar"} review={null}
-        pinned pinnedTop={opts.pinnedTop} reminderTop={false} reminderEnd={false} selected={false} checked={false} inSelection={false}
+        pinnedTop={opts.pinnedTop} reminderTop={false} selected={false} checked={false} inSelection={false}
         account={undefined} categories={categories} hasDraft={false} code={null} reminder={undefined} remindersList={false} interactive={false}
       />,
     ),
@@ -130,12 +130,10 @@ async function pinnedRow(opts: { pinnedTop: boolean; layout?: DesignVariants["ro
   return host.querySelector<HTMLElement>("[data-testid=thread-row]")!;
 }
 
-it.each([["avatar", false], ["classic", false], ["large-avatar", false], ["avatar", true]] as const)("a pinned %s row (compact %s) shows a quiet pin among its marks outside the Pinned section, none inside, and says it either way (plan 177)", async (layout, compact) => {
+it.each([["avatar", false], ["classic", false], ["large-avatar", false], ["avatar", true]] as const)("a %s row (compact %s) draws no pin; in the Pinned section a screen reader hears it's pinned (plan 177, the owner)", async (layout, compact) => {
   const outside = await pinnedRow({ pinnedTop: false, layout, compact });
-  const pin = outside.querySelector("[data-testid=row-pin]");
-  expect(pin).not.toBeNull();
-  expect(pin!.getAttribute("class")).toContain("text-muted-foreground");
-  expect(outside.textContent).toContain(", pinned");
+  expect(outside.querySelector("svg.lucide-pin, [data-testid=row-pin]")).toBeNull();
+  expect(outside.textContent).not.toContain(", pinned");
   await unmount();
   host?.remove();
   const inside = await pinnedRow({ pinnedTop: true, layout, compact });

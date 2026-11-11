@@ -1,9 +1,9 @@
 import { folderName } from "~/lib/account-folders";
-import { anchorAt, anchoredOffset, rowStart, TOP_GAP, TOP_LABEL, topSections, type RowSpacing, type TopSectionKind } from "~/lib/row-offsets";
+import { anchorAt, anchoredOffset, rowStart, TOP_LABEL, topSections, type RowSpacing, type TopSectionKind } from "~/lib/row-offsets";
 import { SearchField } from "@terno/ui/components/search-field";
 import { Skeleton } from "@terno/ui/components/skeleton";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Bell, ChevronDown, ChevronRight, Inbox, ListFilter, Newspaper, Pin, Search, SquarePen, Sun, ListChecks, Tags } from "@terno/ui/icons";
+import { Bell, ChevronDown, ChevronRight, Inbox, ListFilter, Newspaper, Search, SquarePen, Sun, ListChecks, Tags } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { activeFilter } from "~/lib/unread-filter";
 import { setListFilter } from "~/lib/unread";
@@ -78,15 +78,18 @@ function TodayHeading({ kind, top }: { kind: TodayGroup["kind"]; top: number }) 
   );
 }
 
+const TOP_HEADING_ID = { pinned: "inbox-pinned-label", reminders: "inbox-reminders-label", inbox: "inbox-rest-label" } as const satisfies Record<TopSectionKind, string>;
+
 /**
- * Plans 87, 177: what the Inbox top's rows under it are, quiet (the glyph and the name, muted, on the rows' text edge),
- * so Pinned and Reminders read as one family above the mail. Each row says what it is to a screen reader itself.
+ * Plans 87, 177: what the Inbox's rows under it are: Pinned, Reminders and, once either leads, the rest of the Inbox
+ * under its own name (the account's, in one account's Inbox). Words only, in Today's headings' style, and how many in
+ * the quiet ink (the owner). Each row says what it is to a screen reader itself.
  */
-function TopHeading({ kind, top }: { kind: TopSectionKind; top: number }) {
+function TopHeading({ kind, top, name, count }: { kind: TopSectionKind; top: number; name: string; count: string | null }) {
   return (
-    <div aria-hidden data-testid={kind === "pinned" ? "inbox-pinned-label" : "inbox-reminders-label"} className="absolute inset-x-0 flex items-end gap-1.5 px-5 pb-1 text-xs font-medium text-muted-foreground" style={{ top, height: TOP_LABEL }}>
-      {kind === "pinned" ? <Pin className="size-3" /> : <Bell className="size-3" />}
-      {t(kind === "pinned" ? "list.pinned" : "view.reminders")}
+    <div aria-hidden data-testid={TOP_HEADING_ID[kind]} className="absolute inset-x-0 flex items-end gap-1 px-5 pb-1 text-sm font-medium text-foreground" style={{ top, height: TOP_LABEL }}>
+      <span className="min-w-0 truncate">{name}</span>
+      {count !== null && <span data-testid="inbox-section-count" className="shrink-0 font-normal text-muted-foreground tabular-nums">({count})</span>}
     </div>
   );
 }
@@ -1160,11 +1163,11 @@ export function ThreadList() {
   const askOver = usePinnedAsk((s) => (!over && s.overList ? s.inset : 0));
   const dock = pinnedOver(toastRoom, Math.max(usePinnedInset(over), askOver));
   const getItemKey = useCallback((i: number) => items[i]!.id, [items]);
-  // plans 87, 177: the Inbox's top, Pinned then Reminders, each under its heading, a hairline gap before the rest
-  // (the top is published with the rows it came with: read beside them)
-  const sections = useMemo(() => topSections(items, inboxTop), [items]);
+  // plans 87, 177: the Inbox's top, Pinned then Reminders, then the rest of the Inbox, each under its heading
+  // (the top and its count are published with the rows they came with: read beside them)
+  const sections = useMemo(() => ({ ...topSections(items, inboxTop), total: inboxTop.total }), [items]);
   const { top, pinned: pinnedTop } = sections;
-  const topGap = top > 0 && top < items.length ? TOP_GAP : 0;
+  const inboxName = useApp((s) => (s.accountId === null ? null : (s.accounts.find((a) => a.id === s.accountId)?.displayName ?? null)));
   // plan 158: the rule offer is the list's first item: room above the first row, and it goes up with them
   const learned = useLearnedProposal();
   // plan 159: as tall as it's laid out (it wraps rather than cutting the rule)
@@ -1177,13 +1180,13 @@ export function ThreadList() {
   const headingsKey = [...sections.headings.map((h) => h.at), ...todayGroups.map((g) => g.at)].join();
   const headingAt = useMemo(() => new Set(headingsKey ? headingsKey.split(",").map(Number) : []), [headingsKey]);
   // (read by the design switch's anchor, before and after the new heights)
-  const spacingRef = useRef<Omit<RowSpacing, "lead">>({ top, topGap, groups: [] });
-  spacingRef.current = { top, topGap, groups: [...headingAt] };
+  const spacingRef = useRef<Omit<RowSpacing, "lead">>({ groups: [] });
+  spacingRef.current = { groups: [...headingAt] };
   const virtualizer = useVirtualizer({
     count: items.length,
     getScrollElement: () => parentRef.current,
     // plan 145: a section's heading is space under the row before it, or above the first
-    estimateSize: (i) => height + (i === top - 1 ? topGap : 0) + (headingAt.has(i + 1) ? TOP_LABEL : 0),
+    estimateSize: (i) => height + (headingAt.has(i + 1) ? TOP_LABEL : 0),
     paddingStart: lead + (headingAt.has(0) ? TOP_LABEL : 0),
     overscan: 10,
     getItemKey,
@@ -1194,7 +1197,7 @@ export function ThreadList() {
   // the top came or went (or grew), or the offer above it: positions recomputed before paint
   useLayoutEffect(() => {
     virtualizer.measure();
-  }, [top, topGap, headingAt, lead]);
+  }, [headingAt, lead]);
   // the offer came or went while the list was scrolled: what's on screen stays where it is (at the top, it's the first item arriving)
   const shownLead = useRef(lead);
   // the offset as last scrolled: by the time the change is laid out, a shorter list has already clamped the element's own (at its end)
@@ -1437,17 +1440,22 @@ export function ThreadList() {
           !filter && <EmptyState />
         ) : (
           <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
-            {/* plans 87, 177: each of the top's headings above its first row; the hairline in the gap after its last */}
+            {/* plans 87, 177: each of the Inbox's headings above its first row */}
             {sections.headings.map((h) => (
-              <TopHeading key={h.kind} kind={h.kind} top={(virtualizer.measurementsCache[h.at]?.start ?? lead + TOP_LABEL) - TOP_LABEL} />
+              <TopHeading
+                key={h.kind}
+                kind={h.kind}
+                top={(virtualizer.measurementsCache[h.at]?.start ?? lead + TOP_LABEL) - TOP_LABEL}
+                name={h.kind === "pinned" ? t("list.pinned") : h.kind === "reminders" ? t("view.reminders") : (inboxName ?? t("view.inbox"))}
+                count={h.kind === "pinned" ? formatNumber(pinnedTop) : h.kind === "reminders" ? formatNumber(top - pinnedTop) : sections.total ? `${formatNumber(sections.total.n)}${sections.total.capped ? "+" : ""}` : null}
+              />
             ))}
-            {topGap > 0 && <div aria-hidden data-testid="inbox-top-end" className="absolute inset-x-5 h-(--hairline-w) bg-hairline" style={{ top: (virtualizer.measurementsCache[top - 1]?.end ?? 0) - topGap / 2 }} />}
             {/* plan 161, pass 2: each heading from its row's real offset (the digest's row is shorter than the rest) */}
             {todayGroups.map((g) => (
               <TodayHeading key={g.kind} kind={g.kind} top={(virtualizer.measurementsCache[g.at]?.start ?? lead + TOP_LABEL) - TOP_LABEL} />
             ))}
             {virtualItems.map((v) => (
-              <ThreadRow key={v.key} thread={items[v.index]!} top={v.start} height={height} compact={compact} wide={wide} showAccount={showAccount} icons={icons} layout={layout} review={review} pinnedTop={v.index < pinnedTop} reminderTop={v.index >= pinnedTop && v.index < top} reminderEnd={topGap > 0 && v.index === top - 1} match={match} pick={list} section={sectionName(todayGroups.find((g) => g.at === v.index)?.kind)} />
+              <ThreadRow key={v.key} thread={items[v.index]!} top={v.start} height={height} compact={compact} wide={wide} showAccount={showAccount} icons={icons} layout={layout} review={review} pinnedTop={v.index < pinnedTop} reminderTop={v.index >= pinnedTop && v.index < top} match={match} pick={list} section={sectionName(todayGroups.find((g) => g.at === v.index)?.kind)} />
             ))}
           </div>
         )}

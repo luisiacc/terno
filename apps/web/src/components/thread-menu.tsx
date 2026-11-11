@@ -36,8 +36,7 @@ import {
   MessageSquareReply,
   OctagonAlert,
   Plus,
-  Pin,
-  PinOff,
+  PinTop,
   Printer,
   Repeat,
   Reply,
@@ -756,8 +755,8 @@ function MenuItems() {
       {anyPlain && <Item icon={<Star />} label={t("actions.star")} command="thread.star" onClick={() => run("star")} testId="menu-star" />}
       {anyStarred && <Item icon={<StarOff />} label={t("actions.unstar")} command={anyPlain ? undefined : "thread.star"} onClick={() => run("unstar")} testId="menu-unstar" />}
       {/* plan 177 (the owner): beside Star, at the top level */}
-      {anyUnpinned && <Item icon={<Pin />} label={t("actions.pin")} command="thread.pin" onClick={() => void pinThreads(ids)} testId="menu-pin" />}
-      {anyPinned && <Item icon={<PinOff />} label={t("actions.unpin")} command={anyUnpinned ? undefined : "thread.pin"} onClick={() => void unpinThreads(ids)} testId="menu-unpin" />}
+      {anyUnpinned && <Item icon={<PinTop />} label={t("actions.pin")} command="thread.pin" onClick={() => void pinThreads(ids)} testId="menu-pin" />}
+      {anyPinned && <Item icon={<PinTop className="fill-star text-star" />} label={t("actions.unpin")} command={anyUnpinned ? undefined : "thread.pin"} onClick={() => void unpinThreads(ids)} testId="menu-unpin" />}
       <ContextMenuSeparator />
       {/* plan 87: a "select all N" has no ids to set them on */}
       <RemindSub ids={ids} disabled={scope !== null} />
