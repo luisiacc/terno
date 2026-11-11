@@ -41,11 +41,11 @@ Some lists use the preview line for something that is not the preview. They keep
 
 | Design | none | 1 line | 2 lines |
 | --- | --- | --- | --- |
-| Lumen | 58 | 76 | 94 |
-| Graphite | 64 | 84 | 104 |
-| Atelier | 58 | 76 | 94 |
-| Luma | 50 | 68 | 86 |
-| macOS | 46 | 64 | 82 |
+| Lumen | 64 | 76 | 94 |
+| Graphite | 70 | 84 | 104 |
+| Atelier | 64 | 76 | 94 |
+| Luma | 56 | 68 | 86 |
+| macOS | 52 | 64 | 82 |
 
 `designs.test.ts`: with no preview, every design's two remaining lines still have 5 px above and below and the avatar still fits (`avatar.row + 16 ≤ height`).
 
@@ -113,3 +113,9 @@ With no preview, the subject line is drawn in the preview's quiet ink (`text-mut
 > the subject line when no preview should have this style, same size as now, but should have this color and font weight
 
 With no preview the subject takes the preview's weight as well as its ink (`--type-row-snippet-weight`), read or unread, at the subject's own size, leading and tracking. Unread still shows by the sender's weight, the dot and the date. `designs.spec.ts` checks an unread subject's computed color, weight and size in every design.
+
+## Follow-up: room between the sender and the subject (the owner, 2026-11-11)
+
+> lets have a bit more spacing between the sender and the subject when there is no preview, its look super close now
+
+With no preview the subject's line sits `NO_PREVIEW_GAP` (6 px, `mt-1.5`) below the sender's, and `rowHeight` adds the same 6 px, so the padding above and below is a one-line row's (the table above includes it). `designs.spec.ts` measures the gap in every design.

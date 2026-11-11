@@ -18,6 +18,7 @@ import en from "@terno/i18n/locales/en";
 import es from "@terno/i18n/locales/es";
 import { DESIGNS } from "../../../packages/ui/src/designs/index";
 import type { DesignDefinition } from "../../../packages/ui/src/designs/types";
+import { NO_PREVIEW_GAP } from "../../../packages/ui/src/designs/rows";
 import { sqlDb } from "../../backend-dev/src/server";
 import { E2E_NOW } from "./constants";
 import { expect, focusList, forgetOffer, openRow, rows, scenario, selectedRow, stabilize, test, openReview } from "./fixtures";
@@ -176,6 +177,9 @@ test.describe("in every design", { tag: "@design" }, () => {
       await expect(unread).toHaveCSS("font-size", `${parseFloat(d.type.rowSubject.size) * 16}px`);
       const row = page.locator("[data-testid=thread-row]", { has: page.getByTestId("row-marks") }).filter({ has: page.getByTestId("account-label") }).first();
       const subject = (await row.getByTestId("row-subject").boundingBox())!;
+      // the owner: the two lines apart by the gap the row's height allows for
+      const from = (await row.getByTestId("row-from").boundingBox())!;
+      expect(subject.y - (from.y + from.height)).toBeCloseTo(NO_PREVIEW_GAP, 0);
       for (const id of ["row-marks", "account-label"]) {
         const b = (await row.getByTestId(id).boundingBox())!;
         expect(Math.abs(b.y + b.height / 2 - (subject.y + subject.height / 2)), id).toBeLessThanOrEqual(2);
@@ -328,7 +332,7 @@ test.describe("switching designs", () => {
       await page.getByTestId(option).click();
       return before;
     };
-    for (const [option, height] of [["preview-0", 64 - leading], ["preview-2", 64 + leading], ["preview-1", 64]] as const) {
+    for (const [option, height] of [["preview-0", 64 - leading + NO_PREVIEW_GAP], ["preview-2", 64 + leading], ["preview-1", 64]] as const) {
       const before = await choose("preview-select", option);
       await expect(rows(page).first()).toHaveCSS("height", `${height}px`);
       const after = await anchor();

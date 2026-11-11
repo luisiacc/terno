@@ -7,7 +7,7 @@ import { oklchToRgb, parseColor } from "../themes/color";
 import { builtinTheme } from "../themes/registry";
 import { designVars, generateDesignsCss, generateTypeRolesCss } from "./generate";
 import { designById, DESIGNS } from "./index";
-import { rowHeight } from "./rows";
+import { NO_PREVIEW_GAP, rowHeight } from "./rows";
 import { TEXT_STEPS, TYPE_ROLES } from "./types";
 
 const styles = join(import.meta.dirname, "../styles");
@@ -61,7 +61,7 @@ describe("designs (plan 15)", () => {
       expect(d.type.rowSnippet.leading, d.id).toMatch(/^\d+(\.\d+)?rem$/);
       const px = (leading: string) => parseFloat(leading) * 16;
       const none = rowHeight(d, { compact: false, wide: false, results: false, lines: 0 });
-      expect(none, d.id).toBeGreaterThanOrEqual(px(d.type.rowFrom.leading) + px(d.type.rowSubject.leading) + 10);
+      expect(none, d.id).toBeGreaterThanOrEqual(px(d.type.rowFrom.leading) + px(d.type.rowSubject.leading) + NO_PREVIEW_GAP + 10);
       expect(d.avatar.row + 16, d.id).toBeLessThanOrEqual(none);
     }
   });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { designById, DESIGNS } from "./index";
-import { previewLinesFor, rowHeight } from "./rows";
+import { NO_PREVIEW_GAP, previewLinesFor, rowHeight } from "./rows";
 
 const plain = { review: false, results: false, previewing: false };
 
@@ -14,13 +14,13 @@ describe("plan 187: the preview's lines and a list's row height", () => {
     }
   });
 
-  it("one line is the design's height, as before; each line more or less is one preview leading", () => {
+  it("one line is the design's height, as before; each line more or less is one preview leading (with none, plus the gap above the subject)", () => {
     for (const d of DESIGNS) {
       const leading = parseFloat(d.type.rowSnippet.leading) * 16;
       for (const results of [false, true]) {
         const base = d.rows[results ? "results" : "comfortable"];
         expect(rowHeight(d, { compact: false, wide: false, results, lines: 1 }), d.id).toBe(base);
-        expect(rowHeight(d, { compact: false, wide: false, results, lines: 0 }), d.id).toBe(base - leading);
+        expect(rowHeight(d, { compact: false, wide: false, results, lines: 0 }), d.id).toBe(base - leading + NO_PREVIEW_GAP);
         expect(rowHeight(d, { compact: false, wide: false, results, lines: 2 }), d.id).toBe(base + leading);
       }
     }
@@ -38,8 +38,8 @@ describe("plan 187: the preview's lines and a list's row height", () => {
 
   it("the table in the plan", () => {
     const h = (id: string, lines: 0 | 1 | 2) => rowHeight(designById(id), { compact: false, wide: false, results: false, lines });
-    expect([h("lumen", 0), h("lumen", 1), h("lumen", 2)]).toEqual([58, 76, 94]);
-    expect([h("graphite", 0), h("graphite", 1), h("graphite", 2)]).toEqual([64, 84, 104]);
-    expect([h("macos", 0), h("macos", 1), h("macos", 2)]).toEqual([46, 64, 82]);
+    expect([h("lumen", 0), h("lumen", 1), h("lumen", 2)]).toEqual([64, 76, 94]);
+    expect([h("graphite", 0), h("graphite", 1), h("graphite", 2)]).toEqual([70, 84, 104]);
+    expect([h("macos", 0), h("macos", 1), h("macos", 2)]).toEqual([52, 64, 82]);
   });
 });
