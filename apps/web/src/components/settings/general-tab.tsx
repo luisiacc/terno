@@ -4,9 +4,7 @@ import { Button } from "@terno/ui/components/button";
 import { NumberField } from "@terno/ui/components/number-field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { Switch } from "@terno/ui/components/switch";
-import { Columns2, Keyboard, Rows3 } from "@terno/ui/icons";
-import { ToggleGroup, ToggleGroupItem } from "@terno/ui/components/toggle-group";
-import { updateAppearance } from "~/lib/appearance";
+import { Keyboard } from "@terno/ui/icons";
 import { useEffect, useReducer, useRef, useState } from "react";
 import { isLanguageSetting, LOCALE_IDS, LOCALES, resolveLocale, t, type LanguageSetting } from "@terno/i18n";
 import { setApp } from "~/state/app";
@@ -110,12 +108,6 @@ export function DaysField({
     </span>
   );
 }
-
-const density = () =>
-  [
-    { value: "comfortable", label: t("settings.general.density.comfortable") },
-    { value: "compact", label: t("settings.general.density.compact") },
-  ] as const;
 
 /**
  * Plan 41: system notifications, their preview, and the unread count on the
@@ -241,46 +233,6 @@ export function GeneralTab({ settings, update }: { settings: AppSettings; update
       {aiFeaturesAvailable(settings) && (
         <TodaySettings settings={settings} update={update} />
       )}
-      <SettingsGroup title={t("settings.general.list")}>
-        {/* plan 24: the conversation beside the list, or in its place (applied at once, like the style) */}
-        <SettingsRow label={t("settings.general.layout")} hint={t("settings.general.layout.hint")} testId="layout-row">
-          {(a) => (
-            <ToggleGroup
-              aria-labelledby={a["aria-labelledby"]}
-              aria-describedby={a["aria-describedby"]}
-              variant="segmented"
-              value={[settings.layout]}
-              onValueChange={(v: string[]) => v[0] && void updateAppearance({ layout: v[0] as AppSettings["layout"] })}
-              data-testid="layout-toggle"
-            >
-              <ToggleGroupItem value="split" data-testid="layout-split" className="gap-1.5">
-                <Columns2 aria-hidden />
-                {t("settings.general.layout.split")}
-              </ToggleGroupItem>
-              <ToggleGroupItem value="list" data-testid="layout-list" className="gap-1.5">
-                <Rows3 aria-hidden />
-                {t("settings.general.layout.list")}
-              </ToggleGroupItem>
-            </ToggleGroup>
-          )}
-        </SettingsRow>
-        <SettingsRow label={t("settings.general.density")} hint={t("settings.general.density.hint")}>
-          {({ id: _id, ...a }) => (
-            <Select value={settings.density} onValueChange={(v) => void update({ density: v as AppSettings["density"] })} items={density().map((d) => ({ ...d }))}>
-              <SelectTrigger {...a} size="sm" className="w-32" data-testid="density-select">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {density().map((d) => (
-                  <SelectItem key={d.value} value={d.value} data-testid={`density-${d.value}`}>
-                    {d.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-        </SettingsRow>
-      </SettingsGroup>
 
       <SettingsGroup title={t("settings.general.sync")}>
         <SettingsRow labelFor label={t("settings.general.syncWindow")} hint={t("settings.general.syncWindow.hint")}>

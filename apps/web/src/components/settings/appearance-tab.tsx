@@ -17,6 +17,7 @@ import { designDescription, designName } from "~/lib/design";
 import { viewLabel } from "~/lib/format";
 import { resolvedMode, resolveTheme, updateAppearance, useAppearance } from "~/lib/appearance";
 import { ConfirmDialog, SettingsGroup, SettingsRow, type RowA11y, type SettingsUpdate } from "./parts";
+import { ListSettings } from "./list-settings";
 import { SenderPictures } from "./sender-pictures";
 
 /** Under a theme picked for the mode not showing now. */
@@ -279,6 +280,8 @@ export function AppearanceTab({ settings, update }: { settings: AppSettings; upd
 
   return (
     <div data-testid="appearance-tab">
+      <ListSettings settings={settings} update={update} />
+
       <SettingsGroup>
         <SettingsRow stacked label={t("settings.appearance.style")} hint={t("settings.appearance.style.hint")}>
           {(a) => (

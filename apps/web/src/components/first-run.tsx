@@ -153,8 +153,8 @@ export function FirstRun() {
   const body = {
     layout: (
       <RadioGroup aria-label={t("firstRun.layout.label")} value={settings.layout} onValueChange={(layout) => pick({ layout: layout as AppSettings["layout"] })}>
-        <Choice testId="first-run-layout-split" value="split" mark={<Columns2 className="size-5 shrink-0" />} title={t("settings.general.layout.split")} body={t("firstRun.layout.split.body")} />
-        <Choice testId="first-run-layout-list" value="list" mark={<Rows3 className="size-5 shrink-0" />} title={t("settings.general.layout.list")} body={t("firstRun.layout.list.body")} />
+        <Choice testId="first-run-layout-split" value="split" mark={<Columns2 className="size-5 shrink-0" />} title={t("settings.appearance.layout.split")} body={t("firstRun.layout.split.body")} />
+        <Choice testId="first-run-layout-list" value="list" mark={<Rows3 className="size-5 shrink-0" />} title={t("settings.appearance.layout.list")} body={t("firstRun.layout.list.body")} />
       </RadioGroup>
     ),
     look: (

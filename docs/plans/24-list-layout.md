@@ -95,7 +95,7 @@
 - Add `layout: "split" | "list"` to `AppSettings`.
   - The default is `"split"`, so nothing changes for anyone who doesn't opt in.
   - Add it to `settingsPatchSchema`, `DEFAULT_SETTINGS` and `GENERAL_KEYS` (it travels in exports).
-- **Settings → General → List** gets a **Layout** row above Density: a two-option segmented control (`ToggleGroup`, radio semantics) labelled "Split" and "List", each with a tiny glyph (two panes, one pane). Hint: "Split shows the conversation next to the list. List gives the list the full width and opens a conversation in its place."
+- **Settings → General → List** gets a **Layout** row above Density: a two-option segmented control (`ToggleGroup`, radio semantics) labelled "Split" and "List", each with a tiny glyph (two panes, one pane). Hint: "Split shows the conversation next to the list. List gives the list the full width and opens a conversation in its place." *(Moved 2026-11-11, the owner: the List group — Layout and Density — is now the first group in Settings → Appearance.)*
 - **First paint:** the appearance cache gains `layout`. theme.js sets `data-layout` on `<html>`, and `useAppearance` seeds `layout` from it, so a List user never sees a Split frame at launch (the same mechanism as `data-design`).
 - **Live switch:** changing the setting applies immediately, using the design-switch anchor mechanism (`captureDesignAnchors` runs before the change and restores after it) so the first visible row stays put.
   - **Split → List** lands on the list page, with the open thread as the cursor (in view).

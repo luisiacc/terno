@@ -40,8 +40,9 @@ test.beforeAll(async () => {
   }
   page = await app.firstWindow();
   await page.locator("[data-testid=thread-row]").first().waitFor({ timeout: 60_000 });
-  // Settings → General → Layout: List, like a user would
+  // Settings → Appearance → Layout: List, like a user would
   await page.keyboard.press("Meta+,");
+  await page.getByTestId("tab-appearance").click();
   await page.getByTestId("layout-list").click();
   await expect(page.locator("html")).toHaveAttribute("data-layout", "list");
   await page.keyboard.press("Escape");

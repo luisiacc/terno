@@ -142,16 +142,13 @@ test("General and Appearance edit, persist and take effect; the sidebar's rows; 
     const pane = (await scroller.boundingBox())!;
     expect(close.y + close.height).toBeLessThanOrEqual(pane.y);
   });
-  await scenario("General: remote images, density (row height), sync window (validated); no local-mode row (plan 97)", async () => {
+  await scenario("General: remote images, sync window (validated); no local-mode row (plan 97)", async () => {
     await fresh(page);
     await openVia(page, "gear", "general");
     await expect(page.getByTestId("general-tab")).not.toContainText("Local mode");
     const images = page.getByRole("switch", { name: "Always load remote images" });
     await images.click();
     await expect(images).toBeChecked();
-    await page.getByRole("combobox", { name: "Density" }).click();
-    await page.getByTestId("density-compact").click();
-    await expect(rows(page).first()).toHaveCSS("height", "32px");
     const days = page.getByLabel("Sync window");
     await days.fill("3");
     await days.press("Enter");
@@ -164,16 +161,19 @@ test("General and Appearance edit, persist and take effect; the sidebar's rows; 
 
     await reopen(page, "general");
     await expect(page.getByRole("switch", { name: "Always load remote images" })).toBeChecked();
-    await expect(page.getByRole("combobox", { name: "Density" })).toContainText("Compact");
     await expect(page.getByLabel("Sync window")).toHaveValue("45");
-    await expect(rows(page).first()).toHaveCSS("height", "32px");
     await expect(page.getByRole("switch", { name: "Always load remote images" })).toHaveAccessibleDescription(/senders can tell when you open their mail/);
     await page.getByTestId("open-shortcuts").click();
     await expect(page.getByRole("dialog", { name: "Keyboard shortcuts" })).toContainText("Settings");
   });
-  await scenario("Appearance: mode, light and dark themes, motion (--motion), HTML mail", async () => {
+  await scenario("Appearance: list first (density sets the row height), mode, light and dark themes, motion (--motion), HTML mail", async () => {
     await fresh(page);
     await openVia(page, "gear", "appearance");
+    // the list's layout and density lead the section
+    await expect(panel(page).locator("h3").first()).toHaveText("List");
+    await page.getByRole("combobox", { name: "Density" }).click();
+    await page.getByTestId("density-compact").click();
+    await expect(rows(page).first()).toHaveCSS("height", "32px");
     await page.getByTestId("theme-card-solarized-light").click();
     await page.getByTestId("theme-card-nord").click();
     await page.getByRole("group", { name: "Mode" }).getByRole("button", { name: "Dark" }).click();
@@ -186,6 +186,8 @@ test("General and Appearance edit, persist and take effect; the sidebar's rows; 
     await expect(page.locator("html")).toHaveAttribute("data-theme", "nord");
     expect(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--motion").trim())).toBe("50ms");
     await expect(page.getByTestId("mail-paper")).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("combobox", { name: "Density" })).toContainText("Compact");
+    await expect(rows(page).first()).toHaveCSS("height", "32px");
     await page.getByRole("group", { name: "Mode" }).getByRole("button", { name: "Light" }).click();
     await expect(page.locator("html")).toHaveAttribute("data-theme", "solarized-light");
     await expect(page.getByTestId("theme-card-solarized-light")).toHaveAttribute("aria-checked", "true");

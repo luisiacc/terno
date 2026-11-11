@@ -592,9 +592,10 @@ test.describe("the List layout: what stays put", () => {
       await expect(page.getByTestId("thread-list")).toHaveAttribute("data-results-for", /"Label_23"/);
       await expect(page.getByTestId("drafts-strip")).toBeVisible();
     });
-    await scenario("the setting: General → List → Layout switches at once, both ways", async () => {
+    await scenario("the setting: Appearance → List → Layout switches at once, both ways", async () => {
       await fresh();
       await page.getByTestId("open-settings").click();
+      await page.getByTestId("tab-appearance").click();
       await page.getByTestId("layout-split").click();
       await expect(page.locator("html")).toHaveAttribute("data-layout", "split");
       await expect(page.locator("main")).toHaveCount(1);
