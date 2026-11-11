@@ -236,6 +236,15 @@ test.describe("summaries (plan 132)", () => {
       return { fill: s.backgroundColor, primary, radius: s.borderTopLeftRadius, glow: s.boxShadow };
     });
     expect(mark.fill).toBe(mark.primary);
+    // the header's other glyphs (the spinner, a task's glyph) share its colour, so the spinner becomes the dot unchanged
+    expect(await page.evaluate(() => {
+      const probe = document.createElement("span");
+      probe.className = "text-ai";
+      document.body.append(probe);
+      const color = getComputedStyle(probe).color;
+      probe.remove();
+      return color;
+    })).toBe(mark.primary);
     expect(mark.radius).toBe("9999px");
     // two shadows: a faint ring and the halo
     expect(mark.glow).toMatch(/px, .+px$/);

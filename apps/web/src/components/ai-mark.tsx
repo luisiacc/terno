@@ -1,8 +1,9 @@
 import { cn } from "@terno/ui/lib/utils";
 
 /**
- * Plan 181 (the owner, 2026-11-10, after three rounds of icons): a model's words are marked by a glowing dot in the accent,
- * not a sparkle. It sits in the glyph's own 1.15em box, so the title starts where it always did (globals.css `ai-mark`).
+ * Plan 181 (the owner, 2026-11-10, after three rounds of icons): a model's words are marked by a glowing dot, not a sparkle,
+ * in the AI mark's colour (`--ai`: the accent, or Terno's indigo where the accent is an ink or a grey). It sits in the
+ * glyph's own 1.15em box, so the title starts where it always did (globals.css `ai-mark`).
  */
 export function AiMark({ className }: { className?: string }) {
   return (

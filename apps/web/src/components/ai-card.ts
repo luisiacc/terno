@@ -17,10 +17,11 @@ export const AI_INSET = "px-5";
 export const AI_PAD = `${AI_INSET} pb-4`;
 /**
  * The header's glyph, the size of the header's text: the spinner while a card works, and a card's own task glyph (the
- * follow-up's clock). Plan 181: in the accent, as the AI mark (`AiMark`, the glowing dot) is (the owner's exception to
- * AGENTS.md's muted icon beside a label)
+ * follow-up's clock). Plan 181: in the AI mark's colour (`--ai`: the accent, or Terno's indigo where the accent is an ink),
+ * so the spinner turns into the glowing dot (`AiMark`) without changing colour (the owner's exception to AGENTS.md's muted
+ * icon beside a label)
  */
-export const AI_GLYPH = "size-[1.15em] shrink-0 text-primary";
+export const AI_GLYPH = "size-[1.15em] shrink-0 text-ai";
 /**
  * The header: one line of the secondary type, its glyph on the first line. Plan 162: at the body's size on every card (the
  * summary's was 12 px, the follow-up's 13.5, Reply ready's larger again), the facts in the secondary. Plan 181: 44 px.

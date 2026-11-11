@@ -141,7 +141,7 @@ The dot was the palette's accent. In Lumen and Graphite that accent is an ink (b
 - **Where the accent has colour:** the accent itself, at chroma 0.1 or more (`AI_MIN_CHROMA`). Terno, Apple, GitHub, Luma, Catppuccin, Solarized, Dracula, Monokai and Tokyo Night all keep their own colour.
 - **Where it doesn't:** Terno's own indigo, oklch(0.56 0.19 268) in light and (0.7 0.16 268) in dark. That is the blue the owner pointed at.
 
-The colour is defined in the palettes and the CSS only reads the token, per AGENTS.md's rule that colours stay in palettes. A unit test checks every palette's mark has colour and matches its accent where the accent has one. The e2e reads the dot's fill against `var(--ai)` in every design.
+The header's other glyphs (the spinner while a card writes, the follow-up's clock) take the same colour (`AI_GLYPH`, `text-ai`), so the spinner turns into the dot without changing colour; this came from the Codex review. The colour is defined in the palettes and the CSS only reads the token, per AGENTS.md's rule that colours stay in palettes. A unit test checks every palette's mark has colour and matches its accent where the accent has one. The e2e reads the dot's fill against `var(--ai)` in every design.
 
 ## Rating
 

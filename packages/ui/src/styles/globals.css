@@ -135,6 +135,7 @@
   --color-overlay: var(--overlay);
   --color-hairline: var(--hairline);
   --color-tint: var(--tint);
+  --color-ai: var(--ai);
   --color-highlight: var(--highlight);
   --color-draft-foreground: var(--draft-foreground);
   --color-menu-highlight: var(--menu-highlight);
