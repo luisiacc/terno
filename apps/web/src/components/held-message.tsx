@@ -5,15 +5,15 @@ import { Shortcut } from "@terno/ui/components/shortcut";
 import { Spinner } from "@terno/ui/components/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { copyShown, firstReveal, heldIn, undoHeld, useHeldCard, useHeldSends, type HeldSend } from "~/lib/held-sends";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { cardLeaving, copyShown, firstReveal, heldIn, undoHeld, useHeldCard, useHeldSends, type HeldSend } from "~/lib/held-sends";
 import { revealHeld } from "~/lib/reader-scroll";
 import { useSnack, zHolds } from "~/lib/snack";
-import { useApp } from "~/state/app";
+import { setApp, useApp } from "~/state/app";
 import { PANE_TITLE, PANE_TITLE_AFTER, PANE_TITLE_TOP, READING_COLUMN } from "~/lib/pane-lines";
 import { ReaderAttachments } from "./attachments";
 import { HtmlBody, TextBody } from "./mail-body";
-import { useMailReaderView } from "./mail-reader-view";
+import { MailReaderView, useMailReaderView } from "./mail-reader-view";
 import { OpenHead } from "./message-head";
 
 /**
@@ -29,6 +29,8 @@ export function HeldMessage({ held, icons }: { held: HeldSend; icons: boolean })
   const mailAppearance = useApp((s) => s.settings?.htmlMailAppearance ?? "auto");
   // the reader goes to it once, as it would to its copy; back in the conversation later, the reader keeps its place
   useEffect(() => { if (firstReveal(held.draftId)) revealHeld(held.draftId); }, [held.draftId]);
+  // a layout cleanup runs before the card leaves the page: whether focus was in it can still be read (Codex review #3)
+  useLayoutEffect(() => () => cardLeaving(held.draftId), [held.draftId]);
   // its own namespace: never a message's id (heights, consent), one per hold
   const bodyId = -held.draftId;
   const files = useMemo<AttachmentInfo[]>(() => held.attachments.map((a, i) => ({ id: -(i + 1), assetId: a.assetId, contentId: a.contentId ?? null, filename: a.filename, mime: a.mime, size: a.size })), [held.attachments]);
@@ -149,7 +151,11 @@ export function HeldNewMessage() {
   useEffect(() => {
     if (!document.activeElement || document.activeElement === document.body) ref.current?.focus({ preventScroll: true });
   }, []);
+  // it went (or was taken back) before the pane was its: nothing to show here (Codex review #1)
+  useEffect(() => { if (!held) setApp({ heldView: null }); }, [held]);
   return (
+    // the reader's own full-message view, for a long message's "Show full message" (Codex review #5)
+    <MailReaderView identity={`held-${draftId}`}>
     <section ref={ref} tabIndex={-1} aria-labelledby="held-title" data-testid="held-view" className="@container flex h-full min-h-0 flex-col bg-background outline-none">
       {/* the title on the pane title's line, as the new message had it and its conversation will */}
       <div className="drag-region shrink-0 [scrollbar-gutter:stable] overflow-y-hidden">
@@ -169,5 +175,6 @@ export function HeldNewMessage() {
         </div>
       </div>
     </section>
+    </MailReaderView>
   );
 }

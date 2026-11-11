@@ -1281,6 +1281,8 @@ async function send(key: string, sendAt?: number): Promise<boolean> {
         const inPane = getApp().compose?.key === key;
         forgetDraft(key);
         const draftId = d.id!;
+        // the pane first (Codex review #1: a send that already went opens its copy from it); one change, so List's page never passes through the list on its way from the message to the sent view
+        if (inPane) setApp({ compose: null, ...(d.mode === "new" && !pinned ? { heldView: draftId } : {}) });
         holdSend({
           draftId,
           accountId: d.accountId,
@@ -1295,8 +1297,6 @@ async function send(key: string, sendAt?: number): Promise<boolean> {
           goesAt,
           cancel: (cancelled) => cancelHeldSend(draftId, pinned, cancelled),
         });
-        // one change, so List's page never passes through the list on its way from the message to the sent view
-        if (inPane) setApp({ compose: null, ...(d.mode === "new" && !pinned ? { heldView: draftId } : {}) });
         return true;
       }
       sentAway(key, d, hold);

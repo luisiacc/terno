@@ -87,3 +87,16 @@ Codex's critique of the plan (twelve points):
 10. **Body identity.** Taken: the held body uses the negative draft id (never a message's), and the draft's files as its attachments, so cid images resolve as the copy's will (behind the same "Load inline").
 11. **Copy elsewhere** (a forward, a reply whose subject changed). Taken: the card settles and, if it was being looked at, a snack offers "View". Nothing claims delivery: "Message sent" stays the op's.
 12. **Focus.** Taken: focus on Undo as the window ends moves to the card; focus on a card that gives way moves to its copy's header; the new message's pane takes focus the composer left on nothing; the announcement is outside the counter.
+
+## Codex code review
+
+Round 1 found six, all fixed, each with a test that fails without the fix:
+
+1. **A send that went before `compose.hold` answered left the new message's pane empty.** The buffered `scheduledSent` was replayed before the pane was the hold's. The pane is set first now, and a pane whose hold is gone clears itself (`compose.test.ts`).
+2. **A hold settled while the dock offered its Undo left the offer up** (a hover holds it). Its copy known, the offer becomes the spinner, and settling withdraws any offer still there (`held-sends.test.ts`).
+3. **Focus on a card lost when its copy took its place.** The card left the page before the effect that moves focus ran. A layout cleanup, which runs before the card is removed, hands focus to the copy's header (e2e, `compose.spec.ts`).
+4. **Undo out across the window's end dropped focus** when it came back too late or failed. Focus is parked on the card for those transitions too (`held-sends.test.ts`).
+5. **"Show full message" did nothing in the new message's pane**, which had no reader view around it. It has one now.
+6. **A card left after its window, before it was queued, showed nothing anywhere.** The dock says "Sending…" (no Undo), bounded by the hold's own deadline (`held-sends.test.ts`).
+
+Stopped after one round. Perf gate (`test:ui-perf`, load average 3 to 5 from other sessions): "holding j" counts two animations, and it fails the same way on the commit before this series; the 250 KB paragraph's editor plugin (54 ms against 50) is the composer's, untouched here. Both are outside this change.

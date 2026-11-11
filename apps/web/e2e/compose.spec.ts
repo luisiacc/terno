@@ -789,12 +789,15 @@ test("Undo send (plans 158, 182): the reply shows at once where its copy will be
     // the body as it will go (its HTML, in the mail frame the copy will have), and to whom
     await expect(held.frameLocator("iframe").locator("body")).toContainText("Exactly these words");
     await expect(held.getByTestId("recipients")).toContainText("copy@example.com");
+    // focus on the card (Codex review #3) goes on to its copy's header when the copy takes its place
+    await held.focus();
     await expect.poll(async () => (await server.backend.store.scheduled.list()).length).toBe(1);
     const { draftId } = (await server.backend.store.scheduled.list())[0]!;
     await server.backend.server.invoke("scheduled.reschedule", { draftId, sendAt: E2E_NOW - 1 }, dev);
     await expect(page.getByTestId("message")).toHaveCount(before + 1);
     await expect(held).toHaveCount(0);
     const copy = page.getByTestId("message").last();
+    await expect(copy.getByTestId("message-toggle")).toBeFocused();
     await expect(copy).toBeInViewport();
     await expect(copy).toHaveAttribute("data-expanded", "true");
     await expect(copy.frameLocator("iframe").locator("body")).toContainText("Exactly these words");

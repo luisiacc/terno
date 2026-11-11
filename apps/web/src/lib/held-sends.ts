@@ -70,7 +70,7 @@ function later(draftId: number, ms: number, run: () => void): void {
 }
 
 /** It's over (Undo won, its copy is here, or it can't be shown any more): its timers, snack and view go with it. */
-export function settleHeld(draftId: number): void {
+export function settleHeld(draftId: number, keepView = false): void {
   const held = heldById(draftId);
   if (!held) return;
   for (const handle of timers.get(draftId) ?? []) clearTimeout(handle);
@@ -79,8 +79,10 @@ export function settleHeld(draftId: number): void {
   keepFocus(draftId, held.copy?.messageId ?? null);
   cards.delete(draftId);
   if (useSnack.getState().undo === held.undo) useSnack.setState({ undo: null });
-  if (held.phase !== "sending") withdrawSnack(snackId(draftId));
-  if (getApp().heldView === draftId) setApp({ heldView: null });
+  // an offer of Undo goes with it, whatever the phase (Codex review #2); a spinner stays for the op's own result
+  const offered = useSnack.getState().current;
+  if (held.phase !== "sending" || (offered?.id === snackId(draftId) && offered.action)) withdrawSnack(snackId(draftId));
+  if (!keepView && getApp().heldView === draftId) setApp({ heldView: null });
   useHeldSends.setState((s) => ({ holds: s.holds.filter((h) => h.draftId !== draftId) }));
 }
 
@@ -121,8 +123,12 @@ function offerSnack(draftId: number): void {
     snack.loading(t("compose.sending"), { id: snackId(draftId), duration: left, action: { label: t("common.undo"), name: t("compose.undoSend"), undo: held.undo } });
     return;
   }
+  if (held.phase !== "sending") return;
   // its window is over, its copy known, and nothing shows it: nothing left to show; the op's own result says the rest
-  if (held.phase === "sending" && held.copy) settleHeld(draftId);
+  if (held.copy) return settleHeld(draftId);
+  // not queued yet: the dock says it's going, for as long as this hold may last (Codex review #6)
+  const rest = held.goesAt + SENDING_MS - Date.now();
+  if (rest > 0) snack.loading(t("compose.sending"), { id: snackId(draftId), duration: rest });
 }
 
 /** Undo leaves the card as its window ends: focus on it stays on the card (focusable, named), not on nothing. */
@@ -130,6 +136,11 @@ function parkFocus(draftId: number): void {
   if (typeof document === "undefined") return;
   const undo = document.activeElement?.closest(`[data-held-send="${draftId}"] [data-testid=held-undo]`);
   undo?.closest<HTMLElement>("[data-held-send]")?.focus({ preventScroll: true });
+}
+
+/** The card is about to leave the page (its copy shown in its place): focus in it goes on to the copy (Codex review #3). */
+export function cardLeaving(draftId: number): void {
+  keepFocus(draftId, heldById(draftId)?.copy?.messageId ?? null);
 }
 
 /** Focus on a card that goes: to its copy's header if it's there, else the conversation (never left on nothing). */
@@ -163,7 +174,8 @@ const EARLY_MAX = 20;
 export function holdSend(input: HoldInput): void {
   const { cancel, ...shown } = input;
   const draftId = shown.draftId;
-  settleHeld(draftId);
+  // a stale entry for it goes; the pane the sender just gave it stays
+  settleHeld(draftId, true);
   const undo = registerUndo(async () => {
     if (heldById(draftId)) patch(draftId, { phase: "undoing" });
     let won: boolean;
@@ -172,10 +184,17 @@ export function holdSend(input: HoldInput): void {
     } catch (error) {
       // still held for all anyone knows: it can be tried again (the snack's Retry, or the card's Undo)
       const now = heldById(draftId);
-      if (now?.phase === "undoing") patch(draftId, { phase: Date.now() < now.goesAt ? "holding" : "sending" });
+      if (now?.phase === "undoing") {
+        const still = Date.now() < now.goesAt;
+        if (!still) parkFocus(draftId);
+        patch(draftId, { phase: still ? "holding" : "sending" });
+      }
       throw error;
     }
-    if (!won && heldById(draftId)?.phase === "undoing") patch(draftId, { phase: "sending" });
+    if (!won && heldById(draftId)?.phase === "undoing") {
+      parkFocus(draftId);
+      patch(draftId, { phase: "sending" });
+    }
   });
   const held: HeldSend = { ...shown, phase: "holding", undo, copy: null };
   useHeldSends.setState((s) => ({ holds: [...s.holds, held] }));
@@ -199,13 +218,18 @@ function windowEnded(draftId: number): void {
     patch(draftId, { phase: "sending" });
   }
   if (useSnack.getState().undo === held.undo && held.undo.state === "ready") useSnack.setState({ undo: null });
-  const id = snackId(draftId);
-  if (useSnack.getState().current?.id === id) {
-    // the backend's clock started first: its "Message sent" can already be waiting behind the Undo
-    if (newsWaiting()) dismissSnack(id);
-    else snack.loading(t("compose.sending"), { id, duration: SENDING_MS });
-  }
+  undoLeavesDock(draftId);
   if (held.copy && !shownAnywhere(draftId)) settleHeld(draftId);
+}
+
+/** The dock's Undo for this hold, if it shows, becomes the spinner (plan 158), or gives way to a result already waiting. */
+function undoLeavesDock(draftId: number): void {
+  const id = snackId(draftId);
+  const current = useSnack.getState().current;
+  if (current?.id !== id || !current.action) return;
+  // the backend's clock started first: its "Message sent" can already be waiting behind the Undo
+  if (newsWaiting()) dismissSnack(id);
+  else snack.loading(t("compose.sending"), { id, duration: SENDING_MS });
 }
 
 /** Undo from the card: the same token z and the snack run. */
@@ -231,6 +255,7 @@ export function heldWent(sent: ScheduledSent): void {
   parkFocus(sent.draftId);
   patch(sent.draftId, { copy, phase: "sending" });
   if (useSnack.getState().undo === held.undo && held.undo.state === "ready") useSnack.setState({ undo: null });
+  undoLeavesDock(sent.draftId);
   if (held.threadId === null) {
     if (getApp().heldView === sent.draftId) {
       revealSent(sent.messageId);

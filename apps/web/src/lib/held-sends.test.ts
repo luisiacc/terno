@@ -250,3 +250,50 @@ describe("focus (Codex critique #12)", () => {
     unmount();
   });
 });
+
+describe("what the Codex code review found", () => {
+  it("#2: its copy known while the dock offers Undo (held there by a hover): the offer goes, a spinner stays", () => {
+    vi.useFakeTimers();
+    hold(51, 10);
+    flushFrames();
+    expect(dockOffers(51)).toBe(true);
+    useSnack.setState({ paused: ["hover"] });
+    heldWent({ draftId: 51, threadId: 10, messageId: 600 });
+    expect(heldById(51)).toBeUndefined();
+    expect(useSnack.getState().current?.action).toBeUndefined();
+    expect(useSnack.getState().undo).toBeNull();
+  });
+
+  it("#4: Undo out across the window's end, then too late or failed: focus stays on the card", async () => {
+    vi.useFakeTimers();
+    for (const outcome of ["late", "failed"] as const) {
+      document.body.innerHTML = `<article data-held-send="52" tabindex="-1"><button data-testid="held-undo">Undo</button></article>`;
+      const unmount = card(52);
+      let answer!: () => void;
+      hold(52, 10, () => new Promise<boolean>((done, fail) => (answer = () => (outcome === "late" ? done(false) : fail(new Error("offline"))))));
+      document.querySelector<HTMLElement>("[data-testid=held-undo]")!.focus();
+      const undoing = runUndo(heldById(52)!.undo).catch(() => {});
+      vi.advanceTimersByTime(HOLD);
+      expect(heldById(52)?.phase).toBe("undoing");
+      answer();
+      await undoing;
+      expect(heldById(52)?.phase).toBe("sending");
+      expect(document.activeElement).toBe(document.querySelector("[data-held-send]"));
+      unmount();
+      resetHeldSends();
+    }
+  });
+
+  it("#6: a card left after its window, before it's queued: the dock says it's going (no Undo), for a bounded time", () => {
+    vi.useFakeTimers();
+    const unmount = card(53);
+    hold(53, 10);
+    vi.advanceTimersByTime(HOLD);
+    unmount();
+    flushFrames();
+    const current = useSnack.getState().current;
+    expect(current).toMatchObject({ id: "held-send-53", tone: "loading" });
+    expect(current?.action).toBeUndefined();
+    expect(current!.duration).toBeLessThanOrEqual(30_000);
+  });
+});

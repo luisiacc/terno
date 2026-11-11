@@ -221,6 +221,7 @@ describe("the send sound (plan 170)", () => {
   it("plan 182: a held send shows as sent at once: a new message in its own pane (the pane's only if it was writing it)", async () => {
     const { resetHeldSends, useHeldSends } = await import("./held-sends");
     setApp({ settings: { undoSend: true } as import("@terno/core/rpc").AppSettings });
+    resetHeldSends();
     try {
       const key = createDraft({ ...newFields(1), toText: "ana@example.com", subject: "Lunch", bodyText: "Hola" });
       setApp({ compose: { key, seq: 1 } });
@@ -244,6 +245,25 @@ describe("the send sound (plan 170)", () => {
       expect(await q).toBe(true);
       expect(getApp()).toMatchObject({ compose: { key: "someone-else" }, heldView: null });
       expect(useHeldSends.getState().holds).toHaveLength(1);
+
+      // Codex review #1: it went before compose.hold's answer came: its conversation opens from the pane, which isn't left empty
+      resetHeldSends();
+      rpc.calls.length = 0;
+      setApp({ compose: null, heldView: null });
+      const { heldWent, setHeldThreadOpener } = await import("./held-sends");
+      const open = vi.fn();
+      setHeldThreadOpener(open);
+      const late = createDraft({ ...newFields(1), toText: "ana@example.com", bodyText: "Hola" });
+      setApp({ compose: { key: late, seq: 4 } });
+      const r = sendDraft(late);
+      await tick();
+      const id = useDrafts.getState().drafts[late]!.id!;
+      heldWent({ draftId: id, threadId: 70, messageId: 700 });
+      settle("compose.hold", { held: true });
+      expect(await r).toBe(true);
+      expect(open).toHaveBeenCalledWith(70);
+      expect(getApp().heldView).toBeNull();
+      expect(useHeldSends.getState().holds).toHaveLength(0);
     } finally {
       resetHeldSends();
       setApp({ compose: null, heldView: null });
