@@ -29,7 +29,8 @@ import { ReportPreview } from "./diag/report-preview";
 import { useNativeReload } from "~/lib/native-reload";
 import { useAiDraftUi } from "~/lib/ai-draft-state";
 import { IconButton } from "@terno/ui/components/icon-button";
-import { ChevronLeft } from "@terno/ui/icons";
+import { ChevronLeft, KeyRound } from "@terno/ui/icons";
+import { needsSignIn } from "~/lib/sign-in";
 
 /** plan 106: opened on an account, its row (expanded by the tab) takes the first focus; else the dialog's own */
 function initialFocus(): boolean | HTMLElement {
@@ -81,6 +82,8 @@ export function SettingsDialog() {
   const tab = useApp((s) => s.settingsTab);
   const settings = useApp((s) => s.settings);
   const hasDevMode = useApp((s) => s.devAi !== null);
+  // plan 184: accounts that need a sign-in (the Accounts entry says so)
+  const signIns = useApp((s) => s.accounts.filter(needsSignIn).length);
   const stylePage = useAiDraftUi((s) => s.stylePage) && tab === "ai";
 
   // back to Drafting, focus on the button that opened Writing style (pass 3), as the palette's pages go back
@@ -144,11 +147,13 @@ export function SettingsDialog() {
                   key={value}
                   value={value}
                   data-testid={`tab-${value}`}
+                  aria-label={value === "accounts" && signIns ? `${label}, ${t("settings.accounts.needsSignIn", { count: signIns })}` : undefined}
                   data-settings-tab={value}
                   className="h-auto justify-start gap-2.5 rounded-md border border-transparent px-2 py-0.5 font-normal text-sidebar-foreground after:hidden not-data-active:hover:bg-sidebar-hover hover:text-sidebar-foreground data-active:bg-sidebar-accent data-active:font-medium data-active:text-sidebar-accent-foreground data-active:shadow-none dark:data-active:border-transparent dark:data-active:bg-sidebar-accent dark:data-active:shadow-none"
                 >
                   <Icon className="size-4 text-sidebar-glyph" />
                   {label}
+                  {value === "accounts" && signIns > 0 && <KeyRound aria-hidden className="ms-auto size-[1.15em] text-muted-foreground" data-testid="tab-accounts-sign-in" />}
                 </TabsTrigger>
               ))}
             </TabsList>
@@ -213,3 +218,4 @@ export function SettingsDialog() {
     </Dialog>
   );
 }
+

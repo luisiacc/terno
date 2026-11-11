@@ -1,21 +1,23 @@
 import { SentCopies } from "./sent-copies";
 import { RecipientReceipts } from "./recipient-receipts";
 import { localized } from "~/lib/i18n";
-import { separatesTabs, type Account, type CategoryColor } from "@terno/core";
+import { separatesTabs, signInMethod, unhandled, type Account, type CategoryColor, type SignInMethod } from "@terno/core";
 import type { AppSettings } from "@terno/core/rpc";
 import { Accordion, AccordionItem, AccordionPanel, AccordionTrigger } from "@terno/ui/components/accordion";
 import { Button, GHOST_DANGER_PRESS } from "@terno/ui/components/button";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Input } from "@terno/ui/components/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/popover";
 import { Switch } from "@terno/ui/components/switch";
 import { cn } from "@terno/ui/lib/utils";
-import { Plus, RefreshCw, Trash2 } from "@terno/ui/icons";
+import { KeyRound, Plus, RefreshCw, Trash2 } from "@terno/ui/icons";
 import { t } from "@terno/i18n";
 import { useEffect, useId, useState } from "react";
 import { snack } from "~/lib/snack";
 import { setSeparateTabs } from "~/lib/gmail-tabs";
 import { client } from "~/rpc/connection";
-import { canStart, clearAttemptError, needsSignIn, prepareGoogle, signInAgain, useSignIn } from "~/lib/sign-in";
+import { canStart, clearAttemptError, needsGoogleScript, needsSignIn, prepareGoogle, signInAgain, useSignIn } from "~/lib/sign-in";
+import SignInPanel from "../sign-in-panel";
 import { retryIn } from "../connection-pill";
 import { getApp, setApp, useApp } from "~/state/app";
 import { patchAccount, type AccountEdit } from "~/lib/accounts";
@@ -26,8 +28,6 @@ import { AccountRemoveDialog } from "../account-remove-dialog";
 import { ColorPicker, CommitInput, SettingsGroup, SettingsRow, type SettingsUpdate } from "./parts";
 import CaptureRecovery from "./capture-recovery";
 
-
-const WEB = import.meta.env.VITE_TARGET === "web";
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -48,6 +48,15 @@ function status(a: Account): string {
   return t("account.status.upToDate");
 }
 
+/** What the button says for an account that works: the way it would sign in again (plan 184: every method names one). */
+function changeLabel(method: SignInMethod): string {
+  switch (method) {
+  case "password": return t("account.changePassword");
+  case "google": return t("account.connectGoogle");
+  default: return unhandled(method);
+  }
+}
+
 /**
  * Gmail signs in again with Google (in the browser, Google's own window); IMAP with the password, checked by a live
  * login. The same attempt as the sidebar's sign-in panel (plan 25): its error shows here, under the button.
@@ -56,15 +65,17 @@ function Reconnect({ account }: { account: Account }) {
   const [asking, setAsking] = useState(false);
   const [password, setPassword] = useState("");
   const attempt = useSignIn((s) => s.attempts.get(account.id) ?? null);
-  const google = useSignIn((s) => s.google);
+  const script = useSignIn((s) => s.google);
   const busy = Boolean(attempt?.busy);
   const passwordId = useId();
+  const method = signInMethod(account.kind);
+  const google = needsGoogleScript(account);
   // the web's Google popup needs its script before the click (Codex review #9)
   useEffect(() => {
-    if (WEB && account.kind === "gmail") prepareGoogle();
-  }, [account.kind]);
+    if (google) prepareGoogle();
+  }, [google]);
   const run = async () => {
-    if (await signInAgain(account, account.kind === "imap" ? password : undefined)) {
+    if (await signInAgain(account, method === "password" ? password : undefined)) {
       setAsking(false);
       setPassword("");
     }
@@ -75,7 +86,7 @@ function Reconnect({ account }: { account: Account }) {
       {attempt.error.detail && <p className="text-muted-foreground">{attempt.error.detail}</p>}
     </div>
   ) : null;
-  if (account.kind === "imap" && asking) {
+  if (method === "password" && asking) {
     return (
       <div className="flex w-full flex-col gap-1.5">
         <form
@@ -125,9 +136,9 @@ function Reconnect({ account }: { account: Account }) {
       </div>
     );
   }
-  const ready = canStart(account, google);
-  const failed = !ready && google === "failed";
-  const label = needsSignIn(account) ? t("account.signInAgain") : account.kind === "gmail" ? t("account.connectGoogle") : t("account.changePassword");
+  const ready = canStart(account, script);
+  const failed = !ready && script === "failed";
+  const label = needsSignIn(account) ? t("account.signInAgain") : changeLabel(method);
   return (
     <div className="flex w-full min-w-0 flex-col items-end gap-1.5">
       <Button
@@ -136,10 +147,10 @@ function Reconnect({ account }: { account: Account }) {
         focusableWhenDisabled
         disabled={busy}
         aria-disabled={busy || (!ready && !failed) || undefined}
-        loading={busy || (google === "loading" && !ready)}
+        loading={busy || (script === "loading" && !ready)}
         data-testid="account-reconnect"
         onClick={() => {
-          if (account.kind === "imap") setAsking(true);
+          if (method === "password") setAsking(true);
           // Google's script didn't load (offline?): this click tries again (Codex code review #4)
           else if (failed) prepareGoogle();
           else if (ready) void run();
@@ -217,12 +228,53 @@ function AccountEditor({ account, generalWindow, isOwner }: { account: Account; 
   );
 }
 
+/** the account's row in Settings: where focus goes once its sign-in panel is gone */
+const settingsRow = (accountId: number) => document.querySelector<HTMLElement>(`[data-testid="settings-account"][data-account-id="${accountId}"] [data-testid="account-toggle"]`);
+
+/**
+ * Plan 184: a collapsed account that needs a sign-in has its way to sign in on the row, under its text (the same
+ * panel as the sidebar's key), so nothing has to be opened first. An open section shows it among its rows instead.
+ */
+function RowSignIn({ account }: { account: Account }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="flex pb-2.5 pl-5 group-data-open/account:hidden" data-sign-in-ui>
+      <Popover
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (!next) clearAttemptError(account.id);
+        }}
+      >
+        <PopoverTrigger
+          onFocus={() => {
+            if (needsGoogleScript(account)) prepareGoogle();
+          }}
+          render={<Button type="button" variant="outline" size="sm" aria-label={t("account.signInAgainFor", { email: account.email })} data-testid="account-row-sign-in" />}
+        >
+          <KeyRound /> {t("account.signInAgain")}
+        </PopoverTrigger>
+        <PopoverContent
+          side="bottom"
+          align="start"
+          sideOffset={6}
+          className="max-h-(--available-height) w-80 max-w-(--available-width) gap-3 overflow-y-auto"
+          data-testid="sign-in-popover"
+          data-sign-in-ui
+        >
+          <SignInPanel accounts={[account]} home={settingsRow} onLater={() => setOpen(false)} />
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
+}
+
 /** One account in the list: its row opens its settings in place (an accordion section, several may be open). */
 function AccountItem({ account, generalWindow, isOwner }: { account: Account; generalWindow: number; isOwner: boolean }) {
   // a sign-in to redo reads calmly (plan 25); a real error or an outage in the error ink
   const attention = !needsSignIn(account) && (account.syncState.status === "error" || account.syncState.status === "offline");
   return (
-    <AccordionItem value={account.id} data-testid="settings-account" data-account-id={account.id}>
+    <AccordionItem value={account.id} className="group/account" data-testid="settings-account" data-account-id={account.id}>
       <AccordionTrigger level={4} className="-mx-2 w-[calc(100%+1rem)] rounded-md px-2 py-2.5 [contain:inline-size]" data-testid="account-toggle">
         <CategoryDot color={account.color as CategoryColor} />
         <span className="min-w-0 flex-1">
@@ -232,6 +284,7 @@ function AccountItem({ account, generalWindow, isOwner }: { account: Account; ge
           </span>
         </span>
       </AccordionTrigger>
+      {needsSignIn(account) && <RowSignIn account={account} />}
       <AccordionPanel>
         <AccountEditor account={account} generalWindow={generalWindow} isOwner={isOwner} />
       </AccordionPanel>

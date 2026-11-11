@@ -10,7 +10,7 @@
  *   Google page timing out five minutes later), whether or not the account needed a sign-in
  *   (Settings changes a healthy account's password through the same path).
  */
-import type { Account } from "@terno/core";
+import { signInMethod, unhandled, type Account } from "@terno/core";
 import { RpcError } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 import { create } from "zustand";
@@ -42,6 +42,8 @@ interface SignInState {
 export const useSignIn = create<SignInState>(() => ({ later: new Set(), announced: new Set(), attempts: new Map(), google: "idle", request: null }));
 
 export const needsSignIn = (a: Account): boolean => Boolean(a.syncState.authRequired);
+/** web: this account signs in in Google's popup, whose script must be loaded before the click (plan 184: by its method, not its kind) */
+export const needsGoogleScript = (a: Account): boolean => WEB && signInMethod(a.kind) === "google";
 /** a refused SMTP send on an IMAP account: only its sending waits (its mail still syncs) */
 export const sendOnly = (a: Account): boolean => a.syncState.authScope === "send";
 
@@ -110,7 +112,7 @@ export function prepareGoogle(): void {
 
 /** Can this account's sign-in start from a click now? (The web's Google popup needs its script first.) */
 export function canStart(account: Account, state: SignInState["google"]): boolean {
-  return !(WEB && account.kind === "gmail") || state === "ready";
+  return !needsGoogleScript(account) || state === "ready";
 }
 
 // ── attempts
@@ -144,13 +146,22 @@ export async function signInAgain(account: Account, password?: string): Promise<
   const mine = ++seq;
   setAttempt(account.id, { seq: mine, busy: true, error: null });
   try {
-    if (WEB && account.kind === "gmail") {
-      if (!google) throw new Error(t("web.google.loadFailed"));
-      await google.connectGmailWeb(account.email, account.id);
-    } else {
-      await client.call("accounts.reconnect", { id: account.id, password: account.kind === "imap" ? password : undefined });
+    const method = signInMethod(account.kind);
+    switch (method) {
+    case "password":
+      await client.call("accounts.reconnect", { id: account.id, password });
+      break;
+    case "google":
+      if (WEB) {
+        if (!google) throw new Error(t("web.google.loadFailed"));
+        await google.connectGmailWeb(account.email, account.id);
+        break;
+      }
+      await client.call("accounts.reconnect", { id: account.id });
       // plan 74: photos waiting for this sign-in may have come on: Settings shows the state now (an empty update reads it)
       if ((getApp().settings?.googlePhotosPending ?? []).includes(account.id)) setApp({ settings: await client.call("settings.update", {}) });
+      break;
+    default: unhandled(method);
     }
     if (!latest(account.id, mine)) return false;
     setAttempt(account.id, null);

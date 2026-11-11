@@ -5,17 +5,16 @@ import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/po
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { KeyRound } from "@terno/ui/icons";
 import { useEffect, useState } from "react";
-import { clearAttemptError, noticeAccounts, prepareGoogle, putOff, sendOnly, useSignIn } from "~/lib/sign-in";
+import { clearAttemptError, needsGoogleScript, noticeAccounts, prepareGoogle, putOff, sendOnly, useSignIn } from "~/lib/sign-in";
 import { useApp } from "~/state/app";
 import SignInPanel from "./sign-in-panel";
 
-const WEB = import.meta.env.VITE_TARGET === "web";
 /** on the web, Google's script before the click: an account needs it now */
 function usePrepare(accounts: readonly Account[]): void {
-  const gmail = accounts.some((a) => a.kind === "gmail");
+  const google = accounts.some(needsGoogleScript);
   useEffect(() => {
-    if (WEB && gmail) prepareGoogle();
-  }, [gmail]);
+    if (google) prepareGoogle();
+  }, [google]);
 }
 
 /** Closing the panel drops errors left in it (the next look starts clean); an attempt in flight keeps going. */
@@ -105,7 +104,7 @@ const markers = new Map<number, () => void>();
 
 /** Plan 106: Sign In Again… from the account's menu: its key's panel beside its row, prepared as a focus on the key would (Google's script on the web). */
 export function openSignInMarker(account: Account): void {
-  if (WEB && account.kind === "gmail") prepareGoogle();
+  if (needsGoogleScript(account)) prepareGoogle();
   markers.get(account.id)?.();
 }
 
@@ -137,7 +136,7 @@ export function SignInMarker({ account }: { account: Account }) {
           render={
             <PopoverTrigger
               onFocus={() => {
-                if (WEB && account.kind === "gmail") prepareGoogle();
+                if (needsGoogleScript(account)) prepareGoogle();
               }}
               render={
                 <button

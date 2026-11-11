@@ -247,19 +247,34 @@ test.describe("signing in again", () => {
   });
 });
 
-test("Settings says it calmly (not in the error ink) and signs in from there; a healthy account's wrong password shows its error", async ({ app: page, server }) => {
+test("Settings says it calmly (not in the error ink) and signs in from the row; a healthy account's wrong password shows its error", async ({ app: page, server }) => {
   const { personal, freelance } = await accounts(server);
   await refuse(server, personal);
   await page.getByTestId("open-settings").click();
-  await page.getByTestId("tab-accounts").click();
+  // plan 184: the nav says so (a quiet key, and how many in its name)
+  const tab = page.getByTestId("tab-accounts");
+  await expect(tab).toHaveAccessibleName("Accounts, 1 needs a sign-in");
+  await expect(tab.getByTestId("tab-accounts-sign-in")).toBeVisible();
+  await tab.click();
   const item = page.locator(`[data-testid=settings-account][data-account-id="${personal.id}"]`);
   const line = item.getByTestId("account-toggle").locator("span span").nth(1);
   await expect(line).toContainText("Needs you to sign in again");
   await expect(line).not.toHaveClass(/text-destructive-ink/);
+  // plan 184: the way to sign in is on the row (nothing to open first); open, the section shows its own instead
+  const row = item.getByTestId("account-row-sign-in");
+  await expect(row).toHaveAccessibleName(`Sign in again to ${personal.email}`);
   await item.getByTestId("account-toggle").click();
-  await item.getByRole("button", { name: "Sign in again", exact: true }).click();
+  await expect(row).toBeHidden();
+  await expect(item.getByRole("button", { name: "Sign in again", exact: true })).toBeVisible();
+  await item.getByTestId("account-toggle").click();
+  await row.click();
+  await popover(page).getByTestId("sign-in-google").click();
   await expect(page.getByTestId("snack-message").getByText(`${personal.email} is connected again`)).toBeVisible();
   await expect(line).toContainText("Up to date");
+  await expect(row).toHaveCount(0);
+  await expect(tab).toHaveAccessibleName("Accounts");
+  // focus was in the panel that went away: back on the account's row, inside Settings
+  await expect(item.getByTestId("account-toggle")).toBeFocused();
   // Codex review #8: a password change on an account that works says what went wrong, in place
   const other = page.locator(`[data-testid=settings-account][data-account-id="${freelance.id}"]`);
   await other.getByTestId("account-toggle").click();
@@ -267,6 +282,64 @@ test("Settings says it calmly (not in the error ink) and signs in from there; a 
   await other.getByLabel(`Password for ${freelance.email}`).fill("not-it");
   await other.getByTestId("account-reconnect-submit").click();
   await expect(other.getByTestId("account-reconnect-error")).toContainText("That password didn’t work.");
+});
+
+test("plan 184: Settings' row by keyboard: the password field gets focus, a wrong one says so in place, the right one returns focus to the row", async ({ app: page, server }) => {
+  const { personal, freelance } = await accounts(server);
+  await refuse(server, personal, freelance);
+  await page.getByTestId("open-settings").click();
+  await expect(page.getByTestId("tab-accounts")).toHaveAccessibleName("Accounts, 2 need a sign-in");
+  await page.getByTestId("tab-accounts").click();
+  const item = page.locator(`[data-testid=settings-account][data-account-id="${freelance.id}"]`);
+  await item.getByTestId("account-toggle").focus();
+  await page.keyboard.press("Tab");
+  await expect(item.getByTestId("account-row-sign-in")).toBeFocused();
+  await page.keyboard.press("Enter");
+  const field = popover(page).getByLabel(`Password for ${freelance.email}`);
+  await expect(field).toBeFocused();
+  await field.fill("not-it");
+  await page.keyboard.press("Enter");
+  await expect(popover(page).getByTestId("sign-in-error")).toContainText("That password didn’t work.");
+  await expect(field).toHaveValue("not-it");
+  await field.fill(SIGN_IN_PASSWORD);
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("snack-message").getByText(`${freelance.email} is connected again`)).toBeVisible();
+  await expect(item.getByTestId("account-toggle")).toBeFocused();
+  await expect(page.getByTestId("settings-dialog")).toBeVisible();
+  await expect(page.getByTestId("tab-accounts")).toHaveAccessibleName("Accounts, 1 needs a sign-in");
+});
+
+test("plan 184: axe and a look at Settings' row and its panel, in light and dark", { tag: "@design" }, async ({ app: page, server }) => {
+  for (const theme of ["light", "dark"] as const) {
+    await scenario(theme, async () => {
+      for (const a of await server.backend.store.accounts.list()) await signedInElsewhere(server, a);
+      await server.backend.server.invoke("settings.update", { theme }, ctx);
+      await page.reload();
+      await page.locator("[data-ready]").waitFor();
+      const { freelance } = await accounts(server);
+      await refuse(server, freelance);
+      await page.getByTestId("open-settings").click();
+      await page.getByTestId("tab-accounts").click();
+      const item = page.locator(`[data-testid=settings-account][data-account-id="${freelance.id}"]`);
+      await expect(item.getByTestId("account-row-sign-in")).toBeVisible();
+      const wcag = (selector: string) => new AxeBuilder({ page }).setLegacyMode().withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).include(selector);
+      const violations = async (selector: string) => (await wcag(selector).analyze()).violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.html.slice(0, 140)).join(", ")}`);
+      expect(await violations("[data-testid=accounts-group]")).toEqual([]);
+      expect(await violations("[data-testid=tab-accounts]")).toEqual([]);
+      await stabilize(page);
+      await page.mouse.move(0, 0);
+      await expect(item).toHaveScreenshot(`settings-row-${theme}.png`);
+      const shots = process.env.SIGN_IN_SHOTS;
+      if (shots) await page.screenshot({ path: join(shots, `${(await page.locator("html").getAttribute("data-design")) ?? "macos"}-${theme}-settings.png`) });
+      await item.getByTestId("account-row-sign-in").click();
+      await expect(popover(page).getByLabel(`Password for ${freelance.email}`)).toBeFocused();
+      expect(await violations("[data-testid=sign-in-popover]")).toEqual([]);
+      if (shots) await page.screenshot({ path: join(shots, `${(await page.locator("html").getAttribute("data-design")) ?? "macos"}-${theme}-settings-open.png`) });
+      await page.keyboard.press("Escape");
+      await expect(item.getByTestId("account-row-sign-in")).toBeFocused();
+      await page.keyboard.press("Escape");
+    });
+  }
 });
 
 test("Spanish: the line, the key and the panel speak it", async ({ app: page, server }) => {

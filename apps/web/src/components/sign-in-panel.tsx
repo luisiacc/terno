@@ -1,4 +1,4 @@
-import type { Account, CategoryColor } from "@terno/core";
+import { signInMethod, unhandled, type Account, type CategoryColor } from "@terno/core";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { CategoryDot } from "@terno/ui/components/category-dot";
@@ -6,24 +6,32 @@ import { Input } from "@terno/ui/components/input";
 import { PopoverDescription, PopoverTitle } from "@terno/ui/components/popover";
 import { cn } from "@terno/ui/lib/utils";
 import { Spinner } from "@terno/ui/components/spinner";
-import { useEffect, useId, useState } from "react";
-import { canStart, clearAttemptError, prepareGoogle, sendOnly, signInAgain, useSignIn, type Attempt } from "~/lib/sign-in";
+import { createContext, useContext, useEffect, useId, useRef, useState, type RefObject } from "react";
+import { canStart, clearAttemptError, needsGoogleScript, prepareGoogle, sendOnly, signInAgain, useSignIn, type Attempt } from "~/lib/sign-in";
 
 const WEB = import.meta.env.VITE_TARGET === "web";
+
+/** the sidebar's account row: where focus goes when the panel it was in goes away */
+const sidebarRow = (accountId: number) => document.querySelector<HTMLElement>(`[data-testid="nav-account-${accountId}"]`);
+
+/** where this panel is (its next action is looked for only inside it) and where focus goes after it (Codex review of plan 184, #5) */
+const Scope = createContext<{ root: RefObject<HTMLDivElement | null>; home(accountId: number): HTMLElement | null }>({ root: { current: null }, home: sidebarRow });
 
 /**
  * Plan 25: the sign-in panel. One account: its
  * name, a line saying nothing is lost, and its one action. Several: one hairline section each.
  * Errors are inline, under the account they belong to; "Later" closes it.
  */
-export default function SignInPanel({ accounts, onLater }: { accounts: Account[]; onLater: () => void }) {
+export default function SignInPanel({ accounts, onLater, home = sidebarRow }: { accounts: Account[]; onLater: () => void; home?: (accountId: number) => HTMLElement | null }) {
   const one = accounts.length === 1 ? accounts[0]! : null;
-  const webGmail = WEB && accounts.some((a) => a.kind === "gmail");
+  const webGmail = accounts.some(needsGoogleScript);
+  const root = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (webGmail) prepareGoogle();
   }, [webGmail]);
   return (
-    <div className="flex flex-col gap-3" data-sign-in-ui data-testid="sign-in-panel">
+    <Scope.Provider value={{ root, home }}>
+    <div ref={root} className="flex flex-col gap-3" data-sign-in-ui data-testid="sign-in-panel">
       <div className="flex flex-col gap-1">
         {one ? (
           <div className="flex min-w-0 items-center gap-2">
@@ -54,22 +62,30 @@ export default function SignInPanel({ accounts, onLater }: { accounts: Account[]
         </Button>
       </div>
     </div>
+    </Scope.Provider>
   );
 }
 
-/** Focus was on what just went away (the panel, its section, the notice): the next account's action, else the account's row. */
-function settleFocus(accountId: number): void {
+/**
+ * Focus was on what just went away (the panel, its section, the notice): the next account's action in this panel,
+ * else where the panel came from (the account's row). Focus the user moved elsewhere stays.
+ */
+function settleFocus(accountId: number, scope: React.ContextType<typeof Scope>): void {
   const active = document.activeElement;
   if (active && active !== document.body && !active.closest("[data-sign-in-ui]")) return;
-  const next = document.querySelector<HTMLElement>(`[data-sign-in-ui] [data-sign-in-action]:not([data-account-id="${accountId}"])`);
-  (next ?? document.querySelector<HTMLElement>(`[data-testid="nav-account-${accountId}"]`))?.focus();
+  const panel = scope.root.current?.isConnected ? scope.root.current : null;
+  const next = panel?.querySelector<HTMLElement>(`[data-sign-in-action]:not([data-account-id="${accountId}"])`);
+  (next ?? scope.home(accountId))?.focus();
 }
 
-async function run(account: Account, password?: string): Promise<boolean> {
-  const ok = await signInAgain(account, password);
-  // after the account's event has redrawn the panel (its section gone, or the one left laid out alone)
-  if (ok) requestAnimationFrame(() => settleFocus(account.id));
-  return ok;
+function useRun(): (account: Account, password?: string) => Promise<boolean> {
+  const scope = useContext(Scope);
+  return async (account, password) => {
+    const ok = await signInAgain(account, password);
+    // after the account's event has redrawn the panel (its section gone, or the one left laid out alone)
+    if (ok) requestAnimationFrame(() => settleFocus(account.id, scope));
+    return ok;
+  };
 }
 
 function AccountSignIn({ account, expanded = false }: { account: Account; expanded?: boolean }) {
@@ -79,7 +95,7 @@ function AccountSignIn({ account, expanded = false }: { account: Account; expand
   // alone in the panel its field is just there; among several it waits for "Enter password". Once shown it stays
   // (latched as it renders: another account failing later never takes a half-typed password away, review 2)
   if (expanded && !asking) setAsking(true);
-  const form = account.kind === "imap" && asking;
+  const form = signInMethod(account.kind) === "password" && asking;
   return (
     <>
       {!expanded && (
@@ -99,7 +115,7 @@ function AccountSignIn({ account, expanded = false }: { account: Account; expand
       )}
       <AttemptError attempt={attempt} />
       {/* the web's Google script didn't load (offline?): say so; the button tries again (Codex code review #4) */}
-      {WEB && account.kind === "gmail" && google === "failed" && (
+      {needsGoogleScript(account) && google === "failed" && (
         <p role="alert" className="text-xs leading-relaxed text-destructive-ink" data-testid="sign-in-google-failed">
           {t("web.google.loadFailed")}
         </p>
@@ -110,12 +126,18 @@ function AccountSignIn({ account, expanded = false }: { account: Account; expand
 
 function Action({ account, attempt, google, onAsk }: { account: Account; attempt: Attempt | null; google: ReturnType<typeof useSignIn.getState>["google"]; onAsk: () => void }) {
   const common = { "data-sign-in-action": true, "data-account-id": account.id } as const;
-  if (account.kind === "imap") {
+  const run = useRun();
+  const method = signInMethod(account.kind);
+  switch (method) {
+  case "password":
     return (
       <Button size="sm" variant="outline" onClick={onAsk} data-testid="sign-in-password-reveal" {...common}>
         {t("signIn.password.reveal")}
       </Button>
     );
+  case "google":
+    break;
+  default: unhandled(method);
   }
   // the desktop's Google page is open in the browser: say where the user is expected, and offer it again
   if (attempt?.busy && !WEB) {
@@ -154,6 +176,7 @@ function Action({ account, attempt, google, onAsk }: { account: Account; attempt
 function PasswordForm({ account, attempt, autoFocus }: { account: Account; attempt: Attempt | null; autoFocus: boolean }) {
   const [password, setPassword] = useState("");
   const id = useId();
+  const run = useRun();
   const busy = Boolean(attempt?.busy);
   return (
     <form
@@ -173,6 +196,8 @@ function PasswordForm({ account, attempt, autoFocus }: { account: Account; attem
         autoComplete="current-password"
         autoFocus={autoFocus}
         required
+        // what's being checked can't change under it (Settings' rule, Codex review of plan 184 #6)
+        readOnly={busy}
         className="h-8 flex-1"
         placeholder={t("account.password")}
         value={password}
