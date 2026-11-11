@@ -23,3 +23,21 @@ it("forgets a removed account's browser token while a sibling remains usable", a
     await sibling.close();
   }
 });
+
+it("plan 184 (code review #2): photos without a live browser token report the refusal they carry on past", async () => {
+  const broker = createGmailTokenBroker({ now: () => 1000 });
+  const refused: unknown[] = [];
+  const requests: string[] = [];
+  const provider = broker.provider({ account: { id: 1 }, store: {}, config: {}, refused: (error: unknown) => refused.push(error), fetch: async (url: string | URL | Request) => {
+    requests.push(String(url));
+    return Response.json({});
+  } } as unknown as ProviderContext);
+  try {
+    await provider.photos!({ connections: true, otherContacts: false }).catch(() => {});
+    expect(requests).toEqual([]);
+    expect(refused.length).toBeGreaterThan(0);
+    expect(refused[0]).toBeInstanceOf(ProviderAuthError);
+  } finally {
+    await provider.close();
+  }
+});

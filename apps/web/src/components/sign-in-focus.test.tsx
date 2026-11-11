@@ -6,7 +6,16 @@ import type { Account } from "@terno/core";
 import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/popover";
 import SignInPanel from "./sign-in-panel";
 
+// plan 184 (code review #3): a sign-in that finishes later, on cue
+const pending = vi.hoisted(() => ({ finish: null as null | ((ok: boolean) => void) }));
+vi.mock("~/lib/sign-in", async (importActual) => ({
+  ...(await importActual<typeof import("~/lib/sign-in")>()),
+  signInAgain: vi.fn(() => new Promise<boolean>((resolve) => { pending.finish = resolve; })),
+}));
+
 vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+// focus settles a frame after a sign-in: a frame is a turn here
+vi.stubGlobal("requestAnimationFrame", (run: FrameRequestCallback) => setTimeout(() => run(0), 0));
 vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
 vi.stubGlobal("matchMedia", (media: string) => ({ media, matches: false, addEventListener() {}, removeEventListener() {} }));
 
@@ -38,3 +47,22 @@ it.each([true, false])("keeps the same focused password field through two, one, 
   } finally { await act(async () => root.unmount()); host.remove(); }
 });
 
+it("plan 184 (code review #3): a sign-in finishing after its panel closed leaves focus in another account's password field", async () => {
+  const host = document.createElement("div"); document.body.append(host);
+  const home = document.createElement("button"); document.body.append(home);
+  const root = createRoot(host);
+  const google = { ...account(1), kind: "gmail" } as Account, imap = account(2);
+  // each account's own popover (Settings' rows), never one reused for the other
+  const panel = (a: Account) => <Popover key={a.id} open><PopoverTrigger render={<button>Open</button>} /><PopoverContent><SignInPanel accounts={[a]} home={() => home} onLater={() => {}} /></PopoverContent></Popover>;
+  try {
+    await act(async () => root.render(<StrictMode>{panel(google)}</StrictMode>));
+    await act(async () => document.querySelector<HTMLButtonElement>('[data-testid="sign-in-google"]')!.click());
+    expect(pending.finish).not.toBeNull();
+    // its panel closed (the Google page still open in the browser); another account's opened, a password typed
+    await act(async () => root.render(<StrictMode>{panel(imap)}</StrictMode>));
+    const input = document.querySelector<HTMLInputElement>('[data-testid="sign-in-password"]')!;
+    await act(async () => input.focus());
+    await act(async () => { pending.finish!(true); await new Promise((r) => setTimeout(r, 50)); });
+    expect(document.activeElement).toBe(input);
+  } finally { await act(async () => root.unmount()); host.remove(); home.remove(); }
+});

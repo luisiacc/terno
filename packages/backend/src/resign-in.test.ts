@@ -524,6 +524,33 @@ describe("plan 184: whichever call a refused sign-in comes out of, the account s
     expect(t.state(id)).toMatchObject({ authRequired: false });
   });
 
+  it("code review #1: a recheck lifting the refusal while the refused action is still being parked: the action goes", async () => {
+    const t = await setup();
+    const [id] = t.ids as [number];
+    await t.backend.start();
+    await expect.poll(() => t.state(id).status).toBe("idle");
+    const p = t.providers.get(id)!;
+    p.refuseOps.add("archive");
+    const action = t.op(id, "archive");
+    const park = t.backend.store.ops.awaitAuth.bind(t.backend.store.ops);
+    vi.spyOn(t.backend.store.ops, "awaitAuth").mockImplementationOnce(async (...args) => {
+      // the boundary marked it already; IMAP takes the saved password again (Retry) before this park lands
+      expect(t.state(id)).toMatchObject({ authRequired: true });
+      p.refuseOps.clear();
+      // the sync the recheck starts doesn't finish (a slow or failing server): it can't be what lets the action go
+      p.syncGate = new Promise<void>((r) => (release = r));
+      await t.client.call("sync.now", { accountId: id, reason: "user" });
+      await expect.poll(() => t.state(id).authRequired).toBe(false);
+      return park(...args);
+    });
+    let release!: () => void;
+    try {
+      await t.backend.runWorker();
+      await expect.poll(() => t.opRow(action).state).toBe("succeeded");
+      expect(p.executed).toEqual(["archive", "archive"]);
+    } finally { release?.(); }
+  });
+
   it("an IMAP send refused by SMTP is only its sending, wherever it's reported", async () => {
     const t = await setup();
     const [id] = t.ids as [number];

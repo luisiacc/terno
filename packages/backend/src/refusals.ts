@@ -10,19 +10,17 @@ export interface Refusal {
 /**
  * Plan 184: the one boundary where a provider's refused sign-in reaches the account, whatever method raised it
  * (a sync, an action, a search, a body, a folder change, photos) and whatever provider kind it is. Every method's
- * rejection is looked at; a ProviderAuthError not already reported (by `tokenResult` or `refused`, which know its
- * generation better) is handed to `refused` with the generation read as the call began, and the caller sees the
- * error only once the account says so (whether or not that was saved: a caller that must know awaits the report
- * itself). Values and synchronous results pass through untouched.
+ * rejection is looked at; a ProviderAuthError is handed to `refused` with the generation read as the call began
+ * (even if `tokenResult` reported it with the token's: a refusal is idempotent, and the call's generation is what
+ * its caller acts on), and the caller sees the error only once the account says so (whether or not that was saved:
+ * a caller that must know awaits the report itself). Values and synchronous results pass through untouched.
  */
 export function observeRefusals(provider: MailProvider, o: {
   generation(): number;
-  /** already reported to the account (by the context's callbacks, or an earlier call) */
-  reported(error: ProviderAuthError): boolean;
   refused(refusal: Refusal): Promise<void>;
 }): MailProvider {
   const report = (error: unknown, generation: number, send: boolean): Promise<void> | undefined => {
-    if (!(error instanceof ProviderAuthError) || o.reported(error)) return;
+    if (!(error instanceof ProviderAuthError)) return;
     return o.refused({ error, generation, send }).catch(() => {});
   };
   const wrapped = new Map<PropertyKey, { method: (...args: unknown[]) => unknown; through: (...args: unknown[]) => unknown }>();

@@ -1664,16 +1664,16 @@ export class BackendCore {
       }) : undefined;
       if (!this.current(life)) { google?.close(); return null; }
       if (google) this.google.set(accountId, google);
-      // plan 184: IMAP's own refusals (push, a Sent copy) are of the credentials this provider was made with
-      const madeWith = this.credentialsOf(accountId);
       const created = this.options.providers.create({
         yield: () => this.platform.yield(),
         google,
         tokenResult: (generation, error) => {
           if (error instanceof ProviderAuthError) this.reportRefusal(error, status.refuse({ ...authority, generation }, error));
         },
+        // plan 184: work no caller sees fail (push, a Sent copy, a web token missing under photos): the credentials
+        // now (a sign-in that replaced this provider's ended its lifetime; a renewal that kept it, they're its own)
         refused: (error) => {
-          if (!this.refusals.has(error)) this.reportRefusal(error, this.refused(accountId, account.kind, life, madeWith, error, false));
+          if (!this.refusals.has(error)) this.reportRefusal(error, this.refused(accountId, account.kind, life, this.credentialsOf(accountId), error, false));
         },
         flagObservation: true,
         store: this.providerStore(life), account, config: cfg.config,
@@ -1710,7 +1710,6 @@ export class BackendCore {
       // plan 184: whichever method a refusal comes out of, the account says so before its caller hears of it
       const provider = observeRefusals(created, {
         generation: () => this.credentialsOf(accountId),
-        reported: (error) => this.refusals.has(error),
         refused: ({ error, generation, send }) => this.reportRefusal(error, this.refused(accountId, account.kind, life, generation, error, send)),
       });
       life.provider = provider;
@@ -2733,9 +2732,10 @@ export class BackendCore {
           await this.store.ops.release(op.id, this.now());
           this.kickWorker();
         } else if (error instanceof ProviderAuthError) {
-          // the account already says so (the provider's boundary, plan 184): this only parks the action
+          // the account already says so (the provider's boundary, plan 184): this only parks the action, and lets it go
+          // at once if the account recovered meanwhile (a sign-in, or a recheck lifting it with the same credentials)
           await this.store.ops.awaitAuth(op.id, message, this.now());
-          if (this.current(life)) await this.parkedAcrossSignIn(op.account_id, credentials);
+          if (this.current(life) && !(await this.parkedAcrossSignIn(op.account_id, credentials)) && !this.statuses.get(op.account_id)?.holds(op.kind)) await this.resumeAuth(op.account_id);
         } else if (error instanceof ProviderError && error.ambiguous) {
           await this.store.ops.markUnknown(op.id, message, this.now());
           if (isFolderOp(op.kind)) this.notifyChanged([]);
