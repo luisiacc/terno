@@ -65,6 +65,20 @@ export const en = {
       body: "Every action, folder, setting and snippet, a few letters away. What you use most comes first.",
       points: [],
     },
+    agents: {
+      title: "Your AI agents, every inbox.",
+      body: "Connect Claude Code, Codex, Cursor or any app that speaks MCP, and it can search and read all your accounts through Terno. It’s off until you turn it on, and you decide whether agents may only read, also organize, or also send.",
+      points: ["Claude Code, Codex, Cursor, any MCP app", "Off until you turn it on", "Read only, organize or send: your call"],
+      /** the example session beside it: the setup line, a question, Terno's tool at work, the answer */
+      demo: {
+        you: "You",
+        agent: "Agent",
+        ask: "Which invoices haven’t I paid yet? Check every account.",
+        query: "invoice",
+        found: "4 conversations in 3 accounts",
+        answer: "Three are still open: Acme Studio, due Friday; Northwind, in your work account; and the studio rent, in your personal one.",
+      },
+    },
     keyboard: {
       title: "Never touch the mouse.",
       body: "Move, archive, file, reply and undo from the keyboard. Press ? for every shortcut.",

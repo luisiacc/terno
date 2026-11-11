@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { SiteCopy } from "../copy";
 import { DownloadMac, WaitlistLink } from "../parts/download";
 import { Github } from "../parts/icons";
+import { AgentSession, agentsPrivacyLink } from "../parts/agents";
 import { Kbd } from "../parts/kbd";
 import { Logo } from "../parts/logo";
 import { PRO_LEAD, PRO_MORE, Peek, ProLeadShot, proPrivacyLink } from "../parts/pro";
@@ -219,6 +220,14 @@ export const Letter: HomeDesign = ({ copy }) => {
         </Feature>
         <Feature copy={copy} id="palette">
           <Detail copy={copy} name="palette-detail" wide="site-wide" />
+        </Feature>
+        <Feature copy={copy} id="agents">
+          <AgentSession copy={copy} className="mt-12" s={{ window: "letter-window", body: "bg-(--l-bg) text-(--l-ink)", who: "text-[0.72rem] font-semibold tracking-[0.08em] text-(--l-muted) uppercase", tool: "text-(--l-muted)", dim: "text-(--l-muted)" }} />
+          <p className="mt-6 text-[15px]">
+            <a href={agentsPrivacyLink(copy).href} className={link}>
+              {agentsPrivacyLink(copy).label}
+            </a>
+          </p>
         </Feature>
         <Feature copy={copy} id="keyboard">
           <dl className="letter-keys mt-10">

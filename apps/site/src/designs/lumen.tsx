@@ -4,6 +4,7 @@ import { DownloadMac, WaitlistLink } from "../parts/download";
 import { Check, ChevronRight, ExternalLink, Github, ShieldCheck } from "../parts/icons";
 import { Kbd } from "../parts/kbd";
 import { Logo } from "../parts/logo";
+import { AgentSession, agentsPrivacyLink } from "../parts/agents";
 import { PRO_LEAD, PRO_MORE, Peek, ProLeadShot, proPrivacyLink } from "../parts/pro";
 import { DESIGN_SHOTS, Shot, type ShotName } from "../parts/shot";
 import { Waitlist } from "../parts/waitlist";
@@ -305,6 +306,17 @@ export const Lumen: HomeDesign = ({ copy }) => {
               <Section name="snippets-detail" copy={copy} wide="site-wide" />
             </div>
           </div>
+        </Row>
+
+        <Row id="agents" f={f.agents}>
+          <div className={stage}>
+            <AgentSession copy={copy} s={{ window: "lumen-window rounded-xl", body: "bg-(--l-raise) text-(--l-fg)", who: "text-[0.7rem] font-semibold tracking-[0.08em] text-(--l-accent-ink) uppercase", tool: "text-(--l-muted)", dim: "text-(--l-muted)" }} />
+          </div>
+          <p className="mt-6">
+            <a href={agentsPrivacyLink(copy).href} className="lumen-link text-[0.98rem]">
+              {agentsPrivacyLink(copy).label}
+            </a>
+          </p>
         </Row>
 
         {/* keyboard */}

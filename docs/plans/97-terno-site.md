@@ -205,3 +205,12 @@ Codex reviewed `751dba9d4..3d66d4725` and raised three points. All three are fix
 
 - Secret `CLOUDFLARE_API_TOKEN`: a user API token from the "Edit Cloudflare Workers" template plus Account → D1 → Edit and Zone → DNS → Edit, scoped to the account and the terno.app zone. Replace it there if it's revoked or expires.
 - Variable `CLOUDFLARE_ACCOUNT_ID`: the account the Worker and the D1 database live in.
+
+## AI agents (MCP)
+
+The owner: "what i meant initially, was to put this capability on the terno marketing site" (connecting AI agents to Terno over MCP so they can read every inbox; the app side is plan 183).
+
+- **Copy (en, es):** `features.agents`: "Your AI agents, every inbox.", which apps (Claude Code, Codex, Cursor, any MCP app), and the two promises plan 183 keeps: off until you turn it on, and read only, organize or send as you choose. `demo` holds the example session's words.
+- **The picture is text, not a screenshot** (`parts/agents.tsx`, `AgentSession`): a terminal window with the real setup command (its path shortened), a question, Terno's real tool (`search_emails`) at work and the agent's answer. Text reads in both languages and to a screen reader, needs no retake when the app changes, and imitates no agent's own interface. Each design colors it with its tokens.
+- **Where:** Midnight, a full-width card in the features grid after ⌘K and ⌘; (the words left, the session right; stacked on a phone). Lumen, a row after Snippets. Letter, a part of the letter before the keyboard. Each links to the privacy page's `#agents` section, which says what those tools can reach.
+- **Tests:** `render.test.ts` checks every design and language shows the heading, the body, the command, the tool, the example and the `#agents` link, and that `/es/` is in Spanish; the site e2e's axe runs cover the section in every design, light and dark, desktop and phone.

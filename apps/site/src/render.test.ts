@@ -145,6 +145,34 @@ describe("Terno Pro (plan 97)", () => {
   });
 });
 
+describe("AI agents over MCP (plan 97)", () => {
+  const homes = routes().filter((r) => r.page === "home");
+
+  it("every home design shows it in its language: the heading, the real setup command and tool, the example, and a link to the privacy page's section on agents", () => {
+    for (const route of homes) {
+      const copy = COPY[route.lang];
+      const page = new JSDOM(render(route).body).window.document;
+      const heading = [...page.querySelectorAll("h2, h3")].find((h) => h.textContent === copy.features.agents.title);
+      expect(heading, route.path).toBeDefined();
+      const section = heading!.closest("section, article")!;
+      const text = section.textContent!;
+      expect(text).toContain(copy.features.agents.body);
+      expect(text).toContain("claude mcp add terno -- /Applications/Terno.app/…/terno-mcp");
+      expect(text).toContain("terno · search_emails");
+      for (const line of [copy.features.agents.demo.ask, copy.features.agents.demo.answer]) expect(text).toContain(line);
+      const privacy = route.lang === "es" ? "/es/privacy/" : "/privacy/";
+      expect(section.querySelector(`a[href="${privacy}#agents"]`), route.path).not.toBeNull();
+      expect(new JSDOM(render(routes().find((r) => r.path === privacy)!).body).window.document.querySelector("section#agents"), privacy).not.toBeNull();
+    }
+  });
+
+  it("is in Spanish on /es/", () => {
+    const es = new JSDOM(render(routes().find((r) => r.path === "/es/")!).body).window.document;
+    expect(es.body.textContent).toContain(COPY.es.features.agents.demo.ask);
+    expect(es.body.textContent).not.toContain(COPY.en.features.agents.demo.ask);
+  });
+});
+
 describe("the main design", () => {
   it("/ and /es/ render Midnight, without the hero keycaps", () => {
     for (const path of ["/", "/es/"]) {

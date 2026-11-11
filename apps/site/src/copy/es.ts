@@ -66,6 +66,19 @@ export const es: SiteCopy = {
       body: "Cada acción, carpeta, ajuste y plantilla, a unas letras. Lo que más usas sale primero.",
       points: [],
     },
+    agents: {
+      title: "Tus agentes de IA, en todos tus buzones.",
+      body: "Conecta Claude Code, Codex, Cursor o cualquier app compatible con MCP, y podrá buscar y leer todas tus cuentas a través de Terno. Está desactivado hasta que lo activas, y tú decides si los agentes solo pueden leer, también organizar o también enviar.",
+      points: ["Claude Code, Codex, Cursor, cualquier app MCP", "Desactivado hasta que lo activas", "Solo leer, organizar o enviar: tú eliges"],
+      demo: {
+        you: "Tú",
+        agent: "Agente",
+        ask: "¿Qué facturas tengo sin pagar? Mira en todas mis cuentas.",
+        query: "factura",
+        found: "4 conversaciones en 3 cuentas",
+        answer: "Quedan tres: Acme Studio, que vence el viernes; Northwind, en tu cuenta del trabajo; y el alquiler del estudio, en la personal.",
+      },
+    },
     keyboard: {
       title: "Olvídate del ratón.",
       body: "Muévete, archiva, clasifica, responde y deshaz desde el teclado. Pulsa ? para ver todos los atajos.",

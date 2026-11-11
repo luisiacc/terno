@@ -4,6 +4,7 @@ import { DownloadMac, WaitlistLink } from "../parts/download";
 import { Check, ChevronRight, Github, Languages, Mails } from "../parts/icons";
 import { Kbd } from "../parts/kbd";
 import { Logo } from "../parts/logo";
+import { AgentSession, agentsPrivacyLink } from "../parts/agents";
 import { PRO_LEAD, PRO_MORE, Peek, ProLeadShot, proPrivacyLink } from "../parts/pro";
 import { DESIGN_SHOTS, Shot, type ShotName } from "../parts/shot";
 import { Waitlist } from "../parts/waitlist";
@@ -258,6 +259,21 @@ export const Midnight: HomeDesign = ({ copy, route }) => {
             </Card>
             <Card f={f.snippets} className="lg:col-span-3">
               <Section name="snippets-detail" copy={copy} sizes={halfWide} className="site-wide mt-auto" />
+            </Card>
+            <Card f={f.agents} className="md:col-span-2 lg:col-span-6 lg:flex-row lg:items-center lg:gap-12">
+              <div className="mt-auto lg:mt-0 lg:w-[56%] lg:shrink-0">
+                <div className="relative">
+                  <div className="mn-glow mn-glow-soft" aria-hidden="true" />
+                  <AgentSession
+                    copy={copy}
+                    s={{ window: "mn-window relative rounded-xl", body: "bg-(--mn-raised) text-(--mn-fg)", who: `${mono} text-[0.66rem] text-(--mn-accent)`, tool: "text-(--mn-muted)", dim: "text-(--mn-dim)" }}
+                  />
+                </div>
+                <a href={agentsPrivacyLink(copy).href} className={`mt-5 inline-flex items-center gap-0.5 text-sm ${link}`}>
+                  {agentsPrivacyLink(copy).label}
+                  <ChevronRight size="1.15em" />
+                </a>
+              </div>
             </Card>
             <Card f={f.codes} className="lg:col-span-2">
               <Section name="code-detail" copy={copy} sizes="(min-width: 1024px) 320px, (min-width: 768px) 45vw, 90vw" />
