@@ -35,7 +35,7 @@ describe("theme registry", () => {
     expect(light.secondary).toBe(light.muted);
     // ring: primary at the lowest alpha ≥ .55 that still reaches 3:1 on the background and on the sidebar
     expect(parseColor(light.ring).alpha).toBe(0.8);
-    expect(parseColor(dark.ring).alpha).toBe(0.6);
+    expect(parseColor(dark.ring).alpha).toBe(0.65);
     expect(parseColor(light.overlay).alpha).toBe(0.16);
     expect(parseColor(dark.overlay).alpha).toBe(0.6);
     expect(parseColor(dark["sidebar-translucent"]).alpha).toBe(0.62);

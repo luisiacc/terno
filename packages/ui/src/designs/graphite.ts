@@ -34,7 +34,7 @@ const TYPE: Record<TypeRole, TypeSpec> = {
 
 /**
  * Graphite (plan 137): a simple system. SF in regular and medium at -0.15px (the ink half a step heavier, plan 174); type at 12, 13, 14 and 24; #171717,
- * #5D5D5D and #9E9E9E; 8 px navigation, 16 px cards, pill buttons. White panes divided by hairlines, no avatars in rows,
+ * #5D5D5D and #A4A4A4; 8 px navigation, 16 px cards, pill buttons. White panes divided by hairlines, no avatars in rows,
  * and "New message" as a plain row, so the only filled pills are real calls to action.
  */
 export const graphite: DesignDefinition = {

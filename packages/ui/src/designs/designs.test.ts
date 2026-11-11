@@ -97,11 +97,11 @@ describe("designs (plan 15)", () => {
       expect(g.icon.nav).toBe(14);
     });
 
-    it("hierarchy: #171717 and #5D5D5D in light, #EDEDED and #9E9E9E in dark", () => {
+    it("hierarchy: #171717 and #5D5D5D in light, #EDEDED and #A4A4A4 in dark (#9E9E9E in its sidebar)", () => {
       const light = builtinTheme("graphite-light")!.tokens;
       const dark = builtinTheme("graphite-dark")!.tokens;
       expect([light.foreground, light.primary, light["muted-foreground"]].map(hex)).toEqual(["#171717", "#171717", "#5D5D5D"]);
-      expect([dark.foreground, dark["muted-foreground"]].map(hex)).toEqual(["#EDEDED", "#9E9E9E"]);
+      expect([dark.foreground, dark["muted-foreground"]].map(hex)).toEqual(["#EDEDED", "#A4A4A4"]);
     });
   });
 
