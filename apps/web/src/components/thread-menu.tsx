@@ -674,13 +674,6 @@ function MenuItems() {
   const pins = usePins((s) => s.ids);
   const anyPinned = !scope && rows.some((t) => pins.has(t.id));
   const anyUnpinned = !scope && rows.some((t) => !pins.has(t.id));
-  // under More (the top level stays short, plan 158), first: P and the palette reach it in one step
-  const pinItems = (
-    <>
-      {anyUnpinned && <Item icon={<Pin />} label={t("actions.pin")} command="thread.pin" onClick={() => void pinThreads(ids)} testId="menu-pin" />}
-      {anyPinned && <Item icon={<PinOff />} label={t("actions.unpin")} command={anyUnpinned ? undefined : "thread.pin"} onClick={() => void unpinThreads(ids)} testId="menu-unpin" />}
-    </>
-  );
   const sender = scope ? null : sharedSender(rows);
   const filedIn = sender ? categories.filter((c) => rows.some((r) => r.categoryIds.includes(c.id))) : [];
   const fileTo = categories.filter((c) => !filedIn.includes(c));
@@ -762,6 +755,9 @@ function MenuItems() {
       {anyRead && <Item icon={<Mail />} label={t("actions.markUnread")} command="thread.toggleRead" onClick={() => run("markUnread")} testId="menu-unread" />}
       {anyPlain && <Item icon={<Star />} label={t("actions.star")} command="thread.star" onClick={() => run("star")} testId="menu-star" />}
       {anyStarred && <Item icon={<StarOff />} label={t("actions.unstar")} command={anyPlain ? undefined : "thread.star"} onClick={() => run("unstar")} testId="menu-unstar" />}
+      {/* plan 177 (the owner): beside Star, at the top level */}
+      {anyUnpinned && <Item icon={<Pin />} label={t("actions.pin")} command="thread.pin" onClick={() => void pinThreads(ids)} testId="menu-pin" />}
+      {anyPinned && <Item icon={<PinOff />} label={t("actions.unpin")} command={anyUnpinned ? undefined : "thread.pin"} onClick={() => void unpinThreads(ids)} testId="menu-unpin" />}
       <ContextMenuSeparator />
       {/* plan 87: a "select all N" has no ids to set them on */}
       <RemindSub ids={ids} disabled={scope !== null} />
@@ -824,7 +820,7 @@ function MenuItems() {
         </ContextMenuSubTrigger>
         {/* plan 158: everything else, under small labels; a row with several answers opens them beside it */}
         <ContextMenuSubContent className="w-80" data-testid="menu-more-list">
-          <MoreItems pins={pinItems} spam={spam} single={single} code={code} view={view} ids={ids} scope={scope !== null} sender={sender} categories={categories} fileTo={fileTo} filedIn={filedIn} />
+          <MoreItems spam={spam} single={single} code={code} view={view} ids={ids} scope={scope !== null} sender={sender} categories={categories} fileTo={fileTo} filedIn={filedIn} />
         </ContextMenuSubContent>
       </ContextMenuSub>
     </>
@@ -832,10 +828,9 @@ function MenuItems() {
 }
 
 /** "More ▸": what a row is rarely right-clicked for; a row with several answers opens them beside it. */
-function MoreItems({ pins, spam, single, code, view, ids, scope, sender, categories, fileTo, filedIn }: { pins: ReactNode; spam: MenuEntry | undefined; single: ThreadSummary | undefined; code: string | null; view: View; ids: number[]; scope: boolean; sender: { email: string; name: string } | null; categories: readonly Category[]; fileTo: readonly Category[]; filedIn: readonly Category[] }) {
+function MoreItems({ spam, single, code, view, ids, scope, sender, categories, fileTo, filedIn }: { spam: MenuEntry | undefined; single: ThreadSummary | undefined; code: string | null; view: View; ids: number[]; scope: boolean; sender: { email: string; name: string } | null; categories: readonly Category[]; fileTo: readonly Category[]; filedIn: readonly Category[] }) {
   return (
     <>
-      {pins}
       {spam && <Item {...spam} />}
       {single && code && (
         <Item

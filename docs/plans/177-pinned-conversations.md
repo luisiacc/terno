@@ -146,4 +146,6 @@ Five findings, all taken, each with a test that fails without its fix:
 
 ## The row menu (after the e2e)
 
-The row menu keeps at most eleven items at its top level (plan 158). Pin to top and Unpin made twelve, so they go first under **More ▸**, as Pin sits under the reader's More menu; P and the palette reach them in one step.
+The row menu keeps at most eleven items at its top level (plan 158). Pin to top and Unpin made twelve, so they first went under **More ▸**, as Pin sat under the reader's More menu.
+
+**The owner's call:** Pin is not under More anywhere. In the row menu, Pin to top (or Unpin) sits at the top level right after Star; the top level may hold twelve (`selection.spec`). On the reader's toolbar, Pin is an icon button beside Star, before Remind me: the outline pin while unpinned, filled in the ink while pinned (`aria-pressed`, named "Pin to top" or "Unpin", P in its tooltip), as Star fills when starred. `pins.spec` checks both in every style.

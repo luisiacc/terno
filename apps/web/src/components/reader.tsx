@@ -17,7 +17,7 @@ import { TernoMark } from "@terno/ui/brand/terno-mark";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
 import { useReplies } from "~/lib/replies";
-import { Archive, Bell, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Ellipsis, FileDown, Forward, Inbox, Layers, Mail, OctagonAlert, Pin, PinOff, Printer, Reply, ReplyAll, SquarePen, Star, SummaryDoc, Trash2 } from "@terno/ui/icons";
+import { Archive, Bell, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Ellipsis, FileDown, Forward, Inbox, Layers, Mail, OctagonAlert, Pin, Printer, Reply, ReplyAll, SquarePen, Star, SummaryDoc, Trash2 } from "@terno/ui/icons";
 import { type ReactNode, type RefCallback, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/popover";
 import { reminderShort, useReminders, useRemindPopover } from "~/lib/reminders";
@@ -134,10 +134,18 @@ const COLUMN = READING_COLUMN;
 /** Between the toolbar's groups; a narrow reader has no room for it. */
 const ToolbarDivider = ({ className }: { className?: string }) => <Separator orientation="vertical" className={cn("my-auto h-4 @max-[420px]:hidden", className)} />;
 
-/** What's done to a whole conversation less often than triage: pin, mark as unread, print, export, copy. Their keys and the palette still reach them. */
-function ToolbarMore({ threadId }: { threadId: number }) {
-  // plan 177: this conversation's pin (one boolean: only this toolbar renders when it changes)
+/** Plan 177 (the owner): Pin beside Star; filled while this conversation is pinned. One boolean: only this button renders when it changes. */
+function PinButton({ threadId }: { threadId: number }) {
   const pinned = usePins((s) => s.ids.has(threadId));
+  return (
+    <IconButton label={t(pinned ? "actions.unpin" : "actions.pin")} shortcut="p" aria-pressed={pinned} onClick={() => void (pinned ? unpinThreads([threadId]) : pinThreads([threadId]))} data-testid="action-pin" className={cn(tool, pinned && "text-foreground")}>
+      <Pin className={cn(pinned && "fill-current")} />
+    </IconButton>
+  );
+}
+
+/** What's done to a whole conversation less often than triage: mark as unread, print, export, copy. Their keys and the palette still reach them. */
+function ToolbarMore({ threadId }: { threadId: number }) {
   return (
     <DropdownMenu onOpenChange={(open) => setApp({ menuOpen: open })}>
       <Tooltip>
@@ -153,11 +161,6 @@ function ToolbarMore({ threadId }: { threadId: number }) {
         <TooltipContent>{t("reader.more")}</TooltipContent>
       </Tooltip>
       <DropdownMenuContent align="start" sideOffset={6} className="w-64" data-testid="reader-more-menu">
-        <DropdownMenuItem data-testid="action-pin" onClick={() => void (pinned ? unpinThreads([threadId]) : pinThreads([threadId]))}>
-          {pinned ? <PinOff /> : <Pin />}
-          <span className="flex-1">{t(pinned ? "actions.unpin" : "actions.pin")}</span>
-          <DropdownMenuShortcut><Shortcut keys="p" /></DropdownMenuShortcut>
-        </DropdownMenuItem>
         <DropdownMenuItem data-testid="action-unread" onClick={() => act("markUnread")}>
           <Mail />
           <span className="flex-1">{t("actions.markUnread")}</span>
@@ -1248,6 +1251,7 @@ function ReaderContent() {
         <IconButton key={thread?.id ?? "none"} label={thread?.starred ? t("actions.unstar") : t("actions.star")} shortcut="s" onClick={() => toggleStar()} data-testid="action-star" className={cn(tool, thread?.starred && "text-star hover:text-star")}>
           <Star className={cn(thread?.starred && "fill-star")} />
         </IconButton>
+        <PinButton threadId={selectedId} />
         <RemindButton key={`remind-${selectedId}`} threadId={selectedId} />
         {summarize && <SummarizeButton threadId={selectedId} />}
         <ToolbarMore threadId={selectedId} />

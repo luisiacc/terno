@@ -1,5 +1,5 @@
 /**
- * Plan 177: pinned conversations. P, the row menu or the reader's More menu
+ * Plan 177: pinned conversations. P, the row menu or the reader's Pin button
  * pins one to the Inbox's top, under a quiet "Pinned" heading above the due
  * reminders and the mail; putting it away (archive) ends the pin and its Undo
  * brings it back; elsewhere a pinned row shows a quiet pin.
@@ -7,7 +7,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import { E2E_NOW } from "./constants";
-import { expect, focusList, fresh, menuPath, openRow, rows, scenario, searchBox, test } from "./fixtures";
+import { expect, focusList, fresh, openRow, rows, scenario, searchBox, test } from "./fixtures";
 
 const snackWith = (page: Page, text: string | RegExp) => page.locator("[data-testid=snack]").filter({ hasText: text });
 const rowOf = (page: Page, id: string | number) => page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`);
@@ -39,16 +39,42 @@ test.describe("pinned conversations", () => {
       pinned.push(id);
     });
 
-    await scenario("from the row menu: More ▸ Pin to top (the top level stays short); the newest pin leads", async () => {
+    await scenario("the reader's toolbar: Pin beside Star, pressed while pinned; it unpins and pins again", async () => {
+      const pin = page.getByTestId("action-pin");
+      const star = page.getByTestId("action-star");
+      await expect(pin).toHaveAttribute("aria-pressed", "true");
+      await expect(pin).toHaveAccessibleName("Unpin");
+      // right after Star, on its line
+      const [s, p] = [await star.boundingBox(), await pin.boundingBox()];
+      expect(Math.abs(s!.y - p!.y)).toBeLessThan(1);
+      expect(p!.x).toBeGreaterThan(s!.x);
+      if (SHOTS) {
+        await pin.hover();
+        await expect(page.locator("[data-slot=tooltip-content]")).toContainText("Unpin");
+        await page.screenshot({ path: `${SHOTS}/toolbar-pinned-light.png` });
+        await page.emulateMedia({ colorScheme: "dark" });
+        await page.screenshot({ path: `${SHOTS}/toolbar-pinned-dark.png` });
+        await page.emulateMedia({ colorScheme: "light" });
+      }
+      await pin.click();
+      await expect(snackWith(page, "Unpinned")).toBeVisible();
+      await expect(pin).toHaveAttribute("aria-pressed", "false");
+      await expect(page.getByTestId("inbox-pinned-label")).toHaveCount(0);
+      await pin.click();
+      await expect(pin).toHaveAttribute("aria-pressed", "true");
+      await expect(rows(page).first()).toHaveAttribute("data-thread-id", pinned[0]!);
+    });
+
+    await scenario("from the row menu: Pin to top at the top level, right after Star; the newest pin leads", async () => {
       const id = await idAt(page, 5);
       await rowOf(page, id).click({ button: "right" });
-      await menuPath(page, "menu-more");
-      const more = page.getByTestId("menu-more-list");
-      // first under More, with its key
-      const first = more.locator("> [role=menuitem]").first();
-      await expect(first).toHaveAttribute("data-testid", "menu-pin");
-      await expect(first).toContainText("Pin to top");
-      await first.click();
+      const item = page.getByTestId("menu-pin");
+      await expect(item).toBeVisible();
+      await expect(item).toContainText("Pin to top");
+      // beside Star, not under More
+      await expect(page.getByTestId("menu-star").locator("xpath=following-sibling::*[1]")).toHaveAttribute("data-testid", "menu-pin");
+      if (SHOTS) await page.screenshot({ path: `${SHOTS}/row-menu-light.png` });
+      await item.click();
       await expect(snackWith(page, "Pinned to the top")).toBeVisible();
       await expect(rows(page).nth(0)).toHaveAttribute("data-thread-id", id);
       await expect(rows(page).nth(1)).toHaveAttribute("data-thread-id", pinned[0]!);

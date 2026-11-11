@@ -26,9 +26,9 @@ test.describe("remind me", () => {
     const row = rows(page).nth(2);
     const id = (await row.getAttribute("data-thread-id"))!;
     await row.click({ button: "right" });
-    // right after reply and triage
+    // right after reply, triage and the marks (Star, Pin)
     const items = await page.locator("[role=menu] > [data-testid^=menu-]").evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.testid));
-    expect(items.indexOf("menu-remind-always")).toBe(items.indexOf("menu-star") + 1);
+    expect(items.indexOf("menu-remind-always")).toBe(items.indexOf("menu-pin") + 1);
     await menuPath(page, "menu-remind-always");
     const list = page.getByTestId("menu-remind-always-list");
     // the day isn't said twice: "Tomorrow" beside its time, the if-no-reply kind inside

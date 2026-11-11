@@ -242,7 +242,8 @@ test.describe("context menu on one thread", () => {
       await rightClick(page, low);
       const own = () => menu(page).locator("> [role=menuitem]").evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.testid!));
       const top = await own();
-      expect(top.length).toBeLessThanOrEqual(11);
+      // plan 158 kept eleven; the owner put Pin to top beside Star (plan 177)
+      expect(top.length).toBeLessThanOrEqual(12);
       expect(top[0]).toBe("menu-reply");
       expect(top.indexOf("menu-forward")).toBeLessThan(top.indexOf("menu-archive"));
       expect(top.slice(top.indexOf("menu-archive"), top.indexOf("menu-archive") + 2)).toEqual(["menu-archive", "menu-trash"]);
