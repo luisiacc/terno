@@ -605,7 +605,8 @@
   background-color: color-mix(in oklab, var(--primary) 5%, transparent);
 }
 /* 1b · Whisper with a neutral fill in light (the owner: the accent's blue there didn't sit right); dark keeps the accent's
-   wash. Each fill is a surface text already reads on (contrast.ts): the tint (Settings' groups), muted, the field's ink */
+   wash. The tint (Settings' groups), whole or thinned over the page (the owner: lighter here); thinned, it sits between the
+   tint and the surface under it, so text reads on it as on both (contrast.ts) */
 @utility ai-whisper-tint {
   border-radius: calc(var(--card-radius) + 4px);
   background-color: var(--tint);
@@ -613,16 +614,16 @@
     background-color: color-mix(in oklab, var(--primary) 5%, transparent);
   }
 }
-@utility ai-whisper-muted {
+@utility ai-whisper-tint-65 {
   border-radius: calc(var(--card-radius) + 4px);
-  background-color: var(--muted);
+  background-color: color-mix(in oklab, var(--tint) 65%, transparent);
   &:is(.dark *) {
     background-color: color-mix(in oklab, var(--primary) 5%, transparent);
   }
 }
-@utility ai-whisper-field {
+@utility ai-whisper-tint-45 {
   border-radius: calc(var(--card-radius) + 4px);
-  background-color: var(--field);
+  background-color: color-mix(in oklab, var(--tint) 45%, transparent);
   &:is(.dark *) {
     background-color: color-mix(in oklab, var(--primary) 5%, transparent);
   }

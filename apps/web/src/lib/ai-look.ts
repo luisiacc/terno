@@ -6,7 +6,7 @@ import { useApp } from "~/state/app";
  * cards (the summary and Reply ready) beside today's, chosen in Settings → Dev mode, so only a local build ever sees one.
  * Kept in this window's storage: a choice of the developer's, never the profile's.
  */
-export const AI_LOOKS = ["current", "whisper", "whisperTint", "whisperMuted", "whisperField", "ledger", "float", "edge"] as const;
+export const AI_LOOKS = ["current", "whisper", "whisperTint", "whisperTint65", "whisperTint45", "ledger", "float", "edge"] as const;
 export type AiLook = (typeof AI_LOOKS)[number];
 
 const KEY = "terno.dev.aiLook";

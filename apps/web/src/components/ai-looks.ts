@@ -67,8 +67,9 @@ export const AI_LOOK_SPECS: Record<AiLook, AiLookSpec> = {
   whisper: WHISPER,
   // 1b · Whisper in dark as it is (the owner liked it); in light, a neutral grey from the palette instead of the accent's blue
   whisperTint: { ...WHISPER, card: "ai-whisper-tint" },
-  whisperMuted: { ...WHISPER, card: "ai-whisper-muted" },
-  whisperField: { ...WHISPER, card: "ai-whisper-field" },
+  // the owner: the tint, but lighter here
+  whisperTint65: { ...WHISPER, card: "ai-whisper-tint-65" },
+  whisperTint45: { ...WHISPER, card: "ai-whisper-tint-45" },
   // 2 · Mail's banner: no box, hairlines above and below, every line on the conversation's own left edge
   ledger: {
     ...CURRENT,
