@@ -9,7 +9,7 @@ import {
 } from "@terno/ai";
 import { AI_PROVIDER_IDS, canonicalThemeId, COMPATIBLE_PRESETS, DEFAULT_DESIGN, DESIGN_IDS, DESIGN_PALETTE, DEV_AI_PROVIDERS, fitsMode, isDesignId, JEV_DEFAULT_MODEL, SUMMARY_DEFAULT_MODEL, textRef, type DevAiKeys, themeMode, type AiTaskName, type AiTaskTarget, type CustomTheme, type TextRef, type ThemeMode } from "@terno/core";
 import type { AiProfile, AiSettings, AppSettings, SettingsPatch } from "@terno/core/rpc";
-import { DEFAULT_TODAY, FAVORITES_MAX, NUDGE_DEFAULT, type FavoriteFolder } from "@terno/core";
+import { DEFAULT_AGENTS, DEFAULT_TODAY, FAVORITES_MAX, NUDGE_DEFAULT, type AgentAccess, type AgentsSetting, type FavoriteFolder } from "@terno/core";
 import { isLanguageSetting, L, type Localized } from "@terno/i18n";
 import type { MailStore } from "@terno/store";
 import { unreadableSecrets } from "./keychain";
@@ -45,6 +45,10 @@ interface StoredSettings extends Partial<General> {
   localMailVersion?: number;
   /** plan 134: 1 once a switch that was on before it sent more mail was turned off (see stampSmartCategorize) */
   smartCategorizeVersion?: number;
+  /** before plan 183: whether agents could send (mapped on read, see migrateAgents) */
+  allowAgentSend?: boolean;
+  /** plan 183: 1 once agents became a choice (see migrateAgents) */
+  agentsVersion?: number;
 }
 
 export const APPEARANCE_VERSION = 3;
@@ -121,9 +125,26 @@ export function migrateLocalMail(s: StoredSettings): StoredSettings {
   return { ...rest, ai: { ...s.ai, provider: "none" }, aiCategorize: false, localMailVersion: LOCAL_MAIL_VERSION };
 }
 
+export const AGENTS_VERSION = 1;
+
+/**
+ * Plan 183: the MCP connector ran on every launch, never the user's choice.
+ * Every profile now starts with agents off. One that existed keeps the level
+ * it had (organize, or send if it allowed sending), ready for when the user
+ * turns agents on; a fresh one starts at read. `fresh` is read from the raw
+ * stored object, before the other migrations stamp it. Pure, like the others.
+ */
+export function migrateAgents(s: StoredSettings, fresh: boolean): StoredSettings {
+  if ((s.agentsVersion ?? 0) >= AGENTS_VERSION) return s;
+  const { allowAgentSend, ...rest } = s;
+  const access: AgentAccess = fresh ? DEFAULT_AGENTS.access : allowAgentSend ? "send" : "organize";
+  return { ...rest, agents: { enabled: false, access }, agentsVersion: AGENTS_VERSION };
+}
+
 /** Every read-time migration, in order. */
 function migrate(s: StoredSettings): StoredSettings {
-  return migrateLocalMail(migrateErrorReports(migrateRemoteImages(migrateAppearance(s))));
+  const fresh = Object.keys(s).length === 0;
+  return migrateAgents(migrateLocalMail(migrateErrorReports(migrateRemoteImages(migrateAppearance(s, fresh)))), fresh);
 }
 
 export const DEFAULT_SETTINGS: General = {
@@ -145,7 +166,8 @@ export const DEFAULT_SETTINGS: General = {
   // plan 24: nothing changes for anyone who doesn't choose List
   layout: "split",
   remoteImages: "ask",
-  allowAgentSend: false,
+  // plan 183: no connector until the user turns agents on
+  agents: DEFAULT_AGENTS,
   syncWindowDays: 180,
   autoCategorize: "auto",
   aiCategorize: false,
@@ -284,6 +306,11 @@ export async function readAttention(store: SettingsStore): Promise<Pick<AppSetti
 /** Local mode alone: read on every outbound request, so it skips everything else. */
 export async function readLocalMode(store: SettingsStore): Promise<boolean> {
   return (await stored(store)).localMode ?? DEFAULT_SETTINGS.localMode;
+}
+
+/** Plan 183: whether agents are on and at which level; light (no secrets), since the gate reads it on every agent call. */
+export async function readAgents(store: SettingsStore): Promise<AgentsSetting> {
+  return { ...DEFAULT_AGENTS, ...(await stored(store)).agents };
 }
 
 /** Plan 22: whether website icons may be fetched: in either mode, unless the user turned them off. */
@@ -531,7 +558,7 @@ export async function readSettings(store: SettingsStore): Promise<AppSettings> {
 /** The user's own settings, for what writes them down or works out what they were: an export never records the overlay. */
 export async function readStoredSettings(store: SettingsStore): Promise<AppSettings> {
   const s = await stored(store);
-  const { aiProvider: _p, aiModel: _m, ai: _ai, appearanceVersion: _v, remoteImagesVersion: _r, errorReportsVersion: _e, localMailVersion: _l, smartCategorizeVersion: _c, gmailClientId: _g, ...general } = s;
+  const { aiProvider: _p, aiModel: _m, ai: _ai, appearanceVersion: _v, remoteImagesVersion: _r, errorReportsVersion: _e, localMailVersion: _l, smartCategorizeVersion: _c, gmailClientId: _g, agentsVersion: _av, allowAgentSend: _as, ...general } = s;
   const { provider, profiles, capabilities } = aiState(s, s.aiProvider === undefined && !s.ai?.provider && (await store.secrets.has(keySecretName("anthropic"))));
   const profile = profiles[provider] ?? { model: "" };
   const secret = keySecretName(provider, profile.preset);
@@ -582,7 +609,7 @@ export async function updateSettings(store: SettingsStore, patch: SettingsPatch,
 }
 
 function patchedSettings(s: StoredSettings, patch: SettingsPatch, hasLegacyKey: boolean, now: number): StoredSettings {
-  const { ai: aiPatch, summaries: summariesPatch, ask: askPatch, followups: followupsPatch, replies: repliesPatch, today: todayPatch, ...rest } = patch;
+  const { ai: aiPatch, summaries: summariesPatch, ask: askPatch, followups: followupsPatch, replies: repliesPatch, today: todayPatch, agents: agentsPatch, ...rest } = patch;
   const general: Partial<General> = Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined));
   if (summariesPatch) {
     // the moment it went on: mail from before it is never sent (off and on again starts over)
@@ -597,6 +624,8 @@ function patchedSettings(s: StoredSettings, patch: SettingsPatch, hasLegacyKey: 
     general.followups = { ...was, ...followupsPatch, enabled, enabledAt: !enabled ? null : was.enabled ? was.enabledAt : now };
   }
   if (todayPatch) general.today = { ...DEFAULT_TODAY, ...s.today, ...todayPatch };
+  // plan 183: merged onto what is stored now, so a window's older copy can't bring a sibling back
+  if (agentsPatch) general.agents = { ...(s.agents ?? DEFAULT_AGENTS), ...Object.fromEntries(Object.entries(agentsPatch).filter(([, v]) => v !== undefined)) };
   if (repliesPatch) general.replies = { enabled: repliesPatch.enabled };
   if (askPatch) general.ask = { ...(s.ask ?? DEFAULT_SETTINGS.ask), enabled: askPatch.enabled };
   const state = aiState(s, hasLegacyKey);

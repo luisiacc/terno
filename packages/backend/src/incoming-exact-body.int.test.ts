@@ -106,6 +106,7 @@ it("keeps the same account-bound complete body contract for agent reads", async 
     const { msg } = await import("../../store/src/conformance/fixtures");
     const text = "exact agent content ".repeat(10000);
     const result = await backend.store.sync.ingest([msg({ accountId: account.id, bodyText: text, bodyState: "full" })], { now: 1, classifier: null, applyFilters: false });
+    await backend.server.invoke("settings.update", { agents: { enabled: true, access: "read" } }, { clientId: "setup", origin: "dev" });
     backend.connect(serverSide, { clientId: "body-agent", origin: "mcp" });
     expect((await client.call("threads.get", { threadId: result.touched[0]! })).messages[0]!.bodyText === text).toBe(true);
     expect(fixture.unexpected).toEqual([]);

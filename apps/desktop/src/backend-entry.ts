@@ -4,7 +4,7 @@
  * mail data never hops through the main process.
  */
 import { dirname, join } from "node:path";
-import { Backend, openNodeMailbox, nodeStore, parseGoogleClients, seedDemo, seedDemoCode, startAgentSocket, type LegacySecretReader, type SecretCipher } from "@terno/backend";
+import { Backend, openNodeMailbox, nodeStore, parseGoogleClients, seedDemo, seedDemoCode, type LegacySecretReader, type SecretCipher } from "@terno/backend";
 import { devAiKeys } from "@terno/core";
 import type { BackupSummary, MailboxGate } from "@terno/core/mailbox";
 import { cancelClones, classifyOpenError, diskFree, expireBackups, listBackups, mailboxBytes, migrateHeadroom, nodePlatform, prepareUpgrade, quarantineRestored, SCHEMA_VERSION, SqlMailStore, type BackupInfo, type UpgradePlan } from "@terno/db";
@@ -179,6 +179,8 @@ async function initialize(msg: Extract<MainToBackend, { type: "init" }>, signal:
       version: msg.version,
       cipher,
       legacySecrets,
+      // plan 183: the MCP socket opens there only while the user has agents on (start() and the switch decide)
+      agentEndpoint: { socketPath: msg.socketPath, tokenPath: msg.tokenPath },
       // the demo mailbox's sends go to the packaged smoke's SMTP server when it asks (main checked it may)
       // and plan 41's notification smoke adds an IMAP account on its own plain-text servers (the demo mailbox only,
       // and only for an account whose servers are loopback: imap-seam.ts)
@@ -216,8 +218,6 @@ async function initialize(msg: Extract<MainToBackend, { type: "init" }>, signal:
     await backend.start();
     if (signal.aborted) return;
     backend.windowFocus(MAIN_CLIENT, focused);
-    await startAgentSocket(backend, msg.socketPath, msg.tokenPath).catch((e) => log.warn("agents.socket_failed", { errno: (e as { code?: string }).code }));
-    if (signal.aborted) return;
     const b = backend;
     const countAccounts = async () => {
       const list = await b.store.accounts.list().catch(() => []);

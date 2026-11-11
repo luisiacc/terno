@@ -697,6 +697,8 @@ describe("nothing reaches MCP, bootstrap, account events, diagnostics or the log
 
   it("prompts and profiles stay out of bootstrap, the export, events, the logs and diagnostics, on the good path and when it goes wrong", async () => {
     const t = await setup();
+    // plan 183: agents on, at the top level, so what they don't see is kept from them, not switched off
+    await t.client.call("settings.update", { agents: { enabled: true, access: "send" } });
     const records: unknown[] = [];
     setDiagSink({ write: (entry) => void records.push(entry), capture: (record) => void records.push(record) });
     const events: string[] = [];
@@ -803,7 +805,7 @@ describe("provenance (§8)", () => {
 
   it("an agent can't speak for what was typed: it reads as the model's", async () => {
     const t = await setup();
-    await t.client.call("settings.update", { allowAgentSend: true });
+    await t.client.call("settings.update", { agents: { enabled: true, access: "send" } });
     const { send } = await drafted(t, "Hi Tom.");
     const { messageId } = await t.mcp.call("compose.send", { ...send, bodyText: "Hi Tom.", authoredText: "Something else entirely" });
     expect(await t.backend.store.writing.generations.forMessage(messageId)).toMatchObject({ final: null });

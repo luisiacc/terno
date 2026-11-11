@@ -1,7 +1,7 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { chmodSync, existsSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
-import type { Backend } from "./backend";
+import type { BackendCore } from "./core";
 import { socketTransport } from "./transports";
 
 export interface AgentEndpoint {
@@ -20,21 +20,36 @@ export interface AgentEndpoint {
  * Local endpoint for the MCP sidecar. Unix socket + a random token in a 0600
  * file next to it: only processes of this user that can read the token file
  * can talk to the backend. The first line on a connection must be the token.
+ * Plan 183: started and closed by the AgentConnector as the user turns agents on and off.
  */
-export async function startAgentSocket(backend: Backend, socketPath: string, tokenPath: string): Promise<AgentEndpoint> {
+export async function startAgentSocket(backend: BackendCore, socketPath: string, tokenPath: string): Promise<AgentEndpoint> {
   let token = "";
   let since = 0;
+  let closing = false;
   const writeToken = () => {
     token = randomBytes(32).toString("hex");
     writeFileSync(tokenPath, token, { mode: 0o600 });
     chmodSync(tokenPath, 0o600);
     since = backend.now();
   };
-  writeToken();
-  if (existsSync(socketPath)) rmSync(socketPath);
+  const removeFiles = () => {
+    rmSync(tokenPath, { force: true });
+    rmSync(socketPath, { force: true });
+  };
   let clients = 0;
+  // every accepted connection, so closing cuts the ones still in their handshake too (plan 183, Codex review #2)
+  const accepted = new Set<Socket>();
   const live = new Set<Socket>();
   const server: Server = createServer((socket) => {
+    if (closing) {
+      socket.destroy();
+      return;
+    }
+    accepted.add(socket);
+    socket.once("close", () => {
+      accepted.delete(socket);
+      live.delete(socket);
+    });
     let authed = false;
     let pending = "";
     const onData = (chunk: Buffer) => {
@@ -46,13 +61,12 @@ export async function startAgentSocket(backend: Backend, socketPath: string, tok
       }
       const offered = Buffer.from(pending.slice(0, nl).trim());
       const expected = Buffer.from(token);
-      if (offered.length !== expected.length || !timingSafeEqual(offered, expected)) {
+      if (closing || offered.length !== expected.length || !timingSafeEqual(offered, expected)) {
         socket.end('{"error":"unauthorized"}\n');
         return;
       }
       authed = true;
       live.add(socket);
-      socket.once("close", () => live.delete(socket));
       socket.off("data", onData);
       const rest = pending.slice(nl + 1);
       const transport = socketTransport(socket);
@@ -65,11 +79,20 @@ export async function startAgentSocket(backend: Backend, socketPath: string, tok
       if (!authed) socket.destroy();
     }, 5000).unref();
   });
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(socketPath, () => resolve());
-  });
-  chmodSync(socketPath, 0o600);
+  writeToken();
+  if (existsSync(socketPath)) rmSync(socketPath);
+  try {
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(socketPath, () => resolve());
+    });
+    chmodSync(socketPath, 0o600);
+  } catch (error) {
+    // nothing left behind that says agents can connect (Codex review #9)
+    server.close();
+    removeFiles();
+    throw error;
+  }
   const endpoint: AgentEndpoint = {
     socketPath,
     tokenPath,
@@ -84,10 +107,11 @@ export async function startAgentSocket(backend: Backend, socketPath: string, tok
     },
     close: () =>
       new Promise<void>((resolve) => {
+        closing = true;
         if (backend.agents === endpoint) backend.agents = null;
-        for (const socket of live) socket.destroy();
+        for (const socket of accepted) socket.destroy();
         server.close(() => resolve());
-        rmSync(tokenPath, { force: true });
+        removeFiles();
       }),
   };
   backend.agents = endpoint;

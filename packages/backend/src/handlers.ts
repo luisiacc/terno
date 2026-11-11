@@ -1,5 +1,5 @@
 import { RpcError, type Draft, type DraftAddress, type Handlers } from "@terno/core/rpc";
-import { capFilterName, categoryRule, folderRule, isFilterable, similarValue, COUNT_CAP, type AlwaysScope, LEARNED_FILTER_NAME, messageOf, proposeLearnedFilters, listFilterOf, LIST_FILTERS, matchExcerpt, parseSearch, resolveSearch, rowMatchOf, searchWithFilter, type ThreadAction, type AccountPrefs, PINS_MAX, REMINDERS_MAX, SCHEDULED_MAX, UNDO_SEND_MS, FORWARD_ADDRESSES_MAX_CHARS } from "@terno/core";
+import { agentsMaySend, capFilterName, categoryRule, folderRule, isFilterable, similarValue, COUNT_CAP, type AlwaysScope, LEARNED_FILTER_NAME, messageOf, proposeLearnedFilters, listFilterOf, LIST_FILTERS, matchExcerpt, parseSearch, resolveSearch, rowMatchOf, searchWithFilter, type ThreadAction, type AccountPrefs, PINS_MAX, REMINDERS_MAX, SCHEDULED_MAX, UNDO_SEND_MS, FORWARD_ADDRESSES_MAX_CHARS } from "@terno/core";
 import { L } from "@terno/i18n";
 import { movedNothing, SearchCancelledError, StaleCursorError, type AddedBy, type DraftRow, type FolderMoved, type MessageState } from "@terno/store";
 import { GMAIL_SCOPES } from "@terno/mail/portable";
@@ -17,7 +17,7 @@ import { gather, leaveTop, leftNothing, nothingLeft, returnTop, type TopLeft } f
 import { StorageMaintenance } from "./storage";
 import { FolderExports } from "./folder-export";
 import { deleteSnippet, listSnippets, saveSnippet } from "./snippets";
-import { followFavoriteFolders, readAutoCategorize, readSettings, setGooglePhotoState, SettingsError, updateSettings } from "./settings";
+import { followFavoriteFolders, readAgents, readAutoCategorize, readSettings, setGooglePhotoState, SettingsError, updateSettings } from "./settings";
 import { countFolder, createFolder, deleteFolder, favoriteFolder, renameFolder } from "./folders";
 import { googleClientFor } from "./google-client";
 import { authorizeGooglePhotos, setGooglePhotos } from "./icons/google";
@@ -127,7 +127,7 @@ export function createHandlers(b: Backend): Handlers {
   };
   /** Plan 116: an agent sets up no filing into a category that forwards, unless agents may send. */
   const agentMayFile = async (categoryIds: readonly number[]) => {
-    if (!categoryIds.length || (await readSettings(store)).allowAgentSend) return;
+    if (!categoryIds.length || agentsMaySend(await readAgents(store))) return;
     const forwarding = new Set((await store.categories.list()).filter((c) => c.forward?.enabled).map((c) => c.id));
     if (categoryIds.some((id) => forwarding.has(id))) throw new RpcError("FORBIDDEN", L("errors.forwardAgent"));
   };
@@ -720,7 +720,11 @@ export function createHandlers(b: Backend): Handlers {
       b.notifyChanged([]);
       return { ok: true as const };
     },
-    "categories.addThreads": ({ categoryId, threadIds, source }, ctx) => fileThreads(categoryId, threadIds, ctx.origin === "mcp" ? "agent" : ADDED_BY[source], source),
+    "categories.addThreads": async ({ categoryId, threadIds, source }, ctx) => {
+      // plan 183 (Codex critique #1): a later reply in a conversation an agent filed into a category that forwards goes too
+      if (ctx.origin === "mcp") await agentMayFile([categoryId]);
+      return fileThreads(categoryId, threadIds, ctx.origin === "mcp" ? "agent" : ADDED_BY[source], source);
+    },
     "categories.moveThreads": async ({ to, threadIds, source }, ctx) => {
       await requireCategory(to);
       // don't add the move to the turn that parsed 5,000 ids, nor to what that turn scheduled
@@ -783,12 +787,13 @@ export function createHandlers(b: Backend): Handlers {
     },
     "categorize.apply": async ({ categoryId, scope, always, filterName, move }, ctx) => {
       await requireCategory(categoryId);
+      // plan 183 (Codex critique #1): a later reply in a filed conversation forwards, so an agent's filing alone, not only
+      // its "always", needs leave to send
+      if (ctx.origin === "mcp") await agentMayFile([categoryId]);
       // plan 80: the filter first, so mail that arrives while the set is filed is caught by it (the set is fixed below)
       let filter: { id: number; filterUndo: number | null; retargeted: { from: number } | null } | null = null;
       let filterFailed = false;
       if (always && isFilterable(scope)) {
-        // plan 116: an agent's "always" is a filter filing new mail here: not into a category that forwards, unless agents may send
-        if (ctx.origin === "mcp") await agentMayFile([categoryId]);
         try {
           const f = await similarFilters.ensureRule(categoryRule(scope, categoryId), filterName ?? (scope.kind === "words" ? scope.terms.join(", ") : similarValue(scope)));
           filter = { id: f.filter.id, filterUndo: f.filterUndo, retargeted: f.retargeted };
@@ -1420,6 +1425,8 @@ export function createHandlers(b: Backend): Handlers {
           // plan 41: the badge follows at once; notifications turned off drop what was pending
           if (next.dockBadge !== was.dockBadge || next.notifications !== was.notifications || next.notificationPreview !== was.notificationPreview) await b.attention.refresh();
           // plan 101: a wider General window: the accounts that follow it download their older mail
+          // plan 183: the socket opens or closes with the switch (off cuts every agent)
+          if (next.agents.enabled !== was.agents.enabled) await b.agentConnector?.sync();
           if (next.syncWindowDays > was.syncWindowDays) {
             for (const account of await store.accounts.list()) if (account.syncWindowDays === null) await b.widenWindow(account.id, was.syncWindowDays, next.syncWindowDays);
             await b.emitAccounts();
@@ -1579,7 +1586,13 @@ export function createHandlers(b: Backend): Handlers {
     "identity.get": () => store.owner.get(),
     "identity.changeOwner": ({ accountId, password }) => changeOwnerTo(b, accountId, password),
 
-    "agents.status": () => ({ available: b.agents !== null, connected: b.agents?.connected() ?? 0, tokenSince: b.agents?.tokenSince() ?? null }),
+    "agents.status": async () => ({
+      available: b.agentConnector !== null,
+      enabled: (await readAgents(store)).enabled,
+      running: b.agents !== null,
+      connected: b.agents?.connected() ?? 0,
+      tokenSince: b.agents?.tokenSince() ?? null,
+    }),
     "agents.rotateToken": () => {
       if (!b.agents) throw new RpcError("UNAVAILABLE", L("errors.agentsNeedDesktop"));
       return b.agents.rotate();

@@ -36,6 +36,8 @@ async function setup(o: { trigger?: boolean; name?: string } = {}) {
   const [mc, ms] = createMemoryTransportPair();
   backend.connect(ms, { clientId: "agent", origin: "mcp" });
   const agent = new RpcClient(mc);
+  // plan 183: an agent that may organize; the tests that need sending raise it
+  await client.call("settings.update", { agents: { enabled: true, access: "organize" } });
   cleanups.push(async () => {
     await backend.stop().catch(() => {});
     rmSync(dir, { recursive: true, force: true });
@@ -267,8 +269,19 @@ describe("forwarding (plan 116)", () => {
       const rule = { match: "all" as const, conditions: [{ field: "subject" as const, op: "contains" as const, value: "a" }], actions: [{ type: "addCategory" as const, categoryId: cat.id }] };
       await expect(agent.call("filters.save", { name: "x", enabled: true, source: "manual", rule })).rejects.toMatchObject({ code: "FORBIDDEN" });
       await expect(agent.call("categorize.apply", { categoryId: cat.id, scope: { kind: "sender", email: "a@b.test" }, always: true })).rejects.toMatchObject({ code: "FORBIDDEN" });
-      await client.call("settings.update", { allowAgentSend: true });
+      await client.call("settings.update", { agents: { enabled: true, access: "send" } });
       await expect(agent.call("filters.save", { name: "x", enabled: true, source: "manual", rule })).resolves.toMatchObject({ name: "x" });
+    });
+
+    it("plan 183 (Codex critique #1): filing alone needs leave to send, since a later reply in a filed conversation forwards", async () => {
+      const { agent, client, cat, arrive } = await setup();
+      await arrive({ subject: "hola" });
+      const [thread] = (await client.call("threads.list", { view: "inbox" })).items;
+      await expect(agent.call("categories.addThreads", { categoryId: cat.id, threadIds: [thread!.id] })).rejects.toMatchObject({ code: "FORBIDDEN" });
+      await expect(agent.call("categorize.apply", { categoryId: cat.id, scope: { kind: "sender", email: thread!.fromEmail } })).rejects.toMatchObject({ code: "FORBIDDEN" });
+      expect((await client.call("threads.get", { threadId: thread!.id })).thread.categoryIds).not.toContain(cat.id);
+      await client.call("settings.update", { agents: { enabled: true, access: "send" } });
+      await expect(agent.call("categories.addThreads", { categoryId: cat.id, threadIds: [thread!.id] })).resolves.toBeTruthy();
     });
 
     it("#3/#4: the real capacity refusals wait for room, and the forwards after them still go", async () => {

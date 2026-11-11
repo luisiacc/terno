@@ -5,7 +5,9 @@ description: Read, search, triage and organize the user's email across all their
 
 # Terno: email for agents
 
-Terno is the user's local email client. Its MCP server (`terno`) gives you one access point to **every connected account** (Gmail and IMAP). The Terno app must be running.
+Terno is the user's local email client. Its MCP server (`terno`) gives you one access point to **every connected account** (Gmail and IMAP). The Terno app must be running, with **Settings → Agents → Allow agents** on. If a tool says it can't reach Terno, ask the user to check both.
+
+The user also chooses what you may do there: **Read only**, **Read and organize** (archive, mark, categorize, filters, drafts) or **Read, organize and send**. A tool beyond that level is refused with a message saying what it needs; pass it on rather than retrying.
 
 ## Tools
 - `list_accounts`: accounts, categories, unread counts. Call this first to learn account ids.
@@ -15,7 +17,7 @@ Terno is the user's local email client. Its MCP server (`terno`) gives you one a
 - `update_threads`: `archive`, `trash`, `spam`, `markRead`, `star`… (syncs to the server).
 - `categorize`: add/remove conversations to cross-account categories (creates the category by name).
 - `create_draft`: save a reply or new email for the user to review.
-- `send_email`: send immediately. **Only when the user explicitly asked to send**, and only works if they enabled it in Terno → Ajustes → Agentes.
+- `send_email`: send immediately. **Only when the user explicitly asked to send**, and only at "Read, organize and send".
 - `list_filters` / `create_filter`: inspect or create mail filters (use `dryRun: true` first and report how many emails it would match).
 
 ## Search syntax

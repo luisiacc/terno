@@ -1,5 +1,7 @@
+import { AGENT_ACCESS, type AgentAccess } from "@terno/core";
 import type { AppSettings } from "@terno/core/rpc";
 import { Button } from "@terno/ui/components/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { Switch } from "@terno/ui/components/switch";
 import { Check, Copy, KeyRound } from "@terno/ui/icons";
 import { localeTag, t } from "@terno/i18n";
@@ -40,15 +42,14 @@ function CopyBlock({ text, label, testId }: { text: string; label: string; testI
   );
 }
 
-type Status = { available: boolean; connected: number; tokenSince: number | null };
+type Status = { available: boolean; enabled: boolean; running: boolean; connected: number; tokenSince: number | null };
+
+const ACCESS = () =>
+  AGENT_ACCESS.map((value) => ({ value, label: t(`settings.agents.access.${value}`), hint: t(`settings.agents.access.${value}.hint`) }));
 
 /** The MCP token: who is connected, since when it is valid, and a new one on demand. */
-function TokenRow() {
-  const [status, setStatus] = useState<Status | null>(null);
+function TokenRow({ status, refresh }: { status: Status; refresh: () => void }) {
   const [busy, setBusy] = useState(false);
-  const refresh = () => void client.call("agents.status", {}).then(setStatus, () => setStatus(null));
-  useEffect(refresh, []);
-  if (!status?.available) return null;
   const rotate = async () => {
     setBusy(true);
     try {
@@ -79,6 +80,11 @@ function TokenRow() {
 export function AgentsTab({ settings, update }: { settings: AppSettings; update: SettingsUpdate }) {
   const agentsHere = useApp((s) => s.host?.capabilities.agents ?? true);
   const [agent, setAgent] = useState<{ mcpCommand: string; socketPath: string; skillPath: string } | null>(null);
+  const [status, setStatus] = useState<Status | null>(null);
+  const refresh = () => void client.call("agents.status", {}).then(setStatus, () => setStatus(null));
+  const { enabled, access } = settings.agents;
+  // plan 183: the socket opens and closes with the switch, so what it says follows it
+  useEffect(refresh, [enabled]);
   useEffect(() => {
     if (window.ternoDesktop) void window.ternoDesktop.agentInfo().then(setAgent).catch(() => {});
   }, []);
@@ -88,8 +94,39 @@ export function AgentsTab({ settings, update }: { settings: AppSettings; update:
     );
   }
   const mcp = agent?.mcpCommand ?? "/Applications/Terno.app/Contents/Resources/bin/terno-mcp";
+  const levels = ACCESS();
+  const generic = JSON.stringify({ mcpServers: { terno: { command: mcp } } }, null, 2);
   return (
     <div data-testid="agents-tab">
+      <SettingsGroup title={t("settings.agents.access")}>
+        <SettingsRow
+          label={t("settings.agents.enabled")}
+          hint={t("settings.agents.enabled.hint")}
+          error={enabled && status?.available && !status.running ? t("settings.agents.startFailed") : null}
+          errorTestId="agents-start-failed"
+        >
+          {(a) => <Switch {...a} data-testid="agents-enabled" checked={enabled} onCheckedChange={(on) => void update({ agents: { enabled: on } })} />}
+        </SettingsRow>
+        {enabled && (
+          <SettingsRow label={t("settings.agents.level")} hint={levels.find((l) => l.value === access)?.hint}>
+            {({ id: _id, ...a }) => (
+              <Select value={access} onValueChange={(v) => void update({ agents: { access: v as AgentAccess } })} items={levels.map(({ value, label }) => ({ value, label }))}>
+                <SelectTrigger {...a} size="sm" className="w-auto min-w-40" data-testid="agents-access">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {levels.map((l) => (
+                    <SelectItem key={l.value} value={l.value} data-testid={`agents-access-${l.value}`}>
+                      {l.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </SettingsRow>
+        )}
+        {enabled && status?.running && <TokenRow status={status} refresh={refresh} />}
+      </SettingsGroup>
       <SettingsGroup title={t("common.connect")} footer={t("settings.agents.connect.footer")}>
         <SettingsRow stacked label="Claude Code">
           {() => <CopyBlock testId="mcp-claude" label={t("settings.agents.claudeCommand")} text={`claude mcp add terno -- "${mcp}"`} />}
@@ -97,17 +134,14 @@ export function AgentsTab({ settings, update }: { settings: AppSettings; update:
         <SettingsRow stacked label="Codex" hint={t("settings.agents.codex.hint", { path: "~/.codex/config.toml" })}>
           {() => <CopyBlock testId="mcp-codex" label={t("settings.agents.codexConfig")} text={`[mcp_servers.terno]\ncommand = "${mcp}"`} />}
         </SettingsRow>
+        <SettingsRow stacked label={t("settings.agents.other")} hint={t("settings.agents.other.hint")}>
+          {() => <CopyBlock testId="mcp-other" label={t("settings.agents.otherConfig")} text={generic} />}
+        </SettingsRow>
         {agent && (
           <SettingsRow stacked label={t("settings.agents.skill")}>
             {() => <CopyBlock label={t("settings.agents.skillInstall")} text={`mkdir -p ~/.claude/skills/terno && cp "${agent.skillPath}" ~/.claude/skills/terno/SKILL.md`} />}
           </SettingsRow>
         )}
-      </SettingsGroup>
-      <SettingsGroup title={t("settings.agents.permissions")}>
-        <SettingsRow label={t("settings.agents.allowSend")} hint={t("settings.agents.allowSend.hint")}>
-          {(a) => <Switch {...a} data-testid="allow-agent-send" checked={settings.allowAgentSend} onCheckedChange={(on) => void update({ allowAgentSend: on })} />}
-        </SettingsRow>
-        <TokenRow />
       </SettingsGroup>
     </div>
   );

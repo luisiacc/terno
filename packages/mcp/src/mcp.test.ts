@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { Backend, plaintextCipher, seedDemo, startAgentSocket, type AgentEndpoint } from "@terno/backend";
+import { Backend, plaintextCipher, seedDemo } from "@terno/backend";
 import { demoRegistry } from "@terno/mail";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AppConnection } from "./connection";
@@ -11,7 +11,7 @@ import { sqlDb } from "@terno/db";
 
 let dir: string;
 let backend: Backend;
-let endpoint: AgentEndpoint;
+let paths: { socketPath: string; tokenPath: string };
 let client: Client;
 let app: AppConnection;
 
@@ -30,19 +30,25 @@ async function call(name: string, args: Record<string, unknown> = {}) {
 beforeAll(async () => {
   // short path: unix socket paths are limited to ~104 bytes on macOS
   dir = mkdtempSync(join("/tmp", "umcp-"));
-  backend = new Backend({ dbPath: join(dir, "u.db"), version: "t", cipher: plaintextCipher, providers: demoRegistry, autoSync: false });
+  paths = { socketPath: join(dir, "a.sock"), tokenPath: join(dir, "a.token") };
+  backend = new Backend({ dbPath: join(dir, "u.db"), version: "t", cipher: plaintextCipher, providers: demoRegistry, autoSync: false, agentEndpoint: paths });
   await seedDemo(backend.store, { threads: 400, accounts: 3 });
-  endpoint = await startAgentSocket(backend, join(dir, "a.sock"), join(dir, "a.token"));
-  app = new AppConnection({ socketPath: endpoint.socketPath, tokenPath: endpoint.tokenPath });
+  await backend.start();
+  // plan 183: as the user would, in Settings → Agents
+  await setAgents({ enabled: true, access: "organize" });
+  app = new AppConnection(paths);
   const [a, b] = InMemoryTransport.createLinkedPair();
   await createMcpServer(app).connect(a);
   client = new Client({ name: "test", version: "1" });
   await client.connect(b);
 });
 
+function setAgents(agents: { enabled?: boolean; access?: "read" | "organize" | "send" }) {
+  return backend.server.invoke("settings.update", { agents }, { clientId: "settings", origin: "renderer" });
+}
+
 afterAll(async () => {
   app.close();
-  await endpoint.close();
   await backend.stop();
   rmSync(dir, { recursive: true, force: true });
 });
@@ -109,8 +115,35 @@ describe("terno MCP server", () => {
     expect(denied.raw).toMatch(/create_draft/);
     const draft = await call("create_draft", msg);
     expect(draft.json.draftId).toEqual(expect.any(Number));
-    sqlDb(backend.store).run("INSERT OR REPLACE INTO settings (key, value_json) VALUES ('app', ?)", JSON.stringify({ allowAgentSend: true }));
+    await setAgents({ access: "send" });
     expect((await call("send_email", msg)).json).toMatchObject({ queued: true, opId: expect.any(String) });
+    await setAgents({ access: "organize" });
+  });
+
+  it("plan 183: at Read only, a change is refused with what it needs and where the user changes it", async () => {
+    await setAgents({ access: "read" });
+    try {
+      expect((await call("search_emails", { query: "factura", limit: 1 })).isError).toBe(false);
+      const archived = await call("update_threads", { threadIds: [1], action: "archive" });
+      expect(archived.isError).toBe(true);
+      expect(archived.raw).toMatch(/'Read and organize'.*Settings → Agents/);
+      expect((await client.listTools()).tools.find((t) => t.name === "update_threads")!.description).toMatch(/Needs 'Read and organize'/);
+    } finally {
+      await setAgents({ access: "organize" });
+    }
+  });
+
+  it("plan 183: agents turned off cut the agent off, and what it read before isn't served from memory (Codex critique #10)", async () => {
+    expect((await call("list_accounts")).isError).toBe(false);
+    await setAgents({ enabled: false });
+    try {
+      const r = await call("list_accounts");
+      expect(r.isError).toBe(true);
+      expect(r.raw).toMatch(/Settings → Agents → Allow agents/);
+    } finally {
+      await setAgents({ enabled: true });
+    }
+    expect((await call("list_accounts")).isError).toBe(false);
   });
 
   it("previews filters (dry run) before creating them and validates rules", async () => {
@@ -132,12 +165,12 @@ describe("terno MCP server", () => {
     writeFileSync(join(dir, "drop.token"), "x");
     const { connectToApp } = await import("./connection");
     const started = Date.now();
-    await expect(connectToApp({ socketPath: sock, tokenPath: join(dir, "drop.token") })).rejects.toThrow(/not running/);
+    await expect(connectToApp({ socketPath: sock, tokenPath: join(dir, "drop.token") })).rejects.toThrow(/Can't reach Terno/);
     expect(Date.now() - started).toBeLessThan(2000);
     server.close();
   });
 
-  it("reports clearly when the app is not running", async () => {
+  it("reports clearly when the app is not running or agents are off", async () => {
     const offline = new AppConnection({ socketPath: join(dir, "nope.sock"), tokenPath: join(dir, "nope.token") });
     const [a, b] = InMemoryTransport.createLinkedPair();
     await createMcpServer(offline).connect(a);
@@ -145,6 +178,6 @@ describe("terno MCP server", () => {
     await c.connect(b);
     const r = (await c.callTool({ name: "list_accounts", arguments: {} })) as { content: { text: string }[]; isError: boolean };
     expect(r.isError).toBe(true);
-    expect(r.content[0]!.text).toMatch(/not running/);
+    expect(r.content[0]!.text).toMatch(/Open Terno and turn on Settings → Agents → Allow agents/);
   });
 });

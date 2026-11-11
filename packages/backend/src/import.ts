@@ -41,7 +41,7 @@ async function exportedSettings(store: SettingsStore) {
   return settings;
 }
 
-function settingsFrom(raw: Record<string, unknown>, current: Parameters<typeof switchDesign>[0] & { localMode: boolean; allowAgentSend: boolean; errorReports: string; senderIcons: boolean; remoteImages: string; notifications: boolean; notificationPreview: boolean }): { general: SettingsPatch; ai: SettingsPatch["ai"] } {
+function settingsFrom(raw: Record<string, unknown>, current: Parameters<typeof switchDesign>[0] & { localMode: boolean; agents: { enabled: boolean }; errorReports: string; senderIcons: boolean; remoteImages: string; notifications: boolean; notificationPreview: boolean }): { general: SettingsPatch; ai: SettingsPatch["ai"] } {
   const general: Record<string, unknown> = {};
   for (const key of GENERAL_KEYS) {
     if (raw[key] === undefined) continue;
@@ -61,9 +61,11 @@ function settingsFrom(raw: Record<string, unknown>, current: Parameters<typeof s
     const kept = design !== undefined && design !== current.design ? switchDesign(current, design).designPalettes : current.designPalettes;
     general.designPalettes = { ...kept, ...(general.designPalettes as DesignPalettes | undefined) };
   }
-  // a file never makes this install less private: local mode can come on, agent sending can go off
+  // a file never makes this install less private: local mode can come on, agents can go off
   if (raw.localMode === true && !current.localMode) general.localMode = true;
-  if (raw.allowAgentSend === false && current.allowAgentSend) general.allowAgentSend = false;
+  // plan 183 (Codex critique #5): only off, as a partial patch merged onto what is stored when it is written, so it can't
+  // undo a change made meanwhile; the level is never imported
+  if ((raw.agents as { enabled?: unknown } | undefined)?.enabled === false && current.agents.enabled) general.agents = { enabled: false };
   if (raw.errorReports === "never" && current.errorReports !== "never") general.errorReports = "never";
   // plan 22: website icons can go off, never on
   if (raw.senderIcons === false && current.senderIcons) general.senderIcons = false;
@@ -442,6 +444,8 @@ export async function importMailbox(b: Backend, file: ExportFile): Promise<Impor
     await b.writing.learner.aiChanged();
     if (after.localMode !== before.localMode || after.errorReports !== before.errorReports || after.language !== before.language) await b.publishPolicy();
     if (after.dockBadge !== before.dockBadge || after.notifications !== before.notifications || after.notificationPreview !== before.notificationPreview) await b.attention.refresh();
+    // plan 183 (Codex critique #4): agents turned off by the file are cut off now
+    if (after.agents.enabled !== before.agents.enabled) await b.agentConnector?.sync();
   }
   return {
     categories: { added, merged: data.categories.length - added },

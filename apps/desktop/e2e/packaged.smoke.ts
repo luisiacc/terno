@@ -186,21 +186,34 @@ test("main cancels the renderer's remote requests, for everyone (plan 97: not a 
   await expect.poll(() => app.evaluate(() => (globalThis as unknown as { blocked: string[] }).blocked)).toContainEqual(expect.stringContaining("https://example.com/pixel.png"));
 });
 
-test("the bundled terno-mcp wrapper answers MCP requests against the running app", async () => {
+test("the bundled terno-mcp wrapper answers MCP requests against the running app, once the user allows agents (plan 183)", async () => {
   const wrapper = join(appPath, "Contents/Resources/bin/terno-mcp");
   const env = { ...process.env, TERNO_USER_DATA: userData };
   delete env.ELECTRON_RUN_AS_NODE;
-  const child = spawn(wrapper, [], { env, stdio: ["pipe", "pipe", "pipe"] });
-  const lines: string[] = [];
-  child.stdout.setEncoding("utf8").on("data", (d: string) => lines.push(...d.split("\n").filter(Boolean)));
-  const send = (m: unknown) => child.stdin.write(`${JSON.stringify(m)}\n`);
-  send({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "smoke", version: "1" } } });
-  send({ jsonrpc: "2.0", method: "notifications/initialized" });
-  send({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "list_accounts", arguments: {} } });
-  child.stdin.end();
-  await new Promise((r) => child.on("exit", r));
-  const reply = lines.map((l) => JSON.parse(l)).find((m) => m.id === 2);
-  const payload = JSON.parse(reply.result.content[0].text);
+  const listAccounts = async () => {
+    const child = spawn(wrapper, [], { env, stdio: ["pipe", "pipe", "pipe"] });
+    const lines: string[] = [];
+    child.stdout.setEncoding("utf8").on("data", (d: string) => lines.push(...d.split("\n").filter(Boolean)));
+    const send = (m: unknown) => child.stdin.write(`${JSON.stringify(m)}\n`);
+    send({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "smoke", version: "1" } } });
+    send({ jsonrpc: "2.0", method: "notifications/initialized" });
+    send({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "list_accounts", arguments: {} } });
+    child.stdin.end();
+    await new Promise((r) => child.on("exit", r));
+    return lines.map((l) => JSON.parse(l)).find((m) => m.id === 2).result as { isError?: boolean; content: { text: string }[] };
+  };
+  // off by default: no socket, and the agent hears where to turn it on
+  expect(existsSync(join(userData, "agent.token"))).toBe(false);
+  const refused = await listAccounts();
+  expect(refused.isError).toBe(true);
+  expect(refused.content[0]!.text).toMatch(/Settings → Agents → Allow agents/);
+
+  await page.getByTestId("open-settings").click();
+  await page.getByTestId("tab-agents").click();
+  await page.getByRole("switch", { name: "Allow agents" }).click();
+  await expect(page.getByTestId("agents-token-row")).toBeVisible();
+  await page.keyboard.press("Escape");
+  const payload = JSON.parse((await listAccounts()).content[0]!.text);
   expect(payload.accounts).toHaveLength(4);
 });
 

@@ -1,3 +1,4 @@
+import { AGENT_ACCESS, type AgentsSetting } from "../agents";
 import type { AttachmentRef } from "../attachments";
 import type { MailNotice } from "../attention";
 import { LANGUAGE_SETTINGS, LOCALE_IDS, t, type LanguageSetting } from "@terno/i18n";
@@ -182,7 +183,8 @@ export interface AppSettings {
   layout: "split" | "list";
   remoteImages: "ask" | "always";
   ai: AiSettings;
-  allowAgentSend: boolean;
+  /** plan 183: off until the user turns it on; what connected agents may do */
+  agents: AgentsSetting;
   syncWindowDays: number;
   /** what the categorization engine may do with new mail */
   autoCategorize: AutoCategorize;
@@ -490,7 +492,8 @@ const settingsPatch = z.object({
     })
     .strict()
     .optional(),
-  allowAgentSend: z.boolean().optional(),
+  /** plan 183: partial, merged onto the stored value */
+  agents: z.object({ enabled: z.boolean().optional(), access: z.enum(AGENT_ACCESS).optional() }).strict().optional(),
   syncWindowDays: syncWindow.optional(),
   autoCategorize: z.enum(["off", "suggest", "auto"]).optional(),
   aiCategorize: z.boolean().optional(),
@@ -1374,8 +1377,11 @@ export const contract = {
   "identity.get": m<OwnerIdentity | null>()(empty),
   "identity.changeOwner": m<OwnerIdentity>()(z.object({ accountId: id, password: z.string().min(1).max(1000).optional() }), { timeoutMs: 300_000 }),
 
-  /** The MCP endpoint: whether this host runs it, how many agents are connected, since when the token is valid. */
-  "agents.status": m<{ available: boolean; connected: number; tokenSince: number | null }>()(empty),
+  /**
+   * The MCP endpoint: whether this host can run it, whether the user turned agents on, whether it is listening now
+   * (on but not running: it couldn't start), how many agents are connected, since when the token is valid.
+   */
+  "agents.status": m<{ available: boolean; enabled: boolean; running: boolean; connected: number; tokenSince: number | null }>()(empty),
   /** A new token in the token file; agents connected now are cut off and must read it again. */
   "agents.rotateToken": m<{ disconnected: number; tokenSince: number }>()(empty),
 

@@ -8,6 +8,7 @@ import { BackendCore, type BackendCoreOptions } from "./core";
 import type { LookupAll } from "./net-policy";
 import { nodeIconTransport } from "./icons/node-transport";
 import { createNodeIncomingProcessor } from "./incoming-worker";
+import { AgentConnector, type AgentPaths } from "./agent-connector";
 
 export * from "./core";
 
@@ -19,6 +20,8 @@ export interface BackendOptions extends Omit<BackendCoreOptions, "store" | "plat
   platform?: BackendCoreOptions["platform"];
   /** searches answer from the in-memory instant index when it is current (FTS5 otherwise); with dbPath, on by default */
   instantSearch?: boolean;
+  /** plan 183: where the MCP socket and its token go while the user has agents on (desktop, the dev host) */
+  agentEndpoint?: AgentPaths;
 }
 
 const nodeLookup: LookupAll = (host) => dnsLookup(host, { all: true });
@@ -86,5 +89,6 @@ export class Backend extends BackendCore {
     // plan 96: one-click unsubscribe over node:https (public addresses only) unless the host says otherwise
     const unsubscribeTransport = options.unsubscribeTransport === undefined ? nodeUnsubscribeTransport() : options.unsubscribeTransport;
     super({ ...options, store, platform, lookup: options.lookup ?? nodeLookup, onNetworkReset: options.onNetworkReset ?? resetFetchSockets, iconTransport, unsubscribeTransport, incomingProcessor: options.incomingProcessor ?? createNodeIncomingProcessor() });
+    if (options.agentEndpoint) this.agentConnector = new AgentConnector(this, options.agentEndpoint);
   }
 }

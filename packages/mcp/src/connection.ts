@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { connect } from "node:net";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { isRpcMessage, RpcClient, type RpcMessage, type Transport } from "@terno/core/rpc";
+import { isRpcMessage, RpcClient, RpcError, type MethodName, type ParamsOf, type ResultOf, type RpcMessage, type Transport } from "@terno/core/rpc";
 
 export interface Endpoint {
   socketPath: string;
@@ -20,7 +20,8 @@ export function defaultEndpoint(): Endpoint {
 export class NotRunningError extends Error {
   readonly expected = true;
   constructor() {
-    super("Terno is not running. Open the Terno app and try again.");
+    // plan 183: no socket means Terno is closed or agents are off; it can't tell which, so it says both
+    super("Can't reach Terno. Open Terno and turn on Settings → Agents → Allow agents, then try again.");
   }
 }
 
@@ -98,6 +99,20 @@ export class AppConnection {
     });
     this.client = client;
     return client;
+  }
+
+  /**
+   * One call on the live connection. If the connection closes under it (Terno quit, or the user turned agents off), the
+   * agent hears what to do, not that a connection closed. Never retried: a send may have gone before the close.
+   */
+  async call<M extends MethodName>(method: M, params: ParamsOf<M>): Promise<ResultOf<M>> {
+    const client = await this.get();
+    try {
+      return await client.call(method, params);
+    } catch (error) {
+      if (error instanceof RpcError && error.code === "UNAVAILABLE" && this.client !== client) throw new NotRunningError();
+      throw error;
+    }
   }
 
   /** Resolves once no backend call is in flight (or after timeoutMs). */

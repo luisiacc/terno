@@ -1,5 +1,5 @@
 import { sqlDb } from "../../backend-dev/src/server";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { connect } from "node:net";
 import { expect, navTo, test, fresh, scenario } from "./fixtures";
 
@@ -155,25 +155,53 @@ test.describe("accounts, settings and command palette", () => {
 test.describe("agents", () => {
   test.use({ backendOptions: { agentSocket: true } });
 
-  test("Settings → Agents: changing the token cuts connected agents off and writes a new one", async ({ app: page, server }) => {
+  test("Settings → Agents: off until turned on, at the level chosen; the token cuts agents off, and so does turning it off (plan 183)", async ({ app: page, server }) => {
     const { socketPath, tokenPath } = server.agents!;
-    const old = readFileSync(tokenPath, "utf8");
-    const agent = connect(socketPath);
-    await new Promise<void>((r) => agent.once("data", () => r()).write(`${old}\n`));
-    const closed = new Promise<void>((r) => agent.once("close", () => r()));
+    const handshake = (token: string) => {
+      const agent = connect(socketPath);
+      const closed = new Promise<void>((r) => agent.once("close", () => r()));
+      return new Promise<{ reply: string; closed: Promise<void> }>((r) => agent.once("data", (d) => r({ reply: String(d), closed })).write(`${token}\n`));
+    };
     await page.getByTestId("open-settings").click();
+    await page.getByTestId("tab-agents").click();
+    // off: no connector, nothing to manage, but the setup is there to copy, for other apps too
+    const allow = page.getByRole("switch", { name: "Allow agents" });
+    await expect(allow).not.toBeChecked();
+    await expect(page.getByTestId("agents-token-row")).toHaveCount(0);
+    await expect(page.getByTestId("agents-access")).toHaveCount(0);
+    expect(existsSync(tokenPath)).toBe(false);
+    await expect(page.getByTestId("mcp-other")).toContainText('"command": "/Applications/Terno.app/Contents/Resources/bin/terno-mcp"');
+
+    await allow.click();
+    await expect(page.getByTestId("agents-token-row")).toContainText("0 agents connected");
+    await expect(page.getByTestId("agents-access")).toHaveText("Read only");
+    const old = readFileSync(tokenPath, "utf8");
+    const first = await handshake(old);
+    expect(first.reply).toContain('"ok":true');
+    await page.getByTestId("tab-general").click();
     await page.getByTestId("tab-agents").click();
     await expect(page.getByTestId("agents-token-row")).toContainText("1 agent connected");
     await page.getByRole("button", { name: "Change token" }).click();
-    await closed;
+    await first.closed;
     await expect(page.getByTestId("agents-token-row")).toContainText("0 agents connected");
     expect(readFileSync(tokenPath, "utf8")).not.toBe(old);
-    // and the send permission round-trips
-    await page.getByRole("switch", { name: "Allow agents to send mail" }).click();
+
+    // the level round-trips
+    await page.getByTestId("agents-access").click();
+    await page.getByTestId("agents-access-organize").click();
+    await expect(page.getByText("Also archive, mark, categorize, and create filters and drafts. Nothing is sent.")).toBeVisible();
     await page.reload();
     await page.locator("[data-ready]").waitFor();
     await page.keyboard.press("Meta+Comma");
     await page.getByTestId("tab-agents").click();
-    await expect(page.getByRole("switch", { name: "Allow agents to send mail" })).toBeChecked();
+    await expect(page.getByTestId("agents-access")).toHaveText("Read and organize");
+
+    // off cuts a connected agent and leaves nothing behind
+    const second = await handshake(readFileSync(tokenPath, "utf8"));
+    expect(second.reply).toContain('"ok":true');
+    await page.getByRole("switch", { name: "Allow agents" }).click();
+    await second.closed;
+    await expect(page.getByTestId("agents-token-row")).toHaveCount(0);
+    expect(existsSync(tokenPath)).toBe(false);
   });
 });

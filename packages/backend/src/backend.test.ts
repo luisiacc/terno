@@ -1,14 +1,11 @@
 import { mkdtempSync, rmSync } from "node:fs";
-import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMemoryTransportPair, RpcClient, type Events } from "@terno/core/rpc";
 import { claimReadyOps, createAccount, enqueueOp, getOp, type IncomingMessage, sqlDb } from "@terno/db";
 import { ProviderAuthError, ProviderError, type MailProvider, type ProviderOp, type ProviderRegistry, type SyncSink } from "@terno/mail";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { startAgentSocket } from "./agent-socket";
 import { Backend, plaintextCipher } from "./backend";
-import { socketTransport } from "./transports";
 
 const NOW = Date.UTC(2026, 9, 22, 12);
 const cleanups: (() => Promise<void> | void)[] = [];
@@ -140,6 +137,7 @@ describe("opening", () => {
     expect(boot.accounts.length).toBeGreaterThan(0);
     expect(boot.accounts[0]!.syncState).toBeDefined();
     owner.mockClear();
+    await backend.server.invoke("settings.update", { agents: { enabled: true, access: "read" } }, { clientId: "setup", origin: "dev" });
     const [agent, remote] = createMemoryTransportPair();
     backend.connect(remote, { clientId: "agent", origin: "mcp" });
     const mcp = new RpcClient(agent);
@@ -723,6 +721,7 @@ describe("learned filters", () => {
   it("ignores actions taken by agents (MCP)", async () => {
     const { backend, accountId } = await setup();
     await backend.ingestSliced(Array.from({ length: 6 }, () => incoming(accountId)));
+    await backend.server.invoke("settings.update", { agents: { enabled: true, access: "organize" } }, { clientId: "setup", origin: "dev" });
     const [c, s] = createMemoryTransportPair();
     backend.connect(s, { clientId: "agent", origin: "mcp" });
     const agent = new RpcClient(c);
@@ -730,20 +729,6 @@ describe("learned filters", () => {
     for (const id of ids) await agent.call("threads.act", { threadIds: [id], action: "archive" });
     expect(await agent.call("threads.list", { view: "inbox" })).toMatchObject({ items: [] });
     expect(sqlDb(backend.store).get("SELECT count(*) c FROM user_actions")).toEqual({ c: 0 });
-  });
-});
-
-describe("agent permissions", () => {
-  it("MCP clients cannot send unless the user allows it, nor touch settings", async () => {
-    const { backend, client, accountId } = await setup();
-    const [c, s] = createMemoryTransportPair();
-    backend.connect(s, { clientId: "agent", origin: "mcp" });
-    const agent = new RpcClient(c);
-    const send = { accountId, to: [{ name: "", email: "a@b.co" }], subject: "x", bodyText: "y" };
-    await expect(agent.call("compose.send", send)).rejects.toMatchObject({ code: "FORBIDDEN" });
-    await expect(agent.call("settings.update", { allowAgentSend: true })).rejects.toMatchObject({ code: "FORBIDDEN" });
-    await client.call("settings.update", { allowAgentSend: true });
-    await expect(agent.call("compose.send", send)).resolves.toMatchObject({ opId: expect.any(String) });
   });
 });
 
@@ -821,61 +806,3 @@ describe("accounts", () => {
   });
 });
 
-describe("agent socket", () => {
-  it("requires the token, then speaks the RPC envelope", async () => {
-    const { backend } = await setup();
-    const dir = mkdtempSync(join(tmpdir(), "terno-sock-"));
-    const endpoint = await startAgentSocket(backend, join(dir, "s.sock"), join(dir, "token"));
-    cleanups.push(async () => {
-      await endpoint.close();
-      rmSync(dir, { recursive: true, force: true });
-    });
-    const bad = connect(endpoint.socketPath);
-    const rejected = await new Promise<string>((r) => bad.once("data", (d) => r(String(d))).write("nope\n"));
-    expect(rejected).toContain("unauthorized");
-
-    const { readFileSync } = await import("node:fs");
-    const sock = connect(endpoint.socketPath);
-    await new Promise<void>((r) => sock.once("data", () => r()).write(`${readFileSync(endpoint.tokenPath, "utf8")}\n`));
-    const client = new RpcClient(socketTransport(sock));
-    expect(await client.call("app.bootstrap", {})).toMatchObject({ version: "test" });
-    client.close();
-  });
-
-  it("rotating the token cuts connected agents off, refuses the old token and accepts the new one; renderers only", async () => {
-    const { backend } = await setup();
-    const dir = mkdtempSync(join(tmpdir(), "terno-sock-"));
-    const endpoint = await startAgentSocket(backend, join(dir, "s.sock"), join(dir, "token"));
-    cleanups.push(async () => {
-      await endpoint.close();
-      rmSync(dir, { recursive: true, force: true });
-    });
-    const { readFileSync } = await import("node:fs");
-    const handshake = (token: string) =>
-      new Promise<{ sock: ReturnType<typeof connect>; reply: string }>((r) => {
-        const sock = connect(endpoint.socketPath);
-        sock.once("data", (d) => r({ sock, reply: String(d) })).write(`${token}\n`);
-      });
-    const [rc, rs] = createMemoryTransportPair();
-    backend.connect(rs, { clientId: "renderer", origin: "renderer" });
-    const renderer = new RpcClient(rc);
-
-    const old = readFileSync(endpoint.tokenPath, "utf8");
-    const agent = await handshake(old);
-    expect(agent.reply).toContain('"ok":true');
-    const mcp = new RpcClient(socketTransport(agent.sock));
-    expect(await renderer.call("agents.status", {})).toEqual({ available: true, connected: 1, tokenSince: NOW });
-    await expect(mcp.call("agents.rotateToken", {})).rejects.toMatchObject({ code: "FORBIDDEN" });
-
-    const closed = new Promise<void>((r) => agent.sock.once("close", () => r()));
-    expect(await renderer.call("agents.rotateToken", {})).toEqual({ disconnected: 1, tokenSince: NOW });
-    await closed;
-    const fresh = readFileSync(endpoint.tokenPath, "utf8");
-    expect(fresh).not.toBe(old);
-    expect((await handshake(old)).reply).toContain("unauthorized");
-    const again = await handshake(fresh);
-    expect(again.reply).toContain('"ok":true');
-    again.sock.destroy();
-    renderer.close();
-  });
-});

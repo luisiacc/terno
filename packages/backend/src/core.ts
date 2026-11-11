@@ -6,7 +6,7 @@ import { COOLDOWN_TICKETS, copyOpAdmission, rejectedRecipients, type CooldownSta
 import { prepareCopyWire, readCopyWire } from "./sent-copy";
 import type { PendingGmailRenewal } from "./identity";
 import type { AiTasks } from "@terno/ai";
-import { asciiEmail, canonicalAuthored, decodeText, encodeText, messageOf, aiCanRun, textRef, type Account, type AccountPrefs, type DevAiKeys, type FavoriteFolder, type FavoriteFoldersSnapshot, type AccountSyncState, type SyncProgress, type OpState, type ThreadAction } from "@terno/core";
+import { accessAllows, AGENT_METHODS, agentRefusal, agentsMaySend, asciiEmail, canonicalAuthored, decodeText, encodeText, messageOf, aiCanRun, textRef, type Account, type AccountPrefs, type DevAiKeys, type FavoriteFolder, type FavoriteFoldersSnapshot, type AccountSyncState, type SyncProgress, type OpState, type ThreadAction } from "@terno/core";
 import { breadcrumb, captureError, log, type FieldValueOf } from "@terno/core/diag";
 import { RpcError, RpcServer, type AppSettings, type CallContext, type HostInfo, type MethodName, type OpInfo, type ResultOf, type Transport } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
@@ -41,7 +41,7 @@ import { blobFingerprint, migrateLegacySecrets, readKeychainState, SecretUnreada
 import { createNetworkPolicy, type LookupAll, type NetDecision, type NetworkPolicy } from "./net-policy";
 import { CARRY_SLICE, carryRenamed } from "./folders";
 import { followFolderFilters } from "./similar";
-import { followFavoriteFolders, provideDevAi, readAutoCategorize, readComposeSuggestions, readGooglePhotos, readPolicy, readSettings, readSiteIcons, setGooglePhotoState } from "./settings";
+import { followFavoriteFolders, provideDevAi, readAgents, readAutoCategorize, readComposeSuggestions, readGooglePhotos, readPolicy, readSettings, readSiteIcons, setGooglePhotoState } from "./settings";
 import { IconService } from "./icons/service";
 import type { IconTransport } from "./icons/transport";
 import { browserUnsubscribeTransport, type UnsubscribeTransport } from "./unsubscribe";
@@ -399,7 +399,7 @@ export class BackendCore {
         this.notifyChanged([threadId]);
         this.kickWorker();
       },
-      agentsMaySend: async () => (await readSettings(this.store)).allowAgentSend,
+      agentsMaySend: async () => agentsMaySend(await readAgents(this.store)),
       language: async () => (await readPolicy(this.store)).language,
       yieldTurn: () => this.yieldTurn(),
       log: (level, message, extra) => this.log(level, message, extra),
@@ -484,8 +484,17 @@ export class BackendCore {
   /** Startup reads: the persisted model and crash recovery of ops, before any RPC or worker runs. */
   readonly ready: Promise<void>;
 
-  /** the MCP socket (desktop, the Node dev host), set by startAgentSocket */
+  /** the MCP socket while it listens, set by startAgentSocket */
   agents: { connected(): number; tokenSince(): number; rotate(): { disconnected: number; tokenSince: number } } | null = null;
+  /** plan 183: opens and closes that socket as the user turns agents on and off; on hosts that have one (Node) */
+  agentConnector: {
+    /** listens while agents are on, nothing exists while they're off */
+    sync(): Promise<void>;
+    /** on, but the last start failed (the next sync retries) */
+    failed(): boolean;
+    /** for good: what is open closes, and nothing opens after */
+    stop(): Promise<void>;
+  } | null = null;
 
   get host(): HostInfo {
     const host = this.options.host ?? FULL_HOST;
@@ -671,6 +680,8 @@ export class BackendCore {
         this.log("warn", `move ${m.batchId} couldn't be resumed`, error instanceof Error ? error.message : error);
       });
     }
+    // plan 183: the MCP socket, only if the user turned agents on
+    await this.agentConnector?.sync();
     if (this.options.autoSync === false) return;
     this.idleTimer = setInterval(() => void this.categorizer.idle(), 10 * 60_000);
     this.idleTimer.unref?.();
@@ -951,6 +962,8 @@ export class BackendCore {
       catch (error) { failed ??= { error }; }
       return failed;
     })();
+    // plan 183: agents cut off and the socket gone before anything they could call closes (a start in flight included)
+    const agentsClosed = this.agentConnector?.stop();
     this.connectivity.stop();
     this.quickChecks.stop();
     const accountsClosed = Promise.allSettled([...this.lifetimes.values()].map((life) => this.dropAccount(life.id, { remove: life.removing })));
@@ -974,6 +987,7 @@ export class BackendCore {
     if (this.cooldownTimer) clearTimeout(this.cooldownTimer);
     for (const off of this.unwatch.values()) off();
     await accountsClosed;
+    await agentsClosed;
     await scheduledStopped;
     await forwardsStopped;
     await Promise.allSettled([...this.bodyJobs.values()].map((job) => job.promise));
@@ -999,35 +1013,16 @@ export class BackendCore {
 
   // ───────────────────────────── permissions ─────────────────────────────
 
-  private static readonly MCP_ALLOWED: ReadonlySet<MethodName> = new Set<MethodName>([
-    "app.bootstrap",
-    "threads.list",
-    "threads.search",
-    "threads.get",
-    "threads.bodyPart",
-    "threads.act",
-    "categories.addThreads",
-    "categories.removeThreads",
-    "categories.create",
-    // agents can ask what the engine thinks and file in bulk (as agents: half weight)
-    "categorize.predict",
-    "categorize.suggestions",
-    "categorize.count",
-    "categorize.preview",
-    "categorize.apply",
-    "counts.get",
-    "filters.list",
-    "filters.save",
-    "filters.preview",
-    "drafts.save",
-    "drafts.list",
-    "compose.send",
-  ]);
-
+  /** Plan 183: an agent reaches only what the user turned on, at the level they chose (AGENT_METHODS). */
   private async authorize(method: MethodName, ctx: CallContext): Promise<boolean> {
     if (ctx.origin !== "mcp") return true;
-    if (!BackendCore.MCP_ALLOWED.has(method)) return false;
-    if (method === "compose.send") return (await readSettings(this.store)).allowAgentSend;
+    const needed = AGENT_METHODS[method];
+    if (!needed) return false;
+    const agents = await readAgents(this.store);
+    // a connection that outlived the switch gets nothing
+    // i18n-ignore: for the agent, which tells the user
+    if (!agents.enabled) throw new RpcError("FORBIDDEN", "Agents are turned off in Terno. Ask the user to turn on Settings → Agents → Allow agents.");
+    if (!accessAllows(agents.access, needed)) throw new RpcError("FORBIDDEN", agentRefusal(needed));
     return true;
   }
 

@@ -21,6 +21,7 @@ export * from "./people";
 export * from "./attention";
 export * from "./localized";
 
+export * from "./agents";
 export * from "./attachments";
 export * from "./similar";
 

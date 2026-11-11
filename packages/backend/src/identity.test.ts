@@ -190,6 +190,7 @@ describe("agents (MCP)", () => {
     expect(ownerEvents.length).toBeGreaterThan(0);
     expect(mcpOwnerEvents).toEqual([]);
     expect((await client.call("app.bootstrap", {})).owner).not.toBeNull();
+    await client.call("settings.update", { agents: { enabled: true, access: "read" } });
     expect((await mcp.call("app.bootstrap", {})).owner).toBeNull();
     expect(await errorOf(mcp.call("identity.get", {}))).toMatchObject({ code: "FORBIDDEN" });
     expect(await errorOf(mcp.call("identity.changeOwner", { accountId: 1, password: "x" }))).toMatchObject({ code: "FORBIDDEN" });

@@ -1,7 +1,7 @@
 import { mkdirSync, rmSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { join } from "node:path";
-import { APPEARANCE_VERSION, Backend, plaintextCipher, seedDemo, startAgentSocket, webSocketTransport, type AiFactory, type BackendOptions, type LookupAll } from "@terno/backend";
+import { AGENTS_VERSION, APPEARANCE_VERSION, Backend, plaintextCipher, seedDemo, webSocketTransport, type AiFactory, type BackendOptions, type LookupAll } from "@terno/backend";
 import type { DevAiKeys } from "@terno/core";
 import { demoRegistry, type ProviderRegistry } from "@terno/mail";
 export { sqlDb } from "@terno/db";
@@ -58,9 +58,12 @@ export async function startDevServer(o: DevServerOptions): Promise<DevServer> {
   mkdirSync(o.dataDir, { recursive: true });
   const dbPath = join(o.dataDir, "terno.db");
   if (o.fresh) for (const s of ["", "-wal", "-shm", ".search"]) rmSync(dbPath + s, { force: true });
+  const agents = o.agentSocket ? { socketPath: join(o.dataDir, "agent.sock"), tokenPath: join(o.dataDir, "agent.token") } : null;
   const backend = new Backend({
     dbPath,
     version: "dev",
+    // plan 183: the socket opens there only while agents are on
+    agentEndpoint: agents ?? undefined,
     cipher: plaintextCipher,
     providers: o.providers ?? demoRegistry,
     aiFactory: o.aiFactory,
@@ -79,12 +82,12 @@ export async function startDevServer(o: DevServerOptions): Promise<DevServer> {
   });
   if (o.seed !== false && (await seedDemo(backend.store, { threads: o.threads, accounts: o.accounts }))) {
     // a new install's settings (plan 98: its appearance is the new defaults, not an older profile's)
-    await backend.store.settings.set("app", { ai: { provider: "fake" }, appearanceVersion: APPEARANCE_VERSION });
+    // plan 183: and agents as a new install has them (off, at read)
+    await backend.store.settings.set("app", { ai: { provider: "fake" }, appearanceVersion: APPEARANCE_VERSION, agentsVersion: AGENTS_VERSION });
     // warm model from the seeded categories (persisted on close, so E2E copies start ready)
     await backend.categorizer.rebuildNow();
   }
   await backend.start();
-  const agents = o.agentSocket ? await startAgentSocket(backend, join(o.dataDir, "agent.sock"), join(o.dataDir, "agent.token")) : null;
 
   const http: Server = createServer((_req, res) => {
     res.writeHead(404).end();
@@ -114,7 +117,7 @@ export async function startDevServer(o: DevServerOptions): Promise<DevServer> {
   return {
     backend,
     url: `ws://127.0.0.1:${port}`,
-    agents: agents ? { socketPath: agents.socketPath, tokenPath: agents.tokenPath } : null,
+    agents,
     close: () => {
       closing = true;
       return closePromise ??= Promise.resolve().then(async () => {
@@ -134,7 +137,6 @@ export async function startDevServer(o: DevServerOptions): Promise<DevServer> {
             await finished;
           }),
         ]);
-        await attempt(() => agents?.close());
         await attempt(() => backend.stop());
         if (errors.length === 1) throw errors[0];
         if (errors.length) throw new AggregateError(errors);

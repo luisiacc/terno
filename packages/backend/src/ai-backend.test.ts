@@ -92,6 +92,8 @@ async function setup(options: { dns?: Record<string, string[]>; localMode?: bool
   const [mc, ms] = createMemoryTransportPair();
   backend.connect(ms, { clientId: "mcp", origin: "mcp" });
   const mcp = new RpcClient(mc);
+  // plan 183: at the top level, so a refusal below is the method's, not the switch's
+  await client.call("settings.update", { agents: { enabled: true, access: "send" } });
   cleanups.push(async () => {
     await backend.stop();
     rmSync(dir, { recursive: true, force: true });

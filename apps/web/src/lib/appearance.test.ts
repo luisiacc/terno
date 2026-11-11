@@ -69,7 +69,7 @@ const SERVER: AppSettings = {
   density: "comfortable",
   layout: "split",
   remoteImages: "ask",
-  allowAgentSend: false,
+  agents: { enabled: false, access: "read" },
   syncWindowDays: 90,
   autoCategorize: "auto",
   aiCategorize: false,
