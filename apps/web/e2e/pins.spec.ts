@@ -175,7 +175,8 @@ test.describe("pinned conversations", () => {
       );
       const own = accounts.find((a) => a.id === pins[0]!.accountId)!;
       const ownPins = pins.filter((t) => t.accountId === own.id);
-      await page.getByTestId(`nav-account-${own.id}`).click();
+      // on its name: a click selects it (the chevron beside the name only opens it, plan 67)
+      await page.getByTestId(`nav-account-${own.id}`).getByText(own.displayName, { exact: true }).click();
       await expect(rows(page).first()).toHaveAttribute("data-thread-id", String(ownPins[0]!.id));
       await expect(page.getByTestId("inbox-pinned-label")).toHaveText(`Pinned(${ownPins.length})`);
       const total = (await server.backend.server.invoke("threads.scopeCount", { scope: { kind: "view", view: "inbox", accountId: own.id } }, dev)).count;
@@ -183,7 +184,7 @@ test.describe("pinned conversations", () => {
       if (SHOTS) await page.screenshot({ path: `${SHOTS}/pinned-account-light.png` });
       const other = accounts.find((a) => !pins.some((t) => t.accountId === a.id));
       if (other) {
-        await page.getByTestId(`nav-account-${other.id}`).click();
+        await page.getByTestId(`nav-account-${other.id}`).getByText(other.displayName, { exact: true }).click();
         await expect(page.getByTestId("list-title")).toContainText(other.displayName);
         await expect(rows(page).first()).toBeVisible();
         await expect(page.getByTestId("inbox-pinned-label")).toHaveCount(0);
