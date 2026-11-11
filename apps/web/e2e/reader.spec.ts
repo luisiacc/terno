@@ -106,6 +106,77 @@ test.describe("reader conversation", () => {
       await expect(disclosure).toHaveAttribute("aria-expanded", "false");
       await expect(fig).toBeHidden();
     });
+    await scenario("plan 180: a person's menu replies to them alone on their newest message, writes to them, finds their mail; a right-click opens it, not the conversation's", async () => {
+      await fresh(page);
+      const mei = { name: "Mei Nakamura", email: "mei@acme.studio" };
+      const ben = { name: "Ben Ito", email: "ben@acme.studio" };
+      // Mei wrote twice, Yuki last; Ben only in Cc
+      const id = await ingestConversation(server, { subject: "Fotos del evento", count: 5, cc: [ben], from: { 0: mei, 2: mei }, now: E2E_NOW });
+      const meiNewest = sqlDb(server.backend.store).get<{ id: number }>("SELECT id FROM messages WHERE provider_msg_id = 'fotos-del-evento-2'")!.id;
+      await selectThread(page, id, 'subject:"Fotos del evento"');
+      const people = page.getByRole("list", { name: "People in this conversation" });
+      const chip = (name: string) => people.getByRole("button", { name: new RegExp(`^${name}`) });
+      const menu = page.getByTestId("person-menu");
+      type Draft = { toText: string; ccText: string; inReplyToMessageId: number | null; mode: string };
+      const draft = (threadId?: number) => page.evaluate((threadId) => (window as unknown as { __terno: { draft(threadId?: number): Draft | undefined } }).__terno.draft(threadId) ?? null, threadId);
+
+      // a right-click on a chip is that person's menu, not the conversation's around it
+      await chip("Mei Nakamura").click({ button: "right" });
+      await expect(menu).toBeVisible();
+      await expect(page.getByTestId("message-menu")).toHaveCount(0);
+      await expect(menu.getByTestId("person-menu-who")).toHaveText(`${mei.name}${mei.email}`);
+      await axeBothModes(page, "[data-testid=person-menu]");
+      await page.keyboard.press("Escape");
+      await expect(menu).toBeHidden();
+
+      // ⇧F10 on a focused chip: Yuki is who a plain Reply goes to, so there's no "only" for her
+      await chip("Yuki").focus();
+      await page.keyboard.press("Shift+F10");
+      await expect(menu).toBeVisible();
+      await expect(menu.getByTestId("person-new-message")).toHaveText("New message to Yuki");
+      await expect(menu.getByTestId("person-reply-only")).toHaveCount(0);
+      await page.keyboard.press("Escape");
+      await expect(chip("Yuki")).toBeFocused();
+      // Ben never wrote here: nothing about mail from him
+      await chip("Ben").click();
+      await expect(menu.getByTestId("person-reply-only")).toHaveText("Reply to Ben only");
+      await expect(menu.getByTestId("menu-filter")).toHaveCount(0);
+      await page.keyboard.press("Escape");
+
+      // an untouched Reply all becomes a reply to Mei alone, on her newest message
+      await respond(page, "reply-all");
+      await expect.poll(async () => (await draft(id))?.mode).toBe("replyAll");
+      await chip("Mei Nakamura").click();
+      await menu.getByTestId("person-reply-only").click();
+      await expect.poll(() => draft(id)).toMatchObject({ mode: "reply", inReplyToMessageId: meiNewest, ccText: "" });
+      expect(await recipientEmails(page, "compose-to")).toEqual([mei.email]);
+      // what they then add is theirs; asked again, the same reply goes back to her alone, and Undo brings Ben back
+      await page.getByTestId("compose-to").fill(ben.email);
+      await page.getByTestId("compose-to").press("Enter");
+      expect(await recipientEmails(page, "compose-to")).toEqual([mei.email, ben.email]);
+      await page.getByTestId("compose-body").click();
+      await page.keyboard.type("Gracias");
+      await chip("Mei Nakamura").click();
+      await menu.getByTestId("person-reply-only").click();
+      await expect(page.getByTestId("snack-message")).toHaveText("The draft now goes only to Mei Nakamura");
+      expect(await recipientEmails(page, "compose-to")).toEqual([mei.email]);
+      await page.getByTestId("snack-action").click();
+      await expect.poll(() => recipientEmails(page, "compose-to")).toEqual([mei.email, ben.email]);
+
+      // her conversations: the address, sent or received, everywhere
+      await chip("Mei Nakamura").click();
+      await menu.getByTestId("person-conversations").click();
+      await expect(page.getByTestId("search-input")).toHaveValue(mei.email);
+      await expect.poll(() => page.evaluate(() => (window as unknown as { __terno: { loadedIds(): number[] } }).__terno.loadedIds())).toContain(id);
+
+      // a new message to her, from the conversation's account
+      await chip("Mei Nakamura").click();
+      await menu.getByTestId("person-new-message").click();
+      await expect.poll(() => draft()).toMatchObject({ mode: "new" });
+      expect(await recipientEmails(page, "compose-to")).toEqual([mei.email]);
+      // the menu went with the reader: shortcuts aren't left waiting on it
+      expect(await page.evaluate(() => (window as unknown as { __terno: { getApp(): { menuOpen: boolean } } }).__terno.getApp().menuOpen)).toBe(false);
+    });
     await scenario("the reply bar after the last message starts a reply to who wrote last", async () => {
       await fresh(page);
       await openRow(page, 0);

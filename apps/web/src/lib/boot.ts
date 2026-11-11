@@ -8,7 +8,7 @@ import { setSyncProgress } from "~/state/sync-progress";
 import { localized } from "~/lib/i18n";
 import { t } from "@terno/i18n";
 import type { DesignId } from "@terno/core";
-import { acquireDraftHold, trackDraftComposition, draftsSaved, flushAllDrafts, loadDrafts } from "~/lib/drafts";
+import { acquireDraftHold, trackDraftComposition, draftsSaved, flushAllDrafts, loadDrafts, shownDraftKey, useDrafts } from "~/lib/drafts";
 import { installQueryRecovery } from "~/rpc/reconnect";
 import { client, connectBackend } from "~/rpc/connection";
 import { removeFromCategory } from "~/lib/categorize";
@@ -76,6 +76,13 @@ export async function boot(): Promise<void> {
       loadedIds: () => useList.getState().items.map((t) => t.id),
       // the reader specs wait on what the cache holds (a refetch that changes nothing on screen)
       threadDetail: (id: number) => useThreads.getState().details.get(id),
+      // plan 180: who a draft goes to and what it answers
+      draft: (threadId?: number) => {
+        const s = getApp();
+        const key = threadId === undefined ? s.compose?.key : shownDraftKey(useDrafts.getState().drafts, threadId, s.draftShown);
+        const d = key ? useDrafts.getState().drafts[key] : undefined;
+        return d && { toText: d.toText, ccText: d.ccText, bccText: d.bccText, inReplyToMessageId: d.inReplyToMessageId, mode: d.mode };
+      },
       updatesBridge: setBridgeForTests,
       mailboxBridge: setMailboxBridgeForTests,
       // the perf gate times the switch itself (no save, no font wait)

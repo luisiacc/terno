@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { shallow } from "zustand/shallow";
-import { formatAddressList, UNDO_SEND_MS, type AttachmentRef, type ThreadDetail } from "@terno/core";
+import { formatAddressList, UNDO_SEND_MS, type Address, type AttachmentRef, type ThreadDetail } from "@terno/core";
 import { attachmentUploading, draftAttachmentBudget } from "./attachments";
 import { breadcrumb, captureUi } from "~/lib/diag";
 import { useDraftRecovery } from "~/lib/draft-recovery-ui";
@@ -592,6 +592,11 @@ export interface ComposeOpenOptions {
   target?: "ai";
   /** the message it answers or forwards, chosen by the person (plan 158): a draft on another message turns to this one */
   sourceId?: number;
+  /**
+   * plan 180, "Reply to Mei only": the reply goes to this one address, To alone (no Cc, no Bcc, whatever Reply-To says). A
+   * draft here that goes to anyone else is readdressed as a retarget is: converted, with Undo when it held their words.
+   */
+  only?: Address;
   /** told the moment the draft is known, before anything takes focus or paints, so its row shows with it */
   onLanded?: (landing: Exclude<ComposeLanding, { kind: "none" }>) => void;
 }
@@ -744,8 +749,10 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
   }
   let proof: DraftAckRead | undefined, noWriter = false;
   const chosenSource = cell.options?.sourceId;
-  // the draft answers another message than the one chosen: a conversion, as a change of mode is
-  const retarget = Boolean(existing && chosenSource !== undefined && activeSourceId(existing) !== chosenSource);
+  const only = cell.options?.only;
+  // the draft answers another message than the one chosen, or goes to more than the one person asked for: a conversion, as a
+  // change of mode is
+  const retarget = Boolean(existing && ((chosenSource !== undefined && activeSourceId(existing) !== chosenSource) || (only && !goesOnlyTo(existing, only.email))));
   const sameModeSource = Boolean(existing && !retarget && existing.mode === mode && existing.showSourceContext && !existing.presentationExpired && !existing.recovery && activeSourceId(existing) !== null && lease);
   if (existing && (existing.mode !== mode || retarget || sameModeSource) && !existing.presentationExpired && lease) {
     if (mine !== intent || !focusAllowed()) return;
@@ -925,6 +932,7 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
     ? convertFields(before!, mode, detail, account, identities, forwardRefs, chosenSource)
     : replyFields(mode, detail, account, { identities, forwardRefs, ...(chosenSource !== undefined ? { sourceId: chosenSource } : {}) });
   if (converted === before) { snack.error(t("attachments.tooLarge")); return; }
+  if (only) Object.assign(converted, { toText: formatAddressList([only]), ccText: "", bccText: "", auto: { to: [only.email], cc: [], bcc: [] } });
   converted.showSourceContext = true;
   converted.attachments = mergeAttachmentRefs([], converted.attachments ?? []);
   const snapshot = existing;
@@ -983,6 +991,8 @@ async function openComposeNow(mode: DraftMode, threadId: number | null, mine: nu
     const undo = registerUndo(() => editDraft(original.key, { ...before!, uiState: "open" }));
     if (!fresh()) { if (lease && focusLease === lease) releaseFocusLease(lease, false); if (useSnack.getState().undo === undo) useSnack.setState({ undo: null }); return; }
     // the same kind of draft, on another message: "Converted to a reply" would say nothing true
+    // plan 180: the same reply, now to one person
+    if (only && original.mode === mode && !sourceChanged) return void snack(t("compose.onlyTo.message", { name: only.name || only.email }), { action: { label: t("common.undo"), name: t("compose.undoOnlyTo"), undo } });
     const [message, name] = original.mode === mode ? (["compose.converted.message", "compose.undoConvert.message"] as const) : CONVERTED[mode];
     snack(t(message), { action: { label: t("common.undo"), name: t(name), undo } });
     return;
@@ -1019,6 +1029,12 @@ export async function addressReply(key: string, threadId: number, person: { name
     delete patch.bodyHtml;
   }
   return editDraft(key, patch);
+}
+
+/** Plan 180: To is that one address, and there's no Cc or Bcc. */
+function goesOnlyTo(d: LocalDraft, email: string): boolean {
+  const to = parseAddressList(d.toText);
+  return to.length === 1 && to[0]!.email.toLowerCase() === email.toLowerCase() && parseAddressList(d.ccText).length === 0 && parseAddressList(d.bccText).length === 0;
 }
 
 /** To, Cc and Bcc are still only what Terno filled in (plan 163). */

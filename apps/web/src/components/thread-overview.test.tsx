@@ -11,6 +11,8 @@ vi.mock("~/lib/snack", () => ({ snack: Object.assign(vi.fn(), { error: vi.fn() }
 // what each avatar is asked for (icons, a person's), not the icon machinery: that's sender-avatar's own
 vi.mock("./sender-avatar", () => ({ SenderAvatar: ({ icon, person }: { icon: boolean; person: boolean }) => <span aria-hidden data-testid="avatar" data-icon={String(icon)} data-person={String(person)} /> }));
 
+// (the person menu reaches the composer, whose modules read the motion preference as they load)
+vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
 const { ThreadAttachments } = await import("./attachments");
 const { ThreadPeople } = await import("./thread-people");
 
@@ -40,7 +42,7 @@ describe("ThreadPeople (plan 177)", () => {
     expect(host.querySelector("[data-testid=thread-people]")).toBeNull();
   });
 
-  it("a named list of chips, the full name and address for screen readers; past six, a +N button shows the rest", async () => {
+  it("a named list of chips, each a menu button named by the full name and address; past six, a +N button shows the rest", async () => {
     const host = await render(peopleOf([msg({ to: [me, ...Array.from({ length: 8 }, (_, i) => person(i + 1))] }), msg({ from: person(1) })]));
     const list = host.querySelector("ul[data-testid=thread-people]")!;
     expect(list.getAttribute("aria-label")).toBe("People in this conversation");
@@ -49,8 +51,8 @@ describe("ThreadPeople (plan 177)", () => {
     // the avatar and the first name are hidden from screen readers; they hear the full name and address once
     expect(chips()[0]!.querySelector("[data-slot=chip-label] > [aria-hidden]")!.textContent).toBe("Person0");
     expect(chips()[0]!.querySelector(".sr-only")!.textContent).toBe("Person0 Last <p0@acme.studio>");
-    // information, not controls: the only Tab stop is the +N
-    expect([...host.querySelectorAll("button, [tabindex]")]).toHaveLength(1);
+    // plan 180: each chip opens that person's menu
+    expect(chips().every((c) => c.tagName === "BUTTON" && c.getAttribute("aria-haspopup") === "menu")).toBe(true);
     const more = host.querySelector<HTMLButtonElement>("[data-testid=thread-people-more]")!;
     expect(more.textContent).toBe("+3");
     expect(more.getAttribute("aria-label")).toBe("Show 3 more people");

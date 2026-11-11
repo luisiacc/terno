@@ -540,7 +540,7 @@ export async function isolateLocalDiscovery(server: DevServer, ollamaUrl?: strin
  * first. Returns the thread id.
  */
 /** `cc`: others on the conversation, copied on every message (a group thread) */
-export async function ingestConversation(server: DevServer, o: { subject: string; count: number; html?: number; unread?: number; mineFirst?: boolean; cc?: { name: string; email: string }[]; files?: Record<number, { filename: string; mime: string; size: number }[]>; now: number }): Promise<number> {
+export async function ingestConversation(server: DevServer, o: { subject: string; count: number; html?: number; unread?: number; mineFirst?: boolean; cc?: { name: string; email: string }[]; files?: Record<number, { filename: string; mime: string; size: number }[]>; /** who wrote message i instead of Yuki (not the user's) */ from?: Record<number, { name: string; email: string }>; now: number }): Promise<number> {
   const db = sqlDb(server.backend.store);
   const acct = db.get<{ id: number; email: string }>("SELECT id, email FROM accounts ORDER BY id LIMIT 1")!;
   const key = o.subject.toLowerCase().replace(/[^a-z0-9]+/g, "-");
@@ -556,7 +556,7 @@ export async function ingestConversation(server: DevServer, o: { subject: string
       rfcMessageId: `<${key}-${i}@e2e.test>`,
       inReplyTo: i ? `<${key}-${i - 1}@e2e.test>` : null,
       references: Array.from({ length: i }, (_, j) => `<${key}-${j}@e2e.test>`),
-      from: mine ? me : yuki,
+      from: mine ? me : o.from?.[i] ?? yuki,
       to: [mine ? yuki : me],
       cc: o.cc ?? [],
       bcc: [],
