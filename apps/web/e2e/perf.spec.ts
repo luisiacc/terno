@@ -78,7 +78,8 @@ test("holding j: every move commits within a frame and the DOM stays bounded", a
     const seen = new WeakSet<Animation>();
     const tick = () => {
       for (const a of document.getAnimations()) {
-        if (seen.has(a) || a.effect?.getTiming().iterations === Infinity) continue;
+        // (a scroll-driven effect, the learned banner's scroll-follow, is tied to the list's scroll position: no time runs)
+        if (seen.has(a) || a.effect?.getTiming().iterations === Infinity || a.timeline !== document.timeline) continue;
         seen.add(a);
         w.__jAnims++;
       }

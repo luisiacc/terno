@@ -27,7 +27,9 @@ export function AgentSession({ copy, s, className = "" }: { copy: SiteCopy; s: S
       <Window className={s.window}>
         <div className={`grid gap-5 p-5 pt-10 font-mono text-[0.8rem] leading-relaxed sm:p-6 sm:pt-11 ${s.body}`}>
           <p className={`[overflow-wrap:anywhere] ${s.dim}`}>
+            {/* i18n-ignore: the real setup command, the same in every language */}
             <span aria-hidden="true">$ </span>claude mcp add terno -- /Applications/Terno.app/…/<wbr />
+            {/* i18n-ignore: the sidecar's file name */}
             <span className="whitespace-nowrap">terno-mcp</span>
           </p>
           <div>
@@ -35,6 +37,7 @@ export function AgentSession({ copy, s, className = "" }: { copy: SiteCopy; s: S
             <p className="mt-1">{d.ask}</p>
           </div>
           <p className={s.tool}>
+            {/* i18n-ignore: the MCP server's and tool's real names */}
             terno · search_emails <span>“{d.query}”</span>
             <span className={`block ${s.dim}`}>
               <span aria-hidden="true">→ </span>

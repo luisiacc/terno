@@ -428,9 +428,13 @@ test.describe("editable, persisted and in effect", () => {
     await scenario("Agents and Data: agent sending persists; export downloads and imports back", async () => {
       await fresh(page);
       await openVia(page, "gear", "agents");
-      await page.getByRole("switch", { name: "Allow agents to send mail" }).click();
+      // plan 183: sending is the highest access level, once agents are allowed at all
+      await page.getByRole("switch", { name: "Allow agents" }).click();
+      await page.getByTestId("agents-access").click();
+      await page.getByTestId("agents-access-send").click();
       await reopen(page, "agents");
-      await expect(page.getByRole("switch", { name: "Allow agents to send mail" })).toBeChecked();
+      await expect(page.getByRole("switch", { name: "Allow agents" })).toBeChecked();
+      await expect(page.getByTestId("agents-access")).toHaveText("Read, organize and send");
 
       await page.getByTestId("tab-data").click();
       const download = page.waitForEvent("download");
