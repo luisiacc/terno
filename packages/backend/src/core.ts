@@ -18,7 +18,7 @@ import { Autocomplete, DESKTOP_AUTOCOMPLETE_PEAK, DESKTOP_CONTACT_CAPS, DESKTOP_
 import { AiService, defaultAiFactory, type AiFactory } from "./ai-service";
 import { Connectivity, type ConnectivityOptions, type NetReason } from "./connectivity";
 import { QuickChecks, type QuickCheckOptions } from "./quick-checks";
-import { AgentMailWaits, AgentWaitBusyError, type AgentWaitMatch, type AgentWaitResult } from "./agent-mail-waits";
+import { AGENT_ARRIVALS_MAX, AgentMailWaits, AgentWaitBusyError, type AgentWaitMatch, type AgentWaitResult } from "./agent-mail-waits";
 import { AiAssist } from "./ai-assist";
 import { ActionsService } from "./actions";
 import { ReplyService } from "./replies";
@@ -795,13 +795,15 @@ export class BackendCore {
     // i18n-ignore: as above
     if (!this.connectivity.online || status.status === "offline" || status.connection?.state === "offline") throw new RpcError("UNAVAILABLE", "Terno is offline, so no new mail can arrive. Ask the user to check their connection.");
     const provider = await this.provider(p.accountId).catch(() => null);
-    const syncs = !this.stopped && this.syncTimer !== null;
-    const checks = syncs && provider?.quickChecks && quickHealthy(status) ? "quick" : syncs && provider?.watch ? "push" : "poll";
+    // watched whenever its provider takes quick checks: each check asks again whether the account is healthy, so one
+    // mid-pass now is checked once that pass is over (Codex code review #4)
+    const quick = !this.stopped && this.syncTimer !== null && provider?.quickChecks === true;
+    const checks = quick && (quickHealthy(status) || (status.status === "syncing" && quickHealthy({ ...status, status: "idle" }))) ? "quick" : !this.stopped && this.syncTimer !== null && provider?.watch ? "push" : "poll";
     // the agent may have gone while those were read (its disconnect already ended its waits): nothing to start for it
     // i18n-ignore: nobody reads it (the connection is gone)
     if (!this.server.connected(p.ctx)) throw new RpcError("UNAVAILABLE", "The agent's connection closed.");
     try {
-      return { ...(await this.agentWaits.wait({ clientId: p.ctx.clientId, accountId: p.accountId, match: p.match, waitMs: p.waitMs, quick: checks === "quick" })), checks };
+      return { ...(await this.agentWaits.wait({ clientId: p.ctx.clientId, accountId: p.accountId, match: p.match, waitMs: p.waitMs, quick })), checks };
     } catch (error) {
       if (error instanceof AgentWaitBusyError) throw new RpcError("UNAVAILABLE", error.message);
       throw error;
@@ -1983,8 +1985,14 @@ export class BackendCore {
       // plan 41: live mail this pass inserts is news once the account synced in this life (no first sync, no catch-up
       // at launch); it's looked at when the pass is over (its flags, filters and bodies settled)
       const arrivals = this.attention.beginPass(accountId);
-      // plan 191: what it inserts as live mail, for agents waiting on the account once the pass is over
-      const agentArrivals: number[] = [];
+      // plan 191: what it inserts as live mail, for agents waiting on the account once the pass is over; only while one
+      // listens, and bounded per slice (a catch-up inserts thousands)
+      let agentArrivals: number[] = [];
+      const collectAgentArrivals = (ids: readonly number[]) => {
+        if (!ids.length || !this.agentWaits.listening(accountId)) return;
+        agentArrivals.push(...ids.slice(-AGENT_ARRIVALS_MAX));
+        if (agentArrivals.length > AGENT_ARRIVALS_MAX) agentArrivals = agentArrivals.slice(-AGENT_ARRIVALS_MAX);
+      };
       // plan 69: a pass that overlaps a storage removal doesn't put back what it removed
       const pass = this.evictions.pass();
       let observation: FlagObservation | null = null;
@@ -2018,7 +2026,7 @@ export class BackendCore {
           await this.accountWrite(life, () => this.store.captureRepairs.retire(accountId, locator, checkCurrent));
         },
         ingest: async (messages, o) => {
-          await this.ingestSliced(messages, true, life, o?.live ? (ids) => { arrivals.add(ids); agentArrivals.push(...ids); } : undefined, provider.flagSnapshotSource === "locations" ? undefined : observation ?? undefined, checkCurrent, { accountId, pass }, o?.live === true);
+          await this.ingestSliced(messages, true, life, o?.live ? (ids) => { arrivals.add(ids); collectAgentArrivals(ids); } : undefined, provider.flagSnapshotSource === "locations" ? undefined : observation ?? undefined, checkCurrent, { accountId, pass }, o?.live === true);
         },
         // the account's own window, else the general one
         windowDays,

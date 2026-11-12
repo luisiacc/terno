@@ -157,7 +157,7 @@ export function createMcpServer(app: AppConnection, version = "0.1.0"): McpServe
     {
       title: "Wait for new mail",
       description:
-        "Waits for new mail to arrive in one account (a verification code, a sign-in link, a reply), up to waitSeconds, and returns its conversation as search_emails does as soon as a new message matches. " +
+        "Waits for new mail to arrive in one account (a verification code, a sign-in link, a reply), up to waitSeconds, and returns the new messages (sender, subject, first lines, threadId for get_thread) as soon as one matches. " +
         "Search first; call this only when what you expect isn't there yet. While it waits Terno checks that account every few seconds. " +
         "Mail that lands in Spam or Trash isn't reported.",
       inputSchema: {
@@ -172,7 +172,9 @@ export function createMcpServer(app: AppConnection, version = "0.1.0"): McpServe
       try {
         const r = await app.call("sync.agentWait", { accountId, waitSeconds, ...(from?.trim() ? { from } : {}), ...(subject?.trim() ? { subject } : {}) });
         const waited = Math.round(r.waitedMs / 1000);
-        if (r.items.length) return text({ arrived: await summarize(r.items), waitedSeconds: waited });
+        // the messages themselves, never their conversations' summaries (plan 191, Codex code review #1)
+        const arrived = r.items.map((m) => ({ threadId: m.threadId, messageId: m.messageId, from: m.fromName && m.fromName !== m.fromEmail ? `${m.fromName} <${m.fromEmail}>` : m.fromEmail, subject: m.subject, snippet: m.snippet, date: new Date(m.date).toISOString() }));
+        if (arrived.length) return text({ arrived, waitedSeconds: waited });
         const how = r.checks === "quick" ? "" : r.checks === "push" ? " Terno hears of this account's new Inbox mail at once, and of its other folders every 40 seconds." : " Terno checks this account only every 40 seconds right now (it is still syncing, or its last check failed).";
         return text({
           arrived: [],

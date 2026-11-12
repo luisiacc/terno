@@ -2,26 +2,28 @@
  * Plan 191: an agent waiting for new mail on one account (a verification code, a reply). A Gmail-like account is
  * watched meanwhile (QuickChecks: checked every 5 s, as a focused window's); a push account already hears at once.
  * At the end of each pass the core hands over what it inserted as live mail. The wait ends with the first such
- * message of that account that matches the agent's `from` and `subject`, and is outside Spam and Trash (plan 185,
+ * messages of that account that match the agent's `from` and `subject`, and are outside Spam and Trash (plan 185,
  * the owner's rule); or with nothing when its time is up.
  *
  * - Matching is per message, on what the arrival row holds (sender, subject): never a search, which matches
- *   conversations and lets `in:spam` in.
+ *   conversations and lets `in:spam` in. The answer is those messages themselves, not their conversations'
+ *   summaries (a message in Spam elsewhere in the conversation may have written its subject).
  * - A message whose body hasn't come while a filter reads bodies may still be moved to Spam: it is held until its
  *   body arrives (`bodyArrived`) or the wait ends.
- * - Nothing runs without a wait: `arrived` with no waiter on the account returns at once. Queues and reads are
- *   bounded; the only timers are a wait's deadline and the watch's cadence (QuickChecks').
+ * - One wait per agent and account: a new one ends the one before (a call the agent cancelled leaves none behind).
+ * - Nothing runs without a wait: `listening` is false and `arrived` returns at once. Queues and reads are bounded;
+ *   the only timers are a wait's deadline and the watch's cadence (QuickChecks').
  */
-import type { ArrivalRow, ThreadSummary } from "@terno/core";
+import type { AgentArrival, ArrivalRow, ThreadSummary } from "@terno/core";
 
 /** the most waits at once, across every agent */
 export const AGENT_WAITS_MAX = 4;
-/** the most arrivals a wait keeps to look at, or holds for their body (the newest win) */
-const QUEUE_MAX = 500;
+/** the most arrivals a wait keeps to look at, or holds for their body, and a pass collects for them (the newest win) */
+export const AGENT_ARRIVALS_MAX = 500;
 const HELD_MAX = 50;
 /** arrival rows read per store call */
 const READ_CHUNK = 200;
-/** conversations a wait answers with */
+/** messages a wait answers with */
 const ANSWER_MAX = 10;
 
 type Timer = ReturnType<typeof setTimeout>;
@@ -55,7 +57,7 @@ export interface AgentWaitMatch {
 }
 
 export interface AgentWaitResult {
-  items: ThreadSummary[];
+  items: AgentArrival[];
   waitedMs: number;
 }
 
@@ -70,7 +72,7 @@ interface Waiter {
   pending: Set<number>;
   /** matching arrivals waiting for their body (a filter that reads bodies may still move them) */
   held: Set<number>;
-  done: (items: ThreadSummary[]) => void;
+  done: (items: AgentArrival[]) => void;
 }
 
 const norm = (s: string | undefined) => s?.trim().toLowerCase() ?? "";
@@ -109,6 +111,8 @@ export class AgentMailWaits {
    */
   wait(p: { clientId: string; accountId: number; match?: AgentWaitMatch; waitMs: number; quick: boolean }): Promise<AgentWaitResult> {
     if (this.stopped) return Promise.resolve({ items: [], waitedMs: 0 });
+    // the agent's earlier wait on this account is over: it asks again (or cancelled that call)
+    for (const w of this.waiters.values()) if (w.clientId === p.clientId && w.accountId === p.accountId) w.done([]);
     if (this.waiters.size >= AGENT_WAITS_MAX) return Promise.reject(new AgentWaitBusyError());
     const key = `agent-wait:${++this.seq}`;
     const started = this.hooks.now();
@@ -138,13 +142,19 @@ export class AgentMailWaits {
     });
   }
 
+  /** A wait listens to this account: only then does a pass collect its arrivals. */
+  listening(accountId: number): boolean {
+    for (const w of this.waiters.values()) if (w.accountId === accountId) return true;
+    return false;
+  }
+
   /** A pass of the account ended: these are the messages it inserted as live mail (its flags and filters settled). */
   arrived(accountId: number, messageIds: readonly number[]): void {
     if (!this.waiters.size || !messageIds.length) return;
     for (const w of this.waiters.values()) {
       if (w.accountId !== accountId) continue;
       for (const id of messageIds) w.pending.add(id);
-      bounded(w.pending, QUEUE_MAX);
+      bounded(w.pending, AGENT_ARRIVALS_MAX);
       this.look(w);
     }
   }
@@ -177,12 +187,16 @@ export class AgentMailWaits {
     return this.waiters.size;
   }
 
-  /** one look per wait at a time; arrivals meanwhile join its queue and the same look takes them */
+  /** one look per wait at a time; arrivals meanwhile join its queue and the same look (or the next) takes them */
   private look(w: Waiter): void {
     if (this.looks.has(w.key)) return;
     const run = this.drain(w)
       .catch((error: unknown) => this.hooks.log?.("agent wait: looking at new mail failed", error))
-      .finally(() => this.looks.delete(w.key));
+      .finally(() => {
+        this.looks.delete(w.key);
+        // queued after the loop's last check but before this: looked at now, not left for the next arrival (Codex code review #3)
+        if (this.waiters.has(w.key) && w.pending.size) this.look(w);
+      });
     this.looks.set(w.key, run);
   }
 
@@ -194,23 +208,29 @@ export class AgentMailWaits {
       const rows = await this.hooks.arrivals(ids);
       if (!alive()) return;
       const matched = rows.filter((r) => this.matches(w, r));
-      if (!matched.length) {
+      // held before asking about filters: a body that comes meanwhile moves it back to pending (Codex code review #2)
+      const waiting = matched.filter((r) => r.bodyPending);
+      for (const r of waiting) w.held.add(r.id);
+      const filters = waiting.length > 0 && (await this.hooks.bodyFilters());
+      if (!alive()) return;
+      let ready = matched.filter((r) => !r.bodyPending);
+      if (!filters) {
+        // nothing reads bodies: each still held goes now (one its body brought back is read again from pending)
+        ready = [...ready, ...waiting.filter((r) => w.held.delete(r.id))];
+      }
+      bounded(w.held, HELD_MAX);
+      if (!ready.length) {
         await this.hooks.yieldTurn();
         continue;
       }
-      // a filter that reads bodies may still move one whose body hasn't come: held for bodyArrived
-      const ready = matched.some((r) => r.bodyPending) && (await this.hooks.bodyFilters()) ? matched.filter((r) => !r.bodyPending) : matched;
+      ready.sort((a, b) => b.date - a.date || b.id - a.id);
+      // a conversation in Spam or Trash stays out (plan 185)
+      const threads = await this.hooks.summaries([...new Set(ready.map((r) => r.threadId))]);
       if (!alive()) return;
-      for (const r of matched) if (!ready.includes(r)) w.held.add(r.id);
-      bounded(w.held, HELD_MAX);
-      if (!ready.length) continue;
-      const threadIds = [...new Set(ready.sort((a, b) => b.date - a.date || b.id - a.id).map((r) => r.threadId))].slice(0, ANSWER_MAX);
-      // a conversation in Spam or Trash stays out (plan 185); one holding spam elsewhere is summarized without it by the sidecar
-      const items = (await this.hooks.summaries(threadIds)).filter((t) => !t.inSpam && !t.inTrash);
-      if (!alive()) return;
+      const outside = new Set(threads.filter((t) => !t.inSpam && !t.inTrash).map((t) => t.id));
+      const items = ready.filter((r) => outside.has(r.threadId)).slice(0, ANSWER_MAX);
       if (items.length) {
-        const order = new Map(threadIds.map((id, i) => [id, i]));
-        return w.done(items.sort((a, b) => order.get(a.id)! - order.get(b.id)!));
+        return w.done(items.map((r) => ({ threadId: r.threadId, messageId: r.id, fromName: r.fromName, fromEmail: r.fromEmail, subject: r.subject, snippet: r.snippet, date: r.date })));
       }
     }
   }

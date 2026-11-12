@@ -58,6 +58,20 @@ export const AGENT_METHODS: Partial<Record<MethodName, AgentAccess>> = {
   "compose.send": "send",
 };
 
+/**
+ * Plan 191: a new message an agent waited for, as it is: its own sender, subject and lines (never its conversation's
+ * summary, which a message in Spam elsewhere in the conversation could have written).
+ */
+export interface AgentArrival {
+  threadId: number;
+  messageId: number;
+  fromName: string;
+  fromEmail: string;
+  subject: string;
+  snippet: string;
+  date: number;
+}
+
 /** The level's name as Settings → Agents shows it, for messages to agents (English: agents read it, not the UI). */
 export const AGENT_ACCESS_LABEL: Record<AgentAccess, string> = {
   // i18n-ignore: for agents, matching the English label in Settings

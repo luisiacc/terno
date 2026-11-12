@@ -10,25 +10,28 @@ const thread = (id: number, o: Partial<ThreadSummary> = {}): ThreadSummary => ({
   unread: true, starred: false, hasAttachments: false, categoryIds: [], inInbox: true, inSpam: false, inTrash: false, ...o,
 });
 
-function rig(o: { bodyFilters?: boolean } = {}) {
+function rig(o: { bodyFilters?: boolean | (() => Promise<boolean>); onLog?: () => void } = {}) {
   const rows = new Map<number, ArrivalRow>();
   const threads = new Map<number, ThreadSummary>();
   const watches = new Map<string, number>();
   const reads = { arrivals: [] as number[][], summaries: 0 };
   let gate: Promise<void> | null = null;
+  let fail = 0;
   const waits = new AgentMailWaits({
     watch: (key, accountId) => void watches.set(key, accountId),
     unwatch: (key) => void watches.delete(key),
     arrivals: async (ids) => {
       reads.arrivals.push([...ids]);
       if (gate) await gate;
+      if (fail > 0 && fail--) throw new Error("store busy");
       return ids.map((id) => rows.get(id)).filter((r): r is ArrivalRow => !!r);
     },
     summaries: async (ids) => {
       reads.summaries++;
       return ids.map((id) => threads.get(id)).filter((t): t is ThreadSummary => !!t);
     },
-    bodyFilters: async () => o.bodyFilters ?? false,
+    bodyFilters: async () => (typeof o.bodyFilters === "function" ? o.bodyFilters() : (o.bodyFilters ?? false)),
+    log: () => o.onLog?.(),
     yieldTurn: async () => {},
     now: () => Date.now(),
   });
@@ -38,7 +41,7 @@ function rig(o: { bodyFilters?: boolean } = {}) {
     threads.set(threadId, thread(threadId, t));
   };
   const wait = (match?: AgentWaitMatch, o2: { clientId?: string; quick?: boolean } = {}) => waits.wait({ clientId: o2.clientId ?? "c", accountId: 1, match, waitMs: 30_000, quick: o2.quick ?? true });
-  return { waits, message, watches, reads, wait, gate: (g: Promise<void> | null) => void (gate = g) };
+  return { waits, message, watches, reads, wait, gate: (g: Promise<void> | null) => void (gate = g), failNext: () => void (fail = 1) };
 }
 
 const flush = () => vi.advanceTimersByTimeAsync(0);
@@ -51,7 +54,7 @@ describe("AgentMailWaits (plan 191)", () => {
     await vi.advanceTimersByTimeAsync(4_000);
     r.message(10, 100);
     r.waits.arrived(1, [10]);
-    expect(await wait).toEqual({ items: [expect.objectContaining({ id: 100 })], waitedMs: 4_000 });
+    expect(await wait).toEqual({ items: [{ threadId: 100, messageId: 10, fromName: "Ana", fromEmail: "ana@example.com", subject: "Hello", snippet: "", date: expect.any(Number) }], waitedMs: 4_000 });
     expect(r.watches.size).toBe(0);
     expect(vi.getTimerCount()).toBe(0);
   });
@@ -95,11 +98,11 @@ describe("AgentMailWaits (plan 191)", () => {
     expect(r.waits.size).toBe(1);
     r.message(3, 202, { fromEmail: "noreply@github.com", subject: "[GitHub] Your CODE is 1234" });
     r.waits.arrived(1, [3]);
-    expect((await wait).items.map((t) => t.id)).toEqual([202]);
+    expect((await wait).items.map((t) => t.threadId)).toEqual([202]);
     const byName = r.wait({ from: "acme bank" });
     r.message(4, 203, { fromName: "ACME Bank", fromEmail: "x@mailer.test" });
     r.waits.arrived(1, [4]);
-    expect((await byName).items.map((t) => t.id)).toEqual([203]);
+    expect((await byName).items.map((t) => t.threadId)).toEqual([203]);
   });
 
   it("while a filter reads bodies, a match whose body hasn't come waits for it", async () => {
@@ -119,7 +122,57 @@ describe("AgentMailWaits (plan 191)", () => {
     await flush();
     r.message(2, 101, { bodyPending: false });
     r.waits.bodyArrived(2);
-    expect((await wait).items.map((t) => t.id)).toEqual([101]);
+    expect((await wait).items.map((t) => t.threadId)).toEqual([101]);
+  });
+
+  it("a body that comes while the wait asks about filters isn't missed (Codex code review #2)", async () => {
+    let answer!: (v: boolean) => void;
+    const r = rig({ bodyFilters: () => new Promise<boolean>((resolve) => (answer = resolve)) });
+    const wait = r.wait();
+    r.message(1, 100, { bodyPending: true });
+    r.waits.arrived(1, [1]);
+    await flush();
+    // the filters are being asked about: the body comes now, then the answer (a filter reads bodies)
+    r.message(1, 100, { bodyPending: false });
+    r.waits.bodyArrived(1);
+    answer(true);
+    expect((await wait).items.map((t) => t.threadId)).toEqual([100]);
+  });
+
+  it("an arrival queued as a look ends is looked at, not left for the next one (Codex code review #3)", async () => {
+    let r!: ReturnType<typeof rig>;
+    // the look fails; while it winds down (its failure logged) a new message comes
+    r = rig({ onLog: () => { r.message(2, 200); r.waits.arrived(1, [2]); } });
+    const wait = r.wait();
+    r.failNext();
+    r.message(1, 100);
+    r.waits.arrived(1, [1]);
+    expect((await wait).items.map((t) => t.threadId)).toEqual([200]);
+  });
+
+  it("an agent's new wait on the account ends its last one (a call it cancelled leaves nothing running)", async () => {
+    const r = rig();
+    const first = r.wait(undefined, { clientId: "a" });
+    const other = r.wait(undefined, { clientId: "b" });
+    const second = r.wait(undefined, { clientId: "a" });
+    expect((await first).items).toEqual([]);
+    expect(r.waits.size).toBe(2);
+    expect(r.watches.size).toBe(2);
+    r.message(1, 100);
+    r.waits.arrived(1, [1]);
+    expect((await second).items).toHaveLength(1);
+    expect((await other).items).toHaveLength(1);
+  });
+
+  it("listens only while a wait is on the account (a pass collects nothing otherwise)", async () => {
+    const r = rig();
+    expect(r.waits.listening(1)).toBe(false);
+    const wait = r.wait();
+    expect(r.waits.listening(1)).toBe(true);
+    expect(r.waits.listening(2)).toBe(false);
+    await r.waits.stop();
+    await wait;
+    expect(r.waits.listening(1)).toBe(false);
   });
 
   it("with no wait, an arrival reads nothing", async () => {

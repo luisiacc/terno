@@ -21,6 +21,8 @@ interface Scripted extends MailProvider {
   next: IncomingMessage[];
   /** runs after the pass's ingest, in the same pass */
   after: ((sink: SyncSink) => Promise<void>) | null;
+  /** an ordinary pass waits for it */
+  gate: Promise<void> | null;
 }
 
 const cleanups: (() => Promise<unknown> | unknown)[] = [];
@@ -40,9 +42,11 @@ async function setup(kinds: ("quick" | "push")[]) {
         passes: [],
         next: [],
         after: null,
+        gate: null,
         async verify() {},
         async sync(sink: SyncSink) {
           p.passes.push(sink.quick ? "quick" : "full");
+          if (!sink.quick && p.gate) await p.gate;
           const live = p.next.splice(0);
           if (live.length) await sink.ingest(live, { live: true });
           const after = p.after;
@@ -140,6 +144,26 @@ describe("plan 191: an agent waits for new mail on one account", () => {
     expect(t.backend.agentWaits.size).toBe(1);
     p.next.push(msg({ accountId: a, from: { name: "GitHub", email: "noreply@github.com" }, subject: "[GitHub] Your code", date: Date.now() }));
     expect((await wait).items.map((i) => i.subject)).toEqual(["[GitHub] Your code"]);
+  });
+
+  it("a wait that starts during an ordinary pass is checked once the pass is over (Codex code review #4)", async () => {
+    const t = await setup(["quick"]);
+    const [a] = t.ids as [number];
+    const p = t.providers.get(a)!;
+    let open!: () => void;
+    p.gate = new Promise<void>((resolve) => (open = resolve));
+    const pass = t.backend.syncAccount(a);
+    await expect.poll(() => t.state(a).status).toBe("syncing");
+    const wait = t.agent.client.call("sync.agentWait", { accountId: a, waitSeconds: 30 });
+    await expect.poll(() => t.backend.agentWaits.size).toBe(1);
+    await tick(3 * EVERY);
+    expect(t.quick(a)).toBe(0);
+    p.gate = null;
+    open();
+    await pass;
+    await expect.poll(() => t.quick(a)).toBeGreaterThanOrEqual(1);
+    p.next.push(msg({ accountId: a, subject: "Your code", date: Date.now() }));
+    expect(await wait).toMatchObject({ checks: "quick", items: [expect.objectContaining({ subject: "Your code" })] });
   });
 
   it("a push account isn't checked; it hears by push and says so", async () => {

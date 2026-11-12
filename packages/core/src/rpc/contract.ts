@@ -1446,7 +1446,7 @@ export const contract = {
    * has `subject` in it (any case; neither: any), outside Spam and Trash. Ends at the first such mail, or with none.
    * 45 s at most: clients' tool calls time out at 60 s (Codex's documented default).
    */
-  "sync.agentWait": m<{ items: ThreadSummary[]; waitedMs: number; checks: "quick" | "push" | "poll" }>()(
+  "sync.agentWait": m<{ items: import("../agents").AgentArrival[]; waitedMs: number; checks: "quick" | "push" | "poll" }>()(
     z.object({ accountId: id, from: z.string().max(320).optional(), subject: z.string().max(300).optional(), waitSeconds: z.number().int().min(5).max(45).default(30) }).strict(),
     { timeoutMs: 60_000 },
   ),

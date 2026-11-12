@@ -111,6 +111,16 @@ describe("terno MCP server", () => {
     backend.agentWaits.arrived(accountId, r.inserted);
     const got = await waiting;
     expect(got.json.arrived).toEqual([expect.objectContaining({ subject: "[GitHub] Your code is 314159", from: "GitHub <noreply@github.com>" })]);
+    // a clean message in a conversation whose first message is in Spam: the message's own lines, nothing of the spam's
+    // (a conversation's summary takes its subject from its first message; Codex code review #1)
+    await backend.store.sync.ingest([msg({ accountId, providerMsgId: "mixed-1", providerThreadId: "mixed", subject: "WIN A PRIZE spam subject", date: Date.now() - 60_000, isSpam: true, inInbox: false })], { applyFilters: false, now: Date.now(), classifier: null });
+    const mixed = call("wait_for_new_mail", { accountId, waitSeconds: 30 });
+    await expect.poll(() => backend.agentWaits.size).toBe(1);
+    const clean = await backend.store.sync.ingest([msg({ accountId, providerMsgId: "mixed-2", providerThreadId: "mixed", subject: "Your sign-in link", snippet: "Click to sign in", date: Date.now() })], { applyFilters: false, now: Date.now(), classifier: null });
+    backend.agentWaits.arrived(accountId, clean.inserted);
+    const answer = await mixed;
+    expect(answer.json.arrived).toEqual([expect.objectContaining({ subject: "Your sign-in link", snippet: "Click to sign in", messageId: clean.inserted[0] })]);
+    expect(answer.raw).not.toMatch(/PRIZE/);
     // nothing new: the note (with autoSync off, the account isn't checked)
     const none = await call("wait_for_new_mail", { accountId, waitSeconds: 5 });
     expect(none.json).toMatchObject({ arrived: [], waitedSeconds: 5, note: expect.stringMatching(/search again.*may be there/s) });

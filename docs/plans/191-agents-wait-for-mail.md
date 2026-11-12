@@ -170,3 +170,17 @@ Codex (read-only, against the code) made 10 points. All were taken; the design a
 - `SYNC_INTERVAL_MS` (40 s) is exported from `core.ts`.
 - `RpcServer.connected` was added.
 - `docs/MCP.md` lists `get_attachment` (missing since plan 185) and `wait_for_new_mail`.
+
+## What the Codex code review changed
+
+Codex (read-only, against the diff) made 6 findings. All were fixed, each with a test that fails without its fix (checked by reverting the fix):
+
+1. **A conversation's summary could carry a Spam message's subject.** A conversation takes its subject from its first message, so a clean new message in a conversation that began in Spam answered with the spam's subject (confirmed in the test).
+   - The wait now answers with the matched messages themselves: `AgentArrival` (`threadId`, `messageId`, sender, subject, first lines, date) from the arrival row. It never uses the conversation's summary.
+   - *Test* (`mcp.test.ts`): the answer has the new message's subject, and nothing of the spam's.
+   - **Left as is (plan 185, out of scope):** `search_emails` and `list_threads` summarize such a conversation the same way, subject included.
+2. **A body that came while the wait asked about filters was missed.** The hold is now registered before the `bodyFilters()` await, so `bodyArrived` meanwhile moves the message back to pending.
+3. **An arrival queued as a look wound down was stranded.** A look that ends with work pending starts the next one. *Test:* the arrival comes from the failing look's log.
+4. **A wait admitted during an ordinary pass was never checked.** The status read "syncing", so the account wasn't watched. An account whose provider takes quick checks is now always watched while sync runs, and each check asks again whether it is healthy (plan 176). `checks` says `quick` for an account mid-pass that had synced before. *Test:* a gated ordinary pass.
+5. **A cancelled tool call left its wait running** (the backend never hears of MCP's cancellation). An agent's new wait on the same account ends its earlier one, so a cancel and retry can't pile up. At most 4 waits stays the bound across agents.
+6. **A pass collected every inserted id even with no wait.** `collectAgentArrivals` collects only while `listening(accountId)`, keeping the newest 500 per slice and in total.
