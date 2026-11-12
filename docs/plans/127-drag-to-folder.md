@@ -156,3 +156,7 @@ A wider run after the rebase caught what the targeted runs had missed, none of i
 Unit, conformance (SQLite native, WASM, IndexedDB), IMAP integration against imapkit, `folder-drop.spec.ts` in all four designs (twice each), the related specs (`dnd`, `similar`, `account-own-folders`, `folder-actions`), the UI perf gates, web conformance, and light and dark screenshots looked at.
 
 `offers.perf.test.ts`: offers after a drop on a folder 8.3 ms p95 (budget 16); a line moving one account's mail from a sender: 783 ms, stall 18.9 ms (budget 50), list p95 1.6 ms. Its pattern-filter heap comparison fails, the same way on the commit this branched from (`f363b27a`: +54.5 MB against a limit of +49.4 MB): not from this change.
+
+## Later: Move to holds places only (owner, 2026-11-11)
+
+The categories (and their "New category…") left **Move to ▸**: they are already under **Category ▸**, and listing them twice read as the same thing. Move to keeps the Gmail tabs and the account's folders, and is disabled when there are none (a cheap scan of the store's folders; the rows are still built only once it opens). Moving into one category alone stays on `v` (the picker in move mode) and on a drag, so `v` is no longer hinted beside Move to.

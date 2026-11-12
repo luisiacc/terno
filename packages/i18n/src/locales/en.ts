@@ -1235,7 +1235,6 @@ const en = {
   "threadMenu.similar.archive": "Archive similar mail",
   "threadMenu.similar.trash": "Delete similar mail",
   "threadMenu.similar.spam": "Mark similar mail as spam",
-  "threadMenu.moveNote": "Takes it out of its other categories",
   "threadMenu.categoryNote": "It can be in several at once",
   "threadMenu.from": "From {name}",
   "threadMenu.more": "More",

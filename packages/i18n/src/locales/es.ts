@@ -1225,7 +1225,6 @@ const es = {
   "threadMenu.similar.archive": "Archivar correo similar",
   "threadMenu.similar.trash": "Eliminar correo similar",
   "threadMenu.similar.spam": "Marcar correo similar como spam",
-  "threadMenu.moveNote": "Lo saca de sus otras categorías",
   "threadMenu.categoryNote": "Puede estar en varias a la vez",
   "threadMenu.from": "De {name}",
   "threadMenu.more": "Más",

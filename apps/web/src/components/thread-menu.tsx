@@ -57,7 +57,7 @@ import { create } from "zustand";
 import { act, openCompose, tabbedTest, targetRows } from "~/lib/actions";
 import { pinThreads, unpinThreads } from "~/lib/pins";
 import { usePins } from "~/state/pins";
-import { addScopeToCategory, addToCategory, answerReview, fileAlways, filterNameOf, isExclusivelyIn, moveToCategory, removeFromCategory } from "~/lib/categorize";
+import { addScopeToCategory, addToCategory, answerReview, fileAlways, filterNameOf, removeFromCategory } from "~/lib/categorize";
 import { rowSelector, setRule } from "~/lib/flash";
 import { renderProbe } from "~/lib/render-probe";
 import { isMac, scopeRows, selectAll } from "~/lib/select";
@@ -558,18 +558,22 @@ function searchPlaceItems(p: NonNullable<ReturnType<typeof placeActions>>, runOn
  * Plan 80: a Review row's answers, the keyboard's way to its ✓ and Always ▾
  * (one conversation only: the offers are what its own mail shares).
  */
-/** Plan 127: "Move to"'s folders: those of the one account the rows are in (mounted while the submenu is open). */
-function MoveToFolderItems({ rows, ids }: { rows: readonly ThreadSummary[]; ids: readonly number[] }) {
+/** Plan 127: the account whose folders the rows may go to: the one they're all in, none out of Trash or Spam. */
+function folderAccountOf(rows: readonly ThreadSummary[]): number | null {
   const facts = factsOf(rows);
-  const accountId = facts.accounts.size === 1 ? [...facts.accounts][0]! : null;
+  return facts.accounts.size === 1 && !facts.disposed ? [...facts.accounts][0]! : null;
+}
+
+/** Plan 127: "Move to"'s folders: those of that account (built only while the submenu is open). */
+function MoveToFolderItems({ accountId, ids, separated }: { accountId: number; ids: readonly number[]; separated: boolean }) {
   const folders = useApp((s) => s.folders);
-  const here = useApp((s) => (accountId !== null && s.folder !== null && listingFolder(s, accountId, s.folder) ? s.folder : null));
-  const list = useFolderRows(folders, accountId ?? -1, accountId !== null);
+  const here = useApp((s) => (s.folder !== null && listingFolder(s, accountId, s.folder) ? s.folder : null));
+  const list = useFolderRows(folders, accountId, true);
   const own = list.filter((f) => f.selectable && f.key !== null).slice(0, 250);
-  if (accountId === null || facts.disposed || own.length === 0) return null;
+  if (own.length === 0) return null;
   return (
     <>
-      <ContextMenuSeparator />
+      {separated && <ContextMenuSeparator />}
       {own.map((f) => (
         <ContextMenuItem key={f.id} data-testid={`menu-move-folder-${f.key}`} disabled={f.key === here} onClick={() => void moveToFolder({ accountId, key: f.key!, name: f.name }, ids)}>
           <FolderIcon />
@@ -694,10 +698,10 @@ function MenuItems() {
     if (inAll(categoryId)) void removeFromCategory(categoryId, ids);
     else void addToCategory(categoryId, ids, { source: "picker" });
   };
-  const picker = (mode: "toggle" | "move") => {
+  const newCategory = () => {
     // the picker acts on the checked rows or the open thread: make the menu's target that selection
     if (!scope && ids.length === 1) setApp({ selectedId: ids[0]!, checked: getApp().checked.has(ids[0]!) ? getApp().checked : new Set() });
-    setApp({ dialog: "categoryPicker", pickerMode: mode });
+    setApp({ dialog: "categoryPicker", pickerMode: "toggle" });
   };
   const count = scope ? scope.count : ids.length;
   // plan 72: the keyboard's (and screen readers') way to the code a row's chip copies
@@ -716,6 +720,10 @@ function MenuItems() {
     ...(intoTab("promotions") ? [{ icon: <Tag />, label: t("actions.toPromotions"), testId: "menu-to-promotions", onClick: () => run("toPromotions") }] : []),
     ...(intoTab("social") ? [{ icon: <Users />, label: t("actions.toSocial"), testId: "menu-to-social", onClick: () => run("toSocial") }] : []),
   ];
+  // a "select all N" goes to no folder: only out of a Gmail tab, or into one. Whether the account has a folder is
+  // a short scan; the folders themselves are built once the submenu opens
+  const folderAccount = scope ? null : folderAccountOf(rows);
+  const anyFolder = useApp((s) => folderAccount !== null && s.folders.some((f) => f.accountId === folderAccount && f.selectable && f.path.length > 0));
 
   return (
     <>
@@ -760,34 +768,17 @@ function MenuItems() {
       {/* plan 87: a "select all N" has no ids to set them on */}
       <RemindSub ids={ids} disabled={scope !== null} />
       <ContextMenuSub>
-        <ContextMenuSubTrigger data-testid="menu-move" disabled={scope !== null && moves.length === 0}>
+        {/* places only: categories are under Category ▸ (the owner), so v's move-to-a-category isn't hinted here */}
+        <ContextMenuSubTrigger data-testid="menu-move" disabled={moves.length === 0 && !anyFolder}>
           <FolderInput />
           <span className="min-w-0 flex-1 truncate">{t("threadMenu.moveTo")}</span>
-          {hint("thread.move")}
         </ContextMenuSubTrigger>
         <ContextMenuSubContent className="w-60" data-testid="menu-move-list">
           {moves.map((it) => (
             <Item key={it.testId} {...it} />
           ))}
-          {/* a "select all N" moves nothing into a category or a folder: only out of a Gmail tab, or into one */}
-          {scope === null && (
-            <>
-              {moves.length > 0 && <ContextMenuSeparator />}
-              {categories.length > 0 && <p className="px-2 py-1 text-xs text-muted-foreground" data-testid="menu-move-note">{t("threadMenu.moveNote")}</p>}
-              {categories.map((c) => (
-                <ContextMenuItem key={c.id} data-testid={`menu-move-${c.id}`} disabled={isExclusivelyIn(c.id, ids)} onClick={() => void moveToCategory(c.id, ids, { source: "picker" })}>
-                  <CategoryDot color={c.color as CategoryColor} className="mx-1" />
-                  <span className="truncate">{c.name}</span>
-                </ContextMenuItem>
-              ))}
-              {categories.length > 0 && <ContextMenuSeparator />}
-              <ContextMenuItem data-testid="menu-move-new" onClick={() => picker("move")}>
-                <Plus /> {t("threadMenu.newCategory")}
-              </ContextMenuItem>
-              {/* plan 127: the keyboard's way to what a drag onto a folder does */}
-              <MoveToFolderItems rows={rows} ids={ids} />
-            </>
-          )}
+          {/* plan 127: the keyboard's way to what a drag onto a folder does */}
+          {folderAccount !== null && anyFolder && <MoveToFolderItems accountId={folderAccount} ids={ids} separated={moves.length > 0} />}
         </ContextMenuSubContent>
       </ContextMenuSub>
       <ContextMenuSub>
@@ -805,7 +796,7 @@ function MenuItems() {
             </ContextMenuCheckboxItem>
           ))}
           {categories.length > 0 && <ContextMenuSeparator />}
-          <ContextMenuItem data-testid="menu-category-new" onClick={() => picker("toggle")}>
+          <ContextMenuItem data-testid="menu-category-new" onClick={newCategory}>
             <Plus /> {t("threadMenu.newCategory")}
           </ContextMenuItem>
         </ContextMenuSubContent>

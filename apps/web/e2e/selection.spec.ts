@@ -342,7 +342,7 @@ test.describe("context menu on one thread", () => {
       await expect(row(page, id)).toHaveCount(0);
       await expect.poll(() => flags(server, id).in_inbox).toBe(0);
     });
-    await scenario("its category toggles can file a thread in two categories; Move to… leaves it in one", async () => {
+    await scenario("its category toggles can file a thread in two categories; v (Move to…) leaves it in one", async () => {
       await fresh(page);
       const [lecturas, clientes, viajes] = ["Lecturas", "Clientes", "Viajes"].map((n) => db(server).get<{ id: number }>("SELECT id FROM categories WHERE name = ?", n)!.id) as [number, number, number];
       const target = page.locator("[data-testid=thread-row]:not(:has([data-cat-dot]))").first();
@@ -364,9 +364,18 @@ test.describe("context menu on one thread", () => {
       await page.keyboard.press("Escape");
       await page.keyboard.press("Escape");
       await expect(menu(page)).toBeHidden();
+      // the menu's Move to holds places only: its categories are under Category
       await rightClick(page, row(page, id));
       await item(page, "menu-move").hover();
-      await sub(page, `menu-move-${viajes}`).click();
+      await expect(page.getByTestId("menu-move-list")).not.toContainText("Viajes");
+      await page.keyboard.press("Escape");
+      await page.keyboard.press("Escape");
+      await expect(menu(page)).toBeHidden();
+      await row(page, id).dispatchEvent("mousedown", { button: 0 });
+      await focusList(page);
+      await page.keyboard.press("v");
+      await expect(page.getByTestId("category-picker")).toHaveAttribute("data-mode", "move");
+      await page.getByTestId(`pick-category-${viajes}`).click();
       await expect(page.getByTestId("snackbar-title")).toHaveText("Moved to Viajes");
       await expect.poll(cats).toEqual([viajes]);
     });
