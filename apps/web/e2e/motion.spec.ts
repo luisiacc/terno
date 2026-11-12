@@ -325,6 +325,14 @@ test.describe("motion", () => {
       expect(await arrivals(page)).toEqual([]);
     });
     await scenario("its copy takes its place: nothing animates, and it never shows at another height (the user's report: it flashed)", async () => {
+      // its quoted history open on the card (Codex code review): the copy opens folded, at the card's folded height
+      const folded = Math.round((await held.boundingBox())!.height);
+      await held.getByTestId("quote-toggle").click();
+      await expect(held.getByTestId("quote-toggle")).toHaveAttribute("aria-expanded", "true");
+      await expect.poll(async () => Math.round((await held.boundingBox())!.height)).toBeGreaterThan(folded);
+      // (the toggle's own hover and turn over before watching; the spinner loops while it sends)
+      await page.mouse.move(0, 0);
+      await expect.poll(() => held.evaluate((el) => el.getAnimations({ subtree: true }).filter((a) => a.effect?.getTiming().iterations !== Infinity).length)).toBe(0);
       // the conversation's last message's height after every change to the page (an observer runs after each commit,
       // before the copy's frame can load and measure: a frame-sampler only sometimes catches the jump), and anything
       // running in it each frame
@@ -361,7 +369,7 @@ test.describe("motion", () => {
       });
       expect(seen.kinds).toContain("held-message");
       expect(seen.kinds.at(-1)).toBe("message");
-      expect(new Set(seen.heights)).toEqual(new Set([seen.heights[0]]));
+      expect(new Set(seen.heights.filter((_, i) => seen.kinds[i] === "message"))).toEqual(new Set([folded]));
       expect(seen.moving.filter((m) => m !== "spin")).toEqual([]);
       expect(await arrivals(page)).toEqual([]);
     });
@@ -422,7 +430,7 @@ test.describe("motion", () => {
     });
   });
 
-  test("plan 198: a list emptied by its last row leaving: its empty state arrives; one navigated to is simply there", async ({ app: page, server }) => {
+  test("plan 198: a list emptied by its last row leaving: its empty state settles in; one navigated to is simply there", async ({ app: page, server }) => {
     const db = sqlDb(server.backend.store);
     const thread = db.get<{ id: number }>("SELECT id FROM threads WHERE in_inbox = 1 ORDER BY last_date DESC LIMIT 1")!.id;
     const category = await server.backend.store.categories.create("Una sola", "rose", { showInInbox: true });
@@ -431,14 +439,15 @@ test.describe("motion", () => {
     await page.locator("[data-ready]").waitFor();
     await page.getByTestId(`nav-category-${category.id}`).click();
     await expect(rows(page)).toHaveCount(1);
-    await scenario("trashing its one row (archived mail stays in its category): the row leaves, the empty state arrives with the spring", async () => {
+    await scenario("trashing its one row (archived mail stays in its category): the row leaves, the empty state settles in with the spring", async () => {
       await rows(page).first().dispatchEvent("mousedown");
       await recordArrivals(page);
       await focusList(page);
       await page.keyboard.press("#");
       await expect(page.getByTestId("list-empty")).toBeVisible();
       await frames(page);
-      expect((await arrivals(page)).filter((x) => x.id === "arrive")).toEqual([expect.objectContaining({ testid: "list-empty" })]);
+      // (in the row's place at once, its fading copy gone with the list: no fade, never a blank frame; Codex code review)
+      expect((await arrivals(page)).filter((x) => x.id === "arrive")).toEqual([expect.objectContaining({ testid: "list-empty", fades: false })]);
     });
     await scenario("away and back to it, still empty: nothing arrives", async () => {
       await page.getByTestId("nav-inbox").click();

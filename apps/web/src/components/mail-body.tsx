@@ -1,6 +1,7 @@
 import type { AttachmentInfo, MatchNeedle } from "@terno/core";
 import DOMPurify from "dompurify";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { frameHeight, rememberHeight } from "~/lib/frame-heights";
 import { createPortal } from "react-dom";
 import FullMessage from "./full-message";
 import { FullMessageBoundary, useMailReaderView } from "./mail-reader-view";
@@ -27,19 +28,6 @@ export { openLink };
 const MAX_HEIGHT = FRAME_MAX_HEIGHT;
 const WEB = import.meta.env.VITE_TARGET === "web";
 
-/** The last measured height of each message's frame: an expanding message opens to it, not to a guess. */
-const heights = new Map<number, number>();
-const HEIGHTS_MAX = 500;
-function rememberHeight(key: number, h: number) {
-  heights.delete(key);
-  heights.set(key, h);
-  if (heights.size > HEIGHTS_MAX) heights.delete(heights.keys().next().value!);
-}
-/** A body shown under another key first (a held send's card, then its copy): the second opens at the first's height, not at a guess that jumps when measured */
-export function carryHeight(from: number, to: number): void {
-  const h = heights.get(from);
-  if (h !== undefined && !heights.has(to)) rememberHeight(to, h);
-}
 
 /**
  * Renders an HTML email in a sandboxed iframe: sanitized with DOMPurify, no
@@ -90,7 +78,7 @@ export function HtmlBody({ marks, html, messageId, remoteImages, spam = false, a
   useLayoutEffect(() => () => closeView?.(lease, false), [lease, closeView]);
   // the setting or this message's "Load content", in either mode (plan 37)
   const allowRemote = useRemoteConsent((s) => remoteAllowed(messageId, { remoteImages, spam }, s.allowed));
-  const [height, setHeight] = useState(() => section ? 120 : heights.get(messageId) ?? 120);
+  const [height, setHeight] = useState(() => section ? 120 : frameHeight(messageId) ?? 120);
   // re-rendered when the painted theme changes (the colors are literals inside the document)
   const themeKey = useAppearance((s) => s.themeKey);
   const mode = useAppearance((s) => s.mode);
@@ -234,7 +222,8 @@ export function HtmlBody({ marks, html, messageId, remoteImages, spam = false, a
             disabledStops.clear();
           }
           const h = section ? content : Math.min(MAX_HEIGHT, content);
-          if (!section) rememberHeight(messageId, h);
+          // (folded only: a frame opens folded, and opening at an unfolded height would shrink as it measures)
+          if (!section && !quoteShown) rememberHeight(messageId, h);
           setHeight(h);
         };
         measure();

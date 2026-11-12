@@ -151,3 +151,7 @@ One `performance.now()` per removal and per empty-state mount; one WAAPI animati
 2. **"Just emptied" is the list's own fact, not a 300 ms clock.** A global timestamp from `reflowRemoval` couldn't tell emptying from navigating (any removal armed it, even one leaving rows), missed slow commits, and never fired for reminders and follow-ups, which empty through a snapshot reload. `state/list.ts` watches its own store: the list on screen going from rows to none under the same key marks it (an object's property, not a module `let`); another key clears it; `takeEmptied(key)` spends it once. So a cleared reminder or follow-up arrives too, and so does a list emptied by another window: the list on screen went empty, which is what the bridge is for.
 3. **Before paint**, in a layout effect, as the other plans.
 4. **Tests.** Unit (`list.test.ts`): said once by its key, spent by another list in between. e2e (`motion.spec.ts`): trashing a category's only row (archived mail stays in its category) records one spring arrival on the empty state; going away and coming back to it, still empty, records none. The ten specs that read `list-empty` pass unchanged.
+
+## After the owner's report on the send's flash (Codex code review)
+
+Removing the last row unmounts the list, its fading copy with it, so the empty state took its place at a transparent first frame: a blink. It settles in without the fade now (`arrive(el, { spring: true, inPlace: true })`, the spring's small settle kept); the e2e checks it doesn't fade. Plan 195's last section has the rule.

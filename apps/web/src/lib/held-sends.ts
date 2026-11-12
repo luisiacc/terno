@@ -5,6 +5,7 @@ import { useEffect } from "react";
 import { create } from "zustand";
 import { dismissSnack, newsWaiting, registerUndo, snack, undoNow, useSnack, withdrawSnack, type Undo } from "~/lib/snack";
 import { revealSent } from "~/lib/sent-reveal";
+import { standIn } from "~/lib/frame-heights";
 import { getApp, setApp, useApp } from "~/state/app";
 
 /**
@@ -237,6 +238,9 @@ function undoLeavesDock(draftId: number): void {
   else snack.loading(t("compose.sending"), { id, duration: SENDING_MS });
 }
 
+/** A held card's body, in its own namespace: never a message's id (heights, consent), one per hold */
+export const heldBodyId = (draftId: number): number => -draftId;
+
 /** Undo from the card: the same token z and the snack run. */
 export function undoHeld(draftId: number): void {
   const held = heldById(draftId);
@@ -257,6 +261,9 @@ export function heldWent(sent: ScheduledSent): void {
     return;
   }
   const copy = { threadId: sent.threadId, messageId: sent.messageId };
+  // its copy's body opens at the card's height, whenever it opens (here or as the new message's conversation): a guess
+  // would jump a frame as it measured
+  standIn(sent.messageId, heldBodyId(sent.draftId));
   parkFocus(sent.draftId);
   patch(sent.draftId, { copy, phase: "sending" });
   if (useSnack.getState().undo === held.undo && held.undo.state === "ready") useSnack.setState({ undo: null });

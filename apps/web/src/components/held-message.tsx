@@ -3,7 +3,7 @@ import { t } from "@terno/i18n";
 import { Spinner } from "@terno/ui/components/spinner";
 import { cn } from "@terno/ui/lib/utils";
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
-import { cardLeaving, copyShown, firstReveal, heldIn, undoHeld, useHeldCard, useHeldSends, type HeldSend } from "~/lib/held-sends";
+import { cardLeaving, copyShown, firstReveal, heldBodyId, heldIn, undoHeld, useHeldCard, useHeldSends, type HeldSend } from "~/lib/held-sends";
 import { revealHeld } from "~/lib/reader-scroll";
 import { arrive } from "~/lib/flash";
 import { useSnack, zHolds } from "~/lib/snack";
@@ -11,7 +11,7 @@ import { announce } from "~/lib/announce";
 import { setApp, useApp } from "~/state/app";
 import { PANE_TITLE, PANE_TITLE_AFTER, PANE_TITLE_TOP, READING_COLUMN } from "~/lib/pane-lines";
 import { ReaderAttachments } from "./attachments";
-import { carryHeight, HtmlBody, TextBody } from "./mail-body";
+import { HtmlBody, TextBody } from "./mail-body";
 import { MailReaderView, useMailReaderView } from "./mail-reader-view";
 import { OpenHead } from "./message-head";
 import { CountdownPill } from "./countdown-pill";
@@ -36,13 +36,9 @@ export function HeldMessage({ held, icons }: { held: HeldSend; icons: boolean })
     if (held.sentHere) arrive(ref.current, { inPlace: true });
     revealHeld(held.draftId);
   }, [held.draftId]);
-  // its copy is known: the copy's body opens at this one's height, so the handoff doesn't jump a frame
-  const copyId = held.copy?.messageId;
-  useLayoutEffect(() => { if (copyId !== undefined) carryHeight(-held.draftId, copyId); }, [copyId, held.draftId]);
   // a layout cleanup runs before the card leaves the page: whether focus was in it can still be read (Codex review #3)
   useLayoutEffect(() => () => cardLeaving(held.draftId), [held.draftId]);
-  // its own namespace: never a message's id (heights, consent), one per hold
-  const bodyId = -held.draftId;
+  const bodyId = heldBodyId(held.draftId);
   const files = useMemo<AttachmentInfo[]>(() => held.attachments.map((a, i) => ({ id: -(i + 1), assetId: a.assetId, contentId: a.contentId ?? null, filename: a.filename, mime: a.mime, size: a.size })), [held.attachments]);
   // the name on mail sent from it (From:), as its copy will carry it
   const from = { name: account?.senderName ?? "", email: account?.email ?? "" };
@@ -119,7 +115,7 @@ export function HeldMessages({ threadId, messages, icons }: { threadId: number; 
   const all = useHeldSends((s) => s.holds);
   const holds = useMemo(() => heldIn({ holds: all }, threadId), [all, threadId]);
   const arrived = (h: HeldSend) => h.copy !== null && messages.some((m) => m.id === h.copy!.messageId);
-  // the copy is simply there in the card's place, at its height: any motion here reads as a flash
+  // the copy is simply there in the card's place, at its height (`heldWent`'s stand-in): any motion here reads as a flash
   useEffect(() => {
     for (const h of holds) if (arrived(h)) copyShown(h.draftId);
   }, [holds, messages]);

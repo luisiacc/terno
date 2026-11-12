@@ -109,7 +109,8 @@ const token = (name: string) => getComputedStyle(document.documentElement).getPr
  * Plans 195–198: the one arrival. From 4 px below and transparent to settled, at --motion-slow on the motion ease (the
  * spring's small settle where a rare moment allows it). `translate` composes with a row's own transform. Nothing when
  * motion is off. In place of what was just there (`inPlace`: a sent card where its composer was, another category's
- * rows), it settles without the fade: a transparent first frame between the two reads as a flash.
+ * rows, the empty state where the last row was), it settles without the fade: a transparent first frame between the two
+ * reads as a flash. Only what enters empty space fades in (new mail's row, the rows below sliding to make room).
  */
 export function arrive(el: Element | null, { spring = false, inPlace = false }: { spring?: boolean; inPlace?: boolean } = {}): void {
   const ms = motionNow();

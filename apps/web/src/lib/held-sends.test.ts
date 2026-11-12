@@ -7,8 +7,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.mock("~/rpc/connection", () => ({ client: { call: vi.fn(), on: () => () => {}, onAttach: () => () => {} } }));
 
-const { heldWent, holdSend, copyShown, heldById, resetHeldSends, settleOverdue, setHeldThreadOpener, undoHeld, useHeldCard, useHeldSends } = await import("./held-sends");
+const { heldBodyId, heldWent, holdSend, copyShown, heldById, resetHeldSends, settleOverdue, setHeldThreadOpener, undoHeld, useHeldCard, useHeldSends } = await import("./held-sends");
 const { resetSnacks, runUndo, snack, useSnack } = await import("./snack");
+const { frameHeight, rememberHeight } = await import("./frame-heights");
 const { getApp, setApp } = await import("~/state/app");
 
 const HOLD = 5000;
@@ -175,6 +176,14 @@ describe("its copy", () => {
     copyShown(21);
     expect(heldById(21)).toBeUndefined();
     unmount();
+  });
+
+  it("its copy's body opens at the card's height, as measured when the copy opens (Codex code review: a copy in the same commit, a card measured again)", () => {
+    hold(24, 10);
+    rememberHeight(heldBodyId(24), 234);
+    heldWent({ draftId: 24, threadId: 10, messageId: 503 });
+    rememberHeight(heldBodyId(24), 158);
+    expect(frameHeight(503)).toBe(158);
   });
 
   it("a reply nobody looks at settles when it goes", () => {
