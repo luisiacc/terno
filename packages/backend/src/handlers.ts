@@ -1656,6 +1656,11 @@ export function createHandlers(b: Backend): Handlers {
       await b.retryNow(accountId ?? null, reason);
       return { ok: true as const };
     },
+    "sync.agentWait": ({ accountId, from, subject, waitSeconds }, ctx) => {
+      // i18n-ignore: never shown; the renderer has no use for it
+      if (ctx.origin !== "mcp") throw new RpcError("FORBIDDEN", "For agents only.");
+      return b.waitForAgentMail({ ctx, accountId, match: { from, subject }, waitMs: waitSeconds * 1000 });
+    },
     "sync.focus": ({ focused }, ctx) => {
       b.windowFocus(ctx.clientId, focused);
       return { ok: true as const };

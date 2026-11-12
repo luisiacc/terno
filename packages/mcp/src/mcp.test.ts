@@ -58,10 +58,11 @@ describe("terno MCP server", () => {
   it("exposes the documented tools with annotations", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual(
-      ["categorize", "create_draft", "create_filter", "get_attachment", "get_thread", "list_accounts", "list_filters", "list_threads", "search_emails", "send_email", "update_threads"].sort(),
+      ["categorize", "create_draft", "create_filter", "get_attachment", "get_thread", "list_accounts", "list_filters", "list_threads", "search_emails", "send_email", "update_threads", "wait_for_new_mail"].sort(),
     );
     expect(tools.find((t) => t.name === "search_emails")!.annotations?.readOnlyHint).toBe(true);
     expect(tools.find((t) => t.name === "get_attachment")!.annotations?.readOnlyHint).toBe(true);
+    expect(tools.find((t) => t.name === "wait_for_new_mail")!.annotations?.readOnlyHint).toBe(true);
     expect(tools.find((t) => t.name === "send_email")!.annotations?.destructiveHint).toBe(true);
   });
 
@@ -99,6 +100,22 @@ describe("terno MCP server", () => {
     } finally {
       await backend.store.threads.act({ threadIds: [spam, trash], action: "moveToInbox", signal: null, now: Date.now() });
     }
+  });
+
+  it("plan 191: waits for new mail on one account, and says what to do when none comes", async () => {
+    const accountId = (await call("list_accounts")).json.accounts[1].id;
+    const waiting = call("wait_for_new_mail", { accountId, from: "github.com", waitSeconds: 30 });
+    await expect.poll(() => backend.agentWaits.size).toBe(1);
+    // as a pass ends with the mail it brought (agent-wait-sync.test.ts drives real passes)
+    const r = await backend.store.sync.ingest([msg({ accountId, providerMsgId: "code-1", from: { name: "GitHub", email: "noreply@github.com" }, subject: "[GitHub] Your code is 314159", date: Date.now() })], { applyFilters: false, now: Date.now(), classifier: null });
+    backend.agentWaits.arrived(accountId, r.inserted);
+    const got = await waiting;
+    expect(got.json.arrived).toEqual([expect.objectContaining({ subject: "[GitHub] Your code is 314159", from: "GitHub <noreply@github.com>" })]);
+    // nothing new: the note (with autoSync off, the account isn't checked)
+    const none = await call("wait_for_new_mail", { accountId, waitSeconds: 5 });
+    expect(none.json).toMatchObject({ arrived: [], waitedSeconds: 5, note: expect.stringMatching(/search again.*may be there/s) });
+    const unknown = await call("wait_for_new_mail", { accountId: 9999, waitSeconds: 5 });
+    expect(unknown).toMatchObject({ isError: true, raw: "No account 9999. list_accounts gives the ids." });
   });
 
   describe("plan 185: files", () => {

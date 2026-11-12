@@ -7,7 +7,7 @@ import { COOLDOWN_TICKETS, copyOpAdmission, rejectedRecipients, type CooldownSta
 import { prepareCopyWire, readCopyWire } from "./sent-copy";
 import type { PendingGmailRenewal } from "./identity";
 import type { AiTasks } from "@terno/ai";
-import { accessAllows, AGENT_METHODS, agentRefusal, agentsMaySend, asciiEmail, canonicalAuthored, decodeText, encodeText, messageOf, aiCanRun, textRef, type Account, type AccountKind, type AccountPrefs, type DevAiKeys, type FavoriteFolder, type FavoriteFoldersSnapshot, type AccountSyncState, type SyncProgress, type OpState, type ThreadAction } from "@terno/core";
+import { accessAllows, AGENT_METHODS, ruleAwaitsBody, agentRefusal, agentsMaySend, asciiEmail, canonicalAuthored, decodeText, encodeText, messageOf, aiCanRun, textRef, type Account, type AccountKind, type AccountPrefs, type DevAiKeys, type FavoriteFolder, type FavoriteFoldersSnapshot, type AccountSyncState, type SyncProgress, type OpState, type ThreadAction } from "@terno/core";
 import { breadcrumb, captureError, log, type FieldValueOf } from "@terno/core/diag";
 import { RpcError, RpcServer, type AppSettings, type CallContext, type HostInfo, type MethodName, type OpInfo, type ResultOf, type Transport } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
@@ -18,6 +18,7 @@ import { Autocomplete, DESKTOP_AUTOCOMPLETE_PEAK, DESKTOP_CONTACT_CAPS, DESKTOP_
 import { AiService, defaultAiFactory, type AiFactory } from "./ai-service";
 import { Connectivity, type ConnectivityOptions, type NetReason } from "./connectivity";
 import { QuickChecks, type QuickCheckOptions } from "./quick-checks";
+import { AgentMailWaits, AgentWaitBusyError, type AgentWaitMatch, type AgentWaitResult } from "./agent-mail-waits";
 import { AiAssist } from "./ai-assist";
 import { ActionsService } from "./actions";
 import { ReplyService } from "./replies";
@@ -312,6 +313,8 @@ export class BackendCore {
   readonly connectivity: Connectivity;
   /** plan 176: the minute after a window gains focus, accounts without push are checked every 5 s */
   readonly quickChecks: QuickChecks;
+  /** plan 191: agents waiting for new mail on one account */
+  readonly agentWaits: AgentMailWaits;
   /** plan 22: sender icons (website icons and Google photos), idle until the first lookup */
   readonly icons: IconService;
   /** plan 41: the Dock badge and notifications for important new mail */
@@ -438,6 +441,16 @@ export class BackendCore {
       { online: options.online, now: () => this.now(), retries: options.autoSync !== false, ...options.connectivity },
     );
     this.quickChecks = new QuickChecks({ check: () => void this.quickCheck() }, { now: () => this.now(), ...options.quickChecks });
+    this.agentWaits = new AgentMailWaits({
+      watch: (key, accountId, forMs) => this.quickChecks.watch(key, accountId, forMs),
+      unwatch: (key) => this.quickChecks.unwatch(key),
+      arrivals: (ids) => this.store.sync.arrivals(ids),
+      summaries: (ids) => this.store.threads.summaries(ids),
+      bodyFilters: async () => (await this.store.filters.list()).some((f) => f.enabled && ruleAwaitsBody(f.rule)),
+      yieldTurn: () => this.platform.yield(),
+      now: () => this.now(),
+      log: (message, error) => this.log("warn", message, error instanceof Error ? error.message : error),
+    });
     this.icons = new IconService({
       transport: options.iconTransport ?? null,
       files: this.platform.files,
@@ -487,6 +500,7 @@ export class BackendCore {
         this.actions.disconnected(ctx.clientId);
         this.replies.disconnected(ctx.clientId);
         this.quickChecks.disconnected(ctx.clientId);
+        this.agentWaits.disconnected(ctx.clientId);
       },
     });
   }
@@ -764,6 +778,36 @@ export class BackendCore {
     return !this.stopped && this.syncTimer !== null && this.quickChecks.covers(accountId) && this.connectivity.canSync(accountId);
   }
 
+  /**
+   * Plan 191: an agent waits up to `waitMs` for new mail on one account (a code, a reply). Refused, in words for the
+   * agent, when no mail can come (no such account, a sign-in to redo, offline). `checks` says how the account hears of
+   * new mail meanwhile: every 5 s (a synced, healthy account whose provider takes quick checks: only then is it
+   * watched), by push (IDLE on the Inbox), or only at the poll (a first sync or a backfill under way, a failure waiting
+   * for its retry, autoSync off).
+   */
+  async waitForAgentMail(p: { ctx: CallContext; accountId: number; match: AgentWaitMatch; waitMs: number }): Promise<AgentWaitResult & { checks: "quick" | "push" | "poll" }> {
+    // i18n-ignore: for the agent, which tells the user
+    if (!(await this.store.accounts.get(p.accountId))) throw new RpcError("NOT_FOUND", `No account ${p.accountId}. list_accounts gives the ids.`);
+    const account = await this.accountStatus(p.accountId);
+    const status = account.project();
+    // i18n-ignore: as above
+    if (account.signInRequired) throw new RpcError("UNAVAILABLE", "This account needs the user to sign in again in Terno. No new mail arrives until they do.");
+    // i18n-ignore: as above
+    if (!this.connectivity.online || status.status === "offline" || status.connection?.state === "offline") throw new RpcError("UNAVAILABLE", "Terno is offline, so no new mail can arrive. Ask the user to check their connection.");
+    const provider = await this.provider(p.accountId).catch(() => null);
+    const syncs = !this.stopped && this.syncTimer !== null;
+    const checks = syncs && provider?.quickChecks && quickHealthy(status) ? "quick" : syncs && provider?.watch ? "push" : "poll";
+    // the agent may have gone while those were read (its disconnect already ended its waits): nothing to start for it
+    // i18n-ignore: nobody reads it (the connection is gone)
+    if (!this.server.connected(p.ctx)) throw new RpcError("UNAVAILABLE", "The agent's connection closed.");
+    try {
+      return { ...(await this.agentWaits.wait({ clientId: p.ctx.clientId, accountId: p.accountId, match: p.match, waitMs: p.waitMs, quick: checks === "quick" })), checks };
+    } catch (error) {
+      if (error instanceof AgentWaitBusyError) throw new RpcError("UNAVAILABLE", error.message);
+      throw error;
+    }
+  }
+
   // ───────────────────────────── network (plan 20) ─────────────────────────────
 
   /** The host's word on the network: desktop's main (a route or address change, a wake), the web page (online/offline). */
@@ -982,6 +1026,8 @@ export class BackendCore {
     const agentsClosed = this.agentConnector?.stop();
     this.connectivity.stop();
     this.quickChecks.stop();
+    // plan 191: waits end now; a look still reading the store is awaited before it closes (below)
+    const agentWaitsStopped = this.agentWaits.stop();
     const accountsClosed = Promise.allSettled([...this.lifetimes.values()].map((life) => this.dropAccount(life.id, { remove: life.removing })));
     if (this.syncTimer) clearInterval(this.syncTimer);
     if (this.idleTimer) clearInterval(this.idleTimer);
@@ -1023,6 +1069,7 @@ export class BackendCore {
     }
     const failedRetirement = await retirement;
     await this.cooldown?.close();
+    await agentWaitsStopped;
     await this.store.close();
     if (failedRetirement) throw failedRetirement.error;
   }
@@ -1936,6 +1983,8 @@ export class BackendCore {
       // plan 41: live mail this pass inserts is news once the account synced in this life (no first sync, no catch-up
       // at launch); it's looked at when the pass is over (its flags, filters and bodies settled)
       const arrivals = this.attention.beginPass(accountId);
+      // plan 191: what it inserts as live mail, for agents waiting on the account once the pass is over
+      const agentArrivals: number[] = [];
       // plan 69: a pass that overlaps a storage removal doesn't put back what it removed
       const pass = this.evictions.pass();
       let observation: FlagObservation | null = null;
@@ -1969,7 +2018,7 @@ export class BackendCore {
           await this.accountWrite(life, () => this.store.captureRepairs.retire(accountId, locator, checkCurrent));
         },
         ingest: async (messages, o) => {
-          await this.ingestSliced(messages, true, life, o?.live ? (ids) => arrivals.add(ids) : undefined, provider.flagSnapshotSource === "locations" ? undefined : observation ?? undefined, checkCurrent, { accountId, pass }, o?.live === true);
+          await this.ingestSliced(messages, true, life, o?.live ? (ids) => { arrivals.add(ids); agentArrivals.push(...ids); } : undefined, provider.flagSnapshotSource === "locations" ? undefined : observation ?? undefined, checkCurrent, { accountId, pass }, o?.live === true);
         },
         // the account's own window, else the general one
         windowDays,
@@ -2087,7 +2136,11 @@ export class BackendCore {
             // the provider's own failure (offline, a malformed answer) waits; a sign-in to redo or a store failure doesn't
             if (!(error instanceof ProviderError) || error instanceof ProviderAuthError || error instanceof ProviderCooldownError || (accountKind === "gmail" && (error.httpResponse?.status === 429 || (error.httpResponse?.status === 403 && (error.retryable || this.google.get(accountId)?.paused))))) throw error;
           }
-        } finally { arrivals.end(); }
+        } finally {
+          arrivals.end();
+          // plan 191: not a first sync's (its live mail is the mailbox, not news)
+          if (agentArrivals.length && before?.syncState.lastSyncAt != null && this.current(life)) this.agentWaits.arrived(accountId, agentArrivals);
+        }
         if (!this.current(life) || (before?.kind === "gmail" && credentials !== this.credentialsOf(accountId))) return;
         breadcrumb("sync", "sync.done", { accountKind, durationMs: performance.now() - started });
         this.evictions.passDone(accountId, pass);
@@ -2807,6 +2860,8 @@ export class BackendCore {
 
   /** Plan 116: a body arrived (a sync's, or one the reader asked for): its filters and category may make it go; a forward waiting for its files goes now. */
   private bodyArrived(messageId: number): void {
+    // plan 191: an agent's wait may hold it until a filter that reads bodies has seen it
+    this.agentWaits.bodyArrived(messageId);
     // plan 132: a summary may have waited for it (both ways a body arrives come here); plan 134: so may the AI's look
     this.summaries.wake();
     this.followups.wake();

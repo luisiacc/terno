@@ -53,6 +53,7 @@ export function createMcpServer(app: AppConnection, version = "0.1.0"): McpServe
         "Search with Gmail-like operators (from:, to:, subject:, has:attachment, is:unread, in:inbox, account:, category:, before:, after:); a comma means any of, and a bare email address finds mail where it is the sender or a recipient. " +
         `${SPAM_TRASH} ` +
         "Read a message's files with get_attachment. " +
+        "Waiting for a code or a reply? Search first, then wait_for_new_mail on that account. " +
         "The user chooses in Terno → Settings → Agents whether agents may only read, also organize (archive, categorize, filters, drafts), or also send; a tool beyond that level is refused with a message to pass on. " +
         "Never send email unless the user explicitly asked for it; prefer create_draft.",
     },
@@ -150,6 +151,39 @@ export function createMcpServer(app: AppConnection, version = "0.1.0"): McpServe
   );
 
   const includeSpamTrash = z.boolean().default(false).describe("Also read what is in Spam or Trash. Only when the user asked about Spam or Trash.");
+
+  server.registerTool(
+    "wait_for_new_mail",
+    {
+      title: "Wait for new mail",
+      description:
+        "Waits for new mail to arrive in one account (a verification code, a sign-in link, a reply), up to waitSeconds, and returns its conversation as search_emails does as soon as a new message matches. " +
+        "Search first; call this only when what you expect isn't there yet. While it waits Terno checks that account every few seconds. " +
+        "Mail that lands in Spam or Trash isn't reported.",
+      inputSchema: {
+        accountId: z.number().int().positive().describe("From list_accounts"),
+        from: z.string().max(320).optional().describe("Only a message whose sender's address or name contains this (any case), e.g. github.com"),
+        subject: z.string().max(300).optional().describe("Only a message whose subject contains this (any case), e.g. code"),
+        waitSeconds: z.number().int().min(5).max(45).default(30),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    async ({ accountId, from, subject, waitSeconds }) => {
+      try {
+        const r = await app.call("sync.agentWait", { accountId, waitSeconds, ...(from?.trim() ? { from } : {}), ...(subject?.trim() ? { subject } : {}) });
+        const waited = Math.round(r.waitedMs / 1000);
+        if (r.items.length) return text({ arrived: await summarize(r.items), waitedSeconds: waited });
+        const how = r.checks === "quick" ? "" : r.checks === "push" ? " Terno hears of this account's new Inbox mail at once, and of its other folders every 40 seconds." : " Terno checks this account only every 40 seconds right now (it is still syncing, or its last check failed).";
+        return text({
+          arrived: [],
+          waitedSeconds: waited,
+          note: `Nothing new arrived.${how} It may have come just before you started waiting: search again. Terno doesn't report mail that lands in Spam; if the user expects it, tell them it may be there.`,
+        });
+      } catch (e) {
+        return failure(e);
+      }
+    },
+  );
 
   server.registerTool(
     "get_thread",

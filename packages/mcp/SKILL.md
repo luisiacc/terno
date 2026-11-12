@@ -15,6 +15,7 @@ The user also chooses what you may do there: **Read only**, **Read and organize*
 - `list_threads`: newest conversations of a view (`inbox`, `starred`, `sent`, `archive`, `spam`, `trash`, `all`).
 - `get_thread`: read a whole conversation as plain text, with each message's files (`attachmentId`, type, size; `inline` for pictures shown in the body).
 - `get_attachment`: read one file. Text comes back a page at a time (pass `nextOffset` as `offset` for the next); PNG, JPEG, GIF and WebP as images; anything else (PDFs, documents, archives, big files) as a `path` to a private copy: read it with your own file tools. The copy is removed after a day or when the user turns agents off.
+- `wait_for_new_mail`: wait (up to 45 s) for new mail in one account, optionally only from a sender (`from: "github.com"`) or with a word in the subject (`subject: "code"`), when what you expect (a verification code, a sign-in link, a reply) isn't there yet. Search first: it reports only mail that arrives while it waits. Terno checks the account every few seconds meanwhile; call it again to keep waiting. Mail landing in Spam isn't reported: if nothing comes, tell the user it may be in Spam rather than looking there yourself.
 - `update_threads`: `archive`, `trash`, `spam`, `markRead`, `star`… (syncs to the server).
 - `categorize`: add/remove conversations to cross-account categories (creates the category by name).
 - `create_draft`: save a reply or new email for the user to review.

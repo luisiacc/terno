@@ -25,6 +25,8 @@ Available tools:
 - `search_emails`
 - `list_threads`
 - `get_thread`
+- `get_attachment`
+- `wait_for_new_mail`: waits up to 45 s for new mail in one account (a code, a reply), checking it every few seconds meanwhile (plan 191).
 - `update_threads`
 - `categorize`
 - `create_draft`

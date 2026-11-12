@@ -37,6 +37,8 @@ export const AGENT_METHODS: Partial<Record<MethodName, AgentAccess>> = {
   "attachments.info": "read",
   "attachments.read": "read",
   "counts.get": "read",
+  // plan 191: wait for new mail on one account (a check of it every 5 s meanwhile, as a focus makes)
+  "sync.agentWait": "read",
   "filters.list": "read",
   "filters.preview": "read",
   "drafts.list": "read",

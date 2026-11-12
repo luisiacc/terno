@@ -62,6 +62,12 @@ export class RpcServer {
     };
   }
 
+  /** Whether this connection is still open (a handler that awaited may outlive its caller). */
+  connected(ctx: CallContext): boolean {
+    for (const c of this.connections.values()) if (c === ctx) return true;
+    return false;
+  }
+
   /** Executes a call directly (used by in-process callers and tests). */
   async invoke<M extends MethodName>(method: M, params: unknown, ctx: CallContext): Promise<ResultOf<M>> {
     const def = contract[method];

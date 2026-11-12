@@ -1442,6 +1442,15 @@ export const contract = {
    */
   "sync.now": m<{ ok: true }>()(z.object({ accountId: id.optional(), reason: z.enum(["user", "focus"]).default("user") })),
   /**
+   * Plan 191, agents only: wait up to `waitSeconds` for new mail on one account whose sender has `from` and subject
+   * has `subject` in it (any case; neither: any), outside Spam and Trash. Ends at the first such mail, or with none.
+   * 45 s at most: clients' tool calls time out at 60 s (Codex's documented default).
+   */
+  "sync.agentWait": m<{ items: ThreadSummary[]; waitedMs: number; checks: "quick" | "push" | "poll" }>()(
+    z.object({ accountId: id, from: z.string().max(320).optional(), subject: z.string().max(300).optional(), waitSeconds: z.number().int().min(5).max(45).default(30) }).strict(),
+    { timeoutMs: 60_000 },
+  ),
+  /**
    * Plan 176: this window gained or lost focus. For a minute after a focus, accounts without push (Gmail) are
    * checked every 5 s while a Terno window has focus.
    */
