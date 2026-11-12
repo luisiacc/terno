@@ -108,8 +108,8 @@ export async function boot(): Promise<void> {
       refreshQueued = true;
       requestAnimationFrame(() => {
         refreshQueued = false;
-        // a page covering the list: one refresh when it shows again (plan 24, R4)
-        refreshList(listCovered());
+        // a page covering the list: one refresh when it shows again (plan 24, R4); new mail in it arrives (plan 195)
+        refreshList(listCovered(), { arrivals: true });
       });
     });
     installQueryRecovery({ covered: listCovered, readerShown });

@@ -231,3 +231,19 @@ it("plan 158: a mailbox left past its first window asks on until the thread and 
   await vi.waitFor(() => expect(getApp().selectedId).toBe(751));
   expect(calls.filter((c) => c.method === "threads.list").length).toBeLessThanOrEqual(5);
 });
+
+it("plan 195: what arrived is the rows above every row that was there, 1 to 3, none the user just removed", async () => {
+  const { arrivedOnTop } = await import("~/state/list");
+  const before = new Map([[10, 0], [11, 1], [12, 2]]);
+  expect(arrivedOnTop(before, rows(8, 5))).toEqual([8, 9]);
+  // a row that moved up isn't new
+  expect(arrivedOnTop(before, [...rows(11, 1), ...rows(10, 1), ...rows(12, 1)])).toEqual([]);
+  // the Inbox's top (Pinned, Reminders) stands above where mail arrives
+  expect(arrivedOnTop(before, [...rows(20, 1), ...rows(8, 5)], new Set([20]))).toEqual([8, 9]);
+  // a sync's batch just appears
+  expect(arrivedOnTop(before, rows(6, 7))).toEqual([]);
+  // an undo bringing back a row the user archived (an optimistic removal) isn't new mail
+  useList.setState({ items: rows(9, 4), index: new Map(rows(9, 4).map((t, i) => [t.id, i])) });
+  patchRows([9], () => null);
+  expect(arrivedOnTop(before, rows(8, 5))).toEqual([]);
+});

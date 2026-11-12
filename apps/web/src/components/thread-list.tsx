@@ -50,7 +50,8 @@ import { iconsAllowed, iconsAllowedForList } from "~/lib/sender-icons";
 import { useAppearance } from "~/lib/appearance";
 import { previewLinesFor, rowHeight } from "@terno/ui/designs/rows";
 import { fitStrip } from "~/lib/fit-strip";
-import { listAnchor } from "~/state/list";
+import { listAnchor, listArrival } from "~/state/list";
+import { armReflow, arriveRows, motionNow } from "~/lib/flash";
 import { SelectionBar } from "./selection-bar";
 import ActionPreviewHeader from "./action-preview-header";
 import { renderProbe } from "~/lib/render-probe";
@@ -1290,10 +1291,14 @@ export function ThreadList() {
       // through the virtualizer: a scrollToIndex of the last list's (j, then Esc) may still be settling, and this replaces it
       virtualizer.scrollToOffset(at && i !== undefined ? leadRef.current + (i + at.into) * measuredHeight.current : 0);
     };
+    // plan 195: new mail at the top arrives here (the store asks; this list draws the rows)
+    const arrival = { on: () => motionNow() > 0, arm: armReflow, play: arriveRows };
+    Object.assign(listArrival, arrival);
     const off = registerDesignAnchor(capture);
     return () => {
       off();
       if (listAnchor.capture === capture) listAnchor.capture = listAnchor.firstVisible = listAnchor.scrolled = listAnchor.scrollAt = listAnchor.scrollTo = undefined;
+      if (listArrival.on === arrival.on) listArrival.on = listArrival.arm = listArrival.play = undefined;
     };
   }, [virtualizer]);
 

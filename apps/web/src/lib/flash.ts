@@ -59,13 +59,24 @@ export function flashRows(ids: readonly number[]): void {
 }
 
 let reflowTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** The listbox's rows slide to their places for this window (a removal's, plan 195: an arrival's too). */
+export function armReflow(): void {
+  const ms = motionNow();
+  const list = document.querySelector<HTMLElement>("[role=listbox]");
+  if (!list || ms === 0) return;
+  list.dataset.reflow = "";
+  if (reflowTimer) clearTimeout(reflowTimer);
+  reflowTimer = setTimeout(() => delete list.dataset.reflow, Math.min(ms * 1.33, 100) + 60);
+}
+
 /**
  * Rows are leaving the list (archive, trash, a move out of the category view): the ones leaving fade
  * out as detached copies while the rest slide up. data-reflow enables the
  * slide on the listbox only for this window, so navigation never animates.
  */
 export function reflowRemoval(ids: readonly number[]): void {
-  const ms = motionMs();
+  const ms = motionNow();
   const list = document.querySelector<HTMLElement>("[role=listbox]");
   // nothing leaving (the filter kept the only target, the open thread): no rule to build, nothing to slide
   if (!list || ms === 0 || ids.length === 0) return;
@@ -79,7 +90,36 @@ export function reflowRemoval(ids: readonly number[]): void {
     const fade = ghost.animate([{ opacity: 1 }, { opacity: 0 }], { duration: Math.round(ms * 0.66), easing: "ease-out", fill: "forwards" });
     fade.onfinish = fade.oncancel = () => ghost.remove();
   }
-  list.dataset.reflow = "";
-  if (reflowTimer) clearTimeout(reflowTimer);
-  reflowTimer = setTimeout(() => delete list.dataset.reflow, Math.min(ms * 1.33, 100) + 60);
+  armReflow();
+}
+
+/**
+ * The motion setting as it is now: 0 when it's off, reduced by the OS, or paused for the frames a language switch
+ * re-mounts the app (`motion-paused`: CSS stops there, and script animations must too).
+ */
+export function motionNow(): number {
+  if (typeof document !== "undefined" && document.documentElement.classList.contains("motion-paused")) return 0;
+  return motionMs();
+}
+
+/** A motion token's value (WAAPI can't read a var()): the curves have one source, globals.css */
+const token = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+/**
+ * Plans 195–199: the one arrival. From 4 px below and transparent to settled, at --motion-slow on the motion ease (the
+ * spring's small settle where a rare moment allows it). `translate` composes with a row's own transform. Nothing when
+ * motion is off.
+ */
+export function arrive(el: Element | null, { spring = false }: { spring?: boolean } = {}): void {
+  const ms = motionNow();
+  if (!el || ms === 0) return;
+  for (const a of el.getAnimations()) if (a.id === "arrive") a.cancel();
+  el.animate([{ opacity: 0, translate: "0 4px" }, { opacity: 1, translate: "0 0" }], { id: "arrive", duration: Math.min(Math.round(ms * 1.33), 100), easing: token(spring ? "--motion-ease-spring" : "--motion-ease") || "ease-out" });
+}
+
+/** Plan 195: rows that just arrived at the list's top (the others slide down: armReflow, before the commit). */
+export function arriveRows(ids: readonly number[]): void {
+  const list = document.querySelector<HTMLElement>("[role=listbox]");
+  if (!list) return;
+  for (const row of list.querySelectorAll<HTMLElement>(rowSelector(ids))) arrive(row);
 }

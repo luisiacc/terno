@@ -7,7 +7,8 @@
  */
 import type { Page } from "@playwright/test";
 import type { DevServer } from "../../backend-dev/src/server";
-import { expect, focusList, fresh, rows, scenario, test } from "./fixtures";
+import { expect, focusList, fresh, ingestConversation, rows, scenario, test } from "./fixtures";
+import { E2E_NOW } from "./constants";
 import { sqlDb } from "../../backend-dev/src/server";
 
 const ctx = { clientId: "setup", origin: "dev" as const };
@@ -48,6 +49,20 @@ const sampled = (page: Page): Promise<Sample> =>
     w.__anim.stop = true;
     return { max: Math.max(0, ...w.__anim.durations), finite: w.__anim.finite, loops: w.__anim.loops, names: w.__anim.names };
   });
+
+/** Plans 195–199: every arrival asked for, as it starts (one runs ≤ 100 ms: by the time a locator answers it may be over) */
+async function recordArrivals(page: Page) {
+  await page.evaluate(() => {
+    const w = window as unknown as { __arrivals: { id: string | null; testid: string | null; thread: string | null }[] };
+    w.__arrivals = [];
+    const original = Element.prototype.animate;
+    Element.prototype.animate = function (this: Element, keyframes: Keyframe[] | PropertyIndexedKeyframes | null, options?: number | KeyframeAnimationOptions) {
+      if (typeof options === "object" && options.id === "arrive") w.__arrivals.push({ id: options.id, testid: this.getAttribute("data-testid"), thread: this.getAttribute("data-thread-id") });
+      return original.call(this, keyframes, options);
+    };
+  });
+}
+const arrivals = (page: Page) => page.evaluate(() => (window as unknown as { __arrivals: { testid: string | null; thread: string | null }[] }).__arrivals);
 
 /** Holds a backend method until released, so its loading state (spinner, skeleton) stays on screen. */
 function hold(server: DevServer, method: string) {
@@ -201,6 +216,60 @@ test.describe("motion", () => {
       expect(r.finite).toBeGreaterThan(0);
       expect(r.max, `${ms}: ${r.names.join(",")}`).toBeLessThanOrEqual(cap);
     }
+  });
+
+  test("plan 195: new mail at the top of the list arrives as the rows below slide down; scrolled, nothing moves", async ({ app: page, server }) => {
+    await scenario("at the top: the new row rises into place, the row it lands above slides down a row (seen mid-way)", async () => {
+      await rows(page).first().waitFor();
+      await recordArrivals(page);
+      // every row's place, every frame: a slide passes through places between where a row was and where it goes
+      await page.evaluate(() => {
+        const w = window as unknown as { __tops: Map<string, number[]>; __stopTops: boolean };
+        w.__tops = new Map();
+        w.__stopTops = false;
+        const tick = () => {
+          for (const row of document.querySelectorAll<HTMLElement>("[data-testid=thread-row][data-thread-id]")) {
+            const id = row.dataset.threadId!;
+            if (!w.__tops.has(id)) w.__tops.set(id, []);
+            w.__tops.get(id)!.push(Math.round(row.getBoundingClientRect().top * 10) / 10);
+          }
+          if (!w.__stopTops) requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      });
+      const id = await ingestConversation(server, { subject: "Llegó ahora", count: 1, unread: 1, now: E2E_NOW + 7_200_000 });
+      server.backend.notifyChanged([id]);
+      const arrived = page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`);
+      await arrived.waitFor();
+      await frames(page);
+      await frames(page);
+      // the row right under the new one (the Inbox's Pinned and Reminders stay above where mail arrives)
+      const below = await page.evaluate((id) => {
+        const all = [...document.querySelectorAll<HTMLElement>("[data-testid=thread-row][data-thread-id]")].sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
+        return all[all.findIndex((r) => r.dataset.threadId === String(id)) + 1]!.dataset.threadId!;
+      }, id);
+      const tops = await page.evaluate((below) => {
+        const w = window as unknown as { __tops: Map<string, number[]>; __stopTops: boolean };
+        w.__stopTops = true;
+        return w.__tops.get(below)!;
+      }, below);
+      expect(await arrivals(page)).toContainEqual(expect.objectContaining({ thread: String(id) }));
+      const [from, to] = [tops[0]!, tops.at(-1)!];
+      expect(to).toBeGreaterThan(from);
+      expect(tops.some((t) => t > from + 0.5 && t < to - 0.5), tops.join(",")).toBe(true);
+    });
+    await scenario("scrolled down: the anchor keeps the place, nothing arrives", async () => {
+      const scroller = page.getByTestId("thread-list").locator("[data-keep-scroll=list]");
+      await scroller.evaluate((el) => (el.scrollTop = 400));
+      await recordArrivals(page);
+      const id = await ingestConversation(server, { subject: "Llegó mientras leías", count: 1, unread: 1, now: E2E_NOW + 10_800_000 });
+      server.backend.notifyChanged([id]);
+      // the refresh came (its row is drawn, above the rows on screen), and nothing arrived
+      await page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`).waitFor({ state: "attached" });
+      await frames(page);
+      expect(await scroller.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+      expect(await arrivals(page)).toEqual([]);
+    });
   });
 
   test("holding j never animates", async ({ app: page }) => {

@@ -14,6 +14,7 @@ import { flattenToday } from "./today";
 import { useFollowups } from "./followups";
 import { anyDue } from "./reminders";
 import { anyPinned } from "./pins";
+import { useDrag } from "./drag";
 
 interface ListState {
   key: string;
@@ -311,6 +312,37 @@ export function currentScope(): ThreadScope | null {
   return { kind: "view", view: s.view, accountId: s.accountId ?? undefined, categoryId: s.categoryId ?? undefined, ...(filter ? { filter } : {}), ...(s.folder ? { folder: s.folder } : {}), ...(s.gmailTab ? { tab: s.gmailTab } : {}) };
 }
 
+/**
+ * Plan 195: how new mail arrives on screen (the rest slide down, the new rows rise into place), given by the list that
+ * draws the rows while it's mounted: this module stays free of the DOM
+ */
+export const listArrival: { on?: () => boolean; arm?: () => void; play?: (ids: readonly number[]) => void } = {};
+
+/** Plan 195: rows the user's own edits took out of the list, by when (an undo or a recovery bringing one back isn't new mail). Bounded. */
+const left = new Map<number, number>();
+const LEFT_MS = 30_000;
+const LEFT_MAX = 500;
+const leftLately = (id: number) => {
+  const at = left.get(id);
+  return at !== undefined && performance.now() - at < LEFT_MS;
+};
+
+/**
+ * Plan 195: rows a refresh brought above every row that was there, 1 to 3 of them, none the user just removed. The
+ * Inbox's top (Pinned, Reminders: `skip`) stands above where mail arrives, so its rows are passed over
+ */
+export function arrivedOnTop(before: ReadonlyMap<number, number>, items: readonly ThreadSummary[], skip: ReadonlySet<number> = new Set()): number[] {
+  const out: number[] = [];
+  for (const t of items) {
+    if (skip.has(t.id)) continue;
+    if (before.has(t.id)) break;
+    if (leftLately(t.id)) return [];
+    out.push(t.id);
+    if (out.length > 3) return [];
+  }
+  return out;
+}
+
 /** Rows that left the view leave the selection (one write, only when something left). */
 function pruneSelection(index: Map<number, number>): void {
   const s = getApp();
@@ -320,7 +352,7 @@ function pruneSelection(index: Map<number, number>): void {
 }
 
 /** (Re)loads the first page for the current view/search. Latest call wins. */
-export async function reloadList(options: { keepSelection?: boolean; grow?: boolean; window?: boolean; keepWindow?: boolean } = {}): Promise<void> {
+export async function reloadList(options: { keepSelection?: boolean; grow?: boolean; window?: boolean; keepWindow?: boolean; /** plan 195: the backend's own change (new mail may be in it), not an undo or a recovery */ arrivals?: boolean } = {}): Promise<void> {
   const key = listKey();
   const mine = ++seq;
   const connection = client.connectionVersion;
@@ -395,7 +427,13 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
     const restore = windowed && (options.window || listAnchor.scrolled?.()) ? listAnchor.capture?.() : undefined;
     // another list starts where it was left, or at its top, in the commit that shows it
     const arrives = !sameView && !options.keepSelection;
-    const commit = (fn: () => void) => (restore || arrives ? flushSync(fn) : fn());
+    // plan 195: new mail at the top of a mailbox on screen arrives (the rest slide down) rather than pushing it down in a
+    // frame: only from the backend's own change, in a plain mailbox at its very top (scrolled, the anchor keeps the place:
+    // nothing moves), a few rows that weren't there and weren't just removed by the user (an undo isn't new mail), never
+    // during a drag, and only with motion on (the commit it flushes is for the animation)
+    const arrived = options.arrivals && sameView && !restore && scope?.kind === "view" && current.items.length > 0 && !listAnchor.scrolled?.() && useDrag.getState().phase === "idle" && listArrival.on?.() ? arrivedOnTop(current.index, page.items, onTop) : [];
+    if (arrived.length) listArrival.arm?.();
+    const commit = (fn: () => void) => (restore || arrives || arrived.length ? flushSync(fn) : fn());
     commit(() => {
       inboxTop.ids = top.ids;
       inboxTop.pinned = top.pinned;
@@ -414,6 +452,7 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
       });
     });
     restore?.();
+    if (arrived.length) listArrival.play?.(arrived);
     if (arrives) listAnchor.scrollTo?.(place?.scroll ?? null);
     if (counting)
       void counting.then((r) => {
@@ -528,13 +567,13 @@ let deferred = false;
  * or, while a page covers it, once the list shows again (plan 24, R4: no
  * work for a list nobody sees, and its window and anchor survive).
  */
-export function refreshList(covered: boolean): void {
+export function refreshList(covered: boolean, { arrivals = false }: { arrivals?: boolean } = {}): void {
   if (covered) {
     deferred = true;
     return;
   }
   // (List keeps its whole window on a same-list refresh: reloadList)
-  void reloadList({ keepSelection: true });
+  void reloadList({ keepSelection: true, arrivals });
 }
 
 /** The list shows again: the refresh it missed, over its whole loaded window. */
@@ -558,12 +597,21 @@ export function patchRows(ids: readonly number[], patch: (t: ThreadSummary) => T
   }
   const set = new Set(ids);
   let removed = false;
+  const now = performance.now();
   const items = useList.getState().items.flatMap((t) => {
     if (!set.has(t.id)) return [t];
     const next = patch(t);
-    removed ||= next === null;
+    if (next === null) {
+      removed = true;
+      left.delete(t.id);
+      left.set(t.id, now);
+    }
     return next ? [next] : [];
   });
+  for (const id of left.keys()) {
+    if (left.size <= LEFT_MAX) break;
+    left.delete(id);
+  }
   const index = indexOf(items);
   useList.setState({ items, index });
   if (removed) pruneSelection(index);
