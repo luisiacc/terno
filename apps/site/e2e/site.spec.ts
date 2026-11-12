@@ -204,3 +204,20 @@ test("Midnight's header: GitHub and the language menu are named icons; the menu 
   await expect(page.locator('header a[aria-current="page"]')).toHaveText("Español");
   await expect(page.getByRole("link", { name: "Código fuente en GitHub" })).toBeVisible();
 });
+
+test("a picture's tools stay out of its way until it's pointed at or tabbed into (plan 194)", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+  const shot = page.locator("[data-shot]").first();
+  const tools = shot.locator(".site-shot-tools");
+  const opacity = () => tools.evaluate((t) => getComputedStyle(t).opacity);
+  await page.mouse.move(0, 0);
+  await expect.poll(opacity).toBe("0");
+  await shot.locator("img").filter({ visible: true }).first().hover();
+  await expect.poll(opacity).toBe("1");
+  await page.mouse.move(0, 0);
+  await expect.poll(opacity).toBe("0");
+  // the keyboard reaches them, and they show while it's there
+  await tools.getByRole("button").first().focus();
+  await expect.poll(opacity).toBe("1");
+});

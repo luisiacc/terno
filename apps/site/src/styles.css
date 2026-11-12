@@ -118,6 +118,12 @@ html[data-design="midnight"] .site-shot:not([data-show]) > img[data-mode="light"
   font: 500 12px/1 var(--font-system);
 }
 html:not(.js) .site-shot-tools { display: none; }
+/* plan 194: out of the picture's way until it's pointed at or tabbed into (faded, never hidden, so Tab still reaches
+   them); where nothing hovers (a phone) they stay */
+@media (hover: hover) {
+  .site-shot-tools { opacity: 0; transition: opacity 80ms ease; }
+  .site-shot:hover .site-shot-tools, .site-shot:focus-within .site-shot-tools { opacity: 1; }
+}
 .site-shot-modes, .site-shot-tools > button {
   display: flex; padding: 3px; border-radius: 999px;
   background: rgb(255 255 255 / 0.82); color: #3f3f46;
