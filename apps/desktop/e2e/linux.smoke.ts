@@ -73,12 +73,14 @@ test("the menu is the Linux one, hidden until Alt: no macOS-only items, Quit und
   expect([menu.autoHide, menu.visible]).toEqual([true, false]);
 });
 
-test("Help → Check for Updates… says Linux updates come from the releases page", async () => {
+test("Help → Check for Updates… says Linux updates come from the releases page (Settings → About)", async () => {
   await page.getByTestId("open-settings").click();
+  await page.getByTestId("tab-about").click();
   // the probe runs with the first check (30 s after launch, or now), never at startup; the menu item works either way
   // (Settings' button is disabled once the 30 s check has found Linux unsupported)
   await app.evaluate(({ Menu, BrowserWindow }) => Menu.getApplicationMenu()!.getMenuItemById("check-for-updates")!.click(undefined, BrowserWindow.getAllWindows()[0]));
-  await expect(page.getByTestId("updates-status")).toHaveText("Terno can’t update itself on Linux yet. Download new versions from the releases page.");
+  await expect(page.getByTestId("updates-status-row")).toHaveAttribute("data-state", "unsupported");
+  await expect(page.getByTestId("updates-status")).toContainText("Terno can’t update itself on Linux yet. Download new versions from the releases page.");
   await page.keyboard.press("Escape");
 });
 
