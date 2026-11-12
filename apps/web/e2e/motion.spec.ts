@@ -50,19 +50,19 @@ const sampled = (page: Page): Promise<Sample> =>
     return { max: Math.max(0, ...w.__anim.durations), finite: w.__anim.finite, loops: w.__anim.loops, names: w.__anim.names };
   });
 
-/** Plans 195–199: every arrival asked for, as it starts (one runs ≤ 100 ms: by the time a locator answers it may be over) */
+/** Plans 195–199: every arrival (and plan 196's seal) asked for, as it starts (one runs ≤ 100 ms: by the time a locator answers it may be over) */
 async function recordArrivals(page: Page) {
   await page.evaluate(() => {
     const w = window as unknown as { __arrivals: { id: string | null; testid: string | null; thread: string | null }[] };
     w.__arrivals = [];
     const original = Element.prototype.animate;
     Element.prototype.animate = function (this: Element, keyframes: Keyframe[] | PropertyIndexedKeyframes | null, options?: number | KeyframeAnimationOptions) {
-      if (typeof options === "object" && options.id === "arrive") w.__arrivals.push({ id: options.id, testid: this.getAttribute("data-testid"), thread: this.getAttribute("data-thread-id") });
+      if (typeof options === "object" && (options.id === "arrive" || options.id === "seal")) w.__arrivals.push({ id: options.id, testid: this.getAttribute("data-testid"), thread: this.getAttribute("data-thread-id") });
       return original.call(this, keyframes, options);
     };
   });
 }
-const arrivals = (page: Page) => page.evaluate(() => (window as unknown as { __arrivals: { testid: string | null; thread: string | null }[] }).__arrivals);
+const arrivals = (page: Page) => page.evaluate(() => (window as unknown as { __arrivals: { id: string; testid: string | null; thread: string | null }[] }).__arrivals);
 
 /** Holds a backend method until released, so its loading state (spinner, skeleton) stays on screen. */
 function hold(server: DevServer, method: string) {
@@ -269,6 +269,50 @@ test.describe("motion", () => {
       await frames(page);
       expect(await scroller.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
       expect(await arrivals(page)).toEqual([]);
+    });
+  });
+
+  test("plans 196, 199: a sent reply arrives where the composer was, seals once as it leaves, and its copy's date arrives", async ({ app: page, server }) => {
+    await server.backend.server.invoke("settings.update", { undoSend: true }, ctx);
+    await page.reload();
+    await page.locator("[data-ready]").waitFor();
+    await rows(page).first().dispatchEvent("mousedown");
+    await focusList(page);
+    await page.keyboard.press("r");
+    await expect(page.getByTestId("compose-body")).toBeFocused();
+    await page.keyboard.type("Sealed and sent");
+    await recordArrivals(page);
+    await page.keyboard.press("ControlOrMeta+Enter");
+    const held = page.getByTestId("held-message");
+    await scenario("on Send: the held message arrives; nothing seals while it can still be taken back", async () => {
+      await expect(held).toBeVisible();
+      await frames(page);
+      const seen = await arrivals(page);
+      expect(seen.filter((a) => a.id === "arrive" && a.testid === "held-message")).toHaveLength(1);
+      expect(seen.filter((a) => a.id === "seal")).toHaveLength(0);
+      await expect(held.getByTestId("held-seal")).toHaveClass(/scale-x-0/);
+    });
+    await scenario("the window ends: the line draws once across its top and stays while it's sending", async () => {
+      await expect(held.getByTestId("held-status")).toHaveText("Sending…", { timeout: 8000 });
+      await frames(page);
+      expect((await arrivals(page)).filter((a) => a.id === "seal" && a.testid === "held-seal")).toHaveLength(1);
+      const seal = held.getByTestId("held-seal");
+      await expect(seal).toHaveClass(/scale-x-100/);
+      const [line, card] = [(await seal.boundingBox())!, (await held.boundingBox())!];
+      expect(Math.abs(line.width - card.width)).toBeLessThanOrEqual(1);
+      expect(Math.abs(line.y - card.y)).toBeLessThanOrEqual(2);
+    });
+    await scenario("back in the conversation while it's still sending: the line is drawn, and nothing plays again", async () => {
+      const subject = await page.getByTestId("reader-subject").textContent();
+      await rows(page).nth(1).dispatchEvent("mousedown");
+      await expect(page.getByTestId("reader-subject")).not.toHaveText(subject!);
+      await rows(page).first().dispatchEvent("mousedown");
+      await expect(held).toBeVisible();
+      await frames(page);
+      await expect(held.getByTestId("held-seal")).toHaveClass(/scale-x-100/);
+      const seen = await arrivals(page);
+      expect(seen.filter((a) => a.id === "seal")).toHaveLength(1);
+      expect(seen.filter((a) => a.id === "arrive" && a.testid === "held-message")).toHaveLength(1);
     });
   });
 

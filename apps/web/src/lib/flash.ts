@@ -123,3 +123,13 @@ export function arriveRows(ids: readonly number[]): void {
   if (!list) return;
   for (const row of list.querySelectorAll<HTMLElement>(rowSelector(ids))) arrive(row);
 }
+
+/**
+ * Plan 196: a held message's mail leaves: the accent line across its top draws once, left to right (the crossbar of
+ * Terno's mark), on the drawer's curve; it then stays while the mail is sending. Motion off: it's simply there.
+ */
+export function seal(line: Element | null): void {
+  const ms = motionNow();
+  if (!line || ms === 0) return;
+  line.animate([{ transform: "scaleX(0)" }, { transform: "scaleX(1)" }], { id: "seal", duration: Math.min(Math.round(ms * 1.33), 100), easing: token("--motion-ease-drawer") || "ease-out" });
+}

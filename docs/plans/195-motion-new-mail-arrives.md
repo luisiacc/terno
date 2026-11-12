@@ -11,7 +11,7 @@
 | Plan | What | Severity | Depends on | Status |
 |---|---|---|---|---|
 | 195 | New mail arrives (adds `arrive()`, `armReflow()`) | MEDIUM | none | built |
-| 196 | Sending: the held message arrives, and seals as it leaves | LOW | 195's `arrive()` | TODO |
+| 196 | Sending: the held message arrives, and seals as it leaves | LOW | 195's `arrive()` | built |
 | 199 | The sent copy's date arrives where "Sending…" was | LOW | 195's `arrive()`; best after 196 | TODO |
 | 197 | Review's next category arrives | LOW | 195's `arrive()` | TODO |
 | 198 | An emptied list's empty state arrives | LOW | 195's `arrive()` | TODO |

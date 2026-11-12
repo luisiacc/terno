@@ -5,6 +5,7 @@ import { cn } from "@terno/ui/lib/utils";
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { cardLeaving, copyShown, firstReveal, heldIn, undoHeld, useHeldCard, useHeldSends, type HeldSend } from "~/lib/held-sends";
 import { revealHeld } from "~/lib/reader-scroll";
+import { arrive, seal } from "~/lib/flash";
 import { useSnack, zHolds } from "~/lib/snack";
 import { announce } from "~/lib/announce";
 import { setApp, useApp } from "~/state/app";
@@ -26,8 +27,23 @@ export function HeldMessage({ held, icons }: { held: HeldSend; icons: boolean })
   const account = useApp((s) => s.accounts.find((a) => a.id === held.accountId));
   const remoteImages = useApp((s) => s.settings?.remoteImages ?? "ask");
   const mailAppearance = useApp((s) => s.settings?.htmlMailAppearance ?? "auto");
-  // the reader goes to it once, as it would to its copy; back in the conversation later, the reader keeps its place
-  useEffect(() => { if (firstReveal(held.draftId)) revealHeld(held.draftId); }, [held.draftId]);
+  const ref = useRef<HTMLElement>(null);
+  const line = useRef<HTMLSpanElement>(null);
+  // the reader goes to it once, as it would to its copy; back in the conversation later, the reader keeps its place.
+  // Plan 196: and that once, it arrives where the composer was (before it paints: never shown settled, then hidden)
+  useLayoutEffect(() => {
+    if (!firstReveal(held.draftId)) return;
+    arrive(ref.current);
+    revealHeld(held.draftId);
+  }, [held.draftId]);
+  // plan 196: the moment it can no longer be taken back, seen here (a card mounted already sending, a conversation come
+  // back to, shows the line drawn and plays nothing)
+  const phase = useRef(held.phase);
+  useLayoutEffect(() => {
+    const was = phase.current;
+    phase.current = held.phase;
+    if (held.phase === "sending" && was !== "sending") seal(line.current);
+  }, [held.phase]);
   // a layout cleanup runs before the card leaves the page: whether focus was in it can still be read (Codex review #3)
   useLayoutEffect(() => () => cardLeaving(held.draftId), [held.draftId]);
   // its own namespace: never a message's id (heights, consent), one per hold
@@ -48,7 +64,9 @@ export function HeldMessage({ held, icons }: { held: HeldSend; icons: boolean })
     announce(t(z ? "compose.held.statusZ" : "compose.held.status", { count }));
   }, [held.phase, held.goesAt, held.undo]);
   return (
-    <article data-testid="held-message" data-held-send={held.draftId} data-phase={held.phase} tabIndex={-1} aria-label={t("compose.held.label")} className="hairline-b outline-none">
+    <article ref={ref} data-testid="held-message" data-held-send={held.draftId} data-phase={held.phase} tabIndex={-1} aria-label={t("compose.held.label")} className="relative hairline-b outline-none">
+      {/* plan 196: sealed: the accent line over its top edge while it's sending */}
+      <span ref={line} aria-hidden data-testid="held-seal" className={cn("pointer-events-none absolute inset-x-0 -top-px h-0.5 origin-left bg-primary", held.phase === "sending" ? "scale-x-100" : "scale-x-0")} />
       <div className="relative">
         {/* an open message's header, at its place and height: nothing to open or fold yet */}
         <div className="-mx-2 flex w-[calc(100%+1rem)] items-start gap-2.5 px-2 pt-3 pb-1.5">
