@@ -105,6 +105,7 @@ export interface BackendCoreOptions {
   checkClockOnStart?: boolean;
   /** start sync loops and the ops worker on start() (tests disable) */
   autoSync?: boolean;
+  /** how often every account is polled (default SYNC_INTERVAL_MS) */
   syncIntervalMs?: number;
   /** target duration of one ingestion/filter slice before yielding to interactive RPCs */
   sliceBudgetMs?: number;
@@ -177,6 +178,9 @@ export function opSummary(kind: string, subject: string, count: number): Pick<Op
   const m = kind === "send" ? L("backend.op.send", { subject }) : Object.hasOwn(OP_SUMMARY, kind) ? L(OP_SUMMARY[kind as keyof typeof OP_SUMMARY], { count }) : L("backend.op.other", { kind, count });
   return { summary: m.message, summaryI18n: textRef(m)! };
 }
+
+/** plan 191 (the owner): the poll, every account's ordinary pass; Gmail hears of new mail only from it (and quick checks) */
+export const SYNC_INTERVAL_MS = 40_000;
 
 const AUTO_NOTICE_GATHER_MS = 1500;
 /** plan 25: a window's focus rechecks a refused saved password at most this often (a refused login, again and again, locks accounts out) */
@@ -330,7 +334,7 @@ export class BackendCore {
   constructor(options: BackendCoreOptions) {
     // explicit `undefined` must not clobber defaults
     const defined = Object.fromEntries(Object.entries(options).filter(([, v]) => v !== undefined)) as BackendCoreOptions;
-    this.options = { now: Date.now, sliceBudgetMs: 8, syncIntervalMs: 120_000, ...defined };
+    this.options = { now: Date.now, sliceBudgetMs: 8, syncIntervalMs: SYNC_INTERVAL_MS, ...defined };
     this.incoming = new IncomingPipeline(options.incomingProcessor);
     this.platform = options.platform;
     this.store = options.store;
@@ -721,7 +725,7 @@ export class BackendCore {
       // started here, not after the sync: a long or failing pass mustn't postpone it (one probe per watcher)
       const life = this.lifetimes.get(account.id);
       void this.providers.get(account.id)?.then((p) => { if (life && this.current(life)) p?.heartbeat?.(); }, () => {});
-      // plan 25: one that needs a sign-in isn't asked every two minutes (a refused login, again and again, locks
+      // plan 25: one that needs a sign-in isn't asked at every poll (a refused login, again and again, locks
       // accounts out); signing in again lifts it, and recheckSignIn tries the saved password at moments the user would
       if (!this.connectivity.pending(account.id) && !(await this.accountStatus(account.id)).signInRequired) void this.syncAccount(account.id);
     }

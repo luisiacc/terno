@@ -1,7 +1,7 @@
 /**
  * Plan 176: someone who brings Terno to the front is often waiting for a message (a code, a link). For a
  * minute after a window gains focus, the accounts that don't hear of new mail by push are checked every 5 s
- * instead of waiting for the 2-minute poll. All the timer state lives here, so the policy is tested without a
+ * instead of waiting for the poll (every 40 s). All the timer state lives here, so the policy is tested without a
  * backend; which accounts a check reaches is the core's (`hooks.check`).
  *
  * - a window gaining focus starts the minute over; the first check is at once, or 5 s after the last one
