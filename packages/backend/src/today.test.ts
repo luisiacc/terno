@@ -49,7 +49,7 @@ async function setup(o: { provider?: "fake" | "none"; devAi?: { anthropic: strin
   const [c, s] = createMemoryTransportPair();
   backend.connect(s, { clientId: "r", origin: "renderer" });
   const client = new RpcClient(c);
-  const { account } = await backend.store.accounts.create({ kind: "gmail", email: "me@terno.test", displayName: "Me", color: "indigo", now: 0 });
+  const { account } = await backend.store.accounts.create({ kind: "gmail", email: "me@terno.test", displayName: "Me", color: "brown", now: 0 });
   if (o.provider !== "none") await client.call("settings.update", { ai: { provider: "fake", model: "demo" } });
   cleanups.push(async () => {
     await backend.stop();

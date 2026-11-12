@@ -55,7 +55,7 @@ async function mailbox(options: Pick<BackendOptions, "aiFactory" | "log"> = {}) 
     rmSync(dir, { recursive: true, force: true });
   });
   const db = sqlDb(backend.store);
-  const acct = createAccount(db, { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
+  const acct = createAccount(db, { kind: "imap", email: "me@example.com", displayName: "Me", color: "brown" }).id;
   const invoices = createCategory(db, "Invoices", "amber").id;
   const travel = createCategory(db, "Travel", "cyan").id;
   const placed = ingestMessages(db, Array.from({ length: 6 }, (_, i) => incoming(acct, { from: { name: `Billing ${i}`, email: `billing@vendor${i}.example` }, subject: `Invoice ${i}`, date: NOW - (40 + i) * DAY, inInbox: false })), NOW);

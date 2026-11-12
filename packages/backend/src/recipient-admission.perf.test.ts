@@ -15,7 +15,7 @@ for (const engine of ["SQL", "IDB"] as const) for (const shape of ["long", "dens
 async function admit(engine: "SQL" | "IDB", shape: "long" | "dense"): Promise<number> {
   const store = engine === "SQL" ? new SqlMailStore(openDatabase(":memory:"), { platform }) : await IdbMailStore.open({ name: crypto.randomUUID(), factory: new IDBFactory(), platform, instantSearch: false });
   try {
-    const { account } = await store.accounts.create({ kind: "imap", email: "sender@example.test", displayName: "Synthetic", color: "indigo", providerConfig: { appendToSent: false }, now: 1 });
+    const { account } = await store.accounts.create({ kind: "imap", email: "sender@example.test", displayName: "Synthetic", color: "brown", providerConfig: { appendToSent: false }, now: 1 });
     const addresses = Array.from({ length: 1000 }, (_, i) => ({ name: shape === "long" ? "ñ".repeat(250) : "a ".repeat(150), email: `r${i}@example.test` }));
     let previous = process.threadCpuUsage(), max = 0, turns = 0, active = true;
     const record = () => { const usage = process.threadCpuUsage(previous); max = Math.max(max, (usage.user + usage.system) / 1000); previous = process.threadCpuUsage(); };

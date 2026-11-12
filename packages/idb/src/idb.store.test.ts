@@ -187,7 +187,7 @@ describe("an undo of a version-1 move left half-restored", () => {
       v1.result.createObjectStore("meta");
       const tx = v1.transaction!;
       const put = (store: string, row: Record<string, unknown>, key: IDBValidKey) => tx.objectStore(store).put(row, key);
-      put("accounts", { id: 1, kind: "imap", email: "yo@x.mx", display_name: "", color: "indigo", provider_config: "{}", secret_ref: null, sync_state_json: "{}", created_at: 0 }, 1);
+      put("accounts", { id: 1, kind: "imap", email: "yo@x.mx", display_name: "", color: "brown", provider_config: "{}", secret_ref: null, sync_state_json: "{}", created_at: 0 }, 1);
       for (const t of [7, 8]) put("threads", { id: t, account_id: 1, provider_thread_id: null, subject: "s", snippet: "", participants_json: "[]", last_date: t, message_count: 0, unread_count: 0, has_attachments: 0, is_starred: 0, in_inbox: 1, has_sent: 0, in_trash: 0, in_spam: 0, last_from_name: "", last_from_email: "" }, t);
       put("categories", { id: 1, name: "Origen", color: "rose", position: 0, auto_apply: 1 }, 1);
       put("categories", { id: 2, name: "Destino", color: "cyan", position: 1, auto_apply: 1 }, 2);

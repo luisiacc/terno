@@ -34,7 +34,7 @@ async function setup(processor: IncomingProcessor) {
   cleanups.push(async () => { await stop(); rmSync(dir, { recursive: true, force: true }); });
   const accounts = [];
   for (let index = 0; index < 2; index++) {
-    const { account } = await backend.store.accounts.create({ kind: "imap", email: `synthetic${index}@example.test`, displayName: "Synthetic", color: "indigo", providerConfig: {}, now: index + 1 });
+    const { account } = await backend.store.accounts.create({ kind: "imap", email: `synthetic${index}@example.test`, displayName: "Synthetic", color: "brown", providerConfig: {}, now: index + 1 });
     accounts.push(account);
     await backend.provider(account.id);
   }

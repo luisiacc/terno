@@ -81,7 +81,7 @@ it("exports exact draft attachment bytes, imports with fresh account-owned IDs, 
   };
   cleanups.push(async () => { rmSync(dir, { recursive: true, force: true }); });
   const source = make("source.db"); const target = make("target.db");
-  const account = async (b: Backend) => (await b.store.accounts.create({ kind: "gmail", email: "a@test.com", displayName: "A", color: "indigo", now: 0 })).account.id;
+  const account = async (b: Backend) => (await b.store.accounts.create({ kind: "gmail", email: "a@test.com", displayName: "A", color: "brown", now: 0 })).account.id;
   const a = await account(source); const other = await account(target);
   for (const dataBase64 of ["AP+A", "AQID"]) {
     const ref = await source.store.attachments.create({ accountId: a, filename: "same.bin", mime: "application/octet-stream", size: 3, now: 0 });
@@ -113,7 +113,7 @@ it.each(["", "AP+A"])("repeated attached-draft import at full quota is a reserva
   const dir = mkdtempSync(join(tmpdir(), "terno-import-full-"));
   const backend = new Backend({ dbPath: join(dir, "mail.db"), version: "test", cipher: plaintextCipher, providers: demoRegistry, autoSync: false });
   cleanups.push(async () => { await backend.stop(); rmSync(dir, { recursive: true, force: true }); });
-  const accountId = (await backend.store.accounts.create({ kind: "gmail", email: "a@test.com", displayName: "A", color: "indigo", now: 0 })).account.id;
+  const accountId = (await backend.store.accounts.create({ kind: "gmail", email: "a@test.com", displayName: "A", color: "brown", now: 0 })).account.id;
   const size = dataBase64 ? 3 : 0;
   const ref = await backend.store.attachments.create({ accountId, filename: "same.bin", mime: "application/octet-stream", contentId: "part%25@test", size, now: Date.now() });
   if (size) await backend.store.attachments.append(accountId, ref.assetId, 0, dataBase64);
@@ -141,7 +141,7 @@ it.each(["", "AP+A"])("repeated attached-draft import at full quota is a reserva
 it.each(["long", "unicode", "legacy"])("canonical %s filenames re-import at full quota without rewriting persisted metadata", async (kind) => {
   const backend = new Backend({ dbPath: ":memory:", version: "test", cipher: plaintextCipher, providers: demoRegistry, autoSync: false });
   cleanups.push(() => backend.stop());
-  const accountId = (await backend.store.accounts.create({ kind: "gmail", email: "a@test.com", displayName: "A", color: "indigo", now: 0 })).account.id;
+  const accountId = (await backend.store.accounts.create({ kind: "gmail", email: "a@test.com", displayName: "A", color: "brown", now: 0 })).account.id;
   let ref = await backend.store.attachments.create({ accountId, filename: kind === "unicode" ? "../résumé 📨. " : "a".repeat(119) + ".b", mime: "application/octet-stream", size: 3, now: Date.now() });
   await backend.store.attachments.append(accountId, ref.assetId, 0, "AP+A"); await backend.store.attachments.seal(accountId, ref.assetId);
   const db = sqlDb(backend.store);
@@ -211,8 +211,8 @@ it("backs up cross-account reply baselines and retains distinct contexts on repe
   cleanups.push(async () => { rmSync(dir, { recursive: true, force: true }); });
   const source = make("source.db"), target = make("target.db");
   const setup = async (b: Backend) => {
-    const sender = (await b.store.accounts.create({ kind: "gmail", email: "send@example.test", displayName: "Sender", color: "indigo", now: 0 })).account.id;
-    const originalAccount = (await b.store.accounts.create({ kind: "gmail", email: "source@example.test", displayName: "Source", color: "indigo", now: 0 })).account.id;
+    const sender = (await b.store.accounts.create({ kind: "gmail", email: "send@example.test", displayName: "Sender", color: "brown", now: 0 })).account.id;
+    const originalAccount = (await b.store.accounts.create({ kind: "gmail", email: "source@example.test", displayName: "Source", color: "brown", now: 0 })).account.id;
     await b.store.sync.ingest([{ accountId: originalAccount, providerMsgId: "original", providerThreadId: "provider-thread", rfcMessageId: "original@example.test", inReplyTo: null, references: [], from: { name: "Source", email: "other@example.test" }, to: [], cc: [], bcc: [], subject: "Original", date: 1, snippet: "source", bodyText: "source", bodyHtml: null, bodyState: "full", listId: null, isRead: true, isStarred: false, inInbox: true, isSent: false, isDraft: false, isTrash: false, isSpam: false, hasAttachments: false, size: 1 }], { applyFilters: false, now: 1, classifier: null });
     const original = (await b.store.debug.snapshot()).messages[0]!;
     return { sender, originalAccount, original };
@@ -239,7 +239,7 @@ it("retains unresolved reply context in a subsequent backup", async () => {
   const dir = mkdtempSync(join(tmpdir(), "terno-pending-reply-export-"));
   const backend = new Backend({ dbPath: join(dir, "mail.db"), version: "test", cipher: plaintextCipher, providers: demoRegistry, autoSync: false });
   cleanups.push(async () => { await backend.stop(); rmSync(dir, { recursive: true, force: true }); });
-  await backend.store.accounts.create({ kind: "gmail", email: "send@example.test", displayName: "Sender", color: "indigo", now: 0 });
+  await backend.store.accounts.create({ kind: "gmail", email: "send@example.test", displayName: "Sender", color: "brown", now: 0 });
   const [c, s] = createMemoryTransportPair(); backend.connect(s, { clientId: "r", origin: "renderer" }); const client = new RpcClient(c);
   const draft = { accountEmail: "send@example.test", mode: "reply" as const, to: [], cc: [], bcc: [], subject: "Re: Original", subjectEdited: false, bodyText: "keep", bodyHtml: "", quotedText: "> keep", includeQuote: true, inReplyTo: "original@example.test", forwardOf: null, replyContext: { subject: "Original", sourceAccountEmail: "missing@example.test", rfcMessageId: "original@example.test" }, uiState: "open" as const, updatedAt: 0 };
   const data = { format: "terno-export" as const, version: 2 as const, exportedAt: 0, app: "test", accounts: [], categories: [], filters: [], settings: {}, ops: [], drafts: [draft] };

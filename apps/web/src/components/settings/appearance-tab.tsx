@@ -42,7 +42,7 @@ function DesignPreview({ design, mode }: { design: DesignDefinition; mode: Theme
         <span className="h-0.5 w-3/5 rounded-full bg-muted-foreground" />
         <span className="mt-0.5 size-1 rounded-full bg-cat-amber" />
         <span className="size-1 rounded-full bg-cat-emerald" />
-        <span className="size-1 rounded-full bg-cat-indigo" />
+        <span className="size-1 rounded-full bg-cat-violet" />
       </div>
       <div className="flex min-w-0 flex-1 flex-col gap-[3px] bg-pane p-1">
         <div className="flex items-center justify-between gap-0.5">
@@ -61,7 +61,7 @@ function DesignPreview({ design, mode }: { design: DesignDefinition; mode: Theme
         {/* more than fit: the list runs on past the mock's edge, as a real one does */}
         {[0, 1, 2, 3, 4].map((i) => (
           <div key={i} className={cn("relative flex shrink-0 items-center gap-1 rounded-[calc(var(--row-radius)*0.25)] px-0.5", design.avatar.row ? "h-[13px]" : "h-[11px]", i === 1 && "bg-row-selected")}>
-            {design.avatar.row > 0 && <span className={cn("shrink-0 rounded-full", design.avatar.row > 40 ? "size-2.5" : "size-2", ["bg-cat-rose/30", "bg-cat-indigo/30", "bg-cat-emerald/30"][i % 3])} />}
+            {design.avatar.row > 0 && <span className={cn("shrink-0 rounded-full", design.avatar.row > 40 ? "size-2.5" : "size-2", ["bg-cat-rose/30", "bg-cat-violet/30", "bg-cat-emerald/30"][i % 3])} />}
             {!design.avatar.row && i === 0 && <span className="absolute left-0 size-0.5 rounded-full bg-unread" />}
             <span className="flex min-w-0 flex-1 flex-col gap-px">
               <span className={cn("h-0.5 rounded-full", i === 1 ? "w-1/2 bg-row-selected-foreground" : "w-2/5 bg-foreground")} />

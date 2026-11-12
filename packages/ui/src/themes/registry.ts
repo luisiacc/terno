@@ -38,7 +38,7 @@ const BASE = [
   "sidebar-accent",
 ] as const satisfies readonly ThemeToken[];
 
-export const CAT_NAMES = ["rose", "amber", "lime", "emerald", "cyan", "indigo", "violet", "slate"] as const;
+export const CAT_NAMES = ["rose", "amber", "lime", "emerald", "cyan", "brown", "violet", "slate"] as const;
 
 type BaseInput = Record<(typeof BASE)[number], string>;
 
@@ -49,7 +49,7 @@ export interface ThemeInput {
   /** the macOS sidebar shows the window's native vibrancy through a translucent sidebar */
   vibrancy: boolean;
   tokens: BaseInput;
-  /** rose, amber, lime, emerald, cyan, indigo, violet, slate */
+  /** rose, amber, lime, emerald, cyan, brown, violet, slate */
   cats: readonly [string, string, string, string, string, string, string, string];
   /** any derived token, set explicitly */
   overrides?: Partial<Record<ThemeToken, string>>;
@@ -329,7 +329,7 @@ export const THEMES: readonly Theme[] = [
       "row-selected-foreground": "0.22 0.04 268",
       "sidebar-accent": "0.22 0.01 265 / 0.063",
     },
-    cats: cats(".645 .12 10 | .635 .12 75 | .62 .12 130 | .615 .12 165 | .62 .1 215 | .59 .13 268 | .61 .13 300 | .59 .02 265"),
+    cats: cats(".645 .12 10 | .635 .12 75 | .62 .12 130 | .615 .12 165 | .62 .1 215 | .52 .075 50 | .61 .13 300 | .59 .02 265"),
     overrides: { "draft-foreground": "0.42 0.17 268" },
   }),
   defineTheme({
@@ -361,7 +361,7 @@ export const THEMES: readonly Theme[] = [
       "row-selected-foreground": "0.232 0.004 286",
       "sidebar-accent": "0 0 0 / 0.058",
     },
-    cats: cats(".65 .238 18 | .68 .175 63 | .665 .177 90 | .645 .194 147 | .662 .133 234 | .529 .191 278 | .615 .213 312 | .648 .007 286"),
+    cats: cats(".65 .238 18 | .68 .175 63 | .665 .177 90 | .645 .194 147 | .63 .12 215 | .52 .075 50 | .615 .213 312 | .648 .007 286"),
     overrides: { "cat-slate-ink": "0.466 0.008 275.8" },
   }),
   defineTheme({
@@ -393,7 +393,7 @@ export const THEMES: readonly Theme[] = [
       "row-selected-foreground": "0.309 0.052 220",
       "sidebar-accent": "0.891 0.029 92",
     },
-    cats: cats(".592 .202 356 | .581 .173 40 | .649 .134 86 | .639 .151 119 | .634 .102 187 | .615 .139 245 | .582 .126 279 | .648 .016 197"),
+    cats: cats(".592 .202 356 | .581 .173 40 | .649 .134 86 | .639 .151 119 | .634 .102 187 | .481 .075 50 | .582 .126 279 | .648 .016 197"),
   }),
   defineTheme({
     id: "gruvbox-light",
@@ -424,7 +424,7 @@ export const THEMES: readonly Theme[] = [
       "row-selected-foreground": "0.277 0 0",
       "sidebar-accent": "0.883 0.057 89",
     },
-    cats: cats(".546 .203 29 | .622 .171 46 | .64 .143 78 | .631 .135 109 | .625 .094 145 | .576 .066 199 | .597 .111 352 | .619 .029 67"),
+    cats: cats(".546 .203 29 | .622 .171 46 | .64 .143 78 | .631 .135 109 | .625 .094 145 | .52 .075 50 | .597 .111 352 | .619 .029 67"),
   }),
   defineTheme({
     id: "github-light",
@@ -455,7 +455,7 @@ export const THEMES: readonly Theme[] = [
       "row-selected-foreground": "0.254 0.011 254",
       "sidebar-accent": "0.936 0.007 248",
     },
-    cats: cats(".552 .205 25 | .557 .16 45 | .554 .117 75 | .524 .14 148 | .537 .084 202 | .54 .191 257 | .563 .207 295 | .565 .019 251"),
+    cats: cats(".552 .205 25 | .557 .16 45 | .554 .117 75 | .524 .14 148 | .537 .084 202 | .457 .075 50 | .563 .207 295 | .565 .019 251"),
   }),
   defineTheme({
     id: "catppuccin-latte",
@@ -479,14 +479,14 @@ export const THEMES: readonly Theme[] = [
       "primary-foreground": "0.958 0.006 265",
       destructive: "0.55 0.216 20",
       success: "0.52 0.177 140",
-      unread: "0.555 0.25 297",
+      unread: "0.559 0.226 262",
       star: "0.644 0.149 68",
       "row-hover": "0.935 0.009 265",
       "row-selected": "0.909 0.043 299",
       "row-selected-foreground": "0.435 0.043 279",
       "sidebar-accent": "0.893 0.012 265",
     },
-    cats: cats(".55 .216 20 | .657 .204 42 | .644 .149 68 | .62 .177 140 | .627 .145 235 | .559 .226 262 | .555 .25 297 | .601 .03 279"),
+    cats: cats(".55 .216 20 | .657 .204 42 | .644 .149 68 | .62 .177 140 | .6 .12 205 | .52 .075 50 | .555 .25 297 | .601 .03 279"),
   }),
   defineTheme({
     id: "lumen-light",
@@ -518,7 +518,7 @@ export const THEMES: readonly Theme[] = [
       "row-selected-foreground": "0.211 0.005 68",
       "sidebar-accent": "0.944 0.006 75",
     },
-    cats: cats(".6 .14 25 | .6 .16 42 | .62 .11 125 | .58 .095 149 | .589 .079 208 | .55 .1 265 | .589 .109 306 | .58 .015 70"),
+    cats: cats(".6 .14 25 | .6 .16 42 | .62 .11 125 | .58 .095 149 | .589 .079 208 | .5 .075 42 | .589 .109 306 | .58 .015 70"),
     overrides: { ring: "0.6 0.12 76", "draft-foreground": "0.47 0.1 74" },
   }),
   defineTheme({
@@ -551,7 +551,7 @@ export const THEMES: readonly Theme[] = [
       "row-selected-foreground": "0.227 0.004 85",
       "sidebar-accent": "0.929 0.007 89",
     },
-    cats: cats(".57 .12 15 | .6 .11 65 | .58 .08 125 | .559 .069 144 | .554 .055 209 | .496 .079 258 | .557 .065 306 | .56 .012 90"),
+    cats: cats(".57 .12 15 | .6 .11 65 | .58 .08 125 | .559 .069 144 | .554 .055 209 | .5 .075 50 | .557 .065 306 | .56 .012 90"),
     overrides: { "draft-foreground": "0.326 0.061 256" },
   }),
   defineTheme({
@@ -584,7 +584,7 @@ export const THEMES: readonly Theme[] = [
       "row-selected-foreground": "0.2 0.03 262",
       "sidebar-accent": "0 0 0 / 0.058",
     },
-    cats: cats(".645 .2 16 | .64 .15 66 | .62 .16 131 | .61 .13 163 | .61 .11 215 | .585 .2 277 | .606 .21 293 | .554 .046 257"),
+    cats: cats(".645 .2 16 | .64 .15 66 | .62 .16 131 | .61 .13 163 | .61 .11 215 | .52 .075 50 | .606 .21 293 | .554 .046 257"),
   }),
   defineTheme({
     id: "graphite-light",
@@ -618,7 +618,7 @@ export const THEMES: readonly Theme[] = [
       "row-selected-foreground": "#171717",
       "sidebar-accent": "0.957 0 0",
     },
-    cats: cats(".645 .17 16 | .64 .13 66 | .62 .13 131 | .61 .11 163 | .61 .1 205 | .54 .15 262 | .6 .17 322 | .56 .01 257"),
+    cats: cats(".645 .17 16 | .64 .13 66 | .62 .13 131 | .61 .11 163 | .61 .1 205 | .52 .075 50 | .6 .17 322 | .56 .01 257"),
     // plan 161: a state is only ever grey here, so the keyboard's place in a menu, the palette and Ask is the selection's grey
     overrides: { "sidebar-foreground": "#5D5D5D", "sidebar-glyph": "#5D5D5D", "sidebar-accent-foreground": "#171717", "control-edge": "#949494", "control-edge-hover": "#5D5D5D", "draft-foreground": "#171717", "menu-highlight": "#DCDCDC" },
   }),
@@ -651,7 +651,7 @@ export const THEMES: readonly Theme[] = [
       "row-selected-foreground": "0.97 0.01 268",
       "sidebar-accent": "1 0 0 / 0.11",
     },
-    cats: cats(".72 .12 10 | .78 .12 75 | .78 .12 130 | .74 .12 165 | .76 .1 215 | .7 .13 268 | .72 .13 300 | .7 .02 265"),
+    cats: cats(".72 .12 10 | .78 .12 75 | .78 .12 130 | .74 .12 165 | .76 .1 215 | .68 .07 50 | .72 .13 300 | .7 .02 265"),
     overrides: { "draft-foreground": "0.82 0.09 268" },
   }),
   defineTheme({
@@ -683,7 +683,7 @@ export const THEMES: readonly Theme[] = [
       "row-selected-foreground": "0.977 0.008 107",
       "sidebar-accent": "0.343 0.027 276",
     },
-    cats: cats(".725 .18 5 | .834 .124 67 | .955 .134 113 | .871 .22 148 | .883 .093 213 | .716 .13 274 | .742 .149 302 | .56 .08 270"),
+    cats: cats(".68 .2 25 | .834 .124 67 | .955 .134 113 | .871 .22 148 | .883 .093 213 | .734 .07 50 | .742 .149 302 | .56 .08 270"),
   }),
   defineTheme({
     id: "monokai",
@@ -714,7 +714,7 @@ export const THEMES: readonly Theme[] = [
       "row-selected-foreground": "0.977 0.008 107",
       "sidebar-accent": "0.357 0.018 103",
     },
-    cats: cats(".642 .24 7 | .767 .168 62 | .879 .125 103 | .841 .204 127 | .827 .108 212 | .711 .15 272 | .701 .181 298 | .547 .029 97"),
+    cats: cats(".642 .24 7 | .767 .168 62 | .85 .14 95 | .8 .12 170 | .827 .108 212 | .667 .07 50 | .701 .181 298 | .547 .029 97"),
   }),
   defineTheme({
     id: "tokyo-night",
@@ -745,7 +745,7 @@ export const THEMES: readonly Theme[] = [
       "row-selected-foreground": "0.846 0.061 275",
       "sidebar-accent": "0.309 0.037 273",
     },
-    cats: cats(".723 .159 10 | .787 .137 51 | .784 .106 75 | .795 .139 130 | .82 .105 236 | .719 .132 264 | .751 .134 299 | .589 .062 277"),
+    cats: cats(".723 .159 10 | .787 .137 51 | .784 .106 75 | .795 .139 130 | .82 .105 210 | .687 .07 50 | .751 .134 299 | .589 .04 277"),
   }),
   defineTheme({
     id: "gruvbox-dark",
@@ -776,7 +776,7 @@ export const THEMES: readonly Theme[] = [
       "row-selected-foreground": "0.956 0.055 96",
       "sidebar-accent": "0.344 0.007 49",
     },
-    cats: cats(".66 .218 30 | .731 .182 52 | .832 .159 83 | .765 .158 111 | .756 .108 138 | .693 .042 170 | .705 .098 2 | .619 .029 67"),
+    cats: cats(".66 .218 30 | .731 .182 52 | .832 .159 83 | .765 .158 111 | .756 .108 138 | .631 .07 50 | .705 .098 2 | .619 .029 67"),
   }),
   defineTheme({
     id: "nord",
@@ -807,7 +807,7 @@ export const THEMES: readonly Theme[] = [
       "row-selected-foreground": "0.951 0.007 261",
       "sidebar-accent": "0.379 0.029 266",
     },
-    cats: cats(".606 .121 15 | .693 .096 38 | .855 .089 84 | .768 .075 131 | .763 .048 194 | .697 .059 249 | .692 .062 333 | .625 .041 263"),
+    cats: cats(".606 .121 15 | .693 .096 38 | .855 .089 84 | .768 .075 131 | .763 .048 194 | .62 .07 50 | .692 .062 333 | .625 .041 263"),
   }),
   defineTheme({
     // GitHub's dark default (Primer), with Apple's dark-mode blue (#0a84ff) as the primary: vivid like GitHub Light's.
@@ -840,7 +840,7 @@ export const THEMES: readonly Theme[] = [
       "row-selected-foreground": "0.943 0.011 244",
       "sidebar-accent": "0.3 0.015 257",
     },
-    cats: cats(".665 .205 27 | .72 .14 80 | .766 .153 124 | .695 .181 146 | .755 .116 202 | .663 .169 256 | .688 .178 299 | .662 .018 251"),
+    cats: cats(".665 .205 27 | .72 .14 80 | .766 .153 124 | .695 .181 146 | .755 .116 202 | .62 .07 50 | .688 .178 299 | .662 .018 251"),
   }),
   defineTheme({
     id: "catppuccin-mocha",
@@ -864,14 +864,14 @@ export const THEMES: readonly Theme[] = [
       "primary-foreground": "0.243 0.03 284",
       destructive: "0.756 0.13 3",
       success: "0.858 0.109 143",
-      unread: "0.787 0.119 305",
+      unread: "0.766 0.111 260",
       star: "0.919 0.07 87",
       "row-hover": "0.296 0.031 282",
       "row-selected": "0.404 0.032 280",
       "row-selected-foreground": "0.879 0.043 272",
       "sidebar-accent": "0.324 0.032 282",
     },
-    cats: cats(".756 .13 3 | .824 .101 53 | .919 .07 87 | .858 .109 143 | .847 .083 210 | .766 .111 260 | .787 .119 305 | .687 .037 275"),
+    cats: cats(".756 .13 3 | .824 .101 53 | .919 .07 87 | .858 .109 143 | .847 .083 210 | .724 .07 50 | .787 .119 305 | .687 .037 275"),
   }),
   defineTheme({
     id: "lumen-dark",
@@ -902,7 +902,7 @@ export const THEMES: readonly Theme[] = [
       "row-selected-foreground": "0.96 0.01 85",
       "sidebar-accent": "1 0 0 / 0.105",
     },
-    cats: cats(".72 .13 20 | .74 .15 45 | .78 .12 130 | .74 .1 150 | .76 .08 208 | .72 .1 265 | .74 .1 306 | .72 .015 75"),
+    cats: cats(".72 .13 20 | .74 .15 45 | .78 .12 130 | .74 .1 150 | .76 .08 208 | .64 .07 42 | .74 .1 306 | .72 .015 75"),
     overrides: { ring: "0.8 0.13 82 / 80%", "draft-foreground": "0.87 0.09 85" },
   }),
   defineTheme({
@@ -934,7 +934,7 @@ export const THEMES: readonly Theme[] = [
       "row-selected-foreground": "0.96 0.006 85",
       "sidebar-accent": "1 0 0 / 0.115",
     },
-    cats: cats(".72 .11 15 | .76 .1 70 | .76 .08 125 | .74 .07 144 | .75 .06 209 | .72 .08 258 | .74 .07 306 | .7 .012 90"),
+    cats: cats(".72 .11 15 | .76 .1 70 | .76 .08 125 | .74 .07 144 | .75 .06 209 | .66 .07 50 | .74 .07 306 | .7 .012 90"),
     overrides: { "draft-foreground": "0.82 0.06 255" },
   }),
   defineTheme({
@@ -967,7 +967,7 @@ export const THEMES: readonly Theme[] = [
       "row-selected-foreground": "0.97 0.01 255",
       "sidebar-accent": "1 0 0 / 0.11",
     },
-    cats: cats(".72 .15 16 | .8 .14 75 | .78 .16 131 | .74 .13 163 | .76 .1 215 | .7 .15 277 | .72 .15 293 | .7 .03 257"),
+    cats: cats(".72 .15 16 | .8 .14 75 | .78 .16 131 | .74 .13 163 | .76 .1 215 | .7 .07 50 | .72 .15 293 | .7 .03 257"),
   }),
   defineTheme({
     id: "graphite-dark",
@@ -999,7 +999,7 @@ export const THEMES: readonly Theme[] = [
       "row-selected-foreground": "#EDEDED",
       "sidebar-accent": "0.344 0 0",
     },
-    cats: cats(".72 .13 16 | .8 .12 75 | .78 .13 131 | .74 .11 163 | .76 .09 205 | .68 .13 262 | .72 .14 322 | .7 .01 257"),
+    cats: cats(".72 .13 16 | .8 .12 75 | .78 .13 131 | .74 .11 163 | .76 .09 205 | .7 .07 50 | .72 .14 322 | .7 .01 257"),
     // plan 161: the keyboard's place as far toward the selection as #9E9E9E still reads on it (4.58:1): 1.27:1, BOUNDARY_STEPS' exception
     overrides: { "sidebar-foreground": "#A4A4A4", "sidebar-glyph": "#A4A4A4", "sidebar-accent-foreground": "#EDEDED", "control-edge": "#8A8A8A", "control-edge-hover": "#AAAAAA", "draft-foreground": "#EDEDED", "menu-highlight": "#3F3F3F" },
   }),

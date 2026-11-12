@@ -38,7 +38,7 @@ for (const [language, theme] of BOTH) {
       const backend = server.backend;
       const ctx = { clientId: "synthetic", origin: "dev" as const };
       await backend.server.invoke("settings.update", { language, theme, senderIcons: false }, ctx);
-      const { account } = await backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic Gmail", color: "indigo", now: 1 });
+      const { account } = await backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic Gmail", color: "brown", now: 1 });
       await backend.setSecret(`account:${account.id}:refreshToken`, "synthetic-refresh");
       await backend.syncAccount(account.id);
       await backend.syncAccount(account.id);
@@ -84,7 +84,7 @@ for (const [language, theme] of BOTH) {
       server = await startDevServer({ port: 0, dataDir: dir, token: "synthetic", seed: false, autoSync: false, iconTransport: null, googleClients: { preferred: "synthetic-client", clients: [{ clientId: "synthetic-client", clientSecret: "" }] }, providers: createRegistry({ gmail: { endpoints: { token: `${origin}/token`, api: `${origin}/mail` } } }) });
       const backend = server.backend, ctx = { clientId: "synthetic", origin: "dev" as const };
       await backend.server.invoke("settings.update", { language, theme, senderIcons: false }, ctx);
-      const { account } = await backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic Gmail", color: "indigo", now: 1 });
+      const { account } = await backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic Gmail", color: "brown", now: 1 });
       await backend.setSecret(`account:${account.id}:refreshToken`, "synthetic-refresh");
       await backend.syncAccount(account.id);
       await page.goto(`/?backend=${encodeURIComponent(server.url)}&token=synthetic`);

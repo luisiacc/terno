@@ -38,7 +38,7 @@ async function setup() {
   cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
   const t = open(dir);
   await t.backend.store.ready;
-  const accountId = createAccount(sqlDb(t.backend.store), { kind: "gmail", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
+  const accountId = createAccount(sqlDb(t.backend.store), { kind: "gmail", email: "me@example.com", displayName: "Me", color: "brown" }).id;
   return { ...t, dir, accountId };
 }
 

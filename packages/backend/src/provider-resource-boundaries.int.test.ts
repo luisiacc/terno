@@ -155,7 +155,7 @@ function mailbox() {
       phaseStarted = performance.now(); observe("initial-enumeration-start");
       stopAfterEnumeration = true;
       const first = await open();
-      const { account } = await first.store.accounts.create({ kind: "gmail", email: "me@example.test", displayName: "Synthetic", color: "indigo", now: 1 });
+      const { account } = await first.store.accounts.create({ kind: "gmail", email: "me@example.test", displayName: "Synthetic", color: "brown", now: 1 });
       accountId = account.id;
       await (await first.provider(accountId))!.verify();
       work = first.syncAccount(accountId);

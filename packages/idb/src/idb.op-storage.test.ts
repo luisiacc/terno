@@ -99,7 +99,7 @@ for (const instantSearch of [false, true]) {
       try {
         let store = await IdbMailStore.open({ name, factory, instantSearch, platform });
         stores.push(store);
-        const { account } = await store.accounts.create({ kind: "gmail", email: "sender@example.com", displayName: "Synthetic sender", color: "indigo", now: NOW });
+        const { account } = await store.accounts.create({ kind: "gmail", email: "sender@example.com", displayName: "Synthetic sender", color: "brown", now: NOW });
         active = queuedWrites;
         const queued = await store.compose.queueSend({ accountId: account.id, to: [{ name: "Synthetic recipient", email: "recipient@example.com" }], cc: [], bcc: [], subject: "Synthetic locality", bodyText, recordReply: false, now: NOW });
         active = null;
@@ -179,7 +179,7 @@ for (const instantSearch of [false, true]) it(`public target-locality ${instantS
     return request;
   });
   try {
-    const { account } = await store.accounts.create({ kind: "gmail", email: "sender@example.com", displayName: "Synthetic", color: "indigo", now: NOW });
+    const { account } = await store.accounts.create({ kind: "gmail", email: "sender@example.com", displayName: "Synthetic", color: "brown", now: NOW });
     const inserted = (await ingest(store, [
       msg({ accountId: account.id, providerMsgId: "one", providerThreadId: "one-thread" }),
       msg({ accountId: account.id, providerMsgId: "two", providerThreadId: "two-thread" }),
@@ -229,7 +229,7 @@ for (const instantSearch of [false, true]) for (const hidden of [false, true]) {
     });
     let cleanupFailure: PromiseRejectedResult | undefined;
     try {
-      const { account } = await store.accounts.create({ kind: "gmail", email: "sender@example.com", displayName: "Synthetic", color: "indigo", now: NOW });
+      const { account } = await store.accounts.create({ kind: "gmail", email: "sender@example.com", displayName: "Synthetic", color: "brown", now: NOW });
       const queued = await store.compose.queueSend({ accountId: account.id, to: [{ name: "", email: "recipient@example.com" }], cc: [], bcc: [], subject: "terminal", bodyText: "synthetic", recordReply: false, now: NOW });
       await store.ops.claimReady(NOW + 1, 1);
       const before = (await store.ops.get(queued.opId))!;
@@ -292,7 +292,7 @@ for (const instantSearch of [false, true]) {
       let cleanupFailure: PromiseRejectedResult | undefined;
       try {
         let store = await IdbMailStore.open({ factory, name, instantSearch, platform }); opened.push(store);
-        const { account } = await store.accounts.create({ kind: "gmail", email: "sender@example.com", displayName: "Synthetic", color: "indigo", now: NOW });
+        const { account } = await store.accounts.create({ kind: "gmail", email: "sender@example.com", displayName: "Synthetic", color: "brown", now: NOW });
         const queued = await store.compose.queueSend({ accountId: account.id, to: [{ name: "", email: "recipient@example.com" }], cc: [], bcc: [], subject: "errors", bodyText: "synthetic wire", recordReply: false, now: NOW });
         await store.ops.claimReady(NOW + 1, 1);
         await store.ops.awaitAuth(queued.opId, warning, NOW + 2);

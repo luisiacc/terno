@@ -40,7 +40,7 @@ async function setup(boundary = false, deferMount = false) {
   const { setApp } = await import("~/state/app");
   const { useAppearance } = await import("~/lib/appearance");
   const { useDrafts, forgetDraft } = await import("~/lib/drafts");
-  const account = { id: 1, kind: "imap", email: "me@example.test", displayName: "Me", signature: "", color: "blue" } as Account;
+  const account = { id: 1, kind: "imap", email: "me@example.test", displayName: "Me", signature: "", color: "brown" } as Account;
   const detail = { thread: { id: 7, accountId: 1, subject: "Subject", categoryIds: [], inSpam: false, inTrash: false }, messages: [{ id: 3, accountId: 1, attachmentState: "complete", isSent: false, from: { name: "Sender", email: "sender@example.test" }, to: [], cc: [], subject: "Subject", date: 0, bodyText: "Body", attachments: [] }] } as unknown as ThreadDetail;
   const frames = new Map<number, FrameRequestCallback>(); let next = 0;
   const raf = vi.spyOn(window, "requestAnimationFrame").mockImplementation((cb) => { frames.set(++next, cb); return next; });

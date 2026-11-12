@@ -109,7 +109,7 @@ describe("notifications through the backend (plan 41)", () => {
         ],
       },
     ]);
-    const accountId = createAccount(sqlDb(t.backend.store), { kind: "imap", email: ME, displayName: "Me", color: "indigo" }).id;
+    const accountId = createAccount(sqlDb(t.backend.store), { kind: "imap", email: ME, displayName: "Me", color: "brown" }).id;
     await t.backend.store.filters.save({ name: "receipts", enabled: true, source: "manual", rule: { match: "all", conditions: [{ field: "subject", op: "contains", value: "receipt" }], actions: [{ type: "archive" }] } }, Date.now());
     await t.backend.start();
     await t.backend.syncAccount(accountId);
@@ -129,7 +129,7 @@ describe("notifications through the backend (plan 41)", () => {
       { messages: (a) => wroteToCarlos(a), live: false },
       { messages: (a) => [mail(a)], live: false },
     ]);
-    const accountId = createAccount(sqlDb(t.backend.store), { kind: "imap", email: ME, displayName: "Me", color: "indigo" }).id;
+    const accountId = createAccount(sqlDb(t.backend.store), { kind: "imap", email: ME, displayName: "Me", color: "brown" }).id;
     await t.backend.start();
     await t.backend.syncAccount(accountId);
     await t.backend.syncAccount(accountId);
@@ -141,7 +141,7 @@ describe("notifications through the backend (plan 41)", () => {
     const dir = mkdtempSync(join(tmpdir(), "terno-notify-"));
     cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
     const first = await setup([{ messages: (a) => [...wroteToCarlos(a), mail(a), mail(a)], live: false }], dir, true);
-    const accountId = createAccount(sqlDb(first.backend.store), { kind: "imap", email: ME, displayName: "Me", color: "indigo" }).id;
+    const accountId = createAccount(sqlDb(first.backend.store), { kind: "imap", email: ME, displayName: "Me", color: "brown" }).id;
     await first.backend.start();
     await first.backend.syncAccount(accountId);
     await expect.poll(() => first.badges.at(-1)).toBe(2);
@@ -158,7 +158,7 @@ describe("notifications through the backend (plan 41)", () => {
 
   it("the badge follows the Inbox's unread count: a read lowers it, turning it off clears it", async () => {
     const t = await setup([{ messages: (a) => [mail(a), mail(a)], live: false }]);
-    const accountId = createAccount(sqlDb(t.backend.store), { kind: "imap", email: ME, displayName: "Me", color: "indigo" }).id;
+    const accountId = createAccount(sqlDb(t.backend.store), { kind: "imap", email: ME, displayName: "Me", color: "brown" }).id;
     await t.backend.start();
     expect(t.badges).toEqual([0]);
     await t.backend.syncAccount(accountId);
@@ -190,7 +190,7 @@ describe("notifications through the backend (plan 41)", () => {
       rmSync(dir, { recursive: true, force: true });
     });
     await backend.store.ready;
-    const accountId = createAccount(sqlDb(backend.store), { kind: "imap", email: ME, displayName: "Me", color: "indigo" }).id;
+    const accountId = createAccount(sqlDb(backend.store), { kind: "imap", email: ME, displayName: "Me", color: "brown" }).id;
     await client.call("settings.update", { notificationPreview: false });
     await backend.start();
     await backend.syncAccount(accountId);
@@ -206,7 +206,7 @@ describe("notifications through the backend (plan 41)", () => {
       { messages: (a) => wroteToCarlos(a), live: false },
       { messages: (a) => [mail(a)], live: true },
     ]);
-    const accountId = createAccount(sqlDb(t.backend.store), { kind: "imap", email: ME, displayName: "Me", color: "indigo" }).id;
+    const accountId = createAccount(sqlDb(t.backend.store), { kind: "imap", email: ME, displayName: "Me", color: "brown" }).id;
     await t.client.call("settings.update", { notifications: false });
     await t.backend.start();
     let reads = 0;

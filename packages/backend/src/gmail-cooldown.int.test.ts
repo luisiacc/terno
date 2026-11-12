@@ -46,7 +46,7 @@ async function setup(kind: "SQL" | "IndexedDB", autoSync = false) {
   };
   const open = async () => new Backend({ googleClients: TEST_GOOGLE, dbPath: join(dir, "mail.db"), store: kind === "IndexedDB" ? await IdbMailStore.open({ name, factory, platform, instantSearch: false }) : undefined, platform, providers, cipher: plaintextCipher, version: "test", autoSync, now: () => Date.now() + offset, instantSearch: false, iconTransport: null });
   let backend = await open();
-  const { account } = await backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo", providerConfig: {}, now: 1 });
+  const { account } = await backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "brown", providerConfig: {}, now: 1 });
   await backend.setSecret(`account:${account.id}:refreshToken`, "synthetic-refresh");
   cleanup.push(async () => {
     try { await backend.stop(); }
@@ -292,7 +292,7 @@ for (const kind of ["SQL", "IndexedDB"] as const) describe(`${kind} saved Gmail 
 
   sqlite("shares a proved mailbox cooldown across saved accounts while keeping services distinct", async () => {
     const h = await setup(kind); h.answer(healthyProfile);
-    const second = (await h.backend.store.accounts.create({ kind: "gmail", email: "SYNTHETIC@example.test", displayName: "Synthetic second", color: "indigo", providerConfig: {}, now: 2 })).account;
+    const second = (await h.backend.store.accounts.create({ kind: "gmail", email: "SYNTHETIC@example.test", displayName: "Synthetic second", color: "brown", providerConfig: {}, now: 2 })).account;
     await h.backend.setSecret(`account:${second.id}:refreshToken`, "synthetic-second-refresh");
     const firstProvider = (await h.backend.provider(h.account.id))!, secondProvider = (await h.backend.provider(second.id))!;
     await firstProvider.verify(); await secondProvider.verify();
@@ -356,7 +356,7 @@ for (const kind of ["SQL", "IndexedDB"] as const) describe(`${kind} saved Gmail 
   sqlite("R1 installation OAuth pause blocks a token-dependent bound account without claim/refund loops", async () => {
     const h = await setup(kind); h.answer(healthyProfile);
     await (await h.backend.provider(h.account.id))!.verify();
-    const second = (await h.backend.store.accounts.create({ kind: "gmail", email: "other@example.test", displayName: "Other", color: "indigo", now: 2 })).account;
+    const second = (await h.backend.store.accounts.create({ kind: "gmail", email: "other@example.test", displayName: "Other", color: "brown", now: 2 })).account;
     await h.backend.provider(second.id);
     h.answer((req, res) => {
       if (req.url !== "/installation-quota") return healthyProfile(req, res);

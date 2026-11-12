@@ -64,7 +64,7 @@ it("shares prefix/promotion ownership across accounts through actual worker and 
   await backend.ready;
   const accounts = [];
   for (let index = 0; index < 2; index++) {
-    const { account } = await backend.store.accounts.create({ kind: "gmail", email: `synthetic-${index}@example.test`, displayName: "Synthetic", color: "indigo", now: 1 });
+    const { account } = await backend.store.accounts.create({ kind: "gmail", email: `synthetic-${index}@example.test`, displayName: "Synthetic", color: "brown", now: 1 });
     accounts.push(account);
     fixture.accounts.set(String(account.id), account.email);
   }

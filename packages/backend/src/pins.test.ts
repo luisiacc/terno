@@ -70,7 +70,7 @@ async function setup() {
     rmSync(dir, { recursive: true, force: true });
   });
   const db = sqlDb(backend.store);
-  const account = createAccount(db, { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
+  const account = createAccount(db, { kind: "imap", email: "me@example.com", displayName: "Me", color: "brown" }).id;
   const [a, b, c3] = [...ingestMessages(db, [incoming(account, { rfcMessageId: "a@x" }), incoming(account, { rfcMessageId: "b@x" }), incoming(account, { rfcMessageId: "c@x" })]).touchedThreads];
   const events: PinsSnapshot[] = [];
   client.on("pins", (e) => events.push(e));
@@ -185,7 +185,7 @@ describe("pins (plan 179)", () => {
   it("filing into a category hidden from the Inbox ends a pin, its Undo brings it back; a category the Inbox shows keeps it", async () => {
     const { client, a, b } = await setup();
     const hidden = await client.call("categories.create", { name: "Quiet", color: "slate" });
-    const shown = await client.call("categories.create", { name: "Work", color: "indigo", showInInbox: true });
+    const shown = await client.call("categories.create", { name: "Work", color: "brown", showInInbox: true });
     await client.call("pins.add", { threadIds: [a, b] });
     await client.call("categories.addThreads", { categoryId: shown.id, threadIds: [b], source: "picker" });
     const moved = await client.call("categories.moveThreads", { to: hidden.id, threadIds: [a], source: "picker" });

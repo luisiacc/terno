@@ -2,7 +2,7 @@ import { expect } from "vitest";
 import type { MailStore } from "../mail-store";
 
 export async function googleIdentityAdmission(store: MailStore) {
-  const { account } = await store.accounts.create({ kind: "gmail", email: "reader@example.test", displayName: "Reader", color: "indigo", providerConfig: { senderName: "Preserved", cursor: "cursor" }, secret: { key: "refreshToken", blob: Uint8Array.of(1) }, now: 1 });
+  const { account } = await store.accounts.create({ kind: "gmail", email: "reader@example.test", displayName: "Reader", color: "brown", providerConfig: { senderName: "Preserved", cursor: "cursor" }, secret: { key: "refreshToken", blob: Uint8Array.of(1) }, now: 1 });
   const stamp = (await store.accounts.stamp(account.id))!;
   const name = `account:${account.id}:refreshToken`;
   const google = { expectedSubject: null, subject: "first" };

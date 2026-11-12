@@ -42,7 +42,7 @@ async function setup(o: { trigger?: boolean; name?: string } = {}) {
     await backend.stop().catch(() => {});
     rmSync(dir, { recursive: true, force: true });
   });
-  const account = createAccount(sqlDb(backend.store), { kind: "gmail", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
+  const account = createAccount(sqlDb(backend.store), { kind: "gmail", email: "me@example.com", displayName: "Me", color: "brown" }).id;
   const cat = await client.call("categories.create", { name: o.name ?? "Facturas", color: "amber" });
   await client.call("filters.save", { name: "Facturas", enabled: true, source: "manual", rule: { match: "all", conditions: [{ field: "subject", op: "contains", value: "factura" }], actions: [{ type: "addCategory", categoryId: cat.id }] } });
   if (o.trigger !== false) await client.call("categories.setForward", { categoryId: cat.id, forward: { addresses: [ANA], enabled: true } });

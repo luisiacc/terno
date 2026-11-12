@@ -29,7 +29,7 @@ it.each(["base64", "quoted-printable"].flatMap((encoding) => [false, true].map((
   const backend = new Backend({ dbPath: join(dir, "synthetic.db"), incomingProcessor: processor, providers, cipher: plaintextCipher, version: "test", autoSync: false, instantSearch: false, iconTransport: null });
   try {
     await backend.ready;
-    const { account } = await backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo", now: 1 });
+    const { account } = await backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "brown", now: 1 });
     fixture.accounts.set("synthetic", account.email);
     await backend.syncAccount(account.id);
     expect(process).toHaveBeenCalledOnce();

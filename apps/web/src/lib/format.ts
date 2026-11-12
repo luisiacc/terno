@@ -1,4 +1,4 @@
-import { dateStyle, fullDateFormat, type DateStyle } from "@terno/core";
+import { CATEGORY_COLORS, dateStyle, fullDateFormat, type CategoryColor, type DateStyle } from "@terno/core";
 import { formatNumber, getLocale, t, type LocaleId } from "@terno/i18n";
 
 interface Formats {
@@ -64,8 +64,9 @@ export function initials(name: string): string {
   return ((parts[0]?.[0] ?? "?") + (parts.length > 1 ? parts[parts.length - 1]![0] : "")).toUpperCase();
 }
 
-const AVATAR = ["rose", "amber", "lime", "emerald", "cyan", "indigo", "violet", "slate"] as const;
-export function avatarColor(seed: string): (typeof AVATAR)[number] {
+/** an avatar's tint: the category colors (plan 194: none of them blue, as unread is in most palettes) */
+const AVATAR = CATEGORY_COLORS;
+export function avatarColor(seed: string): CategoryColor {
   let h = 0;
   for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) | 0;
   return AVATAR[Math.abs(h) % AVATAR.length]!;

@@ -74,7 +74,7 @@ for (const operation of ["search", "preview", "matchWindow", "matchMessages", "c
   try {
     const [accountId] = await withAccounts(store, 1);
     const seeded = await store.sync.ingest([msg({ accountId: accountId!, bodyText: "exact lifecycle phrase ".repeat(3000) })], { now: 1, classifier: null, applyFilters: false });
-    const messageId = (await store.threads.get(seeded.touched[0]!))!.messages[0]!.id, category = await store.categories.create("Synthetic", "indigo");
+    const messageId = (await store.threads.get(seeded.touched[0]!))!.messages[0]!.id, category = await store.categories.create("Synthetic", "brown");
     const rule = { match: "all" as const, conditions: [{ field: "body" as const, op: "contains" as const, value: "exact lifecycle phrase" }], actions: [{ type: "star" as const }] };
     const read = () => operation === "search" ? store.threads.searchText({ query: '"exact lifecycle phrase"', now: 1, limit: 10 }) : operation === "preview" ? store.filters.preview(rule, 1, 10) : operation === "matchWindow" ? store.filters.matchWindow(rule, 1, { from: messageId, to: messageId }) : operation === "matchMessages" ? store.filters.matchMessages(rule, 1, [messageId]) : operation === "countScope" ? store.categorize.countScope(category.id, { kind: "query", query: '"exact lifecycle phrase"' }, 1) : store.categorize.resolveScope(category.id, { kind: "query", query: '"exact lifecycle phrase"' }, 1, 10);
     armed = true; reading = read(); void reading.catch(() => {}); await held;

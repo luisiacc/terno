@@ -29,7 +29,7 @@ it("hands the admitted native raw reader directly to physical tracking without a
   let work: Promise<void> | undefined;
   try {
     await backend.ready;
-    const { account } = await backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo", now: 1 });
+    const { account } = await backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "brown", now: 1 });
     fixture.accounts.set("synthetic", account.email);
     work = backend.syncAccount(account.id); await requested;
     // Native acquisition happens in the managed transport before the raw response is admitted.
@@ -58,7 +58,7 @@ it("separates completed native control-reader retirement from the next provider 
   const backend = new Backend({ dbPath: join(directory, "synthetic.db"), platform: { ...nodePlatform, async yield() { turns++; await nodePlatform.yield(); } }, providers, cipher: plaintextCipher, version: "test", autoSync: false, instantSearch: false, iconTransport: null });
   try {
     await backend.ready;
-    const { account } = await backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo", now: 1 }); fixture.accounts.set("synthetic", account.email);
+    const { account } = await backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "brown", now: 1 }); fixture.accounts.set("synthetic", account.email);
     await backend.syncAccount(account.id);
     expect(atRelease, "actual native retirement has its own cooperative work turn").toBeGreaterThan(0);
     expect(atLabels, "subsequent provider work follows a separate turn").toBeGreaterThan(atRelease);

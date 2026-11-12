@@ -6,7 +6,7 @@ it("idle IMAP pending lookups stay below 5 ms over 50,000 completed IndexedDB ro
   const store = await IdbMailStore.open({ name: "capture-pending-perf-50k", factory: indexedDB, instantSearch: false, platform: { uuid: () => crypto.randomUUID(), yield: () => Promise.resolve() } });
   try {
     await store.whenLoaded();
-    const { account } = await store.accounts.create({ kind: "imap", email: "pending@example.test", displayName: "P", color: "indigo", now: 0 });
+    const { account } = await store.accounts.create({ kind: "imap", email: "pending@example.test", displayName: "P", color: "brown", now: 0 });
     // 50,000 complete messages in the mirror (SQLite's test writes the same in SQL): nothing to capture among them
     const db = (store as unknown as { db: { table(n: string): { load(row: Record<string, unknown>): void } } }).db;
     for (let i = 1; i <= 50_000; i++) {

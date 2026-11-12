@@ -35,7 +35,7 @@ it.each([
   const backend = new Backend({ dbPath: join(dir, "synthetic.db"), providers, cipher: plaintextCipher, incomingProcessor: processor, version: "test", autoSync: false, instantSearch: false, iconTransport: null });
   try {
     await backend.ready;
-    const { account } = await backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo", now: 1 });
+    const { account } = await backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "brown", now: 1 });
     fixture.accounts.set("synthetic", account.email);
     const budget = 15 * BUDGET_MULTIPLIER;
     const monitor = watchLoop(budget);

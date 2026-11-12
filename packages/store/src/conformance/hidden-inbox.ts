@@ -18,7 +18,7 @@ export function defineHiddenInboxConformance(fresh: () => Promise<MailStore>, re
       const store = await fresh();
       const [a, b] = await withAccounts(store, 2);
       const linkedin = (await store.categories.create("LinkedIn", "cyan")).id;
-      const work = (await store.categories.create("Work", "indigo")).id;
+      const work = (await store.categories.create("Work", "brown")).id;
       const thread = async (pid: string, over: Partial<Parameters<typeof msg>[0]> = {}) => {
         await ingest(store, [msg({ accountId: a!, providerMsgId: pid, date: NOW - DAY, ...over })]);
         return threadOf(store, pid);

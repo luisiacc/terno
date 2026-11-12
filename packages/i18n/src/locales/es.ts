@@ -270,7 +270,7 @@ const es = {
   "settings.color.lime": "Lima",
   "settings.color.emerald": "Esmeralda",
   "settings.color.cyan": "Cian",
-  "settings.color.indigo": "Índigo",
+  "settings.color.brown": "Marrón",
   "settings.color.violet": "Violeta",
   "settings.color.slate": "Pizarra",
   "settings.appearance.senderPictures": "Imágenes de remitentes",

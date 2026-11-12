@@ -18,7 +18,7 @@ let store: IdbMailStore;
 let threadId = 0;
 beforeAll(async () => {
   store = await IdbMailStore.open({ name: `unsubscribe-perf-${Date.now()}`, factory: indexedDB, platform, instantSearch: false });
-  const { account } = await store.accounts.create({ kind: "gmail", email: "me@example.com", displayName: "Me", color: "indigo", now: 0 });
+  const { account } = await store.accounts.create({ kind: "gmail", email: "me@example.com", displayName: "Me", color: "brown", now: 0 });
   await store.whenLoaded();
   // the conversation as the mirror holds it (through ingest, a reply chain of 60,000 is minutes)
   const db = (store as unknown as { db: { table(n: string): { load(row: Record<string, unknown>): void } } }).db;

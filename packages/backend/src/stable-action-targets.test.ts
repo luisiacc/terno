@@ -28,7 +28,7 @@ async function setup() {
   }
   await open();
   cleanup.push(async () => { client.close(); await backend.stop(); rmSync(dir, { recursive: true, force: true }); });
-  const { account } = await backend!.store.accounts.create({ kind: "imap", email: "me@example.test", displayName: "Synthetic", color: "indigo", now: NOW });
+  const { account } = await backend!.store.accounts.create({ kind: "imap", email: "me@example.test", displayName: "Synthetic", color: "brown", now: NOW });
   const category = await client!.call("categories.create", { name: "Receipts", color: "amber" });
   const message: IncomingMessage = {
     accountId: account.id, providerMsgId: "target", providerThreadId: null, rfcMessageId: "target@example.test", inReplyTo: null, references: [],

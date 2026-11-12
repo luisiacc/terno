@@ -69,7 +69,7 @@ async function setup(autoSync = false, kind: "SQL" | "IDB" = "SQL") {
   let backend = await open();
   cleanups.push(async () => { await backend.stop(); rmSync(dir, { recursive: true, force: true }); expect(unexpected).toEqual([]); });
   await backend.ready;
-  const { account } = await backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo", providerConfig: {}, now: 1 });
+  const { account } = await backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "brown", providerConfig: {}, now: 1 });
   await backend.setSecret(`account:${account.id}:refreshToken`, "synthetic-refresh");
   const connect = () => {
     const [local, remote] = createMemoryTransportPair();
@@ -217,7 +217,7 @@ for (const kind of ["SQL", "IDB"] as const) describe(`${kind} W05 saved-account 
     expect(await h.backend.store.ops.get(opId)).toEqual(queued);
     expect(await h.backend.store.providerCooldown.read()).toBe(ledger);
     expect(h.paths()).toEqual(paths);
-    const other = await h.backend.store.accounts.create({ kind: "gmail", email: "other@example.test", displayName: "Other", color: "indigo", providerConfig: {}, now: 2 });
+    const other = await h.backend.store.accounts.create({ kind: "gmail", email: "other@example.test", displayName: "Other", color: "brown", providerConfig: {}, now: 2 });
     await h.backend.setSecret(`account:${other.account.id}:refreshToken`, "synthetic-other");
     h.answer((r) => new URL(r.url).pathname === "/gmail/profile" ? Response.json({ emailAddress: "other@example.test", historyId: "10" }) : undefined);
     const next = await h.rpc.call("compose.send", { accountId: other.account.id, to: [{ email: "recipient@example.test", name: "" }], subject: "Other", bodyText: "Other" });
@@ -532,7 +532,7 @@ for (const kind of ["SQL", "IDB"] as const) describe(`${kind} W05 saved-account 
     h.answer((request) => new URL(request.url).pathname === "/gmail/messages/send" ? failure(429, "rateLimitExceeded") : followupHealthy(request));
     await h.send(); await h.backend.runWorker();
     wall += 120_001; elapsed += 120_001;
-    const other = await h.backend.store.accounts.create({ kind: "gmail", email: "unbound@example.test", displayName: "Unbound", color: "indigo", providerConfig: {}, now: 2 });
+    const other = await h.backend.store.accounts.create({ kind: "gmail", email: "unbound@example.test", displayName: "Unbound", color: "brown", providerConfig: {}, now: 2 });
     await h.backend.setSecret(`account:${other.account.id}:refreshToken`, "synthetic-unbound");
     h.answer((request) => new URL(request.url).pathname === "/token" ? failure(429, "rateLimitExceeded") : followupHealthy(request));
     await h.backend.syncAccount(other.account.id);
@@ -593,7 +593,7 @@ for (const kind of ["SQL", "IDB"] as const) describe(`${kind} W05 saved-account 
     const h = await setup(false, kind);
     await (await h.backend.provider(h.account.id))!.verify();
     await h.backend.store.accounts.setCursor(h.account.id, { historyId: "9" });
-    const other = await h.backend.store.accounts.create({ kind: "gmail", email: "held@example.test", displayName: "Held", color: "indigo", providerConfig: {}, now: 2 });
+    const other = await h.backend.store.accounts.create({ kind: "gmail", email: "held@example.test", displayName: "Held", color: "brown", providerConfig: {}, now: 2 });
     await h.backend.store.accounts.setSyncState(other.account.id, { status: "error", connection: null, authRequired: true, authScope: null, lastError: "Sign in again", lastErrorI18n: { key: "errors.gmail.revoked" } });
     const durableAuth = (await h.backend.store.accounts.get(other.account.id))!.syncState;
     const history = heldJson(200, { historyId: "10" });

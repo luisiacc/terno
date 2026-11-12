@@ -70,7 +70,7 @@ export async function setup(o: { dir?: string; keep?: boolean; provider?: "fake"
   const mcp = connect("mcp", "mcp");
   const accounts = await backend.store.accounts.list();
   for (let i = accounts.length; i < (o.accounts ?? 1); i++) {
-    const { account } = await backend.store.accounts.create({ kind: "gmail", email: `me${i}@terno.test`, displayName: `Me ${i}`, color: "indigo", now: 0 });
+    const { account } = await backend.store.accounts.create({ kind: "gmail", email: `me${i}@terno.test`, displayName: `Me ${i}`, color: "brown", now: 0 });
     accounts.push(account);
   }
   const account = accounts[0]!;

@@ -1,4 +1,4 @@
-import { BUILTIN_THEMES, customThemeSchema, DEFAULT_THEME, THEME_TOKENS } from "@terno/core";
+import { BUILTIN_THEMES, CATEGORY_COLORS, customThemeSchema, DEFAULT_THEME, THEME_TOKENS } from "@terno/core";
 import { describe, expect, it } from "vitest";
 import { composite, contrast, oklchToRgb, parseColor } from "./color";
 import { builtinTheme, glassAlpha, resolveCustomTheme, THEMES, themesFor } from "./registry";
@@ -104,7 +104,33 @@ describe("plan 07 tokens", () => {
   });
 });
 
+describe("plan 194: unread owns its hue", () => {
+  // a color this grey reads as no hue at all (slate), and an unread this grey (Gruvbox Dark) owns none
+  const HUED = 0.05;
+  const hueGap = (a: number, b: number) => Math.min(Math.abs(a - b), 360 - Math.abs(a - b));
+  it("keeps every category and account color 30° of hue from the palette's unread mark", () => {
+    const clashes: string[] = [];
+    for (const t of THEMES) {
+      const unread = parseColor(t.tokens.unread);
+      if (unread.c < HUED) continue;
+      for (const name of CATEGORY_COLORS) {
+        const cat = parseColor(t.tokens[`cat-${name}`]);
+        if (cat.c >= HUED && hueGap(cat.h, unread.h) < 30) clashes.push(`${t.id}: ${name} ${Math.round(hueGap(cat.h, unread.h))}°`);
+      }
+    }
+    expect(clashes).toEqual([]);
+  });
+});
+
 describe("custom themes", () => {
+  it("keep a theme saved with the retired indigo tokens, its colors under brown's names (plan 194)", () => {
+    const only = customThemeSchema.parse({ id: "old", name: "Old", mode: "light", extends: "terno-light", tokens: { "cat-indigo": "oklch(0.5 0.2 265)", "cat-indigo-ink": "#112266" } });
+    expect(only.tokens).toEqual({ "cat-brown": "oklch(0.5 0.2 265)", "cat-brown-ink": "#112266" });
+    expect(resolveCustomTheme(only).tokens["cat-brown"]).toBe("oklch(0.5 0.2 265)");
+    // one the theme set under the new name wins
+    expect(customThemeSchema.parse({ id: "both", name: "Both", mode: "light", extends: "terno-light", tokens: { "cat-indigo": "#3355ff", "cat-brown": "#884422" } }).tokens).toEqual({ "cat-brown": "#884422" });
+  });
+
   it("extend a built-in to a full map and re-derive what follows from their colors", () => {
     const custom = customThemeSchema.parse({ id: "rosa", name: "Rosa", mode: "dark", extends: "dracula", tokens: { primary: "#ff79c6", "cat-rose": "oklch(0.7 0.2 0)" } });
     const t = resolveCustomTheme(custom);

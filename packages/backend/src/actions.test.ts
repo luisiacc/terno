@@ -73,7 +73,7 @@ async function setup(o: { cloud?: boolean; similarCap?: number } = {}) {
     return new RpcClient(c);
   };
   const client = connect("renderer");
-  const { account } = await backend.store.accounts.create({ kind: "gmail", email: "me@terno.test", displayName: "Me", color: "indigo", now: 0 });
+  const { account } = await backend.store.accounts.create({ kind: "gmail", email: "me@terno.test", displayName: "Me", color: "brown", now: 0 });
   if (o.cloud) {
     await client.call("ai.setKey", { provider: "anthropic", value: "sk-test-not-a-real-key" });
     await client.call("settings.update", { ai: { provider: "anthropic", model: "claude-opus-5-5" } });
@@ -921,7 +921,7 @@ describe("what the real-mail panel changed", () => {
 
   it("a rule alone for a category deleted since isn't saved, and a preview the check emptied isn't a rule alone", async () => {
     const { backend, put, preview, apply, model, client } = await setup();
-    const category = await backend.store.categories.create("Recruiting", "indigo", {});
+    const category = await backend.store.categories.create("Recruiting", "brown", {});
     const p = await preview({ actionType: "moveToCategory", categoryId: category.id, lookIn: "everywhere", future: true });
     expect(savesRuleOnly(p)).toBe(true);
     await backend.store.categories.delete(category.id);

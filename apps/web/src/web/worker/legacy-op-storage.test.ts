@@ -53,7 +53,7 @@ async function fixture() {
   let expected: Awaited<ReturnType<typeof store.ops.get>> = null;
   let opId = "";
   try {
-    const { account } = await store.accounts.create({ kind: "gmail", email: "sender@example.com", displayName: "Synthetic", color: "indigo", now: 1 });
+    const { account } = await store.accounts.create({ kind: "gmail", email: "sender@example.com", displayName: "Synthetic", color: "brown", now: 1 });
     const queued = await store.compose.queueSend({ accountId: account.id, to: [{ name: "", email: "recipient@example.com" }], cc: [], bcc: [], subject: "copy", bodyText: "synthetic copy wire", recordReply: false, now: 1 });
     opId = queued.opId; await store.ops.claimReady(2, 1); await store.ops.awaitAuth(opId, "synthetic auth error", 3);
     expected = await store.ops.get(opId);
@@ -225,7 +225,7 @@ async function streamingFixture() {
   const store = await IdbMailStore.open({ factory, name: "seed", instantSearch: false, platform });
   const expected = new Map<string, NonNullable<Awaited<ReturnType<typeof store.ops.get>>>>();
   try {
-    const { account } = await store.accounts.create({ kind: "gmail", email: "sender@example.com", displayName: "Synthetic", color: "indigo", now: 1 });
+    const { account } = await store.accounts.create({ kind: "gmail", email: "sender@example.com", displayName: "Synthetic", color: "brown", now: 1 });
     const send = await store.compose.queueSend({ accountId: account.id, to: [{ name: "", email: "recipient@example.com" }], cc: [], bcc: [], subject: "streaming", bodyText: "~".repeat(32 * 1024), recordReply: false, now: 1 });
     await store.ops.claimReady(2, 1);
     await store.ops.awaitAuth(send.opId, "synthetic-error-".repeat(1024), 3);

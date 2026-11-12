@@ -72,7 +72,7 @@ const described = (r: { stall: number; lessGc: number; maxGc: number; ms: number
 
 beforeAll(async () => {
   store = await IdbMailStore.open({ name, factory: indexedDB, platform, instantSearch: false });
-  accountId = (await store.accounts.create({ kind: CONTACTS_ACCOUNT.kind, email: CONTACTS_ACCOUNT.email, displayName: CONTACTS_ACCOUNT.displayName, color: "indigo", now: NOW })).account.id;
+  accountId = (await store.accounts.create({ kind: CONTACTS_ACCOUNT.kind, email: CONTACTS_ACCOUNT.email, displayName: CONTACTS_ACCOUNT.displayName, color: "brown", now: NOW })).account.id;
   await store.whenLoaded();
   // the columns autocomplete reads as the mirror holds them (through ingest it's minutes), the sent bodies in IndexedDB, read from there as ever
   const db = (store as unknown as { db: { table(n: string): { load(row: Record<string, unknown>): void } } }).db;

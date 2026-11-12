@@ -39,7 +39,7 @@ function legacy(path: string, fail: boolean) {
   try {
     registerFunctions(db);
     for (const migration of MIGRATIONS) if (migration.version <= 38) db.tx(() => { db.exec(migration.sql); db.exec(`PRAGMA user_version=${migration.version}`); });
-    const account = createAccount(db, { kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo" }, 1);
+    const account = createAccount(db, { kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "brown" }, 1);
     db.exec("ALTER TABLE messages ADD COLUMN unsubscribe TEXT");
     ingestMessages(db, [msg({ accountId: account.id, providerMsgId: "legacy", bodyText: text, bodyHtml: html, bodyState: "partial" })], 1);
     db.exec("ALTER TABLE messages DROP COLUMN unsubscribe");

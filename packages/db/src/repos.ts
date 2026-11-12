@@ -15,6 +15,7 @@ import {
   type AccountSyncState,
   type Category,
   type CategoryColor,
+  categoryColor,
   filterState,
   sameFilterState,
   type Filter,
@@ -51,7 +52,7 @@ function toAccount(r: AccountRow): Account {
     kind: r.kind,
     email: r.email,
     displayName: r.display_name,
-    color: r.color,
+    color: categoryColor(r.color),
     ...accountPrefs(JSON.parse(r.provider_config) as AccountPrefs, r.display_name),
     syncState: { ...DEFAULT_SYNC, ...JSON.parse(r.sync_state) },
   };
@@ -170,7 +171,7 @@ export function listCategories(db: Db): Category[] {
     .all<Category & { auto_apply: number; show_in_inbox: number; forward_json: string | null }>("SELECT id, name, color, position, auto_apply, show_in_inbox, forward_json FROM categories ORDER BY position, id")
     .map(({ auto_apply, show_in_inbox, forward_json, ...c }) => {
       const forward = readRuleState(forward_json);
-      return { ...c, autoApply: auto_apply === 1, showInInbox: show_in_inbox === 1, ...(forward && { forward: { addresses: forward.addresses ?? [], enabled: forward.enabled } }) };
+      return { ...c, color: categoryColor(c.color), autoApply: auto_apply === 1, showInInbox: show_in_inbox === 1, ...(forward && { forward: { addresses: forward.addresses ?? [], enabled: forward.enabled } }) };
     });
 }
 
@@ -180,7 +181,7 @@ export function createCategory(db: Db, name: string, color: CategoryColor, { sho
     const id = db.get<{ last_id: number }>("SELECT last_id FROM category_counter WHERE id = 1")!.last_id + 1;
     if (!Number.isSafeInteger(id)) throw new Error("Category identity space exhausted");
     db.run("INSERT INTO categories (id, name, color, position, show_in_inbox) VALUES (?, ?, ?, ?, ?)", id, name, color, position, showInInbox ? 1 : 0);
-    return { id, name, color, position, autoApply: true, showInInbox };
+    return { id, name, color: categoryColor(color), position, autoApply: true, showInInbox };
   });
 }
 

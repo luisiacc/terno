@@ -157,7 +157,7 @@ it.each(["accept", "refuse", "lost"] as const)("sends exact staged bytes through
     const [a, b] = createMemoryTransportPair(); backend.connect(b, { clientId: "synthetic", origin: "renderer" }); client = new RpcClient(a); };
   open();
   cleanup.push(async () => { client.close(); await backend.stop(); server.closeAllConnections(); await new Promise<void>((resolve) => server.close(() => resolve())); rmSync(dir, { recursive: true, force: true }); });
-  const { account } = await backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo", providerConfig: {}, now: 1 });
+  const { account } = await backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "brown", providerConfig: {}, now: 1 });
   await backend.setSecret(`account:${account.id}:refreshToken`, "synthetic-refresh");
   await (await backend.provider(account.id))!.verify();
   const bytes = Buffer.from([0, 255, 128, 13, 10]);

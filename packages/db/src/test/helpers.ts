@@ -43,7 +43,7 @@ export function testDb(): Db {
 
 export function withAccounts(db: Db, n = 2): number[] {
   return Array.from({ length: n }, (_, i) =>
-    createAccount(db, { kind: i % 2 ? "imap" : "gmail", email: `me${i}@example.com`, displayName: `Account ${i}`, color: "indigo" }).id,
+    createAccount(db, { kind: i % 2 ? "imap" : "gmail", email: `me${i}@example.com`, displayName: `Account ${i}`, color: "brown" }).id,
   );
 }
 

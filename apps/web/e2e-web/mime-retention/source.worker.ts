@@ -48,7 +48,7 @@ self.onmessage = (event: MessageEvent<{ kind: "opfs" | "idb"; taskProbe?: boolea
     let client: RpcClient | undefined, outcome: unknown, probe: Worker | undefined, probeUrl: string | undefined;
     try {
       await backend.ready;
-      const { account } = await store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo", now: 1 });
+      const { account } = await store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "brown", now: 1 });
       await store.filters.save({ name: "boundary", enabled: true, source: "manual", rule: { match: "all", conditions: [{ field: "body", op: "contains", value: "boundaryneedle acrossboundary" }], actions: [{ type: "star" }] } }, 1);
       const native = { execMax: 0, stepMax: 0, commitMax: 0, prepareMax: 0, bindMax: 0, calls: 0 };
       const database = sqlite.oo1.DB.prototype, originalExec = database.exec, originalPrepare = database.prepare, statements = sqlite.oo1.Stmt.prototype, originalStep = statements.step;

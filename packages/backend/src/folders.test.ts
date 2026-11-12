@@ -52,7 +52,7 @@ async function setup() {
   };
   const dir = mkdtempSync(join(tmpdir(), "terno-folders-"));
   const backend = new Backend({ dbPath: join(dir, "t.db"), version: "test", providers: registry, cipher: plaintextCipher, autoSync: false, iconTransport: null, openExternal: async () => {} });
-  const account = (await backend.store.accounts.create({ kind: "imap", email: "me@example.test", displayName: "Me", color: "indigo", providerConfig: {}, now: 1 })).account;
+  const account = (await backend.store.accounts.create({ kind: "imap", email: "me@example.test", displayName: "Me", color: "brown", providerConfig: {}, now: 1 })).account;
   const [c, s] = createMemoryTransportPair();
   backend.connect(s, { clientId: "folders", origin: "renderer" });
   const client = new RpcClient(c);

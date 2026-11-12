@@ -140,7 +140,7 @@ describe("accounts.reconnect", () => {
       },
     });
     await client.call("app.bootstrap", {}); // the store opens with the first call
-    const a = createAccount(sqlDb(backend.store), { kind: "gmail", email: "luis@gmail.com", displayName: "luis", color: "indigo" });
+    const a = createAccount(sqlDb(backend.store), { kind: "gmail", email: "luis@gmail.com", displayName: "luis", color: "brown" });
     expect(await errorOf(client.call("accounts.reconnect", { id: a.id }))).toMatchObject({ code: "BAD_REQUEST", message: expect.stringMatching(/not luis@gmail.com/) });
     expect(await backend.getSecret(`account:${a.id}:refreshToken`)).toBeNull();
     email = "luis@gmail.com";

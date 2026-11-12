@@ -87,7 +87,7 @@ export async function actionFixture(kind: "SQL" | "IDB", count = 1, shared = tru
   register(close);
   const accounts: number[] = [];
   for (let index = 0; index < 2; index++) {
-    const { account } = await backend.store.accounts.create({ kind: "gmail", email: `account${index}@example.test`, displayName: "Synthetic", color: "indigo", now: 1 });
+    const { account } = await backend.store.accounts.create({ kind: "gmail", email: `account${index}@example.test`, displayName: "Synthetic", color: "brown", now: 1 });
     accounts.push(account.id); emails.set(account.id, account.email);
     const ids = index ? ["m0"] : [...Array.from({ length: count }, (_, i) => `m${i}`), "sibling"];
     remote.set(account.id, new Map(ids.map((id) => [id, new Set(["INBOX", "UNREAD"])])));

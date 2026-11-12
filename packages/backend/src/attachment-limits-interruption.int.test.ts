@@ -41,7 +41,7 @@ async function setup(kind: "gmail" | "imap" = "gmail") {
   };
   await open();
   cleanup.push(async () => { client.close(); await backend.stop(); rmSync(dir, { recursive: true, force: true }); expect(unexpected).toEqual([]); });
-  const account = async (accountKind = kind) => (await backend.store.accounts.create({ kind: accountKind, email: "sender@example.test", displayName: "Synthetic", color: "indigo", providerConfig: accountKind === "imap" ? { appendToSent: false } : {}, now })).account.id;
+  const account = async (accountKind = kind) => (await backend.store.accounts.create({ kind: accountKind, email: "sender@example.test", displayName: "Synthetic", color: "brown", providerConfig: accountKind === "imap" ? { appendToSent: false } : {}, now })).account.id;
   const accountId = await account();
   await backend.setSecret(`account:${accountId}:refreshToken`, "synthetic-refresh");
   return { accountId, account, routes, sends, setMode(value: typeof mode) { mode = value; }, setNow(value: number) { now = value; }, get backend() { return backend; }, get client() { return client; }, async reopen() { client.close(); await backend.stop(); await open(); } };

@@ -24,7 +24,7 @@ it("300,000 messages, 1 in 20 labelled: every rebuild slice of the backfill with
   await store.whenLoaded();
   const c = (store as unknown as { c: { db: { table(name: string): { load(row: Record<string, unknown>): void } } } }).c;
   // the mailbox as loaded (not written: what's measured is the backfill)
-  const accounts = await store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "S", color: "indigo", providerConfig: {}, now: 1 });
+  const accounts = await store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "S", color: "brown", providerConfig: {}, now: 1 });
   const account = accounts.account.id;
   for (let i = 1; i <= 300_000; i++) {
     if (i % 20 === 0) c.db.table("threads").load({ id: i, account_id: account, last_date: i, unread_count: 0, message_count: 1 });
@@ -52,7 +52,7 @@ it("Codex R47: relisting one IMAP folder of 150,000 cached locations: every rebu
   const store = await IdbMailStore.open({ factory: new IDBFactory(), name: crypto.randomUUID(), instantSearch: false, platform });
   await store.whenLoaded();
   const c = (store as unknown as { c: { db: { table(name: string): { load(row: Record<string, unknown>): void } } } }).c;
-  const account = (await store.accounts.create({ kind: "imap", email: "synthetic@example.test", displayName: "S", color: "indigo", providerConfig: {}, now: 1 })).account.id;
+  const account = (await store.accounts.create({ kind: "imap", email: "synthetic@example.test", displayName: "S", color: "brown", providerConfig: {}, now: 1 })).account.id;
   // the folder as loaded (not written: what's measured is the rebuild), a thread per 10 messages
   for (let i = 1; i <= 150_000; i++) {
     if (i % 10 === 1) c.db.table("threads").load({ id: i, account_id: account, last_date: i, unread_count: 0, message_count: 10 });
@@ -82,7 +82,7 @@ it("Codex R48: expunging a 100,000-message conversation: the longest stall withi
   const store = await IdbMailStore.open({ factory: new IDBFactory(), name: crypto.randomUUID(), instantSearch: false, platform });
   await store.whenLoaded();
   const c = (store as unknown as { c: { db: { table(name: string): { load(row: Record<string, unknown>): void } } } }).c;
-  const account = (await store.accounts.create({ kind: "imap", email: "synthetic@example.test", displayName: "S", color: "indigo", providerConfig: {}, now: 1 })).account.id;
+  const account = (await store.accounts.create({ kind: "imap", email: "synthetic@example.test", displayName: "S", color: "brown", providerConfig: {}, now: 1 })).account.id;
   await store.folders.replace(account, [{ key: "Big", path: ["Big"], selectable: true }]);
   c.db.table("threads").load({ id: 1, account_id: account, last_date: 1, unread_count: 0, message_count: 100_000 });
   c.db.table("thread_folders").load({ thread_id: 1, account_id: account, folder: "Big", last_date: 1, unread: 0 });
@@ -108,7 +108,7 @@ it("Codex R48: a folder of 150,000 threads opened cold, and read again after an 
   const store = await IdbMailStore.open({ factory: new IDBFactory(), name: crypto.randomUUID(), instantSearch: false, platform });
   await store.whenLoaded();
   const c = (store as unknown as { c: { db: { tx<T>(fn: () => T): T; table(name: string): { load(row: Record<string, unknown>): void; put(row: Record<string, unknown>): unknown } } } }).c;
-  const account = (await store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "S", color: "indigo", providerConfig: {}, now: 1 })).account.id;
+  const account = (await store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "S", color: "brown", providerConfig: {}, now: 1 })).account.id;
   await store.folders.replace(account, [{ key: "Label_big", path: ["Big"], selectable: true }]);
   for (let i = 1; i <= 150_000; i++) {
     // dates in no order: nothing kept sorted to start from
@@ -151,7 +151,7 @@ it("Codex R49: Unread in a folder of 150,000 unread threads, cold and after many
   const store = await IdbMailStore.open({ factory: new IDBFactory(), name: crypto.randomUUID(), instantSearch: false, platform });
   await store.whenLoaded();
   const c = (store as unknown as { c: { db: { tx<T>(fn: () => T): T; table(name: string): { load(row: Record<string, unknown>): void; put(row: Record<string, unknown>): unknown; get(...k: unknown[]): Record<string, unknown> | undefined } } } }).c;
-  const account = (await store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "S", color: "indigo", providerConfig: {}, now: 1 })).account.id;
+  const account = (await store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "S", color: "brown", providerConfig: {}, now: 1 })).account.id;
   await store.folders.replace(account, [{ key: "Label_big", path: ["Big"], selectable: true }]);
   for (let i = 1; i <= 150_000; i++) {
     const date = 1_700_000_000_000 + ((i * 7919) % 150_000) * 1000;
@@ -184,7 +184,7 @@ it("Codex R49: a Message-ID twin lookup among 150,000 sharing it, cold and after
   const store = await IdbMailStore.open({ factory: new IDBFactory(), name: crypto.randomUUID(), instantSearch: false, platform });
   await store.whenLoaded();
   const c = (store as unknown as { c: { db: { tx<T>(fn: () => T): T; table(name: string): { load(row: Record<string, unknown>): void; put(row: Record<string, unknown>): unknown } } } }).c;
-  const account = (await store.accounts.create({ kind: "imap", email: "synthetic@example.test", displayName: "S", color: "indigo", providerConfig: {}, now: 1 })).account.id;
+  const account = (await store.accounts.create({ kind: "imap", email: "synthetic@example.test", displayName: "S", color: "brown", providerConfig: {}, now: 1 })).account.id;
   for (let i = 1; i <= 150_000; i++) c.db.table("messages").load({ id: i, account_id: account, thread_id: i, provider_msg_id: `m${i}`, rfc_message_id: "<reused@x>", from_email: "a@x", subject: `S${i}`, date: 1, size: 1, is_trash: 0, is_spam: 0 });
   const locations = store.providerStore(account).locations;
   const e = { subject: "S77", fromEmail: "a@x", date: 1, size: 1, rfcMessageId: "<reused@x>" };
@@ -206,7 +206,7 @@ it("Codex R50: 250 cold lookups of different envelopes among 50,000 sharing a Me
   const store = await IdbMailStore.open({ factory: new IDBFactory(), name: crypto.randomUUID(), instantSearch: false, platform });
   await store.whenLoaded();
   const c = (store as unknown as { c: { db: { tx<T>(fn: () => T): T; table(name: string): { load(row: Record<string, unknown>): void; put(row: Record<string, unknown>): unknown } } } }).c;
-  const account = (await store.accounts.create({ kind: "imap", email: "synthetic@example.test", displayName: "S", color: "indigo", providerConfig: {}, now: 1 })).account.id;
+  const account = (await store.accounts.create({ kind: "imap", email: "synthetic@example.test", displayName: "S", color: "brown", providerConfig: {}, now: 1 })).account.id;
   for (let i = 1; i <= 50_000; i++) c.db.table("messages").load({ id: i, account_id: account, thread_id: i, provider_msg_id: `m${i}`, rfc_message_id: "<reused@x>", from_email: "a@x", subject: `S${i}`, date: 1, size: 1, is_trash: 0, is_spam: 0 });
   const locations = store.providerStore(account).locations;
   // load-aware (timing.ts): on a busy machine a sample the OS held counts at its CPU time
@@ -230,7 +230,7 @@ it("Codex R51: select all in a folder of 150,000 threads, cold and after an arri
   const store = await IdbMailStore.open({ factory: new IDBFactory(), name: crypto.randomUUID(), instantSearch: false, platform });
   await store.whenLoaded();
   const c = (store as unknown as { c: { db: { tx<T>(fn: () => T): T; table(name: string): { load(row: Record<string, unknown>): void; put(row: Record<string, unknown>): unknown } } } }).c;
-  const account = (await store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "S", color: "indigo", providerConfig: {}, now: 1 })).account.id;
+  const account = (await store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "S", color: "brown", providerConfig: {}, now: 1 })).account.id;
   await store.folders.replace(account, [{ key: "Label_big", path: ["Big"], selectable: true }]);
   // ids in no order: nothing kept sorted to start from
   for (let n = 1; n <= 150_000; n++) {
@@ -268,7 +268,7 @@ it("Codex R52: the cold select-all count of a folder of 60,000 members in revers
   const store = await IdbMailStore.open({ factory: new IDBFactory(), name: crypto.randomUUID(), instantSearch: false, platform });
   await store.whenLoaded();
   const c = (store as unknown as { c: { db: { table(name: string): { load(row: Record<string, unknown>): void } } } }).c;
-  const account = (await store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "S", color: "indigo", providerConfig: {}, now: 1 })).account.id;
+  const account = (await store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "S", color: "brown", providerConfig: {}, now: 1 })).account.id;
   await store.folders.replace(account, [{ key: "Label_big", path: ["Big"], selectable: true }]);
   for (let i = 60_000; i >= 1; i--) {
     c.db.table("threads").load({ id: i, account_id: account, last_date: i, unread_count: 0, message_count: 1, in_inbox: 0, in_trash: 0, in_spam: 0 });

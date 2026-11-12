@@ -53,7 +53,7 @@ async function setup(syncError: () => Error | null) {
     await backend.stop().catch(() => {});
     rmSync(dir, { recursive: true, force: true });
   });
-  const accountId = createAccount(sqlDb(backend.store), { kind: "imap", email: "luis@empresa.mx", displayName: "Luis", color: "indigo", providerConfig: {} }).id;
+  const accountId = createAccount(sqlDb(backend.store), { kind: "imap", email: "luis@empresa.mx", displayName: "Luis", color: "brown", providerConfig: {} }).id;
   return { backend, client: new RpcClient(c), accountId };
 }
 

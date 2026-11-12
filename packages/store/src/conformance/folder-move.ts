@@ -63,7 +63,7 @@ export function defineFolderMoveConformance(name: string, harness: StoreHarness)
     it("a thread in a category shown in the Inbox stays there, and in the folder; a hidden one wins", async () => {
       const { store, gmail } = await fresh();
       const shown = (await store.categories.create("Shown", "cyan", { showInInbox: true })).id;
-      const hidden = (await store.categories.create("Hidden", "indigo", { showInInbox: false })).id;
+      const hidden = (await store.categories.create("Hidden", "brown", { showInInbox: false })).id;
       const kept = await gmailThread(store, gmail, "kept");
       const both = await gmailThread(store, gmail, "both");
       const plain = await gmailThread(store, gmail, "plain");
@@ -269,7 +269,7 @@ export function defineFolderMoveConformance(name: string, harness: StoreHarness)
     it("a category shown in the Inbox keeps it there, whichever filter comes first; a hidden one wins", async () => {
       const { store, gmail } = await fresh();
       const shown = (await store.categories.create("Shown", "cyan", { showInInbox: true })).id;
-      const hidden = (await store.categories.create("Hidden", "indigo", { showInInbox: false })).id;
+      const hidden = (await store.categories.create("Hidden", "brown", { showInInbox: false })).id;
       // the folder's filter first: its move still waits for the category's
       await filter(store, [toFolder(gmail, "Label_A")]);
       await filter(store, [{ type: "addCategory", categoryId: shown }]);

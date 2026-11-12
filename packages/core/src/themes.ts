@@ -53,7 +53,7 @@ export const THEME_TOKENS = [
   "cat-lime",
   "cat-emerald",
   "cat-cyan",
-  "cat-indigo",
+  "cat-brown",
   "cat-violet",
   "cat-slate",
   // readable text on a category's soft (15%) background
@@ -62,7 +62,7 @@ export const THEME_TOKENS = [
   "cat-lime-ink",
   "cat-emerald-ink",
   "cat-cyan-ink",
-  "cat-indigo-ink",
+  "cat-brown-ink",
   "cat-violet-ink",
   "cat-slate-ink",
   // plan 07: separators, faint surfaces, raised highlights, the draft label, sidebar glyphs, translucent menus
@@ -171,13 +171,27 @@ export const themeColor = z.string().trim().max(64).regex(THEME_COLOR_RE, { erro
 export const MAX_CUSTOM_THEMES = 20;
 export const MAX_CUSTOM_THEMES_BYTES = 16 * 1024;
 
+/**
+ * Tokens a palette no longer has, and the slot that took their place (plan 194: brown took indigo's). A saved theme
+ * keeps what it set there: the categories that were indigo are brown now, and keep the user's own color.
+ */
+const RETIRED_TOKENS: Readonly<Record<string, ThemeToken>> = { "cat-indigo": "cat-brown", "cat-indigo-ink": "cat-brown-ink" };
+/** A theme's tokens with retired names under their successors (one the theme set itself wins); anything else as given. */
+export function upgradeThemeTokens<T>(tokens: T): T {
+  if (!tokens || typeof tokens !== "object" || Array.isArray(tokens) || !Object.keys(tokens).some((k) => Object.hasOwn(RETIRED_TOKENS, k))) return tokens;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(tokens)) if (!Object.hasOwn(RETIRED_TOKENS, k)) out[k] = v;
+  for (const [k, v] of Object.entries(tokens)) if (Object.hasOwn(RETIRED_TOKENS, k)) out[RETIRED_TOKENS[k]!] ??= v;
+  return out as T;
+}
+
 export const customThemeSchema = z
   .object({
     id: z.string().regex(/^[a-z0-9-]{1,40}$/, { error: () => t("errors.theme.id") }),
     name: z.string().trim().min(1).max(40),
     mode: z.enum(THEME_MODES),
     extends: z.preprocess((v) => (typeof v === "string" ? canonicalThemeId(v) : v), z.enum(BUILTIN_THEME_IDS as [BuiltinThemeId, ...BuiltinThemeId[]])),
-    tokens: z.partialRecord(z.enum(THEME_TOKENS), themeColor).refine((tokens) => Object.keys(tokens).length > 0, { error: () => t("errors.theme.noColors") }),
+    tokens: z.preprocess(upgradeThemeTokens, z.partialRecord(z.enum(THEME_TOKENS), themeColor)).refine((tokens) => Object.keys(tokens).length > 0, { error: () => t("errors.theme.noColors") }),
   })
   .strict()
   .refine((theme) => builtinMode(theme.extends) === theme.mode, { error: () => t("errors.theme.baseMode"), path: ["extends"] });

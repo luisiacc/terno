@@ -55,7 +55,7 @@ async function mailbox(kind: "SQL" | "IndexedDB", mode: "normal" | "local" | "go
     incomingProcessor: { async run(input, signal) { signal.throwIfAborted(); const result = await processIncoming(input); signal.throwIfAborted(); return result; }, async whenIdle() {}, async close() {} },
     platform, providers, cipher: plaintextCipher, version: "test", autoSync: false, instantSearch: false, iconTransport: null });
   let backend = await open(); await backend.ready;
-  const { account } = await backend.store.accounts.create({ kind: "gmail", email: "me@example.test", displayName: "Synthetic", color: "indigo", now: 1 });
+  const { account } = await backend.store.accounts.create({ kind: "gmail", email: "me@example.test", displayName: "Synthetic", color: "brown", now: 1 });
   const runs: Promise<void>[] = [];
   cleanup.push(async () => { await Promise.allSettled(runs); try { expect(unexpected).toEqual([]); expect(backend.net.googlePending()).toBe(0); } finally { await backend.stop(); rmSync(dir, { recursive: true, force: true }); } });
   const cursor = async () => (await backend.store.accounts.config<{ cursor?: unknown }>(account.id))?.config.cursor;
@@ -70,7 +70,7 @@ async function mailbox(kind: "SQL" | "IndexedDB", mode: "normal" | "local" | "go
     minimal(fn?: typeof minimal) { minimal = fn; },
     checkpoint(fn?: typeof checkpoint) { checkpoint = fn; },
     async peer() {
-      const { account: peer } = await backend.store.accounts.create({ kind: "gmail", email: "peer@example.test", displayName: "Peer", color: "indigo", now: 2 });
+      const { account: peer } = await backend.store.accounts.create({ kind: "gmail", email: "peer@example.test", displayName: "Peer", color: "brown", now: 2 });
       await backend.store.accounts.setCursor(peer.id, { historyId: baseline });
       return () => { const run = backend.syncAccount(peer.id); runs.push(run); return run; };
     },

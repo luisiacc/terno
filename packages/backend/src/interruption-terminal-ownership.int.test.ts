@@ -61,7 +61,7 @@ async function setup(answer: (request: Request) => Promise<Response>) {
   cleanup.push(async () => { client.close(); await backend.stop(); rmSync(dir, { recursive: true, force: true }); });
   const ids: number[] = [];
   for (const name of ["first", "sibling"]) {
-    const { account } = await backend!.store.accounts.create({ kind: "gmail", email: `${name}@example.test`, displayName: name, color: "indigo", providerConfig: {}, now: 1 });
+    const { account } = await backend!.store.accounts.create({ kind: "gmail", email: `${name}@example.test`, displayName: name, color: "brown", providerConfig: {}, now: 1 });
     ids.push(account.id);
     await backend!.syncAccount(account.id);
   }

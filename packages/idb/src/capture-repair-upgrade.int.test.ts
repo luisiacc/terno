@@ -12,7 +12,7 @@ import type { MailStore } from "@terno/store";
 import { expect, it } from "vitest";
 const platform = { uuid: () => crypto.randomUUID(), yield: () => new Promise<void>((resolve) => setImmediate(resolve)) };
 async function seed(store: MailStore) {
-  const { account } = await store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "blue", now: 1 });
+  const { account } = await store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "brown", now: 1 });
   await store.sync.ingest([{ accountId: account.id, providerMsgId: "cached", providerThreadId: null, rfcMessageId: "cached@example.test", inReplyTo: null, references: [], from: { name: "", email: "sender@example.test" }, to: [], cc: [], bcc: [], subject: "Cached", date: 1, snippet: "Exact", bodyText: "Exact cached body", bodyHtml: null, bodyState: "full", listId: null, isRead: true, isStarred: false, inInbox: true, isSent: false, isDraft: false, isTrash: false, isSpam: false, hasAttachments: false, size: 5 }], { applyFilters: false, now: 1, classifier: null });
   return { account, before: (await store.debug.snapshot()).messages };
 }
@@ -48,7 +48,7 @@ it("SQL35 upgrades capture schema without changing cached mail, cursor or accoun
     expect((await store.accounts.config<{ cursor: unknown }>(account.id))!.config.cursor).toEqual({ historyId: "100" });
     await store.captureRepairs.block(account.id, { kind: "gmail", providerId: "p" }, "mime-parts", 0);
     expect((await store.captureRepairs.list(account.id)).items).toHaveLength(1);
-    const replacement = await store.accounts.create({ kind: "gmail", email: "other@example.test", displayName: "Other", color: "blue", now: 1 }); expect(replacement.account.id).toBeGreaterThan(account.id);
+    const replacement = await store.accounts.create({ kind: "gmail", email: "other@example.test", displayName: "Other", color: "brown", now: 1 }); expect(replacement.account.id).toBeGreaterThan(account.id);
   } finally { await store.close(); rmSync(dir, { recursive: true, force: true }); }
 });
 function request<T>(value: IDBRequest<T>): Promise<T> { return new Promise((resolve, reject) => { value.onsuccess = () => resolve(value.result); value.onerror = () => reject(value.error); }); }
@@ -79,6 +79,6 @@ it("native fake-IDB21 upgrades capture schema while retaining populated mail and
     expect((await store.accounts.config<{ cursor: unknown }>(account.id))!.config.cursor).toEqual({ historyId: "100" });
     await store.captureRepairs.block(account.id, { kind: "gmail", providerId: "p" }, "mime-parts", 0);
     expect((await store.captureRepairs.list(account.id)).items).toHaveLength(1);
-    const replacement = await store.accounts.create({ kind: "gmail", email: "other@example.test", displayName: "Other", color: "blue", now: 1 }); expect(replacement.account.id).toBeGreaterThan(account.id);
+    const replacement = await store.accounts.create({ kind: "gmail", email: "other@example.test", displayName: "Other", color: "brown", now: 1 }); expect(replacement.account.id).toBeGreaterThan(account.id);
   } finally { await store.close(); }
 });

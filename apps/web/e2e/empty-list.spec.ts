@@ -34,7 +34,7 @@ for (const design of ["macos", "lumen"] as const) {
         const ctx = { clientId: "setup", origin: "dev" as const };
         await server.backend.server.invoke("settings.update", { design, layout: layout!, language, theme: "system" }, ctx);
         // A real account with no messages gives ordinary empty Inbox and Trash views.
-        const { account } = await server.backend.store.accounts.create({ kind: "gmail", email: "empty@example.test", displayName: "Empty account", color: "indigo", now: E2E_NOW });
+        const { account } = await server.backend.store.accounts.create({ kind: "gmail", email: "empty@example.test", displayName: "Empty account", color: "brown", now: E2E_NOW });
         await page.goto(`/?backend=${encodeURIComponent(server.url)}&token=e2e`);
         await page.locator("[data-ready]").waitFor();
         await rows(page).first().waitFor();

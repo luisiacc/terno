@@ -124,7 +124,7 @@ async function setup(refresh = false, kind: "SQL" | "IDB" = "SQL", large = false
   });
   await backend.ready;
   for (let id = 1; id <= sender; id++) {
-    const { account } = await backend.store.accounts.create({ kind: "gmail", email: `account${id}@example.test`, displayName: "Synthetic", color: "indigo", providerConfig: {}, now: id });
+    const { account } = await backend.store.accounts.create({ kind: "gmail", email: `account${id}@example.test`, displayName: "Synthetic", color: "brown", providerConfig: {}, now: id });
     expect(account.id).toBe(id);
     await backend.setSecret(`account:${id}:refreshToken`, "synthetic-refresh");
   }

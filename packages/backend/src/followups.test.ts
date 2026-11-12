@@ -42,7 +42,7 @@ async function setup(o: { enabled?: boolean } = {}) {
   const [c, s] = createMemoryTransportPair();
   backend.connect(s, { clientId: "r", origin: "renderer" });
   const client = new RpcClient(c);
-  const { account } = await backend.store.accounts.create({ kind: "gmail", email: me.email, displayName: "Me", color: "indigo", now: 0 });
+  const { account } = await backend.store.accounts.create({ kind: "gmail", email: me.email, displayName: "Me", color: "brown", now: 0 });
   await client.call("settings.update", { ai: { provider: "fake", model: "demo" } });
   if (o.enabled ?? true) await client.call("settings.update", { followups: { enabled: true } });
   // mail sent from here on: it went on a while ago
@@ -399,7 +399,7 @@ it("filing into a hidden category ends the top, and its Undo puts it back", asyn
   clock.now += 10 * DAY;
   await backend.followups.look();
   const threadId = (await backend.store.debug.snapshot()).messages.find((x) => x.providerMsgId === m.providerMsgId)!.threadId;
-  const category = await client.call("categories.create", { name: "Hidden", color: "indigo", showInInbox: false } as never);
+  const category = await client.call("categories.create", { name: "Hidden", color: "brown", showInInbox: false } as never);
   const moved = await client.call("categories.moveThreads", { to: (category as { id: number }).id, threadIds: [threadId], source: "picker" } as never);
   expect((await client.call("followups.threads", { onTop: true })).items).toEqual([]);
   await client.call("categorize.undo", { batchId: (moved as { batchId: number }).batchId });

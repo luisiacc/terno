@@ -44,7 +44,7 @@ it("importing 5,000 filters, 500 categories and 2,000 drafts: no stall over 50 m
   const lister = new RpcClient(pc);
   const accounts = (await client.call("app.bootstrap", {})).accounts;
   const email = accounts[0]!.email;
-  const categories = Array.from({ length: 500 }, (_, i) => ({ id: 10_000 + i, name: `Importada ${i}`, color: "indigo" as const, position: i, autoApply: i % 2 === 0 }));
+  const categories = Array.from({ length: 500 }, (_, i) => ({ id: 10_000 + i, name: `Importada ${i}`, color: "brown" as const, position: i, autoApply: i % 2 === 0 }));
   const filters = Array.from({ length: 5_000 }, (_, i) => ({
     name: `Filtro ${i}`,
     enabled: true,

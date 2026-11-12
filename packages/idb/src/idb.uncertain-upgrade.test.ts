@@ -493,7 +493,7 @@ it("upgrades physical15 recipient evidence and copy ownership without losing its
   const seed = await IdbMailStore.open({ legacyUpgrade: legacyBodyUpgrade(factory), factory, name: sourceName, instantSearch: false, platform });
   let store: IdbMailStore | undefined, raw: IDBDatabase | undefined;
   try {
-    const { account } = await seed.accounts.create({ kind: "imap", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo", providerConfig: { appendToSent: true }, now: 1 });
+    const { account } = await seed.accounts.create({ kind: "imap", email: "synthetic@example.test", displayName: "Synthetic", color: "brown", providerConfig: { appendToSent: true }, now: 1 });
     const queued = await seed.compose.queueSend({ accountId: account.id, to: [{ name: "", email: "yes@example.test" }, { name: "", email: "no@example.test" }], cc: [], bcc: [], subject: "Synthetic", bodyText: "Exact", recordReply: false, now: 2 });
     await seed.ops.claimReady(2, 1); await seed.sendCopies.startWire(queued.opId, 1); await seed.sendCopies.appendWire(queued.opId, 0, "YQ=="); await seed.sendCopies.sealWire(queued.opId); await seed.sendCopies.accepted(queued.opId, null);
     await seed.ops.markUnknown(queued.opId, "Synthetic", 3, { warning: null, outcomes: [{ email: "yes@example.test", outcome: "accepted" }, { email: "no@example.test", outcome: "rejected" }] });

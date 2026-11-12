@@ -81,7 +81,7 @@ async function fixture(kind: "SQL" | "IndexedDB", path?: string, enabled = false
   };
   let backend = await open(enabled);
   const existing = await backend.store.accounts.list();
-  const account = existing[0] ?? (await backend.store.accounts.create({ kind: "gmail", email: "me@example.test", displayName: "Synthetic", color: "indigo", now: 1 })).account;
+  const account = existing[0] ?? (await backend.store.accounts.create({ kind: "gmail", email: "me@example.test", displayName: "Synthetic", color: "brown", now: 1 })).account;
   if (!existing.length) {
     await backend.store.accounts.setCursor(account.id, { historyId: "100" });
     const category = await backend.store.categories.create("Synthetic", "violet");

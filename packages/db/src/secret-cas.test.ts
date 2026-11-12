@@ -51,7 +51,7 @@ it("a first Google pin and credential roll back together and survive an uncertai
   const dir = mkdtempSync(join(tmpdir(), "terno-first-pin-")), path = join(dir, "test.db");
   let store = new SqlMailStore(openDatabase(path));
   cleanup.push(async () => { await store.close(); rmSync(dir, { recursive: true, force: true }); });
-  const { account } = await store.accounts.create({ kind: "gmail", email: "legacy@example.test", displayName: "Legacy", color: "indigo", providerConfig: { cursor: "keep" }, secret: { key: "refreshToken", blob: Uint8Array.of(1) }, now: 1 });
+  const { account } = await store.accounts.create({ kind: "gmail", email: "legacy@example.test", displayName: "Legacy", color: "brown", providerConfig: { cursor: "keep" }, secret: { key: "refreshToken", blob: Uint8Array.of(1) }, now: 1 });
   const stamp = (await store.accounts.stamp(account.id))!, name = `account:${account.id}:refreshToken`;
   const intent = { kind: "replace" as const, name, expectedBlob: Uint8Array.of(1), blob: Uint8Array.of(2), google: { expectedSubject: null, subject: "first" } };
   let fail = true;

@@ -17,7 +17,7 @@ const yieldTo = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 function fixture(db: Db): number {
   registerFunctions(db);
   for (const migration of MIGRATIONS) if (migration.version <= 37) db.tx(() => { db.exec(migration.sql); db.exec(`PRAGMA user_version=${migration.version}`); });
-  const account = createAccount(db, { kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo" }, 1);
+  const account = createAccount(db, { kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "brown" }, 1);
   const assets = sqlAssets(db);
   const asset = db.tx(() => { const asset = createAsset(assets, () => crypto.randomUUID(), { accountId: account.id, filename: "exact.bin", mime: "application/octet-stream", size: 3, now: 1 }); appendAsset(assets, account.id, asset.assetId!, 0, "AP+A"); sealAsset(assets, account.id, asset.assetId!); return asset; });
   db.exec("ALTER TABLE messages ADD COLUMN unsubscribe TEXT");

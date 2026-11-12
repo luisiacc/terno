@@ -316,8 +316,8 @@ async function resourceModel(fault?: DescriptorFault): Promise<void> {
   try {
     await observed.phase("seed", async () => {
       const store = await open("resource-seed");
-      const a = (await command(() => store.accounts.create({ kind: "gmail", email: "a@example.com", displayName: "A", color: "indigo", now: 1 }))).account.id;
-      const b = (await command(() => store.accounts.create({ kind: "gmail", email: "b@example.com", displayName: "B", color: "indigo", now: 1 }))).account.id;
+      const a = (await command(() => store.accounts.create({ kind: "gmail", email: "a@example.com", displayName: "A", color: "brown", now: 1 }))).account.id;
+      const b = (await command(() => store.accounts.create({ kind: "gmail", email: "b@example.com", displayName: "B", color: "brown", now: 1 }))).account.id;
       await command(() => ingest(store, Array.from({ length: 130 }, (_, i) => msg({ accountId: a, providerMsgId: `r${i}`, providerThreadId: `rt${i}`, bodyText: "fixture" }))));
       const threads = new Map((await store.debug.snapshot()).messages.map((m) => [m.providerMsgId, m.threadId]));
       const flagThreads = Array.from({ length: 129 }, (_, i) => threads.get(`r${i + 1}`)!);

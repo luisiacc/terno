@@ -1,5 +1,5 @@
 import { CATEGORY_COLORS, type Account, type CategoryColor } from "@terno/core";
-import { CategoryDot } from "@terno/ui/components/category-dot";
+import { AccountRing } from "@terno/ui/components/category-dot";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -155,11 +155,11 @@ export function leaveSoloKeepingFocus(id: number): void {
   requestAnimationFrame(() => (document.querySelector<HTMLElement>(`[data-testid="nav-account-${id}"]`) ?? document.querySelector<HTMLElement>('[data-testid="nav-inbox"]'))?.focus());
 }
 
-/** A color's dot in an icon's box, so its label starts on the other items' line */
+/** A color as the account will wear it (a ring, plan 194), in an icon's box, so its label starts on the other items' line */
 function Swatch({ color }: { color: CategoryColor }) {
   return (
     <span aria-hidden className="flex size-[1.15em] shrink-0 items-center justify-center">
-      <CategoryDot color={color} />
+      <AccountRing color={color} />
     </span>
   );
 }

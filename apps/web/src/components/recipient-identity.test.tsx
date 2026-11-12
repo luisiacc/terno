@@ -52,7 +52,7 @@ it("does not locally remove a recipient while Send holds the draft", async () =>
   function Form() { const d = drafts.useDrafts((s) => s.drafts[key]!); return <DraftFieldsForm d={d} accounts={[]} showSubject={false} />; }
   let pending: Promise<boolean> | undefined;
   try {
-    app.setApp({ accounts: [{ id: 1, kind: "imap", email: "me@example.test", displayName: "Me", signature: "", color: "blue", syncState: {} }] as never });
+    app.setApp({ accounts: [{ id: 1, kind: "imap", email: "me@example.test", displayName: "Me", signature: "", color: "brown", syncState: {} }] as never });
     await act(async () => root.render(<Form />));
     await act(async () => { pending = sendDraft(key); });
     await entered.promise; expect(drafts.useDrafts.getState().drafts[key]!.sending).toBe(true);

@@ -19,7 +19,7 @@ vi.stubGlobal("requestAnimationFrame", (run: FrameRequestCallback) => setTimeout
 vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
 vi.stubGlobal("matchMedia", (media: string) => ({ media, matches: false, addEventListener() {}, removeEventListener() {} }));
 
-const account = (id: number) => ({ id, kind: "imap", email: `account${id}@example.test`, displayName: `Account ${id}`, color: "blue", senderName: "", signature: "", syncWindowDays: null, syncState: { authScope: null } }) as Account;
+const account = (id: number) => ({ id, kind: "imap", email: `account${id}@example.test`, displayName: `Account ${id}`, color: "brown", senderName: "", signature: "", syncWindowDays: null, syncState: { authScope: null } }) as Account;
 
 it.each([true, false])("keeps the same focused password field through two, one, and two accounts (returning first: %s)", async (returningFirst) => {
   const host = document.createElement("div"); document.body.append(host);

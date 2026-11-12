@@ -44,7 +44,7 @@ async function setup(kind: "SQL" | "IndexedDB") {
   }
   await open();
   cleanup.push(async () => { client.close(); await backend.stop(); rmSync(dir, { recursive: true, force: true }); });
-  const { account } = await backend!.store.accounts.create({ kind: "imap", email: "me@example.test", displayName: "Synthetic", color: "indigo", now: NOW });
+  const { account } = await backend!.store.accounts.create({ kind: "imap", email: "me@example.test", displayName: "Synthetic", color: "brown", now: NOW });
   const category = await client!.call("categories.create", { name: "Receipts", color: "amber" });
   await backend!.store.settings.set("app", { ai: { provider: "fake" } });
   script.wire = {
@@ -98,7 +98,7 @@ for (const kind of ["SQL", "IndexedDB"] as const) describe(`AI filter targets ($
 
   it.each([false, true])("rejects a referenced account deleted and replaced during model work (negate=%s)", async (negate) => {
     const t = await setup(kind);
-    const { account: other } = await t.backend.store.accounts.create({ kind: "imap", email: "other@example.test", displayName: "Other", color: "indigo", now: NOW });
+    const { account: other } = await t.backend.store.accounts.create({ kind: "imap", email: "other@example.test", displayName: "Other", color: "brown", now: NOW });
     t.script.wire!.match = "any";
     t.script.wire!.conditions.push({ field: "account", op: "is", value: String(other.id), negate });
     const started = gate(); const answer = gate();
@@ -106,7 +106,7 @@ for (const kind of ["SQL", "IndexedDB"] as const) describe(`AI filter targets ($
     const result = t.generate().then(() => null, (error: unknown) => error);
     await started.promise;
     await t.client.call("accounts.remove", { id: other.id });
-    const { account: replacement } = await t.backend.store.accounts.create({ kind: "imap", email: other.email, displayName: "Replacement", color: "indigo", now: NOW });
+    const { account: replacement } = await t.backend.store.accounts.create({ kind: "imap", email: other.email, displayName: "Replacement", color: "brown", now: NOW });
     expect(replacement.id).not.toBe(other.id);
     answer.release();
     expect(await result).toMatchObject({ code: "UNAVAILABLE", details: { aiErrorKind: "invalid_output" }, i18n: { key: "errors.accountGone" } });
@@ -142,7 +142,7 @@ for (const kind of ["SQL", "IndexedDB"] as const) describe(`AI filter targets ($
 
   it("keeps a valid draft when an unreferenced account disappears during model work", async () => {
     const t = await setup(kind);
-    const { account: other } = await t.backend.store.accounts.create({ kind: "imap", email: "other@example.test", displayName: "Other", color: "indigo", now: NOW });
+    const { account: other } = await t.backend.store.accounts.create({ kind: "imap", email: "other@example.test", displayName: "Other", color: "brown", now: NOW });
     t.script.wire!.conditions.push({ field: "account", op: "is", value: String(t.account.id), negate: false });
     const started = gate(); const answer = gate();
     t.script.beforeReply = async () => { started.release(); await answer.promise; };

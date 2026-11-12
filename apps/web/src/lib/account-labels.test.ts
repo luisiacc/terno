@@ -1,8 +1,8 @@
-import type { Account } from "@terno/core";
+import type { Account, CategoryColor } from "@terno/core";
 import { describe, expect, it } from "vitest";
 import { accountLabels } from "./account-labels";
 
-const account = (id: number, email: string, displayName: string, color = "indigo"): Account => ({
+const account = (id: number, email: string, displayName: string, color: CategoryColor = "brown"): Account => ({
   id,
   kind: "gmail",
   email,
@@ -17,7 +17,7 @@ const account = (id: number, email: string, displayName: string, color = "indigo
 describe("accountLabels (plan 23)", () => {
   it("names an account by its display name", () => {
     const labels = accountLabels([account(1, "luis@acme.studio", "Acme Studio"), account(2, "luis.cordero@gmail.com", "Personal")]);
-    expect(labels.get(1)).toEqual({ text: "Acme Studio", email: "luis@acme.studio", color: "indigo" });
+    expect(labels.get(1)).toEqual({ text: "Acme Studio", email: "luis@acme.studio", color: "brown" });
     expect(labels.get(2)!.text).toBe("Personal");
   });
 
@@ -28,7 +28,7 @@ describe("accountLabels (plan 23)", () => {
       account(3, "hola@luiscordero.dev", "  "),
       account(4, "l@icloud.com", "L@iCloud.com"),
     ]);
-    expect(labels.get(1)).toEqual({ text: "luis.cordero@gmail.com", local: "luis.cordero", domain: "@gmail.com", email: "luis.cordero@gmail.com", color: "indigo" });
+    expect(labels.get(1)).toEqual({ text: "luis.cordero@gmail.com", local: "luis.cordero", domain: "@gmail.com", email: "luis.cordero@gmail.com", color: "brown" });
     expect(labels.get(2)).toMatchObject({ local: "compras.luis", domain: "@gmail.com" });
     expect(labels.get(3)).toMatchObject({ local: "hola", domain: "@luiscordero.dev" });
     expect(labels.get(4)).toMatchObject({ local: "l", domain: "@icloud.com" });

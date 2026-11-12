@@ -111,7 +111,7 @@ const FREELANCE_FOLDERS: MockAccount["folders"] = [
 const ICLOUD_FOLDERS: MockAccount["folders"] = [{ key: "Viajes guardados", path: ["Viajes guardados"], selectable: true, tags: ["travel"] }];
 
 const ALL_ACCOUNTS: MockAccount[] = [
-  { kind: "gmail", email: "luis.cordero@gmail.com", displayName: "Personal", color: "indigo", ownerName: "Luis Cordero", weight: 0.32, folders: PERSONAL_LABELS },
+  { kind: "gmail", email: "luis.cordero@gmail.com", displayName: "Personal", color: "brown", ownerName: "Luis Cordero", weight: 0.32, folders: PERSONAL_LABELS },
   { kind: "gmail", email: "luis@acme.studio", displayName: "Acme Studio", color: "emerald", ownerName: "Luis Carlos Cordero", weight: 0.3, folders: ACME_LABELS },
   { kind: "imap", email: "hola@luiscordero.dev", displayName: "Freelance", color: "amber", ownerName: "Luis Cordero", weight: 0.14, folders: FREELANCE_FOLDERS },
   { kind: "imap", email: "lccordero@icloud.com", displayName: "iCloud", color: "cyan", ownerName: "Luis Cordero", weight: 0.08, folders: ICLOUD_FOLDERS },
@@ -126,7 +126,7 @@ export const MOCK_CATEGORIES: MockCategory[] = [
   { name: "Clientes", color: "emerald", tags: ["client"] },
   { name: "Viajes", color: "cyan", tags: ["travel"] },
   { name: "Lecturas", color: "violet", tags: ["newsletter"] },
-  { name: "Desarrollo", color: "indigo", tags: ["dev"] },
+  { name: "Desarrollo", color: "brown", tags: ["dev"] },
 ];
 
 /** mulberry32: tiny, fast, deterministic PRNG */

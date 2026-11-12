@@ -73,7 +73,7 @@ async function setup(kind: "SQL" | "IndexedDB") {
     autoSync: false, instantSearch: false, iconTransport: null,
   });
   let backend = await open();
-  const { account } = await backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo", providerConfig: {}, now: 1 });
+  const { account } = await backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "brown", providerConfig: {}, now: 1 });
   const secretName = `account:${account.id}:refreshToken`;
   await backend.setSecret(secretName, refresh);
   cleanup.push(async () => {

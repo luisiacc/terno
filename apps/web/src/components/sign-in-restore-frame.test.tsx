@@ -20,7 +20,7 @@ vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
 vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
 vi.stubGlobal("matchMedia", (media: string) => ({ media, matches: false, addEventListener() {}, removeEventListener() {} }));
 
-const account = (id: number, kind: Account["kind"]) => ({ id, kind, email: `account${id}@example.test`, displayName: `Account ${id}`, color: "blue", senderName: "", signature: "", syncWindowDays: null, syncState: { authScope: null } }) as Account;
+const account = (id: number, kind: Account["kind"]) => ({ id, kind, email: `account${id}@example.test`, displayName: `Account ${id}`, color: "brown", senderName: "", signature: "", syncWindowDays: null, syncState: { authScope: null } }) as Account;
 const first = account(1, "gmail"), second = account(2, "imap"), third = account(3, "gmail");
 
 async function fixture(strict: boolean, run: (f: Awaited<ReturnType<typeof mount>>) => Promise<void>, keepMounted = false) {

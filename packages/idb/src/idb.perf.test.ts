@@ -336,7 +336,7 @@ it("plan 107: while 300,000-member folders' orders are still being built, an exp
   const own = await IdbMailStore.open({ name: `${name}-members`, factory: indexedDB, platform, instantSearch: false });
   await own.whenLoaded();
   const c = (own as unknown as { c: Ctx }).c;
-  const account = (await own.accounts.create({ kind: "gmail", email: "members@example.com", displayName: "Members", color: "indigo", now: 0 })).account.id;
+  const account = (await own.accounts.create({ kind: "gmail", email: "members@example.com", displayName: "Members", color: "brown", now: 0 })).account.id;
   const N = 300_000;
   // empty threads (nothing to read in them): what's timed is the walk of the members, written in reverse
   const threads = Array.from({ length: N }, (_, i) => ({ id: 50_000_000 + N - i, account_id: account, last_date: 0, message_count: 0, unread_count: 0 }));
@@ -1022,8 +1022,8 @@ it("plan 107: a standard view's export at 500,000 threads: an account beside the
   try {
     const c = (own as unknown as { c: Ctx }).c;
     const threads = c.db.table("threads") as unknown as MirrorTable;
-    const { account } = await own.accounts.create({ kind: "gmail", email: "many@example.com", displayName: "Many", color: "indigo", now: 0 });
-    const { account: empty } = await own.accounts.create({ kind: "gmail", email: "empty@example.com", displayName: "Empty", color: "indigo", now: 0 });
+    const { account } = await own.accounts.create({ kind: "gmail", email: "many@example.com", displayName: "Many", color: "brown", now: 0 });
+    const { account: empty } = await own.accounts.create({ kind: "gmail", email: "empty@example.com", displayName: "Empty", color: "brown", now: 0 });
     const N = 500_000;
     const ARRIVALS = 100;
     const first = 90_000_000;
@@ -1105,7 +1105,7 @@ it("plan 107: an export and a count of a 500,000-message conversation read it a 
   try {
     const c = (own as unknown as { c: Ctx & { db: { tx<T>(fn: () => T): T; table(name: string): { load(row: Record<string, unknown>): void; put(row: Record<string, unknown>): unknown } } } }).c;
     await own.whenLoaded();
-    const { account } = await own.accounts.create({ kind: "gmail", email: "long@example.com", displayName: "Long", color: "indigo", now: 0 });
+    const { account } = await own.accounts.create({ kind: "gmail", email: "long@example.com", displayName: "Long", color: "brown", now: 0 });
     // over the frame either way: reading and sorting all of it per call was ~55 ms at a million
     const N = 500_000;
     const thread = 70_000_000;

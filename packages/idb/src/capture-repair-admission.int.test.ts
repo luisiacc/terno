@@ -29,8 +29,8 @@ async function fixture(kind: "gmail" | "imap", blocked = true, partial = false) 
   const providers: ProviderRegistry = { create: () => ({ async verify() {}, async close() {}, async execute() { throw new Error("Unexpected mutation"); }, async sync(sink) { lastSink = sink; await action?.(sink); } }), async verifyImap() {}, async connectGmail() { throw new Error("Unexpected consent"); } };
   const open = async () => new Backend({ store: await IdbMailStore.open({ factory, name, platform, instantSearch: false }), platform, providers, cipher: plaintextCipher, version: "test", autoSync: false, iconTransport: null });
   let backend = await open(); await backend.ready;
-  const { account } = await backend.store.accounts.create({ kind, email: "synthetic@example.test", displayName: "Synthetic", color: "blue", providerConfig: { demo: true }, now: 1 });
-  const sibling = await backend.store.accounts.create({ kind: "imap", email: "sibling@example.test", displayName: "Sibling", color: "blue", now: 1 });
+  const { account } = await backend.store.accounts.create({ kind, email: "synthetic@example.test", displayName: "Synthetic", color: "brown", providerConfig: { demo: true }, now: 1 });
+  const sibling = await backend.store.accounts.create({ kind: "imap", email: "sibling@example.test", displayName: "Sibling", color: "brown", now: 1 });
   // the app has every account's status once it lists them (80d812de); sign-in then never reads behind held persistence
   await backend.accountViews([account, sibling.account]);
   const source = { ...incoming(account.id, kind), ...(partial && { bodyState: "partial" as const }) };
@@ -106,7 +106,7 @@ it("R3 deletion aborts an admitted repaired body before native persistence and c
   expect(t.sink.signal.aborted).toBe(true); release.release(); await run; await dropped;
   expect(await t.view()).toEqual(before);
   await t.backend.store.accounts.remove(t.account.id); t.backend.accountRemoved(t.account.id);
-  const replacement = await t.backend.store.accounts.create({ kind: "imap", email: "synthetic@example.test", displayName: "Replacement", color: "blue", now: 1 });
+  const replacement = await t.backend.store.accounts.create({ kind: "imap", email: "synthetic@example.test", displayName: "Replacement", color: "brown", now: 1 });
   expect(replacement.account.id).toBeGreaterThan(t.account.id);
   await t.reopen(); expect(await t.backend.store.accounts.get(t.account.id)).toBeNull(); expect((await t.view()).repairs.items).toEqual([]);
   expect((await t.view()).messages).toEqual(before.messages.filter((m) => m.accountId !== t.account.id));

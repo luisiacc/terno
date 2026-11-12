@@ -225,7 +225,7 @@ it("snackbar counts: sender/domain/list ≤ 5 ms, topic ≤ 25 ms (capped at 1 0
 it("bulk-filing 4,000 threads of one sender stays linear (the content cap is a bounded lookup)", () => {
   const db = openDatabase(join(dir, "bulk.db"));
   try {
-    const acct = createAccount(db, { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
+    const acct = createAccount(db, { kind: "imap", email: "me@example.com", displayName: "Me", color: "brown" }).id;
     const cat = createCategory(db, "Lecturas", "violet").id;
     const msgs = generateDataset({ threads: 4_000, accounts: 1, seed: 3, now: NOW }).messages.filter((m) => !m.isSent).slice(0, 4_000);
     for (let i = 0; i < msgs.length; i += 1000) {

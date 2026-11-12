@@ -15,7 +15,7 @@ describe("owner credential compound transaction", () => {
     const store = new SqlMailStore(openDatabase(join(dir, "test.db")));
     cleanup.push(async () => { await store.close(); rmSync(dir, { recursive: true, force: true }); });
     const claim = { displayName: "Reader", provider: "gmail" as const, verifiedBy: "google_oauth" as const, evidence: { googleSub: "synthetic-sub", emailVerified: true } };
-    const create = async (email: string, now: number) => (await store.accounts.create({ kind: "gmail", email, displayName: "Reader", color: "indigo", providerConfig: {}, ownerClaim: claim, now })).account;
+    const create = async (email: string, now: number) => (await store.accounts.create({ kind: "gmail", email, displayName: "Reader", color: "brown", providerConfig: {}, ownerClaim: claim, now })).account;
     await create("first@example.test", 1); const target = await create("second@example.test", 2);
     const stamp = (await store.accounts.stamp(target.id))!, name = `account:${target.id}:refreshToken`, old = Uint8Array.of(1, 2);
     await store.secrets.put(name, old);

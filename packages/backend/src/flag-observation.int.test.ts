@@ -108,7 +108,7 @@ async function setup(kind: "SQL" | "IDB", automatic = false, messageCount = 1) {
   const client = new RpcClient(c);
   cleanups.push(async () => { heldHistory?.response.release(); heldMutation?.response.release(); heldSend?.response.release(); response.release(); freshResponse.release(); client.close(); await backend.stop(); server.closeAllConnections(); await new Promise<void>((resolve) => server.close(() => resolve())); rmSync(dir, { recursive: true, force: true }); });
   await backend.ready;
-  const { account } = await backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo", now: 1 });
+  const { account } = await backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "brown", now: 1 });
   await backend.syncAccount(account.id);
   expect((await backend.store.accounts.get(account.id))?.syncState).toMatchObject({ status: "idle", lastError: null });
   const threadId = (await backend.store.debug.snapshot()).messages[0]!.threadId;
@@ -218,7 +218,7 @@ it("terminal flag outcomes reconcile once at the claimed worker batch boundary",
 it("a stalled sibling Send does not hold a finished account's flag reconciliation", async () => {
   const t = await setup("SQL", true);
   vi.spyOn(t.backend, "kickWorker").mockImplementation(() => {});
-  const { account: sibling } = await t.backend.store.accounts.create({ kind: "gmail", email: "sibling@example.test", displayName: "Sibling", color: "indigo", now: 2 });
+  const { account: sibling } = await t.backend.store.accounts.create({ kind: "gmail", email: "sibling@example.test", displayName: "Sibling", color: "brown", now: 2 });
   await t.backend.syncAccount(sibling.id);
   await t.backend.store.threads.act({ threadIds: [t.threadId], action: "markRead", signal: null, now: 2 });
   const flag = (await t.backend.store.debug.snapshot()).ops[0]!;

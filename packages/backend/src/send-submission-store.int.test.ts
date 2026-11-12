@@ -29,7 +29,7 @@ async function setup(adapter: "SQL" | "IDB", appendToSent = false, recipients = 
   };
   cleanup.push(async () => { for (const store of opened) if (store.isOpen) await store.close(); rmSync(dir, { recursive: true, force: true }); });
   let store = await open();
-  const { account } = await store.accounts.create({ kind: "imap", email: "sender@example.test", displayName: "Synthetic", color: "indigo", providerConfig: { appendToSent }, now: 1 });
+  const { account } = await store.accounts.create({ kind: "imap", email: "sender@example.test", displayName: "Synthetic", color: "brown", providerConfig: { appendToSent }, now: 1 });
   const command = { accountId: account.id, to: recipients, cc: [], bcc: [], subject: "Synthetic", bodyText: "Original captured body", recordReply: false, now: 2 };
   const { opId } = await store.compose.queueSend(command);
   const messageId = (JSON.parse((await store.ops.get(opId))!.target_json) as { messageIds: number[] }).messageIds[0]!;
@@ -262,7 +262,7 @@ it("real SMTP plus IDB completion abort commits acceptance through fallback, reo
   const open = async () => { const s = await IdbMailStore.open({ factory, name, platform, instantSearch: false }); stores.push(s); return s; };
   cleanup.push(async () => { for (const s of stores) if (s.isOpen) await s.close(); });
   const store = await open();
-  const { account } = await store.accounts.create({ kind: "imap", email: "sender@example.test", displayName: "Synthetic", color: "indigo", now: Date.now(), secret: { key: "password", blob: await plaintextCipher.encrypt("synthetic") }, providerConfig: {
+  const { account } = await store.accounts.create({ kind: "imap", email: "sender@example.test", displayName: "Synthetic", color: "brown", now: Date.now(), secret: { key: "password", blob: await plaintextCipher.encrypt("synthetic") }, providerConfig: {
     imap: { host: "127.0.0.1", port: 1, secure: false, user: "synthetic" }, smtp: { host: "127.0.0.1", port: (smtp.server.address() as { port: number }).port, secure: false, user: "synthetic" }, appendToSent: false,
   } });
   const connect = (s: MailStore) => {
@@ -512,7 +512,7 @@ for (const adapter of ["SQL", "IDB"] as const) for (const append of [false, true
   const open = async () => { const store = adapter === "SQL" ? new SqlMailStore(openDatabase(join(dir, "s.db"))) : await IdbMailStore.open({ name, factory, platform, instantSearch: false }); stores.push(store); return store; };
   cleanup.push(async () => { for (const store of stores) if (store.isOpen) await store.close(); rmSync(dir, { recursive: true, force: true }); });
   const store = await open();
-  const { account } = await store.accounts.create({ kind: "imap", email: "sender@example.test", displayName: "Synthetic", color: "indigo", now: 1, secret: { key: "password", blob: await plaintextCipher.encrypt("synthetic") }, providerConfig: { imap: { host: "127.0.0.1", port: 1, secure: false, user: "synthetic" }, smtp: { host: "127.0.0.1", port: (smtp.server.address() as { port: number }).port, secure: false, user: "synthetic" }, appendToSent: append } });
+  const { account } = await store.accounts.create({ kind: "imap", email: "sender@example.test", displayName: "Synthetic", color: "brown", now: 1, secret: { key: "password", blob: await plaintextCipher.encrypt("synthetic") }, providerConfig: { imap: { host: "127.0.0.1", port: 1, secure: false, user: "synthetic" }, smtp: { host: "127.0.0.1", port: (smtp.server.address() as { port: number }).port, secure: false, user: "synthetic" }, appendToSent: append } });
   const connect = (current: MailStore) => { const backend = new Backend({ store: current, dbPath: ":memory:", version: "test", cipher: plaintextCipher, providers: createRegistry({ imap: { allowInsecure: true } }), platform, autoSync: false, iconTransport: null }); const [c, server] = createMemoryTransportPair(); backend.connect(server, { clientId: "recipient-recovery", origin: "renderer" }); const client = new RpcClient(c); cleanup.push(async () => { client.close(); if (current.isOpen) await backend.stop(); }); return { backend, client }; };
   const first = connect(store);
   const { opId } = await first.client.call("compose.send", { accountId: account.id, to: [{ name: "", email: "yes@example.test" }, { name: "", email: "no@example.test" }], bcc: [{ name: "", email: "hidden@example.test" }], subject: "Original synthetic", bodyText: "Exact wire body" });
@@ -616,7 +616,7 @@ for (const adapter of ["SQL", "IDB"] as const) for (const failCompletion of [fal
   const dir = mkdtempSync(join(tmpdir(), "terno-recipient-chain-")), name = crypto.randomUUID(), factory = new IDBFactory(), stores: MailStore[] = [];
   const open = async () => { const store = adapter === "SQL" ? new SqlMailStore(openDatabase(join(dir, "s.db"))) : await IdbMailStore.open({ name, factory, platform, instantSearch: false }); stores.push(store); return store; };
   cleanup.push(async () => { for (const store of stores) if (store.isOpen) await store.close(); rmSync(dir, { recursive: true, force: true }); });
-  const store = await open(); const { account } = await store.accounts.create({ kind: "imap", email: "sender@example.test", displayName: "Synthetic", color: "indigo", now: 1, secret: { key: "password", blob: await plaintextCipher.encrypt("synthetic") }, providerConfig: { imap: { host: "127.0.0.1", port: 1, secure: false, user: "synthetic" }, smtp: { host: "127.0.0.1", port: (smtp.server.address() as { port: number }).port, secure: false, user: "synthetic" }, appendToSent: false } });
+  const store = await open(); const { account } = await store.accounts.create({ kind: "imap", email: "sender@example.test", displayName: "Synthetic", color: "brown", now: 1, secret: { key: "password", blob: await plaintextCipher.encrypt("synthetic") }, providerConfig: { imap: { host: "127.0.0.1", port: 1, secure: false, user: "synthetic" }, smtp: { host: "127.0.0.1", port: (smtp.server.address() as { port: number }).port, secure: false, user: "synthetic" }, appendToSent: false } });
   const connect = (current: MailStore) => { const backend = new Backend({ store: current, dbPath: ":memory:", version: "test", cipher: plaintextCipher, providers: createRegistry({ imap: { allowInsecure: true } }), platform, autoSync: false, iconTransport: null }); const [c, server] = createMemoryTransportPair(); backend.connect(server, { clientId: "recipient-chain", origin: "renderer" }); const client = new RpcClient(c); cleanup.push(async () => { client.close(); if (current.isOpen) await backend.stop(); }); return { backend, client }; };
   const first = connect(store); const { opId } = await first.client.call("compose.send", { accountId: account.id, to: [{ name: "", email: "yes@example.test" }, { name: "", email: "no1@example.test" }], bcc: [{ name: "", email: "no2@example.test" }], subject: "Synthetic chain", bodyText: "Exact wire" });
   await first.backend.runWorker();

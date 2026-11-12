@@ -36,7 +36,7 @@ afterAll(() => {
 const yieldTurn = () => new Promise<void>((r) => setTimeout(r, 0));
 
 async function seed(store: MailStore): Promise<number> {
-  const { account } = await store.accounts.create({ kind: "gmail", email: "me@example.com", displayName: "Me", color: "indigo", now: 0 });
+  const { account } = await store.accounts.create({ kind: "gmail", email: "me@example.com", displayName: "Me", color: "brown", now: 0 });
   await store.folders.replace(account.id, [{ key: "Label_big", path: ["Clients"], selectable: true }]);
   const bytes = new Uint8Array(200 * 1024).map((_, i) => i % 251);
   const all: IncomingMessage[] = [];
@@ -94,7 +94,7 @@ const IDS_MS = 25;
 
 /** one Gmail conversation of CONVERSATION messages (half of them on one date), every one in the folder, beside a few short ones */
 async function seedConversation(store: MailStore): Promise<number> {
-  const { account } = await store.accounts.create({ kind: "gmail", email: "me@example.com", displayName: "Me", color: "indigo", now: 0 });
+  const { account } = await store.accounts.create({ kind: "gmail", email: "me@example.com", displayName: "Me", color: "brown", now: 0 });
   await store.folders.replace(account.id, [{ key: "Label_big", path: ["Clients"], selectable: true }]);
   const all: IncomingMessage[] = [];
   for (let i = 0; i < CONVERSATION + 20; i++) {
@@ -140,7 +140,7 @@ const BIG = 3 * 1024 * 1024;
 
 /** a message whose stored body is 3 MB of short lines, and a short one */
 async function seedBig(store: MailStore): Promise<number> {
-  const { account } = await store.accounts.create({ kind: "gmail", email: "me@example.com", displayName: "Me", color: "indigo", now: 0 });
+  const { account } = await store.accounts.create({ kind: "gmail", email: "me@example.com", displayName: "Me", color: "brown", now: 0 });
   await store.folders.replace(account.id, [{ key: "Label_big", path: ["Clients"], selectable: true }]);
   const body = Array.from({ length: BIG / 32 }, (_, i) => `línea ${String(i).padStart(9, "0")} con palabras`).join("\n");
   await store.sync.ingest([

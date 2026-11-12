@@ -9,7 +9,7 @@ import { FirstSyncPill, firstSyncing } from "./first-sync-pill";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const account = (id: number, sync: Partial<AccountSyncState>, window: number | null = null): Account => ({
-  id, kind: "imap", email: `a${id}@example.test`, displayName: `A${id}`, color: "blue", senderName: "A", signature: "", syncWindowDays: window,
+  id, kind: "imap", email: `a${id}@example.test`, displayName: `A${id}`, color: "brown", senderName: "A", signature: "", syncWindowDays: window,
   syncState: { status: "syncing", syncedSince: null, bodiesPending: 0, lastError: null, lastSyncAt: null, ...sync },
 });
 

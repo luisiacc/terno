@@ -20,7 +20,7 @@ const { accountsChanged, announceParkedSend, noticeAccounts, putOff, requestSign
 const { dismissSnack, resetSnacks, snack, useSnack } = await import("./snack");
 
 const account = (id: number, authRequired: boolean, kind: "imap" | "gmail" = "imap"): Account =>
-  ({ id, kind, email: `a${id}@example.com`, displayName: `A${id}`, color: "indigo", syncState: { status: authRequired ? "error" : "idle", authRequired } }) as unknown as Account;
+  ({ id, kind, email: `a${id}@example.com`, displayName: `A${id}`, color: "brown", syncState: { status: authRequired ? "error" : "idle", authRequired } }) as unknown as Account;
 
 beforeEach(() => {
   setLocale("en", en);

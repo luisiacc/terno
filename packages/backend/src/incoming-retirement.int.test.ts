@@ -18,7 +18,7 @@ async function setup(processor: IncomingProcessor) {
   };
   const backend = new Backend({ dbPath, providers, cipher: plaintextCipher, incomingProcessor: processor, version: "test", autoSync: false, instantSearch: false, iconTransport: null });
   await backend.ready;
-  const { account } = await backend.store.accounts.create({ kind: "imap", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo", now: 1 });
+  const { account } = await backend.store.accounts.create({ kind: "imap", email: "synthetic@example.test", displayName: "Synthetic", color: "brown", now: 1 });
   await backend.provider(account.id);
   return { backend, context, account, dbPath, get providersClosed() { return providersClosed; }, async cleanup() {
     if (backend.store.isOpen) { processor.close = async () => {}; processor.whenIdle = async () => {}; await backend.stop(); }

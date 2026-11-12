@@ -288,7 +288,7 @@ async function storeFixture(mode: StoreMode) {
   return { store, terminal, backend: () => owner!, reopen: async () => { await owner!.stop(); owner = undefined; return open(); } };
 }
 async function account(store: MailStore, n: number, kind: "gmail" | "imap" = "gmail") {
-  return (await store.accounts.create({ kind, email: `synthetic${n}@example.test`, displayName: "Synthetic", color: "indigo", providerConfig: {}, now: 1 })).account;
+  return (await store.accounts.create({ kind, email: `synthetic${n}@example.test`, displayName: "Synthetic", color: "brown", providerConfig: {}, now: 1 })).account;
 }
 async function sendOp(store: MailStore, accountId: number) {
   return (await store.compose.queueSend({ accountId, to: [{ email: "recipient@example.test", name: "" }], cc: [], bcc: [], subject: "Synthetic", bodyText: "Synthetic", recordReply: false, now: 1000 })).opId;

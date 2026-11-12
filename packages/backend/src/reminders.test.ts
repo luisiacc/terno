@@ -71,7 +71,7 @@ async function setup() {
     rmSync(dir, { recursive: true, force: true });
   });
   const db = sqlDb(backend.store);
-  const account = createAccount(db, { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
+  const account = createAccount(db, { kind: "imap", email: "me@example.com", displayName: "Me", color: "brown" }).id;
   const [a, b] = [...ingestMessages(db, [incoming(account, { rfcMessageId: "a@x" }), incoming(account, { rfcMessageId: "b@x" })]).touchedThreads];
   const events: RemindersSnapshot[] = [];
   client.on("reminders", (e) => events.push(e));
@@ -251,7 +251,7 @@ describe("reminders (plan 87)", () => {
   it("filing a due one into a category hidden from the Inbox ends it; the filing's Undo brings it back", async () => {
     const { client, a, b } = await setup();
     const hidden = await client.call("categories.create", { name: "Quiet", color: "slate" });
-    const shown = await client.call("categories.create", { name: "Work", color: "indigo", showInInbox: true });
+    const shown = await client.call("categories.create", { name: "Work", color: "brown", showInInbox: true });
     await client.call("reminders.set", { threadIds: [a, b], dueAt: NOW - 1, kind: "always" });
     await client.call("categories.addThreads", { categoryId: shown.id, threadIds: [b], source: "picker" });
     const moved = await client.call("categories.moveThreads", { to: hidden.id, threadIds: [a], source: "picker" });

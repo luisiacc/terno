@@ -112,7 +112,7 @@ export function defineDateSearch(name: string, open: (now: number) => Promise<Da
         let h: DateSearchHarness;
         beforeEach(async () => {
           h = await open(end);
-          const { account } = await h.store.accounts.create({ kind: "gmail", email: "reader@example.test", displayName: "Reader", color: "indigo", now: end });
+          const { account } = await h.store.accounts.create({ kind: "gmail", email: "reader@example.test", displayName: "Reader", color: "brown", now: end });
           const rows: [string, number, string?][] = [
             ["before-start", start - 1], ["at-start", start], ["start-tie", start], ["last", end - 1],
             ["at-end", end], ["after-end", end + 1],
@@ -124,7 +124,7 @@ export function defineDateSearch(name: string, open: (now: number) => Promise<Da
           expect(ingested.inserted).toHaveLength(12);
           expect((await h.store.threads.list({ view: "all", limit: 100 })).items).toHaveLength(9);
           if (h.rpc) {
-            const { account: other } = await h.store.accounts.create({ kind: "gmail", email: "other@example.test", displayName: "Other", color: "indigo", now: end });
+            const { account: other } = await h.store.accounts.create({ kind: "gmail", email: "other@example.test", displayName: "Other", color: "brown", now: end });
             await h.store.sync.ingest([message(other.id, "another-account", start + 10, 888)], { now: end, applyFilters: false, classifier: null });
           }
           await h.ready();

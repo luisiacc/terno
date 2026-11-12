@@ -7,7 +7,7 @@ const { newFields } = await import("~/lib/compose-fields");
 const { whenDraftsSaved } = await import("./reload");
 const { setApp } = await import("~/state/app");
 import type { Account } from "@terno/core";
-const account: Account = { id: 1, kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", signature: "", color: "blue", senderName: "Synthetic", syncWindowDays: null, syncState: { status: "idle", syncedSince: null, bodiesPending: 0, lastError: null, lastSyncAt: null } };
+const account: Account = { id: 1, kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", signature: "", color: "brown", senderName: "Synthetic", syncWindowDays: null, syncState: { status: "idle", syncedSince: null, bodiesPending: 0, lastError: null, lastSyncAt: null } };
 afterEach(() => { for (const key of Object.keys(useDrafts.getState().drafts)) forgetDraft(key); rpc.mockReset(); });
 function setup() {
   setApp({ accounts: [account] });

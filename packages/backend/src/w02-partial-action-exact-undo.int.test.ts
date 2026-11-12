@@ -72,7 +72,7 @@ async function setup(kind: "SQL" | "IDB") {
   };
   attach();
   cleanups.push(async () => { client.close(); await backend.stop(); rmSync(dir, { recursive: true, force: true }); expect(unexpected).toEqual([]); });
-  const { account } = await backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo", now: 1 });
+  const { account } = await backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "brown", now: 1 });
   await backend.syncAccount(account.id);
   expect((await backend.store.accounts.get(account.id))?.syncState).toMatchObject({ status: "idle", lastError: null });
   const snapshot = await backend.store.debug.snapshot();

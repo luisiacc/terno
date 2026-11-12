@@ -55,7 +55,7 @@ async function setup(adapter: "sql" | "idb", smtp?: number, owned = cleanup) {
   };
   owned.push(async () => { client?.close(); if (backend) await backend.stop(); rmSync(dir, { recursive: true, force: true }); expect(unexpected).toEqual([]); });
   await open();
-  const accountId = (await backend.store.accounts.create({ kind: smtp ? "imap" : "gmail", email: "sender@example.test", displayName: "Synthetic", color: "indigo", now: 1000, providerConfig: smtp ? { imap: { host: "127.0.0.1", port: 1, secure: false, user: "synthetic" }, smtp: { host: "127.0.0.1", port: smtp, secure: false, user: "synthetic" }, appendToSent: false } : {} })).account.id;
+  const accountId = (await backend.store.accounts.create({ kind: smtp ? "imap" : "gmail", email: "sender@example.test", displayName: "Synthetic", color: "brown", now: 1000, providerConfig: smtp ? { imap: { host: "127.0.0.1", port: 1, secure: false, user: "synthetic" }, smtp: { host: "127.0.0.1", port: smtp, secure: false, user: "synthetic" }, appendToSent: false } : {} })).account.id;
   await backend.setSecret(`account:${accountId}:${smtp ? "password" : "refreshToken"}`, "synthetic-secret");
   return {
     accountId, sends, accept() { loseResponse = false; }, get backend() { return backend; }, get client() { return client; },

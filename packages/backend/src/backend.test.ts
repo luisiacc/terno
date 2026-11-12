@@ -82,7 +82,7 @@ async function setup(options: { dir?: string; now?: () => number } = {}) {
     await backend.stop().catch(() => {});
     if (!options.dir) rmSync(dir, { recursive: true, force: true });
   });
-  const accountId = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo", providerConfig: { senderName: "Luis" } }).id;
+  const accountId = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "brown", providerConfig: { senderName: "Luis" } }).id;
   return { backend, client, events, providers, accountId, dir };
 }
 
@@ -398,7 +398,7 @@ describe("sending", () => {
     await backend.ingestSliced([incoming(accountId, { from: { name: "Ana", email: "ana@corp.io" }, listId: null })]);
     await backend.facts.idle();
     expect((await client.call("counts.get", {})).inboxWaiting).toBe(1);
-    await backend.store.accounts.create({ kind: "imap", email: "second@example.com", displayName: "Second", color: "indigo", now: NOW });
+    await backend.store.accounts.create({ kind: "imap", email: "second@example.com", displayName: "Second", color: "brown", now: NOW });
     expect(await backend.store.facts.idle()).toBe(false);
     await backend.emitAccounts();
     await backend.facts.idle();
@@ -453,7 +453,7 @@ describe("sending", () => {
   it("a send interrupted by a crash is reported as unknown after restart, not resent", async () => {
     const first = await setup();
     sqlDb(first.backend.store).run("DELETE FROM accounts"); // keep this test's account list clean
-    const accountId = createAccount(sqlDb(first.backend.store), { kind: "imap", email: "a@b.c", displayName: "A", color: "indigo" }).id;
+    const accountId = createAccount(sqlDb(first.backend.store), { kind: "imap", email: "a@b.c", displayName: "A", color: "brown" }).id;
     enqueueOp(sqlDb(first.backend.store), { accountId, kind: "send", target: {}, payload: { subject: "x" } });
     claimReadyOps(sqlDb(first.backend.store)); // running when the process dies
     await first.backend.stop();

@@ -80,7 +80,7 @@ async function setup(o: { syncIntervalMs?: number; accounts?: number } = {}) {
   });
   await backend.store.ready;
   const ids: number[] = [];
-  for (let i = 0; i < (o.accounts ?? 2); i++) ids.push(createAccount(sqlDb(backend.store), { kind: "imap", email: `a${i}@example.com`, displayName: `A${i}`, color: "indigo", providerConfig: {} }).id);
+  for (let i = 0; i < (o.accounts ?? 2); i++) ids.push(createAccount(sqlDb(backend.store), { kind: "imap", email: `a${i}@example.com`, displayName: `A${i}`, color: "brown", providerConfig: {} }).id);
   const [c, s] = createMemoryTransportPair();
   backend.connect(s, { clientId: "r", origin: "renderer" });
   const client = new RpcClient(c);

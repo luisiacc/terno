@@ -94,6 +94,14 @@ describe("appearance settings", () => {
     expect(settings).toMatchObject({ lightTheme: "terno-light", darkTheme: "custom:mi-nord" });
     expect(settings.customThemes[0]).toMatchObject({ id: "mi-nord", extends: "terno-dark" });
   });
+
+  it("reads a theme saved with indigo's tokens with them under brown's, the user's colors kept (plan 194)", async () => {
+    const { backend, client } = await setup();
+    setSetting(sqlDb(backend.store), "app", { appearanceVersion: 2, darkTheme: "custom:mi-nord", customThemes: [{ ...nord, tokens: { "cat-indigo": "#3355ff" } }] });
+    const settings = (await client.call("app.bootstrap", {})).settings;
+    expect(settings.darkTheme).toBe("custom:mi-nord");
+    expect(settings.customThemes[0]!.tokens).toEqual({ "cat-brown": "#3355ff" });
+  });
 });
 
 describe("remote images (plan 37)", () => {

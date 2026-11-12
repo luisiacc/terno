@@ -52,7 +52,7 @@ it("Google pin and credential admission is conditional and durable across reopen
 
 it("a Google first pin superseded during persistence preparation rolls back both memory and disk", async () => {
   let store = await open();
-  const { account } = await store.accounts.create({ kind: "gmail", email: "legacy@example.test", displayName: "Legacy", color: "indigo", providerConfig: { cursor: "keep" }, secret: { key: "refreshToken", blob: Uint8Array.of(1) }, now: 1 });
+  const { account } = await store.accounts.create({ kind: "gmail", email: "legacy@example.test", displayName: "Legacy", color: "brown", providerConfig: { cursor: "keep" }, secret: { key: "refreshToken", blob: Uint8Array.of(1) }, now: 1 });
   const stamp = (await store.accounts.stamp(account.id))!, name = `account:${account.id}:refreshToken`;
   let eligible = true;
   const take = store["db"].takeCommit.bind(store["db"]);
@@ -69,8 +69,8 @@ it("a Google first pin superseded during persistence preparation rolls back both
 it("owner proof expiry during persistence preparation rolls back pin, credential and owner history", async () => {
   let store = await open();
   const claim = { displayName: "Reader", provider: "gmail" as const, verifiedBy: "google_oauth" as const, evidence: { googleSub: "first", emailVerified: true } };
-  await store.accounts.create({ kind: "gmail", email: "owner@example.test", displayName: "Owner", color: "indigo", ownerClaim: claim, now: 1 });
-  const { account } = await store.accounts.create({ kind: "gmail", email: "target@example.test", displayName: "Target", color: "indigo", providerConfig: { cursor: "keep" }, secret: { key: "refreshToken", blob: Uint8Array.of(1) }, now: 2 });
+  await store.accounts.create({ kind: "gmail", email: "owner@example.test", displayName: "Owner", color: "brown", ownerClaim: claim, now: 1 });
+  const { account } = await store.accounts.create({ kind: "gmail", email: "target@example.test", displayName: "Target", color: "brown", providerConfig: { cursor: "keep" }, secret: { key: "refreshToken", blob: Uint8Array.of(1) }, now: 2 });
   const stamp = (await store.accounts.stamp(account.id))!, name = `account:${account.id}:refreshToken`, owner = await store.owner.get();
   let now = 1;
   const take = store["db"].takeCommit.bind(store["db"]);

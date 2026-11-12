@@ -31,7 +31,7 @@ async function setup(o: { stored?: Record<string, unknown>; start?: typeof start
   const [mc, ms] = createMemoryTransportPair();
   backend.connect(ms, { clientId: "agent", origin: "mcp" });
   const agent = new RpcClient(mc);
-  const accountId = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
+  const accountId = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "brown" }).id;
   let stopped = false;
   const stop = async () => {
     if (stopped) return;

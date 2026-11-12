@@ -17,8 +17,8 @@ async function setup() {
   const [c, s] = createMemoryTransportPair();
   b.connect(s, { clientId: "renderer", origin: "renderer" });
   const client = new RpcClient(c);
-  const a = createAccount(sqlDb(b.store), { displayName: "Synthetic", kind: "gmail", email: "a@test.com", color: "indigo" }).id;
-  const other = createAccount(sqlDb(b.store), { displayName: "Synthetic", kind: "gmail", email: "b@test.com", color: "indigo" }).id;
+  const a = createAccount(sqlDb(b.store), { displayName: "Synthetic", kind: "gmail", email: "a@test.com", color: "brown" }).id;
+  const other = createAccount(sqlDb(b.store), { displayName: "Synthetic", kind: "gmail", email: "b@test.com", color: "brown" }).id;
   close.push(async () => { client.close(); await b.stop(); rmSync(dir, { recursive: true, force: true }); });
   return { b, client, a, other };
 }

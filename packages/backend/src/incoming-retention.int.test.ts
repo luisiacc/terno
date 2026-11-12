@@ -61,7 +61,7 @@ it.each([0, 1])("holds six readers and one decoded attachment consumer through E
     await backend.ready;
     const accounts = [];
     for (let index = 0; index < 2; index++) {
-      const { account } = await backend.store.accounts.create({ kind: "gmail", email: `synthetic-${index}@example.test`, displayName: "Synthetic", color: "indigo", now: 1 });
+      const { account } = await backend.store.accounts.create({ kind: "gmail", email: `synthetic-${index}@example.test`, displayName: "Synthetic", color: "brown", now: 1 });
       accounts.push(account);
       fixture.accounts.set(String(account.id), account.email);
     }
@@ -153,7 +153,7 @@ it("shares real small-result credits while a promoted consumer owns the pipeline
     await backend.ready;
     const accounts = [];
     for (let index = 0; index < 5; index++) {
-      const { account } = await backend.store.accounts.create({ kind: "gmail", email: `mixed-${index}@example.test`, displayName: "Synthetic", color: "indigo", now: 1 });
+      const { account } = await backend.store.accounts.create({ kind: "gmail", email: `mixed-${index}@example.test`, displayName: "Synthetic", color: "brown", now: 1 });
       accounts.push(account); fixture.accounts.set(String(account.id), account.email);
     }
     largeAccount = String(accounts[0]!.id);

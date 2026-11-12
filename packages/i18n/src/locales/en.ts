@@ -276,7 +276,7 @@ const en = {
   "settings.color.lime": "Lime",
   "settings.color.emerald": "Emerald",
   "settings.color.cyan": "Cyan",
-  "settings.color.indigo": "Indigo",
+  "settings.color.brown": "Brown",
   "settings.color.violet": "Violet",
   "settings.color.slate": "Slate",
   "settings.appearance.senderPictures": "Sender pictures",

@@ -15,7 +15,7 @@ it("admits a backed-up Plan95 mailbox through exact legacy conversion before exp
   try {
     registerFunctions(old);
     for (const migration of MIGRATIONS) if (migration.version <= 38) old.tx(() => { old.exec(migration.sql); old.exec(`PRAGMA user_version=${migration.version}`); });
-    const account = createAccount(old, { kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo" }, 1);
+    const account = createAccount(old, { kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "brown" }, 1);
     old.exec("ALTER TABLE messages ADD COLUMN unsubscribe TEXT");
     threadId = [...ingestMessages(old, [msg({ accountId: account.id, providerMsgId: "legacy", bodyText: text, bodyHtml: html, bodyState: "full" })], 1).touchedThreads][0]!;
     old.exec("ALTER TABLE messages DROP COLUMN unsubscribe");

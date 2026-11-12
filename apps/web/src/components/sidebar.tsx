@@ -2,7 +2,7 @@ import { Fragment, memo, useCallback, useEffect, useId, useLayoutEffect, useMemo
 import { create } from "zustand";
 import { COUNTED_VIEWS, FOLDER_VIEWS, folderRef, separatesTabs, tabRef, TABS, viewRef, type Account, type Category, type CategoryColor, type CountedView, type Folder, type FolderView, type Tab, type View } from "@terno/core";
 import { Button } from "@terno/ui/components/button";
-import { CategoryDot } from "@terno/ui/components/category-dot";
+import { AccountRing, CategoryDot } from "@terno/ui/components/category-dot";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
@@ -1063,7 +1063,7 @@ function RenameRow({ account, active, count, reserveEnd, onDone, home }: { accou
       )}
     >
       <span className="flex size-(--icon-nav) items-center justify-center text-sidebar-glyph">
-        <CategoryDot color={account.color as CategoryColor} />
+        <AccountRing color={account.color} />
       </span>
       {/* the text starts where the name did: the field's padding sits outside the label's line */}
       <input
@@ -1166,7 +1166,7 @@ const AccountEntry = memo(function AccountEntry({
               controls={`account-folders-${a.id}`}
               onClick={(e) => pressAccount(a.id, accountPress(e), here)}
               // syncing stays quiet here: the first-sync and connection pills speak for it
-              icon={<CategoryDot color={a.color as CategoryColor} />}
+              icon={<AccountRing color={a.color} />}
               label={a.displayName}
               // open, the count is its Inbox's row's
               count={open ? undefined : unread || undefined}
@@ -1249,7 +1249,7 @@ function SoloSidebar({ account: a, countTone }: { account: Account; countTone: "
             ) : (
               <div data-testid="solo-title" className={cn("flex min-h-(--nav-h) items-center gap-2.5 px-2 py-1", a.syncState.authRequired && "pr-8")}>
                 <span className="flex size-(--icon-nav) shrink-0 items-center justify-center">
-                  <CategoryDot color={a.color as CategoryColor} />
+                  <AccountRing color={a.color} />
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="type-nav-strong block truncate text-sidebar-foreground">{a.displayName}</span>

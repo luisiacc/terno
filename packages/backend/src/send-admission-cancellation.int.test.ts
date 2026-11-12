@@ -54,7 +54,7 @@ for (const adapter of ["SQL", "IDB"] as const) it.each([false, true])(`${adapter
     return { backend, client };
   };
   const first = connect(await open()); await first.backend.ready;
-  const { account } = await first.backend.store.accounts.create({ kind: "imap", email: "author@example.test", displayName: "Original Author", color: "indigo", now: 1, secret: { key: "password", blob: await plaintextCipher.encrypt("synthetic") }, providerConfig: {
+  const { account } = await first.backend.store.accounts.create({ kind: "imap", email: "author@example.test", displayName: "Original Author", color: "brown", now: 1, secret: { key: "password", blob: await plaintextCipher.encrypt("synthetic") }, providerConfig: {
     imap: { host: "127.0.0.1", port: 1, secure: false, user: "synthetic" }, smtp: { host: "127.0.0.1", port: (smtp.server.address() as { port: number }).port, secure: false, user: "synthetic" }, appendToSent: false,
   } });
   const ref = await first.client.call("attachments.create", { accountId: account.id, filename: "exact.bin", mime: "application/octet-stream", size: 5 });
@@ -131,7 +131,7 @@ for (const adapter of ["SQL", "IDB"] as const) it(`${adapter}: R1 an auth hold a
   const client = new RpcClient(local);
   cleanup.push(async () => { client.close(); await backend.stop(); });
   await backend.ready;
-  const { account } = await store.accounts.create({ kind: "imap", email: "sender@example.test", displayName: "Synthetic", color: "indigo", now: 1, secret: { key: "password", blob: await plaintextCipher.encrypt("synthetic") }, providerConfig: {
+  const { account } = await store.accounts.create({ kind: "imap", email: "sender@example.test", displayName: "Synthetic", color: "brown", now: 1, secret: { key: "password", blob: await plaintextCipher.encrypt("synthetic") }, providerConfig: {
     imap: { host: "127.0.0.1", port: 1, secure: false, user: "synthetic" }, smtp: { host: "127.0.0.1", port: (smtp.server.address() as { port: number }).port, secure: false, user: "synthetic" }, appendToSent: false,
   } });
   const provider = (await backend.provider(account.id))!;

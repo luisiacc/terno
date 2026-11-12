@@ -21,7 +21,7 @@ for (const version of [36, 37]) it(`opens SQL${version} large cached bodies with
   try {
     registerFunctions(legacy);
     for (const migration of MIGRATIONS) if (migration.version <= 37) legacy.tx(() => { legacy.exec(migration.sql); legacy.exec(`PRAGMA user_version=${migration.version}`); });
-    const account = createAccount(legacy, { kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo" }, 1);
+    const account = createAccount(legacy, { kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "brown" }, 1);
     legacy.exec("ALTER TABLE messages ADD COLUMN unsubscribe TEXT");
     const result = ingestMessages(legacy, [msg({ accountId: account.id, providerMsgId: "legacy", bodyText: text, bodyHtml: html, bodyState: "full" })], 1);
     legacy.exec("ALTER TABLE messages DROP COLUMN unsubscribe");
@@ -72,7 +72,7 @@ for (const phase of ["prepared", "committed"] as const) it(`resumes exact legacy
   try {
     registerFunctions(old);
     for (const migration of MIGRATIONS) if (migration.version <= 37) old.tx(() => { old.exec(migration.sql); old.exec(`PRAGMA user_version=${migration.version}`); });
-    accountId = createAccount(old, { kind: "imap", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo" }, 1).id;
+    accountId = createAccount(old, { kind: "imap", email: "synthetic@example.test", displayName: "Synthetic", color: "brown" }, 1).id;
     const repo = sqlAssets(old);
     const asset = old.tx(() => { const asset = createAsset(repo, () => crypto.randomUUID(), { accountId, filename: "exact.bin", mime: "application/octet-stream", size: 3, now: 1 }); appendAsset(repo, accountId, asset.assetId!, 0, "AP+A"); sealAsset(repo, accountId, asset.assetId!); return asset; });
     old.exec("ALTER TABLE messages ADD COLUMN unsubscribe TEXT");

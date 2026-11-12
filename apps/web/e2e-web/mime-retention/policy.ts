@@ -9,7 +9,7 @@ export async function measurePolicy(mode: "explore" | "boundary" | "boundary64" 
     const worker = createBrowserIncomingProcessor();
     const records: { shape: string; kib: number; sample: number; combined: number; workerWall: number; cloneWall: number; storeWall: number }[] = [];
     try {
-      const { account } = await store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo", now: 1 });
+      const { account } = await store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "brown", now: 1 });
       await store.sync.ingest(Array.from({ length: 500 }, () => msg({ accountId: account.id })), { applyFilters: false, now: 1, classifier: null });
       for (const value of ["missing one", "missing two", "missing three", "missing four"]) await store.filters.save({ name: "synthetic", enabled: true, source: "manual", rule: { match: "all", conditions: [{ field: "body", op: "contains", value }], actions: [{ type: "archive" }] } }, 1);
       for (const shape of ["words", "combining", "unbroken", "html"] as const) for (const kib of mode !== "explore" ? [128] : [64, 128, 256, 512]) {

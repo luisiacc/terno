@@ -108,7 +108,7 @@ async function gmailHarness(): Promise<Harness> {
   const clock = { now: NOW };
   const t = backendOn(providers, clock);
   cleanup.push(async () => { await t.close(); server.closeAllConnections(); await new Promise<void>((resolve) => server.close(() => resolve())); });
-  const { account } = await t.backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo", providerConfig: {}, now: 1 });
+  const { account } = await t.backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "brown", providerConfig: {}, now: 1 });
   await t.backend.setSecret(`account:${account.id}:refreshToken`, "synthetic-refresh");
   await (await t.backend.provider(account.id))!.verify();
   return { backend: t.backend, client: t.client, accountId: account.id, clock, delivered };

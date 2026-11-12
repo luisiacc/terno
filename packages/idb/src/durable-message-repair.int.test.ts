@@ -84,7 +84,7 @@ async function mailbox(kind: "SQL" | "IndexedDB") {
   const open = async () => new Backend({ dbPath: join(dir, "synthetic.db"), store: kind === "IndexedDB" ? await IdbMailStore.open({ name, factory, platform, instantSearch: false }) : undefined,
     platform, providers, cipher: plaintextCipher, version: "test", autoSync: false, instantSearch: false, iconTransport: null });
   let backend = await open(); await backend.ready;
-  const { account } = await backend.store.accounts.create({ kind: "gmail", email: "me@example.test", displayName: "Synthetic", color: "indigo", now: 1 });
+  const { account } = await backend.store.accounts.create({ kind: "gmail", email: "me@example.test", displayName: "Synthetic", color: "brown", now: 1 });
   const runs: Promise<void>[] = [];
   const clients: RpcClient[] = [];
   cleanup.push(async () => {

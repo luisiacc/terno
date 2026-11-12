@@ -66,7 +66,7 @@ describe("the facts backfill's bounds on IndexedDB (Codex review 2)", () => {
 
   it("a sender job reads its next messages through the index, never the sender's whole history a slice (#2)", async () => {
     const store = await IdbMailStore.open({ name: `facts-sender-${Date.now()}`, factory: indexedDB, platform, instantSearch: false });
-    const { account } = await store.accounts.create({ kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo", now: 0 });
+    const { account } = await store.accounts.create({ kind: "imap", email: "me@example.com", displayName: "Me", color: "brown", now: 0 });
     await store.sync.ingest(Array.from({ length: 600 }, (_, i) => message(account.id, i, { from: { name: "", email: "support@shop.com" } })), { applyFilters: false, now: NOW, classifier: null });
     await store.sync.ingest([message(account.id, 9999, { from: { name: "", email: "me@example.com" }, to: [{ name: "", email: "support@shop.com" }], isSent: true, inInbox: false })], { applyFilters: false, now: NOW, classifier: null });
     expect(await store.facts.idle()).toBe(false);
@@ -88,7 +88,7 @@ describe("the facts backfill's bounds on IndexedDB (Codex review 2)", () => {
   it("a sender job's walk follows what committed: a reverted slice, and a reverted command that took all the sender's mail, are walked again (Codex review 3, #1)", async () => {
     for (const scenario of ["reverted slice", "reverted deletion"] as const) {
       const store = await IdbMailStore.open({ name: `facts-revert-${scenario.length}-${Date.now()}`, factory: indexedDB, platform, instantSearch: false });
-      const { account } = await store.accounts.create({ kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo", now: 0 });
+      const { account } = await store.accounts.create({ kind: "imap", email: "me@example.com", displayName: "Me", color: "brown", now: 0 });
       await store.sync.ingest(Array.from({ length: 600 }, (_, i) => message(account.id, i, { from: { name: "", email: "support@shop.com" } })), { applyFilters: false, now: NOW, classifier: null });
       await store.sync.ingest([message(account.id, 9999, { from: { name: "", email: "me@example.com" }, to: [{ name: "", email: "support@shop.com" }], isSent: true, inInbox: false })], { applyFilters: false, now: NOW, classifier: null });
       const inner = store as unknown as { db: MemDb; c: { facts: FactsQueue; order: RecencyOrder } };
@@ -115,7 +115,7 @@ describe("the facts backfill's bounds on IndexedDB (Codex review 2)", () => {
 
   it("after a reverted slice the address is walked again from its start, in bounded slices: an update that moved a key loses nothing (Codex review 4)", async () => {
     const store = await IdbMailStore.open({ name: `facts-replay-${Date.now()}`, factory: indexedDB, platform, instantSearch: false });
-    const { account } = await store.accounts.create({ kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo", now: 0 });
+    const { account } = await store.accounts.create({ kind: "imap", email: "me@example.com", displayName: "Me", color: "brown", now: 0 });
     await store.sync.ingest(Array.from({ length: 600 }, (_, i) => message(account.id, i, { from: { name: "", email: "support@shop.com" } })), { applyFilters: false, now: NOW, classifier: null });
     await store.sync.ingest([message(account.id, 9999, { from: { name: "", email: "me@example.com" }, to: [{ name: "", email: "support@shop.com" }], isSent: true, inInbox: false })], { applyFilters: false, now: NOW, classifier: null });
     for (let i = 0; i < 4; i++) await store.facts.backfill({ limit: 50 });
@@ -145,7 +145,7 @@ describe("the facts backfill's bounds on IndexedDB (Codex review 2)", () => {
 
   it("a replay that is itself reverted is walked again too: the slice count only moves forward (Codex review 5)", async () => {
     const store = await IdbMailStore.open({ name: `facts-replay2-${Date.now()}`, factory: indexedDB, platform, instantSearch: false });
-    const { account } = await store.accounts.create({ kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo", now: 0 });
+    const { account } = await store.accounts.create({ kind: "imap", email: "me@example.com", displayName: "Me", color: "brown", now: 0 });
     await store.sync.ingest(Array.from({ length: 600 }, (_, i) => message(account.id, i, { from: { name: "", email: "support@shop.com" } })), { applyFilters: false, now: NOW, classifier: null });
     await store.sync.ingest([message(account.id, 9999, { from: { name: "", email: "me@example.com" }, to: [{ name: "", email: "support@shop.com" }], isSent: true, inInbox: false })], { applyFilters: false, now: NOW, classifier: null });
     await store.facts.backfill({ limit: 200 });
@@ -167,7 +167,7 @@ describe("the facts backfill's bounds on IndexedDB (Codex review 2)", () => {
 
   it(`a conversation longer than ${BIG_THREAD} messages is read in chunks, one a slice, to the facts of its newest 200 (#3)`, async () => {
     const store = await IdbMailStore.open({ name: `facts-big-${Date.now()}`, factory: indexedDB, platform, instantSearch: false });
-    const { account } = await store.accounts.create({ kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo", now: 0 });
+    const { account } = await store.accounts.create({ kind: "imap", email: "me@example.com", displayName: "Me", color: "brown", now: 0 });
     const n = 3 * BIG_THREAD;
     // Carlos once, then you, n times: the window holds only your mail (no one else lately)
     const thread = Array.from({ length: n + 1 }, (_, i) =>

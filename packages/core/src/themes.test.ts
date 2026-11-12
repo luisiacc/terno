@@ -100,3 +100,19 @@ describe("switchDesign (plan 138)", () => {
     expect(switchDesign({ ...lumen, designPalettes }, "graphite")).toMatchObject({ lightTheme: "design", darkTheme: "design" });
   });
 });
+
+describe("category colors (plan 194)", () => {
+  it("reads a known color as itself, a retired one as its successor and anything else as slate", async () => {
+    const { categoryColor, CATEGORY_COLORS } = await import("./types");
+    for (const c of CATEGORY_COLORS) expect(categoryColor(c)).toBe(c);
+    expect(categoryColor("indigo")).toBe("brown");
+    expect(categoryColor("blue")).toBe("slate");
+    expect(categoryColor(undefined)).toBe("slate");
+    expect(CATEGORY_COLORS).not.toContain("indigo");
+  });
+  it("lets an older backup's indigo category in, as brown; still refuses junk", async () => {
+    const { exportCategorySchema } = await import("./rpc/contract");
+    expect(exportCategorySchema.parse({ id: 1, name: "Dev", color: "indigo" }).color).toBe("brown");
+    expect(exportCategorySchema.safeParse({ id: 1, name: "Dev", color: "blue" }).success).toBe(false);
+  });
+});

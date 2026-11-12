@@ -73,7 +73,7 @@ async function setup(o: { transport?: UnsubscribeTransport | null; localMode?: b
   });
   if (o.localMode !== undefined) await client.call("settings.update", { localMode: o.localMode });
   const db = sqlDb(backend.store);
-  const account = createAccount(db, { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
+  const account = createAccount(db, { kind: "imap", email: "me@example.com", displayName: "Me", color: "brown" }).id;
   const thread = (over: Partial<IncomingMessage>) => [...ingestMessages(db, [incoming(account, over)]).touchedThreads][0]!;
   return { backend, client, db, account, thread };
 }

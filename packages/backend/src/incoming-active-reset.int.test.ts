@@ -48,7 +48,7 @@ parentPort.on("message", value => {
   let releaseWaiter: (() => void) | undefined;
   try {
     await backend.ready;
-    const { account } = await backend.store.accounts.create({ kind: "imap", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo", now: 1 });
+    const { account } = await backend.store.accounts.create({ kind: "imap", email: "synthetic@example.test", displayName: "Synthetic", color: "brown", now: 1 });
     await backend.store.accounts.setProviderConfig(account.id, { imap: { host: "127.0.0.1", port, secure: false, user: "testuser" }, smtp: { host: "127.0.0.1", port: 1, secure: false, user: "testuser" } });
     await backend.store.secrets.put(`account:${account.id}:password`, await plaintextCipher.encrypt("testpass"));
     work = backend.syncAccount(account.id);

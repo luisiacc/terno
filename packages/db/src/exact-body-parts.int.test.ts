@@ -24,7 +24,7 @@ it("keeps SQL code-point sent prefixes and query category scopes exact for captu
     const result = await store.sync.ingest([msg({ accountId: accountId!, isSent: true, size: 200000, bodyText: text, bodyState: "full" })], { now: 1, classifier: null, applyFilters: false });
     const message = (await store.threads.get(result.touched[0]!))!.messages[0]!;
     expect((await store.autocomplete.sentTexts([message.id]))[0]?.text === [...text].slice(0, 65536).join("")).toBe(true);
-    const category = await store.categories.create("synthetic", "indigo");
+    const category = await store.categories.create("synthetic", "brown");
     expect(await store.categorize.resolveScope(category.id, { kind: "query", query: '"unique boundary phrase"' }, 1, 10)).toEqual(result.touched);
   } finally { await store.close(); }
 });

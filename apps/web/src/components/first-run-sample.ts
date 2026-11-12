@@ -35,7 +35,7 @@ const snippet = (n: N) => t(`firstRun.sample.${n}.snippet`);
 
 const CATEGORIES: { id: number; key: "firstRun.sample.category.travel" | "firstRun.sample.category.work"; color: CategoryColor }[] = [
   { id: -1, key: "firstRun.sample.category.travel", color: "cyan" },
-  { id: -2, key: "firstRun.sample.category.work", color: "indigo" },
+  { id: -2, key: "firstRun.sample.category.work", color: "brown" },
 ];
 
 /** Built once when the preview opens (no timer: its dates don't move while it shows). */

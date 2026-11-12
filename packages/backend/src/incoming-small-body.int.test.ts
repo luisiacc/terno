@@ -18,7 +18,7 @@ it("persists an emitted small complete body without multi-transaction capture st
     await backend.ready;
     const db = sqlDb(backend.store), run = db.run.bind(db); let captures = 0;
     vi.spyOn(db, "run").mockImplementation((sql, ...args) => { if (sql.startsWith("INSERT INTO body_captures")) captures++; return run(sql, ...args); });
-    const { account } = await backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo", now: 1 });
+    const { account } = await backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "brown", now: 1 });
     fixture.accounts.set("synthetic", account.email);
     await backend.syncAccount(account.id);
     const rows = (await backend.store.debug.snapshot()).messages;

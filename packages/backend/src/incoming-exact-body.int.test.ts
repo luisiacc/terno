@@ -35,7 +35,7 @@ it("preserves valid complete large bodies without a monolithic parent SQL body b
       for (const value of parameters) if (typeof value === "string") largest = Math.max(largest, value.length);
       return run(sql, ...parameters);
     });
-    const { account } = await backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo", now: 1 });
+    const { account } = await backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "brown", now: 1 });
     fixture.accounts.set("synthetic", account.email);
     await backend.store.filters.save({ name: "boundary match", enabled: true, source: "manual", rule: { match: "all", conditions: [{ field: "body", op: "contains", value: "boundaryneedle acrossboundary" }], actions: [{ type: "star" }] } }, 1);
     await backend.syncAccount(account.id);
@@ -102,7 +102,7 @@ it("keeps the same account-bound complete body contract for agent reads", async 
   const client = new RpcClient(clientSide);
   try {
     await backend.ready;
-    const { account } = await backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo", now: 1 });
+    const { account } = await backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "brown", now: 1 });
     const { msg } = await import("../../store/src/conformance/fixtures");
     const text = "exact agent content ".repeat(10000);
     const result = await backend.store.sync.ingest([msg({ accountId: account.id, bodyText: text, bodyState: "full" })], { now: 1, classifier: null, applyFilters: false });

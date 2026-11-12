@@ -53,7 +53,7 @@ async function setup(kind: "SQL" | "IndexedDB", accountKind: "imap" | "gmail" = 
   const store = kind === "IndexedDB" ? await IdbMailStore.open({ name: "synthetic-lifecycle", factory: new IDBFactory(), platform }) : undefined;
   const backend = new Backend({ googleClients: TEST_GOOGLE, dbPath: join(dir, "test.db"), store, platform: store ? platform : undefined, version: "test", providers: registry, cipher: plaintextCipher, autoSync, iconTransport: null, openExternal: async () => {} });
   const ids: number[] = [];
-  for (const name of ["first", "sibling"]) ids.push((await backend.store.accounts.create({ kind: accountKind, email: `${name}@example.test`, displayName: name, color: "indigo", providerConfig: { senderName: name }, now: 1 })).account.id);
+  for (const name of ["first", "sibling"]) ids.push((await backend.store.accounts.create({ kind: accountKind, email: `${name}@example.test`, displayName: name, color: "brown", providerConfig: { senderName: name }, now: 1 })).account.id);
   const [c, s] = createMemoryTransportPair();
   backend.connect(s, { clientId: "lifecycle", origin: "renderer" });
   const client = new RpcClient(c);
@@ -516,7 +516,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s account lifetime: X06 / S16 / S
     const t = await setup(kind);
     const lifetimes = (t.backend as unknown as { lifetimes: Map<number, unknown> }).lifetimes;
     for (let i = 0; i < 12; i++) {
-      const account = (await t.backend.store.accounts.create({ kind: "imap", email: `removed${i}@example.test`, displayName: "Removed", color: "indigo", now: i + 2 })).account;
+      const account = (await t.backend.store.accounts.create({ kind: "imap", email: `removed${i}@example.test`, displayName: "Removed", color: "brown", now: i + 2 })).account;
       await t.client.call("accounts.remove", { id: account.id });
       const install = vi.fn();
       await expect(t.backend.signedIn(account.id, install)).rejects.toMatchObject({ code: "NOT_FOUND" });

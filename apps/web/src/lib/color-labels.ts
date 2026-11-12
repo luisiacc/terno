@@ -7,7 +7,7 @@ export const COLOR_LABEL = {
   lime: "settings.color.lime",
   emerald: "settings.color.emerald",
   cyan: "settings.color.cyan",
-  indigo: "settings.color.indigo",
+  brown: "settings.color.brown",
   violet: "settings.color.violet",
   slate: "settings.color.slate",
 } as const satisfies Record<CategoryColor, string>;

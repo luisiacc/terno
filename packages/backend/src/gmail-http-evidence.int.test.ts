@@ -75,7 +75,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s raw provider headers stay out o
     });
     installDiag({ proc: "backend", version: "test", build: "test", channel: "dev", sink: { write: (entry) => records.push(entry), capture: (record) => records.push(record) } });
     let rpc = attach(); await rpc.call("app.bootstrap", {});
-    const { account } = await backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo", providerConfig: {}, now: 1 });
+    const { account } = await backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "brown", providerConfig: {}, now: 1 });
     await backend.setSecret(`account:${account.id}:refreshToken`, "synthetic-refresh");
     const provider = await backend.provider(account.id);
     if (!provider) throw new Error("Missing fixture provider");

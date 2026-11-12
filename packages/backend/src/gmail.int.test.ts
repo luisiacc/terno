@@ -304,7 +304,7 @@ function seed(google: FakeGoogle) {
 async function freshMailbox() {
   const ctx = await setup();
   ctx.google.refreshTokens.add("mailbox-fixture");
-  const { account } = await ctx.backend.store.accounts.create({ kind: "gmail", email: ctx.google.email, displayName: "Mail", color: "indigo", providerConfig: {}, secret: { key: "refreshToken", blob: await plaintextCipher.encrypt("mailbox-fixture") }, now: Date.now() });
+  const { account } = await ctx.backend.store.accounts.create({ kind: "gmail", email: ctx.google.email, displayName: "Mail", color: "brown", providerConfig: {}, secret: { key: "refreshToken", blob: await plaintextCipher.encrypt("mailbox-fixture") }, now: Date.now() });
   return { ...ctx, account };
 }
 

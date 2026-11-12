@@ -26,7 +26,8 @@ export interface Account {
   email: string;
   /** what Terno shows (sidebar, lists) */
   displayName: string;
-  color: string;
+  /** stored as written; read through categoryColor (plan 194) */
+  color: CategoryColor;
   /** the name on mail sent from it (From:) */
   senderName: string;
   /** added below what is written when sending from it ("-- \n" + signature); empty: none */
@@ -337,17 +338,31 @@ export type CountedView = (typeof COUNTED_VIEWS)[number];
 /** A counted folder's place in counts: "accountId:archive" */
 export const viewRef = (accountId: AccountId, view: CountedView) => `${accountId}:${view}`;
 
+/**
+ * What a category or an account may be colored. Plan 194: none is blue, so no palette's unread mark (its own hue, a test
+ * holds every palette to 30° from it) reads as a category or an account; brown took indigo's slot.
+ */
 export const CATEGORY_COLORS = [
   "rose",
   "amber",
   "lime",
   "emerald",
   "cyan",
-  "indigo",
+  "brown",
   "violet",
   "slate",
 ] as const;
 export type CategoryColor = (typeof CATEGORY_COLORS)[number];
+
+const KNOWN_COLORS: ReadonlySet<string> = new Set(CATEGORY_COLORS);
+/** Colors that were offered once, and the slot that took their place (so a user's colors stay as distinct as they were) */
+export const RETIRED_COLORS: Readonly<Record<string, CategoryColor>> = { indigo: "brown" };
+
+/** A stored or imported color as one we draw: itself, a retired one's successor, slate for anything else. */
+export function categoryColor(raw: unknown): CategoryColor {
+  if (typeof raw !== "string") return "slate";
+  return KNOWN_COLORS.has(raw) ? (raw as CategoryColor) : (RETIRED_COLORS[raw] ?? "slate");
+}
 
 export interface Counts {
   /** unread THREADS per view (only inbox is tracked as unread count) */

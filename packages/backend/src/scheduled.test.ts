@@ -38,7 +38,7 @@ async function setup() {
     await backend.stop().catch(() => {});
     rmSync(dir, { recursive: true, force: true });
   });
-  const account = createAccount(sqlDb(backend.store), { kind: "gmail", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
+  const account = createAccount(sqlDb(backend.store), { kind: "gmail", email: "me@example.com", displayName: "Me", color: "brown" }).id;
   const events: ScheduledSnapshot[] = [];
   const drafts: unknown[] = [];
   client.on("scheduled", (e) => events.push(e));

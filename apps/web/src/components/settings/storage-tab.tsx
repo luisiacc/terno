@@ -19,8 +19,8 @@ const WEB = import.meta.env.VITE_TARGET === "web";
 const device = () => t(WEB ? "storage.device.web" : "storage.device.mac");
 
 /** Each view's color, the same in the bar and its legend (category tokens: never a raw color). */
-const COLOR: Record<StorageBucket, CategoryColor> = { inbox: "indigo", archive: "cyan", sent: "emerald", spam: "amber", trash: "rose" };
-const BAR: Record<StorageBucket, string> = { inbox: "bg-cat-indigo", archive: "bg-cat-cyan", sent: "bg-cat-emerald", spam: "bg-cat-amber", trash: "bg-cat-rose" };
+const COLOR: Record<StorageBucket, CategoryColor> = { inbox: "violet", archive: "cyan", sent: "emerald", spam: "amber", trash: "rose" };
+const BAR: Record<StorageBucket, string> = { inbox: "bg-cat-violet", archive: "bg-cat-cyan", sent: "bg-cat-emerald", spam: "bg-cat-amber", trash: "bg-cat-rose" };
 
 const AGE_KEYS = { 30: "storage.age.30", 90: "storage.age.90", 180: "storage.age.180", 365: "storage.age.365", 730: "storage.age.730" } as const satisfies Record<StorageAge, string>;
 const ageLabel = (days: StorageAge) => t(AGE_KEYS[days]);

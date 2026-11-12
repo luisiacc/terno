@@ -60,7 +60,7 @@ describe("numbered SQL portability", () => {
     expect(await store.similar.roots([t, t, thread(ids[5]!), 999999])).toEqual([ids[2]]);
     expect(await store.similar.roots([thread(ids[4]!)])).toEqual([ids[4]]);
     expect((await store.categorize.threadFeatures([t])).size).toBe(1);
-    const category = await store.categories.create("Synthetic", "indigo");
+    const category = await store.categories.create("Synthetic", "brown");
     await store.categories.add({ categoryId: category.id, threadIds: [t], addedBy: "user", now: 0 });
     expect(db.all("SELECT thread_id FROM cls_examples")).toEqual([{ thread_id: t }]);
     expect(db.get("SELECT body_text FROM message_bodies WHERE message_id=?", ids[2]!)).toEqual({ body_text: "chosen body" });
@@ -212,7 +212,7 @@ describe("numbered SQL portability", () => {
     const { db, store, ingest, thread, gmail, other } = fixture();
     const ids = await ingest([msg({ accountId: gmail }), msg({ accountId: other })]);
     const t = thread(ids[0]!), foreign = thread(ids[1]!);
-    const category = await store.categories.create("Synthetic", "indigo");
+    const category = await store.categories.create("Synthetic", "brown");
     expect(await store.categorize.aiCandidate(t)).toBe(true);
     const suggestion = { threadId: t, categoryId: category.id, p: 0.9, explain: [], sender: "ana@example.com", encoded: new Uint32Array(), model: new CategorizerModel({ decayRef: 0 }), now: 0 };
     db.run("INSERT INTO thread_categories(thread_id,category_id,added_by,added_at) VALUES (?,?,'user',0)", foreign, category.id);

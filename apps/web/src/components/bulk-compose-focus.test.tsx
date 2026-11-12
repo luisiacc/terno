@@ -42,7 +42,7 @@ it.each([
   const { useApp, setApp } = await import("~/state/app");
   const { useAppearance } = await import("~/lib/appearance");
   const { useDrafts, forgetDraft } = await import("~/lib/drafts");
-  const account = { id: 1, kind: "imap", email: "me@example.test", displayName: "Me", signature: "", color: "blue", syncState: {} } as Account;
+  const account = { id: 1, kind: "imap", email: "me@example.test", displayName: "Me", signature: "", color: "brown", syncState: {} } as Account;
   const detail = { thread: { id: target, accountId: 1, subject: "Subject", categoryIds: [], inSpam: false, inTrash: false }, messages: [{ id: 3, accountId: 1, attachmentState: "complete", isSent: false, from: { name: "Sender", email: "sender@example.test" }, to: [], cc: [], subject: "Subject", date: 0, bodyText: "Body", attachments: [] }] } as unknown as ThreadDetail;
   const rows = (selection === "single" ? [{ id: 8 }] : [{ id: 7 }, { id: 8 }].slice(0, rowCount)) as ThreadSummary[];
   let resolve!: (value: ThreadDetail) => void; const waiting = new Promise<ThreadDetail>((r) => { resolve = r; });

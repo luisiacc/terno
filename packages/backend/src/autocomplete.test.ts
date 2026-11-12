@@ -36,7 +36,7 @@ async function setup() {
     await backend.stop().catch(() => {});
     rmSync(dir, { recursive: true, force: true });
   });
-  const accountId = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo", providerConfig: { senderName: "Luis" } }).id;
+  const accountId = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "brown", providerConfig: { senderName: "Luis" } }).id;
   return { backend, client: connect("renderer"), mcp: connect("mcp"), accountId, dir };
 }
 
@@ -110,7 +110,7 @@ describe("autocomplete over RPC", () => {
 
   it("removing an account resets the models: none of its people linger", async () => {
     const { backend, client, accountId } = await setup();
-    const other = createAccount(sqlDb(backend.store), { kind: "imap", email: "two@example.com", displayName: "Two", color: "indigo", providerConfig: {} }).id;
+    const other = createAccount(sqlDb(backend.store), { kind: "imap", email: "two@example.com", displayName: "Two", color: "brown", providerConfig: {} }).id;
     await backend.ingestSliced([msg({ accountId: other, from: { name: "Zed Zero", email: "zed@zero.io" }, to: [{ name: "", email: "two@example.com" }] }), msg({ accountId, from: ana, to: [me] })]);
     await client.call("compose.warm", {});
     expect((await client.call("compose.suggestRecipients", { query: "zed" })).items).toHaveLength(1);

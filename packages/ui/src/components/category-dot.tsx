@@ -7,9 +7,21 @@ const DOT: Record<CategoryColor, string> = {
   lime: "bg-cat-lime",
   emerald: "bg-cat-emerald",
   cyan: "bg-cat-cyan",
-  indigo: "bg-cat-indigo",
+  brown: "bg-cat-brown",
   violet: "bg-cat-violet",
   slate: "bg-cat-slate",
+}
+
+// plan 194: an account's mark is a ring, a category's a dot, so the two never read as one thing where they share a color
+const RING: Record<CategoryColor, string> = {
+  rose: "ring-cat-rose",
+  amber: "ring-cat-amber",
+  lime: "ring-cat-lime",
+  emerald: "ring-cat-emerald",
+  cyan: "ring-cat-cyan",
+  brown: "ring-cat-brown",
+  violet: "ring-cat-violet",
+  slate: "ring-cat-slate",
 }
 
 const SOFT: Record<CategoryColor, string> = {
@@ -18,14 +30,19 @@ const SOFT: Record<CategoryColor, string> = {
   lime: "bg-cat-lime/15 text-cat-lime-ink",
   emerald: "bg-cat-emerald/15 text-cat-emerald-ink",
   cyan: "bg-cat-cyan/15 text-cat-cyan-ink",
-  indigo: "bg-cat-indigo/15 text-cat-indigo-ink",
+  brown: "bg-cat-brown/15 text-cat-brown-ink",
   violet: "bg-cat-violet/15 text-cat-violet-ink",
   slate: "bg-cat-slate/15 text-cat-slate-ink",
 }
 
-/** Small colored dot used for categories and accounts. */
+/** A category's mark: a small filled dot. */
 function CategoryDot({ color, className, ...props }: { color: CategoryColor } & React.ComponentProps<"span">) {
   return <span data-slot="category-dot" aria-hidden {...props} className={cn("inline-block size-2 shrink-0 rounded-full", DOT[color] ?? DOT.slate, className)} />
+}
+
+/** An account's mark: the dot's box, hollow, a ring in the account's color. */
+function AccountRing({ color, className, ...props }: { color: CategoryColor } & React.ComponentProps<"span">) {
+  return <span data-slot="account-ring" aria-hidden {...props} className={cn("inline-block size-2 shrink-0 rounded-full ring-[1.5px] ring-inset", RING[color] ?? RING.slate, className)} />
 }
 
 /** Soft pill with a category name. */
@@ -37,4 +54,4 @@ function CategoryBadge({ color, children, className, ...props }: { color: Catego
   )
 }
 
-export { CategoryDot, CategoryBadge }
+export { AccountRing, CategoryDot, CategoryBadge }

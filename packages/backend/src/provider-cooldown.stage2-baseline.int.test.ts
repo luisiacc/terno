@@ -91,7 +91,7 @@ async function fixture(mode: Mode, status: 200 | 429) {
     return backend;
   };
   const seed = await open();
-  const { account } = await seed.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo", providerConfig: {}, now: 1 });
+  const { account } = await seed.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "brown", providerConfig: {}, now: 1 });
   await seed.setSecret(`account:${account.id}:refreshToken`, "synthetic-refresh");
   const stamp = await seed.store.accounts.stamp(account.id);
   if (!stamp) throw new Error("Synthetic account stamp missing");

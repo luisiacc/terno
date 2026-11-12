@@ -12,7 +12,7 @@ import { sqlDb, type DevServer } from "../../backend-dev/src/server";
 import { expect, fresh, rows, scenario, test, openReview } from "./fixtures";
 
 const ctx = { clientId: "setup", origin: "dev" as const };
-const COLOR_NAMES = { rose: "Rose", amber: "Amber", lime: "Lime", emerald: "Emerald", cyan: "Cyan", indigo: "Indigo", violet: "Violet", slate: "Slate" } as const;
+const COLOR_NAMES = { rose: "Rose", amber: "Amber", lime: "Lime", emerald: "Emerald", cyan: "Cyan", brown: "Brown", violet: "Violet", slate: "Slate" } as const;
 const TABS = [
   ["general", "General"],
   ["appearance", "Appearance"],

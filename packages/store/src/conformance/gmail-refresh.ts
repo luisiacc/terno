@@ -9,7 +9,7 @@ export function defineGmailRefreshConformance(name: string, harness: StoreHarnes
     afterEach(async () => { for (const store of stores.splice(0)) if (store.isOpen) await store.close(); });
     const setup = async () => {
       const store = await harness.open(); stores.push(store);
-      const { account } = await store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo", now: 1 });
+      const { account } = await store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "brown", now: 1 });
       await store.sync.beginObservation(account.id, { authoritativeFlags: true });
       await store.accounts.setCursor(account.id, { historyId: "100" });
       return { store, accountId: account.id };
@@ -50,7 +50,7 @@ export function defineGmailRefreshConformance(name: string, harness: StoreHarnes
     });
     it("does not treat another account's observation as fresh admission evidence", async () => {
       const { store, accountId } = await setup();
-      const { account } = await store.accounts.create({ kind: "gmail", email: "peer@example.test", displayName: "Peer", color: "indigo", now: 2 });
+      const { account } = await store.accounts.create({ kind: "gmail", email: "peer@example.test", displayName: "Peer", color: "brown", now: 2 });
       const peerObservation = (await store.sync.beginObservation(account.id, { authoritativeFlags: true }))!;
       await store.sync.ingest([msg({ accountId, providerMsgId: "cross-account", attachments: [] })], { applyFilters: false, now: 3, classifier: null, observation: peerObservation });
       expect((await pending(store, accountId)).map((row) => row.providerMsgId)).toEqual(["cross-account"]);
@@ -60,7 +60,7 @@ export function defineGmailRefreshConformance(name: string, harness: StoreHarnes
       const { store, accountId } = await setup();
       const old = (await store.sync.beginObservation(accountId, { authoritativeFlags: true }))!;
       await store.accounts.remove(accountId);
-      const { account } = await store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Replacement", color: "indigo", now: 2 });
+      const { account } = await store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Replacement", color: "brown", now: 2 });
       expect(account.id).not.toBe(accountId);
       await store.sync.beginObservation(account.id, { authoritativeFlags: true });
       await store.accounts.setCursor(account.id, { historyId: "100" });

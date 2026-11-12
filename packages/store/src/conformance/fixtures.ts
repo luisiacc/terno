@@ -40,7 +40,7 @@ export function msg(over: Partial<IncomingMessage> & { accountId: number }): Inc
 export async function withAccounts(store: MailStore, n = 2): Promise<number[]> {
   const ids: number[] = [];
   for (let i = 0; i < n; i++) {
-    const { account } = await store.accounts.create({ kind: i % 2 ? "imap" : "gmail", email: `me${i}@example.com`, displayName: `Account ${i}`, color: "indigo", now: 0 });
+    const { account } = await store.accounts.create({ kind: i % 2 ? "imap" : "gmail", email: `me${i}@example.com`, displayName: `Account ${i}`, color: "brown", now: 0 });
     ids.push(account.id);
   }
   return ids;

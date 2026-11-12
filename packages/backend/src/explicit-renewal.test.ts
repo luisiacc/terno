@@ -331,7 +331,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s deliberate credential renewal",
     const t = await setup(kind);
     for (const authScope of [null, "send"] as const) {
       const config = { imap: { host: "imap.example.test", port: 993, secure: true, user: "imap@example.test" }, smtp: { host: "smtp.example.test", port: 465, secure: true, user: "imap@example.test" }, senderName: "Synthetic", signature: "Saved signature" };
-      const { account } = await t.backend.store.accounts.create({ kind: "imap", email: `imap-${authScope ?? "read"}@example.test`, displayName: "IMAP", color: "indigo", providerConfig: config, secret: { key: "password", blob: await plaintextCipher.encrypt("old-password") }, now: Date.now() });
+      const { account } = await t.backend.store.accounts.create({ kind: "imap", email: `imap-${authScope ?? "read"}@example.test`, displayName: "IMAP", color: "brown", providerConfig: config, secret: { key: "password", blob: await plaintextCipher.encrypt("old-password") }, now: Date.now() });
       await t.backend.store.accounts.setSyncState(account.id, { status: "error", authRequired: true, authScope, lastError: "preserved failure" });
       const before = await t.backend.store.accounts.get(account.id), owner = await t.backend.store.owner.get();
       const name = `account:${account.id}:password`, get = t.backend.store.secrets.get.bind(t.backend.store.secrets), blob = await get(name);

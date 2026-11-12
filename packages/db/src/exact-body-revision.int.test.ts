@@ -21,7 +21,7 @@ for (const consumer of ["search", "filter", "category"] as const) it(`fences a y
     const [accountId] = await withAccounts(store, 1);
     const inserted = await store.sync.ingest([msg({ accountId: accountId!, bodyText: "old exact phrase ".repeat(5000), bodyState: "full" })], { now: 1, classifier: null, applyFilters: false });
     const id = inserted.touched[0]!, message = (await store.threads.get(id, { bodyFormat: "parts" }))!.messages[0]!;
-    const category = await store.categories.create("synthetic", "indigo"), rule = { match: "all" as const, conditions: [{ field: "body" as const, op: "contains" as const, value: "new exact phrase" }], actions: [{ type: "star" as const }] };
+    const category = await store.categories.create("synthetic", "brown"), rule = { match: "all" as const, conditions: [{ field: "body" as const, op: "contains" as const, value: "new exact phrase" }], actions: [{ type: "star" as const }] };
     const consume = async (): Promise<number[]> => consumer === "search" ? (await store.threads.searchText({ query: '"new exact phrase"', now: 2, limit: 10 })).items.map((t) => t.id) : consumer === "filter" ? (await store.filters.preview(rule, 2, 10)).sample.map((t) => t.id) : store.categorize.resolveScope(category.id, { kind: "query", query: '"new exact phrase"' }, 2, 10);
     sourceRead = false; armed = true;
     pending = consume(); const outcome = pending.then((ids) => ({ ids }), (error: unknown) => ({ error }));

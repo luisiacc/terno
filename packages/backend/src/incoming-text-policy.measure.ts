@@ -12,7 +12,7 @@ it("measures bounded current parse/transfer/clone/native store costs without cho
   const store = new SqlMailStore(openDatabase(join(dir, "test.db")));
   const worker = createNodeIncomingProcessor();
   try {
-    const { account } = await store.accounts.create({ kind: "imap", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo", now: 1 });
+    const { account } = await store.accounts.create({ kind: "imap", email: "synthetic@example.test", displayName: "Synthetic", color: "brown", now: 1 });
     await store.sync.ingest(Array.from({ length: 500 }, () => msg({ accountId: account.id })), { applyFilters: false, now: 1, classifier: null });
     for (const value of ["missing one", "missing two", "missing three", "missing four"]) await store.filters.save({ name: "synthetic", enabled: true, source: "manual", rule: { match: "all", conditions: [{ field: "body", op: "contains", value }], actions: [{ type: "archive" }] } }, 1);
     const records: unknown[] = [];
@@ -53,7 +53,7 @@ it.each([65536, 131072])("measures the exact proposed %s-unit boundary once, inc
     const store = new SqlMailStore(openDatabase(join(dir, "test.db")));
     const worker = createNodeIncomingProcessor();
     try {
-      const { account } = await store.accounts.create({ kind: "imap", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo", now: 1 });
+      const { account } = await store.accounts.create({ kind: "imap", email: "synthetic@example.test", displayName: "Synthetic", color: "brown", now: 1 });
       await store.sync.ingest(Array.from({ length: 500 }, () => msg({ accountId: account.id })), { applyFilters: false, now: 1, classifier: null });
       for (const value of ["missing one", "missing two", "missing three", "missing four"]) await store.filters.save({ name: "synthetic", enabled: true, source: "manual", rule: { match: "all", conditions: [{ field: "body", op: "contains", value }], actions: [{ type: "archive" }] } }, 1);
       const unit = shape === "words" ? "alpha beta gamma " : shape === "combining" ? "e\u0301 alpha " : "x";

@@ -47,7 +47,7 @@ const { CommandPalette } = await import("./command-palette");
 const { useList } = await import("~/state/list");
 const { usePins } = await import("~/state/pins");
 
-const categories = (n: number): Category[] => Array.from({ length: n }, (_, i) => ({ id: i + 1, name: `Category ${i + 1}`, color: "indigo", position: i, autoApply: false, showInInbox: true }) as Category);
+const categories = (n: number): Category[] => Array.from({ length: n }, (_, i) => ({ id: i + 1, name: `Category ${i + 1}`, color: "brown", position: i, autoApply: false, showInInbox: true }) as Category);
 
 async function type(text: string) {
   const input = document.querySelector<HTMLInputElement>("[data-testid=palette-input]")!;
@@ -103,7 +103,7 @@ it("Create and move moves the conversation it was picked for, not the one select
   await act(async () => document.querySelector<HTMLElement>("[data-testid=palette-create]")!.click());
   // the selection moves on while the category is being created
   await act(async () => setApp({ selectedId: 8 }));
-  await act(async () => rpc.create!({ id: 99, name: "Nueva", color: "indigo", position: 3, autoApply: false, showInInbox: true }));
+  await act(async () => rpc.create!({ id: 99, name: "Nueva", color: "brown", position: 3, autoApply: false, showInInbox: true }));
   expect(moves).toEqual([{ categoryId: 99, ids: [7] }]);
 });
 

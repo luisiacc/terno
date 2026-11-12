@@ -25,7 +25,7 @@ for (const adapter of ["SQL", "IDB"] as const) describe(`${adapter} durable Sent
       stores.push(s); return s;
     };
     const store = await open();
-    const { account } = await store.accounts.create({ kind: "imap", email: "sender@example.test", displayName: "Sender", color: "indigo", providerConfig: { appendToSent: true }, now: 1 });
+    const { account } = await store.accounts.create({ kind: "imap", email: "sender@example.test", displayName: "Sender", color: "brown", providerConfig: { appendToSent: true }, now: 1 });
     const command = { accountId: account.id, to: [{ email: "recipient@example.test", name: "" }], cc: [], bcc: [], subject: "Once", bodyText: "Synthetic", recordReply: false, now: 2 };
     return { store, open, account, command };
   }

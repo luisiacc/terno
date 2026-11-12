@@ -88,7 +88,7 @@ function incoming(accountId: number, over: Partial<IncomingMessage> = {}): Incom
 describe("categorizer: training hooks", () => {
   it("UI adds train the in-memory model only after their transaction commits", async () => {
     const { backend, client } = await setup();
-    const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
+    const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "brown" }).id;
     const cat = createCategory(sqlDb(backend.store), "Facturas", "amber").id;
     const r = ingestMessages(sqlDb(backend.store), [incoming(acct), incoming(acct), incoming(acct)]);
     const threads = [...r.touchedThreads];
@@ -114,7 +114,7 @@ describe("categorizer: training hooks", () => {
 
   it("snackbar adds are bulk (half weight) and the whole batch undoes exactly", async () => {
     const { backend, client } = await setup();
-    const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
+    const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "brown" }).id;
     const cat = createCategory(sqlDb(backend.store), "Facturas", "amber").id;
     const threads = [...ingestMessages(sqlDb(backend.store), [incoming(acct), incoming(acct), incoming(acct)]).touchedThreads];
     await backend.categorizer.rebuildNow();
@@ -133,7 +133,7 @@ describe("categorizer: training hooks", () => {
 
   it("removing or undoing returns old uncategorized threads to the background", async () => {
     const { backend, client } = await setup();
-    const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
+    const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "brown" }).id;
     const cat = createCategory(sqlDb(backend.store), "Facturas", "amber").id;
     const threads = [...ingestMessages(sqlDb(backend.store), Array.from({ length: 6 }, (_, i) => incoming(acct, { date: NOW - (10 + i) * DAY })), NOW).touchedThreads];
     await backend.categorizer.rebuildNow();
@@ -153,7 +153,7 @@ describe("categorizer: training hooks", () => {
 
   it("plan 77: a leave's threads go back to the background when it is trained, so a move resumed after a crash still sends them", async () => {
     const { backend, client } = await setup();
-    const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
+    const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "brown" }).id;
     const cat = createCategory(sqlDb(backend.store), "Facturas", "amber").id;
     const threads = [...ingestMessages(sqlDb(backend.store), Array.from({ length: 3 }, (_, i) => incoming(acct, { date: NOW - (10 + i) * DAY })), NOW).touchedThreads];
     await backend.categorizer.rebuildNow();
@@ -172,7 +172,7 @@ describe("categorizer: training hooks", () => {
 
   it("an add that changes nothing returns no undo handle", async () => {
     const { backend, client } = await setup();
-    const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
+    const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "brown" }).id;
     const cat = createCategory(sqlDb(backend.store), "Facturas", "amber").id;
     const [t] = [...ingestMessages(sqlDb(backend.store), [incoming(acct)]).touchedThreads];
     await client.call("categories.addThreads", { categoryId: cat, threadIds: [t!] });
@@ -182,7 +182,7 @@ describe("categorizer: training hooks", () => {
 
   it("plan 77: everything from a sender leaves a category (a user removal each); other senders and categories stay; undo is exact", async () => {
     const { backend, client } = await setup();
-    const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
+    const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "brown" }).id;
     const cat = createCategory(sqlDb(backend.store), "Facturas", "amber").id;
     const other = createCategory(sqlDb(backend.store), "Viajes", "cyan").id;
     const rappi = { name: "Rappi", email: "recibos@rappi.com" };
@@ -220,7 +220,7 @@ describe("categorizer: training hooks", () => {
 
   it("plan 77: a removal that fails partway still names its batch, and its undo takes back what was done", async () => {
     const { backend, client } = await setup();
-    const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
+    const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "brown" }).id;
     const cat = createCategory(sqlDb(backend.store), "Facturas", "amber").id;
     const rappi = { name: "Rappi", email: "recibos@rappi.com" };
     const mine = [...ingestMessages(sqlDb(backend.store), Array.from({ length: 4 }, () => incoming(acct, { from: rappi }))).touchedThreads];
@@ -241,7 +241,7 @@ describe("categorizer: training hooks", () => {
   describe("plan 80: always add to a category", () => {
     async function world() {
       const { backend, client } = await setup();
-      const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
+      const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "brown" }).id;
       const cat = createCategory(sqlDb(backend.store), "Facturas", "amber").id;
       const ingest = (over: Partial<IncomingMessage>[]) => [...ingestMessages(sqlDb(backend.store), over.map((o) => incoming(acct, o))).touchedThreads];
       const members = () => sqlDb(backend.store).all<{ thread_id: number }>("SELECT thread_id FROM thread_categories WHERE category_id = ? ORDER BY thread_id", cat).map((r) => r.thread_id);
@@ -483,7 +483,7 @@ describe("categorizer: training hooks", () => {
 
   it("a thread merge reconciles the model after commit (the losing example is untrained)", async () => {
     const { backend, client } = await setup();
-    const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
+    const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "brown" }).id;
     const cat = createCategory(sqlDb(backend.store), "Clientes", "emerald").id;
     const a = incoming(acct, { rfcMessageId: "ra@x" });
     const c = incoming(acct, { rfcMessageId: "rc@x", references: ["rb@x"] });
@@ -597,7 +597,7 @@ describe("categorizer: auto-apply at ingestion", () => {
     seedDirs.push(seedDir);
     const path = join(seedDir, "terno.db");
     const db = openDatabase(path);
-    const acct = createAccount(db, { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
+    const acct = createAccount(db, { kind: "imap", email: "me@example.com", displayName: "Me", color: "brown" }).id;
     const cat = createCategory(db, "Facturas", "amber").id;
     const old: IncomingMessage[] = [];
     SENDERS.forEach((s, k) => {
@@ -1619,7 +1619,7 @@ describe("categorizer: auto-apply at ingestion", () => {
 describe("categorize RPCs: bulk apply, undo, predictions, suggestions", () => {
   async function mailbox() {
     const { backend, client } = await setup();
-    const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
+    const acct = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "brown" }).id;
     const cat = createCategory(sqlDb(backend.store), "Lecturas", "violet").id;
     return { backend, client, acct, cat };
   }

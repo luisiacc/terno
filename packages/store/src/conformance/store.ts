@@ -1,4 +1,4 @@
-import { CategorizerModel, categoryRule, evaluateRule, normalizeText, subjectGeneralizes, subjectPattern, termsQuery, tokenize, VIEWS, waitingCutoff, type FilterRule, type RuleMessage, type SimilarAction, type SimilarScope, type ThreadAction } from "@terno/core";
+import { CategorizerModel, categoryRule, evaluateRule, normalizeText, subjectGeneralizes, subjectPattern, termsQuery, tokenize, VIEWS, waitingCutoff, type FilterRule, type RuleMessage, type SimilarAction, type SimilarScope, type ThreadAction, type CategoryColor } from "@terno/core";
 import { generateDataset } from "@terno/mock-data";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { MailStore, SnapshotMessage, StoreSnapshot } from "../mail-store";
@@ -243,7 +243,7 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         await ingest(store, [msg({ accountId: a!, providerMsgId: "x", rfcMessageId: "x@x" }), msg({ accountId: a!, providerMsgId: "y", rfcMessageId: "y@x" })]);
         const [tx, ty] = [await threadOf(store, "x"), await threadOf(store, "y")];
         expect(tx).not.toBe(ty);
-        const work = await store.categories.create("Work", "indigo");
+        const work = await store.categories.create("Work", "brown");
         const travel = await store.categories.create("Travel", "cyan");
         await store.categories.add({ categoryId: work.id, threadIds: [tx], addedBy: "user", now: NOW });
         await store.categories.add({ categoryId: travel.id, threadIds: [ty], addedBy: "user", now: NOW });
@@ -1577,7 +1577,7 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         expect((await resolveAll(store, { ...scope, subject: "Tu pedido está en camino" }, "archive", [])).ids).toEqual([exact]);
         // two targets with different numbers share the subject
         expect((await store.similar.offers([a, b], "archive")).offers.find((o) => o.scope.kind === "subject")).toMatchObject({ count: 2 });
-        const category = await store.categories.create("Pedidos", "indigo");
+        const category = await store.categories.create("Pedidos", "brown");
         expect(sorted(await store.categorize.resolveScope(category.id, scope, NOW))).toEqual(sorted([a, b]));
         expect(await store.categorize.countScope(category.id, scope, NOW)).toEqual({ count: 2, capped: false });
         // the filter says the same: its pattern matches both, and not the cancelled one
@@ -1967,8 +1967,8 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
       it("owner confirmation checks the complete stamped credential decision without mutation", async () => {
         let store = await fresh();
         const claim = { displayName: "Synthetic", provider: "gmail" as const, verifiedBy: "google_oauth" as const, evidence: { googleSub: "synthetic", emailVerified: true } };
-        await store.accounts.create({ kind: "gmail", email: "owner@example.test", displayName: "Synthetic", color: "indigo", providerConfig: {}, ownerClaim: claim, now: NOW });
-        const { account } = await store.accounts.create({ kind: "gmail", email: "target@example.test", displayName: "Synthetic", color: "indigo", providerConfig: {}, now: NOW });
+        await store.accounts.create({ kind: "gmail", email: "owner@example.test", displayName: "Synthetic", color: "brown", providerConfig: {}, ownerClaim: claim, now: NOW });
+        const { account } = await store.accounts.create({ kind: "gmail", email: "target@example.test", displayName: "Synthetic", color: "brown", providerConfig: {}, now: NOW });
         const stamp = (await store.accounts.stamp(account.id))!, name = `account:${account.id}:refreshToken`;
         await store.secrets.put(name, Uint8Array.of(1));
         const request = { claim: { ...claim, accountId: account.id, email: account.email }, stamp, secret: { kind: "replace" as const, name, expectedBlob: Uint8Array.of(1), blob: Uint8Array.of(2) }, reason: "synthetic", now: NOW + 1 };
@@ -1996,7 +1996,7 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
       it("owner eligibility refuses or throws before any owner or secret mutation", async () => {
         let store = await fresh();
         const claim = { displayName: "Synthetic", provider: "gmail" as const, verifiedBy: "google_oauth" as const, evidence: { googleSub: "synthetic", emailVerified: true } };
-        const create = (email: string) => store.accounts.create({ kind: "gmail", email, displayName: "Synthetic", color: "indigo", providerConfig: {}, ownerClaim: claim, now: NOW });
+        const create = (email: string) => store.accounts.create({ kind: "gmail", email, displayName: "Synthetic", color: "brown", providerConfig: {}, ownerClaim: claim, now: NOW });
         await create("owner@example.test"); const { account } = await create("target@example.test");
         const owner = await store.owner.get(), stamp = (await store.accounts.stamp(account.id))!, name = `account:${account.id}:refreshToken`;
         await store.secrets.put(name, Uint8Array.of(1));
@@ -2075,7 +2075,7 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
       it("reorder sets every position in one unit, keeps unlisted ones after, and survives a reopen", async () => {
         let store = await fresh();
         const ids: number[] = [];
-        for (const name of ["Facturas", "Clientes", "Viajes", "Lecturas"]) ids.push((await store.categories.create(name, "indigo")).id);
+        for (const name of ["Facturas", "Clientes", "Viajes", "Lecturas"]) ids.push((await store.categories.create(name, "brown")).id);
         const [f, c, v, l] = ids as [number, number, number, number];
         expect((await store.categories.reorder([v, f, 9999])).map((x) => x.name)).toEqual(["Viajes", "Facturas", "Clientes", "Lecturas"]);
         expect((await store.categories.list()).map((x) => x.position)).toEqual([0, 1, 2, 3]);
@@ -2083,7 +2083,22 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         await store.categories.update(c, { name: "Clientes VIP", color: "rose" });
         store = await harness.reopen(store);
         open.push(store);
-        expect((await store.categories.list()).map((x) => [x.name, x.color])).toEqual([["Lecturas", "indigo"], ["Clientes VIP", "rose"], ["Viajes", "indigo"], ["Facturas", "indigo"]]);
+        expect((await store.categories.list()).map((x) => [x.name, x.color])).toEqual([["Lecturas", "brown"], ["Clientes VIP", "rose"], ["Viajes", "brown"], ["Facturas", "brown"]]);
+      });
+    });
+
+    describe("colors offered once (plan 194)", () => {
+      it("an account and a category stored as indigo read back as brown, its slot, and stay that way after a reopen", async () => {
+        let store = await fresh();
+        // as an older build wrote them: the write path stores what it's given
+        const { account } = await store.accounts.create({ kind: "imap", email: "old@example.test", displayName: "Old", color: "indigo", providerConfig: {}, now: 1 });
+        const category = await store.categories.create("Old", "indigo" as CategoryColor);
+        expect(category.color).toBe("brown");
+        expect(account.color).toBe("brown");
+        store = await harness.reopen(store);
+        open.push(store);
+        expect((await store.categories.list()).find((c) => c.id === category.id)?.color).toBe("brown");
+        expect((await store.accounts.list()).find((a) => a.id === account.id)?.color).toBe("brown");
       });
     });
 
@@ -2097,7 +2112,7 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
         open.push(store);
         expect((await store.accounts.list()).map((x) => x.id)).toEqual([b, c, a]);
         // a new one goes last
-        const { account: d } = await store.accounts.create({ kind: "imap", email: "new@example.com", displayName: "New", color: "indigo", now: 0 });
+        const { account: d } = await store.accounts.create({ kind: "imap", email: "new@example.com", displayName: "New", color: "brown", now: 0 });
         expect((await store.accounts.list()).at(-1)!.id).toBe(d.id);
       });
     });

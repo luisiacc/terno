@@ -23,7 +23,7 @@ vi.mock("~/rpc/connection", () => ({
 
 const stored = new Map<number, Partial<Account>>();
 const strip = ({ id: _id, ...rest }: Record<string, unknown>) => rest;
-const base = (id: number): Account => ({ id, kind: "imap", email: `a${id}@example.com`, displayName: `A${id}`, color: "indigo", senderName: "", signature: "", syncWindowDays: null, syncState: { status: "idle", syncedSince: null, bodiesPending: 0, lastError: null, lastSyncAt: null } });
+const base = (id: number): Account => ({ id, kind: "imap", email: `a${id}@example.com`, displayName: `A${id}`, color: "brown", senderName: "", signature: "", syncWindowDays: null, syncState: { status: "idle", syncedSince: null, bodiesPending: 0, lastError: null, lastSyncAt: null } });
 
 const { patchAccount, resetAccountEdits, withPendingEdits } = await import("./accounts");
 const { getApp, setApp } = await import("~/state/app");

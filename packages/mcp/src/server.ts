@@ -332,7 +332,7 @@ export function createMcpServer(app: AppConnection, version = "0.1.0"): McpServe
           const b = await bootstrap();
           id = b.categories.find((c) => c.name.toLowerCase() === categoryName.toLowerCase())?.id;
           if (!id && !remove) {
-            id = (await app.call("categories.create", { name: categoryName, color: "indigo" })).id;
+            id = (await app.call("categories.create", { name: categoryName, color: "brown" })).id;
             boot = null;
           }
         }

@@ -7,7 +7,7 @@ import {
   type Capabilities,
   type CompatiblePreset,
 } from "@terno/ai";
-import { AI_PROVIDER_IDS, canonicalThemeId, COMPATIBLE_PRESETS, DEFAULT_DESIGN, DESIGN_IDS, DESIGN_PALETTE, DEV_AI_PROVIDERS, fitsMode, isDesignId, JEV_DEFAULT_MODEL, SUMMARY_DEFAULT_MODEL, textRef, type DevAiKeys, themeMode, type AiTaskName, type AiTaskTarget, type CustomTheme, type TextRef, type ThemeMode } from "@terno/core";
+import { AI_PROVIDER_IDS, canonicalThemeId, COMPATIBLE_PRESETS, DEFAULT_DESIGN, DESIGN_IDS, DESIGN_PALETTE, DEV_AI_PROVIDERS, fitsMode, isDesignId, JEV_DEFAULT_MODEL, SUMMARY_DEFAULT_MODEL, textRef, type DevAiKeys, themeMode, upgradeThemeTokens, type AiTaskName, type AiTaskTarget, type CustomTheme, type TextRef, type ThemeMode } from "@terno/core";
 import type { AiProfile, AiSettings, AppSettings, SettingsPatch } from "@terno/core/rpc";
 import { DEFAULT_AGENTS, DEFAULT_TODAY, FAVORITES_MAX, NUDGE_DEFAULT, UNDO_SEND_DEFAULT, type AgentAccess, type AgentsSetting, type FavoriteFolder } from "@terno/core";
 import { isLanguageSetting, L, type Localized } from "@terno/i18n";
@@ -446,7 +446,8 @@ function languageOf(s: StoredSettings): AppSettings["language"] {
  * A style's kept palettes read like the slots, and a style that's gone goes.
  */
 function resolveThemes(g: General): General {
-  const customThemes = g.customThemes.map((t) => ({ ...t, extends: canonicalThemeId(t.extends) as CustomTheme["extends"] }));
+  // (plan 194: and a retired token under its successor, so a theme saved before keeps its colors)
+  const customThemes = g.customThemes.map((t) => ({ ...t, extends: canonicalThemeId(t.extends) as CustomTheme["extends"], tokens: upgradeThemeTokens(t.tokens) }));
   const pick = (id: string, mode: ThemeMode) => (fitsMode(canonicalThemeId(id), mode, customThemes) ? canonicalThemeId(id) : DESIGN_PALETTE);
   const previous = (id: string | null, mode: ThemeMode) => (id && id !== DESIGN_PALETTE && themeMode(canonicalThemeId(id), customThemes) === mode ? canonicalThemeId(id) : null);
   return {

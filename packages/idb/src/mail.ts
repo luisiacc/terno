@@ -35,6 +35,7 @@ import {
   type AttachmentInfo,
   type Category,
   type CategoryColor,
+  categoryColor,
   type Counts,
   filterState,
   sameFilterState,
@@ -1508,7 +1509,7 @@ const toAccount = (r: R): Account => ({
   kind: r.kind,
   email: r.email,
   displayName: r.display_name,
-  color: r.color,
+  color: categoryColor(r.color),
   ...accountPrefs(JSON.parse(r.provider_config) as AccountPrefs, r.display_name),
   syncState: { ...DEFAULT_SYNC, ...JSON.parse(r.sync_state) },
 });
@@ -1566,7 +1567,7 @@ export function reorderAccounts(c: Ctx, ids: readonly number[]): Account[] {
 export function listCategories(c: Ctx): Category[] {
   return [...T(c, "categories").all()].sort(byPosition).map((r) => {
     const forward = readRuleState(r.forward_json);
-    return { id: r.id, name: r.name, color: r.color, position: r.position, autoApply: r.auto_apply === 1, showInInbox: r.show_in_inbox !== 0, ...(forward && { forward: { addresses: forward.addresses ?? [], enabled: forward.enabled } }) };
+    return { id: r.id, name: r.name, color: categoryColor(r.color), position: r.position, autoApply: r.auto_apply === 1, showInInbox: r.show_in_inbox !== 0, ...(forward && { forward: { addresses: forward.addresses ?? [], enabled: forward.enabled } }) };
   });
 }
 
@@ -1576,7 +1577,7 @@ export function createCategory(c: Ctx, name: string, color: CategoryColor, { sho
   for (const r of categories.all()) position = Math.max(position, r.position);
   const row: R = { id: nextCategoryId(c.db), name, color, position: position + 1, auto_apply: 1, show_in_inbox: showInInbox ? 1 : 0 };
   categories.insert(row);
-  return { id: row.id, name, color, position: position + 1, autoApply: true, showInInbox };
+  return { id: row.id, name, color: categoryColor(color), position: position + 1, autoApply: true, showInInbox };
 }
 
 export function updateCategory(c: Ctx, id: number, patch: { name?: string; color?: CategoryColor; position?: number; autoApply?: boolean; showInInbox?: boolean }): Category | null {

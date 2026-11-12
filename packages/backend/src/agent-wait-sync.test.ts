@@ -79,7 +79,7 @@ async function setup(kinds: ("quick" | "push")[]) {
   await backend.store.ready;
   const ids = kinds.map((kind, i) => {
     byEmail.set(`a${i}@example.com`, kind);
-    return createAccount(sqlDb(backend.store), { kind: "imap", email: `a${i}@example.com`, displayName: `A${i}`, color: "indigo", providerConfig: {} }).id;
+    return createAccount(sqlDb(backend.store), { kind: "imap", email: `a${i}@example.com`, displayName: `A${i}`, color: "brown", providerConfig: {} }).id;
   });
   const connect = (clientId: string, origin: "renderer" | "mcp") => {
     const [c, s] = createMemoryTransportPair();

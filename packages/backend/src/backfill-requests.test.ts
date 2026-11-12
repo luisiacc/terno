@@ -24,7 +24,7 @@ async function setup() {
   const client = new RpcClient(c);
   cleanups.push(async () => { await backend.stop(); rmSync(dir, { recursive: true, force: true }); });
   await backend.ready;
-  const make = (email: string, prefs: AccountPrefs = {}) => createAccount(sqlDb(backend.store), { kind: "imap", email, displayName: email, color: "indigo", providerConfig: prefs }).id;
+  const make = (email: string, prefs: AccountPrefs = {}) => createAccount(sqlDb(backend.store), { kind: "imap", email, displayName: email, color: "brown", providerConfig: prefs }).id;
   const request = async (id: number) => (await backend.store.accounts.config<AccountPrefs>(id))?.config.backfill ?? null;
   return { backend, client, make, request, tick: (ms: number) => { now += ms; } };
 }
@@ -89,7 +89,7 @@ it("plan 102: a first sync paused between chunks stays a first sync, and its nex
   const backend = new Backend({ dbPath: join(dir, "t.db"), version: "t", cipher: plaintextCipher, providers: registry, autoSync: false });
   cleanups.push(async () => { await backend.stop(); rmSync(dir, { recursive: true, force: true }); });
   await backend.ready;
-  const id = createAccount(sqlDb(backend.store), { kind: "gmail", email: "a@example.com", displayName: "A", color: "indigo", providerConfig: {} }).id;
+  const id = createAccount(sqlDb(backend.store), { kind: "gmail", email: "a@example.com", displayName: "A", color: "brown", providerConfig: {} }).id;
   await backend.syncAccount(id);
   // between chunks: still "Downloading your mail" (syncing, never synced)
   expect((await backend.store.accounts.get(id))?.syncState).toMatchObject({ status: "syncing", lastSyncAt: null });
@@ -111,7 +111,7 @@ async function chunked(sync: (sink: import("@terno/mail").SyncSink, pass: number
   self = new Backend({ dbPath: join(dir, "t.db"), version: "t", cipher: plaintextCipher, providers: registry, autoSync: true, syncIntervalMs: 3_600_000 });
   cleanups.push(async () => { await self.stop(); rmSync(dir, { recursive: true, force: true }); });
   await self.ready;
-  const id = createAccount(sqlDb(self.store), { kind: "gmail", email: "a@example.com", displayName: "A", color: "indigo", providerConfig: {} }).id;
+  const id = createAccount(sqlDb(self.store), { kind: "gmail", email: "a@example.com", displayName: "A", color: "brown", providerConfig: {} }).id;
   return { backend: self, id, passes: () => passes };
 }
 

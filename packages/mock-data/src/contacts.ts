@@ -82,7 +82,7 @@ export function sentBody(rand: () => number, to: Address, es: boolean, chars: nu
   return `${greeting}\n\n${middle} ${habit}\n\n${signoff}${quote}`;
 }
 
-export const CONTACTS_ACCOUNT: MockAccount = { kind: "imap", email: "luis@cordero.dev", displayName: "Work", color: "indigo", ownerName: "Luis Cordero", weight: 1 };
+export const CONTACTS_ACCOUNT: MockAccount = { kind: "imap", email: "luis@cordero.dev", displayName: "Work", color: "brown", ownerName: "Luis Cordero", weight: 1 };
 
 /** The dataset's messages in pages, generated as they are consumed (a build reads a store page by page). */
 export function* contactsPages(o: ContactsDatasetOptions, pageSize = 500, people = contactPeople(o.contacts, (o.seed ?? 7) ^ 0x9e37)): Generator<MockMessage[]> {

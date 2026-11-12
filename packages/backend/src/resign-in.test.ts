@@ -126,7 +126,7 @@ async function setup(o: { syncIntervalMs?: number; kinds?: ("imap" | "gmail")[] 
   await backend.store.ready;
   const ids: number[] = [];
   for (const [i, kind] of (o.kinds ?? ["imap", "imap"]).entries()) {
-    ids.push(createAccount(sqlDb(backend.store), { kind, email: `a${i}@example.com`, displayName: `A${i}`, color: "indigo", providerConfig: {} }).id);
+    ids.push(createAccount(sqlDb(backend.store), { kind, email: `a${i}@example.com`, displayName: `A${i}`, color: "brown", providerConfig: {} }).id);
   }
   const [c, s] = createMemoryTransportPair();
   backend.connect(s, { clientId: "r", origin: "renderer" });

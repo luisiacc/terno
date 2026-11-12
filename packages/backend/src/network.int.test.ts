@@ -384,7 +384,7 @@ describe("plan 20: the IMAP provider's own connections", () => {
       smtp: { host: "127.0.0.1", port: smtp?.port ?? 1, secure: false, user: "t" } };
     const account = fixture
       ? await client.call("accounts.addImap", { email: "luis@test.local", displayName: "Test", ...config, password: "testpass", verify: false })
-      : createAccount(sqlDb(backend.store), { kind: "imap", email: "luis@test.local", displayName: "Test", color: "blue", providerConfig: config });
+      : createAccount(sqlDb(backend.store), { kind: "imap", email: "luis@test.local", displayName: "Test", color: "brown", providerConfig: config });
     let messageId = 0;
     if (fixture) {
       const subject = `session probe ${++seq}`;

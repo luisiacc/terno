@@ -34,7 +34,7 @@ async function setup(kind: "SQL" | "IndexedDB") {
   };
   const options = { dbPath: join(dir, "synthetic.db"), store, platform, version: "test", providers: registry, cipher, autoSync: false, instantSearch: false, iconTransport: null, log: (...args: unknown[]) => logs.push(args) };
   let backend = new Backend(options);
-  const { account } = await backend.store.accounts.create({ kind: "imap", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo", providerConfig: {}, now: 1 });
+  const { account } = await backend.store.accounts.create({ kind: "imap", email: "synthetic@example.test", displayName: "Synthetic", color: "brown", providerConfig: {}, now: 1 });
   const name = `account:${account.id}:password`;
   await backend.setSecret(name, "old");
   await backend.provider(account.id);
@@ -121,7 +121,7 @@ describe.each(["SQL", "IndexedDB"] as const)("%s public provider secret replacem
     blocked.release();
     expect((await replacing)[0]).toMatchObject({ status: "rejected" });
     expect(await t.backend.store.secrets.has(t.name)).toBe(false);
-    const fresh = await t.backend.store.accounts.create({ kind: "imap", email: t.account.email, displayName: "Fresh", color: "indigo", providerConfig: {}, now: 2 });
+    const fresh = await t.backend.store.accounts.create({ kind: "imap", email: t.account.email, displayName: "Fresh", color: "brown", providerConfig: {}, now: 2 });
     await t.backend.provider(fresh.account.id);
     await t.ctx.setSecret("password", "fresh");
     await expect(old.replaceSecret("password", "old", "stale")).rejects.toThrow();

@@ -39,7 +39,7 @@ it("shares six incoming raw reads across accounts and drains all mail without ex
   await backend.ready;
   const accounts = [];
   for (let i = 0; i < 2; i++) {
-    const { account } = await backend.store.accounts.create({ kind: "gmail", email: `synthetic-${i}@example.test`, displayName: `Synthetic ${i}`, color: "indigo", now: 1 });
+    const { account } = await backend.store.accounts.create({ kind: "gmail", email: `synthetic-${i}@example.test`, displayName: `Synthetic ${i}`, color: "brown", now: 1 });
     accounts.push(account);
     fixture.accounts.set(String(account.id), account.email);
   }
@@ -109,7 +109,7 @@ async function controlMailbox(options: Partial<Parameters<typeof incomingGmailFi
   const backend = new Backend({ dbPath: join(dir, "synthetic.db"), providers, cipher: plaintextCipher, version: "test", autoSync: false, instantSearch: false, iconTransport: null });
   cleanup.push(async () => { try { expect(backend.net.googlePending()).toBe(0); } finally { try { await backend.stop(); } finally { rmSync(dir, { recursive: true, force: true }); } } });
   await backend.ready;
-  const { account } = await backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo", now: 1 });
+  const { account } = await backend.store.accounts.create({ kind: "gmail", email: "synthetic@example.test", displayName: "Synthetic", color: "brown", now: 1 });
   fixture.accounts.set("synthetic", account.email);
   return { backend, account, fixture, failure: () => failure, cursor: async () => (await backend.store.accounts.config<{ cursor?: unknown }>(account.id))?.config.cursor };
 }

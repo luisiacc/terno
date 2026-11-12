@@ -96,7 +96,7 @@ it("a real provider sync failure cannot forward its message to the dev console",
   const provider = { async sync() { throw error; }, async close() {} } as unknown as MailProvider;
   const providers = { create: () => provider } as unknown as ProviderRegistry;
   const { backend } = await start(providers);
-  const account = createAccount(sqlDb(backend.store), { kind: "imap", email: "fixture@example.invalid", displayName: "Fixture", color: "indigo", providerConfig: {} });
+  const account = createAccount(sqlDb(backend.store), { kind: "imap", email: "fixture@example.invalid", displayName: "Fixture", color: "brown", providerConfig: {} });
   await backend.syncAccount(account.id);
   expectPrivate();
   expect(console.log).toHaveBeenCalledWith("[backend] log.message", { fields: { source: "backend" } });

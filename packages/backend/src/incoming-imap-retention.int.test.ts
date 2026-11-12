@@ -54,7 +54,7 @@ it.each(["complete", "limit", "cancel"] as const)("admits IMAP BODY through term
     await backend.ready;
     const accounts = [];
     for (let index = 0; index < 2; index++) {
-      const { account } = await backend.store.accounts.create({ kind: "imap", email: `synthetic-${index}@example.test`, displayName: "Synthetic", color: "indigo", now: 1 });
+      const { account } = await backend.store.accounts.create({ kind: "imap", email: `synthetic-${index}@example.test`, displayName: "Synthetic", color: "brown", now: 1 });
       await backend.store.accounts.setProviderConfig(account.id, { imap: { host: "127.0.0.1", port, secure: false, user: "testuser" }, smtp: { host: "127.0.0.1", port: 1, secure: false, user: "testuser" } });
       await backend.store.secrets.put(`account:${account.id}:password`, await plaintextCipher.encrypt("testpass"));
       accounts.push(account);

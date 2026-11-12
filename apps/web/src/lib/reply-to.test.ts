@@ -44,7 +44,7 @@ const original = (accountId: number): IncomingMessage => ({
 for (const engine of ["sql", "idb"] as const) {
   it.each(["reply", "replyAll"] as const)(`${engine}: %s keeps selected Reply-To through draft reopen, backup restore and exact queued recipients`, async (mode: Exclude<DraftMode, "new" | "forward">) => {
     const source = await mailbox(engine);
-    const { account } = await source.backend.store.accounts.create({ kind: "gmail", email: "me@example.test", displayName: "Me", color: "indigo", now: NOW });
+    const { account } = await source.backend.store.accounts.create({ kind: "gmail", email: "me@example.test", displayName: "Me", color: "brown", now: NOW });
     const { touched } = await source.backend.store.sync.ingest([original(account.id)], { applyFilters: false, classifier: null, now: NOW });
     const detail = (await source.backend.store.threads.get(touched[0]!))!;
     const fields = replyFields(mode, detail, account);
@@ -62,7 +62,7 @@ for (const engine of ["sql", "idb"] as const) {
     expect(dump.version).toBe(2);
     expect(dump.drafts[0]).toMatchObject({ to, cc, bcc, inReplyTo: "helpdesk@help.test" });
     const target = await mailbox(engine);
-    const { account: targetAccount } = await target.backend.store.accounts.create({ kind: "gmail", email: account.email, displayName: "Me", color: "indigo", now: NOW });
+    const { account: targetAccount } = await target.backend.store.accounts.create({ kind: "gmail", email: account.email, displayName: "Me", color: "brown", now: NOW });
     await target.backend.store.sync.ingest([original(targetAccount.id)], { applyFilters: false, classifier: null, now: NOW });
     await target.client.call("app.import", { data: dump });
     const [restored] = await target.client.call("drafts.list", {});

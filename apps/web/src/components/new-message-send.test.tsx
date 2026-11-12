@@ -27,7 +27,7 @@ function deferred<T>() { let resolve!: (value: T) => void, reject!: (error: Erro
 for (const layout of ["split", "list"] as const) it.each(["authored successor", "untouched successor", "outside focus", "outside roundtrip", "same-key strip", "rejected", "ordinary"] as const)(`${layout}: an earlier Send respects %s`, async (scenario) => {
   const { App } = await import("~/app"), drafts = await import("~/lib/drafts"), app = await import("~/state/app"), { useAppearance } = await import("~/lib/appearance"), { useList } = await import("~/state/list");
   const previous = app.getApp(), list = useList.getState(), appearance = useAppearance.getState();
-  const account = { id: 1, kind: "imap", email: "me@example.test", displayName: "Me", signature: "", color: "blue", syncState: {} } as Account;
+  const account = { id: 1, kind: "imap", email: "me@example.test", displayName: "Me", signature: "", color: "brown", syncState: {} } as Account;
   const send = deferred<{ threadId: number }>(), entered = deferred<void>(); let sends = 0, saves = 0;
   rpc.call.mockImplementation(async (method) => { if (method === "compose.send") { sends++; entered.resolve(); return send.promise; } return []; });
   drafts.setDraftTransport(async (_method, params) => ({ ...params as object, id: 100 + ++saves, generation: "stable", revision: 1, updatedAt: 0 }));

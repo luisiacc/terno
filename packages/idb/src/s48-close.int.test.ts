@@ -96,7 +96,7 @@ it("refuses every new public body consumer while an admitted native part keeps c
   try {
     const [accountId] = await withAccounts(store, 1);
     const r = await store.sync.ingest([msg({ accountId: accountId!, isSent: true, bodyText: "exact lifecycle phrase ".repeat(3000) })], { now: 1, classifier: null, applyFilters: false });
-    const m = (await store.threads.get(r.touched[0]!, { bodyFormat: "parts" }))!.messages[0]!, category = await store.categories.create("Synthetic", "indigo");
+    const m = (await store.threads.get(r.touched[0]!, { bodyFormat: "parts" }))!.messages[0]!, category = await store.categories.create("Synthetic", "brown");
     const rule = { match: "all" as const, conditions: [{ field: "body" as const, op: "contains" as const, value: "exact lifecycle phrase" }], actions: [{ type: "star" as const }] };
     hold = true; reading = store.threads.bodyPart({ messageId: m.id, accountId: accountId!, version: m.bodyReference!.version, field: "text", ordinal: 0 }); await held;
     closing = store.close();

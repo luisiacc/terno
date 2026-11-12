@@ -41,6 +41,7 @@ import { snippetFieldsSchema, snippetIdSchema, type Snippet } from "../snippets"
 import { customThemesSchema, DESIGN_IDS, type CustomTheme, type DesignId, type DesignPalettes, type MotionMs } from "../themes";
 import {
   CATEGORY_COLORS,
+  RETIRED_COLORS,
   FOLDER_NAME_MAX,
   FOLDER_VIEWS,
   REMINDER_KINDS,
@@ -553,9 +554,12 @@ const settingsPatch = z.object({
 export type SettingsPatch = z.output<typeof settingsPatch>;
 export { settingsPatch as settingsPatchSchema, draftAddress as draftAddressSchema };
 
+/** A color as sent or imported: a retired one (an older backup, client or agent) as its successor (plan 194) */
+const categoryColorSchema = z.preprocess((v) => (typeof v === "string" && Object.hasOwn(RETIRED_COLORS, v) ? RETIRED_COLORS[v] : v), z.enum(CATEGORY_COLORS));
+
 /** What an import reads of each item; items are validated one by one on the backend, in time slices (a bad one is skipped). */
 // plan 116: `forward` (its trigger) comes in turned off: an import never sends mail elsewhere until the user says so
-export const exportCategorySchema = z.object({ id, name: z.string().trim().min(1).max(60), color: z.enum(CATEGORY_COLORS), position: z.number().int().optional(), autoApply: z.boolean().optional(), showInInbox: z.boolean().optional(), forward: z.object({ addresses: z.array(address).min(1).refine((list) => JSON.stringify(list).length <= FORWARD_ADDRESSES_MAX_CHARS), enabled: z.boolean() }).optional() });
+export const exportCategorySchema = z.object({ id, name: z.string().trim().min(1).max(60), color: categoryColorSchema, position: z.number().int().optional(), autoApply: z.boolean().optional(), showInInbox: z.boolean().optional(), forward: z.object({ addresses: z.array(address).min(1).refine((list) => JSON.stringify(list).length <= FORWARD_ADDRESSES_MAX_CHARS), enabled: z.boolean() }).optional() });
 // plan 90: `auto` absent (an older export) means the user's
 export const exportFilterSchema = z.object({ name: z.string().trim().min(1).max(120), enabled: z.boolean(), source: z.enum(["manual", "ai", "learned"]), auto: z.boolean().optional(), rule: filterRuleSchema });
 export const exportedAttachmentSchema = z.object({
@@ -885,13 +889,13 @@ export const contract = {
 
   /** A new category keeps its mail out of the Inbox unless asked (like a folder: plan 83's switch turns it on). */
   "categories.create": m<Category>()(
-    z.object({ name: z.string().trim().min(1).max(60), color: z.enum(CATEGORY_COLORS), showInInbox: z.boolean().default(false) }),
+    z.object({ name: z.string().trim().min(1).max(60), color: categoryColorSchema, showInInbox: z.boolean().default(false) }),
   ),
   "categories.update": m<Category>()(
     z.object({
       id,
       name: z.string().trim().min(1).max(60).optional(),
-      color: z.enum(CATEGORY_COLORS).optional(),
+      color: categoryColorSchema.optional(),
       position: z.number().int().min(0).optional(),
       autoApply: z.boolean().optional(),
       showInInbox: z.boolean().optional(),
@@ -1119,7 +1123,7 @@ export const contract = {
     z.object({
       id,
       displayName: z.string().trim().min(1).max(200).optional(),
-      color: z.enum(CATEGORY_COLORS).optional(),
+      color: categoryColorSchema.optional(),
       senderName: z.string().trim().max(200).optional(),
       signature: z.string().max(10_000).optional(),
       /** null: the general setting */

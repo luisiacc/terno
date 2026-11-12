@@ -11,7 +11,7 @@ const TINT: Record<ReturnType<typeof avatarColor>, string> = {
   lime: "bg-cat-lime/10 text-cat-lime-ink",
   emerald: "bg-cat-emerald/10 text-cat-emerald-ink",
   cyan: "bg-cat-cyan/10 text-cat-cyan-ink",
-  indigo: "bg-cat-indigo/10 text-cat-indigo-ink",
+  brown: "bg-cat-brown/10 text-cat-brown-ink",
   violet: "bg-cat-violet/10 text-cat-violet-ink",
   slate: "bg-cat-slate/10 text-cat-slate-ink",
 };

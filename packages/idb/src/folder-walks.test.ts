@@ -19,7 +19,7 @@ let account: number;
 beforeEach(async () => {
   store = await IdbMailStore.open({ name: `walks-${crypto.randomUUID()}`, factory: indexedDB, platform, instantSearch: false });
   c = (store as unknown as { c: Tables }).c;
-  account = (await store.accounts.create({ kind: "imap", email: "w@example.com", displayName: "W", color: "indigo", now: 0 })).account.id;
+  account = (await store.accounts.create({ kind: "imap", email: "w@example.com", displayName: "W", color: "brown", now: 0 })).account.id;
 });
 afterEach(async () => {
   await store.close();
@@ -197,7 +197,7 @@ it("five exports of accounts' inboxes longer than a run, interleaved, all finish
   // more threads than a run (16,384 a call) in each of five accounts: each export's walk of them is its own
   const N = 16_500;
   const accounts = [account];
-  for (let i = 1; i < 5; i++) accounts.push((await store.accounts.create({ kind: "imap", email: `w${i}@example.com`, displayName: "W", color: "indigo", now: 0 })).account.id);
+  for (let i = 1; i < 5; i++) accounts.push((await store.accounts.create({ kind: "imap", email: `w${i}@example.com`, displayName: "W", color: "brown", now: 0 })).account.id);
   c.db.tx(() => {
     let id = 0;
     for (const a of accounts)
@@ -216,7 +216,7 @@ it("five exports of conversations longer than a run, interleaved, all finish (Co
   // one conversation longer than a run in each of five accounts: each long thread's order is kept while it's read
   const N = 16_500;
   const accounts = [account];
-  for (let i = 1; i < 5; i++) accounts.push((await store.accounts.create({ kind: "imap", email: `w${i}@example.com`, displayName: "W", color: "indigo", now: 0 })).account.id);
+  for (let i = 1; i < 5; i++) accounts.push((await store.accounts.create({ kind: "imap", email: `w${i}@example.com`, displayName: "W", color: "brown", now: 0 })).account.id);
   c.db.tx(() => {
     let id = 0;
     accounts.forEach((a, t) => {

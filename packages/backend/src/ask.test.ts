@@ -56,7 +56,7 @@ async function setup(o: { cloud?: boolean; provider?: "fake" | "none" } = {}) {
     return new RpcClient(c);
   };
   const client = connect("renderer", "renderer");
-  const { account } = await backend.store.accounts.create({ kind: "gmail", email: "me@terno.test", displayName: "Me", color: "indigo", now: 0 });
+  const { account } = await backend.store.accounts.create({ kind: "gmail", email: "me@terno.test", displayName: "Me", color: "brown", now: 0 });
   if (o.cloud) {
     await client.call("ai.setKey", { provider: "anthropic", value: "sk-test-not-a-real-key" });
     await client.call("settings.update", { ai: { provider: "anthropic", model: "claude-opus-5-5" } });

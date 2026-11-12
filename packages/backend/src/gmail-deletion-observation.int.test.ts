@@ -71,7 +71,7 @@ async function mailbox(kind: "SQL" | "IndexedDB") {
     incomingProcessor: { async run(input, signal) { signal.throwIfAborted(); const result = await processIncoming(input); signal.throwIfAborted(); return result; }, async whenIdle() {}, async close() {} },
     platform, providers, cipher: plaintextCipher, version: "test", autoSync: false, instantSearch: false, iconTransport: null });
   let backend = await open(); await backend.ready;
-  const { account } = await backend.store.accounts.create({ kind: "gmail", email: "me@example.test", displayName: "Synthetic", color: "indigo", now: 1 });
+  const { account } = await backend.store.accounts.create({ kind: "gmail", email: "me@example.test", displayName: "Synthetic", color: "brown", now: 1 });
   const clients: RpcClient[] = [], runs: Promise<void>[] = [], held: NonNullable<typeof hold>[] = [];
   const rpc = () => { const [local, remote] = createMemoryTransportPair(); backend.connect(remote, { clientId: "synthetic", origin: "renderer" }); const client = new RpcClient(local); clients.push(client); return client; };
   cleanup.push(async () => {

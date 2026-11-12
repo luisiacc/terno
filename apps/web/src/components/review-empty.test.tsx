@@ -27,7 +27,7 @@ const { useReviewWork } = await import("~/lib/categorize");
 const { useList } = await import("~/state/list");
 const { focusQuietly } = await import("~/lib/quiet-focus");
 
-const cat = (id: number, name: string) => ({ id, name, color: "blue" }) as never;
+const cat = (id: number, name: string) => ({ id, name, color: "brown" }) as never;
 const categories = [cat(1, "Viajes"), cat(2, "Clientes"), cat(3, "Facturas")];
 
 let host: HTMLDivElement;

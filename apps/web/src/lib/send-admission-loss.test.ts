@@ -35,7 +35,7 @@ async function fixture(adapter: "SQL" | "IDB") {
     return { backend, client, store };
   };
   const first = await connect();
-  const { account } = await first.store.accounts.create({ kind: "imap", email: "author@example.test", displayName: "Original", color: "indigo", now: 1, secret: { key: "password", blob: await plaintextCipher.encrypt("synthetic") }, providerConfig: {
+  const { account } = await first.store.accounts.create({ kind: "imap", email: "author@example.test", displayName: "Original", color: "brown", now: 1, secret: { key: "password", blob: await plaintextCipher.encrypt("synthetic") }, providerConfig: {
     imap: { host: "127.0.0.1", port: 1, secure: false, user: "synthetic" }, smtp: { host: "127.0.0.1", port: (smtp.server.address() as { port: number }).port, secure: false, user: "synthetic" }, appendToSent: false,
   } });
   setApp({ accounts: [account] }); useDrafts.setState({ drafts: {} });

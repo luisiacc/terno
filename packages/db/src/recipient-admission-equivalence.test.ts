@@ -9,7 +9,7 @@ const yieldNow = () => new Promise<void>((resolve) => setImmediate(resolve));
 
 it("keeps every recipient occurrence and exact recipient phrases searchable immediately", async () => {
   const db = testDb(), store = new SqlMailStore(db, { platform: { yield: yieldNow } });
-  const { account } = await store.accounts.create({ kind: "imap", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo", providerConfig: { appendToSent: false }, now: 1 });
+  const { account } = await store.accounts.create({ kind: "imap", email: "synthetic@example.test", displayName: "Synthetic", color: "brown", providerConfig: { appendToSent: false }, now: 1 });
   const to = [{ name: "Éxample Name", email: "same+tag@example.test" }, { name: "名字 One", email: "one@example.test" }];
   const cc = [{ name: "Éxample Name", email: "same+tag@example.test" }, { name: "Greek Ελληνικά", email: "two@example.test" }];
   const bcc = [...Array.from({ length: 65 }, (_, i) => ({ name: `Filler ${i}`, email: `filler${i}@example.test` })), { name: "Last Boundary", email: "three@example.test" }];
@@ -23,7 +23,7 @@ it("keeps every recipient occurrence and exact recipient phrases searchable imme
 
 it("rolls back draft, operation, recipient evidence and search index together", async () => {
   const db = testDb(), store = new SqlMailStore(db, { platform: { yield: yieldNow } });
-  const { account } = await store.accounts.create({ kind: "imap", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo", providerConfig: { appendToSent: false }, now: 1 });
+  const { account } = await store.accounts.create({ kind: "imap", email: "synthetic@example.test", displayName: "Synthetic", color: "brown", providerConfig: { appendToSent: false }, now: 1 });
   const to = Array.from({ length: 80 }, (_, i) => ({ name: "Rollback Probe", email: `rollback${i}@example.test` }));
   const draft = (await store.drafts.save({ accountId: account.id, to, cc: [], bcc: [], subject: "Atomic", bodyText: "Exact" }, 1))!;
   let armed = true; db.onBeforeCommit(() => { if (armed) { armed = false; throw new Error("Synthetic rollback"); } });
@@ -38,7 +38,7 @@ it("rolls back draft, operation, recipient evidence and search index together", 
 it("does not consume a draft edited while recipient preparation yields", async () => {
   const db = testDb(); let store: SqlMailStore, change: (() => Promise<void>) | undefined, yields = 0;
   store = new SqlMailStore(db, { platform: { yield: async () => { yields++; const pending = yields === 3 ? change : undefined; if (pending) { change = undefined; await pending(); } else await yieldNow(); } } });
-  const { account } = await store.accounts.create({ kind: "imap", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo", providerConfig: { appendToSent: false }, now: 1 });
+  const { account } = await store.accounts.create({ kind: "imap", email: "synthetic@example.test", displayName: "Synthetic", color: "brown", providerConfig: { appendToSent: false }, now: 1 });
   const to = Array.from({ length: 80 }, (_, i) => ({ name: "Synthetic", email: `r${i}@example.test` }));
   const draft = (await store.drafts.save({ accountId: account.id, to, cc: [], bcc: [], subject: "Original", bodyText: "Original" }, 1))!;
   yields = 0;
@@ -52,7 +52,7 @@ it("does not consume a draft edited while recipient preparation yields", async (
 
 it("queues a send without rereading its large operation payload for unrelated flag binding", async () => {
   const db = testDb(), store = new SqlMailStore(db, { platform: { yield: yieldNow } });
-  const { account } = await store.accounts.create({ kind: "imap", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo", providerConfig: { appendToSent: false }, now: 1 });
+  const { account } = await store.accounts.create({ kind: "imap", email: "synthetic@example.test", displayName: "Synthetic", color: "brown", providerConfig: { appendToSent: false }, now: 1 });
   const get = db.get.bind(db); let wideReads = 0;
   db.get = ((sql: string, ...params: Parameters<typeof db.get> extends [string, ...infer P] ? P : never) => { if (/^SELECT \* FROM ops WHERE id = \?/i.test(sql.trim())) wideReads++; return get(sql, ...params); }) as typeof db.get;
   await store.compose.queueSend({ accountId: account.id, to: [{ name: "Synthetic", email: "recipient@example.test" }], cc: [], bcc: [], subject: "Synthetic", bodyText: "Exact", recordReply: false, now: 2 });
@@ -62,7 +62,7 @@ it("queues a send without rereading its large operation payload for unrelated fl
 
 it("staged FTS has the same tokens, positions, phrase matches and ranking as the original recipient text", async () => {
   const db = testDb(), store = new SqlMailStore(db, { platform: { yield: yieldNow } });
-  const { account } = await store.accounts.create({ kind: "imap", email: "synthetic@example.test", displayName: "Synthetic", color: "indigo", providerConfig: { appendToSent: false }, now: 1 });
+  const { account } = await store.accounts.create({ kind: "imap", email: "synthetic@example.test", displayName: "Synthetic", color: "brown", providerConfig: { appendToSent: false }, now: 1 });
   const names = ["Éxample niñO 名字 ภาษาไทย Ελληνικά ςΣ ﬀ Ⅳ ① à\u0301", "İıẞK ﬁ Œ ø æ ǅ 𝔸 🏳️‍🌈 foo+tag", "a\u0301b\u034fcd ab.cd A_B 0️⃣ Test", "a\0b it's can't € 𐐀 𞤀 a-b c_d"];
   const addresses = Array.from({ length: 80 }, (_, index) => ({ name: names[index % names.length]!, email: `r${index}@example.test` }));
   const queued = await store.compose.queueSend({ accountId: account.id, to: addresses, cc: addresses.slice(0, 4), bcc: addresses.slice(-4), subject: "Synthetic", bodyText: "Exact", recordReply: false, now: 2 });

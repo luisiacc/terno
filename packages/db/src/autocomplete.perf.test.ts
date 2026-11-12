@@ -76,7 +76,7 @@ beforeAll(async () => {
   const seeded = await kept("autocomplete-300k", async (at) => {
     const db = openDatabase(join(at, "m.db"));
     const creating = new SqlMailStore(db, { platform: nodePlatform });
-    const id = (await creating.accounts.create({ kind: CONTACTS_ACCOUNT.kind, email: CONTACTS_ACCOUNT.email, displayName: CONTACTS_ACCOUNT.displayName, color: "indigo", now: NOW })).account.id;
+    const id = (await creating.accounts.create({ kind: CONTACTS_ACCOUNT.kind, email: CONTACTS_ACCOUNT.email, displayName: CONTACTS_ACCOUNT.displayName, color: "brown", now: NOW })).account.id;
     expect(id).toBe(1);
     const triggers = db.all<{ name: string; sql: string }>("SELECT name, sql FROM sqlite_master WHERE type = 'trigger'");
     for (const t of triggers) db.exec(`DROP TRIGGER "${t.name}"`);

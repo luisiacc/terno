@@ -33,7 +33,7 @@ describe("files captured later", () => {
       const open = (): Promise<MailStore> => adapter === "SQL" ? Promise.resolve(new SqlMailStore(openDatabase(join(dir, "mail.db")), { instantSearch: false })) : IdbMailStore.open({ name, factory: indexedDB, instantSearch: false, platform: { uuid: () => crypto.randomUUID(), yield: () => new Promise((r) => setImmediate(r)) } });
       let store = await open();
       try {
-        const { account } = await store.accounts.create({ kind: "imap", email: "capture@test.com", displayName: "Capture", color: "indigo", now: 0 });
+        const { account } = await store.accounts.create({ kind: "imap", email: "capture@test.com", displayName: "Capture", color: "brown", now: 0 });
         const accounts = await store.accounts.list();
         await ingest(store, [msg({ accountId: account.id, providerMsgId: "header", bodyState: "none", bodyText: null, bodyHtml: null, hasAttachments: true, attachments: undefined })]);
         const tid = await threadOf(store, "header");
@@ -83,7 +83,7 @@ describe("files captured later", () => {
       const open = (): Promise<MailStore> => adapter === "SQL" ? Promise.resolve(new SqlMailStore(openDatabase(join(dir, "mail.db")), { instantSearch: false })) : IdbMailStore.open({ name, factory: indexedDB, instantSearch: false, platform: { uuid: () => crypto.randomUUID(), yield: () => new Promise((r) => setImmediate(r)) } });
       let store = await open();
       try {
-        const { account } = await store.accounts.create({ kind: "imap", email: "state@test.com", displayName: "State", color: "indigo", now: 0 });
+        const { account } = await store.accounts.create({ kind: "imap", email: "state@test.com", displayName: "State", color: "brown", now: 0 });
         for (const [providerMsgId, attachments] of [["legacy", undefined], ["empty", []], ["unavailable", [{ filename: "missing.bin", mime: "application/octet-stream", size: 3 }]]] as const) {
           await ingest(store, [msg({ accountId: account.id, providerMsgId, bodyState: "full", hasAttachments: true, attachments: attachments === undefined ? undefined : [...attachments] })]);
         }

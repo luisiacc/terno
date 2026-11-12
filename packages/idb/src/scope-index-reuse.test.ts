@@ -86,7 +86,7 @@ it("cold and reopened scopes preserve hidden Inbox, account, category and ascend
   await ingest(store, Array.from({ length: 96 }, (_, i) => msg({ accountId: i % 2 ? account! : other!, providerMsgId: `scope-${i}`, providerThreadId: `scope-thread-${i}`, isStarred: true, date: 100 })));
   const all = await store.threads.scopeIds({ view: "all", filter: "starred", limit: 1000 });
   expect(all).toHaveLength(96); // scope first: no ready date index
-  const category = await store.categories.create("Hidden", "indigo");
+  const category = await store.categories.create("Hidden", "brown");
   await store.categories.add({ threadIds: all.slice(0, 70), categoryId: category.id, addedBy: "user", now: 1 });
   await store.categories.update(category.id, { showInInbox: false });
   for (let phase = 0; phase < 2; phase++) {

@@ -113,7 +113,7 @@ async function mailbox(kind: "SQL" | "IndexedDB", retries = false) {
   };
   let backend = await open();
   await backend.ready;
-  const { account } = await backend.store.accounts.create({ kind: "gmail", email: "me@example.test", displayName: "Synthetic", color: "indigo", now: 1 });
+  const { account } = await backend.store.accounts.create({ kind: "gmail", email: "me@example.test", displayName: "Synthetic", color: "brown", now: 1 });
   await (await backend.provider(account.id))!.verify();
   requests.length = 0;
   cleanup.push(async () => {

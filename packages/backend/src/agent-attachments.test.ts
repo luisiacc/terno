@@ -62,7 +62,7 @@ describe("plan 185: the backend's agent file calls", () => {
     };
     const renderer = pair("renderer", "renderer");
     await renderer.call("settings.update", { agents: { enabled: true, access: "read" } });
-    const accountId = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "indigo" }).id;
+    const accountId = createAccount(sqlDb(backend.store), { kind: "imap", email: "me@example.com", displayName: "Me", color: "brown" }).id;
     const bytes = new Uint8Array(4000).fill(7);
     await backend.store.sync.ingest([msg({ accountId, providerMsgId: "f", hasAttachments: true, attachments: [{ filename: "a.bin", mime: "application/octet-stream", size: bytes.length, bytes }] })], { applyFilters: false, now: 1, classifier: null });
     const detail = (await backend.store.threads.get((await backend.store.debug.snapshot()).threads[0]!.id))!;

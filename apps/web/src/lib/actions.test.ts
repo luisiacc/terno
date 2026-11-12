@@ -365,7 +365,7 @@ describe("a search's selection spanning places (plan 64)", () => {
 });
 
 describe("Gmail's Promotions and Social (plan 86)", () => {
-  const account = (id: number, kind: "gmail" | "imap", separateTabs = true) => ({ id, kind, email: `${id}@x.test`, displayName: `A${id}`, color: "indigo", senderName: "", signature: "", syncWindowDays: null, separateTabs, syncState: { status: "idle", syncedSince: null, bodiesPending: 0, lastError: null, lastSyncAt: null } }) as never;
+  const account = (id: number, kind: "gmail" | "imap", separateTabs = true) => ({ id, kind, email: `${id}@x.test`, displayName: `A${id}`, color: "brown", senderName: "", signature: "", syncWindowDays: null, separateTabs, syncState: { status: "idle", syncedSince: null, bodiesPending: 0, lastError: null, lastSyncAt: null } }) as never;
   const tabbed = (id: number, accountId: number, tab: number) => ({ ...row(id), accountId, inInbox: true, inSpam: false, inTrash: false, tab }) as ThreadSummary;
   const sent: { action: string; threadIds: number[] }[] = [];
   beforeEach(() => {
@@ -419,7 +419,7 @@ describe("Gmail's Promotions and Social (plan 86)", () => {
 
 describe("an account's Mark all as read (plan 106)", () => {
   const unread = (id: number, accountId: number, tab = 0) => ({ ...row(id), unread: true, accountId, tab, inInbox: true }) as ThreadSummary;
-  const gmail = { id: 1, kind: "gmail", email: "a@gmail.com", displayName: "A", color: "indigo", syncState: { status: "idle" } };
+  const gmail = { id: 1, kind: "gmail", email: "a@gmail.com", displayName: "A", color: "brown", syncState: { status: "idle" } };
   const imap = { id: 2, kind: "imap", email: "b@example.com", displayName: "B", color: "rose", syncState: { status: "idle" } };
   let answer: (v: unknown) => void = () => {};
   beforeEach(() => {
