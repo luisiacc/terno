@@ -7,6 +7,8 @@ import { createPortal } from "react-dom";
 import { formatBytes } from "~/lib/format";
 import { backupDate, restoreMailbox, retryMailbox, skipMailboxBackup, useMailbox } from "~/lib/mailbox";
 import { registerNativeReloadModal } from "~/lib/native-reload";
+import { openLink } from "~/lib/open-link";
+import { TERNO_LINKS } from "~/lib/terno-links";
 import { errorText, unsupportedText, updateNow, useUpdates } from "~/lib/updates";
 import { exportDiagnostics } from "~/state/diag";
 import { ConfirmDialog } from "./settings/parts";
@@ -239,7 +241,7 @@ function UpdateAction({ label, secondary = null }: { label: string; secondary?: 
       <>
         {state.unsupported && <Body>{unsupportedText(state.unsupported)}</Body>}
         <Actions>
-          <Button data-primary onClick={() => window.ternoDesktop?.openExternal("https://github.com/luisiacc/terno/releases/latest")} data-testid="update-download-page">
+          <Button data-primary onClick={() => openLink(TERNO_LINKS.latest)} data-testid="update-download-page">
             {t("updates.required.downloadPage")}
           </Button>
           {secondary}

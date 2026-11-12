@@ -1,7 +1,9 @@
-import type { UnsupportedReason, UpdateChannel, UpdateErrorKind, UpdateMode, UpdateState } from "@terno/core/updates";
+import type { UnsupportedReason, UpdateChannel, UpdateErrorKind, UpdateErrorStage, UpdateInfo, UpdateMode, UpdateState } from "@terno/core/updates";
 import { t, type TextKey } from "@terno/i18n";
 import { create } from "zustand";
+import { openLink } from "~/lib/open-link";
 import { snack } from "~/lib/snack";
+import { releaseNotesUrl } from "~/lib/terno-links";
 import { useWeb } from "~/web/lifecycle";
 
 /**
@@ -19,9 +21,11 @@ interface UpdatesStore {
   later: boolean;
   /** this shell has the updater (state, not a call: the React Compiler caches pure-looking calls) */
   available: boolean;
+  /** the last manual check never reached main (the state it left is stale): About says so until main's next state */
+  checkFailed: boolean;
 }
 
-export const useUpdates = create<UpdatesStore>(() => ({ state: null, later: false, available: Boolean(bridge) }));
+export const useUpdates = create<UpdatesStore>(() => ({ state: null, later: false, available: Boolean(bridge), checkFailed: false }));
 
 let started = false;
 
@@ -35,7 +39,7 @@ export function startUpdates(): void {
 
 function adopt(state: UpdateState): void {
   const was = useUpdates.getState().state;
-  useUpdates.setState({ state });
+  useUpdates.setState({ state, checkFailed: false });
   if (state.justUpdated && was?.justUpdated !== state.justUpdated) {
     const version = state.justUpdated;
     snack.success(t("updates.updated", { version }), {
@@ -49,7 +53,7 @@ function adopt(state: UpdateState): void {
 }
 
 export function openReleaseNotes(version: string): void {
-  window.ternoDesktop?.openExternal(`https://github.com/luisiacc/terno/releases/tag/v${encodeURIComponent(version)}`);
+  openLink(releaseNotesUrl(version));
 }
 
 /** What the sidebar pill shows, from the state (pure: unit-tested). */
@@ -79,6 +83,50 @@ export function pillModel(state: UpdateState | null, o: { later: boolean; webUpd
   return { kind: "hidden" };
 }
 
+/**
+ * Plan 190: Settings → About's update row, from the state (pure: unit-tested). Unlike the pill it always has
+ * something to say (up to date, when it last looked, why it can't), and the action is the one that state allows.
+ */
+export type AboutStatus =
+  | { kind: "idle"; checkedAt: number | null }
+  | { kind: "up-to-date"; checkedAt: number | null }
+  | { kind: "checking" }
+  | { kind: "available"; update: UpdateInfo }
+  /** the version is the download's own (`target`): a later offer doesn't rename it */
+  | { kind: "downloading"; version: string; percent: number }
+  | { kind: "verifying"; version: string }
+  /** installing: the restart is under way; deferred: it waits for a send; refused: why the last Restart didn't happen */
+  | { kind: "ready"; update: UpdateInfo; deferred: boolean; installing: boolean; refused: UpdateErrorKind | null }
+  /** plan 95; a copy that can't update itself is sent to the download page instead */
+  | { kind: "required"; version: string; working: boolean; unsupported: UnsupportedReason | null }
+  /** retry: what Try Again does (a failed install or a failed check looks again; a failed download downloads again) */
+  | { kind: "error"; stage: UpdateErrorStage; error: UpdateErrorKind; retry: "check" | "download" }
+  | { kind: "unsupported"; reason: UnsupportedReason };
+
+export function aboutStatus(state: UpdateState, o: { checkFailed?: boolean } = {}): AboutStatus {
+  const unsupported = state.status === "unsupported" ? (state.unsupported ?? "dev") : null;
+  if (state.required) return { kind: "required", version: state.required, working: state.updatingNow, unsupported };
+  if (unsupported) return { kind: "unsupported", reason: unsupported };
+  // a ready update wins over anything a later check or download is doing (as in the pill)
+  if (state.ready) {
+    const refused = state.error?.stage === "install" ? state.error.kind : null;
+    return { kind: "ready", update: state.ready, deferred: state.deferred === "sending", installing: state.status === "installing", refused };
+  }
+  const inFlight = state.target ?? state.available;
+  if (state.status === "downloading" && inFlight) return { kind: "downloading", version: inFlight.version, percent: state.percent ?? 0 };
+  if (state.status === "verifying" && inFlight) return { kind: "verifying", version: inFlight.version };
+  if (state.status === "checking") return { kind: "checking" };
+  // a failed download or verification settles back on the offer, the error kept beside it
+  if (state.error) {
+    const download = (state.error.stage === "download" || state.error.stage === "verify") && state.available !== null;
+    return { kind: "error", stage: state.error.stage, error: state.error.kind, retry: download ? "download" : "check" };
+  }
+  if (o.checkFailed) return { kind: "error", stage: "check", error: "unknown", retry: "check" };
+  if (state.status === "available" && state.available) return { kind: "available", update: state.available };
+  if (state.status === "up-to-date") return { kind: "up-to-date", checkedAt: state.checkedAt };
+  return { kind: "idle", checkedAt: state.checkedAt };
+}
+
 export function usePill(): PillModel {
   const state = useUpdates((s) => s.state);
   const later = useUpdates((s) => s.later);
@@ -100,7 +148,7 @@ export async function checkForUpdates(): Promise<void> {
   } catch {
     state = null;
   }
-  if (state) useUpdates.setState({ state });
+  useUpdates.setState(state ? { state, checkFailed: false } : { checkFailed: true });
   const said = checkResult(state);
   if (said.tone === "error") snack.error(said.message, { id, description: said.description, action: { label: t("updates.tryAgain"), onClick: () => void checkForUpdates() } });
   else if (said.tone === "success") snack.success(said.message, { id, description: said.description });
