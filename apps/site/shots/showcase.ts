@@ -13,7 +13,7 @@ export const SHOWCASE_CODE = "482913";
 
 const ME = "Sam Rivera";
 export const ACCOUNTS: MockAccount[] = [
-  { kind: "gmail", email: "sam.rivera@gmail.com", displayName: "Personal", color: "brown", ownerName: ME, weight: 0.35 },
+  { kind: "gmail", email: "sam.rivera@gmail.com", displayName: "Personal", color: "rose", ownerName: ME, weight: 0.35 },
   { kind: "gmail", email: "sam@northwind.studio", displayName: "Northwind", color: "emerald", ownerName: ME, weight: 0.35 },
   { kind: "imap", email: "hello@samrivera.design", displayName: "Studio", color: "amber", ownerName: ME, weight: 0.2 },
   { kind: "imap", email: "sam.rivera@outlook.com", displayName: "Outlook", color: "cyan", ownerName: ME, weight: 0.1 },
