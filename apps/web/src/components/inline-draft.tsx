@@ -307,12 +307,24 @@ export function SaveState({ d }: { d: LocalDraft }) {
   // second a draft saved before keeps "Saved" (a first save shows nothing yet); "Saving…" is for a save that takes longer
   const slow = useLasting(pending, SAVING_SHOWN_AFTER_MS);
   const settled = pending && !slow && d.id !== null;
+  // plan 188: what's shown and what's said, apart. "Saved" is said only after a save slow enough to show "Saving…" (at
+  // every pause it would talk over the writing); what needs doing (a restart, a recovery) is always said
+  const [slowSeen, setSlowSeen] = useState(false);
+  useEffect(() => { if (slow) setSlowSeen(true); }, [slow]);
+  useEffect(() => { if (d.status === "dirty") setSlowSeen(false); }, [d.status]);
+  const notice = held ? t("compose.status.restart") : message ? t(`compose.recovery.${message}`) : null;
+  const detail = recovery?.state === "unknown" && recovery.reason ? ` ${t(`compose.recovery.${recovery.reason}`)}` : "";
   return (
+    <>
+    {/* (outside the status's own box, so what it shows reads as before) */}
+    <span aria-live="polite" aria-atomic="true" className="sr-only" data-testid="draft-status-said">
+      {notice ? `${notice}${detail}` : d.status === "saved" && slowSeen ? t("compose.status.saved") : null}
+    </span>
     <span className="inline-flex flex-wrap items-center gap-x-1 text-xs text-muted-foreground" data-testid="draft-status" data-status={d.status}>
       {(slow || settled) && <span aria-hidden>{t(slow ? "compose.status.saving" : "compose.status.saved")}</span>}
-      <span aria-live="polite" aria-atomic="true">
-        {held ? t("compose.status.restart") : message ? t(`compose.recovery.${message}`) : d.status === "saved" ? t("compose.status.saved") : null}
-        {recovery?.state === "unknown" && recovery.reason && ` ${t(`compose.recovery.${recovery.reason}`)}`}
+      <span aria-hidden>
+        {notice ?? (d.status === "saved" ? t("compose.status.saved") : null)}
+        {detail}
       </span>
       {recovery && (
         <Button
@@ -327,15 +339,20 @@ export function SaveState({ d }: { d: LocalDraft }) {
           {t(recovery.state === "unknown" ? "compose.recovery.another" : "compose.recovery.copy")}
         </Button>
       )}
-      {!recovery && d.status === "error" &&
-        richT(d.tooLong ? "compose.status.tooLong" : "compose.status.failed", {
-          retry: (text) => (
-            <Button variant="link-secondary" className="text-xs" onClick={() => retryDraft(d.key)}>
-              {text}
-            </Button>
-          ),
-        })}
+      {/* plan 188: a save that failed is said at once (the work is at stake), its Retry the next control */}
+      {!recovery && d.status === "error" && (
+        <span role="alert" data-testid="draft-status-failed">
+          {richT(d.tooLong ? "compose.status.tooLong" : "compose.status.failed", {
+            retry: (text) => (
+              <Button variant="link-secondary" className="text-xs" onClick={() => retryDraft(d.key)}>
+                {text}
+              </Button>
+            ),
+          })}
+        </span>
+      )}
     </span>
+    </>
   );
 }
 

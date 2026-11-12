@@ -120,7 +120,7 @@ test.describe("Part A: More", () => {
   const layout = (page: Page) =>
     page.evaluate(() => {
       const sidebar = document.querySelector("[data-testid=sidebar]")!;
-      const title = (text: string) => [...sidebar.querySelectorAll("span")].find((s) => s.textContent === text)!.getBoundingClientRect();
+      const title = (text: string) => [...sidebar.querySelectorAll("span, h2")].find((s) => s.textContent === text)!.getBoundingClientRect();
       const cats = [...sidebar.querySelectorAll("[data-testid^=nav-category-]")];
       const more = document.querySelector("[data-testid=nav-more]")!.getBoundingClientRect();
       return {
@@ -459,7 +459,7 @@ test.describe("Part A: More", () => {
       await expect(page.locator("[data-testid^=nav-category-]")).toHaveCount(0);
       const g = await page.evaluate(() => {
         const sidebar = document.querySelector("[data-testid=sidebar]")!;
-        const span = (text: string) => [...sidebar.querySelectorAll("span")].find((s) => s.textContent === text)!.getBoundingClientRect();
+        const span = (text: string) => [...sidebar.querySelectorAll("span, h2")].find((s) => s.textContent === text)!.getBoundingClientRect();
         const empty = sidebar.querySelector("nav p")!.getBoundingClientRect();
         return { underMore: span("Categories").top - document.querySelector("[data-testid=nav-more]")!.getBoundingClientRect().bottom, betweenSections: span("Accounts").top - empty.bottom };
       });

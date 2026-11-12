@@ -62,9 +62,9 @@ function paint(root: HTMLElement, look: MailLook): void {
   root.dataset.mail = look.mail;
 }
 
-export interface HtmlBodyProps { /** plan 158: a search's words, marked in the loaded mail */ marks?: readonly MatchNeedle[]; attachments?: AttachmentInfo[]; accountId?: number; html: string; messageId: number; /** spam never loads on its own, whatever the setting */ spam?: boolean; remoteImages: "ask" | "always"; appearance: "auto" | "paper"; section?: boolean; onExit?: () => void; onSectionHeight?: (height: number) => boolean; hydrate?: (doc: Document, signal: AbortSignal) => Promise<void>; onHydrationError?: () => void }
+export interface HtmlBodyProps { /** plan 158: a search's words, marked in the loaded mail */ marks?: readonly MatchNeedle[]; attachments?: AttachmentInfo[]; accountId?: number; html: string; messageId: number; /** spam never loads on its own, whatever the setting */ spam?: boolean; remoteImages: "ask" | "always"; appearance: "auto" | "paper"; section?: boolean; onExit?: () => void; onSectionHeight?: (height: number) => boolean; hydrate?: (doc: Document, signal: AbortSignal) => Promise<void>; onHydrationError?: () => void; /** plan 188: the frame's name, whose message it is ("Message from Ana, …"); else "Message content" */ label?: string }
 
-export function HtmlBody({ marks, html, messageId, remoteImages, spam = false, appearance, attachments = [], accountId, section = false, onExit, onSectionHeight, hydrate, onHydrationError }: HtmlBodyProps) {
+export function HtmlBody({ marks, html, messageId, remoteImages, spam = false, appearance, attachments = [], accountId, section = false, onExit, onSectionHeight, hydrate, onHydrationError, label }: HtmlBodyProps) {
   const ref = useRef<HTMLIFrameElement>(null);
   const loaded = useRef<{ markup: string; doc: Document; tabs: WeakMap<Node, string | null> } | null>(null);
   const hydrateRef = useRef(hydrate);
@@ -318,7 +318,7 @@ export function HtmlBody({ marks, html, messageId, remoteImages, spam = false, a
       <div className={paper ? "hairline overflow-hidden rounded-lg bg-[var(--mail-paper)] [--hairline-color:var(--border)]" : undefined}>
         <iframe
           ref={ref}
-          title={t("reader.mailContent")}
+          title={label ?? t("reader.mailContent")}
           sandbox="allow-same-origin allow-popups"
           scrolling="no"
           srcDoc={doc}

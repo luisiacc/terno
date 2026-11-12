@@ -107,11 +107,18 @@ it("the preview's line holds two category dots at most, every name in its title;
     const fromLine = el.querySelector("[data-testid=row-from]")!.parentElement!;
     expect(fromLine.querySelector("[data-testid=row-place]")).not.toBeNull();
     // every category is still said
-    expect(el.querySelector(".sr-only")!.textContent).toContain("Reading");
+    expect(rowName(el)).toContain("Reading");
   } finally {
     Object.assign(thread, { categoryIds: [7], inTrash: undefined });
   }
 });
+
+/** The option's name: its own words, in order (aria-hidden parts left out). */
+function rowName(el: HTMLElement): string {
+  const option = (el.closest("[role=option]") ?? el).cloneNode(true) as HTMLElement;
+  option.querySelectorAll("[aria-hidden=true]").forEach((n) => n.remove());
+  return option.textContent ?? "";
+}
 
 async function pinnedRow(opts: { pinnedTop: boolean; layout?: DesignVariants["row"]; compact?: boolean }) {
   host = document.createElement("div");
@@ -133,12 +140,12 @@ async function pinnedRow(opts: { pinnedTop: boolean; layout?: DesignVariants["ro
 it.each([["avatar", false], ["classic", false], ["large-avatar", false], ["avatar", true]] as const)("a %s row (compact %s) draws no pin; in the Pinned section a screen reader hears it's pinned (plan 179, the owner)", async (layout, compact) => {
   const outside = await pinnedRow({ pinnedTop: false, layout, compact });
   expect(outside.querySelector("svg.lucide-pin, [data-testid=row-pin]")).toBeNull();
-  expect(outside.textContent).not.toContain(", pinned");
+  expect(rowName(outside)).not.toContain("pinned");
   await unmount();
   host?.remove();
   const inside = await pinnedRow({ pinnedTop: true, layout, compact });
   expect(inside.querySelector("[data-testid=row-pin]")).toBeNull();
-  expect(inside.textContent).toContain(", pinned");
+  expect(rowName(inside)).toContain("Priya Natarajan, unread, starred, pinned,");
 });
 
 describe("plan 187: the preview's lines", () => {
@@ -195,5 +202,33 @@ describe("plan 187: the preview's lines", () => {
     expect(el.querySelector("[data-testid=row-marks]")).toBeNull();
     // who, what about, and the answers' line
     expect(el.querySelector("[data-testid=row-subject]")!.parentElement!.nextElementSibling).not.toBeNull();
+  });
+});
+
+describe("plan 188: what a screen reader hears for a row", () => {
+  it.each([["avatar", false, false], ["classic", false, false], ["avatar", true, false], ["avatar", false, true]] as const)("a %s row (compact %s, wide %s): who, its state at once, how many, and the rest at the end", async (layout, compact, wide) => {
+    host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    unmount = () => act(async () => root.unmount());
+    await act(async () =>
+      root.render(
+        <ThreadRowView
+          thread={thread} top={0} height={72} compact={compact} wide={wide} icons={false} layout={layout} review={null}
+          pinnedTop={false} reminderTop={false} selected={false} checked={false} inSelection={false} position={12}
+          account={{ text: "Work", email: "me@work.com" } as never} categories={categories} hasDraft code={null} reminder={undefined} remindersList={false} interactive={false}
+        />,
+      ),
+    );
+    const el = host.querySelector<HTMLElement>("[data-testid=thread-row]")!;
+    const name = rowName(el);
+    // who, then the state at once (never after the preview), then how many: a word with the count, never a bare 3
+    expect(name).toMatch(/^Priya Natarajan, unread, starred,3 messages/);
+    expect(name.indexOf("unread")).toBeLessThan(name.indexOf("We looked at"));
+    // the rest, said once at the end
+    expect(name).toMatch(/\. Clients, has attachments, to Work$/);
+    // no aria-label: the name is the row's own words, so it holds what's shown (WCAG 2.5.3)
+    expect(el.hasAttribute("aria-label") || el.hasAttribute("aria-labelledby")).toBe(false);
+    expect(el.getAttribute("aria-posinset")).toBe("12");
   });
 });

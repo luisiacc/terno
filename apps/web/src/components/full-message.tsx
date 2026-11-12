@@ -7,6 +7,7 @@ import { useMailReaderView } from "./mail-reader-view";
 import { snack } from "~/lib/snack";
 import { prepareMailDisplay } from "./mail-graphic";
 import { mailSections } from "./mail-sections";
+import { announce } from "~/lib/announce";
 
 export default function FullMessage({ html, source, onClose, controls, copyText, ...props }: HtmlBodyProps & { source(signal: AbortSignal): Promise<{ root: HTMLElement; tabs: WeakMap<Node, string | null> }>; onClose(): void; controls: ReactNode; copyText(): string }) {
   const view = useMailReaderView();
@@ -49,6 +50,8 @@ export default function FullMessage({ html, source, onClose, controls, copyText,
     try {
       await navigator.clipboard.write([new ClipboardItem({ "text/plain": new Blob([copyText()], { type: "text/plain" }), "text/html": new Blob([html], { type: "text/html" }) })]);
       setCopied(true);
+      // plan 188: the button's own words changing isn't heard while focus stays on it
+      announce(t("reader.full.copied"));
     } catch { setCopied(false); snack.error(t("threadMenu.copyFailed")); }
   };
   if (failedLayout || failedPreparation) throw new Error("Mail section layout could not be reflowed");
@@ -59,7 +62,7 @@ export default function FullMessage({ html, source, onClose, controls, copyText,
         <h2 id="full-message-heading" className="type-body font-semibold">{t("reader.full.title")}</h2>
         <button type="button" className="ml-auto rounded-md text-sm text-muted-foreground hover:text-foreground focus-visible:ring-2" onClick={() => void copy()}>{t(copied ? "reader.full.copied" : "reader.full.copy")}</button>
       </header>
-      <div className="flex shrink-0 items-center gap-3 px-3.5 py-2 text-sm" aria-label={t("reader.full.sections")}>
+      <div role="group" className="flex shrink-0 items-center gap-3 px-3.5 py-2 text-sm" aria-label={t("reader.full.sections")}>
         <button type="button" disabled={!sections || index === 0} onClick={() => move(index - 1)} className="rounded-md text-muted-foreground hover:text-foreground disabled:opacity-50 focus-visible:ring-2">{t("reader.full.previous")}</button>
         <span role="status">{t("reader.full.part", { part: index + 1, count: sections?.count ?? 1 })}</span>
         <button type="button" disabled={!sections || index + 1 === sections.count} onClick={() => move(index + 1)} className="rounded-md text-muted-foreground hover:text-foreground disabled:opacity-50 focus-visible:ring-2">{t("reader.full.next")}</button>

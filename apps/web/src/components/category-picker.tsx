@@ -82,6 +82,8 @@ export function CategoryPicker() {
                   <CategoryDot color={c.color as CategoryColor} />
                   {c.name}
                   {current.has(c.id) && <Check className="ml-auto size-4 text-primary" />}
+                  {/* plan 188: the check is a picture; what it means, and what choosing it does here, is said */}
+                  {current.has(c.id) && <span className="sr-only">{t(mode === "move" ? "category.picker.applied.sr" : "category.picker.remove.sr")}</span>}
                 </CommandItem>
               ))}
               {search.trim() && !exact && (

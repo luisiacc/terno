@@ -2,6 +2,7 @@ import { FLOAT_INSET } from "@terno/ui/lib/float-inset";
 import { t } from "@terno/i18n";
 import type { ReactNode } from "react";
 import { create } from "zustand";
+import { getApp } from "~/state/app";
 
 /**
  * The docked snackbar's state (plan 13): one snack at a time, docked at the
@@ -136,7 +137,17 @@ function schedule(): void {
 }
 
 const fresh = (paused: readonly PauseReason[]): Countdown => ({ elapsed: 0, since: paused.length ? null : clock.now() });
-const spokenOf = (s: { message: string; description?: string }) => (s.description ? `${s.message}. ${s.description}` : s.message);
+/**
+ * What the live region says. Plan 188: a snack with an action says how to reach it, Z only when Z runs this very Undo
+ * (the same rule as its keycap) and single keys are on; F6 always reaches the dock.
+ */
+function spokenOf(s: { message: string; description?: string; action?: SnackAction }): string {
+  const said = s.description ? `${s.message}. ${s.description}` : s.message;
+  if (!s.action) return said;
+  const action = s.action.name ?? s.action.label;
+  const z = zHolds(useSnack.getState(), s.action.undo) && getApp().settings?.characterKeys !== false;
+  return `${said}. ${t(z ? "snack.action.sr.undo" : "snack.action.sr", { action })}`;
+}
 
 function durationOf(input: SnackInput): number {
   if (input.tone === "loading" && input.duration === undefined) return Infinity;

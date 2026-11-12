@@ -698,6 +698,8 @@ export function CommandPalette() {
           value={value}
           onValueChange={setValue}
           ref={inputRef}
+          // plan 188: its name (cmdk labels it with nothing; the placeholder isn't one)
+          aria-label={t("palette.input")}
           data-testid="palette-input"
           addon={
             page !== "root" && (

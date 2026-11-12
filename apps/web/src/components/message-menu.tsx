@@ -119,7 +119,7 @@ function useRespond(threadId: number, messageId: number | null, fallback: () => 
  * end to answer it. Only the menu: the toolbar and the reply bar are the two ways to reply, and a third Reply on every header
  * was one too many (plan 158). It shows on hover and focus, the newest's too, in a place kept for it, so nothing moves.
  */
-export function MessageActions({ threadId, messageId, className }: { threadId: number; messageId: number; className?: string }) {
+export function MessageActions({ threadId, messageId, label, className }: { threadId: number; messageId: number; /** plan 188: whose message it is ("More for Ana's message, …"): every message's ⋯ told apart */ label?: string; className?: string }) {
   const trigger = useRef<HTMLButtonElement>(null);
   const { respond, opened, finalFocus } = useRespond(threadId, messageId, () => trigger.current);
   return (
@@ -134,7 +134,7 @@ export function MessageActions({ threadId, messageId, className }: { threadId: n
           <TooltipTrigger
             render={
               <DropdownMenuTrigger
-                render={<Button ref={trigger} variant="ghost" size="icon-sm" aria-label={t("reader.message.more")} data-testid="message-more" className="text-muted-foreground hover:text-foreground" />}
+                render={<Button ref={trigger} variant="ghost" size="icon-sm" aria-label={label ?? t("reader.message.more")} data-testid="message-more" className="text-muted-foreground hover:text-foreground" />}
               />
             }
           >

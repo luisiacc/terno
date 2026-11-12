@@ -1,4 +1,4 @@
-import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { create } from "zustand";
 import { COUNTED_VIEWS, FOLDER_VIEWS, folderRef, separatesTabs, tabRef, TABS, viewRef, type Account, type Category, type CategoryColor, type CountedView, type Folder, type FolderView, type Tab, type View } from "@terno/core";
 import { Button } from "@terno/ui/components/button";
@@ -154,6 +154,7 @@ function NavItem({
   expanded,
   controls,
   countHelp,
+  countSaid,
   shortcut,
   note,
   hoverAction,
@@ -181,6 +182,8 @@ function NavItem({
   controls?: string;
   /** a category's numbers in words, as the row's tooltip and description (described by its element `id`) */
   countHelp?: { id: string; text: string };
+  /** plan 188: what the number is, its description ("12 unread", "3 due"); unread unless the row says otherwise */
+  countSaid?: string;
   shortcut?: string;
   /** a quiet mark after the name (plan 83: a category hidden from the Inbox) */
   note?: React.ReactNode;
@@ -199,10 +202,14 @@ function NavItem({
     );
   // only the item under the pointer (and the one it left) re-renders during a drag
   const drop = useDropState(dropTarget);
+  // plan 188: what the number counts, as the row's description ("12 unread", "3 due"): the name stays the label and the
+  // count as shown (plan 159: a voice user says what's shown); a row with its own help says it there
+  const saidId = useId();
+  const said = count && !countHelp ? (countSaid ?? t("sidebar.count.unread", { count })) : null;
   const button = (
     <button
       type="button"
-      aria-describedby={countHelp?.id}
+      aria-describedby={countHelp?.id ?? (said ? saidId : undefined)}
       data-testid={testId}
       data-active={active || undefined}
       aria-current={active ? "page" : undefined}
@@ -260,8 +267,7 @@ function NavItem({
       ) : null}
     </button>
   );
-  if (!countHelp && !shortcut && !tip) return button;
-  return (
+  const row = !countHelp && !shortcut && !tip ? button : (
     <Tooltip>
       <TooltipTrigger render={button} />
       <TooltipContent side="right">
@@ -270,12 +276,19 @@ function NavItem({
       </TooltipContent>
     </Tooltip>
   );
+  return said ? (
+    <>
+      {row}
+      <span id={saidId} hidden>{said}</span>
+    </>
+  ) : row;
 }
 
 function SectionTitle({ children, action }: { children: React.ReactNode; action?: React.ReactNode }) {
   return (
     <div className="group/section mt-(--nav-section-gap) mb-0.5 flex min-h-(--nav-section-h) items-center justify-between px-2">
-      <span className="type-section-label text-muted-foreground">{children}</span>
+      {/* plan 188: a heading, so a screen reader can jump from section to section (the look is the label's) */}
+      <h2 className="type-section-label text-muted-foreground">{children}</h2>
       {action}
     </div>
   );
@@ -367,6 +380,7 @@ function ReviewRow({ categories, suggestions, reviewing }: { categories: readonl
       // (a place's name, short enough for every sidebar's width: "Sort into categories" truncated at 1100 px in Lumen)
       label={t("sidebar.toSort")}
       count={total}
+      countSaid={total ? t("sidebar.count.toSort", { count: total }) : undefined}
       tip={total ? t("sidebar.reviewAll", { count: total }) : undefined}
     />
   );
@@ -1403,6 +1417,7 @@ export function Sidebar() {
           icon={<Sun className="size-(--icon-nav)" />}
           label={t("today.title")}
           count={counts.today || undefined}
+          countSaid={counts.today ? t("sidebar.count.needYou", { count: counts.today }) : undefined}
           countTone={design.surfaces.inboxCount}
           // plan 161: what the number counts, in words
           countHelp={counts.today ? { id: "today-count-help", text: t("today.countHelp", { count: counts.today }) } : undefined}
@@ -1422,6 +1437,7 @@ export function Sidebar() {
             icon={<Bell className="size-(--icon-nav)" />}
             label={t("view.reminders")}
             count={dueReminders}
+            countSaid={dueReminders ? t("sidebar.count.due", { count: dueReminders }) : undefined}
             countTone={design.surfaces.inboxCount}
             shortcut="g r"
           />
@@ -1435,6 +1451,7 @@ export function Sidebar() {
               icon={<ListChecks className="size-(--icon-nav)" />}
               label={t("followups.title")}
               count={dueFollowups}
+              countSaid={dueFollowups ? t("sidebar.count.due", { count: dueFollowups }) : undefined}
               countTone={design.surfaces.inboxCount}
             />
           ) : null
@@ -1453,14 +1470,15 @@ export function Sidebar() {
           {t("sidebar.categories")}
         </SectionTitle>
         <ReviewRow categories={categories} suggestions={counts.categorySuggestions} reviewing={reviewCategoryId !== null && !searching} />
-        <div ref={categoriesGroup} data-sort-group data-testid="nav-categories">
+        <div ref={categoriesGroup} role="group" aria-label={t("sidebar.categories")} data-sort-group data-testid="nav-categories">
         {categories.map((c) => {
           const help = categoryHelp(counts.categoryUnread[c.id] ?? 0, counts.categorySuggestions[c.id] ?? 0);
           const suggested = counts.categorySuggestions[c.id] ?? 0;
           return (
             <CategoryMenu key={c.id} category={c} suggested={suggested}>
             <div className="relative" data-suggested={suggested || undefined} data-sort-id={c.id}>
-              {help && <span id={`sidebar-count-category-${c.id}`} className="sr-only">{help}</span>}
+              {/* (hidden: it's the row's description, never a line of its own in the reading order, plan 188) */}
+              {help && <span id={`sidebar-count-category-${c.id}`} hidden>{help}</span>}
               <NavItem
                 testId={`nav-category-${c.id}`}
                 dropTarget={c.id}
@@ -1518,7 +1536,7 @@ export function Sidebar() {
       <CategoryTip />
 
         <SectionTitle>{t("sidebar.accounts")}</SectionTitle>
-        <div ref={accountsGroupRef} data-sort-group onFocus={rememberFocus} onBlur={forgetFocus}>
+        <div ref={accountsGroupRef} role="group" aria-label={t("sidebar.accounts")} data-sort-group onFocus={rememberFocus} onBlur={forgetFocus}>
           {accounts.map((a) => (
             <AccountEntry
               key={a.id}

@@ -1385,6 +1385,13 @@ export function ThreadList() {
   }, [itemsKey]);
 
   const virtualItems = virtualizer.getVirtualItems();
+  // plan 188: how many rows the list has, on each mounted option (-1: more pages to come): written, not rendered, so a page
+  // that arrives re-renders no row for it (a row's own position is its prop: it changes with its offset anyway)
+  const setSize = useList((s) => (s.nextCursor !== null ? -1 : s.items.length));
+  const firstShown = virtualItems[0]?.index, shownCount = virtualItems.length;
+  useLayoutEffect(() => {
+    parentRef.current?.querySelectorAll("[role=option]").forEach((o) => o.setAttribute("aria-setsize", String(setSize)));
+  }, [setSize, items, firstShown, shownCount]);
   const showRow = useCallback((id: number) => {
     const i = useList.getState().index.get(id);
     if (i !== undefined) listScroller.scrollToIndex?.(i);
@@ -1462,7 +1469,7 @@ export function ThreadList() {
               <TodayHeading key={g.kind} kind={g.kind} top={(virtualizer.measurementsCache[g.at]?.start ?? lead + TOP_LABEL) - TOP_LABEL} />
             ))}
             {virtualItems.map((v) => (
-              <ThreadRow key={v.key} thread={items[v.index]!} top={v.start} height={height} compact={compact} wide={wide} showAccount={showAccount} icons={icons} layout={layout} review={review} pinnedTop={v.index < pinnedTop} reminderTop={v.index >= pinnedTop && v.index < top} match={match} lines={lines} pick={list} section={sectionName(todayGroups.find((g) => g.at === v.index)?.kind)} />
+              <ThreadRow key={v.key} thread={items[v.index]!} top={v.start} height={height} compact={compact} wide={wide} showAccount={showAccount} icons={icons} layout={layout} review={review} pinnedTop={v.index < pinnedTop} reminderTop={v.index >= pinnedTop && v.index < top} match={match} lines={lines} pick={list} section={sectionName(todayGroups.find((g) => g.at === v.index)?.kind)} position={v.index + 1} />
             ))}
           </div>
         )}

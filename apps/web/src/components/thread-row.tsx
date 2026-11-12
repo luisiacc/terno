@@ -53,6 +53,8 @@ interface Props {
   pick?: boolean;
   /** plan 162 (Codex review): the first row of a Today section says the section's name to assistive tech (a heading can't sit in a listbox) */
   section?: string;
+  /** plan 188: its place in the list, from 1 (aria-posinset; the list writes the size) */
+  position?: number;
 }
 
 /**
@@ -62,7 +64,7 @@ interface Props {
  * checking one re-renders one. The design picks the layout inside it (classic,
  * avatar, large avatar); the shell, roles, ids and handlers are the same in all.
  */
-export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact, wide = false, showAccount, icons, layout, review = null, pinnedTop = false, reminderTop = false, match = null, lines = 1, pick = false, section }: Props) {
+export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact, wide = false, showAccount, icons, layout, review = null, pinnedTop = false, reminderTop = false, match = null, lines = 1, pick = false, section, position }: Props) {
   renderProbe("ThreadRow");
   /** the open thread (the cursor; the listbox's active descendant) */
   const selected = useApp((s) => s.selectedId === thread.id);
@@ -128,6 +130,7 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
       lines={lines}
       pick={pick}
       section={section}
+      position={position}
       interactive
     />
   );
@@ -269,7 +272,7 @@ function RowDate({ thread, reminderTop, fallback, className, title }: { thread: 
   return <span data-testid="row-date" data-due-at={dueAt ?? undefined} title={title} className={className}>{dueAt !== null ? reminderShort(dueAt) : fallback}</span>;
 }
 
-export function ThreadRowView({ thread, top, height, compact, wide, icons, layout, review, pinnedTop = false, reminderTop, selected, checked, included, pending, inSelection, account, categories, inCategory = null, kept = false, hasDraft, code, reminder, remindersList, interactive, match, excerpt, lines: previewLines = 1, pick = false, section }: ViewProps) {
+export function ThreadRowView({ thread, top, height, compact, wide, icons, layout, review, pinnedTop = false, reminderTop, selected, checked, included, pending, inSelection, account, categories, inCategory = null, kept = false, hasDraft, code, reminder, remindersList, interactive, match, excerpt, lines: previewLines = 1, pick = false, section, position }: ViewProps) {
   const cats = thread.categoryIds.length ? categories.filter((c) => c.id !== inCategory && thread.categoryIds.includes(c.id)) : [];
   const classic = layout === "classic";
   const big = layout === "large-avatar";
@@ -283,6 +286,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
   const onMarksLine = previewLines === 2 ? "self-start h-(--type-row-snippet-leading)" : "self-center";
   /** where it lives when that isn't where mail usually is (Trash wins: trashed spam is in the trash) */
   const place = thread.inTrash ? "trash" : thread.inSpam ? "spam" : null;
+  const rowId = `thread-${thread.id}`;
 
   // plan 158: who, then what, then how it starts: sender and subject in the row's ink (the sender a step heavier), the
   // preview and meta quiet. Unread reads first, by more than one cue: a stronger sender and subject, the dot (8 px), and
@@ -293,7 +297,21 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
       <Marked text={thread.fromName} needles={match?.from} />
     </span>
   );
-  const count = thread.messageCount > 1 && <span className="text-xs text-muted-foreground tabular">{formatNumber(thread.messageCount)}</span>;
+  // plan 188: after the sender, what the dot, the star and the pin show, said (never last, after the whole preview); the
+  // count with its word ("3 messages", never a bare 3). The name stays the row's own words in their order, with these in
+  // them, so it holds what's shown (WCAG 2.5.3) and a voice user can say it
+  const state = [thread.unread && t("list.row.unread"), thread.starred && t("list.row.starred"), pinnedTop && t("list.row.pinned")].filter(Boolean);
+  const count = (
+    <>
+      {state.length > 0 && <span className="sr-only">, {state.join(", ")},</span>}
+      {thread.messageCount > 1 && (
+        <span className="text-xs text-muted-foreground tabular">
+          {formatNumber(thread.messageCount)}
+          <span className="sr-only"> {t("list.row.messagesWord", { count: thread.messageCount })}</span>
+        </span>
+      )}
+    </>
+  );
   const clip = thread.hasAttachments && <Paperclip className="size-3 text-muted-foreground" />;
   const star = thread.starred && <Star className="size-3 fill-star text-star" />;
   const dots = cats.map((c) => <CategoryDot key={c.id} data-cat-dot={c.id} color={c.color as CategoryColor} title={c.name} />);
@@ -513,10 +531,13 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
     </>
   );
 
+  // plan 188: the rest, said once at the end in one sentence (categories, Spam or Trash, attachments, account, code, reminder)
+  const tail = [cats.length ? formatList(cats.map((c) => c.name)) : null, place && t(place === "spam" ? "list.row.inSpam" : "list.row.inTrash"), thread.hasAttachments ? t("list.row.attachments") : null, account ? t("list.row.account", { account: account.text }) : null, code ? t("codes.sr", { code }) : null, reminder ? (reminder.due ? t("remind.due") : t("remind.pending")) : null].filter(Boolean).join(", ");
   return (
     <div
       role="option"
-      id={`thread-${thread.id}`}
+      id={rowId}
+      aria-posinset={position}
       aria-selected={inSelection}
       // plan 161, pass 2: in a preview, whether the row is in it: checked, as its check shows (the cursor is aria-selected)
       aria-checked={included}
@@ -643,16 +664,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
           <div className="flex min-w-0 flex-1 flex-col">{lines}</div>
         </div>
       )}
-      {cats.length > 0 && <span className="sr-only">{formatList(cats.map((c) => c.name))}</span>}
-      {place && <span className="sr-only">{t(place === "spam" ? "list.place.spam.sr" : "list.place.trash.sr")}</span>}
-      {/* what the dot, the star and the clip show, said as well (plan 158) */}
-      {thread.unread && <span className="sr-only">{t("list.state.unread.sr")}</span>}
-      {thread.starred && <span className="sr-only">{t("list.state.starred.sr")}</span>}
-      {pinnedTop && <span className="sr-only">{t("list.state.pinned.sr")}</span>}
-      {thread.hasAttachments && <span className="sr-only">{t("list.state.attachments.sr")}</span>}
-      {account && <span className="sr-only">{t("list.accountLabel.sr", { account: account.text })}</span>}
-      {code && <span className="sr-only">{t("codes.sr", { code })}</span>}
-      {reminder && <span className="sr-only">{reminder.due ? t("remind.due") : t("remind.pending")}</span>}
+      {tail && <span className="sr-only">. {tail}</span>}
     </div>
   );
 }

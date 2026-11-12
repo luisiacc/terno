@@ -2,6 +2,8 @@ import { t } from "@terno/i18n";
 import { TooltipProvider } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
 import { useEffect } from "react";
+import { Announcer } from "~/lib/announce";
+import { installListSpeech } from "~/lib/list-speech";
 import { reviewDrafts, useDraftRecovery } from "~/lib/draft-recovery-ui";
 import { useAppearance } from "~/lib/appearance";
 import { usePage } from "~/lib/page";
@@ -138,6 +140,8 @@ export function App() {
   const page = usePage();
   const covered = page !== "list";
   useEffect(() => installKeyboard(), []);
+  // plan 188: the list's news where focus isn't (a mailbox opened from the sidebar, the selection's size)
+  useEffect(() => installListSpeech(), []);
   useEffect(() => installComposeFollowsSelection(), []);
   useEffect(() => installNetworkEvents(), []);
   // every way of filing threads offers the snackbar, except its own bulk adds
@@ -176,6 +180,8 @@ export function App() {
           {t("list.skipTo")}
         </button>}
         <Sidebar />
+        {/* plan 188: the one polite voice for what changes where focus isn't */}
+        <Announcer />
         <section id="app-list" role={list ? "main" : undefined} aria-label={list ? undefined : t("list.label")} className={cn("hairline-l relative min-h-0", !list && "hairline-r hairline-strong")}>
           {/* under a page the list stays laid out (scroll, measured rows, mounted rows) but isn't painted or reachable */}
           <div

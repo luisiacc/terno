@@ -13,6 +13,7 @@ import { messageDate } from "~/lib/format";
 import { bodyArrivedForSummary, dismissSummary, loadSummary, revealSummaryMessage, setSummaryOpen, stopSummary, summarizable, summarize, useSummaries } from "~/lib/summaries";
 import { replyFromItem } from "~/lib/summary-reply";
 import { setApp, useApp } from "~/state/app";
+import { announce } from "~/lib/announce";
 import { AI_CARD, AI_GLYPH, AI_HEADER, AI_INSET, AI_PAD, AI_TITLE, AiCopyButton, AiErrorNotice, AiProvenance, aiErrorCopy, errorTarget, messageSource, messageSourceShort } from "./ai-card";
 
 /** Pass 3: what an item asks of the user, answered with the conversation's ordinary reply. */
@@ -158,7 +159,7 @@ export default function ThreadSummary({ detail }: { detail: ThreadDetail }) {
   // Stop goes away with the state it's in: focus stays with the block (its next control), or when that went too, the
   // toolbar's button that started it; never on the page. Only while it's really here: a click away blurs with no
   // relatedTarget, just as a removed control does, so a later change must not pull focus back from wherever the user went.
-  const block = useRef<HTMLDivElement>(null);
+  const block = useRef<HTMLElement>(null);
   const hadFocus = useRef(false);
   useEffect(() => {
     const onPointerDown = (e: PointerEvent) => {
@@ -172,6 +173,12 @@ export default function ThreadSummary({ detail }: { detail: ThreadDetail }) {
     hadFocus.current = false;
     const next = block.current?.querySelector<HTMLElement>("button") ?? document.querySelector<HTMLElement>("[data-summarize]");
     next?.focus({ preventScroll: true });
+  }, [ui?.kind]);
+  // plan 188: a summary that was being written and is ready says so, once (never its words as they stream)
+  const wasRunning = useRef(false);
+  useEffect(() => {
+    if (ui?.kind === "ready" && wasRunning.current) announce(t("summary.ready"));
+    wasRunning.current = ui?.kind === "running";
   }, [ui?.kind]);
   if (!summarizable(detail.thread)) return null;
   const onFocusCapture = () => { hadFocus.current = true; };
@@ -247,5 +254,6 @@ export default function ThreadSummary({ detail }: { detail: ThreadDetail }) {
     }
   })();
   if (!content) return null;
-  return <div ref={block} data-summary-card onFocusCapture={onFocusCapture} onBlurCapture={onBlurCapture}>{content}</div>;
+  // plan 188: a region named Summary, as Reply ready and the follow-ups are, so the rotor finds it
+  return <section ref={block} aria-label={t("summary.label")} data-summary-card onFocusCapture={onFocusCapture} onBlurCapture={onBlurCapture}>{content}</section>;
 }

@@ -15,6 +15,7 @@ import { formatBytes } from "~/lib/format";
 import { retryForwardFiles, useForwardFiles, type ForwardFiles } from "~/lib/forward-files";
 import { snack } from "~/lib/snack";
 import { threadFiles } from "~/lib/thread-overview";
+import { announce } from "~/lib/announce";
 
 export function AttachButton({ d }: { d: LocalDraft }) {
   const input = useRef<HTMLInputElement>(null);
@@ -57,6 +58,8 @@ export function DraftAttachments({ d }: { d: LocalDraft }) {
             const body = e.currentTarget.closest("[data-testid=composer]")?.querySelector<HTMLElement>("[data-testid=compose-body]");
             editDraft(d.key, { attachments: d.attachments!.filter((x) => x.assetId !== a.assetId) });
             body?.focus({ preventScroll: true });
+            // plan 188: focus went to the text; what happened is said
+            announce(t("attachments.removed", { name: a.filename }));
           }}
         >
           <span className="max-w-48 truncate">{a.filename}</span><span className="font-normal text-muted-foreground tabular">{formatBytes(a.size)}</span>

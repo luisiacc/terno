@@ -260,6 +260,8 @@ function ConditionRow({ c, onChange, onRemove }: { c: Condition; onChange: (c: C
           <OpSelect c={c} ops={TEXT_OPS} onChange={onChange} className="w-40" />
           <Input
             data-testid="condition-value"
+            // plan 188: a name of its own (the placeholder is an example, not one)
+            aria-label={t("filters.value.label")}
             className={cn("h-7 flex-1", pattern !== null && "font-mono text-xs")}
             value={c.value}
             aria-invalid={issue ? true : undefined}
@@ -697,7 +699,8 @@ export function FiltersDialog() {
               <Fragment key={f.id}>
               {f.auto && !all[i - 1]?.auto && <p data-testid="filters-auto-heading" className="mt-4 mb-1 px-2 text-xs font-medium text-muted-foreground">{t("filters.group.auto")}</p>}
               <div data-testid="filter-item" data-filter-id={f.id} data-auto={f.auto || undefined} data-current={draft.id === f.id || undefined} className={cn("group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted", draft.id === f.id && "bg-muted")}>
-                <button type="button" className="min-w-0 flex-1 text-left" onClick={() => (leaving(), load(draftOf(f)), setExplanation(null))}>
+                {/* plan 188: the open one says so, not only by its fill */}
+                <button type="button" aria-current={draft.id === f.id ? "true" : undefined} className="min-w-0 flex-1 text-left" onClick={() => (leaving(), load(draftOf(f)), setExplanation(null))}>
                   <span className="block truncate">{f.name}</span>
                   <span className="text-2xs text-muted-foreground">
                     {f.auto ? t("filters.source.auto") : f.source === "ai" ? t("filters.source.aiShort") : f.source === "learned" ? t("filters.source.learned") : t("filters.source.manual")} · {t("filters.hits", { count: f.hits })}

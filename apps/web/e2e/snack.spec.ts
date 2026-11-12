@@ -58,7 +58,8 @@ test.describe("the docked snackbar", () => {
       const undo = dock(page).getByTestId("snack-action");
       await expect(undo).toHaveAccessibleName("Undo archive");
       await expect(undo).toHaveAttribute("aria-keyshortcuts", UNDO_KEYS);
-      await expect(page.getByTestId("snack-live")).toHaveText("Archived");
+      // plan 188: and how to reach it, said with it
+      await expect(page.getByTestId("snack-live")).toHaveText("Archived. Undo archive: press Z, or F6 to reach it.");
     });
     await scenario("Undo restores the row; z does too and takes the bar with it", async () => {
       await fresh(page);

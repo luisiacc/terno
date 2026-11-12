@@ -74,7 +74,7 @@ export function Tip({
       <span aria-live="polite" className="sr-only">
         {open && (
           <>
-            {title}. {body}
+            {title}. {body} {t("tip.dismissHint")}
           </>
         )}
       </span>

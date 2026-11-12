@@ -77,7 +77,8 @@ function SearchField({
           className="absolute end-2 top-1/2 -translate-y-1/2"
         />
       ) : (
-        hint && <span className="pointer-events-none absolute end-2 top-1/2 flex -translate-y-1/2">{hint}</span>
+        // (a picture of the key: the field's own name and shortcut say it, plan 188, not "slash" read after it)
+        hint && <span aria-hidden className="pointer-events-none absolute end-2 top-1/2 flex -translate-y-1/2">{hint}</span>
       )}
     </div>
   )
