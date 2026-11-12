@@ -1605,7 +1605,14 @@ test.describe("drafting with AI (plan 133)", () => {
         }
         await page.getByTestId("ai-strip-voice").click();
         expect(await unclipped(page.getByTestId("ai-voice-popover")), where).toEqual([]);
-        await page.keyboard.press("Escape");
+        // Esc once focus is in it (a hand doesn't press it in the popup's first frame): it closes from there, and only it. A
+        // tooltip its focused button shows (keyboard focus) takes the first Esc, as the innermost layer: then one more
+        await expect.poll(() => page.getByTestId("ai-voice-popover").evaluate((el) => el.contains(document.activeElement)), where).toBe(true);
+        await expect(async () => {
+          await page.keyboard.press("Escape");
+          await expect(page.getByTestId("ai-voice-popover")).toHaveCount(0, { timeout: 500 });
+        }, where).toPass({ timeout: 3000 });
+        await expect(strip(page), where).toBeVisible();
       }
     }
     // plan 162 (after ai162-r02): a rewrite picked from the narrow menu gives the keys to the draft, and Undo says what it

@@ -45,8 +45,9 @@ export function AiProvenance({
 }) {
   // plan 162: only what's known: a model without a time is said without one (a zero time is no date)
   const last = detail ?? (model ? (at > 0 ? provenanceDetail(model, at) : t("ai.provenance.modelOnly", { model: modelName(model) })) : null);
+  const [open, setOpen] = useState(false);
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       {/* quiet at rest, a chevron since it opens: the label reads as a status, the row's buttons as commands */}
       <PopoverTrigger
         render={<Button type="button" variant="ghost" size="sm" className={cn("shrink-0 px-1.5 text-xs font-normal text-muted-foreground hover:text-foreground data-popup-open:text-foreground", className)} data-testid={testId} onKeyDown={onKeyDown} />}
@@ -55,9 +56,21 @@ export function AiProvenance({
         <ChevronDown aria-hidden />
       </PopoverTrigger>
       {/* its keys are its own: the popup is portalled, but its keys still bubble through React to whatever holds it (Enter and
-          the arrows chose Ask's sources behind it; a reply's composer would close on its Esc). Base UI's own handlers sit on
-          the popup and the document, so it still moves focus and closes (Codex review) */}
-      <PopoverContent align="end" className="w-72 gap-2 text-sm" data-testid={popoverTestId} aria-label={t("ai.provenance.details")} onKeyDown={(e) => e.stopPropagation()}>
+          the arrows chose Ask's sources behind it; a reply's composer would close on its Esc). Esc closes it here, then: stopped
+          in the popup's portal it never reached Base UI's listener on the document, so with focus inside, Esc did nothing */}
+      <PopoverContent
+        align="end"
+        className="w-72 gap-2 text-sm"
+        data-testid={popoverTestId}
+        aria-label={t("ai.provenance.details")}
+        onKeyDown={(e) => {
+          e.stopPropagation();
+          if (e.key === "Escape" && !e.nativeEvent.isComposing) {
+            e.preventDefault();
+            setOpen(false);
+          }
+        }}
+      >
         {lines.length > 0 && (
           <ul className="flex flex-col gap-1">
             {lines.map((text) => (

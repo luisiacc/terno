@@ -74,3 +74,14 @@ it("plan 161, pass 3: who wrote it is a button (it was a span that took focus an
   expect(popover.textContent).toContain("In your voice with Liam");
   expect(q("x-prov-detail")!.textContent).toMatch(/^Written by qwen3:8b, .+\. It can make mistakes\.$/);
 });
+
+it("Esc with focus inside the popover closes it, and only it: the key never reaches what holds it (a reply's composer)", async () => {
+  const outer = vi.fn();
+  act(() => root.render(<div onKeyDown={(e) => outer(e.key)}><AiProvenance model="qwen3:8b" at={0} testId="x-prov"><button type="button" data-testid="x-inside">Edit</button></AiProvenance></div>));
+  await act(async () => q("x-prov")!.click());
+  const inside = q("x-inside")!;
+  inside.focus();
+  await act(async () => { inside.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })); });
+  await vi.waitFor(() => expect(q("x-prov")!.getAttribute("aria-expanded")).toBe("false"));
+  expect(outer).not.toHaveBeenCalled();
+});
