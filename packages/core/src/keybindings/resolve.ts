@@ -62,7 +62,8 @@ export type Command =
   | "snackbar.only"
   | "snackbar.undo"
   | "snackbar.close"
-  | "snackbar.focus"
+  | "pane.next"
+  | "pane.prev"
   | "suggestion.accept"
   | "suggestion.reject";
 
@@ -73,6 +74,13 @@ export interface KeyContext {
   dialogOpen: boolean;
   /** the categorization snackbar is up: its keys win */
   snackbar?: boolean;
+  /**
+   * Plan 188: focus is on a control with its own use for arrows, Delete and Backspace (a sidebar row, a toolbar button, a
+   * tab, a slider), outside the conversation list and the conversation: those keys stay with it
+   */
+  onControl?: boolean;
+  /** plan 188 (WCAG 2.1.4): false drops every shortcut made of character keys alone (e, #, j, g i…); named keys and chords stay */
+  characterKeys?: boolean;
 }
 
 export interface KeyInput {
@@ -93,13 +101,15 @@ interface Binding {
   inDialog?: boolean;
   /** only while this surface is up, and then before global bindings of the same key */
   context?: "snackbar";
+  /** plan 188: a key a focused control has its own meaning for (arrows, Delete, Backspace): never taken from one */
+  native?: true;
 }
 
 export const DEFAULT_BINDINGS: readonly Binding[] = [
   { keys: "j", command: "list.next" },
-  { keys: "arrowdown", command: "list.next" },
+  { keys: "arrowdown", command: "list.next", native: true },
   { keys: "k", command: "list.prev" },
-  { keys: "arrowup", command: "list.prev" },
+  { keys: "arrowup", command: "list.prev", native: true },
   { keys: "enter", command: "list.open" },
   { keys: "o", command: "list.open" },
   { keys: "x", command: "list.toggleSelect" },
@@ -111,9 +121,9 @@ export const DEFAULT_BINDINGS: readonly Binding[] = [
   { keys: "* u", command: "list.selectUnread" },
   { keys: "* s", command: "list.selectStarred" },
   { keys: "shift+j", command: "list.extendNext" },
-  { keys: "shift+arrowdown", command: "list.extendNext" },
+  { keys: "shift+arrowdown", command: "list.extendNext", native: true },
   { keys: "shift+k", command: "list.extendPrev" },
-  { keys: "shift+arrowup", command: "list.extendPrev" },
+  { keys: "shift+arrowup", command: "list.extendPrev", native: true },
   { keys: "shift+f10", command: "list.menu" },
   { keys: "contextmenu", command: "list.menu" },
   // list.toggleUnread has no key: ⌘L is the composer's link (its button, the palette and the desktop's View menu toggle it)
@@ -127,9 +137,9 @@ export const DEFAULT_BINDINGS: readonly Binding[] = [
   { keys: "e", command: "thread.archive" },
   // Apple Mail's archive
   { keys: "mod+ctrl+a", command: "thread.archive" },
-  { keys: "backspace", command: "thread.trash" },
+  { keys: "backspace", command: "thread.trash", native: true },
   { keys: "#", command: "thread.trash" },
-  { keys: "delete", command: "thread.trash" },
+  { keys: "delete", command: "thread.trash", native: true },
   { keys: "mod+backspace", command: "thread.trash" },
   { keys: "!", command: "thread.spam" },
   { keys: "mod+shift+j", command: "thread.spam" },
@@ -188,8 +198,10 @@ export const DEFAULT_BINDINGS: readonly Binding[] = [
   { keys: "0", command: "snackbar.only", context: "snackbar" },
   { keys: "z", command: "snackbar.undo", context: "snackbar" },
   { keys: "escape", command: "snackbar.close", context: "snackbar" },
-  // the docked snackbar never takes focus: F6 goes to it, from the list or while typing (the handler skips it under a dialog)
-  { keys: "f6", command: "snackbar.focus", inEditable: true, inDialog: true },
+  // plan 188: F6 moves between the panes (a snack that's up first: the docked snackbar never takes focus by itself), from
+  // the list or while typing (the handler skips it under a dialog)
+  { keys: "f6", command: "pane.next", inEditable: true, inDialog: true },
+  { keys: "shift+f6", command: "pane.prev", inEditable: true, inDialog: true },
 ];
 
 /** Canonical chord string for a key event: "mod+shift+k", "#", "arrowdown". */
@@ -204,6 +216,19 @@ export function chordOf(input: KeyInput, isMac = true): string {
   const printableSymbol = key.length === 1 && !/[a-z0-9]/.test(key);
   if (input.shift && !printableSymbol) mods.push("shift");
   return [...mods, key].join("+");
+}
+
+/** One character key, no Command, Ctrl or Alt (Shift makes another character: ⇧N is still one). */
+const characterChord = (chord: string) => {
+  const parts = chord.split("+");
+  const key = parts.at(-1)!;
+  // "+" itself is a character; a chord's last part is its key
+  return (key.length === 1 || chord === "+") && parts.slice(0, -1).every((m) => m === "shift");
+};
+
+/** Plan 188: a binding made of character keys alone, which WCAG 2.1.4 says the user must be able to turn off. */
+export function isCharacterBinding(keys: string): boolean {
+  return keys.split(" ").every(characterChord);
 }
 
 export interface ResolveResult {
@@ -225,6 +250,8 @@ export function resolveKey(
     (b) =>
       (b.context === undefined || (b.context === "snackbar" && context.snackbar === true)) &&
       (!context.editable || b.inEditable) &&
+      !(b.native && context.onControl) &&
+      (context.characterKeys !== false || !isCharacterBinding(b.keys)) &&
       (!(context.dialogOpen || context.composing) || b.inDialog),
   );
   const exact = eligible.find((b) => b.context !== undefined && b.keys === sequence) ?? eligible.find((b) => b.keys === sequence);

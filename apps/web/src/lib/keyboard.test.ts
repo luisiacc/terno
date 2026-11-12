@@ -30,7 +30,7 @@ vi.mock("~/rpc/connection", () => ({
   },
 }));
 vi.mock("~/components/thread-list", () => ({ listScroller: {}, focusSearch() {} }));
-vi.mock("~/components/snack-dock", () => ({ focusDock() {} }));
+vi.mock("~/components/snack-dock", () => ({ focusDock: () => false, inDock: () => false, dockCameFrom: () => null }));
 vi.mock("~/components/thread-menu", () => ({ openMenuForSelection() {} }));
 vi.mock("~/components/category-snackbar", () => ({ snackbarControls: { current: null } }));
 

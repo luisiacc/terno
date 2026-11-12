@@ -1,10 +1,48 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_BINDINGS, resolveKey, shortcutsFor, type KeyContext, type KeyInput } from "./resolve";
+import { DEFAULT_BINDINGS, isCharacterBinding, resolveKey, shortcutsFor, type KeyContext, type KeyInput } from "./resolve";
 
 const ctx: KeyContext = { editable: false, composing: false, dialogOpen: false };
 const key = (k: string, mods: Partial<KeyInput> = {}): KeyInput => ({ key: k, meta: false, ctrl: false, alt: false, shift: false, ...mods });
 
 describe("resolveKey", () => {
+  it("plan 188: arrows, Delete and Backspace stay with a focused control; elsewhere they act", () => {
+    const onControl = { ...ctx, onControl: true };
+    for (const k of ["ArrowDown", "ArrowUp", "Delete", "Backspace"]) expect(resolveKey(key(k), onControl, null).command, k).toBe(null);
+    expect(resolveKey(key("ArrowDown", { shift: true }), onControl, null).command).toBe(null);
+    // the letters and chords still act from a control
+    expect(resolveKey(key("j"), onControl, null).command).toBe("list.next");
+    expect(resolveKey(key("e"), onControl, null).command).toBe("thread.archive");
+    expect(resolveKey(key("Backspace", { meta: true }), onControl, null).command).toBe("thread.trash");
+    expect(resolveKey(key("Delete"), ctx, null).command).toBe("thread.trash");
+    expect(resolveKey(key("ArrowDown"), ctx, null).command).toBe("list.next");
+  });
+
+  it("plan 188: with single-key shortcuts off, character keys do nothing; named keys and chords stay (WCAG 2.1.4)", () => {
+    const off = { ...ctx, characterKeys: false };
+    for (const k of ["e", "#", "j", "k", "s", "!", "z", "?", "/", "c", "y"]) expect(resolveKey(key(k), off, null).command, k).toBe(null);
+    expect(resolveKey(key("N", { shift: true }), off, null).command).toBe(null);
+    expect(resolveKey(key("g"), off, null)).toEqual({ command: null, pending: null });
+    expect(resolveKey(key("1"), { ...off, snackbar: true }, null).command).toBe(null);
+    expect(resolveKey(key("ArrowDown"), off, null).command).toBe("list.next");
+    expect(resolveKey(key("Enter"), off, null).command).toBe("list.open");
+    expect(resolveKey(key("Escape"), off, null).command).toBe("reader.close");
+    expect(resolveKey(key("Delete"), off, null).command).toBe("thread.trash");
+    expect(resolveKey(key("a", { meta: true, ctrl: true }), off, null).command).toBe("thread.archive");
+    expect(resolveKey(key("z", { meta: true }), off, null).command).toBe("action.undo");
+    expect(resolveKey(key("k", { meta: true }), off, null).command).toBe("palette.open");
+    expect(resolveKey(key("F6"), off, null).command).toBe("pane.next");
+    expect(isCharacterBinding("g i")).toBe(true);
+    expect(isCharacterBinding("* a")).toBe(true);
+    expect(isCharacterBinding("shift+j")).toBe(true);
+    expect(isCharacterBinding("mod+shift+j")).toBe(false);
+    expect(isCharacterBinding("arrowdown")).toBe(false);
+  });
+
+  it("plan 188: F6 and ⇧F6 move between panes, also while typing or writing", () => {
+    expect(resolveKey(key("F6"), ctx, null).command).toBe("pane.next");
+    expect(resolveKey(key("F6", { shift: true }), { ...ctx, editable: true, composing: true }, null).command).toBe("pane.prev");
+  });
+
   it("resolves single keys", () => {
     expect(resolveKey(key("j"), ctx, null).command).toBe("list.next");
     expect(resolveKey(key("S", { shift: true }), ctx, null).command).toBe(null); // shift+s is not star

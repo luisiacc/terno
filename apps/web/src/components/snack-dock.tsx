@@ -24,10 +24,20 @@ function giveFocusBack(): void {
 }
 
 /** F6: the dock's primary action (else its close button) while a snack is up; the dock never takes focus by itself. */
-export function focusDock(): void {
+export function focusDock(): boolean {
   const el = dockRef.current;
-  if (!useSnack.getState().current || !el || covered(el)) return;
-  (el.querySelector<HTMLElement>("[data-snack-primary]:not(:disabled)") ?? el.querySelector<HTMLElement>("button:not(:disabled)"))?.focus();
+  if (!useSnack.getState().current || !el || covered(el)) return false;
+  const target = el.querySelector<HTMLElement>("[data-snack-primary]:not(:disabled)") ?? el.querySelector<HTMLElement>("button:not(:disabled)");
+  target?.focus();
+  return !!target && el.contains(document.activeElement);
+}
+
+/** Plan 188: whether focus is in the dock's card, and where it came from (F6 goes on from that pane). */
+export function inDock(el: Element | null): boolean {
+  return !!el && !!dockRef.current?.contains(el);
+}
+export function dockCameFrom(): HTMLElement | null {
+  return returnFocus;
 }
 
 /** The dock's primary action: the countdown pill on the current snack's lifetime (paused with it). */

@@ -441,7 +441,7 @@ function Message({ m, threadId, expanded, onToggle, icons, person, headless, sol
                 icon={icons}
                 person={person}
                 trailing={<>
-                  <span className="ml-auto shrink-0 text-xs text-muted-foreground tabular">{date}</span>
+                  <span className="ml-auto shrink-0 text-xs text-muted-foreground tabular"><span aria-hidden>{date}</span><span className="sr-only">{fullDate(m.date)}</span></span>
                   {!solo && <Disclosure open />}
                 </>}
               />
@@ -451,9 +451,13 @@ function Message({ m, threadId, expanded, onToggle, icons, person, headless, sol
                 <span className="max-w-[45%] shrink-0 truncate">{name}</span>
                 <span aria-hidden className="min-w-0 flex-1 truncate text-[length:var(--ds-text-control)] text-muted-foreground">{m.snippet}</span>
                 <span className="sr-only">{previewFor(m.snippet)}</span>
+                {/* plan 188: the short date shown, the full one said */}
                 <span className="shrink-0 text-xs text-muted-foreground tabular">
-                  {listDate(m.date)}
-                  {timed && <span className="@max-[560px]:hidden">{messageTime(m.date)}</span>}
+                  <span aria-hidden>
+                    {listDate(m.date)}
+                    {timed && <span className="@max-[560px]:hidden">{messageTime(m.date)}</span>}
+                  </span>
+                  <span className="sr-only">{fullDate(m.date)}</span>
                 </span>
                 <Disclosure open={false} />
               </>
@@ -461,14 +465,14 @@ function Message({ m, threadId, expanded, onToggle, icons, person, headless, sol
           </Head>
         </h3>
         {/* on hover and focus only, the newest's too: the reply bar is right there */}
-        {expanded && <MessageActions threadId={threadId} messageId={m.id} className="absolute -right-[5px] bottom-0.5" />}
+        {expanded && <MessageActions threadId={threadId} messageId={m.id} label={t("reader.message.moreFrom", { name, date: fullDate(m.date) })} className="absolute -right-[5px] bottom-0.5" />}
       </div>}
       {/* the region is always there (aria-controls); its content is mounted only while open */}
       <div id={bodyId}>
         <Expand open={open} onOpening={(el) => keepInView(el.closest("article") ?? el)}>
           <div className={cn("pb-4", headless ? "pt-3" : "pt-2")}>
             {m.bodyHtml ? (
-              <HtmlBody marks={marks} html={m.bodyHtml} messageId={m.id} accountId={m.accountId} attachments={m.attachments} remoteImages={remoteImages} spam={!icons} appearance={mailAppearance} />
+              <HtmlBody marks={marks} html={m.bodyHtml} messageId={m.id} accountId={m.accountId} attachments={m.attachments} remoteImages={remoteImages} spam={!icons} appearance={mailAppearance} label={t("reader.mailFrame", { name, date: fullDate(m.date) })} />
             ) : m.bodyText !== null ? (
               <TextBody text={m.bodyText} marks={marks} />
             ) : (
@@ -1195,7 +1199,7 @@ function ReaderContent() {
   const summarize = summarizeOffered && summarizable(thread);
 
   return (
-    <section ref={sectionRef} tabIndex={page ? -1 : undefined} aria-labelledby={page && detail ? "reader-subject" : undefined} onPointerDownCapture={chooseOpenThread} className="@container flex h-full min-h-0 flex-col bg-background outline-none" data-testid="reader">
+    <section ref={sectionRef} tabIndex={-1} aria-labelledby={detail ? "reader-subject" : undefined} aria-label={detail ? undefined : t("reader.label")} aria-busy={selectedId !== null && !detail && !gone ? true : undefined} onPointerDownCapture={chooseOpenThread} className="@container flex h-full min-h-0 flex-col bg-background outline-none" data-testid="reader">
       {/* the same gutter as the conversation below, so the two columns share their edges */}
       <div ref={toolbarRef} className="drag-region scroll-hairline data-context:after:opacity-0! relative shrink-0 overflow-hidden [scrollbar-gutter:stable]">
         {/* on the conversation's column: the first glyph on its left edge, the last control on its right, whatever the width; words as they fit */}

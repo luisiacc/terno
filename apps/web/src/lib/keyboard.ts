@@ -4,7 +4,8 @@ import { goToFolder } from "~/lib/account-folders";
 import { resolveKey, type Command } from "@terno/core";
 import { act, openCompose, toggleRead, toggleStar, undoLast } from "~/lib/actions";
 import { togglePin } from "~/lib/pins";
-import { focusDock } from "~/components/snack-dock";
+import { movePane } from "~/lib/pane-focus";
+import { announce } from "~/lib/announce";
 import { clearSelection, extendSelection, isMac, selectAll, selectWhere, toggleCurrent } from "~/lib/select";
 import { openFocusedMenu, openMenuForSelection } from "~/components/thread-menu";
 import { chooseOpenThread, getApp, markSelectionIntent, navigate, setApp } from "~/state/app";
@@ -16,7 +17,7 @@ import { backToDigest, digestHasKeys, digestKeys } from "~/state/today";
 import { conversationKeys } from "~/lib/conversation-keys";
 import { printCommand } from "~/lib/print-open";
 import { checkForUpdates } from "~/lib/updates";
-import { closeEmptySearch, focusSearch, listScroller } from "~/components/thread-list";
+import { closeEmptySearch, focusRows, focusSearch, listScroller } from "~/components/thread-list";
 import { snackbarControls } from "~/components/category-snackbar";
 import { setListFilter, toggleUnreadFilter } from "~/lib/unread";
 import { closePage, currentPage, goBack, goForward, listLayout, openThread, uncoverList } from "~/lib/page";
@@ -39,7 +40,31 @@ let stepping = false;
 /** every move: a page that answers after the user moved again (or left the page) doesn't move for them */
 let moves = 0;
 
-export function move(delta: number) {
+/**
+ * Plan 188: a key moved the cursor, so focus comes along or hears where it went. On a control outside the list and the
+ * conversation (a sidebar row, a toolbar button) the list takes it, and reads the row; in the conversation, focus the step took
+ * away (a header of the conversation that left) goes to the reader, which is named by the new subject; focus that's still
+ * there hears the subject.
+ */
+function followCursor(id: number, before: Element | null): void {
+  const reader = () => document.querySelector<HTMLElement>("[data-testid=reader]");
+  const inReader = !!before && !!reader()?.contains(before);
+  const listShown = !(listLayout() && currentPage() !== "list");
+  if (!inReader) {
+    // (with focus nowhere, the page itself, nothing is pulled: the list's keys work from there as they always did)
+    if (listShown && before && before !== document.body && !before.closest("[data-list-section]")) focusRows();
+    return;
+  }
+  const said = useList.getState().items.find((t) => t.id === id);
+  requestAnimationFrame(() => {
+    if (getApp().selectedId !== id) return;
+    const active = document.activeElement;
+    if (!active || active === document.body) reader()?.focus({ preventScroll: true });
+    else if (said) announce(t("reader.announce.opened", { subject: said.subject || t("common.noSubject"), from: said.fromName }));
+  });
+}
+
+export function move(delta: number, byKey = false) {
   const { items, index, nextCursor } = useList.getState();
   if (items.length === 0) return;
   const s = getApp();
@@ -58,7 +83,7 @@ export function move(delta: number) {
       stepping = false;
       const still = mine === moves && getApp().selectedId === s.selectedId && listLayout() && currentPage() === "thread";
       if (!ok && still) snack.error(t("reader.olderFailed"));
-      else if (still && useList.getState().items.length > items.length) move(delta);
+      else if (still && useList.getState().items.length > items.length) move(delta, byKey);
     });
     return;
   }
@@ -67,8 +92,10 @@ export function move(delta: number) {
   // plan 87: the user stepped onto it (Split shows it; in List's list page the dwell finds no reader and nothing ends)
   noteOpen(id);
   if (id === s.selectedId) { markSelectionIntent(); chooseOpenThread(); return; }
+  const before = document.activeElement;
   // the cursor moves; in Split that opens it, in List's list page it's only the cursor (Enter opens)
   setApp({ selectedId: id });
+  if (byKey) followCursor(id, before);
   // where it is now: a read row the filter kept may have just left above it
   listScroller.scrollToIndex?.(useList.getState().index.get(id) ?? next);
   // warm the neighbours so the next keypress renders from cache (only where a conversation shows: R12)
@@ -91,7 +118,10 @@ function openCurrent() {
       chooseOpenThread();
       noteOpen(id);
     }
-    return setApp({ readerOpen: true });
+    setApp({ readerOpen: true });
+    // plan 188: into the conversation, as List's page does (the reader is named by its subject)
+    if (id !== null) document.querySelector<HTMLElement>("[data-testid=reader]")?.focus({ preventScroll: true });
+    return;
   }
   if (id !== null) openThread(id);
 }
@@ -163,8 +193,8 @@ export function sendShownDraft(): void {
 
 const HANDLERS: Partial<Record<Command, () => void>> = {
   // plan 162 (after ai162-r02): the digest page has the list's keys while it has the keys: its rows, not Today's behind it
-  "list.next": () => (digestHasKeys() ? digestKeys.current!.step(1) : move(1)),
-  "list.prev": () => (digestHasKeys() ? digestKeys.current!.step(-1) : move(-1)),
+  "list.next": () => (digestHasKeys() ? digestKeys.current!.step(1) : move(1, true)),
+  "list.prev": () => (digestHasKeys() ? digestKeys.current!.step(-1) : move(-1, true)),
   "list.open": () => (digestHasKeys() ? digestKeys.current!.open() : openCurrent()),
   "list.toggleSelect": () => (digestHasKeys() ? digestKeys.current!.toggle() : toggleCurrent()),
   "list.selectAll": selectAll,
@@ -231,11 +261,13 @@ const HANDLERS: Partial<Record<Command, () => void>> = {
   "snackbar.only": () => snackbarControls.current?.only?.(),
   "snackbar.undo": () => snackbarControls.current?.undo(),
   "snackbar.close": () => snackbarControls.current?.close(),
-  // not from a dialog or menu: the dock is under them
-  "snackbar.focus": () => {
-    const s = getApp();
-    if (s.dialog === null && !s.menuOpen) focusDock();
-  },
+};
+
+/** Plan 188: commands whose handler says whether it did anything: a key nothing took is left to the browser (F6 on the web). */
+const DECIDES: Partial<Record<Command, () => boolean>> = {
+  // not from a dialog or menu: the panes are under them
+  "pane.next": () => getApp().dialog === null && !getApp().menuOpen && movePane(1),
+  "pane.prev": () => getApp().dialog === null && !getApp().menuOpen && movePane(-1),
 };
 
 const hasTargets = () => {
@@ -248,6 +280,18 @@ function isEditable(el: Element | null): boolean {
   const tag = el.tagName;
   // a recipient chip has focus inside its field (plan 34): Backspace, Delete and letters are the field's, never the conversation's
   return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || (el as HTMLElement).isContentEditable || el.closest("[data-recipient-field]") !== null;
+}
+
+/**
+ * Plan 188: where arrows, Delete and Backspace aren't the conversation's: a sidebar row (the pane of places, where a
+ * screen reader user stands on "Inbox", and Delete took the open conversation with it), and a control with its own use
+ * for them (a tab, a switch, a slider, a pane's edge, a menu item). Elsewhere a button keeps them for the mail, as it
+ * always did: a click leaves focus on Select all, Star or Archive, and Backspace or ↓ goes on acting on the selection.
+ */
+const OWN_KEYS = "select, summary, [role=tab], [role=menuitem], [role=menuitemradio], [role=menuitemcheckbox], [role=switch], [role=checkbox], [role=radio], [role=slider], [role=separator], [role=treeitem], [role=combobox], [role=spinbutton]";
+function onControl(el: Element | null): boolean {
+  if (!el || el === document.body) return false;
+  return !!el.closest("#app-sidebar") || el.matches(OWN_KEYS);
 }
 
 /** A focused control that Enter and Space activate natively (disclosures, buttons, links). */
@@ -276,6 +320,8 @@ export function installKeyboard(): () => void {
         // the context menu is modal for the keyboard: its arrows, Enter and typeahead apply
         dialogOpen: s.dialog !== null || s.menuOpen,
         snackbar: s.snackbar,
+        onControl: onControl(document.activeElement),
+        characterKeys: s.settings?.characterKeys !== false,
       },
       s.pendingKeys,
       undefined,
@@ -283,6 +329,11 @@ export function installKeyboard(): () => void {
     );
     if (result.pending !== s.pendingKeys) setApp({ pendingKeys: result.pending });
     if (!result.command) return;
+    const decides = DECIDES[result.command];
+    if (decides) {
+      if (decides()) e.preventDefault();
+      return;
+    }
     const handler = HANDLERS[result.command];
     if (!handler) return;
     // with no draft to send, ⌘Enter is left to whoever else takes it (an action preview's Apply)
