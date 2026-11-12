@@ -105,6 +105,10 @@ describe("plan 07 tokens", () => {
 });
 
 describe("plan 194: unread owns its hue", () => {
+  it("Atelier's dark is Graphite's dark palette (the owner: Atelier's own was too dark)", () => {
+    expect(builtinTheme("atelier-dark")!.tokens).toEqual(builtinTheme("graphite-dark")!.tokens);
+  });
+
   // a color this grey reads as no hue at all (slate), and an unread this grey (Gruvbox Dark) owns none
   const HUED = 0.05;
   const hueGap = (a: number, b: number) => Math.min(Math.abs(a - b), 360 - Math.abs(a - b));

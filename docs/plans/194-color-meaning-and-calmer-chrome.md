@@ -108,3 +108,9 @@ No new subscription, query or render: a row renders the same elements on another
 
 1. **A conversation the user only wrote to** lost its one recipient's actions with the chip: no message there is theirs, and the ⋯ offered only a message's writer. The ⋯ of the user's own message now offers the conversation's only other person (`messagePerson`, `thread-overview.test.ts`).
 2. **"Reply to X only"** was dropped from the ⋯ though the chip offered it when a Reply-To sends a plain Reply elsewhere. The ⋯ now uses the chip's own rule (`conversationPeople`, shared by both), tested with a Reply-To.
+
+## Atelier's dark palette (the owner, after the series)
+
+> make the atelier dark style color palette be like the dark palette of graphite, its currently too dark
+
+Atelier's dark palette (`atelier-dark`) now wears Graphite's dark palette whole: one `GRAPHITE_DARK` input in the registry that both themes spread, so they can't drift. Atelier keeps its name, type and structure; only its colors change. `registry.test.ts` holds the two equal; the control-edge test, which pinned Graphite's control overrides to Graphite alone, now names Atelier's dark too.

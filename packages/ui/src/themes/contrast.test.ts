@@ -25,7 +25,8 @@ describe("WCAG AA in every built-in theme", () => {
   });
 
   it("control-edge is input, and its hover the ink at 30%, in every other palette, so no other design's controls moved", () => {
-    for (const theme of THEMES.filter((t) => !t.id.startsWith("graphite-"))) {
+    // (Atelier's dark wears Graphite's dark palette whole, plan 194)
+    for (const theme of THEMES.filter((t) => !t.id.startsWith("graphite-") && t.id !== "atelier-dark")) {
       expect(theme.tokens["control-edge"], theme.id).toBe(theme.tokens.input);
       expect(parseColor(theme.tokens["control-edge-hover"]), theme.id).toEqual(withAlpha(parseColor(theme.tokens.foreground), 0.3));
     }

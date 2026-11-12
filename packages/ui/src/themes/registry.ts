@@ -299,6 +299,41 @@ export function defineTheme(input: ThemeInput): Theme {
 type Cats = ThemeInput["cats"];
 const cats = (s: string) => s.split("|").map((x) => x.trim()) as unknown as Cats;
 
+/**
+ * Graphite's dark palette (plan 137): the ramp turned over, #EDEDED ink on #242424, a slight step above the #202020 sidebar
+ * (the owner), and #AAAAAA (6.5:1; #A4A4A4 on the sidebar) carrying everything secondary. Atelier's dark wears it too
+ * (plan 194, the owner: Atelier's own was too dark).
+ */
+const GRAPHITE_DARK = {
+  tokens: {
+    background: "#242424",
+    foreground: "#EDEDED",
+    pane: "#242424",
+    card: "#2B2B2B",
+    popover: "#2E2E2E",
+    sidebar: "#202020",
+    muted: "#343434",
+    "muted-foreground": "#AAAAAA",
+    accent: "#343434",
+    "accent-foreground": "#EDEDED",
+    border: "1 0 0 / 15%",
+    input: "1 0 0 / 18%",
+    primary: "#EDEDED",
+    "primary-foreground": "#202020",
+    destructive: "0.704 0.17 22",
+    success: "0.75 0.13 150",
+    unread: "0.74 0.13 237",
+    star: "0.82 0.14 80",
+    "row-hover": "1 0 0 / 6%",
+    "row-selected": "#3D3D3D",
+    "row-selected-foreground": "#EDEDED",
+    "sidebar-accent": "0.344 0 0",
+  },
+  cats: cats(".72 .13 16 | .8 .12 75 | .78 .13 131 | .74 .11 163 | .76 .09 205 | .7 .07 50 | .72 .14 322 | .7 .01 257"),
+  // plan 161: the keyboard's place as far toward the selection as #9E9E9E still reads on it (4.58:1): 1.27:1, BOUNDARY_STEPS' exception
+  overrides: { "sidebar-foreground": "#A4A4A4", "sidebar-glyph": "#A4A4A4", "sidebar-accent-foreground": "#EDEDED", "control-edge": "#8A8A8A", "control-edge-hover": "#AAAAAA", "draft-foreground": "#EDEDED", "menu-highlight": "#3F3F3F" },
+} satisfies Pick<ThemeInput, "tokens" | "cats" | "overrides">;
+
 export const THEMES: readonly Theme[] = [
   defineTheme({
     id: "terno-light",
@@ -910,32 +945,8 @@ export const THEMES: readonly Theme[] = [
     name: "Atelier",
     mode: "dark",
     vibrancy: false,
-    tokens: {
-      background: "0.22 0.012 255",
-      foreground: "0.94 0.006 85",
-      pane: "0.22 0.012 255",
-      card: "0.255 0.013 255",
-      popover: "0.265 0.014 255",
-      sidebar: "0.205 0.011 255",
-      muted: "0.285 0.014 255",
-      "muted-foreground": "0.72 0.012 85",
-      accent: "0.31 0.03 255",
-      "accent-foreground": "0.9 0.03 255",
-      border: "1 0 0 / 15%",
-      input: "1 0 0 / 18%",
-      primary: "0.76 0.07 255",
-      "primary-foreground": "0.2 0.03 255",
-      destructive: "0.68 0.16 30",
-      success: "0.72 0.1 145",
-      unread: "0.76 0.07 255",
-      star: "0.74 0.12 50",
-      "row-hover": "1 0 0 / 6%",
-      "row-selected": "0.326 0.035 255",
-      "row-selected-foreground": "0.96 0.006 85",
-      "sidebar-accent": "1 0 0 / 0.115",
-    },
-    cats: cats(".72 .11 15 | .76 .1 70 | .76 .08 125 | .74 .07 144 | .75 .06 209 | .66 .07 50 | .74 .07 306 | .7 .012 90"),
-    overrides: { "draft-foreground": "0.82 0.06 255" },
+    // plan 194 (the owner): Graphite's dark palette; Atelier's own blue-black was too dark
+    ...GRAPHITE_DARK,
   }),
   defineTheme({
     id: "luma-dark",
@@ -974,34 +985,7 @@ export const THEMES: readonly Theme[] = [
     name: "Graphite",
     mode: "dark",
     vibrancy: false,
-    // Graphite dark: the ramp turned over, #EDEDED ink on #242424, a slight step above the #202020 sidebar (the owner), and here #AAAAAA (6.5:1; #A4A4A4 on the sidebar) carries everything secondary
-    tokens: {
-      background: "#242424",
-      foreground: "#EDEDED",
-      pane: "#242424",
-      card: "#2B2B2B",
-      popover: "#2E2E2E",
-      sidebar: "#202020",
-      muted: "#343434",
-      "muted-foreground": "#AAAAAA",
-      accent: "#343434",
-      "accent-foreground": "#EDEDED",
-      border: "1 0 0 / 15%",
-      input: "1 0 0 / 18%",
-      primary: "#EDEDED",
-      "primary-foreground": "#202020",
-      destructive: "0.704 0.17 22",
-      success: "0.75 0.13 150",
-      unread: "0.74 0.13 237",
-      star: "0.82 0.14 80",
-      "row-hover": "1 0 0 / 6%",
-      "row-selected": "#3D3D3D",
-      "row-selected-foreground": "#EDEDED",
-      "sidebar-accent": "0.344 0 0",
-    },
-    cats: cats(".72 .13 16 | .8 .12 75 | .78 .13 131 | .74 .11 163 | .76 .09 205 | .7 .07 50 | .72 .14 322 | .7 .01 257"),
-    // plan 161: the keyboard's place as far toward the selection as #9E9E9E still reads on it (4.58:1): 1.27:1, BOUNDARY_STEPS' exception
-    overrides: { "sidebar-foreground": "#A4A4A4", "sidebar-glyph": "#A4A4A4", "sidebar-accent-foreground": "#EDEDED", "control-edge": "#8A8A8A", "control-edge-hover": "#AAAAAA", "draft-foreground": "#EDEDED", "menu-highlight": "#3F3F3F" },
+    ...GRAPHITE_DARK,
   }),
 ];
 
