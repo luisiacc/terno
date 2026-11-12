@@ -16,41 +16,13 @@
 // cache names (Squirrel's ShipIt state, electron-updater's cache) so they
 // never touch a real Terno's, a generic feed, and no DMG.
 import { execFileSync, spawnSync } from "node:child_process";
-import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, readdirSync } from "node:fs";
-import { createRequire } from "node:module";
+import { copyFileSync, existsSync, mkdtempSync, rmSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { build, Platform, Arch } from "electron-builder";
 import { withMounted } from "../src/dmg-mount.ts";
 import { builderIdentity } from "./sign-identity.mjs";
-
-const here = dirname(fileURLToPath(import.meta.url));
-const root = join(here, "..");
-const require = createRequire(join(root, "package.json"));
-const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
-const electronPkg = JSON.parse(readFileSync(require.resolve("electron/package.json"), "utf8"));
-const electronDist = join(dirname(require.resolve("electron/package.json")), "dist");
-const testBuild = process.env.TERNO_TEST_BUILD ? JSON.parse(process.env.TERNO_TEST_BUILD) : undefined;
-const version = process.env.TERNO_VERSION || pkg.version;
-const release = process.env.TERNO_PACKAGE_OUT || join(root, "release");
-// a test build stages beside its own output, never in the checkout
-const stage = process.env.TERNO_PACKAGE_OUT ? `${release}.stage` : join(root, ".stage");
-// One ASCII name everywhere: bundle, CFBundleName (Electron derives the
-// "<name> Helper.app" file names from it), the executable and the DMG volume.
-const productName = "Terno";
-// the legal entity behind Terno: the LICENSE's Licensor and the Developer ID team
-const publisher = "Luisiacc LLC";
-/** what update tests are built as: never dev.terno.mail, so a real Terno's Squirrel state and caches stay untouched */
-const TEST_APP_ID = "dev.terno.updatetest";
-const appId = testBuild ? TEST_APP_ID : "dev.terno.mail";
-// electron-updater's cache is ~/Library/Caches/<name>-updater
-const packageName = testBuild ? "terno-updatetest" : "terno";
-
-const dist = process.env.TERNO_BUILD_OUT || join(root, "dist");
-if (!existsSync(join(dist, "main.cjs"))) throw new Error("run `pnpm --filter @terno/desktop build` first");
-// a test build (its own feed and profile baked in) is never packaged as a release, nor a release as a test
-if (existsSync(join(dist, "test-build.json")) !== Boolean(testBuild)) throw new Error(testBuild ? `${dist} is not a test build` : `${dist} is a test build: rebuild with \`pnpm build\``);
+import { appId, commonConfig, commonResources, electronDist, productName, release, root, stageApp, stampMinimumVersion, testBuild, uploadReleaseMaps, version } from "./package-stage.mjs";
 
 /** The identity to sign with: explicit, else the best one in the keychain, else ad-hoc ("-"). */
 function pickIdentity() {
@@ -116,17 +88,8 @@ assertCanSign(identity);
 if (process.env.GITHUB_ACTIONS === "true" && process.env.TERNO_RELEASE === "1" && !testBuild && !notarize) throw new Error(`a release on GitHub must be notarized: ${developerId ? "set APPLE_API_KEY, APPLE_API_KEY_ID and APPLE_API_ISSUER" : "no Developer ID Application identity in the keychain"}`);
 console.log(`signing with ${identity === "-" ? "an ad-hoc signature (this build can't update itself)" : identity}${developerId ? `, hardened runtime${notarize ? ", notarized" : ", not notarized (no APPLE_* credentials)"}` : ""}`);
 
-// Source maps (archived by build.mjs, never in the app) go to Sentry for a release (plan 78)
-if (!testBuild && process.env.TERNO_RELEASE === "1") (await import(join(root, "../../scripts/upload-maps.mjs"))).uploadMaps(join(root, ".maps", "LATEST"));
-
-rmSync(stage, { recursive: true, force: true });
-rmSync(release, { recursive: true, force: true });
-mkdirSync(stage, { recursive: true });
-cpSync(dist, join(stage, "dist"), { recursive: true });
-writeFileSync(
-  join(stage, "package.json"),
-  JSON.stringify({ name: packageName, productName, version, description: pkg.description, main: "dist/main.cjs", author: publisher, license: "SEE LICENSE IN LICENSE" }, null, 2),
-);
+await uploadReleaseMaps();
+const stage = stageApp();
 
 await build({
   // the zip target builds the .app too; with a publish config it also writes the channel file, the
@@ -135,28 +98,15 @@ await build({
   projectDir: stage,
   publish: "never",
   config: {
-    appId,
-    productName,
-    copyright: `© 2026 ${publisher}`,
-    electronVersion: electronPkg.version,
+    ...commonConfig(),
     electronDist,
     directories: { output: release, buildResources: join(root, "resources") },
-    files: ["dist/**/*", "!dist/mcp/**", "package.json"],
     extraResources: [
-      { from: join(root, "resources/bin"), to: "bin" },
-      { from: join(dist, "mcp"), to: "mcp" },
+      ...commonResources,
       // plan 19: the macOS 26 (Liquid Glass) icon, compiled by `pnpm brand` from resources/icon.icon
       { from: join(root, "resources/Assets.car"), to: "Assets.car" },
-      // the License (BSL 1.1) travels with every copy
-      { from: join(root, "../../LICENSE"), to: "LICENSE" },
     ],
-    asar: true,
-    npmRebuild: false,
-    nodeGypRebuild: false,
-    buildDependenciesFromSource: false,
-    electronLanguages: ["en", "es"],
     artifactName: "${productName}-${version}-${arch}-mac.${ext}",
-    publish: testBuild ? { provider: "generic", url: testBuild.feed } : { provider: "github", owner: "luisiacc", repo: "terno" },
     mac: {
       category: "public.app-category.productivity",
       // the grid-drawn .icns (Finder before the catalog loads, the DMG, older systems);
@@ -192,21 +142,7 @@ assertIcon(app);
 const channelFile = readdirSync(release).find((f) => /^[a-z]+-mac\.yml$/.test(f));
 if (!channelFile) throw new Error("no update channel file (latest-mac.yml) was written");
 
-// plan 95: a required update. Copies below `minimumVersion` cover their window with "Update Terno" once a check reads
-// this (TERNO_MINIMUM_VERSION, or apps/desktop/release-policy.json's minimumVersion); it must not exceed this release
-const policyFile = join(root, "release-policy.json");
-const minimum = process.env.TERNO_MINIMUM_VERSION || (existsSync(policyFile) ? JSON.parse(readFileSync(policyFile, "utf8")).minimumVersion : null);
-if (minimum) {
-  const semver = /^(\d+)\.(\d+)\.(\d+)(?:-[0-9A-Za-z.-]+)?$/;
-  if (!semver.test(minimum)) throw new Error(`minimumVersion ${minimum} isn't x.y.z`);
-  const core = (v) => semver.exec(v).slice(1, 4).map(Number);
-  const [a, b] = [core(minimum), core(version)];
-  const above = a[0] !== b[0] ? a[0] > b[0] : a[1] !== b[1] ? a[1] > b[1] : a[2] > b[2];
-  if (above) throw new Error(`minimumVersion ${minimum} is above this release (${version}): no copy could meet it`);
-  const yml = join(release, channelFile);
-  writeFileSync(yml, `${readFileSync(yml, "utf8").replace(/^minimumVersion:.*\n?/m, "").trimEnd()}\nminimumVersion: '${minimum}'\n`);
-  console.log(`✓ ${channelFile} requires ${minimum} or later`);
-}
+stampMinimumVersion(channelFile);
 
 if (!testBuild && process.env.TERNO_PACKAGE_DMG !== "0") {
   const dmg = join(release, `${productName}-${version}-arm64.dmg`);
