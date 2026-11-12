@@ -6,7 +6,7 @@ import { REDACTED, sanitizeField } from "./fields";
 import { buildReport } from "./report";
 import { Ring } from "./ring";
 import { scrubText } from "./scrub";
-import type { DiagEntry, ErrorRecord } from "./types";
+import { diagPlatform, type DiagEntry, type ErrorRecord } from "./types";
 import { sanitizeEntry, sanitizeRecord } from "./validate";
 
 /** Strings that must never survive: what a mailbox, a provider or a key looks like. */
@@ -28,6 +28,15 @@ const HOSTILE = {
   password: "password=Tr0ub4dor&3 sent",
 };
 const NEVER = ["luis", "perez", "empresa", "ana.lopez", "López", "hunter2", "supersecret", "LONGTOKENVALUE", "AbCdEfGh", "Contrato", "CAFk9x2", "Tr0ub4dor", "MIIEvQ", "dXNlcj1s", "JVBERi0x", "ABCDEFGHIJKLMNOP", "eyJzdWIi"];
+
+describe("plan 189: the platform every process reports", () => {
+  it("names Linux and its architectures, not other", () => {
+    expect(diagPlatform("linux", "x64")).toEqual({ os: "linux", arch: "x64" });
+    expect(diagPlatform("linux", "arm64")).toEqual({ os: "linux", arch: "arm64" });
+    expect(diagPlatform("darwin", "arm64")).toEqual({ os: "darwin", arch: "arm64" });
+    expect(diagPlatform("freebsd", "riscv64")).toEqual({ os: "other", arch: "other" });
+  });
+});
 
 describe("scrubText", () => {
   it.each(Object.entries(HOSTILE))("%s leaves nothing identifying", (_name, input) => {

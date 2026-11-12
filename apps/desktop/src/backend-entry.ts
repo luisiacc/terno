@@ -8,7 +8,7 @@ import { Backend, openNodeMailbox, nodeStore, parseGoogleClients, seedDemo, seed
 import { devAiKeys } from "@terno/core";
 import type { BackupSummary, MailboxGate } from "@terno/core/mailbox";
 import { cancelClones, classifyOpenError, diskFree, expireBackups, listBackups, mailboxBytes, migrateHeadroom, nodePlatform, prepareUpgrade, quarantineRestored, SCHEMA_VERSION, SqlMailStore, type BackupInfo, type UpgradePlan } from "@terno/db";
-import { captureError, installDiag, log, type DiagEntry, type DiagOptions } from "@terno/core/diag";
+import { captureError, diagPlatform, installDiag, log, type DiagEntry, type DiagOptions } from "@terno/core/diag";
 import { isRpcMessage, type RpcMessage, type Transport } from "@terno/core/rpc";
 import { createRegistry } from "@terno/mail/registry";
 import { loopbackInsecure } from "./imap-seam";
@@ -45,7 +45,7 @@ const diagOptions = (o: Partial<DiagOptions> = {}): DiagOptions => ({
   build: "0",
   channel: "dev",
   ...o,
-  context: () => ({ os: process.platform === "darwin" ? "darwin" : "other", arch: process.arch === "arm64" ? "arm64" : process.arch === "x64" ? "x64" : "other", runtime: `node-${process.versions.node}`, engine: "node-sqlite", accounts }),
+  context: () => ({ ...diagPlatform(process.platform, process.arch), runtime: `node-${process.versions.node}`, engine: "node-sqlite", accounts }),
   sink: {
     // every 500 ms or 100 entries
     write: (e) => {

@@ -32,6 +32,7 @@ import {
   reportsAutomatically,
   mayReport,
   sanitizeCrumbs,
+  diagPlatform,
   sanitizeEntry,
   sanitizeRecord,
   ERROR_REPORTS,
@@ -75,8 +76,6 @@ export interface MainDiagDeps {
 const MAX_RECENT_SEND_DAYS = 7;
 const RINGS_EVERY_MS = 10_000;
 const RELOADS_PER_MINUTE = 3;
-const OS: Record<string, DiagContext["os"]> = { darwin: "darwin", win32: "win32", linux: "linux" };
-const ARCH: Record<string, DiagContext["arch"]> = { arm64: "arm64", x64: "x64", ia32: "ia32" };
 
 function osVersion(): string | undefined {
   try {
@@ -149,9 +148,8 @@ class MainDiag implements DiagSink {
       locale = undefined;
     }
     return {
-      os: OS[process.platform] ?? "other",
+      ...diagPlatform(process.platform, process.arch),
       osVersion: osVersion(),
-      arch: ARCH[process.arch] ?? "other",
       locale,
       runtime: `electron-${process.versions.electron}`,
       engine: "node-sqlite",

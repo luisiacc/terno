@@ -105,3 +105,11 @@ export interface DiagView {
   /** a logs folder the user can open (desktop) */
   logs: boolean;
 }
+
+const DIAG_OS: Record<string, DiagContext["os"]> = { darwin: "darwin", win32: "win32", linux: "linux" };
+const DIAG_ARCH: Record<string, NonNullable<DiagContext["arch"]>> = { arm64: "arm64", x64: "x64", ia32: "ia32" };
+
+/** The platform as every process reports it (main, the backend, the MCP sidecar): one mapping, Linux included (plan 189). */
+export function diagPlatform(platform: string, arch: string): { os: DiagContext["os"]; arch: NonNullable<DiagContext["arch"]> } {
+  return { os: DIAG_OS[platform] ?? "other", arch: DIAG_ARCH[arch] ?? "other" };
+}
