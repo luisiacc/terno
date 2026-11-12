@@ -190,8 +190,9 @@ const SWAP_AWAY = "group-data-many/list:invisible group-data-many/list:scale-50 
 /** j/k's place among several checked rows, and the row a menu is for: the focus ring, inside the shape */
 export const ROW_OUTLINE = "inset 0 0 0 2px var(--ring)";
 
-/** How far into its line a match may stand: near the start, so it shows whole on the narrowest row (a 1100 px window, an account beside it). */
-const LEAD = { own: 12, wide: 40 };
+/** How far into its line a match may stand: near the start, so it shows whole on the narrowest row (a 1100 px window, an account
+ * beside it; plan 193: a one-line row's preview starts after a subject of any length, so it can be short) */
+const LEAD = { own: 12, wide: 20 };
 
 /** The row's words after the subject in a search: from near the match, the match marked. */
 function matchLine(match: RowMatch | null | undefined, text: string, lead: number) {
@@ -237,18 +238,18 @@ function RowSnippet({ thread, reminderTop, ink, quiet, match, excerpt, lead, two
   );
 }
 
-/** A wide row's preview: after the subject's column, a step smaller and in the quiet ink, and the first thing cut. */
+/** A wide row's preview: right after the subject, a step smaller and in the preview's ink, and the first thing cut. */
 function WideSnippet({ thread, reminderTop, ink, quiet, match, excerpt }: { thread: ThreadSummary; reminderTop?: boolean; ink: string; quiet: string; match?: RowMatch | null; excerpt?: string }) {
   const { line } = useOwed(thread, reminderTop);
   const reason = useReason(thread);
   return (
-    <span data-testid="row-snippet" data-followup={line ? true : undefined} data-excerpt={!line && excerpt ? true : undefined} className={cn("min-w-0 flex-1 truncate text-xs", line ? ink : reason ? undefined : quiet)}>
+    <span data-testid="row-snippet" data-followup={line ? true : undefined} data-excerpt={!line && excerpt ? true : undefined} className={cn("ml-1.5 min-w-0 flex-1 truncate text-xs", line ? ink : reason ? undefined : quiet)}>
       {line ?? withReason(reason, quiet, ink, matchLine(match, excerpt ?? thread.snippet, LEAD.wide))}
     </span>
   );
 }
 
-/** A one-line row's words after the subject's column: the same line, where it reads the same; apart from the subject by ink and space, no dash (subjects have their own). */
+/** A one-line row's words right after the subject: the same line, where it reads the same; apart from the subject by ink and space, no dash (subjects have their own). */
 function RowTail({ thread, reminderTop, ink, quiet, match, excerpt }: { thread: ThreadSummary; reminderTop?: boolean; ink: string; quiet: string; match?: RowMatch | null; excerpt?: string }) {
   const { line } = useOwed(thread, reminderTop);
   const reason = useReason(thread);
@@ -256,15 +257,16 @@ function RowTail({ thread, reminderTop, ink, quiet, match, excerpt }: { thread: 
 }
 
 /**
- * Plan 160: a one-line row's subject sits in a column of the list's width (cqw: the same on every row, whatever its
- * sender or marks take), its Draft, place and reminder marks at the column's end, so every preview starts at one x and
- * the eye runs down subjects and previews apart. CSS only: no row measures anything. Short of room the preview goes
- * first (it has no basis), then the column shrinks: nothing paints over the date.
+ * Plan 193 (the owner, undoing plan 160's subject column): a one-line row's preview starts right after its subject,
+ * whatever its length, as one line that reads on; the subject takes its own width up to 70% of what's left after the
+ * sender, so a long one still leaves the preview its first words. Short of room the preview goes first (no basis), then the
+ * subject shrinks beside its marks: nothing paints over the date.
  */
-const SUBJECT_COLUMN = "flex w-[clamp(9rem,30cqw,26rem)] min-w-0 shrink items-center gap-1.5";
-/** A compact row's sender, a column of the list's width too (a wide row's is the table's own) */
+const FLOWING_SUBJECT = "max-w-[70%] min-w-0 truncate";
+/** A one-line row's preview ink: a step darker than the quiet ink, since it runs on from the subject (plan 193) */
+const PREVIEW_INK = "text-row-preview";
+/** A compact row's sender, a column of the list's width (cqw: the same on every row; a wide row's is the table's own) */
 const SENDER_COLUMN = "flex w-[clamp(5rem,24cqw,11rem)] min-w-0 shrink items-center gap-1.5";
-const COMPACT_SUBJECT = "flex w-[clamp(6rem,30cqw,22rem)] min-w-0 shrink items-center gap-1.5";
 
 /** On the Inbox's top and in its own list, the date a row shows is when it's owed. */
 function RowDate({ thread, reminderTop, fallback, className, title }: { thread: ThreadSummary; reminderTop?: boolean; fallback: string; className: string; title?: string }) {
@@ -599,20 +601,17 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
             {count}
             {chip}
           </span>
-          {/* plan 160: the subject in its column, the preview from one x on every row (plan 158's flowing line zigzagged);
-              the preview is what gives way; the meta columns follow it on the right */}
-          <span className="flex min-w-0 flex-1 items-center gap-3">
-            <span className={SUBJECT_COLUMN}>
-              <span data-testid="row-subject" className={cn("min-w-0 truncate", subjectInk)}>{thread.subject ? <Marked text={thread.subject} needles={match?.subject} /> : t("common.noSubject")}</span>
-              {/* what a row is, not a column: at the subject column's end, so neither the preview nor the columns on the right move */}
-              <span className="ml-auto flex shrink-0 items-center gap-1.5 empty:hidden">
-                {draft}
-                {keptTag}
-                {placeTag}
-                {reminder && !reminderTop && bell}
-              </span>
-            </span>
-            {answer ? <span className="flex min-w-0 flex-1 justify-end">{answer}</span> : <WideSnippet thread={thread} reminderTop={reminderTop} ink={owedInk} quiet={quiet} match={match} excerpt={excerpt} />}
+          {/* plan 193: subject then preview, one flowing line (plan 160's subject column left a gap before every short
+              subject's preview); the preview is what gives way; the meta columns follow it on the right */}
+          <span className="flex min-w-0 flex-1 items-center gap-1.5">
+            <span data-testid="row-subject" className={cn(FLOWING_SUBJECT, subjectInk)}>{thread.subject ? <Marked text={thread.subject} needles={match?.subject} /> : t("common.noSubject")}</span>
+            {/* what a row is, not a column: beside the subject, so the columns on the right never move */}
+            {draft}
+            {keptTag}
+            {placeTag}
+            {reminder && !reminderTop && bell}
+            {/* (Review's answers and the subject share what's short, so neither goes whole) */}
+            {answer ? <span className="ml-auto flex min-w-0 justify-end">{answer}</span> : <WideSnippet thread={thread} reminderTop={reminderTop} ink={owedInk} quiet={PREVIEW_INK} match={match} excerpt={excerpt} />}
           </span>
           {accountTag}
           <span data-testid="row-marks" className="flex shrink-0 items-center justify-end gap-1.5">
@@ -626,18 +625,16 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
         <div className={cn("relative flex min-w-0 items-center", classic ? "gap-2" : "gap-2.5")}>
           {lead}
           {avatar}
-          {/* plan 160: the sender and the subject in columns, the preview from one x */}
+          {/* plan 160: the sender in a column; plan 193: the preview right after the subject */}
           <span className={SENDER_COLUMN}>
             {from}
             {count}
           </span>
           {/* (a few characters of subject stay whatever the width: the sender's column gives way first) */}
           <span className="flex min-w-16 flex-1 items-center gap-2">
-            <span className={COMPACT_SUBJECT}>
-              <span data-testid="row-subject" className={cn("min-w-0 truncate", subjectInk)}>{thread.subject ? <Marked text={thread.subject} needles={match?.subject} /> : t("common.noSubject")}</span>
-              {draft && <span className="ml-auto shrink-0">{draft}</span>}
-            </span>
-            <RowTail thread={thread} reminderTop={reminderTop} ink={owedInk} quiet={quiet} match={match} excerpt={excerpt} />
+            <span data-testid="row-subject" className={cn(FLOWING_SUBJECT, subjectInk)}>{thread.subject ? <Marked text={thread.subject} needles={match?.subject} /> : t("common.noSubject")}</span>
+            {draft}
+            <RowTail thread={thread} reminderTop={reminderTop} ink={owedInk} quiet={PREVIEW_INK} match={match} excerpt={excerpt} />
           </span>
           {answer}
           {accountTag}

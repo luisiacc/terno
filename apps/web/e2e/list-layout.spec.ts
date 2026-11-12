@@ -54,11 +54,15 @@ test.describe("the table (plan 158)", () => {
       await expect(rows(page).first()).toHaveAttribute("data-wide", "true");
       const lefts = await rows(page).evaluateAll((els) => els.slice(0, 12).map((r) => {
         const [subject, snippet] = ["row-subject", "row-snippet"].map((id) => r.querySelector(`[data-testid=${id}]`)!.getBoundingClientRect());
-        return { subject: subject!.left, snippet: snippet!.left };
+        return { subject: subject!.left, gap: snippet!.left - subject!.right, marked: !!r.querySelector("[data-testid=row-draft]") };
       }));
       expect(new Set(lefts.map((l) => l.subject)).size).toBe(1);
-      // plan 160: the subject has a column of its own, so every preview starts at one x (plan 158's flowing line zigzagged)
-      expect(new Set(lefts.map((l) => Math.round(l.snippet))).size).toBe(1);
+      // plan 193 (the owner, undoing plan 160's subject column): every preview starts right after its own subject
+      expect(lefts.filter((l) => !l.marked).length).toBeGreaterThan(0);
+      for (const l of lefts.filter((l) => !l.marked)) {
+        expect(l.gap).toBeGreaterThan(4);
+        expect(l.gap).toBeLessThanOrEqual(16);
+      }
       const rights = await rows(page).evaluateAll((els) => els.slice(0, 12).map((r) => Math.round(r.querySelector("[data-testid=row-date]")!.getBoundingClientRect().right)));
       expect(new Set(rights).size).toBe(1);
       const marks = await rows(page).evaluateAll((els) => els.slice(0, 12).map((r) => Math.round(r.querySelector("[data-testid=row-marks]")!.getBoundingClientRect().left)));

@@ -502,7 +502,7 @@ test.describe("precision across screens (plan 160)", { tag: "@design" }, () => {
 });
 
 test.describe("precision across screens: compact rows (plan 160)", { tag: "@design" }, () => {
-  test("a narrow Split list in compact density: previews on one x, nothing over the date", async ({ app: page, server, design }) => {
+  test("a narrow Split list in compact density: each preview right after its subject, nothing over the date", async ({ app: page, server, design }) => {
     await server.backend.server.invoke("settings.update", { density: "compact" }, { clientId: "setup", origin: "dev" as const });
     for (const [width, height] of [[1100, 700], [1060, 700]] as const) {
       await page.setViewportSize({ width, height });
@@ -515,13 +515,15 @@ test.describe("precision across screens: compact rows (plan 160)", { tag: "@desi
           const box = (id: string) => r.querySelector(`[data-testid=${id}]`)?.getBoundingClientRect();
           const subject = box("row-subject")!, snippet = box("row-snippet"), date = box("row-date")!, account = box("account-label");
           const meta = Math.min(date.left, account && account.width > 0 ? account.left : Infinity);
-          return { snippet: snippet && snippet.width > 0 ? snippet.left : null, over: subject.right > meta + 0.5 || (snippet ? snippet.right > meta + 0.5 : false), listWidth: list.width };
+          return { gap: snippet && snippet.width > 0 && !r.querySelector("[data-testid=row-draft]") ? snippet.left - subject.right : null, over: subject.right > meta + 0.5 || (snippet ? snippet.right > meta + 0.5 : false), listWidth: list.width };
         });
       });
-      const lefts = m.map((r) => r.snippet).filter((x): x is number => x !== null);
-      const spread = lefts.length ? Math.max(...lefts) - Math.min(...lefts) : 0;
-      note(`compact ${width} (list ${fmt(m[0]?.listWidth ?? 0)}): preview spread, rows over the meta`, `${fmt(spread)}, ${m.filter((r) => r.over).length}`);
-      expect.soft(spread, `${design} compact ${width}: previews start at one x`).toBeLessThanOrEqual(0.5);
+      // plan 193 (the owner, undoing plan 160's subject column): a preview runs on from its own subject
+      const gaps = m.map((r) => r.gap).filter((x): x is number => x !== null);
+      expect.soft(gaps.length, `${design} compact ${width}: previews show`).toBeGreaterThan(0);
+      const widest = gaps.length ? Math.max(...gaps) : 0;
+      note(`compact ${width} (list ${fmt(m[0]?.listWidth ?? 0)}): widest subject-to-preview gap, rows over the meta`, `${fmt(widest)}, ${m.filter((r) => r.over).length}`);
+      expect.soft(widest, `${design} compact ${width}: each preview starts right after its subject`).toBeLessThanOrEqual(16);
       expect.soft(m.filter((r) => r.over).length, `${design} compact ${width}: no subject or preview runs over the account or the date`).toBe(0);
     }
   });
@@ -546,11 +548,15 @@ test.describe("precision across screens: List (plan 160)", { tag: "@design" }, (
       await expect(count).toHaveCount(0);
     });
 
-    await scenario("previews start on one x (a reserved subject column)", async () => {
-      const lefts = await rows(page).evaluateAll((els) => els.slice(0, 14).map((r) => r.querySelector("[data-testid=row-snippet]")?.getBoundingClientRect().left).filter((x): x is number => x !== undefined));
-      const spread = Math.max(...lefts) - Math.min(...lefts);
-      note("List preview x spread", fmt(spread));
-      expect.soft(spread, `${design} List: every preview starts at one x (spread ${fmt(spread)}px)`).toBeLessThanOrEqual(0.5);
+    await scenario("each preview starts right after its subject (plan 193: no subject column)", async () => {
+      const gaps = await rows(page).evaluateAll((els) => els.slice(0, 14).filter((r) => !r.querySelector("[data-testid=row-draft]")).map((r) => {
+        const snippet = r.querySelector("[data-testid=row-snippet]")?.getBoundingClientRect();
+        return snippet && snippet.width > 0 ? snippet.left - r.querySelector("[data-testid=row-subject]")!.getBoundingClientRect().right : undefined;
+      }).filter((x): x is number => x !== undefined));
+      expect(gaps.length, `${design} List: previews show`).toBeGreaterThan(0);
+      const widest = Math.max(...gaps);
+      note("List widest subject-to-preview gap", fmt(widest));
+      expect.soft(widest, `${design} List: each preview starts right after its subject (widest gap ${fmt(widest)}px)`).toBeLessThanOrEqual(16);
     });
 
     await scenario("a toast over the list: an inset from the foot, no row under it", async () => {
