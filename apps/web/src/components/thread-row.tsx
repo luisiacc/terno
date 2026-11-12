@@ -5,7 +5,7 @@ import { Badge } from "@terno/ui/components/badge";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import type { RowLines } from "@terno/ui/designs/rows";
 import { cn } from "@terno/ui/lib/utils";
-import { Bell, Check, Paperclip, Star } from "@terno/ui/icons";
+import { AlarmClock, Check, Paperclip, Star } from "@terno/ui/icons";
 import { memo } from "react";
 import { formatList, formatNumber, t } from "@terno/i18n";
 import { listDate } from "~/lib/format";
@@ -320,7 +320,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
   const star = thread.starred && <Star className="size-3 fill-star text-star" />;
   const dots = cats.map((c) => <CategoryDot key={c.id} data-cat-dot={c.id} color={c.color as CategoryColor} title={c.name} />);
   // plan 87: due, in the accent (the Inbox's top); set, quiet
-  const bell = reminder && <Bell aria-hidden data-testid="row-reminder" data-due={reminder.due || undefined} className={cn("size-3 shrink-0", opened || checked ? "" : reminder.due ? "text-primary" : "text-muted-foreground")} />;
+  const bell = reminder && <AlarmClock aria-hidden data-testid="row-reminder" data-due={reminder.due || undefined} className={cn("size-3 shrink-0", opened || checked ? "" : reminder.due ? "text-primary" : "text-muted-foreground")} />;
   // plan 64: a search looks everywhere, so a row in Spam or Trash says so (quiet, before the date; said once at the end)
   const placeTag = place && (
     <span aria-hidden data-testid="row-place" data-place={place} className={"shrink-0 text-2xs text-muted-foreground"}>
@@ -391,7 +391,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
     reminderTop && reminder?.due ? (
       // plan 87: on the Inbox's top, the time it came back, in the attention ink (the mail's own date would read as out of order)
       <span data-testid="row-date" data-reminder className={cn("flex items-center gap-1 text-xs font-medium tabular", opened || checked ? "" : "text-unread-ink")}>
-        <Bell aria-hidden data-testid="row-reminder" data-due className="size-3" />
+        <AlarmClock aria-hidden data-testid="row-reminder" data-due className="size-3" />
         {listDate(reminder.dueAt)}
       </span>
     ) : (

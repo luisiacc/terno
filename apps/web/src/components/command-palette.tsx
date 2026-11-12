@@ -7,7 +7,7 @@ import { CategoryDot } from "@terno/ui/components/category-dot";
 import { cn } from "@terno/ui/lib/utils";
 import { Chip } from "@terno/ui/components/chip";
 import { Command, CommandDescription, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from "@terno/ui/components/command";
-import { Archive, AtSign, Bell, BellOff, ListChecks, BookmarkPlus, CalendarClock, CheckCheck, Clock, Copy, FileDown, Focus, FolderInput, Forward, Keyboard, Link, Mail, MailOpen, Moon, OctagonAlert, Palette, Paperclip, Pin, PinOff, PinTop, Inbox, Layers, ListFilter, Mails, PenLine, Plus, Printer, RefreshCw, Reply, ReplyAll, RotateCw, Search, Send, Sparkles, Star, Sun, Tag, NotepadText, Trash2, Undo2, Users } from "@terno/ui/icons";
+import { Archive, AtSign, AlarmClock, AlarmClockOff, ListChecks, BookmarkPlus, CalendarClock, CheckCheck, Clock, Copy, FileDown, Focus, FolderInput, Forward, Keyboard, Link, Mail, MailOpen, Moon, OctagonAlert, Palette, Paperclip, Pin, PinOff, PinTop, Inbox, Layers, ListFilter, Mails, PenLine, Plus, Printer, RefreshCw, Reply, ReplyAll, RotateCw, Search, Send, Sparkles, Star, Sun, Tag, NotepadText, Trash2, Undo2, Users } from "@terno/ui/icons";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { fitWholeRows, markMore } from "@terno/ui/lib/whole-rows";
 import { act, openCompose, targetRows, toggleStar, undoLast } from "~/lib/actions";
@@ -380,7 +380,7 @@ export function CommandPalette() {
     folder("go.all", "view.all", <Mails />, () => goToFolder("all"), undefined, "palette-go-all");
     if (todayOn) add({ id: "go.today", group: "goTo", label: t("palette.goToday"), icon: <Sun />, testId: "palette-go-today", keywords: [goTo("palette.goToday"), ...english("palette.goToday")], run: () => navigate({ today: true }) });
     if (followupsOn) add({ id: "go.followups", group: "goTo", label: t("palette.goFollowups"), icon: <ListChecks />, testId: "palette-go-followups", keywords: [goTo("palette.goFollowups"), ...english("palette.goFollowups")], run: () => navigate({ followups: true }) });
-    add({ id: "go.reminders", group: "goTo", label: t("palette.goReminders"), icon: <Bell />, shortcut: keysOf("go.reminders"), testId: "palette-go-reminders", keywords: [goTo("palette.goReminders"), ...english("palette.goReminders")], run: () => navigate({ reminders: true }) });
+    add({ id: "go.reminders", group: "goTo", label: t("palette.goReminders"), icon: <AlarmClock />, shortcut: keysOf("go.reminders"), testId: "palette-go-reminders", keywords: [goTo("palette.goReminders"), ...english("palette.goReminders")], run: () => navigate({ reminders: true }) });
     for (const c of categories) {
       add({ id: `category:${c.id}`, group: "goTo", label: c.name, search: `${t("palette.search.category")} ${c.name}`, icon: <CategoryDot color={c.color as CategoryColor} className="mx-1" />, keywords: english("palette.search.category"), run: () => navigate({ categoryId: c.id, accountId: null }) });
     }
@@ -440,7 +440,7 @@ export function CommandPalette() {
       if (!scoped && anyPinned) add({ id: "thread.unpin", group: inHand, label: t("actions.unpin"), icon: <PinTop className="fill-star text-star" />, ...(anyUnpinned ? {} : { shortcut: keysOf("thread.pin") }), testId: "palette-unpin", ...withEnglish([t("actions.unpin"), ...english("actions.unpin")], "palette.alias.unpin"), run: () => void unpinThreads() });
       if (scoped || rows.some((r) => r.unread)) add({ id: "thread.markRead", group: inHand, label: t("palette.markRead"), icon: <MailOpen />, shortcut: keysOf("thread.markRead"), ...withEnglish(english("palette.markRead"), "palette.alias.markRead"), run: () => void act("markRead", undefined, { announce: true }) });
       if (scoped || rows.some((r) => !r.unread)) add({ id: "thread.markUnread", group: inHand, label: t("palette.markUnread"), icon: <Mail />, shortcut: keysOf("thread.toggleRead"), ...withEnglish(english("palette.markUnread"), "palette.alias.markUnread"), run: () => void act("markUnread", undefined, { announce: true }) });
-      if (!scoped) add({ id: "thread.remind", group: inHand, label: t("palette.remind"), icon: <Bell />, shortcut: keysOf("thread.remind"), testId: "palette-remind", ...withEnglish(english("palette.remind"), "palette.alias.remind"), page: "remind" });
+      if (!scoped) add({ id: "thread.remind", group: inHand, label: t("palette.remind"), icon: <AlarmClock />, shortcut: keysOf("thread.remind"), testId: "palette-remind", ...withEnglish(english("palette.remind"), "palette.alias.remind"), page: "remind" });
       // a "select all N" moves nothing in the palette: the picker says why (moves need selected conversations)
       add({ id: "thread.move", group: inHand, label: t("palette.move"), icon: <FolderInput />, shortcut: keysOf("thread.move"), testId: "palette-move", ...withEnglish(english("palette.move"), "palette.alias.move"), ...(scoped ? { run: () => setApp({ dialog: "categoryPicker", pickerMode: "move" }) } : { page: "move" as const }) });
       add({ id: "thread.addTo", group: inHand, label: t("palette.addToCategory"), icon: <Tag />, testId: "palette-add-to", keywords: english("palette.addToCategory"), page: "addTo" });
@@ -472,12 +472,12 @@ export function CommandPalette() {
             const id = `remind:${kind}:${p.id}`;
             const set = () => void setReminder(ids(), p.at, kind);
             const hint = presetWhen(p, now);
-            add({ id, group, label: presetLabel(p.id), icon: <Bell />, hint, testId: `palette-remind-${kind}-${p.id}`, run: set });
-            add({ id, group: "actions", label: t("palette.remindAt", { kind: t(kindKey), preset: presetLabel(p.id) }), icon: <Bell />, hint, keywords: [...english(kindKey), ...english("palette.alias.remind").flatMap(words)], searchOnly: true, scale: 0.5, run: set });
+            add({ id, group, label: presetLabel(p.id), icon: <AlarmClock />, hint, testId: `palette-remind-${kind}-${p.id}`, run: set });
+            add({ id, group: "actions", label: t("palette.remindAt", { kind: t(kindKey), preset: presetLabel(p.id) }), icon: <AlarmClock />, hint, keywords: [...english(kindKey), ...english("palette.alias.remind").flatMap(words)], searchOnly: true, scale: 0.5, run: set });
           }
           add({ id: `remind:${kind}:custom`, group, label: t("remind.pick"), icon: <CalendarClock />, testId: `palette-remind-${kind}-custom`, run: () => openRemind({ kind, custom: true }) });
         }
-        if (reminder) add({ id: "remind:clear", group: "remindClear", label: t("remind.clear"), icon: <BellOff />, testId: "palette-remind-clear", run: () => void clearReminder([reminder.threadId]) });
+        if (reminder) add({ id: "remind:clear", group: "remindClear", label: t("remind.clear"), icon: <AlarmClockOff />, testId: "palette-remind-clear", run: () => void clearReminder([reminder.threadId]) });
       }
     }
     // plan 132 §7: the open conversation, never in spam or trash; no shortcut of its own

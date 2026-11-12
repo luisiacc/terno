@@ -3,7 +3,7 @@ import { anchorAt, anchoredOffset, INBOX_LABEL, rowStart, TOP_LABEL, topSections
 import { SearchField } from "@terno/ui/components/search-field";
 import { Skeleton } from "@terno/ui/components/skeleton";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Bell, ChevronDown, ChevronRight, Inbox, ListFilter, Newspaper, Search, SquarePen, Sun, ListChecks } from "@terno/ui/icons";
+import { AlarmClock, ChevronDown, ChevronRight, Inbox, ListFilter, Newspaper, Search, SquarePen, Sun, ListChecks } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { activeFilter } from "~/lib/unread-filter";
 import { setListFilter } from "~/lib/unread";
@@ -1080,7 +1080,7 @@ function EmptyState() {
   if (reminders)
     return (
       <div className="flex h-full flex-col items-center justify-center gap-1 px-8 text-center" data-testid="list-empty">
-        <Bell className="mb-2 size-7 text-muted-foreground" aria-hidden />
+        <AlarmClock className="mb-2 size-7 text-muted-foreground" aria-hidden />
         <p className="text-lg font-semibold tracking-tight">{t("remind.empty")}</p>
         <p className="text-xs text-muted-foreground">{t("remind.emptyHint")}</p>
       </div>

@@ -18,8 +18,8 @@ import {
 } from "@terno/ui/components/context-menu";
 import {
   Archive,
-  Bell,
-  BellOff,
+  AlarmClock,
+  AlarmClockOff,
   CalendarClock,
   Check,
   CheckCheck,
@@ -391,7 +391,7 @@ function RemindItems({ kind, ids, inset }: { kind: ReminderKind; ids: number[]; 
       </ContextMenuItem>
       {anySet && (
         <ContextMenuItem inset={inset} data-testid={`menu-remind-${kind}-clear`} onClick={() => void clearReminder(ids)}>
-          {!inset && <BellOff />}
+          {!inset && <AlarmClockOff />}
           <span className="min-w-0 flex-1 truncate">{t("remind.clear")}</span>
         </ContextMenuItem>
       )}
@@ -404,7 +404,7 @@ function RemindSub({ ids, disabled }: { ids: number[]; disabled: boolean }) {
   return (
     <ContextMenuSub>
       <ContextMenuSubTrigger data-testid="menu-remind-always" disabled={disabled}>
-        <Bell />
+        <AlarmClock />
         <span className="min-w-0 flex-1 truncate">{t("remind.menu")}</span>
         {hint("thread.remind")}
       </ContextMenuSubTrigger>

@@ -3,7 +3,7 @@ import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { ToggleGroup, ToggleGroupItem } from "@terno/ui/components/toggle-group";
 import { cn } from "@terno/ui/lib/utils";
-import { BellOff, CalendarClock } from "@terno/ui/icons";
+import { AlarmClockOff, CalendarClock } from "@terno/ui/icons";
 import { useId, useRef, useState } from "react";
 import { clearReminder, presetLabel, presetWhen, reminderWhen, setReminder, useReminders } from "~/lib/reminders";
 import { useWhen, WhenFields } from "./when-fields";
@@ -117,7 +117,7 @@ export function RemindPicker({ threadIds, initialKind, custom = false, done }: {
                 void clearReminder(threadIds);
               }}
             >
-              <BellOff className="size-[1.15em] text-muted-foreground" aria-hidden />
+              <AlarmClockOff className="size-[1.15em] text-muted-foreground" aria-hidden />
               <span className="min-w-0 flex-1 truncate">{t("remind.clear")}</span>
             </button>
           </>

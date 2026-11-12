@@ -5,6 +5,9 @@
  */
 export const ICONS = {
   ALargeSmall: "TextFontIcon",
+  // plan 194: reminders (a bell read as notifications, beside Pin)
+  AlarmClock: "AlarmClockIcon",
+  AlarmClockOff: "AlarmClockOffIcon",
   // terno.app (plan 97): the Mac download button
   Apple: "AppleIcon",
   Archive: "ArchiveIcon",
@@ -20,8 +23,6 @@ export const ICONS = {
   // plan 166: the digest row's "Not a newsletter"
   Ban: "UnavailableIcon",
   Baseline: "TextColorIcon",
-  Bell: "Notification01Icon",
-  BellOff: "NotificationOff01Icon",
   Bold: "TextBoldIcon",
   BookmarkPlus: "BookmarkAdd01Icon",
   Bot: "BotIcon",

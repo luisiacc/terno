@@ -3,7 +3,7 @@ import { Button } from "@terno/ui/components/button";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
-import { Archive, Bell, CheckCheck, FolderInput, Inbox, Mail, MailOpen, OctagonAlert, ShieldCheck, Star, StarOff, Tag, Trash2, X } from "@terno/ui/icons";
+import { Archive, AlarmClock, CheckCheck, FolderInput, Inbox, Mail, MailOpen, OctagonAlert, ShieldCheck, Star, StarOff, Tag, Trash2, X } from "@terno/ui/icons";
 import { t } from "@terno/i18n";
 import { act, tabbedTest, targetRows } from "~/lib/actions";
 import { openRemind } from "~/lib/reminders";
@@ -154,7 +154,7 @@ export function SelectionBar({ variant = "pane" }: { variant?: Variant }) {
       </BarButton>
       {/* a "select all N" has no ids to set it on (the row menu's rule) */}
       <BarButton bar={bar} label={t("remind.menu")} command="thread.remind" onClick={() => openRemind({ kind: "always" })} testId="bar-remind" rank={3} disabled={scope !== null}>
-        <Bell />
+        <AlarmClock />
       </BarButton>
       <BarButton bar={bar} label={t("actions.moveTo")} command="thread.move" onClick={() => setApp({ dialog: "categoryPicker", pickerMode: "move" })} testId="bar-move" disabled={scope !== null}>
         <FolderInput />

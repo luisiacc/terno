@@ -6,7 +6,7 @@ import { AccountRing, CategoryDot } from "@terno/ui/components/category-dot";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
-import { Sun, Archive, ArrowLeft, Bell, Check, ChevronDown, ChevronRight, EyeOff, Folder as FolderIcon, Forward, Inbox, Layers, OctagonAlert, Plus, Route, Send, Settings2, SquarePen, Star, Tag, Tags, Trash2, Users, ListChecks } from "@terno/ui/icons";
+import { Sun, Archive, ArrowLeft, AlarmClock, Check, ChevronDown, ChevronRight, EyeOff, Folder as FolderIcon, Forward, Inbox, Layers, OctagonAlert, Plus, Route, Send, Settings2, SquarePen, Star, Tag, Tags, Trash2, Users, ListChecks } from "@terno/ui/icons";
 import { openCompose } from "~/lib/actions";
 import { useDesign, variant } from "~/lib/design";
 import { formatNumber, t } from "@terno/i18n";
@@ -1434,7 +1434,7 @@ export function Sidebar() {
             testId="nav-reminders"
             active={inReminders && !searching}
             onClick={() => navigate({ reminders: true })}
-            icon={<Bell className="size-(--icon-nav)" />}
+            icon={<AlarmClock className="size-(--icon-nav)" />}
             label={t("view.reminders")}
             count={dueReminders}
             countSaid={dueReminders ? t("sidebar.count.due", { count: dueReminders }) : undefined}
