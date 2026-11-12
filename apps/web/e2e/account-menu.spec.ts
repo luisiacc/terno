@@ -148,6 +148,32 @@ test.describe("the account menu", () => {
       await page.waitForTimeout(300);
       await expect(target).toBeFocused();
     });
+    await scenario("plan 194: the row a menu is for is outlined while it's open, as the list's is, and only that row", async () => {
+      await freshStart(page);
+      const [a, b] = await accountIds(page);
+      const cat = sqlDb(server.backend.store).get<{ id: number }>("SELECT id FROM categories ORDER BY id LIMIT 1")!.id;
+      const outline = (testId: string) => page.getByTestId(testId).evaluate((el) => getComputedStyle(el).boxShadow);
+      const ring = await page.evaluate(() => {
+        const probe = document.createElement("span");
+        probe.style.color = "var(--ring)";
+        document.body.append(probe);
+        const c = getComputedStyle(probe).color;
+        probe.remove();
+        return c;
+      });
+      for (const [testId, menuId] of [[`nav-account-${a}`, `account-menu-${a}`], [`nav-category-${cat}`, `category-menu-${cat}`]] as const) {
+        expect(await outline(testId), testId).toBe("none");
+        await page.getByTestId(testId).click({ button: "right" });
+        await expect(page.getByTestId(menuId)).toBeVisible();
+        expect(await outline(testId), testId).toContain(ring);
+        expect(await outline(testId), testId).toContain("inset");
+        // no other row
+        expect(await outline(`nav-account-${b}`)).toBe("none");
+        await page.keyboard.press("Escape");
+        await expect(page.getByTestId(menuId)).toHaveCount(0);
+        await expect.poll(() => outline(testId), testId).toBe("none");
+      }
+    });
     await scenario("Shift+F10 and the menu key open the focused row's own menu: an account's, a category's, never the thread menu", async () => {
       await freshStart(page);
       const [a] = await accountIds(page);

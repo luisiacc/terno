@@ -139,6 +139,9 @@ function accountPress(e: React.MouseEvent<HTMLElement>): AccountPress {
   return (e.target as Element).closest("[data-slot=nav-disclosure]") ? "chevron" : "click";
 }
 
+/** A sidebar row whose right-click menu is open (its trigger, a wrapper of the row alone, says so): the list's outline for the row a menu is for */
+const MENU_FOR = "in-data-popup-open:shadow-[inset_0_0_0_2px_var(--ring)]";
+
 function NavItem({
   active,
   onClick,
@@ -229,6 +232,9 @@ function NavItem({
         reserveEnd === "icon" ? "pr-8" : reserveEnd && "pr-14",
         "not-data-active:hover:bg-sidebar-hover hover:text-sidebar-accent-foreground",
         "data-active:type-nav-strong data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground",
+        // plan 194 (the owner): the row a right-click menu is for, outlined while it's open, as the list outlines its row
+        // (its trigger wraps the row alone; ROW_OUTLINE written out for the class scanner)
+        MENU_FOR,
         "data-[drop-state=over]:bg-drop-target data-[drop-state=over]:text-sidebar-accent-foreground data-[drop-state=over]:ring-1 data-[drop-state=over]:ring-primary data-[drop-state=over]:ring-inset",
         "data-[drop-state=already]:bg-sidebar-accent data-[drop-state=already]:text-muted-foreground",
         "data-[drop-state=refused]:bg-transparent data-[drop-state=refused]:text-muted-foreground",
@@ -1247,7 +1253,7 @@ function SoloSidebar({ account: a, countTone }: { account: Account; countTone: "
             {renaming ? (
               <RenameRow account={a} active={false} reserveEnd={a.syncState.authRequired} onDone={() => setRenaming(false)} home='[data-testid="solo-back"]' />
             ) : (
-              <div data-testid="solo-title" className={cn("flex min-h-(--nav-h) items-center gap-2.5 px-2 py-1", a.syncState.authRequired && "pr-8")}>
+              <div data-testid="solo-title" className={cn("flex min-h-(--nav-h) items-center gap-2.5 rounded-(--nav-radius) px-2 py-1", MENU_FOR, a.syncState.authRequired && "pr-8")}>
                 <span className="flex size-(--icon-nav) shrink-0 items-center justify-center">
                   <AccountMark color={a.color} />
                 </span>

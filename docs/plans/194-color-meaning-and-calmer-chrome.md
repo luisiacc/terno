@@ -114,3 +114,9 @@ No new subscription, query or render: a row renders the same elements on another
 > make the atelier dark style color palette be like the dark palette of graphite, its currently too dark
 
 Atelier's dark palette (`atelier-dark`) now wears Graphite's dark palette whole: one `GRAPHITE_DARK` input in the registry that both themes spread, so they can't drift. Atelier keeps its name, type and structure; only its colors change. `registry.test.ts` holds the two equal; the control-edge test, which pinned Graphite's control overrides to Graphite alone, now names Atelier's dark too.
+
+## The row a sidebar menu is for (the owner, after the series)
+
+> for the right click menu here of these items categories and accounts, tehre is no marker on which of them the right click menu is, lets have a nice clean marker for that item when the right lcick menu is active for it
+
+A sidebar row (a category, an account, a folder, a favorite, the focused account's title) is outlined while its right-click menu is open: the list's own mark for the row a menu is for (`ROW_OUTLINE`, 2 px of `--ring` inside the row's shape). Pure CSS on the menu trigger's `data-popup-open` (each trigger wraps its row alone), so opening a menu renders nothing. `account-menu.spec` checks an account's and a category's row: outlined while open, only that row, gone when it closes.
