@@ -103,3 +103,8 @@ No new subscription, query or render: a row renders the same elements on another
 10. **The clock icon**: `AlarmClock`/`AlarmClockOff` added to the catalog and generated; a due reminder is a 20% wash inside the clock, not a solid fill.
 11. **The site's focus ring** was already keyboard-only; the tools fade with opacity so `:focus-within` and Tab keep working; the `display: contents` wrapper is untouched.
 12. **Tests that pinned the old layout** (`thread-row-marks.test.tsx`, `designs.spec`, `account-label.spec`, `account-menu.spec`) were updated; the 1:1 case is in `thread-overview.test.tsx`. MCP's category creation sends brown.
+
+## Revisions after the Codex code review
+
+1. **A conversation the user only wrote to** lost its one recipient's actions with the chip: no message there is theirs, and the ⋯ offered only a message's writer. The ⋯ of the user's own message now offers the conversation's only other person (`messagePerson`, `thread-overview.test.ts`).
+2. **"Reply to X only"** was dropped from the ⋯ though the chip offered it when a Reply-To sends a plain Reply elsewhere. The ⋯ now uses the chip's own rule (`conversationPeople`, shared by both), tested with a Reply-To.

@@ -4,8 +4,7 @@ import { Button } from "@terno/ui/components/button";
 import { Chip } from "@terno/ui/components/chip";
 import { cn } from "@terno/ui/lib/utils";
 import { useMemo, useState } from "react";
-import { autoRecipients, identitiesIn } from "~/lib/compose-fields";
-import { threadPeople } from "~/lib/thread-overview";
+import { conversationPeople } from "~/lib/thread-overview";
 import { fullName, PersonMenu } from "./person-menu";
 import { SenderAvatar } from "./sender-avatar";
 
@@ -23,10 +22,8 @@ export function ThreadPeople({ detail, myEmails, icons, personOf, className }: {
   const mineKey = myEmails.join("\n");
   const { everyone, replyGoesTo } = useMemo(() => {
     if (messages.length < 2) return { everyone: [], replyGoesTo: null };
-    const mine = identitiesIn(detail, myEmails);
     // plan 180: "Reply to X only" isn't offered for the one person a plain Reply already goes to alone (Reply-To counted)
-    const { to, cc } = autoRecipients("reply", detail, mine);
-    return { everyone: threadPeople(messages, mine), replyGoesTo: to.length === 1 && cc.length === 0 ? to[0]!.email.toLowerCase() : null };
+    return conversationPeople(detail, myEmails);
   }, [messages, mineKey]);
   const [all, setAll] = useState(false);
   // plan 194: one other person is a one-to-one conversation, whose headers already say who (each message's ⋯ has what

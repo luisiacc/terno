@@ -14,7 +14,7 @@ import { openPrint, wantsNativeMenu, type PrintIntent } from "~/lib/print-open";
 import { snack } from "~/lib/snack";
 import { setApp, useApp } from "~/state/app";
 import { useThread } from "~/state/threads";
-import { threadPeople, type ThreadPerson } from "~/lib/thread-overview";
+import { messagePerson, type ThreadPerson } from "~/lib/thread-overview";
 import { PersonItems, type PersonParts } from "./person-menu";
 
 /**
@@ -41,29 +41,22 @@ function useReachesSeveral(threadId: number, messageId: number | null): boolean 
   return Boolean(detail && message && reachesSeveral({ ...detail, messages: [message] }, identitiesIn(detail, emails.split("\n"))));
 }
 
-/** Who wrote this message, as their chip would show them; none when it's the user's own (plan 194) */
-function useSenderOf(threadId: number, messageId: number | null): ThreadPerson | null {
+/** Plan 194: whom a message's ⋯ offers (messagePerson), for the message the menu is about */
+function useMessagePerson(threadId: number, messageId: number | null): { person: ThreadPerson; offerReplyOnly: boolean } | null {
   const detail = useThread(threadId);
   const emails = useApp((s) => s.accounts.map((a) => a.email).join("\n"));
-  return useMemo(() => {
-    const message = detail?.messages.find((m) => m.id === messageId);
-    if (!detail || !message) return null;
-    const mine = identitiesIn(detail, emails.split("\n"));
-    if (mine(message.from.email)) return null;
-    const email = message.from.email.toLowerCase();
-    return threadPeople(detail.messages, mine).find((p) => p.email.toLowerCase() === email) ?? null;
-  }, [detail, messageId, emails]);
+  return useMemo(() => (detail && messageId !== null ? messagePerson(detail, messageId, emails.split("\n")) : null), [detail, messageId, emails]);
 }
 
 /**
  * What a message offers, in its ⋯ menu and on a right-click alike (off a message, only the conversation's copy). Plan 194:
- * then what's done about whoever wrote it, as their chip's menu offers (a one-to-one conversation shows no chip)
+ * then what's done about whom it's between, as their chip's menu offers (useMessagePerson)
  */
 function MessageItems({ threadId, messageId, respond, compose, parts }: { threadId: number; messageId: number | null; respond: (mode: Respond) => void; compose: (open: () => Promise<ComposeLanding>) => void; parts: PersonParts }) {
   const { Item, Separator } = parts;
   const replyAll = useReachesSeveral(threadId, messageId);
   const detail = useThread(threadId);
-  const sender = useSenderOf(threadId, messageId);
+  const about = useMessagePerson(threadId, messageId);
   const print = (intent: PrintIntent) => messageId !== null && openPrint({ threadId, messageId, intent });
   return (
     <>
@@ -84,9 +77,9 @@ function MessageItems({ threadId, messageId, respond, compose, parts }: { thread
             <span className="flex-1">{t("actions.forward")}</span>
           </Item>
           <Separator />
-          {sender && detail && (
+          {about && detail && (
             <>
-              <PersonItems person={sender} detail={detail} offerReplyOnly={false} compose={compose} parts={parts} />
+              <PersonItems person={about.person} detail={detail} offerReplyOnly={about.offerReplyOnly} compose={compose} parts={parts} />
               <Separator />
             </>
           )}

@@ -1,7 +1,7 @@
 import type { Address, AttachmentInfo, MessageDetail, ThreadDetail } from "@terno/core";
 import { describe, expect, it } from "vitest";
 import { identitiesIn } from "./compose-fields";
-import { firstName, threadFiles, threadPeople } from "./thread-overview";
+import { firstName, messagePerson, threadFiles, threadPeople } from "./thread-overview";
 
 let next = 1;
 const msg = (from: Address, to: Address[], o: Partial<MessageDetail> = {}): MessageDetail =>
@@ -75,5 +75,34 @@ describe("threadFiles (plan 177)", () => {
     // the older copy keeps its cache, the newer its retry
     expect(files[0]!.attachment.assetId).toBe("x1");
     expect(files[2]!.attachment.assetId).toBeUndefined();
+  });
+});
+
+describe("messagePerson: whom a message's ⋯ offers (plan 194, Codex code review)", () => {
+  const detail = (messages: MessageDetail[]) => ({ thread: { id: 1, accountId: 1 }, messages }) as unknown as ThreadDetail;
+
+  it("whoever wrote it; on the user's own message, the conversation's only other person", () => {
+    const [a, mine] = [msg(ana, [me]), msg(me, [ana], { isSent: true })];
+    const d = detail([a, mine]);
+    expect(messagePerson(d, a.id, [me.email])?.person.email).toBe(ana.email);
+    expect(messagePerson(d, mine.id, [me.email])?.person.email).toBe(ana.email);
+  });
+
+  it("a conversation the user only wrote to still offers its one recipient", () => {
+    const [one, two] = [msg(me, [ana], { isSent: true }), msg(me, [ana], { isSent: true })];
+    const found = messagePerson(detail([one, two]), two.id, [me.email]);
+    expect(found?.person).toMatchObject({ email: ana.email, wrote: false });
+  });
+
+  it("the user's own message among several people offers no one (their chips do)", () => {
+    const mine = msg(me, [ana, ben], { isSent: true });
+    expect(messagePerson(detail([msg(ana, [me, ben]), mine]), mine.id, [me.email])).toBeNull();
+  });
+
+  it("offers Reply to them only when a plain Reply wouldn't go to them alone: a Reply-To elsewhere keeps it", () => {
+    const plain = msg(ana, [me]);
+    expect(messagePerson(detail([msg(me, [ana], { isSent: true }), plain]), plain.id, [me.email])?.offerReplyOnly).toBe(false);
+    const elsewhere = msg(ana, [me], { replyTo: [{ name: "Support", email: "support@acme.studio" }] });
+    expect(messagePerson(detail([msg(me, [ana], { isSent: true }), elsewhere]), elsewhere.id, [me.email])?.offerReplyOnly).toBe(true);
   });
 });

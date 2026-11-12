@@ -1,4 +1,5 @@
-import type { Address, AttachmentInfo, MessageDetail } from "@terno/core";
+import type { Address, AttachmentInfo, MessageDetail, ThreadDetail } from "@terno/core";
+import { autoRecipients, identitiesIn } from "./compose-fields";
 
 /**
  * Plan 177: what a conversation of two or more messages says at its top: who's on it and every file in it. Pure, over the
@@ -89,4 +90,28 @@ export interface ThreadFile {
  */
 export function threadFiles(messages: readonly MessageDetail[]): ThreadFile[] {
   return messages.flatMap((message) => message.attachments.map((attachment) => ({ message, attachment })));
+}
+
+/**
+ * Who's on a conversation besides the user, and who a plain Reply goes to alone (lower-cased; null when it goes to
+ * several): plan 180 offers "Reply to X only" for anyone else. One rule for the people line and (plan 194) a message's ⋯.
+ */
+export function conversationPeople(detail: ThreadDetail, myEmails: readonly string[]): { everyone: ThreadPerson[]; replyGoesTo: string | null } {
+  const mine = identitiesIn(detail, myEmails);
+  const { to, cc } = autoRecipients("reply", detail, mine);
+  return { everyone: threadPeople(detail.messages, mine), replyGoesTo: to.length === 1 && cc.length === 0 ? to[0]!.email.toLowerCase() : null };
+}
+
+/**
+ * Plan 194: whom a message's ⋯ offers, as their chip's menu did: whoever wrote it, or on the user's own message the
+ * conversation's only other person (a one-to-one conversation shows no chip, and in one the user only wrote to, no
+ * message is theirs); "Reply to X only" by the chip's own rule (a Reply-To elsewhere keeps it on offer).
+ */
+export function messagePerson(detail: ThreadDetail, messageId: number, myEmails: readonly string[]): { person: ThreadPerson; offerReplyOnly: boolean } | null {
+  const message = detail.messages.find((m) => m.id === messageId);
+  if (!message) return null;
+  const { everyone, replyGoesTo } = conversationPeople(detail, myEmails);
+  const from = fold(message.from.email);
+  const person = identitiesIn(detail, myEmails)(message.from.email) ? (everyone.length === 1 ? everyone[0]! : null) : (everyone.find((p) => fold(p.email) === from) ?? null);
+  return person && { person, offerReplyOnly: fold(person.email) !== replyGoesTo };
 }
