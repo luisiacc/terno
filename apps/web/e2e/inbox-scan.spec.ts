@@ -64,7 +64,12 @@ test.describe("the inbox list", { tag: "@design" }, () => {
       const firstRow = rows(page).first();
       await firstRow.dispatchEvent("mousedown");
       await page.getByTestId("reader-subject").waitFor();
-      const [fromBefore, subjectBefore, snippetBefore] = await Promise.all(["row-from", "row-subject", "row-snippet"].map((id) => box(firstRow.getByTestId(id))));
+      // (each line from the row's own top: the drafts strip that comes above the list with the draft moves the whole row)
+      const lines = async () => {
+        const top = (await box(firstRow))!.y;
+        return (await Promise.all(["row-from", "row-subject", "row-snippet"].map((id) => box(firstRow.getByTestId(id))))).map((b) => b!.y - top);
+      };
+      const before = await lines();
       await focusList(page);
       await page.keyboard.press("r");
       await page.getByTestId("compose-body").waitFor();
@@ -74,8 +79,7 @@ test.describe("the inbox list", { tag: "@design" }, () => {
       await expect(tag).toHaveText("Draft");
       const size = (l: Locator) => l.evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
       expect(await size(tag)).toBeLessThanOrEqual(await size(firstRow.getByTestId("row-subject")));
-      const [from, subject, snippet] = await Promise.all(["row-from", "row-subject", "row-snippet"].map((id) => box(firstRow.getByTestId(id))));
-      expect([from.y, subject.y, snippet.y]).toEqual([fromBefore!.y, subjectBefore!.y, snippetBefore!.y]);
+      expect(await lines()).toEqual(before);
       await list.evaluate((el) => el.scrollTo(0, 0));
       await freshNoDrafts(page, server);
       // (it shows once, plan 159: a launch that hasn't shown it yet)
