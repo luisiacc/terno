@@ -257,6 +257,11 @@ export function HtmlBody({ marks, html, messageId, remoteImages, spam = false, a
         const onNavKey = (event: KeyboardEvent) => {
           if (section && event.key === "Escape" && !event.isComposing && !event.defaultPrevented) {
             event.preventDefault(); event.stopImmediatePropagation(); exitRef.current?.();
+          } else if (event.key === "F6" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+            // plan 188 (Codex review): F6 between the panes with focus in the mail too; the frame keeps it if nothing moved
+            const forwarded = new KeyboardEvent("keydown", { key: "F6", shiftKey: event.shiftKey, bubbles: true, cancelable: true });
+            document.dispatchEvent(forwarded);
+            if (forwarded.defaultPrevented) event.preventDefault();
           } else if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === "g") {
             // plan 158: the next and previous match with focus in the mail too (the frame's keys stop at its document)
             event.preventDefault();

@@ -49,6 +49,11 @@ export interface SnackInput {
   tone?: SnackTone;
   /** news nobody just asked for (a send's result, the engine's adds): waits behind a snack that offers something */
   background?: boolean;
+  /**
+   * Plan 188 (Codex review): its time is someone else's clock (a held send goes at the backend's moment), so nothing
+   * pauses it: a ring held on hover or focus would show time that isn't there
+   */
+  steady?: boolean;
 }
 
 export interface Snack extends Omit<SnackInput, "id" | "duration" | "tone" | "background"> {
@@ -168,10 +173,11 @@ function show(input: SnackInput & { render?: () => ReactNode }): string {
   const s = useSnack.getState();
   const tone = input.tone ?? "neutral";
   const { id: _, duration: __, background, ...rest } = input;
+  const paused = input.steady ? [] : s.paused;
   if (input.id !== undefined && s.current?.id === input.id) {
     // an update: same entry, the lifetime starts over (a loading snack's result gets its whole time)
     const current: Snack = { ...s.current, description: undefined, action: undefined, secondary: undefined, ...rest, tone, duration: durationOf(input), spoken: spokenOf(input), heard: ++heard };
-    useSnack.setState({ current, last: current, countdown: fresh(s.paused) });
+    useSnack.setState({ current, last: current, countdown: fresh(paused) });
     schedule();
     return input.id;
   }
@@ -187,8 +193,8 @@ function show(input: SnackInput & { render?: () => ReactNode }): string {
   const current: Snack = { ...rest, id, seq: ++seq, tone, duration: durationOf(input), spoken: spokenOf(input), heard: ++heard, news };
   // plan 158: a hover held the snack it was over, not the next: one that comes under a resting pointer (Undo's
   // "Restored", after a click on Undo) runs out, and the pointer moving over it holds it again (the dock's pointermove)
-  const paused = s.paused.filter((r) => r !== "hover");
-  useSnack.setState({ current, last: current, paused, countdown: fresh(paused) });
+  const kept = s.paused.filter((r) => r !== "hover");
+  useSnack.setState({ current, last: current, paused: kept, countdown: fresh(input.steady ? [] : kept) });
   schedule();
   return id;
 }
@@ -270,7 +276,8 @@ export function runAction(which: "action" | "secondary"): void {
 export function pause(reason: PauseReason): void {
   const s = useSnack.getState();
   if (s.paused.includes(reason)) return;
-  const countdown = s.countdown.since === null ? s.countdown : { elapsed: elapsedAt(s.countdown, clock.now()), since: null };
+  // (a steady snack's reason is kept, for the one after it; its own clock runs on)
+  const countdown = s.countdown.since === null || s.current?.steady ? s.countdown : { elapsed: elapsedAt(s.countdown, clock.now()), since: null };
   useSnack.setState({ paused: [...s.paused, reason], countdown });
   schedule();
 }

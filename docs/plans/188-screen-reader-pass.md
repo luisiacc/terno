@@ -127,3 +127,27 @@ The lowest level that catches each:
 10. **`aria-keyshortcuts` is dropped from Series C.** Internal chords ("mod+p", "g i") need a serialization and an availability rule (single keys off) that aren't worth their weight here: VoiceOver reads the attribute only with hints at full verbosity. The palette's input gets its name; its options keep their glyphs.
 11. **Import restores the whole Undo setting.** `undoSend`, `undoSendSeconds` and `characterKeys` join `GENERAL_KEYS`; an old export without them leaves the defaults (tested).
 12. **Tests updated, not only added.** `snack.spec.ts`'s exact spoken text and its F6 cases, `compose.spec.ts`'s Undo clock (now `UNDO_SEND_DEFAULT`), `scheduled.test.ts`; `search.spec.ts`'s ArrowDown into rows, `list-keyboard-entry.spec.ts` and `selection.spec.ts` run unchanged. A manual VoiceOver pass is listed in the report as the owner's to do: DOM assertions can't prove what's spoken.
+
+## What changed while building
+
+- **A row keeps its own words as its name** (not `aria-labelledby`): axe's label-content-name-mismatch (WCAG 2.5.3) failed a name that reordered what's shown, and a voice user says what's shown. The state ("unread, starred, pinned") is said right after the sender, never after the preview; the count has its word ("3 messages"); the rest (categories, Spam or Trash, attachments, account, code, reminder) is one sentence at the end. Section names stay first, as before.
+- **Arrows, Delete and Backspace** stay with a focused element only in the sidebar or on a control with its own use for them (a tab, a switch, a slider, a pane's edge, a menu item, a combobox). An ordinary button elsewhere keeps them for the mail: `selection.spec` clicks Select all and presses Backspace, as people do.
+- **j brings focus to the list only from a control**, never from the page body: with focus nowhere the list's keys already work, and moving focus there would start transitions while j is held (the perf gate counts animations).
+- **Sidebar counts** say their meaning as the row's description (a hidden span), not in its name: the name stays the label and the count as shown (plan 159's rule), and tests that read the count's text read what's shown.
+- **Reply ready's spinner** keeps its status and name ("Loading"): review 3 of plan 144 decided that on purpose.
+- **Dropped**: `aria-keyshortcuts` in `IconButton` and the palette (revision 10).
+
+## Test notes
+
+- Unit: `resolve.test.ts`, `keyboard-focus.test.ts` (new), `list-speech.test.ts` (new), `thread-row-marks.test.tsx`, `save-state.test.tsx`, `scheduled.test.ts` (backend), `export.test.ts`.
+- e2e: `screen-reader.spec.ts` (new); updated `snack.spec.ts`, `compose.spec.ts`, `sidebar-panels.spec.ts`; `designs.spec`, `design-axe`, `selection`, `list-keyboard-entry`, `focus-ring`, `search`, `categories`, `filters`, `palette`, `reader`, `settings*`, `sidebar*`, `today` pass.
+- Failing before this plan, untouched by it: `visual.spec` (Settings → General and Agents baselines predate plan 187 and the agents settings), `settings-pass` Agents and Data (looks for a switch whose label no longer exists), `design-axe`'s ⌘J composer state now and then (the AI button's name vs its "Fill in" word, from 7aa0d0c67), `i18n scan` (`apps/site/src/parts/agents.tsx`), and the perf gate's "holding j" animation count (the learned-rule banner's scroll-follow: fails the same on 865185a25).
+
+## What the Codex code review changed
+
+1. **Undo send's dock pill never pauses** (`SnackInput.steady`): a held send goes at the backend's moment, so hover, focus, a hidden window or a modal no longer hold its ring (`snack.test.ts`).
+2. **F6 over a full message** reaches what's on screen in the main pane (its Back), not the inert conversation under it (`pane-focus.test.ts`).
+3. **⇧F6 from the dock** is the plain reverse (to the conversation); only F6 goes on from where focus came (`pane-focus.test.ts`).
+4. **Clearing the selection is said** ("Selection cleared"): the cursor's row still reads as selected, so nothing else says it (`list-speech.test.ts`).
+5. **F6 from inside a mail's frame** is forwarded to the app, as ⌘G and Esc are; the frame keeps the key when nothing moved (`screen-reader.spec.ts`).
+6. **A held send says each phase once**, not again each time its conversation is come back to (`screen-reader.spec.ts`).

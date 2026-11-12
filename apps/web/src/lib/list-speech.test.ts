@@ -56,5 +56,5 @@ it("the selection says its size as it changes, whatever changed it; Select all s
   setApp({ checked: new Set([1, 2]) });
   setApp({ checked: new Set() });
   setApp({ scope: { key: "inbox", scope: {} as never, label: "Inbox", count: 240 } });
-  expect(said).toEqual(["1 selected", "2 selected", "240 selected"]);
+  expect(said).toEqual(["1 selected", "2 selected", "Selection cleared", "240 selected"]);
 });

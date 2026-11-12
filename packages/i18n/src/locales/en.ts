@@ -1016,6 +1016,7 @@ const en = {
   "list.announce.more": "{mailbox}, more than {count} conversations",
   "list.announce.empty": "No conversations in {mailbox}",
   "list.announce.selected": { one: "# selected", other: "# selected" },
+  "list.announce.selectionCleared": "Selection cleared",
   "reader.label": "Conversation",
   "reader.announce.opened": "{subject}, from {from}",
   "list.reviewTitle": "Sort · {category}",

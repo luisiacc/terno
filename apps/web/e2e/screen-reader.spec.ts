@@ -1,5 +1,6 @@
 import { expect } from "@playwright/test";
-import { focusList, openRow, rows, scenario, test } from "./fixtures";
+import { focusList, fresh, openRow, rows, scenario, selectThread, test } from "./fixtures";
+import { E2E_NOW } from "./constants";
 
 /**
  * Plan 188: what a screen reader user leans on, in the real app (one page, one backend). Focus follows the keys, F6
@@ -40,6 +41,20 @@ test("a screen reader's ways around the app (plan 188)", async ({ app: page, ser
     expect((await active(page)).role).toBe("listbox");
   });
 
+  await scenario("F6 leaves a mail's frame for the next pane, as from anywhere in the conversation (Codex review)", async () => {
+    const store = server.backend.store;
+    const account = (await store.accounts.list())[0]!;
+    const ana = { name: "Ana", email: "ana@example.com" };
+    const { touched } = await store.sync.ingest([{ accountId: account.id, providerThreadId: "f6-frame", providerMsgId: "f6-frame-1", rfcMessageId: "<f6-frame-1@e2e.test>", inReplyTo: null, references: [], replyTo: [], cc: [], bcc: [], from: ana, to: [{ name: "Luis", email: account.email }], subject: "Frame keys", snippet: "A link", date: E2E_NOW, bodyText: null, bodyHtml: '<p>See <a href="https://example.com/x">the link</a>.</p>', bodyState: "full" as const, listId: null, isRead: true, isStarred: false, inInbox: true, isDraft: false, isTrash: false, isSpam: false, isSent: false, hasAttachments: false, size: 100 }], { applyFilters: false, now: E2E_NOW, classifier: null });
+    await selectThread(page, touched[0]!, 'subject:"Frame keys"');
+    const link = page.getByTestId("message").last().frameLocator("iframe").getByRole("link", { name: "the link" });
+    await link.focus();
+    await page.keyboard.press("F6");
+    await expect.poll(async () => (await active(page)).inSidebar).toBe(true);
+    // (the search it was found by goes: the scenarios after it are about the Inbox)
+    await fresh(page);
+  });
+
   await scenario("Delete and ↓ on a sidebar row stay with it: nothing is trashed, the cursor stays", async () => {
     await openRow(page, 0);
     const before = await rows(page).count();
@@ -61,7 +76,9 @@ test("a screen reader's ways around the app (plan 188)", async ({ app: page, ser
   await scenario("the palette's field has a name", async () => {
     await page.keyboard.press("ControlOrMeta+k");
     await expect(page.getByTestId("palette-input")).toHaveAccessibleName("Search commands and mail");
+    await expect(page.getByTestId("palette-input")).toBeFocused();
     await page.keyboard.press("Escape");
+    await expect(page.getByTestId("palette-input")).toHaveCount(0);
   });
 
   await scenario("single-key shortcuts off: e archives nothing; the chord still does", async () => {
@@ -94,5 +111,17 @@ test("a screen reader's ways around the app (plan 188)", async ({ app: page, ser
     await page.keyboard.press("ControlOrMeta+Enter");
     await expect(page.getByTestId("held-message")).toBeVisible();
     await expect(page.getByTestId("announcer")).toHaveText(/^Not sent yet\. Press Z within (19|20) seconds to undo it\.$/);
+    // said once per hold, not again each time its conversation is come back to (Codex review)
+    await page.evaluate(() => {
+      const w = window as unknown as { __said: string[] };
+      w.__said = [];
+      new MutationObserver(() => w.__said.push(document.querySelector("[data-testid=announcer]")!.textContent ?? "")).observe(document.querySelector("[data-testid=announcer]")!, { childList: true, characterData: true, subtree: true });
+    });
+    await focusList(page);
+    await page.keyboard.press("j");
+    await page.keyboard.press("k");
+    await expect(page.getByTestId("held-message")).toBeVisible();
+    await page.waitForTimeout(200);
+    expect((await page.evaluate(() => (window as unknown as { __said: string[] }).__said)).filter((t) => t.startsWith("Not sent yet"))).toEqual([]);
   });
 });

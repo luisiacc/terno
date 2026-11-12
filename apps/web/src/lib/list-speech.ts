@@ -24,8 +24,10 @@ export function installListSpeech(): () => void {
   });
   const offApp = useApp.subscribe((s, prev) => {
     if (s.checked === prev.checked && s.scope === prev.scope) return;
-    const n = selected(s);
-    if (n > 0 && n !== selected(prev)) announce(t("list.announce.selected", { count: n }));
+    const n = selected(s), was = selected(prev);
+    if (n === was) return;
+    // (cleared: said too, Codex review: the cursor's row still reads as selected, so nothing else says it)
+    announce(n > 0 ? t("list.announce.selected", { count: n }) : t("list.announce.selectionCleared"));
   });
   return () => {
     offList();

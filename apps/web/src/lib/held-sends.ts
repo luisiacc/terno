@@ -122,7 +122,7 @@ function offerSnack(draftId: number): void {
   const left = held.goesAt - Date.now();
   if (held.phase === "holding" && left > 0) {
     // the token z already holds (or not): the dock's button runs it, it never takes z over (Codex critique #8)
-    snack.loading(t("compose.sending"), { id: snackId(draftId), duration: left, action: { label: t("common.undo"), name: t("compose.undoSend"), undo: held.undo } });
+    snack.loading(t("compose.sending"), { id: snackId(draftId), duration: left, steady: true, action: { label: t("common.undo"), name: t("compose.undoSend"), undo: held.undo } });
     return;
   }
   if (held.phase !== "sending") return;

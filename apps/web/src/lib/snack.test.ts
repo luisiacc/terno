@@ -131,6 +131,32 @@ describe("pausing", () => {
   });
 });
 
+describe("plan 188", () => {
+  it("a steady snack (a held send: the backend's clock) runs on under hover and focus, and goes at its time", () => {
+    pause("focus");
+    snack.loading("Sending…", { duration: 3000, steady: true, action: { label: "Undo", onClick() {} } });
+    pause("hover");
+    vi.advanceTimersByTime(1000);
+    expect(elapsedAt(useSnack.getState().countdown, clock.now())).toBe(1000);
+    vi.advanceTimersByTime(2000);
+    expect(message()).toBeNull();
+    // the reasons stay for the next one
+    snack("Archivado", { action: { label: "Undo", onClick() {} } });
+    vi.advanceTimersByTime(10_000);
+    expect(message()).toBe("Archivado");
+  });
+
+  it("a snack with an action says how to reach it: Z only when z runs that very undo", () => {
+    snack("Archived", { action: { label: "Undo", name: "Undo archive", onClick() {} } });
+    expect(current()?.spoken).toBe("Archived. Undo archive: press F6 to reach it.");
+    const undo = registerUndo(() => {});
+    snack("Archived", { action: { label: "Undo", name: "Undo archive", undo } });
+    expect(current()?.spoken).toBe("Archived. Undo archive: press Z, or F6 to reach it.");
+    snack("Archived");
+    expect(current()?.spoken).toBe("Archived");
+  });
+});
+
 describe("one at a time", () => {
   it("a new snack replaces the current one and starts its own lifetime", () => {
     snack("Archivado");

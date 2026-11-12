@@ -38,6 +38,9 @@ export function HeldMessage({ held, icons }: { held: HeldSend; icons: boolean })
   // said once as it changes (never each second), through the app's one voice (plan 188: a region that arrives with its
   // words is read unreliably): that it hasn't gone, how long there is and how to take it back, then that it's going
   useEffect(() => {
+    // once per hold and phase, not each time its card mounts again (a conversation left and come back to: Codex review)
+    if (announcedPhase.get(held.draftId) === held.phase) return;
+    sayOnce(held.draftId, held.phase);
     if (held.phase === "sending") return announce(t("compose.sending"));
     if (held.phase !== "holding") return;
     const count = Math.max(1, Math.round((held.goesAt - Date.now()) / 1000));
@@ -63,6 +66,14 @@ export function HeldMessage({ held, icons }: { held: HeldSend; icons: boolean })
       </div>
     </article>
   );
+}
+
+/** Plan 188: the phase each hold last said (the latest holds of the session: a few at most). */
+const announcedPhase = new Map<number, HeldSend["phase"]>();
+function sayOnce(draftId: number, phase: HeldSend["phase"]): void {
+  announcedPhase.delete(draftId);
+  announcedPhase.set(draftId, phase);
+  if (announcedPhase.size > 32) announcedPhase.delete(announcedPhase.keys().next().value!);
 }
 
 /**

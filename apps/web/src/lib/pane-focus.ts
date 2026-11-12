@@ -50,9 +50,11 @@ function focusIn(pane: Pane): boolean {
     case "main": {
       const main = mainPane();
       if (!shown(main)) return false;
-      // the conversation (named by its subject), else the first thing to work with there (a new message's first field)
-      const target = main.querySelector<HTMLElement>("[data-testid=reader][tabindex]") ?? main.querySelector<HTMLElement>("input:not([type=hidden]):not(:disabled), [contenteditable=true], button:not(:disabled), [tabindex='-1'][aria-labelledby]");
-      if (!shown(target)) return false;
+      // the conversation (named by its subject), else the first thing to work with that's on screen and not under
+      // something (a new message's first field; the full message's Back, over the inert conversation: Codex review)
+      const reader = main.querySelector<HTMLElement>("[data-testid=reader][tabindex]");
+      const target = shown(reader) ? reader : [...main.querySelectorAll<HTMLElement>("input:not([type=hidden]):not(:disabled), [contenteditable=true], button:not(:disabled), [tabindex='-1'][aria-labelledby]")].find(shown);
+      if (!target) return false;
       target.focus({ preventScroll: true });
       break;
     }
@@ -72,8 +74,8 @@ export function movePane(step: 1 | -1): boolean {
   const here = paneOf(active);
   const snack = useSnack.getState().current;
   if (step === 1 && here !== "dock" && snack && visited.seq !== snack.seq && focusIn("dock")) return true;
-  // from the dock, on from where focus came from
-  const from = here === "dock" ? (paneOf(dockCameFrom()) ?? "main") : here;
+  // F6 from the dock goes on from where focus came from; ⇧F6 is the plain reverse (Codex review)
+  const from = here === "dock" && step === 1 ? (paneOf(dockCameFrom()) ?? "main") : here;
   const start = from === null ? (step === 1 ? -1 : 0) : ORDER.indexOf(from);
   for (let i = 1; i <= ORDER.length; i++) {
     const pane = ORDER[(start + step * i + ORDER.length * 2) % ORDER.length]!;

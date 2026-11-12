@@ -1006,6 +1006,7 @@ const es = {
   "list.announce.more": "{mailbox}, más de {count} conversaciones",
   "list.announce.empty": "No hay conversaciones en {mailbox}",
   "list.announce.selected": { one: "# seleccionada", other: "# seleccionadas" },
+  "list.announce.selectionCleared": "Selección quitada",
   "reader.label": "Conversación",
   "reader.announce.opened": "{subject}, de {from}",
   "list.reviewTitle": "Ordenar · {category}",
