@@ -151,3 +151,13 @@ The lowest level that catches each:
 4. **Clearing the selection is said** ("Selection cleared"): the cursor's row still reads as selected, so nothing else says it (`list-speech.test.ts`).
 5. **F6 from inside a mail's frame** is forwarded to the app, as ⌘G and Esc are; the frame keeps the key when nothing moved (`screen-reader.spec.ts`).
 6. **A held send says each phase once**, not again each time its conversation is come back to (`screen-reader.spec.ts`).
+
+### Second round
+
+1. **j from a full message** counts as the conversation (focus doesn't jump to the list) (`keyboard-focus.test.ts`).
+2. **A conversation still loading is named by its row's subject**, so focus put on it says where it went.
+3. **A held send says each phase once per hold** (keyed by the hold, not the draft): taken back and sent again, it's said again (`screen-reader.spec.ts`).
+4. **The Undo pill names plain Z only while single keys are on**; its keycap stays ⌘Z, which always works (`screen-reader.spec.ts`).
+5. **F6 reaches a pane whose only stop is its heading** (a digest being prepared). Rare; no test of its own.
+
+Also: the list has `aria-busy` while a page loads (A8, missed in the first pass). `snack.spec`'s Undo scenario picked a row while Shift+A's list was still arriving (2 in 8 here); it now waits for the list to be in. One F6-to-the-dock miss in `snack.spec` was seen once in about 25 runs and not again.

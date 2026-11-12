@@ -1110,6 +1110,8 @@ function ReaderContent() {
   const design = useDesign();
   const detail = useThread(selectedId);
   const gone = useThreadGone(selectedId);
+  // plan 188 (Codex review): while it loads, the section is named by the row's subject, so focus put on it says where it went
+  const listedSubject = useList((l) => (selectedId === null ? undefined : l.items[l.index.get(selectedId) ?? -1]?.subject));
   const categories = useApp((s) => s.categories);
   const accounts = useApp((s) => s.accounts);
   useEffect(() => {
@@ -1199,7 +1201,7 @@ function ReaderContent() {
   const summarize = summarizeOffered && summarizable(thread);
 
   return (
-    <section ref={sectionRef} tabIndex={-1} aria-labelledby={detail ? "reader-subject" : undefined} aria-label={detail ? undefined : t("reader.label")} aria-busy={selectedId !== null && !detail && !gone ? true : undefined} onPointerDownCapture={chooseOpenThread} className="@container flex h-full min-h-0 flex-col bg-background outline-none" data-testid="reader">
+    <section ref={sectionRef} tabIndex={-1} aria-labelledby={detail ? "reader-subject" : undefined} aria-label={detail ? undefined : listedSubject !== undefined ? listedSubject || t("common.noSubject") : t("reader.label")} aria-busy={selectedId !== null && !detail && !gone ? true : undefined} onPointerDownCapture={chooseOpenThread} className="@container flex h-full min-h-0 flex-col bg-background outline-none" data-testid="reader">
       {/* the same gutter as the conversation below, so the two columns share their edges */}
       <div ref={toolbarRef} className="drag-region scroll-hairline data-context:after:opacity-0! relative shrink-0 overflow-hidden [scrollbar-gutter:stable]">
         {/* on the conversation's column: the first glyph on its left edge, the last control on its right, whatever the width; words as they fit */}

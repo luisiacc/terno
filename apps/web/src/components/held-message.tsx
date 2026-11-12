@@ -39,8 +39,8 @@ export function HeldMessage({ held, icons }: { held: HeldSend; icons: boolean })
   // words is read unreliably): that it hasn't gone, how long there is and how to take it back, then that it's going
   useEffect(() => {
     // once per hold and phase, not each time its card mounts again (a conversation left and come back to: Codex review)
-    if (announcedPhase.get(held.draftId) === held.phase) return;
-    sayOnce(held.draftId, held.phase);
+    if (announcedPhase.get(held.undo) === held.phase) return;
+    announcedPhase.set(held.undo, held.phase);
     if (held.phase === "sending") return announce(t("compose.sending"));
     if (held.phase !== "holding") return;
     const count = Math.max(1, Math.round((held.goesAt - Date.now()) / 1000));
@@ -68,13 +68,8 @@ export function HeldMessage({ held, icons }: { held: HeldSend; icons: boolean })
   );
 }
 
-/** Plan 188: the phase each hold last said (the latest holds of the session: a few at most). */
-const announcedPhase = new Map<number, HeldSend["phase"]>();
-function sayOnce(draftId: number, phase: HeldSend["phase"]): void {
-  announcedPhase.delete(draftId);
-  announcedPhase.set(draftId, phase);
-  if (announcedPhase.size > 32) announcedPhase.delete(announcedPhase.keys().next().value!);
-}
+/** Plan 188: the phase each hold last said, by the hold itself (its undo: a draft sent again is a new hold, Codex review). */
+const announcedPhase = new WeakMap<HeldSend["undo"], HeldSend["phase"]>();
 
 /**
  * Where a message has its date: Undo send, its border draining over the window (the dock's own countdown pill, so the

@@ -73,10 +73,14 @@ test.describe("the docked snackbar", () => {
       await expect(dock(page)).toHaveText(/Restored 1 conversation/);
       await expect(dock(page).getByTestId("snack-action")).toHaveCount(0);
       // plan 158: the pointer still on it after the click doesn't hold it; another list makes it stale at once
+      const all = await page.getByTestId("thread-list").getAttribute("data-results-for");
       await page.keyboard.press("Shift+U");
       // (well inside its own 2.5 s)
       await expect(dock(page)).toHaveCount(0, { timeout: 1000 });
       await page.keyboard.press("Shift+A");
+      // (the whole list back before a row is picked from it, its first page in: plan 188's aria-busy says when)
+      await expect(page.getByTestId("thread-list")).toHaveAttribute("data-results-for", all!);
+      await expect(page.locator("[data-testid=thread-list] [aria-busy=true]")).toHaveCount(0);
 
       const second = await openRow(page, 2);
       await focusList(page);

@@ -53,7 +53,7 @@ function focusIn(pane: Pane): boolean {
       // the conversation (named by its subject), else the first thing to work with that's on screen and not under
       // something (a new message's first field; the full message's Back, over the inert conversation: Codex review)
       const reader = main.querySelector<HTMLElement>("[data-testid=reader][tabindex]");
-      const target = shown(reader) ? reader : [...main.querySelectorAll<HTMLElement>("input:not([type=hidden]):not(:disabled), [contenteditable=true], button:not(:disabled), [tabindex='-1'][aria-labelledby]")].find(shown);
+      const target = shown(reader) ? reader : [...main.querySelectorAll<HTMLElement>("input:not([type=hidden]):not(:disabled), [contenteditable=true], button:not(:disabled), [tabindex='-1'][aria-labelledby]")].find(shown) ?? [...main.querySelectorAll<HTMLElement>(":is(h1, h2)[tabindex]")].find(shown);
       if (!target) return false;
       target.focus({ preventScroll: true });
       break;

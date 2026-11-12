@@ -48,7 +48,8 @@ let moves = 0;
  */
 function followCursor(id: number, before: Element | null): void {
   const reader = () => document.querySelector<HTMLElement>("[data-testid=reader]");
-  const inReader = !!before && !!reader()?.contains(before);
+  // (a full message over the conversation is the conversation's too: Codex review)
+  const inReader = !!before && (!!reader()?.contains(before) || !!before.closest("[data-testid=full-message]"));
   const listShown = !(listLayout() && currentPage() !== "list");
   if (!inReader) {
     // (with focus nowhere, the page itself, nothing is pulled: the list's keys work from there as they always did)

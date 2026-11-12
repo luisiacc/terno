@@ -94,6 +94,8 @@ test("a screen reader's ways around the app (plan 188)", async ({ app: page, ser
     await expect(page.locator(`[data-thread-id="${first}"]`)).toHaveCount(1);
     await page.keyboard.press("ControlOrMeta+Backspace");
     await expect(page.locator(`[data-thread-id="${first}"]`)).toHaveCount(0);
+    // the Undo pill names ⌘Z only: plain z does nothing now (Codex review)
+    await expect(page.getByTestId("snack-dock").getByTestId("snack-action")).toHaveAttribute("aria-keyshortcuts", /^(Meta|Control)\+Z$/);
     await page.getByTestId("open-settings").click();
     await keys.click();
     await expect(keys).toHaveAttribute("aria-checked", "true");
@@ -123,5 +125,13 @@ test("a screen reader's ways around the app (plan 188)", async ({ app: page, ser
     await expect(page.getByTestId("held-message")).toBeVisible();
     await page.waitForTimeout(200);
     expect((await page.evaluate(() => (window as unknown as { __said: string[] }).__said)).filter((t) => t.startsWith("Not sent yet"))).toEqual([]);
+    // taken back and sent again, it's a new hold: said again (Codex review)
+    await page.keyboard.press("z");
+    await expect(page.getByTestId("held-message")).toHaveCount(0);
+    await expect(page.getByTestId("compose-body")).toBeVisible();
+    await page.getByTestId("compose-body").click();
+    await page.keyboard.press("ControlOrMeta+Enter");
+    await expect(page.getByTestId("held-message")).toBeVisible();
+    await expect.poll(async () => (await page.evaluate(() => (window as unknown as { __said: string[] }).__said)).filter((t) => t.startsWith("Not sent yet")).length).toBe(1);
   });
 });

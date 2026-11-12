@@ -101,6 +101,14 @@ describe("focus follows the cursor (plan 188)", () => {
     expect(active().dataset.testid).toBe("reader");
   });
 
+  it("j from a full message over the conversation doesn't send focus to the list (Codex review)", () => {
+    document.querySelector("main")!.insertAdjacentHTML("beforeend", `<section data-testid="full-message"><button data-testid="full-back">Back</button></section>`);
+    focus("full-back");
+    press("j");
+    expect(getApp().selectedId).toBe(2);
+    expect(active().getAttribute("role")).not.toBe("listbox");
+  });
+
   it("j from inside the conversation keeps focus there", () => {
     focus("reader");
     press("j");

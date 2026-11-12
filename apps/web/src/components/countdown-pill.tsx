@@ -5,6 +5,7 @@ import { cn } from "@terno/ui/lib/utils";
 import { motionOff } from "@terno/ui/themes/apply";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useAppearance } from "~/lib/appearance";
+import { useApp } from "~/state/app";
 
 /** The pill's outline from the top centre, clockwise (crisp: drawn at the button's own size). */
 function pillPath(w: number, h: number, stroke: number): string {
@@ -68,7 +69,8 @@ function Ring({ size, countdown }: { size: { w: number; h: number }; countdown: 
  */
 const UNDO_CHORD = "mod+z";
 // (the shortcut's own test of the platform: lib/select's would pull the list's state into every pill)
-const undoAria = () => `${typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform) ? "Meta" : "Control"}+Z Z`;
+// plan 188 (Codex review): plain Z only while single keys are on (the keycap is ⌘Z, which always works)
+const undoAria = (keys: boolean) => `${typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform) ? "Meta" : "Control"}+Z${keys ? " Z" : ""}`;
 
 /**
  * A pill whose border drains as its time runs out (the dock's Undo, plan 13; a sent message's Undo send, plan 182), with
@@ -77,6 +79,7 @@ const undoAria = () => `${typeof navigator !== "undefined" && /Mac|iPhone|iPad/.
  */
 export function CountdownPill({ label, name, onClick, shortcut, disabled, busy, countdown, testId, className, ...data }: { label: string; name?: string; onClick: () => void; shortcut?: string; disabled?: boolean; busy?: boolean; countdown: Countdown; testId: string; className?: string } & { [key: `data-${string}`]: string | boolean | undefined }) {
   const ref = useRef<HTMLButtonElement>(null);
+  const keys = useApp((s) => s.settings?.characterKeys !== false);
   const [size, setSize] = useState({ w: 0, h: 0 });
   useLayoutEffect(() => {
     const el = ref.current;
@@ -94,7 +97,7 @@ export function CountdownPill({ label, name, onClick, shortcut, disabled, busy, 
       data-testid={testId}
       {...data}
       aria-label={name}
-      aria-keyshortcuts={shortcut === "z" ? undoAria() : shortcut}
+      aria-keyshortcuts={shortcut === "z" ? undoAria(keys) : shortcut}
       aria-busy={busy || undefined}
       disabled={disabled || busy}
       onClick={onClick}
