@@ -97,21 +97,23 @@ export type AboutStatus =
   | { kind: "verifying"; version: string }
   /** installing: the restart is under way; deferred: it waits for a send; refused: why the last Restart didn't happen */
   | { kind: "ready"; update: UpdateInfo; deferred: boolean; installing: boolean; refused: UpdateErrorKind | null }
-  /** plan 95; a copy that can't update itself is sent to the download page instead */
-  | { kind: "required"; version: string; working: boolean; unsupported: UnsupportedReason | null }
+  /** plan 95; a copy that can't update itself is sent to the download page instead; refused: why the last install didn't happen */
+  | { kind: "required"; version: string; working: boolean; unsupported: UnsupportedReason | null; refused: UpdateErrorKind | null }
   /** retry: what Try Again does (a failed install or a failed check looks again; a failed download downloads again) */
   | { kind: "error"; stage: UpdateErrorStage; error: UpdateErrorKind; retry: "check" | "download" }
   | { kind: "unsupported"; reason: UnsupportedReason };
 
 export function aboutStatus(state: UpdateState, o: { checkFailed?: boolean } = {}): AboutStatus {
   const unsupported = state.status === "unsupported" ? (state.unsupported ?? "dev") : null;
-  if (state.required) return { kind: "required", version: state.required, working: state.updatingNow, unsupported };
+  const refused = state.error?.stage === "install" ? state.error.kind : null;
+  if (state.required) return { kind: "required", version: state.required, working: state.updatingNow, unsupported, refused };
   if (unsupported) return { kind: "unsupported", reason: unsupported };
   // a ready update wins over anything a later check or download is doing (as in the pill)
   if (state.ready) {
-    const refused = state.error?.stage === "install" ? state.error.kind : null;
     return { kind: "ready", update: state.ready, deferred: state.deferred === "sending", installing: state.status === "installing", refused };
   }
+  // the last check never reached main: whatever the state said before it (checking, an older error) is stale; main's next state clears it
+  if (o.checkFailed) return { kind: "error", stage: "check", error: "unknown", retry: "check" };
   const inFlight = state.target ?? state.available;
   if (state.status === "downloading" && inFlight) return { kind: "downloading", version: inFlight.version, percent: state.percent ?? 0 };
   if (state.status === "verifying" && inFlight) return { kind: "verifying", version: inFlight.version };
@@ -121,7 +123,6 @@ export function aboutStatus(state: UpdateState, o: { checkFailed?: boolean } = {
     const download = (state.error.stage === "download" || state.error.stage === "verify") && state.available !== null;
     return { kind: "error", stage: state.error.stage, error: state.error.kind, retry: download ? "download" : "check" };
   }
-  if (o.checkFailed) return { kind: "error", stage: "check", error: "unknown", retry: "check" };
   if (state.status === "available" && state.available) return { kind: "available", update: state.available };
   if (state.status === "up-to-date") return { kind: "up-to-date", checkedAt: state.checkedAt };
   return { kind: "idle", checkedAt: state.checkedAt };

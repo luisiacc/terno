@@ -118,3 +118,11 @@ The critique (12 points) is in the session scratchpad (`plan-critique.txt`). Wha
 10. **Focus**: when the state takes away the focused action (Download → the bar), focus moves to the row's status text (`tabIndex=-1`); a disabled action stays focusable (`focusableWhenDisabled`). Tracked through `focusin`, since a removed element fires no reliable blur. Unit-tested, and the test fails without the handoff.
 11. **One links module** (`terno-links.ts`) for every GitHub URL; the link test checks the opener (a new tab on the web, the shell on desktop).
 12. **Settings primitives**: `SettingsGroup`'s own inset, the shared `Progress` and `Spinner`, `link-secondary` links; axe runs on the whole About pane in light and dark.
+
+## What the Codex code review changed (865185a25..)
+
+The review is in the session scratchpad (`code-review.txt`). Each fix has a regression test that fails without it.
+
+1. **A check that never reached main outranks the state before it**, other than a staged update: after a failed download, Try Again no longer downloads again; a stale "checking" no longer keeps the button busy.
+2. **A required update says why its install was refused** (unsaved drafts) instead of the generic consent line.
+3. **Focus handoff covers the whole row**, not only the action: What's New taken away by a background check moves focus to the status text too.

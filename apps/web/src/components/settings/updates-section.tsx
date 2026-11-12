@@ -64,7 +64,8 @@ function words(status: AboutStatus): { title: string; detail: string } {
       // a Restart that was refused says why (unsaved drafts), the update still staged
       return { title: t("about.status.ready", { version: status.update.version }), detail: status.refused ? errorText(status.refused) : t("about.status.readyHint") };
     case "required":
-      return { title: t("updates.pill.required"), detail: status.unsupported ? unsupportedText(status.unsupported) : t("updates.required.consent") };
+      if (status.unsupported) return { title: t("updates.pill.required"), detail: unsupportedText(status.unsupported) };
+      return { title: t("updates.pill.required"), detail: status.refused ? errorText(status.refused) : t("updates.required.consent") };
     case "error":
       return { title: t(`about.status.failed.${status.stage}`), detail: errorText(status.error) };
     case "unsupported":
@@ -93,14 +94,15 @@ export function UpdateStatusRow({ state, lead }: { state: UpdateState; lead: str
   const checkFailed = useUpdates((s) => s.checkFailed);
   const status = aboutStatus(state, { checkFailed });
   const statusRef = useRef<HTMLDivElement>(null);
-  const actionRef = useRef<HTMLDivElement>(null);
+  const rowRef = useRef<HTMLDivElement>(null);
   /**
-   * The action had focus last: when the state takes it away (Download → the bar), focus stays in the row, on its words.
+   * A control in the row had focus last: when the state takes it away (Download → the bar, What's New → a check),
+   * focus stays in the row, on its words.
    * Read from focusin (a removed element fires no reliable blur); a disabled action stays focusable (focusableWhenDisabled).
    */
   const focused = useRef(false);
   useEffect(() => {
-    const track = (e: FocusEvent) => void (focused.current = actionRef.current?.contains(e.target as Node) ?? false);
+    const track = (e: FocusEvent) => void (focused.current = rowRef.current?.contains(e.target as Node) ?? false);
     document.addEventListener("focusin", track);
     return () => document.removeEventListener("focusin", track);
   }, []);
@@ -151,14 +153,14 @@ export function UpdateStatusRow({ state, lead }: { state: UpdateState; lead: str
         );
     }
   })();
-  const actionKey = action?.props["data-testid"] ?? null;
+  // every render: a cheap look at whether the focused control just left the row
   useLayoutEffect(() => {
-    if (!focused.current || actionRef.current?.contains(document.activeElement)) return;
+    if (!focused.current || rowRef.current?.contains(document.activeElement)) return;
     focused.current = false;
     if (document.activeElement === document.body || document.activeElement === null) statusRef.current?.focus({ preventScroll: true });
-  }, [actionKey]);
+  });
   return (
-    <div className="flex min-h-14 items-center gap-3 py-3" data-testid="updates-status-row" data-state={status.kind}>
+    <div ref={rowRef} className="flex min-h-14 items-center gap-3 py-3" data-testid="updates-status-row" data-state={status.kind}>
       <span className={cn(lead, "flex items-center justify-center self-start pt-0.5")}>
         <Glyph status={status} />
       </span>
@@ -186,7 +188,7 @@ export function UpdateStatusRow({ state, lead }: { state: UpdateState; lead: str
         )}
       </div>
       {action && (
-        <div ref={actionRef} className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           {action}
         </div>
       )}

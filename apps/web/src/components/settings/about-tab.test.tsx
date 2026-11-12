@@ -71,4 +71,15 @@ describe("Settings → About", () => {
     expect(q("updates-download")).toBeNull();
     expect(document.activeElement).toBe(q("updates-status"));
   });
+
+  it("so does What's New when a background check takes the offer's link away", () => {
+    const base = initialUpdateState({ current: "0.1.0", mode: "auto", channel: "stable" });
+    const update = { version: "0.2.0", notes: "", size: null, releaseDate: null };
+    const available: UpdateState = { ...base, status: "available", available: update };
+    act(() => root.render(<UpdateStatusRow state={available} lead="w-10" />));
+    act(() => q("updates-whats-new")!.focus());
+    act(() => root.render(<UpdateStatusRow state={{ ...available, status: "checking" }} lead="w-10" />));
+    expect(q("updates-whats-new")).toBeNull();
+    expect(document.activeElement).toBe(q("updates-status"));
+  });
 });

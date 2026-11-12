@@ -109,12 +109,18 @@ describe("updates: Settings → About's row (plan 190)", () => {
     expect(aboutStatus(s({ type: "not-available", at: 5 }), { checkFailed: true })).toEqual({ kind: "error", stage: "check", error: "unknown", retry: "check" });
     // a staged update is still true
     expect(aboutStatus(s(...ready), { checkFailed: true })).toMatchObject({ kind: "ready" });
+    // nor as an older failure: Try Again checks, it doesn't download again
+    expect(aboutStatus(s(available(), { type: "download-start" }, { type: "download-failed", kind: "offline" }), { checkFailed: true })).toEqual({ kind: "error", stage: "check", error: "unknown", retry: "check" });
+    // nor as a check still running
+    expect(aboutStatus(s({ type: "check-start" }), { checkFailed: true })).toMatchObject({ kind: "error", retry: "check" });
   });
 
   it("an unsupported copy says why; a required update on one points to the download page instead of the updater", () => {
     expect(at({ type: "unsupported", reason: "dmg" })).toEqual({ kind: "unsupported", reason: "dmg" });
-    expect(at({ type: "policy", minimum: "0.5.0" })).toEqual({ kind: "required", version: "0.5.0", working: false, unsupported: null });
-    expect(at({ type: "policy", minimum: "0.5.0" }, { type: "unsupported", reason: "translocated" })).toEqual({ kind: "required", version: "0.5.0", working: false, unsupported: "translocated" });
+    expect(at({ type: "policy", minimum: "0.5.0" })).toEqual({ kind: "required", version: "0.5.0", working: false, unsupported: null, refused: null });
+    expect(at({ type: "policy", minimum: "0.5.0" }, { type: "unsupported", reason: "translocated" })).toEqual({ kind: "required", version: "0.5.0", working: false, unsupported: "translocated", refused: null });
+    // an install refused for unsaved drafts says so, the requirement still standing
+    expect(at({ type: "policy", minimum: "0.5.0" }, ...ready, { type: "install-start" }, { type: "install-failed", kind: "unsaved" })).toMatchObject({ kind: "required", refused: "unsaved" });
     expect(at({ type: "policy", minimum: "0.5.0" }, { type: "update-now", on: true })).toMatchObject({ kind: "required", working: true });
   });
 });
