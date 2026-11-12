@@ -298,6 +298,8 @@ test.describe("motion", () => {
       expect((await arrivals(page)).filter((a) => a.id === "seal" && a.testid === "held-seal")).toHaveLength(1);
       const seal = held.getByTestId("held-seal");
       await expect(seal).toHaveClass(/scale-x-100/);
+      // drawn (its box is measured once the draw is over)
+      await seal.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
       const [line, card] = [(await seal.boundingBox())!, (await held.boundingBox())!];
       expect(Math.abs(line.width - card.width)).toBeLessThanOrEqual(1);
       expect(Math.abs(line.y - card.y)).toBeLessThanOrEqual(2);
@@ -313,6 +315,19 @@ test.describe("motion", () => {
       const seen = await arrivals(page);
       expect(seen.filter((a) => a.id === "seal")).toHaveLength(1);
       expect(seen.filter((a) => a.id === "arrive" && a.testid === "held-message")).toHaveLength(1);
+    });
+    await scenario("its copy takes its place: only the copy's date arrives, once", async () => {
+      const before = (await arrivals(page)).length;
+      const { draftId } = (await server.backend.store.scheduled.list())[0]!;
+      await server.backend.server.invoke("scheduled.reschedule", { draftId, sendAt: E2E_NOW - 1 }, ctx);
+      await expect(held).toHaveCount(0, { timeout: 8000 });
+      await frames(page);
+      const after = (await arrivals(page)).slice(before);
+      expect(after).toEqual([expect.objectContaining({ id: "arrive", testid: null })]);
+      // (the copy's open header carries the date it arrived on)
+      const date = page.getByTestId("message").last().locator("[data-message-date]");
+      await expect(date).toBeVisible();
+      await expect(date).toHaveCSS("opacity", "1");
     });
   });
 

@@ -126,8 +126,15 @@ export function HeldMessages({ threadId, messages, icons }: { threadId: number; 
   const all = useHeldSends((s) => s.holds);
   const holds = useMemo(() => heldIn({ holds: all }, threadId), [all, threadId]);
   const arrived = (h: HeldSend) => h.copy !== null && messages.some((m) => m.id === h.copy!.messageId);
-  useEffect(() => {
-    for (const h of holds) if (arrived(h)) copyShown(h.draftId);
+  // (before paint: plan 199's date is never shown settled, then hidden)
+  useLayoutEffect(() => {
+    for (const h of holds) {
+      if (!arrived(h)) continue;
+      copyShown(h.draftId);
+      // plan 199: where "Sending…" was, the copy's date arrives; the rest is the same message, and stays still. (Ids are
+      // integers from the store, never text from mail)
+      arrive(document.querySelector(`[data-reader-scroller] article[data-message-id="${Math.trunc(h.copy!.messageId)}"] [data-message-date]`));
+    }
   }, [holds, messages]);
   return holds.filter((h) => !arrived(h)).map((h) => <HeldMessage key={h.draftId} held={h} icons={icons} />);
 }
