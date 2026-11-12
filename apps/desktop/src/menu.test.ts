@@ -11,7 +11,7 @@ import { MENU_COMMANDS, PRINT_COMMANDS } from "./print-commands";
 
 afterEach(() => setLocale("en", en));
 
-const actions = { appName: "Terno", dev: false, send: () => {}, reload: () => {}, exportDiagnostics: () => {}, showLogs: () => {}, checkForUpdates: () => {} };
+const actions = { appName: "Terno", platform: "darwin" as NodeJS.Platform, dev: false, send: () => {}, reload: () => {}, exportDiagnostics: () => {}, showLogs: () => {}, checkForUpdates: () => {} };
 const sub = (item: MenuItemConstructorOptions) => item.submenu as MenuItemConstructorOptions[];
 /** every label in the menu bar, nested items included */
 const labels = (items: MenuItemConstructorOptions[]): string[] => items.flatMap((i) => [...(i.label ? [i.label] : []), ...(Array.isArray(i.submenu) ? labels(i.submenu) : [])]);
@@ -106,6 +106,47 @@ describe("main: the menu bar", () => {
     const english = new Set(labels((await (async () => (setLocale("en", en), menuTemplate(actions)))())));
     await switchLanguage("es", []);
     expect(all.filter((l) => english.has(l) && !["Terno", "Zoom"].includes(l))).toEqual([]);
+  });
+});
+
+describe("plan 189: the menu bar on Linux, drawn inside the window", () => {
+  const linux = { ...actions, platform: "linux" as NodeJS.Platform };
+  /** every role in a menu, nested ones included */
+  const roles = (items: MenuItemConstructorOptions[]): string[] => items.flatMap((i) => [...(i.role ? [i.role] : []), ...(Array.isArray(i.submenu) ? roles(i.submenu) : [])]);
+
+  it("has no app or Window menu, and none of macOS's own items (they'd do nothing there)", () => {
+    const template = menuTemplate(linux);
+    expect(template.map((m) => m.label)).toEqual(["File", "Edit", "View", "Help"]);
+    const all = roles(template);
+    for (const mac of ["services", "hide", "hideOthers", "unhide", "startSpeaking", "stopSpeaking", "pasteAndMatchStyle", "front", "zoom", "window"]) expect(all).not.toContain(mac);
+    expect(labels(template)).not.toContain("Speech");
+  });
+
+  it("ends File with Quit, and Help holds Check for Updates… first and About last, every item labelled", () => {
+    let checked = 0;
+    const template = menuTemplate({ ...linux, checkForUpdates: () => checked++ });
+    const file = sub(template[0]!);
+    expect([file.at(-1)!.role, file.at(-1)!.label]).toEqual(["quit", "Quit Terno"]);
+    expect(file.slice(0, 2).map((i) => i.id)).toEqual(["print", "export-pdf"]);
+    const help = sub(template[3]!);
+    expect(help[0]!.label).toBe("Check for Updates…");
+    (help[0]!.click as () => void)();
+    expect(checked).toBe(1);
+    expect(help.map((i) => i.id).filter(Boolean)).toEqual(["check-for-updates", "export-diagnostics", "show-logs"]);
+    expect([help.at(-1)!.role, help.at(-1)!.label]).toEqual(["about", "About Terno"]);
+    const walk = (items: MenuItemConstructorOptions[]) => {
+      for (const i of items) {
+        if (i.type === "separator") continue;
+        expect(i.label, JSON.stringify(i.role)).toBeTruthy();
+        if (Array.isArray(i.submenu)) walk(i.submenu);
+      }
+    };
+    walk(template);
+  });
+
+  it("is Spanish once the locale is", async () => {
+    await switchLanguage("es", []);
+    expect(labels(menuTemplate(linux))).toEqual(expect.arrayContaining(["Archivo", "Salir de Terno", "Ayuda", "Buscar actualizaciones…", "Acerca de Terno"]));
   });
 });
 

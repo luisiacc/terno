@@ -81,7 +81,7 @@ export const FIELD_TYPES = {
   tool: id,
   toVersion: id,
   trigger: enumOf("auto", "manual", "quit", "restart", "other"),
-  unsupported: enumOf("dev", "unsigned", "dmg", "translocated", "read-only", "not-writable", "translated", "other"),
+  unsupported: enumOf("dev", "unsigned", "dmg", "translocated", "read-only", "not-writable", "translated", "linux", "other"),
   updateChannel: enumOf("stable", "nightly"),
   view: enumOf(...VIEWS, "search", "category", "other"),
 } as const satisfies Record<string, FieldType>;

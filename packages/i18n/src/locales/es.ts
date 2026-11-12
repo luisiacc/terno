@@ -2100,6 +2100,7 @@ const es = {
   "updates.unsupported.unsigned": "Esta versión no está firmada y macOS no le permite actualizarse sola. Descarga las versiones nuevas desde la página de versiones.",
   "updates.unsupported.translated": "Esta es la versión para Intel en un Mac con Apple silicon. Descarga la versión para Apple silicon para recibir actualizaciones.",
   "updates.unsupported.location": "Mueve Terno a Aplicaciones para recibir actualizaciones.",
+  "updates.unsupported.linux": "Terno todavía no puede actualizarse solo en Linux. Descarga las versiones nuevas desde la página de versiones.",
   "updates.error.offline": "Terno no pudo conectar con GitHub. Revisa tu conexión e inténtalo de nuevo.",
   "updates.error.server": "GitHub no respondió como se esperaba. Inténtalo más tarde.",
   "updates.error.integrity": "La descarga no coincidía con lo publicado y Terno la descartó. Inténtalo de nuevo.",

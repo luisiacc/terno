@@ -27,14 +27,19 @@ export interface UpdatesMainDeps {
 
 /** codesign and the bundle's folder: can Squirrel replace this copy, and will it accept a signed update? */
 async function probe(): Promise<UnsupportedReason | null> {
+  const off = { signed: null, translated: false, bundlePath: "", volumeReadOnly: false, parentWritable: false };
+  if (!app.isPackaged) return unsupportedReason({ packaged: false, platform: process.platform, ...off });
+  // plan 189: a Linux package is updated by installing the next one
+  if (process.platform !== "darwin") return unsupportedReason({ packaged: true, platform: process.platform, ...off });
   const bundle = bundleOf(process.execPath);
-  if (!app.isPackaged || !bundle) return unsupportedReason({ packaged: false, signed: null, translated: false, bundlePath: "", volumeReadOnly: false, parentWritable: false });
+  if (!bundle) return unsupportedReason({ packaged: false, platform: process.platform, ...off });
   const signed = await new Promise<boolean | null>((resolve) =>
     execFile("codesign", ["-dv", "--verbose=2", bundle], { timeout: 10_000 }, (_error, stdout, stderr) => resolve(signedFromCodesign(`${stdout}\n${stderr}`))),
   );
   const writable = await new Promise<NodeJS.ErrnoException | null>((resolve) => access(dirname(bundle), constants.W_OK, resolve));
   return unsupportedReason({
     packaged: true,
+    platform: process.platform,
     signed,
     translated: app.runningUnderARM64Translation === true,
     bundlePath: bundle,

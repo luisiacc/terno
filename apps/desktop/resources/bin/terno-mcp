@@ -1,6 +1,11 @@
 #!/bin/sh
 # Terno MCP server for Codex / Claude Code. Runs the app's bundled Node (Electron
 # in RunAsNode mode) so no separate Node install is needed. Terno must be running.
+# The app is ../../MacOS/Terno in a .app, ../../terno in a Linux package (plan 189).
 RES="$(cd "$(dirname "$0")/.." && pwd)"
-APP_BIN="$(cd "$RES/../MacOS" && pwd)/Terno"
+if [ -x "$RES/../MacOS/Terno" ]; then
+  APP_BIN="$(cd "$RES/../MacOS" && pwd)/Terno"
+else
+  APP_BIN="$(cd "$RES/.." && pwd)/terno"
+fi
 ELECTRON_RUN_AS_NODE=1 exec "$APP_BIN" "$RES/mcp/terno-mcp.cjs" "$@"

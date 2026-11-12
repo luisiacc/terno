@@ -175,6 +175,7 @@ const UNSUPPORTED = {
   translocated: "updates.unsupported.location",
   "read-only": "updates.unsupported.location",
   "not-writable": "updates.unsupported.location",
+  linux: "updates.unsupported.linux",
 } as const satisfies Record<UnsupportedReason, TextKey>;
 
 export function unsupportedText(reason: UnsupportedReason): string {

@@ -54,6 +54,8 @@ describe("updates: what a manual check says", () => {
 
   it("explains why, in plain words", () => {
     expect(checkResult(s({ type: "unsupported", reason: "dmg" })).description).toBe("Move Terno to Applications to get updates.");
+    // plan 189: Linux has its own reason, never "Move Terno to Applications"
+    expect(checkResult(s({ type: "unsupported", reason: "linux" })).description).toBe("Terno can’t update itself on Linux yet. Download new versions from the releases page.");
     expect(checkResult(s({ type: "check-failed", at: 1, kind: "offline" })).description).toMatch(/couldn’t reach GitHub/);
     expect(checkResult(s({ type: "not-available", at: 1 })).description).toBe("You have the latest version (0.1.0).");
   });

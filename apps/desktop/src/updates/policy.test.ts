@@ -78,7 +78,7 @@ describe("updates: where requests may go", () => {
 });
 
 describe("updates: which copies can update themselves", () => {
-  const ok: LocationProbe = { packaged: true, signed: true, translated: false, bundlePath: "/Applications/Terno.app", volumeReadOnly: false, parentWritable: true };
+  const ok: LocationProbe = { packaged: true, platform: "darwin", signed: true, translated: false, bundlePath: "/Applications/Terno.app", volumeReadOnly: false, parentWritable: true };
   it.each([
     ["a signed copy in Applications", ok, null],
     ["a dev build", { ...ok, packaged: false }, "dev"],
@@ -90,6 +90,8 @@ describe("updates: which copies can update themselves", () => {
     ["under Rosetta", { ...ok, translated: true }, "translated"],
     ["a writable external disk is fine", { ...ok, bundlePath: "/Volumes/Work/Apps/Terno.app" }, null],
     ["signature unknown (codesign failed) doesn't block", { ...ok, signed: null }, null],
+    ["plan 189: a Linux package (deb or rpm) never updates itself", { ...ok, platform: "linux" }, "linux"],
+    ["plan 189: an unpackaged Linux run is still a dev build", { ...ok, platform: "linux", packaged: false }, "dev"],
   ] as const)("%s", (_name, probe, reason) => {
     expect(unsupportedReason(probe as LocationProbe)).toBe(reason);
   });

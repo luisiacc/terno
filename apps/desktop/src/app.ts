@@ -692,6 +692,10 @@ function createWindow() {
     show: false,
     title: "Terno",
     titleBarStyle: isMac ? "hiddenInset" : "default",
+    // plan 189: elsewhere the menu bar sits in the window; it stays out of the way until Alt
+    autoHideMenuBar: !isMac,
+    // X11 draws it in the title bar and the switcher (macOS takes the bundle's)
+    icon: isMac ? undefined : join(resourcesDir(), "icon.png"),
     // centered on the 52 px toolbar row
     trafficLightPosition: { x: 20, y: 19 },
     vibrancy: vibrancy ? "sidebar" : undefined,
@@ -766,6 +770,7 @@ function buildMenu() {
   };
   const template = menuTemplate({
     appName: app.getName(),
+    platform: process.platform,
     dev: isDev,
     send: sendCommand,
     reload: reloadFocused,

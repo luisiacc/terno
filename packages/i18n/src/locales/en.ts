@@ -2117,6 +2117,7 @@ const en = {
   "updates.unsupported.unsigned": "This build isn’t signed, so macOS won’t let it update itself. Download new versions from the releases page.",
   "updates.unsupported.translated": "This is the Intel build running on Apple silicon. Download the Apple silicon version to get updates.",
   "updates.unsupported.location": "Move Terno to Applications to get updates.",
+  "updates.unsupported.linux": "Terno can’t update itself on Linux yet. Download new versions from the releases page.",
   "updates.error.offline": "Terno couldn’t reach GitHub. Check your connection and try again.",
   "updates.error.server": "GitHub didn’t answer as expected. Try again later.",
   "updates.error.integrity": "The download didn’t match what was published, so Terno discarded it. Try again.",

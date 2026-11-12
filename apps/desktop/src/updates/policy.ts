@@ -96,6 +96,8 @@ export function inboundHeaders(headers: Record<string, string[]>): Record<string
 
 export interface LocationProbe {
   packaged: boolean;
+  /** process.platform: only macOS updates itself (Squirrel.Mac) */
+  platform: NodeJS.Platform;
   /** codesign: false for an ad-hoc signature (Squirrel refuses every update to it), null when unknown */
   signed: boolean | null;
   /** an x64 build running under Rosetta */
@@ -111,6 +113,7 @@ export interface LocationProbe {
 /** Why this copy can't update itself, or null. Location reasons all say "Move Terno to Applications". */
 export function unsupportedReason(p: LocationProbe): UnsupportedReason | null {
   if (!p.packaged) return "dev";
+  if (p.platform !== "darwin") return "linux";
   if (p.signed === false) return "unsigned";
   if (p.bundlePath.includes("/AppTranslocation/")) return "translocated";
   if (p.bundlePath.startsWith("/Volumes/") && p.volumeReadOnly) return "dmg";

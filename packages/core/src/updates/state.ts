@@ -12,7 +12,8 @@
 export type UpdateChannel = "stable" | "nightly";
 /** auto: check and download in the background; manual: check in the background, download when asked */
 export type UpdateMode = "auto" | "manual";
-export type UnsupportedReason = "dev" | "unsigned" | "dmg" | "translocated" | "read-only" | "not-writable" | "translated";
+/** "linux": Squirrel is macOS-only, and the deb and rpm packages (plan 189) are updated by downloading the next one */
+export type UnsupportedReason = "dev" | "unsigned" | "dmg" | "translocated" | "read-only" | "not-writable" | "translated" | "linux";
 export type UpdateErrorStage = "check" | "download" | "verify" | "install";
 export type UpdateErrorKind = "offline" | "server" | "integrity" | "disk" | "blocked" | "not-applied" | "unknown" | "unsaved";
 
