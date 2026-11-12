@@ -57,7 +57,7 @@ async function recordArrivals(page: Page) {
     w.__arrivals = [];
     const original = Element.prototype.animate;
     Element.prototype.animate = function (this: Element, keyframes: Keyframe[] | PropertyIndexedKeyframes | null, options?: number | KeyframeAnimationOptions) {
-      if (typeof options === "object" && (options.id === "arrive" || options.id === "seal")) w.__arrivals.push({ id: options.id, testid: this.getAttribute("data-testid"), thread: this.getAttribute("data-thread-id") });
+      if (typeof options === "object" && (options.id === "arrive" || options.id === "seal")) w.__arrivals.push({ id: options.id, testid: this.getAttribute("data-testid") ?? (this.hasAttribute("data-keep-scroll") ? "list" : this.hasAttribute("data-message-date") ? "message-date" : this.getAttribute("data-slot")), thread: this.getAttribute("data-thread-id") });
       return original.call(this, keyframes, options);
     };
   });
@@ -323,11 +323,41 @@ test.describe("motion", () => {
       await expect(held).toHaveCount(0, { timeout: 8000 });
       await frames(page);
       const after = (await arrivals(page)).slice(before);
-      expect(after).toEqual([expect.objectContaining({ id: "arrive", testid: null })]);
+      expect(after).toEqual([expect.objectContaining({ id: "arrive", testid: "message-date" })]);
       // (the copy's open header carries the date it arrived on)
       const date = page.getByTestId("message").last().locator("[data-message-date]");
       await expect(date).toBeVisible();
       await expect(date).toHaveCSS("opacity", "1");
+    });
+  });
+
+  test("plan 197: Review going on to another category: its name and rows arrive once; answering animates nothing new", async ({ app: page, server }) => {
+    const db = sqlDb(server.backend.store);
+    const [a, b] = db.all<{ id: number }>("SELECT id FROM categories ORDER BY id LIMIT 2").map((c) => c.id) as [number, number];
+    // suggestions for two categories, on threads in none
+    const free = db.all<{ id: number }>("SELECT t.id FROM threads t WHERE t.in_inbox = 1 AND NOT EXISTS (SELECT 1 FROM thread_categories WHERE thread_id = t.id) ORDER BY t.last_date DESC LIMIT 4").map((t) => t.id);
+    for (const [i, t] of free.entries()) db.run("INSERT INTO cls_decisions (thread_id, category_id, kind, p, explain_json, at) VALUES (?, ?, 'suggest', 0.8, '[]', ?)", t, i < 2 ? a : b, Date.now());
+    await page.reload();
+    await page.locator("[data-ready]").waitFor();
+    await page.getByTestId("nav-review").click();
+    await expect(rows(page).first()).toBeVisible();
+    await scenario("a switch: the category's name and the rows arrive, once", async () => {
+      await recordArrivals(page);
+      await page.getByTestId("review-category").click();
+      const other = page.locator(`[data-testid^="review-category-"]`).filter({ hasNot: page.locator("[data-selected]") }).last();
+      await other.click();
+      await expect(rows(page).first()).toBeVisible();
+      await frames(page);
+      const seen = (await arrivals(page)).filter((x) => x.id === "arrive");
+      expect(seen.map((x) => x.testid).sort()).toEqual(["list", "select-value"]);
+    });
+    await scenario("answering a suggestion: the row leaves as before, nothing arrives", async () => {
+      await recordArrivals(page);
+      await rows(page).first().dispatchEvent("mousedown");
+      await focusList(page);
+      await page.keyboard.press("y");
+      await frames(page);
+      expect((await arrivals(page)).filter((x) => x.id === "arrive")).toEqual([]);
     });
   });
 

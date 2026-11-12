@@ -13,7 +13,7 @@
 | 195 | New mail arrives (adds `arrive()`, `armReflow()`) | MEDIUM | none | built |
 | 196 | Sending: the held message arrives, and seals as it leaves | LOW | 195's `arrive()` | built |
 | 199 | The sent copy's date arrives where "Sending…" was | LOW | 195's `arrive()`; best after 196 | built |
-| 197 | Review's next category arrives | LOW | 195's `arrive()` | TODO |
+| 197 | Review's next category arrives | LOW | 195's `arrive()` | built |
 | 198 | An emptied list's empty state arrives | LOW | 195's `arrive()` | TODO |
 
 Build in that order: 195 first (it adds the shared helper the others use; each later plan also carries the helper's exact code, so any can run alone), then the send pair, 196 then 199, then 197 and 198. One motion throughout: arrive = `opacity 0 → 1`, `translate 0 4px → 0`, `--motion-slow` on `--motion-ease` (the spring only for 198's rare win); leave = the existing reflow fade. Every duration goes through the user's setting (`motionMs()`, plan 01) and stays within 100 ms; motion off plays nothing.

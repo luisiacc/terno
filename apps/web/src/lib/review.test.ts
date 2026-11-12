@@ -13,7 +13,7 @@ vi.hoisted(() => {
 });
 vi.mock("~/rpc/connection", () => ({ client: { call: () => new Promise(() => {}) } }));
 
-const { enterReview, leaveReview, reviewFrom, reviewTotals, switchReview } = await import("./review");
+const { enterReview, leaveReview, reviewArrival, reviewFrom, reviewTotals, switchReview, takeReviewArrival } = await import("./review");
 const { getApp, navigate, setApp, EMPTY_COUNTS } = await import("~/state/app");
 const { useList } = await import("~/state/list");
 
@@ -129,5 +129,33 @@ describe("Review's way in and out", () => {
     setApp({ query: "", reviewCategoryId: 3 });
     navigate({ view: "archive", accountId: null });
     expect(reviewFrom.origin).toBeNull();
+  });
+});
+
+describe("plan 197: the arrival a switch owes", () => {
+  it("is spent once, by the category switched to; with no rows it's spent and plays nothing", () => {
+    setApp({ categories: CATS });
+    suggest({ 1: 2, 2: 1 });
+    enterReview(1);
+    switchReview(2);
+    expect(takeReviewArrival(1, 3)).toBe(false);
+    expect(takeReviewArrival(2, 3)).toBe(true);
+    expect(takeReviewArrival(2, 3)).toBe(false);
+    switchReview(1);
+    expect(takeReviewArrival(1, 0)).toBe(false);
+    expect(reviewArrival.categoryId).toBeNull();
+    leaveReview();
+  });
+
+  it("is dropped when Review goes anywhere else before the rows come: a later entry doesn't play it", () => {
+    setApp({ categories: CATS });
+    suggest({ 1: 2, 2: 1 });
+    enterReview(1);
+    switchReview(2);
+    leaveReview();
+    expect(reviewArrival.categoryId).toBeNull();
+    enterReview(2);
+    expect(takeReviewArrival(2, 3)).toBe(false);
+    leaveReview();
   });
 });

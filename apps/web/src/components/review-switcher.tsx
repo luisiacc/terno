@@ -2,8 +2,9 @@ import type { CategoryColor } from "@terno/core";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { formatNumber, t } from "@terno/i18n";
-import { useEffect, useMemo, useRef } from "react";
-import { reviewTotals, switchReview, type Pending } from "~/lib/review";
+import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { reviewArrival, reviewTotals, switchReview, type Pending } from "~/lib/review";
+import { arrive } from "~/lib/flash";
 import { setApp, useApp } from "~/state/app";
 
 /**
@@ -25,6 +26,10 @@ export function ReviewSwitcher() {
     },
     [],
   );
+  // plan 197: switched to (the pill's countdown or this menu), the category's name arrives as it changes; its rows follow
+  useLayoutEffect(() => {
+    if (review !== null && reviewArrival.categoryId === review) arrive(document.querySelector('[data-testid="review-category"] [data-slot="select-value"]'));
+  }, [review]);
   const current = categories.find((c) => c.id === review);
   if (!current) return null;
   // the one in view stays a choice at 0 too (its last one answered, Review stays on it: an Undo brings the rows back here)

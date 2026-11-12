@@ -62,9 +62,23 @@ export function enterReview(categoryId: number): void {
   navigate({ view: "all", reviewCategoryId: categoryId, accountId: null });
 }
 
+/**
+ * Plan 197: a switch on its way to this category: its name and rows arrive once, when they're in. Bound to that one
+ * switch: Review going anywhere else drops it (an object's property, not a module let: the React Compiler)
+ */
+export const reviewArrival: { categoryId: number | null } = { categoryId: null };
+
+/** The switch's rows are in (or there were none): true once for the category it went to, and the intent is spent either way */
+export function takeReviewArrival(categoryId: number, rows: number): boolean {
+  if (reviewArrival.categoryId !== categoryId) return false;
+  reviewArrival.categoryId = null;
+  return rows > 0;
+}
+
 /** Another category's suggestions, in the same Review: the way back stays the one you came in by. */
 export function switchReview(categoryId: number): void {
   if (getApp().reviewCategoryId === categoryId) return;
+  reviewArrival.categoryId = categoryId;
   setApp({ reviewCategoryId: categoryId, selectedId: null, checked: new Set(), anchorId: null, scope: null, readerOpen: false });
 }
 
@@ -106,6 +120,8 @@ export function leaveReview(): void {
 
 useApp.subscribe((s, prev) => {
   const review = s.reviewCategoryId;
+  // plan 197: Review went anywhere but the switch's own category (left, entered afresh, another switch): no arrival owed
+  if (review !== prev.reviewCategoryId && review !== reviewArrival.categoryId) reviewArrival.categoryId = null;
   // left for anywhere but a search typed in it (whose Esc comes back to it) or a sentence's preview (whose Cancel comes
   // back to it, Codex code review round 2 #1): the way back is forgotten
   if (review === null) {

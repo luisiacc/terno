@@ -51,7 +51,8 @@ import { useAppearance } from "~/lib/appearance";
 import { previewLinesFor, rowHeight } from "@terno/ui/designs/rows";
 import { fitStrip } from "~/lib/fit-strip";
 import { listAnchor, listArrival } from "~/state/list";
-import { armReflow, arriveRows, motionNow } from "~/lib/flash";
+import { armReflow, arrive, arriveRows, motionNow } from "~/lib/flash";
+import { takeReviewArrival } from "~/lib/review";
 import { SelectionBar } from "./selection-bar";
 import ActionPreviewHeader from "./action-preview-header";
 import { renderProbe } from "~/lib/render-probe";
@@ -1115,6 +1116,12 @@ export function ThreadList() {
   const scanning = useActionPreview((s) => s.preview?.scanning === true);
   const loading = useList((s) => s.loading) || (inPreview && scanning && items.length === 0);
   const itemsKey = useList((s) => s.itemsKey);
+  // plan 197: Review went on to another category: once its rows are in, they arrive (the switcher's name already did)
+  const reviewing = useApp((s) => s.reviewCategoryId);
+  useLayoutEffect(() => {
+    if (reviewing === null || loading || itemsKey !== listKey()) return;
+    if (takeReviewArrival(reviewing, items.length)) arrive(document.querySelector('[data-keep-scroll="list"]'));
+  }, [itemsKey, reviewing, loading, items.length]);
   // plan 187: the rows' shape is the painted appearance's (a change keeps the first row on screen: applyAppearance)
   const compact = useAppearance((s) => s.density === "compact");
   const previewSetting = useAppearance((s) => s.previewLines);
