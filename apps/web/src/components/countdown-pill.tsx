@@ -110,7 +110,8 @@ export function CountdownPill({ label, name, onClick, shortcut, disabled, busy, 
     >
       <Ring size={size} countdown={countdown} />
       {busy && <Spinner aria-hidden className="size-3 text-muted-foreground" />}
-      {label}
+      {/* (a span, so a long label truncates in a pill held to its column: plan 192's "Next: {category}") */}
+      <span className="min-w-0 truncate">{label}</span>
       {/* the key is aria-keyshortcuts; drawn as generated content so the button's text stays its label ("Undo" in "Undo archive") */}
       {shortcut && <Kbd aria-hidden data-key={chordLabel(shortcut === "z" ? UNDO_CHORD : shortcut)} className="h-4 min-w-4 rounded-full bg-tint px-1 text-2xs shadow-none after:content-[attr(data-key)]" />}
     </button>

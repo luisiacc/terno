@@ -1,6 +1,7 @@
 import { capFilterName, FILTER_NAME_MAX, subjectTemplate, type FilterableScope } from "@terno/core";
 import type { CategorizeSource } from "@terno/core/rpc";
 import { formatList, t } from "@terno/i18n";
+import { create } from "zustand";
 import { client } from "~/rpc/connection";
 import { exclusivelyIn } from "~/lib/drag";
 import { reflowRemoval } from "~/lib/flash";
@@ -363,12 +364,23 @@ async function recover(): Promise<void> {
  * a failure brings it back. Accepting shows the category snackbar as anywhere.
  */
 export async function answerReview(threadId: number, categoryId: number, yes: boolean): Promise<void> {
-  // the add reads the row (its unread count moves) before it leaves
-  const answered = yes ? acceptSuggestion(threadId, categoryId).then((f) => f !== null) : rejectSuggestion(threadId, categoryId);
-  bumpSuggestions(categoryId, -1);
-  if (useList.getState().index.has(threadId)) leaveView([threadId]);
-  if (!(await answered)) await recover();
+  useReviewAnswers.setState((s) => ({ pending: s.pending + 1 }));
+  try {
+    // the add reads the row (its unread count moves) before it leaves
+    const answered = yes ? acceptSuggestion(threadId, categoryId).then((f) => f !== null) : rejectSuggestion(threadId, categoryId);
+    bumpSuggestions(categoryId, -1);
+    if (useList.getState().index.has(threadId)) leaveView([threadId]);
+    if (!(await answered)) await recover();
+  } finally {
+    useReviewAnswers.setState((s) => ({ pending: s.pending - 1 }));
+  }
 }
+
+/**
+ * Plan 192: Review's answers still on their way. The list empties before the backend has them; going on to another
+ * category meanwhile would leave a failed one's row to come back where nobody is (its recovery reloads the list in view).
+ */
+export const useReviewAnswers = create<{ pending: number }>(() => ({ pending: 0 }));
 
 /** Who (and the subject, its numbers as #), the domain, the list, or the words (from whom). */
 function headOf(scope: FilterableScope, senderName: string | null): string {

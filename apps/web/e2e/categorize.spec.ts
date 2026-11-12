@@ -437,6 +437,47 @@ test.describe("the engine's suggestions and auto adds in the UI", () => {
     await expect(page.getByTestId("list-empty")).toContainText("All sorted");
   });
 
+  test("plan 192: an emptied Review goes on to the next category (pressed here; by itself in the unit test), then to the Inbox", async ({ app: page, server }) => {
+    const db = sqlDb(server.backend.store);
+    // only these two categories have anything to sort
+    db.run("DELETE FROM cls_decisions WHERE kind = 'suggest' AND outcome IS NULL");
+    const viajes = db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Viajes'")!.id;
+    const other = db.get<{ id: number }>(
+      `SELECT t.id FROM threads t WHERE t.in_inbox = 1 AND t.last_from_email != 'recibos@rappi.com'
+       AND NOT EXISTS (SELECT 1 FROM thread_categories WHERE thread_id = t.id) ORDER BY t.last_date DESC LIMIT 1`,
+    )!.id;
+    db.run("INSERT INTO cls_decisions (thread_id, category_id, kind, p, explain_json, at) VALUES (?, ?, 'suggest', 0.8, '[]', ?)", other, viajes, Date.now());
+    const { facturas, threads } = await withSuggestions(page, server);
+    await openReview(page, facturas);
+    await expect(page.getByTestId("thread-row")).toHaveCount(2);
+    await page.locator(`[data-testid=thread-row][data-thread-id="${threads[0]}"]`).dispatchEvent("mousedown");
+    await focusList(page);
+    await page.keyboard.press("n");
+    await expect(page.getByTestId("thread-row")).toHaveCount(1);
+    await page.keyboard.press("n");
+    // the last answered by keyboard: the way on takes the focus, named for what it does now
+    const next = page.getByTestId("review-next");
+    await expect(next).toHaveText("Next: Viajes");
+    await expect(next).toHaveAccessibleName("Go to Viajes now");
+    await expect(next).toBeFocused();
+    await expect(page.getByTestId("list-empty")).toContainText("Nothing’s left to sort in Facturas.");
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("review-category")).toContainText("Viajes");
+    await expect(page.getByTestId("review-category")).toBeFocused();
+    await expect(page.locator(`[data-testid=thread-row][data-thread-id="${other}"]`)).toBeVisible();
+    // nothing left anywhere: no countdown, the Inbox instead
+    await page.locator(`[data-testid=thread-row][data-thread-id="${other}"]`).dispatchEvent("mousedown");
+    await focusList(page);
+    await page.keyboard.press("n");
+    const inbox = page.getByTestId("review-inbox");
+    await expect(inbox).toHaveText("Go to Inbox");
+    await expect(page.getByTestId("review-next")).toHaveCount(0);
+    await expect(inbox).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("list-title")).toHaveText("Inbox");
+    await expect(page.getByTestId("nav-inbox")).toBeFocused();
+  });
+
   test("out of a category, by hand and by the engine; Settings → Categories", async ({ app: page, server }) => {
     await scenario("an auto add says so and why; 'Not Facturas' reverts it and teaches the engine", async () => {
       const db = sqlDb(server.backend.store);

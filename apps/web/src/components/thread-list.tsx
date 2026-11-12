@@ -3,7 +3,7 @@ import { anchorAt, anchoredOffset, INBOX_LABEL, rowStart, TOP_LABEL, topSections
 import { SearchField } from "@terno/ui/components/search-field";
 import { Skeleton } from "@terno/ui/components/skeleton";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Bell, ChevronDown, ChevronRight, Inbox, ListFilter, Newspaper, Search, SquarePen, Sun, ListChecks, Tags } from "@terno/ui/icons";
+import { Bell, ChevronDown, ChevronRight, Inbox, ListFilter, Newspaper, Search, SquarePen, Sun, ListChecks } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { activeFilter } from "~/lib/unread-filter";
 import { setListFilter } from "~/lib/unread";
@@ -38,7 +38,7 @@ import { ThreadMenu } from "./thread-menu";
 import { DraftsStrip } from "./drafts-strip";
 import { ReviewAlwaysMenu, ReviewButtons } from "./review-actions";
 import { ReviewSwitcher } from "./review-switcher";
-import { reviewTotals } from "~/lib/review";
+import { ReviewEmpty } from "./review-empty";
 import { ThreadRow } from "./thread-row";
 import { registerDesignAnchor, useDesign } from "~/lib/design";
 import { LearnedBanner, LearnedSource, useLearnedProposal } from "./learned-banner";
@@ -1004,6 +1004,7 @@ function UnreadEmptyState({ filter }: { filter: QuickFilter }) {
       <p className="text-xs text-muted-foreground">{body}</p>
       <Button
         data-testid="unread-empty-clear"
+        data-empty-action
         variant="secondary"
         size="sm"
         className={cn("mt-3", search && "self-start")}
@@ -1032,7 +1033,7 @@ function leaveEmptyList() {
   const visible = (el: HTMLElement | null) => (el && el.checkVisibility?.() !== false && !el.closest("[inert]") ? el : null);
   // (scrolling allowed: a sidebar scrolled past its current view brings it back into sight with the focus). No sidebar row
   // is current during a search (plan 158), so an empty search hands it to the Inbox's
-  (visible(document.querySelector<HTMLElement>("[data-testid=unread-empty-clear]")) ??
+  (visible(document.querySelector<HTMLElement>("[data-empty-action]")) ??
     visible(document.querySelector<HTMLElement>("#app-sidebar button[data-active]")) ??
     visible(document.querySelector<HTMLElement>("#app-sidebar [data-testid=nav-inbox]")))?.focus();
 }
@@ -1044,7 +1045,6 @@ function EmptyState() {
   const followups = useApp((s) => s.followups);
   const today = useApp((s) => s.today);
   const review = useApp((s) => s.categories.find((c) => c.id === s.reviewCategoryId));
-  const reviewLeft = useApp((s) => (s.reviewCategoryId === null ? 0 : reviewTotals(s.categories, s.counts.categorySuggestions).total));
   const previewing = useApp((s) => s.actionPreview !== null);
   const ruleOnly = useActionPreview((s) => s.preview !== null && savesRuleOnly(s.preview));
   const coverage = useCoverageNote();
@@ -1055,15 +1055,8 @@ function EmptyState() {
         <p className="text-xs text-muted-foreground">{t("action.rule.emptyBody")}</p>
       </div>
     );
-  // plan 159: Review's last one answered: it stays (Undo brings the rows back here), and says where to go on
-  if (review)
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-1 px-8 text-center" data-testid="list-empty">
-        <Tags className="mb-2 size-7 text-muted-foreground" aria-hidden />
-        <p className="text-lg font-semibold tracking-tight">{t("review.empty.title")}</p>
-        <p className="text-xs text-muted-foreground">{reviewLeft > 0 ? t("review.empty.more", { category: review.name }) : t("review.empty.none")}</p>
-      </div>
-    );
+  // plans 159, 192: Review's last one answered: it stays (Undo brings the rows back here), and goes on
+  if (review) return <ReviewEmpty key={review.id} category={review} />;
   if (today)
     return (
       <div className="flex h-full flex-col items-center justify-center gap-1 px-8 text-center" data-testid="list-empty">

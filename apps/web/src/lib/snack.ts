@@ -96,6 +96,8 @@ interface SnackState {
   paused: readonly PauseReason[];
   /** z's undo, until another replaces it */
   undo: Undo | null;
+  /** undos on their way (from z or a button): what waits on the user's undo holds while one runs (plan 192) */
+  undoing: number;
   /** what the dock takes while it shows (dockReserve): the reader pads its scroll end by it, List's rows end above it */
   inset: number;
   /** plan 162 (after ai162-r02): what stands at the page's foot under the dock, wherever it is (the digest's decision bar) */
@@ -105,7 +107,7 @@ interface SnackState {
 /** Plan 160: the room a toast of this height takes at a pane's foot: the card and --float-inset on each side of it */
 export const dockReserve = (height: number): number => (height > 0 ? Math.ceil(height) + 2 * FLOAT_INSET : 0);
 
-export const useSnack = create<SnackState>(() => ({ current: null, last: null, countdown: { elapsed: 0, since: null }, paused: [], undo: null, inset: 0, pageLift: 0 }));
+export const useSnack = create<SnackState>(() => ({ current: null, last: null, countdown: { elapsed: 0, since: null }, paused: [], undo: null, undoing: 0, inset: 0, pageLift: 0 }));
 
 let seq = 0;
 let heard = 0;
@@ -309,6 +311,7 @@ export async function runUndo(undo: Undo): Promise<void> {
   const s = useSnack.getState();
   if (s.current?.action?.undo === undo) dismissSnack(s.current.id);
   if (useSnack.getState().undo === undo) useSnack.setState({ undo: null });
+  useSnack.setState((s) => ({ undoing: s.undoing + 1 }));
   try {
     await undo.run();
     undo.state = "done";
@@ -316,8 +319,17 @@ export async function runUndo(undo: Undo): Promise<void> {
     undo.state = "ready";
     if (useSnack.getState().undo === null) useSnack.setState({ undo });
     throw error;
+  } finally {
+    useSnack.setState((s) => ({ undoing: s.undoing - 1 }));
   }
 }
+
+/**
+ * Plan 192: the user is busy with the dock (over it, in it, its offers open, an undo of its own running) or an undo is
+ * on its way: a timer of the app's own that would move them on waits.
+ */
+export const dockInUse = (s: Pick<SnackState, "paused" | "undoing">): boolean =>
+  s.undoing > 0 || s.paused.some((r) => r === "hover" || r === "focus" || r === "expanded" || r === "busy");
 
 /** An undo that failed says so, with a retry of the same undo (they're idempotent). */
 function undoFailed(error: unknown, undo: Undo): void {
@@ -351,5 +363,5 @@ export function resetSnacks(): void {
   timer = null;
   queue = [];
   displaced.clear();
-  useSnack.setState({ current: null, last: null, countdown: { elapsed: 0, since: null }, paused: [], undo: null, inset: 0 });
+  useSnack.setState({ current: null, last: null, countdown: { elapsed: 0, since: null }, paused: [], undo: null, undoing: 0, inset: 0 });
 }

@@ -29,6 +29,14 @@ export function reviewTotals(categories: readonly Category[], suggestions: Reado
   return { total, pending };
 }
 
+/**
+ * Plan 192: where an emptied Review goes on to: the category with the most waiting that isn't the one in view (by id: its
+ * own count may not have caught up yet), or none.
+ */
+export function nextToSort(categories: readonly Category[], suggestions: Readonly<Record<number, number>>, current: number): Category | null {
+  return reviewTotals(categories, suggestions).pending.find((p) => p.category.id !== current)?.category ?? null;
+}
+
 /** Where Review was entered from: a mailbox, an account's folder, a list of its own or a search. */
 type Origin = Pick<AppState, "view" | "accountId" | "categoryId" | "folder" | "gmailTab" | "reminders" | "followups" | "today" | "query" | "selectedId"> & {
   /** a search's rows and offset (a mailbox's own place is kept by the list; a search's isn't, Codex code review #2) */
@@ -58,6 +66,12 @@ export function enterReview(categoryId: number): void {
 export function switchReview(categoryId: number): void {
   if (getApp().reviewCategoryId === categoryId) return;
   setApp({ reviewCategoryId: categoryId, selectedId: null, checked: new Set(), anchorId: null, scope: null, readerOpen: false });
+}
+
+/** Plan 192: out of an emptied Review with nothing left anywhere, to the Inbox (Esc still goes back where it was entered from). */
+export function reviewToInbox(): void {
+  if (getApp().reviewCategoryId === null) return;
+  navigate({ view: "inbox", accountId: null, categoryId: null, reviewCategoryId: null });
 }
 
 /** Is the place still there (its category, account or folder gone meanwhile, maybe in another window: Codex code review #3)? */
