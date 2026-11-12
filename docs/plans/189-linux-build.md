@@ -100,3 +100,18 @@ The plan critique raised 12 points, all taken:
 10. **Artifact names per platform**: `source-maps-linux-<sha>`, `source-maps-mac-<sha>`, `release-linux`, `release-mac`; the draft job downloads only the two package artifacts.
 11. **Package metadata differs from the app version**: deb and rpm write `1.4.0~nightly.3` for `1.4.0-nightly.3`, and the deb's architecture is `amd64`/`arm64`. The checks expect those.
 12. **`releaseAssets(version, platforms)`** takes the platforms: the CI draft requires macOS and Linux, `--local` macOS only. Both are tested.
+
+## Built
+
+- Packaging: electron-builder names each package with its format's own architecture, so the release carries `Terno-<v>-linux-amd64.deb`, `-x86_64.rpm`, `-arm64.deb` and `-aarch64.rpm`: the names Debian and Fedora users look for. The desktop entry's categories come from `linux.category` (electron-builder writes it over `desktop.entry`).
+- Verified in Docker on Apple silicon: both architectures package on an arm64 host, every package check passes, and the installed arm64 `.deb` passes `linux.smoke.ts` as an ordinary user with the sandbox on (namespace sandbox; Docker's default seccomp profile has to allow namespaces, as a stock distribution does). Screenshots in light and dark match macOS's layout, with the bundled faces. On macOS, `packaged.smoke.ts` (10) and `update.smoke.ts` (6) still pass after the staging refactor.
+- The x64 package, the AppArmor path on Ubuntu 24.04 and the workflow itself are proven by the first release run on GitHub.
+
+## Revisions after the Codex code review
+
+Four findings, all fixed, each with a test that fails without the fix:
+
+1. **The agents' sidecar couldn't find the app on Linux.** `packages/mcp` looked for the socket and token in `~/Library/Application Support/Terno` whatever the platform; on Linux the profile is `$XDG_CONFIG_HOME/Terno` (`~/.config/Terno`). One `profileDir()` (`packages/mcp/src/profile.ts`) now serves the connection and the sidecar's logs, with unit tests per platform. The smoke no longer sets `TERNO_USER_DATA`: the app and the wrapper share only `XDG_CONFIG_HOME`, as on a user's machine (it failed against the old package).
+2. **The update check in the smoke could wait on a disabled button** once the 30 s startup check had found Linux unsupported. It now clicks Help → Check for Updates…, which works either way and also proves the Linux menu item.
+3. **The keyring test passed with the fixed-key fallback too.** Chromium tags each sealed secret with its provider: `v11` for the Secret Service key, `v10` for the fallback (checked in Docker with and without a keyring; the synchronous API reports `basic_text` in both cases). The smoke requires `v11`.
+4. **The backend and the sidecar reported Linux as `other`.** One `diagPlatform()` in `@terno/core/diag` maps the platform and architecture for main, the backend and the sidecar.
