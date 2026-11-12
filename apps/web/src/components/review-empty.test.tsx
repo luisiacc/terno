@@ -15,7 +15,7 @@ vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
 vi.mock("~/rpc/connection", () => ({ client: { connectionVersion: 1, call: () => new Promise(() => {}), on: () => () => {} } }));
 vi.mock("~/lib/categorize", async () => {
   const { create } = await import("zustand");
-  return { useReviewAnswers: create(() => ({ pending: 0 })) };
+  return { useReviewWork: create(() => ({ pending: 0 })) };
 });
 const announce = vi.hoisted(() => vi.fn());
 vi.mock("~/lib/announce", () => ({ announce }));
@@ -23,8 +23,9 @@ vi.mock("~/lib/announce", () => ({ announce }));
 const { ReviewEmpty, NEXT_MS } = await import("./review-empty");
 const { getApp, setApp } = await import("~/state/app");
 const { useSnack } = await import("~/lib/snack");
-const { useReviewAnswers } = await import("~/lib/categorize");
+const { useReviewWork } = await import("~/lib/categorize");
 const { useList } = await import("~/state/list");
+const { focusQuietly } = await import("~/lib/quiet-focus");
 
 const cat = (id: number, name: string) => ({ id, name, color: "blue" }) as never;
 const categories = [cat(1, "Viajes"), cat(2, "Clientes"), cat(3, "Facturas")];
@@ -36,7 +37,7 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance", "requestAnimationFrame", "cancelAnimationFrame"] });
   announce.mockClear();
   useSnack.setState({ paused: [], undoing: 0 });
-  useReviewAnswers.setState({ pending: 0 });
+  useReviewWork.setState({ pending: 0 });
   setApp({ view: "all", categories, reviewCategoryId: 1, selectedId: null, dialog: null, menuOpen: false, compose: null, heldView: null, counts: { ...getApp().counts, categorySuggestions: { 2: 14, 3: 8 } } });
   // (the list's own load, asked for by the view above, never answers here: it's the loaded, emptied one)
   useList.setState({ key: "review", itemsKey: "review", items: [], loading: false, error: null });
@@ -90,7 +91,7 @@ it("holds wherever the user is busy, and resumes with the time it had", async ()
     ["a message being written", () => setApp({ compose: {} as never }), () => setApp({ compose: null })],
     ["the dock in use", () => useSnack.setState({ paused: ["hover"] }), () => useSnack.setState({ paused: [] })],
     ["an undo on its way", () => useSnack.setState({ undoing: 1 }), () => useSnack.setState({ undoing: 0 })],
-    ["an answer on its way", () => useReviewAnswers.setState({ pending: 1 }), () => useReviewAnswers.setState({ pending: 0 })],
+    ["an answer on its way", () => useReviewWork.setState({ pending: 1 }), () => useReviewWork.setState({ pending: 0 })],
     ["covered by a page or a modal", () => host.setAttribute("aria-hidden", "true"), () => host.removeAttribute("aria-hidden")],
     ["inert", () => host.setAttribute("inert", ""), () => host.removeAttribute("inert")],
   ];
@@ -126,6 +127,11 @@ it("the pointer over it, or focus the user puts there, holds it; focus it takes 
   expect(pill()!.hasAttribute("data-held")).toBe(true);
   await act(async () => pill()!.blur());
   expect(pill()!.hasAttribute("data-held")).toBe(false);
+  // handed there by the app (a page closing, the emptied list): not the user's, it keeps counting
+  await act(async () => focusQuietly(pill()));
+  expect(document.activeElement).toBe(pill());
+  expect(pill()!.hasAttribute("data-held")).toBe(false);
+  await act(async () => pill()!.blur());
   const slot = pill()!.parentElement!;
   await act(async () => void slot.dispatchEvent(new MouseEvent("pointerover", { bubbles: true, relatedTarget: null })));
   expect(pill()!.hasAttribute("data-held")).toBe(true);

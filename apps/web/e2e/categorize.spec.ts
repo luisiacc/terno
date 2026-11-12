@@ -478,6 +478,30 @@ test.describe("the engine's suggestions and auto adds in the UI", () => {
     await expect(page.getByTestId("nav-inbox")).toBeFocused();
   });
 
+  test.describe("List", () => {
+    test.use({ layout: "list" });
+    test("plan 192 (Codex review #3): the last answered from its conversation page, the focus the page hands back doesn't hold the countdown", async ({ app: page, server }) => {
+      const db = sqlDb(server.backend.store);
+      db.run("DELETE FROM cls_decisions WHERE kind = 'suggest' AND outcome IS NULL");
+      const viajes = db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Viajes'")!.id;
+      const [one, two] = db
+        .all<{ id: number }>("SELECT t.id FROM threads t WHERE t.in_inbox = 1 AND NOT EXISTS (SELECT 1 FROM thread_categories WHERE thread_id = t.id) ORDER BY t.last_date DESC LIMIT 2")
+        .map((r) => r.id);
+      const facturas = db.get<{ id: number }>("SELECT id FROM categories WHERE name = 'Facturas'")!.id;
+      for (const [t, c] of [[one, facturas], [two, viajes]] as const) db.run("INSERT INTO cls_decisions (thread_id, category_id, kind, p, explain_json, at) VALUES (?, ?, 'suggest', 0.8, '[]', ?)", t, c, Date.now());
+      await page.reload();
+      await page.locator("[data-ready]").waitFor();
+      await openReview(page, facturas);
+      await page.locator(`[data-testid=thread-row][data-thread-id="${one}"]`).click();
+      await expect(page.getByTestId("list-page")).toBeVisible();
+      await page.keyboard.press("n");
+      await expect(page.getByTestId("list-page")).toHaveCount(0);
+      const next = page.getByTestId("review-next");
+      await expect(next).toBeFocused();
+      await expect(next).not.toHaveAttribute("data-held");
+    });
+  });
+
   test("out of a category, by hand and by the engine; Settings → Categories", async ({ app: page, server }) => {
     await scenario("an auto add says so and why; 'Not Facturas' reverts it and teaches the engine", async () => {
       const db = sqlDb(server.backend.store);

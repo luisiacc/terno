@@ -71,7 +71,7 @@ One timeout while the empty state is up and running; none while held or once gon
 
 The critique's twelve points, and what each changed (the design above is the first draft; where they differ, this wins):
 
-1. **An answer still on its way.** `answerReview()` empties the list before the backend answers; going on and then failing would reload the wrong category. `categorize.ts` keeps how many answers are in flight (`useReviewAnswers`, a tiny store); the countdown holds while any is.
+1. **An answer still on its way.** `answerReview()` empties the list before the backend answers; going on and then failing would reload the wrong category. `categorize.ts` keeps how many answers are in flight (`useReviewWork`, a tiny store); the countdown holds while any is.
 2. **The list covered by a page (List layout).** The list stays mounted, `inert` and invisible, under a conversation or a new message. The countdown holds while the empty state is inside an `inert` or `aria-hidden` ancestor (a page, the web's blocking screen, any modal's sweep), read by `useCovered()` (new, `lib/covered.ts`: the window hidden, or such an ancestor; a `MutationObserver` on the element's ancestors only, attributes `inert` and `aria-hidden`).
 3. **The reader or a composer in use.** It holds while a conversation is selected, a message is being written (`compose`) or a sent one is shown (`heldView`): switching would close them. (Replaces "focus in a text field".)
 4. **The dock in use.** It holds while the dock's own countdown is held by the user (hover, focus, its offers open, its undo running: `paused` has `hover`, `focus`, `expanded` or `busy`) and while any undo runs (`useSnack`'s new `undoing` count, kept by `runUndo`, so z's undo holds it too).
@@ -83,3 +83,14 @@ The critique's twelve points, and what each changed (the design above is the fir
 10. **Keyboard hold.** Focus the user moves to the pill (Tab, a click) holds it until it leaves; focus the empty state gives it itself doesn't (a flag set around its own `focus()` call). The announcement says the time; Esc still leaves Review.
 11. **Long names.** The pill may shrink to the column (`max-w-full`), its label truncates (a `span` in `CountdownPill`), the full name stays in the accessible name.
 12. **Browser cases.** e2e covers pressing it (the switch and where focus lands), Go to Inbox, and the action taking focus after the last answer by keyboard; the time arithmetic and every hold stay in the fake-timer unit test.
+
+## What the Codex code review changed
+
+1. **Add similar from Review** removes its row at once too: `fileAlways()` counts as Review's work (the store, renamed `useReviewWork`, is kept by a `reviewWork()` wrapper around `answerReview()` and a Review row's `fileAlways()`).
+2. **Undo and recovery release before the rows are back.** `undoFiled()`, `recover()` and `fileAlways()` now await their list reload, so `useSnack.undoing` and `useReviewWork` cover it.
+3. **Focus a page hands back held the countdown forever** (List: the last answered from its conversation page; the page gives focus to the list, which hands it on). `leaveEmptyList()` moves focus with `focusQuietly()` (new, `lib/quiet-focus.ts`, shared with the empty state), so only focus the user moves holds it. e2e in List layout, checked failing without the fix.
+4. **A ref written during render** in the countdown hook: set in a layout effect.
+
+Also found while testing: the store was first named `reviewAnswers`; the React Compiler took the call for a plain function and memoized it, so the built app crashed (React #311) while the unit test passed. Hooks keep the `use` prefix.
+
+Tests: `review-empty.test.tsx` (every hold, retargeting, quiet vs user focus, Inbox), `categorize.test.ts` (work held through a failed answer's reload, Add similar, undo's reload), `categorize.spec.ts` (pressed → next with focus on the switcher; Go to Inbox with focus on the Inbox row; List's page path).

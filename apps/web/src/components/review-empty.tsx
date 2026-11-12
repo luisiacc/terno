@@ -4,8 +4,9 @@ import { Button } from "@terno/ui/components/button";
 import { Tags } from "@terno/ui/icons";
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { announce } from "~/lib/announce";
-import { useReviewAnswers } from "~/lib/categorize";
+import { useReviewWork } from "~/lib/categorize";
 import { useCovered } from "~/lib/covered";
+import { focusQuietly, quietFocus } from "~/lib/quiet-focus";
 import { nextToSort, reviewToInbox, switchReview } from "~/lib/review";
 import { dockInUse, useSnack } from "~/lib/snack";
 import { useApp } from "~/state/app";
@@ -14,18 +15,6 @@ import { CountdownPill, type Countdown } from "./countdown-pill";
 
 /** Plan 192: how long an emptied Review waits before going on to the next category. */
 export const NEXT_MS = 5000;
-
-/** Focus the empty state gives itself: it never holds the countdown (focus the user moves there does). */
-const quiet = { focusing: false };
-function focusQuietly(el: HTMLElement | null): void {
-  if (!el) return;
-  quiet.focusing = true;
-  try {
-    el.focus({ preventScroll: true });
-  } finally {
-    quiet.focusing = false;
-  }
-}
 
 const lostFocus = () => !document.activeElement || document.activeElement === document.body;
 const actionIn = (slot: HTMLElement | null) => slot?.querySelector<HTMLElement>("[data-empty-action]") ?? null;
@@ -67,7 +56,8 @@ function Action({ next }: { next: Category | null }) {
       onPointerEnter={() => setHover(true)}
       onPointerLeave={() => setHover(false)}
       onFocus={() => {
-        if (!quiet.focusing) setFocused(true);
+        // focus the app moved here itself (this list handing it on, a page closing) isn't the user's: it doesn't hold
+        if (!quietFocus.moving) setFocused(true);
       }}
       onBlur={(e) => {
         if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFocused(false);
@@ -102,8 +92,8 @@ function useHeld(slot: RefObject<HTMLElement | null>, own: boolean): boolean {
   // a dialog or a menu (the category switcher), or a conversation or message in the reader (switching would close it)
   const app = useApp((s) => s.dialog !== null || s.menuOpen || s.selectedId !== null || s.compose !== null || s.heldView !== null);
   const dock = useSnack(dockInUse);
-  // an answer still on its way: a failure brings its row back to the category in view
-  const answering = useReviewAnswers((s) => s.pending > 0);
+  // an answer or a filing still on its way: a failure brings its row back to the category in view
+  const answering = useReviewWork((s) => s.pending > 0);
   // a list that failed to load isn't an emptied one
   const loaded = useList((s) => s.itemsKey === s.key && s.error === null);
   const covered = useCovered(slot);
@@ -117,7 +107,9 @@ function useHeld(slot: RefObject<HTMLElement | null>, own: boolean): boolean {
 function useCountdown(ms: number, held: boolean, done: () => void): Countdown {
   const [clock, setClock] = useState<{ elapsed: number; since: number | null }>({ elapsed: 0, since: null });
   const run = useRef(done);
-  run.current = done;
+  useLayoutEffect(() => {
+    run.current = done;
+  });
   useEffect(() => {
     setClock((c) => {
       if (held) return c.since === null ? c : { elapsed: c.elapsed + performance.now() - c.since, since: null };

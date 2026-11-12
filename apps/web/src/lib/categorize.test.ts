@@ -27,7 +27,7 @@ vi.mock("~/rpc/connection", () => ({
   },
 }));
 
-const { addToCategory, answerReview, fileAlways, filterNameOf, removeSenderFromCategory, setShowInInbox } = await import("./categorize");
+const { addToCategory, answerReview, fileAlways, filterNameOf, removeSenderFromCategory, setShowInInbox, undoFiled, useReviewWork } = await import("./categorize");
 const { getApp, setApp, EMPTY_COUNTS } = await import("~/state/app");
 const { useList } = await import("~/state/list");
 const { registerUndo, undoLast, undoNow, useSnack } = await import("~/lib/snack");
@@ -378,5 +378,70 @@ describe("plan 83 (Codex review): a refused filing into a hidden category keeps 
     await done;
     expect(useList.getState().items.map((t) => t.id)).toEqual([1, 2, 3]);
     expect(getApp().selectedId).toBe(1);
+  });
+});
+
+describe("plan 192: Review's work on its way holds an emptied Review's countdown, till its rows are back", () => {
+  const settle = () => new Promise((r) => setTimeout(r, 0));
+  /** The list's reload, held till released. */
+  const heldReload = () => {
+    const waiting: (() => void)[] = [];
+    let open = false;
+    fake.handlers["categorize.suggestions"] = () => (open ? Promise.resolve({ items: [] }) : new Promise((r) => waiting.push(() => r({ items: [] }))));
+    return () => {
+      open = true;
+      for (const r of waiting.splice(0)) r();
+    };
+  };
+  beforeEach(() => {
+    setApp({ categories: [{ id: CAT, name: "Facturas" }] as never, reviewCategoryId: CAT, selectedId: 1, counts: { ...EMPTY_COUNTS, categorySuggestions: { [CAT]: 3 } } });
+    useReviewWork.setState({ pending: 0 });
+  });
+
+  it("a failed answer is Review's work until its row is back", async () => {
+    fake.handlers["categorize.feedback"] = async () => {
+      throw new Error("refused");
+    };
+    const release = heldReload();
+    const done = answerReview(2, CAT, false);
+    expect(useReviewWork.getState().pending).toBe(1);
+    await settle();
+    expect(useReviewWork.getState().pending).toBe(1);
+    release();
+    await done;
+    expect(useReviewWork.getState().pending).toBe(0);
+  });
+
+  it("Add similar from Review is Review's work until it's filed and the list reloaded", async () => {
+    let answer!: (v: unknown) => void;
+    fake.handlers["categorize.apply"] = () => new Promise((r) => (answer = r));
+    const release = heldReload();
+    const done = fileAlways(CAT, { kind: "sender", email: "a@b.com" }, 1, "x");
+    expect(useList.getState().items.map((t) => t.id)).not.toContain(1);
+    expect(useReviewWork.getState().pending).toBe(1);
+    answer({ added: 1, batchId: 3, filter: null, filterFailed: false });
+    await settle();
+    expect(useReviewWork.getState().pending).toBe(1);
+    release();
+    await done;
+    expect(useReviewWork.getState().pending).toBe(0);
+    // from anywhere else (no Review row left), it's not Review's
+    fake.handlers["categorize.suggestions"] = async () => ({ items: [] });
+    fake.handlers["categorize.apply"] = async () => ({ added: 0, batchId: null, filter: null, filterFailed: false });
+    const elsewhere = fileAlways(CAT, { kind: "sender", email: "a@b.com" }, null, "x");
+    expect(useReviewWork.getState().pending).toBe(0);
+    await elsewhere;
+  });
+
+  it("an undo of a filing is done once the list has its rows back", async () => {
+    fake.handlers["categorize.undo"] = async () => ({ removed: 1 });
+    const release = heldReload();
+    let finished = false;
+    const done = undoFiled({ categoryId: CAT, addedIds: [], batchId: 4 }).then(() => (finished = true));
+    await settle();
+    expect(finished).toBe(false);
+    release();
+    await done;
+    expect(finished).toBe(true);
   });
 });

@@ -39,6 +39,7 @@ import { DraftsStrip } from "./drafts-strip";
 import { ReviewAlwaysMenu, ReviewButtons } from "./review-actions";
 import { ReviewSwitcher } from "./review-switcher";
 import { ReviewEmpty } from "./review-empty";
+import { focusQuietly } from "~/lib/quiet-focus";
 import { ThreadRow } from "./thread-row";
 import { registerDesignAnchor, useDesign } from "~/lib/design";
 import { LearnedBanner, LearnedSource, useLearnedProposal } from "./learned-banner";
@@ -1033,9 +1034,13 @@ function leaveEmptyList() {
   const visible = (el: HTMLElement | null) => (el && el.checkVisibility?.() !== false && !el.closest("[inert]") ? el : null);
   // (scrolling allowed: a sidebar scrolled past its current view brings it back into sight with the focus). No sidebar row
   // is current during a search (plan 158), so an empty search hands it to the Inbox's
-  (visible(document.querySelector<HTMLElement>("[data-empty-action]")) ??
-    visible(document.querySelector<HTMLElement>("#app-sidebar button[data-active]")) ??
-    visible(document.querySelector<HTMLElement>("#app-sidebar [data-testid=nav-inbox]")))?.focus();
+  // (the app's own move, not the user's: an emptied Review's countdown keeps running, plan 192)
+  focusQuietly(
+    visible(document.querySelector<HTMLElement>("[data-empty-action]")) ??
+      visible(document.querySelector<HTMLElement>("#app-sidebar button[data-active]")) ??
+      visible(document.querySelector<HTMLElement>("#app-sidebar [data-testid=nav-inbox]")),
+    {},
+  );
 }
 
 function EmptyState() {

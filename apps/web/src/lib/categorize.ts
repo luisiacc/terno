@@ -319,8 +319,9 @@ export async function undoFiled(filed: Pick<Filed, "categoryId" | "addedIds" | "
     refreshReader(filed.moved ? [...new Set([...filed.addedIds, ...(filed.threadIds ?? [])])] : filed.addedIds);
     return removed;
   } finally {
-    // success shows the restored rows; failure puts the optimistic removal back
-    void reloadList({ keepSelection: true });
+    // success shows the restored rows; failure puts the optimistic removal back (awaited: an undo is done once they're
+    // there, and what waits on undos holds till then, plan 192)
+    await reloadList({ keepSelection: true });
   }
 }
 
@@ -350,12 +351,14 @@ function bumpSuggestions(categoryId: number, n: number): void {
 
 /** A failed answer: the real numbers, and the list as it is (the row comes back). */
 async function recover(): Promise<void> {
-  void reloadList({ keepSelection: true });
+  // (awaited: Review's work isn't done until the row is back, plan 192)
+  const reload = reloadList({ keepSelection: true });
   try {
     setApp({ counts: await client.call("counts.get", {}) });
   } catch {
     /* the next counts event corrects them */
   }
+  await reload;
 }
 
 /**
@@ -363,24 +366,31 @@ async function recover(): Promise<void> {
  * The row leaves in this frame, as archive's does (the selection moves on);
  * a failure brings it back. Accepting shows the category snackbar as anywhere.
  */
-export async function answerReview(threadId: number, categoryId: number, yes: boolean): Promise<void> {
-  useReviewAnswers.setState((s) => ({ pending: s.pending + 1 }));
-  try {
+export function answerReview(threadId: number, categoryId: number, yes: boolean): Promise<void> {
+  return reviewWork(async () => {
     // the add reads the row (its unread count moves) before it leaves
     const answered = yes ? acceptSuggestion(threadId, categoryId).then((f) => f !== null) : rejectSuggestion(threadId, categoryId);
     bumpSuggestions(categoryId, -1);
     if (useList.getState().index.has(threadId)) leaveView([threadId]);
     if (!(await answered)) await recover();
-  } finally {
-    useReviewAnswers.setState((s) => ({ pending: s.pending - 1 }));
-  }
+  });
 }
 
 /**
- * Plan 192: Review's answers still on their way. The list empties before the backend has them; going on to another
+ * Plan 192: Review's answers and filings still on their way, their rows already gone from the list. Going on to another
  * category meanwhile would leave a failed one's row to come back where nobody is (its recovery reloads the list in view).
  */
-export const useReviewAnswers = create<{ pending: number }>(() => ({ pending: 0 }));
+export const useReviewWork = create<{ pending: number }>(() => ({ pending: 0 }));
+
+/** Counted in `useReviewWork` until it's done, the list's own reload with it. */
+async function reviewWork<T>(run: () => Promise<T>): Promise<T> {
+  useReviewWork.setState((s) => ({ pending: s.pending + 1 }));
+  try {
+    return await run();
+  } finally {
+    useReviewWork.setState((s) => ({ pending: s.pending - 1 }));
+  }
+}
 
 /** Who (and the subject, its numbers as #), the domain, the list, or the words (from whom). */
 function headOf(scope: FilterableScope, senderName: string | null): string {
@@ -415,6 +425,15 @@ interface AlwaysUndo {
   filterUndo: number | null;
 }
 
+interface AlwaysOptions {
+  /** plan 91: what this followed: its Undo takes back this first, then that */
+  original?: Undo;
+  /** plan 91: after a move, the scope moves too (other categories left) */
+  move?: boolean;
+  /** plan 91: taken back first (a default this replaces) */
+  before?: () => Promise<void>;
+}
+
 /**
  * Plan 80: "Always add to C" from the Review list: every conversation the
  * scope matches now (this one included) and a filter for future mail. The
@@ -428,17 +447,18 @@ export async function fileAlways(
   scope: FilterableScope,
   threadId: number | null,
   filterName: string,
-  o: {
-    /** plan 91: what this followed: its Undo takes back this first, then that */
-    original?: Undo;
-    /** plan 91: after a move, the scope moves too (other categories left) */
-    move?: boolean;
-    /** plan 91: taken back first (a default this replaces) */
-    before?: () => Promise<void>;
-  } = {},
+  o: AlwaysOptions = {},
 ): Promise<void> {
   const name = getApp().categories.find((c) => c.id === categoryId)?.name ?? "";
-  if (threadId !== null && getApp().reviewCategoryId !== null && useList.getState().index.has(threadId)) leaveView([threadId]);
+  // Review's row leaves at once: the filing counts as Review's work until it's done (plan 192)
+  if (threadId !== null && getApp().reviewCategoryId !== null && useList.getState().index.has(threadId)) {
+    leaveView([threadId]);
+    return reviewWork(() => fileAlwaysNow(categoryId, scope, filterName, name, o));
+  }
+  return fileAlwaysNow(categoryId, scope, filterName, name, o);
+}
+
+async function fileAlwaysNow(categoryId: number, scope: FilterableScope, filterName: string, name: string, o: AlwaysOptions): Promise<void> {
   const outcome = deferred<AlwaysUndo>();
   const undo = chainUndo(() =>
     outcome.promise.then(async (u) => {
@@ -490,7 +510,8 @@ export async function fileAlways(
     const undoable = u.batchId !== null || u.filterUndo !== null;
     snack.error(t("category.addFailed", { error: errorText(error) }), { id, action: undoable ? undoAction(undo, u.filterUndo !== null ? t("review.always.undoName") : t("category.undoAdd", { category: name })) : undefined });
   } finally {
-    void reloadList({ keepSelection: true });
+    // (awaited: a failure's row is back before Review's work is done, plan 192)
+    await reloadList({ keepSelection: true });
   }
 }
 
