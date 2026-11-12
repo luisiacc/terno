@@ -10,6 +10,7 @@ import { AiTab } from "./settings/ai-tab";
 import { escapeStyleEditor, leaveStyleEditors } from "./settings/writing-style";
 import { AppearanceTab } from "./settings/appearance-tab";
 import { CategoriesTab } from "./settings/categories-tab";
+import { AboutTab } from "./settings/about-tab";
 import { AccountsTab } from "./settings/accounts-tab";
 import { AgentsTab } from "./settings/agents-tab";
 import { DataTab } from "./settings/data-tab";
@@ -209,6 +210,10 @@ export function SettingsDialog() {
 
               <TabsContent value="agents">
                 <AgentsTab settings={settings} update={update} />
+              </TabsContent>
+
+              <TabsContent value="about">
+                <AboutTab />
               </TabsContent>
             </PaneBoundary>
           </SettingsPane>

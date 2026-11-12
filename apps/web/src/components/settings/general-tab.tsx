@@ -13,8 +13,6 @@ import { snack } from "~/lib/snack";
 import { MacSection } from "~/lib/web-parts";
 import { parseSyncWindow, SYNC_WINDOW_MAX, SYNC_WINDOW_MIN } from "~/lib/settings-values";
 import { DiagnosticsSection } from "./diagnostics-section";
-import { useHasUpdates } from "~/lib/updates";
-import { UpdatesSection } from "./updates-section";
 import { SettingsGroup, SettingsRow, type SettingsUpdate } from "./parts";
 import TodaySettings from "./today-settings";
 import { badgeSupported, pageNotificationsSupported } from "~/lib/notify";
@@ -220,7 +218,6 @@ function LanguageRow({ settings, update }: { settings: AppSettings; update: Sett
 const undoSendChoices = (): { value: UndoSendSeconds; label: string }[] => UNDO_SEND_SECONDS.map((n) => ({ value: n, label: t("settings.general.undoSendTime.seconds", { count: n }) }));
 
 export function GeneralTab({ settings, update }: { settings: AppSettings; update: SettingsUpdate }) {
-  const updates = useHasUpdates();
   return (
     <div data-testid="general-tab">
       <SettingsGroup>
@@ -287,8 +284,6 @@ export function GeneralTab({ settings, update }: { settings: AppSettings; update
           )}
         </SettingsRow>
       </SettingsGroup>
-
-      {updates && <UpdatesSection />}
 
       <DiagnosticsSection settings={settings} update={update} />
 

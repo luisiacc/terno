@@ -10,7 +10,7 @@ import type { Page } from "@playwright/test";
 import { expect, navTo, openRow, rows, selectedId, test, timeText, typeTime, fresh, scenario } from "./fixtures";
 import { englishLeaks } from "./i18n-leaks";
 
-const SETTINGS_TABS = ["general", "appearance", "accounts", "categories", "filters", "ai", "agents", "data"] as const;
+const SETTINGS_TABS = ["general", "appearance", "accounts", "categories", "filters", "ai", "agents", "data", "about"] as const;
 
 async function openSettings(page: Page) {
   await page.keyboard.press("Meta+Comma");

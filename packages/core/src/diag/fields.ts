@@ -76,7 +76,7 @@ export const FIELD_TYPES = {
   status: int(0, 999),
   schema: int(0, 100_000),
   step: int(0, 100_000),
-  tab: enumOf("general", "appearance", "accounts", "categories", "filters", "snippets", "ai", "agents", "dev", "data", "storage", "other"),
+  tab: enumOf("general", "appearance", "accounts", "categories", "filters", "snippets", "ai", "agents", "dev", "data", "storage", "about", "other"),
   threadId: int(0, Number.MAX_SAFE_INTEGER),
   tool: id,
   toVersion: id,

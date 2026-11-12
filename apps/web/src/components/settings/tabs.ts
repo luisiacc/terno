@@ -1,5 +1,5 @@
 import { t } from "@terno/i18n";
-import { AtSign, Bot, Database, HardDrive, ListFilter, Palette, SlidersHorizontal, Sparkles, Tag, Terminal, NotepadText } from "@terno/ui/icons";
+import { AtSign, Bot, Database, HardDrive, Info, ListFilter, Palette, SlidersHorizontal, Sparkles, Tag, Terminal, NotepadText } from "@terno/ui/icons";
 import type { SettingsTab } from "~/state/app";
 
 const LABEL_KEYS = {
@@ -14,6 +14,7 @@ const LABEL_KEYS = {
   data: "settings.tab.data",
   storage: "settings.tab.storage",
   dev: "settings.tab.dev",
+  about: "settings.tab.about",
 } as const satisfies Record<SettingsTab, string>;
 
 /** A section's name in the current language. */
@@ -44,6 +45,7 @@ export const SETTINGS_TABS: readonly TabEntry[] = [
   tab("agents", Bot),
   tab("data", Database),
   tab("storage", HardDrive),
+  tab("about", Info),
 ];
 
 /** Plan 146: a local build's own section, last. */

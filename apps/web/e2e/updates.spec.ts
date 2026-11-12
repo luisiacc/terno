@@ -1,6 +1,6 @@
 /**
  * The in-app update's renderer (plan 11): the sidebar pill and its popover,
- * Settings → General → Updates and ⌘K, driven by a stand-in for main's
+ * Settings → About (plan 190) and ⌘K, driven by a stand-in for main's
  * updater (render-probe builds expose it), through every state, in light and
  * dark, with axe. The real updater is the packaged e2e (apps/desktop).
  */
@@ -169,19 +169,23 @@ test.describe("updates: the sidebar pill", () => {
 });
 
 test.describe("updates: Settings and ⌘K", () => {
-  test("Settings and ⌘K: the section, a staged update, an unsupported copy, the commands", async ({ app: page }) => {
-    await scenario("Settings → General → Updates: automatic/manual, channel, check now with its answer; where updates come from is disclosed", async () => {
+  test("Settings → About and ⌘K: the version and status, a staged update, an unsupported copy, a lost check, the commands", async ({ app: page }) => {
+    await scenario("Settings → About: the version, the status with its one action, automatic/manual and channel; where updates come from is disclosed", async () => {
       const now = await page.evaluate(() => Date.now()); // the page runs on the fixture's frozen clock
       await fakeMain(page, { status: "idle", checkedAt: now - 5 * 60_000 }, { check: { status: "up-to-date", checkedAt: now } });
       await page.getByTestId("open-settings").click();
+      // General no longer holds it (plan 190)
+      await expect(page.getByTestId("general-tab")).toBeVisible();
+      await expect(page.getByTestId("general-tab").getByTestId("updates-section")).toHaveCount(0);
+      await page.getByTestId("tab-about").click();
+      await expect(page.getByTestId("settings-title")).toHaveText("About");
+      await expect(page.getByTestId("about-version")).toHaveText(/^Version \d+\.\d+\.\d+/);
+      await expect(page.getByTestId("about-mark")).toHaveAttribute("aria-hidden", "true");
+      await expect(page.getByTestId("updates-status")).toHaveText("Last checked 5 minutes agoTerno looks for new versions in the background.");
       const section = page.getByTestId("updates-section");
       // plan 97: local mode doesn't stop updates
       await expect(section).toContainText("New versions download in the background and install when Terno restarts.");
       await expect(section).toContainText("github.com");
-      await expect(page.getByTestId("updates-status")).toContainText("Last checked 5 minutes ago");
-      await expect(page.getByTestId("updates-version")).toHaveText("Terno 0.1.0");
-      // plan 19: the mark beside the version, decorative (the text names Terno)
-      await expect(page.getByTestId("updates-mark")).toHaveAttribute("aria-hidden", "true");
       await page.getByTestId("updates-auto-switch").click();
       await expect.poll(() => calls(page)).toContain(`prefs:${JSON.stringify({ mode: "manual", channel: "stable" })}`);
       await page.getByTestId("updates-channel-select").click();
@@ -189,18 +193,37 @@ test.describe("updates: Settings and ⌘K", () => {
       await expect.poll(() => calls(page)).toContain(`prefs:${JSON.stringify({ mode: "manual", channel: "nightly" })}`);
       await page.getByTestId("updates-check").click();
       await expect(page.getByTestId("snack-dock")).toContainText("Terno is up to date");
-      await expect(page.getByTestId("updates-status")).toContainText("Terno is up to date");
+      await expect(page.getByTestId("updates-status-title")).toHaveText("Terno is up to date");
+      await expect(page.getByTestId("updates-status")).toContainText("Last checked just now.");
+      // what is pending, and the one thing to do about it: the same calls as the pill's popover
+      await push(page, { status: "available", available: release, mode: "manual" });
+      await expect(page.getByTestId("updates-status-title")).toHaveText("Terno 0.2.0 is available");
+      await expect(page.getByTestId("updates-status")).toContainText("113.1 MB · Oct 24, 2026");
+      await page.getByTestId("updates-download").click();
+      await expect.poll(() => calls(page)).toContain("download");
+      await push(page, { status: "downloading", available: release, target: release, percent: 64 });
+      await expect(page.getByTestId("updates-progress").getByRole("progressbar")).toHaveAttribute("aria-valuenow", "64");
+      await expect(page.getByTestId("updates-download")).toHaveCount(0);
+      await push(page, { status: "available", available: release, error: { stage: "download", kind: "offline", canRetry: true } });
+      await expect(page.getByTestId("updates-status-title")).toHaveText("The update didn’t download");
+      await expect(page.getByTestId("updates-status")).toContainText("Terno couldn’t reach GitHub.");
+      await expect(page.getByTestId("updates-retry")).toBeVisible();
+      await push(page, { status: "ready", available: release, ready: release, percent: 100 });
+      await expect(page.getByTestId("updates-status-title")).toHaveText("Terno 0.2.0 is ready to install");
+      await page.getByTestId("updates-restart").click();
+      await expect.poll(() => calls(page)).toContain("install");
       for (const scheme of ["light", "dark"] as const) {
         await page.emulateMedia({ colorScheme: scheme });
-        await section.scrollIntoViewIfNeeded();
-        const r = await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=updates-section]").analyze();
+        const r = await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=about-tab]").analyze();
         expect(r.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.html.slice(0, 160)).join(", ")}`)).toEqual([]);
       }
+      await page.emulateMedia({ colorScheme: "light" });
     });
     await scenario("with an update staged the channel waits (Squirrel can't unstage it) and says why", async () => {
       await fresh(page);
       await fakeMain(page, { status: "ready", available: release, ready: release, percent: 100, channel: "nightly" });
       await page.getByTestId("open-settings").click();
+      await page.getByTestId("tab-about").click();
       await expect(page.getByTestId("updates-channel-select")).toBeDisabled();
       await expect(page.getByTestId("updates-channel-hint")).toHaveText("Terno 0.2.0 is ready to install. Restart to finish updating, then you can switch channels.");
     });
@@ -208,9 +231,25 @@ test.describe("updates: Settings and ⌘K", () => {
       await fresh(page);
       await fakeMain(page, { status: "unsupported", unsupported: "translocated" });
       await page.getByTestId("open-settings").click();
-      await expect(page.getByTestId("updates-status")).toHaveText("Move Terno to Applications to get updates.");
+      await page.getByTestId("tab-about").click();
+      await expect(page.getByTestId("updates-status")).toHaveText("This copy can’t update itselfMove Terno to Applications to get updates.");
       await expect(page.getByTestId("updates-check")).toBeDisabled();
       await expect(pill(page)).toHaveCount(0);
+    });
+    await scenario("a check that never reaches main says so in the row, not the answer before it", async () => {
+      await fresh(page);
+      await fakeMain(page, { status: "up-to-date", checkedAt: 1 });
+      await page.evaluate(() => {
+        const w = window as unknown as { __terno: { updatesBridge(b: unknown): void }; __upd: { state: unknown } };
+        const upd = w.__upd;
+        w.__terno.updatesBridge({ state: async () => upd.state, check: async () => { throw new Error("gone"); }, download: async () => upd.state, install: async () => upd.state, setPrefs: async () => upd.state, seen: () => {}, onState: () => () => {} });
+      });
+      await page.getByTestId("open-settings").click();
+      await page.getByTestId("tab-about").click();
+      await expect(page.getByTestId("updates-status-title")).toHaveText("Terno is up to date");
+      await page.getByTestId("updates-check").click();
+      await expect(page.getByTestId("updates-status-title")).toHaveText("Couldn’t check for updates");
+      await expect(page.getByTestId("updates-retry")).toBeVisible();
     });
     await scenario("⌘K: Check for Updates… always, Restart to Update once one is ready", async () => {
       await fresh(page);
