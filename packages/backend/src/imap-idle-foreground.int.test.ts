@@ -181,7 +181,7 @@ describe("W06 A29: installed IMAP transport foreground/IDLE ownership", () => {
     budget(w, start, 1);
   });
 
-  it("a listener stopped by a refused login comes back once the command session logs in with the same password (2026-11 audit)", async () => {
+  it("a listener stopped by a refused login asks for a sign-in (plan 184) and knocks no more", async () => {
     const w = await wire();
     const t = await account(w);
     const owner = await listener(w);
@@ -193,11 +193,12 @@ describe("W06 A29: installed IMAP transport foreground/IDLE ownership", () => {
     // a refused login isn't retried on a timer (servers lock accounts out for that)
     await new Promise((resolve) => setTimeout(resolve, 400));
     expect(w.idles.length).toBe(previous);
-    // the command session logs in again (its socket was dropped too): the password works, push comes back
-    for (const session of w.server.control.sessions()) if (session.session !== owner) w.server.control.disconnect(session.session, { text: "drop" });
-    await bounded(t.backend.syncAccount(t.account.id), "sync logs in again");
-    const next = await listener(w, previous);
-    expect(next).not.toBe(owner);
+    // plan 184: push's refusal is the account's, even while sync's session still works (else new mail stops, unmarked);
+    // signing in again brings it all back (resign-in.test.ts: this fixture has no SMTP for the sign-in's check)
+    await expect.poll(async () => (await t.client.call("app.bootstrap", {})).accounts.find((a) => a.id === t.account.id)!.syncState.authRequired).toBe(true);
+    // and a sync meanwhile doesn't knock again with the refused credentials
+    await bounded(t.backend.syncAccount(t.account.id), "sync while a sign-in is asked for");
+    expect(w.idles.length).toBe(previous);
   });
 
   it("reconnects only the BYE'd listener and restores a second push before the scheduled tick", async () => {

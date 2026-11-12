@@ -53,7 +53,7 @@ for (const version of [36, 37]) it(`opens SQL${version} large cached bodies with
   try {
     await backend.ready;
     const timing = loop.stop(); clearInterval(memory);
-    writeFileSync(`/tmp/terno-w11-s48/native-legacy-opening-v${version}.json`, JSON.stringify({ wallMs: performance.now() - began, timing, baselineRss: baseline.rss, sampledPeakProcessRss: peakRss, samples, fixtureStringCodeUnits: text.length + html.length, hostIsolateHeapUsed: process.memoryUsage().heapUsed, hostIsolateArrayBuffers: process.memoryUsage().arrayBuffers }, null, 2));
+    writeFileSync(join(directory, `native-legacy-opening-v${version}.json`), JSON.stringify({ wallMs: performance.now() - began, timing, baselineRss: baseline.rss, sampledPeakProcessRss: peakRss, samples, fixtureStringCodeUnits: text.length + html.length, hostIsolateHeapUsed: process.memoryUsage().heapUsed, hostIsolateArrayBuffers: process.memoryUsage().arrayBuffers }, null, 2));
     const detail = (await backend.store.threads.get(threadId))!;
     expect(detail.messages[0]!.bodyText === text).toBe(true);
     expect(detail.messages[0]!.bodyHtml === html).toBe(true);

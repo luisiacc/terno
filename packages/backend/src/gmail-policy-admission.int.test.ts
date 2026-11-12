@@ -8,6 +8,7 @@ import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { createGmailProvider, inspectGmailToken, ProviderAuthError, ProviderError, type ProviderContext, type ProviderRegistry } from "@terno/mail";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
+import { SYNC_INTERVAL_MS } from "./core";
 import { onSqlite } from "./test/store-axis";
 
 // plan 123: only Terno's own Google clients exist; tests carry a synthetic one
@@ -190,7 +191,8 @@ for (const kind of ["SQL", "IDB"] as const) describe(`${kind} W05 saved-account 
     await vi.waitFor(() => expect(syncing).toHaveBeenCalled());
     await syncing.mock.results[0]!.value;
     expect(h.paths()).toEqual(["/token", "/gmail/profile"]);
-    const poll = intervals.mock.calls.find((call) => call[1] === 120_000)?.[0];
+    // (plan 191: the ordinary poll is SYNC_INTERVAL_MS, 40 s now, not the 2 minutes it was)
+    const poll = intervals.mock.calls.find((call) => call[1] === SYNC_INTERVAL_MS)?.[0];
     expect(poll).toBeTypeOf("function");
     if (typeof poll !== "function") throw new Error("Missing ordinary poll callback");
     poll();

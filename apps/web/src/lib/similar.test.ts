@@ -16,7 +16,8 @@ vi.mock("~/lib/actions", () => ({
   undoAction: (undo: unknown, name: string) => ({ label: "Undo", name, undo }),
 }));
 vi.mock("~/state/list", () => ({ reloadList: () => Promise.resolve() }));
-vi.mock("~/state/app", () => ({ setApp: () => undefined }));
+// (snack speech reads whether single keys are on, plan 188)
+vi.mock("~/state/app", () => ({ setApp: () => undefined, getApp: () => ({ settings: null }) }));
 vi.mock("~/lib/diag", () => ({ captureUi: () => undefined }));
 
 const { applySimilar } = await import("./similar");

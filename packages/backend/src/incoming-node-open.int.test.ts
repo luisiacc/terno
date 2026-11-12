@@ -32,7 +32,7 @@ it("admits a backed-up Plan95 mailbox through exact legacy conversion before exp
     db = await openNodeMailbox(path);
     store = nodeStore(db, { platform: nodePlatform, instantSearch: false });
     const timing = monitor.stop();
-    writeFileSync("/tmp/terno-w11-s48/r4/native-plan95-opening.json", JSON.stringify({ wallMs: performance.now() - began, timing, fixtureCodeUnits: text.length + html.length }));
+    writeFileSync(join(directory, "native-plan95-opening.json"), JSON.stringify({ wallMs: performance.now() - began, timing, fixtureCodeUnits: text.length + html.length }));
     const message = (await store.threads.get(threadId))!.messages[0]!;
     expect(message.bodyText === text && message.bodyHtml === html).toBe(true);
     expect((await store.threads.searchText({ query: '"complete legacy phrase"', now: 1, limit: 10 })).items.map((t) => t.id)).toEqual([threadId]);

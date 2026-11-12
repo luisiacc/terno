@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 /**
- * Codex code review, second pass #3 (plan 125): with Lumen chosen, arrowing to Atelier while its faces load and back to
- * Lumen must leave Lumen. Base UI chooses an arrowed-to radio through its hidden input (no click on the card), and the
- * still-checked Lumen reports no change: the group's reselection has to reach updateAppearance all the same.
+ * Codex code review, second pass #3 (plan 125): with one style chosen, arrowing to a neighbour while its faces load and back
+ * must leave the first (Graphite and Atelier now, as the cards are drawn; it was Lumen and Atelier). Base UI chooses an
+ * arrowed-to radio through its hidden input (no click on the card), and the still-checked one reports no change: the
+ * group's reselection has to reach updateAppearance all the same.
  */
 import type { AppSettings } from "@terno/core/rpc";
 import { act } from "react";
@@ -10,6 +11,8 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+// (jsdom lays nothing out: first run scrolls the chosen card into view)
+HTMLElement.prototype.scrollIntoView = () => {};
 vi.hoisted(() => Object.assign(globalThis, { matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) }));
 const calls = vi.hoisted(() => [] as { method: string; params: Record<string, unknown> }[]);
 /** the backend's settings: settings.update answers with them, patched */
@@ -35,7 +38,7 @@ const { getApp, setApp, useApp } = await import("~/state/app");
 
 const SETTINGS = {
   theme: "light",
-  design: "lumen",
+  design: "graphite",
   lightTheme: "design",
   darkTheme: "design",
   previousLightTheme: null,
@@ -79,6 +82,7 @@ async function render(node: React.ReactNode) {
 const key = (k: string) => act(async () => void document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true })));
 const card = (id: string) => document.querySelector<HTMLElement>(`[data-testid=${id}]`)!;
 
+/** The second style is the first's neighbour on the right, as the cards are drawn (Lumen, Graphite, Atelier, Luma, macOS), with faces to load. */
 async function arrowAwayAndBack(first: string, second: string) {
   await act(async () => card(first).focus());
   await key("ArrowRight");
@@ -90,19 +94,19 @@ async function arrowAwayAndBack(first: string, second: string) {
   expect(document.activeElement).toBe(card(first));
   await act(async () => faces.release.forEach((go) => go()));
   await act(async () => {});
-  expect(getApp().settings!.design).toBe("lumen");
-  expect(calls.filter((c) => c.method === "settings.update" && c.params.design === "atelier")).toEqual([]);
+  expect(getApp().settings!.design).toBe(first.split("-").at(-1));
+  expect(calls.filter((c) => c.method === "settings.update" && c.params.design === second.split("-").at(-1))).toEqual([]);
 }
 
 describe("arrowing away from the chosen style and back cancels the switch", () => {
   it("in Settings → Appearance", async () => {
     await render(<Appearance />);
-    await arrowAwayAndBack("design-card-lumen", "design-card-atelier");
+    await arrowAwayAndBack("design-card-graphite", "design-card-atelier");
   });
 
   it("in first run", async () => {
     localStorage.setItem("terno:first-run", "look");
     await render(<FirstRun />);
-    await arrowAwayAndBack("first-run-design-lumen", "first-run-design-atelier");
+    await arrowAwayAndBack("first-run-design-graphite", "first-run-design-atelier");
   });
 });

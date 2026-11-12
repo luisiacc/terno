@@ -270,6 +270,8 @@ describe("scope actions", () => {
     const archived = ids(db.all<{ id: number }>("SELECT id FROM threads WHERE in_inbox = 0 AND in_trash = 0 AND in_spam = 0 LIMIT 5"));
     await client.call("threads.act", { threadIds: archived.slice(0, 2), action: "trash" });
     expect(db.get<{ c: number }>("SELECT count(*) AS c FROM user_actions")!.c).toBe(2);
+    // (plan 183: agents act only once allowed, at a level that may organize)
+    await client.call("settings.update", { agents: { enabled: true, access: "organize" } });
     await agent.call("threads.act", { threadIds: archived.slice(2), action: "trash" });
     expect(db.get<{ c: number }>("SELECT count(*) AS c FROM user_actions")!.c).toBe(2);
   });
