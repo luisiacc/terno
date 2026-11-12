@@ -19,8 +19,12 @@ async function center(l: Locator) {
   const b = (await l.boundingBox())!;
   return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
 }
+/** The sidebar at rest: More's slide (motion is on here) over, so a target's box is where it will stay. */
+const sidebarStill = (page: Page) =>
+  expect.poll(() => page.evaluate(() => document.getAnimations().filter((x) => x.playState === "running" && ((x.effect as KeyframeEffect | null)?.target as Element | null)?.closest?.("#app-sidebar")).length)).toBe(0);
 /** Presses on a row and moves (in steps, like a hand) onto a target, without releasing. */
 async function dragTo(page: Page, from: Locator, target: Locator) {
+  await sidebarStill(page);
   const a = await center(from);
   const b = await center(target);
   await page.mouse.move(a.x, a.y);

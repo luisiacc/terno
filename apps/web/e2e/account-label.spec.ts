@@ -81,7 +81,8 @@ test.describe("the receiving account on rows", () => {
       // the visible label is hidden from assistive tech; the row's name ends with it, once
       await expect(row.getByTestId("account-label")).toHaveAttribute("aria-hidden", "true");
       const name = await row.getByTestId("account-label").textContent();
-      await expect(row).toHaveAccessibleName(new RegExp(`, to ${name}$`));
+      // (plan 188: in the one sentence of what else the row is, at its end)
+      await expect(row).toHaveAccessibleName(new RegExp(`\\bto ${name}$`));
       // muted text (the snippet's color), never the strong foreground
       const [labelColor, snippetColor] = await row.evaluate((r) => [getComputedStyle(r.querySelector("[data-testid=account-label]")!).color, getComputedStyle(r.querySelector(".text-muted-foreground")!).color]);
       expect(labelColor).toBe(snippetColor);

@@ -21,7 +21,13 @@ async function center(l: Locator) {
   const b = (await l.boundingBox())!;
   return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
 }
+/** The list's page in and the sidebar at rest (an account's folders and a favorite slide in): boxes where they'll stay. */
+async function settled(page: Page) {
+  await expect(page.locator("[data-testid=thread-list] [aria-busy=true]")).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => document.getAnimations().filter((x) => x.playState === "running" && ((x.effect as KeyframeEffect | null)?.target as Element | null)?.closest?.("#app-sidebar")).length)).toBe(0);
+}
 async function dragTo(page: Page, row: Locator, target: Locator) {
+  await settled(page);
   const from = await center(row);
   const to = await center(target);
   await page.mouse.move(from.x, from.y);
@@ -34,6 +40,9 @@ async function openAccount(page: Page, accountId: number) {
   await page.getByTestId(`nav-account-${accountId}`).dblclick();
   await page.getByTestId(`nav-folder-${accountId}-inbox`).click();
   await expect(page.locator("[data-testid=thread-row]").first()).toBeVisible();
+  // (its own list in, not the one before it: a row read now is the account's)
+  await expect(page.getByTestId("list-title")).toContainText(await page.getByTestId(`nav-account-${accountId}`).innerText().then((t) => t.split("\n")[0]!.trim()));
+  await settled(page);
 }
 const rowOutside = async (page: Page, members: Set<number>) => {
   const ids = await page.locator("[data-testid=thread-row]").evaluateAll((els) => els.map((e) => Number(e.getAttribute("data-thread-id"))));

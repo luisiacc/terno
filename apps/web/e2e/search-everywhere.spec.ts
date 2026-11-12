@@ -65,7 +65,7 @@ test.describe("search everywhere", () => {
     await expect(row(page, ids.inbox).getByTestId("row-place")).toHaveCount(0);
     await expect(row(page, ids.archive).getByTestId("row-place")).toHaveCount(0);
     // a screen reader hears it, once, at the end of the row
-    await expect(row(page, ids.spam)).toContainText(", in Spam");
+    await expect(row(page, ids.spam)).toHaveAccessibleName(/\bin Spam\b/);
     // results span accounts: each says whose
     await expect(row(page, ids.inbox).getByTestId("account-label")).toBeVisible();
     // in:all is everything but Spam and Trash

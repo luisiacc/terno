@@ -134,9 +134,12 @@ test.describe("no focus ring around the conversation list", () => {
 
 test("a row's name says what its marks show: unread, starred, has attachments (plan 158)", async ({ app: page }) => {
   const marked = rows(page).filter({ has: page.getByTestId("row-unread-dot") }).filter({ has: page.locator("svg.fill-star") }).first();
-  await expect(marked).toHaveAccessibleName(/, unread ?, starred ?, has attachments/);
+  // plan 188: the state right after the sender (never after the preview), the attachments with the rest at the end
+  const from = await marked.getByTestId("row-from").innerText();
+  await expect(marked).toHaveAccessibleName(new RegExp(`^${from.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*, unread, starred,`));
+  await expect(marked).toHaveAccessibleName(/\bhas attachments\b/);
   const plain = rows(page).filter({ hasNot: page.getByTestId("row-unread-dot") }).filter({ hasNot: page.locator("svg.fill-star") }).first();
   const name = (await plain.evaluate((el) => el.textContent)) ?? "";
-  expect(name).not.toMatch(/, unread|, starred/);
+  expect(name).not.toMatch(/\bunread\b|\bstarred\b/);
   expect(name).toContain(await plain.getByTestId("row-from").innerText());
 });
