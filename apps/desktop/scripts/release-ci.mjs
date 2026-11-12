@@ -1,21 +1,18 @@
-// Plan 126: releases build on GitHub (.github/workflows/release-mac.yml). This
-// module is what both ends share: the secrets the workflow needs, the checks
+// Plans 126 and 189: releases build on GitHub (.github/workflows/release.yml).
+// This module is what both ends share: the secrets each job needs, the checks
 // it runs before touching them, and the `gh workflow run` call that starts it.
-// `node release-ci.mjs check` is the workflow's preflight. RELEASING.md is the
-// maintainer's setup guide.
+// `node release-ci.mjs check <phase>` is each job's preflight. RELEASING.md is
+// the maintainer's setup guide.
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 export const REPO = "luisiacc/terno";
-export const WORKFLOW = "release-mac.yml";
+export const WORKFLOW = "release.yml";
 
-/** Secrets the `release` environment must hold. Empty counts as missing: GitHub passes an unset secret as "". */
-export const REQUIRED_SECRETS = [
-  // plan 99/123: an empty TERNO_GOOGLE_DESKTOP_ID means "a fork, no client" to buildGoogleClients,
-  // so without this check a missing secret would ship a release where Gmail can't connect
-  "TERNO_GOOGLE_DESKTOP_ID",
-  "TERNO_GOOGLE_DESKTOP_SECRET",
-  "TERNO_GOOGLE_WEB_ID",
+// plan 99/123: an empty TERNO_GOOGLE_DESKTOP_ID means "a fork, no client" to buildGoogleClients,
+// so without this check a missing secret would ship a release where Gmail can't connect
+const GOOGLE = ["TERNO_GOOGLE_DESKTOP_ID", "TERNO_GOOGLE_DESKTOP_SECRET", "TERNO_GOOGLE_WEB_ID"];
+const MAC = [
   // the Developer ID Application certificate (.p12, base64) and its export password
   "MAC_CERT_P12",
   "MAC_CERT_PASSWORD",
@@ -25,6 +22,12 @@ export const REQUIRED_SECRETS = [
   "APPLE_API_ISSUER",
 ];
 
+/** Each job's secrets (plan 189): the draft holds none, and the Linux job never sees the signing key. Empty counts as missing: GitHub passes an unset secret as "". */
+export const PHASE_SECRETS = { "build-mac": [...GOOGLE, ...MAC], "build-linux": GOOGLE, draft: [] };
+
+/** Secrets the `release` environment must hold, for every job. */
+export const REQUIRED_SECRETS = [...new Set(Object.values(PHASE_SECRETS).flat())];
+
 /** Optional: the dev Google client (accounts made in dev keep refreshing, plan 99) and Sentry source maps. */
 export const OPTIONAL_SECRETS = ["TERNO_GOOGLE_DESKTOP_DEV_ID", "TERNO_GOOGLE_DESKTOP_DEV_SECRET", "SENTRY_AUTH_TOKEN"];
 
@@ -32,9 +35,10 @@ const SHA = /^[0-9a-f]{40}$/;
 /** What release.mjs releases: stable x.y.z or nightly x.y.z-nightly.n. */
 export const VERSION = /^\d+\.\d+\.\d+(?:-nightly\.\d+)?$/;
 
-/** The preflight: every problem by name, never a value. Empty = ready. */
-export function preflight(env) {
-  const problems = REQUIRED_SECRETS.filter((name) => !env[name]?.trim()).map((name) => `the secret ${name} is missing or empty in the "release" environment (RELEASING.md)`);
+/** A job's preflight: every problem by name, never a value. Empty = ready. */
+export function preflight(env, phase) {
+  if (!Object.hasOwn(PHASE_SECRETS, phase)) return [`unknown phase "${phase}"`];
+  const problems = PHASE_SECRETS[phase].filter((name) => !env[name]?.trim()).map((name) => `the secret ${name} is missing or empty in the "release" environment (RELEASING.md)`);
   if (!SHA.test(env.RELEASE_SHA ?? "")) problems.push(`the commit "${env.RELEASE_SHA ?? ""}" isn't a full 40-character SHA`);
   if (env.TERNO_VERSION && !VERSION.test(env.TERNO_VERSION)) problems.push(`the version "${env.TERNO_VERSION}" isn't x.y.z or x.y.z-nightly.n`);
   return problems;
@@ -106,8 +110,8 @@ export function deleteFailedDraft(version, run = gh) {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url) && process.argv[2] === "check") {
-  const problems = preflight(process.env);
+  const problems = preflight(process.env, process.argv[3]);
   for (const p of problems) console.error(`✗ ${p}`);
   if (problems.length) process.exit(1);
-  console.log(`✓ every release secret is set; building ${process.env.RELEASE_SHA}${process.env.TERNO_VERSION ? ` as ${process.env.TERNO_VERSION}` : ""}`);
+  console.log(`✓ ${process.argv[3]}: every secret it needs is set; releasing ${process.env.RELEASE_SHA}${process.env.TERNO_VERSION ? ` as ${process.env.TERNO_VERSION}` : ""}`);
 }

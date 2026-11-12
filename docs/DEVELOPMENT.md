@@ -6,6 +6,7 @@
 pnpm install            # Node 24+, pnpm 12
 pnpm dev                # backend (WebSocket, demo mailbox) + renderer at http://localhost:5173
 pnpm dist:mac           # → apps/desktop/release/mac-arm64/Terno.app and Terno-<v>-arm64.dmg
+pnpm dist:linux         # on Linux: the .deb and .rpm packages, x64 and arm64 (see Linux below)
 pnpm brand              # every icon (app, Tahoe, DMG, favicons, the in-app mark) from the logo in brand/ (macOS, Xcode 26)
 
 pnpm dev:desktop         # Electron + Vite HMR on your real profile
@@ -32,6 +33,7 @@ pnpm test:perf          # performance gates alone (project perf, one file at a t
 pnpm test:e2e           # Playwright flows + visual regression (apps/web, against backend-dev)
 pnpm test:ui-perf       # renderer perf in Chromium (j-key, keystroke → results, scroll, theme, drag)
 pnpm test:smoke         # Playwright against the PACKAGED arm64 app (run dist:mac first)
+pnpm --filter @terno/desktop test:smoke:linux   # the INSTALLED Linux package, /opt/Terno/terno (see Linux below)
 pnpm test:web           # the web build in Chromium: worker on OPFS, takeover, open errors, offline, gating,
                         # Gmail via Google's flow (stubbed), and the store/engine conformance suites inside a worker
 pnpm test:web-perf      # web budgets at 10k and 50k messages on OPFS (WEB_PERF_STORAGE=idb for IndexedDB,
@@ -52,6 +54,46 @@ What the tests cover:
 - Gmail against a fake Google that verifies PKCE.
 - The MCP server end to end.
 - Printing from real PDFs: every print fixture (long quoted threads, inline replies, a newsletter, a 1000px table, CJK and emoji, long URLs, images, a hostile subject) exported through Chromium on the web and through Electron's `printToPDF` in the packaged app, read back with pdfjs-dist (page size, text present and absent, footer, nothing outside the printable box) and compared against rendered-page baselines.
+
+## Linux (plan 189)
+
+Terno ships `.deb` and `.rpm` packages for x64 and arm64, built on Linux (GitHub's runner for a release: RELEASING.md). Both install to `/opt/Terno`, and their install scripts set up Chromium's sandbox (a setuid helper, or user namespaces with an AppArmor profile on Ubuntu 24.04+). There's no AppImage, because it can't keep that sandbox on. The packages don't update themselves; Settings says so (`updates.unsupported.linux`).
+
+On a Linux machine, with `rpm` installed for the `.rpm`:
+
+```bash
+TERNO_GOOGLE_DESKTOP_ID= TERNO_GOOGLE_WEB_ID= pnpm dist:linux   # no Google client outside a release; TERNO_LINUX_ARCH=x64 for one architecture
+sudo apt install ./apps/desktop/release/Terno-*-linux-amd64.deb
+dbus-run-session -- sh -c 'eval "$(printf smoke | gnome-keyring-daemon --unlock --components=secrets)"; export GNOME_KEYRING_CONTROL; xvfb-run -a pnpm --filter @terno/desktop test:smoke:linux'
+```
+
+From a Mac, in Docker (arm64 Linux on Apple silicon). Build from a clean copy of the commit in a volume, never from the checkout's own `node_modules`:
+
+```bash
+cat > /tmp/Dockerfile.terno-linux <<'EOF'
+FROM node:24-bookworm
+RUN apt-get update && apt-get install -y --no-install-recommends xvfb xauth dbus-x11 gnome-keyring libsecret-1-0 \
+    libgtk-3-0 libnss3 libasound2 libgbm1 libxss1 libxtst6 libnotify4 rpm file && rm -rf /var/lib/apt/lists/*
+RUN corepack enable && corepack prepare pnpm@12.2.1 --activate
+WORKDIR /work
+EOF
+docker build -t terno-linux -f /tmp/Dockerfile.terno-linux /tmp
+git archive HEAD | docker run --rm -i -v terno-work:/work terno-linux tar x -C /work
+docker run --rm -v terno-work:/work terno-linux sh -c 'CI=1 pnpm install --frozen-lockfile && TERNO_BUILD_SHA=docker TERNO_GOOGLE_DESKTOP_ID= TERNO_GOOGLE_WEB_ID= pnpm build && TERNO_LINUX_ARCH=arm64 pnpm --filter @terno/desktop dist:linux'
+```
+
+Then the smoke, as an ordinary user, with namespaces allowed (Docker's default seccomp profile blocks the ones the sandbox needs). Save this as `smoke.sh` and run `docker run --rm --security-opt seccomp=unconfined --security-opt apparmor=unconfined -v terno-work:/work -v "$PWD/smoke.sh:/smoke.sh" terno-linux sh /smoke.sh`:
+
+```sh
+apt-get update -qq && apt-get install -y -qq /work/apps/desktop/release/Terno-*-linux-arm64.deb
+useradd -m smoke && mkdir -p /work/test-results && chmod 777 /work/test-results
+cat > /home/smoke/run.sh <<'EOF'
+cd /work/apps/desktop
+eval "$(printf smoke | gnome-keyring-daemon --unlock --components=secrets)"; export GNOME_KEYRING_CONTROL
+xvfb-run -a ./node_modules/.bin/playwright test -c playwright.linux.config.ts
+EOF
+su smoke -c 'dbus-run-session -- sh /home/smoke/run.sh'
+```
 
 ## Languages
 
