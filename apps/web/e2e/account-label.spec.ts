@@ -109,9 +109,12 @@ test.describe("the receiving account on rows", () => {
     }
     const crowded = page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`);
     await expect(crowded.getByTestId("row-marks").locator("[data-cat-dot]")).toHaveCount(2);
-    const [label, date, marks, snippet] = await Promise.all(["account-label", "row-date", "row-marks", "row-snippet"].map(async (t) => (await crowded.getByTestId(t).boundingBox())!));
+    const [label, date, marks, snippet, from] = await Promise.all(["account-label", "row-date", "row-marks", "row-snippet", "row-from"].map(async (t) => (await crowded.getByTestId(t).boundingBox())!));
     expect(Math.abs(label.x + label.width - (date.x + date.width))).toBeLessThanOrEqual(1.5);
-    expect(marks.x + marks.width).toBeLessThanOrEqual(label.x + 0.5);
+    // plan 194: the marks end the first line, before the date, and the sender keeps its first letters
+    expect(marks.x + marks.width).toBeLessThanOrEqual(date.x + 0.5);
+    expect(Math.abs(marks.y + marks.height / 2 - (date.y + date.height / 2))).toBeLessThanOrEqual(2);
+    expect(from.width).toBeGreaterThan(40);
     // the preview keeps its first words
     expect(snippet.width).toBeGreaterThan(40);
     await expectContained(page);

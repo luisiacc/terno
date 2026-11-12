@@ -1,6 +1,7 @@
 import { CheckboxMark } from "@terno/ui/components/checkbox";
 import { toggleRow, useActionPreview, useActionRows } from "~/state/action-preview";
 import { listFilterOf, matchesFilter, matchFocus, mostUrgent, type CategoryColor, type RowMatch, type ThreadSummary } from "@terno/core";
+import { Badge } from "@terno/ui/components/badge";
 import { CategoryDot } from "@terno/ui/components/category-dot";
 import type { RowLines } from "@terno/ui/designs/rows";
 import { cn } from "@terno/ui/lib/utils";
@@ -307,10 +308,11 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
     <>
       {state.length > 0 && <span className="sr-only">, {state.join(", ")},</span>}
       {thread.messageCount > 1 && (
-        <span className="text-xs text-muted-foreground tabular">
+        // plan 194: a pill, so the count reads as one beside the name (bare digits were easy to miss)
+        <Badge variant="neutral" className="font-medium tabular">
           {formatNumber(thread.messageCount)}
           <span className="sr-only"> {t("list.row.messagesWord", { count: thread.messageCount })}</span>
-        </span>
+        </Badge>
       )}
     </>
   );
@@ -327,9 +329,9 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
   );
   const keptTag = kept && <span data-testid="row-kept" className="shrink-0 text-2xs text-muted-foreground">{t("list.kept")}</span>;
   /**
-   * Plan 173: a three-line row's marks on its preview's line, bounded so they never crowd it out at the narrowest list
-   * (Codex review): two category dots at most (every name is said to a screen reader and in the title), the glyphs; the
-   * words (Spam, Trash, Opened) stay on the first line by the date, where the sender gives way
+   * Plan 194 (after plan 173 put them on the preview's line): a three-line row's marks end its first line, before the
+   * date, so the preview has its line to itself. Two category dots at most (every name is said to a screen reader and in
+   * the title), then the glyphs; the words (Spam, Trash, Opened) stay by the date
    */
   const lineDots = dots.slice(0, 2);
   const lineMarks = (
@@ -372,7 +374,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
         line ? "self-center" : onMarksLine,
         quiet,
         // (three lines, plan 173: with marks beside it a smaller share, so the preview keeps its first words at the narrowest list)
-        wide ? "w-20 @max-[58rem]/rows:hidden" : line ? "max-w-[min(7rem,32%)]" : cn("pl-2", markCount ? "max-w-[min(8rem,30%)]" : "ml-auto max-w-[min(8rem,40%)]"),
+        wide ? "w-20 @max-[58rem]/rows:hidden" : line ? "max-w-[min(7rem,32%)]" : "ml-auto max-w-[min(8rem,40%)] pl-2",
       )}
     >
       {account.local !== undefined ? (
@@ -488,30 +490,35 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
   );
   /** the marks' column, or the slot that holds them */
   const lead = slot || dot;
-  // a three-line row's first line: who, how many, when (plan 173: the marks went to the preview's line, so the name and the
-  // time read clean); a code stays beside the time, the one mark acted on at a glance; in Review the marks stay here
+  /**
+   * Plan 194: what gives way on a three-line row's first line, when it's short: the marks first, whole, from the end (the
+   * bell, then the star, …: their box is one glyph tall and wraps, so what doesn't fit drops below it, out of sight), then
+   * the sender truncates; the code, the words and the date never do. They take only what the sender (65% at most) leaves
+   */
+  const topMarks = markCount > 0 && (
+    <span data-testid="row-marks" title={cats.length > 2 ? cats.map((c) => c.name).join(", ") : undefined} className="flex h-3 min-w-0 flex-1 basis-0 flex-wrap items-center justify-end gap-x-1.5 gap-y-2 overflow-hidden pl-1">
+      {lineMarks}
+    </span>
+  );
+  // who, how many, the marks, when (a code beside the time, the one mark acted on at a glance); in Review all the marks
+  // stay by the date, its answers having the preview's line
   const firstLine = (
-    <div className="flex min-w-0 items-center gap-1.5">
+    <div className="flex min-w-0 items-center gap-1.5 [&>[data-testid=row-from]]:max-w-[65%]">
       {from}
       {count}
-      <span className="ml-auto flex shrink-0 items-center gap-1.5 pl-1">
+      {!answer && topMarks}
+      <span className={cn("flex shrink-0 items-center gap-1.5 pl-1", (answer || !topMarks) && "ml-auto")}>
         {chip}
         {answer ? marks : <>{placeTag}{keptTag}</>}
         {date}
       </span>
     </div>
   );
-  // Apple Mail's three lines: who, what about, how it starts (plan 80: in Review, the answers take the preview's place, so they have the width).
-  // Plan 173: the marks end the preview's line, centred on it so no line moves; the account after them keeps the right edge
-  // under the date (the names one column down the list), and without one the marks take that edge
+  // Apple Mail's three lines: who, what about, how it starts (plan 80: in Review, the answers take the preview's place, so they have the width);
+  // the account ends the preview's line, under the date, the names one column down the list
   const accountShown = !answer && accountTag;
-  const rowMarks = markCount > 0 && (
-    <span data-testid="row-marks" title={cats.length > 2 ? cats.map((c) => c.name).join(", ") : undefined} className={cn("ml-auto flex shrink-0 items-center gap-1.5 pl-2", onMarksLine)}>
-      {lineMarks}
-    </span>
-  );
-  // plan 187: with no preview the marks and the account end the subject's line instead (Review always has its line); two
-  // lines keep their height when the words fit in one, so no row's text sits off its neighbours'
+  // plan 187: with no preview the account ends the subject's line instead (Review always has its line); two lines keep
+  // their height when the words fit in one, so no row's text sits off its neighbours'
   const lines = (
     <>
       {firstLine}
@@ -519,14 +526,11 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
       <div className={cn("flex min-w-0 items-baseline gap-1.5", noPreview && !answer && "mt-1")}>
         {subject}
         {draft}
-        {noPreview && !answer && rowMarks}
         {noPreview && !answer && accountShown}
       </div>
       {(!noPreview || answer) && (
         <div className={cn("flex min-w-0", previewLines === 2 ? "min-h-[calc(var(--type-row-snippet-leading)*2)] items-start" : "items-baseline")}>
           {answer || snippet}
-          {/* (in Review the answers have the line's width: the marks stay by the date) */}
-          {!answer && rowMarks}
           {accountShown}
         </div>
       )}

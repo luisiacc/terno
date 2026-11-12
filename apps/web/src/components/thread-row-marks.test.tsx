@@ -44,32 +44,30 @@ async function row(opts: { layout?: DesignVariants["row"]; compact?: boolean; ac
   return { el: host.querySelector<HTMLElement>("[data-testid=thread-row]")! };
 }
 
-it.each(["avatar", "classic", "large-avatar"] as const)("a three-line %s row ends its preview's line with the marks; the sender's line is who, how many and when (plan 173)", async (layout) => {
+it.each(["avatar", "classic", "large-avatar"] as const)("a three-line %s row ends its first line with the marks, before the date; the preview has its line to itself (plan 194)", async (layout) => {
   const { el } = await row({ layout });
   const snippetLine = el.querySelector("[data-testid=row-snippet]")!.parentElement!;
   const fromLine = el.querySelector("[data-testid=row-from]")!.parentElement!;
-  const marks = snippetLine.querySelector("[data-testid=row-marks]")!;
+  const marks = fromLine.querySelector("[data-testid=row-marks]")!;
   expect(marks).not.toBeNull();
   expect(marks.querySelector("[data-cat-dot='7']")).not.toBeNull();
   expect(marks.querySelectorAll("svg")).toHaveLength(2); // the clip and the star
-  // the marks are the line's last element, on the right edge (no account: they take the free space)
-  expect(snippetLine.lastElementChild).toBe(marks);
-  expect(marks.className).toContain("ml-auto");
-  // the first line: sender, count, then the date at its end, and no mark
-  expect(fromLine.querySelector("svg")).toBeNull();
-  expect(fromLine.querySelector("[data-cat-dot]")).toBeNull();
-  expect(fromLine.lastElementChild!.lastElementChild!.getAttribute("data-testid")).toBe("row-date");
+  // they take what the sender leaves, and drop whole from the end when that's short (one glyph tall, wrapping, clipped)
+  for (const c of ["flex-1", "basis-0", "flex-wrap", "overflow-hidden", "h-3", "justify-end"]) expect(marks.className).toContain(c);
+  // the date still ends the line, after them
+  expect(marks.nextElementSibling!.lastElementChild!.getAttribute("data-testid")).toBe("row-date");
+  // the preview's line: no mark
+  expect(snippetLine.querySelector("svg")).toBeNull();
+  expect(snippetLine.querySelector("[data-cat-dot]")).toBeNull();
 });
 
-it("the account keeps the right edge, the marks just before it (plan 173)", async () => {
+it("the account alone ends the preview's line, on the right edge under the date (plan 194)", async () => {
   const { el } = await row({ account: true });
   const snippetLine = el.querySelector("[data-testid=row-snippet]")!.parentElement!;
   const tag = snippetLine.querySelector("[data-testid=account-label]")!;
-  const marks = snippetLine.querySelector("[data-testid=row-marks]")!;
-  expect(marks.nextElementSibling).toBe(tag);
+  expect(snippetLine.querySelector("[data-testid=row-marks]")).toBeNull();
   expect(snippetLine.lastElementChild).toBe(tag);
-  expect(marks.className).toContain("ml-auto");
-  expect(tag.className).not.toContain("ml-auto");
+  expect(tag.className).toContain("ml-auto");
 });
 
 it("a row with no marks draws no slot for them, and its account takes the edge (plan 173)", async () => {
@@ -96,7 +94,7 @@ it("in Review the answers have the preview's line, and the marks stay by the dat
   expect(el.querySelector("[data-testid=row-marks]")).toBeNull();
 });
 
-it("the preview's line holds two category dots at most, every name in its title; Trash's word stays by the date (plan 173, Codex review)", async () => {
+it("the first line holds two category dots at most, every name in its title; Trash's word stays by the date, outside the marks (plan 173, 194)", async () => {
   Object.assign(thread, { categoryIds: [7, 8, 9], inTrash: true });
   try {
     const { el } = await row();
@@ -111,6 +109,14 @@ it("the preview's line holds two category dots at most, every name in its title;
   } finally {
     Object.assign(thread, { categoryIds: [7], inTrash: undefined });
   }
+});
+
+it("the message count is a pill, its words said (plan 194)", async () => {
+  const { el } = await row();
+  const pill = el.querySelector("[data-slot=badge]")!;
+  expect(pill.textContent).toContain("3");
+  expect(pill.closest("div")).toBe(el.querySelector("[data-testid=row-from]")!.parentElement);
+  expect(rowName(el)).toContain("3 messages");
 });
 
 /** The option's name: its own words, in order (aria-hidden parts left out). */
@@ -149,14 +155,13 @@ it.each([["avatar", false], ["classic", false], ["large-avatar", false], ["avata
 });
 
 describe("plan 187: the preview's lines", () => {
-  it.each(["avatar", "classic", "large-avatar"] as const)("with none, a %s row has no preview; its marks and account end the subject's line, the subject in the preview's ink", async (layout) => {
+  it.each(["avatar", "classic", "large-avatar"] as const)("with none, a %s row has no preview; its account ends the subject's line (the marks stay by the date), the subject in the preview's ink", async (layout) => {
     const { el } = await row({ layout, account: true, lines: 0 });
     expect(el.querySelector("[data-testid=row-snippet]")).toBeNull();
     const subject = el.querySelector("[data-testid=row-subject]")!;
     const subjectLine = subject.parentElement!;
-    const marks = subjectLine.querySelector("[data-testid=row-marks]")!;
-    expect(marks).not.toBeNull();
-    expect(marks.nextElementSibling).toBe(subjectLine.querySelector("[data-testid=account-label]"));
+    expect(subjectLine.querySelector("[data-testid=row-marks]")).toBeNull();
+    expect(el.querySelector("[data-testid=row-from]")!.parentElement!.querySelector("[data-testid=row-marks]")).not.toBeNull();
     expect(subjectLine.lastElementChild!.getAttribute("data-testid")).toBe("account-label");
     // the owner: the subject reads as the preview did, its quiet ink and its weight, unread too (the thread is unread)
     expect(subject.className).toContain("text-muted-foreground");
@@ -172,10 +177,10 @@ describe("plan 187: the preview's lines", () => {
     expect(snippet.className).toContain("truncate");
     expect(snippet.className).not.toContain("line-clamp-2");
     expect(el.querySelector("[data-testid=row-subject]")!.className).not.toContain("text-muted-foreground");
-    expect(snippet.parentElement!.querySelector("[data-testid=row-marks]")!.className).toContain("self-center");
+    expect(snippet.parentElement!.querySelector("[data-testid=row-marks]")).toBeNull();
   });
 
-  it("with two, the preview wraps and clamps (never nowrap), its line is two lines tall, and the marks sit on its first line", async () => {
+  it("with two, the preview wraps and clamps (never nowrap), its line is two lines tall, and the account sits on its first line", async () => {
     const { el } = await row({ lines: 2, account: true });
     const snippet = el.querySelector("[data-testid=row-snippet]")!;
     expect(snippet.className).toContain("line-clamp-2");
@@ -183,7 +188,7 @@ describe("plan 187: the preview's lines", () => {
     const line = snippet.parentElement!;
     expect(line.className).toContain("min-h-[calc(var(--type-row-snippet-leading)*2)]");
     expect(line.className).toContain("items-start");
-    for (const id of ["row-marks", "account-label"]) {
+    for (const id of ["account-label"]) {
       const c = line.querySelector(`[data-testid=${id}]`)!.className;
       expect(c, id).toContain("self-start");
       expect(c, id).toContain("h-(--type-row-snippet-leading)");

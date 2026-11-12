@@ -136,7 +136,7 @@ test.describe("in every design", { tag: "@design" }, () => {
       await expect(rows(page).first()).toHaveCSS("height", `${d.rows.compact}px`);
       await server.backend.server.invoke("settings.update", { density: "comfortable" }, ctx);
     });
-    await scenario("plan 187: two preview lines wrap and clamp, the marks and account on the first; with none they end the subject's line", async () => {
+    await scenario("plan 187: two preview lines wrap and clamp, the account on the first; with none it ends the subject's line (plan 194: the marks stay by the date)", async () => {
       const d = await designOf(page);
       const leading = parseFloat(d.type.rowSnippet.leading) * 16;
       /** a row with marks, an account and a preview long enough for two lines: its parts' boxes */
@@ -148,7 +148,7 @@ test.describe("in every design", { tag: "@design" }, () => {
             return b ? { top: b.top, bottom: b.bottom, mid: (b.top + b.bottom) / 2 } : null;
           };
           const snippet = row.querySelector<HTMLElement>("[data-testid=row-snippet]");
-          return { id: row.dataset.threadId!, snippet: box("row-snippet"), clamped: snippet ? snippet.scrollHeight > snippet.clientHeight + 1 : false, subject: box("row-subject")!, marks: box("row-marks")!, account: box("account-label")! };
+          return { id: row.dataset.threadId!, snippet: box("row-snippet"), clamped: snippet ? snippet.scrollHeight > snippet.clientHeight + 1 : false, subject: box("row-subject")!, marks: box("row-marks")!, account: box("account-label")!, date: box("row-date")! };
         });
       await server.backend.server.invoke("settings.update", { previewLines: 2 }, ctx);
       await reload(page);
@@ -156,8 +156,9 @@ test.describe("in every design", { tag: "@design" }, () => {
       // two lines tall, and more text than fits: clamped, not one nowrap line
       expect(two.snippet!.bottom - two.snippet!.top).toBeCloseTo(2 * leading, 0);
       expect(two.clamped).toBe(true);
-      // the marks and the account centred on the preview's first line
-      for (const part of [two.marks, two.account]) expect(Math.abs(part.mid - (two.snippet!.top + leading / 2))).toBeLessThanOrEqual(2);
+      // the account centred on the preview's first line, the marks on the date's
+      expect(Math.abs(two.account.mid - (two.snippet!.top + leading / 2))).toBeLessThanOrEqual(2);
+      expect(Math.abs(two.marks.mid - two.date.mid)).toBeLessThanOrEqual(2);
       await server.backend.server.invoke("settings.update", { previewLines: 0 }, ctx);
       await reload(page);
       const none = await page.evaluate(() => document.querySelectorAll("[data-testid=row-snippet]").length);
@@ -180,10 +181,10 @@ test.describe("in every design", { tag: "@design" }, () => {
       // the owner: the two lines apart by the gap the row's height allows for
       const from = (await row.getByTestId("row-from").boundingBox())!;
       expect(subject.y - (from.y + from.height)).toBeCloseTo(NO_PREVIEW_GAP, 0);
-      for (const id of ["row-marks", "account-label"]) {
-        const b = (await row.getByTestId(id).boundingBox())!;
-        expect(Math.abs(b.y + b.height / 2 - (subject.y + subject.height / 2)), id).toBeLessThanOrEqual(2);
-      }
+      const account = (await row.getByTestId("account-label").boundingBox())!;
+      expect(Math.abs(account.y + account.height / 2 - (subject.y + subject.height / 2))).toBeLessThanOrEqual(2);
+      const [marks, date] = [(await row.getByTestId("row-marks").boundingBox())!, (await row.getByTestId("row-date").boundingBox())!];
+      expect(Math.abs(marks.y + marks.height / 2 - (date.y + date.height / 2))).toBeLessThanOrEqual(2);
       await server.backend.server.invoke("settings.update", { previewLines: 1 }, ctx);
     });
     await scenario("a category's suggestions are reachable from the sidebar in every design", async () => {
