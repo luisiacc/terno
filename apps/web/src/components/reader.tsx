@@ -1201,7 +1201,7 @@ function ReaderContent() {
   const summarize = summarizeOffered && summarizable(thread);
 
   return (
-    <section ref={sectionRef} tabIndex={-1} aria-labelledby={detail ? "reader-subject" : undefined} aria-label={detail ? undefined : listedSubject !== undefined ? listedSubject || t("common.noSubject") : t("reader.label")} aria-busy={selectedId !== null && !detail && !gone ? true : undefined} onPointerDownCapture={chooseOpenThread} className="@container flex h-full min-h-0 flex-col bg-background outline-none" data-testid="reader">
+    <section ref={sectionRef} tabIndex={page ? -1 : undefined} data-page={page ? "" : undefined} aria-labelledby={detail ? "reader-subject" : undefined} aria-label={detail ? undefined : listedSubject !== undefined ? listedSubject || t("common.noSubject") : t("reader.label")} aria-busy={selectedId !== null && !detail && !gone ? true : undefined} onPointerDownCapture={chooseOpenThread} className="@container flex h-full min-h-0 flex-col bg-background outline-none" data-testid="reader">
       {/* the same gutter as the conversation below, so the two columns share their edges */}
       <div ref={toolbarRef} className="drag-region scroll-hairline data-context:after:opacity-0! relative shrink-0 overflow-hidden [scrollbar-gutter:stable]">
         {/* on the conversation's column: the first glyph on its left edge, the last control on its right, whatever the width; words as they fit */}

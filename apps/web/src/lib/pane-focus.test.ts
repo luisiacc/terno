@@ -31,7 +31,7 @@ beforeEach(() => {
   document.body.innerHTML = `
     <aside id="app-sidebar"><button aria-current="page" data-testid="inbox">Inbox</button></aside>
     <section id="app-list"><div data-list-section><div role="listbox" tabindex="0"></div></div></section>
-    <main><section data-testid="reader" tabindex="-1">x</section></main>
+    <main><section data-testid="reader">x</section></main>
     <section data-dock><button data-testid="undo">Undo</button></section>`;
   useList.setState({ items: [{ id: 1 }] as never });
   useSnack.setState({ current: null });
@@ -42,6 +42,7 @@ const id = () => (document.activeElement as HTMLElement).dataset.testid ?? (docu
 
 it("a snack is F6's first stop; F6 goes on from where focus came; ⇧F6 from it is the plain reverse", () => {
   const reader = document.querySelector<HTMLElement>("[data-testid=reader]")!;
+  reader.tabIndex = -1;
   reader.focus();
   useSnack.setState({ current: { seq: 1 } as never });
   expect(movePane(1)).toBe(true);

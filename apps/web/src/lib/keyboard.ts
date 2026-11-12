@@ -4,7 +4,7 @@ import { goToFolder } from "~/lib/account-folders";
 import { resolveKey, type Command } from "@terno/core";
 import { act, openCompose, toggleRead, toggleStar, undoLast } from "~/lib/actions";
 import { togglePin } from "~/lib/pins";
-import { movePane } from "~/lib/pane-focus";
+import { focusReader, movePane } from "~/lib/pane-focus";
 import { announce } from "~/lib/announce";
 import { clearSelection, extendSelection, isMac, selectAll, selectWhere, toggleCurrent } from "~/lib/select";
 import { openFocusedMenu, openMenuForSelection } from "~/components/thread-menu";
@@ -60,7 +60,7 @@ function followCursor(id: number, before: Element | null): void {
   requestAnimationFrame(() => {
     if (getApp().selectedId !== id) return;
     const active = document.activeElement;
-    if (!active || active === document.body) reader()?.focus({ preventScroll: true });
+    if (!active || active === document.body) focusReader(reader());
     else if (said) announce(t("reader.announce.opened", { subject: said.subject || t("common.noSubject"), from: said.fromName }));
   });
 }
@@ -121,7 +121,7 @@ function openCurrent() {
     }
     setApp({ readerOpen: true });
     // plan 188: into the conversation, as List's page does (the reader is named by its subject)
-    if (id !== null) document.querySelector<HTMLElement>("[data-testid=reader]")?.focus({ preventScroll: true });
+    if (id !== null) focusReader();
     return;
   }
   if (id !== null) openThread(id);

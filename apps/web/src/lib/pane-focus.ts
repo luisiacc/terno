@@ -12,6 +12,21 @@ import { useSnack } from "~/lib/snack";
 type Pane = "sidebar" | "list" | "main" | "dock";
 const ORDER: readonly Pane[] = ["sidebar", "list", "main", "dock"];
 
+/**
+ * Plan 188: focus on the conversation itself (named by its subject), for the keys that go there (Enter, F6, j and k in
+ * it). In Split it is focusable only for that moment: a section that's always tabindex=-1 takes focus from every click
+ * in it, and a reply on its way reads that as the user gone elsewhere (ai-draft.spec). List's page keeps its own.
+ */
+export function focusReader(section: HTMLElement | null = document.querySelector<HTMLElement>("[data-testid=reader]")): boolean {
+  if (!section) return false;
+  if (!section.hasAttribute("tabindex")) {
+    section.tabIndex = -1;
+    section.addEventListener("blur", () => section.dataset.page === undefined && section.removeAttribute("tabindex"), { once: true });
+  }
+  section.focus({ preventScroll: true });
+  return document.activeElement === section;
+}
+
 /** The snack F6 already took focus to: it isn't the first stop again (else F6 would never leave it). */
 const visited: { seq: number | undefined } = { seq: undefined };
 
@@ -52,8 +67,9 @@ function focusIn(pane: Pane): boolean {
       if (!shown(main)) return false;
       // the conversation (named by its subject), else the first thing to work with that's on screen and not under
       // something (a new message's first field; the full message's Back, over the inert conversation: Codex review)
-      const reader = main.querySelector<HTMLElement>("[data-testid=reader][tabindex]");
-      const target = shown(reader) ? reader : [...main.querySelectorAll<HTMLElement>("input:not([type=hidden]):not(:disabled), [contenteditable=true], button:not(:disabled), [tabindex='-1'][aria-labelledby]")].find(shown) ?? [...main.querySelectorAll<HTMLElement>(":is(h1, h2)[tabindex]")].find(shown);
+      const reader = main.querySelector<HTMLElement>("[data-testid=reader]");
+      if (shown(reader)) return focusReader(reader);
+      const target = [...main.querySelectorAll<HTMLElement>("input:not([type=hidden]):not(:disabled), [contenteditable=true], button:not(:disabled), [tabindex='-1'][aria-labelledby]")].find(shown) ?? [...main.querySelectorAll<HTMLElement>(":is(h1, h2)[tabindex]")].find(shown);
       if (!target) return false;
       target.focus({ preventScroll: true });
       break;

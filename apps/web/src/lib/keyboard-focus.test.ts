@@ -40,7 +40,7 @@ beforeEach(() => {
   document.body.innerHTML = `
     <aside id="app-sidebar"><button data-testid="nav-inbox" aria-current="page">Inbox</button><button data-testid="nav-sent">Sent</button></aside>
     <section id="app-list"><div data-list-section><div role="listbox" tabindex="0" aria-label="Conversations"></div></div></section>
-    <main><section data-testid="reader" tabindex="-1" aria-label="Conversation"><button data-testid="archive">Archive</button><button data-testid="message-toggle">Ana</button></section></main>`;
+    <main><section data-testid="reader" aria-label="Conversation"><button data-testid="archive">Archive</button><button data-testid="message-toggle">Ana</button></section></main>`;
   useAppearance.setState({ layout: "split" });
   setApp({ view: "inbox", query: "", categoryId: null, accountId: null, reviewCategoryId: null, checked: new Set(), compose: null, selectedId: 1, readerOpen: false, dialog: null, menuOpen: false, settings: { characterKeys: true } as never });
   const items = [row(1), row(2), row(3)];
@@ -95,10 +95,12 @@ describe("focus follows the cursor (plan 188)", () => {
     expect(active().getAttribute("role")).toBe("listbox");
   });
 
-  it("Enter in Split opens the conversation and goes into it", () => {
+  it("Enter in Split opens the conversation and goes into it; the section is focusable only while it has focus (a click in it never takes it)", () => {
     document.querySelector<HTMLElement>("[role=listbox]")!.focus();
     press("Enter");
     expect(active().dataset.testid).toBe("reader");
+    focus("nav-sent");
+    expect(document.querySelector("[data-testid=reader]")!.hasAttribute("tabindex")).toBe(false);
   });
 
   it("j from a full message over the conversation doesn't send focus to the list (Codex review)", () => {
@@ -110,6 +112,7 @@ describe("focus follows the cursor (plan 188)", () => {
   });
 
   it("j from inside the conversation keeps focus there", () => {
+    document.querySelector<HTMLElement>("[data-testid=reader]")!.tabIndex = -1;
     focus("reader");
     press("j");
     expect(getApp().selectedId).toBe(2);
