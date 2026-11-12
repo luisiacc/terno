@@ -106,6 +106,27 @@ test.describe("reader conversation", () => {
       await expect(disclosure).toHaveAttribute("aria-expanded", "false");
       await expect(fig).toBeHidden();
     });
+    await scenario("plan 194: a one-to-one conversation shows no people line; a message's ⋯ writes to whoever wrote it, finds their mail, copies their address", async () => {
+      await fresh(page);
+      const id = await ingestConversation(server, { subject: "Solo entre dos", count: 3, now: E2E_NOW });
+      await selectThread(page, id, 'subject:"Solo entre dos"');
+      await expect(page.getByTestId("reader-subject")).toHaveText("Solo entre dos");
+      await expect(page.getByTestId("thread-people")).toHaveCount(0);
+      // the subject alone on its line, the account and the count under it
+      const [subject, chips] = [(await page.getByTestId("reader-subject").boundingBox())!, (await page.getByTestId("thread-chips").boundingBox())!];
+      expect(chips.y).toBeGreaterThanOrEqual(subject.y + subject.height - 1);
+      // Yuki's newest message (the last one) by keyboard: its ⋯, then her items
+      const last = page.getByTestId("message").last();
+      await last.getByTestId("message-more").focus();
+      await page.keyboard.press("Enter");
+      const menu = page.getByTestId("message-actions-menu");
+      await expect(menu.getByTestId("person-new-message")).toHaveText("New message to Yuki");
+      await expect(menu.getByTestId("person-conversations")).toBeVisible();
+      await expect(menu.getByTestId("person-copy")).toBeVisible();
+      await axeBothModes(page, "[data-testid=message-actions-menu]");
+      await menu.getByTestId("person-conversations").click();
+      await expect(page.getByTestId("search-input")).toHaveValue("yuki.gutierrez@acme.studio");
+    });
     await scenario("plan 180: a person's menu replies to them alone on their newest message, writes to them, finds their mail; a right-click opens it, not the conversation's", async () => {
       await fresh(page);
       const mei = { name: "Mei Nakamura", email: "mei@acme.studio" };

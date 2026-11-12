@@ -10,14 +10,14 @@ import { ButtonGroup, ButtonGroupItem } from "@terno/ui/components/button-group"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuShortcut, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
 import { Separator } from "@terno/ui/components/separator";
 import { Chip } from "@terno/ui/components/chip";
-import { CategoryDot } from "@terno/ui/components/category-dot";
+import { AccountRing, CategoryDot } from "@terno/ui/components/category-dot";
 import { IconButton } from "@terno/ui/components/icon-button";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { TernoMark } from "@terno/ui/brand/terno-mark";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
 import { useReplies } from "~/lib/replies";
-import { Archive, Bell, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Ellipsis, FileDown, Forward, Inbox, Layers, Mail, OctagonAlert, PinTop, Printer, Reply, ReplyAll, SquarePen, Star, SummaryDoc, Trash2 } from "@terno/ui/icons";
+import { Archive, AlarmClock, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Ellipsis, FileDown, Forward, Inbox, Layers, Mail, OctagonAlert, PinTop, Printer, Reply, ReplyAll, SquarePen, Star, SummaryDoc, Trash2 } from "@terno/ui/icons";
 import { type ReactNode, type RefCallback, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/popover";
 import { reminderShort, useReminders, useRemindPopover } from "~/lib/reminders";
@@ -112,7 +112,8 @@ function RemindButton({ threadId }: { threadId: number }) {
             />
           }
         >
-          <Bell className={cn(reminder?.due && "fill-current")} />
+          {/* due: a wash inside the clock, its hands still drawn (a solid fill would hide them) */}
+          <AlarmClock className={cn(reminder?.due && "fill-primary/20")} />
         </TooltipTrigger>
         <TooltipContent className="flex items-center gap-2">
           {label}
@@ -803,12 +804,12 @@ function Welcome() {
   );
 }
 
-/** The account a conversation is in, as the list's row says it: its color and its name. Information, so no chip (those can be removed). */
+/** The account a conversation is in, as the sidebar marks it: its ring and its name. Information, so no chip (those can be removed). */
 function AccountMark({ account }: { account: Account }) {
   const label = t("reader.account", { name: account.displayName || account.email, email: account.email });
   return (
     <span data-testid="reader-account" title={label} className="inline-flex min-w-0 items-center gap-1.5">
-      <CategoryDot color={account.color as CategoryColor} />
+      <AccountRing color={account.color} />
       <span className="sr-only">{label}</span>
       <span aria-hidden className="truncate">{account.displayName || account.email}</span>
     </span>
@@ -931,12 +932,13 @@ function ReaderHeader({ detail, account, cats, fold }: { detail: ThreadDetail; a
   const myEmails = useApp((s) => s.accounts).map((a) => a.email);
   // its top edge marked: the context line watches that, not the whole heading (a wrapped subject taller than the view is never wholly in it)
   const heading = <h2 id="reader-subject" data-testid="reader-subject" className={cn("relative min-w-0", PANE_TITLE)}><span aria-hidden data-subject-top className="pointer-events-none absolute top-0 left-0 h-px w-px" /><Marked text={subject} needles={marks} testId="reader-subject-match" /></h2>;
-  // on the subject's line, at the dates' edge, while they fit; on a line of their own when they don't
+  // plan 194: the subject on its own line, and what it's about (account, how many, categories) a quiet line under it,
+  // so nothing competes with the subject
   const titled = (
-    <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+    <>
       {heading}
-      <ThreadChips detail={detail} account={account} cats={cats} fold={fold} />
-    </div>
+      <ThreadChips detail={detail} account={account} cats={cats} fold={fold} className="mt-1.5" />
+    </>
   );
   // plan 177: two or more messages, who's on it closes the header, in every design, on the subject's line start; its 4 px
   // under it (padding: a margin would collapse into the header's) keep the chips off a summary card's edge
@@ -1253,8 +1255,10 @@ function ReaderContent() {
         <PinButton threadId={selectedId} />
         <RemindButton key={`remind-${selectedId}`} threadId={selectedId} />
         {summarize && <SummarizeButton threadId={selectedId} />}
-        <ToolbarMore threadId={selectedId} />
         </div>
+        {/* plan 194: what's done less often, a group of its own, so the marks read as one set */}
+        <ToolbarDivider />
+        <ToolbarMore threadId={selectedId} />
         <ReplyGroup replyTo={detail ? replyName(detail, myEmails) : ""} everyone={everyone} />
         {page && <ToolbarDivider />}
         {page && <StepButtons id={selectedId} />}

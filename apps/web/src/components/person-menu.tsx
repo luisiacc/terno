@@ -3,13 +3,63 @@ import { t } from "@terno/i18n";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
 import { Copy, Reply, Search, SquarePen } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { composeLanding, type ComposeLanding } from "~/lib/compose";
 import type { ThreadPerson } from "~/lib/thread-overview";
 import { setApp, useApp } from "~/state/app";
 import { copyAddress, SenderItems, type MenuParts } from "./sender-menu-items";
 
-const PARTS: MenuParts = { Item: DropdownMenuItem, Sub: DropdownMenuSub, SubTrigger: DropdownMenuSubTrigger, SubContent: DropdownMenuSubContent };
+const PARTS: PersonParts = { Item: DropdownMenuItem, Separator: DropdownMenuSeparator, Sub: DropdownMenuSub, SubTrigger: DropdownMenuSubTrigger, SubContent: DropdownMenuSubContent };
+
+/** A menu's parts, a dropdown's or a right-click's */
+export type PersonParts = MenuParts & { Separator: ComponentType };
+
+/**
+ * What's done about one person (plan 180), wherever a menu offers it: their chip's menu, and (plan 194) the ⋯ of a
+ * message they wrote, the way to them once a one-to-one conversation shows no chip. `compose` opens a draft and hands it
+ * focus (each menu keeps its own way of giving focus back when that's refused).
+ */
+export function PersonItems({ person, detail, offerReplyOnly, compose, parts }: { person: ThreadPerson; detail: ThreadDetail; offerReplyOnly: boolean; compose: (open: () => Promise<ComposeLanding>) => void; parts: PersonParts }) {
+  const { Item, Separator } = parts;
+  const categories = useApp((s) => s.categories);
+  const filedIn = categories.filter((c) => detail.thread.categoryIds.includes(c.id));
+  const address = { name: person.name === person.email ? "" : person.name, email: person.email };
+  return (
+    <>
+      <Item data-testid="person-new-message" onClick={() => compose(() => composeLanding("new", null, 0, () => ({ toText: formatAddressList([address]) }), detail.thread.accountId))}>
+        <SquarePen />
+        <span className="min-w-0 flex-1 truncate">{t("people.newMessage", { name: person.short })}</span>
+      </Item>
+      {offerReplyOnly && (
+        <Item
+          data-testid="person-reply-only"
+          // their newest message is what it answers; someone only written to: the reply's usual one
+          onClick={() => compose(() => composeLanding("reply", detail.thread.id, 0, undefined, undefined, { only: address, ...(person.lastSent ? { sourceId: person.lastSent.id } : {}) }))}
+        >
+          <Reply />
+          <span className="min-w-0 flex-1 truncate">{t("people.replyOnly", { name: person.short })}</span>
+        </Item>
+      )}
+      <Separator />
+      {/* plan 140: an address is mail they sent or were sent, everywhere (plan 64) */}
+      <Item data-testid="person-conversations" onClick={() => setApp({ query: person.email, view: "all", categoryId: null, reviewCategoryId: null, checked: new Set(), scope: null })}>
+        <Search />
+        <span className="min-w-0 flex-1 truncate">{t("people.conversations", { name: person.short })}</span>
+      </Item>
+      <Item data-testid="person-copy" onClick={() => copyAddress(person.email)}>
+        <Copy />
+        <span className="min-w-0 flex-1 truncate">{t("threadMenu.copyAddress")}</span>
+      </Item>
+      {/* about mail from them: only someone who wrote here */}
+      {person.wrote && (
+        <>
+          <Separator />
+          <SenderItems sender={{ email: person.email, name: person.name }} categories={categories} filedIn={filedIn} parts={parts} />
+        </>
+      )}
+    </>
+  );
+}
 
 /** The person's full name and address as one line: what their chip stands for. */
 export const fullName = (p: ThreadPerson) => (p.name === p.email ? p.email : `${p.name} <${p.email}>`);
@@ -35,9 +85,6 @@ export function PersonMenu({ person, detail, offerReplyOnly, className, children
     setOpen(next);
     setApp({ menuOpen: next });
   };
-  const categories = useApp((s) => s.categories);
-  const filedIn = categories.filter((c) => detail.thread.categoryIds.includes(c.id));
-  const address = { name: person.name === person.email ? "" : person.name, email: person.email };
   // refused or failed: focus comes back to the chip while it's still here
   const compose = (open: () => Promise<ComposeLanding>) => {
     handedOff.current = true;
@@ -71,37 +118,7 @@ export function PersonMenu({ person, detail, offerReplyOnly, className, children
           {person.name !== person.email && <p className="truncate text-muted-foreground">{person.email}</p>}
         </div>
         <DropdownMenuSeparator />
-        <DropdownMenuItem data-testid="person-new-message" onClick={() => compose(() => composeLanding("new", null, 0, () => ({ toText: formatAddressList([address]) }), detail.thread.accountId))}>
-          <SquarePen />
-          <span className="min-w-0 flex-1 truncate">{t("people.newMessage", { name: person.short })}</span>
-        </DropdownMenuItem>
-        {offerReplyOnly && (
-          <DropdownMenuItem
-            data-testid="person-reply-only"
-            // their newest message is what it answers; someone only written to: the reply's usual one
-            onClick={() => compose(() => composeLanding("reply", detail.thread.id, 0, undefined, undefined, { only: address, ...(person.lastSent ? { sourceId: person.lastSent.id } : {}) }))}
-          >
-            <Reply />
-            <span className="min-w-0 flex-1 truncate">{t("people.replyOnly", { name: person.short })}</span>
-          </DropdownMenuItem>
-        )}
-        <DropdownMenuSeparator />
-        {/* plan 140: an address is mail they sent or were sent, everywhere (plan 64) */}
-        <DropdownMenuItem data-testid="person-conversations" onClick={() => setApp({ query: person.email, view: "all", categoryId: null, reviewCategoryId: null, checked: new Set(), scope: null })}>
-          <Search />
-          <span className="min-w-0 flex-1 truncate">{t("people.conversations", { name: person.short })}</span>
-        </DropdownMenuItem>
-        <DropdownMenuItem data-testid="person-copy" onClick={() => copyAddress(person.email)}>
-          <Copy />
-          <span className="min-w-0 flex-1 truncate">{t("threadMenu.copyAddress")}</span>
-        </DropdownMenuItem>
-        {/* about mail from them: only someone who wrote here */}
-        {person.wrote && (
-          <>
-            <DropdownMenuSeparator />
-            <SenderItems sender={{ email: person.email, name: person.name }} categories={categories} filedIn={filedIn} parts={PARTS} />
-          </>
-        )}
+        <PersonItems person={person} detail={detail} offerReplyOnly={offerReplyOnly} compose={compose} parts={PARTS} />
       </DropdownMenuContent>
     </DropdownMenu>
   );

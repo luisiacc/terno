@@ -42,6 +42,11 @@ describe("ThreadPeople (plan 177)", () => {
     expect(host.querySelector("[data-testid=thread-people]")).toBeNull();
   });
 
+  it("isn't there for a one-to-one conversation: its headers say who (plan 194)", async () => {
+    const host = await render(peopleOf([msg({ from: person(1) }), msg({ from: me, to: [person(1)], isSent: true }), msg({ from: person(1) })]));
+    expect(host.querySelector("[data-testid=thread-people]")).toBeNull();
+  });
+
   it("a named list of chips, each a menu button named by the full name and address; past six, a +N button shows the rest", async () => {
     const host = await render(peopleOf([msg({ to: [me, ...Array.from({ length: 8 }, (_, i) => person(i + 1))] }), msg({ from: person(1) })]));
     const list = host.querySelector("ul[data-testid=thread-people]")!;

@@ -1,19 +1,21 @@
-import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuShortcut, ContextMenuTrigger } from "@terno/ui/components/context-menu";
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuShortcut, ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger, ContextMenuTrigger } from "@terno/ui/components/context-menu";
 import { Shortcut } from "@terno/ui/components/shortcut";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { Button } from "@terno/ui/components/button";
 import { cn } from "@terno/ui/lib/utils";
 import { t } from "@terno/i18n";
 import { Copy, Ellipsis, FileDown, Forward, Printer, Reply, ReplyAll } from "@terno/ui/icons";
-import { useRef, useState, type ComponentType, type MouseEvent, type ReactElement, type ReactNode } from "react";
-import { composeLanding } from "~/lib/compose";
+import { useMemo, useRef, useState, type MouseEvent, type ReactElement } from "react";
+import { composeLanding, type ComposeLanding } from "~/lib/compose";
 import { identitiesIn, reachesSeveral } from "~/lib/compose-fields";
 import { copyThreadText } from "~/lib/copy-thread";
 import { openPrint, wantsNativeMenu, type PrintIntent } from "~/lib/print-open";
 import { snack } from "~/lib/snack";
 import { setApp, useApp } from "~/state/app";
 import { useThread } from "~/state/threads";
+import { threadPeople, type ThreadPerson } from "~/lib/thread-overview";
+import { PersonItems, type PersonParts } from "./person-menu";
 
 /**
  * A right-click on the reader's background is the conversation's too, so it is passed to the trigger as a mail
@@ -30,10 +32,6 @@ export function backgroundMenu(e: MouseEvent<HTMLElement>): void {
 }
 
 type Respond = "reply" | "replyAll" | "forward";
-interface ItemParts {
-  Item: ComponentType<{ "data-testid"?: string; onClick?: () => void; children: ReactNode }>;
-  Separator: ComponentType;
-}
 
 /** Would answering everyone on this one message reach more than one other person? */
 function useReachesSeveral(threadId: number, messageId: number | null): boolean {
@@ -43,9 +41,29 @@ function useReachesSeveral(threadId: number, messageId: number | null): boolean 
   return Boolean(detail && message && reachesSeveral({ ...detail, messages: [message] }, identitiesIn(detail, emails.split("\n"))));
 }
 
-/** What a message offers, in its ⋯ menu and on a right-click alike (off a message, only the conversation's copy). */
-function MessageItems({ threadId, messageId, respond, parts: { Item, Separator } }: { threadId: number; messageId: number | null; respond: (mode: Respond) => void; parts: ItemParts }) {
+/** Who wrote this message, as their chip would show them; none when it's the user's own (plan 194) */
+function useSenderOf(threadId: number, messageId: number | null): ThreadPerson | null {
+  const detail = useThread(threadId);
+  const emails = useApp((s) => s.accounts.map((a) => a.email).join("\n"));
+  return useMemo(() => {
+    const message = detail?.messages.find((m) => m.id === messageId);
+    if (!detail || !message) return null;
+    const mine = identitiesIn(detail, emails.split("\n"));
+    if (mine(message.from.email)) return null;
+    const email = message.from.email.toLowerCase();
+    return threadPeople(detail.messages, mine).find((p) => p.email.toLowerCase() === email) ?? null;
+  }, [detail, messageId, emails]);
+}
+
+/**
+ * What a message offers, in its ⋯ menu and on a right-click alike (off a message, only the conversation's copy). Plan 194:
+ * then what's done about whoever wrote it, as their chip's menu offers (a one-to-one conversation shows no chip)
+ */
+function MessageItems({ threadId, messageId, respond, compose, parts }: { threadId: number; messageId: number | null; respond: (mode: Respond) => void; compose: (open: () => Promise<ComposeLanding>) => void; parts: PersonParts }) {
+  const { Item, Separator } = parts;
   const replyAll = useReachesSeveral(threadId, messageId);
+  const detail = useThread(threadId);
+  const sender = useSenderOf(threadId, messageId);
   const print = (intent: PrintIntent) => messageId !== null && openPrint({ threadId, messageId, intent });
   return (
     <>
@@ -66,6 +84,12 @@ function MessageItems({ threadId, messageId, respond, parts: { Item, Separator }
             <span className="flex-1">{t("actions.forward")}</span>
           </Item>
           <Separator />
+          {sender && detail && (
+            <>
+              <PersonItems person={sender} detail={detail} offerReplyOnly={false} compose={compose} parts={parts} />
+              <Separator />
+            </>
+          )}
         </>
       )}
       <Item data-testid="message-menu-copy-text" onClick={() => copyThreadText(threadId)}>
@@ -89,8 +113,8 @@ function MessageItems({ threadId, messageId, respond, parts: { Item, Separator }
   );
 }
 
-const CONTEXT_PARTS: ItemParts = { Item: ContextMenuItem, Separator: ContextMenuSeparator };
-const DROPDOWN_PARTS: ItemParts = { Item: DropdownMenuItem, Separator: DropdownMenuSeparator };
+const CONTEXT_PARTS: PersonParts = { Item: ContextMenuItem, Separator: ContextMenuSeparator, Sub: ContextMenuSub, SubTrigger: ContextMenuSubTrigger, SubContent: ContextMenuSubContent };
+const DROPDOWN_PARTS: PersonParts = { Item: DropdownMenuItem, Separator: DropdownMenuSeparator, Sub: DropdownMenuSub, SubTrigger: DropdownMenuSubTrigger, SubContent: DropdownMenuSubContent };
 
 /**
  * Answers this message, wherever it is in the conversation. A row chosen in a menu hands focus to the draft, so the
@@ -98,20 +122,23 @@ const DROPDOWN_PARTS: ItemParts = { Item: DropdownMenuItem, Separator: DropdownM
  */
 function useRespond(threadId: number, messageId: number | null, fallback: () => HTMLElement | null | undefined) {
   const handedOff = useRef(false);
-  const respond = (mode: Respond) => {
-    if (messageId === null) return;
+  const compose = (open: () => Promise<ComposeLanding>) => {
     handedOff.current = true;
-    void composeLanding(mode, threadId, 0, undefined, undefined, { sourceId: messageId }).then((landing) => {
+    void open().then((landing) => {
       if (landing.kind !== "none") return;
       handedOff.current = false;
       if (document.activeElement === document.body) fallback()?.focus();
     });
   };
+  const respond = (mode: Respond) => {
+    if (messageId === null) return;
+    compose(() => composeLanding(mode, threadId, 0, undefined, undefined, { sourceId: messageId }));
+  };
   const opened = (open: boolean) => {
     if (open) handedOff.current = false;
     setApp({ menuOpen: open });
   };
-  return { respond, opened, finalFocus: () => !handedOff.current };
+  return { respond, compose, opened, finalFocus: () => !handedOff.current };
 }
 
 /**
@@ -121,7 +148,7 @@ function useRespond(threadId: number, messageId: number | null, fallback: () => 
  */
 export function MessageActions({ threadId, messageId, label, className }: { threadId: number; messageId: number; /** plan 188: whose message it is ("More for Ana's message, …"): every message's ⋯ told apart */ label?: string; className?: string }) {
   const trigger = useRef<HTMLButtonElement>(null);
-  const { respond, opened, finalFocus } = useRespond(threadId, messageId, () => trigger.current);
+  const { respond, compose, opened, finalFocus } = useRespond(threadId, messageId, () => trigger.current);
   return (
     <div
       role="group"
@@ -143,7 +170,7 @@ export function MessageActions({ threadId, messageId, label, className }: { thre
           <TooltipContent>{t("reader.message.more")}</TooltipContent>
         </Tooltip>
         <DropdownMenuContent align="end" sideOffset={4} className="w-60" data-testid="message-actions-menu" finalFocus={finalFocus}>
-          <MessageItems threadId={threadId} messageId={messageId} respond={respond} parts={DROPDOWN_PARTS} />
+          <MessageItems threadId={threadId} messageId={messageId} respond={respond} compose={compose} parts={DROPDOWN_PARTS} />
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
@@ -159,7 +186,7 @@ export function MessageActions({ threadId, messageId, label, className }: { thre
 export function MessageMenu({ threadId, children }: { threadId: number; children: ReactElement }) {
   const [messageId, setMessageId] = useState<number | null>(null);
   const [selected, setSelected] = useState("");
-  const { respond, opened, finalFocus } = useRespond(threadId, messageId, () => document.querySelector<HTMLElement>(`[aria-controls="msg-body-${messageId}"]`));
+  const { respond, compose, opened, finalFocus } = useRespond(threadId, messageId, () => document.querySelector<HTMLElement>(`[aria-controls="msg-body-${messageId}"]`));
   return (
     <ContextMenu onOpenChange={opened}>
       {/* the trigger wraps the whole conversation: mail stays selectable (the primitive defaults to select-none) */}
@@ -191,7 +218,7 @@ export function MessageMenu({ threadId, children }: { threadId: number; children
             <ContextMenuSeparator />
           </>
         )}
-        <MessageItems threadId={threadId} messageId={messageId} respond={respond} parts={CONTEXT_PARTS} />
+        <MessageItems threadId={threadId} messageId={messageId} respond={respond} compose={compose} parts={CONTEXT_PARTS} />
       </ContextMenuContent>
     </ContextMenu>
   );

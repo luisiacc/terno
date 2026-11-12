@@ -29,7 +29,9 @@ export function ThreadPeople({ detail, myEmails, icons, personOf, className }: {
     return { everyone: threadPeople(messages, mine), replyGoesTo: to.length === 1 && cc.length === 0 ? to[0]!.email.toLowerCase() : null };
   }, [messages, mineKey]);
   const [all, setAll] = useState(false);
-  if (!everyone.length) return null;
+  // plan 194: one other person is a one-to-one conversation, whose headers already say who (each message's ⋯ has what
+  // their chip's menu offered)
+  if (everyone.length < 2) return null;
   const shown = all ? everyone : everyone.slice(0, SHOWN);
   return (
     <ul aria-label={t("reader.people")} data-testid="thread-people" className={cn("flex flex-wrap items-center gap-1.5", className)}>
