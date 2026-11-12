@@ -93,3 +93,58 @@ describe("QuickChecks (plan 176)", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 });
+
+describe("QuickChecks watches (plan 191: an agent waiting for one account's mail)", () => {
+  it("a watch checks at once, then every 5 s for its length, then nothing and no timer; it covers only its account", () => {
+    const { q, checks } = rig();
+    q.watch("a", 7, 20_000);
+    expect(q.covers(7)).toBe(true);
+    expect(q.covers(8)).toBe(false);
+    vi.advanceTimersByTime(10 * 60_000);
+    expect(checks).toEqual([0, 5_000, 10_000, 15_000, 20_000]);
+    expect(q.covers(7)).toBe(false);
+    expect(q.active).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("unwatch stops it at once; another watch keeps the cadence going", () => {
+    const { q, checks } = rig();
+    q.watch("a", 1, 60_000);
+    q.watch("b", 2, 60_000);
+    vi.advanceTimersByTime(6_000);
+    q.unwatch("a");
+    expect(q.covers(1)).toBe(false);
+    expect(q.covers(2)).toBe(true);
+    vi.advanceTimersByTime(4_000);
+    q.unwatch("b");
+    vi.advanceTimersByTime(60_000);
+    expect(checks).toEqual([0, 5_000, 10_000]);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("a focus and a watch share one cadence: never two checks within 5 s", () => {
+    const { q, checks } = rig();
+    q.focus("w", true);
+    vi.advanceTimersByTime(2_000);
+    q.watch("a", 1, 30_000);
+    vi.advanceTimersByTime(8_000);
+    expect(checks).toEqual([0, 5_000, 10_000]);
+    // a focus covers every account; its blur leaves the watch's account covered and its checks going
+    expect(q.covers(9)).toBe(true);
+    q.focus("w", false);
+    expect(q.covers(9)).toBe(false);
+    expect(q.covers(1)).toBe(true);
+    vi.advanceTimersByTime(60_000);
+    expect(checks.at(-1)).toBe(30_000);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("nothing after stop", () => {
+    const { q, checks } = rig();
+    q.stop();
+    q.watch("a", 1, 30_000);
+    vi.advanceTimersByTime(60_000);
+    expect(checks).toEqual([]);
+    expect(q.covers(1)).toBe(false);
+  });
+});

@@ -761,7 +761,7 @@ export class BackendCore {
    * wait behind a folder change) and just before the provider, so a blur or offline meanwhile drops it quietly.
    */
   private quickAdmitted(accountId: number): boolean {
-    return !this.stopped && this.syncTimer !== null && this.quickChecks.running && this.connectivity.canSync(accountId);
+    return !this.stopped && this.syncTimer !== null && this.quickChecks.covers(accountId) && this.connectivity.canSync(accountId);
   }
 
   // ───────────────────────────── network (plan 20) ─────────────────────────────

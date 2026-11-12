@@ -9,7 +9,10 @@
  * - the checks end when the minute is up or no window has focus (a blur, a closed window);
  * - focus is tracked per client: two windows' focus and blur arrive on different ports, in either order.
  *
- * Nothing runs outside the minute after a focus: no timer exists then.
+ * Plan 191: an agent waiting for mail on one account watches it for the wait's length. A watch shares the one
+ * cadence with focus (never two checks in 5 s), and covers only its account.
+ *
+ * Nothing runs outside the minute after a focus or a watch: no timer exists then.
  */
 
 /** how often an account without push is checked while the window has just gained focus */
@@ -30,6 +33,8 @@ export interface QuickCheckOptions {
 export class QuickChecks {
   private readonly focused = new Set<string>();
   private until = Number.NEGATIVE_INFINITY;
+  /** plan 191: an agent's wait, by its key: the account it covers, and until when */
+  private readonly watches = new Map<string, { accountId: number; until: number }>();
   private lastAt = Number.NEGATIVE_INFINITY;
   private timer: Timer | null = null;
   private stopped = false;
@@ -60,12 +65,24 @@ export class QuickChecks {
     if (this.stopped) return;
     if (!focused) {
       this.focused.delete(clientId);
-      if (!this.focused.size) this.cancel();
+      if (!this.focused.size && !this.watchesOn()) this.cancel();
       return;
     }
     this.focused.add(clientId);
     this.until = this.now() + this.forMs;
-    if (!this.timer) this.schedule(Math.max(0, this.lastAt + this.everyMs - this.now()));
+    this.start();
+  }
+
+  /** Plan 191: check this account for `forMs` (an agent waiting for its mail), until then or `unwatch`. */
+  watch(key: string, accountId: number, forMs: number): void {
+    if (this.stopped) return;
+    this.watches.set(key, { accountId, until: this.now() + forMs });
+    this.start();
+  }
+
+  unwatch(key: string): void {
+    if (!this.watches.delete(key)) return;
+    if (!this.focusOn() && !this.watchesOn()) this.cancel();
   }
 
   /** the client went (a closed window, a reloaded page): it has no focus any more */
@@ -73,9 +90,16 @@ export class QuickChecks {
     this.focus(clientId, false);
   }
 
-  /** a window has focus and the minute isn't over: a check may go (one that read the store meanwhile asks again) */
-  get running(): boolean {
-    return !this.stopped && this.focused.size > 0 && this.now() <= this.until;
+  /**
+   * A check of this account may go: a window has focus and its minute isn't over, or a wait watches the account
+   * (one that read the store meanwhile asks again).
+   */
+  covers(accountId: number): boolean {
+    if (this.stopped) return false;
+    if (this.focusOn()) return true;
+    const now = this.now();
+    for (const w of this.watches.values()) if (w.accountId === accountId && now <= w.until) return true;
+    return false;
   }
 
   /** a check is scheduled (tests: nothing spins outside the minute) */
@@ -86,7 +110,31 @@ export class QuickChecks {
   stop(): void {
     this.stopped = true;
     this.focused.clear();
+    this.watches.clear();
     this.cancel();
+  }
+
+  private focusOn(): boolean {
+    return this.focused.size > 0 && this.now() <= this.until;
+  }
+
+  /** a watch not over yet (those that are go now) */
+  private watchesOn(): boolean {
+    const now = this.now();
+    for (const [key, w] of this.watches) if (now > w.until) this.watches.delete(key);
+    return this.watches.size > 0;
+  }
+
+  /** the latest moment a check is still wanted */
+  private end(): number {
+    let end = this.focused.size ? this.until : Number.NEGATIVE_INFINITY;
+    for (const w of this.watches.values()) end = Math.max(end, w.until);
+    return end;
+  }
+
+  /** a check at once, or 5 s after the last one (switching windows, or a wait after a focus, isn't a burst) */
+  private start(): void {
+    if (!this.timer) this.schedule(Math.max(0, this.lastAt + this.everyMs - this.now()));
   }
 
   private schedule(ms: number): void {
@@ -100,9 +148,9 @@ export class QuickChecks {
 
   private run(): void {
     this.timer = null;
-    if (this.stopped || !this.focused.size || this.now() > this.until) return;
+    if (this.stopped || (!this.focusOn() && !this.watchesOn())) return;
     this.lastAt = this.now();
     this.hooks.check();
-    if (this.lastAt + this.everyMs <= this.until) this.schedule(this.everyMs);
+    if (this.lastAt + this.everyMs <= this.end()) this.schedule(this.everyMs);
   }
 }
