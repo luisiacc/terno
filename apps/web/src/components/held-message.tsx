@@ -5,13 +5,13 @@ import { cn } from "@terno/ui/lib/utils";
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { cardLeaving, copyShown, firstReveal, heldIn, undoHeld, useHeldCard, useHeldSends, type HeldSend } from "~/lib/held-sends";
 import { revealHeld } from "~/lib/reader-scroll";
-import { arrive, seal } from "~/lib/flash";
+import { arrive } from "~/lib/flash";
 import { useSnack, zHolds } from "~/lib/snack";
 import { announce } from "~/lib/announce";
 import { setApp, useApp } from "~/state/app";
 import { PANE_TITLE, PANE_TITLE_AFTER, PANE_TITLE_TOP, READING_COLUMN } from "~/lib/pane-lines";
 import { ReaderAttachments } from "./attachments";
-import { HtmlBody, TextBody } from "./mail-body";
+import { carryHeight, HtmlBody, TextBody } from "./mail-body";
 import { MailReaderView, useMailReaderView } from "./mail-reader-view";
 import { OpenHead } from "./message-head";
 import { CountdownPill } from "./countdown-pill";
@@ -28,23 +28,17 @@ export function HeldMessage({ held, icons }: { held: HeldSend; icons: boolean })
   const remoteImages = useApp((s) => s.settings?.remoteImages ?? "ask");
   const mailAppearance = useApp((s) => s.settings?.htmlMailAppearance ?? "auto");
   const ref = useRef<HTMLElement>(null);
-  const line = useRef<HTMLSpanElement>(null);
   // the reader goes to it once, as it would to its copy; back in the conversation later, the reader keeps its place.
-  // Plan 196: and that once, it arrives where the composer was, when it was sent from there (before it paints: never
-  // shown settled, then hidden); opened later, it's simply there
+  // Plan 196: and that once, it settles where the composer was, when it was sent from there (in place of the composer:
+  // no fade, which would flash; before it paints); opened later, it's simply there
   useLayoutEffect(() => {
     if (!firstReveal(held.draftId)) return;
-    if (held.sentHere) arrive(ref.current);
+    if (held.sentHere) arrive(ref.current, { inPlace: true });
     revealHeld(held.draftId);
   }, [held.draftId]);
-  // plan 196: the moment it can no longer be taken back, seen here (a card mounted already sending, a conversation come
-  // back to, shows the line drawn and plays nothing)
-  const phase = useRef(held.phase);
-  useLayoutEffect(() => {
-    const was = phase.current;
-    phase.current = held.phase;
-    if (held.phase === "sending" && was !== "sending") seal(line.current);
-  }, [held.phase]);
+  // its copy is known: the copy's body opens at this one's height, so the handoff doesn't jump a frame
+  const copyId = held.copy?.messageId;
+  useLayoutEffect(() => { if (copyId !== undefined) carryHeight(-held.draftId, copyId); }, [copyId, held.draftId]);
   // a layout cleanup runs before the card leaves the page: whether focus was in it can still be read (Codex review #3)
   useLayoutEffect(() => () => cardLeaving(held.draftId), [held.draftId]);
   // its own namespace: never a message's id (heights, consent), one per hold
@@ -65,9 +59,7 @@ export function HeldMessage({ held, icons }: { held: HeldSend; icons: boolean })
     announce(t(z ? "compose.held.statusZ" : "compose.held.status", { count }));
   }, [held.phase, held.goesAt, held.undo]);
   return (
-    <article ref={ref} data-testid="held-message" data-held-send={held.draftId} data-phase={held.phase} tabIndex={-1} aria-label={t("compose.held.label")} className="relative hairline-b outline-none">
-      {/* plan 196: sealed: the accent line over its top edge while it's sending */}
-      <span ref={line} aria-hidden data-testid="held-seal" className={cn("pointer-events-none absolute inset-x-0 -top-px h-0.5 origin-left bg-primary", held.phase === "sending" ? "scale-x-100" : "scale-x-0")} />
+    <article ref={ref} data-testid="held-message" data-held-send={held.draftId} data-phase={held.phase} tabIndex={-1} aria-label={t("compose.held.label")} className="hairline-b outline-none">
       <div className="relative">
         {/* an open message's header, at its place and height: nothing to open or fold yet */}
         <div className="-mx-2 flex w-[calc(100%+1rem)] items-start gap-2.5 px-2 pt-3 pb-1.5">
@@ -127,15 +119,9 @@ export function HeldMessages({ threadId, messages, icons }: { threadId: number; 
   const all = useHeldSends((s) => s.holds);
   const holds = useMemo(() => heldIn({ holds: all }, threadId), [all, threadId]);
   const arrived = (h: HeldSend) => h.copy !== null && messages.some((m) => m.id === h.copy!.messageId);
-  // (before paint: plan 199's date is never shown settled, then hidden)
-  useLayoutEffect(() => {
-    for (const h of holds) {
-      if (!arrived(h)) continue;
-      copyShown(h.draftId);
-      // plan 199: where "Sending…" was, the copy's date arrives; the rest is the same message, and stays still. (Ids are
-      // integers from the store, never text from mail)
-      arrive(document.querySelector(`[data-reader-scroller] article[data-message-id="${Math.trunc(h.copy!.messageId)}"] [data-message-date]`));
-    }
+  // the copy is simply there in the card's place, at its height: any motion here reads as a flash
+  useEffect(() => {
+    for (const h of holds) if (arrived(h)) copyShown(h.draftId);
   }, [holds, messages]);
   return holds.filter((h) => !arrived(h)).map((h) => <HeldMessage key={h.draftId} held={h} icons={icons} />);
 }

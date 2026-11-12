@@ -106,15 +106,17 @@ export function motionNow(): number {
 const token = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
 /**
- * Plans 195–199: the one arrival. From 4 px below and transparent to settled, at --motion-slow on the motion ease (the
+ * Plans 195–198: the one arrival. From 4 px below and transparent to settled, at --motion-slow on the motion ease (the
  * spring's small settle where a rare moment allows it). `translate` composes with a row's own transform. Nothing when
- * motion is off.
+ * motion is off. In place of what was just there (`inPlace`: a sent card where its composer was, another category's
+ * rows), it settles without the fade: a transparent first frame between the two reads as a flash.
  */
-export function arrive(el: Element | null, { spring = false }: { spring?: boolean } = {}): void {
+export function arrive(el: Element | null, { spring = false, inPlace = false }: { spring?: boolean; inPlace?: boolean } = {}): void {
   const ms = motionNow();
   if (!el || ms === 0) return;
   for (const a of el.getAnimations()) if (a.id === "arrive") a.cancel();
-  el.animate([{ opacity: 0, translate: "0 4px" }, { opacity: 1, translate: "0 0" }], { id: "arrive", duration: Math.min(Math.round(ms * 1.33), 100), easing: token(spring ? "--motion-ease-spring" : "--motion-ease") || "ease-out" });
+  const frames = inPlace ? [{ translate: "0 4px" }, { translate: "0 0" }] : [{ opacity: 0, translate: "0 4px" }, { opacity: 1, translate: "0 0" }];
+  el.animate(frames, { id: "arrive", duration: Math.min(Math.round(ms * 1.33), 100), easing: token(spring ? "--motion-ease-spring" : "--motion-ease") || "ease-out" });
 }
 
 /** Plan 195: rows that just arrived at the list's top (the others slide down: armReflow, before the commit). */
@@ -122,14 +124,4 @@ export function arriveRows(ids: readonly number[]): void {
   const list = document.querySelector<HTMLElement>("[role=listbox]");
   if (!list) return;
   for (const row of list.querySelectorAll<HTMLElement>(rowSelector(ids))) arrive(row);
-}
-
-/**
- * Plan 196: a held message's mail leaves: the accent line across its top draws once, left to right (the crossbar of
- * Terno's mark), on the drawer's curve; it then stays while the mail is sending. Motion off: it's simply there.
- */
-export function seal(line: Element | null): void {
-  const ms = motionNow();
-  if (!line || ms === 0) return;
-  line.animate([{ transform: "scaleX(0)" }, { transform: "scaleX(1)" }], { id: "seal", duration: Math.min(Math.round(ms * 1.33), 100), easing: token("--motion-ease-drawer") || "ease-out" });
 }

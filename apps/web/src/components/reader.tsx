@@ -442,7 +442,7 @@ function Message({ m, threadId, expanded, onToggle, icons, person, headless, sol
                 icon={icons}
                 person={person}
                 trailing={<>
-                  <span data-message-date className="ml-auto shrink-0 text-xs text-muted-foreground tabular"><span aria-hidden>{date}</span><span className="sr-only">{fullDate(m.date)}</span></span>
+                  <span className="ml-auto shrink-0 text-xs text-muted-foreground tabular"><span aria-hidden>{date}</span><span className="sr-only">{fullDate(m.date)}</span></span>
                   {!solo && <Disclosure open />}
                 </>}
               />

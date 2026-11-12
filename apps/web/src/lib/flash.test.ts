@@ -27,7 +27,7 @@ afterEach(() => {
   document.documentElement.classList.remove("motion-paused");
 });
 
-describe("arrive (plans 195–199)", () => {
+describe("arrive (plans 195–198)", () => {
   it("rises 4 px into place at --motion-slow, one at a time per element; nothing with motion off, reduced or paused", () => {
     const runs = recordAnimations();
     const el = document.createElement("div");
@@ -48,5 +48,12 @@ describe("arrive (plans 195–199)", () => {
       arrive(el);
     }
     expect(runs).toHaveLength(3);
+  });
+
+  it("in place of what was just there, it settles without the fade (a transparent first frame reads as a flash)", () => {
+    const runs = recordAnimations();
+    arrive(document.createElement("div"), { inPlace: true });
+    expect(runs[0]!.keyframes).toEqual([{ translate: "0 4px" }, { translate: "0 0" }]);
+    expect(runs[0]!.options).toMatchObject({ id: "arrive", duration: 100 });
   });
 });

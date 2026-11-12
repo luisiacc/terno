@@ -63,7 +63,7 @@ export function enterReview(categoryId: number): void {
 }
 
 /**
- * Plan 197: a switch on its way to this category: its name and rows arrive once, when they're in. Bound to that one
+ * Plan 197: a switch on its way to this category: its rows settle into place once, when they're in. Bound to that one
  * switch: Review going anywhere else drops it (an object's property, not a module let: the React Compiler)
  */
 export const reviewArrival: { categoryId: number | null } = { categoryId: null };

@@ -1,6 +1,6 @@
 # 199 — The sent copy's date arrives where "Sending…" was
 
-- **Status**: built
+- **Status**: withdrawn (the owner's report, below)
 - **Commit**: 1520ef910
 - **Severity**: LOW (additive)
 - **Category**: Missed opportunity (state indication)
@@ -113,3 +113,7 @@ One `querySelector` and one WAAPI animation per sent message.
 2. **Before paint.** The effect that settles a hold on its copy became a layout effect, so the date is never drawn settled and then hidden.
 3. **Once, and only here.** `copyShown` settles the hold (`settleHeld` drops it), so a re-render doesn't play it again; a copy that lands while another conversation is open plays nothing (nothing of it is mounted).
 4. **Tests.** The e2e (`motion.spec.ts`, after plan 196's seal) delivers the held send and records exactly one arrival, on the copy's date, which ends visible.
+
+## After the owner's report: withdrawn
+
+"That row of the email flashes and looks weird": the date started transparent, so for two frames the header had neither "Sending…" nor the date. The arrival is gone, with `data-message-date`. What also moved there was older than this plan: the copy's HTML body opened at the 120 px guess and then measured, jumping the message for a frame; it now opens at its card's measured height (`carryHeight` in `mail-body.tsx`, seeded when the copy is known). The handoff is simply still. Plan 195's last section has the rule and the tests.

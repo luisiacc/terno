@@ -11,12 +11,12 @@
 | Plan | What | Severity | Depends on | Status |
 |---|---|---|---|---|
 | 195 | New mail arrives (adds `arrive()`, `armReflow()`) | MEDIUM | none | built |
-| 196 | Sending: the held message arrives, and seals as it leaves | LOW | 195's `arrive()` | built |
-| 199 | The sent copy's date arrives where "Sending…" was | LOW | 195's `arrive()`; best after 196 | built |
+| 196 | Sending: the held message arrives, and seals as it leaves | LOW | 195's `arrive()` | built; the seal withdrawn (the owner: it flashed) |
+| 199 | The sent copy's date arrives where "Sending…" was | LOW | 195's `arrive()`; best after 196 | withdrawn (the owner: it flashed) |
 | 197 | Review's next category arrives | LOW | 195's `arrive()` | built |
 | 198 | An emptied list's empty state arrives | LOW | 195's `arrive()` | built |
 
-Build in that order: 195 first (it adds the shared helper the others use; each later plan also carries the helper's exact code, so any can run alone), then the send pair, 196 then 199, then 197 and 198. One motion throughout: arrive = `opacity 0 → 1`, `translate 0 4px → 0`, `--motion-slow` on `--motion-ease` (the spring only for 198's rare win); leave = the existing reflow fade. Every duration goes through the user's setting (`motionMs()`, plan 01) and stays within 100 ms; motion off plays nothing.
+Build in that order: 195 first (it adds the shared helper the others use; each later plan also carries the helper's exact code, so any can run alone), then the send pair, 196 then 199, then 197 and 198. One motion throughout: arrive = `opacity 0 → 1`, `translate 0 4px → 0` (in place of what was just there, the translate alone: see the owner's report below), `--motion-slow` on `--motion-ease` (the spring only for 198's rare win); leave = the existing reflow fade. Every duration goes through the user's setting (`motionMs()`, plan 01) and stays within 100 ms; motion off plays nothing.
 
 ## The request (verbatim)
 
@@ -217,3 +217,14 @@ At most one `flushSync` per refresh that brings 1–3 new rows; WAAPI on ≤ 3 e
 1. **New mail is the backend's word, not a guess.** A `changed` event from an undo in another window, or a first sync's ingestion, could put a row on top that this window never removed. The backend's live ingestion (`ingestSliced` with `live`: never a first sync or a backfill) now says which threads live mail came to: `changed.arrived`. `boot.ts` gathers them over the frame's coalesced refresh and only those rows may arrive; any other row above them and nothing does. `backend.test.ts` checks live ingestion sends `arrived` and a plain one doesn't; the e2e checks a row that's only changed doesn't arrive.
 2. **Not a navigation on its way.** While another mailbox loads, the list still shows the last one's rows under the new key; a refresh landing then could compare the new mailbox's rows with them. Arrival now needs the list to be showing its own rows (`itemsKey === key`, not loading). A unit test holds a navigation's page back, refreshes meanwhile, and sees nothing played (it fails without the guard).
 3. **The e2e recorder** is installed once per page; a new recording only clears what the last one saw (wrapping again counted every animation twice), with a check that one animation is counted once.
+
+## After the owner's report: what replaces something in place never fades
+
+The owner, trying it: when a sent message went from its Undo counter to its time, "that row of the email flashes and looks weird and also flashes a blue line above". Measured frame by frame:
+
+- **The blue line** was plan 196's seal: "Sending…" lasts about half a second, so the line drew and went with the card at once: a flash, not a seal.
+- **The row** was plan 199's date starting transparent (two frames with no date where "Sending…" had been), and, before this branch, the copy's HTML body opening at the 120 px guess for one frame and then measuring to its height (234 → 158 px in the sample).
+
+The rule they show: an arrival that starts transparent is right where something enters empty space (new mail's row, the rows below sliding to make room; an empty state as the last row fades out), and a flash where it replaces what was just on screen, because its first frame shows neither. So `arrive(el, { inPlace: true })` settles the 4 px without the fade, for the sent card where its composer was (196) and Review's next rows in place of the last category's (197). The seal and 199 are gone; the switcher's category name (197) no longer animates (a word replaced in its own box can neither fade without a blink nor move without a jolt). The copy opens at its card's measured height (`carryHeight`), so the handoff is still.
+
+Tests: `flash.test.ts` (in place: the translate alone); `motion.spec.ts` records whether each arrival fades (the sent card and Review's rows don't) and, after every change to the page, the conversation's last message's height through the handoff: one height, nothing running. That check fails without `carryHeight` every time (a frame sampler only sometimes caught it).

@@ -35,6 +35,11 @@ function rememberHeight(key: number, h: number) {
   heights.set(key, h);
   if (heights.size > HEIGHTS_MAX) heights.delete(heights.keys().next().value!);
 }
+/** A body shown under another key first (a held send's card, then its copy): the second opens at the first's height, not at a guess that jumps when measured */
+export function carryHeight(from: number, to: number): void {
+  const h = heights.get(from);
+  if (h !== undefined && !heights.has(to)) rememberHeight(to, h);
+}
 
 /**
  * Renders an HTML email in a sandboxed iframe: sanitized with DOMPurify, no

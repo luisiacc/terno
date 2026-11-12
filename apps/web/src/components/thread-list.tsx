@@ -1090,11 +1090,12 @@ export function ThreadList() {
   const scanning = useActionPreview((s) => s.preview?.scanning === true);
   const loading = useList((s) => s.loading) || (inPreview && scanning && items.length === 0);
   const itemsKey = useList((s) => s.itemsKey);
-  // plan 197: Review went on to another category: once its rows are in, they arrive (the switcher's name already did)
+  // plan 197: Review went on to another category: once its rows are in, they settle into place (in place of the last
+  // category's: no fade, which would flash)
   const reviewing = useApp((s) => s.reviewCategoryId);
   useLayoutEffect(() => {
     if (reviewing === null || loading || itemsKey !== listKey()) return;
-    if (takeReviewArrival(reviewing, items.length)) arrive(document.querySelector('[data-keep-scroll="list"]'));
+    if (takeReviewArrival(reviewing, items.length)) arrive(document.querySelector('[data-keep-scroll="list"]'), { inPlace: true });
   }, [itemsKey, reviewing, loading, items.length]);
   // plan 187: the rows' shape is the painted appearance's (a change keeps the first row on screen: applyAppearance)
   const compact = useAppearance((s) => s.density === "compact");

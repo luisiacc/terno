@@ -1,6 +1,6 @@
 # 196 — Sending: the held message arrives, and seals as it leaves
 
-- **Status**: built
+- **Status**: built; the seal withdrawn (the owner's report, below)
 - **Commit**: 1520ef910
 - **Severity**: LOW (additive: the one signature moment)
 - **Category**: Missed opportunity (state indication; delight in an occasional moment)
@@ -146,3 +146,7 @@ One WAAPI animation per send at each beat, on one element each (`opacity`/`trans
 ## Revisions after the Codex code review
 
 1. **Opening a conversation isn't Send.** A reply sent from the pinned card while reading something else first shows when its conversation is opened later; its first reveal would have played the arrival. A hold now says whether it was sent from the composer on screen where its card shows (`sentHere`: not pinned, and the conversation in the reader, or the pane for a new message); only then does the card arrive. The e2e sends from the pinned card while reading another conversation, opens the first, and records no arrival.
+
+## After the owner's report
+
+"Also flashes a blue line above": "Sending…" lasts about half a second, so the line drew and left with the card: a flash. The seal is gone (`seal()`, the line, its phase ref). And the card's arrival on Send replaced the composer in place, so its transparent first frame showed neither: it now settles 4 px without the fade (`arrive(el, { inPlace: true })`). Plan 195's last section has the rule and the tests.

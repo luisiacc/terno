@@ -50,10 +50,10 @@ const sampled = (page: Page): Promise<Sample> =>
     return { max: Math.max(0, ...w.__anim.durations), finite: w.__anim.finite, loops: w.__anim.loops, names: w.__anim.names };
   });
 
-/** Plans 195–199: every arrival (and plan 196's seal) asked for, as it starts (one runs ≤ 100 ms: by the time a locator answers it may be over) */
+/** Plans 195–198: every arrival asked for, as it starts (one runs ≤ 100 ms: by the time a locator answers it may be over), and whether it fades */
 async function recordArrivals(page: Page) {
   await page.evaluate(() => {
-    const w = window as unknown as { __arrivals: { id: string | null; testid: string | null; thread: string | null }[] };
+    const w = window as unknown as { __arrivals: { id: string | null; testid: string | null; thread: string | null; fades: boolean }[] };
     // installed once per page; a new recording clears what the last one saw (wrapping again would count each twice)
     const installed = (w as unknown as { __arrivalsOn?: boolean }).__arrivalsOn;
     w.__arrivals = [];
@@ -61,12 +61,12 @@ async function recordArrivals(page: Page) {
     (w as unknown as { __arrivalsOn?: boolean }).__arrivalsOn = true;
     const original = Element.prototype.animate;
     Element.prototype.animate = function (this: Element, keyframes: Keyframe[] | PropertyIndexedKeyframes | null, options?: number | KeyframeAnimationOptions) {
-      if (typeof options === "object" && (options.id === "arrive" || options.id === "seal")) w.__arrivals.push({ id: options.id, testid: this.getAttribute("data-testid") ?? (this.hasAttribute("data-keep-scroll") ? "list" : this.hasAttribute("data-message-date") ? "message-date" : this.getAttribute("data-slot")), thread: this.getAttribute("data-thread-id") });
+      if (typeof options === "object" && options.id === "arrive") w.__arrivals.push({ id: options.id, testid: this.getAttribute("data-testid") ?? (this.hasAttribute("data-keep-scroll") ? "list" : this.getAttribute("data-slot")), thread: this.getAttribute("data-thread-id"), fades: Array.isArray(keyframes) && keyframes.some((k) => "opacity" in k) });
       return original.call(this, keyframes, options);
     };
   });
 }
-const arrivals = (page: Page) => page.evaluate(() => (window as unknown as { __arrivals: { id: string; testid: string | null; thread: string | null }[] }).__arrivals);
+const arrivals = (page: Page) => page.evaluate(() => (window as unknown as { __arrivals: { id: string; testid: string | null; thread: string | null; fades: boolean }[] }).__arrivals);
 
 /** Holds a backend method until released, so its loading state (spinner, skeleton) stays on screen. */
 function hold(server: DevServer, method: string) {
@@ -285,7 +285,7 @@ test.describe("motion", () => {
     });
   });
 
-  test("plans 196, 199: a sent reply arrives where the composer was, seals once as it leaves, and its copy's date arrives", async ({ app: page, server }) => {
+  test("plan 196: a sent reply settles where the composer was (no fade: it replaces the composer), and its copy takes its place without a flash", async ({ app: page, server }) => {
     await server.backend.server.invoke("settings.update", { undoSend: true }, ctx);
     await page.reload();
     await page.locator("[data-ready]").waitFor();
@@ -293,29 +293,15 @@ test.describe("motion", () => {
     await focusList(page);
     await page.keyboard.press("r");
     await expect(page.getByTestId("compose-body")).toBeFocused();
-    await page.keyboard.type("Sealed and sent");
+    await page.keyboard.type("Sent without a flash");
     await recordArrivals(page);
     await page.keyboard.press("ControlOrMeta+Enter");
     const held = page.getByTestId("held-message");
-    await scenario("on Send: the held message arrives; nothing seals while it can still be taken back", async () => {
+    await scenario("on Send: the held message settles into place, once, without fading (never a blank frame where the composer was)", async () => {
       await expect(held).toBeVisible();
       await frames(page);
       const seen = await arrivals(page);
-      expect(seen.filter((a) => a.id === "arrive" && a.testid === "held-message")).toHaveLength(1);
-      expect(seen.filter((a) => a.id === "seal")).toHaveLength(0);
-      await expect(held.getByTestId("held-seal")).toHaveClass(/scale-x-0/);
-    });
-    await scenario("the window ends: the line draws once across its top and stays while it's sending", async () => {
-      await expect(held.getByTestId("held-status")).toHaveText("Sending…", { timeout: 8000 });
-      await frames(page);
-      expect((await arrivals(page)).filter((a) => a.id === "seal" && a.testid === "held-seal")).toHaveLength(1);
-      const seal = held.getByTestId("held-seal");
-      await expect(seal).toHaveClass(/scale-x-100/);
-      // drawn (its box is measured once the draw is over)
-      await seal.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
-      const [line, card] = [(await seal.boundingBox())!, (await held.boundingBox())!];
-      expect(Math.abs(line.width - card.width)).toBeLessThanOrEqual(1);
-      expect(Math.abs(line.y - card.y)).toBeLessThanOrEqual(2);
+      expect(seen.filter((a) => a.testid === "held-message")).toEqual([expect.objectContaining({ fades: false })]);
     });
     await scenario("recorded again: one animation is counted once (the recorder isn't wrapped twice)", async () => {
       await recordArrivals(page);
@@ -324,31 +310,60 @@ test.describe("motion", () => {
       expect(await arrivals(page)).toHaveLength(1);
       await recordArrivals(page);
     });
-    await scenario("back in the conversation while it's still sending: the line is drawn, and nothing plays again", async () => {
+    await scenario("the window ends: \"Sending…\", and nothing moves", async () => {
+      await expect(held.getByTestId("held-status")).toHaveText("Sending…", { timeout: 8000 });
+      await frames(page);
+      expect(await arrivals(page)).toEqual([]);
+    });
+    await scenario("back in the conversation while it's still sending: nothing plays again", async () => {
       const subject = await page.getByTestId("reader-subject").textContent();
       await rows(page).nth(1).dispatchEvent("mousedown");
       await expect(page.getByTestId("reader-subject")).not.toHaveText(subject!);
       await rows(page).first().dispatchEvent("mousedown");
       await expect(held).toBeVisible();
       await frames(page);
-      await expect(held.getByTestId("held-seal")).toHaveClass(/scale-x-100/);
-      // (recorded afresh above: nothing new, neither the seal nor the card's arrival)
-      const seen = await arrivals(page);
-      expect(seen.filter((a) => a.id === "seal")).toHaveLength(0);
-      expect(seen.filter((a) => a.id === "arrive" && a.testid === "held-message")).toHaveLength(0);
+      expect(await arrivals(page)).toEqual([]);
     });
-    await scenario("its copy takes its place: only the copy's date arrives, once", async () => {
-      const before = (await arrivals(page)).length;
+    await scenario("its copy takes its place: nothing animates, and it never shows at another height (the user's report: it flashed)", async () => {
+      // the conversation's last message's height after every change to the page (an observer runs after each commit,
+      // before the copy's frame can load and measure: a frame-sampler only sometimes catches the jump), and anything
+      // running in it each frame
+      await page.evaluate(() => {
+        const w = window as unknown as { __handoff: { heights: number[]; kinds: string[]; moving: string[]; stop: () => void } };
+        const scroller = document.querySelector("[data-reader-scroller]")!;
+        const last = () => [...scroller.querySelectorAll("article")].at(-1);
+        const note = () => {
+          const el = last();
+          if (!el) return;
+          w.__handoff.heights.push(Math.round(el.getBoundingClientRect().height));
+          w.__handoff.kinds.push(el.getAttribute("data-testid") ?? "");
+        };
+        let on = true;
+        const observer = new MutationObserver(note);
+        observer.observe(scroller, { subtree: true, childList: true, attributes: true });
+        w.__handoff = { heights: [], kinds: [], moving: [], stop: () => { on = false; observer.disconnect(); } };
+        note();
+        const tick = () => {
+          for (const a of last()?.getAnimations({ subtree: true }) ?? []) w.__handoff.moving.push(String(a.id || (a as CSSTransition).transitionProperty || (a as CSSAnimation).animationName));
+          if (on) requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      });
       const { draftId } = (await server.backend.store.scheduled.list())[0]!;
       await server.backend.server.invoke("scheduled.reschedule", { draftId, sendAt: E2E_NOW - 1 }, ctx);
       await expect(held).toHaveCount(0, { timeout: 8000 });
       await frames(page);
-      const after = (await arrivals(page)).slice(before);
-      expect(after).toEqual([expect.objectContaining({ id: "arrive", testid: "message-date" })]);
-      // (the copy's open header carries the date it arrived on)
-      const date = page.getByTestId("message").last().locator("[data-message-date]");
-      await expect(date).toBeVisible();
-      await expect(date).toHaveCSS("opacity", "1");
+      await frames(page);
+      const seen = await page.evaluate(() => {
+        const w = window as unknown as { __handoff: { heights: number[]; kinds: string[]; moving: string[]; stop: () => void } };
+        w.__handoff.stop();
+        return { heights: w.__handoff.heights, kinds: w.__handoff.kinds, moving: w.__handoff.moving };
+      });
+      expect(seen.kinds).toContain("held-message");
+      expect(seen.kinds.at(-1)).toBe("message");
+      expect(new Set(seen.heights)).toEqual(new Set([seen.heights[0]]));
+      expect(seen.moving.filter((m) => m !== "spin")).toEqual([]);
+      expect(await arrivals(page)).toEqual([]);
     });
   });
 
@@ -377,7 +392,7 @@ test.describe("motion", () => {
     expect((await arrivals(page)).filter((a) => a.testid === "held-message")).toEqual([]);
   });
 
-  test("plan 197: Review going on to another category: its name and rows arrive once; answering animates nothing new", async ({ app: page, server }) => {
+  test("plan 197: Review going on to another category: its rows settle in once, without fading; answering animates nothing new", async ({ app: page, server }) => {
     const db = sqlDb(server.backend.store);
     const [a, b] = db.all<{ id: number }>("SELECT id FROM categories ORDER BY id LIMIT 2").map((c) => c.id) as [number, number];
     // suggestions for two categories, on threads in none
@@ -387,7 +402,7 @@ test.describe("motion", () => {
     await page.locator("[data-ready]").waitFor();
     await page.getByTestId("nav-review").click();
     await expect(rows(page).first()).toBeVisible();
-    await scenario("a switch: the category's name and the rows arrive, once", async () => {
+    await scenario("a switch: the rows settle in once, without a fade (they replace the last category's: never a blank frame); the name is simply there", async () => {
       await recordArrivals(page);
       await page.getByTestId("review-category").click();
       const other = page.locator(`[data-testid^="review-category-"]`).filter({ hasNot: page.locator("[data-selected]") }).last();
@@ -395,7 +410,7 @@ test.describe("motion", () => {
       await expect(rows(page).first()).toBeVisible();
       await frames(page);
       const seen = (await arrivals(page)).filter((x) => x.id === "arrive");
-      expect(seen.map((x) => x.testid).sort()).toEqual(["list", "select-value"]);
+      expect(seen).toEqual([expect.objectContaining({ testid: "list", fades: false })]);
     });
     await scenario("answering a suggestion: the row leaves as before, nothing arrives", async () => {
       await recordArrivals(page);
