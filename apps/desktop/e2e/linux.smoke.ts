@@ -13,13 +13,15 @@ import { closePackaged } from "./packaged-fixture";
 const EXECUTABLE = process.env.TERNO_LINUX_APP ?? "/opt/Terno/terno";
 const RESOURCES = join(dirname(EXECUTABLE), "resources");
 let workdir: string;
-let userData: string;
+/** $XDG_CONFIG_HOME for the app and the agents' wrapper: the default profile, as a user gets it ($XDG_CONFIG_HOME/Terno) */
+let config: string;
 let app: ElectronApplication;
 let page: Page;
 
 async function launch(): Promise<void> {
-  const env = { ...process.env, TERNO_DEMO: "1", TERNO_TEST_LANGUAGES: "en-US", TERNO_USER_DATA: userData };
+  const env = { ...process.env, TERNO_DEMO: "1", TERNO_TEST_LANGUAGES: "en-US", XDG_CONFIG_HOME: config };
   delete env.ELECTRON_RUN_AS_NODE;
+  delete env.TERNO_USER_DATA;
   app = await electron.launch({ executablePath: EXECUTABLE, env, chromiumSandbox: true });
   page = await app.firstWindow();
   await page.locator("[data-testid=thread-row]").first().waitFor({ timeout: 60_000 });
@@ -31,7 +33,7 @@ test.beforeAll(async () => {
   test.skip(process.platform !== "linux", "Linux only");
   if (!existsSync(EXECUTABLE)) throw new Error(`${EXECUTABLE} missing: install the .deb (or set TERNO_LINUX_APP)`);
   workdir = mkdtempSync(join(tmpdir(), "terno-linux-smoke-"));
-  userData = join(workdir, "profile");
+  config = join(workdir, "config");
   await launch();
 });
 
@@ -46,6 +48,8 @@ test("boots from app:// with the backend in a utility process, and the demo mail
   expect(types).toContain("Utility");
   expect(await page.locator("[data-testid=thread-row]").count()).toBeGreaterThan(5);
   expect(await page.evaluate(() => window.ternoDesktop?.platform)).toBe("linux");
+  // no TERNO_USER_DATA: the profile is where Electron keeps it on Linux
+  expect(await app.evaluate(({ app: a }) => a.getPath("userData"))).toBe(join(config, "Terno"));
 });
 
 test("the renderer that shows mail is sandboxed: a seccomp filter and a PID namespace of its own", async () => {
@@ -69,18 +73,21 @@ test("the menu is the Linux one, hidden until Alt: no macOS-only items, Quit und
   expect([menu.autoHide, menu.visible]).toEqual([true, false]);
 });
 
-test("checking for updates says Linux updates come from the releases page", async () => {
+test("Help → Check for Updates… says Linux updates come from the releases page", async () => {
   await page.getByTestId("open-settings").click();
-  // the probe runs with the first check (30 s after launch, or now), never at startup
-  await page.getByTestId("updates-check").click();
+  // the probe runs with the first check (30 s after launch, or now), never at startup; the menu item works either way
+  // (Settings' button is disabled once the 30 s check has found Linux unsupported)
+  await app.evaluate(({ Menu, BrowserWindow }) => Menu.getApplicationMenu()!.getMenuItemById("check-for-updates")!.click(undefined, BrowserWindow.getAllWindows()[0]));
   await expect(page.getByTestId("updates-status")).toHaveText("Terno can’t update itself on Linux yet. Download new versions from the releases page.");
   await page.keyboard.press("Escape");
 });
 
-test("the bundled terno-mcp wrapper finds the Linux binary and answers against the running app (plan 183)", async () => {
+test("the bundled terno-mcp wrapper finds the Linux binary and the app's default profile, and answers (plan 183)", async () => {
   const wrapper = join(RESOURCES, "bin/terno-mcp");
-  const env = { ...process.env, TERNO_USER_DATA: userData };
+  // only what an agent's environment has: no TERNO_USER_DATA, so the sidecar finds $XDG_CONFIG_HOME/Terno itself (review)
+  const env = { ...process.env, XDG_CONFIG_HOME: config };
   delete env.ELECTRON_RUN_AS_NODE;
+  delete env.TERNO_USER_DATA;
   const listAccounts = async () => {
     const child = spawn(wrapper, [], { env, stdio: ["pipe", "pipe", "pipe"] });
     const lines: string[] = [];
@@ -104,12 +111,14 @@ test("the bundled terno-mcp wrapper finds the Linux binary and answers against t
   expect(payload.accounts.length).toBeGreaterThan(0);
 });
 
-test("a secret sealed through the keyring opens again after a restart (safeStorage's async API, as the backend uses it)", async () => {
+test("a secret is sealed by the keyring, not the fixed-key fallback, and opens again after a restart (safeStorage's async API, as the backend uses it)", async () => {
   const sealed = await app.evaluate(async ({ safeStorage }) => {
     if (!(await safeStorage.isAsyncEncryptionAvailable())) return null;
     return (await safeStorage.encryptStringAsync("terno-linux-smoke")).toString("base64");
   });
   expect(sealed).not.toBeNull();
+  // Chromium tags the provider: v11 is the Secret Service key, v10 the fallback's constant key (review)
+  expect(Buffer.from(sealed!, "base64").subarray(0, 3).toString("latin1")).toBe("v11");
   await closePackaged(app);
   await launch();
   const opened = await app.evaluate(async ({ safeStorage }, blob) => (await safeStorage.decryptStringAsync(Buffer.from(blob, "base64"))).result, sealed!);
