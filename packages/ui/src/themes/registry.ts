@@ -244,7 +244,8 @@ export function derive(input: Pick<ThemeInput, "mode" | "tokens" | "cats" | "ove
   def("primary-hover", () => {
     for (let t = 0.14; t >= 0.06; t = Math.round((t - 0.01) * 100) / 100) {
       const c = mixOklab(o("primary"), o("primary-foreground"), t);
-      if (contrast(o("primary-foreground"), c, bg) >= 4.5) return c;
+      // (4.55: a hover a hair over 4.5 here came out at 4.49 once rounded to sRGB, where axe reads it: GitHub's light, first run)
+      if (contrast(o("primary-foreground"), c, bg) >= 4.55) return c;
     }
     const pr = o("primary");
     return { ...pr, l: Math.max(0, Math.min(1, pr.l + (o("primary-foreground").l > pr.l ? -0.06 : 0.06))) };
