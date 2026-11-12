@@ -55,7 +55,8 @@ describe("WCAG AA in every built-in theme", () => {
     // plan 163: a fill, the primary's wash, on a composer's three surfaces
     // plan 162 (after ai162-r04): a note for AI's words and its label, on the primary's 5% wash, on the same three
     // plan 181: an AI card's two inks on its two fills (light's, dark's) over the reader, Lumen's card and a dialog
-    expect(CONTRAST_PAIRS).toHaveLength(2 + 4 + 49 + 2 + 4 + 2 + 6 + 4 + 3 + 3 + 4 + 40 + 2 + 5 + 1 + 1 + 1 + 8 + 1 + 2 + 1 + 2 + 2 + 2 + 2 + 3 + 6 + 12);
+    // plan 193: a one-line row's preview on a row's four fills
+    expect(CONTRAST_PAIRS).toHaveLength(2 + 4 + 49 + 2 + 4 + 2 + 6 + 4 + 3 + 3 + 4 + 40 + 2 + 5 + 1 + 1 + 1 + 8 + 1 + 2 + 1 + 2 + 2 + 2 + 2 + 3 + 6 + 12 + 4);
   });
 
   it("reports a failing pair with its ratio", () => {

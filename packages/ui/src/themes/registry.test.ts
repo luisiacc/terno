@@ -88,6 +88,20 @@ describe("plan 07 tokens", () => {
     const t = resolveCustomTheme(custom);
     expect(t.tokens["popover-glass"]).not.toBe(builtinTheme("terno-light")!.tokens["popover-glass"]);
   });
+
+  // plan 193 (Codex review): stepping the preview toward the ink must not sink it on a selection that sits near the ink
+  it("a one-line row's preview reads on every row fill, even where the selection is inverted", () => {
+    const custom = customThemeSchema.parse({ id: "negro", name: "Negro", mode: "light", extends: "terno-light", tokens: { foreground: "#000000", "row-selected": "#000000", "row-selected-foreground": "#ffffff", "muted-foreground": "#757575" } });
+    const t = resolveCustomTheme(custom);
+    // never below the quiet ink it replaces, or AA, on any of a row's fills
+    for (const fill of ["background", "pane", "row-hover", "row-selected"] as const) {
+      const floor = Math.min(4.5, contrast(t.tokens["muted-foreground"], t.tokens[fill], t.tokens.background));
+      expect(contrast(t.tokens["row-preview"], t.tokens[fill], t.tokens.background), fill).toBeGreaterThanOrEqual(floor - 0.01);
+    }
+    // and in the built-in themes it is a step darker than the quiet ink, never lighter
+    const base = builtinTheme("terno-light")!;
+    expect(contrast(base.tokens["row-preview"], base.tokens.pane)).toBeGreaterThan(contrast(base.tokens["muted-foreground"], base.tokens.pane));
+  });
 });
 
 describe("custom themes", () => {

@@ -85,6 +85,8 @@ export const CONTRAST_PAIRS: readonly ContrastPair[] = [
   ...text("muted-foreground", ["menu-highlight"]),
   // plan 158: a reader toolbar's and a reply bar's quiet controls
   ...text("foreground-soft", ["background", "card"]),
+  // plan 193: a one-line row's preview, on every fill a row has
+  ...text("row-preview", ["background", "pane", "row-hover", "row-selected"]),
   // plan 158: a search's match on a row, in the row's ink on a wash of the star's gold; lighter on the cursor and on a checked row, whose fills are deeper
   ...(["pane", "background", "row-hover"] as const).map((over): ContrastPair => ({ fg: "foreground", bg: "star", alpha: 0.25, min: 4.5, overToken: over })),
   { fg: "row-selected-foreground", bg: "star", alpha: 0.14, min: 4.5, overToken: "row-selected" },

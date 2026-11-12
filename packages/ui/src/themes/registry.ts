@@ -211,6 +211,19 @@ export function derive(input: Pick<ThemeInput, "mode" | "tokens" | "cats" | "ove
     }
     return o("foreground");
   });
+  // plan 193 (the owner): a one-line row's preview flows on after its subject, so it reads a step darker than the quiet ink
+  // (toward the row's ink, so never less contrast than muted text), still plainly apart from the subject
+  // (a custom theme's inverted selection can sit nearer the ink: there it steps less, at worst the quiet ink itself)
+  def("row-preview", () => {
+    const fills = (["background", "pane", "row-hover", "row-selected"] as const).map((k) => formatOklch(o(k)));
+    // on each fill, AA, or the quiet ink's own contrast where that is already short of it
+    const floor = fills.map((f) => Math.min(4.5, contrast(o("muted-foreground"), f, bg)));
+    for (let t = 0.3; t > 0; t = Math.round((t - 0.05) * 100) / 100) {
+      const c = mixOklab(o("muted-foreground"), o("foreground"), t);
+      if (fills.every((f, i) => contrast(c, f, bg) >= floor[i]!)) return c;
+    }
+    return o("muted-foreground");
+  });
   // plan 158: the popover stepped toward the ink until the keyboard's place shows, while its text still reads
   def("menu-highlight", () => {
     const pop = formatOklch(opaquePopover());

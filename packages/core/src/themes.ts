@@ -73,6 +73,8 @@ export const THEME_TOKENS = [
   // plan 158: the keyboard's place in a menu or the palette; an enabled control's quieter ink
   "menu-highlight",
   "foreground-soft",
+  // plan 193: a one-line row's preview, after its subject: a step from the quiet ink toward the row's
+  "row-preview",
   // plan 181: the AI colour (an AI card's spinner and task glyph), the accent where it has colour
   "ai",
   "sidebar-glyph",

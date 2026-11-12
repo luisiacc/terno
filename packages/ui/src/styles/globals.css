@@ -140,6 +140,7 @@
   --color-draft-foreground: var(--draft-foreground);
   --color-menu-highlight: var(--menu-highlight);
   --color-foreground-soft: var(--foreground-soft);
+  --color-row-preview: var(--row-preview);
   --color-destructive-ink: var(--destructive-ink);
   --color-success-ink: var(--success-ink);
   --color-sidebar-glyph: var(--sidebar-glyph);
