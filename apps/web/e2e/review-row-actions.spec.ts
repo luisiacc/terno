@@ -63,7 +63,7 @@ const cursor = async (page: Page) => (await page.locator("[data-testid=thread-ro
 
 const row = (page: Page, id: number) => page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`);
 /** A row's answers: buttons laid over it from outside the list (plan 158: an option holds no button) */
-const answer = (page: Page, id: number, which: "accept" | "always") => page.locator(`[data-testid=row-review-${which}][data-thread-id="${id}"]`);
+const answer = (page: Page, id: number, which: "accept" | "always" | "reject") => page.locator(`[data-testid=row-review-${which}][data-thread-id="${id}"]`);
 
 test.describe("Review list: answering from the rows (plan 80)", () => {
   test("another Review list of the same size: its buttons answer its own rows, never the last list's (plan 158)", async ({ app: page, server }) => {
@@ -145,6 +145,80 @@ test.describe("Review list: answering from the rows (plan 80)", () => {
     await expect(row(page, threads[1]!)).toHaveCount(0);
     await expect.poll(() => db.get("SELECT label, source FROM cls_examples WHERE thread_id = ?", threads[1]!)).toEqual({ label: -1, source: "reject" });
     expect(filed(threads[1]!)).toBeNull();
+  });
+
+  test("× says it isn't this category (plan 200): on its pill, from the pointer, from Tab, and in the thread menu; nothing filed, the row leaves", async ({ app: page, server }) => {
+    const { db, threads, filed } = await reviewing(page, server);
+    const rejected = (t: number) => db.get("SELECT label, source FROM cls_examples WHERE thread_id = ?", t);
+    await expect(page.getByRole("button", { name: "Not Facturas", exact: true })).toHaveCount(3);
+    // laid exactly over the row's drawn ×, the pills' height, inside the list's column
+    const drawn = (await row(page, threads[0]!).locator("[data-review-slot] > span").nth(2).boundingBox())!;
+    const button = (await answer(page, threads[0]!, "reject").boundingBox())!;
+    for (const k of ["x", "y", "width", "height"] as const) expect(Math.abs(drawn[k] - button[k])).toBeLessThanOrEqual(1);
+    expect(button.height).toBe(24);
+    const list = (await page.getByTestId("thread-list").boundingBox())!;
+    expect(button.x + button.width).toBeLessThanOrEqual(list.x + list.width);
+    const always = (await answer(page, threads[0]!, "always").boundingBox())!;
+    expect(always.x + always.width).toBeLessThanOrEqual(button.x);
+
+    // a row that isn't the open one: pressed, it leaves, nothing is filed, nothing opens
+    const open = await cursor(page);
+    const target = threads.find((t) => t !== open)!;
+    await answer(page, target, "reject").click();
+    await expect(row(page, target)).toHaveCount(0);
+    await expect.poll(() => rejected(target)).toEqual({ label: -1, source: "reject" });
+    expect(filed(target)).toBeNull();
+    expect(await cursor(page)).toBe(open);
+
+    // the open row's, by Tab past its other two answers; Enter, and the list has focus back
+    const mine = threads.find((t) => t !== target)!;
+    await row(page, mine).click();
+    await focusList(page);
+    for (const which of ["accept", "always", "reject"] as const) {
+      await page.keyboard.press("Tab");
+      await expect(answer(page, mine, which)).toBeFocused();
+    }
+    await page.keyboard.press("Enter");
+    await expect(row(page, mine)).toHaveCount(0);
+    await expect.poll(() => rejected(mine)).toEqual({ label: -1, source: "reject" });
+    await expect(page.getByRole("listbox", { name: "Conversations", exact: true })).toBeFocused();
+
+    // and the thread menu, under its yes
+    const last = threads.find((t) => t !== target && t !== mine)!;
+    await row(page, last).click({ button: "right" });
+    await expect(page.getByTestId("thread-menu").getByTestId("menu-review-reject")).toHaveText("Not Facturas");
+    await page.getByTestId("thread-menu").getByTestId("menu-review-reject").click();
+    await expect(row(page, last)).toHaveCount(0);
+    await expect.poll(() => rejected(last)).toEqual({ label: -1, source: "reject" });
+    expect(filed(last)).toBeNull();
+  });
+
+  test("the switcher lists the categories in the sidebar's order, not by count; the one in view at 0 stays in its own place (plan 200)", async ({ app: page, server }) => {
+    const db = sqlDb(server.backend.store);
+    const order = await page.locator("[data-testid^=nav-category-]:not([data-testid^=nav-category-hidden-])").evaluateAll((els) => els.map((e) => Number(e.getAttribute("data-testid")!.slice("nav-category-".length))));
+    const [a, b, c] = order as [number, number, number];
+    db.run("DELETE FROM cls_decisions WHERE kind = 'suggest'");
+    const free = db.all<{ id: number }>("SELECT t.id FROM threads t WHERE t.in_inbox = 1 AND NOT EXISTS (SELECT 1 FROM thread_categories WHERE thread_id = t.id) ORDER BY t.last_date DESC LIMIT 6").map((t) => t.id);
+    expect(free).toHaveLength(6);
+    // by count: c (3), a (2), b (1); the sidebar's: a, b, c
+    for (const [i, t] of free.entries()) db.run("INSERT INTO cls_decisions (thread_id, category_id, kind, p, explain_json, at) VALUES (?, ?, 'suggest', 0.8, '[]', ?)", t, i < 3 ? c : i < 5 ? a : b, Date.now());
+    await page.reload();
+    await page.locator("[data-ready]").waitFor();
+    await openReview(page, b);
+    await expect(page.getByTestId("thread-row")).toHaveCount(1);
+    const listed = () => page.locator("[data-testid^=review-category-]").evaluateAll((els) => els.map((e) => Number(e.getAttribute("data-testid")!.slice("review-category-".length))));
+    await page.getByTestId("review-category").click();
+    expect(await listed()).toEqual([a, b, c]);
+    await page.keyboard.press("Escape");
+    // its one answered: still a choice, at 0, where it was
+    await page.getByTestId("thread-row").first().dispatchEvent("mousedown");
+    await focusList(page);
+    await page.keyboard.press("n");
+    await expect(page.getByTestId("thread-row")).toHaveCount(0);
+    await page.getByTestId("review-category").click();
+    expect(await listed()).toEqual([a, b, c]);
+    await expect(page.getByTestId(`review-category-${b}`)).toContainText("0");
+    await page.keyboard.press("Escape");
   });
 
   test("Always ▾ offers the same subject first, then all from the sender, counted; Escape gives the list back", async ({ app: page, server }) => {

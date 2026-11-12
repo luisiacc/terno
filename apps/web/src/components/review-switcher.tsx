@@ -27,8 +27,9 @@ export function ReviewSwitcher() {
   );
   const current = categories.find((c) => c.id === review);
   if (!current) return null;
-  // the one in view stays a choice at 0 too (its last one answered, Review stays on it: an Undo brings the rows back here)
-  const choices: Pending[] = pending.some((p) => p.category.id === current.id) ? pending : [{ category: current, count: 0 }, ...pending];
+  // the one in view stays a choice at 0 too, in its own place (its last one answered, Review stays on it: an Undo brings
+  // the rows back here); all in the sidebar's order (plan 200)
+  const choices: Pending[] = pending.some((p) => p.category.id === current.id) ? pending : categories.flatMap((category) => (category.id === current.id ? [{ category, count: 0 }] : pending.filter((p) => p.category.id === category.id)));
   const items = choices.map(({ category, count }) => ({ value: String(category.id), label: `${category.name} ${formatNumber(count)}` }));
   return (
     <div data-testid="review-bar" className="type-list-subtitle flex min-w-0 items-center gap-2 text-muted-foreground tabular">

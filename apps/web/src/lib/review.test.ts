@@ -13,7 +13,7 @@ vi.hoisted(() => {
 });
 vi.mock("~/rpc/connection", () => ({ client: { call: () => new Promise(() => {}) } }));
 
-const { enterReview, leaveReview, reviewArrival, reviewFrom, reviewTotals, switchReview, takeReviewArrival } = await import("./review");
+const { enterReview, leaveReview, mostWaiting, nextToSort, reviewArrival, reviewFrom, reviewTotals, switchReview, takeReviewArrival } = await import("./review");
 const { getApp, navigate, setApp, EMPTY_COUNTS } = await import("~/state/app");
 const { useList } = await import("~/state/list");
 
@@ -30,14 +30,24 @@ beforeEach(() => {
 });
 
 describe("reviewTotals", () => {
-  it("sums every category's suggestions and lists those with any, the most first", () => {
+  it("sums every category's suggestions and lists those with any, in the sidebar's order (plan 200)", () => {
     const { total, pending } = reviewTotals(CATS, { 1: 4, 2: 0, 3: 31 });
     expect(total).toBe(35);
-    expect(pending.map((p) => [p.category.name, p.count])).toEqual([["Lecturas", 31], ["Facturas", 4]]);
-  });
-  it("keeps the sidebar's order between equal counts, and has none with nothing to sort", () => {
-    expect(reviewTotals(CATS, { 1: 2, 2: 2 }).pending.map((p) => p.category.id)).toEqual([1, 2]);
+    expect(pending.map((p) => [p.category.name, p.count])).toEqual([["Facturas", 4], ["Lecturas", 31]]);
+    // reordered in the sidebar (ids no longer ascending): its order, as it is now
+    expect(reviewTotals([CATS[2]!, CATS[0]!, CATS[1]!], { 1: 4, 2: 14, 3: 31 }).pending.map((p) => p.category.id)).toEqual([3, 1, 2]);
     expect(reviewTotals(CATS, {})).toEqual({ total: 0, pending: [] });
+  });
+
+  it("Review starts on the one with the most waiting, the first in the sidebar's order when level; none with nothing", () => {
+    expect(mostWaiting(reviewTotals(CATS, { 1: 4, 2: 14, 3: 31 }).pending)?.category.id).toBe(3);
+    expect(mostWaiting(reviewTotals([CATS[1]!, CATS[0]!, CATS[2]!], { 1: 9, 2: 9, 3: 1 }).pending)?.category.id).toBe(2);
+    expect(mostWaiting([])).toBeNull();
+  });
+
+  it("an emptied Review goes on to the most waiting of the others, though its own count hasn't caught up yet", () => {
+    expect(nextToSort(CATS, { 1: 4, 2: 14, 3: 31 }, 3)?.id).toBe(2);
+    expect(nextToSort(CATS, { 3: 31 }, 3)).toBeNull();
   });
 });
 

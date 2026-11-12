@@ -1651,6 +1651,7 @@ const en = {
   // plan 80: answering suggestions from the Review list's rows
   "review.accept": "Add to {category}",
   "review.similar": "Add similar",
+  "review.reject": "Not {category}",
   "review.similar.title": "Add mail like this to {category}, now and in the future",
   "review.always": "Always add to {category}…",
   "review.always.header": "Add to {category}, now and in the future",

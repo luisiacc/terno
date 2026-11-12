@@ -24,9 +24,15 @@ export function reviewTotals(categories: readonly Category[], suggestions: Reado
     total += count;
     pending.push({ category, count });
   }
-  // stable: equal counts keep the sidebar's order
-  pending.sort((a, b) => b.count - a.count);
+  // plan 200: in the sidebar's order (the categories' own, as it draws them): where the user looks for one
   return { total, pending };
+}
+
+/** The one with the most waiting, the first of them in the sidebar's order when they're level (where Review starts) */
+export function mostWaiting(pending: readonly Pending[]): Pending | null {
+  let most: Pending | null = null;
+  for (const p of pending) if (!most || p.count > most.count) most = p;
+  return most;
 }
 
 /**
@@ -34,7 +40,7 @@ export function reviewTotals(categories: readonly Category[], suggestions: Reado
  * own count may not have caught up yet), or none.
  */
 export function nextToSort(categories: readonly Category[], suggestions: Readonly<Record<number, number>>, current: number): Category | null {
-  return reviewTotals(categories, suggestions).pending.find((p) => p.category.id !== current)?.category ?? null;
+  return mostWaiting(reviewTotals(categories, suggestions).pending.filter((p) => p.category.id !== current))?.category ?? null;
 }
 
 /** Where Review was entered from: a mailbox, an account's folder, a list of its own or a search. */

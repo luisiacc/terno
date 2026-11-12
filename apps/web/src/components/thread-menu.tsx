@@ -47,6 +47,7 @@ import {
   Tag,
   Trash2,
   Users,
+  X,
 } from "@terno/ui/icons";
 import { t } from "@terno/i18n";
 import { useCallback, useEffect, useState, type ReactElement, type ReactNode } from "react";
@@ -593,6 +594,8 @@ function ReviewItems({ thread }: { thread: ThreadSummary }) {
   return (
     <>
       <Item icon={<Check />} label={t("review.accept", { category: category.name })} testId="menu-review-accept" onClick={() => void answerReview(thread.id, category.id, true)} />
+      {/* plan 200: and no, as the row's × and n say it */}
+      <Item icon={<X />} label={t("review.reject", { category: category.name })} testId="menu-review-reject" onClick={() => void answerReview(thread.id, category.id, false)} />
       <ContextMenuSub>
         <ContextMenuSubTrigger data-testid="menu-review-always">
           <Repeat />

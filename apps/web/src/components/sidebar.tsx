@@ -19,7 +19,7 @@ import { createCategory as createNamedCategory } from "~/lib/new-category";
 import { offerTip, usePendingTip } from "~/lib/tips";
 import { ACCOUNT_VIEWS, SOLO_VIEWS, listedByAccount, useFolderRows, pressAccount, useOpenAccount, type AccountPress, type FolderRow } from "~/lib/account-folders";
 import { renderProbe } from "~/lib/render-probe";
-import { enterReview, reviewTotals } from "~/lib/review";
+import { enterReview, mostWaiting, reviewTotals } from "~/lib/review";
 import type { DropId } from "~/lib/drag";
 import { actionRef, parseActionRef, takesDrop } from "~/lib/action-drop";
 import { useDropState } from "~/state/drag";
@@ -373,7 +373,7 @@ function ComposeRow() {
  */
 function ReviewRow({ categories, suggestions, reviewing }: { categories: readonly Category[]; suggestions: Readonly<Record<number, number>>; reviewing: boolean }) {
   const { total, pending } = reviewTotals(categories, suggestions);
-  const most = pending[0];
+  const most = mostWaiting(pending);
   // shown with something to sort, and while you're sorting (its last one answered, it's still where you are)
   if (!most && !reviewing) return null;
   const to = most?.category.id;

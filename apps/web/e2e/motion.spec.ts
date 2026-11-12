@@ -412,9 +412,12 @@ test.describe("motion", () => {
     await expect(rows(page).first()).toBeVisible();
     await scenario("a switch: the rows settle in once, without a fade (they replace the last category's: never a blank frame); the name is simply there", async () => {
       await recordArrivals(page);
+      const before = (await page.getByTestId("review-category").textContent())!;
       await page.getByTestId("review-category").click();
-      const other = page.locator(`[data-testid^="review-category-"]`).filter({ hasNot: page.locator("[data-selected]") }).last();
+      // (the other one by its id: in the sidebar's order, plan 200, the one in view may be either end)
+      const other = page.locator(`[data-testid^="review-category-"]:not([data-selected])`).first();
       await other.click();
+      await expect(page.getByTestId("review-category")).not.toContainText(before);
       await expect(rows(page).first()).toBeVisible();
       await frames(page);
       const seen = (await arrivals(page)).filter((x) => x.id === "arrive");

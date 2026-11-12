@@ -1,7 +1,8 @@
 import type { AlwaysScope } from "@terno/core";
+import { CloseButton, closeButtonVariants } from "@terno/ui/components/close-button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel } from "@terno/ui/components/dropdown-menu";
 import { t } from "@terno/i18n";
-import { Check, ChevronDown, MessageSquareText, UserRound } from "@terno/ui/icons";
+import { Check, ChevronDown, MessageSquareText, UserRound, X } from "@terno/ui/icons";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { create } from "zustand";
 import { answerReview, fileAlways, filterNameOf } from "~/lib/categorize";
@@ -26,11 +27,14 @@ const ALWAYS = "shrink-0 border border-border bg-background text-foreground";
 // gated as focus-visible: is)
 const ACCEPT_HOT = "data-hover:border-primary/40 data-hover:bg-[color-mix(in_oklab,var(--accent)_85%,var(--primary))]";
 const ALWAYS_HOT = "data-hover:bg-muted";
+// plan 200: "not this category", BoardUI's close button at the pills' height, its hover as the button's own (`hover:`)
+const REJECT = closeButtonVariants({ size: "sm" });
+const REJECT_HOT = "data-hover:bg-foreground/12 data-hover:text-foreground";
 const RING = "[:root[data-focus-ring]_&[data-focus]]:ring-2 [:root[data-focus-ring]_&[data-focus]]:ring-ring";
 
 /**
- * Plan 80: a Review row's two answers, in words: "Add to C" (it belongs) and "Add similar ▾" (the same subject or
- * everything from the sender, now and in the future), in place of the row's preview line. A row is an option, which can't
+ * Plan 80: a Review row's answers, in place of the row's preview line: "Add to C" (it belongs), "Add similar ▾" (the same
+ * subject or everything from the sender, now and in the future) and, plan 200, × (not C: `n`), quieter than both. A row is an option, which can't
  * hold a button, so the row draws them (this, hidden from assistive tech) and the buttons themselves are `ReviewButtons`,
  * laid over it from outside the list (plan 158). Drawn here, they scroll with their row in the very frame it moves: a
  * layer outside the scroller is placed again only after the scroll, so what it drew trailed the rows. y / n and the
@@ -47,6 +51,9 @@ export function ReviewControls({ threadId, category }: { threadId: number; categ
         {t("review.similar")}
         <ChevronDown className="size-3.5" />
       </span>
+      <span className={`${REJECT} ${REJECT_HOT} ${RING}`}>
+        <X />
+      </span>
     </span>
   );
 }
@@ -56,7 +63,9 @@ const CLEAR = "pointer-events-auto absolute opacity-0 outline-none";
 
 type Mark = { id: number; part: number };
 type Box = { left: number; top: number; width: number; height: number };
-type Spot = { id: number; accept: Box; always: Box };
+type Spot = { id: number; accept: Box; always: Box; reject: Box };
+/** The slot's children, by position: what a mark lights and a press is placed by */
+const PART = { accept: 0, always: 1, reject: 2 } as const;
 
 const boxOf = (el: Element, base: DOMRect): Box => {
   const r = el.getBoundingClientRect();
@@ -112,8 +121,8 @@ export function ReviewButtons({ scroller, tick, show }: { scroller: React.RefObj
     const clip = boxOf(list, base);
     const at = list.getBoundingClientRect();
     const spots = [...list.querySelectorAll<HTMLElement>("[data-review-slot]")].flatMap((slot) => {
-      const [accept, always] = slot.children;
-      return accept && always ? [{ id: Number(slot.dataset.reviewSlot), accept: boxOf(accept, at), always: boxOf(always, at) }] : [];
+      const [accept, always, reject] = slot.children;
+      return accept && always && reject ? [{ id: Number(slot.dataset.reviewSlot), accept: boxOf(accept, at), always: boxOf(always, at), reject: boxOf(reject, at) }] : [];
     });
     const next = { clip, spots };
     setLaid((was) => (JSON.stringify(was) === JSON.stringify(next) ? was : next));
@@ -152,9 +161,9 @@ export function ReviewButtons({ scroller, tick, show }: { scroller: React.RefObj
               title={t("review.accept", { category: name })}
               // a press doesn't take focus from the list (j / k go on from there)
               onMouseDown={(e) => e.preventDefault()}
-              {...states(spot.id, 0)}
+              {...states(spot.id, PART.accept)}
               onClick={(e) => {
-                const id = pressed(e, spot.id, 0);
+                const id = pressed(e, spot.id, PART.accept);
                 if (id === null) return;
                 answered(e);
                 void answerReview(id, category.id, true);
@@ -173,9 +182,9 @@ export function ReviewButtons({ scroller, tick, show }: { scroller: React.RefObj
               aria-haspopup="menu"
               title={t("review.similar.title", { category: name })}
               onMouseDown={(e) => e.preventDefault()}
-              {...states(spot.id, 1)}
+              {...states(spot.id, PART.always)}
               onClick={(e) => {
-                const id = pressed(e, spot.id, 1);
+                const id = pressed(e, spot.id, PART.always);
                 const anchor = id === spot.id ? e.currentTarget : layer.current?.querySelector<HTMLElement>(`[data-testid=row-review-always][data-thread-id="${id}"]`);
                 if (id !== null && anchor) useAlwaysMenu.setState({ threadId: id, anchor });
               }}
@@ -185,6 +194,24 @@ export function ReviewButtons({ scroller, tick, show }: { scroller: React.RefObj
               {t("review.similar")}
               <ChevronDown aria-hidden className="size-3.5" />
             </button>
+            <CloseButton
+              size="sm"
+              data-testid="row-review-reject"
+              data-thread-id={spot.id}
+              tabIndex={spot.id === open ? 0 : -1}
+              label={t("review.reject", { category: name })}
+              title={t("review.reject", { category: name })}
+              onMouseDown={(e) => e.preventDefault()}
+              {...states(spot.id, PART.reject)}
+              onClick={(e) => {
+                const id = pressed(e, spot.id, PART.reject);
+                if (id === null) return;
+                answered(e);
+                void answerReview(id, category.id, false);
+              }}
+              className={CLEAR}
+              style={at(spot.reject)}
+            />
           </div>
         ))}
     </div>

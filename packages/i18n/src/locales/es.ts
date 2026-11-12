@@ -1639,6 +1639,7 @@ const es = {
   "category.removed": { one: "# quitada de {category}", other: "# quitadas de {category}" },
   "category.undone": "Deshecho: {category}",
   "review.accept": "Añadir a {category}",
+  "review.reject": "No es {category}",
   "review.similar": "Añadir similares",
   "review.similar.title": "Añadir a {category} el correo como este, ahora y en el futuro",
   "review.always": "Añadir siempre a {category}…",

@@ -27,7 +27,7 @@ it("pixels as they are, lines and pages in the list's own measure", async () => 
   await act(async () => root.render(
     <div>
       <div ref={scroller} style={{ lineHeight: "20px" }}>
-        <span data-review-slot="7"><span /><span /></span>
+        <span data-review-slot="7"><span /><span /><span /></span>
       </div>
       <ReviewButtons scroller={scroller} tick="a" />
     </div>,
@@ -63,16 +63,21 @@ it("the row draws the pills; its buttons are clear over them, and a hovered or f
   const slot = host.querySelector<HTMLElement>("[data-review-slot='7']")!;
   // drawn in the row, which scrolls natively: a layer placed after the scroll trails it
   expect(slot.className).not.toMatch(/\binvisible\b/);
-  const [accept, always] = ["accept", "always"].map((w) => host.querySelector<HTMLElement>(`[data-testid=row-review-${w}]`)!);
-  for (const b of [accept!, always!]) expect(b.className).toMatch(/\bopacity-0\b/);
+  const [accept, always, reject] = ["accept", "always", "reject"].map((w) => host.querySelector<HTMLElement>(`[data-testid=row-review-${w}]`)!);
+  for (const b of [accept!, always!, reject!]) expect(b.className).toMatch(/\bopacity-0\b/);
+  // plan 200: the ×, named for what it says (never the close button's own "Close")
+  expect(reject!.getAttribute("aria-label")).toBe("Not Facturas");
   const pills = [...slot.children] as HTMLElement[];
   // (from outside the window: React makes enter / leave of an over / out whose other end it doesn't hold)
   const move = (type: string, el: HTMLElement) => act(() => void el.dispatchEvent(new MouseEvent(type, { bubbles: true, relatedTarget: null })));
   await move("pointerover", always!);
-  expect(pills.map((p) => p.hasAttribute("data-hover"))).toEqual([false, true]);
+  expect(pills.map((p) => p.hasAttribute("data-hover"))).toEqual([false, true, false]);
   await move("pointerout", always!);
+  await move("pointerover", reject!);
+  expect(pills.map((p) => p.hasAttribute("data-hover"))).toEqual([false, false, true]);
+  await move("pointerout", reject!);
   await move("pointerover", accept!);
-  expect(pills.map((p) => p.hasAttribute("data-hover"))).toEqual([true, false]);
+  expect(pills.map((p) => p.hasAttribute("data-hover"))).toEqual([true, false, false]);
   // its row drawn again (scrolled away and back): the hover comes back with it
   slot.firstElementChild!.removeAttribute("data-hover");
   await act(async () => root.render(
@@ -85,14 +90,16 @@ it("the row draws the pills; its buttons are clear over them, and a hovered or f
   ));
   expect(slot.firstElementChild!.hasAttribute("data-hover")).toBe(true);
   await move("pointerout", accept!);
-  expect(pills.map((p) => p.hasAttribute("data-hover"))).toEqual([false, false]);
+  expect(pills.map((p) => p.hasAttribute("data-hover"))).toEqual([false, false, false]);
   // focused (by Tab): the pill rings, the button stays clear (shown, it would trail its row on a scroll)
+  await act(() => reject!.focus());
+  expect(pills.map((p) => p.hasAttribute("data-focus"))).toEqual([false, false, true]);
   await act(() => always!.focus());
-  expect(pills.map((p) => p.hasAttribute("data-focus"))).toEqual([false, true]);
+  expect(pills.map((p) => p.hasAttribute("data-focus"))).toEqual([false, true, false]);
   expect(always!.className).toMatch(/\bopacity-0\b/);
   expect(always!.className).not.toMatch(/focus-(visible|reveal):/);
   await act(() => always!.blur());
-  expect(pills.map((p) => p.hasAttribute("data-focus"))).toEqual([false, false]);
+  expect(pills.map((p) => p.hasAttribute("data-focus"))).toEqual([false, false, false]);
   await act(async () => root.unmount());
   host.remove();
 });
@@ -130,6 +137,12 @@ it("a press answers the row whose pill is under the pointer, though its button h
   expect(show).toHaveBeenCalledWith(7);
   await act(() => void accept.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 0 })));
   expect(answerReview).toHaveBeenLastCalledWith(7, 4, true);
+  // plan 200: the × the same way, by its own pill: no
+  pill(7, 2).getBoundingClientRect = () => rect(-60);
+  pill(8, 2).getBoundingClientRect = () => rect(0);
+  const reject = host.querySelector<HTMLElement>("[data-testid=row-review-reject][data-thread-id='7']")!;
+  await act(() => void reject.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1, clientX: 50, clientY: 12 })));
+  expect(answerReview).toHaveBeenLastCalledWith(8, 4, false);
   await act(async () => root.unmount());
   host.remove();
 });
