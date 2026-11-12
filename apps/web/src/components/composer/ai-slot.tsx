@@ -95,7 +95,11 @@ export function AiDraftButton({ draftKey, threadId, disabled, testId }: { draftK
               alone, which says more; narrower still the bordered glyph alone: never a foot that wraps */}
           <Sparkles aria-hidden className="@min-[27rem]/foot:@max-[31rem]/foot:hidden" />
           <span aria-hidden className="@max-[27rem]/foot:hidden" data-testid="compose-ai-word">{gaps ? t("aiDraft.ready.fill") : t("aiDraft.ready.write")}</span>
-          <Shortcut keys="mod+j" className="ml-0.5 @max-[36rem]/foot:hidden" />
+          {/* (a picture of the key, already in aria-keyshortcuts: in the name it broke "the visible words are in the name",
+              axe's label-content-name-mismatch, whenever the foot was wide enough to show it) */}
+          <span aria-hidden className="contents">
+            <Shortcut keys="mod+j" className="ml-0.5 @max-[36rem]/foot:hidden" />
+          </span>
         </TooltipTrigger>
         <TooltipContent className="flex max-w-72 items-center gap-2">
           {gaps ? t("aiDraft.fillIn.tip", { count: gaps }) : t("aiDraft.generate.tip")}
