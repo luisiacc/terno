@@ -53,6 +53,7 @@ import { fitStrip } from "~/lib/fit-strip";
 import { listAnchor, listArrival } from "~/state/list";
 import { armReflow, arrive, arriveRows, motionNow } from "~/lib/flash";
 import { takeReviewArrival } from "~/lib/review";
+import { EmptyState } from "./empty-state";
 import { SelectionBar } from "./selection-bar";
 import ActionPreviewHeader from "./action-preview-header";
 import { renderProbe } from "~/lib/render-probe";
@@ -1045,7 +1046,8 @@ function leaveEmptyList() {
   );
 }
 
-function EmptyState() {
+/** Which empty state the list shows (search answers under its field; the rest are centered: EmptyState, plan 198) */
+function ListEmptyState() {
   const query = useApp((s) => s.query);
   const view = useApp((s) => s.view);
   const reminders = useApp((s) => s.reminders);
@@ -1056,37 +1058,15 @@ function EmptyState() {
   const ruleOnly = useActionPreview((s) => s.preview !== null && savesRuleOnly(s.preview));
   const coverage = useCoverageNote();
   if (previewing && ruleOnly)
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-1 px-8 text-center" data-testid="list-empty">
-        <p className="text-lg font-semibold tracking-tight">{t("action.rule.emptyTitle")}</p>
-        <p className="text-xs text-muted-foreground">{t("action.rule.emptyBody")}</p>
-      </div>
-    );
+    return <EmptyState title={t("action.rule.emptyTitle")} hint={t("action.rule.emptyBody")} />;
   // plans 159, 192: Review's last one answered: it stays (Undo brings the rows back here), and goes on
   if (review) return <ReviewEmpty key={review.id} category={review} />;
   if (today)
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-1 px-8 text-center" data-testid="list-empty">
-        <Sun className="mb-2 size-7 text-muted-foreground" aria-hidden />
-        <p className="text-lg font-semibold tracking-tight">{t("today.empty")}</p>
-      </div>
-    );
+    return <EmptyState icon={<Sun className="mb-2 size-7 text-muted-foreground" aria-hidden />} title={t("today.empty")} />;
   if (followups)
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-1 px-8 text-center" data-testid="list-empty">
-        <ListChecks className="mb-2 size-7 text-muted-foreground" aria-hidden />
-        <p className="text-lg font-semibold tracking-tight">{t("followups.empty")}</p>
-        <p className="text-xs text-muted-foreground">{t("followups.emptyHint")}</p>
-      </div>
-    );
+    return <EmptyState icon={<ListChecks className="mb-2 size-7 text-muted-foreground" aria-hidden />} title={t("followups.empty")} hint={t("followups.emptyHint")} />;
   if (reminders)
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-1 px-8 text-center" data-testid="list-empty">
-        <AlarmClock className="mb-2 size-7 text-muted-foreground" aria-hidden />
-        <p className="text-lg font-semibold tracking-tight">{t("remind.empty")}</p>
-        <p className="text-xs text-muted-foreground">{t("remind.emptyHint")}</p>
-      </div>
-    );
+    return <EmptyState icon={<AlarmClock className="mb-2 size-7 text-muted-foreground" aria-hidden />} title={t("remind.empty")} hint={t("remind.emptyHint")} />;
   // plan 158: a search that found nothing answers under its field, on the rows' line: what it understands (a row puts the
   // words to use), and what it looks through. Nothing floats in the reader
   if (query)
@@ -1099,13 +1079,7 @@ function EmptyState() {
         {coverage && <CoverageNote className="hairline-t mx-2 mt-2 pt-2" />}
       </div>
     );
-  return (
-    <div className="flex h-full flex-col items-center justify-center gap-1 px-8 text-center" data-testid="list-empty">
-      <Inbox className="mb-2 size-7 text-muted-foreground" aria-hidden />
-      <p className="text-lg font-semibold tracking-tight">{view === "inbox" ? t("list.empty.inboxTitle") : t("list.empty.title")}</p>
-      <p className="text-xs text-muted-foreground">{view === "inbox" ? t("list.empty.inboxBody") : t("list.empty.body")}</p>
-    </div>
-  );
+  return <EmptyState icon={<Inbox className="mb-2 size-7 text-muted-foreground" aria-hidden />} title={view === "inbox" ? t("list.empty.inboxTitle") : t("list.empty.title")} hint={view === "inbox" ? t("list.empty.inboxBody") : t("list.empty.body")} />;
 }
 
 export function ThreadList() {
@@ -1461,7 +1435,7 @@ export function ThreadList() {
             ))}
           </div>
         ) : items.length === 0 ? (
-          !filter && <EmptyState />
+          !filter && <ListEmptyState />
         ) : (
           <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
             {/* plans 87, 179: each of the Inbox's headings above its first row */}

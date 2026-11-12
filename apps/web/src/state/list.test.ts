@@ -247,3 +247,19 @@ it("plan 195: what arrived is the rows above every row that was there, 1 to 3, n
   patchRows([9], () => null);
   expect(arrivedOnTop(before, rows(8, 5))).toEqual([]);
 });
+
+it("plan 198: the list on screen going from rows to none is said once, by its key; another list never", async () => {
+  const { takeEmptied } = await import("~/state/list");
+  useList.setState({ key: "k1", itemsKey: "k1", items: rows(1, 2), index: new Map([[1, 0], [2, 1]]) });
+  patchRows([1, 2], () => null);
+  expect(takeEmptied("k2")).toBe(false);
+  expect(takeEmptied("k1")).toBe(true);
+  expect(takeEmptied("k1")).toBe(false);
+  // emptied, then another list before its empty state showed: spent
+  useList.setState({ items: rows(1, 1), index: new Map([[1, 0]]) });
+  patchRows([1], () => null);
+  useList.setState({ key: "k2", itemsKey: "k2", items: [], index: new Map() });
+  expect(takeEmptied("k2")).toBe(false);
+  useList.setState({ key: "k1", itemsKey: "k1" });
+  expect(takeEmptied("k1")).toBe(false);
+});

@@ -617,6 +617,23 @@ export function patchRows(ids: readonly number[], patch: (t: ThreadSummary) => T
   if (removed) pruneSelection(index);
 }
 
+/**
+ * Plan 198: the list on screen went from rows to none (its last rows left: an archive, Review's last answer, a cleared
+ * reminder, another window's change), by its key; another list, or the same one left and come back to, isn't. An
+ * object's property, not a module let (the React Compiler)
+ */
+const emptied: { key: string | null } = { key: null };
+useList.subscribe((s, prev) => {
+  if (s.itemsKey !== prev.itemsKey) emptied.key = null;
+  else if (s.itemsKey && prev.items.length > 0 && s.items.length === 0) emptied.key = s.itemsKey;
+});
+/** Did this list just empty? True once (its empty state arrives), then spent */
+export function takeEmptied(key: string | null): boolean {
+  if (key === null || emptied.key !== key) return false;
+  emptied.key = null;
+  return true;
+}
+
 /** plan 107: a rename being followed (an object property: memory note react-compiler-module-let) */
 export const followedRename: { from: string | null; to: string | null } = { from: null, to: null };
 

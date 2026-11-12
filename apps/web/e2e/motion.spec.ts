@@ -361,6 +361,35 @@ test.describe("motion", () => {
     });
   });
 
+  test("plan 198: a list emptied by its last row leaving: its empty state arrives; one navigated to is simply there", async ({ app: page, server }) => {
+    const db = sqlDb(server.backend.store);
+    const thread = db.get<{ id: number }>("SELECT id FROM threads WHERE in_inbox = 1 ORDER BY last_date DESC LIMIT 1")!.id;
+    const category = await server.backend.store.categories.create("Una sola", "rose", { showInInbox: true });
+    await server.backend.server.invoke("categories.addThreads", { categoryId: category.id, threadIds: [thread], source: "picker" }, ctx);
+    await page.reload();
+    await page.locator("[data-ready]").waitFor();
+    await page.getByTestId(`nav-category-${category.id}`).click();
+    await expect(rows(page)).toHaveCount(1);
+    await scenario("trashing its one row (archived mail stays in its category): the row leaves, the empty state arrives with the spring", async () => {
+      await rows(page).first().dispatchEvent("mousedown");
+      await recordArrivals(page);
+      await focusList(page);
+      await page.keyboard.press("#");
+      await expect(page.getByTestId("list-empty")).toBeVisible();
+      await frames(page);
+      expect((await arrivals(page)).filter((x) => x.id === "arrive")).toEqual([expect.objectContaining({ testid: "list-empty" })]);
+    });
+    await scenario("away and back to it, still empty: nothing arrives", async () => {
+      await page.getByTestId("nav-inbox").click();
+      await expect(rows(page).first()).toBeVisible();
+      await recordArrivals(page);
+      await page.getByTestId(`nav-category-${category.id}`).click();
+      await expect(page.getByTestId("list-empty")).toBeVisible();
+      await frames(page);
+      expect(await arrivals(page)).toEqual([]);
+    });
+  });
+
   test("holding j never animates", async ({ app: page }) => {
     await focusList(page);
     const first = await rows(page).first().getAttribute("data-thread-id");

@@ -8,6 +8,7 @@ import { useReviewWork } from "~/lib/categorize";
 import { useCovered } from "~/lib/covered";
 import { focusQuietly, quietFocus } from "~/lib/quiet-focus";
 import { nextToSort, reviewToInbox, switchReview } from "~/lib/review";
+import { EmptyState } from "./empty-state";
 import { dockInUse, useSnack } from "~/lib/snack";
 import { useApp } from "~/state/app";
 import { useList } from "~/state/list";
@@ -27,12 +28,9 @@ const actionIn = (slot: HTMLElement | null) => slot?.querySelector<HTMLElement>(
 export function ReviewEmpty({ category }: { category: Category }) {
   const next = useApp((s) => nextToSort(s.categories, s.counts.categorySuggestions, category.id));
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-1 px-8 text-center" data-testid="list-empty">
-      <Tags className="mb-2 size-7 text-muted-foreground" aria-hidden />
-      <p className="text-lg font-semibold tracking-tight">{t("review.empty.title")}</p>
-      <p className="text-xs text-muted-foreground">{next ? t("review.empty.more", { category: category.name }) : t("review.empty.none")}</p>
+    <EmptyState icon={<Tags className="mb-2 size-7 text-muted-foreground" aria-hidden />} title={t("review.empty.title")} hint={next ? t("review.empty.more", { category: category.name }) : t("review.empty.none")}>
       <Action next={next} />
-    </div>
+    </EmptyState>
   );
 }
 
