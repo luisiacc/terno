@@ -63,8 +63,13 @@ it("plan 123: an older export's Google client ID is ignored on import", async ()
   expect(settings.density).toBe("compact");
   // plan 187: an export carries the preview's lines
   expect(settings.previewLines).toBe(2);
+  // plan 188: an older export has no Undo window or single-key switch: the defaults stay
+  expect(settings).toMatchObject({ undoSend: true, undoSendSeconds: 5, characterKeys: true });
   expect(settings).not.toHaveProperty("gmailClientId");
   expect(await backend.store.settings.get<Record<string, unknown>>("app", {})).not.toHaveProperty("gmailClientId");
+  // plan 188: Undo send comes back whole (off and its window), and so does the single-key switch
+  await client.call("app.import", { data: { format: "terno-export", version: 2, settings: { undoSend: false, undoSendSeconds: 20, characterKeys: false } } as never });
+  expect((await client.call("app.bootstrap", {})).settings).toMatchObject({ undoSend: false, undoSendSeconds: 20, characterKeys: false });
 });
 
 it("exports exact draft attachment bytes, imports with fresh account-owned IDs, and preserves byte-distinct drafts on repeated import", async () => {

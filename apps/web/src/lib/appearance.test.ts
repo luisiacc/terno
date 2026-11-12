@@ -50,6 +50,8 @@ const SERVER: AppSettings = {
   followups: { enabled: false, enabledAt: null, nudgeAfterDays: 5, scanAnswered: false },
   composeSuggestions: true,
       undoSend: true,
+      undoSendSeconds: 5,
+      characterKeys: true,
       sendSound: true,
   senderIcons: false,
   googlePhotos: {}, googlePhotosPending: [], favoriteFolders: [],

@@ -1,4 +1,4 @@
-import { UNDO_SEND_MS, type AttachmentInfo, type MessageDetail } from "@terno/core";
+import { type AttachmentInfo, type MessageDetail } from "@terno/core";
 import { t } from "@terno/i18n";
 import { Spinner } from "@terno/ui/components/spinner";
 import { cn } from "@terno/ui/lib/utils";
@@ -6,6 +6,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { cardLeaving, copyShown, firstReveal, heldIn, undoHeld, useHeldCard, useHeldSends, type HeldSend } from "~/lib/held-sends";
 import { revealHeld } from "~/lib/reader-scroll";
 import { useSnack, zHolds } from "~/lib/snack";
+import { announce } from "~/lib/announce";
 import { setApp, useApp } from "~/state/app";
 import { PANE_TITLE, PANE_TITLE_AFTER, PANE_TITLE_TOP, READING_COLUMN } from "~/lib/pane-lines";
 import { ReaderAttachments } from "./attachments";
@@ -34,7 +35,15 @@ export function HeldMessage({ held, icons }: { held: HeldSend; icons: boolean })
   const files = useMemo<AttachmentInfo[]>(() => held.attachments.map((a, i) => ({ id: -(i + 1), assetId: a.assetId, contentId: a.contentId ?? null, filename: a.filename, mime: a.mime, size: a.size })), [held.attachments]);
   // the name on mail sent from it (From:), as its copy will carry it
   const from = { name: account?.senderName ?? "", email: account?.email ?? "" };
-  const sending = held.phase === "sending";
+  // said once as it changes (never each second), through the app's one voice (plan 188: a region that arrives with its
+  // words is read unreliably): that it hasn't gone, how long there is and how to take it back, then that it's going
+  useEffect(() => {
+    if (held.phase === "sending") return announce(t("compose.sending"));
+    if (held.phase !== "holding") return;
+    const count = Math.max(1, Math.round((held.goesAt - Date.now()) / 1000));
+    const z = zHolds(useSnack.getState(), held.undo) && useApp.getState().settings?.characterKeys !== false;
+    announce(t(z ? "compose.held.statusZ" : "compose.held.status", { count }));
+  }, [held.phase, held.goesAt, held.undo]);
   return (
     <article data-testid="held-message" data-held-send={held.draftId} data-phase={held.phase} tabIndex={-1} aria-label={t("compose.held.label")} className="hairline-b outline-none">
       <div className="relative">
@@ -42,8 +51,7 @@ export function HeldMessage({ held, icons }: { held: HeldSend; icons: boolean })
         <div className="-mx-2 flex w-[calc(100%+1rem)] items-start gap-2.5 px-2 pt-3 pb-1.5">
           <OpenHead from={from} to={held.to} cc={held.cc} icon={icons} person trailing={<HeldStatus held={held} />} />
         </div>
-        {/* said once as it changes (never each second): that it hasn't gone and can be taken back, then that it's going */}
-        <span role="status" className="sr-only">{sending ? t("compose.sending") : t("compose.held.status")}</span>
+
       </div>
       <div className="pt-2 pb-4">
         {held.bodyHtml ? (
@@ -80,7 +88,7 @@ function HeldStatus({ held }: { held: HeldSend }) {
       busy={held.phase === "undoing"}
       onClick={() => undoHeld(held.draftId)}
       className="-my-1 ml-auto self-center"
-      countdown={{ duration: UNDO_SEND_MS, elapsed: () => UNDO_SEND_MS - (held.goesAt - Date.now()), paused: false, sync: held.goesAt }}
+      countdown={{ duration: held.windowMs, elapsed: () => held.windowMs - (held.goesAt - Date.now()), paused: false, sync: held.goesAt }}
     />
   );
 }

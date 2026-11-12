@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { shallow } from "zustand/shallow";
-import { formatAddressList, UNDO_SEND_MS, type Address, type AttachmentRef, type ThreadDetail } from "@terno/core";
+import { formatAddressList, UNDO_SEND_DEFAULT, type Address, type AttachmentRef, type ThreadDetail } from "@terno/core";
 import { attachmentUploading, draftAttachmentBudget } from "./attachments";
 import { breadcrumb, captureUi } from "~/lib/diag";
 import { useDraftRecovery } from "~/lib/draft-recovery-ui";
@@ -1270,8 +1270,11 @@ async function send(key: string, sendAt?: number): Promise<boolean> {
     // plan 158: Send's Undo window is a schedule of a few seconds: the backend holds it, durably, and the draft stays until it goes
     if (getApp().settings?.undoSend === true) {
       // plan 182: taken before the backend's clock starts, so the window shown here never outlasts its own
-      const goesAt = Date.now() + UNDO_SEND_MS;
-      const hold = await client.call("compose.hold", { ...params, draftId: d.id!, draftGeneration: d.generation!, draftRevision: d.revision });
+      // (plan 188: the user's window, the one the backend reads)
+      const holdSeconds = getApp().settings?.undoSendSeconds ?? UNDO_SEND_DEFAULT;
+      const windowMs = holdSeconds * 1000;
+      const goesAt = Date.now() + windowMs;
+      const hold = await client.call("compose.hold", { ...params, draftId: d.id!, draftGeneration: d.generation!, draftRevision: d.revision, holdSeconds });
       // (no room to hold it: the backend queued it as a plain send)
       // plan 170: the whoosh as it leaves the composer, held or not
       playSendSound();
@@ -1295,6 +1298,7 @@ async function send(key: string, sendAt?: number): Promise<boolean> {
           bodyText: params.bodyText,
           attachments,
           goesAt,
+          windowMs,
           cancel: (cancelled) => cancelHeldSend(draftId, pinned, cancelled),
         });
         return true;

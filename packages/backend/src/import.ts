@@ -30,6 +30,10 @@ const GENERAL_KEYS = [
   "dockBadge",
   // plan 170 (Codex critique #1): a sound turned off stays off on a new store
   "sendSound",
+  // plan 188: how a person reaches the app (single-key shortcuts off) and Undo send, whole (on or off and its window)
+  "characterKeys",
+  "undoSend",
+  "undoSendSeconds",
 ] as const;
 
 // the same limit drafts are saved with (plan 34, Codex review 6): an export always imports back

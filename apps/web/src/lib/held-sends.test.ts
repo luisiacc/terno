@@ -17,7 +17,7 @@ const flushFrames = () => vi.advanceTimersByTime(40);
 /** a hold of draft `draftId` in conversation `threadId` (null: a new message), its cancel answering `answer` */
 function hold(draftId: number, threadId: number | null, answer: (cancelled: () => void) => Promise<boolean> = async (c) => (c(), true)) {
   const cancel = vi.fn(answer);
-  holdSend({ draftId, accountId: 1, threadId, mode: threadId === null ? "new" : "reply", subject: "Lunch", to: [{ name: "Bea", email: "bea@example.com" }], cc: [], bodyHtml: null, bodyText: "Thursday works.", attachments: [], goesAt: Date.now() + HOLD, cancel });
+  holdSend({ draftId, accountId: 1, threadId, mode: threadId === null ? "new" : "reply", subject: "Lunch", to: [{ name: "Bea", email: "bea@example.com" }], cc: [], bodyHtml: null, bodyText: "Thursday works.", attachments: [], goesAt: Date.now() + HOLD, windowMs: HOLD, cancel });
   return cancel;
 }
 

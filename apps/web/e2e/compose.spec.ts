@@ -6,7 +6,7 @@
  * can be undone.
  */
 import type { Page } from "@playwright/test";
-import { UNDO_SEND_MS } from "@terno/core";
+import { UNDO_SEND_DEFAULT } from "@terno/core";
 import { E2E_NOW } from "./constants";
 import { axeBothModes, addRecipients, chipsOf, expect, navTo, focusList, ingestConversation, openRow, recipientEmails, rows, selectThread, stabilize, test, scenario, freshNoDrafts, respond, stripItem } from "./fixtures";
 import { sqlDb } from "../../backend-dev/src/server";
@@ -812,7 +812,7 @@ test("Undo send (plans 158, 182): the reply shows at once where its copy will be
     await page.keyboard.type("Second");
     await page.keyboard.press("ControlOrMeta+Enter");
     await expect(held.getByTestId("held-undo")).toBeVisible();
-    await page.clock.fastForward(UNDO_SEND_MS);
+    await page.clock.fastForward(UNDO_SEND_DEFAULT * 1000);
     await expect(held.getByTestId("held-status")).toHaveText("Sending…");
     await expect(held.locator("[data-slot=spinner]")).toBeVisible();
     await expect(held.getByTestId("held-undo")).toHaveCount(0);
@@ -1101,13 +1101,14 @@ test("the composer's states: unavailable Send, Saving and Saved, an invalid addr
   await expect(note).toHaveCount(0);
   expect(await css(group, "backgroundColor")).not.toBe("rgba(0, 0, 0, 0)");
 
-  // a saved state in the form, not a toast: said aloud only once it's true
+  // a saved state in the form, not a toast; plan 188: shown, never said for a routine save (it would talk over the
+  // writing at every pause: a slow save's "Saved" is said, save-state.test.tsx)
   const status = page.getByTestId("draft-status");
   await page.getByTestId("compose-body").click();
   await page.keyboard.type("Something");
   // (Saving… only for a save that takes a while: save-state.test.tsx)
   await expect(status).toHaveText("Saved");
-  await expect(status.locator("[aria-live]")).toHaveText("Saved");
+  await expect(page.getByTestId("draft-status-said")).toHaveText("");
 
   // what the draft's lifecycle controls do can be read
   // it says it keeps the draft, in the words it's named by (plan 158)

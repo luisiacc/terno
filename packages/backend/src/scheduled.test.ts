@@ -2,7 +2,9 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMemoryTransportPair, RpcClient, type ScheduledSnapshot } from "@terno/core/rpc";
-import { SCHEDULED_BYTES_MAX, SCHEDULED_MAX, UNDO_SEND_MS } from "@terno/core";
+import { SCHEDULED_BYTES_MAX, SCHEDULED_MAX, UNDO_SEND_DEFAULT } from "@terno/core";
+
+const UNDO_SEND_MS = UNDO_SEND_DEFAULT * 1000;
 import { createAccount, sqlDb } from "@terno/db";
 import { demoRegistry } from "@terno/mail";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -93,6 +95,22 @@ describe("scheduled sends (plan 94)", () => {
       expect(await sends()).toHaveLength(1);
       expect(await backend.store.drafts.list()).toEqual([]);
       expect(backend.scheduled.nextAt).toBeNull();
+    });
+
+    it("plan 188: holds for the window the renderer's countdown shows, else the user's setting", async () => {
+      const { backend, client, account, advance, draft, sends } = await setup();
+      await client.call("settings.update", { undoSendSeconds: 30 });
+      const first = await draft();
+      await client.call("compose.hold", { accountId: account, to: [{ name: "Ana", email: "ana@friends.com" }], subject: first.subject, bodyText: "Friday?", draftId: first.id, draftGeneration: first.generation!, draftRevision: first.revision, holdSeconds: 10 });
+      expect(backend.scheduled.nextAt).toBe(NOW + 10_000);
+      await client.call("scheduled.cancel", { draftId: first.id });
+      await client.call("settings.update", { undoSendSeconds: 20 });
+      await hold(client, account, await draft());
+      expect(backend.scheduled.nextAt).toBe(NOW + 20_000);
+      await advance(20_000 - 1);
+      expect(await sends()).toEqual([]);
+      await advance(1);
+      expect(await sends()).toHaveLength(1);
     });
 
     it("plan 182: when it goes, the windows hear which copy it became, once; a cancelled one says nothing", async () => {

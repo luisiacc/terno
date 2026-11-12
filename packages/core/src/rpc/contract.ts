@@ -234,6 +234,10 @@ export interface AppSettings {
   composeSuggestions: boolean;
   /** plan 158: Send holds a message for a few seconds in the backend's own queue, with Undo */
   undoSend: boolean;
+  /** plan 188 (WCAG 2.2.1): how long Undo send holds it */
+  undoSendSeconds: import("../types").UndoSendSeconds;
+  /** plan 188 (WCAG 2.1.4): shortcuts made of character keys alone (e, #, j, g i…); off, only named keys and chords act */
+  characterKeys: boolean;
   /** plan 170: a soft whoosh once a message goes (Send now or held; never Send later) */
   sendSound: boolean;
   /**
@@ -490,6 +494,9 @@ const aiTarget = z.object({
   preset: z.enum(COMPATIBLE_PRESETS).optional(),
 });
 
+/** plan 188: Undo send's windows (UNDO_SEND_SECONDS) */
+const undoSendSeconds = z.union([z.literal(5), z.literal(10), z.literal(20), z.literal(30)]);
+
 const settingsPatch = z.object({
   localMode: z.boolean().optional(),
   theme: z.enum(["system", "light", "dark"]).optional(),
@@ -535,6 +542,8 @@ const settingsPatch = z.object({
   language: z.enum(LANGUAGE_SETTINGS).optional(),
   composeSuggestions: z.boolean().optional(),
   undoSend: z.boolean().optional(),
+  undoSendSeconds: undoSendSeconds.optional(),
+  characterKeys: z.boolean().optional(),
   sendSound: z.boolean().optional(),
   senderIcons: z.boolean().optional(),
   dockBadge: z.boolean().optional(),
@@ -998,8 +1007,8 @@ export const contract = {
   "compose.send": m<{ opId: string; threadId: number; messageId: number }>()(composeSend),
   /** plan 94: the same send, prepared now, sent at `sendAt` (its draft stays until then; past: at once) */
   "compose.schedule": m<{ ok: true }>()(composeSend.extend({ draftId: id, draftGeneration: z.string().min(1).max(64), draftRevision: z.number().int().positive(), sendAt: z.number().int().nonnegative() })),
-  /** plan 158: Send's Undo window: a schedule of UNDO_SEND_MS, on the backend's clock, that isn't listed as one (`scheduled.cancel` takes it back). With no room to hold it, it's queued as a plain send */
-  "compose.hold": m<{ held: true } | { held: false; threadId: number; messageId: number }>()(composeSend.extend({ draftId: id, draftGeneration: z.string().min(1).max(64), draftRevision: z.number().int().positive() })),
+  /** plan 158: Send's Undo window: a schedule of the user's undoSendSeconds (plan 188), on the backend's clock, that isn't listed as one (`scheduled.cancel` takes it back). With no room to hold it, it's queued as a plain send */
+  "compose.hold": m<{ held: true } | { held: false; threadId: number; messageId: number }>()(composeSend.extend({ draftId: id, draftGeneration: z.string().min(1).max(64), draftRevision: z.number().int().positive(), holdSeconds: undoSendSeconds.optional() })),
   /** plan 116: what is waiting to be forwarded, held, going, and what settled lately; the questions past the cap */
   "forwards.list": m<import("../forwarding").ForwardSnapshot>()(empty),
   /** the user's Cancel (those still waiting or held) */

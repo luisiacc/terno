@@ -30,6 +30,8 @@ export interface HeldSend {
   attachments: AttachmentRef[];
   /** when the window ends, on Date.now()'s clock (the backend's own decides; this is only what's shown) */
   goesAt: number;
+  /** plan 188: the whole window it was held for (the user's undoSendSeconds), what its countdown drains over */
+  windowMs: number;
   /** holding: Undo can take it back; sending: its window is over; undoing: the cancel is out */
   phase: "holding" | "sending" | "undoing";
   undo: Undo;

@@ -1,5 +1,5 @@
 import { RpcError, type Draft, type DraftAddress, type Handlers } from "@terno/core/rpc";
-import { agentsMaySend, capFilterName, categoryRule, folderRule, isFilterable, similarValue, COUNT_CAP, type AlwaysScope, LEARNED_FILTER_NAME, messageOf, proposeLearnedFilters, listFilterOf, LIST_FILTERS, matchExcerpt, parseSearch, resolveSearch, rowMatchOf, searchWithFilter, type ThreadAction, type AccountPrefs, PINS_MAX, REMINDERS_MAX, SCHEDULED_MAX, UNDO_SEND_MS, FORWARD_ADDRESSES_MAX_CHARS } from "@terno/core";
+import { agentsMaySend, capFilterName, categoryRule, folderRule, isFilterable, similarValue, COUNT_CAP, type AlwaysScope, LEARNED_FILTER_NAME, messageOf, proposeLearnedFilters, listFilterOf, LIST_FILTERS, matchExcerpt, parseSearch, resolveSearch, rowMatchOf, searchWithFilter, type ThreadAction, type AccountPrefs, PINS_MAX, REMINDERS_MAX, SCHEDULED_MAX, FORWARD_ADDRESSES_MAX_CHARS } from "@terno/core";
 import { L } from "@terno/i18n";
 import { movedNothing, SearchCancelledError, StaleCursorError, type AddedBy, type DraftRow, type FolderMoved, type MessageState } from "@terno/store";
 import { GMAIL_SCOPES } from "@terno/mail/portable";
@@ -1056,8 +1056,12 @@ export function createHandlers(b: Backend): Handlers {
       return r;
     },
     "compose.hold": async (p, ctx) => {
-      const params = ctx.origin === "renderer" ? p : { ...p, bodyHtml: undefined, authoredText: undefined };
-      const r = await b.scheduled.schedule(params, b.now() + UNDO_SEND_MS, true);
+      const { holdSeconds, ...rest } = p;
+      const params = ctx.origin === "renderer" ? rest : { ...rest, bodyHtml: undefined, authoredText: undefined };
+      // plan 188: the window the renderer's countdown shows (it read the setting once for both, so a change mid-call can't
+      // split them); from elsewhere, the user's setting
+      const seconds = holdSeconds ?? (await readSettings(store)).undoSendSeconds;
+      const r = await b.scheduled.schedule(params, b.now() + seconds * 1000, true);
       if (r === "stale") throw new RpcError("STALE", L("errors.draftGone"), { reason: "draftRevision" });
       if (r === "ok") return { held: true as const };
       // no room to hold it: it goes as a plain send, with no Undo, rather than being refused

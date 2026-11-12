@@ -9,7 +9,7 @@ import {
 } from "@terno/ai";
 import { AI_PROVIDER_IDS, canonicalThemeId, COMPATIBLE_PRESETS, DEFAULT_DESIGN, DESIGN_IDS, DESIGN_PALETTE, DEV_AI_PROVIDERS, fitsMode, isDesignId, JEV_DEFAULT_MODEL, SUMMARY_DEFAULT_MODEL, textRef, type DevAiKeys, themeMode, type AiTaskName, type AiTaskTarget, type CustomTheme, type TextRef, type ThemeMode } from "@terno/core";
 import type { AiProfile, AiSettings, AppSettings, SettingsPatch } from "@terno/core/rpc";
-import { DEFAULT_AGENTS, DEFAULT_TODAY, FAVORITES_MAX, NUDGE_DEFAULT, type AgentAccess, type AgentsSetting, type FavoriteFolder } from "@terno/core";
+import { DEFAULT_AGENTS, DEFAULT_TODAY, FAVORITES_MAX, NUDGE_DEFAULT, UNDO_SEND_DEFAULT, type AgentAccess, type AgentsSetting, type FavoriteFolder } from "@terno/core";
 import { isLanguageSetting, L, type Localized } from "@terno/i18n";
 import type { MailStore } from "@terno/store";
 import { unreadableSecrets } from "./keychain";
@@ -186,6 +186,9 @@ export const DEFAULT_SETTINGS: General = {
   composeSuggestions: true,
   // plan 158: on until turned off: a send is the action people regret most
   undoSend: true,
+  undoSendSeconds: UNDO_SEND_DEFAULT,
+  // plan 188: on until turned off (Settings → General)
+  characterKeys: true,
   // plan 170: like Mail's, on until turned off
   sendSound: true,
   // plan 22: website icons are on in either mode until turned off

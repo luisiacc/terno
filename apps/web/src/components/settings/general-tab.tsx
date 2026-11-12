@@ -1,4 +1,4 @@
-import { aiFeaturesAvailable, UNDO_SEND_MS } from "@terno/core";
+import { aiFeaturesAvailable, UNDO_SEND_SECONDS, type UndoSendSeconds } from "@terno/core";
 import type { AppSettings } from "@terno/core/rpc";
 import { Button } from "@terno/ui/components/button";
 import { NumberField } from "@terno/ui/components/number-field";
@@ -216,6 +216,9 @@ function LanguageRow({ settings, update }: { settings: AppSettings; update: Sett
   );
 }
 
+/** Plan 188: Undo send's windows, in seconds. */
+const undoSendChoices = (): { value: UndoSendSeconds; label: string }[] => UNDO_SEND_SECONDS.map((n) => ({ value: n, label: t("settings.general.undoSendTime.seconds", { count: n }) }));
+
 export function GeneralTab({ settings, update }: { settings: AppSettings; update: SettingsUpdate }) {
   const updates = useHasUpdates();
   return (
@@ -246,8 +249,25 @@ export function GeneralTab({ settings, update }: { settings: AppSettings; update
         <SettingsRow label={t("settings.general.suggestions")} hint={t("settings.general.suggestions.hint")} testId="suggestions-row">
           {(a) => <Switch {...a} data-testid="suggestions-switch" checked={settings.composeSuggestions} onCheckedChange={(on) => void update({ composeSuggestions: on })} />}
         </SettingsRow>
-        <SettingsRow label={t("settings.general.undoSend")} hint={t("settings.general.undoSend.hint", { seconds: UNDO_SEND_MS / 1000 })} testId="undo-send-row">
+        <SettingsRow label={t("settings.general.undoSend")} hint={t("settings.general.undoSend.hint", { seconds: settings.undoSendSeconds })} testId="undo-send-row">
           {(a) => <Switch {...a} data-testid="undo-send-switch" checked={settings.undoSend} onCheckedChange={(on) => void update({ undoSend: on })} />}
+        </SettingsRow>
+        {/* plan 188 (WCAG 2.2.1): the window is the user's; off with Undo send, the row stays and says why (as Preview under Compact) */}
+        <SettingsRow label={t("settings.general.undoSendTime")} hint={settings.undoSend ? t("settings.general.undoSendTime.hint") : t("settings.general.undoSendTime.offHint")} testId="undo-send-time-row">
+          {({ id: _id, ...a }) => (
+            <Select value={settings.undoSendSeconds} disabled={!settings.undoSend} onValueChange={(v) => void update({ undoSendSeconds: v as UndoSendSeconds })} items={undoSendChoices()}>
+              <SelectTrigger {...a} size="sm" className="w-32" data-testid="undo-send-time">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {undoSendChoices().map((d) => (
+                  <SelectItem key={d.value} value={d.value} data-testid={`undo-send-${d.value}`}>
+                    {d.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </SettingsRow>
         <SettingsRow label={t("settings.general.sendSound")} hint={t("settings.general.sendSound.hint")} testId="send-sound-row">
           {(a) => <Switch {...a} data-testid="send-sound-switch" checked={settings.sendSound} onCheckedChange={(on) => void update({ sendSound: on })} />}
@@ -255,6 +275,10 @@ export function GeneralTab({ settings, update }: { settings: AppSettings; update
       </SettingsGroup>
 
       <SettingsGroup title={t("settings.general.keyboard")}>
+        {/* plan 188 (WCAG 2.1.4): letters and symbols alone can be turned off; named keys and chords stay */}
+        <SettingsRow label={t("settings.general.characterKeys")} hint={t("settings.general.characterKeys.hint")} testId="character-keys-row">
+          {(a) => <Switch {...a} data-testid="character-keys-switch" checked={settings.characterKeys} onCheckedChange={(on) => void update({ characterKeys: on })} />}
+        </SettingsRow>
         <SettingsRow label={t("settings.general.shortcuts")} hint={t("settings.general.shortcuts.hint")}>
           {({ id: _id, "aria-labelledby": _l, ...a }) => (
             <Button {...a} variant="outline" size="sm" data-testid="open-shortcuts" onClick={() => setApp({ dialog: "shortcuts" })}>
