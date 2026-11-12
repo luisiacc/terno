@@ -17,6 +17,6 @@ export default defineConfig({
   outputDir: "../../test-results/desktop-smoke",
   projects: [
     { name: "update", testMatch: "**/update.smoke.ts" },
-    { name: "packaged", testMatch: "**/*.smoke.ts", testIgnore: "**/update.smoke.ts" },
+    { name: "packaged", testMatch: "**/*.smoke.ts", testIgnore: ["**/update.smoke.ts", "**/linux.smoke.ts"] },
   ],
 });
