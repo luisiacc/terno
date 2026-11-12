@@ -177,7 +177,7 @@ test("plan 37: in local mode the browser loads a newsletter's images on “Load 
   await expect(page.getByTestId("reader-subject")).toBeVisible();
   await expect(page.getByTestId("remote-blocked")).toHaveCount(0);
   // its pixel loaded (from the route, or the cache when it's the same newsletter's)
-  const pixel = page.frameLocator("iframe[title='Message content']").locator("img[src$='/pixel.gif']");
+  const pixel = page.frameLocator("iframe[title^='Message']").locator("img[src$='/pixel.gif']");
   await expect.poll(() => pixel.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
 });
 

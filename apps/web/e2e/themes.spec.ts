@@ -166,7 +166,7 @@ test.describe("themes", () => {
       await page.reload();
       await page.locator("[data-ready]").waitFor();
       const bodyBg = async () => {
-        const frame = page.frameLocator("iframe[title='Message content']");
+        const frame = page.frameLocator("iframe[title^='Message']");
         await expect(frame.locator("body")).toBeVisible();
         return frame.locator("body").evaluate((b) => getComputedStyle(b).backgroundColor);
       };
@@ -176,7 +176,7 @@ test.describe("themes", () => {
       await expect(page.locator("iframe[data-mail=themed]").first()).toBeVisible();
       expect(await bodyBg()).toBe(rgb(toHex(dracula.background)));
       // the frame is its own document: it smooths text like the app (grayscale on macOS), not the subpixel default
-      expect(await page.frameLocator("iframe[title='Message content']").locator("body").evaluate((b) => getComputedStyle(b).getPropertyValue("-webkit-font-smoothing"))).toBe("antialiased");
+      expect(await page.frameLocator("iframe[title^='Message']").locator("body").evaluate((b) => getComputedStyle(b).getPropertyValue("-webkit-font-smoothing"))).toBe("antialiased");
 
       // a designed newsletter keeps its colors on the light paper card
       await openRow(page, 2);
@@ -230,7 +230,7 @@ test.describe("themes", () => {
       await page.locator("[data-ready]").waitFor();
       await openRow(page, 0);
       await expect(page.locator("iframe[data-mail=themed]").first()).toBeVisible();
-      const frame = page.frameLocator("iframe[title='Message content']").first();
+      const frame = page.frameLocator("iframe[title^='Message']").first();
       const rgb = (hex: string) => `rgb(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(", ")})`;
       const dracula = builtinTheme("dracula")!.tokens;
       await expect.poll(() => frame.locator("#ink").evaluate((el) => getComputedStyle(el).color)).toBe(rgb(toHex(dracula.foreground)));
@@ -300,7 +300,7 @@ test.describe("visual: a palette from each family, the Appearance tab", () => {
         await page.reload();
         await page.locator("[data-ready]").waitFor();
         await openRow(page, 2);
-        await expect(page.frameLocator("iframe[title='Message content']").locator("h1")).toBeVisible();
+        await expect(page.frameLocator("iframe[title^='Message']").locator("h1")).toBeVisible();
         await page.evaluate(() => document.fonts.ready);
         await stabilize(page);
         await expect(page).toHaveScreenshot(`reader-${id}.png`);

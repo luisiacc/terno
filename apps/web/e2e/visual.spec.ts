@@ -124,7 +124,7 @@ test.describe("light", () => {
       await forgetOffer(page);
       await openRow(page, 2);
       await expect(page.getByTestId("remote-blocked")).toBeVisible();
-      await expect(page.frameLocator("iframe[title='Message content']").locator("h1")).toBeVisible();
+      await expect(page.frameLocator("iframe[title^='Message']").locator("h1")).toBeVisible();
       await ready(page);
       await expect(page).toHaveScreenshot("reader-html.png");
     });

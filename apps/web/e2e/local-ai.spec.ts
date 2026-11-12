@@ -141,19 +141,19 @@ test.describe("local mode and AI providers", () => {
       await row.getByRole("button", { name: "Load content" }).click();
       await expect(row).toHaveCount(0);
       await expect.poll(() => hits.length).toBeGreaterThan(0);
-      const frame = page.frameLocator("iframe[title='Message content']");
+      const frame = page.frameLocator("iframe[title^='Message']");
       await expect.poll(() => frame.locator("img[src^='https:']").first().evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
       // coming back to it, it's still loaded (per message, for the session)
       await openRow(page, 0);
       await openRow(page, 2);
-      await expect(page.frameLocator("iframe[title='Message content']").locator("h1")).toBeVisible();
+      await expect(page.frameLocator("iframe[title^='Message']").locator("h1")).toBeVisible();
       await expect(page.getByTestId("remote-blocked")).toHaveCount(0);
     });
     await scenario("an HTML mail fits its frame with no inner scroll, and the frame follows the content when the pane resizes", async () => {
       await fresh(page);
       await openRow(page, 2);
-      const frame = page.locator("iframe[title='Message content']");
-      await expect(page.frameLocator("iframe[title='Message content']").locator("h1")).toBeVisible();
+      const frame = page.locator("iframe[title^='Message']");
+      await expect(page.frameLocator("iframe[title^='Message']").locator("h1")).toBeVisible();
       const fits = () =>
         frame.evaluate((f: HTMLIFrameElement) => {
           const root = f.contentDocument!.documentElement;
@@ -183,7 +183,7 @@ test.describe("local mode and AI providers", () => {
       await expect(always).toBeChecked();
       await page.keyboard.press("Escape");
       await openRow(page, 2);
-      await expect(page.frameLocator("iframe[title='Message content']").locator("h1")).toBeVisible();
+      await expect(page.frameLocator("iframe[title^='Message']").locator("h1")).toBeVisible();
       await expect(page.getByTestId("remote-blocked")).toHaveCount(0);
       await expect.poll(() => hits.length).toBeGreaterThan(0);
     });
