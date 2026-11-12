@@ -30,7 +30,7 @@ it("a draft no longer scheduled (unscheduled in another window, given back) is l
 
 it("plan 182 (Codex critique #4): a hold that couldn't go (listed now, or given back) has nothing coming: its card goes", async () => {
   const { holdSend, heldById, resetHeldSends } = await import("./held-sends");
-  const add = (draftId: number) => holdSend({ draftId, accountId: 1, threadId: 3, mode: "reply", subject: "Budget", to: [], cc: [], bodyHtml: null, bodyText: "x", attachments: [], goesAt: Date.now() + 5000, windowMs: 5000, cancel: async () => true });
+  const add = (draftId: number) => holdSend({ draftId, accountId: 1, threadId: 3, mode: "reply", subject: "Budget", to: [], cc: [], bodyHtml: null, bodyText: "x", attachments: [], goesAt: Date.now() + 5000, windowMs: 5000, sentHere: true, cancel: async () => true });
   try {
     add(31);
     add(32);
@@ -55,7 +55,7 @@ it("Undo send waiting on the backend: the draft comes back opened only if nothin
     let answer!: () => void;
     mocks.call.mockImplementation((method: string) => method === "scheduled.cancel" ? new Promise((r) => (answer = () => r({ ok: true }))) : Promise.resolve(method === "drafts.list" ? [stored(draftId)] : { ok: true }));
     resetSnacks();
-    holdSend({ draftId, accountId: 1, threadId: null, mode: "new", subject: "Budget", to: [], cc: [], bodyHtml: null, bodyText: "x", attachments: [], goesAt: Date.now() + 5000, windowMs: 5000, cancel: (cancelled) => cancelHeldSend(draftId, pinned, cancelled) });
+    holdSend({ draftId, accountId: 1, threadId: null, mode: "new", subject: "Budget", to: [], cc: [], bodyHtml: null, bodyText: "x", attachments: [], goesAt: Date.now() + 5000, windowMs: 5000, sentHere: true, cancel: (cancelled) => cancelHeldSend(draftId, pinned, cancelled) });
     const undoing = runUndo(useSnack.getState().undo!);
     await vi.waitFor(() => expect(answer).toBeTypeOf("function"));
     meanwhile();

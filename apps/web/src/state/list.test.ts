@@ -240,6 +240,9 @@ it("plan 195: what arrived is the rows above every row that was there, 1 to 3, n
   expect(arrivedOnTop(before, [...rows(11, 1), ...rows(10, 1), ...rows(12, 1)])).toEqual([]);
   // the Inbox's top (Pinned, Reminders) stands above where mail arrives
   expect(arrivedOnTop(before, [...rows(20, 1), ...rows(8, 5)], new Set([20]))).toEqual([8, 9]);
+  // only rows live mail came to: anything else above them (a restore elsewhere) and nothing arrives
+  expect(arrivedOnTop(before, rows(8, 5), new Set(), new Set([8, 9]))).toEqual([8, 9]);
+  expect(arrivedOnTop(before, rows(8, 5), new Set(), new Set([9]))).toEqual([]);
   // a sync's batch just appears
   expect(arrivedOnTop(before, rows(6, 7))).toEqual([]);
   // an undo bringing back a row the user archived (an optimistic removal) isn't new mail
@@ -262,4 +265,29 @@ it("plan 198: the list on screen going from rows to none is said once, by its ke
   expect(takeEmptied("k2")).toBe(false);
   useList.setState({ key: "k1", itemsKey: "k1" });
   expect(takeEmptied("k1")).toBe(false);
+});
+
+it("plan 195 (Codex code review #2): a refresh while another mailbox is still on its way plays no arrival against the last one's rows", async () => {
+  const { listArrival, listKey } = await import("~/state/list");
+  const played: number[][] = [];
+  Object.assign(listArrival, { on: () => true, arm: () => {}, play: (ids: readonly number[]) => played.push([...ids]) });
+  try {
+    // Archive on screen
+    answer = async () => ({ items: rows(10, 3), nextCursor: null });
+    setApp({ query: "", view: "archive", listFilters: new Map() });
+    await vi.waitFor(() => expect(useList.getState().itemsKey).toBe(listKey()));
+    // Starred asked for, its page held back: Archive's rows still shown
+    let release!: () => void;
+    answer = () => new Promise((r) => (release = () => r({ items: rows(1, 2), nextCursor: null })));
+    setApp({ view: "starred" });
+    await vi.waitFor(() => expect(useList.getState().key).toBe(listKey()));
+    expect(useList.getState().itemsKey).not.toBe(listKey());
+    // live mail meanwhile: the refresh answers first with Starred's rows, two "new" above nothing Archive had
+    answer = async () => ({ items: rows(1, 2), nextCursor: null });
+    await reloadList({ keepSelection: true, arrived: [1, 2] });
+    release();
+    expect(played).toEqual([]);
+  } finally {
+    listArrival.on = listArrival.arm = listArrival.play = undefined;
+  }
 });

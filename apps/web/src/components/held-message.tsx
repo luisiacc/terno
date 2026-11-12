@@ -30,10 +30,11 @@ export function HeldMessage({ held, icons }: { held: HeldSend; icons: boolean })
   const ref = useRef<HTMLElement>(null);
   const line = useRef<HTMLSpanElement>(null);
   // the reader goes to it once, as it would to its copy; back in the conversation later, the reader keeps its place.
-  // Plan 196: and that once, it arrives where the composer was (before it paints: never shown settled, then hidden)
+  // Plan 196: and that once, it arrives where the composer was, when it was sent from there (before it paints: never
+  // shown settled, then hidden); opened later, it's simply there
   useLayoutEffect(() => {
     if (!firstReveal(held.draftId)) return;
-    arrive(ref.current);
+    if (held.sentHere) arrive(ref.current);
     revealHeld(held.draftId);
   }, [held.draftId]);
   // plan 196: the moment it can no longer be taken back, seen here (a card mounted already sending, a conversation come

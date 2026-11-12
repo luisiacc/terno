@@ -167,6 +167,20 @@ describe("local-first actions", () => {
     expect(events.find((e) => e.name === "op")?.payload).toMatchObject({ state: "succeeded", kind: "archive" });
   });
 
+  it("plan 195: live mail says which threads it came to (`arrived`); a first sync's or a backfill's ingestion doesn't", async () => {
+    const { backend, events, accountId } = await setup();
+    await backend.ingestSliced([incoming(accountId, { providerMsgId: "old-1", rfcMessageId: "<old-1@x>" })]);
+    await tick();
+    const quiet = events.filter((e) => e.name === "changed").map((e) => e.payload as { arrived?: number[] });
+    expect(quiet.length).toBeGreaterThan(0);
+    expect(quiet.every((p) => p.arrived === undefined)).toBe(true);
+    events.length = 0;
+    await backend.ingestSliced([incoming(accountId, { providerMsgId: "new-1", rfcMessageId: "<new-1@x>" })], true, undefined, undefined, undefined, undefined, undefined, true);
+    await tick();
+    const live = events.filter((e) => e.name === "changed").map((e) => e.payload as { threadIds: number[]; arrived?: number[] });
+    expect(live.some((p) => p.arrived?.length === 1 && p.threadIds.includes(p.arrived[0]!))).toBe(true);
+  });
+
   it("retryable provider failures back off; non-retryable ones fail", async () => {
     const { backend, client, providers, accountId } = await setup();
     await backend.ingestSliced([incoming(accountId)]);

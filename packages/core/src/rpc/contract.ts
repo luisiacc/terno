@@ -1487,7 +1487,8 @@ export type ResultOf<M extends MethodName> = Contract[M]["__result"];
 
 export interface Events {
   /** Data changed. threadIds empty + views true => refetch everything visible. */
-  changed: { threadIds: number[]; views: boolean };
+  /** plan 195: `arrived`, the threads live mail just came to (never a first sync, a backfill or an undo: those only change) */
+  changed: { threadIds: number[]; views: boolean; arrived?: number[] };
   counts: Counts;
   accounts: Account[];
   categories: Category[];

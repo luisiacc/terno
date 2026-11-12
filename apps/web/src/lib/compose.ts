@@ -1299,6 +1299,8 @@ async function send(key: string, sendAt?: number): Promise<boolean> {
           attachments,
           goesAt,
           windowMs,
+          // plan 196: its card shows where it was written (the conversation in the reader, or the pane): there it arrives
+          sentHere: !pinned && (d.mode === "new" ? inPane : getApp().selectedId === d.threadId),
           cancel: (cancelled) => cancelHeldSend(draftId, pinned, cancelled),
         });
         return true;

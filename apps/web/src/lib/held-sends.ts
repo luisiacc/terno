@@ -37,6 +37,9 @@ export interface HeldSend {
   undo: Undo;
   /** the copy it became, once the backend says */
   copy: { threadId: number; messageId: number } | null;
+  /** plan 196: sent from the composer on screen where its card shows (the conversation, the pane), so the card arrives
+   * there; one sent from the pinned card while reading something else is simply there when its conversation opens */
+  sentHere: boolean;
 }
 
 interface HeldState {

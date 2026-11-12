@@ -54,7 +54,11 @@ const sampled = (page: Page): Promise<Sample> =>
 async function recordArrivals(page: Page) {
   await page.evaluate(() => {
     const w = window as unknown as { __arrivals: { id: string | null; testid: string | null; thread: string | null }[] };
+    // installed once per page; a new recording clears what the last one saw (wrapping again would count each twice)
+    const installed = (w as unknown as { __arrivalsOn?: boolean }).__arrivalsOn;
     w.__arrivals = [];
+    if (installed) return;
+    (w as unknown as { __arrivalsOn?: boolean }).__arrivalsOn = true;
     const original = Element.prototype.animate;
     Element.prototype.animate = function (this: Element, keyframes: Keyframe[] | PropertyIndexedKeyframes | null, options?: number | KeyframeAnimationOptions) {
       if (typeof options === "object" && (options.id === "arrive" || options.id === "seal")) w.__arrivals.push({ id: options.id, testid: this.getAttribute("data-testid") ?? (this.hasAttribute("data-keep-scroll") ? "list" : this.hasAttribute("data-message-date") ? "message-date" : this.getAttribute("data-slot")), thread: this.getAttribute("data-thread-id") });
@@ -238,7 +242,8 @@ test.describe("motion", () => {
         requestAnimationFrame(tick);
       });
       const id = await ingestConversation(server, { subject: "Llegó ahora", count: 1, unread: 1, now: E2E_NOW + 7_200_000 });
-      server.backend.notifyChanged([id]);
+      // as a live sync says it: live mail came to it
+      server.backend.notifyChanged([id], true, [id]);
       const arrived = page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`);
       await arrived.waitFor();
       await frames(page);
@@ -258,12 +263,20 @@ test.describe("motion", () => {
       expect(to).toBeGreaterThan(from);
       expect(tops.some((t) => t > from + 0.5 && t < to - 0.5), tops.join(",")).toBe(true);
     });
+    await scenario("at the top, a row that's only changed (an undo in another window, a first sync): nothing arrives (Codex code review #1)", async () => {
+      await recordArrivals(page);
+      const id = await ingestConversation(server, { subject: "Restaurado en otra ventana", count: 1, unread: 1, now: E2E_NOW + 9_000_000 });
+      server.backend.notifyChanged([id]);
+      await expect(rows(page).first()).toHaveAttribute("data-thread-id", String(id));
+      await frames(page);
+      expect(await arrivals(page)).toEqual([]);
+    });
     await scenario("scrolled down: the anchor keeps the place, nothing arrives", async () => {
       const scroller = page.getByTestId("thread-list").locator("[data-keep-scroll=list]");
       await scroller.evaluate((el) => (el.scrollTop = 400));
       await recordArrivals(page);
       const id = await ingestConversation(server, { subject: "Llegó mientras leías", count: 1, unread: 1, now: E2E_NOW + 10_800_000 });
-      server.backend.notifyChanged([id]);
+      server.backend.notifyChanged([id], true, [id]);
       // the refresh came (its row is drawn, above the rows on screen), and nothing arrived
       await page.locator(`[data-testid=thread-row][data-thread-id="${id}"]`).waitFor({ state: "attached" });
       await frames(page);
@@ -304,6 +317,13 @@ test.describe("motion", () => {
       expect(Math.abs(line.width - card.width)).toBeLessThanOrEqual(1);
       expect(Math.abs(line.y - card.y)).toBeLessThanOrEqual(2);
     });
+    await scenario("recorded again: one animation is counted once (the recorder isn't wrapped twice)", async () => {
+      await recordArrivals(page);
+      await recordArrivals(page);
+      await page.evaluate(() => document.body.animate([{ opacity: 1 }, { opacity: 1 }], { id: "arrive", duration: 1 }));
+      expect(await arrivals(page)).toHaveLength(1);
+      await recordArrivals(page);
+    });
     await scenario("back in the conversation while it's still sending: the line is drawn, and nothing plays again", async () => {
       const subject = await page.getByTestId("reader-subject").textContent();
       await rows(page).nth(1).dispatchEvent("mousedown");
@@ -312,9 +332,10 @@ test.describe("motion", () => {
       await expect(held).toBeVisible();
       await frames(page);
       await expect(held.getByTestId("held-seal")).toHaveClass(/scale-x-100/);
+      // (recorded afresh above: nothing new, neither the seal nor the card's arrival)
       const seen = await arrivals(page);
-      expect(seen.filter((a) => a.id === "seal")).toHaveLength(1);
-      expect(seen.filter((a) => a.id === "arrive" && a.testid === "held-message")).toHaveLength(1);
+      expect(seen.filter((a) => a.id === "seal")).toHaveLength(0);
+      expect(seen.filter((a) => a.id === "arrive" && a.testid === "held-message")).toHaveLength(0);
     });
     await scenario("its copy takes its place: only the copy's date arrives, once", async () => {
       const before = (await arrivals(page)).length;
@@ -329,6 +350,31 @@ test.describe("motion", () => {
       await expect(date).toBeVisible();
       await expect(date).toHaveCSS("opacity", "1");
     });
+  });
+
+  test("plan 196 (Codex code review #3): a reply sent from the pinned card while reading something else is simply there when its conversation opens", async ({ app: page, server }) => {
+    await server.backend.server.invoke("settings.update", { undoSend: true }, ctx);
+    await page.reload();
+    await page.locator("[data-ready]").waitFor();
+    const first = await rows(page).first().getAttribute("data-thread-id");
+    await rows(page).first().dispatchEvent("mousedown");
+    await focusList(page);
+    await page.keyboard.press("r");
+    await expect(page.getByTestId("compose-body")).toBeFocused();
+    await page.keyboard.type("From the pinned card");
+    await page.getByTestId("compose-pin").click();
+    const pinned = page.getByTestId("pinned-draft");
+    await expect(pinned).toBeVisible();
+    // reading another conversation, Send from the card
+    await rows(page).nth(1).dispatchEvent("mousedown");
+    await pinned.getByTestId("compose-body").click();
+    await recordArrivals(page);
+    await page.keyboard.press("ControlOrMeta+Enter");
+    await expect(pinned).toHaveCount(0);
+    await page.locator(`[data-testid=thread-row][data-thread-id="${first}"]`).dispatchEvent("mousedown");
+    await expect(page.getByTestId("held-message")).toBeVisible();
+    await frames(page);
+    expect((await arrivals(page)).filter((a) => a.testid === "held-message")).toEqual([]);
   });
 
   test("plan 197: Review going on to another category: its name and rows arrive once; answering animates nothing new", async ({ app: page, server }) => {

@@ -97,7 +97,10 @@ export async function boot(): Promise<void> {
     void loadDraftingEnabled();
 
     let refreshQueued = false;
-    client.on("changed", ({ threadIds }) => {
+    const arrivedNow = new Set<number>();
+    client.on("changed", ({ threadIds, arrived }) => {
+      // plan 195: live mail that came meanwhile, for the frame's one refresh
+      for (const id of arrived ?? []) arrivedNow.add(id);
       invalidateThreads(threadIds);
       const selected = getApp().selectedId;
       // the conversation on screen refetches now; in List's list page the cursor is only a row (plan 24, R12)
@@ -108,8 +111,10 @@ export async function boot(): Promise<void> {
       refreshQueued = true;
       requestAnimationFrame(() => {
         refreshQueued = false;
+        const arrivedIds = [...arrivedNow];
+        arrivedNow.clear();
         // a page covering the list: one refresh when it shows again (plan 24, R4); new mail in it arrives (plan 195)
-        refreshList(listCovered(), { arrivals: true });
+        refreshList(listCovered(), { arrived: arrivedIds });
       });
     });
     installQueryRecovery({ covered: listCovered, readerShown });

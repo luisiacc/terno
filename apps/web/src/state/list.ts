@@ -328,15 +328,17 @@ const leftLately = (id: number) => {
 };
 
 /**
- * Plan 195: rows a refresh brought above every row that was there, 1 to 3 of them, none the user just removed. The
- * Inbox's top (Pinned, Reminders: `skip`) stands above where mail arrives, so its rows are passed over
+ * Plan 195: rows a refresh brought above every row that was there, 1 to 3 of them, none the user just removed, each one
+ * live mail came to (`news`, when given). The Inbox's top (Pinned, Reminders: `skip`) stands above where mail arrives,
+ * so its rows are passed over
  */
-export function arrivedOnTop(before: ReadonlyMap<number, number>, items: readonly ThreadSummary[], skip: ReadonlySet<number> = new Set()): number[] {
+export function arrivedOnTop(before: ReadonlyMap<number, number>, items: readonly ThreadSummary[], skip: ReadonlySet<number> = new Set(), news?: ReadonlySet<number>): number[] {
   const out: number[] = [];
   for (const t of items) {
     if (skip.has(t.id)) continue;
     if (before.has(t.id)) break;
-    if (leftLately(t.id)) return [];
+    // (any row above that isn't news: this refresh brought something else, so nothing arrives)
+    if (leftLately(t.id) || (news && !news.has(t.id))) return [];
     out.push(t.id);
     if (out.length > 3) return [];
   }
@@ -352,7 +354,7 @@ function pruneSelection(index: Map<number, number>): void {
 }
 
 /** (Re)loads the first page for the current view/search. Latest call wins. */
-export async function reloadList(options: { keepSelection?: boolean; grow?: boolean; window?: boolean; keepWindow?: boolean; /** plan 195: the backend's own change (new mail may be in it), not an undo or a recovery */ arrivals?: boolean } = {}): Promise<void> {
+export async function reloadList(options: { keepSelection?: boolean; grow?: boolean; window?: boolean; keepWindow?: boolean; /** plan 195: threads live mail just came to (the backend's `changed`), the only rows that may arrive */ arrived?: readonly number[] } = {}): Promise<void> {
   const key = listKey();
   const mine = ++seq;
   const connection = client.connectionVersion;
@@ -428,10 +430,12 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
     // another list starts where it was left, or at its top, in the commit that shows it
     const arrives = !sameView && !options.keepSelection;
     // plan 195: new mail at the top of a mailbox on screen arrives (the rest slide down) rather than pushing it down in a
-    // frame: only from the backend's own change, in a plain mailbox at its very top (scrolled, the anchor keeps the place:
-    // nothing moves), a few rows that weren't there and weren't just removed by the user (an undo isn't new mail), never
-    // during a drag, and only with motion on (the commit it flushes is for the animation)
-    const arrived = options.arrivals && sameView && !restore && scope?.kind === "view" && current.items.length > 0 && !listAnchor.scrolled?.() && useDrag.getState().phase === "idle" && listArrival.on?.() ? arrivedOnTop(current.index, page.items, onTop) : [];
+    // frame: only threads the backend says live mail came to (never a first sync, a backfill or an undo, here or in another
+    // window), in a plain mailbox showing its own rows (not a navigation still on its way) at its very top (scrolled, the
+    // anchor keeps the place: nothing moves), a few rows that weren't there and weren't just removed here, never during a
+    // drag, and only with motion on (the commit it flushes is for the animation)
+    const shown = current.itemsKey === key && !current.loading && current.items.length > 0;
+    const arrived = options.arrived?.length && sameView && shown && !restore && scope?.kind === "view" && !listAnchor.scrolled?.() && useDrag.getState().phase === "idle" && listArrival.on?.() ? arrivedOnTop(current.index, page.items, onTop, new Set(options.arrived)) : [];
     if (arrived.length) listArrival.arm?.();
     const commit = (fn: () => void) => (restore || arrives || arrived.length ? flushSync(fn) : fn());
     commit(() => {
@@ -567,13 +571,13 @@ let deferred = false;
  * or, while a page covers it, once the list shows again (plan 24, R4: no
  * work for a list nobody sees, and its window and anchor survive).
  */
-export function refreshList(covered: boolean, { arrivals = false }: { arrivals?: boolean } = {}): void {
+export function refreshList(covered: boolean, { arrived }: { arrived?: readonly number[] } = {}): void {
   if (covered) {
     deferred = true;
     return;
   }
   // (List keeps its whole window on a same-list refresh: reloadList)
-  void reloadList({ keepSelection: true, arrivals });
+  void reloadList({ keepSelection: true, arrived });
 }
 
 /** The list shows again: the refresh it missed, over its whole loaded window. */

@@ -278,6 +278,7 @@ export class BackendCore {
   private readonly undispatched = new Set<string>();
   private sendsSettled: (() => void)[] = [];
   private pendingThreadIds = new Set<number>();
+  private pendingArrived = new Set<number>();
   private pendingViews = false;
   private flushScheduled = false;
   private lastCountsAt = -Infinity;
@@ -1159,8 +1160,9 @@ export class BackendCore {
   }
 
   /** Coalesces change notifications within one turn of the event loop. */
-  notifyChanged(threadIds: Iterable<number>, views = true): void {
+  notifyChanged(threadIds: Iterable<number>, views = true, arrived: Iterable<number> = []): void {
     for (const id of threadIds) this.pendingThreadIds.add(id);
+    for (const id of arrived) this.pendingArrived.add(id);
     this.pendingViews ||= views;
     if (this.flushScheduled) return;
     this.flushScheduled = true;
@@ -1169,9 +1171,11 @@ export class BackendCore {
       if (this.stopped) return;
       const threadIds = [...this.pendingThreadIds];
       const views = this.pendingViews;
+      const arrived = [...this.pendingArrived];
       this.pendingThreadIds.clear();
+      this.pendingArrived.clear();
       this.pendingViews = false;
-      this.server.emit("changed", { threadIds, views });
+      this.server.emit("changed", { threadIds, views, ...(arrived.length ? { arrived } : {}) });
       this.reminders.touched();
       this.pins.touched();
       this.followups.touched();
@@ -1416,7 +1420,8 @@ export class BackendCore {
       this.announceAuto(r.auto);
       this.opsQueued(r.opIds);
       this.reconcileFlags(r.flagReconcileAccounts);
-      this.notifyChanged(r.touched);
+      // plan 195: live mail is news the list may show arriving; a first sync's or a backfill's isn't
+      this.notifyChanged(r.touched, true, live && r.inserted.length ? r.touched : []);
       // plan 116: what it inserted, and the bodies it completed (their filters and category may make them go)
       if (this.forwards.isActive) {
         this.planForwards({ messageIds: forwardEligible ? r.inserted : [], threadIds: r.touched });
