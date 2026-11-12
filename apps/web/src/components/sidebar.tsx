@@ -1573,7 +1573,9 @@ export function Sidebar() {
   );
 
   return (
-    <aside id="app-sidebar" data-testid="sidebar" className="flex h-full min-h-0 w-full flex-col bg-sidebar text-sidebar-foreground">
+    // chrome, as Mail's: nothing here is text to select, and Chromium keeps a selection through clicks on buttons and
+    // unselectable panes (nearly every press in the app), so one started here would stay until a click in mail text
+    <aside id="app-sidebar" data-testid="sidebar" className="flex h-full min-h-0 w-full flex-col bg-sidebar text-sidebar-foreground select-none">
       <div className="drag-region h-(--pane-bar) shrink-0" />
       {/* plan 169: where a moved category or account now is, for a screen reader */}
       <div role="status" aria-live="polite" aria-atomic className="sr-only" data-testid="sidebar-reorder-live" />

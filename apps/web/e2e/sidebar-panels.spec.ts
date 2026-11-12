@@ -58,6 +58,18 @@ test.describe("Part A: More", () => {
       await page.keyboard.press("Tab");
       await expect(page.getByTestId("new-category")).toBeFocused();
     });
+    await scenario("the sidebar's words are chrome, never selected: Chromium keeps a selection through clicks on buttons, so one there couldn't be cleared", async () => {
+      const selected = () => page.evaluate(() => getSelection()?.toString() ?? "");
+      const title = page.getByTestId("sidebar").getByText("Categories", { exact: true });
+      await title.dblclick();
+      expect(await selected()).toBe("");
+      const from = (await title.boundingBox())!, to = (await page.getByTestId("nav-starred").boundingBox())!;
+      await page.mouse.move(from.x + from.width - 2, from.y + from.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(to.x + 4, to.y + to.height / 2, { steps: 8 });
+      await page.mouse.up();
+      expect(await selected()).toBe("");
+    });
     await scenario("toggles, says Less while open, and is remembered across a reload", async () => {
       await moreClosed(page);
       await more(page).click();
