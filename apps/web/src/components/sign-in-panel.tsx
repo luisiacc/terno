@@ -1,7 +1,7 @@
 import { signInMethod, unhandled, type Account } from "@terno/core";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
-import { AccountRing } from "@terno/ui/components/category-dot";
+import { AccountMark } from "@terno/ui/components/category-dot";
 import { Input } from "@terno/ui/components/input";
 import { PopoverDescription, PopoverTitle } from "@terno/ui/components/popover";
 import { cn } from "@terno/ui/lib/utils";
@@ -35,7 +35,7 @@ export default function SignInPanel({ accounts, onLater, home = sidebarRow }: { 
       <div className="flex flex-col gap-1">
         {one ? (
           <div className="flex min-w-0 items-center gap-2">
-            <AccountRing color={one.color} />
+            <AccountMark color={one.color} />
             <div className="min-w-0">
               <PopoverTitle className="truncate text-sm">{t("signIn.title.one", { name: one.displayName })}</PopoverTitle>
               <p className="truncate text-xs text-muted-foreground">{one.email}</p>
@@ -103,7 +103,7 @@ function AccountSignIn({ account, expanded = false }: { account: Account; expand
     <>
       {!expanded && (
         <div className="flex min-w-0 items-center gap-2">
-          <AccountRing color={account.color} />
+          <AccountMark color={account.color} />
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium">{account.displayName}</p>
             <p className="truncate text-xs text-muted-foreground">{account.email}</p>

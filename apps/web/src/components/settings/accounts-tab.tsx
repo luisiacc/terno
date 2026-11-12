@@ -5,7 +5,7 @@ import { separatesTabs, signInMethod, unhandled, type Account, type SignInMethod
 import type { AppSettings } from "@terno/core/rpc";
 import { Accordion, AccordionItem, AccordionPanel, AccordionTrigger } from "@terno/ui/components/accordion";
 import { Button, GHOST_DANGER_PRESS } from "@terno/ui/components/button";
-import { AccountRing } from "@terno/ui/components/category-dot";
+import { AccountMark } from "@terno/ui/components/category-dot";
 import { Input } from "@terno/ui/components/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/popover";
 import { Switch } from "@terno/ui/components/switch";
@@ -276,7 +276,7 @@ function AccountItem({ account, generalWindow, isOwner }: { account: Account; ge
   return (
     <AccordionItem value={account.id} className="group/account" data-testid="settings-account" data-account-id={account.id}>
       <AccordionTrigger level={4} className="-mx-2 w-[calc(100%+1rem)] rounded-md px-2 py-2.5 [contain:inline-size]" data-testid="account-toggle">
-        <AccountRing color={account.color} />
+        <AccountMark color={account.color} />
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-medium">{account.displayName}</span>
           <span className={cn("block truncate text-xs", attention ? "text-destructive-ink" : "text-muted-foreground")}>

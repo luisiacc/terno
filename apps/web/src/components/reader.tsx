@@ -10,7 +10,7 @@ import { ButtonGroup, ButtonGroupItem } from "@terno/ui/components/button-group"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuShortcut, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
 import { Separator } from "@terno/ui/components/separator";
 import { Chip } from "@terno/ui/components/chip";
-import { AccountRing, CategoryDot } from "@terno/ui/components/category-dot";
+import { AccountMark, CategoryDot } from "@terno/ui/components/category-dot";
 import { IconButton } from "@terno/ui/components/icon-button";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { TernoMark } from "@terno/ui/brand/terno-mark";
@@ -804,12 +804,12 @@ function Welcome() {
   );
 }
 
-/** The account a conversation is in, as the sidebar marks it: its ring and its name. Information, so no chip (those can be removed). */
-function AccountMark({ account }: { account: Account }) {
+/** The account a conversation is in, as the sidebar marks it: its diamond and its name. Information, so no chip (those can be removed). */
+function ThreadAccount({ account }: { account: Account }) {
   const label = t("reader.account", { name: account.displayName || account.email, email: account.email });
   return (
     <span data-testid="reader-account" title={label} className="inline-flex min-w-0 items-center gap-1.5">
-      <AccountRing color={account.color} />
+      <AccountMark color={account.color} />
       <span className="sr-only">{label}</span>
       <span aria-hidden className="truncate">{account.displayName || account.email}</span>
     </span>
@@ -846,7 +846,7 @@ function ThreadChips({ detail, account, cats, fold, className }: { detail: Threa
   const thread = detail.thread;
   return (
     <div data-testid="thread-chips" className={cn("flex flex-wrap items-center gap-x-2.5 gap-y-1.5 text-xs text-muted-foreground", className)}>
-      {account && <AccountMark account={account} />}
+      {account && <ThreadAccount account={account} />}
       {detail.messages.length > 1 && <MessageCount count={detail.messages.length} fold={fold} />}
       {cats.map((c) => {
         const auto = detail.categorization?.auto.find((a) => a.categoryId === c.id);

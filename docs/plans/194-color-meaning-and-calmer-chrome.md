@@ -37,9 +37,9 @@ And what to keep: the type scale and ~70-character reading column, the code chip
 - **The rule, held by a test.** In every built-in palette, every category color with chroma ≥ 0.05 is at least **30°** of hue from `unread` (when unread has chroma ≥ 0.05). Palettes that break it after the swap move the *category* color where the palette has room: Dracula's rose becomes its red, Monokai's lime a yellow and emerald a teal-green, Apple's and Tokyo Night's cyan move toward teal, Tokyo Night's slate loses chroma. Catppuccin has none (its pink sits 23° from its red in Mocha), so there `unread` takes the palette's own blue, the slot indigo freed; its accent stays mauve. The contrast suite already derives and checks each `-ink`.
 - **Old values.** One function in core, `categoryColor(raw)`: a known color is itself, `"indigo"` (retired) is `"brown"` (its slot, so a user's colors stay as distinct as they were), anything else `"slate"`. Each store's account reader (`toAccount`) and category list and create read through it, so nothing is rewritten and no migration runs. Inputs that may carry an old value accept it the same way: a backup's categories and the RPC color inputs (`categoryColorSchema`, a preprocess before the enum). A saved custom theme's `cat-indigo`/`cat-indigo-ink` move to `cat-brown`/`cat-brown-ink` (`upgradeThemeTokens`, one the theme set under the new name wins), in the schema (imports, edits) and where settings are read, so the theme stays valid and the categories that were indigo keep the user's own color.
 
-### 2. Accounts are rings, categories dots
+### 2. Accounts are diamonds, categories dots
 
-- `AccountRing` beside `CategoryDot` (`packages/ui/src/components/category-dot.tsx`): the same 8 px box, a 1.5 px ring in the account's color, hollow. Accounts use it everywhere they're marked (sidebar's accounts, Move/focus lists, the reader's account, sign-in, Settings → Accounts, the account menu's header); categories keep the dot. The color pickers keep their swatches.
+- `AccountMark` beside `CategoryDot` (`packages/ui/src/components/category-dot.tsx`): a small filled diamond in the account's color, a 7 px square turned 45°, about the dot's area so neither weighs more. (Built first as a hollow ring; the owner preferred filled diamonds.) Accounts use it everywhere they're marked (sidebar's accounts, Move/focus lists, the reader's account, sign-in, Settings → Accounts, the account menu's header); categories keep the dot. The color pickers keep their swatches.
 - A row names its account in words, as now; once its marks leave the preview's line (3), no dot sits beside the name.
 
 ### 3. A three-line row's marks go up to its date
@@ -76,7 +76,7 @@ And what to keep: the type scale and ~70-character reading column, the code chip
 - `types`/core unit: `categoryColor` maps known, `indigo`, junk; `categoryColorSchema` and `customThemeSchema` accept an old backup and an old custom theme.
 - Store conformance (`packages/store`): an account and a category written as `indigo` read back as `brown`, in both engines.
 - `thread-people.test.ts`: one other person, nothing; two, both.
-- e2e: `inbox-scan`/`list-layout` (marks on the date's line, the preview line ends with the account), the reader spec (subject alone on its line; chips under it; no people line for a 1:1 thread), the sidebar (accounts are rings, categories dots). Site: `apps/site` test that the tools are hidden at rest and shown on hover/focus.
+- e2e: `inbox-scan`/`list-layout` (marks on the date's line, the preview line ends with the account), the reader spec (subject alone on its line; chips under it; no people line for a 1:1 thread), the sidebar (accounts are diamonds, categories dots). Site: `apps/site` test that the tools are hidden at rest and shown on hover/focus.
 - Visual: the inbox in light and dark (classic, macOS, Lumen), looked at; `pnpm ui:rate` + `ui:gate` (list and reader change).
 
 ## Performance
@@ -85,7 +85,7 @@ No new subscription, query or render: a row renders the same elements on another
 
 ## Out of scope
 
-- Account initials or avatars (rings do the job without a new shape per account).
+- Account initials or avatars (a diamond does the job without a new shape per account).
 - Text labels on toolbar buttons.
 - Changing any palette's `unread` or accent.
 
@@ -96,7 +96,7 @@ No new subscription, query or render: a row renders the same elements on another
 3. **The stores' boundaries** are named as they are: `toAccount`, the category list and `createCategory`'s returned object, so create, list and a reopen agree. The conformance case writes `indigo` as an older build did and reads `brown` in both engines.
 4. **Other color consumers**: the avatar palette (`format.ts`, now `CATEGORY_COLORS` itself), the storage chart, the appearance previews, the color labels in `en` and `es`.
 5. **The Tailwind bridge** (`globals.css`) and the generated theme CSS were updated; `generate.test.ts` passes.
-6. **Contrast where rings and dots are drawn.** Adding pairs for the sidebar surfaces showed that category dots never reached 3:1 there in about half the palettes, before this change too. Not done here: a dot or ring is never the only cue (its name is always beside it), and a sidebar-wide palette retune is its own plan.
+6. **Contrast where account and category marks are drawn.** Adding pairs for the sidebar surfaces showed that category dots never reached 3:1 there in about half the palettes, before this change too. Not done here: a dot or diamond is never the only cue (its name is always beside it), and a sidebar-wide palette retune is its own plan.
 7. **Custom themes** can still pick a category color near their unread: the 30° rule holds the built-in palettes; a user's own colors are theirs.
 8. **Overflow on line 1**: the policy above (marks drop whole, then the sender), with `account-label.spec` checking the narrowest list keeps 40 px of sender and the marks on the date's line.
 9. **The people chip was a menu**: kept as each message's ⋯ (above); e2e drives it by keyboard and axe-checks it.

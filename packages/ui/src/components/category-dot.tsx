@@ -12,18 +12,6 @@ const DOT: Record<CategoryColor, string> = {
   slate: "bg-cat-slate",
 }
 
-// plan 194: an account's mark is a ring, a category's a dot, so the two never read as one thing where they share a color
-const RING: Record<CategoryColor, string> = {
-  rose: "ring-cat-rose",
-  amber: "ring-cat-amber",
-  lime: "ring-cat-lime",
-  emerald: "ring-cat-emerald",
-  cyan: "ring-cat-cyan",
-  brown: "ring-cat-brown",
-  violet: "ring-cat-violet",
-  slate: "ring-cat-slate",
-}
-
 const SOFT: Record<CategoryColor, string> = {
   rose: "bg-cat-rose/15 text-cat-rose-ink",
   amber: "bg-cat-amber/15 text-cat-amber-ink",
@@ -40,9 +28,12 @@ function CategoryDot({ color, className, ...props }: { color: CategoryColor } & 
   return <span data-slot="category-dot" aria-hidden {...props} className={cn("inline-block size-2 shrink-0 rounded-full", DOT[color] ?? DOT.slate, className)} />
 }
 
-/** An account's mark: the dot's box, hollow, a ring in the account's color. */
-function AccountRing({ color, className, ...props }: { color: CategoryColor } & React.ComponentProps<"span">) {
-  return <span data-slot="account-ring" aria-hidden {...props} className={cn("inline-block size-2 shrink-0 rounded-full ring-[1.5px] ring-inset", RING[color] ?? RING.slate, className)} />
+/**
+ * An account's mark (plan 194, the owner's call): a small filled diamond, so an account never reads as a category's dot
+ * where the two share a color. A 7 px square turned 45°: about the dot's area, so neither weighs more.
+ */
+function AccountMark({ color, className, ...props }: { color: CategoryColor } & React.ComponentProps<"span">) {
+  return <span data-slot="account-mark" aria-hidden {...props} className={cn("inline-block size-1.75 shrink-0 rotate-45 rounded-[1px]", DOT[color] ?? DOT.slate, className)} />
 }
 
 /** Soft pill with a category name. */
@@ -54,4 +45,4 @@ function CategoryBadge({ color, children, className, ...props }: { color: Catego
   )
 }
 
-export { AccountRing, CategoryDot, CategoryBadge }
+export { AccountMark, CategoryDot, CategoryBadge }
