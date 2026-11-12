@@ -57,8 +57,8 @@ export function SendButton({ d, onSend, className }: { d: LocalDraft; onSend: (s
       : "bg-transparent bg-none text-inherit focus-visible:shadow-[inset_0_0_0_2px_var(--primary),inset_0_0_0_3.5px_var(--primary-foreground)]",
   );
   const variant = outlined ? "ghost" : "default";
-  // plan 188: why it can't send yet, said with it (the tooltip is the pointer's; a press says it at the field too)
-  const whyId = useId();
+  // plan 188: why it can't send yet, said with it (the tooltip is the pointer's; a press says it at the field too). An
+  // aria-description, not a hidden copy of the words: the page's text stays the visible alert's alone
   const why = ready ? null : uploading ? t("compose.stillAdding") : invalid !== null ? t("compose.invalidRecipient", { entry: invalid }) : t("compose.noRecipient");
   return (
     <div
@@ -73,11 +73,10 @@ export function SendButton({ d, onSend, className }: { d: LocalDraft; onSend: (s
       data-testid="compose-send-group"
       data-ready={ready || undefined}
     >
-      {why && <span id={whyId} hidden>{why}</span>}
       <Tooltip>
         <TooltipTrigger
           render={
-            <Button type="submit" size="sm" variant={variant} data-testid="compose-send" aria-busy={d.sending} aria-disabled={!disabled && !ready ? true : undefined} aria-describedby={why && !disabled ? whyId : undefined} disabled={disabled} className={cn(half, "peer gap-2 rounded-r-none pr-2")}>
+            <Button type="submit" size="sm" variant={variant} data-testid="compose-send" aria-busy={d.sending} aria-disabled={!disabled && !ready ? true : undefined} aria-description={why && !disabled ? why : undefined} disabled={disabled} className={cn(half, "peer gap-2 rounded-r-none pr-2")}>
               <Send /> {t("common.send")}
             </Button>
           }
