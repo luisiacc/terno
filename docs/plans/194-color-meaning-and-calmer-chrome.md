@@ -1,6 +1,6 @@
 # Plan 194: one meaning per color, and calmer chrome
 
-- **Status:** building.
+- **Status:** built.
 - **Touches:** plan 15 (palettes), 23 (a row's account), 87 (reminders' bell), 97 (the site's pictures), 173 (a row's marks), 177 (who's on a conversation), 179 (Pin).
 
 ## The request (verbatim)
@@ -34,8 +34,8 @@ And what to keep: the type scale and ~70-character reading column, the code chip
 ### 1. Unread owns its hue
 
 - **Indigo leaves; brown takes its slot.** `CATEGORY_COLORS` becomes rose, amber, lime, emerald, cyan, **brown**, violet, slate: still eight, so auto-assignment and existing distinctness hold, and none of them is blue. The theme tokens follow (`cat-brown`, `cat-brown-ink`; `cat-indigo*` are gone), and every palette gives brown a value: amber's family, redder (H ≈ 50), lower in chroma (≈ .07) and lightness, so it reads as brown beside amber.
-- **The rule, held by a test.** In every built-in palette, every category color with chroma ≥ 0.05 is at least **30°** of hue from `unread` (when unread has chroma ≥ 0.05). Palettes that break it after the swap move the *category* color, never `unread` (each palette's accent and unread stay as their authors made them): Catppuccin's violet becomes its pink, Dracula's rose its red, Monokai's lime its yellow and emerald a teal-green, Apple's and Tokyo Night's cyan move toward teal, Tokyo Night's slate loses chroma. The contrast suite already derives and checks each `-ink`.
-- **Old values.** One function in core, `categoryColor(raw)`: a known color is itself, `"indigo"` (retired) is `"brown"` (its slot, so a user's colors stay as distinct as they were), anything else `"slate"`. Each store's `toAccount`/`toCategory` reads through it, so nothing is rewritten and no migration runs. Inputs that may carry an old value accept it the same way: a backup's categories and the RPC color inputs (`categoryColorSchema`, a preprocess before the enum). A saved custom theme's `cat-indigo`/`cat-indigo-ink` keys are dropped on parse (a blue for the brown slot would be wrong), so the theme stays valid instead of failing `.strict()`.
+- **The rule, held by a test.** In every built-in palette, every category color with chroma ≥ 0.05 is at least **30°** of hue from `unread` (when unread has chroma ≥ 0.05). Palettes that break it after the swap move the *category* color where the palette has room: Dracula's rose becomes its red, Monokai's lime a yellow and emerald a teal-green, Apple's and Tokyo Night's cyan move toward teal, Tokyo Night's slate loses chroma. Catppuccin has none (its pink sits 23° from its red in Mocha), so there `unread` takes the palette's own blue, the slot indigo freed; its accent stays mauve. The contrast suite already derives and checks each `-ink`.
+- **Old values.** One function in core, `categoryColor(raw)`: a known color is itself, `"indigo"` (retired) is `"brown"` (its slot, so a user's colors stay as distinct as they were), anything else `"slate"`. Each store's account reader (`toAccount`) and category list and create read through it, so nothing is rewritten and no migration runs. Inputs that may carry an old value accept it the same way: a backup's categories and the RPC color inputs (`categoryColorSchema`, a preprocess before the enum). A saved custom theme's `cat-indigo`/`cat-indigo-ink` move to `cat-brown`/`cat-brown-ink` (`upgradeThemeTokens`, one the theme set under the new name wins), in the schema (imports, edits) and where settings are read, so the theme stays valid and the categories that were indigo keep the user's own color.
 
 ### 2. Accounts are rings, categories dots
 
@@ -45,12 +45,12 @@ And what to keep: the type scale and ~70-character reading column, the code chip
 ### 3. A three-line row's marks go up to its date
 
 - The marks (≤ 2 dots, paperclip, star, bell) end line 1, before the code chip and the date; line 3 is the preview and the account's name only. Review already keeps them there. With no preview (plan 187), the subject's line keeps only the account. One-line rows (compact, wide) are unchanged.
-- The sender gives way first on line 1 (it truncates; the marks and date don't shrink), as the code chip already makes it.
+- What gives way on a short line 1: the marks take only what the sender (65% at most), the count, the code and the date leave, and drop whole from the end (their box is one glyph tall and wraps, so what doesn't fit goes below it, out of sight); then the sender truncates. The code, Spam/Trash/Opened and the date never shrink. A screen reader still hears every mark in the row's sentence.
 
 ### 4. A calmer reader header
 
 - `classic` and `sender-card`: the subject on its own line (it may wrap), then `ThreadChips` as a quiet second line under it (account, N messages · Expand all, category chips, suggestions). `chips-display` already does this the other way round and stays.
-- `ThreadPeople` shows only when the conversation has **two or more** people besides the user; a 1:1 conversation's message headers already say who.
+- `ThreadPeople` shows only when the conversation has **two or more** people besides the user; a 1:1 conversation's message headers already say who. The chip was also the way to that person's menu (plan 180), so each message's ⋯ (and its right-click) now offers what's done about whoever wrote it: New message to, Conversations with, Copy address and the sender's filing (`PersonItems`, shared with the chip's menu).
 
 ### 5. The toolbar
 
@@ -59,8 +59,8 @@ And what to keep: the type scale and ~70-character reading column, the code chip
 
 ### 6. The site's picture tools
 
-- Hidden until the picture is hovered or holds focus (`:hover`, `:focus-within`), always shown where there's no hover (`@media (hover: none)`); a fade within the site's 80 ms, none under reduced motion.
-- A focus ring only for keyboard focus (`:focus-visible`), drawn in the site's own ring; none after a click.
+- Faded out (opacity, never hidden, so Tab still reaches them) until the picture is hovered or holds focus (`:hover`, `:focus-within`); always shown where there's no hover (`@media (hover: hover)` gates the fade); an 80 ms fade, none under reduced motion.
+- The site already rings only keyboard focus (`:focus-visible`); the ring in the feedback's picture was a Tab's.
 
 ### 7. The count as a pill
 
@@ -90,3 +90,16 @@ No new subscription, query or render: a row renders the same elements on another
 - Changing any palette's `unread` or accent.
 
 ## Revisions after the Codex review
+
+1. **A theme that set only indigo's tokens** would have been left empty and invalid (and an import validates the list whole). Retired tokens now move to brown's names instead of being dropped; `registry.test.ts` covers a theme with only them and one with both.
+2. **Stored themes** were read without the schema; `resolveThemes` (backend settings) applies the same `upgradeThemeTokens`. `settings.test.ts` reads a stored theme with `cat-indigo`.
+3. **The stores' boundaries** are named as they are: `toAccount`, the category list and `createCategory`'s returned object, so create, list and a reopen agree. The conformance case writes `indigo` as an older build did and reads `brown` in both engines.
+4. **Other color consumers**: the avatar palette (`format.ts`, now `CATEGORY_COLORS` itself), the storage chart, the appearance previews, the color labels in `en` and `es`.
+5. **The Tailwind bridge** (`globals.css`) and the generated theme CSS were updated; `generate.test.ts` passes.
+6. **Contrast where rings and dots are drawn.** Adding pairs for the sidebar surfaces showed that category dots never reached 3:1 there in about half the palettes, before this change too. Not done here: a dot or ring is never the only cue (its name is always beside it), and a sidebar-wide palette retune is its own plan.
+7. **Custom themes** can still pick a category color near their unread: the 30° rule holds the built-in palettes; a user's own colors are theirs.
+8. **Overflow on line 1**: the policy above (marks drop whole, then the sender), with `account-label.spec` checking the narrowest list keeps 40 px of sender and the marks on the date's line.
+9. **The people chip was a menu**: kept as each message's ⋯ (above); e2e drives it by keyboard and axe-checks it.
+10. **The clock icon**: `AlarmClock`/`AlarmClockOff` added to the catalog and generated; a due reminder is a 20% wash inside the clock, not a solid fill.
+11. **The site's focus ring** was already keyboard-only; the tools fade with opacity so `:focus-within` and Tab keep working; the `display: contents` wrapper is untouched.
+12. **Tests that pinned the old layout** (`thread-row-marks.test.tsx`, `designs.spec`, `account-label.spec`, `account-menu.spec`) were updated; the 1:1 case is in `thread-overview.test.tsx`. MCP's category creation sends brown.

@@ -179,7 +179,7 @@ test.describe("the account menu", () => {
   });
 
   test("the menu's actions: color, new message, new mail, mark as read, settings", async ({ app: page, server }) => {
-    await scenario("Color: the dot and the account change", async () => {
+    await scenario("Color: the ring and the account change", async () => {
       const [a] = await accountIds(page);
       const current = (await server.backend.store.accounts.get(a!))!.color;
       const next = current === "rose" ? "emerald" : "rose";
@@ -189,7 +189,9 @@ test.describe("the account menu", () => {
       await page.getByTestId(`account-menu-color-${next}`).click();
       await expect(menu(page, a!)).toHaveCount(0);
       await expect.poll(async () => (await server.backend.store.accounts.get(a!))!.color).toBe(next);
-      await expect(row(page, a!).locator(`[data-slot=category-dot].bg-cat-${next}`)).toHaveCount(1);
+      // plan 194: an account's mark is a ring, never a category's dot
+      await expect(row(page, a!).locator(`[data-slot=account-ring].ring-cat-${next}`)).toHaveCount(1);
+      await expect(row(page, a!).locator("[data-slot=category-dot]")).toHaveCount(0);
     });
     await scenario("New message: from that account, wherever you are", async () => {
       await freshStart(page);
