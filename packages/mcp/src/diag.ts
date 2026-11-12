@@ -6,15 +6,12 @@
  */
 import { appendFileSync, existsSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { appendFile, rename, rm, stat } from "node:fs/promises";
-import { homedir, totalmem } from "node:os";
+import { totalmem } from "node:os";
 import { join } from "node:path";
-import { captureError, installDiag, RecordStore, RotatingLog, type DiagEntry, type ErrorRecord } from "@terno/core/diag";
+import { captureError, diagPlatform, installDiag, RecordStore, RotatingLog, type DiagEntry, type ErrorRecord } from "@terno/core/diag";
+import { profileDir } from "./profile";
 
 const MODE = 0o600;
-
-function profileDir(): string {
-  return process.env.TERNO_USER_DATA ?? join(homedir(), "Library", "Application Support", "Terno");
-}
 
 /** A crash record in the profile's crashes/, pruned like main's own. */
 export function writeMcpRecord(profile: string, r: ErrorRecord): void {
@@ -56,7 +53,7 @@ export function installMcpDiag(version: string): void {
     version,
     build: `${version}+${process.env.TERNO_BUILD_SHA ?? "dev"}`,
     channel: process.env.TERNO_BUILD_SHA ? "production" : "dev",
-    context: () => ({ os: process.platform === "darwin" ? "darwin" : "other", arch: process.arch === "arm64" ? "arm64" : "other", runtime: `node-${process.versions.node}`, memMb: Math.round(totalmem() / 1048576) }),
+    context: () => ({ ...diagPlatform(process.platform, process.arch), runtime: `node-${process.versions.node}`, memMb: Math.round(totalmem() / 1048576) }),
     sink: {
       // stdout carries only MCP frames
       write: (e: DiagEntry) => {

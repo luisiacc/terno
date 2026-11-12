@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { connect } from "node:net";
-import { homedir } from "node:os";
 import { join } from "node:path";
+import { profileDir } from "./profile";
 import { isRpcMessage, RpcClient, RpcError, type MethodName, type ParamsOf, type ResultOf, type RpcMessage, type Transport } from "@terno/core/rpc";
 
 export interface Endpoint {
@@ -10,7 +10,7 @@ export interface Endpoint {
 }
 
 export function defaultEndpoint(): Endpoint {
-  const dir = process.env.TERNO_USER_DATA ?? join(homedir(), "Library", "Application Support", "Terno");
+  const dir = profileDir();
   return {
     socketPath: process.env.TERNO_SOCKET ?? join(dir, "agent.sock"),
     tokenPath: process.env.TERNO_TOKEN_FILE ?? join(dir, "agent.token"),
