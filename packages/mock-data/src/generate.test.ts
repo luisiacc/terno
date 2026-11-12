@@ -33,7 +33,9 @@ describe("mock dataset", () => {
       const data = generateDataset(options);
       // plan 17's bulk flag is derived from what the generator already chose (no draw from the PRNG)
       // plan 68's folders are placed after, from a hash (no draw from the PRNG either); plan 96's unsubscribe is from the list id
-      const legacy = { ...data, accounts: data.accounts.map(({ folders: _x, ...a }) => a), messages: data.messages.map(({ tags: _t, family: _f, bulk: _b, gmailLabels: _g, locations: _l, unsubscribe: _u, ...m }) => m) };
+      // plan 194: brown took indigo's slot, the one change to what it draws (the fingerprints still hold with it put back)
+      const indigo = <T extends { color: string }>(x: T) => (x.color === "brown" ? { ...x, color: "indigo" } : x);
+      const legacy = { ...data, categories: data.categories.map(indigo), accounts: data.accounts.map(({ folders: _x, ...a }) => indigo(a)), messages: data.messages.map(({ tags: _t, family: _f, bulk: _b, gmailLabels: _g, locations: _l, unsubscribe: _u, ...m }) => m) };
       expect(fnv(JSON.stringify(legacy))).toBe(expected);
     }
   });
