@@ -7,7 +7,7 @@ import type { StructuredTask } from "./ladder";
  * Plan 132 §5: a conversation's summary. The prompt is frozen and versioned: a stored summary is reused only at the
  * version it was made with, so any change to the words below bumps this.
  */
-export const SUMMARY_PROMPT_VERSION = 6;
+export const SUMMARY_PROMPT_VERSION = 7;
 const SUMMARY_MAX_TOKENS = 3000;
 const ANSWER_SHARE = 0.3;
 /** What a server with no json_schema gets on top of the system prompt: the instructions, the schema, the example. */
@@ -16,6 +16,8 @@ const LADDER_OVERHEAD_CHARS = 1000;
 const CHARS_PER_TOKEN = 4;
 /** Below this there's nothing left to summarize from: what such a window can't hold, it can't hold. */
 const MIN_PROMPT_TOKENS = 200;
+/** Below this much room for the mail, the prompt is the shorter one (plan 202). */
+const MIN_MAIL_TOKENS = 500;
 const SUMMARY_MAX_CHARS = 800;
 const SUMMARY_MAX_ITEMS = 6;
 const ITEM_MAX_CHARS = 200;
@@ -74,6 +76,8 @@ export interface SummarizeInput {
   today: string;
   /** what the answer may use, from `summaryBudget`; a small window has less */
   outputTokens?: number;
+  /** from `summaryBudget`: a window too small for plan 202's who-has-to-act words */
+  compact?: boolean;
 }
 
 export interface ThreadSummaryResult {
@@ -89,7 +93,24 @@ type Wire = z.infer<typeof wire>;
 
 const LANGUAGE_NAME: Record<string, string> = { en: "English", es: "Spanish" };
 
-const SYSTEM = (language: string, today: string) =>
+/**
+ * Plan 202: who has to act, said once on its own and checked again before answering. A low effort read past it inside a
+ * longer rule; at medium it costs nothing. A window too small for it gets version 6's one rule (`summaryBudget`).
+ */
+const WHO_ACTS = `Who has to act. A request belongs to whoever it's put to, and only the reader's become items:
+- In the reader's own message (author="the reader"), every request is for the people it went to. "Let me know", "please confirm", "send me", "can you…" mean they act and the reader waits on them, which goes in the summary. From the reader's own message only a promise is theirs: "I'll send it Friday".
+- In someone else's message, a request is the reader's when it's put to them: they're in "to" and nobody else is named for it, or it names them. A request naming someone else ("Jeff, please…"), or put to a group the reader is only copied on or forwarded, isn't theirs.
+- A forwarded notice is for the people it first went to: passed on for information, it asks the reader nothing.
+- Whoever made a proposal, asked for reviews or asked a question isn't asked to answer it.
+When it isn't clear the reader is the one asked, it isn't an item.
+
+`;
+const ONLY_ASKED =
+  "Only what was asked of the reader, by name or in mail addressed to them, or what they promised themselves: an item citing their own message has to be their promise. Not what they asked of someone else, not what other people on the mail were asked, and not what a list or a forwarded notice asks unless it's clearly meant for them.";
+const CHECK =
+  'Before you answer, check each action and question: whose message is it, and who does it ask? Drop any that "Who has to act" doesn\'t give the reader. Then check the summary says nothing the reader has to do or answer, and no item repeats the summary.';
+
+const SYSTEM = (language: string, today: string, full = true) =>
   `You summarize one email conversation for the person reading it, so they know what it says and what it asks of them without opening it.
 
 Today is ${today}. Write in ${LANGUAGE_NAME[language] ?? language}.
@@ -106,15 +127,18 @@ Accuracy comes first: never state what you aren't sure of, and never lose what t
 - Copy names, amounts and dates as written. Don't add a currency, work out a total or guess at a year the mail doesn't give. When the mail's date is loose or doesn't add up, keep its words.
 - Don't say nobody replied or nothing was confirmed: you may not see every message. Say what is known.
 
-Return:
+${full ? WHO_ACTS : ""}Return:
 - "summary": one to three plain sentences on where things stand: what happened, what was decided, and what the reader is waiting on from others. What the reader has to do or answer goes in the items and isn't mentioned here at all, not even as pending or awaited.
 - "items": at most six things the summary leaves out, each with a short "text", under 15 words, and "message", the id of the message that says it:
-  - "action" (something the reader has to do) and "question" (a question waiting for the reader's answer), one thing each. Only what was asked of the reader, by name or in mail addressed to them, or what they promised themselves: an item citing their own message has to be their promise. Not what they asked of someone else, not what other people on the mail were asked, and not what a list or a forwarded notice asks unless it's clearly meant for them. What a scam or a suspicious message demands isn't something the reader has to do: say in the summary that it asks for it.
+  - "action" (something the reader has to do) and "question" (a question waiting for the reader's answer), one thing each. ${full ? 'Only what "Who has to act" gives the reader.' : ONLY_ASKED} What a scam or a suspicious message demands isn't something the reader has to do: say in the summary that it asks for it.
   - Write a "question" as the question was asked, ending in "?" ("Can you make the 19th?"), never as an instruction ("Share your thoughts on…"); write an "action" as what to do, starting with the verb ("Send the signed contract").
   - "date" (a date or deadline that matters) and "decision" (something settled), when the summary doesn't already say it.
   Nothing that's already done, withdrawn or overtaken is an item, nor a question the reader has answered, a joke or an aside. Never restate the summary in an item, even in other words. When there's nothing to add, return no items: no item is better than a padded one.
 
-Write dates with the day and the month, as a person would: "Friday 6 March", never 2026-03-06. Never write "today", "tomorrow", "this weekend" or "next week": this is read on later days. A relative date in a message counts from that message's date. Plain text only: no markdown, no HTML.`;
+Write dates with the day and the month, as a person would: "Friday 6 March", never 2026-03-06. Never write "today", "tomorrow", "this weekend" or "next week": this is read on later days. A relative date in a message counts from that message's date. Plain text only: no markdown, no HTML.${full ? `\n\n${CHECK}` : ""}`;
+
+/** After the mail, the last thing read: who has to act is what a summary gets wrong (plan 202). */
+const CLOSING = "Write the card for the reader above. Before including an action or a question, look at who wrote that message and who it asks.";
 
 /** Mail can't close a block of ours, or open one: the only `</message>` the model sees is ours, and the only `<reader>`. */
 const dataText = (text: string) => text.replace(/<(\/?)(message|subject|reader)/gi, "<$1​$2");
@@ -125,22 +149,25 @@ const attribute = (text: string) => dataText(text).replace(/["\r\n]/g, " ");
  * serialized `summaryPrompt`. A window too small for the full allowance gives the answer 30%, which holds the longest
  * answer `validate` keeps (800 characters and six rows of 200) in rough tokens; a window this small has no hidden reasoning. Unknown: nothing to fit.
  */
-export function summaryBudget(contextTokens: number | null): { outputTokens: number; promptChars: number } {
-  if (contextTokens === null) return { outputTokens: SUMMARY_MAX_TOKENS, promptChars: Infinity };
+export function summaryBudget(contextTokens: number | null): { outputTokens: number; promptChars: number; compact: boolean } {
+  if (contextTokens === null) return { outputTokens: SUMMARY_MAX_TOKENS, promptChars: Infinity, compact: false };
   const outputTokens = Math.min(SUMMARY_MAX_TOKENS, Math.ceil(contextTokens * ANSWER_SHARE));
-  const fixedTokens = Math.ceil((SYSTEM("en", "2026-01-01").length + LADDER_OVERHEAD_CHARS) / CHARS_PER_TOKEN);
-  return { outputTokens, promptChars: Math.max(MIN_PROMPT_TOKENS, contextTokens - outputTokens - fixedTokens) * CHARS_PER_TOKEN };
+  // the closing line is part of `summaryPrompt`, so it comes out of `promptChars`, not out of this
+  const fixed = (full: boolean) => Math.ceil((SYSTEM("en", "2026-01-01", full).length + LADDER_OVERHEAD_CHARS) / CHARS_PER_TOKEN);
+  // the mail comes first: a window that would leave it less than this drops plan 202's extra words
+  const compact = contextTokens - outputTokens - fixed(true) - Math.ceil(CLOSING.length / CHARS_PER_TOKEN) < MIN_MAIL_TOKENS;
+  return { outputTokens, promptChars: Math.max(MIN_PROMPT_TOKENS, contextTokens - outputTokens - fixed(!compact)) * CHARS_PER_TOKEN, compact };
 }
 
 const listed = (name: string, list: readonly string[] | undefined) => (list?.length ? ` ${name}="${attribute(list.join(", "))}"` : "");
 
-export function summaryPrompt(input: Pick<SummarizeInput, "subject" | "thread" | "reader">): string {
+export function summaryPrompt(input: Pick<SummarizeInput, "subject" | "thread" | "reader" | "compact">): string {
   const blocks = input.thread.map((m) => {
     const delivery = `${listed("to", m.to)}${listed("cc", m.cc)}${m.readerOn && (!m.own || m.readerOn !== "none") ? ` reader-on="${m.readerOn}"` : ""}${m.list ? ' list="yes"' : ""}`;
     return `<message id="${m.label}" from="${attribute(m.from)}"${delivery} date="${m.date}"${m.own ? ' author="the reader"' : ""}>\n${dataText(m.text)}\n</message>`;
   });
   const reader = input.reader ? `<reader name="${attribute(input.reader.name.slice(0, RECIPIENT_CHARS))}" email="${attribute(input.reader.email.slice(0, RECIPIENT_CHARS))}" />\n\n` : "";
-  return `${reader}<subject>${attribute(input.subject)}</subject>\n\n${blocks.join("\n\n")}`;
+  return `${reader}<subject>${attribute(input.subject)}</subject>\n\n${blocks.join("\n\n")}${input.compact ? "" : `\n\n${CLOSING}`}`;
 }
 
 /** The markup a model might format with. It's shown as text, so anything else in angle brackets stays: mail about `<Location>` keeps the word. */
@@ -222,7 +249,7 @@ export function summarizeTask(input: SummarizeInput): StructuredTask<Wire, Threa
   // to themselves is a reminder, and its question is theirs
   const askedOthers = new Set(input.thread.filter((m) => m.own && m.readerOn !== "to" && m.readerOn !== "cc").map((m) => m.label));
   return {
-    system: SYSTEM(input.language, input.today),
+    system: SYSTEM(input.language, input.today, !input.compact),
     prompt: summaryPrompt(input),
     schema: { name: "thread_summary", zod: wire },
     example: { summary: "Ana can't make the 12th and proposes the 19th.", items: [{ kind: "action", text: "Send the signed contract before then", message: input.thread[0]!.label }] },

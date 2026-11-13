@@ -58,13 +58,13 @@ const nameOf = (m: SummarySourceMessage) => (m.fromName ? `${m.fromName} <${m.fr
  * Serialized, a small window can still be too full: tags, addresses and every snippet count. What goes first is what
  * says least: the oldest headers, then the oldest of the others, and only then the newest message's own words.
  */
-function fit(subject: string, thread: ThreadText[], newestAt: number, room: number, reader: SummaryReader): { subject: string; thread: ThreadText[] } {
+function fit(subject: string, thread: ThreadText[], newestAt: number, room: number, reader: SummaryReader, compact: boolean): { subject: string; thread: ThreadText[] } {
   if (room === Infinity) return { subject, thread };
   // a subject can't take the whole window from the words it heads
   const head = subject.slice(0, Math.floor(room / 8));
   let kept = thread;
   let newest = kept[newestAt]!;
-  const size = () => summaryPrompt({ subject: head, thread: kept, reader }).length;
+  const size = () => summaryPrompt({ subject: head, thread: kept, reader, compact }).length;
   while (size() > room && kept.length > 1) {
     const at = kept[0] === newest ? 1 : 0;
     kept = kept.filter((_, i) => i !== at);
@@ -89,7 +89,7 @@ function readerOf(sources: SummarySources, own: ReadonlySet<string>): SummaryRea
 }
 
 /** What goes to the model, and which message each label stands for. */
-async function assemble(store: MailStore, sources: SummarySources, contextTokens: number | null): Promise<{ subject: string; thread: ThreadText[]; reader: SummaryReader; labels: Map<string, number> }> {
+async function assemble(store: MailStore, sources: SummarySources, contextTokens: number | null): Promise<{ subject: string; thread: ThreadText[]; reader: SummaryReader; labels: Map<string, number>; compact: boolean }> {
   const messages = sources.messages.filter((m) => !m.trash && !m.spam);
   // an alias shows up as the address their own mail came from
   const own = new Set([...sources.ownEmails, ...sources.messages.filter((m) => m.own).map((m) => m.fromEmail.trim().toLowerCase())]);
@@ -97,7 +97,7 @@ async function assemble(store: MailStore, sources: SummarySources, contextTokens
   const newest = [...messages].reverse().find((m) => !m.own) ?? messages[messages.length - 1]!;
   const others = messages.filter((m) => m !== newest).slice(-OTHERS);
   // a small window: the newest message first, the others share what's left (plan 133 §1.3's way of sizing down)
-  const room = summaryBudget(contextTokens).promptChars;
+  const { promptChars: room, compact } = summaryBudget(contextTokens);
   const newestLimit = Math.min(NEWEST_TOKENS * CHARS_PER_TOKEN, Math.floor(room * 0.6));
   const otherLimit = Math.min(OTHER_TOKENS * CHARS_PER_TOKEN, Math.floor((room * 0.3) / Math.max(1, others.length)));
   const last = messages[messages.length - 1]!;
@@ -115,7 +115,7 @@ async function assemble(store: MailStore, sources: SummarySources, contextTokens
     const text = m === newest ? stored : stored == null ? null : m === last && room >= ROOM_FOR_QUOTES && stored !== authored ? `${authored}\n\n${stored.slice(0, lastLimit)}` : authored;
     return { label: `m${m.id}`, from: nameOf(m), ...deliveryOf(m, own), date: day(m.date), own: m.own, text: text || m.snippet };
   });
-  const { subject, thread: fitted } = fit(sources.subject, drafted, chosen.indexOf(newest), room, reader);
+  const { subject, thread: fitted } = fit(sources.subject, drafted, chosen.indexOf(newest), room, reader, compact);
   const labels = new Map<string, number>();
   // labelled last: what's dropped leaves no gap in what the model can cite
   const thread = fitted.map((t, i): ThreadText => {
@@ -123,7 +123,7 @@ async function assemble(store: MailStore, sources: SummarySources, contextTokens
     labels.set(label, Number(t.label.slice(1)));
     return { ...t, label };
   });
-  return { subject, thread, reader, labels };
+  return { subject, thread, reader, labels, compact };
 }
 
 async function sha256(text: string): Promise<string> {
@@ -398,8 +398,9 @@ export class SummaryWorker {
     const clearGeneration = store.aiSummaries.clearGeneration();
     const signal = AbortSignal.any([o.signal, this.cleared.signal]);
     const ai = o.ai ?? (await this.host.forTask({ foreground: o.foreground }));
-    const { subject, thread, reader, labels } = await assemble(store, sources, ai.contextTokens);
-    const contentHash = await sha256(JSON.stringify({ subject, thread, reader }));
+    const { subject, thread, reader, labels, compact } = await assemble(store, sources, ai.contextTokens);
+    // the shorter prompt is another prompt: a window that grows asks again (plan 202)
+    const contentHash = await sha256(JSON.stringify({ subject, thread, reader, compact }));
     const language = await this.readerLanguage();
     const base = { threadId: sources.threadId, stamp: sources.stamp, expectThrough: row?.throughMessageId ?? null, now: this.host.now(), clearGeneration };
     if (reusable(row, { contentHash, language, ai })) {
@@ -407,7 +408,7 @@ export class SummaryWorker {
       if (outcome === "written") this.host.ready(sources.threadId);
       return { outcome, summary: outcome === "written" ? (viewOf(row!) ?? undefined) : undefined };
     }
-    const result = await ai.summarize({ subject, thread, reader, language, today: day(this.host.now()), outputTokens: summaryBudget(ai.contextTokens).outputTokens }, signal);
+    const result = await ai.summarize({ subject, thread, reader, language, today: day(this.host.now()), outputTokens: summaryBudget(ai.contextTokens).outputTokens, compact }, signal);
     // a late answer after a cancel, a clear, or the setting going off: nothing is written
     if (signal.aborted) throw new AiError(L("errors.ai.cancelled"), "cancelled");
     const items = result.items.flatMap((item) => {

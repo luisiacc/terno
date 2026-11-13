@@ -691,6 +691,25 @@ describe("by hand", () => {
     expect(model.requests).toHaveLength(2);
   });
 
+  it("plan 202: a summary made with the shorter prompt isn't reused once the window has room for the whole one", async () => {
+    // short enough that both windows send the same words
+    const { client, backend, model, thread } = await old({ bodyText: "Can you send the signed contract by Friday? Thanks." });
+    const window = async (contextTokens: number) => {
+      await backend.store.settings.update("app", {}, (s: Record<string, unknown>) => {
+        const ai = (s.ai ?? {}) as Record<string, unknown>;
+        return { value: { ...s, ai: { ...ai, capabilities: { "fake|||demo": { output: "json_schema", contextTokens, embeddings: false, probedAt: 1 } } } }, result: undefined };
+      });
+      await client.call("settings.update", { summaries: { enabled: false } });
+    };
+    await window(2000);
+    await go(client, thread);
+    expect(promptText(model.requests[0]!.system)).not.toMatch(/Who has to act/);
+    await window(8192);
+    await go(client, thread);
+    expect(model.requests).toHaveLength(2);
+    expect(promptText(model.requests[1]!.system)).toMatch(/Who has to act/);
+  });
+
   it("doesn't count toward the daily cap", async () => {
     const { client, backend, thread } = await old();
     await go(client, thread);

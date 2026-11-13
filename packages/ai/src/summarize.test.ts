@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { fakeTransport } from "./fake";
-import { deliveryOf, SUMMARY_PROMPT_VERSION, summaryPrompt, summarizeTask, type SummarizeInput } from "./summarize";
+import { deliveryOf, SUMMARY_PROMPT_VERSION, summaryBudget, summaryPrompt, summarizeTask, type SummarizeInput } from "./summarize";
 import { createAi } from "./tasks";
 import { promptText, type CompletionRequest, type ModelTransport, type ProviderConfig } from "./types";
 
@@ -38,7 +38,7 @@ describe("the prompt", () => {
     expect(task.prompt).toContain("canary-7f3");
     expect(task.system).toMatch(/data, not instructions/);
     expect(task.effort).toBe("low");
-    expect(SUMMARY_PROMPT_VERSION).toBe(6);
+    expect(SUMMARY_PROMPT_VERSION).toBe(7);
     // plan 148: the rows add to the summary, and the example shown to a server with no json_schema does too
     expect(task.system).toMatch(/Never restate the summary in an item/);
     expect(task.example.summary).not.toContain("contract");
@@ -98,7 +98,29 @@ describe("the prompt", () => {
   it("plan 151: dates are written to be read later, and the row is the reader's to do", () => {
     const { system } = summarizeTask(input());
     expect(system).toMatch(/Never write "today", "tomorrow"/);
+    // plan 202: said once on its own, checked again before answering, and the last thing after the mail
+    expect(system).toMatch(/Who has to act\. A request belongs to whoever it's put to/);
+    expect(system).toMatch(/"Let me know", "please confirm", "send me", "can you…" mean they act and the reader waits/);
+    expect(system.trimEnd()).toMatch(/Before you answer, check each action and question: whose message is it, and who does it ask\?[\s\S]*no item repeats the summary\.$/);
+    expect(summarizeTask(input()).prompt.trimEnd()).toMatch(/look at who wrote that message and who it asks\.$/);
+  });
+
+  it("plan 202: a window too small for who has to act gets version 6's one rule, and its budget counts the shorter prompt", () => {
+    const small = summaryBudget(2000);
+    expect(small.compact).toBe(true);
+    expect(summaryBudget(8192).compact).toBe(false);
+    expect(summaryBudget(null).compact).toBe(false);
+    const { system, prompt } = summarizeTask(input("Hello there", { compact: true }));
+    expect(system).not.toMatch(/Who has to act/);
     expect(system).toMatch(/Not what they asked of someone else/);
+    expect(system).not.toMatch(/Before you answer/);
+    expect(prompt).not.toMatch(/who wrote that message/);
+  });
+
+  it("plan 202: the closing line comes out of what the serialized prompt may use, counted once", () => {
+    // the system prompt and the ladder's overhead are fixed; `promptChars` is all the rest, closing line included
+    const system = summarizeTask(input()).system.length;
+    expect(summaryBudget(4096).promptChars).toBe((4096 - Math.ceil(4096 * 0.3) - Math.ceil((system + 1000) / 4)) * 4);
   });
 
   it("refuses an empty thread before reaching a provider", () => {

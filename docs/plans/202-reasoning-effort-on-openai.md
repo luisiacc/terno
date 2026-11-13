@@ -1,6 +1,6 @@
 # Plan 202: OpenAI's reasoning effort, measured job by job
 
-- **Status:** the plumbing and the evals are on `main`. Drafting (compose and fill, which on OpenAI run on Sol) asks for `low`, by the owner's word. Summaries stay at the default until the owner picks among the measured choices (see "Open decisions").
+- **Status:** built. Drafting asks Sol for `low`. Summaries stay on Luna at its default (medium) with variant B's words, prompt version 7: the owner's choice after round three.
 - **Builds on:** plans 132 (summaries), 133 (drafting), 153 (summaries get the facts right), 168 (no model choice).
 
 ## The request
@@ -154,9 +154,9 @@ What the counts do say:
 - Luna low is the only version with high-severity claims from both judges in both rounds: crediting a list member's question to the reader, and a deadline given as "end of day".
 - Terra low and Luna medium can't be told apart on accuracy. Terra low is half the wait and much steadier (p90 3.8 s against 8–10 s) at about seven times the price.
 
-## Open decisions
+## Decisions
 
-1. **Summaries.** With variant B in every case: Luna at medium (today's speed, 4–5 s with a slow tail, the cheapest accurate one); Terra low (as accurate as far as 90 conversations can tell, 2.3 s and steady, about seven times the cost); or Luna low (2 s and nearly free, with more high-severity slips).
+1. **Summaries: decided.** "ok lets keep luna and new prompt." Luna at its default effort (medium), with variant B in `summarize.ts` as prompt version 7. No `reasoningEffort` on the task.
 2. **Sol's drafting: decided.** "lets do sol drafting at low." `DRAFT_REASONING` in `writing.ts`, on compose and fill (Reply ready's prepared drafts go through compose too). The voice judge isn't drafting and wasn't measured, so it keeps the default.
 
 ## Tests
@@ -170,9 +170,34 @@ What the counts do say:
 - `harness.ts`: eval-only prices (`gpt-6-sol`, `gpt-6.1-terra`), and `adjustRequests` to change a request before it leaves.
 - Results: `~/.terno-evals/runs/effort-*.jsonl`, `luna-*-own-{a,b}.jsonl` and `fresh-*.jsonl`; the audits in `~/.terno-evals/audit7` and `audit8`, each with its key beside it; the variants in `~/.terno-evals/variants`; drafts in `/tmp/terno-ai/drafting-*`.
 
+## Shipping variant B
+
+The words are variant B's, unchanged: the "Who has to act" section before "Return:", the action rule pointing to it, the check at the end of the system prompt, and the closing line after the mail (`CLOSING`, at the end of `summaryPrompt`). `SUMMARY_PROMPT_VERSION` is 7, so no summary made with the old words is reused.
+
+The longer prompt no longer left a 2,000-token window room for the answer (the window test failed). `summaryBudget` now says `compact` when the whole prompt would leave the mail under 500 tokens; such a window gets version 6's words, one rule and no closing line, and `assemble` and `fit` size the prompt with the same flag. Windows that small are local models'; the eval ran on none.
+
+`TERNO_AI_SUMMARY_VARIANT` with `own-b.json` no longer applies: its words are now the prompt's.
+
+## Why Luna at medium takes longer than Terra at low
+
+Luna writes each token faster, but at medium it writes about four times as many, most of them its hidden thinking. Per call on the fresh set, output tokens:
+
+| | Median | p90 | Second tries |
+|---|---:|---:|---:|
+| Luna medium, variant B | 349 | 937 | 5 of 90 |
+| Luna low, variant B | 100 | 398 | 7 of 90 |
+| Terra low, variant B | 86 | 168 | 5 of 90 |
+
+At low, Luna writes about as much as Terra and is as fast (2.0 s against 2.3 s median). How much Luna thinks also varies more from one thread to the next, which is its slower tail, and a card that fails a check is asked for again, a whole second request.
+
 ## What the code review changed
 
 Codex reviewed the first version (summaries at low) and found nothing. Separately, the eval harness had copied all of `budgetedTransport` to price Sol; `budgetedTransport` now takes a price instead.
+
+On shipping variant B, Codex found two, both fixed with a test that fails without the fix:
+
+- **A summary made with the shorter prompt was reused after the window grew.** The reuse hash covered the mail, not which prompt it went with. `compact` is in it now (`summaries.test.ts`, a short thread asked on 2,000 tokens and then on 8,192).
+- **The closing line was counted twice,** once in the fixed part and again by `fit`, which measures `summaryPrompt`. A conversation that fit could lose its oldest message. It's now counted once, in what the serialized prompt may use; the compact decision still includes it (`summarize.test.ts`).
 
 ## Out of scope
 
