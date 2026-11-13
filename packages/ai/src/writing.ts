@@ -287,6 +287,9 @@ export function emailFilter(onBody: (text: string) => void): { push(text: string
   };
 }
 
+/** What drafting asks OpenAI's models for: Sol, the one it runs on there, measured at low (plan 202). */
+export const DRAFT_REASONING: Effort = "low";
+
 export interface ComposeOptions {
   onDelta: (text: string) => void;
   signal?: AbortSignal;
@@ -319,6 +322,8 @@ export async function runCompose(transport: ModelTransport, input: ComposeInput,
       maxTokens: options.maxTokens ?? COMPOSE_MAX_TOKENS,
       signal: options.signal ?? new AbortController().signal,
       effort: options.effort ?? "low",
+      // GPT Sol: first word in 1.1 s against 2.2 s at its default, judged no worse, and its sign-offs kept (plan 202)
+      reasoningEffort: DRAFT_REASONING,
     },
     (text) => filter.push(text),
     options.timing ?? COMPOSE_TIMING,
@@ -503,7 +508,7 @@ export async function runFill(transport: ModelTransport, input: ComposeInput, op
   });
   const result = await streamCompletion(
     transport,
-    { system, messages, output: "text", maxTokens: options.maxTokens ?? COMPOSE_MAX_TOKENS, signal: options.signal ?? new AbortController().signal, effort: options.effort ?? "low" },
+    { system, messages, output: "text", maxTokens: options.maxTokens ?? COMPOSE_MAX_TOKENS, signal: options.signal ?? new AbortController().signal, effort: options.effort ?? "low", reasoningEffort: DRAFT_REASONING },
     (text) => filter.push(text),
     options.timing ?? COMPOSE_TIMING,
   );

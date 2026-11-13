@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { fakeReadDraft, readDraftPrompt, readDraftTask } from "./draft-read";
 import { createAi } from "./tasks";
-import { promptText, type ModelTransport, type ProviderConfig } from "./types";
+import { promptText, type CompletionRequest, type ModelTransport, type ProviderConfig } from "./types";
 import { composePrompt, composeTaskBlock, fillFilter, FILL_RULES, isComposeRequest, isFillRequest, type ComposeInput } from "./writing";
 
 const config: ProviderConfig = { id: "fake", model: "demo", apiKey: null, fetch: globalThis.fetch, timeoutMs: 1000, maxRetries: 0 };
@@ -105,6 +105,13 @@ describe("runFill", () => {
     const r = await ai.fill(input(six), { onFill: (n) => seen.push(n) });
     expect(r.fills).toEqual(["Calle Durango 123", "", null, null, null, null]);
     expect(seen).not.toContain(9);
+  });
+
+  it("asks GPT Sol for low effort, as drafting does (plan 202)", async () => {
+    let asked: CompletionRequest | null = null;
+    const transport: ModelTransport = { complete: () => Promise.reject(new Error("no")), async *stream(req) { asked = req; yield { type: "done", stop: "end" }; } };
+    await createAi(config, { transport }).fill(input(pieces), { onFill: () => {} });
+    expect(asked!.reasoningEffort).toBe("low");
   });
 
   it("the offline model fills what each gap says, and leaves `[fake:empty]`", async () => {

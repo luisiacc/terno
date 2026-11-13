@@ -162,6 +162,8 @@ describe("compose", () => {
     await createAi(config, { transport }).compose(input(), { onDelta: () => {}, effort: "medium" });
     await createAi(config, { transport }).compose(input(), { onDelta: () => {} });
     expect(reqs.map((r) => r.effort)).toEqual(["medium", "low"]);
+    // GPT Sol drafts at low: twice as fast to the first word, judged no worse (plan 202)
+    expect(reqs.map((r) => r.reasoningEffort)).toEqual(["low", "low"]);
     expect(reqs[0]!.maxTokens).toBe(COMPOSE_MAX_TOKENS);
     expect(reqs[0]!.output).toBe("text");
     expect(reqs[0]!.schema).toBeUndefined();

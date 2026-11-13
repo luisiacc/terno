@@ -1,6 +1,6 @@
 # Plan 202: OpenAI's reasoning effort, measured job by job
 
-- **Status:** the plumbing and the evals are on `main`. No job uses it yet: whether summaries and Sol's drafting go to `low` is the owner's call (see "Open decisions").
+- **Status:** the plumbing and the evals are on `main`. Drafting (compose and fill, which on OpenAI run on Sol) asks for `low`, by the owner's word. Summaries stay at the default while a better prompt for Luna at low and GPT Terra are tried (see "Open decisions").
 - **Builds on:** plans 132 (summaries), 133 (drafting), 153 (summaries get the facts right), 168 (no model choice).
 
 ## The request
@@ -82,7 +82,7 @@ $1.26 of the default $5 ledger: Luna $0.36, Haiku $0.25, Sol $0.64, Haiku as dra
 ## Open decisions
 
 1. **Summaries.** Low is 2–3× faster (6.4 s → 2.3 s at six messages) and more often wrong about who owes what. The options: ship low; keep default; or ship low with a prompt or check aimed at ownership, measured with the same audit first. Plan 153's "owner and evidence" field was tried and made things worse, so a new idea is needed.
-2. **Sol's drafting.** Low looks better or equal on everything measured. Shipping it is one line in the drafting task, outside this request's "isolated to summaries".
+2. **Sol's drafting: decided.** "lets do sol drafting at low." `DRAFT_REASONING` in `writing.ts`, on compose and fill (Reply ready's prepared drafts go through compose too). The voice judge isn't drafting and wasn't measured, so it keeps the default.
 
 ## Tests
 
