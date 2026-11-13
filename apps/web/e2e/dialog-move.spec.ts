@@ -194,10 +194,9 @@ test.describe("config dialogs move (plan 129)", () => {
     await drag(page, page.getByTestId("settings-header"), -3000, 0);
     expect((await box(page.getByTestId("tab-general"))).x).toBeLessThan(0);
     await page.getByTestId("tab-general").focus();
-    // the keyboard's way there: off the selected tab and back
+    // the keyboard's way there: off the selected tab (up to the search field above it, plan 203) and back
     await page.keyboard.press("Shift+Tab");
-    // past the dialog's guard, which hands focus on a moment later: a Tab sooner than a person's races it to Close
-    await expect(settings(page).locator("[data-slot=dialog-close]")).toBeFocused();
+    await expect(page.getByTestId("settings-find")).toBeFocused();
     await page.keyboard.press("Tab");
     await expect(page.getByTestId("tab-general")).toBeFocused();
     await expect.poll(async () => (await page.getByTestId("tab-general").boundingBox())!.x).toBeGreaterThanOrEqual(0);
