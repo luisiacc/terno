@@ -14,10 +14,11 @@ function usageOf(u: { prompt_tokens: number; completion_tokens: number; prompt_t
 }
 
 /**
- * The models Terno routes OpenAI's jobs to (plan 168), whose pages document `reasoning_effort` on Chat Completions with
- * low among its values. A model that doesn't take it rejects the request, so nothing else gets it.
+ * OpenAI's models whose pages document `reasoning_effort` on Chat Completions with low among its values: the two Terno
+ * routes to (plan 168), and Terra, tried for summaries (plan 202). A model that doesn't take it rejects the request, so
+ * nothing else gets it.
  */
-const REASONING_MODELS: ReadonlySet<string> = new Set([OPENAI_DEFAULT_MODEL, OPENAI_DRAFT_MODEL]);
+const REASONING_MODELS: ReadonlySet<string> = new Set([OPENAI_DEFAULT_MODEL, OPENAI_DRAFT_MODEL, "gpt-6.1-terra"]);
 export const takesReasoningEffort = (model: string) => REASONING_MODELS.has(model);
 
 /** OpenRouter attributes traffic to the calling app with these. */

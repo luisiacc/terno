@@ -39,6 +39,8 @@ export function realKeys(): { anthropic: string; openai: string; jev: string } {
  */
 const EVAL_PRICES: Readonly<Record<string, ModelPrice>> = {
   "gpt-6-sol": { input: 2, cacheRead: 0.2, output: 10 },
+  // short prompts only: past 272k input tokens it costs more, and no summary sends that much
+  "gpt-6.1-terra": { input: 1, cacheRead: 0.05, cacheWrite: 1.25, output: 5 },
 };
 
 export const evalPriceOf = (model: string): ModelPrice | null => priceOf(model) ?? EVAL_PRICES[model] ?? null;

@@ -350,6 +350,7 @@ describeProviderContract({
 it("asks OpenAI for an effort only on the models Terno routes to, whose docs say they take it", () => {
   expect(takesReasoningEffort("gpt-6-luna")).toBe(true);
   expect(takesReasoningEffort("gpt-6-sol")).toBe(true);
+  expect(takesReasoningEffort("gpt-6.1-terra")).toBe(true);
   expect(takesReasoningEffort("gpt-4o-mini")).toBe(false);
 });
 
