@@ -7,6 +7,7 @@
  */
 import { BRIEF_NOTICE_THREAD } from "@terno/core";
 import { badgeText, NOTICE_SENDERS, noticeText, type MailNotice } from "@terno/core";
+import type { OpenTarget } from "@terno/core/mail-link";
 
 const MAX_TEXT = 300;
 /** live notifications kept so their click handlers survive garbage collection */
@@ -112,19 +113,18 @@ export class DesktopAttention {
 }
 
 /**
- * A notification's open, held until the window it was meant for has a page
- * that listens (`terno:open-ready`, sent again after every load), so a click
- * that had to create or reload a window is never lost. One at a time: a newer
- * click replaces an undelivered one.
+ * What a notification's click or a link (plan 201) opens, held until the window it was meant for has a page that
+ * listens (`terno:open-ready`, sent again after every load), so a click that had to create or reload a window is never
+ * lost. One at a time: a newer click replaces an undelivered one.
  */
 export class OpenRelay {
   private readonly ready = new Set<number>();
-  private pending: { windowId: number; threadId: number | null } | null = null;
+  private pending: { windowId: number; target: OpenTarget } | null = null;
 
-  constructor(private readonly send: (windowId: number, threadId: number | null) => void) {}
+  constructor(private readonly send: (windowId: number, target: OpenTarget) => void) {}
 
-  want(windowId: number, threadId: number | null): void {
-    this.pending = { windowId, threadId };
+  want(windowId: number, target: OpenTarget): void {
+    this.pending = { windowId, target };
     this.deliver();
   }
 
@@ -143,6 +143,6 @@ export class OpenRelay {
     const p = this.pending;
     if (!p || !this.ready.has(p.windowId)) return;
     this.pending = null;
-    this.send(p.windowId, p.threadId);
+    this.send(p.windowId, p.target);
   }
 }

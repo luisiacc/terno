@@ -1,4 +1,5 @@
 import type { MailboxGate } from "@terno/core/mailbox";
+import type { OpenTarget } from "@terno/core/mail-link";
 import type { Channel, DiagView, ReportEvent } from "@terno/core/diag";
 import type { UpdateChannel, UpdateMode, UpdateState } from "@terno/core/updates";
 
@@ -48,8 +49,8 @@ export interface DesktopBridge {
   mboxExport?: DesktopMboxExport;
   /** the menu's commands (Archivo, Ver) */
   onCommand?(listener: (command: "thread.print" | "thread.exportPdf" | "list.toggleUnread" | "updates.check" | "nav.back" | "nav.forward") => void): () => void;
-  /** plan 41: a notification's click opens this conversation (null: the Inbox); older shells don't have it */
-  onOpenThread?(listener: (threadId: number | null) => void): () => void;
+  /** plan 41: a notification's click opens its conversation (null: the Inbox); plan 201: a link opens its message */
+  onOpen?(listener: (target: OpenTarget) => void): () => void;
   /** older shells don't have it */
   diag?: DesktopDiag;
   /** in-app updates (main owns the state and the install); older shells don't have it */

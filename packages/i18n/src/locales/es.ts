@@ -2893,6 +2893,11 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "followup.snack.later": "Vuelve arriba de Entrada {date}",
   "followup.actFailed": "No se pudo cambiar ese seguimiento. Inténtalo de nuevo.",
   "notify.followup": "Vence una promesa",
+  // plan 201: a link to an email (terno://message/…)
+  "links.notFound": "Ese correo no está en Terno",
+  "links.notFoundHint": "Puede que se haya eliminado, o que esté en una cuenta que no está conectada aquí.",
+  "links.failed": "No se pudo abrir ese correo",
+  "links.failedHint": "Terno no pudo acceder a tu buzón ahora mismo. Vuelve a probar el enlace en un momento.",
   "notify.followups": { one: "Vence # promesa", other: "Vencen # promesas" },
   "palette.goFollowups": "Seguimientos",
   "account.followups": "Hacer seguimiento en esta cuenta",

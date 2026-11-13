@@ -2910,6 +2910,11 @@ It contains none of your mail, contacts, settings or keys.
   "followup.snack.later": "Back on top of your Inbox {date}",
   "followup.actFailed": "That follow-up couldn’t be changed. Try again.",
   "notify.followup": "A promise is due",
+  // plan 201: a link to an email (terno://message/…)
+  "links.notFound": "That email isn't in Terno",
+  "links.notFoundHint": "It may have been deleted, or it's in an account that isn't connected here.",
+  "links.failed": "Couldn't open that email",
+  "links.failedHint": "Terno couldn't reach your mailbox just now. Try the link again in a moment.",
   "notify.followups": { one: "# promise is due", other: "# promises are due" },
   "palette.goFollowups": "Follow-ups",
   "account.followups": "Track follow-ups in this account",

@@ -29,6 +29,8 @@ import { diagSession, log as diagLog } from "@terno/core/diag";
 import { isLanguageSetting } from "@terno/i18n";
 import { parseAppearance, windowVibrancy, type Appearance } from "./appearance";
 import { DesktopAttention, OpenRelay } from "./attention";
+import { LinkReceiver, receiveLinks } from "./mail-links";
+import type { OpenTarget } from "@terno/core/mail-link";
 import { BUILD_ID, BUILD_VERSION } from "./diag/build-info";
 import { mainDiag } from "./diag/main";
 import { RestartPolicy } from "./diag/supervisor";
@@ -551,24 +553,30 @@ async function connectWindow(win: BrowserWindow) {
 // ───────────────────────────── Dock badge and notifications (plan 41, attention.ts) ─────────────────────────────
 
 /** A click opens its conversation in the window brought forward, once that window's page listens. */
-const openRelay = new OpenRelay((windowId, threadId) => {
+const openRelay = new OpenRelay((windowId, target) => {
   const win = BrowserWindow.fromId(windowId);
-  if (win && windows.has(win) && !win.isDestroyed()) win.webContents.send("terno:open-thread", threadId);
+  if (win && windows.has(win) && !win.isDestroyed()) win.webContents.send("terno:open", target);
 });
+
+/** A notification's click or a link: in the window brought forward (macOS keeps Terno running with every window closed: one comes back). */
+function openInWindow(target: OpenTarget): void {
+  const win = BrowserWindow.getFocusedWindow() ?? [...windows].find((w) => !w.isDestroyed()) ?? createWindow();
+  // quitting: no window comes back for it
+  if (!win) return;
+  if (win.isMinimized()) win.restore();
+  present(win);
+  openRelay.want(win.id, target);
+}
+
+// plan 201: links to emails, listened for before the app is ready (macOS sends a launching link early), held until a window is
+const links = new LinkReceiver((id) => openInWindow({ kind: "link", id }));
+receiveLinks(app, process.argv, links);
 
 const attention = new DesktopAttention({
   setBadge: (text) => app.dock?.setBadge(text),
   supported: () => Notification.isSupported(),
   create: (options) => new Notification(options),
-  open: (threadId) => {
-    // macOS keeps Terno running with every window closed: a click brings one back
-    const win = BrowserWindow.getFocusedWindow() ?? [...windows].find((w) => !w.isDestroyed()) ?? createWindow();
-    // quitting: no window comes back for it
-    if (!win) return;
-    if (win.isMinimized()) win.restore();
-    present(win);
-    openRelay.want(win.id, threadId);
-  },
+  open: (threadId) => openInWindow({ kind: "thread", threadId }),
   shown: (count) => diagLog.info("notify.shown", { count }),
   failed: () => diagLog.warn("notify.failed", { errorClass: "NotificationFailed" }),
 });
@@ -826,7 +834,9 @@ if (!app.requestSingleInstanceLock()) {
 } else {
   // the run marker and crash dumps belong to the instance that holds the lock
   mainDiag.open(app.getPath("userData"), { trusted, windows: () => windows, demo, restartEngine });
-  app.on("second-instance", () => {
+  app.on("second-instance", (_event, argv) => {
+    // plan 201: a second launch with a link (Linux, a dev or test run) opens it here (and brings this window forward)
+    links.argv(argv);
     const w = [...windows][0];
     if (w) {
       if (w.isMinimized()) w.restore();
@@ -869,6 +879,7 @@ if (!app.requestSingleInstanceLock()) {
     ipcMain.handle("terno:mailbox-restore", (e) => (trusted(e) ? mailbox.restore() : false));
     await carryLegacyLocalStorage();
     createWindow();
+    links.ready();
     app.on("activate", () => {
       if (windows.size === 0) createWindow();
     });

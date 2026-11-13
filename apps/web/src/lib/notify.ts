@@ -13,6 +13,7 @@ import { reconcileSettings } from "~/lib/appearance";
 import { closePage, listCovered, openThread } from "~/lib/page";
 import { getApp, navigate, setApp, useApp } from "~/state/app";
 import { reloadList } from "~/state/list";
+import { openMailLink, supersedeMailLink } from "~/lib/mail-links";
 
 type BadgeNavigator = Navigator & { setAppBadge?(n?: number): Promise<void>; clearAppBadge?(): Promise<void> };
 
@@ -124,7 +125,12 @@ function syncBadge(): void {
 /** At the end of boot (history restored, the first list asked for): a click main queued is delivered only now. */
 export function startAttention(): void {
   if (desktop()) {
-    window.ternoDesktop?.onOpenThread?.((threadId) => openFromNotice(threadId));
+    // plan 201: or a link to an email; whichever came last wins
+    window.ternoDesktop?.onOpen?.((target) => {
+      if (target.kind === "link") return void openMailLink(target.id);
+      supersedeMailLink();
+      openFromNotice(target.threadId);
+    });
     return;
   }
   if (badgeSupported()) {

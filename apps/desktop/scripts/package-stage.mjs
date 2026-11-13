@@ -58,6 +58,8 @@ export function commonConfig() {
   return {
     appId,
     productName,
+    // plan 201: links to emails (terno://message/…); a test build claims none, so it never takes the user's links
+    ...(testBuild ? {} : { protocols: [{ name: "Terno email link", schemes: ["terno"] }] }),
     copyright: `© 2026 ${publisher}`,
     electronVersion,
     files: ["dist/**/*", "!dist/mcp/**", "package.json"],

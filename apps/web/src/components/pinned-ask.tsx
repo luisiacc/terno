@@ -6,7 +6,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/to
 import { ChevronDown, ChevronUp, Pin, Sparkles } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { focusAfterDialog, useAsk, useVisited } from "~/lib/ask";
+import { useAsk, useVisited } from "~/lib/ask";
+import { focusAfterDialog } from "~/lib/focus-message";
 import { listDate } from "~/lib/format";
 import { closePinnedAnswer, openPinnedSource, unpinAnswer } from "~/lib/pinned-ask";
 import { CARD_GAP, pinnedAskPlace, usePinnedAsk, type PinnedAnswer } from "~/lib/pinned-ask-state";

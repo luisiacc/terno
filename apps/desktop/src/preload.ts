@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 import { MENU_COMMANDS, type MenuCommand } from "./print-commands";
 import { clockShiftOf, shiftClock } from "./window-clock";
+import { isMailLinkId, type OpenTarget } from "@terno/core/mail-link";
 
 // plan 167: the demo's fixed clock, before any of the page's scripts run (main passes it only then)
 const clockShift = clockShiftOf(process.argv);
@@ -128,12 +129,18 @@ contextBridge.exposeInMainWorld("ternoDesktop", {
     ipcRenderer.on("terno:reload-refused", relay);
     return () => ipcRenderer.removeListener("terno:reload-refused", relay);
   },
-  // plan 41: a notification's click (a conversation id, or null for the Inbox); main holds it until the page listens
-  onOpenThread: (listener: (threadId: number | null) => void) => {
-    const relay = (_e: unknown, threadId: unknown) => listener(Number.isSafeInteger(threadId) && ((threadId as number) > 0 || threadId === -1 /* plan 145: the brief, BRIEF_NOTICE_THREAD: opens Today */) ? (threadId as number) : null);
-    ipcRenderer.on("terno:open-thread", relay);
+  // plan 41: a notification's click (a conversation id, or null for the Inbox); plan 201: a link's message (its
+  // canonical Message-ID). Main holds it until the page listens.
+  onOpen: (listener: (target: OpenTarget) => void) => {
+    const relay = (_e: unknown, target: unknown) => {
+      const t = target as { kind?: unknown; threadId?: unknown; id?: unknown } | null;
+      if (t?.kind === "link") return isMailLinkId(t.id) ? listener({ kind: "link", id: t.id }) : undefined;
+      const threadId = t?.kind === "thread" ? t.threadId : null;
+      listener({ kind: "thread", threadId: Number.isSafeInteger(threadId) && ((threadId as number) > 0 || threadId === -1 /* plan 145: the brief, BRIEF_NOTICE_THREAD: opens Today */) ? (threadId as number) : null });
+    };
+    ipcRenderer.on("terno:open", relay);
     ipcRenderer.send("terno:open-ready");
-    return () => ipcRenderer.removeListener("terno:open-thread", relay);
+    return () => ipcRenderer.removeListener("terno:open", relay);
   },
   // the Archivo and Ver menus' commands, whitelisted
   onCommand: (listener: (command: MenuCommand) => void) => {

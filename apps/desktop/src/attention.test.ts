@@ -135,8 +135,8 @@ describe("DesktopAttention", () => {
 describe("OpenRelay", () => {
   it("holds a click until the window's page listens, then delivers it once", () => {
     const sent: [number, number | null][] = [];
-    const r = new OpenRelay((w, id) => sent.push([w, id]));
-    r.want(1, 42);
+    const r = new OpenRelay((w, t) => sent.push([w, t.kind === "thread" ? t.threadId : -9]));
+    r.want(1, { kind: "thread", threadId: 42 });
     expect(sent).toEqual([]);
     r.listening(1);
     expect(sent).toEqual([[1, 42]]);
@@ -146,17 +146,28 @@ describe("OpenRelay", () => {
 
   it("a page that went (reload) waits for the next one; a newer click replaces an undelivered one", () => {
     const sent: [number, number | null][] = [];
-    const r = new OpenRelay((w, id) => sent.push([w, id]));
+    const r = new OpenRelay((w, t) => sent.push([w, t.kind === "thread" ? t.threadId : -9]));
     r.listening(1);
     r.gone(1);
-    r.want(1, 42);
-    r.want(1, 43);
+    r.want(1, { kind: "thread", threadId: 42 });
+    r.want(1, { kind: "thread", threadId: 43 });
     expect(sent).toEqual([]);
     r.listening(1);
     expect(sent).toEqual([[1, 43]]);
     // a ready window gets it at once
-    r.want(1, null);
+    r.want(1, { kind: "thread", threadId: null });
     expect(sent).toEqual([[1, 43], [1, null]]);
+  });
+});
+
+describe("OpenRelay carries a link too (plan 201)", () => {
+  it("the newest of a click and a link wins, delivered once the page listens", () => {
+    const sent: [number, unknown][] = [];
+    const r = new OpenRelay((w, t) => sent.push([w, t]));
+    r.want(2, { kind: "thread", threadId: 42 });
+    r.want(2, { kind: "link", id: "a@b" });
+    r.listening(2);
+    expect(sent).toEqual([[2, { kind: "link", id: "a@b" }]]);
   });
 });
 
