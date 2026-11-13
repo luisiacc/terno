@@ -132,3 +132,9 @@ Seven findings, all fixed, each with a test that fails without its fix:
 5. **Summaries was a result when its group can't show** (no provider that summarizes). The entry takes the group's own condition, `summariesOffered` (unit).
 6. **The web's storage engine wasn't searchable.** It's an entry in Storage, only where the web's storage section exists (unit).
 7. **The web's badge was indexed in the desktop's words** ("in the Dock"). Two entries, one per platform, and the row names the one it is (unit).
+
+## After the owner's look (2026-11-12)
+
+> when i types in 'account' and i clicked on the account menu, it highlighted the top part of that section and that looked terrible, lets not do that for any page
+
+Only a row (or a single control: Add account, Auto-add) is tinted when a search opens it. A whole group (Your Terno account, Rules, Snippets, Custom themes, Your style, Mail by mailbox, About's card, Dev mode's environment) comes into view from its top, untinted, on every page; so does an account or category standing in for a row that isn't there. Its first control still takes focus. `find-open.test.ts` and `settings-search.spec.ts` hold it.

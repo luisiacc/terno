@@ -37,9 +37,23 @@ function unmark() {
   marked = null;
 }
 
-/** Scrolls to a setting, marks it (a tint that fades out, globals.css `[data-found]`) and focuses its control. */
+/**
+ * Only a row (or a single control) is tinted: a whole group's tint read as a slab over the section's top (owner's call,
+ * 2026-11-12: "lets not do that for any page"), as did an account's or category's disclosure standing in for a row.
+ */
+const tinted = (el: HTMLElement) => el.hasAttribute("data-setting") && el.tagName !== "SECTION";
+
+/**
+ * Scrolls to a setting and focuses its control; a row is marked for a moment (a tint that fades out, globals.css
+ * `[data-found]`), a group just comes into view from its top.
+ */
 function reveal(el: HTMLElement) {
   unmark();
+  if (!tinted(el)) {
+    el.scrollIntoView({ block: "start", behavior: "instant" });
+    controlOf(el)?.focus({ preventScroll: true });
+    return;
+  }
   el.scrollIntoView({ block: "center", behavior: "instant" });
   el.setAttribute("data-found", "on");
   const timer = setTimeout(() => {

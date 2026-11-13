@@ -104,6 +104,15 @@ test("Settings' search finds every kind of setting, says where and why, and open
     await expect(setting(page, "ai.followups")).toHaveAttribute("data-found", "on", { timeout: 4000 });
   });
 
+  await scenario("a group comes into view untinted: only rows are marked (owner, 2026-11-12)", async () => {
+    await page.keyboard.press("Meta+f");
+    await find(page, "account");
+    await results(page).filter({ hasText: "Your Terno account" }).first().click();
+    await expect(page.getByTestId("tab-accounts")).toHaveAttribute("aria-selected", "true");
+    await expect(setting(page, "accounts.owner")).toBeInViewport();
+    await expect(dialog(page).locator("[data-found]")).toHaveCount(0);
+  });
+
   await scenario("a Gmail account's photos from Google open on Appearance, that account's row (Codex code review)", async () => {
     await page.keyboard.press("Meta+f");
     await find(page, "photos google personal");
@@ -120,7 +129,9 @@ test("Settings' search finds every kind of setting, says where and why, and open
     await page.keyboard.press("Meta+f");
     await find(page, "snippets");
     await page.keyboard.press("Enter");
-    await expect(setting(page, "snippets.list")).toHaveAttribute("data-found", "on");
+    // the list (a group: in view, untinted) in place of the editor
+    await expect(page.getByTestId("snippet-name")).toHaveCount(0);
+    await expect(setting(page, "snippets.list")).toBeInViewport();
   });
 
   await scenario("Esc closes the list, then empties the field, then closes Settings", async () => {

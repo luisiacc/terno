@@ -47,6 +47,18 @@ describe("openFound", () => {
     expect(pane.querySelector("[data-found]")?.getAttribute("data-setting-scope")).toBe("account:2");
   });
 
+  it("tints a row, never a whole group or an account standing in for a row", async () => {
+    pane.innerHTML = `<section data-setting="accounts.owner"><h3>Your Terno account</h3><button>Change</button></section><div data-setting-scope="account:3"><button data-setting-open aria-expanded="true">Work</button></div>`;
+    openFound(target({ id: "accounts.owner", tab: "accounts" }));
+    await vi.advanceTimersByTimeAsync(10);
+    expect(pane.querySelector("section")!.scrollIntoView).toHaveBeenCalled();
+    expect(pane.querySelector("[data-found]")).toBeNull();
+    // an account's row that never came: its account comes into view, untinted
+    openFound(target({ id: "account.instructions", tab: "accounts", scope: { kind: "account", id: 3 } }));
+    await vi.advanceTimersByTimeAsync(1600);
+    expect(pane.querySelector("[data-found]")).toBeNull();
+  });
+
   it("stands down when the person goes to another section before the setting came", async () => {
     pane.innerHTML = `<div data-setting="general.language"></div>`;
     pane.scrollTop = 0;
