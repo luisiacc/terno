@@ -19,7 +19,7 @@ import { realKeys, realTransport, spendReport } from "./harness";
  * - TERNO_AI_SUMMARY_VARIANT: a file of JSON [[find, replace], …] applied to the system prompt, to try wording with no
  *   change to the code
  * - TERNO_AI_SUMMARY_MODEL: the model, GPT Luna by default
- * - TERNO_AI_SUMMARY_EFFORT: low, medium or high in place of the task's own
+ * - TERNO_AI_SUMMARY_EFFORT: low, medium or high in place of the task's own, or default for none at all
  * - TERNO_AI_SUMMARY_VERIFY=1: a second pass that checks the first against the mail
  * - TERNO_AI_SUMMARY_IDS: a file of JSON ids, to run only those
  *
@@ -98,8 +98,11 @@ describe.skipIf(!RUN)("summaries over the corpus", () => {
           system = system.replace(find, replace);
           swapped = true;
         }
-        const effort = (process.env.TERNO_AI_SUMMARY_EFFORT as typeof req.effort | undefined) ?? req.effort;
-        return (budgeted.complete as (...a: unknown[]) => ReturnType<typeof budgeted.complete>)({ ...req, system, effort }, ...rest);
+        const asked = process.env.TERNO_AI_SUMMARY_EFFORT as typeof req.effort | "default" | undefined;
+        // "default": what a model does with none asked, as OpenAI's did before plan 202
+        const effort = asked === "default" ? undefined : (asked ?? req.effort);
+        const reasoningEffort = asked === "default" ? undefined : (asked ?? req.reasoningEffort);
+        return (budgeted.complete as (...a: unknown[]) => ReturnType<typeof budgeted.complete>)({ ...req, system, effort, reasoningEffort }, ...rest);
       },
     };
     const ai = createAi({ id: provider, model: MODEL, apiKey: realKeys()[provider], fetch: globalThis.fetch, timeoutMs: 120_000, maxRetries: 0 }, { transport });

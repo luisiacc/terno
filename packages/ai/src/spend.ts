@@ -1,4 +1,4 @@
-import { costAt, priceOf, worstCaseUsd } from "./prices";
+import { costAt, priceOf, worstCaseUsd, type ModelPrice } from "./prices";
 import { AiError, type CompletionRequest, type ModelTransport, type StreamEvent, type Usage } from "./types";
 
 /**
@@ -28,15 +28,13 @@ export class BudgetExceededError extends AiError {
   }
 }
 
-function worstCase(model: string, req: CompletionRequest): number {
-  const price = priceOf(model);
+function worstCase(model: string, price: ModelPrice | null, req: CompletionRequest): number {
   // an unknown price can't be held to a ceiling, so it doesn't run at all
   if (!price) throw new BudgetExceededError(`no known price for ${model}: refusing to call it on a budget`);
   return worstCaseUsd(price, req);
 }
 
-function actual(model: string, usage: Usage | undefined, reserved: number): number {
-  const price = priceOf(model);
+function actual(price: ModelPrice | null, usage: Usage | undefined, reserved: number): number {
   // no usage reported: assume the worst case happened
   if (!price || !usage) return reserved;
   return costAt(price, usage);
@@ -59,16 +57,19 @@ function settle(ledger: SpendLedger, id: string, entry: Parameters<SpendLedger["
   }
 }
 
-/** Puts a transport under a ledger. A failed request is charged its worst case, since it may have been billed. */
-export function budgetedTransport(inner: ModelTransport, model: string, ledger: SpendLedger, label?: string): ModelTransport {
+/**
+ * Puts a transport under a ledger. A failed request is charged its worst case, since it may have been billed. `price`:
+ * the app's, unless an eval knows one the app doesn't list.
+ */
+export function budgetedTransport(inner: ModelTransport, model: string, ledger: SpendLedger, label?: string, price: ModelPrice | null = priceOf(model)): ModelTransport {
   return {
     ...inner,
     async complete(req) {
-      const reserved = worstCase(model, req);
+      const reserved = worstCase(model, price, req);
       const id = hold(ledger, reserved, model, label);
       try {
         const completion = await inner.complete(req);
-        settle(ledger, id, { model, usd: actual(model, completion.usage, reserved), usage: completion.usage, label });
+        settle(ledger, id, { model, usd: actual(price, completion.usage, reserved), usage: completion.usage, label });
         return completion;
       } catch (error) {
         settle(ledger, id, { model, usd: reserved, label: `${label ?? ""} failed` });
@@ -78,7 +79,7 @@ export function budgetedTransport(inner: ModelTransport, model: string, ledger: 
     ...(inner.stream
       ? {
           async *stream(req: CompletionRequest): AsyncGenerator<StreamEvent> {
-            const reserved = worstCase(model, req);
+            const reserved = worstCase(model, price, req);
             const id = hold(ledger, reserved, model, label);
             let usage: Usage | undefined;
             let finished = false;
@@ -92,7 +93,7 @@ export function budgetedTransport(inner: ModelTransport, model: string, ledger: 
               }
             } finally {
               // stopped early or failed: billed for what ran, which we can't see, so the worst case stands
-              settle(ledger, id, { model, usd: finished ? actual(model, usage, reserved) : reserved, usage, label: finished ? label : `${label ?? ""} stopped` });
+              settle(ledger, id, { model, usd: finished ? actual(price, usage, reserved) : reserved, usage, label: finished ? label : `${label ?? ""} stopped` });
             }
           },
         }

@@ -52,6 +52,12 @@ describe("the spend guard", () => {
     await expect(budgetedTransport(answers, "some-unknown-model", ledger(100)).complete(req())).rejects.toBeInstanceOf(BudgetExceededError);
   });
 
+  it("holds a model the app has no price for to one an eval brings", async () => {
+    const book = ledger(1);
+    await budgetedTransport(answers, "some-unknown-model", book, "eval", { input: 3, output: 7 }).complete(req());
+    expect(book.spent()).toBeCloseTo((100 * 3 + 50 * 7) / 1e6, 10);
+  });
+
   it("charges the worst case when a request fails, since it may have been billed", async () => {
     const book = ledger(1);
     const failing: ModelTransport = { complete: async () => { throw new AiError("nope", "unavailable"); } };

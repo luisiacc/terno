@@ -1,9 +1,9 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { costOf, runStructured, WRITING_PROMPT_VERSION, JUDGE_PROMPT_VERSION, type Usage } from "@terno/ai";
+import { costAt, runStructured, WRITING_PROMPT_VERSION, JUDGE_PROMPT_VERSION, type Effort, type Usage } from "@terno/ai";
 import { screenNotes, type VoiceJudgment } from "../../packages/core/src/index";
-import { fileLedger, realTasks, realTransport, spendReport } from "./harness";
+import { evalPriceOf, fileLedger, realTasks, realTransport, spendReport } from "./harness";
 import {
   ARMS,
   authorshipTask,
@@ -32,6 +32,8 @@ import type { GeneratedExchange } from "./drafting-personas";
  *   fixtures   generate the personas with Haiku and write them to packages/mock-data (committed; never needed again)
  *   profiles   judge the scopes the cases use, on Sonnet; kept in /tmp, so a rerun costs nothing
  *   drafts     TERNO_DRAFT_ARMS=a,b  TERNO_DRAFT_CASES=x,y  (a draft already made at this prompt version is skipped)
+ *              TERNO_DRAFT_MODEL=gpt-6-sol to draft on another model than Sonnet; TERNO_DRAFT_REASONING=default,low to send
+ *              OpenAI's reasoning_effort ("default" sends none, as the app does). Each pairing is its own arm, `arm~model:effort`.
  *   judges     Haiku reads the drafts: meaning kept, and which of two is the real one
  *   report     no network: tables, drafting-results.md, the blind pairs
  *
@@ -42,12 +44,25 @@ const JUDGMENTS = `${OUT}/drafting-judgments.json`;
 const RUNS = `${OUT}/drafting-runs.jsonl`;
 const VERDICTS = `${OUT}/drafting-verdicts.json`;
 const GENERATED = `${OUT}/drafting-generated.json`;
+const ERRORS = `${OUT}/drafting-errors.jsonl`;
 
 const SONNET = { provider: "anthropic" as const, model: "claude-sonnet-5-5" };
 const HAIKU = { provider: "anthropic" as const, model: "claude-haiku-5-5" };
 
 const stage = process.env.TERNO_DRAFT_STAGE ?? "";
 const list = (name: string) => (process.env[name] ? process.env[name]!.split(",").map((s) => s.trim()) : null);
+
+const DRAFTER = (() => {
+  const model = process.env.TERNO_DRAFT_MODEL ?? SONNET.model;
+  return { provider: model.startsWith("claude") ? ("anthropic" as const) : ("openai" as const), model };
+})();
+const REASONING = (list("TERNO_DRAFT_REASONING") ?? ["default"]).map((r) => {
+  if (r !== "default" && r !== "low" && r !== "medium" && r !== "high") throw new Error(`TERNO_DRAFT_REASONING: default, low, medium or high, not ${r}`);
+  return r as Effort | "default";
+});
+/** Sonnet with nothing overridden keeps the plain arm ids, so earlier runs still compare. */
+const armTag = (reasoning: Effort | "default") => (DRAFTER.model === SONNET.model && reasoning === "default" ? "" : `~${DRAFTER.model}:${reasoning}`);
+const baseArm = (stored: string) => ARMS.find((a) => a.id === stored.split("~")[0]);
 
 interface StoredJudgment {
   promptVersion: number;
@@ -188,9 +203,17 @@ describe.runIf(stage === "drafts")("drafts", () => {
       expect(arms.length).toBeGreaterThan(0);
       const cases = list("TERNO_DRAFT_CASES");
       const kinds = list("TERNO_DRAFT_KINDS");
-      const tasks = realTasks(SONNET, "drafting");
+      const price = evalPriceOf(DRAFTER.model);
+      const drafters = REASONING.map((reasoning) => ({
+        reasoning,
+        tag: armTag(reasoning),
+        tasks: realTasks(DRAFTER, `drafting${armTag(reasoning)}`, {}, reasoning === "default" ? undefined : (req) => ({ ...req, reasoningEffort: reasoning })),
+      }));
+      mkdirSync(OUT, { recursive: true });
       const done = new Set(loadRuns().map((r) => `${r.caseId}|${r.arm}|${r.promptVersion}`));
-      const latest = new Map(loadRuns().filter((r) => r.promptVersion === WRITING_PROMPT_VERSION && r.arm === "local+examples").map((r) => [r.caseId, r.draft]));
+      // refine shortens the last draft made by the same model and effort
+      const latest = new Map(loadRuns().filter((r) => r.promptVersion === WRITING_PROMPT_VERSION && baseArm(r.arm)?.id === "local+examples").map((r) => [`${r.caseId}${r.arm.slice("local+examples".length)}`, r.draft]));
+      let turn = 0;
       for (const f of loadFixtures()) {
         const corpus = readFixtureCorpus(f);
         const judgments = loadJudgments(f.id);
@@ -200,35 +223,49 @@ describe.runIf(stage === "drafts")("drafts", () => {
           // the attacks run only when named: they have no original to compare
           if (c.kind === "attack" && !cases && !kinds) continue;
           for (const arm of arms) {
-            if (done.has(`${c.id}|${arm.id}|${WRITING_PROMPT_VERSION}`)) continue;
-            const { input, examples } = draftRequest(f, c, corpus, arm, judgments, latest.get(c.id));
-            const started = performance.now();
-            let first: number | null = null;
-            const result = await tasks.compose(input, {
-              effort: arm.effort,
-              onDelta: () => {
-                first ??= performance.now() - started;
-              },
-            });
-            const usage = result.usage ?? null;
-            const run: Run = {
-              caseId: c.id,
-              persona: f.id,
-              arm: arm.id,
-              promptVersion: WRITING_PROMPT_VERSION,
-              draft: result.text,
-              stop: result.stop,
-              ttftMs: first === null ? null : Math.round(first),
-              totalMs: Math.round(performance.now() - started),
-              usage,
-              usd: usage ? costOf(SONNET.model, usage) : null,
-              examples,
-              measures: measureDraft(f, c, input, result.text, corpus),
-            };
-            appendFileSync(RUNS, `${JSON.stringify(run)}\n`);
-            if (arm.id === "local+examples") latest.set(c.id, result.text);
-            console.log(`\n=== ${c.id} / ${arm.id} / v${WRITING_PROMPT_VERSION}  ttft ${run.ttftMs}ms  in ${usage?.inputTokens} read ${usage?.cacheReadTokens} write ${usage?.cacheWriteTokens} out ${usage?.outputTokens}  $${run.usd?.toFixed(4)}\n${result.text}\n--- original\n${c.original ?? "(attack)"}`);
-            console.log(spendReport());
+            // settings take turns going first, so neither always meets the network first
+            const order = turn++ % 2 === 0 ? drafters : [...drafters].reverse();
+            for (const drafter of order) {
+              const armId = `${arm.id}${drafter.tag}`;
+              if (done.has(`${c.id}|${armId}|${WRITING_PROMPT_VERSION}`)) continue;
+              const { input, examples } = draftRequest(f, c, corpus, arm, judgments, latest.get(`${c.id}${drafter.tag}`));
+              const started = performance.now();
+              let first: number | null = null;
+              const result = await drafter.tasks
+                .compose(input, {
+                  effort: arm.effort,
+                  onDelta: () => {
+                    first ??= performance.now() - started;
+                  },
+                })
+                .catch((error: unknown) => {
+                  // kept apart and not marked done, so a rerun tries it again; a spent cap still stops the run
+                  if ((error as Error).name === "BudgetExceededError") throw error;
+                  appendFileSync(ERRORS, `${JSON.stringify({ caseId: c.id, arm: armId, promptVersion: WRITING_PROMPT_VERSION, error: String(error), afterMs: Math.round(performance.now() - started), at: new Date().toISOString() })}\n`);
+                  console.log(`\n=== ${c.id} / ${armId}  FAILED after ${Math.round(performance.now() - started)}ms: ${String(error)}`);
+                  return null;
+                });
+              if (!result) continue;
+              const usage = result.usage ?? null;
+              const run: Run = {
+                caseId: c.id,
+                persona: f.id,
+                arm: armId,
+                promptVersion: WRITING_PROMPT_VERSION,
+                draft: result.text,
+                stop: result.stop,
+                ttftMs: first === null ? null : Math.round(first),
+                totalMs: Math.round(performance.now() - started),
+                usage,
+                usd: usage && price ? costAt(price, usage) : null,
+                examples,
+                measures: measureDraft(f, c, input, result.text, corpus),
+              };
+              appendFileSync(RUNS, `${JSON.stringify(run)}\n`);
+              if (arm.id === "local+examples") latest.set(`${c.id}${drafter.tag}`, result.text);
+              console.log(`\n=== ${c.id} / ${armId} / v${WRITING_PROMPT_VERSION}  ttft ${run.ttftMs}ms  total ${run.totalMs}ms  in ${usage?.inputTokens} read ${usage?.cacheReadTokens} write ${usage?.cacheWriteTokens} out ${usage?.outputTokens}  $${run.usd?.toFixed(4)}\n${result.text}\n--- original\n${c.original ?? "(attack)"}`);
+              console.log(spendReport());
+            }
           }
         }
       }
@@ -251,7 +288,7 @@ describe.runIf(stage === "judges")("judges", () => {
         const f = fixtures.get(run.persona)!;
         const c = f.cases.find((x) => x.id === run.caseId)!;
         // nothing to compare these with: read by eye
-        if (ARMS.find((a) => a.id === run.arm)?.mode || c.kind === "attack") continue;
+        if (baseArm(run.arm)?.mode || c.kind === "attack") continue;
         if (!entry.meaning) entry.meaning = await runStructured(transport, meaningTask(c, run.draft), { output: "json_schema", signal: signal() });
         if (!entry.authorship && c.original) {
           const corpus = readFixtureCorpus(f);
@@ -279,14 +316,14 @@ describe.runIf(stage === "report")("report", () => {
     const cases = new Map(fixtures.flatMap((f) => f.cases.map((c) => [c.id, { f, c }] as const)));
     // measured again from the text, so a better measure doesn't need a new draft
     const runs = loadRuns()
-      .filter((r) => r.promptVersion === version && ARMS.some((a) => a.id === r.arm))
+      .filter((r) => r.promptVersion === version && baseArm(r.arm))
       .map((r) => {
         const { f, c } = cases.get(r.caseId)!;
-        const arm = ARMS.find((a) => a.id === r.arm)!;
+        const arm = baseArm(r.arm)!;
         const corpus = readFixtureCorpus(f);
         return { ...r, measures: measureDraft(f, c, draftRequest(f, c, corpus, arm, loadJudgments(f.id)).input, r.draft, corpus) };
       });
-    const arms = [...new Set(runs.map((r) => r.arm))].filter((a) => !ARMS.find((x) => x.id === a)?.mode);
+    const arms = [...new Set(runs.map((r) => r.arm))].filter((a) => !baseArm(a)?.mode);
     const verdictOf = (r: Run) => verdicts[`${r.caseId}|${r.arm}|${r.promptVersion}`];
 
     const rows = arms.map((arm) => {
@@ -300,6 +337,7 @@ describe.runIf(stage === "report")("report", () => {
       const kept = all.filter((r) => verdictOf(r)?.meaning?.kept).length;
       const added = all.filter((r) => (verdictOf(r)?.meaning?.added.length ?? 0) > 0).length;
       const ttft = all.map((r) => r.ttftMs ?? 0).sort((a, b) => a - b);
+      const total = all.map((r) => r.totalMs).sort((a, b) => a - b);
       return {
         arm,
         n,
@@ -317,13 +355,14 @@ describe.runIf(stage === "report")("report", () => {
         added,
         fooled: pct(fooled, n),
         ttftMedian: ttft[Math.floor(ttft.length / 2)] ?? 0,
+        totalMedian: total[Math.floor(total.length / 2)] ?? 0,
         usd: mean(all.map((r) => r.usd ?? 0)).toFixed(4),
         output: Math.round(mean(all.map((r) => r.usage?.outputTokens ?? 0))),
         read: Math.round(mean(all.map((r) => r.usage?.cacheReadTokens ?? 0))),
       };
     });
-    const header = "| arm | n | length off | words (orig) | greeting | sign-off | ! | lowercase | invented | [ ] | kept | added | fooled judge | ttft ms | output tok | cache read | $/draft |\n|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|";
-    const table = rows.map((r) => `| ${r.arm} | ${r.n} | ${r.lengthOff} | ${r.words} (${r.original}) | ${r.greeting} | ${r.signOff} | ${r.bang} | ${r.lower} | ${r.invented} | ${r.placeholders} | ${r.kept} | ${r.added} | ${r.fooled} | ${r.ttftMedian} | ${r.output} | ${r.read} | ${r.usd} |`).join("\n");
+    const header = "| arm | n | length off | words (orig) | greeting | sign-off | ! | lowercase | invented | [ ] | kept | added | fooled judge | ttft ms | total ms | output tok | cache read | $/draft |\n|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|";
+    const table = rows.map((r) => `| ${r.arm} | ${r.n} | ${r.lengthOff} | ${r.words} (${r.original}) | ${r.greeting} | ${r.signOff} | ${r.bang} | ${r.lower} | ${r.invented} | ${r.placeholders} | ${r.kept} | ${r.added} | ${r.fooled} | ${r.ttftMedian} | ${r.totalMedian} | ${r.output} | ${r.read} | ${r.usd} |`).join("\n");
 
     const judgments = readJson<Record<string, StoredJudgment>>(JUDGMENTS, {});
     const profileLeaks: string[] = [];

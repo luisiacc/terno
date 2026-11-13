@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { budgetedTransport, createAi, transportFor, type AiOptions, type AiTasks, type ModelTransport, type ProviderConfig, type SpendLedger } from "@terno/ai";
+import { budgetedTransport, createAi, priceOf, transportFor, type AiOptions, type AiTasks, type CompletionRequest, type ModelPrice, type ModelTransport, type ProviderConfig, type SpendLedger } from "@terno/ai";
 import { fileLedger as ledgerAt } from "@terno/ai/file-ledger";
 
 /**
@@ -33,13 +33,31 @@ export function realKeys(): { anthropic: string; openai: string; jev: string } {
   return { anthropic: env.ANTHROPIC_API_KEY ?? "", openai: env.OPENAI_API_KEY ?? "", jev: env.JEV_API_KEY ?? "" };
 }
 
+/**
+ * Prices the app doesn't list, for evals only: the app shows no estimate for a model nobody told it the price of, but
+ * an eval must still be held to the ledger. From the provider's model page.
+ */
+const EVAL_PRICES: Readonly<Record<string, ModelPrice>> = {
+  "gpt-6-sol": { input: 2, cacheRead: 0.2, output: 10 },
+};
+
+export const evalPriceOf = (model: string): ModelPrice | null => priceOf(model) ?? EVAL_PRICES[model] ?? null;
+
+/** Under the ledger, at the app's price or an eval's; a model with neither is refused, as budgetedTransport does. */
+const budgeted = (inner: ModelTransport, model: string, ledger: SpendLedger, label: string): ModelTransport => budgetedTransport(inner, model, ledger, label, evalPriceOf(model));
+
+/** Changes every request before it leaves: an eval's override, such as a reasoning effort the app doesn't set. */
+export function adjustRequests(inner: ModelTransport, adjust: (req: CompletionRequest) => CompletionRequest): ModelTransport {
+  return { ...inner, complete: (req) => inner.complete(adjust(req)), ...(inner.stream ? { stream: (req: CompletionRequest) => inner.stream!(adjust(req)) } : {}) };
+}
+
 export interface RealTarget {
   provider: "anthropic" | "openai" | "jev";
   model: string;
 }
 
 /** Tasks on a real model, under the ledger: the same createAi the app uses. */
-export function realTasks(target: RealTarget, label: string, options: AiOptions = {}): AiTasks {
+export function realTasks(target: RealTarget, label: string, options: AiOptions = {}, adjust?: (req: CompletionRequest) => CompletionRequest): AiTasks {
   const keys = realKeys();
   const config: ProviderConfig = {
     id: target.provider,
@@ -53,7 +71,7 @@ export function realTasks(target: RealTarget, label: string, options: AiOptions 
   const ledger = fileLedger();
   return createAi(config, {
     ...options,
-    wrapTransport: (transport) => budgetedTransport(transport, target.model, ledger, label),
+    wrapTransport: (transport) => budgeted(adjust ? adjustRequests(transport, adjust) : transport, target.model, ledger, label),
     ...(target.provider === "jev" ? {} : { transport: transportFor(config) }),
   });
 }
@@ -62,7 +80,7 @@ export function realTasks(target: RealTarget, label: string, options: AiOptions 
 export function realTransport(target: RealTarget, label: string): ModelTransport {
   const keys = realKeys();
   const config: ProviderConfig = { id: target.provider, model: target.model, apiKey: keys[target.provider], fetch: globalThis.fetch, timeoutMs: 120_000, maxRetries: 0 };
-  return budgetedTransport(transportFor(config), target.model, fileLedger(), label);
+  return budgeted(transportFor(config), target.model, fileLedger(), label);
 }
 
 export function spendReport(): string {
