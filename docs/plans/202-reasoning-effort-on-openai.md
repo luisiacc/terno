@@ -131,9 +131,32 @@ This set was easier than the first (default: 2 / 1 here, 5 / 2 there), so compar
 
 On the user's own key that's the user's bill. Under Pro's managed allowance ($3 a month, plan 85) a typical user's summaries on Terra take about half of it, and a heavy user's all of it.
 
+## Round three: Luna at medium, with both prompts
+
+> can you try gpt luna with medium reasoning and add it to the comparison, with both new and old prompt, i just can't believe these models make those easy mistakes, it says terra low had 4/2 wrong cards, which is more than current luna
+
+Luna's default *is* medium, so "Luna default" was already Luna at medium with the old prompt. It ran again with medium asked for explicitly, which shows how much one run differs from the next, and once with variant B. All six went into one audit with fresh judges, six cards a conversation, on the same 90 conversations as round two.
+
+| | Median / p90 | Cards wrong, Claude / Codex | High, Claude / Codex | Firm | Firm and high | Key facts missing, Claude / Codex |
+|---|---|---:|---:|---:|---:|---:|
+| Luna medium, old prompt (round two's run) | 4.3 s / 9.4 s | 2 / 1 | 1 / 0 | 1 | 0 | 0 / 9 |
+| Luna medium, old prompt (run again) | 4.9 s / 8.2 s | 5 / 4 | 2 / 1 | 3 | 1 | 0 / 9 |
+| Luna medium, variant B | 4.3 s / 10.3 s | 2 / 1 | 1 / 0 | 0 | 0 | 1 / 13 |
+| Luna low, variant B | 2.0 s / 5.3 s | 5 / 4 | 2 / 3 | 3 | 2 | 3 / 14 |
+| Terra low, old prompt | 2.2 s / 3.5 s | 3 / 2 | 2 / 1 | 2 | 1 | 0 / 9 |
+| Terra low, variant B | 2.3 s / 3.8 s | 4 / 2 | 1 / 0 | 2 | 0 | 0 / 7 |
+
+**The same model, prompt and effort, run twice, went from 2 / 1 wrong cards to 5 / 4.** So round two's gap between Terra low (4 / 2) and Luna (2 / 1) is within what a second run changes: on 90 conversations these counts can't rank them. The judges were steadier than the runs: the four sets of cards judged in both rounds scored nearly the same both times (2 / 1 and 2 / 1, 6 / 4 and 5 / 4, 4 / 2 and 3 / 2, 4 / 2 and 4 / 2).
+
+What the counts do say:
+- Every version gets something wrong on 1 to 5 of 90 cards, mostly low severity. One card is flagged on all six versions (a follow-on meeting's date that every model reads the same way), so some of what's left is the mail being unclear, not the model.
+- Variant B costs nothing at medium (2 / 1, none firm) and removed what low effort was getting wrong about who owes what.
+- Luna low is the only version with high-severity claims from both judges in both rounds: crediting a list member's question to the reader, and a deadline given as "end of day".
+- Terra low and Luna medium can't be told apart on accuracy. Terra low is half the wait and much steadier (p90 3.8 s against 8–10 s) at about seven times the price.
+
 ## Open decisions
 
-1. **Summaries.** Three choices, each with variant B where it applies: Luna at its default (most accurate, 4–5 s, slow tail); Luna low with variant B (2 s, ownership fixed, about twice the wrong cards); Terra low with variant B (2.3 s and the most even, close to today's accuracy, about 7× the cost).
+1. **Summaries.** With variant B in every case: Luna at medium (today's speed, 4–5 s with a slow tail, the cheapest accurate one); Terra low (as accurate as far as 90 conversations can tell, 2.3 s and steady, about seven times the cost); or Luna low (2 s and nearly free, with more high-severity slips).
 2. **Sol's drafting: decided.** "lets do sol drafting at low." `DRAFT_REASONING` in `writing.ts`, on compose and fill (Reply ready's prepared drafts go through compose too). The voice judge isn't drafting and wasn't measured, so it keeps the default.
 
 ## Tests
