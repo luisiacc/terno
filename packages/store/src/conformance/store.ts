@@ -2105,9 +2105,14 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
           // a draft is never a conversation's link
           msg({ accountId: a!, providerMsgId: "d1", providerThreadId: "t5", rfcMessageId: "<sent@x>", date: 1_000 }),
           msg({ accountId: a!, providerMsgId: "d2", providerThreadId: "t5", rfcMessageId: "<draft@x>", date: 2_000, isDraft: true }),
+          // mixed, its only message outside Spam a draft: no link (never the Spam one; Codex code review #1)
+          msg({ accountId: a!, providerMsgId: "r1", providerThreadId: "t6", rfcMessageId: "<spam-original@x>", date: 1_000, isSpam: true, inInbox: false }),
+          msg({ accountId: a!, providerMsgId: "r2", providerThreadId: "t6", rfcMessageId: "<reply-draft@x>", date: 2_000, isDraft: true }),
         ]);
         const [t1, t2, t3, t4, t5] = [await threadOf(store, "n1"), await threadOf(store, "s1"), await threadOf(store, "b1"), await threadOf(store, "m1"), await threadOf(store, "d1")];
-        expect(await store.links.newest([t1, t2, t3, t4, t5, t1, 999_999])).toEqual(new Map([[t1, "new@x"], [t2, "only-spam@x"], [t5, "sent@x"]]));
+        const t6 = await threadOf(store, "r1");
+        expect(await threadOf(store, "r2")).toBe(t6);
+        expect(await store.links.newest([t1, t2, t3, t4, t5, t6, t1, 999_999])).toEqual(new Map([[t1, "new@x"], [t2, "only-spam@x"], [t5, "sent@x"]]));
       });
     });
 

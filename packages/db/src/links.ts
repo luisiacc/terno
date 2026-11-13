@@ -24,14 +24,15 @@ export function findLinked(db: Db, rfcMessageId: string): Awaited<ReturnType<Mai
 export function newestLinked(db: Db, threadIds: readonly number[]): Map<number, string> {
   const out = new Map<number, string>();
   for (const threadId of new Set(threadIds)) {
-    const r = db.get<{ r: string | null; away: number }>(
-      `SELECT rfc_message_id AS r, (is_spam OR is_trash) AS away FROM messages INDEXED BY messages_thread
-        WHERE thread_id = ? AND is_draft = 0
-        ORDER BY (is_spam OR is_trash), rfc_message_id IS NULL, date DESC, id DESC LIMIT 1`,
+    // drafts count for whether anything is outside Spam and Trash, never as the link (Codex code review #1)
+    const r = db.get<{ r: string | null; is_draft: number }>(
+      `SELECT rfc_message_id AS r, is_draft FROM messages INDEXED BY messages_thread
+        WHERE thread_id = ?
+        ORDER BY (is_spam OR is_trash), is_draft, rfc_message_id IS NULL, date DESC, id DESC LIMIT 1`,
       threadId,
     );
-    // the first row is outside Spam and Trash whenever any message is: then only its id counts
-    if (r?.r) out.set(threadId, r.r);
+    // the first row is outside Spam and Trash whenever any message is: then only it can be the link
+    if (r?.r && !r.is_draft) out.set(threadId, r.r);
   }
   return out;
 }

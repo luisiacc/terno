@@ -18,8 +18,9 @@ export function findLinked(c: Ctx, rfcMessageId: string): Awaited<ReturnType<Mai
 export function newestLinked(c: Ctx, threadIds: readonly number[]): Map<number, string> {
   const messages = T(c, "messages");
   const out = new Map<number, string>();
-  // the same order as SQL's: outside Spam and Trash first, then one with a Message-ID, then the newest
-  const rank = (m: R) => [m.is_spam || m.is_trash ? 1 : 0, m.rfc_message_id ? 0 : 1, -m.date, -m.id];
+  // the same order as SQL's: outside Spam and Trash first (drafts count for that, never as the link), then not a
+  // draft, then one with a Message-ID, then the newest
+  const rank = (m: R) => [m.is_spam || m.is_trash ? 1 : 0, m.is_draft ? 1 : 0, m.rfc_message_id ? 0 : 1, -m.date, -m.id];
   const before = (a: R, b: R) => {
     const x = rank(a), y = rank(b);
     for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return x[i]! < y[i]!;
@@ -27,8 +28,8 @@ export function newestLinked(c: Ctx, threadIds: readonly number[]): Map<number, 
   };
   for (const threadId of new Set(threadIds)) {
     let best: R | null = null;
-    for (const m of messages.by("fk_thread_id", threadId)) if (!m.is_draft && (!best || before(m, best))) best = m;
-    if (best?.rfc_message_id) out.set(threadId, best.rfc_message_id as string);
+    for (const m of messages.by("fk_thread_id", threadId)) if (!best || before(m, best)) best = m;
+    if (best?.rfc_message_id && !best.is_draft) out.set(threadId, best.rfc_message_id as string);
   }
   return out;
 }

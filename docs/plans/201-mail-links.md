@@ -118,3 +118,6 @@ The MCP reaches the desktop app only (plan 183: `agents.status.available` is fal
 11. **Tests at every level.** Unit tests for the renderer's opener (found, not found, failed, superseded), the packaged smoke for the visible result (the conversation shown, the message drawn open and focused), and `pnpm test:all` for the store contract change.
 
 Not taken: e2e in the web build. The web build has no way to receive an OS link (above), so the whole visible path is the packaged smoke; Split versus List doesn't change `openMailLink` (it calls `openThread`, which already handles both).
+## What the Codex code review changed
+
+1. **A mixed conversation whose only message outside Spam is a draft links to nothing.** `links.newest` skipped drafts before deciding whether anything was outside Spam and Trash, so such a conversation (listed through its clean draft) got its Spam message's link. Both stores now rank every message (outside Spam and Trash first, then not a draft, then with a Message-ID, then the newest) and link only a non-draft winner. Conformance test (both stores), which failed before the fix.
