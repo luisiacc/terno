@@ -1,6 +1,6 @@
 import { captureError } from "@terno/core/diag";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { AGENT_ACCESS_LABEL, ATTACHMENT_CHUNK, base64Bytes, filterRuleSchema, VIEWS, type AgentAccess, type MessageDetail, type ThreadDetail, type ThreadSummary } from "@terno/core";
+import { AGENT_ACCESS_LABEL, ATTACHMENT_CHUNK, base64Bytes, filterRuleSchema, mailLink, VIEWS, type AgentAccess, type MessageDetail, type ThreadDetail, type ThreadSummary } from "@terno/core";
 import { RpcError, type Bootstrap } from "@terno/core/rpc";
 import { z } from "zod";
 import type { AppConnection } from "./connection";
@@ -54,6 +54,7 @@ export function createMcpServer(app: AppConnection, version = "0.1.0"): McpServe
         `${SPAM_TRASH} ` +
         "Read a message's files with get_attachment. " +
         "Waiting for a code or a reply? Search first, then wait_for_new_mail on that account. " +
+        "Conversations and messages come with a link (terno://…) that opens them in Terno: when you point the user at an email, give its link as a Markdown link, e.g. [Invoice from Acme](terno://message/…). " +
         "The user chooses in Terno → Settings → Agents whether agents may only read, also organize (archive, categorize, filters, drafts), or also send; a tool beyond that level is refused with a message to pass on. " +
         "Never send email unless the user explicitly asked for it; prefer create_draft.",
     },
@@ -66,8 +67,12 @@ export function createMcpServer(app: AppConnection, version = "0.1.0"): McpServe
     return boot.data;
   };
   const needs = (level: AgentAccess) => ` Needs '${AGENT_ACCESS_LABEL[level]}' access in Terno.`;
+  // plan 201: a page's links in one call (a conversation's is its newest message's, one outside Spam first)
+  const linksOf = async (p: { threadIds?: number[]; messageIds?: number[] }): Promise<{ threads: Record<number, string>; messages: Record<number, string> }> =>
+    p.threadIds?.length || p.messageIds?.length ? app.call("links.of", { threadIds: p.threadIds ?? [], messageIds: p.messageIds ?? [] }) : { threads: {}, messages: {} };
   const summarize = async (items: ThreadSummary[]) => {
     const b = await bootstrap();
+    const links = (await linksOf({ threadIds: items.map((t) => t.id) })).threads;
     const accounts = new Map(b.accounts.map((a) => [a.id, a.email]));
     const categories = new Map(b.categories.map((c) => [c.id, c.name]));
     return items.map((t) => {
@@ -87,6 +92,7 @@ export function createMcpServer(app: AppConnection, version = "0.1.0"): McpServe
         categories: t.categoryIds.map((id) => categories.get(id)).filter(Boolean),
         // plan 64: a search looks everywhere; where each result lives
         place: t.inTrash ? "trash" : t.inSpam ? "spam" : t.inInbox === undefined ? undefined : t.inInbox ? "inbox" : "archive",
+        link: mailLink(links[t.id]) ?? undefined,
       };
     });
   };
@@ -173,7 +179,8 @@ export function createMcpServer(app: AppConnection, version = "0.1.0"): McpServe
         const r = await app.call("sync.agentWait", { accountId, waitSeconds, ...(from?.trim() ? { from } : {}), ...(subject?.trim() ? { subject } : {}) });
         const waited = Math.round(r.waitedMs / 1000);
         // the messages themselves, never their conversations' summaries (plan 191, Codex code review #1)
-        const arrived = r.items.map((m) => ({ threadId: m.threadId, messageId: m.messageId, from: m.fromName && m.fromName !== m.fromEmail ? `${m.fromName} <${m.fromEmail}>` : m.fromEmail, subject: m.subject, snippet: m.snippet, date: new Date(m.date).toISOString() }));
+        const links = (await linksOf({ messageIds: r.items.map((m) => m.messageId) })).messages;
+        const arrived = r.items.map((m) => ({ threadId: m.threadId, messageId: m.messageId, from: m.fromName && m.fromName !== m.fromEmail ? `${m.fromName} <${m.fromEmail}>` : m.fromEmail, subject: m.subject, snippet: m.snippet, date: new Date(m.date).toISOString(), link: mailLink(links[m.messageId]) ?? undefined }));
         if (arrived.length) return text({ arrived, waitedSeconds: waited });
         const how = r.checks === "quick" ? "" : r.checks === "push" ? " Terno hears of this account's new Inbox mail at once, and of its other folders every 40 seconds." : " Terno checks this account only every 40 seconds right now (it is still syncing, or its last check failed).";
         return text({
@@ -214,6 +221,7 @@ export function createMcpServer(app: AppConnection, version = "0.1.0"): McpServe
             const inline = inlineParts(m.bodyHtml, m.attachments);
             return {
               messageId: m.id,
+              link: mailLink(m.rfcMessageId) ?? undefined,
               from: `${m.from.name} <${m.from.email}>`,
               to: m.to.map((a) => a.email),
               cc: m.cc.map((a) => a.email),

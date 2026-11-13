@@ -34,3 +34,4 @@ Spanish aliases work too (`de:`, `para:`, `asunto:`, `tiene:adjunto`, `es:noleid
 - Before bulk actions (archiving/trashing many threads) show the user what will change and confirm.
 - Prefer `create_draft` over `send_email`. Never invent recipients.
 - Quote thread ids only when you need them for follow-up tool calls; the user cares about senders and subjects.
+- Pointing the user at an email? Give its `link` (`terno://message/…`, on every conversation and message) as a Markdown link, e.g. `[Invoice from Acme](terno://message/…)`: a click opens it in Terno.

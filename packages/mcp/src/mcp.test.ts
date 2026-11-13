@@ -9,6 +9,7 @@ import { AppConnection } from "./connection";
 import { createMcpServer } from "./server";
 import { sqlDb } from "@terno/db";
 import { msg } from "@terno/store/conformance";
+import { canonicalMessageId, parseMailLink } from "@terno/core";
 
 let dir: string;
 let backend: Backend;
@@ -110,7 +111,7 @@ describe("terno MCP server", () => {
     const r = await backend.store.sync.ingest([msg({ accountId, providerMsgId: "code-1", from: { name: "GitHub", email: "noreply@github.com" }, subject: "[GitHub] Your code is 314159", date: Date.now() })], { applyFilters: false, now: Date.now(), classifier: null });
     backend.agentWaits.arrived(accountId, r.inserted);
     const got = await waiting;
-    expect(got.json.arrived).toEqual([expect.objectContaining({ subject: "[GitHub] Your code is 314159", from: "GitHub <noreply@github.com>" })]);
+    expect(got.json.arrived).toEqual([expect.objectContaining({ subject: "[GitHub] Your code is 314159", from: "GitHub <noreply@github.com>", link: expect.stringMatching(/^terno:\/\/message\//) })]);
     // a clean message in a conversation whose first message is in Spam: the message's own lines, nothing of the spam's
     // (a conversation's summary takes its subject from its first message; Codex code review #1)
     await backend.store.sync.ingest([msg({ accountId, providerMsgId: "mixed-1", providerThreadId: "mixed", subject: "WIN A PRIZE spam subject", date: Date.now() - 60_000, isSpam: true, inInbox: false })], { applyFilters: false, now: Date.now(), classifier: null });
@@ -126,6 +127,49 @@ describe("terno MCP server", () => {
     expect(none.json).toMatchObject({ arrived: [], waitedSeconds: 5, note: expect.stringMatching(/search again.*may be there/s) });
     const unknown = await call("wait_for_new_mail", { accountId: 9999, waitSeconds: 5 });
     expect(unknown).toMatchObject({ isError: true, raw: "No account 9999. list_accounts gives the ids." });
+  });
+
+  it("plan 201: conversations and messages carry links that open what they name, built from the Message-ID", async () => {
+    const resolve = (id: string | null) => backend.server.invoke("links.resolve", { id: id! }, { clientId: "renderer", origin: "renderer" });
+    const res = await call("search_emails", { query: "factura", limit: 5 });
+    for (const r of res.json.results) {
+      const id = parseMailLink(r.link);
+      expect(id, r.link).not.toBeNull();
+      expect((await resolve(id))?.threadId).toBe(r.threadId);
+    }
+    const listed = (await call("list_threads", { view: "inbox", limit: 3 })).json.threads;
+    expect(listed.every((t: { link?: string }) => parseMailLink(t.link))).toBe(true);
+    const thread = await call("get_thread", { threadId: res.json.results[0].threadId });
+    const detail = await backend.store.threads.get(res.json.results[0].threadId);
+    for (const m of thread.json.messages) {
+      const id = parseMailLink(m.link);
+      expect(id).toBe(canonicalMessageId(detail!.messages.find((d) => d.id === m.messageId)!.rfcMessageId));
+      expect(await resolve(id)).toEqual({ threadId: thread.json.threadId, messageId: m.messageId });
+    }
+
+    // a conversation whose newest message is in Spam: its link is to the newest one outside it, like its lines
+    const accountId = (await call("list_accounts")).json.accounts[0].id;
+    const now = Date.now();
+    await backend.store.sync.ingest(
+      [
+        msg({ accountId, providerMsgId: "link-1", providerThreadId: "link-t", rfcMessageId: "<Clean.1@Example.test>", subject: "Quarterly linkcheck", date: now - 120_000 }),
+        msg({ accountId, providerMsgId: "link-2", providerThreadId: "link-t", rfcMessageId: "<spam.2@example.test>", subject: "Quarterly linkcheck", date: now - 60_000, isSpam: true, inInbox: false }),
+        msg({ accountId, providerMsgId: "link-3", providerThreadId: "link-n", rfcMessageId: null, subject: "Nolinkcheck here", date: now }),
+      ],
+      { applyFilters: false, now, classifier: null },
+    );
+    const mixed = (await call("search_emails", { query: "linkcheck", limit: 5 })).json.results[0];
+    expect(mixed.link).toBe("terno://message/clean.1%40example.test");
+    // no Message-ID: no link (one made up from the sender and date could open the wrong email)
+    const bare = (await call("search_emails", { query: "nolinkcheck", limit: 5 })).json.results[0];
+    expect(bare.link).toBeUndefined();
+    expect((await call("get_thread", { threadId: bare.threadId })).json.messages[0].link).toBeUndefined();
+    // a link Terno doesn't have
+    expect(await resolve("nobody@nowhere.test")).toBeNull();
+    // agents get the ids; opening one is the user's click, never an agent's
+    const mcp = { clientId: "agent", origin: "mcp" as const };
+    expect(await backend.server.invoke("links.of", { threadIds: [mixed.threadId], messageIds: [] }, mcp)).toEqual({ threads: { [mixed.threadId]: "clean.1@example.test" }, messages: {} });
+    await expect(backend.server.invoke("links.resolve", { id: "clean.1@example.test" }, mcp)).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
   describe("plan 185: files", () => {
