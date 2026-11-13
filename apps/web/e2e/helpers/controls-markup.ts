@@ -10,6 +10,7 @@ import { CategoryDot } from "@terno/ui/components/category-dot";
 import { Checkbox } from "@terno/ui/components/checkbox";
 import { Chip } from "@terno/ui/components/chip";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@terno/ui/components/collapsible";
+import { Combobox, ComboboxInput } from "@terno/ui/components/combobox";
 import { ColorSwatch, ColorSwatches } from "@terno/ui/components/color-swatches";
 import { DialogFooter } from "@terno/ui/components/dialog";
 import { IconButton } from "@terno/ui/components/icon-button";
@@ -109,6 +110,8 @@ process.stdout.write(
       h("div", { style: { display: "flex", gap: 8 } }, h(Chip, { dot: h(CategoryDot, { color: "rose" }), onRemove: () => {}, removeLabel: "Remove Work", removeProps: { "data-testid": "chip-remove" }, "data-testid": "chip" }, "Work")),
       h(SearchField, { "aria-label": "Search", value: "ana", onValueChange: () => {}, "data-testid": "search-full", hint: h(Kbd, null, "/") }),
       h(SearchField, { "aria-label": "Search", value: "", onValueChange: () => {}, "data-testid": "search-empty", hint: h(Kbd, { "data-testid": "search-hint" }, "/") }),
+      // plan 203: the combobox's field at rest, with text: the search field's look
+      h(Combobox, { value: "ana", onValueChange: () => {}, items: [] }, h(ComboboxInput, { "aria-label": "Find", "data-testid": "combobox-full" })),
       h(Announcement, { icon: h(Sparkles), title: "Title", titleProps: { "data-testid": "announcement-title" }, description: "Body", onClose: () => {}, closeProps: { "data-testid": "announcement-close" }, "data-testid": "announcement", className: "m-0" }),
       h(Button, { variant: "link", "data-testid": "link" }, "Try again"),
       h("div", { "data-testid": "snack-surface", className: "snack-surface rounded-xl p-2" }, "Archived"),

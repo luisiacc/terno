@@ -232,6 +232,16 @@ const PROBES: [string, Probe][] = [
     await expect(page.getByTestId("search-empty").locator("..").getByRole("button")).toHaveCount(0);
   }],
 
+  ["the combobox's field (plan 203): the search field's fill and clear, a combobox controlling nothing until it opens", async (page, mode, expect) => {
+    const input = page.getByTestId("combobox-full");
+    expect(await css(page, "combobox-full", "background-color")).toBe(await css(page, "probe-field", "background-color"));
+    await expect(input).toHaveAttribute("role", "combobox");
+    await expect(input).toHaveAttribute("aria-expanded", "false");
+    const clear = input.locator("..").getByRole("button", { name: "Clear search" });
+    await expect(clear).toHaveAttribute("tabindex", "-1");
+    expect(await clear.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(await css(page, "probe-field", "background-color"));
+  }],
+
   ["an announcement sits on the tint: its title the ink, its text muted, its close round on the field wash", async (page, mode, expect) => {
     expect(await css(page, "announcement", "background-color")).toBe(await css(page, "probe-tint", "background-color"));
     expect(await css(page, "announcement-title", "color")).toBe(await css(page, "probe-foreground", "color"));
