@@ -306,6 +306,7 @@ const en = {
   "settings.find.words.backup": "export, import, restore, JSON",
   "settings.find.words.storage": "disk space, free up, size, delete old mail",
   "settings.find.words.version": "update, upgrade, release, check for updates",
+  "settings.find.words.engine": "SQLite, IndexedDB, OPFS, database, browser storage",
   "settings.find.words.channel": "beta, stable, releases",
   "settings.dev.proAi": "Pro AI",
   "settings.dev.proAi.hint": "Run AI features the way Pro will, on the keys below. Your saved provider and keys stay as they are.",

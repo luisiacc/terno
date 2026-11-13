@@ -104,6 +104,25 @@ test("Settings' search finds every kind of setting, says where and why, and open
     await expect(setting(page, "ai.followups")).toHaveAttribute("data-found", "on", { timeout: 4000 });
   });
 
+  await scenario("a Gmail account's photos from Google open on Appearance, that account's row (Codex code review)", async () => {
+    await page.keyboard.press("Meta+f");
+    await find(page, "photos google personal");
+    const first = results(page).first();
+    await expect(first.getByTestId("settings-find-where")).toHaveText(/Appearance.*Sender pictures.*Personal/);
+    await page.keyboard.press("Enter");
+    await expect(dialog(page).locator("[data-setting='appearance.googlePhotos'][data-found]")).toHaveCount(1);
+  });
+
+  await scenario("Snippets opens its list even with a snippet open in its editor (Codex code review)", async () => {
+    await page.getByTestId("tab-snippets").click();
+    await page.getByTestId("settings-snippet-new").click();
+    await expect(page.getByTestId("snippet-name")).toBeFocused();
+    await page.keyboard.press("Meta+f");
+    await find(page, "snippets");
+    await page.keyboard.press("Enter");
+    await expect(setting(page, "snippets.list")).toHaveAttribute("data-found", "on");
+  });
+
   await scenario("Esc closes the list, then empties the field, then closes Settings", async () => {
     await page.keyboard.press("Meta+f");
     await find(page, "mode");

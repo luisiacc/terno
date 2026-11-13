@@ -47,9 +47,10 @@ const literal = (tag: string, attr: string) => tag.match(new RegExp(`\\b${attr}=
 /** Where each id is drawn: a row's or group's `find`, or `findAttrs` on another element. */
 const drawn = new Map<string, Set<string>>();
 for (const { path, text } of sources) {
-  for (const m of text.matchAll(/\bfind="([^"]+)"|findAttrs\("([^"]+)"\)/g)) {
-    const id = (m[1] ?? m[2])!;
-    drawn.set(id, (drawn.get(id) ?? new Set()).add(path));
+  // a literal, a choice between literals (`find={desktop ? "a" : "b"}`), or findAttrs on another element
+  for (const m of text.matchAll(/\bfind="([^"]+)"|\bfind=\{([^}]*)\}|findAttrs\("([^"]+)"\)/g)) {
+    const ids = m[2] !== undefined ? [...m[2].matchAll(/"([^"]+)"/g)].map((q) => q[1]!) : [(m[1] ?? m[3])!];
+    for (const id of ids) drawn.set(id, (drawn.get(id) ?? new Set()).add(path));
   }
 }
 
@@ -111,7 +112,7 @@ describe("the entries a search runs on", async () => {
   const { findEntries } = await import("./search-index");
   const { findSettings } = await import("~/lib/settings-find");
   const settings = { ai: { provider: "none", fromEnv: false, keys: {}, profiles: {} }, devAi: null } as unknown as Parameters<typeof findEntries>[0]["settings"];
-  const ctx = { settings, desktop: true, devMode: false, notifications: true, badge: true, agents: true, updater: false };
+  const ctx = { settings, desktop: true, devMode: false, notifications: true, badge: true, summaries: true, webStorage: false, agents: true, updater: false };
   const accounts = [
     { id: 1, displayName: "Work", kind: "gmail" },
     { id: 2, displayName: "Home", kind: "imap" },
@@ -134,6 +135,12 @@ describe("the entries a search runs on", async () => {
     expect(ids({ ...ctx, devMode: true }).has("dev.proAi")).toBe(true);
     expect(ids({ ...ctx, notifications: false }).has("general.notify")).toBe(false);
     expect(ids({ ...ctx, agents: false }).has("agents.enabled")).toBe(false);
+    // Codex code review: Summaries' group shows only when they can run; the badge in its platform's words; the web's engine
+    expect(ids({ ...ctx, summaries: false }).has("ai.summaries")).toBe(false);
+    expect([...ids(ctx)].filter((id) => id.startsWith("general.badge"))).toEqual(["general.badge"]);
+    expect([...ids({ ...ctx, desktop: false })].filter((id) => id.startsWith("general.badge"))).toEqual(["general.badgeWeb"]);
+    expect(ids(ctx).has("storage.engine")).toBe(false);
+    expect(ids({ ...ctx, desktop: false, webStorage: true }).has("storage.engine")).toBe(true);
   });
 
   it("in Spanish, finds by the English name and words too, and says so", () => {

@@ -298,6 +298,7 @@ const es = {
   "settings.find.words.backup": "exportar, importar, restaurar, JSON",
   "settings.find.words.storage": "espacio en disco, liberar, tamaño, borrar correo antiguo",
   "settings.find.words.version": "actualizar, nueva versión, buscar actualizaciones",
+  "settings.find.words.engine": "SQLite, IndexedDB, OPFS, base de datos, almacenamiento del navegador",
   "settings.find.words.channel": "beta, estable, versiones",
   "settings.dev.proAi": "IA de Pro",
   "settings.dev.proAi.hint": "Ejecuta las funciones de IA como lo hará Pro, con las claves de abajo. Tu proveedor y tus claves guardadas no cambian.",

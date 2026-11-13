@@ -41,7 +41,7 @@ export function DraftingGroup({ settings, update }: { settings: AppSettings; upd
   const checkElsewhere = helperElsewhere("replyCheck", "reply", ai);
   const readElsewhere = helperElsewhere("intent", "writing", ai);
   return (
-    <SettingsGroup title={t("aiDraft.settings.title")} testId="ai-drafting">
+    <SettingsGroup title={t("aiDraft.settings.title")} testId="ai-drafting" busy={prefs === null}>
       <SettingsRow find="ai.drafting" label={t("aiDraft.settings.enabled")} hint={t("aiDraft.settings.enabledHint", { key: shortcutText("mod+j") })}>
         {(a) => <Switch {...a} checked={prefs?.global.enabled ?? true} data-testid="ai-drafting-enabled" onCheckedChange={(enabled) => void save({ global: { enabled } }).catch(failed)} />}
       </SettingsRow>

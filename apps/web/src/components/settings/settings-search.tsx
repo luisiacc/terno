@@ -3,8 +3,10 @@ import { Combobox, ComboboxEmpty, ComboboxInput, ComboboxItem, ComboboxPopup } f
 import { ChevronRight } from "@terno/ui/icons";
 import { Fragment } from "react";
 import { create } from "zustand";
+import { summariesOffered } from "~/lib/ai";
 import { badgeSupported, pageNotificationsSupported } from "~/lib/notify";
 import { findSettings, type Found, type Range } from "~/lib/settings-find";
+import { StorageSection } from "~/lib/web-parts";
 import { useHasUpdates, useUpdates } from "~/lib/updates";
 import { useApp } from "~/state/app";
 import { openFound } from "./find-open";
@@ -85,6 +87,7 @@ export function SettingsSearch() {
   const categories = useApp((s) => s.categories);
   const devMode = useApp((s) => s.devAi !== null);
   const agents = useApp((s) => s.host?.capabilities.agents ?? true);
+  const summaries = useApp(summariesOffered);
   const updater = useHasUpdates();
   const updateState = useUpdates((s) => s.state);
   if (!settings) return null;
@@ -95,6 +98,8 @@ export function SettingsSearch() {
     devMode,
     notifications: desktop || pageNotificationsSupported(),
     badge: desktop || badgeSupported(),
+    summaries,
+    webStorage: StorageSection !== null,
     agents,
     updater: updater && updateState !== null,
   };

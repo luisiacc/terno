@@ -16,6 +16,10 @@ export interface FindContext {
   /** system notifications (desktop, or a browser that has them) and the unread badge */
   notifications: boolean;
   badge: boolean;
+  /** AI summaries can run (their group shows only then) */
+  summaries: boolean;
+  /** the web build's own storage section (its engine) is in Storage */
+  webStorage: boolean;
   /** the Agents section works here (desktop) */
   agents: boolean;
   /** the app updates itself (About's update preferences) */
@@ -60,7 +64,8 @@ export const SETTINGS_INDEX = [
   { id: "general.syncWindow", tab: "general", group: "settings.general.sync", label: "settings.general.syncWindow", hint: "settings.general.syncWindow.hint", words: "settings.find.words.syncWindow" },
   { id: "general.notify", tab: "general", group: "settings.general.notifications", label: "settings.general.notify", words: "settings.find.words.notify", when: (c) => c.notifications },
   { id: "general.notifyPreview", tab: "general", group: "settings.general.notifications", label: "settings.general.notifyPreview", hint: "settings.general.notifyPreview.hint", when: (c) => c.notifications },
-  { id: "general.badge", tab: "general", group: "settings.general.notifications", label: "settings.general.badge", hint: "settings.general.badge.hint", words: "settings.find.words.badge", when: (c) => c.badge },
+  { id: "general.badge", tab: "general", group: "settings.general.notifications", label: "settings.general.badge", hint: "settings.general.badge.hint", words: "settings.find.words.badge", when: (c) => c.badge && c.desktop },
+  { id: "general.badgeWeb", tab: "general", group: "settings.general.notifications", label: "settings.general.badgeWeb", hint: "settings.general.badgeWeb.hint", words: "settings.find.words.badge", when: (c) => c.badge && !c.desktop },
   { id: "general.suggestions", tab: "general", group: "settings.general.writing", label: "settings.general.suggestions", hint: "settings.general.suggestions.hint", words: "settings.find.words.suggestions" },
   { id: "general.undoSend", tab: "general", group: "settings.general.writing", label: "settings.general.undoSend", words: "settings.find.words.undoSend" },
   { id: "general.undoSendTime", tab: "general", group: "settings.general.writing", label: "settings.general.undoSendTime", hint: "settings.general.undoSendTime.hint" },
@@ -133,7 +138,7 @@ export const SETTINGS_INDEX = [
   { id: "ai.sentMail", tab: "ai", group: "aiDraft.settings.title", label: "aiDraft.settings.sentMail", hint: "aiDraft.settings.sentMailHint", under: "ai.drafting" },
   { id: "ai.replies", tab: "ai", group: "aiDraft.settings.title", label: "replies.settings.switch", under: "ai.drafting" },
   { id: "ai.writingStyle", tab: "ai", group: "aiDraft.settings.title", label: "aiDraft.style.title", hint: "aiDraft.settings.styleHint", under: "ai.drafting" },
-  { id: "ai.summaries", tab: "ai", group: "ai.summaries.title", label: "ai.summaries.switch", words: "settings.find.words.summaries" },
+  { id: "ai.summaries", tab: "ai", group: "ai.summaries.title", label: "ai.summaries.switch", words: "settings.find.words.summaries", when: (c) => c.summaries },
   { id: "ai.ask", tab: "ai", group: "ai.ask.title", label: "ai.ask.switch", words: "settings.find.words.ask" },
   { id: "ai.followups", tab: "ai", group: "followups.title", label: "ai.followups.switch", words: "settings.find.words.followups" },
   { id: "ai.nudge", tab: "ai", group: "followups.title", label: "ai.followups.nudge", hint: "ai.followups.nudgeHint", under: "ai.followups" },
@@ -162,6 +167,7 @@ export const SETTINGS_INDEX = [
   { id: "storage.byMailbox", tab: "storage", label: "storage.byMailbox", hint: "storage.byMailbox.footer", words: "settings.find.words.storage" },
   { id: "storage.olderThan", tab: "storage", group: "storage.free", label: "storage.olderThan", words: "settings.find.words.storage" },
   { id: "storage.clearAi", tab: "storage", label: "storage.clearAi" },
+  { id: "storage.engine", tab: "storage", group: "web.storage.title", label: "web.storage.engine", hint: "web.storage.engineHint", words: "settings.find.words.engine", when: (c) => c.webStorage },
 
   // Dev mode, About
   { id: "dev.proAi", tab: "dev", label: "settings.dev.proAi", hint: "settings.dev.proAi.hint", when: (c) => c.devMode },

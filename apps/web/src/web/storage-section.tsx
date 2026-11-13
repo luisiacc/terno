@@ -41,7 +41,7 @@ export function StorageSection() {
           )}
         </SettingsRow>
       </div>
-      <SettingsRow find={false} label={t("web.storage.engine")} hint={t("web.storage.engineHint")}>
+      <SettingsRow find="storage.engine" label={t("web.storage.engine")} hint={t("web.storage.engineHint")}>
         {({ id: _id, ...a }) => (
           <Select value={storage ?? undefined} onValueChange={(v) => v !== storage && setTarget(v as string)} items={ENGINES.map((e) => ({ ...e }))} disabled={removing}>
             <SelectTrigger {...a} size="sm" className="w-40" data-testid="storage-engine">

@@ -155,7 +155,7 @@ function NotificationsGroup({ settings, update }: { settings: AppSettings; updat
         </SettingsRow>
       )}
       {badge && (
-        <SettingsRow find="general.badge" label={t(desktop ? "settings.general.badge" : "settings.general.badgeWeb")} hint={t(desktop ? "settings.general.badge.hint" : "settings.general.badgeWeb.hint")} testId="badge-row">
+        <SettingsRow find={desktop ? "general.badge" : "general.badgeWeb"} label={t(desktop ? "settings.general.badge" : "settings.general.badgeWeb")} hint={t(desktop ? "settings.general.badge.hint" : "settings.general.badgeWeb.hint")} testId="badge-row">
           {(a) => <Switch {...a} data-testid="badge-switch" checked={settings.dockBadge} onCheckedChange={(next) => void update({ dockBadge: next })} />}
         </SettingsRow>
       )}

@@ -35,7 +35,7 @@ export interface RowA11y {
 /** Plan 203: marks the element Settings' search opens for a setting (a row is marked by its `find`). */
 export const findAttrs = (id: SettingId) => ({ "data-setting": id });
 
-export function SettingsGroup({ title, footer, children, testId, className, find }: {
+export function SettingsGroup({ title, footer, children, testId, className, find, busy }: {
   title?: React.ReactNode;
   footer?: React.ReactNode;
   children: React.ReactNode;
@@ -43,10 +43,12 @@ export function SettingsGroup({ title, footer, children, testId, className, find
   className?: string;
   /** plan 203: the whole group is the setting a search opens (a list of the user's own: rules, custom themes) */
   find?: SettingId;
+  /** what it shows is still loading and may change (plan 203: a search waits for it before opening a row in it) */
+  busy?: boolean;
 }) {
   const titleId = useId();
   return (
-    <section className={cn("mb-6 last:mb-0", className)} data-testid={testId} data-setting={find} aria-labelledby={title ? titleId : undefined}>
+    <section className={cn("mb-6 last:mb-0", className)} data-testid={testId} data-setting={find} aria-busy={busy || undefined} aria-labelledby={title ? titleId : undefined}>
       {title && (
         <h3 id={titleId} className="mb-1.5 px-1 text-xs font-semibold text-muted-foreground">
           {title}
@@ -68,12 +70,15 @@ export function SettingsRow({
   labelFor,
   errorTestId,
   find,
+  findScope,
 }: {
   /**
    * Plan 203: the setting this row is in Settings' search (search-index.ts), which opens it here; false for a row
    * that isn't a setting (a status, an error, a list item)
    */
   find?: SettingId | false;
+  /** plan 203: the row is itself one account's or category's (Appearance's photos from Google), as its disclosure is elsewhere */
+  findScope?: `${"account" | "category"}:${number}`;
   label: React.ReactNode;
   hint?: React.ReactNode;
   /** announced (role=alert), linked to the control, which is marked invalid */
@@ -110,14 +115,14 @@ export function SettingsRow({
   );
   if (stacked) {
     return (
-      <div className="py-3" data-testid={testId} data-setting={find || undefined}>
+      <div className="py-3" data-testid={testId} data-setting={find || undefined} data-setting-scope={findScope}>
         {text}
         <div className="mt-2.5">{children(a11y)}</div>
       </div>
     );
   }
   return (
-    <div className="flex min-h-11 items-center justify-between gap-6 py-2.5" data-testid={testId} data-setting={find || undefined}>
+    <div className="flex min-h-11 items-center justify-between gap-6 py-2.5" data-testid={testId} data-setting={find || undefined} data-setting-scope={findScope}>
       {text}
       <div className="flex shrink-0 items-center gap-2">{children(a11y)}</div>
     </div>

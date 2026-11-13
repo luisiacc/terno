@@ -1,5 +1,6 @@
 import { useAiDraftUi } from "~/lib/ai-draft-state";
-import { getApp, setApp } from "~/state/app";
+import { closeSnippetEditor } from "~/lib/snippet-editor-state";
+import { getApp, setApp, useApp } from "~/state/app";
 import type { FindTarget } from "./search-index";
 import { leaveStyleEditors } from "./writing-style";
 
@@ -53,7 +54,10 @@ function reveal(el: HTMLElement) {
 
 const pane = () => document.querySelector<HTMLElement>("[data-testid=settings-scroller]");
 const scopeOf = (root: ParentNode, target: FindTarget) => (target.scope ? root.querySelector<HTMLElement>(`[data-setting-scope="${target.scope.kind}:${target.scope.id}"]`) : null);
-const settingIn = (root: ParentNode, id: string) => root.querySelector<HTMLElement>(`[data-setting="${id}"]`);
+/** a setting in an element, or the element itself (a row that is its own scope) */
+const settingIn = (root: HTMLElement, id: string) => (root.matches(`[data-setting="${id}"]`) ? root : root.querySelector<HTMLElement>(`[data-setting="${id}"]`));
+/** in a group still loading (drafting's preferences), a row may be about to go: it isn't found yet */
+const settled = (el: HTMLElement | null) => (el && !el.closest("[aria-busy=true]") ? el : null);
 
 /** Waits for the target in the pane, opening its disclosure on the way; the fallback when it doesn't come. */
 function seek(target: FindTarget) {
@@ -64,7 +68,8 @@ function seek(target: FindTarget) {
     done = true;
     stop();
     if (!el) return void pane()?.scrollTo({ top: 0 });
-    if (opened) setTimeout(() => reveal(el), GROW_MS);
+    // (gone in the meantime, as Settings closed: nothing to show)
+    if (opened) setTimeout(() => el.isConnected && reveal(el), GROW_MS);
     else reveal(el);
   };
   const look = () => {
@@ -74,7 +79,7 @@ function seek(target: FindTarget) {
     if (target.scope && !scope) return;
     const opener = scope?.querySelector<HTMLElement>("[data-setting-open]");
     // the switch for the scoped one (Auto-add) is on the item's own line: no need to open it
-    const found = settingIn(scope ?? root, target.id);
+    const found = settled(settingIn(scope ?? root, target.id));
     if (found) return finish(found);
     if (opener && opener.getAttribute("aria-expanded") === "false" && !opened) {
       opened = true;
@@ -89,16 +94,23 @@ function seek(target: FindTarget) {
     const within = scope ?? root;
     finish((target.under && settingIn(within, target.under)) || scope?.querySelector<HTMLElement>("[data-setting-open]") || scope || null);
   }, WAIT_MS);
+  // the person went elsewhere (another section, the page, Settings closed) before it came: it no longer opens
+  const style = target.tab === "ai" && target.page === "style";
+  const leftApp = useApp.subscribe((s) => (s.settingsTab !== target.tab || s.dialog !== "settings") && cancel?.());
+  const leftPage = useAiDraftUi.subscribe((s) => target.tab === "ai" && s.stylePage !== style && cancel?.());
   const stop = () => {
     observer.disconnect();
     clearTimeout(timer);
+    leftApp();
+    leftPage();
   };
   cancel = () => {
     done = true;
     stop();
   };
   const root = pane();
-  if (root) observer.observe(root, { childList: true, subtree: true });
+  // a loading group's aria-busy going is a change too
+  if (root) observer.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ["aria-busy"] });
   look();
 }
 
@@ -110,6 +122,8 @@ export function openFound(target: FindTarget) {
   const go = () => {
     setApp({ settingsTab: target.tab });
     if (target.tab === "ai") useAiDraftUi.setState({ stylePage: style });
+    // a snippet open in its editor covers the list (its edits are saved as the editor goes, as when Settings closes)
+    if (target.tab === "snippets") closeSnippetEditor();
     seek(target);
   };
   // leaving Writing style asks first when a profile there has changes (its back button does the same)

@@ -45,7 +45,7 @@ function GooglePhotosRow({ account, state, pending }: { account: Account; state:
       else setApp({ settings: await client.call("icons.googlePhotos", { accountId: account.id, on: true }) });
     });
   return (
-    <SettingsRow find="appearance.googlePhotos" testId={`google-photos-${account.id}`} label={t("settings.appearance.googlePhotos")} hint={photoHint(account, state, pending, busy)}>
+    <SettingsRow find="appearance.googlePhotos" findScope={`account:${account.id}`} testId={`google-photos-${account.id}`} label={t("settings.appearance.googlePhotos")} hint={photoHint(account, state, pending, busy)}>
       {(a) => (
         <div className="flex items-center gap-3">
           {pending && !state && (

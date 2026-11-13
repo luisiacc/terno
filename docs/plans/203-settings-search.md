@@ -120,3 +120,15 @@ Deviations from BoardUI, written in BOARDUI.md:
 10. **Controls outside rows** get anchors: each category's Auto-add switch (scoped), the account list's Add account, Forget saved icons, Test connection, New category; groups that are a list of the user's own (Rules, Snippets, Custom themes, Your style, Mail by mailbox) are anchored on the group.
 11. **The query survives a language change** (the app remounts on one): it lives in a small store, not component state; results are rebuilt in the new language.
 12. **`find` is optional on `SettingsRow`** (Print reuses the row); `settings-search.test.ts` requires it on every row under `components/settings/` and the web's storage section, so Settings can't grow an unsearchable row.
+
+## What the Codex code review changed
+
+Seven findings, all fixed, each with a test that fails without its fix:
+
+1. **Drafting's details opened before its preferences loaded.** Unloaded, Drafting shows its rows as if on, then drops them when drafting turns out to be off; a search could mark and focus a row about to go. `SettingsGroup` takes `busy` (`aria-busy`), Drafting is busy until its preferences arrive, and a search doesn't take a row inside a busy group; the observer also watches `aria-busy` (`find-open.test.ts`).
+2. **Photos from Google never opened.** Each is one Gmail account's row in Appearance, with no disclosure around it. `SettingsRow` takes `findScope`, so the row is its own scope (`find-open.test.ts`, e2e).
+3. **A pending open outlived the person's own navigation.** Going to another section, the page, or closing Settings while a search waited now cancels it (subscriptions to the app's and the page's stores), so it never scrolls another pane (`find-open.test.ts`).
+4. **Snippets didn't open with a snippet in its editor** (the editor covers the list). Opening Snippets closes the editor first, which saves it as it goes, as closing Settings does (e2e).
+5. **Summaries was a result when its group can't show** (no provider that summarizes). The entry takes the group's own condition, `summariesOffered` (unit).
+6. **The web's storage engine wasn't searchable.** It's an entry in Storage, only where the web's storage section exists (unit).
+7. **The web's badge was indexed in the desktop's words** ("in the Dock"). Two entries, one per platform, and the row names the one it is (unit).
