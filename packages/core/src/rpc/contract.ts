@@ -6,6 +6,7 @@ import { z } from "zod";
 import { isValidEmail, MAX_RECIPIENTS } from "../address";
 import { TABS } from "../tabs";
 import { FORWARD_ADDRESSES_MAX_CHARS } from "../forwarding";
+import { MESSAGE_ID_MAX } from "../mail-link";
 import {
   AI_PROVIDER_IDS,
   COMPATIBLE_PRESETS,
@@ -797,6 +798,10 @@ export const contract = {
   /** plan 158: for results whose row doesn't show why they matched, the sentence that does; a few at a time, the rows on screen */
   "threads.excerpts": m<{ excerpts: { threadId: number; text: string }[] }>()(z.object({ query: z.string().max(2000), threadIds: z.array(id).max(10) })),
   "threads.get": m<ThreadDetail>()(z.object({ threadId: id, bodyFormat: z.literal("parts").optional() })),
+  /** Plan 201: the message a link names (its canonical Message-ID), in the conversation it's in now; null: not here. */
+  "links.resolve": m<{ threadId: number; messageId: number } | null>()(z.object({ id: z.string().min(1).max(MESSAGE_ID_MAX) })),
+  /** Plan 201: the ids links name, for conversations (their newest message) and messages; one without a Message-ID is left out. */
+  "links.of": m<{ threads: Record<number, string>; messages: Record<number, string> }>()(z.object({ threadIds: z.array(id).max(100).default([]), messageIds: z.array(id).max(100).default([]) })),
   "threads.bodyPart": m<string>()(z.object({ accountId: id, messageId: id, version: z.string().min(1).max(100), field: z.enum(["text", "html"]), ordinal: z.number().int().min(0) })),
   "reader.hydrate": m<{ changed: boolean; unavailable?: true }>()(z.object({ threadId: id, messageId: id })),
   /** `undoId` (null when nothing changed) puts back exactly the messages it changed (threads.undo) */

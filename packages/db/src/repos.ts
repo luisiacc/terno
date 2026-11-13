@@ -7,6 +7,7 @@ import { L } from "@terno/i18n";
 import { sqlAssets } from "./attachments";
 import {
   accountPrefs,
+  canonicalMessageId,
   withAccountPrefs,
   type Account,
   type AccountKind,
@@ -871,7 +872,7 @@ export function listDrafts(db: Db): DraftRow[] {
 }
 
 /** Message-IDs are stored as ingestion normalizes them: no <>, lower case. */
-export const normalizeRfcId = (id: string): string => id.trim().replace(/^<|>$/g, "").trim().toLowerCase();
+export const normalizeRfcId = (id: string): string => canonicalMessageId(id) ?? "";
 
 export function messageRef(db: Db, messageId: number): string | null {
   return db.get<{ r: string | null }>("SELECT rfc_message_id AS r FROM messages WHERE id = ?", messageId)?.r ?? null;

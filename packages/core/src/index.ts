@@ -22,6 +22,7 @@ export * from "./attention";
 export * from "./localized";
 
 export * from "./agents";
+export * from "./mail-link";
 export * from "./attachments";
 export * from "./similar";
 

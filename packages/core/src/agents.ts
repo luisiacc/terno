@@ -31,6 +31,8 @@ export const AGENT_METHODS: Partial<Record<MethodName, AgentAccess>> = {
   "threads.search": "read",
   "threads.get": "read",
   "threads.bodyPart": "read",
+  // plan 201: the ids of links to emails (opening one is the user's click, never an agent's)
+  "links.of": "read",
   // plan 185: a conversation's files (the sidecar reads a located asset by its chunks)
   "attachments.agentLocate": "read",
   "attachments.agentFile": "read",

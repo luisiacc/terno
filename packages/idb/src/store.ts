@@ -2,6 +2,7 @@ import { ASK_MATCH_MESSAGES, ASK_MATCH_PARTS, CORPUS_TEXTS_MAX, finishBodyClose,
 import { needsCount, messagesHere, senders, allDigests, beginDigest, clearDigests, digestFacts, digestLive, digestRead, getDigest, latestDigest, pendingDigestDays, pruneDigests, waitingAmong, waitingPage, writeDigest } from "./today";
 import { clearReplies, finishReply, getReply, transitionReply } from "./replies";
 import { activeFollowups, claimFollowupNotice, clearFollowups, closeAnsweredFollowups, endFollowupTop, finishFollowups, followupLiveSent, followupScanCandidates, followupSendConfirmed, followupSource, getFollowup, makeFollowupsDue, nextFollowupDue, pruneFollowups, pruneSentMarks, queueScan, restoreFollowups, sentMarkCount, sentMarkPage, threadFollowups, updateFollowup } from "./followups";
+import { findLinked, newestLinked } from "./links";
 import { addAskTurn, askAccountsOf, askCandidates, askHeaders, askNewest, askTurnCount, askTurns, clearAsk, listAskConversations, removeAskConversation, removeAskForAccount, restoreAskConversation } from "./ask";
 import { projectBodyTokens, messageBodiesReleased } from "@terno/store";
 import { releaseIndexBodies, releaseBodyChanges, type IndexChange } from "@terno/store";
@@ -10,7 +11,7 @@ import { BodyProtocol, BodyEpochChanged, BODY_FACT_TABLES, publishBody, type Bod
 import { unsubscribeBodyParts } from "@terno/store";
 import { bodyPreview, validateBodyInput, bodyPrefix, SENT_TEXT_MAX } from "@terno/store";
 import { bodyOwnership } from "./body-ownership";
-import { iterateBodyTokens, type TextOp } from "@terno/core";
+import { canonicalMessageId, iterateBodyTokens, type TextOp } from "@terno/core";
 import { bodyPartRange, decodeBodyPart, assembleBody, prepareBodySnippet, bodyPartWrites, bodyPartCount, BODY_PART_UNITS, bodyTestKey, matchBodyParts, type BodyPartSource, type BodyTest, type BodyTestResults, prepareBodyTokens, browserBodyPreparationFactory } from "@terno/store";
 import { idbCaptureRepairs, idbCaptureStorage, idbCapturePage } from "./capture-repair";
 import { isFolderOp, movesToFolder, type FolderFilterMove } from "@terno/store";
@@ -2560,12 +2561,17 @@ export class IdbMailStore implements MailStore {
     messageRef: (id) => this.read(() => (T(this.c, "messages").get(id)?.rfc_message_id as string | null | undefined) ?? null),
     findMessage: (accountId, rfc) =>
       this.read(() => {
-        const id = rfc.trim().replace(/^<|>$/g, "").trim().toLowerCase();
+        const id = canonicalMessageId(rfc) ?? "";
         const m = T(this.c, "messages")
           .by("rfc", accountId, id)
           .sort((x, y) => y.id - x.id)[0];
         return m ? { id: m.id as number, threadId: m.thread_id as number } : null;
       }),
+  };
+
+  readonly links: MailStore["links"] = {
+    find: (rfc) => this.read(() => findLinked(this.c, rfc)),
+    newest: (threadIds) => this.read(() => newestLinked(this.c, threadIds)),
   };
 
   readonly providerCooldown: MailStore["providerCooldown"] = {

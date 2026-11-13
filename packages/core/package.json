@@ -11,7 +11,8 @@
     "./diag": "./src/diag/index.ts",
     "./diag/envelope": "./src/diag/envelope.ts",
     "./updates": "./src/updates/index.ts",
-    "./mailbox": "./src/mailbox/index.ts"
+    "./mailbox": "./src/mailbox/index.ts",
+    "./mail-link": "./src/mail-link.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"

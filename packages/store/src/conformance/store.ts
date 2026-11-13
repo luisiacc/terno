@@ -2071,6 +2071,46 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
       });
     });
 
+    describe("links to emails (plan 201)", () => {
+      it("find: a Message-ID in every account, first stored first, any form, with where each copy is", async () => {
+        const store = await fresh();
+        const [a, b] = await withAccounts(store);
+        await ingest(store, [msg({ accountId: a!, providerMsgId: "l1", rfcMessageId: "<Same@Example.com>", date: 3_000 })]);
+        await ingest(store, [msg({ accountId: b!, providerMsgId: "l2", rfcMessageId: "<same@example.com>", date: 2_000, isSpam: true, inInbox: false })]);
+        await ingest(store, [msg({ accountId: b!, providerMsgId: "l3", rfcMessageId: "<same@example.com>", date: 1_000, isTrash: true, inInbox: false })]);
+        const snap = await store.debug.snapshot();
+        const id = (p: string) => snap.messages.find((m) => m.providerMsgId === p)!.id;
+        expect(await store.links.find(" <SAME@example.com>")).toEqual([
+          { id: id("l1"), threadId: await threadOf(store, "l1"), accountId: a!, spam: false, trash: false },
+          { id: id("l2"), threadId: await threadOf(store, "l2"), accountId: b!, spam: true, trash: false },
+          { id: id("l3"), threadId: await threadOf(store, "l3"), accountId: b!, spam: false, trash: true },
+        ]);
+        expect(await store.links.find("nobody@example.com")).toEqual([]);
+        expect(await store.links.find("<>")).toEqual([]);
+      });
+
+      it("newest: each conversation's newest linkable message outside Spam and Trash; Spam only when it all is", async () => {
+        const store = await fresh();
+        const [a] = await withAccounts(store);
+        await ingest(store, [
+          msg({ accountId: a!, providerMsgId: "n1", providerThreadId: "t1", rfcMessageId: "<old@x>", date: 1_000 }),
+          msg({ accountId: a!, providerMsgId: "n2", providerThreadId: "t1", rfcMessageId: "<new@x>", date: 2_000 }),
+          msg({ accountId: a!, providerMsgId: "n3", providerThreadId: "t1", rfcMessageId: null, date: 3_000 }),
+          msg({ accountId: a!, providerMsgId: "n4", providerThreadId: "t1", rfcMessageId: "<spam@x>", date: 4_000, isSpam: true, inInbox: false }),
+          msg({ accountId: a!, providerMsgId: "s1", providerThreadId: "t2", rfcMessageId: "<only-spam@x>", date: 1_000, isSpam: true, inInbox: false }),
+          msg({ accountId: a!, providerMsgId: "b1", providerThreadId: "t3", rfcMessageId: null, date: 1_000 }),
+          // mixed: its messages outside Spam have no Message-ID, so no link (never the Spam one the summary leaves out)
+          msg({ accountId: a!, providerMsgId: "m1", providerThreadId: "t4", rfcMessageId: null, date: 1_000 }),
+          msg({ accountId: a!, providerMsgId: "m2", providerThreadId: "t4", rfcMessageId: "<hidden-spam@x>", date: 2_000, isSpam: true, inInbox: false }),
+          // a draft is never a conversation's link
+          msg({ accountId: a!, providerMsgId: "d1", providerThreadId: "t5", rfcMessageId: "<sent@x>", date: 1_000 }),
+          msg({ accountId: a!, providerMsgId: "d2", providerThreadId: "t5", rfcMessageId: "<draft@x>", date: 2_000, isDraft: true }),
+        ]);
+        const [t1, t2, t3, t4, t5] = [await threadOf(store, "n1"), await threadOf(store, "s1"), await threadOf(store, "b1"), await threadOf(store, "m1"), await threadOf(store, "d1")];
+        expect(await store.links.newest([t1, t2, t3, t4, t5, t1, 999_999])).toEqual(new Map([[t1, "new@x"], [t2, "only-spam@x"], [t5, "sent@x"]]));
+      });
+    });
+
     describe("categories in settings", () => {
       it("reorder sets every position in one unit, keeps unlisted ones after, and survives a reopen", async () => {
         let store = await fresh();

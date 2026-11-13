@@ -71,6 +71,9 @@ import type {
   ThreadFeatureSet,
 } from "./types";
 
+/** Plan 201: the copies of one Message-ID a link considers (the same message in a few accounts; more is a sender reusing it) */
+export const LINK_COPIES_MAX = 50;
+
 export interface SnapshotMessage {
   id: number;
   threadId: number;
@@ -942,6 +945,18 @@ export interface MailStore {
     messageRef(messageId: number): Promise<string | null>;
     /** the newest message of an account with that Message-ID (any case, with or without <>), for an import */
     findMessage(accountId: number, rfcMessageId: string): Promise<{ id: number; threadId: number } | null>;
+  };
+
+  /** Plan 201: links to emails name a message by its canonical Message-ID (`@terno/core` mail-link). */
+  links: {
+    /** the messages with that Message-ID (any form) in every account, first stored first, at most LINK_COPIES_MAX */
+    find(rfcMessageId: string): Promise<{ id: number; threadId: number; accountId: number; spam: boolean; trash: boolean }[]>;
+    /**
+     * each conversation's link: its newest message with a Message-ID (no drafts) outside Spam and Trash; one in Spam or
+     * Trash only when the whole conversation is there (a mixed one never links to what its summary leaves out); a
+     * conversation with none is left out
+     */
+    newest(threadIds: readonly number[]): Promise<Map<number, string>>;
   };
 
   /** Private fixed-key cooldown ledger; never included in ProviderStore or preferences. */

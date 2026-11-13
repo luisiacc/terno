@@ -1,6 +1,6 @@
 import { userLabels, writeFolders, type FoldedThread } from "./folders";
 import { insertAttachments, replaceAttachments } from "./attachments";
-import { addressKey, BODY_TAIL_TOKENS, baseSubject, categoryOf, threadTab, emailDomain, unsubscribeJson, featuresFromBlob, normalizeText, threadFacts, trailingTokens, type Address, type FactContext, type FactRow } from "@terno/core";
+import { addressKey, canonicalMessageId, BODY_TAIL_TOKENS, baseSubject, categoryOf, threadTab, emailDomain, unsubscribeJson, featuresFromBlob, normalizeText, threadFacts, trailingTokens, type Address, type FactContext, type FactRow } from "@terno/core";
 import { requireGmailRefresh, acceptFlagObservation, ThreadMerges, flagObservationValid, type LocalFlagField, type FlagObservation, type IncomingMessage, type ModelDelta } from "@terno/store";
 import { bindSqlPromotedFlags, sqlFlags } from "./flag-intents";
 
@@ -67,11 +67,8 @@ function longHead(joined: string): string | null {
   }
 }
 
-function normalizeMessageId(id: string | null | undefined): string | null {
-  if (!id) return null;
-  const trimmed = id.trim().replace(/^<|>$/g, "").trim();
-  return trimmed ? trimmed.toLowerCase() : null;
-}
+/** plan 201: the canonical form, which links name messages by */
+const normalizeMessageId = canonicalMessageId;
 
 /**
  * Finds or creates the thread for a new message. Uses the provider thread id

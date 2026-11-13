@@ -18,6 +18,7 @@ import { StorageMaintenance } from "./storage";
 import { AGENT_ATTACHMENT, AgentFileCancelled, locateForAgent } from "./agent-attachments";
 import { FolderExports } from "./folder-export";
 import { deleteSnippet, listSnippets, saveSnippet } from "./snippets";
+import { linksOf, resolveLink } from "./links";
 import { followFavoriteFolders, readAgents, readAutoCategorize, readSettings, setGooglePhotoState, SettingsError, updateSettings } from "./settings";
 import { countFolder, createFolder, deleteFolder, favoriteFolder, renameFolder } from "./folders";
 import { googleClientFor } from "./google-client";
@@ -534,6 +535,8 @@ export function createHandlers(b: Backend): Handlers {
     },
 
     "threads.bodyPart": (input) => store.threads.bodyPart(input),
+    "links.resolve": ({ id }) => resolveLink(store, id),
+    "links.of": (p) => linksOf(store, p),
 
     "threads.act": async ({ threadIds, action }, ctx) => {
       const signal = Backend.learningSignal(action);

@@ -10,6 +10,7 @@ import { idbAssets, replaceAttachments } from "./attachments";
 import {
   LIST_FILTERS,
   addressKey,
+  canonicalMessageId,
   threadFacts,
   waitingCutoff,
   type FactContext,
@@ -642,11 +643,8 @@ function longHead(joined: string): string | null {
   }
 }
 
-function normalizeMessageId(id: string | null | undefined): string | null {
-  if (!id) return null;
-  const trimmed = id.trim().replace(/^<|>$/g, "").trim();
-  return trimmed ? trimmed.toLowerCase() : null;
-}
+/** plan 201: the canonical form, which links name messages by */
+const normalizeMessageId = canonicalMessageId;
 
 export function bodyTail(body: string | null): string {
   return body ? trailingTokens(body, BODY_TAIL_TOKENS).join(" ") : "";

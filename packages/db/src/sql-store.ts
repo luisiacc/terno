@@ -174,6 +174,7 @@ import { seedDataset } from "./seed";
 import { SqlProviderStore } from "./sql-provider-store";
 import { sqlAutocompleteSource } from "./autocomplete";
 import type { Db } from "./sqlite";
+import { findLinked, newestLinked } from "./links";
 
 /** Ids read per slice when the feed serves a large commit (500 thread docs read in ~1 ms). */
 const MATERIALIZE_SLICE = 500;
@@ -1625,6 +1626,11 @@ export class SqlMailStore implements MailStore {
     findMessage: async (accountId, rfc) => findMessageByRef(this.db, accountId, rfc),
   };
 
+  readonly links: MailStore["links"] = {
+    find: async (rfc) => findLinked(this.db, rfc),
+    newest: async (threadIds) => newestLinked(this.db, threadIds),
+  };
+
   readonly providerCooldown: MailStore["providerCooldown"] = {
     read: () => this.cooldownAction(async () => { const encoded = getSetting<string | null>(this.db, PROVIDER_COOLDOWN_KEY, null); decodeCooldown(encoded); return encoded; }),
     update: (fn) => this.cooldownAction(async () => this.db.tx(() => {
@@ -1873,7 +1879,7 @@ export function openingSqlStore(open: (signal: AbortSignal) => Promise<SqlMailSt
       return Reflect.apply(method, object, args);
     };
   } });
-  const names = new Set(["feed", "threads", "sync", "ops", "attachments", "recipientReceipts", "sendCopies", "compose", "filters", "folders", "categories", "reminders", "pins", "similar", "storage", "categorize", "accounts", "owner", "drafts", "providerCooldown", "settings", "secrets", "learning", "facts", "debug", "dev", "autocomplete", "captureRepairs", "tabs"]);
+  const names = new Set(["feed", "threads", "sync", "ops", "attachments", "recipientReceipts", "sendCopies", "compose", "filters", "folders", "categories", "reminders", "pins", "similar", "storage", "categorize", "accounts", "owner", "drafts", "links", "providerCooldown", "settings", "secrets", "learning", "facts", "debug", "dev", "autocomplete", "captureRepairs", "tabs"]);
   const namespaces = new Map<PropertyKey, object>();
   const facade = new Proxy({} as MailStore, { get(object, member) {
     if (Object.hasOwn(object, member)) return Reflect.get(object, member);
