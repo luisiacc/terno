@@ -16,7 +16,7 @@ export function DataTab() {
   return (
     <div data-testid="data-tab">
       <SettingsGroup title={t("settings.data.backup")} footer={t("settings.data.backup.footer")}>
-        <SettingsRow label={t("settings.data.export")} hint={t("settings.data.export.hint")}>
+        <SettingsRow find="data.export" label={t("settings.data.export")} hint={t("settings.data.export.hint")}>
           {({ id: _id, "aria-labelledby": _l, ...a }) => (
             <Button
               {...a}
@@ -39,7 +39,7 @@ export function DataTab() {
             </Button>
           )}
         </SettingsRow>
-        <SettingsRow label={t("settings.data.import")} hint={t("settings.data.import.hint")} error={error} errorTestId="data-import-error">
+        <SettingsRow find="data.import" label={t("settings.data.import")} hint={t("settings.data.import.hint")} error={error} errorTestId="data-import-error">
           {({ id: _id, "aria-labelledby": _l, ...a }) => (
             <>
               <Button {...a} variant="outline" size="sm" disabled={busy !== null} data-testid="data-import" onClick={() => fileRef.current?.click()}>

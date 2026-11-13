@@ -22,14 +22,14 @@ export function DevTab({ settings, update }: { settings: AppSettings; update: Se
   return (
     <div data-testid="dev-tab">
       <SettingsGroup footer={names.length > 0 && <PrivacyNote testId="dev-ai-privacy" title={t("ai.privacy")}>{t("settings.dev.proAi.disclosure", { count: names.length, providers: namesList(names) })}</PrivacyNote>}>
-        <SettingsRow label={t("settings.dev.proAi")} hint={t("settings.dev.proAi.hint")}>
+        <SettingsRow find="dev.proAi" label={t("settings.dev.proAi")} hint={t("settings.dev.proAi.hint")}>
           {(a) => <Switch {...a} data-testid="dev-ai-switch" checked={settings.devAi} disabled={!settings.devAi && !DEV_AI_PROVIDERS.some((p) => set[p])} onCheckedChange={(on) => void update({ devAi: on })} />}
         </SettingsRow>
         {settings.devAi && <SettingsNote testId="dev-ai-on">{t("settings.dev.proAi.on")}</SettingsNote>}
       </SettingsGroup>
-      <SettingsGroup title={t("settings.dev.env")} footer={t("settings.dev.env.footer")}>
+      <SettingsGroup find="dev.env" title={t("settings.dev.env")} footer={t("settings.dev.env.footer")}>
         {DEV_AI_PROVIDERS.map((provider) => (
-          <SettingsRow key={provider} label={<span className="font-mono text-xs">{DEV_AI_ENV[provider]}</span>} hint={RUNS[provider]()} testId={`dev-env-${provider}`}>
+          <SettingsRow find={false} key={provider} label={<span className="font-mono text-xs">{DEV_AI_ENV[provider]}</span>} hint={RUNS[provider]()} testId={`dev-env-${provider}`}>
             {() => (
               <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 {set[provider] ? <CircleCheck className="size-[1.15em]" aria-hidden /> : <CircleAlert className="size-[1.15em] text-destructive-ink" aria-hidden />}

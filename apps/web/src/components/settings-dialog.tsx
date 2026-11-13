@@ -21,6 +21,8 @@ import { GeneralTab } from "./settings/general-tab";
 import { StorageTab } from "./settings/storage-tab";
 import { DEV_TAB, SETTINGS_TABS, settingsTabLabel } from "./settings/tabs";
 import { DevTab } from "./settings/dev-tab";
+import { endFind } from "./settings/find-open";
+import { SettingsSearch } from "./settings/settings-search";
 import { t } from "@terno/i18n";
 import { reconcileSettings } from "~/lib/appearance";
 import { switchFocus } from "~/lib/i18n";
@@ -32,11 +34,15 @@ import { useAiDraftUi } from "~/lib/ai-draft-state";
 import { IconButton } from "@terno/ui/components/icon-button";
 import { ChevronLeft, KeyRound } from "@terno/ui/icons";
 import { needsSignIn } from "~/lib/sign-in";
+import { isMac } from "~/lib/select";
 
-/** plan 106: opened on an account, its row (expanded by the tab) takes the first focus; else the dialog's own */
+/**
+ * plan 106: opened on an account, its row (expanded by the tab) takes the first focus; else the current section's tab
+ * (plan 203: not the search field above it, which ⌘F reaches)
+ */
 function initialFocus(): boolean | HTMLElement {
   const id = getApp().settingsAccount;
-  if (id === null) return switchFocus();
+  if (id === null) return switchFocus() && (document.querySelector<HTMLElement>(`[data-settings-tab="${getApp().settingsTab}"]`) ?? true);
   const row = document.querySelector<HTMLElement>(`[data-testid=settings-account][data-account-id="${id}"] [data-testid=account-toggle]`);
   // used once: a later visit to the tab opens nothing by itself
   setApp({ settingsAccount: null });
@@ -113,6 +119,8 @@ export function SettingsDialog() {
       onOpenChange={(o) => {
         if (o || fatalModal) return;
         setApp({ dialog: null, settingsAccount: null });
+        // plan 203: nothing waits to open and nothing stays marked
+        endFind();
         // plan 93: Settings opens again on the list (the editor's save is flushed as it unmounts)
         closeSnippetEditor();
         setDeletedSnippet(null);
@@ -123,6 +131,14 @@ export function SettingsDialog() {
         // plan 161, pass 3: Esc steps back a level before it closes: on Writing style, back to Drafting (the style editor's
         // own Esc goes first); a portal's Esc bubbles here through React and is its own
         onKeyDown={(e) => {
+          // plan 203: ⌘F (Ctrl+F) finds a setting, as System Settings' does
+          if (e.key.toLowerCase() === "f" && (isMac ? e.metaKey : e.ctrlKey) && !e.altKey && !e.shiftKey && !imeKey(e.nativeEvent)) {
+            e.preventDefault();
+            const field = document.querySelector<HTMLInputElement>("[data-testid=settings-find]");
+            field?.focus();
+            field?.select();
+            return;
+          }
           if (e.key !== "Escape" || !stylePage || e.defaultPrevented || imeKey(e.nativeEvent) || !e.currentTarget.contains(e.target as Node)) return;
           // plan 162 (after ai162-r02): an open menu on the page (Style for's) closes first, and the page stays (it left)
           if (e.currentTarget.querySelector("[aria-expanded=true][aria-haspopup]") || (e.target as Element).closest("[role=listbox], [role=menu]")) return;
@@ -141,6 +157,7 @@ export function SettingsDialog() {
           {/* macOS System Settings: a sidebar of sections with accent glyphs */}
           <nav data-dialog-handle className="hairline-r hairline-strong flex w-[180px] shrink-0 flex-col bg-sidebar px-2 pt-5 pb-3">
             <h2 className="mb-3 px-2 text-md font-semibold tracking-tight">{t("common.settings")}</h2>
+            <SettingsSearch />
             {/* a 1 px gap: a hovered row's fill never runs into the selected one's */}
             <TabsList activateOnFocus className="h-auto w-full items-stretch gap-px rounded-none bg-transparent p-0 dark:bg-transparent">
               {(hasDevMode ? [...SETTINGS_TABS, DEV_TAB] : SETTINGS_TABS).map(({ value, label, icon: Icon }) => (

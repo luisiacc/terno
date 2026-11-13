@@ -34,7 +34,7 @@ export function AboutTab() {
   const version = sha ? `${BUILD.version} (${sha})` : BUILD.version;
   return (
     <div data-testid="about-tab">
-      <SettingsGroup testId="about-card">
+      <SettingsGroup find="about.version" testId="about-card">
         <div className="flex min-h-16 items-center gap-3 py-3">
           {/* the app's icon: the mark on the accent, as the Dock shows it, in this palette */}
           <span className={`${LEAD} flex size-10 items-center justify-center rounded-[22%] bg-primary text-primary-foreground shadow-xs`}>

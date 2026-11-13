@@ -51,7 +51,7 @@ export function FollowupsGroup({ settings, update }: { settings: AppSettings; up
   };
   return (
     <SettingsGroup title={t("followups.title")} testId="ai-followups">
-      <SettingsRow label={t("ai.followups.switch")} hint={ready ? t("ai.followups.hint", { provider: providerLabel(target.provider, ai) }) : t("ai.followups.hintNoProvider")}>
+      <SettingsRow find="ai.followups" label={t("ai.followups.switch")} hint={ready ? t("ai.followups.hint", { provider: providerLabel(target.provider, ai) }) : t("ai.followups.hintNoProvider")}>
         {(a) => <Switch {...a} checked={followups.enabled} disabled={!ready && !followups.enabled} data-testid="ai-followups-switch" onCheckedChange={(enabled) => void update({ followups: { enabled } })} />}
       </SettingsRow>
       {offering && offer && offer.count > 0 && (
@@ -68,7 +68,7 @@ export function FollowupsGroup({ settings, update }: { settings: AppSettings; up
         </SettingsNote>
       )}
       {followups.enabled && (
-        <SettingsRow label={t("ai.followups.nudge")} hint={t("ai.followups.nudgeHint")}>
+        <SettingsRow find="ai.nudge" label={t("ai.followups.nudge")} hint={t("ai.followups.nudgeHint")}>
           {({ id: _id, "aria-describedby": described }) => (
             <Select value={String(followups.nudgeAfterDays)} onValueChange={(v) => void update({ followups: { nudgeAfterDays: Number(v) as 3 | 5 | 7 | 14 } })} items={NUDGE_CHOICES.map((d) => ({ value: d, label: t("ai.followups.nudgeDays", { count: Number(d) }) }))}>
               <SelectTrigger aria-label={t("ai.followups.nudge")} aria-describedby={described} size="sm" className="w-28" data-testid="ai-followups-nudge">
@@ -93,7 +93,7 @@ export function AskGroup({ settings, update }: { settings: AppSettings; update: 
   const target = routeOf("ask", ai);
   return (
     <SettingsGroup title={t("ai.ask.title")} testId="ai-ask">
-      <SettingsRow label={t("ai.ask.switch")} hint={target.provider === "none" ? t("ai.ask.hintNoProvider") : `${t("ai.ask.hint", { provider: providerLabel(target.provider, ai) })} ${t("settings.ask.commandsHint")}`}>
+      <SettingsRow find="ai.ask" label={t("ai.ask.switch")} hint={target.provider === "none" ? t("ai.ask.hintNoProvider") : `${t("ai.ask.hint", { provider: providerLabel(target.provider, ai) })} ${t("settings.ask.commandsHint")}`}>
         {(a) => <Switch {...a} checked={ask.enabled} data-testid="ai-ask-switch" onCheckedChange={(enabled) => void update({ ask: { enabled } })} />}
       </SettingsRow>
     </SettingsGroup>
@@ -107,7 +107,7 @@ export function DigestGroup({ settings, update }: { settings: AppSettings; updat
   const on = today?.digest === true;
   return (
     <SettingsGroup title={t("today.digest.settingsTitle")} testId="ai-digest">
-      <SettingsRow label={t("today.digest.settingsSwitch")} hint={t("today.digest.settingsHint", { provider: providerLabel(target.provider, ai) })}>
+      <SettingsRow find="ai.digest" label={t("today.digest.settingsSwitch")} hint={t("today.digest.settingsHint", { provider: providerLabel(target.provider, ai) })}>
         {(a) => <Switch {...a} checked={on} data-testid="ai-digest-switch" onCheckedChange={(digest) => void update({ today: { digest } })} />}
       </SettingsRow>
       <NotNewslettersRow />
@@ -161,7 +161,7 @@ function NotNewslettersRow() {
     }
   };
   return (
-    <SettingsRow label={t("today.digest.excluded.title")} hint={t("today.digest.excluded.hint")} stacked testId="ai-digest-excluded">
+    <SettingsRow find="ai.digestExcluded" label={t("today.digest.excluded.title")} hint={t("today.digest.excluded.hint")} stacked testId="ai-digest-excluded">
       {(a) => (
         <ul ref={list} aria-labelledby={a["aria-labelledby"]} aria-describedby={a["aria-describedby"]} className="flex flex-col">
           {senders.map((e, i) => (
@@ -199,7 +199,7 @@ export function SummariesGroup({ settings, update }: { settings: AppSettings; up
   const help = blocked ? errorHelp(blocked.limit ? undefined : blocked.kind, ai) : status?.lastError ? errorHelp(status.lastError, ai) : null;
   return (
     <SettingsGroup title={t("ai.summaries.title")} testId="ai-summaries">
-      <SettingsRow label={t("ai.summaries.switch")} hint={t("ai.summaries.hint", { provider: providerLabel(target.provider, ai) })}>
+      <SettingsRow find="ai.summaries" label={t("ai.summaries.switch")} hint={t("ai.summaries.hint", { provider: providerLabel(target.provider, ai) })}>
         {(a) => <Switch {...a} checked={summaries.enabled} data-testid="ai-summaries-switch" onCheckedChange={(enabled) => void update({ summaries: { enabled } })} />}
       </SettingsRow>
       {summaries.enabled && (blocked || status?.lastError) && (
@@ -224,13 +224,13 @@ export function AiUseGroup({ settings, update }: { settings: AppSettings; update
   }, []);
   return (
     <SettingsGroup testId="ai-use">
-      <SettingsRow label={t("ai.usage.label")} hint={usage?.estimated ? t("ai.usage.hintEstimated") : t("ai.usage.hint")} testId="ai-usage">
+      <SettingsRow find="ai.usage" label={t("ai.usage.label")} hint={usage?.estimated ? t("ai.usage.hintEstimated") : t("ai.usage.hint")} testId="ai-usage">
         {() => <span className="text-sm text-muted-foreground tabular" data-testid="ai-usage-value">{usage ? t(usage.estimated ? "ai.usage.valueEstimated" : "ai.usage.value", { count: usage.month.requests, usd: usd(usage.month.usd) }) : "…"}</span>}
       </SettingsRow>
       {usage && usage.monthAsk.requests > 0 && (
         <SettingsNote testId="ai-usage-ask">{t("ai.ask.usage", { count: usage.monthAsk.requests, usd: usd(usage.monthAsk.usd) })}</SettingsNote>
       )}
-      <SettingsRow labelFor label={t("ai.limit.label")} hint={t("ai.limit.hint")} testId="ai-limit">
+      <SettingsRow find="ai.limit" labelFor label={t("ai.limit.label")} hint={t("ai.limit.hint")} testId="ai-limit">
         {(a) => (
           <NumberField
             id={a.id}

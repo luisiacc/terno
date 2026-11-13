@@ -7,7 +7,7 @@ import { useState } from "react";
 import { snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
 import { setApp, useApp } from "~/state/app";
-import { SettingsGroup, SettingsRow, type SettingsUpdate } from "./parts";
+import { findAttrs, SettingsGroup, SettingsRow, type SettingsUpdate } from "./parts";
 
 const WEB = import.meta.env.VITE_TARGET === "web";
 
@@ -45,7 +45,7 @@ function GooglePhotosRow({ account, state, pending }: { account: Account; state:
       else setApp({ settings: await client.call("icons.googlePhotos", { accountId: account.id, on: true }) });
     });
   return (
-    <SettingsRow testId={`google-photos-${account.id}`} label={t("settings.appearance.googlePhotos")} hint={photoHint(account, state, pending, busy)}>
+    <SettingsRow find="appearance.googlePhotos" testId={`google-photos-${account.id}`} label={t("settings.appearance.googlePhotos")} hint={photoHint(account, state, pending, busy)}>
       {(a) => (
         <div className="flex items-center gap-3">
           {pending && !state && (
@@ -77,7 +77,7 @@ export function SenderPictures({ settings, update }: { settings: AppSettings; up
   const hint = !canFetch ? t("settings.appearance.siteIcons.hintWeb") : t("settings.appearance.siteIcons.hint");
   return (
     <SettingsGroup title={t("settings.appearance.senderPictures")} testId="sender-pictures" footer={t("settings.appearance.senderPictures.footer")}>
-      <SettingsRow testId="site-icons-row" label={t("settings.appearance.siteIcons")} hint={hint}>
+      <SettingsRow find="appearance.siteIcons" testId="site-icons-row" label={t("settings.appearance.siteIcons")} hint={hint}>
         {(a) => <Switch {...a} data-testid="site-icons-switch" disabled={!canFetch} checked={canFetch && settings.senderIcons} onCheckedChange={(on) => void update({ senderIcons: on })} />}
       </SettingsRow>
       {gmail.map((account) => (
@@ -88,6 +88,7 @@ export function SenderPictures({ settings, update }: { settings: AppSettings; up
           variant="outline"
           size="sm"
           data-testid="forget-icons"
+          {...findAttrs("appearance.forgetIcons")}
           onClick={() =>
             void client.call("icons.forget", {}).then(
               () => snack.success(t("settings.appearance.forgetIcons.done")),

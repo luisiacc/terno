@@ -19,7 +19,7 @@ import { offerTip } from "~/lib/tips";
 import { reorderCategories } from "~/lib/reorder";
 import { client } from "~/rpc/connection";
 import { getApp, setApp, useApp } from "~/state/app";
-import { ColorPicker, CommitInput, ConfirmDialog, SettingsGroup, SettingsNote, SettingsRow, type SettingsUpdate } from "./parts";
+import { ColorPicker, CommitInput, ConfirmDialog, findAttrs, SettingsGroup, SettingsNote, SettingsRow, type SettingsUpdate } from "./parts";
 
 const modes = () =>
   [
@@ -64,9 +64,9 @@ function CategoryItem({ category, stats, index, count, autoMode }: { category: C
   const [deleting, setDeleting] = useState(false);
   const name = category.name;
   return (
-    <Collapsible data-testid={`category-stats-${category.id}`} data-category-id={category.id}>
+    <Collapsible data-testid={`category-stats-${category.id}`} data-category-id={category.id} data-setting-scope={`category:${category.id}`}>
       <div className="flex items-center gap-2">
-        <CollapsibleTrigger data-testid="category-toggle" className="-ml-2 min-w-0 flex-1 rounded-md py-2.5 pl-2">
+        <CollapsibleTrigger data-testid="category-toggle" data-setting-open className="-ml-2 min-w-0 flex-1 rounded-md py-2.5 pl-2">
           <CategoryDot color={category.color as CategoryColor} />
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-medium" data-testid="category-name">
@@ -83,6 +83,7 @@ function CategoryItem({ category, stats, index, count, autoMode }: { category: C
         </span>
         <Switch
           data-testid={`category-auto-${category.id}`}
+          {...findAttrs("category.autoAdd")}
           aria-label={t("settings.categories.autoAddTo", { name })}
           title={autoMode ? t("settings.categories.autoAdd") : t("settings.categories.autoAdd.off")}
           checked={category.autoApply}
@@ -92,7 +93,7 @@ function CategoryItem({ category, stats, index, count, autoMode }: { category: C
       </div>
       <CollapsiblePanel>
         <div className="hairline-divide pb-1 pl-5" data-testid="category-editor">
-          <SettingsRow labelFor label={t("account.name")}>
+          <SettingsRow find="category.name" labelFor label={t("account.name")}>
             {(a) => (
               <CommitInput
                 a11y={a}
@@ -105,10 +106,10 @@ function CategoryItem({ category, stats, index, count, autoMode }: { category: C
               />
             )}
           </SettingsRow>
-          <SettingsRow label={t("settings.categories.showInInbox")} hint={t("settings.categories.showInInbox.hint")}>
+          <SettingsRow find="category.showInInbox" label={t("settings.categories.showInInbox")} hint={t("settings.categories.showInInbox.hint")}>
             {(a) => <Switch {...a} data-testid="category-show-in-inbox" checked={category.showInInbox} onCheckedChange={(on) => void setShowInInbox(category.id, on)} />}
           </SettingsRow>
-          <SettingsRow label={t("settings.categories.order")} hint={t("settings.categories.order.hint", { position: index + 1, total: count })}>
+          <SettingsRow find="category.order" label={t("settings.categories.order")} hint={t("settings.categories.order.hint", { position: index + 1, total: count })}>
             {() => (
               <span className="flex gap-1">
                 <Button variant="outline" size="sm" className="aria-disabled:opacity-50" aria-label={t("settings.categories.moveUpNamed", { name })} aria-disabled={index === 0 || undefined} data-testid="category-up" onClick={() => index > 0 && void move(category.id, -1)}>
@@ -120,10 +121,10 @@ function CategoryItem({ category, stats, index, count, autoMode }: { category: C
               </span>
             )}
           </SettingsRow>
-          <SettingsRow label={t("settings.color")}>
+          <SettingsRow find="category.color" label={t("settings.color")}>
             {(a) => <ColorPicker a11y={a} name={`category-color-${category.id}`} testId="category-color" value={category.color} onChange={(color) => updateCategory(category.id, { color }).catch((e: unknown) => { snack.error(errorText(e)); throw e; })} />}
           </SettingsRow>
-          <SettingsRow label={t("settings.categories.delete")} hint={t("settings.categories.delete.hint")}>
+          <SettingsRow find="category.delete" label={t("settings.categories.delete")} hint={t("settings.categories.delete.hint")}>
             {({ id: _id, "aria-labelledby": _l, ...a }) => (
               <>
                 <Button {...a} variant="ghost" size="sm" className={cn("text-destructive-ink", GHOST_DANGER_PRESS)} data-testid="category-delete" onClick={() => setDeleting(true)}>
@@ -166,6 +167,7 @@ function NewCategory() {
   };
   return (
     <form
+      {...findAttrs("categories.new")}
       className="flex items-center gap-2 py-2.5"
       onSubmit={(e) => {
         e.preventDefault();
@@ -207,7 +209,7 @@ function JevKeyRow({ saved, hint }: { saved: boolean; hint: string | null }) {
     }
   };
   return (
-    <SettingsRow stacked labelFor={!saved} label={t("settings.categories.jev")} hint={t("settings.categories.jev.hint")} testId="jev-key-row">
+    <SettingsRow find="categories.jev" stacked labelFor={!saved} label={t("settings.categories.jev")} hint={t("settings.categories.jev.hint")} testId="jev-key-row">
       {(a) =>
         saved ? (
           <div className="space-y-1.5">
@@ -272,7 +274,7 @@ export function CategoriesTab({ settings, update }: { settings: AppSettings; upd
   return (
     <div data-testid="categories-tab">
       <SettingsGroup>
-        <SettingsRow label={t("settings.categories.smart")} hint={t("settings.categories.smart.hint")}>
+        <SettingsRow find="categories.smart" label={t("settings.categories.smart")} hint={t("settings.categories.smart.hint")}>
           {({ id: _id, ...a }) => (
             <Select value={settings.autoCategorize} onValueChange={(v) => void update({ autoCategorize: v as AppSettings["autoCategorize"] })} items={modes().map((m) => ({ ...m }))}>
               <SelectTrigger {...a} size="sm" className="w-36" data-testid="auto-categorize-select">
@@ -288,7 +290,7 @@ export function CategoriesTab({ settings, update }: { settings: AppSettings; upd
             </Select>
           )}
         </SettingsRow>
-        <SettingsRow
+        <SettingsRow find="categories.askAi"
           label={t("settings.categories.askAi")}
           hint={noAi ? t("settings.categories.askAi.noAi") : t("settings.categories.askAi.hint", { provider: providerLabel(categorizer, settings.ai) })}
         >

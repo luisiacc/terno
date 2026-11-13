@@ -70,7 +70,7 @@ export function RecipientReceipts({ accountId }: { accountId: number }) {
   };
   const current = Math.min(page, Math.max(0, Math.ceil((rows?.length ?? 0) / 25) - 1));
   const detailCurrent = Math.min(detailPage, Math.max(0, Math.ceil((selected?.entries.length ?? 0) / 25) - 1));
-  return <SettingsRow label={t("account.recipientReceipts")} hint={t("account.recipientReceipts.hint")} stacked>{() => <div className="flex flex-col gap-2 pb-2 text-xs" data-testid="recipient-recovery">
+  return <SettingsRow find="account.recipientReceipts" label={t("account.recipientReceipts")} hint={t("account.recipientReceipts.hint")} stacked>{() => <div className="flex flex-col gap-2 pb-2 text-xs" data-testid="recipient-recovery">
     {error && <p role="alert" className="text-destructive-ink">{t("account.recipientReceipts.error")}</p>}
     {!rows && !error && <p role="status">{t("account.recipientReceipts.loading")}</p>}
     {rows?.length === 0 && <p>{t("account.recipientReceipts.empty")}</p>}

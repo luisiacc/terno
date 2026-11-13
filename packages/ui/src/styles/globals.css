@@ -586,6 +586,28 @@
   background-color: var(--card-bg);
   box-shadow: 0 0 0 var(--hairline-w) var(--card-ring);
 }
+/*
+ * Plan 203: a setting Settings' search just opened, marked for a moment: the primary's 8% wash behind the row, a little
+ * wider than its text (concentric with the card), under its content. "off" fades it within the motion cap (nothing fades
+ * when motion is off or reduced), then the mark goes. Text on it holds AA (contrast.ts CONTRAST_PAIRS).
+ */
+[data-found] {
+  position: relative;
+  isolation: isolate;
+}
+[data-found]::before {
+  content: "";
+  position: absolute;
+  inset: 2px calc(var(--spacing) * -2);
+  z-index: -1;
+  border-radius: var(--radius-md);
+  background-color: color-mix(in oklab, var(--primary) 8%, transparent);
+  pointer-events: none;
+  transition: opacity var(--motion-slow) var(--motion-ease);
+}
+[data-found="off"]::before {
+  opacity: 0;
+}
 /* a model's words (the summary, Reply ready, the follow-up line, Filters' AI box). Plans 161 and 162 ringed it in
    card-edge; plan 181 (the owner picked "Whisper" from four looks): no ring, no shadow, a breath of fill. In light, Settings' tint
    thinned to 65% over whatever it sits on (the reader, Lumen's reader card, a dialog); in dark, the accent's 5% wash. Its

@@ -30,7 +30,7 @@ export function StorageSection() {
   return (
     <SettingsGroup title={t("web.storage.title")} testId="storage-section">
       <div data-persisted={persistence?.state} data-testid="storage-persistence">
-        <SettingsRow
+        <SettingsRow find={false}
           label={state === "granted" ? t("web.storage.persistent") : t("web.storage.evictable")}
           hint={state === "granted" ? t("web.storage.persistentHint") : t("web.storage.evictableHint")}
         >
@@ -41,7 +41,7 @@ export function StorageSection() {
           )}
         </SettingsRow>
       </div>
-      <SettingsRow label={t("web.storage.engine")} hint={t("web.storage.engineHint")}>
+      <SettingsRow find={false} label={t("web.storage.engine")} hint={t("web.storage.engineHint")}>
         {({ id: _id, ...a }) => (
           <Select value={storage ?? undefined} onValueChange={(v) => v !== storage && setTarget(v as string)} items={ENGINES.map((e) => ({ ...e }))} disabled={removing}>
             <SelectTrigger {...a} size="sm" className="w-40" data-testid="storage-engine">

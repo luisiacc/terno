@@ -145,17 +145,17 @@ function NotificationsGroup({ settings, update }: { settings: AppSettings; updat
   return (
     <SettingsGroup title={t("settings.general.notifications")} testId="notifications-group">
       {(desktop || page) && (
-        <SettingsRow label={t("settings.general.notify")} hint={t(desktop ? "settings.general.notify.hint" : "settings.general.notify.hintWeb")} testId="notify-row">
+        <SettingsRow find="general.notify" label={t("settings.general.notify")} hint={t(desktop ? "settings.general.notify.hint" : "settings.general.notify.hintWeb")} testId="notify-row">
           {(a) => <Switch {...a} data-testid="notify-switch" checked={on} onCheckedChange={(next) => void toggle(next)} />}
         </SettingsRow>
       )}
       {(desktop || page) && (
-        <SettingsRow label={t("settings.general.notifyPreview")} hint={t("settings.general.notifyPreview.hint")} testId="notify-preview-row">
+        <SettingsRow find="general.notifyPreview" label={t("settings.general.notifyPreview")} hint={t("settings.general.notifyPreview.hint")} testId="notify-preview-row">
           {(a) => <Switch {...a} data-testid="notify-preview-switch" disabled={!on} checked={settings.notificationPreview} onCheckedChange={(next) => void update({ notificationPreview: next })} />}
         </SettingsRow>
       )}
       {badge && (
-        <SettingsRow label={t(desktop ? "settings.general.badge" : "settings.general.badgeWeb")} hint={t(desktop ? "settings.general.badge.hint" : "settings.general.badgeWeb.hint")} testId="badge-row">
+        <SettingsRow find="general.badge" label={t(desktop ? "settings.general.badge" : "settings.general.badgeWeb")} hint={t(desktop ? "settings.general.badge.hint" : "settings.general.badgeWeb.hint")} testId="badge-row">
           {(a) => <Switch {...a} data-testid="badge-switch" checked={settings.dockBadge} onCheckedChange={(next) => void update({ dockBadge: next })} />}
         </SettingsRow>
       )}
@@ -175,7 +175,7 @@ function LanguageRow({ settings, update }: { settings: AppSettings; update: Sett
   const commit = (v: LanguageSetting) =>
     void commitLanguage(v, settings.language, () => update({ language: v }, { quiet: true }), (error) => snack.error(error instanceof Error ? error.message : String(error)), "language-select");
   return (
-    <SettingsRow label={t("language.label")} hint={t("language.hint")} testId="language-row">
+    <SettingsRow find="general.language" label={t("language.label")} hint={t("language.hint")} testId="language-row">
       {({ id: _id, ...a }) => (
         <Select
           value={settings.language}
@@ -221,7 +221,7 @@ export function GeneralTab({ settings, update }: { settings: AppSettings; update
   return (
     <div data-testid="general-tab">
       <SettingsGroup>
-        <SettingsRow label={t("settings.general.remoteImages")} hint={t(settings.remoteImages === "always" ? "settings.general.remoteImages.hintOn" : "settings.general.remoteImages.hint")}>
+        <SettingsRow find="general.remoteImages" label={t("settings.general.remoteImages")} hint={t(settings.remoteImages === "always" ? "settings.general.remoteImages.hintOn" : "settings.general.remoteImages.hint")}>
           {(a) => <Switch {...a} data-testid="remote-images-switch" checked={settings.remoteImages === "always"} onCheckedChange={(on) => void update({ remoteImages: on ? "always" : "ask" })} />}
         </SettingsRow>
       </SettingsGroup>
@@ -235,7 +235,7 @@ export function GeneralTab({ settings, update }: { settings: AppSettings; update
       )}
 
       <SettingsGroup title={t("settings.general.sync")}>
-        <SettingsRow labelFor label={t("settings.general.syncWindow")} hint={t("settings.general.syncWindow.hint")}>
+        <SettingsRow find="general.syncWindow" labelFor label={t("settings.general.syncWindow")} hint={t("settings.general.syncWindow.hint")}>
           {(a) => <DaysField a11y={a} testId="sync-window" value={settings.syncWindowDays} onSave={(days) => update({ syncWindowDays: days ?? settings.syncWindowDays }, { quiet: true })} />}
         </SettingsRow>
       </SettingsGroup>
@@ -243,14 +243,14 @@ export function GeneralTab({ settings, update }: { settings: AppSettings; update
       <NotificationsGroup settings={settings} update={update} />
 
       <SettingsGroup title={t("settings.general.writing")}>
-        <SettingsRow label={t("settings.general.suggestions")} hint={t("settings.general.suggestions.hint")} testId="suggestions-row">
+        <SettingsRow find="general.suggestions" label={t("settings.general.suggestions")} hint={t("settings.general.suggestions.hint")} testId="suggestions-row">
           {(a) => <Switch {...a} data-testid="suggestions-switch" checked={settings.composeSuggestions} onCheckedChange={(on) => void update({ composeSuggestions: on })} />}
         </SettingsRow>
-        <SettingsRow label={t("settings.general.undoSend")} hint={t("settings.general.undoSend.hint", { seconds: settings.undoSendSeconds })} testId="undo-send-row">
+        <SettingsRow find="general.undoSend" label={t("settings.general.undoSend")} hint={t("settings.general.undoSend.hint", { seconds: settings.undoSendSeconds })} testId="undo-send-row">
           {(a) => <Switch {...a} data-testid="undo-send-switch" checked={settings.undoSend} onCheckedChange={(on) => void update({ undoSend: on })} />}
         </SettingsRow>
         {/* plan 188 (WCAG 2.2.1): the window is the user's; off with Undo send, the row stays and says why (as Preview under Compact) */}
-        <SettingsRow label={t("settings.general.undoSendTime")} hint={settings.undoSend ? t("settings.general.undoSendTime.hint") : t("settings.general.undoSendTime.offHint")} testId="undo-send-time-row">
+        <SettingsRow find="general.undoSendTime" label={t("settings.general.undoSendTime")} hint={settings.undoSend ? t("settings.general.undoSendTime.hint") : t("settings.general.undoSendTime.offHint")} testId="undo-send-time-row">
           {({ id: _id, ...a }) => (
             <Select value={settings.undoSendSeconds} disabled={!settings.undoSend} onValueChange={(v) => void update({ undoSendSeconds: v as UndoSendSeconds })} items={undoSendChoices()}>
               <SelectTrigger {...a} size="sm" className="w-32" data-testid="undo-send-time">
@@ -266,17 +266,17 @@ export function GeneralTab({ settings, update }: { settings: AppSettings; update
             </Select>
           )}
         </SettingsRow>
-        <SettingsRow label={t("settings.general.sendSound")} hint={t("settings.general.sendSound.hint")} testId="send-sound-row">
+        <SettingsRow find="general.sendSound" label={t("settings.general.sendSound")} hint={t("settings.general.sendSound.hint")} testId="send-sound-row">
           {(a) => <Switch {...a} data-testid="send-sound-switch" checked={settings.sendSound} onCheckedChange={(on) => void update({ sendSound: on })} />}
         </SettingsRow>
       </SettingsGroup>
 
       <SettingsGroup title={t("settings.general.keyboard")}>
         {/* plan 188 (WCAG 2.1.4): letters and symbols alone can be turned off; named keys and chords stay */}
-        <SettingsRow label={t("settings.general.characterKeys")} hint={t("settings.general.characterKeys.hint")} testId="character-keys-row">
+        <SettingsRow find="general.characterKeys" label={t("settings.general.characterKeys")} hint={t("settings.general.characterKeys.hint")} testId="character-keys-row">
           {(a) => <Switch {...a} data-testid="character-keys-switch" checked={settings.characterKeys} onCheckedChange={(on) => void update({ characterKeys: on })} />}
         </SettingsRow>
-        <SettingsRow label={t("settings.general.shortcuts")} hint={t("settings.general.shortcuts.hint")}>
+        <SettingsRow find="general.shortcuts" label={t("settings.general.shortcuts")} hint={t("settings.general.shortcuts.hint")}>
           {({ id: _id, "aria-labelledby": _l, ...a }) => (
             <Button {...a} variant="outline" size="sm" data-testid="open-shortcuts" onClick={() => setApp({ dialog: "shortcuts" })}>
               <Keyboard /> {t("settings.general.shortcuts.show")}

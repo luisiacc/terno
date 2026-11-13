@@ -146,7 +146,7 @@ export function FiltersTab() {
   const [undoOff, setUndoOff] = useState<number | null>(null);
   return (
     <div data-testid="filters-tab">
-      <SettingsGroup title={t("filters.group.yours")} footer={t("filters.footer")} testId="settings-filters-yours">
+      <SettingsGroup find="filters.yours" title={t("filters.group.yours")} footer={t("filters.footer")} testId="settings-filters-yours">
         {yours?.map((f) => <FilterItem key={f.id} filter={f} onChange={refresh} />)}
         {yours?.length === 0 && <p className="py-3 text-sm text-muted-foreground">{t("filters.empty")}</p>}
         <div className="py-1.5">

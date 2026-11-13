@@ -5,7 +5,7 @@ import { AI_JOBS, aiFeaturesAvailable, routeFor } from "@terno/core";
 import { AiUseGroup, AskGroup, DigestGroup, FollowupsGroup, SummariesGroup } from "./ai-summaries";
 import { DraftingGroup } from "./ai-drafting";
 import { useAiDraftUi } from "~/lib/ai-draft-state";
-import { openSettingsTab, PrivacyNote, SettingsGroup, SettingsNote, SettingsRow, type RowA11y, type SettingsUpdate } from "./parts";
+import { findAttrs, openSettingsTab, PrivacyNote, SettingsGroup, SettingsNote, SettingsRow, type RowA11y, type SettingsUpdate } from "./parts";
 import { Button } from "@terno/ui/components/button";
 import { Input } from "@terno/ui/components/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue } from "@terno/ui/components/select";
@@ -92,7 +92,7 @@ function KeyRow({ ai, provider, label, name, placeholder, testId }: { ai: AiSett
     </form>
   );
   return (
-    <SettingsRow stacked labelFor label={label} hint={t("ai.key.hint")} testId={`ai-key-row-${provider}`}>
+    <SettingsRow find="ai.key" stacked labelFor label={label} hint={t("ai.key.hint")} testId={`ai-key-row-${provider}`}>
       {(a) =>
         state.unreadable ? (
           <div className="space-y-1.5" data-testid="ai-key-unreadable">
@@ -270,7 +270,7 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
     return (
       <div data-testid="ai-tab">
         <SettingsGroup footer={<PrivacyNote testId="ai-privacy" title={t("ai.privacy")}>{disclosureLine(ai)}</PrivacyNote>}>
-          <SettingsRow label={t("settings.dev.aiNote")} hint={t("settings.dev.aiNote.hint")} testId="ai-dev-note">
+          <SettingsRow find="ai.devNote" label={t("settings.dev.aiNote")} hint={t("settings.dev.aiNote.hint")} testId="ai-dev-note">
             {() => (
               <Button variant="outline" size="sm" data-testid="ai-dev-open" onClick={() => openSettingsTab("dev")}>
                 {t("settings.dev.open")}
@@ -293,7 +293,7 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
           </PrivacyNote>
         }
       >
-        <SettingsRow label={t("ai.provider")} hint={t("ai.provider.hint")}>
+        <SettingsRow find="ai.provider" label={t("ai.provider")} hint={t("ai.provider.hint")}>
           {({ id: _id, ...a }) => (
             <Select value={choice} onValueChange={(v) => void select(v as ProviderChoice)} items={items}>
               <SelectTrigger {...a} size="sm" className="w-56" data-testid="ai-provider">
@@ -332,7 +332,7 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
         </SettingsRow>
 
         {ai.provider === "compatible" && choice === "compatible" && (
-          <SettingsRow label={t("ai.service")}>
+          <SettingsRow find="ai.service" label={t("ai.service")}>
             {({ id: _id, ...a }) => (
               <Select
                 value={ai.preset ?? "openrouter"}
@@ -355,7 +355,7 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
         )}
 
         {showsEndpoint && (
-          <SettingsRow
+          <SettingsRow find="ai.endpoint"
             stacked
             labelFor
             label={ai.preset === "azure" ? t("ai.endpoint.azure") : t("ai.endpoint")}
@@ -388,7 +388,7 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
         )}
 
         {showsModel && (
-          <SettingsRow stacked labelFor label={t("ai.model")} hint={needsKey && !ai.hasKey ? t("ai.model.needsKey") : undefined}>
+          <SettingsRow find="ai.model" stacked labelFor label={t("ai.model")} hint={needsKey && !ai.hasKey ? t("ai.model.needsKey") : undefined}>
             {(a) => (
               <div className="space-y-2">
                 <div className="flex gap-2">
@@ -442,7 +442,7 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
         )}
 
         {ai.provider !== "none" && (
-          <div className="space-y-2 py-3">
+          <div className="space-y-2 py-3" {...findAttrs("ai.test")}>
             <div className="flex items-center gap-3">
               <Button variant="outline" size="sm" data-testid="ai-test" disabled={keyed ? testTargets.length === 0 : ai.provider !== "fake" && !ai.model} loading={testing} onClick={() => void runTest()}>
                 {t("ai.test")}

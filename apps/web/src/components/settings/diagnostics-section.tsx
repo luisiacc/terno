@@ -61,7 +61,7 @@ export function DiagnosticsSection({ settings, update }: { settings: AppSettings
   const locked = !dsn;
   return (
     <SettingsGroup title={t("diag.settings.title")} testId="diagnostics-section" footer={<BuildLine />}>
-      <SettingsRow label={t("diag.settings.reports")} hint={reportsHint(settings, dsn)} testId="error-reports-row">
+      <SettingsRow find="general.reports" label={t("diag.settings.reports")} hint={reportsHint(settings, dsn)} testId="error-reports-row">
         {({ id: _id, ...a }) => (
           <Select value={locked ? "never" : settings.errorReports} disabled={locked} onValueChange={(v) => void update({ errorReports: v as AppSettings["errorReports"] })} items={REPORTS.map((r) => ({ value: r.value, label: t(r.label) }))}>
             <SelectTrigger {...a} size="sm" className="w-32" data-testid="error-reports-select">
@@ -77,14 +77,14 @@ export function DiagnosticsSection({ settings, update }: { settings: AppSettings
           </Select>
         )}
       </SettingsRow>
-      <SettingsRow label={t("diag.settings.contains")} hint={t("diag.settings.containsHint")}>
+      <SettingsRow find="general.reportContents" label={t("diag.settings.contains")} hint={t("diag.settings.containsHint")}>
         {({ id: _id, "aria-labelledby": _l, ...a }) => (
           <Button {...a} variant="outline" size="sm" data-testid="report-sample" onClick={() => void openPreview("sample")}>
             {t("diag.settings.viewExample")}
           </Button>
         )}
       </SettingsRow>
-      <SettingsRow label={t("diag.settings.logs")} hint={t("diag.settings.logsHint")}>
+      <SettingsRow find="general.logs" label={t("diag.settings.logs")} hint={t("diag.settings.logsHint")}>
         {({ id: _id, "aria-labelledby": _l, ...a }) => (
           <>
             {DESKTOP_DIAG && (

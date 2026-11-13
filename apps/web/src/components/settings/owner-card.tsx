@@ -97,7 +97,7 @@ export function OwnerCard({ owner, demo, accounts }: { owner: OwnerIdentity | nu
   const [changing, setChanging] = useState(false);
   if (demo || !owner) {
     return (
-      <SettingsGroup title={t("account.owner.title")} testId="owner-card">
+      <SettingsGroup find="accounts.owner" title={t("account.owner.title")} testId="owner-card">
         <div className="flex items-center gap-3 py-3 text-sm text-muted-foreground">
           <UserRound className="size-4 shrink-0" /> {demo ? t("account.owner.demo") : t("account.owner.none")}
         </div>
@@ -105,7 +105,7 @@ export function OwnerCard({ owner, demo, accounts }: { owner: OwnerIdentity | nu
     );
   }
   return (
-    <SettingsGroup title={t("account.owner.title")} testId="owner-card" footer={t("account.owner.footer")}>
+    <SettingsGroup find="accounts.owner" title={t("account.owner.title")} testId="owner-card" footer={t("account.owner.footer")}>
       <div className="flex items-center gap-3 py-2.5">
         <BadgeCheck className="size-4 shrink-0 text-primary" aria-hidden />
         <div className="min-w-0 flex-1">

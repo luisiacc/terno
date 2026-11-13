@@ -283,7 +283,7 @@ export function AppearanceTab({ settings, update }: { settings: AppSettings; upd
       <ListSettings settings={settings} />
 
       <SettingsGroup>
-        <SettingsRow stacked label={t("settings.appearance.style")} hint={t("settings.appearance.style.hint")}>
+        <SettingsRow find="appearance.style" stacked label={t("settings.appearance.style")} hint={t("settings.appearance.style.hint")}>
           {(a) => (
             <>
               <RadioGroup
@@ -315,7 +315,7 @@ export function AppearanceTab({ settings, update }: { settings: AppSettings; upd
         </SettingsRow>
       </SettingsGroup>
       <SettingsGroup>
-        <SettingsRow label={t("settings.appearance.mode")} hint={t("settings.appearance.mode.hint")}>
+        <SettingsRow find="appearance.mode" label={t("settings.appearance.mode")} hint={t("settings.appearance.mode.hint")}>
           {(a) => (
             <ToggleGroup aria-labelledby={a["aria-labelledby"]} aria-describedby={a["aria-describedby"]} variant="segmented" value={[settings.theme]} onValueChange={(v: string[]) => v[0] && void updateAppearance({ theme: v[0] as AppSettings["theme"] })} data-testid="mode-toggle">
               <ToggleGroupItem value="system" data-testid="mode-system">{t("settings.appearance.system")}</ToggleGroupItem>
@@ -324,16 +324,16 @@ export function AppearanceTab({ settings, update }: { settings: AppSettings; upd
             </ToggleGroup>
           )}
         </SettingsRow>
-        <SettingsRow stacked label={t("settings.appearance.lightTheme")}>
+        <SettingsRow find="appearance.lightTheme" stacked label={t("settings.appearance.lightTheme")}>
           {(a) => grid("light", a)}
         </SettingsRow>
-        <SettingsRow stacked label={t("settings.appearance.darkTheme")}>
+        <SettingsRow find="appearance.darkTheme" stacked label={t("settings.appearance.darkTheme")}>
           {(a) => grid("dark", a)}
         </SettingsRow>
       </SettingsGroup>
 
       <SettingsGroup title={t("settings.appearance.motionMail")}>
-        <SettingsRow stacked label={t("settings.appearance.motion")} hint={reduced ? t("settings.appearance.motion.reduced") : t("settings.appearance.motion.hint")}>
+        <SettingsRow find="appearance.motion" stacked label={t("settings.appearance.motion")} hint={reduced ? t("settings.appearance.motion.reduced") : t("settings.appearance.motion.hint")}>
           {(a) => (
             <div className="flex items-center gap-4">
               <ToggleGroup
@@ -357,7 +357,7 @@ export function AppearanceTab({ settings, update }: { settings: AppSettings; upd
             </div>
           )}
         </SettingsRow>
-        <SettingsRow stacked label={t("settings.appearance.htmlMail")} hint={t("settings.appearance.htmlMail.hint")}>
+        <SettingsRow find="appearance.htmlMail" stacked label={t("settings.appearance.htmlMail")} hint={t("settings.appearance.htmlMail.hint")}>
           {(a) => (
             <ToggleGroup aria-labelledby={a["aria-labelledby"]} aria-describedby={a["aria-describedby"]} variant="segmented" value={[settings.htmlMailAppearance]} onValueChange={(v: string[]) => v[0] && void updateAppearance({ htmlMailAppearance: v[0] as AppSettings["htmlMailAppearance"] })} data-testid="mail-appearance-toggle">
               <ToggleGroupItem value="auto" data-testid="mail-auto">{t("settings.appearance.htmlMail.auto")}</ToggleGroupItem>
@@ -369,7 +369,7 @@ export function AppearanceTab({ settings, update }: { settings: AppSettings; upd
 
       <SenderPictures settings={settings} update={update} />
 
-      <SettingsGroup title={t("settings.appearance.custom")} testId="custom-themes" footer={t("settings.appearance.custom.footer")}>
+      <SettingsGroup find="appearance.customThemes" title={t("settings.appearance.custom")} testId="custom-themes" footer={t("settings.appearance.custom.footer")}>
         {settings.customThemes.map((c) => (
           <CustomThemeItem key={c.id} theme={c} all={settings.customThemes} />
         ))}

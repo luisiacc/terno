@@ -63,7 +63,7 @@ function TokenRow({ status, refresh }: { status: Status; refresh: () => void }) 
     }
   };
   return (
-    <SettingsRow
+    <SettingsRow find="agents.token"
       testId="agents-token-row"
       label={t("settings.agents.token")}
       hint={status.tokenSince ? t("settings.agents.token.hintSince", { count: status.connected, since: time(status.tokenSince) }) : t("settings.agents.token.hint", { count: status.connected })}
@@ -99,7 +99,7 @@ export function AgentsTab({ settings, update }: { settings: AppSettings; update:
   return (
     <div data-testid="agents-tab">
       <SettingsGroup title={t("settings.agents.access")}>
-        <SettingsRow
+        <SettingsRow find="agents.enabled"
           label={t("settings.agents.enabled")}
           hint={t("settings.agents.enabled.hint")}
           error={enabled && status?.available && !status.running ? t("settings.agents.startFailed") : null}
@@ -108,7 +108,7 @@ export function AgentsTab({ settings, update }: { settings: AppSettings; update:
           {(a) => <Switch {...a} data-testid="agents-enabled" checked={enabled} onCheckedChange={(on) => void update({ agents: { enabled: on } })} />}
         </SettingsRow>
         {enabled && (
-          <SettingsRow label={t("settings.agents.level")} hint={levels.find((l) => l.value === access)?.hint}>
+          <SettingsRow find="agents.level" label={t("settings.agents.level")} hint={levels.find((l) => l.value === access)?.hint}>
             {({ id: _id, ...a }) => (
               <Select value={access} onValueChange={(v) => void update({ agents: { access: v as AgentAccess } })} items={levels.map(({ value, label }) => ({ value, label }))}>
                 <SelectTrigger {...a} size="sm" className="w-auto min-w-40" data-testid="agents-access">
@@ -128,17 +128,17 @@ export function AgentsTab({ settings, update }: { settings: AppSettings; update:
         {enabled && status?.running && <TokenRow status={status} refresh={refresh} />}
       </SettingsGroup>
       <SettingsGroup title={t("common.connect")} footer={t("settings.agents.connect.footer")}>
-        <SettingsRow stacked label="Claude Code">
+        <SettingsRow find="agents.claude" stacked label="Claude Code">
           {() => <CopyBlock testId="mcp-claude" label={t("settings.agents.claudeCommand")} text={`claude mcp add terno -- "${mcp}"`} />}
         </SettingsRow>
-        <SettingsRow stacked label="Codex" hint={t("settings.agents.codex.hint", { path: "~/.codex/config.toml" })}>
+        <SettingsRow find="agents.codex" stacked label="Codex" hint={t("settings.agents.codex.hint", { path: "~/.codex/config.toml" })}>
           {() => <CopyBlock testId="mcp-codex" label={t("settings.agents.codexConfig")} text={`[mcp_servers.terno]\ncommand = "${mcp}"`} />}
         </SettingsRow>
-        <SettingsRow stacked label={t("settings.agents.other")} hint={t("settings.agents.other.hint")}>
+        <SettingsRow find="agents.other" stacked label={t("settings.agents.other")} hint={t("settings.agents.other.hint")}>
           {() => <CopyBlock testId="mcp-other" label={t("settings.agents.otherConfig")} text={generic} />}
         </SettingsRow>
         {agent && (
-          <SettingsRow stacked label={t("settings.agents.skill")}>
+          <SettingsRow find="agents.skill" stacked label={t("settings.agents.skill")}>
             {() => <CopyBlock label={t("settings.agents.skillInstall")} text={`mkdir -p ~/.claude/skills/terno && cp "${agent.skillPath}" ~/.claude/skills/terno/SKILL.md`} />}
           </SettingsRow>
         )}

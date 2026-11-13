@@ -203,7 +203,7 @@ export function UpdatePrefsGroup({ state }: { state: UpdateState }) {
   const modeHint = `${t(mode)} ${t("updates.settings.where")}`;
   return (
     <SettingsGroup title={t("updates.settings.title")} testId="updates-section">
-      <SettingsRow label={t("updates.settings.auto")} hint={modeHint} testId="updates-mode-row">
+      <SettingsRow find="about.autoUpdate" label={t("updates.settings.auto")} hint={modeHint} testId="updates-mode-row">
         {(a) => (
           <Switch
             {...a}
@@ -214,7 +214,7 @@ export function UpdatePrefsGroup({ state }: { state: UpdateState }) {
           />
         )}
       </SettingsRow>
-      <SettingsRow label={t("updates.settings.channel")} hint={<span data-testid="updates-channel-hint">{channelHint(state)}</span>}>
+      <SettingsRow find="about.channel" label={t("updates.settings.channel")} hint={<span data-testid="updates-channel-hint">{channelHint(state)}</span>}>
         {({ id: _id, ...a }) => (
           <Select value={state.channel} disabled={unsupported || state.ready !== null} onValueChange={(v) => void setUpdatePrefs({ mode: state.mode, channel: v as UpdateChannel })} items={CHANNELS.map((c) => ({ value: c.value, label: t(c.label) }))}>
             <SelectTrigger {...a} size="sm" className="w-32" data-testid="updates-channel-select">

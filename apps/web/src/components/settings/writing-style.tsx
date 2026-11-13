@@ -433,7 +433,7 @@ function Profile({ initial, onChanged, onEditing, onReset, total, picked, compac
     );
   return (
     <div ref={card} className="scroll-my-12">
-      <SettingsRow
+      <SettingsRow find={false}
         stacked
         label={<span className="flex items-center gap-1.5" data-testid="style-profile-title">{picked ? from : title}{edited}</span>}
         hint={picked ? undefined : from}
@@ -571,7 +571,7 @@ function Study({ status, onChanged, onShow }: { status: WritingStatus | null; on
   };
   return (
     <>
-      <SettingsRow label={t("aiDraft.study.action")} hint={status?.study ? t("aiDraft.study.studied", { provider: ai ? providerLabel(status.study.provider as never, ai) : status.study.provider }) : t("aiDraft.study.hint")} testId="style-study-row">
+      <SettingsRow find="style.study" label={t("aiDraft.study.action")} hint={status?.study ? t("aiDraft.study.studied", { provider: ai ? providerLabel(status.study.provider as never, ai) : status.study.provider }) : t("aiDraft.study.hint")} testId="style-study-row">
         {({ id: _id, "aria-labelledby": _l, "aria-describedby": described }) =>
           state.kind === "running" ? (
             <span className="flex items-center gap-2 text-sm text-muted-foreground" data-testid="style-study-running">
@@ -658,7 +658,7 @@ export default function WritingStyle() {
           </p>
         )}
       </div>
-      <SettingsGroup title={t("aiDraft.style.yours")} testId="style-own" className="mb-4">
+      <SettingsGroup find="style.profiles" title={t("aiDraft.style.yours")} testId="style-own" className="mb-4">
         {own === null ? <SettingsNote><Spinner aria-hidden className="size-[1.15em]" /></SettingsNote> : own.length === 0 ? <SettingsNote testId="style-empty">{t("aiDraft.style.empty")}</SettingsNote> : <OwnProfiles items={own} onChanged={changed} onReset={setReset} total={status?.state === "ready" && status.messages > 0 ? status.messages : null} reveal={reveal} />}
       </SettingsGroup>
       {/* plan 162 (after ai162-r01): one job per group, in the order they're wanted: your style, the others' (they were
@@ -668,7 +668,7 @@ export default function WritingStyle() {
         <Section scope="person" title={t("aiDraft.style.people")} testId="style-people" version={version} onChanged={changed} onReset={setReset} shared={shared} />
       </div>
       <SettingsGroup title={t("aiDraft.study.title")} testId="style-actions" className="mb-4">
-        <SettingsRow label={t("aiDraft.style.rebuild")} hint={t("aiDraft.style.rebuildHint")} testId="style-rebuild-row">
+        <SettingsRow find="style.rebuild" label={t("aiDraft.style.rebuild")} hint={t("aiDraft.style.rebuildHint")} testId="style-rebuild-row">
           {({ id: _id, "aria-labelledby": _l, "aria-describedby": described }) => (
             <Button variant="outline" size="sm" aria-describedby={described} data-testid="style-rebuild" onClick={() => void client.call("writing.profiles.rebuild", {}).then(changed, failed)}>
               {t("aiDraft.style.rebuildButton")}
@@ -678,7 +678,7 @@ export default function WritingStyle() {
         <Study status={status} onChanged={changed} onShow={() => setReveal((n) => n + 1)} />
       </SettingsGroup>
       <SettingsGroup title={t("aiDraft.style.startOver")} testId="style-start-over">
-        <SettingsRow label={t("aiDraft.style.clear")} hint={t("aiDraft.style.clearHint")}>
+        <SettingsRow find="style.clear" label={t("aiDraft.style.clear")} hint={t("aiDraft.style.clearHint")}>
           {({ id: _id, "aria-labelledby": _l, "aria-describedby": described }) => (
             <Button variant="outline" size="sm" className="text-destructive-ink" aria-describedby={described} data-testid="style-clear" onClick={() => setClearing(true)}>
               {t("aiDraft.style.clearButton")}

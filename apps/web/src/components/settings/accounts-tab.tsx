@@ -25,7 +25,7 @@ import { DaysField } from "./general-tab";
 import { AccountWriting } from "./ai-drafting";
 import { OwnerCard } from "./owner-card";
 import { AccountRemoveDialog } from "../account-remove-dialog";
-import { ColorPicker, CommitInput, SettingsGroup, SettingsRow, type SettingsUpdate } from "./parts";
+import { ColorPicker, CommitInput, findAttrs, SettingsGroup, SettingsRow, type SettingsUpdate } from "./parts";
 import CaptureRecovery from "./capture-recovery";
 
 
@@ -174,20 +174,20 @@ function AccountEditor({ account, generalWindow, isOwner }: { account: Account; 
   const save = (patch: AccountEdit) => patchAccount(account.id, patch, { optimistic: "color" in patch });
   return (
     <div className="hairline-divide pb-1 pl-5" data-testid="account-editor">
-      <SettingsRow labelFor label={t("account.name")} hint={t("account.name.hint")}>
+      <SettingsRow find="account.name" labelFor label={t("account.name")} hint={t("account.name.hint")}>
         {(a) => <CommitInput a11y={a} className="w-56" data-testid="account-name" value={account.displayName} validate={(v) => (v.trim() ? null : t("settings.nameEmpty"))} onCommit={(v) => save({ displayName: v.trim() })} />}
       </SettingsRow>
-      <SettingsRow labelFor label={t("account.sender")} hint={t("account.sender.hint")}>
+      <SettingsRow find="account.sender" labelFor label={t("account.sender")} hint={t("account.sender.hint")}>
         {(a) => <CommitInput a11y={a} className="w-56" data-testid="account-sender" value={account.senderName} onCommit={(v) => save({ senderName: v.trim() })} />}
       </SettingsRow>
-      <SettingsRow label={t("settings.color")}>
+      <SettingsRow find="account.color" label={t("settings.color")}>
         {(a) => <ColorPicker a11y={a} name={`account-color-${account.id}`} testId="account-color" value={account.color} onChange={(color) => save({ color }).catch((e: unknown) => { snack.error(errorText(e)); throw e; })} />}
       </SettingsRow>
-      <SettingsRow stacked labelFor label={t("account.signature")} hint={t("account.signature.hint")}>
+      <SettingsRow find="account.signature" stacked labelFor label={t("account.signature")} hint={t("account.signature.hint")}>
         {(a) => <CommitInput multiline a11y={a} data-testid="account-signature" value={account.signature} placeholder={t("account.signature.placeholder")} maxLength={10_000} onCommit={(v) => save({ signature: v })} />}
       </SettingsRow>
       <AccountWriting accountId={account.id} />
-      <SettingsRow labelFor label={t("settings.general.syncWindow")} hint={t("account.syncWindow.hint", { days: generalWindow })}>
+      <SettingsRow find="account.syncWindow" labelFor label={t("settings.general.syncWindow")} hint={t("account.syncWindow.hint", { days: generalWindow })}>
         {(a) => (
           <DaysField
             a11y={a}
@@ -201,20 +201,20 @@ function AccountEditor({ account, generalWindow, isOwner }: { account: Account; 
       </SettingsRow>
       {/* plan 86: Gmail's Promotions and Social, under the account and out of the Inbox */}
       {account.kind === "gmail" && (
-        <SettingsRow label={t("account.separateTabs")} hint={t("account.separateTabs.hint")}>
+        <SettingsRow find="account.separateTabs" label={t("account.separateTabs")} hint={t("account.separateTabs.hint")}>
           {(a) => <Switch {...a} data-testid="account-separate-tabs" checked={separatesTabs(account)} onCheckedChange={(on) => void setSeparateTabs(account.id, on)} />}
         </SettingsRow>
       )}
       {/* plan 142 */}
-      <SettingsRow label={t("account.followups")} hint={t("account.followups.hint")}>
+      <SettingsRow find="account.followups" label={t("account.followups")} hint={t("account.followups.hint")}>
         {(a) => <Switch {...a} data-testid="account-followups" checked={account.followups !== false} onCheckedChange={(on) => void client.call("accounts.update", { id: account.id, followups: on })} />}
       </SettingsRow>
-      <SettingsRow stacked label={t("account.connection")} hint={<span className="whitespace-pre-wrap [overflow-wrap:anywhere]">{status(account)}</span>}>
+      <SettingsRow find="account.connection" stacked label={t("account.connection")} hint={<span className="whitespace-pre-wrap [overflow-wrap:anywhere]">{status(account)}</span>}>
         {() => <Reconnect account={account} />}
       </SettingsRow>
       <CaptureRecovery key={`capture:${account.id}`} accountId={account.id} />
       {account.kind === "imap" && <><SentCopies key={`copy:${account.id}`} accountId={account.id} /><RecipientReceipts key={`recipients:${account.id}`} accountId={account.id} /></>}
-      <SettingsRow label={t("account.remove")} hint={isOwner ? t("account.remove.hintOwner") : t("account.remove.hint")}>
+      <SettingsRow find="account.remove" label={t("account.remove")} hint={isOwner ? t("account.remove.hintOwner") : t("account.remove.hint")}>
         {({ id: _id, "aria-labelledby": _l, ...a }) => (
           <>
             <Button {...a} variant="ghost" size="sm" className={cn("text-destructive-ink", GHOST_DANGER_PRESS)} data-testid="account-remove" onClick={() => setRemoving(true)}>
@@ -274,8 +274,8 @@ function AccountItem({ account, generalWindow, isOwner }: { account: Account; ge
   // a sign-in to redo reads calmly (plan 25); a real error or an outage in the error ink
   const attention = !needsSignIn(account) && (account.syncState.status === "error" || account.syncState.status === "offline");
   return (
-    <AccordionItem value={account.id} className="group/account" data-testid="settings-account" data-account-id={account.id}>
-      <AccordionTrigger level={4} className="-mx-2 w-[calc(100%+1rem)] rounded-md px-2 py-2.5 [contain:inline-size]" data-testid="account-toggle">
+    <AccordionItem value={account.id} className="group/account" data-testid="settings-account" data-account-id={account.id} data-setting-scope={`account:${account.id}`}>
+      <AccordionTrigger level={4} className="-mx-2 w-[calc(100%+1rem)] rounded-md px-2 py-2.5 [contain:inline-size]" data-testid="account-toggle" data-setting-open>
         <AccountMark color={account.color} />
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-medium">{account.displayName}</span>
@@ -307,7 +307,7 @@ export function AccountsTab({ settings }: { settings: AppSettings; update: Setti
           ))}
         </Accordion>
         <div className="py-1.5">
-          <Button variant="ghost" size="sm" className="-mx-2" data-testid="settings-add-account" onClick={() => setApp({ dialog: "addAccount" })}>
+          <Button variant="ghost" size="sm" className="-mx-2" data-testid="settings-add-account" {...findAttrs("accounts.add")} onClick={() => setApp({ dialog: "addAccount" })}>
             <Plus /> {t("account.add")}
           </Button>
         </div>

@@ -93,7 +93,7 @@ export function StorageTab() {
     <div data-testid="storage-tab">
       {error ? (
         <SettingsGroup>
-          <SettingsRow label={t("storage.error", { message: error })} testId="storage-error">
+          <SettingsRow find={false} label={t("storage.error", { message: error })} testId="storage-error">
             {({ id: _id, "aria-labelledby": _l, ...a }) => (
               <Button {...a} variant="outline" size="sm" onClick={() => void load()}>
                 {t("storage.retry")}
@@ -104,11 +104,11 @@ export function StorageTab() {
       ) : (
         <>
           <Usage report={report} />
-          <SettingsGroup title={t("storage.byMailbox")} footer={t("storage.byMailbox.footer")} testId="storage-buckets">
+          <SettingsGroup find="storage.byMailbox" title={t("storage.byMailbox")} footer={t("storage.byMailbox.footer")} testId="storage-buckets">
             {STORAGE_BUCKETS.map((b) => {
               const r = bucket(b);
               return (
-                <SettingsRow
+                <SettingsRow find={false}
                   key={b}
                   testId={`storage-bucket-${b}`}
                   label={
@@ -126,7 +126,7 @@ export function StorageTab() {
           </SettingsGroup>
 
           <SettingsGroup title={t("storage.free")} footer={t("storage.footer", { device: device() })} testId="storage-free">
-            <SettingsRow label={t("storage.olderThan")}>
+            <SettingsRow find="storage.olderThan" label={t("storage.olderThan")}>
               {({ id: _id, ...a }) => (
                 <Select value={String(age)} onValueChange={(v) => useStorageJob.setState({ age: Number(v) as StorageAge })} items={STORAGE_AGES.map((d) => ({ value: String(d), label: ageLabel(d) }))} disabled={removing}>
                   <SelectTrigger {...a} size="sm" className="w-32" data-testid="storage-age">
@@ -145,7 +145,7 @@ export function StorageTab() {
             {REMOVABLE_BUCKETS.map((b) => {
               const a = bucket(b)?.removable[ageIndex];
               return (
-                <SettingsRow key={b} testId={`storage-pick-${b}`} label={viewLabel(b)} hint={!a ? <Skeleton shape="text" className="mt-1 w-32" /> : a.threads ? amountText(a) : t("storage.nothingOld")}>
+                <SettingsRow find={false} key={b} testId={`storage-pick-${b}`} label={viewLabel(b)} hint={!a ? <Skeleton shape="text" className="mt-1 w-32" /> : a.threads ? amountText(a) : t("storage.nothingOld")}>
                   {(a11y) => (
                     <Checkbox
                       {...a11y}
@@ -165,7 +165,7 @@ export function StorageTab() {
                 </SettingsRow>
               );
             })}
-            <SettingsRow label={selected.threads ? amountText(selected) : t("storage.choose")} testId="storage-summary">
+            <SettingsRow find={false} label={selected.threads ? amountText(selected) : t("storage.choose")} testId="storage-summary">
               {({ id: _id, "aria-labelledby": _l, ...a }) => (
                 <Button
                   {...a}
@@ -184,7 +184,7 @@ export function StorageTab() {
 
           {/* plan 132 §3 */}
           <SettingsGroup testId="storage-ai">
-            <SettingsRow label={t("storage.clearAi")} hint={t("storage.clearAi.hint", { device: device() })}>
+            <SettingsRow find="storage.clearAi" label={t("storage.clearAi")} hint={t("storage.clearAi.hint", { device: device() })}>
               {({ id: _id, "aria-labelledby": _l, ...a }) => (
                 <Button
                   {...a}

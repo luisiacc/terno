@@ -28,7 +28,7 @@ export function SentCopies({ accountId }: { accountId: number }) {
     } catch { setError(true); }
     finally { setBusy(null); }
   };
-  return <SettingsRow label={t("account.sentCopies")} stacked hint={t("account.sentCopies.hint")}>
+  return <SettingsRow find="account.sentCopies" label={t("account.sentCopies")} stacked hint={t("account.sentCopies.hint")}>
     {() => <div className="flex flex-col gap-2 pb-2" data-testid="sent-copy-recovery">
       {error && <p role="alert" className="text-xs text-destructive-ink">{t("errors.sentCopy.unavailable")}</p>}
       {!rows && !error && <p role="status" className="text-xs text-muted-foreground">{t("account.sentCopies.loading")}</p>}

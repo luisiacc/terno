@@ -11,6 +11,7 @@ import { t } from "@terno/i18n";
 import { useId, useState } from "react";
 import { COLOR_LABEL } from "~/lib/color-labels";
 import { setApp, type SettingsTab } from "~/state/app";
+import type { SettingId } from "./search-index";
 
 export { COLOR_LABEL };
 
@@ -31,10 +32,21 @@ export interface RowA11y {
   "aria-invalid"?: true;
 }
 
-export function SettingsGroup({ title, footer, children, testId, className }: { title?: React.ReactNode; footer?: React.ReactNode; children: React.ReactNode; testId?: string; className?: string }) {
+/** Plan 203: marks the element Settings' search opens for a setting (a row is marked by its `find`). */
+export const findAttrs = (id: SettingId) => ({ "data-setting": id });
+
+export function SettingsGroup({ title, footer, children, testId, className, find }: {
+  title?: React.ReactNode;
+  footer?: React.ReactNode;
+  children: React.ReactNode;
+  testId?: string;
+  className?: string;
+  /** plan 203: the whole group is the setting a search opens (a list of the user's own: rules, custom themes) */
+  find?: SettingId;
+}) {
   const titleId = useId();
   return (
-    <section className={cn("mb-6 last:mb-0", className)} data-testid={testId} aria-labelledby={title ? titleId : undefined}>
+    <section className={cn("mb-6 last:mb-0", className)} data-testid={testId} data-setting={find} aria-labelledby={title ? titleId : undefined}>
       {title && (
         <h3 id={titleId} className="mb-1.5 px-1 text-xs font-semibold text-muted-foreground">
           {title}
@@ -55,7 +67,13 @@ export function SettingsRow({
   stacked,
   labelFor,
   errorTestId,
+  find,
 }: {
+  /**
+   * Plan 203: the setting this row is in Settings' search (search-index.ts), which opens it here; false for a row
+   * that isn't a setting (a status, an error, a list item)
+   */
+  find?: SettingId | false;
   label: React.ReactNode;
   hint?: React.ReactNode;
   /** announced (role=alert), linked to the control, which is marked invalid */
@@ -92,14 +110,14 @@ export function SettingsRow({
   );
   if (stacked) {
     return (
-      <div className="py-3" data-testid={testId}>
+      <div className="py-3" data-testid={testId} data-setting={find || undefined}>
         {text}
         <div className="mt-2.5">{children(a11y)}</div>
       </div>
     );
   }
   return (
-    <div className="flex min-h-11 items-center justify-between gap-6 py-2.5" data-testid={testId}>
+    <div className="flex min-h-11 items-center justify-between gap-6 py-2.5" data-testid={testId} data-setting={find || undefined}>
       {text}
       <div className="flex shrink-0 items-center gap-2">{children(a11y)}</div>
     </div>

@@ -42,24 +42,24 @@ export function DraftingGroup({ settings, update }: { settings: AppSettings; upd
   const readElsewhere = helperElsewhere("intent", "writing", ai);
   return (
     <SettingsGroup title={t("aiDraft.settings.title")} testId="ai-drafting">
-      <SettingsRow label={t("aiDraft.settings.enabled")} hint={t("aiDraft.settings.enabledHint", { key: shortcutText("mod+j") })}>
+      <SettingsRow find="ai.drafting" label={t("aiDraft.settings.enabled")} hint={t("aiDraft.settings.enabledHint", { key: shortcutText("mod+j") })}>
         {(a) => <Switch {...a} checked={prefs?.global.enabled ?? true} data-testid="ai-drafting-enabled" onCheckedChange={(enabled) => void save({ global: { enabled } }).catch(failed)} />}
       </SettingsRow>
       {(prefs?.global.enabled ?? true) && (
         <>
-          <SettingsRow stacked labelFor label={t("aiDraft.settings.instructions")} hint={t("aiDraft.settings.instructionsHint")}>
+          <SettingsRow find="ai.instructions" stacked labelFor label={t("aiDraft.settings.instructions")} hint={t("aiDraft.settings.instructionsHint")}>
             {(a) => <CommitInput multiline a11y={a} data-testid="ai-drafting-instructions" value={prefs?.global.instructions ?? ""} placeholder={t("aiDraft.settings.instructionsPlaceholder")} maxLength={WRITING_INSTRUCTIONS_MAX} onCommit={(instructions) => save({ global: { instructions } })} />}
           </SettingsRow>
           {/* plan 157: on with AI; without it the setting does nothing, so it isn't here */}
           {offered && (
-            <SettingsRow label={t("aiDraft.settings.sentMail")} hint={t("aiDraft.settings.sentMailHint")}>
+            <SettingsRow find="ai.sentMail" label={t("aiDraft.settings.sentMail")} hint={t("aiDraft.settings.sentMailHint")}>
               {(a) => <Switch {...a} checked={prefs?.global.useSentMail ?? true} data-testid="ai-drafting-sent-mail" onCheckedChange={(useSentMail) => void save({ global: { useSentMail } }).catch(failed)} />}
             </SettingsRow>
           )}
-          <SettingsRow label={t("replies.settings.switch")} hint={target.provider === "none" ? t("replies.settings.noProvider") : [t("replies.settings.hint", { provider: providerLabel(target.provider, ai) }), checkElsewhere && t("replies.settings.check", { provider: checkElsewhere })].filter(Boolean).join(" ")} testId="replies-setting">
+          <SettingsRow find="ai.replies" label={t("replies.settings.switch")} hint={target.provider === "none" ? t("replies.settings.noProvider") : [t("replies.settings.hint", { provider: providerLabel(target.provider, ai) }), checkElsewhere && t("replies.settings.check", { provider: checkElsewhere })].filter(Boolean).join(" ")} testId="replies-setting">
             {(a) => <Switch {...a} checked={repliesOn} disabled={target.provider === "none"} data-testid="replies-switch" onCheckedChange={(enabled) => void update({ replies: { enabled } })} />}
           </SettingsRow>
-          <SettingsRow label={t("aiDraft.style.title")} hint={t("aiDraft.settings.styleHint")} testId="ai-drafting-style">
+          <SettingsRow find="ai.writingStyle" label={t("aiDraft.style.title")} hint={t("aiDraft.settings.styleHint")} testId="ai-drafting-style">
             {({ id: _id, "aria-labelledby": _l, "aria-describedby": described }) => (
               <Button variant="outline" size="sm" aria-describedby={described} data-testid="ai-drafting-style-open" onClick={() => useAiDraftUi.setState({ stylePage: true })}>
                 {t("aiDraft.settings.styleOpen")}
@@ -87,13 +87,13 @@ export function AccountWriting({ accountId }: { accountId: number }) {
   // each sends only its own field: the backend merges, so a save in flight from the other is never overwritten with what this render saw
   return (
     <>
-      <SettingsRow stacked labelFor label={t("aiDraft.account.instructions")} hint={t("aiDraft.account.instructionsHint")}>
+      <SettingsRow find="account.instructions" stacked labelFor label={t("aiDraft.account.instructions")} hint={t("aiDraft.account.instructionsHint")}>
         {(a) => <CommitInput multiline a11y={a} data-testid="account-writing-instructions" value={own?.instructions ?? ""} placeholder={t("aiDraft.account.instructionsPlaceholder")} maxLength={WRITING_INSTRUCTIONS_MAX} onCommit={(instructions) => save({ account: { accountId, prefs: { instructions } } })} />}
       </SettingsRow>
-      <SettingsRow label={t("replies.account")} hint={t("replies.accountHint")}>
+      <SettingsRow find="account.replies" label={t("replies.account")} hint={t("replies.accountHint")}>
         {(a) => <Switch {...a} checked={own?.prepareReplies ?? true} data-testid="account-prepare-replies" onCheckedChange={(prepareReplies) => void save({ account: { accountId, prefs: { prepareReplies } } }).catch(failed)} />}
       </SettingsRow>
-      <SettingsRow label={t("aiDraft.account.useGeneral")} hint={t("aiDraft.account.useGeneralHint")}>
+      <SettingsRow find="account.useGeneral" label={t("aiDraft.account.useGeneral")} hint={t("aiDraft.account.useGeneralHint")}>
         {(a) => <Switch {...a} checked={own?.useGeneral ?? true} data-testid="account-writing-general" onCheckedChange={(useGeneral) => void save({ account: { accountId, prefs: { useGeneral } } }).catch(failed)} />}
       </SettingsRow>
     </>

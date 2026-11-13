@@ -28,7 +28,7 @@ export function ListSettings({ settings }: { settings: AppSettings }) {
   return (
     <SettingsGroup title={t("settings.appearance.list")}>
       {/* plan 24: the conversation beside the list, or in its place (applied at once, like the style) */}
-      <SettingsRow label={t("settings.appearance.layout")} hint={t("settings.appearance.layout.hint")} testId="layout-row">
+      <SettingsRow find="appearance.layout" label={t("settings.appearance.layout")} hint={t("settings.appearance.layout.hint")} testId="layout-row">
         {(a) => (
           <ToggleGroup
             aria-labelledby={a["aria-labelledby"]}
@@ -49,7 +49,7 @@ export function ListSettings({ settings }: { settings: AppSettings }) {
           </ToggleGroup>
         )}
       </SettingsRow>
-      <SettingsRow label={t("settings.appearance.density")} hint={t("settings.appearance.density.hint")}>
+      <SettingsRow find="appearance.density" label={t("settings.appearance.density")} hint={t("settings.appearance.density.hint")}>
         {({ id: _id, ...a }) => (
           <Select value={settings.density} onValueChange={(v) => void updateAppearance({ density: v as AppSettings["density"] })} items={density().map((d) => ({ ...d }))}>
             <SelectTrigger {...a} size="sm" className="w-32" data-testid="density-select">
@@ -67,7 +67,7 @@ export function ListSettings({ settings }: { settings: AppSettings }) {
       </SettingsRow>
       {/* plan 187: Split's three-line rows; with Compact they are one line, so the row stays, off, and says why */}
       {settings.layout === "split" && (
-        <SettingsRow label={t("settings.appearance.preview")} hint={t(compact ? "settings.appearance.preview.compactHint" : "settings.appearance.preview.hint")} testId="preview-row">
+        <SettingsRow find="appearance.preview" label={t("settings.appearance.preview")} hint={t(compact ? "settings.appearance.preview.compactHint" : "settings.appearance.preview.hint")} testId="preview-row">
           {({ id: _id, ...a }) => (
             <Select value={settings.previewLines} disabled={compact} onValueChange={(v) => void updateAppearance({ previewLines: v as PreviewLines })} items={previewChoices()}>
               <SelectTrigger {...a} size="sm" className="w-32" data-testid="preview-select">

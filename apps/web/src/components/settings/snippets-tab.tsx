@@ -63,7 +63,7 @@ export function SnippetsTab() {
   }
   return (
     <div data-testid="snippets-tab">
-      <SettingsGroup title={t("settings.tab.snippets")} footer={list?.length ? t("snippets.footer", { keys: snippetKeys(), palette: paletteKeys(), example: "{first_name}" }) : undefined}>
+      <SettingsGroup find="snippets.list" title={t("settings.tab.snippets")} footer={list?.length ? t("snippets.footer", { keys: snippetKeys(), palette: paletteKeys(), example: "{first_name}" }) : undefined}>
         {list?.map((s) => <SnippetRow key={s.id} snippet={s} />)}
         {notStored.map(([id, f]) => (
           <div key={id} className="flex min-h-11 items-center gap-3 py-2" data-testid="settings-snippet-unsaved">

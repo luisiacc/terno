@@ -16,7 +16,7 @@ export default function TodaySettings({ settings, update }: { settings: AppSetti
   return (
     <SettingsGroup title={t("today.title")} testId="today-settings">
       {proOff && (
-        <SettingsRow label={t("today.settings.pro")} hint={t("today.settings.proHint")} testId="today-pro-note">
+        <SettingsRow find={false} label={t("today.settings.pro")} hint={t("today.settings.proHint")} testId="today-pro-note">
           {() => (
             <Button variant="outline" size="sm" data-testid="today-dev-open" onClick={() => openSettingsTab("dev")}>
               {t("settings.dev.open")}
@@ -24,10 +24,10 @@ export default function TodaySettings({ settings, update }: { settings: AppSetti
           )}
         </SettingsRow>
       )}
-      <SettingsRow label={t("today.settings.show")}>
+      <SettingsRow find="general.today" label={t("today.settings.show")}>
         {(a) => <Switch {...a} checked={today?.show !== false} data-testid="today-show" onCheckedChange={(show) => void update({ today: { show } })} />}
       </SettingsRow>
-      <SettingsRow label={t("today.settings.prepareAt")} hint={t("today.settings.prepareAtHint")}>
+      <SettingsRow find="general.todayAt" label={t("today.settings.prepareAt")} hint={t("today.settings.prepareAtHint")}>
         {(a) => (
           <TimeField
             aria-labelledby={a["aria-labelledby"]}
@@ -42,7 +42,7 @@ export default function TodaySettings({ settings, update }: { settings: AppSetti
           />
         )}
       </SettingsRow>
-      <SettingsRow label={t("today.settings.notify")} hint={t("today.settings.notifyHint")}>
+      <SettingsRow find="general.todayNotify" label={t("today.settings.notify")} hint={t("today.settings.notifyHint")}>
         {(a) => <Switch {...a} checked={today?.notify === true} data-testid="today-notify" onCheckedChange={(notify) => void update({ today: { notify } })} />}
       </SettingsRow>
     </SettingsGroup>

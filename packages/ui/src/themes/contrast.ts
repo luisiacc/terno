@@ -96,6 +96,8 @@ export const CONTRAST_PAIRS: readonly ContrastPair[] = [
   ...(["card", "tint", "background"] as const).map((over): ContrastPair => ({ fg: "foreground", bg: "primary", alpha: 0.15, min: 4.5, overToken: over })),
   // plan 162 (after ai162-r04): a note for AI in a composer's body, its words and its "For AI" label on the primary's 5% wash
   ...(["foreground", "muted-foreground"] as const).flatMap((fg) => (["card", "tint", "background"] as const).map((over): ContrastPair => ({ fg, bg: "primary", alpha: 0.05, min: 4.5, overToken: over }))),
+  // plan 203: a setting Settings' search opened, marked in the primary's 8% wash (10% fails AA for muted text in two dark palettes), on Settings' groups (tint or card) in the dialog
+  ...(["foreground", "muted-foreground"] as const).flatMap((fg) => (["tint", "card", "popover"] as const).map((over): ContrastPair => ({ fg, bg: "primary", alpha: 0.08, min: 4.5, overToken: over }))),
   // plan 181: the words on an AI card, on its fill (the tint at 65 % in light, the primary's 5 % in dark, globals.css
   // `ai-card`) over the reader, Lumen's reader card and a dialog; each pair is checked in every palette, both modes
   ...(["foreground", "muted-foreground"] as const).flatMap((fg) =>
