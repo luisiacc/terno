@@ -15,6 +15,7 @@ export interface StructuredTask<W, T> {
   example: W;
   maxTokens: number;
   effort?: Effort;
+  reasoningEffort?: Effort;
 }
 
 export interface LadderOptions {
@@ -70,6 +71,7 @@ export async function runStructured<W, T>(transport: ModelTransport, task: Struc
         maxTokens: task.maxTokens,
         signal: options.signal,
         ...(task.effort ? { effort: task.effort } : {}),
+        ...(task.reasoningEffort ? { reasoningEffort: task.reasoningEffort } : {}),
       });
     } catch (error) {
       const weaker = WEAKER[output];

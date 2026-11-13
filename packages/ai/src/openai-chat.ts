@@ -1,6 +1,7 @@
 import OpenAI, { AzureOpenAI } from "openai";
 import { zodResponseFormat } from "openai/helpers/zod";
 import type { ChatCompletionChunk, ChatCompletionCreateParamsNonStreaming } from "openai/resources/chat/completions";
+import { OPENAI_DEFAULT_MODEL, OPENAI_DRAFT_MODEL } from "@terno/core";
 import { L } from "@terno/i18n";
 import { describeProvider, isLocalProvider, needsKey, PRESETS, resolveBaseURL } from "./providers";
 import { mapNetworkError, mapSdkError, type ErrorInfo } from "./sdk-errors";
@@ -11,6 +12,13 @@ export const AZURE_API_VERSION = "2024-10-21";
 function usageOf(u: { prompt_tokens: number; completion_tokens: number; prompt_tokens_details?: { cached_tokens?: number } | null } | null | undefined): Usage | undefined {
   return u ? { inputTokens: u.prompt_tokens, outputTokens: u.completion_tokens, cacheReadTokens: u.prompt_tokens_details?.cached_tokens ?? 0 } : undefined;
 }
+
+/**
+ * The models Terno routes OpenAI's jobs to (plan 168), whose pages document `reasoning_effort` on Chat Completions with
+ * low among its values. A model that doesn't take it rejects the request, so nothing else gets it.
+ */
+const REASONING_MODELS: ReadonlySet<string> = new Set([OPENAI_DEFAULT_MODEL, OPENAI_DRAFT_MODEL]);
+export const takesReasoningEffort = (model: string) => REASONING_MODELS.has(model);
 
 /** OpenRouter attributes traffic to the calling app with these. */
 const OPENROUTER_HEADERS = { "HTTP-Referer": "https://terno.app", "X-Title": "Terno" };
@@ -103,12 +111,14 @@ export function openaiChatTransport(config: ProviderConfig): ModelTransport {
       .map((m) => ({ id: m.id, contextTokens: m.max_context_length, loaded: m.state === "loaded" }));
   }
 
+  const effort = config.id === "openai" && takesReasoningEffort(config.model);
   const request = async (req: CompletionRequest): Promise<ChatCompletionCreateParamsNonStreaming> => {
       const tokenLimit = config.id === "openai" || azure ? { max_completion_tokens: req.maxTokens } : { max_tokens: req.maxTokens };
       return {
         model: config.model,
         messages: [{ role: "system", content: promptText(req.system) }, ...req.messages.map((m) => ({ role: m.role, content: promptText(m.content) }))],
         ...tokenLimit,
+        ...(effort && req.reasoningEffort ? { reasoning_effort: req.reasoningEffort } : {}),
         ...(req.output === "json_schema" && req.schema
           ? { response_format: zodResponseFormat(req.schema.zod, req.schema.name) }
           : req.output === "json_object"

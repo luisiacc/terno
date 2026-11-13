@@ -6,7 +6,8 @@
 import { createServer, type IncomingHttpHeaders, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createAi, discoverModels, probe } from "./tasks";
+import { takesReasoningEffort } from "./openai-chat";
+import { createAi, discoverModels, probe, transportFor } from "./tasks";
 import type { FilterGenerationContext, ProviderConfig } from "./types";
 import type { WireFilter } from "./wire";
 
@@ -234,6 +235,15 @@ function describeProviderContract(c: Contract) {
       expect(c.dialect.lastUser(req.body)).toContain("canary-4d2");
     });
 
+    it("asks for a reasoning effort only when a request sets one, and only where the model documents it", async () => {
+      chat(() => ok());
+      const base = { system: "s", messages: [{ role: "user" as const, content: "x" }], output: "text" as const, maxTokens: 50, signal: new AbortController().signal };
+      await transportFor(config()).complete({ ...base, reasoningEffort: "low" });
+      expect(stub.requests[0]!.body.reasoning_effort).toBe(c.name === "openai" ? "low" : undefined);
+      await transportFor(config()).complete(base);
+      expect(stub.requests[1]!.body.reasoning_effort).toBeUndefined();
+    });
+
     it("gives a summary's failures the kinds the worker acts on", async () => {
       const thread = [{ label: "m1", from: "Ana", date: "2026-11-01", own: false, text: "Hello" }];
       const go = () => createAi(config()).summarize({ subject: "S", thread, language: "en", today: "2026-11-04" });
@@ -274,13 +284,15 @@ describeProviderContract({
 describeProviderContract({
   name: "openai",
   dialect: openaiDialect("/v1/chat/completions"),
-  config: (url) => ({ id: "openai", baseURL: `${url}/v1`, apiKey: "sk-openai-test", model: "gpt-5.2-mini" }),
+  config: (url) => ({ id: "openai", baseURL: `${url}/v1`, apiKey: "sk-openai-test", model: "gpt-6-luna" }),
   checkRequest: (req) => {
     openaiAuth("sk-openai-test")(req);
     expect(req.headers["openai-organization"]).toBeUndefined();
     expect(req.headers["openai-project"]).toBeUndefined();
-    expect(req.body.model).toBe("gpt-5.2-mini");
+    expect(req.body.model).toBe("gpt-6-luna");
     expect(req.body.max_completion_tokens).toBeGreaterThan(0);
+    // a filter keeps the default it was tuned at: only a job measured at another asks for one (plan 202)
+    expect(req.body.reasoning_effort).toBeUndefined();
     expect(req.body.response_format.json_schema).toMatchObject({ name: "filter", strict: true });
   },
 });
@@ -295,6 +307,8 @@ describeProviderContract({
     expect(req.headers["http-referer"]).toBe("https://terno.app");
     expect(req.headers["x-title"]).toBe("Terno");
     expect(req.body.max_tokens).toBeGreaterThan(0);
+    // a model Terno doesn't know may reject it
+    expect(req.body.reasoning_effort).toBeUndefined();
     expect(req.body.response_format.json_schema).toMatchObject({ name: "filter", strict: true });
   },
 });
@@ -331,6 +345,12 @@ describeProviderContract({
     openaiAuth("local")(req);
     expect(req.body.response_format.json_schema).toMatchObject({ name: "filter", strict: true });
   },
+});
+
+it("asks OpenAI for an effort only on the models Terno routes to, whose docs say they take it", () => {
+  expect(takesReasoningEffort("gpt-6-luna")).toBe(true);
+  expect(takesReasoningEffort("gpt-6-sol")).toBe(true);
+  expect(takesReasoningEffort("gpt-4o-mini")).toBe(false);
 });
 
 describe("model discovery", () => {

@@ -71,6 +71,11 @@ export interface CompletionRequest {
   signal: AbortSignal;
   /** how hard to think, where the model takes it; default low */
   effort?: Effort;
+  /**
+   * OpenAI's `reasoning_effort`, on the models that document it. Left out, they think at their default (medium): every
+   * job was tuned there, so a job sets it only once it's measured at another (plan 202).
+   */
+  reasoningEffort?: Effort;
 }
 
 export interface Completion {
