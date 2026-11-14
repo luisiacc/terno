@@ -7,7 +7,7 @@ import { COOLDOWN_TICKETS, copyOpAdmission, rejectedRecipients, type CooldownSta
 import { prepareCopyWire, readCopyWire } from "./sent-copy";
 import type { PendingGmailRenewal } from "./identity";
 import type { AiTasks } from "@terno/ai";
-import { accessAllows, AGENT_METHODS, ruleAwaitsBody, agentRefusal, agentsMaySend, asciiEmail, canonicalAuthored, decodeText, encodeText, messageOf, aiCanRun, textRef, type Account, type AccountKind, type AccountPrefs, type DevAiKeys, type FavoriteFolder, type FavoriteFoldersSnapshot, type AccountSyncState, type SyncProgress, type OpState, type ThreadAction } from "@terno/core";
+import { accessAllows, aiFeaturesAvailable, AGENT_METHODS, ruleAwaitsBody, agentRefusal, agentsMaySend, asciiEmail, canonicalAuthored, decodeText, encodeText, messageOf, aiCanRun, textRef, type Account, type AccountKind, type AccountPrefs, type DevAiKeys, type FavoriteFolder, type FavoriteFoldersSnapshot, type AccountSyncState, type SyncProgress, type OpState, type ThreadAction } from "@terno/core";
 import { breadcrumb, captureError, log, type FieldValueOf } from "@terno/core/diag";
 import { RpcError, RpcServer, type AppSettings, type CallContext, type HostInfo, type MethodName, type OpInfo, type ResultOf, type Transport } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
@@ -25,6 +25,7 @@ import { ReplyService } from "./replies";
 import { TodayService } from "./today";
 import { AskService } from "./ask";
 import { FollowupWorker } from "./followups";
+import { DatedWorker } from "./dated";
 import { SummaryWorker } from "./summaries";
 import { WritingService } from "./writing";
 import { Attention, type AttentionHost } from "./attention";
@@ -43,7 +44,7 @@ import { blobFingerprint, migrateLegacySecrets, readKeychainState, SecretUnreada
 import { createNetworkPolicy, type LookupAll, type NetDecision, type NetworkPolicy } from "./net-policy";
 import { CARRY_SLICE, carryRenamed } from "./folders";
 import { followFolderFilters } from "./similar";
-import { followFavoriteFolders, provideDevAi, readAgents, readAutoCategorize, readComposeSuggestions, readGooglePhotos, readPolicy, readSettings, readSiteIcons, setGooglePhotoState } from "./settings";
+import { aiAllowed, followFavoriteFolders, provideDevAi, readAgents, readAutoCategorize, readComposeSuggestions, readGooglePhotos, readPolicy, readSettings, readSiteIcons, setGooglePhotoState } from "./settings";
 import { IconService } from "./icons/service";
 import type { IconTransport } from "./icons/transport";
 import { browserUnsubscribeTransport, type UnsubscribeTransport } from "./unsubscribe";
@@ -302,6 +303,8 @@ export class BackendCore {
   readonly replies: ReplyService;
   readonly today: TodayService;
   readonly followups: FollowupWorker;
+  /** plan 204: dated items in mail the user got */
+  readonly dated: DatedWorker;
   /** plan 133: drafting: what goes into a draft, and the learner, asleep until the feature is used */
   readonly writing: WritingService;
   /** plan 18: recipient and body suggestions, in memory, built on first use */
@@ -374,11 +377,26 @@ export class BackendCore {
       accountWanted: async (accountId) => (await this.store.accounts.config<AccountPrefs>(accountId))?.config.followups !== false,
       signature: async (accountId) => (await this.store.accounts.get(accountId))?.signature ?? "",
       templated: (accountId) => this.writing.learner.templatedIn(accountId),
-      emit: (snapshot) => this.server.emit("followups", snapshot, { origins: ["renderer", "dev"] }),
+      emit: (snapshot) => {
+        this.server.emit("followups", snapshot, { origins: ["renderer", "dev"] });
+        // plan 204: a promise's day ending moves it to Missed: Today's clock follows what's due
+        void this.today.armClock().catch(() => {});
+      },
       statusChanged: (status) => this.server.emit("followupsStatus", status, { origins: ["renderer", "dev"] }),
       notify: (notice) => this.attention.remind(notice),
       summaries: (ids) => this.store.threads.summaries(ids),
       runBudgeted: (items, work) => this.runBudgeted(items, work),
+      log: (level, message, extra) => this.log(level, message, extra),
+    });
+    this.dated = new DatedWorker({
+      store: this.store,
+      now: () => this.now(),
+      settings: () => readSettings(this.store),
+      allowed: async (settings) => aiFeaturesAvailable(settings) && (await aiAllowed(this.store)),
+      forTask: () => this.aiService.forTask("dated", { foreground: false }),
+      begin: (requestId, clientId) => this.aiService.begin(requestId, clientId),
+      changed: () => this.today.changed(),
+      statusChanged: (status) => this.server.emit("datedStatus", status, { origins: ["renderer", "dev"] }),
       log: (level, message, extra) => this.log(level, message, extra),
     });
     this.facts = new FactsBackfill(this);
@@ -688,6 +706,10 @@ export class BackendCore {
     await this.followups.start().catch((error: unknown) => {
       captureError(error, { code: "ai.failed" });
     });
+    // plan 204: what a quit left marked; awaited, for ingest's question
+    await this.dated.start().catch((error: unknown) => {
+      captureError(error, { code: "ai.failed" });
+    });
     await this.summaries.start().catch((error: unknown) => {
       captureError(error, { code: "ai.failed" });
       this.log("warn", "summaries couldn't start", error instanceof Error ? error.message : error);
@@ -827,6 +849,7 @@ export class BackendCore {
     if (online) {
       this.summaries.wake({ network: true });
       this.followups.wake({ network: true });
+      this.dated.wake({ network: true });
       this.aiAssist.wake({ network: true });
     }
     if (this.options.autoSync === false) return;
@@ -1016,6 +1039,7 @@ export class BackendCore {
     this.aiAssist.stop();
     this.summaries.stop();
     this.followups.stop();
+    this.dated.stop();
     this.incoming.close();
     const retirement = (async () => {
       let failed: { error: unknown } | undefined;
@@ -1193,6 +1217,11 @@ export class BackendCore {
    * that is a quarter of an 8 ms slice. Leading edge immediately, then at
    * most every COUNTS_EVERY_MS (trailing), so the last state always arrives.
    */
+  /** Plan 204: Today's number moved without the mail changing (an item read or acted on, the clock). */
+  countsChanged(): void {
+    this.emitCounts();
+  }
+
   private emitCounts(): void {
     const wait = this.lastCountsAt + COUNTS_EVERY_MS - performance.now();
     if (wait <= 0 && !this.countsTimer) {
@@ -1406,7 +1435,9 @@ export class BackendCore {
       const newMail = wants && (wants.summary || wants.category) ? wants : undefined;
       // plan 142: mail you sent from elsewhere, only while live; the account's own switch is the worker's to read
       const liveSent = live ? { wanted: this.followups.isActive, since: this.followups.since } : undefined;
-      const ingest = async (batch: IncomingMessage[]) => (batch.length ? this.store.sync.ingest(batch, { applyFilters, now: this.now(), classifier, observation, check: checkCurrent, forwardEligible, newMail, liveSent }) : null);
+      // plan 204: live mail you got, for the dated reader (off: this one question)
+      const datedMail = live ? await this.dated.wanted() : undefined;
+      const ingest = async (batch: IncomingMessage[]) => (batch.length ? this.store.sync.ingest(batch, { applyFilters, now: this.now(), classifier, observation, check: checkCurrent, forwardEligible, newMail, liveSent, datedMail }) : null);
       // plan 69: a sync pass's slice never overlaps a storage removal unit, and leaves out what one removed
       const write = () => (pass ? this.evictions.ingest(pass.accountId, pass.pass, chunk, ingest) : ingest(chunk));
       const r = await (life ? this.accountWrite(life, write) : write());
@@ -1430,6 +1461,8 @@ export class BackendCore {
       // plan 132: what it queued, and any body it completed for what waits
       this.summaries.wake();
       if (live) this.followups.wake();
+      // plan 204: what it marked, and any body it completed for what waits
+      this.dated.wake();
       // plan 134: after commit, outside the slice
       this.aiAssist.wake();
     });

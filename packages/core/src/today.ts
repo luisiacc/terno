@@ -1,10 +1,10 @@
 import type { AppSettings } from "./rpc/contract";
 import type { ThreadSummary } from "./types";
 import { aiReady } from "./ai-routing";
+import type { DatedKind } from "./dated";
 
 /** Plan 145: what needs you today, and newsletters folded into one digest. Local but for the digest, which is its own opt-in. */
 
-export const TODAY_NEEDS_MAX = 12;
 export const DIGEST_CANDIDATES_MAX = 40;
 export const DIGEST_WINDOW_MS = 3 * 86_400_000;
 export const DIGEST_KEEP_DAYS = 14;
@@ -35,13 +35,17 @@ export function aiFeaturesAvailable(settings: Pick<AppSettings, "ai"> | null | u
 }
 
 export interface TodayWhy {
-  kind: "promise" | "nudge" | "waiting" | "reminder";
+  kind: "promise" | "nudge" | "waiting" | "reminder" | "dated";
   text?: string;
   dueAt?: number;
   personName?: string | null;
   sentAt?: number;
   /** a waiting row: you've written in this conversation (else it's new, from someone you write to: `needsYou`'s two reasons) */
   wrote?: boolean;
+  /** plan 204: its day is over and nothing was done (a dated item, or a dated promise of yours) */
+  missed?: boolean;
+  /** plan 204: a dated item, what the row's Done, Later and Undo act on */
+  item?: { id: number; revision: number; kind: DatedKind; dueDay: string; timed: boolean; dated: boolean };
 }
 
 export interface TodayItem {
@@ -51,7 +55,8 @@ export interface TodayItem {
   summary?: string;
 }
 
-export type TodaySection = { kind: "needsYou"; items: TodayItem[]; more: number } | { kind: "reminders"; items: TodayItem[] };
+/** Plan 204: every row that's for today, each thread once, in `TODAY_GROUP_ORDER`; Coming up last, and never counted. */
+export type TodaySection = { kind: "missed" | "deadlines" | "plans" | "needsYou" | "reminders" | "comingUp"; items: TodayItem[] };
 
 export interface DigestItem {
   threadId: number;

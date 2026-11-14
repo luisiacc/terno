@@ -15,7 +15,14 @@ import {
   todayKey,
   nextPrepareAt,
   prepareTimeToday,
-  TODAY_NEEDS_MAX,
+  TODAY_GROUP_ORDER,
+  datedPlace,
+  nextTodayChange,
+  promiseMissed,
+  type DatedPlace,
+  type DatedRow,
+  type TodayGroupKind,
+  type TodayWhy,
   type Counts,
   type DigestItem,
   type DigestRow,
@@ -26,7 +33,8 @@ import {
   type TodaySection,
 } from "@terno/core";
 import { captureError } from "@terno/core/diag";
-import type { DigestStored } from "@terno/store";
+import type { AppSettings } from "@terno/core/rpc";
+import { NEEDS_WALK, type DigestStored } from "@terno/store";
 import { DailyLimitError, MonthlyLimitError } from "./ai-limiter";
 import type { BackendCore as Backend } from "./core";
 import { progressReporter } from "./scope";
@@ -46,6 +54,19 @@ const TRIES = 3;
 const SUMMARY_LINE_CHARS = 160;
 /** plan 166: the senders the user said aren't newsletters, in the store's own small values (both stores), never AppSettings */
 const NOT_NEWSLETTERS_KEY = "today:notNewsletters";
+/** plan 204: waiting rows past these show their snippet, so a long list reads no more summaries than a screen needs */
+const SUMMARY_LINES_MAX = 100;
+/** plan 204: what the sidebar's number counts; Reminders and Coming up aren't */
+const COUNTED: ReadonlySet<TodayGroupKind> = new Set(["missed", "deadlines", "plans", "needsYou"]);
+
+/** A thread's place in Today before it's read (revision 10). */
+interface Placed {
+  group: TodayGroupKind;
+  threadId: number;
+  why: TodayWhy;
+  /** from the waiting read: in the Inbox, so neither Spam nor Trash */
+  waiting?: boolean;
+}
 
 /** An entry stored before entries had an id (Codex review, round 2) is named by its address: one entry a sender. */
 const entries = (list: readonly NotNewsletter[]): NotNewsletter[] => list.map((e) => (e.id ? e : { ...e, id: `key:${addressKey(e.email)}` }));
@@ -84,6 +105,9 @@ export class TodayService {
   private leaving: { items: readonly DigestItem[]; stop: AbortController } | null = null;
   /** plan 166: moves with the list of senders that aren't newsletters, so a scan begun before a change isn't kept */
   private exclusions = 0;
+  /** plan 204: the clock's one timer (revision 11) */
+  private clock: ReturnType<typeof setTimeout> | null = null;
+  private clockAt: number | null = null;
 
   constructor(private readonly b: Backend) {}
 
@@ -141,10 +165,13 @@ export class TodayService {
 
   async start(): Promise<void> {
     await this.tick();
+    await this.armClock();
   }
 
   wake(): void {
     void this.tick().catch((error: unknown) => captureError(error, { code: "ai.failed" }));
+    // a machine that slept past a moment the list changes at
+    this.changed();
   }
 
   /** What's underway is told to stop, and has before the store closes. */
@@ -153,6 +180,9 @@ export class TodayService {
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
     this.armedAt = null;
+    if (this.clock) clearTimeout(this.clock);
+    this.clock = null;
+    this.clockAt = null;
     this.controller.abort();
     await this.draining?.catch(() => {});
     await this.refreshing?.catch(() => {});
@@ -171,6 +201,7 @@ export class TodayService {
     void this.setting()
       .then((s) => {
         if (!s.available || !s.digest) this.cancelRun();
+        this.changed();
         return this.tick();
       })
       .catch((error: unknown) => captureError(error, { code: "ai.failed" }));
@@ -490,61 +521,71 @@ export class TodayService {
     return rows.filter((r) => r.state === "due" || (r.state === "open" && r.dueAt <= now));
   }
 
+  /**
+   * Plan 204 revision 10: where each thread sits now, once, by `TODAY_GROUP_ORDER`. One calculation for the list and the
+   * sidebar's count, before any thread is read: what's in Spam or Trash is left out by the caller, and comes back with it.
+   */
+  private async places(now: number, settings: AppSettings): Promise<Placed[]> {
+    const { store } = this.b;
+    const placed: Placed[] = [];
+    const items = settings.dated?.enabled ? await store.dated.active() : [];
+    // a thread's strongest place, and in it its soonest item
+    const best = new Map<number, { place: DatedPlace; row: DatedRow }>();
+    const rank: Record<DatedPlace, number> = { missed: 0, deadlines: 1, plans: 2, comingUp: 3, hidden: 4 };
+    for (const row of items) {
+      const place = datedPlace(row, now);
+      if (place === "hidden") continue;
+      const was = best.get(row.threadId);
+      if (!was || rank[place] < rank[was.place] || (rank[place] === rank[was.place] && row.dueAt < was.row.dueAt)) best.set(row.threadId, { place, row });
+    }
+    const datedWhy = (row: DatedRow, missed: boolean): TodayWhy => ({ kind: "dated", text: row.text, dueAt: row.dueAt, ...(missed ? { missed } : {}), item: { id: row.id, revision: row.revision, kind: row.kind, dueDay: row.dueDay, timed: row.timed, dated: row.dated } });
+    const ofPlace = (place: DatedPlace) => [...best.values()].filter((b) => b.place === place);
+    const followups = settings.followups?.enabled ? this.dueFollowups(await store.followups.active(), now) : [];
+    const missedPromises = followups.filter((r) => promiseMissed(r, now));
+    const promiseWhy = (r: FollowupRow, missed = false): TodayWhy => ({ kind: r.kind === "promise" ? "promise" : "nudge", text: r.text, dueAt: r.dueAt, personName: r.personName, sentAt: r.sentAt, ...(missed ? { missed } : {}) });
+    // Missed: the most recently due first
+    const missed = [...ofPlace("missed").map((b) => ({ threadId: b.row.threadId, at: b.row.dueAt, why: datedWhy(b.row, true) })), ...missedPromises.map((r) => ({ threadId: r.threadId, at: r.dueAt, why: promiseWhy(r, true) }))].sort((a, b) => b.at - a.at);
+    for (const m of missed) placed.push({ group: "missed", threadId: m.threadId, why: m.why });
+    for (const b of ofPlace("deadlines").sort((x, y) => x.row.dueAt - y.row.dueAt)) placed.push({ group: "deadlines", threadId: b.row.threadId, why: datedWhy(b.row, false) });
+    for (const b of ofPlace("plans").sort((x, y) => x.row.dueAt - y.row.dueAt)) placed.push({ group: "plans", threadId: b.row.threadId, why: datedWhy(b.row, false) });
+    // Needs you, as plan 145 and 166 left it, all of it (the 12-row cap is gone)
+    const missedIds = new Set(missedPromises.map((r) => r.id));
+    const promises = followups.filter((r) => r.kind === "promise" && !missedIds.has(r.id)).sort((a, b) => a.dueAt - b.dueAt);
+    const nudges = followups.filter((r) => r.kind === "awaiting").sort((a, b) => a.dueAt - b.dueAt);
+    for (const r of [...promises, ...nudges]) placed.push({ group: "needsYou", threadId: r.threadId, why: promiseWhy(r) });
+    // one bounded read of what's waiting (revision 12): `needsYou` over the newest `NEEDS_WALK`
+    for (const w of await store.today.waitingPage({ now, after: null, limit: NEEDS_WALK })) placed.push({ group: "needsYou", threadId: w.id, why: { kind: "waiting", wrote: w.hasSent }, waiting: true });
+    const endOfDay = new Date(now);
+    endOfDay.setHours(23, 59, 59, 999);
+    const reminders = (await this.b.reminders.refresh()).reminders.filter((r) => r.dueAt <= endOfDay.getTime()).sort((a, b) => a.dueAt - b.dueAt);
+    for (const r of reminders) placed.push({ group: "reminders", threadId: r.threadId, why: { kind: "reminder", dueAt: r.dueAt } });
+    for (const b of ofPlace("comingUp").sort((x, y) => x.row.dueAt - y.row.dueAt)) placed.push({ group: "comingUp", threadId: b.row.threadId, why: datedWhy(b.row, false) });
+    // each thread once, the first group that claims it
+    const taken = new Set<number>();
+    return placed.filter((p) => !taken.has(p.threadId) && taken.add(p.threadId));
+  }
+
   async list(heldIds: readonly number[]): Promise<TodayList> {
     const { store } = this.b;
     const now = this.b.now();
     const settings = await readSettings(store);
     if (!(await this.available(settings))) return { sections: [], digest: null, now, held: [] };
-    const taken = new Set<number>();
-    const needs: TodayItem[] = [];
-    const followups = settings.followups?.enabled ? this.dueFollowups(await store.followups.active(), now) : [];
-    const promises = followups.filter((r) => r.kind === "promise").sort((a, b) => a.dueAt - b.dueAt);
-    const nudges = followups.filter((r) => r.kind === "awaiting").sort((a, b) => a.dueAt - b.dueAt);
-    const ordered = [...promises, ...nudges];
-    const liveThreads = new Map((await store.threads.summaries([...new Set(ordered.map((r) => r.threadId))])).map((t) => [t.id, t]));
-    for (const r of ordered) {
-      const thread = liveThreads.get(r.threadId);
-      if (!thread || thread.inSpam || thread.inTrash || taken.has(thread.id) || needs.length >= TODAY_NEEDS_MAX) continue;
-      taken.add(thread.id);
-      needs.push({ thread, why: { kind: r.kind === "promise" ? "promise" : "nudge", text: r.text, dueAt: r.dueAt, personName: r.personName, sentAt: r.sentAt } });
-    }
-    // the walk's own page: what's already above doesn't take a place
-    let waitingShown = 0;
-    let after: { lastDate: number; id: number } | null = null;
-    while (needs.length < TODAY_NEEDS_MAX) {
-      const page: { id: number; lastDate: number; hasSent: boolean }[] = await store.today.waitingPage({ now, after, limit: TODAY_NEEDS_MAX });
-      if (!page.length) break;
-      const fresh = page.filter((p) => !taken.has(p.id)).slice(0, TODAY_NEEDS_MAX - needs.length);
-      const summaries = new Map((await store.threads.summaries(fresh.map((p) => p.id))).map((t) => [t.id, t]));
-      for (const p of fresh) {
-        const thread = summaries.get(p.id);
-        if (!thread) continue;
-        taken.add(p.id);
-        waitingShown++;
-        needs.push({ thread, why: { kind: "waiting", wrote: p.hasSent }, ...(await this.summaryLine(p.id)) });
-      }
-      after = page[page.length - 1]!;
-      if (page.length < TODAY_NEEDS_MAX) break;
-    }
-    // Show all goes to plan 17's Waiting filter, which holds what's here and the rest
-    const inboxWaiting = (await store.threads.counts(now)).inboxWaiting ?? 0;
-    const more = Math.max(0, inboxWaiting - waitingShown);
+    const placed = await this.places(now, settings);
+    const threads = new Map((await store.threads.summaries(placed.map((p) => p.threadId))).map((t) => [t.id, t]));
+    // Trash and Spam hide a row, and it comes back with its thread (revision 9)
+    const shown = placed.filter((p) => {
+      const t = threads.get(p.threadId);
+      return t && !t.inSpam && !t.inTrash;
+    });
+    // a waiting row's line is its current summary, read together, for the first rows only
+    const lined = shown.filter((p) => p.waiting).slice(0, SUMMARY_LINES_MAX).map((p) => p.threadId);
+    const lines = new Map(await Promise.all(lined.map(async (id) => [id, await this.summaryLine(id)] as const)));
     const sections: TodaySection[] = [];
-    if (needs.length) sections.push({ kind: "needsYou", items: needs, more });
-    const endOfDay = new Date(now);
-    endOfDay.setHours(23, 59, 59, 999);
-    const reminders = (await this.b.reminders.refresh()).reminders.filter((r) => r.dueAt <= endOfDay.getTime() && !taken.has(r.threadId)).sort((a, b) => a.dueAt - b.dueAt);
-    if (reminders.length) {
-      const summaries = new Map((await store.threads.summaries(reminders.map((r) => r.threadId))).map((t) => [t.id, t]));
-      const items: TodayItem[] = reminders.flatMap((r) => {
-        const thread = summaries.get(r.threadId);
-        if (!thread || thread.inTrash || thread.inSpam || taken.has(thread.id)) return [];
-        // one section a thread, Needs you first (revision 5)
-        taken.add(thread.id);
-        return [{ thread, why: { kind: "reminder", dueAt: r.dueAt } } satisfies TodayItem];
-      });
-      if (items.length) sections.push({ kind: "reminders", items });
+    for (const kind of TODAY_GROUP_ORDER) {
+      const items = shown.filter((p) => p.group === kind).map((p): TodayItem => ({ thread: threads.get(p.threadId)!, why: p.why, ...lines.get(p.threadId) }));
+      if (items.length) sections.push({ kind, items });
     }
+    const taken = new Set(shown.map((p) => p.threadId));
     const missing = heldIds.filter((id) => id !== 0 && !taken.has(id));
     const held = missing.length ? await store.threads.summaries(missing) : [];
     return { sections, digest: await this.digestRow(), now, held };
@@ -646,21 +687,56 @@ export class TodayService {
     return { undoId: r.undoId, archived, archivedIds, changed, spared };
   }
 
-  /** The sidebar's number: threads, each once. Null during plan 17's backfill (revision 12). */
+  /** The sidebar's number: Missed, Deadlines, Plans and Needs you, each thread once (revision 10). Null during plan 17's backfill. */
   async withCount(counts: Counts): Promise<Counts> {
     const { store } = this.b;
     const s = await this.setting().catch(() => null);
     if (!s?.available || !s.show) return counts;
     if (counts.inboxWaiting === null || counts.inboxWaiting === undefined) return { ...counts, today: null };
     const settings = await readSettings(store);
+    const counted = (await this.places(this.b.now(), settings)).filter((p) => COUNTED.has(p.group));
+    // what's waiting is in the Inbox already; the rest may be in Trash or Spam, which hide it
+    const others = counted.filter((p) => !p.waiting).map((p) => p.threadId);
+    const facts = others.length ? new Map((await store.filters.actionFacts(others)).map((f) => [f.id, f])) : new Map();
+    return { ...counts, today: counted.filter((p) => p.waiting || (facts.get(p.threadId) && !facts.get(p.threadId)!.inSpam && !facts.get(p.threadId)!.inTrash)).length };
+  }
+
+  // ─── plan 204: what changes by itself ────────────────────────────────────
+
+  /** An item read, settled or acted on, a setting: the list and the count read again, and the clock re-arms. */
+  changed(): void {
+    if (this.stopped) return;
+    this.b.server.emit("todayChanged", {}, { origins: ["renderer", "dev"] });
+    this.b.countsChanged();
+    void this.armClock().catch((error: unknown) => captureError(error, { code: "ai.failed" }));
+  }
+
+  /** Revision 11: one timer for the next moment Today changes by the clock alone; none when there's no such moment. */
+  async armClock(): Promise<void> {
+    if (this.clock) clearTimeout(this.clock);
+    this.clock = null;
+    this.clockAt = null;
+    if (this.stopped) return;
+    const { store } = this.b;
+    const settings = await readSettings(store);
+    if (!(await this.available(settings))) return;
+    const items = settings.dated?.enabled ? await store.dated.active() : [];
+    const promises = settings.followups?.enabled ? await store.followups.active() : [];
     const now = this.b.now();
-    const needs = await store.today.needsCount(now);
-    if (!settings.followups?.enabled) return { ...counts, today: needs };
-    const due = [...new Set(this.dueFollowups(await store.followups.active(), now).map((r) => r.threadId))];
-    if (!due.length) return { ...counts, today: needs };
-    const live = (await store.threads.summaries(due)).filter((t) => !t.inSpam && !t.inTrash).map((t) => t.id);
-    const already = new Set(await store.today.waitingAmong(live, now));
-    return { ...counts, today: needs + live.filter((id) => !already.has(id)).length };
+    const next = nextTodayChange(items, promises, now);
+    if (next === null || this.stopped) return;
+    this.clockAt = next;
+    this.clock = setTimeout(() => {
+      this.clock = null;
+      this.clockAt = null;
+      this.changed();
+    }, Math.min(MAX_DELAY, Math.max(0, next - now)));
+    (this.clock as { unref?: () => void }).unref?.();
+  }
+
+  /** For tests: when the clock fires next. */
+  get clockNextAt(): number | null {
+    return this.clockAt;
   }
 
   private async notify(day: string, prepareAt: string): Promise<void> {
@@ -669,11 +745,11 @@ export class TodayService {
     if (now - prepareTimeToday(prepareAt, now) > NOTIFY_WITHIN_MS) return;
     if ((await store.settings.get<string>(NOTIFIED_KEY, "")) === day) return;
     const list = await this.list([]);
-    const needs = list.sections.find((x) => x.kind === "needsYou");
-    if (!needs?.items.length) return;
+    const count = list.sections.filter((x) => COUNTED.has(x.kind)).reduce((n, x) => n + x.items.length, 0);
+    if (!count) return;
     await store.settings.set(NOTIFIED_KEY, day);
     // how many, and never who or what
-    this.b.attention.remind({ id: `brief-${day}`, count: needs.items.length + (needs.kind === "needsYou" ? needs.more : 0), threadId: BRIEF_NOTICE_THREAD, senders: [], senderCount: 0, subject: "", snippet: "", kind: "brief" });
+    this.b.attention.remind({ id: `brief-${day}`, count, threadId: BRIEF_NOTICE_THREAD, senders: [], senderCount: 0, subject: "", snippet: "", kind: "brief" });
   }
 }
 

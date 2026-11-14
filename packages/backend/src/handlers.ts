@@ -1435,6 +1435,7 @@ export function createHandlers(b: Backend): Handlers {
             b.aiService.devAiChanged();
             b.summaries.settingsChanged(next);
             b.followups.settingsChanged(next);
+            b.dated.settingsChanged(next);
             b.ask.settingsChanged(next.ask.enabled);
             b.aiAssist.targetChanged();
             // plan 150: the jobs added after plan 146 hear of it too
@@ -1451,6 +1452,7 @@ export function createHandlers(b: Backend): Handlers {
           if (patch.ai || patch.replies) b.replies.settingsChanged();
           if (patch.ai || patch.today) b.today.settingsChanged();
           if (patch.ai || patch.followups) b.followups.settingsChanged(next);
+          if (patch.ai || patch.dated) b.dated.settingsChanged(next);
           if (next.localMode !== was.localMode || next.errorReports !== was.errorReports || next.language !== was.language) await b.publishPolicy();
           if (next.composeSuggestions !== was.composeSuggestions) await b.autocomplete.setPhrases(next.composeSuggestions);
           // plan 22: website icons turned off: nothing in flight lands, windows forget them
@@ -1482,6 +1484,7 @@ export function createHandlers(b: Backend): Handlers {
       b.today.settingsChanged();
       b.summaries.settingsChanged(next);
       b.followups.settingsChanged(next);
+      b.dated.settingsChanged(next);
       b.ask.settingsChanged(next.ask.enabled);
       // plan 134: a JEV key chooses where categorization runs
       b.aiAssist.targetChanged();
@@ -1499,6 +1502,7 @@ export function createHandlers(b: Backend): Handlers {
       b.today.settingsChanged();
       b.summaries.settingsChanged(next);
       b.followups.settingsChanged(next);
+      b.dated.settingsChanged(next);
       void b.writing.learner.aiChanged();
       return next;
     },
@@ -1510,6 +1514,7 @@ export function createHandlers(b: Backend): Handlers {
       await b.ask.clear();
       b.actions.invalidate(null);
       await b.followups.clear();
+      await b.dated.clear();
       await b.replies.clear();
       await b.today.clear();
       return { ok: true };
@@ -1529,6 +1534,16 @@ export function createHandlers(b: Backend): Handlers {
     "followups.status": () => b.followups.status(),
     "followups.scanOffer": () => b.followups.scanOffer(),
     "followups.scan": async () => ({ queued: await b.followups.scan() }),
+    // plan 204: renderer only; none of these is in MCP_ALLOWED
+    "dated.act": ({ id, revision, action, until }) => b.dated.act(id, revision, action, until),
+    "dated.undo": async ({ undoId }) => {
+      await b.dated.undoAct(undoId);
+      return { ok: true };
+    },
+    "dated.ofThread": async ({ threadId }) => ({ rows: await b.dated.ofThread(threadId) }),
+    "dated.status": () => b.dated.status(),
+    "dated.scanOffer": () => b.dated.scanOffer(),
+    "dated.scan": async () => ({ queued: await b.dated.scan() }),
     // plan 141: renderer only; none of these is in MCP_ALLOWED
     "ai.ask": (p, ctx) => b.ask.ask(p, ctx.clientId),
     "today.list": ({ heldIds }) => b.today.list(heldIds),

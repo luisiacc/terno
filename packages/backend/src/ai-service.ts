@@ -101,7 +101,7 @@ export class AiService {
       store: b.store,
       now: () => b.now(),
       monthlyLimitUsd: async () => (await readSettings(b.store)).ai.monthlyLimitUsd,
-      beforeAhead: (task) => (task === "digest" ? b.today.holdingUp() : b.replies.holdingUp()),
+      beforeAhead: (task) => (task === "digest" ? b.today.holdingUp() : task === "dated" ? b.dated.holdingUp() : b.replies.holdingUp()),
     });
   }
 

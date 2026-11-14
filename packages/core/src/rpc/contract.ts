@@ -23,6 +23,7 @@ import {
   type DevAiProvider,
 } from "../ai";
 import type { FollowupRow, FollowupsSetting, FollowupsSnapshot } from "../followups";
+import type { DatedRow, DatedSetting } from "../dated";
 import { NOT_NEWSLETTERS_OVER, type DigestRow, type NotNewsletter, type TodayList, type TodaySetting } from "../today";
 import type { AiPrepareReply, AiReplyEvent, PreparedReply, RepliesSetting } from "../replies";
 import type { ActionPreviewInfo, ActionRowTag, AiActionApplied, AiActionCheck, AiActionEvent, AiActionStart } from "../actions";
@@ -228,6 +229,8 @@ export interface AppSettings {
   replies: RepliesSetting;
   /** plan 145 */
   today: TodaySetting;
+  /** plan 204: dates in new mail, off by default (the owner); mail from before `enabledAt` only with the 14-day check's yes */
+  dated: DatedSetting;
   /** anonymous error reports (builds with a DSN, outside local mode): ask each time, send, or never */
   errorReports: "ask" | "always" | "never";
   /** the UI language: follow the system, or a locale Terno ships (@terno/i18n LOCALES) */
@@ -540,6 +543,8 @@ const settingsPatch = z.object({
   replies: z.object({ enabled: z.boolean() }).strict().optional(),
   today: z.object({ show: z.boolean().optional(), prepareAt: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(), notify: z.boolean().optional(), digest: z.boolean().optional() }).strict().optional(),
   followups: z.object({ enabled: z.boolean().optional(), nudgeAfterDays: z.union([z.literal(3), z.literal(5), z.literal(7), z.literal(14)]).optional(), scanAnswered: z.boolean().optional() }).strict().optional(),
+  /** `enabledAt` is the backend's */
+  dated: z.object({ enabled: z.boolean().optional(), scanAnswered: z.boolean().optional(), offerDismissed: z.boolean().optional() }).strict().optional(),
   errorReports: z.enum(["ask", "always", "never"]).optional(),
   language: z.enum(LANGUAGE_SETTINGS).optional(),
   composeSuggestions: z.boolean().optional(),
@@ -1245,6 +1250,15 @@ export const contract = {
   "followups.status": m<{ blockedBy: { kind: AiErrorKind; message: string } | null }>()(empty),
   "followups.scanOffer": m<{ count: number; usd: number | null }>()(empty),
   "followups.scan": m<{ queued: number }>()(empty),
+  /** plan 204: Done, Dismiss and Later on a dated item, each with an exact Undo; never MCP */
+  "dated.act": m<{ undoId: string | null; row: DatedRow | null }>()(z.object({ id, revision: z.number().int().min(0), action: z.enum(["done", "dismiss", "later"]), until: z.number().int().optional() })),
+  "dated.undo": m<{ ok: true }>()(z.object({ undoId: z.string().min(1).max(64) })),
+  /** a thread's open items, for the reader's line */
+  "dated.ofThread": m<{ rows: DatedRow[] }>()(z.object({ threadId: id })),
+  "dated.status": m<{ blockedBy: { kind: AiErrorKind; message: string } | null }>()(empty),
+  /** the 14-day check: how many, and what it would cost; then the yes */
+  "dated.scanOffer": m<{ count: number; usd: number | null }>()(empty),
+  "dated.scan": m<{ queued: number }>()(empty),
 
   // plan 141. All renderer-only: none of these is in MCP_ALLOWED, since a question and its answers are mail content.
   /**
@@ -1540,6 +1554,10 @@ export interface Events {
   followupsStatus: { blockedBy: { kind: AiErrorKind; message: string } | null };
   /** plan 145: the digest moved on: never MCP */
   todayDigest: { day: string };
+  /** plan 204: what Today holds changed by itself (an item read, settled, acted on, or the clock): never MCP */
+  todayChanged: Record<string, never>;
+  /** plan 204: the dated reader stopped, or it's going again */
+  datedStatus: { blockedBy: { kind: AiErrorKind; message: string } | null };
   /** plan 144: a prepared reply as it comes, only to the windows reading that conversation; never MCP */
   aiReply: AiReplyEvent;
   /** plan 143: a preview's count as it grows, or why it ended; only to the connection that asked */

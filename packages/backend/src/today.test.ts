@@ -120,15 +120,15 @@ describe("the list", () => {
     expect((await client.call("counts.get", {})).today).toBe(2);
   });
 
-  it("waiting threads, newest first, capped, with how many more", async () => {
+  it("waiting threads, newest first, all of them: the 12-row cap is gone (plan 204)", async () => {
     const { client, put } = await setup();
     const ids: number[] = [];
     for (let i = 0; i < 15; i++) ids.push(await put());
     const list = await client.call("today.list", { heldIds: [] });
     const needs = list.sections.find((s) => s.kind === "needsYou")!;
-    expect(needs.items).toHaveLength(12);
-    expect(needs.kind === "needsYou" && needs.more).toBe(3);
-    expect(needs.items.map((i) => i.why.kind)).toEqual(Array(12).fill("waiting"));
+    expect(needs.items).toHaveLength(15);
+    expect(needs.items.map((i) => i.why.kind)).toEqual(Array(15).fill("waiting"));
+    expect((await client.call("counts.get", {})).today).toBe(15);
     const dates = needs.items.map((i) => i.thread.lastDate);
     expect(dates).toEqual([...dates].sort((a, b) => b - a));
   });
