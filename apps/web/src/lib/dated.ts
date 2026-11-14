@@ -43,6 +43,13 @@ function dueOn(day: number, time: string | null, now: number): string {
   return time ? t("today.due.onAt", { day: d.text, time }) : t("today.due.on", { day: d.text });
 }
 
+/**
+ * An item's words as they're shown: an alert is what the mail says happened, never a fact of ours, so it says whose word
+ * it is ("Debit card frozen after a $412.18 charge, the email says"); the app adds it, after the model's words are cut
+ * (the Codex code review of the fourth round: a cut lost the model's own). Every place an item's words show goes through it.
+ */
+export const datedText = (o: { kind: DatedKind; text: string }): string => (o.kind === "alert" && o.text ? t("dated.alertSays", { text: o.text }) : o.text);
+
 /** A line: when, then the task ("Due Friday · Pay the electricity bill"); with no day, the task alone. */
 const line = (when: string | null, text: string): string => (when ? t("today.why.line", { when, text }) : text);
 
@@ -69,7 +76,7 @@ export function datedWhen(o: Omit<DatedFacts, "text">, missed: boolean, now = Da
  * Flight to Madrid", "Was due Tuesday · Renew the domain"; an alert that named no day, its words alone. (A Today row says
  * the task alone, its day in the right column: after the second panel round.)
  */
-export const datedLine = (o: DatedFacts, missed: boolean, now = Date.now()): string => line(datedWhen(o, missed, now), o.text);
+export const datedLine = (o: DatedFacts, missed: boolean, now = Date.now()): string => line(datedWhen(o, missed, now), datedText(o));
 
 /** When a promise of yours is due, in words ("Due today", "Was due Tuesday"); null for one that named no day. */
 export function promiseWhen(o: { dueAt?: number; dated: boolean }, missed: boolean, now = Date.now()): string | null {

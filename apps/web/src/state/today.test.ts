@@ -236,7 +236,8 @@ describe("plan 204: Missed, Deadlines, Needs you, Plans, Reminders and Coming up
     // no date in the right column, so the line keeps the whole wording: a missed promise an older backend gave no
     // reference (no task), an alert that named no day
     expect(line(2)).toBe("Was due yesterday · You said: send the contract");
-    expect([line(5), due(5)]).toEqual(["Your card was declined", null]);
+    // the Codex code review of the fourth round: an alert is the mail's word, said by the app
+    expect([line(5), due(5)]).toEqual(["Your card was declined, the email says", null]);
   });
 
   it("Codex code review of the fixes: a timed item keeps its time in Missed; a nudge row has a task (follow-ups' act)", () => {

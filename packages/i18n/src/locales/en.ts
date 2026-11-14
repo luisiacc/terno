@@ -3029,6 +3029,7 @@ It contains none of your mail, contacts, settings or keys.
   "dated.laterBeforeStart": "Pick a time before it starts.",
   "dated.laterNextDay": "Pick a day after today: it’s due today already.",
   "dated.laterItem": "Later: {text}",
+  "dated.alertSays": "{text}, the email says",
   "dated.undo": "Undo this date",
   "dated.snack.done": "Marked done",
   "dated.snack.later": "Moved to later",
