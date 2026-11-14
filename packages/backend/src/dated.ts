@@ -291,7 +291,10 @@ export class DatedWorker {
       const language = await this.readerLanguage(settings);
       const labels = new Map(open.map((r, i) => [`o${i + 1}`, r]));
       const budget = datedBudget(ai.contextTokens);
-      const input = fitDates({ text, subject: src.subject, from: { name: src.fromName || src.fromEmail.split("@")[0]!, automated: src.automated }, receivedAt: inWords(src.date, language), open: [...labels].map(([label, r]) => ({ label, kind: r.kind, text: r.text })), language, outputTokens: budget.outputTokens }, budget.promptChars);
+      // names only: who the reader is and how it reached them, so a task for someone else stays theirs (the eval)
+      const nameOf = (p: { name: string; email: string }) => p.name || p.email.split("@")[0]!;
+      const reader = { name: (await store.accounts.get(src.accountId))?.displayName ?? "", addressed: src.readerIn };
+      const input = fitDates({ text, subject: src.subject, from: { name: src.fromName || src.fromEmail.split("@")[0]!, automated: src.automated }, reader, to: src.to.map(nameOf), cc: src.cc.map(nameOf), receivedAt: inWords(src.date, language), open: [...labels].map(([label, r]) => ({ label, kind: r.kind, text: r.text })), language, outputTokens: budget.outputTokens }, budget.promptChars);
       // a change of provider or key, the setting, Spam meanwhile: each stops it, at the provider too
       const signal = AbortSignal.any([generation.signal, asked.signal, stop.signal]);
       if (signal.aborted) return await drop();

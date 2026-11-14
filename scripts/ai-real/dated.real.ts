@@ -19,10 +19,11 @@ type Accept<T> = T | T[];
 interface Expected { kind: Accept<DatedKind>; due: Accept<string | null>; time?: string }
 interface Case {
   id: string;
+  reader: { name: string; email: string };
   language: string;
   tags: string[];
   subject: string;
-  messages: { from: string; text: string }[];
+  messages: { from: string; text: string; to?: string[]; cc?: string[] }[];
   dated: { receivedAt: string; automated: boolean; open: { label: string; kind: DatedKind; text: string }[]; items: Expected[]; also: Expected[]; settled: string[] };
 }
 
@@ -42,7 +43,11 @@ describe.skipIf(process.env.TERNO_AI_DATED !== "1")("dated items on a small mode
     const lines: string[] = [];
     for (const c of CASES) {
       const mail = c.messages.at(-1)!;
-      const r = await tasks.readDates({ text: mail.text, subject: c.subject, from: { name: nameOf(mail.from), automated: c.dated.automated }, receivedAt: c.dated.receivedAt, open: c.dated.open, language: LANGUAGE });
+      const addressedTo = (list: readonly string[]) => list.some((r) => r.includes(c.reader.email));
+      const to = (mail.to ?? []) as string[];
+      const cc = (mail.cc ?? []) as string[];
+      const reader = { name: c.reader.name, addressed: addressedTo(to) ? ("to" as const) : addressedTo(cc) ? ("cc" as const) : ("none" as const) };
+      const r = await tasks.readDates({ text: mail.text, subject: c.subject, from: { name: nameOf(mail.from), automated: c.dated.automated }, reader, to: to.map(nameOf), cc: cc.map(nameOf), receivedAt: c.dated.receivedAt, open: c.dated.open, language: LANGUAGE });
       const left = [...r.items];
       const problems: string[] = [];
       for (const e of c.dated.items) {

@@ -1,4 +1,4 @@
-import { tabOfCode, type DatedKind, type DatedRow, type DatedState } from "@terno/core";
+import { addressKey, tabOfCode, type DatedKind, type DatedRow, type DatedState } from "@terno/core";
 
 /**
  * Plan 204: dated items, from mail the user got.
@@ -47,6 +47,16 @@ export interface DatedSource {
   own: boolean;
   bodyState: "none" | "partial" | "full";
   bodyUnavailable: boolean;
+  /** the eval: who it was sent to, and whether the reader is addressed, only copied, or not named (a list, Bcc) */
+  to: { name: string; email: string }[];
+  cc: { name: string; email: string }[];
+  readerIn: "to" | "cc" | "none";
+}
+
+/** Where the reader is among a message's recipients, by their own addresses (`addressKey`s). */
+export function readerIn(to: readonly { email: string }[], cc: readonly { email: string }[], own: ReadonlySet<string>): DatedSource["readerIn"] {
+  if (to.some((r) => own.has(addressKey(r.email)))) return "to";
+  return cc.some((r) => own.has(addressKey(r.email))) ? "cc" : "none";
 }
 
 /**

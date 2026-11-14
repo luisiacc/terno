@@ -1,6 +1,7 @@
 import { addressKey, DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, type DatedRow } from "@terno/core";
-import { DATED_MARK_MS, DATED_SCAN_MARK_MS, datedTab, NEW_MAIL_MS, type DatedFinish, type DatedFinishOutcome, type DatedMark, type DatedSnapshot, type DatedSource } from "@terno/store";
+import { DATED_MARK_MS, DATED_SCAN_MARK_MS, datedTab, NEW_MAIL_MS, readerIn, recipientList, type DatedFinish, type DatedFinishOutcome, type DatedMark, type DatedSnapshot, type DatedSource } from "@terno/store";
 import { OWN_SENDER_SQL, RECEIVED_SQL } from "./ai-summaries";
+import { ownAddresses } from "./facts";
 import type { Db } from "./sqlite";
 
 /** Plan 204 on SQLite (v56): see packages/store/src/dated.ts. */
@@ -69,16 +70,23 @@ export function datedScanCandidates(db: Db, since: number, limit: number): numbe
 }
 
 export function datedSource(db: Db, messageId: number): DatedSource | null {
-  const m = db.get<{ id: number; thread_id: number; account_id: number; subject: string; date: number; from_name: string; from_email: string; is_bulk: number; list_id: string | null; tab: number; category: number | null; is_sent: number; is_draft: number; is_spam: number; is_trash: number; own: number; thread_spam: number; body_state: DatedSource["bodyState"]; attachments_captured: number }>(
-    `SELECT m.id, m.thread_id, m.account_id, m.subject, m.date, m.from_name, m.from_email, m.is_bulk, m.list_id, t.tab, m.category, m.is_sent, m.is_draft, m.is_spam, m.is_trash, m.body_state, m.attachments_captured,
+  const m = db.get<{ id: number; thread_id: number; account_id: number; subject: string; date: number; from_name: string; from_email: string; is_bulk: number; list_id: string | null; tab: number; category: number | null; is_sent: number; is_draft: number; is_spam: number; is_trash: number; own: number; thread_spam: number; body_state: DatedSource["bodyState"]; attachments_captured: number; to_json: string; cc_json: string }>(
+    `SELECT m.id, m.thread_id, m.account_id, m.subject, m.date, m.from_name, m.from_email, m.is_bulk, m.list_id, t.tab, m.category, m.is_sent, m.is_draft, m.is_spam, m.is_trash, m.body_state, m.attachments_captured, m.to_json, m.cc_json,
        ${OWN_SENDER_SQL} AS own,
        EXISTS (SELECT 1 FROM messages x INDEXED BY messages_thread WHERE x.thread_id = m.thread_id AND x.is_spam = 1) AS thread_spam
      FROM messages m JOIN threads t ON t.id = m.thread_id WHERE m.id = ?`,
     messageId,
   );
   if (!m) return null;
+  const people = (json: string) => {
+    const list = recipientList(json);
+    return list.addresses.map((email) => ({ name: list.names[email] ?? "", email }));
+  };
+  const to = people(m.to_json);
+  const cc = people(m.cc_json);
   return {
     id: m.id, threadId: m.thread_id, accountId: m.account_id, subject: m.subject, date: m.date, fromName: m.from_name, fromEmail: m.from_email, senderKey: addressKey(m.from_email),
+    to, cc, readerIn: readerIn(to, cc, ownAddresses(db)),
     automated: m.is_bulk === 1 || m.list_id !== null, tab: datedTab(m.tab, m.category),
     draft: m.is_draft === 1, sent: m.is_sent === 1, spam: m.is_spam === 1, trash: m.is_trash === 1, threadSpam: m.thread_spam === 1, own: m.own === 1,
     bodyState: m.body_state, bodyUnavailable: m.attachments_captured === 2 && m.body_state !== "full",
