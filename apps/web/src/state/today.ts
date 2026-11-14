@@ -3,7 +3,7 @@ import { addressKey, DIGEST_ROW_ID, TODAY_COUNTED, TODAY_GROUP_ORDER, type Diges
 import { t } from "@terno/i18n";
 import { create } from "zustand";
 import { listDate } from "~/lib/format";
-import { datedLine, promiseLine, taskOf, type TodayTask } from "~/lib/dated";
+import { datedLine, datedText, promiseLine, taskOf, type TodayTask } from "~/lib/dated";
 import { dueTimeLeft } from "~/lib/when";
 import { client } from "~/rpc/connection";
 import type { Undo } from "~/lib/snack";
@@ -253,7 +253,8 @@ const whyLine = (item: TodayList["sections"][number]["items"][number], why: Toda
     if (why.item && !bare) return datedLine({ ...why.item, dueAt: why.dueAt ?? 0, text: why.text ?? "" }, why.missed === true);
     // the right column says the day; a timed one not due today keeps its time here: "7:40 AM · Flight to Madrid"
     const time = why.item && why.dueAt != null ? dueTimeLeft(why.dueAt, why.item.timed) : null;
-    return time && why.text ? t("today.why.line", { when: time, text: why.text }) : (why.text ?? thread.snippet);
+    const text = why.text && why.item ? datedText({ kind: why.item.kind, text: why.text }) : why.text;
+    return time && text ? t("today.why.line", { when: time, text }) : (text ?? thread.snippet);
   }
   // after the panel: "Due today · You said: send the agenda", "Was due Tuesday · You said: …"
   if (why.kind === "promise") return bare ? t("today.why.promise", { text: why.text ?? "" }) : promiseLine({ text: why.text ?? "", dueAt: why.dueAt, dated: why.promise?.dated ?? why.missed === true }, why.missed === true);

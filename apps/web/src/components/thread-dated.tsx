@@ -7,7 +7,7 @@ import { CalendarClock, ChevronDown } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { useEffect, useRef, useState } from "react";
 import { aiAllowed } from "~/lib/ai";
-import { datedLine, itemLaterWindow, laterNote, laterPresets, laterStart } from "~/lib/dated";
+import { datedLine, datedText, itemLaterWindow, laterNote, laterPresets, laterStart } from "~/lib/dated";
 import { presetLabel, presetWhen } from "~/lib/reminders";
 import { actOnThreadItem } from "~/lib/today-task";
 import { client } from "~/rpc/connection";
@@ -47,7 +47,7 @@ function ItemLater({ threadId, row }: { threadId: number; row: DatedRow }) {
   return (
     <>
       <DropdownMenu>
-        <DropdownMenuTrigger render={<Button ref={triggerRef} variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" data-testid="thread-dated-later" aria-label={t("dated.laterItem", { text: row.text })} />}>
+        <DropdownMenuTrigger render={<Button ref={triggerRef} variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" data-testid="thread-dated-later" aria-label={t("dated.laterItem", { text: datedText(row) })} />}>
           {t("dated.later")}
           <ChevronDown aria-hidden />
         </DropdownMenuTrigger>
@@ -134,11 +134,11 @@ export default function ThreadDated({ detail }: { detail: ThreadDetail }) {
               {/* after the panel: Not a task beside Done, quieter (Done is what's usually meant); the third panel round:
                   Later between them, as quiet */}
               <span className="flex shrink-0 items-center gap-1.5">
-                <Button variant="outline" size="sm" className="text-foreground" data-testid="thread-dated-done" aria-label={t("dated.doneItem", { text: r.text })} onClick={() => void actOnThreadItem(threadId, r, "done")}>
+                <Button variant="outline" size="sm" className="text-foreground" data-testid="thread-dated-done" aria-label={t("dated.doneItem", { text: datedText(r) })} onClick={() => void actOnThreadItem(threadId, r, "done")}>
                   {t("dated.done")}
                 </Button>
                 <ItemLater threadId={threadId} row={r} />
-                <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" data-testid="thread-dated-dismiss" aria-label={t("dated.notTaskItem", { text: r.text })} onClick={() => void actOnThreadItem(threadId, r, "dismiss")}>
+                <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" data-testid="thread-dated-dismiss" aria-label={t("dated.notTaskItem", { text: datedText(r) })} onClick={() => void actOnThreadItem(threadId, r, "dismiss")}>
                   {t("dated.notTask")}
                 </Button>
               </span>

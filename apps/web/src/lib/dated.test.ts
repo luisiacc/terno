@@ -131,6 +131,24 @@ describe("the conversation's line keeps the whole wording (plan 204, after the s
     expect(promiseLine({ text: "send the agenda", dueAt: facts.dueAt, dated: true }, false, now)).toBe("Due today · You said: send the agenda");
     expect(promiseLine({ text: "call back", dated: false }, false, now)).toBe("You said: call back");
   });
+  it("the Codex code review of the fourth round: an alert is the mail's word, the app saying so after the model's words (en, es)", async () => {
+    const { datedLine, datedText } = await import("./dated");
+    const { setLocale } = await import("@terno/i18n");
+    const { default: en } = await import("@terno/i18n/locales/en");
+    const { default: es } = await import("@terno/i18n/locales/es");
+    const now = new Date(2026, 11, 12, 10, 0).getTime();
+    const alert = { kind: "alert" as const, dueDay: "2026-12-14", dueAt: now, timed: false, dated: false, text: "Debit card frozen after a $412.18 charge" };
+    expect(datedLine(alert, false, now)).toBe("Debit card frozen after a $412.18 charge, the email says");
+    expect(datedLine({ ...alert, dated: true }, false, now)).toBe("Due Monday · Debit card frozen after a $412.18 charge, the email says");
+    // only an alert's
+    expect(datedText({ kind: "pay", text: "Pay $187.42 for the utility bill" })).toBe("Pay $187.42 for the utility bill");
+    setLocale("es", es);
+    try {
+      expect(datedText({ ...alert, text: "Tarjeta de débito congelada tras un cargo de $412.18" })).toBe("Tarjeta de débito congelada tras un cargo de $412.18, según el correo");
+    } finally {
+      setLocale("en", en);
+    }
+  });
   it("the third panel round: an ask is its words alone, in the conversation and in Today, its row's date the day it came", async () => {
     const { datedLine, taskOf } = await import("./dated");
     const now = new Date(2026, 10, 12, 10, 0).getTime();
