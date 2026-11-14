@@ -3,7 +3,7 @@
  * Plan 204 (after the second panel round): Done means gone. Done, Not a task and Later on a Today row's task take the row
  * out of Today at once, the cursor on the next row as after Archive; Undo brings it back in its place, selected.
  */
-import type { ThreadSummary, TodayList } from "@terno/core";
+import type { FollowupRow, ThreadSummary, TodayList } from "@terno/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const fake = vi.hoisted(() => {
@@ -20,7 +20,7 @@ vi.mock("~/rpc/connection", () => ({
   },
 }));
 
-const { actOnThreadItem, actOnTodayRow, doneOnSelected } = await import("./today-task");
+const { actOnThreadItem, actOnThreadPromise, actOnTodayRow, doneOnSelected } = await import("./today-task");
 const { getApp, setApp } = await import("~/state/app");
 const { reloadList, useList } = await import("~/state/list");
 const { useToday } = await import("~/state/today");
@@ -30,17 +30,31 @@ const thread = (id: number) => ({ id, accountId: 1, subject: `t${id}`, snippet: 
 const item = (id: number) => ({ id: id * 10, revision: 1, kind: "pay" as const, dueDay: "2026-11-20", timed: false, dated: true });
 /** what's open: the backend's Today, without what's been done (held rows aren't modelled: nothing here leaves on its own) */
 const done = new Set<number>();
-const today = (): TodayList => ({ now: 1e9, held: [], digest: null, sections: [{ kind: "deadlines", items: [1, 2, 3].filter((id) => !done.has(id * 10)).map((id) => ({ thread: thread(id), why: { kind: "dated", text: `Task ${id}`, dueAt: 2e12, item: item(id) } })) }] }) as unknown as TodayList;
+/** promises shown, by thread: Codex code review, the conversation's promise controls */
+const promised = new Map<number, number>();
+const today = (): TodayList =>
+  ({
+    now: 1e9,
+    held: [],
+    digest: null,
+    sections: [
+      { kind: "deadlines", items: [1, 2, 3].filter((id) => !done.has(id * 10)).map((id) => ({ thread: thread(id), why: { kind: "dated", text: `Task ${id}`, dueAt: 2e12, item: item(id) } })) },
+      { kind: "needsYou", items: [...promised].filter(([, id]) => !done.has(id)).map(([threadId, id]) => ({ thread: thread(threadId), why: { kind: "promise", text: "send the agenda", dueAt: 2e12, personName: "Ana", sentAt: 1e9, promise: { id, revision: 1, dated: false } } })) },
+    ],
+  }) as unknown as TodayList;
 const shown = () => useList.getState().items.map((t) => t.id);
 const undo = () => runUndo(useSnack.getState().undo!);
 
 beforeEach(async () => {
   done.clear();
+  promised.clear();
   resetSnacks();
   fake.handlers = {
     "today.list": async () => today(),
     "dated.act": async (p) => (done.add((p as { id: number }).id), { undoId: 5 }),
     "dated.undo": async () => (done.clear(), {}),
+    "followups.act": async (p) => (done.add((p as { id: number }).id), { undoId: 6 }),
+    "followups.undo": async () => (done.clear(), {}),
   };
   setApp({ view: "all", today: true, query: "", selectedId: null, checked: new Set(), scope: null });
   await reloadList();
@@ -84,6 +98,36 @@ describe("Done means gone (plan 204, after the second panel round)", () => {
     await actOnThreadItem(2, item(2), "dismiss");
     expect(shown()).toEqual([1, 3]);
     expect(getApp().selectedId).toBe(3);
+  });
+
+  it("the conversation's promise controls: the row leaves for the promise it stands for, not for another (Codex code review)", async () => {
+    promised.set(4, 400);
+    await reloadList();
+    setApp({ selectedId: 4 });
+    const row = (id: number) => ({ id, threadId: 4, revision: 1, kind: "promise", text: "send the agenda", dueAt: 2e12 }) as unknown as FollowupRow;
+    await actOnThreadPromise(row(401), "done");
+    expect(shown()).toEqual([1, 2, 3, 4]);
+    await actOnThreadPromise(row(400), "done");
+    expect(shown()).toEqual([1, 2, 3]);
+    expect(getApp().selectedId).toBe(3);
+    await vi.waitFor(() => expect(useSnack.getState().undo).toBeTruthy());
+    await undo();
+    expect(shown()).toEqual([1, 2, 3, 4]);
+    expect(getApp().selectedId).toBe(4);
+  });
+
+  it("the headings follow the rows that are left, before the list reloads (Codex code review)", async () => {
+    promised.set(4, 400);
+    await reloadList();
+    expect(useToday.getState().groups).toEqual([{ kind: "deadlines", at: 0 }, { kind: "needsYou", at: 3 }]);
+    fake.handlers["today.list"] = () => new Promise(() => {}); // the reload never answers: what's shown is the optimistic list
+    await actOnTodayRow(1, useToday.getState().tasks.get(1)!, "done");
+    expect(shown()).toEqual([2, 3, 4]);
+    expect(useToday.getState().groups).toEqual([{ kind: "deadlines", at: 0 }, { kind: "needsYou", at: 2 }]);
+    await actOnTodayRow(2, useToday.getState().tasks.get(2)!, "done");
+    await actOnTodayRow(3, useToday.getState().tasks.get(3)!, "done");
+    expect(shown()).toEqual([4]);
+    expect(useToday.getState().groups).toEqual([{ kind: "needsYou", at: 0 }]);
   });
 
   it("outside Today nothing leaves the list", async () => {

@@ -4,6 +4,7 @@ import { t } from "@terno/i18n";
 import { create } from "zustand";
 import { listDate } from "~/lib/format";
 import { datedLine, promiseLine, taskOf, type TodayTask } from "~/lib/dated";
+import { dueTimeLeft } from "~/lib/when";
 import { client } from "~/rpc/connection";
 import type { Undo } from "~/lib/snack";
 import { getApp, navigate, setApp, useApp } from "./app";
@@ -61,6 +62,8 @@ interface TodayState {
   tasks: ReadonlyMap<number, TodayTask>;
   /** plan 204 (after the panel, revision 10): the digest's row, the list's last, or -1 */
   digestAt: number;
+  /** each row's group, by thread (held rows keep theirs): headings and the digest's place follow the rows, whatever leaves */
+  kinds: ReadonlyMap<number, TodayGroupKind>;
   /** plan 204 (after the panel, fix 10): the row whose task Later's "Pick a date…" is choosing a moment for */
   laterPick: { threadId: number; task: TodayTask } | null;
   digest: DigestRow | null;
@@ -86,7 +89,7 @@ function storedComingUp(): boolean {
   }
 }
 
-export const useToday = create<TodayState>(() => ({ groups: [], counted: 0, comingUp: 0, comingUpOpen: storedComingUp(), tasks: new Map(), digestAt: -1, laterPick: null, digest: null, fromDigest: null, pick: null, movedTo: new Map(), notNewsletters: new Set() }));
+export const useToday = create<TodayState>(() => ({ groups: [], counted: 0, comingUp: 0, comingUpOpen: storedComingUp(), tasks: new Map(), digestAt: -1, kinds: new Map(), laterPick: null, digest: null, fromDigest: null, pick: null, movedTo: new Map(), notNewsletters: new Set() }));
 
 /** Plan 204 (after the panel): a Today row's task, only while Today is what's shown (one Map read: other rows never re-render). */
 export function useTodayTask(threadId: number | null | undefined): TodayTask | undefined {
@@ -246,7 +249,12 @@ const whyLine = (item: TodayList["sections"][number]["items"][number], why: Toda
   // electricity bill", "You said: send the agenda"), so the amount fits; the conversation's line keeps the whole wording
   const bare = task?.when != null;
   // plan 204: "Due Friday · Pay the electricity bill", "Tomorrow 7:40 · Flight to Madrid", "Was due Tuesday · …"
-  if (why.kind === "dated") return why.item && !bare ? datedLine({ ...why.item, dueAt: why.dueAt ?? 0, text: why.text ?? "" }, why.missed === true) : (why.text ?? thread.snippet);
+  if (why.kind === "dated") {
+    if (why.item && !bare) return datedLine({ ...why.item, dueAt: why.dueAt ?? 0, text: why.text ?? "" }, why.missed === true);
+    // the right column says the day; a timed one not due today keeps its time here: "7:40 AM · Flight to Madrid"
+    const time = why.item && why.dueAt != null ? dueTimeLeft(why.dueAt, why.item.timed) : null;
+    return time && why.text ? t("today.why.line", { when: time, text: why.text }) : (why.text ?? thread.snippet);
+  }
   // after the panel: "Due today · You said: send the agenda", "Was due Tuesday · You said: …"
   if (why.kind === "promise") return bare ? t("today.why.promise", { text: why.text ?? "" }) : promiseLine({ text: why.text ?? "", dueAt: why.dueAt, dated: why.promise?.dated ?? why.missed === true }, why.missed === true);
   if (why.kind === "nudge") return t("today.why.nudge", { name: why.personName || thread.fromName, count: Math.max(1, Math.floor((Date.now() - (why.sentAt ?? Date.now())) / 86_400_000)) });
@@ -321,6 +329,36 @@ export function flattenToday(list: TodayList, before: readonly ThreadSummary[]):
   // option again, after held rows and never before a person, under no heading of its own (a gap sets it apart)
   const digestAt = list.digest ? items.length : -1;
   if (list.digest) items.push(digestThread());
-  useToday.setState(({ notNewsletters }) => ({ groups, counted: counted.size, comingUp, tasks, digestAt, digest: list.digest && withoutSenders(list.digest, notNewsletters) }));
+  // what each row's heading is: where a group starts, a held row in its own group's run
+  const kinds = new Map<number, TodayGroupKind>();
+  for (let i = 0, g = 0; i < items.length; i++) {
+    while (g + 1 < groups.length && groups[g + 1]!.at <= i) g++;
+    if (groups[g] && groups[g]!.at <= i && items[i]!.id !== DIGEST_ROW_ID) kinds.set(items[i]!.id, groups[g]!.kind);
+  }
+  useToday.setState(({ notNewsletters }) => ({ groups, counted: counted.size, comingUp, tasks, digestAt, kinds, digest: list.digest && withoutSenders(list.digest, notNewsletters) }));
   return items;
+}
+
+/**
+ * Rows left Today's list before it reloads (Done, Archive, anything `patchRows` takes out): its headings and the
+ * digest's place, which are positions, are found again from the rows that are left (Codex code review). A heading goes
+ * with the last row of its group.
+ */
+export function todayRowsLeft(items: readonly ThreadSummary[]): void {
+  if (!getApp().today) return;
+  const { kinds } = useToday.getState();
+  const groups: TodayGroup[] = [];
+  let digestAt = -1;
+  let prev: TodayGroupKind | undefined;
+  for (let i = 0; i < items.length; i++) {
+    const id = items[i]!.id;
+    if (id === DIGEST_ROW_ID) {
+      digestAt = i;
+      continue;
+    }
+    const kind = kinds.get(id) ?? prev;
+    if (kind !== undefined && kind !== prev) groups.push({ kind, at: i });
+    prev = kind;
+  }
+  useToday.setState({ groups, digestAt });
 }

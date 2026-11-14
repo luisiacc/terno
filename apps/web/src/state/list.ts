@@ -10,7 +10,7 @@ import { create } from "zustand";
 import { client } from "~/rpc/connection";
 import { getApp, getSelectionWriteRevision, inPlainInbox, setApp, setListAutoSelection, useApp } from "./app";
 import { noteRows, useActionRows } from "./action-preview";
-import { flattenToday } from "./today";
+import { flattenToday, todayRowsLeft } from "./today";
 import { useFollowups } from "./followups";
 import { anyDue } from "./reminders";
 import { anyPinned } from "./pins";
@@ -618,7 +618,11 @@ export function patchRows(ids: readonly number[], patch: (t: ThreadSummary) => T
   }
   const index = indexOf(items);
   useList.setState({ items, index });
-  if (removed) pruneSelection(index);
+  if (removed) {
+    // Today's headings and its digest follow the rows that are left (Codex code review)
+    todayRowsLeft(items);
+    pruneSelection(index);
+  }
 }
 
 /**

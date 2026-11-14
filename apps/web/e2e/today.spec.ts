@@ -650,7 +650,7 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       await expect(row(page, "Electricity bill").getByTestId("row-task")).toHaveText("Electricity bill");
       await expect(row(page, "Electricity bill").getByTestId("row-date")).toHaveText("Sat");
       const flight = row(page, "Flight to Madrid");
-      await expect(flight.getByTestId("row-task")).toHaveText("Flight to Madrid");
+      await expect(flight.getByTestId("row-task")).toHaveText("7:40 AM · Flight to Madrid"); // tomorrow: the right column says the day, the line keeps the time
       await expect(flight.getByTestId("row-subject")).toHaveText("Flight to Madrid");
       await expect(flight.getByTestId("row-date")).toHaveText("Tomorrow");
       await expect(flight.getByTestId("row-snippet")).toHaveCount(0);

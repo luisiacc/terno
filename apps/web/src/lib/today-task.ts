@@ -1,5 +1,7 @@
+import type { FollowupRow } from "@terno/core";
 import { leaveRows, type LeftRows } from "~/lib/actions";
 import { actOnDated, actOnTask, type DatedRef, type TodayTask } from "~/lib/dated";
+import { actOnFollowup } from "~/lib/followups";
 import { getApp } from "~/state/app";
 import { listKey, useList } from "~/state/list";
 import { useToday } from "~/state/today";
@@ -28,6 +30,16 @@ export function actOnTodayRow(threadId: number, task: TodayTask, action: TaskAct
 export function actOnThreadItem(threadId: number, item: Pick<DatedRef, "id" | "revision">, action: "done" | "dismiss"): Promise<void> {
   const task = useToday.getState().tasks.get(threadId);
   return actOnDated(item, action, undefined, task?.kind === "dated" && task.item.id === item.id ? leaving(threadId) : undefined);
+}
+
+/**
+ * The conversation's promise controls (Done, Later, Not a promise), as its item line (Codex code review): on the promise
+ * its Today row stands for, the row leaves as from the row's own Done; on any other, follow-ups' own act.
+ */
+export function actOnThreadPromise(row: FollowupRow, action: TaskAction, at?: number): Promise<void> {
+  const task = useToday.getState().tasks.get(row.threadId);
+  if (task?.kind === "promise" && task.id === row.id) return actOnTask({ ...task, revision: row.revision }, action, at, leaving(row.threadId));
+  return actOnFollowup(row, action, at);
 }
 
 /**
