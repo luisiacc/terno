@@ -7,12 +7,13 @@ import { NumberField } from "@terno/ui/components/number-field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@terno/ui/components/select";
 import { Switch } from "@terno/ui/components/switch";
 import { useEffect, useRef, useState } from "react";
-import { errorHelp, providerLabel, routeOf, summariesOffered } from "~/lib/ai";
+import { errorHelp, providerLabel, routeOf, summariesOffered, usd } from "~/lib/ai";
 import { localized } from "~/lib/i18n";
 import { undoAction } from "~/lib/actions";
 import { registerUndo, snack } from "~/lib/snack";
 import { reloadList } from "~/state/list";
 import { leaveOut, letBackIn, senderKey } from "~/state/today";
+import { scanOfferText, useDatedScanOffer } from "~/lib/dated";
 import { client } from "~/rpc/connection";
 import { useApp } from "~/state/app";
 import { SettingsGroup, SettingsNote, SettingsRow, type SettingsUpdate } from "./parts";
@@ -116,6 +117,45 @@ export function DigestGroup({ settings, update }: { settings: AppSettings; updat
 }
 
 /**
+ * Plan 204 §6: dates in new mail, for Today's Missed, Deadlines, Plans and Coming up. Off by default (the owner); on, it
+ * asks once about the last 14 days, as Today's header does, and says when it has stopped.
+ */
+export function DatedGroup({ settings, update }: { settings: AppSettings; update: SettingsUpdate }) {
+  const { ai, dated } = settings;
+  const target = routeOf("dated", ai);
+  const ready = aiCanRun("dated", ai);
+  const scan = useDatedScanOffer(dated.enabled && !dated.scanAnswered, (patch) => update({ dated: patch }, { quiet: true }));
+  const [status, setStatus] = useState<{ blockedBy: { kind: AiErrorKind; message: string } | null } | null>(null);
+  useEffect(() => {
+    if (!dated.enabled) return setStatus(null);
+    let current = true;
+    void client.call("dated.status", {}).then((r) => current && setStatus(r), () => {});
+    const off = client.on("datedStatus", setStatus);
+    return () => { current = false; off(); };
+  }, [dated.enabled, ai]);
+  return (
+    <SettingsGroup title={t("ai.dated.title")} testId="ai-dated">
+      <SettingsRow find="ai.dated" label={t("ai.dated.switch")} hint={ready ? t("ai.dated.hint", { provider: providerLabel(target.provider, ai) }) : t("ai.dated.hintNoProvider")}>
+        {(a) => <Switch {...a} checked={dated.enabled} disabled={!ready && !dated.enabled} data-testid="ai-dated-switch" onCheckedChange={(enabled) => void update({ dated: { enabled } })} />}
+      </SettingsRow>
+      {scan.offer && scan.offer.count > 0 && (
+        <SettingsNote testId="ai-dated-offer">
+          <span>{scanOfferText(scan.offer)}</span>{" "}
+          <Button variant="link" size="xs" data-testid="ai-dated-check" onClick={() => void scan.answer(true)}>{t("today.dated.check")}</Button>{" "}
+          <Button variant="link-secondary" size="xs" data-testid="ai-dated-notnow" onClick={() => void scan.answer(false)}>{t("today.dated.notNow")}</Button>
+        </SettingsNote>
+      )}
+      {dated.enabled && status?.blockedBy && (
+        <SettingsNote testId="ai-dated-status">
+          <span role="status" className="text-destructive-ink">{t("ai.dated.paused")}</span>
+          {errorHelp(status.blockedBy.kind, ai) && <span> {errorHelp(status.blockedBy.kind, ai)}</span>}
+        </SettingsNote>
+      )}
+    </SettingsGroup>
+  );
+}
+
+/**
  * Plan 166: the senders said not to be newsletters, where the digest's settings are: each can be let back in, with Undo.
  * Shown whenever there's one, the digest on or off (they're out of Automated mail too). Nothing here leaves the machine.
  */
@@ -211,8 +251,6 @@ export function SummariesGroup({ settings, update }: { settings: AppSettings; up
     </SettingsGroup>
   );
 }
-
-const usd = (amount: number) => new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: amount > 0 && amount < 0.1 ? 3 : 2 }).format(amount);
 
 /** Plan 131: what AI has cost on the user's own keys, and the ceiling on what runs by itself. */
 export function AiUseGroup({ settings, update }: { settings: AppSettings; update: SettingsUpdate }) {
