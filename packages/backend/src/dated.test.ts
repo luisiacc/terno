@@ -756,4 +756,39 @@ describe("the third panel round", () => {
   });
 });
 
+describe("the fourth panel round", () => {
+  const followup = (thread: number, text: string, dueAt: number, o: { kind?: string; state?: string; dated?: number; message?: number } = {}) =>
+    [`INSERT INTO followups (thread_id, message_id, item, kind, text, person_name, person_email, sent_at, due_at, dated, state, revision, created_at) VALUES (?, ?, 0, ?, ?, 'Elena Ruiz', 'elena@acme.test', ?, ?, ?, ?, 0, ?)`, thread, o.message ?? 900_000 + thread, o.kind ?? "promise", text, NOW - 3 * DAY, dueAt, o.dated ?? 1, o.state ?? "open", NOW] as const;
+
+  it("changes 6 and 8: a due promise with no day is Needs you's, after the asks and before the nudges, and Needs you's heading is above Plans'; a Plan that's waiting stays the Plan", async () => {
+    const { client, model, receive, read, raw, clock } = await setup();
+    await client.call("settings.update", { followups: { enabled: true } });
+    model.answer = (req) => {
+      const text = promptText(req.messages[0]!.content);
+      if (text.includes("Flight")) return reply([{ kind: "event", text: "Flight to Madrid", quote: "Flight IB3170", due: "2026-11-19", time: "07:40" }]);
+      if (text.includes("rebranding")) return reply([{ kind: "ask", text: "Answer Mariana about a rebranding quote", quote: "can you send me a quote for the rebranding", due: null, time: null }]);
+      return reply();
+    };
+    const flight = await receive({ from: { name: "Iberia", email: "no-reply@iberia.test" }, subject: "Your trip", bodyText: "Flight IB3170 departs November 19 at 07:40." });
+    const asked = await receive({ from: { name: "Mariana Paz", email: "mariana@studio.test" }, subject: "Rebranding", bodyText: "Hi, can you send me a quote for the rebranding?" });
+    const promised = await receive({ from: { name: "Elena Ruiz", email: "elena@acme.test" }, subject: "The call", bodyText: "Talk soon." });
+    const nudged = await receive({ from: { name: "Ana", email: "ana@people.test" }, subject: "The quote", bodyText: "Talk soon." });
+    await read();
+    raw.run(...followup(promised, "call Elena back", at(2026, 11, 12, 9), { dated: 0 }));
+    raw.run(...followup(nudged, "Ana", at(2026, 11, 12, 9), { kind: "awaiting", dated: 0, state: "due" }));
+    raw.run("UPDATE threads SET waiting_since = ?, has_sent = 1 WHERE id = ?", clock.now - 60_000, flight);
+    clock.now = at(2026, 11, 18, 10);
+    const list = await client.call("today.list", { heldIds: [] });
+    expect(list.sections.map((x) => [x.kind, x.items.map((i) => i.thread.id)])).toEqual([["needsYou", [asked, promised, nudged]], ["plans", [flight]]]);
+    // it names no day, and who it's to, for its row's name and picture
+    expect(list.sections[0]!.items[1]!.why).toMatchObject({ kind: "promise", text: "call Elena back", personName: "Elena Ruiz", personEmail: "elena@acme.test", promise: { dated: false } });
+    expect(list.sections[0]!.items[1]!.why.missed).toBeUndefined();
+    // counted with the rest of Needs you; the waiting Plan isn't
+    expect((await client.call("counts.get", {})).today).toBe(3);
+    // a dated promise of yours due today is still Deadlines'
+    raw.run(...followup(promised, "send the slides", at(2026, 11, 18, 17), { message: 900_500 }));
+    expect((await client.call("today.list", { heldIds: [] })).sections.map((x) => x.kind)).toEqual(["deadlines", "needsYou", "plans"]);
+  });
+});
+
 const followupRows = async (client: RpcClient) => (await client.call("followups.list", {})).rows;

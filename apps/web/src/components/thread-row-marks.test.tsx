@@ -9,6 +9,7 @@ vi.hoisted(() => {
 });
 import type { Category, ThreadSummary } from "@terno/core";
 import type { DesignVariants } from "@terno/ui/designs/index";
+import type { TodayRowTask } from "~/lib/dated";
 import { ThreadRowView } from "./thread-row";
 
 vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -26,7 +27,7 @@ afterEach(async () => {
   host?.remove();
 });
 
-async function row(opts: { layout?: DesignVariants["row"]; compact?: boolean; wide?: boolean; account?: boolean; review?: number; lines?: 0 | 1 | 2; unread?: boolean; selected?: boolean; checked?: boolean } = {}) {
+async function row(opts: { layout?: DesignVariants["row"]; compact?: boolean; wide?: boolean; account?: boolean; review?: number; lines?: 0 | 1 | 2; unread?: boolean; selected?: boolean; checked?: boolean; task?: TodayRowTask } = {}) {
   host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
@@ -37,7 +38,7 @@ async function row(opts: { layout?: DesignVariants["row"]; compact?: boolean; wi
         thread={{ ...thread, unread: opts.unread ?? thread.unread }} top={0} height={72} compact={opts.compact ?? false} wide={opts.wide ?? false} icons={false} layout={opts.layout ?? "avatar"} review={opts.review ?? null}
         reminderTop={false} selected={opts.selected ?? false} checked={opts.checked ?? false} inSelection={false}
         account={opts.account ? { text: "Studio", email: "me@studio.example" } as never : undefined}
-        categories={categories} hasDraft={false} code={null} reminder={undefined} remindersList={false} interactive={false} lines={opts.lines}
+        categories={categories} hasDraft={false} code={null} reminder={undefined} remindersList={false} interactive={false} lines={opts.lines} task={opts.task}
       />,
     ),
   );
@@ -266,4 +267,19 @@ describe("plan 208 (after relief-r03): a read row's words in the design's read i
     expect(subject).toContain("text-muted-foreground");
     expect(subject).not.toContain(READ);
   });
+});
+
+it("the fourth panel round: a promise's Today row names and pictures its person, and one with no day shows none", async () => {
+  const { el } = await row({ task: { when: null, due: null, noDay: true, person: { name: "Elena Ruiz", email: "elena@acme.test" } } });
+  expect(el.querySelector("[data-testid=row-from]")!.textContent).toBe("Elena Ruiz");
+  expect(el.querySelector("[data-testid=sender-avatar]")!.textContent).toBe("ER");
+  const date = el.querySelector("[data-testid=row-date]")!;
+  expect(date.hasAttribute("data-no-day")).toBe(true);
+  expect(date.textContent).toBe("");
+  await unmount();
+  host?.remove();
+  // a task with a day keeps its day; with no person, the thread's sender
+  const again = await row({ task: { when: "Tue", due: "Due Tuesday" } });
+  expect(again.el.querySelector("[data-testid=row-from]")!.textContent).toBe("Priya Natarajan");
+  expect(again.el.querySelector("[data-testid=row-date]")!.textContent).toBe("Tue");
 });
