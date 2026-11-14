@@ -96,9 +96,11 @@ export interface DatedFinish {
   settled: readonly { id: number; revision: number }[];
   /**
    * After the panel: open items this message gives a new day. Applied to an open row of this thread or sender whatever its
-   * revision (Codex review of the fixes: a Later meanwhile mustn't lose the mail's new day); it keeps its deferral.
+   * revision (Codex review of the fixes: a Later meanwhile mustn't lose the mail's new day); it keeps its deferral. `text`:
+   * its new words, in the same write (the fifth panel round); without it the words stay. Neither is in a snapshot, so an
+   * Undo of a Later before or after keeps the move's day and words.
    */
-  moved?: readonly { id: number; dueDay: string; dueAt: number; timed: boolean; actAt: number }[];
+  moved?: readonly { id: number; dueDay: string; dueAt: number; timed: boolean; actAt: number; text?: string }[];
   /**
    * The second panel round: promises of yours (plan 142's rows) this message gives a new day. Only at the revision the
    * reader saw (a Later or Done since wins), on this thread, still open or due; the revision bumps (an older Undo is

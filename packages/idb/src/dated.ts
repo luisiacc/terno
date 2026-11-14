@@ -197,7 +197,8 @@ export function finishDated(c: Ctx, w: DatedFinish): DatedFinishOutcome {
   }
   for (const m of w.moved ?? []) {
     const r = rows.get(m.id);
-    if (r && r.state === "open" && (r.thread_id === src.threadId || r.sender_key === src.senderKey)) rows.update(r, { due_day: m.dueDay, due_at: m.dueAt, timed: m.timed ? 1 : 0, dated: 1, act_at: m.actAt });
+    // its new words, if it gives some, in the same write (the fifth panel round)
+    if (r && r.state === "open" && (r.thread_id === src.threadId || r.sender_key === src.senderKey)) rows.update(r, { due_day: m.dueDay, due_at: m.dueAt, timed: m.timed ? 1 : 0, dated: 1, act_at: m.actAt, ...(m.text ? { text: m.text } : {}) });
   }
   marks.deleteRow(mark);
   return "written";

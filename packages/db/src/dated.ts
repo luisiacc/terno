@@ -194,9 +194,10 @@ export function finishDated(db: Db, w: DatedFinish): DatedFinishOutcome {
     }
     for (const m of w.moved ?? []) {
       db.run(
-        // the revision stays: a Later just before stays undoable, and the move changes no choice of the user's (Codex review)
-        "UPDATE dated_items SET due_day = ?, due_at = ?, timed = ?, dated = 1, act_at = ? WHERE id = ? AND state = 'open' AND (thread_id = ? OR sender_key = ?)",
-        m.dueDay, m.dueAt, m.timed ? 1 : 0, m.actAt, m.id, src.threadId, src.senderKey,
+        // the revision stays: a Later just before stays undoable, and the move changes no choice of the user's (Codex review);
+        // its new words, if it gives some, in the same write (the fifth panel round)
+        "UPDATE dated_items SET due_day = ?, due_at = ?, timed = ?, dated = 1, act_at = ?, text = coalesce(?, text) WHERE id = ? AND state = 'open' AND (thread_id = ? OR sender_key = ?)",
+        m.dueDay, m.dueAt, m.timed ? 1 : 0, m.actAt, m.text ?? null, m.id, src.threadId, src.senderKey,
       );
     }
     db.run("DELETE FROM ai_dated_mail WHERE message_id = ?", w.messageId);

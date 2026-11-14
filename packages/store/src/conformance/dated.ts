@@ -446,6 +446,36 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
         expect(await store.dated.get(row!.id)).toMatchObject({ dueAt: NOW + 7 * DAY, deferredUntil: null, state: "open" });
       });
 
+      it("the fifth panel round: a move writes the item's new words with its day; without them the words stay; Undo of a Later, before or after, keeps both", async () => {
+        const { store, got, item, finish } = await setup();
+        const game = { kind: "event" as const, text: "Soccer game (arrive 9:30)", dueAt: NOW + 7 * DAY + 2 * 3_600_000, timed: true };
+        // Later, then the move, then Undo
+        const a = await got();
+        await finish(a.id, a.thread, { rows: [item(game)] });
+        const [row] = await store.dated.ofThread(a.thread);
+        const laterUndo = (await store.dated.update(row!.id, row!.revision, { deferredUntil: NOW + 2 * DAY }))!;
+        const moving = await got({ inReplyTo: a.m.rfcMessageId, references: [a.m.rfcMessageId!], date: NOW - 1000 });
+        const move = { id: row!.id, dueDay: "2026-11-20", dueAt: NOW + 7 * DAY, timed: true, actAt: NOW + 6 * DAY, text: "Soccer game (arrive 7:30)" };
+        await finish(moving.id, moving.thread, { moved: [move] });
+        expect(await store.dated.get(row!.id)).toMatchObject({ text: "Soccer game (arrive 7:30)", dueAt: NOW + 7 * DAY, deferredUntil: NOW + 2 * DAY, quote: "due on November 20" });
+        expect(await store.dated.restore([{ snapshot: laterUndo, expectRevision: laterUndo.revision + 1 }])).toBe(1);
+        expect(await store.dated.get(row!.id)).toMatchObject({ text: "Soccer game (arrive 7:30)", dueAt: NOW + 7 * DAY, deferredUntil: null, state: "open" });
+        // a later move with no words keeps the ones it has
+        const again = await got({ inReplyTo: a.m.rfcMessageId, references: [a.m.rfcMessageId!], date: NOW - 900 });
+        await finish(again.id, again.thread, { moved: [{ id: row!.id, dueDay: "2026-11-21", dueAt: NOW + 8 * DAY, timed: true, actAt: NOW + 7 * DAY }] });
+        expect(await store.dated.get(row!.id)).toMatchObject({ text: "Soccer game (arrive 7:30)", dueDay: "2026-11-21" });
+        // the move, then Later, then Undo
+        const b = await got({ date: NOW - 800 });
+        await finish(b.id, b.thread, { rows: [item(game)] });
+        const other = (await store.dated.ofThread(b.thread)).find((r) => r.messageId === b.id);
+        const movingB = await got({ inReplyTo: b.m.rfcMessageId, references: [b.m.rfcMessageId!], date: NOW - 700 });
+        await finish(movingB.id, movingB.thread, { moved: [{ ...move, id: other!.id }] });
+        const moved = (await store.dated.get(other!.id))!;
+        const laterB = (await store.dated.update(other!.id, moved.revision, { deferredUntil: NOW + 2 * DAY }))!;
+        expect(await store.dated.restore([{ snapshot: laterB, expectRevision: laterB.revision + 1 }])).toBe(1);
+        expect(await store.dated.get(other!.id)).toMatchObject({ text: "Soccer game (arrive 7:30)", dueAt: NOW + 7 * DAY, deferredUntil: null, state: "open" });
+      });
+
       it("a change applies only at the revision seen; Undo restores exactly, unless something changed it since", async () => {
         const { store, got, item, finish } = await setup();
         const a = await got();
