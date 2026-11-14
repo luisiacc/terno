@@ -7,7 +7,7 @@
  * A reopened mailbox ("closed"): these read and write from a fresh connection; what's written (6,000 look-alikes, slices
  * of live mail) goes through the store as before.
  */
-import { measureToday, measureReplies, measureActionWalk, measureFollowups, measureAsk, measureAiSummaries, measureCategoryEvidence, measureForwards, measureWriting, type WorkloadMailbox } from "@terno/store/conformance";
+import { measureToday, measureReplies, measureActionWalk, measureFollowups, measureDated, measureAsk, measureAiSummaries, measureCategoryEvidence, measureForwards, measureWriting, type WorkloadMailbox } from "@terno/store/conformance";
 import { REMINDERS_MAX, REMOVABLE_BUCKETS, storageCutoff } from "@terno/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { openDatabase } from "./index";
@@ -60,6 +60,8 @@ describe("sharing a large mailbox", () => {
   it("plan 133: drafting's reads hold, with thousands of look-alikes in the way", () => measureWriting(mailbox));
   it("plan 134: categories: what the AI is told and an AI filing hold", () => measureCategoryEvidence(mailbox));
   it("plan 116: forwards: a live slice's planning and the queue's reads hold", () => measureForwards(mailbox));
+  // last: it leaves 1,000 open dated items and their (archived) mail behind
+  it("plan 204: dated items' reads hold at the bound", () => measureDated(mailbox), 600_000);
 });
 
 describe("plan 69: the storage report and removal", () => {
