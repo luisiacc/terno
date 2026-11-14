@@ -507,13 +507,13 @@
   --format-bg: color-mix(in oklab, var(--foreground) 4.5%, transparent);
   --format-ring: none;
   --draft-shadow: 0 1px 2px color-mix(in oklab, var(--shadow-color) 40%, transparent), 0 8px 24px -12px var(--shadow-color);
-  --depth-raised: inset 0 0 0 1px color-mix(in oklab, var(--highlight) 70%, transparent), inset 0 1px var(--highlight), 0 1px 1px var(--shadow-color), 0 3px 8px -3px var(--shadow-color);
+  --depth-raised: inset 0 0 0 1px color-mix(in oklab, var(--highlight) 45%, transparent), inset 0 1px var(--highlight), 0 1px 1px var(--shadow-color), 0 2px 4px -2px var(--shadow-color);
   --depth-raised-sheen: linear-gradient(to bottom, color-mix(in oklab, var(--highlight) 55%, transparent), transparent 70%);
   --depth-edge: var(--depth-rim);
   --depth-edge-firm: var(--control-edge);
-  --depth-segment: 0 0 0 1px var(--depth-rim), inset 0 0 0 1px color-mix(in oklab, var(--highlight) 70%, transparent), inset 0 1px var(--highlight), 0 1px 1px var(--shadow-color), 0 3px 8px -3px var(--shadow-color);
-  --depth-segment-dark: 0 0 0 1px var(--depth-rim), inset 0 0 0 1px color-mix(in oklab, var(--highlight) 70%, transparent), inset 0 1px var(--highlight), 0 1px 1px var(--shadow-color), 0 3px 8px -3px var(--shadow-color);
-  --depth-ink: 0 0 0 1px var(--depth-rim), inset 0 1px color-mix(in oklab, var(--highlight) 40%, transparent), 0 1px 2px var(--shadow-color), 0 4px 10px -3px var(--shadow-color);
+  --depth-segment: 0 0 0 1px var(--depth-rim), inset 0 0 0 1px color-mix(in oklab, var(--highlight) 45%, transparent), inset 0 1px var(--highlight), 0 1px 1px var(--shadow-color), 0 2px 4px -2px var(--shadow-color);
+  --depth-segment-dark: 0 0 0 1px var(--depth-rim), inset 0 0 0 1px color-mix(in oklab, var(--highlight) 45%, transparent), inset 0 1px var(--highlight), 0 1px 1px var(--shadow-color), 0 2px 4px -2px var(--shadow-color);
+  --depth-ink: 0 0 0 1px var(--depth-rim), inset 0 1px color-mix(in oklab, var(--highlight) 40%, transparent), 0 1px 2px var(--shadow-color), 0 3px 6px -3px var(--shadow-color);
   --depth-box: inset 0 1px var(--highlight), 0 1px 2px var(--shadow-color);
   --depth-box-on: 0 0 0 0.5px var(--depth-rim), inset 0 1px color-mix(in oklab, var(--highlight) 40%, transparent), 0 1px 2px var(--shadow-color), 0 2px 5px -2px var(--shadow-color);
   --depth-thumb: 0 0 0 1px var(--depth-rim), inset 0 0 0 1.5px var(--highlight), 0 1px 2px var(--shadow-color), 0 3px 6px -2px var(--shadow-color);

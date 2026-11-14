@@ -172,3 +172,12 @@ The two dark-mode points I'd raised, and the owner's one:
 Relief alone, the everyday set. Overall: Claude 6.5, Codex 7 (UI 6 / 6.5, UX 7.5 / 7.5); every cell under 9, the lowest 4 and 4.5. The round first stopped at the List layout's shots: the harness still set the layout in Settings → General, where it hasn't been since af3c9ea74 (fixed in 002cdccdf, for every style).
 
 Fixed at once, with a test that fails without it: the selection bar's Archive drew its icon and key in the primary's foreground, so on Relief's dark filled pill they were dark on dark (~1.2:1). They take the filled button's own foreground (`cta-foreground`).
+
+Then the owner: "do the decisions here found for this style and then do round 2 rate". Changed for Relief only:
+
+- **Dark filled buttons** (Send, the bar's Archive): the middle way between the owner's dark raised pill and the raters' solid fill: graphite `#5E5E5E` lit to `#505050`, white words, 2:1 on a composer, so the main action stands apart from the dark secondary pills.
+- **Light surfaces:** the list and reader a step lighter than the picture's card (`#EFEFEF`), the sidebar `#E3E3E3`, cards `#F6F6F6`, menus and the palette `#F8F8F8`, so panes and floating surfaces separate. The open row is `#DADADA`, as strong as the owner's soft light selection allows (plan 173, 1.22:1); the raters asked for more, and that rule stands.
+- **Scrims** deeper (24% in light, 65% in dark); the dark popover a step off the app (`#2A2A2A`).
+- **Bevels** softer: the white inner ring at 45% and a shorter drop on raised pills and the ink.
+
+Out of scope here, as they aren't Relief's: the rows' height, Reply shown twice while drafting, the recipient warning's timing and place, List layout's category column. They're app-wide and weigh on every style.

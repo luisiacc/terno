@@ -180,13 +180,13 @@ describe("designs (plan 15)", () => {
         }
     });
 
-    it("Relief is raised: its cards on the card's fill, its palette the pictures' greys", () => {
+    it("Relief is raised: its cards on the card's fill, its palette the pictures' greys (the reading surface a step lighter: UI rating relief-r01)", () => {
       const r = designById("relief");
       expect(r.surfaces).toMatchObject({ card: "raised", depth: "relief", cta: "pill" });
       expect(new Map(designVars(r)).get("--card-bg")).toBe("var(--card)");
       const light = builtinTheme("relief-light")!.tokens;
       const dark = builtinTheme("relief-dark")!.tokens;
-      expect([light.background, light.foreground, light["muted-foreground"], light.primary].map(hexOf)).toEqual(["#E8E8E8", "#1F1F1F", "#565656", "#1C1C1C"]);
+      expect([light.background, light.foreground, light["muted-foreground"], light.primary].map(hexOf)).toEqual(["#EFEFEF", "#1F1F1F", "#565656", "#1C1C1C"]);
       expect([dark.background, dark.foreground].map(hexOf)).toEqual(["#1E1E1E", "#EDEDED"]);
     });
   });

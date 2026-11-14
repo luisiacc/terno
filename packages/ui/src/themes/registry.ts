@@ -670,14 +670,16 @@ export const THEMES: readonly Theme[] = [
     // Relief (plan 204): the owner's light widget, a #E8E8E8 card in #1F1F1F and #565656, its controls in the ink (#1C1C1C)
     // or raised in pale grey. The sidebar is the card's step down; its chosen item is pressed into it, darker. Off switches
     // and unchecked boxes take #858585, the lightest grey that holds 3:1 on the card (the picture's #A8A8A8 is 1.9:1)
+    // UI rating relief-r01: the reading surface a step lighter than the picture's card, so the panes separate from the
+    // sidebar, and menus and the palette lighter again than the app
     tokens: {
-      background: "#E8E8E8",
+      background: "#EFEFEF",
       foreground: "#1F1F1F",
-      pane: "#E8E8E8",
-      card: "#EFEFEF",
-      popover: "#EDEDED",
-      sidebar: "#E0E0E0",
-      muted: "#DCDCDC",
+      pane: "#EFEFEF",
+      card: "#F6F6F6",
+      popover: "#F8F8F8",
+      sidebar: "#E3E3E3",
+      muted: "#E0E0E0",
       "muted-foreground": "#565656",
       accent: "#DEDEDE",
       "accent-foreground": "#1F1F1F",
@@ -690,15 +692,16 @@ export const THEMES: readonly Theme[] = [
       unread: "0.52 0.15 237",
       // 3:1 on the open row's grey too (Codex code review: 0.6 was 2.8:1 there)
       star: "0.53 0.13 66",
-      "row-hover": "#E0E0E0",
-      "row-selected": "#D6D6D6",
+      "row-hover": "#E5E5E5",
+      // the owner's soft light selection (plan 173) at its strongest
+      "row-selected": "#DADADA",
       "row-selected-foreground": "#1F1F1F",
       // a step down from the sidebar: the chosen item is pressed in (the owner: lighter, it read as the Compose pill)
       "sidebar-accent": "#D3D3D3",
     },
     cats: cats(".6 .17 16 | .6 .13 66 | .57 .13 131 | .56 .11 163 | .56 .1 205 | .5 .075 50 | .56 .17 322 | .52 .01 257"),
     // the raised controls' lit top edge and their shadows (designs/depth.ts) are stronger than the flat palettes'
-    overrides: { "sidebar-foreground": "#4A4A4A", "sidebar-glyph": "#4A4A4A", "sidebar-accent-foreground": "#1F1F1F", "control-edge": "#858585", "control-edge-hover": "#565656", highlight: "1 0 0 / 60%", "shadow-color": "0 0 0 / 16%" },
+    overrides: { "sidebar-foreground": "#4A4A4A", "sidebar-glyph": "#4A4A4A", "sidebar-accent-foreground": "#1F1F1F", "control-edge": "#858585", "control-edge-hover": "#565656", highlight: "1 0 0 / 60%", "shadow-color": "0 0 0 / 16%", overlay: "0 0 0 / 24%" },
   }),
   defineTheme({
     id: "terno-dark",
@@ -1042,7 +1045,7 @@ export const THEMES: readonly Theme[] = [
       foreground: "#EDEDED",
       pane: "#1E1E1E",
       card: "#262626",
-      popover: "#252525",
+      popover: "#2A2A2A",
       sidebar: "#191919",
       muted: "#2C2C2C",
       "muted-foreground": "#A4A4A4",
@@ -1063,8 +1066,9 @@ export const THEMES: readonly Theme[] = [
     },
     cats: cats(".72 .13 16 | .8 .12 75 | .78 .13 131 | .74 .11 163 | .76 .09 205 | .7 .07 50 | .72 .14 322 | .7 .01 257"),
     overrides: { "sidebar-foreground": "#A4A4A4", "sidebar-glyph": "#A4A4A4", "sidebar-accent-foreground": "#EDEDED", "control-edge": "#858585", "control-edge-hover": "#A0A0A0", highlight: "1 0 0 / 9%", "shadow-color": "0 0 0 / 55%",
-      // the owner: Send and the other filled buttons are the reference's dark raised pills, lit at the top, not a light ink
-      cta: "#2E2E2E", "cta-hover": "#242424", "cta-foreground": "#EDEDED" },
+      // the owner: Send and the other filled buttons are raised pills, not a light ink; UI rating relief-r01: graphite, a
+      // clear step lighter than the dark secondary pills (2:1 on a composer), so the main action reads as one
+      cta: "#5E5E5E", "cta-hover": "#505050", "cta-foreground": "#FFFFFF", overlay: "0 0 0 / 65%" },
   }),
 ];
 

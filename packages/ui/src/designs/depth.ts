@@ -60,11 +60,12 @@ const XS = `0 1px 2px 0 ${mix("--shadow-color", 50)}`;
 const NONE = "0 0 transparent";
 
 /** Raised, inside a border that is its rim: a white ring, the lit top edge, a contact shadow and a soft drop */
-const RAISED = `inset 0 0 0 1px ${mix("--highlight", 70)}, inset 0 1px var(--highlight), 0 1px 1px var(--shadow-color), 0 3px 8px -3px var(--shadow-color)`;
+// (UI rating relief-r01: the inner ring and the drop softened, as the raised pills read heavy across a bar of them)
+const RAISED = `inset 0 0 0 1px ${mix("--highlight", 45)}, inset 0 1px var(--highlight), 0 1px 1px var(--shadow-color), 0 2px 4px -2px var(--shadow-color)`;
 /** The same with its rim drawn in the shadow, for a raised thing without a border */
 const RIMMED = `0 0 0 1px var(--depth-rim), ${RAISED}`;
 /** The ink, lit along its top edge more faintly (white on black reads strong), over the same shadows */
-const INK = `0 0 0 1px var(--depth-rim), inset 0 1px ${mix("--highlight", 40)}, 0 1px 2px var(--shadow-color), 0 4px 10px -3px var(--shadow-color)`;
+const INK = `0 0 0 1px var(--depth-rim), inset 0 1px ${mix("--highlight", 40)}, 0 1px 2px var(--shadow-color), 0 3px 6px -3px var(--shadow-color)`;
 /** Shaded at the top, ringed faintly, a light lip along the bottom edge */
 const WELL = `inset 0 1px 2px var(--shadow-color), inset 0 0 0 1px ${mix("--shadow-color", 60)}, 0 1px var(--highlight)`;
 
