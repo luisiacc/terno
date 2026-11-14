@@ -8,6 +8,7 @@ export { DIGEST_PROMPT_VERSION, digestBudget, digestPrompt, type DigestInput, ty
 export { REPLY_PROMPT_VERSION, type NeedsReplyInput } from "./replies";
 export { ACTION_PROMPT_VERSION, CHECK_GROUPS_MAX, CHECK_NAME_CHARS, CHECK_SUBJECT_CHARS, checkBudget, checkPrompt, type CheckCandidatesInput, type CheckGroup, type PlanActionInput } from "./actions";
 export { FOLLOWUP_PROMPT_VERSION, fitSentMail, followupBudget, FOLLOWUP_ANSWERING_CHARS, FOLLOWUP_FILES_MAX, FOLLOWUP_OPEN_MAX, FOLLOWUP_OWN_CHARS, FOLLOWUP_RECIPIENTS_MAX, sentMailPrompt, type SentMailInput, type SentMailResult } from "./followups";
+export { DATED_FROM_CHARS, DATED_MAX_TOKENS, DATED_PROMPT_VERSION, DATED_SUBJECT_CHARS, DATED_TEXT_CHARS, datedBudget, datedPrompt, fitDates, type DatedInput, type DatedResult } from "./dated";
 export { ASK_ANSWER_MAX_TOKENS, ASK_ANSWER_RULES, ASK_MESSAGE_OVERHEAD_CHARS, ASK_PROMPT_VERSION, answerFilter, answerPrompt, askBudget, cleanAnswer, fitAskPrompt, fitPlanEarlier, planAskPrompt, planAskTask, type AnswerFromMailInput, type AnswerFromMailOptions, type AnswerFromMailResult, type AskMaterial, type AskPlanResult, type AskStatusWord, type PlanAskInput } from "./ask";
 export * from "./json";
 export * from "./ladder";

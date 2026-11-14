@@ -3,6 +3,7 @@ import type { Localized } from "@terno/i18n";
 import type { z } from "zod";
 import type { AnswerFromMailInput, AnswerFromMailOptions, AnswerFromMailResult, AskPlanResult, PlanAskInput } from "./ask";
 import type { SentMailInput, SentMailResult } from "./followups";
+import type { DatedInput, DatedResult } from "./dated";
 import type { ActionPlan } from "@terno/core";
 import type { CheckCandidatesInput, PlanActionInput } from "./actions";
 import type { DigestInput, DigestOutputItem } from "./digest";
@@ -154,6 +155,8 @@ export interface AiTasks {
   fill(input: ComposeInput, options: FillOptions): Promise<FillResult>;
   /** plan 142: what a message you sent promises, who it waits on, what it keeps */
   readSentMail(input: SentMailInput, signal?: AbortSignal): Promise<SentMailResult>;
+  /** plan 204: what a message you got has with a date that matters to you, and which of your open items it settles */
+  readDates(input: DatedInput, signal?: AbortSignal): Promise<DatedResult>;
   /** plan 145: which of these are newsletters, with a line on each */
   digestNewsletters(input: DigestInput, signal?: AbortSignal): Promise<DigestOutputItem[]>;
   /** plan 144: does this mail want an answer? */

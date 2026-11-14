@@ -3,6 +3,7 @@ import { keyRef } from "@terno/i18n";
 import { fakeAnswer, fakeAskPlan, isAnswerRequest } from "./ask";
 import { fakeActionPlan, fakeCheck } from "./actions";
 import { fakeSentMail } from "./followups";
+import { fakeDates } from "./dated";
 import { fakeDigest } from "./digest";
 import { fakeNeedsReply } from "./replies";
 import { fakeSummary } from "./summarize";
@@ -115,6 +116,7 @@ export function fakeTransport(options: { failFirstAttempt?: boolean } = {}): Mod
       if (schema?.name === "action_plan") return { text: JSON.stringify(fakeActionPlan(prompt, promptText(system))), stop: "end" };
       if (schema?.name === "action_check") return { text: JSON.stringify(fakeCheck(prompt)), stop: "end" };
       if (schema?.name === "sent_mail") return { text: JSON.stringify(fakeSentMail(prompt)), stop: "end" };
+      if (schema?.name === "dated_mail") return { text: JSON.stringify(fakeDates(prompt)), stop: "end" };
       if (schema?.name === "ask_plan") return { text: JSON.stringify(fakeAskPlan(prompt)), stop: "end" };
       if (schema?.name === "voice_judgment") return { text: JSON.stringify(fakeJudgment(prompt)), stop: "end" };
       if (schema?.name === "parse_intent") return { text: JSON.stringify(fakeIntent(prompt)), stop: "end" };
