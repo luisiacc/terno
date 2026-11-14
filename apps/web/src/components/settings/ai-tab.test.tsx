@@ -37,6 +37,7 @@ const settings = (over: Partial<AppSettings["ai"]> = {}) =>
     summaries: { enabled: true },
     ask: { enabled: true },
     followups: { enabled: false, nudgeAfterDays: 3, scanAnswered: true },
+    dated: { enabled: false, enabledAt: null, scanAnswered: false, offerDismissed: false },
     replies: { enabled: false },
     today: { digest: false, show: true },
     devAi: false,

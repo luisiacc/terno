@@ -144,6 +144,7 @@ export const SETTINGS_INDEX = [
   { id: "ai.nudge", tab: "ai", group: "followups.title", label: "ai.followups.nudge", hint: "ai.followups.nudgeHint", under: "ai.followups" },
   { id: "ai.digest", tab: "ai", group: "today.digest.settingsTitle", label: "today.digest.settingsSwitch", words: "settings.find.words.digest", when: ai },
   { id: "ai.digestExcluded", tab: "ai", group: "today.digest.settingsTitle", label: "today.digest.excluded.title", hint: "today.digest.excluded.hint", under: "ai.digest", when: ai },
+  { id: "ai.dated", tab: "ai", group: "ai.dated.title", label: "ai.dated.switch", words: "settings.find.words.dated", when: ai },
   { id: "ai.usage", tab: "ai", label: "ai.usage.label", hint: "ai.usage.hint", words: "settings.find.words.usage" },
   { id: "ai.limit", tab: "ai", label: "ai.limit.label", hint: "ai.limit.hint", words: "settings.find.words.usage" },
   // Writing style, a page of Drafting's
