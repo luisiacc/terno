@@ -93,6 +93,9 @@ export function defineTodayConformance(fresh: () => Promise<MailStore>): void {
       expect(await store.today.countWith([a.thread, notice.thread, notice.thread, calendar.thread, 999_999], NOW)).toEqual({ needs: 2, extra: 2 });
       await store.threads.act({ threadIds: [calendar.thread], action: "trash", signal: null, now: NOW });
       expect(await store.today.countWith([a.thread, notice.thread, calendar.thread], NOW)).toEqual({ needs: 2, extra: 1 });
+      // the third panel round: a waiting thread placed in a group that isn't counted (a Plan) isn't counted as waiting
+      expect(await store.today.countWith([notice.thread], NOW, [b.thread, 999_999])).toEqual({ needs: 1, extra: 1 });
+      expect(await store.today.countWith([], NOW, [a.thread, b.thread])).toEqual({ needs: 0, extra: 0 });
       // someone they've written to, from a tagged address: their one new conversation counts, in both stores
       await store.sync.ingest([msg({ date: NOW - 700, providerMsgId: "to-dia", providerThreadId: "to-dia", from: me, to: [{ name: "Dia", email: "dia@people.test" }], isSent: true, subject: "Hello", accountId: accountId_(), listId: null })], { applyFilters: false, now: NOW, classifier: null });
       const dia = await put({ listId: null, from: { name: "Dia", email: "dia+work@people.test" }, date: NOW - 600, subject: "Something new" });

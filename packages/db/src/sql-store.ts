@@ -1109,7 +1109,7 @@ export class SqlMailStore implements MailStore {
   readonly today: MailStore["today"] = {
     waitingPage: async (o) => waitingPage(this.db, o),
     waitingAmong: async (ids, now) => waitingAmong(this.db, ids, now),
-    countWith: async (ids, now) => countWith(this.db, ids, now),
+    countWith: async (ids, now, uncounted) => countWith(this.db, ids, now, uncounted),
     needsCount: async (now) => needsCount(this.db, now),
     digestFacts: async (ids) => digestFacts(this.db, ids),
     digestLive: async (ids) => digestLive(this.db, ids),

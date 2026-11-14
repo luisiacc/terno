@@ -1,5 +1,5 @@
 import { todayAvailable } from "~/lib/ai";
-import { addressKey, DIGEST_ROW_ID, TODAY_GROUP_ORDER, type DigestItem, type DigestRow, type TodayGroupKind, type TodayList, type TodayWhy, type ThreadSummary } from "@terno/core";
+import { addressKey, DIGEST_ROW_ID, TODAY_COUNTED, TODAY_GROUP_ORDER, type DigestItem, type DigestRow, type TodayGroupKind, type TodayList, type TodayWhy, type ThreadSummary } from "@terno/core";
 import { t } from "@terno/i18n";
 import { create } from "zustand";
 import { listDate } from "~/lib/format";
@@ -271,8 +271,6 @@ function digestThread(): ThreadSummary {
 }
 
 const GROUP_ORDER: readonly TodayGroupKind[] = TODAY_GROUP_ORDER;
-/** Plan 204 §7: what the sidebar counts; Reminders and Coming up aren't */
-const COUNTED: ReadonlySet<TodayGroupKind> = new Set(["missed", "deadlines", "plans", "needsYou"]);
 
 /**
  * The sections as one list, in `TODAY_GROUP_ORDER` and all of them (plan 204: no cap); Coming up only while it's open.
@@ -297,7 +295,8 @@ export function flattenToday(list: TodayList, before: readonly ThreadSummary[]):
       const why = dayKnown(item.why, section.kind);
       const task = taskOf(why);
       items.push({ ...item.thread, snippet: whyLine(item, why, task) });
-      if (COUNTED.has(section.kind)) counted.add(item.thread.id);
+      // the header's "N need you", what the sidebar's number counts (the backend's own rule)
+      if (TODAY_COUNTED.has(section.kind)) counted.add(item.thread.id);
       if (task) tasks.set(item.thread.id, task);
     }
   }

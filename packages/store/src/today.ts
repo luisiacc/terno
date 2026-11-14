@@ -94,10 +94,11 @@ export interface TodayStore {
   /** how many `waitingPage` would walk: the sidebar's number, on every count */
   needsCount(now: number): Promise<number>;
   /**
-   * Plan 204: the sidebar's number in one walk: what's waiting (`needsCount`), and how many of these other threads (Missed,
-   * Deadlines, Plans, follow-ups) are neither waiting already nor in Spam or Trash
+   * Plan 204: the sidebar's number in one walk: what's waiting (`needsCount`) less those placed in a group that isn't
+   * counted (`uncounted`: a waiting thread with a Plan shows as the Plan, so the count agrees with the list), and how many
+   * of these counted threads (Missed, Deadlines, follow-ups) are neither waiting already nor in Spam or Trash
    */
-  countWith(threadIds: readonly number[], now: number): Promise<{ needs: number; extra: number }>;
+  countWith(threadIds: readonly number[], now: number, uncounted?: readonly number[]): Promise<{ needs: number; extra: number }>;
   /** of these messages, those that qualify; `arrivedAt` also for those that don't is what a walk stops on */
   digestFacts(messageIds: readonly number[]): Promise<{ facts: DigestFact[]; oldest: number | null }>;
   /** of these listed threads, how many are still as a digest would act on them: in the Inbox and unread */
