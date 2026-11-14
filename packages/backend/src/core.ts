@@ -1203,6 +1203,7 @@ export class BackendCore {
       this.reminders.touched();
       this.pins.touched();
       this.followups.touched();
+      this.today.touched();
       this.scheduled.touched();
       this.emitCounts();
       this.autocomplete.notify();

@@ -59,6 +59,12 @@ const SUMMARY_LINES_MAX = 100;
 /** plan 204: what the sidebar's number counts; Reminders and Coming up aren't */
 const COUNTED: ReadonlySet<TodayGroupKind> = new Set(["missed", "deadlines", "plans", "needsYou"]);
 
+/** Each thread once, the first group that claims it (§1). */
+const dedupe = (placed: readonly Placed[]): Placed[] => {
+  const taken = new Set<number>();
+  return placed.filter((p) => !taken.has(p.threadId) && taken.add(p.threadId));
+};
+
 /** A thread's place in Today before it's read (revision 10). */
 interface Placed {
   group: TodayGroupKind;
@@ -108,6 +114,9 @@ export class TodayService {
   /** plan 204: the clock's one timer (revision 11) */
   private clock: ReturnType<typeof setTimeout> | null = null;
   private clockAt: number | null = null;
+  /** plan 204: the open dated items, until something changes them */
+  private datedCache: { generation: number; rows: readonly DatedRow[] } | null = null;
+  private datedGeneration = 0;
 
   constructor(private readonly b: Backend) {}
 
@@ -525,10 +534,10 @@ export class TodayService {
    * Plan 204 revision 10: where each thread sits now, once, by `TODAY_GROUP_ORDER`. One calculation for the list and the
    * sidebar's count, before any thread is read: what's in Spam or Trash is left out by the caller, and comes back with it.
    */
-  private async places(now: number, settings: AppSettings): Promise<Placed[]> {
+  private async places(now: number, settings: AppSettings, o: { count?: boolean } = {}): Promise<Placed[]> {
     const { store } = this.b;
     const placed: Placed[] = [];
-    const items = settings.dated?.enabled ? await store.dated.active() : [];
+    const items = settings.dated?.enabled ? await this.datedRows() : [];
     // a thread's strongest place, and in it its soonest item
     const best = new Map<number, { place: DatedPlace; row: DatedRow }>();
     const rank: Record<DatedPlace, number> = { missed: 0, deadlines: 1, plans: 2, comingUp: 3, hidden: 4 };
@@ -553,6 +562,9 @@ export class TodayService {
     const promises = followups.filter((r) => r.kind === "promise" && !missedIds.has(r.id)).sort((a, b) => a.dueAt - b.dueAt);
     const nudges = followups.filter((r) => r.kind === "awaiting").sort((a, b) => a.dueAt - b.dueAt);
     for (const r of [...promises, ...nudges]) placed.push({ group: "needsYou", threadId: r.threadId, why: promiseWhy(r) });
+    // the count reads none of what follows: what's waiting is its own indexed count there, and Reminders and Coming up
+    // aren't counted
+    if (o.count) return dedupe(placed);
     // one bounded read of what's waiting (revision 12): `needsYou` over the newest `NEEDS_WALK`
     for (const w of await store.today.waitingPage({ now, after: null, limit: NEEDS_WALK })) placed.push({ group: "needsYou", threadId: w.id, why: { kind: "waiting", wrote: w.hasSent }, waiting: true });
     const endOfDay = new Date(now);
@@ -560,9 +572,25 @@ export class TodayService {
     const reminders = (await this.b.reminders.refresh()).reminders.filter((r) => r.dueAt <= endOfDay.getTime()).sort((a, b) => a.dueAt - b.dueAt);
     for (const r of reminders) placed.push({ group: "reminders", threadId: r.threadId, why: { kind: "reminder", dueAt: r.dueAt } });
     for (const b of ofPlace("comingUp").sort((x, y) => x.row.dueAt - y.row.dueAt)) placed.push({ group: "comingUp", threadId: b.row.threadId, why: datedWhy(b.row, false) });
-    // each thread once, the first group that claims it
-    const taken = new Set<number>();
-    return placed.filter((p) => !taken.has(p.threadId) && taken.add(p.threadId));
+    return dedupe(placed);
+  }
+
+  /**
+   * The open dated items, read once until something changes them: the count runs on every mailbox change, and the read
+   * is a few ms at the 1,000 bound. What changes them calls `changed()` (the reader, an act, Clear AI data) or changes the
+   * mailbox (a merge, a deleted thread: `touched()`).
+   */
+  private async datedRows(): Promise<readonly DatedRow[]> {
+    const generation = this.datedGeneration;
+    if (this.datedCache?.generation === generation) return this.datedCache.rows;
+    const rows = await this.b.store.dated.active();
+    if (generation === this.datedGeneration) this.datedCache = { generation, rows };
+    return rows;
+  }
+
+  /** The mailbox changed: a merge or a delete may have moved or removed an item's thread. */
+  touched(): void {
+    this.datedGeneration++;
   }
 
   async list(heldIds: readonly number[]): Promise<TodayList> {
@@ -687,24 +715,28 @@ export class TodayService {
     return { undoId: r.undoId, archived, archivedIds, changed, spared };
   }
 
-  /** The sidebar's number: Missed, Deadlines, Plans and Needs you, each thread once (revision 10). Null during plan 17's backfill. */
+  /**
+   * The sidebar's number: Missed, Deadlines, Plans and Needs you, each thread once (revision 10). What's waiting is
+   * plan 145's indexed count; the rest are the placed threads that are neither in Trash or Spam nor already waiting. Null
+   * during plan 17's backfill.
+   */
   async withCount(counts: Counts): Promise<Counts> {
     const { store } = this.b;
     const s = await this.setting().catch(() => null);
     if (!s?.available || !s.show) return counts;
     if (counts.inboxWaiting === null || counts.inboxWaiting === undefined) return { ...counts, today: null };
     const settings = await readSettings(store);
-    const counted = (await this.places(this.b.now(), settings)).filter((p) => COUNTED.has(p.group));
-    // what's waiting is in the Inbox already; the rest may be in Trash or Spam, which hide it
-    const others = counted.filter((p) => !p.waiting).map((p) => p.threadId);
-    const facts = others.length ? new Map((await store.filters.actionFacts(others)).map((f) => [f.id, f])) : new Map();
-    return { ...counts, today: counted.filter((p) => p.waiting || (facts.get(p.threadId) && !facts.get(p.threadId)!.inSpam && !facts.get(p.threadId)!.inTrash)).length };
+    const now = this.b.now();
+    const others = (await this.places(now, settings, { count: true })).filter((p) => COUNTED.has(p.group)).map((p) => p.threadId);
+    const { needs, extra } = await store.today.countWith(others, now);
+    return { ...counts, today: needs + extra };
   }
 
   // ─── plan 204: what changes by itself ────────────────────────────────────
 
   /** An item read, settled or acted on, a setting: the list and the count read again, and the clock re-arms. */
   changed(): void {
+    this.datedGeneration++;
     if (this.stopped) return;
     this.b.server.emit("todayChanged", {}, { origins: ["renderer", "dev"] });
     this.b.countsChanged();
@@ -720,7 +752,7 @@ export class TodayService {
     const { store } = this.b;
     const settings = await readSettings(store);
     if (!(await this.available(settings))) return;
-    const items = settings.dated?.enabled ? await store.dated.active() : [];
+    const items = settings.dated?.enabled ? await this.datedRows() : [];
     const promises = settings.followups?.enabled ? await store.followups.active() : [];
     const now = this.b.now();
     const next = nextTodayChange(items, promises, now);

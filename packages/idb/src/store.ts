@@ -1,5 +1,5 @@
 import { ASK_MATCH_MESSAGES, ASK_MATCH_PARTS, CORPUS_TEXTS_MAX, finishBodyClose, rankSentRefs, readPassages, readThreadContext, type SentRef } from "@terno/store";
-import { needsCount, messagesHere, senders, allDigests, beginDigest, clearDigests, digestFacts, digestLive, digestRead, getDigest, latestDigest, pendingDigestDays, pruneDigests, waitingAmong, waitingPage, writeDigest } from "./today";
+import { countWith, needsCount, messagesHere, senders, allDigests, beginDigest, clearDigests, digestFacts, digestLive, digestRead, getDigest, latestDigest, pendingDigestDays, pruneDigests, waitingAmong, waitingPage, writeDigest } from "./today";
 import { clearReplies, finishReply, getReply, transitionReply } from "./replies";
 import { activeDated, clearDated, datedMarkCount, datedMarkPage, datedScanCandidates, datedSource, finishDated, getDated, markDatedMail, openDatedFor, pruneDated, pruneDatedMarks, queueDatedScan, restoreDated, threadDated, updateDated } from "./dated";
 import { activeFollowups, claimFollowupNotice, clearFollowups, closeAnsweredFollowups, endFollowupTop, finishFollowups, followupLiveSent, followupScanCandidates, followupSendConfirmed, followupSource, getFollowup, makeFollowupsDue, nextFollowupDue, pruneFollowups, pruneSentMarks, queueScan, restoreFollowups, sentMarkCount, sentMarkPage, threadFollowups, updateFollowup } from "./followups";
@@ -1977,6 +1977,7 @@ export class IdbMailStore implements MailStore {
   readonly today: MailStore["today"] = {
     waitingPage: (o) => this.read(() => waitingPage(this.c, o)),
     waitingAmong: (ids, now) => this.read(() => waitingAmong(this.c, ids, now)),
+    countWith: (ids, now) => this.read(() => countWith(this.c, ids, now)),
     needsCount: (now) => this.read(() => needsCount(this.c, now)),
     digestFacts: (ids) => this.read(() => digestFacts(this.c, ids)),
     digestLive: (ids) => this.read(() => digestLive(this.c, ids)),
