@@ -3,13 +3,13 @@ import { FOLLOWUP_CLOSED_KEEP_MS, FOLLOWUPS_ACTIVE_MAX, recipientList, SCAN_MARK
 import { ownAddresses } from "./facts";
 import type { Db } from "./sqlite";
 
-/** Plan 142 on SQLite (v52): see packages/store/src/followups.ts. */
+/** Plan 142 on SQLite (v52; v58 a promise's Later): see packages/store/src/followups.ts. */
 
 interface Raw {
   id: number; thread_id: number; message_id: number; rfc_message_id: string | null; item: number; kind: FollowupRow["kind"]; text: string; quote: string | null; person_name: string | null; person_email: string | null;
-  sent_at: number; due_at: number; dated: number; state: FollowupRow["state"]; inbox_state: FollowupRow["inboxState"]; closed_reason: string | null; closed_at: number | null; notified_at: number | null; from_scan: number; revision: number; model: string | null; provider: string | null; created_at: number;
+  sent_at: number; due_at: number; dated: number; deferred_until: number | null; state: FollowupRow["state"]; inbox_state: FollowupRow["inboxState"]; closed_reason: string | null; closed_at: number | null; notified_at: number | null; from_scan: number; revision: number; model: string | null; provider: string | null; created_at: number;
 }
-const toRow = (r: Raw): FollowupRow => ({ id: r.id, threadId: r.thread_id, messageId: r.message_id, rfcMessageId: r.rfc_message_id, item: r.item, kind: r.kind, text: r.text, quote: r.quote, personName: r.person_name, personEmail: r.person_email, sentAt: r.sent_at, dueAt: r.due_at, dated: r.dated === 1, state: r.state, inboxState: r.inbox_state, closedReason: r.closed_reason, closedAt: r.closed_at, notifiedAt: r.notified_at, fromScan: r.from_scan === 1, revision: r.revision, model: r.model, provider: r.provider, createdAt: r.created_at });
+const toRow = (r: Raw): FollowupRow => ({ id: r.id, threadId: r.thread_id, messageId: r.message_id, rfcMessageId: r.rfc_message_id, item: r.item, kind: r.kind, text: r.text, quote: r.quote, personName: r.person_name, personEmail: r.person_email, sentAt: r.sent_at, dueAt: r.due_at, dated: r.dated === 1, deferredUntil: r.deferred_until ?? null, state: r.state, inboxState: r.inbox_state, closedReason: r.closed_reason, closedAt: r.closed_at, notifiedAt: r.notified_at, fromScan: r.from_scan === 1, revision: r.revision, model: r.model, provider: r.provider, createdAt: r.created_at });
 
 /** Yours and for someone else: mail only to your own addresses says nothing to anyone. */
 function toSomeoneElse(db: Db, to: string, cc: string): boolean {
@@ -167,11 +167,13 @@ export function getFollowup(db: Db, id: number): FollowupRow | null {
   const r = db.get<Raw>("SELECT * FROM followups WHERE id = ?", id);
   return r ? toRow(r) : null;
 }
-export const nextFollowupDue = (db: Db): number | null => db.get<{ at: number | null }>("SELECT min(due_at) AS at FROM followups WHERE state = 'open'")?.at ?? null;
+/** `followupWakeAt` in SQL: a promise's Later, if later than its moment. Over the open rows (the active bound, 1,000). */
+const WAKE = "max(due_at, coalesce(deferred_until, due_at))";
+export const nextFollowupDue = (db: Db): number | null => db.get<{ at: number | null }>(`SELECT min(${WAKE}) AS at FROM followups WHERE state = 'open'`)?.at ?? null;
 
 export function makeFollowupsDue(db: Db, now: number): FollowupRow[] {
   return db.tx(() => {
-    const rows = db.all<Raw>("SELECT * FROM followups WHERE state = 'open' AND due_at <= ?", now);
+    const rows = db.all<Raw>(`SELECT * FROM followups WHERE state = 'open' AND ${WAKE} <= ?`, now);
     for (const r of rows) db.run("UPDATE followups SET state = 'due', inbox_state = ?, revision = revision + 1 WHERE id = ?", r.from_scan ? "none" : "onTop", r.id);
     return rows.map((r) => ({ ...toRow(r), state: "due" as const, inboxState: r.from_scan ? ("none" as const) : ("onTop" as const), revision: r.revision + 1 }));
   });
@@ -195,7 +197,7 @@ export function closeAnsweredFollowups(db: Db, ids: readonly number[], now: numb
   });
 }
 
-const snapshot = (r: Raw): FollowupSnapshot => ({ id: r.id, revision: r.revision, state: r.state, dueAt: r.due_at, inboxState: r.inbox_state, closedReason: r.closed_reason, closedAt: r.closed_at });
+const snapshot = (r: Raw): FollowupSnapshot => ({ id: r.id, revision: r.revision, state: r.state, dueAt: r.due_at, deferredUntil: r.deferred_until ?? null, inboxState: r.inbox_state, closedReason: r.closed_reason, closedAt: r.closed_at });
 
 export function endFollowupTop(db: Db, threadIds: readonly number[]): FollowupSnapshot[] {
   if (!threadIds.length) return [];
@@ -206,13 +208,13 @@ export function endFollowupTop(db: Db, threadIds: readonly number[]): FollowupSn
   });
 }
 
-export function updateFollowup(db: Db, id: number, revision: number, patch: Partial<Pick<FollowupRow, "state" | "dueAt" | "inboxState" | "closedReason" | "closedAt">>): FollowupSnapshot | null {
+export function updateFollowup(db: Db, id: number, revision: number, patch: Partial<Pick<FollowupRow, "state" | "dueAt" | "deferredUntil" | "inboxState" | "closedReason" | "closedAt">>): FollowupSnapshot | null {
   return db.tx(() => {
     const r = db.get<Raw>("SELECT * FROM followups WHERE id = ? AND revision = ?", id, revision);
     if (!r) return null;
     db.run(
-      "UPDATE followups SET state = ?, due_at = ?, inbox_state = ?, closed_reason = ?, closed_at = ?, revision = revision + 1 WHERE id = ?",
-      patch.state ?? r.state, patch.dueAt ?? r.due_at, patch.inboxState ?? r.inbox_state, patch.closedReason !== undefined ? patch.closedReason : r.closed_reason, patch.closedAt !== undefined ? patch.closedAt : r.closed_at, id,
+      "UPDATE followups SET state = ?, due_at = ?, deferred_until = ?, inbox_state = ?, closed_reason = ?, closed_at = ?, revision = revision + 1 WHERE id = ?",
+      patch.state ?? r.state, patch.dueAt ?? r.due_at, patch.deferredUntil !== undefined ? patch.deferredUntil : r.deferred_until, patch.inboxState ?? r.inbox_state, patch.closedReason !== undefined ? patch.closedReason : r.closed_reason, patch.closedAt !== undefined ? patch.closedAt : r.closed_at, id,
     );
     return snapshot(r);
   });
@@ -221,7 +223,8 @@ export function updateFollowup(db: Db, id: number, revision: number, patch: Part
 export function restoreFollowups(db: Db, rows: readonly { snapshot: FollowupSnapshot; expectRevision: number }[]): number {
   return db.tx(() => {
     let n = 0;
-    for (const { snapshot: s, expectRevision } of rows) n += Number(db.run("UPDATE followups SET state = ?, due_at = ?, inbox_state = ?, closed_reason = ?, closed_at = ?, revision = revision + 1 WHERE id = ? AND revision = ?", s.state, s.dueAt, s.inboxState, s.closedReason, s.closedAt, s.id, expectRevision).changes);
+    // the deferral as it was, null too (a journal written before v58 has none)
+    for (const { snapshot: s, expectRevision } of rows) n += Number(db.run("UPDATE followups SET state = ?, due_at = ?, deferred_until = ?, inbox_state = ?, closed_reason = ?, closed_at = ?, revision = revision + 1 WHERE id = ? AND revision = ?", s.state, s.dueAt, s.deferredUntil ?? null, s.inboxState, s.closedReason, s.closedAt, s.id, expectRevision).changes);
     return n;
   });
 }

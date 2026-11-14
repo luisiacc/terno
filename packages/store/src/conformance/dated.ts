@@ -329,6 +329,36 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
         expect((await store.followups.get(promise!.id))!.dueAt).toBe(NOW + 3 * DAY);
       });
 
+      it("the fifth panel round: a promise's Later against a move from their mail, in both orders, and its Undo", async () => {
+        const { store, accountId, got, finish } = await setup();
+        const m = msg({ accountId, from: me, to: [bank], isSent: true, inInbox: false, rfcMessageId: "later@x", date: NOW - 9000, providerMsgId: "l-sent" });
+        const r = await store.sync.ingest([m], { applyFilters: false, now: NOW, classifier: null, liveSent: { wanted: true } });
+        const thread = await threadOf(store, "l-sent");
+        await store.followups.finish({ messageId: r.inserted[0]!, threadId: thread, fromScan: false, rows: [{ kind: "promise", item: 0, text: "send the script", quote: "I'll send the script", personName: "Bank", personEmail: bank.email, dueAt: NOW + DAY, dated: true }], kept: [], now: NOW, model: "m", provider: "p", promptVersion: 1, clearGeneration: store.followups.clearGeneration() });
+        const [p0] = await store.followups.ofThread(thread);
+        const reply = (date: number) => got({ inReplyTo: "later@x", references: ["later@x"], date });
+        // move, then Later, then Undo: the moved day stays, the deferral goes
+        const a = await reply(NOW - 3000);
+        await finish(a.id, a.thread, { movedPromises: [{ id: p0!.id, revision: p0!.revision, dueAt: NOW + 3 * DAY }] });
+        const p1 = (await store.followups.get(p0!.id))!;
+        const later = (await store.followups.update(p1.id, p1.revision, { state: "open", inboxState: "none", deferredUntil: NOW + 5 * DAY }))!;
+        expect(await store.followups.get(p0!.id)).toMatchObject({ dueAt: NOW + 3 * DAY, deferredUntil: NOW + 5 * DAY });
+        expect(await store.followups.restore([{ snapshot: later, expectRevision: later.revision + 1 }])).toBe(1);
+        expect(await store.followups.get(p0!.id)).toMatchObject({ dueAt: NOW + 3 * DAY, deferredUntil: null });
+        // Later, then a move read before it: the Later wins, the move is refused, and Later's Undo still applies
+        const p2 = (await store.followups.get(p0!.id))!;
+        const again = (await store.followups.update(p2.id, p2.revision, { state: "open", inboxState: "none", deferredUntil: NOW + 5 * DAY }))!;
+        const b = await reply(NOW - 2000);
+        await finish(b.id, b.thread, { movedPromises: [{ id: p2.id, revision: p2.revision, dueAt: NOW + 4 * DAY }] });
+        expect(await store.followups.get(p0!.id)).toMatchObject({ dueAt: NOW + 3 * DAY, deferredUntil: NOW + 5 * DAY, revision: p2.revision + 1 });
+        // a move read after it lands, keeping the deferral; Later's Undo is then refused (changed since), nothing lost
+        const c = await reply(NOW - 1000);
+        await finish(c.id, c.thread, { movedPromises: [{ id: p2.id, revision: p2.revision + 1, dueAt: NOW + 4 * DAY }] });
+        expect(await store.followups.get(p0!.id)).toMatchObject({ dueAt: NOW + 4 * DAY, deferredUntil: NOW + 5 * DAY, revision: p2.revision + 2 });
+        expect(await store.followups.restore([{ snapshot: again, expectRevision: again.revision + 1 }])).toBe(0);
+        expect(await store.followups.get(p0!.id)).toMatchObject({ dueAt: NOW + 4 * DAY, deferredUntil: NOW + 5 * DAY });
+      });
+
       it("a later message moves an open item's day whatever its revision, keeping its deferral; never a closed one, nor another sender's", async () => {
         const { store, got, item, finish } = await setup();
         const a = await got();

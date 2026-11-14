@@ -237,6 +237,48 @@ export function defineFollowupsConformance(fresh: () => Promise<MailStore>, reop
         expect(await store.followups.restore([{ snapshot: before, expectRevision: before.revision + 1 }])).toBe(0);
       });
 
+      it("plan 204 (the fifth panel round): a promise's Later keeps its day, comes due by it, survives a reopen; Undo puts back no deferral", async () => {
+        const { store, sent, promise, finish } = await setup();
+        const a = await sent();
+        await finish(a.id, a.thread, { rows: [promise({ dueAt: NOW - DAY, dated: true })] });
+        const [row] = await store.followups.active();
+        expect(row!.deferredUntil).toBeNull();
+        // put off past its day while still open: not due at once, nor its next moment before then
+        const before = (await store.followups.update(row!.id, row!.revision, { state: "open", inboxState: "none", deferredUntil: NOW + 2 * DAY }))!;
+        expect(before).toMatchObject({ deferredUntil: null, dueAt: NOW - DAY });
+        expect(await store.followups.get(row!.id)).toMatchObject({ dueAt: NOW - DAY, deferredUntil: NOW + 2 * DAY, state: "open", revision: row!.revision + 1 });
+        expect(await store.followups.makeDue(NOW)).toEqual([]);
+        expect(await store.followups.nextDue()).toBe(NOW + 2 * DAY);
+        const back = await reopen(store);
+        expect(await back.followups.get(row!.id)).toMatchObject({ dueAt: NOW - DAY, deferredUntil: NOW + 2 * DAY, revision: row!.revision + 1 });
+        // Undo: at the revision Later left, the deferral goes back to none
+        expect(await back.followups.restore([{ snapshot: before, expectRevision: before.revision + 1 }])).toBe(1);
+        expect(await back.followups.get(row!.id)).toMatchObject({ dueAt: NOW - DAY, deferredUntil: null });
+        // a journal written before the deferral existed restores none too
+        const now = (await back.followups.get(row!.id))!;
+        await back.followups.update(now.id, now.revision, { deferredUntil: NOW + DAY });
+        const { deferredUntil: _, ...old } = before;
+        expect(await back.followups.restore([{ snapshot: { ...old, revision: now.revision } as typeof before, expectRevision: now.revision + 1 }])).toBe(1);
+        expect((await back.followups.get(row!.id))!.deferredUntil).toBeNull();
+        // its Later's moment comes: due then, on top
+        const again = (await back.followups.get(row!.id))!;
+        await back.followups.update(again.id, again.revision, { deferredUntil: NOW + DAY });
+        expect(await back.followups.makeDue(NOW + DAY - 1)).toEqual([]);
+        expect((await back.followups.makeDue(NOW + DAY)).map((r) => [r.id, r.state, r.inboxState, r.deferredUntil])).toEqual([[row!.id, "due", "onTop", NOW + DAY]]);
+        expect(await back.followups.nextDue()).toBeNull();
+      });
+
+      it("a deferral before its moment changes nothing: it comes due at its moment", async () => {
+        const { store, sent, promise, finish } = await setup();
+        const a = await sent();
+        await finish(a.id, a.thread, { rows: [promise({ dueAt: NOW + 3 * DAY, dated: true })] });
+        const [row] = await store.followups.active();
+        await store.followups.update(row!.id, row!.revision, { deferredUntil: NOW + DAY });
+        expect(await store.followups.nextDue()).toBe(NOW + 3 * DAY);
+        expect(await store.followups.makeDue(NOW + 2 * DAY)).toEqual([]);
+        expect(await store.followups.makeDue(NOW + 3 * DAY)).toHaveLength(1);
+      });
+
       it("a deleted thread takes them with it; a merge moves them; closed rows go after 90 days", async () => {
         const { store, sent, promise, finish } = await setup();
         const a = await sent({ subject: "One", providerMsgId: "ma", rfcMessageId: "ma@x" });

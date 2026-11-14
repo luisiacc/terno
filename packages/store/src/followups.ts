@@ -87,12 +87,14 @@ export interface FollowupSnapshot {
   revision: number;
   state: FollowupState;
   dueAt: number;
+  /** plan 204 (the fifth panel round): restored as it was, null included */
+  deferredUntil: number | null;
   inboxState: FollowupRow["inboxState"];
   closedReason: string | null;
   closedAt: number | null;
 }
 
-export const snapshotOf = (r: FollowupRow): FollowupSnapshot => ({ id: r.id, revision: r.revision, state: r.state, dueAt: r.dueAt, inboxState: r.inboxState, closedReason: r.closedReason, closedAt: r.closedAt });
+export const snapshotOf = (r: FollowupRow): FollowupSnapshot => ({ id: r.id, revision: r.revision, state: r.state, dueAt: r.dueAt, deferredUntil: r.deferredUntil, inboxState: r.inboxState, closedReason: r.closedReason, closedAt: r.closedAt });
 
 /** A wait no one's a person to wait on: "noreply@…" and friends never owe anyone. Recipients are filtered by the worker. */
 export const ownRecipientsOnly = (to: readonly { email: string }[], own: ReadonlySet<string>): boolean => to.length > 0 && to.every((r) => own.has(addressKey(r.email)));
@@ -117,9 +119,9 @@ export interface FollowupStore {
   active(): Promise<FollowupRow[]>;
   ofThread(threadId: number): Promise<FollowupRow[]>;
   get(id: number): Promise<FollowupRow | null>;
-  /** the soonest open row's moment; null: nothing to wait for */
+  /** the soonest open row's moment (`followupWakeAt`: a promise's Later included); null: nothing to wait for */
   nextDue(): Promise<number | null>;
-  /** what came due, now `due`, on the Inbox's top unless it's from a check */
+  /** what came due by `followupWakeAt`, now `due`, on the Inbox's top unless it's from a check */
   makeDue(now: number): Promise<FollowupRow[]>;
   /** said once each: what hadn't been said yet goes out with this */
   claimNotice(ids: readonly number[], now: number): Promise<number[]>;
@@ -128,7 +130,7 @@ export interface FollowupStore {
   /** the threads' `onTop` rows are `seen` now; what to put back for Undo */
   endTop(threadIds: readonly number[]): Promise<FollowupSnapshot[]>;
   /** a change by the user, conditional on the revision they saw */
-  update(id: number, revision: number, patch: Partial<Pick<FollowupRow, "state" | "dueAt" | "inboxState" | "closedReason" | "closedAt">>): Promise<FollowupSnapshot | null>;
+  update(id: number, revision: number, patch: Partial<Pick<FollowupRow, "state" | "dueAt" | "deferredUntil" | "inboxState" | "closedReason" | "closedAt">>): Promise<FollowupSnapshot | null>;
   /** Undo: each row only if nothing else changed it since */
   restore(rows: readonly { snapshot: FollowupSnapshot; expectRevision: number }[]): Promise<number>;
   prune(now: number): Promise<number>;

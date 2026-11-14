@@ -44,7 +44,12 @@ function stillWaiting(db: Db, threadId: number, snippet: string | null, now: num
   // Codex code review (round 4): a promise of yours there closed (Done, Not a promise) since their latest message, with
   // none still open, is the row you handled; from the promises' states, so Undo brings the conversation back, and newer
   // mail from them too
-  const kept = db.get<{ at: number | null; open: number }>("SELECT max(CASE WHEN state IN ('done', 'dismissed') THEN closed_at END) AS at, count(CASE WHEN state IN ('open', 'due') THEN 1 END) AS open FROM followups INDEXED BY followups_thread WHERE thread_id = ? AND kind = 'promise'", threadId);
+  const kept = db.get<{ at: number | null; open: number; deferred: number }>(
+    "SELECT max(CASE WHEN state IN ('done', 'dismissed') THEN closed_at END) AS at, count(CASE WHEN state IN ('open', 'due') AND coalesce(deferred_until, 0) <= ? THEN 1 END) AS open, count(CASE WHEN state IN ('open', 'due') AND deferred_until > ? THEN 1 END) AS deferred FROM followups INDEXED BY followups_thread WHERE thread_id = ? AND kind = 'promise'",
+    now, now, threadId,
+  );
+  // plan 204 (the fifth panel round): its only open promises put off with Later, it waits for them (Undo brings it back)
+  if (kept && kept.deferred > 0 && kept.open === 0) return false;
   if (kept?.at != null && kept.open === 0) {
     const last = db.get<{ date: number }>("SELECT date FROM messages INDEXED BY messages_thread WHERE thread_id = ? AND is_sent = 0 AND is_draft = 0 AND is_spam = 0 AND is_trash = 0 ORDER BY date DESC, id DESC LIMIT 1", threadId);
     if (last && kept.at >= last.date) return false;

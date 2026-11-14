@@ -32,6 +32,8 @@ export interface FollowupRow {
   sentAt: number;
   dueAt: number;
   dated: boolean;
+  /** plan 204 (the fifth panel round): a promise's Later, hidden until then; its day (`dueAt`) stays. A nudge's Later moves `dueAt` */
+  deferredUntil: number | null;
   state: FollowupState;
   inboxState: FollowupInboxState;
   closedReason: string | null;
@@ -53,6 +55,12 @@ export interface FollowupsSetting {
   /** the one-time offer was answered */
   scanAnswered: boolean;
 }
+
+/**
+ * When a row comes due (the fifth panel round): its moment, or a promise's Later if that's later. One rule for both stores'
+ * due transition and next moment, the notice and the Inbox's top, so a promise put off past its day doesn't come due at once.
+ */
+export const followupWakeAt = (r: Pick<FollowupRow, "dueAt"> & { deferredUntil?: number | null }): number => (r.deferredUntil != null ? Math.max(r.dueAt, r.deferredUntil) : r.dueAt);
 
 /** The app's view: what's active, with `due` true by now; never MCP. */
 export interface FollowupsSnapshot {

@@ -1500,6 +1500,11 @@ CREATE INDEX dated_open ON dated_items(act_at, id) WHERE state = 'open';
 CREATE INDEX dated_thread ON dated_items(thread_id, state);
 CREATE INDEX dated_sender ON dated_items(sender_key) WHERE state = 'open';
 ` },
+  // plan 204 (the fifth panel round): a promise's own Later, hidden until then with its day kept. Shape only: nullable, no
+  // backfill (a promise put off before this keeps the day Later gave it)
+  { version: 58, name: "follow-ups: a promise's Later (plan 204)", sql: `
+ALTER TABLE followups ADD COLUMN deferred_until INTEGER;
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;
