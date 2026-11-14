@@ -531,6 +531,8 @@ describe("a later message moves an item's time (the fourth panel round, revision
     // an untimed item given a moment on its day takes it; another day with no time is the day's move it was
     const bill = { ...game, kind: "pay", dueDay: "2026-11-20", dueAt: at(2026, 11, 20, 9), timed: false } as DatedRow;
     expect(checkDates({ items: [], settled: [], moved: [{ ...moved, due: "2026-11-20", time: "17:00" }] }, { ...base, open: new Map([["o1", bill]]) }).moved).toMatchObject([{ dueAt: at(2026, 11, 20, 17), timed: true }]);
+    // the Codex code review of the fourth round: "at 9:00" is a time, though an untimed item already sorts at 9:00
+    expect(checkDates({ items: [], settled: [], moved: [{ ...moved, due: "2026-11-20", time: "09:00" }] }, { ...base, open: new Map([["o1", bill]]) }).moved).toMatchObject([{ dueAt: at(2026, 11, 20, 9), timed: true }]);
     expect(checkDates({ items: [], settled: [], moved: [{ ...moved, due: "2026-11-15", time: null }] }, base).moved).toMatchObject([{ dueDay: "2026-11-15", timed: false }]);
     // the item at its new moment isn't added beside the move
     const both = checkDates({ items: [{ kind: "event", text: "Soccer game", quote: "Saturday's game", due: "2026-11-14", time: "08:00" }], settled: [], moved: [moved] }, base);
