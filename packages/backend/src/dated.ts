@@ -1,5 +1,5 @@
 import { AiError, DATED_PROMPT_VERSION, DATED_TEXT_CHARS, costAt, datedBudget, fitDates, priceOf, type AiTasks, type DatedResult } from "@terno/ai";
-import { DATED_ITEMS_MAX, DATED_KINDS, DATED_OPEN_SHOWN, DATED_SCAN_DAYS, DATED_SCAN_MAX, datedOver, datedTiming, dayEnd, hasTimeCue, normalizeText, withoutQuotes, type AiErrorKind, type DatedKind, type DatedRow } from "@terno/core";
+import { addressKey, DATED_ITEMS_MAX, DATED_KINDS, DATED_OPEN_SHOWN, followupDue, validFollowupDate, type FollowupRow, DATED_SCAN_DAYS, DATED_SCAN_MAX, datedOver, datedTiming, dayEnd, hasTimeCue, normalizeText, withoutQuotes, type AiErrorKind, type DatedKind, type DatedRow } from "@terno/core";
 import { captureError } from "@terno/core/diag";
 import { RpcError, type AppSettings } from "@terno/core/rpc";
 import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
@@ -33,6 +33,8 @@ export interface DatedHost {
   begin(requestId: string, clientId: string): { signal: AbortSignal; release: () => void };
   /** what Today holds changed: the list and the count read again */
   changed(): void;
+  /** a promise of yours got a new day: follow-ups look again (their snapshot to the windows, their timer) */
+  promisesMoved(): void;
   statusChanged(status: { blockedBy: { kind: AiErrorKind; message: string } | null }): void;
   /** work over a list in the backend's slices */
   runBudgeted<T>(items: readonly T[], work: (chunk: T[]) => void | Promise<void>): Promise<void>;
@@ -59,7 +61,7 @@ const KINDS: ReadonlySet<string> = new Set(DATED_KINDS);
  * day parses and is worth keeping (`datedTiming`), at most `DATED_ITEMS_MAX`, one per kind and day; a settlement names an
  * item it was shown and quotes the mail. Pure.
  */
-export function checkDates(result: { items: readonly (Omit<DatedResult["items"][number], "kind"> & { kind: string })[]; settled: DatedResult["settled"]; moved?: DatedResult["moved"] }, input: { text: string; subject: string; arrivedAt: number; open: ReadonlyMap<string, DatedRow>; fromScan: boolean; now: number }): { rows: DatedWrite[]; settled: { id: number; revision: number }[]; moved: { id: number; dueDay: string; dueAt: number; timed: boolean; actAt: number }[] } {
+export function checkDates(result: { items: readonly (Omit<DatedResult["items"][number], "kind"> & { kind: string })[]; settled: DatedResult["settled"]; moved?: DatedResult["moved"] }, input: { text: string; subject: string; arrivedAt: number; open: ReadonlyMap<string, DatedRow>; promises?: ReadonlyMap<string, Pick<FollowupRow, "id" | "revision">>; fromScan: boolean; now: number }): { rows: DatedWrite[]; settled: { id: number; revision: number }[]; moved: { id: number; dueDay: string; dueAt: number; timed: boolean; actAt: number }[]; movedPromises: { id: number; revision: number; dueAt: number }[] } {
   const said = `${norm(input.subject)}\n${norm(input.text)}`;
   const quoted = (words: string) => {
     const w = norm(words);
@@ -92,7 +94,13 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     seen.add(key);
     rows.push({ kind: item.kind as DatedKind, item: rows.length, text: item.text.trim(), quote: item.quote.trim(), ...timing });
   }
-  return { rows, settled, moved: moved.map(({ kind: _kind, ...m }) => m) };
+  // a promise of yours: its day from this message (the person you made it to), as follow-ups place a dated promise
+  const movedPromises = (result.moved ?? []).flatMap((m) => {
+    const p = input.promises?.get(m.label);
+    const day = p && quoted(m.evidence) ? validFollowupDate(m.due, input.arrivedAt) : null;
+    return p && day ? [{ id: p.id, revision: p.revision, dueAt: followupDue({ kind: "promise", sentAt: input.arrivedAt, due: day, nudgeAfterDays: 0 }).dueAt }] : [];
+  });
+  return { rows, settled, moved: moved.map(({ kind: _kind, ...m }) => m), movedPromises };
 }
 
 export class DatedWorker {
@@ -302,11 +310,15 @@ export class DatedWorker {
       const ai = await this.host.forTask();
       const language = await this.readerLanguage(settings);
       const labels = new Map(open.map((r, i) => [`o${i + 1}`, r]));
+      // the second panel round: your open promises on this thread, offered only to a message from the person you made them
+      // to (they may move the day; nobody else may), to be moved, never settled (Codex review)
+      const promised = (await store.followups.ofThread(src.threadId)).filter((p) => p.kind === "promise" && (p.state === "open" || p.state === "due") && p.personEmail && addressKey(p.personEmail) === src.senderKey && p.sentAt < src.date).slice(0, DATED_OPEN_SHOWN);
+      const promises = new Map(promised.map((p, i) => [`p${i + 1}`, p]));
       const budget = datedBudget(ai.contextTokens);
       // names only: who the reader is and how it reached them, so a task for someone else stays theirs (the eval)
       const nameOf = (p: { name: string; email: string }) => p.name || p.email.split("@")[0]!;
       const reader = { name: (await store.accounts.get(src.accountId))?.displayName ?? "", addressed: src.readerIn };
-      const input = fitDates({ text, subject: src.subject, from: { name: src.fromName || src.fromEmail.split("@")[0]!, automated: src.automated }, reader, to: src.to.map(nameOf), cc: src.cc.map(nameOf), receivedAt: inWords(src.date, language), open: [...labels].map(([label, r]) => ({ label, kind: r.kind, text: r.text })), language, outputTokens: budget.outputTokens }, budget.promptChars);
+      const input = fitDates({ text, subject: src.subject, from: { name: src.fromName || src.fromEmail.split("@")[0]!, automated: src.automated }, reader, to: src.to.map(nameOf), cc: src.cc.map(nameOf), receivedAt: inWords(src.date, language), open: [...[...labels].map(([label, r]) => ({ label, kind: r.kind as DatedKind | "promise", text: r.text })), ...[...promises].map(([label, p]) => ({ label, kind: "promise" as const, text: p.text }))], language, outputTokens: budget.outputTokens }, budget.promptChars);
       // a change of provider or key, the setting, Spam meanwhile: each stops it, at the provider too
       const signal = AbortSignal.any([generation.signal, asked.signal, stop.signal]);
       if (signal.aborted) return await drop();
@@ -314,12 +326,15 @@ export class DatedWorker {
       if (signal.aborted) throw new AiError(L("errors.ai.cancelled"), "cancelled");
       const fromScan = mark.source === "scan";
       const now = this.host.now();
-      const checked = checkDates(result, { text, subject: src.subject, arrivedAt: src.date, open: labels, fromScan, now });
-      const outcome = await store.dated.finish({ messageId: src.id, threadId: src.threadId, fromScan, rows: checked.rows, settled: checked.settled, moved: checked.moved, now, model: ai.model, provider: ai.providerId, promptVersion: DATED_PROMPT_VERSION, clearGeneration });
+      // only what was really sent, after fitting to the window, may be named back (Codex review)
+      const sent = new Set(input.open.map((o) => o.label));
+      const checked = checkDates(result, { text, subject: src.subject, arrivedAt: src.date, open: new Map([...labels].filter(([l]) => sent.has(l))), promises: new Map([...promises].filter(([l]) => sent.has(l))), fromScan, now });
+      const outcome = await store.dated.finish({ messageId: src.id, threadId: src.threadId, fromScan, rows: checked.rows, settled: checked.settled, moved: checked.moved, movedPromises: checked.movedPromises, now, model: ai.model, provider: ai.providerId, promptVersion: DATED_PROMPT_VERSION, clearGeneration });
       this.attempts.delete(src.id);
       // a merge moved it under the request: read again on its new thread (revision 6)
       if (outcome === "moved") this.again = true;
-      if (outcome === "written" && (checked.rows.length || checked.settled.length || checked.moved.length)) this.host.changed();
+      if (outcome === "written" && checked.movedPromises.length) this.host.promisesMoved();
+      if (outcome === "written" && (checked.rows.length || checked.settled.length || checked.moved.length || checked.movedPromises.length)) this.host.changed();
       return "next";
     } catch (error) {
       // Spam or Trash meanwhile: never asked about again; an open item gone to Spam: asked again without it

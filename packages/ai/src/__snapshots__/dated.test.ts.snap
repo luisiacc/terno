@@ -12,20 +12,21 @@ Only note what's the reader's: something the reader has to do, or something of t
 Return:
 - "items": at most 3, each one of these kinds:
   - "pay": a bill, an invoice or a payment due by a day.
-  - "renew": a renewal, a free trial ending, a subscription that charges unless cancelled.
+  - "renew": a renewal, a free trial ending, a subscription that charges unless cancelled. Say what happens, not a task the mail doesn't ask for: "Notely Pro renews automatically ($9.99)", "Free trial ends"; "Renew …" only when it won't renew unless the reader acts.
   - "expire": a card, a document, a password or an account expiring.
   - "respond": something the reader is asked to answer, send, bring, sign or fill in by a day: an RSVP, a form, a signature, a reply ("can you send it by Thursday?", "you're on cupcakes for Friday").
   - "alert": a payment that failed, an account locked or suspended, action required on the reader's own account. It may name no day. Its text says what to check, never to reply or click: "Check the fraud alert with your bank".
-  - "event": a flight, a reservation, an appointment or a booking the reader has, still ahead, even when the mail confirms it or asks the reader to confirm it ("Appointment confirmed: Monday 10:20", "reply C to confirm"). One for someone the reader looks after (a child, a parent), sent to the reader, is the reader's. What to bring or do at it ("bring the vaccine record", "arrive 10 minutes early") belongs to it, not an item of its own.
+  - "event": a flight, a reservation, an appointment, a booking, or a meeting the reader is invited to (a calendar invitation), still ahead, even when the mail confirms it or asks the reader to confirm it ("Appointment confirmed: Monday 10:20", "reply C to confirm"). One for someone the reader looks after (a child, a parent), sent to the reader, is the reader's. What to bring or do at it ("bring the vaccine record", "arrive 10 minutes early") belongs to it, not an item of its own.
   - "delivery": a parcel arriving, or one to pick up.
   Each has:
   - "kind": one of those.
-  - "text": a short imperative or noun phrase, always in English, whatever language the mail is in: "Pay the electricity bill", "Flight to Madrid". When the mail states an amount for it, end with it: "Pay the electricity bill ($187.42)".
+  - "text": a short imperative or noun phrase, always in English, whatever language the mail is in: "Pay the electricity bill", "Flight to Madrid". When the mail states an amount for it, put it right after the verb: "Pay $187.42 for the electricity bill".
   - "quote": a few of the mail's exact words that say it, copied from one line of <mail>.
   - "due": YYYY-MM-DD, the last day to act or the day it happens, counted from when the mail arrived ("Friday", "el 20", "tomorrow"); the first day of a range. null only for an "alert" that names no day. Never guess a day: a kind other than "alert" with no day in the mail isn't an item.
   - "time": HH:MM on a 24-hour clock if the mail states one for it, else null; the start of a window ("between 10:00 and 14:00" is 10:00).
-- "settled": the open items (labels o1, o2… in <open_items>) this message settles, each { "label", "evidence" }, where evidence is the mail's exact words that settle it: "Payment received", "your booking has been cancelled", "your card has been updated". A reminder of the same bill settles nothing. If in doubt, leave it out.
-- "moved": the open items this message gives a new day ("Friday at the latest works", "we've moved your appointment to the 24th"), each { "label", "due", "time", "evidence" } with "due" as above and evidence the mail's exact words. An open item with a new day goes here, never also in "items". One it settles isn't moved.
+- <open_items> holds the reader's open items (o1, o2…) and promises the reader made in this conversation (p1, p2…, kind "promise").
+- "settled": the open items (labels o1, o2…, never a p label) this message settles, each { "label", "evidence" }, where evidence is the mail's exact words that settle it: "Payment received", "your booking has been cancelled", "your card has been updated". A reminder of the same bill settles nothing. If in doubt, leave it out.
+- "moved": the open items or promises this message gives a new day ("Friday at the latest works", "we've moved your appointment to the 24th"), each { "label", "due", "time", "evidence" } with "due" as above and evidence the mail's exact words. An open item with a new day goes here, never also in "items". One it settles isn't moved.
 
 Not items:
 - A marketing deadline: "50% off ends tonight", "last chance", "offer expires Sunday", "precio especial hasta el viernes".
@@ -33,7 +34,6 @@ Not items:
 - A receipt or a confirmation of a payment or purchase already made: "we've received your payment", "your renewal went through". (A booking or appointment still ahead is an "event", even when confirmed.)
 - A newsletter's or an announcement list's optional call to action: "submit your story by Friday", "register by the 20th", "send us your photos".
 - A newsletter's event listings or webinars the reader didn't book.
-- A calendar invitation: the calendar handles it.
 - What someone asks of a third person, not of the reader.
 - A date that's only history: "you joined on…", "your order of March 3"."
 `;

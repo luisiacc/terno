@@ -9,7 +9,8 @@ import type { StructuredTask } from "./ladder";
  */
 /** 2: who the reader is and how they were addressed (the eval: a task for someone else, the reader only copied, was taken as theirs); a time window's start */
 /** 3 (after the user panel): appointments still ahead even when "confirmed"; a request named to someone else in a group mail; a newsletter's call to action; account alerts never say to reply; amounts; `moved` */
-export const DATED_PROMPT_VERSION = 3;
+/** 4 (the second panel round): an automatic renewal says what it is; the amount after the verb; a calendar invitation is an event; your own promises (p1…) can be moved */
+export const DATED_PROMPT_VERSION = 4;
 export const DATED_MAX_TOKENS = 2000;
 export const DATED_SUBJECT_CHARS = 200;
 export const DATED_FROM_CHARS = 100;
@@ -39,7 +40,7 @@ export interface DatedInput {
   /** weekday, date and time, in the user's zone */
   receivedAt: string;
   /** this thread's and this sender's open items, labelled o1, o2…: what it could settle */
-  open: readonly { label: string; kind: DatedKind; text: string }[];
+  open: readonly { label: string; kind: DatedKind | "promise"; text: string }[];
   /** the app's: `text` in each item is for the reader */
   language: string;
   outputTokens?: number;
@@ -63,8 +64,11 @@ type Wire = z.infer<typeof wire>;
 const LANGUAGE_NAME: Record<string, string> = { en: "English", es: "Spanish" };
 const EXAMPLE_TEXT: Record<string, [string, string]> = { en: ["Pay the electricity bill", "Flight to Madrid"], es: ["Pagar la factura de la luz", "Vuelo a Madrid"] };
 
+const AMOUNT_EXAMPLE: Record<string, string> = { en: "Pay $187.42 for the electricity bill", es: "Pagar $187.42 de la factura de la luz" };
+
 const SYSTEM = (language: string, receivedAt: string) => {
   const [pay, flight] = EXAMPLE_TEXT[language] ?? EXAMPLE_TEXT.en!;
+  const amountExample = AMOUNT_EXAMPLE[language] ?? AMOUNT_EXAMPLE.en!;
   return `You read one email a person received, to note what in it has a date that matters to them: something they have to do by a day, or something of theirs that happens on a day. They see each note in a short list of what matters, so only note what's really there.
 
 It arrived ${receivedAt}.
@@ -76,20 +80,21 @@ Only note what's the reader's: something the reader has to do, or something of t
 Return:
 - "items": at most ${DATED_ITEMS_MAX}, each one of these kinds:
   - "pay": a bill, an invoice or a payment due by a day.
-  - "renew": a renewal, a free trial ending, a subscription that charges unless cancelled.
+  - "renew": a renewal, a free trial ending, a subscription that charges unless cancelled. Say what happens, not a task the mail doesn't ask for: "Notely Pro renews automatically ($9.99)", "Free trial ends"; "Renew …" only when it won't renew unless the reader acts.
   - "expire": a card, a document, a password or an account expiring.
   - "respond": something the reader is asked to answer, send, bring, sign or fill in by a day: an RSVP, a form, a signature, a reply ("can you send it by Thursday?", "you're on cupcakes for Friday").
   - "alert": a payment that failed, an account locked or suspended, action required on the reader's own account. It may name no day. Its text says what to check, never to reply or click: "Check the fraud alert with your bank".
-  - "event": a flight, a reservation, an appointment or a booking the reader has, still ahead, even when the mail confirms it or asks the reader to confirm it ("Appointment confirmed: Monday 10:20", "reply C to confirm"). One for someone the reader looks after (a child, a parent), sent to the reader, is the reader's. What to bring or do at it ("bring the vaccine record", "arrive 10 minutes early") belongs to it, not an item of its own.
+  - "event": a flight, a reservation, an appointment, a booking, or a meeting the reader is invited to (a calendar invitation), still ahead, even when the mail confirms it or asks the reader to confirm it ("Appointment confirmed: Monday 10:20", "reply C to confirm"). One for someone the reader looks after (a child, a parent), sent to the reader, is the reader's. What to bring or do at it ("bring the vaccine record", "arrive 10 minutes early") belongs to it, not an item of its own.
   - "delivery": a parcel arriving, or one to pick up.
   Each has:
   - "kind": one of those.
-  - "text": a short imperative or noun phrase, always in ${LANGUAGE_NAME[language] ?? language}, whatever language the mail is in: "${pay}", "${flight}". When the mail states an amount for it, end with it: "${pay} ($187.42)".
+  - "text": a short imperative or noun phrase, always in ${LANGUAGE_NAME[language] ?? language}, whatever language the mail is in: "${pay}", "${flight}". When the mail states an amount for it, put it right after the verb: "${amountExample}".
   - "quote": a few of the mail's exact words that say it, copied from one line of <mail>.
   - "due": YYYY-MM-DD, the last day to act or the day it happens, counted from when the mail arrived ("Friday", "el 20", "tomorrow"); the first day of a range. null only for an "alert" that names no day. Never guess a day: a kind other than "alert" with no day in the mail isn't an item.
   - "time": HH:MM on a 24-hour clock if the mail states one for it, else null; the start of a window ("between 10:00 and 14:00" is 10:00).
-- "settled": the open items (labels o1, o2… in <open_items>) this message settles, each { "label", "evidence" }, where evidence is the mail's exact words that settle it: "Payment received", "your booking has been cancelled", "your card has been updated". A reminder of the same bill settles nothing. If in doubt, leave it out.
-- "moved": the open items this message gives a new day ("Friday at the latest works", "we've moved your appointment to the 24th"), each { "label", "due", "time", "evidence" } with "due" as above and evidence the mail's exact words. An open item with a new day goes here, never also in "items". One it settles isn't moved.
+- <open_items> holds the reader's open items (o1, o2…) and promises the reader made in this conversation (p1, p2…, kind "promise").
+- "settled": the open items (labels o1, o2…, never a p label) this message settles, each { "label", "evidence" }, where evidence is the mail's exact words that settle it: "Payment received", "your booking has been cancelled", "your card has been updated". A reminder of the same bill settles nothing. If in doubt, leave it out.
+- "moved": the open items or promises this message gives a new day ("Friday at the latest works", "we've moved your appointment to the 24th"), each { "label", "due", "time", "evidence" } with "due" as above and evidence the mail's exact words. An open item with a new day goes here, never also in "items". One it settles isn't moved.
 
 Not items:
 - A marketing deadline: "50% off ends tonight", "last chance", "offer expires Sunday", "precio especial hasta el viernes".
@@ -97,7 +102,6 @@ Not items:
 - A receipt or a confirmation of a payment or purchase already made: "we've received your payment", "your renewal went through". (A booking or appointment still ahead is an "event", even when confirmed.)
 - A newsletter's or an announcement list's optional call to action: "submit your story by Friday", "register by the 20th", "send us your photos".
 - A newsletter's event listings or webinars the reader didn't book.
-- A calendar invitation: the calendar handles it.
 - What someone asks of a third person, not of the reader.
 - A date that's only history: "you joined on…", "your order of March 3".`;
 };
@@ -186,7 +190,9 @@ const MADE_UP = "words nobody wrote";
 export function fakeDates(prompt: string): Wire {
   const mail = /<mail>\n([\s\S]*?)\n<\/mail>/.exec(prompt)?.[1] ?? "";
   const subject = /<subject>([\s\S]*?)<\/subject>/.exec(prompt)?.[1]?.trim() ?? "";
-  const open = [...(/<open_items>\n([\s\S]*?)\n<\/open_items>/.exec(prompt)?.[1] ?? "").matchAll(/^(o\d+)\b/gm)].map((m) => m[1]!);
+  const listed = [...(/<open_items>\n([\s\S]*?)\n<\/open_items>/.exec(prompt)?.[1] ?? "").matchAll(/^([op]\d+)\b/gm)].map((m) => m[1]!);
+  const open = listed.filter((l) => l.startsWith("o"));
+  const movable = [...open, ...listed.filter((l) => l.startsWith("p"))];
   const sentences = mail.split(/(?<=[.!?])\s+|\n+/).map((s) => s.trim()).filter(Boolean);
   const madeUp = mail.includes("[[made-up]]");
   const badDate = mail.includes("[[bad-date]]");
@@ -208,6 +214,6 @@ export function fakeDates(prompt: string): Wire {
   const settled = mail.includes("[[settle-all]]") ? open.map((label) => ({ label, evidence: MADE_UP })) : receipt && open[0] ? [{ label: open[0], evidence: receipt }] : [];
   // "… by YYYY-MM-DD at the latest" gives the first open item a new day
   const late = sentences.find((s) => /\d{4}-\d{2}-\d{2} at the latest/i.test(s));
-  const moved = late && open[0] && !settled.length ? [{ label: open[0], due: /(\d{4}-\d{2}-\d{2})/.exec(late)![1]!, time: null, evidence: late }] : [];
+  const moved = late && movable[0] && !settled.length ? [{ label: movable[0], due: /(\d{4}-\d{2}-\d{2})/.exec(late)![1]!, time: null, evidence: late }] : [];
   return { items: moved.length ? items.filter((i) => !late || i.quote !== late) : items, settled, moved };
 }
