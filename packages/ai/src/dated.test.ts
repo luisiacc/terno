@@ -53,7 +53,7 @@ describe("reading dates in mail you got (plan 204)", () => {
   });
 
   it("is frozen at its version: a change to the words is a new version", () => {
-    expect(DATED_PROMPT_VERSION).toBe(2);
+    expect(DATED_PROMPT_VERSION).toBe(3);
     expect(readDatesTask(input()).system).toMatchSnapshot();
   });
 
@@ -68,7 +68,9 @@ describe("reading dates in mail you got (plan 204)", () => {
     const v = validate({
       items: [item({ kind: "PAY ", text: "  Pay   the bill ", due: " " }), item({ kind: "coupon" }), item({ text: " " }), item({ quote: "" }), item({ kind: "alert", due: null }), item({ kind: "event", time: "07:40" }), item({ kind: "renew" })],
       settled: [{ label: " o1 ", evidence: "Payment   received" }, { label: "o2", evidence: " " }, ...Array.from({ length: 20 }, (_, i) => ({ label: `o${i + 3}`, evidence: "x" }))],
+      moved: [{ label: " o3 ", due: " 2026-03-24 ", time: " ", evidence: "Friday at the   latest" }, { label: "o4", due: "", time: null, evidence: "x" }],
     });
+    expect(v.moved).toEqual([{ label: "o3", due: "2026-03-24", time: null, evidence: "Friday at the latest" }]);
     expect(v.items).toHaveLength(DATED_ITEMS_MAX);
     expect(v.items[0]).toEqual({ kind: "pay", text: "Pay the bill", quote: "due 2026-03-20", due: null, time: null });
     expect(v.items.map((i) => i.kind)).toEqual(["pay", "alert", "event"]);
@@ -79,7 +81,7 @@ describe("reading dates in mail you got (plan 204)", () => {
   });
 
   it("cuts long words, and leaves the dates as they came for the backend's checks", () => {
-    const v = validate({ items: [item({ text: "t".repeat(500), quote: "q".repeat(1000), due: "someday", time: "late" })], settled: [] });
+    const v = validate({ items: [item({ text: "t".repeat(500), quote: "q".repeat(1000), due: "someday", time: "late" })], settled: [], moved: [] });
     expect(v.items[0]!.text.length).toBeLessThanOrEqual(120);
     expect(v.items[0]!.quote.length).toBeLessThanOrEqual(400);
     expect(v.items[0]).toMatchObject({ due: "someday", time: "late" });
@@ -97,7 +99,8 @@ describe("reading dates in mail you got (plan 204)", () => {
   });
 
   it("a small window holds the whole conversation with the server: a bad answer and its repair still fit", async () => {
-    const window = 2000;
+    // v3's words need a little more than 2,000: the smallest window that holds them with a bad answer and its repair
+    const window = 2400;
     const budget = datedBudget(window);
     const fitted = fitDates(input({ text: "word ".repeat(1200), outputTokens: budget.outputTokens }), budget.promptChars);
     const sizes: number[] = [];
@@ -110,7 +113,7 @@ describe("reading dates in mail you got (plan 204)", () => {
           calls++;
           if (calls === 1) return { text: "x".repeat(req.maxTokens * 4), stop: "end" as const };
           if (calls === 2) return { text: JSON.stringify({ items: Array.from({ length: 12 }, () => ({})) }), stop: "end" as const };
-          return { text: JSON.stringify({ items: [], settled: [] }), stop: "end" as const };
+          return { text: JSON.stringify({ items: [], settled: [], moved: [] }), stop: "end" as const };
         },
       },
     });
@@ -124,7 +127,7 @@ describe("the offline model's dates", () => {
   const read = (over: Partial<DatedInput> = {}) => createAi(config, { transport: fakeTransport() }).readDates(input(over));
 
   it("runs through the fake: a bill with its day, quoting the mail", async () => {
-    expect(await read()).toEqual({ items: [{ kind: "pay", text: "Your March bill", quote: "Your electricity bill is due 2026-03-20.", due: "2026-03-20", time: null }], settled: [] });
+    expect(await read()).toEqual({ items: [{ kind: "pay", text: "Your March bill", quote: "Your electricity bill is due 2026-03-20.", due: "2026-03-20", time: null }], settled: [], moved: [] });
   });
 
   it("a flight or an appointment is an event, a delivery a delivery, and a time is kept", async () => {
@@ -137,7 +140,7 @@ describe("the offline model's dates", () => {
   it("a failed payment is an alert with no day; nothing with a date is nothing", async () => {
     expect((await read({ text: "Your payment failed. Please update your card." })).items).toEqual([{ kind: "alert", text: "Your March bill", quote: "Your payment failed.", due: null, time: null }]);
     expect((await read({ text: "Pago rechazado." })).items[0]).toMatchObject({ kind: "alert", due: null });
-    expect(await read({ text: "Thanks for writing." })).toEqual({ items: [], settled: [] });
+    expect(await read({ text: "Thanks for writing." })).toEqual({ items: [], settled: [], moved: [] });
   });
 
   it("a receipt settles the first open item, in the mail's words", async () => {
@@ -157,7 +160,7 @@ describe("the offline model's dates", () => {
 
   it("reads only the mail: words in the subject or the open items don't count", () => {
     const prompt = datedPrompt(input({ text: "Hello.", subject: "due 2026-03-20", open: [{ label: "o1", kind: "pay", text: "payment received" }] }));
-    expect(fakeDates(prompt)).toEqual({ items: [], settled: [] });
+    expect(fakeDates(prompt)).toEqual({ items: [], settled: [], moved: [] });
   });
 });
 
@@ -169,5 +172,12 @@ describe("who the reader is (prompt version 2, the eval)", () => {
     expect(datedPrompt(input({ reader: { name: "Nora Quill", addressed: "none" }, to: [] }))).toContain("isn't named among its recipients");
     // never an address
     expect(datedPrompt(input())).not.toMatch(/@/);
+  });
+});
+
+describe("a later message gives an open item a new day (prompt version 3)", () => {
+  it("the fake moves the first open item, and adds nothing for it", () => {
+    const prompt = datedPrompt(input({ text: "Sorry for the rush. 2026-03-24 at the latest works for us.", open: [{ label: "o1", kind: "respond", text: "Send the script" }] }));
+    expect(fakeDates(prompt)).toEqual({ items: [], settled: [], moved: [{ label: "o1", due: "2026-03-24", time: null, evidence: "2026-03-24 at the latest works for us." }] });
   });
 });

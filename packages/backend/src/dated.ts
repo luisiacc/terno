@@ -56,14 +56,27 @@ const KINDS: ReadonlySet<string> = new Set(DATED_KINDS);
  * day parses and is worth keeping (`datedTiming`), at most `DATED_ITEMS_MAX`, one per kind and day; a settlement names an
  * item it was shown and quotes the mail. Pure.
  */
-export function checkDates(result: { items: readonly (Omit<DatedResult["items"][number], "kind"> & { kind: string })[]; settled: DatedResult["settled"] }, input: { text: string; subject: string; arrivedAt: number; open: ReadonlyMap<string, DatedRow>; fromScan: boolean; now: number }): { rows: DatedWrite[]; settled: { id: number; revision: number }[] } {
+export function checkDates(result: { items: readonly (Omit<DatedResult["items"][number], "kind"> & { kind: string })[]; settled: DatedResult["settled"]; moved?: DatedResult["moved"] }, input: { text: string; subject: string; arrivedAt: number; open: ReadonlyMap<string, DatedRow>; fromScan: boolean; now: number }): { rows: DatedWrite[]; settled: { id: number; revision: number }[]; moved: { id: number; dueDay: string; dueAt: number; timed: boolean; actAt: number }[] } {
   const said = `${norm(input.subject)}\n${norm(input.text)}`;
   const quoted = (words: string) => {
     const w = norm(words);
     return w.length >= 3 && said.includes(w);
   };
+  const settled = result.settled.flatMap((s) => {
+    const row = input.open.get(s.label);
+    return row && quoted(s.evidence) ? [{ id: row.id, revision: row.revision }] : [];
+  });
+  // after the panel: a new day for an open item, quoted, from this message's own day; one it settles isn't moved
+  const settledIds = new Set(settled.map((s) => s.id));
+  const moved = (result.moved ?? []).flatMap((m) => {
+    const row = input.open.get(m.label);
+    if (!row || settledIds.has(row.id) || !quoted(m.evidence)) return [];
+    const timing = datedTiming({ kind: row.kind, due: m.due, time: m.time, arrivedAt: input.arrivedAt });
+    return timing && timing.dueDay !== row.dueDay ? [{ id: row.id, kind: row.kind, dueDay: timing.dueDay, dueAt: timing.dueAt, timed: timing.timed, actAt: timing.actAt }] : [];
+  });
   const rows: DatedWrite[] = [];
-  const seen = new Set<string>();
+  // a moved item keeps its id: the same kind on its new day isn't added again (Codex review of the fixes)
+  const seen = new Set<string>(moved.map((m) => `${m.kind}:${m.dueDay}`));
   for (const item of result.items) {
     if (rows.length >= DATED_ITEMS_MAX) break;
     if (!KINDS.has(item.kind) || !item.text.trim() || !quoted(item.quote)) continue;
@@ -76,11 +89,7 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     seen.add(key);
     rows.push({ kind: item.kind as DatedKind, item: rows.length, text: item.text.trim(), quote: item.quote.trim(), ...timing });
   }
-  const settled = result.settled.flatMap((s) => {
-    const row = input.open.get(s.label);
-    return row && quoted(s.evidence) ? [{ id: row.id, revision: row.revision }] : [];
-  });
-  return { rows, settled };
+  return { rows, settled, moved: moved.map(({ kind: _kind, ...m }) => m) };
 }
 
 export class DatedWorker {
@@ -303,11 +312,11 @@ export class DatedWorker {
       const fromScan = mark.source === "scan";
       const now = this.host.now();
       const checked = checkDates(result, { text, subject: src.subject, arrivedAt: src.date, open: labels, fromScan, now });
-      const outcome = await store.dated.finish({ messageId: src.id, threadId: src.threadId, fromScan, rows: checked.rows, settled: checked.settled, now, model: ai.model, provider: ai.providerId, promptVersion: DATED_PROMPT_VERSION, clearGeneration });
+      const outcome = await store.dated.finish({ messageId: src.id, threadId: src.threadId, fromScan, rows: checked.rows, settled: checked.settled, moved: checked.moved, now, model: ai.model, provider: ai.providerId, promptVersion: DATED_PROMPT_VERSION, clearGeneration });
       this.attempts.delete(src.id);
       // a merge moved it under the request: read again on its new thread (revision 6)
       if (outcome === "moved") this.again = true;
-      if (outcome === "written" && (checked.rows.length || checked.settled.length)) this.host.changed();
+      if (outcome === "written" && (checked.rows.length || checked.settled.length || checked.moved.length)) this.host.changed();
       return "next";
     } catch (error) {
       // Spam or Trash meanwhile: never asked about again; an open item gone to Spam: asked again without it

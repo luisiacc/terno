@@ -228,6 +228,31 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
     });
 
     describe("reading and changing them", () => {
+      it("a later message moves an open item's day whatever its revision, keeping its deferral; never a closed one, nor another sender's", async () => {
+        const { store, got, item, finish } = await setup();
+        const a = await got();
+        await finish(a.id, a.thread, { rows: [item()] });
+        const [row] = await store.dated.active();
+        // a Later meanwhile: the revision the reader saw is stale, the mail's new day still lands
+        await store.dated.update(row!.id, row!.revision, { deferredUntil: NOW + 2 * DAY });
+        const later = await got({ inReplyTo: a.m.rfcMessageId, references: [a.m.rfcMessageId!], date: NOW - 1000 });
+        const moved = { id: row!.id, dueDay: "2026-11-24", dueAt: NOW + 11 * DAY, timed: false, actAt: NOW + 8 * DAY };
+        await finish(later.id, later.thread, { moved: [moved] });
+        expect(await store.dated.get(row!.id)).toMatchObject({ dueDay: "2026-11-24", dueAt: NOW + 11 * DAY, actAt: NOW + 8 * DAY, deferredUntil: NOW + 2 * DAY, state: "open", revision: row!.revision + 2 });
+        // closed: stays closed
+        await store.dated.update(row!.id, row!.revision + 2, { state: "done", closedReason: "user", closedAt: NOW });
+        const third = await got({ inReplyTo: a.m.rfcMessageId, references: [a.m.rfcMessageId!], date: NOW - 500 });
+        await finish(third.id, third.thread, { moved: [{ ...moved, dueDay: "2026-11-30" }] });
+        expect(await store.dated.get(row!.id)).toMatchObject({ state: "done", dueDay: "2026-11-24" });
+        // another sender on another thread can't move it
+        const b = await got({ date: NOW - 900 });
+        await finish(b.id, b.thread, { rows: [item()] });
+        const [open] = await store.dated.active();
+        const stranger = await got({ from: { name: "Shop", email: "shop@example.com" }, date: NOW - 100 });
+        await finish(stranger.id, stranger.thread, { moved: [{ ...moved, id: open!.id }] });
+        expect((await store.dated.get(open!.id))!.dueDay).toBe("2026-11-20");
+      });
+
       it("source: who it was sent to, and whether the reader is addressed, only copied, or not named (prompt version 2)", async () => {
         const { store, got } = await setup();
         const oren = { name: "Oren Vale", email: "oren@example.com" };

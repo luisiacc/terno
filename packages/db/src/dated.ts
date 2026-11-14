@@ -135,6 +135,12 @@ export function finishDated(db: Db, w: DatedFinish): DatedFinishOutcome {
         w.now, s.id, s.revision, src.threadId, src.senderKey,
       );
     }
+    for (const m of w.moved ?? []) {
+      db.run(
+        "UPDATE dated_items SET due_day = ?, due_at = ?, timed = ?, dated = 1, act_at = ?, revision = revision + 1 WHERE id = ? AND state = 'open' AND (thread_id = ? OR sender_key = ?)",
+        m.dueDay, m.dueAt, m.timed ? 1 : 0, m.actAt, m.id, src.threadId, src.senderKey,
+      );
+    }
     db.run("DELETE FROM ai_dated_mail WHERE message_id = ?", w.messageId);
     return "written";
   });

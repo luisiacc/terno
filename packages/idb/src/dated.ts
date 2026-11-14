@@ -146,6 +146,10 @@ export function finishDated(c: Ctx, w: DatedFinish): DatedFinishOutcome {
     const r = rows.get(s.id);
     if (r && r.revision === s.revision && r.state === "open" && (r.thread_id === src.threadId || r.sender_key === src.senderKey)) rows.update(r, { state: "settled", closed_reason: "settled", closed_at: w.now, revision: r.revision + 1 });
   }
+  for (const m of w.moved ?? []) {
+    const r = rows.get(m.id);
+    if (r && r.state === "open" && (r.thread_id === src.threadId || r.sender_key === src.senderKey)) rows.update(r, { due_day: m.dueDay, due_at: m.dueAt, timed: m.timed ? 1 : 0, dated: 1, act_at: m.actAt, revision: r.revision + 1 });
+  }
   marks.deleteRow(mark);
   return "written";
 }
