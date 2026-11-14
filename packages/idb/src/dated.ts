@@ -113,6 +113,27 @@ export function openDatedFor(c: Ctx, o: { threadId: number; senderKey: string; b
   return [...found.values()].filter((r) => r.arrived_at < o.before && !inSpam(r.thread_id)).sort((a, b) => b.arrived_at - a.arrived_at || b.id - a.id).slice(0, o.limit).map(toRow);
 }
 
+/** As SQL's (packages/db/src/dated.ts): a message you sent answers the requests made before it on its thread. */
+export function datedAnswered(c: Ctx, messageIds: readonly number[], now: number): number {
+  const messages = T(c, "messages");
+  const rows = T(c, "dated_items");
+  const latest = new Map<number, number>();
+  for (const id of messageIds) {
+    const m = messages.get(id);
+    if (!m || !m.is_sent || m.is_draft || m.is_spam || m.is_trash) continue;
+    latest.set(m.thread_id, Math.max(latest.get(m.thread_id) ?? 0, m.date));
+  }
+  let n = 0;
+  for (const [threadId, at] of latest) {
+    for (const r of rows.by("fk_thread_id", threadId)) {
+      if (r.state !== "open" || r.kind !== "respond" || r.arrived_at >= at) continue;
+      rows.update(r, { state: "settled", closed_reason: "answered", closed_at: now, revision: r.revision + 1 });
+      n++;
+    }
+  }
+  return n;
+}
+
 export function finishDated(c: Ctx, w: DatedFinish): DatedFinishOutcome {
   const marks = T(c, "ai_dated_mail");
   const mark = marks.get(w.messageId);
