@@ -56,7 +56,16 @@ test.describe("follow-ups (plan 142)", () => {
       await rows(page).first().click();
       const line = page.getByTestId("followup-line");
       await expect(line).toBeVisible();
-      await expect(page.getByTestId("followup-due")).toContainText("Due");
+      // the fourth panel round (revision 10): a promise that named no day says none, never the moment it's placed at
+      await expect(page.getByTestId("followup-due")).toHaveCount(0);
+      // one vocabulary with the conversation's dated line, in its weights: Done outlined, Later and Not a task quiet
+      await expect(page.getByTestId("followup-done")).toHaveText("Done");
+      await expect(page.getByTestId("followup-later")).toHaveText("Later");
+      await expect(page.getByTestId("followup-dismiss")).toHaveText("Not a task");
+      const look = (id: string) => page.getByTestId(id).evaluate((el) => { const s = getComputedStyle(el); return { color: s.color, border: s.borderTopWidth, background: s.backgroundColor }; });
+      expect(await look("followup-later")).toEqual(await look("followup-dismiss"));
+      expect((await look("followup-done")).border).not.toBe("0px");
+      expect((await look("followup-dismiss")).border).toBe("0px");
       // plan 161, pass 3: on the AI card, as Reply ready is: its edge on the subject's line, its text inset
       const left = async (id: string) => (await page.getByTestId(id).first().boundingBox())!.x;
       expect(Math.abs((await left("followup-line")) - (await left("reader-subject")))).toBeLessThanOrEqual(1);
@@ -155,7 +164,7 @@ test.describe("follow-ups (plan 142)", () => {
       expect(await page.getByTestId("followup-later-when").count()).toBe(await items.count());
       await page.keyboard.press("Escape");
     });
-    await scenario("plan 162: Reschedule to any moment, through the reminder's own date and time", async () => {
+    await scenario("plan 162: Later to any moment, through the reminder's own date and time", async () => {
       await page.getByTestId("followup-later").click();
       await page.getByTestId("followup-later-pick").click();
       await expect(page.getByTestId("followup-later-custom")).toBeVisible();
@@ -273,7 +282,7 @@ test.describe("follow-ups (plan 142)", () => {
     await fresh(page);
     await rows(page).first().click();
     await expect(page.getByTestId("followup-line")).toBeVisible();
-    // ai-r02: Reschedule's menu was its trigger's 128 px, and cut "Later today" to "Lat…" and Next week to nothing
+    // ai-r02: Later's menu (Reschedule's then) was its trigger's 128 px, and cut "Later today" to "Lat…" and Next week to nothing
     for (const scheme of ["light", "dark"] as const) {
       await page.emulateMedia({ colorScheme: scheme });
       for (const size of [{ width: 1440, height: 900 }, { width: 1100, height: 700 }]) {
@@ -289,7 +298,7 @@ test.describe("follow-ups (plan 142)", () => {
         const custom = page.getByTestId("followup-later-custom");
         await expect(custom).toBeVisible();
         expect(await unclipped(custom), where).toEqual([]);
-        // its Esc closes it alone, and the keys go back to Reschedule
+        // its Esc closes it alone, and the keys go back to Later
         await page.keyboard.press("Escape");
         await expect(custom).toHaveCount(0);
         await expect(page.getByTestId("followup-later")).toBeFocused();

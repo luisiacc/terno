@@ -29,14 +29,26 @@ describe("the follow-up's line (plan 161)", () => {
   it("under the fact, when it comes back, with its date and why; a due one says it's due (pass 3)", () => {
     // the fact is the title now ("hasn't replied yet"): this line says what happens, and on what condition
     expect(followupWhen(row(), NOW)).toBe("Comes back to your Inbox Tue, Oct 27, 9:00 AM if there’s no reply");
-    expect(followupWhen(row({ kind: "promise", text: "send the contract" }), NOW)).toBe("Comes back to your Inbox Tue, Oct 27, 9:00 AM");
     expect(followupWhen(row({ dueAt: new Date(2026, 9, 23, 9, 0).getTime() }), NOW)).toBe("Comes back to your Inbox Tomorrow 9:00 AM if there’s no reply");
     expect(followupWhen(row({ state: "due", dueAt: NOW - MIN }), NOW)).toMatch(/^Due Today /);
+  });
+
+  it("the fourth panel round (revision 10): a promise of yours says its day as Today does, never a time; one with no day, nothing", () => {
+    const promise = (o: Partial<FollowupRow>) => row({ kind: "promise", text: "send the contract", dated: true, ...o });
+    expect(followupWhen(promise({}), NOW)).toBe("Due Tuesday");
+    expect(followupWhen(promise({ dueAt: new Date(2026, 9, 22, 17, 0).getTime() }), NOW)).toBe("Due today");
+    expect(followupWhen(promise({ dueAt: new Date(2026, 9, 23, 9, 0).getTime() }), NOW)).toBe("Due tomorrow");
+    // its day over: Missed's words, by the day (due earlier today is still today's)
+    expect(followupWhen(promise({ state: "due", dueAt: new Date(2026, 9, 22, 9, 0).getTime() }), NOW)).toBe("Due today");
+    expect(followupWhen(promise({ state: "due", dueAt: new Date(2026, 9, 21, 9, 0).getTime() }), NOW)).toBe("Was due yesterday");
+    expect(followupWhen(promise({ dated: false }), NOW)).toBeNull();
+    expect(followupWhen(promise({ dated: false, state: "due", dueAt: NOW - DAY }), NOW)).toBeNull();
   });
 
   it("in Spanish too", () => {
     setLocale("es", es as never);
     expect(followupLine(row(), NOW)).toBe("Esperando la respuesta de Arjun Ramírez");
     expect(followupWhen(row(), NOW)).toMatch(/^Vuelve a tu Entrada mar, 27 oct, 09:00 si no hay respuesta$/);
+    expect(followupWhen(row({ kind: "promise", dated: true }), NOW)).toBe("Vence el martes");
   });
 });

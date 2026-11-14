@@ -1,7 +1,8 @@
-import { followupDaysSince, mostUrgent, type FollowupRow } from "@terno/core";
+import { dayEnd, dayKeyOf, followupDaysSince, mostUrgent, type FollowupRow } from "@terno/core";
 import type { FollowupsSnapshot } from "@terno/core";
 import { t } from "@terno/i18n";
 import { followupsOffered } from "~/lib/ai";
+import { promiseWhen } from "~/lib/dated";
 import { onExplicitOpen } from "~/lib/open-dwell";
 import { registerUndo, snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
@@ -52,12 +53,15 @@ export function followupLine(row: FollowupRow, now = Date.now()): string {
 
 /**
  * Plan 161: when the line comes back, never a bare weekday. Pass 3: under the fact (the title), so it says what happens and
- * on what: "Comes back to your Inbox Wed, Oct 28, 9:00 AM if there's no reply", or that it's due.
+ * on what: "Comes back to your Inbox Wed, Oct 28, 9:00 AM if there's no reply", or that it's due. The fourth panel round
+ * (revision 10): a promise of yours says its day as Today does ("Due Tuesday", "Was due yesterday"), never the moment it's
+ * placed at (a "9:00 AM" no one said); one that named no day says none (null).
  */
-export function followupWhen(row: FollowupRow, now = Date.now()): string {
+export function followupWhen(row: FollowupRow, now = Date.now()): string | null {
+  if (row.kind === "promise") return row.dated ? promiseWhen(row, now >= dayEnd(dayKeyOf(row.dueAt)), now) : null;
   const date = reminderDated(row.dueAt, now);
   if (row.state === "due") return t("followup.dueNow", { date });
-  return t(row.kind === "awaiting" ? "followup.dueOnAwaiting" : "followup.dueOn", { date });
+  return t("followup.dueOnAwaiting", { date });
 }
 
 /** What a row says: its most urgent, and how many more. */
