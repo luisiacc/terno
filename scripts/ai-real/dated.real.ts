@@ -3,6 +3,9 @@ import { join } from "node:path";
 import type { DatedKind } from "@terno/core";
 import { describe, expect, it } from "vitest";
 import { normalizeText } from "../../packages/core/src/text";
+import en from "../../packages/i18n/src/locales/en";
+import es from "../../packages/i18n/src/locales/es";
+import { alertAttributed, alertInstructs, madeUpDetails } from "./dated-checks";
 import { realTasks, spendReport, type RealTarget } from "./harness";
 
 /**
@@ -27,7 +30,7 @@ interface Case {
   tags: string[];
   subject: string;
   messages: { from: string; text: string; to?: string[]; cc?: string[] }[];
-  dated: { receivedAt: string; automated: boolean; open: { label: string; kind: DatedKind | "promise"; text: string }[]; items: Expected[]; also: Expected[]; settled: string[]; moved?: { label: string; due: string; time?: string }[]; mayMove?: { label: string; due: string; time?: string | null }[] };
+  dated: { receivedAt: string; automated: boolean; open: { label: string; kind: DatedKind | "promise"; text: string; due?: string | null; time?: string | null }[]; items: Expected[]; also: Expected[]; settled: string[]; moved?: { label: string; due: string; time?: string }[]; mayMove?: { label: string; due: string; time?: string | null }[] };
 }
 
 /** TERNO_AI_DATED_CASES: only these ids (comma-separated), to look at a few again */
@@ -36,6 +39,8 @@ const CASES: Case[] = readFileSync(join(import.meta.dirname, "corpus", "dated", 
 const MODEL = process.env.TERNO_AI_DATED_MODEL ?? "gpt-6-luna";
 const TARGET: RealTarget = { provider: MODEL.startsWith("claude-") ? "anthropic" : "openai", model: MODEL };
 const LANGUAGE = process.env.TERNO_AI_DATED_LANGUAGE ?? "en";
+/** An alert's line as the app shows it (datedText in apps/web/src/lib/dated.ts), in the app's language */
+const appLine = (text: string) => (LANGUAGE === "es" ? es : en)["dated.alertSays"].replace("{text}", text);
 
 const accepts = <T>(a: Accept<T>, value: T) => (Array.isArray(a) ? a.includes(value) : a === value);
 const matches = (e: Expected, got: { kind: DatedKind; due: string | null; time: string | null }) => accepts(e.kind, got.kind) && accepts(e.due, got.due) && (e.time === undefined || e.time === got.time);
@@ -44,7 +49,7 @@ const nameOf = (from: string) => /^(.*?)\s*<[^>]+>\s*$/.exec(from)?.[1] ?? from;
 describe.skipIf(process.env.TERNO_AI_DATED !== "1")("dated items on a small model", () => {
   it("finds what has a date, leaves out what doesn't, quotes the mail, and settles only on the mail's words", async () => {
     const tasks = realTasks(TARGET, "dated-eval");
-    let expected = 0, found = 0, wrongItems = 0, invented = 0, wrongSettled = 0, missedSettled = 0, rightTimes = 0, times = 0, wrongMoved = 0, missedMoved = 0, unsafe = 0, wrongText = 0, unattributed = 0, madeUpDetail = 0;
+    let expected = 0, found = 0, wrongItems = 0, invented = 0, wrongSettled = 0, missedSettled = 0, rightTimes = 0, times = 0, wrongMoved = 0, missedMoved = 0, unsafe = 0, wrongText = 0, unattributed = 0, selfAttributed = 0, madeUpDetail = 0;
     const lines: string[] = [];
     for (const c of CASES) {
       const mail = c.messages.at(-1)!;
@@ -80,7 +85,7 @@ describe.skipIf(process.env.TERNO_AI_DATED !== "1")("dated items on a small mode
       for (const got of left) {
         if (c.dated.also.some((e) => matches(e, got))) continue;
         wrongItems++;
-        problems.push(`wrong ${got.kind} ${got.due} "${got.text}"`);
+        problems.push(`wrong ${got.kind} ${got.due} "${got.text}", quoting "${got.quote}"`);
       }
       for (const got of r.items) {
         // as the app's own check reads a quote (checkDates): the words, whatever punctuation joins them
@@ -115,34 +120,38 @@ describe.skipIf(process.env.TERNO_AI_DATED !== "1")("dated items on a small mode
         missedMoved++;
         problems.push(`didn't move ${w.label}`);
       }
-      // prompt v3: an account alert never tells the reader to reply or click; v6: nor to pay, call, verify or check with
-      // anyone the mail names, it says what happened as the mail's word, and its amounts and card are the mail's own
-      const digits = (t: string) => t.replace(/[,.]/g, "");
+      // prompt v3: an account alert never tells the reader to act; v7: it's only what the mail says happened, its amounts and
+      // card the mail's own, and whose word it is the app's (dated-checks.ts): the line the app shows says it
       for (const got of r.items) {
         if (got.kind !== "alert") continue;
-        if (/\b(reply|respond|click|wire|transfer|pay|call|verify|contact|check with|responde|contesta|haz clic|transfiere|paga|llama|verifica|contacta|consulta con|confirma con)\b/iu.test(got.text)) {
+        if (alertInstructs(got.text)) {
           unsafe++;
           problems.push(`alert says to act: "${got.text}"`);
         }
-        if (!/\b(says|according|reports|claims|según|dice|informa|indica)\b/iu.test(got.text)) {
-          unattributed++;
-          problems.push(`alert not the mail's word: "${got.text}"`);
+        if (alertAttributed(got.text)) {
+          selfAttributed++;
+          problems.push(`alert says whose word it is, the app's job: "${got.text}"`);
         }
-        for (const n of got.text.match(/\d[\d,.]*\d/g) ?? []) {
-          if (digits(n).length < 3 || digits(mail.text).includes(digits(n))) continue;
+        if (!alertAttributed(appLine(got.text))) {
+          unattributed++;
+          problems.push(`the app's line doesn't say it's the mail's word: "${appLine(got.text)}"`);
+        }
+        for (const n of madeUpDetails(got.text, mail.text)) {
           madeUpDetail++;
           problems.push(`alert's ${n} isn't the mail's`);
         }
       }
       lines.push(`${problems.length ? "✗" : "✓"} ${c.id} [${c.tags.join(",")}] ${r.items.map((i) => `${i.kind} ${i.due}${i.time ? ` ${i.time}` : ""} "${i.text}"`).join("; ") || "nothing"}${r.moved?.length ? ` · moved ${r.moved.map((m) => `${m.label} ${m.due}${m.time ? ` ${m.time}` : ""}`).join(", ")}` : ""}${problems.length ? `\n    ${problems.join("\n    ")}` : ""}`);
     }
-    process.stderr.write(`${lines.join("\n")}\n${JSON.stringify({ model: MODEL, language: LANGUAGE, found, expected, wrongItems, invented, rightTimes, times, wrongSettled, missedSettled, wrongMoved, missedMoved, unsafe, wrongText, unattributed, madeUpDetail })}\n${spendReport()}\n`);
+    process.stderr.write(`${lines.join("\n")}\n${JSON.stringify({ model: MODEL, language: LANGUAGE, found, expected, wrongItems, invented, rightTimes, times, wrongSettled, missedSettled, wrongMoved, missedMoved, unsafe, wrongText, unattributed, selfAttributed, madeUpDetail })}\n${spendReport()}\n`);
     expect(wrongItems).toBeLessThanOrEqual(1);
     expect(wrongSettled).toBe(0);
     expect(wrongMoved).toBe(0);
     expect(missedMoved).toBeLessThanOrEqual(1);
     expect(unsafe).toBe(0);
     expect(madeUpDetail).toBe(0);
+    expect(selfAttributed).toBe(0);
+    expect(unattributed).toBe(0);
     expect(wrongText).toBeLessThanOrEqual(1);
     expect(found).toBeGreaterThanOrEqual(0.85 * expected);
     expect(rightTimes).toBeGreaterThanOrEqual(0.8 * times);
