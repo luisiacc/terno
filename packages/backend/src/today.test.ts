@@ -418,6 +418,19 @@ describe("the digest", () => {
     expect(t.model.reqs).toEqual([]);
   });
 
+  it("after the fourth panel round: a sender named like a security desk is left out of what's automated and of the digest, before any model", async () => {
+    const t = await setup();
+    await t.letter("Stratechery");
+    await t.letter("Tri-River FCU", { from: { name: "Tri-River FCU", email: "security@tririver-fcu-alerts.com" }, subject: "Online banking access temporarily suspended" });
+    await t.client.call("today.list", { heldIds: [] });
+    await vi.waitFor(async () => expect((await t.client.call("today.digest", {}))?.automated).toBe(true));
+    expect((await t.client.call("today.digest", {}))!.items.map((i) => i.from)).toEqual(["Stratechery"]);
+    await on(t);
+    await vi.waitFor(async () => expect((await t.backend.store.today.digest.get(day()))?.state).toBe("ready"));
+    expect(t.model.reqs.map((r) => promptText(r.messages[0]!.content)).join()).not.toContain("Tri-River");
+    expect((await t.client.call("today.digest", {}))!.items.map((i) => i.from)).toEqual(["Stratechery"]);
+  });
+
   describe("plan 166: Not a newsletter", () => {
     const sent = (t: Awaited<ReturnType<typeof setup>>) => t.model.reqs.map((r) => promptText(r.messages[0]!.content)).join();
 

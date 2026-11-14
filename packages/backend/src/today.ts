@@ -44,6 +44,7 @@ import type { BackendCore as Backend } from "./core";
 import { progressReporter } from "./scope";
 import { aiAllowed, readSettings } from "./settings";
 import { withoutQuotes } from "./summaries";
+import { suspiciousSender } from "./suspicious-sender";
 
 /**
  * Plan 145: what needs you today, all of it local and live. Only the digest reads mail with a model, and it's its own
@@ -265,7 +266,8 @@ export class TodayService {
         if (f.arrivedAt < floor || (since && f.messageId <= since.id) || seen.has(f.threadId)) continue;
         // a sign-in code isn't reading, and it isn't something to archive unread
         if (findCode(f.subject, f.snippet)) continue;
-        if (excluded.has(addressKey(f.fromEmail))) continue;
+        // after the fourth panel round: a sender named like a security desk is no newsletter to skim, nor a model's to read
+        if (excluded.has(addressKey(f.fromEmail)) || suspiciousSender(f.fromEmail)) continue;
         seen.add(f.threadId);
         items.push({ threadId: f.threadId, messageId: f.messageId, lastDate: f.lastDate, messageCount: f.messageCount, from: f.from, fromEmail: f.fromEmail, subject: f.subject, line: null });
         if (items.length >= DIGEST_CANDIDATES_MAX) return { items, watermark };
@@ -665,7 +667,7 @@ export class TodayService {
     const day = todayKey(this.b.now());
     // plan 166: left out at read too, both ways, so a scan or a digest from before a change can't show a sender said not to be one
     const excluded = await this.excludedKeys();
-    const allowed = (items: readonly DigestItem[]) => items.filter((i) => !excluded.has(addressKey(i.fromEmail ?? "")));
+    const allowed = (items: readonly DigestItem[]) => items.filter((i) => !excluded.has(addressKey(i.fromEmail ?? "")) && !suspiciousSender(i.fromEmail ?? ""));
     if (!s.digest) {
       if (!this.automated || this.b.now() - this.automated.at > AUTOMATED_FRESH_MS) this.refreshAutomated();
       const items = allowed(this.automated?.candidates.items ?? []);
