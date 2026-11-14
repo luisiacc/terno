@@ -6,6 +6,7 @@ import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
 import { type DatedMark, type DatedSnapshot, type DatedSource, type DatedWrite, type MailStore } from "@terno/store";
 import { DailyLimitError, MonthlyLimitError } from "./ai-limiter";
 import { UI_LOCALE_KEY } from "./forwarding";
+import { suspiciousSender } from "./suspicious-sender";
 
 /**
  * Plan 204 §3: the dated reader. Reads live mail the user got (and, with a yes, the last 14 days), oldest first, and keeps
@@ -345,6 +346,8 @@ export class DatedWorker {
     };
     // the owner's rule: mail in Spam reaches no AI, the whole thread's
     if (!src || src.draft || src.sent || src.own || src.spam || src.trash || src.threadSpam) return drop();
+    // after the fourth panel round: a sender named like a security desk is read for nothing (no item, settlement or move)
+    if (suspiciousSender(src.fromEmail)) return drop();
     if (heldSenders.has(src.senderKey)) return { hold: src.senderKey };
     // what came before it went on is read only with the check's yes
     if (mark.source === "live" && settings.dated.enabledAt !== null && src.date < settings.dated.enabledAt) return drop();
