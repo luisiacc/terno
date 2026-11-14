@@ -19,9 +19,10 @@ export async function resize(app, width, height) {
   await app.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0].setContentSize(size.width, size.height), { width, height });
 }
 
-/** Settings → General → Layout, as a user would. */
+/** Settings → Appearance → Layout, as a user would (the List group moved out of General: af3c9ea74). */
 export async function setLayout(page, layout) {
   await page.keyboard.press("Meta+,");
+  await page.getByRole("tab", { name: /appearance/i }).click();
   await page.getByTestId(`layout-${layout}`).click();
   await page.keyboard.press("Escape");
   await page.getByTestId("settings-dialog").waitFor({ state: "detached" });
