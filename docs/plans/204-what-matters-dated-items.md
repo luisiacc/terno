@@ -530,3 +530,8 @@ Codex (read-only, `/tmp/terno-scratch/p204/critique-6.out`) raised 12 points, al
 10. **The second line where a row has one:** it replaces the subject in the layouts with a subject line, and joins the accessible name elsewhere; heights unchanged; D, Done and Later act on the row's own item; en and es.
 11. **v9's time is in the words only** ("call Marcus at 4:00 PM"): a promise's moment stays the day's, as now.
 12. **Narrow:** an undated alert's row sets no day (`noDay`), its timing and Missed unchanged; word-boundary cuts apply to display text (and a move's text), never to quotes or evidence.
+
+- **The second pass** (Codex, `/tmp/terno-scratch/p204/review-9.out`, 3 points, each with a test that fails without it):
+  - **Trust.** Anyone you've written to is trusted, so jane@acme-support.com keeps her asks and invoices. The check is `dated.written`, plan 17's correspondents by `addressKey`, in both stores with conformance. The store is asked only when a sender looks suspicious: one indexed lookup. Trust is by address, not by domain, because neither store indexes correspondents by domain. `untrustedSenders` is the one rule the reader, Today and the digest all apply.
+  - **Items stored before the guard** from an untrusted suspicious sender are left out where the open items are read: Today's `datedRows` (the list and the count) and the conversation's `dated.ofThread`. Nothing is retired in the background.
+  - **A resumed digest:** `stillListed` applies the guard, so a digest checkpointed before the upgrade neither sends such a message to the model nor stores its result.
