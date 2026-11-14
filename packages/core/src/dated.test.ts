@@ -200,7 +200,16 @@ describe("an acknowledgment (plan 204, the second panel round: plan 145's rule, 
     "Ok, sign it and send it back",
     "Gracias. Mañana te llamo para revisar el presupuesto",
     "Thanks.\n\nOn Tue, Nov 10, Me wrote:\n> Here's the draft.\n\nPlease sign the contract today.",
+    // the second review: a request word capitalized like a name, or one that was filler on its own
+    "Thanks. Please reply.",
+    "Thanks. Please update the team.",
+    "Perfecto. Avísame.",
+    "Thanks. Friday works",
   ])("asks or says more: %j", (text) => expect(isAcknowledgment(text)).toBe(false));
+  it("a body too long to read cheaply is kept: the rule only takes conversations out (the second review)", () => {
+    expect(isAcknowledgment(`Thanks!\n\nOn Tue, Nov 10, Me wrote:\n${"> an old line of the thread\n".repeat(400)}`)).toBe(true);
+    expect(isAcknowledgment(`Thanks!\n\nOn Tue, Nov 10, Me wrote:\n${"> an old line of the thread\n".repeat(800)}`)).toBe(false);
+  });
   it("a snippet that starts like one is worth reading; one that doesn't isn't", () => {
     expect(looksLikeAcknowledgment("Thanks! Talk soon")).toBe(true);
     expect(looksLikeAcknowledgment("Hi Margaret, could you send the form")).toBe(false);
