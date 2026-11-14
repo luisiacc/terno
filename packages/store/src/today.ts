@@ -70,11 +70,13 @@ export function needsYou(rows: readonly WaitingRow[], known: (key: string) => { 
 
 /**
  * Plan 204, the second panel round (plan 145's rule, tighter; Codex review): a current summary of the thread that gives the
- * reader no action and no question. Current: ready, from a prompt that says who has to act, valid, and covering the
- * thread's last message (the caller checks that). Anything else (missing, stale, malformed, older) says nothing.
+ * reader no action and no question. Current: ready, from a prompt that says who has to act, valid, and generated after
+ * every message the thread shows arrived (the caller checks that against `generated_at`: a write checks its sources in
+ * its own transaction, while `through_message_id` moves when mail is queued, and a dropped request leaves it moved).
+ * Anything else (missing, stale, malformed, older) says nothing.
  */
-export function summaryAsksNothing(row: { state: string; prompt_version: number | null; body_json: string | null } | null | undefined): boolean {
-  if (!row || row.state !== "ready" || (row.prompt_version ?? 0) < SUMMARY_WHO_ACTS_SINCE || !row.body_json) return false;
+export function summaryAsksNothing(row: { state: string; prompt_version: number | null; body_json: string | null; generated_at: number | null } | null | undefined): boolean {
+  if (!row || row.state !== "ready" || (row.prompt_version ?? 0) < SUMMARY_WHO_ACTS_SINCE || !row.body_json || row.generated_at == null) return false;
   try {
     const body = JSON.parse(row.body_json) as { summary?: unknown; items?: unknown };
     if (typeof body.summary !== "string" || !Array.isArray(body.items)) return false;

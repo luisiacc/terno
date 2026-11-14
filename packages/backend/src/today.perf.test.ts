@@ -46,7 +46,7 @@ async function needsAtBound(store: MailStore, client: RpcClient, accountId: numb
   for (let i = 0; i < NEEDS_WALK; i++) {
     const threadId = threads.get(`needs-${i}-in`)!;
     const sources = await store.aiSummaries.sources(threadId);
-    const r = await store.aiSummaries.finish({ threadId, stamp: sources!.stamp, expectThrough: null, now, clearGeneration: store.aiSummaries.clearGeneration(), contentHash: "h", promptVersion: 7, language: "en", model: "m", provider: "fake", endpoint: null, bodyJson: body });
+    const r = await store.aiSummaries.finish({ threadId, stamp: sources!.stamp, expectThrough: null, now: now + 1, clearGeneration: store.aiSummaries.clearGeneration(), contentHash: "h", promptVersion: 7, language: "en", model: "m", provider: "fake", endpoint: null, bodyJson: body });
     if (r === "written") written++;
   }
   expect(written).toBe(NEEDS_WALK);
