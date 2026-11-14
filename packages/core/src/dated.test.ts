@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { datedOver, datedPlace, datedTiming, hasTimeCue, nextTodayChange, planEnd, promiseMissed, promiseOver, type DatedKind, type DatedRow } from "./dated";
+import { datedOver, datedPlace, datedTiming, hasTimeCue, nextTodayChange, planEnd, promiseComingUp, promiseMissed, promiseOver, type DatedKind, type DatedRow } from "./dated";
 
 const at = (y: number, m: number, d: number, h = 0, min = 0) => new Date(y, m - 1, d, h, min).getTime();
 const clock = (ms: number) => { const d = new Date(ms); return [d.getMonth() + 1, d.getDate(), d.getHours(), d.getMinutes()]; };
@@ -14,8 +14,10 @@ describe("when a dated item shows (plan 204 §2)", () => {
   it("each kind shows its lead before its day, at 9:00", () => {
     expect(clock(timing("pay", "2026-11-20")!.actAt)).toEqual([11, 17, 9, 0]);
     expect(clock(timing("renew", "2026-11-20")!.actAt)).toEqual([11, 13, 9, 0]);
-    expect(clock(timing("expire", "2026-11-20")!.actAt)).toEqual([11, 13, 9, 0]);
-    expect(clock(timing("respond", "2026-11-20")!.actAt)).toEqual([11, 18, 9, 0]);
+    // after the panel: 30 days for an expiring document (begun already: at once), a week for a request
+    expect(timing("expire", "2026-11-20")!.actAt).toBe(arrived);
+    expect(clock(timing("expire", "2026-12-20")!.actAt)).toEqual([11, 20, 9, 0]);
+    expect(clock(timing("respond", "2026-11-20")!.actAt)).toEqual([11, 13, 9, 0]);
     expect(clock(timing("event", "2026-11-20")!.actAt)).toEqual([11, 19, 9, 0]);
     expect(clock(timing("delivery", "2026-11-20")!.actAt)).toEqual([11, 20, 0, 0]);
   });
@@ -69,6 +71,25 @@ describe("where an item sits (revision 8)", () => {
     expect(datedPlace(later, at(2026, 11, 18, 9))).toBe("comingUp");
     expect(datedPlace(later, at(2026, 11, 21, 9))).toBe("comingUp");
     expect(datedPlace(later, at(2026, 11, 22, 9))).toBe("missed");
+  });
+  it("Codex review of the fixes: a Missed item snoozed past its week comes back for a visible week, not straight to over", () => {
+    const later = { ...bill, deferredUntil: at(2026, 12, 1, 9) };
+    expect(datedPlace(later, at(2026, 11, 28, 9))).toBe("comingUp");
+    expect(datedOver(later, at(2026, 11, 28, 9))).toBe(false);
+    expect(datedPlace(later, at(2026, 12, 1, 9))).toBe("missed");
+    expect(datedOver(later, at(2026, 12, 1, 9))).toBe(false);
+    expect(datedPlace(later, at(2026, 12, 8, 23))).toBe("missed");
+    expect(datedPlace(later, at(2026, 12, 9, 0))).toBe("hidden");
+    expect(datedOver(later, at(2026, 12, 9, 0))).toBe(true);
+    expect(nextTodayChange([later], [], at(2026, 12, 8, 23, 30))).toBe(at(2026, 12, 9));
+  });
+  it("a dated promise due within two weeks is Coming up's, and the clock wakes as it enters and comes due", () => {
+    const promise = { kind: "promise", state: "open", dated: true, dueAt: at(2026, 11, 30, 9) };
+    expect(promiseComingUp(promise, at(2026, 11, 16, 9))).toBe(true);
+    expect(promiseComingUp(promise, at(2026, 11, 16, 8))).toBe(false);
+    expect(promiseComingUp({ ...promise, dated: false }, at(2026, 11, 20))).toBe(false);
+    expect(nextTodayChange([], [promise], at(2026, 11, 10))).toBe(at(2026, 11, 16, 9));
+    expect(nextTodayChange([], [promise], at(2026, 11, 29, 23, 30))).toBe(at(2026, 11, 30));
   });
   it("closed is hidden", () => {
     expect(datedPlace({ ...bill, state: "done" }, at(2026, 11, 18))).toBe("hidden");
