@@ -61,8 +61,6 @@ export const CONTRAST_PAIRS: readonly ContrastPair[] = [
   ...text("sidebar-primary-ink", ["sidebar", "sidebar-accent"]),
   // plan 94: a filled button under the pointer
   ...text("primary-foreground", ["primary-hover"]),
-  // plan 204: a filled button's own colours, at rest and under the pointer
-  ...text("cta-foreground", ["cta", "cta-hover"]),
   // plan 66: a hovered sidebar row's text, counts and glyph, its translucent fill painted over the sidebar
   ...(["sidebar-foreground", "sidebar-accent-foreground", "muted-foreground", "unread-ink"] as const).map((fg): ContrastPair => ({ fg, bg: "sidebar-hover", min: 4.5, overToken: "sidebar" })),
   { fg: "sidebar-glyph", bg: "sidebar-hover", min: 3, overToken: "sidebar" },

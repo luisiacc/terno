@@ -264,10 +264,6 @@ export function derive(input: Pick<ThemeInput, "mode" | "tokens" | "cats" | "ove
     const pr = o("primary");
     return { ...pr, l: Math.max(0, Math.min(1, pr.l + (o("primary-foreground").l > pr.l ? -0.06 : 0.06))) };
   });
-  // plan 204: a filled button's colours are the primary's unless a palette sets its own
-  def("cta", () => o("primary"));
-  def("cta-hover", () => o("primary-hover"));
-  def("cta-foreground", () => o("primary-foreground"));
   // plan 125: the danger button's text, white on a red, or the theme's own dark where its red is light (dark palettes),
   // stepped further only if 4.5:1 needs it; then the lower stop of its top light, a shade darker that the text still reads on
   def("destructive-foreground", () => {
@@ -692,12 +688,13 @@ export const THEMES: readonly Theme[] = [
       unread: "0.52 0.15 237",
       // 3:1 on the open row's grey too (Codex code review: 0.6 was 2.8:1 there)
       star: "0.53 0.13 66",
-      "row-hover": "#E5E5E5",
-      // the owner's soft light selection (plan 173) at its strongest
-      "row-selected": "#DADADA",
+      "row-hover": "#E3E3E3",
+      // the owner (after the second UI rating): a firm open row, past plan 173's soft step, 1.4:1 on the list
+      "row-selected": "#CCCCCC",
       "row-selected-foreground": "#1F1F1F",
-      // a step down from the sidebar: the chosen item is pressed in (the owner: lighter, it read as the Compose pill)
-      "sidebar-accent": "#D3D3D3",
+      // a step down from the sidebar: the chosen item is pressed in (the owner: lighter, it read as the Compose pill), as firm
+      // as the open row
+      "sidebar-accent": "#CBCBCB",
     },
     cats: cats(".6 .17 16 | .6 .13 66 | .57 .13 131 | .56 .11 163 | .56 .1 205 | .5 .075 50 | .56 .17 322 | .52 .01 257"),
     // the raised controls' lit top edge and their shadows (designs/depth.ts) are stronger than the flat palettes'
@@ -1048,7 +1045,7 @@ export const THEMES: readonly Theme[] = [
       popover: "#2A2A2A",
       sidebar: "#191919",
       muted: "#2C2C2C",
-      "muted-foreground": "#A4A4A4",
+      "muted-foreground": "#AAAAAA",
       accent: "#2E2E2E",
       "accent-foreground": "#EDEDED",
       border: "1 0 0 / 14%",
@@ -1060,15 +1057,14 @@ export const THEMES: readonly Theme[] = [
       unread: "0.74 0.13 237",
       star: "0.82 0.14 80",
       "row-hover": "1 0 0 / 6%",
-      "row-selected": "#363636",
+      // the owner (after the second UI rating): a firm open row, 1.5:1 on the list
+      "row-selected": "#3D3D3D",
       "row-selected-foreground": "#EDEDED",
       "sidebar-accent": "#333333",
     },
     cats: cats(".72 .13 16 | .8 .12 75 | .78 .13 131 | .74 .11 163 | .76 .09 205 | .7 .07 50 | .72 .14 322 | .7 .01 257"),
     overrides: { "sidebar-foreground": "#A4A4A4", "sidebar-glyph": "#A4A4A4", "sidebar-accent-foreground": "#EDEDED", "control-edge": "#858585", "control-edge-hover": "#A0A0A0", highlight: "1 0 0 / 9%", "shadow-color": "0 0 0 / 55%",
-      // the owner: Send and the other filled buttons are raised pills, not a light ink; UI rating relief-r01: graphite, a
-      // clear step lighter than the dark secondary pills (2:1 on a composer), so the main action reads as one
-      cta: "#5E5E5E", "cta-hover": "#505050", "cta-foreground": "#FFFFFF", overlay: "0 0 0 / 65%" },
+      overlay: "0 0 0 / 65%" },
   }),
 ];
 

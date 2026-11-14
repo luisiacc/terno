@@ -58,8 +58,7 @@ describe("WCAG AA in every built-in theme", () => {
     // plan 181: an AI card's two inks on its two fills (light's, dark's) over the reader, Lumen's card and a dialog
     // plan 193: a one-line row's preview on a row's four fills
     // plan 203: a setting search opened, its two inks on the primary's 8% wash over Settings' tint, card and dialog
-    // plan 204: a filled button's text on its own fill and hover (the cta colours)
-    expect(CONTRAST_PAIRS).toHaveLength(2 + 4 + 49 + 2 + 4 + 2 + 6 + 4 + 3 + 3 + 4 + 40 + 2 + 5 + 1 + 1 + 1 + 8 + 1 + 2 + 1 + 2 + 2 + 2 + 2 + 3 + 6 + 12 + 4 + 6 + 2);
+    expect(CONTRAST_PAIRS).toHaveLength(2 + 4 + 49 + 2 + 4 + 2 + 6 + 4 + 3 + 3 + 4 + 40 + 2 + 5 + 1 + 1 + 1 + 8 + 1 + 2 + 1 + 2 + 2 + 2 + 2 + 3 + 6 + 12 + 4 + 6);
   });
 
   it("reports a failing pair with its ratio", () => {
@@ -166,10 +165,11 @@ describe("boundaries as drawn (plan 160)", () => {
     if (parseColor(tokens.primary).c >= AI_MIN_CHROMA) expect(tokens.ai).toBe(tokens.primary);
   });
 
-  // the owner's decision (plan 173): light's selections are a soft step, so none drifts back to plan 160's heavy fill
+  // the owner's decision (plan 173): light's selections are a soft step, so none drifts back to plan 160's heavy fill.
+  // Relief is the owner's exception (plan 204, after its second UI rating): its open row and its sidebar's are firm steps
   it.each(THEMES.filter((t) => t.mode === "light").map((t) => t.id))("%s keeps its selections soft (plan 173)", (id) => {
     const theme = THEMES.find((t) => t.id === id)!;
-    const ceiling = 1.22;
+    const ceiling = id === "relief-light" ? 1.5 : 1.22;
     for (const why of ["the open row", "the sidebar's selection"]) {
       const step = BOUNDARY_STEPS.find((s) => s.mode === "light" && s.why.startsWith(why))!;
       expect(boundaryStep(theme, step), `${id}: ${step.why}`).toBeLessThanOrEqual(ceiling);

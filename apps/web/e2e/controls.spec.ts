@@ -292,10 +292,9 @@ const PROBES: [string, Probe][] = [
     await page.mouse.up();
   }],
 
-  // (plan 204: in the cta colours, the primary's in every palette but Relief's dark)
-  ["the primary's gradient runs between its hover and rest fills, the fills its text is checked on", async (page, mode, expect) => {
+  ["the primary's gradient runs between primary-hover and primary, the fills its text is checked on", async (page, mode, expect) => {
     const stops = [await css(page, "primary", "--tw-gradient-from"), await css(page, "primary", "--tw-gradient-to")].map((s) => s.trim());
-    const fills = [await css(page, "probe-cta-hover", "background-color"), await css(page, "probe-cta", "background-color")];
+    const fills = [await css(page, "probe-primary-hover", "background-color"), await css(page, "probe-primary", "background-color")];
     expect(stops.sort()).toEqual(fills.sort());
     // hovered: no gradient, the plain hover fill
     await page.getByTestId("primary").hover();
@@ -384,7 +383,7 @@ for (const mode of ["light", "dark"] as const) {
         await page.mouse.move(1, 1);
         await baseExpect(page.getByTestId("compose-send-later")).toHaveAttribute("aria-expanded", "true");
         baseExpect(await css(page, "compose-send-later", "background-image")).toBe("none");
-        baseExpect(await css(page, "compose-send-later", "background-color")).toBe(await css(page, "probe-cta-hover", "background-color"));
+        baseExpect(await css(page, "compose-send-later", "background-color")).toBe(await css(page, "probe-primary-hover", "background-color"));
       });
       await scenario("Send with nobody to send to is an outlined pair: each half hovers and presses in the quiet fill, never the primary, the outline over a hovered half (plan 173)", async () => {
         await freshNoDrafts(page, server);
@@ -392,7 +391,7 @@ for (const mode of ["light", "dark"] as const) {
         await focusList(page);
         await page.keyboard.press("c");
         await page.addStyleTag({ content: "[data-testid=compose-send-group] *{transition:none!important}" });
-        const primary = await css(page, "probe-cta", "background-color");
+        const primary = await css(page, "probe-primary", "background-color");
         const outline = () => page.getByTestId("compose-send-group").evaluate((el) => getComputedStyle(el, "::after").boxShadow);
         const atRest = await outline();
         for (const id of ["compose-send", "compose-send-later"]) {

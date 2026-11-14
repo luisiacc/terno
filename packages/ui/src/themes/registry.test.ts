@@ -4,14 +4,6 @@ import { composite, contrast, oklchToRgb, parseColor } from "./color";
 import { builtinTheme, glassAlpha, resolveCustomTheme, THEMES, themesFor } from "./registry";
 
 describe("theme registry", () => {
-  it("a filled button's colours are the primary's in every palette but Relief's dark (plan 204)", () => {
-    for (const t of THEMES.filter((x) => x.id !== "relief-dark")) {
-      expect([t.tokens.cta, t.tokens["cta-hover"], t.tokens["cta-foreground"]], t.id).toEqual([t.tokens.primary, t.tokens["primary-hover"], t.tokens["primary-foreground"]]);
-    }
-    const dark = builtinTheme("relief-dark")!.tokens;
-    expect(dark.cta).not.toBe(dark.primary);
-  });
-
   it("matches core's built-in list, in order, with unique ids", () => {
     expect(THEMES.map((t) => ({ id: t.id, mode: t.mode }))).toEqual(BUILTIN_THEMES.map((t) => ({ id: t.id, mode: t.mode })));
     expect(new Set(THEMES.map((t) => t.id)).size).toBe(THEMES.length);

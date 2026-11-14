@@ -185,3 +185,8 @@ Out of scope here, as they aren't Relief's: the rows' height, Reply shown twice 
 ## UI rating, round 2 (relief-r02, commit 4655c1034)
 
 Overall: Claude 6.5, Codex 7 (UI 6 / 7, UX 7.5 / 7.5). The lowest cell rose from 4 to 5.5 for both raters; Codex's multi-select went from 7 to 8, and 12 of its 108 cells reached 9. Still below the bar. What holds Relief down, by both raters, is tonal: dark Send (the graphite pill) still reads as one grey among greys, enabled and disabled; the open row, the list and the reader differ by small grey steps (the owner's soft light selection caps the open row at 1.22:1); and the composer barely separates from the reader. The rest is app-wide, as in round 1: Reply shown twice, the small-window sticky header over the sender, the recipient warning's timing, the rows' height, List layout's category column.
+
+Then the owner, on the two choices the raters left: "do the 2 suggestions to go higher".
+
+- **Dark Send is the light ink again**, a raised light pill: the raters' solid fill. The `cta` tokens (filled buttons apart from the primary) had no other user, so they're gone, and `Button`, Send's group and the selection bar draw the primary as they did before plan 204.
+- **Relief's selections are firm**, past plan 173's soft step, by the owner's exception (the contrast test's ceiling is 1.5 for `relief-light`): the open row `#CCCCCC` on `#EFEFEF` (1.4:1), the sidebar's pressed-in item `#CBCBCB`; in dark `#3D3D3D` on `#1E1E1E` (1.5:1), with the quiet ink at `#AAAAAA` so it holds 4.5:1 on it.
