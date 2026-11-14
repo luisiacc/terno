@@ -415,7 +415,7 @@ describe("acting on an item (§5)", () => {
 });
 
 describe("after the panel", () => {
-  it("a promise row carries the promise it shows; one due in two weeks is Coming up's, one due now is Needs you's", async () => {
+  it("a promise row carries the promise it shows; one due in two weeks is Coming up's, one due today is Deadlines'", async () => {
     const { client, receive, raw, clock } = await setup();
     await client.call("settings.update", { followups: { enabled: true } });
     const later = await receive({ from: { name: "Ana", email: "ana@people.test" }, subject: "The report", bodyText: "Thanks!" });
@@ -425,8 +425,8 @@ describe("after the panel", () => {
     const list = await client.call("today.list", { heldIds: [] });
     const coming = list.sections.find((x) => x.kind === "comingUp")!.items[0]!;
     expect(coming).toMatchObject({ thread: { id: later }, why: { kind: "promise", text: "send the report", promise: { revision: 0 } } });
-    const needs = list.sections.find((x) => x.kind === "needsYou")!.items[0]!;
-    expect(needs).toMatchObject({ thread: { id: now }, why: { kind: "promise", promise: { revision: 3, dated: true } } });
+    const today = list.sections.find((x) => x.kind === "deadlines")!.items[0]!;
+    expect(today).toMatchObject({ thread: { id: now }, why: { kind: "promise", promise: { revision: 3, dated: true } } });
     // Coming up isn't counted
     expect((await client.call("counts.get", {})).today).toBe(1);
   });
@@ -594,5 +594,29 @@ describe("Today's groups (§1)", () => {
     expect((await client.call("today.list", { heldIds: [] })).sections).toEqual([]);
     await backend.today.armClock();
     expect(backend.today.clockNextAt).toBeNull();
+  });
+});
+
+describe("the third panel round", () => {
+  const followup = (thread: number, text: string, dueAt: number, o: { kind?: string; state?: string; dated?: number; message?: number; revision?: number } = {}) =>
+    [`INSERT INTO followups (thread_id, message_id, item, kind, text, person_name, person_email, sent_at, due_at, dated, state, revision, created_at) VALUES (?, ?, 0, ?, ?, 'Elena', 'elena@acme.test', ?, ?, ?, ?, ?, ?)`, thread, o.message ?? 900_000 + thread, o.kind ?? "promise", text, NOW - 3 * DAY, dueAt, o.dated ?? 1, o.state ?? "open", o.revision ?? 0, NOW] as const;
+
+  it("change 3: a promise due today is a deadline from its day's start, by day with the dated items; a nudge stays in Needs you", async () => {
+    const { client, model, receive, read, raw, clock, sections } = await setup();
+    await client.call("settings.update", { followups: { enabled: true } });
+    model.answer = (req) => (promptText(req.messages[0]!.content).includes("electricity") ? reply([bill]) : reply());
+    const billThread = await receive();
+    const agenda = await receive({ from: { name: "Tom", email: "tom@people.test" }, subject: "The agenda", bodyText: "Looking forward to it." });
+    const nudge = await receive({ from: { name: "Ana", email: "ana@people.test" }, subject: "The quote", bodyText: "Looking forward to it." });
+    await read();
+    raw.run(...followup(agenda, "send the agenda", at(2026, 11, 19, 9)));
+    raw.run(...followup(nudge, "Ana", at(2026, 11, 18, 9), { kind: "awaiting", dated: 0, state: "due" }));
+    // 8:00 on the promise's day: before its 9:00, it's already today's
+    clock.now = at(2026, 11, 19, 8);
+    expect(await sections()).toEqual({ deadlines: [agenda, billThread], needsYou: [nudge] });
+    expect((await client.call("counts.get", {})).today).toBe(3);
+    // the day before: Coming up
+    clock.now = at(2026, 11, 18, 10);
+    expect(await sections()).toMatchObject({ deadlines: [billThread], comingUp: [agenda] });
   });
 });

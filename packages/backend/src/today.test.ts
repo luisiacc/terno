@@ -133,7 +133,7 @@ describe("the list", () => {
     expect(dates).toEqual([...dates].sort((a, b) => b - a));
   });
 
-  it("a thread appears once: two due promises and a reminder are one row in Needs you, and count once", async () => {
+  it("a thread appears once: two due promises and a reminder are one row in Deadlines, and count once", async () => {
     const { backend, client, account, clock } = await setup();
     await client.call("settings.update", { followups: { enabled: true } });
     const me = { name: "Me", email: account.email };
@@ -147,7 +147,8 @@ describe("the list", () => {
     await client.call("reminders.set", { threadIds: [t], dueAt: clock.now - 500, kind: "always" });
     const list = await client.call("today.list", { heldIds: [] });
     const sections = list.sections.map((s) => [s.kind, s.items.map((i) => i.thread.id)]);
-    expect(sections).toEqual([["needsYou", [t]]]);
+    // plan 204, the third panel round: a promise of yours that's due, undated, is a deadline
+    expect(sections).toEqual([["deadlines", [t]]]);
     expect(list.sections[0]!.items[0]!.why.kind).toBe("promise");
     expect((await client.call("counts.get", {})).today).toBe(1);
   });
