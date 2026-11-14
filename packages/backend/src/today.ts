@@ -19,6 +19,7 @@ import {
   datedPlace,
   nextTodayChange,
   promisePlace,
+  promiseOver,
   dayKeyOf,
   type DatedPlace,
   type PromisePlace,
@@ -575,8 +576,19 @@ export class TodayService {
     // the count reads none of what follows: what's waiting is its own indexed count there, and Reminders and Coming up
     // come after it, so they never take a waiting thread from it
     if (o.count) return dedupe(placed);
+    // the third panel round (revision 4): a waiting conversation with an open promise of yours shows that promise, the one
+    // due soonest, carried so Done, Not a promise and Later act on exactly it; one put off with Later keeps it, at its new day
+    const owed = new Map<number, FollowupRow>();
+    for (const r of promises) {
+      if (promiseOver(r, now)) continue;
+      const was = owed.get(r.threadId);
+      if (!was || r.dueAt < was.dueAt || (r.dueAt === was.dueAt && r.id < was.id)) owed.set(r.threadId, r);
+    }
     // one bounded read of what's waiting (revision 12): `needsYou` over the newest `NEEDS_WALK`
-    for (const w of await store.today.waitingPage({ now, after: null, limit: NEEDS_WALK })) placed.push({ group: "needsYou", threadId: w.id, why: { kind: "waiting", wrote: w.hasSent }, waiting: true });
+    for (const w of await store.today.waitingPage({ now, after: null, limit: NEEDS_WALK })) {
+      const promise = owed.get(w.id);
+      placed.push({ group: "needsYou", threadId: w.id, why: promise ? promiseWhy(promise) : { kind: "waiting", wrote: w.hasSent }, waiting: true });
+    }
     const endOfDay = new Date(now);
     endOfDay.setHours(23, 59, 59, 999);
     const reminders = (await this.b.reminders.refresh()).reminders.filter((r) => r.dueAt <= endOfDay.getTime()).sort((a, b) => a.dueAt - b.dueAt);
@@ -616,8 +628,8 @@ export class TodayService {
       const t = threads.get(p.threadId);
       return t && !t.inSpam && !t.inTrash;
     });
-    // a waiting row's line is its current summary, read together, for the first rows only
-    const lined = shown.filter((p) => p.waiting).slice(0, SUMMARY_LINES_MAX).map((p) => p.threadId);
+    // a waiting row's line is its current summary, read together, for the first rows only (one showing your promise has it)
+    const lined = shown.filter((p) => p.waiting && p.why.kind === "waiting").slice(0, SUMMARY_LINES_MAX).map((p) => p.threadId);
     const lines = new Map(await Promise.all(lined.map(async (id) => [id, await this.summaryLine(id)] as const)));
     const sections: TodaySection[] = [];
     for (const kind of TODAY_GROUP_ORDER) {
