@@ -12,7 +12,8 @@ import type { StructuredTask } from "./ladder";
 /** 4 (the second panel round): an automatic renewal says what it is; the amount after the verb; a calendar invitation is an event; your own promises (p1…) can be moved */
 /** 5 (the third panel round): a person's undated ask (`ask`); a window or a "by" time said in a Plan's text, not its time; the one thing to bring in its text; the currency as written; every dated thing its own item */
 /** 6 (the fourth panel round): an alert says what the mail says happened, attributed, never an instruction; `moved` is a new day or a new time */
-export const DATED_PROMPT_VERSION = 6;
+/** 7 (the Codex code review of the fourth round): an alert's text is only what happened, its attribution the app's (a cut kept losing it); the open items show their day and time, for a move of the time alone */
+export const DATED_PROMPT_VERSION = 7;
 export const DATED_MAX_TOKENS = 2000;
 export const DATED_SUBJECT_CHARS = 200;
 export const DATED_FROM_CHARS = 100;
@@ -41,8 +42,8 @@ export interface DatedInput {
   cc: readonly string[];
   /** weekday, date and time, in the user's zone */
   receivedAt: string;
-  /** this thread's and this sender's open items, labelled o1, o2…: what it could settle */
-  open: readonly { label: string; kind: DatedKind | "promise"; text: string }[];
+  /** this thread's and this sender's open items, labelled o1, o2…: what it could settle; `due` (YYYY-MM-DD) and `time` (HH:MM) when it has them, so a move of the time alone can say its day (the Codex code review of the fourth round) */
+  open: readonly { label: string; kind: DatedKind | "promise"; text: string; due?: string | null; time?: string | null }[];
   /** the app's: `text` in each item is for the reader */
   language: string;
   outputTokens?: number;
@@ -68,7 +69,7 @@ const EXAMPLE_TEXT: Record<string, [string, string]> = { en: ["Pay the electrici
 
 const AMOUNT_EXAMPLE: Record<string, string> = { en: "Pay $187.42 for the electricity bill", es: "Pagar $187.42 de la factura de la luz" };
 const ASK_EXAMPLE: Record<string, [string, string]> = { en: ["Answer Mariana about a rebranding quote", "Tell Mom if you're coming for Christmas"], es: ["Responder a Mariana sobre el presupuesto del rebranding", "Decirle a mamá si vas en Navidad"] };
-const ALERT_EXAMPLE: Record<string, string> = { en: "Debit card frozen after a $412.18 charge, the email says", es: "Tarjeta de débito congelada tras un cargo de $412.18, según el correo" };
+const ALERT_EXAMPLE: Record<string, string> = { en: "Debit card frozen after a $412.18 charge", es: "Tarjeta de débito congelada tras un cargo de $412.18" };
 const DETAIL_EXAMPLE: Record<string, [string, string, string]> = { en: ["Furnace service, 12–2 PM", "Package arriving by 9 PM", "Blood test (fast after midnight)"], es: ["Revisión de la caldera, 12–14 h", "Paquete llega antes de las 21 h", "Análisis de sangre (en ayunas desde medianoche)"] };
 
 const SYSTEM = (language: string, receivedAt: string) => {
@@ -91,7 +92,7 @@ Return:
   - "renew": a renewal, a free trial ending, a subscription that charges unless cancelled. Say what happens, not a task the mail doesn't ask for: "Notely Pro renews automatically ($9.99)", "Free trial ends"; "Renew …" only when it won't renew unless the reader acts.
   - "expire": a card, a document, a password or an account expiring.
   - "respond": something the reader is asked to answer, send, bring, sign or fill in by a day: an RSVP, a form, a signature, a reply ("can you send it by Thursday?", "you're on cupcakes for Friday"). It always has a day. A request with a day is this, and never also an "ask".
-  - "alert": a payment that failed, an account locked or suspended, action required on the reader's own account. It may name no day. Its text says what the mail says happened, with the amount, the card or the account it states, and always that it's the mail's word: "${alertExample}". Never an instruction: not to reply, click, pay or call, nor to check with someone the mail names (it may not be who it claims).
+  - "alert": a payment that failed, an account locked or suspended, action required on the reader's own account. It may name no day. Its text is only what the mail says happened, with the amount, the card or the account it states, and what stops: "${alertExample}"; the app shows it as the mail's word, so never add "the email says". Never an instruction: not to reply, click, pay or call, nor to check with someone the mail names (it may not be who it claims).
   - "event": a flight, a reservation, an appointment, a booking, or a meeting the reader is invited to (a calendar invitation), still ahead, even when the mail confirms it or asks the reader to confirm it ("Appointment confirmed: Monday 10:20", "reply C to confirm"): the event is the item.
   - "delivery": a parcel arriving, or one to pick up.
   - "ask": only when nothing else in this list fits: the sender, a person ("Sent by a person"), asks the reader directly for an answer or for something, and the mail gives it no day: a question for them, something to send, do or decide ("can you send me a quote?", "I'd love your take on the draft", "are you coming for Christmas?"). Never from an automated address; never what the mail asks someone else; never a newsletter's or a list's call to action, a sales pitch, or what a scam or a stranger wants (money, details, a click); never a question that needs no answer ("hope you're well?", "let me know if you have any questions", "no need to reply"). One that names the reader ("<their name>, could you…?") is theirs even when they're only copied. At most one "ask" a mail: what they most need from the reader. Its text says whom to answer and about what: "${askExample}", "${familyExample}".
@@ -102,9 +103,9 @@ Return:
   - "quote": a few of the mail's exact words that say it, copied from one line of <mail> as they're written, never reworded.
   - "due": YYYY-MM-DD, the last day to act or the day it happens, counted from when the mail arrived ("Friday", "el 20", "tomorrow"); the first day of a range. null for an "ask", and for an "alert" that names no day. Never guess a day: another kind with no day in the mail isn't an item.
   - "time": HH:MM on a 24-hour clock when the mail states the moment it starts or is due ("at 9:30", "pay by 1 PM"), else null. An event or a delivery with a window ("between 12 and 2") or only a "by" time ("arriving by 9 PM") has no time: say it in its text instead: "${windowExample}", "${byExample}".
-- <open_items> holds the reader's open items (o1, o2…) and promises the reader made in this conversation (p1, p2…, kind "promise").
+- <open_items> holds the reader's open items (o1, o2…) and promises the reader made in this conversation (p1, p2…, kind "promise"), each with its day and time when it has them ("o1 (event, 2026-03-07 10:00): …").
 - "settled": the open items (labels o1, o2…, never a p label) this message settles, each { "label", "evidence" }, where evidence is the mail's exact words that settle it: "Payment received", "your booking has been cancelled", "your card has been updated". A reminder of the same bill settles nothing. If in doubt, leave it out.
-- "moved": the open items or promises this message gives a new day or a new time ("Friday at the latest works", "we've moved your appointment to the 24th", "Saturday's game is now at 8:00"), each { "label", "due", "time", "evidence" } with "due" as above (the same day when only the time changes), "time" the new time or null when the mail gives none, and evidence the mail's exact words. An open item with a new day or time goes here, never also in "items". An open item the mail only mentions again with no new day or time (a reminder, a new place) is neither moved nor an item. One it settles isn't moved.
+- "moved": the open items or promises this message gives a new day or a new time ("Friday at the latest works", "we've moved your appointment to the 24th", "Saturday's game is now at 8:00"), each { "label", "due", "time", "evidence" } with "due" as above (its own day from <open_items> when only the time changes), "time" the new time or null when the mail gives none, and evidence the mail's exact words. An open item with a new day or time goes here, never also in "items". An open item the mail only mentions again with no new day or time (a reminder, a new place) is neither moved nor an item. One it settles isn't moved.
 
 Not items:
 - A marketing deadline: "50% off ends tonight", "last chance", "offer expires Sunday", "precio especial hasta el viernes".
@@ -122,7 +123,8 @@ const RECIPIENTS_SHOWN = 10;
 const ADDRESSED: Record<DatedInput["reader"]["addressed"], string> = { to: "The reader is one of the people it's addressed to.", cc: "The reader is only copied on it (Cc), not addressed.", none: "The reader isn't named among its recipients (a list, or a blind copy)." };
 
 export function datedPrompt(input: DatedInput): string {
-  const open = input.open.slice(0, DATED_OPEN_SHOWN).map((o) => `${o.label} (${o.kind}): ${dataText(o.text.slice(0, OPEN_TEXT_CHARS))}`).join("\n");
+  const when = (o: DatedInput["open"][number]) => (o.due ? `, ${o.due}${o.time ? ` ${o.time}` : ""}` : "");
+  const open = input.open.slice(0, DATED_OPEN_SHOWN).map((o) => `${o.label} (${o.kind}${when(o)}): ${dataText(o.text.slice(0, OPEN_TEXT_CHARS))}`).join("\n");
   return [
     // outside the blocks: ours, not the mail's
     input.from.automated ? "Sent from an automated address (a list, bulk mail or no-reply)." : "Sent by a person.",
@@ -156,6 +158,14 @@ export function fitDates(input: DatedInput, promptChars: number): DatedInput {
 }
 
 const clean = (text: string, max: number) => text.replace(/\s+/g, " ").trim().slice(0, max);
+/** v6's words, which a model may still give: the app says whose word an alert is, so the model's own goes (en, es) */
+const SAID_AFTER = /[\s,;:.(—–-]*\b(?:the (?:e-?mail|mail|message|bank|sender) (?:says|claims|reports)|(?:says|according to) the (?:e-?mail|mail|message)|seg[uú]n (?:el|la) (?:correo|mensaje|e-?mail|banco|remitente)|(?:dice|indica|informa) el (?:correo|mensaje|banco))\)?[\s.]*$/iu;
+const SAID_BEFORE = /^\s*(?:the (?:e-?mail|mail|message) says|according to the (?:e-?mail|mail|message)|seg[uú]n el (?:correo|mensaje)|el (?:correo|mensaje) dice)\s*(?:that|que)?[\s,:]*/iu;
+const alertText = (kind: string, text: string) => {
+  if (kind.trim().toLowerCase() !== "alert") return text;
+  const bare = text.replace(SAID_AFTER, "").replace(SAID_BEFORE, "");
+  return bare ? bare.charAt(0).toLocaleUpperCase() + bare.slice(1) : text;
+};
 const KINDS: ReadonlySet<string> = new Set(DATED_KINDS);
 const isKind = (kind: string): kind is DatedKind => KINDS.has(kind);
 const blankToNull = (value: string | null) => (value?.trim() ? value.trim() : null);
@@ -173,7 +183,7 @@ export function readDatesTask(input: DatedInput): StructuredTask<Wire, DatedResu
       ok: true,
       value: {
         items: w.items
-          .map((i) => ({ kind: i.kind.trim().toLowerCase(), text: clean(i.text, TEXT_CHARS), quote: clean(i.quote, QUOTE_CHARS), due: blankToNull(i.due), time: blankToNull(i.time) }))
+          .map((i) => ({ kind: i.kind.trim().toLowerCase(), text: clean(alertText(i.kind, i.text), TEXT_CHARS), quote: clean(i.quote, QUOTE_CHARS), due: blankToNull(i.due), time: blankToNull(i.time) }))
           .filter((i): i is DatedResult["items"][number] => isKind(i.kind) && !!i.text && !!i.quote)
           .slice(0, DATED_ITEMS_MAX),
         settled: w.settled

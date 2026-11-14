@@ -66,17 +66,38 @@ describe("reading dates in mail you got (plan 204)", () => {
     expect(es).toContain('"Revisión de la caldera, 12–14 h"');
   });
 
-  it("prompt v6: an alert says what the mail says happened, attributed, never an instruction; a move is a new day or a new time", () => {
+  it("prompt v7: an alert is only what the mail says happened, never an instruction, its attribution the app's; a move is a new day or a new time", () => {
     const en = readDatesTask(input()).system;
-    expect(en).toContain('"Debit card frozen after a $412.18 charge, the email says"');
+    expect(en).toContain('"Debit card frozen after a $412.18 charge"; the app shows it as the mail\'s word, so never add "the email says"');
     expect(en).toContain("not to reply, click, pay or call, nor to check with someone the mail names");
-    expect(en).toContain('this message gives a new day or a new time');
-    expect(en).toContain("(the same day when only the time changes)");
-    expect(readDatesTask(input({ language: "es" })).system).toContain('"Tarjeta de débito congelada tras un cargo de $412.18, según el correo"');
+    expect(en).toContain("this message gives a new day or a new time");
+    expect(en).toContain("(its own day from <open_items> when only the time changes)");
+    expect(readDatesTask(input({ language: "es" })).system).toContain('"Tarjeta de débito congelada tras un cargo de $412.18"');
+  });
+
+  it("the Codex code review of the fourth round: the open items show their day and time, so a move of the time alone can say its day", () => {
+    const prompt = datedPrompt(input({ open: [{ label: "o1", kind: "event", text: "Mateo's soccer game", due: "2026-03-07", time: "10:00" }, { label: "o2", kind: "pay", text: "Pay the bill", due: "2026-03-20", time: null }, { label: "p1", kind: "promise", text: "send the deck", due: null }] }));
+    expect(prompt).toContain("<open_items>\no1 (event, 2026-03-07 10:00): Mateo's soccer game\no2 (pay, 2026-03-20): Pay the bill\np1 (promise): send the deck\n</open_items>");
+  });
+
+  it("the Codex code review of the fourth round: an alert's own attribution goes, before the cut, so a long one is never cut mid-word for it (en, es)", () => {
+    const long = "Debit card ending in 4821 frozen after an unrecognized $412.18 charge at Gulfway Fuel on March 2, with online transfers paused";
+    const v = validate({
+      items: [
+        item({ kind: "alert", text: `${long}, the email says.`, due: null }),
+        item({ kind: "alert", text: "Tarjeta bloqueada tras un cargo de $412.18, según el correo", due: null }),
+        item({ kind: "alert", text: "According to the email, payroll funding of $48,210.55 failed", due: null }),
+      ],
+      settled: [],
+      moved: [],
+    });
+    expect(v.items.map((i) => i.text)).toEqual([long.slice(0, 120), "Tarjeta bloqueada tras un cargo de $412.18", "Payroll funding of $48,210.55 failed"]);
+    // only an alert's: another kind keeps its words
+    expect(validate({ items: [item({ text: "Pay what the email says" })], settled: [], moved: [] }).items[0]!.text).toBe("Pay what the email says");
   });
 
   it("is frozen at its version: a change to the words is a new version", () => {
-    expect(DATED_PROMPT_VERSION).toBe(6);
+    expect(DATED_PROMPT_VERSION).toBe(7);
     expect(readDatesTask(input()).system).toMatchSnapshot();
   });
 
@@ -122,8 +143,8 @@ describe("reading dates in mail you got (plan 204)", () => {
   });
 
   it("a small window holds the whole conversation with the server: a bad answer and its repair still fit", async () => {
-    // v6's words (an ask, a Plan's window, an alert's attribution, a move's time) need a little over 3,200: a window that holds them with a bad answer and its repair
-    const window = 3300;
+    // v7's words (an ask, a Plan's window, an alert's words, a move's time, the open items' days) need a little over 3,300: a window that holds them with a bad answer and its repair
+    const window = 3400;
     const budget = datedBudget(window);
     const fitted = fitDates(input({ text: "word ".repeat(1200), outputTokens: budget.outputTokens }), budget.promptChars);
     const sizes: number[] = [];
