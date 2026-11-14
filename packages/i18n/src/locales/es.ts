@@ -1924,6 +1924,7 @@ const es = {
   "compose.noAccount": "Conecta una cuenta para escribir correos",
   "compose.invalidRecipient": "«{entry}» no es una dirección de correo. Corrígela o quítala y vuelve a enviar.",
   "compose.noRecipient": "Añade un destinatario para enviar",
+  "compose.finishRecipient": "Termina el destinatario que estás escribiendo para enviar",
   "compose.emptySend.question": "¿Enviar sin mensaje?",
   "compose.recipients.list": "Destinatarios en {field}",
   "compose.recipients.invalid": "No es una dirección de correo válida",

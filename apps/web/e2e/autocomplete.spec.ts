@@ -136,6 +136,35 @@ test.describe("recipients", () => {
       expect(await recipientEmails(page, "compose-to")).toEqual(["arjun.patel@zentrix.dev"]);
       await expect(page.getByTestId("compose-to")).toBeFocused();
     });
+    await scenario("a name still being typed, its suggestions open, isn't called wrong before Send; Send still refuses it, and committed it's named (plan 205)", async () => {
+      await freshNoDrafts(page, server);
+      await seed(server);
+      await newMessage(page);
+      const line = page.getByTestId("strip-item-recipients");
+      const send = page.getByTestId("compose-send");
+      const finish = "Finish the recipient you’re typing to send";
+      await page.keyboard.type("ana@x.io,");
+      await page.keyboard.type("Arjun");
+      await expect(options(page).first()).toContainText("Arjun Patel");
+      await expect(line).toHaveText("To ana@x.io and 1 more");
+      await expect(send).toHaveAttribute("aria-description", finish);
+      await send.hover();
+      await expect(page.locator("[data-slot=tooltip-content]")).toHaveText(finish);
+      await page.mouse.move(1, 1);
+      // ⌘↩ from the field: refused, and now it's said everywhere
+      await page.keyboard.press("ControlOrMeta+Enter");
+      await expect(page.getByTestId("compose-field-problem")).toHaveText("“Arjun” isn’t an email address. Fix or remove it, then send.");
+      await expect(line).toHaveText("“Arjun” isn’t an email address");
+      await expect(page.getByTestId("composer").or(page.getByTestId("new-message")).first()).toBeVisible();
+      // typing again: it's being typed again; leaving the field commits it, and it's named
+      await page.getByTestId("compose-to").focus();
+      await page.keyboard.type("a");
+      await expect(line).toHaveText("To ana@x.io and 1 more");
+      await body(page).click();
+      expect(await recipientEmails(page, "compose-to")).toEqual(["ana@x.io", "Arjuna"]);
+      await expect(line).toHaveText("“Arjuna” isn’t an email address");
+      await expect(send).toHaveAttribute("aria-description", "“Arjuna” isn’t an email address. Fix or remove it, then send.");
+    });
     await scenario("a pasted list is parsed into recipients", async () => {
       await freshNoDrafts(page, server);
       await seed(server);

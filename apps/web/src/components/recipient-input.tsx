@@ -9,6 +9,7 @@ import { prefetchRecipientInitials, recipientInitials, suggestRecipients, warmAu
 import { chipLabel, chipName, chipNoReply, commit, derive, edit, insert, remove, SELECT_INVALID, serialize, summaryNames, typedAddresses, type Chip, type FieldState } from "~/lib/recipient-field";
 import { emailsIn, highlight, pastedAddresses, tokenAt, type TypedToken } from "~/lib/recipients";
 import { renderProbe } from "~/lib/render-probe";
+import { setTyping, typingOf, type RecipientField } from "~/lib/recipient-typing";
 import { formatAddressList } from "@terno/core";
 import { SenderAvatar } from "./sender-avatar";
 
@@ -102,6 +103,20 @@ export function RecipientInput({
   const open = items.length > 0;
   const ids = useMemo(() => ({ invalid: `${descId}-invalid`, noReply: `${descId}-noreply`, hint: `${descId}-hint` }), [descId]);
 
+  // plan 205: in a draft, what's still being typed is published for what's said before Send (the strip, Send's
+  // tooltip), only from this field's own changes; the draft's key from the composer around it, the field from its id
+  const typingAt = useRef<{ key: string; field: RecipientField } | null>(null);
+  const publishTyping = (next: FieldState | null) => {
+    const key = rootRef.current?.closest<HTMLElement>("[data-draft-key]")?.dataset.draftKey;
+    const name = /^compose-(to|cc|bcc)$/.exec(testId)?.[1] as RecipientField | undefined;
+    const typing = next && key && name && rootRef.current?.contains(document.activeElement) ? typingOf(next) : null;
+    const was = typingAt.current;
+    if (was && (!typing || was.key !== key || was.field !== name)) setTyping(was.key, was.field, null);
+    typingAt.current = typing ? { key: key!, field: name! } : null;
+    if (typing) setTyping(key!, name!, typing);
+  };
+  useEffect(() => () => publishTyping(null), []);
+
   const invalid = field.chips.find((c) => !c.valid);
   const invalidEntry = invalid ? invalid.address.email || invalid.address.name : null;
   useEffect(() => onInvalid?.(invalidEntry), [invalidEntry]);
@@ -116,6 +131,7 @@ export function RecipientInput({
     setField(derive(value, rootRef.current?.contains(document.activeElement) ?? false));
     setSelected(new Set());
     history.current = { undo: [], redo: [], typing: false };
+    publishTyping(null);
   }, [value]);
 
   /** every address in the draft's fields: never suggested again (all of them, past what a request carries) */
@@ -140,6 +156,7 @@ export function RecipientInput({
     h.redo = [];
     h.typing = !!o.typing && !/\s$/.test(next.text);
     setField(next);
+    publishTyping(next);
     return true;
   };
 
@@ -163,6 +180,7 @@ export function RecipientInput({
     setField(prev);
     setSelected(new Set());
     inputRef.current?.focus();
+    publishTyping(prev);
     caretAfter.current = prev.text.length;
   };
 
@@ -549,6 +567,8 @@ export function RecipientInput({
         // what was typed becomes a chip; the input goes back after the chips
         if (field.text.trim()) commitTyped();
         else if (canEdit() && field.at !== field.chips.length) setField({ ...field, at: field.chips.length });
+        // nothing is being typed once focus is elsewhere, even when the commit couldn't go in
+        publishTyping(null);
       }}
     >
       {shown.length > 0 && (

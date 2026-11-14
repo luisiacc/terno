@@ -906,9 +906,10 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
         </div>
       )}
       {!oneRow && showField && <ListSearch />}
-      {/* plan 158: the compact title row keeps its title and controls in a search: what it found goes under the field, on its text's line */}
+      {/* plan 158: the compact title row keeps its title and controls in a search: what it found goes under the field, on its text's line;
+          plan 205: 8 px clear of the first result (the header's own 6 and 2 more) */}
       {underField && (
-        <p className="flex items-center gap-2 px-3 pt-1.5">
+        <p className="flex items-center gap-2 px-3 pt-1.5 pb-0.5">
           {stats}
           {searchAll}
         </p>

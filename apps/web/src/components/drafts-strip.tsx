@@ -13,7 +13,7 @@ import { pinnedKey } from "~/lib/pinned-draft-state";
 import { getApp, getSelectionWriteRevision } from "~/state/app";
 import { authored, useDrafts, type LocalDraft } from "~/lib/drafts";
 import { reminderShort, reminderWhen } from "~/lib/when";
-import { firstInvalid } from "~/lib/recipient-field";
+import { shownInvalid, useRecipientTyping } from "~/lib/recipient-typing";
 import { useScheduled } from "~/lib/scheduled";
 import { ScheduledPopover } from "./scheduled-popover";
 
@@ -26,12 +26,15 @@ interface DraftLine {
 }
 
 function useDraftLine(key: string): DraftLine | null {
+  // only typing in this draft's recipient fields renders it again (plan 205)
+  const typing = useRecipientTyping((s) => s[key]);
   return useDrafts(
     useShallow((s) => {
       const d = s.drafts[key];
       if (!d) return null;
-      // put away with an address that can't be one, it still says so: it won't send like that (plan 158)
-      return { subject: d.subject, mode: d.mode, toText: d.toText, invalid: firstInvalid(d.toText) ?? firstInvalid(d.ccText) ?? firstInvalid(d.bccText) };
+      // put away with an address that can't be one, it still says so: it won't send like that (plan 158); the entry
+      // still being typed isn't named (plan 205)
+      return { subject: d.subject, mode: d.mode, toText: d.toText, invalid: shownInvalid(d, typing) };
     }),
   );
 }

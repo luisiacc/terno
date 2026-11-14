@@ -13,6 +13,7 @@ import { useFilesOnTheirWay } from "~/lib/attachments";
 import { emptyMessage, validRecipients, type LocalDraft } from "~/lib/drafts";
 import { clearEmptySend, useEmptySend } from "~/lib/send-problem";
 import { firstInvalid } from "~/lib/recipient-field";
+import { shownInvalid, useRecipientTyping } from "~/lib/recipient-typing";
 import { SendLaterPicker } from "./send-later-picker";
 
 /** Plan 94: which composer's Send later is open (⌘⇧↩ opens it from the keyboard). */
@@ -39,7 +40,9 @@ export function SendButton({ d, onSend, className }: { d: LocalDraft; onSend: (s
   const disabled = d.sending || Boolean(d.recovery);
   const uploading = useFilesOnTheirWay(d.key);
   const ready = canSendTo(d) && !uploading;
-  const invalid = firstInvalid(d.toText) ?? firstInvalid(d.ccText) ?? firstInvalid(d.bccText);
+  // plan 205: what's said before Send leaves out the entry still being typed (Send itself refuses it, `ready`)
+  const typing = useRecipientTyping((s) => s[d.key]);
+  const invalid = shownInvalid(d, typing);
   // Ready, the group owns the fill (a primary button's, plan 118), radius and shadow, so the halves meet with no seam;
   // each half is the primary's own hover, open and press over it (bg-none: a half's own gradient would hide them).
   // Not ready (plan 118's unavailable: a click still says why), it reads as an outlined pair of quiet buttons (plan 173,
@@ -59,7 +62,16 @@ export function SendButton({ d, onSend, className }: { d: LocalDraft; onSend: (s
   const variant = outlined ? "ghost" : "default";
   // plan 188: why it can't send yet, said with it (the tooltip is the pointer's; a press says it at the field too). An
   // aria-description, not a hidden copy of the words: the page's text stays the visible alert's alone
-  const why = ready ? null : uploading ? t("compose.stillAdding") : invalid !== null ? t("compose.invalidRecipient", { entry: invalid }) : t("compose.noRecipient");
+  const why = ready
+    ? null
+    : uploading
+      ? t("compose.stillAdding")
+      : invalid !== null
+        ? t("compose.invalidRecipient", { entry: invalid })
+        : // only the entry being typed stands in the way
+          validRecipients(d.toText).length > 0
+          ? t("compose.finishRecipient")
+          : t("compose.noRecipient");
   return (
     <div
       className={cn(
@@ -82,7 +94,7 @@ export function SendButton({ d, onSend, className }: { d: LocalDraft; onSend: (s
           }
         />
         <TooltipContent className="flex items-center gap-2">
-          {ready ? t("common.send") : uploading ? t("compose.stillAdding") : invalid !== null ? t("compose.invalidRecipient", { entry: invalid }) : t("compose.noRecipient")}
+          {why ?? t("common.send")}
           {ready && <Shortcut keys="mod+enter" />}
         </TooltipContent>
       </Tooltip>

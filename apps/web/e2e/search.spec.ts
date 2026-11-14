@@ -391,4 +391,18 @@ test.describe("search", () => {
     await page.getByRole("button", { name: "Clear search" }).click();
     await expect(page.getByTestId("drafts-strip")).toBeVisible();
   });
+
+  // plan 205: the compact title header (macOS, Relief, Graphite) puts the count under the field
+  test("the count under the field sits on the rows' text line, nothing painted past it, 8 px clear of the first result", { tag: ["@variant-relief", "@variant-graphite"] }, async ({ app: page }) => {
+    await search(page, "design");
+    const stats = page.getByTestId("search-stats");
+    await expect(stats).toBeVisible();
+    const box = (await stats.boundingBox())!;
+    const first = rows(page).first();
+    const from = (await first.getByTestId("row-from").boundingBox())!;
+    expect(Math.abs(box.x - from.x)).toBeLessThanOrEqual(0.5);
+    // words, not a chip: no wash reaching out of the column (Settings' found mark once caught it, plan 203)
+    expect(await stats.evaluate((el) => getComputedStyle(el, "::before").backgroundColor)).toBe("rgba(0, 0, 0, 0)");
+    expect((await first.boundingBox())!.y - (box.y + box.height)).toBeGreaterThanOrEqual(8);
+  });
 });

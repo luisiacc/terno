@@ -591,13 +591,14 @@
 /*
  * Plan 203: a setting Settings' search just opened, marked for a moment: the primary's 8% wash behind the row, a little
  * wider than its text (concentric with the card), under its content. "off" fades it within the motion cap (nothing fades
- * when motion is off or reduced), then the mark goes. Text on it holds AA (contrast.ts CONTRAST_PAIRS).
+ * when motion is off or reduced), then the mark goes. Text on it holds AA (contrast.ts CONTRAST_PAIRS). A setting's
+ * own (plan 205: a bare `[data-found]` also washed search's count, `data-found` there since plan 158, into a chip).
  */
-[data-found] {
+[data-setting][data-found] {
   position: relative;
   isolation: isolate;
 }
-[data-found]::before {
+[data-setting][data-found]::before {
   content: "";
   position: absolute;
   inset: 2px calc(var(--spacing) * -2);
@@ -607,7 +608,7 @@
   pointer-events: none;
   transition: opacity var(--motion-slow) var(--motion-ease);
 }
-[data-found="off"]::before {
+[data-setting][data-found="off"]::before {
   opacity: 0;
 }
 /* a model's words (the summary, Reply ready, the follow-up line, Filters' AI box). Plans 161 and 162 ringed it in

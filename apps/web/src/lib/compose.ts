@@ -6,6 +6,7 @@ import { breadcrumb, captureUi } from "~/lib/diag";
 import { useDraftRecovery } from "~/lib/draft-recovery-ui";
 import { firstInvalid, SELECT_INVALID } from "./recipient-field";
 import { clearEmptySend, sayProblem, useEmptySend } from "./send-problem";
+import { endTyping } from "./recipient-typing";
 import type { DraftMode } from "@terno/core/rpc";
 import { t } from "@terno/i18n";
 import { client } from "~/rpc/connection";
@@ -1177,6 +1178,8 @@ function recipientProblem(d: LocalDraft): { field: "to" | "cc" | "bcc"; message:
   return validRecipients(d.toText).length === 0 ? { field: "to", message: t("compose.noRecipient") } : null;
 }
 function sayRecipientProblem(key: string, problem: { field: "to" | "cc" | "bcc"; message: string }): void {
+  // Send ends the typing: the strip and Send's tooltip name the wrong entry again (plan 205)
+  endTyping(key);
   const shown = typeof document !== "undefined" && document.querySelector(`[data-draft-key="${CSS.escape(key)}"] [data-recipient-field="compose-${problem.field}"]`) !== null;
   if (shown) sayProblem({ key, ...problem });
   else snack.error(problem.message);
