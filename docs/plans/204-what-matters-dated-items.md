@@ -324,3 +324,16 @@ The same seven personas, re-captured at the packets' morning: Deadlines 6.1 → 
 5. **Needs you, tighter (plan 145's rule, amended):** a waiting conversation isn't Needs you's when (a) its last message from them is only an acknowledgment ("Thanks.", "Got it", "Sounds good", "Gracias", "Perfecto"; short, no question: `isAcknowledgment` in `@terno/core`, en and es), or (b) it has a summary covering its last message (plan 132) that gives the reader no action and no question (plan 202's who-has-to-act). Both are read in `needsRows`, in both stores, so the list and the sidebar's count agree.
 
 Out of scope: a first message from someone new that asks the reader something (widening Needs you); a promise of yours another person's later mail replaces rather than moves.
+
+### Revisions after the Codex review of the second round's changes
+
+Codex (read-only, `/tmp/terno-scratch/p204/critique-3.out`) raised 8 points, all taken.
+
+1. **A promise's move is the user's choice's equal, not above it:** it applies only at the revision the reader saw (a Later or Done since wins), and it bumps the revision, so an older Undo is refused as "changed since", plan 142's exact Undo.
+2. **Atomic with the read:** promise moves go in `DatedFinish.movedPromises` and are written in the same transaction as the items and the mark, both stores. A move for a promise that doesn't exist yet (the incoming extension read before the sent mail) is lost: out of scope.
+3. **Who may move a promise:** only a message on the promise's own thread from the person it was made to (`person_email`); quoted, with a real day. `p` labels can't be settled, only moved. Hostile-mail cases in the eval.
+4. **Everything that shows a promise or Needs you reloads:** after a promise move, follow-ups' snapshot is emitted and Today changes; when a summary completes, Today changes too (its list and count).
+5. **A summary decides only when it's current and of the right kind:** ready, prompt version 7 or later (who has to act), valid JSON, and no message of the thread after the one it covers. Anything else keeps the conversation as plan 145's rule had it. A body with only `date` or `decision` items gives the reader nothing to do or answer.
+6. **An acknowledgment is the whole message,** read from its stored text with quotes and signature taken off: a few words of thanks or agreement and nothing else ("Thanks.", "Got it, thanks!", "Gracias", "Perfecto 👍"), never one with a request ("Thanks, send it Friday"). The thread's snippet is a first, cheap screen; the text is read only for a snippet that starts like one. No text: kept.
+7. **Applied to `needsYou`'s result,** after its window and its per-sender count, so nothing it excluded can come in.
+8. **The perf gate also holds the absolute times** of `needsCount`, the count and the list, at 50k with the waiting window full.
