@@ -112,8 +112,8 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     if (!row || row.kind === "ask" || settledIds.has(row.id) || !quoted(m.evidence)) return [];
     const timing = datedTiming({ kind: row.kind, due: m.due, time: m.time, arrivedAt: input.arrivedAt });
     // the fourth panel round (revision 5): a new moment on the same day moves it too ("the game is moved earlier to 8:00");
-    // the same day with no time keeps the item's own
-    const changed = timing && (timing.dueDay !== row.dueDay || (timing.timed && timing.dueAt !== row.dueAt));
+    // the same day with no time keeps the item's own; an untimed item's 9:00 is a default, so "at 9:00" gives it a time
+    const changed = timing && (timing.dueDay !== row.dueDay || (timing.timed && (!row.timed || timing.dueAt !== row.dueAt)));
     return changed ? [{ id: row.id, kind: row.kind, dueDay: timing.dueDay, dueAt: timing.dueAt, timed: timing.timed, actAt: timing.actAt }] : [];
   });
   const rows: DatedWrite[] = [];
