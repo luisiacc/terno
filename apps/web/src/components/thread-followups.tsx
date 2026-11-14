@@ -25,6 +25,9 @@ import { AI_ACTIONS, AI_CARD, AI_GLYPH, AI_HEADER, AI_PAD, AI_TITLE, AiProvenanc
 import FollowupsTip from "./followups-tip";
 import { WhenForm } from "./when-fields";
 
+/** The dated line's quiet buttons (thread-dated's Later and Not a task), for a promise's. */
+const QUIET = { variant: "ghost", className: "text-muted-foreground hover:text-foreground" } as const;
+
 /**
  * Plan 161: the line in the AI suggestions' anatomy. Pass 3: on their card too, as Reply ready is (plan 148 left a card out
  * of its scope; raters read the bare line as mail metadata): the fact is the title ("Waiting for Arjun’s reply", plan 162), when it
@@ -32,6 +35,8 @@ import { WhenForm } from "./when-fields";
  */
 function Line({ row, messages }: { row: FollowupRow; messages: readonly MessageDetail[] }) {
   const line = followupLine(row);
+  // the fourth panel round (revision 10): a promise of yours says its day ("Due Tuesday"), or none; a nudge, when it comes back
+  const when = followupWhen(row);
   // plan 147: a follow-up stays readable when its key goes; a nudge is a draft, and can't be written
   const canNudge = useCanDraft();
   const now = new Date();
@@ -56,7 +61,7 @@ function Line({ row, messages }: { row: FollowupRow; messages: readonly MessageD
         <Clock aria-hidden className={cn(AI_GLYPH, "text-sm")} />
         <span data-testid="followup-text" className={cn(AI_TITLE, "text-sm")}>{line}</span>
       </p>
-      <p data-testid="followup-due" className="text-sm text-muted-foreground tabular">{followupWhen(row)}</p>
+      {when && <p data-testid="followup-due" className="text-sm text-muted-foreground tabular">{when}</p>}
       <div className={cn(AI_ACTIONS, "mt-3")} data-testid="followup-actions">
         {awaiting ? (
           drafted && nudging === "writing" ? (
@@ -70,10 +75,12 @@ function Line({ row, messages }: { row: FollowupRow; messages: readonly MessageD
             canNudge && <Button size="sm" data-testid="followup-nudge" onClick={() => void nudge(row)}>{t("followup.nudge")}</Button>
           )
         ) : (
-          <Button size="sm" data-testid="followup-done" onClick={() => void actOnThreadPromise(row, "done")}>{t("followup.done")}</Button>
+          // the fourth panel round (revision 10): a promise is a task, so its buttons are the dated line's, in its
+          // weights: Done outline, Later and Not a task ghost
+          <Button variant="outline" size="sm" className="text-foreground" data-testid="followup-done" onClick={() => void actOnThreadPromise(row, "done")}>{t("followup.done")}</Button>
         )}
         <DropdownMenu>
-          <DropdownMenuTrigger render={<Button ref={laterRef} variant="outline" size="sm" className="text-foreground" data-testid="followup-later" />}>
+          <DropdownMenuTrigger render={<Button ref={laterRef} size="sm" data-testid="followup-later" {...(awaiting ? { variant: "outline", className: "text-foreground" } : QUIET)} />}>
             {t("followup.later")}
             <ChevronDown aria-hidden />
           </DropdownMenuTrigger>
@@ -101,7 +108,7 @@ function Line({ row, messages }: { row: FollowupRow; messages: readonly MessageD
               from={span.from}
               notes={laterNote(span)}
               testPrefix="followup-later"
-              submit={t("followup.later")}
+              submit={t("dated.laterSet")}
               onSet={(at) => {
                 setPicking(false);
                 laterRef.current?.focus({ preventScroll: true });
@@ -110,7 +117,10 @@ function Line({ row, messages }: { row: FollowupRow; messages: readonly MessageD
             />
           </PopoverContent>
         </Popover>
-        <Button variant="outline" size="sm" className="text-foreground" data-testid="followup-dismiss" onClick={() => void actOnThreadPromise(row, "dismiss")}>{t(awaiting ? "followup.dismiss" : "followup.notPromise")}</Button>
+        {/* a nudge's dismissal keeps its words and weight: it isn't a task */}
+        <Button size="sm" data-testid="followup-dismiss" {...(awaiting ? { variant: "outline", className: "text-foreground" } : QUIET)} onClick={() => void actOnThreadPromise(row, "dismiss")}>
+          {t(awaiting ? "followup.dismiss" : "followup.notTask")}
+        </Button>
         {/* where it came from, named ("Your message, Oct 22"), its words (the quote) on hover; nothing when it's the one
             message on screen */}
         {source !== null && (
