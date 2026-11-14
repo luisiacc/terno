@@ -700,9 +700,11 @@ export const THEMES: readonly Theme[] = [
       unread: "0.52 0.15 237",
       // 3:1 on the open row's grey too (Codex code review: 0.6 was 2.8:1 there)
       star: "0.53 0.13 66",
-      "row-hover": "#E3E3E3",
-      // the owner (after the second UI rating): a firm open row, past plan 173's soft step, 1.4:1 on the list
-      "row-selected": "#CCCCCC",
+      // a step lighter with the softer open row below (round 2's), so the two stay apart (1.09:1)
+      "row-hover": "#E5E5E5",
+      // the owner (after the fourth UI rating): the open row soft again, the step it had before round 1 (#D6D6D6 on #E8E8E8,
+      // 1.19:1) on today's lighter list; round 2's firm #CCCCCC (1.4:1) read too heavy
+      "row-selected": "#DCDCDC",
       "row-selected-foreground": "#1F1F1F",
       // a step down from the sidebar: the chosen item is pressed in (the owner: lighter, it read as the Compose pill), as firm
       // as the open row
