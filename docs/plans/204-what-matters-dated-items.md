@@ -423,3 +423,20 @@ Codex (read-only, `/tmp/terno-scratch/p204/review-7.out`) raised 3 points, all t
 2. **Done on a conversation's only promise doesn't bring its waiting row back:** a promise of yours there closed (Done, Not a promise) since their latest message, with none still open, is the row you handled (`stillWaiting`, both stores, conformance); Undo brings it back, as does newer mail from them; a second open promise there keeps it waiting.
 3. **An ask doesn't hide your promise:** in a conversation where you'd promised them something, the ask's row shows your promise ("could you send that report?" is about it), so its actions act on the promise.
 4. **A message that says no answer is needed asks nothing** (`saysNoReplyNeeded`, en and es, whole phrases: "No action needed!", "No need to reply now", "No hace falta que contestes"): never an ask (`checkDates`), and a conversation whose last message from them says it in its first words isn't Needs you's (both stores).
+
+## After the fourth panel round (2026-11-14)
+
+The same seven personas on 548ac7fcd, with the panel's own changes (summaries on, dark first, run in parallel: the mailboxes read in 2½ minutes rather than 17, the screenshots in 24 s rather than 7 minutes). Needs you 4.1 → 6.7, Look 7.9, would use daily 6.1, Missed 7.6, Acting 6.9, Plans 6.6; Deadlines 7.1 → 6.0 and Coming up 6.7 → 6.0. Against the keys, 99% shown on the first read (all of Needs you's misses found). What they asked, checked against the data, and this round's changes:
+
+1. **A later message that changes only the time doesn't move it** ("Saturday's game is moved earlier to 8:00 AM"; the row kept 10:00): `checkDates` required a new day. A timed item moves when its moment changes, the day the same.
+2. **A promise's card invents "9:00 AM"** (`followupWhen` shows the moment it comes back): a dated promise of yours says its day ("Due today", "Due Tuesday"), never the time it's placed at.
+3. **One vocabulary in the conversation.** The promise card said Reschedule and Not a promise beside the dated line's Later and Not a task: it says Later and Not a task too (en, es), with the dated line's button weights.
+4. **A promise row named the reader** (the conversation's last sender is you): a promise's row names the person you made it to.
+5. **The buckets disagree** (a December membership in Deadlines, an invoice due in 7 days and your own promise for Sunday behind Coming up's toggle). A bill's lead goes from 3 days to a week, as a request's is (the owner's week); a dated promise of yours is Deadlines' from a week before its day (§2's lead for requests); an expiring document keeps the owner's 30 days.
+6. **An undated promise sat in Deadlines under the day it was made** ("Nov 6"): an undated promise that's due is Needs you's (it has no day), ordered after the asks.
+7. **Alerts say too little** ("Check the failed payment"). Prompt v6: an alert says what happened, with what the mail states (the amount, the card, what stops), and to check with the company that sent it: "Debit card frozen after a $412.18 charge: check with Tri-River". Still never an instruction to pay, wire, click or reply (revision 11 of the third round).
+8. **People before passive plans:** Needs you comes before Plans (Missed, Deadlines, Needs you, Plans, Reminders, Coming up).
+9. **Undo names what it undoes:** "Done: Pay $187.42 for the utility bill" (en, es), not "Marked done".
+10. **Coming up says its horizon:** the toggle reads "4 coming up in 2 weeks" (en, es).
+
+Not this round: a scam named in the automated messages' row; delegating to an assistant; keys for Not a task and Later (the owner's rule); the separate jobs inside one event's mail.
