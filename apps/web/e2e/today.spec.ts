@@ -10,7 +10,7 @@ import { sqlDb } from "../../backend-dev/src/server";
 import { E2E_NOW } from "./constants";
 import { inEveryLook, wheelsTo } from "./helpers/looks";
 import { unclipped } from "./helpers/unclipped";
-import { expect, fresh, ingestConversation, scenario, test, type DevServerFixture } from "./fixtures";
+import { expect, focusList, fresh, ingestConversation, scenario, test, type DevServerFixture } from "./fixtures";
 
 test.use({ backendOptions: { network: true }, today: true });
 
@@ -99,11 +99,10 @@ test.describe("Today (plan 145)", () => {
     await expect(page.getByTestId("thread-row").filter({ hasText: "Can you make the 19th" })).toBeVisible();
     // plan 166: the row leads with its own words: no "Your turn: they replied ·" before them
     await expect(page.getByTestId("thread-row").filter({ hasText: "Can you make the 19th" }).getByTestId("row-why")).toHaveCount(0);
-    // the header says what each number is: the sidebar's count, then how many of them the list shows if it's capped
-    // pass 3: one sentence, never a second total to read against the Inbox's: "9 need you", or when capped (plan 162) "Showing 12 of 41"
-    await expect(page.getByTestId("today-needs")).toHaveText(/^(The newest \d+ of \d+ that need you|\d+ needs? you)$/);
+    // pass 3: one sentence, never a second total to read against the Inbox's; plan 204: no cap, so it's the sidebar's count
+    await expect(page.getByTestId("today-needs")).toHaveText(/^\d+ needs? you$/);
     const sidebar = (await page.getByTestId("nav-today").innerText()).match(/\d+/)?.[0];
-    if (sidebar) await expect(page.getByTestId("today-needs")).toHaveText(new RegExp(`^(The newest \\d+ of ${sidebar} that need you|${sidebar} needs? you)$`));
+    if (sidebar) await expect(page.getByTestId("today-needs")).toHaveText(new RegExp(`^${sidebar} needs? you$`));
     await expect(page.getByTestId("today-line")).not.toContainText(/waiting|\d+ to reply/);
     // the owner: "Your turn" and "Waiting for your reply" are the same thing: one heading, and the new conversation is
     // under it with its own words, no reason before them
@@ -505,6 +504,23 @@ test.describe("Today (plan 145)", () => {
 
 test.describe("Today in List (plan 162, after ai162-r02, Codex review)", () => {
   test.use({ layout: "list" });
+  test("plan 204: List's one-row header gives the dates offer a line of its own, on the title's text edge", async ({ app: page, server }) => {
+    await settingUp(page, server, { ai: { provider: "fake", model: "demo" } });
+    await page.getByTestId("nav-today").click();
+    const offer = page.getByTestId("today-dated-offer");
+    await expect(offer).toBeVisible();
+    const edge = async (l: Locator) => l.evaluate((e) => e.getBoundingClientRect().left);
+    // its words on the title's: the line's box starts at the header's padding, as the title's row does
+    expect(Math.abs((await edge(offer.locator("span").first())) - (await edge(page.getByTestId("list-title"))))).toBeLessThanOrEqual(1);
+    expect((await offer.boundingBox())!.y).toBeGreaterThan((await page.getByTestId("list-title").boundingBox())!.y);
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-dated-offer-list.png` });
+    await offer.getByTestId("today-dated-dismiss").click();
+    await expect(offer).toHaveCount(0);
+    await fresh(page);
+    await page.getByTestId("nav-today").click();
+    await expect(page.getByTestId("today-line")).toBeVisible();
+    await expect(page.getByTestId("today-dated-offer")).toHaveCount(0);
+  });
   test("the digest is a page over the list: Esc closes it, back to the list at its way in", async ({ app: page, server }) => {
     await withMail(server);
     await settingUp(page, server, { ai: { provider: "fake", model: "demo" }, today: { digest: true, prepareAt: "00:00" } });
@@ -519,5 +535,190 @@ test.describe("Today in List (plan 162, after ai162-r02, Codex review)", () => {
     await page.keyboard.press("Escape");
     await expect(page.getByTestId("digest-page")).toHaveCount(0);
     await expect(page.getByTestId("digest-row")).toBeVisible();
+  });
+});
+
+test.describe("What matters, part one: dated items (plan 204)", () => {
+  /** a message from a service, as live mail reaches the dated reader (marked in the ingest, as the sync does) */
+  async function received(server: DevServerFixture, key: string, from: { name: string; email: string }, subject: string, text: string, live = true) {
+    const db = sqlDb(server.backend.store);
+    const acct = db.get<{ id: number; email: string }>("SELECT id, email FROM accounts ORDER BY id LIMIT 1")!;
+    const message = { accountId: acct.id, providerMsgId: key, providerThreadId: key, rfcMessageId: `<${key}@e2e.test>`, inReplyTo: null, references: [], from, to: [{ name: "", email: acct.email }], cc: [], bcc: [], subject, date: E2E_NOW, snippet: text, bodyText: text, bodyHtml: null, bodyState: "full", listId: null, isRead: false, isStarred: false, inInbox: true, isSent: false, isDraft: false, isTrash: false, isSpam: false, hasAttachments: false, size: 1200 } as unknown as IncomingMessage;
+    await server.backend.store.sync.ingest([message], { applyFilters: false, now: E2E_NOW, classifier: null, ...(live ? { datedMail: await server.backend.dated.wanted() } : {}) });
+    return db.get<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages WHERE provider_msg_id = ?", key)!;
+  }
+  const datedSetting = async (server: DevServerFixture) => ((await server.backend.server.invoke("app.bootstrap", {}, dev)) as { settings: { dated: { enabled: boolean; scanAnswered: boolean } } }).settings.dated;
+  const row = (page: Page, text: string) => page.getByTestId("thread-row").filter({ hasText: text });
+  const headings = (page: Page) => page.getByTestId("today-heading").evaluateAll((els) => els.map((e) => e.getAttribute("data-kind")));
+
+  test("turned on from Today's header; a bill, a flight and a renewal from new mail; Missed; Done from the menu with Undo; Coming up by keyboard; the reader's line", async ({ app: page, server }) => {
+    await settingUp(page, server, { ai: { provider: "fake", model: "demo" } });
+    await page.getByTestId("nav-today").click();
+
+    await scenario("the header offers it while it's off, and turning it on asks about the last 14 days once", async () => {
+      const offer = page.getByTestId("today-dated-offer");
+      await expect(offer).toContainText("Show bills, renewals and trips here.");
+      // on the header's text edge, as Today's line above it
+      const edge = async (id: string) => page.getByTestId(id).evaluate((e) => e.getBoundingClientRect().left);
+      expect(Math.abs((await edge("today-dated-offer")) - (await edge("today-line")))).toBeLessThanOrEqual(1);
+      await expect(offer.getByTestId("today-dated-dismiss")).toHaveAccessibleName("Don’t offer bills, renewals and trips again");
+      if (SHOTS) await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-dated-offer-light.png` });
+      await offer.getByTestId("today-dated-on").click();
+      await expect(offer).toHaveCount(0);
+      await expect.poll(async () => (await datedSetting(server)).enabled).toBe(true);
+      const scan = page.getByTestId("today-dated-scan");
+      await expect(scan).toContainText(/^Check the last 14 days too\? \d+ messages?/);
+      if (SHOTS) await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-dated-scan-light.png` });
+      // nothing old is read without a yes
+      await scan.getByTestId("today-dated-notnow").click();
+      await expect(scan).toHaveCount(0);
+      await expect.poll(async () => (await datedSetting(server)).scanAnswered).toBe(true);
+      expect(await server.backend.store.dated.marks.count()).toBe(0);
+    });
+
+    await scenario("new mail with a date: the bill under Deadlines, the flight under Plans, the renewal under Coming up, closed", async () => {
+      await received(server, "bill-1", { name: "City Power", email: "billing@citypower.test" }, "Electricity bill", "Hello. Your electricity bill of $84.20 is due 2026-10-24. Thank you.");
+      await received(server, "flight-1", { name: "Iberia", email: "no-reply@iberia.test" }, "Flight to Madrid", "Your flight on 2026-10-23 at 07:40 leaves from terminal 4.");
+      await received(server, "renew-1", { name: "Domains Co", email: "billing@domains.test" }, "Domain renewal", "Your domain renews soon. Payment is due 2026-11-01.");
+      server.backend.dated.wake();
+      await expect(row(page, "Electricity bill")).toBeVisible({ timeout: 15_000 });
+      await expect(row(page, "Flight to Madrid")).toBeVisible();
+      await expect(row(page, "Electricity bill").getByTestId("row-snippet")).toHaveText("Due Saturday · Electricity bill");
+      await expect(row(page, "Flight to Madrid").getByTestId("row-snippet")).toHaveText(/^Tomorrow \d{1,2}:\d{2}\s?(AM|PM)? · Flight to Madrid$/);
+      expect(await headings(page)).toEqual(expect.arrayContaining(["deadlines", "plans"]));
+      expect((await headings(page)).indexOf("deadlines")).toBeLessThan((await headings(page)).indexOf("plans"));
+      // later than its time to act: not a row, only the header's quiet count
+      await expect(row(page, "Domain renewal")).toHaveCount(0);
+      await expect(page.getByTestId("today-coming-up")).toHaveText("1 coming up");
+      await expect(page.getByTestId("today-coming-up")).toHaveAttribute("aria-expanded", "false");
+    });
+
+    await scenario("a date that passed with nothing done: Missed, first", async () => {
+      // written as the worker would have, on the 14-day check's path (a past day isn't kept from new mail)
+      const m = await received(server, "domain-1", { name: "Registrar", email: "billing@registrar.test" }, "Renew the domain", "Your domain expires.", false);
+      const store = server.backend.store;
+      await store.dated.marks.queueScan([m.id], E2E_NOW);
+      const due = new Date(2026, 9, 20, 9, 0).getTime();
+      const wrote = await store.dated.finish({ messageId: m.id, threadId: m.thread_id, fromScan: true, rows: [{ kind: "renew", item: 0, text: "Renew the domain", quote: "Your domain expires.", dueDay: "2026-10-20", dueAt: due, timed: false, dated: true, actAt: due - 7 * 86_400_000 }], settled: [], now: E2E_NOW, model: "demo", provider: "fake", promptVersion: 1, clearGeneration: store.dated.clearGeneration() });
+      expect(wrote).toBe("written");
+      server.backend.today.changed();
+      await expect(row(page, "Renew the domain").getByTestId("row-snippet")).toHaveText("Was due Tuesday · Renew the domain");
+      expect((await headings(page))[0]).toBe("missed");
+      await expect(page.getByTestId("today-heading").first()).toHaveText("Missed");
+    });
+
+    await scenario("Coming up opens and closes by keyboard, at the list's end under its heading, and stays open after a reload", async () => {
+      const toggle = page.getByTestId("today-coming-up");
+      await toggle.focus();
+      await page.keyboard.press("Enter");
+      await expect(toggle).toHaveAttribute("aria-expanded", "true");
+      await expect(toggle).toHaveText("Hide coming up");
+      await expect(toggle).toBeFocused();
+      // last, past the demo's Needs you (the list is virtualized: scrolled to its end, focus left on the toggle)
+      const toEnd = () => page.locator('[data-keep-scroll="list"]').evaluate((el) => { el.scrollTop = el.scrollHeight; });
+      await expect.poll(async () => (await toEnd(), await row(page, "Domain renewal").count())).toBe(1);
+      await expect(row(page, "Domain renewal").getByTestId("row-snippet")).toHaveText(/^Due (Nov 1|Sunday) · Domain renewal$/);
+      expect((await headings(page)).at(-1)).toBe("comingUp");
+      // the heading on the rows' own line
+      const left = async (l: Locator) => l.evaluate((el) => el.getBoundingClientRect().left + parseFloat(getComputedStyle(el).paddingLeft));
+      expect(Math.abs((await left(page.locator("[data-testid=today-heading][data-kind=comingUp]"))) - (await left(row(page, "Domain renewal"))))).toBeLessThanOrEqual(1);
+      if (SHOTS) {
+        const top = () => page.locator('[data-keep-scroll="list"]').evaluate((el) => { el.scrollTop = 0; });
+        for (const mode of ["light", "dark"] as const) {
+          await page.emulateMedia({ colorScheme: mode });
+          await toEnd();
+          await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-dated-end-${mode}.png` });
+          await top();
+          await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-dated-top-${mode}.png` });
+        }
+        await page.emulateMedia({ colorScheme: "light" });
+        await toEnd();
+      }
+      for (const mode of ["dark", "light"] as const) {
+        await page.emulateMedia({ colorScheme: mode });
+        const results = await new AxeBuilder({ page }).include('[data-keep-scroll="list"]').include("[data-testid=today-line]").analyze();
+        expect(results.violations.map((v) => `${mode} ${v.id}: ${v.nodes[0]?.html.slice(0, 120)}`)).toEqual([]);
+      }
+      await page.keyboard.press("Space");
+      await expect(toggle).toHaveAttribute("aria-expanded", "false");
+      await expect(row(page, "Domain renewal")).toHaveCount(0);
+      // remembered: open again after a reload
+      await page.keyboard.press("Enter");
+      await expect(toggle).toHaveAttribute("aria-expanded", "true");
+      await fresh(page);
+      await page.getByTestId("nav-today").click();
+      await expect(page.getByTestId("today-coming-up")).toHaveAttribute("aria-expanded", "true");
+      await expect.poll(async () => (await toEnd(), await row(page, "Domain renewal").count())).toBe(1);
+    });
+
+    await scenario("Done from the row's menu: it leaves Today, and Undo (z) brings it back", async () => {
+      await page.locator('[data-keep-scroll="list"]').evaluate((el) => { el.scrollTop = 0; });
+      await row(page, "Electricity bill").click({ button: "right" });
+      await expect(page.getByTestId("menu-dated-later")).toBeVisible();
+      await page.getByTestId("menu-dated-done").click();
+      await expect(row(page, "Electricity bill")).toHaveCount(0);
+      await expect(page.locator("[data-testid=snack]")).toContainText("Marked done");
+      await focusList(page);
+      await page.keyboard.press("z");
+      await expect(row(page, "Electricity bill")).toBeVisible();
+      // a row with no date has neither
+      await page.keyboard.press("Escape");
+      await expect.poll(async () => (await server.backend.store.dated.active()).some((r) => r.text === "Electricity bill")).toBe(true);
+    });
+
+    await scenario("the reader's line: on the AI card's surface, with its Done", async () => {
+      await row(page, "Electricity bill").click();
+      const line = page.getByTestId("thread-dated");
+      await expect(line).toBeVisible();
+      await expect(line.getByTestId("thread-dated-text")).toHaveText("Due Saturday · Electricity bill");
+      await expect(line).toHaveClass(/\bai-card\b/);
+      await expect(line.getByTestId("thread-dated-done")).toHaveAccessibleName("Done: Electricity bill");
+      if (SHOTS) {
+        await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-dated-reader-light.png` });
+        await page.emulateMedia({ colorScheme: "dark" });
+        await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-dated-reader-dark.png` });
+        await page.emulateMedia({ colorScheme: "light" });
+      }
+      expect((await new AxeBuilder({ page }).include("[data-testid=thread-dated]").analyze()).violations).toEqual([]);
+      await line.getByTestId("thread-dated-done").click();
+      await expect(line).toHaveCount(0);
+      // the open row is held where it was until the selection lets go (revision 9), no longer saying it's due
+      await expect(row(page, "Electricity bill").getByTestId("row-snippet")).not.toContainText("Due Saturday");
+    });
+
+    await scenario("Settings → AI: its group beside the digest's, on, naming who reads the mail", async () => {
+      await page.getByTestId("open-settings").click();
+      await page.getByTestId("tab-ai").click();
+      const group = page.getByTestId("ai-dated");
+      await expect(group).toContainText("Bills, renewals and trips");
+      await expect(group.getByTestId("ai-dated-switch")).toBeChecked();
+      await expect(group).toContainText("Reads new mail that has a date in it with");
+      await group.scrollIntoViewIfNeeded();
+      if (SHOTS) {
+        for (const mode of ["light", "dark"] as const) {
+          await page.emulateMedia({ colorScheme: mode });
+          await group.screenshot({ path: `${SHOTS}/${test.info().project.name}-dated-settings-${mode}.png` });
+        }
+        await page.emulateMedia({ colorScheme: "light" });
+      }
+      expect((await new AxeBuilder({ page }).include("[data-testid=ai-dated]").analyze()).violations).toEqual([]);
+      await page.keyboard.press("Escape");
+    });
+
+    // the screenshots AGENTS.md asks for: the groups, in every design, light and dark (looked at, not compared)
+    if (SHOTS) {
+      for (const design of ["macos", "atelier", "lumen", "luma", "graphite"] as const) {
+        await settingUp(page, server, { design });
+        await expect(page.locator(`html[data-design=${design}]`)).toHaveCount(1);
+        await page.getByTestId("nav-today").click();
+        await row(page, "Flight to Madrid").click();
+        await page.locator('[data-keep-scroll="list"]').evaluate((el) => { el.scrollTop = 0; });
+        for (const mode of ["light", "dark"] as const) {
+          await page.emulateMedia({ colorScheme: mode });
+          await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-dated-${design}-${mode}.png` });
+        }
+        await page.emulateMedia({ colorScheme: "light" });
+      }
+    }
   });
 });
