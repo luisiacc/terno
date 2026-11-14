@@ -89,11 +89,12 @@ export const promiseLine = (o: { text: string; dueAt?: number; dated: boolean },
  * the same in words for a screen reader (that column is hidden from it; after the second panel round); `dueAt`, what
  * Later's window is read from (`laterWindow`); a promise's `dated`, whether it names a day. The fourth panel round: a
  * promise's `noDay` (one that names none: its row's date stays empty, never the mail's) and `person` (whom you made it
- * to: the row's name and picture, the conversation's last sender being you).
+ * to: the row's name and picture, the conversation's last sender being you). `text`, the task's words as the row showed
+ * them, what its Undo names (null for a nudge: it has none of its own).
  */
 export type TodayTask =
-  | { kind: "dated"; item: DatedRef; when: string | null; due: string | null; dueAt: number }
-  | { kind: "promise"; id: number; revision: number; when: string | null; due: string | null; dated?: boolean; noDay?: boolean; person?: TaskPerson };
+  | { kind: "dated"; item: DatedRef; when: string | null; due: string | null; dueAt: number; text?: string | null }
+  | { kind: "promise"; id: number; revision: number; when: string | null; due: string | null; dated?: boolean; noDay?: boolean; person?: TaskPerson; text?: string | null };
 // a nudge (no reply to your mail) acts as a promise does: through follow-ups' act on the row it shows (Codex code review)
 
 /** Who a promise or a nudge is with, as its row names and pictures them; no address, initials alone. */
@@ -120,7 +121,7 @@ export function taskOf(why: TodayWhy, now = Date.now()): TodayTask | null {
     // a Missed item says its day; one still ahead, its time today
     const timed = item.timed && !why.missed;
     const when = item.dated ? dueShort(timed ? dueAt : (localDay(item.dueDay)?.getTime() ?? dueAt), timed, now) : null;
-    return { kind: "dated", item, when, due: datedWhen({ ...item, dueAt }, why.missed === true, now), dueAt };
+    return { kind: "dated", item, when, due: datedWhen({ ...item, dueAt }, why.missed === true, now), dueAt, text: why.text ?? null };
   }
   if ((why.kind === "promise" || why.kind === "nudge") && why.promise) {
     const dated = why.kind === "promise" && why.promise.dated === true && why.dueAt !== undefined;
@@ -132,6 +133,7 @@ export function taskOf(why: TodayWhy, now = Date.now()): TodayTask | null {
       when: dated ? dueShort(why.dueAt!, false, now) : null,
       due: dated ? promiseWhen({ dueAt: why.dueAt, dated }, why.missed === true, now) : null,
       dated,
+      text: why.kind === "promise" ? (why.text ?? null) : null,
       // a promise with no day says none (the fourth panel round): the mail's date beside it would read as one
       ...(why.kind === "promise" && !dated ? { noDay: true } : {}),
       ...(person ? { person } : {}),
@@ -184,16 +186,40 @@ export function laterStart(w: LaterWindow, now = Date.now()): number {
 }
 
 const SAID = { done: "dated.snack.done", dismiss: "dated.snack.dismissed", later: "dated.snack.later" } as const;
+const SAID_ITEM = { done: "dated.snack.doneItem", dismiss: "dated.snack.dismissedItem", later: "dated.snack.laterItem" } as const;
+/** A task's words in the snack, at most: one line beside its Undo (the snack ellipsizes what's left over too) */
+const SAID_MAX = 60;
+
+/** A long task cut at a word, if one is near the end, with an ellipsis. */
+function shortened(text: string): string {
+  if (text.length <= SAID_MAX) return text;
+  const cut = text.slice(0, SAID_MAX - 1);
+  const space = cut.lastIndexOf(" ");
+  return `${(space >= SAID_MAX - 16 ? cut.slice(0, space) : cut).trimEnd().replace(/[,;:·-]$/, "")}…`;
+}
+
+/**
+ * The fourth panel round (change 9, revision 11): what the snack says of Done, Not a task and Later, naming the task so
+ * its Undo says what it undoes: "Done: Pay $187.42 for the utility bill", "Not a task: …", "Later: …". One formatter for
+ * the row's menu, D, the palette, the conversation's line and the promise card. The words are the task's as it was acted
+ * on (a reload can't name what replaced it); with none (a nudge), the plain "Marked done".
+ */
+export function taskSaid(action: "done" | "dismiss" | "later", text: string | null | undefined): string {
+  const words = text?.trim();
+  return words ? t(SAID_ITEM[action], { text: shortened(words) }) : t(SAID[action]);
+}
 
 /**
  * Done, Not a task and Later (plan 204 §5, after the panel), each with Undo that puts the exact item back, as follow-ups'
  * act. Today reloads on the backend's `todayChanged`. `left`: the Today row it took out of the list (after the second
  * panel round), which its Undo puts back selected, and a failure brings back.
  */
-export async function actOnDated(item: Pick<DatedRef, "id" | "revision">, action: "done" | "dismiss" | "later", until?: number, left?: LeftRows): Promise<void> {
+export async function actOnDated(item: Pick<DatedRef, "id" | "revision"> & { text?: string | null }, action: "done" | "dismiss" | "later", until?: number, left?: LeftRows): Promise<void> {
+  // its words now, before the act's reload replaces them
+  const text = item.text;
   try {
     const { undoId } = await client.call("dated.act", { id: item.id, revision: item.revision, action, ...(until !== undefined ? { until } : {}) });
-    said(action, undoId === null ? null : () => client.call("dated.undo", { undoId }).then(() => undefined), "dated.undo", left);
+    said(action, text, undoId === null ? null : () => client.call("dated.undo", { undoId }).then(() => undefined), "dated.undo", left);
   } catch (error) {
     left?.failed();
     snack.error((error as { message?: string }).message ?? t("dated.actFailed"));
@@ -202,20 +228,20 @@ export async function actOnDated(item: Pick<DatedRef, "id" | "revision">, action
 
 /** The same three on a Today row's task: a promise through follow-ups' act (its revision, its Undo), in Today's words. */
 export async function actOnTask(task: TodayTask, action: "done" | "dismiss" | "later", at?: number, left?: LeftRows): Promise<void> {
-  if (task.kind === "dated") return actOnDated(task.item, action, at, left);
+  if (task.kind === "dated") return actOnDated({ ...task.item, text: task.text }, action, at, left);
   try {
     const { undoId } = await client.call("followups.act", { id: task.id, revision: task.revision, action, ...(at !== undefined ? { dueAt: at } : {}) });
-    said(action, undoId === null ? null : () => client.call("followups.undo", { undoId }).then(() => undefined), "followup.undo", left);
+    said(action, task.text, undoId === null ? null : () => client.call("followups.undo", { undoId }).then(() => undefined), "followup.undo", left);
   } catch (error) {
     left?.failed();
     snack.error((error as { message?: string }).message ?? t("followup.actFailed"));
   }
 }
 
-/** The snack, with Undo when there's one (the row it took out back with it). */
-function said(action: "done" | "dismiss" | "later", run: (() => Promise<void>) | null, name: "dated.undo" | "followup.undo", left?: LeftRows): void {
+/** The snack, naming the task, with Undo when there's one (the row it took out back with it). */
+function said(action: "done" | "dismiss" | "later", text: string | null | undefined, run: (() => Promise<void>) | null, name: "dated.undo" | "followup.undo", left?: LeftRows): void {
   const undo = run && registerUndo(() => (left ? left.undo(run) : run()));
-  snack.success(t(SAID[action]), undo ? { action: { label: t("common.undo"), name: t(name), undo } } : {});
+  snack.success(taskSaid(action, text), undo ? { action: { label: t("common.undo"), name: t(name), undo } } : {});
 }
 
 /**

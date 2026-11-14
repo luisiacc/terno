@@ -17,7 +17,7 @@ const errors: string[] = [];
 const said: { text: string; undo: boolean }[] = [];
 vi.mock("~/lib/snack", () => ({ registerUndo: (f: () => void) => f, snack: { success: (text: string, o: { action?: unknown }) => said.push({ text, undo: !!o.action }), error: (m: string) => errors.push(m) } }));
 
-const { actOnTask, answerScan, laterChoices, laterNote, laterStart, laterWindow } = await import("./dated");
+const { actOnTask, answerScan, laterChoices, laterNote, laterStart, laterWindow, taskSaid } = await import("./dated");
 
 beforeEach(() => {
   calls.length = 0;
@@ -42,6 +42,31 @@ describe("a Today row's task (plan 204, after the panel)", () => {
     await actOnTask({ kind: "dated", item, when: null, due: null, dueAt: 0 }, "done");
     expect(params).toEqual([{ id: 7, revision: 3, action: "later", dueAt: 1234 }, { id: 30, revision: 2, action: "done" }]);
     expect(said.map((s) => s.text)).toEqual(["Moved to later", "Marked done"]);
+  });
+
+  it("the fourth panel round (change 9): Undo names what it undoes, by the words the task had when acted on", async () => {
+    const bill = { kind: "dated" as const, item, when: null, due: null, dueAt: 0, text: "Pay $187.42 for the utility bill" };
+    await actOnTask(bill, "done");
+    await actOnTask({ kind: "promise", id: 7, revision: 3, when: null, due: null, text: "send the agenda" }, "dismiss");
+    await actOnTask(bill, "later", 1234);
+    expect(said).toEqual([
+      { text: "Done: Pay $187.42 for the utility bill", undo: true },
+      { text: "Not a task: send the agenda", undo: true },
+      { text: "Later: Pay $187.42 for the utility bill", undo: true },
+    ]);
+    // a nudge has no words of its own: the plain ones
+    await actOnTask({ kind: "promise", id: 8, revision: 0, when: null, due: null, text: null }, "done");
+    expect(said.at(-1)!.text).toBe("Marked done");
+  });
+
+  it("a long task is cut at a word, so the snack keeps its Undo in view", () => {
+    const long = "Renew the commercial general liability insurance policy for the downtown warehouse before it lapses";
+    const text = taskSaid("done", long);
+    expect(text).toBe("Done: Renew the commercial general liability insurance policy…");
+    expect(text.length).toBeLessThanOrEqual("Done: ".length + 60);
+    // one word with no space near the end is cut where it must be
+    expect(taskSaid("dismiss", "x".repeat(80))).toBe(`Not a task: ${"x".repeat(59)}…`);
+    expect(taskSaid("later", "  ")).toBe("Moved to later");
   });
 
   it("Later's choices: every preset that applies now; on a Plan, only those before it ends", () => {

@@ -27,18 +27,18 @@ export function actOnTodayRow(threadId: number, task: TodayTask, action: TaskAct
  * The conversation's line acts on its own item (Done, Not a task, and Later to a moment); when that item is the one its
  * Today row stands for, the row leaves as it would from the row's own act, with its Undo and a failure's way back.
  */
-export function actOnThreadItem(threadId: number, item: Pick<DatedRef, "id" | "revision">, action: TaskAction, at?: number): Promise<void> {
+export function actOnThreadItem(threadId: number, item: Pick<DatedRef, "id" | "revision"> & { text?: string | null }, action: TaskAction, at?: number): Promise<void> {
   const task = useToday.getState().tasks.get(threadId);
   return actOnDated(item, action, at, task?.kind === "dated" && task.item.id === item.id ? leaving(threadId) : undefined);
 }
 
 /**
- * The conversation's promise controls (Done, Later, Not a promise), as its item line (Codex code review): on the promise
+ * The conversation's promise controls (Done, Later, Not a task), as its item line (Codex code review): on the promise
  * its Today row stands for, the row leaves as from the row's own Done; on any other, follow-ups' own act.
  */
 export function actOnThreadPromise(row: FollowupRow, action: TaskAction, at?: number): Promise<void> {
   const task = useToday.getState().tasks.get(row.threadId);
-  if (task?.kind === "promise" && task.id === row.id) return actOnTask({ ...task, revision: row.revision }, action, at, leaving(row.threadId));
+  if (task?.kind === "promise" && task.id === row.id) return actOnTask({ ...task, revision: row.revision, text: row.kind === "promise" ? row.text : null }, action, at, leaving(row.threadId));
   return actOnFollowup(row, action, at);
 }
 

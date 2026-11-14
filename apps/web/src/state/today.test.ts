@@ -293,7 +293,7 @@ describe("plan 204: Missed, Deadlines, Needs you, Plans, Reminders and Coming up
     flattenToday(list({ deadlines: [dated(1, "pay", "Wire payroll", 12, { timed: true, h: 13 })], needsYou: [{ thread: thread(3), why: { kind: "promise", text: "send the agenda", dueAt: at(12, 18), promise: { id: 31, revision: 2, dated: true } } } as never] }), []);
     expect(useToday.getState().tasks.get(1)).toMatchObject({ when: "1:00 PM" });
     // a promise row acts on the promise it shows, exactly
-    expect(useToday.getState().tasks.get(3)).toEqual({ kind: "promise", id: 31, revision: 2, when: "Today", due: "Due today", dated: true });
+    expect(useToday.getState().tasks.get(3)).toEqual({ kind: "promise", id: 31, revision: 2, when: "Today", due: "Due today", dated: true, text: "send the agenda" });
   });
 
   it("the fourth panel round: a promise's row is its person's, the one it shows now; one with no day says none", () => {

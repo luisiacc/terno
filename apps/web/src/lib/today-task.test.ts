@@ -67,10 +67,22 @@ describe("Done means gone (plan 204, after the second panel round)", () => {
     // the same frame: not held in place as a row that leaves on its own is
     expect(shown()).toEqual([1, 3]);
     expect(getApp().selectedId).toBe(3);
-    await vi.waitFor(() => expect(useSnack.getState().current?.message).toBe("Marked done"));
+    // the fourth panel round: it names the task, as the row showed it
+    await vi.waitFor(() => expect(useSnack.getState().current?.message).toBe("Done: Task 2"));
     await undo();
     expect(shown()).toEqual([1, 2, 3]);
     expect(getApp().selectedId).toBe(2);
+  });
+
+  it("the fourth panel round: Undo's words are the task's when acted on, not what the reload brought in its place", async () => {
+    let slow: (() => void) | null = null;
+    fake.handlers["dated.act"] = (p) => new Promise((resolve) => (slow = () => resolve((done.add((p as { id: number }).id), { undoId: 5 }))));
+    const acting = actOnTodayRow(2, useToday.getState().tasks.get(2)!, "dismiss");
+    // the conversation's next item is the row's now (a reload while the act was on its way)
+    useToday.setState({ tasks: new Map([[2, { kind: "dated", item: { ...item(2), id: 21 }, when: null, due: null, dueAt: 0, text: "Pay the rent" }]]) });
+    slow!();
+    await acting;
+    expect(useSnack.getState().current?.message).toBe("Not a task: Task 2");
   });
 
   it("Not a task and Later leave too; a row that isn't the open one leaves without moving the cursor", async () => {
@@ -104,11 +116,11 @@ describe("Done means gone (plan 204, after the second panel round)", () => {
     const sent: unknown[] = [];
     const act = fake.handlers["dated.act"]!;
     fake.handlers["dated.act"] = async (p) => (sent.push(p), act(p));
-    await actOnThreadItem(2, item(2), "later", 3e12);
+    await actOnThreadItem(2, { ...item(2), text: "Task 2" }, "later", 3e12);
     expect(sent).toEqual([{ id: 20, revision: 1, action: "later", until: 3e12 }]);
     expect(shown()).toEqual([1, 3]);
     expect(getApp().selectedId).toBe(3);
-    await vi.waitFor(() => expect(useSnack.getState().current?.message).toBe("Moved to later"));
+    await vi.waitFor(() => expect(useSnack.getState().current?.message).toBe("Later: Task 2"));
     await undo();
     expect(shown()).toEqual([1, 2, 3]);
     expect(getApp().selectedId).toBe(2);
@@ -128,10 +140,13 @@ describe("Done means gone (plan 204, after the second panel round)", () => {
     const row = (id: number) => ({ id, threadId: 4, revision: 1, kind: "promise", text: "send the agenda", dueAt: 2e12 }) as unknown as FollowupRow;
     await actOnThreadPromise(row(401), "done");
     expect(shown()).toEqual([1, 2, 3, 4]);
+    // follow-ups' own act names the promise too (the fourth panel round)
+    expect(useSnack.getState().current?.message).toBe("Done: send the agenda");
     await actOnThreadPromise(row(400), "done");
     expect(shown()).toEqual([1, 2, 3]);
     expect(getApp().selectedId).toBe(3);
     await vi.waitFor(() => expect(useSnack.getState().undo).toBeTruthy());
+    expect(useSnack.getState().current?.message).toBe("Done: send the agenda");
     await undo();
     expect(shown()).toEqual([1, 2, 3, 4]);
     expect(getApp().selectedId).toBe(4);

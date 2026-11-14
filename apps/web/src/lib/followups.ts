@@ -2,7 +2,7 @@ import { dayEnd, dayKeyOf, followupDaysSince, mostUrgent, type FollowupRow } fro
 import type { FollowupsSnapshot } from "@terno/core";
 import { t } from "@terno/i18n";
 import { followupsOffered } from "~/lib/ai";
-import { promiseWhen } from "~/lib/dated";
+import { promiseWhen, taskSaid } from "~/lib/dated";
 import { onExplicitOpen } from "~/lib/open-dwell";
 import { registerUndo, snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
@@ -71,12 +71,16 @@ export function rowLine(rows: readonly FollowupRow[] | undefined, now = Date.now
   return rows.length > 1 ? `${line} +${rows.length - 1}` : line;
 }
 
-/** Done, Dismiss and Later, each with Undo that puts the exact row back. */
+/**
+ * Done, Dismiss and Later, each with Undo that puts the exact row back. A promise's snack names it as Today's do ("Done:
+ * send the contract", the fourth panel round); a nudge's keeps its own words.
+ */
 export async function actOnFollowup(row: FollowupRow, action: "done" | "dismiss" | "later", dueAt?: number): Promise<void> {
+  const text = row.kind === "promise" ? row.text : null;
   try {
     const { undoId } = await client.call("followups.act", { id: row.id, revision: row.revision, action, ...(dueAt !== undefined ? { dueAt } : {}) });
     const undo = undoId === null ? null : registerUndo(() => client.call("followups.undo", { undoId }).then(() => undefined));
-    const said = action === "done" ? t("followup.snack.done") : action === "dismiss" ? t("followup.snack.dismissed") : t("followup.snack.later", { date: reminderDated(dueAt ?? row.dueAt) });
+    const said = text !== null ? taskSaid(action, text) : action === "done" ? t("followup.snack.done") : action === "dismiss" ? t("followup.snack.dismissed") : t("followup.snack.later", { date: reminderDated(dueAt ?? row.dueAt) });
     snack.success(said, undo ? { action: { label: t("common.undo"), name: t("followup.undo"), undo } } : {});
   } catch (error) {
     const e = error as { message?: string };
