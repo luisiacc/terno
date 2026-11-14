@@ -273,3 +273,18 @@ That is: the "before shipping" list; **a week's lead for requests from people an
 11. **The automated-messages entry moves to the end of Today:** the list's last row (`DIGEST_ROW_ID`, as plan 145 had it, never before a person), under no heading of its own.
 
 Out of scope: a rule for a first message from a prospective client; a promise of yours that a later message from someone else replaces; ownership and handing to an assistant (plan 206); the coverage line ("checked mail since…").
+
+### Revisions after the Codex review of the fixes
+
+Codex (read-only, `/tmp/terno-scratch/p204/critique-2.out`) raised 10 points, all taken. Each replaces what the list above says.
+
+1. **Fix 8 is "your reply answers a request", not a coupled Done.** A thread can hold several requests and promises, so pairing by thread could close unrelated work, and a joint Done would need one journal across two stores. Instead, as plan 142's `closeWaitsBefore` does for waits: a message you send on the thread (a confirmed send, or live sync of mail sent elsewhere) settles the thread's open `respond` items from messages before it (`closed_reason` `answered`), in the same commit. Your promise, if it made one, is then the obligation. Both stores, conformance.
+2. *(with 1)* No joint action, so no joint Undo.
+3. **A promise row carries its own reference:** `TodayWhy.promise = { id, revision }` for promise and nudge rows, so D, Done and Not a task act on the promise shown, never "the thread's most urgent". `today.done` (`d`) is registered in the keybinding resolver like any other binding, so turning character keys off turns it off.
+4. **Promises in Coming up are wired to the clock and the list:** open dated promises due in the next 14 days are placed in Coming up; `nextTodayChange` also wakes when one enters the 14 days and when it comes due; a follow-ups change calls `today.changed()` (the list and the count reload), not only the clock.
+5. **A moved item keeps its id and adds nothing.** A new day for an open item goes in `moved`, never in `items`; `checkDates` drops a new item of the same kind on the moved item's new day. `moved` and `settled` exclude each other (settled wins).
+6. **A move applies to an open item whatever its revision** (it changes only the due day, its time and `act_at`, keeps `deferred_until`, and bumps the revision), so Later meanwhile can't lose the mail's new day. A closed item stays closed.
+7. **No recalculation for the new leads:** 204 hasn't shipped, so no stored item has the old ones.
+8. **Task first, in every form:** where a row has a snippet line, the task takes it in the foreground ink and the subject moves to it from line two; in a one-line or compact row, the task is what the snippet's place shows; with no preview, the task takes the subject's line. Row heights don't change, so the virtualizer and the anchor are untouched. The right column shows the due day or time.
+9. **Later on a Missed item gives it back a visible week:** Missed lasts until 7 days after the later of its day's end and the deferral's end, in `datedPlace`, `datedOver` and `nextTodayChange`. On a Plan, Later offers only times before it ends.
+10. **The digest's entry is the list's last option again** (`DIGEST_ROW_ID`, after held rows), superseding plan 162's place in the header (the owner, 2026-11-14): j/k, Enter, the active descendant, and coming back to it from its page (focus and scroll, even when it was virtualized out); still never checked, dragged, given a menu or thread actions.
