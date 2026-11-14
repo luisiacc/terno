@@ -61,15 +61,22 @@ describe("reading dates in mail you got (plan 204)", () => {
     expect(en).toContain('"Furnace service, 12–2 PM", "Package arriving by 9 PM"');
     expect(en).toContain('"Blood test (fast after midnight)"');
     expect(en).toContain('"US$29"');
-    // the eval: "never … pay or move money, even when the mail says to" led a small model to bill a customs scam
-    expect(en).toContain("Its text says what to check, never to reply or click");
     const es = readDatesTask(input({ language: "es" })).system;
     expect(es).toContain('"Responder a Mariana sobre el presupuesto del rebranding"');
     expect(es).toContain('"Revisión de la caldera, 12–14 h"');
   });
 
+  it("prompt v6: an alert says what the mail says happened, attributed, never an instruction; a move is a new day or a new time", () => {
+    const en = readDatesTask(input()).system;
+    expect(en).toContain('"Debit card frozen after a $412.18 charge, the email says"');
+    expect(en).toContain("not to reply, click, pay or call, nor to check with someone the mail names");
+    expect(en).toContain('this message gives a new day or a new time');
+    expect(en).toContain("(the same day when only the time changes)");
+    expect(readDatesTask(input({ language: "es" })).system).toContain('"Tarjeta de débito congelada tras un cargo de $412.18, según el correo"');
+  });
+
   it("is frozen at its version: a change to the words is a new version", () => {
-    expect(DATED_PROMPT_VERSION).toBe(5);
+    expect(DATED_PROMPT_VERSION).toBe(6);
     expect(readDatesTask(input()).system).toMatchSnapshot();
   });
 
@@ -115,8 +122,8 @@ describe("reading dates in mail you got (plan 204)", () => {
   });
 
   it("a small window holds the whole conversation with the server: a bad answer and its repair still fit", async () => {
-    // v5's words (an ask, a Plan's window) need a little under 3,200: the smallest window that holds them with a bad answer and its repair
-    const window = 3200;
+    // v6's words (an ask, a Plan's window, an alert's attribution, a move's time) need a little over 3,200: a window that holds them with a bad answer and its repair
+    const window = 3300;
     const budget = datedBudget(window);
     const fitted = fitDates(input({ text: "word ".repeat(1200), outputTokens: budget.outputTokens }), budget.promptChars);
     const sizes: number[] = [];
