@@ -57,7 +57,8 @@ export function datedTab(threadTab: number, category: number | null): DatedSourc
   const tab = tabOfCode(threadTab);
   if (tab) return tab;
   if (category == null) return null;
-  return category === 4 ? "updates" : category === 5 ? "forums" : "primary";
+  // Gmail's own category, whether or not this account shows the tabs apart: Promotions is Promotions
+  return category === 2 ? "promotions" : category === 3 ? "social" : category === 4 ? "updates" : category === 5 ? "forums" : "primary";
 }
 
 export interface DatedWrite {
