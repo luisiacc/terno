@@ -619,4 +619,32 @@ describe("the third panel round", () => {
     clock.now = at(2026, 11, 18, 10);
     expect(await sections()).toMatchObject({ deadlines: [billThread], comingUp: [agenda] });
   });
+
+  it("change 2: a waiting conversation with your promise shows the one due soonest, exactly; Later keeps it the conversation's, at its new day", async () => {
+    const { client, receive, raw, clock } = await setup();
+    await client.call("settings.update", { followups: { enabled: true } });
+    // Elena's "gentle nudge" on the October update, after Priya promised it
+    const elena = await receive({ from: { name: "Elena", email: "elena@acme.test" }, subject: "Re: October update", bodyText: "Gentle nudge on the October update, by Monday if you can." });
+    raw.run("UPDATE threads SET waiting_since = ?, has_sent = 1 WHERE id = ?", clock.now - 60_000, elena);
+    raw.run(...followup(elena, "send the board deck", at(2026, 11, 20, 9), { message: 900_001 }));
+    raw.run(...followup(elena, "send the October update", at(2026, 11, 17, 9), { message: 900_002, revision: 2 }));
+    clock.now = at(2026, 11, 14, 10);
+    const row = async () => {
+      const list = await client.call("today.list", { heldIds: [] });
+      expect(list.sections.map((x) => x.kind)).toEqual(["needsYou"]);
+      return list.sections[0]!.items[0]!;
+    };
+    const first = await row();
+    expect(first).toMatchObject({ thread: { id: elena }, why: { kind: "promise", text: "send the October update", dueAt: at(2026, 11, 17, 9), promise: { revision: 2, dated: true } } });
+    // its line is the promise, so no summary is read for it
+    expect(first.summary).toBeUndefined();
+    expect((await client.call("counts.get", {})).today).toBe(1);
+    // Later on exactly it: the deck is now the soonest
+    await client.call("followups.act", { id: first.why.promise!.id, revision: 2, action: "later", dueAt: at(2026, 11, 23, 9) });
+    const second = await row();
+    expect(second.why).toMatchObject({ text: "send the board deck", dueAt: at(2026, 11, 20, 9) });
+    // Done on the deck: the October update is the conversation's promise again, at its new day
+    await client.call("followups.act", { id: second.why.promise!.id, revision: second.why.promise!.revision, action: "done" });
+    expect((await row()).why).toMatchObject({ text: "send the October update", dueAt: at(2026, 11, 23, 9), promise: { id: first.why.promise!.id } });
+  });
 });
