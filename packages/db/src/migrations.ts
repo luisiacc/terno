@@ -1459,6 +1459,47 @@ CREATE INDEX dated_open ON dated_items(act_at, id) WHERE state = 'open';
 CREATE INDEX dated_thread ON dated_items(thread_id, state);
 CREATE INDEX dated_sender ON dated_items(sender_key) WHERE state = 'open';
 ` },
+  // plan 204 (after the third panel round, revision 9): the kinds' CHECK admits `ask`, so the table is rebuilt: its ids
+  // (and AUTOINCREMENT's high mark, so a pruned id is never reused by an Undo's journal), revisions and indexes kept.
+  // Bounded: 1,000 open and 90 days closed
+  { version: 57, name: "dated items: an ask (plan 204)", sql: `
+CREATE TABLE dated_items_v57 (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  thread_id INTEGER NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+  message_id INTEGER NOT NULL,
+  item INTEGER NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('pay','renew','expire','respond','alert','event','delivery','ask')),
+  text TEXT NOT NULL,
+  quote TEXT NOT NULL,
+  sender_key TEXT NOT NULL,
+  due_day TEXT NOT NULL,
+  due_at INTEGER NOT NULL,
+  timed INTEGER NOT NULL DEFAULT 0,
+  dated INTEGER NOT NULL DEFAULT 1,
+  act_at INTEGER NOT NULL,
+  deferred_until INTEGER,
+  arrived_at INTEGER NOT NULL,
+  state TEXT NOT NULL CHECK (state IN ('open','done','dismissed','settled')),
+  closed_reason TEXT,
+  closed_at INTEGER,
+  from_scan INTEGER NOT NULL DEFAULT 0,
+  revision INTEGER NOT NULL DEFAULT 0,
+  model TEXT,
+  provider TEXT,
+  prompt_version INTEGER,
+  created_at INTEGER NOT NULL,
+  UNIQUE (message_id, item)
+);
+INSERT INTO dated_items_v57 (id, thread_id, message_id, item, kind, text, quote, sender_key, due_day, due_at, timed, dated, act_at, deferred_until, arrived_at, state, closed_reason, closed_at, from_scan, revision, model, provider, prompt_version, created_at)
+  SELECT id, thread_id, message_id, item, kind, text, quote, sender_key, due_day, due_at, timed, dated, act_at, deferred_until, arrived_at, state, closed_reason, closed_at, from_scan, revision, model, provider, prompt_version, created_at FROM dated_items;
+INSERT INTO sqlite_sequence (name, seq) SELECT 'dated_items_v57', seq FROM sqlite_sequence WHERE name = 'dated_items' AND NOT EXISTS (SELECT 1 FROM sqlite_sequence WHERE name = 'dated_items_v57');
+UPDATE sqlite_sequence SET seq = max(seq, (SELECT coalesce(max(seq), 0) FROM sqlite_sequence WHERE name = 'dated_items')) WHERE name = 'dated_items_v57';
+DROP TABLE dated_items;
+ALTER TABLE dated_items_v57 RENAME TO dated_items;
+CREATE INDEX dated_open ON dated_items(act_at, id) WHERE state = 'open';
+CREATE INDEX dated_thread ON dated_items(thread_id, state);
+CREATE INDEX dated_sender ON dated_items(sender_key) WHERE state = 'open';
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

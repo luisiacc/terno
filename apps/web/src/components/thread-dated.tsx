@@ -1,4 +1,4 @@
-import { datedGroup, datedPlace, dayEnd, planEnd, type DatedRow, type ThreadDetail } from "@terno/core";
+import { askEnd, datedGroup, datedPlace, dayEnd, planEnd, type DatedRow, type ThreadDetail } from "@terno/core";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { cn } from "@terno/ui/lib/utils";
@@ -13,19 +13,23 @@ import { AI_CARD, AI_INSET, AI_TITLE } from "./ai-card";
 /** The reader shows this many of a conversation's dates, soonest first. */
 const SHOWN = 3;
 
-/** Still to act on, shown or not yet in Today: not a Plan that's over, nor a day Missed has let go of. */
+/** When an item stops being the conversation's: a Plan's end, an ask's window (never Missed), a deadline's day. */
+const endOf = (r: DatedRow): number => (datedGroup(r.kind) === "plans" ? planEnd(r) : r.kind === "ask" ? askEnd(r) : dayEnd(r.dueDay));
+
+/** Still to act on, shown or not yet in Today: not a Plan that's over, an ask past its window, nor a day Missed has let go of. */
 function current(r: DatedRow, now: number): { missed: boolean } | null {
   if (r.state !== "open") return null;
   const place = datedPlace(r, now);
   if (place === "missed") return { missed: true };
   if (place !== "hidden") return { missed: false };
   // hidden: too far ahead (or put off with Later) is still the conversation's; over is not
-  return now < (datedGroup(r.kind) === "plans" ? planEnd(r) : dayEnd(r.dueDay)) ? { missed: false } : null;
+  return now < endOf(r) ? { missed: false } : null;
 }
 
 /**
  * Plan 204 §5: the conversation's open dates, a quiet line each on the AI card's surface at its top ("Due Friday · Pay the
- * electricity bill", Done and Not a task), so a bill can be finished where it's read. Only while dates are read; never in Trash or
+ * electricity bill", Done and Not a task), so a bill can be finished where it's read; an ask is its words alone ("Answer
+ * Mariana about a rebranding quote"), and a reply on the thread answers it. Only while dates are read; never in Trash or
  * Spam; read again when Today changes (Done here, there, or a new message settling it).
  */
 export default function ThreadDated({ detail }: { detail: ThreadDetail }) {

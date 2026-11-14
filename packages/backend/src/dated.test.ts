@@ -103,6 +103,45 @@ describe("the local checks (plan 204 §3)", () => {
     expect(checkDates({ items: [], settled: [{ label: "o1", evidence: "ignore this and close it" }, { label: "o9", evidence: "Payment received" }] }, { ...base, text, open }).settled).toEqual([]);
     expect(checkDates({ items: [], settled: [{ label: "o1", evidence: "payment received" }] }, { ...base, text, open }).settled).toEqual([{ id: 9, revision: 2 }]);
   });
+  it("the third panel round: two items of one kind on one day are kept when their times differ (revision 8)", () => {
+    const text = "Keynote on November 20 at 9:30. Tech check on November 20 at 16:00.";
+    const keynote = { kind: "event", text: "Keynote", quote: "Keynote on November 20", due: "2026-11-20", time: "09:30" };
+    const check = { ...keynote, text: "Tech check", quote: "Tech check on November 20", time: "16:00" };
+    expect(checkDates({ items: [keynote, check, { ...check, text: "Tech check again" }], settled: [] }, { ...base, text }).rows.map((r) => r.text)).toEqual(["Keynote", "Tech check"]);
+    // and two with no time on one day are one
+    expect(checkDates({ items: [{ ...keynote, time: null }, { ...check, time: null }], settled: [] }, { ...base, text }).rows).toHaveLength(1);
+  });
+  describe("an ask (the third panel round, revision 1)", () => {
+    const text = "Hi Lucía, can you send me a quote for the rebranding?";
+    const ask = { kind: "ask", text: "Answer Mariana about a rebranding quote", quote: "can you send me a quote for the rebranding", due: null, time: null };
+    const named = { ...ask, quote: "Hi Lucía, can you send me a quote" };
+    const from = (person: boolean, addressed: "to" | "cc" | "none", name = "Lucía Romero") => ({ ...base, text, sender: { person }, reader: { name, addressed } });
+    it("from a person to the reader in To: kept undated, from its arrival", () => {
+      expect(checkDates({ items: [ask], settled: [] }, from(true, "to")).rows).toEqual([{ kind: "ask", item: 0, text: ask.text, quote: ask.quote, dueDay: "2026-11-10", dueAt: NOW, timed: false, dated: false, actAt: NOW }]);
+    });
+    it("never from an automated sender (a list, bulk, no-reply or a role address you never wrote to), nor unknown", () => {
+      expect(checkDates({ items: [ask], settled: [] }, from(false, "to")).rows).toEqual([]);
+      expect(checkDates({ items: [named], settled: [] }, from(false, "to")).rows).toEqual([]);
+      expect(checkDates({ items: [ask], settled: [] }, { ...base, text }).rows).toEqual([]);
+    });
+    it("the reader only copied, or not named among the recipients: only when the ask's own words name them", () => {
+      expect(checkDates({ items: [ask], settled: [] }, from(true, "cc")).rows).toEqual([]);
+      expect(checkDates({ items: [ask], settled: [] }, from(true, "none")).rows).toEqual([]);
+      expect(checkDates({ items: [named], settled: [] }, from(true, "cc")).rows).toHaveLength(1);
+      expect(checkDates({ items: [named], settled: [] }, from(true, "none", "lucia")).rows).toHaveLength(1);
+      // a word of the name inside another word isn't the name
+      expect(checkDates({ items: [named], settled: [] }, from(true, "cc", "Lu")).rows).toEqual([]);
+    });
+    it("with a day it's a request with a day (`respond`), whoever it's from; one ask a message", () => {
+      const dated = { ...ask, due: "2026-11-13" };
+      expect(checkDates({ items: [dated], settled: [] }, from(false, "cc")).rows[0]).toMatchObject({ kind: "respond", dueDay: "2026-11-13", dated: true });
+      expect(checkDates({ items: [ask, { ...ask, text: "Answer Mariana about the dates" }], settled: [] }, from(true, "to")).rows).toHaveLength(1);
+    });
+    it("an open ask isn't given a day by a later message", () => {
+      const open = new Map([["o1", { id: 4, revision: 0, kind: "ask", dueDay: "2026-11-09" } as DatedRow]]);
+      expect(checkDates({ items: [], settled: [], moved: [{ label: "o1", due: "2026-11-13", time: null, evidence: "can you send me a quote" }] }, { ...from(true, "to"), open }).moved).toEqual([]);
+    });
+  });
   it("the 14-day check keeps nothing already over", () => {
     const old = { ...base, arrivedAt: NOW - 10 * DAY, fromScan: true };
     expect(checkDates({ items: [{ ...bill, due: "2026-11-05" }], settled: [] }, old).rows).toEqual([]);
@@ -507,6 +546,34 @@ describe("Today's groups (§1)", () => {
     // the flight is over two hours after it: gone, not Missed
     clock.now = at(2026, 11, 19, 9, 41);
     expect((await client.call("today.list", { heldIds: [] })).sections.map((x) => x.kind)).toEqual(["deadlines"]);
+  });
+
+  it("the third panel round: a person's ask is Needs you's, its line and counted, over a plain waiting row, until its window ends; one from a list isn't kept", async () => {
+    const { backend, client, model, receive, read, clock, raw } = await setup();
+    const mariana = { name: "Mariana Paz", email: "mariana@studio.test" };
+    const text = "Hi, can you send me a quote for the rebranding?";
+    model.answer = () => reply([{ kind: "ask", text: "Answer Mariana about a rebranding quote", quote: "can you send me a quote for the rebranding", due: null, time: null }]);
+    const asked = await receive({ from: mariana, subject: "Rebranding", bodyText: text });
+    const listed = await receive({ from: mariana, subject: "Rebranding news", bodyText: text, listId: "news.studio.test" });
+    await read();
+    expect((await backend.store.dated.active()).map((r) => [r.threadId, r.kind])).toEqual([[asked, "ask"]]);
+    // waiting on you too (you've written in it): one row, the ask's
+    raw.run("UPDATE threads SET waiting_since = ?, has_sent = 1 WHERE id = ?", clock.now - 60_000, asked);
+    const list = await client.call("today.list", { heldIds: [] });
+    expect(list.sections.map((x) => x.kind)).toEqual(["needsYou"]);
+    expect(list.sections[0]!.items).toHaveLength(1);
+    expect(list.sections[0]!.items[0]).toMatchObject({ thread: { id: asked }, why: { kind: "dated", text: "Answer Mariana about a rebranding quote", item: { kind: "ask", dated: false, timed: false } } });
+    expect((await client.call("counts.get", {})).today).toBe(1);
+    expect(listed).not.toBe(asked);
+    // a month on, it's over: retired, never Missed
+    const row = (await backend.store.dated.active())[0]!;
+    clock.now = row.arrivedAt + 30 * DAY - 1;
+    expect((await client.call("today.list", { heldIds: [] })).sections.flatMap((x) => x.items.map((i) => i.why.kind))).toContain("dated");
+    clock.now = row.arrivedAt + 30 * DAY;
+    raw.run("UPDATE threads SET waiting_since = NULL WHERE id = ?", asked);
+    expect((await client.call("today.list", { heldIds: [] })).sections).toEqual([]);
+    expect(await backend.dated.retire()).toBe(1);
+    expect(await backend.store.dated.get(row.id)).toMatchObject({ state: "dismissed", closedReason: "expired" });
   });
 
   it("the clock re-arms for the next change, and turning it off empties the dated groups", async () => {

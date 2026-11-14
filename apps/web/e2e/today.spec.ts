@@ -619,11 +619,11 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
 
     await scenario("the header offers it while it's off, and turning it on asks about the last 14 days once", async () => {
       const offer = page.getByTestId("today-dated-offer");
-      await expect(offer).toContainText("Show bills, renewals and trips here.");
+      await expect(offer).toContainText("Show bills, trips and requests here.");
       // on the header's text edge, as Today's line above it
       const edge = async (id: string) => page.getByTestId(id).evaluate((e) => e.getBoundingClientRect().left);
       expect(Math.abs((await edge("today-dated-offer")) - (await edge("today-line")))).toBeLessThanOrEqual(1);
-      await expect(offer.getByTestId("today-dated-dismiss")).toHaveAccessibleName("Don’t offer bills, renewals and trips again");
+      await expect(offer.getByTestId("today-dated-dismiss")).toHaveAccessibleName("Don’t offer bills, trips and requests again");
       if (SHOTS) await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-dated-offer-light.png` });
       await offer.getByTestId("today-dated-on").click();
       await expect(offer).toHaveCount(0);
@@ -914,7 +914,7 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       await page.getByTestId("open-settings").click();
       await page.getByTestId("tab-ai").click();
       const group = page.getByTestId("ai-dated");
-      await expect(group).toContainText("Bills, renewals and trips");
+      await expect(group).toContainText("Bills, trips and requests");
       await expect(group.getByTestId("ai-dated-switch")).toBeChecked();
       await expect(group).toContainText("Reads new mail that has a date in it with");
       await group.scrollIntoViewIfNeeded();

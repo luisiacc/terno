@@ -16,7 +16,7 @@ export interface DatedFacts {
   dueDay: string;
   dueAt: number;
   timed: boolean;
-  /** false: an alert that named no day, which reads as its words alone */
+  /** false: an alert that named no day, or an ask (it has none): each reads as its words alone */
   dated: boolean;
   text: string;
 }
@@ -48,11 +48,12 @@ const line = (when: string | null, text: string): string => (when ? t("today.why
 
 /**
  * When an item is, in words: "Due Friday", "Due today 1:00 PM" (after the panel: any item with a time says it), "Tomorrow
- * 7:40" (a Plan), "Was due Tuesday" (Missed); null for an alert that named no day. A Today row's screen reader hears it
- * after the task, the right column (its short form) being hidden from it (after the second panel round).
+ * 7:40" (a Plan), "Was due Tuesday" (Missed); null for an alert that named no day, and for an ask (the third panel round:
+ * a person's question, never due, its row's date the day it came). A Today row's screen reader hears it after the task, the
+ * right column (its short form) being hidden from it (after the second panel round).
  */
 export function datedWhen(o: Omit<DatedFacts, "text">, missed: boolean, now = Date.now()): string | null {
-  if (!o.dated) return null;
+  if (o.kind === "ask" || !o.dated) return null;
   const time = o.timed ? reminderTime(o.dueAt) : null;
   if (missed) return wasDue(dayOf(o), now, time);
   if (datedGroup(o.kind) === "plans") {

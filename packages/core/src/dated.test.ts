@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { isAcknowledgment, looksLikeAcknowledgment } from "./today";
-import { datedOver, datedPlace, datedTiming, hasTimeCue, nextTodayChange, planEnd, promiseComingUp, promiseMissed, promiseOver, type DatedKind, type DatedRow } from "./dated";
+import { ANSWERED_KINDS, askEnd, datedGroup, datedOver, datedPlace, datedTiming, hasTimeCue, nextTodayChange, planEnd, promiseComingUp, promiseMissed, promiseOver, type DatedKind, type DatedRow } from "./dated";
+import { WAITING_WINDOW_MS } from "./people";
 
 const at = (y: number, m: number, d: number, h = 0, min = 0) => new Date(y, m - 1, d, h, min).getTime();
 const clock = (ms: number) => { const d = new Date(ms); return [d.getMonth() + 1, d.getDate(), d.getHours(), d.getMinutes()]; };
@@ -8,8 +9,8 @@ const clock = (ms: number) => { const d = new Date(ms); return [d.getMonth() + 1
 const arrived = at(2026, 11, 10, 14);
 const timing = (kind: DatedKind, due: string | null, time: string | null = null, arrivedAt = arrived) => datedTiming({ kind, due, time, arrivedAt });
 
-type Placed = Pick<DatedRow, "kind" | "state" | "dueDay" | "dueAt" | "timed" | "actAt" | "deferredUntil">;
-const item = (kind: DatedKind, due: string | null, time: string | null = null, more: Partial<Placed> = {}): Placed => ({ kind, state: "open", deferredUntil: null, ...timing(kind, due, time)!, ...more });
+type Placed = Pick<DatedRow, "kind" | "state" | "dueDay" | "dueAt" | "timed" | "actAt" | "deferredUntil" | "arrivedAt">;
+const item = (kind: DatedKind, due: string | null, time: string | null = null, more: Partial<Placed> = {}): Placed => ({ kind, state: "open", deferredUntil: null, arrivedAt: arrived, ...timing(kind, due, time)!, ...more });
 
 describe("when a dated item shows (plan 204 §2)", () => {
   it("each kind shows its lead before its day, at 9:00", () => {
@@ -153,6 +154,40 @@ describe("the next change by the clock (revision 11)", () => {
   });
   it("nothing open: no timer", () => {
     expect(nextTodayChange([{ ...item("pay", "2026-11-20"), state: "done" }], [], arrived)).toBeNull();
+  });
+});
+
+describe("an ask (after the third panel round, revision 2)", () => {
+  const ask = item("ask", null);
+  it("has no day of its own: it shows from its arrival, undated; with a day it isn't an ask", () => {
+    expect(timing("ask", null)).toEqual({ dueDay: "2026-11-10", dueAt: arrived, timed: false, dated: false, actAt: arrived });
+    expect(timing("ask", "2026-11-20")).toBeNull();
+    expect(datedGroup("ask")).toBe("needsYou");
+  });
+  it("is Needs you's for Needs you's window after it arrived, never Missed, then over", () => {
+    expect(datedPlace(ask, arrived)).toBe("needsYou");
+    expect(datedPlace(ask, at(2026, 11, 20))).toBe("needsYou");
+    expect(askEnd(ask)).toBe(arrived + WAITING_WINDOW_MS);
+    expect(datedPlace(ask, askEnd(ask) - 1)).toBe("needsYou");
+    expect(datedOver(ask, askEnd(ask) - 1)).toBe(false);
+    expect(datedPlace(ask, askEnd(ask))).toBe("hidden");
+    expect(datedOver(ask, askEnd(ask))).toBe(true);
+  });
+  it("Later hides it until then (Coming up's within two weeks); a Later past its window is over at the window's end", () => {
+    const later = { ...ask, deferredUntil: at(2026, 11, 13, 9) };
+    expect(datedPlace(later, at(2026, 11, 11))).toBe("comingUp");
+    expect(datedPlace(later, at(2026, 11, 13, 9))).toBe("needsYou");
+    const past = { ...ask, deferredUntil: askEnd(ask) + 86_400_000 };
+    expect(datedOver(past, askEnd(ask) - 1)).toBe(false);
+    expect(datedOver(past, askEnd(ask))).toBe(true);
+    expect(datedPlace(past, askEnd(ask))).toBe("hidden");
+  });
+  it("the clock wakes at its window's end, not at each midnight (its words name no day)", () => {
+    expect(nextTodayChange([ask], [], at(2026, 11, 10, 15))).toBe(askEnd(ask));
+    expect(nextTodayChange([ask], [], askEnd(ask))).toBeNull();
+  });
+  it("a send of yours answers it, as it answers a request with a day", () => {
+    expect(ANSWERED_KINDS).toEqual(["respond", "ask"]);
   });
 });
 

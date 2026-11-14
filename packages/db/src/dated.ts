@@ -1,10 +1,13 @@
-import { addressKey, DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, type DatedRow } from "@terno/core";
+import { addressKey, ANSWERED_KINDS, DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, senderIsPerson, type DatedRow } from "@terno/core";
 import { DATED_MARK_MS, DATED_SCAN_MARK_MS, datedTab, NEW_MAIL_MS, readerIn, recipientList, type DatedFinish, type DatedFinishOutcome, type DatedMark, type DatedSnapshot, type DatedSource } from "@terno/store";
 import { OWN_SENDER_SQL, RECEIVED_SQL } from "./ai-summaries";
 import { ownAddresses } from "./facts";
 import type { Db } from "./sqlite";
 
-/** Plan 204 on SQLite (v56): see packages/store/src/dated.ts. */
+/** Plan 204 on SQLite (v56, v57 admits `ask`): see packages/store/src/dated.ts. */
+
+/** `ANSWERED_KINDS` as SQL's list: what a send of yours answers */
+const ANSWERED_SQL = `kind IN (${ANSWERED_KINDS.map((k) => `'${k}'`).join(", ")})`;
 
 interface Raw {
   id: number; thread_id: number; message_id: number; item: number; kind: DatedRow["kind"]; text: string; quote: string; sender_key: string; due_day: string; due_at: number; timed: number; dated: number; act_at: number;
@@ -70,8 +73,8 @@ export function datedScanCandidates(db: Db, since: number, limit: number): numbe
 }
 
 export function datedSource(db: Db, messageId: number): DatedSource | null {
-  const m = db.get<{ id: number; thread_id: number; account_id: number; subject: string; date: number; from_name: string; from_email: string; is_bulk: number; list_id: string | null; tab: number; category: number | null; is_sent: number; is_draft: number; is_spam: number; is_trash: number; own: number; thread_spam: number; body_state: DatedSource["bodyState"]; attachments_captured: number; to_json: string; cc_json: string }>(
-    `SELECT m.id, m.thread_id, m.account_id, m.subject, m.date, m.from_name, m.from_email, m.is_bulk, m.list_id, t.tab, m.category, m.is_sent, m.is_draft, m.is_spam, m.is_trash, m.body_state, m.attachments_captured, m.to_json, m.cc_json,
+  const m = db.get<{ id: number; thread_id: number; account_id: number; subject: string; date: number; from_name: string; from_email: string; is_bulk: number; list_id: string | null; gmail_labels: string | null; tab: number; category: number | null; is_sent: number; is_draft: number; is_spam: number; is_trash: number; own: number; thread_spam: number; body_state: DatedSource["bodyState"]; attachments_captured: number; to_json: string; cc_json: string }>(
+    `SELECT m.id, m.thread_id, m.account_id, m.subject, m.date, m.from_name, m.from_email, m.is_bulk, m.list_id, m.gmail_labels, t.tab, m.category, m.is_sent, m.is_draft, m.is_spam, m.is_trash, m.body_state, m.attachments_captured, m.to_json, m.cc_json,
        ${OWN_SENDER_SQL} AS own,
        EXISTS (SELECT 1 FROM messages x INDEXED BY messages_thread WHERE x.thread_id = m.thread_id AND x.is_spam = 1) AS thread_spam
      FROM messages m JOIN threads t ON t.id = m.thread_id WHERE m.id = ?`,
@@ -88,6 +91,7 @@ export function datedSource(db: Db, messageId: number): DatedSource | null {
     id: m.id, threadId: m.thread_id, accountId: m.account_id, subject: m.subject, date: m.date, fromName: m.from_name, fromEmail: m.from_email, senderKey: addressKey(m.from_email),
     to, cc, readerIn: readerIn(to, cc, ownAddresses(db)),
     automated: m.is_bulk === 1 || m.list_id !== null, tab: datedTab(m.tab, m.category),
+    person: senderIsPerson(m, { written: (key) => db.get<{ written: number }>("SELECT written FROM correspondents WHERE email = ?", key)?.written === 1 }),
     draft: m.is_draft === 1, sent: m.is_sent === 1, spam: m.is_spam === 1, trash: m.is_trash === 1, threadSpam: m.thread_spam === 1, own: m.own === 1,
     bodyState: m.body_state, bodyUnavailable: m.attachments_captured === 2 && m.body_state !== "full",
   };
@@ -118,7 +122,7 @@ const lastTrustedSend = (db: Db, threadId: number): number | null =>
 /** A reply of yours at `before` answers the thread's open requests from messages before it. */
 export function settleAnswered(db: Db, threadId: number, before: number, now: number): number {
   return Number(db.run(
-    "UPDATE dated_items SET state = 'settled', closed_reason = 'answered', closed_at = ?, revision = revision + 1 WHERE id IN (SELECT id FROM dated_items INDEXED BY dated_thread WHERE thread_id = ? AND state = 'open') AND kind = 'respond' AND arrived_at < ?",
+    `UPDATE dated_items SET state = 'settled', closed_reason = 'answered', closed_at = ?, revision = revision + 1 WHERE id IN (SELECT id FROM dated_items INDEXED BY dated_thread WHERE thread_id = ? AND state = 'open') AND ${ANSWERED_SQL} AND arrived_at < ?`,
     now, threadId, before,
   ).changes);
 }
@@ -127,7 +131,7 @@ export function settleAnswered(db: Db, threadId: number, before: number, now: nu
  * After the panel (Codex review of the fixes, revision 1): a message you sent answers the requests made before it on its
  * thread, as plan 142's `closeWaitsBefore` ends waits; your promise, if it made one, is then the obligation. For the
  * threads an ingest or a flag/location reconciliation touched (a draft sent elsewhere is an update, not an insert), by
- * their newest trusted send. Only `respond` items: a bill isn't paid by writing back.
+ * their newest trusted send. Only requests (`respond`, and an `ask`): a bill isn't paid by writing back.
  */
 export function datedAnswered(db: Db, threadIds: Iterable<number>, now: number): number {
   let n = 0;
@@ -154,7 +158,7 @@ export function finishDated(db: Db, w: DatedFinish): DatedFinishOutcome {
     for (const r of w.rows) {
       if (db.get("SELECT 1 FROM dated_items WHERE message_id = ? AND item = ?", w.messageId, r.item)) continue;
       // before the bound (Codex review, round 2): an answered request is stored closed, and never evicts open work
-      const answered = r.kind === "respond" && (repliedAt ??= lastTrustedSend(db, src.threadId) ?? -1) > src.date;
+      const answered = ANSWERED_KINDS.includes(r.kind) && (repliedAt ??= lastTrustedSend(db, src.threadId) ?? -1) > src.date;
       if (!answered && open >= DATED_ACTIVE_MAX) {
         // the bound keeps the soonest: the furthest of them all isn't added
         const furthest = db.get<{ id: number; act_at: number }>("SELECT id, act_at FROM dated_items INDEXED BY dated_open WHERE state = 'open' ORDER BY act_at DESC, id DESC LIMIT 1");
