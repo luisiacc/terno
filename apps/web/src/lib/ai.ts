@@ -159,6 +159,9 @@ export function providerLabel(provider: AiProviderId, ai?: Pick<AiSettings, "pro
 
 const MODEL_NAME: Record<string, string> = { [SUMMARY_DEFAULT_MODEL]: "GPT Luna", [WRITING_CLAUDE_MODEL]: "Claude Sonnet 5.5" };
 
+/** An amount AI costs, in dollars: a tenth of a cent shows under ten cents. */
+export const usd = (amount: number): string => new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: amount > 0 && amount < 0.1 ? 3 : 2 }).format(amount);
+
 /** A model as people say it; an id nobody named as itself. */
 export const modelName = (id: string): string => MODEL_NAME[id] ?? id;
 

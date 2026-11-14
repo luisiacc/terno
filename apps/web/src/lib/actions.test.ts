@@ -251,7 +251,7 @@ describe("plan 145 (owner's decisions 2): a newsletter the digest opened, taken 
     fake.handlers["threads.undo"] = async () => ({ restored: 1 });
     // Today's list holds the digest's row and its conversations; the newsletter isn't one of them
     const waiting = (id: number) => ({ thread: row(id), why: { kind: "waiting" } });
-    fake.handlers["today.list"] = async () => ({ sections: [{ kind: "needsYou", more: 0, items: [waiting(1), waiting(2)] }], digest: digest(), held: [], now: 0 });
+    fake.handlers["today.list"] = async () => ({ sections: [{ kind: "needsYou", items: [waiting(1), waiting(2)] }], digest: digest(), held: [], now: 0 });
     const { useToday } = await import("~/state/today");
     setApp({ view: "all", today: true });
     await vi.waitFor(() => expect(useList.getState().items.map((t) => t.id)).toEqual([1, 2]));

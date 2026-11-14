@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { DIGEST_ROW_ID, type TodayList } from "@terno/core";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
 vi.mock("~/rpc/connection", () => ({ client: { call: vi.fn(async () => ({})), on: () => () => {}, connectionVersion: 1 } }));
@@ -59,7 +59,6 @@ describe("plan 166, after the owner's second look: Needs you is one group", () =
       sections: [
         {
           kind: "needsYou",
-          more: 3,
           items: [
             { thread: thread(5), why: { kind: "promise", text: "send the contract" } },
             waiting(1, false, "A summary."),
@@ -75,12 +74,11 @@ describe("plan 166, after the owner's second look: Needs you is one group", () =
     expect(groups()).toEqual([["needsYou", 0], ["reminders", 4]]);
     expect(rows.map((r) => r.snippet)).toEqual(["You said: send the contract", "A summary.", "snippet 2", "No reply from Tom in 5 days", "snippet 7"]);
     expect("reasons" in useToday.getState()).toBe(false);
-    expect(useToday.getState().needsShown).toBe(4);
-    expect(useToday.getState().more).toBe(3);
+    expect(useToday.getState().counted).toBe(4);
   });
 
   it("a held row stays at its place, above Reminders' heading", () => {
-    const list = (items: ReturnType<typeof waiting>[], held: never[] = []): TodayList => ({ now: 0, held, digest: null, sections: [{ kind: "needsYou", more: 0, items }, { kind: "reminders", items: [{ thread: thread(7), why: { kind: "reminder" } }] }] });
+    const list = (items: ReturnType<typeof waiting>[], held: never[] = []): TodayList => ({ now: 0, held, digest: null, sections: [{ kind: "needsYou", items }, { kind: "reminders", items: [{ thread: thread(7), why: { kind: "reminder" } }] }] });
     const before = flattenToday(list([waiting(1, true), waiting(2, false)]), []);
     expect(groups()).toEqual([["needsYou", 0], ["reminders", 2]]);
     const rows = flattenToday(list([waiting(1, true)], [thread(2)]), before);
@@ -93,7 +91,7 @@ describe("plan 161, pass 2: the digest's way in", () => {
   const thread = (id: number) => ({ id, snippet: "s", fromName: "Ana" }) as never;
   const digest = { day: "2026-10-22", state: "ready" as const, automated: false, items: [], liveIds: [1, 2], readIds: [] };
   it("plan 162 (after ai162-r02): isn't a row: the list starts with Needs you, and the digest is the header's", () => {
-    const list: TodayList = { now: 0, held: [thread(9)], digest, sections: [{ kind: "needsYou", more: 0, items: [{ thread: thread(1), why: { kind: "waiting", wrote: true } }] }] };
+    const list: TodayList = { now: 0, held: [thread(9)], digest, sections: [{ kind: "needsYou", items: [{ thread: thread(1), why: { kind: "waiting", wrote: true } }] }] };
     const rows = flattenToday(list, [thread(9)]);
     expect(rows.map((r) => r.id)).toEqual([9, 1]);
     expect(rows.some((r) => r.id === DIGEST_ROW_ID)).toBe(false);
@@ -163,5 +161,117 @@ describe("plan 162 (after ai162-r05): the digest's row says who the newsletters 
     expect(digestFrom({ ...digest, liveIds: [2], readIds: [] } as never, "en")).toBe("Figma");
     expect(digestFrom({ ...digest, liveIds: [], readIds: [] } as never, "en")).toBeNull();
     expect(digestFrom({ ...digest, state: "pending" } as never, "en")).toBeNull();
+  });
+});
+
+describe("plan 204: Missed, Deadlines, Plans, Needs you, Reminders and Coming up", () => {
+  const thread = (id: number) => ({ id, snippet: `snippet ${id}`, fromName: "Ana" }) as never;
+  const groups = () => useToday.getState().groups.map((g) => [g.kind, g.at]);
+  // Thursday 12 November 2026, 10:00, local
+  const now = new Date(2026, 10, 12, 10, 0).getTime();
+  const day = (d: number) => `2026-11-${String(d).padStart(2, "0")}`;
+  const at = (d: number, h = 9, m = 0) => new Date(2026, 10, d, h, m).getTime();
+  const dated = (id: number, kind: "pay" | "renew" | "alert" | "event" | "delivery", text: string, d: number, o: { timed?: boolean; h?: number; m?: number; missed?: boolean; undated?: boolean } = {}) => ({
+    thread: thread(id),
+    why: { kind: "dated" as const, text, dueAt: at(d, o.h, o.m), ...(o.missed ? { missed: true } : {}), item: { id: id * 10, revision: 1, kind, dueDay: day(d), timed: o.timed === true, dated: o.undated !== true } },
+  });
+  const list = (over: Partial<Record<"missed" | "deadlines" | "plans" | "needsYou" | "reminders" | "comingUp", ReturnType<typeof dated>[] | { thread: never; why: never }[]>>, held: never[] = []): TodayList => ({
+    now,
+    held,
+    digest: null,
+    // the backend's order, given scrambled: the list keeps core's
+    sections: (["comingUp", "reminders", "needsYou", "plans", "deadlines", "missed"] as const).map((kind) => ({ kind, items: (over[kind] ?? []) as never })),
+  });
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(now);
+    useToday.setState({ comingUpOpen: false, groups: [] });
+  });
+  afterEach(() => vi.useRealTimers());
+
+  const full = () =>
+    list({
+      missed: [dated(1, "renew", "Renew the domain", 10, { missed: true }), { thread: thread(2), why: { kind: "promise", text: "send the contract", dueAt: at(11), missed: true } } as never],
+      deadlines: [dated(3, "pay", "Pay the electricity bill", 13), dated(4, "pay", "Pay the rent", 12), dated(5, "alert", "Your card was declined", 12, { undated: true })],
+      plans: [dated(6, "event", "Flight to Madrid", 13, { timed: true, h: 7, m: 40 }), dated(7, "delivery", "Your parcel arrives", 12)],
+      needsYou: [{ thread: thread(8), why: { kind: "waiting", wrote: true } } as never],
+      reminders: [{ thread: thread(9), why: { kind: "reminder" } } as never],
+      comingUp: [dated(10, "renew", "Renew the passport", 20)],
+    });
+
+  it("every group in core's order, a heading each, all their rows (no cap); Coming up closed, but counted for its toggle", () => {
+    const many = list({ needsYou: Array.from({ length: 30 }, (_, i) => ({ thread: thread(100 + i), why: { kind: "waiting", wrote: true } })) as never });
+    expect(flattenToday(many, []).length).toBe(30);
+    expect(useToday.getState().counted).toBe(30);
+
+    const rows = flattenToday(full(), []);
+    expect(rows.map((r) => r.id)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(groups()).toEqual([["missed", 0], ["deadlines", 2], ["plans", 5], ["needsYou", 7], ["reminders", 8]]);
+    expect(useToday.getState().comingUp).toBe(1);
+    // Reminders and Coming up aren't counted
+    expect(useToday.getState().counted).toBe(8);
+    // the menu's Done knows each row's item; a promise and a waiting row have none
+    expect(useToday.getState().dated.get(3)).toMatchObject({ id: 30, revision: 1, kind: "pay" });
+    expect(useToday.getState().dated.has(2)).toBe(false);
+    expect(useToday.getState().dated.has(8)).toBe(false);
+  });
+
+  it("each kind's line: due, a plan's day and time, Missed, a missed promise, an alert with no day", () => {
+    const rows = flattenToday(full(), []);
+    const line = (id: number) => rows.find((r) => r.id === id)!.snippet;
+    expect(line(1)).toBe("Was due Tuesday · Renew the domain");
+    expect(line(2)).toBe("Was due yesterday · You said: send the contract");
+    expect(line(3)).toBe("Due tomorrow · Pay the electricity bill");
+    expect(line(4)).toBe("Due today · Pay the rent");
+    expect(line(5)).toBe("Your card was declined");
+    expect(line(6)).toBe("Tomorrow 7:40 AM · Flight to Madrid");
+    expect(line(7)).toBe("Today · Your parcel arrives");
+  });
+
+  it("further days: a weekday within six, else the date", () => {
+    const rows = flattenToday(list({ deadlines: [dated(1, "pay", "Pay the water bill", 17)], plans: [dated(2, "event", "Dinner at Lúa", 16)], comingUp: [] }), []);
+    expect(rows[0]!.snippet).toBe("Due Tuesday · Pay the water bill");
+    expect(rows[1]!.snippet).toBe("Monday · Dinner at Lúa");
+    useToday.setState({ comingUpOpen: true });
+    const later = flattenToday(full(), []);
+    expect(later.at(-1)!.snippet).toBe("Due Nov 20 · Renew the passport");
+  });
+
+  it("Coming up's rows only while it's open: last, under its own heading", () => {
+    useToday.setState({ comingUpOpen: true });
+    const rows = flattenToday(full(), []);
+    expect(rows.map((r) => r.id)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    expect(groups().at(-1)).toEqual(["comingUp", 9]);
+    expect(useToday.getState().counted).toBe(8);
+  });
+
+  it("a held row keeps its group's place in any group; a group it was the last of keeps its heading", () => {
+    const before = flattenToday(full(), []);
+    // Pay the rent was done while it was open: held where it was, in Deadlines
+    const next = full();
+    next.sections.find((s) => s.kind === "deadlines")!.items.splice(1, 1);
+    next.held = [thread(4)];
+    expect(flattenToday(next, before).map((r) => r.id)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(groups()).toEqual([["missed", 0], ["deadlines", 2], ["plans", 5], ["needsYou", 7], ["reminders", 8]]);
+    // Plans' both rows gone, one of them held: Plans' heading stays above it, before Needs you
+    const after = flattenToday(full(), []);
+    const gone = full();
+    gone.sections.find((s) => s.kind === "plans")!.items = [];
+    gone.held = [thread(6)];
+    expect(flattenToday(gone, after).map((r) => r.id)).toEqual([1, 2, 3, 4, 5, 6, 8, 9]);
+    expect(groups()).toEqual([["missed", 0], ["deadlines", 2], ["plans", 5], ["needsYou", 6], ["reminders", 7]]);
+  });
+
+  it("Coming up's open or closed is remembered, and storage that refuses changes nothing else", async () => {
+    const { setComingUpOpen } = await import("./today");
+    setComingUpOpen(true);
+    expect(localStorage.getItem("terno.today.comingUp")).toBe("open");
+    expect(useToday.getState().comingUpOpen).toBe(true);
+    const set = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("denied");
+    });
+    setComingUpOpen(false);
+    expect(useToday.getState().comingUpOpen).toBe(false);
+    set.mockRestore();
   });
 });

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** Plan 161, pass 3: Today's line says one thing, with no second total to read against the Inbox's. */
+/** Plan 161, pass 3: Today's line says one thing, with no second total to read against the Inbox's. Plan 204: no cap, so nothing past it. */
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
@@ -16,26 +16,36 @@ const host = document.createElement("div");
 document.body.append(host);
 const root = createRoot(host);
 const line = () => host.querySelector("[data-testid=today-line]")!.textContent;
+const toggle = () => host.querySelector<HTMLButtonElement>("[data-testid=today-coming-up]");
 
-async function show(today: number, shown: number, more: number) {
+async function show(today: number | null, o: { counted?: number; comingUp?: number; open?: boolean } = {}) {
   await act(async () => {
-    useApp.setState({ counts: { ...getApp().counts, today, inboxWaiting: 165 } });
-    useToday.setState({ needsShown: shown, more });
+    useApp.setState({ counts: { ...getApp().counts, today: today ?? undefined, inboxWaiting: 165 } });
+    useToday.setState({ counted: o.counted ?? 0, comingUp: o.comingUp ?? 0, comingUpOpen: o.open ?? false });
     root.render(<TodayLine />);
   });
 }
 
-it("capped: what the list is, as a sentence, and the way to the rest by its place, never the Waiting count", async () => {
-  await show(41, 12, 29);
-  // plan 162 (after ai162-r01): "Showing 12 of 41 · See all in To reply to" read as a broken sentence
-  expect(host.querySelector("[data-testid=today-needs]")!.textContent).toBe("The newest 12 of 41 that need you");
-  expect(host.querySelector("[data-testid=today-more]")!.textContent).toBe("See all in Inbox");
-  expect(host.querySelector("[data-testid=today-more]")!.getAttribute("aria-description")).toContain("To reply to");
-  expect(line()).not.toMatch(/165|waiting/);
+it("how many need you, and nothing else: no cap, no way to the rest, never the Waiting count", async () => {
+  await show(41);
+  expect(line()).toBe("41 need you");
+  expect(line()).not.toMatch(/165|waiting|newest|See all/);
+  expect(toggle()).toBeNull();
 });
 
-it("not capped: how many need you, and nothing else", async () => {
-  await show(9, 9, 0);
-  expect(line()).toBe("9 need you");
-  expect(host.querySelector("[data-testid=today-more]")).toBeNull();
+it("before the sidebar's count arrives, what the list counts", async () => {
+  await show(null, { counted: 3 });
+  expect(line()).toBe("3 need you");
+});
+
+it("plan 204: Coming up's toggle after the count, named by what it holds and whether it's open", async () => {
+  await show(2, { comingUp: 4 });
+  expect(toggle()!.textContent).toBe("4 coming up");
+  expect(toggle()!.getAttribute("aria-expanded")).toBe("false");
+  await show(2, { comingUp: 4, open: true });
+  expect(toggle()!.textContent).toBe("Hide coming up");
+  expect(toggle()!.getAttribute("aria-expanded")).toBe("true");
+  // nothing coming up, nothing to open
+  await show(2, { comingUp: 0, open: true });
+  expect(toggle()).toBeNull();
 });

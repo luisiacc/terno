@@ -21,11 +21,12 @@ import { create } from "zustand";
 import { formatNumber, getLocale, t } from "@terno/i18n";
 import { viewLabel } from "~/lib/format";
 import { useActionPreview } from "~/state/action-preview";
-import { navigate, getApp, setApp, useApp } from "~/state/app";
+import { getApp, setApp, useApp } from "~/state/app";
 import { installDragController } from "~/lib/drag-install";
 import { currentScope, inboxTop, listKey, loadMore, searchOfKey, useList } from "~/state/list";
 import { wantExcerpts } from "~/state/excerpts";
-import { digestFrom, digestLabel, useToday, type TodayGroup } from "~/state/today";
+import { digestFrom, digestLabel, setComingUpOpen, useToday, type TodayGroup } from "~/state/today";
+import { TodayDatedOffer } from "./today-dated-offer";
 import { DIGEST_ROW_ID } from "@terno/core";
 import { clearSelection, selectScope } from "~/lib/select";
 import { scopeLabel } from "~/lib/selection";
@@ -100,7 +101,7 @@ function TopHeading({ kind, top, name, count }: { kind: TopSectionKind; top: num
 }
 
 /** Each of Today's sections has a heading of its own, in the sections' style. */
-const SECTION_NAME = { needsYou: "today.needsYou", reminders: "today.reminders" } as const satisfies Record<TodayGroup["kind"], string>;
+const SECTION_NAME = { missed: "today.missed", deadlines: "today.deadlines", plans: "today.plans", needsYou: "today.needsYou", reminders: "today.reminders", comingUp: "today.comingUp" } as const satisfies Record<TodayGroup["kind"], string>;
 
 /** Plan 162 (Codex review): a section's name, said to assistive tech by its first row (the drawn heading is aria-hidden) */
 function sectionName(kind: TodayGroup["kind"]): string;
@@ -667,43 +668,23 @@ function Subtitle({ filter, greeting }: { filter: QuickFilter | undefined; greet
 
 /**
  * Plan 161: Today's numbers in words, under its title in every header. Pass 3: one sentence, never a second total to read
- * against the Inbox's: what the list is ("Showing 12 of 41", 41 being the sidebar's count; plan 162) and, when it's
- * capped, the way to the rest by the Inbox filter's own name. The digest's way in is the list's first row.
+ * against the Inbox's. Plan 204: the list holds all of it (no cap, no way to "the rest"), so the sentence is the count;
+ * after it, Coming up's quiet toggle ("4 coming up"), which opens its rows at the list's end. A control, so it lives here:
+ * the listbox holds only its options.
  */
 export function TodayLine() {
   const needs = useApp((s) => s.counts.today ?? null);
-  const shown = useToday((s) => s.needsShown);
-  const more = useToday((s) => s.more);
-  const count = needs ?? shown;
-  const capped = needs !== null && needs > shown && shown > 0;
+  const counted = useToday((s) => s.counted);
+  const comingUp = useToday((s) => s.comingUp);
+  const open = useToday((s) => s.comingUpOpen);
+  const count = needs ?? counted;
   return (
-    // plan 162 (after ai162-r01): what the list is, as a sentence ("The newest 12 of 41 that need you"), and apart from it a
-    // way to the rest named by its place, the Inbox, a 24 px target (the filter's name in the sentence read as a typo)
     <p data-testid="today-line" className="type-list-subtitle flex min-w-0 flex-wrap items-center gap-x-2 text-muted-foreground tabular">
-      {count > 0 && <span data-testid="today-needs" className="text-foreground">{capped ? t("today.line.newest", { count, shown }) : t("today.line.needs", { count })}</span>}
-      {more > 0 && (
-        <>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  variant="link-secondary"
-                  data-testid="today-more"
-                  aria-description={t("today.line.moreTip", { filter: t("list.filter.waiting") })}
-                  className={cn(COUNT_LINK, "-mx-1 inline-flex h-6 items-center gap-0.5 rounded-md px-1 font-medium")}
-                  onClick={() => {
-                    navigate({ view: "inbox" });
-                    setListFilter("waiting");
-                  }}
-                >
-                  {t("today.line.more")}
-                  <ChevronRight aria-hidden className="size-[1.15em]" />
-                </Button>
-              }
-            />
-            <TooltipContent className="max-w-72">{t("today.line.moreTip", { filter: t("list.filter.waiting") })}</TooltipContent>
-          </Tooltip>
-        </>
+      {count > 0 && <span data-testid="today-needs" className="text-foreground">{t("today.line.needs", { count })}</span>}
+      {comingUp > 0 && (
+        <Button variant="link-secondary" data-testid="today-coming-up" aria-expanded={open} className={COUNT_LINK} onClick={() => setComingUpOpen(!open)}>
+          {open ? t("today.line.hideComingUp") : t("today.line.comingUp", { count: comingUp })}
+        </Button>
       )}
     </p>
   );
@@ -885,6 +866,7 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
               <>
                 <TodayLine />
                 <TodayDigestEntry />
+                <TodayDatedOffer />
               </>
             ) : (
               <Subtitle filter={filter} greeting={kind === "greeting"} />
@@ -897,8 +879,11 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
         <div className="-mt-1.5 pb-2 pl-3">
           <TodayLine />
           <TodayDigestEntry />
+          <TodayDatedOffer />
         </div>
       )}
+      {/* plan 204: List's one row has no room for the offer: it gets a line of its own, on the title's text edge */}
+      {oneRow && today && !searching && <TodayDatedOffer className="-mt-1 pb-2 pl-3" />}
       {/* plan 159: Review's switcher on a line of its own under the title, in every header (it never gives way: it's where you are) */}
       {!oneRow && review && !searching && (
         <div className="-mt-1.5 pb-2 pl-3">

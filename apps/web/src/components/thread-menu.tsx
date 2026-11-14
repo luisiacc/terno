@@ -28,6 +28,8 @@ import {
   Forward,
   Folder as FolderIcon,
   FolderInput,
+  CircleCheck,
+  Clock,
   Inbox,
   Mail,
   MailMinus,
@@ -85,6 +87,8 @@ import { useAlwaysOffers } from "./review-actions";
 import { clearReminder, openRemind, presetLabel, presetWhen, reminderWhen, setReminder, useReminders } from "~/lib/reminders";
 import { reachesSeveral } from "~/lib/compose-fields";
 import { loadThread, useThreads } from "~/state/threads";
+import { useToday } from "~/state/today";
+import { actOnDated } from "~/lib/dated";
 import { fitWholeRows } from "@terno/ui/lib/whole-rows";
 
 /** What the open menu acts on: explicit threads, or a "select all N" scope. Set at right-click; rows never read it. */
@@ -420,6 +424,37 @@ function RemindSub({ ids, disabled }: { ids: number[]; disabled: boolean }) {
   );
 }
 
+/**
+ * Plan 204 §5: a Today row that stands for a dated item (a bill, a renewal, a trip): Done, and Later with the reminder's
+ * presets, each with the snack's Undo (and z), as a follow-up's. No shortcut of its own (the owner, plan 161).
+ */
+function DatedItems({ threadId }: { threadId: number }) {
+  const item = useToday((s) => s.dated.get(threadId));
+  const inToday = useApp((s) => s.today);
+  if (!item || !inToday) return null;
+  const presets = remindPresets(new Date(), "always");
+  return (
+    <>
+      <Item icon={<CircleCheck />} label={t("dated.done")} testId="menu-dated-done" onClick={() => void actOnDated(item, "done")} />
+      <ContextMenuSub>
+        <ContextMenuSubTrigger data-testid="menu-dated-later">
+          <Clock />
+          <span className="min-w-0 flex-1 truncate">{t("dated.later")}</span>
+        </ContextMenuSubTrigger>
+        <ContextMenuSubContent className="w-max min-w-60" data-testid="menu-dated-later-list">
+          {presets.map((p) => (
+            <ContextMenuItem key={p.id} data-testid={`menu-dated-later-${p.id}`} onClick={() => void actOnDated(item, "later", p.at)}>
+              <span className="min-w-0 flex-1 truncate">{presetLabel(p.id)}</span>
+              <ContextMenuShortcut className="tracking-normal tabular-nums">{presetWhen(p)}</ContextMenuShortcut>
+            </ContextMenuItem>
+          ))}
+        </ContextMenuSubContent>
+      </ContextMenuSub>
+      <ContextMenuSeparator />
+    </>
+  );
+}
+
 const SIMILAR_LABEL = { archive: "threadMenu.similar.archive", trash: "threadMenu.similar.trash", spam: "threadMenu.similar.spam" } as const;
 const SIMILAR_ICON = { archive: <Archive />, trash: <Trash2 />, spam: <OctagonAlert /> };
 
@@ -749,6 +784,7 @@ function MenuItems() {
         </>
       )}
       {single && <ReviewItems thread={single} />}
+      {single && <DatedItems threadId={single.id} />}
       {single && (
         <>
           <Item icon={<Reply />} label={t("actions.reply")} command="compose.reply" onClick={() => reply("reply")} testId="menu-reply" />
