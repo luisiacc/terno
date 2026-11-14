@@ -3017,6 +3017,7 @@ It contains none of your mail, contacts, settings or keys.
   "dated.snack.done": "Marked done",
   "dated.snack.later": "Moved to later",
   "dated.actFailed": "That date couldn’t be changed. Try again.",
+  "dated.scanFailed": "The last 14 days couldn’t be checked. Try again.",
   "dated.section": "Dates in this conversation",
   "errors.ai.summaryMoved": "This conversation keeps changing. Try again in a moment.",
   "errors.ai.draftTooLarge": "This draft is too long for this model. Shorten what’s in the draft or the instruction, or choose a larger model in Settings → AI.",

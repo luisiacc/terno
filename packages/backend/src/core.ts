@@ -397,6 +397,7 @@ export class BackendCore {
       begin: (requestId, clientId) => this.aiService.begin(requestId, clientId),
       changed: () => this.today.changed(),
       statusChanged: (status) => this.server.emit("datedStatus", status, { origins: ["renderer", "dev"] }),
+      runBudgeted: (items, work) => this.runBudgeted(items, work),
       log: (level, message, extra) => this.log(level, message, extra),
     });
     this.facts = new FactsBackfill(this);

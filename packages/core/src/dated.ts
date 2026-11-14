@@ -183,6 +183,23 @@ export function promiseMissed(r: { kind: string; state: string; dated: boolean; 
   return now >= missedAt && now < dayAt(new Date(missedAt), MISSED_DAYS, 0);
 }
 
+/** Codex code review: past Missed's days a dated promise is the Earlier tab's (plan 205), never Needs you's again. */
+export function promiseOver(r: { kind: string; state: string; dated: boolean; dueAt: number }, now: number): boolean {
+  if (r.kind !== "promise" || r.state !== "due" || !r.dated) return false;
+  return now >= dayAt(new Date(startOfDay(r.dueAt)), 1 + MISSED_DAYS, 0);
+}
+
+/**
+ * Codex code review: an item whose time in Today is over for good: a Plan that's ended, a deadline past Missed's days and
+ * not moved on with Later. It's retired (`expired`), so the open set holds only what can still show (its bound of 1,000).
+ */
+export function datedOver(r: Pick<DatedRow, "kind" | "state" | "dueDay" | "dueAt" | "timed" | "deferredUntil">, now: number): boolean {
+  if (r.state !== "open") return false;
+  if (datedGroup(r.kind) === "plans") return now >= planEnd(r);
+  if (r.deferredUntil !== null && r.deferredUntil > now) return false;
+  return now >= dayAt(new Date(dayEnd(r.dueDay)), MISSED_DAYS, 0);
+}
+
 /**
  * Revision 11: the next moment, strictly after `now`, at which Today changes by the clock alone: an item showing,
  * entering Coming up, a day ending (Missed), Missed ending, a Plan ending, a deferral ending, a promise's day ending.
@@ -212,6 +229,8 @@ export function nextTodayChange(items: readonly Pick<DatedRow, "kind" | "state" 
     consider(missedAt);
     consider(dayAt(new Date(missedAt), MISSED_DAYS, 0));
   }
+  // Codex code review: a row's words are by the day ("Tomorrow 7:40", "Due Friday"): while one shows, midnight changes them
+  if (items.some((r) => datedPlace(r, now) !== "hidden") || promises.some((p) => promiseMissed(p, now))) consider(dayAt(new Date(startOfDay(now)), 1, 0));
   return Number.isFinite(next) ? next : null;
 }
 

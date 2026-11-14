@@ -244,6 +244,9 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
         expect((await of(src.date)).map((x) => x.messageId)).toEqual([order.id, bill.id]);
         expect((await of(src.date, 1)).map((x) => x.messageId)).toEqual([order.id]);
         expect((await of(NOW - 3500)).map((x) => x.messageId)).toEqual([bill.id]);
+        // Codex code review: the order's conversation moved to Spam: its item is no request's material any more
+        await store.threads.act({ threadIds: [order.thread], action: "spam", signal: null, now: NOW });
+        expect((await of(src.date)).map((x) => x.messageId)).toEqual([bill.id]);
       });
 
       it("a change applies only at the revision seen; Undo restores exactly, unless something changed it since", async () => {

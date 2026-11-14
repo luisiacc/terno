@@ -65,7 +65,7 @@ export async function actOnDated(item: Pick<DatedRef, "id" | "revision">, action
  * the count and the cost (none on a local model), as follow-ups' 30 days (plan 142). Today's header and Settings ask it
  * alike; `save` writes the answer the way each writes settings. Nothing old is read without a yes.
  */
-export function useDatedScanOffer(offering: boolean, save: (patch: { scanAnswered: true }) => Promise<unknown>): { offer: { count: number; usd: number | null } | null; answer: (check: boolean) => Promise<void> } {
+export function useDatedScanOffer(offering: boolean, save: (patch: { scanAnswered: true }) => Promise<unknown>): { offer: { count: number; usd: number | null } | null; answer: (check: boolean) => Promise<boolean> } {
   const [offer, setOffer] = useState<{ count: number; usd: number | null } | null>(null);
   useEffect(() => {
     if (!offering) return setOffer(null);
@@ -75,11 +75,21 @@ export function useDatedScanOffer(offering: boolean, save: (patch: { scanAnswere
       current = false;
     };
   }, [offering]);
-  const answer = async (check: boolean) => {
-    if (check) await client.call("dated.scan", {}).catch(() => {});
-    await save({ scanAnswered: true });
-  };
-  return { offer, answer };
+  return { offer, answer: (check: boolean) => answerScan(check, save) };
+}
+
+/** The offer's answer. Codex code review: a yes is kept only once the check is queued; one that failed says so and stays offered. */
+export async function answerScan(check: boolean, save: (patch: { scanAnswered: true }) => Promise<unknown>): Promise<boolean> {
+  if (check) {
+    try {
+      await client.call("dated.scan", {});
+    } catch (error) {
+      snack.error((error as { message?: string }).message ?? t("dated.scanFailed"));
+      return false;
+    }
+  }
+  await save({ scanAnswered: true });
+  return true;
 }
 
 /** The offer's words: "Check the last 14 days too? 23 messages, about $0.02."; no cost where it's free (a model of the user's own). */

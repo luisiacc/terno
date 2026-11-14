@@ -1,5 +1,5 @@
 import { AiError, DATED_PROMPT_VERSION, DATED_TEXT_CHARS, costAt, datedBudget, fitDates, priceOf, type AiTasks, type DatedResult } from "@terno/ai";
-import { DATED_ITEMS_MAX, DATED_KINDS, DATED_OPEN_SHOWN, DATED_SCAN_DAYS, DATED_SCAN_MAX, datedTiming, dayEnd, hasTimeCue, normalizeText, withoutQuotes, type AiErrorKind, type DatedKind, type DatedRow } from "@terno/core";
+import { DATED_ITEMS_MAX, DATED_KINDS, DATED_OPEN_SHOWN, DATED_SCAN_DAYS, DATED_SCAN_MAX, datedOver, datedTiming, dayEnd, hasTimeCue, normalizeText, withoutQuotes, type AiErrorKind, type DatedKind, type DatedRow } from "@terno/core";
 import { captureError } from "@terno/core/diag";
 import { RpcError, type AppSettings } from "@terno/core/rpc";
 import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
@@ -19,6 +19,8 @@ const RETRY_WAIT_MS = 60_000;
 const UNDO_KEPT = 50;
 /** what a message costs to read, for the check's estimate: ~600 tokens in, ~100 out */
 const SCAN_TOKENS = { inputTokens: 600, outputTokens: 100 };
+/** the 14-day check walks this many received messages at most, to find the `DATED_SCAN_MAX` worth reading (Codex code review) */
+const SCAN_WALK = 3000;
 
 export interface DatedHost {
   readonly store: MailStore;
@@ -32,6 +34,8 @@ export interface DatedHost {
   /** what Today holds changed: the list and the count read again */
   changed(): void;
   statusChanged(status: { blockedBy: { kind: AiErrorKind; message: string } | null }): void;
+  /** work over a list in the backend's slices */
+  runBudgeted<T>(items: readonly T[], work: (chunk: T[]) => void | Promise<void>): Promise<void>;
   log(level: "info" | "warn" | "error", message: string, extra?: unknown): void;
 }
 
@@ -94,7 +98,7 @@ export class DatedWorker {
   private undoSeq = 0;
   private prunedDay: string | null = null;
   /** the request on its way out: checked again as it leaves the limiter, repairs included (revision 3) */
-  private leaving: { messageId: number; threadId: number; stop: AbortController } | null = null;
+  private leaving: { messageId: number; threadId: number; senderKey: string; date: number; open: readonly number[]; stop: AbortController } | null = null;
 
   constructor(private readonly host: DatedHost) {}
 
@@ -121,6 +125,11 @@ export class DatedWorker {
     this.active = settings.dated.enabled;
     if (this.stopped) return;
     if (this.active) this.wake();
+  }
+
+  /** Once a day with nothing to read too: the day's bounds, and what's over retired. */
+  async daily(): Promise<void> {
+    if (this.isActive && !this.running) await this.bounds();
   }
 
   stop(): void {
@@ -175,8 +184,13 @@ export class DatedWorker {
   async holdingUp(): Promise<void> {
     const leaving = this.leaving;
     if (!leaving || leaving.stop.signal.aborted) return;
-    const src = await this.host.store.dated.source(leaving.messageId);
-    if (!src || src.spam || src.trash || src.threadSpam || src.threadId !== leaving.threadId) leaving.stop.abort();
+    const { store } = this.host;
+    const src = await store.dated.source(leaving.messageId);
+    if (!src || src.spam || src.trash || src.threadSpam || src.threadId !== leaving.threadId) return leaving.stop.abort();
+    // Codex code review: the open items it carries are material too; one whose conversation went to Spam stops it
+    if (!leaving.open.length) return;
+    const still = new Set((await store.dated.openFor({ threadId: leaving.threadId, senderKey: leaving.senderKey, before: leaving.date, limit: DATED_OPEN_SHOWN })).map((r) => r.id));
+    if (leaving.open.some((id) => !still.has(id))) leaving.stop.abort();
   }
 
   private async drain(): Promise<void> {
@@ -202,6 +216,23 @@ export class DatedWorker {
     this.prunedDay = today;
     await this.host.store.dated.marks.prune(this.host.now());
     await this.host.store.dated.prune(this.host.now());
+    await this.retire();
+  }
+
+  /**
+   * Codex code review: what's over for good (a Plan that's ended, a deadline past Missed's days) is closed as `expired`, so
+   * the open set, bounded at 1,000, holds only what can still show and never refuses new items for old ones.
+   */
+  async retire(): Promise<number> {
+    const { store } = this.host;
+    const now = this.host.now();
+    const over = (await store.dated.active()).filter((r) => datedOver(r, now));
+    let n = 0;
+    await this.host.runBudgeted(over, async (chunk) => {
+      for (const r of chunk) if (await store.dated.update(r.id, r.revision, { state: "dismissed", closedReason: "expired", closedAt: now })) n++;
+    });
+    if (n) this.host.changed();
+    return n;
   }
 
   /** Oldest first; a message waiting for its body holds later ones from its thread and its sender (revision 5). */
@@ -251,7 +282,7 @@ export class DatedWorker {
     if (!text.trim() && !src.subject.trim()) return drop();
     const asked = this.host.begin(`dated:${mark.messageId}`, "dated-worker");
     const stop = new AbortController();
-    this.leaving = { messageId: src.id, threadId: src.threadId, stop };
+    this.leaving = { messageId: src.id, threadId: src.threadId, senderKey: src.senderKey, date: src.date, open: open.map((r) => r.id), stop };
     try {
       const ai = await this.host.forTask();
       const language = await this.readerLanguage(settings);
@@ -273,8 +304,15 @@ export class DatedWorker {
       if (outcome === "written" && (checked.rows.length || checked.settled.length)) this.host.changed();
       return "next";
     } catch (error) {
-      // Spam or Trash meanwhile: never asked about again
-      if (stop.signal.aborted) return await drop();
+      // Spam or Trash meanwhile: never asked about again; an open item gone to Spam: asked again without it
+      if (stop.signal.aborted) {
+        const now = await store.dated.source(src.id);
+        if (now && !now.spam && !now.trash && !now.threadSpam && now.threadId === src.threadId) {
+          this.again = true;
+          return "stop";
+        }
+        return await drop();
+      }
       return this.failed(mark, error);
     } finally {
       asked.release();
@@ -374,8 +412,26 @@ export class DatedWorker {
 
   // ─── §6: the one-time check ──────────────────────────────────────────────
 
+  /**
+   * Codex code review: the check's messages are those the reader would ask about, chosen before its bound: newest first,
+   * not Spam, Trash, Promotions or Social, and automated mail only with a time cue. Walked in the backend's slices.
+   */
+  private async scanPicks(now: number): Promise<number[]> {
+    const { store } = this.host;
+    const walked = await store.dated.scanCandidates(now - DATED_SCAN_DAYS * 86_400_000, SCAN_WALK);
+    const picks: number[] = [];
+    await this.host.runBudgeted(walked, async (chunk) => {
+      if (picks.length >= DATED_SCAN_MAX) return;
+      const sources = (await Promise.all(chunk.map((id) => store.dated.source(id)))).filter((s): s is DatedSource => !!s && !s.spam && !s.trash && !s.threadSpam && !s.draft && !s.sent && !s.own && s.tab !== "social" && s.tab !== "promotions");
+      const automated = sources.filter((s) => s.automated);
+      const texts = automated.length ? await store.aiSummaries.text(automated.map((s) => ({ messageId: s.id, limit: DATED_TEXT_CHARS }))) : new Map<number, string | null>();
+      for (const s of sources) if (picks.length < DATED_SCAN_MAX && (!s.automated || hasTimeCue(withoutQuotes(texts.get(s.id) ?? ""), s.subject))) picks.push(s.id);
+    });
+    return picks;
+  }
+
   async scanOffer(): Promise<{ count: number; usd: number | null }> {
-    const ids = await this.host.store.dated.scanCandidates(this.host.now() - DATED_SCAN_DAYS * 86_400_000, DATED_SCAN_MAX);
+    const ids = await this.scanPicks(this.host.now());
     const ai = await this.host.forTask().catch(() => null);
     const price = ai && !ai.local ? priceOf(ai.model) : null;
     return { count: ids.length, usd: ai?.local ? 0 : price ? costAt(price, SCAN_TOKENS) * ids.length : null };
@@ -385,7 +441,7 @@ export class DatedWorker {
   async scan(): Promise<number> {
     if (!this.isActive || (await this.host.settings()).dated.scanAnswered) return 0;
     const now = this.host.now();
-    const ids = await this.host.store.dated.scanCandidates(now - DATED_SCAN_DAYS * 86_400_000, DATED_SCAN_MAX);
+    const ids = await this.scanPicks(now);
     const queued = await this.host.store.dated.marks.queueScan(ids, now);
     this.wake();
     return queued;

@@ -19,6 +19,7 @@ import {
   datedPlace,
   nextTodayChange,
   promiseMissed,
+  promiseOver,
   type DatedPlace,
   type DatedRow,
   type TodayGroupKind,
@@ -117,6 +118,7 @@ export class TodayService {
   /** plan 204: the open dated items, until something changes them */
   private datedCache: { generation: number; rows: readonly DatedRow[] } | null = null;
   private datedGeneration = 0;
+  private clockSeq = 0;
 
   constructor(private readonly b: Backend) {}
 
@@ -189,6 +191,7 @@ export class TodayService {
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
     this.armedAt = null;
+    this.clockSeq++;
     if (this.clock) clearTimeout(this.clock);
     this.clock = null;
     this.clockAt = null;
@@ -549,7 +552,8 @@ export class TodayService {
     }
     const datedWhy = (row: DatedRow, missed: boolean): TodayWhy => ({ kind: "dated", text: row.text, dueAt: row.dueAt, ...(missed ? { missed } : {}), item: { id: row.id, revision: row.revision, kind: row.kind, dueDay: row.dueDay, timed: row.timed, dated: row.dated } });
     const ofPlace = (place: DatedPlace) => [...best.values()].filter((b) => b.place === place);
-    const followups = settings.followups?.enabled ? this.dueFollowups(await store.followups.active(), now) : [];
+    // Codex code review: a dated promise past Missed's days is the Earlier tab's (plan 205), not Needs you's again
+    const followups = settings.followups?.enabled ? this.dueFollowups(await store.followups.active(), now).filter((r) => !promiseOver(r, now)) : [];
     const missedPromises = followups.filter((r) => promiseMissed(r, now));
     const promiseWhy = (r: FollowupRow, missed = false): TodayWhy => ({ kind: r.kind === "promise" ? "promise" : "nudge", text: r.text, dueAt: r.dueAt, personName: r.personName, sentAt: r.sentAt, ...(missed ? { missed } : {}) });
     // Missed: the most recently due first
@@ -745,6 +749,8 @@ export class TodayService {
 
   /** Revision 11: one timer for the next moment Today changes by the clock alone; none when there's no such moment. */
   async armClock(): Promise<void> {
+    // Codex code review: only the newest call arms, so two at once can't leave a timer behind
+    const seq = ++this.clockSeq;
     if (this.clock) clearTimeout(this.clock);
     this.clock = null;
     this.clockAt = null;
@@ -756,11 +762,14 @@ export class TodayService {
     const promises = settings.followups?.enabled ? await store.followups.active() : [];
     const now = this.b.now();
     const next = nextTodayChange(items, promises, now);
-    if (next === null || this.stopped) return;
+    if (next === null || this.stopped || seq !== this.clockSeq) return;
+    if (this.clock) clearTimeout(this.clock);
     this.clockAt = next;
     this.clock = setTimeout(() => {
       this.clock = null;
       this.clockAt = null;
+      // a day's bounds with nothing to read: what's over is retired (Codex code review)
+      void this.b.dated.daily().catch(() => {});
       this.changed();
     }, Math.min(MAX_DELAY, Math.max(0, next - now)));
     (this.clock as { unref?: () => void }).unref?.();
