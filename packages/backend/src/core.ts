@@ -379,8 +379,8 @@ export class BackendCore {
       templated: (accountId) => this.writing.learner.templatedIn(accountId),
       emit: (snapshot) => {
         this.server.emit("followups", snapshot, { origins: ["renderer", "dev"] });
-        // plan 204: a promise's day ending moves it to Missed: Today's clock follows what's due
-        void this.today.armClock().catch(() => {});
+        // plan 204: a promise made, done, moved or come due changes What matters: its list and count reload, its clock re-arms
+        this.today.changed();
       },
       statusChanged: (status) => this.server.emit("followupsStatus", status, { origins: ["renderer", "dev"] }),
       notify: (notice) => this.attention.remind(notice),

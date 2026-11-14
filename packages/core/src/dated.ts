@@ -16,7 +16,8 @@ export type DatedGroup = "deadlines" | "plans";
 export const datedGroup = (kind: DatedKind): DatedGroup => (kind === "event" || kind === "delivery" ? "plans" : "deadlines");
 
 /** How many days before its day an item shows (§2); an alert shows at once and a delivery on its day. */
-export const DATED_LEAD_DAYS: Readonly<Record<DatedKind, number>> = { pay: 3, renew: 7, expire: 7, respond: 2, alert: 0, event: 1, delivery: 0 };
+/** After the panel (the owner, 2026-11-14): a week for requests from people, 30 days for expiring documents. */
+export const DATED_LEAD_DAYS: Readonly<Record<DatedKind, number>> = { pay: 3, renew: 7, expire: 30, respond: 7, alert: 0, event: 1, delivery: 0 };
 /** Missed keeps an item this long, then it's the Earlier tab's (plan 205; the owner, 2026-11-13). */
 export const MISSED_DAYS = 7;
 /** Coming up looks this far ahead. */
@@ -169,7 +170,7 @@ export function datedPlace(r: Pick<DatedRow, "kind" | "state" | "dueDay" | "dueA
     const missedAt = dayEnd(r.dueDay);
     if (now >= missedAt) {
       if (deferred) return showsAt - now <= COMING_UP_DAYS * 86_400_000 ? "comingUp" : "hidden";
-      return now < dayAt(new Date(missedAt), MISSED_DAYS, 0) ? "missed" : "hidden";
+      return now < missedUntil(r) ? "missed" : "hidden";
     }
   }
   if (showsAt <= now) return group;
@@ -197,7 +198,21 @@ export function datedOver(r: Pick<DatedRow, "kind" | "state" | "dueDay" | "dueAt
   if (r.state !== "open") return false;
   if (datedGroup(r.kind) === "plans") return now >= planEnd(r);
   if (r.deferredUntil !== null && r.deferredUntil > now) return false;
-  return now >= dayAt(new Date(dayEnd(r.dueDay)), MISSED_DAYS, 0);
+  return now >= missedUntil(r);
+}
+
+/**
+ * When a deadline leaves Missed: `MISSED_DAYS` after its day ends, or (Codex review of the fixes) after a Later that
+ * ran past that day ends, so a snoozed Missed item comes back for a visible week rather than straight to over.
+ */
+export function missedUntil(r: Pick<DatedRow, "dueDay" | "deferredUntil">): number {
+  const from = Math.max(dayEnd(r.dueDay), r.deferredUntil ?? 0);
+  return dayAt(new Date(startOfDay(from)), MISSED_DAYS + (from === startOfDay(from) ? 0 : 1), 0);
+}
+
+/** A dated promise of yours due within Coming up's two weeks, not yet due: Coming up's (plan 204, after the panel). */
+export function promiseComingUp(r: { kind: string; state: string; dated: boolean; dueAt: number }, now: number): boolean {
+  return r.kind === "promise" && r.state === "open" && r.dated && r.dueAt > now && r.dueAt - now <= COMING_UP_DAYS * 86_400_000;
 }
 
 /**
@@ -218,19 +233,22 @@ export function nextTodayChange(items: readonly Pick<DatedRow, "kind" | "state" 
     if (r.deferredUntil !== null) consider(r.deferredUntil);
     if (datedGroup(r.kind) === "plans") consider(planEnd(r));
     else {
-      const missedAt = dayEnd(r.dueDay);
-      consider(missedAt);
-      consider(dayAt(new Date(missedAt), MISSED_DAYS, 0));
+      consider(dayEnd(r.dueDay));
+      consider(missedUntil(r));
     }
   }
   for (const p of promises) {
+    if (p.kind === "promise" && p.state === "open" && p.dated) {
+      consider(p.dueAt - ahead);
+      consider(p.dueAt);
+    }
     if (p.kind !== "promise" || p.state !== "due" || !p.dated) continue;
     const missedAt = dayAt(new Date(startOfDay(p.dueAt)), 1, 0);
     consider(missedAt);
     consider(dayAt(new Date(missedAt), MISSED_DAYS, 0));
   }
   // Codex code review: a row's words are by the day ("Tomorrow 7:40", "Due Friday"): while one shows, midnight changes them
-  if (items.some((r) => datedPlace(r, now) !== "hidden") || promises.some((p) => promiseMissed(p, now))) consider(dayAt(new Date(startOfDay(now)), 1, 0));
+  if (items.some((r) => datedPlace(r, now) !== "hidden") || promises.some((p) => promiseMissed(p, now) || promiseComingUp(p, now))) consider(dayAt(new Date(startOfDay(now)), 1, 0));
   return Number.isFinite(next) ? next : null;
 }
 

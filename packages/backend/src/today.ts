@@ -19,6 +19,7 @@ import {
   datedPlace,
   nextTodayChange,
   promiseMissed,
+  promiseComingUp,
   promiseOver,
   type DatedPlace,
   type DatedRow,
@@ -59,6 +60,10 @@ const NOT_NEWSLETTERS_KEY = "today:notNewsletters";
 const SUMMARY_LINES_MAX = 100;
 /** plan 204: what the sidebar's number counts; Reminders and Coming up aren't */
 const COUNTED: ReadonlySet<TodayGroupKind> = new Set(["missed", "deadlines", "plans", "needsYou"]);
+
+/** After the panel: a group's items by their day, then the timed ones by time, then the untimed ("Due today 1:00 PM" first). */
+const byDay = (a: Pick<DatedRow, "dueDay" | "dueAt" | "timed">, b: Pick<DatedRow, "dueDay" | "dueAt" | "timed">): number =>
+  a.dueDay.localeCompare(b.dueDay) || (a.timed === b.timed ? a.dueAt - b.dueAt : a.timed ? -1 : 1);
 
 /** Each thread once, the first group that claims it (§1). */
 const dedupe = (placed: readonly Placed[]): Placed[] => {
@@ -553,14 +558,16 @@ export class TodayService {
     const datedWhy = (row: DatedRow, missed: boolean): TodayWhy => ({ kind: "dated", text: row.text, dueAt: row.dueAt, ...(missed ? { missed } : {}), item: { id: row.id, revision: row.revision, kind: row.kind, dueDay: row.dueDay, timed: row.timed, dated: row.dated } });
     const ofPlace = (place: DatedPlace) => [...best.values()].filter((b) => b.place === place);
     // Codex code review: a dated promise past Missed's days is the Earlier tab's (plan 205), not Needs you's again
-    const followups = settings.followups?.enabled ? this.dueFollowups(await store.followups.active(), now).filter((r) => !promiseOver(r, now)) : [];
+    const active = settings.followups?.enabled ? await store.followups.active() : [];
+    const followups = this.dueFollowups(active, now).filter((r) => !promiseOver(r, now));
     const missedPromises = followups.filter((r) => promiseMissed(r, now));
-    const promiseWhy = (r: FollowupRow, missed = false): TodayWhy => ({ kind: r.kind === "promise" ? "promise" : "nudge", text: r.text, dueAt: r.dueAt, personName: r.personName, sentAt: r.sentAt, ...(missed ? { missed } : {}) });
+    // after the panel: the row carries the promise it shows, what D, Done and Not a task act on
+    const promiseWhy = (r: FollowupRow, missed = false): TodayWhy => ({ kind: r.kind === "promise" ? "promise" : "nudge", text: r.text, dueAt: r.dueAt, personName: r.personName, sentAt: r.sentAt, ...(missed ? { missed } : {}), promise: { id: r.id, revision: r.revision } });
     // Missed: the most recently due first
     const missed = [...ofPlace("missed").map((b) => ({ threadId: b.row.threadId, at: b.row.dueAt, why: datedWhy(b.row, true) })), ...missedPromises.map((r) => ({ threadId: r.threadId, at: r.dueAt, why: promiseWhy(r, true) }))].sort((a, b) => b.at - a.at);
     for (const m of missed) placed.push({ group: "missed", threadId: m.threadId, why: m.why });
-    for (const b of ofPlace("deadlines").sort((x, y) => x.row.dueAt - y.row.dueAt)) placed.push({ group: "deadlines", threadId: b.row.threadId, why: datedWhy(b.row, false) });
-    for (const b of ofPlace("plans").sort((x, y) => x.row.dueAt - y.row.dueAt)) placed.push({ group: "plans", threadId: b.row.threadId, why: datedWhy(b.row, false) });
+    for (const b of ofPlace("deadlines").sort((x, y) => byDay(x.row, y.row))) placed.push({ group: "deadlines", threadId: b.row.threadId, why: datedWhy(b.row, false) });
+    for (const b of ofPlace("plans").sort((x, y) => byDay(x.row, y.row))) placed.push({ group: "plans", threadId: b.row.threadId, why: datedWhy(b.row, false) });
     // Needs you, as plan 145 and 166 left it, all of it (the 12-row cap is gone)
     const missedIds = new Set(missedPromises.map((r) => r.id));
     const promises = followups.filter((r) => r.kind === "promise" && !missedIds.has(r.id)).sort((a, b) => a.dueAt - b.dueAt);
@@ -575,7 +582,9 @@ export class TodayService {
     endOfDay.setHours(23, 59, 59, 999);
     const reminders = (await this.b.reminders.refresh()).reminders.filter((r) => r.dueAt <= endOfDay.getTime()).sort((a, b) => a.dueAt - b.dueAt);
     for (const r of reminders) placed.push({ group: "reminders", threadId: r.threadId, why: { kind: "reminder", dueAt: r.dueAt } });
-    for (const b of ofPlace("comingUp").sort((x, y) => x.row.dueAt - y.row.dueAt)) placed.push({ group: "comingUp", threadId: b.row.threadId, why: datedWhy(b.row, false) });
+    // Coming up: dated items, and (after the panel) your dated promises due in the next two weeks, soonest first
+    const later = [...ofPlace("comingUp").map((b) => ({ threadId: b.row.threadId, at: b.row.dueAt, why: datedWhy(b.row, false) })), ...active.filter((r) => promiseComingUp(r, now)).map((r) => ({ threadId: r.threadId, at: r.dueAt, why: promiseWhy(r) }))];
+    for (const c of later.sort((a, b) => a.at - b.at)) placed.push({ group: "comingUp", threadId: c.threadId, why: c.why });
     return dedupe(placed);
   }
 

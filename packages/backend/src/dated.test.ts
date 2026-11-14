@@ -368,6 +368,41 @@ describe("acting on an item (§5)", () => {
   });
 });
 
+describe("after the panel", () => {
+  it("a promise row carries the promise it shows; one due in two weeks is Coming up's, one due now is Needs you's", async () => {
+    const { client, receive, raw, clock } = await setup();
+    await client.call("settings.update", { followups: { enabled: true } });
+    const later = await receive({ from: { name: "Ana", email: "ana@people.test" }, subject: "The report", bodyText: "Thanks!" });
+    const now = await receive({ from: { name: "Tom", email: "tom@people.test" }, subject: "The agenda", bodyText: "Thanks!" });
+    raw.run("INSERT INTO followups (thread_id, message_id, item, kind, text, sent_at, due_at, dated, state, created_at) VALUES (?, 999998, 0, 'promise', 'send the report', ?, ?, 1, 'open', ?)", later, clock.now - DAY, at(2026, 11, 20, 9), clock.now);
+    raw.run("INSERT INTO followups (thread_id, message_id, item, kind, text, sent_at, due_at, dated, state, revision, created_at) VALUES (?, 999999, 0, 'promise', 'send the agenda', ?, ?, 1, 'due', 3, ?)", now, clock.now - DAY, at(2026, 11, 10, 17), clock.now);
+    const list = await client.call("today.list", { heldIds: [] });
+    const coming = list.sections.find((x) => x.kind === "comingUp")!.items[0]!;
+    expect(coming).toMatchObject({ thread: { id: later }, why: { kind: "promise", text: "send the report", promise: { revision: 0 } } });
+    const needs = list.sections.find((x) => x.kind === "needsYou")!.items[0]!;
+    expect(needs).toMatchObject({ thread: { id: now }, why: { kind: "promise", promise: { revision: 3 } } });
+    // Coming up isn't counted
+    expect((await client.call("counts.get", {})).today).toBe(1);
+  });
+
+  it("inside a group: by day, then the timed ones by time, then the untimed", async () => {
+    const { client, model, receive, read, clock } = await setup();
+    model.answer = (req) => {
+      const p = promptText(req.messages[0]!.content);
+      if (p.includes("payroll")) return reply([{ kind: "pay", text: "Fund payroll", quote: "payroll by 1:00 PM", due: "2026-11-13", time: "13:00" }]);
+      if (p.includes("domain")) return reply([{ kind: "renew", text: "Renew the domain", quote: "domain expires", due: "2026-11-13", time: null }]);
+      return reply([{ kind: "pay", text: "Pay the bill", quote: "due on November 12", due: "2026-11-12", time: null }]);
+    };
+    const payroll = await receive({ subject: "Payroll", bodyText: "Fund payroll by 1:00 PM today." });
+    const domain = await receive({ from: { name: "Registrar", email: "bot@registrar.test" }, subject: "Domain", bodyText: "Your domain expires today." });
+    const bill = await receive({ from: { name: "Gas", email: "bills@gas.test" }, subject: "Gas bill", bodyText: "Your bill is due on November 12." });
+    await read();
+    clock.now = at(2026, 11, 12, 10);
+    const deadlines = (await client.call("today.list", { heldIds: [] })).sections.find((x) => x.kind === "deadlines")!;
+    expect(deadlines.items.map((i) => i.thread.id)).toEqual([bill, payroll, domain]);
+  });
+});
+
 describe("Today's groups (§1)", () => {
   it("one thread once, by precedence: a bill's thread waiting on a reply is the bill; groups in order; the count counts each once", async () => {
     const { client, model, receive, read, clock, raw } = await setup();
