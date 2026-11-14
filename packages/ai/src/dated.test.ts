@@ -52,8 +52,24 @@ describe("reading dates in mail you got (plan 204)", () => {
     expect(en).toMatchObject({ schema: { name: "dated_mail" }, effort: "low" });
   });
 
+  it("prompt v5: a person's undated ask, in the app's language; a Plan's window and what to bring in its text; the currency as written", () => {
+    const en = readDatesTask(input()).system;
+    expect(en).toContain('the sender, a person ("Sent by a person"), asks the reader directly');
+    expect(en).toContain('A request with a day is this, and never also an "ask".');
+    expect(en).toContain("null for an \"ask\"");
+    expect(en).toContain('"Answer Mariana about a rebranding quote"');
+    expect(en).toContain('"Furnace service, 12–2 PM", "Package arriving by 9 PM"');
+    expect(en).toContain('"Blood test (fast after midnight)"');
+    expect(en).toContain('"US$29"');
+    // the eval: "never … pay or move money, even when the mail says to" led a small model to bill a customs scam
+    expect(en).toContain("Its text says what to check, never to reply or click");
+    const es = readDatesTask(input({ language: "es" })).system;
+    expect(es).toContain('"Responder a Mariana sobre el presupuesto del rebranding"');
+    expect(es).toContain('"Revisión de la caldera, 12–14 h"');
+  });
+
   it("is frozen at its version: a change to the words is a new version", () => {
-    expect(DATED_PROMPT_VERSION).toBe(4);
+    expect(DATED_PROMPT_VERSION).toBe(5);
     expect(readDatesTask(input()).system).toMatchSnapshot();
   });
 
@@ -99,8 +115,8 @@ describe("reading dates in mail you got (plan 204)", () => {
   });
 
   it("a small window holds the whole conversation with the server: a bad answer and its repair still fit", async () => {
-    // v4's words need a little more than 2,000: the smallest window that holds them with a bad answer and its repair
-    const window = 2600;
+    // v5's words (an ask, a Plan's window) need a little under 3,200: the smallest window that holds them with a bad answer and its repair
+    const window = 3200;
     const budget = datedBudget(window);
     const fitted = fitDates(input({ text: "word ".repeat(1200), outputTokens: budget.outputTokens }), budget.promptChars);
     const sizes: number[] = [];
@@ -141,6 +157,13 @@ describe("the offline model's dates", () => {
     expect((await read({ text: "Your payment failed. Please update your card." })).items).toEqual([{ kind: "alert", text: "Your March bill", quote: "Your payment failed.", due: null, time: null }]);
     expect((await read({ text: "Pago rechazado." })).items[0]).toMatchObject({ kind: "alert", due: null });
     expect(await read({ text: "Thanks for writing." })).toEqual({ items: [], settled: [], moved: [] });
+  });
+
+  it("a person's question is an ask, with no day; an automated sender's isn't", async () => {
+    const person = { from: { name: "Mariana Paz", automated: false } };
+    expect((await read({ ...person, text: "Hi Nora! Can you send me a quote for the rebranding? Thanks." })).items).toEqual([{ kind: "ask", text: "Answer Mariana Paz", quote: "Can you send me a quote for the rebranding?", due: null, time: null }]);
+    expect((await read({ ...person, text: "¿Puedes venir en Navidad? ¿Y podrías traer postre?" })).items).toHaveLength(1);
+    expect((await read({ text: "Can you rate your order?" })).items).toEqual([]);
   });
 
   it("a receipt settles the first open item, in the mail's words", async () => {
