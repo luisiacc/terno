@@ -824,7 +824,7 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       server.backend.today.changed();
       await page.locator('[data-keep-scroll="list"]').evaluate((el) => { el.scrollTop = 0; });
       const agenda = row(page, "The agenda");
-      await expect(agenda.getByTestId("row-task")).toHaveText(/You said: send the agenda$/, { timeout: 15_000 });
+      await expect(agenda.getByTestId("row-task")).toHaveText(/^Due today · You said: send the agenda$/, { timeout: 15_000 });
       await expect(agenda.getByTestId("row-subject")).toHaveText("The agenda");
       // Coming up holds the later one, saying its day (it's open from the scenario before)
       const toEnd = () => page.locator('[data-keep-scroll="list"]').evaluate((el) => { el.scrollTop = el.scrollHeight; });

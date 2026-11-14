@@ -380,7 +380,7 @@ describe("after the panel", () => {
     const coming = list.sections.find((x) => x.kind === "comingUp")!.items[0]!;
     expect(coming).toMatchObject({ thread: { id: later }, why: { kind: "promise", text: "send the report", promise: { revision: 0 } } });
     const needs = list.sections.find((x) => x.kind === "needsYou")!.items[0]!;
-    expect(needs).toMatchObject({ thread: { id: now }, why: { kind: "promise", promise: { revision: 3 } } });
+    expect(needs).toMatchObject({ thread: { id: now }, why: { kind: "promise", promise: { revision: 3, dated: true } } });
     // Coming up isn't counted
     expect((await client.call("counts.get", {})).today).toBe(1);
   });
