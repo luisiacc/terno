@@ -308,3 +308,19 @@ Round two, on those fixes (`review-4.out`, 3 points, all fixed):
 10. **On SQLite, an answered request at the bound evicted open work:** the answered check comes before the bound, as IndexedDB had it.
 
 Two rounds, per the owner's cap.
+
+## After the second panel round (2026-11-14)
+
+The same seven personas, re-captured at the packets' morning: Deadlines 6.1 → 6.9, Acting 5.1 → 5.9, Plans 3.9 → 6.0 (partly the capture time), Needs you 3.9 → 3.6, would use daily still 5.3. Against the keys, 82% → 88% shown. What the panel kept asking for, and the owner's answers:
+
+> Yeah let's do the quick fixes. Do show the calendar invitations. They can just remove them anyway. Extend the later mail move date to Promises I Made. I think yes. Yes we need to tighten the Needs You rule from plan 145
+
+### The changes
+
+1. **Done means gone.** Done, D and Not a task take the row out of Today at once, with Undo: it isn't held in place as an ordinary row (plan 145's revision 9 holds rows that *leave on their own*; one the user just finished is their choice). The selection moves to the next row, as after Archive.
+2. **A row's task line drops "Due today ·"** where the right column already says when: the line is the task, so the amount fits. The conversation's line keeps the full wording.
+3. **Prompt v4:** a subscription that renews by itself reads as what it is ("Plan renews automatically ($9.99)", "Free trial ends"), never "Renew …" or "Cancel …" unless the mail says the reader must act to keep or stop it; the amount goes right after the verb ("Pay $187.42 for the electricity bill"); **a calendar invitation the reader is invited to is an event** (the owner: "they can just remove them anyway"), reversing §3's exclusion.
+4. **Later mail moves the day of a promise you made**, as it moves a dated item's: the reader's open promises in the thread (plan 142's rows) are offered beside the open items (`p1`, `p2`), and a move on one goes through `followups.move` (both stores): the due moment recomputed by `followupDue` from the new day, the promise open again if that's ahead, its revision kept as a dated item's move keeps it.
+5. **Needs you, tighter (plan 145's rule, amended):** a waiting conversation isn't Needs you's when (a) its last message from them is only an acknowledgment ("Thanks.", "Got it", "Sounds good", "Gracias", "Perfecto"; short, no question: `isAcknowledgment` in `@terno/core`, en and es), or (b) it has a summary covering its last message (plan 132) that gives the reader no action and no question (plan 202's who-has-to-act). Both are read in `needsRows`, in both stores, so the list and the sidebar's count agree.
+
+Out of scope: a first message from someone new that asks the reader something (widening Needs you); a promise of yours another person's later mail replaces rather than moves.
