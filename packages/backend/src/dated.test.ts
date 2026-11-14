@@ -515,6 +515,54 @@ describe("a later message moves a day (after the panel)", () => {
   });
 });
 
+describe("a later message moves an item's time (the fourth panel round, revision 5)", () => {
+  const game = { id: 9, revision: 2, kind: "event", dueDay: "2026-11-14", dueAt: at(2026, 11, 14, 10), timed: true } as DatedRow;
+  const base = { text: "Heads up: Saturday's game is moved earlier to 8:00 AM, same field.", subject: "Re: Saturday", arrivedAt: NOW, open: new Map([["o1", game]]), fromScan: false, now: NOW };
+  const moved = { label: "o1", due: "2026-11-14", time: "08:00", evidence: "moved earlier to 8:00 AM" };
+
+  it("a new moment on the same day moves a timed item; the same moment, or no time, keeps it where it is", () => {
+    expect(checkDates({ items: [], settled: [], moved: [moved] }, base).moved).toEqual([{ id: 9, dueDay: "2026-11-14", dueAt: at(2026, 11, 14, 8), timed: true, actAt: at(2026, 11, 13, 9) }]);
+    expect(checkDates({ items: [], settled: [], moved: [{ ...moved, time: "10:00" }] }, base).moved).toEqual([]);
+    expect(checkDates({ items: [], settled: [], moved: [{ ...moved, time: null }] }, base).moved).toEqual([]);
+    // an untimed item given a moment on its day takes it; another day with no time is the day's move it was
+    const bill = { ...game, kind: "pay", dueDay: "2026-11-20", dueAt: at(2026, 11, 20, 9), timed: false } as DatedRow;
+    expect(checkDates({ items: [], settled: [], moved: [{ ...moved, due: "2026-11-20", time: "17:00" }] }, { ...base, open: new Map([["o1", bill]]) }).moved).toMatchObject([{ dueAt: at(2026, 11, 20, 17), timed: true }]);
+    expect(checkDates({ items: [], settled: [], moved: [{ ...moved, due: "2026-11-15", time: null }] }, base).moved).toMatchObject([{ dueDay: "2026-11-15", timed: false }]);
+    // the item at its new moment isn't added beside the move
+    const both = checkDates({ items: [{ kind: "event", text: "Soccer game", quote: "Saturday's game", due: "2026-11-14", time: "08:00" }], settled: [], moved: [moved] }, base);
+    expect(both.rows).toEqual([]);
+    expect(both.moved).toHaveLength(1);
+  });
+
+  it("the same item, its Later kept: Later, then the move, then Undo; the move, then Later, then Undo", async () => {
+    const { backend, client, model, receive, read } = await setup();
+    model.answer = (req) => {
+      const p = promptText(req.messages[0]!.content);
+      if (p.includes("moved earlier")) return reply([], [], [moved]);
+      if (p.includes("still on")) return reply([], [], [{ ...moved, time: null, evidence: "still on" }]);
+      return reply([{ kind: "event", text: "Soccer game", quote: "game on Saturday at 10:00", due: "2026-11-14", time: "10:00" }]);
+    };
+    const coach = { name: "Coach Ray", email: "ray@club.test" };
+    const thread = await receive({ from: coach, subject: "Saturday", bodyText: "Reminder: the game on Saturday at 10:00.", providerThreadId: "game" });
+    await read();
+    const [row] = (await client.call("dated.ofThread", { threadId: thread })).rows;
+    const later = await client.call("dated.act", { id: row!.id, revision: row!.revision, action: "later", until: at(2026, 11, 12, 9) });
+    await receive({ from: coach, subject: "Re: Saturday", bodyText: base.text, providerThreadId: "game" });
+    await read();
+    expect(await backend.store.dated.get(row!.id)).toMatchObject({ dueDay: "2026-11-14", dueAt: at(2026, 11, 14, 8), timed: true, deferredUntil: at(2026, 11, 12, 9), state: "open" });
+    await client.call("dated.undo", { undoId: later.undoId! });
+    const moved8 = (await backend.store.dated.get(row!.id))!;
+    expect(moved8).toMatchObject({ dueAt: at(2026, 11, 14, 8), deferredUntil: null });
+    const again = await client.call("dated.act", { id: row!.id, revision: moved8.revision, action: "later", until: at(2026, 11, 13, 9) });
+    await client.call("dated.undo", { undoId: again.undoId! });
+    expect(await backend.store.dated.get(row!.id)).toMatchObject({ dueAt: at(2026, 11, 14, 8), deferredUntil: null, state: "open" });
+    // "still on", the same day and no time: it keeps 8:00
+    await receive({ from: coach, subject: "Re: Saturday", bodyText: "The game is still on, rain or shine.", providerThreadId: "game" });
+    await read();
+    expect((await backend.store.dated.active()).map((r) => [r.id, r.dueAt])).toEqual([[row!.id, at(2026, 11, 14, 8)]]);
+  });
+});
+
 describe("a later message moves a promise you made (the second panel round)", () => {
   it("Theo's script: his promise for Tuesday, then Jess's 'Friday at the latest' gives it Friday; a stranger can't touch it", async () => {
     const { backend, client, model, receive, read, raw, clock } = await setup();
