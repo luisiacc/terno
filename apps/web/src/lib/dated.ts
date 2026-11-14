@@ -25,58 +25,71 @@ const capital = (s: string): string => s.charAt(0).toLocaleUpperCase(getLocale()
 const dayOf = (o: Pick<DatedFacts, "dueDay" | "dueAt">): number => localDay(o.dueDay)?.getTime() ?? o.dueAt;
 
 /**
- * "Was due Tuesday · …": a Missed line, an item's or a dated promise's (its text already in its own words). A timed one
- * keeps its time (Codex code review of the fixes): "Was due yesterday 1:00 PM · Wire payroll".
+ * "Was due Tuesday": a Missed day in words, an item's or a dated promise's. A timed one keeps its time (Codex code review of
+ * the fixes): "Was due yesterday 1:00 PM".
  */
-export function wasDueLine(day: number, text: string, now = Date.now(), time: string | null = null): string {
+function wasDue(day: number, now: number, time: string | null): string {
   const d = datedDay(day, now);
-  if (d.near === "yesterday") return time ? t("today.why.wasDueYesterdayAt", { time, text }) : t("today.why.wasDueYesterday", { text });
-  return time ? t("today.why.wasDueOnAt", { day: d.text, time, text }) : t("today.why.wasDueOn", { day: d.text, text });
+  if (d.near === "yesterday") return time ? t("today.due.wasYesterdayAt", { time }) : t("today.due.wasYesterday");
+  return time ? t("today.due.wasOnAt", { day: d.text, time }) : t("today.due.wasOn", { day: d.text });
 }
 
-/** "Due Friday · …", "Due today 1:00 PM · …" (after the panel: any timed item says its time, not only a Plan). */
-function dueLine(day: number, time: string | null, text: string, now: number): string {
+/** "Due Friday", "Due today 1:00 PM" (after the panel: any timed item says its time, not only a Plan). */
+function dueOn(day: number, time: string | null, now: number): string {
   const d = datedDay(day, now);
-  if (d.near === "today") return time ? t("today.why.dueTodayAt", { time, text }) : t("today.why.dueToday", { text });
-  if (d.near === "tomorrow") return time ? t("today.why.dueTomorrowAt", { time, text }) : t("today.why.dueTomorrow", { text });
-  return time ? t("today.why.dueOnAt", { day: d.text, time, text }) : t("today.why.dueOn", { day: d.text, text });
+  if (d.near === "today") return time ? t("today.due.todayAt", { time }) : t("today.due.today");
+  if (d.near === "tomorrow") return time ? t("today.due.tomorrowAt", { time }) : t("today.due.tomorrow");
+  return time ? t("today.due.onAt", { day: d.text, time }) : t("today.due.on", { day: d.text });
 }
+
+/** A line: when, then the task ("Due Friday · Pay the electricity bill"); with no day, the task alone. */
+const line = (when: string | null, text: string): string => (when ? t("today.why.line", { when, text }) : text);
 
 /**
- * Plan 204 §8: an item's line, in Today's row and the reader alike: "Due Friday · Pay the electricity bill" (Deadlines and
- * Coming up), "Due today 1:00 PM · Wire payroll" (after the panel: any item with a time says it), "Tomorrow 7:40 · Flight
- * to Madrid" (a Plan), "Was due Tuesday · Renew the domain" (Missed); an alert that named no day, its words alone.
+ * When an item is, in words: "Due Friday", "Due today 1:00 PM" (after the panel: any item with a time says it), "Tomorrow
+ * 7:40" (a Plan), "Was due Tuesday" (Missed); null for an alert that named no day. A Today row's screen reader hears it
+ * after the task, the right column (its short form) being hidden from it (after the second panel round).
  */
-export function datedLine(o: DatedFacts, missed: boolean, now = Date.now()): string {
-  if (!o.dated) return o.text;
+export function datedWhen(o: Omit<DatedFacts, "text">, missed: boolean, now = Date.now()): string | null {
+  if (!o.dated) return null;
   const time = o.timed ? reminderTime(o.dueAt) : null;
-  if (missed) return wasDueLine(dayOf(o), o.text, now, time);
+  if (missed) return wasDue(dayOf(o), now, time);
   if (datedGroup(o.kind) === "plans") {
     const d = datedDay(dayOf(o), now);
     const when = d.near === "today" ? t("today.when.today") : d.near === "tomorrow" ? t("today.when.tomorrow") : capital(d.text);
-    return t("today.why.plan", { when: time ? `${when} ${time}` : when, text: o.text });
+    return time ? `${when} ${time}` : when;
   }
-  return dueLine(dayOf(o), time, o.text, now);
+  return dueOn(dayOf(o), time, now);
 }
 
 /**
- * Plan 204 (after the panel, fix 8): a promise of yours, in your words: "Due today · You said: send the agenda", "Due
- * Tuesday · You said: …" (Coming up), "Was due Tuesday · You said: …" (Missed); one that named no day, "You said: …".
+ * Plan 204 §8: an item's full line, as the conversation shows it: "Due Friday · Pay the electricity bill", "Tomorrow 7:40 ·
+ * Flight to Madrid", "Was due Tuesday · Renew the domain"; an alert that named no day, its words alone. (A Today row says
+ * the task alone, its day in the right column: after the second panel round.)
  */
-export function promiseLine(o: { text: string; dueAt?: number; dated: boolean }, missed: boolean, now = Date.now()): string {
-  const said = t("today.why.promise", { text: o.text });
-  if (!o.dueAt || !o.dated) return said;
-  return missed ? wasDueLine(o.dueAt, said, now) : dueLine(o.dueAt, null, said, now);
+export const datedLine = (o: DatedFacts, missed: boolean, now = Date.now()): string => line(datedWhen(o, missed, now), o.text);
+
+/** When a promise of yours is due, in words ("Due today", "Was due Tuesday"); null for one that named no day. */
+export function promiseWhen(o: { dueAt?: number; dated: boolean }, missed: boolean, now = Date.now()): string | null {
+  if (!o.dueAt || !o.dated) return null;
+  return missed ? wasDue(o.dueAt, now, null) : dueOn(o.dueAt, null, now);
 }
+
+/**
+ * Plan 204 (after the panel, fix 8): a promise of yours, in your words: "Due today · You said: send the agenda", "Was due
+ * Tuesday · You said: …"; one that named no day, "You said: …".
+ */
+export const promiseLine = (o: { text: string; dueAt?: number; dated: boolean }, missed: boolean, now = Date.now()): string => line(promiseWhen(o, missed, now), t("today.why.promise", { text: o.text }));
 
 /**
  * Plan 204 (after the panel): what a Today row's Done, Not a task, Later and D act on: its dated item, or the promise of
- * yours it shows (`why.promise`, exactly: never the thread's most urgent). `when` is the right column's due day; `end`, a
- * Plan's end, the last moment Later may choose.
+ * yours it shows (`why.promise`, exactly: never the thread's most urgent). `when` is the right column's due day, `due`
+ * the same in words for a screen reader (that column is hidden from it; after the second panel round); `end`, a Plan's
+ * end, the last moment Later may choose.
  */
 export type TodayTask =
-  | { kind: "dated"; item: DatedRef; when: string | null; end: number | null }
-  | { kind: "promise"; id: number; revision: number; when: string | null };
+  | { kind: "dated"; item: DatedRef; when: string | null; due: string | null; end: number | null }
+  | { kind: "promise"; id: number; revision: number; when: string | null; due: string | null };
 // a nudge (no reply to your mail) acts as a promise does: through follow-ups' act on the row it shows (Codex code review)
 
 /** A Today row's task, from what the backend said of it: a dated item, a promise or a nudge; a waiting row or a reminder has none. */
@@ -87,11 +100,11 @@ export function taskOf(why: TodayWhy, now = Date.now()): TodayTask | null {
     // a Missed item says its day; one still ahead, its time today
     const timed = item.timed && !why.missed;
     const when = item.dated ? dueShort(timed ? dueAt : (localDay(item.dueDay)?.getTime() ?? dueAt), timed, now) : null;
-    return { kind: "dated", item, when, end: datedGroup(item.kind) === "plans" ? planEnd({ dueDay: item.dueDay, dueAt, timed: item.timed }) : null };
+    return { kind: "dated", item, when, due: datedWhen({ ...item, dueAt }, why.missed === true, now), end: datedGroup(item.kind) === "plans" ? planEnd({ dueDay: item.dueDay, dueAt, timed: item.timed }) : null };
   }
   if ((why.kind === "promise" || why.kind === "nudge") && why.promise) {
     const dated = why.kind === "promise" && why.promise.dated === true && why.dueAt !== undefined;
-    return { kind: "promise", id: why.promise.id, revision: why.promise.revision, when: dated ? dueShort(why.dueAt!, false, now) : null };
+    return { kind: "promise", id: why.promise.id, revision: why.promise.revision, when: dated ? dueShort(why.dueAt!, false, now) : null, due: dated ? promiseWhen({ dueAt: why.dueAt, dated }, why.missed === true, now) : null };
   }
   return null;
 }

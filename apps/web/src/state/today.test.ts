@@ -220,16 +220,20 @@ describe("plan 204: Missed, Deadlines, Plans, Needs you, Reminders and Coming up
     expect(useToday.getState().tasks.has(8)).toBe(false);
   });
 
-  it("each kind's line: due, a plan's day and time, Missed, a missed promise, an alert with no day", () => {
+  it("each kind's line: the task alone where the date says when, and when in words for a screen reader", () => {
     const rows = flattenToday(full(), []);
     const line = (id: number) => rows.find((r) => r.id === id)!.snippet;
-    expect(line(1)).toBe("Was due Tuesday · Renew the domain");
+    const due = (id: number) => useToday.getState().tasks.get(id)?.due;
+    // after the second panel round: the right column says when, so the line doesn't say it again
+    expect([line(1), due(1)]).toEqual(["Renew the domain", "Was due Tuesday"]);
+    expect([line(3), due(3)]).toEqual(["Pay the electricity bill", "Due tomorrow"]);
+    expect([line(4), due(4)]).toEqual(["Pay the rent", "Due today"]);
+    expect([line(6), due(6)]).toEqual(["Flight to Madrid", "Tomorrow 7:40 AM"]);
+    expect([line(7), due(7)]).toEqual(["Your parcel arrives", "Today"]);
+    // no date in the right column, so the line keeps the whole wording: a missed promise an older backend gave no
+    // reference (no task), an alert that named no day
     expect(line(2)).toBe("Was due yesterday · You said: send the contract");
-    expect(line(3)).toBe("Due tomorrow · Pay the electricity bill");
-    expect(line(4)).toBe("Due today · Pay the rent");
-    expect(line(5)).toBe("Your card was declined");
-    expect(line(6)).toBe("Tomorrow 7:40 AM · Flight to Madrid");
-    expect(line(7)).toBe("Today · Your parcel arrives");
+    expect([line(5), due(5)]).toEqual(["Your card was declined", null]);
   });
 
   it("Codex code review of the fixes: a timed item keeps its time in Missed; a nudge row has a task (follow-ups' act)", () => {
@@ -240,8 +244,9 @@ describe("plan 204: Missed, Deadlines, Plans, Needs you, Reminders and Coming up
       }),
       [],
     );
-    expect(rows.find((r) => r.id === 1)!.snippet).toBe("Was due yesterday 1:00 PM · Wire payroll");
-    expect(useToday.getState().tasks.get(2)).toMatchObject({ kind: "promise", id: 41, revision: 1, when: null });
+    expect(rows.find((r) => r.id === 1)!.snippet).toBe("Wire payroll");
+    expect(useToday.getState().tasks.get(1)).toMatchObject({ when: "Yesterday", due: "Was due yesterday 1:00 PM" });
+    expect(useToday.getState().tasks.get(2)).toMatchObject({ kind: "promise", id: 41, revision: 1, when: null, due: null });
   });
 
   it("after the panel: any timed item says its time; a promise of yours says when it's due; Coming up's promise its day", () => {
@@ -258,12 +263,14 @@ describe("plan 204: Missed, Deadlines, Plans, Needs you, Reminders and Coming up
       [],
     );
     const line = (id: number) => rows.find((r) => r.id === id)?.snippet;
-    expect(line(1)).toBe("Due today 1:00 PM · Wire payroll");
-    expect(line(2)).toBe("Due tomorrow 9:30 AM · Pay the rent");
-    expect(line(3)).toBe("Due today · You said: send the agenda");
-    expect(line(4)).toBe("You said: call back");
+    const due = (id: number) => useToday.getState().tasks.get(id)?.due;
+    expect([line(1), due(1)]).toEqual(["Wire payroll", "Due today 1:00 PM"]);
+    expect([line(2), due(2)]).toEqual(["Pay the rent", "Due tomorrow 9:30 AM"]);
+    expect([line(3), due(3)]).toEqual(["You said: send the agenda", "Due today"]);
+    expect([line(4), due(4)]).toEqual(["You said: call back", null]);
     useToday.setState({ comingUpOpen: true });
-    expect(flattenToday(list({ comingUp: [{ thread: thread(5), why: { kind: "promise", text: "send the deck", dueAt: at(17), promise: { id: 51, revision: 0 } } } as never] }), [])[0]!.snippet).toBe("Due Tuesday · You said: send the deck");
+    expect(flattenToday(list({ comingUp: [{ thread: thread(5), why: { kind: "promise", text: "send the deck", dueAt: at(17), promise: { id: 51, revision: 0 } } } as never] }), [])[0]!.snippet).toBe("You said: send the deck");
+    expect(useToday.getState().tasks.get(5)).toMatchObject({ when: "Tue", due: "Due Tuesday" });
   });
 
   it("after the panel: each row's task, what D, Done, Not a task and Later act on, with its due day for the date's place", () => {
@@ -279,16 +286,17 @@ describe("plan 204: Missed, Deadlines, Plans, Needs you, Reminders and Coming up
     flattenToday(list({ deadlines: [dated(1, "pay", "Wire payroll", 12, { timed: true, h: 13 })], needsYou: [{ thread: thread(3), why: { kind: "promise", text: "send the agenda", dueAt: at(12, 18), promise: { id: 31, revision: 2, dated: true } } } as never] }), []);
     expect(useToday.getState().tasks.get(1)).toMatchObject({ when: "1:00 PM" });
     // a promise row acts on the promise it shows, exactly
-    expect(useToday.getState().tasks.get(3)).toEqual({ kind: "promise", id: 31, revision: 2, when: "Today" });
+    expect(useToday.getState().tasks.get(3)).toEqual({ kind: "promise", id: 31, revision: 2, when: "Today", due: "Due today" });
   });
 
   it("further days: a weekday within six, else the date", () => {
-    const rows = flattenToday(list({ deadlines: [dated(1, "pay", "Pay the water bill", 17)], plans: [dated(2, "event", "Dinner at Lúa", 16)], comingUp: [] }), []);
-    expect(rows[0]!.snippet).toBe("Due Tuesday · Pay the water bill");
-    expect(rows[1]!.snippet).toBe("Monday · Dinner at Lúa");
+    flattenToday(list({ deadlines: [dated(1, "pay", "Pay the water bill", 17)], plans: [dated(2, "event", "Dinner at Lúa", 16)], comingUp: [] }), []);
+    const due = (id: number) => useToday.getState().tasks.get(id)?.due;
+    expect(due(1)).toBe("Due Tuesday");
+    expect(due(2)).toBe("Monday");
     useToday.setState({ comingUpOpen: true });
-    const later = flattenToday(full(), []);
-    expect(later.at(-1)!.snippet).toBe("Due Nov 20 · Renew the passport");
+    flattenToday(full(), []);
+    expect(due(10)).toBe("Due Nov 20");
   });
 
   it("Coming up's rows only while it's open: last, under its own heading", () => {

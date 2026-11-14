@@ -30,16 +30,16 @@ beforeEach(() => {
 describe("a Today row's task (plan 204, after the panel)", () => {
   const item = { id: 30, revision: 2, kind: "event" as const, dueDay: "2026-11-12", timed: true, dated: true };
   it("Not a task: a date is dismissed by its own act, a promise by follow-ups' (the one the row shows), each with Undo", async () => {
-    await actOnTask({ kind: "dated", item, when: null, end: null }, "dismiss");
-    await actOnTask({ kind: "promise", id: 7, revision: 3, when: null }, "dismiss");
+    await actOnTask({ kind: "dated", item, when: null, due: null, end: null }, "dismiss");
+    await actOnTask({ kind: "promise", id: 7, revision: 3, when: null, due: null }, "dismiss");
     expect(calls).toEqual(["dated.act", "followups.act"]);
     expect(params).toEqual([{ id: 30, revision: 2, action: "dismiss" }, { id: 7, revision: 3, action: "dismiss" }]);
     expect(said).toEqual([{ text: "Removed from Today", undo: true }, { text: "Removed from Today", undo: true }]);
   });
 
   it("Done and Later say so; a promise's Later moves its due moment", async () => {
-    await actOnTask({ kind: "promise", id: 7, revision: 3, when: null }, "later", 1234);
-    await actOnTask({ kind: "dated", item, when: null, end: null }, "done");
+    await actOnTask({ kind: "promise", id: 7, revision: 3, when: null, due: null }, "later", 1234);
+    await actOnTask({ kind: "dated", item, when: null, due: null, end: null }, "done");
     expect(params).toEqual([{ id: 7, revision: 3, action: "later", dueAt: 1234 }, { id: 30, revision: 2, action: "done" }]);
     expect(said.map((s) => s.text)).toEqual(["Moved to later", "Marked done"]);
   });
@@ -47,8 +47,8 @@ describe("a Today row's task (plan 204, after the panel)", () => {
   it("Later's choices: every preset that applies now; on a Plan, only those before it ends", () => {
     // Thursday 12 November 2026, 10:00: later today, tomorrow, this weekend, next week
     const now = new Date(2026, 10, 12, 10, 0).getTime();
-    expect(laterChoices({ kind: "promise", id: 7, revision: 3, when: null }, now).map((p) => p.id)).toEqual(["laterToday", "tomorrow", "weekend", "nextWeek"]);
-    const plan = { kind: "dated" as const, item, when: null, end: new Date(2026, 10, 14, 12, 0).getTime() };
+    expect(laterChoices({ kind: "promise", id: 7, revision: 3, when: null, due: null }, now).map((p) => p.id)).toEqual(["laterToday", "tomorrow", "weekend", "nextWeek"]);
+    const plan = { kind: "dated" as const, item, when: null, due: null, end: new Date(2026, 10, 14, 12, 0).getTime() };
     expect(laterChoices(plan, now).map((p) => p.id)).toEqual(["laterToday", "tomorrow", "weekend"]);
     expect(laterChoices({ ...plan, end: new Date(2026, 10, 12, 12, 0).getTime() }, now)).toEqual([]);
   });
@@ -75,5 +75,19 @@ describe("the 14-day check's answer", () => {
     await answerScan(false, save);
     expect(calls).toEqual([]);
     expect(save).toHaveBeenCalledWith({ scanAnswered: true });
+  });
+});
+
+describe("the conversation's line keeps the whole wording (plan 204, after the second panel round)", () => {
+  it("when, then the task; a promise's in your words; no day, the task alone", async () => {
+    const { datedLine, promiseLine } = await import("./dated");
+    // Thursday 12 November 2026, 10:00
+    const now = new Date(2026, 10, 12, 10, 0).getTime();
+    const facts = { kind: "pay" as const, dueDay: "2026-11-12", dueAt: new Date(2026, 10, 12, 13, 0).getTime(), timed: true, dated: true, text: "Wire payroll" };
+    expect(datedLine(facts, false, now)).toBe("Due today 1:00 PM · Wire payroll");
+    expect(datedLine({ ...facts, dueDay: "2026-11-11", timed: false }, true, now)).toBe("Was due yesterday · Wire payroll");
+    expect(datedLine({ ...facts, dated: false }, false, now)).toBe("Wire payroll");
+    expect(promiseLine({ text: "send the agenda", dueAt: facts.dueAt, dated: true }, false, now)).toBe("Due today · You said: send the agenda");
+    expect(promiseLine({ text: "call back", dated: false }, false, now)).toBe("You said: call back");
   });
 });
