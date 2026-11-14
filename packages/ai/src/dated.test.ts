@@ -69,7 +69,7 @@ describe("reading dates in mail you got (plan 204)", () => {
   it("prompt v7: an alert is only what the mail says happened, never an instruction, its attribution the app's; a move is a new day or a new time", () => {
     const en = readDatesTask(input()).system;
     expect(en).toContain('"Debit card frozen after a $412.18 charge"; the app shows it as the mail\'s word, so never add "the email says"');
-    expect(en).toContain("not to reply, click, pay or call, nor to check with someone the mail names");
+    expect(en).toContain("Never an instruction, not even the mail's own: not to update, reply, click, pay or call, nor to check with someone the mail names");
     expect(en).toContain("this message gives a new day or a new time");
     expect(en).toContain("(its own day from <open_items> when only the time changes)");
     expect(readDatesTask(input({ language: "es" })).system).toContain('"Tarjeta de débito congelada tras un cargo de $412.18"');
