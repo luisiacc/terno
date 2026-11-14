@@ -29,23 +29,30 @@ const pendingRow = (threadId: number, through: number, at: number): R => ({
   thread_id: threadId, state: "pending", through_message_id: through, source_stamp: null, content_hash: null, prompt_version: null, language: null, model: null, provider: null, endpoint: null, body_json: null, attempts: 0, error_kind: null, created_at: at, generated_at: null, failed_at: null,
 });
 
-function ownAddresses(c: Ctx): Set<string> {
+/** The user's own addresses as the new-mail rule compares them (lower case): the accounts' and plan 17's `own`. */
+export function receivedOwn(c: Ctx): Set<string> {
   const own = new Set<string>();
   for (const a of T(c, "accounts").all()) own.add(String(a.email).toLowerCase());
   for (const k of T(c, "correspondents").keysBy("own", 1)) own.add(String(k).toLowerCase());
   return own;
 }
 
+/**
+ * Mail the user received, as the AI features on new mail read it: not sent, a draft, spam or trash, and not from the
+ * user. One rule for `ai_new_mail` and plan 204's `ai_dated_mail`, so the two can't drift; the window is each caller's.
+ */
+export const received = (m: R, own: ReadonlySet<string>): boolean => !m.is_sent && !m.is_draft && !m.is_spam && !m.is_trash && !own.has(String(m.from_email).toLowerCase());
+
 /** Ingest's part (in its command): live mail it inserted, marked; a summary queued for its thread, when they want one. */
 export function markNewMail(c: Ctx, messageIds: readonly number[], now: number, wants: NewMailWants): void {
   if (!messageIds.length || (!wants.summary && !wants.category)) return;
   const messages = T(c, "messages");
   const marks = T(c, "ai_new_mail");
-  const own = ownAddresses(c);
+  const own = receivedOwn(c);
   const through = new Map<number, number>();
   for (const id of messageIds) {
     const m = messages.get(id);
-    if (!m || m.is_sent || m.is_draft || m.is_spam || m.is_trash || m.date < now - NEW_MAIL_MS || own.has(String(m.from_email).toLowerCase()) || marks.has(id)) continue;
+    if (!m || !received(m, own) || m.date < now - NEW_MAIL_MS || marks.has(id)) continue;
     marks.insert({ message_id: id, thread_id: m.thread_id, arrived_at: now, wants_summary: wants.summary ? 1 : 0, wants_category: wants.category ? 1 : 0 });
     if (wants.summary) through.set(m.thread_id, Math.max(through.get(m.thread_id) ?? 0, id));
   }
