@@ -11,7 +11,8 @@ import type { StructuredTask } from "./ladder";
 /** 3 (after the user panel): appointments still ahead even when "confirmed"; a request named to someone else in a group mail; a newsletter's call to action; account alerts never say to reply; amounts; `moved` */
 /** 4 (the second panel round): an automatic renewal says what it is; the amount after the verb; a calendar invitation is an event; your own promises (p1…) can be moved */
 /** 5 (the third panel round): a person's undated ask (`ask`); a window or a "by" time said in a Plan's text, not its time; the one thing to bring in its text; the currency as written; every dated thing its own item */
-export const DATED_PROMPT_VERSION = 5;
+/** 6 (the fourth panel round): an alert says what the mail says happened, attributed, never an instruction; `moved` is a new day or a new time */
+export const DATED_PROMPT_VERSION = 6;
 export const DATED_MAX_TOKENS = 2000;
 export const DATED_SUBJECT_CHARS = 200;
 export const DATED_FROM_CHARS = 100;
@@ -67,6 +68,7 @@ const EXAMPLE_TEXT: Record<string, [string, string]> = { en: ["Pay the electrici
 
 const AMOUNT_EXAMPLE: Record<string, string> = { en: "Pay $187.42 for the electricity bill", es: "Pagar $187.42 de la factura de la luz" };
 const ASK_EXAMPLE: Record<string, [string, string]> = { en: ["Answer Mariana about a rebranding quote", "Tell Mom if you're coming for Christmas"], es: ["Responder a Mariana sobre el presupuesto del rebranding", "Decirle a mamá si vas en Navidad"] };
+const ALERT_EXAMPLE: Record<string, string> = { en: "Debit card frozen after a $412.18 charge, the email says", es: "Tarjeta de débito congelada tras un cargo de $412.18, según el correo" };
 const DETAIL_EXAMPLE: Record<string, [string, string, string]> = { en: ["Furnace service, 12–2 PM", "Package arriving by 9 PM", "Blood test (fast after midnight)"], es: ["Revisión de la caldera, 12–14 h", "Paquete llega antes de las 21 h", "Análisis de sangre (en ayunas desde medianoche)"] };
 
 const SYSTEM = (language: string, receivedAt: string) => {
@@ -74,6 +76,7 @@ const SYSTEM = (language: string, receivedAt: string) => {
   const amountExample = AMOUNT_EXAMPLE[language] ?? AMOUNT_EXAMPLE.en!;
   const [askExample, familyExample] = ASK_EXAMPLE[language] ?? ASK_EXAMPLE.en!;
   const [windowExample, byExample, bringExample] = DETAIL_EXAMPLE[language] ?? DETAIL_EXAMPLE.en!;
+  const alertExample = ALERT_EXAMPLE[language] ?? ALERT_EXAMPLE.en!;
   return `You read one email a person received, to note what in it matters to them: something they have to do by a day, something of theirs that happens on a day, or something a person asks them directly. They see each note in a short list of what matters, so only note what's really there.
 
 It arrived ${receivedAt}.
@@ -88,7 +91,7 @@ Return:
   - "renew": a renewal, a free trial ending, a subscription that charges unless cancelled. Say what happens, not a task the mail doesn't ask for: "Notely Pro renews automatically ($9.99)", "Free trial ends"; "Renew …" only when it won't renew unless the reader acts.
   - "expire": a card, a document, a password or an account expiring.
   - "respond": something the reader is asked to answer, send, bring, sign or fill in by a day: an RSVP, a form, a signature, a reply ("can you send it by Thursday?", "you're on cupcakes for Friday"). It always has a day. A request with a day is this, and never also an "ask".
-  - "alert": a payment that failed, an account locked or suspended, action required on the reader's own account. It may name no day. Its text says what to check, never to reply or click: "Check the fraud alert with your bank".
+  - "alert": a payment that failed, an account locked or suspended, action required on the reader's own account. It may name no day. Its text says what the mail says happened, with the amount, the card or the account it states, and always that it's the mail's word: "${alertExample}". Never an instruction: not to reply, click, pay or call, nor to check with someone the mail names (it may not be who it claims).
   - "event": a flight, a reservation, an appointment, a booking, or a meeting the reader is invited to (a calendar invitation), still ahead, even when the mail confirms it or asks the reader to confirm it ("Appointment confirmed: Monday 10:20", "reply C to confirm"): the event is the item.
   - "delivery": a parcel arriving, or one to pick up.
   - "ask": only when nothing else in this list fits: the sender, a person ("Sent by a person"), asks the reader directly for an answer or for something, and the mail gives it no day: a question for them, something to send, do or decide ("can you send me a quote?", "I'd love your take on the draft", "are you coming for Christmas?"). Never from an automated address; never what the mail asks someone else; never a newsletter's or a list's call to action, a sales pitch, or what a scam or a stranger wants (money, details, a click); never a question that needs no answer ("hope you're well?", "let me know if you have any questions", "no need to reply"). One that names the reader ("<their name>, could you…?") is theirs even when they're only copied. At most one "ask" a mail: what they most need from the reader. Its text says whom to answer and about what: "${askExample}", "${familyExample}".
@@ -101,7 +104,7 @@ Return:
   - "time": HH:MM on a 24-hour clock when the mail states the moment it starts or is due ("at 9:30", "pay by 1 PM"), else null. An event or a delivery with a window ("between 12 and 2") or only a "by" time ("arriving by 9 PM") has no time: say it in its text instead: "${windowExample}", "${byExample}".
 - <open_items> holds the reader's open items (o1, o2…) and promises the reader made in this conversation (p1, p2…, kind "promise").
 - "settled": the open items (labels o1, o2…, never a p label) this message settles, each { "label", "evidence" }, where evidence is the mail's exact words that settle it: "Payment received", "your booking has been cancelled", "your card has been updated". A reminder of the same bill settles nothing. If in doubt, leave it out.
-- "moved": the open items or promises this message gives a new day ("Friday at the latest works", "we've moved your appointment to the 24th"), each { "label", "due", "time", "evidence" } with "due" as above and evidence the mail's exact words. An open item with a new day goes here, never also in "items". One it settles isn't moved.
+- "moved": the open items or promises this message gives a new day or a new time ("Friday at the latest works", "we've moved your appointment to the 24th", "Saturday's game is now at 8:00"), each { "label", "due", "time", "evidence" } with "due" as above (the same day when only the time changes), "time" the new time or null when the mail gives none, and evidence the mail's exact words. An open item with a new day or time goes here, never also in "items". An open item the mail only mentions again with no new day or time (a reminder, a new place) is neither moved nor an item. One it settles isn't moved.
 
 Not items:
 - A marketing deadline: "50% off ends tonight", "last chance", "offer expires Sunday", "precio especial hasta el viernes".
