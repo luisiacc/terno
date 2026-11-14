@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
 import { DEFAULT_ANTHROPIC_MODEL, PROVIDERS as AI_PROVIDERS } from "../../packages/ai/src/providers";
-import { ASK_CLAUDE_MODEL, ASK_PLAN_CLAUDE_MODEL, DEV_AI_ENV, DIGEST_OPENAI_MODEL, FOLLOWUP_OPENAI_MODEL, JEV_DEFAULT_MODEL, OPENAI_DEFAULT_MODEL, SUMMARY_DEFAULT_MODEL, WRITING_CLAUDE_MODEL } from "../../packages/core/src/ai";
+import { ASK_CLAUDE_MODEL, ASK_PLAN_CLAUDE_MODEL, DATED_OPENAI_MODEL, DEV_AI_ENV, DIGEST_OPENAI_MODEL, FOLLOWUP_OPENAI_MODEL, JEV_DEFAULT_MODEL, OPENAI_DEFAULT_MODEL, SUMMARY_DEFAULT_MODEL, WRITING_CLAUDE_MODEL } from "../../packages/core/src/ai";
 import { AI_JOBS, routeFor } from "../../packages/core/src/ai-routing";
 import { electronEnv } from "./harness.mjs";
 import { copyRedacted, envFile, filesHoldingKeys, PRO_ROUTING, PROVIDERS, readKeys, redact, REDACTED } from "./keys.mjs";
@@ -66,6 +66,7 @@ describe("plan 161: the AI rating's keys", () => {
       ask: `anthropic/${ASK_CLAUDE_MODEL}`,
       askPlan: `anthropic/${ASK_PLAN_CLAUDE_MODEL}`,
       followup: `openai/${FOLLOWUP_OPENAI_MODEL}`,
+      dated: `openai/${DATED_OPENAI_MODEL}`,
       digest: `openai/${DIGEST_OPENAI_MODEL}`,
       filter: `anthropic/${DEFAULT_ANTHROPIC_MODEL}`,
       intent: `openai/${OPENAI_DEFAULT_MODEL}`,

@@ -28,6 +28,7 @@ describe("on keys (Claude, OpenAI, Pro, Dev mode's Pro AI)", () => {
       ask: SONNET,
       askPlan: HAIKU,
       followup: LUNA,
+      dated: LUNA,
       digest: LUNA,
       filter: OPUS,
       categorize: "jev/jev-latest",
@@ -35,7 +36,7 @@ describe("on keys (Claude, OpenAI, Pro, Dev mode's Pro AI)", () => {
   });
 
   it("only Claude: everything there, summaries on Haiku (they run on every new mail), filters and categories on Opus", () => {
-    expect(table(ai({ provider: "anthropic", keys: { anthropic: key() } }))).toEqual({ summary: HAIKU, writing: SONNET, voice: SONNET, reply: SONNET, intent: HAIKU, replyCheck: HAIKU, ask: SONNET, askPlan: HAIKU, followup: HAIKU, digest: HAIKU, filter: OPUS, categorize: OPUS });
+    expect(table(ai({ provider: "anthropic", keys: { anthropic: key() } }))).toEqual({ summary: HAIKU, writing: SONNET, voice: SONNET, reply: SONNET, intent: HAIKU, replyCheck: HAIKU, ask: SONNET, askPlan: HAIKU, followup: HAIKU, dated: HAIKU, digest: HAIKU, filter: OPUS, categorize: OPUS });
   });
 
   it("only OpenAI: drafting on Sol, every other job on Luna (the owner)", () => {
