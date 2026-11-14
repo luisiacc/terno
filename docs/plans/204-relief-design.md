@@ -152,3 +152,17 @@ Three findings, all fixed, each with a test that fails without the fix:
 1. The chosen sidebar row's lift (`data-active:shadow-(--depth-nav)`) is emitted after the outline a right-click menu draws on its row, so the chosen account or category lost that outline, in every design (flat's lift is a transparent layer). The outline is important now; `account-menu.spec` right-clicks the chosen row too.
 2. Relief light's star was 2.8:1 on the open row; it's darker (`0.53 0.13 66`), and Relief is in the star-on-rows contrast test.
 3. The composer's From select clears its trigger's chrome to sit plain on the row, but not the new sheen and emboss, so Relief painted a lit patch behind it. It clears them too; `relief.spec` checks it.
+
+## The owner's first look
+
+Follow-up requests, verbatim:
+
+> fix those for dark mode and show me more pictures of dark mode
+
+> also i dont like that the selected item like the inbox in light mode looks like the compose button
+
+The two dark-mode points I'd raised, and the owner's one:
+
+- **Send and the other filled buttons in dark** were the light ink, as in Graphite. They're now the dark reference's raised pills ("View build", "Pause"): `#2E2E2E` lit to `#242424`, `#EDEDED` words. The primary (switches that are on, ticked boxes, links, the focus ring) keeps its light ink, so filled buttons have their own tokens: `cta`, `cta-hover` and `cta-foreground`, derived as the primary's in every palette, and set apart only in `relief-dark`. `Button`'s default and Send's group draw them; their text is in `CONTRAST_PAIRS` on both fills. A unit test holds every other palette's `cta` to its primary, and `controls.spec` compares the button with the `cta` probes.
+- **The off switch's thumb in dark** was white, the brightest thing on screen. Its dark fill is the design's (`--depth-thumb-dark`, `--depth-thumb-dark-shade`: the ink as before where depth is flat), a soft grey in Relief.
+- **The chosen sidebar item** stood up from the sidebar like the Compose pill. It's pressed in now, a held-down key: `--depth-nav` is a shaded well, and in light the fill is a step darker than the sidebar (`#D3D3D3`, 1.14:1). In dark a darker step can't hold the selection's floor on `#191919`, so the fill stays the lighter `#333333`, pressed in by its shading.

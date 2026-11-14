@@ -40,7 +40,8 @@ export function SendButton({ d, onSend, className }: { d: LocalDraft; onSend: (s
   const uploading = useFilesOnTheirWay(d.key);
   const ready = canSendTo(d) && !uploading;
   const invalid = firstInvalid(d.toText) ?? firstInvalid(d.ccText) ?? firstInvalid(d.bccText);
-  // Ready, the group owns the fill (a primary button's, plan 118), radius and shadow, so the halves meet with no seam;
+  // Ready, the group owns the fill (a primary button's, plan 118, in its cta colours, plan 204), radius and shadow, so
+  // the halves meet with no seam;
   // each half is the primary's own hover, open and press over it (bg-none: a half's own gradient would hide them).
   // Not ready (plan 118's unavailable: a click still says why), it reads as an outlined pair of quiet buttons (plan 173,
   // the owner): each half a ghost with its hover and press, the outline drawn over them (::after), so a hovered half
@@ -54,7 +55,7 @@ export function SendButton({ d, onSend, className }: { d: LocalDraft; onSend: (s
       ? // (Send still takes the click that says why, so it presses too, as the clock does; the halves keep the group's
         // corners, so a focus ring isn't clipped where the group is rounder than a ghost: Codex review)
         "rounded-[max(var(--cta-floor),min(var(--ds-radius-md),12px))] text-inherit hover:text-foreground aria-expanded:text-foreground unavailable:opacity-100 active:bg-[color-mix(in_oklab,var(--muted),var(--foreground)_6%)] dark:active:bg-muted focus-visible:shadow-[inset_0_0_0_2px_var(--ring)]"
-      : "bg-transparent bg-none text-inherit focus-visible:shadow-[inset_0_0_0_2px_var(--primary),inset_0_0_0_3.5px_var(--primary-foreground)]",
+      : "bg-transparent bg-none text-inherit focus-visible:shadow-[inset_0_0_0_2px_var(--cta),inset_0_0_0_3.5px_var(--cta-foreground)]",
   );
   const variant = outlined ? "ghost" : "default";
   // plan 188: why it can't send yet, said with it (the tooltip is the pointer's; a press says it at the field too). An
@@ -67,7 +68,7 @@ export function SendButton({ d, onSend, className }: { d: LocalDraft; onSend: (s
         outlined
           ? // the outline over the halves; firmer while either is under the pointer or open, as an outline button's border
             "text-muted-foreground after:pointer-events-none after:absolute after:inset-0 after:rounded-[inherit] after:shadow-[inset_0_0_0_1px_var(--border)] hover:after:shadow-[inset_0_0_0_1px_var(--input)] has-aria-expanded:after:shadow-[inset_0_0_0_1px_var(--input)]"
-          : "bg-primary bg-linear-to-b from-primary-hover to-primary text-primary-foreground dark:from-primary dark:to-primary-hover shadow-(--depth-ink)",
+          : "bg-cta bg-linear-to-b from-cta-hover to-cta text-cta-foreground dark:from-cta dark:to-cta-hover shadow-(--depth-ink)",
         className,
       )}
       data-testid="compose-send-group"

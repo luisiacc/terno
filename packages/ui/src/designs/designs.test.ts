@@ -151,6 +151,8 @@ describe("designs (plan 15)", () => {
         "--depth-box": xs,
         "--depth-box-on": "inset 0 1px var(--highlight)",
         "--depth-thumb": "0 3px 3px 0 color-mix(in oklab, var(--shadow-color) 30%, transparent), 0 0.75px 0 0 color-mix(in oklab, var(--shadow-color) 50%, transparent)",
+        "--depth-thumb-dark": "var(--foreground)",
+        "--depth-thumb-dark-shade": "color-mix(in oklab, var(--foreground) 88%, var(--background))",
         "--depth-thumb-chip": "1",
         "--depth-track": "var(--control-edge)",
         "--depth-track-dark": "color-mix(in oklab, var(--control-edge) 80%, transparent)",

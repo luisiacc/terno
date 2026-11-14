@@ -16,8 +16,9 @@ const buttonVariants = cva(
         // lighter of the two in light palettes, the darker in dark ones). Plan 173: hover and open are primary-hover, flat
         // (its text checked on it; a step toward the ink did nothing where the primary is the ink, Lumen's and Graphite's),
         // and press is a step of the ink beyond it, which only takes its label further off it. Unavailable (plan 125,
-        // BoardUI): the muted fill and its text, flat, and no press colour (`press` skips it)
-        default: "bg-primary bg-linear-to-b from-primary-hover to-primary text-primary-foreground shadow-(--depth-ink) dark:from-primary dark:to-primary-hover hover:bg-primary-hover hover:bg-none aria-expanded:bg-primary-hover aria-expanded:bg-none press:bg-[color-mix(in_oklab,var(--primary-hover)_75%,var(--foreground))] press:bg-none unavailable:bg-muted unavailable:bg-none unavailable:text-muted-foreground unavailable:shadow-none",
+        // BoardUI): the muted fill and its text, flat, and no press colour (`press` skips it). Plan 204: its colours are the
+        // cta tokens, the primary's in every palette but one that draws its calls to action apart (Relief's dark)
+        default: "bg-cta bg-linear-to-b from-cta-hover to-cta text-cta-foreground shadow-(--depth-ink) dark:from-cta dark:to-cta-hover hover:bg-cta-hover hover:bg-none aria-expanded:bg-cta-hover aria-expanded:bg-none press:bg-[color-mix(in_oklab,var(--cta-hover)_75%,var(--foreground))] press:bg-none unavailable:bg-muted unavailable:bg-none unavailable:text-muted-foreground unavailable:shadow-none",
         // The secondary: its own 1 px border (no size change) firming up on hover, over a contact shadow, on the muted fill;
         // pressed, a step of the ink deeper (plan 173); unavailable, the field wash under its border, flat (plan 125). Its lift,
         // its light and its pressed-in words are the design's depth (plan 204), as is the primary's

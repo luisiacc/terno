@@ -98,6 +98,11 @@ export const THEME_TOKENS = [
   "sidebar-hover",
   // plan 94: a filled (primary) button under the pointer, a visible step whose text still reads
   "primary-hover",
+  // plan 204: a filled button's own fill, hover and text: the primary's, except where a palette draws its calls to action
+  // apart from the accent (Relief's dark: the reference's dark raised pills)
+  "cta",
+  "cta-hover",
+  "cta-foreground",
   // plan 125: BoardUI's danger button, solid: its text, and the lower stop of its top light
   "destructive-foreground",
   "destructive-shade",

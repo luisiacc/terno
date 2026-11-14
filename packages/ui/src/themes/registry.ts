@@ -264,6 +264,10 @@ export function derive(input: Pick<ThemeInput, "mode" | "tokens" | "cats" | "ove
     const pr = o("primary");
     return { ...pr, l: Math.max(0, Math.min(1, pr.l + (o("primary-foreground").l > pr.l ? -0.06 : 0.06))) };
   });
+  // plan 204: a filled button's colours are the primary's unless a palette sets its own
+  def("cta", () => o("primary"));
+  def("cta-hover", () => o("primary-hover"));
+  def("cta-foreground", () => o("primary-foreground"));
   // plan 125: the danger button's text, white on a red, or the theme's own dark where its red is light (dark palettes),
   // stepped further only if 4.5:1 needs it; then the lower stop of its top light, a shade darker that the text still reads on
   def("destructive-foreground", () => {
@@ -664,7 +668,7 @@ export const THEMES: readonly Theme[] = [
     mode: "light",
     vibrancy: false,
     // Relief (plan 204): the owner's light widget, a #E8E8E8 card in #1F1F1F and #565656, its controls in the ink (#1C1C1C)
-    // or raised in pale grey. The sidebar is the card's step down; its chosen item stands up from it, lighter. Off switches
+    // or raised in pale grey. The sidebar is the card's step down; its chosen item is pressed into it, darker. Off switches
     // and unchecked boxes take #858585, the lightest grey that holds 3:1 on the card (the picture's #A8A8A8 is 1.9:1)
     tokens: {
       background: "#E8E8E8",
@@ -689,7 +693,8 @@ export const THEMES: readonly Theme[] = [
       "row-hover": "#E0E0E0",
       "row-selected": "#D6D6D6",
       "row-selected-foreground": "#1F1F1F",
-      "sidebar-accent": "#F0F0F0",
+      // a step down from the sidebar: the chosen item is pressed in (the owner: lighter, it read as the Compose pill)
+      "sidebar-accent": "#D3D3D3",
     },
     cats: cats(".6 .17 16 | .6 .13 66 | .57 .13 131 | .56 .11 163 | .56 .1 205 | .5 .075 50 | .56 .17 322 | .52 .01 257"),
     // the raised controls' lit top edge and their shadows (designs/depth.ts) are stronger than the flat palettes'
@@ -1057,7 +1062,9 @@ export const THEMES: readonly Theme[] = [
       "sidebar-accent": "#333333",
     },
     cats: cats(".72 .13 16 | .8 .12 75 | .78 .13 131 | .74 .11 163 | .76 .09 205 | .7 .07 50 | .72 .14 322 | .7 .01 257"),
-    overrides: { "sidebar-foreground": "#A4A4A4", "sidebar-glyph": "#A4A4A4", "sidebar-accent-foreground": "#EDEDED", "control-edge": "#858585", "control-edge-hover": "#A0A0A0", highlight: "1 0 0 / 9%", "shadow-color": "0 0 0 / 55%" },
+    overrides: { "sidebar-foreground": "#A4A4A4", "sidebar-glyph": "#A4A4A4", "sidebar-accent-foreground": "#EDEDED", "control-edge": "#858585", "control-edge-hover": "#A0A0A0", highlight: "1 0 0 / 9%", "shadow-color": "0 0 0 / 55%",
+      // the owner: Send and the other filled buttons are the reference's dark raised pills, lit at the top, not a light ink
+      cta: "#2E2E2E", "cta-hover": "#242424", "cta-foreground": "#EDEDED" },
   }),
 ];
 

@@ -53,6 +53,9 @@ process.stdout.write(
       h("i", { "data-testid": "probe-destructive", className: "border border-destructive dark:border-destructive/50" }),
       h("i", { "data-testid": "probe-ring", className: "border border-ring" }),
       h("i", { "data-testid": "probe-primary-hover", className: "bg-primary-hover" }),
+      // plan 204: a filled button's own fills (the primary's, but in Relief's dark)
+      h("i", { "data-testid": "probe-cta", className: "bg-cta" }),
+      h("i", { "data-testid": "probe-cta-hover", className: "bg-cta-hover" }),
       h("i", { "data-testid": "probe-primary", className: "bg-primary" }),
       h("i", { "data-testid": "probe-muted", className: "bg-muted" }),
       // (no utility in the app uses bg-menu-highlight, so Tailwind has no class for it)

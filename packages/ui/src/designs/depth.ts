@@ -29,8 +29,11 @@ export const DEPTH_VARS = [
   "--depth-box",
   "--depth-box-on",
   /** the switch: its thumb and the thumb's chip (an opacity), its track's fill when off (light, dark) and its track's
-   * shadow off and on. Relief's off track is the picture's pale one, its rim in the 3:1 control edge */
+   * shadow off and on; in dark, the thumb's fill from its top to its foot. Relief's off track is the picture's pale one,
+   * its rim in the 3:1 control edge, and its dark thumb a soft grey rather than the brightest thing on screen */
   "--depth-thumb",
+  "--depth-thumb-dark",
+  "--depth-thumb-dark-shade",
   "--depth-thumb-chip",
   "--depth-track",
   "--depth-track-dark",
@@ -77,6 +80,8 @@ export const DEPTHS: Record<DepthId, Record<DepthVar, string>> = {
     "--depth-box": XS,
     "--depth-box-on": "inset 0 1px var(--highlight)",
     "--depth-thumb": `0 3px 3px 0 ${mix("--shadow-color", 30)}, 0 0.75px 0 0 ${mix("--shadow-color", 50)}`,
+    "--depth-thumb-dark": "var(--foreground)",
+    "--depth-thumb-dark-shade": "color-mix(in oklab, var(--foreground) 88%, var(--background))",
     "--depth-thumb-chip": "1",
     "--depth-track": "var(--control-edge)",
     "--depth-track-dark": "color-mix(in oklab, var(--control-edge) 80%, transparent)",
@@ -101,6 +106,8 @@ export const DEPTHS: Record<DepthId, Record<DepthVar, string>> = {
     "--depth-box-on": `0 0 0 0.5px var(--depth-rim), inset 0 1px ${mix("--highlight", 40)}, 0 1px 2px var(--shadow-color), 0 2px 5px -2px var(--shadow-color)`,
     "--depth-thumb": `0 0 0 1px var(--depth-rim), inset 0 0 0 1.5px var(--highlight), 0 1px 2px var(--shadow-color), 0 3px 6px -2px var(--shadow-color)`,
     // the picture's plain disc: no chip
+    "--depth-thumb-dark": "color-mix(in oklab, var(--foreground) 68%, var(--background))",
+    "--depth-thumb-dark-shade": "color-mix(in oklab, var(--foreground) 52%, var(--background))",
     "--depth-thumb-chip": "0",
     "--depth-track": "color-mix(in oklab, var(--control-edge) 50%, var(--background))",
     "--depth-track-dark": "color-mix(in oklab, var(--control-edge) 40%, var(--background))",
@@ -110,7 +117,8 @@ export const DEPTHS: Record<DepthId, Record<DepthVar, string>> = {
     "--depth-field": `inset 0 1px 2px ${mix("--shadow-color", 70)}, 0 1px ${mix("--highlight", 70)}`,
     "--depth-card": `inset 0 1px var(--highlight), 0 1px 2px ${mix("--shadow-color", 60)}, 0 12px 32px -14px var(--shadow-color)`,
     "--depth-card-sheen": `linear-gradient(to bottom, ${mix("--highlight", 25)}, transparent 120px)`,
-    "--depth-nav": `0 0 0 1px ${mix("--depth-rim", 60)}, inset 0 1px var(--highlight), 0 1px 2px var(--shadow-color)`,
+    // the owner: the chosen sidebar item is pressed in, as a held-down key, so it never reads as Compose's raised pill
+    "--depth-nav": `inset 0 1px 2px var(--shadow-color), inset 0 0 0 1px ${mix("--shadow-color", 50)}, 0 1px ${mix("--highlight", 70)}`,
     "--emboss": `0 1px 0 ${mix("--highlight", 85)}`,
   },
 };

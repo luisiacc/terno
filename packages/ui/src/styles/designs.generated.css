@@ -163,6 +163,8 @@
   --depth-box: 0 1px 2px 0 color-mix(in oklab, var(--shadow-color) 50%, transparent);
   --depth-box-on: inset 0 1px var(--highlight);
   --depth-thumb: 0 3px 3px 0 color-mix(in oklab, var(--shadow-color) 30%, transparent), 0 0.75px 0 0 color-mix(in oklab, var(--shadow-color) 50%, transparent);
+  --depth-thumb-dark: var(--foreground);
+  --depth-thumb-dark-shade: color-mix(in oklab, var(--foreground) 88%, var(--background));
   --depth-thumb-chip: 1;
   --depth-track: var(--control-edge);
   --depth-track-dark: color-mix(in oklab, var(--control-edge) 80%, transparent);
@@ -338,6 +340,8 @@
   --depth-box: 0 1px 2px 0 color-mix(in oklab, var(--shadow-color) 50%, transparent);
   --depth-box-on: inset 0 1px var(--highlight);
   --depth-thumb: 0 3px 3px 0 color-mix(in oklab, var(--shadow-color) 30%, transparent), 0 0.75px 0 0 color-mix(in oklab, var(--shadow-color) 50%, transparent);
+  --depth-thumb-dark: var(--foreground);
+  --depth-thumb-dark-shade: color-mix(in oklab, var(--foreground) 88%, var(--background));
   --depth-thumb-chip: 1;
   --depth-track: var(--control-edge);
   --depth-track-dark: color-mix(in oklab, var(--control-edge) 80%, transparent);
@@ -513,6 +517,8 @@
   --depth-box: inset 0 1px var(--highlight), 0 1px 2px var(--shadow-color);
   --depth-box-on: 0 0 0 0.5px var(--depth-rim), inset 0 1px color-mix(in oklab, var(--highlight) 40%, transparent), 0 1px 2px var(--shadow-color), 0 2px 5px -2px var(--shadow-color);
   --depth-thumb: 0 0 0 1px var(--depth-rim), inset 0 0 0 1.5px var(--highlight), 0 1px 2px var(--shadow-color), 0 3px 6px -2px var(--shadow-color);
+  --depth-thumb-dark: color-mix(in oklab, var(--foreground) 68%, var(--background));
+  --depth-thumb-dark-shade: color-mix(in oklab, var(--foreground) 52%, var(--background));
   --depth-thumb-chip: 0;
   --depth-track: color-mix(in oklab, var(--control-edge) 50%, var(--background));
   --depth-track-dark: color-mix(in oklab, var(--control-edge) 40%, var(--background));
@@ -522,7 +528,7 @@
   --depth-field: inset 0 1px 2px color-mix(in oklab, var(--shadow-color) 70%, transparent), 0 1px color-mix(in oklab, var(--highlight) 70%, transparent);
   --depth-card: inset 0 1px var(--highlight), 0 1px 2px color-mix(in oklab, var(--shadow-color) 60%, transparent), 0 12px 32px -14px var(--shadow-color);
   --depth-card-sheen: linear-gradient(to bottom, color-mix(in oklab, var(--highlight) 25%, transparent), transparent 120px);
-  --depth-nav: 0 0 0 1px color-mix(in oklab, var(--depth-rim) 60%, transparent), inset 0 1px var(--highlight), 0 1px 2px var(--shadow-color);
+  --depth-nav: inset 0 1px 2px var(--shadow-color), inset 0 0 0 1px color-mix(in oklab, var(--shadow-color) 50%, transparent), 0 1px color-mix(in oklab, var(--highlight) 70%, transparent);
   --emboss: 0 1px 0 color-mix(in oklab, var(--highlight) 85%, transparent);
 }
 
@@ -688,6 +694,8 @@
   --depth-box: 0 1px 2px 0 color-mix(in oklab, var(--shadow-color) 50%, transparent);
   --depth-box-on: inset 0 1px var(--highlight);
   --depth-thumb: 0 3px 3px 0 color-mix(in oklab, var(--shadow-color) 30%, transparent), 0 0.75px 0 0 color-mix(in oklab, var(--shadow-color) 50%, transparent);
+  --depth-thumb-dark: var(--foreground);
+  --depth-thumb-dark-shade: color-mix(in oklab, var(--foreground) 88%, var(--background));
   --depth-thumb-chip: 1;
   --depth-track: var(--control-edge);
   --depth-track-dark: color-mix(in oklab, var(--control-edge) 80%, transparent);
@@ -863,6 +871,8 @@
   --depth-box: 0 1px 2px 0 color-mix(in oklab, var(--shadow-color) 50%, transparent);
   --depth-box-on: inset 0 1px var(--highlight);
   --depth-thumb: 0 3px 3px 0 color-mix(in oklab, var(--shadow-color) 30%, transparent), 0 0.75px 0 0 color-mix(in oklab, var(--shadow-color) 50%, transparent);
+  --depth-thumb-dark: var(--foreground);
+  --depth-thumb-dark-shade: color-mix(in oklab, var(--foreground) 88%, var(--background));
   --depth-thumb-chip: 1;
   --depth-track: var(--control-edge);
   --depth-track-dark: color-mix(in oklab, var(--control-edge) 80%, transparent);
@@ -1038,6 +1048,8 @@
   --depth-box: 0 1px 2px 0 color-mix(in oklab, var(--shadow-color) 50%, transparent);
   --depth-box-on: inset 0 1px var(--highlight);
   --depth-thumb: 0 3px 3px 0 color-mix(in oklab, var(--shadow-color) 30%, transparent), 0 0.75px 0 0 color-mix(in oklab, var(--shadow-color) 50%, transparent);
+  --depth-thumb-dark: var(--foreground);
+  --depth-thumb-dark-shade: color-mix(in oklab, var(--foreground) 88%, var(--background));
   --depth-thumb-chip: 1;
   --depth-track: var(--control-edge);
   --depth-track-dark: color-mix(in oklab, var(--control-edge) 80%, transparent);
