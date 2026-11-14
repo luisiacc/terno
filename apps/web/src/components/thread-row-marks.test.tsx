@@ -238,7 +238,7 @@ describe("plan 188: what a screen reader hears for a row", () => {
   });
 });
 
-describe("plan 204 (after relief-r03): a read row's words in the design's read ink", () => {
+describe("plan 208 (after relief-r03): a read row's words in the design's read ink", () => {
   const READ = "text-(--row-read-ink)";
   const words = (el: HTMLElement) => ["row-from", "row-subject"].map((id) => el.querySelector(`[data-testid=${id}]`)!.className);
 

@@ -40,7 +40,7 @@ export function SendButton({ d, onSend, className }: { d: LocalDraft; onSend: (s
   const disabled = d.sending || Boolean(d.recovery);
   const uploading = useFilesOnTheirWay(d.key);
   const ready = canSendTo(d) && !uploading;
-  // plan 205: what's said before Send leaves out the entry still being typed (Send itself refuses it, `ready`)
+  // plan 209: what's said before Send leaves out the entry still being typed (Send itself refuses it, `ready`)
   const typing = useRecipientTyping((s) => s[d.key]);
   const invalid = shownInvalid(d, typing);
   // Ready, the group owns the fill (a primary button's, plan 118), radius and shadow, so the halves meet with no seam;

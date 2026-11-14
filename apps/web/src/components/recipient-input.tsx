@@ -103,7 +103,7 @@ export function RecipientInput({
   const open = items.length > 0;
   const ids = useMemo(() => ({ invalid: `${descId}-invalid`, noReply: `${descId}-noreply`, hint: `${descId}-hint` }), [descId]);
 
-  // plan 205: in a draft, what's still being typed is published for what's said before Send (the strip, Send's
+  // plan 209: in a draft, what's still being typed is published for what's said before Send (the strip, Send's
   // tooltip), only from this field's own changes; the draft's key from the composer around it, the field from its id
   const typingAt = useRef<{ key: string; field: RecipientField } | null>(null);
   const publishTyping = (next: FieldState | null) => {

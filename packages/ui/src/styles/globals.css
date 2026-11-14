@@ -581,7 +581,7 @@
 @utility rounded-menu {
   border-radius: calc(var(--radius-md) + var(--spacing) * 1.5);
 }
-/* a group of rows on a card (plan 137): the design's corners, and either its tint or an outline on the surface; plan 204:
+/* a group of rows on a card (plan 137): the design's corners, and either its tint or an outline on the surface; plan 208:
    or raised on the card's fill, lifted by the design's depth */
 @utility card-group {
   border-radius: var(--card-radius);
@@ -593,7 +593,7 @@
  * Plan 203: a setting Settings' search just opened, marked for a moment: the primary's 8% wash behind the row, a little
  * wider than its text (concentric with the card), under its content. "off" fades it within the motion cap (nothing fades
  * when motion is off or reduced), then the mark goes. Text on it holds AA (contrast.ts CONTRAST_PAIRS). A setting's
- * own (plan 205: a bare `[data-found]` also washed search's count, `data-found` there since plan 158, into a chip).
+ * own (plan 209: a bare `[data-found]` also washed search's count, `data-found` there since plan 158, into a chip).
  */
 [data-setting][data-found] {
   position: relative;

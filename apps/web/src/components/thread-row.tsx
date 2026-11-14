@@ -295,7 +295,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
   // preview and meta quiet. Unread reads first, by more than one cue: a stronger sender and subject, the dot (8 px), and
   // its date in the ink at medium where a read row's is quiet
   const quiet = "text-muted-foreground";
-  // plan 204 (after relief-r03): a read row's sender and subject in the design's read ink (the row's own ink but in Relief);
+  // plan 208 (after relief-r03): a read row's sender and subject in the design's read ink (the row's own ink but in Relief);
   // the open and checked rows keep the selection's. An unread line's search marks take its weight (never lighter than it;
   // every design's unread weight is at least its semibold), a read line's stay semibold, a step above it
   const tone = thread.unread ? "[&_mark]:[font-weight:inherit]" : !opened && !checked && "text-(--row-read-ink)";

@@ -141,7 +141,7 @@ function accountPress(e: React.MouseEvent<HTMLElement>): AccountPress {
 
 /**
  * A sidebar row whose right-click menu is open (its trigger, a wrapper of the row alone, says so): the list's outline for the
- * row a menu is for. Important: the chosen row's lift (plan 204, `data-active:shadow-(--depth-nav)`) is emitted after it,
+ * row a menu is for. Important: the chosen row's lift (plan 208, `data-active:shadow-(--depth-nav)`) is emitted after it,
  * and would hide it on the row that's open (Codex code review)
  */
 const MENU_FOR = "in-data-popup-open:shadow-[inset_0_0_0_2px_var(--ring)]!";
@@ -235,7 +235,7 @@ function NavItem({
         inset && (INSET[depth] ?? INSET.at(-1)),
         reserveEnd === "icon" ? "pr-8" : reserveEnd && "pr-14",
         "not-data-active:hover:bg-sidebar-hover hover:text-sidebar-accent-foreground",
-        // plan 204: the chosen row stands up from the sidebar as the design's depth says (flat: no lift)
+        // plan 208: the chosen row stands up from the sidebar as the design's depth says (flat: no lift)
         "data-active:type-nav-strong data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground data-active:shadow-(--depth-nav)",
         // plan 194 (the owner): the row a right-click menu is for, outlined while it's open, as the list outlines its row
         // (its trigger wraps the row alone; ROW_OUTLINE written out for the class scanner)
@@ -320,7 +320,7 @@ function ComposeOutline() {
 
 /**
  * Lumen and Relief: "Compose" as a soft raised pill, modest beside the mail: the solid fill is for the one action of the task at
- * hand (Send, Archive). How far it stands up is the design's depth (plan 204: Relief's is the reference's rimmed Share pill).
+ * hand (Send, Archive). How far it stands up is the design's depth (plan 208: Relief's is the reference's rimmed Share pill).
  */
 function ComposePill() {
   return (

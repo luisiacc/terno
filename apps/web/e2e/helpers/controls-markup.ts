@@ -100,7 +100,7 @@ process.stdout.write(
       h("i", { "data-testid": "probe-control-edge", className: "border border-control-edge" }),
       h("i", { "data-testid": "probe-control-edge-hover", className: "border border-control-edge-hover" }),
       h("i", { "data-testid": "probe-border", className: "border border-border" }),
-      // plan 204: a raised control's border, the design's edge (the border where depth is flat, Relief's rim)
+      // plan 208: a raised control's border, the design's edge (the border where depth is flat, Relief's rim)
       h("i", { "data-testid": "probe-raised-edge", className: "border border-(--depth-edge)" }),
       h("i", { "data-testid": "probe-primary-border", className: "border border-primary" }),
       h("i", { "data-testid": "probe-primary-ink-on-bg", className: "bg-primary-foreground" }),

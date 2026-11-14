@@ -61,7 +61,7 @@ export function designVars(d: DesignDefinition): [string, string][] {
     ["--command-radius", d.layout.commandRadius],
     // plan 137: the floor under a worded button's corners: max(floor, its radius), so "control" draws what it always did
     ["--cta-floor", d.surfaces.cta === "pill" ? "9999px" : "0px"],
-    // plan 204: a raised card is the card's own fill, its hairline, and the depth's lift under it
+    // plan 208: a raised card is the card's own fill, its hairline, and the depth's lift under it
     ["--card-bg", d.surfaces.card === "tint" ? "var(--tint)" : d.surfaces.card === "raised" ? "var(--card)" : "transparent"],
     ["--card-ring", d.surfaces.card === "tint" ? "transparent" : "var(--border)"],
     // plan 161: in a dialog in dark, a tint card is a step off the popover at most: it's ringed there
@@ -85,7 +85,7 @@ export function designVars(d: DesignDefinition): [string, string][] {
     ["--format-ring", d.surfaces.draft === "outline" ? "0 0 0 var(--hairline-w) var(--border)" : "none"],
     ["--draft-shadow", d.surfaces.draft === "card" ? "0 1px 2px color-mix(in oklab, var(--shadow-color) 40%, transparent), 0 8px 24px -12px var(--shadow-color)" : "0 0 transparent"],
   );
-  // plan 204: how controls stand off the surface
+  // plan 208: how controls stand off the surface
   for (const name of DEPTH_VARS) out.push([name, DEPTHS[d.surfaces.depth][name]]);
   return out;
 }

@@ -136,7 +136,7 @@ test.describe("recipients", () => {
       expect(await recipientEmails(page, "compose-to")).toEqual(["arjun.patel@zentrix.dev"]);
       await expect(page.getByTestId("compose-to")).toBeFocused();
     });
-    await scenario("a name still being typed, its suggestions open, isn't called wrong before Send; Send still refuses it, and committed it's named (plan 205)", async () => {
+    await scenario("a name still being typed, its suggestions open, isn't called wrong before Send; Send still refuses it, and committed it's named (plan 209)", async () => {
       await freshNoDrafts(page, server);
       await seed(server);
       await newMessage(page);

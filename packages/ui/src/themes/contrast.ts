@@ -87,7 +87,7 @@ export const CONTRAST_PAIRS: readonly ContrastPair[] = [
   ...text("foreground-soft", ["background", "card"]),
   // plan 193: a one-line row's preview, on every fill a row has
   ...text("row-preview", ["background", "pane", "row-hover", "row-selected"]),
-  // plan 204 (after relief-r03): a read row's sender and subject in a design that sets them back (the open and checked rows keep the selection's ink)
+  // plan 208 (after relief-r03): a read row's sender and subject in a design that sets them back (the open and checked rows keep the selection's ink)
   ...text("row-read", ["background", "pane", "row-hover"]),
   // plan 158: a search's match on a row, in the row's ink on a wash of the star's gold; lighter on the cursor and on a checked row, whose fills are deeper
   ...(["pane", "background", "row-hover"] as const).map((over): ContrastPair => ({ fg: "foreground", bg: "star", alpha: 0.25, min: 4.5, overToken: over })),

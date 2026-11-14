@@ -173,7 +173,7 @@ test.describe("the account menu", () => {
         await expect(page.getByTestId(menuId)).toHaveCount(0);
         await expect.poll(() => outline(testId), testId).toBe("none");
       }
-      // plan 204: the chosen row too, whose lift (the design's depth) is drawn after the outline's class (Codex code review)
+      // plan 208: the chosen row too, whose lift (the design's depth) is drawn after the outline's class (Codex code review)
       await page.getByTestId(`nav-account-${a}`).click();
       await expect(page.getByTestId(`nav-account-${a}`)).toHaveAttribute("data-active");
       await page.getByTestId(`nav-account-${a}`).click({ button: "right" });

@@ -392,7 +392,7 @@ test.describe("search", () => {
     await expect(page.getByTestId("drafts-strip")).toBeVisible();
   });
 
-  // plan 205: the compact title header (macOS, Relief, Graphite) puts the count under the field
+  // plan 209: the compact title header (macOS, Relief, Graphite) puts the count under the field
   test("the count under the field sits on the rows' text line, nothing painted past it, 8 px clear of the first result", { tag: ["@variant-relief", "@variant-graphite"] }, async ({ app: page }) => {
     await search(page, "design");
     const stats = page.getByTestId("search-stats");

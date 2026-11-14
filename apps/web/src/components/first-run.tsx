@@ -198,7 +198,7 @@ export function FirstRun() {
           // the chosen style chosen again (clicked, or arrowed back onto) cancels a switch still waiting for its faces
           // (Codex code review #2, second pass #3)
           onReselect={(design) => pick({ design: design as AppSettings["design"] })}
-          // plan 204: two rows of three, as six don't fit one row with their names whole, and fewer would leave one alone
+          // plan 208: two rows of three, as six don't fit one row with their names whole, and fewer would leave one alone
           className="grid shrink-0 grid-cols-3 gap-2"
         >
           {DESIGNS.map((d) => (

@@ -295,7 +295,7 @@ export function AppearanceTab({ settings, update }: { settings: AppSettings; upd
                   // the chosen style chosen again (clicked, or arrowed back onto) is a choice too: it cancels a switch still
                   // waiting for its faces (Codex code review #2, second pass #3)
                   onReselect={(id) => void updateAppearance({ design: id as DesignDefinition["id"] })}
-                  // one row of six at Settings' width; narrower, two rows of three, never a style alone on a row (plan 204)
+                  // one row of six at Settings' width; narrower, two rows of three, never a style alone on a row (plan 208)
                   className="grid grid-cols-3 gap-2 @[33rem]:grid-cols-6"
                   data-testid="design-grid"
                 >

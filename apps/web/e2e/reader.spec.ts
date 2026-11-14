@@ -335,7 +335,7 @@ test.describe("plan 158: the reader's masthead, measure and reply controls", () 
     let solo = 0;
     let soloForward = 0;
     const order = () => page.getByTestId("action-reply").locator("xpath=..").locator("button").evaluateAll((items) => items.map((i) => i.getAttribute("data-testid")));
-    /** plan 205: the group's look: a raised control, or the ghost look (no fill, sheen, shadow, border or dividers) */
+    /** plan 209: the group's look: a raised control, or the ghost look (no fill, sheen, shadow, border or dividers) */
     const groupLook = () => page.getByTestId("action-reply").locator("xpath=..").evaluate((group) => {
       const s = getComputedStyle(group), clear = "rgba(0, 0, 0, 0)";
       // (no shadow: none, or only clear ones)
@@ -364,7 +364,7 @@ test.describe("plan 158: the reader's masthead, measure and reply controls", () 
       await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
       await page.keyboard.press("a");
       await expect(page.getByTestId("compose-body")).toBeFocused();
-      // plan 205: one active reply surface: while the reply is open in the conversation, the toolbar's group steps back
+      // plan 209: one active reply surface: while the reply is open in the conversation, the toolbar's group steps back
       await expect.poll(groupLook).toBe("ghost");
       expect(Math.abs((await replyAt()) - solo)).toBeLessThanOrEqual(0.5);
       // put away into its line the draft is still there, but no editor is: the group comes back
@@ -410,7 +410,7 @@ test.describe("plan 158: the reader's masthead, measure and reply controls", () 
       expect(Math.abs((await forwardAt()) - soloForward)).toBeLessThanOrEqual(0.5);
       expect(Math.abs((await replyAt()) - solo)).toBeLessThanOrEqual(0.5);
       await expect(reply).toHaveAttribute("aria-haspopup", "menu");
-      // plan 205: and says so, with a chevron inside it (its room kept on a one-to-one, so the place above holds)
+      // plan 209: and says so, with a chevron inside it (its room kept on a one-to-one, so the place above holds)
       const chevron = page.getByTestId("action-reply-chevron");
       await expect(chevron).toBeVisible();
       const inside = async () => {
@@ -451,7 +451,7 @@ test.describe("plan 158: the reader's masthead, measure and reply controls", () 
       const g = await geometry(page);
       expect(Math.abs(g.end - g.right), "the last control on the column's edge").toBeLessThanOrEqual(1.5);
       expect(g.overflow).toBe(false);
-      // plan 205: narrower still, until no word fits: Reply is the plain square, its chevron gone (its room pushed Reply ·
+      // plan 209: narrower still, until no word fits: Reply is the plain square, its chevron gone (its room pushed Reply ·
       // Forward past the column at a 421 px reader: Codex review), and the row still ends on the column's edge
       const toolbar = page.locator("[data-reader-toolbar]");
       for (let i = 0; i < 80 && (await toolbar.getAttribute("data-words")) !== "0"; i++) await page.keyboard.press("ArrowRight");

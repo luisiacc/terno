@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { firstInvalid, serialize, type FieldState } from "./recipient-field";
 
 /**
- * Plan 205: the entry a recipient field is still being typed into isn't wrong yet. Send stays strict (`firstInvalid`
+ * Plan 209: the entry a recipient field is still being typed into isn't wrong yet. Send stays strict (`firstInvalid`
  * on the whole text); only what's said before Send (the drafts strip's line, Send's tooltip) leaves that entry out.
  */
 export type RecipientField = "to" | "cc" | "bcc";

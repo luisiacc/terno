@@ -34,7 +34,7 @@ function coverOf(scroller: HTMLElement): { covered: number; coveredTop: number }
 /**
  * Plan 158: a composer's opening scroll (one with `wanted`) that would leave the conversation's subject cut by the
  * reader's top goes on past all of it, as far as `max` lets it: the context line then names it. Never short of what's
- * wanted (stopping at the subject's top hid the composer's Send row under the window's edge at 1100x700). Plan 205: the
+ * wanted (stopping at the subject's top hid the composer's Send row under the window's edge at 1100x700). Plan 209: the
  * same for every head the reader shows (`data-reader-head`: a message's header, Lumen's sender card) against the line
  * the scroll lands on, the context line (`line`, its scroll padding): never a sender's name half under it.
  */

@@ -26,14 +26,14 @@ interface DraftLine {
 }
 
 function useDraftLine(key: string): DraftLine | null {
-  // only typing in this draft's recipient fields renders it again (plan 205)
+  // only typing in this draft's recipient fields renders it again (plan 209)
   const typing = useRecipientTyping((s) => s[key]);
   return useDrafts(
     useShallow((s) => {
       const d = s.drafts[key];
       if (!d) return null;
       // put away with an address that can't be one, it still says so: it won't send like that (plan 158); the entry
-      // still being typed isn't named (plan 205)
+      // still being typed isn't named (plan 209)
       return { subject: d.subject, mode: d.mode, toText: d.toText, invalid: shownInvalid(d, typing) };
     }),
   );

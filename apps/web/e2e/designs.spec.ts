@@ -8,7 +8,7 @@
  *   compose, listHeader, search, quickFilters, row, readerHeader, replyAction), or a part only
  *   those rows have (an avatar's icon); and the axe sweep (design-axe.spec.ts) and motion, which change only with a structure.
  * - **@variant-graphite, also Graphite:** a flow through its own value, the sidebar's compose row. Luma adds no value.
- * - **@variant-relief, also Relief** (plan 204): its depth redraws every control's surface, so the axe sweep and motion.
+ * - **@variant-relief, also Relief** (plan 208): its depth redraws every control's surface, so the axe sweep and motion.
  *
  * A flow that reads the same in every design takes no tag: one run. A flow tied to one design says so with `test.use({ design })`,
  * and runs once, in `e2e`. Adding a design that holds a new value: its project's grep (playwright.config.ts) and a @variant flow.
@@ -68,7 +68,7 @@ test.describe("in every design", { tag: "@design" }, () => {
       await expect(cards).toHaveCount(DESIGNS.length);
       const tops = await cards.evaluateAll((els) => els.map((el) => el.getBoundingClientRect().top));
       expect(new Set(tops).size).toBeLessThanOrEqual(2);
-      // plan 204: and never a style alone on its row (six: one row, or two of three)
+      // plan 208: and never a style alone on its row (six: one row, or two of three)
       expect(new Set(tops.map((top) => tops.filter((t) => t === top).length)).size).toBe(1);
       // the cell is as tall as its tallest description, whichever is showing
       const cell = await page.getByTestId("design-descriptions").evaluate((el) => ({ height: el.getBoundingClientRect().height, tallest: Math.max(...[...el.children].map((c) => c.getBoundingClientRect().height)), count: el.children.length }));

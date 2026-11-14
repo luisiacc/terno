@@ -20,7 +20,7 @@ const buttonVariants = cva(
         default: "bg-primary bg-linear-to-b from-primary-hover to-primary text-primary-foreground shadow-(--depth-ink) dark:from-primary dark:to-primary-hover hover:bg-primary-hover hover:bg-none aria-expanded:bg-primary-hover aria-expanded:bg-none press:bg-[color-mix(in_oklab,var(--primary-hover)_75%,var(--foreground))] press:bg-none unavailable:bg-muted unavailable:bg-none unavailable:text-muted-foreground unavailable:shadow-none",
         // The secondary: its own 1 px border (no size change) firming up on hover, over a contact shadow, on the muted fill;
         // pressed, a step of the ink deeper (plan 173); unavailable, the field wash under its border, flat (plan 125). Its lift,
-        // its light and its pressed-in words are the design's depth (plan 204), as is the primary's
+        // its light and its pressed-in words are the design's depth (plan 208), as is the primary's
         outline:
           "border-(--depth-edge) bg-card bg-(image:--depth-raised-sheen) shadow-(--depth-raised) [text-shadow:var(--emboss)] hover:border-(--depth-edge-firm) hover:bg-muted hover:text-foreground press:not-aria-invalid:border-(--depth-edge-firm) press:bg-[color-mix(in_oklab,var(--muted),var(--foreground)_6%)] aria-expanded:border-(--depth-edge-firm) aria-expanded:bg-muted aria-expanded:text-foreground [&_svg:not([class*='text-'])]:text-muted-foreground hover:[&_svg:not([class*='text-'])]:text-foreground aria-expanded:[&_svg:not([class*='text-'])]:text-foreground unavailable:border-border unavailable:bg-field unavailable:bg-none unavailable:text-muted-foreground unavailable:shadow-none unavailable:[text-shadow:none]",
         secondary:

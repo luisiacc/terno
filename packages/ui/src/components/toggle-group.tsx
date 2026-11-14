@@ -44,7 +44,7 @@ function ToggleGroup({
       className={cn(
         "group/toggle-group flex w-fit flex-row items-center gap-[--spacing(var(--gap))] rounded-lg data-[size=sm]:rounded-[min(var(--radius-md),10px)] data-vertical:flex-col data-vertical:items-stretch",
         // BoardUI's segmented control (plan 120): a track, the field wash in light and the darkest surface in dark, sunk
-        // into the surface as the design's depth says (plan 204)
+        // into the surface as the design's depth says (plan 208)
         variant === "segmented" && "gap-0.5 rounded-[calc(var(--radius-md)+var(--spacing)*0.5)] bg-field p-0.5 shadow-(--depth-well) dark:bg-background",
         className
       )}

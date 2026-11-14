@@ -123,7 +123,7 @@ describe("designs (plan 15)", () => {
   });
 
   it("the values Graphite added leave the other designs as they were", () => {
-    // (plan 204: Relief came after, and decides these for itself)
+    // (plan 208: Relief came after, and decides these for itself)
     for (const d of DESIGNS.filter((x) => x.id !== "graphite" && x.id !== "relief")) {
       expect(d.weights, d.id).toEqual({ semibold: 600, bold: 700 });
       expect(d.tracking.base, d.id).toBe("normal");
@@ -136,7 +136,7 @@ describe("designs (plan 15)", () => {
     }
   });
 
-  describe("depth (plan 204)", () => {
+  describe("depth (plan 208)", () => {
     it("every design but Relief is flat, and flat is exactly what the controls drew before", () => {
       expect(DESIGNS.filter((d) => d.surfaces.depth !== "flat").map((d) => d.id)).toEqual(["relief"]);
       const xs = "0 1px 2px 0 color-mix(in oklab, var(--shadow-color) 50%, transparent)";
@@ -191,7 +191,7 @@ describe("designs (plan 15)", () => {
     });
   });
 
-  it("plan 204 (after relief-r03): Relief alone sets read rows back, by weight and ink; every other design keeps the row's ink", () => {
+  it("plan 208 (after relief-r03): Relief alone sets read rows back, by weight and ink; every other design keeps the row's ink", () => {
     expect(DESIGNS.filter((d) => d.surfaces.readRow !== "ink").map((d) => d.id)).toEqual(["relief"]);
     for (const d of DESIGNS) expect(new Map(designVars(d)).get("--row-read-ink"), d.id).toBe(d.surfaces.readRow === "soft" ? "var(--row-read)" : "var(--foreground)");
     const { rowFrom, rowSubject } = designById("relief").type;

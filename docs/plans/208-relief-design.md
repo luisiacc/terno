@@ -1,4 +1,4 @@
-# 204 · Relief: a tactile style from two reference widgets
+# 208 · Relief: a tactile style from two reference widgets
 
 ## Request (verbatim)
 
@@ -188,12 +188,12 @@ Overall: Claude 6.5, Codex 7 (UI 6 / 7, UX 7.5 / 7.5). The lowest cell rose from
 
 Then the owner, on the two choices the raters left: "do the 2 suggestions to go higher".
 
-- **Dark Send is the light ink again**, a raised light pill: the raters' solid fill. The `cta` tokens (filled buttons apart from the primary) had no other user, so they're gone, and `Button`, Send's group and the selection bar draw the primary as they did before plan 204.
+- **Dark Send is the light ink again**, a raised light pill: the raters' solid fill. The `cta` tokens (filled buttons apart from the primary) had no other user, so they're gone, and `Button`, Send's group and the selection bar draw the primary as they did before plan 208.
 - **Relief's selections are firm**, past plan 173's soft step, by the owner's exception (the contrast test's ceiling is 1.5 for `relief-light`): the open row `#CCCCCC` on `#EFEFEF` (1.4:1), the sidebar's pressed-in item `#CBCBCB`; in dark `#3D3D3D` on `#1E1E1E` (1.5:1), with the quiet ink at `#AAAAAA` so it holds 4.5:1 on it.
 
 ## UI rating, round 3 (relief-r03, commit 023f5f908)
 
-After Relief's two choices (light dark-mode Send, firm selections) and plan 205's app-wide fixes: Claude 6.5 (UI 6 → 6.5, lowest 5.5), Codex 7 → 7.5 (UI 7.5, UX 8, lowest 6). Below the bar. Codex's notes are now mostly app-wide; Claude's are Relief's tonal range (the sidebar 1.13:1 off the list in light, 1.04:1 in dark) and the rows' density.
+After Relief's two choices (light dark-mode Send, firm selections) and plan 209's app-wide fixes: Claude 6.5 (UI 6 → 6.5, lowest 5.5), Codex 7 → 7.5 (UI 7.5, UX 8, lowest 6). Below the bar. Codex's notes are now mostly app-wide; Claude's are Relief's tonal range (the sidebar 1.13:1 off the list in light, 1.04:1 in dark) and the rows' density.
 
 ## Unread rows, after round 3
 
@@ -216,7 +216,7 @@ Tests: designs.test (the value and its variable in every design; Relief's weight
 
 ### As built
 
-As above. e2e (`relief.spec`): in Relief, an unread row's sender and subject are 650 in the ink, a read row's 500 and 400 in `row-read`, an open read row in `row-selected-foreground`; in macOS a read row stays in the ink. Relief's baselines updated (inbox, reply, 980, List layout); they also take plan 205's reserved chevron room on Reply, which the per-pixel threshold had let through.
+As above. e2e (`relief.spec`): in Relief, an unread row's sender and subject are 650 in the ink, a read row's 500 and 400 in `row-read`, an open read row in `row-selected-foreground`; in macOS a read row stays in the ink. Relief's baselines updated (inbox, reply, 980, List layout); they also take plan 209's reserved chevron room on Reply, which the per-pixel threshold had let through.
 
 ### Revisions after the Codex code review
 
@@ -227,3 +227,7 @@ One finding, fixed with a test that fails without it: `row-read` was a fixed ble
 After the unread rows: Claude 6.5 → 7 (UI 7, UX 7.5, lowest 5.5), Codex 7.5 → 7 (UI 7, UX 7.5, lowest 6). Below the bar. Neither rater names unread rows any more (round 3's Claude did). What they name now, density left out by the owner's decision: dark mode's quiet text in the composer (To, Cc, "from …" about 3.1–3.3:1 by Claude's probe) and key chips; the sidebar 1.04:1 off the list in dark; the small-window reply's half-covered sender; Reply and Forward in both the toolbar and the reply bar; the open row's fill read as faint (Claude) or not distinct enough (Codex); raised secondary controls on the bulk screen; List layout's scanning and behaviour (archive from the reader returns to the list); search's highlighted excerpt lost once a result is read.
 
 Then the owner, on the round's notes: "no those are fine, and actually lets make the highlighted color background of the thread lighter in light mode, similar to how it was before round 1". The open row in `relief-light` goes from round 2's firm `#CCCCCC` (1.4:1 on the list) back to the step it had before round 1 (`#D6D6D6` on `#E8E8E8`, 1.19:1), on today's lighter list: `#DCDCDC` (1.19:1), inside plan 173's soft ceiling again. The hovered row goes a step lighter to `#E5E5E5` (round 2's), so the two stay 1.09:1 apart (contrast.ts's 1.08). The sidebar's chosen item stays firm, the one exception the contrast test keeps. Dark is unchanged. Relief's baselines updated; the resign-in ones also take round 2's pressed-in sidebar item and raised buttons, which the per-pixel threshold had let through.
+
+## Renumbered
+
+Written as plan 204 (and its app-wide part as 205) on its branch while main took 204 for What matters, which names 205–207 as its next plans. On landing, Relief became 208 and the app-wide fixes 209, in the code's comments and tests as well.

@@ -482,7 +482,7 @@ export function draftTitle(d: LocalDraft): string {
 /** Plan 115: this conversation's draft is in the pinned card (kept so even after the conversation's placement expired) */
 const usePinnedHere = (threadId: number | null, draftKey: string | null) => usePinned((s) => s.key !== null && (s.key === draftKey || (draftKey === null && s.threadId === threadId)));
 
-/** Plan 205: the slot's editor is open on screen (not collapsed into its line, nor in the pinned card): what the toolbar's Reply quiets for */
+/** Plan 209: the slot's editor is open on screen (not collapsed into its line, nor in the pinned card): what the toolbar's Reply quiets for */
 export function useInlineComposerOpen(threadId: number | null, draftKey: string | null): boolean {
   const pinned = usePinnedHere(threadId, draftKey);
   return useDrafts((s) => !pinned && draftKey !== null && s.drafts[draftKey]?.uiState === "open");

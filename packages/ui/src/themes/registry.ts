@@ -225,7 +225,7 @@ export function derive(input: Pick<ThemeInput, "mode" | "tokens" | "cats" | "ove
     }
     return o("muted-foreground");
   });
-  // plan 204 (after relief-r03): a read row's words a step back from the ink toward the quiet ink, still well above the
+  // plan 208 (after relief-r03): a read row's words a step back from the ink toward the quiet ink, still well above the
   // one-line preview (row-preview is at least 70% the quiet ink), so ink > read > preview > quiet holds in every palette.
   // Less of a step where a blend would fall under AA on a row's unselected fills (a custom theme's coloured ink), none at worst
   def("row-read", () => {
@@ -675,7 +675,7 @@ export const THEMES: readonly Theme[] = [
     name: "Relief",
     mode: "light",
     vibrancy: false,
-    // Relief (plan 204): the owner's light widget, a #E8E8E8 card in #1F1F1F and #565656, its controls in the ink (#1C1C1C)
+    // Relief (plan 208): the owner's light widget, a #E8E8E8 card in #1F1F1F and #565656, its controls in the ink (#1C1C1C)
     // or raised in pale grey. The sidebar is the card's step down; its chosen item is pressed into it, darker. Off switches
     // and unchecked boxes take #858585, the lightest grey that holds 3:1 on the card (the picture's #A8A8A8 is 1.9:1)
     // UI rating relief-r01: the reading surface a step lighter than the picture's card, so the panes separate from the
@@ -1049,7 +1049,7 @@ export const THEMES: readonly Theme[] = [
     name: "Relief",
     mode: "dark",
     vibrancy: false,
-    // Relief's dark (plan 204): the owner's dark widget, a #1E1E1E card in #EDEDED, its quiet words a step lighter than the
+    // Relief's dark (plan 208): the owner's dark widget, a #1E1E1E card in #EDEDED, its quiet words a step lighter than the
     // picture's #969696 so they read on the open row and on a wash of the ink; wells sink toward black, raised things are lit at the top edge
     tokens: {
       background: "#1E1E1E",

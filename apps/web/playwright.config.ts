@@ -12,7 +12,7 @@ const OUT = process.env.E2E_PORT ? `dist-e2e-${PORT}` : "dist-e2e";
 /**
  * What each design's project runs, beyond `e2e` (macOS), which runs every flow once: @design everywhere, and a design's own
  * structural variants only where it holds a value macOS lacks (designs.spec.ts says when to use which). Luma adds no value.
- * Relief (plan 204) holds no new variant, but its depth redraws every control's surface: it runs the axe and motion sweeps.
+ * Relief (plan 208) holds no new variant, but its depth redraws every control's surface: it runs the axe and motion sweeps.
  */
 const FLOWS = { lumen: /@design|@variant(?!-)/, atelier: /@design|@variant(?!-)/, luma: /@design/, graphite: /@design|@variant-graphite/, relief: /@design|@variant-relief/ } as const;
 

@@ -1,4 +1,4 @@
-# 205 · App-wide fixes from Relief's UI rating
+# 209 · App-wide fixes from Relief's UI rating
 
 ## Request (verbatim)
 
@@ -6,7 +6,7 @@
 >
 > For the app-wide issues I want you to fix them so the rate of the UI increases. When you're done with them, also as part of these fixes, do a side-by-side comparison of the old UI, the current UI, and the UI after you do the app-wide fixes (so I can see what exactly changed, with arrows pointed at them). After you've done that run another round of rating
 
-The two suggestions are Relief's own (plan 204: a light dark-mode Send, firm selections). This plan is the app-wide part: what the raters of rounds `relief-r01` and `relief-r02` marked down in every style, not only Relief.
+The two suggestions are Relief's own (plan 208: a light dark-mode Send, firm selections). This plan is the app-wide part: what the raters of rounds `relief-r01` and `relief-r02` marked down in every style, not only Relief.
 
 ## What's chosen, and what isn't
 

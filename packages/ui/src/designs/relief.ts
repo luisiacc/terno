@@ -29,7 +29,7 @@ const TYPE: Record<TypeRole, TypeSpec> = {
 };
 
 /**
- * Relief (plan 204): the owner's two reference widgets. Pale grey surfaces; controls that stand up from them (pills ringed
+ * Relief (plan 208): the owner's two reference widgets. Pale grey surfaces; controls that stand up from them (pills ringed
  * in a dark rim with a white one inside, lit along the top edge) or sink into them (tracks shaded at the top); the ink
  * for what's on or primary. Graphite's type and structure, with the pictures' rounder shapes: pill buttons and
  * navigation, 18 px cards, and New message as the pictures' black pill.

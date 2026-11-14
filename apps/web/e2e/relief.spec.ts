@@ -1,5 +1,5 @@
 /**
- * Plan 204: Relief's depth, measured in the running app: raised controls carry its rim and lit edge, tracks and fields are
+ * Plan 208: Relief's depth, measured in the running app: raised controls carry its rim and lit edge, tracks and fields are
  * sunk, Settings' groups are raised cards, and the switch is the picture's pale track and plain disc. A nested preview of
  * another design draws flat, and macOS (flat) draws exactly the shadows it did before depth was a design value.
  */
@@ -23,7 +23,7 @@ const layers = (el: Locator) => el.evaluate((node) => {
 const shadow = (el: Locator) => el.evaluate((node) => getComputedStyle(node).boxShadow);
 const insets = (el: Locator) => el.evaluate((node) => (getComputedStyle(node).boxShadow.match(/inset/g) ?? []).length);
 
-test.describe("Relief (plan 204)", () => {
+test.describe("Relief (plan 208)", () => {
   test.use({ design: "relief" });
 
   test("raised, sunk and lit as the pictures are", async ({ app: page }) => {
@@ -86,7 +86,7 @@ const words = (row: Locator) => row.evaluate((r) => {
   return { from: [style("row-from").fontWeight, style("row-from").color], subject: [style("row-subject").fontWeight, style("row-subject").color], ink: probe("--foreground"), read: probe("--row-read"), selected: probe("--row-selected-foreground") };
 });
 
-test.describe("Relief's read and unread rows (plan 204, after relief-r03)", () => {
+test.describe("Relief's read and unread rows (plan 208, after relief-r03)", () => {
   test.use({ design: "relief" });
 
   test("unread is one heavy block in the ink, read is regular in the softer ink, the open row the selection's", async ({ app: page, server }) => {
@@ -110,7 +110,7 @@ test.describe("Relief's read and unread rows (plan 204, after relief-r03)", () =
   });
 });
 
-test.describe("Relief dark (plan 204)", () => {
+test.describe("Relief dark (plan 208)", () => {
   test.use({ design: "relief" });
 
   test("the filled buttons' own colours reach their icons and keys (UI rating relief-r01)", async ({ app: page, server }) => {
@@ -129,7 +129,7 @@ test.describe("Relief dark (plan 204)", () => {
   });
 });
 
-test.describe("a flat design keeps what it drew (plan 204)", () => {
+test.describe("a flat design keeps what it drew (plan 208)", () => {
   test("macOS: the same shadows as before depth was a design value", async ({ app: page }) => {
     await scenario("the real controls", async () => {
       await addControls(page);

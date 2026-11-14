@@ -16,7 +16,7 @@ function Switch({
         "peer group/switch relative inline-flex shrink-0 items-center rounded-full border border-transparent transition-all outline-none group-has-[:focus-visible]/field-label:border-transparent group-has-[:focus-visible]/field-label:ring-0 after:absolute after:-inset-x-3 after:-inset-y-2 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 data-[size=default]:h-[18.4px] data-[size=default]:w-[32px] data-[size=sm]:h-[14px] data-[size=sm]:w-[24px] dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 data-checked:bg-primary data-unchecked:bg-(--depth-track) dark:data-unchecked:bg-(--depth-track-dark) data-disabled:cursor-not-allowed data-disabled:opacity-50",
         // The switch (plan 118): the track lit from the top with an inner highlight, a dot in the thumb
         "data-checked:bg-linear-to-b data-checked:from-highlight data-checked:to-transparent data-checked:shadow-(--depth-switch-on)",
-        // plan 204: the design's depth: off, a track sunk into the surface, its fill and rim the design's (flat: the edge, no shadow)
+        // plan 208: the design's depth: off, a track sunk into the surface, its fill and rim the design's (flat: the edge, no shadow)
         "data-unchecked:shadow-(--depth-switch-off)",
         className
       )}
@@ -25,7 +25,7 @@ function Switch({
       <SwitchPrimitive.Thumb
         data-slot="switch-thumb"
         // BoardUI's thumb (plan 125): white in both modes, lit from the top, over a two-layer contact shadow; its chip a
-        // small embossed dot, the primary when on; its shadow the design's (plan 204)
+        // small embossed dot, the primary when on; its shadow the design's (plan 208)
         className="pointer-events-none relative block rounded-full bg-card bg-linear-to-b from-card from-45% to-muted shadow-(--depth-thumb) ring-0 transition-transform group-data-[size=default]/switch:size-4 group-data-[size=sm]/switch:size-3 group-data-[size=default]/switch:data-checked:translate-x-[calc(100%-2px)] group-data-[size=sm]/switch:data-checked:translate-x-[calc(100%-2px)] group-data-[size=default]/switch:data-unchecked:translate-x-0 group-data-[size=sm]/switch:data-unchecked:translate-x-0 dark:bg-(--depth-thumb-dark) dark:from-(--depth-thumb-dark) dark:to-(--depth-thumb-dark-shade) after:absolute after:inset-0 after:m-auto after:opacity-(--depth-thumb-chip) after:size-1.5 after:rounded-full after:bg-input after:shadow-[inset_0_0.5px_1px_var(--shadow-color)] dark:data-unchecked:after:bg-muted-foreground/50 data-checked:after:bg-primary group-data-[size=sm]/switch:after:size-1"
       />
     </SwitchPrimitive.Root>

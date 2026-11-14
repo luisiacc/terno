@@ -1,4 +1,4 @@
-/** Plan 205: the entry still being typed isn't named before Send; what's committed and wrong still is, and Send stays strict. */
+/** Plan 209: the entry still being typed isn't named before Send; what's committed and wrong still is, and Send stays strict. */
 import { afterEach, describe, expect, it } from "vitest";
 import { commit, derive, edit, EMPTY, firstInvalid, serialize, type FieldState } from "./recipient-field";
 import { endTyping, setTyping, shownInvalid, typingOf, useRecipientTyping } from "./recipient-typing";
@@ -8,7 +8,7 @@ afterEach(() => useRecipientTyping.setState({}, true));
 const draft = (toText: string, ccText = "", bccText = "") => ({ toText, ccText, bccText });
 const typed = (s: FieldState) => ({ to: typingOf(s)! });
 
-describe("what's said before Send (plan 205)", () => {
+describe("what's said before Send (plan 209)", () => {
   it("leaves out the name still being typed after the chips", () => {
     const s: FieldState = { ...derive("ana@x.io, ", true), text: "isa" };
     const d = draft(serialize(s));

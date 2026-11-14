@@ -25,7 +25,7 @@ describe("WCAG AA in every built-in theme", () => {
   });
 
   it("control-edge is input, and its hover the ink at 30%, in every other palette, so no other design's controls moved", () => {
-    // (Atelier's dark wears Graphite's dark palette whole, plan 194; Relief holds 3:1 as Graphite does, plan 204)
+    // (Atelier's dark wears Graphite's dark palette whole, plan 194; Relief holds 3:1 as Graphite does, plan 208)
     for (const theme of THEMES.filter((t) => !t.id.startsWith("graphite-") && !t.id.startsWith("relief-") && t.id !== "atelier-dark")) {
       expect(theme.tokens["control-edge"], theme.id).toBe(theme.tokens.input);
       expect(parseColor(theme.tokens["control-edge-hover"]), theme.id).toEqual(withAlpha(parseColor(theme.tokens.foreground), 0.3));
@@ -58,7 +58,7 @@ describe("WCAG AA in every built-in theme", () => {
     // plan 181: an AI card's two inks on its two fills (light's, dark's) over the reader, Lumen's card and a dialog
     // plan 193: a one-line row's preview on a row's four fills
     // plan 203: a setting search opened, its two inks on the primary's 8% wash over Settings' tint, card and dialog
-    // plan 204 (after relief-r03): a read row's words on a row's three unselected fills
+    // plan 208 (after relief-r03): a read row's words on a row's three unselected fills
     expect(CONTRAST_PAIRS).toHaveLength(2 + 4 + 49 + 2 + 4 + 2 + 6 + 4 + 3 + 3 + 4 + 40 + 2 + 5 + 1 + 1 + 1 + 8 + 1 + 2 + 1 + 2 + 2 + 2 + 2 + 3 + 6 + 12 + 4 + 6 + 3);
   });
 
@@ -167,7 +167,7 @@ describe("boundaries as drawn (plan 160)", () => {
   });
 
   // the owner's decision (plan 173): light's selections are a soft step, so none drifts back to plan 160's heavy fill.
-  // Relief's sidebar is the owner's exception (plan 204, after its second UI rating): its chosen item is a firm step. Its open
+  // Relief's sidebar is the owner's exception (plan 208, after its second UI rating): its chosen item is a firm step. Its open
   // row was too, until the fourth rating, when the owner had it soft again
   it.each(THEMES.filter((t) => t.mode === "light").map((t) => t.id))("%s keeps its selections soft (plan 173)", (id) => {
     const theme = THEMES.find((t) => t.id === id)!;

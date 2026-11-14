@@ -271,7 +271,7 @@ function ReplyGroup({ replyTo, everyone, quiet }: { replyTo: string; everyone: s
 }
 
 /**
- * Plan 205: a reply or forward open in the conversation is where answering happens, so the toolbar's group steps back to the
+ * Plan 209: a reply or forward open in the conversation is where answering happens, so the toolbar's group steps back to the
  * ghost look (no fill, sheen, shadow, border or dividers; its size kept, so nothing moves): still there, still R and F.
  * Here, never in ButtonGroup's defaults.
  */
@@ -280,7 +280,7 @@ const QUIET = "border-transparent bg-transparent bg-none shadow-none divide-tran
 const QUIET_ITEM = "text-foreground-soft hover:text-foreground";
 
 /**
- * Plan 205: Reply that opens a choice says so with a chevron, inside it. Reply that doesn't keeps the chevron's room as
+ * Plan 209: Reply that opens a choice says so with a chevron, inside it. Reply that doesn't keeps the chevron's room as
  * padding on both sides, so Reply is one width either way and stands where it does in every conversation (plan 173). The
  * room is the gap and the glyph, less the 2 px an inline-end icon takes back from the end padding. With its word hidden
  * (the tightest toolbar), Reply is the plain square in both and the chevron goes: its room didn't fit there (Codex code
@@ -450,7 +450,7 @@ function Message({ m, threadId, expanded, onToggle, icons, person, headless, sol
         <h3>
           <Head
             {...toggle}
-            // a composer's opening scroll never leaves it half under the context line (plan 205)
+            // a composer's opening scroll never leaves it half under the context line (plan 209)
             data-reader-head
             data-current={current || undefined}
             className={cn(
@@ -474,7 +474,7 @@ function Message({ m, threadId, expanded, onToggle, icons, person, headless, sol
             ) : (
               <>
                 <SenderAvatar name={name} email={m.from.email} icon={icons} person={person} className="size-(--avatar-collapsed) text-2xs" />
-                {/* plan 205: the list row's marks, said as the row says them: unread before the sender (in the column's margin, as
+                {/* plan 209: the list row's marks, said as the row says them: unread before the sender (in the column's margin, as
                     Mail's, 6 px off the hover's edge, so the names keep their column), an attachment by the date */}
                 {!m.isRead && <span aria-hidden data-testid="message-unread-dot" className="absolute top-1/2 -left-[14px] size-2 -translate-y-1/2 rounded-full bg-unread @max-[420px]:-left-[7px] @max-[420px]:size-1.5" />}
                 <span className="max-w-[45%] shrink-0 truncate">{name}</span>
@@ -1211,7 +1211,7 @@ function ReaderContent() {
   const listTitle = useListTitle();
   const myEmails = accounts.map((a) => a.email);
   const replyAll = detail ? reachesSeveral(detail, myEmails) : false;
-  // plan 205: Reply's chevron comes and goes with Reply all
+  // plan 209: Reply's chevron comes and goes with Reply all
   const toolbarSet = `${page}|${design.id}|${replyAll}|${t("actions.archive")}|${detail?.thread.inTrash || detail?.thread.inSpam}|${!!detail && inSeparateTab(detail.thread, accounts)}|${summarizeOffered && summarizable(detail?.thread)}|${listTitle}`;
   useLayoutEffect(() => {
     const row = toolbarRowRef.current;

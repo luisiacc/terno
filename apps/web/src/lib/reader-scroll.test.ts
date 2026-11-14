@@ -102,7 +102,7 @@ describe("keepInView", () => {
     }
   });
 
-  describe("plan 205: no head left half under the context line", () => {
+  describe("plan 209: no head left half under the context line", () => {
     // the context line: 32 px (the scroller's scroll-padding-top). 116 wanted, as above: el's top 200 at 800, the view's
     // foot at 884; room to 800 - 16 - 32
     const motions = [{ motionMs: 80, reducedMotion: false }, { motionMs: 80, reducedMotion: true }];

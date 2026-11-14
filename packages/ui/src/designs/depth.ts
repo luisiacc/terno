@@ -1,10 +1,10 @@
 /**
- * How controls stand off the surface (plan 204): a design picks one preset, and generate.ts writes it as the `--depth-*`
+ * How controls stand off the surface (plan 208): a design picks one preset, and generate.ts writes it as the `--depth-*`
  * variables of its `[data-design]` block, which the controls read in place of literal shadows. Token references only (the
  * palette's shadow colour, highlight, rim and edges), never a colour, and never a `@theme` alias such as `--shadow-xs`:
  * those resolve at the root, so a nested preview in another palette would draw the outer one's (Codex review).
  *
- * `flat` is exactly what every control drew before plan 204, so the designs that use it render as they did.
+ * `flat` is exactly what every control drew before plan 208, so the designs that use it render as they did.
  * `relief` is the owner's two reference widgets: raised things ringed by a dark rim with a white one inside it, lit along
  * the top edge and casting a short shadow; recessed things shaded at the top with a light lip below; words on raised
  * neutral controls pressed into them.

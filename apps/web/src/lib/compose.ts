@@ -1178,7 +1178,7 @@ function recipientProblem(d: LocalDraft): { field: "to" | "cc" | "bcc"; message:
   return validRecipients(d.toText).length === 0 ? { field: "to", message: t("compose.noRecipient") } : null;
 }
 function sayRecipientProblem(key: string, problem: { field: "to" | "cc" | "bcc"; message: string }): void {
-  // Send ends the typing: the strip and Send's tooltip name the wrong entry again (plan 205)
+  // Send ends the typing: the strip and Send's tooltip name the wrong entry again (plan 209)
   endTyping(key);
   const shown = typeof document !== "undefined" && document.querySelector(`[data-draft-key="${CSS.escape(key)}"] [data-recipient-field="compose-${problem.field}"]`) !== null;
   if (shown) sayProblem({ key, ...problem });

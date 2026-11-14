@@ -178,7 +178,7 @@ test.describe("reader through the read-after-dwell", () => {
     expect(await scrollTop(page)).toBe(top);
   });
 
-  test("plan 205: a message folded while still unread shows the list's dot before its sender, one with files a clip by its date, and both are said", async ({ app: page, server }) => {
+  test("plan 209: a message folded while still unread shows the list's dot before its sender, one with files a clip by its date, and both are said", async ({ app: page, server }) => {
     const id = await ingestConversation(server, { subject: "Marcas plegadas", count: 3, unread: 2, mineFirst: true, files: { 1: [{ filename: "brief.pdf", mime: "application/pdf", size: 1200 }] }, now: E2E_NOW });
     const release = holdActions(server);
     await selectThread(page, id, 'subject:"Marcas plegadas"');

@@ -86,12 +86,12 @@ export interface DesignDefinition {
     inboxCount: "muted" | "unread";
     /** a button with words on it: the control's corners, or a pill */
     cta: "control" | "pill";
-    /** a group of rows: on the tint, outlined on its surface, or raised on the card's fill (plan 204) */
+    /** a group of rows: on the tint, outlined on its surface, or raised on the card's fill (plan 208) */
     card: "tint" | "outline" | "raised";
-    /** how controls stand: today's light touch, or raised and recessed (plan 204, designs/depth.ts) */
+    /** how controls stand: today's light touch, or raised and recessed (plan 208, designs/depth.ts) */
     depth: DepthId;
     /** a read row's sender and subject: in the row's ink, or a step back toward the quiet ink (`row-read`), so unread
-     * rows stand out by ink as well as weight and the dot (plan 204, after relief-r03) */
+     * rows stand out by ink as well as weight and the dot (plan 208, after relief-r03) */
     readRow: "ink" | "soft";
   };
   variants: DesignVariants;

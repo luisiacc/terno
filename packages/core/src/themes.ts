@@ -69,7 +69,7 @@ export const THEME_TOKENS = [
   "hairline",
   "tint",
   "highlight",
-  // plan 204: the dark rim around a raised or recessed control (designs/depth.ts)
+  // plan 208: the dark rim around a raised or recessed control (designs/depth.ts)
   "depth-rim",
   "draft-foreground",
   // plan 158: the keyboard's place in a menu or the palette; an enabled control's quieter ink
@@ -77,7 +77,7 @@ export const THEME_TOKENS = [
   "foreground-soft",
   // plan 193: a one-line row's preview, after its subject: a step from the quiet ink toward the row's
   "row-preview",
-  // plan 204 (after relief-r03): a read row's sender and subject, where a design sets them back from unread ones (Relief)
+  // plan 208 (after relief-r03): a read row's sender and subject, where a design sets them back from unread ones (Relief)
   "row-read",
   // plan 181: the AI colour (an AI card's spinner and task glyph), the accent where it has colour
   "ai",

@@ -11,7 +11,7 @@ export type { DesignDefinition, DesignVariants, TypeRole } from "./types";
 
 /**
  * Every design, in the order Settings, first run and the palette show them (plan 173, the owner: Graphite second, macOS
- * last; plan 204: Relief beside Graphite, the two greys together). A test keeps it in sync with @terno/core DESIGN_IDS.
+ * last; plan 208: Relief beside Graphite, the two greys together). A test keeps it in sync with @terno/core DESIGN_IDS.
  */
 export const DESIGNS: readonly DesignDefinition[] = [lumen, graphite, relief, atelier, luma, macos];
 
