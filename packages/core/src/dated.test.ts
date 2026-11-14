@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isAcknowledgment, looksLikeAcknowledgment } from "./today";
+import { isAcknowledgment, looksLikeAcknowledgment, saysNoReplyNeeded } from "./today";
 import { ANSWERED_KINDS, askEnd, datedGroup, datedOver, datedPlace, datedTiming, hasTimeCue, laterBefore, nextTodayChange, planEnd, promiseLaterFrom, promiseOver, promisePlace, type DatedKind, type DatedRow } from "./dated";
 import { WAITING_WINDOW_MS } from "./people";
 
@@ -284,5 +284,14 @@ describe("an acknowledgment (plan 204, the second panel round: plan 145's rule, 
   it("a snippet that starts like one is worth reading; one that doesn't isn't", () => {
     expect(looksLikeAcknowledgment("Thanks! Talk soon")).toBe(true);
     expect(looksLikeAcknowledgment("Hi Margaret, could you send the form")).toBe(false);
+  });
+});
+
+describe("saysNoReplyNeeded (the fourth panel read)", () => {
+  it.each(["Quick FYI: the code is live. No action needed! Jess", "No need to reply now, I know you're slammed.", "Nothing needed from you.", "You don't need to reply.", "Te aviso nada más, no hace falta que contestes.", "No es necesario responder."])("says no answer is needed: %j", (text) => {
+    expect(saysNoReplyNeeded(text)).toBe(true);
+  });
+  it.each(["Can you reply by Friday?", "Need you to answer this", "No, I need a reply today.", "", null])("doesn't: %j", (text) => {
+    expect(saysNoReplyNeeded(text)).toBe(false);
   });
 });

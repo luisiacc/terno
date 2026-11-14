@@ -1,4 +1,4 @@
-import { isAcknowledgment, looksLikeAcknowledgment, waitingCutoff, type DigestItem } from "@terno/core";
+import { isAcknowledgment, looksLikeAcknowledgment, saysNoReplyNeeded, waitingCutoff, type DigestItem } from "@terno/core";
 import { NEEDS_WALK, needsYou, summaryAsksNothing, type DigestFact, type DigestStored, type WaitingRow } from "@terno/store";
 import { inboxHiding, shownSql } from "./queries";
 import type { Db } from "./sqlite";
@@ -33,11 +33,21 @@ function needsRows(db: Db, now: number): WaitingRow[] {
  * task, settled or put off till later; it's read from the item, so the item's Undo brings the conversation back as it was.
  */
 function stillWaiting(db: Db, threadId: number, snippet: string | null, now: number): boolean {
+  // the fourth panel read: they said no answer is needed ("No action needed!"), in its first words
+  if (saysNoReplyNeeded(snippet)) return false;
   // the thread's items first (most have none): its latest message is read only when one is handled
   const handled = db.all<{ message_id: number }>("SELECT message_id FROM dated_items INDEXED BY dated_thread WHERE thread_id = ? AND (state IN ('done', 'dismissed', 'settled') OR deferred_until > ?)", threadId, now);
   if (handled.length) {
     const last = db.get<{ id: number }>("SELECT id FROM messages INDEXED BY messages_thread WHERE thread_id = ? AND is_sent = 0 AND is_draft = 0 AND is_spam = 0 AND is_trash = 0 ORDER BY date DESC, id DESC LIMIT 1", threadId);
     if (last && handled.some((h) => h.message_id === last.id)) return false;
+  }
+  // Codex code review (round 4): a promise of yours there closed (Done, Not a promise) since their latest message, with
+  // none still open, is the row you handled; from the promises' states, so Undo brings the conversation back, and newer
+  // mail from them too
+  const kept = db.get<{ at: number | null; open: number }>("SELECT max(CASE WHEN state IN ('done', 'dismissed') THEN closed_at END) AS at, count(CASE WHEN state IN ('open', 'due') THEN 1 END) AS open FROM followups INDEXED BY followups_thread WHERE thread_id = ? AND kind = 'promise'", threadId);
+  if (kept?.at != null && kept.open === 0) {
+    const last = db.get<{ date: number }>("SELECT date FROM messages INDEXED BY messages_thread WHERE thread_id = ? AND is_sent = 0 AND is_draft = 0 AND is_spam = 0 AND is_trash = 0 ORDER BY date DESC, id DESC LIMIT 1", threadId);
+    if (last && kept.at >= last.date) return false;
   }
   if (looksLikeAcknowledgment(snippet)) {
     const last = db.get<{ text: string | null }>(

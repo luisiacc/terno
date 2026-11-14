@@ -1,4 +1,4 @@
-import { isAcknowledgment, looksLikeAcknowledgment, waitingCutoff, type DigestItem } from "@terno/core";
+import { isAcknowledgment, looksLikeAcknowledgment, saysNoReplyNeeded, waitingCutoff, type DigestItem } from "@terno/core";
 import { NEEDS_WALK, needsYou, summaryAsksNothing, type DigestFact, type DigestStored, type WaitingRow } from "@terno/store";
 import { inboxHiddenTest, T, type Ctx, type R } from "./mail";
 
@@ -49,10 +49,20 @@ const shown = (c: Ctx, threadId: number): R[] => T(c, "messages").by("fk_thread_
 
 /** As SQL's (packages/db/src/today.ts): not handled, not an acknowledgment, and no current summary that gives the reader nothing to do. */
 function stillWaiting(c: Ctx, threadId: number, ack: number | undefined, now: number): boolean {
+  // the fourth panel read: they said no answer is needed ("No action needed!"), in its first words
+  if (saysNoReplyNeeded(T(c, "threads").get(threadId)?.snippet as string | null | undefined)) return false;
   const items = T(c, "dated_items").by("fk_thread_id", threadId).filter((d) => d.state === "done" || d.state === "dismissed" || d.state === "settled" || (d.deferred_until ?? 0) > now);
   if (items.length) {
     const last = shown(c, threadId).filter((m) => !m.is_sent).sort((a, b) => b.date - a.date || b.id - a.id)[0];
     if (last && items.some((d) => d.message_id === last.id)) return false;
+  }
+  // Codex code review (round 4): a promise of yours there closed since their latest message, with none still open, is the
+  // row you handled
+  const promises = T(c, "followups").by("fk_thread_id", threadId).filter((f) => f.kind === "promise");
+  const kept = promises.filter((f) => (f.state === "done" || f.state === "dismissed") && f.closed_at != null);
+  if (kept.length && !promises.some((f) => f.state === "open" || f.state === "due")) {
+    const last = shown(c, threadId).filter((m) => !m.is_sent).sort((a, b) => b.date - a.date || b.id - a.id)[0];
+    if (last && kept.some((f) => (f.closed_at as number) >= last.date)) return false;
   }
   if (ack !== undefined) {
     const body = c.body(ack);
