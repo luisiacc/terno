@@ -248,13 +248,17 @@ describe("the Codex code review", () => {
     await receive({ from: { name: "Iberia", email: "no-reply@iberia.test" }, subject: "Your trip", bodyText: "Flight IB3170 departs November 19 at 07:40." });
     await read();
     expect(await backend.store.dated.active()).toHaveLength(2);
-    // the flight is over, the bill still Missed
-    clock.now = at(2026, 11, 22, 10);
-    expect(await backend.dated.retire()).toBe(1);
-    expect((await backend.store.dated.active()).map((r) => r.kind)).toEqual(["pay"]);
-    // past Missed's days the bill goes too, by the day's bounds
-    clock.now = at(2026, 11, 28, 1);
+    // the day's bounds run at its first wake, the flight not over yet
+    clock.now = at(2026, 11, 19, 0, 30);
     await backend.dated.daily();
+    expect(await backend.store.dated.active()).toHaveLength(2);
+    // round 2: the clock wakes as the flight ends, the same day: it's retired then, not the next day
+    clock.now = at(2026, 11, 19, 9, 41);
+    await backend.dated.daily();
+    expect((await backend.store.dated.active()).map((r) => r.kind)).toEqual(["pay"]);
+    // past Missed's days the bill goes too
+    clock.now = at(2026, 11, 28, 1);
+    expect(await backend.dated.retire()).toBe(1);
     expect(await backend.store.dated.active()).toEqual([]);
     expect((await client.call("today.list", { heldIds: [] })).sections).toEqual([]);
   });
@@ -268,6 +272,18 @@ describe("the Codex code review", () => {
     await receive({ date: clock.now - 3 * DAY, from: { name: "Ana", email: "ana@people.test" }, subject: "Lunch", bodyText: "Thanks, that sounds great!" }, false);
     expect((await client.call("dated.scanOffer", {})).count).toBe(2);
     expect((await client.call("dated.scan", {})).queued).toBe(2);
+  });
+
+  it("round 2: the check also reads a later message that may settle one it reads, and one whose body isn't here yet", async () => {
+    const { client, receive, clock } = await setup();
+    await receive({ date: clock.now - 4 * DAY }, false);
+    // the biller's receipt, no time cue in it: read, since it may settle the bill
+    await receive({ date: clock.now - 2 * DAY, listId: "billing.power.test", subject: "Thanks", bodyText: "Paid in full. Your balance is now zero." }, false);
+    // someone else's automated mail with no cue: still left out
+    await receive({ date: clock.now - 2 * DAY, from: { name: "Shop", email: "news@shop.test" }, listId: "news.shop.test", subject: "Hello", bodyText: "Here are the photos from our team offsite." }, false);
+    // an automated notice whose body hasn't come: can't be judged, so read
+    await receive({ date: clock.now - 1 * DAY, from: { name: "Bank", email: "alerts@bank.test" }, listId: "alerts.bank.test", subject: "Account notice", bodyText: null, bodyState: "none" }, false);
+    expect((await client.call("dated.scanOffer", {})).count).toBe(3);
   });
 
   it("#4: a dated promise past Missed's days isn't Needs you's again", async () => {
