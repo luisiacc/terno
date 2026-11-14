@@ -26,7 +26,7 @@ afterEach(async () => {
 });
 
 type Item = { kind: string; text: string; quote: string; due: string | null; time: string | null };
-const reply = (items: Item[] = [], settled: { label: string; evidence: string }[] = []): Completion => ({ text: JSON.stringify({ items, settled }), stop: "end" });
+const reply = (items: Item[] = [], settled: { label: string; evidence: string }[] = [], moved: { label: string; due: string; time: string | null; evidence: string }[] = []): Completion => ({ text: JSON.stringify({ items, settled, moved }), stop: "end" });
 const bill: Item = { kind: "pay", text: "Pay the electricity bill", quote: "due on November 20", due: "2026-11-20", time: null };
 const BILL_TEXT = "Your electricity bill of $54.20 is due on November 20.";
 
@@ -400,6 +400,44 @@ describe("after the panel", () => {
     clock.now = at(2026, 11, 12, 10);
     const deadlines = (await client.call("today.list", { heldIds: [] })).sections.find((x) => x.kind === "deadlines")!;
     expect(deadlines.items.map((i) => i.thread.id)).toEqual([bill, payroll, domain]);
+  });
+});
+
+describe("a later message moves a day (after the panel)", () => {
+  const row = { id: 9, revision: 2, kind: "respond", dueDay: "2026-11-10" } as DatedRow;
+  const base = { text: "Friday at the latest works for us, 2026-11-13.", subject: "Re: script", arrivedAt: NOW, open: new Map([["o1", row]]), fromScan: false, now: NOW };
+
+  it("quoted, a real day from this message, a label it was shown; settled wins; the same kind on the new day isn't added", () => {
+    const moved = { label: "o1", due: "2026-11-13", time: null, evidence: "Friday at the latest works for us" };
+    expect(checkDates({ items: [], settled: [], moved: [moved] }, base).moved).toMatchObject([{ id: 9, dueDay: "2026-11-13" }]);
+    expect(checkDates({ items: [], settled: [], moved: [{ ...moved, evidence: "words nobody wrote" }] }, base).moved).toEqual([]);
+    expect(checkDates({ items: [], settled: [], moved: [{ ...moved, label: "o9" }] }, base).moved).toEqual([]);
+    expect(checkDates({ items: [], settled: [], moved: [{ ...moved, due: "2026-11-01" }] }, base).moved).toEqual([]);
+    expect(checkDates({ items: [], settled: [{ label: "o1", evidence: "works for us" }], moved: [moved] }, base).moved).toEqual([]);
+    const both = checkDates({ items: [{ kind: "respond", text: "Send the script", quote: "Friday at the latest", due: "2026-11-13", time: null }], settled: [], moved: [moved] }, base);
+    expect(both.rows).toEqual([]);
+    expect(both.moved).toHaveLength(1);
+  });
+
+  it("Theo's script: Missed by Tuesday's day, then 'Friday at the latest' moves it back to Deadlines, the same item", async () => {
+    const { backend, client, model, receive, read, clock } = await setup();
+    model.answer = (req) => {
+      const p = promptText(req.messages[0]!.content);
+      if (p.includes("at the latest")) return reply([], [], [{ label: "o1", due: "2026-11-13", time: null, evidence: "Friday at the latest" }]);
+      return reply([{ kind: "respond", text: "Send the sponsor script", quote: "send the script by Tuesday", due: "2026-11-10", time: null }]);
+    };
+    const thread = await receive({ from: { name: "Jess", email: "jess@sponsor.test" }, subject: "Script", bodyText: "Can you send the script by Tuesday?", providerThreadId: "jess" });
+    await read();
+    clock.now = at(2026, 11, 12, 9);
+    expect((await client.call("today.list", { heldIds: [] })).sections.map((x) => x.kind)).toEqual(["missed"]);
+    const [before] = await backend.store.dated.active();
+    await receive({ from: { name: "Jess", email: "jess@sponsor.test" }, subject: "Re: Script", bodyText: "No stress. Friday at the latest is fine.", providerThreadId: "jess" });
+    await read();
+    const [after] = await backend.store.dated.active();
+    expect(after).toMatchObject({ id: before!.id, dueDay: "2026-11-13" });
+    const list = await client.call("today.list", { heldIds: [] });
+    expect(list.sections.map((x) => x.kind)).toEqual(["deadlines"]);
+    expect(list.sections[0]!.items[0]!.thread.id).toBe(thread);
   });
 });
 

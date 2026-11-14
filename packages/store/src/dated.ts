@@ -92,6 +92,11 @@ export interface DatedFinish {
   rows: readonly DatedWrite[];
   /** open items this message settled: only the exact row it was shown, at the revision it was shown */
   settled: readonly { id: number; revision: number }[];
+  /**
+   * After the panel: open items this message gives a new day. Applied to an open row of this thread or sender whatever its
+   * revision (Codex review of the fixes: a Later meanwhile mustn't lose the mail's new day); it keeps its deferral.
+   */
+  moved?: readonly { id: number; dueDay: string; dueAt: number; timed: boolean; actAt: number }[];
   now: number;
   model: string | null;
   provider: string | null;
