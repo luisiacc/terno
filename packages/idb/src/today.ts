@@ -10,6 +10,7 @@ import { inboxHiddenTest, T, type Ctx, type R } from "./mail";
  * acknowledgment only is one. The store reads those bodies ahead, then `needsRows` decides.
  */
 export interface NeedsWalk {
+  now: number;
   rows: WaitingRow[];
   /** thread → its last message from someone else, for those whose snippet starts like an acknowledgment */
   acks: Map<number, number>;
@@ -36,18 +37,23 @@ export function needsWalk(c: Ctx, now: number): NeedsWalk {
     const last = shown(c, r.id).filter((m) => !m.is_sent).sort((a, b) => b.date - a.date || b.id - a.id)[0];
     if (last) acks.set(r.id, last.id as number);
   }
-  return { rows: needs, acks };
+  return { now, rows: needs, acks };
 }
 
 /** What a walk lets in that's still waiting on the reader, its acknowledgments' bodies read ahead: never wider than `needsYou`. */
 function needsRows(c: Ctx, walk: NeedsWalk): WaitingRow[] {
-  return walk.rows.filter((r) => stillWaiting(c, r.id, walk.acks.get(r.id)));
+  return walk.rows.filter((r) => stillWaiting(c, r.id, walk.acks.get(r.id), walk.now));
 }
 
 const shown = (c: Ctx, threadId: number): R[] => T(c, "messages").by("fk_thread_id", threadId).filter((m) => !m.is_draft && !m.is_spam && !m.is_trash);
 
-/** As SQL's (packages/db/src/today.ts): not an acknowledgment, and no current summary that gives the reader nothing to do. */
-function stillWaiting(c: Ctx, threadId: number, ack: number | undefined): boolean {
+/** As SQL's (packages/db/src/today.ts): not handled, not an acknowledgment, and no current summary that gives the reader nothing to do. */
+function stillWaiting(c: Ctx, threadId: number, ack: number | undefined, now: number): boolean {
+  const items = T(c, "dated_items").by("fk_thread_id", threadId).filter((d) => d.state === "done" || d.state === "dismissed" || d.state === "settled" || (d.deferred_until ?? 0) > now);
+  if (items.length) {
+    const last = shown(c, threadId).filter((m) => !m.is_sent).sort((a, b) => b.date - a.date || b.id - a.id)[0];
+    if (last && items.some((d) => d.message_id === last.id)) return false;
+  }
   if (ack !== undefined) {
     const body = c.body(ack);
     if (isAcknowledgment(body?.body_text ?? body?.body_preview ?? null)) return false;
