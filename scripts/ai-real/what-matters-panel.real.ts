@@ -68,7 +68,8 @@ function realMail(box: Box, seed: number): Mail[] {
           id: `${c.id}-${j}`,
           thread: c.id,
           from: m.own ? box.me : parseAddress(m.from),
-          to: m.to.length ? m.to.map(me) : [box.me],
+          // no To in its mailbox: a broadcast or a blind copy, the reader not named (it was the reader alone, an ask)
+          to: m.to.map(me),
           cc: m.cc.map(me),
           subject: j ? `Re: ${c.subject}` : c.subject,
           date: new Date(at).toISOString(),
@@ -126,7 +127,7 @@ async function drained(backend: Backend): Promise<void> {
 }
 
 /** What the AI read the mailbox with: a kept database is reused only while all of it is still what the code would use. */
-const MANIFEST = { dated: DATED_PROMPT_VERSION, followups: FOLLOWUP_PROMPT_VERSION, summaries: SUMMARY_PROMPT_VERSION, summariesOn: true, phases: [PHASE_ONE, NOW] };
+const MANIFEST = { mail: 2, dated: DATED_PROMPT_VERSION, followups: FOLLOWUP_PROMPT_VERSION, summaries: SUMMARY_PROMPT_VERSION, summariesOn: true, phases: [PHASE_ONE, NOW] };
 
 /** What Today shows, written beside the database: the packet's source. */
 async function writeToday(backend: Backend, client: RpcClient, dir: string, persona: string) {
