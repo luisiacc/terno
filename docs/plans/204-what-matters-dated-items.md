@@ -33,6 +33,9 @@ Then, after a first proposal:
 | Taking things out | By sender and by kind of mail, so it never fills with noise | 206 |
 | The user's own words | A box: what they want there and what they don't, merged with our rules | 206 |
 | The first screen | **A setting, changed any time:** right-click Inbox or What matters, "Open at launch" | 207 |
+| Reading dates in new mail | **Off by default.** In the future, switching to Pro will ask the user whether What matters should be their first screen | 204, 207 |
+| Missed's span | **7 days,** then the Earlier tab | 204, 205 |
+| Mail already here | **The offer to check the last 14 days,** with the count and the cost, nothing sent without a yes | 204 |
 
 ## What exists
 
@@ -153,7 +156,7 @@ CREATE INDEX dated_sender ON dated_items(sender_key) WHERE state = 'open';
 
 ### 6. Turning it on, and older mail
 
-- **Settings → AI → What matters** (the group plan 205 names; until then "Today"): "Find dates in new mail", **on by default wherever AI can run**, as summaries are since plan 157, because the view is built on it. The hint: "Reads new mail with a date in it with {provider}, to show bills, renewals, trips and other things with a deadline. About {cost} a month." With the provider and model row. Off: no marker flag, no worker, no requests; Deadlines, Plans, Missed (for items) and Coming up have nothing in them.
+- **Settings → AI → What matters** (the group plan 205 names; until then "Today"): "Find dates in new mail", **off by default** (the owner, 2026-11-13). **Today's header offers it** while it's off and AI can run: one quiet line, "Show bills, renewals and trips here · Turn on", dismissible for good, so the way in is where its result will be. Turning it on from there, or in Settings, then offers the 14-day check below. The hint: "Reads new mail with a date in it with {provider}, to show bills, renewals, trips and other things with a deadline. About {cost} a month." With the provider and model row. Off: no marker flag, no worker, no requests; Deadlines, Plans, Missed (for items) and Coming up have nothing in them.
 - **Mail already here** is never read without a yes. The first time the feature runs, Today's header offers **"Check the last 14 days"**, with the count after the local filter and the cost, as plan 142's scan offer; `from_scan` rows don't notify (no notification exists in this plan anyway) and an item whose date has passed isn't kept.
 - **The gate:** `aiFeaturesAvailable`, the one rule. A provider removed stops the worker; rows stay until Clear AI data.
 
