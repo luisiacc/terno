@@ -221,3 +221,7 @@ As above. e2e (`relief.spec`): in Relief, an unread row's sender and subject are
 ### Revisions after the Codex code review
 
 One finding, fixed with a test that fails without it: `row-read` was a fixed blend, so a custom theme whose ink and quiet ink each just pass AA could get a read ink under it (a blue ink `#1E6EFA` and `#767676` on white: 4.46:1). It now steps back toward the ink until it holds on the background, pane and hovered row, as `row-preview` does; the built-in palettes come out the same.
+
+## UI rating, round 4 (relief-r04, commit 117135dc1)
+
+After the unread rows: Claude 6.5 → 7 (UI 7, UX 7.5, lowest 5.5), Codex 7.5 → 7 (UI 7, UX 7.5, lowest 6). Below the bar. Neither rater names unread rows any more (round 3's Claude did). What they name now, density left out by the owner's decision: dark mode's quiet text in the composer (To, Cc, "from …" about 3.1–3.3:1 by Claude's probe) and key chips; the sidebar 1.04:1 off the list in dark; the small-window reply's half-covered sender; Reply and Forward in both the toolbar and the reply bar; the open row's fill read as faint (Claude) or not distinct enough (Codex); raised secondary controls on the bulk screen; List layout's scanning and behaviour (archive from the reader returns to the list); search's highlighted excerpt lost once a result is read.
