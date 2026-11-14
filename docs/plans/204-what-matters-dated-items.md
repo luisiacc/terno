@@ -241,3 +241,11 @@ Codex (read-only, `git diff 599de7aac..HEAD`, `/tmp/terno-scratch/p204/review-1.
 5. **Two re-arms of the clock at once left a timer behind,** which `stop()` didn't clear. Only the newest call arms (#5).
 6. **"Tomorrow 7:40" stayed "Tomorrow" past midnight.** While any row shows, the next midnight is a change too (`nextTodayChange`; core test).
 7. **A yes to the check that failed was saved anyway,** so the check was never offered again. The answer is saved only once the check is queued; a failure says so and the offer stays (`apps/web/src/lib/dated.test.ts`).
+
+Round two, on those fixes (`/tmp/terno-scratch/p204/review-2.out`, 3 points, all fixed, each in `dated.test` failing without it):
+
+8. **The 14-day check could leave out a later message that settles one it reads** ("Paid in full", no time cue), so an already-paid bill stayed open. A message newer than a pick from the same sender or conversation is read too.
+9. **Automated mail whose body hadn't come was judged on an empty text** and left out for good. It's read: the worker waits for its body (the filter errs towards reading).
+10. **The clock's wake didn't retire what had just ended** once the day's bounds had run (a flight over at 9:40). `daily()` retires at every wake, and keeps the bounds once a day.
+
+Two rounds, as the owner's cap on review rounds asks; nothing left open from them.

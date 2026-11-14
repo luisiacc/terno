@@ -129,7 +129,10 @@ export class DatedWorker {
 
   /** Once a day with nothing to read too: the day's bounds, and what's over retired. */
   async daily(): Promise<void> {
-    if (this.isActive && !this.running) await this.bounds();
+    if (!this.isActive) return;
+    if (!this.running) await this.bounds();
+    // round 2: at every moment the clock wakes for, not only the day's first: a Plan ends at 9:40 too
+    await this.retire();
   }
 
   stop(): void {
@@ -419,15 +422,20 @@ export class DatedWorker {
   private async scanPicks(now: number): Promise<number[]> {
     const { store } = this.host;
     const walked = await store.dated.scanCandidates(now - DATED_SCAN_DAYS * 86_400_000, SCAN_WALK);
-    const picks: number[] = [];
+    // newest first: whether each is worth reading by itself, and who and where it's from
+    const seen: { s: DatedSource; worth: boolean }[] = [];
     await this.host.runBudgeted(walked, async (chunk) => {
-      if (picks.length >= DATED_SCAN_MAX) return;
       const sources = (await Promise.all(chunk.map((id) => store.dated.source(id)))).filter((s): s is DatedSource => !!s && !s.spam && !s.trash && !s.threadSpam && !s.draft && !s.sent && !s.own && s.tab !== "social" && s.tab !== "promotions");
-      const automated = sources.filter((s) => s.automated);
-      const texts = automated.length ? await store.aiSummaries.text(automated.map((s) => ({ messageId: s.id, limit: DATED_TEXT_CHARS }))) : new Map<number, string | null>();
-      for (const s of sources) if (picks.length < DATED_SCAN_MAX && (!s.automated || hasTimeCue(withoutQuotes(texts.get(s.id) ?? ""), s.subject))) picks.push(s.id);
+      // round 2: a body not here yet can't be judged; it's read, and the worker waits for it (the filter errs towards reading)
+      const judged = sources.filter((s) => s.automated && (s.bodyState === "full" || s.bodyUnavailable));
+      const texts = judged.length ? await store.aiSummaries.text(judged.map((s) => ({ messageId: s.id, limit: DATED_TEXT_CHARS }))) : new Map<number, string | null>();
+      for (const s of sources) seen.push({ s, worth: !s.automated || (s.bodyState !== "full" && !s.bodyUnavailable) || hasTimeCue(withoutQuotes(texts.get(s.id) ?? ""), s.subject) });
     });
-    return picks;
+    // round 2: a later message from the sender or the conversation of one it reads ("Paid in full") may settle it: it's read too
+    const oldest = new Map<string, number>();
+    for (const { s, worth } of seen) if (worth) for (const key of [`t${s.threadId}`, `s${s.senderKey}`]) oldest.set(key, Math.min(oldest.get(key) ?? Infinity, s.date));
+    const settles = (s: DatedSource) => [`t${s.threadId}`, `s${s.senderKey}`].some((key) => (oldest.get(key) ?? Infinity) < s.date);
+    return seen.filter(({ s, worth }) => worth || settles(s)).slice(0, DATED_SCAN_MAX).map(({ s }) => s.id);
   }
 
   async scanOffer(): Promise<{ count: number; usd: number | null }> {
