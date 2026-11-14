@@ -513,3 +513,20 @@ On f68d56f93 (prompt v7, the phishing guard): Deadlines 6.0 → 6.9, Acting 6.9 
 The panel: an old corpus message with no To went to the persona as its only recipient, so an all-staff broadcast read as asking them; such a message now goes to undisclosed recipients (the reader isn't named), as it did in its mailbox.
 
 Not this round: delegating; a way to stop a sender for good; the parts of one event's mail (confirm by replying, what to bring) as separate items.
+
+### Revisions after the Codex review of the fifth round's changes
+
+Codex (read-only, `/tmp/terno-scratch/p204/critique-6.out`) raised 12 points, all taken.
+
+1. **Promise Later changes the scheduler too:** one effective wake-up (`max(dueAt, deferredUntil)` while deferred), shared by both stores' due transition and next-due read, notifications, the Inbox's top and the clock; a nudge keeps its rescheduling.
+2. **A deferred promise is no row's promise** (`owed` skips it), and a waiting conversation whose only open promise is deferred isn't Needs you's until it's back, derived from stored state so Undo restores it.
+3. **A deferral past Missed's week keeps the promise:** while deferred it's never over; when it comes back after its day it's Missed for a week from then (as `missedUntil` does for dated items), in `promiseOver`, `promisePlace` and `nextTodayChange` together.
+4. **`deferred_until` everywhere a row goes:** SQLite v58 `ALTER TABLE` (shape only), IndexedDB normalized to null, the row converters, update, restore and snapshots (restored to null explicitly). A promise put off before this keeps the day Later gave it.
+5. **Cold outreach, with or without a day:** the prompt says cold pitches, sales and recruiting outreach are neither an ask nor a request with a day; nothing else (an empty reading doesn't suppress a waiting conversation).
+6. **Asks stay attributable and plain:** adversarial en/es eval cases (forged familiarity, a request for money or details, an instruction in the mail); no contact history is sent to classify "cold".
+7. **A move's new text is optional, bounded and evidenced:** `moved.text` with its own quoted `textEvidence`; the old text stays without it; written with the schedule in one write, both stores; an ask turned into a request keeps its words unless the move gives new ones. Never for a `p…` label (another person's words can't become "You said").
+8. **A move's new text is outside Undo's snapshots:** Later → move → Undo keeps the move's day and words and restores the deferral, both stores, both orders.
+9. **The second item is chosen while placing,** from the candidates per thread before `best` and `dedupe` drop them: one distinct item that would show (not deferred, over or not yet showing), attached to `TodayItem` as `also`; the count is still of primary threads; no per-row reads; the perf fixture gains threads with several dates and promises.
+10. **The second line where a row has one:** it replaces the subject in the layouts with a subject line, and joins the accessible name elsewhere; heights unchanged; D, Done and Later act on the row's own item; en and es.
+11. **v9's time is in the words only** ("call Marcus at 4:00 PM"): a promise's moment stays the day's, as now.
+12. **Narrow:** an undated alert's row sets no day (`noDay`), its timing and Missed unchanged; word-boundary cuts apply to display text (and a move's text), never to quotes or evidence.
