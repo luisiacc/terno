@@ -1,3 +1,4 @@
+import { addressKey } from "@terno/core";
 import { registrableDomain, senderHost } from "./icons/domain";
 
 /**
@@ -19,6 +20,27 @@ function siteOf(email: string): string | null {
   const host = senderHost(email);
   if (!host) return null;
   return registrableDomain(host) ?? host.split(".").slice(-2).join(".");
+}
+
+/** Which of these senders (`addressKey`s) the user has written to: the store's `dated.written`, one indexed lookup each. */
+export type WrittenTo = (senderKeys: readonly string[]) => Promise<ReadonlySet<string>>;
+
+/**
+ * The guard as everything applies it (Codex's second pass): the senders among these named like a security desk whom the
+ * user has never written to. Someone you correspond with (jane@acme-support.com, your consultant) keeps her asks and
+ * invoices, whatever her domain's words. Asks the store only when a sender looks suspicious, so most reads ask nothing.
+ */
+export async function untrustedSenders(emails: Iterable<string>, writtenTo: WrittenTo): Promise<Set<string>> {
+  const suspicious = [...new Set([...emails].map(addressKey))].filter(suspiciousSender);
+  if (!suspicious.length) return new Set();
+  const trusted = await writtenTo(suspicious);
+  return new Set(suspicious.filter((key) => !trusted.has(key)));
+}
+
+/** Rows from a sender `untrustedSenders` leaves out, gone (an item stored before the guard, Codex's second pass). */
+export async function withoutUntrusted<T extends { senderKey: string }>(rows: readonly T[], writtenTo: WrittenTo): Promise<readonly T[]> {
+  const out = await untrustedSenders(rows.map((r) => r.senderKey), writtenTo);
+  return out.size ? rows.filter((r) => !out.has(r.senderKey)) : rows;
 }
 
 export function suspiciousSender(email: string): boolean {

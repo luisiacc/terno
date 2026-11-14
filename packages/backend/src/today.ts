@@ -44,7 +44,7 @@ import type { BackendCore as Backend } from "./core";
 import { progressReporter } from "./scope";
 import { aiAllowed, readSettings } from "./settings";
 import { withoutQuotes } from "./summaries";
-import { suspiciousSender } from "./suspicious-sender";
+import { suspiciousSender, untrustedSenders, withoutUntrusted, type WrittenTo } from "./suspicious-sender";
 
 /**
  * Plan 145: what needs you today, all of it local and live. Only the digest reads mail with a model, and it's its own
@@ -267,7 +267,7 @@ export class TodayService {
         // a sign-in code isn't reading, and it isn't something to archive unread
         if (findCode(f.subject, f.snippet)) continue;
         // after the fourth panel round: a sender named like a security desk is no newsletter to skim, nor a model's to read
-        if (excluded.has(addressKey(f.fromEmail)) || suspiciousSender(f.fromEmail)) continue;
+        if (excluded.has(addressKey(f.fromEmail)) || (suspiciousSender(f.fromEmail) && (await untrustedSenders([f.fromEmail], this.writtenTo)).size)) continue;
         seen.add(f.threadId);
         items.push({ threadId: f.threadId, messageId: f.messageId, lastDate: f.lastDate, messageCount: f.messageCount, from: f.from, fromEmail: f.fromEmail, subject: f.subject, line: null });
         if (items.length >= DIGEST_CANDIDATES_MAX) return { items, watermark };
@@ -398,6 +398,8 @@ export class TodayService {
   }
 
   /** As listed, and (plan 166) from a sender still allowed in: run as each request leaves, repairs included. Each with its sender. */
+  private readonly writtenTo: WrittenTo = (keys) => this.b.store.dated.written(keys);
+
   private async stillListed(listed: readonly DigestItem[]): Promise<DigestItem[]> {
     if (!listed.length) return [];
     const [items, excluded] = await Promise.all([this.withSenders(listed), this.excludedKeys()]);
@@ -613,7 +615,9 @@ export class TodayService {
   private async datedRows(): Promise<readonly DatedRow[]> {
     const generation = this.datedGeneration;
     if (this.datedCache?.generation === generation) return this.datedCache.rows;
-    const rows = await this.b.store.dated.active();
+    const { dated } = this.b.store;
+    // Codex's second pass: an item stored from a suspicious sender before the guard isn't shown nor counted
+    const rows = await withoutUntrusted(await dated.active(), (keys) => dated.written(keys));
     if (generation === this.datedGeneration) this.datedCache = { generation, rows };
     return rows;
   }
@@ -667,10 +671,13 @@ export class TodayService {
     const day = todayKey(this.b.now());
     // plan 166: left out at read too, both ways, so a scan or a digest from before a change can't show a sender said not to be one
     const excluded = await this.excludedKeys();
-    const allowed = (items: readonly DigestItem[]) => items.filter((i) => !excluded.has(addressKey(i.fromEmail ?? "")) && !suspiciousSender(i.fromEmail ?? ""));
+    const allowed = async (items: readonly DigestItem[]) => {
+      const out = await untrustedSenders(items.map((i) => i.fromEmail ?? ""), this.writtenTo);
+      return items.filter((i) => !excluded.has(addressKey(i.fromEmail ?? "")) && !out.has(addressKey(i.fromEmail ?? "")));
+    };
     if (!s.digest) {
       if (!this.automated || this.b.now() - this.automated.at > AUTOMATED_FRESH_MS) this.refreshAutomated();
-      const items = allowed(this.automated?.candidates.items ?? []);
+      const items = await allowed(this.automated?.candidates.items ?? []);
       if (!items.length) return null;
       return { day, state: "ready", items: newestFirst(items), automated: true, ...(await this.states(items)) };
     }
@@ -681,7 +688,7 @@ export class TodayService {
     const here = new Set(await store.today.messagesHere(shown.items.map((i) => i.messageId)));
     const kept = shown.items.filter((i) => here.has(i.messageId));
     if (kept.length !== shown.items.length) void this.purgeGone().catch((error: unknown) => captureError(error, { code: "ai.failed" }));
-    const items = allowed(await this.withSenders(kept));
+    const items = await allowed(await this.withSenders(kept));
     const paused = row?.state === "pending" && row.errorKind !== null && this.paused;
     return { day: row?.state === "pending" ? day : shown.day, state: paused ? "failed" : (row?.state ?? shown.state), items: newestFirst(items), automated: false, ...(await this.states(items)), errorKind: paused ? row!.errorKind : shown.errorKind, model: shown.model, provider: shown.provider };
   }
