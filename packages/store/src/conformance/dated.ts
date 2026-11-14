@@ -240,6 +240,22 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
         expect(open.map((r) => [r.threadId, r.kind]).sort()).toEqual([[ask.thread, "pay"], [elsewhere.thread, "respond"]].sort());
         const answered = (await store.dated.ofThread(ask.thread)).find((r) => r.kind === "respond");
         expect(answered).toBeUndefined();
+        // a request read after your reply is stored answered (the reader finishing late, or the 14-day check)
+        const late = await got({ inReplyTo: "ask@x", references: ["ask@x"], date: NOW - 3500 });
+        await finish(late.id, late.thread, { rows: [item({ kind: "respond", text: "Send the deck too" })] });
+        expect((await store.dated.ofThread(ask.thread)).some((r) => r.kind === "respond")).toBe(false);
+      });
+
+      it("Codex code review of the fixes: a forged From claiming your address, in the Inbox, answers nothing", async () => {
+        const { store, accountId, got, item, finish } = await setup();
+        const ask = await got({ rfcMessageId: "ask2@x", date: NOW - 5000 });
+        await finish(ask.id, ask.thread, { rows: [item({ kind: "respond", text: "Send the deck" })] });
+        // what IMAP marks sent because its From is yours, though it arrived in the Inbox
+        await store.sync.ingest([msg({ accountId, from: me, to: [bank], isSent: true, inInbox: true, inReplyTo: "ask2@x", references: ["ask2@x"], subject: "Re", date: NOW - 3000 })], { applyFilters: false, now: NOW, classifier: null });
+        expect((await store.dated.ofThread(ask.thread)).map((r) => r.kind)).toEqual(["respond"]);
+        // Gmail's SENT label is yours for certain, in the Inbox or not (a reply to yourself too)
+        await store.sync.ingest([msg({ accountId, from: me, to: [bank], isSent: true, inInbox: true, gmailLabels: ["SENT", "INBOX"], inReplyTo: "ask2@x", references: ["ask2@x"], subject: "Re", date: NOW - 2000 })], { applyFilters: false, now: NOW, classifier: null });
+        expect(await store.dated.ofThread(ask.thread)).toEqual([]);
       });
 
       it("a later message moves an open item's day whatever its revision, keeping its deferral; never a closed one, nor another sender's", async () => {
@@ -248,11 +264,14 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
         await finish(a.id, a.thread, { rows: [item()] });
         const [row] = await store.dated.active();
         // a Later meanwhile: the revision the reader saw is stale, the mail's new day still lands
-        await store.dated.update(row!.id, row!.revision, { deferredUntil: NOW + 2 * DAY });
+        const laterUndo = (await store.dated.update(row!.id, row!.revision, { deferredUntil: NOW + 2 * DAY }))!;
         const later = await got({ inReplyTo: a.m.rfcMessageId, references: [a.m.rfcMessageId!], date: NOW - 1000 });
         const moved = { id: row!.id, dueDay: "2026-11-24", dueAt: NOW + 11 * DAY, timed: false, actAt: NOW + 8 * DAY };
         await finish(later.id, later.thread, { moved: [moved] });
-        expect(await store.dated.get(row!.id)).toMatchObject({ dueDay: "2026-11-24", dueAt: NOW + 11 * DAY, actAt: NOW + 8 * DAY, deferredUntil: NOW + 2 * DAY, state: "open", revision: row!.revision + 2 });
+        expect(await store.dated.get(row!.id)).toMatchObject({ dueDay: "2026-11-24", dueAt: NOW + 11 * DAY, actAt: NOW + 8 * DAY, deferredUntil: NOW + 2 * DAY, state: "open", revision: row!.revision + 1 });
+        // Codex code review of the fixes: the move kept the revision, so Later's Undo still applies, and the new day stays
+        expect(await store.dated.restore([{ snapshot: laterUndo, expectRevision: laterUndo.revision + 1 }])).toBe(1);
+        expect(await store.dated.get(row!.id)).toMatchObject({ dueDay: "2026-11-24", deferredUntil: null, state: "open", revision: row!.revision + 2 });
         // closed: stays closed
         await store.dated.update(row!.id, row!.revision + 2, { state: "done", closedReason: "user", closedAt: NOW });
         const third = await got({ inReplyTo: a.m.rfcMessageId, references: [a.m.rfcMessageId!], date: NOW - 500 });

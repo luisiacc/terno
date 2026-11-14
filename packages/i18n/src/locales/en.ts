@@ -2615,6 +2615,8 @@ It contains none of your mail, contacts, settings or keys.
   "today.why.dueOnAt": "Due {day} {time} · {text}",
   "today.why.wasDueYesterday": "Was due yesterday · {text}",
   "today.why.wasDueOn": "Was due {day} · {text}",
+  "today.why.wasDueYesterdayAt": "Was due yesterday {time} · {text}",
+  "today.why.wasDueOnAt": "Was due {day} {time} · {text}",
   "today.why.plan": "{when} · {text}",
   "today.when.today": "Today",
   "today.when.tomorrow": "Tomorrow",

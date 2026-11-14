@@ -232,6 +232,18 @@ describe("plan 204: Missed, Deadlines, Plans, Needs you, Reminders and Coming up
     expect(line(7)).toBe("Today · Your parcel arrives");
   });
 
+  it("Codex code review of the fixes: a timed item keeps its time in Missed; a nudge row has a task (follow-ups' act)", () => {
+    const rows = flattenToday(
+      list({
+        missed: [dated(1, "pay", "Wire payroll", 11, { missed: true, timed: true, h: 13 })],
+        needsYou: [{ thread: thread(2), why: { kind: "nudge", text: "", personName: "Ana", sentAt: at(5), dueAt: at(10), promise: { id: 41, revision: 1, dated: false } } } as never],
+      }),
+      [],
+    );
+    expect(rows.find((r) => r.id === 1)!.snippet).toBe("Was due yesterday 1:00 PM · Wire payroll");
+    expect(useToday.getState().tasks.get(2)).toMatchObject({ kind: "promise", id: 41, revision: 1, when: null });
+  });
+
   it("after the panel: any timed item says its time; a promise of yours says when it's due; Coming up's promise its day", () => {
     const rows = flattenToday(
       list({

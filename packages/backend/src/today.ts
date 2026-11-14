@@ -20,6 +20,7 @@ import {
   nextTodayChange,
   promiseMissed,
   promiseComingUp,
+  dayKeyOf,
   promiseOver,
   type DatedPlace,
   type DatedRow,
@@ -553,7 +554,7 @@ export class TodayService {
       const place = datedPlace(row, now);
       if (place === "hidden") continue;
       const was = best.get(row.threadId);
-      if (!was || rank[place] < rank[was.place] || (rank[place] === rank[was.place] && row.dueAt < was.row.dueAt)) best.set(row.threadId, { place, row });
+      if (!was || rank[place] < rank[was.place] || (rank[place] === rank[was.place] && byDay(row, was.row) < 0)) best.set(row.threadId, { place, row });
     }
     const datedWhy = (row: DatedRow, missed: boolean): TodayWhy => ({ kind: "dated", text: row.text, dueAt: row.dueAt, ...(missed ? { missed } : {}), item: { id: row.id, revision: row.revision, kind: row.kind, dueDay: row.dueDay, timed: row.timed, dated: row.dated } });
     const ofPlace = (place: DatedPlace) => [...best.values()].filter((b) => b.place === place);
@@ -583,8 +584,8 @@ export class TodayService {
     const reminders = (await this.b.reminders.refresh()).reminders.filter((r) => r.dueAt <= endOfDay.getTime()).sort((a, b) => a.dueAt - b.dueAt);
     for (const r of reminders) placed.push({ group: "reminders", threadId: r.threadId, why: { kind: "reminder", dueAt: r.dueAt } });
     // Coming up: dated items, and (after the panel) your dated promises due in the next two weeks, soonest first
-    const later = [...ofPlace("comingUp").map((b) => ({ threadId: b.row.threadId, at: b.row.dueAt, why: datedWhy(b.row, false) })), ...active.filter((r) => promiseComingUp(r, now)).map((r) => ({ threadId: r.threadId, at: r.dueAt, why: promiseWhy(r) }))];
-    for (const c of later.sort((a, b) => a.at - b.at)) placed.push({ group: "comingUp", threadId: c.threadId, why: c.why });
+    const later = [...ofPlace("comingUp").map((b) => ({ threadId: b.row.threadId, at: b.row, why: datedWhy(b.row, false) })), ...active.filter((r) => promiseComingUp(r, now)).map((r) => ({ threadId: r.threadId, at: { dueDay: dayKeyOf(r.dueAt), dueAt: r.dueAt, timed: false }, why: promiseWhy(r) }))];
+    for (const c of later.sort((a, b) => byDay(a.at, b.at))) placed.push({ group: "comingUp", threadId: c.threadId, why: c.why });
     return dedupe(placed);
   }
 
