@@ -103,6 +103,59 @@ export function defineTodayConformance(fresh: () => Promise<MailStore>): void {
       }
     });
 
+    it("plan 204, the second panel round: a thanks, or a current summary that asks nothing, isn't waiting on you", async () => {
+      const { store } = await setup();
+      const ingest = (m: Partial<IncomingMessage>, summary = false) =>
+        store.sync.ingest([msg({ listId: null, isRead: false, to: [me], ...m, accountId: accountId_() })], { applyFilters: false, now: NOW, classifier: null, ...(summary ? { newMail: { summary: true } } : {}) });
+      /** their own message, then the answer: a conversation they're in */
+      const talk = async (name: string, date: number, text: string, summary = false) => {
+        const email = `${name.toLowerCase()}@people.test`;
+        await ingest({ date: date - 500, providerMsgId: `${name}-out`, providerThreadId: name, from: me, to: [{ name, email }], isSent: true, isRead: true, subject: `About ${name}` });
+        await ingest({ date, providerMsgId: `${name}-in`, providerThreadId: name, from: { name, email }, subject: `Re: About ${name}`, inReplyTo: `${name}-out`, snippet: text.slice(0, 120), bodyText: text }, summary);
+        return threadOf(store, `${name}-in`);
+      };
+      const summarize = async (thread: number, promptVersion: number, bodyJson: string) => {
+        const r = await store.aiSummaries.finish({
+          threadId: thread,
+          stamp: (await store.aiSummaries.sources(thread))!.stamp,
+          expectThrough: (await store.aiSummaries.get(thread))?.throughMessageId ?? null,
+          now: NOW,
+          clearGeneration: store.aiSummaries.clearGeneration(),
+          contentHash: "hash",
+          promptVersion,
+          language: "en",
+          model: "gpt-6-luna",
+          provider: "openai",
+          endpoint: null,
+          bodyJson,
+        });
+        expect(r).toBe("written");
+      };
+      const nothing = JSON.stringify({ summary: "Ana sent the contract.", items: [{ kind: "fact", text: "The contract is attached." }] });
+      const ack = await talk("Ana", NOW - 9000, "Thanks!\n\nAna\n\nOn Tue, Me wrote:\n> Can you send the deck?");
+      const ackAsks = await talk("Bea", NOW - 8000, "Thanks, can you send it Friday?");
+      const told = await talk("Cleo", NOW - 7000, "Here's the contract.", true);
+      await summarize(told, 7, nothing);
+      const asked = await talk("Dia", NOW - 6000, "Here's the contract.", true);
+      await summarize(asked, 7, JSON.stringify({ summary: "Dia sent the contract to sign.", items: [{ kind: "action", text: "Sign it" }] }));
+      const older = await talk("Eve", NOW - 5000, "Here's the contract.", true);
+      await summarize(older, 6, nothing);
+      const malformed = await talk("Fay", NOW - 4000, "Here's the contract.", true);
+      await summarize(malformed, 7, JSON.stringify({ summary: "No items" }));
+      const stale = await talk("Gus", NOW - 3000, "Here's the contract.", true);
+      await summarize(stale, 7, nothing);
+      // a later message the summary hasn't read: it can't speak for it
+      await ingest({ date: NOW - 2000, providerMsgId: "Gus-in-2", providerThreadId: "Gus", from: { name: "Gus", email: "gus@people.test" }, subject: "Re: About Gus", inReplyTo: "Gus-in", bodyText: "One more thing." });
+
+      const all = [ack, ackAsks, told, asked, older, malformed, stale];
+      expect((await store.threads.summaries(all)).every((t) => t.waitingSince != null)).toBe(true);
+      const kept = [ackAsks, asked, older, malformed, stale];
+      expect(new Set(await store.today.waitingAmong(all, NOW))).toEqual(new Set(kept));
+      expect(new Set((await store.today.waitingPage({ now: NOW, after: null, limit: 20 })).map((p) => p.id))).toEqual(new Set(kept));
+      expect(await store.today.needsCount(NOW)).toBe(kept.length);
+      expect((await store.today.countWith([], NOW)).needs).toBe(kept.length);
+    });
+
     it("digestLive: only what's in the Inbox and unread", async () => {
       const { store, put } = await setup();
       const a = await put();

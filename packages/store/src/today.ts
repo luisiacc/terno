@@ -1,4 +1,4 @@
-import { addressKey, CALENDAR_ANSWER_PREFIXES, type DigestItem, type DigestState } from "@terno/core";
+import { addressKey, CALENDAR_ANSWER_PREFIXES, SUMMARY_WHO_ACTS_SINCE, type DigestItem, type DigestState } from "@terno/core";
 
 /**
  * Plan 145's reads and table, the part both stores share (`packages/db/src/today.ts`, `packages/idb/src/today.ts`). The
@@ -66,6 +66,22 @@ export function needsYou(rows: readonly WaitingRow[], known: (key: string) => { 
     const who = known(key);
     return who?.written === 1 && who.own !== 1;
   });
+}
+
+/**
+ * Plan 204, the second panel round (plan 145's rule, tighter; Codex review): a current summary of the thread that gives the
+ * reader no action and no question. Current: ready, from a prompt that says who has to act, valid, and covering the
+ * thread's last message (the caller checks that). Anything else (missing, stale, malformed, older) says nothing.
+ */
+export function summaryAsksNothing(row: { state: string; prompt_version: number | null; body_json: string | null } | null | undefined): boolean {
+  if (!row || row.state !== "ready" || (row.prompt_version ?? 0) < SUMMARY_WHO_ACTS_SINCE || !row.body_json) return false;
+  try {
+    const body = JSON.parse(row.body_json) as { summary?: unknown; items?: unknown };
+    if (typeof body.summary !== "string" || !Array.isArray(body.items)) return false;
+    return !body.items.some((i) => i && typeof i === "object" && ((i as { kind?: unknown }).kind === "action" || (i as { kind?: unknown }).kind === "question"));
+  } catch {
+    return false;
+  }
 }
 
 export interface TodayStore {

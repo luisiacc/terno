@@ -1,11 +1,22 @@
-import { waitingCutoff, type DigestItem } from "@terno/core";
-import { NEEDS_WALK, needsYou, type DigestFact, type DigestStored, type WaitingRow } from "@terno/store";
+import { isAcknowledgment, looksLikeAcknowledgment, waitingCutoff, type DigestItem } from "@terno/core";
+import { NEEDS_WALK, needsYou, summaryAsksNothing, type DigestFact, type DigestStored, type WaitingRow } from "@terno/store";
 import { inboxHiddenTest, T, type Ctx, type R } from "./mail";
 
 /** Plan 145 on IndexedDB, like SQL's (packages/db/src/today.ts). */
 
+/**
+ * What Needs you reads, in two steps (plan 204, the second panel round: plan 145's rule, tighter). The walk: the newest
+ * waiting threads `needsYou` lets in, and the message whose text decides whether each that starts like an
+ * acknowledgment only is one. The store reads those bodies ahead, then `needsRows` decides.
+ */
+export interface NeedsWalk {
+  rows: WaitingRow[];
+  /** thread → its last message from someone else, for those whose snippet starts like an acknowledgment */
+  acks: Map<number, number>;
+}
+
 /** The newest waiting threads, in the Waiting filter's own date order (revision 11). */
-function needsRows(c: Ctx, now: number): WaitingRow[] {
+export function needsWalk(c: Ctx, now: number): NeedsWalk {
   const threads = T(c, "threads");
   const correspondents = T(c, "correspondents");
   const cutoff = waitingCutoff(now);
@@ -18,24 +29,49 @@ function needsRows(c: Ctx, now: number): WaitingRow[] {
     rows.push({ id, lastDate: t.last_date, from: String(t.last_from_email), subject: String(t.subject), hasSent: t.has_sent === 1 });
     if (rows.length >= NEEDS_WALK) break;
   }
-  return needsYou(rows, (key) => correspondents.get(key) as { written: number; own: number } | undefined);
+  const needs = needsYou(rows, (key) => correspondents.get(key) as { written: number; own: number } | undefined);
+  const acks = new Map<number, number>();
+  for (const r of needs) {
+    if (!looksLikeAcknowledgment(threads.get(r.id)?.snippet as string | null | undefined)) continue;
+    const last = shown(c, r.id).filter((m) => !m.is_sent).sort((a, b) => b.date - a.date || b.id - a.id)[0];
+    if (last) acks.set(r.id, last.id as number);
+  }
+  return { rows: needs, acks };
 }
 
-export function waitingPage(c: Ctx, o: { now: number; after: { lastDate: number; id: number } | null; limit: number }): { id: number; lastDate: number; hasSent: boolean }[] {
+/** What a walk lets in that's still waiting on the reader, its acknowledgments' bodies read ahead: never wider than `needsYou`. */
+function needsRows(c: Ctx, walk: NeedsWalk): WaitingRow[] {
+  return walk.rows.filter((r) => stillWaiting(c, r.id, walk.acks.get(r.id)));
+}
+
+const shown = (c: Ctx, threadId: number): R[] => T(c, "messages").by("fk_thread_id", threadId).filter((m) => !m.is_draft && !m.is_spam && !m.is_trash);
+
+/** As SQL's (packages/db/src/today.ts): not an acknowledgment, and no current summary that gives the reader nothing to do. */
+function stillWaiting(c: Ctx, threadId: number, ack: number | undefined): boolean {
+  if (ack !== undefined) {
+    const body = c.body(ack);
+    if (isAcknowledgment(body?.body_text ?? body?.body_preview ?? null)) return false;
+  }
+  const summary = T(c, "ai_summaries").get(threadId) as { state: string; prompt_version: number | null; through_message_id: number; body_json: string | null } | undefined;
+  if (!summaryAsksNothing(summary)) return true;
+  return shown(c, threadId).some((m) => m.id > summary!.through_message_id);
+}
+
+export function waitingPage(c: Ctx, o: { after: { lastDate: number; id: number } | null; limit: number }, walk: NeedsWalk): { id: number; lastDate: number; hasSent: boolean }[] {
   const { after } = o;
-  return needsRows(c, o.now)
+  return needsRows(c, walk)
     .filter((r) => !after || r.lastDate < after.lastDate || (r.lastDate === after.lastDate && r.id < after.id))
     .slice(0, o.limit)
     .map((r) => ({ id: r.id, lastDate: r.lastDate, hasSent: r.hasSent }));
 }
 
-export function waitingAmong(c: Ctx, threadIds: readonly number[], now: number): number[] {
+export function waitingAmong(c: Ctx, threadIds: readonly number[], walk: NeedsWalk): number[] {
   const wanted = new Set(threadIds);
-  return needsRows(c, now).filter((r) => wanted.has(r.id)).map((r) => r.id);
+  return needsRows(c, walk).filter((r) => wanted.has(r.id)).map((r) => r.id);
 }
 
-export function countWith(c: Ctx, threadIds: readonly number[], now: number): { needs: number; extra: number } {
-  const rows = needsRows(c, now);
+export function countWith(c: Ctx, threadIds: readonly number[], walk: NeedsWalk): { needs: number; extra: number } {
+  const rows = needsRows(c, walk);
   const waiting = new Set(rows.map((r) => r.id));
   const threads = T(c, "threads");
   let extra = 0;
@@ -46,8 +82,8 @@ export function countWith(c: Ctx, threadIds: readonly number[], now: number): { 
   return { needs: rows.length, extra };
 }
 
-export function needsCount(c: Ctx, now: number): number {
-  return needsRows(c, now).length;
+export function needsCount(c: Ctx, walk: NeedsWalk): number {
+  return needsRows(c, walk).length;
 }
 
 export function digestFacts(c: Ctx, messageIds: readonly number[]): { facts: DigestFact[]; oldest: number | null } {

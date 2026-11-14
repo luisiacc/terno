@@ -1,5 +1,5 @@
 import { ASK_MATCH_MESSAGES, ASK_MATCH_PARTS, CORPUS_TEXTS_MAX, finishBodyClose, rankSentRefs, readPassages, readThreadContext, type SentRef } from "@terno/store";
-import { countWith, needsCount, messagesHere, senders, allDigests, beginDigest, clearDigests, digestFacts, digestLive, digestRead, getDigest, latestDigest, pendingDigestDays, pruneDigests, waitingAmong, waitingPage, writeDigest } from "./today";
+import { countWith, needsCount, needsWalk, type NeedsWalk, messagesHere, senders, allDigests, beginDigest, clearDigests, digestFacts, digestLive, digestRead, getDigest, latestDigest, pendingDigestDays, pruneDigests, waitingAmong, waitingPage, writeDigest } from "./today";
 import { clearReplies, finishReply, getReply, transitionReply } from "./replies";
 import { datedAnswered, settleAnswered, activeDated, clearDated, datedMarkCount, datedMarkPage, datedScanCandidates, datedSource, finishDated, getDated, markDatedMail, openDatedFor, pruneDated, pruneDatedMarks, queueDatedScan, restoreDated, threadDated, updateDated } from "./dated";
 import { activeFollowups, claimFollowupNotice, clearFollowups, closeAnsweredFollowups, endFollowupTop, finishFollowups, followupLiveSent, followupScanCandidates, followupSendConfirmed, followupSource, getFollowup, makeFollowupsDue, nextFollowupDue, pruneFollowups, pruneSentMarks, queueScan, restoreFollowups, sentMarkCount, sentMarkPage, threadFollowups, updateFollowup } from "./followups";
@@ -1981,11 +1981,31 @@ export class IdbMailStore implements MailStore {
   private followupClears = 0;
 
   private digestClears = 0;
+  /**
+   * Needs you (plan 204, the second panel round): a plain read, unless a waiting thread starts like an acknowledgment;
+   * then its message's body is read ahead, in a unit no command enters between reading it and deciding.
+   */
+  private async needs<V>(now: number, work: (walk: NeedsWalk) => V): Promise<V> {
+    const quick = await this.read(() => {
+      const walk = needsWalk(this.c, now);
+      return walk.acks.size ? null : { value: work(walk) };
+    });
+    if (quick) return quick.value;
+    return this.bodyCommand(async () => {
+      await this.settled();
+      return this.exclusive(async () => {
+        const walk = needsWalk(this.c, now);
+        await this.readBodies(walk.acks.values());
+        return work(walk);
+      });
+    });
+  }
+
   readonly today: MailStore["today"] = {
-    waitingPage: (o) => this.read(() => waitingPage(this.c, o)),
-    waitingAmong: (ids, now) => this.read(() => waitingAmong(this.c, ids, now)),
-    countWith: (ids, now) => this.read(() => countWith(this.c, ids, now)),
-    needsCount: (now) => this.read(() => needsCount(this.c, now)),
+    waitingPage: (o) => this.needs(o.now, (walk) => waitingPage(this.c, o, walk)),
+    waitingAmong: (ids, now) => this.needs(now, (walk) => waitingAmong(this.c, ids, walk)),
+    countWith: (ids, now) => this.needs(now, (walk) => countWith(this.c, ids, walk)),
+    needsCount: (now) => this.needs(now, (walk) => needsCount(this.c, walk)),
     digestFacts: (ids) => this.read(() => digestFacts(this.c, ids)),
     digestLive: (ids) => this.read(() => digestLive(this.c, ids)),
     digestRead: (ids) => this.read(() => digestRead(this.c, ids)),

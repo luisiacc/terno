@@ -143,5 +143,39 @@ export function prepareTimeToday(prepareAt: string, now: number): number {
   return at.getTime();
 }
 
+/**
+ * Plan 204, the second panel round (plan 145's rule, tighter): a message that only acknowledges ("Thanks.", "Got it,
+ * thanks!", "Gracias", "Perfecto 👍") isn't waiting on the reader. Conservative: the whole visible message, quotes and a
+ * signature off; a few words; an acknowledgment in it; no question and no request. Anything else is kept.
+ */
+const ACK = /\b(thanks|thank you|thx|ty|got it|sounds good|great|perfect|ok|okay|noted|will do|cheers|appreciate it|gracias|muchas gracias|perfecto|listo|de acuerdo|vale|entendido|recibido|genial|excelente)\b|👍|🙏/iu;
+const REQUEST = /\?|¿|\b(can you|could you|would you|please|pls|let me know|send|need|when|what|why|how|por favor|puedes|podrías|podrias|me mandas|me envías|necesito|avísame|avisame|cuándo|cuando|qué|que tal)\b/iu;
+const SIGN_OFF = /^(--\s*$|sent from my|enviado desde|get outlook|best,?$|regards,?$|saludos,?$|un abrazo,?$|abrazo,?$|cheers,?$)/i;
+
+/** A message's own words: quotes, the quoted header and anything after a sign-off taken off. */
+function ownWords(text: string): string {
+  const lines: string[] = [];
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (line.startsWith(">") || /^on .+ wrote:$/i.test(line) || /^el .+ escribió:$/i.test(line)) break;
+    if (SIGN_OFF.test(line)) break;
+    lines.push(line);
+  }
+  return lines.join(" ").replace(/\s+/g, " ").trim();
+}
+
+export function isAcknowledgment(text: string | null | undefined): boolean {
+  if (!text) return false;
+  const words = ownWords(text);
+  if (!words || words.split(" ").length > 10) return false;
+  return ACK.test(words) && !REQUEST.test(words);
+}
+
+/** The cheap screen first: a snippet that starts like an acknowledgment is worth reading the message for. */
+export const looksLikeAcknowledgment = (snippet: string | null | undefined): boolean => !!snippet && snippet.length <= 200 && ACK.test(snippet.slice(0, 40));
+
+/** Plan 202: summaries say who has to act from this prompt version on; an older one can't say the reader has nothing to do. */
+export const SUMMARY_WHO_ACTS_SINCE = 7;
+
 /** An acceptance answers an invitation: there's nothing to answer back. Lowercase, as the stores compare them. */
 export const CALENDAR_ANSWER_PREFIXES = ["accepted:", "declined:", "tentative:", "aceptado:", "aceptada:", "rechazado:", "rechazada:", "provisional:", "nueva hora propuesta:", "new time proposed:"] as const;
