@@ -562,7 +562,7 @@ export class TodayService {
     const followups = this.dueFollowups(active, now).filter((r) => !promiseOver(r, now));
     const missedPromises = followups.filter((r) => promiseMissed(r, now));
     // after the panel: the row carries the promise it shows, what D, Done and Not a task act on
-    const promiseWhy = (r: FollowupRow, missed = false): TodayWhy => ({ kind: r.kind === "promise" ? "promise" : "nudge", text: r.text, dueAt: r.dueAt, personName: r.personName, sentAt: r.sentAt, ...(missed ? { missed } : {}), promise: { id: r.id, revision: r.revision } });
+    const promiseWhy = (r: FollowupRow, missed = false): TodayWhy => ({ kind: r.kind === "promise" ? "promise" : "nudge", text: r.text, dueAt: r.dueAt, personName: r.personName, sentAt: r.sentAt, ...(missed ? { missed } : {}), promise: { id: r.id, revision: r.revision, dated: r.dated } });
     // Missed: the most recently due first
     const missed = [...ofPlace("missed").map((b) => ({ threadId: b.row.threadId, at: b.row.dueAt, why: datedWhy(b.row, true) })), ...missedPromises.map((r) => ({ threadId: r.threadId, at: r.dueAt, why: promiseWhy(r, true) }))].sort((a, b) => b.at - a.at);
     for (const m of missed) placed.push({ group: "missed", threadId: m.threadId, why: m.why });
