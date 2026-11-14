@@ -24,11 +24,21 @@ function needsRows(db: Db, now: number): WaitingRow[] {
     (key) => db.get<{ written: number; own: number }>("SELECT written, own FROM correspondents WHERE email = ?", key),
   );
   // plan 204, the second panel round (plan 145's rule, tighter): on what needsYou let in, never widening it
-  return needs.filter((r) => stillWaiting(db, r.id, snippets.get(r.id) ?? null));
+  return needs.filter((r) => stillWaiting(db, r.id, snippets.get(r.id) ?? null, now));
 }
 
-/** Not an acknowledgment, and no current summary that gives the reader nothing to do or answer (see packages/store/src/today.ts). */
-function stillWaiting(db: Db, threadId: number, snippet: string | null): boolean {
+/**
+ * Not handled, not an acknowledgment, and no current summary that gives the reader nothing to do or answer (see
+ * packages/store/src/today.ts). Handled (Codex code review): a dated item read from their latest message is done, not a
+ * task, settled or put off till later; it's read from the item, so the item's Undo brings the conversation back as it was.
+ */
+function stillWaiting(db: Db, threadId: number, snippet: string | null, now: number): boolean {
+  // the thread's items first (most have none): its latest message is read only when one is handled
+  const handled = db.all<{ message_id: number }>("SELECT message_id FROM dated_items INDEXED BY dated_thread WHERE thread_id = ? AND (state IN ('done', 'dismissed', 'settled') OR deferred_until > ?)", threadId, now);
+  if (handled.length) {
+    const last = db.get<{ id: number }>("SELECT id FROM messages INDEXED BY messages_thread WHERE thread_id = ? AND is_sent = 0 AND is_draft = 0 AND is_spam = 0 AND is_trash = 0 ORDER BY date DESC, id DESC LIMIT 1", threadId);
+    if (last && handled.some((h) => h.message_id === last.id)) return false;
+  }
   if (looksLikeAcknowledgment(snippet)) {
     const last = db.get<{ text: string | null }>(
       `SELECT coalesce(b.body_text, b.body_preview) AS text FROM messages m INDEXED BY messages_thread LEFT JOIN message_bodies b ON b.message_id = m.id

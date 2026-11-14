@@ -177,7 +177,8 @@ function ownWords(text: string): string {
 export function isAcknowledgment(text: string | null | undefined): boolean {
   if (!text) return false;
   const words = ownWords(text);
-  if (!words || /[?¿]/.test(words) || !ACK.test(words)) return false;
+  // a few words: an acknowledgment, at most eight more (the cheap test first)
+  if (!words || words.split(" ").length > 14 || /[?¿]/.test(words) || !ACK.test(words)) return false;
   const rest = words.replace(ACK_ONLY, " ").match(/[\p{L}\p{N}'’]+/gu) ?? [];
   if (rest.length > 8) return false;
   let names = 0;

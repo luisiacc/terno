@@ -166,6 +166,43 @@ export function defineTodayConformance(fresh: () => Promise<MailStore>): void {
       expect((await store.today.countWith([], NOW)).needs).toBe(kept.length);
     });
 
+    it("Codex code review: a request you've handled from their latest message (Done, Not a task, Later) isn't waiting on you", async () => {
+      const { store } = await setup();
+      const DAY = 86_400_000;
+      const ingest = async (m: Partial<IncomingMessage>, dated = false) =>
+        (await store.sync.ingest([msg({ listId: null, isRead: false, to: [me], ...m, accountId: accountId_() })], { applyFilters: false, now: NOW, classifier: null, ...(dated ? { datedMail: { since: null } } : {}) })).inserted[0]!;
+      /** their request, answering yours, with a dated item read from it */
+      const asked = async (name: string, date: number) => {
+        const email = `${name.toLowerCase()}@people.test`;
+        await ingest({ date: date - 500, providerMsgId: `${name}-out`, providerThreadId: name, from: me, to: [{ name, email }], isSent: true, isRead: true, subject: `About ${name}` });
+        const message = await ingest({ date, providerMsgId: `${name}-in`, providerThreadId: name, from: { name, email }, subject: `Re: About ${name}`, inReplyTo: `${name}-out`, bodyText: "Please send the report by Friday." }, true);
+        const thread = await threadOf(store, `${name}-in`);
+        await store.dated.finish({ messageId: message, threadId: thread, fromScan: false, settled: [], now: NOW, model: "m", provider: "p", promptVersion: 4, clearGeneration: store.dated.clearGeneration(),
+          rows: [{ kind: "respond", item: 0, text: "Send the report", quote: "by Friday", dueDay: "2026-11-06", dueAt: NOW + DAY, timed: false, dated: true, actAt: NOW }] });
+        const [item] = await store.dated.ofThread(thread);
+        return { thread, item: item! };
+      };
+      const done = await asked("Ivy", NOW - 9000);
+      const later = await asked("Jon", NOW - 8000);
+      const answered = await asked("Kim", NOW - 7000);
+      const open = await asked("Lou", NOW - 6000);
+      const all = [done.thread, later.thread, answered.thread, open.thread];
+      expect(new Set(await store.today.waitingAmong(all, NOW))).toEqual(new Set(all));
+
+      const was = (await store.dated.update(done.item.id, done.item.revision, { state: "done", closedAt: NOW }))!;
+      await store.dated.update(later.item.id, later.item.revision, { deferredUntil: NOW + DAY });
+      await store.dated.update(answered.item.id, answered.item.revision, { state: "dismissed", closedAt: NOW });
+      // something newer from them: waiting again, whatever was handled before it
+      await ingest({ date: NOW - 500, providerMsgId: "Kim-in-2", providerThreadId: "Kim", from: { name: "Kim", email: "kim@people.test" }, subject: "Re: About Kim", inReplyTo: "Kim-in", bodyText: "Also, the slides?" });
+      expect(new Set(await store.today.waitingAmong(all, NOW))).toEqual(new Set([answered.thread, open.thread]));
+      expect(await store.today.needsCount(NOW)).toBe(2);
+      // Later's time comes: back
+      expect(new Set(await store.today.waitingAmong(all, NOW + 2 * DAY))).toEqual(new Set([later.thread, answered.thread, open.thread]));
+      // Undo: the item as it was, and the conversation with it
+      expect(await store.dated.restore([{ snapshot: was, expectRevision: done.item.revision + 1 }])).toBe(1);
+      expect(new Set(await store.today.waitingAmong(all, NOW))).toEqual(new Set([done.thread, answered.thread, open.thread]));
+    });
+
     it("digestLive: only what's in the Inbox and unread", async () => {
       const { store, put } = await setup();
       const a = await put();

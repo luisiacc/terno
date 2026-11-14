@@ -130,7 +130,7 @@ async function run(kind: "SQLite" | "IndexedDB", budget: { spread: Gate; bound: 
 
 describe("Today at 50k threads with 1,000 dated items (plan 204 revision 12)", () => {
   // the count is plan 145's walk and what this plan adds to it: at most 2 ms spread, 4 ms with a thousand threads to check
-  // Needs you's own walk: about 7 ms (SQLite) and 5 ms (IndexedDB) as mailboxes have it, 21 and 6 with all 2,000 on its slowest path
-  it("SQLite", async () => run("SQLite", { spread: { listMs: 20, addedMs: 2, needsMs: 12, countMs: 14 }, bound: { listMs: 30, addedMs: 4, needsMs: 12, countMs: 14 }, needs: { listMs: 40, addedMs: 5, needsMs: 35, countMs: 38 }, busyMs: 60 }), 600_000);
+  // Needs you's own walk: about 7 ms (SQLite) and 5 ms (IndexedDB) as mailboxes have it, about 28 and 8 with all 2,000 on its slowest path
+  it("SQLite", async () => run("SQLite", { spread: { listMs: 20, addedMs: 2, needsMs: 12, countMs: 14 }, bound: { listMs: 30, addedMs: 4, needsMs: 12, countMs: 14 }, needs: { listMs: 45, addedMs: 5, needsMs: 40, countMs: 42 }, busyMs: 60 }), 600_000);
   it("IndexedDB", async () => run("IndexedDB", { spread: { listMs: 20, addedMs: 2, needsMs: 10, countMs: 12 }, bound: { listMs: 30, addedMs: 4, needsMs: 10, countMs: 12 }, needs: { listMs: 15, addedMs: 3, needsMs: 12, countMs: 14 }, busyMs: 60 }), 900_000);
 });
