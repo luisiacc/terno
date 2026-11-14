@@ -585,7 +585,9 @@ test.describe("Today in List (plan 162, after ai162-r02, Codex review)", () => {
     server.backend.today.changed();
     await page.locator('[data-keep-scroll="list"]').evaluate((el) => { el.scrollTop = 0; });
     const payroll = page.getByTestId("thread-row").filter({ hasText: "Wire payroll" });
-    await expect(payroll.getByTestId("row-task")).toHaveText(/^Due today 1:00\s?PM · Wire payroll$/, { timeout: 15_000 });
+    // after the second panel round: the task alone, the date saying when (and a screen reader hearing it after the task)
+    await expect(payroll.getByTestId("row-task")).toHaveText("Wire payroll", { timeout: 15_000 });
+    await expect(payroll).toHaveAccessibleName(/Wire payroll\s*, Due today 1:00\s?PM,\s*Can you make the 19th/);
     await expect(payroll.getByTestId("row-subject")).toHaveText("Can you make the 19th");
     await expect(payroll.getByTestId("row-date")).toHaveText(/^1:00\s?PM$/);
     if (SHOTS) {
@@ -645,15 +647,15 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       await expect(row(page, "Flight to Madrid")).toBeVisible();
       // after the panel: the task first, where the subject is, in the row's ink; the subject quiet under it; when it's due
       // where the date is
-      await expect(row(page, "Electricity bill").getByTestId("row-task")).toHaveText("Due Saturday · Electricity bill");
+      await expect(row(page, "Electricity bill").getByTestId("row-task")).toHaveText("Electricity bill");
       await expect(row(page, "Electricity bill").getByTestId("row-date")).toHaveText("Sat");
       const flight = row(page, "Flight to Madrid");
-      await expect(flight.getByTestId("row-task")).toHaveText(/^Tomorrow \d{1,2}:\d{2}\s?(AM|PM)? · Flight to Madrid$/);
+      await expect(flight.getByTestId("row-task")).toHaveText("Flight to Madrid");
       await expect(flight.getByTestId("row-subject")).toHaveText("Flight to Madrid");
       await expect(flight.getByTestId("row-date")).toHaveText("Tomorrow");
       await expect(flight.getByTestId("row-snippet")).toHaveCount(0);
-      // read in that order too: the task, then the subject (the date isn't said twice)
-      await expect(flight).toHaveAccessibleName(/^Plans, Iberia.*Tomorrow \d{1,2}:\d{2}\s?(AM|PM)? · Flight to Madrid\s*Flight to Madrid/);
+      // read in that order too: the task, when (the date is hidden from a screen reader), then the subject
+      await expect(flight).toHaveAccessibleName(/^Plans, Iberia.*Flight to Madrid\s*, Tomorrow \d{1,2}:\d{2}\s?(AM|PM)?,\s*Flight to Madrid/);
       const ink = (l: Locator) => l.evaluate((el) => getComputedStyle(el).color);
       expect(await ink(flight.getByTestId("row-task"))).toBe(await ink(flight.getByTestId("row-from")));
       expect(await ink(flight.getByTestId("row-subject"))).not.toBe(await ink(flight.getByTestId("row-from")));
@@ -674,7 +676,8 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       const wrote = await store.dated.finish({ messageId: m.id, threadId: m.thread_id, fromScan: true, rows: [{ kind: "renew", item: 0, text: "Renew the domain", quote: "Your domain expires.", dueDay: "2026-10-20", dueAt: due, timed: false, dated: true, actAt: due - 7 * 86_400_000 }], settled: [], now: E2E_NOW, model: "demo", provider: "fake", promptVersion: 1, clearGeneration: store.dated.clearGeneration() });
       expect(wrote).toBe("written");
       server.backend.today.changed();
-      await expect(row(page, "Renew the domain").getByTestId("row-task")).toHaveText("Was due Tuesday · Renew the domain");
+      await expect(row(page, "Renew the domain").getByTestId("row-task")).toHaveText("Renew the domain");
+      await expect(row(page, "Renew the domain")).toHaveAccessibleName(/Renew the domain\s*, Was due Tuesday,/);
       await expect(row(page, "Renew the domain").getByTestId("row-date")).toHaveText("Tue");
       expect((await headings(page))[0]).toBe("missed");
       await expect(page.getByTestId("today-heading").first()).toHaveText("Missed");
@@ -690,7 +693,7 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       // last, past the demo's Needs you (the list is virtualized: scrolled to its end, focus left on the toggle)
       const toEnd = () => page.locator('[data-keep-scroll="list"]').evaluate((el) => { el.scrollTop = el.scrollHeight; });
       await expect.poll(async () => (await toEnd(), await row(page, "Domain renewal").count())).toBe(1);
-      await expect(row(page, "Domain renewal").getByTestId("row-task")).toHaveText(/^Due (Nov 1|Sunday) · Domain renewal$/);
+      await expect(row(page, "Domain renewal").getByTestId("row-task")).toHaveText("Domain renewal");
       expect((await headings(page)).at(-1)).toBe("comingUp");
       // the heading on the rows' own line
       const left = async (l: Locator) => l.evaluate((el) => el.getBoundingClientRect().left + parseFloat(getComputedStyle(el).paddingLeft));
@@ -824,12 +827,13 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       server.backend.today.changed();
       await page.locator('[data-keep-scroll="list"]').evaluate((el) => { el.scrollTop = 0; });
       const agenda = row(page, "The agenda");
-      await expect(agenda.getByTestId("row-task")).toHaveText(/^Due today · You said: send the agenda$/, { timeout: 15_000 });
+      await expect(agenda.getByTestId("row-task")).toHaveText("You said: send the agenda", { timeout: 15_000 });
+      await expect(agenda).toHaveAccessibleName(/You said: send the agenda\s*, Due today,/);
       await expect(agenda.getByTestId("row-subject")).toHaveText("The agenda");
       // Coming up holds the later one, saying its day (it's open from the scenario before)
       const toEnd = () => page.locator('[data-keep-scroll="list"]').evaluate((el) => { el.scrollTop = el.scrollHeight; });
       await expect.poll(async () => (await toEnd(), await row(page, "The deck").count())).toBe(1);
-      await expect(row(page, "The deck").getByTestId("row-task")).toHaveText("Due Sunday · You said: send the deck");
+      await expect(row(page, "The deck").getByTestId("row-task")).toHaveText("You said: send the deck");
       await expect(row(page, "The deck").getByTestId("row-date")).toHaveText("Sun");
       if (SHOTS) {
         for (const mode of ["light", "dark"] as const) {

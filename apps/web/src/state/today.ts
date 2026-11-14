@@ -253,12 +253,15 @@ export function digestFrom(digest: DigestRow, locale: string): string | null {
   return new Intl.ListFormat(locale, { type: "conjunction" }).format(rest > 0 ? [...shown, t("action.found.more", { count: rest })] : shown);
 }
 
-const whyLine = (item: TodayList["sections"][number]["items"][number], why: TodayWhy): string => {
+const whyLine = (item: TodayList["sections"][number]["items"][number], why: TodayWhy, task: TodayTask | null): string => {
   const { thread, summary } = item;
+  // after the second panel round: where the right column says when, the line is the task alone ("Pay $187.42 for the
+  // electricity bill", "You said: send the agenda"), so the amount fits; the conversation's line keeps the whole wording
+  const bare = task?.when != null;
   // plan 204: "Due Friday · Pay the electricity bill", "Tomorrow 7:40 · Flight to Madrid", "Was due Tuesday · …"
-  if (why.kind === "dated") return why.item ? datedLine({ ...why.item, dueAt: why.dueAt ?? 0, text: why.text ?? "" }, why.missed === true) : (why.text ?? thread.snippet);
+  if (why.kind === "dated") return why.item && !bare ? datedLine({ ...why.item, dueAt: why.dueAt ?? 0, text: why.text ?? "" }, why.missed === true) : (why.text ?? thread.snippet);
   // after the panel: "Due today · You said: send the agenda", "Was due Tuesday · You said: …"
-  if (why.kind === "promise") return promiseLine({ text: why.text ?? "", dueAt: why.dueAt, dated: why.promise?.dated ?? why.missed === true }, why.missed === true);
+  if (why.kind === "promise") return bare ? t("today.why.promise", { text: why.text ?? "" }) : promiseLine({ text: why.text ?? "", dueAt: why.dueAt, dated: why.promise?.dated ?? why.missed === true }, why.missed === true);
   if (why.kind === "nudge") return t("today.why.nudge", { name: why.personName || thread.fromName, count: Math.max(1, Math.floor((Date.now() - (why.sentAt ?? Date.now())) / 86_400_000)) });
   if (why.kind === "reminder") return why.dueAt ? `${t("today.why.reminder", { when: listDate(why.dueAt) })} · ${thread.snippet}` : thread.snippet;
   return summary ?? thread.snippet;
@@ -297,9 +300,9 @@ export function flattenToday(list: TodayList, before: readonly ThreadSummary[]):
     groups.push({ kind: section.kind, at: items.length });
     for (const item of section.items) {
       const why = dayKnown(item.why, section.kind);
-      items.push({ ...item.thread, snippet: whyLine(item, why) });
-      if (COUNTED.has(section.kind)) counted.add(item.thread.id);
       const task = taskOf(why);
+      items.push({ ...item.thread, snippet: whyLine(item, why, task) });
+      if (COUNTED.has(section.kind)) counted.add(item.thread.id);
       if (task) tasks.set(item.thread.id, task);
     }
   }

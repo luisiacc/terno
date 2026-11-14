@@ -60,9 +60,10 @@ export interface ThreadRowProps {
   /**
    * plan 204 (after the panel): a Today row with a dated item or a promise of yours: the task leads (its line, which is the
    * row's snippet, in the row's ink where the subject is, the subject quiet in the preview's place) and its due day is the
-   * row's date. Heights don't change.
+   * row's date. Heights don't change. After the second panel round the line is the task alone where the date says when;
+   * `due` says it in words to a screen reader, after the task (the date is hidden from it).
    */
-  task?: Pick<TodayTask, "when">;
+  task?: Pick<TodayTask, "when" | "due">;
 }
 
 /**
@@ -430,10 +431,15 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
    * the row's ink and the subject's type; the subject quiet where the preview is. No preview: the task alone on the
    * subject's line. Read in that order too (the task before the subject).
    */
+  // after the second panel round: the date says when to the eye; this says it to a screen reader, after the task
+  const taskDue = task?.due && <span className="sr-only">, {task.due},</span>;
   const taskLine = task && (
-    <span data-testid="row-task" className={cn("min-w-0 truncate", thread.unread ? "type-row-subject-strong" : "type-row-subject")}>
-      {thread.snippet}
-    </span>
+    <>
+      <span data-testid="row-task" className={cn("min-w-0 truncate", thread.unread ? "type-row-subject-strong" : "type-row-subject")}>
+        {thread.snippet}
+      </span>
+      {taskDue}
+    </>
   );
   const taskSubject = task && (
     <span data-testid="row-subject" className={cn("type-row-snippet min-w-0 truncate", quiet)}>
@@ -639,7 +645,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
           {/* plan 193: subject then preview, one flowing line (plan 160's subject column left a gap before every short
               subject's preview); the preview is what gives way; the meta columns follow it on the right */}
           <span className="flex min-w-0 flex-1 items-center gap-1.5">
-            {task ? <span data-testid="row-task" className={cn(FLOWING_SUBJECT, subjectInk)}>{thread.snippet}</span> : <span data-testid="row-subject" className={cn(FLOWING_SUBJECT, subjectInk)}>{subjectWords}</span>}
+            {task ? <><span data-testid="row-task" className={cn(FLOWING_SUBJECT, subjectInk)}>{thread.snippet}</span>{taskDue}</> : <span data-testid="row-subject" className={cn(FLOWING_SUBJECT, subjectInk)}>{subjectWords}</span>}
             {/* what a row is, not a column: beside the subject, so the columns on the right never move */}
             {draft}
             {keptTag}
@@ -668,7 +674,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
           {/* (a few characters of subject stay whatever the width: the sender's column gives way first) */}
           <span className="flex min-w-16 flex-1 items-center gap-2">
             {/* plan 204 (after the panel): a task row's task where the subject is, the subject quiet after it */}
-            {task ? <span data-testid="row-task" className={cn(FLOWING_SUBJECT, subjectInk)}>{thread.snippet}</span> : <span data-testid="row-subject" className={cn(FLOWING_SUBJECT, subjectInk)}>{subjectWords}</span>}
+            {task ? <><span data-testid="row-task" className={cn(FLOWING_SUBJECT, subjectInk)}>{thread.snippet}</span>{taskDue}</> : <span data-testid="row-subject" className={cn(FLOWING_SUBJECT, subjectInk)}>{subjectWords}</span>}
             {draft}
             {task ? <span data-testid="row-subject" className={cn("type-row-snippet min-w-0 flex-1 truncate", PREVIEW_INK)}>{subjectWords}</span> : <RowTail thread={thread} reminderTop={reminderTop} ink={owedInk} quiet={PREVIEW_INK} match={match} excerpt={excerpt} />}
           </span>
