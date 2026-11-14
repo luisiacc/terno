@@ -244,6 +244,24 @@ export function defineTodayConformance(fresh: () => Promise<MailStore>): void {
       await store.followups.finish({ messageId: deck, threadId: open.thread, fromScan: false, rows: [{ kind: "promise", item: 0, text: "send the deck", quote: "I'll send the deck", personName: "Lou", personEmail: "lou@people.test", dueAt: NOW + 2 * DAY, dated: true }], kept: [], now: NOW, model: "m", provider: "p", promptVersion: 1, clearGeneration: store.followups.clearGeneration() });
       await store.followups.update(open.promise.id, open.promise.revision, { state: "done", closedReason: "user", closedAt: NOW, inboxState: "none" });
       expect(await store.today.waitingAmong([open.thread], NOW)).toEqual([open.thread]);
+
+      // plan 204 (the fifth panel round): its only open promise put off with Later isn't waiting until it's back; Undo, or
+      // another open promise there, and it is
+      const fresh = await owed("Ned", NOW - 4000);
+      const later = (await store.followups.update(fresh.promise.id, fresh.promise.revision, { state: "open", inboxState: "none", deferredUntil: NOW + DAY }))!;
+      expect(await store.today.waitingAmong([fresh.thread], NOW)).toEqual([]);
+      expect(await store.today.waitingAmong([fresh.thread], NOW + DAY)).toEqual([fresh.thread]);
+      const count = await store.today.needsCount(NOW);
+      expect(await store.followups.restore([{ snapshot: later, expectRevision: later.revision + 1 }])).toBe(1);
+      expect(await store.today.waitingAmong([fresh.thread], NOW)).toEqual([fresh.thread]);
+      expect(await store.today.needsCount(NOW)).toBe(count + 1);
+      const deferredLou = (await store.followups.ofThread(open.thread)).find((r) => r.state === "open")!;
+      await store.followups.update(deferredLou.id, deferredLou.revision, { deferredUntil: NOW + DAY });
+      expect(await store.today.waitingAmong([open.thread], NOW)).toEqual([]);
+      await ingest({ date: NOW - 6100, providerMsgId: "Lou-out-3", providerThreadId: "Lou", from: me, to: [{ name: "Lou", email: "lou@people.test" }], isSent: true, inInbox: false, isRead: true, subject: "Re: About Lou", bodyText: "Also the budget." }, true);
+      const budget = (await store.followups.marks.page(null, 10)).at(-1)!.messageId;
+      await store.followups.finish({ messageId: budget, threadId: open.thread, fromScan: false, rows: [{ kind: "promise", item: 0, text: "send the budget", quote: "Also the budget", personName: "Lou", personEmail: "lou@people.test", dueAt: NOW + 3 * DAY, dated: true }], kept: [], now: NOW, model: "m", provider: "p", promptVersion: 1, clearGeneration: store.followups.clearGeneration() });
+      expect(await store.today.waitingAmong([open.thread], NOW)).toEqual([open.thread]);
     });
 
     it("digestLive: only what's in the Inbox and unread", async () => {

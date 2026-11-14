@@ -667,3 +667,20 @@ describe("migration v57: an ask (plan 204, after the third panel round)", () => 
     expect(() => insert(null, "chore")).toThrow(/CHECK/);
   });
 });
+
+describe("migration v58: a promise's Later (plan 204, the fifth panel round)", () => {
+  it("adds a nullable deferral to follow-ups, every row kept as it was (no backfill)", () => {
+    const { db } = legacyMail(57, { threads: 2, seed: 9 });
+    const thread = db.get<{ id: number }>("SELECT id FROM threads ORDER BY id LIMIT 1")!.id;
+    db.run(
+      `INSERT INTO followups (thread_id, message_id, item, kind, text, sent_at, due_at, dated, state, revision, created_at)
+       VALUES (?, 1, 0, 'promise', 'send the deck', 1, 5, 1, 'open', 3, 2)`,
+      thread,
+    );
+    const before = db.all<Record<string, unknown>>("SELECT * FROM followups ORDER BY id");
+    expect(before).toHaveLength(1);
+    expect(migrate(db)).toEqual({ from: 57, to: SCHEMA_VERSION });
+    expect(db.all<Record<string, unknown>>("SELECT * FROM followups ORDER BY id")).toEqual(before.map((r) => ({ ...r, deferred_until: null })));
+    expect(db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'followups' AND sql IS NOT NULL ORDER BY name").map((r) => r.name)).toEqual(["followups_active", "followups_thread", "followups_top"]);
+  });
+});

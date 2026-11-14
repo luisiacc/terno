@@ -4,7 +4,7 @@ import { T, type Ctx, type R } from "./mail";
 
 /** Plan 142 on IndexedDB, like SQL's (packages/db/src/followups.ts). */
 
-const toRow = (r: R): FollowupRow => ({ id: r.id, threadId: r.thread_id, messageId: r.message_id, rfcMessageId: r.rfc_message_id ?? null, item: r.item, kind: r.kind, text: r.text, quote: r.quote ?? null, personName: r.person_name ?? null, personEmail: r.person_email ?? null, sentAt: r.sent_at, dueAt: r.due_at, dated: r.dated === 1, state: r.state, inboxState: r.inbox_state, closedReason: r.closed_reason ?? null, closedAt: r.closed_at ?? null, notifiedAt: r.notified_at ?? null, fromScan: r.from_scan === 1, revision: r.revision, model: r.model ?? null, provider: r.provider ?? null, createdAt: r.created_at });
+const toRow = (r: R): FollowupRow => ({ id: r.id, threadId: r.thread_id, messageId: r.message_id, rfcMessageId: r.rfc_message_id ?? null, item: r.item, kind: r.kind, text: r.text, quote: r.quote ?? null, personName: r.person_name ?? null, personEmail: r.person_email ?? null, sentAt: r.sent_at, dueAt: r.due_at, dated: r.dated === 1, deferredUntil: r.deferred_until ?? null, state: r.state, inboxState: r.inbox_state, closedReason: r.closed_reason ?? null, closedAt: r.closed_at ?? null, notifiedAt: r.notified_at ?? null, fromScan: r.from_scan === 1, revision: r.revision, model: r.model ?? null, provider: r.provider ?? null, createdAt: r.created_at });
 
 function own(c: Ctx): Set<string> {
   const out = new Set<string>();
@@ -151,7 +151,7 @@ export function finishFollowups(c: Ctx, w: FollowupFinish): FollowupFinishOutcom
       rows.deleteRow(oldest);
       active--;
     }
-    rows.put({ thread_id: src.threadId, message_id: w.messageId, rfc_message_id: src.rfcMessageId, item: r.item, kind: r.kind, text: r.text, quote: r.quote, person_name: r.personName, person_email: r.personEmail, sent_at: src.date, due_at: r.dueAt, dated: r.dated ? 1 : 0, state: "open", inbox_state: "none", closed_reason: null, closed_at: null, notified_at: null, from_scan: w.fromScan ? 1 : 0, revision: 0, model: w.model, provider: w.provider, prompt_version: w.promptVersion, created_at: w.now });
+    rows.put({ thread_id: src.threadId, message_id: w.messageId, rfc_message_id: src.rfcMessageId, item: r.item, kind: r.kind, text: r.text, quote: r.quote, person_name: r.personName, person_email: r.personEmail, sent_at: src.date, due_at: r.dueAt, dated: r.dated ? 1 : 0, deferred_until: null, state: "open", inbox_state: "none", closed_reason: null, closed_at: null, notified_at: null, from_scan: w.fromScan ? 1 : 0, revision: 0, model: w.model, provider: w.provider, prompt_version: w.promptVersion, created_at: w.now });
     active++;
   }
   for (const k of w.kept) {
@@ -163,6 +163,8 @@ export function finishFollowups(c: Ctx, w: FollowupFinish): FollowupFinishOutcom
 }
 
 const byDue = (a: R, b: R) => a.due_at - b.due_at || a.id - b.id;
+/** `followupWakeAt`: a promise's Later, if later than its moment (a row stored before it has none) */
+const wakeAt = (r: R): number => Math.max(r.due_at, r.deferred_until ?? r.due_at);
 
 export function activeFollowups(c: Ctx): FollowupRow[] {
   const rows = T(c, "followups");
@@ -175,7 +177,7 @@ export function getFollowup(c: Ctx, id: number): FollowupRow | null {
 }
 export function nextFollowupDue(c: Ctx): number | null {
   let at: number | null = null;
-  for (const r of T(c, "followups").by("state", "open")) if (at === null || r.due_at < at) at = r.due_at;
+  for (const r of T(c, "followups").by("state", "open")) if (at === null || wakeAt(r) < at) at = wakeAt(r);
   return at;
 }
 
@@ -183,7 +185,7 @@ export function makeFollowupsDue(c: Ctx, now: number): FollowupRow[] {
   const rows = T(c, "followups");
   const out: FollowupRow[] = [];
   for (const r of rows.by("state", "open")) {
-    if (r.due_at > now) continue;
+    if (wakeAt(r) > now) continue;
     out.push(toRow(rows.update(r, { state: "due", inbox_state: r.from_scan ? "none" : "onTop", revision: r.revision + 1 })));
   }
   return out;
@@ -215,7 +217,7 @@ export function closeAnsweredFollowups(c: Ctx, ids: readonly number[], now: numb
   return closed;
 }
 
-const snapshot = (r: R): FollowupSnapshot => ({ id: r.id, revision: r.revision, state: r.state, dueAt: r.due_at, inboxState: r.inbox_state, closedReason: r.closed_reason ?? null, closedAt: r.closed_at ?? null });
+const snapshot = (r: R): FollowupSnapshot => ({ id: r.id, revision: r.revision, state: r.state, dueAt: r.due_at, deferredUntil: r.deferred_until ?? null, inboxState: r.inbox_state, closedReason: r.closed_reason ?? null, closedAt: r.closed_at ?? null });
 
 export function endFollowupTop(c: Ctx, threadIds: readonly number[]): FollowupSnapshot[] {
   const rows = T(c, "followups");
@@ -229,12 +231,12 @@ export function endFollowupTop(c: Ctx, threadIds: readonly number[]): FollowupSn
   return out;
 }
 
-export function updateFollowup(c: Ctx, id: number, revision: number, patch: Partial<Pick<FollowupRow, "state" | "dueAt" | "inboxState" | "closedReason" | "closedAt">>): FollowupSnapshot | null {
+export function updateFollowup(c: Ctx, id: number, revision: number, patch: Partial<Pick<FollowupRow, "state" | "dueAt" | "deferredUntil" | "inboxState" | "closedReason" | "closedAt">>): FollowupSnapshot | null {
   const rows = T(c, "followups");
   const r = rows.get(id);
   if (!r || r.revision !== revision) return null;
   const before = snapshot(r);
-  rows.update(r, { state: patch.state ?? r.state, due_at: patch.dueAt ?? r.due_at, inbox_state: patch.inboxState ?? r.inbox_state, closed_reason: patch.closedReason !== undefined ? patch.closedReason : (r.closed_reason ?? null), closed_at: patch.closedAt !== undefined ? patch.closedAt : (r.closed_at ?? null), revision: r.revision + 1 });
+  rows.update(r, { state: patch.state ?? r.state, due_at: patch.dueAt ?? r.due_at, deferred_until: patch.deferredUntil !== undefined ? patch.deferredUntil : (r.deferred_until ?? null), inbox_state: patch.inboxState ?? r.inbox_state, closed_reason: patch.closedReason !== undefined ? patch.closedReason : (r.closed_reason ?? null), closed_at: patch.closedAt !== undefined ? patch.closedAt : (r.closed_at ?? null), revision: r.revision + 1 });
   return before;
 }
 
@@ -244,7 +246,8 @@ export function restoreFollowups(c: Ctx, list: readonly { snapshot: FollowupSnap
   for (const { snapshot: s, expectRevision } of list) {
     const r = rows.get(s.id);
     if (!r || r.revision !== expectRevision) continue;
-    rows.update(r, { state: s.state, due_at: s.dueAt, inbox_state: s.inboxState, closed_reason: s.closedReason, closed_at: s.closedAt, revision: r.revision + 1 });
+    // the deferral as it was, null too (a journal from before it has none)
+    rows.update(r, { state: s.state, due_at: s.dueAt, deferred_until: s.deferredUntil ?? null, inbox_state: s.inboxState, closed_reason: s.closedReason, closed_at: s.closedAt, revision: r.revision + 1 });
     n++;
   }
   return n;

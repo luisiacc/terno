@@ -59,8 +59,11 @@ function stillWaiting(c: Ctx, threadId: number, ack: number | undefined, now: nu
   // Codex code review (round 4): a promise of yours there closed since their latest message, with none still open, is the
   // row you handled
   const promises = T(c, "followups").by("fk_thread_id", threadId).filter((f) => f.kind === "promise");
+  const open = promises.filter((f) => f.state === "open" || f.state === "due");
+  // plan 204 (the fifth panel round): its only open promises put off with Later, it waits for them (Undo brings it back)
+  if (open.length && open.every((f) => (f.deferred_until ?? 0) > now)) return false;
   const kept = promises.filter((f) => (f.state === "done" || f.state === "dismissed") && f.closed_at != null);
-  if (kept.length && !promises.some((f) => f.state === "open" || f.state === "due")) {
+  if (kept.length && !open.length) {
     const last = shown(c, threadId).filter((m) => !m.is_sent).sort((a, b) => b.date - a.date || b.id - a.id)[0];
     if (last && kept.some((f) => (f.closed_at as number) >= last.date)) return false;
   }
