@@ -191,17 +191,34 @@ export function datedPlace(r: Pick<DatedRow, "kind" | "state" | "dueDay" | "dueA
   return showsAt - now <= COMING_UP_DAYS * 86_400_000 ? "comingUp" : "hidden";
 }
 
-/** A dated promise of yours (plan 142) whose day has ended, due and not moved on with Later: Missed for `MISSED_DAYS`. */
-export function promiseMissed(r: { kind: string; state: string; dated: boolean; dueAt: number }, now: number): boolean {
-  if (r.kind !== "promise" || r.state !== "due" || !r.dated) return false;
-  const missedAt = dayAt(new Date(startOfDay(r.dueAt)), 1, 0);
-  return now >= missedAt && now < dayAt(new Date(missedAt), MISSED_DAYS, 0);
-}
+/** A promise of yours, as Today places it (plan 142's row). */
+type PromiseFacts = { kind: string; state: string; dated: boolean; dueAt: number };
+
+/** Due by now: the follow-ups worker marks it `due` at `dueAt`, and a promise read before it ran is due all the same. */
+const promiseDue = (r: PromiseFacts, now: number): boolean => r.state === "due" || (r.state === "open" && r.dueAt <= now);
 
 /** Codex code review: past Missed's days a dated promise is the Earlier tab's (plan 205), never Needs you's again. */
-export function promiseOver(r: { kind: string; state: string; dated: boolean; dueAt: number }, now: number): boolean {
-  if (r.kind !== "promise" || r.state !== "due" || !r.dated) return false;
+export function promiseOver(r: PromiseFacts, now: number): boolean {
+  if (r.kind !== "promise" || (r.state !== "open" && r.state !== "due") || !r.dated) return false;
   return now >= dayAt(new Date(startOfDay(r.dueAt)), 1 + MISSED_DAYS, 0);
+}
+
+export type PromisePlace = "missed" | "deadlines" | "comingUp" | "hidden";
+
+/**
+ * The third panel round (revision 5): where a promise of yours sits, by the calendar day of its `dueAt`. One rule for the
+ * list, the count and the clock. Missed: dated, its day over, for `MISSED_DAYS`. Deadlines: its day is today, whatever
+ * the hour (a 9:00 promise is today's at 8:00), or undated and due. Coming up: a dated one within its two weeks. A nudge
+ * isn't a promise: it's Needs you's, by `dueAt`.
+ */
+export function promisePlace(r: PromiseFacts, now: number): PromisePlace {
+  if (r.kind !== "promise" || (r.state !== "open" && r.state !== "due")) return "hidden";
+  if (!r.dated) return promiseDue(r, now) ? "deadlines" : "hidden";
+  const starts = startOfDay(r.dueAt);
+  const ends = dayAt(new Date(starts), 1, 0);
+  if (now >= ends) return promiseOver(r, now) ? "hidden" : "missed";
+  if (now >= starts) return "deadlines";
+  return r.dueAt - now <= COMING_UP_DAYS * 86_400_000 ? "comingUp" : "hidden";
 }
 
 /**
@@ -224,11 +241,6 @@ export function datedOver(r: Pick<DatedRow, "kind" | "state" | "dueDay" | "dueAt
 export function missedUntil(r: Pick<DatedRow, "dueDay" | "deferredUntil">): number {
   const from = Math.max(dayEnd(r.dueDay), r.deferredUntil ?? 0);
   return dayAt(new Date(startOfDay(from)), MISSED_DAYS + (from === startOfDay(from) ? 0 : 1), 0);
-}
-
-/** A dated promise of yours due within Coming up's two weeks, not yet due: Coming up's (plan 204, after the panel). */
-export function promiseComingUp(r: { kind: string; state: string; dated: boolean; dueAt: number }, now: number): boolean {
-  return r.kind === "promise" && r.state === "open" && r.dated && r.dueAt > now && r.dueAt - now <= COMING_UP_DAYS * 86_400_000;
 }
 
 /**
@@ -254,19 +266,24 @@ export function nextTodayChange(items: readonly Pick<DatedRow, "kind" | "state" 
       consider(missedUntil(r));
     }
   }
+  // where `promisePlace` moves a promise: into Coming up, its day starting (Deadlines), ending (Missed), Missed ending;
+  // an undated one as it comes due
   for (const p of promises) {
-    if (p.kind === "promise" && p.state === "open" && p.dated) {
-      consider(p.dueAt - ahead);
+    if (p.kind !== "promise" || (p.state !== "open" && p.state !== "due")) continue;
+    if (!p.dated) {
       consider(p.dueAt);
+      continue;
     }
-    if (p.kind !== "promise" || p.state !== "due" || !p.dated) continue;
-    const missedAt = dayAt(new Date(startOfDay(p.dueAt)), 1, 0);
-    consider(missedAt);
-    consider(dayAt(new Date(missedAt), MISSED_DAYS, 0));
+    const starts = startOfDay(p.dueAt);
+    const ends = dayAt(new Date(starts), 1, 0);
+    consider(p.dueAt - ahead);
+    consider(starts);
+    consider(ends);
+    consider(dayAt(new Date(ends), MISSED_DAYS, 0));
   }
   // Codex code review: a row's words are by the day ("Tomorrow 7:40", "Due Friday"): while one shows, midnight changes them
   // (an ask's aren't: it says no day)
-  if (items.some((r) => r.kind !== "ask" && datedPlace(r, now) !== "hidden") || promises.some((p) => promiseMissed(p, now) || promiseComingUp(p, now))) consider(dayAt(new Date(startOfDay(now)), 1, 0));
+  if (items.some((r) => r.kind !== "ask" && datedPlace(r, now) !== "hidden") || promises.some((p) => promisePlace(p, now) !== "hidden")) consider(dayAt(new Date(startOfDay(now)), 1, 0));
   return Number.isFinite(next) ? next : null;
 }
 

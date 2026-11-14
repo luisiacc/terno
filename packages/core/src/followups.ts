@@ -92,6 +92,10 @@ export function localDay(text: string): Date | null {
  * - a promise for today written after 9:00: today at 17:00; after 17:00, tomorrow at 9:00
  * - a promise with no date: 3 days after sending, at the next 9:00
  * - awaiting a reply: `nudgeAfterDays` after sending, at the next 9:00
+ *
+ * Today places a promise by the day of `dueAt` (plan 204's `promisePlace`), so one for "today" made after 17:00 is
+ * tomorrow's there: in Deadlines tomorrow, Missed a day later than its words say. Kept (plan 204): rare, and the
+ * alternative is a day column on `followups`.
  */
 export function followupDue(o: { kind: FollowupKind; sentAt: number; due: string | null; nudgeAfterDays: number }): { dueAt: number; dated: boolean } {
   const sent = startOfDay(o.sentAt);
