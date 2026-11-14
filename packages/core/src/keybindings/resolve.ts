@@ -31,6 +31,8 @@ export type Command =
   | "thread.print"
   | "thread.exportPdf"
   | "thread.remind"
+  /** plan 204 (the owner): Done on the selected What matters row's date or promise */
+  | "today.done"
   | "message.next"
   | "message.prev"
   | "message.toggleAll"
@@ -153,6 +155,8 @@ export const DEFAULT_BINDINGS: readonly Binding[] = [
   { keys: "v", command: "thread.move" },
   // plan 87: Superhuman's "remind me"
   { keys: "h", command: "thread.remind" },
+  // plan 204: the owner chose D for Done on a What matters row (an exception to plan 161's no new AI shortcuts)
+  { keys: "d", command: "today.done" },
   // plan 158: within the open conversation, on letters every keyboard types without Option (j and k are the list's, n a suggestion's)
   { keys: "shift+n", command: "message.next" },
   { keys: "shift+p", command: "message.prev" },
