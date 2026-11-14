@@ -684,7 +684,8 @@ export const THEMES: readonly Theme[] = [
       destructive: "0.53 0.2 27",
       success: "0.5 0.13 150",
       unread: "0.52 0.15 237",
-      star: "0.6 0.15 66",
+      // 3:1 on the open row's grey too (Codex code review: 0.6 was 2.8:1 there)
+      star: "0.53 0.13 66",
       "row-hover": "#E0E0E0",
       "row-selected": "#D6D6D6",
       "row-selected-foreground": "#1F1F1F",

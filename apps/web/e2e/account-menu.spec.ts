@@ -173,6 +173,13 @@ test.describe("the account menu", () => {
         await expect(page.getByTestId(menuId)).toHaveCount(0);
         await expect.poll(() => outline(testId), testId).toBe("none");
       }
+      // plan 204: the chosen row too, whose lift (the design's depth) is drawn after the outline's class (Codex code review)
+      await page.getByTestId(`nav-account-${a}`).click();
+      await expect(page.getByTestId(`nav-account-${a}`)).toHaveAttribute("data-active");
+      await page.getByTestId(`nav-account-${a}`).click({ button: "right" });
+      await expect(page.getByTestId(`account-menu-${a}`)).toBeVisible();
+      expect(await outline(`nav-account-${a}`)).toContain(ring);
+      await page.keyboard.press("Escape");
     });
     await scenario("Shift+F10 and the menu key open the focused row's own menu: an account's, a category's, never the thread menu", async () => {
       await freshStart(page);

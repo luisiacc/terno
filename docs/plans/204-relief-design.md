@@ -144,3 +144,11 @@ Twelve points, all taken:
 - `e2e/relief.spec.ts`: Relief's controls, Settings' cards, the switch and the chosen tab measured in the running app; a nested Lumen preview's depth is flat; macOS's controls compute exactly Tailwind's `shadow-xs` and no sheen or emboss.
 - `controls.spec` runs in every design id, so Relief too: its secondary and radio card borders are compared with the design's raised edge rather than `--border`.
 - Already failing on the base commit (`4d940ab1b`, checked on a clean copy): `motion.spec`'s "in a design" flow (the list's listbox never shows) in Lumen and Atelier, so in Relief too.
+
+## Revisions after the Codex code review
+
+Three findings, all fixed, each with a test that fails without the fix:
+
+1. The chosen sidebar row's lift (`data-active:shadow-(--depth-nav)`) is emitted after the outline a right-click menu draws on its row, so the chosen account or category lost that outline, in every design (flat's lift is a transparent layer). The outline is important now; `account-menu.spec` right-clicks the chosen row too.
+2. Relief light's star was 2.8:1 on the open row; it's darker (`0.53 0.13 66`), and Relief is in the star-on-rows contrast test.
+3. The composer's From select clears its trigger's chrome to sit plain on the row, but not the new sheen and emboss, so Relief painted a lit patch behind it. It clears them too; `relief.spec` checks it.

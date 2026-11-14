@@ -139,8 +139,12 @@ function accountPress(e: React.MouseEvent<HTMLElement>): AccountPress {
   return (e.target as Element).closest("[data-slot=nav-disclosure]") ? "chevron" : "click";
 }
 
-/** A sidebar row whose right-click menu is open (its trigger, a wrapper of the row alone, says so): the list's outline for the row a menu is for */
-const MENU_FOR = "in-data-popup-open:shadow-[inset_0_0_0_2px_var(--ring)]";
+/**
+ * A sidebar row whose right-click menu is open (its trigger, a wrapper of the row alone, says so): the list's outline for the
+ * row a menu is for. Important: the chosen row's lift (plan 204, `data-active:shadow-(--depth-nav)`) is emitted after it,
+ * and would hide it on the row that's open (Codex code review)
+ */
+const MENU_FOR = "in-data-popup-open:shadow-[inset_0_0_0_2px_var(--ring)]!";
 
 function NavItem({
   active,

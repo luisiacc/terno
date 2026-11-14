@@ -63,6 +63,13 @@ test.describe("Relief (plan 204)", () => {
       const lumen = page.getByTestId("design-card-lumen").locator('[data-design="lumen"]');
       expect(await lumen.evaluate((el) => [getComputedStyle(el).getPropertyValue("--depth-well").trim(), getComputedStyle(el).getPropertyValue("--emboss").trim()])).toEqual(["0 0 transparent", "none"]);
     });
+    await scenario("a plain select stays plain: the composer's From has no sheen or pressed-in words (Codex code review)", async () => {
+      await fresh(page);
+      await page.keyboard.press("c");
+      const from = page.getByTestId("compose-from");
+      await expect(from).toBeVisible();
+      expect(await from.evaluate((el) => [getComputedStyle(el).backgroundImage, getComputedStyle(el).textShadow])).toEqual(["none", "none"]);
+    });
   });
 });
 

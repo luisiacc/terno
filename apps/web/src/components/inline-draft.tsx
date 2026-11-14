@@ -237,7 +237,7 @@ export function DraftFieldsForm({ d, accounts, showSubject, threadAccountId }: {
       {fromRow && (
         <Row label={t("compose.from")} remove={fromRemovable ? { label: t("compose.hideFrom"), testId: "compose-hide-from", disabled: d.sending, onRemove: () => (setFromOpen(false), backToText()) } : undefined}>
           <Select disabled={d.sending || draftSenderLocked(d)} value={String(d.accountId)} onValueChange={(v) => update({ accountId: Number(v) })} items={accounts.map((a) => ({ value: String(a.id), label: `${a.displayName} · ${a.email}` }))}>
-            <SelectTrigger id={`${id}-from`} size="sm" aria-label={t("compose.from")} className="-ml-2.5 h-7 min-w-0 border-0 bg-transparent shadow-none dark:bg-transparent dark:hover:bg-muted" data-testid="compose-from" title={draftSenderLocked(d) ? t("attachments.senderLocked") : undefined}>
+            <SelectTrigger id={`${id}-from`} size="sm" aria-label={t("compose.from")} className="-ml-2.5 h-7 min-w-0 border-0 bg-transparent bg-none shadow-none [text-shadow:none] dark:bg-transparent dark:hover:bg-muted" data-testid="compose-from" title={draftSenderLocked(d) ? t("attachments.senderLocked") : undefined}>
               {/* a long address truncates in a narrow pane: the corner's Pin stays in the row */}
               <SelectValue className="block! min-w-0 truncate" />
             </SelectTrigger>

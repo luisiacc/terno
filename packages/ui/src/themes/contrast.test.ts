@@ -13,7 +13,7 @@ describe("WCAG AA in every built-in theme", () => {
     expect(failures).toEqual([]);
   });
 
-  it.each(["lumen-light", "lumen-dark", "atelier-light", "atelier-dark"])("%s keeps its star readable on hovered, selected and checked rows", (id) => {
+  it.each(["lumen-light", "lumen-dark", "atelier-light", "atelier-dark", "relief-light", "relief-dark"])("%s keeps its star readable on hovered, selected and checked rows", (id) => {
     expect(contrastFailures(THEMES.find((t) => t.id === id)!, STAR_ON_ROWS)).toEqual([]);
   });
 
