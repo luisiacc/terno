@@ -222,6 +222,23 @@ export function promisePlace(r: PromiseFacts, now: number): PromisePlace {
 }
 
 /**
+ * The third panel round: the first moment Later may choose for a promise of yours, or null. A dated one is placed by its
+ * day (`promisePlace`), so Later on it is another day: a moment later today would leave it today's, in Deadlines, as if
+ * nothing was chosen. An undated one, or a nudge, goes by its moment.
+ */
+export const promiseLaterFrom = (r: { dated: boolean }, now: number): number | null => (r.dated ? dayAt(new Date(startOfDay(now)), 1, 0) : null);
+
+/**
+ * The third panel round (revision 10): the moment Later must come before on a dated item, or null. A timed item still
+ * ahead, its own moment (Later today at 1:00 PM isn't for a 1:00 PM payroll); a Plan, its end. A Missed item, or one
+ * whose moment has passed, may go anywhere ahead. The menus, the picker and the backend's check all ask this.
+ */
+export function laterBefore(r: Pick<DatedRow, "kind" | "dueDay" | "dueAt" | "timed">, now: number): number | null {
+  if (r.timed && r.dueAt > now) return r.dueAt;
+  return datedGroup(r.kind) === "plans" ? planEnd(r) : null;
+}
+
+/**
  * Codex code review: an item whose time in Today is over for good: a Plan that's ended, a deadline past Missed's days and
  * not moved on with Later. It's retired (`expired`), so the open set holds only what can still show (its bound of 1,000).
  */

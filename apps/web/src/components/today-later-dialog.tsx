@@ -1,23 +1,15 @@
-import { defaultRemindAt } from "@terno/core";
 import { t } from "@terno/i18n";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@terno/ui/components/dialog";
-import type { TodayTask } from "~/lib/dated";
+import { laterNote, laterStart, laterWindow, type TodayTask } from "~/lib/dated";
 import { actOnTodayRow } from "~/lib/today-task";
 import { setApp } from "~/state/app";
 import { useToday } from "~/state/today";
 import { WhenForm } from "./when-fields";
 
-const HOUR = 3_600_000;
-
-/** Where its own moment starts: the reminder picker's (tomorrow at 9), or, on a Plan that ends before then, an hour before its end. */
-export function laterStart(task: TodayTask, now = Date.now()): number {
-  const start = defaultRemindAt(new Date(now));
-  if (task.kind !== "dated" || task.end === null || start < task.end) return start;
-  const minute = 60_000;
-  return Math.ceil(Math.max(now + 15 * minute, task.end - HOUR) / minute) * minute;
-}
-
-/** Plan 204 (after the panel, fix 10): a Today row's Later at a moment of your own, the reminder's date and time (plan 87); on a Plan, before it ends. */
+/**
+ * Plan 204 (after the panel, fix 10): a Today row's Later at a moment of your own, the reminder's date and time (plan 87),
+ * in Later's window (the third panel round: before a timed item's moment, a Plan's end; a dated promise, another day).
+ */
 export function openTodayLater(threadId: number, task: TodayTask): void {
   useToday.setState({ laterPick: { threadId, task } });
   setApp({ dialog: "todayLater" });
@@ -26,6 +18,7 @@ export function openTodayLater(threadId: number, task: TodayTask): void {
 export function TodayLaterDialog() {
   const pick = useToday((s) => s.laterPick);
   const task = pick?.task ?? null;
+  const span = task && laterWindow(task);
   const close = () => {
     useToday.setState({ laterPick: null });
     setApp({ dialog: null });
@@ -36,10 +29,12 @@ export function TodayLaterDialog() {
         <DialogHeader>
           <DialogTitle>{t("dated.later")}</DialogTitle>
         </DialogHeader>
-        {task && (
+        {task && span && (
           <WhenForm
-            start={laterStart(task)}
-            before={task.kind === "dated" ? task.end : null}
+            start={laterStart(span)}
+            before={span.before}
+            from={span.from}
+            notes={laterNote(span)}
             testPrefix="today-later"
             submit={t("dated.laterSet")}
             onSet={(at) => {

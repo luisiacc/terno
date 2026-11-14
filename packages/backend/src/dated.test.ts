@@ -653,4 +653,31 @@ describe("the third panel round", () => {
     await client.call("followups.act", { id: second.why.promise!.id, revision: second.why.promise!.revision, action: "done" });
     expect((await row()).why).toMatchObject({ text: "send the October update", dueAt: at(2026, 11, 23, 9), promise: { id: first.why.promise!.id } });
   });
+
+  it("change 6: Later before a timed item's own moment while it's ahead, anywhere once Missed; a dated promise's Later is another day", async () => {
+    const { client, model, receive, read, raw, clock } = await setup();
+    await client.call("settings.update", { followups: { enabled: true } });
+    model.answer = (req) => (promptText(req.messages[0]!.content).includes("payroll") ? reply([{ kind: "pay", text: "Fund payroll", quote: "payroll by 1:00 PM", due: "2026-11-13", time: "13:00" }]) : reply());
+    const payroll = await receive({ subject: "Payroll", bodyText: "Fund payroll by 1:00 PM on Friday." });
+    await read();
+    clock.now = at(2026, 11, 13, 10);
+    const [item] = (await client.call("dated.ofThread", { threadId: payroll })).rows;
+    await expect(client.call("dated.act", { id: item!.id, revision: item!.revision, action: "later", until: at(2026, 11, 13, 13) })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    const ok = await client.call("dated.act", { id: item!.id, revision: item!.revision, action: "later", until: at(2026, 11, 13, 12) });
+    await client.call("dated.undo", { undoId: ok.undoId! });
+    // Missed: every moment ahead
+    clock.now = at(2026, 11, 14, 10);
+    const [missed] = (await client.call("dated.ofThread", { threadId: payroll })).rows;
+    await client.call("dated.act", { id: missed!.id, revision: missed!.revision, action: "later", until: at(2026, 11, 16, 9) });
+    // a promise due today: Later today would leave it today's
+    const thread = await receive({ from: { name: "Tom", email: "tom@people.test" }, subject: "The agenda", bodyText: "Looking forward to it." });
+    raw.run(...followup(thread, "send the agenda", at(2026, 11, 14, 9), { state: "due" }));
+    raw.run(...followup(thread, "call back", at(2026, 11, 14, 9), { state: "due", dated: 0, message: 900_100 }));
+    const [dated, undated] = (await followupRows(client)).sort((a, b) => Number(b.dated) - Number(a.dated));
+    await expect(client.call("followups.act", { id: dated!.id, revision: dated!.revision, action: "later", dueAt: at(2026, 11, 14, 15) })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await client.call("followups.act", { id: dated!.id, revision: dated!.revision, action: "later", dueAt: at(2026, 11, 15, 9) });
+    await client.call("followups.act", { id: undated!.id, revision: undated!.revision, action: "later", dueAt: at(2026, 11, 14, 15) });
+  });
 });
+
+const followupRows = async (client: RpcClient) => (await client.call("followups.list", {})).rows;
