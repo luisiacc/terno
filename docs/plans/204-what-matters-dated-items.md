@@ -440,3 +440,20 @@ The same seven personas on 548ac7fcd, with the panel's own changes (summaries on
 10. **Coming up says its horizon:** the toggle reads "4 coming up in 2 weeks" (en, es).
 
 Not this round: a scam named in the automated messages' row; delegating to an assistant; keys for Not a task and Later (the owner's rule); the separate jobs inside one event's mail.
+
+### Revisions after the Codex review of the fourth round's changes
+
+Codex (read-only, `/tmp/terno-scratch/p204/critique-5.out`) raised 12 points; taken as follows.
+
+1. **No week's lead for promises:** Later on a dated promise moves its due day (there's no deferral column on `followups`), so a promise put off within the lead would stay in Deadlines. Change 5 is the bill's lead only; a promise keeps its day's rule. A deferral column is a later plan's.
+2. **An ask's checks run before a day turns it into a request** (`checkDates`): an ask with a day from an automated sender, or asked of someone else, is dropped as an ask would be, not kept as a `respond`.
+3. **Prompt v6's alerts are descriptive and attributed,** never an instruction: what the mail says happened, with the amount or card it states ("Debit card frozen after a $412.18 charge, the email says"), never "check with" a name the mail gives (it may be an impersonation), never pay, wire, click or reply. The eval adds a phishing alert with invented details beside real words.
+4. **Needs you before Plans is the headings' order only:** a thread that's both a Plan and waiting stays the Plan (its precedence and the count unchanged); `TODAY_GROUP_ORDER` puts Needs you's section above Plans'.
+5. **Time-only moves:** the prompt says `moved` is a new day *or time*; `checkDates` moves a timed item whose moment changes on the same day, and a same-day move with no time keeps the item's time. The text's words aren't rewritten (a window said in the text stays). Item id and deferral kept; Undo as before.
+6. **The bill's week applies to bills read from now on** (`actAt` is stored): one already open keeps its three days. The panel reads every mailbox again, and a real mailbox's open bills turn over in a month; no rescheduling pass.
+7. **A send answers requests as before** (plan 204's rule, any trusted send of yours): "I'll send the deck tomorrow" is a promise follow-ups shows as yours. Not changed this round.
+8. **An undated due promise is Needs you's** (`PromisePlace` gains `needsYou`), after asks and before nudges, and its row shows no day (not the mail's date).
+9. **A promise's row names and pictures the person you made it to:** `TodayWhy` carries the promise's `personEmail` beside `personName`, and the row uses them for its name and avatar; the thread's own data is unchanged.
+10. **The promise card says its day with `promiseWhen`** (no "9:00 AM"); an undated promise says no day; a nudge keeps its "comes back" time. Only the promise's buttons are renamed (Later, Not a task); a nudge's dismissal keeps its words.
+11. **Undo's words are captured when acting:** the task's text goes with the act ("Done: Pay $187.42…"), one formatter for the row, the conversation, D and the follow-ups card.
+12. **Coming up's horizon wording is dropped** from this round: items come into it by their time to act, so "in 2 weeks" wouldn't be exact.
