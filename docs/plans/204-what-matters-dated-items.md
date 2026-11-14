@@ -249,3 +249,27 @@ Round two, on those fixes (`/tmp/terno-scratch/p204/review-2.out`, 3 points, all
 10. **The clock's wake didn't retire what had just ended** once the day's bounds had run (a flight over at 9:40). `daily()` retires at every wake, and keeps the bounds once a day.
 
 Two rounds, as the owner's cap on review rounds asks; nothing left open from them.
+
+## After the user panel (2026-11-14)
+
+Seven simulated users reviewed What matters on their own mailboxes, read by the real reader (the report: https://claude.ai/artifact/Dn12kA8m9gT1XRSwCyw1Fx; method and pitfalls in the session's notes). Would use it daily: 5.3 out of 10. 82% of what the answer keys expected was shown, and 7 of 86 traps. The owner said yes to fixing the list below before landing 204, and decided:
+
+> yes to all 4 suggestions, for the shortcut we can use D if possible
+
+That is: the "before shipping" list; **a week's lead for requests from people and 30 days for expiring documents**; **D** for Done on Today's rows (an exception to the owner's no-new-AI-shortcuts rule, for this one action); and the automated-messages entry moving to **the end** of Today.
+
+### The fixes
+
+1. **Not a task.** Beside Done wherever Done is (the row's menu, the palette, the conversation's line): `dated.act(…, "dismiss")` (exists), or `followups.act(…, "dismiss")` for a promise. The snack: "Removed from Today", with Undo. Learning from it by sender is plan 206's.
+2. **D is Done** on the selected Today row (`today.done`, `d`, outside fields and dialogs): a dated item's Done, or a promise's. Anywhere else, and on a row with neither, it does nothing. The menu shows it beside Done.
+3. **Task first.** A Today row with a dated item or a promise leads with the task on its second line ("Due Friday · Pay the electricity bill", in the row's foreground, not the snippet's muted ink), the subject quiet on the third, and its due day (and time) where the received date usually is.
+4. **Times and order.** Any timed item says its time ("Due today 1:00 PM · Wire payroll"), not only Plans. Inside a group, items order by their day, then the timed ones by time, then the untimed. The text carries the amount when the mail states one (prompt).
+5. **Later mail moves a date.** `readDates` gains `moved: { label, due, time, evidence }[]` for open items a later message gives a new day ("Friday at the latest"); the evidence must be the mail's words and the day must pass `datedTiming` from the new message. `DatedFinish` gains `moved`, applied only at the revision shown, in both stores, recomputing `act_at`; a Missed item with a new day leaves Missed by the rule that places it.
+6. **Prompt v3** (`DATED_PROMPT_VERSION` 3), each with eval cases: a booking or appointment still ahead is an event, even when the mail "confirms" it or asks to confirm it; a request addressed by name to someone else in a group mail isn't the reader's; a newsletter's optional call to action isn't an item; an account or security item never tells the reader to reply ("Check the fraud alert with your bank"); the amount in the text; `moved`.
+7. **Follow-ups (plan 142) don't take conditional or joking lines as promises** ("if we get to the Rose Bowl I'll have a ticket with your name on it"): its prompt version 8, with eval cases.
+8. **Promises in What matters.** A dated promise of yours due in the next 14 days is in Coming up. One due today says so ("Due today · You said: send the agenda"). In the conversation, a request's dated line (`respond`) gives way to your own open promise on the same thread, so one obligation has one line and one Done; Done or Not a task on either closes the other on that thread.
+9. **Leads:** `respond` 7 days (was 2), `expire` 30 days (was 7).
+10. **Later's choices** on a Today row are the reminder presets that apply now, plus "Pick a date…" (the Time Field); Remind me isn't offered beside it on a Today row with an item, since the two meant the same thing there.
+11. **The automated-messages entry moves to the end of Today:** the list's last row (`DIGEST_ROW_ID`, as plan 145 had it, never before a person), under no heading of its own.
+
+Out of scope: a rule for a first message from a prospective client; a promise of yours that a later message from someone else replaces; ownership and handing to an assistant (plan 206); the coverage line ("checked mail since…").
