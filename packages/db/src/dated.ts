@@ -104,28 +104,43 @@ export function openDatedFor(db: Db, o: { threadId: number; senderKey: string; b
 }
 
 /**
- * After the panel (Codex review of the fixes, revision 1): a message you sent answers the requests made before it on its
- * thread, as plan 142's `closeWaitsBefore` ends waits; your promise, if it made one, is then the obligation. In the
- * commit that makes the send known. Only `respond` items: a bill isn't paid by writing back.
+ * Codex code review of the fixes: mail that is yours for certain, not only by its From (IMAP sets `is_sent` for a forged
+ * message claiming your address): Gmail's SENT label, or out of the Inbox (an IMAP Sent folder). Never a local copy not
+ * confirmed yet. Terno's own confirmed send is trusted where it's known (`settleAnswered`).
  */
-export function datedAnswered(db: Db, messageIds: readonly number[], now: number): number {
-  if (!messageIds.length) return 0;
-  const sent = db.all<{ thread_id: number; at: number }>(
-    "SELECT thread_id, max(date) AS at FROM messages WHERE id IN (SELECT value FROM json_each(?)) AND is_sent = 1 AND is_draft = 0 AND is_spam = 0 AND is_trash = 0 GROUP BY thread_id",
-    JSON.stringify(messageIds),
-  );
+const TRUSTED_SENT = "is_sent = 1 AND is_draft = 0 AND is_spam = 0 AND is_trash = 0 AND coalesce(provider_msg_id, 'local:') NOT LIKE 'local:%' AND (gmail_labels LIKE '%\"SENT\"%' OR in_inbox = 0)";
+
+/** The newest message in this thread that's certainly yours, or null. */
+const lastTrustedSend = (db: Db, threadId: number): number | null =>
+  db.get<{ at: number | null }>(`SELECT max(date) AS at FROM messages INDEXED BY messages_thread WHERE thread_id = ? AND ${TRUSTED_SENT}`, threadId)?.at ?? null;
+
+/** A reply of yours at `before` answers the thread's open requests from messages before it. */
+export function settleAnswered(db: Db, threadId: number, before: number, now: number): number {
+  return Number(db.run(
+    "UPDATE dated_items SET state = 'settled', closed_reason = 'answered', closed_at = ?, revision = revision + 1 WHERE id IN (SELECT id FROM dated_items INDEXED BY dated_thread WHERE thread_id = ? AND state = 'open') AND kind = 'respond' AND arrived_at < ?",
+    now, threadId, before,
+  ).changes);
+}
+
+/**
+ * After the panel (Codex review of the fixes, revision 1): a message you sent answers the requests made before it on its
+ * thread, as plan 142's `closeWaitsBefore` ends waits; your promise, if it made one, is then the obligation. For the
+ * threads an ingest or a flag/location reconciliation touched (a draft sent elsewhere is an update, not an insert), by
+ * their newest trusted send. Only `respond` items: a bill isn't paid by writing back.
+ */
+export function datedAnswered(db: Db, threadIds: Iterable<number>, now: number): number {
   let n = 0;
-  for (const s of sent) {
-    n += Number(db.run(
-      "UPDATE dated_items SET state = 'settled', closed_reason = 'answered', closed_at = ?, revision = revision + 1 WHERE id IN (SELECT id FROM dated_items INDEXED BY dated_thread WHERE thread_id = ? AND state = 'open') AND kind = 'respond' AND arrived_at < ?",
-      now, s.thread_id, s.at,
-    ).changes);
+  for (const threadId of threadIds) {
+    if (!db.get("SELECT 1 FROM dated_items INDEXED BY dated_thread WHERE thread_id = ? AND state = 'open' LIMIT 1", threadId)) continue;
+    const at = lastTrustedSend(db, threadId);
+    if (at !== null) n += settleAnswered(db, threadId, at, now);
   }
   return n;
 }
 
 export function finishDated(db: Db, w: DatedFinish): DatedFinishOutcome {
   return db.tx(() => {
+    let repliedAt: number | undefined;
     if (!db.get("SELECT 1 FROM ai_dated_mail WHERE message_id = ?", w.messageId)) return "gone";
     const src = datedSource(db, w.messageId);
     if (!src || src.spam || src.trash || src.draft || src.threadSpam) {
@@ -144,6 +159,15 @@ export function finishDated(db: Db, w: DatedFinish): DatedFinishOutcome {
         db.run("DELETE FROM dated_items WHERE id = ?", furthest.id);
         open--;
       }
+      const answered = r.kind === "respond" && (repliedAt ??= lastTrustedSend(db, src.threadId) ?? -1) > src.date;
+      if (answered) {
+        db.run(
+          `INSERT OR IGNORE INTO dated_items (thread_id, message_id, item, kind, text, quote, sender_key, due_day, due_at, timed, dated, act_at, deferred_until, arrived_at, state, closed_reason, closed_at, from_scan, revision, model, provider, prompt_version, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 'settled', 'answered', ?, ?, 0, ?, ?, ?, ?)`,
+          src.threadId, w.messageId, r.item, r.kind, r.text, r.quote, src.senderKey, r.dueDay, r.dueAt, r.timed ? 1 : 0, r.dated ? 1 : 0, r.actAt, src.date, w.now, w.fromScan ? 1 : 0, w.model, w.provider, w.promptVersion, w.now,
+        );
+        continue;
+      }
       open += Number(db.run(
         `INSERT OR IGNORE INTO dated_items (thread_id, message_id, item, kind, text, quote, sender_key, due_day, due_at, timed, dated, act_at, deferred_until, arrived_at, state, from_scan, revision, model, provider, prompt_version, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 'open', ?, 0, ?, ?, ?, ?)`,
@@ -158,7 +182,8 @@ export function finishDated(db: Db, w: DatedFinish): DatedFinishOutcome {
     }
     for (const m of w.moved ?? []) {
       db.run(
-        "UPDATE dated_items SET due_day = ?, due_at = ?, timed = ?, dated = 1, act_at = ?, revision = revision + 1 WHERE id = ? AND state = 'open' AND (thread_id = ? OR sender_key = ?)",
+        // the revision stays: a Later just before stays undoable, and the move changes no choice of the user's (Codex review)
+        "UPDATE dated_items SET due_day = ?, due_at = ?, timed = ?, dated = 1, act_at = ? WHERE id = ? AND state = 'open' AND (thread_id = ? OR sender_key = ?)",
         m.dueDay, m.dueAt, m.timed ? 1 : 0, m.actAt, m.id, src.threadId, src.senderKey,
       );
     }

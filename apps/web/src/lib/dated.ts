@@ -24,10 +24,14 @@ const capital = (s: string): string => s.charAt(0).toLocaleUpperCase(getLocale()
 
 const dayOf = (o: Pick<DatedFacts, "dueDay" | "dueAt">): number => localDay(o.dueDay)?.getTime() ?? o.dueAt;
 
-/** "Was due Tuesday · …": a Missed line, an item's or a dated promise's (its text already in its own words). */
-export function wasDueLine(day: number, text: string, now = Date.now()): string {
+/**
+ * "Was due Tuesday · …": a Missed line, an item's or a dated promise's (its text already in its own words). A timed one
+ * keeps its time (Codex code review of the fixes): "Was due yesterday 1:00 PM · Wire payroll".
+ */
+export function wasDueLine(day: number, text: string, now = Date.now(), time: string | null = null): string {
   const d = datedDay(day, now);
-  return d.near === "yesterday" ? t("today.why.wasDueYesterday", { text }) : t("today.why.wasDueOn", { day: d.text, text });
+  if (d.near === "yesterday") return time ? t("today.why.wasDueYesterdayAt", { time, text }) : t("today.why.wasDueYesterday", { text });
+  return time ? t("today.why.wasDueOnAt", { day: d.text, time, text }) : t("today.why.wasDueOn", { day: d.text, text });
 }
 
 /** "Due Friday · …", "Due today 1:00 PM · …" (after the panel: any timed item says its time, not only a Plan). */
@@ -45,8 +49,8 @@ function dueLine(day: number, time: string | null, text: string, now: number): s
  */
 export function datedLine(o: DatedFacts, missed: boolean, now = Date.now()): string {
   if (!o.dated) return o.text;
-  if (missed) return wasDueLine(dayOf(o), o.text, now);
   const time = o.timed ? reminderTime(o.dueAt) : null;
+  if (missed) return wasDueLine(dayOf(o), o.text, now, time);
   if (datedGroup(o.kind) === "plans") {
     const d = datedDay(dayOf(o), now);
     const when = d.near === "today" ? t("today.when.today") : d.near === "tomorrow" ? t("today.when.tomorrow") : capital(d.text);
@@ -73,8 +77,9 @@ export function promiseLine(o: { text: string; dueAt?: number; dated: boolean },
 export type TodayTask =
   | { kind: "dated"; item: DatedRef; when: string | null; end: number | null }
   | { kind: "promise"; id: number; revision: number; when: string | null };
+// a nudge (no reply to your mail) acts as a promise does: through follow-ups' act on the row it shows (Codex code review)
 
-/** A Today row's task, from what the backend said of it; a waiting row, a nudge or a reminder has none. */
+/** A Today row's task, from what the backend said of it: a dated item, a promise or a nudge; a waiting row or a reminder has none. */
 export function taskOf(why: TodayWhy, now = Date.now()): TodayTask | null {
   if (why.kind === "dated" && why.item) {
     const item = why.item;
@@ -84,8 +89,8 @@ export function taskOf(why: TodayWhy, now = Date.now()): TodayTask | null {
     const when = item.dated ? dueShort(timed ? dueAt : (localDay(item.dueDay)?.getTime() ?? dueAt), timed, now) : null;
     return { kind: "dated", item, when, end: datedGroup(item.kind) === "plans" ? planEnd({ dueDay: item.dueDay, dueAt, timed: item.timed }) : null };
   }
-  if (why.kind === "promise" && why.promise) {
-    const dated = why.promise.dated === true && why.dueAt !== undefined;
+  if ((why.kind === "promise" || why.kind === "nudge") && why.promise) {
+    const dated = why.kind === "promise" && why.promise.dated === true && why.dueAt !== undefined;
     return { kind: "promise", id: why.promise.id, revision: why.promise.revision, when: dated ? dueShort(why.dueAt!, false, now) : null };
   }
   return null;

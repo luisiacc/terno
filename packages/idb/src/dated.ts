@@ -113,23 +113,35 @@ export function openDatedFor(c: Ctx, o: { threadId: number; senderKey: string; b
   return [...found.values()].filter((r) => r.arrived_at < o.before && !inSpam(r.thread_id)).sort((a, b) => b.arrived_at - a.arrived_at || b.id - a.id).slice(0, o.limit).map(toRow);
 }
 
-/** As SQL's (packages/db/src/dated.ts): a message you sent answers the requests made before it on its thread. */
-export function datedAnswered(c: Ctx, messageIds: readonly number[], now: number): number {
-  const messages = T(c, "messages");
+/** As SQL's (packages/db/src/dated.ts): mail that is yours for certain, never a forged From nor a local copy not confirmed. */
+const trustedSend = (m: R): boolean => !!m.is_sent && !m.is_draft && !m.is_spam && !m.is_trash && !String(m.provider_msg_id ?? "local:").startsWith("local:") && (String(m.gmail_labels ?? "").includes('"SENT"') || !m.in_inbox);
+
+const lastTrustedSend = (c: Ctx, threadId: number): number | null => {
+  let at: number | null = null;
+  for (const m of T(c, "messages").by("fk_thread_id", threadId)) if (trustedSend(m) && (at === null || m.date > at)) at = m.date;
+  return at;
+};
+
+/** A reply of yours at `before` answers the thread's open requests from messages before it. */
+export function settleAnswered(c: Ctx, threadId: number, before: number, now: number): number {
   const rows = T(c, "dated_items");
-  const latest = new Map<number, number>();
-  for (const id of messageIds) {
-    const m = messages.get(id);
-    if (!m || !m.is_sent || m.is_draft || m.is_spam || m.is_trash) continue;
-    latest.set(m.thread_id, Math.max(latest.get(m.thread_id) ?? 0, m.date));
-  }
   let n = 0;
-  for (const [threadId, at] of latest) {
-    for (const r of rows.by("fk_thread_id", threadId)) {
-      if (r.state !== "open" || r.kind !== "respond" || r.arrived_at >= at) continue;
-      rows.update(r, { state: "settled", closed_reason: "answered", closed_at: now, revision: r.revision + 1 });
-      n++;
-    }
+  for (const r of rows.by("fk_thread_id", threadId)) {
+    if (r.state !== "open" || r.kind !== "respond" || r.arrived_at >= before) continue;
+    rows.update(r, { state: "settled", closed_reason: "answered", closed_at: now, revision: r.revision + 1 });
+    n++;
+  }
+  return n;
+}
+
+/** As SQL's: the threads an ingest or a reconciliation touched, by their newest trusted send. */
+export function datedAnswered(c: Ctx, threadIds: Iterable<number>, now: number): number {
+  const rows = T(c, "dated_items");
+  let n = 0;
+  for (const threadId of threadIds) {
+    if (!rows.by("fk_thread_id", threadId).some((r) => r.state === "open")) continue;
+    const at = lastTrustedSend(c, threadId);
+    if (at !== null) n += settleAnswered(c, threadId, at, now);
   }
   return n;
 }
@@ -147,8 +159,17 @@ export function finishDated(c: Ctx, w: DatedFinish): DatedFinishOutcome {
   if (src.threadId !== w.threadId) return "moved";
   const rows = T(c, "dated_items");
   let open = rows.count("state", "open");
+  let repliedAt: number | undefined;
   for (const r of w.rows) {
     if (rows.by("identity", w.messageId, r.item).length) continue;
+    // a request read after your reply is stored answered (Codex code review of the fixes)
+    if (r.kind === "respond" && (repliedAt ??= lastTrustedSend(c, src.threadId) ?? -1) > src.date) {
+      rows.put({
+        thread_id: src.threadId, message_id: w.messageId, item: r.item, kind: r.kind, text: r.text, quote: r.quote, sender_key: src.senderKey, due_day: r.dueDay, due_at: r.dueAt, timed: r.timed ? 1 : 0, dated: r.dated ? 1 : 0, act_at: r.actAt,
+        deferred_until: null, arrived_at: src.date, state: "settled", closed_reason: "answered", closed_at: w.now, from_scan: w.fromScan ? 1 : 0, revision: 0, model: w.model, provider: w.provider, prompt_version: w.promptVersion, created_at: w.now,
+      });
+      continue;
+    }
     if (open >= DATED_ACTIVE_MAX) {
       // the bound keeps the soonest: the furthest of them all isn't added
       let furthest: R | undefined;
@@ -169,7 +190,7 @@ export function finishDated(c: Ctx, w: DatedFinish): DatedFinishOutcome {
   }
   for (const m of w.moved ?? []) {
     const r = rows.get(m.id);
-    if (r && r.state === "open" && (r.thread_id === src.threadId || r.sender_key === src.senderKey)) rows.update(r, { due_day: m.dueDay, due_at: m.dueAt, timed: m.timed ? 1 : 0, dated: 1, act_at: m.actAt, revision: r.revision + 1 });
+    if (r && r.state === "open" && (r.thread_id === src.threadId || r.sender_key === src.senderKey)) rows.update(r, { due_day: m.dueDay, due_at: m.dueAt, timed: m.timed ? 1 : 0, dated: 1, act_at: m.actAt });
   }
   marks.deleteRow(mark);
   return "written";

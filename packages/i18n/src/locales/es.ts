@@ -2598,6 +2598,8 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "today.why.dueOnAt": "Vence el {day} {time} · {text}",
   "today.why.wasDueYesterday": "Venció ayer · {text}",
   "today.why.wasDueOn": "Venció el {day} · {text}",
+  "today.why.wasDueYesterdayAt": "Venció ayer {time} · {text}",
+  "today.why.wasDueOnAt": "Venció el {day} {time} · {text}",
   "today.why.plan": "{when} · {text}",
   "today.when.today": "Hoy",
   "today.when.tomorrow": "Mañana",

@@ -400,6 +400,23 @@ describe("after the panel", () => {
     clock.now = at(2026, 11, 12, 10);
     const deadlines = (await client.call("today.list", { heldIds: [] })).sections.find((x) => x.kind === "deadlines")!;
     expect(deadlines.items.map((i) => i.thread.id)).toEqual([bill, payroll, domain]);
+    // Codex code review of the fixes: Coming up orders the same way (earlier, the untimed 9:00 came first)
+    clock.now = at(2026, 11, 8, 10);
+    const coming = (await client.call("today.list", { heldIds: [] })).sections.find((x) => x.kind === "comingUp")!;
+    expect(coming.items.map((i) => i.thread.id)).toEqual([bill, payroll, domain]);
+  });
+
+  it("Codex code review of the fixes: a thread with two items the same day shows the timed one", async () => {
+    const { client, model, receive, read, clock } = await setup();
+    model.answer = () => reply([
+      { kind: "renew", text: "Renew the plan", quote: "renews", due: "2026-11-13", time: null },
+      { kind: "pay", text: "Fund payroll", quote: "payroll by 1:00 PM", due: "2026-11-13", time: "13:00" },
+    ]);
+    await receive({ subject: "Payroll", bodyText: "Your plan renews today, and fund payroll by 1:00 PM." });
+    await read();
+    clock.now = at(2026, 11, 13, 10);
+    const [row] = (await client.call("today.list", { heldIds: [] })).sections.find((x) => x.kind === "deadlines")!.items;
+    expect(row!.why).toMatchObject({ text: "Fund payroll", item: { timed: true } });
   });
 });
 
