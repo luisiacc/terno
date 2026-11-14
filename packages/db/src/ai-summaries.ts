@@ -44,6 +44,17 @@ const toRow = (r: Raw): AiSummaryRow => ({
   failedAt: r.failed_at,
 });
 
+const FROM_ACCOUNT = "lower(m.from_email) IN (SELECT lower(email) FROM accounts)";
+const FROM_OWN = "EXISTS (SELECT 1 FROM correspondents c WHERE c.email = lower(m.from_email) AND c.own = 1)";
+/** `m` (a messages row) is from one of the user's own addresses: an account's, or one plan 17 learned is theirs. */
+export const OWN_SENDER_SQL = `(${FROM_ACCOUNT} OR ${FROM_OWN})`;
+
+/**
+ * Mail the user received, as the AI features on new mail read it: not sent, a draft, spam or trash, and not from the
+ * user. One rule for `ai_new_mail` and plan 204's `ai_dated_mail`, so the two can't drift; the window is each caller's.
+ */
+export const RECEIVED_SQL = `m.is_sent = 0 AND m.is_draft = 0 AND m.is_spam = 0 AND m.is_trash = 0 AND NOT ${FROM_ACCOUNT} AND NOT ${FROM_OWN}`;
+
 /** Ingest's part (in its transaction): live mail it inserted, marked; a summary queued for its thread, when they want one. */
 export function markNewMail(db: Db, messageIds: readonly number[], now: number, wants: NewMailWants): void {
   if (!messageIds.length || (!wants.summary && !wants.category)) return;
@@ -51,9 +62,7 @@ export function markNewMail(db: Db, messageIds: readonly number[], now: number, 
   db.run(
     `INSERT OR IGNORE INTO ai_new_mail (message_id, thread_id, arrived_at, wants_summary, wants_category)
      SELECT m.id, m.thread_id, ?, ?, ? FROM messages m
-     WHERE m.id IN (SELECT value FROM json_each(?)) AND m.is_sent = 0 AND m.is_draft = 0 AND m.is_spam = 0 AND m.is_trash = 0 AND m.date >= ?
-       AND lower(m.from_email) NOT IN (SELECT lower(email) FROM accounts)
-       AND NOT EXISTS (SELECT 1 FROM correspondents c WHERE c.email = lower(m.from_email) AND c.own = 1)`,
+     WHERE m.id IN (SELECT value FROM json_each(?)) AND ${RECEIVED_SQL} AND m.date >= ?`,
     now,
     wants.summary ? 1 : 0,
     wants.category ? 1 : 0,
