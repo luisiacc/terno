@@ -24,7 +24,7 @@ interface Case {
   tags: string[];
   subject: string;
   messages: { from: string; text: string; to?: string[]; cc?: string[] }[];
-  dated: { receivedAt: string; automated: boolean; open: { label: string; kind: DatedKind; text: string }[]; items: Expected[]; also: Expected[]; settled: string[] };
+  dated: { receivedAt: string; automated: boolean; open: { label: string; kind: DatedKind; text: string }[]; items: Expected[]; also: Expected[]; settled: string[]; moved?: { label: string; due: string; time?: string }[]; mayMove?: { label: string; due: string }[] };
 }
 
 const CASES: Case[] = readFileSync(join(import.meta.dirname, "corpus", "dated", "dated.jsonl"), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line) as Case);
@@ -39,7 +39,7 @@ const nameOf = (from: string) => /^(.*?)\s*<[^>]+>\s*$/.exec(from)?.[1] ?? from;
 describe.skipIf(process.env.TERNO_AI_DATED !== "1")("dated items on a small model", () => {
   it("finds what has a date, leaves out what doesn't, quotes the mail, and settles only on the mail's words", async () => {
     const tasks = realTasks(TARGET, "dated-eval");
-    let expected = 0, found = 0, wrongItems = 0, invented = 0, wrongSettled = 0, missedSettled = 0, rightTimes = 0, times = 0;
+    let expected = 0, found = 0, wrongItems = 0, invented = 0, wrongSettled = 0, missedSettled = 0, rightTimes = 0, times = 0, wrongMoved = 0, missedMoved = 0, unsafe = 0;
     const lines: string[] = [];
     for (const c of CASES) {
       const mail = c.messages.at(-1)!;
@@ -71,7 +71,9 @@ describe.skipIf(process.env.TERNO_AI_DATED !== "1")("dated items on a small mode
         problems.push(`wrong ${got.kind} ${got.due} "${got.text}"`);
       }
       for (const got of r.items) {
-        if (!normalizeText(mail.text).includes(normalizeText(got.quote))) {
+        // as the app's own check reads a quote (checkDates): the words, whatever punctuation joins them
+        const words = (t: string) => normalizeText(t).toLowerCase().replace(/[^\p{L}\p{N}$€£%]+/gu, " ").trim();
+        if (!words(mail.text).includes(words(got.quote))) {
           invented++;
           problems.push(`quote not in the mail: "${got.quote}"`);
         }
@@ -87,11 +89,34 @@ describe.skipIf(process.env.TERNO_AI_DATED !== "1")("dated items on a small mode
         missedSettled++;
         problems.push(`didn't settle ${s}`);
       }
+      // prompt v3: a later message's new day for an open item, never a new item
+      const want = c.dated.moved ?? [];
+      for (const m of r.moved ?? []) {
+        const w = want.find((x) => x.label === m.label);
+        if (w && w.due === m.due && (w.time === undefined || w.time === m.time)) continue;
+        if ((c.dated.mayMove ?? []).some((x) => x.label === m.label && x.due === m.due)) continue;
+        wrongMoved++;
+        problems.push(`moved ${m.label} to ${m.due} ${m.time ?? ""}`);
+      }
+      for (const w of want) {
+        if ((r.moved ?? []).some((m) => m.label === w.label)) continue;
+        missedMoved++;
+        problems.push(`didn't move ${w.label}`);
+      }
+      // prompt v3: an account alert never tells the reader to reply or click
+      for (const got of r.items) {
+        if (got.kind !== "alert" || !/\b(reply|respond|click|responde|contesta|haz clic)\b/i.test(got.text)) continue;
+        unsafe++;
+        problems.push(`alert says to reply: "${got.text}"`);
+      }
       lines.push(`${problems.length ? "✗" : "✓"} ${c.id} [${c.tags.join(",")}] ${r.items.map((i) => `${i.kind} ${i.due}${i.time ? ` ${i.time}` : ""} "${i.text}"`).join("; ") || "nothing"}${problems.length ? `\n    ${problems.join("\n    ")}` : ""}`);
     }
-    process.stderr.write(`${lines.join("\n")}\n${JSON.stringify({ model: MODEL, language: LANGUAGE, found, expected, wrongItems, invented, rightTimes, times, wrongSettled, missedSettled })}\n${spendReport()}\n`);
+    process.stderr.write(`${lines.join("\n")}\n${JSON.stringify({ model: MODEL, language: LANGUAGE, found, expected, wrongItems, invented, rightTimes, times, wrongSettled, missedSettled, wrongMoved, missedMoved, unsafe })}\n${spendReport()}\n`);
     expect(wrongItems).toBeLessThanOrEqual(1);
     expect(wrongSettled).toBe(0);
+    expect(wrongMoved).toBe(0);
+    expect(missedMoved).toBeLessThanOrEqual(1);
+    expect(unsafe).toBe(0);
     expect(found / expected).toBeGreaterThanOrEqual(0.85);
     expect(rightTimes / Math.max(1, times)).toBeGreaterThanOrEqual(0.8);
   }, 900_000);

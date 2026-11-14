@@ -24,6 +24,10 @@ const base: Case[] = [
   { text: "Let's catch up sometime.", promise: false, replies: false },
   { text: "Attached is the invoice.", promise: false, replies: false },
   { text: "Sounds good, talk soon.", promise: false, replies: false },
+  // plan 204's user panel: a conditional, and banter, aren't promises (prompt version 8)
+  { text: "If we get to the Rose Bowl I will have a ticket with your name on it.", promise: false, replies: false },
+  { text: "When you come visit I'll take my ring off and stick it in your face, ha.", promise: false, replies: false },
+  { text: "Si gano la lotería te invito a Cancún, jaja.", promise: false, replies: false, es: true },
 ];
 // every wording again, in a thread that gives it something to answer: about 150 readings in all
 const CASES = Array.from({ length: 10 }, () => base).flat();
@@ -42,7 +46,10 @@ describe.skipIf(process.env.TERNO_AI_FOLLOWUPS !== "1")("follow-ups on a small m
       if (c.replies) {
         replies++;
         if (r.expectsReply) foundReplies++;
-      } else if (r.expectsReply) falseReplies++;
+      } else if (r.expectsReply) {
+        falseReplies++;
+        console.log("expects a reply, shouldn't:", c.text);
+      }
       if (c.due) {
         dates++;
         if (r.promises[0]?.due === c.due) rightDates++;
