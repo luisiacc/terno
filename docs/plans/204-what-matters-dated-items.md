@@ -498,3 +498,18 @@ The panel showed two phishing mails as alerts: security@tririver-fcu-alerts.com'
 - **The reader** never asks about such a sender's message: its mark is consumed, so it keeps no item, settlement or move and isn't asked again.
 - **What's automated and the digest** (plan 145) leave it out of a scan (it takes none of the 40 places and reaches no model) and at read (a digest stored before), so the row's names and count never show it.
 - **Dropped: the lookalike half** (a domain with the same letters as one the user already gets mail from, once hyphens and those words are taken out). It needs the domains the user gets mail from, which neither store keeps by domain. A bounded read would be a new index on both stores. Both of the panel's fakes are caught without it, so it's left for a later plan.
+
+## After the fifth panel round (2026-11-14)
+
+On f68d56f93 (prompt v7, the phishing guard): Deadlines 6.0 → 6.9, Acting 6.9 → 7.4, Missed 7.9, Look 7.9; Needs you 6.7 → 5.6, Coming up 5.9, Plans 6.3; would use daily 6.1. Diego is at 7 or more everywhere. Against the keys, 97% shown and both phishing alerts gone. What they asked, checked against the data:
+
+1. **Your own promise due in a few days hides behind Coming up's toggle** (Jordan's pricing for Tuesday, Theo's deck for Sunday), because a promise is Deadlines' only on its day: the fourth round dropped a week's lead because Later moves a promise's day. **A promise gets its own Later:** `followups.deferred_until` (SQLite v58, nullable; IndexedDB a field; snapshots and Undo carry it), set by Later instead of moving `due_at`; a dated promise is Deadlines' from a week before its day (a request's lead), unless put off until later; Missed by its own day as before. The pickers offer every preset again.
+2. **A moved item keeps its old words** ("arrive 9:30" beside an 8 AM game): a move may carry the item's new text (prompt v8's `moved.text`, quoted like the rest), written with the move in both stores.
+3. **An alert with no day shows the day it came** ("Yesterday" under Deadlines, read as overdue): an undated alert's row shows no day, as an undated promise's doesn't.
+4. **Cold outreach is no ask** (a recruiter's pitch asking for intros): prompt v8 says a cold pitch, sales or recruiting outreach to the reader isn't an ask; and the model's text is cut at a word, not inside one.
+5. **"You said: call"**: follow-ups' prompt v9 says a promise's text names what, to whom where it matters, and the time it states ("call Marcus at 4:00 PM").
+6. **One conversation hides its second date** (Priya's board meeting under "Send Jess your draft", again): a row whose conversation has another open item that would show shows it on its second line, in place of the subject: "Also Thursday 9:00 AM · Board meeting".
+
+The panel: an old corpus message with no To went to the persona as its only recipient, so an all-staff broadcast read as asking them; such a message now goes to undisclosed recipients (the reader isn't named), as it did in its mailbox.
+
+Not this round: delegating; a way to stop a sender for good; the parts of one event's mail (confirm by replying, what to bring) as separate items.
