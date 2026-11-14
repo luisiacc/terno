@@ -124,18 +124,25 @@ describe("the local checks (plan 204 §3)", () => {
       expect(checkDates({ items: [named], settled: [] }, from(false, "to")).rows).toEqual([]);
       expect(checkDates({ items: [ask], settled: [] }, { ...base, text }).rows).toEqual([]);
     });
-    it("the reader only copied, or not named among the recipients: only when the ask's own words name them", () => {
-      expect(checkDates({ items: [ask], settled: [] }, from(true, "cc")).rows).toEqual([]);
-      expect(checkDates({ items: [ask], settled: [] }, from(true, "none")).rows).toEqual([]);
+    it("the reader only copied, or not named among the recipients: only when the mail names them where it asks", () => {
+      const team = { text: "Hi team, can you send me a quote for the rebranding? Thanks, Lucía and Pedro, for the photos." };
+      expect(checkDates({ items: [ask], settled: [] }, { ...from(true, "cc"), ...team }).rows).toEqual([]);
+      expect(checkDates({ items: [ask], settled: [] }, { ...from(true, "none"), ...team }).rows).toEqual([]);
+      expect(checkDates({ items: [ask], settled: [] }, { ...from(true, "to"), ...team }).rows).toHaveLength(1);
       expect(checkDates({ items: [named], settled: [] }, from(true, "cc")).rows).toHaveLength(1);
       expect(checkDates({ items: [named], settled: [] }, from(true, "none", "lucia")).rows).toHaveLength(1);
+      // the eval: a model quotes from "can you", the name just before it in the mail ("Lucía, can you…")
+      expect(checkDates({ items: [ask], settled: [] }, from(true, "cc")).rows).toHaveLength(1);
       // a word of the name inside another word isn't the name
       expect(checkDates({ items: [named], settled: [] }, from(true, "cc", "Lu")).rows).toEqual([]);
     });
-    it("with a day it's a request with a day (`respond`), whoever it's from; one ask a message", () => {
+    it("with a day it's a request with a day (`respond`), whoever it's from; one ask a message, none beside a request with a day", () => {
       const dated = { ...ask, due: "2026-11-13" };
       expect(checkDates({ items: [dated], settled: [] }, from(false, "cc")).rows[0]).toMatchObject({ kind: "respond", dueDay: "2026-11-13", dated: true });
       expect(checkDates({ items: [ask, { ...ask, text: "Answer Mariana about the dates" }], settled: [] }, from(true, "to")).rows).toHaveLength(1);
+      // the eval: a model gave the request with a day and the same as an ask beside it
+      const respond = { ...ask, kind: "respond", text: "Send Mariana a quote", due: "2026-11-13" };
+      expect(checkDates({ items: [respond, ask], settled: [] }, from(true, "to")).rows.map((r) => r.kind)).toEqual(["respond"]);
     });
     it("an open ask isn't given a day by a later message", () => {
       const open = new Map([["o1", { id: 4, revision: 0, kind: "ask", dueDay: "2026-11-09" } as DatedRow]]);

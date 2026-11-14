@@ -62,15 +62,21 @@ const itemKey = (kind: string, t: { dueDay: string; dueAt: number; timed: boolea
 /** A name's words, as a quote's are read: "Lucía Romero" → ["lucia", "romero"]; an initial or a bare letter isn't one. */
 const nameWords = (name: string) => norm(name).split(" ").filter((w) => w.length >= 2);
 
+/** How far before an ask's quote the reader's name may be ("Nora, could you…" quoted from "could you"): a few words. */
+const NAMED_BEFORE_CHARS = 24;
+
 /**
  * The third panel round (revision 1): who an ask may be from and to, read here and not only from the model: a person
- * (`senderIsPerson`, never a list, bulk or no-reply address), and the reader addressed in To or named in the ask's own words.
+ * (`senderIsPerson`, never a list, bulk or no-reply address), and the reader addressed in To or named where the mail asks.
+ * `said` is the mail as `norm` reads it.
  */
-function askAllowed(quote: string, o: { sender?: { person: boolean }; reader?: { name: string; addressed: "to" | "cc" | "none" } }): boolean {
+function askAllowed(quote: string, said: string, o: { sender?: { person: boolean }; reader?: { name: string; addressed: "to" | "cc" | "none" } }): boolean {
   if (!o.sender?.person || !o.reader) return false;
   if (o.reader.addressed === "to") return true;
-  const said = ` ${norm(quote)} `;
-  return nameWords(o.reader.name).some((w) => said.includes(` ${w} `));
+  const q = norm(quote);
+  const at = said.indexOf(q);
+  const where = ` ${at < 0 ? q : said.slice(Math.max(0, at - NAMED_BEFORE_CHARS), at + q.length)} `;
+  return nameWords(o.reader.name).some((w) => where.includes(` ${w} `));
 }
 
 /**
@@ -100,12 +106,14 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
   const rows: DatedWrite[] = [];
   // a moved item keeps its id: the same kind on its new day isn't added again (Codex review of the fixes)
   const seen = new Set<string>(moved.map((m) => itemKey(m.kind, m)));
+  // the eval: a person's request with a day is the `respond`, never also an undated ask beside it
+  const requested = result.items.some((i) => (i.kind === "respond" || (i.kind === "ask" && i.due)) && quoted(i.quote));
   for (const item of result.items) {
     if (rows.length >= DATED_ITEMS_MAX) break;
     if (!KINDS.has(item.kind) || !item.text.trim() || !quoted(item.quote)) continue;
     // an ask is never a dated kind's substitute: one with a day is a request with a day
     const kind = (item.kind === "ask" && item.due ? "respond" : item.kind) as DatedKind;
-    if (kind === "ask" && !askAllowed(item.quote, input)) continue;
+    if (kind === "ask" && (requested || !askAllowed(item.quote, said, input))) continue;
     const timing = datedTiming({ kind, due: item.due, time: item.time, arrivedAt: input.arrivedAt });
     if (!timing) continue;
     // the 14-day check keeps nothing already over (§6)
@@ -339,7 +347,8 @@ export class DatedWorker {
       // names only: who the reader is and how it reached them, so a task for someone else stays theirs (the eval)
       const nameOf = (p: { name: string; email: string }) => p.name || p.email.split("@")[0]!;
       const reader = { name: (await store.accounts.get(src.accountId))?.displayName ?? "", addressed: src.readerIn };
-      const input = fitDates({ text, subject: src.subject, from: { name: src.fromName || src.fromEmail.split("@")[0]!, automated: src.automated }, reader, to: src.to.map(nameOf), cc: src.cc.map(nameOf), receivedAt: inWords(src.date, language), open: [...[...labels].map(([label, r]) => ({ label, kind: r.kind as DatedKind | "promise", text: r.text })), ...[...promises].map(([label, p]) => ({ label, kind: "promise" as const, text: p.text }))], language, outputTokens: budget.outputTokens }, budget.promptChars);
+      // the third panel round: "a person" as the ask's local check reads it (a role address you never wrote to isn't one)
+      const input = fitDates({ text, subject: src.subject, from: { name: src.fromName || src.fromEmail.split("@")[0]!, automated: src.automated || !src.person }, reader, to: src.to.map(nameOf), cc: src.cc.map(nameOf), receivedAt: inWords(src.date, language), open: [...[...labels].map(([label, r]) => ({ label, kind: r.kind as DatedKind | "promise", text: r.text })), ...[...promises].map(([label, p]) => ({ label, kind: "promise" as const, text: p.text }))], language, outputTokens: budget.outputTokens }, budget.promptChars);
       // a change of provider or key, the setting, Spam meanwhile: each stops it, at the provider too
       const signal = AbortSignal.any([generation.signal, asked.signal, stop.signal]);
       if (signal.aborted) return await drop();

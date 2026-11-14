@@ -910,13 +910,37 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       await expect(page.locator("[data-testid=snack]")).toContainText("Marked done");
     });
 
+    await scenario("a person's ask (the third panel round): Needs you, its words first, the day it came; its line in the conversation", async () => {
+      await received(server, "ask-1", { name: "Mariana Paz", email: "mariana@studio.test" }, "Rebranding", "Hi! Can you send me a quote for the rebranding?");
+      server.backend.dated.wake();
+      const ask = row(page, "Rebranding");
+      await expect(ask.getByTestId("row-task")).toHaveText("Answer Mariana Paz", { timeout: 15_000 });
+      await expect(ask.getByTestId("row-subject")).toHaveText("Rebranding");
+      // no day to say: the right column is when it came, and a screen reader hears the task, then the subject
+      await expect(ask.locator("[data-task]")).toHaveCount(0);
+      await expect(ask).toHaveAccessibleName(/Answer Mariana Paz.*Rebranding/);
+      expect(await headings(page)).toContain("needsYou");
+      await ask.click();
+      const line = page.getByTestId("thread-dated");
+      await expect(line.getByTestId("thread-dated-item")).toHaveAttribute("data-kind", "ask");
+      await expect(line.getByTestId("thread-dated-text")).toHaveText("Answer Mariana Paz");
+      if (SHOTS) {
+        await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-dated-ask-light.png` });
+        await page.emulateMedia({ colorScheme: "dark" });
+        await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-dated-ask-dark.png` });
+        await page.emulateMedia({ colorScheme: "light" });
+      }
+      await line.getByTestId("thread-dated-done").click();
+      await expect(row(page, "Rebranding")).toHaveCount(0);
+    });
+
     await scenario("Settings → AI: its group beside the digest's, on, naming who reads the mail", async () => {
       await page.getByTestId("open-settings").click();
       await page.getByTestId("tab-ai").click();
       const group = page.getByTestId("ai-dated");
       await expect(group).toContainText("Bills, trips and requests");
       await expect(group.getByTestId("ai-dated-switch")).toBeChecked();
-      await expect(group).toContainText("Reads new mail that has a date in it with");
+      await expect(group).toContainText("Reads new mail with");
       await group.scrollIntoViewIfNeeded();
       if (SHOTS) {
         for (const mode of ["light", "dark"] as const) {
