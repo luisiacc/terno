@@ -443,7 +443,8 @@ test.describe("axe", { tag: ["@variant", "@variant-relief"] }, () => {
       await start(page, server, { ai: { provider: "fake", model: "demo" }, today: { digest: true, prepareAt: "00:00" } });
       await page.getByTestId("nav-today").click();
       await expect(page.getByTestId("digest-row")).toBeVisible({ timeout: 15_000 });
-      await clean(page, "Today", ['[data-keep-scroll="list"]', "[data-testid=today-line]"]);
+      // plan 204: the dates offer in its header, while dates aren't read
+      await clean(page, "Today", ['[data-keep-scroll="list"]', "[data-testid=today-line]", "[data-testid=today-dated-offer]"]);
       await page.getByTestId("digest-row").click();
       await page.getByTestId("digest-page").waitFor();
       await clean(page, "the digest", "[data-testid=digest-page]");
@@ -474,6 +475,7 @@ test.describe("axe", { tag: ["@variant", "@variant-relief"] }, () => {
       await page.getByTestId("tab-ai").click();
       await page.getByTestId("ai-digest-excluded").waitFor();
       await clean(page, "Settings, the senders that aren't newsletters", "[data-testid=ai-digest]");
+      await clean(page, "Settings, bills, renewals and trips", "[data-testid=ai-dated]");
       await page.getByTestId("ai-drafting-style-open").click();
       await expect(page.getByTestId("style-status")).toContainText(/Learned from/, { timeout: 20_000 });
       await clean(page, "Writing style", "[data-testid=writing-style]");
