@@ -21,6 +21,7 @@ import {
   promisePlace,
   promiseOver,
   dayKeyOf,
+  TODAY_COUNTED,
   type DatedPlace,
   type PromisePlace,
   type DatedRow,
@@ -59,9 +60,6 @@ const SUMMARY_LINE_CHARS = 160;
 const NOT_NEWSLETTERS_KEY = "today:notNewsletters";
 /** plan 204: waiting rows past these show their snippet, so a long list reads no more summaries than a screen needs */
 const SUMMARY_LINES_MAX = 100;
-/** plan 204: what the sidebar's number counts; Reminders and Coming up aren't */
-const COUNTED: ReadonlySet<TodayGroupKind> = new Set(["missed", "deadlines", "plans", "needsYou"]);
-
 type DayOrder = Pick<DatedRow, "dueDay" | "dueAt" | "timed">;
 
 /** After the panel: a group's items by their day, then the timed ones by time, then the untimed ("Due today 1:00 PM" first). */
@@ -739,9 +737,10 @@ export class TodayService {
   }
 
   /**
-   * The sidebar's number: Missed, Deadlines, Plans and Needs you, each thread once (revision 10). What's waiting is
-   * plan 145's indexed count; the rest are the placed threads that are neither in Trash or Spam nor already waiting. Null
-   * during plan 17's backfill.
+   * The sidebar's number: Missed, Deadlines and Needs you, each thread once (revision 10; the third panel round: not
+   * Plans). What's waiting is plan 145's indexed count, less what's placed in a group that isn't counted (a waiting
+   * thread with a Plan is the Plan, revision 3); the rest are the placed threads that are neither in Trash or Spam nor
+   * already waiting. Null during plan 17's backfill.
    */
   async withCount(counts: Counts): Promise<Counts> {
     const { store } = this.b;
@@ -750,8 +749,10 @@ export class TodayService {
     if (counts.inboxWaiting === null || counts.inboxWaiting === undefined) return { ...counts, today: null };
     const settings = await readSettings(store);
     const now = this.b.now();
-    const others = (await this.places(now, settings, { count: true })).filter((p) => COUNTED.has(p.group)).map((p) => p.threadId);
-    const { needs, extra } = await store.today.countWith(others, now);
+    const placed = await this.places(now, settings, { count: true });
+    const counted = placed.filter((p) => TODAY_COUNTED.has(p.group)).map((p) => p.threadId);
+    const uncounted = placed.filter((p) => !TODAY_COUNTED.has(p.group)).map((p) => p.threadId);
+    const { needs, extra } = await store.today.countWith(counted, now, uncounted);
     return { ...counts, today: needs + extra };
   }
 
@@ -805,7 +806,7 @@ export class TodayService {
     if (now - prepareTimeToday(prepareAt, now) > NOTIFY_WITHIN_MS) return;
     if ((await store.settings.get<string>(NOTIFIED_KEY, "")) === day) return;
     const list = await this.list([]);
-    const count = list.sections.filter((x) => COUNTED.has(x.kind)).reduce((n, x) => n + x.items.length, 0);
+    const count = list.sections.filter((x) => TODAY_COUNTED.has(x.kind)).reduce((n, x) => n + x.items.length, 0);
     if (!count) return;
     await store.settings.set(NOTIFIED_KEY, day);
     // how many, and never who or what

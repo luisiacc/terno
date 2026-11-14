@@ -66,8 +66,9 @@ export function waitingAmong(db: Db, threadIds: readonly number[], now: number):
   return needsRows(db, now).filter((r) => wanted.has(r.id)).map((r) => r.id);
 }
 
-export function countWith(db: Db, threadIds: readonly number[], now: number): { needs: number; extra: number } {
-  const rows = needsRows(db, now);
+export function countWith(db: Db, threadIds: readonly number[], now: number, uncounted: readonly number[] = []): { needs: number; extra: number } {
+  const elsewhere = new Set(uncounted);
+  const rows = needsRows(db, now).filter((r) => !elsewhere.has(r.id));
   if (!threadIds.length) return { needs: rows.length, extra: 0 };
   const waiting = new Set(rows.map((r) => r.id));
   const live = db.all<{ id: number }>("SELECT id FROM threads WHERE id IN (SELECT value FROM json_each(?)) AND in_spam = 0 AND in_trash = 0", JSON.stringify([...new Set(threadIds)]));

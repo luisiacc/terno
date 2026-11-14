@@ -76,8 +76,9 @@ export function waitingAmong(c: Ctx, threadIds: readonly number[], walk: NeedsWa
   return needsRows(c, walk).filter((r) => wanted.has(r.id)).map((r) => r.id);
 }
 
-export function countWith(c: Ctx, threadIds: readonly number[], walk: NeedsWalk): { needs: number; extra: number } {
-  const rows = needsRows(c, walk);
+export function countWith(c: Ctx, threadIds: readonly number[], walk: NeedsWalk, uncounted: readonly number[] = []): { needs: number; extra: number } {
+  const elsewhere = new Set(uncounted);
+  const rows = needsRows(c, walk).filter((r) => !elsewhere.has(r.id));
   const waiting = new Set(rows.map((r) => r.id));
   const threads = T(c, "threads");
   let extra = 0;

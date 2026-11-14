@@ -549,7 +549,13 @@ describe("Today's groups (§1)", () => {
     expect(list.sections.map((x) => x.kind)).toEqual(["deadlines", "plans"]);
     expect(list.sections[0]!.items[0]).toMatchObject({ thread: { id: billThread }, why: { kind: "dated", text: "Pay the electricity bill", item: { kind: "pay", dueDay: "2026-11-20" } } });
     expect(list.sections[1]!.items[0]).toMatchObject({ thread: { id: flight }, why: { item: { kind: "event", timed: true } } });
-    expect((await client.call("counts.get", {})).today).toBe(2);
+    // the third panel round: a Plan isn't something you owe, so the count is the bill alone, even with the flight's
+    // thread waiting on a reply (it shows as the Plan, so the count agrees with the list)
+    expect((await client.call("counts.get", {})).today).toBe(1);
+    raw.run("UPDATE threads SET waiting_since = ?, has_sent = 1 WHERE id = ?", clock.now - 60_000, flight);
+    expect((await client.call("today.list", { heldIds: [] })).sections.map((x) => [x.kind, x.items.map((i) => i.thread.id)])).toEqual([["deadlines", [billThread]], ["plans", [flight]]]);
+    expect((await client.call("counts.get", {})).today).toBe(1);
+    raw.run("UPDATE threads SET waiting_since = NULL, has_sent = 0 WHERE id = ?", flight);
     // the flight is over two hours after it: gone, not Missed
     clock.now = at(2026, 11, 19, 9, 41);
     expect((await client.call("today.list", { heldIds: [] })).sections.map((x) => x.kind)).toEqual(["deadlines"]);

@@ -212,8 +212,8 @@ describe("plan 204: Missed, Deadlines, Plans, Needs you, Reminders and Coming up
     expect(rows.map((r) => r.id)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
     expect(groups()).toEqual([["missed", 0], ["deadlines", 2], ["plans", 5], ["needsYou", 7], ["reminders", 8]]);
     expect(useToday.getState().comingUp).toBe(1);
-    // Reminders and Coming up aren't counted
-    expect(useToday.getState().counted).toBe(8);
+    // Plans, Reminders and Coming up aren't counted (the third panel round: a Plan isn't something you owe)
+    expect(useToday.getState().counted).toBe(6);
     // the menu's Done knows each row's task; a promise with no reference (an older backend) and a waiting row have none
     expect(useToday.getState().tasks.get(3)).toMatchObject({ kind: "dated", item: { id: 30, revision: 1, kind: "pay" } });
     expect(useToday.getState().tasks.has(2)).toBe(false);
@@ -307,7 +307,7 @@ describe("plan 204: Missed, Deadlines, Plans, Needs you, Reminders and Coming up
     const rows = flattenToday(full(), []);
     expect(rows.map((r) => r.id)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
     expect(groups().at(-1)).toEqual(["comingUp", 9]);
-    expect(useToday.getState().counted).toBe(8);
+    expect(useToday.getState().counted).toBe(6);
   });
 
   it("a held row keeps its group's place in any group; a group it was the last of keeps its heading", () => {

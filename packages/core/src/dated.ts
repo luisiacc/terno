@@ -290,6 +290,11 @@ export function nextTodayChange(items: readonly Pick<DatedRow, "kind" | "state" 
 /** Today's groups in order: a thread sits in the first that claims it (§1). Coming up takes only what's left. */
 export const TODAY_GROUP_ORDER = ["missed", "deadlines", "plans", "needsYou", "reminders", "comingUp"] as const;
 export type TodayGroupKind = (typeof TODAY_GROUP_ORDER)[number];
+/**
+ * What "N need you" counts, the header's and the sidebar's (the third panel round, revision 3): what you owe or have
+ * missed. A Plan is something happening to you; Reminders and Coming up aren't for now.
+ */
+export const TODAY_COUNTED: ReadonlySet<TodayGroupKind> = new Set(["missed", "deadlines", "needsYou"]);
 
 const MONTHS = "jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|ene(?:ro)?|febrero|marzo|abr(?:il)?|mayo|junio|julio|ago(?:sto)?|sept?(?:iembre)?|setiembre|octubre|noviembre|dic(?:iembre)?";
 const WORDS = [

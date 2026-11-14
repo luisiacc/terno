@@ -2004,7 +2004,7 @@ export class IdbMailStore implements MailStore {
   readonly today: MailStore["today"] = {
     waitingPage: (o) => this.needs(o.now, (walk) => waitingPage(this.c, o, walk)),
     waitingAmong: (ids, now) => this.needs(now, (walk) => waitingAmong(this.c, ids, walk)),
-    countWith: (ids, now) => this.needs(now, (walk) => countWith(this.c, ids, walk)),
+    countWith: (ids, now, uncounted) => this.needs(now, (walk) => countWith(this.c, ids, walk, uncounted)),
     needsCount: (now) => this.needs(now, (walk) => needsCount(this.c, walk)),
     digestFacts: (ids) => this.read(() => digestFacts(this.c, ids)),
     digestLive: (ids) => this.read(() => digestLive(this.c, ids)),
