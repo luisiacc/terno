@@ -229,3 +229,15 @@ Codex (read-only, `codex exec -s read-only`, the critique in the session's scrat
 - **The gate measures what this plan adds to the count,** in the same turns as plan 145's own `needsCount`, which is itself 5 to 6 ms on SQLite at 50k on this machine: at most 2 ms with items spread over the weeks (0.7 measured), 4 ms with all 1,000 showing (1.1 measured). The whole of `today.list` is 4 to 15 ms; the longest turn 41 ms (`today.perf.test.ts`). A tight loop of awaits on SQLite never yields, so the gate takes a turn between calls, as two requests would.
 - **Coming up is a toggle in Today's header line,** not a line at the list's end: the list is a listbox, which holds only its options.
 - **No hover control on rows:** a row has no hover actions anywhere; Done is in the row's menu, the palette and the reader's line.
+
+## What the code review changed
+
+Codex (read-only, `git diff 599de7aac..HEAD`, `/tmp/terno-scratch/p204/review-1.out`): 7 points, all fixed, each with a test that fails without it.
+
+1. **An open item from a conversation since moved to Spam went to the model as material** (`open_items`). `openFor` leaves out items whose conversation has anything in Spam (both stores, conformance), and the request's last look (`holdingUp`) also checks the items it carries: one gone stops it, and it's asked again without that item (`dated.test` #1).
+2. **What's over stayed open forever and would fill the bound of 1,000.** `datedOver` (a Plan that's ended, a deadline past Missed's days and not moved on with Later) and `retire()`, in the day's bounds and when the clock fires: closed as `dismissed`, `expired`, kept for plan 205's Earlier tab (#2).
+3. **The 14-day check took the newest 300 received before its own filters,** so Promotions could fill it. It walks up to 3,000 in the backend's slices and picks what the reader would ask about (not Spam, Trash, Promotions or Social; automated mail only with a time cue) before its bound; the offer's count is the same selection (#3).
+4. **A dated promise past Missed's days came back to Needs you.** `promiseOver` leaves it out (#4).
+5. **Two re-arms of the clock at once left a timer behind,** which `stop()` didn't clear. Only the newest call arms (#5).
+6. **"Tomorrow 7:40" stayed "Tomorrow" past midnight.** While any row shows, the next midnight is a change too (`nextTodayChange`; core test).
+7. **A yes to the check that failed was saved anyway,** so the check was never offered again. The answer is saved only once the check is queued; a failure says so and the offer stays (`apps/web/src/lib/dated.test.ts`).

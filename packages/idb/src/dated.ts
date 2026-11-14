@@ -95,8 +95,12 @@ export function openDatedFor(c: Ctx, o: { threadId: number; senderKey: string; b
   const rows = T(c, "dated_items");
   const found = new Map<number, R>();
   for (const r of rows.by("fk_thread_id", o.threadId)) if (r.state === "open") found.set(r.id, r);
-  for (const r of rows.by("sender", o.senderKey)) found.set(r.id, r);
-  return [...found.values()].filter((r) => r.arrived_at < o.before).sort((a, b) => b.arrived_at - a.arrived_at || b.id - a.id).slice(0, o.limit).map(toRow);
+  for (const r of rows.by("sender", o.senderKey)) if (r.state === "open") found.set(r.id, r);
+  // Codex code review: an item whose conversation has anything in Spam is never material for a request (the owner's rule)
+  const messages = T(c, "messages");
+  const spam = new Map<number, boolean>();
+  const inSpam = (threadId: number) => spam.get(threadId) ?? spam.set(threadId, messages.by("fk_thread_id", threadId).some((x) => !!x.is_spam)).get(threadId)!;
+  return [...found.values()].filter((r) => r.arrived_at < o.before && !inSpam(r.thread_id)).sort((a, b) => b.arrived_at - a.arrived_at || b.id - a.id).slice(0, o.limit).map(toRow);
 }
 
 export function finishDated(c: Ctx, w: DatedFinish): DatedFinishOutcome {

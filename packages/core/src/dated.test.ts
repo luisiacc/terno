@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { datedPlace, datedTiming, hasTimeCue, nextTodayChange, planEnd, promiseMissed, type DatedKind, type DatedRow } from "./dated";
+import { datedOver, datedPlace, datedTiming, hasTimeCue, nextTodayChange, planEnd, promiseMissed, promiseOver, type DatedKind, type DatedRow } from "./dated";
 
 const at = (y: number, m: number, d: number, h = 0, min = 0) => new Date(y, m - 1, d, h, min).getTime();
 const clock = (ms: number) => { const d = new Date(ms); return [d.getMonth() + 1, d.getDate(), d.getHours(), d.getMinutes()]; };
@@ -92,17 +92,42 @@ describe("a promise of yours is Missed (plan 204 §1)", () => {
   });
 });
 
+describe("what's over for good (Codex code review)", () => {
+  it("a plan once it's ended, a deadline past Missed's days unless Later moved it", () => {
+    expect(datedOver(item("event", "2026-11-20", "07:40"), at(2026, 11, 20, 9, 40))).toBe(true);
+    expect(datedOver(item("event", "2026-11-20", "07:40"), at(2026, 11, 20, 9, 39))).toBe(false);
+    const bill = item("pay", "2026-11-20");
+    expect(datedOver(bill, at(2026, 11, 27, 23))).toBe(false);
+    expect(datedOver(bill, at(2026, 11, 28))).toBe(true);
+    expect(datedOver({ ...bill, deferredUntil: at(2026, 12, 1) }, at(2026, 11, 28))).toBe(false);
+    expect(datedOver({ ...bill, state: "done" }, at(2026, 12, 28))).toBe(false);
+  });
+  it("a dated promise past Missed's days is over, not Needs you's again", () => {
+    const promise = { kind: "promise", state: "due", dated: true, dueAt: at(2026, 11, 12, 9) };
+    expect(promiseOver(promise, at(2026, 11, 19, 23))).toBe(false);
+    expect(promiseOver(promise, at(2026, 11, 20))).toBe(true);
+    expect(promiseOver({ ...promise, dated: false }, at(2026, 12, 20))).toBe(false);
+  });
+});
+
 describe("the next change by the clock (revision 11)", () => {
   it("is the soonest moment strictly after now, across items and promises", () => {
     const bill = item("pay", "2026-11-20");
-    expect(nextTodayChange([bill], [], at(2026, 11, 10, 15))).toBe(at(2026, 11, 17, 9));
-    expect(nextTodayChange([bill], [], at(2026, 11, 17, 9))).toBe(at(2026, 11, 21));
-    expect(nextTodayChange([bill], [], at(2026, 11, 21))).toBe(at(2026, 11, 28));
+    // in Coming up, Deadlines and Missed it's shown, so each midnight is a change too (its words); the last day's is Missed's end
+    expect(nextTodayChange([bill], [], at(2026, 11, 10, 15))).toBe(at(2026, 11, 11));
+    expect(nextTodayChange([bill], [], at(2026, 11, 16, 15))).toBe(at(2026, 11, 17));
+    expect(nextTodayChange([bill], [], at(2026, 11, 17, 0, 30))).toBe(at(2026, 11, 17, 9));
+    expect(nextTodayChange([bill], [], at(2026, 11, 20, 9))).toBe(at(2026, 11, 21));
+    expect(nextTodayChange([bill], [], at(2026, 11, 27, 9))).toBe(at(2026, 11, 28));
     expect(nextTodayChange([bill], [], at(2026, 11, 28))).toBeNull();
     expect(nextTodayChange([], [{ kind: "promise", state: "due", dated: true, dueAt: at(2026, 11, 12, 9) }], at(2026, 11, 12, 10))).toBe(at(2026, 11, 13));
   });
   it("an item further than two weeks enters Coming up", () => {
     expect(nextTodayChange([item("pay", "2026-12-20")], [], at(2026, 11, 10, 15))).toBe(at(2026, 12, 3, 9));
+  });
+  it("Codex code review: while a row shows, midnight changes its words (Tomorrow becomes Today)", () => {
+    const flight = item("event", "2026-11-20", "07:40");
+    expect(nextTodayChange([flight], [], at(2026, 11, 19, 23))).toBe(at(2026, 11, 20));
   });
   it("nothing open: no timer", () => {
     expect(nextTodayChange([{ ...item("pay", "2026-11-20"), state: "done" }], [], arrived)).toBeNull();

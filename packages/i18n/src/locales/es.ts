@@ -3000,6 +3000,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "dated.snack.done": "Marcado como hecho",
   "dated.snack.later": "Pasado a más tarde",
   "dated.actFailed": "No se pudo cambiar esa fecha. Inténtalo de nuevo.",
+  "dated.scanFailed": "No se pudieron revisar los últimos 14 días. Inténtalo de nuevo.",
   "dated.section": "Fechas de esta conversación",
   "errors.ai.summaryMoved": "Esta conversación sigue cambiando. Vuelve a intentarlo en un momento.",
   "errors.ai.draftTooLarge": "Este borrador es demasiado largo para este modelo. Acorta lo que hay en el borrador o la instrucción, o elige un modelo mayor en Ajustes → IA.",

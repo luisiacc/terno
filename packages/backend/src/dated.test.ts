@@ -11,7 +11,7 @@ import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { demoRegistry } from "@terno/mail";
 import { msg, threadOf } from "@terno/store/conformance";
 import type { IncomingMessage } from "@terno/store";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 import { checkDates } from "./dated";
 
@@ -217,6 +217,99 @@ describe("the reader", () => {
   });
 });
 
+describe("the Codex code review", () => {
+  it("#1: an open item whose conversation went to Spam under a request stops it, and it's asked again without that item", async () => {
+    const { backend, model, receive, read, raw } = await setup();
+    model.answer = () => reply([bill]);
+    const first = await receive();
+    await read();
+    let release!: () => void;
+    model.gate = new Promise((r) => (release = r));
+    model.requests.length = 0;
+    model.answer = () => reply();
+    await receive({ subject: "Reminder", bodyText: "A reminder: your bill is due on November 20." });
+    backend.dated.wake();
+    await expect.poll(() => model.requests.length).toBe(1);
+    expect(promptText(model.requests[0]!.messages[0]!.content)).toContain("<open_items>");
+    raw.run("UPDATE messages SET is_spam = 1 WHERE thread_id = ?", first);
+    // the limiter's last look, as a repair would take it
+    await backend.dated.holdingUp();
+    model.gate = null;
+    release();
+    await expect.poll(() => backend.store.dated.marks.count()).toBe(0);
+    expect(model.requests).toHaveLength(2);
+    expect(promptText(model.requests[1]!.messages[0]!.content)).not.toContain("<open_items>");
+  });
+
+  it("#2: what's over for good is retired, so the open set holds only what can still show", async () => {
+    const { backend, client, model, receive, read, clock } = await setup();
+    model.answer = (req) => (promptText(req.messages[0]!.content).includes("Flight") ? reply([{ kind: "event", text: "Flight to Madrid", quote: "Flight IB3170", due: "2026-11-19", time: "07:40" }]) : reply([bill]));
+    await receive();
+    await receive({ from: { name: "Iberia", email: "no-reply@iberia.test" }, subject: "Your trip", bodyText: "Flight IB3170 departs November 19 at 07:40." });
+    await read();
+    expect(await backend.store.dated.active()).toHaveLength(2);
+    // the flight is over, the bill still Missed
+    clock.now = at(2026, 11, 22, 10);
+    expect(await backend.dated.retire()).toBe(1);
+    expect((await backend.store.dated.active()).map((r) => r.kind)).toEqual(["pay"]);
+    // past Missed's days the bill goes too, by the day's bounds
+    clock.now = at(2026, 11, 28, 1);
+    await backend.dated.daily();
+    expect(await backend.store.dated.active()).toEqual([]);
+    expect((await client.call("today.list", { heldIds: [] })).sections).toEqual([]);
+  });
+
+  it("#3: the 14-day check picks what the reader would ask about before its bound", async () => {
+    const { client, receive, clock } = await setup();
+    await receive({ date: clock.now - 3 * DAY, gmailLabels: ["INBOX", "CATEGORY_PROMOTIONS"] }, false);
+    await receive({ date: clock.now - 3 * DAY, listId: "news.power.test", subject: "Photos", bodyText: "Here are the photos from our team offsite." }, false);
+    await receive({ date: clock.now - 3 * DAY, isSpam: true }, false);
+    await receive({ date: clock.now - 3 * DAY }, false);
+    await receive({ date: clock.now - 3 * DAY, from: { name: "Ana", email: "ana@people.test" }, subject: "Lunch", bodyText: "Thanks, that sounds great!" }, false);
+    expect((await client.call("dated.scanOffer", {})).count).toBe(2);
+    expect((await client.call("dated.scan", {})).queued).toBe(2);
+  });
+
+  it("#4: a dated promise past Missed's days isn't Needs you's again", async () => {
+    const { client, receive, raw, clock } = await setup();
+    await client.call("settings.update", { followups: { enabled: true } });
+    const thread = await receive({ from: { name: "Ana", email: "ana@people.test" }, subject: "The report", bodyText: "Thanks!" });
+    raw.run("INSERT INTO followups (thread_id, message_id, item, kind, text, sent_at, due_at, dated, state, created_at) VALUES (?, 999999, 0, 'promise', 'send the report', ?, ?, 1, 'due', ?)", thread, clock.now - DAY, at(2026, 11, 12, 9), clock.now);
+    clock.now = at(2026, 11, 13, 10);
+    expect((await client.call("today.list", { heldIds: [] })).sections.map((x) => x.kind)).toEqual(["missed"]);
+    clock.now = at(2026, 11, 20, 10);
+    expect((await client.call("today.list", { heldIds: [] })).sections).toEqual([]);
+  });
+
+  it("#5: two re-arms at once leave one timer, and stop leaves none", async () => {
+    const { backend, model, receive, read } = await setup();
+    model.answer = () => reply([bill]);
+    await receive();
+    await read();
+    const live = new Set<unknown>();
+    const set = globalThis.setTimeout;
+    const clear = globalThis.clearTimeout;
+    const spySet = vi.spyOn(globalThis, "setTimeout").mockImplementation(((fn: () => void, ms?: number) => {
+      const id = set(fn, ms);
+      if (ms !== undefined && ms > 60_000) live.add(id);
+      return id;
+    }) as typeof setTimeout);
+    const spyClear = vi.spyOn(globalThis, "clearTimeout").mockImplementation(((id?: Parameters<typeof clearTimeout>[0]) => {
+      live.delete(id);
+      clear(id);
+    }) as typeof clearTimeout);
+    try {
+      await Promise.all([backend.today.armClock(), backend.today.armClock(), backend.today.armClock()]);
+      expect(live.size).toBe(1);
+      await backend.today.stop();
+      expect(live.size).toBe(0);
+    } finally {
+      spySet.mockRestore();
+      spyClear.mockRestore();
+    }
+  });
+});
+
 describe("acting on an item (§5)", () => {
   it("Done and Later, each with an exact Undo; a stale revision is refused", async () => {
     const { client, model, receive, read, clock, sections } = await setup();
@@ -284,7 +377,7 @@ describe("Today's groups (§1)", () => {
     await receive();
     await read();
     await backend.today.armClock();
-    expect(backend.today.clockNextAt).toBe(at(2026, 11, 17, 9));
+    expect(backend.today.clockNextAt).toBe(at(2026, 11, 11));
     await client.call("settings.update", { dated: { enabled: false } });
     expect((await client.call("today.list", { heldIds: [] })).sections).toEqual([]);
     await backend.today.armClock();
