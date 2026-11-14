@@ -3,7 +3,7 @@ import { addressKey, DIGEST_ROW_ID, TODAY_GROUP_ORDER, type DigestItem, type Dig
 import { t } from "@terno/i18n";
 import { create } from "zustand";
 import { listDate } from "~/lib/format";
-import { actOnTask, datedLine, promiseLine, taskOf, type TodayTask } from "~/lib/dated";
+import { datedLine, promiseLine, taskOf, type TodayTask } from "~/lib/dated";
 import { client } from "~/rpc/connection";
 import type { Undo } from "~/lib/snack";
 import { getApp, navigate, setApp, useApp } from "./app";
@@ -61,8 +61,8 @@ interface TodayState {
   tasks: ReadonlyMap<number, TodayTask>;
   /** plan 204 (after the panel, revision 10): the digest's row, the list's last, or -1 */
   digestAt: number;
-  /** plan 204 (after the panel, fix 10): the task Later's "Pick a date…" is choosing a moment for */
-  laterPick: TodayTask | null;
+  /** plan 204 (after the panel, fix 10): the row whose task Later's "Pick a date…" is choosing a moment for */
+  laterPick: { threadId: number; task: TodayTask } | null;
   digest: DigestRow | null;
   /** the conversation opened from the digest page: its Back returns there, and only it shows one (plan 161) */
   fromDigest: number | null;
@@ -92,19 +92,6 @@ export const useToday = create<TodayState>(() => ({ groups: [], counted: 0, comi
 export function useTodayTask(threadId: number | null | undefined): TodayTask | undefined {
   const task = useToday((s) => (threadId == null ? undefined : s.tasks.get(threadId)));
   return useApp((s) => s.today) ? task : undefined;
-}
-
-/**
- * Plan 204 (after the panel, fix 2): D on Today's selected row with a task is its Done; anywhere else, on a row without
- * one, or among several checked, it does nothing (false: the key is left alone).
- */
-export function doneOnSelected(): boolean {
-  const s = getApp();
-  if (!s.today || s.selectedId === null || s.scope || (s.checked.size > 0 && !(s.checked.size === 1 && s.checked.has(s.selectedId)))) return false;
-  const task = useToday.getState().tasks.get(s.selectedId);
-  if (!task) return false;
-  void actOnTask(task, "done");
-  return true;
 }
 
 /** Plan 204: Coming up opens under the rest, or closes; the list is read again with it (held rows and the selection kept). */

@@ -2,6 +2,7 @@ import { datedGroup, localDay, planEnd, remindPresets, type DatedKind, type Remi
 import { getLocale, t } from "@terno/i18n";
 import { useEffect, useState } from "react";
 import { usd } from "~/lib/ai";
+import type { LeftRows } from "~/lib/actions";
 import { registerUndo, snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
 import { datedDay, dueShort, reminderTime } from "~/lib/when";
@@ -119,30 +120,35 @@ const SAID = { done: "dated.snack.done", dismiss: "dated.snack.dismissed", later
 
 /**
  * Done, Not a task and Later (plan 204 §5, after the panel), each with Undo that puts the exact item back, as follow-ups'
- * act. Today reloads on the backend's `todayChanged`.
+ * act. Today reloads on the backend's `todayChanged`. `left`: the Today row it took out of the list (after the second
+ * panel round), which its Undo puts back selected, and a failure brings back.
  */
-export async function actOnDated(item: Pick<DatedRef, "id" | "revision">, action: "done" | "dismiss" | "later", until?: number): Promise<void> {
+export async function actOnDated(item: Pick<DatedRef, "id" | "revision">, action: "done" | "dismiss" | "later", until?: number, left?: LeftRows): Promise<void> {
   try {
     const { undoId } = await client.call("dated.act", { id: item.id, revision: item.revision, action, ...(until !== undefined ? { until } : {}) });
-    const undo = undoId === null ? null : registerUndo(() => client.call("dated.undo", { undoId }).then(() => undefined));
-    snack.success(t(SAID[action]), undo ? { action: { label: t("common.undo"), name: t("dated.undo"), undo } } : {});
+    said(action, undoId === null ? null : () => client.call("dated.undo", { undoId }).then(() => undefined), "dated.undo", left);
   } catch (error) {
-    const e = error as { message?: string };
-    snack.error(e.message ?? t("dated.actFailed"));
+    left?.failed();
+    snack.error((error as { message?: string }).message ?? t("dated.actFailed"));
   }
 }
 
 /** The same three on a Today row's task: a promise through follow-ups' act (its revision, its Undo), in Today's words. */
-export async function actOnTask(task: TodayTask, action: "done" | "dismiss" | "later", at?: number): Promise<void> {
-  if (task.kind === "dated") return actOnDated(task.item, action, at);
+export async function actOnTask(task: TodayTask, action: "done" | "dismiss" | "later", at?: number, left?: LeftRows): Promise<void> {
+  if (task.kind === "dated") return actOnDated(task.item, action, at, left);
   try {
     const { undoId } = await client.call("followups.act", { id: task.id, revision: task.revision, action, ...(at !== undefined ? { dueAt: at } : {}) });
-    const undo = undoId === null ? null : registerUndo(() => client.call("followups.undo", { undoId }).then(() => undefined));
-    snack.success(t(SAID[action]), undo ? { action: { label: t("common.undo"), name: t("followup.undo"), undo } } : {});
+    said(action, undoId === null ? null : () => client.call("followups.undo", { undoId }).then(() => undefined), "followup.undo", left);
   } catch (error) {
-    const e = error as { message?: string };
-    snack.error(e.message ?? t("followup.actFailed"));
+    left?.failed();
+    snack.error((error as { message?: string }).message ?? t("followup.actFailed"));
   }
+}
+
+/** The snack, with Undo when there's one (the row it took out back with it). */
+function said(action: "done" | "dismiss" | "later", run: (() => Promise<void>) | null, name: "dated.undo" | "followup.undo", left?: LeftRows): void {
+  const undo = run && registerUndo(() => (left ? left.undo(run) : run()));
+  snack.success(t(SAID[action]), undo ? { action: { label: t("common.undo"), name: t(name), undo } } : {});
 }
 
 /**

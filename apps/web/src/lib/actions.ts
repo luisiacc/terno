@@ -311,7 +311,6 @@ async function offerSimilar(snackId: string, action: SimilarAction, targets: rea
  */
 export function leaveList(action: ThreadAction, targets: readonly number[], options: { quiet?: boolean } = {}): void {
   const s = getApp();
-  const { items, index } = useList.getState();
   // in a filtered list a row that stops matching leaves (a search too), except the open one: it stays put until the selection moves
   const reading = unmatches(action, activeFilter(s));
   const leaving = reading || (s.query ? false : !staysInView(s, action));
@@ -324,20 +323,60 @@ export function leaveList(action: ThreadAction, targets: readonly number[], opti
 
   // back on the list first (focus with it), then the cursor moves: the page closes even when no thread is left to move to
   if (backToList) closePage({ focus: true });
-  if (!backToDigest && leaving && !reading && s.selectedId !== null && targets.includes(s.selectedId)) {
-    // Superhuman-style: move to the next thread that isn't being removed. The app opened it, not the user: it isn't
-    // read until they choose it (plan 158), so an Undo finds it as it was
-    const start = index.get(s.selectedId) ?? 0;
-    const removed = new Set(targets);
-    const next = items.slice(start + 1).find((t) => !removed.has(t.id)) ?? items.slice(0, start).reverse().find((t) => !removed.has(t.id));
-    setAppOpened(next?.id ?? null);
-  }
+  if (!backToDigest && leaving && !reading) stepPast(targets);
   if (leaving) reflowRemoval(targets.filter((id) => id !== stays));
   patchRows(targets, (t): ThreadSummary | null => (leaving && t.id !== stays ? null : patched(t, action)));
 
   // what the user acted on stops being selected; automatic and undo actions never touch the selection
   const onTargets = !options.quiet && targets.some((id) => s.checked.has(id));
   if (onTargets && (s.checked.size || s.scope)) setApp({ checked: new Set(), scope: null });
+}
+
+/**
+ * Superhuman-style: the open row is being removed, so the cursor moves to the next thread that isn't (or the one before).
+ * The app opened it, not the user: it isn't read until they choose it (plan 158), so an Undo finds it as it was.
+ */
+function stepPast(targets: readonly number[]): void {
+  const { selectedId } = getApp();
+  if (selectedId === null || !targets.includes(selectedId)) return;
+  const { items, index } = useList.getState();
+  const start = index.get(selectedId) ?? 0;
+  const removed = new Set(targets);
+  const next = items.slice(start + 1).find((t) => !removed.has(t.id)) ?? items.slice(0, start).reverse().find((t) => !removed.has(t.id));
+  setAppOpened(next?.id ?? null);
+}
+
+/** Rows an action outside the thread actions took out of the list, and how it puts them back. */
+export interface LeftRows {
+  /** Undo's run, wrapped: once it's done and the list holds the rows again, the selection is put back as Archive's Undo puts it */
+  undo(run: () => Promise<void>): Promise<void>;
+  /** the action didn't happen: the rows come back with the list, the selection with them */
+  failed(): void;
+}
+
+/**
+ * Plan 204 (after the second panel round): rows taken out of the list by an action that isn't a thread action (Today's
+ * Done, Not a task and Later), as Archive takes them: gone in the same frame, the cursor on the next row, List's
+ * conversation page closed if it showed one, and checks on them let go.
+ */
+export function leaveRows(targets: readonly number[]): LeftRows {
+  const s = getApp();
+  const before = selectionBefore();
+  if (s.selectedId !== null && targets.includes(s.selectedId) && listLayout() && currentPage() === "thread") closePage({ focus: true });
+  stepPast(targets);
+  reflowRemoval(targets);
+  patchRows(targets, () => null);
+  if (targets.some((id) => s.checked.has(id))) setApp({ checked: new Set(), scope: null });
+  settled(before);
+  const back = (focus: Element | null) => reloadList({ keepSelection: true }).then(() => restoreSelection(before, focus));
+  return {
+    async undo(run) {
+      const focus = focusAtUndo();
+      await run();
+      await back(focus);
+    },
+    failed: () => void back(null),
+  };
 }
 
 export function deferred<T>(): { promise: Promise<T>; resolve(v: T): void } {
