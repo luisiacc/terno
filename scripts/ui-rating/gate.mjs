@@ -14,7 +14,7 @@ export const UI_FACETS = ["typography", "contrast", "placement", "hierarchy", "c
 export const UX_FACETS = ["efficiency", "clarity", "feedback", "consistency", "accessibility"];
 export const FACETS = [...UI_FACETS, ...UX_FACETS];
 export const RATERS = ["claude", "codex"];
-export const DESIGNS = ["lumen", "atelier", "macos", "graphite"];
+export const DESIGNS = ["lumen", "atelier", "macos", "graphite", "relief"];
 
 const isScore = (n) => typeof n === "number" && n >= 1 && n <= 10;
 

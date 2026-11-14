@@ -67,7 +67,7 @@ export function SendButton({ d, onSend, className }: { d: LocalDraft; onSend: (s
         outlined
           ? // the outline over the halves; firmer while either is under the pointer or open, as an outline button's border
             "text-muted-foreground after:pointer-events-none after:absolute after:inset-0 after:rounded-[inherit] after:shadow-[inset_0_0_0_1px_var(--border)] hover:after:shadow-[inset_0_0_0_1px_var(--input)] has-aria-expanded:after:shadow-[inset_0_0_0_1px_var(--input)]"
-          : "bg-primary bg-linear-to-b from-primary-hover to-primary text-primary-foreground dark:from-primary dark:to-primary-hover shadow-[inset_0_1px_var(--highlight),0_1px_2px_var(--shadow-color)]",
+          : "bg-primary bg-linear-to-b from-primary-hover to-primary text-primary-foreground dark:from-primary dark:to-primary-hover shadow-(--depth-ink)",
         className,
       )}
       data-testid="compose-send-group"

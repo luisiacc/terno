@@ -40,7 +40,7 @@ export const lumen: DesignDefinition = {
   layout: { sidebar: "248px", listMin: "340px", listMax: "min(400px, 32vw)", readerMin: 380, readerMax: "704px", readerPadX: "2rem", rowRadius: "1rem", navRadius: "0.75rem", navHeight: "2.125rem", sidebarPad: "0.5rem", navSectionGap: "1rem", navSectionHeight: "1.25rem", cardRadius: "calc(var(--ds-radius-lg) + 2px)", commandRadius: "var(--ds-radius-xl)" },
   rows: { comfortable: 76, compact: 36, wide: 40, results: 76 },
   avatar: { row: 36, rowCompact: 24, rowWide: 24, message: 28, collapsed: 28, senderCard: 28 },
-  surfaces: { draft: "card", inboxCount: "muted", cta: "control", card: "tint" },
+  surfaces: { draft: "card", inboxCount: "muted", cta: "control", card: "tint", depth: "flat" },
   variants: {
     compose: "sidebar-pill",
     listHeader: "greeting",

@@ -32,7 +32,7 @@ if (keys) guardOutput(secrets);
 const designs = flag("designs", DESIGNS.join(",")).split(",");
 const raters = flag("raters", RATERS.join(",")).split(",");
 const parallel = Number(flag("parallel", "6"));
-const NAMES = { lumen: "Lumen", atelier: "Atelier", macos: "macOS", graphite: "Graphite" };
+const NAMES = { lumen: "Lumen", atelier: "Atelier", macos: "macOS", graphite: "Graphite", relief: "Relief" };
 const HOURS = 3_600_000;
 
 // a score belongs to a commit

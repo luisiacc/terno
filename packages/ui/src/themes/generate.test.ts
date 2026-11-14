@@ -17,12 +17,12 @@ describe("generated theme CSS", () => {
     const css = generateThemesCss();
     for (const t of THEMES) expect(css).toContain(`[data-theme="${t.id}"] {`);
     expect(css).toMatch(/^:root,\n\[data-theme="lumen-light"\] \{/m);
-    expect(css.match(/color-scheme: dark;/g)).toHaveLength(12);
+    expect(css.match(/color-scheme: dark;/g)).toHaveLength(13);
   });
 
   // plan 137: 10 KB with Graphite's pair (about 400 bytes a pair); plan 160's field and draft-edge, about 15 bytes a theme
-  it("stays small: ≤ 10.5 KB gzip", () => {
-    expect(gzipSync(readFileSync(file)).length).toBeLessThanOrEqual(10.5 * 1024);
+  it("stays small: ≤ 11 KB gzip", () => {
+    expect(gzipSync(readFileSync(file)).length).toBeLessThanOrEqual(11 * 1024);
   });
 
   it("is imported by globals.css, which no longer hard-codes theme values", () => {

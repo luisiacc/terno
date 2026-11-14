@@ -231,7 +231,8 @@ function NavItem({
         inset && (INSET[depth] ?? INSET.at(-1)),
         reserveEnd === "icon" ? "pr-8" : reserveEnd && "pr-14",
         "not-data-active:hover:bg-sidebar-hover hover:text-sidebar-accent-foreground",
-        "data-active:type-nav-strong data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground",
+        // plan 204: the chosen row stands up from the sidebar as the design's depth says (flat: no lift)
+        "data-active:type-nav-strong data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground data-active:shadow-(--depth-nav)",
         // plan 194 (the owner): the row a right-click menu is for, outlined while it's open, as the list outlines its row
         // (its trigger wraps the row alone; ROW_OUTLINE written out for the class scanner)
         MENU_FOR,
@@ -313,14 +314,17 @@ function ComposeOutline() {
   );
 }
 
-/** Lumen: "Compose" as a soft raised pill, modest beside the mail: the solid fill is for the one action of the task at hand (Send, Archive). */
+/**
+ * Lumen and Relief: "Compose" as a soft raised pill, modest beside the mail: the solid fill is for the one action of the task at
+ * hand (Send, Archive). How far it stands up is the design's depth (plan 204: Relief's is the reference's rimmed Share pill).
+ */
 function ComposePill() {
   return (
     <div className="shrink-0 px-2 pb-3">
       <Tooltip>
         <TooltipTrigger
           render={
-            <button type="button" data-testid="compose-button" onClick={() => openCompose("new")} className="type-compose flex h-9 w-full items-center gap-2.5 rounded-full border border-border bg-card pr-3 pl-2 text-left text-foreground shadow-xs transition-colors outline-none hover:border-input hover:bg-muted focus-visible:ring-2 focus-visible:ring-sidebar-ring">
+            <button type="button" data-testid="compose-button" onClick={() => openCompose("new")} className="type-compose flex h-9 w-full items-center gap-2.5 rounded-full border border-(--depth-edge) bg-card bg-(image:--depth-raised-sheen) pr-3 pl-2 text-left text-foreground shadow-(--depth-raised) [text-shadow:var(--emboss)] transition-colors outline-none hover:border-(--depth-edge-firm) hover:bg-muted focus-visible:ring-2 focus-visible:ring-sidebar-ring">
               <span className="flex size-(--icon-nav) items-center justify-center text-muted-foreground">
                 <SquarePen className="size-(--icon-nav)" />
               </span>
@@ -1065,7 +1069,7 @@ function RenameRow({ account, active, count, reserveEnd, onDone, home }: { accou
         "type-nav flex h-(--nav-h) w-full items-center gap-2.5 rounded-(--nav-radius) px-2 text-sidebar-foreground",
         ROW_SEAM,
         reserveEnd && "pr-8",
-        "data-active:type-nav-strong data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground",
+        "data-active:type-nav-strong data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground data-active:shadow-(--depth-nav)",
       )}
     >
       <span className="flex size-(--icon-nav) items-center justify-center text-sidebar-glyph">

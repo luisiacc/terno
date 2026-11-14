@@ -74,8 +74,8 @@ function RadioDot({ className, ...props }: React.ComponentProps<"span">) {
       data-slot="radio-dot"
       aria-hidden
       className={cn(
-        "relative flex size-4 shrink-0 items-center justify-center rounded-full border border-control-edge bg-card shadow-xs transition-colors group-data-unchecked/radio:group-hover/radio:border-control-edge-hover",
-        "group-data-checked/radio:border-primary group-data-checked/radio:bg-primary group-data-checked/radio:bg-linear-to-b group-data-checked/radio:from-highlight group-data-checked/radio:to-transparent group-data-checked/radio:shadow-[inset_0_1px_var(--highlight)]",
+        "relative flex size-4 shrink-0 items-center justify-center rounded-full border border-control-edge bg-card shadow-(--depth-box) transition-colors group-data-unchecked/radio:group-hover/radio:border-control-edge-hover",
+        "group-data-checked/radio:border-primary group-data-checked/radio:bg-primary group-data-checked/radio:bg-linear-to-b group-data-checked/radio:from-highlight group-data-checked/radio:to-transparent group-data-checked/radio:shadow-(--depth-box-on)",
         // the centre, scaled in when chosen
         "after:size-1.5 after:scale-0 after:rounded-full after:bg-primary-foreground after:transition-transform group-data-checked/radio:after:scale-100",
         className
@@ -117,7 +117,7 @@ function RadioCard({ className, onClick, onFocus, ...props }: RadioPrimitive.Roo
     <RadioPrimitive.Root
       data-slot="radio-card"
       className={cn(
-        "group/radio relative flex cursor-pointer rounded-xl border border-border bg-card text-left text-foreground shadow-xs transition-[border-color,box-shadow] outline-none select-none data-unchecked:hover:border-input focus-visible:ring-2 focus-visible:ring-ring data-checked:border-primary data-checked:shadow-[0_0_0_1px_var(--primary)] data-disabled:cursor-not-allowed data-disabled:opacity-50",
+        "group/radio relative flex cursor-pointer rounded-xl border border-(--depth-edge) bg-card bg-(image:--depth-raised-sheen) text-left text-foreground shadow-(--depth-raised) transition-[border-color,box-shadow] outline-none select-none data-unchecked:hover:border-(--depth-edge-firm) focus-visible:ring-2 focus-visible:ring-ring data-checked:border-primary data-checked:shadow-[0_0_0_1px_var(--primary)] data-disabled:cursor-not-allowed data-disabled:opacity-50",
         className
       )}
       {...props}

@@ -1,6 +1,7 @@
 /**
  * Plan 139: axe per structure, light and dark, once per surface: macOS here, then the designs holding a variant macOS lacks
- * (@variant: Lumen, Atelier). Names and roles change only with a variant, and Luma adds none. Colors don't need it:
+ * (@variant: Lumen, Atelier), and Relief, whose depth redraws every control's surface (plan 204). Names and roles change only
+ * with a variant, and Luma adds none. Colors don't need it:
  * contrast.test.ts holds every pair in every palette. Each surface a flow checks in macOS is reached here too, in a sweep rather
  * than a flow per design. A failure names the surface and the mode, and the rest still run. A new surface: a line here.
  *
@@ -59,7 +60,7 @@ const closeAll = async (page: Page) => {
   await page.keyboard.press("Escape");
 };
 
-test.describe("axe", { tag: "@variant" }, () => {
+test.describe("axe", { tag: ["@variant", "@variant-relief"] }, () => {
   test.setTimeout(120_000);
   // the sweep's rare surfaces: a provider behind a network it can switch off, an offline model, a tip
   test.use({ backendOptions: { network: true }, actionTimeout: 30_000, tips: true });

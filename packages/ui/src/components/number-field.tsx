@@ -90,7 +90,7 @@ function NumberField({
       <NumberFieldPrimitive.Group
         data-slot="number-field-group"
         className={cn(
-          "group/number-field flex h-8 w-full min-w-0 items-center rounded-lg border border-transparent bg-field transition-colors hover:border-input has-[input:focus-visible]:border-ring has-[input:focus-visible]:ring-3 has-[input:focus-visible]:ring-ring has-[input[aria-invalid=true]]:border-destructive has-[input[aria-invalid=true]]:ring-3 has-[input[aria-invalid=true]]:ring-destructive/20 data-disabled:pointer-events-none dark:has-[input[aria-invalid=true]]:ring-destructive/40",
+          "group/number-field flex h-8 w-full min-w-0 items-center rounded-lg border border-transparent bg-field shadow-(--depth-field) transition-colors hover:border-input has-[input:focus-visible]:border-ring has-[input:focus-visible]:ring-3 has-[input:focus-visible]:ring-ring has-[input[aria-invalid=true]]:border-destructive has-[input[aria-invalid=true]]:ring-3 has-[input[aria-invalid=true]]:ring-destructive/20 data-disabled:pointer-events-none dark:has-[input[aria-invalid=true]]:ring-destructive/40",
           steppers && "pe-1",
           className
         )}

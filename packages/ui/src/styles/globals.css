@@ -580,11 +580,13 @@
 @utility rounded-menu {
   border-radius: calc(var(--radius-md) + var(--spacing) * 1.5);
 }
-/* a group of rows on a card (plan 137): the design's corners, and either its tint or an outline on the surface */
+/* a group of rows on a card (plan 137): the design's corners, and either its tint or an outline on the surface; plan 204:
+   or raised on the card's fill, lifted by the design's depth */
 @utility card-group {
   border-radius: var(--card-radius);
   background-color: var(--card-bg);
-  box-shadow: 0 0 0 var(--hairline-w) var(--card-ring);
+  background-image: var(--depth-card-sheen);
+  box-shadow: 0 0 0 var(--hairline-w) var(--card-ring), var(--depth-card);
 }
 /*
  * Plan 203: a setting Settings' search just opened, marked for a moment: the primary's 8% wash behind the row, a little

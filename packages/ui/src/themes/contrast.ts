@@ -136,7 +136,7 @@ export interface SurfaceStep {
   /** a mode where it's held this way (plan 173: light's selection is the owner's lighter step) */
   mode?: "light" | "dark";
 }
-export const RATED_PALETTES = ["lumen-light", "lumen-dark", "atelier-light", "atelier-dark", "terno-light", "terno-dark", "graphite-light", "graphite-dark"] as const;
+export const RATED_PALETTES = ["lumen-light", "lumen-dark", "atelier-light", "atelier-dark", "terno-light", "terno-dark", "graphite-light", "graphite-dark", "relief-light", "relief-dark"] as const;
 export const SURFACE_STEPS: readonly SurfaceStep[] = [
   { a: "row-selected", b: "background", min: 1.18, mode: "dark", why: "the open row stands out from the list" },
   { a: "row-selected", b: "row-hover", min: 1.1, mode: "dark", why: "a row under the pointer doesn't look open" },

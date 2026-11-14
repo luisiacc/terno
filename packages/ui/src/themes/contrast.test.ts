@@ -17,7 +17,7 @@ describe("WCAG AA in every built-in theme", () => {
     expect(contrastFailures(THEMES.find((t) => t.id === id)!, STAR_ON_ROWS)).toEqual([]);
   });
 
-  it.each(["graphite-light", "graphite-dark"])("%s draws unchecked boxes and off switches at 3:1", (id) => {
+  it.each(["graphite-light", "graphite-dark", "relief-light", "relief-dark"])("%s draws unchecked boxes and off switches at 3:1", (id) => {
     const theme = THEMES.find((t) => t.id === id)!;
     expect(contrastFailures(theme, CONTROL_EDGES)).toEqual([]);
     // the off switch's track is 80% of it in dark (switch.tsx)
@@ -25,8 +25,8 @@ describe("WCAG AA in every built-in theme", () => {
   });
 
   it("control-edge is input, and its hover the ink at 30%, in every other palette, so no other design's controls moved", () => {
-    // (Atelier's dark wears Graphite's dark palette whole, plan 194)
-    for (const theme of THEMES.filter((t) => !t.id.startsWith("graphite-") && t.id !== "atelier-dark")) {
+    // (Atelier's dark wears Graphite's dark palette whole, plan 194; Relief holds 3:1 as Graphite does, plan 204)
+    for (const theme of THEMES.filter((t) => !t.id.startsWith("graphite-") && !t.id.startsWith("relief-") && t.id !== "atelier-dark")) {
       expect(theme.tokens["control-edge"], theme.id).toBe(theme.tokens.input);
       expect(parseColor(theme.tokens["control-edge-hover"]), theme.id).toEqual(withAlpha(parseColor(theme.tokens.foreground), 0.3));
     }

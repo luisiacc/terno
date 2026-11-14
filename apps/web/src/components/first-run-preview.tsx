@@ -123,7 +123,7 @@ function Sidebar({ design, sample }: { design: DesignDefinition; sample: SampleM
         ),
         "sidebar-pill": (
           <div className="shrink-0 px-2 pb-3">
-            <div className="type-compose flex h-9 w-full items-center gap-2.5 rounded-full border border-border bg-card pr-3 pl-2 text-foreground shadow-xs">
+            <div className="type-compose flex h-9 w-full items-center gap-2.5 rounded-full border border-(--depth-edge) bg-card bg-(image:--depth-raised-sheen) pr-3 pl-2 text-foreground shadow-(--depth-raised) [text-shadow:var(--emboss)]">
               <span className="flex size-(--icon-nav) items-center justify-center text-muted-foreground">
                 <SquarePen className="size-(--icon-nav)" />
               </span>
@@ -156,8 +156,8 @@ function List({ design, sample, wide, compact, lines, selected }: { design: Desi
   const filters = quick === "menu" && (
     // the header's All | Unread and its More filters (plan 158), drawn
     <span className="flex shrink-0 items-center gap-1">
-      <span className="flex items-center gap-0.5 rounded-[calc(var(--radius-md)+var(--spacing)*0.5)] bg-field p-0.5 text-xs dark:bg-background">
-        <span className="flex h-6 items-center rounded-md bg-card px-2.5 font-medium shadow-xs dark:bg-muted">{t("list.filter.all")}</span>
+      <span className="flex items-center gap-0.5 rounded-[calc(var(--radius-md)+var(--spacing)*0.5)] bg-field p-0.5 text-xs shadow-(--depth-well) dark:bg-background">
+        <span className="flex h-6 items-center rounded-md bg-card bg-(image:--depth-raised-sheen) px-2.5 font-medium shadow-(--depth-segment) dark:bg-muted">{t("list.filter.all")}</span>
         <span className="flex h-6 items-center px-2.5 text-muted-foreground">{t("list.filter.unread")}</span>
       </span>
       {icon(<ListFilter />)}
@@ -168,7 +168,7 @@ function List({ design, sample, wide, compact, lines, selected }: { design: Desi
     <>
       {behindButton && icon(<Search />)}
       {v.compose === "list-header" && (
-        <span className="flex h-7 shrink-0 items-center gap-1 rounded-md border border-border bg-card px-2.5 text-[length:var(--ds-text-control)] font-medium shadow-xs">
+        <span className="flex h-7 shrink-0 items-center gap-1 rounded-md border border-(--depth-edge) bg-card bg-(image:--depth-raised-sheen) px-2.5 text-[length:var(--ds-text-control)] font-medium shadow-(--depth-raised)">
           <SquarePen className="size-[1.15em] text-muted-foreground" />
           {t("compose.newMessage")}
         </span>
@@ -282,7 +282,7 @@ function Reader({ design, sample }: { design: DesignDefinition; sample: SampleMa
           {tool(<Mail />)}
           {tool(<Star />)}
         </div>
-        <span className={cn("ml-auto flex h-8 items-center divide-x divide-border overflow-hidden rounded-[max(var(--cta-floor),var(--ds-radius-lg))] border border-border bg-card text-[length:var(--ds-text-control)] font-medium shadow-xs [&_svg]:[--icon-line:var(--icon-line-toolbar)]", design.variants.replyAction === "pill" && "rounded-full")}>
+        <span className={cn("ml-auto flex h-8 items-center divide-x divide-border overflow-hidden rounded-[max(var(--cta-floor),var(--ds-radius-lg))] border border-(--depth-edge) bg-card bg-(image:--depth-raised-sheen) text-[length:var(--ds-text-control)] font-medium shadow-(--depth-raised) [&_svg]:[--icon-line:var(--icon-line-toolbar)]", design.variants.replyAction === "pill" && "rounded-full")}>
           <span className="flex h-full items-center gap-1.5 px-2.5">
             <Reply className="size-[1.15em] text-muted-foreground" />
             {t("actions.reply")}

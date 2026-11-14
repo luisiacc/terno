@@ -156,7 +156,7 @@ const PROBES: [string, Probe][] = [
   ["a radio card takes the primary edge when chosen; at rest, the border on the card", async (page, mode, expect) => {
     expect(await css(page, "radio-card-on", "border-top-color")).toBe(await css(page, "probe-primary-border", "border-top-color"));
     expect(await css(page, "radio-card-on", "box-shadow")).not.toMatch(FLAT);
-    expect(await css(page, "radio-card-off", "border-top-color")).toBe(await css(page, "probe-border", "border-top-color"));
+    expect(await css(page, "radio-card-off", "border-top-color")).toBe(await css(page, "probe-raised-edge", "border-top-color"));
     expect(await css(page, "radio-card-off", "background-color")).toBe(await css(page, "probe-card", "background-color"));
   }],
 
@@ -209,7 +209,7 @@ const PROBES: [string, Probe][] = [
     expect(await css(page, "icon-ghost", "color")).toBe(await css(page, "probe-muted-ink", "color"));
     await expect(page.getByTestId("icon-ghost")).toHaveAccessibleName("Archive");
     expect(await css(page, "icon-secondary", "background-color")).toBe(await css(page, "probe-card", "background-color"));
-    expect(await css(page, "icon-secondary", "border-top-color")).toBe(await css(page, "probe-border", "border-top-color"));
+    expect(await css(page, "icon-secondary", "border-top-color")).toBe(await css(page, "probe-raised-edge", "border-top-color"));
     expect(await css(page, "icon-secondary", "width")).toBe("32px");
   }],
 

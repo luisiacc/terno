@@ -38,7 +38,7 @@ const { getApp, setApp, useApp } = await import("~/state/app");
 
 const SETTINGS = {
   theme: "light",
-  design: "graphite",
+  design: "relief",
   lightTheme: "design",
   darkTheme: "design",
   previousLightTheme: null,
@@ -82,12 +82,12 @@ async function render(node: React.ReactNode) {
 const key = (k: string) => act(async () => void document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true })));
 const card = (id: string) => document.querySelector<HTMLElement>(`[data-testid=${id}]`)!;
 
-/** The second style is the first's neighbour on the right, as the cards are drawn (Lumen, Graphite, Atelier, Luma, macOS), with faces to load. */
+/** The second style is the first's neighbour on the right, as the cards are drawn (Lumen, Graphite, Relief, Atelier, Luma, macOS), with faces to load. */
 async function arrowAwayAndBack(first: string, second: string) {
   await act(async () => card(first).focus());
   await key("ArrowRight");
   expect(document.activeElement).toBe(card(second));
-  // the switch waits for the second style's faces; Lumen is still the chosen one
+  // the switch waits for the second style's faces; the first is still the chosen one
   expect(faces.release.length).toBeGreaterThan(0);
   expect(card(first).getAttribute("aria-checked")).toBe("true");
   await key("ArrowLeft");
@@ -101,12 +101,12 @@ async function arrowAwayAndBack(first: string, second: string) {
 describe("arrowing away from the chosen style and back cancels the switch", () => {
   it("in Settings → Appearance", async () => {
     await render(<Appearance />);
-    await arrowAwayAndBack("design-card-graphite", "design-card-atelier");
+    await arrowAwayAndBack("design-card-relief", "design-card-atelier");
   });
 
   it("in first run", async () => {
     localStorage.setItem("terno:first-run", "look");
     await render(<FirstRun />);
-    await arrowAwayAndBack("first-run-design-graphite", "first-run-design-atelier");
+    await arrowAwayAndBack("first-run-design-relief", "first-run-design-atelier");
   });
 });

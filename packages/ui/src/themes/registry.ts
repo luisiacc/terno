@@ -177,6 +177,7 @@ export function derive(input: Pick<ThemeInput, "mode" | "tokens" | "cats" | "ove
   // plan 07
   def("hairline", () => withAlpha(o("foreground"), 0.11));
   def("highlight", () => (light ? "1 0 0 / 16%" : "1 0 0 / 6%"));
+  def("depth-rim", () => (light ? "0 0 0 / 24%" : "0 0 0 / 60%"));
   def("tint", () => {
     // a faint shift toward the ink, smaller until text on it still reads
     for (let t = light ? 0.045 : 0.07; t > 0; t = Math.round((t - 0.005) * 1000) / 1000) {
@@ -658,6 +659,42 @@ export const THEMES: readonly Theme[] = [
     overrides: { "sidebar-foreground": "#5D5D5D", "sidebar-glyph": "#5D5D5D", "sidebar-accent-foreground": "#171717", "control-edge": "#949494", "control-edge-hover": "#5D5D5D", "draft-foreground": "#171717", "menu-highlight": "#DCDCDC" },
   }),
   defineTheme({
+    id: "relief-light",
+    name: "Relief",
+    mode: "light",
+    vibrancy: false,
+    // Relief (plan 204): the owner's light widget, a #E8E8E8 card in #1F1F1F and #565656, its controls in the ink (#1C1C1C)
+    // or raised in pale grey. The sidebar is the card's step down; its chosen item stands up from it, lighter. Off switches
+    // and unchecked boxes take #858585, the lightest grey that holds 3:1 on the card (the picture's #A8A8A8 is 1.9:1)
+    tokens: {
+      background: "#E8E8E8",
+      foreground: "#1F1F1F",
+      pane: "#E8E8E8",
+      card: "#EFEFEF",
+      popover: "#EDEDED",
+      sidebar: "#E0E0E0",
+      muted: "#DCDCDC",
+      "muted-foreground": "#565656",
+      accent: "#DEDEDE",
+      "accent-foreground": "#1F1F1F",
+      border: "0 0 0 / 14%",
+      input: "0 0 0 / 16%",
+      primary: "#1C1C1C",
+      "primary-foreground": "1 0 0",
+      destructive: "0.53 0.2 27",
+      success: "0.5 0.13 150",
+      unread: "0.52 0.15 237",
+      star: "0.6 0.15 66",
+      "row-hover": "#E0E0E0",
+      "row-selected": "#D6D6D6",
+      "row-selected-foreground": "#1F1F1F",
+      "sidebar-accent": "#F0F0F0",
+    },
+    cats: cats(".6 .17 16 | .6 .13 66 | .57 .13 131 | .56 .11 163 | .56 .1 205 | .5 .075 50 | .56 .17 322 | .52 .01 257"),
+    // the raised controls' lit top edge and their shadows (designs/depth.ts) are stronger than the flat palettes'
+    overrides: { "sidebar-foreground": "#4A4A4A", "sidebar-glyph": "#4A4A4A", "sidebar-accent-foreground": "#1F1F1F", "control-edge": "#858585", "control-edge-hover": "#565656", highlight: "1 0 0 / 60%", "shadow-color": "0 0 0 / 16%" },
+  }),
+  defineTheme({
     id: "terno-dark",
     name: "Terno Dark",
     mode: "dark",
@@ -987,6 +1024,40 @@ export const THEMES: readonly Theme[] = [
     vibrancy: false,
     ...GRAPHITE_DARK,
   }),
+  defineTheme({
+    id: "relief-dark",
+    name: "Relief",
+    mode: "dark",
+    vibrancy: false,
+    // Relief's dark (plan 204): the owner's dark widget, a #1E1E1E card in #EDEDED, its quiet words a step lighter than the
+    // picture's #969696 so they read on the open row and on a wash of the ink; wells sink toward black, raised things are lit at the top edge
+    tokens: {
+      background: "#1E1E1E",
+      foreground: "#EDEDED",
+      pane: "#1E1E1E",
+      card: "#262626",
+      popover: "#252525",
+      sidebar: "#191919",
+      muted: "#2C2C2C",
+      "muted-foreground": "#A4A4A4",
+      accent: "#2E2E2E",
+      "accent-foreground": "#EDEDED",
+      border: "1 0 0 / 14%",
+      input: "1 0 0 / 16%",
+      primary: "#E6E6E6",
+      "primary-foreground": "#1A1A1A",
+      destructive: "0.704 0.17 22",
+      success: "0.75 0.13 150",
+      unread: "0.74 0.13 237",
+      star: "0.82 0.14 80",
+      "row-hover": "1 0 0 / 6%",
+      "row-selected": "#363636",
+      "row-selected-foreground": "#EDEDED",
+      "sidebar-accent": "#333333",
+    },
+    cats: cats(".72 .13 16 | .8 .12 75 | .78 .13 131 | .74 .11 163 | .76 .09 205 | .7 .07 50 | .72 .14 322 | .7 .01 257"),
+    overrides: { "sidebar-foreground": "#A4A4A4", "sidebar-glyph": "#A4A4A4", "sidebar-accent-foreground": "#EDEDED", "control-edge": "#858585", "control-edge-hover": "#A0A0A0", highlight: "1 0 0 / 9%", "shadow-color": "0 0 0 / 55%" },
+  }),
 ];
 
 const BY_ID = new Map(THEMES.map((t) => [t.id, t]));
@@ -997,6 +1068,7 @@ export function themeName(theme: Pick<Theme, "id" | "name">): string {
   if (theme.id === "terno-dark") return t("ui.theme.ternoDark");
   // the style it belongs to has a Spanish name; its colors go by the same one
   if (theme.id === "graphite-light" || theme.id === "graphite-dark") return t("design.graphite");
+  if (theme.id === "relief-light" || theme.id === "relief-dark") return t("design.relief");
   return theme.name;
 }
 

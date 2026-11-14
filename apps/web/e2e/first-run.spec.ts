@@ -62,9 +62,9 @@ test.describe("first-run setup", () => {
         }),
       );
     const first = await measure();
-    expect(first).toHaveLength(5);
+    expect(first).toHaveLength(6);
     // in each style's own text scale: the same tiles, every name fits
-    for (const id of ["lumen", "atelier", "macos", "luma", "graphite"]) {
+    for (const id of ["lumen", "atelier", "macos", "luma", "graphite", "relief"]) {
       await page.getByTestId(`first-run-design-${id}`).click();
       await expect(preview(page)).toHaveAttribute("data-design", id);
       const now = await measure();

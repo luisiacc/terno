@@ -69,6 +69,8 @@ export const THEME_TOKENS = [
   "hairline",
   "tint",
   "highlight",
+  // plan 204: the dark rim around a raised or recessed control (designs/depth.ts)
+  "depth-rim",
   "draft-foreground",
   // plan 158: the keyboard's place in a menu or the palette; an enabled control's quieter ink
   "menu-highlight",
@@ -126,6 +128,7 @@ export const BUILTIN_THEMES = [
   { id: "atelier-light", mode: "light" },
   { id: "luma-light", mode: "light" },
   { id: "graphite-light", mode: "light" },
+  { id: "relief-light", mode: "light" },
   { id: "terno-dark", mode: "dark" },
   { id: "dracula", mode: "dark" },
   { id: "monokai", mode: "dark" },
@@ -138,6 +141,7 @@ export const BUILTIN_THEMES = [
   { id: "atelier-dark", mode: "dark" },
   { id: "luma-dark", mode: "dark" },
   { id: "graphite-dark", mode: "dark" },
+  { id: "relief-dark", mode: "dark" },
 ] as const satisfies readonly { id: string; mode: ThemeMode }[];
 export type BuiltinThemeId = (typeof BUILTIN_THEMES)[number]["id"];
 export const BUILTIN_THEME_IDS = BUILTIN_THEMES.map((t) => t.id) as BuiltinThemeId[];
@@ -216,7 +220,7 @@ export const customThemesSchema = z
  * Designs (plan 15): typography, shape, density and component variants; the
  * values live in @terno/ui/designs (a test keeps both lists in sync).
  */
-export const DESIGN_IDS = ["macos", "atelier", "lumen", "luma", "graphite"] as const;
+export const DESIGN_IDS = ["macos", "atelier", "lumen", "luma", "graphite", "relief"] as const;
 export type DesignId = (typeof DESIGN_IDS)[number];
 export const DEFAULT_DESIGN: DesignId = "lumen";
 /** lightTheme/darkTheme: "the design's own palette" ("Style colors"), the default */

@@ -14,7 +14,7 @@ function ButtonGroup({ className, ...props }: React.ComponentProps<"div">) {
       role="group"
       data-slot="button-group"
       className={cn(
-        "inline-flex h-8 shrink-0 items-stretch divide-x divide-border overflow-hidden rounded-[max(var(--cta-floor),var(--ds-radius-lg))] border border-border bg-card shadow-xs",
+        "inline-flex h-8 shrink-0 items-stretch divide-x divide-border overflow-hidden rounded-[max(var(--cta-floor),var(--ds-radius-lg))] border border-(--depth-edge) bg-card bg-(image:--depth-raised-sheen) shadow-(--depth-raised) [text-shadow:var(--emboss)]",
         className,
       )}
       {...props}

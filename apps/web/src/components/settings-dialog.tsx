@@ -167,7 +167,7 @@ export function SettingsDialog() {
                   data-testid={`tab-${value}`}
                   aria-label={value === "accounts" && signIns ? `${label}, ${t("settings.accounts.needsSignIn", { count: signIns })}` : undefined}
                   data-settings-tab={value}
-                  className="h-auto justify-start gap-2.5 rounded-md border border-transparent px-2 py-0.5 font-normal text-sidebar-foreground after:hidden not-data-active:hover:bg-sidebar-hover hover:text-sidebar-foreground data-active:bg-sidebar-accent data-active:font-medium data-active:text-sidebar-accent-foreground data-active:shadow-none dark:data-active:border-transparent dark:data-active:bg-sidebar-accent dark:data-active:shadow-none"
+                  className="h-auto justify-start gap-2.5 rounded-md border border-transparent px-2 py-0.5 font-normal text-sidebar-foreground after:hidden not-data-active:hover:bg-sidebar-hover hover:text-sidebar-foreground data-active:bg-sidebar-accent data-active:font-medium data-active:text-sidebar-accent-foreground data-active:shadow-(--depth-nav) dark:data-active:border-transparent dark:data-active:bg-sidebar-accent dark:data-active:shadow-(--depth-nav)"
                 >
                   <Icon className="size-4 text-sidebar-glyph" />
                   {label}

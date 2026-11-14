@@ -1,13 +1,14 @@
 /**
  * Plan 15: designs. `e2e` runs every flow once, in macOS. What repeats in the other designs (plan 139) is what they can change:
  *
- * - **@design, all five:** what any design's type, shape, density or palette can change: this file's first part (layout at the
+ * - **@design, all six:** what any design's type, shape, density or palette can change: this file's first part (layout at the
  *   minimum window, row heights, keyboard and scroll, the parts every variant keeps, a baseline of each key screen), other
  *   baselines, the icon line, corners, and the List layout's round trip.
  * - **@variant, Lumen and Atelier:** a flow that goes through a structural variant macOS doesn't hold (designs/types.ts:
  *   compose, listHeader, search, quickFilters, row, readerHeader, replyAction), or a part only
  *   those rows have (an avatar's icon); and the axe sweep (design-axe.spec.ts) and motion, which change only with a structure.
  * - **@variant-graphite, also Graphite:** a flow through its own value, the sidebar's compose row. Luma adds no value.
+ * - **@variant-relief, also Relief** (plan 204): its depth redraws every control's surface, so the axe sweep and motion.
  *
  * A flow that reads the same in every design takes no tag: one run. A flow tied to one design says so with `test.use({ design })`,
  * and runs once, in `e2e`. Adding a design that holds a new value: its project's grep (playwright.config.ts) and a @variant flow.
@@ -67,6 +68,8 @@ test.describe("in every design", { tag: "@design" }, () => {
       await expect(cards).toHaveCount(DESIGNS.length);
       const tops = await cards.evaluateAll((els) => els.map((el) => el.getBoundingClientRect().top));
       expect(new Set(tops).size).toBeLessThanOrEqual(2);
+      // plan 204: and never a style alone on its row (six: one row, or two of three)
+      expect(new Set(tops.map((top) => tops.filter((t) => t === top).length)).size).toBe(1);
       // the cell is as tall as its tallest description, whichever is showing
       const cell = await page.getByTestId("design-descriptions").evaluate((el) => ({ height: el.getBoundingClientRect().height, tallest: Math.max(...[...el.children].map((c) => c.getBoundingClientRect().height)), count: el.children.length }));
       expect(cell.count).toBe(DESIGNS.length);
@@ -295,7 +298,7 @@ test.describe("switching designs", () => {
       const row = [...el.querySelectorAll<HTMLElement>("[data-testid=thread-row]")].map((r) => r.getBoundingClientRect()).filter((r) => r.bottom > top + 0.5).sort((a, b) => a.top - b.top)[0]!;
       el.scrollBy(0, row.top - top + row.height * 0.4);
     });
-    for (const id of ["atelier", "lumen", "graphite", "macos"] as const) {
+    for (const id of ["atelier", "lumen", "graphite", "relief", "macos"] as const) {
       const before = await anchor();
       expect(before.into).toBeGreaterThan(0.05);
       const card = page.getByTestId(`design-card-${id}`);

@@ -286,22 +286,24 @@ export function AppearanceTab({ settings, update }: { settings: AppSettings; upd
         <SettingsRow find="appearance.style" stacked label={t("settings.appearance.style")} hint={t("settings.appearance.style.hint")}>
           {(a) => (
             <>
-              <RadioGroup
-                aria-labelledby={a["aria-labelledby"]}
-                aria-describedby={`${a["aria-describedby"]} design-description`}
-                value={settings.design}
-                onValueChange={(id) => void updateAppearance({ design: id as DesignDefinition["id"] })}
-                // the chosen style chosen again (clicked, or arrowed back onto) is a choice too: it cancels a switch still
-                // waiting for its faces (Codex code review #2, second pass #3)
-                onReselect={(id) => void updateAppearance({ design: id as DesignDefinition["id"] })}
-                // one row at Settings' width; narrower, a second row, and never a third: the column gives way before three stop fitting
-                className="grid grid-cols-[repeat(auto-fit,minmax(min(5.5rem,calc((100%-1rem)/3)),1fr))] gap-2"
-                data-testid="design-grid"
-              >
-                {DESIGNS.map((d) => (
-                  <StyleCard key={d.id} design={d} mode={mode} />
-                ))}
-              </RadioGroup>
+              <div className="@container">
+                <RadioGroup
+                  aria-labelledby={a["aria-labelledby"]}
+                  aria-describedby={`${a["aria-describedby"]} design-description`}
+                  value={settings.design}
+                  onValueChange={(id) => void updateAppearance({ design: id as DesignDefinition["id"] })}
+                  // the chosen style chosen again (clicked, or arrowed back onto) is a choice too: it cancels a switch still
+                  // waiting for its faces (Codex code review #2, second pass #3)
+                  onReselect={(id) => void updateAppearance({ design: id as DesignDefinition["id"] })}
+                  // one row of six at Settings' width; narrower, two rows of three, never a style alone on a row (plan 204)
+                  className="grid grid-cols-3 gap-2 @[33rem]:grid-cols-6"
+                  data-testid="design-grid"
+                >
+                  {DESIGNS.map((d) => (
+                    <StyleCard key={d.id} design={d} mode={mode} />
+                  ))}
+                </RadioGroup>
+              </div>
               {/* all of them in one cell, the chosen one showing: as tall as the longest, so nothing below moves when a choice wraps differently */}
               <div className="mt-2 grid text-xs text-muted-foreground" data-testid="design-descriptions">
                 {DESIGNS.map((d) => (

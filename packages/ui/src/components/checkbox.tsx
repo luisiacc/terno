@@ -4,9 +4,9 @@ import { cn } from "cn"
 import { Check as CheckIcon, Minus as MinusIcon } from "@terno/ui/icons"
 
 const BOX = [
-        "group/checkbox peer relative flex size-4 shrink-0 items-center justify-center rounded-[4px] border border-control-edge transition-colors outline-none group-has-disabled/field:opacity-50 group-has-[:focus-visible]/field-label:ring-0 group-has-[:focus-visible]/field-label:not-data-checked:border-control-edge after:absolute after:-inset-x-3 after:-inset-y-2 hover:not-data-checked:not-data-indeterminate:border-control-edge-hover focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 aria-invalid:aria-checked:border-primary bg-card shadow-xs dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40",
-        "data-checked:border-primary data-checked:bg-primary data-checked:bg-linear-to-b data-checked:from-highlight data-checked:to-transparent data-checked:text-primary-foreground data-checked:shadow-[inset_0_1px_var(--highlight)] group-has-[:focus-visible]/field-label:data-checked:border-primary dark:data-checked:bg-primary",
-        "data-indeterminate:border-primary data-indeterminate:bg-primary data-indeterminate:bg-linear-to-b data-indeterminate:from-highlight data-indeterminate:to-transparent data-indeterminate:text-primary-foreground data-indeterminate:shadow-[inset_0_1px_var(--highlight)] dark:data-indeterminate:bg-primary",
+        "group/checkbox peer relative flex size-4 shrink-0 items-center justify-center rounded-[4px] border border-control-edge transition-colors outline-none group-has-disabled/field:opacity-50 group-has-[:focus-visible]/field-label:ring-0 group-has-[:focus-visible]/field-label:not-data-checked:border-control-edge after:absolute after:-inset-x-3 after:-inset-y-2 hover:not-data-checked:not-data-indeterminate:border-control-edge-hover focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 aria-invalid:aria-checked:border-primary bg-card shadow-(--depth-box) dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40",
+        "data-checked:border-primary data-checked:bg-primary data-checked:bg-linear-to-b data-checked:from-highlight data-checked:to-transparent data-checked:text-primary-foreground data-checked:shadow-(--depth-box-on) group-has-[:focus-visible]/field-label:data-checked:border-primary dark:data-checked:bg-primary",
+        "data-indeterminate:border-primary data-indeterminate:bg-primary data-indeterminate:bg-linear-to-b data-indeterminate:from-highlight data-indeterminate:to-transparent data-indeterminate:text-primary-foreground data-indeterminate:shadow-(--depth-box-on) dark:data-indeterminate:bg-primary",
 ].join(" ")
 
 /**
@@ -14,9 +14,9 @@ const BOX = [
  * control a pointer hits and a screen reader names is the 24 px element itself, not a pseudo-element around a 16 px one.
  */
 const TARGET_BOX = [
-  "relative flex size-4 shrink-0 items-center justify-center rounded-[4px] border border-control-edge bg-card shadow-xs transition-colors",
+  "relative flex size-4 shrink-0 items-center justify-center rounded-[4px] border border-control-edge bg-card shadow-(--depth-box) transition-colors",
   "group-focus-visible/checkbox:border-ring group-focus-visible/checkbox:ring-3 group-focus-visible/checkbox:ring-ring group-disabled/checkbox:opacity-50",
-  "group-data-checked/checkbox:border-primary group-data-checked/checkbox:bg-primary group-data-checked/checkbox:bg-linear-to-b group-data-checked/checkbox:from-highlight group-data-checked/checkbox:to-transparent group-data-checked/checkbox:text-primary-foreground group-data-checked/checkbox:shadow-[inset_0_1px_var(--highlight)] dark:group-data-checked/checkbox:bg-primary",
+  "group-data-checked/checkbox:border-primary group-data-checked/checkbox:bg-primary group-data-checked/checkbox:bg-linear-to-b group-data-checked/checkbox:from-highlight group-data-checked/checkbox:to-transparent group-data-checked/checkbox:text-primary-foreground group-data-checked/checkbox:shadow-(--depth-box-on) dark:group-data-checked/checkbox:bg-primary",
 ].join(" ")
 
 /**
@@ -25,7 +25,7 @@ const TARGET_BOX = [
  * fade; ticked is the ink's mark on the card.
  */
 const QUIET_BOX = [
-  "relative flex size-4 shrink-0 items-center justify-center rounded-[4px] border border-control-edge-hover bg-card text-foreground shadow-xs transition-colors",
+  "relative flex size-4 shrink-0 items-center justify-center rounded-[4px] border border-control-edge-hover bg-card text-foreground shadow-(--depth-box) transition-colors",
   "group-focus-visible/checkbox:border-ring group-focus-visible/checkbox:ring-3 group-focus-visible/checkbox:ring-ring group-disabled/checkbox:opacity-50",
 ].join(" ")
 

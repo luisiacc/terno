@@ -47,7 +47,7 @@ function Progress({
         aria-valuenow={value === null ? undefined : Math.round(value)}
         aria-valuetext={valueText}
         data-slot="progress-track"
-        className="relative h-1 w-full overflow-hidden rounded-full bg-field"
+        className="relative h-1 w-full overflow-hidden rounded-full bg-field shadow-(--depth-well)"
       >
         <span data-slot="progress-fill" className="absolute inset-0 rounded-full bg-primary transition-transform duration-base ease-motion" style={{ transform: `translateX(${drawn - 100}%)` }} />
         {children}

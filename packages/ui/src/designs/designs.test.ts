@@ -5,12 +5,17 @@ import { DEFAULT_DESIGN, DESIGN_IDS } from "@terno/core";
 import { describe, expect, it } from "vitest";
 import { oklchToRgb, parseColor } from "../themes/color";
 import { builtinTheme } from "../themes/registry";
+import { DEPTHS, DEPTH_VARS } from "./depth";
 import { designVars, generateDesignsCss, generateTypeRolesCss } from "./generate";
 import { designById, DESIGNS } from "./index";
 import { NO_PREVIEW_GAP, rowHeight } from "./rows";
 import { TEXT_STEPS, TYPE_ROLES } from "./types";
 
 const styles = join(import.meta.dirname, "../styles");
+const hexOf = (color: string) => {
+  const { r, g, b } = oklchToRgb(parseColor(color));
+  return `#${[r, g, b].map((v) => Math.round(v * 255).toString(16).padStart(2, "0")).join("")}`.toUpperCase();
+};
 
 describe("designs (plan 15)", () => {
   it("match core's list, with unique ids; unknown ids are the default", () => {
@@ -118,7 +123,8 @@ describe("designs (plan 15)", () => {
   });
 
   it("the values Graphite added leave the other designs as they were", () => {
-    for (const d of DESIGNS.filter((x) => x.id !== "graphite")) {
+    // (plan 204: Relief came after, and decides these for itself)
+    for (const d of DESIGNS.filter((x) => x.id !== "graphite" && x.id !== "relief")) {
       expect(d.weights, d.id).toEqual({ semibold: 600, bold: 700 });
       expect(d.tracking.base, d.id).toBe("normal");
       expect(d.icon.nav, d.id).toBe(16);
@@ -128,6 +134,59 @@ describe("designs (plan 15)", () => {
       expect(d.tracking.wide, d.id).toBe("0.025em");
       expect(d.layout.commandRadius, d.id).toBe("var(--ds-radius-xl)");
     }
+  });
+
+  describe("depth (plan 204)", () => {
+    it("every design but Relief is flat, and flat is exactly what the controls drew before", () => {
+      expect(DESIGNS.filter((d) => d.surfaces.depth !== "flat").map((d) => d.id)).toEqual(["relief"]);
+      const xs = "0 1px 2px 0 color-mix(in oklab, var(--shadow-color) 50%, transparent)";
+      expect(DEPTHS.flat).toEqual({
+        "--depth-raised": xs,
+        "--depth-raised-sheen": "none",
+        "--depth-edge": "var(--border)",
+        "--depth-edge-firm": "var(--input)",
+        "--depth-segment": xs,
+        "--depth-segment-dark": "inset 0 1px var(--highlight), 0 1px 2px var(--shadow-color)",
+        "--depth-ink": "inset 0 1px var(--highlight), 0 1px 2px var(--shadow-color)",
+        "--depth-box": xs,
+        "--depth-box-on": "inset 0 1px var(--highlight)",
+        "--depth-thumb": "0 3px 3px 0 color-mix(in oklab, var(--shadow-color) 30%, transparent), 0 0.75px 0 0 color-mix(in oklab, var(--shadow-color) 50%, transparent)",
+        "--depth-thumb-chip": "1",
+        "--depth-track": "var(--control-edge)",
+        "--depth-track-dark": "color-mix(in oklab, var(--control-edge) 80%, transparent)",
+        "--depth-switch-off": "0 0 transparent",
+        "--depth-switch-on": "inset 0 1px var(--highlight)",
+        "--depth-well": "0 0 transparent",
+        "--depth-field": "0 0 transparent",
+        "--depth-card": "0 0 transparent",
+        "--depth-card-sheen": "none",
+        "--depth-nav": "0 0 transparent",
+        "--emboss": "none",
+      });
+    });
+
+    it("every design's block sets every depth variable, over palette tokens only (no @theme alias, no colour)", () => {
+      for (const d of DESIGNS) {
+        const vars = new Map(designVars(d));
+        for (const name of DEPTH_VARS) expect(vars.get(name), `${d.id} ${name}`).toBe(DEPTHS[d.surfaces.depth][name]);
+      }
+      for (const preset of Object.values(DEPTHS))
+        for (const [name, value] of Object.entries(preset)) {
+          // a root alias (--shadow-xs) would resolve against the outer palette in a nested preview
+          expect(value, name).not.toMatch(/var\(--shadow-(?!color)/);
+          expect(value, name).not.toMatch(/#[0-9a-f]{3,8}\b|oklch\(|rgba?\(/i);
+        }
+    });
+
+    it("Relief is raised: its cards on the card's fill, its palette the pictures' greys", () => {
+      const r = designById("relief");
+      expect(r.surfaces).toMatchObject({ card: "raised", depth: "relief", cta: "pill" });
+      expect(new Map(designVars(r)).get("--card-bg")).toBe("var(--card)");
+      const light = builtinTheme("relief-light")!.tokens;
+      const dark = builtinTheme("relief-dark")!.tokens;
+      expect([light.background, light.foreground, light["muted-foreground"], light.primary].map(hexOf)).toEqual(["#E8E8E8", "#1F1F1F", "#565656", "#1C1C1C"]);
+      expect([dark.background, dark.foreground].map(hexOf)).toEqual(["#1E1E1E", "#EDEDED"]);
+    });
   });
 
   it("generated CSS is up to date (run `pnpm --filter @terno/ui gen:designs`)", () => {

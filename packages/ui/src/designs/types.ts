@@ -1,4 +1,5 @@
 import type { BuiltinThemeId, DesignId, ThemeMode } from "@terno/core";
+import type { DepthId } from "./depth";
 
 /**
  * A design (plan 15): typography, shape, density and a closed set of
@@ -85,8 +86,10 @@ export interface DesignDefinition {
     inboxCount: "muted" | "unread";
     /** a button with words on it: the control's corners, or a pill */
     cta: "control" | "pill";
-    /** a group of rows: on the tint, or outlined on its surface */
-    card: "tint" | "outline";
+    /** a group of rows: on the tint, outlined on its surface, or raised on the card's fill (plan 204) */
+    card: "tint" | "outline" | "raised";
+    /** how controls stand: today's light touch, or raised and recessed (plan 204, designs/depth.ts) */
+    depth: DepthId;
   };
   variants: DesignVariants;
 }

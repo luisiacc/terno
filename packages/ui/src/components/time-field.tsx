@@ -38,11 +38,11 @@ function TimeField<T extends TimeValue>({
             data-testid={testId}
             // the secondary's chrome; the border firms on hover, and focus (a text field keeps its ring) and error color it
             className={cn(
-              "flex h-8 w-full min-w-0 cursor-text items-center rounded-md border border-border bg-card pr-2.5 pl-8 text-sm whitespace-nowrap shadow-xs transition-colors",
-              "data-[hovered]:border-input data-[focus-within]:border-ring data-[focus-within]:ring-3 data-[focus-within]:ring-ring",
+              "flex h-8 w-full min-w-0 cursor-text items-center rounded-md border border-(--depth-edge) bg-card bg-(image:--depth-raised-sheen) pr-2.5 pl-8 text-sm whitespace-nowrap shadow-(--depth-raised) transition-colors",
+              "data-[hovered]:border-(--depth-edge-firm) data-[focus-within]:border-ring data-[focus-within]:ring-3 data-[focus-within]:ring-ring",
               "data-[invalid]:border-destructive data-[invalid]:ring-3 data-[invalid]:ring-destructive/20 dark:data-[invalid]:border-destructive/50 dark:data-[invalid]:ring-destructive/40",
               // unavailable, as the secondary button (plan 125): the field wash under its border, flat, no opacity
-              "data-[disabled]:pointer-events-none data-[disabled]:bg-field data-[disabled]:shadow-none"
+              "data-[disabled]:pointer-events-none data-[disabled]:bg-field data-[disabled]:bg-none data-[disabled]:shadow-none"
             )}
           >
             {(segment) => (
