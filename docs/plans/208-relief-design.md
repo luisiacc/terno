@@ -228,6 +228,12 @@ After the unread rows: Claude 6.5 → 7 (UI 7, UX 7.5, lowest 5.5), Codex 7.5 �
 
 Then the owner, on the round's notes: "no those are fine, and actually lets make the highlighted color background of the thread lighter in light mode, similar to how it was before round 1". The open row in `relief-light` goes from round 2's firm `#CCCCCC` (1.4:1 on the list) back to the step it had before round 1 (`#D6D6D6` on `#E8E8E8`, 1.19:1), on today's lighter list: `#DCDCDC` (1.19:1), inside plan 173's soft ceiling again. The hovered row goes a step lighter to `#E5E5E5` (round 2's), so the two stay 1.09:1 apart (contrast.ts's 1.08). The sidebar's chosen item stays firm, the one exception the contrast test keeps. Dark is unchanged. Relief's baselines updated; the resign-in ones also take round 2's pressed-in sidebar item and raised buttons, which the per-pixel threshold had let through.
 
+## A paler light, from a reference (after landing)
+
+The owner, with a picture of another app's pale sidebar beside a white content card: "lets make the light mode for the Relief style be more like the bar in this picture like that background the arrow is pointing to". The picture's bar is `#F5F5F5`, its content white, its chosen item `#ECECEC`. Shown three ways (the sidebar alone, which left it lighter than the `#EFEFEF` list; the sidebar with white panes; and the panes at `#FAFAFA`), the owner liked white panes but found them "too white … it should be just a tad lighter than the sidebar", and chose `#FAFAFA`.
+
+`relief-light` now: sidebar `#F5F5F5`, background and pane `#FAFAFA` (1.04:1 above the sidebar, the hairline doing most of the separating), card and popover white, so raised controls, menus and the palette stay lighter than the app. The greys on the list keep their steps: the hovered row `#F0F0F0` (1.09:1), the open row `#E7E7E7` (1.18:1, 1.09:1 above the hover). The sidebar's chosen item goes from round 2's firm `#CBCBCB` to `#E3E3E3` (1.18:1), soft like the picture's, so contrast.test.ts's exception for it is gone. Dark is unchanged. Relief's baselines updated.
+
 ## Renumbered
 
 Written as plan 204 (and its app-wide part as 205) on its branch while main took 204 for What matters, which names 205–207 as its next plans. On landing, Relief became 208 and the app-wide fixes 209, in the code's comments and tests as well.

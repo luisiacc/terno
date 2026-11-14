@@ -167,14 +167,12 @@ describe("boundaries as drawn (plan 160)", () => {
   });
 
   // the owner's decision (plan 173): light's selections are a soft step, so none drifts back to plan 160's heavy fill.
-  // Relief's sidebar is the owner's exception (plan 208, after its second UI rating): its chosen item is a firm step. Its open
-  // row was too, until the fourth rating, when the owner had it soft again
+  // Relief's were firm for a while (plan 208) until the owner had them soft again
   it.each(THEMES.filter((t) => t.mode === "light").map((t) => t.id))("%s keeps its selections soft (plan 173)", (id) => {
     const theme = THEMES.find((t) => t.id === id)!;
     for (const why of ["the open row", "the sidebar's selection"]) {
-      const ceiling = id === "relief-light" && why === "the sidebar's selection" ? 1.5 : 1.22;
       const step = BOUNDARY_STEPS.find((s) => s.mode === "light" && s.why.startsWith(why))!;
-      expect(boundaryStep(theme, step), `${id}: ${step.why}`).toBeLessThanOrEqual(ceiling);
+      expect(boundaryStep(theme, step), `${id}: ${step.why}`).toBeLessThanOrEqual(1.22);
     }
   });
 });

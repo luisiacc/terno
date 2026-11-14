@@ -680,13 +680,15 @@ export const THEMES: readonly Theme[] = [
     // and unchecked boxes take #858585, the lightest grey that holds 3:1 on the card (the picture's #A8A8A8 is 1.9:1)
     // UI rating relief-r01: the reading surface a step lighter than the picture's card, so the panes separate from the
     // sidebar, and menus and the palette lighter again than the app
+    // The owner (2026-11-14, from a reference): the sidebar the pale #F5F5F5 bar beside the content, which is a tad lighter
+    // still (#FAFAFA, not white: white glared and flattened the raised controls); controls, menus and the palette white above it
     tokens: {
-      background: "#EFEFEF",
+      background: "#FAFAFA",
       foreground: "#1F1F1F",
-      pane: "#EFEFEF",
-      card: "#F6F6F6",
-      popover: "#F8F8F8",
-      sidebar: "#E3E3E3",
+      pane: "#FAFAFA",
+      card: "#FFFFFF",
+      popover: "#FFFFFF",
+      sidebar: "#F5F5F5",
       muted: "#E0E0E0",
       "muted-foreground": "#565656",
       accent: "#DEDEDE",
@@ -700,15 +702,15 @@ export const THEMES: readonly Theme[] = [
       unread: "0.52 0.15 237",
       // 3:1 on the open row's grey too (Codex code review: 0.6 was 2.8:1 there)
       star: "0.53 0.13 66",
-      // a step lighter with the softer open row below (round 2's), so the two stay apart (1.09:1)
-      "row-hover": "#E5E5E5",
+      // 1.09:1 off the list, and a step under the open row so the two stay apart (1.09:1)
+      "row-hover": "#F0F0F0",
       // the owner (after the fourth UI rating): the open row soft again, the step it had before round 1 (#D6D6D6 on #E8E8E8,
-      // 1.19:1) on today's lighter list; round 2's firm #CCCCCC (1.4:1) read too heavy
-      "row-selected": "#DCDCDC",
+      // 1.19:1), kept at that step on the lighter list; round 2's firm #CCCCCC (1.4:1) read too heavy
+      "row-selected": "#E7E7E7",
       "row-selected-foreground": "#1F1F1F",
-      // a step down from the sidebar: the chosen item is pressed in (the owner: lighter, it read as the Compose pill), as firm
-      // as the open row
-      "sidebar-accent": "#CBCBCB",
+      // a step down from the sidebar: the chosen item is pressed in (the owner: lighter, it read as the Compose pill), about
+      // as soft as the open row (1.18:1)
+      "sidebar-accent": "#E3E3E3",
     },
     cats: cats(".6 .17 16 | .6 .13 66 | .57 .13 131 | .56 .11 163 | .56 .1 205 | .5 .075 50 | .56 .17 322 | .52 .01 257"),
     // the raised controls' lit top edge and their shadows (designs/depth.ts) are stronger than the flat palettes'
