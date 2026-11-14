@@ -27,8 +27,9 @@ import { rowLine } from "~/lib/followups";
 import { useFollowups } from "~/state/followups";
 import { onlyOnTop } from "~/state/list";
 import { useExcerpts } from "~/state/excerpts";
+import type { TodayTask } from "~/lib/dated";
 
-interface Props {
+export interface ThreadRowProps {
   thread: ThreadSummary;
   top: number;
   height: number;
@@ -56,6 +57,12 @@ interface Props {
   section?: string;
   /** plan 188: its place in the list, from 1 (aria-posinset; the list writes the size) */
   position?: number;
+  /**
+   * plan 204 (after the panel): a Today row with a dated item or a promise of yours: the task leads (its line, which is the
+   * row's snippet, in the row's ink where the subject is, the subject quiet in the preview's place) and its due day is the
+   * row's date. Heights don't change.
+   */
+  task?: Pick<TodayTask, "when">;
 }
 
 /**
@@ -65,7 +72,7 @@ interface Props {
  * checking one re-renders one. The design picks the layout inside it (classic,
  * avatar, large avatar); the shell, roles, ids and handlers are the same in all.
  */
-export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact, wide = false, showAccount, icons, layout, review = null, pinnedTop = false, reminderTop = false, match = null, lines = 1, pick = false, section, position }: Props) {
+export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact, wide = false, showAccount, icons, layout, review = null, pinnedTop = false, reminderTop = false, match = null, lines = 1, pick = false, section, position, task }: ThreadRowProps) {
   renderProbe("ThreadRow");
   /** the open thread (the cursor; the listbox's active descendant) */
   const selected = useApp((s) => s.selectedId === thread.id);
@@ -132,12 +139,13 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
       pick={pick}
       section={section}
       position={position}
+      task={task}
       interactive
     />
   );
 });
 
-type ViewProps = Omit<Props, "showAccount" | "wide" | "review" | "reminderTop" | "match"> & {
+type ViewProps = Omit<ThreadRowProps, "showAccount" | "wide" | "review" | "reminderTop" | "match"> & {
   match?: RowMatch | null;
   excerpt?: string;
   wide: boolean;
@@ -275,7 +283,7 @@ function RowDate({ thread, reminderTop, fallback, className, title }: { thread: 
   return <span data-testid="row-date" data-due-at={dueAt ?? undefined} title={title} className={className}>{dueAt !== null ? reminderShort(dueAt) : fallback}</span>;
 }
 
-export function ThreadRowView({ thread, top, height, compact, wide, icons, layout, review, pinnedTop = false, reminderTop, selected, checked, included, pending, inSelection, account, categories, inCategory = null, kept = false, hasDraft, code, reminder, remindersList, interactive, match, excerpt, lines: previewLines = 1, pick = false, section, position }: ViewProps) {
+export function ThreadRowView({ thread, top, height, compact, wide, icons, layout, review, pinnedTop = false, reminderTop, selected, checked, included, pending, inSelection, account, categories, inCategory = null, kept = false, hasDraft, code, reminder, remindersList, interactive, match, excerpt, lines: previewLines = 1, pick = false, section, position, task }: ViewProps) {
   const cats = thread.categoryIds.length ? categories.filter((c) => c.id !== inCategory && thread.categoryIds.includes(c.id)) : [];
   const classic = layout === "classic";
   const big = layout === "large-avatar";
@@ -392,7 +400,10 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
     </span>
   );
   const date =
-    reminderTop && reminder?.due ? (
+    task?.when ? (
+      // plan 204 (after the panel): when it's due, not when it came; the line says it in words (so it isn't said twice)
+      <span aria-hidden data-testid="row-date" data-task className={cn("text-xs tabular", thread.unread ? "font-medium text-foreground" : "text-muted-foreground")}>{task.when}</span>
+    ) : reminderTop && reminder?.due ? (
       // plan 87: on the Inbox's top, the time it came back, in the attention ink (the mail's own date would read as out of order)
       <span data-testid="row-date" data-reminder className={cn("flex items-center gap-1 text-xs font-medium tabular", opened || checked ? "" : "text-unread-ink")}>
         <AlarmClock aria-hidden data-testid="row-reminder" data-due className="size-3" />
@@ -408,9 +419,25 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
   // unread still shows by the sender's weight, the dot and the date
   const subjectInk = noPreview && !line ? cn("type-row-subject [font-weight:var(--type-row-snippet-weight)]", quiet) : cn(thread.unread ? "type-row-subject-strong" : "type-row-subject", tone);
   // its own line: only a very long subject truncates
+  const subjectWords = thread.subject ? <Marked text={thread.subject} needles={match?.subject} /> : t("common.noSubject");
   const subject = (
     <span data-testid="row-subject" className={cn("min-w-0 truncate", subjectInk)}>
-      {thread.subject ? <Marked text={thread.subject} needles={match?.subject} /> : t("common.noSubject")}
+      {subjectWords}
+    </span>
+  );
+  /**
+   * Plan 204 (after the panel, revision 8): a task row leads with the task. Three lines: the task where the subject is, in
+   * the row's ink and the subject's type; the subject quiet where the preview is. No preview: the task alone on the
+   * subject's line. Read in that order too (the task before the subject).
+   */
+  const taskLine = task && (
+    <span data-testid="row-task" className={cn("min-w-0 truncate", thread.unread ? "type-row-subject-strong" : "type-row-subject")}>
+      {thread.snippet}
+    </span>
+  );
+  const taskSubject = task && (
+    <span data-testid="row-subject" className={cn("type-row-snippet min-w-0 truncate", quiet)}>
+      {subjectWords}
     </span>
   );
   // plan 142: gated on the row's every state, as Draft's ink is (contrast.ts)
@@ -528,13 +555,13 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
       {firstLine}
       {/* (with no preview, NO_PREVIEW_GAP above it: two lines read as one block otherwise, the owner) */}
       <div className={cn("flex min-w-0 items-baseline gap-1.5", noPreview && !answer && "mt-1")}>
-        {subject}
+        {taskLine || subject}
         {draft}
         {noPreview && !answer && accountShown}
       </div>
       {(!noPreview || answer) && (
         <div className={cn("flex min-w-0", previewLines === 2 ? "min-h-[calc(var(--type-row-snippet-leading)*2)] items-start" : "items-baseline")}>
-          {answer || snippet}
+          {answer || taskSubject || snippet}
           {accountShown}
         </div>
       )}
@@ -612,14 +639,14 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
           {/* plan 193: subject then preview, one flowing line (plan 160's subject column left a gap before every short
               subject's preview); the preview is what gives way; the meta columns follow it on the right */}
           <span className="flex min-w-0 flex-1 items-center gap-1.5">
-            <span data-testid="row-subject" className={cn(FLOWING_SUBJECT, subjectInk)}>{thread.subject ? <Marked text={thread.subject} needles={match?.subject} /> : t("common.noSubject")}</span>
+            {task ? <span data-testid="row-task" className={cn(FLOWING_SUBJECT, subjectInk)}>{thread.snippet}</span> : <span data-testid="row-subject" className={cn(FLOWING_SUBJECT, subjectInk)}>{subjectWords}</span>}
             {/* what a row is, not a column: beside the subject, so the columns on the right never move */}
             {draft}
             {keptTag}
             {placeTag}
             {reminder && !reminderTop && bell}
             {/* (Review's answers and the subject share what's short, so neither goes whole) */}
-            {answer ? <span className="ml-auto flex min-w-0 justify-end">{answer}</span> : <WideSnippet thread={thread} reminderTop={reminderTop} ink={owedInk} quiet={PREVIEW_INK} match={match} excerpt={excerpt} />}
+            {answer ? <span className="ml-auto flex min-w-0 justify-end">{answer}</span> : task ? <span data-testid="row-subject" className={cn("ml-1.5 min-w-0 flex-1 truncate text-xs", PREVIEW_INK)}>{subjectWords}</span> : <WideSnippet thread={thread} reminderTop={reminderTop} ink={owedInk} quiet={PREVIEW_INK} match={match} excerpt={excerpt} />}
           </span>
           {accountTag}
           <span data-testid="row-marks" className="flex shrink-0 items-center justify-end gap-1.5">
@@ -640,9 +667,10 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
           </span>
           {/* (a few characters of subject stay whatever the width: the sender's column gives way first) */}
           <span className="flex min-w-16 flex-1 items-center gap-2">
-            <span data-testid="row-subject" className={cn(FLOWING_SUBJECT, subjectInk)}>{thread.subject ? <Marked text={thread.subject} needles={match?.subject} /> : t("common.noSubject")}</span>
+            {/* plan 204 (after the panel): a task row's task where the subject is, the subject quiet after it */}
+            {task ? <span data-testid="row-task" className={cn(FLOWING_SUBJECT, subjectInk)}>{thread.snippet}</span> : <span data-testid="row-subject" className={cn(FLOWING_SUBJECT, subjectInk)}>{subjectWords}</span>}
             {draft}
-            <RowTail thread={thread} reminderTop={reminderTop} ink={owedInk} quiet={PREVIEW_INK} match={match} excerpt={excerpt} />
+            {task ? <span data-testid="row-subject" className={cn("type-row-snippet min-w-0 flex-1 truncate", PREVIEW_INK)}>{subjectWords}</span> : <RowTail thread={thread} reminderTop={reminderTop} ink={owedInk} quiet={PREVIEW_INK} match={match} excerpt={excerpt} />}
           </span>
           {answer}
           {accountTag}

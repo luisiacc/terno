@@ -107,3 +107,16 @@ export function datedDay(ms: number, now = Date.now()): { near: "today" | "tomor
   const near = days === 0 ? "today" : days === 1 ? "tomorrow" : days === -1 ? "yesterday" : null;
   return { near, text: Math.abs(days) < 7 ? fmt().weekdayLong.format(ms) : dayOf(ms, now) };
 }
+
+/**
+ * Plan 204 (after the panel): a Today task's day where a row's received date usually is, as short as that date: its time
+ * today ("1:00 PM") or "Today", "Tomorrow", "Yesterday" (a Missed one), the weekday within 6 days either way ("Fri"),
+ * further its date ("Nov 21"). The row's line says the rest ("Due Friday 1:00 PM · …").
+ */
+export function dueShort(ms: number, timed: boolean, now = Date.now()): string {
+  const days = daysAway(ms, now);
+  if (days === 0) return timed ? fmt().time.format(ms) : t("today.when.today");
+  if (days === 1) return t("today.when.tomorrow");
+  if (days === -1) return t("date.yesterday");
+  return Math.abs(days) < 7 ? fmt().weekday.format(ms).replace(".", "") : dayOf(ms, now);
+}

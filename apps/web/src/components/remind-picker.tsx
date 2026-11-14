@@ -1,12 +1,11 @@
 import { defaultRemindAt, remindPresets, type ReminderKind } from "@terno/core";
 import { t } from "@terno/i18n";
-import { Button } from "@terno/ui/components/button";
 import { ToggleGroup, ToggleGroupItem } from "@terno/ui/components/toggle-group";
 import { cn } from "@terno/ui/lib/utils";
 import { AlarmClockOff, CalendarClock } from "@terno/ui/icons";
-import { useId, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { clearReminder, presetLabel, presetWhen, reminderWhen, setReminder, useReminders } from "~/lib/reminders";
-import { useWhen, WhenFields } from "./when-fields";
+import { WhenForm } from "./when-fields";
 
 /**
  * Plan 87's picker: Remind me or If no reply, its presets with their
@@ -20,12 +19,7 @@ export function RemindPicker({ threadIds, initialKind, custom = false, done }: {
   // the kind asked for ("Remind me if no reply ▸ Pick…") wins; else the reminder there is; else Remind me
   const [kind, setKind] = useState<ReminderKind>(initialKind ?? current?.kind ?? "always");
   const [picking, setPicking] = useState(custom);
-  const when = useWhen(defaultRemindAt(new Date()));
-  const { chosen, past, ready } = when;
-  const formRef = useRef<HTMLFormElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
-  const pastId = useId();
-  const [, recheck] = useState(0);
   const presets = remindPresets(new Date(), kind);
 
   const set = (dueAt: number) => {
@@ -81,28 +75,7 @@ export function RemindPicker({ threadIds, initialKind, custom = false, done }: {
           <span className="min-w-0 flex-1 truncate">{t("remind.pick")}</span>
         </button>
         {picking && (
-          <form
-            ref={formRef}
-            className="flex flex-col gap-2 pt-1 pb-1"
-            data-testid="remind-custom"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (!ready) return;
-              // the moment can pass while the picker stays open: the clock again, and a render that shows why
-              if (chosen > Date.now()) set(chosen);
-              else recheck((n) => n + 1);
-            }}
-          >
-            <WhenFields when={when} testPrefix="remind" describedBy={pastId} onEnter={() => formRef.current?.requestSubmit()} />
-            {past && (
-              <p id={pastId} className="px-2 text-xs text-destructive-ink" data-testid="remind-past">
-                {t("remind.past")}
-              </p>
-            )}
-            <Button type="submit" size="sm" data-testid="remind-set" disabled={past || !ready} className="self-end">
-              {t("remind.set")}
-            </Button>
-          </form>
+          <WhenForm start={defaultRemindAt(new Date())} testPrefix="remind" formTestId="remind-custom" submit={t("remind.set")} onSet={set} className="pt-1 pb-1" noteClassName="px-2" />
         )}
         {current && (
           <>

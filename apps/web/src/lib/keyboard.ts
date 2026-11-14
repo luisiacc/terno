@@ -13,7 +13,7 @@ import { loadMore, useList } from "~/state/list";
 import { loadThread, useThreads } from "~/state/threads";
 import { acceptSuggestion, answerReview, rejectSuggestion } from "~/lib/categorize";
 import { leaveReview } from "~/lib/review";
-import { backToDigest, digestHasKeys, digestKeys } from "~/state/today";
+import { backToDigest, digestHasKeys, digestKeys, doneOnSelected } from "~/state/today";
 import { conversationKeys } from "~/lib/conversation-keys";
 import { printCommand } from "~/lib/print-open";
 import { checkForUpdates } from "~/lib/updates";
@@ -269,6 +269,8 @@ const DECIDES: Partial<Record<Command, () => boolean>> = {
   // not from a dialog or menu: the panes are under them
   "pane.next": () => getApp().dialog === null && !getApp().menuOpen && movePane(1),
   "pane.prev": () => getApp().dialog === null && !getApp().menuOpen && movePane(-1),
+  // plan 204 (after the panel): Done on Today's selected row with a date or a promise; elsewhere the key is left alone
+  "today.done": () => !digestHasKeys() && doneOnSelected(),
 };
 
 const hasTargets = () => {

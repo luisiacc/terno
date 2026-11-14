@@ -24,7 +24,7 @@ function current(r: DatedRow, now: number): { missed: boolean } | null {
 
 /**
  * Plan 204 §5: the conversation's open dates, a quiet line each on the AI card's surface at its top ("Due Friday · Pay the
- * electricity bill" and Done), so a bill can be finished where it's read. Only while dates are read; never in Trash or
+ * electricity bill", Done and Not a task), so a bill can be finished where it's read. Only while dates are read; never in Trash or
  * Spam; read again when Today changes (Done here, there, or a new message settling it).
  */
 export default function ThreadDated({ detail }: { detail: ThreadDetail }) {
@@ -59,9 +59,15 @@ export default function ThreadDated({ detail }: { detail: ThreadDetail }) {
           return (
             <li key={r.id} data-testid="thread-dated-item" data-kind={r.kind} className="flex min-h-11 items-center gap-3 text-sm">
               <span data-testid="thread-dated-text" className={cn(AI_TITLE, "min-w-0 flex-1 wrap-anywhere tabular")}>{line}</span>
-              <Button variant="outline" size="sm" className="text-foreground" data-testid="thread-dated-done" aria-label={t("dated.doneItem", { text: r.text })} onClick={() => void actOnDated(r, "done")}>
-                {t("dated.done")}
-              </Button>
+              {/* after the panel: Not a task beside Done, quieter (Done is what's usually meant) */}
+              <span className="flex shrink-0 items-center gap-1.5">
+                <Button variant="outline" size="sm" className="text-foreground" data-testid="thread-dated-done" aria-label={t("dated.doneItem", { text: r.text })} onClick={() => void actOnDated(r, "done")}>
+                  {t("dated.done")}
+                </Button>
+                <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" data-testid="thread-dated-dismiss" aria-label={t("dated.notTaskItem", { text: r.text })} onClick={() => void actOnDated(r, "dismiss")}>
+                  {t("dated.notTask")}
+                </Button>
+              </span>
             </li>
           );
         })}

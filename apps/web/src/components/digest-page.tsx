@@ -1,4 +1,4 @@
-import { NOT_NEWSLETTER_NAME_MAX, type DigestItem, type DigestRow } from "@terno/core";
+import { DIGEST_ROW_ID, NOT_NEWSLETTER_NAME_MAX, type DigestItem, type DigestRow } from "@terno/core";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { Checkbox } from "@terno/ui/components/checkbox";
@@ -18,7 +18,8 @@ import { whenDay } from "~/lib/when";
 import { AiErrorNotice, aiErrorCopy, errorTarget } from "~/components/ai-error";
 import { client } from "~/rpc/connection";
 import { setApp, useApp } from "~/state/app";
-import { reloadList } from "~/state/list";
+import { reloadList, useList } from "~/state/list";
+import { focusRows, listScroller } from "~/components/thread-list";
 import { digestKeys, digestPick, keepDigestPick, leaveOut, letBackIn, openFromDigest, senderKey, useToday, withoutSenders } from "~/state/today";
 import { AiProvenance } from "~/components/ai-provenance";
 
@@ -233,8 +234,13 @@ export default function DigestPage() {
         const id = cursor() ?? (rows()[0] ? Number(rows()[0]!.dataset.digestOpen) : null);
         if (id !== null) keys.current.open(id);
       },
-      // where the keys came from: the digest's way in, in Today's header
-      leave: () => document.querySelector<HTMLElement>("[data-testid=digest-row]")?.focus({ preventScroll: true }),
+      // where the keys came from: the list, on the digest's row, scrolled to it even when it was virtualized out (plan 204,
+      // after the panel: the row is the list's last option again)
+      leave: () => {
+        const i = useList.getState().index.get(DIGEST_ROW_ID);
+        if (i !== undefined) listScroller.scrollToIndex?.(i);
+        focusRows();
+      },
     };
     return () => {
       digestKeys.current = null;

@@ -7,7 +7,7 @@ import { CategoryDot } from "@terno/ui/components/category-dot";
 import { cn } from "@terno/ui/lib/utils";
 import { Chip } from "@terno/ui/components/chip";
 import { Command, CommandDescription, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from "@terno/ui/components/command";
-import { Archive, AtSign, AlarmClock, AlarmClockOff, ListChecks, BookmarkPlus, CalendarClock, CheckCheck, CircleCheck, Clock, Copy, FileDown, Focus, FolderInput, Forward, Keyboard, Link, Mail, MailOpen, Moon, OctagonAlert, Palette, Paperclip, Pin, PinOff, PinTop, Inbox, Layers, ListFilter, Mails, PenLine, Plus, Printer, RefreshCw, Reply, ReplyAll, RotateCw, Search, Send, Sparkles, Star, Sun, Tag, NotepadText, Trash2, Undo2, Users } from "@terno/ui/icons";
+import { Archive, AtSign, Ban, AlarmClock, AlarmClockOff, ListChecks, BookmarkPlus, CalendarClock, CheckCheck, CircleCheck, Clock, Copy, FileDown, Focus, FolderInput, Forward, Keyboard, Link, Mail, MailOpen, Moon, OctagonAlert, Palette, Paperclip, Pin, PinOff, PinTop, Inbox, Layers, ListFilter, Mails, PenLine, Plus, Printer, RefreshCw, Reply, ReplyAll, RotateCw, Search, Send, Sparkles, Star, Sun, Tag, NotepadText, Trash2, Undo2, Users } from "@terno/ui/icons";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { fitWholeRows, markMore } from "@terno/ui/lib/whole-rows";
 import { act, openCompose, targetRows, toggleStar, undoLast } from "~/lib/actions";
@@ -29,8 +29,8 @@ import { checkForUpdates, installUpdate, useHasUpdates, useUpdates } from "~/lib
 import { englishWords as english } from "~/lib/palette-words";
 import { getApp, navigate, setApp, useApp } from "~/state/app";
 import { openRemind, presetLabel, presetWhen, setReminder, clearReminder, useReminders } from "~/lib/reminders";
-import { useToday } from "~/state/today";
-import { actOnDated } from "~/lib/dated";
+import { useTodayTask } from "~/state/today";
+import { actOnTask } from "~/lib/dated";
 import { draftCommands, type DraftCommands } from "~/lib/draft-commands";
 import { isInstruction } from "~/lib/imperative";
 import { askFrom, paletteBack, handBackKeysNow, paletteFrom, paletteKeys, paletteReturn, returnPaletteFocus, setPalettePage, usePalettePage } from "~/lib/palette-open";
@@ -226,9 +226,8 @@ export function CommandPalette() {
   const checkedOne = useApp((s) => (open && s.checked.size === 1 ? [...s.checked][0]! : null));
   const single = useApp((s) => (open && !s.scope && s.checked.size === 0 ? s.selectedId : null));
   const reminder = useReminders((s) => (single !== null ? s.byThread.get(single) : undefined));
-  // plan 204: the Today row's dated item, what its Done acts on (its menu's, here for the keyboard)
-  const datedItem = useToday((s) => (single !== null ? s.dated.get(single) : undefined));
-  const inToday = useApp((s) => open && s.today);
+  // plan 204: the Today row's task, what its Done and Not a task act on (its menu's, here for the keyboard)
+  const todayTask = useTodayTask(open ? single : null);
   // the unread filter applies to a mailbox (not "Review")
   // the unread toggle's state: Unread on or not (another filter on: it switches to Unread)
   const filter = useApp((s) => (open && s.reviewCategoryId === null && !s.reminders && !s.followups && !s.today ? (isUnreadOnly(s) ? "on" : "off") : null));
@@ -485,8 +484,11 @@ export function CommandPalette() {
         if (reminder) add({ id: "remind:clear", group: "remindClear", label: t("remind.clear"), icon: <AlarmClockOff />, testId: "palette-remind-clear", run: () => void clearReminder([reminder.threadId]) });
       }
     }
-    // plan 204 §5: the selected Today row's date, Done (no shortcut of its own: the owner)
-    if (inToday && datedItem) add({ id: "dated.done", group: "conversation", label: t("dated.done"), icon: <CircleCheck />, testId: "palette-dated-done", keywords: english("dated.done"), run: () => void actOnDated(datedItem, "done") });
+    // plan 204 §5, after the panel: the selected Today row's task (a date or a promise of yours), Done (D) and Not a task
+    if (todayTask) {
+      add({ id: "dated.done", group: "conversation", label: t("dated.done"), icon: <CircleCheck />, shortcut: keysOf("today.done"), testId: "palette-dated-done", keywords: english("dated.done"), run: () => void actOnTask(todayTask, "done") });
+      add({ id: "dated.dismiss", group: "conversation", label: t("dated.notTask"), icon: <Ban />, testId: "palette-dated-dismiss", keywords: english("dated.notTask"), run: () => void actOnTask(todayTask, "dismiss") });
+    }
     // plan 132 §7: the open conversation, never in spam or trash; no shortcut of its own
     if (canSummarize && replyable && summarizable(openThread?.thread)) {
       add({ id: "thread.summarize", group: "conversation", label: t("palette.summarize"), icon: <Sparkles />, testId: "palette-summarize", ...synonyms("palette.alias.summarize", english("palette.summarize")), run: () => void summarize(openThread!.thread.id) });

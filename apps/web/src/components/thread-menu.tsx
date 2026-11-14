@@ -18,6 +18,7 @@ import {
 } from "@terno/ui/components/context-menu";
 import {
   Archive,
+  Ban,
   AlarmClock,
   AlarmClockOff,
   CalendarClock,
@@ -87,8 +88,9 @@ import { useAlwaysOffers } from "./review-actions";
 import { clearReminder, openRemind, presetLabel, presetWhen, reminderWhen, setReminder, useReminders } from "~/lib/reminders";
 import { reachesSeveral } from "~/lib/compose-fields";
 import { loadThread, useThreads } from "~/state/threads";
-import { useToday } from "~/state/today";
-import { actOnDated } from "~/lib/dated";
+import { useTodayTask } from "~/state/today";
+import { actOnTask, laterChoices } from "~/lib/dated";
+import { openTodayLater } from "./today-later-dialog";
 import { fitWholeRows } from "@terno/ui/lib/whole-rows";
 
 /** What the open menu acts on: explicit threads, or a "select all N" scope. Set at right-click; rows never read it. */
@@ -425,17 +427,19 @@ function RemindSub({ ids, disabled }: { ids: number[]; disabled: boolean }) {
 }
 
 /**
- * Plan 204 §5: a Today row that stands for a dated item (a bill, a renewal, a trip): Done, and Later with the reminder's
- * presets, each with the snack's Undo (and z), as a follow-up's. No shortcut of its own (the owner, plan 161).
+ * Plan 204 §5, after the panel: a Today row that stands for a task (a dated item, or a promise of yours): Done (D), Not a
+ * task, and Later with every reminder preset that applies now (on a Plan, only those before it ends) and a moment of your
+ * own, each with the snack's Undo (and z). Remind me isn't offered beside it: there the two meant the same thing.
  */
-function DatedItems({ threadId }: { threadId: number }) {
-  const item = useToday((s) => s.dated.get(threadId));
-  const inToday = useApp((s) => s.today);
-  if (!item || !inToday) return null;
-  const presets = remindPresets(new Date(), "always");
+function TaskItems({ threadId }: { threadId: number }) {
+  const task = useTodayTask(threadId);
+  if (!task) return null;
+  const now = Date.now();
+  const presets = laterChoices(task, now);
   return (
     <>
-      <Item icon={<CircleCheck />} label={t("dated.done")} testId="menu-dated-done" onClick={() => void actOnDated(item, "done")} />
+      <Item icon={<CircleCheck />} label={t("dated.done")} command="today.done" testId="menu-dated-done" onClick={() => void actOnTask(task, "done")} />
+      <Item icon={<Ban />} label={t("dated.notTask")} testId="menu-dated-dismiss" onClick={() => void actOnTask(task, "dismiss")} />
       <ContextMenuSub>
         <ContextMenuSubTrigger data-testid="menu-dated-later">
           <Clock />
@@ -443,11 +447,16 @@ function DatedItems({ threadId }: { threadId: number }) {
         </ContextMenuSubTrigger>
         <ContextMenuSubContent className="w-max min-w-60" data-testid="menu-dated-later-list">
           {presets.map((p) => (
-            <ContextMenuItem key={p.id} data-testid={`menu-dated-later-${p.id}`} onClick={() => void actOnDated(item, "later", p.at)}>
+            <ContextMenuItem key={p.id} data-testid={`menu-dated-later-${p.id}`} onClick={() => void actOnTask(task, "later", p.at)}>
               <span className="min-w-0 flex-1 truncate">{presetLabel(p.id)}</span>
-              <ContextMenuShortcut className="tracking-normal tabular-nums">{presetWhen(p)}</ContextMenuShortcut>
+              <ContextMenuShortcut className="tracking-normal tabular-nums">{presetWhen(p, now)}</ContextMenuShortcut>
             </ContextMenuItem>
           ))}
+          {presets.length > 0 && <ContextMenuSeparator />}
+          <ContextMenuItem data-testid="menu-dated-later-pick" onClick={() => openTodayLater(task)}>
+            <CalendarClock />
+            <span className="min-w-0 flex-1 truncate">{t("dated.pickDate")}</span>
+          </ContextMenuItem>
         </ContextMenuSubContent>
       </ContextMenuSub>
       <ContextMenuSeparator />
@@ -745,6 +754,8 @@ function MenuItems() {
   // plan 72: the keyboard's (and screen readers') way to the code a row's chip copies
   const code = single ? threadCode(single, Date.now()) : null;
   const replyAllOffered = useReplyAllOffered(single?.id);
+  // plan 204 (after the panel): a Today task's Later replaces Remind me
+  const task = useTodayTask(single?.id);
 
   // what the view offers, sorted by where it goes; the way back leads only where it replaces Archive
   const placed: MenuEntry[] = searchPlaces ? searchPlaceItems(searchPlaces, (a) => run(a)) : placeItems(view, run);
@@ -784,7 +795,7 @@ function MenuItems() {
         </>
       )}
       {single && <ReviewItems thread={single} />}
-      {single && <DatedItems threadId={single.id} />}
+      {single && <TaskItems threadId={single.id} />}
       {single && (
         <>
           <Item icon={<Reply />} label={t("actions.reply")} command="compose.reply" onClick={() => reply("reply")} testId="menu-reply" />
@@ -805,7 +816,7 @@ function MenuItems() {
       {anyPinned && <Item icon={<PinTop className="fill-star text-star" />} label={t("actions.unpin")} command={anyUnpinned ? undefined : "thread.pin"} onClick={() => void unpinThreads(ids)} testId="menu-unpin" />}
       <ContextMenuSeparator />
       {/* plan 87: a "select all N" has no ids to set them on */}
-      <RemindSub ids={ids} disabled={scope !== null} />
+      {!task && <RemindSub ids={ids} disabled={scope !== null} />}
       <ContextMenuSub>
         {/* places only: categories are under Category ▸ (the owner), so v's move-to-a-category isn't hinted here */}
         <ContextMenuSubTrigger data-testid="menu-move" disabled={moves.length === 0 && !anyFolder}>

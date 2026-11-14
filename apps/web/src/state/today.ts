@@ -1,9 +1,9 @@
 import { todayAvailable } from "~/lib/ai";
-import { addressKey, DIGEST_ROW_ID, TODAY_GROUP_ORDER, type DigestItem, type DigestRow, type TodayGroupKind, type TodayList, type ThreadSummary } from "@terno/core";
+import { addressKey, DIGEST_ROW_ID, TODAY_GROUP_ORDER, type DigestItem, type DigestRow, type TodayGroupKind, type TodayList, type TodayWhy, type ThreadSummary } from "@terno/core";
 import { t } from "@terno/i18n";
 import { create } from "zustand";
 import { listDate } from "~/lib/format";
-import { datedLine, wasDueLine, type DatedRef } from "~/lib/dated";
+import { actOnTask, datedLine, promiseLine, taskOf, type TodayTask } from "~/lib/dated";
 import { client } from "~/rpc/connection";
 import type { Undo } from "~/lib/snack";
 import { getApp, navigate, setApp, useApp } from "./app";
@@ -54,8 +54,15 @@ interface TodayState {
   comingUp: number;
   /** plan 204: Coming up open under the rest (closed by default; remembered on this machine) */
   comingUpOpen: boolean;
-  /** plan 204: the dated item each row stands for, what its menu's Done and Later act on */
-  dated: ReadonlyMap<number, DatedRef>;
+  /**
+   * plan 204 (after the panel): the task each row stands for, a dated item or a promise of yours: what its Done, Not a
+   * task, Later and D act on, and what leads the row (its line first, its due day where the date is)
+   */
+  tasks: ReadonlyMap<number, TodayTask>;
+  /** plan 204 (after the panel, revision 10): the digest's row, the list's last, or -1 */
+  digestAt: number;
+  /** plan 204 (after the panel, fix 10): the task Later's "Pick a date…" is choosing a moment for */
+  laterPick: TodayTask | null;
   digest: DigestRow | null;
   /** the conversation opened from the digest page: its Back returns there, and only it shows one (plan 161) */
   fromDigest: number | null;
@@ -79,7 +86,26 @@ function storedComingUp(): boolean {
   }
 }
 
-export const useToday = create<TodayState>(() => ({ groups: [], counted: 0, comingUp: 0, comingUpOpen: storedComingUp(), dated: new Map(), digest: null, fromDigest: null, pick: null, movedTo: new Map(), notNewsletters: new Set() }));
+export const useToday = create<TodayState>(() => ({ groups: [], counted: 0, comingUp: 0, comingUpOpen: storedComingUp(), tasks: new Map(), digestAt: -1, laterPick: null, digest: null, fromDigest: null, pick: null, movedTo: new Map(), notNewsletters: new Set() }));
+
+/** Plan 204 (after the panel): a Today row's task, only while Today is what's shown (one Map read: other rows never re-render). */
+export function useTodayTask(threadId: number | null | undefined): TodayTask | undefined {
+  const task = useToday((s) => (threadId == null ? undefined : s.tasks.get(threadId)));
+  return useApp((s) => s.today) ? task : undefined;
+}
+
+/**
+ * Plan 204 (after the panel, fix 2): D on Today's selected row with a task is its Done; anywhere else, on a row without
+ * one, or among several checked, it does nothing (false: the key is left alone).
+ */
+export function doneOnSelected(): boolean {
+  const s = getApp();
+  if (!s.today || s.selectedId === null || s.scope || (s.checked.size > 0 && !(s.checked.size === 1 && s.checked.has(s.selectedId)))) return false;
+  const task = useToday.getState().tasks.get(s.selectedId);
+  if (!task) return false;
+  void actOnTask(task, "done");
+  return true;
+}
 
 /** Plan 204: Coming up opens under the rest, or closes; the list is read again with it (held rows and the selection kept). */
 export function setComingUpOpen(open: boolean): void {
@@ -227,18 +253,24 @@ export function digestFrom(digest: DigestRow, locale: string): string | null {
   return new Intl.ListFormat(locale, { type: "conjunction" }).format(rest > 0 ? [...shown, t("action.found.more", { count: rest })] : shown);
 }
 
-const whyLine = (item: TodayList["sections"][number]["items"][number]): string => {
-  const { why, thread, summary } = item;
+const whyLine = (item: TodayList["sections"][number]["items"][number], why: TodayWhy): string => {
+  const { thread, summary } = item;
   // plan 204: "Due Friday · Pay the electricity bill", "Tomorrow 7:40 · Flight to Madrid", "Was due Tuesday · …"
   if (why.kind === "dated") return why.item ? datedLine({ ...why.item, dueAt: why.dueAt ?? 0, text: why.text ?? "" }, why.missed === true) : (why.text ?? thread.snippet);
-  if (why.kind === "promise") {
-    const said = t("today.why.promise", { text: why.text ?? "" });
-    return why.missed && why.dueAt ? wasDueLine(why.dueAt, said) : said;
-  }
+  // after the panel: "Due today · You said: send the agenda", "Was due Tuesday · You said: …"
+  if (why.kind === "promise") return promiseLine({ text: why.text ?? "", dueAt: why.dueAt, dated: why.promise?.dated ?? why.missed === true }, why.missed === true);
   if (why.kind === "nudge") return t("today.why.nudge", { name: why.personName || thread.fromName, count: Math.max(1, Math.floor((Date.now() - (why.sentAt ?? Date.now())) / 86_400_000)) });
   if (why.kind === "reminder") return why.dueAt ? `${t("today.why.reminder", { when: listDate(why.dueAt) })} · ${thread.snippet}` : thread.snippet;
   return summary ?? thread.snippet;
 };
+
+/** A promise in Coming up or Missed names a day (only dated ones are placed there), whatever an older backend said of it. */
+const dayKnown = (why: TodayWhy, kind: TodayGroupKind): TodayWhy => (why.promise && why.promise.dated === undefined && (kind === "comingUp" || why.missed) ? { ...why, promise: { ...why.promise, dated: true } } : why);
+
+/** Plan 204 (after the panel, revision 10): the digest's place in the list, its last option; no thread has its id (it's never checked or acted on). */
+function digestThread(): ThreadSummary {
+  return { id: DIGEST_ROW_ID, accountId: 0, subject: t("today.newsletters"), snippet: "", fromName: t("today.newsletters"), fromEmail: "", lastDate: 0, messageCount: 1, unread: false, starred: false, hasAttachments: false, categoryIds: [], inInbox: false, inSpam: false, inTrash: false } as unknown as ThreadSummary;
+}
 
 const GROUP_ORDER: readonly TodayGroupKind[] = TODAY_GROUP_ORDER;
 /** Plan 204 §7: what the sidebar counts; Reminders and Coming up aren't */
@@ -252,11 +284,9 @@ export function flattenToday(list: TodayList, before: readonly ThreadSummary[]):
   const groups: TodayGroup[] = [];
   const items: ThreadSummary[] = [];
   const counted = new Set<number>();
-  const dated = new Map<number, DatedRef>();
+  const tasks = new Map<number, TodayTask>();
   const open = useToday.getState().comingUpOpen;
   let comingUp = 0;
-  // plan 162 (after ai162-r02): the digest isn't a row: its way in is Today's header (TodayDigestEntry), above the fold and
-  // never before a person (it led the list, under its own heading, on a page that says these need you)
   const sections = [...list.sections].sort((a, b) => GROUP_ORDER.indexOf(a.kind) - GROUP_ORDER.indexOf(b.kind));
   for (const section of sections) {
     if (section.kind === "comingUp") {
@@ -266,9 +296,11 @@ export function flattenToday(list: TodayList, before: readonly ThreadSummary[]):
     if (!section.items.length) continue;
     groups.push({ kind: section.kind, at: items.length });
     for (const item of section.items) {
-      items.push({ ...item.thread, snippet: whyLine(item) });
+      const why = dayKnown(item.why, section.kind);
+      items.push({ ...item.thread, snippet: whyLine(item, why) });
       if (COUNTED.has(section.kind)) counted.add(item.thread.id);
-      if (item.why.item) dated.set(item.thread.id, item.why.item);
+      const task = taskOf(why);
+      if (task) tasks.set(item.thread.id, task);
     }
   }
   // plan 166: a held row stays in the group it was in. At a group's first place it sits above that group's heading (it
@@ -295,6 +327,10 @@ export function flattenToday(list: TodayList, before: readonly ThreadSummary[]):
       groups.sort((a, b) => a.at - b.at);
     }
   }
-  useToday.setState(({ notNewsletters }) => ({ groups, counted: counted.size, comingUp, dated, digest: list.digest && withoutSenders(list.digest, notNewsletters) }));
+  // plan 204 (after the panel, revision 10, superseding plan 162's place in the header): the digest is the list's last
+  // option again, after held rows and never before a person, under no heading of its own (a gap sets it apart)
+  const digestAt = list.digest ? items.length : -1;
+  if (list.digest) items.push(digestThread());
+  useToday.setState(({ notNewsletters }) => ({ groups, counted: counted.size, comingUp, tasks, digestAt, digest: list.digest && withoutSenders(list.digest, notNewsletters) }));
   return items;
 }

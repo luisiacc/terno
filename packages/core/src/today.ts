@@ -47,7 +47,7 @@ export interface TodayWhy {
   /** plan 204: a dated item, what the row's Done, Later and Undo act on */
   item?: { id: number; revision: number; kind: DatedKind; dueDay: string; timed: boolean; dated: boolean };
   /** plan 204 (Codex review): the promise or wait this row shows, what D, Done and Not a task act on (never the thread's most urgent) */
-  promise?: { id: number; revision: number };
+  promise?: { id: number; revision: number; /** it names a day (`FollowupRow.dated`): only then does its line say "Due …" */ dated?: boolean };
 }
 
 export interface TodayItem {
