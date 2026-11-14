@@ -62,10 +62,10 @@ test.describe("follow-ups (plan 142)", () => {
       await expect(page.getByTestId("followup-done")).toHaveText("Done");
       await expect(page.getByTestId("followup-later")).toHaveText("Later");
       await expect(page.getByTestId("followup-dismiss")).toHaveText("Not a task");
-      const look = (id: string) => page.getByTestId(id).evaluate((el) => { const s = getComputedStyle(el); return { color: s.color, border: s.borderTopWidth, background: s.backgroundColor }; });
+      const look = (id: string) => page.getByTestId(id).evaluate((el) => { const s = getComputedStyle(el); return { color: s.color, border: s.borderTopColor, background: s.backgroundColor }; });
       expect(await look("followup-later")).toEqual(await look("followup-dismiss"));
-      expect((await look("followup-done")).border).not.toBe("0px");
-      expect((await look("followup-dismiss")).border).toBe("0px");
+      expect((await look("followup-done")).border).not.toBe("rgba(0, 0, 0, 0)");
+      expect((await look("followup-dismiss")).border).toBe("rgba(0, 0, 0, 0)");
       // plan 161, pass 3: on the AI card, as Reply ready is: its edge on the subject's line, its text inset
       const left = async (id: string) => (await page.getByTestId(id).first().boundingBox())!.x;
       expect(Math.abs((await left("followup-line")) - (await left("reader-subject")))).toBeLessThanOrEqual(1);

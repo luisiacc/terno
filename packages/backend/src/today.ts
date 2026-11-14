@@ -567,7 +567,7 @@ export class TodayService {
     for (const d of [...ofPlace("deadlines"), ...promisesIn("deadlines")].sort((a, b) => byDay(a.at, b.at))) placed.push({ group: "deadlines", threadId: d.threadId, why: d.why });
     for (const p of ofPlace("plans").sort((a, b) => byDay(a.at, b.at))) placed.push({ group: "plans", threadId: p.threadId, why: p.why });
     // the third panel round (revision 4): a conversation with an open promise of yours shows that promise, the one due
-    // soonest, carried so Done, Not a promise and Later act on exactly it; one put off with Later keeps it, at its new day
+    // soonest, carried so Done, Not a task and Later act on exactly it; one put off with Later keeps it, at its new day
     const owed = new Map<number, FollowupRow>();
     for (const r of promises) {
       if (promiseOver(r, now)) continue;
