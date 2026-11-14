@@ -30,10 +30,11 @@ import { assertCertain, UNCERTAINTY_KEY, UncertainWriteError } from "./uncertain
  * Version 29 adds Ask your mail's conversations and turns (SQL v51, plan 141).
  * Version 30 adds sent-mail marks and follow-ups (SQL v52, plan 142).
  * Version 33 adds pinned conversations (SQL v55, plan 179).
+ * Version 34 adds received-mail marks and dated items (SQL v56, plan 204).
  */
 export { IDB_VERSION };
 /** the SQL schema this one mirrors (migration ids are shared across adapters) */
-export const LOGICAL_SCHEMA = 55;
+export const LOGICAL_SCHEMA = 56;
 /** the last logical schema that changed what the instant search index holds (its snapshots carry it) */
 export const SEARCH_SCHEMA = 7;
 
@@ -112,6 +113,9 @@ export const TABLES: readonly (TableSpec & { memoryOnly?: boolean; early?: boole
   { name: "ai_digests", early: true, key: ["day"], indexes: {} },
   { name: "ai_prepared_replies", early: true, key: ["thread_id"], indexes: {} },
   { name: "followups", early: true, key: ["id"], autoId: true, indexes: { ...fk("thread_id"), identity: ["message_id", "item"], state: ["state"], top: ["inbox_state"] } },
+  // plan 204: as plan 142's; `open` and `sender` hold only open rows (SQL's partial indexes)
+  { name: "ai_dated_mail", key: ["message_id"], indexes: { ...fk("message_id"), thread: ["thread_id"] } },
+  { name: "dated_items", early: true, key: ["id"], autoId: true, indexes: { ...fk("thread_id"), identity: ["message_id", "item"], message: ["message_id"], state: ["state"], sender: { columns: ["sender_key"], where: (r) => r.state === "open" } } },
   { name: "send_copies", early: true, key: ["opId"], indexes: fk("accountId") },
   { name: "send_copy_bytes", key: ["id"], lazy: true },
   { name: "recipient_receipts", early: true, key: ["opId"], indexes: fk("accountId") },
@@ -192,6 +196,8 @@ export const FOREIGN_KEYS: readonly ForeignKey[] = [
   c("ai_sent_mail", "message_id", "messages"),
   c("ai_prepared_replies", "thread_id", "threads"),
   c("followups", "thread_id", "threads"),
+  c("ai_dated_mail", "message_id", "messages"),
+  c("dated_items", "thread_id", "threads"),
   c("writing_profiles", "account_id", "accounts"),
   c("writing_generations", "account_id", "accounts"),
   c("writing_generations", "draft_id", "drafts"),
@@ -383,6 +389,8 @@ export async function openIdb(factory: IDBFactory, name: string): Promise<IDBDat
       if (event.oldVersion >= 1 && event.oldVersion < 32 && !db.objectStoreNames.contains("ai_digests")) db.createObjectStore("ai_digests");
       // plan 179 (likewise)
       if (event.oldVersion >= 1 && event.oldVersion < 33 && !db.objectStoreNames.contains("pins")) db.createObjectStore("pins");
+      // plan 204 (likewise)
+      if (event.oldVersion >= 1 && event.oldVersion < 34) for (const name of ["ai_dated_mail", "dated_items"]) if (!db.objectStoreNames.contains(name)) db.createObjectStore(name);
       // plan 144 (likewise)
       if (event.oldVersion >= 1 && event.oldVersion < 31 && !db.objectStoreNames.contains("ai_prepared_replies")) db.createObjectStore("ai_prepared_replies");
       // plan 142 (likewise)

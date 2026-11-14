@@ -63,6 +63,7 @@ const SHIPPED: [number, string][] = [
   [53, "7e473f5b2e06222e"],
   [54, "37ddb876fee2c6b6"],
   [55, "47fad34c8551c38a"],
+  [56, "e515245fc0bf3c63"],
 ];
 
 it("a shipped migration's SQL never changes, and a new one is added here", () => {

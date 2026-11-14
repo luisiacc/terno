@@ -1,7 +1,7 @@
 import "fake-indexeddb/auto";
 import { ingest, msg, threadOf, withAccounts } from "@terno/store/conformance";
 import { expect, it } from "vitest";
-import { databaseName, LOGICAL_SCHEMA } from "./schema";
+import { databaseName, IDB_VERSION } from "./schema";
 import { IdbMailStore } from "./store";
 import { legacyBodyUpgrade, physicalImage } from "./test/legacy-stores";
 
@@ -19,9 +19,9 @@ it("a version-32 mailbox gains an empty pins store; its mail and reminders stay,
   const x = await threadOf(source, "x");
   await source.reminders.put([{ threadId: x, dueAt: 2e12, kind: "always", setAt: 1e12 }], 10);
   await source.close();
-  // the same image as version 32 wrote it: no pins store, the logical schema before it
+  // the same image as version 32 wrote it: no pins store nor what came after it, logical schema 54
   const raw = await request(indexedDB.open(databaseName(name)));
-  const image = (await physicalImage(raw)).filter((s) => s.name !== "pins").map((s) => (s.name === "meta" ? { ...s, values: s.values.map((v, i) => (s.keys[i] === "logicalSchema" ? LOGICAL_SCHEMA - 1 : v)) } : s));
+  const image = (await physicalImage(raw)).filter((s) => !["pins", "ai_dated_mail", "dated_items"].includes(s.name)).map((s) => (s.name === "meta" ? { ...s, values: s.values.map((v, i) => (s.keys[i] === "logicalSchema" ? 54 : v)) } : s));
   raw.close();
   const old = indexedDB.open(databaseName(legacyName), 32);
   old.onupgradeneeded = () => {
@@ -42,7 +42,7 @@ it("a version-32 mailbox gains an empty pins store; its mail and reminders stay,
   const reopened = await open(legacyName);
   expect(await reopened.pins.list()).toEqual([{ threadId: x, pinnedAt: 5 }]);
   const db = await request(indexedDB.open(databaseName(legacyName)));
-  expect(db.version).toBe(33);
+  expect(db.version).toBe(IDB_VERSION);
   db.close();
   await reopened.close();
 });

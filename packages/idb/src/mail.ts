@@ -82,6 +82,7 @@ import { answeredThreads, factsReady, noteSentMail, ownAddresses, ownMailChanged
 import { mergeReminder } from "./reminders";
 import { mergePin } from "./pins";
 import { mergeFollowups } from "./followups";
+import { mergeDated } from "./dated";
 import { mergeSummaries } from "./ai-summaries";
 
 /**
@@ -758,6 +759,7 @@ export function mergeThreads(c: Ctx, into: number, from: number, result: IngestR
   mergePin(c, into, from);
   mergeSummaries(c, into, from);
   mergeFollowups(c, into, from);
+  mergeDated(c, into, from);
   T(c, "threads").delete(from);
   result.touchedThreads.delete(from);
   result.touchedThreads.add(into);

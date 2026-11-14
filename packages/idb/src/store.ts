@@ -1,6 +1,7 @@
 import { ASK_MATCH_MESSAGES, ASK_MATCH_PARTS, CORPUS_TEXTS_MAX, finishBodyClose, rankSentRefs, readPassages, readThreadContext, type SentRef } from "@terno/store";
 import { needsCount, messagesHere, senders, allDigests, beginDigest, clearDigests, digestFacts, digestLive, digestRead, getDigest, latestDigest, pendingDigestDays, pruneDigests, waitingAmong, waitingPage, writeDigest } from "./today";
 import { clearReplies, finishReply, getReply, transitionReply } from "./replies";
+import { activeDated, clearDated, datedMarkCount, datedMarkPage, datedScanCandidates, datedSource, finishDated, getDated, markDatedMail, openDatedFor, pruneDated, pruneDatedMarks, queueDatedScan, restoreDated, threadDated, updateDated } from "./dated";
 import { activeFollowups, claimFollowupNotice, clearFollowups, closeAnsweredFollowups, endFollowupTop, finishFollowups, followupLiveSent, followupScanCandidates, followupSendConfirmed, followupSource, getFollowup, makeFollowupsDue, nextFollowupDue, pruneFollowups, pruneSentMarks, queueScan, restoreFollowups, sentMarkCount, sentMarkPage, threadFollowups, updateFollowup } from "./followups";
 import { findLinked, newestLinked } from "./links";
 import { addAskTurn, askAccountsOf, askCandidates, askHeaders, askNewest, askTurnCount, askTurns, clearAsk, listAskConversations, removeAskConversation, removeAskForAccount, restoreAskConversation } from "./ask";
@@ -1256,7 +1257,7 @@ export class IdbMailStore implements MailStore {
         return { accountId, protocolId: current.protocol_id, epoch: flagTick(repo, accountId) };
       });
     },
-    ingest: async (batch, { applyFilters, now, classifier, observation, check, forwardEligible, newMail, liveSent }) => this.bodyCommand(async () => {
+    ingest: async (batch, { applyFilters, now, classifier, observation, check, forwardEligible, newMail, liveSent, datedMail }) => this.bodyCommand(async () => {
       const callerCheck = check; check = () => { if (this.bodyClosing) throw new Error("The store is closing"); callerCheck?.(); };
       await this.bodyCleanup;
       const staged: IncomingMessage[] = [];
@@ -1281,6 +1282,8 @@ export class IdbMailStore implements MailStore {
           if (newMail) markNewMail(this.c, result.inserted, now, newMail);
         // plan 142: mail you sent from elsewhere ends the waits before it, and is read if the feature is on
         if (liveSent) followupLiveSent(this.c, result.inserted, now, liveSent.wanted, liveSent.since);
+        // plan 204: received mail the dated reader wants, by the same rule as new mail's
+        if (datedMail) markDatedMail(this.c, result.inserted, now, datedMail.since);
           const touched = new Set(result.touchedThreads);
           const opIds: string[] = [];
           const folderMoves: FolderFilterMove[] = [];
@@ -2042,6 +2045,38 @@ export class IdbMailStore implements MailStore {
       clearFollowups(this.c);
     }),
     clearGeneration: () => this.followupClears,
+  };
+
+  private datedClears = 0;
+  // plan 204: what reads or writes messages waits for them; the items alone are early, as follow-ups'
+  readonly dated: MailStore["dated"] = {
+    marks: {
+      page: (after, limit) => this.read(() => datedMarkPage(this.c, after, limit)),
+      count: () => this.read(() => datedMarkCount(this.c)),
+      queueScan: (ids, now) => this.command(() => queueDatedScan(this.c, ids, now)),
+      consume: (id) => this.command(() => void T(this.c, "ai_dated_mail").delete(id)),
+      clear: () => this.command(() => {
+        const marks = T(this.c, "ai_dated_mail");
+        for (const r of marks.all()) marks.deleteRow(r);
+      }),
+      prune: (now) => this.command(() => pruneDatedMarks(this.c, now)),
+    },
+    scanCandidates: (since, limit) => this.read(() => datedScanCandidates(this.c, since, limit)),
+    source: (id) => this.read(() => datedSource(this.c, id)),
+    openFor: (o) => this.early(() => openDatedFor(this.c, o)),
+    finish: (w) => this.command(() => (w.clearGeneration === this.datedClears ? finishDated(this.c, w) : "gone")),
+    active: () => this.early(() => activeDated(this.c)),
+    ofThread: (id) => this.early(() => threadDated(this.c, id)),
+    get: (id) => this.early(() => getDated(this.c, id)),
+    update: (id, revision, patch) => this.command(() => updateDated(this.c, id, revision, patch)),
+    restore: (rows) => this.command(() => restoreDated(this.c, rows)),
+    prune: (now) => this.command(() => pruneDated(this.c, now)),
+    // the generation moves at once: a finish queued before it is refused, as on SQL
+    clear: () => {
+      this.datedClears++;
+      return this.command(() => clearDated(this.c));
+    },
+    clearGeneration: () => this.datedClears,
   };
 
   private askClears = 0;
