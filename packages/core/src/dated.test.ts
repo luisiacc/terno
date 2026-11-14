@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { isAcknowledgment, looksLikeAcknowledgment } from "./today";
 import { datedOver, datedPlace, datedTiming, hasTimeCue, nextTodayChange, planEnd, promiseComingUp, promiseMissed, promiseOver, type DatedKind, type DatedRow } from "./dated";
 
 const at = (y: number, m: number, d: number, h = 0, min = 0) => new Date(y, m - 1, d, h, min).getTime();
@@ -171,4 +172,28 @@ describe("time cues (§3)", () => {
     ["Here are the photos from the team offsite", "Photos"],
     ["Great to hear from you, hope all is well", "Hola"],
   ])("skips %j", (text, subject) => expect(hasTimeCue(text, subject)).toBe(false));
+});
+
+describe("an acknowledgment (plan 204, the second panel round: plan 145's rule, tighter)", () => {
+  it.each([
+    "Thanks.",
+    "Thanks.\n\nMargaret",
+    "Got it, thanks!",
+    "Sounds good 👍",
+    "Gracias",
+    "Perfecto, gracias.\n\nEnviado desde mi iPhone",
+    "Ok\n\nOn Tue, Nov 10, Ana wrote:\n> Can you send the deck by Friday?",
+  ])("only acknowledges: %j", (text) => expect(isAcknowledgment(text)).toBe(true));
+  it.each([
+    "Thanks, can you send it Friday?",
+    "Thanks! Please send the signed copy.",
+    "Gracias, ¿me mandas el archivo?",
+    "Thanks for the update. When do you think the second draft will be ready for review by the team",
+    "",
+    "Here's the contract.",
+  ])("asks or says more: %j", (text) => expect(isAcknowledgment(text)).toBe(false));
+  it("a snippet that starts like one is worth reading; one that doesn't isn't", () => {
+    expect(looksLikeAcknowledgment("Thanks! Talk soon")).toBe(true);
+    expect(looksLikeAcknowledgment("Hi Margaret, could you send the form")).toBe(false);
+  });
 });

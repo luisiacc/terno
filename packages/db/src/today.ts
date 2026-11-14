@@ -1,5 +1,5 @@
-import { waitingCutoff, type DigestItem } from "@terno/core";
-import { NEEDS_WALK, needsYou, type DigestFact, type DigestStored, type WaitingRow } from "@terno/store";
+import { isAcknowledgment, looksLikeAcknowledgment, waitingCutoff, type DigestItem } from "@terno/core";
+import { NEEDS_WALK, needsYou, summaryAsksNothing, type DigestFact, type DigestStored, type WaitingRow } from "@terno/store";
 import { inboxHiding, shownSql } from "./queries";
 import type { Db } from "./sqlite";
 
@@ -9,8 +9,8 @@ import type { Db } from "./sqlite";
 function needsRows(db: Db, now: number): WaitingRow[] {
   const cutoff = waitingCutoff(now);
   const hiding = shownSql(inboxHiding(db));
-  const rows = db.all<{ id: number; last_date: number; last_from_email: string; subject: string; has_sent: number }>(
-    `SELECT id, last_date, last_from_email, subject, has_sent FROM threads INDEXED BY threads_waiting
+  const rows = db.all<{ id: number; last_date: number; last_from_email: string; subject: string; has_sent: number; snippet: string | null }>(
+    `SELECT id, last_date, last_from_email, subject, has_sent, snippet FROM threads INDEXED BY threads_waiting
      WHERE waiting_since IS NOT NULL AND last_date >= ? AND waiting_since >= ? AND in_inbox = 1${hiding.where}
      ORDER BY last_date DESC, id DESC LIMIT ?`,
     cutoff,
@@ -18,10 +18,29 @@ function needsRows(db: Db, now: number): WaitingRow[] {
     ...hiding.params,
     NEEDS_WALK,
   );
-  return needsYou(
+  const snippets = new Map(rows.map((r) => [r.id, r.snippet]));
+  const needs = needsYou(
     rows.map((r) => ({ id: r.id, lastDate: r.last_date, from: r.last_from_email, subject: r.subject, hasSent: r.has_sent === 1 })),
     (key) => db.get<{ written: number; own: number }>("SELECT written, own FROM correspondents WHERE email = ?", key),
   );
+  // plan 204, the second panel round (plan 145's rule, tighter): on what needsYou let in, never widening it
+  return needs.filter((r) => stillWaiting(db, r.id, snippets.get(r.id) ?? null));
+}
+
+/** Not an acknowledgment, and no current summary that gives the reader nothing to do or answer (see packages/store/src/today.ts). */
+function stillWaiting(db: Db, threadId: number, snippet: string | null): boolean {
+  if (looksLikeAcknowledgment(snippet)) {
+    const last = db.get<{ text: string | null }>(
+      `SELECT coalesce(b.body_text, b.body_preview) AS text FROM messages m INDEXED BY messages_thread LEFT JOIN message_bodies b ON b.message_id = m.id
+       WHERE m.thread_id = ? AND m.is_sent = 0 AND m.is_draft = 0 AND m.is_spam = 0 AND m.is_trash = 0 ORDER BY m.date DESC, m.id DESC LIMIT 1`,
+      threadId,
+    );
+    if (isAcknowledgment(last?.text)) return false;
+  }
+  const summary = db.get<{ state: string; prompt_version: number | null; through_message_id: number; body_json: string | null }>("SELECT state, prompt_version, through_message_id, body_json FROM ai_summaries WHERE thread_id = ?", threadId);
+  if (!summaryAsksNothing(summary)) return true;
+  // current: nothing in the thread after what it covers
+  return !!db.get("SELECT 1 FROM messages INDEXED BY messages_thread WHERE thread_id = ? AND id > ? AND is_draft = 0 AND is_spam = 0 AND is_trash = 0 LIMIT 1", threadId, summary!.through_message_id);
 }
 
 export function waitingPage(db: Db, o: { now: number; after: { lastDate: number; id: number } | null; limit: number }): { id: number; lastDate: number; hasSent: boolean }[] {

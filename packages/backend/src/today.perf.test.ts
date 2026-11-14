@@ -11,8 +11,8 @@ import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { IdbMailStore } from "@terno/idb";
 import { demoRegistry } from "@terno/mail";
 import { generateDataset } from "@terno/mock-data";
-import type { MailStore } from "@terno/store";
-import { seedDatedItems } from "@terno/store/conformance";
+import { NEEDS_WALK, type MailStore } from "@terno/store";
+import { msg, seedDatedItems } from "@terno/store/conformance";
 import { afterAll, describe, expect, it } from "vitest";
 import { copyMailbox, LARGE_MAILBOX } from "../../db/src/test/perf-mailbox";
 import { watchLoop } from "../../db/src/test/timing";
@@ -24,9 +24,37 @@ const MULT = Number(process.env.PERF_BUDGET_MULTIPLIER ?? "1");
 const dir = mkdtempSync(join(tmpdir(), "terno-today-perf-"));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
+/** list: today.list; added: what the count adds to plan 145's; needs and count: absolute, so a slower Needs you shows (plan 204, the second panel round) */
+type Gate = { listMs: number; addedMs: number; needsMs: number; countMs: number };
+
 const p95 = (times: number[]) => [...times].sort((a, b) => a - b)[Math.floor(times.length * 0.95) - 1]!;
 
-async function run(kind: "SQLite" | "IndexedDB", budget: { spread: { listMs: number; addedMs: number }; bound: { listMs: number; addedMs: number }; busyMs: number }) {
+/** NEEDS_WALK conversations newer than the mailbox's, each waiting on the reader, as above. */
+async function needsAtBound(store: MailStore, client: RpcClient, accountId: number, now: number) {
+  await client.call("settings.update", { summaries: { enabled: false } });
+  const me = { name: "Me", email: "me@perf.test" };
+  const who = (i: number) => ({ name: `Person ${i}`, email: `person${i}@needs.test` });
+  const at = (i: number) => now - 3_600_000 - i * 1000;
+  const text = "Thanks! Here are the notes from this morning's call, with the numbers we went through and the plan for next week.";
+  const out = Array.from({ length: NEEDS_WALK }, (_, i) => msg({ accountId, date: at(i) - 500, providerMsgId: `needs-${i}-out`, providerThreadId: `needs-${i}`, from: me, to: [who(i)], isSent: true, isRead: true, listId: null, subject: `Notes ${i}` }));
+  const back = Array.from({ length: NEEDS_WALK }, (_, i) => msg({ accountId, date: at(i), providerMsgId: `needs-${i}-in`, providerThreadId: `needs-${i}`, from: who(i), to: [me], isRead: false, listId: null, subject: `Re: Notes ${i}`, inReplyTo: `needs-${i}-out`, snippet: text, bodyText: text }));
+  for (const batch of [out, back]) for (let i = 0; i < batch.length; i += 500) await store.sync.ingest(batch.slice(i, i + 500), { applyFilters: false, now, classifier: null });
+  // one snapshot: threadOf reads the whole mailbox each time
+  const threads = new Map((await store.debug.snapshot()).messages.map((m) => [m.providerMsgId, m.threadId]));
+  const body = JSON.stringify({ summary: "Notes from the call.", items: [{ kind: "fact", text: "The plan for next week is in the notes." }] });
+  let written = 0;
+  for (let i = 0; i < NEEDS_WALK; i++) {
+    const threadId = threads.get(`needs-${i}-in`)!;
+    const sources = await store.aiSummaries.sources(threadId);
+    const r = await store.aiSummaries.finish({ threadId, stamp: sources!.stamp, expectThrough: null, now, clearGeneration: store.aiSummaries.clearGeneration(), contentHash: "h", promptVersion: 7, language: "en", model: "m", provider: "fake", endpoint: null, bodyJson: body });
+    if (r === "written") written++;
+  }
+  expect(written).toBe(NEEDS_WALK);
+  // the facts of what came in, as the backend's slices would: until then the count has no waiting number to add to
+  while (!(await store.facts.idle())) await store.facts.backfill({ limit: 5000 });
+}
+
+async function run(kind: "SQLite" | "IndexedDB", budget: { spread: Gate; bound: Gate; needs: Gate; busyMs: number }) {
   const platform = { uuid: () => crypto.randomUUID(), yield: () => new Promise<void>((resolve) => setImmediate(resolve)) };
   let store: MailStore | undefined;
   let accountId: number;
@@ -51,7 +79,7 @@ async function run(kind: "SQLite" | "IndexedDB", budget: { spread: { listMs: num
     await client.call("settings.update", { dated: { enabled: true }, followups: { enabled: true } });
     // a turn between calls, as between two requests: the store answers synchronously on SQLite
     const turn = () => new Promise<void>((resolve) => setImmediate(resolve));
-    const measure = async (label: string, at: number, gate: { listMs: number; addedMs: number }) => {
+    const measure = async (label: string, at: number, gate: Gate) => {
       clock.now = at;
       backend.today.touched();
       const lists: number[] = [];
@@ -80,6 +108,8 @@ async function run(kind: "SQLite" | "IndexedDB", budget: { spread: { listMs: num
       expect(report.longest.busy).toBeLessThanOrEqual(budget.busyMs * MULT);
       expect(p95(lists)).toBeLessThanOrEqual(gate.listMs * MULT);
       expect(added).toBeLessThanOrEqual(gate.addedMs * MULT);
+      expect(p95(needs)).toBeLessThanOrEqual(gate.needsMs * MULT);
+      expect(p95(counts)).toBeLessThanOrEqual(gate.countMs * MULT);
     };
     // as a mailbox has them: the items spread over the coming weeks, a few for today, the rest Coming up
     await measure("spread", NOW, budget.spread);
@@ -89,6 +119,10 @@ async function run(kind: "SQLite" | "IndexedDB", budget: { spread: { listMs: num
     const all = await client.call("today.list", { heldIds: [] });
     expect(all.sections.reduce((n, x) => n + x.items.length, 0)).toBeGreaterThanOrEqual(1000);
     await measure("all showing", NOW + 2 * DAY, budget.bound);
+    // plan 204, the second panel round: Needs you full (NEEDS_WALK conversations), each on the tighter rule's slowest
+    // path: a snippet that starts like a thanks (its body read), a body that says more, a current summary to parse
+    await needsAtBound(backend.store, client, accountId, NOW + 2 * DAY);
+    await measure("Needs you at its bound", NOW + 2 * DAY, budget.needs);
   } finally {
     await backend.stop();
   }
@@ -96,6 +130,7 @@ async function run(kind: "SQLite" | "IndexedDB", budget: { spread: { listMs: num
 
 describe("Today at 50k threads with 1,000 dated items (plan 204 revision 12)", () => {
   // the count is plan 145's walk and what this plan adds to it: at most 2 ms spread, 4 ms with a thousand threads to check
-  it("SQLite", async () => run("SQLite", { spread: { listMs: 20, addedMs: 2 }, bound: { listMs: 30, addedMs: 4 }, busyMs: 60 }), 600_000);
-  it("IndexedDB", async () => run("IndexedDB", { spread: { listMs: 20, addedMs: 2 }, bound: { listMs: 30, addedMs: 4 }, busyMs: 60 }), 900_000);
+  // Needs you's own walk: about 7 ms (SQLite) and 5 ms (IndexedDB) as mailboxes have it, 21 and 6 with all 2,000 on its slowest path
+  it("SQLite", async () => run("SQLite", { spread: { listMs: 20, addedMs: 2, needsMs: 12, countMs: 14 }, bound: { listMs: 30, addedMs: 4, needsMs: 12, countMs: 14 }, needs: { listMs: 40, addedMs: 5, needsMs: 35, countMs: 38 }, busyMs: 60 }), 600_000);
+  it("IndexedDB", async () => run("IndexedDB", { spread: { listMs: 20, addedMs: 2, needsMs: 10, countMs: 12 }, bound: { listMs: 30, addedMs: 4, needsMs: 10, countMs: 12 }, needs: { listMs: 15, addedMs: 3, needsMs: 12, countMs: 14 }, busyMs: 60 }), 900_000);
 });
