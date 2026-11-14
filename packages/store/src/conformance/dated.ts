@@ -228,6 +228,20 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
     });
 
     describe("reading and changing them", () => {
+      it("a message you send answers the requests before it on its thread, not a bill nor a later request nor another thread's", async () => {
+        const { store, accountId, got, item, finish } = await setup();
+        const ask = await got({ rfcMessageId: "ask@x", date: NOW - 5000 });
+        await finish(ask.id, ask.thread, { rows: [item({ kind: "respond", text: "Send the deck" }), item({ kind: "pay", item: 1, dueDay: "2026-11-21" })] });
+        const elsewhere = await got({ date: NOW - 4000 });
+        await finish(elsewhere.id, elsewhere.thread, { rows: [item({ kind: "respond", text: "Answer Tom" })] });
+        // your reply on the first thread, from elsewhere (sync)
+        await store.sync.ingest([msg({ accountId, from: me, to: [bank], isSent: true, inInbox: false, inReplyTo: "ask@x", references: ["ask@x"], subject: "Re", date: NOW - 3000 })], { applyFilters: false, now: NOW, classifier: null });
+        const open = await store.dated.active();
+        expect(open.map((r) => [r.threadId, r.kind]).sort()).toEqual([[ask.thread, "pay"], [elsewhere.thread, "respond"]].sort());
+        const answered = (await store.dated.ofThread(ask.thread)).find((r) => r.kind === "respond");
+        expect(answered).toBeUndefined();
+      });
+
       it("a later message moves an open item's day whatever its revision, keeping its deferral; never a closed one, nor another sender's", async () => {
         const { store, got, item, finish } = await setup();
         const a = await got();

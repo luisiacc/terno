@@ -103,6 +103,27 @@ export function openDatedFor(db: Db, o: { threadId: number; senderKey: string; b
   ).map(toRow);
 }
 
+/**
+ * After the panel (Codex review of the fixes, revision 1): a message you sent answers the requests made before it on its
+ * thread, as plan 142's `closeWaitsBefore` ends waits; your promise, if it made one, is then the obligation. In the
+ * commit that makes the send known. Only `respond` items: a bill isn't paid by writing back.
+ */
+export function datedAnswered(db: Db, messageIds: readonly number[], now: number): number {
+  if (!messageIds.length) return 0;
+  const sent = db.all<{ thread_id: number; at: number }>(
+    "SELECT thread_id, max(date) AS at FROM messages WHERE id IN (SELECT value FROM json_each(?)) AND is_sent = 1 AND is_draft = 0 AND is_spam = 0 AND is_trash = 0 GROUP BY thread_id",
+    JSON.stringify(messageIds),
+  );
+  let n = 0;
+  for (const s of sent) {
+    n += Number(db.run(
+      "UPDATE dated_items SET state = 'settled', closed_reason = 'answered', closed_at = ?, revision = revision + 1 WHERE id IN (SELECT id FROM dated_items INDEXED BY dated_thread WHERE thread_id = ? AND state = 'open') AND kind = 'respond' AND arrived_at < ?",
+      now, s.thread_id, s.at,
+    ).changes);
+  }
+  return n;
+}
+
 export function finishDated(db: Db, w: DatedFinish): DatedFinishOutcome {
   return db.tx(() => {
     if (!db.get("SELECT 1 FROM ai_dated_mail WHERE message_id = ?", w.messageId)) return "gone";
