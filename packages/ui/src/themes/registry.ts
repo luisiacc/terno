@@ -225,6 +225,18 @@ export function derive(input: Pick<ThemeInput, "mode" | "tokens" | "cats" | "ove
     }
     return o("muted-foreground");
   });
+  // plan 204 (after relief-r03): a read row's words a step back from the ink toward the quiet ink, still well above the
+  // one-line preview (row-preview is at least 70% the quiet ink), so ink > read > preview > quiet holds in every palette.
+  // Less of a step where a blend would fall under AA on a row's unselected fills (a custom theme's coloured ink), none at worst
+  def("row-read", () => {
+    const fills = (["background", "pane", "row-hover"] as const).map((k) => formatOklch(o(k)));
+    const floor = fills.map((f) => Math.min(4.5, contrast(o("foreground"), f, bg)));
+    for (let t = 0.28; t > 0; t = Math.round((t - 0.02) * 100) / 100) {
+      const c = mixOklab(o("foreground"), o("muted-foreground"), t);
+      if (fills.every((f, i) => contrast(c, f, bg) >= floor[i]!)) return c;
+    }
+    return o("foreground");
+  });
   // plan 158: the popover stepped toward the ink until the keyboard's place shows, while its text still reads
   def("menu-highlight", () => {
     const pop = formatOklch(opaquePopover());

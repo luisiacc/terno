@@ -102,6 +102,21 @@ describe("plan 07 tokens", () => {
     const base = builtinTheme("terno-light")!;
     expect(contrast(base.tokens["row-preview"], base.tokens.pane)).toBeGreaterThan(contrast(base.tokens["muted-foreground"], base.tokens.pane));
   });
+
+  it("plan 204 (after relief-r03): a read row's words sit between the ink and the one-line preview, in every built-in theme", () => {
+    for (const t of THEMES) {
+      const on = (k: "foreground" | "row-read" | "row-preview") => contrast(t.tokens[k], t.tokens.pane, t.tokens.background);
+      expect(on("row-read"), t.id).toBeLessThan(on("foreground"));
+      expect(on("row-read"), t.id).toBeGreaterThan(on("row-preview"));
+    }
+  });
+
+  it("plan 204 (after relief-r03): a read row's words hold AA where a blend of two passing inks wouldn't (Codex code review)", () => {
+    const custom = customThemeSchema.parse({ id: "azul", name: "Azul", mode: "light", extends: "terno-light", tokens: { background: "#ffffff", pane: "#ffffff", "row-hover": "#ffffff", foreground: "#1e6efa", "muted-foreground": "#767676" } });
+    const t = resolveCustomTheme(custom);
+    // the plain 28% blend is 4.46:1 here
+    expect(contrast(t.tokens["row-read"], t.tokens.background, t.tokens.background)).toBeGreaterThanOrEqual(4.5);
+  });
 });
 
 describe("plan 194: unread owns its hue", () => {

@@ -73,6 +73,43 @@ test.describe("Relief (plan 204)", () => {
   });
 });
 
+/** A row's sender and subject: their weights and colours, and the colour a token resolves to on the row */
+const words = (row: Locator) => row.evaluate((r) => {
+  const probe = (v: string) => {
+    const i = r.appendChild(document.createElement("i"));
+    i.style.color = `var(${v})`;
+    const c = getComputedStyle(i).color;
+    i.remove();
+    return c;
+  };
+  const style = (id: string) => getComputedStyle(r.querySelector(`[data-testid=${id}]`)!);
+  return { from: [style("row-from").fontWeight, style("row-from").color], subject: [style("row-subject").fontWeight, style("row-subject").color], ink: probe("--foreground"), read: probe("--row-read"), selected: probe("--row-selected-foreground") };
+});
+
+test.describe("Relief's read and unread rows (plan 204, after relief-r03)", () => {
+  test.use({ design: "relief" });
+
+  test("unread is one heavy block in the ink, read is regular in the softer ink, the open row the selection's", async ({ app: page, server }) => {
+    const rows = page.getByTestId("thread-row");
+    const read = page.locator("[data-testid=thread-row]:not([data-unread]):not([data-opened])").first();
+    const id = Number(await read.getAttribute("data-thread-id"));
+    await server.backend.server.invoke("threads.act", { threadIds: [id], action: "markUnread" }, { clientId: "setup", origin: "dev" });
+    const unread = rows.and(page.locator(`[data-thread-id="${id}"]`));
+    await expect(unread).toHaveAttribute("data-unread");
+    const u = await words(unread);
+    expect([u.from, u.subject]).toEqual([["650", u.ink], ["650", u.ink]]);
+    const r = await words(page.locator("[data-testid=thread-row]:not([data-unread]):not([data-opened])").first());
+    expect(r.read).not.toBe(r.ink);
+    expect([r.from, r.subject]).toEqual([["500", r.read], ["400", r.read]]);
+    // the open row, read, in the selection's own ink
+    const opened = page.locator("[data-testid=thread-row]:not([data-unread])").nth(1);
+    await opened.click();
+    await expect(opened).toHaveAttribute("data-opened");
+    const o = await words(opened);
+    expect([o.from[1], o.subject[1]]).toEqual([o.selected, o.selected]);
+  });
+});
+
 test.describe("Relief dark (plan 204)", () => {
   test.use({ design: "relief" });
 
@@ -110,6 +147,10 @@ test.describe("a flat design keeps what it drew (plan 204)", () => {
       expect(await layers(page.getByTestId("primary"))).toBe(2);
       // the track has no shadow worth drawing
       expect(await layers(page.getByTestId("segmented"))).toBe(0);
+    });
+    await scenario("a read row's words stay in the row's ink (only Relief sets them back)", async () => {
+      const r = await words(page.locator("[data-testid=thread-row]:not([data-unread]):not([data-opened])").first());
+      expect([r.from[1], r.subject[1]]).toEqual([r.ink, r.ink]);
     });
   });
 });

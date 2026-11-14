@@ -77,6 +77,8 @@ export const THEME_TOKENS = [
   "foreground-soft",
   // plan 193: a one-line row's preview, after its subject: a step from the quiet ink toward the row's
   "row-preview",
+  // plan 204 (after relief-r03): a read row's sender and subject, where a design sets them back from unread ones (Relief)
+  "row-read",
   // plan 181: the AI colour (an AI card's spinner and task glyph), the accent where it has colour
   "ai",
   "sidebar-glyph",

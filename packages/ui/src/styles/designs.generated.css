@@ -140,6 +140,7 @@
   --card-bg: var(--tint);
   --card-ring: transparent;
   --card-ring-dialog: var(--card-edge);
+  --row-read-ink: var(--foreground);
   --row-h: 76px;
   --row-h-compact: 36px;
   --avatar-row: 36px;
@@ -317,6 +318,7 @@
   --card-bg: transparent;
   --card-ring: var(--border);
   --card-ring-dialog: var(--border);
+  --row-read-ink: var(--foreground);
   --row-h: 84px;
   --row-h-compact: 32px;
   --avatar-row: 0px;
@@ -426,15 +428,15 @@
   --type-row-from-family: -apple-system, BlinkMacSystemFont, "Geist Variable", ui-sans-serif, system-ui, sans-serif;
   --type-row-from-size: 0.8125rem;
   --type-row-from-leading: 1.25rem;
-  --type-row-from-weight: 550;
+  --type-row-from-weight: 500;
   --type-row-from-strong: 650;
   --type-row-from-tracking: -0.15px;
   --type-row-from-style: normal;
   --type-row-subject-family: -apple-system, BlinkMacSystemFont, "Geist Variable", ui-sans-serif, system-ui, sans-serif;
   --type-row-subject-size: 0.8125rem;
   --type-row-subject-leading: 1.25rem;
-  --type-row-subject-weight: 450;
-  --type-row-subject-strong: 550;
+  --type-row-subject-weight: 400;
+  --type-row-subject-strong: 650;
   --type-row-subject-tracking: -0.15px;
   --type-row-subject-style: normal;
   --type-row-snippet-family: -apple-system, BlinkMacSystemFont, "Geist Variable", ui-sans-serif, system-ui, sans-serif;
@@ -494,6 +496,7 @@
   --card-bg: var(--card);
   --card-ring: var(--border);
   --card-ring-dialog: var(--border);
+  --row-read-ink: var(--row-read);
   --row-h: 84px;
   --row-h-compact: 32px;
   --avatar-row: 0px;
@@ -671,6 +674,7 @@
   --card-bg: var(--tint);
   --card-ring: transparent;
   --card-ring-dialog: var(--card-edge);
+  --row-read-ink: var(--foreground);
   --row-h: 76px;
   --row-h-compact: 34px;
   --avatar-row: 32px;
@@ -848,6 +852,7 @@
   --card-bg: var(--tint);
   --card-ring: transparent;
   --card-ring-dialog: var(--card-edge);
+  --row-read-ink: var(--foreground);
   --row-h: 68px;
   --row-h-compact: 32px;
   --avatar-row: 32px;
@@ -1025,6 +1030,7 @@
   --card-bg: var(--tint);
   --card-ring: transparent;
   --card-ring-dialog: var(--card-edge);
+  --row-read-ink: var(--foreground);
   --row-h: 64px;
   --row-h-compact: 32px;
   --avatar-row: 0px;

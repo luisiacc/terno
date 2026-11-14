@@ -63,7 +63,7 @@ export const graphite: DesignDefinition = {
   // plan 174: room around the three lines (12 px above and below), as Mail and Search Browser's sidebar have; compact stays the dense choice
   rows: { comfortable: 84, compact: 32, wide: 40, results: 76 },
   avatar: { row: 0, rowCompact: 0, rowWide: 0, message: 28, collapsed: 28, senderCard: 0 },
-  surfaces: { draft: "outline", inboxCount: "muted", cta: "pill", card: "outline", depth: "flat" },
+  surfaces: { draft: "outline", inboxCount: "muted", cta: "pill", card: "outline", depth: "flat", readRow: "ink" },
   variants: {
     compose: "sidebar-row",
     listHeader: "title",

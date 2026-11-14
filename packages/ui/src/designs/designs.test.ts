@@ -191,6 +191,13 @@ describe("designs (plan 15)", () => {
     });
   });
 
+  it("plan 204 (after relief-r03): Relief alone sets read rows back, by weight and ink; every other design keeps the row's ink", () => {
+    expect(DESIGNS.filter((d) => d.surfaces.readRow !== "ink").map((d) => d.id)).toEqual(["relief"]);
+    for (const d of DESIGNS) expect(new Map(designVars(d)).get("--row-read-ink"), d.id).toBe(d.surfaces.readRow === "soft" ? "var(--row-read)" : "var(--foreground)");
+    const { rowFrom, rowSubject } = designById("relief").type;
+    expect([rowFrom.weight, rowFrom.strong, rowSubject.weight, rowSubject.strong]).toEqual([500, 650, 400, 650]);
+  });
+
   it("generated CSS is up to date (run `pnpm --filter @terno/ui gen:designs`)", () => {
     expect(readFileSync(join(styles, "designs.generated.css"), "utf8")).toBe(generateDesignsCss());
     expect(readFileSync(join(styles, "type-roles.generated.css"), "utf8")).toBe(generateTypeRolesCss());

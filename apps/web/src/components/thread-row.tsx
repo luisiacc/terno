@@ -295,8 +295,12 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
   // preview and meta quiet. Unread reads first, by more than one cue: a stronger sender and subject, the dot (8 px), and
   // its date in the ink at medium where a read row's is quiet
   const quiet = "text-muted-foreground";
+  // plan 204 (after relief-r03): a read row's sender and subject in the design's read ink (the row's own ink but in Relief);
+  // the open and checked rows keep the selection's. An unread line's search marks take its weight (never lighter than it;
+  // every design's unread weight is at least its semibold), a read line's stay semibold, a step above it
+  const tone = thread.unread ? "[&_mark]:[font-weight:inherit]" : !opened && !checked && "text-(--row-read-ink)";
   const from = (
-    <span data-testid="row-from" className={cn("min-w-0 truncate", thread.unread ? "type-row-from-strong" : "type-row-from")}>
+    <span data-testid="row-from" className={cn("min-w-0 truncate", thread.unread ? "type-row-from-strong" : "type-row-from", tone)}>
       <Marked text={thread.fromName} needles={match?.from} />
     </span>
   );
@@ -402,7 +406,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
   // the row's own ink (the open row's on its fill), so sender and subject never drift apart. Plan 187, the owner: with no
   // preview the subject reads as the preview did, its quiet ink and its weight (read or unread), at the subject's size;
   // unread still shows by the sender's weight, the dot and the date
-  const subjectInk = noPreview && !line ? cn("type-row-subject [font-weight:var(--type-row-snippet-weight)]", quiet) : thread.unread ? "type-row-subject-strong" : "type-row-subject";
+  const subjectInk = noPreview && !line ? cn("type-row-subject [font-weight:var(--type-row-snippet-weight)]", quiet) : cn(thread.unread ? "type-row-subject-strong" : "type-row-subject", tone);
   // its own line: only a very long subject truncates
   const subject = (
     <span data-testid="row-subject" className={cn("min-w-0 truncate", subjectInk)}>

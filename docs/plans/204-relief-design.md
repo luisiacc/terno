@@ -194,3 +194,30 @@ Then the owner, on the two choices the raters left: "do the 2 suggestions to go 
 ## UI rating, round 3 (relief-r03, commit 023f5f908)
 
 After Relief's two choices (light dark-mode Send, firm selections) and plan 205's app-wide fixes: Claude 6.5 (UI 6 → 6.5, lowest 5.5), Codex 7 → 7.5 (UI 7.5, UX 8, lowest 6). Below the bar. Codex's notes are now mostly app-wide; Claude's are Relief's tonal range (the sidebar 1.13:1 off the list in light, 1.04:1 in dark) and the rows' density.
+
+## Unread rows, after round 3
+
+The owner, on the rows' density: "i don't care about row density at all, ignore that … it gives things room to breathe". On unread: "what is your proposal then? i kind of like the dot there". Shown the proposal side by side (Relief's inbox, light and dark): "yes do it".
+
+Round 3's Claude: unread is only the dot and a little more weight. Read and unread differed by one half step (sender 550 / 650, subject 450 / 550), in the same ink. The dot stays; the words carry the rest:
+
+- **Weights** (`relief.ts` type roles): the sender 500 read, 650 unread; the subject 400 read, 650 unread. An unread row reads as one heavy block, a read row at regular weight.
+- **A read row's sender and subject in a softer ink**: a new design value, `surfaces.readRow: "ink" | "soft"`, written as `--row-read-ink` (`var(--foreground)` or `var(--row-read)`, a token reference). Every other design keeps `ink`, so it draws what it did. The open and checked rows keep the selection's own ink, unread or not; a subject drawn in the quiet ink (no preview, plan 187) stays as it is.
+
+Tests: designs.test (the value and its variable in every design; Relief's weights), the contrast pairs, an e2e in Relief reading a read and an unread row's weight and colour (and the open row's), and Relief's baselines.
+
+### Revisions after the Codex review of the plan
+
+1. **A token of its own, not `foreground-soft`.** That one is only held on the background and cards (Catppuccin Latte's is 4.21:1 on a hovered row), and it's lighter than a one-line row's preview (`row-preview`), which would put the subject under its own preview. `row-read` is the ink 28% of the way to the quiet ink (what the owner was shown), so ink > read > preview > quiet in every palette (registry.test), with `CONTRAST_PAIRS` on the background, pane and hovered row.
+2. **Selection wins**: the read ink is set only on a row neither open nor checked, so the selection's ink, the bulk selection's cursor and the action preview's muted override all stand.
+3. **A search mark never lightens its line**: marks are semibold, under an unread line's 650. On an unread sender or subject a mark takes the line's weight (every design's unread weight is at least its semibold, so nothing gets lighter), keeping its gold wash; on a read line it stays a step above.
+4. **Scoped to the row** (`ThreadRowView`'s spans), never the type utilities, which Today's digest title also uses. Appearance's previews draw bars, not rows, and are unchanged.
+5. **Tests on every branch**: thread-row-marks covers the three-line, compact, wide and one-line shapes, the open and checked rows, unread, and the no-preview subject.
+
+### As built
+
+As above. e2e (`relief.spec`): in Relief, an unread row's sender and subject are 650 in the ink, a read row's 500 and 400 in `row-read`, an open read row in `row-selected-foreground`; in macOS a read row stays in the ink. Relief's baselines updated (inbox, reply, 980, List layout); they also take plan 205's reserved chevron room on Reply, which the per-pixel threshold had let through.
+
+### Revisions after the Codex code review
+
+One finding, fixed with a test that fails without it: `row-read` was a fixed blend, so a custom theme whose ink and quiet ink each just pass AA could get a read ink under it (a blue ink `#1E6EFA` and `#767676` on white: 4.46:1). It now steps back toward the ink until it holds on the background, pane and hovered row, as `row-preview` does; the built-in palettes come out the same.

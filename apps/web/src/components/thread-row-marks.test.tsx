@@ -26,7 +26,7 @@ afterEach(async () => {
   host?.remove();
 });
 
-async function row(opts: { layout?: DesignVariants["row"]; compact?: boolean; account?: boolean; review?: number; lines?: 0 | 1 | 2 } = {}) {
+async function row(opts: { layout?: DesignVariants["row"]; compact?: boolean; wide?: boolean; account?: boolean; review?: number; lines?: 0 | 1 | 2; unread?: boolean; selected?: boolean; checked?: boolean } = {}) {
   host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
@@ -34,8 +34,8 @@ async function row(opts: { layout?: DesignVariants["row"]; compact?: boolean; ac
   await act(async () =>
     root.render(
       <ThreadRowView
-        thread={thread} top={0} height={72} compact={opts.compact ?? false} wide={false} icons={false} layout={opts.layout ?? "avatar"} review={opts.review ?? null}
-        reminderTop={false} selected={false} checked={false} inSelection={false}
+        thread={{ ...thread, unread: opts.unread ?? thread.unread }} top={0} height={72} compact={opts.compact ?? false} wide={opts.wide ?? false} icons={false} layout={opts.layout ?? "avatar"} review={opts.review ?? null}
+        reminderTop={false} selected={opts.selected ?? false} checked={opts.checked ?? false} inSelection={false}
         account={opts.account ? { text: "Studio", email: "me@studio.example" } as never : undefined}
         categories={categories} hasDraft={false} code={null} reminder={undefined} remindersList={false} interactive={false} lines={opts.lines}
       />,
@@ -235,5 +235,35 @@ describe("plan 188: what a screen reader hears for a row", () => {
     // no aria-label: the name is the row's own words, so it holds what's shown (WCAG 2.5.3)
     expect(el.hasAttribute("aria-label") || el.hasAttribute("aria-labelledby")).toBe(false);
     expect(el.getAttribute("aria-posinset")).toBe("12");
+  });
+});
+
+describe("plan 204 (after relief-r03): a read row's words in the design's read ink", () => {
+  const READ = "text-(--row-read-ink)";
+  const words = (el: HTMLElement) => ["row-from", "row-subject"].map((id) => el.querySelector(`[data-testid=${id}]`)!.className);
+
+  it.each([{}, { compact: true }, { wide: true }, { lines: 1 as const }])("a read row's sender and subject, in every row shape (%o)", async (shape) => {
+    const { el } = await row({ ...shape, unread: false });
+    for (const c of words(el)) expect(c).toContain(READ);
+  });
+
+  it.each([{ selected: true }, { checked: true }])("the open and checked rows keep the selection's ink (%o)", async (state) => {
+    const { el } = await row({ ...state, unread: false });
+    for (const c of words(el)) expect(c).not.toContain(READ);
+  });
+
+  it("an unread row keeps the ink, and its search marks take the line's weight", async () => {
+    const { el } = await row({ unread: true });
+    for (const c of words(el)) {
+      expect(c).not.toContain(READ);
+      expect(c).toContain("[&_mark]:[font-weight:inherit]");
+    }
+  });
+
+  it("a subject drawn as the preview (no preview, plan 187) stays in the quiet ink", async () => {
+    const { el } = await row({ lines: 0, unread: false });
+    const subject = el.querySelector("[data-testid=row-subject]")!.className;
+    expect(subject).toContain("text-muted-foreground");
+    expect(subject).not.toContain(READ);
   });
 });

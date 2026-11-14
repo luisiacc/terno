@@ -9,6 +9,7 @@ const role = (size: string, leading: string, weight: number, strong: number): Ty
 /** Graphite's half steps: words in the ink a little heavier than the grey beside them */
 const INK = 450;
 const INK_MEDIUM = 550;
+const UNREAD = 650;
 
 const TYPE: Record<TypeRole, TypeSpec> = {
   listTitle: role("0.875rem", "1.25rem", INK_MEDIUM, INK_MEDIUM),
@@ -16,8 +17,10 @@ const TYPE: Record<TypeRole, TypeSpec> = {
   listSubtitle: role("0.75rem", "1rem", 400, 500),
   sectionLabel: role("0.75rem", "1rem", 400, 400),
   nav: role("0.8125rem", "1.25rem", 400, INK_MEDIUM),
-  rowFrom: role("0.8125rem", "1.25rem", INK_MEDIUM, 650),
-  rowSubject: role("0.8125rem", "1.25rem", INK, INK_MEDIUM),
+  // after relief-r03 (the owner): read and unread apart by more than a half step, the dot kept: a read row at regular
+  // weight (and in the softer ink, surfaces.readRow), an unread one's sender and subject one heavy block
+  rowFrom: role("0.8125rem", "1.25rem", 500, UNREAD),
+  rowSubject: role("0.8125rem", "1.25rem", 400, UNREAD),
   rowSnippet: role("0.8125rem", "1.25rem", 400, 400),
   readerSubject: role("1.5rem", "2rem", INK_MEDIUM, INK_MEDIUM),
   senderName: role("0.875rem", "1.25rem", INK_MEDIUM, INK_MEDIUM),
@@ -55,7 +58,7 @@ export const relief: DesignDefinition = {
   layout: { sidebar: "216px", listMin: "340px", listMax: "min(400px, 32vw)", readerMin: 348, readerMax: "704px", readerPadX: "2rem", rowRadius: "0.625rem", navRadius: "9999px", navHeight: "1.75rem", sidebarPad: "0.75rem", navSectionGap: "1.25rem", navSectionHeight: "1.625rem", cardRadius: "1.125rem", commandRadius: "0.625rem" },
   rows: { comfortable: 84, compact: 32, wide: 40, results: 76 },
   avatar: { row: 0, rowCompact: 0, rowWide: 0, message: 28, collapsed: 28, senderCard: 0 },
-  surfaces: { draft: "card", inboxCount: "muted", cta: "pill", card: "raised", depth: "relief" },
+  surfaces: { draft: "card", inboxCount: "muted", cta: "pill", card: "raised", depth: "relief", readRow: "soft" },
   variants: {
     compose: "sidebar-pill",
     listHeader: "title",

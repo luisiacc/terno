@@ -66,6 +66,7 @@ export function designVars(d: DesignDefinition): [string, string][] {
     ["--card-ring", d.surfaces.card === "tint" ? "transparent" : "var(--border)"],
     // plan 161: in a dialog in dark, a tint card is a step off the popover at most: it's ringed there
     ["--card-ring-dialog", d.surfaces.card === "tint" ? "var(--card-edge)" : "var(--border)"],
+    ["--row-read-ink", d.surfaces.readRow === "soft" ? "var(--row-read)" : "var(--foreground)"],
     ["--row-h", `${d.rows.comfortable}px`],
     ["--row-h-compact", `${d.rows.compact}px`],
     ["--avatar-row", `${d.avatar.row}px`],
