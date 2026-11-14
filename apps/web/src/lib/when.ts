@@ -120,3 +120,6 @@ export function dueShort(ms: number, timed: boolean, now = Date.now()): string {
   if (days === -1) return t("date.yesterday");
   return Math.abs(days) < 7 ? fmt().weekday.format(ms).replace(".", "") : dayOf(ms, now);
 }
+
+/** What `dueShort` can't say: the time of a timed one not due today (Codex code review: "Tomorrow" alone lost "7:40"). */
+export const dueTimeLeft = (ms: number, timed: boolean, now = Date.now()): string | null => (timed && daysAway(ms, now) !== 0 ? fmt().time.format(ms) : null);

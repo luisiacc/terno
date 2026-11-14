@@ -228,7 +228,8 @@ describe("plan 204: Missed, Deadlines, Plans, Needs you, Reminders and Coming up
     expect([line(1), due(1)]).toEqual(["Renew the domain", "Was due Tuesday"]);
     expect([line(3), due(3)]).toEqual(["Pay the electricity bill", "Due tomorrow"]);
     expect([line(4), due(4)]).toEqual(["Pay the rent", "Due today"]);
-    expect([line(6), due(6)]).toEqual(["Flight to Madrid", "Tomorrow 7:40 AM"]);
+    // Codex code review: "Tomorrow" in the right column can't hold the time, so the line does
+    expect([line(6), due(6)]).toEqual(["7:40 AM · Flight to Madrid", "Tomorrow 7:40 AM"]);
     expect([line(7), due(7)]).toEqual(["Your parcel arrives", "Today"]);
     // no date in the right column, so the line keeps the whole wording: a missed promise an older backend gave no
     // reference (no task), an alert that named no day
@@ -244,7 +245,8 @@ describe("plan 204: Missed, Deadlines, Plans, Needs you, Reminders and Coming up
       }),
       [],
     );
-    expect(rows.find((r) => r.id === 1)!.snippet).toBe("Wire payroll");
+    // "Yesterday" in the right column can't hold the time: the line does (Codex code review)
+    expect(rows.find((r) => r.id === 1)!.snippet).toBe("1:00 PM · Wire payroll");
     expect(useToday.getState().tasks.get(1)).toMatchObject({ when: "Yesterday", due: "Was due yesterday 1:00 PM" });
     expect(useToday.getState().tasks.get(2)).toMatchObject({ kind: "promise", id: 41, revision: 1, when: null, due: null });
   });
@@ -264,8 +266,9 @@ describe("plan 204: Missed, Deadlines, Plans, Needs you, Reminders and Coming up
     );
     const line = (id: number) => rows.find((r) => r.id === id)?.snippet;
     const due = (id: number) => useToday.getState().tasks.get(id)?.due;
+    // today, the right column is the time; tomorrow, it's the day and the line keeps the time
     expect([line(1), due(1)]).toEqual(["Wire payroll", "Due today 1:00 PM"]);
-    expect([line(2), due(2)]).toEqual(["Pay the rent", "Due tomorrow 9:30 AM"]);
+    expect([line(2), due(2)]).toEqual(["9:30 AM · Pay the rent", "Due tomorrow 9:30 AM"]);
     expect([line(3), due(3)]).toEqual(["You said: send the agenda", "Due today"]);
     expect([line(4), due(4)]).toEqual(["You said: call back", null]);
     useToday.setState({ comingUpOpen: true });

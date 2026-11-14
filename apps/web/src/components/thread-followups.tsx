@@ -10,7 +10,8 @@ import { useEffect, useRef, useState } from "react";
 import { followupsOffered, modelName } from "~/lib/ai";
 import { whenDate } from "~/lib/when";
 import { useCanDraft } from "~/lib/ai-draft-state";
-import { actOnFollowup, followupLine, followupWhen } from "~/lib/followups";
+import { followupLine, followupWhen } from "~/lib/followups";
+import { actOnThreadPromise } from "~/lib/today-task";
 import { useDrafts } from "~/lib/drafts";
 import { presetLabel, presetWhen } from "~/lib/reminders";
 import { revealSummaryMessage } from "~/lib/summaries";
@@ -66,7 +67,7 @@ function Line({ row, messages }: { row: FollowupRow; messages: readonly MessageD
             canNudge && <Button size="sm" data-testid="followup-nudge" onClick={() => void nudge(row)}>{t("followup.nudge")}</Button>
           )
         ) : (
-          <Button size="sm" data-testid="followup-done" onClick={() => void actOnFollowup(row, "done")}>{t("followup.done")}</Button>
+          <Button size="sm" data-testid="followup-done" onClick={() => void actOnThreadPromise(row, "done")}>{t("followup.done")}</Button>
         )}
         <DropdownMenu>
           <DropdownMenuTrigger render={<Button ref={laterRef} variant="outline" size="sm" className="text-foreground" data-testid="followup-later" />}>
@@ -77,7 +78,7 @@ function Line({ row, messages }: { row: FollowupRow; messages: readonly MessageD
               shortcut row, the moment each resolves to in the shortcut's place, and nothing in it shrinks */}
           <DropdownMenuContent align="start" className="w-max" data-testid="followup-later-menu">
             {later.map((p) => (
-              <DropdownMenuItem key={p.id} data-testid={`followup-later-${p.id}`} onClick={() => void actOnFollowup(row, "later", p.at)}>
+              <DropdownMenuItem key={p.id} data-testid={`followup-later-${p.id}`} onClick={() => void actOnThreadPromise(row, "later", p.at)}>
                 <span className="whitespace-nowrap">{presetLabel(p.id)}</span>
                 <DropdownMenuShortcut data-testid="followup-later-when" className="tracking-normal whitespace-nowrap tabular-nums">{presetWhen(p, now.getTime())}</DropdownMenuShortcut>
               </DropdownMenuItem>
@@ -99,12 +100,12 @@ function Line({ row, messages }: { row: FollowupRow; messages: readonly MessageD
               onSet={(at) => {
                 setPicking(false);
                 laterRef.current?.focus({ preventScroll: true });
-                void actOnFollowup(row, "later", at);
+                void actOnThreadPromise(row, "later", at);
               }}
             />
           </PopoverContent>
         </Popover>
-        <Button variant="outline" size="sm" className="text-foreground" data-testid="followup-dismiss" onClick={() => void actOnFollowup(row, "dismiss")}>{t(awaiting ? "followup.dismiss" : "followup.notPromise")}</Button>
+        <Button variant="outline" size="sm" className="text-foreground" data-testid="followup-dismiss" onClick={() => void actOnThreadPromise(row, "dismiss")}>{t(awaiting ? "followup.dismiss" : "followup.notPromise")}</Button>
         {/* where it came from, named ("Your message, Oct 22"), its words (the quote) on hover; nothing when it's the one
             message on screen */}
         {source !== null && (
