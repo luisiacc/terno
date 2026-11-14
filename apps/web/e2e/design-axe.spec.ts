@@ -16,6 +16,7 @@ import { sqlDb } from "../../backend-dev/src/server";
 import { E2E_NOW } from "./constants";
 import { addRecipients, expect, focusList, navTo, openRow, rows, search, selectedRow, test, type DevServerFixture, openReview } from "./fixtures";
 import { BACKUP, base, failed, fakeMain, gate, release, upd } from "./helpers/fake-main";
+import { digestRow } from "./helpers/today";
 
 // the format bar's controls are what this drives (plan 158: closed by default)
 test.use({ formatBar: true });
@@ -442,10 +443,11 @@ test.describe("axe", { tag: ["@variant", "@variant-relief"] }, () => {
     test("Today, the digest, an AI rule and Writing style", async ({ app: page, server }) => {
       await start(page, server, { ai: { provider: "fake", model: "demo" }, today: { digest: true, prepareAt: "00:00" } });
       await page.getByTestId("nav-today").click();
-      await expect(page.getByTestId("digest-row")).toBeVisible({ timeout: 15_000 });
+      // plan 204 (after the panel): the digest's row is the list's last
+      await (await digestRow(page)).scrollIntoViewIfNeeded();
       // plan 204: the dates offer in its header, while dates aren't read
       await clean(page, "Today", ['[data-keep-scroll="list"]', "[data-testid=today-line]", "[data-testid=today-dated-offer]"]);
-      await page.getByTestId("digest-row").click();
+      await (await digestRow(page)).click();
       await page.getByTestId("digest-page").waitFor();
       await clean(page, "the digest", "[data-testid=digest-page]");
       // plan 166: a row's Not a newsletter, shown on its hover; the sender it leaves out is listed in Settings below
