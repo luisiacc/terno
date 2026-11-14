@@ -69,6 +69,7 @@ import { RemindPicker } from "./remind-picker";
 import DigestPage from "./digest-page";
 import ReplyReady, { replyAllTo } from "./reply-ready";
 import ThreadFollowups from "./thread-followups";
+import ThreadDated from "./thread-dated";
 import ThreadSummary from "./thread-summary";
 
 
@@ -1093,6 +1094,7 @@ function Thread({ detail, account, cats, summaryShown }: { detail: ThreadDetail;
       <div data-conversation-menu>
         {/* inside the menu: Lumen's card can stand for the message (plan 59) */}
         <ReaderHeader detail={detail} account={account} cats={cats} fold={fold} />
+        <ThreadDated detail={detail} />
         <ThreadFollowups detail={detail} />
         {summaryShown && <ThreadSummary detail={detail} />}
         <ThreadAttachments messages={detail.messages} />
