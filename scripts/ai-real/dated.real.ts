@@ -24,7 +24,7 @@ interface Case {
   tags: string[];
   subject: string;
   messages: { from: string; text: string; to?: string[]; cc?: string[] }[];
-  dated: { receivedAt: string; automated: boolean; open: { label: string; kind: DatedKind; text: string }[]; items: Expected[]; also: Expected[]; settled: string[]; moved?: { label: string; due: string; time?: string }[]; mayMove?: { label: string; due: string }[] };
+  dated: { receivedAt: string; automated: boolean; open: { label: string; kind: DatedKind | "promise"; text: string }[]; items: Expected[]; also: Expected[]; settled: string[]; moved?: { label: string; due: string; time?: string }[]; mayMove?: { label: string; due: string }[] };
 }
 
 const CASES: Case[] = readFileSync(join(import.meta.dirname, "corpus", "dated", "dated.jsonl"), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line) as Case);
