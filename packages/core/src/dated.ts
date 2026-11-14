@@ -21,8 +21,8 @@ export const datedGroup = (kind: DatedKind): DatedGroup => (kind === "ask" ? "ne
 export const ANSWERED_KINDS: readonly DatedKind[] = ["respond", "ask"];
 
 /** How many days before its day an item shows (§2); an alert shows at once and a delivery on its day. */
-/** After the panel (the owner, 2026-11-14): a week for requests from people, 30 days for expiring documents. */
-export const DATED_LEAD_DAYS: Readonly<Record<DatedKind, number>> = { pay: 3, renew: 7, expire: 30, respond: 7, alert: 0, event: 1, delivery: 0, ask: 0 };
+/** After the panel (the owner, 2026-11-14): a week for requests from people and for bills, 30 days for expiring documents. */
+export const DATED_LEAD_DAYS: Readonly<Record<DatedKind, number>> = { pay: 7, renew: 7, expire: 30, respond: 7, alert: 0, event: 1, delivery: 0, ask: 0 };
 /** Missed keeps an item this long, then it's the Earlier tab's (plan 205; the owner, 2026-11-13). */
 export const MISSED_DAYS = 7;
 /** Coming up looks this far ahead. */

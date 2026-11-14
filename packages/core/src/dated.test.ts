@@ -14,7 +14,8 @@ const item = (kind: DatedKind, due: string | null, time: string | null = null, m
 
 describe("when a dated item shows (plan 204 §2)", () => {
   it("each kind shows its lead before its day, at 9:00", () => {
-    expect(clock(timing("pay", "2026-11-20")!.actAt)).toEqual([11, 17, 9, 0]);
+    // the fourth panel round (change 5): a bill's week, as a request's
+    expect(clock(timing("pay", "2026-11-20")!.actAt)).toEqual([11, 13, 9, 0]);
     expect(clock(timing("renew", "2026-11-20")!.actAt)).toEqual([11, 13, 9, 0]);
     // after the panel: 30 days for an expiring document (begun already: at once), a week for a request
     expect(timing("expire", "2026-11-20")!.actAt).toBe(arrived);
@@ -175,14 +176,14 @@ describe("the next change by the clock (revision 11)", () => {
     // in Coming up, Deadlines and Missed it's shown, so each midnight is a change too (its words); the last day's is Missed's end
     expect(nextTodayChange([bill], [], at(2026, 11, 10, 15))).toBe(at(2026, 11, 11));
     expect(nextTodayChange([bill], [], at(2026, 11, 16, 15))).toBe(at(2026, 11, 17));
-    expect(nextTodayChange([bill], [], at(2026, 11, 17, 0, 30))).toBe(at(2026, 11, 17, 9));
+    expect(nextTodayChange([bill], [], at(2026, 11, 13, 0, 30))).toBe(at(2026, 11, 13, 9));
     expect(nextTodayChange([bill], [], at(2026, 11, 20, 9))).toBe(at(2026, 11, 21));
     expect(nextTodayChange([bill], [], at(2026, 11, 27, 9))).toBe(at(2026, 11, 28));
     expect(nextTodayChange([bill], [], at(2026, 11, 28))).toBeNull();
     expect(nextTodayChange([], [{ kind: "promise", state: "due", dated: true, dueAt: at(2026, 11, 12, 9) }], at(2026, 11, 12, 10))).toBe(at(2026, 11, 13));
   });
   it("an item further than two weeks enters Coming up", () => {
-    expect(nextTodayChange([item("pay", "2026-12-20")], [], at(2026, 11, 10, 15))).toBe(at(2026, 12, 3, 9));
+    expect(nextTodayChange([item("pay", "2026-12-20")], [], at(2026, 11, 10, 15))).toBe(at(2026, 11, 29, 9));
   });
   it("Codex code review: while a row shows, midnight changes its words (Tomorrow becomes Today)", () => {
     const flight = item("event", "2026-11-20", "07:40");
