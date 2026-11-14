@@ -89,7 +89,8 @@ import { clearReminder, openRemind, presetLabel, presetWhen, reminderWhen, setRe
 import { reachesSeveral } from "~/lib/compose-fields";
 import { loadThread, useThreads } from "~/state/threads";
 import { useTodayTask } from "~/state/today";
-import { actOnTask, laterChoices } from "~/lib/dated";
+import { laterChoices } from "~/lib/dated";
+import { actOnTodayRow } from "~/lib/today-task";
 import { openTodayLater } from "./today-later-dialog";
 import { fitWholeRows } from "@terno/ui/lib/whole-rows";
 
@@ -438,8 +439,8 @@ function TaskItems({ threadId }: { threadId: number }) {
   const presets = laterChoices(task, now);
   return (
     <>
-      <Item icon={<CircleCheck />} label={t("dated.done")} command="today.done" testId="menu-dated-done" onClick={() => void actOnTask(task, "done")} />
-      <Item icon={<Ban />} label={t("dated.notTask")} testId="menu-dated-dismiss" onClick={() => void actOnTask(task, "dismiss")} />
+      <Item icon={<CircleCheck />} label={t("dated.done")} command="today.done" testId="menu-dated-done" onClick={() => void actOnTodayRow(threadId, task, "done")} />
+      <Item icon={<Ban />} label={t("dated.notTask")} testId="menu-dated-dismiss" onClick={() => void actOnTodayRow(threadId, task, "dismiss")} />
       <ContextMenuSub>
         <ContextMenuSubTrigger data-testid="menu-dated-later">
           <Clock />
@@ -447,13 +448,13 @@ function TaskItems({ threadId }: { threadId: number }) {
         </ContextMenuSubTrigger>
         <ContextMenuSubContent className="w-max min-w-60" data-testid="menu-dated-later-list">
           {presets.map((p) => (
-            <ContextMenuItem key={p.id} data-testid={`menu-dated-later-${p.id}`} onClick={() => void actOnTask(task, "later", p.at)}>
+            <ContextMenuItem key={p.id} data-testid={`menu-dated-later-${p.id}`} onClick={() => void actOnTodayRow(threadId, task, "later", p.at)}>
               <span className="min-w-0 flex-1 truncate">{presetLabel(p.id)}</span>
               <ContextMenuShortcut className="tracking-normal tabular-nums">{presetWhen(p, now)}</ContextMenuShortcut>
             </ContextMenuItem>
           ))}
           {presets.length > 0 && <ContextMenuSeparator />}
-          <ContextMenuItem data-testid="menu-dated-later-pick" onClick={() => openTodayLater(task)}>
+          <ContextMenuItem data-testid="menu-dated-later-pick" onClick={() => openTodayLater(threadId, task)}>
             <CalendarClock />
             <span className="min-w-0 flex-1 truncate">{t("dated.pickDate")}</span>
           </ContextMenuItem>

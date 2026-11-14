@@ -309,7 +309,7 @@ describe("plan 204: Missed, Deadlines, Plans, Needs you, Reminders and Coming up
 
   it("a held row keeps its group's place in any group; a group it was the last of keeps its heading", () => {
     const before = flattenToday(full(), []);
-    // Pay the rent was done while it was open: held where it was, in Deadlines
+    // Pay the rent left on its own (a later mail settled it) while it was open: held where it was, in Deadlines
     const next = full();
     next.sections.find((s) => s.kind === "deadlines")!.items.splice(1, 1);
     next.held = [thread(4)];

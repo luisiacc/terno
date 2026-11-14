@@ -730,13 +730,16 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
     await scenario("Done from the row's menu (D beside it), Not a task and Later; each leaves Today, and Undo (z) brings it back", async () => {
       await page.locator('[data-keep-scroll="list"]').evaluate((el) => { el.scrollTop = 0; });
       const snack = page.locator("[data-testid=snack]");
-      // gone from Today (or, while it's the open row, held in place without its task: revision 9)
-      const gone = () => expect(row(page, "Electricity bill").getByTestId("row-task")).toHaveCount(0);
+      // after the second panel round: gone from Today at once, even the open row (not held in place: the user finished it)
+      const gone = () => expect(row(page, "Electricity bill")).toHaveCount(0);
       const undo = async () => {
         await focusList(page);
         await page.keyboard.press("z");
         await expect(row(page, "Electricity bill").getByTestId("row-task")).toBeVisible();
       };
+      // the rows' ids, top to bottom
+      const order = () => page.getByTestId("thread-row").evaluateAll((els) => els.map((e) => ({ id: e.getAttribute("data-thread-id"), top: e.getBoundingClientRect().top })).sort((a, b) => a.top - b.top).map((r) => r.id));
+      const cursor = page.locator("[data-testid=thread-row][data-cursor]");
       await row(page, "Electricity bill").click({ button: "right" });
       await expect(page.getByTestId("menu-dated-done")).toContainText("D");
       await expect(page.getByTestId("menu-dated-dismiss")).toHaveText("Not a task");
@@ -762,13 +765,35 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       await expect(snack).toContainText("Marked done");
       await undo();
 
-      // D: the selected row's Done, the same snack and Undo
+      // D: the selected row's Done, the same snack and Undo. The row goes and the next one is selected, as after Archive;
+      // z brings it back in its place, selected
       await row(page, "Electricity bill").click();
+      const ids = await order();
+      const bill = await row(page, "Electricity bill").getAttribute("data-thread-id");
+      const next = ids[ids.indexOf(bill) + 1]!;
       await focusList(page);
       await page.keyboard.press("d");
       await gone();
+      await expect(cursor).toHaveAttribute("data-thread-id", next);
       await expect(snack).toContainText("Marked done");
       await undo();
+      await expect(cursor).toHaveAttribute("data-thread-id", bill!);
+      expect(await order()).toEqual(ids);
+      if (SHOTS) {
+        for (const mode of ["light", "dark"] as const) {
+          await page.emulateMedia({ colorScheme: mode });
+          await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-dated-done-before-${mode}.png` });
+          await focusList(page);
+          await page.keyboard.press("d");
+          await gone();
+          await expect(cursor).toHaveAttribute("data-thread-id", next);
+          await expect(page.getByTestId("reader-subject")).not.toHaveText("Electricity bill");
+          await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-dated-done-after-${mode}.png` });
+          await undo();
+          await expect(cursor).toHaveAttribute("data-thread-id", bill!);
+        }
+        await page.emulateMedia({ colorScheme: "light" });
+      }
       // on a row with no task it does nothing
       const waiting = page.getByTestId("thread-row").filter({ hasNot: page.getByTestId("row-task") }).first();
       const kept = await waiting.getAttribute("data-thread-id");
@@ -847,7 +872,7 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       await agenda.click();
       await focusList(page);
       await page.keyboard.press("d");
-      await expect(agenda.getByTestId("row-task")).toHaveCount(0);
+      await expect(agenda).toHaveCount(0);
       await expect(page.locator("[data-testid=snack]")).toContainText("Marked done");
       await expect.poll(async () => (await store.followups.active()).some((r) => r.text === "send the agenda")).toBe(false);
       await page.keyboard.press("z");
@@ -863,13 +888,15 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       await expect(line).toHaveClass(/\bai-card\b/);
       await expect(line.getByTestId("thread-dated-done")).toHaveAccessibleName("Done: Electricity bill");
       await expect(line.getByTestId("thread-dated-dismiss")).toHaveAccessibleName("Not a task: Electricity bill");
-      // Not a task here: the line goes, and the snack's Undo brings it (and the row) back
+      // Not a task here: the row leaves Today as from its own menu (the next conversation opens), and the snack's Undo
+      // brings it back, open again with its line
       await line.getByTestId("thread-dated-dismiss").click();
-      await expect(line).toHaveCount(0);
+      await expect(row(page, "Electricity bill")).toHaveCount(0);
       await expect(page.locator("[data-testid=snack]")).toContainText("Removed from Today");
       await focusList(page);
       await page.keyboard.press("z");
-      await expect(line).toBeVisible();
+      await expect(page.locator("[data-testid=thread-row][data-cursor]")).toContainText("Electricity bill");
+      await expect(line.getByTestId("thread-dated-text")).toHaveText("Due Saturday · Electricity bill");
       if (SHOTS) {
         await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-dated-reader-light.png` });
         await page.emulateMedia({ colorScheme: "dark" });
@@ -877,10 +904,10 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
         await page.emulateMedia({ colorScheme: "light" });
       }
       expect((await new AxeBuilder({ page }).include("[data-testid=thread-dated]").analyze()).violations).toEqual([]);
+      // Done here: the row leaves Today at once (not held in place: the user finished it)
       await line.getByTestId("thread-dated-done").click();
-      await expect(line).toHaveCount(0);
-      // the open row is held where it was until the selection lets go (revision 9), no longer saying it's due
-      await expect(row(page, "Electricity bill").getByTestId("row-snippet")).not.toContainText("Due Saturday");
+      await expect(row(page, "Electricity bill")).toHaveCount(0);
+      await expect(page.locator("[data-testid=snack]")).toContainText("Marked done");
     });
 
     await scenario("Settings → AI: its group beside the digest's, on, naming who reads the mail", async () => {

@@ -4,7 +4,8 @@ import { Button } from "@terno/ui/components/button";
 import { cn } from "@terno/ui/lib/utils";
 import { useEffect, useState } from "react";
 import { aiAllowed } from "~/lib/ai";
-import { actOnDated, datedLine } from "~/lib/dated";
+import { datedLine } from "~/lib/dated";
+import { actOnThreadItem } from "~/lib/today-task";
 import { client } from "~/rpc/connection";
 import { useApp } from "~/state/app";
 import { AI_CARD, AI_INSET, AI_TITLE } from "./ai-card";
@@ -61,10 +62,10 @@ export default function ThreadDated({ detail }: { detail: ThreadDetail }) {
               <span data-testid="thread-dated-text" className={cn(AI_TITLE, "min-w-0 flex-1 wrap-anywhere tabular")}>{line}</span>
               {/* after the panel: Not a task beside Done, quieter (Done is what's usually meant) */}
               <span className="flex shrink-0 items-center gap-1.5">
-                <Button variant="outline" size="sm" className="text-foreground" data-testid="thread-dated-done" aria-label={t("dated.doneItem", { text: r.text })} onClick={() => void actOnDated(r, "done")}>
+                <Button variant="outline" size="sm" className="text-foreground" data-testid="thread-dated-done" aria-label={t("dated.doneItem", { text: r.text })} onClick={() => void actOnThreadItem(threadId, r, "done")}>
                   {t("dated.done")}
                 </Button>
-                <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" data-testid="thread-dated-dismiss" aria-label={t("dated.notTaskItem", { text: r.text })} onClick={() => void actOnDated(r, "dismiss")}>
+                <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" data-testid="thread-dated-dismiss" aria-label={t("dated.notTaskItem", { text: r.text })} onClick={() => void actOnThreadItem(threadId, r, "dismiss")}>
                   {t("dated.notTask")}
                 </Button>
               </span>
