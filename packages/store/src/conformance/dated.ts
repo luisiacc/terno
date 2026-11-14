@@ -127,6 +127,15 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
         await store.sync.ingest([msg({ accountId, from: me, to: [shop], isSent: true, inInbox: false, gmailLabels: ["SENT"], subject: "Re: Your question", date: NOW - 1000 })], { applyFilters: false, now: NOW, classifier: null });
         expect((await store.dated.source(support.id))!.person).toBe(true);
       });
+
+      it("after the fourth panel round: written, the senders among some you've written to (plan 17's correspondents), by key", async () => {
+        const { store, accountId } = await setup();
+        const jane = { name: "Jane", email: "jane@acme-support.com" };
+        expect(await store.dated.written(["jane@acme-support.com", "orders@shop.test"])).toEqual(new Set());
+        await store.sync.ingest([msg({ accountId, from: me, to: [jane], isSent: true, inInbox: false, gmailLabels: ["SENT"], subject: "The invoice", date: NOW - 1000 })], { applyFilters: false, now: NOW, classifier: null });
+        expect(await store.dated.written(["jane@acme-support.com", "orders@shop.test", "jane@acme-support.com"])).toEqual(new Set(["jane@acme-support.com"]));
+        expect(await store.dated.written([])).toEqual(new Set());
+      });
     });
 
     describe("finish", () => {

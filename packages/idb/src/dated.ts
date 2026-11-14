@@ -204,6 +204,10 @@ export function finishDated(c: Ctx, w: DatedFinish): DatedFinishOutcome {
 }
 
 export const activeDated = (c: Ctx): DatedRow[] => T(c, "dated_items").by("state", "open").sort(byAct).slice(0, DATED_ACTIVE_MAX).map(toRow);
+export const datedWritten = (c: Ctx, keys: readonly string[]): Set<string> => {
+  const correspondents = T(c, "correspondents");
+  return new Set([...new Set(keys)].filter((key) => correspondents.get(key)?.written === 1));
+};
 export const threadDated = (c: Ctx, threadId: number): DatedRow[] => T(c, "dated_items").by("fk_thread_id", threadId).filter((r) => r.state === "open").sort(byAct).map(toRow);
 export function getDated(c: Ctx, id: number): DatedRow | null {
   const r = T(c, "dated_items").get(id);

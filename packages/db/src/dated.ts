@@ -205,6 +205,8 @@ export function finishDated(db: Db, w: DatedFinish): DatedFinishOutcome {
 }
 
 export const activeDated = (db: Db): DatedRow[] => db.all<Raw>("SELECT * FROM dated_items INDEXED BY dated_open WHERE state = 'open' ORDER BY act_at, id LIMIT ?", DATED_ACTIVE_MAX).map(toRow);
+export const datedWritten = (db: Db, keys: readonly string[]): Set<string> =>
+  new Set([...new Set(keys)].filter((key) => db.get<{ written: number }>("SELECT written FROM correspondents WHERE email = ?", key)?.written === 1));
 export const threadDated = (db: Db, threadId: number): DatedRow[] => db.all<Raw>("SELECT * FROM dated_items INDEXED BY dated_thread WHERE thread_id = ? AND state = 'open' ORDER BY act_at, id", threadId).map(toRow);
 export function getDated(db: Db, id: number): DatedRow | null {
   const r = db.get<Raw>("SELECT * FROM dated_items WHERE id = ?", id);
