@@ -1,5 +1,5 @@
 import { AiError, DATED_PROMPT_VERSION, DATED_TEXT_CHARS, costAt, datedBudget, fitDates, priceOf, type AiTasks, type DatedResult } from "@terno/ai";
-import { addressKey, DATED_ITEMS_MAX, DATED_KINDS, DATED_OPEN_SHOWN, followupDue, validFollowupDate, type FollowupRow, DATED_SCAN_DAYS, DATED_SCAN_MAX, datedOver, datedTiming, dayEnd, hasTimeCue, normalizeText, withoutQuotes, type AiErrorKind, type DatedKind, type DatedRow } from "@terno/core";
+import { addressKey, DATED_ITEMS_MAX, DATED_KINDS, DATED_OPEN_SHOWN, followupDue, validFollowupDate, type FollowupRow, DATED_SCAN_DAYS, DATED_SCAN_MAX, datedOver, datedTiming, dayEnd, hasTimeCue, laterBefore, normalizeText, withoutQuotes, type AiErrorKind, type DatedKind, type DatedRow } from "@terno/core";
 import { captureError } from "@terno/core/diag";
 import { RpcError, type AppSettings } from "@terno/core/rpc";
 import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
@@ -453,6 +453,12 @@ export class DatedWorker {
   async act(id: number, revision: number, action: "done" | "dismiss" | "later", until?: number): Promise<{ undoId: string | null; row: DatedRow | null }> {
     const now = this.host.now();
     if (action === "later" && (until === undefined || until <= now)) throw new RpcError("BAD_REQUEST", L("errors.dated.later"));
+    // the third panel round: the menus' and the picker's own rule (a timed item still ahead, before its moment; a Plan, its end)
+    if (action === "later") {
+      const row = await this.host.store.dated.get(id);
+      const limit = row ? laterBefore(row, now) : null;
+      if (limit !== null && until! >= limit) throw new RpcError("BAD_REQUEST", L("errors.dated.laterLate"));
+    }
     const patch: Parameters<MailStore["dated"]["update"]>[2] = action === "later" ? { deferredUntil: until! } : { state: action === "done" ? "done" : "dismissed", closedReason: "user", closedAt: now };
     const before = await this.host.store.dated.update(id, revision, patch);
     if (!before) throw new RpcError("STALE", L("errors.dated.changed"));

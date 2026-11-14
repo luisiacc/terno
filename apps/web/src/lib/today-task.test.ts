@@ -100,6 +100,27 @@ describe("Done means gone (plan 204, after the second panel round)", () => {
     expect(getApp().selectedId).toBe(3);
   });
 
+  it("the third panel round: Later from the conversation's line takes the row out at once, its moment sent; Undo brings it back selected; a failure brings it back", async () => {
+    const sent: unknown[] = [];
+    const act = fake.handlers["dated.act"]!;
+    fake.handlers["dated.act"] = async (p) => (sent.push(p), act(p));
+    await actOnThreadItem(2, item(2), "later", 3e12);
+    expect(sent).toEqual([{ id: 20, revision: 1, action: "later", until: 3e12 }]);
+    expect(shown()).toEqual([1, 3]);
+    expect(getApp().selectedId).toBe(3);
+    await vi.waitFor(() => expect(useSnack.getState().current?.message).toBe("Moved to later"));
+    await undo();
+    expect(shown()).toEqual([1, 2, 3]);
+    expect(getApp().selectedId).toBe(2);
+    fake.handlers["dated.act"] = async () => {
+      throw new Error("That’s too late for it. Choose an earlier time.");
+    };
+    await actOnThreadItem(2, item(2), "later", 3e12);
+    await vi.waitFor(() => expect(shown()).toEqual([1, 2, 3]));
+    expect(getApp().selectedId).toBe(2);
+    expect(useSnack.getState().current?.message).toBe("That’s too late for it. Choose an earlier time.");
+  });
+
   it("the conversation's promise controls: the row leaves for the promise it stands for, not for another (Codex code review)", async () => {
     promised.set(4, 400);
     await reloadList();

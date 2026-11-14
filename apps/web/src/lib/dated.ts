@@ -1,4 +1,4 @@
-import { datedGroup, localDay, planEnd, remindPresets, type DatedKind, type RemindPreset, type TodayWhy } from "@terno/core";
+import { datedGroup, defaultRemindAt, laterBefore, localDay, promiseLaterFrom, remindPresets, type DatedKind, type DatedRow, type RemindPreset, type TodayWhy } from "@terno/core";
 import { getLocale, t } from "@terno/i18n";
 import { useEffect, useState } from "react";
 import { usd } from "~/lib/ai";
@@ -86,12 +86,12 @@ export const promiseLine = (o: { text: string; dueAt?: number; dated: boolean },
 /**
  * Plan 204 (after the panel): what a Today row's Done, Not a task, Later and D act on: its dated item, or the promise of
  * yours it shows (`why.promise`, exactly: never the thread's most urgent). `when` is the right column's due day, `due`
- * the same in words for a screen reader (that column is hidden from it; after the second panel round); `end`, a Plan's
- * end, the last moment Later may choose.
+ * the same in words for a screen reader (that column is hidden from it; after the second panel round); `dueAt`, what
+ * Later's window is read from (`laterWindow`); a promise's `dated`, whether it names a day.
  */
 export type TodayTask =
-  | { kind: "dated"; item: DatedRef; when: string | null; due: string | null; end: number | null }
-  | { kind: "promise"; id: number; revision: number; when: string | null; due: string | null };
+  | { kind: "dated"; item: DatedRef; when: string | null; due: string | null; dueAt: number }
+  | { kind: "promise"; id: number; revision: number; when: string | null; due: string | null; dated?: boolean };
 // a nudge (no reply to your mail) acts as a promise does: through follow-ups' act on the row it shows (Codex code review)
 
 /** A Today row's task, from what the backend said of it: a dated item, a promise or a nudge; a waiting row or a reminder has none. */
@@ -102,19 +102,56 @@ export function taskOf(why: TodayWhy, now = Date.now()): TodayTask | null {
     // a Missed item says its day; one still ahead, its time today
     const timed = item.timed && !why.missed;
     const when = item.dated ? dueShort(timed ? dueAt : (localDay(item.dueDay)?.getTime() ?? dueAt), timed, now) : null;
-    return { kind: "dated", item, when, due: datedWhen({ ...item, dueAt }, why.missed === true, now), end: datedGroup(item.kind) === "plans" ? planEnd({ dueDay: item.dueDay, dueAt, timed: item.timed }) : null };
+    return { kind: "dated", item, when, due: datedWhen({ ...item, dueAt }, why.missed === true, now), dueAt };
   }
   if ((why.kind === "promise" || why.kind === "nudge") && why.promise) {
     const dated = why.kind === "promise" && why.promise.dated === true && why.dueAt !== undefined;
-    return { kind: "promise", id: why.promise.id, revision: why.promise.revision, when: dated ? dueShort(why.dueAt!, false, now) : null, due: dated ? promiseWhen({ dueAt: why.dueAt, dated }, why.missed === true, now) : null };
+    return { kind: "promise", id: why.promise.id, revision: why.promise.revision, when: dated ? dueShort(why.dueAt!, false, now) : null, due: dated ? promiseWhen({ dueAt: why.dueAt, dated }, why.missed === true, now) : null, dated };
   }
   return null;
 }
 
-/** Plan 204 (after the panel, fix 10): Later's choices now, the reminder's presets; on a Plan, only those before it ends. */
-export function laterChoices(task: TodayTask, now = Date.now()): RemindPreset[] {
-  const presets = remindPresets(new Date(now), "always");
-  return task.kind === "dated" && task.end !== null ? presets.filter((p) => p.at < task.end!) : presets;
+/**
+ * Where Later may go now (the third panel round): at or after `from` (a dated promise of yours: another day), before
+ * `before` (a timed item still ahead: its own moment, `limit` "due" or "starts"; a Plan: its end, "ends"). One rule for
+ * the row's menu, the conversation's line, the picker and the backend's check (`laterBefore`, `promiseLaterFrom`).
+ */
+export interface LaterWindow {
+  from: number | null;
+  before: number | null;
+  limit: "due" | "starts" | "ends" | null;
+}
+
+/** A dated item's window: a Missed one, or one whose moment has passed, may go anywhere ahead. */
+export function itemLaterWindow(item: Pick<DatedRow, "kind" | "dueDay" | "dueAt" | "timed">, now = Date.now()): LaterWindow {
+  const before = laterBefore(item, now);
+  const limit = before === null ? null : item.timed && item.dueAt > now ? (datedGroup(item.kind) === "plans" ? "starts" : "due") : "ends";
+  return { from: null, before, limit };
+}
+
+export function laterWindow(task: TodayTask, now = Date.now()): LaterWindow {
+  if (task.kind === "dated") return itemLaterWindow({ ...task.item, dueAt: task.dueAt }, now);
+  return { from: promiseLaterFrom({ dated: task.dated === true }, now), before: null, limit: null };
+}
+
+/** Plan 204 (after the panel, fix 10; the third panel round): Later's choices now, the reminder's presets in its window. */
+export function laterPresets(w: LaterWindow, now = Date.now()): RemindPreset[] {
+  return remindPresets(new Date(now), "always").filter((p) => (w.from === null || p.at >= w.from) && (w.before === null || p.at < w.before));
+}
+
+export const laterChoices = (task: TodayTask, now = Date.now()): RemindPreset[] => laterPresets(laterWindow(task, now), now);
+
+/** Why the picker's moment can't be set: too early for a dated promise, or too late for the item ("before it's due"). */
+export const laterNote = (w: LaterWindow): { early: string; late: string } => ({ early: t("dated.laterNextDay"), late: t(w.limit === "due" ? "dated.laterBeforeDue" : w.limit === "starts" ? "dated.laterBeforeStart" : "dated.laterPastEnd") });
+
+const HOUR = 3_600_000;
+
+/** Where the picker starts: the reminder picker's (tomorrow at 9), or, when that's past the window's end, an hour before it. */
+export function laterStart(w: LaterWindow, now = Date.now()): number {
+  const start = defaultRemindAt(new Date(now));
+  if (w.before === null || start < w.before) return start;
+  const minute = 60_000;
+  return Math.ceil(Math.max(now + 15 * minute, w.before - HOUR) / minute) * minute;
 }
 
 const SAID = { done: "dated.snack.done", dismiss: "dated.snack.dismissed", later: "dated.snack.later" } as const;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { isAcknowledgment, looksLikeAcknowledgment } from "./today";
-import { ANSWERED_KINDS, askEnd, datedGroup, datedOver, datedPlace, datedTiming, hasTimeCue, nextTodayChange, planEnd, promiseOver, promisePlace, type DatedKind, type DatedRow } from "./dated";
+import { ANSWERED_KINDS, askEnd, datedGroup, datedOver, datedPlace, datedTiming, hasTimeCue, laterBefore, nextTodayChange, planEnd, promiseLaterFrom, promiseOver, promisePlace, type DatedKind, type DatedRow } from "./dated";
 import { WAITING_WINDOW_MS } from "./people";
 
 const at = (y: number, m: number, d: number, h = 0, min = 0) => new Date(y, m - 1, d, h, min).getTime();
@@ -130,6 +130,24 @@ describe("where a promise of yours sits (plan 204 §1, the third panel round)", 
   it("the clock wakes as its day starts and ends, and as an undated one comes due", () => {
     expect(nextTodayChange([], [{ ...promise, state: "open" }], at(2026, 11, 11, 15))).toBe(at(2026, 11, 12));
     expect(nextTodayChange([], [{ ...promise, dated: false, state: "open" }], at(2026, 11, 12, 8))).toBe(at(2026, 11, 12, 9));
+  });
+});
+
+describe("Later's bounds (the third panel round)", () => {
+  it("a timed item still ahead: before its moment; a Plan: before its end; a Missed one or a passed moment: anywhere", () => {
+    const payroll = item("pay", "2026-11-13", "13:00");
+    expect(laterBefore(payroll, at(2026, 11, 13, 10))).toBe(at(2026, 11, 13, 13));
+    expect(laterBefore(payroll, at(2026, 11, 13, 14))).toBeNull();
+    expect(laterBefore(payroll, at(2026, 11, 14, 10))).toBeNull();
+    expect(laterBefore(item("pay", "2026-11-13"), at(2026, 11, 13, 10))).toBeNull();
+    const flight = item("event", "2026-11-19", "07:40");
+    expect(laterBefore(flight, at(2026, 11, 18, 10))).toBe(at(2026, 11, 19, 7, 40));
+    expect(laterBefore(flight, at(2026, 11, 19, 8))).toBe(at(2026, 11, 19, 9, 40));
+    expect(laterBefore(item("delivery", "2026-11-19"), at(2026, 11, 19, 8))).toBe(at(2026, 11, 20));
+  });
+  it("a dated promise of yours: another day; an undated one or a nudge, any moment", () => {
+    expect(promiseLaterFrom({ dated: true }, at(2026, 11, 12, 10, 30))).toBe(at(2026, 11, 13));
+    expect(promiseLaterFrom({ dated: false }, at(2026, 11, 12, 10, 30))).toBeNull();
   });
 });
 

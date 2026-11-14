@@ -810,10 +810,12 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       await expect.poll(async () => (await server.backend.store.dated.active()).some((r) => r.text === "Electricity bill")).toBe(false);
       await undo();
 
-      // Later ▸ Pick a date…: the reminder's own date and time; a Plan's only before it ends
+      // Later ▸ Pick a date…: the reminder's own date and time; a timed Plan's only before it starts (the third panel
+      // round: tomorrow at 9:00 isn't for a 7:40 AM flight)
       await row(page, "Flight to Madrid").click({ button: "right" });
       await page.getByTestId("menu-dated-later").click();
-      await expect(page.getByTestId("menu-dated-later-tomorrow")).toBeVisible();
+      await expect(page.getByTestId("menu-dated-later-laterToday")).toBeVisible();
+      await expect(page.getByTestId("menu-dated-later-tomorrow")).toHaveCount(0);
       await expect(page.getByTestId("menu-dated-later-nextWeek")).toHaveCount(0);
       await page.keyboard.press("Escape");
       if (await page.getByTestId("menu-dated-done").isVisible()) await page.keyboard.press("Escape");
@@ -880,7 +882,7 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       await page.keyboard.press("Escape");
     });
 
-    await scenario("the reader's line: on the AI card's surface, with its Done and Not a task", async () => {
+    await scenario("the reader's line: on the AI card's surface, with its Done, Later and Not a task", async () => {
       await row(page, "Electricity bill").click();
       const line = page.getByTestId("thread-dated");
       await expect(line).toBeVisible();
@@ -904,6 +906,59 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
         await page.emulateMedia({ colorScheme: "light" });
       }
       expect((await new AxeBuilder({ page }).include("[data-testid=thread-dated]").analyze()).violations).toEqual([]);
+      // the third panel round: Later beside Done and Not a task, on their line, with the row's presets and a day of your own
+      const later = line.getByTestId("thread-dated-later");
+      await expect(later).toHaveAccessibleName("Later: Electricity bill");
+      const box = async (id: string) => line.getByTestId(id).evaluate((el) => { const r = el.getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom) }; });
+      expect(await box("thread-dated-later")).toEqual(await box("thread-dated-done"));
+      expect(await box("thread-dated-later")).toEqual(await box("thread-dated-dismiss"));
+      // keyboard: Tab from Done reaches it, Enter opens it
+      await line.getByTestId("thread-dated-done").focus();
+      await page.keyboard.press("Tab");
+      await expect(later).toBeFocused();
+      await page.keyboard.press("Enter");
+      const menu = page.getByTestId("thread-dated-later-menu");
+      await expect(menu).toBeVisible();
+      await expect(menu.getByRole("menuitem")).toHaveText([/^Later today/, /^Tomorrow/, /^This weekend/, /^Next week/, "Pick a date…"]);
+      if (SHOTS) {
+        for (const mode of ["light", "dark"] as const) {
+          await page.emulateMedia({ colorScheme: mode });
+          await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-dated-reader-later-${mode}.png` });
+        }
+        await page.emulateMedia({ colorScheme: "light" });
+      }
+      expect((await new AxeBuilder({ page }).include("[data-testid=thread-dated-later-menu]").analyze()).violations).toEqual([]);
+      // Escape gives the keys back to Later, as the follow-up's Later
+      await page.keyboard.press("Escape");
+      await expect(menu).toHaveCount(0);
+      await expect(later).toBeFocused();
+      // Tomorrow: the row leaves Today as from its own menu, and z brings it back, open with its line
+      await later.click();
+      await page.getByTestId("thread-dated-later-tomorrow").click();
+      await expect(row(page, "Electricity bill")).toHaveCount(0);
+      await expect(page.locator("[data-testid=snack]")).toContainText("Moved to later");
+      await expect.poll(async () => (await server.backend.store.dated.active()).find((r) => r.text === "Electricity bill")?.deferredUntil ?? null).not.toBeNull();
+      await focusList(page);
+      await page.keyboard.press("z");
+      await expect(page.locator("[data-testid=thread-row][data-cursor]")).toContainText("Electricity bill");
+      await expect(line.getByTestId("thread-dated-text")).toHaveText("Due Saturday · Electricity bill");
+      await expect.poll(async () => (await server.backend.store.dated.active()).find((r) => r.text === "Electricity bill")?.deferredUntil).toBeNull();
+      // Pick a date…: the reminder's own fields, in a popover by Later
+      await later.click();
+      await page.getByTestId("thread-dated-later-pick").click();
+      const custom = page.getByTestId("thread-dated-later-custom");
+      await expect(custom).toBeVisible();
+      await expect(custom.getByTestId("thread-dated-later-date")).toBeVisible();
+      if (SHOTS) {
+        for (const mode of ["light", "dark"] as const) {
+          await page.emulateMedia({ colorScheme: mode });
+          await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-dated-reader-pick-${mode}.png` });
+        }
+        await page.emulateMedia({ colorScheme: "light" });
+      }
+      await page.keyboard.press("Escape");
+      await expect(custom).toHaveCount(0);
+      await expect(later).toBeFocused();
       // Done here: the row leaves Today at once (not held in place: the user finished it)
       await line.getByTestId("thread-dated-done").click();
       await expect(row(page, "Electricity bill")).toHaveCount(0);

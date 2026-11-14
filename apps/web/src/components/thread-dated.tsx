@@ -1,14 +1,19 @@
 import { askEnd, datedGroup, datedPlace, dayEnd, planEnd, type DatedRow, type ThreadDetail } from "@terno/core";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuShortcut, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
+import { Popover, PopoverContent } from "@terno/ui/components/popover";
+import { CalendarClock, ChevronDown } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { aiAllowed } from "~/lib/ai";
-import { datedLine } from "~/lib/dated";
+import { datedLine, itemLaterWindow, laterNote, laterPresets, laterStart } from "~/lib/dated";
+import { presetLabel, presetWhen } from "~/lib/reminders";
 import { actOnThreadItem } from "~/lib/today-task";
 import { client } from "~/rpc/connection";
 import { useApp } from "~/state/app";
 import { AI_CARD, AI_INSET, AI_TITLE } from "./ai-card";
+import { WhenForm } from "./when-fields";
 
 /** The reader shows this many of a conversation's dates, soonest first. */
 const SHOWN = 3;
@@ -27,10 +32,72 @@ function current(r: DatedRow, now: number): { missed: boolean } | null {
 }
 
 /**
+ * The third panel round (change 6): Later on the conversation's line, as the row's menu offers it: the presets in Later's
+ * window (a timed item still ahead, only what's before its moment; a Plan, before its end; a Missed one, every preset)
+ * and a moment of your own. It goes through the row's flow (`actOnThreadItem`): the Today row leaves at once, Undo is
+ * exact, a failure brings it back.
+ */
+function ItemLater({ threadId, row }: { threadId: number; row: DatedRow }) {
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const [picking, setPicking] = useState(false);
+  const now = Date.now();
+  const span = itemLaterWindow(row, now);
+  const presets = laterPresets(span, now);
+  const back = () => triggerRef.current?.focus({ preventScroll: true });
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger render={<Button ref={triggerRef} variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" data-testid="thread-dated-later" aria-label={t("dated.laterItem", { text: row.text })} />}>
+          {t("dated.later")}
+          <ChevronDown aria-hidden />
+        </DropdownMenuTrigger>
+        {/* as wide as what it holds, each moment in the shortcut's place, as the follow-up's Later */}
+        <DropdownMenuContent align="end" className="w-max" data-testid="thread-dated-later-menu">
+          {presets.map((p) => (
+            <DropdownMenuItem key={p.id} data-testid={`thread-dated-later-${p.id}`} onClick={() => void actOnThreadItem(threadId, row, "later", p.at)}>
+              <span className="whitespace-nowrap">{presetLabel(p.id)}</span>
+              <DropdownMenuShortcut className="tracking-normal whitespace-nowrap tabular-nums">{presetWhen(p, now)}</DropdownMenuShortcut>
+            </DropdownMenuItem>
+          ))}
+          {presets.length > 0 && <DropdownMenuSeparator />}
+          <DropdownMenuItem data-testid="thread-dated-later-pick" onClick={() => setPicking(true)}>
+            <CalendarClock aria-hidden />
+            <span className="whitespace-nowrap">{t("dated.pickDate")}</span>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <Popover
+        open={picking}
+        onOpenChange={(open) => {
+          setPicking(open);
+          if (!open) back();
+        }}
+      >
+        <PopoverContent anchor={triggerRef} align="end" className="w-80" data-testid="thread-dated-later-custom" aria-label={t("dated.later")}>
+          <WhenForm
+            start={laterStart(span, now)}
+            before={span.before}
+            from={span.from}
+            notes={laterNote(span)}
+            testPrefix="thread-dated-later"
+            submit={t("dated.laterSet")}
+            onSet={(at) => {
+              setPicking(false);
+              back();
+              void actOnThreadItem(threadId, row, "later", at);
+            }}
+          />
+        </PopoverContent>
+      </Popover>
+    </>
+  );
+}
+
+/**
  * Plan 204 §5: the conversation's open dates, a quiet line each on the AI card's surface at its top ("Due Friday · Pay the
- * electricity bill", Done and Not a task), so a bill can be finished where it's read; an ask is its words alone ("Answer
- * Mariana about a rebranding quote"), and a reply on the thread answers it. Only while dates are read; never in Trash or
- * Spam; read again when Today changes (Done here, there, or a new message settling it).
+ * electricity bill", Done, Later and Not a task), so a bill can be finished where it's read; an ask is its words alone
+ * ("Answer Mariana about a rebranding quote"), and a reply on the thread answers it. Only while dates are read; never in
+ * Trash or Spam; read again when Today changes (Done here, there, or a new message settling it).
  */
 export default function ThreadDated({ detail }: { detail: ThreadDetail }) {
   const on = useApp((s) => aiAllowed(s) && s.settings?.dated?.enabled === true);
@@ -64,11 +131,13 @@ export default function ThreadDated({ detail }: { detail: ThreadDetail }) {
           return (
             <li key={r.id} data-testid="thread-dated-item" data-kind={r.kind} className="flex min-h-11 items-center gap-3 text-sm">
               <span data-testid="thread-dated-text" className={cn(AI_TITLE, "min-w-0 flex-1 wrap-anywhere tabular")}>{line}</span>
-              {/* after the panel: Not a task beside Done, quieter (Done is what's usually meant) */}
+              {/* after the panel: Not a task beside Done, quieter (Done is what's usually meant); the third panel round:
+                  Later between them, as quiet */}
               <span className="flex shrink-0 items-center gap-1.5">
                 <Button variant="outline" size="sm" className="text-foreground" data-testid="thread-dated-done" aria-label={t("dated.doneItem", { text: r.text })} onClick={() => void actOnThreadItem(threadId, r, "done")}>
                   {t("dated.done")}
                 </Button>
+                <ItemLater threadId={threadId} row={r} />
                 <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" data-testid="thread-dated-dismiss" aria-label={t("dated.notTaskItem", { text: r.text })} onClick={() => void actOnThreadItem(threadId, r, "dismiss")}>
                   {t("dated.notTask")}
                 </Button>

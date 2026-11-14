@@ -8,6 +8,7 @@ vi.mock("~/rpc/connection", () => ({ client: { call: vi.fn(async () => ({})), on
 const { digestPick, flattenToday, installToday, keepDigestPick, useToday } = await import("./today");
 installToday();
 const { setApp } = await import("./app");
+const { laterWindow } = await import("~/lib/dated");
 
 const ai = { provider: "ollama", model: "m", local: true, needsKey: false, keys: {} };
 
@@ -280,16 +281,18 @@ describe("plan 204: Missed, Deadlines, Plans, Needs you, Reminders and Coming up
     flattenToday(full(), []);
     const tasks = useToday.getState().tasks;
     // Missed says its day; a deadline tomorrow, "Tomorrow"; an alert that named none, nothing (the received date stays)
-    expect(tasks.get(1)).toMatchObject({ kind: "dated", when: "Tue", end: null });
+    expect(tasks.get(1)).toMatchObject({ kind: "dated", when: "Tue" });
+    expect(laterWindow(tasks.get(1)!)).toEqual({ from: null, before: null, limit: null });
     expect(tasks.get(3)).toMatchObject({ when: "Tomorrow" });
     expect(tasks.get(5)).toMatchObject({ when: null });
-    // a Plan: its time tomorrow, and Later only before it ends
-    expect(tasks.get(6)).toMatchObject({ when: "Tomorrow", end: at(13, 7, 40) + 2 * 3_600_000 });
-    expect(tasks.get(7)).toMatchObject({ kind: "dated", end: new Date(2026, 10, 13).getTime() });
+    // a Plan: its time tomorrow, and Later only before it starts (the third panel round), or an untimed one before it ends
+    expect(tasks.get(6)).toMatchObject({ when: "Tomorrow" });
+    expect(laterWindow(tasks.get(6)!)).toEqual({ from: null, before: at(13, 7, 40), limit: "starts" });
+    expect(laterWindow(tasks.get(7)!)).toEqual({ from: null, before: new Date(2026, 10, 13).getTime(), limit: "ends" });
     flattenToday(list({ deadlines: [dated(1, "pay", "Wire payroll", 12, { timed: true, h: 13 })], needsYou: [{ thread: thread(3), why: { kind: "promise", text: "send the agenda", dueAt: at(12, 18), promise: { id: 31, revision: 2, dated: true } } } as never] }), []);
     expect(useToday.getState().tasks.get(1)).toMatchObject({ when: "1:00 PM" });
     // a promise row acts on the promise it shows, exactly
-    expect(useToday.getState().tasks.get(3)).toEqual({ kind: "promise", id: 31, revision: 2, when: "Today", due: "Due today" });
+    expect(useToday.getState().tasks.get(3)).toEqual({ kind: "promise", id: 31, revision: 2, when: "Today", due: "Due today", dated: true });
   });
 
   it("further days: a weekday within six, else the date", () => {

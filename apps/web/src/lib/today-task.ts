@@ -24,12 +24,12 @@ export function actOnTodayRow(threadId: number, task: TodayTask, action: TaskAct
 }
 
 /**
- * The conversation's line acts on its own item; when that item is the one its Today row stands for, the row leaves as
- * it would from the row's own Done.
+ * The conversation's line acts on its own item (Done, Not a task, and Later to a moment); when that item is the one its
+ * Today row stands for, the row leaves as it would from the row's own act, with its Undo and a failure's way back.
  */
-export function actOnThreadItem(threadId: number, item: Pick<DatedRef, "id" | "revision">, action: "done" | "dismiss"): Promise<void> {
+export function actOnThreadItem(threadId: number, item: Pick<DatedRef, "id" | "revision">, action: TaskAction, at?: number): Promise<void> {
   const task = useToday.getState().tasks.get(threadId);
-  return actOnDated(item, action, undefined, task?.kind === "dated" && task.item.id === item.id ? leaving(threadId) : undefined);
+  return actOnDated(item, action, at, task?.kind === "dated" && task.item.id === item.id ? leaving(threadId) : undefined);
 }
 
 /**

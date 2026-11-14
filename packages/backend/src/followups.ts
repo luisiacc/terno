@@ -1,5 +1,5 @@
 import { AiError, FOLLOWUP_ANSWERING_CHARS, FOLLOWUP_OPEN_MAX, FOLLOWUP_OWN_CHARS, FOLLOWUP_PROMPT_VERSION, fitSentMail, followupBudget, costAt, priceOf, type AiTasks, type SentMailResult } from "@terno/ai";
-import { automatedLevel, followupDue, normalizeText, readCorpus, SCAN_DAYS, SCAN_MESSAGES_MAX, SCAN_PROMISE_OVERDUE_MS, SCAN_WAIT_STALE_MS, validFollowupDate, withoutQuotes, followupNotice, type AiErrorKind, type FollowupRow, type FollowupsSnapshot, type MailNotice, type ThreadSummary } from "@terno/core";
+import { automatedLevel, followupDue, normalizeText, promiseLaterFrom, readCorpus, SCAN_DAYS, SCAN_MESSAGES_MAX, SCAN_PROMISE_OVERDUE_MS, SCAN_WAIT_STALE_MS, validFollowupDate, withoutQuotes, followupNotice, type AiErrorKind, type FollowupRow, type FollowupsSnapshot, type MailNotice, type ThreadSummary } from "@terno/core";
 import { captureError } from "@terno/core/diag";
 import { RpcError, type AppSettings } from "@terno/core/rpc";
 import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
@@ -478,6 +478,12 @@ export class FollowupWorker {
   /** Done, Not a promise / Dismiss, and Later: one journal entry on the row (revision 6). */
   async act(id: number, revision: number, action: "done" | "dismiss" | "later", dueAt?: number): Promise<{ undoId: string | null; row: FollowupRow | null }> {
     const now = this.host.now();
+    // plan 204, the third panel round: Today places a dated promise by its day, so its Later is another day
+    if (action === "later") {
+      const row = await this.host.store.followups.get(id);
+      const from = row?.kind === "promise" ? promiseLaterFrom(row, now) : null;
+      if (from !== null && (dueAt ?? now) < from) throw new RpcError("BAD_REQUEST", L("errors.followups.laterDay"));
+    }
     const patch: Parameters<MailStore["followups"]["update"]>[2] =
       action === "later" ? { state: "open", inboxState: "none", dueAt: dueAt ?? now } : { state: action === "done" ? "done" : "dismissed", inboxState: "none", closedReason: "user", closedAt: now };
     const before = await this.host.store.followups.update(id, revision, patch);
