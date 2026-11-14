@@ -82,8 +82,8 @@ function askAllowed(quote: string, said: string, o: { sender?: { person: boolean
 /**
  * §3's local checks, before anything's stored: the quote is the mail's (its text or subject), the kind is one of ours, a
  * day parses and is worth keeping (`datedTiming`), at most `DATED_ITEMS_MAX`, one per kind, day and time; an ask only from
- * a person to the reader (`askAllowed`), and one with a day is the request it is (`respond`); a settlement names an item it
- * was shown and quotes the mail. Pure.
+ * a person to the reader (`askAllowed`), and one with a day is the request it is (`respond`); a settlement names
+ * an item it was shown and quotes the mail; a move gives a new day or, for a timed item, a new moment. Pure.
  */
 export function checkDates(result: { items: readonly (Omit<DatedResult["items"][number], "kind"> & { kind: string })[]; settled: DatedResult["settled"]; moved?: DatedResult["moved"] }, input: { text: string; subject: string; arrivedAt: number; open: ReadonlyMap<string, DatedRow>; promises?: ReadonlyMap<string, Pick<FollowupRow, "id" | "revision">>; fromScan: boolean; now: number; sender?: { person: boolean }; reader?: { name: string; addressed: "to" | "cc" | "none" } }): { rows: DatedWrite[]; settled: { id: number; revision: number }[]; moved: { id: number; dueDay: string; dueAt: number; timed: boolean; actAt: number }[]; movedPromises: { id: number; revision: number; dueAt: number }[] } {
   const said = `${norm(input.subject)}\n${norm(input.text)}`;
@@ -111,7 +111,10 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     const row = input.open.get(m.label);
     if (!row || row.kind === "ask" || settledIds.has(row.id) || !quoted(m.evidence)) return [];
     const timing = datedTiming({ kind: row.kind, due: m.due, time: m.time, arrivedAt: input.arrivedAt });
-    return timing && timing.dueDay !== row.dueDay ? [{ id: row.id, kind: row.kind, dueDay: timing.dueDay, dueAt: timing.dueAt, timed: timing.timed, actAt: timing.actAt }] : [];
+    // the fourth panel round (revision 5): a new moment on the same day moves it too ("the game is moved earlier to 8:00");
+    // the same day with no time keeps the item's own
+    const changed = timing && (timing.dueDay !== row.dueDay || (timing.timed && timing.dueAt !== row.dueAt));
+    return changed ? [{ id: row.id, kind: row.kind, dueDay: timing.dueDay, dueAt: timing.dueAt, timed: timing.timed, actAt: timing.actAt }] : [];
   });
   const rows: DatedWrite[] = [];
   // a moved item keeps its id: the same kind on its new day isn't added again (Codex review of the fixes)

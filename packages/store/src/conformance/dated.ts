@@ -393,6 +393,20 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
         expect(await store.dated.update(row!.id, row!.revision, { state: "dismissed", closedReason: "expired", closedAt: NOW }, { dueDay: "2026-12-04", dueAt: NOW + 21 * DAY })).not.toBeNull();
       });
 
+      it("the fourth panel round: a move to a new moment on the same day keeps the item and its Later; what was decided at the old moment doesn't apply", async () => {
+        const { store, got, item, finish } = await setup();
+        const a = await got();
+        await finish(a.id, a.thread, { rows: [item({ kind: "event", dueAt: NOW + 7 * DAY + 2 * 3_600_000, timed: true })] });
+        const [row] = await store.dated.active();
+        const laterUndo = (await store.dated.update(row!.id, row!.revision, { deferredUntil: NOW + 2 * DAY }))!;
+        const later = await got({ inReplyTo: a.m.rfcMessageId, references: [a.m.rfcMessageId!], date: NOW - 1000 });
+        await finish(later.id, later.thread, { moved: [{ id: row!.id, dueDay: "2026-11-20", dueAt: NOW + 7 * DAY, timed: true, actAt: NOW + 6 * DAY }] });
+        expect(await store.dated.get(row!.id)).toMatchObject({ dueDay: "2026-11-20", dueAt: NOW + 7 * DAY, timed: true, deferredUntil: NOW + 2 * DAY, revision: row!.revision + 1 });
+        expect(await store.dated.update(row!.id, row!.revision + 1, { state: "dismissed", closedReason: "expired", closedAt: NOW }, { dueDay: "2026-11-20", dueAt: row!.dueAt })).toBeNull();
+        expect(await store.dated.restore([{ snapshot: laterUndo, expectRevision: laterUndo.revision + 1 }])).toBe(1);
+        expect(await store.dated.get(row!.id)).toMatchObject({ dueAt: NOW + 7 * DAY, deferredUntil: null, state: "open" });
+      });
+
       it("a change applies only at the revision seen; Undo restores exactly, unless something changed it since", async () => {
         const { store, got, item, finish } = await setup();
         const a = await got();
