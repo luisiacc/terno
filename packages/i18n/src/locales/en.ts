@@ -2807,6 +2807,8 @@ It contains none of your mail, contacts, settings or keys.
   "errors.ai.askRefused": "The model declined to answer this.",
   "errors.ai.askTooSmall": "This question is too long for this model. Shorten it, or choose a model with more room.",
   "errors.followups.changed": "This follow-up changed in the meantime. Look at it again.",
+  "errors.dated.changed": "This item changed in the meantime. Look at it again.",
+  "errors.dated.later": "Choose a time after now.",
   "errors.ai.askGone": "This question was deleted.",
   "errors.ai.askTooLong": "This conversation is long enough. Start a new question.",
   "ask.placeholder": "Ask your mail…",

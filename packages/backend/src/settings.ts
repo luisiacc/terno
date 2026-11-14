@@ -9,7 +9,7 @@ import {
 } from "@terno/ai";
 import { AI_PROVIDER_IDS, canonicalThemeId, COMPATIBLE_PRESETS, DEFAULT_DESIGN, DESIGN_IDS, DESIGN_PALETTE, DEV_AI_PROVIDERS, fitsMode, isDesignId, JEV_DEFAULT_MODEL, SUMMARY_DEFAULT_MODEL, textRef, type DevAiKeys, themeMode, upgradeThemeTokens, type AiTaskName, type AiTaskTarget, type CustomTheme, type TextRef, type ThemeMode } from "@terno/core";
 import type { AiProfile, AiSettings, AppSettings, SettingsPatch } from "@terno/core/rpc";
-import { DEFAULT_AGENTS, DEFAULT_TODAY, FAVORITES_MAX, NUDGE_DEFAULT, UNDO_SEND_DEFAULT, type AgentAccess, type AgentsSetting, type FavoriteFolder } from "@terno/core";
+import { DEFAULT_AGENTS, DEFAULT_DATED, DEFAULT_TODAY, FAVORITES_MAX, NUDGE_DEFAULT, UNDO_SEND_DEFAULT, type AgentAccess, type AgentsSetting, type FavoriteFolder } from "@terno/core";
 import { isLanguageSetting, L, type Localized } from "@terno/i18n";
 import type { MailStore } from "@terno/store";
 import { unreadableSecrets } from "./keychain";
@@ -180,6 +180,8 @@ export const DEFAULT_SETTINGS: General = {
   replies: { enabled: false },
   today: DEFAULT_TODAY,
   followups: { enabled: false, enabledAt: null, nudgeAfterDays: NUDGE_DEFAULT, scanAnswered: false },
+  // plan 204: off by default (the owner, 2026-11-13); Today's header offers it
+  dated: DEFAULT_DATED,
   errorReports: "ask",
   // new installs follow the system: English unless it's a language Terno ships
   language: "system",
@@ -615,7 +617,7 @@ export async function updateSettings(store: SettingsStore, patch: SettingsPatch,
 }
 
 function patchedSettings(s: StoredSettings, patch: SettingsPatch, hasLegacyKey: boolean, now: number): StoredSettings {
-  const { ai: aiPatch, summaries: summariesPatch, ask: askPatch, followups: followupsPatch, replies: repliesPatch, today: todayPatch, agents: agentsPatch, ...rest } = patch;
+  const { ai: aiPatch, summaries: summariesPatch, ask: askPatch, followups: followupsPatch, dated: datedPatch, replies: repliesPatch, today: todayPatch, agents: agentsPatch, ...rest } = patch;
   const general: Partial<General> = Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined));
   if (summariesPatch) {
     // the moment it went on: mail from before it is never sent (off and on again starts over)
@@ -628,6 +630,12 @@ function patchedSettings(s: StoredSettings, patch: SettingsPatch, hasLegacyKey: 
     const enabled = followupsPatch.enabled ?? was.enabled;
     // the moment it went on: what was sent before it is read only with a yes
     general.followups = { ...was, ...followupsPatch, enabled, enabledAt: !enabled ? null : was.enabled ? was.enabledAt : now };
+  }
+  if (datedPatch) {
+    const was = { ...DEFAULT_DATED, ...s.dated };
+    const enabled = datedPatch.enabled ?? was.enabled;
+    // the moment it went on: mail from before it is read only with the 14-day check's yes
+    general.dated = { ...was, ...datedPatch, enabled, enabledAt: !enabled ? null : was.enabled ? was.enabledAt : now };
   }
   if (todayPatch) general.today = { ...DEFAULT_TODAY, ...s.today, ...todayPatch };
   // plan 183: merged onto what is stored now, so a window's older copy can't bring a sibling back

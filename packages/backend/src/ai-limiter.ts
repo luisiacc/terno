@@ -7,13 +7,13 @@ import type { MailStore } from "@terno/store";
 /** A background task's share of the provider, across all of them. */
 const BACKGROUND_PER_MINUTE = 20;
 /** What one day may spend by itself, per task: nobody asked for each of these requests. */
-export const DAILY_REQUESTS: Readonly<Record<BackgroundTask, number>> = { summary: 300, categorize: 200, voice: 60, followup: 200, reply: 100, digest: 10 };
+export const DAILY_REQUESTS: Readonly<Record<BackgroundTask, number>> = { summary: 300, categorize: 200, voice: 60, followup: 200, reply: 100, digest: 10, dated: 300 };
 /** A second ceiling, in input tokens, because a request's size varies. */
-export const DAILY_INPUT_TOKENS: Readonly<Record<BackgroundTask, number>> = { summary: 1_500_000, categorize: 400_000, voice: 400_000, followup: 400_000, reply: 800_000, digest: 60_000 };
+export const DAILY_INPUT_TOKENS: Readonly<Record<BackgroundTask, number>> = { summary: 1_500_000, categorize: 400_000, voice: 400_000, followup: 400_000, reply: 800_000, digest: 60_000, dated: 600_000 };
 /** How much background work may wait for a permit, so a burst can't pile up in memory. */
 const MAX_WAITING = 64;
 
-export type BackgroundTask = "summary" | "categorize" | "voice" | "followup" | "reply" | "digest";
+export type BackgroundTask = "summary" | "categorize" | "voice" | "followup" | "reply" | "digest" | "dated";
 export type LimiterTask = AiTaskName | "filter" | "voice" | "intent" | "reply";
 
 interface Tally {
@@ -179,7 +179,7 @@ export class AiLimiter {
     }
     const release = o.local ? await this.takeLocal(o.foreground || o.ahead === true, req.signal) : () => {};
     try {
-      if (o.ahead || o.task === "digest") await this.host.beforeAhead?.(o.task);
+      if (o.ahead || o.task === "digest" || o.task === "dated") await this.host.beforeAhead?.(o.task);
       if (req.signal.aborted) throw new AiError(L("errors.ai.cancelled"), "cancelled");
       const book = await this.bookFor(o.foreground);
       if (!o.foreground) this.checkCeilings(book!, task, worst, await this.host.monthlyLimitUsd());
