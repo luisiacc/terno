@@ -17,4 +17,5 @@ export * from "./actions-perf";
 export * from "./replies-perf";
 export * from "./today-perf";
 export * from "./followups-perf";
+export * from "./dated-perf";
 export * from "./smart-categorization-perf";

@@ -18,7 +18,7 @@ import "fake-indexeddb/auto";
 import { REMOVABLE_BUCKETS, storageCutoff } from "@terno/core";
 import { generateDataset } from "@terno/mock-data";
 import type { Platform } from "@terno/store";
-import { measureToday, measureReplies, measureActionWalk, measureFollowups, measureAsk, measureAiSummaries, measureCategoryEvidence, measureForwards, measureWriting, type WorkloadMailbox } from "@terno/store/conformance";
+import { measureToday, measureReplies, measureActionWalk, measureFollowups, measureDated, measureAsk, measureAiSummaries, measureCategoryEvidence, measureForwards, measureWriting, type WorkloadMailbox } from "@terno/store/conformance";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { machineBusy, sampleAsync, settle, watchLoop } from "../../db/src/test/timing";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -175,6 +175,8 @@ describe("the workloads the stores share", () => {
   it("plan 133: drafting's reads hold, with thousands of look-alikes in the way", () => measureWriting(mailbox()), 600_000);
   it("plan 134: categories: what the AI is told and an AI filing hold", () => measureCategoryEvidence(mailbox()), 600_000);
   it("plan 116: forwards: a live slice's planning and the queue's reads hold", () => measureForwards(mailbox()), 600_000);
+  // last: it leaves 1,000 open dated items and their (archived) mail behind
+  it("plan 204: dated items' reads hold at the bound", () => measureDated(mailbox()), 600_000);
 });
 
 describe("plan 69: the storage report and removal", () => {
