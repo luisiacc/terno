@@ -136,9 +136,13 @@ describe("the local checks (plan 204 §3)", () => {
       // a word of the name inside another word isn't the name
       expect(checkDates({ items: [named], settled: [] }, from(true, "cc", "Lu")).rows).toEqual([]);
     });
-    it("with a day it's a request with a day (`respond`), whoever it's from; one ask a message, none beside a request with a day", () => {
+    it("with a day it's a request with a day (`respond`) when it's an ask at all; one ask a message, none beside a request with a day", () => {
       const dated = { ...ask, due: "2026-11-13" };
-      expect(checkDates({ items: [dated], settled: [] }, from(false, "cc")).rows[0]).toMatchObject({ kind: "respond", dueDay: "2026-11-13", dated: true });
+      expect(checkDates({ items: [dated], settled: [] }, from(true, "to")).rows[0]).toMatchObject({ kind: "respond", dueDay: "2026-11-13", dated: true });
+      // revision 2 of the fourth round: checked as an ask first, an automated sender's or a third person's is dropped
+      expect(checkDates({ items: [dated], settled: [] }, from(false, "to")).rows).toEqual([]);
+      expect(checkDates({ items: [dated], settled: [] }, { ...from(true, "cc"), text: "Hi team, can you send me a quote for the rebranding?" }).rows).toEqual([]);
+      expect(checkDates({ items: [dated], settled: [] }, { ...base, text }).rows).toEqual([]);
       expect(checkDates({ items: [ask, { ...ask, text: "Answer Mariana about the dates" }], settled: [] }, from(true, "to")).rows).toHaveLength(1);
       // the eval: a model gave the request with a day and the same as an ask beside it
       const respond = { ...ask, kind: "respond", text: "Send Mariana a quote", due: "2026-11-13" };

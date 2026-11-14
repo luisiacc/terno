@@ -82,7 +82,7 @@ function askAllowed(quote: string, said: string, o: { sender?: { person: boolean
 /**
  * §3's local checks, before anything's stored: the quote is the mail's (its text or subject), the kind is one of ours, a
  * day parses and is worth keeping (`datedTiming`), at most `DATED_ITEMS_MAX`, one per kind, day and time; an ask only from
- * a person to the reader (`askAllowed`), and one with a day is the request it is (`respond`); a settlement names
+ * a person to the reader (`askAllowed`), and one with a day, so allowed, is the request it is (`respond`); a settlement names
  * an item it was shown and quotes the mail; a move gives a new day or, for a timed item, a new moment. Pure.
  */
 export function checkDates(result: { items: readonly (Omit<DatedResult["items"][number], "kind"> & { kind: string })[]; settled: DatedResult["settled"]; moved?: DatedResult["moved"] }, input: { text: string; subject: string; arrivedAt: number; open: ReadonlyMap<string, DatedRow>; promises?: ReadonlyMap<string, Pick<FollowupRow, "id" | "revision">>; fromScan: boolean; now: number; sender?: { person: boolean }; reader?: { name: string; addressed: "to" | "cc" | "none" } }): { rows: DatedWrite[]; settled: { id: number; revision: number }[]; moved: { id: number; dueDay: string; dueAt: number; timed: boolean; actAt: number }[]; movedPromises: { id: number; revision: number; dueAt: number }[] } {
@@ -119,14 +119,17 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
   const rows: DatedWrite[] = [];
   // a moved item keeps its id: the same kind on its new day isn't added again (Codex review of the fixes)
   const seen = new Set<string>(moved.map((m) => itemKey(m.kind, m)));
+  // revision 2 of the fourth round: an ask with a day is an ask first (a person, to the reader), then the request it is
+  const datedAsk = (i: { kind: string; due: string | null; quote: string }) => i.kind === "ask" && !!i.due && askAllowed(i.quote, said, input);
   // the eval: a person's request with a day is the `respond`, never also an undated ask beside it
-  const requested = [...answered, ...result.items].some((i) => (i.kind === "respond" || (i.kind === "ask" && i.due)) && quoted(i.quote));
+  const requested = [...answered, ...result.items].some((i) => (i.kind === "respond" || datedAsk(i)) && quoted(i.quote));
   // the fourth panel read: a person who says no answer is needed ("No need to reply now") asks nothing
   const noReply = saysNoReplyNeeded(input.text);
   for (const item of [...answered, ...result.items]) {
     if (rows.length >= DATED_ITEMS_MAX) break;
     if (!KINDS.has(item.kind) || !item.text.trim() || !quoted(item.quote)) continue;
-    // an ask is never a dated kind's substitute: one with a day is a request with a day
+    // an ask is never a dated kind's substitute: one with a day is a request with a day, if it's an ask at all
+    if (item.kind === "ask" && item.due && !datedAsk(item)) continue;
     const kind = (item.kind === "ask" && item.due ? "respond" : item.kind) as DatedKind;
     if (kind === "ask" && (requested || noReply || !askAllowed(item.quote, said, input))) continue;
     const timing = datedTiming({ kind, due: item.due, time: item.time, arrivedAt: input.arrivedAt });
