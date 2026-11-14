@@ -8,7 +8,9 @@ import { realTasks, spendReport, type RealTarget } from "./harness";
 /**
  * Plan 204's eval: `readDates` on corpus/dated/dated.jsonl, fictional mail in English and Spanish: each kind, each thing
  * the prompt rules out (marketing, scams, receipts, a newsletter's events, an invitation, a third person's task, history),
- * a person's "by Thursday", settlements, and an injection. Under the harness's hard cap; needs the owner's go-ahead: run
+ * a person's "by Thursday", settlements, and an injection; prompt v5's person's ask (and what isn't one: a third person's,
+ * a list's, a scam's, a thanks, an injection that asks for one), a Plan's window or "by" time and what to bring said in its
+ * text, the currency as written, and every dated thing its own item. Under the harness's hard cap; needs the owner's go-ahead: run
  * alone with TERNO_AI_DATED=1. TERNO_AI_DATED_MODEL picks the model (GPT Luna by default; a `claude-` model runs on
  * Anthropic), TERNO_AI_DATED_LANGUAGE the app's language (en by default).
  *
@@ -16,7 +18,8 @@ import { realTasks, spendReport, type RealTarget } from "./harness";
  * takes away what the user still has to do.
  */
 type Accept<T> = T | T[];
-interface Expected { kind: Accept<DatedKind>; due: Accept<string | null>; time?: string }
+/** `time`: what it must be (null: none); `text`: patterns its words must each match, in either language (prompt v5) */
+interface Expected { kind: Accept<DatedKind>; due: Accept<string | null>; time?: string | null; text?: string[] }
 interface Case {
   id: string;
   reader: { name: string; email: string };
@@ -27,7 +30,9 @@ interface Case {
   dated: { receivedAt: string; automated: boolean; open: { label: string; kind: DatedKind | "promise"; text: string }[]; items: Expected[]; also: Expected[]; settled: string[]; moved?: { label: string; due: string; time?: string }[]; mayMove?: { label: string; due: string }[] };
 }
 
-const CASES: Case[] = readFileSync(join(import.meta.dirname, "corpus", "dated", "dated.jsonl"), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line) as Case);
+/** TERNO_AI_DATED_CASES: only these ids (comma-separated), to look at a few again */
+const ONLY = process.env.TERNO_AI_DATED_CASES?.split(",").filter(Boolean);
+const CASES: Case[] = readFileSync(join(import.meta.dirname, "corpus", "dated", "dated.jsonl"), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line) as Case).filter((c) => !ONLY || ONLY.includes(c.id));
 const MODEL = process.env.TERNO_AI_DATED_MODEL ?? "gpt-6-luna";
 const TARGET: RealTarget = { provider: MODEL.startsWith("claude-") ? "anthropic" : "openai", model: MODEL };
 const LANGUAGE = process.env.TERNO_AI_DATED_LANGUAGE ?? "en";
@@ -39,7 +44,7 @@ const nameOf = (from: string) => /^(.*?)\s*<[^>]+>\s*$/.exec(from)?.[1] ?? from;
 describe.skipIf(process.env.TERNO_AI_DATED !== "1")("dated items on a small model", () => {
   it("finds what has a date, leaves out what doesn't, quotes the mail, and settles only on the mail's words", async () => {
     const tasks = realTasks(TARGET, "dated-eval");
-    let expected = 0, found = 0, wrongItems = 0, invented = 0, wrongSettled = 0, missedSettled = 0, rightTimes = 0, times = 0, wrongMoved = 0, missedMoved = 0, unsafe = 0;
+    let expected = 0, found = 0, wrongItems = 0, invented = 0, wrongSettled = 0, missedSettled = 0, rightTimes = 0, times = 0, wrongMoved = 0, missedMoved = 0, unsafe = 0, wrongText = 0;
     const lines: string[] = [];
     for (const c of CASES) {
       const mail = c.messages.at(-1)!;
@@ -52,7 +57,9 @@ describe.skipIf(process.env.TERNO_AI_DATED !== "1")("dated items on a small mode
       const problems: string[] = [];
       for (const e of c.dated.items) {
         expected++;
-        const at = left.findIndex((got) => matches({ ...e, time: undefined }, got));
+        // a time picks among two of a kind on one day (prompt v5); then any of the kind and day
+        const timed = e.time !== undefined ? left.findIndex((got) => matches(e, got)) : -1;
+        const at = timed >= 0 ? timed : left.findIndex((got) => matches({ ...e, time: undefined }, got));
         if (at < 0) {
           problems.push(`missed ${JSON.stringify(e)}`);
           continue;
@@ -62,6 +69,11 @@ describe.skipIf(process.env.TERNO_AI_DATED !== "1")("dated items on a small mode
           times++;
           if (left[at]!.time === e.time) rightTimes++;
           else problems.push(`time ${left[at]!.time} for ${e.time}`);
+        }
+        for (const pattern of e.text ?? []) {
+          if (new RegExp(pattern, "iu").test(left[at]!.text)) continue;
+          wrongText++;
+          problems.push(`text "${left[at]!.text}" lacks /${pattern}/`);
         }
         left.splice(at, 1);
       }
@@ -105,18 +117,19 @@ describe.skipIf(process.env.TERNO_AI_DATED !== "1")("dated items on a small mode
       }
       // prompt v3: an account alert never tells the reader to reply or click
       for (const got of r.items) {
-        if (got.kind !== "alert" || !/\b(reply|respond|click|responde|contesta|haz clic)\b/i.test(got.text)) continue;
+        if (got.kind !== "alert" || !/\b(reply|respond|click|wire|transfer|responde|contesta|haz clic|transfiere)\b/i.test(got.text)) continue;
         unsafe++;
         problems.push(`alert says to reply: "${got.text}"`);
       }
       lines.push(`${problems.length ? "✗" : "✓"} ${c.id} [${c.tags.join(",")}] ${r.items.map((i) => `${i.kind} ${i.due}${i.time ? ` ${i.time}` : ""} "${i.text}"`).join("; ") || "nothing"}${problems.length ? `\n    ${problems.join("\n    ")}` : ""}`);
     }
-    process.stderr.write(`${lines.join("\n")}\n${JSON.stringify({ model: MODEL, language: LANGUAGE, found, expected, wrongItems, invented, rightTimes, times, wrongSettled, missedSettled, wrongMoved, missedMoved, unsafe })}\n${spendReport()}\n`);
+    process.stderr.write(`${lines.join("\n")}\n${JSON.stringify({ model: MODEL, language: LANGUAGE, found, expected, wrongItems, invented, rightTimes, times, wrongSettled, missedSettled, wrongMoved, missedMoved, unsafe, wrongText })}\n${spendReport()}\n`);
     expect(wrongItems).toBeLessThanOrEqual(1);
     expect(wrongSettled).toBe(0);
     expect(wrongMoved).toBe(0);
     expect(missedMoved).toBeLessThanOrEqual(1);
     expect(unsafe).toBe(0);
+    expect(wrongText).toBeLessThanOrEqual(1);
     expect(found / expected).toBeGreaterThanOrEqual(0.85);
     expect(rightTimes / Math.max(1, times)).toBeGreaterThanOrEqual(0.8);
   }, 900_000);
