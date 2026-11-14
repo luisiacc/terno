@@ -27,7 +27,7 @@ import { rowLine } from "~/lib/followups";
 import { useFollowups } from "~/state/followups";
 import { onlyOnTop } from "~/state/list";
 import { useExcerpts } from "~/state/excerpts";
-import type { TodayTask } from "~/lib/dated";
+import type { TodayRowTask } from "~/lib/dated";
 
 export interface ThreadRowProps {
   thread: ThreadSummary;
@@ -61,9 +61,11 @@ export interface ThreadRowProps {
    * plan 204 (after the panel): a Today row with a dated item or a promise of yours: the task leads (its line, which is the
    * row's snippet, in the row's ink where the subject is, the subject quiet in the preview's place) and its due day is the
    * row's date. Heights don't change. After the second panel round the line is the task alone where the date says when;
-   * `due` says it in words to a screen reader, after the task (the date is hidden from it).
+   * `due` says it in words to a screen reader, after the task (the date is hidden from it). The fourth panel round: a
+   * promise with no day leaves the date empty (`noDay`), and a promise's row names and pictures its `person`, not the
+   * conversation's last sender (you); the thread's own data is unchanged.
    */
-  task?: Pick<TodayTask, "when" | "due">;
+  task?: TodayRowTask;
 }
 
 /**
@@ -308,9 +310,11 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
   // the open and checked rows keep the selection's. An unread line's search marks take its weight (never lighter than it;
   // every design's unread weight is at least its semibold), a read line's stay semibold, a step above it
   const tone = thread.unread ? "[&_mark]:[font-weight:inherit]" : !opened && !checked && "text-(--row-read-ink)";
+  // the fourth panel round (revision 9): a promise's row is about the person you made it to
+  const who = task?.person;
   const from = (
     <span data-testid="row-from" className={cn("min-w-0 truncate", thread.unread ? "type-row-from-strong" : "type-row-from", tone)}>
-      <Marked text={thread.fromName} needles={match?.from} />
+      <Marked text={who?.name ?? thread.fromName} needles={match?.from} />
     </span>
   );
   // plan 188: after the sender, what the dot, the star and the pin show, said (never last, after the whole preview); the
@@ -404,6 +408,9 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
     task?.when ? (
       // plan 204 (after the panel): when it's due, not when it came; the line says it in words (so it isn't said twice)
       <span aria-hidden data-testid="row-date" data-task className={cn("text-xs tabular", thread.unread ? "font-medium text-foreground" : "text-muted-foreground")}>{task.when}</span>
+    ) : task?.noDay ? (
+      // the fourth panel round: a promise that names no day says none (the mail's date would read as its day)
+      <span aria-hidden data-testid="row-date" data-task data-no-day />
     ) : reminderTop && reminder?.due ? (
       // plan 87: on the Inbox's top, the time it came back, in the attention ink (the mail's own date would read as out of order)
       <span data-testid="row-date" data-reminder className={cn("flex items-center gap-1 text-xs font-medium tabular", opened || checked ? "" : "text-unread-ink")}>
@@ -488,11 +495,11 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
       onClick={toggles ? (e) => { e.stopPropagation(); toggleRow(thread.id); } : undefined}
     >
       <SenderAvatar
-        name={thread.fromName}
-        email={thread.fromEmail}
+        name={who?.name ?? thread.fromName}
+        email={who ? who.email : thread.fromEmail}
         // plan 22: never an icon for spam, whatever the view or the search (nor until the backend says a row stopped being spam)
-        icon={icons && !thread.inSpam && !thread.hasSpam && !thread.spamHeld}
-        person={thread.person === true}
+        icon={icons && (!who || who.email !== "") && !thread.inSpam && !thread.hasSpam && !thread.spamHeld}
+        person={who ? true : thread.person === true}
         className={cn(
           compact
             ? "size-(--avatar-row-compact) text-[length:calc(var(--avatar-row-compact)*0.42)]"

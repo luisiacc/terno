@@ -203,17 +203,17 @@ export function promiseOver(r: PromiseFacts, now: number): boolean {
   return now >= dayAt(new Date(startOfDay(r.dueAt)), 1 + MISSED_DAYS, 0);
 }
 
-export type PromisePlace = "missed" | "deadlines" | "comingUp" | "hidden";
+export type PromisePlace = "missed" | "deadlines" | "needsYou" | "comingUp" | "hidden";
 
 /**
  * The third panel round (revision 5): where a promise of yours sits, by the calendar day of its `dueAt`. One rule for the
  * list, the count and the clock. Missed: dated, its day over, for `MISSED_DAYS`. Deadlines: its day is today, whatever
- * the hour (a 9:00 promise is today's at 8:00), or undated and due. Coming up: a dated one within its two weeks. A nudge
- * isn't a promise: it's Needs you's, by `dueAt`.
+ * the hour (a 9:00 promise is today's at 8:00). Needs you: undated and due (the fourth panel round: it has no day to sit
+ * under). Coming up: a dated one within its two weeks. A nudge isn't a promise: it's Needs you's, by `dueAt`.
  */
 export function promisePlace(r: PromiseFacts, now: number): PromisePlace {
   if (r.kind !== "promise" || (r.state !== "open" && r.state !== "due")) return "hidden";
-  if (!r.dated) return promiseDue(r, now) ? "deadlines" : "hidden";
+  if (!r.dated) return promiseDue(r, now) ? "needsYou" : "hidden";
   const starts = startOfDay(r.dueAt);
   const ends = dayAt(new Date(starts), 1, 0);
   if (now >= ends) return promiseOver(r, now) ? "hidden" : "missed";
@@ -304,8 +304,12 @@ export function nextTodayChange(items: readonly Pick<DatedRow, "kind" | "state" 
   return Number.isFinite(next) ? next : null;
 }
 
-/** Today's groups in order: a thread sits in the first that claims it (§1). Coming up takes only what's left. */
-export const TODAY_GROUP_ORDER = ["missed", "deadlines", "plans", "needsYou", "reminders", "comingUp"] as const;
+/**
+ * Today's sections in the order they're shown. The fourth panel round (revision 4): people before passive plans, so Needs
+ * you's heading is above Plans'; which group claims a thread is `places()`'s precedence, not this (a thread that's both a
+ * Plan and waiting stays the Plan). Coming up takes only what's left.
+ */
+export const TODAY_GROUP_ORDER = ["missed", "deadlines", "needsYou", "plans", "reminders", "comingUp"] as const;
 export type TodayGroupKind = (typeof TODAY_GROUP_ORDER)[number];
 /**
  * What "N need you" counts, the header's and the sidebar's (the third panel round, revision 3): what you owe or have

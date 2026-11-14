@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { isAcknowledgment, looksLikeAcknowledgment, saysNoReplyNeeded } from "./today";
-import { ANSWERED_KINDS, askEnd, datedGroup, datedOver, datedPlace, datedTiming, hasTimeCue, laterBefore, nextTodayChange, planEnd, promiseLaterFrom, promiseOver, promisePlace, type DatedKind, type DatedRow } from "./dated";
+import { ANSWERED_KINDS, askEnd, datedGroup, datedOver, datedPlace, datedTiming, hasTimeCue, laterBefore, nextTodayChange, planEnd, promiseLaterFrom, promiseOver, promisePlace, TODAY_COUNTED, TODAY_GROUP_ORDER, type DatedKind, type DatedRow } from "./dated";
 import { WAITING_WINDOW_MS } from "./people";
 
 const at = (y: number, m: number, d: number, h = 0, min = 0) => new Date(y, m - 1, d, h, min).getTime();
@@ -122,11 +122,15 @@ describe("where a promise of yours sits (plan 204 §1, the third panel round)", 
     expect(promisePlace(open, at(2026, 11, 12, 0))).toBe("deadlines");
     expect(promisePlace(open, at(2026, 11, 11, 23, 59))).toBe("comingUp");
   });
-  it("undated: Deadlines once due, and never Missed", () => {
+  it("undated: Needs you's once due (it has no day to sit under), and never Missed (the fourth panel round)", () => {
     const undated = { kind: "promise", state: "open", dated: false, dueAt: at(2026, 11, 12, 9) };
     expect(promisePlace(undated, at(2026, 11, 12, 8))).toBe("hidden");
-    expect(promisePlace(undated, at(2026, 11, 12, 9))).toBe("deadlines");
-    expect(promisePlace({ ...undated, state: "due" }, at(2026, 12, 30))).toBe("deadlines");
+    expect(promisePlace(undated, at(2026, 11, 12, 9))).toBe("needsYou");
+    expect(promisePlace({ ...undated, state: "due" }, at(2026, 12, 30))).toBe("needsYou");
+    expect(TODAY_COUNTED.has("needsYou")).toBe(true);
+  });
+  it("Needs you's heading is above Plans' (the fourth panel round, revision 4)", () => {
+    expect(TODAY_GROUP_ORDER).toEqual(["missed", "deadlines", "needsYou", "plans", "reminders", "comingUp"]);
   });
   it("the clock wakes as its day starts and ends, and as an undated one comes due", () => {
     expect(nextTodayChange([], [{ ...promise, state: "open" }], at(2026, 11, 11, 15))).toBe(at(2026, 11, 12));

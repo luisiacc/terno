@@ -87,12 +87,30 @@ export const promiseLine = (o: { text: string; dueAt?: number; dated: boolean },
  * Plan 204 (after the panel): what a Today row's Done, Not a task, Later and D act on: its dated item, or the promise of
  * yours it shows (`why.promise`, exactly: never the thread's most urgent). `when` is the right column's due day, `due`
  * the same in words for a screen reader (that column is hidden from it; after the second panel round); `dueAt`, what
- * Later's window is read from (`laterWindow`); a promise's `dated`, whether it names a day.
+ * Later's window is read from (`laterWindow`); a promise's `dated`, whether it names a day. The fourth panel round: a
+ * promise's `noDay` (one that names none: its row's date stays empty, never the mail's) and `person` (whom you made it
+ * to: the row's name and picture, the conversation's last sender being you).
  */
 export type TodayTask =
   | { kind: "dated"; item: DatedRef; when: string | null; due: string | null; dueAt: number }
-  | { kind: "promise"; id: number; revision: number; when: string | null; due: string | null; dated?: boolean };
+  | { kind: "promise"; id: number; revision: number; when: string | null; due: string | null; dated?: boolean; noDay?: boolean; person?: TaskPerson };
 // a nudge (no reply to your mail) acts as a promise does: through follow-ups' act on the row it shows (Codex code review)
+
+/** Who a promise or a nudge is with, as its row names and pictures them; no address, initials alone. */
+export interface TaskPerson {
+  name: string;
+  email: string;
+}
+
+/** What a Today row shows of its task: when (or explicitly no day), and whose it is. */
+export type TodayRowTask = { when: string | null; due: string | null; noDay?: boolean; person?: TaskPerson };
+
+/** The fourth panel round (revision 9): the person a promise or nudge is with; with no name, their address's local part. */
+function personOf(why: TodayWhy): TaskPerson | undefined {
+  const email = why.personEmail?.trim() ?? "";
+  const name = why.personName?.trim() || email.split("@")[0];
+  return name ? { name, email } : undefined;
+}
 
 /** A Today row's task, from what the backend said of it: a dated item, a promise or a nudge; a waiting row or a reminder has none. */
 export function taskOf(why: TodayWhy, now = Date.now()): TodayTask | null {
@@ -106,7 +124,18 @@ export function taskOf(why: TodayWhy, now = Date.now()): TodayTask | null {
   }
   if ((why.kind === "promise" || why.kind === "nudge") && why.promise) {
     const dated = why.kind === "promise" && why.promise.dated === true && why.dueAt !== undefined;
-    return { kind: "promise", id: why.promise.id, revision: why.promise.revision, when: dated ? dueShort(why.dueAt!, false, now) : null, due: dated ? promiseWhen({ dueAt: why.dueAt, dated }, why.missed === true, now) : null, dated };
+    const person = personOf(why);
+    return {
+      kind: "promise",
+      id: why.promise.id,
+      revision: why.promise.revision,
+      when: dated ? dueShort(why.dueAt!, false, now) : null,
+      due: dated ? promiseWhen({ dueAt: why.dueAt, dated }, why.missed === true, now) : null,
+      dated,
+      // a promise with no day says none (the fourth panel round): the mail's date beside it would read as one
+      ...(why.kind === "promise" && !dated ? { noDay: true } : {}),
+      ...(person ? { person } : {}),
+    };
   }
   return null;
 }

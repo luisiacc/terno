@@ -40,6 +40,8 @@ export interface TodayWhy {
   text?: string;
   dueAt?: number;
   personName?: string | null;
+  /** the fourth panel round (revision 9): a promise's or a nudge's person, whom its row names and pictures */
+  personEmail?: string | null;
   sentAt?: number;
   /** a waiting row: you've written in this conversation (else it's new, from someone you write to: `needsYou`'s two reasons) */
   wrote?: boolean;
@@ -59,7 +61,7 @@ export interface TodayItem {
 }
 
 /** Plan 204: every row that's for today, each thread once, in `TODAY_GROUP_ORDER`; Coming up last, and never counted. */
-export type TodaySection = { kind: "missed" | "deadlines" | "plans" | "needsYou" | "reminders" | "comingUp"; items: TodayItem[] };
+export type TodaySection = { kind: "missed" | "deadlines" | "needsYou" | "plans" | "reminders" | "comingUp"; items: TodayItem[] };
 
 export interface DigestItem {
   threadId: number;
