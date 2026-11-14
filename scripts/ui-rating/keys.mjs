@@ -31,6 +31,7 @@ export const PRO_ROUTING = {
   ask: "anthropic/claude-sonnet-5-5",
   askPlan: "anthropic/claude-haiku-5-5",
   followup: "openai/gpt-6-luna",
+  dated: "openai/gpt-6-luna",
   digest: "openai/gpt-6-luna",
   filter: "anthropic/claude-opus-5-5",
   intent: "openai/gpt-6-luna",

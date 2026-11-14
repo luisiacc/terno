@@ -2,6 +2,8 @@ import {
   ASK_CLAUDE_MODEL,
   ASK_PLAN_CLAUDE_MODEL,
   ASK_PLAN_OPENAI_MODEL,
+  DATED_CLAUDE_MODEL,
+  DATED_OPENAI_MODEL,
   DIGEST_CLAUDE_MODEL,
   DIGEST_OPENAI_MODEL,
   FILTER_CLAUDE_MODEL,
@@ -23,7 +25,7 @@ import type { AiSettings } from "./rpc/contract";
  * Plan 168: every job `AiService.forTask` runs. `voice`, `intent` and `reply` are drafting's; `askPlan` is Ask's planner
  * (and actions'); `replyCheck` is Reply ready's check.
  */
-export const AI_JOBS = ["summary", "writing", "voice", "intent", "reply", "replyCheck", "ask", "askPlan", "followup", "digest", "filter", "categorize"] as const;
+export const AI_JOBS = ["summary", "writing", "voice", "intent", "reply", "replyCheck", "ask", "askPlan", "followup", "dated", "digest", "filter", "categorize"] as const;
 export type AiJob = (typeof AI_JOBS)[number];
 
 export interface AiRoute {
@@ -47,6 +49,7 @@ const MODELS: Record<KeyedProvider, Record<AiJob, string>> = {
     ask: ASK_CLAUDE_MODEL,
     askPlan: ASK_PLAN_CLAUDE_MODEL,
     followup: FOLLOWUP_CLAUDE_MODEL,
+    dated: DATED_CLAUDE_MODEL,
     digest: DIGEST_CLAUDE_MODEL,
     filter: FILTER_CLAUDE_MODEL,
     categorize: FILTER_CLAUDE_MODEL,
@@ -61,6 +64,7 @@ const MODELS: Record<KeyedProvider, Record<AiJob, string>> = {
     ask: OPENAI_DEFAULT_MODEL,
     askPlan: ASK_PLAN_OPENAI_MODEL,
     followup: FOLLOWUP_OPENAI_MODEL,
+    dated: DATED_OPENAI_MODEL,
     digest: DIGEST_OPENAI_MODEL,
     filter: OPENAI_DEFAULT_MODEL,
     categorize: OPENAI_DEFAULT_MODEL,
@@ -68,11 +72,11 @@ const MODELS: Record<KeyedProvider, Record<AiJob, string>> = {
 };
 
 /**
- * The owner (plan 168): with both keys, Sonnet drafts and Luna does the small things: summaries, follow-ups, the digest,
- * Reply ready's check and reading a drafting instruction. Ask's planner isn't one: it never leaves the answer's provider
- * (plan 141 §6), so a question goes to one company. Filters and categories stay on Opus.
+ * The owner (plan 168): with both keys, Sonnet drafts and Luna does the small things: summaries, follow-ups, dated items
+ * (plan 204), the digest, Reply ready's check and reading a drafting instruction. Ask's planner isn't one: it never leaves
+ * the answer's provider (plan 141 §6), so a question goes to one company. Filters and categories stay on Opus.
  */
-const SMALL_JOBS: ReadonlySet<AiJob> = new Set(["summary", "followup", "digest", "replyCheck", "intent"]);
+const SMALL_JOBS: ReadonlySet<AiJob> = new Set(["summary", "followup", "dated", "digest", "replyCheck", "intent"]);
 
 /** A saved key that can be sent: readable, and for the endpoint it would go to. One that can't leaves the job to the other key. */
 const usable = (key: AiSettings["keys"][AiProviderId]): boolean => key?.hasKey === true && key.keyUnreadable !== true && key.keyConfirmed !== false;
