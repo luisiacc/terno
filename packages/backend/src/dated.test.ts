@@ -249,6 +249,20 @@ describe("the reader", () => {
     expect(await backend.store.dated.active()).toHaveLength(0);
   });
 
+  it("after the fourth panel round: a sender named like a security desk is never asked about, and keeps nothing", async () => {
+    const { backend, client, model, receive, read } = await setup();
+    model.answer = () => reply([{ kind: "alert", text: "Online banking access suspended", quote: "access temporarily suspended", due: null, time: null }]);
+    const thread = await receive({ from: { name: "Tri-River FCU", email: "security@tririver-fcu-alerts.com" }, subject: "Online banking access temporarily suspended", bodyText: "Your online banking access temporarily suspended. Verify by November 12." });
+    await read();
+    expect(model.requests).toHaveLength(0);
+    expect((await client.call("dated.ofThread", { threadId: thread })).rows).toEqual([]);
+    // the real bank's own mail is read
+    await receive({ from: { name: "Tri-River FCU", email: "alerts@tririverfcu.org" }, subject: "Online banking access temporarily suspended", bodyText: "Your online banking access temporarily suspended. Verify by November 12." });
+    await read();
+    expect(model.requests).toHaveLength(1);
+    expect(await backend.store.dated.active()).toHaveLength(1);
+  });
+
   it("Spam meanwhile stops the request as it leaves, and nothing is written", async () => {
     const { backend, model, receive, raw } = await setup();
     let release!: () => void;
