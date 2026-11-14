@@ -31,9 +31,11 @@ function CategoryDot({ color, className, ...props }: { color: CategoryColor } & 
 /**
  * An account's mark (plan 194, the owner's call): a small filled diamond, so an account never reads as a category's dot
  * where the two share a color. A 7 px square turned 45°: about the dot's area, so neither weighs more.
+ * Turned, its tips reach 7(√2−1)/2 ≈ 1.5 px past its box on every side; the margin gives that room back, so where
+ * it sits bare on a content line (the reader, Settings) its tip, not its box, meets the line, and the gap after it is the gap.
  */
 function AccountMark({ color, className, ...props }: { color: CategoryColor } & React.ComponentProps<"span">) {
-  return <span data-slot="account-mark" aria-hidden {...props} className={cn("inline-block size-1.75 shrink-0 rotate-45 rounded-[1px]", DOT[color] ?? DOT.slate, className)} />
+  return <span data-slot="account-mark" aria-hidden {...props} className={cn("m-[1.5px] inline-block size-1.75 shrink-0 rotate-45 rounded-[1px]", DOT[color] ?? DOT.slate, className)} />
 }
 
 /** Soft pill with a category name. */
