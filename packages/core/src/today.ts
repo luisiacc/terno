@@ -193,6 +193,13 @@ export function isAcknowledgment(text: string | null | undefined): boolean {
 export const looksLikeAcknowledgment = (snippet: string | null | undefined): boolean => !!snippet && snippet.length <= 200 && ACK.test(snippet.slice(0, 40));
 
 /** Plan 202: summaries say who has to act from this prompt version on; an older one can't say the reader has nothing to do. */
+/**
+ * Plan 204, the fourth panel read: a message that says the reader needn't answer or act ("No action needed!", "No need to
+ * reply now", "No hace falta que contestes") asks nothing of them: not an ask, and not Needs you's. Whole phrases only.
+ */
+const NO_REPLY = /\b(no (action|reply|response|answer) (is )?(needed|required|necessary)|no need to (reply|respond|answer|write back|get back to me|do anything)|nothing (is )?(needed|required) from you|you don'?t (need|have) to (reply|respond|answer|do anything)|no hace falta (que )?(respondas|contestes|responder|contestar|hacer nada)|no es necesario (que )?(respondas|contestes|responder|contestar)|no tienes que (responder|contestar|hacer nada)|sin necesidad de (responder|contestar)|no requiere (respuesta|acción))\b/iu;
+export const saysNoReplyNeeded = (text: string | null | undefined): boolean => !!text && NO_REPLY.test(text.slice(0, ACK_MAX_CHARS));
+
 export const SUMMARY_WHO_ACTS_SINCE = 7;
 
 /** An acceptance answers an invitation: there's nothing to answer back. Lowercase, as the stores compare them. */

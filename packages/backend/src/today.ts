@@ -565,23 +565,27 @@ export class TodayService {
     for (const m of [...ofPlace("missed"), ...promisesIn("missed")].sort((a, b) => b.at.dueAt - a.at.dueAt)) placed.push({ group: "missed", threadId: m.threadId, why: m.why });
     for (const d of [...ofPlace("deadlines"), ...promisesIn("deadlines")].sort((a, b) => byDay(a.at, b.at))) placed.push({ group: "deadlines", threadId: d.threadId, why: d.why });
     for (const p of ofPlace("plans").sort((a, b) => byDay(a.at, b.at))) placed.push({ group: "plans", threadId: p.threadId, why: p.why });
-    // Needs you: people waiting on an answer. A person's ask first, newest first, before what's waiting (so it's the
-    // row's line, and counted); then nudges (no reply to your mail) by when they came due
-    const asks = [...best.values()].filter((b) => b.place === "needsYou").sort((x, y) => y.row.arrivedAt - x.row.arrivedAt || y.row.id - x.row.id);
-    for (const b of asks) placed.push({ group: "needsYou", threadId: b.row.threadId, why: datedWhy(b.row, false) });
-    const nudges = active.filter((r) => r.kind === "awaiting" && (r.state === "due" || (r.state === "open" && r.dueAt <= now))).sort((a, b) => a.dueAt - b.dueAt);
-    for (const r of nudges) placed.push({ group: "needsYou", threadId: r.threadId, why: promiseWhy(r) });
-    // the count reads none of what follows: what's waiting is its own indexed count there, and Reminders and Coming up
-    // come after it, so they never take a waiting thread from it
-    if (o.count) return dedupe(placed);
-    // the third panel round (revision 4): a waiting conversation with an open promise of yours shows that promise, the one
-    // due soonest, carried so Done, Not a promise and Later act on exactly it; one put off with Later keeps it, at its new day
+    // the third panel round (revision 4): a conversation with an open promise of yours shows that promise, the one due
+    // soonest, carried so Done, Not a promise and Later act on exactly it; one put off with Later keeps it, at its new day
     const owed = new Map<number, FollowupRow>();
     for (const r of promises) {
       if (promiseOver(r, now)) continue;
       const was = owed.get(r.threadId);
       if (!was || r.dueAt < was.dueAt || (r.dueAt === was.dueAt && r.id < was.id)) owed.set(r.threadId, r);
     }
+    // Needs you: people waiting on an answer. A person's ask first, newest first, before what's waiting (so it's the
+    // row's line, and counted), unless you'd promised them something there (Codex code review: "could you send that
+    // report?" after you said you would is about your promise); then nudges (no reply to your mail) by when they came due
+    const asks = [...best.values()].filter((b) => b.place === "needsYou").sort((x, y) => y.row.arrivedAt - x.row.arrivedAt || y.row.id - x.row.id);
+    for (const b of asks) {
+      const promise = owed.get(b.row.threadId);
+      placed.push({ group: "needsYou", threadId: b.row.threadId, why: promise ? promiseWhy(promise) : datedWhy(b.row, false) });
+    }
+    const nudges = active.filter((r) => r.kind === "awaiting" && (r.state === "due" || (r.state === "open" && r.dueAt <= now))).sort((a, b) => a.dueAt - b.dueAt);
+    for (const r of nudges) placed.push({ group: "needsYou", threadId: r.threadId, why: promiseWhy(r) });
+    // the count reads none of what follows: what's waiting is its own indexed count there, and Reminders and Coming up
+    // come after it, so they never take a waiting thread from it
+    if (o.count) return dedupe(placed);
     // one bounded read of what's waiting (revision 12): `needsYou` over the newest `NEEDS_WALK`
     for (const w of await store.today.waitingPage({ now, after: null, limit: NEEDS_WALK })) {
       const promise = owed.get(w.id);

@@ -206,6 +206,46 @@ export function defineTodayConformance(fresh: () => Promise<MailStore>): void {
       expect(new Set(await store.today.waitingAmong(all, NOW))).toEqual(new Set([done.thread, answered.thread, open.thread]));
     });
 
+    it("Codex code review (round 4): a promise you've closed since their latest message, or a message saying no answer is needed, isn't waiting on you", async () => {
+      const { store } = await setup();
+      const DAY = 86_400_000;
+      const ingest = async (m: Partial<IncomingMessage>, liveSent = false) =>
+        (await store.sync.ingest([msg({ listId: null, isRead: false, to: [me], ...m, accountId: accountId_() })], { applyFilters: false, now: NOW, classifier: null, ...(liveSent ? { liveSent: { wanted: true } } : {}) })).inserted[0]!;
+      /** you wrote and promised (follow-ups read it: it's marked), they wrote back */
+      const owed = async (name: string, date: number, reply = "Any news on the report?") => {
+        const email = `${name.toLowerCase()}@people.test`;
+        const sent = await ingest({ date: date - 500, providerMsgId: `${name}-out`, providerThreadId: name, from: me, to: [{ name, email }], isSent: true, inInbox: false, isRead: true, subject: `About ${name}`, bodyText: "I'll send the report Friday." }, true);
+        await ingest({ date, providerMsgId: `${name}-in`, providerThreadId: name, from: { name, email }, subject: `Re: About ${name}`, inReplyTo: `${name}-out`, snippet: reply, bodyText: reply });
+        const thread = await threadOf(store, `${name}-in`);
+        await store.followups.finish({ messageId: sent, threadId: thread, fromScan: false, rows: [{ kind: "promise", item: 0, text: "send the report", quote: "I'll send the report", personName: name, personEmail: email, dueAt: NOW + DAY, dated: true }], kept: [], now: NOW, model: "m", provider: "p", promptVersion: 1, clearGeneration: store.followups.clearGeneration() });
+        const promise = (await store.followups.active()).find((r) => r.threadId === thread)!;
+        return { thread, promise };
+      };
+      const done = await owed("Ivy", NOW - 9000);
+      const dismissed = await owed("Jon", NOW - 8000);
+      const newer = await owed("Kim", NOW - 7000);
+      const open = await owed("Lou", NOW - 6000);
+      const fyi = await owed("Max", NOW - 5000, "Quick FYI: the promo code is live. No action needed! Max");
+      const all = [done.thread, dismissed.thread, newer.thread, open.thread, fyi.thread];
+      expect(new Set(await store.today.waitingAmong(all, NOW))).toEqual(new Set([done.thread, dismissed.thread, newer.thread, open.thread]));
+
+      const was = (await store.followups.update(done.promise.id, done.promise.revision, { state: "done", closedReason: "user", closedAt: NOW, inboxState: "none" }))!;
+      await store.followups.update(dismissed.promise.id, dismissed.promise.revision, { state: "dismissed", closedReason: "user", closedAt: NOW, inboxState: "none" });
+      await store.followups.update(newer.promise.id, newer.promise.revision, { state: "done", closedReason: "user", closedAt: NOW - 6500, inboxState: "none" });
+      // something newer from them after it closed: waiting again
+      await ingest({ date: NOW - 500, providerMsgId: "Kim-in-2", providerThreadId: "Kim", from: { name: "Kim", email: "kim@people.test" }, subject: "Re: About Kim", inReplyTo: "Kim-in", bodyText: "And the slides?" });
+      expect(new Set(await store.today.waitingAmong(all, NOW))).toEqual(new Set([newer.thread, open.thread]));
+      expect(await store.today.needsCount(NOW)).toBe(2);
+      // Undo: the promise as it was, and the conversation with it
+      expect(await store.followups.restore([{ snapshot: was, expectRevision: was.revision + 1 }])).toBe(1);
+      expect(new Set(await store.today.waitingAmong(all, NOW))).toEqual(new Set([done.thread, newer.thread, open.thread]));
+      // two promises there and one closed: the other is still owed, so it's still waiting on you
+      const deck = await ingest({ date: NOW - 6200, providerMsgId: "Lou-out-2", providerThreadId: "Lou", from: me, to: [{ name: "Lou", email: "lou@people.test" }], isSent: true, inInbox: false, isRead: true, subject: "Re: About Lou", bodyText: "And I'll send the deck." }, true);
+      await store.followups.finish({ messageId: deck, threadId: open.thread, fromScan: false, rows: [{ kind: "promise", item: 0, text: "send the deck", quote: "I'll send the deck", personName: "Lou", personEmail: "lou@people.test", dueAt: NOW + 2 * DAY, dated: true }], kept: [], now: NOW, model: "m", provider: "p", promptVersion: 1, clearGeneration: store.followups.clearGeneration() });
+      await store.followups.update(open.promise.id, open.promise.revision, { state: "done", closedReason: "user", closedAt: NOW, inboxState: "none" });
+      expect(await store.today.waitingAmong([open.thread], NOW)).toEqual([open.thread]);
+    });
+
     it("digestLive: only what's in the Inbox and unread", async () => {
       const { store, put } = await setup();
       const a = await put();

@@ -144,9 +144,20 @@ describe("the local checks (plan 204 §3)", () => {
       const respond = { ...ask, kind: "respond", text: "Send Mariana a quote", due: "2026-11-13" };
       expect(checkDates({ items: [respond, ask], settled: [] }, from(true, "to")).rows.map((r) => r.kind)).toEqual(["respond"]);
     });
-    it("an open ask isn't given a day by a later message", () => {
-      const open = new Map([["o1", { id: 4, revision: 0, kind: "ask", dueDay: "2026-11-09" } as DatedRow]]);
-      expect(checkDates({ items: [], settled: [], moved: [{ label: "o1", due: "2026-11-13", time: null, evidence: "can you send me a quote" }] }, { ...from(true, "to"), open }).moved).toEqual([]);
+    it("Codex code review (round 4): a later message's day makes an open ask the request it now is, a `respond` on that day", () => {
+      const open = new Map([["o1", { id: 4, revision: 2, kind: "ask", dueDay: "2026-11-09", text: "Answer Mariana about a rebranding quote" } as DatedRow]]);
+      const out = checkDates({ items: [], settled: [], moved: [{ label: "o1", due: "2026-11-13", time: null, evidence: "can you send me a quote" }] }, { ...from(true, "to"), open });
+      expect(out.moved).toEqual([]);
+      expect(out.settled).toEqual([{ id: 4, revision: 2 }]);
+      expect(out.rows).toEqual([expect.objectContaining({ kind: "respond", text: "Answer Mariana about a rebranding quote", quote: "can you send me a quote", dueDay: "2026-11-13", dated: true })]);
+      // and the words have to be the mail's
+      expect(checkDates({ items: [], settled: [], moved: [{ label: "o1", due: "2026-11-13", time: null, evidence: "by Friday please" }] }, { ...from(true, "to"), open }).rows).toEqual([]);
+    });
+    it("the fourth panel read: a mail that says no answer is needed asks nothing", () => {
+      const fyi = { ...from(true, "to"), text: "Drinks when you're back from Chicago? No need to reply now, I know you're slammed." };
+      const drinks = { ...ask, text: "Tell Maya about drinks", quote: "Drinks when you're back from Chicago" };
+      expect(checkDates({ items: [drinks], settled: [] }, fyi).rows).toEqual([]);
+      expect(checkDates({ items: [drinks], settled: [] }, { ...fyi, text: "Drinks when you're back from Chicago?" }).rows).toHaveLength(1);
     });
   });
   it("the 14-day check keeps nothing already over", () => {
@@ -652,6 +663,19 @@ describe("the third panel round", () => {
     // Done on the deck: the October update is the conversation's promise again, at its new day
     await client.call("followups.act", { id: second.why.promise!.id, revision: second.why.promise!.revision, action: "done" });
     expect((await row()).why).toMatchObject({ text: "send the October update", dueAt: at(2026, 11, 23, 9), promise: { id: first.why.promise!.id } });
+  });
+
+  it("Codex code review (round 4): an ask in a conversation where you'd promised them something shows your promise", async () => {
+    const { client, model, receive, read, raw, clock } = await setup();
+    await client.call("settings.update", { followups: { enabled: true } });
+    model.answer = () => reply([{ kind: "ask", text: "Send Elena the report", quote: "could you send that report", due: null, time: null }]);
+    const elena = await receive({ from: { name: "Elena", email: "elena@acme.test" }, subject: "Re: the report", bodyText: "Hi, could you send that report?" });
+    await read();
+    raw.run(...followup(elena, "send the report", at(2026, 11, 20, 9), { revision: 3 }));
+    clock.now = at(2026, 11, 14, 10);
+    const list = await client.call("today.list", { heldIds: [] });
+    expect(list.sections.map((x) => x.kind)).toEqual(["needsYou"]);
+    expect(list.sections[0]!.items[0]).toMatchObject({ thread: { id: elena }, why: { kind: "promise", text: "send the report", promise: { revision: 3 } } });
   });
 
   it("change 6: Later before a timed item's own moment while it's ahead, anywhere once Missed; a dated promise's Later is another day", async () => {

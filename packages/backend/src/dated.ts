@@ -1,5 +1,5 @@
 import { AiError, DATED_PROMPT_VERSION, DATED_TEXT_CHARS, costAt, datedBudget, fitDates, priceOf, type AiTasks, type DatedResult } from "@terno/ai";
-import { addressKey, DATED_ITEMS_MAX, DATED_KINDS, DATED_OPEN_SHOWN, followupDue, validFollowupDate, type FollowupRow, DATED_SCAN_DAYS, DATED_SCAN_MAX, datedOver, datedTiming, dayEnd, hasTimeCue, laterBefore, normalizeText, withoutQuotes, type AiErrorKind, type DatedKind, type DatedRow } from "@terno/core";
+import { addressKey, saysNoReplyNeeded, DATED_ITEMS_MAX, DATED_KINDS, DATED_OPEN_SHOWN, followupDue, validFollowupDate, type FollowupRow, DATED_SCAN_DAYS, DATED_SCAN_MAX, datedOver, datedTiming, dayEnd, hasTimeCue, laterBefore, normalizeText, withoutQuotes, type AiErrorKind, type DatedKind, type DatedRow } from "@terno/core";
 import { captureError } from "@terno/core/diag";
 import { RpcError, type AppSettings } from "@terno/core/rpc";
 import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
@@ -97,9 +97,19 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
   });
   // after the panel: a new day for an open item, quoted, from this message's own day; one it settles isn't moved
   const settledIds = new Set(settled.map((s) => s.id));
+  // Codex code review (round 4): a day for an open ask ("I need it by Friday") makes it the request it now is: the ask is
+  // settled and a `respond` with its words and that day is this message's
+  const answered: DatedResult["items"] = [];
+  for (const m of result.moved ?? []) {
+    const row = input.open.get(m.label);
+    if (!row || row.kind !== "ask" || settledIds.has(row.id) || !quoted(m.evidence)) continue;
+    settled.push({ id: row.id, revision: row.revision });
+    settledIds.add(row.id);
+    answered.push({ kind: "respond", text: row.text, quote: m.evidence, due: m.due, time: m.time });
+  }
   const moved = (result.moved ?? []).flatMap((m) => {
     const row = input.open.get(m.label);
-    if (!row || settledIds.has(row.id) || !quoted(m.evidence)) return [];
+    if (!row || row.kind === "ask" || settledIds.has(row.id) || !quoted(m.evidence)) return [];
     const timing = datedTiming({ kind: row.kind, due: m.due, time: m.time, arrivedAt: input.arrivedAt });
     return timing && timing.dueDay !== row.dueDay ? [{ id: row.id, kind: row.kind, dueDay: timing.dueDay, dueAt: timing.dueAt, timed: timing.timed, actAt: timing.actAt }] : [];
   });
@@ -107,13 +117,15 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
   // a moved item keeps its id: the same kind on its new day isn't added again (Codex review of the fixes)
   const seen = new Set<string>(moved.map((m) => itemKey(m.kind, m)));
   // the eval: a person's request with a day is the `respond`, never also an undated ask beside it
-  const requested = result.items.some((i) => (i.kind === "respond" || (i.kind === "ask" && i.due)) && quoted(i.quote));
-  for (const item of result.items) {
+  const requested = [...answered, ...result.items].some((i) => (i.kind === "respond" || (i.kind === "ask" && i.due)) && quoted(i.quote));
+  // the fourth panel read: a person who says no answer is needed ("No need to reply now") asks nothing
+  const noReply = saysNoReplyNeeded(input.text);
+  for (const item of [...answered, ...result.items]) {
     if (rows.length >= DATED_ITEMS_MAX) break;
     if (!KINDS.has(item.kind) || !item.text.trim() || !quoted(item.quote)) continue;
     // an ask is never a dated kind's substitute: one with a day is a request with a day
     const kind = (item.kind === "ask" && item.due ? "respond" : item.kind) as DatedKind;
-    if (kind === "ask" && (requested || !askAllowed(item.quote, said, input))) continue;
+    if (kind === "ask" && (requested || noReply || !askAllowed(item.quote, said, input))) continue;
     const timing = datedTiming({ kind, due: item.due, time: item.time, arrivedAt: input.arrivedAt });
     if (!timing) continue;
     // the 14-day check keeps nothing already over (§6)
