@@ -254,7 +254,8 @@ describe("plan 145 (owner's decisions 2): a newsletter the digest opened, taken 
     fake.handlers["today.list"] = async () => ({ sections: [{ kind: "needsYou", items: [waiting(1), waiting(2)] }], digest: digest(), held: [], now: 0 });
     const { useToday } = await import("~/state/today");
     setApp({ view: "all", today: true });
-    await vi.waitFor(() => expect(useList.getState().items.map((t) => t.id)).toEqual([1, 2]));
+    // plan 204 (after the panel, fix 11): the digest's entry is the list's last option again
+    await vi.waitFor(() => expect(useList.getState().items.map((t) => t.id)).toEqual([1, 2, 0]));
     setApp({ selectedId: NEWSLETTER });
     useToday.setState({ fromDigest: NEWSLETTER, pick: { day: "d", toggled: new Set(), scroll: 120, from: null }, digest: digest() });
   });
