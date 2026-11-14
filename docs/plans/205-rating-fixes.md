@@ -73,3 +73,13 @@ Eleven points; all taken. What changed:
 ## Revisions after the Codex code review
 
 One finding, fixed with a test that fails without the fix: at the tightest toolbar (no words, a ~421 px reader with a Gmail tab's conversation and Summarize), the chevron's kept room pushed Reply · Forward past the reading column. With no words, Reply is the plain 32 px square and the chevron goes (the menu it opens still names itself); `reader.spec` narrows the reader for real until no word fits and checks the row ends on the column's edge.
+
+## The comparison and round 3
+
+`/tmp/terno-scratch/compare/out/`: six cards, each one region of the same capture at round 1 (`002cdccdf`), round 2 (`4655c1034`) and now (`023f5f908`), arrows on what changed. Built by `cards.py` from the rounds' own shots, so screens, sizes and modes match.
+
+What the "now" capture doesn't show: at 1100×700 with a long draft open, the sender's header above it is still under the context line. The opening scroll can't clear it without pushing the composer's Send row out of the window, and the scroll keeps Send. Fix 1 holds where the room allows (the unit tests); this capture is the case where it doesn't.
+
+Round 3 (`relief-r03`): Claude 6.5 (UI 6.5, UX 7, lowest 5.5), Codex 7.5 (UI 7.5, UX 8, lowest 6; 9 cells at 9 or more). Still below the bar. What's left is mostly the rows' density (an owner decision), unread rows' weight, the sidebar's step off the list (1.13:1 light, 1.04:1 dark), and collapsed messages and the reply bar sharing the reader's surface.
+
+Perf, on a quiet machine: inline reply's first frame 36.5 ms max (≤ 50), its expansion 115.9 ms (≤ 133); typing beside 2,000 drafts 8.3 ms p95 (16).

@@ -190,3 +190,7 @@ Then the owner, on the two choices the raters left: "do the 2 suggestions to go 
 
 - **Dark Send is the light ink again**, a raised light pill: the raters' solid fill. The `cta` tokens (filled buttons apart from the primary) had no other user, so they're gone, and `Button`, Send's group and the selection bar draw the primary as they did before plan 204.
 - **Relief's selections are firm**, past plan 173's soft step, by the owner's exception (the contrast test's ceiling is 1.5 for `relief-light`): the open row `#CCCCCC` on `#EFEFEF` (1.4:1), the sidebar's pressed-in item `#CBCBCB`; in dark `#3D3D3D` on `#1E1E1E` (1.5:1), with the quiet ink at `#AAAAAA` so it holds 4.5:1 on it.
+
+## UI rating, round 3 (relief-r03, commit 023f5f908)
+
+After Relief's two choices (light dark-mode Send, firm selections) and plan 205's app-wide fixes: Claude 6.5 (UI 6 → 6.5, lowest 5.5), Codex 7 → 7.5 (UI 7.5, UX 8, lowest 6). Below the bar. Codex's notes are now mostly app-wide; Claude's are Relief's tonal range (the sidebar 1.13:1 off the list in light, 1.04:1 in dark) and the rows' density.
