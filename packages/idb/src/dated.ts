@@ -1,5 +1,5 @@
 import { addressKey, DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, type DatedRow } from "@terno/core";
-import { DATED_MARK_MS, DATED_SCAN_MARK_MS, datedTab, NEW_MAIL_MS, type DatedFinish, type DatedFinishOutcome, type DatedMark, type DatedSnapshot, type DatedSource } from "@terno/store";
+import { DATED_MARK_MS, DATED_SCAN_MARK_MS, datedTab, NEW_MAIL_MS, readerIn, recipientList, type DatedFinish, type DatedFinishOutcome, type DatedMark, type DatedSnapshot, type DatedSource } from "@terno/store";
 import { received, receivedOwn } from "./ai-summaries";
 import { T, type Ctx, type R } from "./mail";
 
@@ -83,8 +83,18 @@ export function datedSource(c: Ctx, messageId: number): DatedSource | null {
   const thread = m && T(c, "threads").get(m.thread_id);
   if (!m || !thread) return null;
   const email = String(m.from_email ?? "");
+  const people = (json: string) => {
+    const list = recipientList(json);
+    return list.addresses.map((address) => ({ name: list.names[address] ?? "", email: address }));
+  };
+  const to = people(m.to_json);
+  const cc = people(m.cc_json);
+  const mine = new Set<string>();
+  for (const a of T(c, "accounts").all()) mine.add(addressKey(String(a.email)));
+  for (const k of T(c, "correspondents").keysBy("own", 1)) mine.add(addressKey(String(k)));
   return {
     id: m.id, threadId: m.thread_id, accountId: m.account_id, subject: m.subject ?? "", date: m.date, fromName: m.from_name ?? "", fromEmail: email, senderKey: addressKey(email),
+    to, cc, readerIn: readerIn(to, cc, mine),
     automated: !!m.is_bulk || m.list_id != null, tab: datedTab(Number(thread.tab ?? 0), m.category ?? null),
     draft: !!m.is_draft, sent: !!m.is_sent, spam: !!m.is_spam, trash: !!m.is_trash, threadSpam: messages.by("fk_thread_id", m.thread_id).some((x) => !!x.is_spam), own: receivedOwn(c).has(email.toLowerCase()),
     bodyState: m.body_state, bodyUnavailable: m.attachments_captured === 2 && m.body_state !== "full",

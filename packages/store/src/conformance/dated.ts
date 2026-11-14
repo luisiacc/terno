@@ -228,6 +228,17 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
     });
 
     describe("reading and changing them", () => {
+      it("source: who it was sent to, and whether the reader is addressed, only copied, or not named (prompt version 2)", async () => {
+        const { store, got } = await setup();
+        const oren = { name: "Oren Vale", email: "oren@example.com" };
+        const addressed = await got();
+        const copied = await got({ to: [oren], cc: [{ name: "Me", email: "ME0+work@example.com" }] });
+        const listed = await got({ to: [{ name: "", email: "dev@lists.example.com" }] });
+        expect(await store.dated.source(addressed.id)).toMatchObject({ readerIn: "to", to: [me], cc: [] });
+        expect(await store.dated.source(copied.id)).toMatchObject({ readerIn: "cc", to: [oren] });
+        expect((await store.dated.source(listed.id))!.readerIn).toBe("none");
+      });
+
       it("openFor: open items of the thread or the sender, from older messages, newest first", async () => {
         const { store, accountId, got, item, finish } = await setup();
         const bill = await got({ rfcMessageId: "t1@x", date: NOW - 5000 });
