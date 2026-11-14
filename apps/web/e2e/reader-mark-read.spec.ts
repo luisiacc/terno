@@ -178,6 +178,38 @@ test.describe("reader through the read-after-dwell", () => {
     expect(await scrollTop(page)).toBe(top);
   });
 
+  test("plan 205: a message folded while still unread shows the list's dot before its sender, one with files a clip by its date, and both are said", async ({ app: page, server }) => {
+    const id = await ingestConversation(server, { subject: "Marcas plegadas", count: 3, unread: 2, mineFirst: true, files: { 1: [{ filename: "brief.pdf", mime: "application/pdf", size: 1200 }] }, now: E2E_NOW });
+    const release = holdActions(server);
+    await selectThread(page, id, 'subject:"Marcas plegadas"');
+    const toggles = page.getByTestId("reader").getByTestId("message-toggle");
+    await expect(toggles).toHaveCount(3);
+    // the read one, folded from the start: neither mark
+    await expect(toggles.nth(0)).toHaveAttribute("aria-expanded", "false");
+    await expect(toggles.nth(0).getByTestId("message-unread-dot")).toHaveCount(0);
+    await expect(toggles.nth(0).getByTestId("message-attachment-mark")).toHaveCount(0);
+    // the unread one with a file opens; folded before the dwell's mark-read lands (the backend holds it), it keeps both marks
+    await expect(toggles.nth(1)).toHaveAttribute("aria-expanded", "true");
+    await expect(toggles.nth(1).getByTestId("message-unread-dot")).toHaveCount(0);
+    await toggles.nth(1).click();
+    await expect(toggles.nth(1)).toHaveAttribute("aria-expanded", "false");
+    const dot = toggles.nth(1).getByTestId("message-unread-dot"), clip = toggles.nth(1).getByTestId("message-attachment-mark");
+    await expect(dot).toBeVisible();
+    await expect(clip).toBeVisible();
+    const box = async (testId: string) => (await toggles.nth(1).getByTestId(testId).boundingBox())!;
+    const name = (await toggles.nth(1).getByText("Yuki Gutiérrez").boundingBox())!;
+    const date = (await toggles.nth(1).locator(".tabular").boundingBox())!;
+    expect((await box("message-unread-dot")).x + 8).toBeLessThanOrEqual(name.x);
+    expect((await box("message-attachment-mark")).x + 12).toBeLessThanOrEqual(date.x);
+    await expect(toggles.nth(1)).toHaveAccessibleName(/^Yuki Gutiérrez ?, unread,.*, has attachments,/);
+    await expect(toggles.nth(0)).not.toHaveAccessibleName(/unread|attachments/);
+    // read at last: the dot goes, the clip stays
+    await markedRead(page, id, release);
+    await expect(dot).toHaveCount(0);
+    await expect(clip).toBeVisible();
+    await expect(toggles.nth(1)).not.toHaveAccessibleName(/unread/);
+  });
+
   test("the inline reply keeps its focus, text and caret through the mark-read", async ({ app: page, server }) => {
     const id = await ingestConversation(server, { subject: "Notas de la reunión", count: 3, unread: 1, now: E2E_NOW });
     const release = holdActions(server);

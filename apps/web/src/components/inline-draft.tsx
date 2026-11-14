@@ -479,6 +479,15 @@ export function draftTitle(d: LocalDraft): string {
   return d.mode === "new" ? t("compose.newMessage") : formLabel(d.mode === "forward", who);
 }
 
+/** Plan 115: this conversation's draft is in the pinned card (kept so even after the conversation's placement expired) */
+const usePinnedHere = (threadId: number | null, draftKey: string | null) => usePinned((s) => s.key !== null && (s.key === draftKey || (draftKey === null && s.threadId === threadId)));
+
+/** Plan 205: the slot's editor is open on screen (not collapsed into its line, nor in the pinned card): what the toolbar's Reply quiets for */
+export function useInlineComposerOpen(threadId: number | null, draftKey: string | null): boolean {
+  const pinned = usePinnedHere(threadId, draftKey);
+  return useDrafts((s) => !pinned && draftKey !== null && s.drafts[draftKey]?.uiState === "open");
+}
+
 /**
  * What follows the last message of a conversation: the reply bar, or the
  * conversation's draft (open, or collapsed into one line). The three share
@@ -487,8 +496,7 @@ export function draftTitle(d: LocalDraft): string {
  */
 /** `replyAll`: offered in the bar only when it reaches someone Reply doesn't */
 export function DraftSlot({ threadId, draftKey, replyTo, replyAll = true, account, checkpoint, onCheckpointReopen, stepAside = false }: { threadId: number; draftKey: string | null; replyTo: string; replyAll?: boolean; account: Account | undefined; checkpoint?: BodyCheckpoint; onCheckpointReopen?: () => () => void; /** plan 162: a prepared reply takes the bar's place while it shows */ stepAside?: boolean }) {
-  // plan 115: this conversation's draft is in the pinned card (kept so even after the conversation's placement expired)
-  const pinned = usePinned((s) => s.key !== null && (s.key === draftKey || (draftKey === null && s.threadId === threadId)));
+  const pinned = usePinnedHere(threadId, draftKey);
   const d = useDrafts((s) => (draftKey && !pinned ? s.drafts[draftKey] : undefined));
   const accounts = useApp((s) => s.accounts);
   const recovering = useDraftRecovery((s) => s.open);

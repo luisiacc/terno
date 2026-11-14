@@ -34,15 +34,26 @@ function coverOf(scroller: HTMLElement): { covered: number; coveredTop: number }
 /**
  * Plan 158: a composer's opening scroll (one with `wanted`) that would leave the conversation's subject cut by the
  * reader's top goes on past all of it, as far as `max` lets it: the context line then names it. Never short of what's
- * wanted (stopping at the subject's top hid the composer's Send row under the window's edge at 1100x700).
+ * wanted (stopping at the subject's top hid the composer's Send row under the window's edge at 1100x700). Plan 205: the
+ * same for every head the reader shows (`data-reader-head`: a message's header, Lumen's sender card) against the line
+ * the scroll lands on, the context line (`line`, its scroll padding): never a sender's name half under it.
  */
-function keepSubjectWhole(scroller: HTMLElement, delta: number, max: number): number {
-  const subject = delta > 0 ? scroller.querySelector<HTMLElement>("#reader-subject") : null;
-  if (!subject) return delta;
-  const s = scroller.getBoundingClientRect().top, r = subject.getBoundingClientRect();
-  const top = r.top - s, bottom = r.bottom - s;
-  if (!(top >= 0 && top < delta && bottom > delta)) return delta;
-  return bottom <= max ? bottom : delta;
+function keepHeadsWhole(scroller: HTMLElement, delta: number, max: number, line: number): number {
+  if (delta <= 0) return delta;
+  const s = scroller.getBoundingClientRect().top;
+  let to = delta;
+  // in the page's order, top to bottom: going past one can only cut one further down, which comes later
+  for (const head of scroller.querySelectorAll<HTMLElement>("[data-reader-head]")) {
+    const r = head.getBoundingClientRect();
+    // the subject goes wholly past the pane's top (the line then names it), and only if it was whole before; a message's
+    // head goes past the line itself
+    const subject = head.id === "reader-subject";
+    if (subject && r.top - s < 0) continue;
+    const at = subject ? 0 : line;
+    const top = r.top - s - to, bottom = r.bottom - s - to;
+    if (bottom > at && top < at && bottom - at + to <= max) to += bottom - at;
+  }
+  return to;
 }
 
 /** `wanted`: how much of the element, from its top, has to show (all of it by default): a composer's foot sticks, so its first lines are enough. */
@@ -57,7 +68,7 @@ export function keepInView(el: HTMLElement, scroller: HTMLElement | null = el.cl
       const r = el.getBoundingClientRect(), s = scroller.getBoundingClientRect();
       const overflow = r.top + Math.min(wanted(), r.height) - (s.bottom - pad - covered);
       const room = r.top - (s.top + pad + coveredTop);
-      if (overflow > 0) scroller.scrollTop += keepSubjectWhole(scroller, Math.min(overflow, room), room);
+      if (overflow > 0) scroller.scrollTop += keepHeadsWhole(scroller, Math.min(overflow, room), room, coveredTop);
     });
     cancel = () => cancelAnimationFrame(id);
     return cancelReaderScroll;
@@ -82,7 +93,7 @@ export function keepInView(el: HTMLElement, scroller: HTMLElement | null = el.cl
     const overflow = (wanted ? r.top + Math.min(wanted(), r.height) : r.bottom) - (s.bottom - pad - covered);
     const room = r.top - (s.top + pad + coveredTop);
     // write
-    if (overflow > 0 && room > 0) scroller.scrollTop += wanted ? keepSubjectWhole(scroller, Math.min(overflow, room), room) : Math.min(overflow, room);
+    if (overflow > 0 && room > 0) scroller.scrollTop += wanted ? keepHeadsWhole(scroller, Math.min(overflow, room), room, coveredTop) : Math.min(overflow, room);
     if (performance.now() < until) frame = requestAnimationFrame(step);
     else stop();
   };

@@ -66,6 +66,7 @@ describe("keepInView", () => {
   it("never stops with the subject cut by the reader's top, and never short of what's wanted: past the subject (plan 158)", () => {
     const subject = document.createElement("h2");
     subject.id = "reader-subject";
+    subject.toggleAttribute("data-reader-head", true);
     scroller.prepend(subject);
     for (const motionMs of [80, 0]) {
       useAppearance.setState({ motionMs });
@@ -99,5 +100,64 @@ describe("keepInView", () => {
       expect(scroller.scrollTop).toBe(16);
       el.getBoundingClientRect = () => rect(800 - scroller.scrollTop, 600);
     }
+  });
+
+  describe("plan 205: no head left half under the context line", () => {
+    // the context line: 32 px (the scroller's scroll-padding-top). 116 wanted, as above: el's top 200 at 800, the view's
+    // foot at 884; room to 800 - 16 - 32
+    const motions = [{ motionMs: 80, reducedMotion: false }, { motionMs: 80, reducedMotion: true }];
+    const head = (top: number, height: number, subject = false) => {
+      const h = document.createElement(subject ? "h2" : "button");
+      if (subject) h.id = "reader-subject";
+      h.toggleAttribute("data-reader-head", true);
+      h.getBoundingClientRect = () => rect(top - scroller.scrollTop, height);
+      el.before(h);
+      return h;
+    };
+    const open = (motion: (typeof motions)[number]) => {
+      useAppearance.setState(motion);
+      scroller.scrollTop = 0;
+      keepInView(el, scroller, 16, () => 200);
+      frame();
+      return scroller.scrollTop;
+    };
+    beforeEach(() => { scroller.style.scrollPaddingTop = "32px"; });
+
+    it("a message's header the scroll would leave straddling the line goes past it, in either motion", () => {
+      // 130 to 170 would sit at 14 to 54: its top under the line, its name cut. Past it: its foot on the line
+      head(130, 40);
+      for (const motion of motions) expect(open(motion), JSON.stringify(motion)).toBe(170 - 32);
+    });
+
+    it("a head already clear of the line, or wholly under it, changes nothing", () => {
+      const h = head(150, 40);
+      // at 34 to 74: whole below the line
+      for (const motion of motions) expect(open(motion)).toBe(116);
+      // at -16 to 24: all under the line
+      h.getBoundingClientRect = () => rect(100 - scroller.scrollTop, 40);
+      for (const motion of motions) expect(open(motion)).toBe(116);
+    });
+
+    it("never short of what's wanted: with too little room the scroll stops where it would have", () => {
+      // el's top at 170: room for 170 - 48 = 122, and going past 130 to 170 takes 138
+      el.getBoundingClientRect = () => rect(170 - scroller.scrollTop, 900);
+      head(130, 40);
+      for (const motion of motions) {
+        useAppearance.setState(motion);
+        scroller.scrollTop = 0;
+        keepInView(el, scroller, 16, () => 830);
+        frame();
+        expect(scroller.scrollTop).toBe(116);
+      }
+    });
+
+    it("the subject is cut only once its top has gone, and then goes wholly past the pane's top (plan 158)", () => {
+      // at 4 to 54: its top still in view, so no line covers it
+      const subject = head(120, 50, true);
+      for (const motion of motions) expect(open(motion)).toBe(116);
+      // at -6 to 44: its top gone: past all of it, as plan 158 has it (compose.spec: "a subject not whole is wholly gone")
+      subject.getBoundingClientRect = () => rect(110 - scroller.scrollTop, 50);
+      for (const motion of motions) expect(open(motion)).toBe(160);
+    });
   });
 });

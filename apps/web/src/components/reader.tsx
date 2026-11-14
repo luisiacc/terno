@@ -17,7 +17,7 @@ import { TernoMark } from "@terno/ui/brand/terno-mark";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
 import { useReplies } from "~/lib/replies";
-import { Archive, AlarmClock, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Ellipsis, FileDown, Forward, Inbox, Layers, Mail, OctagonAlert, PinTop, Printer, Reply, ReplyAll, SquarePen, Star, SummaryDoc, Trash2 } from "@terno/ui/icons";
+import { Archive, AlarmClock, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Ellipsis, FileDown, Forward, Inbox, Layers, Mail, OctagonAlert, Paperclip, PinTop, Printer, Reply, ReplyAll, SquarePen, Star, SummaryDoc, Trash2 } from "@terno/ui/icons";
 import { type ReactNode, type RefCallback, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/popover";
 import { reminderShort, useReminders, useRemindPopover } from "~/lib/reminders";
@@ -27,7 +27,7 @@ import { takeSent } from "~/lib/sent-reveal";
 import { OpenHead, Recipients } from "./message-head";
 import { HeldMessages } from "./held-message";
 import { Expand } from "./expand";
-import { DraftSlot, draftTitle } from "./inline-draft";
+import { DraftSlot, draftTitle, useInlineComposerOpen } from "./inline-draft";
 import { bottomInset, usePinnedInset } from "~/lib/pinned-draft-state";
 import { PANE_TITLE, PANE_TITLE_AFTER, PANE_TITLE_GAP, READING_COLUMN } from "~/lib/pane-lines";
 import { AskReturn } from "./ask-return";
@@ -197,7 +197,7 @@ function ToolbarMore({ threadId }: { threadId: number }) {
  * at the conversation's end, the message's ⋯ menu, the row menu, the palette and `a`.
  * Their words show as the toolbar has room for them (`fitWords`): Reply's first, Forward's last. The pill also shows Reply's key.
  */
-function ReplyGroup({ replyTo, everyone }: { replyTo: string; everyone: string | null }) {
+function ReplyGroup({ replyTo, everyone, quiet }: { replyTo: string; everyone: string | null; quiet: boolean }) {
   const pill = useDesign().variants.replyAction === "pill";
   // a choice hands focus to the draft; refused (a forward's files, say), the button that asked keeps it
   const choose = (mode: "forward", button: HTMLElement) => {
@@ -206,7 +206,7 @@ function ReplyGroup({ replyTo, everyone }: { replyTo: string; everyone: string |
     });
   };
   const replyReady = useReplies((r) => r.shown?.phase === "ready");
-  const item = (tier: 1 | 3, pad?: string) => cn("px-2.5", pad, SQUARE_ITEM[tier]);
+  const item = (tier: 1 | 3, pad?: string) => cn("px-2.5", pad, SQUARE_ITEM[tier], quiet && QUIET_ITEM);
   const replyFace = (
     <>
       <Reply />
@@ -214,9 +214,10 @@ function ReplyGroup({ replyTo, everyone }: { replyTo: string; everyone: string |
       <span className={WORDS[1]}>{t("actions.reply")}</span>
       {/* plan 162: one R on screen: while a reply is ready, R is its (the card says so), not this button's */}
       {pill && !replyReady && <span aria-hidden className={cn("inline-flex", HIDE[1])}><Shortcut keys="r" /></span>}
+      {everyone !== null && <ChevronDown data-icon="inline-end" aria-hidden data-testid="action-reply-chevron" className="group-data-[words=0]/tb:hidden" />}
     </>
   );
-  const replyClass = item(1, pill ? "pl-3" : undefined);
+  const replyClass = cn(item(1, pill ? "pl-3" : undefined), everyone !== null ? CHEVRON.shown : pill ? CHEVRON.keptPill : CHEVRON.kept);
   // Reply becomes a menu's trigger (and back) when Reply all comes or goes, as new mail adds a Cc: the old button, still in
   // the page while React detaches it, hands its focus to the new one, so a keyboard user's place survives the swap
   const replyFocus = useRef(false);
@@ -231,7 +232,7 @@ function ReplyGroup({ replyTo, everyone }: { replyTo: string; everyone: string |
     };
   }, []);
   return (
-    <ButtonGroup aria-label={t("reader.group.respond")} className={cn("no-drag ml-auto shrink-0 [&_svg]:[--icon-line:var(--icon-line-toolbar)]", pill && "rounded-full")}>
+    <ButtonGroup aria-label={t("reader.group.respond")} data-quiet={quiet || undefined} className={cn("no-drag ml-auto shrink-0 [&_svg]:[--icon-line:var(--icon-line-toolbar)]", pill && "rounded-full", quiet && QUIET)}>
       {everyone !== null ? (
         <ReplyChoices replyTo={replyTo} everyone={everyone} keys={!replyReady} className={replyClass} buttonRef={replyRef}>
           {replyFace}
@@ -268,6 +269,28 @@ function ReplyGroup({ replyTo, everyone }: { replyTo: string; everyone: string |
     </ButtonGroup>
   );
 }
+
+/**
+ * Plan 205: a reply or forward open in the conversation is where answering happens, so the toolbar's group steps back to the
+ * ghost look (no fill, sheen, shadow, border or dividers; its size kept, so nothing moves): still there, still R and F.
+ * Here, never in ButtonGroup's defaults.
+ */
+const QUIET = "border-transparent bg-transparent bg-none shadow-none divide-transparent [text-shadow:none]";
+/** …and its words in the toolbar's ghost ink */
+const QUIET_ITEM = "text-foreground-soft hover:text-foreground";
+
+/**
+ * Plan 205: Reply that opens a choice says so with a chevron, inside it. Reply that doesn't keeps the chevron's room as
+ * padding on both sides, so Reply is one width either way and stands where it does in every conversation (plan 173). The
+ * room is the gap and the glyph, less the 2 px an inline-end icon takes back from the end padding. With its word hidden
+ * (the tightest toolbar), Reply is the plain square in both and the chevron goes: its room didn't fit there (Codex code
+ * review: Reply · Forward past the column at a 421 px reader); the menu it opens still names itself.
+ */
+const CHEVRON = {
+  shown: "pr-2",
+  kept: "px-[calc(0.625rem_+_(0.25rem_+_1.15em)/2)]",
+  keptPill: "pl-[calc(0.75rem_+_(0.25rem_+_1.15em)/2)] pr-[calc(0.625rem_+_(0.25rem_+_1.15em)/2)]",
+};
 
 /**
  * Plan 173: Reply, on a conversation with others in it, is the trigger of a menu: Reply to *name* or Reply all, the reply
@@ -427,9 +450,11 @@ function Message({ m, threadId, expanded, onToggle, icons, person, headless, sol
         <h3>
           <Head
             {...toggle}
+            // a composer's opening scroll never leaves it half under the context line (plan 205)
+            data-reader-head
             data-current={current || undefined}
             className={cn(
-              "-mx-2 flex w-[calc(100%+1rem)] gap-2.5 rounded-lg px-2 text-left outline-none transition-colors data-current:bg-tint focus-visible:ring-2 focus-visible:ring-ring",
+              "relative -mx-2 flex w-[calc(100%+1rem)] gap-2.5 rounded-lg px-2 text-left outline-none transition-colors data-current:bg-tint focus-visible:ring-2 focus-visible:ring-ring",
               !solo && "group-hover/mh:bg-tint",
               expanded ? "items-start pt-3 pb-1.5" : "h-9 items-center text-sm",
             )}
@@ -449,9 +474,19 @@ function Message({ m, threadId, expanded, onToggle, icons, person, headless, sol
             ) : (
               <>
                 <SenderAvatar name={name} email={m.from.email} icon={icons} person={person} className="size-(--avatar-collapsed) text-2xs" />
+                {/* plan 205: the list row's marks, said as the row says them: unread before the sender (in the column's margin, as
+                    Mail's, 6 px off the hover's edge, so the names keep their column), an attachment by the date */}
+                {!m.isRead && <span aria-hidden data-testid="message-unread-dot" className="absolute top-1/2 -left-[14px] size-2 -translate-y-1/2 rounded-full bg-unread @max-[420px]:-left-[7px] @max-[420px]:size-1.5" />}
                 <span className="max-w-[45%] shrink-0 truncate">{name}</span>
+                {!m.isRead && <span className="sr-only">, {t("list.row.unread")},</span>}
                 <span aria-hidden className="min-w-0 flex-1 truncate text-[length:var(--ds-text-control)] text-muted-foreground">{m.snippet}</span>
                 <span className="sr-only">{previewFor(m.snippet)}</span>
+                {m.hasAttachments && (
+                  <>
+                    <Paperclip aria-hidden data-testid="message-attachment-mark" className="size-3 shrink-0 text-muted-foreground" />
+                    <span className="sr-only">, {t("list.row.attachments")},</span>
+                  </>
+                )}
                 {/* plan 188: the short date shown, the full one said */}
                 <span className="shrink-0 text-xs text-muted-foreground tabular">
                   <span aria-hidden>
@@ -931,7 +966,7 @@ function ReaderHeader({ detail, account, cats, fold }: { detail: ThreadDetail; a
   const marks = useSearchMarks()?.subject;
   const myEmails = useApp((s) => s.accounts).map((a) => a.email);
   // its top edge marked: the context line watches that, not the whole heading (a wrapped subject taller than the view is never wholly in it)
-  const heading = <h2 id="reader-subject" data-testid="reader-subject" className={cn("relative min-w-0", PANE_TITLE)}><span aria-hidden data-subject-top className="pointer-events-none absolute top-0 left-0 h-px w-px" /><Marked text={subject} needles={marks} testId="reader-subject-match" /></h2>;
+  const heading = <h2 id="reader-subject" data-testid="reader-subject" data-reader-head className={cn("relative min-w-0", PANE_TITLE)}><span aria-hidden data-subject-top className="pointer-events-none absolute top-0 left-0 h-px w-px" /><Marked text={subject} needles={marks} testId="reader-subject-match" /></h2>;
   // plan 194: the subject on its own line, and what it's about (account, how many, categories) a quiet line under it,
   // so nothing competes with the subject
   const titled = (
@@ -963,7 +998,7 @@ function ReaderHeader({ detail, account, cats, fold }: { detail: ThreadDetail; a
         <div className={HEADER}>
           {titled}
           {/* the message's id: a right-click here is a right-click on the message (Print this message, Copy) */}
-          <div data-testid="sender-card" data-message-id={one.id} className="group/mh relative mt-1.5 flex items-start gap-2.5">
+          <div data-testid="sender-card" data-reader-head data-message-id={one.id} className="group/mh relative mt-1.5 flex items-start gap-2.5">
             <SenderAvatar name={name} email={one.from.email} icon={iconsFor(detail.thread)} person={personFor(one, detail.thread.person === true)} className="size-(--avatar-sender) text-xs" />
             <div className="flex min-h-(--avatar-sender) min-w-0 flex-1 flex-col justify-center">
               <span className="flex items-baseline gap-2">
@@ -1141,6 +1176,7 @@ function ReaderContent() {
   );
   const draftShown = useApp((s) => s.draftShown);
   const draftKey = useDrafts((s) => (selectedId === null ? null : shownDraftKey(s.drafts, selectedId, draftShown)));
+  const composing = useInlineComposerOpen(selectedId, draftKey);
   const repliesOn = useApp(repliesOffered);
   const readyHere = useReplies((r) => r.shown?.phase === "ready" && r.shown.threadId === selectedId);
   const summarizeOffered = useApp(summariesOffered);
@@ -1175,7 +1211,8 @@ function ReaderContent() {
   const listTitle = useListTitle();
   const myEmails = accounts.map((a) => a.email);
   const replyAll = detail ? reachesSeveral(detail, myEmails) : false;
-  const toolbarSet = `${page}|${design.id}|${t("actions.archive")}|${detail?.thread.inTrash || detail?.thread.inSpam}|${!!detail && inSeparateTab(detail.thread, accounts)}|${summarizeOffered && summarizable(detail?.thread)}|${listTitle}`;
+  // plan 205: Reply's chevron comes and goes with Reply all
+  const toolbarSet = `${page}|${design.id}|${replyAll}|${t("actions.archive")}|${detail?.thread.inTrash || detail?.thread.inSpam}|${!!detail && inSeparateTab(detail.thread, accounts)}|${summarizeOffered && summarizable(detail?.thread)}|${listTitle}`;
   useLayoutEffect(() => {
     const row = toolbarRowRef.current;
     if (!row) return;
@@ -1259,7 +1296,7 @@ function ReaderContent() {
         {/* plan 194: what's done less often, a group of its own, so the marks read as one set */}
         <ToolbarDivider />
         <ToolbarMore threadId={selectedId} />
-        <ReplyGroup replyTo={detail ? replyName(detail, myEmails) : ""} everyone={everyone} />
+        <ReplyGroup replyTo={detail ? replyName(detail, myEmails) : ""} everyone={everyone} quiet={composing && !!detail} />
         {page && <ToolbarDivider />}
         {page && <StepButtons id={selectedId} />}
         </div>

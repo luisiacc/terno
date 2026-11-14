@@ -335,6 +335,13 @@ test.describe("plan 158: the reader's masthead, measure and reply controls", () 
     let solo = 0;
     let soloForward = 0;
     const order = () => page.getByTestId("action-reply").locator("xpath=..").locator("button").evaluateAll((items) => items.map((i) => i.getAttribute("data-testid")));
+    /** plan 205: the group's look: a raised control, or the ghost look (no fill, sheen, shadow, border or dividers) */
+    const groupLook = () => page.getByTestId("action-reply").locator("xpath=..").evaluate((group) => {
+      const s = getComputedStyle(group), clear = "rgba(0, 0, 0, 0)";
+      // (no shadow: none, or only clear ones)
+      const shadowless = s.boxShadow.replaceAll(`${clear} 0px 0px 0px 0px`, "").replace(/[ ,]/g, "") === "" || s.boxShadow === "none";
+      return s.backgroundColor === clear && s.backgroundImage === "none" && shadowless && s.borderTopColor === clear && getComputedStyle(group.firstElementChild!).borderRightColor === clear ? "ghost" : "raised";
+    });
     await scenario("one other person: no Reply all anywhere, never a dimmed one; no Reply menu; a still works", async () => {
       await selectThread(page, id, 'subject:"Solo con Yuki"');
       await expect(page.getByTestId("action-reply")).toContainText("Reply");
@@ -352,10 +359,24 @@ test.describe("plan 158: the reader's masthead, measure and reply controls", () 
       await expect(only.locator("button")).toHaveCount(0);
       await only.click();
       await expect(page.getByTestId("message")).toHaveAttribute("data-expanded", "true");
+      expect(await groupLook()).toBe("raised");
+      await expect(page.getByTestId("action-reply-chevron")).toHaveCount(0);
       await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
       await page.keyboard.press("a");
       await expect(page.getByTestId("compose-body")).toBeFocused();
+      // plan 205: one active reply surface: while the reply is open in the conversation, the toolbar's group steps back
+      await expect.poll(groupLook).toBe("ghost");
+      expect(Math.abs((await replyAt()) - solo)).toBeLessThanOrEqual(0.5);
+      // put away into its line the draft is still there, but no editor is: the group comes back
+      await page.keyboard.type("Hola.");
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("draft-collapsed")).toBeVisible();
+      expect(await groupLook()).toBe("raised");
+      await page.getByTestId("draft-collapsed").click();
+      await expect(page.getByTestId("compose-body")).toBeFocused();
+      await expect.poll(groupLook).toBe("ghost");
       await page.getByTestId("compose-discard").click();
+      await expect.poll(groupLook).toBe("raised");
       // the menu put away with Esc and Reply clicked while it's still closing: the closing menu doesn't take focus back
       // from the draft, so every letter typed lands in it (plan 158: "Probe" lost its "Pr" to the trigger and to r)
       await page.emulateMedia({ reducedMotion: "no-preference" });
@@ -389,6 +410,15 @@ test.describe("plan 158: the reader's masthead, measure and reply controls", () 
       expect(Math.abs((await forwardAt()) - soloForward)).toBeLessThanOrEqual(0.5);
       expect(Math.abs((await replyAt()) - solo)).toBeLessThanOrEqual(0.5);
       await expect(reply).toHaveAttribute("aria-haspopup", "menu");
+      // plan 205: and says so, with a chevron inside it (its room kept on a one-to-one, so the place above holds)
+      const chevron = page.getByTestId("action-reply-chevron");
+      await expect(chevron).toBeVisible();
+      const inside = async () => {
+        const [c, r] = [(await chevron.boundingBox())!, (await reply.boundingBox())!];
+        const glyph = (await reply.locator("svg").first().boundingBox())!;
+        return c.x > glyph.x + glyph.width && c.x + c.width <= r.x + r.width;
+      };
+      expect(await inside()).toBe(true);
       // Reply itself opens the menu: Reply to the sender, then Reply all saying who it reaches; Esc gives Reply its focus back
       await reply.click();
       const menu = page.getByTestId("reply-options-menu");
@@ -421,6 +451,16 @@ test.describe("plan 158: the reader's masthead, measure and reply controls", () 
       const g = await geometry(page);
       expect(Math.abs(g.end - g.right), "the last control on the column's edge").toBeLessThanOrEqual(1.5);
       expect(g.overflow).toBe(false);
+      // plan 205: narrower still, until no word fits: Reply is the plain square, its chevron gone (its room pushed Reply ·
+      // Forward past the column at a 421 px reader: Codex review), and the row still ends on the column's edge
+      const toolbar = page.locator("[data-reader-toolbar]");
+      for (let i = 0; i < 80 && (await toolbar.getAttribute("data-words")) !== "0"; i++) await page.keyboard.press("ArrowRight");
+      await expect(toolbar).toHaveAttribute("data-words", "0");
+      await expect(chevron).toBeHidden();
+      await expect(page.getByTestId("action-reply")).toHaveCSS("width", "32px");
+      const tight = await geometry(page);
+      expect(Math.abs(tight.end - tight.right), "the last control on the column's edge, words gone").toBeLessThanOrEqual(1.5);
+      expect(tight.overflow).toBe(false);
       await page.setViewportSize({ width: 1440, height: 900 });
       await respond(page, "reply-all");
       await expect(page.getByTestId("compose-body")).toBeFocused();
