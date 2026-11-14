@@ -555,6 +555,8 @@ describe("a later message moves an item's time (the fourth panel round, revision
     const later = await client.call("dated.act", { id: row!.id, revision: row!.revision, action: "later", until: at(2026, 11, 12, 9) });
     await receive({ from: coach, subject: "Re: Saturday", bodyText: base.text, providerThreadId: "game" });
     await read();
+    // the Codex code review of the fourth round: the model is shown the item's day and time, so it can say the same day
+    expect(promptText(model.requests.at(-1)!.messages[0]!.content)).toContain("o1 (event, 2026-11-14 10:00): Soccer game");
     expect(await backend.store.dated.get(row!.id)).toMatchObject({ dueDay: "2026-11-14", dueAt: at(2026, 11, 14, 8), timed: true, deferredUntil: at(2026, 11, 12, 9), state: "open" });
     await client.call("dated.undo", { undoId: later.undoId! });
     const moved8 = (await backend.store.dated.get(row!.id))!;
@@ -576,7 +578,7 @@ describe("a later message moves a promise you made (the second panel round)", ()
     model.answer = (req) => {
       const p = promptText(req.messages[0]!.content);
       // the promise is offered only to the person it was made to
-      if (p.includes("p1 (promise)")) return reply([], [], [{ label: "p1", due: "2026-11-13", time: null, evidence: "Friday at the latest" }]);
+      if (p.includes("p1 (promise, 2026-11-10)")) return reply([], [], [{ label: "p1", due: "2026-11-13", time: null, evidence: "Friday at the latest" }]);
       return reply();
     };
     const thread = await receive({ from: { name: "Jess", email: "jess@sponsor.test" }, subject: "Script", bodyText: "Looking forward to it.", providerThreadId: "jess" });
@@ -586,7 +588,7 @@ describe("a later message moves a promise you made (the second panel round)", ()
     model.requests.length = 0;
     await receive({ from: { name: "Mallory", email: "mallory@else.test" }, subject: "Re: Script", bodyText: "Friday at the latest, 2026-11-20.", providerThreadId: "jess" });
     await read();
-    expect(promptText(model.requests.at(-1)!.messages[0]!.content)).not.toContain("p1 (promise)");
+    expect(promptText(model.requests.at(-1)!.messages[0]!.content)).not.toContain("p1 (promise");
     expect((await backend.store.followups.get(before!.id))!.dueAt).toBe(at(2026, 11, 10, 9));
     // Jess herself
     await receive({ from: { name: "Jess", email: "jess@sponsor.test" }, subject: "Re: Script", bodyText: "No stress. Friday at the latest is fine.", providerThreadId: "jess" });
