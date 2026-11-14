@@ -56,12 +56,30 @@ const inWords = (ms: number, language: string): string => {
 const norm = (text: string) => normalizeText(text).toLowerCase().replace(/[^\p{L}\p{N}$€£%]+/gu, " ").trim();
 const KINDS: ReadonlySet<string> = new Set(DATED_KINDS);
 
+/** One item a message per kind, day and time (revision 8: a keynote at 9:30 and a tech check at 4:00 are two). */
+const itemKey = (kind: string, t: { dueDay: string; dueAt: number; timed: boolean }) => `${kind}:${t.dueDay}:${t.timed ? t.dueAt : ""}`;
+
+/** A name's words, as a quote's are read: "Lucía Romero" → ["lucia", "romero"]; an initial or a bare letter isn't one. */
+const nameWords = (name: string) => norm(name).split(" ").filter((w) => w.length >= 2);
+
+/**
+ * The third panel round (revision 1): who an ask may be from and to, read here and not only from the model: a person
+ * (`senderIsPerson`, never a list, bulk or no-reply address), and the reader addressed in To or named in the ask's own words.
+ */
+function askAllowed(quote: string, o: { sender?: { person: boolean }; reader?: { name: string; addressed: "to" | "cc" | "none" } }): boolean {
+  if (!o.sender?.person || !o.reader) return false;
+  if (o.reader.addressed === "to") return true;
+  const said = ` ${norm(quote)} `;
+  return nameWords(o.reader.name).some((w) => said.includes(` ${w} `));
+}
+
 /**
  * §3's local checks, before anything's stored: the quote is the mail's (its text or subject), the kind is one of ours, a
- * day parses and is worth keeping (`datedTiming`), at most `DATED_ITEMS_MAX`, one per kind and day; a settlement names an
- * item it was shown and quotes the mail. Pure.
+ * day parses and is worth keeping (`datedTiming`), at most `DATED_ITEMS_MAX`, one per kind, day and time; an ask only from
+ * a person to the reader (`askAllowed`), and one with a day is the request it is (`respond`); a settlement names an item it
+ * was shown and quotes the mail. Pure.
  */
-export function checkDates(result: { items: readonly (Omit<DatedResult["items"][number], "kind"> & { kind: string })[]; settled: DatedResult["settled"]; moved?: DatedResult["moved"] }, input: { text: string; subject: string; arrivedAt: number; open: ReadonlyMap<string, DatedRow>; promises?: ReadonlyMap<string, Pick<FollowupRow, "id" | "revision">>; fromScan: boolean; now: number }): { rows: DatedWrite[]; settled: { id: number; revision: number }[]; moved: { id: number; dueDay: string; dueAt: number; timed: boolean; actAt: number }[]; movedPromises: { id: number; revision: number; dueAt: number }[] } {
+export function checkDates(result: { items: readonly (Omit<DatedResult["items"][number], "kind"> & { kind: string })[]; settled: DatedResult["settled"]; moved?: DatedResult["moved"] }, input: { text: string; subject: string; arrivedAt: number; open: ReadonlyMap<string, DatedRow>; promises?: ReadonlyMap<string, Pick<FollowupRow, "id" | "revision">>; fromScan: boolean; now: number; sender?: { person: boolean }; reader?: { name: string; addressed: "to" | "cc" | "none" } }): { rows: DatedWrite[]; settled: { id: number; revision: number }[]; moved: { id: number; dueDay: string; dueAt: number; timed: boolean; actAt: number }[]; movedPromises: { id: number; revision: number; dueAt: number }[] } {
   const said = `${norm(input.subject)}\n${norm(input.text)}`;
   const quoted = (words: string) => {
     const w = norm(words);
@@ -81,18 +99,21 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
   });
   const rows: DatedWrite[] = [];
   // a moved item keeps its id: the same kind on its new day isn't added again (Codex review of the fixes)
-  const seen = new Set<string>(moved.map((m) => `${m.kind}:${m.dueDay}`));
+  const seen = new Set<string>(moved.map((m) => itemKey(m.kind, m)));
   for (const item of result.items) {
     if (rows.length >= DATED_ITEMS_MAX) break;
     if (!KINDS.has(item.kind) || !item.text.trim() || !quoted(item.quote)) continue;
-    const timing = datedTiming({ kind: item.kind as DatedKind, due: item.due, time: item.time, arrivedAt: input.arrivedAt });
+    // an ask is never a dated kind's substitute: one with a day is a request with a day
+    const kind = (item.kind === "ask" && item.due ? "respond" : item.kind) as DatedKind;
+    if (kind === "ask" && !askAllowed(item.quote, input)) continue;
+    const timing = datedTiming({ kind, due: item.due, time: item.time, arrivedAt: input.arrivedAt });
     if (!timing) continue;
     // the 14-day check keeps nothing already over (§6)
     if (input.fromScan && timing.dated && dayEnd(timing.dueDay) <= input.now) continue;
-    const key = `${item.kind}:${timing.dueDay}`;
+    const key = itemKey(kind, timing);
     if (seen.has(key)) continue;
     seen.add(key);
-    rows.push({ kind: item.kind as DatedKind, item: rows.length, text: item.text.trim(), quote: item.quote.trim(), ...timing });
+    rows.push({ kind, item: rows.length, text: item.text.trim(), quote: item.quote.trim(), ...timing });
   }
   // a promise of yours: its day from this message (the person you made it to), as follow-ups place a dated promise
   const movedPromises = (result.moved ?? []).flatMap((m) => {
@@ -328,7 +349,7 @@ export class DatedWorker {
       const now = this.host.now();
       // only what was really sent, after fitting to the window, may be named back (Codex review)
       const sent = new Set(input.open.map((o) => o.label));
-      const checked = checkDates(result, { text, subject: src.subject, arrivedAt: src.date, open: new Map([...labels].filter(([l]) => sent.has(l))), promises: new Map([...promises].filter(([l]) => sent.has(l))), fromScan, now });
+      const checked = checkDates(result, { text, subject: src.subject, arrivedAt: src.date, open: new Map([...labels].filter(([l]) => sent.has(l))), promises: new Map([...promises].filter(([l]) => sent.has(l))), fromScan, now, sender: { person: src.person }, reader });
       const outcome = await store.dated.finish({ messageId: src.id, threadId: src.threadId, fromScan, rows: checked.rows, settled: checked.settled, moved: checked.moved, movedPromises: checked.movedPromises, now, model: ai.model, provider: ai.providerId, promptVersion: DATED_PROMPT_VERSION, clearGeneration });
       this.attempts.delete(src.id);
       // a merge moved it under the request: read again on its new thread (revision 6)

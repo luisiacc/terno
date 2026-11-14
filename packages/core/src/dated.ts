@@ -1,23 +1,28 @@
 import { REMIND_MORNING } from "./reminders";
 import { localDay } from "./followups";
+import { WAITING_WINDOW_MS } from "./people";
 
 /**
  * Plan 204: dated items, what incoming mail says has a date that matters to the reader (a bill due, a renewal, a flight).
  * The model says what it is and when; when it shows, and where, is decided here, locally.
  */
 
-export const DATED_KINDS = ["pay", "renew", "expire", "respond", "alert", "event", "delivery"] as const;
+/** `ask` (after the third panel round): a person's direct, undated ask of the reader, Needs you's, never a dated kind's substitute */
+export const DATED_KINDS = ["pay", "renew", "expire", "respond", "alert", "event", "delivery", "ask"] as const;
 export type DatedKind = (typeof DATED_KINDS)[number];
 export const DATED_STATES = ["open", "done", "dismissed", "settled"] as const;
 export type DatedState = (typeof DATED_STATES)[number];
 
-/** Today's groups this plan adds: something to do by a date, and something happening to the reader. */
-export type DatedGroup = "deadlines" | "plans";
-export const datedGroup = (kind: DatedKind): DatedGroup => (kind === "event" || kind === "delivery" ? "plans" : "deadlines");
+/** Today's groups this plan adds: something to do by a date, and something happening to the reader; an ask is Needs you's. */
+export type DatedGroup = "deadlines" | "plans" | "needsYou";
+export const datedGroup = (kind: DatedKind): DatedGroup => (kind === "ask" ? "needsYou" : kind === "event" || kind === "delivery" ? "plans" : "deadlines");
+
+/** What a send of yours on the thread answers (plan 204's answered rule): a request, with a day or without. */
+export const ANSWERED_KINDS: readonly DatedKind[] = ["respond", "ask"];
 
 /** How many days before its day an item shows (§2); an alert shows at once and a delivery on its day. */
 /** After the panel (the owner, 2026-11-14): a week for requests from people, 30 days for expiring documents. */
-export const DATED_LEAD_DAYS: Readonly<Record<DatedKind, number>> = { pay: 3, renew: 7, expire: 30, respond: 7, alert: 0, event: 1, delivery: 0 };
+export const DATED_LEAD_DAYS: Readonly<Record<DatedKind, number>> = { pay: 3, renew: 7, expire: 30, respond: 7, alert: 0, event: 1, delivery: 0, ask: 0 };
 /** Missed keeps an item this long, then it's the Earlier tab's (plan 205; the owner, 2026-11-13). */
 export const MISSED_DAYS = 7;
 /** Coming up looks this far ahead. */
@@ -53,7 +58,7 @@ export interface DatedRow {
   /** when, for ordering: the time if the mail gave one, else 9:00 that day */
   dueAt: number;
   timed: boolean;
-  /** false: an alert that named no day (its day is `ALERT_DAYS` after it arrived) */
+  /** false: an alert that named no day (its day is `ALERT_DAYS` after it arrived), or an ask (the day it arrived) */
   dated: boolean;
   /** when it shows (§2) */
   actAt: number;
@@ -125,11 +130,14 @@ export interface DatedTiming {
 }
 
 /**
- * §2 and revision 7: when an item is due and when it shows. `due` is YYYY-MM-DD (null only for an alert), `time` HH:MM.
- * Null: not to be kept (a day already over, a year out, a dated kind with no day). Pure; local time throughout.
+ * §2 and revision 7: when an item is due and when it shows. `due` is YYYY-MM-DD (null only for an alert or an ask), `time`
+ * HH:MM. Null: not to be kept (a day already over, a year out, a dated kind with no day, an ask with one). Pure; local time
+ * throughout.
  */
 export function datedTiming(o: { kind: DatedKind; due: string | null | undefined; time?: string | null; arrivedAt: number }): DatedTiming | null {
   const arrived = new Date(o.arrivedAt);
+  // an ask has no day of its own, not even a made-up one: it shows from its arrival, for Needs you's window (askEnd)
+  if (o.kind === "ask") return o.due ? null : { dueDay: dayKeyOf(o.arrivedAt), dueAt: o.arrivedAt, timed: false, dated: false, actAt: o.arrivedAt };
   if (!o.due) {
     if (o.kind !== "alert") return null;
     const day = new Date(startOfDay(o.arrivedAt));
@@ -150,22 +158,28 @@ export function datedTiming(o: { kind: DatedKind; due: string | null | undefined
   return { dueDay: o.due, dueAt, timed: clock !== null, dated: true, actAt: Math.max(act, o.arrivedAt) };
 }
 
-export type DatedPlace = "missed" | "deadlines" | "plans" | "comingUp" | "hidden";
+export type DatedPlace = "missed" | "deadlines" | "plans" | "needsYou" | "comingUp" | "hidden";
 
 /** When a Plan is over: two hours after its time, or its day's end. */
 export const planEnd = (r: Pick<DatedRow, "dueDay" | "dueAt" | "timed">): number => (r.timed ? r.dueAt + PLAN_LENGTH_MS : dayEnd(r.dueDay));
+
+/** When an ask is over: Needs you's window after it arrived (`WAITING_WINDOW_MS`), as for a conversation waiting on you. */
+export const askEnd = (r: Pick<DatedRow, "arrivedAt">): number => r.arrivedAt + WAITING_WINDOW_MS;
 
 /**
  * Revision 8: where an item sits now. One rule for the list, the count and the timer. Later (`deferredUntil`) is honoured in
  * every group: a deferred item is never Missed.
  */
-export function datedPlace(r: Pick<DatedRow, "kind" | "state" | "dueDay" | "dueAt" | "timed" | "actAt" | "deferredUntil">, now: number): DatedPlace {
+export function datedPlace(r: Pick<DatedRow, "kind" | "state" | "dueDay" | "dueAt" | "timed" | "actAt" | "deferredUntil" | "arrivedAt">, now: number): DatedPlace {
   if (r.state !== "open") return "hidden";
   const group = datedGroup(r.kind);
   const deferred = r.deferredUntil !== null && r.deferredUntil > now;
   const showsAt = deferred ? Math.max(r.actAt, r.deferredUntil!) : r.actAt;
   if (group === "plans") {
     if (now >= planEnd(r)) return "hidden";
+  } else if (group === "needsYou") {
+    // an ask is never Missed: it waits in Needs you until its window ends, a Later past that included
+    if (now >= askEnd(r)) return "hidden";
   } else {
     const missedAt = dayEnd(r.dueDay);
     if (now >= missedAt) {
@@ -194,9 +208,11 @@ export function promiseOver(r: { kind: string; state: string; dated: boolean; du
  * Codex code review: an item whose time in Today is over for good: a Plan that's ended, a deadline past Missed's days and
  * not moved on with Later. It's retired (`expired`), so the open set holds only what can still show (its bound of 1,000).
  */
-export function datedOver(r: Pick<DatedRow, "kind" | "state" | "dueDay" | "dueAt" | "timed" | "deferredUntil">, now: number): boolean {
+export function datedOver(r: Pick<DatedRow, "kind" | "state" | "dueDay" | "dueAt" | "timed" | "deferredUntil" | "arrivedAt">, now: number): boolean {
   if (r.state !== "open") return false;
   if (datedGroup(r.kind) === "plans") return now >= planEnd(r);
+  // an ask's window doesn't move with Later: one put off past it is over at its end
+  if (r.kind === "ask") return now >= askEnd(r);
   if (r.deferredUntil !== null && r.deferredUntil > now) return false;
   return now >= missedUntil(r);
 }
@@ -219,7 +235,7 @@ export function promiseComingUp(r: { kind: string; state: string; dated: boolean
  * Revision 11: the next moment, strictly after `now`, at which Today changes by the clock alone: an item showing,
  * entering Coming up, a day ending (Missed), Missed ending, a Plan ending, a deferral ending, a promise's day ending.
  */
-export function nextTodayChange(items: readonly Pick<DatedRow, "kind" | "state" | "dueDay" | "dueAt" | "timed" | "actAt" | "deferredUntil">[], promises: readonly { kind: string; state: string; dated: boolean; dueAt: number }[], now: number): number | null {
+export function nextTodayChange(items: readonly Pick<DatedRow, "kind" | "state" | "dueDay" | "dueAt" | "timed" | "actAt" | "deferredUntil" | "arrivedAt">[], promises: readonly { kind: string; state: string; dated: boolean; dueAt: number }[], now: number): number | null {
   let next = Infinity;
   const consider = (at: number) => {
     if (at > now && at < next) next = at;
@@ -232,6 +248,7 @@ export function nextTodayChange(items: readonly Pick<DatedRow, "kind" | "state" 
     consider(showsAt - ahead);
     if (r.deferredUntil !== null) consider(r.deferredUntil);
     if (datedGroup(r.kind) === "plans") consider(planEnd(r));
+    else if (r.kind === "ask") consider(askEnd(r));
     else {
       consider(dayEnd(r.dueDay));
       consider(missedUntil(r));
@@ -248,7 +265,8 @@ export function nextTodayChange(items: readonly Pick<DatedRow, "kind" | "state" 
     consider(dayAt(new Date(missedAt), MISSED_DAYS, 0));
   }
   // Codex code review: a row's words are by the day ("Tomorrow 7:40", "Due Friday"): while one shows, midnight changes them
-  if (items.some((r) => datedPlace(r, now) !== "hidden") || promises.some((p) => promiseMissed(p, now) || promiseComingUp(p, now))) consider(dayAt(new Date(startOfDay(now)), 1, 0));
+  // (an ask's aren't: it says no day)
+  if (items.some((r) => r.kind !== "ask" && datedPlace(r, now) !== "hidden") || promises.some((p) => promiseMissed(p, now) || promiseComingUp(p, now))) consider(dayAt(new Date(startOfDay(now)), 1, 0));
   return Number.isFinite(next) ? next : null;
 }
 

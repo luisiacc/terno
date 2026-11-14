@@ -27,7 +27,7 @@ function handBack(): void {
 
 /**
  * Plan 204 §6: the way in is where its result will be. While dates aren't read and AI can read them, Today's header offers
- * it in one quiet line, "Show bills, renewals and trips here. Turn on", dismissible for good. Once it's on, the same place
+ * it in one quiet line, "Show bills, trips and requests here. Turn on", dismissible for good. Once it's on, the same place
  * asks once about the last 14 days, with the count and the cost.
  */
 export function TodayDatedOffer({ className }: { className?: string }) {

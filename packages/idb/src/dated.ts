@@ -1,4 +1,4 @@
-import { addressKey, DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, type DatedRow } from "@terno/core";
+import { addressKey, ANSWERED_KINDS, DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, senderIsPerson, type DatedRow } from "@terno/core";
 import { DATED_MARK_MS, DATED_SCAN_MARK_MS, datedTab, NEW_MAIL_MS, readerIn, recipientList, type DatedFinish, type DatedFinishOutcome, type DatedMark, type DatedSnapshot, type DatedSource } from "@terno/store";
 import { received, receivedOwn } from "./ai-summaries";
 import { T, type Ctx, type R } from "./mail";
@@ -96,6 +96,7 @@ export function datedSource(c: Ctx, messageId: number): DatedSource | null {
     id: m.id, threadId: m.thread_id, accountId: m.account_id, subject: m.subject ?? "", date: m.date, fromName: m.from_name ?? "", fromEmail: email, senderKey: addressKey(email),
     to, cc, readerIn: readerIn(to, cc, mine),
     automated: !!m.is_bulk || m.list_id != null, tab: datedTab(Number(thread.tab ?? 0), m.category ?? null),
+    person: senderIsPerson({ from_email: email, list_id: m.list_id ?? null, is_bulk: m.is_bulk ? 1 : 0, gmail_labels: m.gmail_labels ?? null, is_spam: m.is_spam ? 1 : 0 }, { written: (key) => T(c, "correspondents").get(key)?.written === 1 }),
     draft: !!m.is_draft, sent: !!m.is_sent, spam: !!m.is_spam, trash: !!m.is_trash, threadSpam: messages.by("fk_thread_id", m.thread_id).some((x) => !!x.is_spam), own: receivedOwn(c).has(email.toLowerCase()),
     bodyState: m.body_state, bodyUnavailable: m.attachments_captured === 2 && m.body_state !== "full",
   };
@@ -127,7 +128,7 @@ export function settleAnswered(c: Ctx, threadId: number, before: number, now: nu
   const rows = T(c, "dated_items");
   let n = 0;
   for (const r of rows.by("fk_thread_id", threadId)) {
-    if (r.state !== "open" || r.kind !== "respond" || r.arrived_at >= before) continue;
+    if (r.state !== "open" || !ANSWERED_KINDS.includes(r.kind) || r.arrived_at >= before) continue;
     rows.update(r, { state: "settled", closed_reason: "answered", closed_at: now, revision: r.revision + 1 });
     n++;
   }
@@ -163,7 +164,7 @@ export function finishDated(c: Ctx, w: DatedFinish): DatedFinishOutcome {
   for (const r of w.rows) {
     if (rows.by("identity", w.messageId, r.item).length) continue;
     // a request read after your reply is stored answered (Codex code review of the fixes)
-    if (r.kind === "respond" && (repliedAt ??= lastTrustedSend(c, src.threadId) ?? -1) > src.date) {
+    if (ANSWERED_KINDS.includes(r.kind) && (repliedAt ??= lastTrustedSend(c, src.threadId) ?? -1) > src.date) {
       rows.put({
         thread_id: src.threadId, message_id: w.messageId, item: r.item, kind: r.kind, text: r.text, quote: r.quote, sender_key: src.senderKey, due_day: r.dueDay, due_at: r.dueAt, timed: r.timed ? 1 : 0, dated: r.dated ? 1 : 0, act_at: r.actAt,
         deferred_until: null, arrived_at: src.date, state: "settled", closed_reason: "answered", closed_at: w.now, from_scan: w.fromScan ? 1 : 0, revision: 0, model: w.model, provider: w.provider, prompt_version: w.promptVersion, created_at: w.now,

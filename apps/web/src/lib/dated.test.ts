@@ -90,4 +90,15 @@ describe("the conversation's line keeps the whole wording (plan 204, after the s
     expect(promiseLine({ text: "send the agenda", dueAt: facts.dueAt, dated: true }, false, now)).toBe("Due today · You said: send the agenda");
     expect(promiseLine({ text: "call back", dated: false }, false, now)).toBe("You said: call back");
   });
+  it("the third panel round: an ask is its words alone, in the conversation and in Today, its row's date the day it came", async () => {
+    const { datedLine, taskOf } = await import("./dated");
+    const now = new Date(2026, 10, 12, 10, 0).getTime();
+    const arrived = new Date(2026, 10, 10, 9, 0).getTime();
+    const ask = { kind: "ask" as const, dueDay: "2026-11-10", dueAt: arrived, timed: false, dated: false, text: "Answer Mariana about a rebranding quote" };
+    expect(datedLine(ask, false, now)).toBe("Answer Mariana about a rebranding quote");
+    // an older backend's ask said dated: it still names no day
+    expect(datedLine({ ...ask, dated: true }, false, now)).toBe("Answer Mariana about a rebranding quote");
+    const task = taskOf({ kind: "dated", text: ask.text, dueAt: arrived, item: { id: 1, revision: 0, kind: "ask", dueDay: ask.dueDay, timed: false, dated: false } }, now);
+    expect(task).toMatchObject({ kind: "dated", when: null, due: null, end: null });
+  });
 });

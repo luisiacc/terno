@@ -549,7 +549,7 @@ export class TodayService {
     const items = settings.dated?.enabled ? await this.datedRows() : [];
     // a thread's strongest place, and in it its soonest item
     const best = new Map<number, { place: DatedPlace; row: DatedRow }>();
-    const rank: Record<DatedPlace, number> = { missed: 0, deadlines: 1, plans: 2, comingUp: 3, hidden: 4 };
+    const rank: Record<DatedPlace, number> = { missed: 0, deadlines: 1, plans: 2, needsYou: 3, comingUp: 4, hidden: 5 };
     for (const row of items) {
       const place = datedPlace(row, now);
       if (place === "hidden") continue;
@@ -574,6 +574,8 @@ export class TodayService {
     const promises = followups.filter((r) => r.kind === "promise" && !missedIds.has(r.id)).sort((a, b) => a.dueAt - b.dueAt);
     const nudges = followups.filter((r) => r.kind === "awaiting").sort((a, b) => a.dueAt - b.dueAt);
     for (const r of [...promises, ...nudges]) placed.push({ group: "needsYou", threadId: r.threadId, why: promiseWhy(r) });
+    // the third panel round: a person's ask, newest first, before what's waiting (so it's the row's line, and counted)
+    for (const b of ofPlace("needsYou").sort((x, y) => y.row.arrivedAt - x.row.arrivedAt || y.row.id - x.row.id)) placed.push({ group: "needsYou", threadId: b.row.threadId, why: datedWhy(b.row, false) });
     // the count reads none of what follows: what's waiting is its own indexed count there, and Reminders and Coming up
     // aren't counted
     if (o.count) return dedupe(placed);

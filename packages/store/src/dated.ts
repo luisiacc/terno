@@ -35,6 +35,8 @@ export interface DatedSource {
   senderKey: string;
   /** a list or bulk sender: a cue the worker reads, never a reason to skip (revision 4) */
   automated: boolean;
+  /** plan 17's `senderIsPerson` (a role address only if you've written to it): who an ask may come from (third panel round) */
+  person: boolean;
   /** Gmail's tab for its thread, or null where there are none (plan 86) */
   tab: "primary" | "social" | "promotions" | "updates" | "forums" | null;
   draft: boolean;

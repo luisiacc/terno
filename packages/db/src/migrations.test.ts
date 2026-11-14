@@ -640,3 +640,30 @@ describe("migration v37: Gmail tabs (plan 86)", () => {
     expect(JSON.parse(gmail.get<{ value_json: string }>("SELECT value_json FROM settings WHERE key = 'tabs_backfill'")!.value_json)).toEqual({ phase: "messages", after: 0 });
   });
 });
+
+describe("migration v57: an ask (plan 204, after the third panel round)", () => {
+  it("admits `ask`, keeping every row with its id and revision, the indexes, and the ids' high mark (a pruned id isn't reused)", () => {
+    const { db } = legacyMail(56, { threads: 3, seed: 8 });
+    const thread = db.get<{ id: number }>("SELECT id FROM threads ORDER BY id LIMIT 1")!.id;
+    const insert = (id: number | null, kind: string, revision = 0, state = "open") =>
+      db.run(
+        `INSERT INTO dated_items (id, thread_id, message_id, item, kind, text, quote, sender_key, due_day, due_at, timed, dated, act_at, deferred_until, arrived_at, state, closed_reason, closed_at, from_scan, revision, model, provider, prompt_version, created_at)
+         VALUES (?, ?, ?, 0, ?, 'Pay', 'due', 'a@b.mx', '2026-11-20', 5, 0, 1, 4, NULL, 3, ?, NULL, NULL, 0, ?, 'm', 'p', 4, 2)`,
+        id, thread, id ?? 100, kind, state, revision,
+      );
+    insert(1, "pay", 2);
+    insert(2, "respond", 0, "done");
+    insert(3, "event", 1);
+    db.run("DELETE FROM dated_items WHERE id = 3");
+    expect(() => insert(4, "ask")).toThrow(/CHECK/);
+    const before = db.all<Record<string, unknown>>("SELECT * FROM dated_items ORDER BY id");
+    expect(migrate(db)).toEqual({ from: 56, to: SCHEMA_VERSION });
+    expect(db.all<Record<string, unknown>>("SELECT * FROM dated_items ORDER BY id")).toEqual(before);
+    expect(db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'dated_items' AND sql IS NOT NULL ORDER BY name").map((r) => r.name)).toEqual(["dated_open", "dated_sender", "dated_thread"]);
+    expect(db.get("SELECT name FROM sqlite_master WHERE name = 'dated_items_v57'")).toBeUndefined();
+    // an ask now; the next id is past the pruned one, as before the upgrade
+    insert(null, "ask");
+    expect(db.get<{ id: number; kind: string }>("SELECT id, kind FROM dated_items WHERE message_id = 100")).toEqual({ id: 4, kind: "ask" });
+    expect(() => insert(null, "chore")).toThrow(/CHECK/);
+  });
+});

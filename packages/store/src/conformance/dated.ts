@@ -113,6 +113,20 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
         expect((await store.dated.source(mine.id))!.own).toBe(true);
         expect(await store.dated.source(999_999)).toBeNull();
       });
+
+      it("the third panel round: whether the sender is a person, by plan 17's rule (a role address once you've written to it)", async () => {
+        const { store, accountId, got } = await setup();
+        const ana = await got({ from: { name: "Ana Ruiz", email: "ana@studio.test" } });
+        expect((await store.dated.source(ana.id))!.person).toBe(true);
+        const list = await got({ from: { name: "Ana Ruiz", email: "ana@studio.test" }, listId: "news.studio.test" });
+        expect((await store.dated.source(list.id))!.person).toBe(false);
+        const noreply = await got({ from: { name: "Studio", email: "no-reply@studio.test" } });
+        expect((await store.dated.source(noreply.id))!.person).toBe(false);
+        const support = await got({ from: shop, subject: "Your question" });
+        expect((await store.dated.source(support.id))!.person).toBe(false);
+        await store.sync.ingest([msg({ accountId, from: me, to: [shop], isSent: true, inInbox: false, gmailLabels: ["SENT"], subject: "Re: Your question", date: NOW - 1000 })], { applyFilters: false, now: NOW, classifier: null });
+        expect((await store.dated.source(support.id))!.person).toBe(true);
+      });
     });
 
     describe("finish", () => {
@@ -251,6 +265,24 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
         const late = await got({ inReplyTo: "ask@x", references: ["ask@x"], date: NOW - 3500 });
         await finish(late.id, late.thread, { rows: [item({ kind: "respond", text: "Send the deck too" })] });
         expect((await store.dated.ofThread(ask.thread)).some((r) => r.kind === "respond")).toBe(false);
+      });
+
+      it("the third panel round: an ask is kept undated, and a message you send answers it as it answers a request with a day", async () => {
+        const { store, accountId, got, item, finish } = await setup();
+        const ana = { name: "Ana Ruiz", email: "ana@studio.test" };
+        const ask = await got({ from: ana, rfcMessageId: "quote@x", date: NOW - 5000 });
+        const asked = item({ kind: "ask", text: "Answer Ana about a quote", quote: "can you send me a quote", dueDay: "2026-11-13", dueAt: NOW - 5000, dated: false, actAt: NOW - 5000 });
+        await finish(ask.id, ask.thread, { rows: [asked, item({ kind: "pay", item: 1, dueDay: "2026-11-21" })] });
+        const [row] = (await store.dated.ofThread(ask.thread)).filter((r) => r.kind === "ask");
+        expect(row).toMatchObject({ kind: "ask", text: "Answer Ana about a quote", dated: false, timed: false, state: "open", arrivedAt: ask.m.date });
+        await store.sync.ingest([msg({ accountId, from: me, to: [ana], isSent: true, inInbox: false, gmailLabels: ["SENT"], inReplyTo: "quote@x", references: ["quote@x"], subject: "Re", date: NOW - 3000 })], { applyFilters: false, now: NOW, classifier: null });
+        expect((await store.dated.get(row!.id))).toMatchObject({ state: "settled", closedReason: "answered", revision: row!.revision + 1 });
+        expect((await store.dated.active()).map((r) => r.kind)).toEqual(["pay"]);
+        // read after your reply: stored answered, never open
+        const late = await got({ from: ana, inReplyTo: "quote@x", references: ["quote@x"], date: NOW - 3500 });
+        await finish(late.id, late.thread, { rows: [{ ...asked, text: "Answer Ana about the dates" }] });
+        expect(late.thread).toBe(ask.thread);
+        expect((await store.dated.ofThread(ask.thread)).map((r) => r.kind)).toEqual(["pay"]);
       });
 
       it("Codex code review of the fixes: a forged From claiming your address, in the Inbox, answers nothing", async () => {
