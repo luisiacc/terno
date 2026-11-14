@@ -150,6 +150,11 @@ export interface DatedStore {
   /** open, by `act_at`, at most `DATED_ACTIVE_MAX` */
   active(): Promise<DatedRow[]>;
   ofThread(threadId: number): Promise<DatedRow[]>;
+  /**
+   * The senders among these (`addressKey`s) the user has written to (plan 17's correspondents), by key: one indexed
+   * lookup each. After the fourth panel round, a sender named like a security desk you correspond with is trusted.
+   */
+  written(senderKeys: readonly string[]): Promise<Set<string>>;
   get(id: number): Promise<DatedRow | null>;
   /**
    * a change by the user, conditional on the revision they saw; with `schedule`, also on the day it was decided on (a move

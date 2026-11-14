@@ -1,7 +1,7 @@
 import { ASK_MATCH_MESSAGES, ASK_MATCH_PARTS, CORPUS_TEXTS_MAX, finishBodyClose, rankSentRefs, readPassages, readThreadContext, type SentRef } from "@terno/store";
 import { countWith, needsCount, needsWalk, type NeedsWalk, messagesHere, senders, allDigests, beginDigest, clearDigests, digestFacts, digestLive, digestRead, getDigest, latestDigest, pendingDigestDays, pruneDigests, waitingAmong, waitingPage, writeDigest } from "./today";
 import { clearReplies, finishReply, getReply, transitionReply } from "./replies";
-import { datedAnswered, settleAnswered, activeDated, clearDated, datedMarkCount, datedMarkPage, datedScanCandidates, datedSource, finishDated, getDated, markDatedMail, openDatedFor, pruneDated, pruneDatedMarks, queueDatedScan, restoreDated, threadDated, updateDated } from "./dated";
+import { datedAnswered, settleAnswered, activeDated, clearDated, datedMarkCount, datedMarkPage, datedScanCandidates, datedSource, finishDated, getDated, markDatedMail, openDatedFor, pruneDated, pruneDatedMarks, queueDatedScan, restoreDated, threadDated, datedWritten, updateDated } from "./dated";
 import { activeFollowups, claimFollowupNotice, clearFollowups, closeAnsweredFollowups, endFollowupTop, finishFollowups, followupLiveSent, followupScanCandidates, followupSendConfirmed, followupSource, getFollowup, makeFollowupsDue, nextFollowupDue, pruneFollowups, pruneSentMarks, queueScan, restoreFollowups, sentMarkCount, sentMarkPage, threadFollowups, updateFollowup } from "./followups";
 import { findLinked, newestLinked } from "./links";
 import { addAskTurn, askAccountsOf, askCandidates, askHeaders, askNewest, askTurnCount, askTurns, clearAsk, listAskConversations, removeAskConversation, removeAskForAccount, restoreAskConversation } from "./ask";
@@ -2095,6 +2095,7 @@ export class IdbMailStore implements MailStore {
     finish: (w) => this.command(() => (w.clearGeneration === this.datedClears ? finishDated(this.c, w) : "gone")),
     active: () => this.early(() => activeDated(this.c)),
     ofThread: (id) => this.early(() => threadDated(this.c, id)),
+    written: (keys) => this.early(() => datedWritten(this.c, keys)),
     get: (id) => this.early(() => getDated(this.c, id)),
     update: (id, revision, patch, schedule) => this.command(() => updateDated(this.c, id, revision, patch, schedule)),
     restore: (rows) => this.command(() => restoreDated(this.c, rows)),
