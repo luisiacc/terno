@@ -497,6 +497,22 @@ describe("the digest", () => {
       expect(sent(t)).not.toContain("Spammy");
     });
 
+    it("Codex's second pass: a digest checkpointed before the phishing guard, resumed, never sends a suspicious sender's message nor keeps it", async () => {
+      const t = await setup();
+      const kept = await t.letter("Kept");
+      const fake = await t.letter("Tri-River FCU", { from: { name: "Tri-River FCU", email: "security@tririver-fcu-alerts.com" } });
+      const { digest } = t.backend.store.today;
+      const g = digest.clearGeneration();
+      const senders = new Map([[kept, "news@kept.test"], [fake, "security@tririver-fcu-alerts.com"]]);
+      const items = (await t.backend.store.filters.actionFacts([kept, fake])).map((f) => ({ threadId: f.id, messageId: f.id, lastDate: f.lastDate, messageCount: f.messageCount, from: f.subject, fromEmail: senders.get(f.id)!, subject: f.subject, line: null }));
+      await digest.begin(day(), { at: 0, id: 0 }, items, g);
+      await on(t);
+      await vi.waitFor(async () => expect((await digest.get(day()))?.state).toBe("ready"));
+      expect(sent(t)).toContain("BODY-CANARY of Kept");
+      expect(sent(t)).not.toContain("Tri-River");
+      expect((await digest.get(day()))!.items.map((i) => i.threadId)).toEqual([kept]);
+    });
+
     it("a digest stored before items carried a sender: its own message's, not the thread's last, and pending ones too", async () => {
       const t = await setup();
       const one = await t.letter("Old Letter");

@@ -404,9 +404,12 @@ export class TodayService {
     if (!listed.length) return [];
     const [items, excluded] = await Promise.all([this.withSenders(listed), this.excludedKeys()]);
     const facts = new Map((await this.b.store.filters.actionFacts(items.map((i) => i.threadId))).map((f) => [f.id, f]));
+    // Codex's second pass: a digest checkpointed before the guard, resumed, sends and keeps no suspicious sender's message
+    const untrusted = await untrustedSenders(items.map((i) => i.fromEmail ?? ""), this.writtenTo);
     return items.filter((i) => {
       const f = facts.get(i.threadId);
-      return f && !f.inSpam && !f.inTrash && f.lastDate === i.lastDate && f.messageCount === i.messageCount && !excluded.has(addressKey(i.fromEmail ?? ""));
+      const key = addressKey(i.fromEmail ?? "");
+      return f && !f.inSpam && !f.inTrash && f.lastDate === i.lastDate && f.messageCount === i.messageCount && !excluded.has(key) && !untrusted.has(key);
     });
   }
 
