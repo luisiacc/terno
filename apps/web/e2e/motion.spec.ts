@@ -94,7 +94,8 @@ const frames = (page: Page) => page.evaluate(() => new Promise<void>((r) => requ
 async function exercise(page: Page) {
   await page.getByTestId("open-settings").click();
   await expect(page.getByTestId("settings-dialog")).toBeVisible();
-  await page.getByTestId("settings-dialog").getByRole("combobox").first().click();
+  // a select's popup: plan 203's search field, an input, is the dialog's first combobox now
+  await page.getByTestId("settings-dialog").locator('button[role="combobox"]').first().click();
   await expect(page.getByRole("listbox")).toBeVisible();
   await frames(page);
   await page.keyboard.press("Escape");
