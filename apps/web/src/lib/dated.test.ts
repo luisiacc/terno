@@ -115,6 +115,6 @@ describe("the conversation's line keeps the whole wording (plan 204, after the s
     // an older backend's ask said dated: it still names no day
     expect(datedLine({ ...ask, dated: true }, false, now)).toBe("Answer Mariana about a rebranding quote");
     const task = taskOf({ kind: "dated", text: ask.text, dueAt: arrived, item: { id: 1, revision: 0, kind: "ask", dueDay: ask.dueDay, timed: false, dated: false } }, now);
-    expect(task).toMatchObject({ kind: "dated", when: null, due: null, end: null });
+    expect(task).toMatchObject({ kind: "dated", when: null, due: null, dueAt: arrived });
   });
 });
