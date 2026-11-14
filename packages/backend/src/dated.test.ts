@@ -263,6 +263,39 @@ describe("the reader", () => {
     expect(await backend.store.dated.active()).toHaveLength(1);
   });
 
+  it("Codex's second pass: someone you've written to is trusted, whatever their domain's words", async () => {
+    const { backend, model, receive, read, raw } = await setup();
+    model.answer = () => reply([bill]);
+    raw.run("INSERT INTO correspondents (email, written) VALUES (?, 1)", "jane@acme-support.com");
+    await receive({ from: { name: "Jane", email: "Jane+billing@Acme-Support.com" } });
+    await read();
+    expect(model.requests).toHaveLength(1);
+    expect(await backend.store.dated.active()).toHaveLength(1);
+    // her colleague, never written to, isn't
+    await receive({ from: { name: "Mo", email: "mo@acme-support.com" } });
+    await read();
+    expect(model.requests).toHaveLength(1);
+  });
+
+  it("Codex's second pass: an item stored from a suspicious sender before the guard isn't shown, counted or in its conversation, unless you've written to them", async () => {
+    const { backend, client, model, receive, read, raw, clock } = await setup();
+    model.answer = () => reply([bill]);
+    const thread = await receive();
+    await read();
+    // as if read before the guard existed
+    raw.run("UPDATE dated_items SET sender_key = ?", "security@tririver-fcu-alerts.com");
+    backend.today.touched();
+    clock.now = at(2026, 11, 18, 10);
+    expect((await client.call("today.list", { heldIds: [] })).sections).toEqual([]);
+    expect((await client.call("counts.get", {})).today).toBe(0);
+    expect((await client.call("dated.ofThread", { threadId: thread })).rows).toEqual([]);
+    raw.run("INSERT INTO correspondents (email, written) VALUES (?, 1)", "security@tririver-fcu-alerts.com");
+    backend.today.touched();
+    expect((await client.call("today.list", { heldIds: [] })).sections.map((x) => x.kind)).toEqual(["deadlines"]);
+    expect((await client.call("counts.get", {})).today).toBe(1);
+    expect((await client.call("dated.ofThread", { threadId: thread })).rows).toHaveLength(1);
+  });
+
   it("Spam meanwhile stops the request as it leaves, and nothing is written", async () => {
     const { backend, model, receive, raw } = await setup();
     let release!: () => void;
