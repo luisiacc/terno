@@ -73,6 +73,25 @@ test.describe("Relief (plan 204)", () => {
   });
 });
 
+test.describe("Relief dark (plan 204)", () => {
+  test.use({ design: "relief" });
+
+  test("the filled buttons' own colours reach their icons and keys (UI rating relief-r01)", async ({ app: page, server }) => {
+    await server.backend.server.invoke("settings.update", { theme: "dark" }, { clientId: "setup", origin: "dev" });
+    await page.reload();
+    await page.locator("[data-ready]").waitFor();
+    const meta = process.platform === "darwin" ? "Meta" : "Control";
+    const rows = page.getByTestId("thread-row");
+    await rows.nth(1).click({ modifiers: [meta] });
+    await rows.nth(2).click({ modifiers: [meta] });
+    const archive = page.getByTestId("bar-archive").first();
+    await expect(archive).toBeVisible();
+    const colors = await archive.evaluate((el) => ({ text: getComputedStyle(el).color, icon: getComputedStyle(el.querySelector("svg")!).color, key: el.querySelector("kbd") ? getComputedStyle(el.querySelector("kbd")!).color : getComputedStyle(el).color }));
+    expect(colors.icon).toBe(colors.text);
+    expect(colors.key).toBe(colors.text);
+  });
+});
+
 test.describe("a flat design keeps what it drew (plan 204)", () => {
   test("macOS: the same shadows as before depth was a design value", async ({ app: page }) => {
     await scenario("the real controls", async () => {

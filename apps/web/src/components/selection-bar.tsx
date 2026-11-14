@@ -24,7 +24,7 @@ const DANGER =
   // (pressed through `press`, as the button's own press: plan 173, so the base's neutral press doesn't win over the red)
   "text-destructive hover:bg-destructive/10 hover:text-destructive press:bg-destructive/10 aria-expanded:text-destructive dark:hover:bg-destructive/20 dark:press:bg-destructive/20 [&_svg:not([class*='text-'])]:text-destructive hover:[&_svg:not([class*='text-'])]:text-destructive unavailable:text-muted-foreground unavailable:[&_svg:not([class*='text-'])]:text-muted-foreground";
 /** A key on the primary, as on Send */
-const LEAD = "[&_kbd]:bg-primary-foreground/15 [&_kbd]:text-primary-foreground [&_svg:not([class*='text-'])]:text-primary-foreground";
+const LEAD = "[&_kbd]:bg-cta-foreground/15 [&_kbd]:text-cta-foreground [&_svg:not([class*='text-'])]:text-cta-foreground";
 
 /**
  * In List's toolbar, which words a narrow bar lets go first (their icon stays, the name in its tooltip and to a screen

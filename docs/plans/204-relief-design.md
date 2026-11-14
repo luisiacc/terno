@@ -166,3 +166,9 @@ The two dark-mode points I'd raised, and the owner's one:
 - **Send and the other filled buttons in dark** were the light ink, as in Graphite. They're now the dark reference's raised pills ("View build", "Pause"): `#2E2E2E` lit to `#242424`, `#EDEDED` words. The primary (switches that are on, ticked boxes, links, the focus ring) keeps its light ink, so filled buttons have their own tokens: `cta`, `cta-hover` and `cta-foreground`, derived as the primary's in every palette, and set apart only in `relief-dark`. `Button`'s default and Send's group draw them; their text is in `CONTRAST_PAIRS` on both fills. A unit test holds every other palette's `cta` to its primary, and `controls.spec` compares the button with the `cta` probes.
 - **The off switch's thumb in dark** was white, the brightest thing on screen. Its dark fill is the design's (`--depth-thumb-dark`, `--depth-thumb-dark-shade`: the ink as before where depth is flat), a soft grey in Relief.
 - **The chosen sidebar item** stood up from the sidebar like the Compose pill. It's pressed in now, a held-down key: `--depth-nav` is a shaded well, and in light the fill is a step darker than the sidebar (`#D3D3D3`, 1.14:1). In dark a darker step can't hold the selection's floor on `#191919`, so the fill stays the lighter `#333333`, pressed in by its shading.
+
+## UI rating, round 1 (relief-r01, commit 002cdccdf)
+
+Relief alone, the everyday set. Overall: Claude 6.5, Codex 7 (UI 6 / 6.5, UX 7.5 / 7.5); every cell under 9, the lowest 4 and 4.5. The round first stopped at the List layout's shots: the harness still set the layout in Settings → General, where it hasn't been since af3c9ea74 (fixed in 002cdccdf, for every style).
+
+Fixed at once, with a test that fails without it: the selection bar's Archive drew its icon and key in the primary's foreground, so on Relief's dark filled pill they were dark on dark (~1.2:1). They take the filled button's own foreground (`cta-foreground`).
