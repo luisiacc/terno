@@ -1,8 +1,9 @@
 import { todayAvailable } from "~/lib/ai";
-import { addressKey, DIGEST_ROW_ID, type DigestItem, type DigestRow, type TodayList, type ThreadSummary } from "@terno/core";
+import { addressKey, DIGEST_ROW_ID, TODAY_GROUP_ORDER, type DigestItem, type DigestRow, type TodayGroupKind, type TodayList, type ThreadSummary } from "@terno/core";
 import { t } from "@terno/i18n";
 import { create } from "zustand";
 import { listDate } from "~/lib/format";
+import { datedLine, wasDueLine, type DatedRef } from "~/lib/dated";
 import { client } from "~/rpc/connection";
 import type { Undo } from "~/lib/snack";
 import { getApp, navigate, setApp, useApp } from "./app";
@@ -13,8 +14,8 @@ import { reloadList } from "./list";
  * thread rows, with what they say in the snippet's place.
  */
 export interface TodayGroup {
-  /** plan 166, after the owner's second look: Needs you is one group again ("they're really the same") */
-  kind: "needsYou" | "reminders";
+  /** plan 166, after the owner's second look: Needs you is one group again ("they're really the same"); plan 204 adds Missed, Deadlines, Plans and Coming up */
+  kind: TodayGroupKind;
   /** the row it begins at */
   at: number;
 }
@@ -47,13 +48,18 @@ export interface DigestDone {
 
 interface TodayState {
   groups: TodayGroup[];
-  more: number;
+  /** plan 204: the threads the list's counted groups hold (the sidebar's count until its own arrives): no cap, so it's all of them */
+  counted: number;
+  /** plan 204: what Coming up holds, shown or not (never counted) */
+  comingUp: number;
+  /** plan 204: Coming up open under the rest (closed by default; remembered on this machine) */
+  comingUpOpen: boolean;
+  /** plan 204: the dated item each row stands for, what its menu's Done and Later act on */
+  dated: ReadonlyMap<number, DatedRef>;
   digest: DigestRow | null;
   /** the conversation opened from the digest page: its Back returns there, and only it shows one (plan 161) */
   fromDigest: number | null;
   pick: DigestPick | null;
-  /** the rows Needs you shows (the sidebar's count can be more) */
-  needsShown: number;
   /** owner's decisions (2): newsletters the reader sent to Trash or Spam on the way back, so their row says so, not "Archived" */
   movedTo: ReadonlyMap<number, "trash" | "spam">;
   /**
@@ -63,7 +69,28 @@ interface TodayState {
   notNewsletters: ReadonlySet<string>;
 }
 
-export const useToday = create<TodayState>(() => ({ groups: [], more: 0, digest: null, fromDigest: null, pick: null, needsShown: 0, movedTo: new Map(), notNewsletters: new Set() }));
+/** Plan 204: Coming up's open or closed, a convenience of this machine's: storage can be missing or refuse. */
+const COMING_UP_KEY = "terno.today.comingUp";
+function storedComingUp(): boolean {
+  try {
+    return localStorage.getItem(COMING_UP_KEY) === "open";
+  } catch {
+    return false;
+  }
+}
+
+export const useToday = create<TodayState>(() => ({ groups: [], counted: 0, comingUp: 0, comingUpOpen: storedComingUp(), dated: new Map(), digest: null, fromDigest: null, pick: null, movedTo: new Map(), notNewsletters: new Set() }));
+
+/** Plan 204: Coming up opens under the rest, or closes; the list is read again with it (held rows and the selection kept). */
+export function setComingUpOpen(open: boolean): void {
+  try {
+    localStorage.setItem(COMING_UP_KEY, open ? "open" : "closed");
+  } catch {
+    // remembered for this session only
+  }
+  useToday.setState({ comingUpOpen: open });
+  if (getApp().today) void reloadList({ keepSelection: true });
+}
 
 /** Plan 166: an item's sender, as the list of senders that aren't newsletters keys it. */
 export const senderKey = (item: Pick<DigestItem, "fromEmail">): string => addressKey(item.fromEmail ?? "");
@@ -161,6 +188,10 @@ export function installToday(): void {
   client.on("todayDigest", () => {
     if (getApp().today) void reloadList({ keepSelection: true });
   });
+  // plan 204: a dated item came, was done, moved, or its time came round (the backend's one timer)
+  client.on("todayChanged", () => {
+    if (getApp().today) void reloadList({ keepSelection: true });
+  });
 
   // no provider any more: no row, no list. The digest's data stays until Clear AI data.
   useApp.subscribe((s) => {
@@ -198,30 +229,47 @@ export function digestFrom(digest: DigestRow, locale: string): string | null {
 
 const whyLine = (item: TodayList["sections"][number]["items"][number]): string => {
   const { why, thread, summary } = item;
-  if (why.kind === "promise") return t("today.why.promise", { text: why.text ?? "" });
+  // plan 204: "Due Friday · Pay the electricity bill", "Tomorrow 7:40 · Flight to Madrid", "Was due Tuesday · …"
+  if (why.kind === "dated") return why.item ? datedLine({ ...why.item, dueAt: why.dueAt ?? 0, text: why.text ?? "" }, why.missed === true) : (why.text ?? thread.snippet);
+  if (why.kind === "promise") {
+    const said = t("today.why.promise", { text: why.text ?? "" });
+    return why.missed && why.dueAt ? wasDueLine(why.dueAt, said) : said;
+  }
   if (why.kind === "nudge") return t("today.why.nudge", { name: why.personName || thread.fromName, count: Math.max(1, Math.floor((Date.now() - (why.sentAt ?? Date.now())) / 86_400_000)) });
   if (why.kind === "reminder") return why.dueAt ? `${t("today.why.reminder", { when: listDate(why.dueAt) })} · ${thread.snippet}` : thread.snippet;
   return summary ?? thread.snippet;
 };
 
-const GROUP_ORDER: readonly TodayGroup["kind"][] = ["needsYou", "reminders"];
+const GROUP_ORDER: readonly TodayGroupKind[] = TODAY_GROUP_ORDER;
+/** Plan 204 §7: what the sidebar counts; Reminders and Coming up aren't */
+const COUNTED: ReadonlySet<TodayGroupKind> = new Set(["missed", "deadlines", "plans", "needsYou"]);
 
-/** The sections as one list; held rows stay where they were until the selection lets go (revision 9). */
+/**
+ * The sections as one list, in `TODAY_GROUP_ORDER` and all of them (plan 204: no cap); Coming up only while it's open.
+ * Held rows stay where they were until the selection lets go (revision 9).
+ */
 export function flattenToday(list: TodayList, before: readonly ThreadSummary[]): ThreadSummary[] {
   const groups: TodayGroup[] = [];
   const items: ThreadSummary[] = [];
-  let more = 0;
-  let needsShown = 0;
+  const counted = new Set<number>();
+  const dated = new Map<number, DatedRef>();
+  const open = useToday.getState().comingUpOpen;
+  let comingUp = 0;
   // plan 162 (after ai162-r02): the digest isn't a row: its way in is Today's header (TodayDigestEntry), above the fold and
   // never before a person (it led the list, under its own heading, on a page that says these need you)
-  for (const section of list.sections) {
-    if (section.kind === "needsYou") {
-      more = section.more;
-      needsShown = section.items.length;
+  const sections = [...list.sections].sort((a, b) => GROUP_ORDER.indexOf(a.kind) - GROUP_ORDER.indexOf(b.kind));
+  for (const section of sections) {
+    if (section.kind === "comingUp") {
+      comingUp = section.items.length;
+      if (!open) continue;
     }
     if (!section.items.length) continue;
     groups.push({ kind: section.kind, at: items.length });
-    for (const item of section.items) items.push({ ...item.thread, snippet: whyLine(item) });
+    for (const item of section.items) {
+      items.push({ ...item.thread, snippet: whyLine(item) });
+      if (COUNTED.has(section.kind)) counted.add(item.thread.id);
+      if (item.why.item) dated.set(item.thread.id, item.why.item);
+    }
   }
   // plan 166: a held row stays in the group it was in. At a group's first place it sits above that group's heading (it
   // went under the next one's), and a group it was the last of keeps its heading for it
@@ -247,6 +295,6 @@ export function flattenToday(list: TodayList, before: readonly ThreadSummary[]):
       groups.sort((a, b) => a.at - b.at);
     }
   }
-  useToday.setState(({ notNewsletters }) => ({ groups, more, digest: list.digest && withoutSenders(list.digest, notNewsletters), needsShown }));
+  useToday.setState(({ notNewsletters }) => ({ groups, counted: counted.size, comingUp, dated, digest: list.digest && withoutSenders(list.digest, notNewsletters) }));
   return items;
 }

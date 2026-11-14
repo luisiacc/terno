@@ -3,7 +3,7 @@ import { getLocale, t } from "@terno/i18n";
 /** Plan 87's moments in words (plan 94's scheduled sends say theirs the same way); no imports of the app. */
 
 const DAY = 86_400_000;
-const formats = new Map<string, { time: Intl.DateTimeFormat; weekday: Intl.DateTimeFormat; day: Intl.DateTimeFormat; year: Intl.DateTimeFormat; dated: Intl.DateTimeFormat; datedYear: Intl.DateTimeFormat }>();
+const formats = new Map<string, { time: Intl.DateTimeFormat; weekday: Intl.DateTimeFormat; weekdayLong: Intl.DateTimeFormat; day: Intl.DateTimeFormat; year: Intl.DateTimeFormat; dated: Intl.DateTimeFormat; datedYear: Intl.DateTimeFormat }>();
 function fmt() {
   const id = getLocale();
   let f = formats.get(id);
@@ -13,6 +13,7 @@ function fmt() {
     f = {
       time: new Intl.DateTimeFormat(tag, time),
       weekday: new Intl.DateTimeFormat(tag, { weekday: "short" }),
+      weekdayLong: new Intl.DateTimeFormat(tag, { weekday: "long" }),
       day: new Intl.DateTimeFormat(tag, { day: "numeric", month: "short" }),
       year: new Intl.DateTimeFormat(tag, { day: "numeric", month: "short", year: "numeric" }),
       dated: new Intl.DateTimeFormat(tag, { weekday: "short", day: "numeric", month: "short" }),
@@ -95,4 +96,14 @@ export function whenDay(ms: number, now = Date.now()): string {
 /** Plan 162: a boundary in time, never ambiguous: the day with its year, "Apr 25, 2026" (what a search went back to). */
 export function boundaryDay(ms: number): string {
   return fmt().year.format(ms);
+}
+
+/**
+ * Plan 204: the day a dated line names, near or not: today, tomorrow, yesterday; the weekday within 6 days either way
+ * ("Friday", "viernes"); further, its date ("Nov 21", "21 nov"). The words for the near three are the line's own.
+ */
+export function datedDay(ms: number, now = Date.now()): { near: "today" | "tomorrow" | "yesterday" | null; text: string } {
+  const days = daysAway(ms, now);
+  const near = days === 0 ? "today" : days === 1 ? "tomorrow" : days === -1 ? "yesterday" : null;
+  return { near, text: Math.abs(days) < 7 ? fmt().weekdayLong.format(ms) : dayOf(ms, now) };
 }
