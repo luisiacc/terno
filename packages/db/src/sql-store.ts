@@ -6,6 +6,7 @@ import { bodyUpgradePending, BodyUpgradeRequired, BODY_UPGRADE_APPLICATION_ID, B
 import { unsubscribeBodyParts, decodeBodyPart } from "@terno/store";
 import { needsCount, messagesHere, senders, allDigests, beginDigest, clearDigests, digestFacts, digestLive, digestRead, getDigest, latestDigest, pendingDigestDays, pruneDigests, waitingAmong, waitingPage, writeDigest } from "./today";
 import { clearReplies, finishReply, getReply, transitionReply } from "./replies";
+import { activeDated, clearDated, datedMarkCount, datedMarkPage, datedScanCandidates, datedSource, finishDated, getDated, markDatedMail, openDatedFor, pruneDated, pruneDatedMarks, queueDatedScan, restoreDated, threadDated, updateDated } from "./dated";
 import { activeFollowups, claimFollowupNotice, clearFollowups, closeAnsweredFollowups, endFollowupTop, finishFollowups, followupLiveSent, followupScanCandidates, followupSendConfirmed, followupSource, getFollowup, makeFollowupsDue, nextFollowupDue, pruneFollowups, pruneSentMarks, queueScan, restoreFollowups, sentMarkCount, sentMarkPage, threadFollowups, updateFollowup } from "./followups";
 import { addAskTurn, askAccountsOf, askHeaders, askMatching, askNewest, askText, askTurnCount, askTurns, clearAsk, listAskConversations, removeAskConversation, removeAskForAccount, restoreAskConversation } from "./ask";
 import { retainBody, observeBodyRetirement, bodyReadReference, sqlBodyParts, cleanupBodies, finishBodyStage, withBodySelection, hydrateBodyReference, stageBody, prepareBodyMatches, withBodyMatches } from "./body-parts";
@@ -622,7 +623,7 @@ export class SqlMailStore implements MailStore {
     // Messages, filter claims, filter actions and their ops, and the categorizer's decisions
     // commit together: a crash can't record a filter as applied without its effects, nor an
     // auto-categorization without its message.
-    ingest: async (batch, { applyFilters, now, classifier, observation, check, forwardEligible, newMail, liveSent }) => this.bodyCommand(async () => {
+    ingest: async (batch, { applyFilters, now, classifier, observation, check, forwardEligible, newMail, liveSent, datedMail }) => this.bodyCommand(async () => {
       const callerCheck = check; check = () => { if (this.bodyClosing) throw new Error("The store is closing"); callerCheck?.(); };
       await this.bodyCleanup;
       const staged: IncomingMessage[] = [];
@@ -646,6 +647,8 @@ export class SqlMailStore implements MailStore {
         if (newMail) markNewMail(this.db, result.inserted, now, newMail);
         // plan 142: mail you sent from elsewhere ends the waits before it, and is read if the feature is on
         if (liveSent) followupLiveSent(this.db, result.inserted, now, liveSent.wanted, liveSent.since);
+        // plan 204: received mail the dated reader wants, by the same rule as new mail's
+        if (datedMail) markDatedMail(this.db, result.inserted, now, datedMail.since);
         const touched = new Set(result.touchedThreads);
         const opIds: string[] = [];
         const folderMoves: FolderFilterMove[] = [];
@@ -1163,6 +1166,34 @@ export class SqlMailStore implements MailStore {
       clearFollowups(this.db);
     },
     clearGeneration: () => this.followupClears,
+  };
+
+  private datedClears = 0;
+  readonly dated: MailStore["dated"] = {
+    marks: {
+      page: async (after, limit) => datedMarkPage(this.db, after, limit),
+      count: async () => datedMarkCount(this.db),
+      queueScan: async (ids, now) => queueDatedScan(this.db, ids, now),
+      consume: async (id) => void this.db.run("DELETE FROM ai_dated_mail WHERE message_id = ?", id),
+      clear: async () => void this.db.run("DELETE FROM ai_dated_mail"),
+      prune: async (now) => pruneDatedMarks(this.db, now),
+    },
+    scanCandidates: async (since, limit) => datedScanCandidates(this.db, since, limit),
+    source: async (id) => datedSource(this.db, id),
+    openFor: async (o) => openDatedFor(this.db, o),
+    // the generation's check and the write are one synchronous step
+    finish: async (w) => (w.clearGeneration === this.datedClears ? finishDated(this.db, w) : "gone"),
+    active: async () => activeDated(this.db),
+    ofThread: async (id) => threadDated(this.db, id),
+    get: async (id) => getDated(this.db, id),
+    update: async (id, revision, patch) => updateDated(this.db, id, revision, patch),
+    restore: async (rows) => restoreDated(this.db, rows),
+    prune: async (now) => pruneDated(this.db, now),
+    clear: async () => {
+      this.datedClears++;
+      clearDated(this.db);
+    },
+    clearGeneration: () => this.datedClears,
   };
 
   private askClears = 0;

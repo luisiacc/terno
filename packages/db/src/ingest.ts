@@ -10,6 +10,7 @@ import { pendingFlagFields, pruneOpTargets } from "./repos";
 import { mergeReminder } from "./reminders";
 import { mergePin } from "./pins";
 import { mergeFollowups } from "./followups";
+import { mergeDated } from "./dated";
 import { mergeSummaries } from "./ai-summaries";
 import { answeredThreads, FACT_COLUMNS, noteSentMail, noteSentMailPrepared, ownAddresses, ownMailChanged, recomputeContext, referencesOfOwn } from "./facts";
 
@@ -195,6 +196,7 @@ export function mergeThreads(db: Db, into: number, from: number, result: IngestR
   mergePin(db, into, from);
   mergeSummaries(db, into, from);
   mergeFollowups(db, into, from);
+  mergeDated(db, into, from);
   db.run("DELETE FROM threads WHERE id = ?", from);
   result.touchedThreads.delete(from);
   result.touchedThreads.add(into);

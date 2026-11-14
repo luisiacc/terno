@@ -1,4 +1,4 @@
-import type { DatedKind, DatedRow, DatedState } from "@terno/core";
+import { tabOfCode, type DatedKind, type DatedRow, type DatedState } from "@terno/core";
 
 /**
  * Plan 204: dated items, from mail the user got.
@@ -47,6 +47,17 @@ export interface DatedSource {
   own: boolean;
   bodyState: "none" | "partial" | "full";
   bodyUnavailable: boolean;
+}
+
+/**
+ * `DatedSource.tab` from what's stored: the thread's tab where Terno separates one (`threads.tab`, plan 86), else the
+ * message's own Gmail category (`messages.category`; null: not Gmail).
+ */
+export function datedTab(threadTab: number, category: number | null): DatedSource["tab"] {
+  const tab = tabOfCode(threadTab);
+  if (tab) return tab;
+  if (category == null) return null;
+  return category === 4 ? "updates" : category === 5 ? "forums" : "primary";
 }
 
 export interface DatedWrite {

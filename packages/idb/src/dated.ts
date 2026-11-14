@@ -1,0 +1,183 @@
+import { addressKey, DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, type DatedRow } from "@terno/core";
+import { DATED_MARK_MS, DATED_SCAN_MARK_MS, datedTab, NEW_MAIL_MS, type DatedFinish, type DatedFinishOutcome, type DatedMark, type DatedSnapshot, type DatedSource } from "@terno/store";
+import { received, receivedOwn } from "./ai-summaries";
+import { T, type Ctx, type R } from "./mail";
+
+/** Plan 204 on IndexedDB, like SQL's (packages/db/src/dated.ts). */
+
+const toRow = (r: R): DatedRow => ({
+  id: r.id, threadId: r.thread_id, messageId: r.message_id, item: r.item, kind: r.kind, text: r.text, quote: r.quote, senderKey: r.sender_key, dueDay: r.due_day, dueAt: r.due_at, timed: r.timed === 1, dated: r.dated === 1, actAt: r.act_at,
+  deferredUntil: r.deferred_until ?? null, arrivedAt: r.arrived_at, state: r.state, closedReason: r.closed_reason ?? null, closedAt: r.closed_at ?? null, fromScan: r.from_scan === 1, revision: r.revision, model: r.model ?? null, provider: r.provider ?? null, createdAt: r.created_at,
+});
+
+const byAct = (a: R, b: R) => a.act_at - b.act_at || a.id - b.id;
+
+/** Ingest's part (in its command): received live mail, by the new-mail rule, and since the feature went on. */
+export function markDatedMail(c: Ctx, messageIds: readonly number[], now: number, since: number | null): void {
+  if (!messageIds.length) return;
+  const messages = T(c, "messages");
+  const marks = T(c, "ai_dated_mail");
+  const own = receivedOwn(c);
+  const floor = since == null ? now - NEW_MAIL_MS : Math.max(now - NEW_MAIL_MS, since);
+  for (const id of messageIds) {
+    const m = messages.get(id);
+    if (!m || !received(m, own) || m.date < floor || marks.has(id)) continue;
+    marks.insert({ message_id: id, thread_id: m.thread_id, arrived_at: m.date, queued_at: now, source: "live" });
+  }
+}
+
+/** A merge: the marks follow their messages, and the items their thread (a new revision: what was shown has moved). */
+export function mergeDated(c: Ctx, into: number, from: number): void {
+  const marks = T(c, "ai_dated_mail");
+  for (const m of marks.by("thread", from)) marks.update(m, { thread_id: into });
+  const rows = T(c, "dated_items");
+  for (const r of rows.by("fk_thread_id", from)) rows.update(r, { thread_id: into, revision: r.revision + 1 });
+}
+
+const toMark = (r: R): DatedMark => ({ messageId: r.message_id, threadId: r.thread_id, arrivedAt: r.arrived_at, queuedAt: r.queued_at, source: r.source });
+
+export function datedMarkPage(c: Ctx, after: { arrivedAt: number; messageId: number } | null, limit: number): DatedMark[] {
+  return [...T(c, "ai_dated_mail").all()]
+    .filter((r) => !after || r.arrived_at > after.arrivedAt || (r.arrived_at === after.arrivedAt && r.message_id > after.messageId))
+    .sort((a, b) => a.arrived_at - b.arrived_at || a.message_id - b.message_id)
+    .slice(0, limit)
+    .map(toMark);
+}
+
+export const datedMarkCount = (c: Ctx): number => T(c, "ai_dated_mail").size;
+
+/** Not marked, not read: what a check may still take. */
+const unread = (c: Ctx, id: number): boolean => !T(c, "ai_dated_mail").has(id) && T(c, "dated_items").count("message", id) === 0;
+
+export function queueDatedScan(c: Ctx, messageIds: readonly number[], now: number): number {
+  const messages = T(c, "messages");
+  const marks = T(c, "ai_dated_mail");
+  const own = receivedOwn(c);
+  let n = 0;
+  for (const id of messageIds) {
+    const m = messages.get(id);
+    if (!m || !received(m, own) || !unread(c, id)) continue;
+    marks.insert({ message_id: id, thread_id: m.thread_id, arrived_at: m.date, queued_at: now, source: "scan" });
+    n++;
+  }
+  return n;
+}
+
+export function pruneDatedMarks(c: Ctx, now: number): number {
+  const marks = T(c, "ai_dated_mail");
+  const old = [...marks.all()].filter((r) => r.queued_at < now - (r.source === "scan" ? DATED_SCAN_MARK_MS : DATED_MARK_MS));
+  for (const r of old) marks.deleteRow(r);
+  return old.length;
+}
+
+export function datedScanCandidates(c: Ctx, since: number, limit: number): number[] {
+  const own = receivedOwn(c);
+  const out: R[] = [];
+  for (const m of T(c, "messages").all()) if (m.date >= since && received(m, own) && unread(c, m.id)) out.push(m);
+  return out.sort((a, b) => b.date - a.date || b.id - a.id).slice(0, limit).map((m) => m.id);
+}
+
+export function datedSource(c: Ctx, messageId: number): DatedSource | null {
+  const messages = T(c, "messages");
+  const m = messages.get(messageId);
+  const thread = m && T(c, "threads").get(m.thread_id);
+  if (!m || !thread) return null;
+  const email = String(m.from_email ?? "");
+  return {
+    id: m.id, threadId: m.thread_id, accountId: m.account_id, subject: m.subject ?? "", date: m.date, fromName: m.from_name ?? "", fromEmail: email, senderKey: addressKey(email),
+    automated: !!m.is_bulk || m.list_id != null, tab: datedTab(Number(thread.tab ?? 0), m.category ?? null),
+    draft: !!m.is_draft, sent: !!m.is_sent, spam: !!m.is_spam, trash: !!m.is_trash, threadSpam: messages.by("fk_thread_id", m.thread_id).some((x) => !!x.is_spam), own: receivedOwn(c).has(email.toLowerCase()),
+    bodyState: m.body_state, bodyUnavailable: m.attachments_captured === 2 && m.body_state !== "full",
+  };
+}
+
+export function openDatedFor(c: Ctx, o: { threadId: number; senderKey: string; before: number; limit: number }): DatedRow[] {
+  const rows = T(c, "dated_items");
+  const found = new Map<number, R>();
+  for (const r of rows.by("fk_thread_id", o.threadId)) if (r.state === "open") found.set(r.id, r);
+  for (const r of rows.by("sender", o.senderKey)) found.set(r.id, r);
+  return [...found.values()].filter((r) => r.arrived_at < o.before).sort((a, b) => b.arrived_at - a.arrived_at || b.id - a.id).slice(0, o.limit).map(toRow);
+}
+
+export function finishDated(c: Ctx, w: DatedFinish): DatedFinishOutcome {
+  const marks = T(c, "ai_dated_mail");
+  const mark = marks.get(w.messageId);
+  if (!mark) return "gone";
+  const src = datedSource(c, w.messageId);
+  if (!src || src.spam || src.trash || src.draft || src.threadSpam) {
+    marks.deleteRow(mark);
+    return "gone";
+  }
+  // a merge since it was read: the mark stays, and the worker reads it again on its thread
+  if (src.threadId !== w.threadId) return "moved";
+  const rows = T(c, "dated_items");
+  let open = rows.count("state", "open");
+  for (const r of w.rows) {
+    if (rows.by("identity", w.messageId, r.item).length) continue;
+    if (open >= DATED_ACTIVE_MAX) {
+      // the bound keeps the soonest: the furthest of them all isn't added
+      let furthest: R | undefined;
+      for (const x of rows.by("state", "open")) if (!furthest || byAct(x, furthest) > 0) furthest = x;
+      if (!furthest || furthest.act_at <= r.actAt) continue;
+      rows.deleteRow(furthest);
+      open--;
+    }
+    rows.put({
+      thread_id: src.threadId, message_id: w.messageId, item: r.item, kind: r.kind, text: r.text, quote: r.quote, sender_key: src.senderKey, due_day: r.dueDay, due_at: r.dueAt, timed: r.timed ? 1 : 0, dated: r.dated ? 1 : 0, act_at: r.actAt,
+      deferred_until: null, arrived_at: src.date, state: "open", closed_reason: null, closed_at: null, from_scan: w.fromScan ? 1 : 0, revision: 0, model: w.model, provider: w.provider, prompt_version: w.promptVersion, created_at: w.now,
+    });
+    open++;
+  }
+  for (const s of w.settled) {
+    const r = rows.get(s.id);
+    if (r && r.revision === s.revision && r.state === "open" && (r.thread_id === src.threadId || r.sender_key === src.senderKey)) rows.update(r, { state: "settled", closed_reason: "settled", closed_at: w.now, revision: r.revision + 1 });
+  }
+  marks.deleteRow(mark);
+  return "written";
+}
+
+export const activeDated = (c: Ctx): DatedRow[] => T(c, "dated_items").by("state", "open").sort(byAct).slice(0, DATED_ACTIVE_MAX).map(toRow);
+export const threadDated = (c: Ctx, threadId: number): DatedRow[] => T(c, "dated_items").by("fk_thread_id", threadId).filter((r) => r.state === "open").sort(byAct).map(toRow);
+export function getDated(c: Ctx, id: number): DatedRow | null {
+  const r = T(c, "dated_items").get(id);
+  return r ? toRow(r) : null;
+}
+
+const snapshot = (r: R): DatedSnapshot => ({ id: r.id, revision: r.revision, state: r.state, deferredUntil: r.deferred_until ?? null, closedReason: r.closed_reason ?? null, closedAt: r.closed_at ?? null });
+
+export function updateDated(c: Ctx, id: number, revision: number, patch: Partial<Pick<DatedRow, "state" | "deferredUntil" | "closedReason" | "closedAt">>): DatedSnapshot | null {
+  const rows = T(c, "dated_items");
+  const r = rows.get(id);
+  if (!r || r.revision !== revision) return null;
+  const before = snapshot(r);
+  rows.update(r, {
+    state: patch.state ?? r.state, deferred_until: patch.deferredUntil !== undefined ? patch.deferredUntil : before.deferredUntil, closed_reason: patch.closedReason !== undefined ? patch.closedReason : before.closedReason, closed_at: patch.closedAt !== undefined ? patch.closedAt : before.closedAt, revision: r.revision + 1,
+  });
+  return before;
+}
+
+export function restoreDated(c: Ctx, list: readonly { snapshot: DatedSnapshot; expectRevision: number }[]): number {
+  const rows = T(c, "dated_items");
+  let n = 0;
+  for (const { snapshot: s, expectRevision } of list) {
+    const r = rows.get(s.id);
+    if (!r || r.revision !== expectRevision) continue;
+    rows.update(r, { state: s.state, deferred_until: s.deferredUntil, closed_reason: s.closedReason, closed_at: s.closedAt, revision: r.revision + 1 });
+    n++;
+  }
+  return n;
+}
+
+export function pruneDated(c: Ctx, now: number): number {
+  const rows = T(c, "dated_items");
+  const old = [...rows.by("state", "done"), ...rows.by("state", "dismissed"), ...rows.by("state", "settled")].filter((r) => (r.closed_at ?? r.created_at) < now - DATED_CLOSED_KEEP_MS);
+  for (const r of old) rows.deleteRow(r);
+  return old.length;
+}
+
+export function clearDated(c: Ctx): void {
+  const rows = T(c, "dated_items");
+  for (const r of rows.all()) rows.deleteRow(r);
+  const marks = T(c, "ai_dated_mail");
+  for (const r of marks.all()) marks.deleteRow(r);
+}
