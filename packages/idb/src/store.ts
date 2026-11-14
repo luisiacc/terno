@@ -2076,7 +2076,7 @@ export class IdbMailStore implements MailStore {
     active: () => this.early(() => activeDated(this.c)),
     ofThread: (id) => this.early(() => threadDated(this.c, id)),
     get: (id) => this.early(() => getDated(this.c, id)),
-    update: (id, revision, patch) => this.command(() => updateDated(this.c, id, revision, patch)),
+    update: (id, revision, patch, schedule) => this.command(() => updateDated(this.c, id, revision, patch, schedule)),
     restore: (rows) => this.command(() => restoreDated(this.c, rows)),
     prune: (now) => this.command(() => pruneDated(this.c, now)),
     // the generation moves at once: a finish queued before it is refused, as on SQL

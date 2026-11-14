@@ -1194,7 +1194,7 @@ export class SqlMailStore implements MailStore {
     active: async () => activeDated(this.db),
     ofThread: async (id) => threadDated(this.db, id),
     get: async (id) => getDated(this.db, id),
-    update: async (id, revision, patch) => updateDated(this.db, id, revision, patch),
+    update: async (id, revision, patch, schedule) => updateDated(this.db, id, revision, patch, schedule),
     restore: async (rows) => restoreDated(this.db, rows),
     prune: async (now) => pruneDated(this.db, now),
     clear: async () => {

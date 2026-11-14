@@ -143,8 +143,11 @@ export interface DatedStore {
   active(): Promise<DatedRow[]>;
   ofThread(threadId: number): Promise<DatedRow[]>;
   get(id: number): Promise<DatedRow | null>;
-  /** a change by the user, conditional on the revision they saw */
-  update(id: number, revision: number, patch: Partial<Pick<DatedRow, "state" | "deferredUntil" | "closedReason" | "closedAt">>): Promise<DatedSnapshot | null>;
+  /**
+   * a change by the user, conditional on the revision they saw; with `schedule`, also on the day it was decided on (a move
+   * keeps the revision, so retiring what's over checks the day hasn't moved since: Codex review, round 2)
+   */
+  update(id: number, revision: number, patch: Partial<Pick<DatedRow, "state" | "deferredUntil" | "closedReason" | "closedAt">>, schedule?: { dueDay: string; dueAt: number }): Promise<DatedSnapshot | null>;
   /** Undo: each row only if nothing else changed it since */
   restore(rows: readonly { snapshot: DatedSnapshot; expectRevision: number }[]): Promise<number>;
   /** closed rows past `DATED_CLOSED_KEEP_MS` */

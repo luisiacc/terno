@@ -114,7 +114,7 @@ export function openDatedFor(c: Ctx, o: { threadId: number; senderKey: string; b
 }
 
 /** As SQL's (packages/db/src/dated.ts): mail that is yours for certain, never a forged From nor a local copy not confirmed. */
-const trustedSend = (m: R): boolean => !!m.is_sent && !m.is_draft && !m.is_spam && !m.is_trash && !String(m.provider_msg_id ?? "local:").startsWith("local:") && (String(m.gmail_labels ?? "").includes('"SENT"') || !m.in_inbox);
+const trustedSend = (m: R): boolean => !!m.is_sent && !m.is_draft && !m.is_spam && !m.is_trash && !String(m.provider_msg_id ?? "local:").startsWith("local:") && String(m.gmail_labels ?? "").includes('"SENT"');
 
 const lastTrustedSend = (c: Ctx, threadId: number): number | null => {
   let at: number | null = null;
@@ -205,10 +205,10 @@ export function getDated(c: Ctx, id: number): DatedRow | null {
 
 const snapshot = (r: R): DatedSnapshot => ({ id: r.id, revision: r.revision, state: r.state, deferredUntil: r.deferred_until ?? null, closedReason: r.closed_reason ?? null, closedAt: r.closed_at ?? null });
 
-export function updateDated(c: Ctx, id: number, revision: number, patch: Partial<Pick<DatedRow, "state" | "deferredUntil" | "closedReason" | "closedAt">>): DatedSnapshot | null {
+export function updateDated(c: Ctx, id: number, revision: number, patch: Partial<Pick<DatedRow, "state" | "deferredUntil" | "closedReason" | "closedAt">>, schedule?: { dueDay: string; dueAt: number }): DatedSnapshot | null {
   const rows = T(c, "dated_items");
   const r = rows.get(id);
-  if (!r || r.revision !== revision) return null;
+  if (!r || r.revision !== revision || (schedule && (r.due_day !== schedule.dueDay || r.due_at !== schedule.dueAt))) return null;
   const before = snapshot(r);
   rows.update(r, {
     state: patch.state ?? r.state, deferred_until: patch.deferredUntil !== undefined ? patch.deferredUntil : before.deferredUntil, closed_reason: patch.closedReason !== undefined ? patch.closedReason : before.closedReason, closed_at: patch.closedAt !== undefined ? patch.closedAt : before.closedAt, revision: r.revision + 1,

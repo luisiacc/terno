@@ -104,11 +104,12 @@ export function openDatedFor(db: Db, o: { threadId: number; senderKey: string; b
 }
 
 /**
- * Codex code review of the fixes: mail that is yours for certain, not only by its From (IMAP sets `is_sent` for a forged
- * message claiming your address): Gmail's SENT label, or out of the Inbox (an IMAP Sent folder). Never a local copy not
- * confirmed yet. Terno's own confirmed send is trusted where it's known (`settleAnswered`).
+ * Codex code review of the fixes: mail that is yours for certain, not only by its From (IMAP sets `is_sent` for any
+ * message claiming your address, in any folder, and the store doesn't keep which folder is Sent): Gmail's SENT label. Never
+ * a local copy not confirmed yet. Terno's own confirmed send is trusted where it's known (`settleAnswered`); a reply sent
+ * from another IMAP client leaves the request for the user's Done (round 2: safe over convenient).
  */
-const TRUSTED_SENT = "is_sent = 1 AND is_draft = 0 AND is_spam = 0 AND is_trash = 0 AND coalesce(provider_msg_id, 'local:') NOT LIKE 'local:%' AND (gmail_labels LIKE '%\"SENT\"%' OR in_inbox = 0)";
+const TRUSTED_SENT = "is_sent = 1 AND is_draft = 0 AND is_spam = 0 AND is_trash = 0 AND coalesce(provider_msg_id, 'local:') NOT LIKE 'local:%' AND gmail_labels LIKE '%\"SENT\"%'";
 
 /** The newest message in this thread that's certainly yours, or null. */
 const lastTrustedSend = (db: Db, threadId: number): number | null =>
@@ -152,14 +153,15 @@ export function finishDated(db: Db, w: DatedFinish): DatedFinishOutcome {
     let open = db.get<{ n: number }>("SELECT COUNT(*) AS n FROM dated_items INDEXED BY dated_open WHERE state = 'open'")!.n;
     for (const r of w.rows) {
       if (db.get("SELECT 1 FROM dated_items WHERE message_id = ? AND item = ?", w.messageId, r.item)) continue;
-      if (open >= DATED_ACTIVE_MAX) {
+      // before the bound (Codex review, round 2): an answered request is stored closed, and never evicts open work
+      const answered = r.kind === "respond" && (repliedAt ??= lastTrustedSend(db, src.threadId) ?? -1) > src.date;
+      if (!answered && open >= DATED_ACTIVE_MAX) {
         // the bound keeps the soonest: the furthest of them all isn't added
         const furthest = db.get<{ id: number; act_at: number }>("SELECT id, act_at FROM dated_items INDEXED BY dated_open WHERE state = 'open' ORDER BY act_at DESC, id DESC LIMIT 1");
         if (!furthest || furthest.act_at <= r.actAt) continue;
         db.run("DELETE FROM dated_items WHERE id = ?", furthest.id);
         open--;
       }
-      const answered = r.kind === "respond" && (repliedAt ??= lastTrustedSend(db, src.threadId) ?? -1) > src.date;
       if (answered) {
         db.run(
           `INSERT OR IGNORE INTO dated_items (thread_id, message_id, item, kind, text, quote, sender_key, due_day, due_at, timed, dated, act_at, deferred_until, arrived_at, state, closed_reason, closed_at, from_scan, revision, model, provider, prompt_version, created_at)
@@ -201,10 +203,10 @@ export function getDated(db: Db, id: number): DatedRow | null {
 
 const snapshot = (r: Raw): DatedSnapshot => ({ id: r.id, revision: r.revision, state: r.state, deferredUntil: r.deferred_until, closedReason: r.closed_reason, closedAt: r.closed_at });
 
-export function updateDated(db: Db, id: number, revision: number, patch: Partial<Pick<DatedRow, "state" | "deferredUntil" | "closedReason" | "closedAt">>): DatedSnapshot | null {
+export function updateDated(db: Db, id: number, revision: number, patch: Partial<Pick<DatedRow, "state" | "deferredUntil" | "closedReason" | "closedAt">>, schedule?: { dueDay: string; dueAt: number }): DatedSnapshot | null {
   return db.tx(() => {
     const r = db.get<Raw>("SELECT * FROM dated_items WHERE id = ? AND revision = ?", id, revision);
-    if (!r) return null;
+    if (!r || (schedule && (r.due_day !== schedule.dueDay || r.due_at !== schedule.dueAt))) return null;
     db.run(
       "UPDATE dated_items SET state = ?, deferred_until = ?, closed_reason = ?, closed_at = ?, revision = revision + 1 WHERE id = ?",
       patch.state ?? r.state, patch.deferredUntil !== undefined ? patch.deferredUntil : r.deferred_until, patch.closedReason !== undefined ? patch.closedReason : r.closed_reason, patch.closedAt !== undefined ? patch.closedAt : r.closed_at, id,
