@@ -47,8 +47,11 @@ const inWords = (ms: number, language: string): string => {
   }
 };
 
-/** Normalized, as a person retyping it would: a quote must really be in the mail. */
-const norm = (text: string) => normalizeText(text).replace(/\s+/g, " ").trim().toLowerCase();
+/**
+ * Normalized, as a person retyping it would: a quote must really be in the mail. Punctuation is left out (the eval: a
+ * model joins two lines with a period, "Amount due: $84.20. Please pay by…"); the words, their order and the digits stay.
+ */
+const norm = (text: string) => normalizeText(text).toLowerCase().replace(/[^\p{L}\p{N}$€£%]+/gu, " ").trim();
 const KINDS: ReadonlySet<string> = new Set(DATED_KINDS);
 
 /**
