@@ -34,6 +34,18 @@ export function waitingAmong(c: Ctx, threadIds: readonly number[], now: number):
   return needsRows(c, now).filter((r) => wanted.has(r.id)).map((r) => r.id);
 }
 
+export function countWith(c: Ctx, threadIds: readonly number[], now: number): { needs: number; extra: number } {
+  const rows = needsRows(c, now);
+  const waiting = new Set(rows.map((r) => r.id));
+  const threads = T(c, "threads");
+  let extra = 0;
+  for (const id of new Set(threadIds)) {
+    const t = threads.get(id);
+    if (t && !t.in_spam && !t.in_trash && !waiting.has(id)) extra++;
+  }
+  return { needs: rows.length, extra };
+}
+
 export function needsCount(c: Ctx, now: number): number {
   return needsRows(c, now).length;
 }
