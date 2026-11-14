@@ -8,6 +8,7 @@ import { demoRegistry } from "../../packages/mail/src";
 import type { IncomingMessage } from "../../packages/store/src";
 import { msg } from "../../packages/store/src/conformance/fixtures";
 import { realAiFactory } from "../../apps/backend-dev/src/real-ai";
+import { DATED_PROMPT_VERSION, FOLLOWUP_PROMPT_VERSION, SUMMARY_PROMPT_VERSION } from "../../packages/ai/src";
 import { realKeys, spendReport } from "./harness";
 
 /**
@@ -111,18 +112,58 @@ function incoming(box: Box, accountId: number, m: Mail, read: boolean): Incoming
 }
 
 async function drained(backend: Backend): Promise<void> {
-  for (let i = 0; i < 1200; i++) {
+  for (let i = 0; i < 2400; i++) {
     const dated = await backend.store.dated.marks.count();
     const sent = await backend.store.followups.marks.count();
-    if (!dated && !sent) return;
+    const summaries = await backend.store.aiSummaries.pendingCount();
+    if (!dated && !sent && !summaries) return;
     backend.dated.wake({ network: true });
     backend.followups.wake({ network: true });
+    backend.summaries.wake({ network: true });
     await new Promise((r) => setTimeout(r, 500));
   }
   throw new Error("the readers didn't finish");
 }
 
-describe.skipIf(process.env.TERNO_PANEL !== "1")("What matters, on each persona's mailbox", () => {
+/** What the AI read the mailbox with: a kept database is reused only while all of it is still what the code would use. */
+const MANIFEST = { dated: DATED_PROMPT_VERSION, followups: FOLLOWUP_PROMPT_VERSION, summaries: SUMMARY_PROMPT_VERSION, summariesOn: true, phases: [PHASE_ONE, NOW] };
+
+/** What Today shows, written beside the database: the packet's source. */
+async function writeToday(backend: Backend, client: RpcClient, dir: string, persona: string) {
+  const list = await client.call("today.list", { heldIds: [] });
+  const rows = await backend.store.dated.active();
+  writeFileSync(join(dir, "today.json"), JSON.stringify({ persona, at: new Date(NOW).toString(), sections: list.sections.map((x) => ({ kind: x.kind, items: x.items.map((i) => ({ threadId: i.thread.id, from: i.thread.fromName, subject: i.thread.subject, snippet: i.thread.snippet, why: i.why, summary: i.summary ?? null })) })), dated: rows, followups: await backend.store.followups.active() }, null, 2));
+  return { list, rows };
+}
+
+/**
+ * The panel, faster (the owner, after the third round): when nothing the AI reads changed, the AI's database is kept and
+ * only Today's list is made again from it with the current code, at the packet's morning; no key, no request.
+ */
+describe.skipIf(process.env.TERNO_PANEL !== "1" || process.env.TERNO_PANEL_RELIST !== "1")("What matters again, on each persona's kept database", () => {
+  for (const id of ONLY ?? ["theo", "maria", "diego", "jordan", "margaret", "sam", "priya"]) {
+    it(id, { timeout: 300_000 }, async () => {
+      const dir = join(DIR, "db", id);
+      const kept = existsSync(join(dir, "manifest.json")) ? readFileSync(join(dir, "manifest.json"), "utf8") : null;
+      if (kept !== JSON.stringify(MANIFEST)) throw new Error(`${id}: the kept database was read with other prompts or settings (${kept ?? "no manifest"}); read the mailbox again`);
+      const backend = new Backend({ dbPath: join(dir, "terno.db"), version: "panel", cipher: plaintextCipher, providers: demoRegistry, autoSync: false, now: () => NOW });
+      await backend.store.ready;
+      await backend.ready;
+      try {
+        const [c, s] = createMemoryTransportPair();
+        backend.connect(s, { clientId: "renderer", origin: "renderer" });
+        const client = new RpcClient(c);
+        backend.today.touched();
+        const { list, rows } = await writeToday(backend, client, dir, id);
+        console.log(`${id} (relisted): ${list.sections.map((x) => `${x.kind} ${x.items.length}`).join(", ")}; ${rows.length} dated open`);
+      } finally {
+        await backend.stop();
+      }
+    });
+  }
+});
+
+describe.skipIf(process.env.TERNO_PANEL !== "1" || process.env.TERNO_PANEL_RELIST === "1")("What matters, on each persona's mailbox", () => {
   const boxes = (ONLY ?? ["theo", "maria", "diego", "jordan", "margaret", "sam", "priya"]).map((id) => JSON.parse(readFileSync(join(DIR, "mail", `${id}.json`), "utf8")) as Box);
   for (const [b, box] of boxes.entries()) {
     it(box.id, { timeout: 1_800_000 }, async () => {
@@ -143,8 +184,8 @@ describe.skipIf(process.env.TERNO_PANEL !== "1")("What matters, on each persona'
         const keys = realKeys();
         await client.call("ai.setKey", { provider: "anthropic", value: keys.anthropic });
         await client.call("ai.setKey", { provider: "openai", value: keys.openai });
-        // both keys: Pro's routing (the dated reader on Luna); no summaries, which this panel isn't about
-        await client.call("settings.update", { ai: { provider: "anthropic" }, language: box.language, summaries: { enabled: false } });
+        // both keys: Pro's routing (the dated reader on Luna); summaries on, as the app's default (Needs you reads them)
+        await client.call("settings.update", { ai: { provider: "anthropic" }, language: box.language, summaries: { enabled: true } });
         await client.call("settings.update", { dated: { enabled: true }, followups: { enabled: true } });
         const all = [...box.messages, ...realMail(box, 204 + b)].sort((x, y) => atOf(x) - atOf(y));
         const first = all.filter((m) => atOf(m) <= PHASE_ONE);
@@ -163,20 +204,14 @@ describe.skipIf(process.env.TERNO_PANEL !== "1")("What matters, on each persona'
         await drained(backend);
         clock.set(NOW);
         backend.today.touched();
-        const list = await client.call("today.list", { heldIds: [] });
-        const byProvider = new Map<number, string>();
-        const rows = await backend.store.dated.active();
-        for (const r of rows) {
-          const [summary] = await backend.store.threads.summaries([r.threadId]);
-          if (summary) byProvider.set(r.id, summary.subject);
-        }
-        writeFileSync(join(dir, "today.json"), JSON.stringify({ persona: box.id, at: new Date(NOW).toString(), sections: list.sections.map((x) => ({ kind: x.kind, items: x.items.map((i) => ({ threadId: i.thread.id, from: i.thread.fromName, subject: i.thread.subject, snippet: i.thread.snippet, why: i.why })) })), dated: rows, followups: await backend.store.followups.active() }, null, 2));
+        const { list, rows } = await writeToday(backend, client, dir, box.id);
         // the copy keeps no key: the demo's provider, so the app opens it as it is
         await client.call("ai.setKey", { provider: "anthropic", value: "" });
         await client.call("ai.setKey", { provider: "openai", value: "" });
         await client.call("settings.update", { ai: { provider: "fake", model: "demo" } });
         expect(await backend.store.secrets.has("ai:anthropic:apiKey")).toBe(false);
         expect(await backend.store.secrets.has("ai:openai:apiKey")).toBe(false);
+        writeFileSync(join(dir, "manifest.json"), JSON.stringify(MANIFEST));
         console.log(`${box.id}: ${list.sections.map((x) => `${x.kind} ${x.items.length}`).join(", ")}; ${rows.length} dated open; ${spendReport()}`);
       } finally {
         await backend.stop();
