@@ -1,0 +1,128 @@
+import type { DatedKind, DatedRow, DatedState } from "@terno/core";
+
+/**
+ * Plan 204: dated items, from mail the user got.
+ *
+ * - `ai_dated_mail`: "this arrived as live mail, and the dated reader hasn't read it" (revision 1: its own marker, not a
+ *   flag on `ai_new_mail`, whose clean-ups belong to summaries and categories). Written in the ingest commit by the same
+ *   rule as `markNewMail` (`newMailRule`), or by the user's yes to the 14-day check (`source = 'scan'`, revision 2).
+ * - `dated_items`: one row per item, unique on its source message and item. Rows outlive the source message
+ *   (`message_id` has no cascade), never the thread.
+ */
+
+export const DATED_MARK_MS = 3 * 86_400_000;
+export const DATED_SCAN_MARK_MS = 14 * 86_400_000;
+
+export interface DatedMark {
+  messageId: number;
+  threadId: number;
+  /** the message's own date: marks are read oldest first (revision 5) */
+  arrivedAt: number;
+  queuedAt: number;
+  source: "live" | "scan";
+}
+
+/** What the reader needs of one received message, no body. */
+export interface DatedSource {
+  id: number;
+  threadId: number;
+  accountId: number;
+  subject: string;
+  date: number;
+  fromName: string;
+  fromEmail: string;
+  /** `addressKey(fromEmail)` */
+  senderKey: string;
+  /** a list or bulk sender: a cue the worker reads, never a reason to skip (revision 4) */
+  automated: boolean;
+  /** Gmail's tab for its thread, or null where there are none (plan 86) */
+  tab: "primary" | "social" | "promotions" | "updates" | "forums" | null;
+  draft: boolean;
+  sent: boolean;
+  spam: boolean;
+  trash: boolean;
+  /** any message of its thread is in Spam: the owner's rule, plan 132's `hasSpam` */
+  threadSpam: boolean;
+  /** from one of the user's own addresses */
+  own: boolean;
+  bodyState: "none" | "partial" | "full";
+  bodyUnavailable: boolean;
+}
+
+export interface DatedWrite {
+  kind: DatedKind;
+  item: number;
+  text: string;
+  quote: string;
+  dueDay: string;
+  dueAt: number;
+  timed: boolean;
+  dated: boolean;
+  actAt: number;
+}
+
+export interface DatedFinish {
+  messageId: number;
+  /** what it read: anything else means the source changed under the request (a merge: retried, revision 6) */
+  threadId: number;
+  fromScan: boolean;
+  /** rows to add; none is a valid answer, which still consumes the mark */
+  rows: readonly DatedWrite[];
+  /** open items this message settled: only the exact row it was shown, at the revision it was shown */
+  settled: readonly { id: number; revision: number }[];
+  now: number;
+  model: string | null;
+  provider: string | null;
+  promptVersion: number | null;
+  clearGeneration: number;
+}
+
+/** `moved`: the message is on another thread now (a merge), so the mark stays and the worker reads it again. */
+export type DatedFinishOutcome = "written" | "gone" | "moved";
+
+/** A journal entry: enough to put one row back exactly, if nothing else changed it since. */
+export interface DatedSnapshot {
+  id: number;
+  revision: number;
+  state: DatedState;
+  deferredUntil: number | null;
+  closedReason: string | null;
+  closedAt: number | null;
+}
+
+export const datedSnapshotOf = (r: DatedRow): DatedSnapshot => ({ id: r.id, revision: r.revision, state: r.state, deferredUntil: r.deferredUntil, closedReason: r.closedReason, closedAt: r.closedAt });
+
+export interface DatedStore {
+  marks: {
+    /** oldest first, by the message's date */
+    page(after: { arrivedAt: number; messageId: number } | null, limit: number): Promise<DatedMark[]>;
+    count(): Promise<number>;
+    /** the 14-day check: what the user agreed to; idempotent on the message */
+    queueScan(messageIds: readonly number[], now: number): Promise<number>;
+    /** read and found nothing to do, or never to be read */
+    consume(messageId: number): Promise<void>;
+    clear(): Promise<void>;
+    /** live marks past `DATED_MARK_MS`, scan marks past `DATED_SCAN_MARK_MS` */
+    prune(now: number): Promise<number>;
+  };
+  /** received mail since then a check could read, newest first: inbound, not a draft, sent, spam or trash, not from the user, not already marked or read */
+  scanCandidates(since: number, limit: number): Promise<number[]>;
+  source(messageId: number): Promise<DatedSource | null>;
+  /** open items a message could settle: its thread's and its sender's, from messages older than it, newest first, at most `limit` */
+  openFor(o: { threadId: number; senderKey: string; before: number; limit: number }): Promise<DatedRow[]>;
+  /** Results, settlements and consuming the mark, in one commit that checks the clear generation and the source (revision 6). */
+  finish(write: DatedFinish): Promise<DatedFinishOutcome>;
+  /** open, by `act_at`, at most `DATED_ACTIVE_MAX` */
+  active(): Promise<DatedRow[]>;
+  ofThread(threadId: number): Promise<DatedRow[]>;
+  get(id: number): Promise<DatedRow | null>;
+  /** a change by the user, conditional on the revision they saw */
+  update(id: number, revision: number, patch: Partial<Pick<DatedRow, "state" | "deferredUntil" | "closedReason" | "closedAt">>): Promise<DatedSnapshot | null>;
+  /** Undo: each row only if nothing else changed it since */
+  restore(rows: readonly { snapshot: DatedSnapshot; expectRevision: number }[]): Promise<number>;
+  /** closed rows past `DATED_CLOSED_KEEP_MS` */
+  prune(now: number): Promise<number>;
+  /** Clear AI data: rows and marks; ups the generation */
+  clear(): Promise<void>;
+  clearGeneration(): number;
+}
