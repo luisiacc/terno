@@ -244,7 +244,7 @@ export class DatedWorker {
     const over = (await store.dated.active()).filter((r) => datedOver(r, now));
     let n = 0;
     await this.host.runBudgeted(over, async (chunk) => {
-      for (const r of chunk) if (await store.dated.update(r.id, r.revision, { state: "dismissed", closedReason: "expired", closedAt: now })) n++;
+      for (const r of chunk) if (await store.dated.update(r.id, r.revision, { state: "dismissed", closedReason: "expired", closedAt: now }, { dueDay: r.dueDay, dueAt: r.dueAt })) n++;
     });
     if (n) this.host.changed();
     return n;

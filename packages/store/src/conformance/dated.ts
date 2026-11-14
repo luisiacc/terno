@@ -213,7 +213,7 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
       });
 
       it("past the bound, the furthest act-at isn't added: a sooner item takes its place, a later one doesn't come in", async () => {
-        const { store, got, item, finish } = await setup();
+        const { store, accountId, got, item, finish } = await setup();
         const a = await got();
         await finish(a.id, a.thread, { rows: Array.from({ length: DATED_ACTIVE_MAX }, (_, i) => item({ item: 10 + i, actAt: NOW + (i + 1) * 1000 })) });
         expect(await store.dated.active()).toHaveLength(DATED_ACTIVE_MAX);
@@ -224,6 +224,13 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
         expect(active[0]).toMatchObject({ messageId: b.id, item: 1 });
         expect(active.at(-1)!.actAt).toBe(NOW + (DATED_ACTIVE_MAX - 1) * 1000);
         expect(active.some((r) => r.messageId === b.id && r.item === 0)).toBe(false);
+        // a request already answered (your reply came first) is stored closed, and evicts nothing (Codex review, round 2)
+        const replied = await got({ rfcMessageId: "full@x", date: NOW - 9000 });
+        await store.sync.ingest([msg({ accountId, from: me, to: [bank], isSent: true, inInbox: false, gmailLabels: ["SENT"], inReplyTo: "full@x", references: ["full@x"], subject: "Re", date: NOW - 8000 })], { applyFilters: false, now: NOW, classifier: null });
+        const furthest = (await store.dated.active()).at(-1)!;
+        await finish(replied.id, replied.thread, { rows: [item({ kind: "respond", item: 0, actAt: NOW - 1 })] });
+        expect((await store.dated.active()).at(-1)).toEqual(furthest);
+        expect(await store.dated.active()).toHaveLength(DATED_ACTIVE_MAX);
       });
     });
 
@@ -235,7 +242,7 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
         const elsewhere = await got({ date: NOW - 4000 });
         await finish(elsewhere.id, elsewhere.thread, { rows: [item({ kind: "respond", text: "Answer Tom" })] });
         // your reply on the first thread, from elsewhere (sync)
-        await store.sync.ingest([msg({ accountId, from: me, to: [bank], isSent: true, inInbox: false, inReplyTo: "ask@x", references: ["ask@x"], subject: "Re", date: NOW - 3000 })], { applyFilters: false, now: NOW, classifier: null });
+        await store.sync.ingest([msg({ accountId, from: me, to: [bank], isSent: true, inInbox: false, gmailLabels: ["SENT"], inReplyTo: "ask@x", references: ["ask@x"], subject: "Re", date: NOW - 3000 })], { applyFilters: false, now: NOW, classifier: null });
         const open = await store.dated.active();
         expect(open.map((r) => [r.threadId, r.kind]).sort()).toEqual([[ask.thread, "pay"], [elsewhere.thread, "respond"]].sort());
         const answered = (await store.dated.ofThread(ask.thread)).find((r) => r.kind === "respond");
@@ -250,8 +257,9 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
         const { store, accountId, got, item, finish } = await setup();
         const ask = await got({ rfcMessageId: "ask2@x", date: NOW - 5000 });
         await finish(ask.id, ask.thread, { rows: [item({ kind: "respond", text: "Send the deck" })] });
-        // what IMAP marks sent because its From is yours, though it arrived in the Inbox
+        // what IMAP marks sent because its From is yours, in the Inbox or in an archive folder (round 2)
         await store.sync.ingest([msg({ accountId, from: me, to: [bank], isSent: true, inInbox: true, inReplyTo: "ask2@x", references: ["ask2@x"], subject: "Re", date: NOW - 3000 })], { applyFilters: false, now: NOW, classifier: null });
+        await store.sync.ingest([msg({ accountId, from: me, to: [bank], isSent: true, inInbox: false, inReplyTo: "ask2@x", references: ["ask2@x"], subject: "Re", date: NOW - 2500 })], { applyFilters: false, now: NOW, classifier: null });
         expect((await store.dated.ofThread(ask.thread)).map((r) => r.kind)).toEqual(["respond"]);
         // Gmail's SENT label is yours for certain, in the Inbox or not (a reply to yourself too)
         await store.sync.ingest([msg({ accountId, from: me, to: [bank], isSent: true, inInbox: true, gmailLabels: ["SENT", "INBOX"], inReplyTo: "ask2@x", references: ["ask2@x"], subject: "Re", date: NOW - 2000 })], { applyFilters: false, now: NOW, classifier: null });
@@ -316,6 +324,19 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
         // Codex code review: the order's conversation moved to Spam: its item is no request's material any more
         await store.threads.act({ threadIds: [order.thread], action: "spam", signal: null, now: NOW });
         expect((await of(src.date)).map((x) => x.messageId)).toEqual([bill.id]);
+      });
+
+      it("an update can require the day it was decided on: retiring what's over after a move changes nothing (Codex review, round 2)", async () => {
+        const { store, got, item, finish } = await setup();
+        const a = await got();
+        await finish(a.id, a.thread, { rows: [item()] });
+        const [row] = await store.dated.active();
+        const later = await got({ inReplyTo: a.m.rfcMessageId, references: [a.m.rfcMessageId!], date: NOW - 1000 });
+        await finish(later.id, later.thread, { moved: [{ id: row!.id, dueDay: "2026-12-04", dueAt: NOW + 21 * DAY, timed: false, actAt: NOW + 18 * DAY }] });
+        // the revision is the same, the day isn't: what was decided on the old day doesn't apply
+        expect(await store.dated.update(row!.id, row!.revision, { state: "dismissed", closedReason: "expired", closedAt: NOW }, { dueDay: row!.dueDay, dueAt: row!.dueAt })).toBeNull();
+        expect((await store.dated.get(row!.id))!.state).toBe("open");
+        expect(await store.dated.update(row!.id, row!.revision, { state: "dismissed", closedReason: "expired", closedAt: NOW }, { dueDay: "2026-12-04", dueAt: NOW + 21 * DAY })).not.toBeNull();
       });
 
       it("a change applies only at the revision seen; Undo restores exactly, unless something changed it since", async () => {

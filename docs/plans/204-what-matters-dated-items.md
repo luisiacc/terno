@@ -288,3 +288,23 @@ Codex (read-only, `/tmp/terno-scratch/p204/critique-2.out`) raised 10 points, al
 8. **Task first, in every form:** where a row has a snippet line, the task takes it in the foreground ink and the subject moves to it from line two; in a one-line or compact row, the task is what the snippet's place shows; with no preview, the task takes the subject's line. Row heights don't change, so the virtualizer and the anchor are untouched. The right column shows the due day or time.
 9. **Later on a Missed item gives it back a visible week:** Missed lasts until 7 days after the later of its day's end and the deferral's end, in `datedPlace`, `datedOver` and `nextTodayChange`. On a Plan, Later offers only times before it ends.
 10. **The digest's entry is the list's last option again** (`DIGEST_ROW_ID`, after held rows), superseding plan 162's place in the header (the owner, 2026-11-14): j/k, Enter, the active descendant, and coming back to it from its page (focus and scroll, even when it was virtualized out); still never checked, dragged, given a menu or thread actions.
+
+### What the code review of the fixes changed
+
+Codex (read-only, `git diff b5d4dd8cd..HEAD`, `/tmp/terno-scratch/p204/review-3.out`): 7 points, all fixed, each with a test that fails without it.
+
+1. **A forged From could answer a request:** IMAP marks a message sent when its From is the user's. Only a send that's certainly theirs answers now (see round 2); Terno's own confirmed send is trusted as it is.
+2. **A request read after your reply came back open:** it's stored answered when a trusted reply in its thread is newer than it.
+3. **A move broke Later's Undo:** a move keeps the revision (it changes no choice of the user's).
+4. **A draft sent elsewhere answered nothing:** the check runs on every thread an ingest touched and on flag reconciliation, not only on inserted messages.
+5. **A nudge row had no Done or Not a task:** it acts through follow-ups' act, as a promise does.
+6. **The order wasn't applied everywhere:** a thread's item and Coming up use the same comparator (by day, then the timed by time).
+7. **A timed Missed item lost its time:** "Was due yesterday 1:00 PM · Wire payroll" (en, es).
+
+Round two, on those fixes (`review-4.out`, 3 points, all fixed):
+
+8. **An archived forged message still counted** ("out of the Inbox" isn't Sent: IMAP sets `is_sent` from the From in any folder, and the store doesn't keep which folder is Sent). Only Gmail's SENT label, or Terno's own confirmed send, answers a request; a reply sent from another IMAP client leaves it for the user's Done.
+9. **Retiring what's over could dismiss an item a later mail had just moved** (the move keeps the revision): `dated.update` takes an optional `schedule`, and retirement passes the day it decided on.
+10. **On SQLite, an answered request at the bound evicted open work:** the answered check comes before the bound, as IndexedDB had it.
+
+Two rounds, per the owner's cap.
