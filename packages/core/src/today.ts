@@ -147,21 +147,22 @@ export function prepareTimeToday(prepareAt: string, now: number): number {
 /**
  * Plan 204, the second panel round (plan 145's rule, tighter): a message that only acknowledges ("Thanks.", "Got it,
  * thanks!", "Gracias", "Perfecto 👍") isn't waiting on the reader. Conservative, by what it allows rather than what it
- * catches (Codex code review): the visible message (quotes off, inline answers kept, nothing after a sign-off), no
- * question, an acknowledgment, and every other word one that adds nothing ("for the update", "talk soon") or a name
- * signing it. "Thanks, review the contract today" and "Perfecto, firma el contrato hoy" are kept.
+ * catches (Codex code reviews): the visible message (quotes off, inline answers kept, nothing after a sign-off), no
+ * question and no request word, acknowledgments, whole phrases that add nothing ("for the update", "talk soon") and at
+ * most a name signing it, at its end. "Thanks, review the contract today", "Thanks. Please reply." and "Perfecto.
+ * Avísame." are kept. A body too long to read cheaply is kept too: the rule only ever takes conversations out.
  */
 const ACK = /\b(thanks|thank you|thx|ty|got it|sounds good|great|perfect|ok|okay|noted|will do|cheers|appreciate it|gracias|muchas gracias|perfecto|listo|de acuerdo|vale|entendido|recibido|genial|excelente)\b|👍|🙏/iu;
 const ACK_ONLY =
   /\b(thank you|thanks|thx|ty|many thanks|much appreciated|appreciate it|got it|sounds good|sounds great|great|perfect|ok|okay|noted|will do|cheers|awesome|all good|muchas gracias|mil gracias|gracias|perfecto|perfecta|listo|de acuerdo|vale|entendido|recibido|genial|excelente)\b|[👍🙏🙌😊🙂]/giu;
-/** words that add nothing to a thanks: no task, no date, no thing */
-const FILLER = new Set(
-  ("for the that this it its your you all again so much very a lot update info information help reply heads up quick response " +
-    "have nice great good day weekend talk soon too everyone team hi hello hey dear and as always " +
-    "por la el lo los las tu su información info ayuda respuesta aviso todo bien muy mucho de nuevo buen día fin semana " +
-    "que tengas igualmente un abrazo saludos hola nos vemos pronto y sí si yes yeah sure").split(" "),
-);
+/** whole phrases that add nothing to a thanks: no task, no date, no thing */
+const FILLER =
+  /\b(for (the|your) (update|info|information|help|quick reply|reply|response|heads up|note)|so much|a lot|again|as always|talk soon|have a (great|good|nice) (day|weekend|one)|you too|hi|hello|hey|dear|por (la|tu|su) (información|info|ayuda|respuesta)|por el aviso|de nuevo|que tengas (un )?buen (día|fin de semana)|buen (día|fin de semana)|igualmente|nos vemos( pronto)?|un abrazo|saludos|hola)\b/giu;
+/** a request, however it's dressed: never an acknowledgment */
+const REQUEST = /\b(please|pls|let me know|can you|could you|would you|send|reply|update|review|sign|call|confirm|check|need|por favor|avísame|avisame|me avisas|mándame|mandame|envíame|enviame|revisa|firma|llama|confirma|necesito)\b/iu;
 const SIGN_OFF = /^(--\s*$|sent from my|enviado desde|get outlook|best,?$|regards,?$|saludos,?$|un abrazo,?$|abrazo,?$|cheers,?$)/i;
+/** past this, a body isn't read for it (the sidebar's count reads it): kept, as anything unsure is */
+const ACK_MAX_CHARS = 20_000;
 
 /** A message's own words: quotes off (an answer between them kept), nothing after a sign-off. */
 function ownWords(text: string): string {
@@ -175,20 +176,17 @@ function ownWords(text: string): string {
 }
 
 export function isAcknowledgment(text: string | null | undefined): boolean {
-  if (!text) return false;
+  if (!text || text.length > ACK_MAX_CHARS) return false;
   const words = ownWords(text);
-  // a few words: an acknowledgment, at most eight more (the cheap test first)
+  // a few words (the cheap test first), no question, an acknowledgment
   if (!words || words.split(" ").length > 14 || /[?¿]/.test(words) || !ACK.test(words)) return false;
-  const rest = words.replace(ACK_ONLY, " ").match(/[\p{L}\p{N}'’]+/gu) ?? [];
-  if (rest.length > 8) return false;
-  let names = 0;
-  for (const w of rest) {
-    if (FILLER.has(w.toLowerCase())) continue;
-    // a name signing it ("Thanks! Ana"): capitalized, at most two
-    if (/^\p{Lu}\p{Ll}+$/u.test(w) && ++names <= 2) continue;
-    return false;
-  }
-  return true;
+  // the phrases that add nothing off ("for the update"), then no request in what's left
+  const plain = words.replace(FILLER, " ");
+  if (REQUEST.test(plain)) return false;
+  const rest = plain.replace(ACK_ONLY, " ").match(/[\p{L}\p{N}'’]+/gu) ?? [];
+  // what's left is at most a name signing it: one or two capitalized words, the message's last
+  if (rest.length > 2 || !rest.every((w) => /^\p{Lu}\p{Ll}+$/u.test(w))) return false;
+  return !rest.length || words.replace(/[^\p{L}\p{N}'’]+$/u, "").endsWith(rest.at(-1)!);
 }
 
 /** The cheap screen first: a snippet that starts like an acknowledgment is worth reading the message for. */
