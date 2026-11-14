@@ -2,6 +2,7 @@ import type { AppSettings } from "./rpc/contract";
 import type { ThreadSummary } from "./types";
 import { aiReady } from "./ai-routing";
 import type { DatedKind } from "./dated";
+import { withoutQuotes } from "./text";
 
 /** Plan 145: what needs you today, and newsletters folded into one digest. Local but for the digest, which is its own opt-in. */
 
@@ -145,19 +146,28 @@ export function prepareTimeToday(prepareAt: string, now: number): number {
 
 /**
  * Plan 204, the second panel round (plan 145's rule, tighter): a message that only acknowledges ("Thanks.", "Got it,
- * thanks!", "Gracias", "Perfecto 👍") isn't waiting on the reader. Conservative: the whole visible message, quotes and a
- * signature off; a few words; an acknowledgment in it; no question and no request. Anything else is kept.
+ * thanks!", "Gracias", "Perfecto 👍") isn't waiting on the reader. Conservative, by what it allows rather than what it
+ * catches (Codex code review): the visible message (quotes off, inline answers kept, nothing after a sign-off), no
+ * question, an acknowledgment, and every other word one that adds nothing ("for the update", "talk soon") or a name
+ * signing it. "Thanks, review the contract today" and "Perfecto, firma el contrato hoy" are kept.
  */
 const ACK = /\b(thanks|thank you|thx|ty|got it|sounds good|great|perfect|ok|okay|noted|will do|cheers|appreciate it|gracias|muchas gracias|perfecto|listo|de acuerdo|vale|entendido|recibido|genial|excelente)\b|👍|🙏/iu;
-const REQUEST = /\?|¿|\b(can you|could you|would you|please|pls|let me know|send|need|when|what|why|how|por favor|puedes|podrías|podrias|me mandas|me envías|necesito|avísame|avisame|cuándo|cuando|qué|que tal)\b/iu;
+const ACK_ONLY =
+  /\b(thank you|thanks|thx|ty|many thanks|much appreciated|appreciate it|got it|sounds good|sounds great|great|perfect|ok|okay|noted|will do|cheers|awesome|all good|muchas gracias|mil gracias|gracias|perfecto|perfecta|listo|de acuerdo|vale|entendido|recibido|genial|excelente)\b|[👍🙏🙌😊🙂]/giu;
+/** words that add nothing to a thanks: no task, no date, no thing */
+const FILLER = new Set(
+  ("for the that this it its your you all again so much very a lot update info information help reply heads up quick response " +
+    "have nice great good day weekend talk soon too everyone team hi hello hey dear and as always " +
+    "por la el lo los las tu su información info ayuda respuesta aviso todo bien muy mucho de nuevo buen día fin semana " +
+    "que tengas igualmente un abrazo saludos hola nos vemos pronto y sí si yes yeah sure").split(" "),
+);
 const SIGN_OFF = /^(--\s*$|sent from my|enviado desde|get outlook|best,?$|regards,?$|saludos,?$|un abrazo,?$|abrazo,?$|cheers,?$)/i;
 
-/** A message's own words: quotes, the quoted header and anything after a sign-off taken off. */
+/** A message's own words: quotes off (an answer between them kept), nothing after a sign-off. */
 function ownWords(text: string): string {
   const lines: string[] = [];
-  for (const raw of text.split(/\r?\n/)) {
+  for (const raw of withoutQuotes(text).split(/\r?\n/)) {
     const line = raw.trim();
-    if (line.startsWith(">") || /^on .+ wrote:$/i.test(line) || /^el .+ escribió:$/i.test(line)) break;
     if (SIGN_OFF.test(line)) break;
     lines.push(line);
   }
@@ -167,8 +177,17 @@ function ownWords(text: string): string {
 export function isAcknowledgment(text: string | null | undefined): boolean {
   if (!text) return false;
   const words = ownWords(text);
-  if (!words || words.split(" ").length > 10) return false;
-  return ACK.test(words) && !REQUEST.test(words);
+  if (!words || /[?¿]/.test(words) || !ACK.test(words)) return false;
+  const rest = words.replace(ACK_ONLY, " ").match(/[\p{L}\p{N}'’]+/gu) ?? [];
+  if (rest.length > 8) return false;
+  let names = 0;
+  for (const w of rest) {
+    if (FILLER.has(w.toLowerCase())) continue;
+    // a name signing it ("Thanks! Ana"): capitalized, at most two
+    if (/^\p{Lu}\p{Ll}+$/u.test(w) && ++names <= 2) continue;
+    return false;
+  }
+  return true;
 }
 
 /** The cheap screen first: a snippet that starts like an acknowledgment is worth reading the message for. */

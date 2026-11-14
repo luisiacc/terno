@@ -52,9 +52,9 @@ function stillWaiting(c: Ctx, threadId: number, ack: number | undefined): boolea
     const body = c.body(ack);
     if (isAcknowledgment(body?.body_text ?? body?.body_preview ?? null)) return false;
   }
-  const summary = T(c, "ai_summaries").get(threadId) as { state: string; prompt_version: number | null; through_message_id: number; body_json: string | null } | undefined;
+  const summary = T(c, "ai_summaries").get(threadId) as { state: string; prompt_version: number | null; body_json: string | null; generated_at: number | null } | undefined;
   if (!summaryAsksNothing(summary)) return true;
-  return shown(c, threadId).some((m) => m.id > summary!.through_message_id);
+  return shown(c, threadId).some((m) => m.created_at >= summary!.generated_at!);
 }
 
 export function waitingPage(c: Ctx, o: { after: { lastDate: number; id: number } | null; limit: number }, walk: NeedsWalk): { id: number; lastDate: number; hasSent: boolean }[] {

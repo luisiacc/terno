@@ -105,8 +105,9 @@ export function defineTodayConformance(fresh: () => Promise<MailStore>): void {
 
     it("plan 204, the second panel round: a thanks, or a current summary that asks nothing, isn't waiting on you", async () => {
       const { store } = await setup();
-      const ingest = (m: Partial<IncomingMessage>, summary = false) =>
-        store.sync.ingest([msg({ listId: null, isRead: false, to: [me], ...m, accountId: accountId_() })], { applyFilters: false, now: NOW, classifier: null, ...(summary ? { newMail: { summary: true } } : {}) });
+      // arrival (created_at) and a summary's writing are compared: mail arrives at NOW, summaries are written at NOW + 1
+      const ingest = (m: Partial<IncomingMessage>, summary = false, at = NOW) =>
+        store.sync.ingest([msg({ listId: null, isRead: false, to: [me], ...m, accountId: accountId_() })], { applyFilters: false, now: at, classifier: null, ...(summary ? { newMail: { summary: true } } : {}) });
       /** their own message, then the answer: a conversation they're in */
       const talk = async (name: string, date: number, text: string, summary = false) => {
         const email = `${name.toLowerCase()}@people.test`;
@@ -119,7 +120,7 @@ export function defineTodayConformance(fresh: () => Promise<MailStore>): void {
           threadId: thread,
           stamp: (await store.aiSummaries.sources(thread))!.stamp,
           expectThrough: (await store.aiSummaries.get(thread))?.throughMessageId ?? null,
-          now: NOW,
+          now: NOW + 1,
           clearGeneration: store.aiSummaries.clearGeneration(),
           contentHash: "hash",
           promptVersion,
@@ -145,11 +146,20 @@ export function defineTodayConformance(fresh: () => Promise<MailStore>): void {
       const stale = await talk("Gus", NOW - 3000, "Here's the contract.", true);
       await summarize(stale, 7, nothing);
       // a later message the summary hasn't read: it can't speak for it
-      await ingest({ date: NOW - 2000, providerMsgId: "Gus-in-2", providerThreadId: "Gus", from: { name: "Gus", email: "gus@people.test" }, subject: "Re: About Gus", inReplyTo: "Gus-in", bodyText: "One more thing." });
+      await ingest({ date: NOW - 2000, providerMsgId: "Gus-in-2", providerThreadId: "Gus", from: { name: "Gus", email: "gus@people.test" }, subject: "Re: About Gus", inReplyTo: "Gus-in", bodyText: "One more thing." }, false, NOW + 2);
+      // Codex code review: a request queued for a summary, then dropped (too short to read), leaves the old one ready with
+      // its watermark moved past the new mail: it still can't speak for it
+      const dropped = await talk("Hal", NOW - 1500, "Here's the contract.", true);
+      await summarize(dropped, 7, nothing);
+      await ingest({ date: NOW - 1000, providerMsgId: "Hal-in-2", providerThreadId: "Hal", from: { name: "Hal", email: "hal@people.test" }, subject: "Re: About Hal", inReplyTo: "Hal-in", bodyText: "Can you sign it today?" }, true, NOW + 2);
+      const queued = await store.aiSummaries.get(dropped);
+      expect(queued?.state).toBe("pending");
+      await store.aiSummaries.drop(dropped, queued!.throughMessageId);
+      expect(await store.aiSummaries.get(dropped)).toMatchObject({ state: "ready", throughMessageId: queued!.throughMessageId });
 
-      const all = [ack, ackAsks, told, asked, older, malformed, stale];
+      const all = [ack, ackAsks, told, asked, older, malformed, stale, dropped];
       expect((await store.threads.summaries(all)).every((t) => t.waitingSince != null)).toBe(true);
-      const kept = [ackAsks, asked, older, malformed, stale];
+      const kept = [ackAsks, asked, older, malformed, stale, dropped];
       expect(new Set(await store.today.waitingAmong(all, NOW))).toEqual(new Set(kept));
       expect(new Set((await store.today.waitingPage({ now: NOW, after: null, limit: 20 })).map((p) => p.id))).toEqual(new Set(kept));
       expect(await store.today.needsCount(NOW)).toBe(kept.length);

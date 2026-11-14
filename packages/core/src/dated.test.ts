@@ -183,6 +183,9 @@ describe("an acknowledgment (plan 204, the second panel round: plan 145's rule, 
     "Gracias",
     "Perfecto, gracias.\n\nEnviado desde mi iPhone",
     "Ok\n\nOn Tue, Nov 10, Ana wrote:\n> Can you send the deck by Friday?",
+    "Got it, thanks for the update! Talk soon.",
+    "Muchas gracias por la información, saludos",
+    "Thanks so much, Ana Ruiz",
   ])("only acknowledges: %j", (text) => expect(isAcknowledgment(text)).toBe(true));
   it.each([
     "Thanks, can you send it Friday?",
@@ -191,6 +194,12 @@ describe("an acknowledgment (plan 204, the second panel round: plan 145's rule, 
     "Thanks for the update. When do you think the second draft will be ready for review by the team",
     "",
     "Here's the contract.",
+    // Codex code review: a request without a question mark, en and es, and an answer written below a quote
+    "Thanks, review the contract today.",
+    "Perfecto, firma el contrato hoy.",
+    "Ok, sign it and send it back",
+    "Gracias. Mañana te llamo para revisar el presupuesto",
+    "Thanks.\n\nOn Tue, Nov 10, Me wrote:\n> Here's the draft.\n\nPlease sign the contract today.",
   ])("asks or says more: %j", (text) => expect(isAcknowledgment(text)).toBe(false));
   it("a snippet that starts like one is worth reading; one that doesn't isn't", () => {
     expect(looksLikeAcknowledgment("Thanks! Talk soon")).toBe(true);

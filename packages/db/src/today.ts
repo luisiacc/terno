@@ -37,10 +37,10 @@ function stillWaiting(db: Db, threadId: number, snippet: string | null): boolean
     );
     if (isAcknowledgment(last?.text)) return false;
   }
-  const summary = db.get<{ state: string; prompt_version: number | null; through_message_id: number; body_json: string | null }>("SELECT state, prompt_version, through_message_id, body_json FROM ai_summaries WHERE thread_id = ?", threadId);
+  const summary = db.get<{ state: string; prompt_version: number | null; body_json: string | null; generated_at: number | null }>("SELECT state, prompt_version, body_json, generated_at FROM ai_summaries WHERE thread_id = ?", threadId);
   if (!summaryAsksNothing(summary)) return true;
-  // current: nothing in the thread after what it covers
-  return !!db.get("SELECT 1 FROM messages INDEXED BY messages_thread WHERE thread_id = ? AND id > ? AND is_draft = 0 AND is_spam = 0 AND is_trash = 0 LIMIT 1", threadId, summary!.through_message_id);
+  // current: nothing the thread shows arrived after it was written
+  return !!db.get("SELECT 1 FROM messages INDEXED BY messages_thread WHERE thread_id = ? AND created_at >= ? AND is_draft = 0 AND is_spam = 0 AND is_trash = 0 LIMIT 1", threadId, summary!.generated_at);
 }
 
 export function waitingPage(db: Db, o: { now: number; after: { lastDate: number; id: number } | null; limit: number }): { id: number; lastDate: number; hasSent: boolean }[] {
