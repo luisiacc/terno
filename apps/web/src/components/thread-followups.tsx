@@ -6,7 +6,7 @@ import { Popover, PopoverContent } from "@terno/ui/components/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { ArrowRight, CalendarClock, ChevronDown, Clock } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { followupsOffered, modelName } from "~/lib/ai";
 import { whenDate } from "~/lib/when";
 import { useCanDraft } from "~/lib/ai-draft-state";
@@ -21,7 +21,7 @@ import { useApp } from "~/state/app";
 import { useFollowups } from "~/state/followups";
 import { AI_ACTIONS, AI_CARD, AI_GLYPH, AI_HEADER, AI_PAD, AI_TITLE, AiProvenance, messageSource } from "./ai-card";
 import FollowupsTip from "./followups-tip";
-import { useWhen, WhenFields } from "./when-fields";
+import { WhenForm } from "./when-fields";
 
 /**
  * Plan 161: the line in the AI suggestions' anatomy. Pass 3: on their card too, as Reply ready is (plan 148 left a card out
@@ -43,12 +43,8 @@ function Line({ row, messages }: { row: FollowupRow; messages: readonly MessageD
   // card says so and takes you to that draft (it offered to open it over an empty body)
   const nudging = useAiDraft((s) => (drafted ? nudgeState(s.sessions[nudgeDraft(row.threadId) ?? ""]?.phase) : null));
   const laterRef = useRef<HTMLButtonElement>(null);
-  const formRef = useRef<HTMLFormElement>(null);
-  const pastId = useId();
+  // its own moment starts where the reminder's own picker does (plan 87): the next sensible moment, never one already past
   const [picking, setPicking] = useState(false);
-  const [, recheck] = useState(0);
-  // it starts where the reminder's own picker does (plan 87): the next sensible moment, never one already past
-  const when = useWhen(defaultRemindAt(new Date()));
   return (
     <div data-testid="followup-line" data-kind={row.kind} data-state={row.state} className={cn(AI_CARD, AI_PAD)}>
       {/* the news first, at the text's size: it's what the card is */}
@@ -96,23 +92,16 @@ function Line({ row, messages }: { row: FollowupRow; messages: readonly MessageD
         </DropdownMenu>
         <Popover open={picking} onOpenChange={(open) => { setPicking(open); if (!open) laterRef.current?.focus({ preventScroll: true }); }}>
           <PopoverContent anchor={laterRef} align="start" className="w-80" data-testid="followup-later-custom" aria-label={t("followup.later")}>
-            <form
-              ref={formRef}
-              className="flex flex-col gap-2"
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (!when.ready) return;
-                // the moment can pass while it's open: the clock again, and a render that says why (as RemindPicker does)
-                if (when.chosen <= Date.now()) return recheck((n) => n + 1);
+            <WhenForm
+              start={defaultRemindAt(new Date())}
+              testPrefix="followup-later"
+              submit={t("followup.later")}
+              onSet={(at) => {
                 setPicking(false);
                 laterRef.current?.focus({ preventScroll: true });
-                void actOnFollowup(row, "later", when.chosen);
+                void actOnFollowup(row, "later", at);
               }}
-            >
-              <WhenFields when={when} testPrefix="followup-later" describedBy={pastId} onEnter={() => formRef.current?.requestSubmit()} />
-              {when.past && <p id={pastId} className="text-xs text-destructive-ink" data-testid="followup-later-past">{t("remind.past")}</p>}
-              <Button type="submit" size="sm" data-testid="followup-later-set" disabled={when.past || !when.ready} className="self-end">{t("followup.later")}</Button>
-            </form>
+            />
           </PopoverContent>
         </Popover>
         <Button variant="outline" size="sm" className="text-foreground" data-testid="followup-dismiss" onClick={() => void actOnFollowup(row, "dismiss")}>{t(awaiting ? "followup.dismiss" : "followup.notPromise")}</Button>

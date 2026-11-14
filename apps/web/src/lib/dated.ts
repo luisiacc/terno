@@ -1,10 +1,10 @@
-import { datedGroup, localDay, type DatedKind, type TodayWhy } from "@terno/core";
+import { datedGroup, localDay, planEnd, remindPresets, type DatedKind, type RemindPreset, type TodayWhy } from "@terno/core";
 import { getLocale, t } from "@terno/i18n";
 import { useEffect, useState } from "react";
 import { usd } from "~/lib/ai";
 import { registerUndo, snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
-import { datedDay, reminderTime } from "~/lib/when";
+import { datedDay, dueShort, reminderTime } from "~/lib/when";
 
 /** Plan 204: a dated item as Today's row carries it, what Done and Later act on. */
 export type DatedRef = NonNullable<TodayWhy["item"]>;
@@ -30,33 +30,100 @@ export function wasDueLine(day: number, text: string, now = Date.now()): string 
   return d.near === "yesterday" ? t("today.why.wasDueYesterday", { text }) : t("today.why.wasDueOn", { day: d.text, text });
 }
 
+/** "Due Friday · …", "Due today 1:00 PM · …" (after the panel: any timed item says its time, not only a Plan). */
+function dueLine(day: number, time: string | null, text: string, now: number): string {
+  const d = datedDay(day, now);
+  if (d.near === "today") return time ? t("today.why.dueTodayAt", { time, text }) : t("today.why.dueToday", { text });
+  if (d.near === "tomorrow") return time ? t("today.why.dueTomorrowAt", { time, text }) : t("today.why.dueTomorrow", { text });
+  return time ? t("today.why.dueOnAt", { day: d.text, time, text }) : t("today.why.dueOn", { day: d.text, text });
+}
+
 /**
  * Plan 204 §8: an item's line, in Today's row and the reader alike: "Due Friday · Pay the electricity bill" (Deadlines and
- * Coming up), "Tomorrow 7:40 · Flight to Madrid" (a Plan: the time only when the mail gave one), "Was due Tuesday · Renew
- * the domain" (Missed); an alert that named no day, its words alone.
+ * Coming up), "Due today 1:00 PM · Wire payroll" (after the panel: any item with a time says it), "Tomorrow 7:40 · Flight
+ * to Madrid" (a Plan), "Was due Tuesday · Renew the domain" (Missed); an alert that named no day, its words alone.
  */
 export function datedLine(o: DatedFacts, missed: boolean, now = Date.now()): string {
   if (!o.dated) return o.text;
   if (missed) return wasDueLine(dayOf(o), o.text, now);
-  const d = datedDay(dayOf(o), now);
+  const time = o.timed ? reminderTime(o.dueAt) : null;
   if (datedGroup(o.kind) === "plans") {
+    const d = datedDay(dayOf(o), now);
     const when = d.near === "today" ? t("today.when.today") : d.near === "tomorrow" ? t("today.when.tomorrow") : capital(d.text);
-    return t("today.why.plan", { when: o.timed ? `${when} ${reminderTime(o.dueAt)}` : when, text: o.text });
+    return t("today.why.plan", { when: time ? `${when} ${time}` : when, text: o.text });
   }
-  if (d.near === "today") return t("today.why.dueToday", { text: o.text });
-  if (d.near === "tomorrow") return t("today.why.dueTomorrow", { text: o.text });
-  return t("today.why.dueOn", { day: d.text, text: o.text });
+  return dueLine(dayOf(o), time, o.text, now);
 }
 
-/** Done and Later (plan 204 §5), each with Undo that puts the exact item back, as follow-ups' act. Today reloads on the backend's `todayChanged`. */
-export async function actOnDated(item: Pick<DatedRef, "id" | "revision">, action: "done" | "later", until?: number): Promise<void> {
+/**
+ * Plan 204 (after the panel, fix 8): a promise of yours, in your words: "Due today · You said: send the agenda", "Due
+ * Tuesday · You said: …" (Coming up), "Was due Tuesday · You said: …" (Missed); one that named no day, "You said: …".
+ */
+export function promiseLine(o: { text: string; dueAt?: number; dated: boolean }, missed: boolean, now = Date.now()): string {
+  const said = t("today.why.promise", { text: o.text });
+  if (!o.dueAt || !o.dated) return said;
+  return missed ? wasDueLine(o.dueAt, said, now) : dueLine(o.dueAt, null, said, now);
+}
+
+/**
+ * Plan 204 (after the panel): what a Today row's Done, Not a task, Later and D act on: its dated item, or the promise of
+ * yours it shows (`why.promise`, exactly: never the thread's most urgent). `when` is the right column's due day; `end`, a
+ * Plan's end, the last moment Later may choose.
+ */
+export type TodayTask =
+  | { kind: "dated"; item: DatedRef; when: string | null; end: number | null }
+  | { kind: "promise"; id: number; revision: number; when: string | null };
+
+/** A Today row's task, from what the backend said of it; a waiting row, a nudge or a reminder has none. */
+export function taskOf(why: TodayWhy, now = Date.now()): TodayTask | null {
+  if (why.kind === "dated" && why.item) {
+    const item = why.item;
+    const dueAt = why.dueAt ?? 0;
+    // a Missed item says its day; one still ahead, its time today
+    const timed = item.timed && !why.missed;
+    const when = item.dated ? dueShort(timed ? dueAt : (localDay(item.dueDay)?.getTime() ?? dueAt), timed, now) : null;
+    return { kind: "dated", item, when, end: datedGroup(item.kind) === "plans" ? planEnd({ dueDay: item.dueDay, dueAt, timed: item.timed }) : null };
+  }
+  if (why.kind === "promise" && why.promise) {
+    const dated = why.promise.dated === true && why.dueAt !== undefined;
+    return { kind: "promise", id: why.promise.id, revision: why.promise.revision, when: dated ? dueShort(why.dueAt!, false, now) : null };
+  }
+  return null;
+}
+
+/** Plan 204 (after the panel, fix 10): Later's choices now, the reminder's presets; on a Plan, only those before it ends. */
+export function laterChoices(task: TodayTask, now = Date.now()): RemindPreset[] {
+  const presets = remindPresets(new Date(now), "always");
+  return task.kind === "dated" && task.end !== null ? presets.filter((p) => p.at < task.end!) : presets;
+}
+
+const SAID = { done: "dated.snack.done", dismiss: "dated.snack.dismissed", later: "dated.snack.later" } as const;
+
+/**
+ * Done, Not a task and Later (plan 204 §5, after the panel), each with Undo that puts the exact item back, as follow-ups'
+ * act. Today reloads on the backend's `todayChanged`.
+ */
+export async function actOnDated(item: Pick<DatedRef, "id" | "revision">, action: "done" | "dismiss" | "later", until?: number): Promise<void> {
   try {
     const { undoId } = await client.call("dated.act", { id: item.id, revision: item.revision, action, ...(until !== undefined ? { until } : {}) });
     const undo = undoId === null ? null : registerUndo(() => client.call("dated.undo", { undoId }).then(() => undefined));
-    snack.success(t(action === "done" ? "dated.snack.done" : "dated.snack.later"), undo ? { action: { label: t("common.undo"), name: t("dated.undo"), undo } } : {});
+    snack.success(t(SAID[action]), undo ? { action: { label: t("common.undo"), name: t("dated.undo"), undo } } : {});
   } catch (error) {
     const e = error as { message?: string };
     snack.error(e.message ?? t("dated.actFailed"));
+  }
+}
+
+/** The same three on a Today row's task: a promise through follow-ups' act (its revision, its Undo), in Today's words. */
+export async function actOnTask(task: TodayTask, action: "done" | "dismiss" | "later", at?: number): Promise<void> {
+  if (task.kind === "dated") return actOnDated(task.item, action, at);
+  try {
+    const { undoId } = await client.call("followups.act", { id: task.id, revision: task.revision, action, ...(at !== undefined ? { dueAt: at } : {}) });
+    const undo = undoId === null ? null : registerUndo(() => client.call("followups.undo", { undoId }).then(() => undefined));
+    snack.success(t(SAID[action]), undo ? { action: { label: t("common.undo"), name: t("followup.undo"), undo } } : {});
+  } catch (error) {
+    const e = error as { message?: string };
+    snack.error(e.message ?? t("followup.actFailed"));
   }
 }
 

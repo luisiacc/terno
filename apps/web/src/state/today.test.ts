@@ -90,13 +90,17 @@ describe("plan 166, after the owner's second look: Needs you is one group", () =
 describe("plan 161, pass 2: the digest's way in", () => {
   const thread = (id: number) => ({ id, snippet: "s", fromName: "Ana" }) as never;
   const digest = { day: "2026-10-22", state: "ready" as const, automated: false, items: [], liveIds: [1, 2], readIds: [] };
-  it("plan 162 (after ai162-r02): isn't a row: the list starts with Needs you, and the digest is the header's", () => {
+  it("plan 204 (after the panel, revision 10): the list's last option again, after held rows, under no heading; none without a digest", () => {
     const list: TodayList = { now: 0, held: [thread(9)], digest, sections: [{ kind: "needsYou", items: [{ thread: thread(1), why: { kind: "waiting", wrote: true } }] }] };
-    const rows = flattenToday(list, [thread(9)]);
-    expect(rows.map((r) => r.id)).toEqual([9, 1]);
-    expect(rows.some((r) => r.id === DIGEST_ROW_ID)).toBe(false);
+    // the digest's row stays last however the held row was placed (never before a person)
+    const rows = flattenToday(list, [thread(9), thread(1), thread(DIGEST_ROW_ID)]);
+    expect(rows.map((r) => r.id)).toEqual([9, 1, DIGEST_ROW_ID]);
+    expect(useToday.getState().digestAt).toBe(2);
     expect(useToday.getState().groups.map((g) => [g.kind, g.at])).toEqual([["needsYou", 0]]);
     expect(useToday.getState().digest).toBe(digest);
+    expect(useToday.getState().tasks.has(DIGEST_ROW_ID)).toBe(false);
+    expect(flattenToday({ ...list, digest: null }, rows).map((r) => r.id)).toEqual([9, 1]);
+    expect(useToday.getState().digestAt).toBe(-1);
   });
   it("plan 162 (after ai162-r02): a newsletter opened from the page is kept in its pick at once, beside what was unticked", async () => {
     const { openFromDigest } = await import("./today");
@@ -210,10 +214,10 @@ describe("plan 204: Missed, Deadlines, Plans, Needs you, Reminders and Coming up
     expect(useToday.getState().comingUp).toBe(1);
     // Reminders and Coming up aren't counted
     expect(useToday.getState().counted).toBe(8);
-    // the menu's Done knows each row's item; a promise and a waiting row have none
-    expect(useToday.getState().dated.get(3)).toMatchObject({ id: 30, revision: 1, kind: "pay" });
-    expect(useToday.getState().dated.has(2)).toBe(false);
-    expect(useToday.getState().dated.has(8)).toBe(false);
+    // the menu's Done knows each row's task; a promise with no reference (an older backend) and a waiting row have none
+    expect(useToday.getState().tasks.get(3)).toMatchObject({ kind: "dated", item: { id: 30, revision: 1, kind: "pay" } });
+    expect(useToday.getState().tasks.has(2)).toBe(false);
+    expect(useToday.getState().tasks.has(8)).toBe(false);
   });
 
   it("each kind's line: due, a plan's day and time, Missed, a missed promise, an alert with no day", () => {
@@ -226,6 +230,44 @@ describe("plan 204: Missed, Deadlines, Plans, Needs you, Reminders and Coming up
     expect(line(5)).toBe("Your card was declined");
     expect(line(6)).toBe("Tomorrow 7:40 AM · Flight to Madrid");
     expect(line(7)).toBe("Today · Your parcel arrives");
+  });
+
+  it("after the panel: any timed item says its time; a promise of yours says when it's due; Coming up's promise its day", () => {
+    const rows = flattenToday(
+      list({
+        deadlines: [dated(1, "pay", "Wire payroll", 12, { timed: true, h: 13 }), dated(2, "pay", "Pay the rent", 13, { timed: true, h: 9, m: 30 })],
+        needsYou: [
+          { thread: thread(3), why: { kind: "promise", text: "send the agenda", dueAt: at(12, 18), promise: { id: 31, revision: 2, dated: true } } } as never,
+          { thread: thread(4), why: { kind: "promise", text: "call back", dueAt: at(12, 18), promise: { id: 41, revision: 0, dated: false } } } as never,
+        ],
+        // an older backend's promise in Coming up names no `dated`: there it can only be a dated one
+        comingUp: [{ thread: thread(5), why: { kind: "promise", text: "send the deck", dueAt: at(17), promise: { id: 51, revision: 0 } } } as never],
+      }),
+      [],
+    );
+    const line = (id: number) => rows.find((r) => r.id === id)?.snippet;
+    expect(line(1)).toBe("Due today 1:00 PM · Wire payroll");
+    expect(line(2)).toBe("Due tomorrow 9:30 AM · Pay the rent");
+    expect(line(3)).toBe("Due today · You said: send the agenda");
+    expect(line(4)).toBe("You said: call back");
+    useToday.setState({ comingUpOpen: true });
+    expect(flattenToday(list({ comingUp: [{ thread: thread(5), why: { kind: "promise", text: "send the deck", dueAt: at(17), promise: { id: 51, revision: 0 } } } as never] }), [])[0]!.snippet).toBe("Due Tuesday · You said: send the deck");
+  });
+
+  it("after the panel: each row's task, what D, Done, Not a task and Later act on, with its due day for the date's place", () => {
+    flattenToday(full(), []);
+    const tasks = useToday.getState().tasks;
+    // Missed says its day; a deadline tomorrow, "Tomorrow"; an alert that named none, nothing (the received date stays)
+    expect(tasks.get(1)).toMatchObject({ kind: "dated", when: "Tue", end: null });
+    expect(tasks.get(3)).toMatchObject({ when: "Tomorrow" });
+    expect(tasks.get(5)).toMatchObject({ when: null });
+    // a Plan: its time tomorrow, and Later only before it ends
+    expect(tasks.get(6)).toMatchObject({ when: "Tomorrow", end: at(13, 7, 40) + 2 * 3_600_000 });
+    expect(tasks.get(7)).toMatchObject({ kind: "dated", end: new Date(2026, 10, 13).getTime() });
+    flattenToday(list({ deadlines: [dated(1, "pay", "Wire payroll", 12, { timed: true, h: 13 })], needsYou: [{ thread: thread(3), why: { kind: "promise", text: "send the agenda", dueAt: at(12, 18), promise: { id: 31, revision: 2, dated: true } } } as never] }), []);
+    expect(useToday.getState().tasks.get(1)).toMatchObject({ when: "1:00 PM" });
+    // a promise row acts on the promise it shows, exactly
+    expect(useToday.getState().tasks.get(3)).toEqual({ kind: "promise", id: 31, revision: 2, when: "Today" });
   });
 
   it("further days: a weekday within six, else the date", () => {

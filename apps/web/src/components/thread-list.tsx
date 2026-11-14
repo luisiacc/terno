@@ -26,6 +26,7 @@ import { installDragController } from "~/lib/drag-install";
 import { currentScope, inboxTop, listKey, loadMore, searchOfKey, useList } from "~/state/list";
 import { wantExcerpts } from "~/state/excerpts";
 import { digestFrom, digestLabel, setComingUpOpen, useToday, type TodayGroup } from "~/state/today";
+import type { TodayTask } from "~/lib/dated";
 import { TodayDatedOffer } from "./today-dated-offer";
 import { DIGEST_ROW_ID } from "@terno/core";
 import { clearSelection, selectScope } from "~/lib/select";
@@ -41,7 +42,7 @@ import { ReviewAlwaysMenu, ReviewButtons } from "./review-actions";
 import { ReviewSwitcher } from "./review-switcher";
 import { ReviewEmpty } from "./review-empty";
 import { focusQuietly } from "~/lib/quiet-focus";
-import { ThreadRow } from "./thread-row";
+import { ROW_SHAPE, ThreadRow, type ThreadRowProps } from "./thread-row";
 import { registerDesignAnchor, useDesign } from "~/lib/design";
 import { LearnedBanner, LearnedSource, useLearnedProposal } from "./learned-banner";
 import { ForwardQuestion } from "./forward-question";
@@ -72,6 +73,7 @@ const askOverList = (): number => (usePinnedAsk.getState().overList ? usePinnedA
 const listInset = (): number => (useAppearance.getState().layout === "list" ? pinnedOver(listCovered() ? 0 : useSnack.getState().inset, pinnedInsetNow()) : askOverList());
 
 const EMPTY_GROUPS: readonly TodayGroup[] = [];
+const NO_TASKS: ReadonlyMap<number, TodayTask> = new Map();
 
 /** Plan 145: what the rows under it are, drawn in space the row above leaves. Not a stop for arrow keys: a listbox holds only its options. */
 function TodayHeading({ kind, top }: { kind: TodayGroup["kind"]; top: number }) {
@@ -111,45 +113,60 @@ function sectionName(kind: TodayGroup["kind"] | undefined): string | undefined {
 }
 
 /**
- * Plan 162 (after ai162-r02): the digest's way in, in Today's header under its sentence: above the fold and never before a
- * person (as the list's first row it led a page that says these need you; after them it fell below the fold, ai-r00).
- * After ai162-r05: a row in the list's anatomy, not a caption (it was the smallest thing on the page: five reports): its
- * glyph in an avatar's tile, its count line at the sender's size and weight, under it who they're from, a chevron. List's
- * one-line header holds it on the title's line, one line at the row's size. The selection's fill while the digest is
- * open; its test id is the row's it replaced.
+ * Plan 204 (after the panel, revision 10, superseding plan 162's place in Today's header): the digest's way in is the
+ * list's last option again (plan 145's row), after every person and every held row, under no heading of its own. It takes
+ * the cursor as a row does (j/k, Enter, the active descendant) and nothing else a thread can: no thread id, so it's never
+ * checked, dragged, given a menu or a thread's actions. In the row's anatomy: its glyph in the avatars' column (or on the
+ * text line, with none), its count line where a sender is, under it who they're from, a chevron.
  */
-export function TodayDigestEntry({ inline }: { /** List's full-width title row: beside the sentence, at its own width */ inline?: boolean }) {
+function DigestListRow({ top, height, line, compact, layout, pick, position }: { top: number; height: number; line: boolean; compact: boolean; layout: ThreadRowProps["layout"]; /** List's rows keep a checkbox slot before the names: its glyph goes there */ pick: boolean; position: number }) {
   const digest = useToday((s) => s.digest);
   const selected = useApp((s) => s.selectedId === DIGEST_ROW_ID);
+  // what assistive tech hears as selected, as a row's: the cursor while nothing is checked (it's never checked itself)
+  const inSelection = useApp((s) => s.selectedId === DIGEST_ROW_ID && s.checked.size === 0 && s.scope === null);
   if (!digest) return null;
   const from = digestFrom(digest, getLocale());
+  const quiet = !selected && "text-muted-foreground";
+  // with no avatars, List's rows keep a slot of a check's size before the names (ThreadRowView's): the glyph is centred in it
+  const slot = layout === "classic" && pick && (
+    <span aria-hidden data-testid="digest-row-tile" className={cn("relative flex w-6 shrink-0 items-center justify-center", quiet)}>
+      <Newspaper className="size-[1.15em]" />
+    </span>
+  );
+  const tile = layout !== "classic" && (
+    <span aria-hidden data-testid="digest-row-tile" className={cn("grid shrink-0 place-items-center rounded-full bg-muted text-muted-foreground [&_svg]:size-4", compact ? "size-(--avatar-row-compact)" : line ? "size-(--avatar-row-wide)" : "size-(--avatar-row)")}>
+      <Newspaper />
+    </span>
+  );
   return (
-    <button
-      type="button"
+    <div
+      role="option"
+      id={`thread-${DIGEST_ROW_ID}`}
+      aria-selected={inSelection}
+      aria-posinset={position}
+      data-cursor={selected || undefined}
       data-testid="digest-row"
-      aria-current={selected ? "true" : undefined}
-      // every fill starts at 8 px, as a row's selection does; the tile on the header's text edge
-      className={cn(
-        "no-drag flex min-w-0 cursor-pointer items-center rounded-lg text-start transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-        inline ? "h-8 max-w-[44cqw] shrink-0 gap-2 ps-2 pe-1.5" : "-ms-3 mt-1.5 w-[calc(100%+0.75rem)] gap-3 py-1.5 ps-3 pe-2",
-        selected ? "bg-row-selected text-row-selected-foreground" : "text-foreground hover:bg-row-hover",
-      )}
-      // the ordinary row's press and release (Codex review): a bulk selection ends, as opening any row ends it
+      // pressed and released on the click, as its header button was (Codex review): the press's focus has gone to the list
+      // by then, so the page opening takes the keys; a bulk selection ends, as opening any row ends it
       onClick={() => {
         pressRow(DIGEST_ROW_ID, { meta: false, ctrl: false, shift: false });
         releaseRow(DIGEST_ROW_ID);
       }}
+      // hover and the selection fill it as any row's; its gaps a row's (a wide row's are wider)
+      className={cn("group/row absolute left-0 flex w-full cursor-pointer items-center px-5 select-none", (line && !compact) || layout === "large-avatar" ? "gap-3" : layout === "classic" ? "gap-2" : "gap-2.5", ROW_SHAPE, selected ? "text-row-selected-foreground before:bg-row-selected" : "text-foreground hover:before:bg-row-hover")}
+      style={{ transform: `translateY(${top}px)`, height }}
     >
-      <span aria-hidden data-testid="digest-row-tile" className={cn("grid shrink-0 place-items-center rounded-full bg-muted text-muted-foreground [&_svg]:size-4", inline ? "size-6" : "size-8")}>
-        <Newspaper />
-      </span>
+      {tile || slot}
       <span className="sr-only">{t("today.newsletters")}, </span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate type-row-from font-medium" data-testid="digest-row-title">{digestLabel(digest)}</span>
-        {!inline && from && <span className={cn("block truncate text-xs", !selected && "text-muted-foreground")} data-testid="digest-row-from">{from}</span>}
+      <span className={cn("relative flex min-w-0 flex-1", line ? "items-baseline gap-2" : "flex-col")}>
+        <span data-testid="digest-row-title" className="flex min-w-0 items-center gap-1.5 type-row-from-strong">
+          {layout === "classic" && !pick && <Newspaper aria-hidden data-testid="digest-row-tile" className={cn("size-[1.15em] shrink-0", quiet)} />}
+          <span className="min-w-0 truncate">{digestLabel(digest)}</span>
+        </span>
+        {from && <span data-testid="digest-row-from" className={cn("min-w-0 truncate type-row-snippet", quiet)}>{from}</span>}
       </span>
-      <ChevronRight aria-hidden className={cn("size-4 shrink-0", !selected && "text-muted-foreground")} />
-    </button>
+      <ChevronRight aria-hidden className={cn("relative size-4 shrink-0", quiet)} />
+    </div>
   );
 }
 
@@ -809,10 +826,7 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
           ) : review ? (
             <ReviewSwitcher />
           ) : today ? (
-            <>
-              <TodayLine />
-              <TodayDigestEntry inline />
-            </>
+            <TodayLine />
           ) : (
             kind !== "title" && <Subtitle filter={filter} greeting={kind === "greeting"} />
           )}
@@ -865,7 +879,6 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
             ) : today ? (
               <>
                 <TodayLine />
-                <TodayDigestEntry />
                 <TodayDatedOffer />
               </>
             ) : (
@@ -878,7 +891,6 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
       {!oneRow && kind === "title" && today && !searching && (
         <div className="-mt-1.5 pb-2 pl-3">
           <TodayLine />
-          <TodayDigestEntry />
           <TodayDatedOffer />
         </div>
       )}
@@ -1148,8 +1160,12 @@ export function ThreadList() {
   leadRef.current = lead;
   const inToday = useApp((s) => s.today);
   const todayGroups = useToday((s) => (inToday ? s.groups : EMPTY_GROUPS));
+  // plan 204 (after the panel): what each Today row's task is (its line leads, its due day is its date), and the digest's
+  // row at the end, set apart by a heading's room with no words in it
+  const tasks = useToday((s) => (inToday ? s.tasks : NO_TASKS));
+  const digestAt = useToday((s) => (inToday ? s.digestAt : -1));
   // every heading the rows have, by the row each stands above: the top's sections, or Today's (never both)
-  const headingsKey = [...sections.headings.map((h) => h.at), ...todayGroups.map((g) => g.at)].join();
+  const headingsKey = [...sections.headings.map((h) => h.at), ...todayGroups.map((g) => g.at), ...(digestAt > 0 ? [digestAt] : [])].join();
   const headingAt = useMemo(() => new Set(headingsKey ? headingsKey.split(",").map(Number) : []), [headingsKey]);
   // the Inbox's headings have more room above their words than Today's
   const label = sections.headings.length ? INBOX_LABEL : TOP_LABEL;
@@ -1435,12 +1451,13 @@ export function ThreadList() {
                 count={h.kind === "pinned" ? formatNumber(pinnedTop) : h.kind === "reminders" ? formatNumber(top - pinnedTop) : sections.total ? `${formatNumber(sections.total.n)}${sections.total.capped ? "+" : ""}` : null}
               />
             ))}
-            {/* plan 161, pass 2: each heading from its row's real offset (the digest's row is shorter than the rest) */}
+            {/* plan 161, pass 2: each heading from its row's real offset */}
             {todayGroups.map((g) => (
               <TodayHeading key={g.kind} kind={g.kind} top={(virtualizer.measurementsCache[g.at]?.start ?? lead + TOP_LABEL) - TOP_LABEL} />
             ))}
             {virtualItems.map((v) => (
-              <ThreadRow key={v.key} thread={items[v.index]!} top={v.start} height={height} compact={compact} wide={wide} showAccount={showAccount} icons={icons} layout={layout} review={review} pinnedTop={v.index < pinnedTop} reminderTop={v.index >= pinnedTop && v.index < top} match={match} lines={lines} pick={list} section={sectionName(todayGroups.find((g) => g.at === v.index)?.kind)} position={v.index + 1} />
+              v.index === digestAt ? <DigestListRow key={v.key} top={v.start} height={height} line={compact || wide} compact={compact} layout={layout} pick={list} position={v.index + 1} /> :
+              <ThreadRow key={v.key} thread={items[v.index]!} top={v.start} height={height} compact={compact} wide={wide} showAccount={showAccount} icons={icons} layout={layout} review={review} pinnedTop={v.index < pinnedTop} reminderTop={v.index >= pinnedTop && v.index < top} match={match} lines={lines} pick={list} section={sectionName(todayGroups.find((g) => g.at === v.index)?.kind)} task={tasks.get(items[v.index]!.id)} position={v.index + 1} />
             ))}
           </div>
         )}

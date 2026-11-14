@@ -4,7 +4,7 @@ import { create } from "zustand";
 import type { PrintTarget } from "~/lib/print-open";
 import { LEGACY_FILTERS, loadListFilters } from "~/lib/unread-filter";
 
-export type DialogName = "settings" | "shortcuts" | "palette" | "categoryPicker" | "filters" | "addAccount" | "print" | "remind" | null;
+export type DialogName = "settings" | "shortcuts" | "palette" | "categoryPicker" | "filters" | "addAccount" | "print" | "remind" | "todayLater" | null;
 export type SettingsTab = "general" | "appearance" | "accounts" | "categories" | "filters" | "snippets" | "ai" | "agents" | "dev" | "data" | "storage" | "about";
 
 /** The draft being written (lib/drafts holds its content); seq changes each time it is (re)opened, for focus. */

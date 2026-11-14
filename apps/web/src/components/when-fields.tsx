@@ -5,7 +5,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/po
 import { Time, TimeField } from "@terno/ui/components/time-field";
 import { cn } from "@terno/ui/lib/utils";
 import { CalendarDays } from "@terno/ui/icons";
-import { useState } from "react";
+import { useId, useRef, useState } from "react";
 
 export const midnight = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
 export const at = (day: Date, minutes: number) => new Date(day.getFullYear(), day.getMonth(), day.getDate(), Math.floor(minutes / 60), minutes % 60).getTime();
@@ -92,5 +92,42 @@ export function WhenFields({ when, testPrefix, describedBy, onEnter }: { when: R
         className="w-30 shrink-0"
       />
     </div>
+  );
+}
+
+/**
+ * A moment of your own, set with a button: the date and time above, why it can't be set yet under them (past, or after
+ * `before`: a Plan's end), and the button. The clock is read again on submit, since the moment can pass while it's open.
+ * Plan 87's reminder, plan 162's follow-up Later and plan 204's Today Later share it.
+ */
+export function WhenForm({ start, testPrefix, submit, onSet, before = null, formTestId, className, noteClassName }: { start: number; testPrefix: string; submit: string; onSet: (at: number) => void; /** the moment it must come before */ before?: number | null; formTestId?: string; className?: string; noteClassName?: string }) {
+  const when = useWhen(start);
+  const formRef = useRef<HTMLFormElement>(null);
+  const noteId = useId();
+  const [, recheck] = useState(0);
+  const late = before !== null && when.ready && when.chosen >= before;
+  const shown = { ...when, past: when.past || late };
+  return (
+    <form
+      ref={formRef}
+      className={cn("flex flex-col gap-2", className)}
+      data-testid={formTestId}
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!when.ready || late) return;
+        if (when.chosen <= Date.now()) return recheck((n) => n + 1);
+        onSet(when.chosen);
+      }}
+    >
+      <WhenFields when={shown} testPrefix={testPrefix} describedBy={noteId} onEnter={() => formRef.current?.requestSubmit()} />
+      {shown.past && (
+        <p id={noteId} className={cn("text-xs text-destructive-ink", noteClassName)} data-testid={`${testPrefix}-past`}>
+          {t(when.past ? "remind.past" : "dated.laterPastEnd")}
+        </p>
+      )}
+      <Button type="submit" size="sm" data-testid={`${testPrefix}-set`} disabled={shown.past || !when.ready} className="self-end">
+        {submit}
+      </Button>
+    </form>
   );
 }

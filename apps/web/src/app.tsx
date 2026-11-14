@@ -28,6 +28,7 @@ import { installComposeFollowsSelection } from "~/lib/compose";
 import { installNetworkEvents } from "~/lib/network";
 import { Reader } from "./components/reader";
 import { RemindDialog } from "./components/remind-dialog";
+import { TodayLaterDialog } from "./components/today-later-dialog";
 import { SelectionBar } from "./components/selection-bar";
 import { SnackDock } from "./components/snack-dock";
 import { Sidebar } from "./components/sidebar";
@@ -229,6 +230,7 @@ export function App() {
       {dialog === "shortcuts" && <ShortcutsDialog />}
       {dialog === "print" && <PrintSheet />}
       {dialog === "remind" && <RemindDialog />}
+      {dialog === "todayLater" && <TodayLaterDialog />}
       {fresh && dialog === null && needsFirstRun() && <FirstRun />}
       {/* inside the settings sheet it opens over the sheet (a nested dialog) */}
       {dialog !== "settings" && <ReportPreview />}

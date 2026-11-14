@@ -62,6 +62,7 @@ export const SECTIONS: { title: Label; rows: [Command, Label][] }[] = [
       ["thread.category", "shortcuts.categories"],
       ["thread.move", "shortcuts.move"],
       ["thread.remind", "shortcuts.remind"],
+      ["today.done", "shortcuts.todayDone"],
       ["action.undo", "common.undo"],
       ["thread.print", "shortcuts.print"],
       ["thread.exportPdf", "shortcuts.exportPdf"],
