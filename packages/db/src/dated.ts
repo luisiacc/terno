@@ -182,6 +182,12 @@ export function finishDated(db: Db, w: DatedFinish): DatedFinishOutcome {
         w.now, s.id, s.revision, src.threadId, src.senderKey,
       );
     }
+    for (const m of w.movedPromises ?? []) {
+      db.run(
+        "UPDATE followups SET due_at = ?, dated = 1, state = CASE WHEN ? > ? THEN 'open' ELSE state END, inbox_state = 'none', revision = revision + 1 WHERE id = ? AND revision = ? AND thread_id = ? AND kind = 'promise' AND state IN ('open','due')",
+        m.dueAt, m.dueAt, w.now, m.id, m.revision, src.threadId,
+      );
+    }
     for (const m of w.moved ?? []) {
       db.run(
         // the revision stays: a Later just before stays undoable, and the move changes no choice of the user's (Codex review)

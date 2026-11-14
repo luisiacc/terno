@@ -266,6 +266,28 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
         expect(await store.dated.ofThread(ask.thread)).toEqual([]);
       });
 
+      it("the second panel round: a later message moves your promise's day, only at the revision seen and on its thread", async () => {
+        const { store, accountId, got, finish } = await setup();
+        // your promise, read from what you sent (plan 142)
+        const m = msg({ accountId, from: me, to: [bank], isSent: true, inInbox: false, rfcMessageId: "promise@x", date: NOW - 9000, providerMsgId: "p-sent" });
+        const r = await store.sync.ingest([m], { applyFilters: false, now: NOW, classifier: null, liveSent: { wanted: true } });
+        const thread = await threadOf(store, "p-sent");
+        await store.followups.finish({ messageId: r.inserted[0]!, threadId: thread, fromScan: false, rows: [{ kind: "promise", item: 0, text: "send the script", quote: "I'll send the script", personName: "Bank", personEmail: bank.email, dueAt: NOW - DAY, dated: true }], kept: [], now: NOW, model: "m", provider: "p", promptVersion: 1, clearGeneration: store.followups.clearGeneration() });
+        const [promise] = await store.followups.ofThread(thread);
+        // "Friday at the latest", from them, on that thread
+        const reply = await got({ inReplyTo: "promise@x", references: ["promise@x"], date: NOW - 1000 });
+        expect(reply.thread).toBe(thread);
+        await finish(reply.id, reply.thread, { movedPromises: [{ id: promise!.id, revision: promise!.revision + 5, dueAt: NOW + 3 * DAY }] });
+        expect((await store.followups.get(promise!.id))!.dueAt).toBe(NOW - DAY);
+        const again = await got({ inReplyTo: "promise@x", references: ["promise@x"], date: NOW - 500 });
+        await finish(again.id, again.thread, { movedPromises: [{ id: promise!.id, revision: promise!.revision, dueAt: NOW + 3 * DAY }] });
+        expect(await store.followups.get(promise!.id)).toMatchObject({ dueAt: NOW + 3 * DAY, dated: true, state: "open", revision: promise!.revision + 1 });
+        // another thread's message can't move it
+        const elsewhere = await got({ date: NOW - 100 });
+        await finish(elsewhere.id, elsewhere.thread, { movedPromises: [{ id: promise!.id, revision: promise!.revision + 1, dueAt: NOW + 9 * DAY }] });
+        expect((await store.followups.get(promise!.id))!.dueAt).toBe(NOW + 3 * DAY);
+      });
+
       it("a later message moves an open item's day whatever its revision, keeping its deferral; never a closed one, nor another sender's", async () => {
         const { store, got, item, finish } = await setup();
         const a = await got();

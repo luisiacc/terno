@@ -458,6 +458,38 @@ describe("a later message moves a day (after the panel)", () => {
   });
 });
 
+describe("a later message moves a promise you made (the second panel round)", () => {
+  it("Theo's script: his promise for Tuesday, then Jess's 'Friday at the latest' gives it Friday; a stranger can't touch it", async () => {
+    const { backend, client, model, receive, read, raw, clock } = await setup();
+    await client.call("settings.update", { followups: { enabled: true } });
+    model.answer = (req) => {
+      const p = promptText(req.messages[0]!.content);
+      // the promise is offered only to the person it was made to
+      if (p.includes("p1 (promise)")) return reply([], [], [{ label: "p1", due: "2026-11-13", time: null, evidence: "Friday at the latest" }]);
+      return reply();
+    };
+    const thread = await receive({ from: { name: "Jess", email: "jess@sponsor.test" }, subject: "Script", bodyText: "Looking forward to it.", providerThreadId: "jess" });
+    raw.run("INSERT INTO followups (thread_id, message_id, item, kind, text, person_name, person_email, sent_at, due_at, dated, state, created_at) VALUES (?, 999997, 0, 'promise', 'send the script', 'Jess', 'jess@sponsor.test', ?, ?, 1, 'due', ?)", thread, clock.now - DAY, at(2026, 11, 10, 9), clock.now);
+    const [before] = await backend.store.followups.ofThread(thread);
+    // a stranger on the thread: the promise isn't offered, nothing moves
+    model.requests.length = 0;
+    await receive({ from: { name: "Mallory", email: "mallory@else.test" }, subject: "Re: Script", bodyText: "Friday at the latest, 2026-11-20.", providerThreadId: "jess" });
+    await read();
+    expect(promptText(model.requests.at(-1)!.messages[0]!.content)).not.toContain("p1 (promise)");
+    expect((await backend.store.followups.get(before!.id))!.dueAt).toBe(at(2026, 11, 10, 9));
+    // Jess herself
+    await receive({ from: { name: "Jess", email: "jess@sponsor.test" }, subject: "Re: Script", bodyText: "No stress. Friday at the latest is fine.", providerThreadId: "jess" });
+    await read();
+    const after = (await backend.store.followups.get(before!.id))!;
+    expect(after).toMatchObject({ dated: true, revision: before!.revision + 1 });
+    expect(new Date(after.dueAt).getDate()).toBe(13);
+    // no longer Missed: it's today's
+    clock.now = at(2026, 11, 13, 10);
+    const sections = (await client.call("today.list", { heldIds: [] })).sections;
+    expect(sections.find((x) => x.kind === "missed")).toBeUndefined();
+  });
+});
+
 describe("Today's groups (§1)", () => {
   it("one thread once, by precedence: a bill's thread waiting on a reply is the bill; groups in order; the count counts each once", async () => {
     const { client, model, receive, read, clock, raw } = await setup();

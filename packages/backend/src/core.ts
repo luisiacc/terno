@@ -360,7 +360,11 @@ export class BackendCore {
       runs: (s) => s.summaries.enabled && (!options.devAi || s.devAi) && aiCanRun("summary", s.ai),
       forTask: (o) => this.aiService.forTask("summary", o),
       begin: (requestId, clientId) => this.aiService.begin(requestId, clientId),
-      ready: (threadId) => this.server.emit("aiSummary", { threadId }, { origins: ["renderer", "dev"] }),
+      ready: (threadId) => {
+        this.server.emit("aiSummary", { threadId }, { origins: ["renderer", "dev"] });
+        // plan 204, second round: Needs you reads a current summary's who-has-to-act, so its list and count follow it
+        this.today.changed();
+      },
       log: (level, message, extra) => this.log(level, message, extra),
     });
     this.writing = new WritingService(this);
@@ -396,6 +400,7 @@ export class BackendCore {
       forTask: () => this.aiService.forTask("dated", { foreground: false }),
       begin: (requestId, clientId) => this.aiService.begin(requestId, clientId),
       changed: () => this.today.changed(),
+      promisesMoved: () => void this.followups.look().catch(() => {}),
       statusChanged: (status) => this.server.emit("datedStatus", status, { origins: ["renderer", "dev"] }),
       runBudgeted: (items, work) => this.runBudgeted(items, work),
       log: (level, message, extra) => this.log(level, message, extra),

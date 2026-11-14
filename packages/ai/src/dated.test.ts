@@ -53,7 +53,7 @@ describe("reading dates in mail you got (plan 204)", () => {
   });
 
   it("is frozen at its version: a change to the words is a new version", () => {
-    expect(DATED_PROMPT_VERSION).toBe(3);
+    expect(DATED_PROMPT_VERSION).toBe(4);
     expect(readDatesTask(input()).system).toMatchSnapshot();
   });
 
@@ -99,8 +99,8 @@ describe("reading dates in mail you got (plan 204)", () => {
   });
 
   it("a small window holds the whole conversation with the server: a bad answer and its repair still fit", async () => {
-    // v3's words need a little more than 2,000: the smallest window that holds them with a bad answer and its repair
-    const window = 2400;
+    // v4's words need a little more than 2,000: the smallest window that holds them with a bad answer and its repair
+    const window = 2600;
     const budget = datedBudget(window);
     const fitted = fitDates(input({ text: "word ".repeat(1200), outputTokens: budget.outputTokens }), budget.promptChars);
     const sizes: number[] = [];

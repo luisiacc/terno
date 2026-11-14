@@ -97,6 +97,12 @@ export interface DatedFinish {
    * revision (Codex review of the fixes: a Later meanwhile mustn't lose the mail's new day); it keeps its deferral.
    */
   moved?: readonly { id: number; dueDay: string; dueAt: number; timed: boolean; actAt: number }[];
+  /**
+   * The second panel round: promises of yours (plan 142's rows) this message gives a new day. Only at the revision the
+   * reader saw (a Later or Done since wins), on this thread, still open or due; the revision bumps (an older Undo is
+   * refused), and the promise is open again when its new moment is ahead.
+   */
+  movedPromises?: readonly { id: number; revision: number; dueAt: number }[];
   now: number;
   model: string | null;
   provider: string | null;
