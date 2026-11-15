@@ -258,7 +258,6 @@ const whyLine = (item: TodayList["sections"][number]["items"][number], why: Toda
   }
   // after the panel: "Due today · You said: send the agenda", "Was due Tuesday · You said: …"
   if (why.kind === "promise") return bare ? t("today.why.promise", { text: why.text ?? "" }) : promiseLine({ text: why.text ?? "", dueAt: why.dueAt, dated: why.promise?.dated ?? why.missed === true }, why.missed === true);
-  if (why.kind === "nudge") return t("today.why.nudge", { name: why.personName || thread.fromName, count: Math.max(1, Math.floor((Date.now() - (why.sentAt ?? Date.now())) / 86_400_000)) });
   if (why.kind === "reminder") return why.dueAt ? `${t("today.why.reminder", { when: listDate(why.dueAt) })} · ${thread.snippet}` : thread.snippet;
   return summary ?? thread.snippet;
 };

@@ -36,11 +36,12 @@ export function aiFeaturesAvailable(settings: Pick<AppSettings, "ai"> | null | u
 }
 
 export interface TodayWhy {
-  kind: "promise" | "nudge" | "waiting" | "reminder" | "dated";
+  /** the sixth panel round (change 4): no nudge, what you wait on from others: What matters tracks your own promises */
+  kind: "promise" | "waiting" | "reminder" | "dated";
   text?: string;
   dueAt?: number;
   personName?: string | null;
-  /** the fourth panel round (revision 9): a promise's or a nudge's person, whom its row names and pictures */
+  /** the fourth panel round (revision 9): a promise's person, whom its row names and pictures */
   personEmail?: string | null;
   sentAt?: number;
   /** a waiting row: you've written in this conversation (else it's new, from someone you write to: `needsYou`'s two reasons) */
@@ -49,7 +50,7 @@ export interface TodayWhy {
   missed?: boolean;
   /** plan 204: a dated item, what the row's Done, Later and Undo act on */
   item?: { id: number; revision: number; kind: DatedKind; dueDay: string; timed: boolean; dated: boolean };
-  /** plan 204 (Codex review): the promise or wait this row shows, what D, Done and Not a task act on (never the thread's most urgent) */
+  /** plan 204 (Codex review): the promise this row shows, what D, Done and Not a task act on (never the thread's most urgent) */
   promise?: { id: number; revision: number; /** it names a day (`FollowupRow.dated`): only then does its line say "Due …" */ dated?: boolean };
 }
 

@@ -54,7 +54,7 @@ describe("a Today row's task (plan 204, after the panel)", () => {
       { text: "Not a task: send the agenda", undo: true },
       { text: "Later: Pay $187.42 for the utility bill", undo: true },
     ]);
-    // a nudge has no words of its own: the plain ones
+    // a task with no words of its own: the plain ones
     await actOnTask({ kind: "promise", id: 8, revision: 0, when: null, due: null, text: null }, "done");
     expect(said.at(-1)!.text).toBe("Marked done");
   });

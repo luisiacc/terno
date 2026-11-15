@@ -2588,7 +2588,6 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "today.comingUp": "Próximamente",
   "today.newsletters": "Boletines",
   "today.why.promise": "Dijiste: {text}",
-  "today.why.nudge": { one: "Sin respuesta de {name} desde hace # día", other: "Sin respuesta de {name} desde hace # días" },
   "today.why.reminder": "Recordatorio {when}",
   "today.why.line": "{when} · {text}",
   "today.due.today": "Vence hoy",

@@ -102,7 +102,7 @@ const sameWords = (a: string, b: string): boolean => a.trim().toLowerCase().repl
 function withAlso(placed: readonly Placed[], candidates: ReadonlyMap<number, readonly AlsoCandidate[]>): Placed[] {
   return placed.map((p) => {
     const { why } = p;
-    const own = why.item ? `d:${why.item.id}` : why.kind === "promise" && why.promise ? `p:${why.promise.id}` : why.kind === "nudge" ? "" : null;
+    const own = why.item ? `d:${why.item.id}` : why.kind === "promise" && why.promise ? `p:${why.promise.id}` : null;
     const list = own === null ? undefined : candidates.get(p.threadId);
     if (!list) return p;
     let also: AlsoCandidate | undefined;
@@ -608,7 +608,7 @@ export class TodayService {
     const active = settings.followups?.enabled ? await store.followups.active() : [];
     // after the panel: the row carries the promise it shows, what D, Done and Not a task act on
     // the fourth panel round (revision 9): who it's to, so a promise's row names and pictures them, not you (the last sender)
-    const promiseWhy = (r: FollowupRow, missed = false): TodayWhy => ({ kind: r.kind === "promise" ? "promise" : "nudge", text: r.text, dueAt: r.dueAt, personName: r.personName, personEmail: r.personEmail, sentAt: r.sentAt, ...(missed ? { missed } : {}), promise: { id: r.id, revision: r.revision, dated: r.dated } });
+    const promiseWhy = (r: FollowupRow, missed = false): TodayWhy => ({ kind: "promise", text: r.text, dueAt: r.dueAt, personName: r.personName, personEmail: r.personEmail, sentAt: r.sentAt, ...(missed ? { missed } : {}), promise: { id: r.id, revision: r.revision, dated: r.dated } });
     // the third panel round (revision 5): your promises by their day, beside the dated items: Missed, Deadlines (due today),
     // Coming up; the fourth (revision 8): one due with no day is Needs you's
     const promises = active.filter((r) => r.kind === "promise");
@@ -633,15 +633,15 @@ export class TodayService {
     // Needs you: people waiting on an answer. A person's ask first, newest first, before what's waiting (so it's the
     // row's line, and counted), unless you'd promised them something there (Codex code review: "could you send that
     // report?" after you said you would is about your promise); then your promises that are due and name no day (the
-    // fourth panel round, revision 8), the longest due first; then nudges (no reply to your mail) by when they came due
+    // fourth panel round, revision 8), the longest due first. The sixth panel round (change 4): no nudges, what you wait
+    // on from others (Follow-ups and the Inbox's top keep them), here or in the count; their conversation keeps an ask, a
+    // promise or a reminder it has
     const asks = [...best.values()].filter((b) => b.place === "needsYou").sort((x, y) => y.row.arrivedAt - x.row.arrivedAt || y.row.id - x.row.id);
     for (const b of asks) {
       const promise = owed.get(b.row.threadId);
       placed.push({ group: "needsYou", threadId: b.row.threadId, why: promise ? promiseWhy(promise) : datedWhy(b.row, false) });
     }
     for (const p of promisesIn("needsYou").sort((a, b) => a.at.dueAt - b.at.dueAt)) placed.push({ group: "needsYou", threadId: p.threadId, why: p.why });
-    const nudges = active.filter((r) => r.kind === "awaiting" && (r.state === "due" || (r.state === "open" && r.dueAt <= now))).sort((a, b) => a.dueAt - b.dueAt);
-    for (const r of nudges) placed.push({ group: "needsYou", threadId: r.threadId, why: promiseWhy(r) });
     // the count reads none of what follows: what's waiting is its own indexed count there, and Reminders and Coming up
     // come after it, so they never take a waiting thread from it
     if (o.count) return dedupe(placed);
