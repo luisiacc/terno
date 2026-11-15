@@ -1,4 +1,4 @@
-import { DATED_ITEMS_MAX, DATED_KINDS, DATED_OPEN_SHOWN, saysDay, type DatedKind } from "@terno/core";
+import { DATED_ITEMS_MAX, DATED_KINDS, DATED_OPEN_SHOWN, saysDay, ZONE_NOTE, type DatedKind } from "@terno/core";
 import { z } from "zod";
 import type { StructuredTask } from "./ladder";
 
@@ -306,8 +306,7 @@ export function movedInZone(at: { due: string; time: string }, from: string, to:
   return (ms === null ? null : wallIn(ms, to)) ?? { due: at.due, time: null };
 }
 
-/** An item's words ending in the mail's own time and zone (prompt v10): "(4:00 PM PT)", "(18:00 hora de Ciudad de México)". */
-const ZONE_NOTE = /\s*\((\d{1,2}(?::\d{2})?)(\s*[AaPp]\.?\s?[Mm]\.?)?\s+((?:[A-Z]{2,5}(?:[+-]\d{1,2})?)|[^()]*\b(?:[Tt]ime|hora|horario)\b[^()]*)\)\s*$/u;
+// an item's words ending in the mail's own time and zone (prompt v10): `ZONE_NOTE`, core's, which What matters' rows read too
 
 /**
  * Codex code review of the seventh round: a move of the time keeps an item's words in step with it. Its zone note takes the
