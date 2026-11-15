@@ -558,9 +558,11 @@ export class TodayService {
   private async project(now: number, settings: AppSettings, o: { count?: boolean } = {}): Promise<{ rows: ProjectedRow[]; counts: TodayCounts; threads: ReadonlyMap<number, ThreadSummary> }> {
     const { store } = this.b;
     const read = async () => [settings.dated?.enabled ? await this.datedRows() : [], settings.followups?.enabled ? (await store.followups.active()).filter((r) => r.kind === "promise") : []] as const;
+    const version = this.links.version;
     let [dated, promises] = await read();
-    // what a new item is the same as, before any row shows it twice (written once, then read like any fact)
-    if (await this.links.reconcile(store, dated, promises)) {
+    // what a new item is the same as, before any row shows it twice (written once, then read like any fact); a membership
+    // written by another read meanwhile makes this one's stale too
+    if ((await this.links.reconcile(store, dated, promises)) || this.links.version !== version) {
       this.datedGeneration++;
       [dated, promises] = await read();
     }

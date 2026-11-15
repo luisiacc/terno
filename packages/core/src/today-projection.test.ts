@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { datedGroupAt, datedTiming, needsPresence, nextTodayChange, type DatedKind, type DatedRow } from "./dated";
 import type { FollowupRow } from "./followups";
-import { projectToday, type ProjectionFacts } from "./today-projection";
+import { placedThreads, placeItems, projectToday, type ProjectionFacts } from "./today-projection";
 import { splitZoneNote, statedClock, weekEndDay } from "./today-items";
 
 const at = (y: number, m: number, d: number, h = 0, min = 0) => new Date(y, m - 1, d, h, min).getTime();
@@ -87,6 +87,8 @@ describe("duplicates and related details", () => {
     const rows = projectToday(facts({ dated: [restaurant, friend], live: (id) => id !== 1 })).rows;
     expect(rows.map((r) => [r.id, r.threadId])).toEqual([[`dated:${restaurant.id}`, 2]]);
     expect(projectToday(facts({ dated: [restaurant, friend], live: (id) => id !== 1 }), { count: true }).counts.today).toBe(0);
+    // round 2: the caller is asked about every member's conversation, so it can know the friend's is live
+    expect(placedThreads(placeItems([restaurant, friend], [], NOW)).sort()).toEqual([1, 2]);
   });
 
   it("an errand read as a bill and as your promise is one row; its id stays the canonical's when only the member is open", () => {
@@ -199,6 +201,8 @@ describe("words and clocks", () => {
     expect(statedClock("call Marcus at 4:00 pm pt")).toMatchObject({ time: "16:00", zone: "America/Los_Angeles" });
     expect(statedClock("call Marcus at 4:00 PM CST")).toBeNull();
     expect(statedClock("call Priya at 9:00 AM IST")).toBeNull();
+    // round 2: an offset after the zone isn't read as the zone alone
+    expect(statedClock("call Marcus at 4:00 PM UTC+2")).toBeNull();
     expect(statedClock("send the deck")).toBeNull();
   });
 });

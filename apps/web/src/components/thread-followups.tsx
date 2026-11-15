@@ -21,6 +21,8 @@ import { useAiDraft } from "~/lib/ai-draft";
 import { offerTip, usePendingTip } from "~/lib/tips";
 import { useApp } from "~/state/app";
 import { useFeedTarget } from "~/state/today";
+import { historyWhen } from "~/lib/today-sentence";
+import { client } from "~/rpc/connection";
 import { useFollowups } from "~/state/followups";
 import { AI_ACTIONS, AI_CARD, AI_GLYPH, AI_HEADER, AI_PAD, AI_TITLE, AiProvenance, messageSource } from "./ai-card";
 import FollowupsTip from "./followups-tip";
@@ -145,18 +147,54 @@ function Line({ row, messages, target = false }: { row: FollowupRow; messages: r
   );
 }
 
+/**
+ * Plan 210 (iteration 2, Codex code review): a history line's promise, closed: its words and what happened, marked as the
+ * feed's open row's, nothing to act on (it's done).
+ */
+function ClosedPromise({ row }: { row: FollowupRow }) {
+  const outcome = row.state === "done" ? "done" : "dismissed";
+  return (
+    <div data-testid="followup-line" data-kind={row.kind} data-state={row.state} data-target className={cn(AI_CARD, AI_PAD)}>
+      <p data-testid="followup-header" className={AI_HEADER}>
+        <Clock aria-hidden className={cn(AI_GLYPH, "text-sm")} />
+        <span data-testid="followup-text" className={cn(AI_TITLE, "text-sm text-muted-foreground")}>{t("today.why.promise", { text: row.text })}</span>
+      </p>
+      <p data-testid="followup-due" className="text-sm text-muted-foreground tabular">{historyWhen({ outcome, kind: "promise", key: { at: row.closedAt ?? row.createdAt, src: 1, id: row.id } })}</p>
+    </div>
+  );
+}
+
 /** Plan 142 §7: a quiet line for each thing this conversation holds, in the conversation's text column, above its summary. */
 export default function ThreadFollowups({ detail }: { detail: ThreadDetail }) {
   const enabled = useApp(followupsOffered);
-  // plan 210 (iteration 2): the promise the feed's open row is, marked
+  // plan 210 (iteration 2): the promise the feed's open row is, marked; a closed one (a history line) read on its own
   const target = useFeedTarget(detail.thread.id);
   const rows = useFollowups((s) => s.byThread.get(detail.thread.id));
-  const shown = enabled && !detail.thread.inTrash && !detail.thread.inSpam ? rows : undefined;
+  const closedId = target.find((r) => r.source === "promise" && !rows?.some((x) => x.id === r.id))?.id;
+  const [closed, setClosed] = useState<FollowupRow | null>(null);
+  useEffect(() => {
+    setClosed(null);
+    if (closedId === undefined || !enabled) return;
+    let live = true;
+    void client.call("followups.get", { id: closedId }).then((r) => live && setClosed(r.row && r.row.threadId === detail.thread.id && r.row.state !== "open" && r.row.state !== "due" ? r.row : null), () => {});
+    return () => {
+      live = false;
+    };
+  }, [closedId, enabled, detail.thread.id]);
+  const hidden = !enabled || detail.thread.inTrash || detail.thread.inSpam;
+  const shown = !hidden ? rows : undefined;
   const tipFor = usePendingTip("followups-first");
   const fresh = shown?.some((r) => !r.fromScan);
   useEffect(() => {
     if (fresh) offerTip("followups-first", detail.thread.id);
   }, [fresh, detail.thread.id]);
+  if (closed && !hidden && !shown?.length) {
+    return (
+      <section className="mb-4 space-y-3" aria-label={t("followups.title")} data-testid="thread-followups">
+        <ClosedPromise row={closed} />
+      </section>
+    );
+  }
   if (!shown?.length) return null;
   return (
     // no hairline of its own: the message's divider under it would make two
@@ -164,6 +202,7 @@ export default function ThreadFollowups({ detail }: { detail: ThreadDetail }) {
       {shown.map((row) => (
         <Line key={row.id} row={row} messages={detail.messages} target={target.some((r) => r.source === "promise" && r.id === row.id)} />
       ))}
+      {closed && <ClosedPromise row={closed} />}
       {tipFor === detail.thread.id && (
         <FollowupsTip kind={shown[0]!.kind} name={shown[0]!.personName?.split(/\s+/)[0] || null} />
       )}

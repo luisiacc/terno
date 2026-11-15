@@ -5,7 +5,7 @@ import { actOnDated, actOnTask, type DatedRef, type TodayTask } from "~/lib/date
 import { actOnFollowup } from "~/lib/followups";
 import { closePage, currentPage, listLayout } from "~/lib/page";
 import { getApp, setApp, setAppOpened } from "~/state/app";
-import { noteEdit, reloadList } from "~/state/list";
+import { listKey, noteEdit, reloadList } from "~/state/list";
 import { feedRow, rowOfThread, useFeedRow, useToday, type FeedRow } from "~/state/today";
 
 type TaskAction = "done" | "dismiss" | "later";
@@ -37,10 +37,14 @@ function leaveFeedRows(ids: readonly FeedRowId[]): LeftRows | undefined {
     }
   }
   const moved = useFeedRow.getState().moves;
+  const where = { key: listKey(), selectedId: getApp().selectedId };
   const back = async () => {
+    // left for another mailbox, or another conversation opened there since: nothing of What matters' is put back (Codex
+    // code review, round 2); its next read brings the row
+    if (!getApp().today || listKey() !== where.key) return;
     await reloadList({ keepSelection: true });
     // the open row back, unless another was opened since (Codex's design: a newer selection wins, a sibling row included)
-    if (useFeedRow.getState().moves !== moved || before.opened === null || !useToday.getState().rows.some((r) => r.id === before.opened)) return;
+    if (useFeedRow.getState().moves !== moved || getApp().selectedId !== where.selectedId || listKey() !== where.key || before.opened === null || !useToday.getState().rows.some((r) => r.id === before.opened)) return;
     useFeedRow.setState(({ moves }) => ({ opened: before.opened, moves: moves + 1 }));
     setAppOpened(before.selectedId);
   };

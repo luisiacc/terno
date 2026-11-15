@@ -44,7 +44,12 @@ function amounts(text: string): Set<string> {
 const ERRANDS: ReadonlySet<string> = new Set(["pay", "respond", "ask", "expire", "renew"]);
 
 /** What an amount is for: three letters or more ("bus" is a thing), never the verbs and small words any errand has. */
-const ERRAND_STOP = new Set("the and for you your our with from this that will send pay paid give bring get all are was can".split(" "));
+const ERRAND_STOP = new Set(
+  (
+    "the and for you your our with from this that will send pay paid give bring get all are was can " +
+    "para por con del los las una uno que sus tus mis nos les pagar paga pague enviar envia envio mandar manda traer trae dar"
+  ).split(" "),
+);
 const objectWords = (text: string, quote: string | null): Set<string> =>
   new Set([...namingWords(`${text}\n${quote ?? ""}`, { names: false }), ...normalizeText(`${text} ${quote ?? ""}`).toLowerCase().split(/[^\p{L}]+/u)].filter((w) => w.length >= 3 && !/\d/u.test(w) && !ERRAND_STOP.has(w)));
 
@@ -53,7 +58,8 @@ const objectWords = (text: string, quote: string | null): Set<string> =>
  * of iteration 2), whatever else their words share.
  */
 const PERIOD = /\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre|q[1-4]|\d{4}-\d{2}(?:-\d{2})?|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\b/giu;
-const periods = (text: string): Set<string> => new Set([...normalizeText(text).toLowerCase().matchAll(PERIOD)].map((m) => m[0].slice(0, 3)));
+// a month's name by its first three letters (either language's, either length), a date or a quarter whole (Codex code review)
+const periods = (text: string): Set<string> => new Set([...normalizeText(text).toLowerCase().matchAll(PERIOD)].map((m) => (/^[a-z]/u.test(m[0]) && !/^q\d/u.test(m[0]) ? m[0].slice(0, 3) : m[0])));
 const periodsDiffer = (a: string, b: string): boolean => {
   const [pa, pb] = [periods(a), periods(b)];
   return pa.size > 0 && pb.size > 0 && !shares(pa, pb);
@@ -201,16 +207,29 @@ export class TodayLinks {
     return run;
   }
 
-  /** True: something was linked, and the items should be read again. */
+  /** ups each time membership is written: a read from before it is stale (Codex code review, round 2) */
+  private written = 0;
+
+  get version(): number {
+    return this.written;
+  }
+
+  /**
+   * True: something was linked, and the items should be read again. In the queue, after any reconcile or act on its way,
+   * and `seen` set only once what it found is written, so a projection read beside another sees a membership written
+   * meanwhile by `version` (Codex code review, round 2).
+   */
   reconcile(store: MailStore, dated: readonly DatedRow[], promises: readonly FollowupRow[]): Promise<boolean> {
-    const fresh = (key: string, threadId: number) => this.seen.get(key) !== threadId;
-    const anyFresh = dated.some((r) => fresh(refKey({ source: "dated", id: r.id }), r.threadId)) || promises.some((r) => fresh(refKey({ source: "promise", id: r.id }), r.threadId));
-    if (!anyFresh) return Promise.resolve(false);
     return this.exclusive(async () => {
+      const fresh = (key: string, threadId: number) => this.seen.get(key) !== threadId;
+      const anyFresh = dated.some((r) => fresh(refKey({ source: "dated", id: r.id }), r.threadId)) || promises.some((r) => fresh(refKey({ source: "promise", id: r.id }), r.threadId));
+      if (!anyFresh) return false;
       const links = findLinks(dated, promises, fresh);
+      const wrote = (links.same.length || links.details.length ? await store.today.link(links) : 0) > 0;
       // bounded: what's open now, as it is now
       this.seen = new Map([...dated.map((r) => [refKey({ source: "dated", id: r.id }), r.threadId] as const), ...promises.map((r) => [refKey({ source: "promise", id: r.id }), r.threadId] as const)]);
-      return (links.same.length || links.details.length ? await store.today.link(links) : 0) > 0;
+      if (wrote) this.written++;
+      return wrote;
     });
   }
 }
