@@ -1546,7 +1546,8 @@ export function createHandlers(b: Backend): Handlers {
     "dated.scan": async () => ({ queued: await b.dated.scan() }),
     // plan 141: renderer only; none of these is in MCP_ALLOWED
     "ai.ask": (p, ctx) => b.ask.ask(p, ctx.clientId),
-    "today.list": ({ heldIds }) => b.today.list(heldIds),
+    "today.list": ({ heldIds, history }) => b.today.list(heldIds, { history }),
+    "today.history": ({ after, limit, heldIds }) => b.today.history({ after, limit, heldIds }),
     "today.digest": () => b.today.digestRow(),
     "today.digestRetry": async () => {
       await b.today.retry();
