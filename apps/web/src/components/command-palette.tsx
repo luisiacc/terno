@@ -30,7 +30,7 @@ import { englishWords as english } from "~/lib/palette-words";
 import { getApp, navigate, setApp, useApp } from "~/state/app";
 import { openRemind, presetLabel, presetWhen, setReminder, clearReminder, useReminders } from "~/lib/reminders";
 import { useTodayTask } from "~/state/today";
-import { actOnTodayRow } from "~/lib/today-task";
+import { actOnTodayRow, openLater } from "~/lib/today-task";
 import { draftCommands, type DraftCommands } from "~/lib/draft-commands";
 import { isInstruction } from "~/lib/imperative";
 import { askFrom, paletteBack, handBackKeysNow, paletteFrom, paletteKeys, paletteReturn, returnPaletteFocus, setPalettePage, usePalettePage } from "~/lib/palette-open";
@@ -487,7 +487,9 @@ export function CommandPalette() {
     // plan 204 §5, after the panel: the selected Today row's task (a date or a promise of yours), Done (D) and Not a task
     if (todayTask && single !== null) {
       add({ id: "dated.done", group: "conversation", label: t("dated.done"), icon: <CircleCheck />, shortcut: keysOf("today.done"), testId: "palette-dated-done", keywords: english("dated.done"), run: () => void actOnTodayRow(single, todayTask, "done") });
-      add({ id: "dated.dismiss", group: "conversation", label: t("dated.notTask"), icon: <Ban />, testId: "palette-dated-dismiss", keywords: english("dated.notTask"), run: () => void actOnTodayRow(single, todayTask, "dismiss") });
+      // plan 210 (iteration 1): Later's picker for the item as it is now (once the palette has gone), and Remove, with their keys
+      add({ id: "dated.later", group: "conversation", label: t("palette.todayLater"), icon: <Clock />, shortcut: keysOf("today.later"), testId: "palette-dated-later", keywords: english("palette.todayLater"), run: () => requestAnimationFrame(() => openLater(single, todayTask)) });
+      add({ id: "dated.dismiss", group: "conversation", label: t("dated.notTask"), icon: <Ban />, shortcut: keysOf("today.remove"), testId: "palette-dated-dismiss", keywords: english("dated.notTask"), run: () => void actOnTodayRow(single, todayTask, "dismiss") });
     }
     // plan 132 §7: the open conversation, never in spam or trash; no shortcut of its own
     if (canSummarize && replyable && summarizable(openThread?.thread)) {

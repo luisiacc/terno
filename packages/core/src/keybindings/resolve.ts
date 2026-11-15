@@ -33,6 +33,10 @@ export type Command =
   | "thread.remind"
   /** plan 204 (the owner): Done on the selected What matters row's date or promise */
   | "today.done"
+  /** plan 210 (iteration 1, the owner): Later on that item, its picker opened for the item as it is then */
+  | "today.later"
+  /** plan 210 (iteration 1, the owner): Remove that item from What matters (once "Not a task"), with its Undo */
+  | "today.remove"
   | "message.next"
   | "message.prev"
   | "message.toggleAll"
@@ -157,6 +161,11 @@ export const DEFAULT_BINDINGS: readonly Binding[] = [
   { keys: "h", command: "thread.remind" },
   // plan 204: the owner chose D for Done on a What matters row (an exception to plan 161's no new AI shortcuts)
   { keys: "d", command: "today.done" },
+  // plan 210 (iteration 1, the owner: "add keys for Later and Not a task"): b is Gmail's snooze, which Later is; ⇧D is
+  // Done's sibling (D finishes the item, ⇧D takes it off the list). l, r and Delete are the categories', reply's and
+  // Trash's, and m stays free for mute (plan 206)
+  { keys: "b", command: "today.later" },
+  { keys: "shift+d", command: "today.remove" },
   // plan 158: within the open conversation, on letters every keyboard types without Option (j and k are the list's, n a suggestion's)
   { keys: "shift+n", command: "message.next" },
   { keys: "shift+p", command: "message.prev" },

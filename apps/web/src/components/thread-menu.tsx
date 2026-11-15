@@ -90,8 +90,7 @@ import { reachesSeveral } from "~/lib/compose-fields";
 import { loadThread, useThreads } from "~/state/threads";
 import { useTodayTask } from "~/state/today";
 import { laterChoices } from "~/lib/dated";
-import { actOnTodayRow } from "~/lib/today-task";
-import { openTodayLater } from "./today-later-dialog";
+import { actOnTodayRow, openTodayLater } from "~/lib/today-task";
 import { fitWholeRows } from "@terno/ui/lib/whole-rows";
 
 /** What the open menu acts on: explicit threads, or a "select all N" scope. Set at right-click; rows never read it. */
@@ -440,11 +439,13 @@ function TaskItems({ threadId }: { threadId: number }) {
   return (
     <>
       <Item icon={<CircleCheck />} label={t("dated.done")} command="today.done" testId="menu-dated-done" onClick={() => void actOnTodayRow(threadId, task, "done")} />
-      <Item icon={<Ban />} label={t("dated.notTask")} testId="menu-dated-dismiss" onClick={() => void actOnTodayRow(threadId, task, "dismiss")} />
+      <Item icon={<Ban />} label={t("dated.notTask")} command="today.remove" testId="menu-dated-dismiss" onClick={() => void actOnTodayRow(threadId, task, "dismiss")} />
       <ContextMenuSub>
         <ContextMenuSubTrigger data-testid="menu-dated-later">
           <Clock />
           <span className="min-w-0 flex-1 truncate">{t("dated.later")}</span>
+          {/* plan 210 (iteration 1): b opens Later's own picker on the item */}
+          {hint("today.later")}
         </ContextMenuSubTrigger>
         <ContextMenuSubContent className="w-max min-w-60" data-testid="menu-dated-later-list">
           {presets.map((p) => (
