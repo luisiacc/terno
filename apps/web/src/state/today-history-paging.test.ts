@@ -70,3 +70,20 @@ it("a reload that waited while a page went deeper asks again, down to the deepes
   expect(throughs[1]).toEqual(line(13).key);
   await vi.waitFor(() => expect(ids()).toEqual([1, 10, 11, 12, 13]));
 });
+
+it("Codex code review, round 2: a page still on its way when a reload lands is dropped (its rows could bring back what the reload took away); the next page continues from the reload", async () => {
+  const late = deferred<{ items: TodayHistoryItem[]; next: null }>();
+  rpc.call.mockImplementation((method: string) => (method === "today.history" ? late.promise : Promise.resolve(answer([10], 10))));
+  const more = loadMore();
+  // line 11 left the history meanwhile (its item reopened, or it went to Spam): the reload says so first
+  await reloadList({ keepSelection: true });
+  expect(ids()).toEqual([1, 10]);
+  late.resolve({ items: [line(11), line(12)], next: null });
+  await more;
+  expect(ids()).toEqual([1, 10]);
+  expect(useToday.getState().history.has(11)).toBe(false);
+  expect(useList.getState().loadingMore).toBe(false);
+  rpc.call.mockImplementation(async (method: string, params: { after?: unknown }) => (method === "today.history" ? { items: params.after ? [line(12)] : [], next: null } : answer([10], 10)));
+  await loadMore();
+  expect(ids()).toEqual([1, 10, 12]);
+});

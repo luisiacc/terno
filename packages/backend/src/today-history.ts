@@ -41,24 +41,35 @@ const outcomeOf = (r: { state: string; closedReason: string | null }): HistoryOu
 
 export async function historyPage(store: MailStore, o: HistoryAsk): Promise<TodayHistoryPage> {
   const since = o.now - DATED_CLOSED_KEEP_MS;
+  // an item from an untrusted sender isn't shown (as in the open part, Codex's second pass of plan 204)
+  const trusted = (rows: DatedRow[]) => withoutUntrusted(rows, (keys) => store.dated.written(keys));
   // each table strictly after the key, translated: at the key's moment a dated item comes before a promise
   const start = (src: 0 | 1): ClosedAt | null => (o.after ? historyAfter(o.after, src) : null);
   const dated: Source<DatedRow> = { src: 0, after: start(0), buf: [], done: !o.dated, read: (after) => store.dated.closedPage({ since, after, limit: READ_BATCH }) };
   const promises: Source<FollowupRow> = { src: 1, after: start(1), buf: [], done: !o.promises, read: (after) => store.followups.closedPage({ since, after, limit: READ_BATCH }) };
-  // what each read brought: each thread's newest closing, and the thread (Spam, Trash, gone)
-  const newest = new Map<number, HistoryKey>();
+  // what each read brought: the thread (Spam, Trash, gone), and, on a page after a key, whether the conversation has an
+  // eligible closing above that key: its line was on a page before, at its newest closing (Codex code review: eligible,
+  // so an untrusted sender's newer item, never shown, doesn't hide an older one or your promise). Walking newest first,
+  // a conversation's first eligible closing past the key is then its newest: it's the line, and `seen` keeps it once
   const threads = new Map<number, ThreadSummary | null>();
+  const above = new Set<number>();
   const learn = async (ids: readonly number[]) => {
     const fresh = [...new Set(ids)].filter((id) => !threads.has(id));
     if (!fresh.length) return;
-    const [d, p, summaries] = await Promise.all([o.dated ? store.dated.newestClosed(fresh, since) : new Map<number, ClosedAt>(), o.promises ? store.followups.newestClosed(fresh, since) : new Map<number, ClosedAt>(), store.threads.summaries(fresh)]);
+    const after = o.after;
+    const [d, p, summaries] = await Promise.all([after && o.dated ? store.dated.newestClosed(fresh, since) : new Map<number, ClosedAt>(), after && o.promises ? store.followups.newestClosed(fresh, since) : new Map<number, ClosedAt>(), store.threads.summaries(fresh)]);
     const byId = new Map(summaries.map((t) => [t.id, t]));
+    for (const id of fresh) threads.set(id, byId.get(id) ?? null);
+    if (!after) return;
+    // at the key or above it: the line at the key is the page before's last
+    const newer = (k: ClosedAt | undefined, src: 0 | 1) => !!k && historyOrder({ at: k.at, src, id: k.id }, after) <= 0;
+    const checks: DatedRow[] = [];
     for (const id of fresh) {
-      threads.set(id, byId.get(id) ?? null);
-      const keys = [d.get(id) && { at: d.get(id)!.at, src: 0 as const, id: d.get(id)!.id }, p.get(id) && { at: p.get(id)!.at, src: 1 as const, id: p.get(id)!.id }].filter((k): k is HistoryKey => !!k);
-      const top = keys.sort(historyOrder)[0];
-      if (top) newest.set(id, top);
+      if (newer(p.get(id), 1)) above.add(id);
+      else if (newer(d.get(id), 0)) checks.push((await store.dated.get(d.get(id)!.id))!);
     }
+    // a newer dated closing counts only from a sender the open part would show
+    for (const row of await trusted(checks.filter(Boolean))) above.add(row.threadId);
   };
   let slice = performance.now();
   const breathe = async () => {
@@ -79,8 +90,6 @@ export async function historyPage(store: MailStore, o: HistoryAsk): Promise<Toda
       s.buf.push(...(await keep(rows)));
     }
   };
-  // an item from an untrusted sender isn't shown (as in the open part, Codex's second pass of plan 204)
-  const trusted = (rows: DatedRow[]) => withoutUntrusted(rows, (keys) => store.dated.written(keys));
   const all = async (rows: FollowupRow[]) => rows;
   const items: TodayHistoryItem[] = [];
   const seen = new Set<number>();
@@ -101,8 +110,7 @@ export async function historyPage(store: MailStore, o: HistoryAsk): Promise<Toda
     }
     const row = head.source.buf.shift()! as DatedRow | FollowupRow;
     const thread = threads.get(row.threadId);
-    const top = newest.get(row.threadId);
-    if (!thread || thread.inSpam || thread.inTrash || o.exclude.has(row.threadId) || seen.has(row.threadId) || !top || historyOrder(top, head.key) !== 0) continue;
+    if (!thread || thread.inSpam || thread.inTrash || o.exclude.has(row.threadId) || seen.has(row.threadId) || above.has(row.threadId)) continue;
     seen.add(row.threadId);
     items.push({ thread, key: head.key, outcome: outcomeOf(row), kind: head.key.src === 0 ? (row as DatedRow).kind : "promise", text: row.text });
     if (!o.through && items.length >= o.limit) {
