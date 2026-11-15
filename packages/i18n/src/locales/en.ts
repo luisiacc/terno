@@ -2672,7 +2672,7 @@ It contains none of your mail, contacts, settings or keys.
   "today.tip.body": "Today lists what you promised, who's waiting on you and what's due. It reads what's on this Mac.",
   "today.settings.pro": "Today is a Pro feature",
   "today.settings.proHint": "It shows in the sidebar while Pro AI is on in Dev mode.",
-  "today.settings.show": "Show Today",
+  "today.settings.show": "Show What matters",
   "today.settings.finished": "Show finished items",
   "today.settings.finishedHint": "What's done, not a task or past stays under Earlier. Off, only what's left shows.",
   "today.settings.prepareAt": "Prepare at",

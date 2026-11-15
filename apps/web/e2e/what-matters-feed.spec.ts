@@ -238,6 +238,21 @@ test("the owner's inbox-zero setting: the gear on What matters' title row hides 
     await expect(line(page, "Pay the old bill")).toHaveAttribute("data-history", "true");
   });
 
+  await scenario("Codex code review: with the options open, the mail's keys don't reach the mail behind them", async () => {
+    await reach(page, "Wire payroll");
+    await line(page, "Wire payroll").getByTestId("wm-item-open").click();
+    await expect(line(page, "Wire payroll")).toHaveAttribute("data-open");
+    await gear.click();
+    await toggle.focus();
+    for (const key of ["d", "j", "k", "e"]) await page.keyboard.press(key);
+    await expect(line(page, "Wire payroll")).toHaveAttribute("data-open");
+    await expect(page.getByTestId("snack")).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("wm-options-panel")).toHaveCount(0);
+    await expect(line(page, "Wire payroll")).toHaveAttribute("data-open");
+    await page.keyboard.press("Escape");
+  });
+
   await scenario("More settings opens Settings at the same switch, which changes it too", async () => {
     await gear.click();
     await page.getByTestId("wm-options-more").click();
