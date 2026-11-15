@@ -1,6 +1,6 @@
 # Plan 210: What matters as a feed, with its history
 
-- **Status:** plan, for the Codex critique. Built on `t3/what-matters-ui-variants` (plan 204's briefing, "the UI experiment").
+- **Status:** plan, critiqued by Codex; **stopped for the owner** (see "What needs the owner before building"): the history as asked needs a schema change and two refactors. "Revisions after the Codex review" overrides the sections before it.
 - **Builds on:** plan 204 (dated items, Missed, Coming up, the briefing B and its fixes), plan 145 (Needs you, the digest), plan 142 (your promises), plan 87 (reminders), plan 17 (who is a person), plan 166 (Not a newsletter).
 - **Takes from the plans plan 204 reserved:** 205's name ("What matters") and its Earlier tab, which becomes the history below the open part (no tab); 207's first screen stays 207's (below). 206 (removal rules, the user's own words) is untouched.
 
@@ -61,7 +61,7 @@ Every line is there when its mail has been read, as Today already is: a waiting 
 ### 5. The name and the count
 
 - **What matters** ("Lo importante"): the sidebar's entry, the feed's title, the palette. Not "Today" any more: the history and Coming up aren't today's.
-- **The count** is unchanged: the open part's counted groups (Missed, Deadlines, Needs you, Plans; plan 204 §7). History and the automated section are never counted.
+- **The count** is unchanged: `TODAY_COUNTED` (Missed, Deadlines, Needs you; plan 204 §7). Plans, Reminders, Coming up, held rows, the automated section and the history are never counted.
 
 ### 6. The first screen
 
@@ -96,3 +96,32 @@ No lazy loading; the feed is virtualized as now. The history's three reads are b
 ## Out of scope
 
 Strangers' first messages (see §1, for the owner); plan 206's removal rules and the user's own words; plan 207's first-screen setting; reopening a done item other than by Undo; the list look getting the history; notifications.
+
+## Revisions after the Codex review
+
+Codex (read-only, `/tmp/terno-scratch/p204/ui-variants/critique-210.full.out`) raised 12 points. All are taken; points 2, 3 and 6 are why this plan stops here.
+
+1. **"Not waiting" isn't "answered."** True: `waitingSince` is null too when their newest message only Cc'd you or was answered elsewhere, and `has_sent` says you wrote once, not that the last message is your reply. Answered needs its own fact: the moment of your reply after their latest inbound message, from a sent message that isn't a draft or a failed send. Nothing stores that now (owner's section, B). Nor can the stores say a conversation ever had a line in What matters, so Answered would be "person conversations whose newest message is your reply, within the window", without claiming each once had a line.
+2. **The closed rows have no count bound.** True: the 1,000 cap is on open rows; the closed set can grow without bound inside 90 days, and neither table has an index by closing time. Taken: `dated_items(closed_at DESC, id DESC) WHERE state <> 'open'` and `followups(closed_at DESC, id DESC) WHERE kind = 'promise' AND state IN ('done','dismissed')` in SQLite (a shape-only migration), and IndexedDB indexes on the same keys (a version bump). "No schema change" is withdrawn.
+3. **The answered read isn't indexed by answers.** True: `threads_people` covers `has_sent`, not `waiting_since` nor the reply, so finding few answers walks every recent person conversation, and IndexedDB's people order can rebuild synchronously. Taken: an answered order needs a stored column with its own index (owner's section, B).
+4. **Per-source limits can't guarantee distinct lines.** Taken: each source is read by its index with a continuation, refilled until `HISTORY_MAX` distinct eligible threads or the window's end; ties by time, then kind (an item, a promise, an answer), then id; a thread's newest closing wins; a test with duplicates across a source's page boundary.
+5. **A cursor needs a consistency contract.** Taken by not paging across requests: the history comes whole (at most `HISTORY_MAX`, now 200) in the same `today.list` answer as the open part, from the same read, so an act or new mail between pages can't skip or repeat a line. The window's start is fixed per answer (now less 90 days), and the cache is keyed by its day as well as the generations, so time passing re-reads it.
+6. **Paging needs a renderer refactor.** True: `fetchPage` refuses Today's cursors, `flattenToday` replaces every map, the feed never calls `loadMore`, `listKey()` doesn't hold the look and `setWmLook` doesn't reload. With 5 (no paging) only the last two remain, and they fit: the look joins Today's list key when it's the feed, and switching it reloads. A history past `HISTORY_MAX` needs Today's state to take appended pages (owner's section, C).
+7. **Done doesn't always move a conversation into history.** True: Done closes the shown item, and the conversation's next item, promise or reminder may claim the row. Taken: Done closes exactly the shown item; the conversation goes to the history only when nothing open claims it; Undo restores the item's snapshot and the reload places it by the rules then (no promise of "on top" beyond that).
+8. **Held rows and history.** Taken: one placement rule, open, else held (the selection keeps it in its group), else history; a held row is never also a history line; tests for an open row and a checked row becoming history.
+9. **Lifecycles with no history source.** Taken, narrowing the history: dated items by state and `closed_reason` (done; dismissed as Not a task, or Over when its reason is `expired`; settled); promises done or dismissed. Not in the history: an overdue promise past Missed's week (still open, hidden by `promiseOver`), nudges (others' replies, not yours to finish), reminders (deleted when they've gone off).
+10. **The same gates on every read.** Taken: the history goes through the open part's gate (`aiFeaturesAvailable`, the dated setting), `withoutUntrusted` for items, Spam and Trash out, merged threads at their surviving id (a merge moves the rows), account removal by cascade, Clear AI data empties it (the dated generation); a test each.
+11. **The count.** Corrected in §5: `TODAY_COUNTED` is Missed, Deadlines and Needs you; a test asserts the history, Plans, Reminders, Coming up and held rows don't move it.
+12. **Gates.** Taken: the feed's render counts in the UI perf gate, the history read in the Today perf gate at 50k in both stores, `pnpm test:all` (a migration and new store reads), and `pnpm ui:rate` and `ui:gate` before the feed is the default look.
+
+## What needs the owner before building
+
+The feed as asked doesn't fit the code as it is without these. Each is a decision:
+
+- **A. A schema change.** Closed-order indexes on `dated_items` and `followups`, both stores (revision 2). Shape-only, within the migration budget; it brings `pnpm test:all` into this series.
+- **B. "Answered" needs a new stored fact (a refactor of the facts pipeline).** A conversation's answered moment (`answered_at`: your reply after their latest inbound message, never a draft nor a failed send), kept with `person` and `waiting_since` at ingest, at send and in the background facts slice, indexed, in both stores, with a backfill slice for existing mail (plan 112: the migration only adds the column). Without it the history can't hold answered conversations correctly or cheaply (revisions 1 and 3). *Option:* build the history without Answered first: Done, Not a task, Settled, Over.
+- **C. A history past 200 lines needs Today's renderer state to take pages (a refactor of `flattenToday` and the list's Today branch):** its maps are rebuilt whole on each answer; pages need them split into the open part's and the history's, with cursors that survive an act (revision 6). *Option:* cap the history at 200 lines (about a busy month) and leave the rest to the Inbox and search.
+- **D. Strangers.** Whether a first message from someone you've never written to gets a line (§1); plan 145's panel found most such mail on real mailboxes was a bank's or a service's.
+
+With A, and the options for B (no Answered yet) and C (200 lines), the rest fits the code as it is: one `today.list` answer carrying the history, the feed drawing it under "Earlier", Done moving a line there when nothing else claims its conversation.
+
