@@ -1952,6 +1952,16 @@ describe("What matters' history (plan 210)", () => {
     expect((await lines()).map(([, thread]) => thread)).toEqual([other, two, two]);
   });
 
+  it("plan 210 (iteration 2): a history line opened shows its own closed item on the conversation's line, of that conversation only", async () => {
+    const { client, threads, act, rowOf } = await bills(2);
+    const row = await rowOf(threads[0]!);
+    await act(threads[0]!, "done");
+    expect((await client.call("dated.ofThread", { threadId: threads[0]! })).rows).toEqual([]);
+    expect((await client.call("dated.ofThread", { threadId: threads[0]!, include: row.id })).rows.map((r) => [r.id, r.state])).toEqual([[row.id, "done"]]);
+    // another conversation's item isn't brought in
+    expect((await client.call("dated.ofThread", { threadId: threads[1]!, include: row.id })).rows.map((r) => r.id)).toEqual([(await rowOf(threads[1]!)).id]);
+  });
+
   it("the owner's inbox-zero setting: finished items hidden, no history is read at all, and Done still takes the line off the top", async () => {
     const { client, threads, act, list, backend } = await bills(2);
     await act(threads[0]!, "done");
