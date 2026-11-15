@@ -15,24 +15,25 @@ import {
   todayKey,
   nextPrepareAt,
   prepareTimeToday,
-  TODAY_GROUP_ORDER,
-  datedGroupAt,
   nextTodayChange,
-  promiseGroupAt,
-  promiseOver,
-  promiseDeferred,
-  dayKeyOf,
-  todayCounted,
-  sortInDay,
+  laterBefore,
+  placedThreads,
+  placeItems,
+  projectRows,
+  refKey,
+  todayBadge,
   type DatedRow,
-  type TodayAlso,
-  type TodayGroupKind,
-  type TodayWhy,
   type Counts,
   type DigestItem,
   type DigestRow,
-  type FollowupRow,
+  type FeedRowId,
+  type ItemSeen,
   type NotNewsletter,
+  type ProjectedRow,
+  type PlacedItem,
+  type FollowupRow,
+  type TodayCounts,
+  type ThreadSummary,
   type TodayItem,
   type TodayList,
   type TodaySection,
@@ -41,14 +42,17 @@ import {
   type TodayHistoryPage,
 } from "@terno/core";
 import { captureError } from "@terno/core/diag";
-import type { AppSettings } from "@terno/core/rpc";
-import { NEEDS_WALK, type DigestStored } from "@terno/store";
+import { RpcError, type AppSettings } from "@terno/core/rpc";
+import { L } from "@terno/i18n";
+import { NEEDS_WALK, type DigestStored, type ItemChanges, type ItemSnapshots } from "@terno/store";
 import { DailyLimitError, MonthlyLimitError } from "./ai-limiter";
 import type { BackendCore as Backend } from "./core";
+import { readerZone } from "./promise-time";
 import { progressReporter } from "./scope";
 import { aiAllowed, readSettings } from "./settings";
 import { withoutQuotes } from "./summaries";
 import { historyPage } from "./today-history";
+import { TodayLinks } from "./today-links";
 import { suspiciousSender, untrustedSenders, withoutUntrusted, type WrittenTo } from "./suspicious-sender";
 
 /**
@@ -66,85 +70,14 @@ const SUMMARY_LINE_CHARS = 160;
 const NOT_NEWSLETTERS_KEY = "today:notNewsletters";
 /** plan 204: waiting rows past these show their snippet, so a long list reads no more summaries than a screen needs */
 const SUMMARY_LINES_MAX = 100;
-type DayOrder = Pick<DatedRow, "dueDay" | "dueAt" | "timed">;
+/** plan 210 (iteration 2): the acts on items kept for Undo */
+const UNDO_KEPT = 50;
 
-/** After the panel: a group's items by their day, then the timed ones by time, then the untimed ("Due today 1:00 PM" first). */
-const byDay = (a: DayOrder, b: DayOrder): number =>
-  // YYYY-MM-DD keys compare as text; `localeCompare` cost more than the rest of a sort at the bound
-  (a.dueDay < b.dueDay ? -1 : a.dueDay > b.dueDay ? 1 : 0) || (a.timed === b.timed ? a.dueAt - b.dueAt : a.timed ? -1 : 1);
-
-/** A dated item or a promise of yours, ranked in its group before `dedupe` picks each conversation's row. */
-interface Ranked {
-  threadId: number;
-  at: DayOrder;
-  why: TodayWhy;
-  /** plan 210: a day of its own's, or Coming up's, day */
-  day: string | null;
-}
-
-/** Each thread once, the first group that claims it (§1). */
-const dedupe = (placed: readonly Placed[]): Placed[] => {
-  const taken = new Set<number>();
-  return placed.filter((p) => !taken.has(p.threadId) && taken.add(p.threadId));
-};
-
-/**
- * Plan 210 (iteration 1): Today's rows in their day's order once each conversation has its row: what's waiting and your
- * reminders, which claim a conversation only after its own items, take their place by the same `inDayOrder` (a waiting
- * conversation showing your promise among your promises, by its day: Codex code review), people as they came. Other
- * groups stay as they are.
- */
-const todayRanked = (placed: readonly Placed[]): Placed[] => {
-  const today = sortInDay(
-    placed.filter((p) => p.group === "today"),
-    (p) => p.why,
-    false,
-  );
-  let i = 0;
-  return placed.map((p) => (p.group === "today" ? today[i++]! : p));
-};
-
-/** A thread's place in Today before it's read (revision 10). */
-interface Placed {
-  group: TodayGroupKind;
-  /** plan 210: a day of its own's, or Coming up's, day */
-  day?: string | null;
-  threadId: number;
-  why: TodayWhy;
-  /** from the waiting read: in the Inbox, so neither Spam nor Trash */
-  waiting?: boolean;
-  also?: TodayAlso;
-}
-
-/** The fifth panel round (revision 9): an open item a row could say it also has; `key` names it apart from the row's own. */
-type AlsoCandidate = TodayAlso & { key: string };
-
-/** Put off with Later, the field on dated items and on promises of yours alike: no row says it's there until it's back. */
-const putOff = (r: { dueAt: number; deferredUntil?: number | null }, now: number): boolean => r.deferredUntil != null && r.deferredUntil > now;
-
-const sameWords = (a: string, b: string): boolean => a.trim().toLowerCase().replace(/\s+/gu, " ") === b.trim().toLowerCase().replace(/\s+/gu, " ");
-
-/**
- * The fifth panel round (change 6, revision 9): a row with a task of its own says its conversation's next one, the soonest
- * of the others that would show, so Priya's board meeting isn't hidden under "Send Jess your draft". Never the row's own
- * item, nor the same words again (a mail noted twice); never an ask under a promise of yours (the promise is its answer,
- * as the ask's row shows it). A waiting row or a reminder has no task to stand beside.
- */
-function withAlso(placed: readonly Placed[], candidates: ReadonlyMap<number, readonly AlsoCandidate[]>): Placed[] {
-  return placed.map((p) => {
-    const { why } = p;
-    const own = why.item ? `d:${why.item.id}` : why.kind === "promise" && why.promise ? `p:${why.promise.id}` : null;
-    const list = own === null ? undefined : candidates.get(p.threadId);
-    if (!list) return p;
-    let also: AlsoCandidate | undefined;
-    for (const c of list) {
-      if (c.key === own || (why.text !== undefined && sameWords(c.text, why.text)) || (why.kind === "promise" && c.kind === "ask")) continue;
-      if (!also || byDay(c, also) < 0 || (byDay(c, also) === 0 && c.key < also.key)) also = c;
-    }
-    if (!also) return p;
-    const { key: _key, ...rest } = also;
-    return { ...p, also: rest };
-  });
+/** Plan 210 (iteration 2): an act's patch on a dated item and on a promise of yours, as each worker's own act had them. */
+function patchesFor(action: "done" | "dismiss" | "later", now: number, until: number | undefined): { dated: ItemChanges["dated"][number]["patch"]; promise: ItemChanges["promises"][number]["patch"] } {
+  if (action === "later") return { dated: { deferredUntil: until! }, promise: { state: "open", inboxState: "none", deferredUntil: until! } };
+  const state = action === "done" ? "done" : "dismissed";
+  return { dated: { state, closedReason: "user", closedAt: now }, promise: { state, inboxState: "none", closedReason: "user", closedAt: now } };
 }
 
 /** An entry stored before entries had an id (Codex review, round 2) is named by its address: one entry a sender. */
@@ -187,6 +120,13 @@ export class TodayService {
   /** plan 204: the clock's one timer (revision 11) */
   private clock: ReturnType<typeof setTimeout> | null = null;
   private clockAt: number | null = null;
+  /** plan 210 (iteration 2): duplicate membership, reconciled before any projection */
+  private readonly links = new TodayLinks();
+  /** plan 210 (iteration 2): the items' places, the list's and the count's, until the clock or the items move them */
+  private readonly placing: ({ dated: readonly DatedRow[]; promises: string; at: number; until: number; items: PlacedItem[] } | null)[] = [null, null];
+  /** plan 210 (iteration 2): what each act on items changed, for its Undo */
+  private readonly undo = new Map<string, ItemSnapshots>();
+  private undoSeq = 0;
   /** plan 204: the open dated items, until something changes them */
   private datedCache: { generation: number; rows: readonly DatedRow[] } | null = null;
   private datedGeneration = 0;
@@ -608,114 +548,61 @@ export class TodayService {
   // ─── the list ────────────────────────────────────────────────────────────
 
   /**
-   * Plan 204 revision 10: where each thread sits now, once, by `TODAY_GROUP_ORDER`. One calculation for the list and the
-   * sidebar's count, before any thread is read: what's in Spam or Trash is left out by the caller, and comes back with it.
-   * The seventh panel round (revision 1): every dated item and promise that shows is ranked by its group and its order
-   * there, and each conversation's row is its first (`dedupe`), that exact item. Plan 210: the groups are by day.
+   * Plan 210 (iteration 2, Codex's design): the one projection, the list's, the sidebar's count's and the morning notice's,
+   * from bounded batched reads (never one a row): the open dated items (cached until they change) and promises, their
+   * duplicate membership reconciled first (`TodayLinks`), placed (`placeItems`); then what's waiting on you (`needsYou`
+   * over the newest `NEEDS_WALK`), your reminders due today (the list's only), and which of the placed items'
+   * conversations are in Spam or Trash; then rows and the counts' buckets (`projectRows`). The list reads its rows'
+   * conversations once, what says Spam and Trash too (`threads`); the count asks only that (`liveAmong`).
    */
-  private async places(now: number, settings: AppSettings, o: { count?: boolean } = {}): Promise<Placed[]> {
+  private async project(now: number, settings: AppSettings, o: { count?: boolean } = {}): Promise<{ rows: ProjectedRow[]; counts: TodayCounts; threads: ReadonlyMap<number, ThreadSummary> }> {
     const { store } = this.b;
-    const placed: Placed[] = [];
-    const items = settings.dated?.enabled ? await this.datedRows() : [];
-    // the fifth panel round (revision 9): what each conversation has that would show, before `dedupe` keeps one; the count
-    // says none of it, so it gathers none
-    const collect = !o.count;
-    const candidates = new Map<number, AlsoCandidate[]>();
-    const candidate = (threadId: number, c: AlsoCandidate) => {
-      const list = candidates.get(threadId);
-      if (list) list.push(c);
-      else candidates.set(threadId, [c]);
-    };
-    const ranked: Record<"missed" | "today" | "day" | "comingUp", Ranked[]> = { missed: [], today: [], day: [], comingUp: [] };
-    const asks: DatedRow[] = [];
-    const datedWhy = (row: DatedRow, missed: boolean): TodayWhy => ({ kind: "dated", text: row.text, dueAt: row.dueAt, ...(missed ? { missed } : {}), item: { id: row.id, revision: row.revision, kind: row.kind, dueDay: row.dueDay, timed: row.timed, dated: row.dated } });
-    const today = dayKeyOf(now);
-    for (const row of items) {
-      const at = datedGroupAt(row, now, today);
-      if (at === null) continue;
-      if (collect && !putOff(row, now)) candidate(row.threadId, { key: `d:${row.id}`, kind: row.kind, text: row.text, dueDay: row.dueDay, dueAt: row.dueAt, timed: row.timed, dated: row.dated });
-      // Coming up is never counted, nor before what's waiting
-      if (o.count && at.group === "comingUp") continue;
-      // a person's ask is Today's with what needs you now, after what's due today (its own order below)
-      if (row.kind === "ask" && at.group === "today") asks.push(row);
-      else ranked[at.group].push({ threadId: row.threadId, at: row, why: datedWhy(row, at.group === "missed"), day: at.day });
+    const read = async () => [settings.dated?.enabled ? await this.datedRows() : [], settings.followups?.enabled ? (await store.followups.active()).filter((r) => r.kind === "promise") : []] as const;
+    let [dated, promises] = await read();
+    // what a new item is the same as, before any row shows it twice (written once, then read like any fact)
+    if (await this.links.reconcile(store, dated, promises)) {
+      this.datedGeneration++;
+      [dated, promises] = await read();
     }
-    const active = settings.followups?.enabled ? await store.followups.active() : [];
-    // after the panel: the row carries the promise it shows, what D, Done and Remove act on
-    // the fourth panel round (revision 9): who it's to, so a promise's row names and pictures them, not you (the last sender)
-    const promiseWhy = (r: FollowupRow, missed = false): TodayWhy => ({ kind: "promise", text: r.text, dueAt: r.dueAt, personName: r.personName, personEmail: r.personEmail, sentAt: r.sentAt, ...(missed ? { missed } : {}), promise: { id: r.id, revision: r.revision, dated: r.dated } });
-    // the third panel round (revision 5): your promises by their day, beside the dated items; the fourth (revision 8): one
-    // due with no day is Needs you's. A promise's moment is its day's (v9 says a time in its words alone): never timed here
-    const promises = active.filter((r) => r.kind === "promise");
-    const owedNow: FollowupRow[] = [];
-    for (const r of promises) {
-      const at = promiseGroupAt(r, now, today);
-      if (at === null) continue;
-      if (collect && !putOff(r, now)) candidate(r.threadId, { key: `p:${r.id}`, kind: "promise", text: r.text, dueDay: dayKeyOf(r.dueAt), dueAt: r.dueAt, timed: false, dated: r.dated });
-      if (o.count && at.group === "comingUp") continue;
-      // one that named no day, due: Today's with what needs you now
-      if (!r.dated && at.group === "today") owedNow.push(r);
-      else ranked[at.group].push({ threadId: r.threadId, at: { dueDay: dayKeyOf(r.dueAt), dueAt: r.dueAt, timed: false }, why: promiseWhy(r, at.group === "missed"), day: at.day });
-    }
-    // the third panel round (revision 4): a conversation with an open promise of yours shows that promise, the one due
-    // soonest, carried so Done, Remove and Later act on exactly it; one put off with Later (the fifth panel round) is
-    // none's until it's back, and a conversation whose only open promise it is isn't waiting meanwhile (the stores' rule).
-    // The seventh (revision 1): an ask's row takes it only from the same group or an earlier one (plan 210: Missed or
-    // Today; one with no day is Today's whenever it shows), so a person's question isn't put under next week's promise. The
-    // count needs none of it: the row is Today's and counted either way
-    const owed = new Map<number, FollowupRow>();
-    const owedAsk = new Map<number, FollowupRow>();
-    const soonest = (map: Map<number, FollowupRow>, r: FollowupRow) => {
-      const was = map.get(r.threadId);
-      if (!was || r.dueAt < was.dueAt || (r.dueAt === was.dueAt && r.id < was.id)) map.set(r.threadId, r);
-    };
-    for (const r of collect ? promises : []) {
-      if (promiseOver(r, now) || promiseDeferred(r, now)) continue;
-      soonest(owed, r);
-      const group = r.dated ? promiseGroupAt(r, now, today)?.group : "today";
-      if (group === "missed" || group === "today") soonest(owedAsk, r);
-    }
-    // Missed: the most recently due first
-    for (const m of ranked.missed.sort((a, b) => b.at.dueAt - a.at.dueAt)) placed.push({ group: "missed", threadId: m.threadId, why: m.why });
-    // Today (plan 210, iteration 1: one order inside a day, `inDayOrder`, before each conversation's row is chosen, so a
-    // conversation with a bill and a dinner today is the bill): what's due, the timed by their time; your promises due
-    // (those that name no day, the fourth panel round's revision 8, among them); a person's ask, newest first (the owner's
-    // "Under Today"), unless you'd promised them something there (Codex code review: "could you send that report?" after
-    // you said you would is about your promise); then plans and deliveries, by their time. The sixth panel round
-    // (change 4): no nudges, what you wait on from others, here or in the count
-    const todays: Placed[] = ranked.today.map((d) => ({ group: "today", threadId: d.threadId, why: d.why }));
-    for (const ask of asks.sort((x, y) => y.arrivedAt - x.arrivedAt || y.id - x.id)) {
-      const promise = owedAsk.get(ask.threadId);
-      todays.push({ group: "today", threadId: ask.threadId, why: promise ? promiseWhy(promise) : datedWhy(ask, false) });
-    }
-    for (const r of owedNow) todays.push({ group: "today", threadId: r.threadId, why: promiseWhy(r) });
-    placed.push(...sortInDay(todays, (p) => p.why, false));
-    // each day ahead and Coming up: by the day it's under, then the same order, a timed row by its time of day (Codex code
-    // review: never the original day first, which two put off to the same day don't share)
-    const byItsDay = (rows: readonly Ranked[]): Ranked[] => sortInDay(rows, (r) => r.why, true, (r) => r.day!);
-    const days = byItsDay(ranked.day).map((s): Placed => ({ group: "day", day: s.day, threadId: s.threadId, why: s.why }));
-    // the count reads none of what's waiting (its own indexed count there, the stores' `countWith`), nor your reminders
-    // and Coming up, which never take a waiting thread from it. A conversation's own items claim it before its waiting row
-    // (revision 3: a waiting thread with a Plan is the Plan), here and in the list alike
-    if (o.count) return dedupe([...placed, ...days]);
-    // one bounded read of what's waiting (revision 12): `needsYou` over the newest `NEEDS_WALK`. A conversation with a
-    // task of its own on a day ahead is that task (plan 204 §1: a bill's thread waiting on a reply is the bill), as the
-    // count has it
-    const ahead = new Set(days.map((s) => s.threadId));
-    for (const w of await store.today.waitingPage({ now, after: null, limit: NEEDS_WALK })) {
-      if (ahead.has(w.id)) continue;
-      const promise = owed.get(w.id);
-      placed.push({ group: "today", threadId: w.id, why: promise ? promiseWhy(promise) : { kind: "waiting", wrote: w.hasSent }, waiting: true });
-    }
-    placed.push(...days);
-    // your reminders due today: Today's (a conversation's task or waiting row claims it first)
+    const items = this.placed(dated, promises, now, o.count === true);
     const endOfDay = new Date(now);
     endOfDay.setHours(23, 59, 59, 999);
-    const reminders = (await this.b.reminders.refresh()).reminders.filter((r) => r.dueAt <= endOfDay.getTime()).sort((a, b) => a.dueAt - b.dueAt);
-    for (const r of reminders) placed.push({ group: "today", threadId: r.threadId, why: { kind: "reminder", dueAt: r.dueAt } });
-    // Coming up: dated items, and (after the panel) your dated promises due in the next two weeks, by their day
-    for (const c of byItsDay(ranked.comingUp)) placed.push({ group: "comingUp", day: c.day, threadId: c.threadId, why: c.why });
-    return withAlso(todayRanked(dedupe(placed)), candidates);
+    const reminders = o.count ? [] : (await this.b.reminders.refresh()).reminders.filter((r) => r.dueAt <= endOfDay.getTime()).map((r) => ({ threadId: r.threadId, dueAt: r.dueAt }));
+    const ids = [...placedThreads(items), ...reminders.map((r) => r.threadId)];
+    const waiting = await store.today.waitingPage({ now, after: null, limit: NEEDS_WALK });
+    // (the zone's read only for the rows' words: an Intl formatter is dear on every count)
+    const fact = { now, waiting, reminders, zone: o.count ? "" : readerZone() };
+    if (o.count) {
+      const live = await store.today.liveAmong([...new Set(ids)]);
+      return { ...projectRows(items, { ...fact, live: (id) => live.has(id) }, o), threads: new Map() };
+    }
+    const threads = new Map((await store.threads.summaries([...new Set([...ids, ...waiting.map((w) => w.id)])])).map((t) => [t.id, t]));
+    const live = (id: number) => {
+      const t = threads.get(id);
+      return !!t && !t.inSpam && !t.inTrash;
+    };
+    return { ...projectRows(items, { ...fact, live }, o), threads };
+  }
+
+  /**
+   * Where the items sit changes only at the moments `nextTodayChange` knows (and midnight): between them, and while the items
+   * are the same (the cached dated rows, the promises as read), the count reuses it. The count runs on every mailbox change.
+   */
+  private placed(dated: readonly DatedRow[], promises: readonly FollowupRow[], now: number, count: boolean): PlacedItem[] {
+    const key = promises.map((r) => `${r.id}.${r.revision}.${r.state}.${r.deferredUntil ?? ""}.${r.sameAs ?? ""}`).join();
+    const was = this.placing[count ? 1 : 0];
+    if (was && was.dated === dated && was.promises === key && now >= was.at && now < was.until) return was.items;
+    const midnight = new Date(now);
+    midnight.setHours(24, 0, 0, 0);
+    const until = Math.min(nextTodayChange(dated, promises, now) ?? Infinity, midnight.getTime());
+    const items = placeItems(dated, promises, now, { count });
+    this.placing[count ? 1 : 0] = { dated, promises: key, at: now, until, items };
+    return items;
+  }
+
+  /** Plan 210 (iteration 2): the header's, the sidebar's and the notice's numbers, as the list has them. */
+  private async counts(now: number, settings: AppSettings): Promise<TodayCounts> {
+    return (await this.project(now, settings, { count: true })).counts;
   }
 
   /**
@@ -740,52 +627,44 @@ export class TodayService {
 
   /**
    * Plan 210: the history's lines strictly after `after` (a next page), or from the top (to `through`, a reload keeping
-   * its depth; else a page). The open part's conversations and the held ones never have a line; one place calculation.
+   * its depth; else a page). Iteration 2: a line per closed item, whatever else its conversation has open; a row the
+   * feed holds in the open part (`held`, by its id) has none.
    */
-  async history(o: { after: HistoryKey | null; through?: HistoryKey | null; limit?: number; heldIds: readonly number[]; placed?: readonly Placed[] }): Promise<TodayHistoryPage> {
+  async history(o: { after: HistoryKey | null; through?: HistoryKey | null; limit?: number; held: readonly FeedRowId[] }): Promise<TodayHistoryPage> {
     const { store } = this.b;
     const now = this.b.now();
     const settings = await readSettings(store);
     // plan 210 (the owner): finished items hidden, no history is read at all
     if (!(await this.available(settings)) || settings.today?.finished === false) return { items: [], next: null };
-    const placed = o.placed ?? (await this.places(now, settings));
-    const exclude = new Set([...placed.map((p) => p.threadId), ...o.heldIds]);
-    return historyPage(store, { now, after: o.after, through: o.through ?? null, limit: o.limit ?? HISTORY_PAGE, exclude, dated: settings.dated?.enabled === true, promises: settings.followups?.enabled === true, yieldTurn: () => this.b.yieldTurn(), sliceMs: this.b.options.sliceBudgetMs });
+    return historyPage(store, { now, after: o.after, through: o.through ?? null, limit: o.limit ?? HISTORY_PAGE, held: new Set(o.held), dated: settings.dated?.enabled === true, promises: settings.followups?.enabled === true, yieldTurn: () => this.b.yieldTurn(), sliceMs: this.b.options.sliceBudgetMs });
   }
 
-  async list(heldIds: readonly number[], ask: { history?: { through: HistoryKey | null } } = {}): Promise<TodayList> {
+  /**
+   * Plan 210 (iteration 2): the open part, a row per item in the projection's order, a section per group (and per day for a
+   * day of its own and Coming up), with the header's numbers; the history after it when asked (the feed). `held`: the rows
+   * the feed keeps in place while they're open or checked (it keeps their last words itself), never a history line.
+   */
+  async list(held: readonly FeedRowId[], ask: { history?: { through: HistoryKey | null } } = {}): Promise<TodayList> {
     const { store } = this.b;
     const now = this.b.now();
     const settings = await readSettings(store);
-    if (!(await this.available(settings))) return { sections: [], digest: null, now, held: [] };
-    const placed = await this.places(now, settings);
-    const threads = new Map((await store.threads.summaries(placed.map((p) => p.threadId))).map((t) => [t.id, t]));
-    // Trash and Spam hide a row, and it comes back with its thread (revision 9)
-    const shown = placed.filter((p) => {
-      const t = threads.get(p.threadId);
-      return t && !t.inSpam && !t.inTrash;
-    });
-    // a waiting row's line is its current summary, read together, for the first rows only (one showing your promise has it)
-    const lined = shown.filter((p) => p.waiting && p.why.kind === "waiting").slice(0, SUMMARY_LINES_MAX).map((p) => p.threadId);
+    const none = { missed: 0, today: 0, thisWeek: 0 };
+    if (!(await this.available(settings))) return { sections: [], digest: null, now, counts: none };
+    // Trash and Spam hide a row, and it comes back with its thread (the projection read it from these summaries)
+    const { rows: shown, counts, threads } = await this.project(now, settings);
+    // a waiting row's line is its current summary, read together, for the first rows only
+    const lined = shown.filter((r) => r.waiting).slice(0, SUMMARY_LINES_MAX).map((r) => r.threadId);
     const lines = new Map(await Promise.all(lined.map(async (id) => [id, await this.summaryLine(id)] as const)));
-    // plan 210: a section per group, and per day for a day of its own and Coming up (placed in their order already)
     const sections: TodaySection[] = [];
-    for (const kind of TODAY_GROUP_ORDER) {
-      for (const p of shown) {
-        if (p.group !== kind) continue;
-        const item: TodayItem = { thread: threads.get(p.threadId)!, why: p.why, ...lines.get(p.threadId), ...(p.also ? { also: p.also } : {}) };
-        const last = sections.at(-1);
-        const day = p.day ?? undefined;
-        if (last?.kind === kind && last.day === day) last.items.push(item);
-        else sections.push({ kind, ...(day ? { day } : {}), items: [item] });
-      }
+    for (const r of shown) {
+      const item: TodayItem = { id: r.id, thread: threads.get(r.threadId)!, why: r.why, ...(r.waiting ? lines.get(r.threadId) : {}), ...(r.also ? { also: r.also } : {}) };
+      const last = sections.at(-1);
+      const day = r.day ?? undefined;
+      if (last?.kind === r.group && last.day === day) last.items.push(item);
+      else sections.push({ kind: r.group, ...(day ? { day } : {}), items: [item] });
     }
-    const taken = new Set(shown.map((p) => p.threadId));
-    const missing = heldIds.filter((id) => id !== 0 && !taken.has(id));
-    const held = missing.length ? await store.threads.summaries(missing) : [];
-    // plan 210: the history after the open part, from the same placing (so no conversation is in both)
-    const history = ask.history && settings.today?.finished !== false ? await this.history({ after: null, through: ask.history.through, heldIds, placed }) : undefined;
-    return { sections, digest: await this.digestRow(), now, held, ...(history ? { history } : {}) };
+    const history = ask.history && settings.today?.finished !== false ? await this.history({ after: null, through: ask.history.through, held }) : undefined;
+    return { sections, digest: await this.digestRow(), now, counts, ...(history ? { history } : {}) };
   }
 
   private async summaryLine(threadId: number): Promise<{ summary?: string }> {
@@ -888,23 +767,60 @@ export class TodayService {
   }
 
   /**
-   * The sidebar's number: the rows `todayCounted` counts, each thread once (revision 10; plan 210: Missed, Today and the
-   * days ahead, a row whose own item is a Plan's kind not). What's waiting is plan 145's indexed count, less
-   * what's placed as a row that isn't counted (a waiting thread with a Plan is the Plan, revision 3); the rest are the
-   * placed threads that are neither in Trash or Spam nor already waiting. Null during plan 17's backfill.
+   * The sidebar's number (plan 210, iteration 2, the owner): Missed and Today's, the rows `todayCounted` counts under them,
+   * from the list's own projection (a row per item: two of one conversation count twice). Null during plan 17's backfill.
    */
   async withCount(counts: Counts): Promise<Counts> {
-    const { store } = this.b;
     const s = await this.setting().catch(() => null);
     if (!s?.available || !s.show) return counts;
     if (counts.inboxWaiting === null || counts.inboxWaiting === undefined) return { ...counts, today: null };
-    const settings = await readSettings(store);
+    return { ...counts, today: todayBadge(await this.counts(this.b.now(), await readSettings(this.b.store))) };
+  }
+
+  // ─── plan 210 (iteration 2): an act on a row is on every item it is ──────
+
+  /**
+   * Done, Remove and Later on an item, and on every item it's the same thing as (a merged row's members, whichever was
+   * named), at once: each named one at the revision it was seen at, the others as they are now (they're the same thing),
+   * all or none. Its Undo puts every one back. A promise of yours goes through here from anywhere (the feed, the
+   * conversation's card), so a duplicate is never left behind.
+   */
+  async act(seen: readonly ItemSeen[], action: "done" | "dismiss" | "later", until?: number): Promise<{ undoId: string | null }> {
+    const { store } = this.b;
     const now = this.b.now();
-    const placed = await this.places(now, settings, { count: true });
-    const counted = placed.filter((p) => todayCounted(p.group, p.why)).map((p) => p.threadId);
-    const uncounted = placed.filter((p) => !todayCounted(p.group, p.why)).map((p) => p.threadId);
-    const { needs, extra } = await store.today.countWith(counted, now, uncounted);
-    return { ...counts, today: needs + extra };
+    const stale = () => new RpcError("STALE", L(seen[0]?.source === "promise" ? "errors.followups.changed" : "errors.dated.changed"));
+    if (action === "later" && (until === undefined || until <= now)) throw new RpcError("BAD_REQUEST", L("errors.dated.later"));
+    const named = await Promise.all(seen.map((r) => (r.source === "dated" ? store.dated.get(r.id) : store.followups.get(r.id))));
+    if (named.some((r) => !r)) throw stale();
+    const { dated, promises } = await store.today.members(named.map((r, i) => r!.sameAs ?? refKey(seen[i]!)));
+    const at = new Map(seen.map((r) => [refKey(r), r.revision]));
+    // the named ones whatever their state (one closed since is stale), the others while they're open
+    const datedNow = dated.filter((r) => at.has(refKey({ source: "dated", id: r.id })) || r.state === "open");
+    const promisesNow = promises.filter((r) => at.has(refKey({ source: "promise", id: r.id })) || r.state === "open" || r.state === "due");
+    // the third panel round: Later's own rule on each dated one (a timed item still ahead, before its moment; a Plan, its end)
+    if (action === "later" && datedNow.some((r) => (laterBefore(r, now) ?? Infinity) <= until!)) throw new RpcError("BAD_REQUEST", L("errors.dated.laterLate"));
+    const patch = patchesFor(action, now, until);
+    const before = await store.today.act({
+      dated: datedNow.map((r) => ({ id: r.id, revision: at.get(refKey({ source: "dated", id: r.id })) ?? r.revision, patch: patch.dated })),
+      promises: promisesNow.map((r) => ({ id: r.id, revision: at.get(refKey({ source: "promise", id: r.id })) ?? r.revision, patch: patch.promise })),
+    });
+    if (!before) throw stale();
+    const undoId = `t${++this.undoSeq}`;
+    this.undo.set(undoId, before);
+    while (this.undo.size > UNDO_KEPT) this.undo.delete(this.undo.keys().next().value!);
+    this.changed();
+    if (before.promises.length) await this.b.followups.look();
+    return { undoId };
+  }
+
+  /** An act's Undo: every item back as it was, or none when one changed since. */
+  async undoAct(undoId: string): Promise<void> {
+    const before = this.undo.get(undoId);
+    if (!before) return;
+    this.undo.delete(undoId);
+    await this.b.store.today.restore(before);
+    this.changed();
+    if (before.promises.length) await this.b.followups.look();
   }
 
   // ─── plan 204: what changes by itself ────────────────────────────────────
@@ -960,8 +876,8 @@ export class TodayService {
     const now = this.b.now();
     if (now - prepareTimeToday(prepareAt, now) > NOTIFY_WITHIN_MS) return;
     if ((await store.settings.get<string>(NOTIFIED_KEY, "")) === day) return;
-    const list = await this.list([]);
-    const count = list.sections.reduce((n, x) => n + x.items.filter((i) => todayCounted(x.kind, i.why)).length, 0);
+    // the badge's number (plan 210, iteration 2: Missed and Today's), from the same projection
+    const count = todayBadge(await this.counts(now, await readSettings(store)));
     if (!count) return;
     await store.settings.set(NOTIFIED_KEY, day);
     // how many, and never who or what

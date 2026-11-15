@@ -1,12 +1,13 @@
 import { AiError, DATED_PROMPT_VERSION, DATED_SUBJECT_CHARS, DATED_TEXT_CHARS, costAt, datedBudget, fitDates, priceOf, type AiTasks, type DatedResult } from "@terno/ai";
-import { addressKey, saysNoReplyNeeded, DATED_ITEMS_MAX, DATED_KINDS, DATED_OPEN_SHOWN, followupDue, validFollowupDate, type FollowupRow, DATED_SCAN_DAYS, DATED_SCAN_MAX, datedOver, dayKeyOf, datedTiming, dayEnd, hasTimeCue, laterBefore, normalizeText, withoutQuotes, type AiErrorKind, type DatedKind, type DatedRow } from "@terno/core";
+import { addressKey, needsPresence, saysNoReplyNeeded, DATED_ITEMS_MAX, DATED_KINDS, DATED_OPEN_SHOWN, followupDue, validFollowupDate, type FollowupRow, DATED_SCAN_DAYS, DATED_SCAN_MAX, datedOver, dayKeyOf, datedTiming, dayEnd, hasTimeCue, normalizeText, withoutQuotes, type AiErrorKind, type DatedKind, type DatedRow } from "@terno/core";
 import { captureError } from "@terno/core/diag";
-import { RpcError, type AppSettings } from "@terno/core/rpc";
+import type { AppSettings } from "@terno/core/rpc";
 import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
-import { readNothingAsked, type DatedMark, type DatedSnapshot, type DatedSource, type DatedWrite, type MailStore } from "@terno/store";
+import { readNothingAsked, type DatedMark, type DatedSource, type DatedWrite, type MailStore } from "@terno/store";
 import { DailyLimitError, MonthlyLimitError } from "./ai-limiter";
 import { UI_LOCALE_KEY } from "./forwarding";
 import { contextOf, namesApart, namesItem, norm, otherIds, paragraphsOf, plainEvidence, sameObject, sameThing, saysReplaced, saysWhen, sentencesOf, settlesKind } from "./dated-evidence";
+import { promiseMoment } from "./promise-time";
 import { untrustedSenders, withoutUntrusted } from "./suspicious-sender";
 
 /**
@@ -18,7 +19,6 @@ import { untrustedSenders, withoutUntrusted } from "./suspicious-sender";
 const PAGE = 50;
 const MAX_ATTEMPTS = 3;
 const RETRY_WAIT_MS = 60_000;
-const UNDO_KEPT = 50;
 /** what a message costs to read, for the check's estimate: ~600 tokens in, ~100 out */
 const SCAN_TOKENS = { inputTokens: 600, outputTokens: 100 };
 /** the 14-day check walks this many received messages at most, to find the `DATED_SCAN_MAX` worth reading (Codex code review) */
@@ -167,6 +167,26 @@ export function asksForSecrets(item: { text: string; quote: string }): boolean {
 type Move = Omit<DatedResult["moved"][number], "text" | "textEvidence"> & Partial<Pick<DatedResult["moved"][number], "text" | "textEvidence">>;
 
 /**
+ * Plan 210 (iteration 2, the panel's A5 and A6), decided once as an item is read, never on a count: a person's request to the
+ * reader (`askAllowed`) shows from its arrival, in Today's people with its day ("by Nov 30"); a delivery that needs someone
+ * there (a signature) from the day before.
+ */
+function shownEarly(kind: DatedKind, item: { text: string; quote: string }, said: string, input: Parameters<typeof checkDates>[1]): boolean {
+  if (kind === "respond") return askAllowed(item.quote, said, input.text, input);
+  return kind === "delivery" && needsPresence(item.text, item.quote);
+}
+
+/**
+ * A promise's new day from its person's mail (the second panel round), at a time its words state (plan 210, iteration 2);
+ * and, when that mail came after its day was over, the day it had (`brokenDueAt`: its row keeps saying "promised Tue").
+ */
+function movedPromise(p: { text?: string; dueAt?: number; dated?: boolean }, day: string, arrivedAt: number): { dueAt: number; timed: boolean; brokenDueAt: number | null } {
+  const due = followupDue({ kind: "promise", sentAt: arrivedAt, due: day, nudgeAfterDays: 0 });
+  const broken = p.dated && p.dueAt !== undefined && dayEnd(dayKeyOf(p.dueAt)) <= arrivedAt ? p.dueAt : null;
+  return { ...promiseMoment(p.text ?? "", day, due, arrivedAt), brokenDueAt: broken };
+}
+
+/**
  * §3's local checks, before anything's stored: the quote is the mail's (its text or subject), the kind is one of ours, a
  * day parses and is worth keeping (`datedTiming`), at most `DATED_ITEMS_MAX`, one per kind, day and time; an ask only from
  * a person to the reader (`askAllowed`) and never for credentials or an ID (`asksForSecrets`), and one with a day, so
@@ -174,7 +194,7 @@ type Move = Omit<DatedResult["moved"][number], "text" | "textEvidence"> & Partia
  * day or, for a timed item, a new moment, and its new words only with the mail's own. Plan 210 (the Codex review of iteration
  * 1, revision 2): a settlement or a move rests on evidence tied to that item (`tiedTo`). Pure.
  */
-export function checkDates(result: { items: readonly (Omit<DatedResult["items"][number], "kind"> & { kind: string })[]; settled: DatedResult["settled"]; moved?: readonly Move[] }, input: { text: string; subject: string; arrivedAt: number; open: ReadonlyMap<string, DatedRow>; promises?: ReadonlyMap<string, Pick<FollowupRow, "id" | "revision"> & { text?: string }>; fromScan: boolean; now: number; sender?: { person: boolean }; reader?: { name: string; addressed: "to" | "cc" | "none" }; others?: readonly string[]; threadId?: number; senderKey?: string; from?: string }): { rows: DatedWrite[]; settled: { id: number; revision: number }[]; moved: { id: number; dueDay: string; dueAt: number; timed: boolean; actAt: number; text?: string }[]; movedPromises: { id: number; revision: number; dueAt: number }[]; asked: boolean } {
+export function checkDates(result: { items: readonly (Omit<DatedResult["items"][number], "kind"> & { kind: string })[]; settled: DatedResult["settled"]; moved?: readonly Move[] }, input: { text: string; subject: string; arrivedAt: number; open: ReadonlyMap<string, DatedRow>; promises?: ReadonlyMap<string, Pick<FollowupRow, "id" | "revision"> & Partial<Pick<FollowupRow, "text" | "dueAt" | "dated">>>; fromScan: boolean; now: number; sender?: { person: boolean }; reader?: { name: string; addressed: "to" | "cc" | "none" }; others?: readonly string[]; threadId?: number; senderKey?: string; from?: string }): { rows: DatedWrite[]; settled: { id: number; revision: number }[]; moved: { id: number; dueDay: string; dueAt: number; timed: boolean; actAt: number; text?: string }[]; movedPromises: { id: number; revision: number; dueAt: number; timed: boolean; brokenDueAt: number | null }[]; asked: boolean } {
   const said = `${norm(input.subject)}\n${norm(input.text)}`;
   const quoted = (words: string) => {
     const w = norm(words);
@@ -311,9 +331,9 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     const key = itemKey(kind, timing);
     if (movedKeys.has(key)) continue;
     if (rows.some((r) => itemKey(r.kind, r) === key && (!TWO_A_DAY.has(kind) || sameThing(r, item)))) continue;
-    rows.push({ kind, item: rows.length, text: item.text.trim(), quote: item.quote.trim(), ...timing });
+    rows.push({ kind, item: rows.length, text: item.text.trim(), quote: item.quote.trim(), ...timing, ...(shownEarly(kind, item, said, input) ? { early: true } : {}) });
   }
-  const movedPromises = promiseMoves.filter((m) => !replaced.has(m)).map(({ p, day }) => ({ id: p.id, revision: p.revision, dueAt: followupDue({ kind: "promise", sentAt: input.arrivedAt, due: day, nudgeAfterDays: 0 }).dueAt }));
+  const movedPromises = promiseMoves.filter((m) => !replaced.has(m)).map(({ p, day }) => ({ id: p.id, revision: p.revision, ...movedPromise(p, day, input.arrivedAt) }));
   return { rows, settled, moved: moved.map(({ kind: _kind, ...m }) => m), movedPromises, asked };
 }
 
@@ -328,8 +348,6 @@ export class DatedWorker {
   private heldUntil = 0;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly attempts = new Map<number, number>();
-  private readonly undo = new Map<string, { snapshot: DatedSnapshot; expectRevision: number }[]>();
-  private undoSeq = 0;
   private prunedDay: string | null = null;
   /** the request on its way out: checked again as it leaves the limiter, repairs included (revision 3) */
   private leaving: { messageId: number; threadId: number; senderKey: string; date: number; open: readonly number[]; stop: AbortController } | null = null;
@@ -638,41 +656,7 @@ export class DatedWorker {
     return isLocaleId(ui) ? ui : DEFAULT_LOCALE;
   }
 
-  // ─── what the user does (§5) ─────────────────────────────────────────────
-
-  private remember(entries: { snapshot: DatedSnapshot; expectRevision: number }[]): string | null {
-    if (!entries.length) return null;
-    const id = `d${++this.undoSeq}`;
-    this.undo.set(id, entries);
-    while (this.undo.size > UNDO_KEPT) this.undo.delete(this.undo.keys().next().value!);
-    return id;
-  }
-
-  /** Done, Dismiss and Later: one journal entry on the row, conditional on the revision the user saw. */
-  async act(id: number, revision: number, action: "done" | "dismiss" | "later", until?: number): Promise<{ undoId: string | null; row: DatedRow | null }> {
-    const now = this.host.now();
-    if (action === "later" && (until === undefined || until <= now)) throw new RpcError("BAD_REQUEST", L("errors.dated.later"));
-    // the third panel round: the menus' and the picker's own rule (a timed item still ahead, before its moment; a Plan, its end)
-    if (action === "later") {
-      const row = await this.host.store.dated.get(id);
-      const limit = row ? laterBefore(row, now) : null;
-      if (limit !== null && until! >= limit) throw new RpcError("BAD_REQUEST", L("errors.dated.laterLate"));
-    }
-    const patch: Parameters<MailStore["dated"]["update"]>[2] = action === "later" ? { deferredUntil: until! } : { state: action === "done" ? "done" : "dismissed", closedReason: "user", closedAt: now };
-    const before = await this.host.store.dated.update(id, revision, patch);
-    if (!before) throw new RpcError("STALE", L("errors.dated.changed"));
-    this.host.changed();
-    const row = await this.host.store.dated.get(id);
-    return { undoId: this.remember([{ snapshot: before, expectRevision: before.revision + 1 }]), row };
-  }
-
-  async undoAct(undoId: string): Promise<void> {
-    const entries = this.undo.get(undoId);
-    if (!entries) return;
-    this.undo.delete(undoId);
-    await this.host.store.dated.restore(entries);
-    this.host.changed();
-  }
+  // ─── what the user does (§5): plan 210 (iteration 2), What matters' one act on items (`TodayService.act`) ───
 
   /** Codex's second pass: an item stored from a suspicious sender before the guard isn't shown, as in Today. */
   async ofThread(threadId: number): Promise<DatedRow[]> {
@@ -730,7 +714,6 @@ export class DatedWorker {
   async clear(): Promise<void> {
     this.generation.abort();
     this.generation = new AbortController();
-    this.undo.clear();
     await this.host.store.dated.clear();
     this.host.changed();
   }

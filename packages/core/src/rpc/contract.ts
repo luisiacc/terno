@@ -67,6 +67,8 @@ import {
 const id = z.number().int().positive();
 /** plan 210: a history line's key (`HistoryKey`) */
 const historyKey = z.object({ at: z.number().int().nonnegative(), src: z.union([z.literal(0), z.literal(1)]), id });
+/** plan 210 (iteration 2): a What matters row's id ("dated:42", "promise:7", "waiting:12", "reminder:12") */
+const feedRowId = z.string().regex(/^(?:dated|promise|waiting|reminder):\d{1,15}$/);
 /** days of mail an account downloads (settings, an account, connecting one) */
 const syncWindow = z.number().int().min(7).max(3650);
 const ids = z.array(id).min(1).max(5000);
@@ -1270,11 +1272,14 @@ export const contract = {
   "ai.ask": m<AiAskResult>()(z.object({ requestId, question: z.string().trim().min(1).max(ASK_QUESTION_MAX), conversationId: id.optional(), timezone: z.string().min(1).max(100) }), { timeoutMs: 180_000 }),
   /** The user's own servers look further back for this turn's question; one more answer comes of it. Only on a click. */
   "ai.askOlder": m<AiAskResult>()(z.object({ requestId, conversationId: id, turnId: id, timezone: z.string().min(1).max(100) }), { timeoutMs: 300_000 }),
-  /** Plan 145: what needs you. Local, and live: asked again as things change. `heldIds`: the open and checked rows, kept in place. */
+  /**
+   * Plan 145: what needs you. Local, and live: asked again as things change. Plan 210 (iteration 2): a row per item; `held`,
+   * the rows (their ids) the feed keeps in place while open or checked, which are never a history line.
+   */
   // plan 210: with `history`, the history's first page too, or down to and including `through` (a reload keeping its depth)
-  "today.list": m<TodayList>()(z.object({ heldIds: z.array(id).max(500).default([]), history: z.object({ through: historyKey.nullable() }).optional() })),
-  /** plan 210: the history's lines strictly after `after`, at most `limit`; held conversations are left out as the list leaves them */
-  "today.history": m<TodayHistoryPage>()(z.object({ after: historyKey, limit: z.number().int().min(1).max(100).default(HISTORY_PAGE), heldIds: z.array(id).max(500).default([]) })),
+  "today.list": m<TodayList>()(z.object({ held: z.array(feedRowId).max(500).default([]), history: z.object({ through: historyKey.nullable() }).optional() })),
+  /** plan 210: the history's lines strictly after `after`, at most `limit`; held rows are left out as the list leaves them */
+  "today.history": m<TodayHistoryPage>()(z.object({ after: historyKey, limit: z.number().int().min(1).max(100).default(HISTORY_PAGE), held: z.array(feedRowId).max(500).default([]) })),
   "today.digest": m<DigestRow | null>()(z.object({ day: z.string().max(10).optional() })),
   /** a person's try again */
   "today.digestRetry": m<{ ok: true }>()(empty),

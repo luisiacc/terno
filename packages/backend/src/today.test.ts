@@ -78,7 +78,7 @@ describe("who sees it", () => {
   it("no provider: no sections, no timer, no count", async () => {
     const { backend, client, put } = await setup({ provider: "none" });
     await put();
-    expect(await client.call("today.list", { heldIds: [] })).toMatchObject({ sections: [], digest: null });
+    expect(await client.call("today.list", { held: [] })).toMatchObject({ sections: [], digest: null });
     await backend.today.arm();
     expect(backend.today.nextAt).toBeNull();
     expect((await client.call("counts.get", {})).today).toBeUndefined();
@@ -114,7 +114,7 @@ describe("the list", () => {
     const colleague = await put({ from: { name: "Col", email: "colleague+work@people.test" } });
     raw.run("UPDATE threads SET has_sent = 0 WHERE id = ?", colleague);
     for (let i = 0; i < 2; i++) raw.run("UPDATE threads SET has_sent = 0 WHERE id = ?", await put({ from: { name: "Svc", email: "service@machine.test" } }));
-    const list = await client.call("today.list", { heldIds: [] });
+    const list = await client.call("today.list", { held: [] });
     const needs = list.sections.find((s) => s.kind === "today")!;
     expect(new Set(needs.items.map((i) => i.thread.id))).toEqual(new Set([yours, colleague]));
     expect((await client.call("counts.get", {})).today).toBe(2);
@@ -124,7 +124,7 @@ describe("the list", () => {
     const { client, put } = await setup();
     const ids: number[] = [];
     for (let i = 0; i < 15; i++) ids.push(await put());
-    const list = await client.call("today.list", { heldIds: [] });
+    const list = await client.call("today.list", { held: [] });
     const needs = list.sections.find((s) => s.kind === "today")!;
     expect(needs.items).toHaveLength(15);
     expect(needs.items.map((i) => i.why.kind)).toEqual(Array(15).fill("waiting"));
@@ -133,7 +133,7 @@ describe("the list", () => {
     expect(dates).toEqual([...dates].sort((a, b) => b - a));
   });
 
-  it("a thread appears once: two due promises and a reminder are one row in Needs you, and count once", async () => {
+  it("plan 210 (iteration 2): two due promises in one conversation are two rows, counted each; your reminder there brings nothing more", async () => {
     const { backend, client, account, clock } = await setup();
     await client.call("settings.update", { followups: { enabled: true } });
     const me = { name: "Me", email: account.email };
@@ -145,20 +145,12 @@ describe("the list", () => {
     expect(finished).not.toBe("gone");
     clock.now += 5000;
     await client.call("reminders.set", { threadIds: [t], dueAt: clock.now - 500, kind: "always" });
-    const list = await client.call("today.list", { heldIds: [] });
+    const list = await client.call("today.list", { held: [] });
     const sections = list.sections.map((s) => [s.kind, s.items.map((i) => i.thread.id)]);
-    // plan 204, the fourth panel round: a promise of yours that's due, undated, is Needs you's (it has no day)
-    expect(sections).toEqual([["today", [t]]]);
-    expect(list.sections[0]!.items[0]!.why.kind).toBe("promise");
-    expect((await client.call("counts.get", {})).today).toBe(1);
-  });
-
-  it("held rows come back", async () => {
-    const { client, put, raw } = await setup();
-    const t = await put();
-    raw.run("UPDATE threads SET waiting_since = NULL WHERE id = ?", t);
-    const list = await client.call("today.list", { heldIds: [t] });
-    expect(list.held.map((x) => x.id)).toEqual([t]);
+    // plan 204, the fourth panel round: a promise of yours that's due, undated, is Today's (it has no day)
+    expect(sections).toEqual([["today", [t, t]]]);
+    expect(list.sections[0]!.items.map((i) => [i.why.kind, i.why.text])).toEqual([["promise", "send the contract"], ["promise", "and the deck"]]);
+    expect((await client.call("counts.get", {})).today).toBe(2);
   });
 });
 
@@ -411,7 +403,7 @@ describe("the digest", () => {
   it("the digest off shows what's automated, unticked and unsorted, and sends nothing", async () => {
     const t = await setup();
     await t.letter("Acme Store");
-    await t.client.call("today.list", { heldIds: [] });
+    await t.client.call("today.list", { held: [] });
     await vi.waitFor(async () => expect((await t.client.call("today.digest", {}))?.automated).toBe(true));
     const row = (await t.client.call("today.digest", {}))!;
     expect(row.items[0]).toMatchObject({ line: null, from: "Acme Store" });
@@ -422,7 +414,7 @@ describe("the digest", () => {
     const t = await setup();
     await t.letter("Stratechery");
     await t.letter("Tri-River FCU", { from: { name: "Tri-River FCU", email: "security@tririver-fcu-alerts.com" }, subject: "Online banking access temporarily suspended" });
-    await t.client.call("today.list", { heldIds: [] });
+    await t.client.call("today.list", { held: [] });
     await vi.waitFor(async () => expect((await t.client.call("today.digest", {}))?.automated).toBe(true));
     expect((await t.client.call("today.digest", {}))!.items.map((i) => i.from)).toEqual(["Stratechery"]);
     await on(t);
@@ -629,7 +621,7 @@ describe("the digest", () => {
       const t = await setup();
       await t.letter("Acme Store");
       await t.letter("Other Shop");
-      await t.client.call("today.list", { heldIds: [] });
+      await t.client.call("today.list", { held: [] });
       await vi.waitFor(async () => expect((await t.client.call("today.digest", {}))?.items).toHaveLength(2));
       await t.client.call("today.notNewsletter", { email: "news@acmestore.test", name: "Acme Store" });
       expect((await t.client.call("today.digest", {}))!.items.map((i) => i.from)).toEqual(["Other Shop"]);
@@ -684,12 +676,12 @@ describe("the digest", () => {
     expect(t.backend.today.nextAt).toBeNull();
     expect(await t.backend.store.today.digest.get(todayKey(t.clock.now))).toBeNull();
     expect(t.model.reqs).toEqual([]);
-    expect((await t.client.call("today.list", { heldIds: [] })).sections).toEqual([]);
+    expect((await t.client.call("today.list", { held: [] })).sections).toEqual([]);
     await t.client.call("settings.update", { devAi: true });
     await vi.waitFor(() => expect(t.backend.today.nextAt).not.toBeNull());
     await vi.waitFor(async () => expect((await t.backend.store.today.digest.get(todayKey(t.clock.now)))?.state).toBe("ready"));
     expect(t.model.reqs.length).toBeGreaterThan(0);
-    expect((await t.client.call("today.list", { heldIds: [] })).sections.length).toBeGreaterThan(0);
+    expect((await t.client.call("today.list", { held: [] })).sections.length).toBeGreaterThan(0);
   });
 
   it("the notice: off by default, once a day, never who or what, and never hours late", async () => {

@@ -6,6 +6,7 @@ import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
 import { AWAITING_ITEM, type FollowupSnapshot, type FollowupSource, type FollowupWrite, type MailStore, type SentMark } from "@terno/store";
 import { DailyLimitError, MonthlyLimitError } from "./ai-limiter";
 import { UI_LOCALE_KEY } from "./forwarding";
+import { promiseMoment } from "./promise-time";
 
 const MAX_DELAY = 2 ** 31 - 1;
 const PAGE = 50;
@@ -71,8 +72,10 @@ export function checkSentMail(result: SentMailResult, input: { ownText: string; 
     if (!own.includes(norm(p.quote))) return;
     const to = p.to ? person.get(p.to) : undefined;
     const due = validFollowupDate(p.due, input.sentAt);
-    const { dueAt, dated } = followupDue({ kind: "promise", sentAt: input.sentAt, due, nudgeAfterDays: input.nudgeAfterDays });
-    rows.push({ kind: "promise", item, text: p.text, quote: p.quote, personName: to?.name || null, personEmail: to?.email ?? null, dueAt, dated });
+    const day = followupDue({ kind: "promise", sentAt: input.sentAt, due, nudgeAfterDays: input.nudgeAfterDays });
+    // plan 210 (iteration 2): a time its words state is its moment
+    const { dueAt, timed } = promiseMoment(p.text, due, day, input.sentAt);
+    rows.push({ kind: "promise", item, text: p.text, quote: p.quote, personName: to?.name || null, personEmail: to?.email ?? null, dueAt, dated: day.dated, ...(timed ? { timed } : {}) });
   });
   if (result.expectsReply) {
     const who = result.awaiting.flatMap((label) => person.get(label) ?? []).filter((r) => isPerson(r.email));

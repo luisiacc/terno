@@ -1,7 +1,8 @@
 /**
  * Plan 210 (Codex code review): the history's walk over a store's closed rows. A reload down to a line whose lines all left
- * meanwhile still continues from it; a walk past many left-out rows gives the event loop back between reads; an untrusted
- * sender's newer item, never shown, hides neither an older item nor your promise on its conversation.
+ * meanwhile still continues from it; a walk past many left-out rows gives the event loop back between reads. Iteration 2: a
+ * line per closed item (two of one conversation are two lines), an untrusted sender's never; true duplicates one line at
+ * their newest closing, none while one of them is open, once across pages; a held row none.
  */
 import type { DatedRow, FollowupRow, ThreadSummary } from "@terno/core";
 import type { MailStore } from "@terno/store";
@@ -10,33 +11,33 @@ import { historyPage, type HistoryAsk } from "./today-history";
 
 const NOW = 100 * 86_400_000;
 const MIN = 60_000;
-type Closed = { id: number; threadId: number; closedAt: number; senderKey?: string };
+type Closed = { id: number; threadId: number; closedAt: number | null; senderKey?: string; sameAs?: string | null; state?: string };
 
 /** a store of closed rows (newest first by closing, then id): dated items and promises; `spam` threads are in Spam */
 function fakeStore(datedRows: Closed[], promiseRows: Closed[] = [], spam: ReadonlySet<number> = new Set()) {
-  const dated = datedRows.map((r) => ({ state: "done", closedReason: "user", kind: "pay", text: `Pay ${r.id}`, senderKey: "billing@power.test", ...r }) as unknown as DatedRow);
-  const promises = promiseRows.map((r) => ({ state: "done", closedReason: "user", kind: "promise", text: `send ${r.id}`, ...r }) as unknown as FollowupRow);
+  const dated = datedRows.map((r) => ({ state: "done", closedReason: "user", kind: "pay", text: `Pay ${r.id}`, senderKey: "billing@power.test", sameAs: null, ...r }) as unknown as DatedRow);
+  const promises = promiseRows.map((r) => ({ state: "done", closedReason: "user", kind: "promise", text: `send ${r.id}`, sameAs: null, ...r }) as unknown as FollowupRow);
   const order = <T extends { closedAt: number | null; id: number }>(rows: T[]) => [...rows].sort((a, b) => b.closedAt! - a.closedAt! || b.id - a.id);
-  const page = <T extends { closedAt: number | null; id: number }>(rows: T[]) => async (o: { since: number; after: { at: number; id: number } | null; limit: number }) => {
+  const page = <T extends { closedAt: number | null; id: number; state: string }>(rows: T[]) => async (o: { since: number; after: { at: number; id: number } | null; limit: number }) => {
     reads.count++;
-    return order(rows).filter((r) => r.closedAt! >= o.since && (!o.after || r.closedAt! < o.after.at || (r.closedAt === o.after.at && r.id < o.after.id))).slice(0, o.limit);
+    return order(rows.filter((r) => r.state !== "open" && r.state !== "due")).filter((r) => r.closedAt! >= o.since && (!o.after || r.closedAt! < o.after.at || (r.closedAt === o.after.at && r.id < o.after.id))).slice(0, o.limit);
   };
-  const newest = <T extends { closedAt: number | null; id: number; threadId: number }>(rows: T[]) => async (ids: readonly number[]) =>
-    new Map(ids.flatMap((id) => {
-      const top = order(rows.filter((r) => r.threadId === id))[0];
-      return top ? [[id, { at: top.closedAt!, id: top.id }] as const] : [];
-    }));
   const reads = { count: 0 };
+  const members = async (keys: readonly string[]) => ({
+    dated: dated.filter((r) => keys.includes(`dated:${r.id}`) || (r.sameAs != null && keys.includes(r.sameAs))),
+    promises: promises.filter((r) => keys.includes(`promise:${r.id}`) || (r.sameAs != null && keys.includes(r.sameAs))),
+  });
   const store = {
-    dated: { closedPage: page(dated), newestClosed: newest(dated), get: async (id: number) => dated.find((r) => r.id === id) ?? null, written: async () => new Set<string>() },
-    followups: { closedPage: page(promises), newestClosed: newest(promises) },
+    dated: { closedPage: page(dated), written: async () => new Set<string>() },
+    followups: { closedPage: page(promises) },
+    today: { members },
     threads: { summaries: async (ids: readonly number[]) => ids.map((id) => ({ id, inSpam: spam.has(id), inTrash: false }) as ThreadSummary) },
   } as unknown as MailStore;
   return { store, reads };
 }
 const bills = (n: number): Closed[] => Array.from({ length: n }, (_, i) => ({ id: i + 1, threadId: i + 1, closedAt: NOW - (i + 1) * MIN }));
 
-const ask = (over: Partial<HistoryAsk>): HistoryAsk => ({ now: NOW, after: null, through: null, limit: 40, exclude: new Set(), dated: true, promises: true, yieldTurn: async () => {}, sliceMs: 1000, ...over });
+const ask = (over: Partial<HistoryAsk>): HistoryAsk => ({ now: NOW, after: null, through: null, limit: 40, held: new Set(), dated: true, promises: true, yieldTurn: async () => {}, sliceMs: 1000, ...over });
 
 describe("historyPage", () => {
   it("a reload down to a line whose lines all left meanwhile continues from that line, never ending the history", async () => {
@@ -58,18 +59,34 @@ describe("historyPage", () => {
     expect(yields).toBeGreaterThanOrEqual(reads.count - 1);
   });
 
-  it("an untrusted sender's newer item hides neither the conversation's older item nor your promise, from the top or past a key", async () => {
-    // conversation 7: an untrusted item (never shown) newest, then your promise, then a trusted item; conversation 1 newer still
+  it("a line per closed item: two of one conversation are two, an untrusted sender's none, each with its item's id", async () => {
     const untrusted = "alerts@bank-security-alerts.com";
     const { store } = fakeStore(
       [{ id: 1, threadId: 1, closedAt: NOW - MIN }, { id: 70, threadId: 7, closedAt: NOW - 2 * MIN, senderKey: untrusted }, { id: 71, threadId: 7, closedAt: NOW - 5 * MIN }],
       [{ id: 9, threadId: 7, closedAt: NOW - 3 * MIN }],
     );
     const top = await historyPage(store, ask({}));
-    expect(top.items.map((i) => [i.thread.id, i.kind])).toEqual([[1, "pay"], [7, "promise"]]);
-    const after = await historyPage(store, ask({ after: top.items[0]!.key }));
-    expect(after.items.map((i) => [i.thread.id, i.kind])).toEqual([[7, "promise"]]);
-    // past the promise's own key, the conversation's line was above: its older item isn't a second one
-    expect((await historyPage(store, ask({ after: top.items[1]!.key }))).items).toEqual([]);
+    expect(top.items.map((i) => [i.id, i.thread.id, i.kind])).toEqual([["dated:1", 1, "pay"], ["promise:9", 7, "promise"], ["dated:71", 7, "pay"]]);
+    expect(top.items[2]!.item).toEqual({ source: "dated", id: 71 });
+    const after = await historyPage(store, ask({ after: top.items[1]!.key }));
+    expect(after.items.map((i) => i.id)).toEqual(["dated:71"]);
+    // a held row has none
+    expect((await historyPage(store, ask({ held: new Set(["promise:9"]) }))).items.map((i) => i.id)).toEqual(["dated:1", "dated:71"]);
+  });
+
+  it("true duplicates: one line at their newest closing, whichever table; none while one is open; once across pages", async () => {
+    // a bill and your promise of it (canonical dated:20), the promise closed last; a dinner read twice, one still open
+    const { store } = fakeStore(
+      [{ id: 20, threadId: 2, closedAt: NOW - 4 * MIN }, { id: 30, threadId: 3, closedAt: NOW - 2 * MIN }, { id: 31, threadId: 4, closedAt: null, state: "open", sameAs: "dated:30" }, { id: 40, threadId: 5, closedAt: NOW - 6 * MIN }],
+      [{ id: 21, threadId: 2, closedAt: NOW - MIN, sameAs: "dated:20" }],
+    );
+    const top = await historyPage(store, ask({}));
+    expect(top.items.map((i) => [i.id, i.item, i.kind])).toEqual([
+      ["dated:20", { source: "promise", id: 21 }, "promise"],
+      ["dated:40", { source: "dated", id: 40 }, "pay"],
+    ]);
+    // a page from the merged line's key: the bill's own older closing isn't a second line
+    expect((await historyPage(store, ask({ after: top.items[0]!.key }))).items.map((i) => i.id)).toEqual(["dated:40"]);
+    expect((await historyPage(store, ask({ limit: 1 }))).items.map((i) => i.id)).toEqual(["dated:20"]);
   });
 });
