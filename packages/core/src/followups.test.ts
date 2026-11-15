@@ -45,6 +45,8 @@ describe("a date a model gave", () => {
 
 it("the most urgent is what's due, then the soonest; days since count whole days (plan 161)", () => {
   expect(mostUrgent([{ id: 1, state: "open", dueAt: 1 }, { id: 2, state: "due", dueAt: 9 }, { id: 3, state: "due", dueAt: 5 }])!.id).toBe(3);
+  // plan 204 (Codex code review of the fifth round): a promise put off wakes at its Later, so the one due sooner is the row's
+  expect(mostUrgent([{ id: 1, state: "open", dueAt: 1, deferredUntil: 100 }, { id: 2, state: "open", dueAt: 50, deferredUntil: null }])!.id).toBe(2);
   expect(followupDaysSince(0, 3600)).toBe(0);
   expect(followupDaysSince(0, 86_400_000 - 1)).toBe(0);
   expect(followupDaysSince(0, 86_400_000)).toBe(1);

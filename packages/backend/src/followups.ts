@@ -1,5 +1,5 @@
 import { AiError, FOLLOWUP_ANSWERING_CHARS, FOLLOWUP_OPEN_MAX, FOLLOWUP_OWN_CHARS, FOLLOWUP_PROMPT_VERSION, fitSentMail, followupBudget, costAt, priceOf, type AiTasks, type SentMailResult } from "@terno/ai";
-import { automatedLevel, followupDue, followupWakeAt, normalizeText, readCorpus, SCAN_DAYS, SCAN_MESSAGES_MAX, SCAN_PROMISE_OVERDUE_MS, SCAN_WAIT_STALE_MS, validFollowupDate, withoutQuotes, followupNotice, type AiErrorKind, type FollowupRow, type FollowupsSnapshot, type MailNotice, type ThreadSummary } from "@terno/core";
+import { automatedLevel, byUrgency, followupDue, followupWakeAt, normalizeText, readCorpus, SCAN_DAYS, SCAN_MESSAGES_MAX, SCAN_PROMISE_OVERDUE_MS, SCAN_WAIT_STALE_MS, validFollowupDate, withoutQuotes, followupNotice, type AiErrorKind, type FollowupRow, type FollowupsSnapshot, type MailNotice, type ThreadSummary } from "@terno/core";
 import { captureError } from "@terno/core/diag";
 import { RpcError, type AppSettings } from "@terno/core/rpc";
 import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
@@ -518,7 +518,8 @@ export class FollowupWorker {
   /** One row a thread, its most urgent first: the Inbox's top, or the whole list (revision 10). */
   async threads(onTop: boolean, accountId?: number): Promise<ThreadSummary[]> {
     const rows = (await this.host.store.followups.active()).filter((r) => !onTop || r.inboxState === "onTop");
-    const order = [...new Set(rows.sort((a, b) => (a.state === "due" ? 0 : 1) - (b.state === "due" ? 0 : 1) || followupWakeAt(a) - followupWakeAt(b)).map((r) => r.threadId))];
+    // the row's own order (`byUrgency`, as its line picks), so a thread is placed by the promise it shows
+    const order = [...new Set(rows.sort(byUrgency).map((r) => r.threadId))];
     const threads = new Map((await this.host.summaries(order)).map((t) => [t.id, t]));
     return order.flatMap((id) => {
       const t = threads.get(id);

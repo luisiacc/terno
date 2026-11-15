@@ -577,3 +577,8 @@ On 2e7da1ac6 (a promise's own Later, prompts v8 and v9, the second line): would 
 6. **The soccer game's move** ("moved EARLIER to 8:00 AM", a list's mail) was missed on this read after landing on earlier ones: the case goes into the eval as it is in María's mailbox (the open item, the list's mail) to see whether it's the prompt or chance.
 
 Not this round: one card for the conversation's items (the date line, the promise card and the summary's To do: three asked); keys for Not a task and Later (the owner's rule); handing to an assistant.
+
+
+### Revisions after the Codex code review of the fifth round
+
+- **The promise's Later (`/tmp/terno-scratch/p204/review-10.out`, 2 points, each with a test that fails without it):** an undated promise put off until before its own moment wakes Today when its Later ends (`nextTodayChange` considers `deferredUntil` before the undated branch's `continue`), so its waiting conversation and the counts come back on time; and one urgency order, `byUrgency` in `@terno/core` (due first, then `followupWakeAt`), sorts the follow-ups list's threads in the backend and picks a row's promise in the renderer (`mostUrgent`, under `rowLine` and `useOwed`), so a thread placed by promise B never shows put-off promise A's words and day.
