@@ -16,6 +16,7 @@ export * from "./replies";
 export * from "./today";
 export * from "./followups";
 export * from "./dated";
+export * from "./dated-days";
 export * from "./themes";
 export * from "./list-filter";
 export * from "./people";

@@ -149,6 +149,12 @@ describe("reading dates in mail you got (plan 204)", () => {
     expect(due({ kind: "respond", quote: "antes de las 18:00 del lunes", due: "2026-11-16" })).toBe("2026-11-16");
     expect(due({ kind: "respond", quote: "before Monday", due: "2026-11-16", time: "17:00" })).toBe("2026-11-16");
     expect(due({ kind: "event", quote: "the dinner before Monday's launch", due: "2026-11-16" })).toBe("2026-11-16");
+    // the Codex code review of v11 (point 6): a negated "before" or a lower bound isn't a deadline, nor a sentence that asks nothing
+    expect(due({ kind: "respond", quote: "please submit on Monday", due: "2026-11-16" }, "Do not submit before Monday; please submit on Monday.")).toBe("2026-11-16");
+    expect(due({ kind: "respond", quote: "Send your entry on Monday", due: "2026-11-16" }, "Send your entry on Monday. Entries sent before Monday won't count.")).toBe("2026-11-16");
+    expect(due({ kind: "respond", quote: "Submit it Monday", due: "2026-11-16" }, "Submit it Monday. The portal opens before Monday.")).toBe("2026-11-16");
+    expect(due({ kind: "respond", quote: "No la mandes antes del lunes", due: "2026-11-16" })).toBe("2026-11-16");
+    expect(due({ kind: "respond", quote: "Sign it Monday", due: "2026-11-16" }, "Sign it Monday. We were busy before Monday.")).toBe("2026-11-16");
     // the "before" in the quote's paragraph, not its sentence (the eval: Luna quoted the bill's first sentence); not another paragraph's
     const bill = "Intentamos cobrar tu factura de $86.30, pero el pago fue rechazado. Por favor paga antes del lunes 9 de marzo.";
     expect(due({ kind: "pay", quote: "Intentamos cobrar tu factura de $86.30", due: "2026-03-09" }, bill)).toBe("2026-03-08");
@@ -246,6 +252,12 @@ describe("reading dates in mail you got (plan 204)", () => {
     expect(read([call], { moved: [move({ text: "Call with Marcus and Jo (11:00 PM PT)", textEvidence: "Jo will join" })] }).moved[0]).toMatchObject({ text: "Call with Marcus and Jo (10:00 PM PT)", textEvidence: "Jo will join" });
     const andres = { label: "o1", kind: "event" as const, text: "Llamada con Andrés (18:00 hora de Ciudad de México)", due: "2026-11-20", time: "01:00" };
     expect(readDatesTask(input({ zone: "Europe/Madrid", open: [andres] })).validate({ items: [], settled: [], moved: [move({ due: "2026-11-20", time: "19:30 America/Mexico_City", evidence: "mejor a las 19:30" })] })).toMatchObject({ value: { moved: [{ due: "2026-11-20", time: "02:30", text: "Llamada con Andrés (19:30 hora de Ciudad de México)" }] } });
+    // the Codex code review of v11 (point 7): a move that names the date it's on, the item's own day in the reader's zone, is
+    // read on that date, not as a move of the time alone: Friday November 20 at 02:00 ET (Thursday 23:00 PT) moved to "Friday
+    // November 20 at 10 PM PT" is Saturday 01:00 here; "10 PM PT" alone stays Thursday in PT, Friday 01:00 here
+    const friday = { ...call, due: "2026-11-20", time: "02:00" };
+    expect(read([friday], { moved: [move({ due: "2026-11-20", evidence: "moved to Friday, November 20 at 10 PM PT" })] }).moved[0]).toMatchObject({ due: "2026-11-21", time: "01:00" });
+    expect(read([friday], { moved: [move({ due: "2026-11-20", evidence: "move it to 10 PM PT" })] }).moved[0]).toMatchObject({ due: "2026-11-20", time: "01:00" });
     // words without a zone note are left to the move, as before
     expect(read([{ ...call, text: "Blood test (12 hours fasting)" }], { moved: [move({})] }).moved[0]).toMatchObject({ text: null });
     expect(read([{ ...call, text: "Sofia's cleaning (reply C to confirm)" }], { moved: [move({})] }).moved[0]).toMatchObject({ text: null });

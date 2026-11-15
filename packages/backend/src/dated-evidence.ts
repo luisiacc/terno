@@ -1,4 +1,4 @@
-import { hasTimeCue, normalizeText } from "@terno/core";
+import { normalizeText, saysClock, saysDay } from "@terno/core";
 
 /**
  * Plan 210, the Codex review of iteration 1 (revisions 2 and 3): what ties the reader's words to one obligation. A quote that's
@@ -86,43 +86,99 @@ export function namingWords(text: string, o: { names: boolean } = { names: true 
 }
 
 const shares = (a: ReadonlySet<string>, b: ReadonlySet<string>) => [...a].some((w) => b.has(w));
+/** an identifier: a number of three digits or more that isn't an amount or a year ("invoice 1001", "order BD-55018") */
+const idsOf = (words: ReadonlySet<string>) => new Set([...words].filter((w) => /^\d+$/.test(w)));
+/** the words of an item that can name it: its text's and quote's, without the sender's own name (in every mail they send) */
+const itemWords = (item: { text: string; quote: string }, from: string) => {
+  const sender = namingWords(from);
+  return new Set([...namingWords(`${item.text}\n${item.quote}`)].filter((w) => !sender.has(w)));
+};
 
 /**
  * Whether some words name the item: a word of its text or quote in them ("the electricity bill", "invoice 2231"). The
  * sender's own name ("Brightline", in every mail they send) says who, not which of their things: it's left out.
  */
 export function namesItem(item: { text: string; quote: string }, words: string, from = ""): boolean {
-  const sender = namingWords(from);
-  return shares(new Set([...namingWords(`${item.text}\n${item.quote}`)].filter((w) => !sender.has(w))), namingWords(words));
+  return shares(itemWords(item, from), namingWords(words));
 }
 
 /**
- * Revision 3: two items of one kind on one day, from one mail, are the same thing when they quote the same sentence or their
- * words name the same thing ("Send the revised budget", "Answer Mariana about the budget"); "send the deck Friday" and "sign
- * the form Friday" are two.
+ * The Codex code review of v11 (point 2): words that give an identifier the item doesn't have, and none it has ("Payment
+ * received for invoice 1001" against invoice 1002), are about something else.
  */
-export function sameThing(a: { text: string; quote: string }, b: { text: string; quote: string }, sentences: Sentences): boolean {
-  const at = new Set(sentencesWith(a.quote, sentences));
-  if (sentencesWith(b.quote, sentences).some((i) => at.has(i))) return true;
+export function otherIds(item: { text: string; quote: string }, words: string): boolean {
+  const mine = idsOf(namingWords(`${item.text}\n${item.quote}`));
+  const said = idsOf(namingWords(words));
+  return mine.size > 0 && said.size > 0 && !shares(mine, said);
+}
+
+/**
+ * The Codex code review of v11 (point 2): when some words name open items, they settle or move one only when they name it
+ * apart from every other they name: a word or an identifier the other lacks ("invoice 1001", "vs the Bobcats"), or its own
+ * day and not the other's ("Thursday's class (November 19)"). "Payment received for your invoice" with two invoices open
+ * settles neither.
+ */
+export function namesApart<T extends { id: number; text: string; quote: string; dueDay: string }>(item: T, named: readonly T[], words: string, from = ""): boolean {
+  const said = namingWords(words);
+  const mine = new Set([...itemWords(item, from)].filter((w) => said.has(w)));
+  return named.every((o) => {
+    if (o.id === item.id) return true;
+    const theirs = itemWords(o, from);
+    if ([...mine].some((w) => !theirs.has(w))) return true;
+    if (item.dueDay === o.dueDay) return false;
+    // a weekday names this week's and next's alike: then its date does ("Thursday's class (November 19)")
+    return (saysDay(words, item.dueDay) && !saysDay(words, o.dueDay)) || (saysDay(words, item.dueDay, { weekdays: false }) && !saysDay(words, o.dueDay, { weekdays: false }));
+  });
+}
+
+/**
+ * Revision 3, and the Codex code review of v11 (point 4): two of the app's texts name the same thing when the words that name
+ * one are all among the other's ("Send the revised budget", "Answer Mariana about the budget"), never on one shared noun
+ * ("Sign the vendor contract", "Sign the employment contract" are two) and never with different identifiers. Names aside.
+ */
+export function sameObject(a: string, b: string): boolean {
+  const wa = namingWords(a, { names: false });
+  const wb = namingWords(b, { names: false });
+  const [ia, ib] = [idsOf(wa), idsOf(wb)];
+  if (ia.size && ib.size) return shares(ia, ib);
+  if (!wa.size || !wb.size) return false;
+  return [...wa].every((w) => wb.has(w)) || [...wb].every((w) => wa.has(w));
+}
+
+/**
+ * Two items of one kind on one day, from one mail, are the same thing when one quote holds the other (the model quoted one
+ * request twice) or their words name the same object (`sameObject`); one sentence alone is not enough ("send the deck and
+ * sign the form by Friday" asks two things).
+ */
+export function sameThing(a: { text: string; quote: string }, b: { text: string; quote: string }): boolean {
   const qa = norm(a.quote);
   const qb = norm(b.quote);
-  if (qa && qb && (qa.includes(qb) || qb.includes(qa))) return true;
-  return sameWords(a.text, b.text);
+  if (qa.split(" ").length >= 3 && qb.split(" ").length >= 3 && (qa.includes(qb) || qb.includes(qa))) return !idsDiffer(a.text, b.text);
+  return sameObject(a.text, b.text);
 }
+const idsDiffer = (a: string, b: string) => {
+  const [ia, ib] = [idsOf(namingWords(a)), idsOf(namingWords(b))];
+  return ia.size > 0 && ib.size > 0 && !shares(ia, ib);
+};
 
-/** Whether two of the app's texts name the same thing, names aside ("send Owen the pen test summary", "Send Owen Mbeki the pen test summary by Sunday"). */
-export function sameWords(a: string, b: string): boolean {
-  return shares(namingWords(a, { names: false }), namingWords(b, { names: false }));
-}
+// The Codex code review of v11 (point 8): words addressed to a model, never a mention of one ("The AI workshop is cancelled"):
+// "Assistant: …", "Note for the AI assistant: …", "«Asistente: …»", "if you are an AI…"
+const AGENT = String.raw`(?:(?:ai|ia|email|e-mail)\s+)?(?:assistants?|asistentes?|chatbots?|bots?|llms?|language models?|modelos? de lenguaje|ai|ia)`;
+const ADDRESSED = new RegExp(
+  [
+    String.raw`(?:^|[.;!?\n"“«(]\s*)(?:(?:note|message|instructions?|reminder|nota|mensaje|instrucciones|recordatorio)\s+(?:to|for|para|al?)\s+(?:\S+\s+){0,3}?)?(?:dear\s+|hey\s+|hi\s+|attention\s+|hola\s+|atencion\s+)?${AGENT}\s*[:,]`,
+    String.raw`\b(?:note|message|instructions?|nota|mensaje|instrucciones)\s+(?:to|for|para)\s+(?:the\s+|any\s+|all\s+|el\s+|los\s+)?${AGENT}\b`,
+    String.raw`\b(?:if you are|you are|si eres|eres)\s+(?:an?\s+|un\s+|una\s+)?${AGENT}\b`,
+  ].join("|"),
+  "mu",
+);
 
-// a sentence that tells the app what to do with what it holds: a label, its open items, an assistant, "ignore the above",
-// "mark … as done" (en, es), read as `norm` reads it
+// a sentence that tells the app what to do with what it holds: a label, its open items, "ignore the above", "mark … as done"
+// (en, es), read as `norm` reads it
 const TO_THE_APP = new RegExp(
   [
     String.raw`\b[op]\d{1,2}\b`,
     String.raw`\bopen (?:items?|tasks?)\b`,
-    String.raw`\b(?:assistants?|chatbots?|llms?|language models?|asistentes?)\b`,
-    String.raw`\bai\b`,
     String.raw`\bignor\w* (?:\S+ ){0,3}?(?:previous|prior|above|earlier|instructions?|instrucciones|anteriores)\b`,
     String.raw`\b(?:mark|set|treat|flag|close|clear|consider) (?:\S+ ){0,6}?as (?:done|settled|paid|complete|completed|resolved|closed|finished|handled)\b`,
     String.raw`\b(?:marca|marcar|marque|marquen|considera|considerar|da|dar|den) (?:\S+ ){0,6}?(?:como|por) (?:hech|pagad|resuelt|complet|cerrad|terminad|atendid)\w*`,
@@ -132,9 +188,9 @@ const TO_THE_APP = new RegExp(
   "u",
 );
 
-/** Whether some words talk to the app about what it holds instead of saying what happened. */
+/** Whether some words talk to the app (or a model) about what it holds instead of saying what happened. */
 export function talksToTheApp(words: string): boolean {
-  return TO_THE_APP.test(norm(words));
+  return TO_THE_APP.test(norm(words)) || ADDRESSED.test(words.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase());
 }
 
 /** A settlement's or a move's evidence: two words at least, never in a sentence that talks to the app. */
@@ -158,7 +214,21 @@ export function settlesKind(kind: string, words: string): boolean {
   return (SETTLES[kind]?.test(read) ?? false) && !BLANKET.test(read);
 }
 
-/** A move's evidence says the new day or time, in its paragraph ("Friday at the latest works", "now at 8:00", "meets Monday the 16th… before then"). */
-export function saysWhen(evidence: string, paragraph: string): boolean {
-  return hasTimeCue(evidence) || hasTimeCue(paragraph);
+/**
+ * The Codex code review of v11 (point 3): a move's evidence, in its paragraph, says the day it moves to ("Friday at the latest
+ * works", "moved to the 24th", "meets Monday the 16th… before then", a day either side for "before" and another zone), or,
+ * for the time alone on the item's own day, a clock time ("now at 8:00"). Never a word that only goes with dates
+ * ("appointment", "payment"), as the reading filter's cues do.
+ */
+export function saysWhen(evidence: string, paragraph: string, to: { due: string; timeOnly: boolean }, arrivedAt: number): boolean {
+  const words = `${evidence}\n${paragraph}`;
+  return saysDay(words, to.due, { slack: 1, arrivedAt }) || (to.timeOnly && saysClock(words));
+}
+
+// The Codex code review of v11 (point 5): words that put one thing in another's place (en, es)
+const REPLACES = /\b(?:skip|instead|rather than|in place of|in its place|forget (?:about )?|never mind|scrap|no longer need|don'?t need|en (?:lugar|vez) de|olvid\w*|ya no (?:hace falta|necesito|es necesari\w*)|no hace falta|dejemos|deja de lado)\b/u;
+
+/** Whether some words say a thing replaces another ("skip the piecemeal version: send me the full draft", "olvidemos…"). */
+export function saysReplaced(words: string): boolean {
+  return REPLACES.test(norm(words));
 }
