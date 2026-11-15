@@ -790,19 +790,22 @@ export class TodayService {
     const now = this.b.now();
     const stale = () => new RpcError("STALE", L(seen[0]?.source === "promise" ? "errors.followups.changed" : "errors.dated.changed"));
     if (action === "later" && (until === undefined || until <= now)) throw new RpcError("BAD_REQUEST", L("errors.dated.later"));
-    const named = await Promise.all(seen.map((r) => (r.source === "dated" ? store.dated.get(r.id) : store.followups.get(r.id))));
-    if (named.some((r) => !r)) throw stale();
-    const { dated, promises } = await store.today.members(named.map((r, i) => r!.sameAs ?? refKey(seen[i]!)));
-    const at = new Map(seen.map((r) => [refKey(r), r.revision]));
-    // the named ones whatever their state (one closed since is stale), the others while they're open
-    const datedNow = dated.filter((r) => at.has(refKey({ source: "dated", id: r.id })) || r.state === "open");
-    const promisesNow = promises.filter((r) => at.has(refKey({ source: "promise", id: r.id })) || r.state === "open" || r.state === "due");
-    // the third panel round: Later's own rule on each dated one (a timed item still ahead, before its moment; a Plan, its end)
-    if (action === "later" && datedNow.some((r) => (laterBefore(r, now) ?? Infinity) <= until!)) throw new RpcError("BAD_REQUEST", L("errors.dated.laterLate"));
-    const patch = patchesFor(action, now, until);
-    const before = await store.today.act({
-      dated: datedNow.map((r) => ({ id: r.id, revision: at.get(refKey({ source: "dated", id: r.id })) ?? r.revision, patch: patch.dated })),
-      promises: promisesNow.map((r) => ({ id: r.id, revision: at.get(refKey({ source: "promise", id: r.id })) ?? r.revision, patch: patch.promise })),
+    // (Codex code review of iteration 2) alone with the matcher: no member joins between reading the members and the write
+    const before = await this.links.exclusive(async () => {
+      const named = await Promise.all(seen.map((r) => (r.source === "dated" ? store.dated.get(r.id) : store.followups.get(r.id))));
+      if (named.some((r) => !r)) throw stale();
+      const { dated, promises } = await store.today.members(named.map((r, i) => r!.sameAs ?? refKey(seen[i]!)));
+      const at = new Map(seen.map((r) => [refKey(r), r.revision]));
+      // the named ones whatever their state (one closed since is stale), the others while they're open
+      const datedNow = dated.filter((r) => at.has(refKey({ source: "dated", id: r.id })) || r.state === "open");
+      const promisesNow = promises.filter((r) => at.has(refKey({ source: "promise", id: r.id })) || r.state === "open" || r.state === "due");
+      // the third panel round: Later's own rule on each dated one (a timed item still ahead, before its moment; a Plan, its end)
+      if (action === "later" && datedNow.some((r) => (laterBefore(r, now) ?? Infinity) <= until!)) throw new RpcError("BAD_REQUEST", L("errors.dated.laterLate"));
+      const patch = patchesFor(action, now, until);
+      return store.today.act({
+        dated: datedNow.map((r) => ({ id: r.id, revision: at.get(refKey({ source: "dated", id: r.id })) ?? r.revision, patch: patch.dated })),
+        promises: promisesNow.map((r) => ({ id: r.id, revision: at.get(refKey({ source: "promise", id: r.id })) ?? r.revision, patch: patch.promise })),
+      });
     });
     if (!before) throw stale();
     const undoId = `t${++this.undoSeq}`;

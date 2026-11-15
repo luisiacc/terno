@@ -60,18 +60,26 @@ export async function historyPage(store: MailStore, o: HistoryAsk): Promise<Toda
   const threads = new Map<number, ThreadSummary | null>();
   const groups = new Map<string, { open: boolean; newest: HistoryKey | null }>();
   const learn = async (rows: readonly Row[]) => {
-    const fresh = [...new Set(rows.map((r) => r.threadId))].filter((id) => !threads.has(id));
     const keys = [...new Set(rows.map(keyOf))].filter((k) => !groups.has(k));
-    const [summaries, members] = await Promise.all([fresh.length ? store.threads.summaries(fresh) : [], keys.length ? store.today.members(keys) : { dated: [], promises: [] }]);
+    const members = keys.length ? await store.today.members(keys) : { dated: [], promises: [] };
+    // every member's conversation, and whether its sender is trusted: a merged item's line is its newest closing that may
+    // show (Codex code review of iteration 2: one in Trash never hides the others')
+    const fresh = [...new Set([...rows, ...members.dated, ...members.promises].map((r) => r.threadId))].filter((id) => !threads.has(id));
+    const [summaries, kept] = await Promise.all([fresh.length ? store.threads.summaries(fresh) : [], trusted(members.dated)]);
     const byId = new Map(summaries.map((t) => [t.id, t]));
     for (const id of fresh) threads.set(id, byId.get(id) ?? null);
+    const trustedIds = new Set(kept.map((r) => r.id));
+    const shows = (m: Row) => {
+      const t = threads.get(m.threadId);
+      return !!t && !t.inSpam && !t.inTrash && (m.src === 1 || trustedIds.has(m.id));
+    };
     for (const k of keys) groups.set(k, { open: false, newest: null });
     const all: Row[] = [...members.dated.map((r) => ({ ...r, src: 0 as const })), ...members.promises.map((r) => ({ ...r, src: 1 as const }))];
     for (const m of all) {
       const g = groups.get(keyOf(m));
       if (!g) continue;
       if (open(m)) g.open = true;
-      else if (m.closedAt !== null && m.closedAt >= since && (!g.newest || historyOrder(closingOf(m), g.newest) < 0)) g.newest = closingOf(m);
+      else if (m.closedAt !== null && m.closedAt >= since && shows(m) && (!g.newest || historyOrder(closingOf(m), g.newest) < 0)) g.newest = closingOf(m);
     }
   };
   let slice = performance.now();

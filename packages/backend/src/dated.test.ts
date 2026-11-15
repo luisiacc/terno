@@ -1030,10 +1030,18 @@ describe("a move may carry the item's new words (the fifth panel round, change 2
     expect(checkDates({ items: [], settled: [], moved: [{ ...moved, text: " " }] }, base).moved[0]).not.toHaveProperty("text");
     // no move (the same moment), no new words
     expect(checkDates({ items: [], settled: [], moved: [{ ...moved, time: "10:00" }] }, base).moved).toEqual([]);
+    // plan 210 (iteration 2, Codex code review): a promise with a stated time moved by a mail that gives one takes the move's
+    // time, already in the reader's zone, on the move's day, never its words' clock read again on that day; with none, its
+    // own clock on the new day
+    const timed = new Map([["p1", { id: 5, revision: 1, text: "call Marcus at 10 PM PT", dueAt: at(2026, 11, 12, 22), dated: true, timed: true }]]);
+    const call = { ...moved, label: "p1", due: "2026-11-13", time: "08:30", evidence: "Friday at 8:30 works" };
+    expect(checkDates({ items: [], settled: [], moved: [call] }, { ...base, text: "Friday at 8:30 works.", promises: timed }).movedPromises).toEqual([{ id: 5, revision: 1, dueAt: at(2026, 11, 13, 8, 30), timed: true, brokenDueAt: null }]);
+    expect(checkDates({ items: [], settled: [], moved: [{ ...call, time: null, evidence: "Friday works" }] }, { ...base, text: "Friday works.", promises: timed }).movedPromises).toEqual([{ id: 5, revision: 1, dueAt: at(2026, 11, 13, 22), timed: true, brokenDueAt: null }]);
     // a promise of yours keeps its words: another person's can't become "You said"
     const promises = new Map([["p1", { id: 5, revision: 1 }]]);
     const out = checkDates({ items: [], settled: [], moved: [{ ...moved, label: "p1", due: "2026-11-13" }] }, { ...base, promises });
-    expect(out.movedPromises).toEqual([{ id: 5, revision: 1, dueAt: expect.any(Number), timed: false, brokenDueAt: null }]);
+    // (the move's own time is the promise's: plan 210, iteration 2)
+    expect(out.movedPromises).toEqual([{ id: 5, revision: 1, dueAt: expect.any(Number), timed: true, brokenDueAt: null }]);
     expect(JSON.stringify(out)).not.toContain("arrive 7:30");
   });
 
@@ -1741,7 +1749,7 @@ describe("plan 210 (iteration 2): duplicates, a broken promise, early and one ti
   const school = { name: "Ms. Ortiz", email: "ortiz@school.test" };
   const trip: Item = { kind: "pay", text: "Pay $12 for the bus", quote: "$12 for the bus", due: "2026-11-20", time: null };
   const promised = (thread: number, text: string, dueAt: number, createdAt: number) =>
-    [`INSERT INTO followups (thread_id, message_id, item, kind, text, quote, person_name, person_email, sent_at, due_at, dated, state, revision, created_at) VALUES (?, 990001, 0, 'promise', ?, 'I''ll send the signed slip and $12', 'Ms. Ortiz', 'ortiz@school.test', ?, ?, 1, 'open', 0, ?)`, thread, text, createdAt, dueAt, createdAt] as const;
+    [`INSERT INTO followups (thread_id, message_id, item, kind, text, quote, person_name, person_email, sent_at, due_at, dated, state, revision, created_at) VALUES (?, 990001, 0, 'promise', ?, 'I''ll send the signed slip and $12 for the bus', 'Ms. Ortiz', 'ortiz@school.test', ?, ?, 1, 'open', 0, ?)`, thread, text, createdAt, dueAt, createdAt] as const;
 
   it("an errand read as a bill and as your promise is one row, its canonical's; Done closes both at once and Undo brings both back; a stale revision changes neither", async () => {
     const { backend, client, model, receive, read, raw, clock } = await setup();

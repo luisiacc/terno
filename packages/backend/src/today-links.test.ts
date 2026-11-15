@@ -1,9 +1,13 @@
 /** Plan 210 (iteration 2, B7): which items are one thing, conservatively, and which is a detail of another. */
 import type { DatedKind, DatedRow, FollowupRow } from "@terno/core";
 import { describe, expect, it } from "vitest";
-import { findLinks, isDetailOf, sameErrand, sameEvent, samePromise, sameRequest } from "./today-links";
+import { findLinks, isDetailOf, sameErrand, sameEvent, samePromise, sameRequest, TodayLinks } from "./today-links";
+import type { MailStore } from "@terno/store";
 
 const T = Date.UTC(2026, 10, 20, 0, 30);
+/** every item not looked at yet; or only dated items past an id */
+const all = () => true;
+const after = (id: number) => (key: string) => !key.startsWith("dated:") || Number(key.slice(6)) > id;
 let n = 0;
 const dated = (kind: DatedKind, text: string, more: Partial<DatedRow> = {}): DatedRow =>
   ({ id: ++n, threadId: 1, messageId: n, item: 0, kind, text, quote: text, senderKey: "a@x.test", dueDay: "2026-11-20", dueAt: T, timed: true, dated: true, actAt: 0, deferredUntil: null, arrivedAt: 0, state: "open", closedReason: null, closedAt: null, fromScan: false, revision: 0, model: null, provider: null, createdAt: n, sameAs: null, detailOf: null, ...more }) as DatedRow;
@@ -24,13 +28,17 @@ describe("one thing, read twice", () => {
   });
 
   it("an errand: a bill or request and your promise in one conversation, by amount or object", () => {
-    expect(sameErrand(dated("pay", "Pay $12 for the bus"), promise("send the signed slip and $12"))).toBe(true);
+    expect(sameErrand(dated("pay", "Pay $12 for the bus"), promise("send the signed slip and $12", { quote: "I'll send the signed slip and $12 for the bus" }))).toBe(true);
+    // Codex code review: an amount alone isn't one errand
+    expect(sameErrand(dated("pay", "Pay $12 for the bus"), promise("send $12 for the museum"))).toBe(false);
+    // nor one request for November and one for December
+    expect(sameErrand(dated("respond", "Send the November payroll report"), promise("send the December payroll report"))).toBe(false);
     // what they asked for and what you promised name the same object (`sameObject`: one's naming words all the other's)
     expect(sameErrand(dated("respond", "Send the revised budget"), promise("send the budget"))).toBe(true);
     expect(sameErrand(dated("respond", "Sign the vendor contract"), promise("sign the employment contract"))).toBe(false);
     // a bill and a promise share no object by words alone: only by amount
     expect(sameErrand(dated("pay", "Pay the bus fee"), promise("pay the bus fee"))).toBe(false);
-    expect(sameErrand(dated("pay", "Pay $12 for the bus"), promise("send the signed slip and $12", { threadId: 2 }))).toBe(false);
+    expect(sameErrand(dated("pay", "Pay $12 for the bus"), promise("send the signed slip and $12 for the bus", { threadId: 2 }))).toBe(false);
     expect(sameErrand(dated("pay", "Pay $54.20 for electricity"), promise("send the slip and $12"))).toBe(false);
   });
 
@@ -40,6 +48,9 @@ describe("one thing, read twice", () => {
     expect(sameRequest(draft, dated("ask", "Answer Jess about the budget", { quote: "can you tell me the budget", threadId: 4 }))).toBe(false);
     expect(sameRequest(draft, dated("respond", "Send Jess your draft", { quote: "your draft by Saturday", threadId: 5 }))).toBe(false);
     expect(sameRequest(draft, dated("respond", "Send Jess your draft", { quote: "your draft by Saturday", threadId: 4, senderKey: "else@x.test" }))).toBe(false);
+    // Codex code review: a recurring request for another period is another request
+    const nov = dated("respond", "Send the November payroll report", { quote: "send the November payroll report", threadId: 6 });
+    expect(sameRequest(nov, dated("respond", "Send the December payroll report", { quote: "send the December payroll report", threadId: 6 }))).toBe(false);
   });
 
   it("a promise read as two from one sentence of yours, with an object in common; two things in one sentence stay two", () => {
@@ -64,27 +75,74 @@ describe("findLinks", () => {
   it("the newer joins the older's canonical, never forms a chain, and only what's new since the last look is matched", () => {
     const a = dated("event", "Dinner at Nopa", { threadId: 1 });
     const b = dated("event", "Dinner with Jess at Nopa", { threadId: 2 });
-    const links = findLinks([a, b], [], { dated: 0, promise: 0 });
+    const links = findLinks([a, b], [], all);
     expect(links.same).toEqual([{ item: { source: "dated", id: b.id }, sameAs: `dated:${a.id}` }]);
     // a third read of it joins the canonical, not its member
     const c = dated("event", "Nopa dinner, party of 4 at Nopa", { threadId: 3 });
-    expect(findLinks([a, { ...b, sameAs: `dated:${a.id}` }, c], [], { dated: b.id, promise: 0 }).same).toEqual([{ item: { source: "dated", id: c.id }, sameAs: `dated:${a.id}` }]);
+    expect(findLinks([a, { ...b, sameAs: `dated:${a.id}` }, c], [], after(b.id)).same).toEqual([{ item: { source: "dated", id: c.id }, sameAs: `dated:${a.id}` }]);
     // nothing new: nothing looked at
-    expect(findLinks([a, b], [], { dated: b.id, promise: 0 }).same).toEqual([]);
+    expect(findLinks([a, b], [], after(b.id)).same).toEqual([]);
   });
 
   it("a bill and a later promise: the promise joins the bill; a promise before the bill: the bill joins the promise", () => {
     const bill = dated("pay", "Pay $12 for the bus");
-    const mine = promise("send the slip and $12");
-    expect(findLinks([bill], [mine], { dated: 0, promise: 0 }).same).toEqual([{ item: { source: "promise", id: mine.id }, sameAs: `dated:${bill.id}` }]);
-    const early = promise("send the slip and $15");
+    const mine = promise("send the slip and $12 for the bus");
+    expect(findLinks([bill], [mine], all).same).toEqual([{ item: { source: "promise", id: mine.id }, sameAs: `dated:${bill.id}` }]);
+    const early = promise("send the slip and $15 for the museum");
     const later = dated("pay", "Pay $15 for the museum");
-    expect(findLinks([later], [early], { dated: 0, promise: 0 }).same).toEqual([{ item: { source: "dated", id: later.id }, sameAs: `promise:${early.id}` }]);
+    expect(findLinks([later], [early], all).same).toEqual([{ item: { source: "dated", id: later.id }, sameAs: `promise:${early.id}` }]);
   });
 
   it("a trip's return leg is linked as a detail", () => {
     const out = dated("event", "Flight to Austin", { messageId: 900, dueDay: "2026-11-20" });
     const back = dated("event", "Return flight", { messageId: 900, dueDay: "2026-11-24", dueAt: T + 4 * 86_400_000 });
-    expect(findLinks([out, back], [], { dated: 0, promise: 0 }).details).toEqual([{ id: back.id, detailOf: out.id }]);
+    expect(findLinks([out, back], [], all).details).toEqual([{ id: back.id, detailOf: out.id }]);
+  });
+});
+
+describe("plan 210 (iteration 2, Codex code review): what the matcher looks at, and when", () => {
+  it("a link found in the same pass is counted at once: what joins an item that just joined another joins its canonical, never a chain", () => {
+    // the request asked twice (the newer one first in the open set, as the store orders them) and your promise of it
+    const first = dated("respond", "Send the budget", { quote: "send the budget by Friday", threadId: 9, createdAt: 1 });
+    const again = dated("respond", "Send the budget", { quote: "the budget, by Saturday then", threadId: 9, createdAt: 2 });
+    const mine = promise("send the budget", { threadId: 9, createdAt: 3 });
+    const links = findLinks([again, first], [mine], all).same;
+    expect(links).toEqual([
+      { item: { source: "dated", id: again.id }, sameAs: `dated:${first.id}` },
+      { item: { source: "promise", id: mine.id }, sameAs: `dated:${first.id}` },
+    ]);
+  });
+
+  it("an item moved to another conversation (a merge of two) is looked at again; one looked at in its conversation isn't", async () => {
+    const written: unknown[] = [];
+    const store = { today: { link: async (l: unknown) => (written.push(l), 1) } } as unknown as MailStore;
+    const links = new TodayLinks();
+    const ask = dated("respond", "Send the budget", { threadId: 1, createdAt: 1 });
+    const mine = promise("send the budget", { threadId: 2, createdAt: 2 });
+    expect(await links.reconcile(store, [ask], [mine])).toBe(false);
+    expect(await links.reconcile(store, [ask], [mine])).toBe(false);
+    expect(written).toEqual([]);
+    // the two conversations merged: both now on conversation 1
+    expect(await links.reconcile(store, [ask], [{ ...mine, threadId: 1 }])).toBe(true);
+    expect(written).toEqual([{ same: [{ item: { source: "promise", id: mine.id }, sameAs: `dated:${ask.id}` }], details: [] }]);
+  });
+
+  it("an act resolving a row's members runs alone: a reconcile waits for it", async () => {
+    const order: string[] = [];
+    const store = { today: { link: async () => (order.push("link"), 1) } } as unknown as MailStore;
+    const links = new TodayLinks();
+    let release!: () => void;
+    const acting = links.exclusive(async () => {
+      order.push("act starts");
+      await new Promise<void>((r) => (release = r));
+      order.push("act writes");
+    });
+    const a = dated("event", "Dinner at Nopa", { threadId: 1, createdAt: 1 });
+    const b = dated("event", "Dinner with Jess at Nopa", { threadId: 2, createdAt: 2 });
+    const reconciling = links.reconcile(store, [a, b], []);
+    await Promise.resolve();
+    release();
+    await Promise.all([acting, reconciling]);
+    expect(order).toEqual(["act starts", "act writes", "link"]);
   });
 });

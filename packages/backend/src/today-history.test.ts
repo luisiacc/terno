@@ -89,4 +89,10 @@ describe("historyPage", () => {
     expect((await historyPage(store, ask({ after: top.items[0]!.key }))).items.map((i) => i.id)).toEqual(["dated:40"]);
     expect((await historyPage(store, ask({ limit: 1 }))).items.map((i) => i.id)).toEqual(["dated:20"]);
   });
+
+  it("Codex code review: a merged item's newest closing in Spam never hides the line: its newest closing that may show is", async () => {
+    const { store } = fakeStore([{ id: 50, threadId: 5, closedAt: NOW - 3 * MIN }, { id: 51, threadId: 6, closedAt: NOW - MIN, sameAs: "dated:50" }], [], new Set([6]));
+    const top = await historyPage(store, ask({}));
+    expect(top.items.map((i) => [i.id, i.item, i.thread.id])).toEqual([["dated:50", { source: "dated", id: 50 }, 5]]);
+  });
 });

@@ -1,5 +1,5 @@
 import { AiError, DATED_PROMPT_VERSION, DATED_SUBJECT_CHARS, DATED_TEXT_CHARS, costAt, datedBudget, fitDates, priceOf, type AiTasks, type DatedResult } from "@terno/ai";
-import { addressKey, needsPresence, saysNoReplyNeeded, DATED_ITEMS_MAX, DATED_KINDS, DATED_OPEN_SHOWN, followupDue, validFollowupDate, type FollowupRow, DATED_SCAN_DAYS, DATED_SCAN_MAX, datedOver, dayKeyOf, datedTiming, dayEnd, hasTimeCue, normalizeText, withoutQuotes, type AiErrorKind, type DatedKind, type DatedRow } from "@terno/core";
+import { addressKey, localDay, needsPresence, saysNoReplyNeeded, DATED_ITEMS_MAX, DATED_KINDS, DATED_OPEN_SHOWN, followupDue, validFollowupDate, type FollowupRow, DATED_SCAN_DAYS, DATED_SCAN_MAX, datedOver, dayKeyOf, datedTiming, dayEnd, hasTimeCue, normalizeText, withoutQuotes, type AiErrorKind, type DatedKind, type DatedRow } from "@terno/core";
 import { captureError } from "@terno/core/diag";
 import type { AppSettings } from "@terno/core/rpc";
 import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
@@ -7,7 +7,6 @@ import { readNothingAsked, type DatedMark, type DatedSource, type DatedWrite, ty
 import { DailyLimitError, MonthlyLimitError } from "./ai-limiter";
 import { UI_LOCALE_KEY } from "./forwarding";
 import { contextOf, namesApart, namesItem, norm, otherIds, paragraphsOf, plainEvidence, sameObject, sameThing, saysReplaced, saysWhen, sentencesOf, settlesKind } from "./dated-evidence";
-import { promiseMoment } from "./promise-time";
 import { untrustedSenders, withoutUntrusted } from "./suspicious-sender";
 
 /**
@@ -177,13 +176,23 @@ function shownEarly(kind: DatedKind, item: { text: string; quote: string }, said
 }
 
 /**
- * A promise's new day from its person's mail (the second panel round), at a time its words state (plan 210, iteration 2);
- * and, when that mail came after its day was over, the day it had (`brokenDueAt`: its row keeps saying "promised Tue").
+ * A promise's new day from its person's mail (the second panel round), and (plan 210, iteration 2) its time: the move's own
+ * (already in the reader's zone, as every move's), else, for a promise with a stated time, its clock as it was, on the new
+ * day (Codex code review: never its words' clock read again on a day already converted); and, when that mail came after its
+ * day was over, the day it had (`brokenDueAt`: its row keeps saying "promised Tue").
  */
-function movedPromise(p: { text?: string; dueAt?: number; dated?: boolean }, day: string, arrivedAt: number): { dueAt: number; timed: boolean; brokenDueAt: number | null } {
+function movedPromise(p: { dueAt?: number; dated?: boolean; timed?: boolean }, day: string, time: string | null, arrivedAt: number): { dueAt: number; timed: boolean; brokenDueAt: number | null } {
   const due = followupDue({ kind: "promise", sentAt: arrivedAt, due: day, nudgeAfterDays: 0 });
   const broken = p.dated && p.dueAt !== undefined && dayEnd(dayKeyOf(p.dueAt)) <= arrivedAt ? p.dueAt : null;
-  return { ...promiseMoment(p.text ?? "", day, due, arrivedAt), brokenDueAt: broken };
+  const was = p.timed && p.dueAt !== undefined ? new Date(p.dueAt) : null;
+  const clock = time ?? (was ? `${was.getHours()}:${String(was.getMinutes()).padStart(2, "0")}` : null);
+  const at = clock ? localDay(day) : null;
+  if (at && clock) {
+    const [h, m] = clock.split(":").map(Number) as [number, number];
+    at.setHours(h, m, 0, 0);
+    if (at.getTime() > arrivedAt) return { dueAt: at.getTime(), timed: true, brokenDueAt: broken };
+  }
+  return { dueAt: due.dueAt, timed: false, brokenDueAt: broken };
 }
 
 /**
@@ -194,7 +203,7 @@ function movedPromise(p: { text?: string; dueAt?: number; dated?: boolean }, day
  * day or, for a timed item, a new moment, and its new words only with the mail's own. Plan 210 (the Codex review of iteration
  * 1, revision 2): a settlement or a move rests on evidence tied to that item (`tiedTo`). Pure.
  */
-export function checkDates(result: { items: readonly (Omit<DatedResult["items"][number], "kind"> & { kind: string })[]; settled: DatedResult["settled"]; moved?: readonly Move[] }, input: { text: string; subject: string; arrivedAt: number; open: ReadonlyMap<string, DatedRow>; promises?: ReadonlyMap<string, Pick<FollowupRow, "id" | "revision"> & Partial<Pick<FollowupRow, "text" | "dueAt" | "dated">>>; fromScan: boolean; now: number; sender?: { person: boolean }; reader?: { name: string; addressed: "to" | "cc" | "none" }; others?: readonly string[]; threadId?: number; senderKey?: string; from?: string }): { rows: DatedWrite[]; settled: { id: number; revision: number }[]; moved: { id: number; dueDay: string; dueAt: number; timed: boolean; actAt: number; text?: string }[]; movedPromises: { id: number; revision: number; dueAt: number; timed: boolean; brokenDueAt: number | null }[]; asked: boolean } {
+export function checkDates(result: { items: readonly (Omit<DatedResult["items"][number], "kind"> & { kind: string })[]; settled: DatedResult["settled"]; moved?: readonly Move[] }, input: { text: string; subject: string; arrivedAt: number; open: ReadonlyMap<string, DatedRow>; promises?: ReadonlyMap<string, Pick<FollowupRow, "id" | "revision"> & Partial<Pick<FollowupRow, "text" | "dueAt" | "dated" | "timed">>>; fromScan: boolean; now: number; sender?: { person: boolean }; reader?: { name: string; addressed: "to" | "cc" | "none" }; others?: readonly string[]; threadId?: number; senderKey?: string; from?: string }): { rows: DatedWrite[]; settled: { id: number; revision: number }[]; moved: { id: number; dueDay: string; dueAt: number; timed: boolean; actAt: number; text?: string }[]; movedPromises: { id: number; revision: number; dueAt: number; timed: boolean; brokenDueAt: number | null }[]; asked: boolean } {
   const said = `${norm(input.subject)}\n${norm(input.text)}`;
   const quoted = (words: string) => {
     const w = norm(words);
@@ -286,7 +295,7 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
       if (!named.some((o) => o.id === p.id) || !namesApart(mine, named, context, input.from)) return [];
     }
     const day = validFollowupDate(m.due, input.arrivedAt);
-    return day ? [{ p, day, evidence: m.evidence }] : [];
+    return day ? [{ p, day, time: m.time ?? null, evidence: m.evidence }] : [];
   });
   /**
    * Plan 210 (prompt v11): a promise's move and a request for that same day, from one mail, can be one thing. The move, when
@@ -333,7 +342,7 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     if (rows.some((r) => itemKey(r.kind, r) === key && (!TWO_A_DAY.has(kind) || sameThing(r, item)))) continue;
     rows.push({ kind, item: rows.length, text: item.text.trim(), quote: item.quote.trim(), ...timing, ...(shownEarly(kind, item, said, input) ? { early: true } : {}) });
   }
-  const movedPromises = promiseMoves.filter((m) => !replaced.has(m)).map(({ p, day }) => ({ id: p.id, revision: p.revision, ...movedPromise(p, day, input.arrivedAt) }));
+  const movedPromises = promiseMoves.filter((m) => !replaced.has(m)).map(({ p, day, time }) => ({ id: p.id, revision: p.revision, ...movedPromise(p, day, time, input.arrivedAt) }));
   return { rows, settled, moved: moved.map(({ kind: _kind, ...m }) => m), movedPromises, asked };
 }
 

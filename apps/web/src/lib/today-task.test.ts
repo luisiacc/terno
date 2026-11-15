@@ -23,7 +23,7 @@ vi.mock("~/rpc/connection", () => ({
 }));
 
 const { actOnThreadItem, actOnThreadPromise, actOnTodayRow, doneOnSelected, laterFromPicker, laterOnSelected, removeOnSelected } = await import("./today-task");
-const { getApp, setApp } = await import("~/state/app");
+const { getApp, openedByApp, setApp } = await import("~/state/app");
 const { reloadList } = await import("~/state/list");
 const { feedRow, installToday, openFeedRow, useFeedRow, useToday } = await import("~/state/today");
 const { resetSnacks, runUndo, useSnack } = await import("~/lib/snack");
@@ -78,6 +78,8 @@ describe("Done means gone (plan 204, after the second panel round; plan 210, ite
     // the same frame: not held in place as a row that leaves on its own is
     expect(shown()).toEqual(["dated:10", "dated:50", "dated:30"]);
     expect([useFeedRow.getState().opened, getApp().selectedId]).toEqual(["dated:50", 2]);
+    // Codex code review: opened by the app, as Archive's next is, so it isn't read until chosen
+    expect(openedByApp(2)).toBe(true);
     await vi.waitFor(() => expect(useSnack.getState().current?.message).toBe("Done: Task 2"));
     await undo();
     expect(shown()).toEqual(["dated:10", "dated:20", "dated:50", "dated:30"]);
@@ -163,6 +165,17 @@ describe("Done means gone (plan 204, after the second panel round; plan 210, ite
     await undo();
     expect(shown()).toContain("promise:400");
     expect(useFeedRow.getState().opened).toBe("promise:400");
+  });
+
+  it("Codex code review of iteration 2: a promise merged into a row its card doesn't lead takes that row out too, with its Undo", async () => {
+    // the row is a bill (dated:20) with your promise 600 as its member
+    useToday.setState({ rows: useToday.getState().rows.map((r) => (r.id === "dated:20" ? { ...r, entry: { ...r.entry!, why: { ...r.entry!.why, members: [{ source: "dated", id: 20 }, { source: "promise", id: 600 }] } } } : r)) });
+    const row = { id: 600, threadId: 2, revision: 1, kind: "promise", text: "send the slip", dueAt: 2e12 } as unknown as FollowupRow;
+    await actOnThreadPromise(row, "done");
+    expect(shown()).toEqual(["dated:10", "dated:50", "dated:30"]);
+    await vi.waitFor(() => expect(useSnack.getState().undo).toBeTruthy());
+    await undo();
+    expect(shown()).toEqual(["dated:10", "dated:20", "dated:50", "dated:30"]);
   });
 
   it("the headings follow the rows that are left, before the list reloads (Codex code review)", async () => {

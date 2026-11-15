@@ -88,7 +88,7 @@ import { useAlwaysOffers } from "./review-actions";
 import { clearReminder, openRemind, presetLabel, presetWhen, reminderWhen, setReminder, useReminders } from "~/lib/reminders";
 import { reachesSeveral } from "~/lib/compose-fields";
 import { loadThread, useThreads } from "~/state/threads";
-import { useTodayTask } from "~/state/today";
+import { useToday, useTodayTask } from "~/state/today";
 import { laterChoices } from "~/lib/dated";
 import { actOnTodayRow, openTodayLater } from "~/lib/today-task";
 import { fitWholeRows } from "@terno/ui/lib/whole-rows";
@@ -233,6 +233,8 @@ export function ThreadMenu({ children }: { children: ReactElement }) {
     setOpen(next);
     setApp({ menuOpen: next });
     if (!next) setRule("menu-target", null);
+    // plan 210 (iteration 2, Codex code review): the row it was opened on means nothing once it has gone
+    if (!next) useToday.setState({ menuRow: null });
   };
   // plan 160: a resize or a scroll moves the row out from under the menu: it goes rather than stay where the row was
   useEffect(() => {
@@ -433,7 +435,7 @@ function RemindSub({ ids, disabled }: { ids: number[]; disabled: boolean }) {
  */
 function TaskItems({ threadId }: { threadId: number }) {
   // plan 210 (iteration 2): the row right-clicked (or open) of this conversation: its own task, never a sibling's
-  const row = useTodayTask(threadId);
+  const row = useTodayTask(threadId, "menu");
   if (!row) return null;
   const { rowId, task } = row;
   const now = Date.now();
@@ -759,7 +761,7 @@ function MenuItems() {
   const code = single ? threadCode(single, Date.now()) : null;
   const replyAllOffered = useReplyAllOffered(single?.id);
   // plan 204 (after the panel): a Today task's Later replaces Remind me
-  const task = useTodayTask(single?.id);
+  const task = useTodayTask(single?.id, "menu");
 
   // what the view offers, sorted by where it goes; the way back leads only where it replaces Archive
   const placed: MenuEntry[] = searchPlaces ? searchPlaceItems(searchPlaces, (a) => run(a)) : placeItems(view, run);

@@ -2,6 +2,7 @@ import { dayEnd, dayKeyOf, followupDaysSince, mostUrgent, type FollowupRow } fro
 import type { FollowupsSnapshot } from "@terno/core";
 import { t } from "@terno/i18n";
 import { followupsOffered } from "~/lib/ai";
+import type { LeftRows } from "~/lib/actions";
 import { promiseWhen, taskSaid } from "~/lib/dated";
 import { onExplicitOpen } from "~/lib/open-dwell";
 import { registerUndo, snack } from "~/lib/snack";
@@ -76,14 +77,17 @@ export function rowLine(rows: readonly FollowupRow[] | undefined, now = Date.now
  * Done, Dismiss and Later, each with Undo that puts the exact row back. A promise's snack names it as Today's do ("Done:
  * send the contract", the fourth panel round); a nudge's keeps its own words.
  */
-export async function actOnFollowup(row: FollowupRow, action: "done" | "dismiss" | "later", dueAt?: number): Promise<void> {
+export async function actOnFollowup(row: FollowupRow, action: "done" | "dismiss" | "later", dueAt?: number, left?: LeftRows): Promise<void> {
   const text = row.kind === "promise" ? row.text : null;
   try {
     const { undoId } = await client.call("followups.act", { id: row.id, revision: row.revision, action, ...(dueAt !== undefined ? { dueAt } : {}) });
-    const undo = undoId === null ? null : registerUndo(() => client.call("followups.undo", { undoId }).then(() => undefined));
+    // plan 210 (iteration 2): What matters' rows it took out come back with its Undo
+    const run = () => client.call("followups.undo", { undoId: undoId! }).then(() => undefined);
+    const undo = undoId === null ? null : registerUndo(() => (left ? left.undo(run) : run()));
     const said = text !== null ? taskSaid(action, text) : action === "done" ? t("followup.snack.done") : action === "dismiss" ? t("followup.snack.dismissed") : t("followup.snack.later", { date: reminderDated(dueAt ?? row.dueAt) });
     snack.success(said, undo ? { action: { label: t("common.undo"), name: t("followup.undo"), undo } } : {});
   } catch (error) {
+    left?.failed();
     const e = error as { message?: string };
     snack.error(e.message ?? t("followup.actFailed"));
   }
