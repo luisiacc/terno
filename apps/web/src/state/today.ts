@@ -291,8 +291,10 @@ export function installToday(): void {
   useApp.subscribe((s, prev) => {
     if (s.selectedId === prev.selectedId) return;
     const { opened } = useFeedRow.getState();
-    if (s.selectedId === null || s.selectedId === DIGEST_ROW_ID) {
-      if (opened !== null && !(s.selectedId === DIGEST_ROW_ID && opened === DIGEST_FEED_ROW)) useFeedRow.setState({ opened: s.selectedId === DIGEST_ROW_ID ? DIGEST_FEED_ROW : null });
+    // the digest's page (however it came back: Esc from a newsletter it opened too) is the digest's row
+    const want = s.selectedId === null ? null : s.selectedId === DIGEST_ROW_ID ? DIGEST_FEED_ROW : undefined;
+    if (want !== undefined) {
+      if (opened !== want) useFeedRow.setState({ opened: want });
       return;
     }
     if (feedRow(opened)?.threadId === s.selectedId) return;
