@@ -226,10 +226,6 @@ export function closedDatedPage(c: Ctx, o: { since: number; after: ClosedAt | nu
   return c.closedOrders.dated.page(T(c, "dated_items"), o).map(toRow);
 }
 
-/** Plan 210: each thread's newest closing since `since`, one look each in the order (never a thread's every row). */
-export function newestClosedDated(c: Ctx, threadIds: readonly number[], since: number): Map<number, ClosedAt> {
-  return c.closedOrders.dated.newest(T(c, "dated_items"), threadIds, since);
-}
 
 export const threadDated = (c: Ctx, threadId: number): DatedRow[] => T(c, "dated_items").by("fk_thread_id", threadId).filter((r) => r.state === "open").sort(byAct).map(toRow);
 export function getDated(c: Ctx, id: number): DatedRow | null {

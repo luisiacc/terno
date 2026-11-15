@@ -233,21 +233,6 @@ export function closedDatedPage(db: Db, o: { since: number; after: ClosedAt | nu
     .map(toRow);
 }
 
-/** Plan 210: each thread's newest closing since `since`: one seek of `dated_closed_thread` each (never a thread's every row). */
-export function newestClosedDated(db: Db, threadIds: readonly number[], since: number): Map<number, ClosedAt> {
-  return newestEach(db, "SELECT closed_at AS at, id FROM dated_items INDEXED BY dated_closed_thread WHERE thread_id = ? AND state <> 'open' AND closed_at >= ? ORDER BY closed_at DESC, id DESC LIMIT 1", threadIds, since);
-}
-
-/** A newest-closing query, one row a thread. */
-export function newestEach(db: Db, sql: string, threadIds: readonly number[], since: number): Map<number, ClosedAt> {
-  const out = new Map<number, ClosedAt>();
-  for (const id of new Set(threadIds)) {
-    const top = db.get<ClosedAt>(sql, id, since);
-    if (top) out.set(id, top);
-  }
-  return out;
-}
-
 export function getDated(db: Db, id: number): DatedRow | null {
   const r = db.get<Raw>("SELECT * FROM dated_items WHERE id = ?", id);
   return r ? toRow(r) : null;

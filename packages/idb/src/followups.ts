@@ -175,10 +175,6 @@ export function closedFollowupPage(c: Ctx, o: { since: number; after: ClosedAt |
   return c.closedOrders.followups.page(T(c, "followups"), o).map(toRow);
 }
 
-export function newestClosedFollowup(c: Ctx, threadIds: readonly number[], since: number): Map<number, ClosedAt> {
-  return c.closedOrders.followups.newest(T(c, "followups"), threadIds, since);
-}
-
 export const threadFollowups = (c: Ctx, threadId: number): FollowupRow[] => T(c, "followups").by("fk_thread_id", threadId).filter(live).sort(byDue).map(toRow);
 export function getFollowup(c: Ctx, id: number): FollowupRow | null {
   const r = T(c, "followups").get(id);
