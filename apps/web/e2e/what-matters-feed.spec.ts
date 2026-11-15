@@ -471,6 +471,34 @@ test("plan 210 (iteration 1): inside a day, tasks before plans; a conversation w
     await expect(openLine(page, "Pay the deposit")).toBeVisible();
   });
 
+  await scenario("the second line (who, and the conversation's next item) ends before Done and Later, never under them: wide, beside the open email, in Spanish", async () => {
+    const clear = async () => {
+      const deposit = openLine(page, "Pay the deposit");
+      // where its words end: the content box (an ellipsis ends it there)
+      const meta = await deposit.getByTestId("wm-meta").evaluate((el) => el.getBoundingClientRect().right - parseFloat(getComputedStyle(el).paddingRight));
+      const controls = (await deposit.getByTestId("wm-done").boundingBox())!;
+      expect(meta).toBeLessThanOrEqual(controls.x);
+    };
+    for (const language of ["en", "es"] as const) {
+      await server.backend.server.invoke("settings.update", { language }, dev);
+      await fresh(page);
+      await page.getByTestId("nav-today").click();
+      await expect(page.getByTestId("list-title")).toHaveText(language === "en" ? "What matters" : "Lo importante");
+      await reach(page, "Pay the deposit");
+      await openLine(page, "Pay the deposit").hover();
+      await clear();
+      await openLine(page, "Pay the deposit").getByTestId("wm-item-open").click();
+      await expect(page.getByTestId("reader")).toBeVisible();
+      await clear();
+      await page.keyboard.press("Escape");
+      await page.mouse.move(0, 0);
+    }
+    await server.backend.server.invoke("settings.update", { language: "en" }, dev);
+    await fresh(page);
+    await page.getByTestId("nav-today").click();
+    await expect(page.getByTestId("list-title")).toHaveText("What matters");
+  });
+
   await scenario("Done's and Later's tooltips say their keys", async () => {
     await reach(page, "Wire payroll");
     const it = openLine(page, "Wire payroll");

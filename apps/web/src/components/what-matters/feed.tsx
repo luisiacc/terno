@@ -1,10 +1,10 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { DIGEST_ROW_ID, localDay, type ThreadSummary } from "@terno/core";
-import { t } from "@terno/i18n";
+import { getLocale, t } from "@terno/i18n";
 import { Skeleton } from "@terno/ui/components/skeleton";
 import { Sun } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
-import { memo, useEffect, useId, useMemo, useRef } from "react";
+import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef } from "react";
 import type { TodayTask } from "~/lib/dated";
 import { useDesign } from "~/lib/design";
 import { listDate } from "~/lib/format";
@@ -157,6 +157,15 @@ export function WhatMattersFeed() {
     };
   }, [virtualizer]);
 
+  // plan 210 (iteration 1, Codex's critique point 10): Done and Later sit over the second line's end, and their width is
+  // the language's and the design's ("Hecho", "Más tarde"): the line ends before them by what they measure, never under them
+  const sectionRef = useRef<HTMLElement>(null);
+  const locale = getLocale();
+  useLayoutEffect(() => {
+    const controls = sectionRef.current?.querySelector<HTMLElement>("[data-testid=wm-controls]");
+    if (controls?.offsetWidth) sectionRef.current!.style.setProperty("--wm-controls", `${controls.offsetWidth}px`);
+  }, [rows, design, locale]);
+
   // leaving What matters, the place it was left at goes with it
   useEffect(() => () => useFeedCursor.setState({ id: null }), []);
 
@@ -173,7 +182,7 @@ export function WhatMattersFeed() {
     if (last !== undefined && last >= rows.length - 15) void loadMore();
   }, [last, rows.length]);
   return (
-    <section className="relative flex h-full min-h-0 flex-col bg-pane" data-testid="wm-feed">
+    <section ref={sectionRef} className="relative flex h-full min-h-0 flex-col bg-pane" data-testid="wm-feed">
       <header ref={headerRef} className="drag-region scroll-hairline shrink-0 pb-2">
         <div className={cn(COLUMN, "pl-8")}>
           <div className="flex h-(--pane-bar) items-center">
@@ -264,6 +273,14 @@ function OpenItem({ id, thread, group, open, cursor }: { id: number; thread: Thr
   return <Item id={id} sentence={sentence} meta={task?.also ? `${who} · ${task.also}` : who} when={when.text} tone={when.tone} task={task} open={open} cursor={cursor} later={ahead} />;
 }
 
+/**
+ * While Done and Later show (hover, focus, the open item, a menu of theirs open), the second line ends before them: they are
+ * `--wm-controls` wide (measured) from 0.5rem in, and the line's end is 0.75rem in (the item's padding), or past the when
+ * column (at least 5rem) and its 1rem gap; a wider column only leaves more room. Never under them (plan 210, iteration 1).
+ */
+const ROOM_BESIDE_WHEN = "group-hover/item:pr-[max(0px,calc(var(--wm-controls,7.5rem)-6rem))] group-has-focus-reveal/item:pr-[max(0px,calc(var(--wm-controls,7.5rem)-6rem))] group-data-open/item:pr-[max(0px,calc(var(--wm-controls,7.5rem)-6rem))]";
+const ROOM = "group-hover/item:pr-(--wm-controls,7.5rem) group-has-focus-reveal/item:pr-(--wm-controls,7.5rem) group-data-open/item:pr-(--wm-controls,7.5rem)";
+
 interface ItemProps {
   id: number;
   sentence: string;
@@ -285,6 +302,10 @@ interface ItemProps {
 }
 
 /**
+ * Plan 210 (iteration 1, Codex's critique point 10): the quiet words (who, "since Wed", a day ahead's column, Coming up's
+ * sentences) are the row's preview ink, a step stronger than the muted one and held to AA on every fill a row has (rest,
+ * hover, the cursor: CONTRAST_PAIRS' row-preview); on the open item, the selection's ink. The history alone stays muted.
+ *
  * After the UI panel: what's Missed or due today reads stronger than what's days away (the ink and a medium weight), and
  * its day in the right column is the accent at rest; days away, the day is quiet. No red: weight and one accent. On the
  * open item every word is the selection's ink (the pairs CONTRAST_PAIRS holds); under the pointer, the accent gives way
@@ -294,8 +315,8 @@ const SENTENCE_INK: Record<TodayTone, string> = { missed: "font-medium text-fore
 const WHEN_INK: Record<TodayTone, string> = {
   missed: "font-medium text-foreground",
   today: "font-medium text-primary group-[:hover:not([data-open])]/item:text-foreground group-data-cursor/item:text-foreground",
-  later: "text-muted-foreground",
-  none: "text-muted-foreground",
+  later: "text-row-preview",
+  none: "text-row-preview",
 };
 
 /**
@@ -310,17 +331,17 @@ function Item({ id, sentence, meta, when, tone, task, open, cursor = false, late
     <div data-thread-id={menuId(id)} data-item-id={id} data-testid="wm-item" data-open={open || undefined} data-cursor={cursor || undefined} data-history={past || undefined} data-digest={digest || undefined} data-ahead={(later && !past) || undefined} data-tone={tone} className="group/item relative rounded-lg not-data-open:hover:bg-row-hover data-cursor:bg-row-hover data-open:bg-row-selected">
       <button type="button" data-testid="wm-item-open" title={`${sentence}\n${meta}`} aria-expanded={open} onClick={() => openItem(id)} className="flex w-full min-w-0 items-start gap-4 rounded-lg px-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring">
         <span className="min-w-0 flex-1">
-          <span id={textId} data-testid="wm-sentence" className={cn("line-clamp-2 text-base text-pretty group-data-open/item:text-row-selected-foreground", later ? "text-muted-foreground" : SENTENCE_INK[tone])}>
+          <span id={textId} data-testid="wm-sentence" className={cn("line-clamp-2 text-base text-pretty group-data-open/item:text-row-selected-foreground", later ? (past ? "text-muted-foreground" : "text-row-preview") : SENTENCE_INK[tone])}>
             {sentence}
           </span>
           {/* while Done and Later show over its end, it ends (in an ellipsis) before them: a little before, beside the right
               column (at least 5rem, so they reach no further into it), else their width */}
-          <span data-testid="wm-meta" className={cn("mt-0.5 block truncate text-sm text-muted-foreground", task && (when ? "group-hover/item:pr-6 group-has-[:focus-visible]/item:pr-6 group-data-open/item:pr-6" : "group-hover/item:pr-28 group-has-[:focus-visible]/item:pr-28 group-data-open/item:pr-28"))}>
+          <span data-testid="wm-meta" className={cn("mt-0.5 block truncate text-sm group-data-open/item:text-row-selected-foreground", past ? "text-muted-foreground" : "text-row-preview", task && (when ? ROOM_BESIDE_WHEN : ROOM))}>
             {meta}
           </span>
         </span>
         {when && (
-          <span data-testid="wm-when" className={cn("min-w-20 shrink-0 pt-px text-right text-sm whitespace-nowrap tabular group-data-open/item:text-row-selected-foreground", WHEN_INK[tone])}>
+          <span data-testid="wm-when" className={cn("min-w-20 shrink-0 pt-px text-right text-sm whitespace-nowrap tabular group-data-open/item:text-row-selected-foreground", past ? "text-muted-foreground" : WHEN_INK[tone])}>
             {when}
           </span>
         )}
@@ -328,7 +349,7 @@ function Item({ id, sentence, meta, when, tone, task, open, cursor = false, late
       {task && (
         <div
           data-testid="wm-controls"
-          className="pointer-events-none absolute right-2 bottom-1.5 flex items-center gap-1 rounded-md bg-pane pl-2 opacity-0 transition-opacity duration-fast group-hover/item:pointer-events-auto group-[:hover:not([data-open])]/item:bg-row-hover group-hover/item:opacity-100 group-data-open/item:pointer-events-auto group-data-open/item:bg-row-selected group-data-open/item:opacity-100 has-[:focus-visible]:pointer-events-auto has-[:focus-visible]:opacity-100 has-[[aria-expanded=true]]:pointer-events-auto has-[[aria-expanded=true]]:opacity-100"
+          className="pointer-events-none absolute right-2 bottom-1.5 flex items-center gap-1 rounded-md bg-pane pl-2 opacity-0 transition-opacity duration-fast group-hover/item:pointer-events-auto group-[:hover:not([data-open])]/item:bg-row-hover group-hover/item:opacity-100 group-data-open/item:pointer-events-auto group-data-open/item:bg-row-selected group-data-open/item:opacity-100 has-focus-reveal:pointer-events-auto has-focus-reveal:opacity-100 has-[[aria-expanded=true]]:pointer-events-auto has-[[aria-expanded=true]]:opacity-100"
         >
           <BriefTaskControls threadId={id} task={task} describedBy={textId} />
         </div>
