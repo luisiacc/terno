@@ -2638,6 +2638,10 @@ It contains none of your mail, contacts, settings or keys.
   "whatMatters.history.settled": "Settled {day}",
   "whatMatters.history.over": "Over {day}",
   "whatMatters.to": "To {name}",
+  "whatMatters.privacy.cloud": "Terno sends each new message’s text to {destination} to find these; nothing else leaves your Mac for them.",
+  "whatMatters.privacy.cloudSettings": "To find bills, trips and requests, Terno sends each new message’s text to {destination}; nothing else leaves your Mac for them.",
+  "whatMatters.privacy.local": "Terno reads each new message’s text with {name} on this Mac to find these; nothing leaves your Mac.",
+  "whatMatters.privacy.localSettings": "To find bills, trips and requests, Terno reads each new message’s text with {name} on this Mac; nothing leaves it.",
   "whatMatters.automatedLine": "Newsletters and notifications",
   // plan 210 (the owner): what has no date sits in Today, its column saying when it came, so it isn't read as due today
   "whatMatters.since": "since {day}",
@@ -2653,6 +2657,7 @@ It contains none of your mail, contacts, settings or keys.
   "today.dated.dismiss": "Don’t offer bills, trips and requests again",
   "today.dated.scan": { one: "Check the last 14 days too? # message.", other: "Check the last 14 days too? # messages." },
   "today.dated.scanCost": { one: "Check the last 14 days too? # message, about {usd}.", other: "Check the last 14 days too? # messages, about {usd}." },
+  "today.dated.scanTiny": { one: "Check the last 14 days too? # message, less than a cent.", other: "Check the last 14 days too? # messages, less than a cent." },
   "today.dated.check": "Check",
   "today.dated.notNow": "Not now",
   "today.countHelp": { one: "# needs you: something due today or soon, something you missed, or someone waiting for your answer", other: "# need you: what's due today or soon, what you missed, and people waiting for your answer" },

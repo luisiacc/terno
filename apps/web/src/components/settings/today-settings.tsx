@@ -3,7 +3,7 @@ import { getLocale, localeTag, t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { Switch } from "@terno/ui/components/switch";
 import { Time, TimeField } from "@terno/ui/components/time-field";
-import { aiAllowed } from "~/lib/ai";
+import { aiAllowed, datedReaderLine } from "~/lib/ai";
 import { useApp } from "~/state/app";
 import { openSettingsTab, SettingsGroup, SettingsRow, type SettingsUpdate } from "./parts";
 
@@ -13,8 +13,10 @@ export default function TodaySettings({ settings, update }: { settings: AppSetti
   // a local build with Dev mode's Pro AI off: the rows save, but Today stays out of the sidebar, so say why
   const proOff = !useApp(aiAllowed);
   const [h = 8, m = 0] = (today?.prepareAt ?? "08:00").split(":").map(Number);
+  // plan 210 (iteration 1): who reads the mail for it, by where the dated reader's job goes
+  const reader = datedReaderLine(settings.ai, "settings");
   return (
-    <SettingsGroup title={t("today.title")} testId="today-settings">
+    <SettingsGroup title={t("today.title")} testId="today-settings" footer={reader && <span data-testid="today-privacy">{reader}</span>}>
       {proOff && (
         <SettingsRow find={false} label={t("today.settings.pro")} hint={t("today.settings.proHint")} testId="today-pro-note">
           {() => (

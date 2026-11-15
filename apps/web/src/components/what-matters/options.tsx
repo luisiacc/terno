@@ -5,6 +5,7 @@ import { Switch } from "@terno/ui/components/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { Settings2 } from "@terno/ui/icons";
 import { useId, useState } from "react";
+import { datedReaderLine } from "~/lib/ai";
 import { reconcileSettings } from "~/lib/appearance";
 import { snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
@@ -27,6 +28,8 @@ async function saveFinished(finished: boolean): Promise<void> {
 export function WhatMattersOptions() {
   const [open, setOpen] = useState(false);
   const finished = useApp((s) => s.settings?.today?.finished !== false);
+  // plan 210 (iteration 1): who reads the mail for it, where its options are
+  const reader = useApp((s) => datedReaderLine(s.settings?.ai, "settings"));
   const labelId = useId();
   const hintId = useId();
   const more = () => {
@@ -70,6 +73,11 @@ export function WhatMattersOptions() {
           </div>
           <Switch aria-labelledby={labelId} aria-describedby={hintId} checked={finished} data-testid="wm-options-finished" onCheckedChange={(on) => void saveFinished(on)} />
         </div>
+        {reader && (
+          <p data-testid="wm-options-privacy" className="text-xs text-muted-foreground">
+            {reader}
+          </p>
+        )}
         <Button variant="link" size="xs" className="self-start" data-testid="wm-options-more" onClick={more}>
           {t("whatMatters.moreSettings")}
         </Button>

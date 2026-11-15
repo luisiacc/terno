@@ -17,7 +17,7 @@ const errors: string[] = [];
 const said: { text: string; undo: boolean }[] = [];
 vi.mock("~/lib/snack", () => ({ registerUndo: (f: () => void) => f, snack: { success: (text: string, o: { action?: unknown }) => said.push({ text, undo: !!o.action }), error: (m: string) => errors.push(m) } }));
 
-const { actOnTask, answerScan, laterChoices, laterNote, laterStart, laterWindow, taskSaid } = await import("./dated");
+const { actOnTask, answerScan, laterChoices, laterNote, laterStart, laterWindow, scanOfferText, taskSaid } = await import("./dated");
 
 beforeEach(() => {
   calls.length = 0;
@@ -67,6 +67,15 @@ describe("a Today row's task (plan 204, after the panel)", () => {
     // one word with no space near the end is cut where it must be
     expect(taskSaid("dismiss", "x".repeat(80))).toBe(`Removed from What matters: ${"x".repeat(59)}…`);
     expect(taskSaid("later", "  ")).toBe("Moved to later");
+  });
+
+  it("plan 210 (iteration 1): the 14-day check says \"less than a cent\" only for a positive estimate under one; free, unknown and larger costs as they were", () => {
+    expect(scanOfferText({ count: 23, usd: 0.004 })).toBe("Check the last 14 days too? 23 messages, less than a cent.");
+    expect(scanOfferText({ count: 1, usd: 0.0099 })).toBe("Check the last 14 days too? 1 message, less than a cent.");
+    expect(scanOfferText({ count: 23, usd: 0.02 })).toBe("Check the last 14 days too? 23 messages, about $0.02.");
+    expect(scanOfferText({ count: 23, usd: 0.01 })).toMatch(/about \$0\.01/);
+    expect(scanOfferText({ count: 23, usd: 0 })).toBe("Check the last 14 days too? 23 messages.");
+    expect(scanOfferText({ count: 23, usd: null })).toBe("Check the last 14 days too? 23 messages.");
   });
 
   it("Later's choices: every preset that applies now; on a Plan, only those before it ends", () => {

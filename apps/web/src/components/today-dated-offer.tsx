@@ -5,6 +5,7 @@ import { Button } from "@terno/ui/components/button";
 import { CloseButton } from "@terno/ui/components/close-button";
 import { cn } from "@terno/ui/lib/utils";
 import { reconcileSettings } from "~/lib/appearance";
+import { datedReaderLine } from "~/lib/ai";
 import { scanOfferText, useDatedScanOffer } from "~/lib/dated";
 import { focusQuietly } from "~/lib/quiet-focus";
 import { snack } from "~/lib/snack";
@@ -33,6 +34,8 @@ function handBack(): void {
 export function TodayDatedOffer({ className }: { className?: string }) {
   const dated = useApp((s) => s.settings?.dated);
   const can = useApp((s) => aiCanRun("dated", s.settings?.ai));
+  // plan 210 (iteration 1): turning it on says who will read the mail, by where the dated reader's job goes
+  const reader = useApp((s) => datedReaderLine(s.settings?.ai, "offer"));
   const scan = useDatedScanOffer(can && dated?.enabled === true && !dated.scanAnswered, (patch) => saveDated(patch));
   if (!dated || !can) return null;
   const line = cn("type-list-subtitle mt-1 flex min-w-0 flex-wrap items-center gap-x-2 text-muted-foreground", className);
@@ -41,6 +44,7 @@ export function TodayDatedOffer({ className }: { className?: string }) {
     return (
       <p data-testid="today-dated-offer" className={line}>
         <span>{t("today.dated.offer")}</span>
+        {reader && <span data-testid="today-dated-privacy">{reader}</span>}
         <span className="inline-flex items-center gap-x-2">
           <Button variant="link" data-testid="today-dated-on" onClick={() => void saveDated({ enabled: true }).then(handBack)}>{t("today.dated.turnOn")}</Button>
           <CloseButton label={t("today.dated.dismiss")} data-testid="today-dated-dismiss" onClick={() => void saveDated({ offerDismissed: true }).then(handBack)} />
