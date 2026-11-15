@@ -628,3 +628,20 @@ On round 7's head (an undated alert never Missed, Plans three days ahead, delive
 2. **Prompt v10:** a time is in the reader's zone (the prompt says the reader's zone; one the mail states in another zone is converted, and the text keeps the mail's: "Call Marcus (4:00 PM PT)"); an event listed in a newsletter or a list's announcements is never the source of an item, even when it names the reader (their own logistics mail is); and follow-ups' prompt v10: a team's plan ("our plan is to email him the draft") isn't a promise of the reader's unless they commit to it themselves ("I'll…").
 
 Not this round: wrapping a row's task line (the briefing layout the owner chose wraps it); a "this is a scam" action; delegating.
+
+### Revisions after the Codex review of the seventh round's changes
+
+Codex (read-only, `/tmp/terno-scratch/p204/critique-8.out`) raised 12 points; taken as follows.
+
+1. **A conversation's row is chosen after the new groups:** every eligible dated item and promise is ranked by its group (Missed, Today, Needs you, Soon, Coming up) and its order there, and the winner's exact id and revision is the row's; an ask's row takes your promise there only if that promise is in the same or an earlier group.
+2. **One counted rule, shared:** a row counts when its group is Missed, Today, Needs you or Soon and its own item isn't an event or a delivery (`todayCounted(group, kind)` in core, used by `withCount`, `notify` and the header); the counted and uncounted thread ids go through both stores' `countWith`; a Plan whose `also` is a task doesn't count (its row doesn't).
+3. **Promises stay untimed** (their moment is the day's; a time stays in their words): ordered among the day's untimed items. Structured promise times are a later plan's.
+4. **Time zones have an input contract:** the prompt gets the reader's IANA zone beside `receivedAt`, and `due` and `time` are in that zone (a conversion can change the day); the text keeps the mail's zone only when it differs. Tested across DST and midnight; v10 is for mail read from now on.
+5. **"Soon", not "This week":** the group after Needs you holds what's due after today within its lead (a week for bills, requests and promises, 30 days for expiring documents, three days for plans), so it isn't a calendar week.
+6. **Lifecycle first, then the group:** `datedPlace()`/`promisePlace()` keep deciding eligibility, expiry and deferral; the visible group is assigned after, from the item's own day (an ask's arrival day and an undated alert's synthetic day never make it "Today": an ask is Needs you's, an undated alert is Today's while it shows). `nextTodayChange()` and `conversationItem()` follow. Done/Later → regroup → Undo in both stores, with a move between.
+7. **An ask never asks for credentials or ID:** `checkDates` drops an ask whose words ask to send a password, a code, an account or card number, or an ID (en, es), beside the existing checks.
+8. **Listings, not list mail:** prompt v10 says an event listed in a newsletter's or announcement list's calendar isn't an item even when it names the reader; a list's mail about the reader's own arrangement (a team's game moved) still moves or settles it. Both in the eval with competing open items.
+9. **Follow-ups v10 replaces the "we'll look into it" paragraph, not adds a rule:** a sender undertaking something for the team ("we'll send it Friday", "de nuestra parte enviamos…") is a promise; reporting someone's or a team's plan ("our plan is to email him the draft", "Legal will prepare it") isn't. Matched en/es cases.
+10. **A send still answers requests as before** (any trusted send settles earlier asks and requests); not changed this round, recorded as a known limit.
+11. **v10 is prospective;** the groups are read-time, no migration.
+12. **The whole presentation changes together:** `TodaySection`, `TODAY_GROUP_ORDER`, the list's accessible section names, `flattenToday()`, en and es (and `today.countHelp`, which still mentions nudges); `datedWhen()`'s wording stays the item's own; the perf gate gains mixed-kind conversations at 50k threads and 1,000 items, the count keeping its cheap path.
