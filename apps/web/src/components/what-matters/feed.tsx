@@ -14,6 +14,7 @@ import { installScrollHairline } from "~/lib/scroll-hairline";
 import { pressRow, releaseRow } from "~/lib/select";
 import { historySentence, historyWhen, todaySentence, todayWhen, type TodayTone } from "~/lib/today-sentence";
 import { useFeedCursor } from "~/lib/feed-focus";
+import { measureControls } from "~/lib/feed-controls";
 import { closeFeedConversation } from "~/lib/feed-pane";
 import { getApp, useApp } from "~/state/app";
 import { listAnchor, loadMore, useList } from "~/state/list";
@@ -157,14 +158,11 @@ export function WhatMattersFeed() {
     };
   }, [virtualizer]);
 
-  // plan 210 (iteration 1, Codex's critique point 10): Done and Later sit over the second line's end, and their width is
-  // the language's and the design's ("Hecho", "Más tarde"): the line ends before them by what they measure, never under them
+  // plan 210 (iteration 1, Codex's critique point 10): Done and Later's width, the language's and the design's, so the
+  // second line ends before them (`measureControls`: by the first drawn, and again when either changes)
   const sectionRef = useRef<HTMLElement>(null);
-  const locale = getLocale();
-  useLayoutEffect(() => {
-    const controls = sectionRef.current?.querySelector<HTMLElement>("[data-testid=wm-controls]");
-    if (controls?.offsetWidth) sectionRef.current!.style.setProperty("--wm-controls", `${controls.offsetWidth}px`);
-  }, [rows, design, locale]);
+  const controlsKey = `${getLocale()}|${design.id}`;
+  useLayoutEffect(() => measureControls(sectionRef.current?.querySelector<HTMLElement>("[data-testid=wm-controls]") ?? null, true), [controlsKey]);
 
   // leaving What matters, the place it was left at goes with it
   useEffect(() => () => useFeedCursor.setState({ id: null }), []);
@@ -182,7 +180,7 @@ export function WhatMattersFeed() {
     if (last !== undefined && last >= rows.length - 15) void loadMore();
   }, [last, rows.length]);
   return (
-    <section ref={sectionRef} className="relative flex h-full min-h-0 flex-col bg-pane" data-testid="wm-feed">
+    <section ref={sectionRef} className="relative flex h-full min-h-0 flex-col bg-pane" data-testid="wm-feed" data-controls-key={controlsKey}>
       <header ref={headerRef} className="drag-region scroll-hairline shrink-0 pb-2">
         <div className={cn(COLUMN, "pl-8")}>
           <div className="flex h-(--pane-bar) items-center">
@@ -274,12 +272,13 @@ function OpenItem({ id, thread, group, open, cursor }: { id: number; thread: Thr
 }
 
 /**
- * While Done and Later show (hover, focus, the open item, a menu of theirs open), the second line ends before them: they are
+ * While Done and Later show (hover, focus, the open item, their Later menu open), the second line ends before them: they are
  * `--wm-controls` wide (measured) from 0.5rem in, and the line's end is 0.75rem in (the item's padding), or past the when
  * column (at least 5rem) and its 1rem gap; a wider column only leaves more room. Never under them (plan 210, iteration 1).
  */
-const ROOM_BESIDE_WHEN = "group-hover/item:pr-[max(0px,calc(var(--wm-controls,7.5rem)-6rem))] group-has-focus-reveal/item:pr-[max(0px,calc(var(--wm-controls,7.5rem)-6rem))] group-data-open/item:pr-[max(0px,calc(var(--wm-controls,7.5rem)-6rem))]";
-const ROOM = "group-hover/item:pr-(--wm-controls,7.5rem) group-has-focus-reveal/item:pr-(--wm-controls,7.5rem) group-data-open/item:pr-(--wm-controls,7.5rem)";
+const ROOM_BESIDE_WHEN =
+  "group-hover/item:pr-[max(0px,calc(var(--wm-controls,7.5rem)-6rem))] group-has-focus-reveal/item:pr-[max(0px,calc(var(--wm-controls,7.5rem)-6rem))] group-data-open/item:pr-[max(0px,calc(var(--wm-controls,7.5rem)-6rem))] group-has-[[aria-expanded=true]]/item:pr-[max(0px,calc(var(--wm-controls,7.5rem)-6rem))]";
+const ROOM = "group-hover/item:pr-(--wm-controls,7.5rem) group-has-focus-reveal/item:pr-(--wm-controls,7.5rem) group-data-open/item:pr-(--wm-controls,7.5rem) group-has-[[aria-expanded=true]]/item:pr-(--wm-controls,7.5rem)";
 
 interface ItemProps {
   id: number;
@@ -349,6 +348,7 @@ function Item({ id, sentence, meta, when, tone, task, open, cursor = false, late
       {task && (
         <div
           data-testid="wm-controls"
+          ref={(el) => measureControls(el)}
           className="pointer-events-none absolute right-2 bottom-1.5 flex items-center gap-1 rounded-md bg-pane pl-2 opacity-0 transition-opacity duration-fast group-hover/item:pointer-events-auto group-[:hover:not([data-open])]/item:bg-row-hover group-hover/item:opacity-100 group-data-open/item:pointer-events-auto group-data-open/item:bg-row-selected group-data-open/item:opacity-100 has-focus-reveal:pointer-events-auto has-focus-reveal:opacity-100 has-[[aria-expanded=true]]:pointer-events-auto has-[[aria-expanded=true]]:opacity-100"
         >
           <BriefTaskControls threadId={id} task={task} describedBy={textId} />

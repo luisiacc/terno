@@ -23,7 +23,6 @@ import {
   promiseDeferred,
   dayKeyOf,
   todayCounted,
-  dayTier,
   inDayOrder,
   type DatedRow,
   type TodayAlso,
@@ -91,11 +90,12 @@ const dedupe = (placed: readonly Placed[]): Placed[] => {
 
 /**
  * Plan 210 (iteration 1): Today's rows in their day's order once each conversation has its row: what's waiting and your
- * reminders, which claim a conversation only after its own items, take their tier's place (people before your reminders,
- * both before plans), each tier keeping its order. Other groups stay as they are.
+ * reminders, which claim a conversation only after its own items, take their place by the same `inDayOrder` (a waiting
+ * conversation showing your promise among your promises, by its day: Codex code review), people as they came. Other
+ * groups stay as they are.
  */
 const todayRanked = (placed: readonly Placed[]): Placed[] => {
-  const today = placed.filter((p) => p.group === "today").sort((a, b) => dayTier(a.why) - dayTier(b.why));
+  const today = placed.filter((p) => p.group === "today").sort((a, b) => inDayOrder(a.why, b.why, false));
   let i = 0;
   return placed.map((p) => (p.group === "today" ? today[i++]! : p));
 };

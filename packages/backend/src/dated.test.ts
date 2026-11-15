@@ -1125,6 +1125,21 @@ describe("the fifth panel round: a promise's own Later", () => {
     return { groups: list.sections.map((x) => [x.kind, x.items.map((i) => [i.thread.id, i.why.kind])]), header, sidebar: (await client.call("counts.get", {})).today };
   };
 
+  it("plan 210 (Codex code review): waiting conversations showing your promises go by the promises' days, as your own promises do, not by their newest mail", async () => {
+    const { client, receive, read, raw, clock } = await setup();
+    await client.call("settings.update", { followups: { enabled: true } });
+    const elena = await receive({ from: { name: "Elena", email: "elena@acme.test" }, subject: "Re: the deck", bodyText: "Looking forward to it.", providerThreadId: "elena" });
+    clock.now += 60_000;
+    const ned = await receive({ from: { name: "Ned", email: "ned@people.test" }, subject: "Re: the plan", bodyText: "Looking forward to it.", providerThreadId: "ned" });
+    await read();
+    raw.run("UPDATE threads SET waiting_since = ?, has_sent = 1 WHERE id IN (?, ?)", clock.now - 60_000, elena, ned);
+    // both past their week's lead: each conversation is waiting, showing its promise; Ned wrote last, Elena's is due first
+    raw.run(...followup(elena, "send the deck", at(2026, 11, 25, 9)));
+    raw.run(...followup(ned, "send the plan", at(2026, 11, 28, 9)));
+    clock.now = at(2026, 11, 14, 10);
+    expect(await today(client)).toEqual({ groups: [["today", [[elena, "promise"], [ned, "promise"]]]], header: 2, sidebar: 2 });
+  });
+
   it("put off, a waiting conversation's only promise is none's until it's back, an ask there still Needs you's; Undo brings it back; the counts agree", async () => {
     const { client, model, receive, read, raw, clock } = await setup();
     await client.call("settings.update", { followups: { enabled: true } });

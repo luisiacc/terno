@@ -376,7 +376,7 @@ test("the owner's inbox-zero setting: the gear on What matters' title row hides 
     await expect(page.getByTestId("wm-options-panel")).toBeVisible();
     await expect(toggle).toHaveAccessibleName("Show finished items");
     // plan 210 (iteration 1): who reads the mail for it, where its options are
-    await expect(page.getByTestId("wm-options-privacy")).toHaveText(/^To find bills, trips and requests, Terno reads each new message’s text with .+ on this Mac; nothing leaves it\.$/);
+    await expect(page.getByTestId("wm-options-privacy")).toHaveText(/^To find bills, trips and requests, Terno reads each new message with .+ on this Mac; nothing leaves your Mac for them\.$/);
     await expect(toggle).toHaveAttribute("aria-checked", "true");
     await axeBothModes(page, '[data-testid="wm-options-panel"]');
     await toggle.click();
@@ -423,7 +423,7 @@ test("the owner's inbox-zero setting: the gear on What matters' title row hides 
     await page.getByTestId("wm-options-more").click();
     const row = page.getByTestId("today-finished");
     await expect(row).toBeVisible();
-    await expect(page.getByTestId("today-privacy")).toContainText("To find bills, trips and requests, Terno reads each new message’s text with");
+    await expect(page.getByTestId("today-privacy")).toContainText("To find bills, trips and requests, Terno reads each new message with");
     await expect(row).toBeInViewport();
     await expect(row).toHaveAttribute("aria-checked", "true");
     await row.click();
@@ -487,6 +487,12 @@ test("plan 210 (iteration 1): inside a day, tasks before plans; a conversation w
       await reach(page, "Pay the deposit");
       await openLine(page, "Pay the deposit").hover();
       await clear();
+      // (Codex code review) its Later menu open, the pointer on it: still clear
+      await openLine(page, "Pay the deposit").getByTestId("wm-later").click();
+      await page.getByTestId("wm-later-menu").hover();
+      await clear();
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("wm-later-menu")).toHaveCount(0);
       await openLine(page, "Pay the deposit").getByTestId("wm-item-open").click();
       await expect(page.getByTestId("reader")).toBeVisible();
       await clear();
@@ -497,6 +503,22 @@ test("plan 210 (iteration 1): inside a day, tasks before plans; a conversation w
     await fresh(page);
     await page.getByTestId("nav-today").click();
     await expect(page.getByTestId("list-title")).toHaveText("What matters");
+  });
+
+  await scenario("Codex code review: the palette's Later opens the item's Later menu, which stays open once the palette has gone", async () => {
+    await reach(page, "Wire payroll");
+    await openLine(page, "Wire payroll").getByTestId("wm-item-open").click();
+    await expect(page.getByTestId("reader")).toBeVisible();
+    await page.keyboard.press("ControlOrMeta+k");
+    await page.getByTestId("palette-dated-later").click();
+    const menu = page.getByTestId("wm-later-menu");
+    await expect(menu).toBeVisible();
+    await page.waitForTimeout(400);
+    await expect(menu).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(menu).toHaveCount(0);
+    await expect(openLine(page, "Wire payroll")).toBeVisible();
+    await page.keyboard.press("Escape");
   });
 
   await scenario("Done's and Later's tooltips say their keys", async () => {

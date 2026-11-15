@@ -20,7 +20,7 @@ vi.mock("~/rpc/connection", () => ({
   },
 }));
 
-const { actOnThreadItem, actOnThreadPromise, actOnTodayRow, doneOnSelected, laterOnSelected, removeOnSelected } = await import("./today-task");
+const { actOnThreadItem, actOnThreadPromise, actOnTodayRow, doneOnSelected, laterFromPicker, laterOnSelected, removeOnSelected } = await import("./today-task");
 const { getApp, setApp } = await import("~/state/app");
 const { reloadList, useList } = await import("~/state/list");
 const { useToday } = await import("~/state/today");
@@ -191,6 +191,32 @@ describe("Done means gone (plan 204, after the second panel round)", () => {
     expect(acts).toHaveLength(1);
     setApp({ dialog: null });
     useToday.setState({ laterPick: null });
+  });
+
+  it("plan 210 (Codex code review): b on another item than the open one, then a moment of your own: the item goes and the keys go on to the next, as from a preset", async () => {
+    // the feed's items as buttons, the keyboard on the first while the second is open
+    const feed = document.createElement("section");
+    feed.dataset.testid = "wm-feed";
+    for (const id of [1, 2, 3]) feed.insertAdjacentHTML("beforeend", `<div data-item-id="${id}"><button data-testid="wm-item-open">${id}</button></div>`);
+    document.body.append(feed);
+    const button = (id: number) => feed.querySelector<HTMLElement>(`[data-item-id="${id}"] button`)!;
+    button(1).focus();
+    const task = useToday.getState().tasks.get(1)!;
+    expect(laterOnSelected()).toBe(true);
+    // the feed draws no Later button here: the picker, for item 1, the keys' next item with it
+    expect(useToday.getState().laterPick).toEqual({ threadId: 1, task, next: 2 });
+    const frame = globalThis.requestAnimationFrame;
+    globalThis.requestAnimationFrame = (cb) => (cb(0), 0);
+    try {
+      laterFromPicker(useToday.getState().laterPick!, 3e12);
+      expect(shown()).toEqual([2, 3]);
+      expect(document.activeElement).toBe(button(2));
+    } finally {
+      globalThis.requestAnimationFrame = frame;
+      feed.remove();
+      setApp({ dialog: null });
+      useToday.setState({ laterPick: null });
+    }
   });
 
   it("plan 210 (iteration 1): b and ⇧D leave the key alone among several checked, in a scope, on a row with no task, or outside What matters", async () => {
