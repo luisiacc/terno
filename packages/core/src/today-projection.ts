@@ -178,8 +178,11 @@ export function placeItems(dated: readonly DatedRow[], promises: readonly Follow
   return out;
 }
 
-/** The conversations placed items are in: what the caller asks the store about (Spam, Trash), one read. */
-export const placedThreads = (items: readonly PlacedItem[]): number[] => [...new Set(items.map((p) => p.item.lead.row.threadId))];
+/**
+ * The conversations placed items are in, every member's (one shows a merged row when the canonical's is in Spam or Trash:
+ * Codex code review): what the caller asks the store about, one read.
+ */
+export const placedThreads = (items: readonly PlacedItem[]): number[] => [...new Set(items.flatMap((p) => p.item.entries.map((e) => e.row.threadId)))];
 
 /**
  * Plan 210 (iteration 2): every row, in `TODAY_GROUP_ORDER` (Missed by the most recently due; Today by `sortInDay`; each

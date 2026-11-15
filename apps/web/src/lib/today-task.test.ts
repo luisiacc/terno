@@ -86,6 +86,15 @@ describe("Done means gone (plan 204, after the second panel round; plan 210, ite
     expect([useFeedRow.getState().opened, getApp().selectedId]).toEqual(["dated:20", 2]);
   });
 
+  it("Codex code review, round 2: Undo after leaving What matters opens nothing in the mailbox shown now", async () => {
+    expect(doneOnSelected()).toBe(true);
+    await vi.waitFor(() => expect(useSnack.getState().undo).toBeTruthy());
+    setApp({ today: false, view: "inbox", selectedId: null });
+    await undo();
+    expect(getApp().selectedId).toBeNull();
+    expect(done.has(20)).toBe(false);
+  });
+
   it("Undo restores the open row only when nothing was opened since, a sibling of its conversation included", async () => {
     expect(doneOnSelected()).toBe(true);
     await vi.waitFor(() => expect(useSnack.getState().undo).toBeTruthy());

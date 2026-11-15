@@ -1252,6 +1252,8 @@ export const contract = {
   /** the one-time check: how much, and what it would cost when the price is known */
   /** why it has stopped reading, for Settings */
   "followups.status": m<{ blockedBy: { kind: AiErrorKind; message: string } | null }>()(empty),
+  /** plan 210 (iteration 2): one promise of yours whatever its state (a history line opened: its closed promise) */
+  "followups.get": m<{ row: FollowupRow | null }>()(z.object({ id })),
   "followups.scanOffer": m<{ count: number; usd: number | null }>()(empty),
   "followups.scan": m<{ queued: number }>()(empty),
   /** plan 204: Done, Dismiss and Later on a dated item, each with an exact Undo; never MCP */

@@ -31,6 +31,9 @@ describe("one thing, read twice", () => {
     expect(sameErrand(dated("pay", "Pay $12 for the bus"), promise("send the signed slip and $12", { quote: "I'll send the signed slip and $12 for the bus" }))).toBe(true);
     // Codex code review: an amount alone isn't one errand
     expect(sameErrand(dated("pay", "Pay $12 for the bus"), promise("send $12 for the museum"))).toBe(false);
+    // round 2: nor through Spanish small words ("para", "el")
+    expect(sameErrand(dated("pay", "Pagar $12 para el autobús"), promise("enviar $12 para el museo"))).toBe(false);
+    expect(sameErrand(dated("pay", "Pagar $12 para el autobús"), promise("mandar el permiso y $12 para el autobús"))).toBe(true);
     // nor one request for November and one for December
     expect(sameErrand(dated("respond", "Send the November payroll report"), promise("send the December payroll report"))).toBe(false);
     // what they asked for and what you promised name the same object (`sameObject`: one's naming words all the other's)
@@ -51,6 +54,10 @@ describe("one thing, read twice", () => {
     // Codex code review: a recurring request for another period is another request
     const nov = dated("respond", "Send the November payroll report", { quote: "send the November payroll report", threadId: 6 });
     expect(sameRequest(nov, dated("respond", "Send the December payroll report", { quote: "send the December payroll report", threadId: 6 }))).toBe(false);
+    // round 2: dates and numeric months whole, never their first three characters
+    const iso = dated("respond", "Send the 2026-11 payroll report", { quote: "send the 2026-11 payroll report", threadId: 6 });
+    expect(sameRequest(iso, dated("respond", "Send the 2026-12 payroll report", { quote: "send the 2026-12 payroll report", threadId: 6 }))).toBe(false);
+    expect(sameRequest(iso, dated("respond", "Send the 2026-11 payroll report", { quote: "the 2026-11 payroll report, please", threadId: 6 }))).toBe(true);
   });
 
   it("a promise read as two from one sentence of yours, with an object in common; two things in one sentence stay two", () => {
@@ -125,6 +132,18 @@ describe("plan 210 (iteration 2, Codex code review): what the matcher looks at, 
     // the two conversations merged: both now on conversation 1
     expect(await links.reconcile(store, [ask], [{ ...mine, threadId: 1 }])).toBe(true);
     expect(written).toEqual([{ same: [{ item: { source: "promise", id: mine.id }, sameAs: `dated:${ask.id}` }], details: [] }]);
+  });
+
+  it("round 2: a read beside one that linked is told by the version, even though its own look finds nothing new", async () => {
+    let n = 0;
+    const store = { today: { link: async () => (n++, 1) } } as unknown as MailStore;
+    const links = new TodayLinks();
+    const a = dated("event", "Dinner at Nopa", { threadId: 1, createdAt: 1 });
+    const b = dated("event", "Dinner with Jess at Nopa", { threadId: 2, createdAt: 2 });
+    const version = links.version;
+    const [first, second] = await Promise.all([links.reconcile(store, [a, b], []), links.reconcile(store, [a, b], [])]);
+    expect([first, second, n]).toEqual([true, false, 1]);
+    expect(links.version).not.toBe(version);
   });
 
   it("an act resolving a row's members runs alone: a reconcile waits for it", async () => {

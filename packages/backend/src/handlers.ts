@@ -1539,6 +1539,10 @@ export function createHandlers(b: Backend): Handlers {
       return { ok: true };
     },
     "followups.status": () => b.followups.status(),
+    "followups.get": async ({ id }) => {
+      const row = await b.store.followups.get(id);
+      return { row: row?.kind === "promise" ? row : null };
+    },
     "followups.scanOffer": () => b.followups.scanOffer(),
     "followups.scan": async () => ({ queued: await b.followups.scan() }),
     // plan 204: renderer only; none of these is in MCP_ALLOWED

@@ -1802,6 +1802,10 @@ describe("plan 210 (iteration 2): duplicates, a broken promise, early and one ti
     expect(items.map((i) => i.thread.id)).toEqual([restaurant]);
     expect(items[0]!.why.members).toHaveLength(2);
     expect(friend).not.toBe(restaurant);
+    // Codex code review, round 2: the restaurant's conversation in Trash, the friend's still shows the dinner, the same row
+    await backend.store.threads.act({ threadIds: [restaurant], action: "trash", signal: null, now: clock.now });
+    const trashed = (await client.call("today.list", { held: [] })).sections.flatMap((x) => x.items);
+    expect(trashed.map((i) => [i.id, i.thread.id])).toEqual([[items[0]!.id, friend]]);
     await client.call("dated.act", { id: items[0]!.why.item!.id, revision: items[0]!.why.item!.revision, action: "later", until: at(2026, 11, 19, 9) });
     expect((await backend.store.dated.active()).every((r) => r.deferredUntil === at(2026, 11, 19, 9))).toBe(true);
   });
@@ -1959,6 +1963,15 @@ describe("What matters' history (plan 210)", () => {
     expect((await lines([all[1]![0] as string])).map(([, thread]) => thread)).toEqual([spam, two, two]);
     await s.backend.store.threads.act({ threadIds: [spam], action: "spam", signal: null, now: s.clock.now });
     expect((await lines()).map(([, thread]) => thread)).toEqual([other, two, two]);
+  });
+
+  it("Codex code review, round 2: a history line's promise is read whatever its state, and only a promise", async () => {
+    const { client, threads, raw, clock } = await bills(1);
+    raw.run("INSERT INTO followups (thread_id, message_id, item, kind, text, sent_at, due_at, state, closed_reason, closed_at, created_at) VALUES (?, 1, 0, 'promise', 'send the contract', 1, 2, 'done', 'user', ?, 1)", threads[0]!, clock.now);
+    raw.run("INSERT INTO followups (thread_id, message_id, item, kind, text, sent_at, due_at, state, created_at) VALUES (?, 1, 100, 'awaiting', '', 1, 2, 'open', 1)", threads[0]!);
+    const [promise, wait] = (raw as unknown as { all<T>(sql: string): T[] }).all<{ id: number }>("SELECT id FROM followups ORDER BY id");
+    expect((await client.call("followups.get", { id: promise!.id })).row).toMatchObject({ state: "done", text: "send the contract" });
+    expect((await client.call("followups.get", { id: wait!.id })).row).toBeNull();
   });
 
   it("plan 210 (iteration 2): a history line opened shows its own closed item on the conversation's line, of that conversation only", async () => {

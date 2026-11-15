@@ -84,7 +84,8 @@ export interface StatedClock {
  */
 export function statedClock(text: string): StatedClock | null {
   const m = CLOCK.exec(text);
-  if (!m) return null;
+  // an offset after the zone ("UTC+2") is a zone this doesn't read: no clock at all (Codex code review)
+  if (!m || /^\s*[+-]\s?\d/u.test(text.slice(m.index + m[0].length))) return null;
   let h = Number(m[1]);
   const min = m[2] === undefined ? 0 : Number(m[2]);
   const meridiem = m[3]?.replace(/[\s.]/gu, "").toLowerCase();
