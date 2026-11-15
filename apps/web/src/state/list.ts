@@ -11,7 +11,9 @@ import { create } from "zustand";
 import { client } from "~/rpc/connection";
 import { getApp, getSelectionWriteRevision, inPlainInbox, setApp, setListAutoSelection, useApp } from "./app";
 import { noteRows, useActionRows } from "./action-preview";
-import { flattenToday, todayRowsLeft } from "./today";
+import { appendHistory, cursorKey, flattenToday, historyCursor, historyThrough, todayRowsLeft, useToday } from "./today";
+/** plan 210: the most history lines one page asks for (the backend's bound) */
+const HISTORY_PAGE_MAX = 100;
 import { useFollowups } from "./followups";
 import { anyDue } from "./reminders";
 import { anyPinned } from "./pins";
@@ -23,7 +25,8 @@ interface ListState {
   itemsKey: string;
   items: ThreadSummary[];
   index: Map<number, number>;
-  nextCursor: { lastDate: number; id: number } | null;
+  /** plan 210: What matters' history pages by its key, whose third part rides here */
+  nextCursor: ListCursor | null;
   loading: boolean;
   loadingMore: boolean;
   error: string | null;
@@ -121,7 +124,7 @@ export function listKey(): string {
   // plan 87: Reminders, only when it's that list (every other list's key is as it was)
   // plan 86: a Gmail tab likewise ("~promotions": never a folder's key)
   // plan 108: a search focused on an account looks only in it, so it's another list than the same search everywhere
-  return JSON.stringify([s.view, s.accountId, s.categoryId, s.reviewCategoryId, activeFilter(s) ?? null, ...(s.folder ? [s.folder] : []), ...(s.gmailTab ? [`~${s.gmailTab}`] : []), ...(s.reminders ? ["reminders"] : []), ...(s.followups ? ["followups"] : []), ...(s.actionPreview ? [`action:${s.actionPreview}`] : []), ...(s.today ? ["today"] : []), ...(soloSearch(s) ? ["~solo"] : []), s.query.trim()]);
+  return JSON.stringify([s.view, s.accountId, s.categoryId, s.reviewCategoryId, activeFilter(s) ?? null, ...(s.folder ? [s.folder] : []), ...(s.gmailTab ? [`~${s.gmailTab}`] : []), ...(s.reminders ? ["reminders"] : []), ...(s.followups ? ["followups"] : []), ...(s.actionPreview ? [`action:${s.actionPreview}`] : []), ...(s.today ? [feedLook(true, useWmLook.getState().look) ? "today:feed" : "today"] : []), ...(soloSearch(s) ? ["~solo"] : []), s.query.trim()]);
 }
 
 /** The search a list's key holds: what its rows answer to, whatever is being typed by now. Empty for a mailbox, Review or a preview. */
@@ -184,7 +187,9 @@ export function onlyOnTop(t: { id: number; inInbox?: boolean; categoryIds: reado
   return t.categoryIds.some((id) => hidden.includes(id));
 }
 
-type Paged = { items: ThreadSummary[]; nextCursor: { lastDate: number; id: number } | null };
+type Paged = { items: ThreadSummary[]; nextCursor: ListCursor | null };
+/** A page's continuation: a date and an id (the Inbox's), with plan 210's history adding which table's id it is. */
+export type ListCursor = { lastDate: number; id: number; src?: 0 | 1 };
 
 /**
  * The plain Inbox's first page with its top in front (`top` says what it is); the reader of the answer publishes it
@@ -233,7 +238,7 @@ function heldInReminders(selectedId: number | null, pinnedIds: ReadonlySet<numbe
   return row ? { row, at: at - inboxTop.pinned } : null;
 }
 
-async function fetchPage(cursor?: { lastDate: number; id: number }, limit = PAGE) {
+async function fetchPage(cursor?: ListCursor, limit = PAGE) {
   const s = getApp();
   if (s.reminders) {
     // plan 87: one bounded page, soonest first
@@ -250,14 +255,25 @@ async function fetchPage(cursor?: { lastDate: number; id: number }, limit = PAGE
     return { items: r.items, nextCursor: offset + page < r.total ? { lastDate: 0, id: offset + page } : null };
   }
   if (s.today) {
-    if (cursor) return { items: [], nextCursor: null };
+    // plan 210: drawn as the feed, What matters has its history below, in pages by key
+    const feed = feedLook(true, useWmLook.getState().look);
+    if (cursor && !feed) return { items: [], nextCursor: null };
     // the digest's row is the cursor's, not a thread's: nothing to keep, and no id the backend takes. The open one is held
     // only when it's one of these rows: holding keeps a row you're on, never adds one (a newsletter opened from the
-    // digest is read as any mail is, and isn't Today's: the owner, plan 161)
-    const open = s.selectedId !== null && s.selectedId !== 0 && useList.getState().index.has(s.selectedId) ? [s.selectedId] : [];
-    const held = new Set([...s.checked, ...open]);
-    const list = await client.call("today.list", { heldIds: [...held].slice(0, 500) });
-    return { items: flattenToday(list, useList.getState().items), nextCursor: null };
+    // digest is read as any mail is, and isn't Today's: the owner, plan 161). Plan 210: a history line isn't held, it
+    // stays the history's (only a row that leaves the open part on its own is kept where it was)
+    const shown = useList.getState();
+    const { history } = useToday.getState();
+    const open = s.selectedId !== null && s.selectedId !== 0 && shown.index.has(s.selectedId) ? [s.selectedId] : [];
+    const heldIds = [...new Set([...s.checked, ...open])].filter((id) => !history.has(id)).slice(0, 500);
+    if (cursor) {
+      const page = await client.call("today.history", { after: cursorKey(cursor), limit: Math.min(limit, HISTORY_PAGE_MAX), heldIds });
+      return { items: appendHistory(page, shown.index), nextCursor: historyCursor(page.next) };
+    }
+    // a reload of the list on screen keeps the history as deep as it was loaded (the same key), another starts at its top
+    const through = shown.itemsKey === listKey() ? historyThrough(shown.items) : null;
+    const list = await client.call("today.list", { heldIds, ...(feed ? { history: { through } } : {}) });
+    return { items: flattenToday(list, useList.getState().items), nextCursor: historyCursor(list.history?.next) };
   }
   if (s.followups) {
     if (cursor) return { items: [], nextCursor: null };
@@ -647,6 +663,11 @@ export function takeEmptied(key: string | null): boolean {
 
 /** plan 107: a rename being followed (an object property: memory note react-compiler-module-let) */
 export const followedRename: { from: string | null; to: string | null } = { from: null, to: null };
+
+// plan 210: What matters drawn another way is another list (the feed has its history, the list look hasn't)
+useWmLook.subscribe((s, prev) => {
+  if (s.look !== prev.look && getApp().today) void reloadList();
+});
 
 // Any change of view / account / category / query reloads the list (navigation,
 // search box, palette, shortcuts all just update app state).
