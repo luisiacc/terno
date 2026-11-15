@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { isAcknowledgment, looksLikeAcknowledgment, saysNoReplyNeeded } from "./today";
-import { ANSWERED_KINDS, askEnd, datedGroup, datedOver, datedPlace, datedTiming, hasTimeCue, laterBefore, nextTodayChange, planEnd, promiseOver, promisePlace, TODAY_COUNTED, TODAY_GROUP_ORDER, type DatedKind, type DatedRow } from "./dated";
+import { alertUntil, ANSWERED_KINDS, askEnd, datedGroup, datedOver, datedPlace, datedTiming, hasTimeCue, laterBefore, nextTodayChange, planEnd, promiseOver, promisePlace, TODAY_COUNTED, TODAY_GROUP_ORDER, type DatedKind, type DatedRow } from "./dated";
 import { WAITING_WINDOW_MS } from "./people";
 
 const at = (y: number, m: number, d: number, h = 0, min = 0) => new Date(y, m - 1, d, h, min).getTime();
@@ -9,7 +9,7 @@ const clock = (ms: number) => { const d = new Date(ms); return [d.getMonth() + 1
 const arrived = at(2026, 11, 10, 14);
 const timing = (kind: DatedKind, due: string | null, time: string | null = null, arrivedAt = arrived) => datedTiming({ kind, due, time, arrivedAt });
 
-type Placed = Pick<DatedRow, "kind" | "state" | "dueDay" | "dueAt" | "timed" | "actAt" | "deferredUntil" | "arrivedAt">;
+type Placed = Pick<DatedRow, "kind" | "state" | "dueDay" | "dueAt" | "timed" | "dated" | "actAt" | "deferredUntil" | "arrivedAt">;
 const item = (kind: DatedKind, due: string | null, time: string | null = null, more: Partial<Placed> = {}): Placed => ({ kind, state: "open", deferredUntil: null, arrivedAt: arrived, ...timing(kind, due, time)!, ...more });
 
 describe("when a dated item shows (plan 204 §2)", () => {
@@ -21,10 +21,11 @@ describe("when a dated item shows (plan 204 §2)", () => {
     expect(timing("expire", "2026-11-20")!.actAt).toBe(arrived);
     expect(clock(timing("expire", "2026-12-20")!.actAt)).toEqual([11, 20, 9, 0]);
     expect(clock(timing("respond", "2026-11-20")!.actAt)).toEqual([11, 13, 9, 0]);
-    expect(clock(timing("event", "2026-11-20")!.actAt)).toEqual([11, 19, 9, 0]);
+    // the sixth panel round (change 3): a Plan three days ahead
+    expect(clock(timing("event", "2026-11-20")!.actAt)).toEqual([11, 17, 9, 0]);
     expect(clock(timing("delivery", "2026-11-20")!.actAt)).toEqual([11, 20, 0, 0]);
   });
-  it("an alert shows at once; one with no day is due its third day", () => {
+  it("an alert shows at once; one with no day is ordered as if due its third day", () => {
     expect(timing("alert", "2026-11-20")!.actAt).toBe(arrived);
     const undated = timing("alert", null)!;
     expect(undated).toMatchObject({ actAt: arrived, dated: false, dueDay: "2026-11-12" });
@@ -101,10 +102,73 @@ describe("where an item sits (revision 8)", () => {
   it("closed is hidden", () => {
     expect(datedPlace({ ...bill, state: "done" }, at(2026, 11, 18))).toBe("hidden");
   });
-  it("an undated alert is Missed its fourth day", () => {
-    const alert = item("alert", null);
+});
+
+describe("an alert that names no day (the sixth panel round, change 1 and revision 2)", () => {
+  const alert = item("alert", null);
+  it("is Deadlines' for a week from its arrival, never Missed, then over", () => {
     expect(datedPlace(alert, arrived)).toBe("deadlines");
-    expect(datedPlace(alert, at(2026, 11, 13, 0))).toBe("missed");
+    // its stored day (the order's) passing makes it no Missed item
+    expect(datedPlace(alert, at(2026, 11, 13, 0))).toBe("deadlines");
+    expect(datedPlace(alert, at(2026, 11, 17, 13, 59))).toBe("deadlines");
+    expect(datedOver(alert, at(2026, 11, 17, 13, 59))).toBe(false);
+    expect(datedPlace(alert, at(2026, 11, 17, 14))).toBe("hidden");
+    expect(datedOver(alert, at(2026, 11, 17, 14))).toBe(true);
+  });
+  it("the clock wakes at its week's end, not at each midnight (it says no day)", () => {
+    expect(nextTodayChange([alert], [], at(2026, 11, 12, 10))).toBe(at(2026, 11, 17, 14));
+    expect(nextTodayChange([alert], [], at(2026, 11, 17, 14))).toBeNull();
+  });
+  it("Later past its week keeps it: never over while put off, then a week from its return", () => {
+    const later = { ...alert, deferredUntil: at(2026, 11, 20, 9) };
+    expect(datedPlace(later, at(2026, 11, 17, 15))).toBe("comingUp");
+    expect(datedOver(later, at(2026, 11, 17, 15))).toBe(false);
+    expect(datedPlace(later, at(2026, 11, 20, 9))).toBe("deadlines");
+    expect(alertUntil(later)).toBe(at(2026, 11, 27, 9));
+    expect(datedPlace(later, at(2026, 11, 27, 8, 59))).toBe("deadlines");
+    expect(datedOver(later, at(2026, 11, 27, 9))).toBe(true);
+    expect(nextTodayChange([later], [], at(2026, 11, 17, 15))).toBe(at(2026, 11, 20, 9));
+    expect(nextTodayChange([later], [], at(2026, 11, 20, 9))).toBe(at(2026, 11, 27, 9));
+  });
+  it("a week by the wall clock across a DST change", () => {
+    // US clocks fall back on Nov 1: still 14:00 a week on, wherever the tests run
+    expect(new Date(alertUntil({ arrivedAt: at(2026, 10, 30, 14), deferredUntil: null })).getHours()).toBe(14);
+    expect(new Date(alertUntil({ arrivedAt: at(2026, 3, 5, 14), deferredUntil: null })).getHours()).toBe(14);
+  });
+  it("one with a day is a deadline as before: Missed after it", () => {
+    const dated = item("alert", "2026-11-12");
+    expect(datedPlace(dated, arrived)).toBe("deadlines");
+    expect(datedPlace(dated, at(2026, 11, 13, 0))).toBe("missed");
+  });
+});
+
+describe("a Plan's lead, read when placed (the sixth panel round, change 3 and revision 6)", () => {
+  // stored under the old lead: a day before, at 9:00
+  const stored = item("event", "2026-11-20", "10:00", { actAt: at(2026, 11, 19, 9) });
+  it("an event stored a day ahead shows three days ahead, with no rescheduling", () => {
+    expect(datedPlace(stored, at(2026, 11, 17, 8, 59))).toBe("comingUp");
+    expect(datedPlace(stored, at(2026, 11, 17, 9))).toBe("plans");
+    expect(nextTodayChange([stored], [], at(2026, 11, 17, 0, 30))).toBe(at(2026, 11, 17, 9));
+  });
+  it("the earlier of the two: a stored moment before the lead keeps it; a delivery stays on its day; a bill keeps its week", () => {
+    expect(datedPlace(item("event", "2026-11-20", null, { actAt: arrived }), at(2026, 11, 10, 15))).toBe("plans");
+    const parcel = item("delivery", "2026-11-20");
+    expect(datedPlace(parcel, at(2026, 11, 19, 23, 59))).toBe("comingUp");
+    expect(datedPlace(parcel, at(2026, 11, 20, 0))).toBe("plans");
+    const bill = item("pay", "2026-11-20");
+    expect(datedPlace(bill, at(2026, 11, 13, 8, 59))).toBe("comingUp");
+    expect(datedPlace(bill, at(2026, 11, 13, 9))).toBe("deadlines");
+  });
+  it("across a DST change its lead is still 9:00", () => {
+    // US clocks change on Nov 1 and Mar 8: three days before Nov 3 and Mar 10 cross them
+    const storedFrom = (due: string, actAt: number, arrivedAt: number): Placed => ({ kind: "event", state: "open", deferredUntil: null, arrivedAt, ...timing("event", due, null, arrivedAt)!, actAt });
+    const fall = storedFrom("2026-11-03", at(2026, 11, 2, 9), at(2026, 10, 20, 12));
+    expect(datedPlace(fall, at(2026, 10, 31, 8, 59))).toBe("comingUp");
+    expect(datedPlace(fall, at(2026, 10, 31, 9))).toBe("plans");
+    const spring = storedFrom("2026-03-10", at(2026, 3, 9, 9), at(2026, 2, 20, 12));
+    expect(datedPlace(spring, at(2026, 3, 7, 8, 59))).toBe("comingUp");
+    expect(nextTodayChange([spring], [], at(2026, 3, 7, 0, 30))).toBe(at(2026, 3, 7, 9));
+    expect(clock(timing("event", "2026-03-10", null, at(2026, 2, 20, 12))!.actAt)).toEqual([3, 7, 9, 0]);
   });
 });
 

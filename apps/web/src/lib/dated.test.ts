@@ -198,3 +198,20 @@ describe("a row's second item (plan 204, the fifth panel round, change 6)", () =
     }
   });
 });
+
+describe("the conversation's line (plan 204, the sixth panel round, revision 2)", () => {
+  it("an alert that named no day: its line for a week from its arrival, never Missed; put off past it, kept", async () => {
+    const { conversationItem } = await import("./dated");
+    const { datedTiming } = await import("@terno/core");
+    const arrived = new Date(2026, 10, 10, 14).getTime();
+    const alert = { id: 1, threadId: 1, messageId: 1, item: 0, kind: "alert" as const, text: "Debit card frozen", quote: "frozen", senderKey: "bank", ...datedTiming({ kind: "alert", due: null, arrivedAt: arrived })!, deferredUntil: null, arrivedAt: arrived, state: "open" as const, closedReason: null, closedAt: null, fromScan: false, revision: 0, model: null, provider: null, createdAt: arrived };
+    expect(conversationItem(alert, new Date(2026, 10, 13, 10).getTime())).toEqual({ missed: false });
+    expect(conversationItem(alert, new Date(2026, 10, 17, 13, 59).getTime())).toEqual({ missed: false });
+    expect(conversationItem(alert, new Date(2026, 10, 17, 14).getTime())).toBeNull();
+    const later = { ...alert, deferredUntil: new Date(2026, 11, 20, 9).getTime() };
+    expect(conversationItem(later, new Date(2026, 10, 18, 10).getTime())).toEqual({ missed: false });
+    // a bill is Missed past its day, as Today says
+    const bill = { ...alert, kind: "pay" as const, ...datedTiming({ kind: "pay", due: "2026-11-12", arrivedAt: arrived })! };
+    expect(conversationItem(bill, new Date(2026, 10, 13, 10).getTime())).toEqual({ missed: true });
+  });
+});

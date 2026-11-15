@@ -1,4 +1,4 @@
-import { askEnd, datedGroup, datedPlace, dayEnd, planEnd, type DatedRow, type ThreadDetail } from "@terno/core";
+import type { DatedRow, ThreadDetail } from "@terno/core";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuShortcut, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
@@ -7,7 +7,7 @@ import { CalendarClock, ChevronDown } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { useEffect, useRef, useState } from "react";
 import { aiAllowed } from "~/lib/ai";
-import { datedLine, datedText, itemLaterWindow, laterNote, laterPresets, laterStart } from "~/lib/dated";
+import { conversationItem, datedLine, datedText, itemLaterWindow, laterNote, laterPresets, laterStart } from "~/lib/dated";
 import { presetLabel, presetWhen } from "~/lib/reminders";
 import { actOnThreadItem } from "~/lib/today-task";
 import { client } from "~/rpc/connection";
@@ -17,19 +17,6 @@ import { WhenForm } from "./when-fields";
 
 /** The reader shows this many of a conversation's dates, soonest first. */
 const SHOWN = 3;
-
-/** When an item stops being the conversation's: a Plan's end, an ask's window (never Missed), a deadline's day. */
-const endOf = (r: DatedRow): number => (datedGroup(r.kind) === "plans" ? planEnd(r) : r.kind === "ask" ? askEnd(r) : dayEnd(r.dueDay));
-
-/** Still to act on, shown or not yet in Today: not a Plan that's over, an ask past its window, nor a day Missed has let go of. */
-function current(r: DatedRow, now: number): { missed: boolean } | null {
-  if (r.state !== "open") return null;
-  const place = datedPlace(r, now);
-  if (place === "missed") return { missed: true };
-  if (place !== "hidden") return { missed: false };
-  // hidden: too far ahead (or put off with Later) is still the conversation's; over is not
-  return now < endOf(r) ? { missed: false } : null;
-}
 
 /**
  * The third panel round (change 6): Later on the conversation's line, as the row's menu offers it: the presets in Later's
@@ -116,7 +103,7 @@ export default function ThreadDated({ detail }: { detail: ThreadDetail }) {
   }, [on, hidden, threadId]);
   const now = Date.now();
   const shown = rows
-    .map((r) => ({ r, at: current(r, now) }))
+    .map((r) => ({ r, at: conversationItem(r, now) }))
     .filter((x): x is { r: DatedRow; at: { missed: boolean } } => x.at !== null)
     .sort((a, b) => a.r.dueAt - b.r.dueAt)
     .slice(0, SHOWN);

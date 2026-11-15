@@ -1,4 +1,4 @@
-import { datedGroup, defaultRemindAt, laterBefore, localDay, remindPresets, type DatedKind, type DatedRow, type RemindPreset, type TodayAlso, type TodayWhy } from "@terno/core";
+import { alertUntil, askEnd, datedGroup, datedPlace, dayEnd, defaultRemindAt, laterBefore, localDay, planEnd, remindPresets, undatedAlert, type DatedKind, type DatedRow, type RemindPreset, type TodayAlso, type TodayWhy } from "@terno/core";
 import { getLocale, t } from "@terno/i18n";
 import { useEffect, useState } from "react";
 import { usd } from "~/lib/ai";
@@ -77,6 +77,25 @@ export function datedWhen(o: Omit<DatedFacts, "text">, missed: boolean, now = Da
  * the task alone, its day in the right column: after the second panel round.)
  */
 export const datedLine = (o: DatedFacts, missed: boolean, now = Date.now()): string => line(datedWhen(o, missed, now), datedText(o));
+
+/**
+ * When an item stops being its conversation's: a Plan's end, an ask's window, an undated alert's week (the sixth panel
+ * round: never Missed), a deadline's day (Missed then says it, by `datedPlace`).
+ */
+const conversationEnd = (r: DatedRow): number => (datedGroup(r.kind) === "plans" ? planEnd(r) : r.kind === "ask" ? askEnd(r) : undatedAlert(r) ? alertUntil(r) : dayEnd(r.dueDay));
+
+/**
+ * The conversation's line for an item, by Today's rule (`datedPlace`): still to act on, shown in Today or not yet (too far
+ * ahead, or put off with Later); null once over (a Plan ended, an ask past its window, an alert past its week, a day
+ * Missed has let go of).
+ */
+export function conversationItem(r: DatedRow, now: number): { missed: boolean } | null {
+  if (r.state !== "open") return null;
+  const place = datedPlace(r, now);
+  if (place === "missed") return { missed: true };
+  if (place !== "hidden") return { missed: false };
+  return now < conversationEnd(r) ? { missed: false } : null;
+}
 
 /**
  * The fifth panel round (change 6): a Today row's second line, its conversation's next item, with the row's own short
