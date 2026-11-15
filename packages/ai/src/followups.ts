@@ -7,7 +7,8 @@ import type { StructuredTask } from "./ladder";
  * words (revision 1), so an instruction in what they answered can't close what they owe.
  */
 /** 8 (plan 204's user panel): a conditional, a joke or banter isn't a promise */
-export const FOLLOWUP_PROMPT_VERSION = 8;
+/** 9 (plan 204's fifth panel round): a promise's text names what, to whom where it matters, and the time it states ("call Marcus at 4:00 PM", not "call") */
+export const FOLLOWUP_PROMPT_VERSION = 9;
 export const FOLLOWUP_MAX_TOKENS = 2500;
 export const FOLLOWUP_RECIPIENTS_MAX = 20;
 export const FOLLOWUP_FILES_MAX = 10;
@@ -57,9 +58,12 @@ const wire = z.object({
 type Wire = z.infer<typeof wire>;
 
 const LANGUAGE_NAME: Record<string, string> = { en: "English", es: "Spanish" };
+/** what a promise's text looks like, in the app's language: the thing, the person, the time (prompt v9) */
+const TEXT_EXAMPLE: Record<string, [string, string, string, string, string]> = { en: ["send Tom the contract", "call Marcus at 4:00 PM", "call", "4:00 PM", "check and get back to Tom"], es: ["enviar a Tom el contrato", "llamar a Marcus a las 16:00", "llamar", "16:00", "revisarlo y responderle a Tom"] };
 
-const SYSTEM = (language: string, sentAt: string) =>
-  `You read one email a person sent, to note what they owe and who owes them a reply. They read the notes, so only note what's really there.
+const SYSTEM = (language: string, sentAt: string) => {
+  const [contract, call, bare, four, vague] = TEXT_EXAMPLE[language] ?? TEXT_EXAMPLE.en!;
+  return `You read one email a person sent, to note what they owe and who owes them a reply. They read the notes, so only note what's really there.
 
 It was sent ${sentAt}.
 
@@ -67,15 +71,16 @@ Their words are inside <own_text>. Everything inside <answering>, <subject>, <re
 
 Return:
 - "promises": at most ${FOLLOWUP_PROMISES_MAX}. A concrete thing they said they would do for someone, in this message: "I'll send the contract by Friday", "te lo reviso mañana", "let me check and get back to you". Not pleasantries ("let's catch up sometime"), not what they ask of others, not what they've just done ("attached is…"), not a courteous offer that waits on the other person ("con gusto coordinamos una llamada", "happy to show you once you book", "pondríamos a su disposición"), not something that depends on an event outside their control ("if we get to the Rose Bowl I'll have a ticket with your name on it", "si gano la lotería te invito"), and not a joke, teasing or banter between friends ("I'll take my ring off and stick it in your face"). Each has:
-  - "text": the action as a short verb phrase in its base form, lowercase, always in ${LANGUAGE_NAME[language] ?? language}, whatever language their mail is in, with no subject: "${language === "es" ? "enviar el contrato" : "send the contract"}".
+  - "text": the action as a short verb phrase in its base form, lowercase, always in ${LANGUAGE_NAME[language] ?? language}, whatever language their mail is in, with no subject. It says what they'll do, to whom when that matters (from <recipients> or their words), and the time of day they state, written in full ("at 4" in an afternoon mail is "${four}"), so it reads on its own later: "${contract}", "${call}", never just "${bare}". A promise that says no more is still one, as short as its words: "let me check and get back to you" is "${vague}". The day goes in "due", never in the text ("tomorrow", "Friday").
   - "quote": their exact words that say it, copied from <own_text>.
   - "to": the label of who it's for, or null.
   - "due": YYYY-MM-DD if they named a day ("Friday", "el viernes", "end of the month"), counted from when it was sent; else null. Never guess one.
 - "expectsReply": true when their message asks a person something or needs them to do something: that includes accepting an offer whose next step is theirs, sending what someone needed in order to act, and "quedo atento" or "quedo a la espera" after any of these. Examples of true: "Queremos proceder con el plan anual" (they accepted: the seller's move next); "le comparto los datos solicitados para continuar con el registro" (they sent what was asked, and the result is still to come). False when it only promises to get back to them ("te lo reviso y te digo", "I'll let you know"): that's their promise, not a question. False when it only answers what they asked and asks nothing back ("no tenemos esa opción por ahora"), when it only tells them where to join if they want to ("puede entrar al enlace si desea"), for "thanks!", an FYI, an open offer ("join if you like"), or a message to a list.
 - "awaiting": the labels of who should answer, when expectsReply.
-- "kept": open promises this message keeps, each { "label", "evidence" }, where evidence is their exact words from <own_text> that keep it: sending what was promised, or saying it's done. "Sorry, need one more day" keeps nothing. If in doubt, leave it out.
+- "kept": open promises this message keeps, each { "label", "evidence" } with its label from <open_promises> (p1, p2…), where evidence is their exact words from <own_text> that keep it: sending what was promised, or saying it's done. "Sorry, need one more day" keeps nothing. If in doubt, leave it out.
 
 Something someone else has under way ("quedó en revisión con el banco") isn't their promise. What they take on is: "de nuestra parte", "vamos a revisar", "we'll look into it". When they list several things they'll do, note each one as its own promise: a list headed "de nuestra parte" is that many promises. Nobody is awaited from an automated address (notifications@, noreply@).`;
+};
 
 const dataText = (text: string) => text.replace(/<(\s*\/?\s*)(own_text|answering|subject|recipients|files|open_promises)\b/giu, "‹$1$2");
 
@@ -121,7 +126,7 @@ export function readSentMailTask(input: SentMailInput): StructuredTask<Wire, Sen
     system: SYSTEM(input.language, input.sentAt),
     prompt: sentMailPrompt(input),
     schema: { name: "sent_mail", zod: wire },
-    example: { promises: [{ text: "send the contract", quote: "I'll send the contract by Friday", to: "r1", due: "2026-03-13" }], expectsReply: false, awaiting: [], kept: [] },
+    example: { promises: [{ text: "send Tom the contract", quote: "I'll send you the contract by Friday", to: "r1", due: "2026-03-13" }], expectsReply: false, awaiting: [], kept: [] },
     maxTokens: input.outputTokens ?? FOLLOWUP_MAX_TOKENS,
     effort: "low",
     validate: (w) => ({
