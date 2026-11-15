@@ -149,10 +149,13 @@ function pickRow(rows: readonly FeedRow[], threadId: number | null | undefined, 
 
 export const rowOfThread = (threadId: number | null | undefined): FeedRow | undefined => pickRow(useToday.getState().rows, threadId, [useToday.getState().menuRow, useFeedRow.getState().opened]);
 
-/** Plan 204 (after the panel): a What matters row's task for a conversation, with its row, only while What matters is shown. */
-export function useTodayTask(threadId: number | null | undefined): { rowId: FeedRowId; task: TodayTask } | undefined {
+/**
+ * Plan 204 (after the panel): a What matters row's task for a conversation, with its row, only while What matters is shown.
+ * Plan 210 (iteration 2): the right-click menu's is the row it was opened on (`from: "menu"`); the palette's, the open row.
+ */
+export function useTodayTask(threadId: number | null | undefined, from: "menu" | "open" = "open"): { rowId: FeedRowId; task: TodayTask } | undefined {
   const opened = useFeedRow((s) => s.opened);
-  const row = useToday((s) => pickRow(s.rows, threadId, [s.menuRow, opened]));
+  const row = useToday((s) => pickRow(s.rows, threadId, from === "menu" ? [s.menuRow, opened] : [opened]));
   const today = useApp((s) => s.today);
   return today && row?.task ? { rowId: row.id, task: row.task } : undefined;
 }

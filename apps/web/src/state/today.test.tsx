@@ -338,3 +338,29 @@ describe("plan 210: the history below the open part and the automated section, a
     expect(historyThrough()).toBeNull();
   });
 });
+
+describe("plan 210 (iteration 2, Codex code review): whose task the menu's and the palette's Done are", () => {
+  it("the right-click menu's, the row it was opened on; the palette's, the open row, whatever menu came before", async () => {
+    const { act } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    const { useTodayTask } = await import("./today");
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const task = (id: number) => ({ kind: "dated" as const, item: { id, revision: 0, kind: "pay" as const, dueDay: "2026-11-12", timed: false, dated: true }, when: null, due: null, dueAt: 0 });
+    setApp({ today: true, selectedId: 2 });
+    useToday.setState({ rows: [{ id: "dated:10", threadId: 2, task: task(10) }, { id: "dated:11", threadId: 2, task: task(11) }], menuRow: "dated:10" });
+    useFeedRow.setState({ opened: "dated:11" });
+    const seen: Record<string, string | undefined> = {};
+    function Probe() {
+      seen.menu = useTodayTask(2, "menu")?.rowId;
+      seen.palette = useTodayTask(2, "open")?.rowId;
+      return null;
+    }
+    const host = document.createElement("div");
+    const root = createRoot(host);
+    await act(async () => root.render(<Probe />));
+    expect(seen).toEqual({ menu: "dated:10", palette: "dated:11" });
+    await act(async () => useToday.setState({ menuRow: null }));
+    expect(seen).toEqual({ menu: "dated:11", palette: "dated:11" });
+    await act(async () => root.unmount());
+  });
+});

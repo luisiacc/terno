@@ -81,6 +81,14 @@ describe("duplicates and related details", () => {
     expect(rows[0]!.why.members).toEqual([{ source: "dated", id: restaurant.id }, { source: "dated", id: friend.id }]);
   });
 
+  it("Codex code review: the canonical's conversation in Trash, a live member shows the same row", () => {
+    const restaurant = dated("event", "2026-11-18", { threadId: 1 }, "19:30");
+    const friend = dated("event", "2026-11-18", { threadId: 2, sameAs: `dated:${restaurant.id}` }, "19:30");
+    const rows = projectToday(facts({ dated: [restaurant, friend], live: (id) => id !== 1 })).rows;
+    expect(rows.map((r) => [r.id, r.threadId])).toEqual([[`dated:${restaurant.id}`, 2]]);
+    expect(projectToday(facts({ dated: [restaurant, friend], live: (id) => id !== 1 }), { count: true }).counts.today).toBe(0);
+  });
+
   it("an errand read as a bill and as your promise is one row; its id stays the canonical's when only the member is open", () => {
     const bus = dated("pay", "2026-11-20", { threadId: 1 });
     const mine = promise(at(2026, 11, 20, 9), { threadId: 1, sameAs: `dated:${bus.id}` });
@@ -135,13 +143,17 @@ describe("early, broken, one time", () => {
 
   it("the mail's own time leaves the words for the when column; a promise's stated time too", () => {
     const rfp = dated("respond", "2026-11-18", { text: "Submit the RFP response (5:00 PM ET)" }, "16:00");
-    const call = promise(at(2026, 11, 18, 16), { text: "call Marcus at 4:00 PM PT", timed: true });
+    // 4:00 PM in Los Angeles that day
+    const call = promise(Date.UTC(2026, 10, 19, 0, 0), { text: "call Marcus at 4:00 PM PT", timed: true });
     const rows = projectToday(facts({ dated: [rfp], promises: [call] })).rows;
     expect(rows.find((r) => r.why.kind === "dated")!.why).toMatchObject({ text: "Submit the RFP response", item: { note: "5:00 PM ET" } });
     expect(rows.find((r) => r.why.kind === "promise")!.why).toMatchObject({ text: "call Marcus", promise: { timed: true, note: "4:00 PM PT" } });
     // in the reader's own zone, no brackets
     const local = projectToday(facts({ promises: [call], zone: "America/Los_Angeles" })).rows[0]!;
     expect(local.why.promise?.note).toBeUndefined();
+    // moved to another time, its words' clock isn't the row's to say (Codex code review)
+    const moved = projectToday(facts({ promises: [{ ...call, dueAt: call.dueAt + 3_600_000 }] })).rows[0]!;
+    expect(moved.why.promise?.note).toBeUndefined();
   });
 });
 
@@ -183,6 +195,10 @@ describe("words and clocks", () => {
     expect(statedClock("llamar a Ana a las 16:30")).toMatchObject({ time: "16:30", zone: null, rest: "llamar a Ana" });
     expect(statedClock("send it by 9am")).toMatchObject({ time: "09:00", rest: "send it" });
     expect(statedClock("meet at 4 people")).toBeNull();
+    // Codex code review: a zone that reads one way only, in any case; one that doesn't (CST, IST) leaves it untimed
+    expect(statedClock("call Marcus at 4:00 pm pt")).toMatchObject({ time: "16:00", zone: "America/Los_Angeles" });
+    expect(statedClock("call Marcus at 4:00 PM CST")).toBeNull();
+    expect(statedClock("call Priya at 9:00 AM IST")).toBeNull();
     expect(statedClock("send the deck")).toBeNull();
   });
 });

@@ -4,7 +4,7 @@ import type { LeftRows } from "~/lib/actions";
 import { actOnDated, actOnTask, type DatedRef, type TodayTask } from "~/lib/dated";
 import { actOnFollowup } from "~/lib/followups";
 import { closePage, currentPage, listLayout } from "~/lib/page";
-import { getApp, setApp } from "~/state/app";
+import { getApp, setApp, setAppOpened } from "~/state/app";
 import { noteEdit, reloadList } from "~/state/list";
 import { feedRow, rowOfThread, useFeedRow, useToday, type FeedRow } from "~/state/today";
 
@@ -32,7 +32,8 @@ function leaveFeedRows(ids: readonly FeedRowId[]): LeftRows | undefined {
       const at = rows.indexOf(open);
       const next = rows.slice(at + 1).find((r) => !gone.has(r.id)) ?? rows.slice(0, at).reverse().find((r) => !gone.has(r.id));
       useFeedRow.setState(({ moves }) => ({ opened: next?.id ?? null, moves: moves + 1 }));
-      setApp({ selectedId: next ? next.threadId : null });
+      // opened by the app, as Archive's next is: not read until chosen (Codex code review of iteration 2)
+      setAppOpened(next ? next.threadId : null);
     }
   }
   const moved = useFeedRow.getState().moves;
@@ -41,7 +42,7 @@ function leaveFeedRows(ids: readonly FeedRowId[]): LeftRows | undefined {
     // the open row back, unless another was opened since (Codex's design: a newer selection wins, a sibling row included)
     if (useFeedRow.getState().moves !== moved || before.opened === null || !useToday.getState().rows.some((r) => r.id === before.opened)) return;
     useFeedRow.setState(({ moves }) => ({ opened: before.opened, moves: moves + 1 }));
-    setApp({ selectedId: before.selectedId });
+    setAppOpened(before.selectedId);
   };
   return {
     async undo(run) {
@@ -84,10 +85,9 @@ export function actOnThreadItem(_threadId: number, item: Pick<DatedRef, "id" | "
  * for the promise leave as from the row's own Done; elsewhere, follow-ups' own act.
  */
 export function actOnThreadPromise(row: FollowupRow, action: TaskAction, at?: number): Promise<void> {
+  // the rows it is, its own or a merged one it's a member of (Codex code review of iteration 2), leave with its act
   const rows = rowsOfItem("promise", row.id);
-  const shown = feedRow(rows[0]);
-  if (shown?.task?.kind === "promise" && shown.task.id === row.id) return actOnTask({ ...shown.task, revision: row.revision, text: row.kind === "promise" ? row.text : null }, action, at, leaveFeedRows(rows));
-  return actOnFollowup(row, action, at);
+  return actOnFollowup(row, action, at, rows.length ? leaveFeedRows(rows) : undefined);
 }
 
 /**

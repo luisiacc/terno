@@ -64,7 +64,7 @@ const ZONES: Readonly<Record<string, string>> = {
  * "at 4:00 PM", "at 4 pm PT", "a las 16:00", "a las 4 de la tarde" is not read (words, not a clock). The clock and where it
  * was found, so the sentence can leave it out.
  */
-const CLOCK = /\s*\b(?:at|by|a las|antes de las)\s+(\d{1,2})(?::(\d{2}))?\s*([AaPp]\.?\s?[Mm]\.?)?(?:\s+(PT|PST|PDT|MT|MST|MDT|ET|EST|EDT|UTC|GMT|Pacific|Mountain|Eastern)(?:\s+[Tt]ime)?)?\b/u;
+const CLOCK = /\s*\b(?:at|by|a las|antes de las)\s+(\d{1,2})(?::(\d{2}))?\s*([AaPp]\.?\s?[Mm]\.?)?(?:\s+([A-Z]{1,3}T|UTC|pt|pst|pdt|mt|mst|mdt|ct|cst|cdt|et|est|edt|utc|gmt|ist|bst|Pacific|Mountain|Central|Eastern|Atlantic)(?:\s+[Tt]ime)?)?\b/u;
 
 export interface StatedClock {
   /** "HH:MM" on the clock it was said on */
@@ -95,7 +95,9 @@ export function statedClock(text: string): StatedClock | null {
     h = (h % 12) + (meridiem.startsWith("p") ? 12 : 0);
   }
   if (h > 23 || min > 59) return null;
-  const zone = m[4] ? (ZONES[m[4].toLowerCase()] ?? null) : null;
+  // a zone named that doesn't read one way (CST, IST, BST…): its time can't be placed, so the promise keeps its words, untimed
+  const zone = m[4] ? (ZONES[m[4].toLowerCase()] ?? undefined) : null;
+  if (zone === undefined) return null;
   const said = m[0].trim().replace(/^(?:at|by|a las|antes de las)\s+/iu, "");
   return { time: `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`, zone, note: said, rest: `${text.slice(0, m.index)}${text.slice(m.index + m[0].length)}`.replace(/\s{2,}/gu, " ").trim() };
 }
@@ -109,4 +111,16 @@ export function weekEndDay(now: number): string {
   const fromMonday = (d.getDay() + 6) % 7;
   d.setDate(d.getDate() + (6 - fromMonday));
   return dayKeyOf(d.getTime());
+}
+
+/**
+ * Whether a moment is still the stated clock (Codex code review of iteration 2): a promise moved to another time keeps its
+ * old words, whose time and zone then aren't the row's to say.
+ */
+export function clockHolds(ms: number, clock: Pick<StatedClock, "time" | "zone">): boolean {
+  try {
+    return new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", ...(clock.zone ? { timeZone: clock.zone } : {}) }).format(ms) === clock.time;
+  } catch {
+    return false;
+  }
 }

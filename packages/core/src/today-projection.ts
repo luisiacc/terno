@@ -1,7 +1,7 @@
 import { datedGroup, datedGroupAt, dayKeyOf, promiseGroupAt, shownEarly, todayCounted, type DatedRow, type TaskPlace, type TodayGroupKind } from "./dated";
 import type { FollowupRow } from "./followups";
 import { sortInDay, type TodayAlso, type TodayCounts, type TodayWhy } from "./today";
-import { refKey, reminderRowId, splitZoneNote, statedClock, waitingRowId, weekEndDay, type FeedRowId, type ItemRef } from "./today-items";
+import { clockHolds, refKey, reminderRowId, splitZoneNote, statedClock, waitingRowId, weekEndDay, type FeedRowId, type ItemRef } from "./today-items";
 
 /**
  * Plan 210 (iteration 2, the owner: "a row per item"; Codex's design): What matters is one projection, the list's, the
@@ -45,6 +45,8 @@ export interface Logical {
   id: FeedRowId;
   lead: { source: "dated"; row: DatedRow } | { source: "promise"; row: FollowupRow };
   members: ItemRef[];
+  /** every open member, the lead first: another shows it when the lead's conversation is in Spam or Trash */
+  entries: Logical["lead"][];
 }
 
 const own = (source: "dated" | "promise", id: number): string => refKey({ source, id });
@@ -59,12 +61,16 @@ function logicalItems(dated: readonly DatedRow[], promises: readonly FollowupRow
   const add = (key: string, entry: Logical["lead"], ref: ItemRef) => {
     const g = groups.get(key);
     const isCanonical = own(entry.source, entry.row.id) === key;
-    if (!g) return void groups.set(key, { id: key, lead: entry, members: [ref] });
+    if (!g) return void groups.set(key, { id: key, lead: entry, members: [ref], entries: [entry] });
     // the canonical leads; else the first open member, a dated item before a promise, the lower id first
     if (isCanonical) {
       g.lead = entry;
       g.members.unshift(ref);
-    } else g.members.push(ref);
+      g.entries.unshift(entry);
+    } else {
+      g.members.push(ref);
+      g.entries.push(entry);
+    }
   };
   for (const row of dated) add(row.sameAs ?? own("dated", row.id), { source: "dated", row }, { source: "dated", id: row.id });
   for (const row of promises) add(row.sameAs ?? own("promise", row.id), { source: "promise", row }, { source: "promise", id: row.id });
@@ -87,7 +93,7 @@ function datedWhy(row: DatedRow, missed: boolean, early: boolean, members: ItemR
 function promiseWhy(r: FollowupRow, missed: boolean, members: ItemRef[], zone: string): TodayWhy {
   // a time its words state is the column's (its zone's words in brackets when that isn't the reader's); never in the sentence
   const clock = r.timed ? statedClock(r.text) : null;
-  const note = clock?.zone && clock.zone !== zone ? clock.note : null;
+  const note = clock?.zone && clock.zone !== zone && clockHolds(r.dueAt, clock) ? clock.note : null;
   return {
     kind: "promise",
     text: clock ? clock.rest : r.text,
@@ -134,11 +140,13 @@ export function placeItems(dated: readonly DatedRow[], promises: readonly Follow
     const keep = (at: TaskPlace | null): at is TaskPlace => at !== null && !(o.count && at.group === "comingUp");
     for (const row of dated) {
       const at = datedGroupAt(row, now, today);
-      if (keep(at)) out.push({ item: { id: own("dated", row.id), lead: { source: "dated", row }, members: [{ source: "dated", id: row.id }] }, at });
+      const lead = { source: "dated" as const, row };
+      if (keep(at)) out.push({ item: { id: own("dated", row.id), lead, members: [{ source: "dated", id: row.id }], entries: [lead] }, at });
     }
     for (const row of promises) {
       const at = promiseGroupAt(row, now, today);
-      if (keep(at)) out.push({ item: { id: own("promise", row.id), lead: { source: "promise", row }, members: [{ source: "promise", id: row.id }] }, at });
+      const lead = { source: "promise" as const, row };
+      if (keep(at)) out.push({ item: { id: own("promise", row.id), lead, members: [{ source: "promise", id: row.id }], entries: [lead] }, at });
     }
     return out;
   }
@@ -190,9 +198,18 @@ export function projectRows(items: readonly PlacedItem[], f: Pick<ProjectionFact
   // what they asked), so a waiting row there would say the same thing twice. One behind Coming up says nothing yet: the
   // conversation waiting on you is a row of its own meanwhile (their nudge on a promise due next week)
   const represented = new Set<number>();
-  for (const { item, at, detail } of items) {
-    const { lead } = item;
-    if (!f.live(lead.row.threadId)) continue;
+  for (const placedItem of items) {
+    const { item, detail } = placedItem;
+    let { at } = placedItem;
+    let { lead } = item;
+    // (Codex code review of iteration 2) the canonical's conversation in Spam or Trash: a live member shows the same row
+    if (!f.live(lead.row.threadId)) {
+      const alt = item.entries.find((e) => e !== lead && f.live(e.row.threadId));
+      const altAt = !alt ? null : alt.source === "dated" ? datedGroupAt(alt.row, f.now, today) : promiseGroupAt(alt.row, f.now, today);
+      if (!alt || !altAt || (o.count && altAt.group === "comingUp")) continue;
+      lead = alt;
+      at = altAt;
+    }
     const plan = lead.source === "dated" && datedGroup(lead.row.kind) === "plans";
     if (!plan && at.group !== "comingUp") represented.add(lead.row.threadId);
     // the count needs only what `todayCounted` reads: no words made

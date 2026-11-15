@@ -43,13 +43,32 @@ function amounts(text: string): Set<string> {
 }
 const ERRANDS: ReadonlySet<string> = new Set(["pay", "respond", "ask", "expire", "renew"]);
 
+/** What an amount is for: three letters or more ("bus" is a thing), never the verbs and small words any errand has. */
+const ERRAND_STOP = new Set("the and for you your our with from this that will send pay paid give bring get all are was can".split(" "));
+const objectWords = (text: string, quote: string | null): Set<string> =>
+  new Set([...namingWords(`${text}\n${quote ?? ""}`, { names: false }), ...normalizeText(`${text} ${quote ?? ""}`).toLowerCase().split(/[^\p{L}]+/u)].filter((w) => w.length >= 3 && !/\d/u.test(w) && !ERRAND_STOP.has(w)));
+
+/**
+ * Months and dates an item's words name: a request for November's report and one for December's are two (Codex code review
+ * of iteration 2), whatever else their words share.
+ */
+const PERIOD = /\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre|q[1-4]|\d{4}-\d{2}(?:-\d{2})?|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\b/giu;
+const periods = (text: string): Set<string> => new Set([...normalizeText(text).toLowerCase().matchAll(PERIOD)].map((m) => m[0].slice(0, 3)));
+const periodsDiffer = (a: string, b: string): boolean => {
+  const [pa, pb] = [periods(a), periods(b)];
+  return pa.size > 0 && pb.size > 0 && !shares(pa, pb);
+};
+
 /**
  * One errand read twice in one conversation: a bill or a request from them and your promise to do it ("$12 for the bus",
- * "send the signed slip and $12"), by the same amount, or (a request and your promise) the same object (`sameObject`).
+ * "send the signed slip and $12 for the bus"): the same amount and the thing it's for (Codex code review of iteration 2: an
+ * amount alone isn't one errand, "$12 for the museum" is another), or (a request and your promise) the same object
+ * (`sameObject`). Never across periods named apart.
  */
 export function sameErrand(d: DatedRow, p: FollowupRow): boolean {
   if (d.threadId !== p.threadId || !ERRANDS.has(d.kind) || p.kind !== "promise") return false;
-  if (shares(amounts(`${d.text}\n${d.quote}`), amounts(`${p.text}\n${p.quote ?? ""}`))) return true;
+  if (periodsDiffer(`${d.text}\n${d.quote}`, `${p.text}\n${p.quote ?? ""}`)) return false;
+  if (shares(amounts(`${d.text}\n${d.quote}`), amounts(`${p.text}\n${p.quote ?? ""}`)) && shares(objectWords(d.text, d.quote), objectWords(p.text, p.quote))) return true;
   return (d.kind === "respond" || d.kind === "ask") && sameObject(d.text, p.text);
 }
 
@@ -60,7 +79,7 @@ export function sameErrand(d: DatedRow, p: FollowupRow): boolean {
  */
 export function sameRequest(a: DatedRow, b: DatedRow): boolean {
   const request = (r: DatedRow) => r.kind === "respond" || r.kind === "ask";
-  return a.id !== b.id && a.threadId === b.threadId && a.senderKey === b.senderKey && a.messageId !== b.messageId && request(a) && request(b) && sameThing(a, b);
+  return a.id !== b.id && a.threadId === b.threadId && a.senderKey === b.senderKey && a.messageId !== b.messageId && request(a) && request(b) && !periodsDiffer(`${a.text}\n${a.quote}`, `${b.text}\n${b.quote}`) && sameThing(a, b);
 }
 
 /**
@@ -85,10 +104,9 @@ export function isDetailOf(detail: DatedRow, of: DatedRow): boolean {
   return detail.kind === "event" && of.kind === "event" && detail.messageId === of.messageId && detail.id !== of.id && detail.dueDay > of.dueDay && TRAVEL.test(of.text) && TRAVEL.test(detail.text);
 }
 
-const keyOf = (source: ItemRef["source"], r: { id: number; sameAs?: string | null }): string => r.sameAs ?? refKey({ source, id: r.id });
-
-/** Older first: a dated item before a promise stored at the same moment. */
-const older = (a: { createdAt: number }, b: { createdAt: number }): boolean => a.createdAt < b.createdAt;
+/** Stored first: by when, then (one table's) the lower id; a dated item before a promise stored at the same moment. */
+const older = (a: { id: number; createdAt: number }, b: { id: number; createdAt: number }): boolean => a.createdAt < b.createdAt || (a.createdAt === b.createdAt && a.id < b.id);
+const promiseOlder = (p: { createdAt: number }, d: { createdAt: number }): boolean => p.createdAt < d.createdAt;
 
 export interface Links {
   same: { item: ItemRef; sameAs: string }[];
@@ -96,19 +114,23 @@ export interface Links {
 }
 
 /**
- * What the items stored since `seen` are the same as, or a detail of, among every open one: each newer one joins the older's
- * canonical (`keyOf`), so a canonical keeps its id as evidence arrives. Bucketed (by moment, conversation, message), never
- * every pair.
+ * What the items not looked at yet (`fresh`) are the same as, or a detail of, among every open one: each newer one joins the
+ * older's canonical, so a canonical keeps its id as evidence arrives. A link found in this pass is counted at once
+ * (Codex code review of iteration 2): what joins an item that has just joined another joins that one's canonical, never
+ * makes a chain the store would refuse. Bucketed (by moment, conversation, message), never every pair.
  */
-export function findLinks(dated: readonly DatedRow[], promises: readonly FollowupRow[], seen: { dated: number; promise: number }): Links {
+export function findLinks(dated: readonly DatedRow[], promises: readonly FollowupRow[], fresh: (key: string, threadId: number) => boolean): Links {
   const out: Links = { same: [], details: [] };
-  const fresh = (source: ItemRef["source"], id: number) => id > (source === "dated" ? seen.dated : seen.promise);
   const byMoment = new Map<number, DatedRow[]>();
   const byMessage = new Map<number, DatedRow[]>();
   const datedByThread = new Map<number, DatedRow[]>();
   const promisesByThread = new Map<number, FollowupRow[]>();
   const promisesByMessage = new Map<number, FollowupRow[]>();
-  const push = <K, V>(m: Map<K, V[]>, k: K, v: V) => void m.set(k, [...(m.get(k) ?? []), v]);
+  const push = <K, V>(m: Map<K, V[]>, k: K, v: V) => {
+    const list = m.get(k);
+    if (list) list.push(v);
+    else m.set(k, [v]);
+  };
   for (const r of dated) {
     if (r.kind === "event" && r.timed) push(byMoment, r.dueAt, r);
     if (r.kind === "event") push(byMessage, r.messageId, r);
@@ -119,73 +141,76 @@ export function findLinks(dated: readonly DatedRow[], promises: readonly Followu
     push(promisesByThread, p.threadId, p);
     push(promisesByMessage, p.messageId, p);
   }
-  const taken = new Set<string>();
-  const join = (item: ItemRef, row: { sameAs?: string | null }, canonical: string) => {
-    const key = refKey(item);
-    if (row.sameAs || taken.has(key) || canonical === key) return;
-    taken.add(key);
-    out.same.push({ item, sameAs: canonical });
+  // each item's canonical, this pass's links included; an item others are the same as is never made anyone's
+  const joined = new Map<string, string>();
+  const canonicals = new Set<string>([...dated, ...promises].flatMap((r) => (r.sameAs ? [r.sameAs] : [])));
+  const own = (source: ItemRef["source"], r: { id: number }) => refKey({ source, id: r.id });
+  const canonicalOf = (source: ItemRef["source"], r: { id: number; sameAs?: string | null }) => r.sameAs ?? joined.get(own(source, r)) ?? own(source, r);
+  const join = (source: ItemRef["source"], row: { id: number; sameAs?: string | null }, to: string) => {
+    const key = own(source, row);
+    if (row.sameAs || joined.has(key) || canonicals.has(key) || to === key) return;
+    joined.set(key, to);
+    canonicals.add(to);
+    out.same.push({ item: { source, id: row.id }, sameAs: to });
   };
+  const isFresh = (source: ItemRef["source"], r: { id: number; threadId: number }) => fresh(own(source, r), r.threadId);
   for (const r of dated) {
-    if (!fresh("dated", r.id)) continue;
-    const other = r.kind === "event" && r.timed ? byMoment.get(r.dueAt)?.find((o) => o.id < r.id && sameEvent(o, r)) : undefined;
-    if (other) join({ source: "dated", id: r.id }, r, keyOf("dated", other));
+    if (!isFresh("dated", r)) continue;
+    const other = r.kind === "event" && r.timed ? byMoment.get(r.dueAt)?.find((o) => o.id !== r.id && older(o, r) && sameEvent(o, r)) : undefined;
+    if (other) join("dated", r, canonicalOf("dated", other));
     if (r.kind === "event" && r.detailOf == null) {
       const outbound = byMessage.get(r.messageId)?.filter((o) => isDetailOf(r, o)).sort((a, b) => a.dueAt - b.dueAt)[0];
       if (outbound) out.details.push({ id: r.id, detailOf: outbound.id });
     }
     if (ERRANDS.has(r.kind)) {
-      const asked = datedByThread.get(r.threadId)?.find((o) => o.id < r.id && sameRequest(o, r));
-      if (asked) join({ source: "dated", id: r.id }, r, keyOf("dated", asked));
+      const asked = datedByThread.get(r.threadId)?.find((o) => o.id !== r.id && older(o, r) && sameRequest(o, r));
+      if (asked) join("dated", r, canonicalOf("dated", asked));
       const promise = promisesByThread.get(r.threadId)?.find((p) => sameErrand(r, p));
       // the newer joins the older's canonical
-      if (promise && older(promise, r)) join({ source: "dated", id: r.id }, r, keyOf("promise", promise));
-      else if (promise) join({ source: "promise", id: promise.id }, promise, keyOf("dated", r));
+      if (promise && promiseOlder(promise, r)) join("dated", r, canonicalOf("promise", promise));
+      else if (promise) join("promise", promise, canonicalOf("dated", r));
     }
   }
   for (const p of promises) {
-    if (p.kind !== "promise" || !fresh("promise", p.id)) continue;
-    const twin = promisesByMessage.get(p.messageId)?.find((o) => o.id < p.id && samePromise(o, p));
-    if (twin) join({ source: "promise", id: p.id }, p, keyOf("promise", twin));
+    if (p.kind !== "promise" || !isFresh("promise", p)) continue;
+    const twin = promisesByMessage.get(p.messageId)?.find((o) => o.id !== p.id && older(o, p) && samePromise(o, p));
+    if (twin) join("promise", p, canonicalOf("promise", twin));
     const errand = datedByThread.get(p.threadId)?.find((d) => sameErrand(d, p));
-    if (errand && older(errand, p)) join({ source: "promise", id: p.id }, p, keyOf("dated", errand));
-    else if (errand) join({ source: "dated", id: errand.id }, errand, keyOf("promise", p));
+    if (errand && !promiseOlder(p, errand)) join("promise", p, canonicalOf("dated", errand));
+    else if (errand) join("dated", errand, canonicalOf("promise", p));
   }
   return out;
 }
 
 /**
  * Plan 210 (iteration 2): membership is reconciled before any projection reads the items, so a duplicate never shows as a
- * row of its own. Only what's stored since the last look is matched (by id: both tables only grow), against every open item;
- * the first look after a start reads them all, once, bucketed. One at a time.
+ * row of its own. What's matched is what hasn't been looked at in the conversation it's in now (Codex code review: a merge of
+ * conversations brings two items together, so an item moved is looked at again), against every open item; the first look
+ * after a start reads them all, once, bucketed. One at a time, and never while an act resolves a row's members
+ * (`exclusive`), so no member joins between an act's read and its write.
  */
 export class TodayLinks {
-  private seen = { dated: 0, promise: 0 };
-  private running: Promise<boolean> | null = null;
+  /** each item looked at, by its key, and the conversation it was in then */
+  private seen = new Map<string, number>();
+  private queue: Promise<unknown> = Promise.resolve();
 
-  /** True: something was linked, and the items should be read again. */
-  async reconcile(store: MailStore, dated: readonly DatedRow[], promises: readonly FollowupRow[]): Promise<boolean> {
-    while (this.running) await this.running.catch(() => false);
-    const top = { dated: Math.max(0, ...dated.map((r) => r.id)), promise: Math.max(0, ...promises.map((r) => r.id)) };
-    // a store cleared (Clear AI data): ids may begin again
-    if (top.dated < this.seen.dated) this.seen.dated = 0;
-    if (top.promise < this.seen.promise) this.seen.promise = 0;
-    if (top.dated === this.seen.dated && top.promise === this.seen.promise) return false;
-    const run = (async () => {
-      const links = findLinks(dated, promises, this.seen);
-      this.seen = top;
-      return (links.same.length || links.details.length ? await store.today.link(links) : 0) > 0;
-    })();
-    this.running = run;
-    try {
-      return await run;
-    } finally {
-      if (this.running === run) this.running = null;
-    }
+  /** Runs `work` alone: no reconcile meanwhile, nor another act. */
+  exclusive<T>(work: () => Promise<T>): Promise<T> {
+    const run = this.queue.then(work, work);
+    this.queue = run.catch(() => undefined);
+    return run;
   }
 
-  /** For tests: what's been looked at. */
-  get watermark(): { dated: number; promise: number } {
-    return this.seen;
+  /** True: something was linked, and the items should be read again. */
+  reconcile(store: MailStore, dated: readonly DatedRow[], promises: readonly FollowupRow[]): Promise<boolean> {
+    const fresh = (key: string, threadId: number) => this.seen.get(key) !== threadId;
+    const anyFresh = dated.some((r) => fresh(refKey({ source: "dated", id: r.id }), r.threadId)) || promises.some((r) => fresh(refKey({ source: "promise", id: r.id }), r.threadId));
+    if (!anyFresh) return Promise.resolve(false);
+    return this.exclusive(async () => {
+      const links = findLinks(dated, promises, fresh);
+      // bounded: what's open now, as it is now
+      this.seen = new Map([...dated.map((r) => [refKey({ source: "dated", id: r.id }), r.threadId] as const), ...promises.map((r) => [refKey({ source: "promise", id: r.id }), r.threadId] as const)]);
+      return (links.same.length || links.details.length ? await store.today.link(links) : 0) > 0;
+    });
   }
 }
