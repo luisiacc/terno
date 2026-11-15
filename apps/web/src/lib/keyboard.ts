@@ -14,7 +14,7 @@ import { loadThread, useThreads } from "~/state/threads";
 import { acceptSuggestion, answerReview, rejectSuggestion } from "~/lib/categorize";
 import { leaveReview } from "~/lib/review";
 import { backToDigest, digestHasKeys, digestKeys } from "~/state/today";
-import { doneOnSelected } from "~/lib/today-task";
+import { doneOnSelected, laterOnSelected, removeOnSelected } from "~/lib/today-task";
 import { conversationKeys } from "~/lib/conversation-keys";
 import { printCommand } from "~/lib/print-open";
 import { checkForUpdates } from "~/lib/updates";
@@ -279,6 +279,9 @@ const DECIDES: Partial<Record<Command, () => boolean>> = {
   "pane.prev": () => getApp().dialog === null && !getApp().menuOpen && movePane(-1),
   // plan 204 (after the panel): Done on Today's selected row with a date or a promise; elsewhere the key is left alone
   "today.done": () => !digestHasKeys() && doneOnSelected(),
+  // plan 210 (iteration 1, the owner): Later (b) and Remove (⇧D) on that same item, by the same rule
+  "today.later": () => !digestHasKeys() && laterOnSelected(),
+  "today.remove": () => !digestHasKeys() && removeOnSelected(),
 };
 
 const hasTargets = () => {

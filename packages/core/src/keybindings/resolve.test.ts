@@ -237,6 +237,25 @@ describe("selection and triage bindings (plan 06)", () => {
     expect(run([key("z")], { ...ctx, snackbar: true })).toBe("snackbar.undo");
   });
 
+  it("plan 210 (iteration 1): What matters' D, b (Later) and ⇧D (Remove); never while typing, writing, under a menu or with character keys off", () => {
+    expect(run([key("d")])).toBe("today.done");
+    expect(run([key("b")])).toBe("today.later");
+    expect(run([key("D", { shift: true })])).toBe("today.remove");
+    // the keys the owner ruled out keep their own commands
+    expect(run([key("l")])).toBe("thread.category");
+    expect(run([key("r")])).toBe("compose.reply");
+    expect(run([key("Delete")])).toBe("thread.trash");
+    expect(run([key("m")])).toBeNull();
+    for (const c of [{ ...ctx, editable: true }, { ...ctx, composing: true }, { ...ctx, dialogOpen: true }, { ...ctx, characterKeys: false }]) {
+      for (const k of [key("b"), key("D", { shift: true }), key("d")]) expect(run([k], c), JSON.stringify([k, c])).toBeNull();
+    }
+    // ⌘B and ⌘⇧D aren't them
+    expect(run([key("b", { meta: true })])).toBeNull();
+    expect(run([key("d", { meta: true, shift: true })])).toBeNull();
+    expect(shortcutsFor("today.later")).toEqual(["b"]);
+    expect(shortcutsFor("today.remove")).toEqual(["shift+d"]);
+  });
+
   it("⇧F10 and the ContextMenu key open the context menu", () => {
     expect(run([key("F10", { shift: true })])).toBe("list.menu");
     expect(run([key("ContextMenu")])).toBe("list.menu");

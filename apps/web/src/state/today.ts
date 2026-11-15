@@ -82,6 +82,11 @@ interface TodayState {
   kinds: ReadonlyMap<number, FeedGroupKind>;
   /** plan 204 (after the panel, fix 10): the row whose task Later's "Pick a date…" is choosing a moment for */
   laterPick: { threadId: number; task: TodayTask } | null;
+  /**
+   * plan 210 (iteration 1): the feed item whose Later menu is open (its button, or b), with the task as it was when it
+   * opened: a reload meanwhile can't move its presets to another item; `next`, where the keys go once it's acted on
+   */
+  laterMenu: { threadId: number; task: TodayTask; next?: number } | null;
   digest: DigestRow | null;
   /** the conversation opened from the digest page: its Back returns there, and only it shows one (plan 161) */
   fromDigest: number | null;
@@ -105,7 +110,7 @@ function storedComingUp(): boolean {
   }
 }
 
-export const useToday = create<TodayState>(() => ({ groups: [], counted: 0, comingUp: 0, ahead: new Set(), comingUpOpen: storedComingUp(), tasks: new Map(), entries: new Map(), history: new Map(), kinds: new Map(), laterPick: null, digest: null, fromDigest: null, pick: null, movedTo: new Map(), notNewsletters: new Set() }));
+export const useToday = create<TodayState>(() => ({ groups: [], counted: 0, comingUp: 0, ahead: new Set(), comingUpOpen: storedComingUp(), tasks: new Map(), entries: new Map(), history: new Map(), kinds: new Map(), laterPick: null, laterMenu: null, digest: null, fromDigest: null, pick: null, movedTo: new Map(), notNewsletters: new Set() }));
 
 /** Plan 204 (after the panel): a Today row's task, only while Today is what's shown (one Map read: other rows never re-render). */
 export function useTodayTask(threadId: number | null | undefined): TodayTask | undefined {

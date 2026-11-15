@@ -20,7 +20,7 @@ vi.mock("~/rpc/connection", () => ({
   },
 }));
 
-const { actOnThreadItem, actOnThreadPromise, actOnTodayRow, doneOnSelected } = await import("./today-task");
+const { actOnThreadItem, actOnThreadPromise, actOnTodayRow, doneOnSelected, laterOnSelected, removeOnSelected } = await import("./today-task");
 const { getApp, setApp } = await import("~/state/app");
 const { reloadList, useList } = await import("~/state/list");
 const { useToday } = await import("~/state/today");
@@ -165,6 +165,46 @@ describe("Done means gone (plan 204, after the second panel round)", () => {
     await actOnTodayRow(3, useToday.getState().tasks.get(3)!, "done");
     expect(shown()).toEqual([4]);
     expect(useToday.getState().groups).toEqual([{ kind: "day:2026-11-20", at: 0 }]);
+  });
+
+  it("plan 210 (iteration 1): ⇧D removes the key's item as D finishes it, with the same Undo; b opens Later for the item as it was, and opening or leaving it moves nothing", async () => {
+    const acts: unknown[] = [];
+    const act = fake.handlers["dated.act"]!;
+    fake.handlers["dated.act"] = async (p) => (acts.push(p), act(p));
+    expect(removeOnSelected()).toBe(true);
+    expect(shown()).toEqual([1, 3]);
+    expect(getApp().selectedId).toBe(3);
+    await vi.waitFor(() => expect(acts).toEqual([{ id: 20, revision: 1, action: "dismiss" }]));
+    await vi.waitFor(() => expect(useSnack.getState().undo).toBeTruthy());
+    await undo();
+    expect(shown()).toEqual([1, 2, 3]);
+    // b: with no feed drawn (the item is the reader's alone), Later's own picker, for the task b saw
+    setApp({ selectedId: 2 });
+    const seen = useToday.getState().tasks.get(2)!;
+    expect(laterOnSelected()).toBe(true);
+    expect(getApp().dialog).toBe("todayLater");
+    expect(useToday.getState().laterPick).toEqual({ threadId: 2, task: seen });
+    // a reload meanwhile brings another item to the row: the picker keeps the one it opened for
+    useToday.setState({ tasks: new Map([[2, { kind: "dated", item: { ...item(2), id: 21 }, when: null, due: null, dueAt: 0 }]]) });
+    expect(useToday.getState().laterPick?.task).toBe(seen);
+    expect(shown()).toEqual([1, 2, 3]);
+    expect(acts).toHaveLength(1);
+    setApp({ dialog: null });
+    useToday.setState({ laterPick: null });
+  });
+
+  it("plan 210 (iteration 1): b and ⇧D leave the key alone among several checked, in a scope, on a row with no task, or outside What matters", async () => {
+    setApp({ checked: new Set([1, 2]) });
+    expect(removeOnSelected()).toBe(false);
+    expect(laterOnSelected()).toBe(false);
+    setApp({ checked: new Set(), selectedId: 99 });
+    expect(removeOnSelected()).toBe(false);
+    expect(laterOnSelected()).toBe(false);
+    setApp({ selectedId: 2, today: false });
+    expect(removeOnSelected()).toBe(false);
+    expect(laterOnSelected()).toBe(false);
+    expect(shown()).toEqual([1, 2, 3]);
+    expect(getApp().dialog).toBe(null);
   });
 
   it("outside Today nothing leaves the list", async () => {

@@ -3,7 +3,7 @@ import { focusedFeedItem, focusFeedItem, useFeedCursor } from "~/lib/feed-focus"
 import { leaveRows, type LeftRows } from "~/lib/actions";
 import { actOnDated, actOnTask, type DatedRef, type TodayTask } from "~/lib/dated";
 import { actOnFollowup } from "~/lib/followups";
-import { getApp } from "~/state/app";
+import { getApp, setApp } from "~/state/app";
 import { listKey, useList } from "~/state/list";
 import { useToday } from "~/state/today";
 
@@ -44,24 +44,83 @@ export function actOnThreadPromise(row: FollowupRow, action: TaskAction, at?: nu
 }
 
 /**
- * Plan 204 (after the panel, fix 2): D on Today's selected row with a task is its Done; anywhere else, on a row without
- * one, or among several checked, it does nothing (false: the key is left alone).
+ * What D, b and ⇧D act on: What matters' item with a task (plan 204, after the panel, fix 2; plan 210's iteration 1 for
+ * b and ⇧D). Anywhere else, on a row without one, or among several checked, nothing (null: the key is left alone).
  */
-export function doneOnSelected(): boolean {
+function keyTarget(): { id: number; task: TodayTask; next: number | undefined } | null {
   const s = getApp();
   // plan 210 (Codex code review): in the feed, the item the keyboard is on (Tab to another, D finishes that one), else
   // the open one, else the one a conversation was just put away from
   const id = s.today ? (focusedFeedItem() ?? s.selectedId ?? useFeedCursor.getState().id) : null;
-  if (id === null || s.scope || (s.checked.size > 0 && !(s.checked.size === 1 && s.checked.has(id)))) return false;
+  if (id === null || s.scope || (s.checked.size > 0 && !(s.checked.size === 1 && s.checked.has(id)))) return null;
   const task = useToday.getState().tasks.get(id);
-  if (!task) return false;
+  if (!task) return null;
   // (Codex code review, round 2) the keyboard on another item than the open one: it goes on to the item after it (else
   // the one before), as the open one would, so a second D is that one's, never the open conversation's
   const focused = id !== s.selectedId && focusedFeedItem() === id;
   const { items, index } = useList.getState();
   const at = index.get(id);
   const next = focused && at !== undefined ? (items[at + 1] ?? items[at - 1])?.id : undefined;
-  void actOnTodayRow(id, task, "done");
+  return { id, task, next };
+}
+
+/** D (Done) and ⇧D (Remove) on the key's item, the keys going on as from the open one. */
+function actOnKeyTarget(action: "done" | "dismiss"): boolean {
+  const target = keyTarget();
+  if (!target) return false;
+  void actOnTodayRow(target.id, target.task, action);
+  const { next } = target;
   if (next !== undefined) requestAnimationFrame(() => focusFeedItem(next));
   return true;
+}
+
+export const doneOnSelected = (): boolean => actOnKeyTarget("done");
+
+/** Plan 210 (iteration 1, the owner): ⇧D takes the item off What matters ("Remove"), with the same Undo as its menu's. */
+export const removeOnSelected = (): boolean => actOnKeyTarget("dismiss");
+
+/**
+ * Plan 210 (iteration 1, the owner): b opens the item's Later, for the item as it is now. Opening it or leaving it changes
+ * nothing; only a moment chosen there moves the item, as from its button.
+ */
+export function laterOnSelected(): boolean {
+  const target = keyTarget();
+  if (!target) return false;
+  openLater(target.id, target.task, target.next);
+  return true;
+}
+
+/** Plan 204 (after the panel, fix 10): Later's "Pick a date…", a moment of your own in its own window. */
+export function openTodayLater(threadId: number, task: TodayTask): void {
+  useToday.setState({ laterPick: { threadId, task } });
+  setApp({ dialog: "todayLater" });
+}
+
+const laterButton = (id: number): HTMLElement | null => document.querySelector<HTMLElement>(`[data-testid=wm-feed] [data-item-id="${id}"] [data-testid=wm-later]`);
+
+/**
+ * Plan 210 (iteration 1): an item's Later, its presets where the feed draws the item (the menu its button opens), else the
+ * picker a menu's "Pick a date…" opens. The task is kept as it is now (`laterMenu`, `laterPick`), so a reload while it's
+ * open can't move the choice to another item; the act is revision-checked as any.
+ */
+export function openLater(threadId: number, task: TodayTask, next?: number): void {
+  if (!laterButton(threadId)) return openTodayLater(threadId, task);
+  // the menu holds the app's keys while it's open (D or e under it would reach the mail behind)
+  useToday.setState({ laterMenu: { threadId, task, ...(next !== undefined ? { next } : {}) } });
+  setApp({ menuOpen: true });
+}
+
+/** The Later menu closes (chosen, Esc, a click away, or its item gone): the app's keys are the app's again. */
+export function closeLater(): void {
+  if (!useToday.getState().laterMenu) return;
+  useToday.setState({ laterMenu: null });
+  setApp({ menuOpen: false });
+}
+
+/** A moment from the Later menu: the act, and the keys on to the next item when b came from another than the open one. */
+export function laterFromMenu(threadId: number, task: TodayTask, at: number): void {
+  const next = useToday.getState().laterMenu?.next;
+  closeLater();
+  void actOnTodayRow(threadId, task, "later", at);
+  if (next !== undefined) requestAnimationFrame(() => focusFeedItem(next));
 }
