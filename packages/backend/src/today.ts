@@ -23,7 +23,7 @@ import {
   promiseDeferred,
   dayKeyOf,
   todayCounted,
-  inDayOrder,
+  sortInDay,
   type DatedRow,
   type TodayAlso,
   type TodayGroupKind,
@@ -95,7 +95,11 @@ const dedupe = (placed: readonly Placed[]): Placed[] => {
  * groups stay as they are.
  */
 const todayRanked = (placed: readonly Placed[]): Placed[] => {
-  const today = placed.filter((p) => p.group === "today").sort((a, b) => inDayOrder(a.why, b.why, false));
+  const today = sortInDay(
+    placed.filter((p) => p.group === "today"),
+    (p) => p.why,
+    false,
+  );
   let i = 0;
   return placed.map((p) => (p.group === "today" ? today[i++]! : p));
 };
@@ -685,11 +689,11 @@ export class TodayService {
       todays.push({ group: "today", threadId: ask.threadId, why: promise ? promiseWhy(promise) : datedWhy(ask, false) });
     }
     for (const r of owedNow) todays.push({ group: "today", threadId: r.threadId, why: promiseWhy(r) });
-    placed.push(...todays.sort((a, b) => inDayOrder(a.why, b.why, false)));
+    placed.push(...sortInDay(todays, (p) => p.why, false));
     // each day ahead and Coming up: by the day it's under, then the same order, a timed row by its time of day (Codex code
     // review: never the original day first, which two put off to the same day don't share)
-    const byItsDay = (a: Ranked, b: Ranked): number => (a.day! < b.day! ? -1 : a.day! > b.day! ? 1 : inDayOrder(a.why, b.why, true));
-    const days = ranked.day.sort(byItsDay).map((s): Placed => ({ group: "day", day: s.day, threadId: s.threadId, why: s.why }));
+    const byItsDay = (rows: readonly Ranked[]): Ranked[] => sortInDay(rows, (r) => r.why, true, (r) => r.day!);
+    const days = byItsDay(ranked.day).map((s): Placed => ({ group: "day", day: s.day, threadId: s.threadId, why: s.why }));
     // the count reads none of what's waiting (its own indexed count there, the stores' `countWith`), nor your reminders
     // and Coming up, which never take a waiting thread from it. A conversation's own items claim it before its waiting row
     // (revision 3: a waiting thread with a Plan is the Plan), here and in the list alike
@@ -710,7 +714,7 @@ export class TodayService {
     const reminders = (await this.b.reminders.refresh()).reminders.filter((r) => r.dueAt <= endOfDay.getTime()).sort((a, b) => a.dueAt - b.dueAt);
     for (const r of reminders) placed.push({ group: "today", threadId: r.threadId, why: { kind: "reminder", dueAt: r.dueAt } });
     // Coming up: dated items, and (after the panel) your dated promises due in the next two weeks, by their day
-    for (const c of ranked.comingUp.sort(byItsDay)) placed.push({ group: "comingUp", day: c.day, threadId: c.threadId, why: c.why });
+    for (const c of byItsDay(ranked.comingUp)) placed.push({ group: "comingUp", day: c.day, threadId: c.threadId, why: c.why });
     return withAlso(todayRanked(dedupe(placed)), candidates);
   }
 

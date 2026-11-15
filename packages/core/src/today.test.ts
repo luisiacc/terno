@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { aiFeaturesAvailable, dayTier, inDayOrder, nextPrepareAt, prepareTimeToday, todayKey, type TodayWhy } from "./today";
+import { aiFeaturesAvailable, dayTier, inDayOrder, nextPrepareAt, prepareTimeToday, sortInDay, todayKey, type TodayWhy } from "./today";
 
 const settings = (provider: string, over = {}) => ({ ai: { provider, model: "m", needsKey: false, hasKey: false, keyConfirmed: false, keyUnreadable: false, keys: {}, ...over } }) as never;
 
@@ -87,5 +87,20 @@ describe("one order inside a day (plan 210, iteration 1)", () => {
     const morning = as("morning 8:00", dated("event", at(18, 8), true));
     expect(sorted([morning, lastNight])).toEqual(["last night 23:00", "morning 8:00"]);
     expect(sorted([lastNight, morning], true)).toEqual(["morning 8:00", "last night 23:00"]);
+  });
+
+  it("a whole list in the same order, each key read once: by its day first when given, ties as they came", () => {
+    const rows = [
+      { day: "2026-11-20", why: as("concert", dated("event", at(20, 19), true)) },
+      { day: "2026-11-19", why: as("parcel", dated("delivery", at(19, 0))) },
+      { day: "2026-11-20", why: as("rent", dated("pay", at(20, 0))) },
+      { day: "2026-11-19", why: as("ned", { kind: "waiting" }) },
+      { day: "2026-11-19", why: as("ana", { kind: "waiting" }) },
+      { day: "2026-11-19", why: as("tax", dated("pay", at(19, 0))) },
+    ];
+    expect(sortInDay(rows, (r) => r.why, true, (r) => r.day).map((r) => named.get(r.why))).toEqual(["tax", "ned", "ana", "parcel", "rent", "concert"]);
+    // without days, the comparator's order
+    const whys = rows.map((r) => r.why);
+    expect(sortInDay(whys, (w) => w, false).map((w) => named.get(w))).toEqual(sorted(whys));
   });
 });

@@ -74,6 +74,24 @@ const minuteOfDay = (ms: number): number => {
   return d.getHours() * 60 + d.getMinutes();
 };
 
+type DayWhy = Pick<TodayWhy, "kind" | "item" | "dueAt">;
+
+/** What `inDayOrder` compares of a row, read once: its tier, timed or not, its moment (or time of day), its moment. */
+interface DayKey {
+  tier: number;
+  timed: boolean;
+  at: number;
+  dueAt: number;
+}
+
+function dayKey(why: DayWhy, clock: boolean): DayKey {
+  const timed = timedWhy(why);
+  const dueAt = why.dueAt ?? 0;
+  return { tier: dayTier(why), timed, at: timed && clock ? minuteOfDay(dueAt) : dueAt, dueAt };
+}
+
+const byDayKey = (x: DayKey, y: DayKey): number => (x.tier !== y.tier || x.tier === 2 ? x.tier - y.tier : x.timed !== y.timed ? (x.timed ? -1 : 1) : x.at - y.at || x.dueAt - y.dueAt);
+
 /**
  * Plan 210 (iteration 1): the one order inside a day, the backend's before each conversation's row is chosen and the
  * renderer's where Coming up joins a day: by `dayTier`, then the timed first, by their time, then the rest as they came
@@ -81,13 +99,16 @@ const minuteOfDay = (ms: number): number => {
  * their time of day (put off, they may first have been due another day); Today's by their moment, so a Plan still on
  * from last night comes first.
  */
-export function inDayOrder(a: Pick<TodayWhy, "kind" | "item" | "dueAt">, b: Pick<TodayWhy, "kind" | "item" | "dueAt">, clock: boolean): number {
-  const tier = dayTier(a) - dayTier(b);
-  if (tier !== 0 || dayTier(a) === 2) return tier;
-  const [ta, tb] = [timedWhy(a), timedWhy(b)];
-  if (ta !== tb) return ta ? -1 : 1;
-  const [x, y] = [a.dueAt ?? 0, b.dueAt ?? 0];
-  return ta && clock ? minuteOfDay(x) - minuteOfDay(y) || x - y : x - y;
+export const inDayOrder = (a: DayWhy, b: DayWhy, clock: boolean): number => byDayKey(dayKey(a, clock), dayKey(b, clock));
+
+/**
+ * The same order for a whole list, each row's key read once (the backend sorts up to the 1,000-item bound on every count):
+ * by `day` first when given (a day ahead's and Coming up's rows, under their days), ties as they came.
+ */
+export function sortInDay<T>(rows: readonly T[], why: (row: T) => DayWhy, clock: boolean, day?: (row: T) => string): T[] {
+  const keyed = rows.map((row, i) => ({ row, i, day: day?.(row) ?? "", key: dayKey(why(row), clock) }));
+  keyed.sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : byDayKey(a.key, b.key) || a.i - b.i));
+  return keyed.map((k) => k.row);
 }
 
 /**
