@@ -1,4 +1,5 @@
 import { categoryReferenceCeiling, nextCategoryId, reserveCategoryIds } from "./category-identities";
+import type { ClosedOrder } from "./closed-order";
 import { readRuleState } from "@terno/store";
 import { saveFilterForward } from "./forwards";
 import { folderPage, folderScopeIds, folderUnreadCounts, refreshFolders } from "./folders";
@@ -100,6 +101,8 @@ export interface Ctx {
   order: ThreadOrder;
   /** the same order, per quick filter (unread, attachments, starred): a filtered page never walks the threads it leaves out */
   filterOrders: Record<ListFilter, ThreadOrder>;
+  /** plan 210: closed items and closed promises of yours by closing time (SQLite's `dated_closed` and `followups_closed`) */
+  closedOrders: { dated: ClosedOrder; followups: ClosedOrder };
   scopes: ScopeIndex;
   /** plan 17: the threads whose facts the backfill hasn't computed yet */
   facts: FactsQueue;

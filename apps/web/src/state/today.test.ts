@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
 vi.mock("~/rpc/connection", () => ({ client: { call: vi.fn(async () => ({})), on: () => () => {}, connectionVersion: 1 } }));
 
-const { appendHistory, digestPick, flattenToday, historyThrough, installToday, keepDigestPick, useToday } = await import("./today");
+const { digestPick, flattenToday, historyThrough, installToday, keepDigestPick, publishHistory, todayAnswer, useToday } = await import("./today");
 installToday();
 const { setApp } = await import("./app");
 const { laterWindow } = await import("~/lib/dated");
@@ -394,13 +394,22 @@ describe("plan 210: the history below the open part and the automated section, a
     expect(useToday.getState().kinds.get(3)).toBe("history");
     expect(useToday.getState().counted).toBe(1);
     expect(historyThrough(rows)).toEqual({ at: 800, src: 0, id: 30 });
-    // the next page: what the list has is left out, the rest joins the history
-    const index = new Map(rows.map((r, i) => [r.id, i]));
-    const more = appendHistory({ items: [line(3, 800), line(4, 600)], next: null }, index);
-    expect(more.map((r) => r.id)).toEqual([4]);
+    // the next page's lines the list took join the history
+    publishHistory([line(4, 600)]);
     expect(useToday.getState().history.get(4)?.key).toEqual({ at: 600, src: 0, id: 40 });
     expect(useToday.getState().kinds.get(4)).toBe("history");
-    expect(historyThrough([...rows, ...more])).toEqual({ at: 600, src: 0, id: 40 });
+    expect(historyThrough([...rows, thread(4)])).toEqual({ at: 600, src: 0, id: 40 });
+  });
+
+  it("Codex code review: an answer's maps change nothing until the list publishes them with its rows", () => {
+    flattenToday({ now: 0, held: [], digest: null, sections: [{ kind: "needsYou", items: [{ thread: thread(1), why: { kind: "waiting", wrote: true } }] }] }, []);
+    const answer = todayAnswer({ now: 0, held: [], digest: null, sections: [], history: { items: [line(1, 900)], next: null } }, []);
+    expect(answer.items.map((r) => r.id)).toEqual([1]);
+    // dropped (a newer answer came): the open row is still the open part's
+    expect(useToday.getState().history.has(1)).toBe(false);
+    expect(useToday.getState().kinds.get(1)).toBe("needsYou");
+    answer.publish();
+    expect(useToday.getState().kinds.get(1)).toBe("history");
   });
 
   it("without a history (the list look), no history group and nothing to page", () => {

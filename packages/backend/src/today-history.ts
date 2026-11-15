@@ -32,6 +32,9 @@ export interface HistoryAsk {
   exclude: ReadonlySet<number>;
   dated: boolean;
   promises: boolean;
+  /** Codex code review: a walk past many left-out rows gives the event loop back between reads, within the slice's budget */
+  yieldTurn: () => Promise<void>;
+  sliceMs: number;
 }
 
 const outcomeOf = (r: { state: string; closedReason: string | null }): HistoryOutcome => (r.state === "done" ? "done" : r.state === "settled" ? "settled" : r.closedReason === "expired" ? "over" : "dismissed");
@@ -57,17 +60,24 @@ export async function historyPage(store: MailStore, o: HistoryAsk): Promise<Toda
       if (top) newest.set(id, top);
     }
   };
+  let slice = performance.now();
+  const breathe = async () => {
+    if (performance.now() - slice < o.sliceMs) return;
+    await o.yieldTurn();
+    slice = performance.now();
+  };
   const fill = async <R extends { threadId: number; id: number; closedAt: number | null }>(s: Source<R>, keep: (rows: R[]) => Promise<readonly R[]>) => {
-    if (s.buf.length || s.done) return;
-    const rows = await s.read(s.after);
-    if (rows.length < READ_BATCH) s.done = true;
-    if (!rows.length) return;
-    const last = rows.at(-1)!;
-    s.after = { at: last.closedAt!, id: last.id };
-    await learn(rows.map((r) => r.threadId));
-    s.buf.push(...(await keep(rows)));
-    // a whole batch left out (an untrusted sender's items): read on
-    if (!s.buf.length) await fill(s, keep);
+    // a whole batch left out (an untrusted sender's items) reads on
+    while (!s.buf.length && !s.done) {
+      await breathe();
+      const rows = await s.read(s.after);
+      if (rows.length < READ_BATCH) s.done = true;
+      if (!rows.length) return;
+      const last = rows.at(-1)!;
+      s.after = { at: last.closedAt!, id: last.id };
+      await learn(rows.map((r) => r.threadId));
+      s.buf.push(...(await keep(rows)));
+    }
   };
   // an item from an untrusted sender isn't shown (as in the open part, Codex's second pass of plan 204)
   const trusted = (rows: DatedRow[]) => withoutUntrusted(rows, (keys) => store.dated.written(keys));
@@ -84,8 +94,9 @@ export async function historyPage(store: MailStore, o: HistoryAsk): Promise<Toda
     }
     const head = heads.sort((a, b) => historyOrder(a.key, b.key))[0]!;
     if (o.through && historyOrder(head.key, o.through) > 0) {
-      // past the line the renderer had: the rest is the next page's
-      next = items.at(-1)?.key ?? null;
+      // past the line the renderer had: the rest is the next page's, from the last line here, or (none left above it, all
+      // gone meanwhile: Codex code review) from that line itself, so nothing older is lost
+      next = items.at(-1)?.key ?? o.through;
       break;
     }
     const row = head.source.buf.shift()! as DatedRow | FollowupRow;

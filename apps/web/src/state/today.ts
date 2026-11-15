@@ -1,5 +1,5 @@
 import { todayAvailable } from "~/lib/ai";
-import { addressKey, DIGEST_ROW_ID, TODAY_COUNTED, TODAY_GROUP_ORDER, type DigestItem, type DigestRow, type HistoryKey, type TodayGroupKind, type TodayHistoryItem, type TodayHistoryPage, type TodayItem, type TodayList, type TodayWhy, type ThreadSummary } from "@terno/core";
+import { addressKey, DIGEST_ROW_ID, TODAY_COUNTED, TODAY_GROUP_ORDER, type DigestItem, type DigestRow, type HistoryKey, type TodayGroupKind, type TodayHistoryItem, type TodayItem, type TodayList, type TodayWhy, type ThreadSummary } from "@terno/core";
 import { t } from "@terno/i18n";
 import { create } from "zustand";
 import { listDate } from "~/lib/format";
@@ -285,6 +285,16 @@ const GROUP_ORDER: readonly FeedGroupKind[] = [...TODAY_GROUP_ORDER, "history"];
  * Held rows stay where they were until the selection lets go (revision 9).
  */
 export function flattenToday(list: TodayList, before: readonly ThreadSummary[]): ThreadSummary[] {
+  const answer = todayAnswer(list, before);
+  answer.publish();
+  return answer.items;
+}
+
+/**
+ * The same, its maps published only when asked (Codex code review of plan 210): the list publishes them with the rows,
+ * in the commit that shows them, so an answer it drops (a newer one came, the list moved on) changes nothing.
+ */
+export function todayAnswer(list: TodayList, before: readonly ThreadSummary[]): { items: ThreadSummary[]; publish: () => void } {
   const groups: TodayGroup[] = [];
   const items: ThreadSummary[] = [];
   const counted = new Set<number>();
@@ -356,8 +366,8 @@ export function flattenToday(list: TodayList, before: readonly ThreadSummary[]):
     while (g + 1 < groups.length && groups[g + 1]!.at <= i) g++;
     if (groups[g] && groups[g]!.at <= i && items[i]!.id !== DIGEST_ROW_ID) kinds.set(items[i]!.id, groups[g]!.kind);
   }
-  useToday.setState(({ notNewsletters }) => ({ groups, counted: counted.size, comingUp, tasks, entries, history, digestAt, kinds, digest: list.digest && withoutSenders(list.digest, notNewsletters) }));
-  return items;
+  const publish = () => useToday.setState(({ notNewsletters }) => ({ groups, counted: counted.size, comingUp, tasks, entries, history, digestAt, kinds, digest: list.digest && withoutSenders(list.digest, notNewsletters) }));
+  return { items, publish };
 }
 
 /**
@@ -385,13 +395,12 @@ export function todayRowsLeft(items: readonly ThreadSummary[]): void {
 }
 
 /**
- * Plan 210: a page of the history, after the lines the list has: its lines join the history's map and group (the list
- * appends the rows themselves, leaving out any it has). Its key travels as the list's cursor, never kept here, so a page
- * the list drops (a newer answer came) moves nothing.
+ * Plan 210: lines of a history page the list has just taken (in the commit that shows their rows): they join the
+ * history's map and group. A page's key travels as the list's cursor, never kept here, so a page the list drops moves
+ * nothing (Codex code review).
  */
-export function appendHistory(page: TodayHistoryPage, have: ReadonlyMap<number, number>): ThreadSummary[] {
-  const fresh = page.items.filter((line) => !have.has(line.thread.id));
-  if (!fresh.length) return [];
+export function publishHistory(fresh: readonly TodayHistoryItem[]): void {
+  if (!fresh.length) return;
   useToday.setState(({ history, kinds }) => {
     const nextHistory = new Map(history);
     const nextKinds = new Map(kinds);
@@ -401,7 +410,6 @@ export function appendHistory(page: TodayHistoryPage, have: ReadonlyMap<number, 
     }
     return { history: nextHistory, kinds: nextKinds };
   });
-  return fresh.map((line) => line.thread);
 }
 
 /** Plan 210: the deepest history line these rows hold, what a reload asks down to (so it keeps the depth it had). */

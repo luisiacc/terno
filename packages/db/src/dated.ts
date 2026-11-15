@@ -214,9 +214,9 @@ export function closedDatedPage(db: Db, o: { since: number; after: ClosedAt | nu
   const { after } = o;
   return db
     .all<Raw>(
-      `SELECT * FROM dated_items INDEXED BY dated_closed WHERE state <> 'open' AND closed_at >= ?${after ? " AND (closed_at < ? OR (closed_at = ? AND id < ?))" : ""} ORDER BY closed_at DESC, id DESC LIMIT ?`,
+      `SELECT * FROM dated_items INDEXED BY dated_closed WHERE state <> 'open' AND closed_at >= ?${after ? " AND (closed_at, id) < (?, ?)" : ""} ORDER BY closed_at DESC, id DESC LIMIT ?`,
       o.since,
-      ...(after ? [after.at, after.at, after.id] : []),
+      ...(after ? [after.at, after.id] : []),
       o.limit,
     )
     .map(toRow);
