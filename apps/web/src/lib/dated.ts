@@ -100,7 +100,7 @@ export const promiseLine = (o: { text: string; dueAt?: number; dated: boolean },
  * them, what its Undo names (null for a nudge: it has none of its own).
  */
 export type TodayTask =
-  | { kind: "dated"; item: DatedRef; when: string | null; due: string | null; dueAt: number; text?: string | null }
+  | { kind: "dated"; item: DatedRef; when: string | null; due: string | null; dueAt: number; noDay?: boolean; text?: string | null }
   | { kind: "promise"; id: number; revision: number; when: string | null; due: string | null; dated?: boolean; noDay?: boolean; person?: TaskPerson; text?: string | null };
 // a nudge (no reply to your mail) acts as a promise does: through follow-ups' act on the row it shows (Codex code review)
 
@@ -128,7 +128,10 @@ export function taskOf(why: TodayWhy, now = Date.now()): TodayTask | null {
     // a Missed item says its day; one still ahead, its time today
     const timed = item.timed && !why.missed;
     const when = item.dated ? dueShort(timed ? dueAt : (localDay(item.dueDay)?.getTime() ?? dueAt), timed, now) : null;
-    return { kind: "dated", item, when, due: datedWhen({ ...item, dueAt }, why.missed === true, now), dueAt, text: why.text ?? null };
+    // the fifth panel round (change 3): an alert that named no day says none, as a promise with none doesn't (its made-up
+    // day only says when it's Missed); an ask keeps the day it came
+    const noDay = item.kind === "alert" && !item.dated;
+    return { kind: "dated", item, when, due: datedWhen({ ...item, dueAt }, why.missed === true, now), dueAt, text: why.text ?? null, ...(noDay ? { noDay } : {}) };
   }
   if ((why.kind === "promise" || why.kind === "nudge") && why.promise) {
     const dated = why.kind === "promise" && why.promise.dated === true && why.dueAt !== undefined;

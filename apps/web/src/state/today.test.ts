@@ -282,11 +282,12 @@ describe("plan 204: Missed, Deadlines, Needs you, Plans, Reminders and Coming up
   it("after the panel: each row's task, what D, Done, Not a task and Later act on, with its due day for the date's place", () => {
     flattenToday(full(), []);
     const tasks = useToday.getState().tasks;
-    // Missed says its day; a deadline tomorrow, "Tomorrow"; an alert that named none, nothing (the received date stays)
+    // Missed says its day; a deadline tomorrow, "Tomorrow"; an alert that named none, no day at all (the fifth panel
+    // round: not the day it came either)
     expect(tasks.get(1)).toMatchObject({ kind: "dated", when: "Tue" });
     expect(laterWindow(tasks.get(1)!)).toEqual({ before: null, limit: null });
     expect(tasks.get(3)).toMatchObject({ when: "Tomorrow" });
-    expect(tasks.get(5)).toMatchObject({ when: null });
+    expect(tasks.get(5)).toMatchObject({ when: null, noDay: true });
     // a Plan: its time tomorrow, and Later only before it starts (the third panel round), or an untimed one before it ends
     expect(tasks.get(6)).toMatchObject({ when: "Tomorrow" });
     expect(laterWindow(tasks.get(6)!)).toEqual({ before: at(13, 7, 40), limit: "starts" });
