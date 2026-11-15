@@ -1,5 +1,5 @@
 import { todayAvailable } from "~/lib/ai";
-import { addressKey, DIGEST_ROW_ID, todayCounted, TODAY_GROUP_ORDER, type DigestItem, type DigestRow, type TodayGroupKind, type TodayList, type TodayWhy, type ThreadSummary } from "@terno/core";
+import { addressKey, DIGEST_ROW_ID, todayCounted, TODAY_GROUP_ORDER, type DigestItem, type DigestRow, type TodayGroupKind, type TodayItem, type TodayList, type TodayWhy, type ThreadSummary } from "@terno/core";
 import { t } from "@terno/i18n";
 import { create } from "zustand";
 import { listDate } from "~/lib/format";
@@ -60,6 +60,8 @@ interface TodayState {
    * task, Later and D act on, and what leads the row (its line first, its due day where the date is)
    */
   tasks: ReadonlyMap<number, TodayTask>;
+  /** plan 204, the UI experiment: each row's item as the backend said it (a promise's day known), what a feed's sentence is made from */
+  entries: ReadonlyMap<number, TodayItem>;
   /** plan 204 (after the panel, revision 10): the digest's row, the list's last, or -1 */
   digestAt: number;
   /** each row's group, by thread (held rows keep theirs): headings and the digest's place follow the rows, whatever leaves */
@@ -89,7 +91,7 @@ function storedComingUp(): boolean {
   }
 }
 
-export const useToday = create<TodayState>(() => ({ groups: [], counted: 0, comingUp: 0, comingUpOpen: storedComingUp(), tasks: new Map(), digestAt: -1, kinds: new Map(), laterPick: null, digest: null, fromDigest: null, pick: null, movedTo: new Map(), notNewsletters: new Set() }));
+export const useToday = create<TodayState>(() => ({ groups: [], counted: 0, comingUp: 0, comingUpOpen: storedComingUp(), tasks: new Map(), entries: new Map(), digestAt: -1, kinds: new Map(), laterPick: null, digest: null, fromDigest: null, pick: null, movedTo: new Map(), notNewsletters: new Set() }));
 
 /** Plan 204 (after the panel): a Today row's task, only while Today is what's shown (one Map read: other rows never re-render). */
 export function useTodayTask(threadId: number | null | undefined): TodayTask | undefined {
@@ -281,6 +283,7 @@ export function flattenToday(list: TodayList, before: readonly ThreadSummary[]):
   const items: ThreadSummary[] = [];
   const counted = new Set<number>();
   const tasks = new Map<number, TodayTask>();
+  const entries = new Map<number, TodayItem>();
   const open = useToday.getState().comingUpOpen;
   let comingUp = 0;
   const sections = [...list.sections].sort((a, b) => GROUP_ORDER.indexOf(a.kind) - GROUP_ORDER.indexOf(b.kind));
@@ -295,6 +298,7 @@ export function flattenToday(list: TodayList, before: readonly ThreadSummary[]):
       const why = dayKnown(item.why, section.kind);
       const task = taskOf(why);
       items.push({ ...item.thread, snippet: whyLine(item, why, task) });
+      entries.set(item.thread.id, why === item.why ? item : { ...item, why });
       // the header's "N need you", what the sidebar's number counts (the backend's own rule: never a Plan's kind)
       if (todayCounted(section.kind, item.why.item?.kind)) counted.add(item.thread.id);
       // the fifth panel round (change 6): the conversation's next item, said on the row's second line
@@ -335,7 +339,7 @@ export function flattenToday(list: TodayList, before: readonly ThreadSummary[]):
     while (g + 1 < groups.length && groups[g + 1]!.at <= i) g++;
     if (groups[g] && groups[g]!.at <= i && items[i]!.id !== DIGEST_ROW_ID) kinds.set(items[i]!.id, groups[g]!.kind);
   }
-  useToday.setState(({ notNewsletters }) => ({ groups, counted: counted.size, comingUp, tasks, digestAt, kinds, digest: list.digest && withoutSenders(list.digest, notNewsletters) }));
+  useToday.setState(({ notNewsletters }) => ({ groups, counted: counted.size, comingUp, tasks, entries, digestAt, kinds, digest: list.digest && withoutSenders(list.digest, notNewsletters) }));
   return items;
 }
 
