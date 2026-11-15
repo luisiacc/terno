@@ -187,3 +187,15 @@ Done (or Not a task) closes the shown item; its row leaves at once as now; the r
 
 Left as it is: an untrusted item newer than a trusted one of the same conversation, both above a page's key, can let the trusted one show once more past the key (only the newest per table is known without reading a conversation's rows); untrusted items are only those stored before plan 204's guard.
 
+## The full run
+
+`pnpm test:all` (E2E_PORT 5421, WEB_PORT 5422; the machine at load 8 from other work): lint, build, typecheck, db-wasm, e2e, ui-perf and startup passed; perf failed only on the crowded first pass and passed alone. What failed:
+
+- **unit, `reader-compose-focus.test`: this series' bug,** fixed: the reader's Close (plan 204's experiment) called its two hooks only in Split (`!page && feedLook(useApp…, useWmLook…)`), so a layout switch changed the hook count. They run on every render now.
+- **unit, `open-errors.test` ("a step that fails names itself"), smoke `mailbox.smoke` ("a step that fails…") and web-conformance's OPFS lifecycle ("a step that fails leaves the file at its version", then "Cannot pause VFS" from the file it left open): not this series.** All three re-run the newest migration that creates a table (v57, plan 204's), which recreates its table by rename and so runs twice without failing; `open-errors.test` fails the same with the branch's migrations before v59 (checked).
+- **unit, `apps/site` render test** (the site's design list): not this series (no file of it or of the designs touched).
+
+The unit project run again alone after the fix: only the last two of those.
+
+Screenshots for the owner: `/tmp/terno-scratch/p204/panel/shots-feed/<maria|priya>/` (the copies seeded with 50 past bills from made-up billers so the history reaches its second page; screenshot data only).
+
