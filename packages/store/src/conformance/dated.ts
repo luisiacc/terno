@@ -645,7 +645,7 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
         expect((await store.dated.closedPage({ since, after: { at: NOW - 1000, id: a!.id }, limit: 1 })).map((r) => r.id)).toEqual([b!.id]);
       });
 
-      it("takes every closed state, and each thread's newest closing by its thread", async () => {
+      it("takes every closed state, two closings of one conversation each a row of their own, and a reopened one leaves", async () => {
         const s = await closedItems([NOW - 5000], "settled");
         const m = await s.got({ subject: "Two items", providerMsgId: "h-two" });
         await s.finish(m.id, m.thread, { rows: [s.item(), s.item({ item: 1, text: "Renew the domain" })] });
@@ -654,14 +654,10 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
         await s.store.dated.update(second!.id, second!.revision, { state: "done", closedReason: "user", closedAt: NOW - 100 });
         const since = NOW - DATED_CLOSED_KEEP_MS;
         expect((await s.store.dated.closedPage({ since, after: null, limit: 10 })).map((r) => [r.id, r.state])).toEqual([[second!.id, "done"], [first!.id, "dismissed"], [s.rows[0]!.id, "settled"]]);
-        const newest = await s.store.dated.newestClosed([m.thread, s.rows[0]!.thread, 987_654], since);
-        expect(newest).toEqual(new Map([[m.thread, { at: NOW - 100, id: second!.id }], [s.rows[0]!.thread, { at: NOW - 5000, id: s.rows[0]!.id }]]));
-        expect(await s.store.dated.newestClosed([], since)).toEqual(new Map());
-        // reopened (Undo), it leaves both
+        // reopened (Undo), it leaves the page, and the conversation's other closing stays
         const back = await s.store.dated.get(second!.id);
         await s.store.dated.update(back!.id, back!.revision, { state: "open", closedReason: null, closedAt: null });
-        expect((await s.store.dated.newestClosed([m.thread], since)).get(m.thread)).toEqual({ at: NOW - 4000, id: first!.id });
-        expect((await s.store.dated.closedPage({ since, after: null, limit: 10 })).map((r) => r.id)).not.toContain(second!.id);
+        expect((await s.store.dated.closedPage({ since, after: null, limit: 10 })).map((r) => r.id)).toEqual([first!.id, s.rows[0]!.id]);
       });
     });
 

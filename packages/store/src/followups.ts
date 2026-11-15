@@ -123,8 +123,6 @@ export interface FollowupStore {
   ofThread(threadId: number): Promise<FollowupRow[]>;
   /** Plan 210: closed promises of yours (done, dismissed) closed since `since`, newest first by `(closed_at, id)`, strictly after `after`, at most `limit` */
   closedPage(o: { since: number; after: ClosedAt | null; limit: number }): Promise<FollowupRow[]>;
-  /** Plan 210: each of these threads' newest closed promise since `since`, by thread */
-  newestClosed(threadIds: readonly number[], since: number): Promise<Map<number, ClosedAt>>;
   get(id: number): Promise<FollowupRow | null>;
   /** the soonest open row's moment (`followupWakeAt`: a promise's Later included); null: nothing to wait for */
   nextDue(): Promise<number | null>;

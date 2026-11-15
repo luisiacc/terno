@@ -660,7 +660,7 @@ describe("migration v57: an ask (plan 204, after the third panel round)", () => 
     expect(migrate(db)).toEqual({ from: 56, to: SCHEMA_VERSION });
     // v60's columns at their defaults (plan 210, iteration 2)
     expect(db.all<Record<string, unknown>>("SELECT * FROM dated_items ORDER BY id")).toEqual(before.map((r) => ({ ...r, early: 0, same_as: null, detail_of: null })));
-    expect(db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'dated_items' AND sql IS NOT NULL ORDER BY name").map((r) => r.name)).toEqual(["dated_closed", "dated_closed_thread", "dated_open", "dated_same", "dated_sender", "dated_thread"]);
+    expect(db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'dated_items' AND sql IS NOT NULL ORDER BY name").map((r) => r.name)).toEqual(["dated_closed", "dated_open", "dated_same", "dated_sender", "dated_thread"]);
     expect(db.get("SELECT name FROM sqlite_master WHERE name = 'dated_items_v57'")).toBeUndefined();
     // an ask now; the next id is past the pruned one, as before the upgrade
     insert(null, "ask");
@@ -682,12 +682,12 @@ describe("migration v58: a promise's Later (plan 204, the fifth panel round)", (
     expect(before).toHaveLength(1);
     expect(migrate(db)).toEqual({ from: 57, to: SCHEMA_VERSION });
     expect(db.all<Record<string, unknown>>("SELECT * FROM followups ORDER BY id")).toEqual(before.map((r) => ({ ...r, deferred_until: null, same_as: null, broken_due_at: null, timed: 0 })));
-    expect(db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'followups' AND sql IS NOT NULL ORDER BY name").map((r) => r.name)).toEqual(["followups_active", "followups_closed", "followups_closed_thread", "followups_same", "followups_thread", "followups_top"]);
+    expect(db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'followups' AND sql IS NOT NULL ORDER BY name").map((r) => r.name)).toEqual(["followups_active", "followups_closed", "followups_same", "followups_thread", "followups_top"]);
   });
 });
 
 describe("migration v60: What matters' items (plan 210, iteration 2)", () => {
-  it("adds duplicates, details, early, a broken promise's day and a promise's time at their defaults, every row kept (shape only)", () => {
+  it("adds duplicates, details, early, a broken promise's day and a promise's time at their defaults, every row kept, and drops v59's per-thread closing indexes (shape only)", () => {
     const { db } = legacyMail(59, { threads: 2, seed: 10 });
     const thread = db.get<{ id: number }>("SELECT id FROM threads ORDER BY id LIMIT 1")!.id;
     db.run(
@@ -709,6 +709,9 @@ describe("migration v60: What matters' items (plan 210, iteration 2)", () => {
     expect(db.get<{ sql: string }>("SELECT sql FROM sqlite_master WHERE name = 'dated_same'")!.sql).toMatch(/WHERE same_as IS NOT NULL/);
     expect(db.get<{ sql: string }>("SELECT sql FROM sqlite_master WHERE name = 'followups_same'")!.sql).toMatch(/WHERE same_as IS NOT NULL/);
     expect(db.all<{ detail: string }>("EXPLAIN QUERY PLAN SELECT id FROM dated_items WHERE same_as IN ('dated:1')").map((r) => r.detail).join(" ")).toMatch(/dated_same/);
+    // a line per closed item now: no conversation's newest closing is read
+    for (const name of ["dated_closed_thread", "followups_closed_thread"]) expect(db.get("SELECT 1 FROM sqlite_master WHERE name = ?", name)).toBeUndefined();
+    for (const name of ["dated_closed", "followups_closed"]) expect(db.get("SELECT 1 FROM sqlite_master WHERE name = ?", name)).toBeDefined();
   });
 });
 

@@ -89,13 +89,10 @@ export async function measureDated(o: WorkloadMailbox): Promise<void> {
   const deepKey = { at: all[19_000]!.closedAt!, id: all[19_000]!.id };
   const first = await timed(40, () => store.dated.closedPage({ since, after: null, limit: 100 }));
   const deep = await timed(40, () => store.dated.closedPage({ since, after: deepKey, limit: 100 }));
-  const threads = all.slice(0, 100).map((r) => r.threadId);
-  const newest = await timed(40, () => store.dated.newestClosed(threads, since));
   const promises = await timed(40, () => store.followups.closedPage({ since, after: null, limit: 100 }));
-  o.log(`History: cold (20,000 closed) ${cold.toFixed(1)} ms, a first page of closed items ${first.toFixed(2)} ms, a deep one ${deep.toFixed(2)} ms, a page's newest closings ${newest.toFixed(2)} ms, closed promises ${promises.toFixed(2)} ms`);
+  o.log(`History: cold (20,000 closed) ${cold.toFixed(1)} ms, a first page of closed items ${first.toFixed(2)} ms, a deep one ${deep.toFixed(2)} ms, closed promises ${promises.toFixed(2)} ms`);
   expect(cold).toBeLessThanOrEqual(COLD_MS * o.budget);
   expect(first).toBeLessThanOrEqual(5 * o.budget);
   expect(deep).toBeLessThanOrEqual(5 * o.budget);
-  expect(newest).toBeLessThanOrEqual(5 * o.budget);
   expect(promises).toBeLessThanOrEqual(5 * o.budget);
 }

@@ -205,8 +205,6 @@ export interface DatedStore {
    * `after`, at most `limit`: what What matters' history pages through (an index by closing time, both stores).
    */
   closedPage(o: { since: number; after: ClosedAt | null; limit: number }): Promise<DatedRow[]>;
-  /** Plan 210: each of these threads' newest closing since `since` (by `(closed_at, id)`), by thread; none, not in the map */
-  newestClosed(threadIds: readonly number[], since: number): Promise<Map<number, ClosedAt>>;
   /**
    * The senders among these (`addressKey`s) the user has written to (plan 17's correspondents), by key: one indexed
    * lookup each. After the fourth panel round, a sender named like a security desk you correspond with is trusted.

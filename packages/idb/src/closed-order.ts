@@ -9,7 +9,6 @@ const PATCH_MAX = 256;
 interface Entry {
   at: number;
   id: number;
-  thread: number;
 }
 const newer = (a: Entry, b: Entry): boolean => a.at > b.at || (a.at === b.at && a.id > b.id);
 const byOrder = (a: Entry, b: Entry): number => b.at - a.at || b.id - a.id;
@@ -27,16 +26,15 @@ function position(list: readonly Entry[], e: Entry): number {
 }
 
 /**
- * Plan 210 (Codex code review): what SQLite's closing-time indexes are, in memory: a table's closed rows by `(closed_at,
- * id)`, newest first, and each thread's the same way (its newest closing is its first), kept as rows change (a closing,
- * an Undo, a prune, a merge) rather than sorted for each page. A page is a binary search to its key and a walk of
- * `limit` rows; a thread's newest closing is one look. Built once, on the first read (rows loaded before it existed), as
+ * Plan 210 (Codex code review): what SQLite's closing-time index is, in memory: a table's closed rows by `(closed_at, id)`,
+ * newest first, kept as rows change (a closing, an Undo, a prune) rather than sorted for each page. A page is a binary
+ * search to its key and a walk of `limit` rows. Built once, on the first read (rows loaded before it existed), as
  * `ThreadOrder` is; past `PATCH_MAX` changes unread (Clear AI data, a bulk prune) it's marked stale and tracks nothing more.
+ * Plan 210 (iteration 2): a line per closed item, so no thread's own order any more.
  */
 export class ClosedOrder {
   private all: Entry[] = [];
   private readonly entries = new Map<number, Entry>();
-  private readonly threads = new Map<number, Entry[]>();
   private readonly pending = new Set<number>();
   private stale = true;
 
@@ -47,7 +45,7 @@ export class ClosedOrder {
   ) {
     db.onRow((name, row, prev) => {
       if (name !== this.table || this.stale) return;
-      if (row && prev && row.closed_at === prev.closed_at && row.thread_id === prev.thread_id && this.keep(row as R) === this.keep(prev as R)) return;
+      if (row && prev && row.closed_at === prev.closed_at && this.keep(row as R) === this.keep(prev as R)) return;
       this.pending.add((row ?? prev)!.id as number);
       // too much to patch: rebuilt on the next read, and nothing more held meanwhile
       if (this.pending.size > PATCH_MAX) {
@@ -58,15 +56,12 @@ export class ClosedOrder {
   }
 
   private entry(r: R): Entry | null {
-    return r.closed_at == null || !this.keep(r) ? null : { at: r.closed_at as number, id: r.id as number, thread: r.thread_id as number };
+    return r.closed_at == null || !this.keep(r) ? null : { at: r.closed_at as number, id: r.id as number };
   }
 
   private add(e: Entry): void {
     this.entries.set(e.id, e);
     this.all.splice(position(this.all, e), 0, e);
-    const mine = this.threads.get(e.thread);
-    if (mine) mine.splice(position(mine, e), 0, e);
-    else this.threads.set(e.thread, [e]);
   }
 
   private remove(id: number): void {
@@ -74,9 +69,6 @@ export class ClosedOrder {
     if (!e) return;
     this.entries.delete(id);
     this.all.splice(position(this.all, e), 1);
-    const mine = this.threads.get(e.thread)!;
-    mine.splice(position(mine, e), 1);
-    if (!mine.length) this.threads.delete(e.thread);
   }
 
   private current(rows: Table<R>): void {
@@ -84,7 +76,6 @@ export class ClosedOrder {
       this.stale = false;
       this.pending.clear();
       this.entries.clear();
-      this.threads.clear();
       this.all = [];
       for (const r of rows.all()) {
         const e = this.entry(r);
@@ -93,11 +84,6 @@ export class ClosedOrder {
         this.all.push(e);
       }
       this.all.sort(byOrder);
-      for (const e of this.all) {
-        const mine = this.threads.get(e.thread);
-        if (mine) mine.push(e);
-        else this.threads.set(e.thread, [e]);
-      }
       return;
     }
     for (const id of this.pending) {
@@ -115,7 +101,7 @@ export class ClosedOrder {
     let lo = 0;
     if (o.after) {
       // past every row at or before the key: closed later, or at the same moment with an id >= its
-      const key: Entry = { at: o.after.at, id: o.after.id - 1, thread: 0 };
+      const key: Entry = { at: o.after.at, id: o.after.id - 1 };
       lo = position(this.all, key);
     }
     const out: R[] = [];
@@ -123,17 +109,6 @@ export class ClosedOrder {
       const e = this.all[i]!;
       if (e.at < o.since) break;
       out.push(rows.get(e.id)!);
-    }
-    return out;
-  }
-
-  /** each of these threads' newest closing since `since` */
-  newest(rows: Table<R>, threadIds: readonly number[], since: number): Map<number, ClosedAt> {
-    this.current(rows);
-    const out = new Map<number, ClosedAt>();
-    for (const id of new Set(threadIds)) {
-      const top = this.threads.get(id)?.[0];
-      if (top && top.at >= since) out.set(id, { at: top.at, id: top.id });
     }
     return out;
   }

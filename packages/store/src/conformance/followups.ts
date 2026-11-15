@@ -293,7 +293,7 @@ export function defineFollowupsConformance(fresh: () => Promise<MailStore>, reop
       });
     });
     describe("the history's reads (plan 210)", () => {
-      it("pages your closed promises newest first, strictly after a key; waits and open rows never; each thread's newest", async () => {
+      it("pages your closed promises newest first, strictly after a key; waits and open rows never", async () => {
         const { store, sent, promise, wait, finish } = await setup();
         const ids: { id: number; thread: number }[] = [];
         for (const i of [0, 1, 2, 3]) {
@@ -310,7 +310,6 @@ export function defineFollowupsConformance(fresh: () => Promise<MailStore>, reop
         expect(page.map((r) => r.id)).toEqual([ids[1]!.id, ids[0]!.id]);
         expect((await store.followups.closedPage({ since, after: { at: NOW - 1000, id: ids[1]!.id }, limit: 10 })).map((r) => r.id)).toEqual([ids[0]!.id]);
         expect((await store.followups.closedPage({ since: NOW - 1500, after: null, limit: 10 })).map((r) => r.id)).toEqual([ids[1]!.id]);
-        expect(await store.followups.newestClosed(ids.map((x) => x.thread), since)).toEqual(new Map([[ids[0]!.thread, { at: NOW - 2000, id: ids[0]!.id }], [ids[1]!.thread, { at: NOW - 1000, id: ids[1]!.id }]]));
       });
     });
   });
