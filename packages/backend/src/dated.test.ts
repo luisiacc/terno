@@ -195,6 +195,11 @@ describe("the local checks (plan 204 §3)", () => {
       expect(told("Para que sepas, necesito que me envíes el contrato.")).toHaveLength(1);
       expect(told("Just so you know, the deck is due Friday and you're presenting it")).toHaveLength(1);
       expect(told("Para que lo sepas, tienes que firmar antes del lunes")).toHaveLength(1);
+      // round 2: a bare imperative after the lead-in, whatever its verb (en, es)
+      expect(told("FYI, fill out the form")).toHaveLength(1);
+      expect(told("FYI, submit the expense report")).toHaveLength(1);
+      expect(told("Para que sepas, completa el formulario")).toHaveLength(1);
+      expect(told("Heads up: the venue changed, the new one is on Main St.")).toEqual([]);
     });
     describe("never one addressed by name to another of the mail's recipients (the seventh panel round)", () => {
       const asks = (text: string, quote: string, reader: { name: string; addressed: "to" | "cc" | "none" }, others: string[], due: string | null = null) =>
@@ -559,6 +564,22 @@ describe("the reader", () => {
     expect((await backend.store.dated.active()).map((r) => r.dueDay)).toEqual(["2026-11-20"]);
     // answered: it's once, so nothing is read twice
     expect((await client.call("dated.scan", {})).queued).toBe(0);
+  });
+
+  it("plan 210 (Codex code review of iteration 2, round 2): a request the check drops as already over still means something was asked, and a subject past what's sent says nothing either way", async () => {
+    const { backend, client, model, receive, read, raw, clock } = await setup();
+    const kim = { name: "Kim Ito", email: "kim@people.test" };
+    model.answer = (req) => (promptText(req.messages[0]!.content).includes("the forms") ? reply([{ kind: "respond", text: "Send Kim the forms", quote: "send me the forms by Thursday", due: "2026-11-05", time: null }]) : reply());
+    // before it went on: read only by the 14-day check, after its day
+    const overdue = await receive({ from: kim, subject: "Re: forms", bodyText: "Hi! Could you send me the forms by Thursday?\n\nKim", providerThreadId: "kim", date: clock.now - 6 * DAY }, false);
+    // a short mail whose question is in a subject longer than the reader is sent
+    const subject = await receive({ from: { name: "Lea Park", email: "lea@people.test" }, subject: `${"Re: the shared drive and the archive move, ".repeat(6)}can you approve the budget?`, bodyText: "As in the subject line, when you have a minute.", providerThreadId: "lea" });
+    await client.call("dated.scan", {});
+    await client.call("settings.update", { dated: { scanAnswered: true } });
+    await read();
+    expect(await backend.store.dated.active()).toEqual([]);
+    raw.run("UPDATE threads SET waiting_since = ?, has_sent = 1 WHERE id IN (?, ?)", clock.now - 60_000, overdue, subject);
+    expect(new Set((await client.call("today.list", { heldIds: [] })).sections.flatMap((x) => x.items.map((i) => i.thread.id)))).toEqual(new Set([overdue, subject]));
   });
 
   it("a later message settles an item: a receipt is read even with no time cue, and only then", async () => {
