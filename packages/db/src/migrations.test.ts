@@ -658,7 +658,7 @@ describe("migration v57: an ask (plan 204, after the third panel round)", () => 
     expect(() => insert(4, "ask")).toThrow(/CHECK/);
     const before = db.all<Record<string, unknown>>("SELECT * FROM dated_items ORDER BY id");
     expect(migrate(db)).toEqual({ from: 56, to: SCHEMA_VERSION });
-    // v60's columns at their defaults (plan 210, iteration 2)
+    // v61's columns at their defaults (plan 210, iteration 2)
     expect(db.all<Record<string, unknown>>("SELECT * FROM dated_items ORDER BY id")).toEqual(before.map((r) => ({ ...r, early: 0, same_as: null, detail_of: null })));
     expect(db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'dated_items' AND sql IS NOT NULL ORDER BY name").map((r) => r.name)).toEqual(["dated_closed", "dated_open", "dated_same", "dated_sender", "dated_thread"]);
     expect(db.get("SELECT name FROM sqlite_master WHERE name = 'dated_items_v57'")).toBeUndefined();
@@ -686,9 +686,9 @@ describe("migration v58: a promise's Later (plan 204, the fifth panel round)", (
   });
 });
 
-describe("migration v60: What matters' items (plan 210, iteration 2)", () => {
+describe("migration v61: What matters' items (plan 210, iteration 2)", () => {
   it("adds duplicates, details, early, a broken promise's day and a promise's time at their defaults, every row kept, and drops v59's per-thread closing indexes (shape only)", () => {
-    const { db } = legacyMail(59, { threads: 2, seed: 10 });
+    const { db } = legacyMail(60, { threads: 2, seed: 10 });
     const thread = db.get<{ id: number }>("SELECT id FROM threads ORDER BY id LIMIT 1")!.id;
     db.run(
       `INSERT INTO dated_items (thread_id, message_id, item, kind, text, quote, sender_key, due_day, due_at, timed, dated, act_at, arrived_at, state, revision, created_at)
@@ -702,7 +702,7 @@ describe("migration v60: What matters' items (plan 210, iteration 2)", () => {
     );
     const dated = db.all<Record<string, unknown>>("SELECT * FROM dated_items ORDER BY id");
     const followups = db.all<Record<string, unknown>>("SELECT * FROM followups ORDER BY id");
-    expect(migrate(db)).toEqual({ from: 59, to: SCHEMA_VERSION });
+    expect(migrate(db)).toEqual({ from: 60, to: SCHEMA_VERSION });
     expect(db.all<Record<string, unknown>>("SELECT * FROM dated_items ORDER BY id")).toEqual(dated.map((r) => ({ ...r, early: 0, same_as: null, detail_of: null })));
     expect(db.all<Record<string, unknown>>("SELECT * FROM followups ORDER BY id")).toEqual(followups.map((r) => ({ ...r, same_as: null, broken_due_at: null, timed: 0 })));
     // `same_as` by index, only where it's set
