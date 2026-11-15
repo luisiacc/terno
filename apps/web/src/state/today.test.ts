@@ -95,12 +95,10 @@ describe("plan 161, pass 2: the digest's way in", () => {
     // the digest's row stays last however the held row was placed (never before a person)
     const rows = flattenToday(list, [thread(9), thread(1), thread(DIGEST_ROW_ID)]);
     expect(rows.map((r) => r.id)).toEqual([9, 1, DIGEST_ROW_ID]);
-    expect(useToday.getState().digestAt).toBe(2);
     expect(useToday.getState().groups.map((g) => [g.kind, g.at])).toEqual([["needsYou", 0]]);
     expect(useToday.getState().digest).toBe(digest);
     expect(useToday.getState().tasks.has(DIGEST_ROW_ID)).toBe(false);
     expect(flattenToday({ ...list, digest: null }, rows).map((r) => r.id)).toEqual([9, 1]);
-    expect(useToday.getState().digestAt).toBe(-1);
   });
   it("plan 162 (after ai162-r02): a newsletter opened from the page is kept in its pick at once, beside what was unticked", async () => {
     const { openFromDigest } = await import("./today");
@@ -379,7 +377,6 @@ describe("plan 210: the history below the open part and the automated section, a
     const rows = flattenToday(list, []);
     expect(rows.map((r) => r.id)).toEqual([1, DIGEST_ROW_ID, 2, 3]);
     expect(groups()).toEqual([["needsYou", 0], ["history", 2]]);
-    expect(useToday.getState().digestAt).toBe(1);
     expect(useToday.getState().kinds.get(3)).toBe("history");
     expect(useToday.getState().counted).toBe(1);
     expect(historyThrough(rows)).toEqual({ at: 800, src: 0, id: 30 });

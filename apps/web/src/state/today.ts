@@ -67,9 +67,7 @@ interface TodayState {
   entries: ReadonlyMap<number, TodayItem>;
   /** plan 210: the history's lines loaded so far, by thread (what each says, and its key) */
   history: ReadonlyMap<number, TodayHistoryItem>;
-  /** plan 204 (after the panel, revision 10): the digest's row, the list's last, or -1 */
-  digestAt: number;
-  /** each row's group, by thread (held rows keep theirs): headings and the digest's place follow the rows, whatever leaves */
+  /** each row's group, by thread (held rows keep theirs): the feed's headings follow the rows, whatever leaves */
   kinds: ReadonlyMap<number, FeedGroupKind>;
   /** plan 204 (after the panel, fix 10): the row whose task Later's "Pick a date…" is choosing a moment for */
   laterPick: { threadId: number; task: TodayTask } | null;
@@ -96,7 +94,7 @@ function storedComingUp(): boolean {
   }
 }
 
-export const useToday = create<TodayState>(() => ({ groups: [], counted: 0, comingUp: 0, comingUpOpen: storedComingUp(), tasks: new Map(), entries: new Map(), history: new Map(), digestAt: -1, kinds: new Map(), laterPick: null, digest: null, fromDigest: null, pick: null, movedTo: new Map(), notNewsletters: new Set() }));
+export const useToday = create<TodayState>(() => ({ groups: [], counted: 0, comingUp: 0, comingUpOpen: storedComingUp(), tasks: new Map(), entries: new Map(), history: new Map(), kinds: new Map(), laterPick: null, digest: null, fromDigest: null, pick: null, movedTo: new Map(), notNewsletters: new Set() }));
 
 /** Plan 204 (after the panel): a Today row's task, only while Today is what's shown (one Map read: other rows never re-render). */
 export function useTodayTask(threadId: number | null | undefined): TodayTask | undefined {
@@ -150,10 +148,10 @@ export function digestPick(day: string): DigestPick {
 export const keepDigestPick = (pick: DigestPick): void => useToday.setState((s) => ({ pick: s.pick?.day === pick.day ? { ...s.pick, ...pick } : pick }));
 
 /**
- * Plan 162 (after ai162-r02): the digest page's own keys, the list's (j/k move, x ticks, Enter opens, Esc leaves), while
- * it has them: focus in the page, or nowhere with the page on screen. Set by the page while it's mounted.
+ * Plan 162 (after ai162-r02): the digest page's own keys, the list's (j/k move, x ticks, Enter opens; Esc puts the
+ * page away, as What matters' feed puts away a conversation, plan 210), while it has them: focus in the page, or nowhere with the page on screen. Set by the page while it's mounted.
  */
-export const digestKeys: { current: { has: () => boolean; step: (delta: 1 | -1) => void; toggle: () => void; open: () => void; leave: () => void } | null } = { current: null };
+export const digestKeys: { current: { has: () => boolean; step: (delta: 1 | -1) => void; toggle: () => void; open: () => void } | null } = { current: null };
 
 /** The digest page's keys, when it has them. */
 export const digestHasKeys = (): boolean => digestKeys.current?.has() === true;
@@ -346,7 +344,6 @@ export function todayAnswer(list: TodayList, before: readonly ThreadSummary[]): 
   }
   // plan 204 (after the panel, revision 10, superseding plan 162's place in the header): the digest is the list's last
   // option again, after held rows and never before a person, under no heading of its own (a gap sets it apart)
-  const digestAt = list.digest ? items.length : -1;
   if (list.digest) items.push(digestThread());
   // plan 210: the history after the automated section, its first page (or as deep as the list had it)
   const history = new Map<number, TodayHistoryItem>();
@@ -365,32 +362,28 @@ export function todayAnswer(list: TodayList, before: readonly ThreadSummary[]): 
     while (g + 1 < groups.length && groups[g + 1]!.at <= i) g++;
     if (groups[g] && groups[g]!.at <= i && items[i]!.id !== DIGEST_ROW_ID) kinds.set(items[i]!.id, groups[g]!.kind);
   }
-  const publish = () => useToday.setState(({ notNewsletters }) => ({ groups, counted: counted.size, comingUp, tasks, entries, history, digestAt, kinds, digest: list.digest && withoutSenders(list.digest, notNewsletters) }));
+  const publish = () => useToday.setState(({ notNewsletters }) => ({ groups, counted: counted.size, comingUp, tasks, entries, history, kinds, digest: list.digest && withoutSenders(list.digest, notNewsletters) }));
   return { items, publish };
 }
 
 /**
- * Rows left Today's list before it reloads (Done, Archive, anything `patchRows` takes out): its headings and the
- * digest's place, which are positions, are found again from the rows that are left (Codex code review). A heading goes
- * with the last row of its group.
+ * Rows left Today's list before it reloads (Done, Archive, anything `patchRows` takes out): its groups' starts, which are
+ * positions (where a held row goes next time), are found again from the rows that are left (Codex code review). A group
+ * goes with its last row.
  */
 export function todayRowsLeft(items: readonly ThreadSummary[]): void {
   if (!getApp().today) return;
   const { kinds } = useToday.getState();
   const groups: TodayGroup[] = [];
-  let digestAt = -1;
   let prev: FeedGroupKind | undefined;
   for (let i = 0; i < items.length; i++) {
     const id = items[i]!.id;
-    if (id === DIGEST_ROW_ID) {
-      digestAt = i;
-      continue;
-    }
+    if (id === DIGEST_ROW_ID) continue;
     const kind = kinds.get(id) ?? prev;
     if (kind !== undefined && kind !== prev) groups.push({ kind, at: i });
     prev = kind;
   }
-  useToday.setState({ groups, digestAt });
+  useToday.setState({ groups });
 }
 
 /**

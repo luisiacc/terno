@@ -27,7 +27,7 @@ const ended = (s: string): string => (/[.!?…]$/u.test(s) ? s : `${s}.`);
 const verbFirst = (s: string): string => (/^\p{Lu}\p{Ll}+\b/u.test(s) ? s.charAt(0).toLocaleLowerCase(getLocale()) + s.slice(1) : s);
 
 /** The sentence for a Today item, in the app's language. */
-export function todaySentence(item: Pick<TodayItem, "thread" | "why" | "summary">, now = Date.now()): string {
+export function todaySentence(item: Pick<TodayItem, "thread" | "why" | "summary">): string {
   const { thread, why } = item;
   const subject = thread.subject?.trim() || t("common.noSubject");
   if (why.kind === "dated") {
@@ -39,10 +39,6 @@ export function todaySentence(item: Pick<TodayItem, "thread" | "why" | "summary"
   if (why.kind === "promise") {
     const text = verbFirst(bare(why.text ?? ""));
     return text ? tidy(t("whatMatters.say.promise", { text })) : ended(subject);
-  }
-  if (why.kind === "nudge") {
-    const name = why.personName || thread.fromName;
-    return ended(t("today.why.nudge", { name, count: Math.max(1, Math.floor((now - (why.sentAt ?? now)) / 86_400_000)) }));
   }
   if (why.kind === "reminder") return t("whatMatters.say.reminder", { subject });
   // waiting on you: the summary's first sentence where there's one, else who wrote and about what
@@ -58,11 +54,19 @@ export function todaySentence(item: Pick<TodayItem, "thread" | "why" | "summary"
 export type TodayTone = "missed" | "today" | "later" | "none";
 
 /**
- * The briefing's right column (after the UI panel), in the list's own words: its short day ("Wed", "Tomorrow", "Nov 30")
+ * The feed's right column (after the UI panel), in the list's own words: its short day ("Wed", "Tomorrow", "Nov 30")
  * and a timed item's time ("2:00 PM", "Mon 7:40 AM"); Missed's "Was due Wed"; nothing for an alert that named no day;
- * for what has no day of its own, the day it came, which the column shows quietly.
+ * for what has no day of its own, the day it came, which the column shows quietly. Its weight follows the item's group
+ * where the group is by when (plan 204's seventh round): Missed, Today (an alert while it shows, a Plan today), Soon and
+ * Coming up; elsewhere (Needs you, Reminders) by its own day.
  */
-export function todayWhen(item: Pick<TodayItem, "thread" | "why">, now = Date.now()): { text: string | null; tone: TodayTone } {
+export function todayWhen(item: Pick<TodayItem, "thread" | "why">, now = Date.now(), group?: FeedGroupKind): { text: string | null; tone: TodayTone } {
+  const when = whenOf(item, now);
+  const tone: TodayTone = group === "missed" ? "missed" : group === "today" ? "today" : group === "soon" || group === "comingUp" ? "later" : when.tone;
+  return { text: when.text, tone };
+}
+
+function whenOf(item: Pick<TodayItem, "thread" | "why">, now: number): { text: string | null; tone: TodayTone } {
   const { thread, why } = item;
   const was = (day: number): string => (datedDay(day, now).near === "yesterday" ? t("today.due.wasYesterday") : t("today.due.wasOn", { day: dueShort(day, false, now) }));
   const ahead = (day: number, at: number, timed: boolean): { text: string; tone: TodayTone } => {
@@ -106,5 +110,3 @@ export function historyWhen(line: Pick<TodayHistoryItem, "outcome" | "kind" | "k
   return t(`whatMatters.history.${line.outcome === "dismissed" && line.kind === "promise" ? "notPromise" : line.outcome}`, { day });
 }
 
-/** The chat's quiet line above a group: "3 things you missed", "1 plan ahead"; the history's, its name (how many is still loading). */
-export const groupLine = (kind: FeedGroupKind, count: number): string => (kind === "history" ? t("today.history") : t(`whatMatters.group.${kind}`, { count }));

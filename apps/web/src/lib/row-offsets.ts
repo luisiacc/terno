@@ -3,15 +3,12 @@
  * paddingStart): rows of one height, and between them space of a fixed height whatever theirs (plan 174).
  */
 
-/** Today's section heading's line */
-export const TOP_LABEL = 28;
-
 /** Plan 179: the Inbox's section heading's line (Pinned, Reminders, the Inbox under them): more room above its words (the owner) */
 export const INBOX_LABEL = 36;
 
 /**
  * The fixed space: the offer above the rows (`lead`) and the section headings, each `label` tall and the index of the
- * row it stands above (`groups`: the Inbox's sections, or Today's; never both).
+ * row it stands above (`groups`: the Inbox's sections).
  */
 export interface RowSpacing { lead: number; label: number; groups: readonly number[] }
 

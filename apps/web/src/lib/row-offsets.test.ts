@@ -1,14 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { anchorAt, anchoredOffset, INBOX_LABEL, rowStart, TOP_LABEL, topSections } from "./row-offsets";
+import { anchorAt, anchoredOffset, INBOX_LABEL, rowStart, topSections } from "./row-offsets";
+
+/** any heading's line: the layout is the same whatever its height */
+const LABEL = 28;
 
 // two due reminders on top, the Reminders heading above them and the Inbox's under them; no offer
-const spacing = { lead: 0, label: TOP_LABEL, groups: [0, 2] as number[] };
+const spacing = { lead: 0, label: LABEL, groups: [0, 2] as number[] };
 
 describe("row offsets (plan 174)", () => {
-  it("lays rows out as the virtualizer does: the heading, the reminders, the Inbox's heading, Today's headings", () => {
-    expect(rowStart(0, 64, spacing)).toBe(TOP_LABEL);
-    expect(rowStart(2, 64, spacing)).toBe(2 * TOP_LABEL + 128);
-    expect(rowStart(3, 64, { lead: 40, label: TOP_LABEL, groups: [0, 2] })).toBe(40 + TOP_LABEL + 192 + TOP_LABEL);
+  it("lays rows out as the virtualizer does: the heading, the reminders, the Inbox's heading, mail under it", () => {
+    expect(rowStart(0, 64, spacing)).toBe(LABEL);
+    expect(rowStart(2, 64, spacing)).toBe(2 * LABEL + 128);
+    expect(rowStart(3, 64, { lead: 40, label: LABEL, groups: [0, 2] })).toBe(40 + LABEL + 192 + LABEL);
   });
 
   it("a style switch keeps the first visible row at the same depth: only the rows scale, the headings don't", () => {
@@ -20,17 +23,17 @@ describe("row offsets (plan 174)", () => {
   });
 
   it("a viewport in the heading under a row anchors the next, the row actually on screen (Codex review, round 2)", () => {
-    // the second reminder ends at TOP_LABEL + 128; the Inbox's heading under it, mail after
-    const y = TOP_LABEL + 128 + 5;
+    // the second reminder ends at LABEL + 128; the Inbox's heading under it, mail after
+    const y = LABEL + 128 + 5;
     const anchor = anchorAt(y, 100, 64, spacing);
-    expect(anchor).toEqual({ index: 2, into: 5 - TOP_LABEL });
+    expect(anchor).toEqual({ index: 2, into: 5 - LABEL });
     // the space above it stays as it was
-    expect(anchoredOffset(anchor, 64, 84, spacing)).toBe(rowStart(2, 84, spacing) + 5 - TOP_LABEL);
+    expect(anchoredOffset(anchor, 64, 84, spacing)).toBe(rowStart(2, 84, spacing) + 5 - LABEL);
   });
 
   it("above the first row, the first row is the anchor, and what's above it keeps its height", () => {
     const offer = { ...spacing, lead: 48 };
-    expect(anchorAt(0, 100, 64, offer)).toEqual({ index: 0, into: -(48 + TOP_LABEL) });
+    expect(anchorAt(0, 100, 64, offer)).toEqual({ index: 0, into: -(48 + LABEL) });
     expect(anchoredOffset(anchorAt(10, 100, 64, offer), 64, 84, offer)).toBe(10);
   });
 });

@@ -54,7 +54,7 @@ test("launch({ ai: true }): Pro's real models on the .env keys, only their provi
     await expect(page.getByTestId("nav-today")).toBeVisible();
     // the digest prepared on its own, on a real model
     await page.getByTestId("nav-today").click();
-    await expect(page.getByTestId("digest-row").filter({ hasText: /\d+ newsletters? · today/ }).first()).toBeVisible({ timeout: 5 * 60_000 });
+    await expect(page.locator("[data-testid=wm-item][data-digest]").filter({ hasText: /\d+ newsletters? · today/ }).first()).toBeVisible({ timeout: 5 * 60_000 });
     await page.keyboard.press("Meta+Shift+k");
     await expect(page.getByRole("dialog", { name: "Ask your mail" })).toBeVisible();
     await page.keyboard.press("Escape");

@@ -4,7 +4,6 @@ import { keepInPage } from "@terno/store/list";
 import { followupsOffered } from "~/lib/ai";
 import { prune } from "~/lib/selection";
 import { activeFilter } from "~/lib/unread-filter";
-import { feedLook, useWmLook } from "~/lib/what-matters-look";
 import { DIGEST_ROW_ID, matchesFilter } from "@terno/core";
 import { flushSync } from "react-dom";
 import { create } from "zustand";
@@ -87,8 +86,8 @@ function rememberPlace(selectedId: number | null): void {
 
 /** What a list's first page opens: where it was left, else its nearest row now, else the top. */
 function openedOn(place: Place | undefined, items: readonly ThreadSummary[]): number | null {
-  // plan 204, the UI experiment: Today as a feed opens nothing by itself (a conversation comes in beside it when asked for)
-  if ((!place || place.selectedId === null) && feedLook(getApp().today, useWmLook.getState().look)) return null;
+  // plan 210: What matters, a feed, opens nothing by itself (a conversation comes in beside it when asked for)
+  if ((!place || place.selectedId === null) && getApp().today) return null;
   // plan 161: Today's first row is the digest's; a list opens on its first conversation, unless that's all there is
   if (!place || place.selectedId === null) return (items.find((t) => t.id !== DIGEST_ROW_ID) ?? items[0])?.id ?? null;
   const id = place.selectedId;
@@ -125,7 +124,7 @@ export function listKey(): string {
   // plan 87: Reminders, only when it's that list (every other list's key is as it was)
   // plan 86: a Gmail tab likewise ("~promotions": never a folder's key)
   // plan 108: a search focused on an account looks only in it, so it's another list than the same search everywhere
-  return JSON.stringify([s.view, s.accountId, s.categoryId, s.reviewCategoryId, activeFilter(s) ?? null, ...(s.folder ? [s.folder] : []), ...(s.gmailTab ? [`~${s.gmailTab}`] : []), ...(s.reminders ? ["reminders"] : []), ...(s.followups ? ["followups"] : []), ...(s.actionPreview ? [`action:${s.actionPreview}`] : []), ...(s.today ? [feedLook(true, useWmLook.getState().look) ? "today:feed" : "today"] : []), ...(soloSearch(s) ? ["~solo"] : []), s.query.trim()]);
+  return JSON.stringify([s.view, s.accountId, s.categoryId, s.reviewCategoryId, activeFilter(s) ?? null, ...(s.folder ? [s.folder] : []), ...(s.gmailTab ? [`~${s.gmailTab}`] : []), ...(s.reminders ? ["reminders"] : []), ...(s.followups ? ["followups"] : []), ...(s.actionPreview ? [`action:${s.actionPreview}`] : []), ...(s.today ? ["today"] : []), ...(soloSearch(s) ? ["~solo"] : []), s.query.trim()]);
 }
 
 /** The search a list's key holds: what its rows answer to, whatever is being typed by now. Empty for a mailbox, Review or a preview. */
@@ -258,10 +257,10 @@ async function fetchPage(cursor?: ListCursor, limit = PAGE) {
     return { items: r.items, nextCursor: offset + page < r.total ? { lastDate: 0, id: offset + page } : null };
   }
   if (s.today) {
-    // plan 210: drawn as the feed, What matters has its history below, in pages by key
-    // and only while finished items are shown (the owner: an inbox-zero feeling, off): no history asked for at all
-    const feed = feedLook(true, useWmLook.getState().look) && s.settings?.today?.finished !== false;
-    if (cursor && !feed) return { items: [], nextCursor: null };
+    // plan 210: What matters has its history below, in pages by key, while finished items are shown (the owner: off, an
+    // inbox-zero feeling, and no history asked for at all)
+    const finished = s.settings?.today?.finished !== false;
+    if (cursor && !finished) return { items: [], nextCursor: null };
     // the digest's row is the cursor's, not a thread's: nothing to keep, and no id the backend takes. The open one is held
     // only when it's one of these rows: holding keeps a row you're on, never adds one (a newsletter opened from the
     // digest is read as any mail is, and isn't Today's: the owner, plan 161). Plan 210: a history line isn't held, it
@@ -276,7 +275,7 @@ async function fetchPage(cursor?: ListCursor, limit = PAGE) {
     }
     // a reload of the list on screen keeps the history as deep as it was loaded (the same key), another starts at its top
     const through = shown.itemsKey === listKey() ? historyThrough(shown.items) : null;
-    const list = await client.call("today.list", { heldIds, ...(feed ? { history: { through } } : {}) });
+    const list = await client.call("today.list", { heldIds, ...(finished ? { history: { through } } : {}) });
     const answer = todayAnswer(list, useList.getState().items);
     return { items: answer.items, nextCursor: historyCursor(list.history?.next), publish: answer.publish };
   }
@@ -703,10 +702,6 @@ const historyDepth = { moved: 0 };
 /** plan 107: a rename being followed (an object property: memory note react-compiler-module-let) */
 export const followedRename: { from: string | null; to: string | null } = { from: null, to: null };
 
-// plan 210: What matters drawn another way is another list (the feed has its history, the list look hasn't)
-useWmLook.subscribe((s, prev) => {
-  if (s.look !== prev.look && getApp().today) void reloadList();
-});
 // plan 210: finished items shown or hidden: the history comes or goes where the open part stays
 useApp.subscribe((s, prev) => {
   if (s.today && prev.settings && s.settings && s.settings.today?.finished !== prev.settings.today?.finished) void reloadList({ keepSelection: true });
