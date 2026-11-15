@@ -238,3 +238,25 @@ This replaces plan 204's seventh-round groups (Missed / Today / Needs you / Soon
 - **The feed:** a heading per group ("Missed", "Today", then "Tomorrow", a weekday this week, a date beyond: `dayHeading`, the when column's day words, capitalised as headings, en and es); Coming up's items, opened, join their day's heading (timed first by time, then the rest), drawn quietly as Coming up's were; the toggle's count is theirs. The right column: a day's item says its day or time as before; what has no date says "since Wed" (`whatMatters.since`), quietly; a reminder its time. Weight: Missed and Today's dated items strong; what's undated in Today, days ahead and Coming up quiet.
 - **History** ("Earlier") stays as built, newest first.
 - **Tests:** core (the group and day of every kind: today, tomorrow, a week out, Coming up by day, a Later past its day, an undated alert, an ask, a promise either way; the count's rule with a reminder and a Plan in Today; midnight with only an ask showing); backend (`today.list`'s sections by day and their order, a waiting thread with a task tomorrow under Tomorrow, the header's, the sidebar's and the notice's counts agreeing); both stores' conformance (unchanged `countWith`); renderer (Coming up merged into its days and their order, the held row's group, the toggle's count); `todayWhen` (since, a reminder, the tones by group); e2e (the headings by day, Coming up opening into them).
+
+### What the code review changed (the feed as the only view, by day; Codex, `/tmp/terno-scratch/p204/ui-variants/review-feed-1.out`)
+
+Twelve findings; ten fixed, each with a test that fails without it:
+
+1. **D finished the open item, not the one the keyboard was on** (Tab to another item, D): D in the feed acts on the focused item, else the open one, else the one just put away (`focusedFeedItem`, `doneOnSelected`). e2e.
+2. **j/k left the keys on the previous item** (Enter then reopened it): the keys go with the item j/k opened (`followCursor` → `focusFeed`). e2e.
+3. **Coming up grouped a postponed item under its own day**: its day is the later of its own and its Later's (`comingUpDay`), dated items and promises alike. Core tests.
+5. **Words that change at midnight with nothing dated showing** ("since Wed", "Done today"): the clock wakes at midnight too, once a day (`armClock`). Backend test.
+6. **Search shortcuts (/, ⌘F) focused a field the feed doesn't have**: search from What matters goes to the Inbox's list with its field, looking everywhere as always (`focusSearch`). e2e.
+7. **Esc inside an HTML mail didn't put the feed's conversation away**: the frame's Esc does what the page's does (`forwardNavKey`). Unit test.
+8. **Focus returning to an item scrolled out of the drawn window fell on the first item**: it's scrolled in, then focused (`focusFeed`; the scroller moved to `lib/list-scroller.ts` so focus code reaches it without the list). e2e (the skip link after scrolling to the history's end).
+9. **Two items put off to the same day weren't timed first**: a day's rows go by its day, then the timed by time (`byItsDay`). Backend test.
+10. **The wide feed left the page without a main landmark**: the list's pane is `main` while the feed has the room alone, as List's is (a `main` on the feed itself failed axe's top-level rule). e2e.
+12. **Esc after Tab and Enter brought the ring back on the item**: the feed's own returns of focus clear it (plan 54; `hideFocusRing`). e2e.
+
+Not changed, and why:
+
+- **4. IndexedDB's history order is built in one go on a cold read** (Codex measured 43 ms at 50,000 closings). Closings are what the reader and your promises produced and closed within 90 days: the 1,000-item open bound and the reading rate keep them in the low thousands, and the perf gate holds the cold build to 8 ms at 20,000. Recorded; a sliced build is the fix if real mailboxes ever come near.
+- **11. A conversation on two history pages when its newest closing is from a sender untrusted later**: plan 210's known limit (an item stored before the sender guard); very rare, and the line it shows is true.
+
+Also from the run: test:all's two visual baselines (Settings → General, en and es) were updated for plan 210's own rows ("Show What matters", "Show finished items"); the apps/site render test fails as on the base (unrelated); the Today perf gate's "spread: added" was 2.6 ms against 2 under a load of 11 and 1.5 alone.

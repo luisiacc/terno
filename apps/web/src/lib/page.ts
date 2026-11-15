@@ -16,6 +16,7 @@ import { flushDeferredRefresh, followedRename, listKey, refreshPolicy, soloSearc
 import { noteOpen } from "~/lib/reminders";
 import { closePreviewRow } from "~/state/action-preview";
 import { backToDigest } from "~/state/today";
+import { closeFeedConversation } from "~/lib/feed-pane";
 import { setHeldThreadOpener } from "~/lib/held-sends";
 
 export type { Page };
@@ -232,6 +233,11 @@ export function forwardNavKey(e: KeyboardEvent): void {
   if (!listLayout() || currentPage() === "list") {
     // plan 161, pass 2: a preview's matched conversation closes back to its rule from inside its mail too (Split)
     if (e.key === "Escape" && !listLayout() && closePreviewRow()) {
+      e.preventDefault();
+      return;
+    }
+    // plan 210 (Codex code review): What matters' conversation beside the feed goes, as Esc does outside the mail
+    if (e.key === "Escape" && !getApp().query && closeFeedConversation()) {
       e.preventDefault();
       return;
     }

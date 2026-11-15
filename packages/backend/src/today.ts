@@ -679,7 +679,9 @@ export class TodayService {
       placed.push({ group: "today", threadId: ask.threadId, why: promise ? promiseWhy(promise) : datedWhy(ask, false) });
     }
     for (const r of owedNow.sort((a, b) => a.dueAt - b.dueAt)) placed.push({ group: "today", threadId: r.threadId, why: promiseWhy(r) });
-    const byItsDay = (a: Ranked, b: Ranked): number => (a.day! < b.day! ? -1 : a.day! > b.day! ? 1 : byDay(a.at, b.at));
+    // (Codex code review: by the day it's under, then the timed by time, then the rest; never the original day first, which
+    // two put off to the same day don't share)
+    const byItsDay = (a: Ranked, b: Ranked): number => (a.day! < b.day! ? -1 : a.day! > b.day! ? 1 : byTime(a, b));
     const days = ranked.day.sort(byItsDay).map((s): Placed => ({ group: "day", day: s.day, threadId: s.threadId, why: s.why }));
     // the count reads none of what's waiting (its own indexed count there, the stores' `countWith`), nor your reminders
     // and Coming up, which never take a waiting thread from it
@@ -918,8 +920,12 @@ export class TodayService {
     const items = settings.dated?.enabled ? await this.datedRows() : [];
     const promises = settings.followups?.enabled ? await store.followups.active() : [];
     const now = this.b.now();
-    const next = nextTodayChange(items, promises, now);
-    if (next === null || this.stopped || seq !== this.clockSeq) return;
+    // plan 210 (Codex code review): midnight too, whatever shows: what's waiting says "since Wed", the history "Done today",
+    // and neither is an item the clock knows. Once a day, never a poll
+    const midnight = new Date(now);
+    midnight.setHours(24, 0, 0, 0);
+    const next = Math.min(nextTodayChange(items, promises, now) ?? Infinity, midnight.getTime());
+    if (this.stopped || seq !== this.clockSeq) return;
     if (this.clock) clearTimeout(this.clock);
     this.clockAt = next;
     this.clock = setTimeout(() => {

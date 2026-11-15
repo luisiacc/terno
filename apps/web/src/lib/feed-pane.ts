@@ -1,4 +1,4 @@
-import { listScroller } from "~/components/thread-list";
+import { listScroller } from "~/lib/list-scroller";
 import { listLayout } from "~/lib/page";
 import { focusFeedItem, useFeedCursor } from "~/lib/feed-focus";
 import { getApp, setApp } from "~/state/app";

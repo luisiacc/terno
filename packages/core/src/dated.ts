@@ -394,13 +394,14 @@ const TODAY: TaskPlace = { group: "today", day: null };
 const MISSED: TaskPlace = { group: "missed", day: null };
 
 /**
- * Coming up's day for what isn't shown yet: its own day ahead; put off past its day, or with no day of its own (an ask, an
- * alert that named none, a promise that did), the day its Later ends.
+ * Coming up's day for what isn't shown yet: the day it shows again, the later of its own day and its Later's (put off past
+ * its day, Codex code review: the 22nd's for a bill due the 18th put off to the 22nd); with no day of its own (an ask, an
+ * alert that named none, a promise that did), its Later's.
  */
 function comingUpDay(own: string | null, deferredUntil: number | null | undefined, today: string): string {
-  if (own !== null && own > today) return own;
   const back = deferredUntil != null ? dayKeyOf(deferredUntil) : null;
-  return back !== null && back > today ? back : (own ?? back ?? today);
+  const day = own !== null && back !== null ? (own > back ? own : back) : (own ?? back);
+  return day !== null && day > today ? day : (back ?? own ?? today);
 }
 
 /**

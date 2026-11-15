@@ -8,6 +8,11 @@ const MODIFIERS = new Set(["Shift", "Control", "Alt", "Meta", "CapsLock"]);
 const MOVES = new Set(["Tab", "F6"]);
 const NAVIGATING = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown", "Enter", " ", "Escape"]);
 
+/** Plan 54: focus the app moved after a key it answered (Esc putting a conversation away) shows no ring until the next Tab. */
+export function hideFocusRing(doc: Document = document): void {
+  doc.documentElement.removeAttribute("data-focus-ring");
+}
+
 export function installFocusRing(win: Window = window): void {
   const root = win.document.documentElement;
   const set = (on: boolean) => {

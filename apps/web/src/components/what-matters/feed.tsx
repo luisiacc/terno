@@ -19,7 +19,7 @@ import { getApp, useApp } from "~/state/app";
 import { listAnchor, loadMore, useList } from "~/state/list";
 import { digestFrom, digestLabel, groupDay, useToday, type FeedGroupKind } from "~/state/today";
 import { EmptyState } from "../empty-state";
-import { listScroller } from "../thread-list";
+import { listScroller } from "~/lib/list-scroller";
 import { ThreadMenu } from "../thread-menu";
 import { TodayDatedOffer } from "../today-dated-offer";
 import { WhatMattersOptions } from "./options";
