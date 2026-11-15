@@ -2605,7 +2605,6 @@ It contains none of your mail, contacts, settings or keys.
   "today.comingUp": "Coming up",
   "today.newsletters": "Newsletters",
   "today.why.promise": "You said: {text}",
-  "today.why.nudge": { one: "No reply from {name} in # day", other: "No reply from {name} in # days" },
   "today.why.reminder": "Reminder {when}",
   "today.why.line": "{when} · {text}",
   "today.due.today": "Due today",

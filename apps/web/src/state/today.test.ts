@@ -52,7 +52,7 @@ describe("plan 166, after the owner's second look: Needs you is one group", () =
   const waiting = (id: number, wrote: boolean, summary?: string) => ({ thread: thread(id), why: { kind: "waiting" as const, wrote }, ...(summary ? { summary } : {}) });
   const groups = () => useToday.getState().groups.map((g) => [g.kind, g.at]);
 
-  it("one heading, in the backend's order; the row leads with its own words, a promise's and a nudge's lines stay", () => {
+  it("one heading, in the backend's order; the row leads with its own words, a promise's line stays", () => {
     const list: TodayList = {
       now: 0,
       held: [],
@@ -64,18 +64,17 @@ describe("plan 166, after the owner's second look: Needs you is one group", () =
             { thread: thread(5), why: { kind: "promise", text: "send the contract" } },
             waiting(1, false, "A summary."),
             waiting(2, true),
-            { thread: thread(6), why: { kind: "nudge", personName: "Tom", sentAt: Date.now() - 5 * 86_400_000 } },
           ],
         },
         { kind: "reminders", items: [{ thread: thread(7), why: { kind: "reminder" } }] },
       ],
     };
     const rows = flattenToday(list, []);
-    expect(rows.map((r) => r.id)).toEqual([5, 1, 2, 6, 7]);
-    expect(groups()).toEqual([["needsYou", 0], ["reminders", 4]]);
-    expect(rows.map((r) => r.snippet)).toEqual(["You said: send the contract", "A summary.", "snippet 2", "No reply from Tom in 5 days", "snippet 7"]);
+    expect(rows.map((r) => r.id)).toEqual([5, 1, 2, 7]);
+    expect(groups()).toEqual([["needsYou", 0], ["reminders", 3]]);
+    expect(rows.map((r) => r.snippet)).toEqual(["You said: send the contract", "A summary.", "snippet 2", "snippet 7"]);
     expect("reasons" in useToday.getState()).toBe(false);
-    expect(useToday.getState().counted).toBe(4);
+    expect(useToday.getState().counted).toBe(3);
   });
 
   it("a held row stays at its place, above Reminders' heading", () => {
@@ -240,18 +239,11 @@ describe("plan 204: Missed, Deadlines, Needs you, Plans, Reminders and Coming up
     expect([line(5), due(5)]).toEqual(["Your card was declined, the email says", null]);
   });
 
-  it("Codex code review of the fixes: a timed item keeps its time in Missed; a nudge row has a task (follow-ups' act)", () => {
-    const rows = flattenToday(
-      list({
-        missed: [dated(1, "pay", "Wire payroll", 11, { missed: true, timed: true, h: 13 })],
-        needsYou: [{ thread: thread(2), why: { kind: "nudge", text: "", personName: "Ana", sentAt: at(5), dueAt: at(10), promise: { id: 41, revision: 1, dated: false } } } as never],
-      }),
-      [],
-    );
+  it("Codex code review of the fixes: a timed item keeps its time in Missed", () => {
+    const rows = flattenToday(list({ missed: [dated(1, "pay", "Wire payroll", 11, { missed: true, timed: true, h: 13 })] }), []);
     // "Yesterday" in the right column can't hold the time: the line does (Codex code review)
     expect(rows.find((r) => r.id === 1)!.snippet).toBe("1:00 PM · Wire payroll");
     expect(useToday.getState().tasks.get(1)).toMatchObject({ when: "Yesterday", due: "Was due yesterday 1:00 PM" });
-    expect(useToday.getState().tasks.get(2)).toMatchObject({ kind: "promise", id: 41, revision: 1, when: null, due: null });
   });
 
   it("after the panel: any timed item says its time; a promise of yours says when it's due; Coming up's promise its day", () => {
@@ -310,10 +302,6 @@ describe("plan 204: Missed, Deadlines, Needs you, Plans, Reminders and Coming up
     // nobody known: the thread's own sender stays
     flattenToday(list({ needsYou: [promise(33, 0, null, null, false)] }), []);
     expect(useToday.getState().tasks.get(3)).not.toHaveProperty("person");
-    // a nudge isn't a promise: no explicit no-day (its row keeps the mail's date), but it's with its person
-    flattenToday(list({ needsYou: [{ thread: thread(2), why: { kind: "nudge", text: "", personName: "Ana", personEmail: "ana@x.test", sentAt: at(5), dueAt: at(10), promise: { id: 41, revision: 1, dated: false } } } as never] }), []);
-    expect(useToday.getState().tasks.get(2)).toMatchObject({ when: null, person: { name: "Ana" } });
-    expect(useToday.getState().tasks.get(2)).not.toHaveProperty("noDay");
   });
 
   it("the fifth panel round (change 6): a row's task says its conversation's next item; what it acts on stays its own", () => {

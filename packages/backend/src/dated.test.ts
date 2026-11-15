@@ -771,7 +771,7 @@ describe("the third panel round", () => {
   const followup = (thread: number, text: string, dueAt: number, o: { kind?: string; state?: string; dated?: number; message?: number; revision?: number } = {}) =>
     [`INSERT INTO followups (thread_id, message_id, item, kind, text, person_name, person_email, sent_at, due_at, dated, state, revision, created_at) VALUES (?, ?, 0, ?, ?, 'Elena', 'elena@acme.test', ?, ?, ?, ?, ?, ?)`, thread, o.message ?? 900_000 + thread, o.kind ?? "promise", text, NOW - 3 * DAY, dueAt, o.dated ?? 1, o.state ?? "open", o.revision ?? 0, NOW] as const;
 
-  it("change 3: a promise is a deadline from a week before its day (the fifth panel round), by day with the dated items; a nudge stays in Needs you", async () => {
+  it("change 3: a promise is a deadline from a week before its day (the fifth panel round), by day with the dated items; a nudge isn't Today's (the sixth)", async () => {
     const { client, model, receive, read, raw, clock, sections } = await setup();
     await client.call("settings.update", { followups: { enabled: true } });
     model.answer = (req) => (promptText(req.messages[0]!.content).includes("electricity") ? reply([bill]) : reply());
@@ -783,8 +783,8 @@ describe("the third panel round", () => {
     raw.run(...followup(nudge, "Ana", at(2026, 11, 18, 9), { kind: "awaiting", dated: 0, state: "due" }));
     // 8:00 on the promise's day: before its 9:00, it's already today's
     clock.now = at(2026, 11, 19, 8);
-    expect(await sections()).toEqual({ deadlines: [agenda, billThread], needsYou: [nudge] });
-    expect((await client.call("counts.get", {})).today).toBe(3);
+    expect(await sections()).toEqual({ deadlines: [agenda, billThread] });
+    expect((await client.call("counts.get", {})).today).toBe(2);
     // the fifth panel round: a week before its day, from 9:00, as a request's (the bill's week starts a day later)
     clock.now = at(2026, 11, 12, 9);
     expect(await sections()).toMatchObject({ deadlines: [agenda], comingUp: [billThread] });
@@ -874,7 +874,7 @@ describe("the fourth panel round", () => {
   const followup = (thread: number, text: string, dueAt: number, o: { kind?: string; state?: string; dated?: number; message?: number } = {}) =>
     [`INSERT INTO followups (thread_id, message_id, item, kind, text, person_name, person_email, sent_at, due_at, dated, state, revision, created_at) VALUES (?, ?, 0, ?, ?, 'Elena Ruiz', 'elena@acme.test', ?, ?, ?, ?, 0, ?)`, thread, o.message ?? 900_000 + thread, o.kind ?? "promise", text, NOW - 3 * DAY, dueAt, o.dated ?? 1, o.state ?? "open", NOW] as const;
 
-  it("changes 6 and 8: a due promise with no day is Needs you's, after the asks and before the nudges, and Needs you's heading is above Plans'; a Plan that's waiting stays the Plan", async () => {
+  it("changes 6 and 8: a due promise with no day is Needs you's, after the asks (a nudge isn't Today's: the sixth round), and Needs you's heading is above Plans'; a Plan that's waiting stays the Plan", async () => {
     const { client, model, receive, read, raw, clock } = await setup();
     await client.call("settings.update", { followups: { enabled: true } });
     model.answer = (req) => {
@@ -893,12 +893,13 @@ describe("the fourth panel round", () => {
     raw.run("UPDATE threads SET waiting_since = ?, has_sent = 1 WHERE id = ?", clock.now - 60_000, flight);
     clock.now = at(2026, 11, 18, 10);
     const list = await client.call("today.list", { heldIds: [] });
-    expect(list.sections.map((x) => [x.kind, x.items.map((i) => i.thread.id)])).toEqual([["needsYou", [asked, promised, nudged]], ["plans", [flight]]]);
+    expect(list.sections.map((x) => [x.kind, x.items.map((i) => i.thread.id)])).toEqual([["needsYou", [asked, promised]], ["plans", [flight]]]);
+    expect(nudged).not.toBe(promised);
     // it names no day, and who it's to, for its row's name and picture
     expect(list.sections[0]!.items[1]!.why).toMatchObject({ kind: "promise", text: "call Elena back", personName: "Elena Ruiz", personEmail: "elena@acme.test", promise: { dated: false } });
     expect(list.sections[0]!.items[1]!.why.missed).toBeUndefined();
     // counted with the rest of Needs you; the waiting Plan isn't
-    expect((await client.call("counts.get", {})).today).toBe(3);
+    expect((await client.call("counts.get", {})).today).toBe(2);
     // a dated promise of yours due today is still Deadlines'
     raw.run(...followup(promised, "send the slides", at(2026, 11, 18, 17), { message: 900_500 }));
     expect((await client.call("today.list", { heldIds: [] })).sections.map((x) => x.kind)).toEqual(["deadlines", "needsYou", "plans"]);
@@ -1043,6 +1044,40 @@ describe("the fifth panel round: a row says its conversation's next item (change
     const [promised] = await list();
     expect(promised).toMatchObject({ thread: { id: thread }, why: { kind: "promise" } });
     expect(promised!.also).toBeUndefined();
+  });
+});
+
+describe("the sixth panel round: nudges leave Today (change 4, revision 7)", () => {
+  // sent after her mail, so a wait is still unanswered; open, so `look()` brings it due onto the Inbox's top
+  const followup = (thread: number, kind: "promise" | "awaiting", sentAt: number, dueAt: number, message: number) =>
+    [`INSERT INTO followups (thread_id, message_id, item, kind, text, person_name, person_email, sent_at, due_at, dated, state, revision, created_at) VALUES (?, ?, 0, ?, ?, 'Ana', 'ana@people.test', ?, ?, 0, 'open', 0, ?)`, thread, message, kind, kind === "promise" ? "call Ana back" : "", sentAt, dueAt, NOW] as const;
+
+  it("a nudge-only conversation is in neither the list nor the counts; one with an ask, a promise or a reminder keeps those, never a nudge as its second line; Follow-ups and the Inbox's top keep it", async () => {
+    const { backend, client, model, receive, read, raw, clock } = await setup();
+    await client.call("settings.update", { followups: { enabled: true } });
+    model.answer = (req) => (promptText(req.messages[0]!.content).includes("budget") ? reply([{ kind: "ask", text: "Answer Ana about the budget", quote: "what's the budget", due: null, time: null }]) : reply());
+    const ana = { name: "Ana", email: "ana@people.test" };
+    const only = await receive({ from: ana, subject: "The quote", bodyText: "Talk soon.", providerThreadId: "only" });
+    const withAsk = await receive({ from: ana, subject: "The budget", bodyText: "Separately, what's the budget?", providerThreadId: "ask" });
+    const withPromise = await receive({ from: ana, subject: "The call", bodyText: "Talk soon.", providerThreadId: "promise" });
+    const withReminder = await receive({ from: ana, subject: "The venue", bodyText: "Talk soon.", providerThreadId: "reminder" });
+    await read();
+    const due = at(2026, 11, 9, 9);
+    for (const [i, thread] of [only, withAsk, withPromise, withReminder].entries()) raw.run(...followup(thread, "awaiting", clock.now, due, 910_000 + i));
+    raw.run(...followup(withPromise, "promise", clock.now, due, 910_100));
+    await client.call("reminders.set", { threadIds: [withReminder], dueAt: clock.now - 1, kind: "always" });
+    await backend.followups.look();
+    const list = await client.call("today.list", { heldIds: [] });
+    const groups = list.sections.map((x) => [x.kind, x.items.map((i) => [i.thread.id, i.why.kind])]);
+    expect(groups).toEqual([["needsYou", [[withAsk, "dated"], [withPromise, "promise"]]], ["reminders", [[withReminder, "reminder"]]]]);
+    expect(list.sections.flatMap((x) => x.items).every((i) => i.also === undefined)).toBe(true);
+    // the header's count (the counted groups' rows) and the sidebar's agree: the ask and the promise
+    const header = list.sections.filter((x) => TODAY_COUNTED.has(x.kind)).reduce((n, x) => n + x.items.length, 0);
+    expect([header, (await client.call("counts.get", {})).today]).toEqual([2, 2]);
+    // Follow-ups still has every nudge, on the Inbox's top
+    const nudges = (await followupRows(client)).filter((r) => r.kind === "awaiting");
+    expect(nudges.map((r) => r.threadId).sort()).toEqual([only, withAsk, withPromise, withReminder].sort());
+    expect(nudges.every((r) => r.state === "due" && r.inboxState === "onTop")).toBe(true);
   });
 });
 

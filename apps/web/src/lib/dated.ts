@@ -130,7 +130,7 @@ export const promiseLine = (o: { text: string; dueAt?: number; dated: boolean },
  * Later's window is read from (`laterWindow`); a promise's `dated`, whether it names a day. The fourth panel round: a
  * promise's `noDay` (one that names none: its row's date stays empty, never the mail's) and `person` (whom you made it
  * to: the row's name and picture, the conversation's last sender being you). `text`, the task's words as the row showed
- * them, what its Undo names (null for a nudge: it has none of its own).
+ * them, what its Undo names.
  */
 export type TodayTask = (
   | { kind: "dated"; item: DatedRef; when: string | null; due: string | null; dueAt: number; noDay?: boolean; text?: string | null }
@@ -139,9 +139,7 @@ export type TodayTask = (
   /** the fifth panel round (change 6): its conversation's next item, in words ("Also Thu 9:00 AM · Board meeting"), never what it acts on */
   also?: string;
 };
-// a nudge (no reply to your mail) acts as a promise does: through follow-ups' act on the row it shows (Codex code review)
-
-/** Who a promise or a nudge is with, as its row names and pictures them; no address, initials alone. */
+/** Who a promise is with, as its row names and pictures them; no address, initials alone. */
 export interface TaskPerson {
   name: string;
   email: string;
@@ -150,14 +148,14 @@ export interface TaskPerson {
 /** What a Today row shows of its task: when (or explicitly no day), and whose it is. */
 export type TodayRowTask = { when: string | null; due: string | null; noDay?: boolean; person?: TaskPerson; also?: string };
 
-/** The fourth panel round (revision 9): the person a promise or nudge is with; with no name, their address's local part. */
+/** The fourth panel round (revision 9): the person a promise is with; with no name, their address's local part. */
 function personOf(why: TodayWhy): TaskPerson | undefined {
   const email = why.personEmail?.trim() ?? "";
   const name = why.personName?.trim() || email.split("@")[0];
   return name ? { name, email } : undefined;
 }
 
-/** A Today row's task, from what the backend said of it: a dated item, a promise or a nudge; a waiting row or a reminder has none. */
+/** A Today row's task, from what the backend said of it: a dated item or a promise; a waiting row or a reminder has none. */
 export function taskOf(why: TodayWhy, now = Date.now()): TodayTask | null {
   if (why.kind === "dated" && why.item) {
     const item = why.item;
@@ -170,8 +168,8 @@ export function taskOf(why: TodayWhy, now = Date.now()): TodayTask | null {
     const noDay = item.kind === "alert" && !item.dated;
     return { kind: "dated", item, when, due: datedWhen({ ...item, dueAt }, why.missed === true, now), dueAt, text: why.text ?? null, ...(noDay ? { noDay } : {}) };
   }
-  if ((why.kind === "promise" || why.kind === "nudge") && why.promise) {
-    const dated = why.kind === "promise" && why.promise.dated === true && why.dueAt !== undefined;
+  if (why.kind === "promise" && why.promise) {
+    const dated = why.promise.dated === true && why.dueAt !== undefined;
     const person = personOf(why);
     return {
       kind: "promise",
@@ -180,9 +178,9 @@ export function taskOf(why: TodayWhy, now = Date.now()): TodayTask | null {
       when: dated ? dueShort(why.dueAt!, false, now) : null,
       due: dated ? promiseWhen({ dueAt: why.dueAt, dated }, why.missed === true, now) : null,
       dated,
-      text: why.kind === "promise" ? (why.text ?? null) : null,
+      text: why.text ?? null,
       // a promise with no day says none (the fourth panel round): the mail's date beside it would read as one
-      ...(why.kind === "promise" && !dated ? { noDay: true } : {}),
+      ...(!dated ? { noDay: true } : {}),
       ...(person ? { person } : {}),
     };
   }
@@ -248,7 +246,7 @@ function shortened(text: string): string {
  * The fourth panel round (change 9, revision 11): what the snack says of Done, Not a task and Later, naming the task so
  * its Undo says what it undoes: "Done: Pay $187.42 for the utility bill", "Not a task: …", "Later: …". One formatter for
  * the row's menu, D, the palette, the conversation's line and the promise card. The words are the task's as it was acted
- * on (a reload can't name what replaced it); with none (a nudge), the plain "Marked done".
+ * on (a reload can't name what replaced it); with none, the plain "Marked done".
  */
 export function taskSaid(action: "done" | "dismiss" | "later", text: string | null | undefined): string {
   const words = text?.trim();
