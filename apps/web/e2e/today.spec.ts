@@ -185,10 +185,12 @@ test.describe("What matters and its digest (plan 145)", () => {
     await show(page, "Can you make the 19th");
     // plan 166: an item leads with its own words: no "Your turn: they replied ·" before them
     await expect(item(page, "Can you make the 19th")).not.toContainText("Your turn");
-    // pass 3: one sentence, never a second total to read against the Inbox's; plan 204: no cap, so it's the sidebar's count
-    await expect(page.getByTestId("today-needs")).toHaveText(/^\d+ needs? you$/);
+    // pass 3: one sentence, never a second total to read against the Inbox's; plan 210 (iteration 2): by when, "6 today ·
+    // 8 this week", and the sidebar's badge is Missed and Today's
+    await expect(page.getByTestId("today-needs")).toHaveText(/^(\d+ missed · )?\d+ today( · \d+ this week)?$/);
     const sidebar = (await page.getByTestId("nav-today").innerText()).match(/\d+/)?.[0];
-    if (sidebar) await expect(page.getByTestId("today-needs")).toHaveText(new RegExp(`^${sidebar} needs? you$`));
+    const said = (await page.getByTestId("today-needs").innerText()).match(/(?:(\d+) missed · )?(\d+) today/)!;
+    if (sidebar) expect(Number(sidebar)).toBe(Number(said[1] ?? 0) + Number(said[2]));
     await expect(page.getByTestId("today-line")).not.toContainText(/waiting|\d+ to reply/);
     // the owner: "Your turn" and "Waiting for your reply" are the same thing: one heading, and the new conversation is
     // under it in its own words, no reason before them
@@ -1125,26 +1127,81 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
 
     /** the fifth panel round: Jess's draft and her board meeting, from one mail */
     const jess = () => item(page, "Send Jess your draft");
-    await scenario("the fifth panel round: a conversation's next item on the item's second line, D on its own; an alert with no day says none", async () => {
+    await scenario("plan 210 (iteration 2): two items of one conversation are two rows: each opens it, the reader's line marks its own; j/k walk them, a second click puts the open one away; D on one leaves the other, z brings it back", async () => {
       const store = server.backend.store;
-      // written as the reader would (the demo model gives one mail's items one text, its subject)
-      const m = await received(server, "board-1", { name: "Jess Okafor", email: "jess@board.test" }, "Board meeting", "Board meeting is locked: Monday at 9:00. Could you send me your draft by Saturday?", false);
+      const m = await received(server, "board-1", { name: "Jess Okafor", email: "jess@board.test" }, "Board meeting", "Board meeting is locked: Saturday at 8:00. Could you send me your draft by Saturday?", false);
       await store.dated.marks.queueScan([m.id], E2E_NOW);
       const DAY = 86_400_000;
       const saturday = new Date(2026, 9, 24, 9, 0).getTime();
-      const meeting = new Date(2026, 9, 26, 9, 0).getTime();
+      const meeting = new Date(2026, 9, 24, 8, 0).getTime();
       const rows = [
         { kind: "respond" as const, item: 0, text: "Send Jess your draft", quote: "send me your draft by Saturday", dueDay: "2026-10-24", dueAt: saturday, timed: false, dated: true, actAt: saturday - 7 * DAY },
-        { kind: "event" as const, item: 1, text: "Board meeting", quote: "Board meeting is locked", dueDay: "2026-10-26", dueAt: meeting, timed: true, dated: true, actAt: meeting - DAY },
+        { kind: "event" as const, item: 1, text: "Board meeting", quote: "Board meeting is locked", dueDay: "2026-10-24", dueAt: meeting, timed: true, dated: true, actAt: saturday - 7 * DAY },
       ];
       expect(await store.dated.finish({ messageId: m.id, threadId: m.thread_id, fromScan: true, rows, settled: [], now: E2E_NOW, model: "demo", provider: "fake", promptVersion: 1, clearGeneration: store.dated.clearGeneration() })).toBe("written");
       server.backend.today.changed();
-      await expect.poll(async () => (await server.backend.today.list([])).sections.some((s) => s.items.some((i) => i.thread.id === m.thread_id))).toBe(true);
+      await expect.poll(async () => (await server.backend.today.list([])).sections.flatMap((s) => s.items).filter((i) => i.thread.id === m.thread_id).length).toBe(2);
       await show(page, "Send Jess your draft");
-      // the draft is the item (Soon); the meeting, Coming up's, which this conversation held from view, is its second line
-      await expect(jess().getByTestId("wm-sentence")).toHaveText("Send Jess your draft.", { timeout: 15_000 });
-      await expect(jess().getByTestId("wm-meta")).toHaveText("Jess Okafor · Also Mon 9:00 AM · Board meeting");
-      await expect(jess().getByTestId("wm-when")).toHaveText("Sat");
+      const board = () => page.locator(`${FEED} [data-testid=wm-item]:not([data-history])`).filter({ has: page.locator("[data-testid=wm-sentence]", { hasText: /^Board meeting\.$/ }) });
+      // two rows, one conversation, each its own id; no Also on either (a related detail only)
+      await expect(jess()).toHaveAttribute("data-thread-id", String(m.thread_id));
+      await expect(board()).toHaveAttribute("data-thread-id", String(m.thread_id));
+      const [draftId, boardId] = [await jess().getAttribute("data-row-id"), await board().getAttribute("data-row-id")];
+      expect(draftId).not.toBe(boardId);
+      await expect(jess().getByTestId("wm-meta")).toHaveText("Jess Okafor");
+      if (SHOTS) {
+        await jess().scrollIntoViewIfNeeded();
+        for (const mode of ["light", "dark"] as const) {
+          await page.emulateMedia({ colorScheme: mode });
+          await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-two-rows-${mode}.png` });
+        }
+        await page.emulateMedia({ colorScheme: "light" });
+      }
+      // the draft opens the conversation, the reader's line marking the draft
+      await jess().click();
+      await expect(jess()).toHaveAttribute("data-open", "true");
+      await expect(board()).not.toHaveAttribute("data-open", "true");
+      const target = page.locator("[data-testid=thread-dated-item][data-target]");
+      await expect(target).toHaveCount(1);
+      await expect(target.getByTestId("thread-dated-text")).toContainText("Send Jess your draft");
+      // the meeting's row: the same conversation, its line now the meeting's, nothing reopened
+      const subject = await page.getByTestId("reader-subject").innerText();
+      await board().click();
+      await expect(board()).toHaveAttribute("data-open", "true");
+      await expect(jess()).not.toHaveAttribute("data-open", "true");
+      await expect(page.getByTestId("reader-subject")).toHaveText(subject);
+      await expect(target.getByTestId("thread-dated-text")).toContainText("Board meeting");
+      if (SHOTS) {
+        for (const mode of ["light", "dark"] as const) {
+          await page.emulateMedia({ colorScheme: mode });
+          await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-two-rows-open-${mode}.png` });
+        }
+        await page.emulateMedia({ colorScheme: "light" });
+      }
+      // a second click puts it away
+      await board().click();
+      await expect(page.locator(`${FEED} [data-testid=wm-item][data-open]`)).toHaveCount(0);
+      // j/k walk rows: from the draft down to the meeting, two steps of one conversation, and back
+      const order = async () => page.locator(`${FEED} [data-testid=wm-item]`).evaluateAll((els) => els.map((e) => e.getAttribute("data-row-id")));
+      const ids = await order();
+      const steps = ids.indexOf(boardId) - ids.indexOf(draftId);
+      expect(steps).toBeGreaterThan(0);
+      await jess().click();
+      await focusList(page);
+      for (let i = 0; i < steps; i++) await page.keyboard.press("j");
+      await expect(board()).toHaveAttribute("data-open", "true");
+      for (let i = 0; i < steps; i++) await page.keyboard.press("k");
+      await expect(jess()).toHaveAttribute("data-open", "true");
+      // D on the draft: it goes, the meeting of its conversation stays; z, back
+      await page.keyboard.press("d");
+      await expect(page.locator("[data-testid=snack]")).toContainText("Done: Send Jess your draft");
+      await expect(jess()).toHaveCount(0);
+      await expect(board()).toHaveCount(1);
+      await expect.poll(async () => (await store.dated.ofThread(m.thread_id)).map((r) => r.text)).toEqual(["Board meeting"]);
+      await page.keyboard.press("z");
+      await expect(jess()).toHaveCount(1);
+      await expect(board()).toHaveCount(1);
+      await page.keyboard.press("Escape");
 
       // an alert that named no day is Today's while it shows, its column since when it came, quietly (plan 210)
       await received(server, "alert-1", { name: "Tri-River", email: "alerts@tririverfcu.org" }, "Card payment failed", "Your card payment failed at Corner Market.");
@@ -1155,25 +1212,32 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       await expect(alert.getByTestId("wm-sentence")).toHaveText("Card payment failed, the email says.");
       await expect(alert.getByTestId("wm-when")).toHaveText(/^since /);
       await expect(alert).toHaveAttribute("data-tone", "none");
+    });
 
-      // D acts on the item's own task; the meeting is then the conversation's item, in Coming up; Undo puts the draft back
-      await show(page, "Send Jess your draft");
-      await jess().click();
-      await expect(jess()).toHaveAttribute("data-open", "true");
+    await scenario("plan 210 (iteration 2): one dinner read from two conversations is one row; Done finishes both, z brings both back", async () => {
+      const store = server.backend.store;
+      const dinner = new Date(2026, 9, 24, 19, 30).getTime();
+      const add = async (key: string, from: { name: string; email: string }, text: string) => {
+        const m = await received(server, key, from, "Friday", `${text} Saturday 7:30 PM.`, false);
+        await store.dated.marks.queueScan([m.id], E2E_NOW);
+        const row = { kind: "event" as const, item: 0, text, quote: text, dueDay: "2026-10-24", dueAt: dinner, timed: true, dated: true, actAt: E2E_NOW };
+        expect(await store.dated.finish({ messageId: m.id, threadId: m.thread_id, fromScan: true, rows: [row], settled: [], now: E2E_NOW, model: "demo", provider: "fake", promptVersion: 1, clearGeneration: store.dated.clearGeneration() })).toBe("written");
+      };
+      await add("nopa-1", { name: "Nopa", email: "reservations@nopa.test" }, "Dinner reservation at Nopa");
+      await add("nopa-2", { name: "Jess Okafor", email: "jess@board.test" }, "Dinner with Jess at Nopa");
+      server.backend.today.changed();
+      const dinners = page.locator(`${FEED} [data-testid=wm-item]:not([data-history])`).filter({ hasText: /Nopa/ });
+      await show(page, "Dinner reservation at Nopa");
+      await expect(dinners).toHaveCount(1);
+      await dinners.hover();
+      await dinners.getByTestId("wm-done").click();
+      await expect(page.locator("[data-testid=snack]")).toContainText("Done: Dinner reservation at Nopa");
+      await expect(dinners).toHaveCount(0);
+      await expect.poll(async () => (await store.dated.active()).filter((r) => /Nopa/.test(r.text)).length).toBe(0);
       await focusList(page);
-      await page.keyboard.press("d");
-      await expect(page.locator("[data-testid=snack]")).toContainText("Done: Send Jess your draft");
-      await expect(jess()).toHaveCount(0);
-      await expect.poll(async () => (await store.dated.ofThread(m.thread_id)).map((r) => r.text)).toEqual(["Board meeting"]);
-      // (a Plan on another day: the right column says the day and its time)
-      const board = page.locator(`${FEED} [data-testid=wm-item]`).filter({ has: page.locator("[data-testid=wm-sentence]", { hasText: /^Board meeting\.$/ }) });
-      await expect.poll(async () => (await toEnd(page), await board.count())).toBe(1);
-      await expect(board.getByTestId("wm-when")).toHaveText(/^Mon 9:00\sAM$/);
-      await expect(board.getByTestId("wm-meta")).toHaveText("Jess Okafor");
       await page.keyboard.press("z");
-      await show(page, "Send Jess your draft");
-      await expect(jess().getByTestId("wm-meta")).toHaveText("Jess Okafor · Also Mon 9:00 AM · Board meeting");
-      await page.keyboard.press("Escape");
+      await expect.poll(async () => (await store.dated.active()).filter((r) => /Nopa/.test(r.text)).length).toBe(2);
+      await expect(dinners).toHaveCount(1);
     });
 
     await scenario("Settings → AI: its group beside the digest's, on, naming who reads the mail", async () => {

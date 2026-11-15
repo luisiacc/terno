@@ -436,7 +436,7 @@ test("the owner's inbox-zero setting: the gear on What matters' title row hides 
 });
 
 
-test("plan 210 (iteration 1): inside a day, tasks before plans; a conversation with both is its task; the item's keys in its tooltips", async ({ app: page, server }) => {
+test("plan 210 (iteration 1): inside a day, tasks before plans; iteration 2: a conversation with both is two rows; the item's keys in its tooltips", async ({ app: page, server }) => {
   await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" }, dated: { enabled: true, scanAnswered: true } }, dev);
   // a breakfast at 9:00 and a parcel today, then the payroll at 1:00 PM; one conversation with a dinner at 8:00 and a deposit
   await items(server, "breakfast", [{ kind: "event", text: "Team breakfast", hour: 9 }]);
@@ -452,14 +452,17 @@ test("plan 210 (iteration 1): inside a day, tasks before plans; a conversation w
   await page.getByTestId("nav-today").click();
   await expect(line(page, "Wire payroll")).toBeVisible({ timeout: 15_000 });
 
-  await scenario("the payroll and the deposit (tasks), then the breakfast and the parcel (plans, quieter); the deposit's conversation is the deposit, the dinner its second line", async () => {
+  await scenario("the payroll and the deposit (tasks), then the dinner, the breakfast and the parcel (plans by time, quieter); the deposit's conversation is two rows, its dinner its own", async () => {
     const order = (await walk(page)).rows.filter((r) => r.kind === "open").map((r) => r.text);
     const today = order.filter((t) => /payroll|deposit|breakfast|parcel|Dinner/.test(t));
-    expect(today).toEqual(["Wire payroll.", "Pay the deposit.", "Team breakfast.", "Your parcel arrives."]);
+    expect(today).toEqual(["Wire payroll.", "Pay the deposit.", "Dinner at Lumen.", "Team breakfast.", "Your parcel arrives."]);
     await reach(page, "Pay the deposit");
     const deposit = openLine(page, "Pay the deposit");
-    await expect(deposit.getByTestId("wm-meta")).toContainText("Dinner at Lumen");
+    await expect(deposit.getByTestId("wm-meta")).not.toContainText("Dinner at Lumen");
     await expect(deposit).toHaveAttribute("data-tone", "today");
+    const conversation = (await deposit.getAttribute("data-thread-id"))!;
+    await reach(page, "Dinner at Lumen");
+    await expect(openLine(page, "Dinner at Lumen")).toHaveAttribute("data-thread-id", conversation);
     await reach(page, "Team breakfast");
     await expect(openLine(page, "Team breakfast")).toHaveAttribute("data-tone", "later");
     await reach(page, "Pay the deposit");
