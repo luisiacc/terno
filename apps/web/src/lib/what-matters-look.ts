@@ -37,5 +37,11 @@ export function setWmLook(look: WmLook): void {
   useWmLook.setState({ look });
 }
 
+/**
+ * The item a conversation put away (Esc, the reader's Close, a second click) was opened from: the feed marks it quietly and
+ * j/k go on from it, as from the open item. Gone once another opens, or Today is left.
+ */
+export const useFeedCursor = create<{ id: number | null }>(() => ({ id: null }));
+
 /** Today is on screen as a feed (chat or briefing), not as thread rows. */
 export const feedLook = (today: boolean, look: WmLook): boolean => today && look !== "list";

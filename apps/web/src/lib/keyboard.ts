@@ -19,7 +19,8 @@ import { conversationKeys } from "~/lib/conversation-keys";
 import { printCommand } from "~/lib/print-open";
 import { checkForUpdates } from "~/lib/updates";
 import { closeEmptySearch, focusRows, focusSearch, listScroller } from "~/components/thread-list";
-import { closeFeedConversation } from "~/components/what-matters/feed";
+import { closeFeedConversation } from "~/lib/feed-pane";
+import { useFeedCursor } from "~/lib/what-matters-look";
 import { snackbarControls } from "~/components/category-snackbar";
 import { setListFilter, toggleUnreadFilter } from "~/lib/unread";
 import { closePage, currentPage, goBack, goForward, listLayout, openThread, uncoverList } from "~/lib/page";
@@ -71,7 +72,9 @@ export function move(delta: number, byKey = false) {
   const { items, index, nextCursor } = useList.getState();
   if (items.length === 0) return;
   const s = getApp();
-  const current = s.selectedId !== null ? (index.get(s.selectedId) ?? -1) : -1;
+  // plan 204, the UI experiment: with no conversation open beside Today's feed, from the item one was put away from
+  const from = s.selectedId ?? useFeedCursor.getState().id;
+  const current = from !== null ? (index.get(from) ?? -1) : -1;
   // List's conversation page: a thread that isn't in the loaded list (a reload, a draft's) has no neighbours to step to (R10)
   const onPage = listLayout() && currentPage() === "thread";
   if (onPage && current === -1) return;

@@ -14,9 +14,9 @@ import { LIST_TITLE } from "~/lib/list-title";
 import { installScrollHairline } from "~/lib/scroll-hairline";
 import { pressRow, releaseRow } from "~/lib/select";
 import { groupLine, todaySentence, todayWhen, type TodayTone } from "~/lib/today-sentence";
-import { listLayout } from "~/lib/page";
-import { feedLook, useWmLook, type WmLook } from "~/lib/what-matters-look";
-import { getApp, setApp, useApp } from "~/state/app";
+import { closeFeedConversation } from "~/lib/feed-pane";
+import { useFeedCursor, type WmLook } from "~/lib/what-matters-look";
+import { getApp, useApp } from "~/state/app";
 import { useList } from "~/state/list";
 import { digestFrom, digestLabel, useToday } from "~/state/today";
 import { EmptyState } from "../empty-state";
@@ -62,23 +62,14 @@ function feedRows(items: readonly ThreadSummary[], kinds: ReadonlyMap<number, To
   return rows;
 }
 
-/** Opens the item's conversation beside the feed (List: as its page), as a click on a row does. */
+/**
+ * Opens the item's conversation beside the feed (List: as its page), as a click on a row does; on the item already open
+ * beside it, puts it away again, as Esc does (the owner: one toggle).
+ */
 function openItem(id: number): void {
+  if (getApp().selectedId === id && closeFeedConversation()) return;
   pressRow(id, { meta: false, ctrl: false, shift: false });
   releaseRow(id);
-}
-
-/**
- * Esc in Split: the conversation open beside the feed goes, and the feed has the room again; the keyboard is back on the
- * item it was opened from (quietly: no ring after a key, plan 54). False where there's none to put away.
- */
-export function closeFeedConversation(): boolean {
-  const s = getApp();
-  const id = s.selectedId;
-  if (id === null || listLayout() || !feedLook(s.today, useWmLook.getState().look)) return false;
-  setApp({ selectedId: null });
-  requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-testid=wm-feed] [data-thread-id="${id}"] button`)?.focus({ preventScroll: true }));
-  return true;
 }
 
 /** Who an item is from, as the feed says it: a promise's person (you sent its last message), else the sender. */
@@ -122,6 +113,7 @@ export function WhatMattersFeed({ look }: { look: Exclude<WmLook, "list"> }) {
   const selectedId = useApp((s) => s.selectedId);
   useEffect(() => {
     if (selectedId === null) return;
+    useFeedCursor.setState({ id: null });
     const frame = requestAnimationFrame(() => {
       const i = useList.getState().index.get(selectedId);
       const r = i === undefined ? undefined : rowOf.get(i);
@@ -130,6 +122,9 @@ export function WhatMattersFeed({ look }: { look: Exclude<WmLook, "list"> }) {
     return () => cancelAnimationFrame(frame);
     // only when the open item changes (the feed's width changes with it)
   }, [selectedId]);
+
+  // leaving Today, the place it was left at goes with it
+  useEffect(() => () => useFeedCursor.setState({ id: null }), []);
 
   // the header's hairline once the feed is scrolled, as the list's
   useEffect(() => {
@@ -218,6 +213,7 @@ const FeedItem = memo(function FeedItem({ id, thread, chat, later }: { id: numbe
   const entry = useToday((s) => s.entries.get(id));
   const task = useToday((s) => s.tasks.get(id));
   const open = useApp((s) => s.selectedId === id);
+  const cursor = useFeedCursor((s) => s.id === id);
   const sentence = useMemo(() => (entry ? todaySentence(entry) : thread.subject || t("common.noSubject")), [entry, thread.subject]);
   // a held row (no longer Today's) says only the day it came, quietly
   const when = useMemo(() => (entry ? todayWhen(entry) : { text: listDate(thread.lastDate), tone: "none" as const }), [entry, thread.lastDate]);
@@ -226,7 +222,7 @@ const FeedItem = memo(function FeedItem({ id, thread, chat, later }: { id: numbe
   // the briefing's second line: who (whom a promise of yours was made to), and the conversation's next item; never the
   // email's date, which read as the due day (after the UI panel): the right column says when
   const who = task?.kind === "promise" && task.person ? t("whatMatters.to", { name: task.person.name }) : sender;
-  return <BriefItem id={id} sentence={sentence} meta={task?.also ? `${who} · ${task.also}` : who} when={when.text} tone={when.tone} task={task} open={open} later={later} />;
+  return <BriefItem id={id} sentence={sentence} meta={task?.also ? `${who} · ${task.also}` : who} when={when.text} tone={when.tone} task={task} open={open} cursor={cursor} later={later} />;
 });
 
 interface ItemProps {
@@ -244,6 +240,8 @@ interface ItemProps {
 }
 
 interface BriefProps extends Omit<ItemProps, "openLabel" | "also"> {
+  /** the item a conversation was just put away from: marked quietly (the hover's fill), where j/k go on from */
+  cursor?: boolean;
   /** the right column: a short day, a time, "Was due Wed", or nothing */
   when: string | null;
   tone: TodayTone;
@@ -264,7 +262,7 @@ function ChatNote({ id, openLabel, sentence, meta, also, task, open, later }: It
         </p>
         {also && <p className="mt-1 text-sm text-muted-foreground">{also}</p>}
         <div className="mt-2.5 flex items-center gap-1">
-          <Button variant="outline" size="sm" data-testid="wm-open" aria-describedby={textId} onClick={() => openItem(id)}>
+          <Button variant="outline" size="sm" data-testid="wm-open" aria-describedby={textId} aria-expanded={open} onClick={() => openItem(id)}>
             {openLabel ?? t("whatMatters.open")}
             <ArrowRight data-icon="inline-end" />
           </Button>
@@ -285,7 +283,7 @@ function ChatNote({ id, openLabel, sentence, meta, also, task, open, later }: It
 const SENTENCE_INK: Record<TodayTone, string> = { missed: "font-medium text-foreground", today: "font-medium text-foreground", later: "text-foreground", none: "text-foreground" };
 const WHEN_INK: Record<TodayTone, string> = {
   missed: "font-medium text-foreground",
-  today: "font-medium text-primary group-[:hover:not([data-open])]/item:text-foreground",
+  today: "font-medium text-primary group-[:hover:not([data-open])]/item:text-foreground group-data-cursor/item:text-foreground",
   later: "text-muted-foreground",
   none: "text-muted-foreground",
 };
@@ -296,11 +294,11 @@ const WHEN_INK: Record<TodayTone, string> = {
  * Later, in words, on hover, on focus and on the open item, over the second line's end (they take no room while hidden);
  * D and the right-click menu as on the list.
  */
-function BriefItem({ id, sentence, meta, when, tone, task, open, later }: BriefProps) {
+function BriefItem({ id, sentence, meta, when, tone, task, open, cursor = false, later }: BriefProps) {
   const textId = useId();
   return (
-    <div data-thread-id={menuId(id)} data-testid="wm-item" data-open={open || undefined} data-tone={tone} className="group/item relative rounded-lg not-data-open:hover:bg-row-hover data-open:bg-row-selected">
-      <button type="button" data-testid="wm-item-open" title={`${sentence}\n${meta}`} aria-current={open || undefined} onClick={() => openItem(id)} className="flex w-full min-w-0 items-start gap-4 rounded-lg px-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring">
+    <div data-thread-id={menuId(id)} data-testid="wm-item" data-open={open || undefined} data-cursor={cursor || undefined} data-tone={tone} className="group/item relative rounded-lg not-data-open:hover:bg-row-hover data-cursor:bg-row-hover data-open:bg-row-selected">
+      <button type="button" data-testid="wm-item-open" title={`${sentence}\n${meta}`} aria-expanded={open} onClick={() => openItem(id)} className="flex w-full min-w-0 items-start gap-4 rounded-lg px-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring">
         <span className="min-w-0 flex-1">
           <span id={textId} data-testid="wm-sentence" className={cn("line-clamp-2 text-base text-pretty group-data-open/item:text-row-selected-foreground", later ? "text-muted-foreground" : SENTENCE_INK[tone])}>
             {sentence}

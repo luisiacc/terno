@@ -17,7 +17,7 @@ import { TernoMark } from "@terno/ui/brand/terno-mark";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
 import { useReplies } from "~/lib/replies";
-import { Archive, AlarmClock, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Ellipsis, FileDown, Forward, Inbox, Layers, Mail, OctagonAlert, Paperclip, PinTop, Printer, Reply, ReplyAll, SquarePen, Star, SummaryDoc, Trash2 } from "@terno/ui/icons";
+import { Archive, AlarmClock, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Ellipsis, FileDown, Forward, Inbox, Layers, Mail, OctagonAlert, Paperclip, PinTop, Printer, Reply, ReplyAll, SquarePen, Star, SummaryDoc, Trash2, X } from "@terno/ui/icons";
 import { type ReactNode, type RefCallback, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/popover";
 import { reminderShort, useReminders, useRemindPopover } from "~/lib/reminders";
@@ -34,6 +34,8 @@ import { AskReturn } from "./ask-return";
 import { ActionRule } from "./action-preview-header";
 import { ScheduledReplyLine } from "./scheduled-popover";
 import { ForwardLine } from "./forward-line";
+import { closeFeedConversation } from "~/lib/feed-pane";
+import { feedLook, useWmLook } from "~/lib/what-matters-look";
 import { comingHomeKey, shownDraftKey, useDrafts } from "~/lib/drafts";
 import { reachesSeveral, replyName } from "~/lib/compose-fields";
 import { composeFocusPending, composeLanding, registerReaderFocusDestination, returnDraftsTo, subscribeComposeFocus } from "~/lib/compose";
@@ -1109,6 +1111,8 @@ function Thread({ detail, account, cats, summaryShown }: { detail: ThreadDetail;
 function ReaderContent() {
   const selectedId = useApp((s) => s.selectedId);
   const page = useAppearance((s) => s.layout === "list");
+  // plan 204, the UI experiment: Split's pane beside Today's feed is the feed's (its toolbar closes it)
+  const feedPane = !page && feedLook(useApp((s) => s.today), useWmLook((s) => s.look));
   // the dock sits over the conversation's foot in either layout (plan 158: Split's too), so its end (the reply bar) scrolls clear of it
   // plan 115: and the pinned draft sits over its foot in either layout: the last message scrolls clear of the taller one
   const dock = bottomInset(useSnack((s) => s.inset), usePinnedInset());
@@ -1299,6 +1303,19 @@ function ReaderContent() {
         <ToolbarDivider />
         <ToolbarMore threadId={selectedId} />
         <ReplyGroup replyTo={detail ? replyName(detail, myEmails) : ""} everyone={everyone} quiet={composing && !!detail} />
+        {/* plan 204, the UI experiment: beside Today's feed the pane is the feed's, and closes back to it, as Esc does */}
+        {feedPane && <ToolbarDivider />}
+        {feedPane && (
+          <Tooltip>
+            <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label={t("whatMatters.closeEmail")} aria-keyshortcuts="Escape" onClick={() => closeFeedConversation()} data-testid="reader-close" className={cn(tool, "-mr-2 @max-[560px]:-mr-1.5")} />}>
+              <X />
+            </TooltipTrigger>
+            <TooltipContent className="flex items-center gap-2">
+              {t("common.close")}
+              <Shortcut keys="escape" />
+            </TooltipContent>
+          </Tooltip>
+        )}
         {page && <ToolbarDivider />}
         {page && <StepButtons id={selectedId} />}
         </div>

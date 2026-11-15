@@ -70,12 +70,54 @@ for (const look of ["chat", "brief"] as const) {
       await expect(item).toHaveAttribute("data-open");
       await expect(feed).toBeVisible();
       if (look === "brief") await expect(item.getByTestId("wm-controls")).toHaveCSS("opacity", "1");
+      await expect(open).toHaveAttribute("aria-expanded", "true");
       await page.keyboard.press("Escape");
       await expect(page.getByTestId("reader")).toHaveCount(0);
       await expect(item).not.toHaveAttribute("data-open");
+      await expect(open).toHaveAttribute("aria-expanded", "false");
+      // the keyboard is back on the item it was opened from
+      await expect(open).toBeFocused();
+    });
+
+    await scenario("the reader's Close (after Forward) and a click on the open item put it away too; only beside the feed", async () => {
+      await open.click();
+      const close = page.getByTestId("reader-close");
+      await expect(close).toHaveAccessibleName("Close email");
+      await axeBothModes(page, "[data-reader-toolbar]");
+      // the toolbar's last control, after Reply and Forward, on their line
+      const box = async (id: string) => (await page.getByTestId(id).boundingBox())!;
+      const [forward, x] = [await box("action-forward"), await close.boundingBox()];
+      expect(x!.x).toBeGreaterThan(forward.x + forward.width);
+      expect(Math.abs(x!.y + x!.height / 2 - (forward.y + forward.height / 2))).toBeLessThanOrEqual(1);
+      await close.click();
+      await expect(page.getByTestId("reader")).toHaveCount(0);
+      await expect(open).toBeFocused();
+      await expect(open).toHaveAttribute("aria-expanded", "false");
+      // the place is kept: j/k go on from the item it was opened from
+      if (look === "brief") await expect(item).toHaveAttribute("data-cursor");
+      const at = await feed.locator("[data-thread-id]").evaluateAll((els, id) => els.findIndex((e) => e.getAttribute("data-thread-id") === id), await item.getAttribute("data-thread-id"));
+      await page.keyboard.press(at > 0 ? "k" : "j");
+      await expect(page.getByTestId("reader")).toBeVisible();
+      await expect(feed.locator("[data-thread-id]").nth(at > 0 ? at - 1 : at + 1)).toHaveAttribute("data-open");
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("reader")).toHaveCount(0);
+      // the same item again: open, then closed by a second click
+      await open.click();
+      await expect(page.getByTestId("reader")).toBeVisible();
+      await open.click();
+      await expect(page.getByTestId("reader")).toHaveCount(0);
+      await expect(item).not.toHaveAttribute("data-open");
+      // the Inbox's reader has no Close
+      await page.getByTestId("nav-inbox").click();
+      await page.getByTestId("thread-row").first().click();
+      await expect(page.getByTestId("reader")).toBeVisible();
+      await expect(page.getByTestId("reader-close")).toHaveCount(0);
+      await page.getByTestId("nav-today").click();
+      await expect(feed).toBeVisible();
     });
 
     await scenario("D on the open item is its Done, and z brings it back", async () => {
+      if (await page.getByTestId("reader").count()) await page.keyboard.press("Escape");
       await open.click();
       await expect(item).toHaveAttribute("data-open");
       await page.keyboard.press("d");
