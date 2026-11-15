@@ -69,7 +69,7 @@ describe("reading dates in mail you got (plan 204)", () => {
   it("prompt v7: an alert is only what the mail says happened, never an instruction, its attribution the app's; a move is a new day or a new time", () => {
     const en = readDatesTask(input()).system;
     expect(en).toContain('"Debit card frozen after a $412.18 charge"; the app shows it as the mail\'s word, so never add "the email says"');
-    expect(en).toContain("Never an instruction, not even the mail's own: not to update, reply, click, pay or call, nor to check with someone the mail names");
+    expect(en).toContain("Never an instruction, not even the mail's own and not in parentheses: not to update, reply, click, pay or call, nor to check with someone the mail names");
     expect(en).toContain("this message gives a new day or a new time");
     expect(en).toContain("(its own day from <open_items> when only the time changes)");
     expect(readDatesTask(input({ language: "es" })).system).toContain('"Tarjeta de débito congelada tras un cargo de $412.18"');
@@ -98,8 +98,25 @@ describe("reading dates in mail you got (plan 204)", () => {
   });
 
   it("is frozen at its version: a change to the words is a new version", () => {
-    expect(DATED_PROMPT_VERSION).toBe(8);
+    expect(DATED_PROMPT_VERSION).toBe(9);
     expect(readDatesTask(input()).system).toMatchSnapshot();
+  });
+
+  it("prompt v9 (the sixth panel round): an offer isn't an ask; an alert's stated deadline is its day and time; \"reply C to confirm\" in the event's words; a failed payment and its bill are one item", () => {
+    const en = readDatesTask(input()).system;
+    // the eval: said in the ask's own line, Haiku dropped a colleague's real ask (2 in 11); among what isn't an item, none
+    expect(en).toContain('- An offer of help: "let me know if you need a swap", "happy to help if you need anything", "I can cover for you if needed". It asks nothing of the reader: neither an "ask" nor a "respond".');
+    expect(en).toContain('Its "due" and "time" are a deadline the mail states for it ("cancelled unless we hear from you by 1:00 PM on Wednesday": that Wednesday, 13:00), never the day it happened, and never a "respond" beside it; with none, null.');
+    expect(en).toContain('null for an "ask", and for an "alert" that states no deadline.');
+    expect(en).toContain('its text says so in a few words: "Sofia\'s cleaning (reply C to confirm)"; never a "respond" beside it with a day the mail doesn\'t give.');
+    expect(en).toContain('that\'s this one item and nothing else for that bill (no "alert", no second "pay" or "respond"): its text says what failed: "Pay $142.67 for the Brightline bill (the card was declined)"');
+    expect(en).toContain('an alert about something else beside a bill (a locked login, a frozen card) is its own item');
+    expect(en).toContain('"textEvidence" the mail\'s exact words that say it, from one line of <mail>');
+    const es = readDatesTask(input({ language: "es" })).system;
+    expect(es).toContain('"Limpieza de Sofía (responder C para confirmar)"');
+    expect(es).toContain('"Pagar $142.67 de la factura de Brightline (la tarjeta fue rechazada)"');
+    // a model's hidden reasoning counts against the ceiling: the soccer game's reading ran Luna past 2,000
+    expect(readDatesTask(input()).maxTokens).toBe(3000);
   });
 
   it("has a limit on every input", () => {
@@ -192,12 +209,12 @@ describe("reading dates in mail you got (plan 204)", () => {
     expect(fitted.open).toHaveLength(3);
     expect(fitted.text.length).toBeLessThan(6000);
     expect(fitDates(input({ open }), datedBudget(32_000).promptChars).open).toHaveLength(10);
-    expect(datedBudget(null)).toEqual({ outputTokens: 2000, promptChars: Infinity });
+    expect(datedBudget(null)).toEqual({ outputTokens: 3000, promptChars: Infinity });
   });
 
   it("a small window holds the whole conversation with the server: a bad answer and its repair still fit", async () => {
-    // v8's words (an ask, a Plan's window, an alert's words, a move's time and words, cold outreach, the open items' days) need a little over 3,700: a window that holds them with a bad answer and its repair
-    const window = 3800;
+    // v9's words (an ask, a Plan's window, an alert's words and deadline, a move's time and words, cold outreach, offers, a failed payment, the open items' days) need a little over 4,200 (v8 3,700; the app warns below 5,500 for the filter): a window that holds them with a bad answer and its repair
+    const window = 4300;
     const budget = datedBudget(window);
     const fitted = fitDates(input({ text: "word ".repeat(1200), outputTokens: budget.outputTokens }), budget.promptChars);
     const sizes: number[] = [];
