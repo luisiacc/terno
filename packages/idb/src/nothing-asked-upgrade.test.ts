@@ -44,7 +44,7 @@ it("a version-34 mailbox gains an empty store; its mail and dated items stay, an
   const [thanks] = (await upgraded.sync.ingest([msg({ accountId: account!, providerMsgId: "thanks", from: ana, to: [{ name: "Me", email: me.email }], inReplyTo: "out@t", references: ["out@t"], date: NOW - 1000, bodyText: "Thanks so much, that's perfect!" })], dated)).inserted;
   const talk = await threadOf(upgraded, "thanks");
   expect(await upgraded.today.waitingAmong([talk], NOW)).toEqual([talk]);
-  expect(await upgraded.dated.finish({ messageId: thanks!, threadId: talk, fromScan: false, rows: [], settled: [], now: NOW, model: null, provider: null, promptVersion: DATED_NOTHING_ASKED_SINCE, clearGeneration: upgraded.dated.clearGeneration() })).toBe("written");
+  expect(await upgraded.dated.finish({ messageId: thanks!, threadId: talk, fromScan: false, rows: [], settled: [], now: NOW, model: null, provider: null, promptVersion: DATED_NOTHING_ASKED_SINCE, readWhole: true, clearGeneration: upgraded.dated.clearGeneration() })).toBe("written");
   expect(await upgraded.today.waitingAmong([talk], NOW)).toEqual([]);
   await upgraded.close();
   const reopened = await open(legacyName);

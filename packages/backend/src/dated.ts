@@ -112,18 +112,6 @@ function toAnother(quote: string, text: string, reader: string, others: readonly
 }
 
 /**
- * Plan 210 (iteration 2): an ask now keeps its conversation in Needs you, so a sentence that says it only informs ("Nora,
- * just so you know, the caterer is confirmed", "FYI…", "para que sepas…") and asks nothing (no question, no "please") is never one, whatever the
- * model made of it (Haiku did, 7 in 15 readings in Spanish on prompt v12). Pure.
- */
-const TELLS = /^(?:[\p{L}'’.-]+(?: [\p{L}'’.-]+)?,\s*)?(?:just so you know|just a heads[- ]up|heads[- ]up|fyi|for your information|(?:solo )?para que (?:lo )?sepas|te aviso que)\b/iu;
-const ASKS = /[?¿]|\b(?:please|could|can you|would you|let me know|por favor|puedes|podr[ií]as|av[ií]same|dime)\b/iu;
-export function onlyTells(quote: string): boolean {
-  const q = quote.trim().replace(/^[^\p{L}]+/u, "");
-  return TELLS.test(q) && !ASKS.test(q);
-}
-
-/**
  * The third panel round (revision 1): who an ask may be from and to, read here and not only from the model: a person
  * (`senderIsPerson`, never a list, bulk or no-reply address), and the reader addressed in To or named where the mail asks.
  * The seventh panel round: never one the mail addresses by name to another of its recipients ("Oren, could you send me the
@@ -143,6 +131,24 @@ function askAllowed(quote: string, said: string, text: string, o: { sender?: { p
 const SEND_VERB = String.raw`send|share|give|provide|forward|e-?mail|text|tell|reply with|respond with|confirm|need|what['’]?s|what is|(?:envi|mand|pas|indic|proporcion|confirm)(?:as?|es?|ar)(?:me|nos)?|compart(?:es?|as?|ir)(?:me|nos)?|dame|danos|darme|darnos|dime|decirme|responde(?:me)? con|necesito|cual es`;
 const SECRET = String.raw`password|passcode|passphrase|pin (?:number|code)|(?:one[- ]time|verification|security|login|sign[- ]in|access|authentication|2fa|6[- ]digit|six[- ]digit) code|otp|code (?:we|i|you|they) (?:just )?(?:sent|texted|emailed|got|received)|(?:bank )?account (?:number|no|details)|bank details|card (?:number|details)|cvv|cvc|routing (?:number|no)|iban|swift code|sort code|social security|ssn|(?:scan|copy|photo|picture) of (?:your |the )?(?:id|passport|driver['’]?s licen[cs]e)|(?:id|passport|licen[cs]e) (?:scan|copy|number|details)|(?:your|tu|su) (?:pin|id)|contrasena|(?:tu|su) (?:clave|nip|dni|ine|cedula|identificacion)|codigo (?:de (?:verificacion|seguridad|acceso|confirmacion)|otp|que (?:te|le) (?:llego|enviamos|mandamos|envie|mande))|numero de (?:cuenta|tarjeta|ruta|seguro social)|datos (?:bancarios|de (?:la|tu|su) tarjeta)|clabe|(?:foto|copia|escaneo|numero) de (?:tu |su |la )?(?:ine|dni|cedula|pasaporte|identificacion|licencia)`;
 const ASKS_FOR_SECRETS = new RegExp(String.raw`\b(?:${SEND_VERB})\b[^.!?\n]{0,60}?\b(?:${SECRET})\b`, "i");
+
+/**
+ * Plan 210 (iteration 2): an ask now keeps its conversation in Needs you, so a sentence that says it only informs ("Nora,
+ * just so you know, the caterer is confirmed", "FYI…", "para que sepas…") is never one, whatever the model made of it (Haiku
+ * did, 7 in 15 readings in Spanish on prompt v12). Conservative (the Codex code review): after the lead-in, what it says
+ * mustn't ask, need, want, tell the reader to do something or speak to them ("FYI, send me the contract", "FYI, I need your
+ * approval", "para que sepas, necesito que me envíes…" are asks). Read without accents. Pure.
+ */
+const TELLS = /^(?:[\p{L}'’.-]+(?: [\p{L}'’.-]+)?,\s*)?(?:just so you know|just a heads[- ]up|heads[- ]up|fyi|for your information|(?:solo )?para que (?:lo )?sepas|te aviso que)\b[\s,:;.-]*/iu;
+const STILL_ASKS = new RegExp(
+  String.raw`[?¿]|\b(?:${SEND_VERB}|please|could|can|would|will you|let me|approve|sign|review|check|call|reply|answer|pay|bring|book|schedule|want|wanted|like|need|needs|must|should|you|your|yours|yourself|por favor|puedes|podrias|puede|podria|avisame|necesit\w*|quier\w*|quisier\w*|gustaria|firm\w*|revis\w*|llam\w*|respond\w*|contest\w*|pag\w*|tra[ei]\w*|reserv\w*|hay que|tienes que|tiene que|debes|deberias|te|ti|tu|tus|usted|ustedes|contigo)\b`,
+  "i",
+);
+export function onlyTells(quote: string): boolean {
+  const q = quote.trim().normalize("NFD").replace(/\p{M}/gu, "").replace(/^[^\p{L}]+/u, "");
+  const lead = TELLS.exec(q);
+  return !!lead && !q.includes("?") && !STILL_ASKS.test(q.slice(lead[0].length));
+}
 
 /**
  * The seventh panel round (revision 7): an ask, or the request it turns into with a day, never asks the reader to send a
@@ -500,7 +506,7 @@ export class DatedWorker {
     const open = await store.dated.openFor({ threadId: src.threadId, senderKey: src.senderKey, before: src.date, limit: DATED_OPEN_SHOWN });
     if (!open.length && (src.tab === "social" || src.tab === "promotions")) return drop();
     if (src.bodyState !== "full" && !src.bodyUnavailable) return { hold: src.senderKey };
-    const text = await this.text(src);
+    const { text, whole } = await this.text(src);
     // a cost filter, not a judgment (§3): a person's mail is read whatever its words
     if (!open.length && src.automated && !hasTimeCue(text, src.subject)) return drop();
     if (!text.trim() && !src.subject.trim()) return drop();
@@ -534,13 +540,17 @@ export class DatedWorker {
       // only what was really sent, after fitting to the window, may be named back (Codex review)
       const sent = new Set(input.open.map((o) => o.label));
       const checked = checkDates(result, { text, subject: src.subject, arrivedAt: src.date, open: new Map([...labels].filter(([l]) => sent.has(l))), promises: new Map([...promises].filter(([l]) => sent.has(l))), fromScan, now, sender: { person: src.person }, reader, others, threadId: src.threadId, senderKey: src.senderKey, from: input.from.name });
-      const outcome = await store.dated.finish({ messageId: src.id, threadId: src.threadId, fromScan, rows: checked.rows, settled: checked.settled, moved: checked.moved, movedPromises: checked.movedPromises, now, model: ai.model, provider: ai.providerId, promptVersion: DATED_PROMPT_VERSION, clearGeneration });
+      // plan 210 (iteration 2, the Codex code review): "nothing asked" only of a message the model saw all of, never one cut
+      // to the window or to the reader's limit
+      const readWhole = whole && text.length <= DATED_TEXT_CHARS && input.text === text;
+      const write = { messageId: src.id, threadId: src.threadId, fromScan, rows: checked.rows, settled: checked.settled, moved: checked.moved, movedPromises: checked.movedPromises, now, model: ai.model, provider: ai.providerId, promptVersion: DATED_PROMPT_VERSION, readWhole, clearGeneration };
+      const outcome = await store.dated.finish(write);
       this.attempts.delete(src.id);
       // a merge moved it under the request: read again on its new thread (revision 6)
       if (outcome === "moved") this.again = true;
       if (outcome === "written" && checked.movedPromises.length) this.host.promisesMoved();
       // plan 210 (iteration 2): nothing asked of the reader takes a waiting conversation out of Needs you, in the same write
-      const quiet = readNothingAsked({ rows: checked.rows, promptVersion: DATED_PROMPT_VERSION });
+      const quiet = readNothingAsked(write);
       if (outcome === "written" && (quiet || checked.rows.length || checked.settled.length || checked.moved.length || checked.movedPromises.length)) this.host.changed();
       return "next";
     } catch (error) {
@@ -560,9 +570,11 @@ export class DatedWorker {
     }
   }
 
-  private async text(src: DatedSource): Promise<string> {
+  /** `whole`: the store gave all of it (under the limit, the body captured in full), for "nothing asked" (plan 210) */
+  private async text(src: DatedSource): Promise<{ text: string; whole: boolean }> {
     const texts = await this.host.store.aiSummaries.text([{ messageId: src.id, limit: DATED_TEXT_CHARS * 2 }]);
-    return withoutQuotes(texts.get(src.id) ?? "");
+    const raw = texts.get(src.id) ?? "";
+    return { text: withoutQuotes(raw), whole: raw.length < DATED_TEXT_CHARS * 2 && !src.bodyUnavailable };
   }
 
   private async failed(mark: DatedMark, error: unknown): Promise<"next" | "stop"> {

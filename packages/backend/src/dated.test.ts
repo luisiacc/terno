@@ -5,7 +5,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createAi, DATED_PROMPT_VERSION, promptText, type AiOptions, type Completion, type CompletionRequest, type ProviderConfig } from "@terno/ai";
+import { createAi, DATED_PROMPT_VERSION, DATED_TEXT_CHARS, promptText, type AiOptions, type Completion, type CompletionRequest, type ProviderConfig } from "@terno/ai";
 import { todayCounted, type DatedRow } from "@terno/core";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { demoRegistry } from "@terno/mail";
@@ -189,6 +189,12 @@ describe("the local checks (plan 204 §3)", () => {
       expect(told("FYI the caterer is confirmed, please send them the headcount")).toHaveLength(1);
       expect(told("Para que sepas, el catering está confirmado. ¿Puedes mandarles el número de invitados?")).toHaveLength(1);
       expect(told("The caterer is confirmed, can you send them the headcount")).toHaveLength(1);
+      // the Codex code review: an imperative, a need or a want after the lead-in still asks (en, es)
+      expect(told("FYI, send me the signed contract")).toHaveLength(1);
+      expect(told("FYI, I need your approval on the draft")).toHaveLength(1);
+      expect(told("Para que sepas, necesito que me envíes el contrato.")).toHaveLength(1);
+      expect(told("Just so you know, the deck is due Friday and you're presenting it")).toHaveLength(1);
+      expect(told("Para que lo sepas, tienes que firmar antes del lunes")).toHaveLength(1);
     });
     describe("never one addressed by name to another of the mail's recipients (the seventh panel round)", () => {
       const asks = (text: string, quote: string, reader: { name: string; addressed: "to" | "cc" | "none" }, others: string[], due: string | null = null) =>
@@ -1156,21 +1162,23 @@ describe("Today's groups (§1)", () => {
     const thanks = await receive({ from: marisa, subject: "Re: la cena", bodyText: "¡Gracias a ti! Aquí tienes tu casa, cuando quieras.", providerThreadId: "marisa" });
     const asks = await receive({ from: { name: "Jo Bennett", email: "jo@people.test" }, subject: "Re: photos", bodyText: "Thanks so much, that's perfect! Could you send me the address for Saturday?", providerThreadId: "jo" });
     const unread = await receive({ from: { name: "Sam Ortega", email: "sam@people.test" }, subject: "Re: the lease", bodyText: "Thanks so much, that's perfect!", providerThreadId: "sam" }, false);
+    // the Codex code review: a mail longer than the reader is shown, its question past the cut: read, but not all of it
+    const long = await receive({ from: { name: "Ines Vidal", email: "ines@people.test" }, subject: "Re: the notes", bodyText: `${"The notes from Tuesday, in full. ".repeat(Math.ceil(DATED_TEXT_CHARS / 30))}\n\nCould you send me the budget by then?`, providerThreadId: "ines" });
     await read();
     // each reading tells Today, nothing found too (it can take a conversation out): Marisa's and Jo's
     await expect.poll(() => changes).toBeGreaterThanOrEqual(2);
     const waiting = (...ids: number[]) => raw.run(`UPDATE threads SET waiting_since = ?, has_sent = 1 WHERE id IN (${ids.map(() => "?").join(", ")})`, clock.now - 60_000, ...ids);
-    waiting(thanks, asks, unread);
+    waiting(thanks, asks, unread, long);
     const shown = async () => {
       const list = await client.call("today.list", { heldIds: [] });
       return { ids: new Set(list.sections.flatMap((x) => x.items.map((i) => i.thread.id))), sidebar: (await client.call("counts.get", {})).today };
     };
-    expect(await shown()).toEqual({ ids: new Set([asks, unread]), sidebar: 2 });
+    expect(await shown()).toEqual({ ids: new Set([asks, unread, long]), sidebar: 3 });
     // newer mail from Marisa nobody has read: plan 145's rule again
     clock.now += 60_000;
     await receive({ from: marisa, subject: "Re: la cena", bodyText: "Por cierto, ¿te paso la receta?", providerThreadId: "marisa" }, false);
     waiting(thanks);
-    expect(await shown()).toEqual({ ids: new Set([thanks, asks, unread]), sidebar: 3 });
+    expect(await shown()).toEqual({ ids: new Set([thanks, asks, unread, long]), sidebar: 4 });
   });
 
   it("plan 210 (iteration 2): Clear AI data forgets what was read with nothing asked: plan 145's rule again", async () => {
