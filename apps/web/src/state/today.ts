@@ -1,5 +1,5 @@
 import { todayAvailable } from "~/lib/ai";
-import { addressKey, DIGEST_ROW_ID, TODAY_COUNTED, TODAY_GROUP_ORDER, type DigestItem, type DigestRow, type TodayGroupKind, type TodayItem, type TodayList, type TodayWhy, type ThreadSummary } from "@terno/core";
+import { addressKey, DIGEST_ROW_ID, TODAY_COUNTED, TODAY_GROUP_ORDER, type DigestItem, type DigestRow, type HistoryKey, type TodayGroupKind, type TodayHistoryItem, type TodayHistoryPage, type TodayItem, type TodayList, type TodayWhy, type ThreadSummary } from "@terno/core";
 import { t } from "@terno/i18n";
 import { create } from "zustand";
 import { listDate } from "~/lib/format";
@@ -14,9 +14,12 @@ import { reloadList } from "./list";
  * Plan 145: Today's shape on the list: which rows begin a section, and the digest. Rows themselves are the ordinary
  * thread rows, with what they say in the snippet's place.
  */
+/** plan 210: the open part's groups, and the history below them (What matters drawn as the feed) */
+export type FeedGroupKind = TodayGroupKind | "history";
+
 export interface TodayGroup {
-  /** plan 166, after the owner's second look: Needs you is one group again ("they're really the same"); plan 204 adds Missed, Deadlines, Plans and Coming up */
-  kind: TodayGroupKind;
+  /** plan 166, after the owner's second look: Needs you is one group again ("they're really the same"); plan 204 adds Missed, Deadlines, Plans and Coming up; plan 210 the history */
+  kind: FeedGroupKind;
   /** the row it begins at */
   at: number;
 }
@@ -62,10 +65,12 @@ interface TodayState {
   tasks: ReadonlyMap<number, TodayTask>;
   /** plan 204, the UI experiment: each row's item as the backend said it (a promise's day known), what a feed's sentence is made from */
   entries: ReadonlyMap<number, TodayItem>;
+  /** plan 210: the history's lines loaded so far, by thread (what each says, and its key) */
+  history: ReadonlyMap<number, TodayHistoryItem>;
   /** plan 204 (after the panel, revision 10): the digest's row, the list's last, or -1 */
   digestAt: number;
   /** each row's group, by thread (held rows keep theirs): headings and the digest's place follow the rows, whatever leaves */
-  kinds: ReadonlyMap<number, TodayGroupKind>;
+  kinds: ReadonlyMap<number, FeedGroupKind>;
   /** plan 204 (after the panel, fix 10): the row whose task Later's "Pick a date…" is choosing a moment for */
   laterPick: { threadId: number; task: TodayTask } | null;
   digest: DigestRow | null;
@@ -91,7 +96,7 @@ function storedComingUp(): boolean {
   }
 }
 
-export const useToday = create<TodayState>(() => ({ groups: [], counted: 0, comingUp: 0, comingUpOpen: storedComingUp(), tasks: new Map(), entries: new Map(), digestAt: -1, kinds: new Map(), laterPick: null, digest: null, fromDigest: null, pick: null, movedTo: new Map(), notNewsletters: new Set() }));
+export const useToday = create<TodayState>(() => ({ groups: [], counted: 0, comingUp: 0, comingUpOpen: storedComingUp(), tasks: new Map(), entries: new Map(), history: new Map(), digestAt: -1, kinds: new Map(), laterPick: null, digest: null, fromDigest: null, pick: null, movedTo: new Map(), notNewsletters: new Set() }));
 
 /** Plan 204 (after the panel): a Today row's task, only while Today is what's shown (one Map read: other rows never re-render). */
 export function useTodayTask(threadId: number | null | undefined): TodayTask | undefined {
@@ -273,7 +278,7 @@ function digestThread(): ThreadSummary {
   return { id: DIGEST_ROW_ID, accountId: 0, subject: t("today.newsletters"), snippet: "", fromName: t("today.newsletters"), fromEmail: "", lastDate: 0, messageCount: 1, unread: false, starred: false, hasAttachments: false, categoryIds: [], inInbox: false, inSpam: false, inTrash: false } as unknown as ThreadSummary;
 }
 
-const GROUP_ORDER: readonly TodayGroupKind[] = TODAY_GROUP_ORDER;
+const GROUP_ORDER: readonly FeedGroupKind[] = [...TODAY_GROUP_ORDER, "history"];
 
 /**
  * The sections as one list, in `TODAY_GROUP_ORDER` and all of them (plan 204: no cap); Coming up only while it's open.
@@ -334,13 +339,24 @@ export function flattenToday(list: TodayList, before: readonly ThreadSummary[]):
   // option again, after held rows and never before a person, under no heading of its own (a gap sets it apart)
   const digestAt = list.digest ? items.length : -1;
   if (list.digest) items.push(digestThread());
+  // plan 210: the history after the automated section, its first page (or as deep as the list had it)
+  const history = new Map<number, TodayHistoryItem>();
+  const listed = new Set(items.map((t) => t.id));
+  if (list.history?.items.length) {
+    groups.push({ kind: "history", at: items.length });
+    for (const line of list.history.items) {
+      if (listed.has(line.thread.id)) continue;
+      history.set(line.thread.id, line);
+      items.push(line.thread);
+    }
+  }
   // what each row's heading is: where a group starts, a held row in its own group's run
-  const kinds = new Map<number, TodayGroupKind>();
+  const kinds = new Map<number, FeedGroupKind>();
   for (let i = 0, g = 0; i < items.length; i++) {
     while (g + 1 < groups.length && groups[g + 1]!.at <= i) g++;
     if (groups[g] && groups[g]!.at <= i && items[i]!.id !== DIGEST_ROW_ID) kinds.set(items[i]!.id, groups[g]!.kind);
   }
-  useToday.setState(({ notNewsletters }) => ({ groups, counted: counted.size, comingUp, tasks, entries, digestAt, kinds, digest: list.digest && withoutSenders(list.digest, notNewsletters) }));
+  useToday.setState(({ notNewsletters }) => ({ groups, counted: counted.size, comingUp, tasks, entries, history, digestAt, kinds, digest: list.digest && withoutSenders(list.digest, notNewsletters) }));
   return items;
 }
 
@@ -354,7 +370,7 @@ export function todayRowsLeft(items: readonly ThreadSummary[]): void {
   const { kinds } = useToday.getState();
   const groups: TodayGroup[] = [];
   let digestAt = -1;
-  let prev: TodayGroupKind | undefined;
+  let prev: FeedGroupKind | undefined;
   for (let i = 0; i < items.length; i++) {
     const id = items[i]!.id;
     if (id === DIGEST_ROW_ID) {
@@ -367,3 +383,38 @@ export function todayRowsLeft(items: readonly ThreadSummary[]): void {
   }
   useToday.setState({ groups, digestAt });
 }
+
+/**
+ * Plan 210: a page of the history, after the lines the list has: its lines join the history's map and group (the list
+ * appends the rows themselves, leaving out any it has). Its key travels as the list's cursor, never kept here, so a page
+ * the list drops (a newer answer came) moves nothing.
+ */
+export function appendHistory(page: TodayHistoryPage, have: ReadonlyMap<number, number>): ThreadSummary[] {
+  const fresh = page.items.filter((line) => !have.has(line.thread.id));
+  if (!fresh.length) return [];
+  useToday.setState(({ history, kinds }) => {
+    const nextHistory = new Map(history);
+    const nextKinds = new Map(kinds);
+    for (const line of fresh) {
+      nextHistory.set(line.thread.id, line);
+      nextKinds.set(line.thread.id, "history");
+    }
+    return { history: nextHistory, kinds: nextKinds };
+  });
+  return fresh.map((line) => line.thread);
+}
+
+/** Plan 210: the deepest history line these rows hold, what a reload asks down to (so it keeps the depth it had). */
+export function historyThrough(items: readonly ThreadSummary[]): HistoryKey | null {
+  const { history } = useToday.getState();
+  for (let i = items.length - 1; i >= 0; i--) {
+    const line = history.get(items[i]!.id);
+    if (line) return line.key;
+  }
+  return null;
+}
+
+/** Plan 210: the list's cursor for a history key, and back (the list's cursor carries the key's three parts). */
+export const historyCursor = (key: HistoryKey | null | undefined): { lastDate: number; id: number; src: 0 | 1 } | null => (key ? { lastDate: key.at, id: key.id, src: key.src } : null);
+export const cursorKey = (c: { lastDate: number; id: number; src?: 0 | 1 }): HistoryKey => ({ at: c.lastDate, id: c.id, src: c.src ?? 0 });
+

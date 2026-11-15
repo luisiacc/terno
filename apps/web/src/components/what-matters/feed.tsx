@@ -1,5 +1,5 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { DIGEST_ROW_ID, type ThreadSummary, type TodayGroupKind } from "@terno/core";
+import { DIGEST_ROW_ID, type ThreadSummary } from "@terno/core";
 import { getLocale, t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { SeparatorLabel } from "@terno/ui/components/separator";
@@ -13,12 +13,12 @@ import { listDate } from "~/lib/format";
 import { LIST_TITLE } from "~/lib/list-title";
 import { installScrollHairline } from "~/lib/scroll-hairline";
 import { pressRow, releaseRow } from "~/lib/select";
-import { groupLine, todaySentence, todayWhen, type TodayTone } from "~/lib/today-sentence";
+import { groupLine, historySentence, historyWhen, todaySentence, todayWhen, type TodayTone } from "~/lib/today-sentence";
 import { closeFeedConversation } from "~/lib/feed-pane";
 import { useFeedCursor, type WmLook } from "~/lib/what-matters-look";
 import { getApp, useApp } from "~/state/app";
-import { useList } from "~/state/list";
-import { digestFrom, digestLabel, useToday } from "~/state/today";
+import { loadMore, useList } from "~/state/list";
+import { digestFrom, digestLabel, useToday, type FeedGroupKind } from "~/state/today";
 import { EmptyState } from "../empty-state";
 import { listScroller, TodayLine } from "../thread-list";
 import { ThreadMenu } from "../thread-menu";
@@ -30,26 +30,27 @@ import { BriefTaskControls, NoteTaskMenu } from "./task-menus";
  * the same order, held rows, the digest's place) and Today's own maps (each row's group, task and item). So j/k, D, the
  * right-click menu, Done's Undo and a reload all work as they do on the list; only the drawing differs. `chat` is the
  * owner's read-only feed of short notes, each with a small way to its email; `brief` keeps the headings, one plain
- * sentence an item, the whole item opening it. The conversation opens in the reader beside it (app.tsx).
+ * sentence an item, the whole item opening it. The conversation opens in the reader beside it (app.tsx). Plan 210: under
+ * the open part and the automated section, the history ("Earlier"), newest first, paged in as the feed nears its end.
  */
 
 type FeedRow =
-  | { type: "heading"; key: string; kind: TodayGroupKind; count: number }
-  | { type: "item"; key: string; id: number; index: number; kind: TodayGroupKind | undefined }
+  | { type: "heading"; key: string; kind: FeedGroupKind; count: number }
+  | { type: "item"; key: string; id: number; index: number; kind: FeedGroupKind | undefined }
   | { type: "digest"; key: string; index: number }
   | { type: "end"; key: string };
 
-const SECTION_NAME = { missed: "today.missed", deadlines: "today.deadlines", plans: "today.plans", needsYou: "today.needsYou", reminders: "today.reminders", comingUp: "today.comingUp" } as const satisfies Record<TodayGroupKind, string>;
+const SECTION_NAME = { missed: "today.missed", deadlines: "today.deadlines", plans: "today.plans", needsYou: "today.needsYou", reminders: "today.reminders", comingUp: "today.comingUp", history: "today.history" } as const satisfies Record<FeedGroupKind, string>;
 
 /** The list's rows with a heading where each group begins (a held row keeps its group's), the digest, and the chat's end. */
-function feedRows(items: readonly ThreadSummary[], kinds: ReadonlyMap<number, TodayGroupKind>, chat: boolean): FeedRow[] {
-  const counts = new Map<TodayGroupKind, number>();
+function feedRows(items: readonly ThreadSummary[], kinds: ReadonlyMap<number, FeedGroupKind>, chat: boolean, more: boolean): FeedRow[] {
+  const counts = new Map<FeedGroupKind, number>();
   for (const it of items) {
     const k = kinds.get(it.id);
     if (k) counts.set(k, (counts.get(k) ?? 0) + 1);
   }
   const rows: FeedRow[] = [];
-  let prev: TodayGroupKind | undefined;
+  let prev: FeedGroupKind | undefined;
   items.forEach((it, index) => {
     if (it.id === DIGEST_ROW_ID) return void rows.push({ type: "digest", key: "digest", index });
     const kind = kinds.get(it.id) ?? prev;
@@ -58,7 +59,8 @@ function feedRows(items: readonly ThreadSummary[], kinds: ReadonlyMap<number, To
     prev = kind;
     rows.push({ type: "item", key: `t-${it.id}`, id: it.id, index, kind });
   });
-  if (chat && items.length) rows.push({ type: "end", key: "end" });
+  // the chat's end once nothing older is coming
+  if (chat && items.length && !more) rows.push({ type: "end", key: "end" });
   return rows;
 }
 
@@ -86,7 +88,8 @@ export function WhatMattersFeed({ look }: { look: Exclude<WmLook, "list"> }) {
   const items = useList((s) => s.items);
   const loading = useList((s) => s.loading);
   const kinds = useToday((s) => s.kinds);
-  const rows = useMemo(() => feedRows(items, kinds, chat), [items, kinds, chat]);
+  const more = useList((s) => s.nextCursor !== null);
+  const rows = useMemo(() => feedRows(items, kinds, chat, more), [items, kinds, chat, more]);
   const rowOf = useMemo(() => new Map(rows.flatMap((r, i) => (r.type === "item" || r.type === "digest" ? [[r.index, i] as const] : []))), [rows]);
   const design = useDesign();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -133,6 +136,11 @@ export function WhatMattersFeed({ look }: { look: Exclude<WmLook, "list"> }) {
   }, []);
 
   const virtualItems = virtualizer.getVirtualItems();
+  // plan 210: the history's next page as the feed nears its end, as the Inbox's (the list keeps its cursor)
+  const last = virtualItems.at(-1)?.index;
+  useEffect(() => {
+    if (last !== undefined && last >= rows.length - 15) void loadMore();
+  }, [last, rows.length]);
   return (
     <section className="relative flex h-full min-h-0 flex-col bg-pane" data-testid="wm-feed" data-look={look}>
       <header ref={headerRef} className="drag-region scroll-hairline shrink-0 pb-2">
@@ -191,7 +199,7 @@ export function WhatMattersFeed({ look }: { look: Exclude<WmLook, "list"> }) {
 }
 
 /** The chat's quiet line where a group begins: "3 things you missed", between hairlines, read as the group's heading. */
-function ChatDivider({ kind, count }: { kind: TodayGroupKind; count: number }) {
+function ChatDivider({ kind, count }: { kind: FeedGroupKind; count: number }) {
   return (
     <SeparatorLabel role="heading" aria-level={2} data-testid="wm-divider" data-kind={kind} className="pt-5 pb-2">
       {groupLine(kind, count)}
@@ -200,7 +208,7 @@ function ChatDivider({ kind, count }: { kind: TodayGroupKind; count: number }) {
 }
 
 /** The briefing's heading: the list's section names, over a hairline. */
-function BriefHeading({ kind }: { kind: TodayGroupKind }) {
+function BriefHeading({ kind }: { kind: FeedGroupKind }) {
   return (
     <h2 data-testid="wm-heading" data-kind={kind} className="hairline-b mx-3 mb-1 pt-5 pb-1.5 text-sm font-medium text-foreground">
       {t(SECTION_NAME[kind])}
@@ -210,10 +218,24 @@ function BriefHeading({ kind }: { kind: TodayGroupKind }) {
 
 /** One item, its sentence made from what the backend said of it; a held row (no longer Today's) says its subject. */
 const FeedItem = memo(function FeedItem({ id, thread, chat, later }: { id: number; thread: ThreadSummary; chat: boolean; later: boolean }) {
-  const entry = useToday((s) => s.entries.get(id));
-  const task = useToday((s) => s.tasks.get(id));
   const open = useApp((s) => s.selectedId === id);
   const cursor = useFeedCursor((s) => s.id === id);
+  // plan 210: a history line: its words quiet, what happened and when in the column, nothing to act on
+  const line = useToday((s) => s.history.get(id));
+  if (line) {
+    const said = historySentence(line);
+    const happened = historyWhen(line);
+    const from = thread.fromName || thread.fromEmail;
+    if (chat) return <ChatNote id={id} sentence={said} meta={`${happened} · ${from}`} also={undefined} task={undefined} open={open} later past />;
+    return <BriefItem id={id} sentence={said} meta={from} when={happened} tone="none" task={undefined} open={open} cursor={cursor} later past />;
+  }
+  return <OpenItem id={id} thread={thread} chat={chat} later={later} open={open} cursor={cursor} />;
+});
+
+/** An open line: its sentence made from what the backend said of it; a held row (no longer Today's) says its subject. */
+function OpenItem({ id, thread, chat, later, open, cursor }: { id: number; thread: ThreadSummary; chat: boolean; later: boolean; open: boolean; cursor: boolean }) {
+  const entry = useToday((s) => s.entries.get(id));
+  const task = useToday((s) => s.tasks.get(id));
   const sentence = useMemo(() => (entry ? todaySentence(entry) : thread.subject || t("common.noSubject")), [entry, thread.subject]);
   // a held row (no longer Today's) says only the day it came, quietly
   const when = useMemo(() => (entry ? todayWhen(entry) : { text: listDate(thread.lastDate), tone: "none" as const }), [entry, thread.lastDate]);
@@ -223,7 +245,7 @@ const FeedItem = memo(function FeedItem({ id, thread, chat, later }: { id: numbe
   // email's date, which read as the due day (after the UI panel): the right column says when
   const who = task?.kind === "promise" && task.person ? t("whatMatters.to", { name: task.person.name }) : sender;
   return <BriefItem id={id} sentence={sentence} meta={task?.also ? `${who} · ${task.also}` : who} when={when.text} tone={when.tone} task={task} open={open} cursor={cursor} later={later} />;
-});
+}
 
 interface ItemProps {
   id: number;
@@ -237,6 +259,8 @@ interface ItemProps {
   open: boolean;
   /** Coming up's: quieter */
   later: boolean;
+  /** plan 210: a history line (done, not a task, settled, over) */
+  past?: boolean;
 }
 
 interface BriefProps extends Omit<ItemProps, "openLabel" | "also"> {
@@ -252,10 +276,10 @@ interface BriefProps extends Omit<ItemProps, "openLabel" | "also"> {
  * next item under it, a small button to its email, and its task's menu. Who it's from and when sit under the note, as a
  * chat's time does.
  */
-function ChatNote({ id, openLabel, sentence, meta, also, task, open, later }: ItemProps) {
+function ChatNote({ id, openLabel, sentence, meta, also, task, open, later, past = false }: ItemProps) {
   const textId = useId();
   return (
-    <article data-thread-id={menuId(id)} data-testid="wm-note" data-open={open || undefined} aria-labelledby={textId} className="py-1.5">
+    <article data-thread-id={menuId(id)} data-testid="wm-note" data-open={open || undefined} data-history={past || undefined} aria-labelledby={textId} className="py-1.5">
       <div className={cn("w-fit max-w-full rounded-2xl rounded-bl-md px-4 pt-3 pb-2.5", open ? "bg-row-selected" : "ai-card")}>
         <p id={textId} className={cn("text-base text-pretty", later ? "text-muted-foreground" : "text-foreground")}>
           {sentence}
@@ -294,10 +318,10 @@ const WHEN_INK: Record<TodayTone, string> = {
  * Later, in words, on hover, on focus and on the open item, over the second line's end (they take no room while hidden);
  * D and the right-click menu as on the list.
  */
-function BriefItem({ id, sentence, meta, when, tone, task, open, cursor = false, later }: BriefProps) {
+function BriefItem({ id, sentence, meta, when, tone, task, open, cursor = false, later, past = false }: BriefProps) {
   const textId = useId();
   return (
-    <div data-thread-id={menuId(id)} data-testid="wm-item" data-open={open || undefined} data-cursor={cursor || undefined} data-tone={tone} className="group/item relative rounded-lg not-data-open:hover:bg-row-hover data-cursor:bg-row-hover data-open:bg-row-selected">
+    <div data-thread-id={menuId(id)} data-testid="wm-item" data-open={open || undefined} data-cursor={cursor || undefined} data-history={past || undefined} data-tone={tone} className="group/item relative rounded-lg not-data-open:hover:bg-row-hover data-cursor:bg-row-hover data-open:bg-row-selected">
       <button type="button" data-testid="wm-item-open" title={`${sentence}\n${meta}`} aria-expanded={open} onClick={() => openItem(id)} className="flex w-full min-w-0 items-start gap-4 rounded-lg px-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring">
         <span className="min-w-0 flex-1">
           <span id={textId} data-testid="wm-sentence" className={cn("line-clamp-2 text-base text-pretty group-data-open/item:text-row-selected-foreground", later ? "text-muted-foreground" : SENTENCE_INK[tone])}>

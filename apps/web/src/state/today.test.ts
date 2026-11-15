@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
 vi.mock("~/rpc/connection", () => ({ client: { call: vi.fn(async () => ({})), on: () => () => {}, connectionVersion: 1 } }));
 
-const { digestPick, flattenToday, installToday, keepDigestPick, useToday } = await import("./today");
+const { appendHistory, digestPick, flattenToday, historyThrough, installToday, keepDigestPick, useToday } = await import("./today");
 installToday();
 const { setApp } = await import("./app");
 const { laterWindow } = await import("~/lib/dated");
@@ -372,3 +372,42 @@ describe("plan 204: Missed, Deadlines, Needs you, Plans, Reminders and Coming up
     set.mockRestore();
   });
 });
+
+describe("plan 210: the history below the open part and the automated section, and its pages", () => {
+  const thread = (id: number) => ({ id, snippet: `snippet ${id}`, fromName: "Ana" }) as never;
+  const line = (id: number, at: number) => ({ thread: thread(id), key: { at, src: 0 as const, id: id * 10 }, outcome: "done" as const, kind: "pay" as const, text: "Pay the bill" });
+  const groups = () => useToday.getState().groups.map((g) => [g.kind, g.at]);
+
+  it("the history's first page after the digest, under its own heading; a page appended joins it; the deepest line is what a reload asks down to", () => {
+    const list: TodayList = {
+      now: 0,
+      held: [],
+      digest: { day: "2026-11-13", state: "ready", items: [], automated: true, liveIds: [], errorKind: null },
+      sections: [{ kind: "needsYou", items: [{ thread: thread(1), why: { kind: "waiting", wrote: true } }] }],
+      // a line for a conversation already in the open part is never drawn twice
+      history: { items: [line(2, 900), line(3, 800), line(1, 700)], next: { at: 800, src: 0, id: 30 } },
+    };
+    const rows = flattenToday(list, []);
+    expect(rows.map((r) => r.id)).toEqual([1, DIGEST_ROW_ID, 2, 3]);
+    expect(groups()).toEqual([["needsYou", 0], ["history", 2]]);
+    expect(useToday.getState().digestAt).toBe(1);
+    expect(useToday.getState().kinds.get(3)).toBe("history");
+    expect(useToday.getState().counted).toBe(1);
+    expect(historyThrough(rows)).toEqual({ at: 800, src: 0, id: 30 });
+    // the next page: what the list has is left out, the rest joins the history
+    const index = new Map(rows.map((r, i) => [r.id, i]));
+    const more = appendHistory({ items: [line(3, 800), line(4, 600)], next: null }, index);
+    expect(more.map((r) => r.id)).toEqual([4]);
+    expect(useToday.getState().history.get(4)?.key).toEqual({ at: 600, src: 0, id: 40 });
+    expect(useToday.getState().kinds.get(4)).toBe("history");
+    expect(historyThrough([...rows, ...more])).toEqual({ at: 600, src: 0, id: 40 });
+  });
+
+  it("without a history (the list look), no history group and nothing to page", () => {
+    const rows = flattenToday({ now: 0, held: [], digest: null, sections: [{ kind: "needsYou", items: [{ thread: thread(1), why: { kind: "waiting", wrote: true } }] }] }, []);
+    expect(groups()).toEqual([["needsYou", 0]]);
+    expect(useToday.getState().history.size).toBe(0);
+    expect(historyThrough(rows)).toBeNull();
+  });
+});
+
