@@ -1,4 +1,4 @@
-import { DATED_ITEMS_MAX, DATED_KINDS, DATED_OPEN_SHOWN, type DatedKind } from "@terno/core";
+import { DATED_ITEMS_MAX, DATED_KINDS, DATED_OPEN_SHOWN, saysDay, type DatedKind } from "@terno/core";
 import { z } from "zod";
 import type { StructuredTask } from "./ladder";
 
@@ -332,18 +332,35 @@ const BEFORE = /\b(?:before|antes del?)\s+(?:(?:next|this|el|pr[oó]ximo)\s+)?(?
 const plain = (text: string) => text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
 // a deadline's kinds: an event or a delivery "before" something is when it happens, not a last day
 const DEADLINES: ReadonlySet<string> = new Set(["pay", "renew", "expire", "respond", "alert"]);
+// The Codex code review of v11 (point 6): the "before" is a deadline only in a sentence that asks for something by then, and
+// never negated or a lower bound ("do not submit before Monday", "opens before Monday", "anything before Monday won't count")
+const ASKS = /\b(?:please|could you|can you|would you|let me know|need|needs|must|due|have to|has to|send|pay|submit|return|sign|confirm|por favor|necesito|necesitamos|necesita|puedes|podrias|puede|debe|deben|tienes que|hay que|favor de|envia\w*|manda\w*|paga|pague|confirm\w*|entrega\w*|avisame)\b/u;
+const NOT_BEFORE = /\b(?:not|no|never|don'?t|doesn'?t|cannot|can'?t|nunca|ni|tampoco|earliest|starting|starts?|opens?|after|desde|a partir|despues)\b/u;
+const NOT_AFTER = /\b(?:won'?t|will not|isn'?t|is not|aren'?t|are not|not be|no se|no cuenta|no valen?|no sera)\b/u;
 
 /**
  * Plan 210 (prompt v11): "before Monday", "antes del lunes", "before the 20th" and "antes del día 20" are due the day before.
  * The prompt says so, and a small model still gave the day it names now and then (Luna in Spanish, the panel's Fer): a
- * deadline whose words (its quote's paragraph, `said`) say "before" a day, given on that very day with no time, is moved
- * back one. One already a day earlier, or on another, is left as it is.
+ * deadline whose words (its quote's paragraph, `said`) ask for it "before" a day, given on that very day with no time, is
+ * moved back one. One already a day earlier, or on another, is left as it is; so is one whose "before" is negated or a lower
+ * bound, or in a sentence that asks for nothing (the Codex code review of v11).
  */
 export function dayBefore(kind: string, due: string | null, time: string | null, said: string): string | null {
   const day = due ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(due) : null;
   if (!due || !day || time || !DEADLINES.has(kind)) return due;
   const at = new Date(Date.UTC(Number(day[1]), Number(day[2]) - 1, Number(day[3])));
-  const named = [...plain(said).matchAll(BEFORE)].some((b) => (b[1] ? WEEKDAY[b[1]] === at.getUTCDay() : Number(b[2]) === at.getUTCDate()));
+  const words = plain(said);
+  const named = [...words.matchAll(BEFORE)].some((b) => {
+    if (b[1] ? WEEKDAY[b[1]] !== at.getUTCDay() : Number(b[2]) !== at.getUTCDate()) return false;
+    const start = b.index!;
+    const end = start + b[0].length;
+    // its clause (to a comma, a semicolon or a sentence's end) and its sentence
+    const clauseStart = Math.max(...[".", ";", ",", "!", "?", "\n", ":"].map((c) => words.lastIndexOf(c, start))) + 1;
+    const clauseEnd = Math.min(...[".", ";", ",", "!", "?", "\n"].map((c) => (words.indexOf(c, end) < 0 ? words.length : words.indexOf(c, end))));
+    const sentenceStart = Math.max(...[".", "!", "?", "\n"].map((c) => words.lastIndexOf(c, start))) + 1;
+    const sentenceEnd = Math.min(...[".", "!", "?", "\n"].map((c) => (words.indexOf(c, end) < 0 ? words.length : words.indexOf(c, end))));
+    return !NOT_BEFORE.test(words.slice(clauseStart, start)) && !NOT_AFTER.test(words.slice(end, clauseEnd)) && ASKS.test(words.slice(sentenceStart, sentenceEnd));
+  });
   return named ? new Date(at.getTime() - 86_400_000).toISOString().slice(0, 10) : due;
 }
 
@@ -395,7 +412,10 @@ export function readDatesTask(input: DatedInput): StructuredTask<Wire, DatedResu
             const zoned = zonedTime(blankToNull(m.time));
             const was = open.get(label);
             // the Codex code review of the seventh round: the time alone, in another zone, read against the item's own moment
-            const at = zoned && due && was?.due === due ? movedInZone({ due, time: zoned[1]! }, zoned[2]!, input.zone, { due: was.due, time: was.time ?? null }) : local(due, blankToNull(m.time));
+            // the Codex code review of v11 (point 7): a move whose words name its date ("Friday November 20 at 10 PM PT") is read
+            // on that date even when it's the item's own day in the reader's zone; only a move of the time alone is anchored
+            const timeOnly = zoned && due && was?.due === due && !saysDay(`${m.evidence}\n${m.textEvidence ?? ""}`, due);
+            const at = timeOnly && zoned && was?.due ? movedInZone({ due, time: zoned[1]! }, zoned[2]!, input.zone, { due: was.due, time: was.time ?? null }) : local(due, blankToNull(m.time));
             // and an o item's zone note follows its new time, in the move's words or in its own: from the mail's time and zone
             // whenever it gives one (its second pass: across a clock change the reader's clock can read the same), and gone when
             // it moves to another time in the reader's own zone

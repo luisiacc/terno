@@ -6,7 +6,7 @@ import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
 import { type DatedMark, type DatedSnapshot, type DatedSource, type DatedWrite, type MailStore } from "@terno/store";
 import { DailyLimitError, MonthlyLimitError } from "./ai-limiter";
 import { UI_LOCALE_KEY } from "./forwarding";
-import { contextOf, namesItem, norm, paragraphsOf, plainEvidence, sameThing, sameWords, saysWhen, sentencesOf, settlesKind } from "./dated-evidence";
+import { contextOf, namesApart, namesItem, norm, otherIds, paragraphsOf, plainEvidence, sameObject, sameThing, saysReplaced, saysWhen, sentencesOf, settlesKind } from "./dated-evidence";
 import { untrustedSenders, withoutUntrusted } from "./suspicious-sender";
 
 /**
@@ -168,11 +168,16 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
    * when it's that sender's only open one of its kind ("Payment received" for their one bill): a receipt for that bill, never
    * "all paid". Someone else's mail in its conversation settles or moves it only when the sentence names it. The worker
    * passes the thread and the sender; a caller that doesn't reads every open item as this conversation's and this sender's.
+   * The Codex code review of v11: a move's paragraph says the day it moves to (`saysWhen`, point 3); a sentence that names
+   * open items names this one apart from the others it names, and gives no identifier it doesn't have (point 2).
    */
-  const tiedTo = (row: Pick<DatedRow, "threadId" | "senderKey" | "kind" | "text" | "quote"> | null, evidence: string, move: boolean) => {
+  const tiedTo = (row: Pick<DatedRow, "id" | "threadId" | "senderKey" | "kind" | "text" | "quote" | "dueDay"> | null, evidence: string, move: { due: string; timeOnly: boolean } | null) => {
     const context = contextOf(evidence, sentences);
-    if (!quoted(evidence) || !plainEvidence(evidence, context) || (move && !saysWhen(evidence, contextOf(evidence, paragraphs)))) return false;
+    if (!quoted(evidence) || !plainEvidence(evidence, context) || (move && !saysWhen(evidence, contextOf(evidence, paragraphs), move, input.arrivedAt))) return false;
     if (!row) return true;
+    if (otherIds(row, context)) return false;
+    const named = [...input.open.values()].filter((r) => namesItem(r, context, input.from));
+    if (named.length && !namesApart(row, named, context, input.from)) return false;
     if (input.threadId !== undefined && row.threadId !== input.threadId) {
       if (row.senderKey !== input.senderKey) return false;
       const theirs = [...input.open.values()].filter((r) => r.senderKey === row.senderKey && r.kind === row.kind);
@@ -185,7 +190,7 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
   const newWords = (m: Move) => (m.text?.trim() && m.textEvidence && quoted(m.textEvidence) ? m.text.trim() : undefined);
   const settled = result.settled.flatMap((s) => {
     const row = input.open.get(s.label);
-    return row && tiedTo(row, s.evidence, false) ? [{ id: row.id, revision: row.revision }] : [];
+    return row && tiedTo(row, s.evidence, null) ? [{ id: row.id, revision: row.revision }] : [];
   });
   // after the panel: a new day for an open item, quoted, from this message's own day; one it settles isn't moved
   const settledIds = new Set(settled.map((s) => s.id));
@@ -198,7 +203,7 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
   const refused = (i: { kind: string; text: string; quote: string }) => (i.kind === "ask" || i.kind === "respond") && (asksForSecrets(i) || toAnother(i.quote, input.text, input.reader?.name ?? "", input.others));
   for (const m of result.moved ?? []) {
     const row = input.open.get(m.label);
-    if (!row || row.kind !== "ask" || settledIds.has(row.id) || !tiedTo(row, m.evidence, true)) continue;
+    if (!row || row.kind !== "ask" || settledIds.has(row.id) || !tiedTo(row, m.evidence, { due: m.due, timeOnly: false })) continue;
     const request = { kind: "respond" as const, text: newWords(m) ?? row.text, quote: m.evidence, due: m.due, time: m.time };
     // revision 7: a request for credentials or an ID neither becomes one nor answers the ask, which stays as it was; nor
     // does one the mail addresses to another of its recipients (the seventh panel round)
@@ -209,7 +214,7 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
   }
   const moved = (result.moved ?? []).flatMap((m) => {
     const row = input.open.get(m.label);
-    if (!row || row.kind === "ask" || settledIds.has(row.id) || !tiedTo(row, m.evidence, true)) return [];
+    if (!row || row.kind === "ask" || settledIds.has(row.id) || !tiedTo(row, m.evidence, { due: m.due, timeOnly: m.due === row.dueDay && !!m.time })) return [];
     const timing = datedTiming({ kind: row.kind, due: m.due, time: m.time, arrivedAt: input.arrivedAt });
     // the fourth panel round (revision 5): a new moment on the same day moves it too ("the game is moved earlier to 8:00");
     // the same day with no time keeps the item's own; an untimed item's 9:00 is a default, so "at 9:00" gives it a time
@@ -224,17 +229,28 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
   // revision 2 of the fourth round: an ask with a day is an ask first (a person, to the reader), then the request it is
   const datedAsk = (i: { kind: string; due: string | null; quote: string }) => i.kind === "ask" && !!i.due && askAllowed(i.quote, said, input.text, input);
   // a promise of yours: its day from this message (the person you made it to), as follow-ups place a dated promise; offered
-  // only to that person, in its conversation, and tied by its words and the day they say
+  // only to that person, in its conversation, and tied by its words and the day they say. The Codex code review of v11 (point
+  // 1): with more than one promise offered, the sentence names this one apart from the others ("the report can wait until
+  // Friday" moves the report, never the budget); naming none of them, it moves none
+  const offered = [...(input.promises ?? new Map()).values()].map((p) => ({ id: p.id, text: p.text ?? "", quote: "", dueDay: "" }));
   const promiseMoves = (result.moved ?? []).flatMap((m) => {
     const p = input.promises?.get(m.label);
-    const day = p && tiedTo(null, m.evidence, true) ? validFollowupDate(m.due, input.arrivedAt) : null;
-    return p && day ? [{ p, day }] : [];
+    if (!p || !tiedTo(null, m.evidence, { due: m.due, timeOnly: false })) return [];
+    if (offered.length > 1) {
+      const context = contextOf(m.evidence, sentences);
+      const named = offered.filter((o) => namesItem(o, context, input.from));
+      const mine = offered.find((o) => o.id === p.id)!;
+      if (!named.some((o) => o.id === p.id) || !namesApart(mine, named, context, input.from)) return [];
+    }
+    const day = validFollowupDate(m.due, input.arrivedAt);
+    return day ? [{ p, day, evidence: m.evidence }] : [];
   });
   /**
-   * Plan 210 (prompt v11): a promise's move and a request for that same day, from one mail, are one thing. The move, when
+   * Plan 210 (prompt v11): a promise's move and a request for that same day, from one mail, can be one thing. The move, when
    * the request names what was promised ("we haven't received the summary: could you get it to me before then?"); the
-   * request, when it asks for something else in its place ("skip the piecemeal version: send me a full draft of Chapter 2
-   * by Monday"), and the promise stays where it was. The eval: a small model gave both, either way.
+   * request, when the mail says it takes the promise's place ("skip the piecemeal version: send me a full draft of Chapter 2
+   * by Monday"), and the promise stays where it was. The Codex code review of v11 (point 5): only on those words; a request
+   * for something else beside the move ("The report can wait until Friday. Send the receipt by Friday") leaves both.
    */
   const promised = new Set<object>();
   const replaced = new Set<object>();
@@ -242,16 +258,15 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     const words = m.p.text;
     if (words === undefined) continue;
     const sameDay = result.items.filter((i) => (i.kind === "respond" || (i.kind === "ask" && !!i.due)) && i.due === m.day);
-    if (!sameDay.length) continue;
-    const naming = sameDay.filter((i) => sameWords(i.text, words));
+    const naming = sameDay.filter((i) => sameObject(i.text, words));
     if (naming.length) for (const i of naming) promised.add(i);
-    else replaced.add(m);
+    else if (sameDay.some((i) => saysReplaced(`${contextOf(i.quote, paragraphs)}\n${contextOf(m.evidence, paragraphs)}`))) replaced.add(m);
   }
   const candidates = [...answered, ...result.items].filter((i) => !refused(i) && !promised.has(i));
   // the eval: a person's request with a day is the `respond`, never also an undated ask beside it for the same thing; an ask
   // about something else stays (plan 210, the Codex review of iteration 1, revision 3)
   const requests = candidates.filter((i) => (i.kind === "respond" || datedAsk(i)) && quoted(i.quote));
-  const requested = (ask: { text: string; quote: string }) => requests.some((r) => sameThing(r, ask, sentences));
+  const requested = (ask: { text: string; quote: string }) => requests.some((r) => sameThing(r, ask));
   // the fourth panel read: a person who says no answer is needed ("No need to reply now") asks nothing
   const noReply = saysNoReplyNeeded(input.text);
   for (const item of candidates) {
@@ -267,7 +282,7 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     if (input.fromScan && timing.dated && dayEnd(timing.dueDay) <= input.now) continue;
     const key = itemKey(kind, timing);
     if (movedKeys.has(key)) continue;
-    if (rows.some((r) => itemKey(r.kind, r) === key && (!TWO_A_DAY.has(kind) || sameThing(r, item, sentences)))) continue;
+    if (rows.some((r) => itemKey(r.kind, r) === key && (!TWO_A_DAY.has(kind) || sameThing(r, item)))) continue;
     rows.push({ kind, item: rows.length, text: item.text.trim(), quote: item.quote.trim(), ...timing });
   }
   const movedPromises = promiseMoves.filter((m) => !replaced.has(m)).map(({ p, day }) => ({ id: p.id, revision: p.revision, dueAt: followupDue({ kind: "promise", sentAt: input.arrivedAt, due: day, nudgeAfterDays: 0 }).dueAt }));
