@@ -222,6 +222,7 @@ const isKind = (kind: string): kind is DatedKind => KINDS.has(kind);
 const blankToNull = (value: string | null) => (value?.trim() ? value.trim() : null);
 
 const IANA_NAME = /^(?:[A-Za-z_]+(?:\/[A-Za-z0-9_+-]+)+|UTC)$/;
+const DAY_MS = 86_400_000;
 
 /** An instant's wall clock in `zone`, read as if it were UTC: `Date.UTC` of what a clock there shows. Throws for a zone the runtime doesn't know. */
 function wallClock(zone: string): (ms: number) => number {
@@ -232,6 +233,30 @@ function wallClock(zone: string): (ms: number) => number {
   };
 }
 
+/** The instant a clock in `zone` shows `due` at `time`; null for a malformed day or time, or a zone that isn't a region the runtime knows. */
+function instantIn(due: string, time: string, zone: string): number | null {
+  const d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(due);
+  const t = /^(\d{1,2}):(\d{2})$/.exec(time);
+  // a region's name, never an abbreviation: the runtime takes "IST" and "CST" as one place each, the ambiguity the prompt keeps out
+  if (!d || !t || !IANA_NAME.test(zone)) return null;
+  let there: (ms: number) => number;
+  try {
+    there = wallClock(zone);
+  } catch {
+    return null;
+  }
+  const wall = Date.UTC(Number(d[1]), Number(d[2]) - 1, Number(d[3]), Number(t[1]), Number(t[2]));
+  // the instant that clock shows: its offset guessed at the wall time, then read again at the instant (a change between)
+  const ms = wall - (there(wall) - wall);
+  return wall - (there(ms) - ms);
+}
+
+/** An instant's day and time on a clock in `zone`. */
+function wallIn(ms: number, zone: string): { due: string; time: string } {
+  const iso = new Date(wallClock(zone)(ms)).toISOString();
+  return { due: iso.slice(0, 10), time: iso.slice(11, 16) };
+}
+
 /**
  * Prompt v10 (the seventh panel round, revision 4): a day and time the mail gives in another zone come back as it gives them,
  * that zone named, and are converted here to the reader's, exactly across daylight saving time and midnight: asked to convert,
@@ -240,35 +265,62 @@ function wallClock(zone: string): (ms: number) => number {
  * the prompt.
  */
 export function inZone(at: { due: string; time: string }, from: string, to: string): { due: string; time: string | null } {
-  const d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(at.due);
-  const t = /^(\d{1,2}):(\d{2})$/.exec(at.time);
-  if (!d || !t || from === to) return at;
-  // a region's name, never an abbreviation: the runtime takes "IST" and "CST" as one place each, the ambiguity the prompt keeps out
-  if (!IANA_NAME.test(from)) return { due: at.due, time: null };
-  let there: (ms: number) => number;
-  let here: (ms: number) => number;
-  try {
-    there = wallClock(from);
-    here = wallClock(to);
-  } catch {
-    return { due: at.due, time: null };
-  }
-  const wall = Date.UTC(Number(d[1]), Number(d[2]) - 1, Number(d[3]), Number(t[1]), Number(t[2]));
-  // the instant that clock shows: its offset guessed at the wall time, then read again at the instant (a change between)
-  let ms = wall - (there(wall) - wall);
-  ms = wall - (there(ms) - ms);
-  const iso = new Date(here(ms)).toISOString();
-  return { due: iso.slice(0, 10), time: iso.slice(11, 16) };
+  if (from === to || !/^\d{4}-\d{2}-\d{2}$/.test(at.due) || !/^\d{1,2}:\d{2}$/.test(at.time)) return at;
+  const ms = instantIn(at.due, at.time, from);
+  return ms === null ? { due: at.due, time: null } : wallIn(ms, to);
+}
+
+/**
+ * Codex code review of the seventh round: a move of the time alone gives the open item's own day, the reader's, beside a time
+ * in another zone, and the two zones' days can differ (Thursday 23:00 PT is Friday 02:00 ET). So it's read against the item's
+ * own moment (`was`, the reader's): that clock's time on whichever of the days around it lands nearest, never a day further.
+ */
+export function movedInZone(at: { due: string; time: string }, from: string, to: string, was: { due: string; time: string | null }): { due: string; time: string | null } {
+  const anchor = instantIn(was.due, was.time ?? "12:00", to);
+  if (anchor === null || IANA_NAME.test(from) === false) return inZone(at, from, to);
+  const day = Date.parse(`${wallIn(anchor, from).due}T00:00:00Z`);
+  const near = [-1, 0, 1]
+    .map((k) => instantIn(new Date(day + k * DAY_MS).toISOString().slice(0, 10), at.time, from))
+    .filter((ms): ms is number => ms !== null)
+    .sort((a, b) => Math.abs(a - anchor) - Math.abs(b - anchor))[0];
+  return near === undefined ? inZone(at, from, to) : wallIn(near, to);
+}
+
+/** An item's words ending in the mail's own time and zone (prompt v10): "(4:00 PM PT)", "(18:00 hora de Ciudad de México)". */
+const ZONE_NOTE = /\s*\((\d{1,2}(?::\d{2})?)(\s*[AaPp]\.?\s?[Mm]\.?)?\s+((?:[A-Z]{2,5}(?:[+-]\d{1,2})?)|[^()]*\b(?:[Tt]ime|hora|horario)\b[^()]*)\)\s*$/u;
+
+/**
+ * Codex code review of the seventh round: a move of the time keeps an item's words in step with it. Its zone note takes the
+ * mail's new time ("Call with Marcus (4:00 PM PT)" moved to 17:00 PT is "(5:00 PM PT)", written as the note wrote it); one
+ * moved to a time in the reader's own zone loses the note. Null when the words have no note.
+ */
+export function withZoneNote(text: string, time: string | null): string | null {
+  const note = ZONE_NOTE.exec(text);
+  if (!note) return null;
+  const bare = text.slice(0, note.index).trimEnd();
+  if (!time) return bare;
+  const [h, m] = time.split(":").map(Number) as [number, number];
+  const meridiem = note[2];
+  let clock: string;
+  if (meridiem) {
+    const pm = h >= 12;
+    // the note's own way of writing it: "PM", "p. m.", "pm"
+    const marker = meridiem.replace(/[ap]/i, (c) => (c === c.toUpperCase() ? (pm ? "P" : "A") : pm ? "p" : "a"));
+    clock = `${h % 12 || 12}${m || note[1]!.includes(":") ? `:${String(m).padStart(2, "0")}` : ""}${marker}`;
+  } else clock = `${note[1]!.startsWith("0") ? String(h).padStart(2, "0") : h}:${String(m).padStart(2, "0")}`;
+  return `${bare} (${clock} ${note[3]})`;
 }
 
 /** Shape only: whether a quote is the mail's, and a date one to keep, are the backend's local checks (`checkDates`). */
 export function readDatesTask(input: DatedInput): StructuredTask<Wire, DatedResult> {
+  const zonedTime = (time: string | null) => (time ? /^(\d{1,2}:\d{2})\s+(\S+)$/.exec(time) : null);
   // prompt v10: a time given in another zone ("16:00 America/Los_Angeles"), in the reader's
   const local = (due: string | null, time: string | null) => {
-    const zoned = time ? /^(\d{1,2}:\d{2})\s+(\S+)$/.exec(time) : null;
+    const zoned = zonedTime(time);
     if (!zoned) return { due, time };
     return due ? inZone({ due, time: zoned[1]! }, zoned[2]!, input.zone) : { due, time: zoned[1]! };
   };
+  const open = new Map(input.open.map((o) => [o.label, o]));
   return {
     system: SYSTEM(input.language, input.receivedAt, input.zone),
     prompt: datedPrompt(input),
@@ -291,11 +343,25 @@ export function readDatesTask(input: DatedInput): StructuredTask<Wire, DatedResu
           .slice(0, DATED_OPEN_SHOWN)
           .map((m) => {
             // both or neither: new words without the mail's own aren't kept, and the move still is
-            const text = m.text ? cutAtWord(m.text, TEXT_CHARS) : "";
-            const textEvidence = m.textEvidence ? clean(m.textEvidence, QUOTE_CHARS) : "";
+            const label = m.label.trim();
+            const due = m.due.trim();
+            const evidence = clean(m.evidence, QUOTE_CHARS);
+            let text = m.text ? cutAtWord(m.text, TEXT_CHARS) : "";
+            let textEvidence = m.textEvidence ? clean(m.textEvidence, QUOTE_CHARS) : "";
+            const zoned = zonedTime(blankToNull(m.time));
+            const was = open.get(label);
+            // the Codex code review of the seventh round: the time alone, in another zone, read against the item's own moment
+            const at = zoned && due && was?.due === due ? movedInZone({ due, time: zoned[1]! }, zoned[2]!, input.zone, { due: was.due, time: was.time ?? null }) : local(due, blankToNull(m.time));
+            // and an o item's zone note follows its new time, in the move's words or in its own
+            if (label.startsWith("o") && at.time && at.time !== was?.time) {
+              const noted = withZoneNote(text && textEvidence ? text : (was?.text ?? ""), zoned ? zoned[1]! : null);
+              if (noted !== null) {
+                text = cutAtWord(noted, TEXT_CHARS);
+                textEvidence ||= evidence;
+              }
+            }
             const both = !!text && !!textEvidence;
-            const at = local(m.due.trim(), blankToNull(m.time));
-            return { label: m.label.trim(), due: at.due ?? "", time: at.time, evidence: clean(m.evidence, QUOTE_CHARS), text: both ? text : null, textEvidence: both ? textEvidence : null };
+            return { label, due: at.due ?? "", time: at.time, evidence, text: both ? text : null, textEvidence: both ? textEvidence : null };
           })
           .filter((m) => m.label && m.due && m.evidence),
       },

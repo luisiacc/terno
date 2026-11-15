@@ -169,6 +169,34 @@ describe("reading dates in mail you got (plan 204)", () => {
     expect(read("Europe/London", { moved: [{ label: "o1", due: "2026-11-21", time: "20:00 America/Los_Angeles", evidence: "moved to 8 PM", text: null, textEvidence: null }] }).moved[0]).toMatchObject({ due: "2026-11-22", time: "04:00" });
   });
 
+  it("Codex code review of the seventh round: a time-only move in another zone is read against the item's own moment, never a day further, and its zone note follows the new time", () => {
+    type Moved = { label: string; due: string; time: string | null; evidence: string; text: string | null; textEvidence: string | null };
+    const call = { label: "o1", kind: "event" as const, text: "Call with Marcus (11:00 PM PT)", due: "2026-07-11", time: "02:00" };
+    const task = (open: DatedInput["open"]) => readDatesTask(input({ zone: "America/New_York", open }));
+    const read = (open: DatedInput["open"], w: { items?: ReturnType<typeof item>[]; moved?: Moved[] }) => {
+      const v = task(open).validate({ items: w.items ?? [], settled: [], moved: w.moved ?? [] });
+      if (!v.ok) throw new Error("rejected");
+      return v.value;
+    };
+    const move = (over: Partial<Moved>): Moved => ({ label: "o1", due: "2026-07-11", time: "22:00 America/Los_Angeles", evidence: "move it to 10 PM PT", text: null, textEvidence: null, ...over });
+    // extraction: July 10 at 23:00 PT is July 11 at 02:00 in New York
+    expect(read([], { items: [item({ kind: "event", text: "Call with Marcus (11:00 PM PT)", due: "2026-07-10", time: "23:00 America/Los_Angeles" })] }).items[0]).toMatchObject({ due: "2026-07-11", time: "02:00" });
+    // then "move it to 10 PM PT", the item's own (New York) day beside it: still July 10 in PT, 01:00 on July 11 here, not July 12
+    expect(read([call], { moved: [move({})] }).moved[0]).toEqual({ label: "o1", due: "2026-07-11", time: "01:00", evidence: "move it to 10 PM PT", text: "Call with Marcus (10:00 PM PT)", textEvidence: "move it to 10 PM PT" });
+    // a move that names its day in the mail's zone is read as given: July 12 at 22:00 PT is July 13 at 01:00 here
+    expect(read([call], { moved: [move({ due: "2026-07-12" })] }).moved[0]).toMatchObject({ due: "2026-07-13", time: "01:00", text: "Call with Marcus (10:00 PM PT)" });
+    // moved to a time in the reader's own zone: the note goes; the same time again changes no words
+    expect(read([call], { moved: [move({ time: "09:00", evidence: "let's do 9 AM your time" })] }).moved[0]).toMatchObject({ due: "2026-07-11", time: "09:00", text: "Call with Marcus", textEvidence: "let's do 9 AM your time" });
+    expect(read([call], { moved: [move({ time: "02:00" })] }).moved[0]).toMatchObject({ text: null, textEvidence: null });
+    // the move's own words keep their note in step too, and a 24-hour note stays one
+    expect(read([call], { moved: [move({ text: "Call with Marcus and Jo (11:00 PM PT)", textEvidence: "Jo will join" })] }).moved[0]).toMatchObject({ text: "Call with Marcus and Jo (10:00 PM PT)", textEvidence: "Jo will join" });
+    const andres = { label: "o1", kind: "event" as const, text: "Llamada con Andrés (18:00 hora de Ciudad de México)", due: "2026-11-20", time: "01:00" };
+    expect(readDatesTask(input({ zone: "Europe/Madrid", open: [andres] })).validate({ items: [], settled: [], moved: [move({ due: "2026-11-20", time: "19:30 America/Mexico_City", evidence: "mejor a las 19:30" })] })).toMatchObject({ value: { moved: [{ due: "2026-11-20", time: "02:30", text: "Llamada con Andrés (19:30 hora de Ciudad de México)" }] } });
+    // words without a zone note are left to the move, as before
+    expect(read([{ ...call, text: "Blood test (12 hours fasting)" }], { moved: [move({})] }).moved[0]).toMatchObject({ text: null });
+    expect(read([{ ...call, text: "Sofia's cleaning (reply C to confirm)" }], { moved: [move({})] }).moved[0]).toMatchObject({ text: null });
+  });
+
   it("has a limit on every input", () => {
     const prompt = datedPrompt(input({ text: "t".repeat(100_000), subject: "s".repeat(1000), from: { name: "n".repeat(1000), automated: true }, open: Array.from({ length: 50 }, (_, i) => ({ label: `o${i + 1}`, kind: "pay" as const, text: "x".repeat(1000) })) }));
     expect(prompt.length).toBeLessThan(9_000);
