@@ -21,7 +21,7 @@ import { create } from "zustand";
 import { formatNumber, t } from "@terno/i18n";
 import { viewLabel } from "~/lib/format";
 import { useActionPreview } from "~/state/action-preview";
-import { getApp, setApp, useApp } from "~/state/app";
+import { getApp, navigate, setApp, useApp } from "~/state/app";
 import { installDragController } from "~/lib/drag-install";
 import { currentScope, inboxTop, listKey, loadMore, searchOfKey, useList } from "~/state/list";
 import { wantExcerpts } from "~/state/excerpts";
@@ -85,7 +85,8 @@ function TopHeading({ kind, top, name, count }: { kind: TopSectionKind; top: num
 }
 
 export const searchInputRef: { current: HTMLInputElement | null } = { current: null };
-export const listScroller: { scrollToIndex?: (i: number) => void } = {};
+export { listScroller } from "~/lib/list-scroller";
+import { listScroller } from "~/lib/list-scroller";
 
 /** A virtualized-out option cannot be the listbox's active descendant. */
 function pointListCursor(el: HTMLElement | null, id: number | null) {
@@ -334,6 +335,8 @@ function typeQuery(q: string): void {
 
 /** "/" and ⌘F: the search field, opened first where the design keeps it behind a button. */
 export function focusSearch(): void {
+  // plan 210 (Codex code review): What matters' feed has no field: a search is the Inbox's list's, looking everywhere
+  if (getApp().today) flushSync(() => navigate({ view: "inbox" }));
   if (!searchInputRef.current) flushSync(() => useSearchOpen.setState({ open: true }));
   // under List's selection toolbar: searching ends the selection, and the field is there to take the focus
   if (searchInputRef.current?.closest("[inert]")) flushSync(clearSelection);

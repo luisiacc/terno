@@ -659,6 +659,27 @@ describe("after the panel", () => {
     expect(coming.map((x) => [x.day, x.items.map((i) => i.thread.id)])).toEqual([["2026-11-12", [bill]], ["2026-11-13", [payroll, domain]]]);
   });
 
+  it("plan 210 (Codex code review): two put off to the same day are under it timed first, whatever their own days were", async () => {
+    const { client, model, receive, read, clock } = await setup();
+    model.answer = (req) =>
+      promptText(req.messages[0]!.content).includes("payroll")
+        ? reply([{ kind: "pay", text: "Fund payroll", quote: "payroll by 1:00 PM", due: "2026-11-11", time: "13:00" }])
+        : reply([{ kind: "pay", text: "Pay the bill", quote: "due on November 10", due: "2026-11-10", time: null }]);
+    const payroll = await receive({ subject: "Payroll", bodyText: "Fund payroll by 1:00 PM on November 11." });
+    const bill = await receive({ from: { name: "Gas", email: "bills@gas.test" }, subject: "Gas bill", bodyText: "Your bill is due on November 10." });
+    await read();
+    // both Missed on the 12th, both put off to the 20th
+    clock.now = at(2026, 11, 12, 10);
+    for (const thread of [payroll, bill]) {
+      const [row] = (await client.call("dated.ofThread", { threadId: thread })).rows;
+      await client.call("dated.act", { id: row!.id, revision: row!.revision, action: "later", until: at(2026, 11, 20, 9) });
+    }
+    clock.now = at(2026, 11, 15, 10);
+    const coming = (await client.call("today.list", { heldIds: [] })).sections.filter((x) => x.kind === "comingUp");
+    // under the 20th, the day they're back (never their own past days), the timed payroll first
+    expect(coming.map((x) => [x.day, x.items.map((i) => i.thread.id)])).toEqual([["2026-11-20", [payroll, bill]]]);
+  });
+
   it("Codex code review of the fixes: a thread with two items the same day shows the timed one", async () => {
     const { client, model, receive, read, clock } = await setup();
     model.answer = () => reply([
@@ -932,7 +953,11 @@ describe("Today's groups (§1)", () => {
     await client.call("settings.update", { dated: { enabled: false } });
     expect((await client.call("today.list", { heldIds: [] })).sections).toEqual([]);
     await backend.today.armClock();
-    expect(backend.today.clockNextAt).toBeNull();
+    // plan 210 (Codex code review): no item's moment left, but midnight still renews what's waiting's "since" and the
+    // history's "today"
+    const midnight = new Date(backend.now());
+    midnight.setHours(24, 0, 0, 0);
+    expect(backend.today.clockNextAt).toBe(midnight.getTime());
   });
 });
 

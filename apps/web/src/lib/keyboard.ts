@@ -20,7 +20,7 @@ import { printCommand } from "~/lib/print-open";
 import { checkForUpdates } from "~/lib/updates";
 import { closeEmptySearch, focusRows, focusSearch, listScroller } from "~/components/thread-list";
 import { closeFeedConversation } from "~/lib/feed-pane";
-import { useFeedCursor } from "~/lib/feed-focus";
+import { focusFeed, useFeedCursor } from "~/lib/feed-focus";
 import { snackbarControls } from "~/components/category-snackbar";
 import { setListFilter, toggleUnreadFilter } from "~/lib/unread";
 import { closePage, currentPage, goBack, goForward, listLayout, openThread, uncoverList } from "~/lib/page";
@@ -57,6 +57,9 @@ function followCursor(id: number, before: Element | null): void {
   if (!inReader) {
     // (with focus nowhere, the page itself, nothing is pulled: the list's keys work from there as they always did)
     if (listShown && before && before !== document.body && !before.closest("[data-list-section]")) focusRows();
+    // plan 210 (Codex code review): the feed's items are buttons of their own: the keys go with the item j/k opened, so
+    // Enter and D are that one's
+    else if (getApp().today && before?.closest("[data-testid=wm-feed]")) requestAnimationFrame(() => getApp().selectedId === id && focusFeed());
     return;
   }
   const said = useList.getState().items.find((t) => t.id === id);
