@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { DatedKind } from "@terno/core";
 import { describe, expect, it } from "vitest";
+import { checkDates } from "../../packages/backend/src/dated";
 import { normalizeText } from "../../packages/core/src/text";
 import en from "../../packages/i18n/src/locales/en";
 import es from "../../packages/i18n/src/locales/es";
@@ -36,6 +37,8 @@ interface Case {
   id: string;
   reader: { name: string; email: string };
   language: string;
+  /** the day the mail came (YYYY-MM-DD), for the app's checks */
+  today: string;
   tags: string[];
   subject: string;
   messages: { from: string; text: string; to?: string[]; cc?: string[] }[];
@@ -81,7 +84,7 @@ const cutInside = (kept: string, raw: readonly string[]) => {
 describe.skipIf(process.env.TERNO_AI_DATED !== "1")("dated items on a small model", () => {
   it("finds what has a date, leaves out what doesn't, quotes the mail, and settles only on the mail's words", async () => {
     const tasks = realTasks(TARGET, "dated-eval", {}, undefined, (text) => answers.push(text));
-    let expected = 0, found = 0, wrongItems = 0, invented = 0, wrongSettled = 0, missedSettled = 0, rightTimes = 0, times = 0, wrongMoved = 0, missedMoved = 0, unsafe = 0, wrongText = 0, unattributed = 0, selfAttributed = 0, madeUpDetail = 0, moveTexts = 0, rightMoveTexts = 0, wrongMoveText = 0, promiseText = 0, cut = 0, cutWords = 0, failures = 0;
+    let expected = 0, found = 0, wrongItems = 0, wrongShown = 0, invented = 0, wrongSettled = 0, missedSettled = 0, rightTimes = 0, times = 0, wrongMoved = 0, missedMoved = 0, unsafe = 0, wrongText = 0, unattributed = 0, selfAttributed = 0, madeUpDetail = 0, moveTexts = 0, rightMoveTexts = 0, wrongMoveText = 0, promiseText = 0, cut = 0, cutWords = 0, failures = 0;
     const answers: string[] = [];
     const lines: string[] = [];
     for (const c of CASES) {
@@ -130,10 +133,15 @@ describe.skipIf(process.env.TERNO_AI_DATED !== "1")("dated items on a small mode
         }
         left.splice(at, 1);
       }
+      // the seventh panel round: what the app's local checks keep of the answer (checkDates), the rows a reader would see
+      const others = [...to, ...cc].filter((p) => !p.includes(c.reader.email)).map(nameOf);
+      const kept = checkDates(r, { text: mail.text, subject: c.subject, arrivedAt: new Date(`${c.today}T12:00:00`).getTime(), open: new Map(), fromScan: false, now: 0, sender: { person: !c.dated.automated }, reader, others }).rows;
       for (const got of left) {
         if (c.dated.also.some((e) => matches(e, got))) continue;
         wrongItems++;
-        problems.push(`wrong ${got.kind} ${got.due} "${got.text}", quoting "${got.quote}"`);
+        const shown = kept.some((k) => k.text === got.text.trim() && k.quote === got.quote.trim());
+        if (shown) wrongShown++;
+        problems.push(`wrong ${got.kind} ${got.due} "${got.text}", quoting "${got.quote}"${shown ? "" : " (the app's checks drop it)"}`);
       }
       for (const got of r.items) {
         if (cutOf(got.text, rawTexts(answers))) cut++;
@@ -232,7 +240,7 @@ describe.skipIf(process.env.TERNO_AI_DATED !== "1")("dated items on a small mode
       if (failed && process.env.TERNO_AI_DATED_RAW === "1") problems.push(`raw: ${(answers.at(-1) ?? "").replace(/\s+/g, " ")}`);
       lines.push(`${failed ? "✗" : "✓"} ${c.id} [${c.tags.join(",")}] ${r.items.map((i) => `${i.kind} ${i.due}${i.time ? ` ${i.time}` : ""} "${i.text}"`).join("; ") || "nothing"}${r.moved?.length ? ` · moved ${r.moved.map((m) => `${m.label} ${m.due}${m.time ? ` ${m.time}` : ""}${m.text ? ` "${m.text}"` : ""}`).join(", ")}` : ""}${problems.length ? `\n    ${problems.join("\n    ")}` : ""}`);
     }
-    process.stderr.write(`${lines.join("\n")}\n${JSON.stringify({ model: MODEL, language: LANGUAGE, found, expected, wrongItems, invented, rightTimes, times, wrongSettled, missedSettled, wrongMoved, missedMoved, unsafe, wrongText, unattributed, selfAttributed, madeUpDetail, rightMoveTexts, moveTexts, wrongMoveText, promiseText, cut, cutWords, failures })}\n${spendReport()}\n`);
+    process.stderr.write(`${lines.join("\n")}\n${JSON.stringify({ model: MODEL, language: LANGUAGE, found, expected, wrongItems, wrongShown, invented, rightTimes, times, wrongSettled, missedSettled, wrongMoved, missedMoved, unsafe, wrongText, unattributed, selfAttributed, madeUpDetail, rightMoveTexts, moveTexts, wrongMoveText, promiseText, cut, cutWords, failures })}\n${spendReport()}\n`);
     expect(wrongItems).toBeLessThanOrEqual(1);
     expect(wrongSettled).toBe(0);
     expect(wrongMoved).toBe(0);
