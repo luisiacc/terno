@@ -99,14 +99,67 @@ describe("reading dates in mail you got (plan 204)", () => {
   });
 
   it("is frozen at its version: a change to the words is a new version", () => {
-    expect(DATED_PROMPT_VERSION).toBe(10);
+    expect(DATED_PROMPT_VERSION).toBe(11);
     expect(readDatesTask(input()).system).toMatchSnapshot();
+  });
+
+  it("prompt v11 (plan 210): a group's required act is the reader's, an optional call isn't; a pick-up's last day is a deadline; 'before Monday' is Sunday; soft days keep their words; a replaced promise is a new request; the names the mail gives", () => {
+    const en = readDatesTask(input()).system;
+    // the panel: Sam's progress report (a list to doctoral students) and grading deadline (a TA list), María's field trip
+    expect(en).toContain('Mail to a group the reader is in (a course\'s TAs, "doctoral students in years 2-5", a class\'s families, a team), from a person or a list, is the reader\'s when it requires each of them to do something by a day');
+    expect(en).toContain("That's a \"respond\" of the reader's, and so is a reminder of it. A class trip or a game of the reader's child in such a mail is an \"event\".");
+    expect(en).toContain('Only an optional call isn\'t theirs: one for volunteers, entries or sign-ups ("we still need helpers, sign up by Wednesday", "submit your story", "register for the webinar", "strongly encouraged to attend").');
+    // v10's listing rule, worded so it can't be read as "list mail isn't the reader's"
+    expect(en).toContain("This is about listings only: what a group's mail requires of the reader by a day is theirs (above)");
+    // Margaret's meeting named by her son; her prescription and library hold
+    expect(en).toContain('or a meeting of the reader\'s that a person\'s mail names ("your meeting with Ms. Greer is Tuesday the 17th")');
+    expect(en).toContain('A prescription, a library hold or a recalled book is never a "delivery"');
+    expect(en).toContain('"Pick up the lisinopril prescription", "Return Statistical Rethinking to the library"');
+    // Jordan's and Diego's "before Monday", Priya's "by then", Jonah's soft day, a card's month
+    expect(en).toContain('"Before" a day is the day before it, in any language: "before Monday" and "antes del lunes" in a mail of Wednesday the 11th are Sunday the 15th');
+    expect(en).toContain('"by then" is the day the mail named just before it');
+    expect(en).toContain('the text always says it in the mail\'s words: "Call Grandma this week", "Send Jonah $48.20 for the cabin (ideally before the 20th)"');
+    expect(en).toContain('A card\'s or a document\'s month ("expires 11/26") is that month\'s last day (2026-11-30)');
+    // Sam's Chapter 2, and the promise re-dated as it was
+    expect(en).toContain('a new day for what was promised ("we haven\'t received the report yet, could you get it to me before Monday?") moves it, and nothing else. A different thing asked for in its place ("skip the piecemeal version: please send me a full draft of Chapter 2 by Monday") is a new "respond", and the promise isn\'t moved at all.');
+    // the round's vaguer texts
+    expect(en).toContain('It names the company, account, document or person the mail names, so it reads on its own: "Sign the Kestrel-Brightwood MSA", "Set up an exec call with Marlowe", never a vague "the final MSA", "your draft" or an order number alone.');
+    const es = readDatesTask(input({ language: "es" })).system;
+    expect(es).toContain('"Llamar a la abuela esta semana"');
+    expect(es).toContain('"Firmar el MSA de Kestrel-Brightwood"');
+    expect(es).toContain('"Recoger la receta de lisinopril"');
+  });
+
+  it("prompt v11: a deadline quoted as 'before' a day the model gave as that day is the day before (en, es); never an event's, a timed one's, or one already earlier", () => {
+    const due = (i: Partial<{ kind: string; quote: string; due: string | null; time: string | null }>, text = i.quote ?? "") => {
+      const v = readDatesTask(input({ text })).validate({ items: [item(i)], settled: [], moved: [] });
+      if (!v.ok) throw new Error("rejected");
+      return v.value.items[0]!.due;
+    };
+    // Monday, November 16, 2026
+    expect(due({ kind: "respond", quote: "Necesito que me confirmes antes del lunes", due: "2026-11-16" })).toBe("2026-11-15");
+    expect(due({ kind: "respond", quote: "Could you sign the lease and send it back to me before Monday?", due: "2026-11-16" })).toBe("2026-11-15");
+    expect(due({ kind: "pay", quote: "Por favor paga antes del lunes 9 de marzo", due: "2026-03-09" })).toBe("2026-03-08");
+    expect(due({ kind: "respond", quote: "¿Me las puedes enviar antes del día 20?", due: "2026-11-20" })).toBe("2026-11-19");
+    expect(due({ kind: "respond", quote: "let me know before the 20th", due: "2026-11-20" })).toBe("2026-11-19");
+    // already the day before, another day, "by", a time, an event
+    expect(due({ kind: "respond", quote: "before Monday", due: "2026-11-15" })).toBe("2026-11-15");
+    expect(due({ kind: "respond", quote: "by Monday", due: "2026-11-16" })).toBe("2026-11-16");
+    expect(due({ kind: "respond", quote: "send it before 5 PM", due: "2026-11-05" })).toBe("2026-11-05");
+    expect(due({ kind: "respond", quote: "antes de las 18:00 del lunes", due: "2026-11-16" })).toBe("2026-11-16");
+    expect(due({ kind: "respond", quote: "before Monday", due: "2026-11-16", time: "17:00" })).toBe("2026-11-16");
+    expect(due({ kind: "event", quote: "the dinner before Monday's launch", due: "2026-11-16" })).toBe("2026-11-16");
+    // the "before" in the quote's paragraph, not its sentence (the eval: Luna quoted the bill's first sentence); not another paragraph's
+    const bill = "Intentamos cobrar tu factura de $86.30, pero el pago fue rechazado. Por favor paga antes del lunes 9 de marzo.";
+    expect(due({ kind: "pay", quote: "Intentamos cobrar tu factura de $86.30", due: "2026-03-09" }, bill)).toBe("2026-03-08");
+    expect(due({ kind: "pay", quote: "Intentamos cobrar tu factura de $86.30", due: "2026-03-09" }, "Intentamos cobrar tu factura de $86.30.\n\nNo cobramos nada antes del lunes 9.")).toBe("2026-03-09");
   });
 
   it("prompt v9 (the sixth panel round): an offer isn't an ask; an alert's stated deadline is its day and time; \"reply C to confirm\" in the event's words; a failed payment and its bill are one item", () => {
     const en = readDatesTask(input()).system;
     // the eval: said in the ask's own line, Haiku dropped a colleague's real ask (2 in 11); among what isn't an item, none
-    expect(en).toContain('- An offer of help: "let me know if you need a swap", "happy to help if you need anything", "I can cover for you if needed". It asks nothing of the reader: neither an "ask" nor a "respond".');
+    // v11: Margaret's son's offer to come by Saturday, which Luna made a request (1 in 5)
+    expect(en).toContain('- An offer of help: "let me know if you need a swap", "happy to help if you need anything", "I can cover for you if needed", "I can swing by Saturday and take pictures of them, just let me know". It asks nothing of the reader: neither an "ask" nor a "respond".');
     expect(en).toContain('Its "due" and "time" are a deadline the mail states for it ("cancelled unless we hear from you by 1:00 PM on Wednesday": that Wednesday, 13:00), never the day it happened, and never a "respond" beside it; with none, null.');
     expect(en).toContain('null for an "ask", and for an "alert" that states no deadline.');
     expect(en).toContain('its text says so in a few words: "Sofia\'s cleaning (reply C to confirm)"; never a "respond" beside it with a day the mail doesn\'t give.');
@@ -132,8 +185,9 @@ describe("reading dates in mail you got (plan 204)", () => {
     expect(en).toContain('"time" the new time (its zone as above) or null when the mail gives none');
     expect(readDatesTask(input({ language: "es" })).system).toContain('"Llamada con Marcus (4:00 PM PT)"');
     // revision 8: a listing names the reader and still isn't one; a list's mail about their own arrangement still moves or settles it
-    expect(en).toContain('- An event in a newsletter\'s or an announcement list\'s calendar or "upcoming events", or a webinar the reader didn\'t book, even when it names the reader (a talk they give, a team they\'re on): only a mail about their own part in it, to them, is.');
-    expect(en).toContain("A list's mail about the reader's own arrangement (their child's team's game moved, their class cancelled) still moves or settles it.");
+    // v11: worded so it can't be read as "list mail isn't the reader's"
+    expect(en).toContain('- An event listed in a newsletter\'s or an announcement\'s calendar, "this month" or "upcoming events", or a webinar the reader didn\'t book, even when it names the reader (a talk they give, a team they\'re on): only a mail about their own part in it, to them, is.');
+    expect(en).toContain("a list's mail about the reader's own arrangement (their child's team's game moved, their class cancelled) still moves or settles it.");
     // the eval: Haiku made "arrive by 11:30 to set up" an item of its own beside the event
     expect(en).toContain('What to bring or do at an event or a delivery ("bring the vaccine record", "arrive by 11:30 to set up", "signature required"');
     expect(en).not.toContain("A newsletter's event listings or webinars the reader didn't book.");
@@ -261,7 +315,7 @@ describe("reading dates in mail you got (plan 204)", () => {
     expect(en).toContain('"Please arrive by 7:30" makes "Soccer game (arrive 7:30)"');
     expect(en).toContain("Never for a p label: a promise keeps its words.");
     expect(en).toContain("Else null, as for most moves: a new day or time alone changes no words");
-    expect(en).toContain('never also in "items"; what the mail asks about a promise (a new day, how to send it) is that promise\'s, never an item of its own');
+    expect(en).toContain('never also in "items". What the mail asks about a promise is that promise\'s, never an item of its own');
     // the eval: said in the ask's own line, Haiku dropped a colleague's real ask (5 in 10); among what isn't an item, none
     expect(en).toContain('- A pitch, sales or recruiting mail from someone who doesn\'t know the reader ("one of my clients is hiring a VP… your name came up", "would you be open to a quick call about our product?"), with a day or without: it\'s neither an "ask" nor a "respond".');
     expect(en).toContain("an urgent plea to wire money to someone stranded or robbed");
@@ -318,8 +372,8 @@ describe("reading dates in mail you got (plan 204)", () => {
   });
 
   it("a small window holds the whole conversation with the server: a bad answer and its repair still fit", async () => {
-    // v10's words (an ask, a Plan's window, an alert's words and deadline, a move's time and words, cold outreach, offers, a failed payment, the open items' days, a time in another zone, a newsletter's listing) need a little over 4,700 (v9 4,200, v8 3,700; the app warns below 5,500 for the filter): a window that holds them with a bad answer and its repair
-    const window = 4800;
+    // v11's words (an ask, a Plan's window, an alert's words and deadline, a move's time and words, cold outreach, offers, a failed payment, the open items' days, a time in another zone, a newsletter's listing, a group's required act, "before" a day, soft days, a replaced promise) need a little over 5,800 (v10 4,700, v9 4,200, v8 3,700), past the 5,500 the app warns below for the filter: a window between them reads only the mail's first 200 tokens. A window that holds them with a bad answer and its repair
+    const window = 5900;
     const budget = datedBudget(window);
     const fitted = fitDates(input({ text: "word ".repeat(1200), outputTokens: budget.outputTokens }), budget.promptChars);
     const sizes: number[] = [];

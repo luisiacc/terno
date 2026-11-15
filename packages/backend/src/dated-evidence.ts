@@ -107,7 +107,12 @@ export function sameThing(a: { text: string; quote: string }, b: { text: string;
   const qa = norm(a.quote);
   const qb = norm(b.quote);
   if (qa && qb && (qa.includes(qb) || qb.includes(qa))) return true;
-  return shares(namingWords(a.text, { names: false }), namingWords(b.text, { names: false }));
+  return sameWords(a.text, b.text);
+}
+
+/** Whether two of the app's texts name the same thing, names aside ("send Owen the pen test summary", "Send Owen Mbeki the pen test summary by Sunday"). */
+export function sameWords(a: string, b: string): boolean {
+  return shares(namingWords(a, { names: false }), namingWords(b, { names: false }));
 }
 
 // a sentence that tells the app what to do with what it holds: a label, its open items, an assistant, "ignore the above",
