@@ -1,6 +1,6 @@
 # Plan 210: What matters as a feed, with its history
 
-- **Status:** plan, critiqued by Codex; **stopped for the owner** (see "What needs the owner before building"): the history as asked needs a schema change and two refactors. "Revisions after the Codex review" overrides the sections before it.
+- **Status:** built on `t3/what-matters-ui-variants` after the owner's answers (below). "Owner's answers" and "The design as built" override the sections before them, and the revisions where they differ.
 - **Builds on:** plan 204 (dated items, Missed, Coming up, the briefing B and its fixes), plan 145 (Needs you, the digest), plan 142 (your promises), plan 87 (reminders), plan 17 (who is a person), plan 166 (Not a newsletter).
 - **Takes from the plans plan 204 reserved:** 205's name ("What matters") and its Earlier tab, which becomes the history below the open part (no tab); 207's first screen stays 207's (below). 206 (removal rules, the user's own words) is untouched.
 
@@ -124,4 +124,43 @@ The feed as asked doesn't fit the code as it is without these. Each is a decisio
 - **D. Strangers.** Whether a first message from someone you've never written to gets a line (§1); plan 145's panel found most such mail on real mailboxes was a bank's or a service's.
 
 With A, and the options for B (no Answered yet) and C (200 lines), the rest fits the code as it is: one `today.list` answer carrying the history, the feed drawing it under "Earlier", Done moving a line there when nothing else claims its conversation.
+
+## Owner's answers (2026-11-14)
+
+- **A.** "Yes, add the indexes"
+- **B.** "Ship without it first"
+- **C.** "90 days, i should also be able to show more as i scroll to see more if they were in the past and they are already generated items in the feed"
+- **D.** "Only if they ask you something"
+
+So: the closed-time indexes in both stores; no answered fact (an answered conversation leaves the open part as now, and isn't in the history); the history reaches back 90 days in pages as you scroll, no line cap (C replaces revision 5's 200 lines and its "no paging"); a stranger gets a line only through an ask (a dated item of kind `ask`, which the dated reader already writes for a person's question), never for a first message alone.
+
+## The design as built
+
+### The history's lines
+
+A line is a **closing** of a conversation's item: a dated item done, not a task (`dismissed`), settled, or over (`dismissed` with `closed_reason = 'expired'`), or a promise of yours done or not a promise, closed in the last 90 days (`DATED_CLOSED_KEEP_MS`, `FOLLOWUP_CLOSED_KEEP_MS`: what's kept). **One line per conversation, at its newest closing** across both tables; a conversation in the open part, held there by the selection, or in Spam or Trash has none; an item from an untrusted sender is left out as in the open part (`withoutUntrusted`). Whether a closing is a line depends only on the data, never on what was paged before.
+
+### The order and the key
+
+Newest first by the key `(at, source, id)`: `at` the closing time; at the same time a dated item before a promise (`source` 0, 1); then the higher id first. `HistoryKey = { at, src, id }`. Each table is read by its new index in that order (`closedPage({ since, after, limit })`, strictly after a key), and a conversation's newest closing by its thread index (`newestClosed(threadIds, since)`).
+
+### Pages, and why none repeats or skips a line
+
+- `today.list({ heldIds, history })`: with `history` (asked only when What matters is drawn as the feed), the open part as before and the history from its top: the first page (`HISTORY_PAGE`, 40 lines), or down to and including `through`, the last line the renderer had (a reload keeps the depth that was loaded).
+- `today.history({ after, limit })`: the lines strictly after `after`, in the key's order.
+- The backend walks the two indexed reads merged by the key, skipping a closing that isn't its conversation's newest, until `limit` lines or the window's end; `next` is the last line's key, or null at the end.
+- Pages are keyset, so between two requests: an item closed meanwhile is newer than any cursor and lands at the top (the reload that `todayChanged` sends shows it); one reopened (Undo) leaves the history (its conversation is open again, and its closing is gone) and its conversation's previous closing, if any, takes its place in key order; nothing already passed is shown again, and nothing after the cursor is skipped. The reload fetches the open part and the history through the same key, so a page's lines are replaced whole, never patched.
+- The renderer keeps the history's key with the list: Today's state holds the open part's maps and the history's separately (`flattenToday` for the first answer, `appendHistory` for a page), the list's cursor carries the key, and the feed asks for the next page when its last rows are near (the list's `loadMore`, as the Inbox's). Today's list key includes the look, and switching the look reloads.
+
+### Drawing it
+
+Under a heading "Earlier" ("Antes"), after the automated section: the line's words as the open part says them ("Pay $187.42 for the electricity bill.", "You said you'd send Jess the deck."), quiet (the muted ink, regular weight), and in the right-hand column what happened and when: "Done today", "Not a task Wed", "Settled Nov 2", "Over yesterday" (es "Hecho hoy", "No era tarea el mié", "Resuelto el 2 nov", "Pasó ayer"). It opens its conversation as any line; it has no Done or Later; the right-click menu is the conversation's; j/k walk into it. The chat look gets the same lines under "N earlier".
+
+### Done, Undo
+
+Done (or Not a task) closes the shown item; its row leaves at once as now; the reload puts the conversation at the top of the history when nothing open claims it. Undo restores the item's snapshot; the conversation is open again, so it leaves the history and is placed by the open part's rules.
+
+### Name
+
+"What matters" / "Lo importante" for the sidebar, the title and the palette (`today.title`); the count unchanged.
 
