@@ -2638,6 +2638,7 @@ It contains none of your mail, contacts, settings or keys.
   "whatMatters.history.settled": "Settled {day}",
   "whatMatters.history.over": "Over {day}",
   "whatMatters.to": "To {name}",
+  "whatMatters.automatedLine": "Newsletters and notifications",
   // plan 210 (the owner): what has no date sits in Today, its column saying when it came, so it isn't read as due today
   "whatMatters.since": "since {day}",
   "whatMatters.say.promise": "You said you'd {text}.",

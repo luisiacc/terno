@@ -2620,6 +2620,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "whatMatters.history.removed": "Quitado {day}",
   "whatMatters.history.settled": "Resuelto {day}",
   "whatMatters.history.over": "Pasó {day}",
+  "whatMatters.automatedLine": "Boletines y notificaciones",
   "whatMatters.to": "Para {name}",
   "whatMatters.since": "desde {day}",
   "whatMatters.say.promise": "Dijiste que ibas a {text}.",
