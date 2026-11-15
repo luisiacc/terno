@@ -41,7 +41,7 @@ Terno's shared controls (`src/components/`) are BoardUI's free **Base** componen
 | Context Menu | `context-menu.tsx` | rows from `menu-styles.ts` |
 | Date Calendar | `calendar.tsx` | react-day-picker; no ranges yet |
 | Date Picker | `calendar.tsx` in a Popover | the trigger is the secondary button |
-| Divider | `separator.tsx` | a hairline; labelled and double dividers: port on first use |
+| Divider | `separator.tsx` | a hairline; `SeparatorLabel` the labelled one (plan 204's chat experiment); double dividers: port on first use |
 | Drawer | port on first use | |
 | Dropdown | `dropdown-menu.tsx` | rows from `menu-styles.ts` |
 | File Upload | port on first use | the composers' drop zone is `composer-drop.tsx` |

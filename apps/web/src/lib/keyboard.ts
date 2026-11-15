@@ -19,6 +19,7 @@ import { conversationKeys } from "~/lib/conversation-keys";
 import { printCommand } from "~/lib/print-open";
 import { checkForUpdates } from "~/lib/updates";
 import { closeEmptySearch, focusRows, focusSearch, listScroller } from "~/components/thread-list";
+import { closeFeedConversation } from "~/components/what-matters/feed";
 import { snackbarControls } from "~/components/category-snackbar";
 import { setListFilter, toggleUnreadFilter } from "~/lib/unread";
 import { closePage, currentPage, goBack, goForward, listLayout, openThread, uncoverList } from "~/lib/page";
@@ -159,6 +160,8 @@ function escape() {
   // plan 162 (after ai162-r02): the digest page gives its keys back to the list, at the digest's way in
   // (List's digest is a page over the list: Esc closes it as any page, back to the list, Codex review)
   if (!(listLayout() && currentPage() !== "list") && digestHasKeys()) return void digestKeys.current!.leave();
+  // plan 204, the UI experiment: Today's feed puts away the conversation open beside it
+  if (!s.checked.size && !s.scope && closeFeedConversation()) return;
   if (listLayout() && currentPage() !== "list") { markSelectionIntent(); closePage({ focus: true }); }
   // plan 161, pass 2: a matched conversation open in the reader closes first, back to the rule; then the preview ends
   else if (s.actionPreview) { if (listLayout() || !closePreviewRow()) leavePreview(); }
