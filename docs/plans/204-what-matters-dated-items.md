@@ -619,3 +619,12 @@ Codex (read-only, `/tmp/terno-scratch/p204/critique-7.out`) raised 12 points; ta
 ### What the Codex code review of the sixth round's changes found
 
 Codex (read-only, `git diff b73c2da9b..HEAD`, `/tmp/terno-scratch/p204/review-11.out`): no actionable defects.
+
+## After the seventh panel round (2026-11-14)
+
+On round 7's head (an undated alert never Missed, Plans three days ahead, deliveries and asks scoped to their conversation, nudges out, prompt v9 with room to answer): would use daily 6.7 → 6.9, Missed 8.1, Content 7.4, Deadlines 7.4, Plans 7.4, Acting 7.7, Look 7.9, Needs you 6.7; Coming up 6.0. María 5 → 7, Diego at 8. Against the keys, 98% shown. What the panel has asked for in every round since the third, and this round's changes:
+
+1. **Today's things together, at the top** ("put today's things together": the spare key before noon, the furnace man at 12–2, the fraud alert; "Tyler is buried below nine deadlines"; "order by stakes and real time within a day"). The groups go by when, not by kind: **Missed**; **Today** (whatever is due or happens today, or is an alert: deadlines, plans, your promises; timed first by time, then the rest); **Needs you** (people waiting on an answer); **This week** (deadlines and plans after today, by day, within their leads); **Reminders**; **Coming up** (behind its toggle, as now). "N need you" counts Missed, Today, Needs you and This week, leaving out Plans' kinds (events and deliveries) wherever they sit.
+2. **Prompt v10:** a time is in the reader's zone (the prompt says the reader's zone; one the mail states in another zone is converted, and the text keeps the mail's: "Call Marcus (4:00 PM PT)"); an event listed in a newsletter or a list's announcements is never the source of an item, even when it names the reader (their own logistics mail is); and follow-ups' prompt v10: a team's plan ("our plan is to email him the draft") isn't a promise of the reader's unless they commit to it themselves ("I'll…").
+
+Not this round: wrapping a row's task line (the briefing layout the owner chose wraps it); a "this is a scam" action; delegating.
