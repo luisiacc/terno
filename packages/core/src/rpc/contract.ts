@@ -24,7 +24,7 @@ import {
 } from "../ai";
 import type { FollowupRow, FollowupsSetting, FollowupsSnapshot } from "../followups";
 import type { DatedRow, DatedSetting } from "../dated";
-import { NOT_NEWSLETTERS_OVER, type DigestRow, type NotNewsletter, type TodayList, type TodaySetting } from "../today";
+import { HISTORY_PAGE, NOT_NEWSLETTERS_OVER, type DigestRow, type NotNewsletter, type TodayHistoryPage, type TodayList, type TodaySetting } from "../today";
 import type { AiPrepareReply, AiReplyEvent, PreparedReply, RepliesSetting } from "../replies";
 import type { ActionPreviewInfo, ActionRowTag, AiActionApplied, AiActionCheck, AiActionEvent, AiActionStart } from "../actions";
 import { ASK_QUESTION_MAX, ASK_SOURCES_MAX, type AiAskEvent, type AiAskResult, type AskConversationSummary, type AskOlderOffer, type AskSourceView, type AskTurn } from "../ask";
@@ -65,6 +65,8 @@ import {
 } from "../types";
 
 const id = z.number().int().positive();
+/** plan 210: a history line's key (`HistoryKey`) */
+const historyKey = z.object({ at: z.number().int().nonnegative(), src: z.union([z.literal(0), z.literal(1)]), id });
 /** days of mail an account downloads (settings, an account, connecting one) */
 const syncWindow = z.number().int().min(7).max(3650);
 const ids = z.array(id).min(1).max(5000);
@@ -1269,7 +1271,10 @@ export const contract = {
   /** The user's own servers look further back for this turn's question; one more answer comes of it. Only on a click. */
   "ai.askOlder": m<AiAskResult>()(z.object({ requestId, conversationId: id, turnId: id, timezone: z.string().min(1).max(100) }), { timeoutMs: 300_000 }),
   /** Plan 145: what needs you. Local, and live: asked again as things change. `heldIds`: the open and checked rows, kept in place. */
-  "today.list": m<TodayList>()(z.object({ heldIds: z.array(id).max(500).default([]) })),
+  // plan 210: with `history`, the history's first page too, or down to and including `through` (a reload keeping its depth)
+  "today.list": m<TodayList>()(z.object({ heldIds: z.array(id).max(500).default([]), history: z.object({ through: historyKey.nullable() }).optional() })),
+  /** plan 210: the history's lines strictly after `after`, at most `limit`; held conversations are left out as the list leaves them */
+  "today.history": m<TodayHistoryPage>()(z.object({ after: historyKey, limit: z.number().int().min(1).max(100).default(HISTORY_PAGE), heldIds: z.array(id).max(500).default([]) })),
   "today.digest": m<DigestRow | null>()(z.object({ day: z.string().max(10).optional() })),
   /** a person's try again */
   "today.digestRetry": m<{ ok: true }>()(empty),
