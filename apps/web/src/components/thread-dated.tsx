@@ -81,7 +81,7 @@ function ItemLater({ threadId, row }: { threadId: number; row: DatedRow }) {
 
 /**
  * Plan 204 §5: the conversation's open dates, a quiet line each on the AI card's surface at its top ("Due Friday · Pay the
- * electricity bill", Done, Later and Not a task), so a bill can be finished where it's read; an ask is its words alone
+ * electricity bill", Done, Later and Remove), so a bill can be finished where it's read; an ask is its words alone
  * ("Answer Mariana about a rebranding quote"), and a reply on the thread answers it. Only while dates are read; never in
  * Trash or Spam; read again when Today changes (Done here, there, or a new message settling it).
  */
@@ -117,15 +117,15 @@ export default function ThreadDated({ detail }: { detail: ThreadDetail }) {
           return (
             <li key={r.id} data-testid="thread-dated-item" data-kind={r.kind} className="flex min-h-11 items-center gap-3 text-sm">
               <span data-testid="thread-dated-text" className={cn(AI_TITLE, "min-w-0 flex-1 wrap-anywhere tabular")}>{line}</span>
-              {/* after the panel: Not a task beside Done, quieter (Done is what's usually meant); the third panel round:
+              {/* after the panel: Remove beside Done, quieter (Done is what's usually meant); the third panel round:
                   Later between them, as quiet */}
               <span className="flex shrink-0 items-center gap-1.5">
                 <Button variant="outline" size="sm" className="text-foreground" data-testid="thread-dated-done" aria-label={t("dated.doneItem", { text: datedText(r) })} onClick={() => void actOnThreadItem(threadId, r, "done")}>
                   {t("dated.done")}
                 </Button>
                 <ItemLater threadId={threadId} row={r} />
-                <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" data-testid="thread-dated-dismiss" aria-label={t("dated.notTaskItem", { text: datedText(r) })} onClick={() => void actOnThreadItem(threadId, r, "dismiss")}>
-                  {t("dated.notTask")}
+                <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" data-testid="thread-dated-dismiss" aria-label={t("dated.removeItem", { text: datedText(r) })} onClick={() => void actOnThreadItem(threadId, r, "dismiss")}>
+                  {t("dated.remove")}
                 </Button>
               </span>
             </li>

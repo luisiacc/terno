@@ -226,7 +226,7 @@ export function CommandPalette() {
   const checkedOne = useApp((s) => (open && s.checked.size === 1 ? [...s.checked][0]! : null));
   const single = useApp((s) => (open && !s.scope && s.checked.size === 0 ? s.selectedId : null));
   const reminder = useReminders((s) => (single !== null ? s.byThread.get(single) : undefined));
-  // plan 204: the Today row's task, what its Done and Not a task act on (its menu's, here for the keyboard)
+  // plan 204: the Today row's task, what its Done and Remove act on (its menu's, here for the keyboard)
   const todayTask = useTodayTask(open ? single : null);
   // the unread filter applies to a mailbox (not "Review")
   // the unread toggle's state: Unread on or not (another filter on: it switches to Unread)
@@ -484,12 +484,12 @@ export function CommandPalette() {
         if (reminder) add({ id: "remind:clear", group: "remindClear", label: t("remind.clear"), icon: <AlarmClockOff />, testId: "palette-remind-clear", run: () => void clearReminder([reminder.threadId]) });
       }
     }
-    // plan 204 §5, after the panel: the selected Today row's task (a date or a promise of yours), Done (D) and Not a task
+    // plan 204 §5, after the panel: the selected Today row's task (a date or a promise of yours), Done (D) and Remove
     if (todayTask && single !== null) {
       add({ id: "dated.done", group: "conversation", label: t("dated.done"), icon: <CircleCheck />, shortcut: keysOf("today.done"), testId: "palette-dated-done", keywords: english("dated.done"), run: () => void actOnTodayRow(single, todayTask, "done") });
       // plan 210 (iteration 1): Later's picker for the item as it is now (once the palette has gone), and Remove, with their keys
       add({ id: "dated.later", group: "conversation", label: t("palette.todayLater"), icon: <Clock />, shortcut: keysOf("today.later"), testId: "palette-dated-later", keywords: english("palette.todayLater"), run: () => requestAnimationFrame(() => openLater(single, todayTask)) });
-      add({ id: "dated.dismiss", group: "conversation", label: t("dated.notTask"), icon: <Ban />, shortcut: keysOf("today.remove"), testId: "palette-dated-dismiss", keywords: english("dated.notTask"), run: () => void actOnTodayRow(single, todayTask, "dismiss") });
+      add({ id: "dated.dismiss", group: "conversation", label: t("palette.todayRemove"), icon: <Ban />, shortcut: keysOf("today.remove"), testId: "palette-dated-dismiss", ...synonyms("palette.alias.todayRemove", english("palette.todayRemove")), run: () => void actOnTodayRow(single, todayTask, "dismiss") });
     }
     // plan 132 §7: the open conversation, never in spam or trash; no shortcut of its own
     if (canSummarize && replyable && summarizable(openThread?.thread)) {

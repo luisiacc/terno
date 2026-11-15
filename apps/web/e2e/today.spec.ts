@@ -772,7 +772,7 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       await expect.poll(async () => (await toEnd(page), await item(page, "Domain renewal").count())).toBe(1);
     });
 
-    await scenario("Done from the item's menu (D beside it), Not a task and Later; each leaves What matters, and Undo (z) brings it back", async () => {
+    await scenario("Done from the item's menu (D beside it), Remove (⇧D) and Later (B); each leaves What matters, and Undo (z) brings it back", async () => {
       await show(page, "Electricity bill");
       const snack = page.locator("[data-testid=snack]");
       // after the second panel round: gone at once, even the open item (not held in place: the user finished it)
@@ -786,7 +786,10 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       const order = () => page.locator(`${FEED} [data-testid=wm-item][data-thread-id]`).evaluateAll((els) => els.map((e) => ({ id: e.getAttribute("data-thread-id"), top: e.getBoundingClientRect().top })).sort((a, b) => a.top - b.top).map((r) => r.id));
       await item(page, "Electricity bill").click({ button: "right" });
       await expect(page.getByTestId("menu-dated-done")).toContainText("D");
-      await expect(page.getByTestId("menu-dated-dismiss")).toHaveText("Not a task");
+      // plan 210 (iteration 1, the owner): "Not a task" is "Remove", and the menu says its key, as Later's does
+      await expect(page.getByTestId("menu-dated-dismiss")).toContainText("Remove");
+      await expect(page.getByTestId("menu-dated-dismiss")).toContainText("⇧D");
+      await expect(page.getByTestId("menu-dated-later")).toContainText("B");
       // Later replaces Remind me on a task's item: every preset that applies now, and a day of your own
       await expect(page.getByTestId("menu-remind-always")).toHaveCount(0);
       await page.getByTestId("menu-dated-later").click();
@@ -840,14 +843,49 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       await expect(snack.filter({ hasText: "Done:" })).toHaveCount(0);
       await page.keyboard.press("Escape");
 
-      // Not a task: out of What matters, said so, with Undo
+      // Remove: out of What matters, said so (never as if the email went), with Undo
       await show(page, "Electricity bill");
       await item(page, "Electricity bill").click({ button: "right" });
       await page.getByTestId("menu-dated-dismiss").click();
       await gone();
-      await expect(snack).toContainText("Not a task: Electricity bill");
+      await expect(snack).toContainText("Removed from What matters: Electricity bill");
       await expect.poll(async () => (await server.backend.store.dated.active()).some((r) => r.text === "Electricity bill")).toBe(false);
-      await undo("Not a task");
+      await undo("Remove");
+      if (await page.getByTestId("reader").count()) await page.keyboard.press("Escape");
+
+      // plan 210 (iteration 1): ⇧D, the open item's Remove, the same snack and Undo; the next one opens, as after D
+      await show(page, "Electricity bill");
+      await item(page, "Electricity bill").click();
+      await expect(item(page, "Electricity bill")).toHaveAttribute("data-open", "true");
+      await focusList(page);
+      await page.keyboard.press("Shift+D");
+      await gone();
+      await expect(open(page)).toHaveAttribute("data-thread-id", next);
+      await expect(snack).toContainText("Removed from What matters: Electricity bill");
+      await undo("⇧D");
+      await expect(open(page)).toHaveAttribute("data-thread-id", bill!);
+
+      // b: the open item's Later, its own presets beside it. Opening and leaving it moves nothing, and while it's open the
+      // mail behind keeps its keys (D there would finish the item)
+      await focusList(page);
+      await page.keyboard.press("b");
+      const laterMenu = page.getByTestId("wm-later-menu");
+      await expect(laterMenu).toBeVisible();
+      await expect(laterMenu.getByTestId("wm-later-tomorrow")).toBeVisible();
+      await page.keyboard.press("d");
+      await page.keyboard.press("Escape");
+      await expect(laterMenu).toHaveCount(0);
+      await expect(item(page, "Electricity bill")).toHaveCount(1);
+      await expect(open(page)).toHaveAttribute("data-thread-id", bill!);
+      await expect(snack.filter({ hasText: "Done:" })).toHaveCount(0);
+      expect((await server.backend.store.dated.active()).some((r) => r.text === "Electricity bill")).toBe(true);
+      // b again, a preset: it goes, said so, and z brings it back
+      await focusList(page);
+      await page.keyboard.press("b");
+      await laterMenu.getByTestId("wm-later-tomorrow").click();
+      await gone();
+      await expect(snack).toContainText("Later: Electricity bill");
+      await undo("b");
       if (await page.getByTestId("reader").count()) await page.keyboard.press("Escape");
 
       // Later ▸ Pick a date…: the reminder's own date and time; a timed Plan's only before it starts (the third panel
@@ -937,7 +975,7 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       await expect(card.getByTestId("followup-due")).toHaveText("Due today");
       await expect(card.getByTestId("followup-done")).toHaveText("Done");
       await expect(card.getByTestId("followup-later")).toHaveText("Later");
-      await expect(card.getByTestId("followup-dismiss")).toHaveText("Not a task");
+      await expect(card.getByTestId("followup-dismiss")).toHaveText("Remove");
       if (SHOTS) {
         for (const mode of ["light", "dark"] as const) {
           await page.emulateMedia({ colorScheme: mode });
@@ -971,7 +1009,7 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       await page.keyboard.press("Escape");
     });
 
-    await scenario("the reader's line: on the AI card's surface, with its Done, Later and Not a task", async () => {
+    await scenario("the reader's line: on the AI card's surface, with its Done, Later and Remove", async () => {
       await show(page, "Electricity bill");
       await item(page, "Electricity bill").click();
       const line = page.getByTestId("thread-dated");
@@ -979,12 +1017,13 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       await expect(line.getByTestId("thread-dated-text")).toHaveText("Due Saturday · Electricity bill");
       await expect(line).toHaveClass(/\bai-card\b/);
       await expect(line.getByTestId("thread-dated-done")).toHaveAccessibleName("Done: Electricity bill");
-      await expect(line.getByTestId("thread-dated-dismiss")).toHaveAccessibleName("Not a task: Electricity bill");
-      // Not a task here: the item leaves What matters as from its own menu (the next conversation opens), and the snack's
+      await expect(line.getByTestId("thread-dated-dismiss")).toHaveAccessibleName("Remove from What matters: Electricity bill");
+      await expect(line.getByTestId("thread-dated-dismiss")).toHaveText("Remove");
+      // Remove here: the item leaves What matters as from its own menu (the next conversation opens), and the snack's
       // Undo brings it back, open again with its line
       await line.getByTestId("thread-dated-dismiss").click();
       await expect(item(page, "Electricity bill")).toHaveCount(0);
-      await expect(page.locator("[data-testid=snack]")).toContainText("Not a task: Electricity bill");
+      await expect(page.locator("[data-testid=snack]")).toContainText("Removed from What matters: Electricity bill");
       await focusList(page);
       await page.keyboard.press("z");
       await expect(open(page)).toContainText("Electricity bill");
@@ -996,7 +1035,7 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
         await page.emulateMedia({ colorScheme: "light" });
       }
       expect((await new AxeBuilder({ page }).include("[data-testid=thread-dated]").analyze()).violations).toEqual([]);
-      // the third panel round: Later beside Done and Not a task, on their line, with the item's presets and a day of your own
+      // the third panel round: Later beside Done and Remove, on their line, with the item's presets and a day of your own
       const later = line.getByTestId("thread-dated-later");
       await expect(later).toHaveAccessibleName("Later: Electricity bill");
       const box = async (id: string) => line.getByTestId(id).evaluate((el) => { const r = el.getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom) }; });

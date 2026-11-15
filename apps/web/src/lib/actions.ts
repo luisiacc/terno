@@ -356,7 +356,7 @@ export interface LeftRows {
 
 /**
  * Plan 204 (after the second panel round): rows taken out of the list by an action that isn't a thread action (Today's
- * Done, Not a task and Later), as Archive takes them: gone in the same frame, the cursor on the next row, List's
+ * Done, Remove and Later), as Archive takes them: gone in the same frame, the cursor on the next row, List's
  * conversation page closed if it showed one, and checks on them let go.
  */
 export function leaveRows(targets: readonly number[]): LeftRows {

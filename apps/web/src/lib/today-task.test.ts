@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Plan 204 (after the second panel round): Done means gone. Done, Not a task and Later on a Today row's task take the row
+ * Plan 204 (after the second panel round): Done means gone. Done, Remove and Later on a Today row's task take the row
  * out of Today at once, the cursor on the next row as after Archive; Undo brings it back in its place, selected.
  */
 import type { FollowupRow, ThreadSummary, TodayList } from "@terno/core";
@@ -83,10 +83,10 @@ describe("Done means gone (plan 204, after the second panel round)", () => {
     useToday.setState({ tasks: new Map([[2, { kind: "dated", item: { ...item(2), id: 21 }, when: null, due: null, dueAt: 0, text: "Pay the rent" }]]) });
     slow!();
     await acting;
-    expect(useSnack.getState().current?.message).toBe("Not a task: Task 2");
+    expect(useSnack.getState().current?.message).toBe("Removed from What matters: Task 2");
   });
 
-  it("Not a task and Later leave too; a row that isn't the open one leaves without moving the cursor", async () => {
+  it("Remove and Later leave too; a row that isn't the open one leaves without moving the cursor", async () => {
     await actOnTodayRow(3, useToday.getState().tasks.get(3)!, "dismiss");
     expect(shown()).toEqual([1, 2]);
     expect(getApp().selectedId).toBe(2);

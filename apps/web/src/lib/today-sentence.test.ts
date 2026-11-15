@@ -126,8 +126,8 @@ describe("the history's lines (plan 210)", () => {
     expect(historySentence(line("promise", "dismissed", at(10), "Send Jess the deck"))).toBe("You said you'd send Jess the deck.");
     expect(historySentence(line("pay", "done", at(10), " "))).toBe("Your statement is ready.");
     expect(historyWhen(line("pay", "done", at(13, 8)), NOW)).toBe("Done today");
-    expect(historyWhen(line("pay", "dismissed", at(12, 9)), NOW)).toBe("Not a task yesterday");
-    expect(historyWhen(line("promise", "dismissed", at(11)), NOW)).toBe("Not a promise Wed");
+    expect(historyWhen(line("pay", "dismissed", at(12, 9)), NOW)).toBe("Removed yesterday");
+    expect(historyWhen(line("promise", "dismissed", at(11)), NOW)).toBe("Removed Wed");
     expect(historyWhen(line("pay", "settled", at(2)), NOW)).toBe("Settled Nov 2");
     expect(historyWhen(line("pay", "over", at(9)), NOW)).toBe("Over Mon");
   });
@@ -136,6 +136,7 @@ describe("the history's lines (plan 210)", () => {
     setLocale("es", es);
     expect(historyWhen(line("pay", "done", at(13, 8)), NOW)).toBe("Hecho hoy");
     expect(historyWhen(line("pay", "over", at(11)), NOW)).toBe("Pasó el mié");
+    expect(historyWhen(line("promise", "dismissed", at(11)), NOW)).toBe("Quitado el mié");
     expect(historySentence(line("promise", "done", at(11), "enviar a Valeria los ajustes"))).toBe("Dijiste que ibas a enviar a Valeria los ajustes.");
   });
 });

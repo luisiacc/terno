@@ -58,10 +58,10 @@ test.describe("follow-ups (plan 142)", () => {
       await expect(line).toBeVisible();
       // the fourth panel round (revision 10): a promise that named no day says none, never the moment it's placed at
       await expect(page.getByTestId("followup-due")).toHaveCount(0);
-      // one vocabulary with the conversation's dated line, in its weights: Done outlined, Later and Not a task quiet
+      // one vocabulary with the conversation's dated line, in its weights: Done outlined, Later and Remove quiet
       await expect(page.getByTestId("followup-done")).toHaveText("Done");
       await expect(page.getByTestId("followup-later")).toHaveText("Later");
-      await expect(page.getByTestId("followup-dismiss")).toHaveText("Not a task");
+      await expect(page.getByTestId("followup-dismiss")).toHaveText("Remove");
       const look = (id: string) => page.getByTestId(id).evaluate((el) => { const s = getComputedStyle(el); return { color: s.color, border: s.borderTopColor, background: s.backgroundColor }; });
       expect(await look("followup-later")).toEqual(await look("followup-dismiss"));
       expect((await look("followup-done")).border).not.toBe("rgba(0, 0, 0, 0)");
