@@ -1,6 +1,6 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { DIGEST_ROW_ID, localDay, type ThreadSummary } from "@terno/core";
-import { getLocale, t } from "@terno/i18n";
+import { t } from "@terno/i18n";
 import { Skeleton } from "@terno/ui/components/skeleton";
 import { Sun } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
@@ -17,7 +17,7 @@ import { useFeedCursor } from "~/lib/feed-focus";
 import { closeFeedConversation } from "~/lib/feed-pane";
 import { getApp, useApp } from "~/state/app";
 import { listAnchor, loadMore, useList } from "~/state/list";
-import { digestFrom, digestLabel, groupDay, useToday, type FeedGroupKind } from "~/state/today";
+import { digestLabel, groupDay, useToday, type FeedGroupKind } from "~/state/today";
 import { EmptyState } from "../empty-state";
 import { listScroller } from "~/lib/list-scroller";
 import { ThreadMenu } from "../thread-menu";
@@ -337,12 +337,15 @@ function Item({ id, sentence, meta, when, tone, task, open, cursor = false, late
   );
 }
 
-/** The digest's way in, the feed's last item: its count, who the newsletters are from, and the page beside the feed. */
+/**
+ * The digest's way in, the feed's last item: its count, and the page beside the feed. Its second line says what it holds in
+ * general words (plan 210, iteration 1; Codex's critique point 9): senders' names there read as people the feed already
+ * shows (a calendar invitation's, a biller's line above), and guessing which are on screen is no rule.
+ */
 function DigestItem() {
   const digest = useToday((s) => s.digest);
   const open = useApp((s) => s.selectedId === DIGEST_ROW_ID);
   if (!digest) return null;
-  const from = digestFrom(digest, getLocale());
   const sentence = digestLabel(digest);
-  return <Item id={DIGEST_ROW_ID} sentence={sentence} meta={from ?? t("today.newsletters")} when={null} tone="none" task={undefined} open={open} later={false} digest />;
+  return <Item id={DIGEST_ROW_ID} sentence={sentence} meta={t("whatMatters.automatedLine")} when={null} tone="none" task={undefined} open={open} later={false} digest />;
 }

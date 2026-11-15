@@ -161,10 +161,11 @@ test.describe("What matters and its digest (plan 145)", () => {
     await expect(first).toHaveAttribute("data-kind", "today");
     await expect(first).toHaveText("Today");
     // plan 204 (after the panel): the digest's way in is the last open item, never before a person, under no heading of
-    // its own; its count where an item's sentence is, who they're from under it
+    // its own; its count where an item's sentence is, what it holds under it in general words (plan 210, iteration 1: never
+    // senders' names, which read as people the feed already shows)
     const entry = await digestRow(page);
     await expect(entry.getByTestId("wm-sentence")).toContainText(/\d+ /, { timeout: 15_000 });
-    await expect(entry.getByTestId("wm-meta")).not.toBeEmpty();
+    await expect(entry.getByTestId("wm-meta")).toHaveText("Newsletters and notifications");
     await expect(entry).not.toHaveAttribute("data-thread-id");
     const rows = await walk(page);
     const at = rows.findIndex((r) => r.digest);
