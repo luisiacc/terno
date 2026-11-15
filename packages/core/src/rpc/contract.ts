@@ -1258,7 +1258,8 @@ export const contract = {
   "dated.act": m<{ undoId: string | null; row: DatedRow | null }>()(z.object({ id, revision: z.number().int().min(0), action: z.enum(["done", "dismiss", "later"]), until: z.number().int().optional() })),
   "dated.undo": m<{ ok: true }>()(z.object({ undoId: z.string().min(1).max(64) })),
   /** a thread's open items, for the reader's line */
-  "dated.ofThread": m<{ rows: DatedRow[] }>()(z.object({ threadId: id })),
+  /** plan 210 (iteration 2): with `include`, that item too whatever its state (a history line opened: its closed item) */
+  "dated.ofThread": m<{ rows: DatedRow[] }>()(z.object({ threadId: id, include: id.optional() })),
   "dated.status": m<{ blockedBy: { kind: AiErrorKind; message: string } | null }>()(empty),
   /** the 14-day check: how many, and what it would cost; then the yes */
   "dated.scanOffer": m<{ count: number; usd: number | null }>()(empty),

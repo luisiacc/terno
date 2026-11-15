@@ -1,18 +1,17 @@
+import type { FeedRowId } from "@terno/core";
 import { hideFocusRing } from "~/lib/focus-ring";
-import { listScroller } from "~/lib/list-scroller";
 import { focusQuietly } from "~/lib/quiet-focus";
 import { getApp } from "~/state/app";
-import { useList } from "~/state/list";
-import { create } from "zustand";
+import { feedRow, useFeedRow, useToday } from "~/state/today";
 
 /**
- * Plan 210: the item a conversation put away (Esc, the reader's Close, a second click) was opened from: the feed marks it
- * quietly and j/k go on from it, as from the open item. Gone once another opens, or What matters is left.
+ * Plan 210 (iteration 2): the feed scrolls a row into view by its id (registered by the feed while it's drawn); the list's
+ * own `listScroller` stays the conversations' (a list index).
  */
-export const useFeedCursor = create<{ id: number | null }>(() => ({ id: null }));
+export const feedScroller: { toRow?: (id: FeedRowId) => void } = {};
 
 /** An item's own control in the feed (the digest's too, which has no conversation), if it's drawn. */
-const itemButton = (id: number): HTMLElement | null => document.querySelector<HTMLElement>(`[data-testid=wm-feed] [data-item-id="${id}"] [data-testid=wm-item-open]`);
+const itemButton = (id: FeedRowId): HTMLElement | null => document.querySelector<HTMLElement>(`[data-testid=wm-feed] [data-row-id="${CSS.escape(id)}"] [data-testid=wm-item-open]`);
 
 /**
  * The keys on an item the app moved them to, quietly. `quiet`: after a key the app answered (Esc, the reader's Close, j/k)
@@ -25,22 +24,31 @@ function land(el: HTMLElement | null, quiet: boolean): void {
 }
 
 /**
+ * The row the feed is on: the open one while its conversation is the app's open one, else the one a conversation was put
+ * away from (plan 210, iteration 2: a row, never "the conversation's row").
+ */
+export function feedPlace(): FeedRowId | null {
+  const { opened, cursor } = useFeedRow.getState();
+  const open = feedRow(opened);
+  return open && getApp().selectedId === open.threadId ? open.id : cursor;
+}
+
+/**
  * Plan 210: the keys back on What matters' feed, where the list's rows would have them (Esc from the digest's page, the
- * skip link, a pane switch, j/k): on the open item, else the one a conversation was put away from, else the first drawn.
+ * skip link, a pane switch, j/k): on the open row, else the one a conversation was put away from, else the first drawn.
  * One the feed has scrolled out of its drawn window is brought into view first (Codex code review). False when the feed
  * has no item.
  */
 export function focusFeed(o: { quiet?: boolean } = {}): boolean {
   const quiet = o.quiet === true;
-  const id = getApp().selectedId ?? useFeedCursor.getState().id;
+  const id = feedPlace();
   const first = () => document.querySelector<HTMLElement>("[data-testid=wm-feed] [data-testid=wm-item-open]");
-  const index = id === null ? undefined : useList.getState().index.get(id);
-  if (id === null || index === undefined) {
+  if (id === null || !useToday.getState().rows.some((r) => r.id === id)) {
     land(first(), quiet);
     return first() !== null;
   }
   // in view first, drawn or not: a drawn one may be in the overscan, past the edge (Codex code review, round 2)
-  listScroller.scrollToIndex?.(index);
+  feedScroller.toRow?.(id);
   const el = itemButton(id);
   if (el) {
     land(el, quiet);
@@ -51,19 +59,18 @@ export function focusFeed(o: { quiet?: boolean } = {}): boolean {
   return true;
 }
 
-/** The item put away has the keys again (once the feed has drawn it: a frame more while it's being drawn), with no ring. */
-export function focusFeedItem(id: number): void {
+/** The row put away has the keys again (once the feed has drawn it: a frame more while it's being drawn), with no ring. */
+export function focusFeedItem(id: FeedRowId): void {
   const el = itemButton(id);
   if (el) land(el, true);
   else requestAnimationFrame(() => land(itemButton(id), true));
 }
 
 /**
- * Codex code review: the item the keyboard is on in the feed, which D and the item's keys act on before the open one
- * (Tab to another item, D finishes that one); null when the keys aren't on an item.
+ * Codex code review: the row the keyboard is on in the feed, which D and the item's keys act on before the open one (Tab
+ * to another item, D finishes that one); null when the keys aren't on an item.
  */
-export function focusedFeedItem(): number | null {
-  const el = document.activeElement?.closest?.("[data-testid=wm-feed] [data-item-id]");
-  const id = el ? Number(el.getAttribute("data-item-id")) : NaN;
-  return Number.isFinite(id) ? id : null;
+export function focusedFeedItem(): FeedRowId | null {
+  const el = document.activeElement?.closest?.("[data-testid=wm-feed] [data-row-id]");
+  return el?.getAttribute("data-row-id") ?? null;
 }

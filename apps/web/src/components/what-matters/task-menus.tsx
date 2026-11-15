@@ -1,4 +1,4 @@
-import { shortcutFor } from "@terno/core";
+import { shortcutFor, type FeedRowId } from "@terno/core";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuShortcut, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
@@ -17,13 +17,13 @@ import { useToday } from "~/state/today";
  */
 
 /** Later's presets that apply now, then a moment of your own, for the task as it was when the menu opened. */
-function LaterItems({ threadId, task }: { threadId: number; task: TodayTask }) {
+function LaterItems({ rowId, task }: { rowId: FeedRowId; task: TodayTask }) {
   const now = Date.now();
   const presets = laterChoices(task, now);
   return (
     <>
       {presets.map((p) => (
-        <DropdownMenuItem key={p.id} data-testid={`wm-later-${p.id}`} onClick={() => laterFromMenu(threadId, task, p.at)}>
+        <DropdownMenuItem key={p.id} data-testid={`wm-later-${p.id}`} onClick={() => laterFromMenu(rowId, task, p.at)}>
           <span className="min-w-0 flex-1 truncate">{presetLabel(p.id)}</span>
           <DropdownMenuShortcut className="tracking-normal tabular-nums">{presetWhen(p, now)}</DropdownMenuShortcut>
         </DropdownMenuItem>
@@ -31,7 +31,7 @@ function LaterItems({ threadId, task }: { threadId: number; task: TodayTask }) {
       {presets.length > 0 && <DropdownMenuSeparator />}
       <DropdownMenuItem
         data-testid="wm-later-pick"
-        onClick={() => pickFromMenu(threadId, task)}
+        onClick={() => pickFromMenu(rowId, task)}
       >
         <CalendarClock />
         <span className="min-w-0 flex-1 truncate">{t("dated.pickDate")}</span>
@@ -49,26 +49,26 @@ const LATER_KEY = shortcutFor("today.later") ?? "b";
  * (plan 210, iteration 1). Each is described by the item's sentence, so a screen reader hears which Done it is. Later's
  * menu is the app's (`laterMenu`): its button and b open the same one, for the task as it was then.
  */
-export function BriefTaskControls({ threadId, task, describedBy }: { threadId: number; task: TodayTask; describedBy: string }) {
-  const menu = useToday((s) => (s.laterMenu?.threadId === threadId ? s.laterMenu : null));
+export function BriefTaskControls({ rowId, task, describedBy }: { rowId: FeedRowId; task: TodayTask; describedBy: string }) {
+  const menu = useToday((s) => (s.laterMenu?.rowId === rowId ? s.laterMenu : null));
   // an item that goes (a reload, the feed scrolled) takes its open menu with it, and the app's keys come back
   useEffect(
     () => () => {
-      if (useToday.getState().laterMenu?.threadId === threadId) closeLater();
+      if (useToday.getState().laterMenu?.rowId === rowId) closeLater();
     },
-    [threadId],
+    [rowId],
   );
   return (
     <>
       <Tooltip>
-        <TooltipTrigger render={<Button variant="outline" size="xs" data-testid="wm-done" aria-describedby={describedBy} aria-keyshortcuts={DONE_KEY} onClick={() => void actOnTodayRow(threadId, task, "done")} />}>
+        <TooltipTrigger render={<Button variant="outline" size="xs" data-testid="wm-done" aria-describedby={describedBy} aria-keyshortcuts={DONE_KEY} onClick={() => void actOnTodayRow(rowId, task, "done")} />}>
           {t("dated.done")}
         </TooltipTrigger>
         <TooltipContent>
           {t("dated.done")} <Shortcut keys={DONE_KEY} />
         </TooltipContent>
       </Tooltip>
-      <DropdownMenu open={menu !== null} onOpenChange={(open) => (open ? openLater(threadId, task) : closeLater())}>
+      <DropdownMenu open={menu !== null} onOpenChange={(open) => (open ? openLater(rowId, task) : closeLater())}>
         <Tooltip>
           <TooltipTrigger
             render={
@@ -86,7 +86,7 @@ export function BriefTaskControls({ threadId, task, describedBy }: { threadId: n
         </Tooltip>
         <DropdownMenuContent align="end" sideOffset={4} className="w-max min-w-60" data-testid="wm-later-menu">
           {/* (closing, it fades with what it showed) */}
-          <LaterItems threadId={threadId} task={menu?.task ?? task} />
+          <LaterItems rowId={rowId} task={menu?.task ?? task} />
         </DropdownMenuContent>
       </DropdownMenu>
     </>

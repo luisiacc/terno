@@ -10,7 +10,7 @@ import { create } from "zustand";
 import { client } from "~/rpc/connection";
 import { getApp, getSelectionWriteRevision, inPlainInbox, setApp, setListAutoSelection, useApp } from "./app";
 import { noteRows, useActionRows } from "./action-preview";
-import { cursorKey, historyCursor, historyThrough, publishHistory, todayAnswer, todayRowsLeft, useToday } from "./today";
+import { cursorKey, heldRows, historyCursor, historyThrough, publishHistory, todayAnswer, todayRowsLeft } from "./today";
 import type { TodayHistoryItem } from "@terno/core";
 /** plan 210: the most history lines one page asks for (the backend's bound) */
 const HISTORY_PAGE_MAX = 100;
@@ -261,21 +261,17 @@ async function fetchPage(cursor?: ListCursor, limit = PAGE) {
     // inbox-zero feeling, and no history asked for at all)
     const finished = s.settings?.today?.finished !== false;
     if (cursor && !finished) return { items: [], nextCursor: null };
-    // the digest's row is the cursor's, not a thread's: nothing to keep, and no id the backend takes. The open one is held
-    // only when it's one of these rows: holding keeps a row you're on, never adds one (a newsletter opened from the
-    // digest is read as any mail is, and isn't Today's: the owner, plan 161). Plan 210: a history line isn't held, it
-    // stays the history's (only a row that leaves the open part on its own is kept where it was)
+    // plan 210 (iteration 2): the rows the feed holds where they are (the open one, the checked conversations'), by their
+    // ids: holding keeps a row you're on, never adds one; the digest's isn't an item, and a history line stays the history's
     const shown = useList.getState();
-    const { history } = useToday.getState();
-    const open = s.selectedId !== null && s.selectedId !== 0 && shown.index.has(s.selectedId) ? [s.selectedId] : [];
-    const heldIds = [...new Set([...s.checked, ...open])].filter((id) => !history.has(id)).slice(0, 500);
+    const held = heldRows();
     if (cursor) {
-      const page = await client.call("today.history", { after: cursorKey(cursor), limit: Math.min(limit, HISTORY_PAGE_MAX), heldIds });
+      const page = await client.call("today.history", { after: cursorKey(cursor), limit: Math.min(limit, HISTORY_PAGE_MAX), held });
       return { items: page.items.map((line) => line.thread), nextCursor: historyCursor(page.next), history: page.items };
     }
     // a reload of the list on screen keeps the history as deep as it was loaded (the same key), another starts at its top
-    const through = shown.itemsKey === listKey() ? historyThrough(shown.items) : null;
-    const list = await client.call("today.list", { heldIds, ...(finished ? { history: { through } } : {}) });
+    const through = shown.itemsKey === listKey() ? historyThrough() : null;
+    const list = await client.call("today.list", { held, ...(finished ? { history: { through } } : {}) });
     const answer = todayAnswer(list, useList.getState().items);
     return { items: answer.items, nextCursor: historyCursor(list.history?.next), publish: answer.publish };
   }
@@ -383,6 +379,8 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
   const connection = client.connectionVersion;
   const selectionRevision = getSelectionWriteRevision();
   const openAtStart = getApp().selectedId;
+  // plan 210 (iteration 2): What matters holds rows by their ids, which the request named
+  const heldAtStart = getApp().today ? heldRows().join() : "";
   const current = useList.getState();
   const sameView = current.key === key;
   if (!sameView) {
@@ -410,10 +408,11 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
     const top = ("top" in page && page.top) || NO_TOP;
     const onTop = new Set(top.ids);
     const join = (more: Paged) => {
-      // plan 210: a history page's rows and lines join once each, whatever the rows already hold (Codex code review)
+      // plan 210: a history page's conversations join once each, whatever the rows already hold (Codex code review); its
+      // lines all join (iteration 2: a line per item, whatever else of its conversation is on screen), once each by id
       const have = more.history ? new Set(page.items.map((t) => t.id)) : null;
       const rows = (onTop.size ? more.items.filter((t) => !onTop.has(t.id)) : more.items).filter((t) => !have?.has(t.id));
-      const lines = more.history?.filter((l) => !have!.has(l.thread.id));
+      const lines = more.history;
       return { ...page, items: [...page.items, ...rows], nextCursor: more.nextCursor, ...(lines ? { history: [...(today(page).history ?? []), ...lines] } : {}) };
     };
     // plan 24, R4: the whole loaded window, however deep, in pieces (a refresh that waited behind a page must not shrink the list
@@ -452,8 +451,13 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
     }
     // Today holds the open row only while it's one of the list's rows: one opened while this page was on its way wasn't
     // held by it, and would leave and never come back. Ask again, holding it (Codex review, plan 161)
+    // (plan 210, iteration 2: the rows held, by their ids: a sibling row of the one asked about opened meanwhile too)
     const open = getApp().selectedId;
     if (sameView && getApp().today && open !== openAtStart && open !== null && open !== 0 && current.index.has(open) && !page.items.some((t) => t.id === open)) {
+      void reloadList({ ...options, keepSelection: true });
+      return;
+    }
+    if (sameView && getApp().today && heldRows().join() !== heldAtStart) {
       void reloadList({ ...options, keepSelection: true });
       return;
     }
@@ -562,10 +566,11 @@ async function loadNextPage(): Promise<boolean> {
     const seen = new Set(useList.getState().items.map((t) => t.id));
     const fresh = page.items.filter((t) => !seen.has(t.id));
     const items = [...useList.getState().items, ...(activeFilter(getApp()) ? heldOnly(fresh) : fresh)];
-    // plan 210: the history lines of the rows taken, published with them; a reload in flight asks again, deeper
+    // plan 210: the history lines of the page taken, published with its conversations (each line once, by its id); a
+    // reload in flight asks again, deeper
     const lines = today(page).history;
     if (lines) {
-      publishHistory(lines.filter((l) => !seen.has(l.thread.id)));
+      publishHistory(lines);
       historyDepth.moved++;
     }
     useList.setState({ items, index: indexOf(items), nextCursor: page.nextCursor, loadingMore: false });
@@ -639,6 +644,14 @@ export function flushDeferredRefresh(): void {
   if (!deferred) return;
   deferred = false;
   void reloadList({ keepSelection: true, window: true });
+}
+
+/**
+ * Plan 210 (iteration 2): an optimistic edit that isn't of the list's rows (What matters' item rows leaving): a read already
+ * on its way may predate it, so the list asks again, as after `patchRows`.
+ */
+export function noteEdit(): void {
+  edits++;
 }
 
 /** Optimistic local edit of rows (actions apply instantly, then the backend confirms). */

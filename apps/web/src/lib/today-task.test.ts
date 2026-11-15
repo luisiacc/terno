@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 /**
- * Plan 204 (after the second panel round): Done means gone. Done, Remove and Later on a Today row's task take the row
- * out of Today at once, the cursor on the next row as after Archive; Undo brings it back in its place, selected.
+ * Plan 204 (after the second panel round): Done means gone. Done, Remove and Later on a What matters row's task take the
+ * row out at once, the open one moving on to the next as after Archive; Undo brings it back in its place, open. Plan 210
+ * (iteration 2): rows by their own ids, so a conversation's other row stays; the conversation's line and its promise card
+ * take out the rows standing for their item.
  */
 import type { FollowupRow, ThreadSummary, TodayList } from "@terno/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -22,28 +24,35 @@ vi.mock("~/rpc/connection", () => ({
 
 const { actOnThreadItem, actOnThreadPromise, actOnTodayRow, doneOnSelected, laterFromPicker, laterOnSelected, removeOnSelected } = await import("./today-task");
 const { getApp, setApp } = await import("~/state/app");
-const { reloadList, useList } = await import("~/state/list");
-const { useToday } = await import("~/state/today");
+const { reloadList } = await import("~/state/list");
+const { feedRow, installToday, openFeedRow, useFeedRow, useToday } = await import("~/state/today");
 const { resetSnacks, runUndo, useSnack } = await import("~/lib/snack");
+installToday();
 
 const thread = (id: number) => ({ id, accountId: 1, subject: `t${id}`, snippet: "", fromName: "A", fromEmail: "a@x.test", lastDate: 1e9 - id, messageCount: 1, unread: false, starred: false, hasAttachments: false, categoryIds: [], inInbox: true, inSpam: false, inTrash: false }) as unknown as ThreadSummary;
 const item = (id: number) => ({ id: id * 10, revision: 1, kind: "pay" as const, dueDay: "2026-11-20", timed: false, dated: true });
-/** what's open: the backend's Today, without what's been done (held rows aren't modelled: nothing here leaves on its own) */
+/** what's open: the backend's What matters, without what's been done (held rows aren't modelled: nothing here leaves on its own) */
 const done = new Set<number>();
-/** promises shown, by thread: Codex code review, the conversation's promise controls */
+/** promises shown, by thread */
 const promised = new Map<number, number>();
+/** items 1, 2 and 3 on conversations 1, 2, 3; item 5 a second one of conversation 2 */
 const today = (): TodayList =>
   ({
     now: 1e9,
-    held: [],
+    counts: { missed: 0, today: 3, thisWeek: 0 },
     digest: null,
     sections: [
-      { kind: "today", items: [1, 2, 3].filter((id) => !done.has(id * 10)).map((id) => ({ thread: thread(id), why: { kind: "dated", text: `Task ${id}`, dueAt: 2e12, item: item(id) } })) },
+      { kind: "today", items: [[1, 1], [2, 2], [5, 2], [3, 3]].filter(([id]) => !done.has(id! * 10)).map(([id, t]) => ({ id: `dated:${id! * 10}`, thread: thread(t!), why: { kind: "dated", text: `Task ${id}`, dueAt: 2e12, item: item(id!) } })) },
       // (a day ahead's: a heading of its own after Today's)
-      { kind: "day", day: "2026-11-20", items: [...promised].filter(([, id]) => !done.has(id)).map(([threadId, id]) => ({ thread: thread(threadId), why: { kind: "promise", text: "send the agenda", dueAt: 2e12, personName: "Ana", sentAt: 1e9, promise: { id, revision: 1, dated: false } } })) },
+      { kind: "day", day: "2026-11-20", items: [...promised].filter(([, id]) => !done.has(id)).map(([threadId, id]) => ({ id: `promise:${id}`, thread: thread(threadId), why: { kind: "promise", text: "send the agenda", dueAt: 2e12, personName: "Ana", sentAt: 1e9, promise: { id, revision: 1, dated: false } } })) },
     ],
   }) as unknown as TodayList;
-const shown = () => useList.getState().items.map((t) => t.id);
+const shown = () => useToday.getState().rows.map((r) => r.id);
+const task = (row: string) => feedRow(row)!.task!;
+const open = (row: string) => {
+  openFeedRow(row);
+  setApp({ selectedId: feedRow(row)!.threadId });
+};
 const undo = () => runUndo(useSnack.getState().undo!);
 
 beforeEach(async () => {
@@ -52,165 +61,157 @@ beforeEach(async () => {
   resetSnacks();
   fake.handlers = {
     "today.list": async () => today(),
-    "dated.act": async (p) => (done.add((p as { id: number }).id), { undoId: 5 }),
+    "dated.act": async (p) => (done.add((p as { id: number }).id), { undoId: "t5" }),
     "dated.undo": async () => (done.clear(), {}),
-    "followups.act": async (p) => (done.add((p as { id: number }).id), { undoId: 6 }),
+    "followups.act": async (p) => (done.add((p as { id: number }).id), { undoId: "t6" }),
     "followups.undo": async () => (done.clear(), {}),
   };
   setApp({ view: "all", today: true, query: "", selectedId: null, checked: new Set(), scope: null });
+  useFeedRow.setState({ opened: null, cursor: null });
   await reloadList();
-  setApp({ selectedId: 2 });
+  open("dated:20");
 });
 
-describe("Done means gone (plan 204, after the second panel round)", () => {
-  it("D: the row leaves at once and the cursor is on the next; Undo brings it back in its place, selected", async () => {
+describe("Done means gone (plan 204, after the second panel round; plan 210, iteration 2: a row per item)", () => {
+  it("D: the row leaves at once, its conversation's other row stays and opens next; Undo brings it back in its place, open", async () => {
     expect(doneOnSelected()).toBe(true);
     // the same frame: not held in place as a row that leaves on its own is
-    expect(shown()).toEqual([1, 3]);
-    expect(getApp().selectedId).toBe(3);
-    // the fourth panel round: it names the task, as the row showed it
+    expect(shown()).toEqual(["dated:10", "dated:50", "dated:30"]);
+    expect([useFeedRow.getState().opened, getApp().selectedId]).toEqual(["dated:50", 2]);
     await vi.waitFor(() => expect(useSnack.getState().current?.message).toBe("Done: Task 2"));
     await undo();
-    expect(shown()).toEqual([1, 2, 3]);
-    expect(getApp().selectedId).toBe(2);
+    expect(shown()).toEqual(["dated:10", "dated:20", "dated:50", "dated:30"]);
+    expect([useFeedRow.getState().opened, getApp().selectedId]).toEqual(["dated:20", 2]);
+  });
+
+  it("Undo restores the open row only when nothing was opened since, a sibling of its conversation included", async () => {
+    expect(doneOnSelected()).toBe(true);
+    await vi.waitFor(() => expect(useSnack.getState().undo).toBeTruthy());
+    open("dated:10");
+    await undo();
+    expect(shown()).toEqual(["dated:10", "dated:20", "dated:50", "dated:30"]);
+    expect(useFeedRow.getState().opened).toBe("dated:10");
   });
 
   it("the fourth panel round: Undo's words are the task's when acted on, not what the reload brought in its place", async () => {
     let slow: (() => void) | null = null;
-    fake.handlers["dated.act"] = (p) => new Promise((resolve) => (slow = () => resolve((done.add((p as { id: number }).id), { undoId: 5 }))));
-    const acting = actOnTodayRow(2, useToday.getState().tasks.get(2)!, "dismiss");
-    // the conversation's next item is the row's now (a reload while the act was on its way)
-    useToday.setState({ tasks: new Map([[2, { kind: "dated", item: { ...item(2), id: 21 }, when: null, due: null, dueAt: 0, text: "Pay the rent" }]]) });
+    fake.handlers["dated.act"] = (p) => new Promise((resolve) => (slow = () => resolve((done.add((p as { id: number }).id), { undoId: "t5" }))));
+    const acting = actOnTodayRow("dated:20", task("dated:20"), "dismiss");
+    useToday.setState({ rows: [] });
     slow!();
     await acting;
     expect(useSnack.getState().current?.message).toBe("Removed from What matters: Task 2");
   });
 
-  it("Remove and Later leave too; a row that isn't the open one leaves without moving the cursor", async () => {
-    await actOnTodayRow(3, useToday.getState().tasks.get(3)!, "dismiss");
-    expect(shown()).toEqual([1, 2]);
-    expect(getApp().selectedId).toBe(2);
-    await actOnTodayRow(2, useToday.getState().tasks.get(2)!, "later", 3e12);
-    expect(shown()).toEqual([1]);
-    expect(getApp().selectedId).toBe(1);
+  it("Remove and Later leave too; a row that isn't the open one leaves without moving the open one", async () => {
+    await actOnTodayRow("dated:30", task("dated:30"), "dismiss");
+    expect(shown()).toEqual(["dated:10", "dated:20", "dated:50"]);
+    expect(useFeedRow.getState().opened).toBe("dated:20");
+    await actOnTodayRow("dated:20", task("dated:20"), "later", 3e12);
+    expect(shown()).toEqual(["dated:10", "dated:50"]);
+    expect(useFeedRow.getState().opened).toBe("dated:50");
   });
 
-  it("an act that failed brings the row back, selected", async () => {
+  it("an act that failed brings the row back, open", async () => {
     fake.handlers["dated.act"] = async () => {
       throw new Error("The backend is busy.");
     };
-    await actOnTodayRow(2, useToday.getState().tasks.get(2)!, "done");
-    await vi.waitFor(() => expect(shown()).toEqual([1, 2, 3]));
-    expect(getApp().selectedId).toBe(2);
+    await actOnTodayRow("dated:20", task("dated:20"), "done");
+    await vi.waitFor(() => expect(shown()).toEqual(["dated:10", "dated:20", "dated:50", "dated:30"]));
+    expect(useFeedRow.getState().opened).toBe("dated:20");
     expect(useSnack.getState().current?.message).toBe("The backend is busy.");
   });
 
-  it("the conversation's line: its row leaves only for the item the row stands for", async () => {
+  it("the conversation's line: the row standing for its item leaves, never its sibling", async () => {
     await actOnThreadItem(2, { id: 99, revision: 1 }, "done");
-    expect(shown()).toEqual([1, 2, 3]);
-    await actOnThreadItem(2, item(2), "dismiss");
-    expect(shown()).toEqual([1, 3]);
-    expect(getApp().selectedId).toBe(3);
+    expect(shown()).toEqual(["dated:10", "dated:20", "dated:50", "dated:30"]);
+    await actOnThreadItem(2, item(5), "dismiss");
+    expect(shown()).toEqual(["dated:10", "dated:20", "dated:30"]);
+    expect(useFeedRow.getState().opened).toBe("dated:20");
   });
 
-  it("the third panel round: Later from the conversation's line takes the row out at once, its moment sent; Undo brings it back selected; a failure brings it back", async () => {
+  it("the third panel round: Later from the conversation's line takes the row out at once, its moment sent; Undo brings it back open; a failure brings it back", async () => {
     const sent: unknown[] = [];
     const act = fake.handlers["dated.act"]!;
     fake.handlers["dated.act"] = async (p) => (sent.push(p), act(p));
     await actOnThreadItem(2, { ...item(2), text: "Task 2" }, "later", 3e12);
     expect(sent).toEqual([{ id: 20, revision: 1, action: "later", until: 3e12 }]);
-    expect(shown()).toEqual([1, 3]);
-    expect(getApp().selectedId).toBe(3);
+    expect(shown()).toEqual(["dated:10", "dated:50", "dated:30"]);
     await vi.waitFor(() => expect(useSnack.getState().current?.message).toBe("Later: Task 2"));
     await undo();
-    expect(shown()).toEqual([1, 2, 3]);
-    expect(getApp().selectedId).toBe(2);
+    expect(shown()).toEqual(["dated:10", "dated:20", "dated:50", "dated:30"]);
+    expect(useFeedRow.getState().opened).toBe("dated:20");
     fake.handlers["dated.act"] = async () => {
       throw new Error("That’s too late for it. Choose an earlier time.");
     };
     await actOnThreadItem(2, item(2), "later", 3e12);
-    await vi.waitFor(() => expect(shown()).toEqual([1, 2, 3]));
-    expect(getApp().selectedId).toBe(2);
+    await vi.waitFor(() => expect(shown()).toEqual(["dated:10", "dated:20", "dated:50", "dated:30"]));
     expect(useSnack.getState().current?.message).toBe("That’s too late for it. Choose an earlier time.");
   });
 
   it("the conversation's promise controls: the row leaves for the promise it stands for, not for another (Codex code review)", async () => {
     promised.set(4, 400);
     await reloadList();
-    setApp({ selectedId: 4 });
+    open("promise:400");
     const row = (id: number) => ({ id, threadId: 4, revision: 1, kind: "promise", text: "send the agenda", dueAt: 2e12 }) as unknown as FollowupRow;
     await actOnThreadPromise(row(401), "done");
-    expect(shown()).toEqual([1, 2, 3, 4]);
-    // follow-ups' own act names the promise too (the fourth panel round)
+    expect(shown()).toContain("promise:400");
     expect(useSnack.getState().current?.message).toBe("Done: send the agenda");
     await actOnThreadPromise(row(400), "done");
-    expect(shown()).toEqual([1, 2, 3]);
-    expect(getApp().selectedId).toBe(3);
+    expect(shown()).not.toContain("promise:400");
     await vi.waitFor(() => expect(useSnack.getState().undo).toBeTruthy());
-    expect(useSnack.getState().current?.message).toBe("Done: send the agenda");
     await undo();
-    expect(shown()).toEqual([1, 2, 3, 4]);
-    expect(getApp().selectedId).toBe(4);
+    expect(shown()).toContain("promise:400");
+    expect(useFeedRow.getState().opened).toBe("promise:400");
   });
 
   it("the headings follow the rows that are left, before the list reloads (Codex code review)", async () => {
     promised.set(4, 400);
     await reloadList();
-    expect(useToday.getState().groups).toEqual([{ kind: "today", at: 0 }, { kind: "day:2026-11-20", at: 3 }]);
-    fake.handlers["today.list"] = () => new Promise(() => {}); // the reload never answers: what's shown is the optimistic list
-    await actOnTodayRow(1, useToday.getState().tasks.get(1)!, "done");
-    expect(shown()).toEqual([2, 3, 4]);
-    expect(useToday.getState().groups).toEqual([{ kind: "today", at: 0 }, { kind: "day:2026-11-20", at: 2 }]);
-    await actOnTodayRow(2, useToday.getState().tasks.get(2)!, "done");
-    await actOnTodayRow(3, useToday.getState().tasks.get(3)!, "done");
-    expect(shown()).toEqual([4]);
-    expect(useToday.getState().groups).toEqual([{ kind: "day:2026-11-20", at: 0 }]);
+    fake.handlers["today.list"] = () => new Promise(() => {}); // the reload never answers: what's shown is the optimistic feed
+    for (const row of ["dated:10", "dated:20", "dated:50", "dated:30"]) await actOnTodayRow(row, task(row), "done");
+    expect(useToday.getState().rows.map((r) => [r.id, r.group])).toEqual([["promise:400", "day:2026-11-20"]]);
   });
 
-  it("plan 210 (iteration 1): ⇧D removes the key's item as D finishes it, with the same Undo; b opens Later for the item as it was, and opening or leaving it moves nothing", async () => {
+  it("plan 210 (iteration 1): ⇧D removes the key's row as D finishes it, with the same Undo; b opens Later for the item as it was, and opening or leaving it moves nothing", async () => {
     const acts: unknown[] = [];
     const act = fake.handlers["dated.act"]!;
     fake.handlers["dated.act"] = async (p) => (acts.push(p), act(p));
     expect(removeOnSelected()).toBe(true);
-    expect(shown()).toEqual([1, 3]);
-    expect(getApp().selectedId).toBe(3);
+    expect(shown()).toEqual(["dated:10", "dated:50", "dated:30"]);
     await vi.waitFor(() => expect(acts).toEqual([{ id: 20, revision: 1, action: "dismiss" }]));
     await vi.waitFor(() => expect(useSnack.getState().undo).toBeTruthy());
     await undo();
-    expect(shown()).toEqual([1, 2, 3]);
-    // b: with no feed drawn (the item is the reader's alone), Later's own picker, for the task b saw
-    setApp({ selectedId: 2 });
-    const seen = useToday.getState().tasks.get(2)!;
+    expect(shown()).toEqual(["dated:10", "dated:20", "dated:50", "dated:30"]);
+    // b: with no feed drawn, Later's own picker, for the task b saw: the open row's, never its sibling's
+    open("dated:50");
+    const seen = task("dated:50");
     expect(laterOnSelected()).toBe(true);
     expect(getApp().dialog).toBe("todayLater");
-    expect(useToday.getState().laterPick).toEqual({ threadId: 2, task: seen });
-    // a reload meanwhile brings another item to the row: the picker keeps the one it opened for
-    useToday.setState({ tasks: new Map([[2, { kind: "dated", item: { ...item(2), id: 21 }, when: null, due: null, dueAt: 0 }]]) });
+    expect(useToday.getState().laterPick).toEqual({ rowId: "dated:50", task: seen });
+    useToday.setState({ rows: [] });
     expect(useToday.getState().laterPick?.task).toBe(seen);
-    expect(shown()).toEqual([1, 2, 3]);
     expect(acts).toHaveLength(1);
     setApp({ dialog: null });
     useToday.setState({ laterPick: null });
   });
 
-  it("plan 210 (Codex code review): b on another item than the open one, then a moment of your own: the item goes and the keys go on to the next, as from a preset", async () => {
-    // the feed's items as buttons, the keyboard on the first while the second is open
+  it("plan 210 (Codex code review): b on another row than the open one, then a moment of your own: the row goes and the keys go on to the next, as from a preset", async () => {
     const feed = document.createElement("section");
     feed.dataset.testid = "wm-feed";
-    for (const id of [1, 2, 3]) feed.insertAdjacentHTML("beforeend", `<div data-item-id="${id}"><button data-testid="wm-item-open">${id}</button></div>`);
+    for (const id of shown()) feed.insertAdjacentHTML("beforeend", `<div data-row-id="${id}"><button data-testid="wm-item-open">${id}</button></div>`);
     document.body.append(feed);
-    const button = (id: number) => feed.querySelector<HTMLElement>(`[data-item-id="${id}"] button`)!;
-    button(1).focus();
-    const task = useToday.getState().tasks.get(1)!;
+    const button = (id: string) => feed.querySelector<HTMLElement>(`[data-row-id="${id}"] button`)!;
+    button("dated:10").focus();
+    const seen = task("dated:10");
     expect(laterOnSelected()).toBe(true);
-    // the feed draws no Later button here: the picker, for item 1, the keys' next item with it
-    expect(useToday.getState().laterPick).toEqual({ threadId: 1, task, next: 2 });
+    expect(useToday.getState().laterPick).toEqual({ rowId: "dated:10", task: seen, next: "dated:20" });
     const frame = globalThis.requestAnimationFrame;
     globalThis.requestAnimationFrame = (cb) => (cb(0), 0);
     try {
       laterFromPicker(useToday.getState().laterPick!, 3e12);
-      expect(shown()).toEqual([2, 3]);
-      expect(document.activeElement).toBe(button(2));
+      expect(shown()).toEqual(["dated:20", "dated:50", "dated:30"]);
+      expect(document.activeElement).toBe(button("dated:20"));
     } finally {
       globalThis.requestAnimationFrame = frame;
       feed.remove();
@@ -224,21 +225,21 @@ describe("Done means gone (plan 204, after the second panel round)", () => {
     expect(removeOnSelected()).toBe(false);
     expect(laterOnSelected()).toBe(false);
     setApp({ checked: new Set(), selectedId: 99 });
+    useFeedRow.setState({ opened: null, cursor: null });
     expect(removeOnSelected()).toBe(false);
     expect(laterOnSelected()).toBe(false);
-    setApp({ selectedId: 2, today: false });
+    open("dated:20");
+    setApp({ today: false });
     expect(removeOnSelected()).toBe(false);
     expect(laterOnSelected()).toBe(false);
-    expect(shown()).toEqual([1, 2, 3]);
     expect(getApp().dialog).toBe(null);
   });
 
-  it("outside Today nothing leaves the list", async () => {
-    const task = useToday.getState().tasks.get(2)!;
+  it("outside What matters nothing leaves the feed", async () => {
+    const seen = task("dated:20");
     setApp({ today: false });
-    useList.setState({ itemsKey: "other" });
-    await actOnTodayRow(2, task, "done");
-    expect(shown()).toEqual([1, 2, 3]);
+    await actOnTodayRow("dated:20", seen, "done");
+    expect(shown()).toEqual(["dated:10", "dated:20", "dated:50", "dated:30"]);
     expect(done.has(20)).toBe(true);
   });
 });

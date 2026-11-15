@@ -659,9 +659,12 @@ export class DatedWorker {
   // ─── what the user does (§5): plan 210 (iteration 2), What matters' one act on items (`TodayService.act`) ───
 
   /** Codex's second pass: an item stored from a suspicious sender before the guard isn't shown, as in Today. */
-  async ofThread(threadId: number): Promise<DatedRow[]> {
+  async ofThread(threadId: number, include?: number): Promise<DatedRow[]> {
     const { dated } = this.host.store;
-    return [...(await withoutUntrusted(await dated.ofThread(threadId), (keys) => dated.written(keys)))];
+    // plan 210 (iteration 2): a history line opened shows its own closed item, of this conversation only
+    const extra = include === undefined ? null : await dated.get(include);
+    const rows = [...(await dated.ofThread(threadId)), ...(extra && extra.threadId === threadId && extra.state !== "open" ? [extra] : [])];
+    return [...(await withoutUntrusted(rows, (keys) => dated.written(keys)))];
   }
 
   // ─── §6: the one-time check ──────────────────────────────────────────────

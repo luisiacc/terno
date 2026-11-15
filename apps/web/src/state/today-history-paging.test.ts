@@ -15,8 +15,9 @@ const { useList, loadMore, reloadList } = await import("~/state/list");
 const { useToday } = await import("~/state/today");
 
 const thread = (id: number) => ({ id, lastDate: 1000 - id, subject: `S ${id}`, fromName: "A", categoryIds: [], unread: false }) as unknown as ThreadSummary;
-const line = (id: number): TodayHistoryItem => ({ thread: thread(id), key: { at: 10_000 - id, src: 0, id }, outcome: "done", kind: "pay", text: `Pay ${id}` });
-const answer = (lines: number[], next: number | null) => ({ sections: [{ kind: "today", items: [{ thread: thread(1), why: { kind: "waiting", wrote: true } }] }], digest: null, now: 0, held: [], history: { items: lines.map(line), next: next === null ? null : line(next).key } });
+const line = (id: number): TodayHistoryItem => ({ id: `dated:${id}`, item: { source: "dated", id }, thread: thread(id), key: { at: 10_000 - id, src: 0, id }, outcome: "done", kind: "pay", text: `Pay ${id}` });
+const answer = (lines: number[], next: number | null) => ({ sections: [{ kind: "today", items: [{ id: "waiting:1", thread: thread(1), why: { kind: "waiting", wrote: true } }] }], digest: null, now: 0, counts: { missed: 0, today: 1, thisWeek: 0 }, history: { items: lines.map(line), next: next === null ? null : line(next).key } });
+const line12 = () => useToday.getState().rows.find((r) => r.id === "dated:12");
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((done) => (resolve = done));
@@ -40,14 +41,13 @@ it("a page the list drops (a newer answer came) publishes nothing; one it takes 
   setApp({ today: false, view: "inbox" });
   late.resolve({ items: [line(12)], next: null });
   await more;
-  expect(useToday.getState().history.has(12)).toBe(false);
+  expect(line12()).toBeUndefined();
   setApp({ today: true, view: "all" });
   await reloadList();
   rpc.call.mockImplementation(async (method: string) => (method === "today.history" ? { items: [line(12)], next: null } : answer([10, 11], 11)));
   await loadMore();
   expect(ids()).toEqual([1, 10, 11, 12]);
-  expect(useToday.getState().history.get(12)?.text).toBe("Pay 12");
-  expect(useToday.getState().kinds.get(12)).toBe("history");
+  expect(line12()).toMatchObject({ group: "history", line: { text: "Pay 12" } });
 });
 
 it("a reload that waited while a page went deeper asks again, down to the deepest line", async () => {
@@ -80,7 +80,7 @@ it("Codex code review, round 2: a page still on its way when a reload lands is d
   late.resolve({ items: [line(11), line(12)], next: null });
   await more;
   expect(ids()).toEqual([1, 10]);
-  expect(useToday.getState().history.has(11)).toBe(false);
+  expect(useToday.getState().rows.some((r) => r.id === "dated:11")).toBe(false);
   expect(useList.getState().loadingMore).toBe(false);
   rpc.call.mockImplementation(async (method: string, params: { after?: unknown }) => (method === "today.history" ? { items: params.after ? [line(12)] : [], next: null } : answer([10], 10)));
   await loadMore();

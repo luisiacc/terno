@@ -1551,7 +1551,7 @@ export function createHandlers(b: Backend): Handlers {
       await b.today.undoAct(undoId);
       return { ok: true };
     },
-    "dated.ofThread": async ({ threadId }) => ({ rows: await b.dated.ofThread(threadId) }),
+    "dated.ofThread": async ({ threadId, include }) => ({ rows: await b.dated.ofThread(threadId, include) }),
     "dated.status": () => b.dated.status(),
     "dated.scanOffer": () => b.dated.scanOffer(),
     "dated.scan": async () => ({ queued: await b.dated.scan() }),

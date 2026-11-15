@@ -20,6 +20,7 @@ import { nudge, nudgeDraft, nudgeState, openNudge } from "~/lib/followup-nudge";
 import { useAiDraft } from "~/lib/ai-draft";
 import { offerTip, usePendingTip } from "~/lib/tips";
 import { useApp } from "~/state/app";
+import { useFeedTarget } from "~/state/today";
 import { useFollowups } from "~/state/followups";
 import { AI_ACTIONS, AI_CARD, AI_GLYPH, AI_HEADER, AI_PAD, AI_TITLE, AiProvenance, messageSource } from "./ai-card";
 import FollowupsTip from "./followups-tip";
@@ -33,7 +34,7 @@ const QUIET = { variant: "ghost", className: "text-muted-foreground hover:text-f
  * of its scope; raters read the bare line as mail metadata): the fact is the title ("Waiting for Arjun’s reply", plan 162), when it
  * comes back is under it, then the buttons, the source, and who found it at the row's end.
  */
-function Line({ row, messages }: { row: FollowupRow; messages: readonly MessageDetail[] }) {
+function Line({ row, messages, target = false }: { row: FollowupRow; messages: readonly MessageDetail[]; target?: boolean }) {
   const line = followupLine(row);
   // the fourth panel round (revision 10): a promise of yours says its day ("Due Tuesday"), or none; a nudge, when it comes back
   const when = followupWhen(row);
@@ -54,7 +55,7 @@ function Line({ row, messages }: { row: FollowupRow; messages: readonly MessageD
   // its own moment starts where the reminder's own picker does (plan 87): the next sensible moment, never one already past
   const [picking, setPicking] = useState(false);
   return (
-    <div data-testid="followup-line" data-kind={row.kind} data-state={row.state} className={cn(AI_CARD, AI_PAD)}>
+    <div data-testid="followup-line" data-kind={row.kind} data-state={row.state} data-target={target || undefined} className={cn(AI_CARD, AI_PAD)}>
       {/* the news first, at the text's size: it's what the card is */}
       <p data-testid="followup-header" className={AI_HEADER}>
         <Clock aria-hidden className={cn(AI_GLYPH, "text-sm")} />
@@ -147,6 +148,8 @@ function Line({ row, messages }: { row: FollowupRow; messages: readonly MessageD
 /** Plan 142 §7: a quiet line for each thing this conversation holds, in the conversation's text column, above its summary. */
 export default function ThreadFollowups({ detail }: { detail: ThreadDetail }) {
   const enabled = useApp(followupsOffered);
+  // plan 210 (iteration 2): the promise the feed's open row is, marked
+  const target = useFeedTarget(detail.thread.id);
   const rows = useFollowups((s) => s.byThread.get(detail.thread.id));
   const shown = enabled && !detail.thread.inTrash && !detail.thread.inSpam ? rows : undefined;
   const tipFor = usePendingTip("followups-first");
@@ -159,7 +162,7 @@ export default function ThreadFollowups({ detail }: { detail: ThreadDetail }) {
     // no hairline of its own: the message's divider under it would make two
     <section className="mb-4 space-y-3" aria-label={t("followups.title")} data-testid="thread-followups">
       {shown.map((row) => (
-        <Line key={row.id} row={row} messages={detail.messages} />
+        <Line key={row.id} row={row} messages={detail.messages} target={target.some((r) => r.source === "promise" && r.id === row.id)} />
       ))}
       {tipFor === detail.thread.id && (
         <FollowupsTip kind={shown[0]!.kind} name={shown[0]!.personName?.split(/\s+/)[0] || null} />

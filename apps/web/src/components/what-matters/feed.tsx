@@ -1,5 +1,5 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { DIGEST_ROW_ID, localDay, type ThreadSummary } from "@terno/core";
+import { DIGEST_ROW_ID, localDay, type FeedRowId, type ThreadSummary } from "@terno/core";
 import { getLocale, t } from "@terno/i18n";
 import { Skeleton } from "@terno/ui/components/skeleton";
 import { Sun } from "@terno/ui/icons";
@@ -13,12 +13,13 @@ import { LIST_TITLE } from "~/lib/list-title";
 import { installScrollHairline } from "~/lib/scroll-hairline";
 import { pressRow, releaseRow } from "~/lib/select";
 import { historySentence, historyWhen, todaySentence, todayWhen, type TodayTone } from "~/lib/today-sentence";
-import { useFeedCursor } from "~/lib/feed-focus";
+import { feedScroller } from "~/lib/feed-focus";
 import { measureControls } from "~/lib/feed-controls";
 import { closeFeedConversation } from "~/lib/feed-pane";
+import { listLayout } from "~/lib/page";
 import { getApp, useApp } from "~/state/app";
 import { listAnchor, loadMore, useList } from "~/state/list";
-import { digestLabel, groupDay, useToday, type FeedGroupKind } from "~/state/today";
+import { digestLabel, feedRow, groupDay, openFeedRow, useFeedRow, useToday, type FeedGroupKind, type FeedRow } from "~/state/today";
 import { EmptyState } from "../empty-state";
 import { listScroller } from "~/lib/list-scroller";
 import { ThreadMenu } from "../thread-menu";
@@ -28,17 +29,18 @@ import { BriefTaskControls } from "./task-menus";
 import { TodayLine } from "./today-line";
 
 /**
- * Plan 204's briefing, which the owner made What matters' only view (plan 210): a feed drawn from the very rows the list
- * keeps (`useList`: the same order, held rows, the digest's place) and Today's own maps (each row's group, task and item),
- * so j/k, D, the right-click menu, Done's Undo and a reload all work as on any list. The headings, one plain sentence an
+ * Plan 204's briefing, which the owner made What matters' only view (plan 210): a feed drawn from Today's rows (plan 210,
+ * iteration 2: a row per item, each by its own id, held rows and the digest's in their places), their conversations the
+ * list's (`useList`: once each, for what acts on conversations and pages the history), so j/k, D, the right-click menu,
+ * Done's Undo and a reload work on rows. The headings, one plain sentence an
  * item, when in a column of its own, the whole item opening its conversation in the reader beside it (app.tsx). Under the
  * open part and the automated section, the history ("Earlier"), newest first, paged in as the feed nears its end.
  */
 
-type FeedRow =
+type Drawn =
   | { type: "heading"; key: string; kind: FeedGroupKind }
-  | { type: "item"; key: string; id: number; index: number; kind: FeedGroupKind | undefined }
-  | { type: "digest"; key: string; index: number };
+  | { type: "item"; key: string; row: FeedRow }
+  | { type: "digest"; key: string; row: FeedRow };
 
 /** A group's heading: Missed, Today, a day ahead in the when column's day words (plan 210), Earlier. */
 function headingName(kind: FeedGroupKind): string {
@@ -47,29 +49,36 @@ function headingName(kind: FeedGroupKind): string {
   return t(kind === "missed" ? "today.missed" : kind === "today" ? "today.today" : "today.history");
 }
 
-/** The list's rows with a heading where each group begins (a held row keeps its group's), and the digest. */
-function feedRows(items: readonly ThreadSummary[], kinds: ReadonlyMap<number, FeedGroupKind>): FeedRow[] {
-  const rows: FeedRow[] = [];
+/** The rows with a heading where each group begins (a held row keeps its group's), and the digest's. */
+function drawn(rows: readonly FeedRow[]): Drawn[] {
+  const out: Drawn[] = [];
   let prev: FeedGroupKind | undefined;
-  items.forEach((it, index) => {
-    if (it.id === DIGEST_ROW_ID) return void rows.push({ type: "digest", key: "digest", index });
-    const kind = kinds.get(it.id) ?? prev;
+  for (const row of rows) {
+    if (row.threadId === DIGEST_ROW_ID) {
+      out.push({ type: "digest", key: row.id, row });
+      continue;
+    }
+    const kind = row.group ?? prev;
     // keyed by the row it stands above: a group can begin twice while the rows and their groups are on their way
-    if (kind && kind !== prev) rows.push({ type: "heading", key: `h-${kind}-${it.id}`, kind });
+    if (kind && kind !== prev) out.push({ type: "heading", key: `h-${kind}-${row.id}`, kind });
     prev = kind;
-    rows.push({ type: "item", key: `t-${it.id}`, id: it.id, index, kind });
-  });
-  return rows;
+    out.push({ type: "item", key: row.id, row });
+  }
+  return out;
 }
 
 /**
- * Opens the item's conversation beside the feed (List: as its page), as a click on a row does; on the item already open
- * beside it, puts it away again, as Esc does (the owner: one toggle).
+ * Opens the row's conversation beside the feed (List: as its page), as a click on a list's row does; on the row already
+ * open beside it, puts it away again, as Esc does (the owner: one toggle). Plan 210 (iteration 2): another row of the
+ * conversation already open only moves the reader's line to its item, nothing reopened.
  */
-function openItem(id: number): void {
-  if (getApp().selectedId === id && closeFeedConversation()) return;
-  pressRow(id, { meta: false, ctrl: false, shift: false });
-  releaseRow(id);
+function openItem(row: FeedRow): void {
+  const open = useFeedRow.getState().opened === row.id && getApp().selectedId === row.threadId;
+  if (open && closeFeedConversation()) return;
+  openFeedRow(row.id);
+  if (getApp().selectedId === row.threadId && !listLayout()) return;
+  pressRow(row.threadId, { meta: false, ctrl: false, shift: false });
+  releaseRow(row.threadId);
 }
 
 /** Who an item is from, as the feed says it: a promise's person (you sent its last message), else the sender. */
@@ -83,10 +92,12 @@ const COLUMN = "mx-auto w-full max-w-[44rem] px-5";
 
 export function WhatMattersFeed() {
   const items = useList((s) => s.items);
+  const index = useList((s) => s.index);
   const loading = useList((s) => s.loading);
-  const kinds = useToday((s) => s.kinds);
-  const rows = useMemo(() => feedRows(items, kinds), [items, kinds]);
-  const rowOf = useMemo(() => new Map(rows.flatMap((r, i) => (r.type === "item" || r.type === "digest" ? [[r.index, i] as const] : []))), [rows]);
+  const feed = useToday((s) => s.rows);
+  const rows = useMemo(() => drawn(feed), [feed]);
+  /** each row's place among what's drawn, by its id */
+  const placeOf = useMemo(() => new Map(rows.flatMap((r, i) => (r.type !== "heading" ? [[r.key, i] as const] : []))), [rows]);
   const design = useDesign();
   const scrollRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLElement>(null);
@@ -100,40 +111,45 @@ export function WhatMattersFeed() {
     paddingEnd: 24,
   });
 
-  // j/k move the list's cursor (the app's selection): the item it lands on comes into view, a row of look-ahead kept
+  // j/k move the feed's row: the row it lands on comes into view, a row of look-ahead kept. What scrolls the list by a
+  // conversation (the reader's arrows, a menu) lands on that conversation's open row, else its first
   useEffect(() => {
-    listScroller.scrollToIndex = (i) => {
-      const r = rowOf.get(i);
+    feedScroller.toRow = (id) => {
+      const r = placeOf.get(id);
       if (r !== undefined) virtualizer.scrollToIndex(r, { align: "auto" });
     };
-  }, [virtualizer, rowOf]);
+    listScroller.scrollToIndex = (i) => {
+      const thread = useList.getState().items[i]?.id;
+      const open = feedRow(useFeedRow.getState().opened);
+      const id = open?.threadId === thread ? open?.id : useToday.getState().rows.find((r) => r.threadId === thread)?.id;
+      if (id !== undefined) feedScroller.toRow?.(id);
+    };
+  }, [virtualizer, placeOf]);
 
-  // the open item stays in view when the feed narrows beside the conversation (its notes rewrap to new heights)
-  const selectedId = useApp((s) => s.selectedId);
+  // the open row stays in view when the feed narrows beside the conversation (its notes rewrap to new heights)
+  const opened = useFeedRow((s) => s.opened);
   useEffect(() => {
-    if (selectedId === null) return;
-    useFeedCursor.setState({ id: null });
-    const frame = requestAnimationFrame(() => {
-      const i = useList.getState().index.get(selectedId);
-      const r = i === undefined ? undefined : rowOf.get(i);
-      if (r !== undefined) virtualizer.scrollToIndex(r, { align: "auto" });
-    });
+    if (opened === null) return;
+    const frame = requestAnimationFrame(() => feedScroller.toRow?.(opened));
     return () => cancelAnimationFrame(frame);
-    // only when the open item changes (the feed's width changes with it)
-  }, [selectedId]);
+    // only when the open row changes (the feed's width changes with it)
+  }, [opened]);
 
-  // plan 210 (Codex code review, round 2): where the feed was left, as the list's own rows say it (the first item on
-  // screen and how far into it), so coming back from another mailbox pages down to it and shows it again
+  // plan 210 (Codex code review, round 2): where the feed was left, as the list's own terms say it (the first item's
+  // conversation on screen and how far into it), so coming back from another mailbox pages down to it and shows it again;
+  // iteration 2: the row itself is kept too (`shownRow`), so two rows of one conversation come back to the right one
   const rowsRef = useRef(rows);
   rowsRef.current = rows;
+  const shownRow = useRef<FeedRowId | null>(null);
   useEffect(() => {
     const firstShown = () => {
       const el = scrollRef.current;
       if (!el) return null;
       const v = virtualizer.getVirtualItems().find((x) => x.end > el.scrollTop && rowsRef.current[x.index]?.type === "item");
       if (!v) return null;
-      const row = rowsRef.current[v.index] as Extract<FeedRow, { type: "item" }>;
-      return { id: row.id, into: Math.max(0, (el.scrollTop - v.start) / Math.max(1, v.size)) };
+      const drawnRow = rowsRef.current[v.index] as Extract<Drawn, { type: "item" }>;
+      shownRow.current = drawnRow.row.id;
+      return { id: drawnRow.row.threadId, into: Math.max(0, (el.scrollTop - v.start) / Math.max(1, v.size)) };
     };
     const anchor: typeof listAnchor = {
       scrolled: () => (scrollRef.current?.scrollTop ?? 0) > 0,
@@ -141,8 +157,8 @@ export function WhatMattersFeed() {
       scrollAt: () => ((scrollRef.current?.scrollTop ?? 0) > 0 ? firstShown() : null),
       scrollTo: (at) => {
         if (!at) return virtualizer.scrollToOffset(0);
-        const i = useList.getState().index.get(at.id);
-        const r = rowsRef.current.findIndex((x) => x.type === "item" && x.index === i);
+        const kept = rowsRef.current.findIndex((x) => x.type === "item" && x.row.id === shownRow.current && x.row.threadId === at.id);
+        const r = kept >= 0 ? kept : rowsRef.current.findIndex((x) => x.type === "item" && x.row.threadId === at.id);
         if (r < 0) return;
         virtualizer.scrollToIndex(r, { align: "start" });
         // and how far into it, once it's measured
@@ -165,7 +181,13 @@ export function WhatMattersFeed() {
   useLayoutEffect(() => measureControls(sectionRef.current?.querySelector<HTMLElement>("[data-testid=wm-controls]") ?? null, true), [controlsKey]);
 
   // leaving What matters, the place it was left at goes with it
-  useEffect(() => () => useFeedCursor.setState({ id: null }), []);
+  useEffect(
+    () => () => {
+      useFeedRow.setState({ cursor: null });
+      feedScroller.toRow = undefined;
+    },
+    [],
+  );
 
   // the header's hairline once the feed is scrolled, as the list's
   useEffect(() => {
@@ -208,7 +230,7 @@ export function WhatMattersFeed() {
                 </div>
               ))}
             </div>
-          ) : items.length === 0 ? (
+          ) : rows.length === 0 ? (
             <EmptyState icon={<Sun className="mb-2 size-7 text-muted-foreground" aria-hidden />} title={t("today.empty")} />
           ) : (
             <div aria-label={t("whatMatters.feed.label")} role="group" className="relative" style={{ height: virtualizer.getTotalSize() }}>
@@ -217,7 +239,7 @@ export function WhatMattersFeed() {
                 return (
                   <div key={v.key} data-index={v.index} ref={virtualizer.measureElement} className="absolute inset-x-0 top-0" style={{ transform: `translateY(${v.start}px)` }}>
                     <div className={COLUMN}>
-                      {row.type === "heading" ? <Heading kind={row.kind} /> : row.type === "item" ? <FeedItem id={row.id} thread={items[row.index]!} group={row.kind} /> : <DigestItem />}
+                      {row.type === "heading" ? <Heading kind={row.kind} /> : row.type === "item" ? <FeedItem row={row.row} thread={items[index.get(row.row.threadId) ?? -1]} /> : <DigestItem />}
                     </div>
                   </div>
                 );
@@ -239,36 +261,34 @@ function Heading({ kind }: { kind: FeedGroupKind }) {
   );
 }
 
-/** One item, its sentence made from what the backend said of it; a held row (no longer Today's) says its subject. */
-const FeedItem = memo(function FeedItem({ id, thread, group }: { id: number; thread: ThreadSummary; group: FeedGroupKind | undefined }) {
-  const open = useApp((s) => s.selectedId === id);
-  const cursor = useFeedCursor((s) => s.id === id);
+/** One row, its sentence made from what the backend said of it; a held row (no longer the backend's) says its own words. */
+const FeedItem = memo(function FeedItem({ row, thread }: { row: FeedRow; thread: ThreadSummary | undefined }) {
+  const mine = useFeedRow((s) => s.opened === row.id);
+  const shown = useApp((s) => s.selectedId === row.threadId);
+  const open = mine && shown;
+  const cursor = useFeedRow((s) => s.cursor === row.id);
+  if (!thread) return null;
   // plan 210: a history line: its words quiet, what happened and when in the column, nothing to act on
-  const line = useToday((s) => s.history.get(id));
-  if (line) {
-    const said = historySentence(line);
-    const happened = historyWhen(line);
+  if (row.line) {
     const from = thread.fromName || thread.fromEmail;
-    return <Item id={id} sentence={said} meta={from} when={happened} tone="none" task={undefined} open={open} cursor={cursor} later past />;
+    return <Item row={row} sentence={historySentence(row.line)} meta={from} when={historyWhen(row.line)} tone="none" task={undefined} open={open} cursor={cursor} later past />;
   }
-  return <OpenItem id={id} thread={thread} group={group} open={open} cursor={cursor} />;
+  return <OpenItem row={row} thread={thread} open={open} cursor={cursor} />;
 });
 
-/** An open line: its sentence made from what the backend said of it; a held row (no longer Today's) says its subject. */
-function OpenItem({ id, thread, group, open, cursor }: { id: number; thread: ThreadSummary; group: FeedGroupKind | undefined; open: boolean; cursor: boolean }) {
-  const entry = useToday((s) => s.entries.get(id));
-  const task = useToday((s) => s.tasks.get(id));
+/** An open line: its sentence made from what the backend said of it. */
+function OpenItem({ row, thread, open, cursor }: { row: FeedRow; thread: ThreadSummary; open: boolean; cursor: boolean }) {
+  const { entry, task, group } = row;
   // plan 210: one of Coming up's, under its day while Coming up is open: quiet
-  const ahead = useToday((s) => s.ahead.has(id));
+  const ahead = row.ahead === true;
   const sentence = useMemo(() => (entry ? todaySentence(entry) : thread.subject || t("common.noSubject")), [entry, thread.subject]);
-  // a held row (no longer Today's) says only the day it came, quietly
   // its weight by its group (plan 210: Missed and Today's dated items strong, a day ahead quiet), its column in the list's words
   const when = useMemo(() => (entry ? todayWhen(entry, Date.now(), group, ahead) : { text: listDate(thread.lastDate), tone: "none" as const }), [entry, group, ahead, thread.lastDate]);
   const sender = senderOf(thread, task);
-  // the briefing's second line: who (whom a promise of yours was made to), and the conversation's next item; never the
-  // email's date, which read as the due day (after the UI panel): the right column says when
+  // the briefing's second line: who (whom a promise of yours was made to), and its related detail (a return leg); never
+  // the email's date, which read as the due day (after the UI panel): the right column says when
   const who = task?.kind === "promise" && task.person ? t("whatMatters.to", { name: task.person.name }) : sender;
-  return <Item id={id} sentence={sentence} meta={task?.also ? `${who} · ${task.also}` : who} when={when.text} tone={when.tone} task={task} open={open} cursor={cursor} later={ahead} />;
+  return <Item row={row} sentence={sentence} meta={task?.also ? `${who} · ${task.also}` : who} when={when.text} tone={when.tone} task={task} open={open} cursor={cursor} later={ahead} />;
 }
 
 /**
@@ -281,7 +301,7 @@ const ROOM_BESIDE_WHEN =
 const ROOM = "group-hover/item:pr-(--wm-controls,7.5rem) group-has-focus-reveal/item:pr-(--wm-controls,7.5rem) group-data-open/item:pr-(--wm-controls,7.5rem) group-has-[[aria-expanded=true]]/item:pr-(--wm-controls,7.5rem)";
 
 interface ItemProps {
-  id: number;
+  row: FeedRow;
   sentence: string;
   meta: string;
   task: TodayTask | undefined;
@@ -324,11 +344,12 @@ const WHEN_INK: Record<TodayTone, string> = {
  * Later, in words, on hover, on focus and on the open item, over the second line's end (they take no room while hidden);
  * D and the right-click menu as on the list.
  */
-function Item({ id, sentence, meta, when, tone, task, open, cursor = false, later, past = false, digest = false }: ItemProps) {
+function Item({ row, sentence, meta, when, tone, task, open, cursor = false, later, past = false, digest = false }: ItemProps) {
   const textId = useId();
   return (
-    <div data-thread-id={menuId(id)} data-item-id={id} data-testid="wm-item" data-open={open || undefined} data-cursor={cursor || undefined} data-history={past || undefined} data-digest={digest || undefined} data-ahead={(later && !past) || undefined} data-tone={tone} className="group/item relative rounded-lg not-data-open:hover:bg-row-hover data-cursor:bg-row-hover data-open:bg-row-selected">
-      <button type="button" data-testid="wm-item-open" title={`${sentence}\n${meta}`} aria-expanded={open} onClick={() => openItem(id)} className="flex w-full min-w-0 items-start gap-4 rounded-lg px-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring">
+    // the right-click menu is the conversation's, its task this row's (plan 210, iteration 2: `menuRow`)
+    <div data-thread-id={menuId(row.threadId)} data-row-id={row.id} data-held={row.held || undefined} data-testid="wm-item" onContextMenu={() => useToday.setState({ menuRow: row.id })} data-open={open || undefined} data-cursor={cursor || undefined} data-history={past || undefined} data-digest={digest || undefined} data-ahead={(later && !past) || undefined} data-tone={tone} className="group/item relative rounded-lg not-data-open:hover:bg-row-hover data-cursor:bg-row-hover data-open:bg-row-selected">
+      <button type="button" data-testid="wm-item-open" title={`${sentence}\n${meta}`} aria-expanded={open} onClick={() => openItem(row)} className="flex w-full min-w-0 items-start gap-4 rounded-lg px-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring">
         <span className="min-w-0 flex-1">
           <span id={textId} data-testid="wm-sentence" className={cn("line-clamp-2 text-base text-pretty group-data-open/item:text-row-selected-foreground", later ? (past ? "text-muted-foreground" : "text-row-preview") : SENTENCE_INK[tone])}>
             {sentence}
@@ -351,7 +372,7 @@ function Item({ id, sentence, meta, when, tone, task, open, cursor = false, late
           ref={(el) => measureControls(el)}
           className="pointer-events-none absolute right-2 bottom-1.5 flex items-center gap-1 rounded-md bg-pane pl-2 opacity-0 transition-opacity duration-fast group-hover/item:pointer-events-auto group-[:hover:not([data-open])]/item:bg-row-hover group-hover/item:opacity-100 group-data-open/item:pointer-events-auto group-data-open/item:bg-row-selected group-data-open/item:opacity-100 has-focus-reveal:pointer-events-auto has-focus-reveal:opacity-100 has-[[aria-expanded=true]]:pointer-events-auto has-[[aria-expanded=true]]:opacity-100"
         >
-          <BriefTaskControls threadId={id} task={task} describedBy={textId} />
+          <BriefTaskControls rowId={row.id} task={task} describedBy={textId} />
         </div>
       )}
     </div>
@@ -365,8 +386,9 @@ function Item({ id, sentence, meta, when, tone, task, open, cursor = false, late
  */
 function DigestItem() {
   const digest = useToday((s) => s.digest);
+  const row = useToday((s) => s.rows.find((r) => r.threadId === DIGEST_ROW_ID));
   const open = useApp((s) => s.selectedId === DIGEST_ROW_ID);
-  if (!digest) return null;
+  if (!digest || !row) return null;
   const sentence = digestLabel(digest);
-  return <Item id={DIGEST_ROW_ID} sentence={sentence} meta={t("whatMatters.automatedLine")} when={null} tone="none" task={undefined} open={open} later={false} digest />;
+  return <Item row={row} sentence={sentence} meta={t("whatMatters.automatedLine")} when={null} tone="none" task={undefined} open={open} later={false} digest />;
 }

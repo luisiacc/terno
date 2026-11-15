@@ -63,12 +63,15 @@ export function todayWhen(item: Pick<TodayItem, "thread" | "why">, now = Date.no
   const when = whenOf(item, now);
   // plan 210 (iteration 1): a plan or a delivery sits under the day's tasks, drawn as quietly as a day ahead's
   const plan = item.why.kind === "dated" && item.why.item !== undefined && datedGroup(item.why.item.kind) === "plans";
-  const tone: TodayTone = ahead || group?.startsWith("day:") || (plan && group !== "missed") ? "later" : group === "missed" ? "missed" : group === "today" ? (when.tone === "none" ? "none" : "today") : when.tone;
+  // (a promise broken and given a new day keeps the late mark wherever it sits: plan 210, iteration 2)
+  const tone: TodayTone = when.tone === "missed" ? "missed" : ahead || group?.startsWith("day:") || (plan && group !== "missed") ? "later" : group === "missed" ? "missed" : group === "today" ? (when.tone === "none" ? "none" : "today") : when.tone;
   return { text: when.text, tone };
 }
 
 function whenOf(item: Pick<TodayItem, "thread" | "why">, now: number): { text: string | null; tone: TodayTone } {
   const { thread, why } = item;
+  // plan 210 (iteration 2): one time per row, the reader's, and the mail's own in brackets when its zone isn't theirs
+  const zoned = (text: string, note: string | null | undefined): string => (note ? t("whatMatters.zoned", { when: text, time: note }) : text);
   const was = (day: number): string => (datedDay(day, now).near === "yesterday" ? t("today.due.wasYesterday") : t("today.due.wasOn", { day: dueShort(day, false, now) }));
   const ahead = (day: number, at: number, timed: boolean): { text: string; tone: TodayTone } => {
     const time = dueTimeLeft(at, timed, now);
@@ -85,12 +88,20 @@ function whenOf(item: Pick<TodayItem, "thread" | "why">, now: number): { text: s
     const dueAt = why.dueAt ?? 0;
     const day = localDay(it.dueDay)?.getTime() ?? dueAt;
     if (why.missed) return { text: was(day), tone: "missed" };
-    return ahead(day, dueAt, it.timed);
+    // a person's request shown before its day (plan 210, iteration 2): what it's by, quietly, among the people
+    if (it.early) return { text: t("whatMatters.by", { day: dueShort(day, false, now) }), tone: "none" };
+    const at = ahead(day, dueAt, it.timed);
+    return { ...at, text: zoned(at.text, it.timed ? it.note : null) };
   }
   if (why.kind === "promise") {
-    if (why.promise?.dated !== true || why.dueAt === undefined) return came;
+    const p = why.promise;
+    if (p?.dated !== true || why.dueAt === undefined) return came;
     if (why.missed) return { text: was(why.dueAt), tone: "missed" };
-    return ahead(why.dueAt, why.dueAt, false);
+    const at = ahead(why.dueAt, why.dueAt, p.timed === true);
+    const text = zoned(at.text, p.timed ? p.note : null);
+    // broken and given a new day: its first day stays said, in Missed's weight, under the new day (never moved to Missed)
+    if (p.promisedAt != null) return { text: t("whatMatters.promised", { when: text, day: dueShort(p.promisedAt, false, now) }), tone: "missed" };
+    return { ...at, text };
   }
   return came;
 }

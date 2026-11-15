@@ -13,14 +13,14 @@ import { loadMore, useList } from "~/state/list";
 import { loadThread, useThreads } from "~/state/threads";
 import { acceptSuggestion, answerReview, rejectSuggestion } from "~/lib/categorize";
 import { leaveReview } from "~/lib/review";
-import { backToDigest, digestHasKeys, digestKeys } from "~/state/today";
+import { backToDigest, digestHasKeys, digestKeys, openFeedRow, useFeedRow, useToday } from "~/state/today";
 import { doneOnSelected, laterOnSelected, removeOnSelected } from "~/lib/today-task";
 import { conversationKeys } from "~/lib/conversation-keys";
 import { printCommand } from "~/lib/print-open";
 import { checkForUpdates } from "~/lib/updates";
 import { closeEmptySearch, focusRows, focusSearch, listScroller } from "~/components/thread-list";
 import { closeFeedConversation } from "~/lib/feed-pane";
-import { focusFeed, useFeedCursor } from "~/lib/feed-focus";
+import { feedPlace, feedScroller, focusFeed } from "~/lib/feed-focus";
 import { snackbarControls } from "~/components/category-snackbar";
 import { setListFilter, toggleUnreadFilter } from "~/lib/unread";
 import { closePage, currentPage, goBack, goForward, listLayout, openThread, uncoverList } from "~/lib/page";
@@ -71,12 +71,38 @@ function followCursor(id: number, before: Element | null): void {
   });
 }
 
+/**
+ * Plan 210 (iteration 2): j/k in What matters walk its rows, two of one conversation two steps: the open row (else the one
+ * a conversation was put away from) to the next, which opens its conversation (or, a sibling, only moves the reader's
+ * target), the history's next page asked for at the end.
+ */
+function feedMove(delta: number, byKey: boolean): void {
+  const { rows } = useToday.getState();
+  if (rows.length === 0) return;
+  const from = feedPlace();
+  const current = from === null ? -1 : rows.findIndex((r) => r.id === from);
+  if (current + delta > rows.length - 1) void loadMore();
+  const next = rows[Math.max(0, Math.min(rows.length - 1, current + delta))]!;
+  const s = getApp();
+  if (next.id === useFeedRow.getState().opened && next.threadId === s.selectedId) {
+    markSelectionIntent();
+    chooseOpenThread();
+    return;
+  }
+  noteOpen(next.threadId);
+  const before = document.activeElement;
+  openFeedRow(next.id);
+  setApp({ selectedId: next.threadId });
+  if (byKey) followCursor(next.threadId, before);
+  feedScroller.toRow?.(next.id);
+}
+
 export function move(delta: number, byKey = false) {
+  if (getApp().today) return feedMove(delta, byKey);
   const { items, index, nextCursor } = useList.getState();
   if (items.length === 0) return;
   const s = getApp();
-  // plan 204, the UI experiment: with no conversation open beside Today's feed, from the item one was put away from
-  const from = s.selectedId ?? useFeedCursor.getState().id;
+  const from = s.selectedId;
   const current = from !== null ? (index.get(from) ?? -1) : -1;
   // List's conversation page: a thread that isn't in the loaded list (a reload, a draft's) has no neighbours to step to (R10)
   const onPage = listLayout() && currentPage() === "thread";
