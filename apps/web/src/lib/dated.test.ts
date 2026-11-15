@@ -159,5 +159,17 @@ describe("the conversation's line keeps the whole wording (plan 204, after the s
     expect(datedLine({ ...ask, dated: true }, false, now)).toBe("Answer Mariana about a rebranding quote");
     const task = taskOf({ kind: "dated", text: ask.text, dueAt: arrived, item: { id: 1, revision: 0, kind: "ask", dueDay: ask.dueDay, timed: false, dated: false } }, now);
     expect(task).toMatchObject({ kind: "dated", when: null, due: null, dueAt: arrived });
+    expect(task!.noDay).toBeUndefined();
+  });
+  it("the fifth panel round (change 3): an alert that named no day says none on its row, ahead or Missed; one with a day says it", async () => {
+    const { taskOf } = await import("./dated");
+    const now = new Date(2026, 10, 12, 10, 0).getTime();
+    const arrived = new Date(2026, 10, 11, 9, 0).getTime();
+    const item = { id: 2, revision: 0, kind: "alert" as const, dueDay: "2026-11-13", timed: false, dated: false };
+    const why = { kind: "dated" as const, text: "Debit card frozen", dueAt: arrived, item };
+    expect(taskOf(why, now)).toMatchObject({ when: null, due: null, noDay: true });
+    expect(taskOf({ ...why, missed: true }, now)).toMatchObject({ when: null, due: null, noDay: true });
+    expect(taskOf({ ...why, item: { ...item, dated: true } }, now)).toMatchObject({ when: "Tomorrow", due: "Due tomorrow" });
+    expect(taskOf({ ...why, item: { ...item, dated: true } }, now)!.noDay).toBeUndefined();
   });
 });
