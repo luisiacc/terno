@@ -423,7 +423,8 @@ describe("what you do", () => {
     expect(back).toMatchObject({ state: "due", inboxState: "onTop", dueAt: row!.dueAt });
     await expect(client.call("followups.act", { id: row!.id, revision: row!.revision, action: "done" })).rejects.toMatchObject({ code: "STALE" });
     const later = await client.call("followups.act", { id: back!.id, revision: back!.revision, action: "later", dueAt: clock.now + DAY });
-    expect(later.row).toMatchObject({ state: "open", inboxState: "none" });
+    // plan 204 (the fifth panel round): a promise's Later is its own, its moment kept
+    expect(later.row).toMatchObject({ state: "open", inboxState: "none", dueAt: row!.dueAt, deferredUntil: clock.now + DAY });
     expect(backend.followups.nextAt).toBe(clock.now + DAY);
   });
 });

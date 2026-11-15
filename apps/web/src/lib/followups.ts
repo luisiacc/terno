@@ -24,7 +24,8 @@ export function applyFollowups(snapshot: FollowupsSnapshot): void {
   useFollowups.setState({ rows: snapshot.rows, byThread, due, onTop, loaded: true });
   const s = getApp();
   if (!before.loaded && useList.getState().itemsKey === "") return;
-  const key = (rows: readonly FollowupRow[]) => JSON.stringify(rows.map((r) => [r.id, r.state, r.inboxState, r.dueAt]));
+  // a promise's Later (plan 204, the fifth panel round) moves its place in the list, not its moment
+  const key = (rows: readonly FollowupRow[]) => JSON.stringify(rows.map((r) => [r.id, r.state, r.inboxState, r.dueAt, r.deferredUntil]));
   // the Inbox's top is what's on it; the Follow-ups list is all of them
   const changed = s.followups ? key(before.rows) !== key(snapshot.rows) : inPlainInbox(s) && JSON.stringify(before.rows.filter((r) => r.inboxState === "onTop").map((r) => r.threadId)) !== JSON.stringify(snapshot.rows.filter((r) => r.inboxState === "onTop").map((r) => r.threadId));
   if (changed) void reloadList({ keepSelection: true });

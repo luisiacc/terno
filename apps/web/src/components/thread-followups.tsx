@@ -1,4 +1,4 @@
-import { defaultRemindAt, promiseLaterFrom, type FollowupRow, type MessageDetail, type ThreadDetail } from "@terno/core";
+import { defaultRemindAt, type FollowupRow, type MessageDetail, type ThreadDetail } from "@terno/core";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuShortcut, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
@@ -10,7 +10,7 @@ import { useEffect, useRef, useState } from "react";
 import { followupsOffered, modelName } from "~/lib/ai";
 import { whenDate } from "~/lib/when";
 import { useCanDraft } from "~/lib/ai-draft-state";
-import { laterNote, laterPresets } from "~/lib/dated";
+import { laterPresets } from "~/lib/dated";
 import { followupLine, followupWhen } from "~/lib/followups";
 import { actOnThreadPromise } from "~/lib/today-task";
 import { useDrafts } from "~/lib/drafts";
@@ -41,9 +41,8 @@ function Line({ row, messages }: { row: FollowupRow; messages: readonly MessageD
   const canNudge = useCanDraft();
   const now = new Date();
   const awaiting = row.kind === "awaiting";
-  // plan 204, the third panel round: Today places a dated promise by its day, so its Later is another day
-  const span = { from: awaiting ? null : promiseLaterFrom(row, now.getTime()), before: null, limit: null };
-  const later = laterPresets(span, now.getTime());
+  // plan 204 (the fifth panel round): a promise's Later is its own, so any moment ahead, as a nudge's
+  const later = laterPresets({ before: null, limit: null }, now.getTime());
   const mine = useApp((s) => s.accounts).map((a) => a.email);
   const source = messageSource(messages, row.messageId, mine);
   // the nudge Write a follow-up made, still a draft: the line offers it rather than another
@@ -105,8 +104,6 @@ function Line({ row, messages }: { row: FollowupRow; messages: readonly MessageD
           <PopoverContent anchor={laterRef} align="start" className="w-80" data-testid="followup-later-custom" aria-label={t("followup.later")}>
             <WhenForm
               start={defaultRemindAt(new Date())}
-              from={span.from}
-              notes={laterNote(span)}
               testPrefix="followup-later"
               submit={t("dated.laterSet")}
               onSet={(at) => {

@@ -1,4 +1,4 @@
-import { datedGroup, defaultRemindAt, laterBefore, localDay, promiseLaterFrom, remindPresets, type DatedKind, type DatedRow, type RemindPreset, type TodayWhy } from "@terno/core";
+import { datedGroup, defaultRemindAt, laterBefore, localDay, remindPresets, type DatedKind, type DatedRow, type RemindPreset, type TodayWhy } from "@terno/core";
 import { getLocale, t } from "@terno/i18n";
 import { useEffect, useState } from "react";
 import { usd } from "~/lib/ai";
@@ -150,12 +150,11 @@ export function taskOf(why: TodayWhy, now = Date.now()): TodayTask | null {
 }
 
 /**
- * Where Later may go now (the third panel round): at or after `from` (a dated promise of yours: another day), before
- * `before` (a timed item still ahead: its own moment, `limit` "due" or "starts"; a Plan: its end, "ends"). One rule for
- * the row's menu, the conversation's line, the picker and the backend's check (`laterBefore`, `promiseLaterFrom`).
+ * Where Later may go now (the third panel round): before `before` (a timed item still ahead: its own moment, `limit` "due"
+ * or "starts"; a Plan: its end, "ends"). One rule for the row's menu, the conversation's line, the picker and the
+ * backend's check (`laterBefore`). A promise of yours may go anywhere ahead: its Later is its own (the fifth panel round).
  */
 export interface LaterWindow {
-  from: number | null;
   before: number | null;
   limit: "due" | "starts" | "ends" | null;
 }
@@ -164,23 +163,23 @@ export interface LaterWindow {
 export function itemLaterWindow(item: Pick<DatedRow, "kind" | "dueDay" | "dueAt" | "timed">, now = Date.now()): LaterWindow {
   const before = laterBefore(item, now);
   const limit = before === null ? null : item.timed && item.dueAt > now ? (datedGroup(item.kind) === "plans" ? "starts" : "due") : "ends";
-  return { from: null, before, limit };
+  return { before, limit };
 }
 
 export function laterWindow(task: TodayTask, now = Date.now()): LaterWindow {
   if (task.kind === "dated") return itemLaterWindow({ ...task.item, dueAt: task.dueAt }, now);
-  return { from: promiseLaterFrom({ dated: task.dated === true }, now), before: null, limit: null };
+  return { before: null, limit: null };
 }
 
 /** Plan 204 (after the panel, fix 10; the third panel round): Later's choices now, the reminder's presets in its window. */
 export function laterPresets(w: LaterWindow, now = Date.now()): RemindPreset[] {
-  return remindPresets(new Date(now), "always").filter((p) => (w.from === null || p.at >= w.from) && (w.before === null || p.at < w.before));
+  return remindPresets(new Date(now), "always").filter((p) => w.before === null || p.at < w.before);
 }
 
 export const laterChoices = (task: TodayTask, now = Date.now()): RemindPreset[] => laterPresets(laterWindow(task, now), now);
 
-/** Why the picker's moment can't be set: too early for a dated promise, or too late for the item ("before it's due"). */
-export const laterNote = (w: LaterWindow): { early: string; late: string } => ({ early: t("dated.laterNextDay"), late: t(w.limit === "due" ? "dated.laterBeforeDue" : w.limit === "starts" ? "dated.laterBeforeStart" : "dated.laterPastEnd") });
+/** Why the picker's moment can't be set: too late for the item ("before it's due"). */
+export const laterNote = (w: LaterWindow): { late: string } => ({ late: t(w.limit === "due" ? "dated.laterBeforeDue" : w.limit === "starts" ? "dated.laterBeforeStart" : "dated.laterPastEnd") });
 
 const HOUR = 3_600_000;
 
