@@ -286,8 +286,12 @@ function digestThread(): ThreadSummary {
   return { id: DIGEST_ROW_ID, accountId: 0, subject: t("today.newsletters"), snippet: "", fromName: t("today.newsletters"), fromEmail: "", lastDate: 0, messageCount: 1, unread: false, starred: false, hasAttachments: false, categoryIds: [], inInbox: false, inSpam: false, inTrash: false } as unknown as ThreadSummary;
 }
 
-/** A row's moment if it's timed (a timed dated item's): a day's timed rows come first, by it. */
-const timedAt = (item: TodayItem): number | null => (item.why.kind === "dated" && item.why.item?.timed && item.why.dueAt !== undefined ? item.why.dueAt : null);
+/** A row's time of day if it's timed (a timed dated item's): a day's timed rows come first, by it (put off, it may have been due another day). */
+function timedAt(item: TodayItem): number | null {
+  if (item.why.kind !== "dated" || !item.why.item?.timed || item.why.dueAt === undefined) return null;
+  const d = new Date(item.why.dueAt);
+  return d.getHours() * 60 + d.getMinutes();
+}
 
 /**
  * Plan 210: the sections as the feed's groups, in order: Missed, Today, then a group per day ahead; while it's open, Coming

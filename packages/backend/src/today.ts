@@ -78,6 +78,12 @@ const byDay = (a: DayOrder, b: DayOrder): number =>
  */
 const byTime = (a: { at: DayOrder }, b: { at: DayOrder }): number => (a.at.timed === b.at.timed ? a.at.dueAt - b.at.dueAt : a.at.timed ? -1 : 1);
 
+/** A moment's time of day, in minutes (plan 210: a day's timed rows by it, whichever day they were first due). */
+const clockOf = (ms: number): number => {
+  const d = new Date(ms);
+  return d.getHours() * 60 + d.getMinutes();
+};
+
 /** A dated item or a promise of yours, ranked in its group before `dedupe` picks each conversation's row. */
 interface Ranked {
   threadId: number;
@@ -679,9 +685,9 @@ export class TodayService {
       placed.push({ group: "today", threadId: ask.threadId, why: promise ? promiseWhy(promise) : datedWhy(ask, false) });
     }
     for (const r of owedNow.sort((a, b) => a.dueAt - b.dueAt)) placed.push({ group: "today", threadId: r.threadId, why: promiseWhy(r) });
-    // (Codex code review: by the day it's under, then the timed by time, then the rest; never the original day first, which
-    // two put off to the same day don't share)
-    const byItsDay = (a: Ranked, b: Ranked): number => (a.day! < b.day! ? -1 : a.day! > b.day! ? 1 : byTime(a, b));
+    // (Codex code review: by the day it's under, then the timed by their time of day, then the rest; never the original
+    // day first, which two put off to the same day don't share)
+    const byItsDay = (a: Ranked, b: Ranked): number => (a.day! < b.day! ? -1 : a.day! > b.day! ? 1 : a.at.timed && b.at.timed ? clockOf(a.at.dueAt) - clockOf(b.at.dueAt) || a.at.dueAt - b.at.dueAt : byTime(a, b));
     const days = ranked.day.sort(byItsDay).map((s): Placed => ({ group: "day", day: s.day, threadId: s.threadId, why: s.why }));
     // the count reads none of what's waiting (its own indexed count there, the stores' `countWith`), nor your reminders
     // and Coming up, which never take a waiting thread from it
