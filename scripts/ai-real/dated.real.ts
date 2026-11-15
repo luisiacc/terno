@@ -18,7 +18,10 @@ import { realTasks, spendReport, type RealTarget } from "./harness";
  * details, an instruction in the mail) beside a known person's real one, and display text never cut inside a word; prompt
  * v9's offers that aren't asks, an alert's stated deadline, "reply C to confirm" in an event's words, a declined card and
  * its bill as one payment beside an unrelated alert that stays, and the sixth panel round's soccer game as the worker
- * shows it (a list's mail, two of the coach's games open). A reading that fails (an answer cut off) is counted, and
+ * shows it (a list's mail, two of the coach's games open); prompt v10's times in another zone than the reader's (`zone`;
+ * across a midnight, a daylight-saving week and an abbreviation that names two), a newsletter's listing that names the reader
+ * beside their own logistics mail, a list's move and cancellation with another open item, and asks for credentials or an
+ * ID. A reading that fails (an answer cut off) is counted, and
  * TERNO_AI_DATED_REPEAT reads each case that many times. Under the harness's hard cap; needs the owner's go-ahead: run
  * alone with TERNO_AI_DATED=1. TERNO_AI_DATED_MODEL picks the model (GPT Luna by default; a `claude-` model runs on
  * Anthropic), TERNO_AI_DATED_LANGUAGE the app's language (en by default).
@@ -27,8 +30,8 @@ import { realTasks, spendReport, type RealTarget } from "./harness";
  * takes away what the user still has to do.
  */
 type Accept<T> = T | T[];
-/** `time`: what it must be (null: none); `text`: patterns its words must each match, in either language (prompt v5) */
-interface Expected { kind: Accept<DatedKind>; due: Accept<string | null>; time?: string | null; text?: string[] }
+/** `time`: what it must be (null: none); `text`: patterns its words must each match, in either language (prompt v5); `textNot`: ones they mustn't (v10: no zone named when it's the reader's own) */
+interface Expected { kind: Accept<DatedKind>; due: Accept<string | null>; time?: string | null; text?: string[]; textNot?: string[] }
 interface Case {
   id: string;
   reader: { name: string; email: string };
@@ -37,11 +40,13 @@ interface Case {
   subject: string;
   messages: { from: string; text: string; to?: string[]; cc?: string[] }[];
   /** a move's `text`: patterns its new words must each match, `textNot` ones they mustn't (prompt v8); `keep`: what words it gives, if any, must still say */
-  dated: { receivedAt: string; automated: boolean; open: { label: string; kind: DatedKind | "promise"; text: string; due?: string | null; time?: string | null }[]; items: Expected[]; also: Expected[]; settled: string[]; moved?: { label: string; due: string; time?: string; text?: string[]; textNot?: string[]; keep?: string[] }[]; mayMove?: { label: string; due: string; time?: string | null }[] };
+  /** `zone`: the reader's (prompt v10); by the case's language when it doesn't say, as the mail was written for them */
+  dated: { receivedAt: string; zone?: string; automated: boolean; open: { label: string; kind: DatedKind | "promise"; text: string; due?: string | null; time?: string | null }[]; items: Expected[]; also: Expected[]; settled: string[]; moved?: { label: string; due: string; time?: string; text?: string[]; textNot?: string[]; keep?: string[] }[]; mayMove?: { label: string; due: string; time?: string | null }[] };
 }
 
 /** TERNO_AI_DATED_CASES: only these ids (comma-separated), to look at a few again */
 const ONLY = process.env.TERNO_AI_DATED_CASES?.split(",").filter(Boolean);
+/** TERNO_AI_DATED_RAW=1 (below): a failed case shows the model's own answer */
 /** TERNO_AI_DATED_REPEAT: each case read this many times, to measure how often a reading goes wrong (the sixth panel round's soccer game) */
 const REPEAT = Math.max(1, Number(process.env.TERNO_AI_DATED_REPEAT ?? 1));
 const CASES: Case[] = readFileSync(join(import.meta.dirname, "corpus", "dated", "dated.jsonl"), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line) as Case).filter((c) => !ONLY?.length || ONLY.includes(c.id)).flatMap((c) => Array.from({ length: REPEAT }, () => c));
@@ -88,7 +93,7 @@ describe.skipIf(process.env.TERNO_AI_DATED !== "1")("dated items on a small mode
       answers.length = 0;
       let r: Awaited<ReturnType<typeof tasks.readDates>>;
       try {
-        r = await tasks.readDates({ text: mail.text, subject: c.subject, from: { name: nameOf(mail.from), automated: c.dated.automated }, reader, to: to.map(nameOf), cc: cc.map(nameOf), receivedAt: c.dated.receivedAt, open: c.dated.open, language: LANGUAGE });
+        r = await tasks.readDates({ text: mail.text, subject: c.subject, from: { name: nameOf(mail.from), automated: c.dated.automated }, reader, to: to.map(nameOf), cc: cc.map(nameOf), receivedAt: c.dated.receivedAt, zone: c.dated.zone ?? (c.language === "es" ? "Europe/Madrid" : "America/New_York"), open: c.dated.open, language: LANGUAGE });
       } catch (error) {
         // the sixth panel round: an answer cut off is a reading the worker loses, so it's counted, not the run's end
         failures++;
@@ -117,6 +122,11 @@ describe.skipIf(process.env.TERNO_AI_DATED !== "1")("dated items on a small mode
           if (new RegExp(pattern, "iu").test(left[at]!.text)) continue;
           wrongText++;
           problems.push(`text "${left[at]!.text}" lacks /${pattern}/`);
+        }
+        for (const pattern of e.textNot ?? []) {
+          if (!new RegExp(pattern, "iu").test(left[at]!.text)) continue;
+          wrongText++;
+          problems.push(`text "${left[at]!.text}" has /${pattern}/`);
         }
         left.splice(at, 1);
       }
@@ -218,6 +228,8 @@ describe.skipIf(process.env.TERNO_AI_DATED !== "1")("dated items on a small mode
         }
       }
       const failed = problems.some((p) => !p.startsWith("note: "));
+      // TERNO_AI_DATED_RAW=1: what the model wrote, before the app read it (prompt v10's zone: its day and time as the mail gave them)
+      if (failed && process.env.TERNO_AI_DATED_RAW === "1") problems.push(`raw: ${(answers.at(-1) ?? "").replace(/\s+/g, " ")}`);
       lines.push(`${failed ? "✗" : "✓"} ${c.id} [${c.tags.join(",")}] ${r.items.map((i) => `${i.kind} ${i.due}${i.time ? ` ${i.time}` : ""} "${i.text}"`).join("; ") || "nothing"}${r.moved?.length ? ` · moved ${r.moved.map((m) => `${m.label} ${m.due}${m.time ? ` ${m.time}` : ""}${m.text ? ` "${m.text}"` : ""}`).join(", ")}` : ""}${problems.length ? `\n    ${problems.join("\n    ")}` : ""}`);
     }
     process.stderr.write(`${lines.join("\n")}\n${JSON.stringify({ model: MODEL, language: LANGUAGE, found, expected, wrongItems, invented, rightTimes, times, wrongSettled, missedSettled, wrongMoved, missedMoved, unsafe, wrongText, unattributed, selfAttributed, madeUpDetail, rightMoveTexts, moveTexts, wrongMoveText, promiseText, cut, cutWords, failures })}\n${spendReport()}\n`);

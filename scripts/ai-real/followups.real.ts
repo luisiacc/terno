@@ -8,7 +8,8 @@ import { realTasks, spendReport, type RealTarget } from "./harness";
  * (Haiku by default; a `gpt-` model runs on OpenAI).
  *
  * Prompt v9 (plan 204's fifth panel round): a promise's text says what, to whom and the time it states ("call Marcus at
- * 4:00 PM", not "call"): `text`, patterns it must each match; `textNot`, ones it mustn't (the day is in `due`).
+ * 4:00 PM", not "call"): `text`, patterns it must each match; `textNot`, ones it mustn't (the day is in `due`). Prompt v10
+ * (the seventh panel round): what the sender undertakes, alone or for the team, against a plan they only report, en and es.
  */
 interface Case { text: string; promise: boolean; replies: boolean; due?: string | string[]; es?: boolean; to?: string; words?: string[]; wordsNot?: string[] }
 const TODAY = "Monday, 2 March 2026, 11:00";
@@ -39,6 +40,17 @@ const base: Case[] = [
   { text: "Great meeting today. I'll send you the deck tomorrow morning.", promise: true, replies: false, due: "2026-03-03", to: "Jess", words: ["send", "Jess", "deck"], wordsNot: ["tomorrow", "tuesday"] },
   { text: "Gracias por la visita. Te mando el presupuesto el viernes.", promise: true, replies: false, due: "2026-03-06", es: true, to: "Carmen", words: ["enviar|mandar", "Carmen", "presupuesto"], wordsNot: ["viernes"] },
   { text: "Got it. I'll review the contract and get back to you by 3pm today.", promise: true, replies: false, to: "Tom", words: ["contract", "\\b3(:00)?\\s*(PM|p\\.m\\.)|15:00"] },
+  // prompt v10 (the seventh panel round): undertaking something, alone or for the team, is a promise; reporting a plan, theirs or a team's, isn't
+  { text: "We'll send you the revised quote on Friday.", promise: true, replies: false, due: "2026-03-06" },
+  { text: "De nuestra parte, te enviamos la cotización revisada el viernes.", promise: true, replies: false, due: "2026-03-06", es: true },
+  { text: "We'll look into it and get back to you.", promise: true, replies: false },
+  { text: "Vamos a revisarlo y te avisamos.", promise: true, replies: false, es: true },
+  { text: "Quick update on the Hartley account: our plan is to email him the draft once Legal signs off.", promise: false, replies: false },
+  { text: "Una actualización sobre la cuenta Hartley: nuestro plan es enviarle el borrador cuando Legal lo apruebe.", promise: false, replies: false, es: true },
+  { text: "FYI, Legal will prepare the documentation next week.", promise: false, replies: false },
+  { text: "Para que lo sepas, Legal va a preparar la documentación la próxima semana.", promise: false, replies: false, es: true },
+  { text: "Legal will prepare the documentation, and I'll send it to you as soon as it's ready.", promise: true, replies: false, words: ["send", "document"] },
+  { text: "Legal va a preparar la documentación y yo te la envío en cuanto esté lista.", promise: true, replies: false, es: true, words: ["enviar|mandar", "documentaci[oó]n"] },
 ];
 // every wording again, in a thread that gives it something to answer: about 150 readings in all
 const CASES = Array.from({ length: 10 }, () => base).flat();
