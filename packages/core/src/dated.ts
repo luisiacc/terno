@@ -82,6 +82,16 @@ export interface DatedRow {
   model: string | null;
   provider: string | null;
   createdAt: number;
+  /**
+   * Plan 210 (iteration 2): shown before its kind's lead, decided when it was read (`checkDates`): a person's request to the
+   * reader from its arrival (Today's people, "by Nov 30"), a delivery that needs someone there from the day before. Absent:
+   * not (stored before it).
+   */
+  early?: boolean;
+  /** Plan 210 (iteration 2): the same thing as another item (`ItemRef` key, "dated:42" or "promise:7"): one row, its canonical's */
+  sameAs?: string | null;
+  /** Plan 210 (iteration 2): a related detail of this dated item (a return leg under its outbound flight): its `Also` while it shows */
+  detailOf?: number | null;
 }
 
 export interface DatedSetting {
@@ -175,11 +185,31 @@ function leadStart(kind: DatedKind, day: Date): number {
  * shows by today's without a rescheduling pass: the earlier of its stored `actAt` and its kind's lead before its day, never
  * before its mail came (as `datedTiming`). An alert, a delivery and what has no day keep their stored moment.
  */
-function showsFrom(r: Pick<DatedRow, "kind" | "dueDay" | "dated" | "actAt" | "arrivedAt">): number {
+function showsFrom(r: Pick<DatedRow, "kind" | "dueDay" | "dated" | "actAt" | "arrivedAt" | "early">): number {
+  // plan 210 (iteration 2): shown early, read from the item (a move keeps it): a person's request from its arrival, a
+  // delivery that needs someone there from the day before
+  if (r.early && r.dated) {
+    if (r.kind === "respond") return r.arrivedAt;
+    const day = r.kind === "delivery" ? localDay(r.dueDay) : null;
+    if (day) return Math.max(r.arrivedAt, dayAt(day, -1, 0));
+  }
   if (!r.dated || r.kind === "alert" || r.kind === "delivery" || r.kind === "ask") return r.actAt;
   const day = localDay(r.dueDay);
   return day ? Math.max(r.arrivedAt, Math.min(r.actAt, leadStart(r.kind, day))) : r.actAt;
 }
+
+/**
+ * Plan 210 (iteration 2, the panel's A5): a request shown from its arrival sits in Today's people (its column "by Nov 30")
+ * until its day comes, never under a far day's heading, nor behind Coming up.
+ */
+export const shownEarly = (r: Pick<DatedRow, "kind" | "dated" | "early" | "dueDay">, today: string): boolean => r.early === true && r.dated && r.kind === "respond" && r.dueDay > today;
+
+/**
+ * Plan 210 (iteration 2, A6): a delivery that needs someone there (a signature, an adult, an ID), by its words: shown from the
+ * day before. Read once, when the item is read (`checkDates`), never on a count.
+ */
+const PRESENCE = /\b(signature|sign(?:ed)? for|adult|someone (?:must|needs? to|has to|should) be (?:home|there|present|available)|must be present|id (?:required|needed)|in person|firma|firmar|adulto|alguien (?:debe|tiene que|necesita) estar|presente)\b/iu;
+export const needsPresence = (text: string, quote = ""): boolean => PRESENCE.test(`${text}\n${quote}`);
 
 /** An alert that named no day: Deadlines' for its week (`alertUntil`), never Missed. */
 export const undatedAlert = (r: Pick<DatedRow, "kind" | "dated">): boolean => r.kind === "alert" && !r.dated;
@@ -210,7 +240,7 @@ export const askEnd = (r: Pick<DatedRow, "arrivedAt">): number => r.arrivedAt + 
  * Revision 8: where an item sits now. One rule for the list, the count and the timer. Later (`deferredUntil`) is honoured in
  * every group: a deferred item is never Missed.
  */
-export function datedPlace(r: Pick<DatedRow, "kind" | "state" | "dueDay" | "dueAt" | "timed" | "dated" | "actAt" | "deferredUntil" | "arrivedAt">, now: number): DatedPlace {
+export function datedPlace(r: Pick<DatedRow, "kind" | "state" | "dueDay" | "dueAt" | "timed" | "dated" | "actAt" | "deferredUntil" | "arrivedAt" | "early">, now: number): DatedPlace {
   if (r.state !== "open") return "hidden";
   const group = datedGroup(r.kind);
   const deferred = r.deferredUntil !== null && r.deferredUntil > now;
@@ -323,7 +353,7 @@ export function missedUntil(r: Pick<DatedRow, "dueDay" | "deferredUntil">): numb
  * Revision 11: the next moment, strictly after `now`, at which Today changes by the clock alone: an item showing,
  * entering Coming up, a day ending (Missed), Missed ending, a Plan ending, a deferral ending, a promise's day ending.
  */
-export function nextTodayChange(items: readonly Pick<DatedRow, "kind" | "state" | "dueDay" | "dueAt" | "timed" | "dated" | "actAt" | "deferredUntil" | "arrivedAt">[], promises: readonly PromiseFacts[], now: number): number | null {
+export function nextTodayChange(items: readonly Pick<DatedRow, "kind" | "state" | "dueDay" | "dueAt" | "timed" | "dated" | "actAt" | "deferredUntil" | "arrivedAt" | "early">[], promises: readonly PromiseFacts[], now: number): number | null {
   let next = Infinity;
   const consider = (at: number) => {
     if (at > now && at < next) next = at;
@@ -416,7 +446,8 @@ export function datedGroupAt(r: Parameters<typeof datedPlace>[0], now: number, t
   if (place === "missed") return MISSED;
   const undated = r.kind === "ask" || undatedAlert(r);
   if (place === "comingUp") return { group: "comingUp", day: comingUpDay(undated ? null : r.dueDay, r.deferredUntil, today) };
-  if (undated || r.dueDay <= today) return TODAY;
+  // plan 210 (iteration 2): a request shown from its arrival is Today's (its people) until its day
+  if (undated || r.dueDay <= today || shownEarly(r, today)) return TODAY;
   return { group: "day", day: r.dueDay };
 }
 

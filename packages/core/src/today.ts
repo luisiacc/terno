@@ -2,6 +2,7 @@ import type { AppSettings } from "./rpc/contract";
 import type { ThreadSummary } from "./types";
 import { aiReady } from "./ai-routing";
 import { datedGroup, type DatedKind, type TodayGroupKind } from "./dated";
+import type { FeedRowId, ItemRef } from "./today-items";
 import { withoutQuotes } from "./text";
 
 /** Plan 145: what needs you today, and newsletters folded into one digest. Local but for the digest, which is its own opt-in. */
@@ -50,10 +51,23 @@ export interface TodayWhy {
   wrote?: boolean;
   /** plan 204: its day is over and nothing was done (a dated item, or a dated promise of yours) */
   missed?: boolean;
-  /** plan 204: a dated item, what the row's Done, Later and Undo act on */
-  item?: { id: number; revision: number; kind: DatedKind; dueDay: string; timed: boolean; dated: boolean };
-  /** plan 204 (Codex review): the promise this row shows, what D, Done and Remove act on (never the thread's most urgent) */
-  promise?: { id: number; revision: number; /** it names a day (`FollowupRow.dated`): only then does its line say "Due …" */ dated?: boolean };
+  /**
+   * plan 204: a dated item, what the row's Done, Later and Undo act on. Plan 210 (iteration 2): `early`, a person's request
+   * shown in Today's people before its day ("by Nov 30"); `note`, the mail's own time in its zone when it isn't the reader's
+   * ("5:00 PM ET"), taken out of `text` for the when column (one time per row)
+   */
+  item?: { id: number; revision: number; kind: DatedKind; dueDay: string; timed: boolean; dated: boolean; early?: boolean; note?: string | null };
+  /**
+   * plan 204 (Codex review): the promise this row shows, what D, Done and Remove act on (never the thread's most urgent).
+   * Plan 210 (iteration 2): `timed`, its words state a time (`dueAt` is it); `note`, that time as written when its zone isn't
+   * the reader's; `promisedAt`, the day it was first promised for, when it was broken and then given a new one ("promised Tue")
+   */
+  promise?: { id: number; revision: number; /** it names a day (`FollowupRow.dated`): only then does its line say "Due …" */ dated?: boolean; timed?: boolean; note?: string | null; promisedAt?: number | null };
+  /**
+   * Plan 210 (iteration 2): every item this row is (true duplicates: the same dinner from the restaurant and from a friend,
+   * an errand read as a bill and as your promise), the shown one first: what Done, Later and Remove act on, all at once
+   */
+  members?: ItemRef[];
 }
 
 /**
@@ -62,11 +76,13 @@ export interface TodayWhy {
  * answer), your reminder (3), then a plan or a delivery (4), which the feed draws quieter.
  */
 export function dayTier(why: Pick<TodayWhy, "kind" | "item">): number {
-  if (why.kind === "dated") return !why.item ? 0 : why.item.kind === "ask" ? 2 : datedGroup(why.item.kind) === "plans" ? 4 : 0;
+  // plan 210 (iteration 2): a person's request shown before its day is with the people, as their ask is
+  if (why.kind === "dated") return !why.item ? 0 : why.item.kind === "ask" || why.item.early ? 2 : datedGroup(why.item.kind) === "plans" ? 4 : 0;
   return why.kind === "promise" ? 1 : why.kind === "waiting" ? 2 : 3;
 }
 
-const timedWhy = (why: Pick<TodayWhy, "kind" | "item">): boolean => why.kind === "dated" && why.item?.timed === true;
+/** A row whose moment is a time of day: a timed dated item, or (plan 210, iteration 2) a promise whose words state one. */
+const timedWhy = (why: Pick<TodayWhy, "kind" | "item" | "promise">): boolean => (why.kind === "dated" ? why.item?.timed === true : why.kind === "promise" && why.promise?.timed === true);
 
 /** A moment's time of day, in minutes. */
 const minuteOfDay = (ms: number): number => {
@@ -74,7 +90,7 @@ const minuteOfDay = (ms: number): number => {
   return d.getHours() * 60 + d.getMinutes();
 };
 
-type DayWhy = Pick<TodayWhy, "kind" | "item" | "dueAt">;
+type DayWhy = Pick<TodayWhy, "kind" | "item" | "dueAt" | "promise">;
 
 /** What `inDayOrder` compares of a row, read once: its tier, timed or not, its moment (or time of day), its moment. */
 interface DayKey {
@@ -112,8 +128,9 @@ export function sortInDay<T>(rows: readonly T[], why: (row: T) => DayWhy, clock:
 }
 
 /**
- * The fifth panel round (change 6): another open item of the row's conversation that would show in Today (not put off,
- * not over), the soonest, so a second date isn't hidden under the first: "Also Thu 9:00 AM · Board meeting".
+ * Plan 210 (iteration 2): a related detail of the row's item, said on its second line: a return leg under its outbound flight
+ * ("Also Sun 6:10 PM · Return flight to Austin"). Only that (`DatedRow.detailOf`): another obligation of the conversation is
+ * a row of its own. Once the row's item is over, the detail is a row of its own.
  */
 export interface TodayAlso {
   /** a dated item's kind, or a promise of yours */
@@ -127,13 +144,30 @@ export interface TodayAlso {
 }
 
 export interface TodayItem {
+  /** plan 210 (iteration 2): the row's identity (`FeedRowId`), what the feed keys it by: two items of one conversation are two */
+  id: FeedRowId;
   thread: ThreadSummary;
   why: TodayWhy;
   /** the stored summary's first sentence, only when it's current */
   summary?: string;
-  /** a row with a task of its own: its conversation's next one (never what the row's D, Done and Later act on) */
+  /** plan 210 (iteration 2): a related detail of its item (a return leg), never another obligation */
   also?: TodayAlso;
 }
+
+/**
+ * Plan 210 (iteration 2): the header's numbers and the sidebar's ("6 today · 8 this week"; the badge Missed + Today). What
+ * counts is `todayCounted`'s (never a Plan's kind, nor a reminder, nor Coming up): `missed`, the rows under Missed; `today`,
+ * those under Today (due or happening today, what has no date, a person's request shown early); `thisWeek`, those under a
+ * day ahead through the week's end (`weekEndDay`, Sunday).
+ */
+export interface TodayCounts {
+  missed: number;
+  today: number;
+  thisWeek: number;
+}
+
+/** The sidebar's badge and the morning notice: what's Missed and what's Today's. */
+export const todayBadge = (c: TodayCounts): number => c.missed + c.today;
 
 /**
  * Plan 204: every row that's for today, each thread once, in `TODAY_GROUP_ORDER`; Coming up last, and never counted. Plan
@@ -196,8 +230,8 @@ export interface TodayList {
   sections: TodaySection[];
   digest: DigestRow | null;
   now: number;
-  /** the open and checked rows no section holds any more: kept in place until the selection lets go (revision 9) */
-  held: ThreadSummary[];
+  /** plan 210 (iteration 2): the header's numbers, from the same projection as the rows */
+  counts: TodayCounts;
   /** plan 210: the history's first page (or down to the line asked for), when asked for (What matters drawn as the feed) */
   history?: TodayHistoryPage;
 }
@@ -228,6 +262,10 @@ export function historyAfter(key: HistoryKey, src: 0 | 1): { at: number; id: num
 export type HistoryOutcome = "done" | "dismissed" | "settled" | "over";
 
 export interface TodayHistoryItem {
+  /** plan 210 (iteration 2): its row's identity, the closed item's (a merged one's canonical's) */
+  id: FeedRowId;
+  /** the closed item the line is: what the reader's line shows when it's opened */
+  item: ItemRef;
   thread: ThreadSummary;
   key: HistoryKey;
   outcome: HistoryOutcome;
