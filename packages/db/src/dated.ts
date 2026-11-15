@@ -222,18 +222,17 @@ export function closedDatedPage(db: Db, o: { since: number; after: ClosedAt | nu
     .map(toRow);
 }
 
-/** Plan 210: each thread's newest closing since `since`, by its thread index. */
+/** Plan 210: each thread's newest closing since `since`: one seek of `dated_closed_thread` each (never a thread's every row). */
 export function newestClosedDated(db: Db, threadIds: readonly number[], since: number): Map<number, ClosedAt> {
-  const rows = threadIds.length ? db.all<{ thread_id: number; closed_at: number; id: number }>("SELECT thread_id, closed_at, id FROM dated_items INDEXED BY dated_thread WHERE thread_id IN (SELECT value FROM json_each(?)) AND state <> 'open' AND closed_at >= ?", JSON.stringify([...new Set(threadIds)]), since) : [];
-  return newestBy(rows);
+  return newestEach(db, "SELECT closed_at AS at, id FROM dated_items INDEXED BY dated_closed_thread WHERE thread_id = ? AND state <> 'open' AND closed_at >= ? ORDER BY closed_at DESC, id DESC LIMIT 1", threadIds, since);
 }
 
-/** Of these closings, each thread's newest by `(closed_at, id)`. */
-export function newestBy(rows: readonly { thread_id: number; closed_at: number; id: number }[]): Map<number, ClosedAt> {
+/** A newest-closing query, one row a thread. */
+export function newestEach(db: Db, sql: string, threadIds: readonly number[], since: number): Map<number, ClosedAt> {
   const out = new Map<number, ClosedAt>();
-  for (const r of rows) {
-    const was = out.get(r.thread_id);
-    if (!was || r.closed_at > was.at || (r.closed_at === was.at && r.id > was.id)) out.set(r.thread_id, { at: r.closed_at, id: r.id });
+  for (const id of new Set(threadIds)) {
+    const top = db.get<ClosedAt>(sql, id, since);
+    if (top) out.set(id, top);
   }
   return out;
 }

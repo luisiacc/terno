@@ -478,6 +478,14 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
       today(page).publish?.();
       const lines = today(page).history;
       if (lines) publishHistory(lines);
+      // plan 210 (Codex code review, round 2): Today's answer is the history from its top: a page still on its way
+      // continued the one it replaces, so it's no one's now (its rows could bring back what this took away); the next one
+      // asks from this answer's continuation
+      const replaced = getApp().today && sameView;
+      if (replaced) {
+        pageSeq++;
+        pendingMore = null;
+      }
       inboxTop.ids = top.ids;
       inboxTop.pinned = top.pinned;
       inboxTop.total = top.total;
@@ -492,6 +500,7 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
         searchMs: "tookMs" in page ? (page.tookMs as number) : null,
         complete: "complete" in page ? (page.complete as boolean) : true,
         ...(counting ? {} : { unreadTotal: null }),
+        ...(replaced ? { loadingMore: false } : {}),
       });
     });
     restore?.();

@@ -209,26 +209,14 @@ export const datedWritten = (c: Ctx, keys: readonly string[]): Set<string> => {
   const correspondents = T(c, "correspondents");
   return new Set([...new Set(keys)].filter((key) => correspondents.get(key)?.written === 1));
 };
-/** Plan 210: of these rows, each thread's newest closing since `since`. */
-export function newestClosedOf(rows: Iterable<R>, since: number): Map<number, ClosedAt> {
-  const out = new Map<number, ClosedAt>();
-  for (const r of rows) {
-    const at = r.closed_at as number | null | undefined;
-    if (at == null || at < since) continue;
-    const was = out.get(r.thread_id as number);
-    if (!was || at > was.at || (at === was.at && (r.id as number) > was.id)) out.set(r.thread_id as number, { at, id: r.id as number });
-  }
-  return out;
-}
-
 /** Plan 210: closed rows newest first by `(closed_at, id)`, strictly after `after`, by the closing-time order. */
 export function closedDatedPage(c: Ctx, o: { since: number; after: ClosedAt | null; limit: number }): DatedRow[] {
   return c.closedOrders.dated.page(T(c, "dated_items"), o).map(toRow);
 }
 
+/** Plan 210: each thread's newest closing since `since`, one look each in the order (never a thread's every row). */
 export function newestClosedDated(c: Ctx, threadIds: readonly number[], since: number): Map<number, ClosedAt> {
-  const rows = T(c, "dated_items");
-  return newestClosedOf([...new Set(threadIds)].flatMap((id) => rows.by("fk_thread_id", id).filter((r) => r.state !== "open")), since);
+  return c.closedOrders.dated.newest(T(c, "dated_items"), threadIds, since);
 }
 
 export const threadDated = (c: Ctx, threadId: number): DatedRow[] => T(c, "dated_items").by("fk_thread_id", threadId).filter((r) => r.state === "open").sort(byAct).map(toRow);

@@ -130,6 +130,20 @@ test("the open part, the automated section and the history under Earlier, paged 
     await page.keyboard.press("Escape");
   });
 
+  await scenario("Codex code review, round 2: scrolled deep with nothing open, the Inbox and back, the feed is where it was", async () => {
+    await reach(page, "Pay bill 3.");
+    // the line at the top of the view, past the history's first page
+    await line(page, "Pay bill 3.").evaluate((el) => {
+      const sc = el.closest('[data-keep-scroll="list"]')!;
+      sc.scrollTop += el.getBoundingClientRect().top - sc.getBoundingClientRect().top;
+    });
+    await page.waitForTimeout(300);
+    await page.getByTestId("nav-inbox").click();
+    await expect(page.getByTestId("thread-list")).toBeVisible();
+    await page.getByTestId("nav-today").click();
+    await expect(line(page, "Pay bill 3.")).toBeInViewport({ timeout: 15_000 });
+  });
+
   await scenario("Done moves a line to the top of the history, quiet and saying so; Undo puts it back in the open part", async () => {
     await reach(page, "Wire payroll");
     await line(page, "Wire payroll").getByTestId("wm-item-open").click();
