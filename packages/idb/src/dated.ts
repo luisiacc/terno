@@ -1,4 +1,4 @@
-import { addressKey, ANSWERED_KINDS, DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, senderIsPerson, type DatedRow } from "@terno/core";
+import { addressKey, ANSWERED_KINDS, DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, senderIsPerson, THREAD_SCOPED_KINDS, type DatedRow } from "@terno/core";
 import { DATED_MARK_MS, DATED_SCAN_MARK_MS, datedTab, NEW_MAIL_MS, readerIn, recipientList, type DatedFinish, type DatedFinishOutcome, type DatedMark, type DatedSnapshot, type DatedSource } from "@terno/store";
 import { received, receivedOwn } from "./ai-summaries";
 import { T, type Ctx, type R } from "./mail";
@@ -11,6 +11,9 @@ const toRow = (r: R): DatedRow => ({
 });
 
 const byAct = (a: R, b: R) => a.act_at - b.act_at || a.id - b.id;
+
+/** As SQL's: a message reaches its thread's items, and its sender's elsewhere but for `THREAD_SCOPED_KINDS` (the sixth panel round). */
+const reaches = (r: R, src: { threadId: number; senderKey: string }): boolean => r.thread_id === src.threadId || (r.sender_key === src.senderKey && !THREAD_SCOPED_KINDS.includes(r.kind));
 
 /** Ingest's part (in its command): received live mail, by the new-mail rule, and since the feature went on. */
 export function markDatedMail(c: Ctx, messageIds: readonly number[], now: number, since: number | null): void {
@@ -106,7 +109,7 @@ export function openDatedFor(c: Ctx, o: { threadId: number; senderKey: string; b
   const rows = T(c, "dated_items");
   const found = new Map<number, R>();
   for (const r of rows.by("fk_thread_id", o.threadId)) if (r.state === "open") found.set(r.id, r);
-  for (const r of rows.by("sender", o.senderKey)) if (r.state === "open") found.set(r.id, r);
+  for (const r of rows.by("sender", o.senderKey)) if (r.state === "open" && reaches(r, o)) found.set(r.id, r);
   // Codex code review: an item whose conversation has anything in Spam is never material for a request (the owner's rule)
   const messages = T(c, "messages");
   const spam = new Map<number, boolean>();
@@ -187,7 +190,7 @@ export function finishDated(c: Ctx, w: DatedFinish): DatedFinishOutcome {
   }
   for (const s of w.settled) {
     const r = rows.get(s.id);
-    if (r && r.revision === s.revision && r.state === "open" && (r.thread_id === src.threadId || r.sender_key === src.senderKey)) rows.update(r, { state: "settled", closed_reason: "settled", closed_at: w.now, revision: r.revision + 1 });
+    if (r && r.revision === s.revision && r.state === "open" && reaches(r, src)) rows.update(r, { state: "settled", closed_reason: "settled", closed_at: w.now, revision: r.revision + 1 });
   }
   const followups = T(c, "followups");
   for (const m of w.movedPromises ?? []) {
@@ -198,7 +201,7 @@ export function finishDated(c: Ctx, w: DatedFinish): DatedFinishOutcome {
   for (const m of w.moved ?? []) {
     const r = rows.get(m.id);
     // its new words, if it gives some, in the same write (the fifth panel round)
-    if (r && r.state === "open" && (r.thread_id === src.threadId || r.sender_key === src.senderKey)) rows.update(r, { due_day: m.dueDay, due_at: m.dueAt, timed: m.timed ? 1 : 0, dated: 1, act_at: m.actAt, ...(m.text ? { text: m.text } : {}) });
+    if (r && r.state === "open" && reaches(r, src)) rows.update(r, { due_day: m.dueDay, due_at: m.dueAt, timed: m.timed ? 1 : 0, dated: 1, act_at: m.actAt, ...(m.text ? { text: m.text } : {}) });
   }
   marks.deleteRow(mark);
   return "written";

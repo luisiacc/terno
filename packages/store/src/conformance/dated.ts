@@ -387,6 +387,56 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
         expect((await store.dated.get(open!.id))!.dueDay).toBe("2026-11-20");
       });
 
+      it("the sixth panel round: a delivery or an ask is material for, and moved or settled by, its own conversation only; there, Later's Undo around a move stays as it was", async () => {
+        const { store, got, item, finish } = await setup();
+        const thread = (m: { m: IncomingMessage }) => ({ inReplyTo: m.m.rfcMessageId, references: [m.m.rfcMessageId!] });
+        const move = (id: number, dueDay: string, days: number) => ({ id, dueDay, dueAt: NOW + days * DAY, timed: false, actAt: NOW + days * DAY });
+        // one order's bill, then its parcel (newer), then the shop's next order elsewhere
+        const order = await got({ from: shop, date: NOW - 9500 });
+        await finish(order.id, order.thread, { rows: [item()] });
+        const shipped = await got({ from: shop, ...thread(order), date: NOW - 9000 });
+        expect(shipped.thread).toBe(order.thread);
+        await finish(shipped.id, shipped.thread, { rows: [item({ kind: "delivery", text: "Your parcel arrives", quote: "arrives Tuesday", dueDay: "2026-11-17", dueAt: NOW + 4 * DAY, actAt: NOW + 4 * DAY })] });
+        const rows = await store.dated.ofThread(order.thread);
+        const bill = rows.find((r) => r.kind === "pay")!;
+        const parcel = rows.find((r) => r.kind === "delivery")!;
+        const next = await got({ from: shop, date: NOW - 8000 });
+        const src = (await store.dated.source(next.id))!;
+        // as context: the bill crosses, the parcel doesn't, and it takes none of the limit
+        expect((await store.dated.openFor({ threadId: src.threadId, senderKey: src.senderKey, before: src.date, limit: 1 })).map((r) => r.id)).toEqual([bill.id]);
+        // as a write: neither moved nor settled from there
+        await finish(next.id, next.thread, { moved: [move(parcel.id, "2026-11-14", 1)], settled: [{ id: parcel.id, revision: parcel.revision }] });
+        expect(await store.dated.get(parcel.id)).toMatchObject({ state: "open", dueDay: "2026-11-17", revision: parcel.revision });
+        // a person's ask: not from their other conversation, either way
+        const mariana = { name: "Mariana Paz", email: "mariana@studio.test" };
+        const asked = await got({ from: mariana, date: NOW - 7000 });
+        await finish(asked.id, asked.thread, { rows: [item({ kind: "ask", text: "Answer Mariana about the quote", quote: "can you send a quote", dated: false })] });
+        const [ask] = await store.dated.ofThread(asked.thread);
+        const elsewhere = await got({ from: mariana, date: NOW - 6000 });
+        const from = (await store.dated.source(elsewhere.id))!;
+        expect(await store.dated.openFor({ threadId: from.threadId, senderKey: from.senderKey, before: from.date, limit: 10 })).toEqual([]);
+        await finish(elsewhere.id, elsewhere.thread, { moved: [move(ask!.id, "2026-11-20", 7)], settled: [{ id: ask!.id, revision: ask!.revision }] });
+        expect(await store.dated.get(ask!.id)).toMatchObject({ state: "open", dated: false, dueDay: ask!.dueDay, revision: ask!.revision });
+        // in its own conversation it is settled
+        const there = await got({ from: mariana, ...thread(asked), date: NOW - 5000 });
+        await finish(there.id, there.thread, { settled: [{ id: ask!.id, revision: ask!.revision }] });
+        expect((await store.dated.get(ask!.id))!.state).toBe("settled");
+        // the parcel moves in its own: Later, the move, Undo keeps the move's day and gives back the deferral
+        const laterUndo = (await store.dated.update(parcel.id, parcel.revision, { deferredUntil: NOW + DAY }))!;
+        const update = await got({ from: shop, ...thread(order), date: NOW - 4000 });
+        await finish(update.id, update.thread, { moved: [move(parcel.id, "2026-11-15", 2)] });
+        expect(await store.dated.get(parcel.id)).toMatchObject({ dueDay: "2026-11-15", deferredUntil: NOW + DAY });
+        expect(await store.dated.restore([{ snapshot: laterUndo, expectRevision: laterUndo.revision + 1 }])).toBe(1);
+        expect(await store.dated.get(parcel.id)).toMatchObject({ dueDay: "2026-11-15", deferredUntil: null, state: "open" });
+        // the move, Later, Undo
+        const again = await got({ from: shop, ...thread(order), date: NOW - 3000 });
+        await finish(again.id, again.thread, { moved: [move(parcel.id, "2026-11-16", 3)] });
+        const moved = (await store.dated.get(parcel.id))!;
+        const later = (await store.dated.update(parcel.id, moved.revision, { deferredUntil: NOW + DAY }))!;
+        expect(await store.dated.restore([{ snapshot: later, expectRevision: later.revision + 1 }])).toBe(1);
+        expect(await store.dated.get(parcel.id)).toMatchObject({ dueDay: "2026-11-16", deferredUntil: null, state: "open" });
+      });
+
       it("source: who it was sent to, and whether the reader is addressed, only copied, or not named (prompt version 2)", async () => {
         const { store, got } = await setup();
         const oren = { name: "Oren Vale", email: "oren@example.com" };

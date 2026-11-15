@@ -32,6 +32,11 @@ export const COMING_UP_DAYS = 14;
 export const ALERT_DAYS = 7;
 /** ...and sits among the deadlines as if due its third day (its stored `dueDay`, for order only). */
 const ALERT_ORDER_DAYS = 3;
+/**
+ * The sixth panel round (revisions 3 and 4): what only its own conversation may move or settle, as context and as a write.
+ * Each shipment is its own, and a person's ask is about the conversation it's in; other kinds move across the sender's mail.
+ */
+export const THREAD_SCOPED_KINDS: readonly DatedKind[] = ["delivery", "ask"];
 /** A Plan with a time is over this long after it. */
 export const PLAN_LENGTH_MS = 2 * 60 * 60 * 1000;
 /** Items a message can give, and the open ones a message is shown to settle. */
