@@ -1,5 +1,5 @@
 import { addressKey, ANSWERED_KINDS, DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, senderIsPerson, THREAD_SCOPED_KINDS, type DatedRow } from "@terno/core";
-import { DATED_MARK_MS, DATED_SCAN_MARK_MS, datedTab, NEW_MAIL_MS, readerIn, recipientList, type DatedFinish, type DatedFinishOutcome, type DatedMark, type DatedSnapshot, type DatedSource } from "@terno/store";
+import { DATED_MARK_MS, DATED_SCAN_MARK_MS, datedTab, NEW_MAIL_MS, readerIn, recipientList, type ClosedAt, type DatedFinish, type DatedFinishOutcome, type DatedMark, type DatedSnapshot, type DatedSource } from "@terno/store";
 import { received, receivedOwn } from "./ai-summaries";
 import { T, type Ctx, type R } from "./mail";
 
@@ -212,6 +212,46 @@ export const datedWritten = (c: Ctx, keys: readonly string[]): Set<string> => {
   const correspondents = T(c, "correspondents");
   return new Set([...new Set(keys)].filter((key) => correspondents.get(key)?.written === 1));
 };
+/**
+ * Plan 210: closed rows newest first by `(closed_at, id)`, strictly after `after`, as SQLite's `dated_closed` index walks
+ * them. Here from the state buckets (memory holds the table, bounded by the closed keep), sorted for the page.
+ */
+export function closedPage(rows: Iterable<R>, o: { since: number; after: ClosedAt | null; limit: number }): R[] {
+  const { since, after } = o;
+  const out: R[] = [];
+  for (const r of rows) {
+    const at = r.closed_at as number | null | undefined;
+    if (at == null || at < since) continue;
+    if (after && !(at < after.at || (at === after.at && (r.id as number) < after.id))) continue;
+    out.push(r);
+  }
+  return out.sort((a, b) => b.closed_at - a.closed_at || b.id - a.id).slice(0, o.limit);
+}
+
+/** Plan 210: of these rows, each thread's newest closing since `since`. */
+export function newestClosedOf(rows: Iterable<R>, since: number): Map<number, ClosedAt> {
+  const out = new Map<number, ClosedAt>();
+  for (const r of rows) {
+    const at = r.closed_at as number | null | undefined;
+    if (at == null || at < since) continue;
+    const was = out.get(r.thread_id as number);
+    if (!was || at > was.at || (at === was.at && (r.id as number) > was.id)) out.set(r.thread_id as number, { at, id: r.id as number });
+  }
+  return out;
+}
+
+const CLOSED_STATES = ["done", "dismissed", "settled"] as const;
+
+export function closedDatedPage(c: Ctx, o: { since: number; after: ClosedAt | null; limit: number }): DatedRow[] {
+  const rows = T(c, "dated_items");
+  return closedPage(CLOSED_STATES.flatMap((s) => rows.by("state", s)), o).map(toRow);
+}
+
+export function newestClosedDated(c: Ctx, threadIds: readonly number[], since: number): Map<number, ClosedAt> {
+  const rows = T(c, "dated_items");
+  return newestClosedOf([...new Set(threadIds)].flatMap((id) => rows.by("fk_thread_id", id).filter((r) => r.state !== "open")), since);
+}
+
 export const threadDated = (c: Ctx, threadId: number): DatedRow[] => T(c, "dated_items").by("fk_thread_id", threadId).filter((r) => r.state === "open").sort(byAct).map(toRow);
 export function getDated(c: Ctx, id: number): DatedRow | null {
   const r = T(c, "dated_items").get(id);

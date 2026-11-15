@@ -1505,6 +1505,12 @@ CREATE INDEX dated_sender ON dated_items(sender_key) WHERE state = 'open';
   { version: 58, name: "follow-ups: a promise's Later (plan 204)", sql: `
 ALTER TABLE followups ADD COLUMN deferred_until INTEGER;
 ` },
+  // plan 210: What matters' history, newest closing first, in pages: an index by closing time on each closed set. Shape
+  // only (two partial indexes over tables bounded by their keep)
+  { version: 59, name: "closed items and promises by closing time (plan 210)", sql: `
+CREATE INDEX dated_closed ON dated_items(closed_at DESC, id DESC) WHERE state <> 'open';
+CREATE INDEX followups_closed ON followups(closed_at DESC, id DESC) WHERE kind = 'promise' AND state IN ('done','dismissed');
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

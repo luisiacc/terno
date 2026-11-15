@@ -292,5 +292,26 @@ export function defineFollowupsConformance(fresh: () => Promise<MailStore>, reop
         expect(await store.followups.prune(NOW + 91 * DAY)).toBe(1);
       });
     });
+    describe("the history's reads (plan 210)", () => {
+      it("pages your closed promises newest first, strictly after a key; waits and open rows never; each thread's newest", async () => {
+        const { store, sent, promise, wait, finish } = await setup();
+        const ids: { id: number; thread: number }[] = [];
+        for (const i of [0, 1, 2, 3]) {
+          const m = await sent({ subject: `P ${i}`, providerMsgId: `hp-${i}`, rfcMessageId: `hp-${i}@x` });
+          await finish(m.id, m.thread, { rows: i === 3 ? [wait()] : [promise()] });
+          const [row] = await store.followups.ofThread(m.thread);
+          ids.push({ id: row!.id, thread: m.thread });
+          if (i === 2) continue;
+          await store.followups.update(row!.id, row!.revision, { state: i === 1 ? "dismissed" : "done", closedReason: "user", closedAt: i === 0 ? NOW - 2000 : NOW - 1000 });
+        }
+        const since = NOW - 90 * DAY;
+        const page = await store.followups.closedPage({ since, after: null, limit: 10 });
+        // the wait closed (i = 3) isn't yours to show; the open promise (i = 2) isn't closed
+        expect(page.map((r) => r.id)).toEqual([ids[1]!.id, ids[0]!.id]);
+        expect((await store.followups.closedPage({ since, after: { at: NOW - 1000, id: ids[1]!.id }, limit: 10 })).map((r) => r.id)).toEqual([ids[0]!.id]);
+        expect((await store.followups.closedPage({ since: NOW - 1500, after: null, limit: 10 })).map((r) => r.id)).toEqual([ids[1]!.id]);
+        expect(await store.followups.newestClosed(ids.map((x) => x.thread), since)).toEqual(new Map([[ids[0]!.thread, { at: NOW - 2000, id: ids[0]!.id }], [ids[1]!.thread, { at: NOW - 1000, id: ids[1]!.id }]]));
+      });
+    });
   });
 }
