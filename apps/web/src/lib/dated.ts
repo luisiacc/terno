@@ -1,4 +1,4 @@
-import { datedGroup, defaultRemindAt, laterBefore, localDay, remindPresets, type DatedKind, type DatedRow, type RemindPreset, type TodayWhy } from "@terno/core";
+import { datedGroup, defaultRemindAt, laterBefore, localDay, remindPresets, type DatedKind, type DatedRow, type RemindPreset, type TodayAlso, type TodayWhy } from "@terno/core";
 import { getLocale, t } from "@terno/i18n";
 import { useEffect, useState } from "react";
 import { usd } from "~/lib/ai";
@@ -78,6 +78,20 @@ export function datedWhen(o: Omit<DatedFacts, "text">, missed: boolean, now = Da
  */
 export const datedLine = (o: DatedFacts, missed: boolean, now = Date.now()): string => line(datedWhen(o, missed, now), datedText(o));
 
+/**
+ * The fifth panel round (change 6): a Today row's second line, its conversation's next item, with the row's own short
+ * day ("Thu", "Nov 21") and time: "Also Thu 9:00 AM · Board meeting", "Also tomorrow · You said: send the deck"; one
+ * that names no day, "Also: Answer Mariana about the quote". An alert says whose word it is, as everywhere.
+ */
+export function alsoLine(o: TodayAlso, now = Date.now()): string {
+  const text = o.kind === "promise" ? t("today.why.promise", { text: o.text }) : datedText({ kind: o.kind, text: o.text });
+  if (!o.dated) return t("today.also.bare", { text });
+  const day = dayOf(o);
+  const near = datedDay(day, now).near;
+  const when = near ? t(`today.also.${near}`) : t("today.also.on", { day: dueShort(day, false, now) });
+  return t("today.also.line", { when: o.timed ? `${when} ${reminderTime(o.dueAt)}` : when, text });
+}
+
 /** When a promise of yours is due, in words ("Due today", "Was due Tuesday"); null for one that named no day. */
 export function promiseWhen(o: { dueAt?: number; dated: boolean }, missed: boolean, now = Date.now()): string | null {
   if (!o.dueAt || !o.dated) return null;
@@ -99,9 +113,13 @@ export const promiseLine = (o: { text: string; dueAt?: number; dated: boolean },
  * to: the row's name and picture, the conversation's last sender being you). `text`, the task's words as the row showed
  * them, what its Undo names (null for a nudge: it has none of its own).
  */
-export type TodayTask =
+export type TodayTask = (
   | { kind: "dated"; item: DatedRef; when: string | null; due: string | null; dueAt: number; noDay?: boolean; text?: string | null }
-  | { kind: "promise"; id: number; revision: number; when: string | null; due: string | null; dated?: boolean; noDay?: boolean; person?: TaskPerson; text?: string | null };
+  | { kind: "promise"; id: number; revision: number; when: string | null; due: string | null; dated?: boolean; noDay?: boolean; person?: TaskPerson; text?: string | null }
+) & {
+  /** the fifth panel round (change 6): its conversation's next item, in words ("Also Thu 9:00 AM · Board meeting"), never what it acts on */
+  also?: string;
+};
 // a nudge (no reply to your mail) acts as a promise does: through follow-ups' act on the row it shows (Codex code review)
 
 /** Who a promise or a nudge is with, as its row names and pictures them; no address, initials alone. */
@@ -111,7 +129,7 @@ export interface TaskPerson {
 }
 
 /** What a Today row shows of its task: when (or explicitly no day), and whose it is. */
-export type TodayRowTask = { when: string | null; due: string | null; noDay?: boolean; person?: TaskPerson };
+export type TodayRowTask = { when: string | null; due: string | null; noDay?: boolean; person?: TaskPerson; also?: string };
 
 /** The fourth panel round (revision 9): the person a promise or nudge is with; with no name, their address's local part. */
 function personOf(why: TodayWhy): TaskPerson | undefined {

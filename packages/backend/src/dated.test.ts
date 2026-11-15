@@ -963,5 +963,87 @@ describe("the fifth panel round: a promise's own Later", () => {
     expect(moved.row).toMatchObject({ dueAt: clock.now + DAY, deferredUntil: null, state: "open" });
   });
 });
+describe("the fifth panel round: a row says its conversation's next item (change 6, revision 9)", () => {
+  const JESS = "Board meeting is locked: Thursday Nov 19, 9:00–12:00. Could you send me your draft by Friday?";
+  const draft: Item = { kind: "respond", text: "Send Jess your draft", quote: "send me your draft by Friday", due: "2026-11-20", time: null };
+  const board: Item = { kind: "event", text: "Board meeting", quote: "Board meeting is locked", due: "2026-11-19", time: "09:00" };
+  const renewal: Item = { kind: "renew", text: "Renew the board's insurance", quote: "Board meeting is locked", due: "2026-12-20", time: null };
+
+  async function jess() {
+    const s = await setup();
+    s.model.answer = () => reply([draft, board, renewal]);
+    const thread = await s.receive({ from: { name: "Jess Okafor", email: "jess@board.test" }, subject: "Board meeting", bodyText: JESS });
+    await s.read();
+    const row = async () => {
+      const list = await s.client.call("today.list", { heldIds: [] });
+      return list.sections.flatMap((x) => x.items.map((i) => ({ group: x.kind, ...i }))).find((i) => i.thread.id === thread)!;
+    };
+    return { ...s, thread, row };
+  }
+
+  it("Jess's draft says the board meeting, which showed nowhere; the count is still of rows", async () => {
+    const { client, clock, row } = await jess();
+    clock.now = at(2026, 11, 14, 10);
+    const first = await row();
+    expect(first).toMatchObject({ group: "deadlines", why: { text: "Send Jess your draft" }, also: { kind: "event", text: "Board meeting", dueDay: "2026-11-19", dueAt: at(2026, 11, 19, 9), timed: true, dated: true } });
+    expect((await client.call("counts.get", {})).today).toBe(1);
+    // Done on the row's own item: the board meeting is the row's, and nothing else would show (the renewal isn't yet)
+    await client.call("dated.act", { id: first.why.item!.id, revision: first.why.item!.revision, action: "done" });
+    const next = await row();
+    expect(next).toMatchObject({ group: "comingUp", why: { text: "Board meeting" } });
+    expect(next.also).toBeUndefined();
+  });
+
+  it("never one put off, over, or not showing yet; a promise of yours that would show is one", async () => {
+    const { client, clock, raw, thread, row } = await jess();
+    clock.now = at(2026, 11, 14, 10);
+    const [meeting] = (await client.call("dated.ofThread", { threadId: thread })).rows.filter((r) => r.kind === "event");
+    const later = await client.call("dated.act", { id: meeting!.id, revision: meeting!.revision, action: "later", until: at(2026, 11, 18, 9) });
+    expect((await row()).also).toBeUndefined();
+    await client.call("dated.undo", { undoId: later.undoId! });
+    expect((await row()).also).toMatchObject({ text: "Board meeting" });
+    // your promise in the conversation, due before it: the soonest
+    await client.call("settings.update", { followups: { enabled: true } });
+    raw.run(`INSERT INTO followups (thread_id, message_id, item, kind, text, person_name, person_email, sent_at, due_at, dated, state, revision, created_at) VALUES (?, 900001, 0, 'promise', 'send Jess the budget', 'Jess Okafor', 'jess@board.test', ?, ?, 1, 'open', 0, ?)`, thread, NOW, at(2026, 11, 16, 9), NOW);
+    // with a promise's week (the fifth round's change 1) it's in Deadlines, the row's own: the meeting is what it also has
+    const owed = await row();
+    expect(owed).toMatchObject({ group: "deadlines", why: { kind: "promise", text: "send Jess the budget" } });
+    expect(owed.also).toMatchObject({ kind: "event", text: "Board meeting" });
+    raw.run("UPDATE followups SET state = 'done' WHERE thread_id = ?", thread);
+    // the meeting's over at noon on its day: the draft has nothing beside it (the renewal's time to act is a month off)
+    clock.now = at(2026, 11, 19, 12);
+    const after = await row();
+    expect(after).toMatchObject({ group: "deadlines", why: { text: "Send Jess your draft" } });
+    expect(after.also).toBeUndefined();
+  });
+
+  it("never the same words again, nor an ask under the promise that answers it", async () => {
+    const { backend, client, model, receive, read, raw, clock } = await setup();
+    await client.call("settings.update", { followups: { enabled: true } });
+    const jessFrom = { from: { name: "Jess Okafor", email: "jess@board.test" }, providerThreadId: "jess" };
+    model.answer = () => reply([draft]);
+    const thread = await receive({ ...jessFrom, subject: "Draft", bodyText: "Could you send me your draft by Friday?" });
+    await read();
+    // the same request noted again from a later message, and Jess's ask in another
+    model.answer = () => reply([{ ...draft, quote: "your draft by Saturday", due: "2026-11-21" }]);
+    expect(await receive({ ...jessFrom, subject: "Re: Draft", bodyText: "Sorry, your draft by Saturday is fine." })).toBe(thread);
+    await read();
+    model.answer = () => reply([{ kind: "ask", text: "Answer Jess about the budget", quote: "can you tell me the budget", due: null, time: null }]);
+    expect(await receive({ ...jessFrom, subject: "Re: Draft", bodyText: "One more thing: can you tell me the budget?" })).toBe(thread);
+    await read();
+    expect((await client.call("dated.ofThread", { threadId: thread })).rows).toHaveLength(3);
+    clock.now = at(2026, 11, 14, 10);
+    const list = async () => (await client.call("today.list", { heldIds: [] })).sections.flatMap((x) => x.items);
+    const [first] = await list();
+    expect(first).toMatchObject({ thread: { id: thread }, why: { text: "Send Jess your draft" }, also: { kind: "ask", text: "Answer Jess about the budget", dated: false } });
+    // a promise of yours there: the ask's row is the promise, and the ask isn't said under it
+    raw.run(`INSERT INTO followups (thread_id, message_id, item, kind, text, person_name, person_email, sent_at, due_at, dated, state, revision, created_at) VALUES (?, 900001, 0, 'promise', 'send Jess the budget', 'Jess Okafor', 'jess@board.test', ?, ?, 0, 'open', 0, ?)`, thread, NOW, NOW + 3 * DAY, NOW);
+    raw.run("UPDATE dated_items SET state = 'done' WHERE kind = 'respond'");
+    backend.today.touched();
+    const [promised] = await list();
+    expect(promised).toMatchObject({ thread: { id: thread }, why: { kind: "promise" } });
+    expect(promised!.also).toBeUndefined();
+  });
+});
 
 const followupRows = async (client: RpcClient) => (await client.call("followups.list", {})).rows;

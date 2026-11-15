@@ -316,6 +316,14 @@ describe("plan 204: Missed, Deadlines, Needs you, Plans, Reminders and Coming up
     expect(useToday.getState().tasks.get(2)).not.toHaveProperty("noDay");
   });
 
+  it("the fifth panel round (change 6): a row's task says its conversation's next item; what it acts on stays its own", () => {
+    const board = { kind: "event" as const, text: "Board meeting", dueDay: day(17), dueAt: at(17, 9), timed: true, dated: true };
+    flattenToday(list({ deadlines: [{ ...dated(3, "respond" as never, "Send Jess your draft", 13), also: board } as never, dated(4, "pay", "Pay the rent", 12)] }), []);
+    const { tasks } = useToday.getState();
+    expect(tasks.get(3)).toMatchObject({ kind: "dated", item: { id: 30 }, when: "Tomorrow", also: "Also Tue 9:00 AM · Board meeting" });
+    expect(tasks.get(4)).not.toHaveProperty("also");
+  });
+
   it("further days: a weekday within six, else the date", () => {
     flattenToday(list({ deadlines: [dated(1, "pay", "Pay the water bill", 17)], plans: [dated(2, "event", "Dinner at Lúa", 16)], comingUp: [] }), []);
     const due = (id: number) => useToday.getState().tasks.get(id)?.due;

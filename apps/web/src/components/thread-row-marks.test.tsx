@@ -283,3 +283,31 @@ it("the fourth panel round: a promise's Today row names and pictures its person,
   expect(again.el.querySelector("[data-testid=row-from]")!.textContent).toBe("Priya Natarajan");
   expect(again.el.querySelector("[data-testid=row-date]")!.textContent).toBe("Tue");
 });
+
+it.each([
+  ["three lines", {}],
+  ["compact", { compact: true }],
+  ["wide", { wide: true }],
+] as const)("the fifth panel round: a Today row's next item takes the quiet subject's place, %s; its height is the row's", async (_, o) => {
+  const { el } = await row({ ...o, task: { when: "Fri", due: "Due Friday", also: "Also Thu 9:00 AM · Board meeting" } });
+  const also = el.querySelector("[data-testid=row-also]")!;
+  expect(also.textContent).toBe("Also Thu 9:00 AM · Board meeting");
+  expect(el.querySelector("[data-testid=row-subject]")).toBeNull();
+  expect(also.className).toContain("truncate");
+  expect(el.style.height).toBe("72px");
+  // read in the row's order: the task, its day, then the next
+  const text = el.textContent!;
+  expect(text.indexOf("Due Friday")).toBeLessThan(text.indexOf("Also Thu"));
+});
+
+it("the fifth panel round: with no subject line (no preview), the next item is said, not shown; without one, the subject stays", async () => {
+  const { el } = await row({ lines: 0, task: { when: "Fri", due: "Due Friday", also: "Also Thu 9:00 AM · Board meeting" } });
+  expect(el.querySelector("[data-testid=row-also]")).toBeNull();
+  const said = [...el.querySelectorAll(".sr-only")].map((s) => s.textContent);
+  expect(said).toContain(". Also Thu 9:00 AM · Board meeting");
+  await unmount();
+  host?.remove();
+  const plain = await row({ task: { when: "Fri", due: "Due Friday" } });
+  expect(plain.el.querySelector("[data-testid=row-also]")).toBeNull();
+  expect(plain.el.querySelector("[data-testid=row-subject]")!.textContent).toBe("Homepage concepts");
+});

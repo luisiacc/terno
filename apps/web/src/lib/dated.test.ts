@@ -173,3 +173,28 @@ describe("the conversation's line keeps the whole wording (plan 204, after the s
     expect(taskOf({ ...why, item: { ...item, dated: true } }, now)!.noDay).toBeUndefined();
   });
 });
+
+describe("a row's second item (plan 204, the fifth panel round, change 6)", () => {
+  it("the row's own short day and time, the task in its words; no day, its words alone (en, es)", async () => {
+    const { alsoLine } = await import("./dated");
+    const { setLocale } = await import("@terno/i18n");
+    const { default: en } = await import("@terno/i18n/locales/en");
+    const { default: es } = await import("@terno/i18n/locales/es");
+    // Saturday 14 November 2026, 10:00
+    const now = new Date(2026, 10, 14, 10, 0).getTime();
+    const board = { kind: "event" as const, text: "Board meeting", dueDay: "2026-11-19", dueAt: new Date(2026, 10, 19, 9, 0).getTime(), timed: true, dated: true };
+    expect(alsoLine(board, now)).toBe("Also Thu 9:00 AM · Board meeting");
+    expect(alsoLine({ ...board, dueDay: "2026-11-15", dueAt: new Date(2026, 10, 15, 9, 0).getTime() }, now)).toBe("Also tomorrow 9:00 AM · Board meeting");
+    expect(alsoLine({ kind: "promise", text: "send the deck", dueDay: "2026-11-14", dueAt: new Date(2026, 10, 14, 9).getTime(), timed: false, dated: true }, now)).toBe("Also today · You said: send the deck");
+    expect(alsoLine({ kind: "pay", text: "Renew the lease", dueDay: "2026-11-30", dueAt: new Date(2026, 10, 30, 9).getTime(), timed: false, dated: true }, now)).toBe("Also Nov 30 · Renew the lease");
+    expect(alsoLine({ kind: "ask", text: "Answer Jess about the budget", dueDay: "2026-11-13", dueAt: now, timed: false, dated: false }, now)).toBe("Also: Answer Jess about the budget");
+    expect(alsoLine({ kind: "alert", text: "Debit card frozen", dueDay: "2026-11-16", dueAt: now, timed: false, dated: false }, now)).toBe("Also: Debit card frozen, the email says");
+    setLocale("es", es);
+    try {
+      expect(alsoLine(board, now)).toBe("También el jue 09:00 · Board meeting");
+      expect(alsoLine({ kind: "promise", text: "enviar la presentación", dueDay: "2026-11-15", dueAt: new Date(2026, 10, 15, 9).getTime(), timed: false, dated: true }, now)).toBe("También mañana · Dijiste: enviar la presentación");
+    } finally {
+      setLocale("en", en);
+    }
+  });
+});

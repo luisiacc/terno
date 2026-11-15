@@ -7,6 +7,7 @@ import "fake-indexeddb/auto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { todayKey } from "@terno/core";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { IdbMailStore } from "@terno/idb";
 import { demoRegistry } from "@terno/mail";
@@ -54,6 +55,36 @@ async function needsAtBound(store: MailStore, client: RpcClient, accountId: numb
   while (!(await store.facts.idle())) await store.facts.backfill({ limit: 5000 });
 }
 
+/**
+ * The fifth panel round (revision 9): conversations holding two dated items and two promises of yours, Coming up as the
+ * spread has them and all showing at the bound, each row saying its next. Among the soonest, so they stay at the bound.
+ */
+const SEVERAL = 50;
+
+async function severalPerThread(store: MailStore, accountId: number, now: number) {
+  const me = { name: "Me", email: "me@perf.test" };
+  const who = (i: number) => ({ name: `Board ${i}`, email: `board${i}@several.test` });
+  // yours first, so the requests in what came after aren't answered by it
+  const sent = Array.from({ length: SEVERAL }, (_, i) => msg({ accountId, from: me, to: [who(i)], isSent: true, isRead: true, inInbox: false, listId: null, providerMsgId: `several-${i}-out`, providerThreadId: `several-${i}`, subject: `Board ${i}`, date: now - 7_200_000 - i, bodyText: "I'll send the budget." }));
+  const came = Array.from({ length: SEVERAL }, (_, i) => msg({ accountId, from: who(i), to: [me], inInbox: false, listId: null, providerMsgId: `several-${i}-in`, providerThreadId: `several-${i}`, subject: `Re: Board ${i}`, date: now - 3_600_000 - i, bodyText: "The board meets Thursday at 9:00; the dues are due Friday." }));
+  const outs = (await store.sync.ingest(sent, { applyFilters: false, now, classifier: null, liveSent: { wanted: true } })).inserted;
+  const ins = (await store.sync.ingest(came, { applyFilters: false, now, classifier: null, datedMail: { since: null } })).inserted;
+  expect([outs.length, ins.length]).toEqual([SEVERAL, SEVERAL]);
+  const day = (n: number) => todayKey(now + n * DAY);
+  for (let i = 0; i < SEVERAL; i++) {
+    const src = (await store.dated.source(ins[i]!))!;
+    const rows = [
+      { kind: "event" as const, item: 0, text: "Board meeting", quote: "The board meets Thursday", dueDay: day(4), dueAt: now + 4 * DAY, timed: true, dated: true, actAt: now + 30_000 + i },
+      { kind: "pay" as const, item: 1, text: "Pay the dues", quote: "the dues are due Friday", dueDay: day(5), dueAt: now + 5 * DAY, timed: false, dated: true, actAt: now + 30_000 + i },
+    ];
+    expect(await store.dated.finish({ messageId: ins[i]!, threadId: src.threadId, fromScan: false, rows, settled: [], now, model: "m", provider: "p", promptVersion: 1, clearGeneration: store.dated.clearGeneration() })).toBe("written");
+    const promise = (item: number, text: string, dueAt: number, dated: boolean) => ({ kind: "promise" as const, item, text, quote: "I'll send the budget", personName: who(i).name, personEmail: who(i).email, dueAt, dated });
+    await store.followups.finish({ messageId: outs[i]!, threadId: src.threadId, fromScan: false, rows: [promise(0, "send the budget", now + 3 * DAY, true), promise(1, "call back", now + DAY, false)], kept: [], now, model: "m", provider: "p", promptVersion: 1, clearGeneration: store.followups.clearGeneration() });
+  }
+  // the facts of what came in: until then the count has no waiting number to add to
+  while (!(await store.facts.idle())) await store.facts.backfill({ limit: 5000 });
+}
+
 async function run(kind: "SQLite" | "IndexedDB", budget: { spread: Gate; bound: Gate; needs: Gate; busyMs: number }) {
   const platform = { uuid: () => crypto.randomUUID(), yield: () => new Promise<void>((resolve) => setImmediate(resolve)) };
   let store: MailStore | undefined;
@@ -76,6 +107,8 @@ async function run(kind: "SQLite" | "IndexedDB", budget: { spread: Gate; bound: 
     await client.call("settings.update", { ai: { provider: "fake" } });
     // seeded first: the reader, once on, would read (and drop) mail from before it went on
     await seedDatedItems({ store: backend.store, accountId, now: NOW, budget: MULT, log: () => {} });
+    // the soonest stay at the bound: these take the place of the furthest SEVERAL * 2 of those
+    await severalPerThread(backend.store, accountId, NOW);
     await client.call("settings.update", { dated: { enabled: true }, followups: { enabled: true } });
     // a turn between calls, as between two requests: the store answers synchronously on SQLite
     const turn = () => new Promise<void>((resolve) => setImmediate(resolve));
@@ -113,11 +146,13 @@ async function run(kind: "SQLite" | "IndexedDB", budget: { spread: Gate; bound: 
     };
     // as a mailbox has them: the items spread over the coming weeks, a few for today, the rest Coming up
     await measure("spread", NOW, budget.spread);
-    // the bound: every item's time to act has come, and the list holds all 1,000
+    // the bound: every item's time to act has come, and the list holds all 1,000, a conversation once (each of SEVERAL
+    // with its next item said beside it)
     clock.now = NOW + 2 * DAY;
     backend.today.touched();
-    const all = await client.call("today.list", { heldIds: [] });
-    expect(all.sections.reduce((n, x) => n + x.items.length, 0)).toBeGreaterThanOrEqual(1000);
+    const all = (await client.call("today.list", { heldIds: [] })).sections.flatMap((x) => x.items);
+    expect(all.length).toBeGreaterThanOrEqual(1000 - SEVERAL);
+    expect(all.filter((i) => i.also).length).toBe(SEVERAL);
     await measure("all showing", NOW + 2 * DAY, budget.bound);
     // plan 204, the second panel round: Needs you full (NEEDS_WALK conversations), each on the tighter rule's slowest
     // path: a snippet that starts like a thanks (its body read), a body that says more, a current summary to parse

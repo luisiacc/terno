@@ -26,6 +26,7 @@ import {
   type DatedPlace,
   type PromisePlace,
   type DatedRow,
+  type TodayAlso,
   type TodayGroupKind,
   type TodayWhy,
   type Counts,
@@ -81,6 +82,38 @@ interface Placed {
   why: TodayWhy;
   /** from the waiting read: in the Inbox, so neither Spam nor Trash */
   waiting?: boolean;
+  also?: TodayAlso;
+}
+
+/** The fifth panel round (revision 9): an open item a row could say it also has; `key` names it apart from the row's own. */
+type AlsoCandidate = TodayAlso & { key: string };
+
+/** Put off with Later, the field on dated items and on promises of yours alike: no row says it's there until it's back. */
+const putOff = (r: { dueAt: number; deferredUntil?: number | null }, now: number): boolean => r.deferredUntil != null && r.deferredUntil > now;
+
+const sameWords = (a: string, b: string): boolean => a.trim().toLowerCase().replace(/\s+/gu, " ") === b.trim().toLowerCase().replace(/\s+/gu, " ");
+
+/**
+ * The fifth panel round (change 6, revision 9): a row with a task of its own says its conversation's next one, the soonest
+ * of the others that would show, so Priya's board meeting isn't hidden under "Send Jess your draft". Never the row's own
+ * item, nor the same words again (a mail noted twice); never an ask under a promise of yours (the promise is its answer,
+ * as the ask's row shows it). A waiting row or a reminder has no task to stand beside.
+ */
+function withAlso(placed: readonly Placed[], candidates: ReadonlyMap<number, readonly AlsoCandidate[]>): Placed[] {
+  return placed.map((p) => {
+    const { why } = p;
+    const own = why.item ? `d:${why.item.id}` : why.kind === "promise" && why.promise ? `p:${why.promise.id}` : why.kind === "nudge" ? "" : null;
+    const list = own === null ? undefined : candidates.get(p.threadId);
+    if (!list) return p;
+    let also: AlsoCandidate | undefined;
+    for (const c of list) {
+      if (c.key === own || (why.text !== undefined && sameWords(c.text, why.text)) || (why.kind === "promise" && c.kind === "ask")) continue;
+      if (!also || byDay(c, also) < 0 || (byDay(c, also) === 0 && c.key < also.key)) also = c;
+    }
+    if (!also) return p;
+    const { key: _key, ...rest } = also;
+    return { ...p, also: rest };
+  });
 }
 
 /** An entry stored before entries had an id (Codex review, round 2) is named by its address: one entry a sender. */
@@ -554,9 +587,19 @@ export class TodayService {
     // a thread's strongest place, and in it its soonest item
     const best = new Map<number, { place: DatedPlace; row: DatedRow }>();
     const rank: Record<DatedPlace, number> = { missed: 0, deadlines: 1, plans: 2, needsYou: 3, comingUp: 4, hidden: 5 };
+    // the fifth panel round (revision 9): what each conversation has that would show, before `best` and `dedupe` keep one;
+    // the count says none of it, so it gathers none
+    const collect = !o.count;
+    const candidates = new Map<number, AlsoCandidate[]>();
+    const candidate = (threadId: number, c: AlsoCandidate) => {
+      const list = candidates.get(threadId);
+      if (list) list.push(c);
+      else candidates.set(threadId, [c]);
+    };
     for (const row of items) {
       const place = datedPlace(row, now);
       if (place === "hidden") continue;
+      if (collect && !putOff(row, now)) candidate(row.threadId, { key: `d:${row.id}`, kind: row.kind, text: row.text, dueDay: row.dueDay, dueAt: row.dueAt, timed: row.timed, dated: row.dated });
       const was = best.get(row.threadId);
       if (!was || rank[place] < rank[was.place] || (rank[place] === rank[was.place] && byDay(row, was.row) < 0)) best.set(row.threadId, { place, row });
     }
@@ -569,6 +612,10 @@ export class TodayService {
     // the third panel round (revision 5): your promises by their day, beside the dated items: Missed, Deadlines (due today),
     // Coming up; the fourth (revision 8): one due with no day is Needs you's
     const promises = active.filter((r) => r.kind === "promise");
+    for (const r of collect ? promises : []) {
+      // a promise's moment is its day's (v9 says a time in its words alone): it's never timed here
+      if (promisePlace(r, now) !== "hidden" && !putOff(r, now)) candidate(r.threadId, { key: `p:${r.id}`, kind: "promise", text: r.text, dueDay: dayKeyOf(r.dueAt), dueAt: r.dueAt, timed: false, dated: r.dated });
+    }
     const promisesIn = (place: PromisePlace) => promises.filter((r) => promisePlace(r, now) === place).map((r) => ({ threadId: r.threadId, at: { dueDay: dayKeyOf(r.dueAt), dueAt: r.dueAt, timed: false }, why: promiseWhy(r, place === "missed") }));
     // Missed: the most recently due first
     for (const m of [...ofPlace("missed"), ...promisesIn("missed")].sort((a, b) => b.at.dueAt - a.at.dueAt)) placed.push({ group: "missed", threadId: m.threadId, why: m.why });
@@ -609,7 +656,7 @@ export class TodayService {
     for (const r of reminders) placed.push({ group: "reminders", threadId: r.threadId, why: { kind: "reminder", dueAt: r.dueAt } });
     // Coming up: dated items, and (after the panel) your dated promises due in the next two weeks, soonest first
     for (const c of [...ofPlace("comingUp"), ...promisesIn("comingUp")].sort((a, b) => byDay(a.at, b.at))) placed.push({ group: "comingUp", threadId: c.threadId, why: c.why });
-    return dedupe(placed);
+    return withAlso(dedupe(placed), candidates);
   }
 
   /**
@@ -649,7 +696,7 @@ export class TodayService {
     const lines = new Map(await Promise.all(lined.map(async (id) => [id, await this.summaryLine(id)] as const)));
     const sections: TodaySection[] = [];
     for (const kind of TODAY_GROUP_ORDER) {
-      const items = shown.filter((p) => p.group === kind).map((p): TodayItem => ({ thread: threads.get(p.threadId)!, why: p.why, ...lines.get(p.threadId) }));
+      const items = shown.filter((p) => p.group === kind).map((p): TodayItem => ({ thread: threads.get(p.threadId)!, why: p.why, ...lines.get(p.threadId), ...(p.also ? { also: p.also } : {}) }));
       if (items.length) sections.push({ kind, items });
     }
     const taken = new Set(shown.map((p) => p.threadId));
