@@ -1506,6 +1506,26 @@ describe("What matters' history (plan 210)", () => {
     expect(await history()).toEqual([other, two]);
   });
 
+  it("the owner's inbox-zero setting: finished items hidden, no history is read at all, and Done still takes the line off the top", async () => {
+    const { client, threads, act, list, backend } = await bills(2);
+    await act(threads[0]!, "done");
+    expect((await list()).history!.items.map((i) => i.thread.id)).toEqual([threads[0]!]);
+    await client.call("settings.update", { today: { finished: false } });
+    const dated = vi.spyOn(backend.store.dated, "closedPage");
+    const promises = vi.spyOn(backend.store.followups, "closedPage");
+    const hidden = await list();
+    expect(hidden.history).toBeUndefined();
+    expect(hidden.sections.flatMap((x) => x.items.map((i) => i.thread.id))).toEqual([threads[1]!]);
+    expect(await client.call("today.history", { after: { at: 1, src: 0, id: 1 }, limit: 10, heldIds: [] })).toEqual({ items: [], next: null });
+    await act(threads[1]!, "done");
+    expect((await list()).sections).toEqual([]);
+    expect(dated).not.toHaveBeenCalled();
+    expect(promises).not.toHaveBeenCalled();
+    // shown again: the history comes back, newest first
+    await client.call("settings.update", { today: { finished: true } });
+    expect((await list()).history!.items.map((i) => i.thread.id)).toEqual([threads[1]!, threads[0]!]);
+  });
+
   it("a promise of yours done or not a promise is a line too; at the same moment a dated item comes first, and pages split them exactly", async () => {
     const { client, threads, act, list, raw, backend, clock, account } = await bills(2);
     await client.call("settings.update", { followups: { enabled: true } });

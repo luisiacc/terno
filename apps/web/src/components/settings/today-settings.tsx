@@ -27,6 +27,9 @@ export default function TodaySettings({ settings, update }: { settings: AppSetti
       <SettingsRow find="general.today" label={t("today.settings.show")}>
         {(a) => <Switch {...a} checked={today?.show !== false} data-testid="today-show" onCheckedChange={(show) => void update({ today: { show } })} />}
       </SettingsRow>
+      <SettingsRow find="general.todayFinished" label={t("today.settings.finished")} hint={t("today.settings.finishedHint")}>
+        {(a) => <Switch {...a} checked={today?.finished !== false} data-testid="today-finished" onCheckedChange={(finished) => void update({ today: { finished } })} />}
+      </SettingsRow>
       <SettingsRow find="general.todayAt" label={t("today.settings.prepareAt")} hint={t("today.settings.prepareAtHint")}>
         {(a) => (
           <TimeField

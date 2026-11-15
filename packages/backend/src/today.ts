@@ -725,7 +725,8 @@ export class TodayService {
     const { store } = this.b;
     const now = this.b.now();
     const settings = await readSettings(store);
-    if (!(await this.available(settings))) return { items: [], next: null };
+    // plan 210 (the owner): finished items hidden, no history is read at all
+    if (!(await this.available(settings)) || settings.today?.finished === false) return { items: [], next: null };
     const placed = o.placed ?? (await this.places(now, settings));
     const exclude = new Set([...placed.map((p) => p.threadId), ...o.heldIds]);
     return historyPage(store, { now, after: o.after, through: o.through ?? null, limit: o.limit ?? HISTORY_PAGE, exclude, dated: settings.dated?.enabled === true, promises: settings.followups?.enabled === true, yieldTurn: () => this.b.yieldTurn(), sliceMs: this.b.options.sliceBudgetMs });
@@ -755,7 +756,7 @@ export class TodayService {
     const missing = heldIds.filter((id) => id !== 0 && !taken.has(id));
     const held = missing.length ? await store.threads.summaries(missing) : [];
     // plan 210: the history after the open part, from the same placing (so no conversation is in both)
-    const history = ask.history ? await this.history({ after: null, through: ask.history.through, heldIds, placed }) : undefined;
+    const history = ask.history && settings.today?.finished !== false ? await this.history({ after: null, through: ask.history.through, heldIds, placed }) : undefined;
     return { sections, digest: await this.digestRow(), now, held, ...(history ? { history } : {}) };
   }
 

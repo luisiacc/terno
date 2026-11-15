@@ -543,7 +543,7 @@ const settingsPatch = z.object({
   ask: z.object({ enabled: z.boolean() }).strict().optional(),
   /** `enabledAt` is the backend's */
   replies: z.object({ enabled: z.boolean() }).strict().optional(),
-  today: z.object({ show: z.boolean().optional(), prepareAt: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(), notify: z.boolean().optional(), digest: z.boolean().optional() }).strict().optional(),
+  today: z.object({ show: z.boolean().optional(), prepareAt: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(), notify: z.boolean().optional(), digest: z.boolean().optional(), finished: z.boolean().optional() }).strict().optional(),
   followups: z.object({ enabled: z.boolean().optional(), nudgeAfterDays: z.union([z.literal(3), z.literal(5), z.literal(7), z.literal(14)]).optional(), scanAnswered: z.boolean().optional() }).strict().optional(),
   /** `enabledAt` is the backend's */
   dated: z.object({ enabled: z.boolean().optional(), scanAnswered: z.boolean().optional(), offerDismissed: z.boolean().optional() }).strict().optional(),
