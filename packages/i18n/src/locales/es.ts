@@ -2617,6 +2617,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "whatMatters.feed.label": "Lo de hoy",
   "whatMatters.feed.end": "Eso es todo por ahora.",
   "whatMatters.open": "Abrir correo",
+  "whatMatters.closeEmail": "Cerrar correo",
   "whatMatters.more": "Más",
   "whatMatters.to": "Para {name}",
   "whatMatters.group.missed": { one: "# cosa que se te pasó", other: "# cosas que se te pasaron" },
