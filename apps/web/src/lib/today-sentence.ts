@@ -1,7 +1,8 @@
-import { localDay, type TodayGroupKind, type TodayItem } from "@terno/core";
+import { localDay, type TodayHistoryItem, type TodayItem } from "@terno/core";
 import { getLocale, t } from "@terno/i18n";
 import { listDate } from "~/lib/format";
 import { datedDay, dueShort, dueTimeLeft } from "~/lib/when";
+import type { FeedGroupKind } from "~/state/today";
 
 /**
  * Plan 204, the UI experiment: a Today item said in one plain sentence, made here from what the backend said of it, no
@@ -87,5 +88,23 @@ export function todayWhen(item: Pick<TodayItem, "thread" | "why">, now = Date.no
   return came;
 }
 
-/** The chat's quiet line above a group: "3 things you missed", "1 plan ahead". */
-export const groupLine = (kind: TodayGroupKind, count: number): string => t(`whatMatters.group.${kind}`, { count });
+/**
+ * Plan 210: a history line in the open part's words: an item's own ("Pay $187.42 for the electricity bill."), an alert's
+ * with whose word it is, a promise of yours as "You said you'd …".
+ */
+export function historySentence(line: Pick<TodayHistoryItem, "kind" | "text" | "thread">): string {
+  const text = bare(line.text);
+  if (!text) return ended(line.thread.subject?.trim() || t("common.noSubject"));
+  if (line.kind === "promise") return tidy(t("whatMatters.say.promise", { text: verbFirst(text) }));
+  return ended(line.kind === "alert" ? t("dated.alertSays", { text }) : text);
+}
+
+/** Plan 210: the history's right-hand column, what happened and when: "Done today", "Not a task Wed", "Over Nov 2" (es "Hecho el mié"). */
+export function historyWhen(line: Pick<TodayHistoryItem, "outcome" | "kind" | "key">, now = Date.now()): string {
+  const near = datedDay(line.key.at, now).near;
+  const day = near ? t(`today.also.${near}`) : t("today.also.on", { day: dueShort(line.key.at, false, now) });
+  return t(`whatMatters.history.${line.outcome === "dismissed" && line.kind === "promise" ? "notPromise" : line.outcome}`, { day });
+}
+
+/** The chat's quiet line above a group: "3 things you missed", "1 plan ahead"; the history's, its name (how many is still loading). */
+export const groupLine = (kind: FeedGroupKind, count: number): string => (kind === "history" ? t("today.history") : t(`whatMatters.group.${kind}`, { count }));
