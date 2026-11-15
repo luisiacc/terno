@@ -35,7 +35,6 @@ import { ActionRule } from "./action-preview-header";
 import { ScheduledReplyLine } from "./scheduled-popover";
 import { ForwardLine } from "./forward-line";
 import { closeFeedConversation } from "~/lib/feed-pane";
-import { feedLook, useWmLook } from "~/lib/what-matters-look";
 import { comingHomeKey, shownDraftKey, useDrafts } from "~/lib/drafts";
 import { reachesSeveral, replyName } from "~/lib/compose-fields";
 import { composeFocusPending, composeLanding, registerReaderFocusDestination, returnDraftsTo, subscribeComposeFocus } from "~/lib/compose";
@@ -1113,8 +1112,7 @@ function ReaderContent() {
   const page = useAppearance((s) => s.layout === "list");
   // plan 204, the UI experiment: Split's pane beside Today's feed is the feed's (its toolbar closes it)
   const inToday = useApp((s) => s.today);
-  const look = useWmLook((s) => s.look);
-  const feedPane = !page && feedLook(inToday, look);
+  const feedPane = !page && inToday;
   // the dock sits over the conversation's foot in either layout (plan 158: Split's too), so its end (the reply bar) scrolls clear of it
   // plan 115: and the pinned draft sits over its foot in either layout: the last message scrolls clear of the taller one
   const dock = bottomInset(useSnack((s) => s.inset), usePinnedInset());

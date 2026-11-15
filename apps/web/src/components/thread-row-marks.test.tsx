@@ -9,7 +9,6 @@ vi.hoisted(() => {
 });
 import type { Category, ThreadSummary } from "@terno/core";
 import type { DesignVariants } from "@terno/ui/designs/index";
-import type { TodayRowTask } from "~/lib/dated";
 import { ThreadRowView } from "./thread-row";
 
 vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -27,7 +26,7 @@ afterEach(async () => {
   host?.remove();
 });
 
-async function row(opts: { layout?: DesignVariants["row"]; compact?: boolean; wide?: boolean; account?: boolean; review?: number; lines?: 0 | 1 | 2; unread?: boolean; selected?: boolean; checked?: boolean; task?: TodayRowTask } = {}) {
+async function row(opts: { layout?: DesignVariants["row"]; compact?: boolean; wide?: boolean; account?: boolean; review?: number; lines?: 0 | 1 | 2; unread?: boolean; selected?: boolean; checked?: boolean } = {}) {
   host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
@@ -38,7 +37,7 @@ async function row(opts: { layout?: DesignVariants["row"]; compact?: boolean; wi
         thread={{ ...thread, unread: opts.unread ?? thread.unread }} top={0} height={72} compact={opts.compact ?? false} wide={opts.wide ?? false} icons={false} layout={opts.layout ?? "avatar"} review={opts.review ?? null}
         reminderTop={false} selected={opts.selected ?? false} checked={opts.checked ?? false} inSelection={false}
         account={opts.account ? { text: "Studio", email: "me@studio.example" } as never : undefined}
-        categories={categories} hasDraft={false} code={null} reminder={undefined} remindersList={false} interactive={false} lines={opts.lines} task={opts.task}
+        categories={categories} hasDraft={false} code={null} reminder={undefined} remindersList={false} interactive={false} lines={opts.lines}
       />,
     ),
   );
@@ -267,47 +266,4 @@ describe("plan 208 (after relief-r03): a read row's words in the design's read i
     expect(subject).toContain("text-muted-foreground");
     expect(subject).not.toContain(READ);
   });
-});
-
-it("the fourth panel round: a promise's Today row names and pictures its person, and one with no day shows none", async () => {
-  const { el } = await row({ task: { when: null, due: null, noDay: true, person: { name: "Elena Ruiz", email: "elena@acme.test" } } });
-  expect(el.querySelector("[data-testid=row-from]")!.textContent).toBe("Elena Ruiz");
-  expect(el.querySelector("[data-testid=sender-avatar]")!.textContent).toBe("ER");
-  const date = el.querySelector("[data-testid=row-date]")!;
-  expect(date.hasAttribute("data-no-day")).toBe(true);
-  expect(date.textContent).toBe("");
-  await unmount();
-  host?.remove();
-  // a task with a day keeps its day; with no person, the thread's sender
-  const again = await row({ task: { when: "Tue", due: "Due Tuesday" } });
-  expect(again.el.querySelector("[data-testid=row-from]")!.textContent).toBe("Priya Natarajan");
-  expect(again.el.querySelector("[data-testid=row-date]")!.textContent).toBe("Tue");
-});
-
-it.each([
-  ["three lines", {}],
-  ["compact", { compact: true }],
-  ["wide", { wide: true }],
-] as const)("the fifth panel round: a Today row's next item takes the quiet subject's place, %s; its height is the row's", async (_, o) => {
-  const { el } = await row({ ...o, task: { when: "Fri", due: "Due Friday", also: "Also Thu 9:00 AM · Board meeting" } });
-  const also = el.querySelector("[data-testid=row-also]")!;
-  expect(also.textContent).toBe("Also Thu 9:00 AM · Board meeting");
-  expect(el.querySelector("[data-testid=row-subject]")).toBeNull();
-  expect(also.className).toContain("truncate");
-  expect(el.style.height).toBe("72px");
-  // read in the row's order: the task, its day, then the next
-  const text = el.textContent!;
-  expect(text.indexOf("Due Friday")).toBeLessThan(text.indexOf("Also Thu"));
-});
-
-it("the fifth panel round: with no subject line (no preview), the next item is said, not shown; without one, the subject stays", async () => {
-  const { el } = await row({ lines: 0, task: { when: "Fri", due: "Due Friday", also: "Also Thu 9:00 AM · Board meeting" } });
-  expect(el.querySelector("[data-testid=row-also]")).toBeNull();
-  const said = [...el.querySelectorAll(".sr-only")].map((s) => s.textContent);
-  expect(said).toContain(". Also Thu 9:00 AM · Board meeting");
-  await unmount();
-  host?.remove();
-  const plain = await row({ task: { when: "Fri", due: "Due Friday" } });
-  expect(plain.el.querySelector("[data-testid=row-also]")).toBeNull();
-  expect(plain.el.querySelector("[data-testid=row-subject]")!.textContent).toBe("Homepage concepts");
 });

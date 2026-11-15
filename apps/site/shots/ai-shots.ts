@@ -313,7 +313,7 @@ async function shoot(page: Page) {
   // --- Today: the sent-mail scan's promise and unanswered question beside what waits for a reply ---
   for (const until = Date.now() + JOB_MS; ; await page.waitForTimeout(10_000)) {
     await go("today");
-    await page.getByTestId("today-heading").waitFor();
+    await page.getByTestId("wm-heading").first().waitFor();
     const text = await page.locator("main, body").first().innerText();
     if (/You said/.test(text) && /No reply/.test(text)) break;
     if (Date.now() > until) throw new Error("Today has no promise and no unanswered question after 5 minutes");
@@ -321,10 +321,10 @@ async function shoot(page: Page) {
   // the bar: the digest's row, once prepared, counts its newsletters. A model that put every issue under "other" leaves
   // none: the digest is turned off and on in Settings, as a person would (which prepares today's again), once. Short of
   // it, Today and the digest keep the previous run's pictures, and what the digest's page says is printed.
-  const digestRow = page.getByTestId("digest-row").first();
+  const digestRow = page.locator("[data-testid=wm-item][data-digest]").first();
   let digestGood = false;
   for (let n = 0; n < 2 && !digestGood; n++) {
-    await page.waitForFunction(() => !/Preparing/.test(document.querySelector("[data-testid=digest-row]")?.textContent ?? "Preparing"), null, { timeout: JOB_MS });
+    await page.waitForFunction(() => !/Preparing/.test(document.querySelector("[data-testid=wm-item][data-digest]")?.textContent ?? "Preparing"), null, { timeout: JOB_MS });
     digestGood = /\d+ newsletters? · today/.test(await digestRow.innerText());
     if (digestGood) break;
     await say("digest row", digestRow);

@@ -1,4 +1,4 @@
-import { DIGEST_ROW_ID, NOT_NEWSLETTER_NAME_MAX, type DigestItem, type DigestRow } from "@terno/core";
+import { NOT_NEWSLETTER_NAME_MAX, type DigestItem, type DigestRow } from "@terno/core";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { Checkbox } from "@terno/ui/components/checkbox";
@@ -18,8 +18,7 @@ import { whenDay } from "~/lib/when";
 import { AiErrorNotice, aiErrorCopy, errorTarget } from "~/components/ai-error";
 import { client } from "~/rpc/connection";
 import { setApp, useApp } from "~/state/app";
-import { reloadList, useList } from "~/state/list";
-import { focusRows, listScroller } from "~/components/thread-list";
+import { reloadList } from "~/state/list";
 import { digestKeys, digestPick, keepDigestPick, leaveOut, letBackIn, openFromDigest, senderKey, useToday, withoutSenders } from "~/state/today";
 import { AiProvenance } from "~/components/ai-provenance";
 
@@ -142,7 +141,7 @@ export default function DigestPage() {
     // pass 2: back from a newsletter, the row it was opened from is the cursor again (a program's focus: no ring). Plan 162
     // (after ai162-r02): opened afresh, the first row is, so the page has the keys (j moved Today's list behind it)
     const at = (pick.from != null && scroller.current.querySelector<HTMLElement>(`[data-digest-open="${pick.from}"]`)) || scroller.current.querySelector<HTMLElement>("[data-digest-open]");
-    const elsewhere = document.activeElement && document.activeElement !== document.body && !document.activeElement.closest("[data-testid=list-header], [data-testid=thread-list]");
+    const elsewhere = document.activeElement && document.activeElement !== document.body && !document.activeElement.closest("[data-testid=list-header], [data-testid=thread-list], [data-testid=wm-feed]");
     if (at && (pick.from != null || !elsewhere)) at.focus({ preventScroll: true });
     if (pick.from != null) keepDigestPick({ day, toggled: pick.toggled, scroll: pick.scroll, from: null });
   }, [row, day]);
@@ -233,13 +232,6 @@ export default function DigestPage() {
       open: () => {
         const id = cursor() ?? (rows()[0] ? Number(rows()[0]!.dataset.digestOpen) : null);
         if (id !== null) keys.current.open(id);
-      },
-      // where the keys came from: the list, on the digest's row, scrolled to it even when it was virtualized out (plan 204,
-      // after the panel: the row is the list's last option again)
-      leave: () => {
-        const i = useList.getState().index.get(DIGEST_ROW_ID);
-        if (i !== undefined) listScroller.scrollToIndex?.(i);
-        focusRows();
       },
     };
     return () => {

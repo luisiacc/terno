@@ -1,9 +1,9 @@
 import { folderName } from "~/lib/account-folders";
-import { anchorAt, anchoredOffset, INBOX_LABEL, rowStart, TOP_LABEL, topSections, type RowSpacing, type TopSectionKind } from "~/lib/row-offsets";
+import { anchorAt, anchoredOffset, INBOX_LABEL, rowStart, topSections, type RowSpacing, type TopSectionKind } from "~/lib/row-offsets";
 import { SearchField } from "@terno/ui/components/search-field";
 import { Skeleton } from "@terno/ui/components/skeleton";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { AlarmClock, ChevronDown, ChevronRight, Inbox, ListFilter, Newspaper, Search, SquarePen, Sun, ListChecks } from "@terno/ui/icons";
+import { AlarmClock, ChevronDown, Inbox, ListFilter, Search, SquarePen, ListChecks } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { activeFilter } from "~/lib/unread-filter";
 import { setListFilter } from "~/lib/unread";
@@ -18,17 +18,13 @@ import { installScrollHairline } from "~/lib/scroll-hairline";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { create } from "zustand";
-import { formatNumber, getLocale, t } from "@terno/i18n";
+import { formatNumber, t } from "@terno/i18n";
 import { viewLabel } from "~/lib/format";
 import { useActionPreview } from "~/state/action-preview";
 import { getApp, setApp, useApp } from "~/state/app";
 import { installDragController } from "~/lib/drag-install";
 import { currentScope, inboxTop, listKey, loadMore, searchOfKey, useList } from "~/state/list";
 import { wantExcerpts } from "~/state/excerpts";
-import { digestFrom, digestLabel, setComingUpOpen, useToday, type TodayGroup } from "~/state/today";
-import type { TodayTask } from "~/lib/dated";
-import { TodayDatedOffer } from "./today-dated-offer";
-import { DIGEST_ROW_ID } from "@terno/core";
 import { clearSelection, selectScope } from "~/lib/select";
 import { scopeLabel } from "~/lib/selection";
 import { SearchHelp } from "./search-help";
@@ -42,7 +38,7 @@ import { ReviewAlwaysMenu, ReviewButtons } from "./review-actions";
 import { ReviewSwitcher } from "./review-switcher";
 import { ReviewEmpty } from "./review-empty";
 import { focusQuietly } from "~/lib/quiet-focus";
-import { ROW_SHAPE, ThreadRow, type ThreadRowProps } from "./thread-row";
+import { ThreadRow } from "./thread-row";
 import { registerDesignAnchor, useDesign } from "~/lib/design";
 import { LearnedBanner, LearnedSource, useLearnedProposal } from "./learned-banner";
 import { ForwardQuestion } from "./forward-question";
@@ -61,7 +57,7 @@ import ActionPreviewHeader from "./action-preview-header";
 import { renderProbe } from "~/lib/render-probe";
 import { LIST_TITLE } from "~/lib/list-title";
 import { listCovered, usePage } from "~/lib/page";
-import { pressRow, releaseRow } from "~/lib/select";
+import { focusFeed } from "~/lib/feed-focus";
 
 /**
  * What covers the list's last rows now: List's pinned draft (Split's is over the reader, plan 158), and Split's pinned
@@ -72,25 +68,11 @@ const pinnedOver = (snack: number, pinned: number): number => Math.max(0, bottom
 const askOverList = (): number => (usePinnedAsk.getState().overList ? usePinnedAsk.getState().inset : 0);
 const listInset = (): number => (useAppearance.getState().layout === "list" ? pinnedOver(listCovered() ? 0 : useSnack.getState().inset, pinnedInsetNow()) : askOverList());
 
-const EMPTY_GROUPS: readonly TodayGroup[] = [];
-const NO_TASKS: ReadonlyMap<number, TodayTask> = new Map();
-
-/** Plan 145: what the rows under it are, drawn in space the row above leaves. Not a stop for arrow keys: a listbox holds only its options. */
-function TodayHeading({ kind, top }: { kind: TodayGroup["kind"]; top: number }) {
-  // plan 162 (after ai162-r01): a section's name in the ink at the rows' size, a real heading (it was a 12 px grey label,
-  // quieter than the digest's row above it)
-  return (
-    <div aria-hidden data-testid="today-heading" data-kind={kind} className="absolute inset-x-0 flex items-end px-5 pb-1 text-sm font-medium text-foreground" style={{ top, height: TOP_LABEL }}>
-      {sectionName(kind)}
-    </div>
-  );
-}
-
 const TOP_HEADING_ID = { pinned: "inbox-pinned-label", reminders: "inbox-reminders-label", inbox: "inbox-rest-label" } as const satisfies Record<TopSectionKind, string>;
 
 /**
  * Plans 87, 179: what the Inbox's rows under it are: Pinned, Reminders and, once either leads, the rest of the Inbox
- * under its own name (the account's, in one account's Inbox). Words only, at Today's headings' size in the softer ink (the owner), and how many in
+ * under its own name (the account's, in one account's Inbox). Words only, at the rows' size in the softer ink (the owner), and how many in
  * the quiet ink (the owner). Each row says what it is to a screen reader itself.
  */
 function TopHeading({ kind, top, name, count }: { kind: TopSectionKind; top: number; name: string; count: string | null }) {
@@ -98,74 +80,6 @@ function TopHeading({ kind, top, name, count }: { kind: TopSectionKind; top: num
     <div aria-hidden data-testid={TOP_HEADING_ID[kind]} className="absolute inset-x-0 flex items-end gap-1 px-5 pb-1 text-sm font-medium text-foreground-soft" style={{ top, height: INBOX_LABEL }}>
       <span className="min-w-0 truncate">{name}</span>
       {count !== null && <span data-testid="inbox-section-count" className="shrink-0 font-normal text-muted-foreground tabular-nums">({count})</span>}
-    </div>
-  );
-}
-
-/** Each of Today's sections has a heading of its own, in the sections' style. */
-const SECTION_NAME = { missed: "today.missed", today: "today.today", needsYou: "today.needsYou", soon: "today.soon", reminders: "today.reminders", comingUp: "today.comingUp", history: "today.history" } as const satisfies Record<TodayGroup["kind"], string>;
-
-/** Plan 162 (Codex review): a section's name, said to assistive tech by its first row (the drawn heading is aria-hidden) */
-function sectionName(kind: TodayGroup["kind"]): string;
-function sectionName(kind: TodayGroup["kind"] | undefined): string | undefined;
-function sectionName(kind: TodayGroup["kind"] | undefined): string | undefined {
-  return kind ? t(SECTION_NAME[kind]) : undefined;
-}
-
-/**
- * Plan 204 (after the panel, revision 10, superseding plan 162's place in Today's header): the digest's way in is the
- * list's last option again (plan 145's row), after every person and every held row, under no heading of its own. It takes
- * the cursor as a row does (j/k, Enter, the active descendant) and nothing else a thread can: no thread id, so it's never
- * checked, dragged, given a menu or a thread's actions. In the row's anatomy: its glyph in the avatars' column (or on the
- * text line, with none), its count line where a sender is, under it who they're from, a chevron.
- */
-function DigestListRow({ top, height, line, compact, layout, pick, position }: { top: number; height: number; line: boolean; compact: boolean; layout: ThreadRowProps["layout"]; /** List's rows keep a checkbox slot before the names: its glyph goes there */ pick: boolean; position: number }) {
-  const digest = useToday((s) => s.digest);
-  const selected = useApp((s) => s.selectedId === DIGEST_ROW_ID);
-  // what assistive tech hears as selected, as a row's: the cursor while nothing is checked (it's never checked itself)
-  const inSelection = useApp((s) => s.selectedId === DIGEST_ROW_ID && s.checked.size === 0 && s.scope === null);
-  if (!digest) return null;
-  const from = digestFrom(digest, getLocale());
-  const quiet = !selected && "text-muted-foreground";
-  // with no avatars, List's rows keep a slot of a check's size before the names (ThreadRowView's): the glyph is centred in it
-  const slot = layout === "classic" && pick && (
-    <span aria-hidden data-testid="digest-row-tile" className={cn("relative flex w-6 shrink-0 items-center justify-center", quiet)}>
-      <Newspaper className="size-[1.15em]" />
-    </span>
-  );
-  const tile = layout !== "classic" && (
-    <span aria-hidden data-testid="digest-row-tile" className={cn("grid shrink-0 place-items-center rounded-full bg-muted text-muted-foreground [&_svg]:size-4", compact ? "size-(--avatar-row-compact)" : line ? "size-(--avatar-row-wide)" : "size-(--avatar-row)")}>
-      <Newspaper />
-    </span>
-  );
-  return (
-    <div
-      role="option"
-      id={`thread-${DIGEST_ROW_ID}`}
-      aria-selected={inSelection}
-      aria-posinset={position}
-      data-cursor={selected || undefined}
-      data-testid="digest-row"
-      // pressed and released on the click, as its header button was (Codex review): the press's focus has gone to the list
-      // by then, so the page opening takes the keys; a bulk selection ends, as opening any row ends it
-      onClick={() => {
-        pressRow(DIGEST_ROW_ID, { meta: false, ctrl: false, shift: false });
-        releaseRow(DIGEST_ROW_ID);
-      }}
-      // hover and the selection fill it as any row's; its gaps a row's (a wide row's are wider)
-      className={cn("group/row absolute left-0 flex w-full cursor-pointer items-center px-5 select-none", (line && !compact) || layout === "large-avatar" ? "gap-3" : layout === "classic" ? "gap-2" : "gap-2.5", ROW_SHAPE, selected ? "text-row-selected-foreground before:bg-row-selected" : "text-foreground hover:before:bg-row-hover")}
-      style={{ transform: `translateY(${top}px)`, height }}
-    >
-      {tile || slot}
-      <span className="sr-only">{t("today.newsletters")}, </span>
-      <span className={cn("relative flex min-w-0 flex-1", line ? "items-baseline gap-2" : "flex-col")}>
-        <span data-testid="digest-row-title" className="flex min-w-0 items-center gap-1.5 type-row-from-strong">
-          {layout === "classic" && !pick && <Newspaper aria-hidden data-testid="digest-row-tile" className={cn("size-[1.15em] shrink-0", quiet)} />}
-          <span className="min-w-0 truncate">{digestLabel(digest)}</span>
-        </span>
-        {from && <span data-testid="digest-row-from" className={cn("min-w-0 truncate type-row-snippet", quiet)}>{from}</span>}
-      </span>
-      <ChevronRight aria-hidden className={cn("relative size-4 shrink-0", quiet)} />
     </div>
   );
 }
@@ -440,8 +354,12 @@ export function closeEmptySearch(): void {
 
 const listRows = () => document.querySelector<HTMLElement>("[data-testid=thread-list] [data-keep-scroll=list]");
 
-/** Focus on the rows (where j/k and Esc are the list's), as soon as there are some: an empty list hands focus away. */
+/**
+ * Focus on the rows (where j/k and Esc are the list's), as soon as there are some: an empty list hands focus away. Plan
+ * 210: What matters is a feed, not this list: its item has the keys.
+ */
 export function focusRows(): void {
+  if (getApp().today) return void focusFeed();
   if (useList.getState().items.length) return void listRows()?.focus({ preventScroll: true });
   const off = useList.subscribe((l) => {
     if (l.loading) return;
@@ -452,6 +370,7 @@ export function focusRows(): void {
 
 /** Plan 158, the skip link: the rows, or with none the list's own first control (its header, or a preview's), never a wait. */
 export function skipToList(): void {
+  if (getApp().today && focusFeed()) return;
   if (useList.getState().items.length) return focusRows();
   document.querySelector<HTMLElement>("[data-testid=thread-list] :is(button, input):not([disabled])")?.focus();
 }
@@ -683,38 +602,13 @@ function Subtitle({ filter, greeting }: { filter: QuickFilter | undefined; greet
   );
 }
 
-/**
- * Plan 161: Today's numbers in words, under its title in every header. Pass 3: one sentence, never a second total to read
- * against the Inbox's. Plan 204: the list holds all of it (no cap, no way to "the rest"), so the sentence is the count;
- * after it, Coming up's quiet toggle ("4 coming up"), which opens its rows at the list's end. A control, so it lives here:
- * the listbox holds only its options.
- */
-export function TodayLine() {
-  const needs = useApp((s) => s.counts.today ?? null);
-  const counted = useToday((s) => s.counted);
-  const comingUp = useToday((s) => s.comingUp);
-  const open = useToday((s) => s.comingUpOpen);
-  const count = needs ?? counted;
-  return (
-    <p data-testid="today-line" className="type-list-subtitle flex min-w-0 flex-wrap items-center gap-x-2 text-muted-foreground tabular">
-      {count > 0 && <span data-testid="today-needs" className="text-foreground">{t("today.line.needs", { count })}</span>}
-      {comingUp > 0 && (
-        <Button variant="link-secondary" data-testid="today-coming-up" aria-expanded={open} className={COUNT_LINK} onClick={() => setComingUpOpen(!open)}>
-          {open ? t("today.line.hideComingUp") : t("today.line.comingUp", { count: comingUp })}
-        </Button>
-      )}
-    </p>
-  );
-}
-
 function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement>; /** List's full-width list: everything that fits sits on the title's line */ oneRow: boolean }) {
   const view = useApp((s) => s.view);
   const category = useApp((s) => s.categories.find((c) => c.id === s.categoryId));
   const folder = useApp(folderName);
   const review = useApp((s) => s.categories.find((c) => c.id === s.reviewCategoryId));
   // plan 87: Reminders is a list of its own, unfiltered (no quick filters)
-  const reminders = useApp((s) => s.reminders || s.followups || s.today);
-  const today = useApp((s) => s.today);
+  const reminders = useApp((s) => s.reminders || s.followups);
   const followups = useApp((s) => s.followups);
   const account = useApp((s) => s.accounts.find((a) => a.id === s.accountId));
   const query = useApp((s) => s.query);
@@ -730,7 +624,7 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
   // plan 64: a search looks everywhere, so the list is the search's, not the sidebar mailbox's
   const searching = query.trim() !== "" && !review;
   // plan 159: Review says what it's for; the category in view is its switcher's, under the title
-  const title = searching ? t("list.search.title") : review ? t("sidebar.sort") : today ? t("today.title") : followups ? t("followups.title") : reminders ? t("view.reminders") : (folder ?? category?.name ?? viewLabel(view));
+  const title = searching ? t("list.search.title") : review ? t("sidebar.sort") : followups ? t("followups.title") : reminders ? t("view.reminders") : (folder ?? category?.name ?? viewLabel(view));
   // the title names the mailbox; the greeting is the words under the inbox's (any account; not a Gmail tab of it, plan 86)
   const kind = design.variants.listHeader === "greeting" && view === "inbox" && !folder && !category && !review && !searching ? "greeting" : design.variants.listHeader === "title" ? "title" : "display";
   const behindButton = design.variants.search === "button";
@@ -825,8 +719,6 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
             </p>
           ) : review ? (
             <ReviewSwitcher />
-          ) : today ? (
-            <TodayLine />
           ) : (
             kind !== "title" && <Subtitle filter={filter} greeting={kind === "greeting"} />
           )}
@@ -866,8 +758,7 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
           </div>
           {/* gives way as the list scrolls (at once: moving through a list never animates), unless it says what a search found */}
           {!review && <div
-            // plan 161: Today's line is its way to the digest: it stays
-            data-keep={query || today ? true : undefined}
+            data-keep={query ? true : undefined}
             // on a short window it gives its room to the rows (the counts are the sidebar's too), unless it says what a search found
             className="-mt-1.5 pb-2 pl-3 group-data-scrolled/list:not-data-keep:hidden [@media(max-height:760px)]:not-data-keep:hidden"
           >
@@ -876,26 +767,12 @@ function Header({ hairlineRef, oneRow }: { hairlineRef: React.Ref<HTMLDivElement
                 {stats}
                 {searchAll}
               </p>
-            ) : today ? (
-              <>
-                <TodayLine />
-                <TodayDatedOffer />
-              </>
             ) : (
               <Subtitle filter={filter} greeting={kind === "greeting"} />
             )}
           </div>}
         </>
       )}
-      {/* plan 161: the title row has no subtitle line: Today's numbers and its digest get one of their own */}
-      {!oneRow && kind === "title" && today && !searching && (
-        <div className="-mt-1.5 pb-2 pl-3">
-          <TodayLine />
-          <TodayDatedOffer />
-        </div>
-      )}
-      {/* plan 204: List's one row has no room for the offer: it gets a line of its own, on the title's text edge */}
-      {oneRow && today && !searching && <TodayDatedOffer className="-mt-1 pb-2 pl-3" />}
       {/* plan 159: Review's switcher on a line of its own under the title, in every header (it never gives way: it's where you are) */}
       {!oneRow && review && !searching && (
         <div className="-mt-1.5 pb-2 pl-3">
@@ -1050,7 +927,6 @@ function ListEmptyState() {
   const view = useApp((s) => s.view);
   const reminders = useApp((s) => s.reminders);
   const followups = useApp((s) => s.followups);
-  const today = useApp((s) => s.today);
   const review = useApp((s) => s.categories.find((c) => c.id === s.reviewCategoryId));
   const previewing = useApp((s) => s.actionPreview !== null);
   const ruleOnly = useActionPreview((s) => s.preview !== null && savesRuleOnly(s.preview));
@@ -1059,8 +935,6 @@ function ListEmptyState() {
     return <EmptyState title={t("action.rule.emptyTitle")} hint={t("action.rule.emptyBody")} />;
   // plans 159, 192: Review's last one answered: it stays (Undo brings the rows back here), and goes on
   if (review) return <ReviewEmpty key={review.id} category={review} />;
-  if (today)
-    return <EmptyState icon={<Sun className="mb-2 size-7 text-muted-foreground" aria-hidden />} title={t("today.empty")} />;
   if (followups)
     return <EmptyState icon={<ListChecks className="mb-2 size-7 text-muted-foreground" aria-hidden />} title={t("followups.empty")} hint={t("followups.emptyHint")} />;
   if (reminders)
@@ -1158,17 +1032,10 @@ export function ThreadList() {
   const lead = learned.proposal && !previewing ? learned.height : 0;
   const leadRef = useRef(lead);
   leadRef.current = lead;
-  const inToday = useApp((s) => s.today);
-  const todayGroups = useToday((s) => (inToday ? s.groups : EMPTY_GROUPS));
-  // plan 204 (after the panel): what each Today row's task is (its line leads, its due day is its date), and the digest's
-  // row at the end, set apart by a heading's room with no words in it
-  const tasks = useToday((s) => (inToday ? s.tasks : NO_TASKS));
-  const digestAt = useToday((s) => (inToday ? s.digestAt : -1));
-  // every heading the rows have, by the row each stands above: the top's sections, or Today's (never both)
-  const headingsKey = [...sections.headings.map((h) => h.at), ...todayGroups.map((g) => g.at), ...(digestAt > 0 ? [digestAt] : [])].join();
+  // every heading the rows have, by the row each stands above (the top's sections)
+  const headingsKey = sections.headings.map((h) => h.at).join();
   const headingAt = useMemo(() => new Set(headingsKey ? headingsKey.split(",").map(Number) : []), [headingsKey]);
-  // the Inbox's headings have more room above their words than Today's
-  const label = sections.headings.length ? INBOX_LABEL : TOP_LABEL;
+  const label = INBOX_LABEL;
   // (read by the design switch's anchor, before and after the new heights)
   const spacingRef = useRef<Omit<RowSpacing, "lead">>({ label, groups: [] });
   spacingRef.current = { label, groups: [...headingAt] };
@@ -1221,7 +1088,7 @@ export function ThreadList() {
         const rows = useList.getState().items;
         if (!el || rows.length === 0) return;
         const oldH = measuredHeight.current;
-        // the offer above the rows, the Reminders label and gap and Today's headings keep their heights whatever the rows'
+        // the offer above the rows, the Reminders label and gap and the Inbox's headings keep their heights whatever the rows'
         // (plan 174): only the rows themselves scale
         const spacing = (): RowSpacing => ({ lead: leadRef.current, ...spacingRef.current });
         const was = spacing();
@@ -1451,13 +1318,8 @@ export function ThreadList() {
                 count={h.kind === "pinned" ? formatNumber(pinnedTop) : h.kind === "reminders" ? formatNumber(top - pinnedTop) : sections.total ? `${formatNumber(sections.total.n)}${sections.total.capped ? "+" : ""}` : null}
               />
             ))}
-            {/* plan 161, pass 2: each heading from its row's real offset */}
-            {todayGroups.map((g) => (
-              <TodayHeading key={g.kind} kind={g.kind} top={(virtualizer.measurementsCache[g.at]?.start ?? lead + TOP_LABEL) - TOP_LABEL} />
-            ))}
             {virtualItems.map((v) => (
-              v.index === digestAt ? <DigestListRow key={v.key} top={v.start} height={height} line={compact || wide} compact={compact} layout={layout} pick={list} position={v.index + 1} /> :
-              <ThreadRow key={v.key} thread={items[v.index]!} top={v.start} height={height} compact={compact} wide={wide} showAccount={showAccount} icons={icons} layout={layout} review={review} pinnedTop={v.index < pinnedTop} reminderTop={v.index >= pinnedTop && v.index < top} match={match} lines={lines} pick={list} section={sectionName(todayGroups.find((g) => g.at === v.index)?.kind)} task={tasks.get(items[v.index]!.id)} position={v.index + 1} />
+              <ThreadRow key={v.key} thread={items[v.index]!} top={v.start} height={height} compact={compact} wide={wide} showAccount={showAccount} icons={icons} layout={layout} review={review} pinnedTop={v.index < pinnedTop} reminderTop={v.index >= pinnedTop && v.index < top} match={match} lines={lines} pick={list} position={v.index + 1} />
             ))}
           </div>
         )}

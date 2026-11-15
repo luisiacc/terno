@@ -88,7 +88,6 @@ test("the open part, the automated section and the history under Earlier, paged 
   // automated mail: the section between the open part and the history
   await server.backend.store.sync.ingest([message(server, "news-1", { name: "Weekly News", email: "news@weekly.test" }, "Weekly issue", "This week's issue.", E2E_NOW - HOUR, { isRead: false, inInbox: true, listId: "weekly-1" })], { applyFilters: false, now: E2E_NOW, classifier: null });
   sqlDb(server.backend.store).run("UPDATE threads SET person = 0 WHERE subject = 'Weekly issue'");
-  await page.evaluate(() => localStorage.setItem("terno.wm.look", "brief"));
   await fresh(page);
   await page.getByTestId("nav-today").click();
   await expect(feed(page)).toBeVisible();
@@ -100,7 +99,7 @@ test("the open part, the automated section and the history under Earlier, paged 
     await axeBothModes(page, '[data-testid="wm-feed"]');
     const { rows, mostDrawn } = await walk(page);
     const kinds = rows.map((r) => r.kind);
-    expect(kinds[0]).toBe("#deadlines");
+    expect(kinds[0]).toBe("#today");
     expect(kinds.lastIndexOf("open")).toBeLessThan(kinds.indexOf("auto"));
     expect(kinds.indexOf("auto")).toBeLessThan(kinds.indexOf("#history"));
     const history = rows.filter((r) => r.kind === "history").map((r) => Number(/bill (\d+)/.exec(r.text)?.[1]));
@@ -176,27 +175,103 @@ test("the open part, the automated section and the history under Earlier, paged 
   });
 });
 
-test("the list look has no history; drawn as the feed, the same What matters has it", async ({ app: page, server }) => {
+test("an item: one sentence, when in its column, who under it; its conversation beside the feed, put away by Esc, the reader's Close or a second click; D and z; axe in light and dark", async ({ app: page, server }) => {
   await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" }, dated: { enabled: true, scanAnswered: true } }, dev);
   await item(server, "payroll", "Wire payroll", null);
-  await item(server, "closed-1", "Pay the old bill", E2E_NOW - HOUR);
   await fresh(page);
   await page.getByTestId("nav-today").click();
-  await expect(page.getByTestId("thread-row").filter({ hasText: "Wire payroll" })).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByTestId("thread-row").filter({ hasText: "Pay the old bill" })).toHaveCount(0);
-  await page.evaluate(() => localStorage.setItem("terno.wm.look", "brief"));
-  await fresh(page);
-  await page.getByTestId("nav-today").click();
-  await expect(line(page, "Wire payroll")).toBeVisible({ timeout: 15_000 });
-  await reach(page, "Pay the old bill");
-  await expect(line(page, "Pay the old bill")).toHaveAttribute("data-history", "true");
+  const it = line(page, "Wire payroll");
+  const open = it.getByTestId("wm-item-open");
+
+  await scenario("one plain sentence under its group; nothing opens by itself, so the feed has the reader's room", async () => {
+    await expect(it).toContainText("Wire payroll.", { timeout: 15_000 });
+    // after the UI panel: when in a column of its own, the list's words, the accent for today; who under the sentence,
+    // never the email's date
+    await expect(it.getByTestId("wm-when")).toHaveText(/^1:00\sPM$/);
+    await expect(it).toHaveAttribute("data-tone", "today");
+    await expect(it.getByTestId("wm-meta")).toHaveText("Billing");
+    // Done and Later in words, out of sight (and out of the pointer's way) until the item is hovered, focused or open
+    const controls = it.getByTestId("wm-controls");
+    await expect(controls).toHaveCSS("opacity", "0");
+    await it.hover();
+    await expect(controls).toHaveCSS("opacity", "1");
+    await expect(it.getByTestId("wm-done")).toHaveAccessibleName("Done");
+    await expect(it.getByTestId("wm-done")).toHaveAccessibleDescription("Wire payroll.");
+    await expect(it.getByTestId("wm-later")).toHaveAccessibleName("Later");
+    await page.mouse.move(0, 0);
+    await expect(feed(page).getByTestId("wm-heading").first()).toBeVisible();
+    await expect(page.getByTestId("reader")).toHaveCount(0);
+    await axeBothModes(page, '[data-testid="wm-feed"]');
+  });
+
+  await scenario("its conversation opens beside the feed, and Esc puts it away, the keys back on the item", async () => {
+    await open.click();
+    await expect(page.getByTestId("reader")).toBeVisible();
+    await expect(page.locator("#reader-subject")).toHaveText("Wire payroll (payroll)");
+    await expect(it).toHaveAttribute("data-open");
+    await expect(feed(page)).toBeVisible();
+    await expect(it.getByTestId("wm-controls")).toHaveCSS("opacity", "1");
+    await expect(open).toHaveAttribute("aria-expanded", "true");
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("reader")).toHaveCount(0);
+    await expect(it).not.toHaveAttribute("data-open");
+    await expect(open).toHaveAttribute("aria-expanded", "false");
+    await expect(open).toBeFocused();
+  });
+
+  await scenario("the reader's Close (after Forward) and a click on the open item put it away too; only beside the feed", async () => {
+    await open.click();
+    const close = page.getByTestId("reader-close");
+    await expect(close).toHaveAccessibleName("Close email");
+    await axeBothModes(page, "[data-reader-toolbar]");
+    // the toolbar's last control, after Reply and Forward, on their line
+    const box = async (id: string) => (await page.getByTestId(id).boundingBox())!;
+    const [forward, x] = [await box("action-forward"), await close.boundingBox()];
+    expect(x!.x).toBeGreaterThan(forward.x + forward.width);
+    expect(Math.abs(x!.y + x!.height / 2 - (forward.y + forward.height / 2))).toBeLessThanOrEqual(1);
+    await close.click();
+    await expect(page.getByTestId("reader")).toHaveCount(0);
+    await expect(open).toBeFocused();
+    await expect(open).toHaveAttribute("aria-expanded", "false");
+    // the place is kept: j/k go on from the item it was opened from
+    await expect(it).toHaveAttribute("data-cursor");
+    const at = await feed(page).locator("[data-thread-id]").evaluateAll((els, id) => els.findIndex((e) => e.getAttribute("data-thread-id") === id), await it.getAttribute("data-thread-id"));
+    await page.keyboard.press(at > 0 ? "k" : "j");
+    await expect(page.getByTestId("reader")).toBeVisible();
+    await expect(feed(page).locator("[data-thread-id]").nth(at > 0 ? at - 1 : at + 1)).toHaveAttribute("data-open");
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("reader")).toHaveCount(0);
+    // the same item again: open, then closed by a second click
+    await open.click();
+    await expect(page.getByTestId("reader")).toBeVisible();
+    await open.click();
+    await expect(page.getByTestId("reader")).toHaveCount(0);
+    await expect(it).not.toHaveAttribute("data-open");
+    // the Inbox's reader has no Close
+    await page.getByTestId("nav-inbox").click();
+    await page.getByTestId("thread-row").first().click();
+    await expect(page.getByTestId("reader")).toBeVisible();
+    await expect(page.getByTestId("reader-close")).toHaveCount(0);
+    await page.getByTestId("nav-today").click();
+    await expect(feed(page)).toBeVisible();
+  });
+
+  await scenario("D on the open item is its Done, and z brings it back", async () => {
+    if (await page.getByTestId("reader").count()) await page.keyboard.press("Escape");
+    await open.click();
+    await expect(it).toHaveAttribute("data-open");
+    await page.keyboard.press("d");
+    await expect(page.getByTestId("snack")).toContainText("Done: Wire payroll");
+    await expect(feed(page).locator("[data-thread-id]:not([data-history])").filter({ hasText: "Wire payroll" })).toHaveCount(0);
+    await page.keyboard.press("z");
+    await expect(feed(page).locator("[data-thread-id]:not([data-history])").filter({ hasText: "Wire payroll" })).toBeVisible();
+  });
 });
 
 test("the owner's inbox-zero setting: the gear on What matters' title row hides the finished items and shows them again; Settings has the same switch, and More settings opens it", async ({ app: page, server }) => {
   await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" }, dated: { enabled: true, scanAnswered: true } }, dev);
   await item(server, "payroll", "Wire payroll", null);
   await item(server, "closed-1", "Pay the old bill", E2E_NOW - HOUR);
-  await page.evaluate(() => localStorage.setItem("terno.wm.look", "brief"));
   await fresh(page);
   await page.getByTestId("nav-today").click();
   await expect(line(page, "Wire payroll")).toBeVisible({ timeout: 15_000 });
