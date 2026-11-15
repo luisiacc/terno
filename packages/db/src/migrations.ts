@@ -1513,6 +1513,17 @@ CREATE INDEX dated_closed_thread ON dated_items(thread_id, closed_at DESC, id DE
 CREATE INDEX followups_closed ON followups(closed_at DESC, id DESC) WHERE kind = 'promise' AND state IN ('done','dismissed');
 CREATE INDEX followups_closed_thread ON followups(thread_id, closed_at DESC, id DESC) WHERE kind = 'promise' AND state IN ('done','dismissed');
 ` },
+  // plan 210 (iteration 2): a message the dated reader read and found nothing asked of the reader in, which Needs you reads
+  // (the reader's marks go once it's read), found by its thread. Shape only: an empty table, bounded by the waiting window
+  { version: 60, name: "dated reader: nothing asked (plan 210)", sql: `
+CREATE TABLE dated_nothing_asked (
+  message_id INTEGER PRIMARY KEY REFERENCES messages(id) ON DELETE CASCADE,
+  thread_id INTEGER NOT NULL,
+  arrived_at INTEGER NOT NULL,
+  prompt_version INTEGER NOT NULL
+) WITHOUT ROWID;
+CREATE INDEX dated_nothing_asked_thread ON dated_nothing_asked(thread_id);
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

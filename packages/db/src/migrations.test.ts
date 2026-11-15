@@ -684,3 +684,20 @@ describe("migration v58: a promise's Later (plan 204, the fifth panel round)", (
     expect(db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'followups' AND sql IS NOT NULL ORDER BY name").map((r) => r.name)).toEqual(["followups_active", "followups_closed", "followups_closed_thread", "followups_thread", "followups_top"]);
   });
 });
+
+describe("migration v60: what the dated reader read with nothing asked (plan 210, iteration 2)", () => {
+  it("adds an empty table keyed by message and found by thread, every message kept; a row goes with its message", () => {
+    const { db } = legacyMail(59, { threads: 2, seed: 10 });
+    const before = db.all<Record<string, unknown>>("SELECT id, thread_id FROM messages ORDER BY id");
+    expect(migrate(db)).toEqual({ from: 59, to: SCHEMA_VERSION });
+    expect(db.get<{ n: number }>("SELECT count(*) AS n FROM dated_nothing_asked")!.n).toBe(0);
+    expect(db.all<Record<string, unknown>>("SELECT id, thread_id FROM messages ORDER BY id")).toEqual(before);
+    expect(db.all<{ name: string }>("SELECT name FROM pragma_table_info('dated_nothing_asked') ORDER BY cid").map((r) => r.name)).toEqual(["message_id", "thread_id", "arrived_at", "prompt_version"]);
+    expect(db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'dated_nothing_asked' AND sql IS NOT NULL").map((r) => r.name)).toEqual(["dated_nothing_asked_thread"]);
+    const m = before.at(-1) as { id: number; thread_id: number };
+    db.run("INSERT INTO dated_nothing_asked (message_id, thread_id, arrived_at, prompt_version) VALUES (?, ?, 5, 12)", m.id, m.thread_id);
+    db.exec("PRAGMA foreign_keys = ON");
+    db.run("DELETE FROM messages WHERE id = ?", m.id);
+    expect(db.get<{ n: number }>("SELECT count(*) AS n FROM dated_nothing_asked")!.n).toBe(0);
+  });
+});

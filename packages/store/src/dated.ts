@@ -1,4 +1,4 @@
-import { addressKey, tabOfCode, type DatedKind, type DatedRow, type DatedState } from "@terno/core";
+import { addressKey, ANSWERED_KINDS, tabOfCode, type DatedKind, type DatedRow, type DatedState } from "@terno/core";
 
 /**
  * Plan 204: dated items, from mail the user got.
@@ -12,6 +12,18 @@ import { addressKey, tabOfCode, type DatedKind, type DatedRow, type DatedState }
 
 export const DATED_MARK_MS = 3 * 86_400_000;
 export const DATED_SCAN_MARK_MS = 14 * 86_400_000;
+
+/**
+ * Plan 210 (iteration 2, the owner: "only when something is asked"): `dated_nothing_asked` keeps each message the reader
+ * read, at this prompt or later, and found no `ask` or `respond` in (what the checks kept). A waiting conversation whose
+ * latest message from them is one leaves Needs you (`stillWaiting`, both stores); mail not read keeps plan 145's rule.
+ * Prompt v12 is the first whose "nothing asked" is trusted for it (a thanks, a closing reply).
+ */
+export const DATED_NOTHING_ASKED_SINCE = 12;
+
+/** A reading that records "nothing asked": a trusted prompt, and no request of the reader (`ask`, `respond`) kept. */
+export const readNothingAsked = (w: Pick<DatedFinish, "rows" | "promptVersion">): boolean =>
+  w.promptVersion != null && w.promptVersion >= DATED_NOTHING_ASKED_SINCE && !w.rows.some((r) => ANSWERED_KINDS.includes(r.kind));
 
 export interface DatedMark {
   messageId: number;
@@ -159,7 +171,11 @@ export interface DatedStore {
    * round), from messages older than it, newest first, at most `limit`
    */
   openFor(o: { threadId: number; senderKey: string; before: number; limit: number }): Promise<DatedRow[]>;
-  /** Results, settlements and consuming the mark, in one commit that checks the clear generation and the source (revision 6). */
+  /**
+   * Results, settlements and consuming the mark, in one commit that checks the clear generation and the source (revision 6).
+   * Plan 210: rows with no `ask` or `respond` at `DATED_NOTHING_ASKED_SINCE` or later also record the message as read with
+   * nothing asked of the reader (`dated_nothing_asked`), in the same commit.
+   */
   finish(write: DatedFinish): Promise<DatedFinishOutcome>;
   /** open, by `act_at`, at most `DATED_ACTIVE_MAX` */
   active(): Promise<DatedRow[]>;
@@ -184,9 +200,9 @@ export interface DatedStore {
   update(id: number, revision: number, patch: Partial<Pick<DatedRow, "state" | "deferredUntil" | "closedReason" | "closedAt">>, schedule?: { dueDay: string; dueAt: number }): Promise<DatedSnapshot | null>;
   /** Undo: each row only if nothing else changed it since */
   restore(rows: readonly { snapshot: DatedSnapshot; expectRevision: number }[]): Promise<number>;
-  /** closed rows past `DATED_CLOSED_KEEP_MS` */
+  /** closed rows past `DATED_CLOSED_KEEP_MS`, and "nothing asked" of mail older than the waiting window (`waitingCutoff`) */
   prune(now: number): Promise<number>;
-  /** Clear AI data: rows and marks; ups the generation */
+  /** Clear AI data: rows, marks and what was read with nothing asked; ups the generation */
   clear(): Promise<void>;
   clearGeneration(): number;
 }
