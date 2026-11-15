@@ -661,23 +661,27 @@ describe("after the panel", () => {
 
   it("plan 210 (Codex code review): two put off to the same day are under it timed first, whatever their own days were", async () => {
     const { client, model, receive, read, clock } = await setup();
-    model.answer = (req) =>
-      promptText(req.messages[0]!.content).includes("payroll")
-        ? reply([{ kind: "pay", text: "Fund payroll", quote: "payroll by 1:00 PM", due: "2026-11-11", time: "13:00" }])
-        : reply([{ kind: "pay", text: "Pay the bill", quote: "due on November 10", due: "2026-11-10", time: null }]);
+    model.answer = (req) => {
+      const p = promptText(req.messages[0]!.content);
+      if (p.includes("payroll")) return reply([{ kind: "pay", text: "Fund payroll", quote: "payroll by 1:00 PM", due: "2026-11-11", time: "13:00" }]);
+      if (p.includes("invoice")) return reply([{ kind: "pay", text: "Pay the invoice", quote: "invoice by 6:00 PM", due: "2026-11-10", time: "18:00" }]);
+      return reply([{ kind: "pay", text: "Pay the bill", quote: "due on November 10", due: "2026-11-10", time: null }]);
+    };
     const payroll = await receive({ subject: "Payroll", bodyText: "Fund payroll by 1:00 PM on November 11." });
+    const invoice = await receive({ from: { name: "Studio", email: "billing@studio.test" }, subject: "Invoice", bodyText: "Pay the invoice by 6:00 PM on November 10." });
     const bill = await receive({ from: { name: "Gas", email: "bills@gas.test" }, subject: "Gas bill", bodyText: "Your bill is due on November 10." });
     await read();
-    // both Missed on the 12th, both put off to the 20th
+    // all Missed on the 12th, all put off to the 20th
     clock.now = at(2026, 11, 12, 10);
-    for (const thread of [payroll, bill]) {
+    for (const thread of [payroll, invoice, bill]) {
       const [row] = (await client.call("dated.ofThread", { threadId: thread })).rows;
       await client.call("dated.act", { id: row!.id, revision: row!.revision, action: "later", until: at(2026, 11, 20, 9) });
     }
     clock.now = at(2026, 11, 15, 10);
     const coming = (await client.call("today.list", { heldIds: [] })).sections.filter((x) => x.kind === "comingUp");
-    // under the 20th, the day they're back (never their own past days), the timed payroll first
-    expect(coming.map((x) => [x.day, x.items.map((i) => i.thread.id)])).toEqual([["2026-11-20", [payroll, bill]]]);
+    // under the 20th, the day they're back (never their own past days): the timed by their time of day (round 2: the 1:00 PM
+    // payroll before the 6:00 PM invoice, though the invoice was due a day earlier), then the untimed bill
+    expect(coming.map((x) => [x.day, x.items.map((i) => i.thread.id)])).toEqual([["2026-11-20", [payroll, invoice, bill]]]);
   });
 
   it("Codex code review of the fixes: a thread with two items the same day shows the timed one", async () => {
