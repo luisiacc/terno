@@ -148,7 +148,7 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
         expect(active.map((r) => r.item)).toEqual([1, 0]);
         expect(active[1]).toEqual({
           id: active[1]!.id, threadId: a.thread, messageId: a.id, item: 0, kind: "pay", text: "Pay the electricity bill", quote: "due on November 20", senderKey: "bills@bank.test", dueDay: "2026-11-20", dueAt: NOW + 7 * DAY, timed: false, dated: true, actAt: NOW + 4 * DAY,
-          deferredUntil: null, arrivedAt: a.m.date, state: "open", closedReason: null, closedAt: null, fromScan: false, revision: 0, model: "m", provider: "p", createdAt: NOW,
+          deferredUntil: null, arrivedAt: a.m.date, state: "open", closedReason: null, closedAt: null, fromScan: false, revision: 0, model: "m", provider: "p", createdAt: NOW, early: false, sameAs: null, detailOf: null,
         });
         // read once: a second answer finds no mark and changes nothing
         expect(await finish(a.id, a.thread, { rows: [item({ item: 2 })] })).toBe("gone");
@@ -662,6 +662,133 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
         await s.store.dated.update(back!.id, back!.revision, { state: "open", closedReason: null, closedAt: null });
         expect((await s.store.dated.newestClosed([m.thread], since)).get(m.thread)).toEqual({ at: NOW - 4000, id: first!.id });
         expect((await s.store.dated.closedPage({ since, after: null, limit: 10 })).map((r) => r.id)).not.toContain(second!.id);
+      });
+    });
+
+    describe("What matters' items (plan 210, iteration 2)", () => {
+      /** a dated item and two promises of yours, each on a conversation of its own, plus a second dated item */
+      async function items() {
+        const s = await setup();
+        const promise = async (key: string, over: { text?: string; timed?: boolean; dueAt?: number; item?: number } = {}) => {
+          const m = msg({ accountId: s.accountId, from: me, to: [bank], isSent: true, inInbox: false, rfcMessageId: `${key}@x`, date: NOW - 9000, providerMsgId: `${key}-sent` });
+          const r = await s.store.sync.ingest([m], { applyFilters: false, now: NOW, classifier: null, liveSent: { wanted: true } });
+          const thread = await threadOf(s.store, `${key}-sent`);
+          await s.store.followups.finish({ messageId: r.inserted[0]!, threadId: thread, fromScan: false, rows: [{ kind: "promise", item: over.item ?? 0, text: over.text ?? "send the slip and $12", quote: "I'll send the slip", personName: "Bank", personEmail: bank.email, dueAt: over.dueAt ?? NOW + DAY, dated: true, ...(over.timed !== undefined ? { timed: over.timed } : {}) }], kept: [], now: NOW, model: "m", provider: "p", promptVersion: 1, clearGeneration: s.store.followups.clearGeneration() });
+          return { thread, row: (await s.store.followups.ofThread(thread))[0]! };
+        };
+        const dated = async (key: string, over: Partial<DatedWrite> = {}) => {
+          const m = await s.got({ providerMsgId: key, subject: key });
+          await s.finish(m.id, m.thread, { rows: [s.item(over)] });
+          return (await s.store.dated.ofThread(m.thread))[0]!;
+        };
+        return { ...s, promise, dated };
+      }
+
+      it("an item read early keeps it, and a promise's stated time and its first broken day round-trip", async () => {
+        const { store, dated, promise, got, finish } = await items();
+        const early = await dated("early", { kind: "respond", early: true });
+        expect(early.early).toBe(true);
+        expect((await dated("plain")).early).toBe(false);
+        expect(early).toMatchObject({ sameAs: null, detailOf: null });
+        const timed = await promise("timed", { timed: true });
+        expect(timed.row).toMatchObject({ timed: true, sameAs: null, brokenDueAt: null });
+        expect((await promise("untimed", { text: "send the deck" })).row.timed).toBe(false);
+        // broken (its day over when their mail came) and moved: the first broken day is kept, a second move doesn't take it
+        const late = await promise("late", { dueAt: NOW - 2 * DAY });
+        const reply = (date: number) => got({ inReplyTo: "late@x", references: ["late@x"], date });
+        const a = await reply(NOW - 3000);
+        await finish(a.id, a.thread, { movedPromises: [{ id: late.row.id, revision: late.row.revision, dueAt: NOW + 3 * DAY, brokenDueAt: NOW - 2 * DAY, timed: true }] });
+        expect(await store.followups.get(late.row.id)).toMatchObject({ dueAt: NOW + 3 * DAY, brokenDueAt: NOW - 2 * DAY, timed: true, revision: late.row.revision + 1 });
+        const b = await reply(NOW - 2000);
+        await finish(b.id, b.thread, { movedPromises: [{ id: late.row.id, revision: late.row.revision + 1, dueAt: NOW + 5 * DAY, brokenDueAt: NOW + 3 * DAY }] });
+        // no `timed`: as it was
+        expect(await store.followups.get(late.row.id)).toMatchObject({ dueAt: NOW + 5 * DAY, brokenDueAt: NOW - 2 * DAY, timed: true });
+        // a move that wasn't after a broken day leaves none
+        const fresh = await promise("fresh", { dueAt: NOW + DAY });
+        const c = await got({ inReplyTo: "fresh@x", references: ["fresh@x"], date: NOW - 1000 });
+        await finish(c.id, c.thread, { movedPromises: [{ id: fresh.row.id, revision: fresh.row.revision, dueAt: NOW + 2 * DAY, brokenDueAt: null }] });
+        expect(await store.followups.get(fresh.row.id)).toMatchObject({ dueAt: NOW + 2 * DAY, brokenDueAt: null, timed: false });
+      });
+
+      it("links duplicates to a canonical and details to their item, on open rows only, never over one set nor in a chain, and the revision stays", async () => {
+        const { store, dated, promise } = await items();
+        const bill = await dated("bill", { text: "Pay $12 for the bus" });
+        const slip = await promise("slip");
+        const dinner = await dated("dinner", { kind: "event", text: "Dinner at Nopa" });
+        const mention = await dated("mention", { kind: "event", text: "Dinner with Jess at Nopa" });
+        const outbound = await dated("outbound", { kind: "event", text: "Flight to Austin" });
+        const back = await dated("back", { kind: "event", text: "Return flight from Austin" });
+        const closed = await dated("closed");
+        await store.dated.update(closed.id, closed.revision, { state: "done", closedReason: "user", closedAt: NOW });
+        const n = await store.today.link({
+          same: [
+            { item: { source: "promise", id: slip.row.id }, sameAs: `dated:${bill.id}` },
+            { item: { source: "dated", id: mention.id }, sameAs: `dated:${dinner.id}` },
+            // closed: never linked
+            { item: { source: "dated", id: closed.id }, sameAs: `dated:${dinner.id}` },
+            // a chain: the target is itself a member
+            { item: { source: "dated", id: outbound.id }, sameAs: `dated:${mention.id}` },
+            // the canonical of others isn't made anyone's
+            { item: { source: "dated", id: dinner.id }, sameAs: `dated:${bill.id}` },
+            // no such target, and not itself
+            { item: { source: "dated", id: outbound.id }, sameAs: "dated:987654" },
+            { item: { source: "dated", id: outbound.id }, sameAs: `dated:${outbound.id}` },
+          ],
+          details: [{ id: back.id, detailOf: outbound.id }, { id: outbound.id, detailOf: outbound.id }, { id: closed.id, detailOf: outbound.id }],
+        });
+        expect(n).toBe(3);
+        expect(await store.followups.get(slip.row.id)).toMatchObject({ sameAs: `dated:${bill.id}`, revision: slip.row.revision });
+        expect(await store.dated.get(mention.id)).toMatchObject({ sameAs: `dated:${dinner.id}`, revision: mention.revision });
+        expect(await store.dated.get(back.id)).toMatchObject({ detailOf: outbound.id, revision: back.revision });
+        for (const id of [dinner.id, bill.id, outbound.id, closed.id]) expect((await store.dated.get(id))!.sameAs).toBeNull();
+        // never over one already set
+        expect(await store.today.link({ same: [{ item: { source: "dated", id: mention.id }, sameAs: `dated:${bill.id}` }], details: [{ id: back.id, detailOf: bill.id }] })).toBe(0);
+        expect((await store.dated.get(mention.id))!.sameAs).toBe(`dated:${dinner.id}`);
+        // members: each canonical's own row and its members, in any state; nothing else
+        await store.dated.update(mention.id, mention.revision, { state: "done", closedReason: "user", closedAt: NOW });
+        const found = await store.today.members([`dated:${dinner.id}`, `dated:${bill.id}`, "promise:987654", "nonsense"]);
+        expect(found.dated.map((r) => r.id)).toEqual([bill.id, dinner.id, mention.id].sort((a, b) => a - b));
+        expect(found.promises.map((r) => r.id)).toEqual([slip.row.id]);
+        expect(await store.today.members([`promise:${slip.row.id}`])).toMatchObject({ dated: [], promises: [{ id: slip.row.id }] });
+        expect(await store.today.members([])).toEqual({ dated: [], promises: [] });
+      });
+
+      it("acts on a dated item and a promise at once, all or none, and its Undo restores both only while neither changed", async () => {
+        const { store, dated, promise } = await items();
+        const bill = await dated("bill");
+        const slip = await promise("slip");
+        const changes = (billRevision: number, slipRevision: number) => ({
+          dated: [{ id: bill.id, revision: billRevision, patch: { state: "done" as const, closedReason: "user", closedAt: NOW } }],
+          promises: [{ id: slip.row.id, revision: slipRevision, patch: { state: "done" as const, inboxState: "none" as const, closedReason: "user", closedAt: NOW } }],
+        });
+        // one stale: nothing changes
+        expect(await store.today.act(changes(bill.revision, slip.row.revision + 1))).toBeNull();
+        expect(await store.dated.get(bill.id)).toMatchObject({ state: "open", revision: bill.revision });
+        expect(await store.followups.get(slip.row.id)).toMatchObject({ state: "open", revision: slip.row.revision });
+        const snapshots = await store.today.act(changes(bill.revision, slip.row.revision));
+        expect(snapshots).toEqual({
+          dated: [{ id: bill.id, revision: bill.revision, state: "open", deferredUntil: null, closedReason: null, closedAt: null }],
+          promises: [{ id: slip.row.id, revision: slip.row.revision, state: "open", dueAt: slip.row.dueAt, deferredUntil: null, inboxState: "none", closedReason: null, closedAt: null }],
+        });
+        expect(await store.dated.get(bill.id)).toMatchObject({ state: "done", closedAt: NOW, revision: bill.revision + 1 });
+        expect(await store.followups.get(slip.row.id)).toMatchObject({ state: "done", closedAt: NOW, revision: slip.row.revision + 1 });
+        // its Undo: both back, exactly (each a revision on)
+        expect(await store.today.restore(snapshots!)).toBe(true);
+        expect(await store.dated.get(bill.id)).toMatchObject({ state: "open", closedAt: null, closedReason: null, revision: bill.revision + 2 });
+        expect(await store.followups.get(slip.row.id)).toMatchObject({ state: "open", closedAt: null, revision: slip.row.revision + 2 });
+        // done again, then one changed since: the Undo restores neither
+        const again = (await store.today.act(changes(bill.revision + 2, slip.row.revision + 2)))!;
+        await store.followups.update(slip.row.id, slip.row.revision + 3, { closedReason: "kept" });
+        expect(await store.today.restore(again)).toBe(false);
+        expect((await store.dated.get(bill.id))!.state).toBe("done");
+        expect((await store.followups.get(slip.row.id))!.state).toBe("done");
+        const now = (await store.followups.get(slip.row.id))!;
+        await store.followups.update(now.id, now.revision, { state: "open", closedReason: null, closedAt: null });
+        // a Later on one alone, and an empty act, are fine
+        const later = await store.today.act({ dated: [], promises: [{ id: slip.row.id, revision: now.revision + 1, patch: { deferredUntil: NOW + DAY } }] });
+        expect(later?.promises).toHaveLength(1);
+        expect((await store.followups.get(slip.row.id))!.deferredUntil).toBe(NOW + DAY);
+        expect(await store.today.act({ dated: [], promises: [] })).toEqual({ dated: [], promises: [] });
       });
     });
   });

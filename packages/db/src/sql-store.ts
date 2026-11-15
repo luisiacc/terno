@@ -4,7 +4,7 @@ import { publishBody } from "@terno/store";
 import { resolvable, parseSearch, searchTerms } from "@terno/core";
 import { bodyUpgradePending, BodyUpgradeRequired, BODY_UPGRADE_APPLICATION_ID, BODY_READY_APPLICATION_ID } from "./body-upgrade";
 import { unsubscribeBodyParts, decodeBodyPart } from "@terno/store";
-import { countWith, needsCount, messagesHere, senders, allDigests, beginDigest, clearDigests, digestFacts, digestLive, digestRead, getDigest, latestDigest, pendingDigestDays, pruneDigests, waitingAmong, waitingPage, writeDigest } from "./today";
+import { actOnItems, itemMembers, linkItems, liveAmong, needsCount, restoreItems, messagesHere, senders, allDigests, beginDigest, clearDigests, digestFacts, digestLive, digestRead, getDigest, latestDigest, pendingDigestDays, pruneDigests, waitingAmong, waitingPage, writeDigest } from "./today";
 import { clearReplies, finishReply, getReply, transitionReply } from "./replies";
 import { activeDated, closedDatedPage, newestClosedDated, clearDated, datedAnswered, settleAnswered, datedMarkCount, datedMarkPage, datedScanCandidates, datedSource, finishDated, getDated, markDatedMail, openDatedFor, pruneDated, pruneDatedMarks, queueDatedScan, restoreDated, threadDated, datedWritten, updateDated } from "./dated";
 import { activeFollowups, closedFollowupPage, newestClosedFollowup, claimFollowupNotice, clearFollowups, closeAnsweredFollowups, endFollowupTop, finishFollowups, followupLiveSent, followupScanCandidates, followupSendConfirmed, followupSource, getFollowup, makeFollowupsDue, nextFollowupDue, pruneFollowups, pruneSentMarks, queueScan, restoreFollowups, sentMarkCount, sentMarkPage, threadFollowups, updateFollowup } from "./followups";
@@ -1109,8 +1109,12 @@ export class SqlMailStore implements MailStore {
   readonly today: MailStore["today"] = {
     waitingPage: async (o) => waitingPage(this.db, o),
     waitingAmong: async (ids, now) => waitingAmong(this.db, ids, now),
-    countWith: async (ids, now, uncounted) => countWith(this.db, ids, now, uncounted),
     needsCount: async (now) => needsCount(this.db, now),
+    liveAmong: async (ids) => liveAmong(this.db, ids),
+    members: async (keys) => itemMembers(this.db, keys),
+    link: async (o) => linkItems(this.db, o),
+    act: async (changes) => actOnItems(this.db, changes),
+    restore: async (snapshots) => restoreItems(this.db, snapshots),
     digestFacts: async (ids) => digestFacts(this.db, ids),
     digestLive: async (ids) => digestLive(this.db, ids),
     digestRead: async (ids) => digestRead(this.db, ids),

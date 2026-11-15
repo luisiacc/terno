@@ -91,20 +91,12 @@ export function defineTodayConformance(fresh: () => Promise<MailStore>): void {
       expect(next.map((p) => p.id)).toEqual([a.thread]);
       expect(new Set(await store.today.waitingAmong([a.thread, b.thread, notice.thread, calendar.thread, 999_999], NOW))).toEqual(new Set(waiting));
       expect(await store.today.needsCount(NOW)).toBe(2);
-      // plan 204: one walk for the sidebar: a waiting thread isn't counted twice, an unknown one not at all, and Spam or Trash hides one
-      expect(await store.today.countWith([a.thread, notice.thread, notice.thread, calendar.thread, 999_999], NOW)).toEqual({ needs: 2, extra: 2 });
+      // plan 210 (iteration 2): which threads' rows may show, in one read: here, and in neither Spam nor Trash
+      expect(await store.today.liveAmong([a.thread, notice.thread, notice.thread, calendar.thread, 999_999])).toEqual(new Set([a.thread, notice.thread, calendar.thread]));
       await store.threads.act({ threadIds: [calendar.thread], action: "trash", signal: null, now: NOW });
-      expect(await store.today.countWith([a.thread, notice.thread, calendar.thread], NOW)).toEqual({ needs: 2, extra: 1 });
-      // the third panel round: a waiting thread placed in a group that isn't counted (a Plan) isn't counted as waiting
-      expect(await store.today.countWith([notice.thread], NOW, [b.thread, 999_999])).toEqual({ needs: 1, extra: 1 });
-      expect(await store.today.countWith([], NOW, [a.thread, b.thread])).toEqual({ needs: 0, extra: 0 });
-      // the seventh panel round: a waiting thread placed as a counted row (Soon's bill) counts once, as waiting, beside one
-      // placed as an uncounted row (Today's appointment) and a counted one that isn't waiting
-      expect(await store.today.countWith([a.thread, notice.thread], NOW, [b.thread])).toEqual({ needs: 1, extra: 1 });
-      // plan 210 (iteration 1): a waiting conversation with a bill and a dinner on one day is placed as the bill (counted,
-      // once, as waiting), one with only a dinner as the dinner (not counted): the header's, the sidebar's and the
-      // notice's numbers are the same rows in both stores
-      expect(await store.today.countWith([a.thread, a.thread], NOW, [b.thread])).toEqual({ needs: 1, extra: 0 });
+      await store.threads.act({ threadIds: [notice.thread], action: "spam", signal: null, now: NOW });
+      expect(await store.today.liveAmong([a.thread, notice.thread, calendar.thread])).toEqual(new Set([a.thread]));
+      expect(await store.today.liveAmong([])).toEqual(new Set());
       // someone they've written to, from a tagged address: their one new conversation counts, in both stores
       await store.sync.ingest([msg({ date: NOW - 700, providerMsgId: "to-dia", providerThreadId: "to-dia", from: me, to: [{ name: "Dia", email: "dia@people.test" }], isSent: true, subject: "Hello", accountId: accountId_(), listId: null })], { applyFilters: false, now: NOW, classifier: null });
       const dia = await put({ listId: null, from: { name: "Dia", email: "dia+work@people.test" }, date: NOW - 600, subject: "Something new" });
@@ -175,7 +167,6 @@ export function defineTodayConformance(fresh: () => Promise<MailStore>): void {
       expect(new Set(await store.today.waitingAmong(all, NOW))).toEqual(new Set(kept));
       expect(new Set((await store.today.waitingPage({ now: NOW, after: null, limit: 20 })).map((p) => p.id))).toEqual(new Set(kept));
       expect(await store.today.needsCount(NOW)).toBe(kept.length);
-      expect((await store.today.countWith([], NOW)).needs).toBe(kept.length);
     });
 
     it("Codex code review: a request you've handled from their latest message (Done, Not a task, Later) isn't waiting on you", async () => {

@@ -9,8 +9,9 @@ import type { Db } from "./sqlite";
 interface Raw {
   id: number; thread_id: number; message_id: number; rfc_message_id: string | null; item: number; kind: FollowupRow["kind"]; text: string; quote: string | null; person_name: string | null; person_email: string | null;
   sent_at: number; due_at: number; dated: number; deferred_until: number | null; state: FollowupRow["state"]; inbox_state: FollowupRow["inboxState"]; closed_reason: string | null; closed_at: number | null; notified_at: number | null; from_scan: number; revision: number; model: string | null; provider: string | null; created_at: number;
+  same_as: string | null; broken_due_at: number | null; timed: number;
 }
-const toRow = (r: Raw): FollowupRow => ({ id: r.id, threadId: r.thread_id, messageId: r.message_id, rfcMessageId: r.rfc_message_id, item: r.item, kind: r.kind, text: r.text, quote: r.quote, personName: r.person_name, personEmail: r.person_email, sentAt: r.sent_at, dueAt: r.due_at, dated: r.dated === 1, deferredUntil: r.deferred_until ?? null, state: r.state, inboxState: r.inbox_state, closedReason: r.closed_reason, closedAt: r.closed_at, notifiedAt: r.notified_at, fromScan: r.from_scan === 1, revision: r.revision, model: r.model, provider: r.provider, createdAt: r.created_at });
+const toRow = (r: Raw): FollowupRow => ({ id: r.id, threadId: r.thread_id, messageId: r.message_id, rfcMessageId: r.rfc_message_id, item: r.item, kind: r.kind, text: r.text, quote: r.quote, personName: r.person_name, personEmail: r.person_email, sentAt: r.sent_at, dueAt: r.due_at, dated: r.dated === 1, deferredUntil: r.deferred_until ?? null, state: r.state, inboxState: r.inbox_state, closedReason: r.closed_reason, closedAt: r.closed_at, notifiedAt: r.notified_at, fromScan: r.from_scan === 1, revision: r.revision, model: r.model, provider: r.provider, createdAt: r.created_at, sameAs: r.same_as ?? null, brokenDueAt: r.broken_due_at ?? null, timed: r.timed === 1 });
 
 /** Yours and for someone else: mail only to your own addresses says nothing to anyone. */
 function toSomeoneElse(db: Db, to: string, cc: string): boolean {
@@ -139,9 +140,9 @@ export function finishFollowups(db: Db, w: FollowupFinish): FollowupFinishOutcom
     const own = ownAddresses(db);
     let active = db.get<{ n: number }>("SELECT COUNT(*) AS n FROM followups WHERE state IN ('open','due')")!.n;
     const add = (r: FollowupFinish["rows"][number]) => db.run(
-      `INSERT OR IGNORE INTO followups (thread_id, message_id, rfc_message_id, item, kind, text, quote, person_name, person_email, sent_at, due_at, dated, state, inbox_state, from_scan, model, provider, prompt_version, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', 'none', ?, ?, ?, ?, ?)`,
-      src.threadId, w.messageId, src.rfcMessageId, r.item, r.kind, r.text, r.quote, r.personName, r.personEmail, src.date, r.dueAt, r.dated ? 1 : 0, w.fromScan ? 1 : 0, w.model, w.provider, w.promptVersion, w.now,
+      `INSERT OR IGNORE INTO followups (thread_id, message_id, rfc_message_id, item, kind, text, quote, person_name, person_email, sent_at, due_at, dated, state, inbox_state, from_scan, model, provider, prompt_version, created_at, timed)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', 'none', ?, ?, ?, ?, ?, ?)`,
+      src.threadId, w.messageId, src.rfcMessageId, r.item, r.kind, r.text, r.quote, r.personName, r.personEmail, src.date, r.dueAt, r.dated ? 1 : 0, w.fromScan ? 1 : 0, w.model, w.provider, w.promptVersion, w.now, r.timed ? 1 : 0,
     ).changes;
     const later = db.get("SELECT 1 FROM messages INDEXED BY messages_thread WHERE thread_id = ? AND date > ? AND is_sent = 1 AND is_draft = 0 AND is_trash = 0 AND is_spam = 0 AND provider_msg_id NOT LIKE 'local:%' LIMIT 1", src.threadId, src.date);
     for (const r of w.rows) {

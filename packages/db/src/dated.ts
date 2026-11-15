@@ -14,10 +14,12 @@ const SENDER_REACHES_SQL = `kind NOT IN (${THREAD_SCOPED_KINDS.map((k) => `'${k}
 interface Raw {
   id: number; thread_id: number; message_id: number; item: number; kind: DatedRow["kind"]; text: string; quote: string; sender_key: string; due_day: string; due_at: number; timed: number; dated: number; act_at: number;
   deferred_until: number | null; arrived_at: number; state: DatedRow["state"]; closed_reason: string | null; closed_at: number | null; from_scan: number; revision: number; model: string | null; provider: string | null; created_at: number;
+  early: number; same_as: string | null; detail_of: number | null;
 }
 const toRow = (r: Raw): DatedRow => ({
   id: r.id, threadId: r.thread_id, messageId: r.message_id, item: r.item, kind: r.kind, text: r.text, quote: r.quote, senderKey: r.sender_key, dueDay: r.due_day, dueAt: r.due_at, timed: r.timed === 1, dated: r.dated === 1, actAt: r.act_at,
   deferredUntil: r.deferred_until, arrivedAt: r.arrived_at, state: r.state, closedReason: r.closed_reason, closedAt: r.closed_at, fromScan: r.from_scan === 1, revision: r.revision, model: r.model, provider: r.provider, createdAt: r.created_at,
+  early: r.early === 1, sameAs: r.same_as ?? null, detailOf: r.detail_of ?? null,
 });
 
 /** Ingest's part (in its transaction): received live mail, by the new-mail rule, and since the feature went on. */
@@ -171,16 +173,16 @@ export function finishDated(db: Db, w: DatedFinish): DatedFinishOutcome {
       }
       if (answered) {
         db.run(
-          `INSERT OR IGNORE INTO dated_items (thread_id, message_id, item, kind, text, quote, sender_key, due_day, due_at, timed, dated, act_at, deferred_until, arrived_at, state, closed_reason, closed_at, from_scan, revision, model, provider, prompt_version, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 'settled', 'answered', ?, ?, 0, ?, ?, ?, ?)`,
-          src.threadId, w.messageId, r.item, r.kind, r.text, r.quote, src.senderKey, r.dueDay, r.dueAt, r.timed ? 1 : 0, r.dated ? 1 : 0, r.actAt, src.date, w.now, w.fromScan ? 1 : 0, w.model, w.provider, w.promptVersion, w.now,
+          `INSERT OR IGNORE INTO dated_items (thread_id, message_id, item, kind, text, quote, sender_key, due_day, due_at, timed, dated, act_at, deferred_until, arrived_at, state, closed_reason, closed_at, from_scan, revision, model, provider, prompt_version, created_at, early)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 'settled', 'answered', ?, ?, 0, ?, ?, ?, ?, ?)`,
+          src.threadId, w.messageId, r.item, r.kind, r.text, r.quote, src.senderKey, r.dueDay, r.dueAt, r.timed ? 1 : 0, r.dated ? 1 : 0, r.actAt, src.date, w.now, w.fromScan ? 1 : 0, w.model, w.provider, w.promptVersion, w.now, r.early ? 1 : 0,
         );
         continue;
       }
       open += Number(db.run(
-        `INSERT OR IGNORE INTO dated_items (thread_id, message_id, item, kind, text, quote, sender_key, due_day, due_at, timed, dated, act_at, deferred_until, arrived_at, state, from_scan, revision, model, provider, prompt_version, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 'open', ?, 0, ?, ?, ?, ?)`,
-        src.threadId, w.messageId, r.item, r.kind, r.text, r.quote, src.senderKey, r.dueDay, r.dueAt, r.timed ? 1 : 0, r.dated ? 1 : 0, r.actAt, src.date, w.fromScan ? 1 : 0, w.model, w.provider, w.promptVersion, w.now,
+        `INSERT OR IGNORE INTO dated_items (thread_id, message_id, item, kind, text, quote, sender_key, due_day, due_at, timed, dated, act_at, deferred_until, arrived_at, state, from_scan, revision, model, provider, prompt_version, created_at, early)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 'open', ?, 0, ?, ?, ?, ?, ?)`,
+        src.threadId, w.messageId, r.item, r.kind, r.text, r.quote, src.senderKey, r.dueDay, r.dueAt, r.timed ? 1 : 0, r.dated ? 1 : 0, r.actAt, src.date, w.fromScan ? 1 : 0, w.model, w.provider, w.promptVersion, w.now, r.early ? 1 : 0,
       ).changes);
     }
     for (const s of w.settled) {
@@ -191,8 +193,10 @@ export function finishDated(db: Db, w: DatedFinish): DatedFinishOutcome {
     }
     for (const m of w.movedPromises ?? []) {
       db.run(
-        "UPDATE followups SET due_at = ?, dated = 1, state = CASE WHEN ? > ? THEN 'open' ELSE state END, inbox_state = 'none', revision = revision + 1 WHERE id = ? AND revision = ? AND thread_id = ? AND kind = 'promise' AND state IN ('open','due')",
-        m.dueAt, m.dueAt, w.now, m.id, m.revision, src.threadId,
+        // plan 210 (iteration 2): its first broken day kept (a second move after another broken day keeps the first), and
+        // whether its new moment is a stated time (absent: as it was)
+        "UPDATE followups SET due_at = ?, dated = 1, state = CASE WHEN ? > ? THEN 'open' ELSE state END, inbox_state = 'none', broken_due_at = coalesce(broken_due_at, ?), timed = coalesce(?, timed), revision = revision + 1 WHERE id = ? AND revision = ? AND thread_id = ? AND kind = 'promise' AND state IN ('open','due')",
+        m.dueAt, m.dueAt, w.now, m.brokenDueAt ?? null, m.timed === undefined ? null : m.timed ? 1 : 0, m.id, m.revision, src.threadId,
       );
     }
     for (const m of w.moved ?? []) {

@@ -1524,6 +1524,20 @@ CREATE TABLE dated_nothing_asked (
 ) WITHOUT ROWID;
 CREATE INDEX dated_nothing_asked_thread ON dated_nothing_asked(thread_id);
 ` },
+  // plan 210 (iteration 2): What matters' rows are items. A duplicate's canonical (`same_as`, an item's key), a related
+  // detail's item (`detail_of`), shown early (`early`), a broken promise's first day (`broken_due_at`), a promise's stated
+  // time (`timed`). Shape only: nullable or a constant default (no rewrite), and two partial indexes over bounded tables
+  // that hold nothing yet
+  { version: 61, name: "What matters' items: duplicates, details, early, a broken promise's day, a promise's time (plan 210)", sql: `
+ALTER TABLE dated_items ADD COLUMN early INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE dated_items ADD COLUMN same_as TEXT;
+ALTER TABLE dated_items ADD COLUMN detail_of INTEGER;
+ALTER TABLE followups ADD COLUMN same_as TEXT;
+ALTER TABLE followups ADD COLUMN broken_due_at INTEGER;
+ALTER TABLE followups ADD COLUMN timed INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX dated_same ON dated_items(same_as) WHERE same_as IS NOT NULL;
+CREATE INDEX followups_same ON followups(same_as) WHERE same_as IS NOT NULL;
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

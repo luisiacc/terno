@@ -95,6 +95,8 @@ export interface DatedWrite {
   timed: boolean;
   dated: boolean;
   actAt: number;
+  /** plan 210 (iteration 2): shown before its kind's lead (`DatedRow.early`); absent, not */
+  early?: boolean;
 }
 
 export interface DatedFinish {
@@ -121,7 +123,18 @@ export interface DatedFinish {
    * reader saw (a Later or Done since wins), on this thread, still open or due; the revision bumps (an older Undo is
    * refused), and the promise is open again when its new moment is ahead.
    */
-  movedPromises?: readonly { id: number; revision: number; dueAt: number }[];
+  movedPromises?: readonly {
+    id: number;
+    revision: number;
+    dueAt: number;
+    /**
+     * plan 210 (iteration 2): its day as it was, when this message came after that day was over (it had been broken): kept
+     * as the promise's first broken day (`FollowupRow.brokenDueAt`) unless it already has one. Null or absent: it wasn't
+     */
+    brokenDueAt?: number | null;
+    /** plan 210 (iteration 2): `dueAt` is a time its words state (`FollowupRow.timed`) */
+    timed?: boolean;
+  }[];
   now: number;
   model: string | null;
   provider: string | null;

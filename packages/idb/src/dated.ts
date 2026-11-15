@@ -8,6 +8,8 @@ import { T, type Ctx, type R } from "./mail";
 const toRow = (r: R): DatedRow => ({
   id: r.id, threadId: r.thread_id, messageId: r.message_id, item: r.item, kind: r.kind, text: r.text, quote: r.quote, senderKey: r.sender_key, dueDay: r.due_day, dueAt: r.due_at, timed: r.timed === 1, dated: r.dated === 1, actAt: r.act_at,
   deferredUntil: r.deferred_until ?? null, arrivedAt: r.arrived_at, state: r.state, closedReason: r.closed_reason ?? null, closedAt: r.closed_at ?? null, fromScan: r.from_scan === 1, revision: r.revision, model: r.model ?? null, provider: r.provider ?? null, createdAt: r.created_at,
+  // plan 210 (iteration 2): a row stored before them has none
+  early: r.early === 1, sameAs: r.same_as ?? null, detailOf: r.detail_of ?? null,
 });
 
 const byAct = (a: R, b: R) => a.act_at - b.act_at || a.id - b.id;
@@ -172,7 +174,7 @@ export function finishDated(c: Ctx, w: DatedFinish): DatedFinishOutcome {
     if (ANSWERED_KINDS.includes(r.kind) && (repliedAt ??= lastTrustedSend(c, src.threadId) ?? -1) > src.date) {
       rows.put({
         thread_id: src.threadId, message_id: w.messageId, item: r.item, kind: r.kind, text: r.text, quote: r.quote, sender_key: src.senderKey, due_day: r.dueDay, due_at: r.dueAt, timed: r.timed ? 1 : 0, dated: r.dated ? 1 : 0, act_at: r.actAt,
-        deferred_until: null, arrived_at: src.date, state: "settled", closed_reason: "answered", closed_at: w.now, from_scan: w.fromScan ? 1 : 0, revision: 0, model: w.model, provider: w.provider, prompt_version: w.promptVersion, created_at: w.now,
+        deferred_until: null, arrived_at: src.date, state: "settled", closed_reason: "answered", closed_at: w.now, from_scan: w.fromScan ? 1 : 0, revision: 0, model: w.model, provider: w.provider, prompt_version: w.promptVersion, created_at: w.now, early: r.early ? 1 : 0,
       });
       continue;
     }
@@ -186,7 +188,7 @@ export function finishDated(c: Ctx, w: DatedFinish): DatedFinishOutcome {
     }
     rows.put({
       thread_id: src.threadId, message_id: w.messageId, item: r.item, kind: r.kind, text: r.text, quote: r.quote, sender_key: src.senderKey, due_day: r.dueDay, due_at: r.dueAt, timed: r.timed ? 1 : 0, dated: r.dated ? 1 : 0, act_at: r.actAt,
-      deferred_until: null, arrived_at: src.date, state: "open", closed_reason: null, closed_at: null, from_scan: w.fromScan ? 1 : 0, revision: 0, model: w.model, provider: w.provider, prompt_version: w.promptVersion, created_at: w.now,
+      deferred_until: null, arrived_at: src.date, state: "open", closed_reason: null, closed_at: null, from_scan: w.fromScan ? 1 : 0, revision: 0, model: w.model, provider: w.provider, prompt_version: w.promptVersion, created_at: w.now, early: r.early ? 1 : 0,
     });
     open++;
   }
@@ -198,7 +200,8 @@ export function finishDated(c: Ctx, w: DatedFinish): DatedFinishOutcome {
   for (const m of w.movedPromises ?? []) {
     const p = followups.get(m.id);
     if (!p || p.revision !== m.revision || p.thread_id !== src.threadId || p.kind !== "promise" || (p.state !== "open" && p.state !== "due")) continue;
-    followups.update(p, { due_at: m.dueAt, dated: 1, state: m.dueAt > w.now ? "open" : p.state, inbox_state: "none", revision: p.revision + 1 });
+    // plan 210 (iteration 2): its first broken day kept, and whether its new moment is a stated time (absent: as it was)
+    followups.update(p, { due_at: m.dueAt, dated: 1, state: m.dueAt > w.now ? "open" : p.state, inbox_state: "none", broken_due_at: p.broken_due_at ?? m.brokenDueAt ?? null, ...(m.timed !== undefined ? { timed: m.timed ? 1 : 0 } : {}), revision: p.revision + 1 });
   }
   for (const m of w.moved ?? []) {
     const r = rows.get(m.id);

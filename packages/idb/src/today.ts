@@ -1,5 +1,7 @@
-import { isAcknowledgment, looksLikeAcknowledgment, saysNoReplyNeeded, waitingCutoff, type DigestItem } from "@terno/core";
-import { DATED_NOTHING_ASKED_SINCE, NEEDS_WALK, needsYou, summaryAsksNothing, type DigestFact, type DigestStored, type WaitingRow } from "@terno/store";
+import { isAcknowledgment, looksLikeAcknowledgment, parseRef, refKey, saysNoReplyNeeded, waitingCutoff, type DatedRow, type DigestItem, type FollowupRow, type ItemRef } from "@terno/core";
+import { DATED_NOTHING_ASKED_SINCE, NEEDS_WALK, needsYou, summaryAsksNothing, type DigestFact, type DigestStored, type ItemChanges, type ItemSnapshots, type WaitingRow } from "@terno/store";
+import { getDated, restoreDated, updateDated } from "./dated";
+import { getFollowup, restoreFollowups, updateFollowup } from "./followups";
 import { inboxHiddenTest, T, type Ctx, type R } from "./mail";
 
 /** Plan 145 on IndexedDB, like SQL's (packages/db/src/today.ts). */
@@ -93,17 +95,75 @@ export function waitingAmong(c: Ctx, threadIds: readonly number[], walk: NeedsWa
   return needsRows(c, walk).filter((r) => wanted.has(r.id)).map((r) => r.id);
 }
 
-export function countWith(c: Ctx, threadIds: readonly number[], walk: NeedsWalk, uncounted: readonly number[] = []): { needs: number; extra: number } {
-  const elsewhere = new Set(uncounted);
-  const rows = needsRows(c, walk).filter((r) => !elsewhere.has(r.id));
-  const waiting = new Set(rows.map((r) => r.id));
+/** Plan 210 (iteration 2): as SQL's (packages/db/src/today.ts): those still here and in neither Spam nor Trash. */
+export function liveAmong(c: Ctx, threadIds: readonly number[]): Set<number> {
   const threads = T(c, "threads");
-  let extra = 0;
-  for (const id of new Set(threadIds)) {
+  const out = new Set<number>();
+  for (const id of threadIds) {
     const t = threads.get(id);
-    if (t && !t.in_spam && !t.in_trash && !waiting.has(id)) extra++;
+    if (t && !t.in_spam && !t.in_trash) out.add(id);
   }
-  return { needs: rows.length, extra };
+  return out;
+}
+
+const TABLE = { dated: "dated_items", promise: "followups" } as const;
+const isOpen = (source: ItemRef["source"], r: R): boolean => (source === "dated" ? r.state === "open" : r.kind === "promise" && (r.state === "open" || r.state === "due"));
+
+/** Plan 210 (iteration 2): the dated items and promises of these canonical items, any state: by id, and by `same`. */
+export function itemMembers(c: Ctx, keys: readonly string[]): { dated: DatedRow[]; promises: FollowupRow[] } {
+  const ids = { dated: new Set<number>(), promise: new Set<number>() };
+  const dated = T(c, "dated_items");
+  const followups = T(c, "followups");
+  for (const key of new Set(keys)) {
+    const ref = parseRef(key);
+    if (!ref) continue;
+    if (ref.source === "dated" ? dated.has(ref.id) : followups.get(ref.id)?.kind === "promise") ids[ref.source].add(ref.id);
+    for (const r of dated.by("same", key)) ids.dated.add(r.id);
+    for (const r of followups.by("same", key)) if (r.kind === "promise") ids.promise.add(r.id);
+  }
+  const sorted = (s: Set<number>) => [...s].sort((a, b) => a - b);
+  return { dated: sorted(ids.dated).map((id) => getDated(c, id)!), promises: sorted(ids.promise).map((id) => getFollowup(c, id)!) };
+}
+
+/** Plan 210 (iteration 2): as SQL's: on open rows, never over one set, never a chain; no revision moves (no choice of the user's). */
+export function linkItems(c: Ctx, o: { same: readonly { item: ItemRef; sameAs: string }[]; details: readonly { id: number; detailOf: number }[] }): number {
+  let n = 0;
+  for (const { item, sameAs } of o.same) {
+    const target = parseRef(sameAs);
+    if (!target || sameAs === refKey(item)) continue;
+    const canonical = T(c, TABLE[target.source]).get(target.id);
+    if (!canonical || (target.source === "promise" && canonical.kind !== "promise") || canonical.same_as != null) continue;
+    if (T(c, "dated_items").count("same", refKey(item)) || T(c, "followups").count("same", refKey(item))) continue;
+    const rows = T(c, TABLE[item.source]);
+    const r = rows.get(item.id);
+    if (!r || r.same_as != null || !isOpen(item.source, r)) continue;
+    rows.update(r, { same_as: sameAs });
+    n++;
+  }
+  const dated = T(c, "dated_items");
+  for (const d of o.details) {
+    const r = dated.get(d.id);
+    if (d.id === d.detailOf || !dated.has(d.detailOf) || !r || r.detail_of != null || r.state !== "open") continue;
+    dated.update(r, { detail_of: d.detailOf });
+    n++;
+  }
+  return n;
+}
+
+const atRevision = (c: Ctx, table: "dated_items" | "followups", id: number, revision: number): boolean => T(c, table).get(id)?.revision === revision;
+
+/** Plan 210 (iteration 2): one act on every item a row is, each at the revision it was seen at, or on none (one command). */
+export function actOnItems(c: Ctx, changes: ItemChanges): ItemSnapshots | null {
+  if (!changes.dated.every((x) => atRevision(c, "dated_items", x.id, x.revision)) || !changes.promises.every((x) => atRevision(c, "followups", x.id, x.revision))) return null;
+  return { dated: changes.dated.map((x) => updateDated(c, x.id, x.revision, x.patch)!), promises: changes.promises.map((x) => updateFollowup(c, x.id, x.revision, x.patch)!) };
+}
+
+/** Its Undo: every row still at the revision the act left, or none restored. */
+export function restoreItems(c: Ctx, s: ItemSnapshots): boolean {
+  if (!s.dated.every((r) => atRevision(c, "dated_items", r.id, r.revision + 1)) || !s.promises.every((r) => atRevision(c, "followups", r.id, r.revision + 1))) return false;
+  restoreDated(c, s.dated.map((snapshot) => ({ snapshot, expectRevision: snapshot.revision + 1 })));
+  restoreFollowups(c, s.promises.map((snapshot) => ({ snapshot, expectRevision: snapshot.revision + 1 })));
+  return true;
 }
 
 export function needsCount(c: Ctx, walk: NeedsWalk): number {

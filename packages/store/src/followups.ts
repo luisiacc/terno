@@ -56,6 +56,8 @@ export interface FollowupWrite {
   personEmail: string | null;
   dueAt: number;
   dated: boolean;
+  /** plan 210 (iteration 2): `dueAt` is a time its words state (`FollowupRow.timed`); absent, not */
+  timed?: boolean;
 }
 
 export interface FollowupFinish {

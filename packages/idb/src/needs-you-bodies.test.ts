@@ -41,5 +41,4 @@ it("an acknowledgment's body, not in memory after a reopen, is read ahead and de
   expect(c.db.table("message_bodies").get(last.id as number)).toBeUndefined();
   expect(await store.today.needsCount(NOW)).toBe(1);
   expect(await store.today.waitingAmong([thanks, asks], NOW)).toEqual([asks]);
-  expect((await store.today.countWith([thanks], NOW)).needs).toBe(1);
 });
