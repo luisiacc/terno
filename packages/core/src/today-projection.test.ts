@@ -52,6 +52,9 @@ describe("a row per item", () => {
     expect(rows.filter((r) => r.waiting).map((r) => r.threadId)).toEqual([4, 6]);
     // the plan isn't counted; the ask and the two waiting conversations are Today's
     expect(counts).toEqual({ missed: 0, today: 3, thisWeek: 0 });
+    // your promise to them behind Coming up says nothing yet: their conversation waiting on you is its own row meanwhile
+    const later = promise(at(2026, 11, 30, 9), { threadId: 6 });
+    expect(projectToday(facts({ promises: [later], waiting })).rows.filter((r) => r.waiting).map((r) => r.threadId)).toEqual([4, 5, 6]);
   });
 
   it("an item in Spam or Trash has no row, and isn't counted", () => {

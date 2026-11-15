@@ -74,7 +74,7 @@ async function setup(o: { enabled?: boolean } = {}) {
     await drained();
   };
   // a group's rows together, a day of its own's and Coming up's whatever days they're under (plan 210)
-  const sections = async () => (await client.call("today.list", { heldIds: [] })).sections.reduce<Record<string, number[]>>((o, x) => ({ ...o, [x.kind]: [...(o[x.kind] ?? []), ...x.items.map((i) => i.thread.id)] }), {});
+  const sections = async () => (await client.call("today.list", { held: [] })).sections.reduce<Record<string, number[]>>((o, x) => ({ ...o, [x.kind]: [...(o[x.kind] ?? []), ...x.items.map((i) => i.thread.id)] }), {});
   return { backend, client, model, clock, receive, read, sections, raw, account };
 }
 
@@ -495,7 +495,9 @@ describe("the reader", () => {
     expect((await client.call("counts.get", {})).today).toBe(0);
     clock.now = at(2026, 11, 17, 9);
     expect(await sections()).toMatchObject({ day: [thread] });
-    expect((await client.call("counts.get", {})).today).toBe(1);
+    // plan 210 (iteration 2): a day ahead is the header's "this week", never the badge's (Missed and Today)
+    expect((await client.call("today.list", { held: [] })).counts).toEqual({ missed: 0, today: 0, thisWeek: 1 });
+    expect((await client.call("counts.get", {})).today).toBe(0);
     clock.now = at(2026, 11, 20, 0);
     expect(await sections()).toMatchObject({ today: [thread] });
     expect((await client.call("counts.get", {})).today).toBe(1);
@@ -652,13 +654,13 @@ describe("the reader", () => {
     raw.run("UPDATE dated_items SET sender_key = ?", "security@tririver-fcu-alerts.com");
     backend.today.touched();
     clock.now = at(2026, 11, 18, 10);
-    expect((await client.call("today.list", { heldIds: [] })).sections).toEqual([]);
+    expect((await client.call("today.list", { held: [] })).sections).toEqual([]);
     expect((await client.call("counts.get", {})).today).toBe(0);
     expect((await client.call("dated.ofThread", { threadId: thread })).rows).toEqual([]);
     raw.run("INSERT INTO correspondents (email, written) VALUES (?, 1)", "security@tririver-fcu-alerts.com");
     backend.today.touched();
-    expect((await client.call("today.list", { heldIds: [] })).sections.map((x) => x.kind)).toEqual(["day"]);
-    expect((await client.call("counts.get", {})).today).toBe(1);
+    expect((await client.call("today.list", { held: [] })).sections.map((x) => x.kind)).toEqual(["day"]);
+    expect((await client.call("today.list", { held: [] })).counts.thisWeek).toBe(1);
     expect((await client.call("dated.ofThread", { threadId: thread })).rows).toHaveLength(1);
   });
 
@@ -734,7 +736,7 @@ describe("the Codex code review", () => {
     clock.now = at(2026, 11, 28, 1);
     expect(await backend.dated.retire()).toBe(1);
     expect(await backend.store.dated.active()).toEqual([]);
-    expect((await client.call("today.list", { heldIds: [] })).sections).toEqual([]);
+    expect((await client.call("today.list", { held: [] })).sections).toEqual([]);
   });
 
   it("#3: the 14-day check picks what the reader would ask about before its bound", async () => {
@@ -766,9 +768,9 @@ describe("the Codex code review", () => {
     const thread = await receive({ from: { name: "Ana", email: "ana@people.test" }, subject: "The report", bodyText: "Thanks!" });
     raw.run("INSERT INTO followups (thread_id, message_id, item, kind, text, sent_at, due_at, dated, state, created_at) VALUES (?, 999999, 0, 'promise', 'send the report', ?, ?, 1, 'due', ?)", thread, clock.now - DAY, at(2026, 11, 12, 9), clock.now);
     clock.now = at(2026, 11, 13, 10);
-    expect((await client.call("today.list", { heldIds: [] })).sections.map((x) => x.kind)).toEqual(["missed"]);
+    expect((await client.call("today.list", { held: [] })).sections.map((x) => x.kind)).toEqual(["missed"]);
     clock.now = at(2026, 11, 20, 10);
-    expect((await client.call("today.list", { heldIds: [] })).sections).toEqual([]);
+    expect((await client.call("today.list", { held: [] })).sections).toEqual([]);
   });
 
   it("#5: two re-arms at once leave one timer, and stop leaves none", async () => {
@@ -850,7 +852,7 @@ describe("after the panel", () => {
     const now = await receive({ from: { name: "Tom", email: "tom@people.test" }, subject: "The agenda", bodyText: "Thanks!" });
     raw.run("INSERT INTO followups (thread_id, message_id, item, kind, text, sent_at, due_at, dated, state, created_at) VALUES (?, 999998, 0, 'promise', 'send the report', ?, ?, 1, 'open', ?)", later, clock.now - DAY, at(2026, 11, 20, 9), clock.now);
     raw.run("INSERT INTO followups (thread_id, message_id, item, kind, text, sent_at, due_at, dated, state, revision, created_at) VALUES (?, 999999, 0, 'promise', 'send the agenda', ?, ?, 1, 'due', 3, ?)", now, clock.now - DAY, at(2026, 11, 10, 17), clock.now);
-    const list = await client.call("today.list", { heldIds: [] });
+    const list = await client.call("today.list", { held: [] });
     const coming = list.sections.find((x) => x.kind === "comingUp")!.items[0]!;
     expect(coming).toMatchObject({ thread: { id: later }, why: { kind: "promise", text: "send the report", promise: { revision: 0 } } });
     const today = list.sections.find((x) => x.kind === "today")!.items[0]!;
@@ -873,14 +875,14 @@ describe("after the panel", () => {
     await read();
     clock.now = at(2026, 11, 11, 10);
     // plan 210: a heading per day, in order, each with the timed first by time, then the untimed
-    const days = (await client.call("today.list", { heldIds: [] })).sections.map((x) => [x.kind, x.day, x.items.map((i) => i.thread.id)]);
+    const days = (await client.call("today.list", { held: [] })).sections.map((x) => [x.kind, x.day, x.items.map((i) => i.thread.id)]);
     expect(days).toEqual([["day", "2026-11-12", [bill]], ["day", "2026-11-13", [payroll, domain]]]);
     // the seventh panel round: on the 13th the bill is Missed, and Today has the payroll at its time before the domain
     clock.now = at(2026, 11, 13, 10);
-    expect((await client.call("today.list", { heldIds: [] })).sections.map((x) => [x.kind, x.items.map((i) => i.thread.id)])).toEqual([["missed", [bill]], ["today", [payroll, domain]]]);
+    expect((await client.call("today.list", { held: [] })).sections.map((x) => [x.kind, x.items.map((i) => i.thread.id)])).toEqual([["missed", [bill]], ["today", [payroll, domain]]]);
     // Codex code review of the fixes: Coming up orders the same way (earlier, the untimed 9:00 came first)
     clock.now = at(2026, 11, 8, 10);
-    const coming = (await client.call("today.list", { heldIds: [] })).sections.filter((x) => x.kind === "comingUp");
+    const coming = (await client.call("today.list", { held: [] })).sections.filter((x) => x.kind === "comingUp");
     expect(coming.map((x) => [x.day, x.items.map((i) => i.thread.id)])).toEqual([["2026-11-12", [bill]], ["2026-11-13", [payroll, domain]]]);
   });
 
@@ -903,7 +905,7 @@ describe("after the panel", () => {
       await client.call("dated.act", { id: row!.id, revision: row!.revision, action: "later", until: at(2026, 11, 20, 9) });
     }
     clock.now = at(2026, 11, 15, 10);
-    const coming = (await client.call("today.list", { heldIds: [] })).sections.filter((x) => x.kind === "comingUp");
+    const coming = (await client.call("today.list", { held: [] })).sections.filter((x) => x.kind === "comingUp");
     // under the 20th, the day they're back (never their own past days): the timed by their time of day (round 2: the 1:00 PM
     // payroll before the 6:00 PM invoice, though the invoice was due a day earlier), then the untimed bill
     expect(coming.map((x) => [x.day, x.items.map((i) => i.thread.id)])).toEqual([["2026-11-20", [payroll, invoice, bill]]]);
@@ -918,7 +920,7 @@ describe("after the panel", () => {
     await receive({ subject: "Payroll", bodyText: "Your plan renews today, and fund payroll by 1:00 PM." });
     await read();
     clock.now = at(2026, 11, 13, 10);
-    const [row] = (await client.call("today.list", { heldIds: [] })).sections.find((x) => x.kind === "today")!.items;
+    const [row] = (await client.call("today.list", { held: [] })).sections.find((x) => x.kind === "today")!.items;
     expect(row!.why).toMatchObject({ text: "Fund payroll", item: { timed: true } });
   });
 });
@@ -949,15 +951,16 @@ describe("a later message moves a day (after the panel)", () => {
     const thread = await receive({ from: { name: "Jess", email: "jess@sponsor.test" }, subject: "Script", bodyText: "Can you send the script by Tuesday?", providerThreadId: "jess" });
     await read();
     clock.now = at(2026, 11, 12, 9);
-    expect((await client.call("today.list", { heldIds: [] })).sections.map((x) => x.kind)).toEqual(["missed"]);
+    expect((await client.call("today.list", { held: [] })).sections.map((x) => x.kind)).toEqual(["missed"]);
     const [before] = await backend.store.dated.active();
     await receive({ from: { name: "Jess", email: "jess@sponsor.test" }, subject: "Re: Script", bodyText: "No stress. Friday at the latest is fine.", providerThreadId: "jess" });
     await read();
     const [after] = await backend.store.dated.active();
     expect(after).toMatchObject({ id: before!.id, dueDay: "2026-11-13" });
-    const list = await client.call("today.list", { heldIds: [] });
-    expect(list.sections.map((x) => x.kind)).toEqual(["day"]);
-    expect(list.sections[0]!.items[0]!.thread.id).toBe(thread);
+    // plan 210 (iteration 2): a person's request with a day ahead is Today's people's, "by Fri", until its day
+    const list = await client.call("today.list", { held: [] });
+    expect(list.sections.map((x) => x.kind)).toEqual(["today"]);
+    expect(list.sections[0]!.items[0]).toMatchObject({ thread: { id: thread }, why: { item: { early: true, dueDay: "2026-11-13" } } });
   });
 });
 
@@ -1030,7 +1033,7 @@ describe("a move may carry the item's new words (the fifth panel round, change 2
     // a promise of yours keeps its words: another person's can't become "You said"
     const promises = new Map([["p1", { id: 5, revision: 1 }]]);
     const out = checkDates({ items: [], settled: [], moved: [{ ...moved, label: "p1", due: "2026-11-13" }] }, { ...base, promises });
-    expect(out.movedPromises).toEqual([{ id: 5, revision: 1, dueAt: expect.any(Number) }]);
+    expect(out.movedPromises).toEqual([{ id: 5, revision: 1, dueAt: expect.any(Number), timed: false, brokenDueAt: null }]);
     expect(JSON.stringify(out)).not.toContain("arrive 7:30");
   });
 
@@ -1109,13 +1112,13 @@ describe("a later message moves a promise you made (the second panel round)", ()
     expect(new Date(after.dueAt).getDate()).toBe(13);
     // no longer Missed: it's today's
     clock.now = at(2026, 11, 13, 10);
-    const sections = (await client.call("today.list", { heldIds: [] })).sections;
+    const sections = (await client.call("today.list", { held: [] })).sections;
     expect(sections.find((x) => x.kind === "missed")).toBeUndefined();
   });
 });
 
 describe("Today's groups (§1)", () => {
-  it("one thread once, by precedence: a bill's thread waiting on a reply is the bill; groups in order; the count counts each once", async () => {
+  it("plan 210 (iteration 2): a row per item; a bill's thread waiting is the bill (the request is said), a Plan's thread waiting is the Plan and its waiting row; the badge is Missed and Today's", async () => {
     const { client, model, receive, read, clock, raw } = await setup();
     model.answer = (req) => (promptText(req.messages[0]!.content).includes("Flight") ? reply([{ kind: "event", text: "Flight to Madrid", quote: "Flight IB3170", due: "2026-11-19", time: "07:40" }]) : reply([bill]));
     const billThread = await receive();
@@ -1123,25 +1126,28 @@ describe("Today's groups (§1)", () => {
     await read();
     raw.run("UPDATE threads SET waiting_since = ?, has_sent = 1 WHERE id = ?", clock.now - 60_000, billThread);
     clock.now = at(2026, 11, 18, 10);
-    const list = await client.call("today.list", { heldIds: [] });
-    // plan 210: each under its own day, in order (the bill's thread waiting is the bill there, not a waiting row in Today)
-    expect(list.sections.map((x) => [x.kind, x.day, x.items.map((i) => i.thread.id)])).toEqual([["day", "2026-11-19", [flight]], ["day", "2026-11-20", [billThread]]]);
-    expect(list.sections[1]!.items[0]).toMatchObject({ thread: { id: billThread }, why: { kind: "dated", text: "Pay the electricity bill", item: { kind: "pay", dueDay: "2026-11-20" } } });
-    expect(list.sections[0]!.items[0]).toMatchObject({ thread: { id: flight }, why: { item: { kind: "event", timed: true } } });
-    // the third panel round: a Plan isn't something you owe, so the count is the bill alone, even with the flight's
-    // thread waiting on a reply (it shows as the Plan, so the count agrees with the list)
-    expect((await client.call("counts.get", {})).today).toBe(1);
+    const list = await client.call("today.list", { held: [] });
+    const shape = (l: typeof list) => l.sections.map((x) => [x.kind, x.day, x.items.map((i) => [i.thread.id, i.why.kind])]);
+    expect(shape(list)).toEqual([["day", "2026-11-19", [[flight, "dated"]]], ["day", "2026-11-20", [[billThread, "dated"]]]]);
+    expect(list.sections[1]!.items[0]).toMatchObject({ why: { kind: "dated", text: "Pay the electricity bill", item: { kind: "pay", dueDay: "2026-11-20" } } });
+    expect(list.sections[1]!.items[0]!.id).toMatch(/^dated:\d+$/);
+    // a Plan isn't what was asked: the bill alone is this week's; nothing is Today's
+    expect(list.counts).toEqual({ missed: 0, today: 0, thisWeek: 1 });
+    expect((await client.call("counts.get", {})).today).toBe(0);
+    // the flight's thread waiting on you: its waiting row is Today's, the flight its own day's
     raw.run("UPDATE threads SET waiting_since = ?, has_sent = 1 WHERE id = ?", clock.now - 60_000, flight);
-    expect((await client.call("today.list", { heldIds: [] })).sections.map((x) => [x.kind, x.items.map((i) => i.thread.id)])).toEqual([["day", [flight]], ["day", [billThread]]]);
+    const waiting = await client.call("today.list", { held: [] });
+    expect(shape(waiting)).toEqual([["today", undefined, [[flight, "waiting"]]], ["day", "2026-11-19", [[flight, "dated"]]], ["day", "2026-11-20", [[billThread, "dated"]]]]);
+    expect(waiting.sections[0]!.items[0]!.id).toBe(`waiting:${flight}`);
     expect((await client.call("counts.get", {})).today).toBe(1);
-    // on its day the flight is Today's, above the bill, and still the Plan it is: not counted
+    // on its day the flight is Today's, after the person waiting, and still the Plan it is: not counted
     clock.now = at(2026, 11, 19, 6);
-    expect((await client.call("today.list", { heldIds: [] })).sections.map((x) => [x.kind, x.items.map((i) => i.thread.id)])).toEqual([["today", [flight]], ["day", [billThread]]]);
+    expect(shape(await client.call("today.list", { held: [] }))).toEqual([["today", undefined, [[flight, "waiting"], [flight, "dated"]]], ["day", "2026-11-20", [[billThread, "dated"]]]]);
     expect((await client.call("counts.get", {})).today).toBe(1);
     raw.run("UPDATE threads SET waiting_since = NULL, has_sent = 0 WHERE id = ?", flight);
     // the flight is over two hours after it: gone, not Missed
     clock.now = at(2026, 11, 19, 9, 41);
-    expect((await client.call("today.list", { heldIds: [] })).sections.map((x) => x.kind)).toEqual(["day"]);
+    expect((await client.call("today.list", { held: [] })).sections.map((x) => x.kind)).toEqual(["day"]);
   });
 
   it("the third panel round: a person's ask is Needs you's, its line and counted, over a plain waiting row, until its window ends; one from a list isn't kept", async () => {
@@ -1155,7 +1161,7 @@ describe("Today's groups (§1)", () => {
     expect((await backend.store.dated.active()).map((r) => [r.threadId, r.kind])).toEqual([[asked, "ask"]]);
     // waiting on you too (you've written in it): one row, the ask's
     raw.run("UPDATE threads SET waiting_since = ?, has_sent = 1 WHERE id = ?", clock.now - 60_000, asked);
-    const list = await client.call("today.list", { heldIds: [] });
+    const list = await client.call("today.list", { held: [] });
     expect(list.sections.map((x) => x.kind)).toEqual(["today"]);
     expect(list.sections[0]!.items).toHaveLength(1);
     expect(list.sections[0]!.items[0]).toMatchObject({ thread: { id: asked }, why: { kind: "dated", text: "Answer Mariana about a rebranding quote", item: { kind: "ask", dated: false, timed: false } } });
@@ -1164,10 +1170,10 @@ describe("Today's groups (§1)", () => {
     // a month on, it's over: retired, never Missed
     const row = (await backend.store.dated.active())[0]!;
     clock.now = row.arrivedAt + 30 * DAY - 1;
-    expect((await client.call("today.list", { heldIds: [] })).sections.flatMap((x) => x.items.map((i) => i.why.kind))).toContain("dated");
+    expect((await client.call("today.list", { held: [] })).sections.flatMap((x) => x.items.map((i) => i.why.kind))).toContain("dated");
     clock.now = row.arrivedAt + 30 * DAY;
     raw.run("UPDATE threads SET waiting_since = NULL WHERE id = ?", asked);
-    expect((await client.call("today.list", { heldIds: [] })).sections).toEqual([]);
+    expect((await client.call("today.list", { held: [] })).sections).toEqual([]);
     expect(await backend.dated.retire()).toBe(1);
     expect(await backend.store.dated.get(row.id)).toMatchObject({ state: "dismissed", closedReason: "expired" });
   });
@@ -1221,7 +1227,7 @@ describe("Today's groups (§1)", () => {
     await backend.today.armClock();
     expect(backend.today.clockNextAt).toBe(at(2026, 11, 11));
     await client.call("settings.update", { dated: { enabled: false } });
-    expect((await client.call("today.list", { heldIds: [] })).sections).toEqual([]);
+    expect((await client.call("today.list", { held: [] })).sections).toEqual([]);
     await backend.today.armClock();
     // plan 210 (Codex code review): no item's moment left, but midnight still renews what's waiting's "since" and the
     // history's "today"
@@ -1248,7 +1254,7 @@ describe("the third panel round", () => {
     // 8:00 on the promise's day: before its 9:00, it's already today's
     clock.now = at(2026, 11, 19, 8);
     expect(await sections()).toEqual({ today: [agenda], day: [billThread] });
-    expect((await client.call("counts.get", {})).today).toBe(2);
+    expect((await client.call("counts.get", {})).today).toBe(1);
     // the fifth panel round: a week before its day, from 9:00, as a request's (the bill's week starts a day later)
     clock.now = at(2026, 11, 12, 9);
     expect(await sections()).toMatchObject({ day: [agenda], comingUp: [billThread] });
@@ -1256,64 +1262,52 @@ describe("the third panel round", () => {
     expect(await sections()).toMatchObject({ comingUp: [agenda, billThread] });
   });
 
-  it("change 2: a waiting conversation with your promise shows the one due soonest, exactly; one put off is none's until it's back (the fifth panel round)", async () => {
+  it("plan 210 (iteration 2): a waiting conversation's promises are rows of their own, by their days; its waiting row stands meanwhile; one put off waits for it", async () => {
     const { client, receive, raw, clock } = await setup();
     await client.call("settings.update", { followups: { enabled: true } });
     // Elena's "gentle nudge" on the October update, after Priya promised it
     const elena = await receive({ from: { name: "Elena", email: "elena@acme.test" }, subject: "Re: October update", bodyText: "Gentle nudge on the October update, by Monday if you can." });
     raw.run("UPDATE threads SET waiting_since = ?, has_sent = 1 WHERE id = ?", clock.now - 60_000, elena);
-    // past their week's lead (Coming up's), so the conversation is Needs you's
     raw.run(...followup(elena, "send the board deck", at(2026, 11, 28, 9), { message: 900_001 }));
     raw.run(...followup(elena, "send the October update", at(2026, 11, 25, 9), { message: 900_002, revision: 2 }));
     clock.now = at(2026, 11, 14, 10);
-    const row = async () => {
-      const list = await client.call("today.list", { heldIds: [] });
-      expect(list.sections.map((x) => x.kind)).toEqual(["today"]);
-      return list.sections[0]!.items[0]!;
-    };
-    const first = await row();
-    expect(first).toMatchObject({ thread: { id: elena }, why: { kind: "promise", text: "send the October update", dueAt: at(2026, 11, 25, 9), promise: { revision: 2, dated: true } } });
-    // its line is the promise, so no summary is read for it
-    expect(first.summary).toBeUndefined();
+    const rows = async () => (await client.call("today.list", { held: [] })).sections.map((x) => [x.kind, x.items.map((i) => [i.id.split(":")[0], i.why.text ?? null])]);
+    // both promises behind Coming up (a week's lead): the conversation waiting on you is Today's meanwhile
+    // (Coming up: a section a day)
+    expect(await rows()).toEqual([["today", [["waiting", null]]], ["comingUp", [["promise", "send the October update"]]], ["comingUp", [["promise", "send the board deck"]]]]);
     expect((await client.call("counts.get", {})).today).toBe(1);
-    // Later on exactly it: its day stays, and the deck is the conversation's promise meanwhile
-    await client.call("followups.act", { id: first.why.promise!.id, revision: 2, action: "later", dueAt: at(2026, 11, 26, 9) });
-    const second = await row();
-    expect(second.why).toMatchObject({ text: "send the board deck", dueAt: at(2026, 11, 28, 9) });
-    // Done on the deck: the conversation's only open promise is put off, so it waits for it in Coming up, not counted
-    await client.call("followups.act", { id: second.why.promise!.id, revision: second.why.promise!.revision, action: "done" });
-    const waits = await client.call("today.list", { heldIds: [] });
-    expect(waits.sections.map((x) => [x.kind, x.items.map((i) => i.thread.id)])).toEqual([["comingUp", [elena]]]);
-    expect(waits.sections[0]!.items[0]!.why).toMatchObject({ text: "send the October update", dueAt: at(2026, 11, 25, 9), promise: { id: first.why.promise!.id } });
+    const [update, deck] = (await followupRows(client)).filter((r) => r.threadId === elena).sort((a, b) => a.dueAt - b.dueAt);
+    // a week before the update's day, its row is that day's; the conversation's waiting row goes (the promise says it)
+    clock.now = at(2026, 11, 18, 9);
+    expect(await rows()).toEqual([["day", [["promise", "send the October update"]]], ["comingUp", [["promise", "send the board deck"]]]]);
+    // Later on the update, Done on the deck: its only open promise put off, it waits for it, not counted
+    clock.now = at(2026, 11, 14, 10);
+    await client.call("followups.act", { id: update!.id, revision: update!.revision, action: "later", dueAt: at(2026, 11, 26, 9) });
+    await client.call("followups.act", { id: deck!.id, revision: deck!.revision, action: "done" });
+    expect(await rows()).toEqual([["comingUp", [["promise", "send the October update"]]]]);
     expect((await client.call("counts.get", {})).today).toBe(0);
     // back after its day: Missed, for a week from then
     clock.now = at(2026, 11, 26, 9);
-    const back = await client.call("today.list", { heldIds: [] });
-    expect(back.sections.map((x) => [x.kind, x.items.map((i) => i.thread.id)])).toEqual([["missed", [elena]]]);
+    expect(await rows()).toEqual([["missed", [["promise", "send the October update"]]]]);
     expect((await client.call("counts.get", {})).today).toBe(1);
   });
 
-  it("Codex code review (round 4): an ask in a conversation where you'd promised them something shows your promise, when it's in the same group or an earlier one (the seventh panel round, revision 1)", async () => {
+  it("plan 210 (iteration 2): an ask and your promise in one conversation are two rows, each by its own day (a promise never stands in for an ask)", async () => {
     const { client, model, receive, read, raw, clock } = await setup();
     await client.call("settings.update", { followups: { enabled: true } });
-    model.answer = () => reply([{ kind: "ask", text: "Send Elena the report", quote: "could you send that report", due: null, time: null }]);
-    const elena = await receive({ from: { name: "Elena", email: "elena@acme.test" }, subject: "Re: the report", bodyText: "Hi, could you send that report?" });
+    model.answer = () => reply([{ kind: "ask", text: "Send Elena the numbers", quote: "could you send the numbers", due: null, time: null }]);
+    const elena = await receive({ from: { name: "Elena", email: "elena@acme.test" }, subject: "Re: the report", bodyText: "Hi, could you send the numbers?" });
     await read();
-    // past its week's lead, so the conversation is the ask's (the fifth panel round); the promise, in Coming up, is later
-    // than Needs you, so the ask is its own row, the promise its second line (the seventh)
-    raw.run(...followup(elena, "send the report", at(2026, 11, 28, 9), { revision: 3 }));
+    raw.run(...followup(elena, "send the report", at(2026, 11, 20, 9), { revision: 3 }));
     clock.now = at(2026, 11, 14, 10);
-    const list = async () => (await client.call("today.list", { heldIds: [] })).sections.map((x) => [x.kind, x.items.map((i) => ({ thread: i.thread.id, why: i.why, also: i.also }))]);
-    expect(await list()).toMatchObject([["today", [{ thread: elena, why: { kind: "dated", text: "Send Elena the report", item: { kind: "ask" } }, also: { kind: "promise", text: "send the report", dueDay: "2026-11-28" } }]]]);
-    // Soon's, still later than Needs you: the same
-    clock.now = at(2026, 11, 21, 9);
-    expect(await list()).toMatchObject([["today", [{ thread: elena, why: { kind: "dated", item: { kind: "ask" } } }]]]);
-    // on its day it's Today's, and the conversation's row
-    clock.now = at(2026, 11, 28, 8);
-    expect(await list()).toMatchObject([["today", [{ thread: elena, why: { kind: "promise", text: "send the report", promise: { revision: 3 } } }]]]);
-    // one that names no day is Needs you's whenever it shows: the ask's row is it
-    raw.run("UPDATE followups SET dated = 0, due_at = ? WHERE thread_id = ?", at(2026, 12, 1, 9), elena);
-    expect(await list()).toMatchObject([["today", [{ thread: elena, why: { kind: "promise", text: "send the report", promise: { revision: 3, dated: false } } }]]]);
+    const list = await client.call("today.list", { held: [] });
+    expect(list.sections.map((x) => [x.kind, x.items.map((i) => [i.thread.id, i.why.kind, i.why.text])])).toEqual([
+      ["today", [[elena, "dated", "Send Elena the numbers"]]],
+      ["day", [[elena, "promise", "send the report"]]],
+    ]);
+    expect(list.sections.flatMap((x) => x.items).every((i) => i.also === undefined)).toBe(true);
+    // (a Saturday: the promise's Friday is next week's)
+    expect(list.counts).toEqual({ missed: 0, today: 1, thisWeek: 0 });
   });
 
   it("change 6: Later before a timed item's own moment while it's ahead, anywhere once Missed; a promise's Later any moment, its day kept (the fifth panel round)", async () => {
@@ -1339,7 +1333,7 @@ describe("the third panel round", () => {
     const later = await client.call("followups.act", { id: dated!.id, revision: dated!.revision, action: "later", dueAt: at(2026, 11, 14, 15) });
     expect(later.row).toMatchObject({ dueAt: at(2026, 11, 14, 9), deferredUntil: at(2026, 11, 14, 15), state: "open" });
     // (plan 210: the conversation is Today's still, by the promise that named no day: never the one put off)
-    const row = (await client.call("today.list", { heldIds: [] })).sections.flatMap((x) => x.items).find((i) => i.thread.id === thread);
+    const row = (await client.call("today.list", { held: [] })).sections.flatMap((x) => x.items).find((i) => i.thread.id === thread);
     expect(row?.why).toMatchObject({ kind: "promise", text: "call back", promise: { dated: false } });
     await client.call("followups.act", { id: undated!.id, revision: undated!.revision, action: "later", dueAt: at(2026, 11, 14, 15) });
   });
@@ -1367,31 +1361,31 @@ describe("the fourth panel round", () => {
     raw.run(...followup(nudged, "Ana", at(2026, 11, 12, 9), { kind: "awaiting", dated: 0, state: "due" }));
     raw.run("UPDATE threads SET waiting_since = ?, has_sent = 1 WHERE id = ?", clock.now - 60_000, flight);
     clock.now = at(2026, 11, 18, 10);
-    const list = await client.call("today.list", { heldIds: [] });
-    expect(list.sections.map((x) => [x.kind, x.items.map((i) => i.thread.id)])).toEqual([["today", [promised, asked]], ["day", [flight]]]);
+    const list = await client.call("today.list", { held: [] });
+    // plan 210 (iteration 2): the flight's thread waiting on you is a waiting row of its own (a Plan isn't what was asked)
+    expect(list.sections.map((x) => [x.kind, x.items.map((i) => i.thread.id)])).toEqual([["today", [promised, asked, flight]], ["day", [flight]]]);
     expect(nudged).not.toBe(promised);
     // it names no day, and who it's to, for its row's name and picture
     expect(list.sections[0]!.items[0]!.why).toMatchObject({ kind: "promise", text: "call Elena back", personName: "Elena Ruiz", personEmail: "elena@acme.test", promise: { dated: false } });
     expect(list.sections[0]!.items[0]!.why.missed).toBeUndefined();
-    // counted with the rest of Needs you; the waiting Plan isn't
-    expect((await client.call("counts.get", {})).today).toBe(2);
+    // counted with the rest of Today: the promise, the ask, the flight's waiting row; the Plan itself isn't
+    expect((await client.call("counts.get", {})).today).toBe(3);
     // a dated promise of yours due today is Today's
     raw.run(...followup(promised, "send the slides", at(2026, 11, 18, 17), { message: 900_500 }));
-    expect((await client.call("today.list", { heldIds: [] })).sections.map((x) => x.kind)).toEqual(["today", "day"]);
+    expect((await client.call("today.list", { held: [] })).sections.map((x) => x.kind)).toEqual(["today", "day"]);
   });
 });
 
 describe("the fifth panel round: a promise's own Later", () => {
   const followup = (thread: number, text: string, dueAt: number, o: { message?: number } = {}) =>
     [`INSERT INTO followups (thread_id, message_id, item, kind, text, person_name, person_email, sent_at, due_at, dated, state, revision, created_at) VALUES (?, ?, 0, 'promise', ?, 'Elena', 'elena@acme.test', ?, ?, 1, 'open', 0, ?)`, thread, o.message ?? 900_000 + thread, text, NOW - 3 * DAY, dueAt, NOW] as const;
-  /** the list, its header's count (the counted groups' rows) and the sidebar's, together */
+  /** the list, its header's numbers and the sidebar's (plan 210, iteration 2: Missed and Today's), together */
   const today = async (client: RpcClient) => {
-    const list = await client.call("today.list", { heldIds: [] });
-    const header = list.sections.reduce((n, x) => n + x.items.filter((i) => todayCounted(x.kind, i.why)).length, 0);
-    return { groups: list.sections.map((x) => [x.kind, x.items.map((i) => [i.thread.id, i.why.kind])]), header, sidebar: (await client.call("counts.get", {})).today };
+    const list = await client.call("today.list", { held: [] });
+    return { groups: list.sections.map((x) => [x.kind, x.items.map((i) => [i.thread.id, i.why.kind])]), header: list.counts, sidebar: (await client.call("counts.get", {})).today };
   };
 
-  it("plan 210 (Codex code review): waiting conversations showing your promises go by the promises' days, as your own promises do, not by their newest mail", async () => {
+  it("plan 210 (iteration 2): waiting conversations with promises behind Coming up are waiting rows, newest first; the promises are rows of their own by their days", async () => {
     const { client, receive, read, raw, clock } = await setup();
     await client.call("settings.update", { followups: { enabled: true } });
     // plan 210 (iteration 2): mail the dated reader didn't read (not live) keeps plan 145's waiting rule
@@ -1400,14 +1394,13 @@ describe("the fifth panel round: a promise's own Later", () => {
     const ned = await receive({ from: { name: "Ned", email: "ned@people.test" }, subject: "Re: the plan", bodyText: "Looking forward to it.", providerThreadId: "ned" }, false);
     await read();
     raw.run("UPDATE threads SET waiting_since = ?, has_sent = 1 WHERE id IN (?, ?)", clock.now - 60_000, elena, ned);
-    // both past their week's lead: each conversation is waiting, showing its promise; Ned wrote last, Elena's is due first
     raw.run(...followup(elena, "send the deck", at(2026, 11, 25, 9)));
     raw.run(...followup(ned, "send the plan", at(2026, 11, 28, 9)));
     clock.now = at(2026, 11, 14, 10);
-    expect(await today(client)).toEqual({ groups: [["today", [[elena, "promise"], [ned, "promise"]]]], header: 2, sidebar: 2 });
+    expect(await today(client)).toEqual({ groups: [["today", [[ned, "waiting"], [elena, "waiting"]]], ["comingUp", [[elena, "promise"]]], ["comingUp", [[ned, "promise"]]]], header: { missed: 0, today: 2, thisWeek: 0 }, sidebar: 2 });
   });
 
-  it("put off, a waiting conversation's only promise is none's until it's back, an ask there still Needs you's; Undo brings it back; the counts agree", async () => {
+  it("put off, a waiting conversation's only promise is none's until it's back, an ask there still Today's; Undo brings it back; the counts agree", async () => {
     const { client, model, receive, read, raw, clock } = await setup();
     await client.call("settings.update", { followups: { enabled: true } });
     model.answer = (req) => (promptText(req.messages[0]!.content).includes("budget") ? reply([{ kind: "ask", text: "Answer Elena about the budget", quote: "what's the budget", due: null, time: null }]) : reply());
@@ -1416,26 +1409,22 @@ describe("the fifth panel round: a promise's own Later", () => {
     const ned = await receive({ from: { name: "Ned", email: "ned@people.test" }, subject: "Re: the plan", bodyText: "Looking forward to it.", providerThreadId: "ned" }, false);
     await read();
     raw.run("UPDATE threads SET waiting_since = ?, has_sent = 1 WHERE id IN (?, ?)", clock.now - 60_000, elena, ned);
-    // past their week's lead: the conversations are Needs you's, Ned's showing his promise; Elena's promise is Coming up's,
-    // later than her ask, so the ask is her row (the seventh panel round, revision 1)
     raw.run(...followup(elena, "send the deck", at(2026, 11, 28, 9)));
     raw.run(...followup(ned, "send the plan", at(2026, 11, 27, 9)));
     clock.now = at(2026, 11, 14, 10);
-    // (plan 210, iteration 1: your promise before a person's ask)
-    expect(await today(client)).toEqual({ groups: [["today", [[ned, "promise"], [elena, "dated"]]]], header: 2, sidebar: 2 });
+    // Elena's ask says her conversation; Ned's is a waiting row; both promises behind Coming up
+    const header = (today: number) => ({ missed: 0, today, thisWeek: 0 });
+    expect(await today(client)).toEqual({ groups: [["today", [[elena, "dated"], [ned, "waiting"]]], ["comingUp", [[ned, "promise"]]], ["comingUp", [[elena, "promise"]]]], header: header(2), sidebar: 2 });
     const [deck, plan] = [(await followupRows(client)).find((r) => r.threadId === elena)!, (await followupRows(client)).find((r) => r.threadId === ned)!];
-    // Ned's only promise, put off: his conversation waits for it in Coming up; Elena's, put off: her ask is the row
+    // Ned's only promise, put off: his conversation waits for it; Elena's ask stays
     const offNed = await client.call("followups.act", { id: plan.id, revision: plan.revision, action: "later", dueAt: at(2026, 11, 20, 9) });
     await client.call("followups.act", { id: deck.id, revision: deck.revision, action: "later", dueAt: at(2026, 11, 20, 9) });
-    expect(await today(client)).toEqual({ groups: [["today", [[elena, "dated"]]], ["comingUp", [[ned, "promise"]]]], header: 1, sidebar: 1 });
-    // Undo: Ned's conversation as it was, and its promise its row
+    expect(await today(client)).toEqual({ groups: [["today", [[elena, "dated"]]], ["comingUp", [[ned, "promise"]]], ["comingUp", [[elena, "promise"]]]], header: header(1), sidebar: 1 });
     await client.call("followups.undo", { undoId: offNed.undoId! });
-    // (plan 210, iteration 1: your promise before a person's ask)
-    expect(await today(client)).toEqual({ groups: [["today", [[ned, "promise"], [elena, "dated"]]]], header: 2, sidebar: 2 });
-    // its Later's moment: Ned's is a week before its day, Soon's, and his conversation's row there; Elena's is Coming up's
-    // again, her ask still the row
+    expect(await today(client)).toEqual({ groups: [["today", [[elena, "dated"], [ned, "waiting"]]], ["comingUp", [[ned, "promise"]]], ["comingUp", [[elena, "promise"]]]], header: header(2), sidebar: 2 });
+    // a week before Ned's day his promise is that day's, and says his conversation; Elena's Later has ended, a week before hers
     clock.now = at(2026, 11, 20, 9);
-    expect(await today(client)).toEqual({ groups: [["today", [[elena, "dated"]]], ["day", [[ned, "promise"]]]], header: 2, sidebar: 2 });
+    expect(await today(client)).toEqual({ groups: [["today", [[elena, "dated"]]], ["day", [[ned, "promise"]]], ["comingUp", [[elena, "promise"]]]], header: header(1), sidebar: 1 });
   });
 
   it("Later on an overdue promise keeps its day and Undo's revision: it doesn't come due again at once", async () => {
@@ -1460,94 +1449,51 @@ describe("the fifth panel round: a promise's own Later", () => {
     expect(moved.row).toMatchObject({ dueAt: clock.now + DAY, deferredUntil: null, state: "open" });
   });
 });
-describe("the fifth panel round: a row says its conversation's next item (change 6, revision 9)", () => {
+describe("plan 210 (iteration 2): a conversation's items are rows of their own", () => {
   const JESS = "Board meeting is locked: Thursday Nov 19, 9:00–12:00. Could you send me your draft by Friday?";
   const draft: Item = { kind: "respond", text: "Send Jess your draft", quote: "send me your draft by Friday", due: "2026-11-20", time: null };
   const board: Item = { kind: "event", text: "Board meeting", quote: "Board meeting is locked", due: "2026-11-19", time: "09:00" };
-  const renewal: Item = { kind: "renew", text: "Renew the board's insurance", quote: "Board meeting is locked", due: "2026-12-20", time: null };
 
-  async function jess() {
-    const s = await setup();
-    s.model.answer = () => reply([draft, board, renewal]);
-    const thread = await s.receive({ from: { name: "Jess Okafor", email: "jess@board.test" }, subject: "Board meeting", bodyText: JESS });
-    await s.read();
-    const row = async () => {
-      const list = await s.client.call("today.list", { heldIds: [] });
-      return list.sections.flatMap((x) => x.items.map((i) => ({ group: x.kind, ...i }))).find((i) => i.thread.id === thread)!;
-    };
-    return { ...s, thread, row };
-  }
-
-  it("Jess's draft says the board meeting, which showed nowhere; the count is still of rows", async () => {
-    const { client, clock, row } = await jess();
-    clock.now = at(2026, 11, 14, 10);
-    const first = await row();
-    expect(first).toMatchObject({ group: "day", why: { text: "Send Jess your draft" }, also: { kind: "event", text: "Board meeting", dueDay: "2026-11-19", dueAt: at(2026, 11, 19, 9), timed: true, dated: true } });
-    expect((await client.call("counts.get", {})).today).toBe(1);
-    // Done on the row's own item: the board meeting is the row's, and nothing else would show (the renewal isn't yet)
-    await client.call("dated.act", { id: first.why.item!.id, revision: first.why.item!.revision, action: "done" });
-    const next = await row();
-    expect(next).toMatchObject({ group: "comingUp", why: { text: "Board meeting" } });
-    expect(next.also).toBeUndefined();
+  it("Jess's draft and the board meeting are two rows, the draft shown from its arrival in Today's people (A5), the meeting under its day; Done on one leaves the other", async () => {
+    const { client, clock, model, receive, read } = await setup();
+    model.answer = () => reply([draft, board]);
+    const thread = await receive({ from: { name: "Jess Okafor", email: "jess@board.test" }, subject: "Board meeting", bodyText: JESS });
+    await read();
+    clock.now = at(2026, 11, 16, 10);
+    const list = await client.call("today.list", { held: [] });
+    const rows = list.sections.map((x) => [x.kind, x.items.map((i) => [i.thread.id, i.why.text])]);
+    expect(rows).toEqual([["today", [[thread, "Send Jess your draft"]]], ["day", [[thread, "Board meeting"]]]]);
+    const [drafted, meeting] = list.sections.flatMap((x) => x.items);
+    expect(drafted!.id).not.toBe(meeting!.id);
+    expect(drafted!.why.item).toMatchObject({ early: true, dueDay: "2026-11-20" });
+    expect(list.counts).toEqual({ missed: 0, today: 1, thisWeek: 0 });
+    await client.call("dated.act", { id: drafted!.why.item!.id, revision: drafted!.why.item!.revision, action: "done" });
+    const after = (await client.call("today.list", { held: [] })).sections.flatMap((x) => x.items);
+    expect(after.map((i) => i.id)).toEqual([meeting!.id]);
   });
 
-  it("never one put off, over, or not showing yet; a promise of yours that would show is one", async () => {
-    const { client, clock, raw, thread, row } = await jess();
-    clock.now = at(2026, 11, 14, 10);
-    const [meeting] = (await client.call("dated.ofThread", { threadId: thread })).rows.filter((r) => r.kind === "event");
-    const later = await client.call("dated.act", { id: meeting!.id, revision: meeting!.revision, action: "later", until: at(2026, 11, 18, 9) });
-    expect((await row()).also).toBeUndefined();
-    await client.call("dated.undo", { undoId: later.undoId! });
-    expect((await row()).also).toMatchObject({ text: "Board meeting" });
-    // your promise in the conversation, due before it: the soonest
-    await client.call("settings.update", { followups: { enabled: true } });
-    raw.run(`INSERT INTO followups (thread_id, message_id, item, kind, text, person_name, person_email, sent_at, due_at, dated, state, revision, created_at) VALUES (?, 900001, 0, 'promise', 'send Jess the budget', 'Jess Okafor', 'jess@board.test', ?, ?, 1, 'open', 0, ?)`, thread, NOW, at(2026, 11, 16, 9), NOW);
-    // with a promise's week (the fifth round's change 1) it's in Soon, before the draft by day, the row's own: the meeting
-    // is what it also has
-    const owed = await row();
-    expect(owed).toMatchObject({ group: "day", why: { kind: "promise", text: "send Jess the budget" } });
-    expect(owed.also).toMatchObject({ kind: "event", text: "Board meeting" });
-    raw.run("UPDATE followups SET state = 'done' WHERE thread_id = ?", thread);
-    // the meeting's over at noon on its day: the draft has nothing beside it (the renewal's time to act is a month off)
-    clock.now = at(2026, 11, 19, 12);
-    const after = await row();
-    expect(after).toMatchObject({ group: "day", why: { text: "Send Jess your draft" } });
-    expect(after.also).toBeUndefined();
-  });
-
-  it("never the same words again, nor an ask under the promise that answers it", async () => {
-    const { backend, client, model, receive, read, raw, clock } = await setup();
-    await client.call("settings.update", { followups: { enabled: true } });
+  it("a request asked again in the conversation is one row, and Done on it closes both", async () => {
+    const { backend, client, model, receive, read, clock } = await setup();
     const jessFrom = { from: { name: "Jess Okafor", email: "jess@board.test" }, providerThreadId: "jess" };
     model.answer = () => reply([draft]);
     const thread = await receive({ ...jessFrom, subject: "Draft", bodyText: "Could you send me your draft by Friday?" });
     await read();
-    // the same request noted again from a later message, and Jess's ask in another
     model.answer = () => reply([{ ...draft, quote: "your draft by Saturday", due: "2026-11-21" }]);
     expect(await receive({ ...jessFrom, subject: "Re: Draft", bodyText: "Sorry, your draft by Saturday is fine." })).toBe(thread);
     await read();
-    model.answer = () => reply([{ kind: "ask", text: "Answer Jess about the budget", quote: "can you tell me the budget", due: null, time: null }]);
-    expect(await receive({ ...jessFrom, subject: "Re: Draft", bodyText: "One more thing: can you tell me the budget?" })).toBe(thread);
-    await read();
-    expect((await client.call("dated.ofThread", { threadId: thread })).rows).toHaveLength(3);
     clock.now = at(2026, 11, 14, 10);
-    const list = async () => (await client.call("today.list", { heldIds: [] })).sections.flatMap((x) => x.items);
-    // the ask is Needs you's, before the draft's Soon (the seventh panel round): its row, the draft its second line
-    const [first] = await list();
-    expect(first).toMatchObject({ thread: { id: thread }, why: { text: "Answer Jess about the budget" }, also: { kind: "respond", text: "Send Jess your draft", dueDay: "2026-11-20" } });
-    // answered: the draft is the row, and the same request noted again isn't its second line
-    const answered = await client.call("dated.act", { id: first!.why.item!.id, revision: first!.why.item!.revision, action: "done" });
-    const [draftRow] = await list();
-    expect(draftRow).toMatchObject({ thread: { id: thread }, why: { text: "Send Jess your draft", item: { dueDay: "2026-11-20" } } });
-    expect(draftRow!.also).toBeUndefined();
-    await client.call("dated.undo", { undoId: answered.undoId! });
-    // a promise of yours there: the ask's row is the promise, and the ask isn't said under it
-    raw.run(`INSERT INTO followups (thread_id, message_id, item, kind, text, person_name, person_email, sent_at, due_at, dated, state, revision, created_at) VALUES (?, 900001, 0, 'promise', 'send Jess the budget', 'Jess Okafor', 'jess@board.test', ?, ?, 0, 'open', 0, ?)`, thread, NOW, NOW + 3 * DAY, NOW);
-    raw.run("UPDATE dated_items SET state = 'done' WHERE kind = 'respond'");
-    backend.today.touched();
-    const [promised] = await list();
-    expect(promised).toMatchObject({ thread: { id: thread }, why: { kind: "promise" } });
-    expect(promised!.also).toBeUndefined();
+    const items = (await client.call("today.list", { held: [] })).sections.flatMap((x) => x.items);
+    expect(items).toHaveLength(1);
+    const [first, second] = (await backend.store.dated.active()).sort((a, b) => a.id - b.id);
+    expect(second!.sameAs).toBe(`dated:${first!.id}`);
+    expect(items[0]).toMatchObject({ id: `dated:${first!.id}`, why: { members: [{ source: "dated", id: first!.id }, { source: "dated", id: second!.id }] } });
+    const done = await client.call("dated.act", { id: first!.id, revision: first!.revision, action: "done" });
+    expect((await backend.store.dated.active()).length).toBe(0);
+    expect((await client.call("today.list", { held: [] })).sections).toEqual([]);
+    // Undo: both back, one row again
+    await client.call("dated.undo", { undoId: done.undoId! });
+    expect((await backend.store.dated.active()).length).toBe(2);
+    expect((await client.call("today.list", { held: [] })).sections.flatMap((x) => x.items).map((i) => i.id)).toEqual([`dated:${first!.id}`]);
   });
 });
 
@@ -1571,14 +1517,13 @@ describe("the sixth panel round: nudges leave Today (change 4, revision 7)", () 
     raw.run(...followup(withPromise, "promise", clock.now, due, 910_100));
     await client.call("reminders.set", { threadIds: [withReminder], dueAt: clock.now - 1, kind: "always" });
     await backend.followups.look();
-    const list = await client.call("today.list", { heldIds: [] });
+    const list = await client.call("today.list", { held: [] });
     const groups = list.sections.map((x) => [x.kind, x.items.map((i) => [i.thread.id, i.why.kind])]);
     // plan 210: your reminder due today is Today's, after the rest (iteration 1: your promise before a person's ask)
     expect(groups).toEqual([["today", [[withPromise, "promise"], [withAsk, "dated"], [withReminder, "reminder"]]]]);
     expect(list.sections.flatMap((x) => x.items).every((i) => i.also === undefined)).toBe(true);
-    // the header's count (the counted groups' rows) and the sidebar's agree: the ask and the promise
-    const header = list.sections.reduce((n, x) => n + x.items.filter((i) => todayCounted(x.kind, i.why)).length, 0);
-    expect([header, (await client.call("counts.get", {})).today]).toEqual([2, 2]);
+    // the header's Today and the sidebar's agree: the ask and the promise
+    expect([list.counts.today, (await client.call("counts.get", {})).today]).toEqual([2, 2]);
     // Follow-ups still has every nudge, on the Inbox's top
     const nudges = (await followupRows(client)).filter((r) => r.kind === "awaiting");
     expect(nudges.map((r) => r.threadId).sort()).toEqual([only, withAsk, withPromise, withReminder].sort());
@@ -1650,14 +1595,13 @@ describe("the sixth panel round: a delivery and an ask stay in their conversatio
 });
 
 describe("the seventh panel round: the groups go by when, not by kind (change 1; revisions 1, 2 and 6)", () => {
-  /** the list's groups, its header's count (the counted rows) and the sidebar's, together */
+  /** the list's groups, its header's numbers and the sidebar's (plan 210, iteration 2), together */
   const today = async (client: RpcClient) => {
-    const list = await client.call("today.list", { heldIds: [] });
-    const header = list.sections.reduce((n, x) => n + x.items.filter((i) => todayCounted(x.kind, i.why)).length, 0);
-    return { list, groups: list.sections.map((x) => [x.kind, x.items.map((i) => i.thread.id)]), header, sidebar: (await client.call("counts.get", {})).today };
+    const list = await client.call("today.list", { held: [] });
+    return { list, groups: list.sections.map((x) => [x.kind, x.items.map((i) => i.thread.id)]), header: list.counts, sidebar: (await client.call("counts.get", {})).today };
   };
 
-  it("today's appointment over next week's bill in one conversation: the appointment is the row, Today's and not counted, the bill its second line; Done makes the bill the row, in Soon and counted; Undo, as it was", async () => {
+  it("plan 210 (iteration 2): today's appointment and next week's bill in one conversation are two rows, each by its own day; Done on the appointment leaves the bill; Undo, as it was", async () => {
     const { client, model, receive, read, clock } = await setup();
     model.answer = () =>
       reply([
@@ -1666,23 +1610,21 @@ describe("the seventh panel round: the groups go by when, not by kind (change 1;
       ]);
     const dentist = await receive({ from: { name: "Smile Dental", email: "front@smile.test" }, subject: "Your visit", bodyText: "Your cleaning is on Saturday at 3:00 PM. Your invoice of $80 is due November 20." });
     await read();
-    clock.now = at(2026, 11, 14, 10);
+    // Friday: the cleaning tomorrow, the invoice next Friday, each its own day's
+    clock.now = at(2026, 11, 13, 10);
     const first = await today(client);
-    expect(first.groups).toEqual([["today", [dentist]]]);
-    const [row] = first.list.sections[0]!.items;
-    expect(row).toMatchObject({ why: { kind: "dated", text: "Dental cleaning", item: { kind: "event", timed: true } }, also: { kind: "pay", text: "Pay the dental invoice", dueDay: "2026-11-20" } });
-    expect([first.header, first.sidebar]).toEqual([0, 0]);
-    const done = await client.call("dated.act", { id: row!.why.item!.id, revision: row!.why.item!.revision, action: "done" });
+    expect(first.groups).toEqual([["day", [dentist]], ["day", [dentist]]]);
+    const [cleaning, invoice] = first.list.sections.flatMap((x) => x.items);
+    expect(cleaning).toMatchObject({ why: { kind: "dated", text: "Dental cleaning", item: { kind: "event", timed: true } } });
+    expect(invoice).toMatchObject({ why: { text: "Pay the dental invoice" } });
+    expect(cleaning!.also).toBeUndefined();
+    // a Plan isn't counted; the invoice is next week's
+    expect([first.header, first.sidebar]).toEqual([{ missed: 0, today: 0, thisWeek: 0 }, 0]);
+    const done = await client.call("dated.act", { id: cleaning!.why.item!.id, revision: cleaning!.why.item!.revision, action: "done" });
     const after = await today(client);
-    expect(after.groups).toEqual([["day", [dentist]]]);
-    expect(after.list.sections[0]!.items[0]).toMatchObject({ why: { text: "Pay the dental invoice" } });
-    expect(after.list.sections[0]!.items[0]!.also).toBeUndefined();
-    expect([after.header, after.sidebar]).toEqual([1, 1]);
+    expect(after.list.sections.flatMap((x) => x.items).map((i) => i.id)).toEqual([invoice!.id]);
     await client.call("dated.undo", { undoId: done.undoId! });
-    const back = await today(client);
-    expect(back.groups).toEqual([["today", [dentist]]]);
-    expect(back.list.sections[0]!.items[0]).toMatchObject({ why: { text: "Dental cleaning", item: { id: row!.why.item!.id } }, also: { text: "Pay the dental invoice" } });
-    expect([back.header, back.sidebar]).toEqual([0, 0]);
+    expect((await today(client)).list.sections.flatMap((x) => x.items).map((i) => i.id)).toEqual([cleaning!.id, invoice!.id]);
   });
 
   it("the count agrees with the list across mixed kinds, groups and waiting conversations; Today has tasks before people before plans (plan 210, iteration 1)", async () => {
@@ -1725,13 +1667,16 @@ describe("the seventh panel round: the groups go by when, not by kind (change 1;
       // plan 210, iteration 1: what's due, the timed by time, then the untimed as they came due (the alert came first);
       // then (the owner's "Under Today") people: the ask, then what's waiting (waiting with a Plan or a bill on a day ahead
       // is that item there; with only Coming up's, it's waiting); then the plans and deliveries, the timed by time
-      ["today", [t["standup at noon"], t["card locked"], t["rent today"], t["the slides"], t["waiting"], t["insurance December"], t["flight tonight"], t["parcel today"]]],
+      // plan 210 (iteration 2): a row per item; a conversation waiting on you is its own row unless an item of it shown
+      // now says what's asked (the invoice does; a Plan, or the insurance behind Coming up, doesn't), newest first
+      ["today", [t["standup at noon"], t["card locked"], t["rent today"], t["the slides"], t["waiting"], t["insurance December"], t["dinner Friday"], t["flight tonight"], t["flight tonight"], t["parcel today"]]],
       ["day", [t["dinner Friday"]]],
       ["day", [t["invoice Saturday"]]],
+      ["comingUp", [t["insurance December"]]],
     ]);
-    // counted: the water bill, the standup, the alert, the rent, the ask, both waiting, the invoice; never the flight, the
-    // parcel or dinner, whether waiting or not
-    expect([r.header, r.sidebar]).toEqual([8, 8]);
+    // counted: the water bill (Missed); the standup, the alert, the rent, the ask and four waiting (Today); the invoice
+    // (this week, through Sunday); never the flight, the parcel or dinner themselves. The badge: Missed and Today
+    expect([r.header, r.sidebar]).toEqual([{ missed: 1, today: 8, thisWeek: 1 }, 9]);
   });
 
   it("plan 210 (iteration 1): a conversation with a task and a plan on one day is the task, its row's act and count the task's; tasks, people, then plans, in Today and a day ahead; the header, the sidebar and the morning notice agree", async () => {
@@ -1756,33 +1701,156 @@ describe("the seventh panel round: the groups go by when, not by kind (change 1;
     // plan 210 (iteration 2): not read by the dated reader (not live), so plan 145's waiting rule
     t["waiting"] = await receive({ from: { name: "Ned", email: "ned@people.test" }, subject: "Lunch?", bodyText: "Are you free for lunch next week?", providerThreadId: "ned" }, false);
     await read();
-    // all of them waiting on your answer: each conversation's own item claims it first
+    // all of them waiting on your answer: a conversation whose item shown now says what's asked has no waiting row
     for (const key of Object.keys(t)) raw.run("UPDATE threads SET waiting_since = ?, has_sent = 1 WHERE id = ?", clock.now - 60_000, t[key]);
     clock.now = at(2026, 11, 18, 10);
     const r = await today(client);
+    // plan 210 (iteration 2): a row per item: the deposit, then people (newest first: Ned, the concert's and the breakfast's
+    // conversations, whose Plans say nothing asked), then the plans by their time, the dinner of the deposit's conversation last
     expect(r.groups).toEqual([
-      ["today", [t["mixed"], t["waiting"], t["only a plan"]]],
+      ["today", [t["mixed"], t["waiting"], t["concert friday"], t["only a plan"], t["only a plan"], t["mixed"]]],
       ["day", [t["rent friday"], t["concert friday"]]],
     ]);
-    const row = r.list.sections[0]!.items[0]!;
-    expect(row).toMatchObject({ why: { kind: "dated", text: "Pay the deposit", item: { kind: "pay" } }, also: { kind: "event", text: "Dinner at Lumen" } });
-    // counted: the deposit's conversation, Ned, the rent; never the breakfast nor the concert, waiting or not
-    expect([r.header, r.sidebar]).toEqual([3, 3]);
+    const [row, , , , , dinner] = r.list.sections[0]!.items;
+    expect(row).toMatchObject({ why: { kind: "dated", text: "Pay the deposit", item: { kind: "pay" } } });
+    expect(row!.also).toBeUndefined();
+    expect(dinner).toMatchObject({ why: { kind: "dated", text: "Dinner at Lumen" } });
+    // counted: the deposit and three waiting (Today), the rent (this week); never the breakfast, the concert nor the dinner
+    expect([r.header, r.sidebar]).toEqual([{ missed: 0, today: 4, thisWeek: 1 }, 4]);
     const notices: number[] = [];
     vi.spyOn(backend.attention, "remind").mockImplementation((n: { count: number }) => void notices.push(n.count));
     clock.now = at(2026, 11, 18, 8, 30);
     await (backend.today as unknown as { notify(day: string, at: string): Promise<void> }).notify("2026-11-18", "08:00");
-    expect(notices).toEqual([3]);
-    // Done on the row is the deposit's: the conversation is the dinner then, Today's quiet plan and not counted
+    // the notice is the badge: Missed and Today
+    expect(notices).toEqual([4]);
+    // Done on the deposit: the dinner stays its own row, Today's quiet plan, not counted; the deposit's mail answered, its
+    // conversation isn't waiting
     clock.now = at(2026, 11, 18, 10);
-    await client.call("dated.act", { id: row.why.item!.id, revision: row.why.item!.revision, action: "done" });
+    await client.call("dated.act", { id: row!.why.item!.id, revision: row!.why.item!.revision, action: "done" });
     const after = await today(client);
     expect(after.groups).toEqual([
-      ["today", [t["waiting"], t["only a plan"], t["mixed"]]],
+      ["today", [t["waiting"], t["concert friday"], t["only a plan"], t["only a plan"], t["mixed"]]],
       ["day", [t["rent friday"], t["concert friday"]]],
     ]);
-    expect(after.list.sections[0]!.items[2]!.why).toMatchObject({ text: "Dinner at Lumen" });
-    expect([after.header, after.sidebar]).toEqual([2, 2]);
+    expect(after.list.sections[0]!.items.map((i) => i.id)).not.toContain(row!.id);
+    expect([after.header, after.sidebar]).toEqual([{ missed: 0, today: 3, thisWeek: 1 }, 3]);
+  });
+});
+
+describe("plan 210 (iteration 2): duplicates, a broken promise, early and one time", () => {
+  const school = { name: "Ms. Ortiz", email: "ortiz@school.test" };
+  const trip: Item = { kind: "pay", text: "Pay $12 for the bus", quote: "$12 for the bus", due: "2026-11-20", time: null };
+  const promised = (thread: number, text: string, dueAt: number, createdAt: number) =>
+    [`INSERT INTO followups (thread_id, message_id, item, kind, text, quote, person_name, person_email, sent_at, due_at, dated, state, revision, created_at) VALUES (?, 990001, 0, 'promise', ?, 'I''ll send the signed slip and $12', 'Ms. Ortiz', 'ortiz@school.test', ?, ?, 1, 'open', 0, ?)`, thread, text, createdAt, dueAt, createdAt] as const;
+
+  it("an errand read as a bill and as your promise is one row, its canonical's; Done closes both at once and Undo brings both back; a stale revision changes neither", async () => {
+    const { backend, client, model, receive, read, raw, clock } = await setup();
+    await client.call("settings.update", { followups: { enabled: true } });
+    model.answer = () => reply([trip]);
+    const thread = await receive({ from: school, subject: "Field trip", bodyText: "Please send the signed slip and $12 for the bus by Friday." });
+    await read();
+    raw.run(...promised(thread, "send the signed slip and $12", at(2026, 11, 20, 9), clock.now + 1));
+    clock.now = at(2026, 11, 18, 10);
+    const list = await client.call("today.list", { held: [] });
+    const items = list.sections.flatMap((x) => x.items);
+    const [bus] = await backend.store.dated.active();
+    const [mine] = (await followupRows(client)).filter((r) => r.kind === "promise");
+    expect(items.map((i) => i.id)).toEqual([`dated:${bus!.id}`]);
+    expect(items[0]!.why.members).toEqual([{ source: "dated", id: bus!.id }, { source: "promise", id: mine!.id }]);
+    expect((await backend.store.followups.get(mine!.id))!.sameAs).toBe(`dated:${bus!.id}`);
+    // one row, one count
+    expect(list.counts.thisWeek).toBe(1);
+    // seen at an older revision: refused, and neither changes
+    await expect(client.call("dated.act", { id: bus!.id, revision: bus!.revision + 5, action: "done" })).rejects.toMatchObject({ code: "STALE" });
+    expect((await backend.store.followups.get(mine!.id))!.state).toBe("open");
+    const done = await client.call("dated.act", { id: bus!.id, revision: bus!.revision, action: "done" });
+    expect([(await backend.store.dated.get(bus!.id))!.state, (await backend.store.followups.get(mine!.id))!.state]).toEqual(["done", "done"]);
+    const after = await client.call("today.list", { held: [], history: { through: null } });
+    expect(after.sections).toEqual([]);
+    // one history line, the canonical's, at the newest closing
+    expect(after.history!.items.map((i) => i.id)).toEqual([`dated:${bus!.id}`]);
+    await client.call("dated.undo", { undoId: done.undoId! });
+    expect([(await backend.store.dated.get(bus!.id))!.state, (await backend.store.followups.get(mine!.id))!.state]).toEqual(["open", "open"]);
+    expect((await client.call("today.list", { held: [] })).sections.flatMap((x) => x.items).map((i) => i.id)).toEqual([`dated:${bus!.id}`]);
+    // the promise's own control (the conversation's card) acts on both too
+    const [again] = (await followupRows(client)).filter((r) => r.kind === "promise");
+    await client.call("followups.act", { id: again!.id, revision: again!.revision, action: "dismiss" });
+    expect([(await backend.store.dated.get(bus!.id))!.state, (await backend.store.followups.get(mine!.id))!.state]).toEqual(["dismissed", "dismissed"]);
+  });
+
+  it("the same dinner from the restaurant and from a friend is one row; Later puts both off", async () => {
+    const { backend, client, model, receive, read, clock } = await setup();
+    model.answer = (req) =>
+      promptText(req.messages[0]!.content).includes("Jess")
+        ? reply([{ kind: "event", text: "Dinner with Jess at Nopa", quote: "dinner at Nopa Friday 7:30", due: "2026-11-20", time: "19:30" }])
+        : reply([{ kind: "event", text: "Dinner reservation at Nopa", quote: "Your table at Nopa", due: "2026-11-20", time: "19:30" }]);
+    const restaurant = await receive({ from: { name: "Nopa", email: "reservations@nopa.test" }, subject: "Your reservation", bodyText: "Your table at Nopa is confirmed for Friday at 7:30 PM." });
+    await read();
+    const friend = await receive({ from: { name: "Jess", email: "jess@people.test" }, subject: "Friday", bodyText: "From Jess: dinner at Nopa Friday 7:30, can't wait." });
+    await read();
+    clock.now = at(2026, 11, 18, 10);
+    const items = (await client.call("today.list", { held: [] })).sections.flatMap((x) => x.items);
+    expect(items.map((i) => i.thread.id)).toEqual([restaurant]);
+    expect(items[0]!.why.members).toHaveLength(2);
+    expect(friend).not.toBe(restaurant);
+    await client.call("dated.act", { id: items[0]!.why.item!.id, revision: items[0]!.why.item!.revision, action: "later", until: at(2026, 11, 19, 9) });
+    expect((await backend.store.dated.active()).every((r) => r.deferredUntil === at(2026, 11, 19, 9))).toBe(true);
+  });
+
+  it("a promise broken and then given a new day by its person keeps its first day on its row, under the new one, not Missed; a second move keeps the first", async () => {
+    const { backend, client, model, receive, read, raw, clock } = await setup();
+    await client.call("settings.update", { followups: { enabled: true } });
+    model.answer = (req) => {
+      const p = promptText(req.messages[0]!.content);
+      const day = p.includes("Monday") ? "2026-11-16" : "2026-11-13";
+      return p.includes("p1 (promise") ? reply([], [], [{ label: "p1", due: day, time: null, evidence: p.includes("Monday") ? "Monday works" : "Friday at the latest" }]) : reply();
+    };
+    const thread = await receive({ from: { name: "Jess", email: "jess@sponsor.test" }, subject: "Script", bodyText: "Looking forward to it.", providerThreadId: "jess" });
+    await read();
+    raw.run("INSERT INTO followups (thread_id, message_id, item, kind, text, person_name, person_email, sent_at, due_at, dated, state, created_at) VALUES (?, 999997, 0, 'promise', 'send the script', 'Jess', 'jess@sponsor.test', ?, ?, 1, 'due', ?)", thread, clock.now - DAY, at(2026, 11, 10, 9), clock.now);
+    const [before] = await backend.store.followups.ofThread(thread);
+    // the 12th: its day (the 10th) is over when she writes
+    clock.now = at(2026, 11, 12, 10);
+    await receive({ from: { name: "Jess", email: "jess@sponsor.test" }, subject: "Re: Script", bodyText: "No stress. Friday at the latest is fine.", providerThreadId: "jess" });
+    await read();
+    expect(await backend.store.followups.get(before!.id)).toMatchObject({ brokenDueAt: at(2026, 11, 10, 9) });
+    const list = await client.call("today.list", { held: [] });
+    expect(list.sections.map((x) => [x.kind, x.day])).toEqual([["day", "2026-11-13"]]);
+    const row = list.sections[0]!.items[0]!;
+    expect(row.why).toMatchObject({ kind: "promise", promise: { promisedAt: at(2026, 11, 10, 9) } });
+    expect(row.why.missed).toBeUndefined();
+    expect(list.counts.missed).toBe(0);
+    // the 14th: Friday over too; "Monday works" moves it again, the first broken day kept
+    clock.now = at(2026, 11, 14, 10);
+    await receive({ from: { name: "Jess", email: "jess@sponsor.test" }, subject: "Re: Script", bodyText: "Monday works too.", providerThreadId: "jess" });
+    await read();
+    expect(await backend.store.followups.get(before!.id)).toMatchObject({ brokenDueAt: at(2026, 11, 10, 9) });
+  });
+
+  it("a delivery that needs someone there shows from the day before; one that doesn't, on its day", async () => {
+    const { backend, client, model, receive, read, clock } = await setup();
+    model.answer = (req) =>
+      promptText(req.messages[0]!.content).includes("signature")
+        ? reply([{ kind: "delivery", text: "Laptops arrive", quote: "Adult signature required", due: "2026-11-21", time: null }])
+        : reply([{ kind: "delivery", text: "Your parcel arrives", quote: "Your parcel arrives Saturday", due: "2026-11-21", time: null }]);
+    const laptops = await receive({ from: { name: "Shop", email: "orders@shop.test" }, subject: "Laptops", bodyText: "Your laptops arrive Saturday. Adult signature required." });
+    await read();
+    const parcel = await receive({ from: { name: "Shop", email: "orders@shop.test" }, subject: "Parcel", bodyText: "Your parcel arrives Saturday." });
+    await read();
+    expect((await backend.store.dated.active()).map((r) => [r.threadId, r.early])).toEqual(expect.arrayContaining([[laptops, true], [parcel, false]]));
+    clock.now = at(2026, 11, 20, 8);
+    const list = await client.call("today.list", { held: [] });
+    expect(list.sections.map((x) => [x.kind, x.day, x.items.map((i) => i.thread.id)])).toEqual([["day", "2026-11-21", [laptops]], ["comingUp", "2026-11-21", [parcel]]]);
+  });
+
+  it("one time per row: the mail's own time in its zone leaves the words for the when column", async () => {
+    const { client, model, receive, read, clock } = await setup();
+    model.answer = () => reply([{ kind: "respond", text: "Submit the RFP response (5:00 PM ET)", quote: "submit by 5:00 PM ET", due: "2026-11-20", time: "17:00" }]);
+    await receive({ subject: "RFP", bodyText: "Please submit by 5:00 PM ET on November 20." });
+    await read();
+    clock.now = at(2026, 11, 18, 10);
+    const [row] = (await client.call("today.list", { held: [] })).sections.flatMap((x) => x.items);
+    expect(row!.why).toMatchObject({ text: "Submit the RFP response", item: { timed: true, note: "5:00 PM ET" } });
   });
 });
 
@@ -1801,7 +1869,7 @@ describe("What matters' history (plan 210)", () => {
       const row = await rowOf(thread);
       return s.client.call("dated.act", { id: row.id, revision: row.revision, action });
     };
-    const list = (through: { at: number; src: 0 | 1; id: number } | null = null, heldIds: number[] = []) => s.client.call("today.list", { heldIds, history: { through } });
+    const list = (through: { at: number; src: 0 | 1; id: number } | null = null, held: string[] = []) => s.client.call("today.list", { held, history: { through } });
     const lines = async (through: { at: number; src: 0 | 1; id: number } | null = null) => (await list(through)).history!.items.map((i) => i.thread.id);
     return { ...s, threads, act, list, lines, rowOf };
   }
@@ -1809,7 +1877,8 @@ describe("What matters' history (plan 210)", () => {
   it("Done and Not a task move a conversation from the open part to the top of the history, Undo moves it back; the count is the open part's", async () => {
     const { client, threads, act, list, lines } = await bills(3);
     const [a, b, c] = threads as [number, number, number];
-    expect((await client.call("counts.get", {})).today).toBe(3);
+    // (due Friday: this week's in the header, never the badge's)
+    expect((await list()).counts.thisWeek).toBe(3);
     await act(a, "done");
     const dismissed = await act(b, "dismiss");
     const first = await list();
@@ -1817,12 +1886,12 @@ describe("What matters' history (plan 210)", () => {
     expect(first.history!.items.map((i) => [i.thread.id, i.outcome, i.kind, i.text])).toEqual([[b, "dismissed", "pay", "Pay the electricity bill"], [a, "done", "pay", "Pay the electricity bill"]]);
     expect(first.history!.next).toBeNull();
     // never counted
-    expect((await client.call("counts.get", {})).today).toBe(1);
+    expect((await list()).counts.thisWeek).toBe(1);
     await client.call("dated.undo", { undoId: dismissed.undoId! });
     expect(await lines()).toEqual([a]);
     expect((await list()).sections.flatMap((x) => x.items.map((i) => i.thread.id)).sort()).toEqual([b, c].sort());
     // without asking for it, no history (the list look)
-    expect((await client.call("today.list", { heldIds: [] })).history).toBeUndefined();
+    expect((await client.call("today.list", { held: [] })).history).toBeUndefined();
   });
 
   it("pages by key: every line once and in order, whatever closes or reopens between pages; a reload keeps its depth", async () => {
@@ -1831,7 +1900,7 @@ describe("What matters' history (plan 210)", () => {
     for (const t of threads.slice(0, 7)) undo[t] = (await act(t, "done")).undoId!;
     const all = (await list()).history!.items;
     expect(all.map((i) => i.thread.id)).toEqual(threads.slice(0, 7).reverse());
-    const page = (after: (typeof all)[number]["key"], limit: number) => client.call("today.history", { after, limit, heldIds: [] });
+    const page = (after: (typeof all)[number]["key"], limit: number) => client.call("today.history", { after, limit, held: [] });
     const p1 = await page(all[1]!.key, 2);
     expect(p1.items.map((i) => i.thread.id)).toEqual([all[2]!.thread.id, all[3]!.thread.id]);
     expect(p1.next).toEqual(all[3]!.key);
@@ -1848,7 +1917,7 @@ describe("What matters' history (plan 210)", () => {
     expect(await lines(all[1]!.key)).toEqual([threads[7]!, all[0]!.thread.id, all[1]!.thread.id]);
   });
 
-  it("one line per conversation at its newest closing; the open part, a held row, Spam and Trash have none", async () => {
+  it("plan 210 (iteration 2): a line per closed item, while its conversation's other item is still open; a held row, Spam and Trash have none", async () => {
     const s = await setup();
     const renew: Item = { kind: "renew", text: "Renew the plan", quote: "electricity bill", due: "2026-11-21", time: null };
     s.model.answer = () => reply([bill, renew]);
@@ -1868,17 +1937,19 @@ describe("What matters' history (plan 210)", () => {
     const [first] = (await s.client.call("dated.ofThread", { threadId: two })).rows;
     s.clock.now += 1000;
     await s.client.call("dated.act", { id: first!.id, revision: first!.revision, action: "done" });
-    const history = async (heldIds: number[] = []) => (await s.client.call("today.list", { heldIds, history: { through: null } })).history!.items.map((i) => i.thread.id);
-    // its other item still open: the conversation is the open part's, not the history's
-    expect(await history()).toEqual([]);
+    const lines = async (held: string[] = []) => (await s.client.call("today.list", { held, history: { through: null } })).history!.items.map((i) => [i.id, i.thread.id]);
+    // its other item still open: the closed one is a line all the same (a row per item), and the open one a row
+    expect(await lines()).toEqual([[`dated:${first!.id}`, two]]);
+    expect((await s.client.call("today.list", { held: [] })).sections.flatMap((x) => x.items).filter((i) => i.thread.id === two)).toHaveLength(1);
     await close(two);
     await close(other);
     await close(spam);
-    expect(await history()).toEqual([spam, other, two]);
-    expect((await s.client.call("today.list", { heldIds: [], history: { through: null } })).history!.items.find((i) => i.thread.id === two)!.text).toBe("Renew the plan");
-    expect(await history([other])).toEqual([spam, two]);
+    const all = await lines();
+    expect(all.map(([, thread]) => thread)).toEqual([spam, other, two, two]);
+    // a row the feed holds in the open part has no line
+    expect((await lines([all[1]![0] as string])).map(([, thread]) => thread)).toEqual([spam, two, two]);
     await s.backend.store.threads.act({ threadIds: [spam], action: "spam", signal: null, now: s.clock.now });
-    expect(await history()).toEqual([other, two]);
+    expect((await lines()).map(([, thread]) => thread)).toEqual([other, two, two]);
   });
 
   it("the owner's inbox-zero setting: finished items hidden, no history is read at all, and Done still takes the line off the top", async () => {
@@ -1891,7 +1962,7 @@ describe("What matters' history (plan 210)", () => {
     const hidden = await list();
     expect(hidden.history).toBeUndefined();
     expect(hidden.sections.flatMap((x) => x.items.map((i) => i.thread.id))).toEqual([threads[1]!]);
-    expect(await client.call("today.history", { after: { at: 1, src: 0, id: 1 }, limit: 10, heldIds: [] })).toEqual({ items: [], next: null });
+    expect(await client.call("today.history", { after: { at: 1, src: 0, id: 1 }, limit: 10, held: [] })).toEqual({ items: [], next: null });
     await act(threads[1]!, "done");
     expect((await list()).sections).toEqual([]);
     expect(dated).not.toHaveBeenCalled();
@@ -1916,10 +1987,10 @@ describe("What matters' history (plan 210)", () => {
     put(third, 0, "dismissed", closed!.closedAt!);
     put(threads[1]!, 1, "done", closed!.closedAt! - 10);
     const lines = (await list()).history!.items;
-    // the second conversation's bill is open: its closed promise isn't a line
-    expect(lines.map((i) => [i.thread.id, i.kind, i.outcome])).toEqual([[threads[0]!, "pay", "done"], [third, "promise", "dismissed"]]);
-    const after = await client.call("today.history", { after: lines[0]!.key, limit: 5, heldIds: [] });
-    expect(after.items.map((i) => i.thread.id)).toEqual([third]);
+    // plan 210 (iteration 2): the second conversation's bill still open, its closed promise is a line all the same
+    expect(lines.map((i) => [i.thread.id, i.kind, i.outcome])).toEqual([[threads[0]!, "pay", "done"], [third, "promise", "dismissed"], [threads[1]!, "promise", "done"]]);
+    const after = await client.call("today.history", { after: lines[0]!.key, limit: 5, held: [] });
+    expect(after.items.map((i) => i.thread.id)).toEqual([third, threads[1]!]);
   });
 });
 

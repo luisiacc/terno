@@ -41,7 +41,7 @@ export interface ProjectedRow {
 }
 
 /** One item, or the true duplicates of one: its id the canonical's key, shown as `lead`. */
-interface Logical {
+export interface Logical {
   id: FeedRowId;
   lead: { source: "dated"; row: DatedRow } | { source: "promise"; row: FollowupRow };
   members: ItemRef[];
@@ -111,49 +111,98 @@ interface Placed extends ProjectedRow {
   came: number;
 }
 
+/** A canonical item in its group, before anything of its conversation is known (`placeItems`). */
+export interface PlacedItem {
+  item: Logical;
+  at: TaskPlace;
+  /** its related detail, shown as its Also while it shows */
+  detail?: DatedRow;
+}
+
+/**
+ * The projection's first step: the canonical items (`logicalItems`) and where each sits (`datedGroupAt`, `promiseGroupAt`),
+ * a related detail folded under its item while that item shows (a trip outlives its outbound flight: then it's a row of
+ * its own). Needs no store: the caller then reads which of their conversations may show (`placedThreads`). `count`: Coming
+ * up is never counted nor says a conversation, so it's left out.
+ */
+export function placeItems(dated: readonly DatedRow[], promises: readonly FollowupRow[], now: number, o: { count?: boolean } = {}): PlacedItem[] {
+  const today = dayKeyOf(now);
+  // most mailboxes link nothing: each item is its own, placed where it is, and nothing is grouped (every count runs this
+  // over the 1,000-item bound)
+  if (!dated.some((r) => r.sameAs != null || r.detailOf != null) && !promises.some((r) => r.sameAs != null)) {
+    const out: PlacedItem[] = [];
+    const keep = (at: TaskPlace | null): at is TaskPlace => at !== null && !(o.count && at.group === "comingUp");
+    for (const row of dated) {
+      const at = datedGroupAt(row, now, today);
+      if (keep(at)) out.push({ item: { id: own("dated", row.id), lead: { source: "dated", row }, members: [{ source: "dated", id: row.id }] }, at });
+    }
+    for (const row of promises) {
+      const at = promiseGroupAt(row, now, today);
+      if (keep(at)) out.push({ item: { id: own("promise", row.id), lead: { source: "promise", row }, members: [{ source: "promise", id: row.id }] }, at });
+    }
+    return out;
+  }
+  const where = new Map<number, TaskPlace | null>();
+  const placeOf = (r: DatedRow) => {
+    if (!where.has(r.id)) where.set(r.id, datedGroupAt(r, now, today));
+    return where.get(r.id)!;
+  };
+  const parents = new Map(dated.map((r) => [r.id, r]));
+  const details = new Map<number, DatedRow>();
+  const items = logicalItems(
+    dated.filter((r) => {
+      const parent = r.detailOf == null ? undefined : parents.get(r.detailOf);
+      if (!parent || placeOf(parent) === null) return true;
+      const was = details.get(parent.id);
+      if (!was || r.dueAt < was.dueAt || (r.dueAt === was.dueAt && r.id < was.id)) details.set(parent.id, r);
+      return false;
+    }),
+    promises,
+  );
+  const out: PlacedItem[] = [];
+  for (const item of items) {
+    const { lead } = item;
+    const at = lead.source === "dated" ? placeOf(lead.row) : promiseGroupAt(lead.row, now, today);
+    if (at === null || (o.count && at.group === "comingUp")) continue;
+    const detail = lead.source === "dated" ? details.get(lead.row.id) : undefined;
+    out.push({ item, at, ...(detail ? { detail } : {}) });
+  }
+  return out;
+}
+
+/** The conversations placed items are in: what the caller asks the store about (Spam, Trash), one read. */
+export const placedThreads = (items: readonly PlacedItem[]): number[] => [...new Set(items.map((p) => p.item.lead.row.threadId))];
+
 /**
  * Plan 210 (iteration 2): every row, in `TODAY_GROUP_ORDER` (Missed by the most recently due; Today by `sortInDay`; each
  * day ahead and Coming up by their day, then the same order), and the counts. `count`: only the counts are wanted (nothing
- * ordered, no reminders).
+ * ordered, no words made, no reminders).
  */
 export function projectToday(f: ProjectionFacts, o: { count?: boolean } = {}): { rows: ProjectedRow[]; counts: TodayCounts } {
+  return projectRows(placeItems(f.dated, f.promises, f.now, o), f, o);
+}
+
+/** The projection's second step: placed items, what's waiting and your reminders as rows, and the counts' buckets. */
+export function projectRows(items: readonly PlacedItem[], f: Pick<ProjectionFacts, "now" | "waiting" | "reminders" | "live" | "zone">, o: { count?: boolean } = {}): { rows: ProjectedRow[]; counts: TodayCounts } {
   const today = dayKeyOf(f.now);
-  // a related detail stands under its item while that item shows; its own row once it doesn't (a trip outlives its outbound flight)
-  const parents = new Map<number, DatedRow>();
-  for (const r of f.dated) parents.set(r.id, r);
-  const details = new Map<number, DatedRow[]>();
-  const items = logicalItems(
-    f.dated.filter((r) => {
-      const parent = r.detailOf == null ? undefined : parents.get(r.detailOf);
-      if (!parent || !f.live(parent.threadId) || datedGroupAt(parent, f.now, today) === null) return true;
-      details.set(parent.id, [...(details.get(parent.id) ?? []), r]);
-      return false;
-    }),
-    f.promises,
-  );
   const placed: Placed[] = [];
-  // conversations an item of theirs stands for: their ask, request or bill, or your promise to them (a Plan isn't what
-  // they asked), so a waiting row there would say the same thing twice
+  // conversations an item of theirs shown now stands for: their ask, request or bill, or your promise to them (a Plan isn't
+  // what they asked), so a waiting row there would say the same thing twice. One behind Coming up says nothing yet: the
+  // conversation waiting on you is a row of its own meanwhile (their nudge on a promise due next week)
   const represented = new Set<number>();
-  for (const item of items) {
+  for (const { item, at, detail } of items) {
     const { lead } = item;
     if (!f.live(lead.row.threadId)) continue;
-    let at: TaskPlace | null;
-    let why: TodayWhy;
-    if (lead.source === "dated") {
-      at = datedGroupAt(lead.row, f.now, today);
-      if (at === null) continue;
-      why = datedWhy(lead.row, at.group === "missed", at.group === "today" && shownEarly(lead.row, today), item.members);
-      if (datedGroup(lead.row.kind) !== "plans") represented.add(lead.row.threadId);
-    } else {
-      at = promiseGroupAt(lead.row, f.now, today);
-      if (at === null) continue;
-      why = promiseWhy(lead.row, at.group === "missed", item.members, f.zone);
-      represented.add(lead.row.threadId);
-    }
-    const detail = lead.source === "dated" ? details.get(lead.row.id)?.sort((a, b) => a.dueAt - b.dueAt || a.id - b.id)[0] : undefined;
+    const plan = lead.source === "dated" && datedGroup(lead.row.kind) === "plans";
+    if (!plan && at.group !== "comingUp") represented.add(lead.row.threadId);
+    // the count needs only what `todayCounted` reads: no words made
+    const why: TodayWhy = o.count
+      ? lead.source === "dated" ? { kind: "dated", item: { id: lead.row.id, revision: 0, kind: lead.row.kind, dueDay: "", timed: false, dated: true } } : { kind: "promise" }
+      : lead.source === "dated"
+        ? datedWhy(lead.row, at.group === "missed", at.group === "today" && shownEarly(lead.row, today), item.members)
+        : promiseWhy(lead.row, at.group === "missed", item.members, f.zone);
     const came = lead.source === "dated" ? lead.row.arrivedAt : lead.row.sentAt;
-    placed.push({ id: item.id, threadId: lead.row.threadId, group: at.group, day: at.day, why, dueAt: lead.row.dueAt, came, ...(detail ? { also: alsoOf(detail) } : {}) });
+    placed.push({ id: item.id, threadId: lead.row.threadId, group: at.group, day: at.day, why, dueAt: lead.row.dueAt, came, ...(detail && !o.count ? { also: alsoOf(detail) } : {}) });
   }
   // what's waiting on you (the owner's round 10: only when something is asked; the stores' `stillWaiting` says so), unless
   // an item of the conversation already says it

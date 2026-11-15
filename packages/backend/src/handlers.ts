@@ -1522,9 +1522,16 @@ export function createHandlers(b: Backend): Handlers {
     // plan 142: renderer only; none of these is in MCP_ALLOWED
     "followups.list": () => b.followups.look(),
     "followups.threads": async ({ onTop, accountId }) => ({ items: await b.followups.threads(onTop, accountId) }),
-    "followups.act": ({ id, revision, action, dueAt }) => b.followups.act(id, revision, action, dueAt),
+    // plan 210 (iteration 2): a promise of yours is acted on with every item it's the same thing as (What matters' one act);
+    // a wait, as plan 142's
+    "followups.act": async ({ id, revision, action, dueAt }) => {
+      if ((await b.store.followups.get(id))?.kind !== "promise") return b.followups.act(id, revision, action, dueAt);
+      const { undoId } = await b.today.act([{ source: "promise", id, revision }], action, action === "later" ? (dueAt ?? b.now()) : undefined);
+      return { undoId, row: await b.store.followups.get(id) };
+    },
     "followups.undo": async ({ undoId }) => {
-      await b.followups.undoAct(undoId);
+      if (undoId.startsWith("t")) await b.today.undoAct(undoId);
+      else await b.followups.undoAct(undoId);
       return { ok: true };
     },
     "followups.seen": async ({ threadId }) => {
@@ -1535,9 +1542,13 @@ export function createHandlers(b: Backend): Handlers {
     "followups.scanOffer": () => b.followups.scanOffer(),
     "followups.scan": async () => ({ queued: await b.followups.scan() }),
     // plan 204: renderer only; none of these is in MCP_ALLOWED
-    "dated.act": ({ id, revision, action, until }) => b.dated.act(id, revision, action, until),
+    // plan 210 (iteration 2): an item is acted on with every item it's the same thing as, all or none (What matters' one act)
+    "dated.act": async ({ id, revision, action, until }) => {
+      const { undoId } = await b.today.act([{ source: "dated", id, revision }], action, until);
+      return { undoId, row: await b.store.dated.get(id) };
+    },
     "dated.undo": async ({ undoId }) => {
-      await b.dated.undoAct(undoId);
+      await b.today.undoAct(undoId);
       return { ok: true };
     },
     "dated.ofThread": async ({ threadId }) => ({ rows: await b.dated.ofThread(threadId) }),
@@ -1546,8 +1557,8 @@ export function createHandlers(b: Backend): Handlers {
     "dated.scan": async () => ({ queued: await b.dated.scan() }),
     // plan 141: renderer only; none of these is in MCP_ALLOWED
     "ai.ask": (p, ctx) => b.ask.ask(p, ctx.clientId),
-    "today.list": ({ heldIds, history }) => b.today.list(heldIds, { history }),
-    "today.history": ({ after, limit, heldIds }) => b.today.history({ after, limit, heldIds }),
+    "today.list": ({ held, history }) => b.today.list(held, { history }),
+    "today.history": ({ after, limit, held }) => b.today.history({ after, limit, held }),
     "today.digest": () => b.today.digestRow(),
     "today.digestRetry": async () => {
       await b.today.retry();

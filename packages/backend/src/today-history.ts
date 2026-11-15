@@ -1,13 +1,15 @@
-import { DATED_CLOSED_KEEP_MS, historyAfter, historyOrder, type DatedRow, type FollowupRow, type HistoryKey, type HistoryOutcome, type ThreadSummary, type TodayHistoryItem, type TodayHistoryPage } from "@terno/core";
+import { DATED_CLOSED_KEEP_MS, historyAfter, historyOrder, refKey, type DatedRow, type FeedRowId, type FollowupRow, type HistoryKey, type HistoryOutcome, type ItemRef, type ThreadSummary, type TodayHistoryItem, type TodayHistoryPage } from "@terno/core";
 import type { ClosedAt, MailStore } from "@terno/store";
 import { withoutUntrusted } from "./suspicious-sender";
 
 /**
- * Plan 210: What matters' history, one page. A line is a conversation's newest closing (a dated item done, not a task,
- * settled or over; a promise of yours done or not a promise) in the keep's window, unless the conversation is in the open
- * part, held there, or in Spam or Trash. Whether a closing is a line depends only on the data, so pages taken by key
- * (`historyOrder`: newest first, a dated item before a promise at the same moment, then the higher id) never repeat or
- * skip one: what closes meanwhile is newer than any key, and what reopens leaves.
+ * Plan 210: What matters' history, one page. Iteration 2 (a row per item): a line is a closed item (a dated item done,
+ * removed, settled or over; a promise of yours done or removed) in the keep's window, whatever else its conversation has
+ * open; true duplicates are one line, at their newest closing, and none while any of them is open. Never in Spam or
+ * Trash, never a row the feed holds in the open part. Whether a closing is a line depends only on the data (its item's
+ * members, read in a batch a page), so pages taken by key (`historyOrder`: newest first, a dated item before a promise at
+ * the same moment, then the higher id) never repeat or skip one: what closes meanwhile is newer than any key, and what
+ * reopens leaves.
  */
 
 /** How many rows each table's read takes at a time; a page past what's eligible reads on. */
@@ -28,8 +30,8 @@ export interface HistoryAsk {
   /** from the top down to and including this line (a reload keeping the depth it had); else `limit` lines */
   through: HistoryKey | null;
   limit: number;
-  /** the open part's conversations and the held ones: never a history line */
-  exclude: ReadonlySet<number>;
+  /** the rows the feed holds in the open part (their ids): never a history line */
+  held: ReadonlySet<FeedRowId>;
   dated: boolean;
   promises: boolean;
   /** Codex code review: a walk past many left-out rows gives the event loop back between reads, within the slice's budget */
@@ -39,37 +41,38 @@ export interface HistoryAsk {
 
 const outcomeOf = (r: { state: string; closedReason: string | null }): HistoryOutcome => (r.state === "done" ? "done" : r.state === "settled" ? "settled" : r.closedReason === "expired" ? "over" : "dismissed");
 
+type Row = (DatedRow & { src: 0 }) | (FollowupRow & { src: 1 });
+const sourceOf = (src: 0 | 1): ItemRef["source"] => (src === 0 ? "dated" : "promise");
+const keyOf = (r: Row): string => r.sameAs ?? refKey({ source: sourceOf(r.src), id: r.id });
+const closingOf = (r: Row): HistoryKey => ({ at: r.closedAt!, src: r.src, id: r.id });
+const open = (r: { state: string }): boolean => r.state === "open" || r.state === "due";
+
 export async function historyPage(store: MailStore, o: HistoryAsk): Promise<TodayHistoryPage> {
   const since = o.now - DATED_CLOSED_KEEP_MS;
   // an item from an untrusted sender isn't shown (as in the open part, Codex's second pass of plan 204)
   const trusted = (rows: DatedRow[]) => withoutUntrusted(rows, (keys) => store.dated.written(keys));
   // each table strictly after the key, translated: at the key's moment a dated item comes before a promise
   const start = (src: 0 | 1): ClosedAt | null => (o.after ? historyAfter(o.after, src) : null);
-  const dated: Source<DatedRow> = { src: 0, after: start(0), buf: [], done: !o.dated, read: (after) => store.dated.closedPage({ since, after, limit: READ_BATCH }) };
-  const promises: Source<FollowupRow> = { src: 1, after: start(1), buf: [], done: !o.promises, read: (after) => store.followups.closedPage({ since, after, limit: READ_BATCH }) };
-  // what each read brought: the thread (Spam, Trash, gone), and, on a page after a key, whether the conversation has an
-  // eligible closing above that key: its line was on a page before, at its newest closing (Codex code review: eligible,
-  // so an untrusted sender's newer item, never shown, doesn't hide an older one or your promise). Walking newest first,
-  // a conversation's first eligible closing past the key is then its newest: it's the line, and `seen` keeps it once
+  const dated: Source<Row> = { src: 0, after: start(0), buf: [], done: !o.dated, read: async (after) => (await store.dated.closedPage({ since, after, limit: READ_BATCH })).map((r) => ({ ...r, src: 0 as const })) };
+  const promises: Source<Row> = { src: 1, after: start(1), buf: [], done: !o.promises, read: async (after) => (await store.followups.closedPage({ since, after, limit: READ_BATCH })).map((r) => ({ ...r, src: 1 as const })) };
+  // what each read brought: its thread (Spam, Trash, gone), and each item's members: a merged item is a line once, at its
+  // newest closing, and only when none of it is open (lone items, most, are their own and only member)
   const threads = new Map<number, ThreadSummary | null>();
-  const above = new Set<number>();
-  const learn = async (ids: readonly number[]) => {
-    const fresh = [...new Set(ids)].filter((id) => !threads.has(id));
-    if (!fresh.length) return;
-    const after = o.after;
-    const [d, p, summaries] = await Promise.all([after && o.dated ? store.dated.newestClosed(fresh, since) : new Map<number, ClosedAt>(), after && o.promises ? store.followups.newestClosed(fresh, since) : new Map<number, ClosedAt>(), store.threads.summaries(fresh)]);
+  const groups = new Map<string, { open: boolean; newest: HistoryKey | null }>();
+  const learn = async (rows: readonly Row[]) => {
+    const fresh = [...new Set(rows.map((r) => r.threadId))].filter((id) => !threads.has(id));
+    const keys = [...new Set(rows.map(keyOf))].filter((k) => !groups.has(k));
+    const [summaries, members] = await Promise.all([fresh.length ? store.threads.summaries(fresh) : [], keys.length ? store.today.members(keys) : { dated: [], promises: [] }]);
     const byId = new Map(summaries.map((t) => [t.id, t]));
     for (const id of fresh) threads.set(id, byId.get(id) ?? null);
-    if (!after) return;
-    // at the key or above it: the line at the key is the page before's last
-    const newer = (k: ClosedAt | undefined, src: 0 | 1) => !!k && historyOrder({ at: k.at, src, id: k.id }, after) <= 0;
-    const checks: DatedRow[] = [];
-    for (const id of fresh) {
-      if (newer(p.get(id), 1)) above.add(id);
-      else if (newer(d.get(id), 0)) checks.push((await store.dated.get(d.get(id)!.id))!);
+    for (const k of keys) groups.set(k, { open: false, newest: null });
+    const all: Row[] = [...members.dated.map((r) => ({ ...r, src: 0 as const })), ...members.promises.map((r) => ({ ...r, src: 1 as const }))];
+    for (const m of all) {
+      const g = groups.get(keyOf(m));
+      if (!g) continue;
+      if (open(m)) g.open = true;
+      else if (m.closedAt !== null && m.closedAt >= since && (!g.newest || historyOrder(closingOf(m), g.newest) < 0)) g.newest = closingOf(m);
     }
-    // a newer dated closing counts only from a sender the open part would show
-    for (const row of await trusted(checks.filter(Boolean))) above.add(row.threadId);
   };
   let slice = performance.now();
   const breathe = async () => {
@@ -77,7 +80,7 @@ export async function historyPage(store: MailStore, o: HistoryAsk): Promise<Toda
     await o.yieldTurn();
     slice = performance.now();
   };
-  const fill = async <R extends { threadId: number; id: number; closedAt: number | null }>(s: Source<R>, keep: (rows: R[]) => Promise<readonly R[]>) => {
+  const fill = async (s: Source<Row>, keep: (rows: Row[]) => Promise<readonly Row[]>) => {
     // a whole batch left out (an untrusted sender's items) reads on
     while (!s.buf.length && !s.done) {
       await breathe();
@@ -86,17 +89,18 @@ export async function historyPage(store: MailStore, o: HistoryAsk): Promise<Toda
       if (!rows.length) return;
       const last = rows.at(-1)!;
       s.after = { at: last.closedAt!, id: last.id };
-      await learn(rows.map((r) => r.threadId));
-      s.buf.push(...(await keep(rows)));
+      const kept = await keep(rows);
+      await learn(kept);
+      s.buf.push(...kept);
     }
   };
-  const all = async (rows: FollowupRow[]) => rows;
+  const datedTrusted = async (rows: Row[]) => (await trusted(rows as DatedRow[])) as Row[];
+  const all = async (rows: Row[]) => rows;
   const items: TodayHistoryItem[] = [];
-  const seen = new Set<number>();
   let next: HistoryKey | null = null;
   for (;;) {
-    await Promise.all([fill(dated, trusted), fill(promises, all)]);
-    const heads = [dated.buf[0] && { key: { at: dated.buf[0].closedAt!, src: 0 as const, id: dated.buf[0].id }, source: dated }, promises.buf[0] && { key: { at: promises.buf[0].closedAt!, src: 1 as const, id: promises.buf[0].id }, source: promises }].filter((h) => !!h);
+    await Promise.all([fill(dated, datedTrusted), fill(promises, all)]);
+    const heads = [dated.buf[0], promises.buf[0]].filter((r): r is Row => !!r).map((r) => ({ key: closingOf(r), source: r.src === 0 ? dated : promises }));
     if (!heads.length) {
       next = null;
       break;
@@ -108,11 +112,13 @@ export async function historyPage(store: MailStore, o: HistoryAsk): Promise<Toda
       next = items.at(-1)?.key ?? o.through;
       break;
     }
-    const row = head.source.buf.shift()! as DatedRow | FollowupRow;
+    const row = head.source.buf.shift()!;
     const thread = threads.get(row.threadId);
-    if (!thread || thread.inSpam || thread.inTrash || o.exclude.has(row.threadId) || seen.has(row.threadId) || above.has(row.threadId)) continue;
-    seen.add(row.threadId);
-    items.push({ thread, key: head.key, outcome: outcomeOf(row), kind: head.key.src === 0 ? (row as DatedRow).kind : "promise", text: row.text });
+    const id = keyOf(row);
+    const group = groups.get(id);
+    // a merged item's line is its newest closing's, and it has none while any of it is open
+    if (!thread || thread.inSpam || thread.inTrash || o.held.has(id) || !group || group.open || !group.newest || historyOrder(group.newest, head.key) !== 0) continue;
+    items.push({ id, item: { source: sourceOf(row.src), id: row.id }, thread, key: head.key, outcome: outcomeOf(row), kind: row.src === 0 ? row.kind : "promise", text: row.text });
     if (!o.through && items.length >= o.limit) {
       next = head.key;
       break;
