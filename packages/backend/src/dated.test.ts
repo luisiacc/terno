@@ -1046,4 +1046,121 @@ describe("the fifth panel round: a row says its conversation's next item (change
   });
 });
 
+describe("What matters' history (plan 210)", () => {
+  /** n bills on their own conversations, read and showing (Deadlines) */
+  async function bills(n: number) {
+    const s = await setup();
+    s.model.answer = () => reply([bill]);
+    const threads: number[] = [];
+    for (let i = 0; i < n; i++) threads.push(await s.receive({ subject: `Bill ${i}` }));
+    await s.read();
+    s.clock.now = at(2026, 11, 18, 10);
+    const rowOf = async (thread: number) => (await s.client.call("dated.ofThread", { threadId: thread })).rows[0]!;
+    const act = async (thread: number, action: "done" | "dismiss") => {
+      s.clock.now += 1000;
+      const row = await rowOf(thread);
+      return s.client.call("dated.act", { id: row.id, revision: row.revision, action });
+    };
+    const list = (through: { at: number; src: 0 | 1; id: number } | null = null, heldIds: number[] = []) => s.client.call("today.list", { heldIds, history: { through } });
+    const lines = async (through: { at: number; src: 0 | 1; id: number } | null = null) => (await list(through)).history!.items.map((i) => i.thread.id);
+    return { ...s, threads, act, list, lines, rowOf };
+  }
+
+  it("Done and Not a task move a conversation from the open part to the top of the history, Undo moves it back; the count is the open part's", async () => {
+    const { client, threads, act, list, lines } = await bills(3);
+    const [a, b, c] = threads as [number, number, number];
+    expect((await client.call("counts.get", {})).today).toBe(3);
+    await act(a, "done");
+    const dismissed = await act(b, "dismiss");
+    const first = await list();
+    expect(first.sections.flatMap((x) => x.items.map((i) => i.thread.id))).toEqual([c]);
+    expect(first.history!.items.map((i) => [i.thread.id, i.outcome, i.kind, i.text])).toEqual([[b, "dismissed", "pay", "Pay the electricity bill"], [a, "done", "pay", "Pay the electricity bill"]]);
+    expect(first.history!.next).toBeNull();
+    // never counted
+    expect((await client.call("counts.get", {})).today).toBe(1);
+    await client.call("dated.undo", { undoId: dismissed.undoId! });
+    expect(await lines()).toEqual([a]);
+    expect((await list()).sections.flatMap((x) => x.items.map((i) => i.thread.id)).sort()).toEqual([b, c].sort());
+    // without asking for it, no history (the list look)
+    expect((await client.call("today.list", { heldIds: [] })).history).toBeUndefined();
+  });
+
+  it("pages by key: every line once and in order, whatever closes or reopens between pages; a reload keeps its depth", async () => {
+    const { client, threads, act, list, lines } = await bills(8);
+    const undo: Record<number, string> = {};
+    for (const t of threads.slice(0, 7)) undo[t] = (await act(t, "done")).undoId!;
+    const all = (await list()).history!.items;
+    expect(all.map((i) => i.thread.id)).toEqual(threads.slice(0, 7).reverse());
+    const page = (after: (typeof all)[number]["key"], limit: number) => client.call("today.history", { after, limit, heldIds: [] });
+    const p1 = await page(all[1]!.key, 2);
+    expect(p1.items.map((i) => i.thread.id)).toEqual([all[2]!.thread.id, all[3]!.thread.id]);
+    expect(p1.next).toEqual(all[3]!.key);
+    // between pages: one closes (newest: above every key, never on a later page), one not yet paged reopens (gone)
+    await act(threads[7]!, "done");
+    await client.call("dated.undo", { undoId: undo[all[4]!.thread.id]! });
+    const p2 = await page(p1.next!, 2);
+    expect(p2.items.map((i) => i.thread.id)).toEqual([all[5]!.thread.id, all[6]!.thread.id]);
+    const p3 = await page(p2.next!, 2);
+    expect(p3).toEqual({ items: [], next: null });
+    // a reload down to the last line it had: the same depth, the newest on top
+    const reload = await list(p2.next!);
+    expect(reload.history!.items.map((i) => i.thread.id)).toEqual([threads[7]!, all[0]!.thread.id, all[1]!.thread.id, all[2]!.thread.id, all[3]!.thread.id, all[5]!.thread.id, all[6]!.thread.id]);
+    expect(await lines(all[1]!.key)).toEqual([threads[7]!, all[0]!.thread.id, all[1]!.thread.id]);
+  });
+
+  it("one line per conversation at its newest closing; the open part, a held row, Spam and Trash have none", async () => {
+    const s = await setup();
+    const renew: Item = { kind: "renew", text: "Renew the plan", quote: "electricity bill", due: "2026-11-21", time: null };
+    s.model.answer = () => reply([bill, renew]);
+    const two = await s.receive({ subject: "Two" });
+    await s.read();
+    s.model.answer = () => reply([bill]);
+    const other = await s.receive({ subject: "Other" });
+    const spam = await s.receive({ subject: "Spammed" });
+    await s.read();
+    s.clock.now = at(2026, 11, 18, 10);
+    const close = async (thread: number) => {
+      for (const row of (await s.client.call("dated.ofThread", { threadId: thread })).rows) {
+        s.clock.now += 1000;
+        await s.client.call("dated.act", { id: row.id, revision: row.revision, action: "done" });
+      }
+    };
+    const [first] = (await s.client.call("dated.ofThread", { threadId: two })).rows;
+    s.clock.now += 1000;
+    await s.client.call("dated.act", { id: first!.id, revision: first!.revision, action: "done" });
+    const history = async (heldIds: number[] = []) => (await s.client.call("today.list", { heldIds, history: { through: null } })).history!.items.map((i) => i.thread.id);
+    // its other item still open: the conversation is the open part's, not the history's
+    expect(await history()).toEqual([]);
+    await close(two);
+    await close(other);
+    await close(spam);
+    expect(await history()).toEqual([spam, other, two]);
+    expect((await s.client.call("today.list", { heldIds: [], history: { through: null } })).history!.items.find((i) => i.thread.id === two)!.text).toBe("Renew the plan");
+    expect(await history([other])).toEqual([spam, two]);
+    await s.backend.store.threads.act({ threadIds: [spam], action: "spam", signal: null, now: s.clock.now });
+    expect(await history()).toEqual([other, two]);
+  });
+
+  it("a promise of yours done or not a promise is a line too; at the same moment a dated item comes first, and pages split them exactly", async () => {
+    const { client, threads, act, list, raw, backend, clock, account } = await bills(2);
+    await client.call("settings.update", { followups: { enabled: true } });
+    await act(threads[0]!, "done");
+    const [closed] = await backend.store.dated.closedPage({ since: 0, after: null, limit: 1 });
+    const m = msg({ accountId: account.id, from: me, to: [power], isSent: true, inInbox: false, date: clock.now - 5000, subject: "Promise", providerMsgId: "promise-1" });
+    await backend.ingestSliced([m], true);
+    const third = await threadOf(backend.store, "promise-1");
+    // promises written as follow-ups' finish writes them, then closed: on a third conversation at the bill's very moment,
+    // and on the second (its bill still open) a little before
+    const put = (thread: number, item: number, state: "done" | "dismissed", closedAt: number) =>
+      raw.run("INSERT INTO followups (thread_id, message_id, item, kind, text, sent_at, due_at, state, closed_reason, closed_at, created_at) VALUES (?, 1, ?, 'promise', 'send the contract', ?, ?, ?, 'user', ?, ?)", thread, item, closedAt, closedAt, state, closedAt, closedAt);
+    put(third, 0, "dismissed", closed!.closedAt!);
+    put(threads[1]!, 1, "done", closed!.closedAt! - 10);
+    const lines = (await list()).history!.items;
+    // the second conversation's bill is open: its closed promise isn't a line
+    expect(lines.map((i) => [i.thread.id, i.kind, i.outcome])).toEqual([[threads[0]!, "pay", "done"], [third, "promise", "dismissed"]]);
+    const after = await client.call("today.history", { after: lines[0]!.key, limit: 5, heldIds: [] });
+    expect(after.items.map((i) => i.thread.id)).toEqual([third]);
+  });
+});
+
 const followupRows = async (client: RpcClient) => (await client.call("followups.list", {})).rows;

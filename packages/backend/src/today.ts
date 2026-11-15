@@ -37,6 +37,9 @@ import {
   type TodayItem,
   type TodayList,
   type TodaySection,
+  HISTORY_PAGE,
+  type HistoryKey,
+  type TodayHistoryPage,
 } from "@terno/core";
 import { captureError } from "@terno/core/diag";
 import type { AppSettings } from "@terno/core/rpc";
@@ -46,6 +49,7 @@ import type { BackendCore as Backend } from "./core";
 import { progressReporter } from "./scope";
 import { aiAllowed, readSettings } from "./settings";
 import { withoutQuotes } from "./summaries";
+import { historyPage } from "./today-history";
 import { suspiciousSender, untrustedSenders, withoutUntrusted, type WrittenTo } from "./suspicious-sender";
 
 /**
@@ -679,7 +683,21 @@ export class TodayService {
     this.datedGeneration++;
   }
 
-  async list(heldIds: readonly number[]): Promise<TodayList> {
+  /**
+   * Plan 210: the history's lines strictly after `after` (a next page), or from the top (to `through`, a reload keeping
+   * its depth; else a page). The open part's conversations and the held ones never have a line; one place calculation.
+   */
+  async history(o: { after: HistoryKey | null; through?: HistoryKey | null; limit?: number; heldIds: readonly number[]; placed?: readonly Placed[] }): Promise<TodayHistoryPage> {
+    const { store } = this.b;
+    const now = this.b.now();
+    const settings = await readSettings(store);
+    if (!(await this.available(settings))) return { items: [], next: null };
+    const placed = o.placed ?? (await this.places(now, settings));
+    const exclude = new Set([...placed.map((p) => p.threadId), ...o.heldIds]);
+    return historyPage(store, { now, after: o.after, through: o.through ?? null, limit: o.limit ?? HISTORY_PAGE, exclude, dated: settings.dated?.enabled === true, promises: settings.followups?.enabled === true });
+  }
+
+  async list(heldIds: readonly number[], ask: { history?: { through: HistoryKey | null } } = {}): Promise<TodayList> {
     const { store } = this.b;
     const now = this.b.now();
     const settings = await readSettings(store);
@@ -702,7 +720,9 @@ export class TodayService {
     const taken = new Set(shown.map((p) => p.threadId));
     const missing = heldIds.filter((id) => id !== 0 && !taken.has(id));
     const held = missing.length ? await store.threads.summaries(missing) : [];
-    return { sections, digest: await this.digestRow(), now, held };
+    // plan 210: the history after the open part, from the same placing (so no conversation is in both)
+    const history = ask.history ? await this.history({ after: null, through: ask.history.through, heldIds, placed }) : undefined;
+    return { sections, digest: await this.digestRow(), now, held, ...(history ? { history } : {}) };
   }
 
   private async summaryLine(threadId: number): Promise<{ summary?: string }> {

@@ -137,7 +137,53 @@ export interface TodayList {
   now: number;
   /** the open and checked rows no section holds any more: kept in place until the selection lets go (revision 9) */
   held: ThreadSummary[];
+  /** plan 210: the history's first page (or down to the line asked for), when asked for (What matters drawn as the feed) */
+  history?: TodayHistoryPage;
 }
+
+/**
+ * Plan 210: a history line's place: when its item closed, then at the same moment a dated item (0) before a promise (1),
+ * then the higher id. The history is newest first in this order; a page is taken strictly after a line's key.
+ */
+export interface HistoryKey {
+  at: number;
+  src: 0 | 1;
+  id: number;
+}
+
+/** Negative: `a` comes first (newer). */
+export const historyOrder = (a: HistoryKey, b: HistoryKey): number => b.at - a.at || a.src - b.src || b.id - a.id;
+
+/**
+ * A table's own key (`closed_at`, id) strictly after a history line: at the line's moment, dated items come before
+ * promises, so the dated table takes none of that moment after a promise, and the promises' table all of it after a dated item.
+ */
+export function historyAfter(key: HistoryKey, src: 0 | 1): { at: number; id: number } {
+  if (key.src === src) return { at: key.at, id: key.id };
+  return { at: key.at, id: src === 0 ? 0 : Number.MAX_SAFE_INTEGER };
+}
+
+/** What happened to the item: done, not a task (a promise: not a promise), settled by later mail, or over (retired when its time passed). */
+export type HistoryOutcome = "done" | "dismissed" | "settled" | "over";
+
+export interface TodayHistoryItem {
+  thread: ThreadSummary;
+  key: HistoryKey;
+  outcome: HistoryOutcome;
+  /** a dated item's kind, or a promise of yours */
+  kind: DatedKind | "promise";
+  /** its words, as the open part said them */
+  text: string;
+}
+
+export interface TodayHistoryPage {
+  items: TodayHistoryItem[];
+  /** the last line's key, to ask for the page after it; null: nothing older */
+  next: HistoryKey | null;
+}
+
+/** Plan 210: the history's lines a page. */
+export const HISTORY_PAGE = 40;
 
 /** A day's key, in the machine's own time. */
 export function todayKey(ms: number): string {
