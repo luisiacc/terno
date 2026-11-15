@@ -127,7 +127,7 @@ function askAllowed(quote: string, said: string, text: string, o: { sender?: { p
 
 // a verb that asks for it, then within the sentence what it asks for; read without accents, so "envíame" is "enviame"
 const SEND_VERB = String.raw`send|share|give|provide|forward|e-?mail|text|tell|reply with|respond with|confirm|need|what['’]?s|what is|(?:envi|mand|pas|indic|proporcion|confirm)(?:as?|es?|ar)(?:me|nos)?|compart(?:es?|as?|ir)(?:me|nos)?|dame|danos|darme|darnos|dime|decirme|responde(?:me)? con|necesito|cual es`;
-const SECRET = String.raw`password|passcode|passphrase|pin (?:number|code)|(?:one[- ]time|verification|security|login|sign[- ]in|access|authentication|2fa|6[- ]digit|six[- ]digit) code|otp|code (?:we|i|you|they) (?:just )?(?:sent|texted|emailed|got|received)|(?:bank )?account (?:number|no|details)|bank details|card (?:number|details)|cvv|cvc|routing (?:number|no)|iban|swift code|sort code|social security|ssn|(?:scan|copy|photo|picture) of (?:your |the )?(?:id|passport|driver['’]?s licen[cs]e)|(?:id|passport|licen[cs]e) (?:scan|copy|number|details)|contrasena|(?:tu|su) (?:clave|nip|pin)|codigo (?:de (?:verificacion|seguridad|acceso|confirmacion)|otp|que (?:te|le) (?:llego|enviamos|mandamos|envie|mande))|numero de (?:cuenta|tarjeta|ruta|seguro social)|datos (?:bancarios|de (?:la|tu|su) tarjeta)|clabe|(?:foto|copia|escaneo|numero) de (?:tu |su |la )?(?:ine|dni|cedula|pasaporte|identificacion|licencia)`;
+const SECRET = String.raw`password|passcode|passphrase|pin (?:number|code)|(?:one[- ]time|verification|security|login|sign[- ]in|access|authentication|2fa|6[- ]digit|six[- ]digit) code|otp|code (?:we|i|you|they) (?:just )?(?:sent|texted|emailed|got|received)|(?:bank )?account (?:number|no|details)|bank details|card (?:number|details)|cvv|cvc|routing (?:number|no)|iban|swift code|sort code|social security|ssn|(?:scan|copy|photo|picture) of (?:your |the )?(?:id|passport|driver['’]?s licen[cs]e)|(?:id|passport|licen[cs]e) (?:scan|copy|number|details)|(?:your|tu|su) (?:pin|id)|contrasena|(?:tu|su) (?:clave|nip|dni|ine|cedula|identificacion)|codigo (?:de (?:verificacion|seguridad|acceso|confirmacion)|otp|que (?:te|le) (?:llego|enviamos|mandamos|envie|mande))|numero de (?:cuenta|tarjeta|ruta|seguro social)|datos (?:bancarios|de (?:la|tu|su) tarjeta)|clabe|(?:foto|copia|escaneo|numero) de (?:tu |su |la )?(?:ine|dni|cedula|pasaporte|identificacion|licencia)`;
 const ASKS_FOR_SECRETS = new RegExp(String.raw`\b(?:${SEND_VERB})\b[^.!?\n]{0,60}?\b(?:${SECRET})\b`, "i");
 
 /**
@@ -165,13 +165,17 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
   // Codex code review (round 4): a day for an open ask ("I need it by Friday") makes it the request it now is: the ask is
   // settled and a `respond` with its words and that day is this message's
   const answered: DatedResult["items"] = [];
+  // revision 7 and the seventh panel round: no request of the reader's, an ask or a `respond` however it came, asks for
+  // credentials or an ID, or is addressed by name to another recipient (Codex code review of the seventh round: a model's own
+  // `respond` too, and before `requested`, so a refused one never hides a real ask)
+  const refused = (i: { kind: string; text: string; quote: string }) => (i.kind === "ask" || i.kind === "respond") && (asksForSecrets(i) || toAnother(i.quote, input.text, input.reader?.name ?? "", input.others));
   for (const m of result.moved ?? []) {
     const row = input.open.get(m.label);
     if (!row || row.kind !== "ask" || settledIds.has(row.id) || !quoted(m.evidence)) continue;
     const request = { kind: "respond" as const, text: newWords(m) ?? row.text, quote: m.evidence, due: m.due, time: m.time };
     // revision 7: a request for credentials or an ID neither becomes one nor answers the ask, which stays as it was; nor
     // does one the mail addresses to another of its recipients (the seventh panel round)
-    if (asksForSecrets(request) || toAnother(m.evidence, input.text, input.reader?.name ?? "", input.others)) continue;
+    if (refused(request)) continue;
     settled.push({ id: row.id, revision: row.revision });
     settledIds.add(row.id);
     answered.push(request);
@@ -191,18 +195,19 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
   // a moved item keeps its id: the same kind on its new day isn't added again (Codex review of the fixes)
   const seen = new Set<string>(moved.map((m) => itemKey(m.kind, m)));
   // revision 2 of the fourth round: an ask with a day is an ask first (a person, to the reader), then the request it is
-  const datedAsk = (i: { kind: string; text: string; due: string | null; quote: string }) => i.kind === "ask" && !!i.due && askAllowed(i.quote, said, input.text, input) && !asksForSecrets(i);
+  const datedAsk = (i: { kind: string; due: string | null; quote: string }) => i.kind === "ask" && !!i.due && askAllowed(i.quote, said, input.text, input);
+  const candidates = [...answered, ...result.items].filter((i) => !refused(i));
   // the eval: a person's request with a day is the `respond`, never also an undated ask beside it
-  const requested = [...answered, ...result.items].some((i) => (i.kind === "respond" || datedAsk(i)) && quoted(i.quote));
+  const requested = candidates.some((i) => (i.kind === "respond" || datedAsk(i)) && quoted(i.quote));
   // the fourth panel read: a person who says no answer is needed ("No need to reply now") asks nothing
   const noReply = saysNoReplyNeeded(input.text);
-  for (const item of [...answered, ...result.items]) {
+  for (const item of candidates) {
     if (rows.length >= DATED_ITEMS_MAX) break;
     if (!KINDS.has(item.kind) || !item.text.trim() || !quoted(item.quote)) continue;
     // an ask is never a dated kind's substitute: one with a day is a request with a day, if it's an ask at all
     if (item.kind === "ask" && item.due && !datedAsk(item)) continue;
     const kind = (item.kind === "ask" && item.due ? "respond" : item.kind) as DatedKind;
-    if (kind === "ask" && (requested || noReply || !askAllowed(item.quote, said, input.text, input) || asksForSecrets(item))) continue;
+    if (kind === "ask" && (requested || noReply || !askAllowed(item.quote, said, input.text, input))) continue;
     const timing = datedTiming({ kind, due: item.due, time: item.time, arrivedAt: input.arrivedAt });
     if (!timing) continue;
     // the 14-day check keeps nothing already over (§6)

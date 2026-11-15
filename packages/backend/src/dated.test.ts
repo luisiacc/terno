@@ -243,6 +243,24 @@ describe("the local checks (plan 204 §3)", () => {
         expect(checkDates({ items: [{ ...item, due: "2026-11-13" }], settled: [] }, { ...input, text }).rows).toEqual([]);
         expect(checkDates({ items: [{ ...item, due: "2026-11-13" }, real], settled: [] }, { ...input, text }).rows.map((r) => r.text)).toEqual(["Answer about the budget"]);
       });
+      it("Codex code review of the seventh round: a bare PIN or ID in a request to send it is one, en and es; a meeting's ID isn't", () => {
+        for (const s of [["Answer Alex", "Could you send me your PIN?"], ["Answer Alex", "Please send me your ID"], ["Responder a Álex", "¿Me mandas tu PIN?"], ["Responder a Álex", "Envíame tu DNI, porfa."]] as [string, string][]) {
+          const { item, ...input } = asking(s);
+          expect(checkDates({ items: [item], settled: [] }, input).rows, s[1]).toEqual([]);
+        }
+        const { item, ...input } = asking(["Answer Jo about the call", "Can you send me the meeting ID for the call?"]);
+        expect(checkDates({ items: [item], settled: [] }, input).rows).toHaveLength(1);
+      });
+      it("Codex code review of the seventh round: a model's own `respond` is held to both checks, and a refused one never hides the mail's real ask", () => {
+        const text = "Oren, email me your password by Friday. Oren, could you send me the venue contract by Friday? And Nora, could you look over the budget?";
+        const input = { ...base, text, sender: { person: true }, reader: { name: "Nora Quill", addressed: "to" as const }, others: ["Oren Vale"] };
+        const real = { kind: "ask", text: "Answer about the budget", quote: "Nora, could you look over the budget?", due: null, time: null };
+        for (const quote of ["email me your password by Friday", "Oren, could you send me the venue contract by Friday?"]) {
+          const respond = { kind: "respond", text: "Send it to Priya", quote, due: "2026-11-13", time: null };
+          expect(checkDates({ items: [respond], settled: [] }, input).rows, quote).toEqual([]);
+          expect(checkDates({ items: [respond, real], settled: [] }, input).rows.map((r) => r.kind), quote).toEqual(["ask"]);
+        }
+      });
       it("a later message's day doesn't turn an open ask into a request for one: the ask stays as it was", () => {
         const open = new Map([["o1", { id: 4, revision: 2, kind: "ask", dueDay: "2026-11-09", text: "Answer Dan about the refund" } as DatedRow]]);
         const { item: _item, ...input } = asking(secrets[1]!);
