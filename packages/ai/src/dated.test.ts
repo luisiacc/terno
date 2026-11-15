@@ -1,6 +1,6 @@
 import { DATED_ITEMS_MAX } from "@terno/core";
 import { describe, expect, it } from "vitest";
-import { datedBudget, datedPrompt, DATED_PROMPT_VERSION, fakeDates, fitDates, readDatesTask, type DatedInput } from "./dated";
+import { cutAtWord, datedBudget, datedPrompt, DATED_PROMPT_VERSION, fakeDates, fitDates, readDatesTask, type DatedInput } from "./dated";
 import { fakeTransport } from "./fake";
 import { createAi } from "./tasks";
 import { promptText, type CompletionRequest, type ProviderConfig } from "./types";
@@ -91,13 +91,14 @@ describe("reading dates in mail you got (plan 204)", () => {
       settled: [],
       moved: [],
     });
-    expect(v.items.map((i) => i.text)).toEqual([long.slice(0, 120), "Tarjeta bloqueada tras un cargo de $412.18", "Payroll funding of $48,210.55 failed"]);
+    // the fifth panel round: cut at a word, never inside one
+    expect(v.items.map((i) => i.text)).toEqual(["Debit card ending in 4821 frozen after an unrecognized $412.18 charge at Gulfway Fuel on March 2, with online transfers", "Tarjeta bloqueada tras un cargo de $412.18", "Payroll funding of $48,210.55 failed"]);
     // only an alert's: another kind keeps its words
     expect(validate({ items: [item({ text: "Pay what the email says" })], settled: [], moved: [] }).items[0]!.text).toBe("Pay what the email says");
   });
 
   it("is frozen at its version: a change to the words is a new version", () => {
-    expect(DATED_PROMPT_VERSION).toBe(7);
+    expect(DATED_PROMPT_VERSION).toBe(8);
     expect(readDatesTask(input()).system).toMatchSnapshot();
   });
 
@@ -112,9 +113,9 @@ describe("reading dates in mail you got (plan 204)", () => {
     const v = validate({
       items: [item({ kind: "PAY ", text: "  Pay   the bill ", due: " " }), item({ kind: "coupon" }), item({ text: " " }), item({ quote: "" }), item({ kind: "alert", due: null }), item({ kind: "event", time: "07:40" }), item({ kind: "renew" })],
       settled: [{ label: " o1 ", evidence: "Payment   received" }, { label: "o2", evidence: " " }, ...Array.from({ length: 20 }, (_, i) => ({ label: `o${i + 3}`, evidence: "x" }))],
-      moved: [{ label: " o3 ", due: " 2026-03-24 ", time: " ", evidence: "Friday at the   latest" }, { label: "o4", due: "", time: null, evidence: "x" }],
+      moved: [{ label: " o3 ", due: " 2026-03-24 ", time: " ", evidence: "Friday at the   latest", text: null, textEvidence: null }, { label: "o4", due: "", time: null, evidence: "x", text: null, textEvidence: null }],
     });
-    expect(v.moved).toEqual([{ label: "o3", due: "2026-03-24", time: null, evidence: "Friday at the latest" }]);
+    expect(v.moved).toEqual([{ label: "o3", due: "2026-03-24", time: null, evidence: "Friday at the latest", text: null, textEvidence: null }]);
     expect(v.items).toHaveLength(DATED_ITEMS_MAX);
     expect(v.items[0]).toEqual({ kind: "pay", text: "Pay the bill", quote: "due 2026-03-20", due: null, time: null });
     expect(v.items.map((i) => i.kind)).toEqual(["pay", "alert", "event"]);
@@ -131,6 +132,58 @@ describe("reading dates in mail you got (plan 204)", () => {
     expect(v.items[0]).toMatchObject({ due: "someday", time: "late" });
   });
 
+  it("prompt v8 (the fifth panel round): a move may give an o item's new words, quoted, never a promise's; cold outreach is neither an ask nor a request", () => {
+    const en = readDatesTask(input()).system;
+    expect(en).toContain('each { "label", "due", "time", "evidence", "text", "textEvidence" }');
+    expect(en).toContain('"text": for an o label only, the item\'s new text when its text in <open_items> no longer says what this message says');
+    expect(en).toContain('"Please arrive by 7:30" makes "Soccer game (arrive 7:30)"');
+    expect(en).toContain("Never for a p label: a promise keeps its words.");
+    expect(en).toContain("Else null, as for most moves: a new day or time alone changes no words");
+    expect(en).toContain('never also in "items"; what the mail asks about a promise (a new day, how to send it) is that promise\'s, never an item of its own');
+    // the eval: said in the ask's own line, Haiku dropped a colleague's real ask (5 in 10); among what isn't an item, none
+    expect(en).toContain('- A pitch, sales or recruiting mail from someone who doesn\'t know the reader ("one of my clients is hiring a VP… your name came up", "would you be open to a quick call about our product?"), with a day or without: it\'s neither an "ask" nor a "respond".');
+    expect(en).toContain("an urgent plea to wire money to someone stranded or robbed");
+    expect(en).toContain("So is any request to send by email a password, a login, an account, card or bank number, or an ID");
+    expect(readDatesTask(input({ language: "es" })).system).toContain('"Lleguen a las 7:30" makes "Partido de fútbol (llegar 7:30)"');
+  });
+
+  it("the fifth panel round: a move's new words come with the mail's own, both or neither; they're cut at a word, the evidence never", () => {
+    const move = { label: "o1", due: "2026-03-07", time: "08:00", evidence: "moved EARLIER to 8:00 AM" };
+    const v = validate({
+      items: [],
+      settled: [],
+      moved: [
+        { ...move, text: "  Soccer game   (arrive 7:30) ", textEvidence: " Please arrive by   7:30 " },
+        { ...move, label: "o2", text: "Soccer game (arrive 7:30)", textEvidence: " " },
+        { ...move, label: "o3", text: null, textEvidence: "Please arrive by 7:30" },
+        { ...move, label: "o4", text: "Soccer game at Riverside Park field 3 with the whole team, arrive early to warm up and bring the orange jerseys and water bottles", textEvidence: `${"word ".repeat(100)}end` },
+      ],
+    });
+    expect(v.moved.map((m) => [m.label, m.text, m.textEvidence])).toEqual([
+      ["o1", "Soccer game (arrive 7:30)", "Please arrive by 7:30"],
+      ["o2", null, null],
+      ["o3", null, null],
+      ["o4", "Soccer game at Riverside Park field 3 with the whole team, arrive early to warm up and bring the orange jerseys and", "word ".repeat(80)],
+    ]);
+  });
+
+  it("the fifth panel round: display text is cut at a word, never inside one, a long unbroken token at a character, never inside one", () => {
+    expect(cutAtWord("Send the signed lease to the landlord", 30)).toBe("Send the signed lease to the");
+    expect(cutAtWord("  Pay   the bill ", 120)).toBe("Pay the bill");
+    // no word ends inside the bound: a link, a reference
+    expect(cutAtWord("x".repeat(500), 120)).toBe("x".repeat(120));
+    // trailing punctuation goes with the cut
+    expect(cutAtWord("Dentist, Dr. Ruiz: bring the card", 20)).toBe("Dentist, Dr. Ruiz");
+    // Unicode: an accent, an emoji, a flag are never split
+    expect(cutAtWord("Revisión de la caldera y el calentador", 22)).toBe("Revisión de la caldera");
+    expect(cutAtWord("🎉".repeat(10), 5)).toBe("🎉🎉");
+    expect(cutAtWord("🇲🇽🇲🇽🇲🇽", 6)).toBe("🇲🇽");
+    expect(cutAtWord("e\u0301".repeat(4), 3)).toBe("e\u0301");
+    // a script with no spaces is cut at its words
+    expect(cutAtWord("请在星期五之前支付电费账单", 8).length).toBeLessThanOrEqual(8);
+    expect("请在星期五之前支付电费账单".startsWith(cutAtWord("请在星期五之前支付电费账单", 8))).toBe(true);
+  });
+
   it("fits a small window: the open items past three go first, then the mail's tail", () => {
     const budget = datedBudget(2000);
     const open = Array.from({ length: 10 }, (_, i) => ({ label: `o${i + 1}`, kind: "pay" as const, text: "Pay the bill ".repeat(10) }));
@@ -143,8 +196,8 @@ describe("reading dates in mail you got (plan 204)", () => {
   });
 
   it("a small window holds the whole conversation with the server: a bad answer and its repair still fit", async () => {
-    // v7's words (an ask, a Plan's window, an alert's words, a move's time, the open items' days) need a little over 3,300: a window that holds them with a bad answer and its repair
-    const window = 3400;
+    // v8's words (an ask, a Plan's window, an alert's words, a move's time and words, cold outreach, the open items' days) need a little over 3,700: a window that holds them with a bad answer and its repair
+    const window = 3800;
     const budget = datedBudget(window);
     const fitted = fitDates(input({ text: "word ".repeat(1200), outputTokens: budget.outputTokens }), budget.promptChars);
     const sizes: number[] = [];
@@ -229,6 +282,6 @@ describe("who the reader is (prompt version 2, the eval)", () => {
 describe("a later message gives an open item a new day (prompt version 3)", () => {
   it("the fake moves the first open item, and adds nothing for it", () => {
     const prompt = datedPrompt(input({ text: "Sorry for the rush. 2026-03-24 at the latest works for us.", open: [{ label: "o1", kind: "respond", text: "Send the script" }] }));
-    expect(fakeDates(prompt)).toEqual({ items: [], settled: [], moved: [{ label: "o1", due: "2026-03-24", time: null, evidence: "2026-03-24 at the latest works for us." }] });
+    expect(fakeDates(prompt)).toEqual({ items: [], settled: [], moved: [{ label: "o1", due: "2026-03-24", time: null, evidence: "2026-03-24 at the latest works for us.", text: null, textEvidence: null }] });
   });
 });

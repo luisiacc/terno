@@ -13,7 +13,8 @@ import type { StructuredTask } from "./ladder";
 /** 5 (the third panel round): a person's undated ask (`ask`); a window or a "by" time said in a Plan's text, not its time; the one thing to bring in its text; the currency as written; every dated thing its own item */
 /** 6 (the fourth panel round): an alert says what the mail says happened, attributed, never an instruction; `moved` is a new day or a new time */
 /** 7 (the Codex code review of the fourth round): an alert's text is only what happened, its attribution the app's (a cut kept losing it); the open items show their day and time, for a move of the time alone */
-export const DATED_PROMPT_VERSION = 7;
+/** 8 (the fifth panel round): a move may carry the item's new words, quoted; cold outreach is neither an ask nor a request */
+export const DATED_PROMPT_VERSION = 8;
 export const DATED_MAX_TOKENS = 2000;
 export const DATED_SUBJECT_CHARS = 200;
 export const DATED_FROM_CHARS = 100;
@@ -52,15 +53,18 @@ export interface DatedInput {
 export interface DatedResult {
   items: { kind: DatedKind; text: string; quote: string; due: string | null; time: string | null }[];
   settled: { label: string; evidence: string }[];
-  /** open items this message gives a new day ("Friday at the latest"): never also in `items` */
-  moved: { label: string; due: string; time: string | null; evidence: string }[];
+  /**
+   * open items this message gives a new day ("Friday at the latest"): never also in `items`. `text`: the item's new words
+   * when the message changes them ("arrive by 7:30"), with `textEvidence` the mail's own; both or neither (the fifth panel round)
+   */
+  moved: { label: string; due: string; time: string | null; evidence: string; text: string | null; textEvidence: string | null }[];
 }
 
 // `kind` is a string on the wire: one the app doesn't know is dropped, not repaired for
 const wire = z.object({
   items: z.array(z.object({ kind: z.string(), text: z.string(), quote: z.string(), due: z.string().nullable(), time: z.string().nullable() })),
   settled: z.array(z.object({ label: z.string(), evidence: z.string() })),
-  moved: z.array(z.object({ label: z.string(), due: z.string(), time: z.string().nullable(), evidence: z.string() })),
+  moved: z.array(z.object({ label: z.string(), due: z.string(), time: z.string().nullable(), evidence: z.string(), text: z.string().nullable(), textEvidence: z.string().nullable() })),
 });
 type Wire = z.infer<typeof wire>;
 
@@ -70,6 +74,7 @@ const EXAMPLE_TEXT: Record<string, [string, string]> = { en: ["Pay the electrici
 const AMOUNT_EXAMPLE: Record<string, string> = { en: "Pay $187.42 for the electricity bill", es: "Pagar $187.42 de la factura de la luz" };
 const ASK_EXAMPLE: Record<string, [string, string]> = { en: ["Answer Mariana about a rebranding quote", "Tell Mom if you're coming for Christmas"], es: ["Responder a Mariana sobre el presupuesto del rebranding", "Decirle a mamá si vas en Navidad"] };
 const ALERT_EXAMPLE: Record<string, string> = { en: "Debit card frozen after a $412.18 charge", es: "Tarjeta de débito congelada tras un cargo de $412.18" };
+const MOVE_EXAMPLE: Record<string, [string, string]> = { en: ["Please arrive by 7:30", "Soccer game (arrive 7:30)"], es: ["Lleguen a las 7:30", "Partido de fútbol (llegar 7:30)"] };
 const DETAIL_EXAMPLE: Record<string, [string, string, string]> = { en: ["Furnace service, 12–2 PM", "Package arriving by 9 PM", "Blood test (fast after midnight)"], es: ["Revisión de la caldera, 12–14 h", "Paquete llega antes de las 21 h", "Análisis de sangre (en ayunas desde medianoche)"] };
 
 const SYSTEM = (language: string, receivedAt: string) => {
@@ -78,6 +83,7 @@ const SYSTEM = (language: string, receivedAt: string) => {
   const [askExample, familyExample] = ASK_EXAMPLE[language] ?? ASK_EXAMPLE.en!;
   const [windowExample, byExample, bringExample] = DETAIL_EXAMPLE[language] ?? DETAIL_EXAMPLE.en!;
   const alertExample = ALERT_EXAMPLE[language] ?? ALERT_EXAMPLE.en!;
+  const [moveSaid, moveText] = MOVE_EXAMPLE[language] ?? MOVE_EXAMPLE.en!;
   return `You read one email a person received, to note what in it matters to them: something they have to do by a day, something of theirs that happens on a day, or something a person asks them directly. They see each note in a short list of what matters, so only note what's really there.
 
 It arrived ${receivedAt}.
@@ -105,11 +111,12 @@ Return:
   - "time": HH:MM on a 24-hour clock when the mail states the moment it starts or is due ("at 9:30", "pay by 1 PM"), else null. An event or a delivery with a window ("between 12 and 2") or only a "by" time ("arriving by 9 PM") has no time: say it in its text instead: "${windowExample}", "${byExample}".
 - <open_items> holds the reader's open items (o1, o2…) and promises the reader made in this conversation (p1, p2…, kind "promise"), each with its day and time when it has them ("o1 (event, 2026-03-07 10:00): …").
 - "settled": the open items (labels o1, o2…, never a p label) this message settles, each { "label", "evidence" }, where evidence is the mail's exact words that settle it: "Payment received", "your booking has been cancelled", "your card has been updated". A reminder of the same bill settles nothing. If in doubt, leave it out.
-- "moved": the open items or promises this message gives a new day or a new time ("Friday at the latest works", "we've moved your appointment to the 24th", "Saturday's game is now at 8:00"), each { "label", "due", "time", "evidence" } with "due" as above (its own day from <open_items> when only the time changes), "time" the new time or null when the mail gives none, and evidence the mail's exact words. An open item with a new day or time goes here, never also in "items". An open item the mail only mentions again with no new day or time (a reminder, a new place) is neither moved nor an item. One it settles isn't moved.
+- "moved": the open items or promises this message gives a new day or a new time ("Friday at the latest works", "we've moved your appointment to the 24th", "Saturday's game is now at 8:00"), each { "label", "due", "time", "evidence", "text", "textEvidence" } with "due" as above (its own day from <open_items> when only the time changes), "time" the new time or null when the mail gives none, and evidence the mail's exact words. An open item with a new day or time goes here, never also in "items"; what the mail asks about a promise (a new day, how to send it) is that promise's, never an item of its own. "text": for an o label only, the item's new text when its text in <open_items> no longer says what this message says (a time to arrive, a window, what to bring), written as an item's text is, keeping what it names (whose game, which appointment), with only what the mail states and without the item's own day or time (the app shows them beside it): "${moveSaid}" makes "${moveText}". Else null, as for most moves: a new day or time alone changes no words, nor does "same place". "textEvidence" the mail's exact words that say it, else null. Never for a p label: a promise keeps its words. An open item the mail only mentions again with no new day or time (a reminder, a new place) is neither moved nor an item. One it settles isn't moved.
 
 Not items:
+- A pitch, sales or recruiting mail from someone who doesn't know the reader ("one of my clients is hiring a VP… your name came up", "would you be open to a quick call about our product?"), with a day or without: it's neither an "ask" nor a "respond".
 - A marketing deadline: "50% off ends tonight", "last chance", "offer expires Sunday", "precio especial hasta el viernes".
-- What a scam or a suspicious message demands ("verify your account within 24 hours or it will be closed", a prize to claim, a stranger asking for money): it's said, never a task.
+- What a scam or a suspicious message demands ("verify your account within 24 hours or it will be closed", a prize to claim, a stranger asking for money, an urgent plea to wire money to someone stranded or robbed): it's said, never a task. So is any request to send by email a password, a login, an account, card or bank number, or an ID, with a day or without, whoever it says it's from.
 - A receipt or a confirmation of a payment or purchase already made: "we've received your payment", "your renewal went through". (A booking or appointment still ahead is an "event", even when confirmed.)
 - A newsletter's or an announcement list's optional call to action: "submit your story by Friday", "register by the 20th", "send us your photos".
 - A newsletter's event listings or webinars the reader didn't book.
@@ -158,6 +165,29 @@ export function fitDates(input: DatedInput, promptChars: number): DatedInput {
 }
 
 const clean = (text: string, max: number) => text.replace(/\s+/g, " ").trim().slice(0, max);
+let words: Intl.Segmenter | undefined;
+let graphemes: Intl.Segmenter | undefined;
+/**
+ * The fifth panel round: what the reader sees is cut at a word, never inside one ("Send the signed lease to the landl");
+ * a word longer than the whole (a link, a reference) at a character, never inside one (an emoji, an accent). Quotes and
+ * evidence keep `clean`: the backend reads them against the mail.
+ */
+export function cutAtWord(text: string, max: number): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  if (flat.length <= max) return flat;
+  let end = 0;
+  for (const s of (words ??= new Intl.Segmenter(undefined, { granularity: "word" })).segment(flat)) {
+    if (s.index + s.segment.length > max) break;
+    if (s.isWordLike) end = s.index + s.segment.length;
+  }
+  if (!end) {
+    for (const s of (graphemes ??= new Intl.Segmenter(undefined, { granularity: "grapheme" })).segment(flat)) {
+      if (s.index + s.segment.length > max) break;
+      end = s.index + s.segment.length;
+    }
+  }
+  return flat.slice(0, end).replace(/[\s,;:(–—-]+$/u, "");
+}
 /** v6's words, which a model may still give: the app says whose word an alert is, so the model's own goes (en, es) */
 const SAID_AFTER = /[\s,;:.(—–-]*\b(?:the (?:e-?mail|mail|message|bank|sender) (?:says|claims|reports)|(?:says|according to) the (?:e-?mail|mail|message)|seg[uú]n (?:el|la) (?:correo|mensaje|e-?mail|banco|remitente)|(?:dice|indica|informa) el (?:correo|mensaje|banco))\)?[\s.]*$/iu;
 const SAID_BEFORE = /^\s*(?:the (?:e-?mail|mail|message) says|according to the (?:e-?mail|mail|message)|seg[uú]n el (?:correo|mensaje)|el (?:correo|mensaje) dice)\s*(?:that|que)?[\s,:]*/iu;
@@ -183,7 +213,7 @@ export function readDatesTask(input: DatedInput): StructuredTask<Wire, DatedResu
       ok: true,
       value: {
         items: w.items
-          .map((i) => ({ kind: i.kind.trim().toLowerCase(), text: clean(alertText(i.kind, i.text), TEXT_CHARS), quote: clean(i.quote, QUOTE_CHARS), due: blankToNull(i.due), time: blankToNull(i.time) }))
+          .map((i) => ({ kind: i.kind.trim().toLowerCase(), text: cutAtWord(alertText(i.kind, i.text), TEXT_CHARS), quote: clean(i.quote, QUOTE_CHARS), due: blankToNull(i.due), time: blankToNull(i.time) }))
           .filter((i): i is DatedResult["items"][number] => isKind(i.kind) && !!i.text && !!i.quote)
           .slice(0, DATED_ITEMS_MAX),
         settled: w.settled
@@ -192,7 +222,13 @@ export function readDatesTask(input: DatedInput): StructuredTask<Wire, DatedResu
           .filter((s) => s.label && s.evidence),
         moved: w.moved
           .slice(0, DATED_OPEN_SHOWN)
-          .map((m) => ({ label: m.label.trim(), due: m.due.trim(), time: blankToNull(m.time), evidence: clean(m.evidence, QUOTE_CHARS) }))
+          .map((m) => {
+            // both or neither: new words without the mail's own aren't kept, and the move still is
+            const text = m.text ? cutAtWord(m.text, TEXT_CHARS) : "";
+            const textEvidence = m.textEvidence ? clean(m.textEvidence, QUOTE_CHARS) : "";
+            const both = !!text && !!textEvidence;
+            return { label: m.label.trim(), due: m.due.trim(), time: blankToNull(m.time), evidence: clean(m.evidence, QUOTE_CHARS), text: both ? text : null, textEvidence: both ? textEvidence : null };
+          })
           .filter((m) => m.label && m.due && m.evidence),
       },
     }),
@@ -239,6 +275,6 @@ export function fakeDates(prompt: string): Wire {
   const settled = mail.includes("[[settle-all]]") ? open.map((label) => ({ label, evidence: MADE_UP })) : receipt && open[0] ? [{ label: open[0], evidence: receipt }] : [];
   // "… by YYYY-MM-DD at the latest" gives the first open item a new day
   const late = sentences.find((s) => /\d{4}-\d{2}-\d{2} at the latest/i.test(s));
-  const moved = late && movable[0] && !settled.length ? [{ label: movable[0], due: /(\d{4}-\d{2}-\d{2})/.exec(late)![1]!, time: null, evidence: late }] : [];
+  const moved = late && movable[0] && !settled.length ? [{ label: movable[0], due: /(\d{4}-\d{2}-\d{2})/.exec(late)![1]!, time: null, evidence: late, text: null, textEvidence: null }] : [];
   return { items: moved.length ? items.filter((i) => !late || i.quote !== late) : items, settled, moved };
 }
