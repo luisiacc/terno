@@ -15,7 +15,11 @@ import { realTasks, spendReport, type RealTarget } from "./harness";
  * a list's, a scam's, a thanks, an injection that asks for one), a Plan's window or "by" time and what to bring said in its
  * text, the currency as written, and every dated thing its own item; prompt v8's move with new words (never a promise's),
  * cold recruiting and sales outreach with a day and without, adversarial asks (forged familiarity, a stranger's money or
- * details, an instruction in the mail) beside a known person's real one, and display text never cut inside a word. Under the harness's hard cap; needs the owner's go-ahead: run
+ * details, an instruction in the mail) beside a known person's real one, and display text never cut inside a word; prompt
+ * v9's offers that aren't asks, an alert's stated deadline, "reply C to confirm" in an event's words, a declined card and
+ * its bill as one payment beside an unrelated alert that stays, and the sixth panel round's soccer game as the worker
+ * shows it (a list's mail, two of the coach's games open). A reading that fails (an answer cut off) is counted, and
+ * TERNO_AI_DATED_REPEAT reads each case that many times. Under the harness's hard cap; needs the owner's go-ahead: run
  * alone with TERNO_AI_DATED=1. TERNO_AI_DATED_MODEL picks the model (GPT Luna by default; a `claude-` model runs on
  * Anthropic), TERNO_AI_DATED_LANGUAGE the app's language (en by default).
  *
@@ -38,7 +42,9 @@ interface Case {
 
 /** TERNO_AI_DATED_CASES: only these ids (comma-separated), to look at a few again */
 const ONLY = process.env.TERNO_AI_DATED_CASES?.split(",").filter(Boolean);
-const CASES: Case[] = readFileSync(join(import.meta.dirname, "corpus", "dated", "dated.jsonl"), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line) as Case).filter((c) => !ONLY || ONLY.includes(c.id));
+/** TERNO_AI_DATED_REPEAT: each case read this many times, to measure how often a reading goes wrong (the sixth panel round's soccer game) */
+const REPEAT = Math.max(1, Number(process.env.TERNO_AI_DATED_REPEAT ?? 1));
+const CASES: Case[] = readFileSync(join(import.meta.dirname, "corpus", "dated", "dated.jsonl"), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line) as Case).filter((c) => !ONLY || ONLY.includes(c.id)).flatMap((c) => Array.from({ length: REPEAT }, () => c));
 const MODEL = process.env.TERNO_AI_DATED_MODEL ?? "gpt-6-luna";
 const TARGET: RealTarget = { provider: MODEL.startsWith("claude-") ? "anthropic" : "openai", model: MODEL };
 const LANGUAGE = process.env.TERNO_AI_DATED_LANGUAGE ?? "en";
@@ -70,7 +76,7 @@ const cutInside = (kept: string, raw: readonly string[]) => {
 describe.skipIf(process.env.TERNO_AI_DATED !== "1")("dated items on a small model", () => {
   it("finds what has a date, leaves out what doesn't, quotes the mail, and settles only on the mail's words", async () => {
     const tasks = realTasks(TARGET, "dated-eval", {}, undefined, (text) => answers.push(text));
-    let expected = 0, found = 0, wrongItems = 0, invented = 0, wrongSettled = 0, missedSettled = 0, rightTimes = 0, times = 0, wrongMoved = 0, missedMoved = 0, unsafe = 0, wrongText = 0, unattributed = 0, selfAttributed = 0, madeUpDetail = 0, moveTexts = 0, rightMoveTexts = 0, wrongMoveText = 0, promiseText = 0, cut = 0, cutWords = 0;
+    let expected = 0, found = 0, wrongItems = 0, invented = 0, wrongSettled = 0, missedSettled = 0, rightTimes = 0, times = 0, wrongMoved = 0, missedMoved = 0, unsafe = 0, wrongText = 0, unattributed = 0, selfAttributed = 0, madeUpDetail = 0, moveTexts = 0, rightMoveTexts = 0, wrongMoveText = 0, promiseText = 0, cut = 0, cutWords = 0, failures = 0;
     const answers: string[] = [];
     const lines: string[] = [];
     for (const c of CASES) {
@@ -80,7 +86,16 @@ describe.skipIf(process.env.TERNO_AI_DATED !== "1")("dated items on a small mode
       const cc = (mail.cc ?? []) as string[];
       const reader = { name: c.reader.name, addressed: addressedTo(to) ? ("to" as const) : addressedTo(cc) ? ("cc" as const) : ("none" as const) };
       answers.length = 0;
-      const r = await tasks.readDates({ text: mail.text, subject: c.subject, from: { name: nameOf(mail.from), automated: c.dated.automated }, reader, to: to.map(nameOf), cc: cc.map(nameOf), receivedAt: c.dated.receivedAt, open: c.dated.open, language: LANGUAGE });
+      let r: Awaited<ReturnType<typeof tasks.readDates>>;
+      try {
+        r = await tasks.readDates({ text: mail.text, subject: c.subject, from: { name: nameOf(mail.from), automated: c.dated.automated }, reader, to: to.map(nameOf), cc: cc.map(nameOf), receivedAt: c.dated.receivedAt, open: c.dated.open, language: LANGUAGE });
+      } catch (error) {
+        // the sixth panel round: an answer cut off is a reading the worker loses, so it's counted, not the run's end
+        failures++;
+        const last = answers.at(-1) ?? "";
+        lines.push(`✗ ${c.id} [${c.tags.join(",")}] failed: ${error instanceof Error ? error.message : String(error)} (its answer: ${last.length} characters${last ? `, "${last.slice(0, 300).replace(/\s+/g, " ")}"` : ""})`);
+        continue;
+      }
       const left = [...r.items];
       const problems: string[] = [];
       for (const e of c.dated.items) {
@@ -205,7 +220,7 @@ describe.skipIf(process.env.TERNO_AI_DATED !== "1")("dated items on a small mode
       const failed = problems.some((p) => !p.startsWith("note: "));
       lines.push(`${failed ? "✗" : "✓"} ${c.id} [${c.tags.join(",")}] ${r.items.map((i) => `${i.kind} ${i.due}${i.time ? ` ${i.time}` : ""} "${i.text}"`).join("; ") || "nothing"}${r.moved?.length ? ` · moved ${r.moved.map((m) => `${m.label} ${m.due}${m.time ? ` ${m.time}` : ""}${m.text ? ` "${m.text}"` : ""}`).join(", ")}` : ""}${problems.length ? `\n    ${problems.join("\n    ")}` : ""}`);
     }
-    process.stderr.write(`${lines.join("\n")}\n${JSON.stringify({ model: MODEL, language: LANGUAGE, found, expected, wrongItems, invented, rightTimes, times, wrongSettled, missedSettled, wrongMoved, missedMoved, unsafe, wrongText, unattributed, selfAttributed, madeUpDetail, rightMoveTexts, moveTexts, wrongMoveText, promiseText, cut, cutWords })}\n${spendReport()}\n`);
+    process.stderr.write(`${lines.join("\n")}\n${JSON.stringify({ model: MODEL, language: LANGUAGE, found, expected, wrongItems, invented, rightTimes, times, wrongSettled, missedSettled, wrongMoved, missedMoved, unsafe, wrongText, unattributed, selfAttributed, madeUpDetail, rightMoveTexts, moveTexts, wrongMoveText, promiseText, cut, cutWords, failures })}\n${spendReport()}\n`);
     expect(wrongItems).toBeLessThanOrEqual(1);
     expect(wrongSettled).toBe(0);
     expect(wrongMoved).toBe(0);
@@ -219,5 +234,6 @@ describe.skipIf(process.env.TERNO_AI_DATED !== "1")("dated items on a small mode
     expect(rightTimes).toBeGreaterThanOrEqual(0.8 * times);
     expect(wrongMoveText).toBe(0);
     expect(cutWords).toBe(0);
+    expect(failures).toBe(0);
   }, 900_000);
 });
