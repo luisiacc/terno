@@ -278,8 +278,8 @@ export function defineTodayConformance(fresh: () => Promise<MailStore>): void {
       const DAY = 86_400_000;
       const ingest = async (m: Partial<IncomingMessage>, dated = false) =>
         (await store.sync.ingest([msg({ listId: null, isRead: false, to: [me], ...m, accountId: accountId_() })], { applyFilters: false, now: NOW, classifier: null, ...(dated ? { datedMail: { since: null } } : {}) })).inserted[0]!;
-      const read = (messageId: number, thread: number, rows: Parameters<MailStore["dated"]["finish"]>[0]["rows"], promptVersion = DATED_NOTHING_ASKED_SINCE) =>
-        store.dated.finish({ messageId, threadId: thread, fromScan: false, settled: [], now: NOW, model: "m", provider: "p", promptVersion, clearGeneration: store.dated.clearGeneration(), rows });
+      const read = (messageId: number, thread: number, rows: Parameters<MailStore["dated"]["finish"]>[0]["rows"], promptVersion = DATED_NOTHING_ASKED_SINCE, readWhole = true) =>
+        store.dated.finish({ messageId, threadId: thread, fromScan: false, settled: [], now: NOW, model: "m", provider: "p", promptVersion, readWhole, clearGeneration: store.dated.clearGeneration(), rows });
       /** you wrote, they answered (marked for the dated reader) */
       const talk = async (name: string, date: number, text: string) => {
         const email = `${name.toLowerCase()}@people.test`;
@@ -295,7 +295,8 @@ export function defineTodayConformance(fresh: () => Promise<MailStore>): void {
       const queued = await talk("Dia", NOW - 6000, "Thanks so much, that's perfect!");
       const older = await talk("Eve", NOW - 5000, "Thanks so much, that's perfect!");
       const newer = await talk("Fay", NOW - 4000, "Thanks so much, that's perfect!");
-      const all = [thanks, asked, other, queued, older, newer].map((c) => c.thread);
+      const cut = await talk("Gil", NOW - 3000, "Thanks so much, that's perfect! (a long mail, its end past what the model was shown)");
+      const all = [thanks, asked, other, queued, older, newer, cut].map((c) => c.thread);
       expect(new Set(await store.today.waitingAmong(all, NOW))).toEqual(new Set(all));
       const before = await store.today.needsCount(NOW);
 
@@ -306,7 +307,9 @@ export function defineTodayConformance(fresh: () => Promise<MailStore>): void {
       // a reading before the rule's prompt says nothing either way
       expect(await read(older.message, older.thread, [], DATED_NOTHING_ASKED_SINCE - 1)).toBe("written");
       expect(await read(newer.message, newer.thread, [])).toBe("written");
-      const still = [asked.thread, queued.thread, older.thread];
+      // the Codex code review: a reading of part of the message (cut to the window) can't say nothing was asked
+      expect(await read(cut.message, cut.thread, [], DATED_NOTHING_ASKED_SINCE, false)).toBe("written");
+      const still = [asked.thread, queued.thread, older.thread, cut.thread];
       expect(new Set(await store.today.waitingAmong(all, NOW))).toEqual(new Set(still));
       expect(new Set((await store.today.waitingPage({ now: NOW, after: null, limit: 50 })).map((p) => p.id).filter((id) => all.includes(id)))).toEqual(new Set(still));
       expect(await store.today.needsCount(NOW)).toBe(before - 3);
@@ -337,7 +340,7 @@ export function defineTodayConformance(fresh: () => Promise<MailStore>): void {
       await ingest({ date: NOW - 3500, providerMsgId: "Gus-out", rfcMessageId: "gus-out@x", from: me, to: [gus], isSent: true, isRead: true, subject: "Dinner" });
       const message = await ingest({ date: NOW - 1000, providerMsgId: "Gus-in", rfcMessageId: "gus-in@x", from: gus, subject: "Re: Dinner", inReplyTo: "gus-out@x", references: ["gus-out@x"], bodyText: "Thanks so much, that's perfect!" });
       const thread = await threadOf(store, "Gus-in");
-      expect(await store.dated.finish({ messageId: message, threadId: thread, fromScan: false, settled: [], rows: [], now: NOW, model: "m", provider: "p", promptVersion: DATED_NOTHING_ASKED_SINCE, clearGeneration: store.dated.clearGeneration() })).toBe("written");
+      expect(await store.dated.finish({ messageId: message, threadId: thread, fromScan: false, settled: [], rows: [], now: NOW, model: "m", provider: "p", promptVersion: DATED_NOTHING_ASKED_SINCE, readWhole: true, clearGeneration: store.dated.clearGeneration() })).toBe("written");
       expect(await store.today.waitingAmong([thread], NOW)).toEqual([]);
       // an older message of his that joins the two by its references: the one read is still his latest, on the survivor
       await ingest({ date: NOW - 3000, providerMsgId: "Gus-bridge", rfcMessageId: "gus-bridge@x", from: gus, subject: "Re: Dinner", inReplyTo: "gus-b@x", references: ["gus-b@x", "gus-out@x"], bodyText: "Saturday?" });

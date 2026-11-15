@@ -54,7 +54,7 @@ async function needsAtBound(store: MailStore, client: RpcClient, accountId: numb
   const read = new Set(marked);
   const marks = (await store.dated.marks.page(null, 10 * NEEDS_WALK)).filter((m) => read.has(m.messageId));
   expect(marks).toHaveLength(NEEDS_WALK);
-  for (const m of marks) expect(await store.dated.finish({ messageId: m.messageId, threadId: m.threadId, fromScan: false, rows: [], settled: [], now, model: "m", provider: "p", promptVersion: DATED_NOTHING_ASKED_SINCE, clearGeneration: store.dated.clearGeneration() })).toBe("written");
+  for (const m of marks) expect(await store.dated.finish({ messageId: m.messageId, threadId: m.threadId, fromScan: false, rows: [], settled: [], now, model: "m", provider: "p", promptVersion: DATED_NOTHING_ASKED_SINCE, readWhole: true, clearGeneration: store.dated.clearGeneration() })).toBe("written");
   const body = JSON.stringify({ summary: "Notes from the call.", items: [{ kind: "fact", text: "The plan for next week is in the notes." }] });
   let written = 0;
   for (let i = 0; i < NEEDS_WALK; i++) {
