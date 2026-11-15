@@ -259,7 +259,8 @@ async function fetchPage(cursor?: ListCursor, limit = PAGE) {
   }
   if (s.today) {
     // plan 210: drawn as the feed, What matters has its history below, in pages by key
-    const feed = feedLook(true, useWmLook.getState().look);
+    // and only while finished items are shown (the owner: an inbox-zero feeling, off): no history asked for at all
+    const feed = feedLook(true, useWmLook.getState().look) && s.settings?.today?.finished !== false;
     if (cursor && !feed) return { items: [], nextCursor: null };
     // the digest's row is the cursor's, not a thread's: nothing to keep, and no id the backend takes. The open one is held
     // only when it's one of these rows: holding keeps a row you're on, never adds one (a newsletter opened from the
@@ -705,6 +706,10 @@ export const followedRename: { from: string | null; to: string | null } = { from
 // plan 210: What matters drawn another way is another list (the feed has its history, the list look hasn't)
 useWmLook.subscribe((s, prev) => {
   if (s.look !== prev.look && getApp().today) void reloadList();
+});
+// plan 210: finished items shown or hidden: the history comes or goes where the open part stays
+useApp.subscribe((s, prev) => {
+  if (s.today && prev.settings && s.settings && s.settings.today?.finished !== prev.settings.today?.finished) void reloadList({ keepSelection: true });
 });
 
 // Any change of view / account / category / query reloads the list (navigation,
