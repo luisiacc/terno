@@ -1,9 +1,9 @@
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuShortcut, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
-import { IconButton } from "@terno/ui/components/icon-button";
+import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
-import { Ban, CalendarClock, CircleCheck, Clock, Ellipsis } from "@terno/ui/icons";
+import { Ban, CalendarClock, ChevronDown, CircleCheck, Clock, Ellipsis } from "@terno/ui/icons";
 import { laterChoices, type TodayTask } from "~/lib/dated";
 import { presetLabel, presetWhen } from "~/lib/reminders";
 import { actOnTodayRow } from "~/lib/today-task";
@@ -70,20 +70,27 @@ export function NoteTaskMenu({ threadId, task }: { threadId: number; task: Today
   );
 }
 
-/** The briefing item's Done (D) and Later, shown on hover and while one of them has focus (or Later's menu is open). */
-export function BriefTaskControls({ threadId, task }: { threadId: number; task: TodayTask }) {
+/**
+ * The briefing item's Done (D) and Later, in words (after the UI panel: "I wouldn't press a button I can't read"), as the
+ * reader's line has them: Done the secondary button, Later the quiet one with its presets. Each is described by the item's
+ * sentence, so a screen reader hears which Done it is.
+ */
+export function BriefTaskControls({ threadId, task, describedBy }: { threadId: number; task: TodayTask; describedBy: string }) {
   return (
     <>
-      <IconButton label={t("dated.done")} shortcut="d" data-testid="wm-done" onClick={() => void actOnTodayRow(threadId, task, "done")}>
-        <CircleCheck />
-      </IconButton>
+      <Tooltip>
+        <TooltipTrigger render={<Button variant="outline" size="xs" data-testid="wm-done" aria-describedby={describedBy} aria-keyshortcuts="d" onClick={() => void actOnTodayRow(threadId, task, "done")} />}>
+          {t("dated.done")}
+        </TooltipTrigger>
+        <TooltipContent>
+          {t("dated.done")} <Shortcut keys="d" />
+        </TooltipContent>
+      </Tooltip>
       <DropdownMenu>
-        <Tooltip>
-          <TooltipTrigger render={<DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label={t("dated.later")} data-testid="wm-later" className="text-muted-foreground hover:text-foreground" />} />}>
-            <Clock />
-          </TooltipTrigger>
-          <TooltipContent>{t("dated.later")}</TooltipContent>
-        </Tooltip>
+        <DropdownMenuTrigger render={<Button variant="ghost" size="xs" data-testid="wm-later" aria-describedby={describedBy} className="text-muted-foreground hover:text-foreground aria-expanded:text-foreground" />}>
+          {t("dated.later")}
+          <ChevronDown data-icon="inline-end" />
+        </DropdownMenuTrigger>
         <DropdownMenuContent align="end" sideOffset={4} className="w-max min-w-60" data-testid="wm-later-menu">
           <LaterItems threadId={threadId} task={task} />
         </DropdownMenuContent>

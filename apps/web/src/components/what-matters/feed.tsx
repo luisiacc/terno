@@ -13,7 +13,7 @@ import { listDate } from "~/lib/format";
 import { LIST_TITLE } from "~/lib/list-title";
 import { installScrollHairline } from "~/lib/scroll-hairline";
 import { pressRow, releaseRow } from "~/lib/select";
-import { groupLine, todaySentence } from "~/lib/today-sentence";
+import { groupLine, todaySentence, todayWhen, type TodayTone } from "~/lib/today-sentence";
 import { listLayout } from "~/lib/page";
 import { feedLook, useWmLook, type WmLook } from "~/lib/what-matters-look";
 import { getApp, setApp, useApp } from "~/state/app";
@@ -207,7 +207,7 @@ function ChatDivider({ kind, count }: { kind: TodayGroupKind; count: number }) {
 /** The briefing's heading: the list's section names, over a hairline. */
 function BriefHeading({ kind }: { kind: TodayGroupKind }) {
   return (
-    <h2 data-testid="wm-heading" data-kind={kind} className="hairline-b mx-3 pt-6 pb-1.5 text-sm font-medium text-foreground">
+    <h2 data-testid="wm-heading" data-kind={kind} className="hairline-b mx-3 mb-1 pt-5 pb-1.5 text-sm font-medium text-foreground">
       {t(SECTION_NAME[kind])}
     </h2>
   );
@@ -219,8 +219,14 @@ const FeedItem = memo(function FeedItem({ id, thread, chat, later }: { id: numbe
   const task = useToday((s) => s.tasks.get(id));
   const open = useApp((s) => s.selectedId === id);
   const sentence = useMemo(() => (entry ? todaySentence(entry) : thread.subject || t("common.noSubject")), [entry, thread.subject]);
-  const meta = `${senderOf(thread, task)} · ${listDate(thread.lastDate)}`;
-  return chat ? <ChatNote id={id} sentence={sentence} meta={meta} also={task?.also} task={task} open={open} later={later} /> : <BriefItem id={id} sentence={sentence} meta={meta} also={task?.also} task={task} open={open} later={later} />;
+  // a held row (no longer Today's) says only the day it came, quietly
+  const when = useMemo(() => (entry ? todayWhen(entry) : { text: listDate(thread.lastDate), tone: "none" as const }), [entry, thread.lastDate]);
+  const sender = senderOf(thread, task);
+  if (chat) return <ChatNote id={id} sentence={sentence} meta={when.text ? `${when.text} · ${sender}` : sender} also={task?.also} task={task} open={open} later={later} />;
+  // the briefing's second line: who (whom a promise of yours was made to), and the conversation's next item; never the
+  // email's date, which read as the due day (after the UI panel): the right column says when
+  const who = task?.kind === "promise" && task.person ? t("whatMatters.to", { name: task.person.name }) : sender;
+  return <BriefItem id={id} sentence={sentence} meta={task?.also ? `${who} · ${task.also}` : who} when={when.text} tone={when.tone} task={task} open={open} later={later} />;
 });
 
 interface ItemProps {
@@ -235,6 +241,12 @@ interface ItemProps {
   open: boolean;
   /** Coming up's: quieter */
   later: boolean;
+}
+
+interface BriefProps extends Omit<ItemProps, "openLabel" | "also"> {
+  /** the right column: a short day, a time, "Was due Wed", or nothing */
+  when: string | null;
+  tone: TodayTone;
 }
 
 /**
@@ -265,20 +277,52 @@ function ChatNote({ id, openLabel, sentence, meta, also, task, open, later }: It
 }
 
 /**
- * B: one plain sentence, who and when quietly under it; the whole item opens its conversation, the list staying where it
- * is. Done and Later on hover and focus (D and the right-click menu as on the list).
+ * After the UI panel: what's Missed or due today reads stronger than what's days away (the ink and a medium weight), and
+ * its day in the right column is the accent at rest; days away, the day is quiet. No red: weight and one accent. On the
+ * open item every word is the selection's ink (the pairs CONTRAST_PAIRS holds); under the pointer, the accent gives way
+ * to the ink (the accent isn't held on the hover's fill).
  */
-function BriefItem({ id, sentence, meta, also, task, open, later }: ItemProps) {
+const SENTENCE_INK: Record<TodayTone, string> = { missed: "font-medium text-foreground", today: "font-medium text-foreground", later: "text-foreground", none: "text-foreground" };
+const WHEN_INK: Record<TodayTone, string> = {
+  missed: "font-medium text-foreground",
+  today: "font-medium text-primary group-[:hover:not([data-open])]/item:text-foreground",
+  later: "text-muted-foreground",
+  none: "text-muted-foreground",
+};
+
+/**
+ * B: one plain sentence (two lines at most, the rest in its name and title), who under it, and when in a column of its
+ * own on the right, in the list's words. The whole item opens its conversation, the list staying where it is. Done and
+ * Later, in words, on hover, on focus and on the open item, over the second line's end (they take no room while hidden);
+ * D and the right-click menu as on the list.
+ */
+function BriefItem({ id, sentence, meta, when, tone, task, open, later }: BriefProps) {
+  const textId = useId();
   return (
-    <div data-thread-id={menuId(id)} data-testid="wm-item" data-open={open || undefined} className="group/item relative flex items-center gap-1 rounded-lg pr-2 hover:bg-row-hover data-open:bg-row-selected">
-      <button type="button" data-testid="wm-item-open" aria-current={open || undefined} onClick={() => openItem(id)} className="min-w-0 flex-1 rounded-lg px-3 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring">
-        <span className={cn("block text-base text-pretty", later ? "text-muted-foreground" : "text-foreground")}>{sentence}</span>
-        <span className="mt-0.5 block truncate text-sm text-muted-foreground">{meta}</span>
-        {also && <span className="block truncate text-sm text-muted-foreground">{also}</span>}
+    <div data-thread-id={menuId(id)} data-testid="wm-item" data-open={open || undefined} data-tone={tone} className="group/item relative rounded-lg not-data-open:hover:bg-row-hover data-open:bg-row-selected">
+      <button type="button" data-testid="wm-item-open" title={`${sentence}\n${meta}`} aria-current={open || undefined} onClick={() => openItem(id)} className="flex w-full min-w-0 items-start gap-4 rounded-lg px-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <span className="min-w-0 flex-1">
+          <span id={textId} data-testid="wm-sentence" className={cn("line-clamp-2 text-base text-pretty group-data-open/item:text-row-selected-foreground", later ? "text-muted-foreground" : SENTENCE_INK[tone])}>
+            {sentence}
+          </span>
+          {/* while Done and Later show over its end, it ends (in an ellipsis) before them: a little before, beside the right
+              column (at least 5rem, so they reach no further into it), else their width */}
+          <span data-testid="wm-meta" className={cn("mt-0.5 block truncate text-sm text-muted-foreground", task && (when ? "group-hover/item:pr-6 group-has-[:focus-visible]/item:pr-6 group-data-open/item:pr-6" : "group-hover/item:pr-28 group-has-[:focus-visible]/item:pr-28 group-data-open/item:pr-28"))}>
+            {meta}
+          </span>
+        </span>
+        {when && (
+          <span data-testid="wm-when" className={cn("min-w-20 shrink-0 pt-px text-right text-sm whitespace-nowrap tabular group-data-open/item:text-row-selected-foreground", WHEN_INK[tone])}>
+            {when}
+          </span>
+        )}
       </button>
       {task && (
-        <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-fast group-hover/item:opacity-100 group-data-open/item:opacity-100 has-[:focus-visible]:opacity-100 has-[[aria-expanded=true]]:opacity-100">
-          <BriefTaskControls threadId={id} task={task} />
+        <div
+          data-testid="wm-controls"
+          className="pointer-events-none absolute right-2 bottom-1.5 flex items-center gap-1 rounded-md bg-pane pl-2 opacity-0 transition-opacity duration-fast group-hover/item:pointer-events-auto group-[:hover:not([data-open])]/item:bg-row-hover group-hover/item:opacity-100 group-data-open/item:pointer-events-auto group-data-open/item:bg-row-selected group-data-open/item:opacity-100 has-[:focus-visible]:pointer-events-auto has-[:focus-visible]:opacity-100 has-[[aria-expanded=true]]:pointer-events-auto has-[[aria-expanded=true]]:opacity-100"
+        >
+          <BriefTaskControls threadId={id} task={task} describedBy={textId} />
         </div>
       )}
     </div>
@@ -292,5 +336,5 @@ function DigestItem({ chat }: { chat: boolean }) {
   if (!digest) return null;
   const from = digestFrom(digest, getLocale());
   const sentence = digestLabel(digest);
-  return chat ? <ChatNote id={DIGEST_ROW_ID} openLabel={t("common.open")} sentence={sentence} meta={from ?? t("today.newsletters")} also={undefined} task={undefined} open={open} later={false} /> : <BriefItem id={DIGEST_ROW_ID} sentence={sentence} meta={from ?? t("today.newsletters")} also={undefined} task={undefined} open={open} later={false} />;
+  return chat ? <ChatNote id={DIGEST_ROW_ID} openLabel={t("common.open")} sentence={sentence} meta={from ?? t("today.newsletters")} also={undefined} task={undefined} open={open} later={false} /> : <BriefItem id={DIGEST_ROW_ID} sentence={sentence} meta={from ?? t("today.newsletters")} when={null} tone="none" task={undefined} open={open} later={false} />;
 }
