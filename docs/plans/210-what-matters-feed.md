@@ -176,3 +176,14 @@ Done (or Not a task) closes the shown item; its row leaves at once as now; the r
 6. **SQLite's deep page walked the newer closings again.** The key is a row value, `(closed_at, id) < (?, ?)`, which the index seeks (`history-plan.test.ts` asserts the plan).
 7. **A long walk past left-out rows held the event loop.** The walk gives the turn back between reads within the backend's slice budget (`today-history.test.ts`).
 
+**Round 2** (`/tmp/terno-scratch/p204/ui-variants/review-210-2.out`): 6 findings, all fixed, each with a test; the last round (the cap is two).
+
+1. **A page still on its way when a reload landed could bring back what the reload took away** (round 1 handled the other order). A Today reload is the history from its top, so it drops any page on its way (`pageSeq`), and the next page continues from its answer (`today-history-paging.test.ts`, both orders).
+2. **An untrusted sender's newer item hid an older line on its conversation.** A line is now a conversation's first eligible closing past the page's key, and a conversation is skipped only when it has an eligible closing at or above the key (an untrusted item, never shown, doesn't count) (`today-history.test.ts`).
+3. **Back from another mailbox with nothing open, the feed lost its depth and place.** The feed tells the list where it is (`listAnchor`: the first item on screen and how far into it), so coming back pages down to it and shows it again (e2e).
+4. **A conversation's newest closing read its every closed row.** SQLite seeks new per-thread indexes (`dated_closed_thread`, `followups_closed_thread`, in v59, which isn't shipped yet), one row each; IndexedDB's order keeps each thread's closings in order too (`history-plan.test.ts`, `closed-order.test.ts`).
+5. **IndexedDB's first read sorted everything at once.** The order is built from plain entries now and its cold build is timed in the perf gate after twenty thousand closings at once: 5 ms (under the 8 ms slice); SQLite's 0.5 ms. Bounded by the 90-day keep.
+6. **Unread, the order held every change forever.** It tracks nothing while stale, and past 256 changes unread it marks itself stale and lets them go (`closed-order.test.ts`).
+
+Left as it is: an untrusted item newer than a trusted one of the same conversation, both above a page's key, can let the trusted one show once more past the key (only the newest per table is known without reading a conversation's rows); untrusted items are only those stored before plan 204's guard.
+

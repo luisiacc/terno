@@ -1509,7 +1509,9 @@ ALTER TABLE followups ADD COLUMN deferred_until INTEGER;
   // only (two partial indexes over tables bounded by their keep)
   { version: 59, name: "closed items and promises by closing time (plan 210)", sql: `
 CREATE INDEX dated_closed ON dated_items(closed_at DESC, id DESC) WHERE state <> 'open';
+CREATE INDEX dated_closed_thread ON dated_items(thread_id, closed_at DESC, id DESC) WHERE state <> 'open';
 CREATE INDEX followups_closed ON followups(closed_at DESC, id DESC) WHERE kind = 'promise' AND state IN ('done','dismissed');
+CREATE INDEX followups_closed_thread ON followups(thread_id, closed_at DESC, id DESC) WHERE kind = 'promise' AND state IN ('done','dismissed');
 ` },
 ];
 

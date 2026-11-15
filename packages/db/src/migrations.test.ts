@@ -659,7 +659,7 @@ describe("migration v57: an ask (plan 204, after the third panel round)", () => 
     const before = db.all<Record<string, unknown>>("SELECT * FROM dated_items ORDER BY id");
     expect(migrate(db)).toEqual({ from: 56, to: SCHEMA_VERSION });
     expect(db.all<Record<string, unknown>>("SELECT * FROM dated_items ORDER BY id")).toEqual(before);
-    expect(db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'dated_items' AND sql IS NOT NULL ORDER BY name").map((r) => r.name)).toEqual(["dated_closed", "dated_open", "dated_sender", "dated_thread"]);
+    expect(db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'dated_items' AND sql IS NOT NULL ORDER BY name").map((r) => r.name)).toEqual(["dated_closed", "dated_closed_thread", "dated_open", "dated_sender", "dated_thread"]);
     expect(db.get("SELECT name FROM sqlite_master WHERE name = 'dated_items_v57'")).toBeUndefined();
     // an ask now; the next id is past the pruned one, as before the upgrade
     insert(null, "ask");
@@ -681,6 +681,6 @@ describe("migration v58: a promise's Later (plan 204, the fifth panel round)", (
     expect(before).toHaveLength(1);
     expect(migrate(db)).toEqual({ from: 57, to: SCHEMA_VERSION });
     expect(db.all<Record<string, unknown>>("SELECT * FROM followups ORDER BY id")).toEqual(before.map((r) => ({ ...r, deferred_until: null })));
-    expect(db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'followups' AND sql IS NOT NULL ORDER BY name").map((r) => r.name)).toEqual(["followups_active", "followups_closed", "followups_thread", "followups_top"]);
+    expect(db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'followups' AND sql IS NOT NULL ORDER BY name").map((r) => r.name)).toEqual(["followups_active", "followups_closed", "followups_closed_thread", "followups_thread", "followups_top"]);
   });
 });
