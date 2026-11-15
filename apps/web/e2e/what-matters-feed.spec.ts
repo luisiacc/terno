@@ -43,6 +43,8 @@ async function item(server: DevServerFixture, key: string, text: string, closedA
 const feed = (page: Page) => page.getByTestId("wm-feed");
 const line = (page: Page, text: string) => feed(page).locator("[data-thread-id]").filter({ hasText: text });
 const scroller = (page: Page) => feed(page).locator('[data-keep-scroll="list"]');
+/** an open item (never its history line) */
+const openLine = (page: Page, text: string) => feed(page).locator("[data-thread-id]:not([data-history])").filter({ hasText: text });
 
 /** Down from the top until a line is drawn (the feed draws only what's near the view), pages coming in on the way. */
 async function reach(page: Page, text: string): Promise<void> {
@@ -166,6 +168,19 @@ test("the open part, the automated section and the history under Earlier, paged 
     await expect(feed(page).locator("[data-history]").filter({ hasText: "Wire payroll" })).toHaveCount(0);
   });
 
+  await scenario("Codex code review: the skip link brings the keys back to the item put away, scrolled out of view meanwhile", async () => {
+    await reach(page, "Wire payroll");
+    await openLine(page, "Wire payroll").getByTestId("wm-item-open").click();
+    await page.keyboard.press("Escape");
+    await reach(page, "Pay bill 0.");
+    await expect(openLine(page, "Wire payroll")).toHaveCount(0);
+    await page.getByTestId("skip-to-list").focus();
+    await page.keyboard.press("Enter");
+    const back = openLine(page, "Wire payroll").getByTestId("wm-item-open");
+    await expect(back).toBeFocused();
+    await expect(back).toBeInViewport();
+  });
+
   await scenario("a new item arrives while the feed is on screen", async () => {
     await scroller(page).evaluate((el) => (el.scrollTop = 0));
     await item(server, "rent", "Pay the rent", null);
@@ -178,6 +193,7 @@ test("the open part, the automated section and the history under Earlier, paged 
 test("an item: one sentence, when in its column, who under it; its conversation beside the feed, put away by Esc, the reader's Close or a second click; D and z; axe in light and dark", async ({ app: page, server }) => {
   await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" }, dated: { enabled: true, scanAnswered: true } }, dev);
   await item(server, "payroll", "Wire payroll", null);
+  await item(server, "rent", "Pay the rent", null);
   await fresh(page);
   await page.getByTestId("nav-today").click();
   const it = line(page, "Wire payroll");
@@ -265,6 +281,57 @@ test("an item: one sentence, when in its column, who under it; its conversation 
     await expect(feed(page).locator("[data-thread-id]:not([data-history])").filter({ hasText: "Wire payroll" })).toHaveCount(0);
     await page.keyboard.press("z");
     await expect(feed(page).locator("[data-thread-id]:not([data-history])").filter({ hasText: "Wire payroll" })).toBeVisible();
+  });
+
+  await scenario("Codex code review: the wide feed is the page's main landmark; D finishes the item the keyboard is on; j takes the keys with the item it opens", async () => {
+    if (await page.getByTestId("reader").count()) await page.keyboard.press("Escape");
+    await expect(page.getByTestId("reader")).toHaveCount(0);
+    // the feed alone: its pane is the page's main content (as List's one pane is)
+    await expect(page.getByRole("main")).toHaveCount(1);
+    await expect(page.getByRole("main").getByTestId("wm-feed")).toHaveCount(1);
+    await openLine(page, "Wire payroll").getByTestId("wm-item-open").click();
+    // the reader beside it is the main content then, alone
+    await expect(page.getByRole("main")).toHaveCount(1);
+    await expect(page.getByRole("main").getByTestId("wm-feed")).toHaveCount(0);
+    // the keyboard on the other item: D is that one's, the open one stays
+    await openLine(page, "Pay the rent").getByTestId("wm-item-open").focus();
+    await page.keyboard.press("d");
+    await expect(page.getByTestId("snack")).toContainText("Done: Pay the rent");
+    await expect(openLine(page, "Wire payroll")).toHaveAttribute("data-open", "true");
+    await page.keyboard.press("z");
+    await expect(openLine(page, "Pay the rent")).toBeVisible();
+    // j opens the next item and the keys go with it: Enter and D are that one's
+    await page.keyboard.press("Escape");
+    await openLine(page, "Wire payroll").getByTestId("wm-item-open").focus();
+    await page.keyboard.press("k");
+    await page.keyboard.press("j");
+    // (the focused element's item is the open one)
+    await expect.poll(() => page.evaluate(() => { const item = document.activeElement?.closest("[data-testid=wm-item]"); return !!item?.hasAttribute("data-open") && document.activeElement?.getAttribute("data-testid"); })).toBe("wm-item-open");
+    await page.keyboard.press("Escape");
+  });
+
+  await scenario("Codex code review: Tab to an item, Enter opens it, Esc puts it away: back on the item with no ring (plan 54)", async () => {
+    const button = openLine(page, "Wire payroll").getByTestId("wm-item-open");
+    await button.focus();
+    // the ring on, as a Tab leaves it (focus-ring.spec's way)
+    await button.focus();
+    await page.evaluate(() => document.documentElement.toggleAttribute("data-focus-ring", true));
+    await expect(button).toBeFocused();
+    expect(await page.evaluate(() => document.documentElement.hasAttribute("data-focus-ring"))).toBe(true);
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("reader")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("reader")).toHaveCount(0);
+    await expect(button).toBeFocused();
+    await expect.poll(() => page.evaluate(() => document.documentElement.hasAttribute("data-focus-ring"))).toBe(false);
+  });
+
+  await scenario("Codex code review: / from What matters searches, in the list's field, everywhere", async () => {
+    await openLine(page, "Wire payroll").getByTestId("wm-item-open").focus();
+    await page.keyboard.press("/");
+    await expect(page.getByTestId("search-input")).toBeFocused();
+    await page.keyboard.type("Wire payroll");
+    await expect(page.getByTestId("thread-row").filter({ hasText: "Wire payroll" }).first()).toBeVisible({ timeout: 15_000 });
   });
 });
 

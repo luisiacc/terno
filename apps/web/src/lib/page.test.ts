@@ -24,7 +24,7 @@ vi.mock("~/rpc/connection", () => ({
 }));
 
 const { useAppearance } = await import("~/lib/appearance");
-const { closePage, currentPage, openThread, pageOf } = await import("./page");
+const { closePage, currentPage, forwardNavKey, openThread, pageOf } = await import("./page");
 const { act, scheduleMarkRead, toggleStar } = await import("./actions");
 const { extendSelection, pickRow, pressRow, releaseRow, selectAll, selectWhere, toggleCurrent } = await import("./select");
 const { loadThread, useThreads } = await import("~/state/threads");
@@ -392,5 +392,19 @@ describe("the covered list's refresh (R4)", () => {
   it("not covered: today's refresh", async () => {
     refreshList(false);
     await vi.waitFor(() => expect(fake.calls).toContain("threads.list"));
+  });
+});
+
+describe("plan 210 (Codex code review): Esc from inside a mail frame", () => {
+  it("puts What matters' open conversation away, as Esc outside the mail does; elsewhere in Split it closes nothing", () => {
+    layout("split");
+    setApp({ view: "all", today: true, selectedId: 2 });
+    const esc = new KeyboardEvent("keydown", { key: "Escape", cancelable: true });
+    forwardNavKey(esc);
+    expect(getApp().selectedId).toBeNull();
+    expect(esc.defaultPrevented).toBe(true);
+    setApp({ today: false, view: "inbox", selectedId: 2 });
+    forwardNavKey(new KeyboardEvent("keydown", { key: "Escape", cancelable: true }));
+    expect(getApp().selectedId).toBe(2);
   });
 });

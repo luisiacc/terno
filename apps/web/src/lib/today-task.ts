@@ -1,4 +1,5 @@
 import type { FollowupRow } from "@terno/core";
+import { focusedFeedItem, useFeedCursor } from "~/lib/feed-focus";
 import { leaveRows, type LeftRows } from "~/lib/actions";
 import { actOnDated, actOnTask, type DatedRef, type TodayTask } from "~/lib/dated";
 import { actOnFollowup } from "~/lib/followups";
@@ -48,9 +49,12 @@ export function actOnThreadPromise(row: FollowupRow, action: TaskAction, at?: nu
  */
 export function doneOnSelected(): boolean {
   const s = getApp();
-  if (!s.today || s.selectedId === null || s.scope || (s.checked.size > 0 && !(s.checked.size === 1 && s.checked.has(s.selectedId)))) return false;
-  const task = useToday.getState().tasks.get(s.selectedId);
+  // plan 210 (Codex code review): in the feed, the item the keyboard is on (Tab to another, D finishes that one), else
+  // the open one, else the one a conversation was just put away from
+  const id = s.today ? (focusedFeedItem() ?? s.selectedId ?? useFeedCursor.getState().id) : null;
+  if (id === null || s.scope || (s.checked.size > 0 && !(s.checked.size === 1 && s.checked.has(id)))) return false;
+  const task = useToday.getState().tasks.get(id);
   if (!task) return false;
-  void actOnTodayRow(s.selectedId, task, "done");
+  void actOnTodayRow(id, task, "done");
   return true;
 }
