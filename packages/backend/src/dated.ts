@@ -56,6 +56,15 @@ const inWords = (ms: number, language: string): string => {
   }
 };
 
+/** prompt v10: the reader's zone, the machine's, in which `inWords`, `clockOf` and `datedTiming` read days and times, and a time the mail gives in another is converted to; read each time, as a trip changes it */
+const readerZone = (): string => {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  } catch {
+    return "UTC";
+  }
+};
+
 /**
  * Normalized, as a person retyping it would: a quote must really be in the mail. Punctuation is left out (the eval: a
  * model joins two lines with a period, "Amount due: $84.20. Please pay by…"); the words, their order and the digits stay.
@@ -400,7 +409,7 @@ export class DatedWorker {
       const nameOf = (p: { name: string; email: string }) => p.name || p.email.split("@")[0]!;
       const reader = { name: (await store.accounts.get(src.accountId))?.displayName ?? "", addressed: src.readerIn };
       // the third panel round: "a person" as the ask's local check reads it (a role address you never wrote to isn't one)
-      const input = fitDates({ text, subject: src.subject, from: { name: src.fromName || src.fromEmail.split("@")[0]!, automated: src.automated || !src.person }, reader, to: src.to.map(nameOf), cc: src.cc.map(nameOf), receivedAt: inWords(src.date, language), open: [...[...labels].map(([label, r]) => ({ label, kind: r.kind as DatedKind | "promise", text: r.text, due: r.dated ? r.dueDay : null, time: r.timed ? clockOf(r.dueAt) : null })), ...[...promises].map(([label, p]) => ({ label, kind: "promise" as const, text: p.text, due: p.dated ? dayKeyOf(p.dueAt) : null }))], language, outputTokens: budget.outputTokens }, budget.promptChars);
+      const input = fitDates({ text, subject: src.subject, from: { name: src.fromName || src.fromEmail.split("@")[0]!, automated: src.automated || !src.person }, reader, to: src.to.map(nameOf), cc: src.cc.map(nameOf), receivedAt: inWords(src.date, language), zone: readerZone(), open: [...[...labels].map(([label, r]) => ({ label, kind: r.kind as DatedKind | "promise", text: r.text, due: r.dated ? r.dueDay : null, time: r.timed ? clockOf(r.dueAt) : null })), ...[...promises].map(([label, p]) => ({ label, kind: "promise" as const, text: p.text, due: p.dated ? dayKeyOf(p.dueAt) : null }))], language, outputTokens: budget.outputTokens }, budget.promptChars);
       // a change of provider or key, the setting, Spam meanwhile: each stops it, at the provider too
       const signal = AbortSignal.any([generation.signal, asked.signal, stop.signal]);
       if (signal.aborted) return await drop();

@@ -253,6 +253,22 @@ describe("the reader", () => {
     expect(await sections()).toEqual({});
   });
 
+  it("prompt v10: the request says the reader's zone, the machine's, and a time the mail gives in another is kept at its instant", async () => {
+    const { model, receive, read, client } = await setup();
+    // Thursday 4:00 PM PT, as the mail says it and named: midnight UTC on Friday, whatever this machine's zone
+    model.answer = () => reply([{ kind: "event", text: "Call with Marcus (4:00 PM PT)", quote: "Thursday at 4:00 PM PT", due: "2026-11-19", time: "16:00 America/Los_Angeles" }]);
+    const thread = await receive({ bodyText: "Can we talk Thursday at 4:00 PM PT? I'll call you." });
+    await read();
+    const system = promptText(model.requests[0]!.system);
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    expect(system).toMatch(new RegExp(`It arrived [^\\n]*10 November 2026[^\\n]*, in the reader's time zone \\(${zone.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\)\\.`));
+    expect(system).toContain(`When the mail gives the time in a zone other than the reader's (${zone})`);
+    const instant = Date.UTC(2026, 10, 20, 0, 0);
+    const local = new Date(instant);
+    const [row] = (await client.call("dated.ofThread", { threadId: thread })).rows;
+    expect(row).toMatchObject({ text: "Call with Marcus (4:00 PM PT)", dueAt: instant, dueDay: `${local.getFullYear()}-${String(local.getMonth() + 1).padStart(2, "0")}-${String(local.getDate()).padStart(2, "0")}`, timed: true });
+  });
+
   it("never asks about Spam, Trash, Promotions or Social, nor automated mail with no time cue; a person's mail is read whatever its words", async () => {
     const { model, receive, read } = await setup();
     await receive({ isSpam: true });
