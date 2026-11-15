@@ -212,22 +212,6 @@ export const datedWritten = (c: Ctx, keys: readonly string[]): Set<string> => {
   const correspondents = T(c, "correspondents");
   return new Set([...new Set(keys)].filter((key) => correspondents.get(key)?.written === 1));
 };
-/**
- * Plan 210: closed rows newest first by `(closed_at, id)`, strictly after `after`, as SQLite's `dated_closed` index walks
- * them. Here from the state buckets (memory holds the table, bounded by the closed keep), sorted for the page.
- */
-export function closedPage(rows: Iterable<R>, o: { since: number; after: ClosedAt | null; limit: number }): R[] {
-  const { since, after } = o;
-  const out: R[] = [];
-  for (const r of rows) {
-    const at = r.closed_at as number | null | undefined;
-    if (at == null || at < since) continue;
-    if (after && !(at < after.at || (at === after.at && (r.id as number) < after.id))) continue;
-    out.push(r);
-  }
-  return out.sort((a, b) => b.closed_at - a.closed_at || b.id - a.id).slice(0, o.limit);
-}
-
 /** Plan 210: of these rows, each thread's newest closing since `since`. */
 export function newestClosedOf(rows: Iterable<R>, since: number): Map<number, ClosedAt> {
   const out = new Map<number, ClosedAt>();
@@ -240,11 +224,9 @@ export function newestClosedOf(rows: Iterable<R>, since: number): Map<number, Cl
   return out;
 }
 
-const CLOSED_STATES = ["done", "dismissed", "settled"] as const;
-
+/** Plan 210: closed rows newest first by `(closed_at, id)`, strictly after `after`, by the closing-time order. */
 export function closedDatedPage(c: Ctx, o: { since: number; after: ClosedAt | null; limit: number }): DatedRow[] {
-  const rows = T(c, "dated_items");
-  return closedPage(CLOSED_STATES.flatMap((s) => rows.by("state", s)), o).map(toRow);
+  return c.closedOrders.dated.page(T(c, "dated_items"), o).map(toRow);
 }
 
 export function newestClosedDated(c: Ctx, threadIds: readonly number[], since: number): Map<number, ClosedAt> {
