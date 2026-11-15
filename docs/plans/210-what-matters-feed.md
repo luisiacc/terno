@@ -199,3 +199,12 @@ The unit project run again alone after the fix: only the last two of those.
 
 Screenshots for the owner: `/tmp/terno-scratch/p204/panel/shots-feed/<maria|priya>/` (the copies seeded with 50 past bills from made-up billers so the history reaches its second page; screenshot data only).
 
+## Hiding what's finished (the owner, 2026-11-14)
+
+> lets have a setting to hide done things, they might like that to have an inbox-zero feeling, lets have that on settings too, but lets also have it in a gear icon in the top right of the 'what matters' view so they can access it directly there and change it
+
+- **The setting:** `today.finished` (with What matters' others, saved as every setting is), on by default (the owner chose a historic feed). "Show finished items" / "Mostrar lo terminado": "What's done, not a task or past stays under Earlier. Off, only what's left shows." Off: no Earlier and no history read at all (the backend answers `today.list` without one and `today.history` with nothing, and the renderer doesn't ask); Done still takes a line off the top, with its Undo; on again, the list reloads with the history from its top.
+- **In Settings:** General → What matters, beside its other rows, and Settings' search finds it (en and es, with "done, history, earlier, inbox zero…").
+- **The gear:** on the feed's title row, at its right, a quiet icon-only button (the sidebar's settings glyph, the header's icon size) named "What matters options", with its tooltip; it opens BoardUI's popover with the same switch (its label and line) and "More settings…", which opens Settings at that row. A change applies at once, wherever it's made.
+- **Tests:** backend (hidden: no history and neither table's closed rows read; Done still leaves the top; shown again, the history back); e2e (the gear on the title's line and named, its switch hiding Earlier and bringing it back, axe on the popover in both modes, Done and Undo while hidden, More settings opening Settings at the row, which changes it too).
+

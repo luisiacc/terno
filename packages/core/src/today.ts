@@ -21,9 +21,11 @@ export interface TodaySetting {
   prepareAt: string;
   notify: boolean;
   digest: boolean;
+  /** plan 210 (the owner): the history ("Earlier") under the open part; off, only what's left, an inbox-zero feeling */
+  finished: boolean;
 }
 
-export const DEFAULT_TODAY: TodaySetting = { show: true, prepareAt: "08:00", notify: false, digest: false };
+export const DEFAULT_TODAY: TodaySetting = { show: true, prepareAt: "08:00", notify: false, digest: false, finished: true };
 
 /**
  * Who sees Today: a provider set up, or (once plan 85's Pro exists) an active entitlement. One helper, so Pro joins in one
