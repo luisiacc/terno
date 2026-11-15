@@ -1,4 +1,4 @@
-import { DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS } from "@terno/core";
+import { DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, datedGroupAt } from "@terno/core";
 import { describe, expect, it } from "vitest";
 import { DATED_MARK_MS, DATED_SCAN_MARK_MS, type DatedFinish, type DatedWrite } from "../dated";
 import type { MailStore } from "../mail-store";
@@ -524,6 +524,38 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
         const laterB = (await store.dated.update(other!.id, moved.revision, { deferredUntil: NOW + 2 * DAY }))!;
         expect(await store.dated.restore([{ snapshot: laterB, expectRevision: laterB.revision + 1 }])).toBe(1);
         expect(await store.dated.get(other!.id)).toMatchObject({ text: "Soccer game (arrive 7:30)", dueAt: NOW + 7 * DAY, deferredUntil: null, state: "open" });
+      });
+
+      it("the seventh panel round: Done, Later, a move between and their Undos leave the row whose own day groups it: Soon, Coming up while put off, Today once moved to today", async () => {
+        const { store, got, item, finish } = await setup();
+        // the groups are read in the machine's own days
+        const local = (day: number, hour = 9) => new Date(2026, 10, day, hour).getTime();
+        const at = local(15, 10);
+        const a = await got();
+        await finish(a.id, a.thread, { rows: [item({ dueDay: "2026-11-20", dueAt: local(20), actAt: local(13) })] });
+        const [row] = await store.dated.ofThread(a.thread);
+        const group = async () => datedGroupAt((await store.dated.get(row!.id))!, at);
+        expect(await group()).toBe("soon");
+        const done = (await store.dated.update(row!.id, row!.revision, { state: "done", closedReason: "user", closedAt: at }))!;
+        expect(await group()).toBeNull();
+        expect(await store.dated.restore([{ snapshot: done, expectRevision: done.revision + 1 }])).toBe(1);
+        expect(await group()).toBe("soon");
+        // Later, then their mail moves it to today at 5 PM, then Later's Undo: today's, at its new moment
+        const back = (await store.dated.get(row!.id))!;
+        const later = (await store.dated.update(row!.id, back.revision, { deferredUntil: local(17) }))!;
+        expect(await group()).toBe("comingUp");
+        const moving = await got({ inReplyTo: a.m.rfcMessageId, references: [a.m.rfcMessageId!], date: NOW - 1000 });
+        await finish(moving.id, moving.thread, { moved: [{ id: row!.id, dueDay: "2026-11-15", dueAt: local(15, 17), timed: true, actAt: local(14) }] });
+        expect(await group()).toBe("comingUp");
+        expect(await store.dated.restore([{ snapshot: later, expectRevision: later.revision + 1 }])).toBe(1);
+        expect(await store.dated.get(row!.id)).toMatchObject({ dueDay: "2026-11-15", dueAt: local(15, 17), timed: true, deferredUntil: null, state: "open" });
+        expect(await group()).toBe("today");
+        // Done on it now, and its Undo: Today's again, exactly
+        const now = (await store.dated.get(row!.id))!;
+        const doneToday = (await store.dated.update(row!.id, now.revision, { state: "done", closedReason: "user", closedAt: at }))!;
+        expect(await group()).toBeNull();
+        expect(await store.dated.restore([{ snapshot: doneToday, expectRevision: doneToday.revision + 1 }])).toBe(1);
+        expect(await group()).toBe("today");
       });
 
       it("a change applies only at the revision seen; Undo restores exactly, unless something changed it since", async () => {

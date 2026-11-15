@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { isAcknowledgment, looksLikeAcknowledgment, saysNoReplyNeeded } from "./today";
-import { alertUntil, ANSWERED_KINDS, askEnd, datedGroup, datedOver, datedPlace, datedTiming, hasTimeCue, laterBefore, nextTodayChange, planEnd, promiseOver, promisePlace, TODAY_COUNTED, TODAY_GROUP_ORDER, type DatedKind, type DatedRow } from "./dated";
+import { alertUntil, ANSWERED_KINDS, askEnd, datedGroup, datedGroupAt, datedOver, datedPlace, datedTiming, hasTimeCue, laterBefore, nextTodayChange, planEnd, promiseGroupAt, promiseOver, promisePlace, todayCounted, TODAY_GROUP_ORDER, type DatedKind, type DatedRow } from "./dated";
 import { WAITING_WINDOW_MS } from "./people";
 
 const at = (y: number, m: number, d: number, h = 0, min = 0) => new Date(y, m - 1, d, h, min).getTime();
@@ -243,10 +243,7 @@ describe("where a promise of yours sits (plan 204 §1, the third panel round)", 
     expect(promisePlace(undated, at(2026, 11, 12, 8))).toBe("hidden");
     expect(promisePlace(undated, at(2026, 11, 12, 9))).toBe("needsYou");
     expect(promisePlace({ ...undated, state: "due" }, at(2026, 12, 30))).toBe("needsYou");
-    expect(TODAY_COUNTED.has("needsYou")).toBe(true);
-  });
-  it("Needs you's heading is above Plans' (the fourth panel round, revision 4)", () => {
-    expect(TODAY_GROUP_ORDER).toEqual(["missed", "deadlines", "needsYou", "plans", "reminders", "comingUp"]);
+    expect(todayCounted("needsYou")).toBe(true);
   });
   it("the clock wakes as its day starts and ends, and as an undated one comes due", () => {
     expect(nextTodayChange([], [{ ...promise, state: "open" }], at(2026, 11, 11, 15))).toBe(at(2026, 11, 12));
@@ -410,5 +407,79 @@ describe("saysNoReplyNeeded (the fourth panel read)", () => {
   });
   it.each(["Can you reply by Friday?", "Need you to answer this", "No, I need a reply today.", "", null])("doesn't: %j", (text) => {
     expect(saysNoReplyNeeded(text)).toBe(false);
+  });
+});
+
+describe("the groups go by when, not by kind (the seventh panel round, change 1; revisions 2, 5 and 6)", () => {
+  it("Missed, Today, Needs you, Soon, Reminders, Coming up", () => {
+    expect(TODAY_GROUP_ORDER).toEqual(["missed", "today", "needsYou", "soon", "reminders", "comingUp"]);
+  });
+  it("a deadline and a Plan: Soon within their lead, Today on their day, then Missed or over", () => {
+    const bill = item("pay", "2026-11-20");
+    expect(datedGroupAt(bill, at(2026, 11, 10, 15))).toBe("comingUp");
+    expect(datedGroupAt(bill, at(2026, 11, 13, 9))).toBe("soon");
+    expect(datedGroupAt(bill, at(2026, 11, 19, 23, 59))).toBe("soon");
+    expect(datedGroupAt(bill, at(2026, 11, 20, 0))).toBe("today");
+    expect(datedGroupAt(bill, at(2026, 11, 21, 0))).toBe("missed");
+    expect(datedGroupAt(bill, at(2026, 11, 28, 0))).toBeNull();
+    const flight = item("event", "2026-11-20", "23:00");
+    expect(datedGroupAt(flight, at(2026, 11, 17, 9))).toBe("soon");
+    expect(datedGroupAt(flight, at(2026, 11, 20, 8))).toBe("today");
+    // still on after midnight: Today's until it ends, never Missed
+    expect(datedGroupAt(flight, at(2026, 11, 21, 0, 30))).toBe("today");
+    expect(datedGroupAt(flight, at(2026, 11, 21, 1))).toBeNull();
+    // Later keeps it out of every group until then: Coming up's meanwhile, and never Missed
+    expect(datedGroupAt({ ...bill, deferredUntil: at(2026, 11, 22, 9) }, at(2026, 11, 21, 9))).toBe("comingUp");
+  });
+  it("an alert is Today's while it shows, with a day or without; an ask is Needs you's: neither's stored day makes it Today", () => {
+    const undated = item("alert", null);
+    // its stored day (for order only) is the 12th: neither before nor on it does that decide anything
+    expect(undated.dueDay).toBe("2026-11-12");
+    expect(datedGroupAt(undated, arrived)).toBe("today");
+    expect(datedGroupAt(undated, at(2026, 11, 14, 9))).toBe("today");
+    expect(datedGroupAt(undated, at(2026, 11, 17, 14))).toBeNull();
+    const dated = item("alert", "2026-11-14");
+    expect(datedGroupAt(dated, arrived)).toBe("today");
+    expect(datedGroupAt(dated, at(2026, 11, 15, 0))).toBe("missed");
+    // an ask's stored day is its arrival: on that day it's still Needs you's
+    const ask = item("ask", null);
+    expect(ask.dueDay).toBe("2026-11-10");
+    expect(datedGroupAt(ask, arrived)).toBe("needsYou");
+    expect(datedGroupAt(ask, at(2026, 11, 12, 9))).toBe("needsYou");
+  });
+  it("a promise of yours: Soon from its lead, Today on its day, Missed after; one with no day Needs you's once due", () => {
+    const promise = { kind: "promise", state: "open", dated: true, dueAt: at(2026, 11, 20, 17) };
+    expect(promiseGroupAt(promise, at(2026, 11, 12, 9))).toBe("comingUp");
+    expect(promiseGroupAt(promise, at(2026, 11, 13, 9))).toBe("soon");
+    expect(promiseGroupAt(promise, at(2026, 11, 20, 0))).toBe("today");
+    expect(promiseGroupAt(promise, at(2026, 11, 21, 0))).toBe("missed");
+    const undated = { ...promise, dated: false, dueAt: at(2026, 11, 14, 9) };
+    expect(promiseGroupAt(undated, at(2026, 11, 14, 8))).toBeNull();
+    expect(promiseGroupAt(undated, at(2026, 11, 14, 9))).toBe("needsYou");
+  });
+  it("its day by the wall clock across a DST change: Today from its midnight, not an hour off", () => {
+    // US clocks fall back on Nov 1 and spring forward on Mar 8
+    const from = (kind: DatedKind, due: string, time: string | null, arrivedAt: number): Placed => ({ kind, state: "open", deferredUntil: null, arrivedAt, ...timing(kind, due, time, arrivedAt)! });
+    const fall = from("pay", "2026-11-01", null, at(2026, 10, 20, 12));
+    expect(datedGroupAt(fall, at(2026, 10, 31, 23, 59))).toBe("soon");
+    expect(datedGroupAt(fall, at(2026, 11, 1, 0))).toBe("today");
+    expect(datedGroupAt(fall, at(2026, 11, 1, 23, 59))).toBe("today");
+    const spring = from("event", "2026-03-08", "10:00", at(2026, 2, 20, 12));
+    expect(datedGroupAt(spring, at(2026, 3, 7, 23, 59))).toBe("soon");
+    expect(datedGroupAt(spring, at(2026, 3, 8, 0))).toBe("today");
+    // the clock wakes at that midnight, when Soon's item becomes Today's
+    expect(nextTodayChange([spring], [], at(2026, 3, 7, 22))).toBe(at(2026, 3, 8, 0));
+  });
+  it("what's counted: a row in Missed, Today, Needs you or Soon whose own item isn't a Plan's kind", () => {
+    for (const group of ["missed", "today", "needsYou", "soon"] as const) {
+      expect(todayCounted(group)).toBe(true);
+      expect(todayCounted(group, "pay")).toBe(true);
+      expect(todayCounted(group, "alert")).toBe(true);
+      expect(todayCounted(group, "ask")).toBe(true);
+      expect(todayCounted(group, "event")).toBe(false);
+      expect(todayCounted(group, "delivery")).toBe(false);
+    }
+    expect(todayCounted("reminders")).toBe(false);
+    expect(todayCounted("comingUp", "pay")).toBe(false);
   });
 });

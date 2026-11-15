@@ -168,7 +168,7 @@ describe("plan 162 (after ai162-r05): the digest's row says who the newsletters 
   });
 });
 
-describe("plan 204: Missed, Deadlines, Needs you, Plans, Reminders and Coming up", () => {
+describe("plan 204: Missed, Today, Needs you, Soon, Reminders and Coming up (the seventh panel round: by when, not by kind)", () => {
   const thread = (id: number) => ({ id, snippet: `snippet ${id}`, fromName: "Ana" }) as never;
   const groups = () => useToday.getState().groups.map((g) => [g.kind, g.at]);
   // Thursday 12 November 2026, 10:00, local
@@ -179,12 +179,12 @@ describe("plan 204: Missed, Deadlines, Needs you, Plans, Reminders and Coming up
     thread: thread(id),
     why: { kind: "dated" as const, text, dueAt: at(d, o.h, o.m), ...(o.missed ? { missed: true } : {}), item: { id: id * 10, revision: 1, kind, dueDay: day(d), timed: o.timed === true, dated: o.undated !== true } },
   });
-  const list = (over: Partial<Record<"missed" | "deadlines" | "plans" | "needsYou" | "reminders" | "comingUp", ReturnType<typeof dated>[] | { thread: never; why: never }[]>>, held: never[] = []): TodayList => ({
+  const list = (over: Partial<Record<"missed" | "today" | "needsYou" | "soon" | "reminders" | "comingUp", ReturnType<typeof dated>[] | { thread: never; why: never }[]>>, held: never[] = []): TodayList => ({
     now,
     held,
     digest: null,
     // the backend's order, given scrambled: the list keeps core's
-    sections: (["comingUp", "reminders", "needsYou", "plans", "deadlines", "missed"] as const).map((kind) => ({ kind, items: (over[kind] ?? []) as never })),
+    sections: (["comingUp", "reminders", "soon", "needsYou", "today", "missed"] as const).map((kind) => ({ kind, items: (over[kind] ?? []) as never })),
   });
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ["Date"] });
@@ -196,9 +196,9 @@ describe("plan 204: Missed, Deadlines, Needs you, Plans, Reminders and Coming up
   const full = () =>
     list({
       missed: [dated(1, "renew", "Renew the domain", 10, { missed: true }), { thread: thread(2), why: { kind: "promise", text: "send the contract", dueAt: at(11), missed: true } } as never],
-      deadlines: [dated(3, "pay", "Pay the electricity bill", 13), dated(4, "pay", "Pay the rent", 12), dated(5, "alert", "Your card was declined", 12, { undated: true })],
-      plans: [dated(6, "event", "Flight to Madrid", 13, { timed: true, h: 7, m: 40 }), dated(7, "delivery", "Your parcel arrives", 12)],
+      today: [dated(4, "pay", "Pay the rent", 12), dated(5, "alert", "Your card was declined", 12, { undated: true }), dated(7, "delivery", "Your parcel arrives", 12)],
       needsYou: [{ thread: thread(8), why: { kind: "waiting", wrote: true } } as never],
+      soon: [dated(6, "event", "Flight to Madrid", 13, { timed: true, h: 7, m: 40 }), dated(3, "pay", "Pay the electricity bill", 13)],
       reminders: [{ thread: thread(9), why: { kind: "reminder" } } as never],
       comingUp: [dated(10, "renew", "Renew the passport", 20)],
     });
@@ -209,16 +209,19 @@ describe("plan 204: Missed, Deadlines, Needs you, Plans, Reminders and Coming up
     expect(useToday.getState().counted).toBe(30);
 
     const rows = flattenToday(full(), []);
-    // the fourth panel round (revision 4): people before passive plans, Needs you's heading above Plans'
-    expect(rows.map((r) => r.id)).toEqual([1, 2, 3, 4, 5, 8, 6, 7, 9]);
-    expect(groups()).toEqual([["missed", 0], ["deadlines", 2], ["needsYou", 5], ["plans", 6], ["reminders", 8]]);
+    // the seventh panel round: what's today's first, people before what's due later
+    expect(rows.map((r) => r.id)).toEqual([1, 2, 4, 5, 7, 8, 6, 3, 9]);
+    expect(groups()).toEqual([["missed", 0], ["today", 2], ["needsYou", 5], ["soon", 6], ["reminders", 8]]);
     expect(useToday.getState().comingUp).toBe(1);
-    // Plans, Reminders and Coming up aren't counted (the third panel round: a Plan isn't something you owe)
+    // a Plan's kind wherever it sits (today's parcel, Soon's flight), Reminders and Coming up aren't counted (the third
+    // panel round: a Plan isn't something you owe; the seventh: one rule, `todayCounted`)
     expect(useToday.getState().counted).toBe(6);
     // the menu's Done knows each row's task; a promise with no reference (an older backend) and a waiting row have none
     expect(useToday.getState().tasks.get(3)).toMatchObject({ kind: "dated", item: { id: 30, revision: 1, kind: "pay" } });
     expect(useToday.getState().tasks.has(2)).toBe(false);
     expect(useToday.getState().tasks.has(8)).toBe(false);
+    flattenToday(list({ today: [dated(7, "delivery", "Your parcel arrives", 12)], soon: [dated(6, "event", "Flight to Madrid", 13, { timed: true, h: 7, m: 40 })] }), []);
+    expect(useToday.getState().counted).toBe(0);
   });
 
   it("each kind's line: the task alone where the date says when, and when in words for a screen reader", () => {
@@ -249,11 +252,9 @@ describe("plan 204: Missed, Deadlines, Needs you, Plans, Reminders and Coming up
   it("after the panel: any timed item says its time; a promise of yours says when it's due; Coming up's promise its day", () => {
     const rows = flattenToday(
       list({
-        deadlines: [dated(1, "pay", "Wire payroll", 12, { timed: true, h: 13 }), dated(2, "pay", "Pay the rent", 13, { timed: true, h: 9, m: 30 })],
-        needsYou: [
-          { thread: thread(3), why: { kind: "promise", text: "send the agenda", dueAt: at(12, 18), promise: { id: 31, revision: 2, dated: true } } } as never,
-          { thread: thread(4), why: { kind: "promise", text: "call back", dueAt: at(12, 18), promise: { id: 41, revision: 0, dated: false } } } as never,
-        ],
+        today: [dated(1, "pay", "Wire payroll", 12, { timed: true, h: 13 }), { thread: thread(3), why: { kind: "promise", text: "send the agenda", dueAt: at(12, 18), promise: { id: 31, revision: 2, dated: true } } } as never],
+        needsYou: [{ thread: thread(4), why: { kind: "promise", text: "call back", dueAt: at(12, 18), promise: { id: 41, revision: 0, dated: false } } } as never],
+        soon: [dated(2, "pay", "Pay the rent", 13, { timed: true, h: 9, m: 30 })],
         // an older backend's promise in Coming up names no `dated`: there it can only be a dated one
         comingUp: [{ thread: thread(5), why: { kind: "promise", text: "send the deck", dueAt: at(17), promise: { id: 51, revision: 0 } } } as never],
       }),
@@ -284,7 +285,7 @@ describe("plan 204: Missed, Deadlines, Needs you, Plans, Reminders and Coming up
     expect(tasks.get(6)).toMatchObject({ when: "Tomorrow" });
     expect(laterWindow(tasks.get(6)!)).toEqual({ before: at(13, 7, 40), limit: "starts" });
     expect(laterWindow(tasks.get(7)!)).toEqual({ before: new Date(2026, 10, 13).getTime(), limit: "ends" });
-    flattenToday(list({ deadlines: [dated(1, "pay", "Wire payroll", 12, { timed: true, h: 13 })], needsYou: [{ thread: thread(3), why: { kind: "promise", text: "send the agenda", dueAt: at(12, 18), promise: { id: 31, revision: 2, dated: true } } } as never] }), []);
+    flattenToday(list({ today: [dated(1, "pay", "Wire payroll", 12, { timed: true, h: 13 }), { thread: thread(3), why: { kind: "promise", text: "send the agenda", dueAt: at(12, 18), promise: { id: 31, revision: 2, dated: true } } } as never] }), []);
     expect(useToday.getState().tasks.get(1)).toMatchObject({ when: "1:00 PM" });
     // a promise row acts on the promise it shows, exactly
     expect(useToday.getState().tasks.get(3)).toEqual({ kind: "promise", id: 31, revision: 2, when: "Today", due: "Due today", dated: true, text: "send the agenda" });
@@ -293,7 +294,7 @@ describe("plan 204: Missed, Deadlines, Needs you, Plans, Reminders and Coming up
   it("the fourth panel round: a promise's row is its person's, the one it shows now; one with no day says none", () => {
     const promise = (id: number, revision: number, personName: string | null, personEmail: string | null, dated = true) =>
       ({ thread: thread(3), why: { kind: "promise", text: "send the agenda", dueAt: at(12, 18), personName, personEmail, promise: { id, revision, dated } } }) as never;
-    flattenToday(list({ deadlines: [promise(31, 0, "Elena Ruiz", "elena@acme.test")] }), []);
+    flattenToday(list({ today: [promise(31, 0, "Elena Ruiz", "elena@acme.test")] }), []);
     expect(useToday.getState().tasks.get(3)).toMatchObject({ when: "Today", person: { name: "Elena Ruiz", email: "elena@acme.test" } });
     expect(useToday.getState().tasks.get(3)).not.toHaveProperty("noDay");
     // Done on it, and the conversation's other promise is the row's: its person, not the first one's
@@ -306,14 +307,14 @@ describe("plan 204: Missed, Deadlines, Needs you, Plans, Reminders and Coming up
 
   it("the fifth panel round (change 6): a row's task says its conversation's next item; what it acts on stays its own", () => {
     const board = { kind: "event" as const, text: "Board meeting", dueDay: day(17), dueAt: at(17, 9), timed: true, dated: true };
-    flattenToday(list({ deadlines: [{ ...dated(3, "respond" as never, "Send Jess your draft", 13), also: board } as never, dated(4, "pay", "Pay the rent", 12)] }), []);
+    flattenToday(list({ today: [dated(4, "pay", "Pay the rent", 12)], soon: [{ ...dated(3, "respond" as never, "Send Jess your draft", 13), also: board } as never] }), []);
     const { tasks } = useToday.getState();
     expect(tasks.get(3)).toMatchObject({ kind: "dated", item: { id: 30 }, when: "Tomorrow", also: "Also Tue 9:00 AM · Board meeting" });
     expect(tasks.get(4)).not.toHaveProperty("also");
   });
 
   it("further days: a weekday within six, else the date", () => {
-    flattenToday(list({ deadlines: [dated(1, "pay", "Pay the water bill", 17)], plans: [dated(2, "event", "Dinner at Lúa", 16)], comingUp: [] }), []);
+    flattenToday(list({ soon: [dated(2, "event", "Dinner at Lúa", 16), dated(1, "pay", "Pay the water bill", 17)], comingUp: [] }), []);
     const due = (id: number) => useToday.getState().tasks.get(id)?.due;
     expect(due(1)).toBe("Due Tuesday");
     expect(due(2)).toBe("Monday");
@@ -325,26 +326,26 @@ describe("plan 204: Missed, Deadlines, Needs you, Plans, Reminders and Coming up
   it("Coming up's rows only while it's open: last, under its own heading", () => {
     useToday.setState({ comingUpOpen: true });
     const rows = flattenToday(full(), []);
-    expect(rows.map((r) => r.id)).toEqual([1, 2, 3, 4, 5, 8, 6, 7, 9, 10]);
+    expect(rows.map((r) => r.id)).toEqual([1, 2, 4, 5, 7, 8, 6, 3, 9, 10]);
     expect(groups().at(-1)).toEqual(["comingUp", 9]);
     expect(useToday.getState().counted).toBe(6);
   });
 
   it("a held row keeps its group's place in any group; a group it was the last of keeps its heading", () => {
     const before = flattenToday(full(), []);
-    // Pay the rent left on its own (a later mail settled it) while it was open: held where it was, in Deadlines
+    // Pay the rent left on its own (a later mail settled it) while it was open: held where it was, first in Today
     const next = full();
-    next.sections.find((s) => s.kind === "deadlines")!.items.splice(1, 1);
+    next.sections.find((s) => s.kind === "today")!.items.splice(0, 1);
     next.held = [thread(4)];
-    expect(flattenToday(next, before).map((r) => r.id)).toEqual([1, 2, 3, 4, 5, 8, 6, 7, 9]);
-    expect(groups()).toEqual([["missed", 0], ["deadlines", 2], ["needsYou", 5], ["plans", 6], ["reminders", 8]]);
-    // Plans' both rows gone, one of them held: Plans' heading stays above it, before Reminders
+    expect(flattenToday(next, before).map((r) => r.id)).toEqual([1, 2, 4, 5, 7, 8, 6, 3, 9]);
+    expect(groups()).toEqual([["missed", 0], ["today", 2], ["needsYou", 5], ["soon", 6], ["reminders", 8]]);
+    // Soon's both rows gone, one of them held: Soon's heading stays above it, before Reminders
     const after = flattenToday(full(), []);
     const gone = full();
-    gone.sections.find((s) => s.kind === "plans")!.items = [];
+    gone.sections.find((s) => s.kind === "soon")!.items = [];
     gone.held = [thread(6)];
-    expect(flattenToday(gone, after).map((r) => r.id)).toEqual([1, 2, 3, 4, 5, 8, 6, 9]);
-    expect(groups()).toEqual([["missed", 0], ["deadlines", 2], ["needsYou", 5], ["plans", 6], ["reminders", 7]]);
+    expect(flattenToday(gone, after).map((r) => r.id)).toEqual([1, 2, 4, 5, 7, 8, 6, 9]);
+    expect(groups()).toEqual([["missed", 0], ["today", 2], ["needsYou", 5], ["soon", 6], ["reminders", 7]]);
   });
 
   it("Coming up's open or closed is remembered, and storage that refuses changes nothing else", async () => {

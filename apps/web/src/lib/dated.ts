@@ -1,4 +1,4 @@
-import { alertUntil, askEnd, datedGroup, datedPlace, dayEnd, defaultRemindAt, laterBefore, localDay, planEnd, remindPresets, undatedAlert, type DatedKind, type DatedRow, type RemindPreset, type TodayAlso, type TodayWhy } from "@terno/core";
+import { alertUntil, askEnd, datedGroup, datedGroupAt, dayEnd, defaultRemindAt, laterBefore, localDay, planEnd, remindPresets, undatedAlert, type DatedKind, type DatedRow, type RemindPreset, type TodayAlso, type TodayWhy } from "@terno/core";
 import { getLocale, t } from "@terno/i18n";
 import { useEffect, useState } from "react";
 import { usd } from "~/lib/ai";
@@ -85,15 +85,15 @@ export const datedLine = (o: DatedFacts, missed: boolean, now = Date.now()): str
 const conversationEnd = (r: DatedRow): number => (datedGroup(r.kind) === "plans" ? planEnd(r) : r.kind === "ask" ? askEnd(r) : undatedAlert(r) ? alertUntil(r) : dayEnd(r.dueDay));
 
 /**
- * The conversation's line for an item, by Today's rule (`datedPlace`): still to act on, shown in Today or not yet (too far
- * ahead, or put off with Later); null once over (a Plan ended, an ask past its window, an alert past its week, a day
- * Missed has let go of).
+ * The conversation's line for an item, by Today's rule (`datedGroupAt`, the group its row would be in): still to act on,
+ * shown in Today or not yet (too far ahead, or put off with Later); null once over (a Plan ended, an ask past its window,
+ * an alert past its week, a day Missed has let go of). Its words are the item's own whichever group it's in.
  */
 export function conversationItem(r: DatedRow, now: number): { missed: boolean } | null {
   if (r.state !== "open") return null;
-  const place = datedPlace(r, now);
-  if (place === "missed") return { missed: true };
-  if (place !== "hidden") return { missed: false };
+  const group = datedGroupAt(r, now);
+  if (group === "missed") return { missed: true };
+  if (group !== null) return { missed: false };
   return now < conversationEnd(r) ? { missed: false } : null;
 }
 

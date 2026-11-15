@@ -16,15 +16,13 @@ import {
   nextPrepareAt,
   prepareTimeToday,
   TODAY_GROUP_ORDER,
-  datedPlace,
+  datedGroupAt,
   nextTodayChange,
-  promisePlace,
+  promiseGroupAt,
   promiseOver,
   promiseDeferred,
   dayKeyOf,
-  TODAY_COUNTED,
-  type DatedPlace,
-  type PromisePlace,
+  todayCounted,
   type DatedRow,
   type TodayAlso,
   type TodayGroupKind,
@@ -67,7 +65,24 @@ type DayOrder = Pick<DatedRow, "dueDay" | "dueAt" | "timed">;
 
 /** After the panel: a group's items by their day, then the timed ones by time, then the untimed ("Due today 1:00 PM" first). */
 const byDay = (a: DayOrder, b: DayOrder): number =>
-  a.dueDay.localeCompare(b.dueDay) || (a.timed === b.timed ? a.dueAt - b.dueAt : a.timed ? -1 : 1);
+  // YYYY-MM-DD keys compare as text; `localeCompare` cost more than the rest of a sort at the bound
+  (a.dueDay < b.dueDay ? -1 : a.dueDay > b.dueDay ? 1 : 0) || (a.timed === b.timed ? a.dueAt - b.dueAt : a.timed ? -1 : 1);
+
+/**
+ * The seventh panel round: Today's items, the timed first by their time, then the untimed (a promise's moment is its day's)
+ * as they came due; an item still on from last night (a Plan at 23:00) is among the timed, first.
+ */
+const byTime = (a: { at: DayOrder }, b: { at: DayOrder }): number => (a.at.timed === b.at.timed ? a.at.dueAt - b.at.dueAt : a.at.timed ? -1 : 1);
+
+/** Needs you's place in the groups: an ask's row takes your promise only from here or before (the seventh panel round). */
+const NEEDS_YOU_AT = TODAY_GROUP_ORDER.indexOf("needsYou");
+
+/** A dated item or a promise of yours, ranked in its group before `dedupe` picks each conversation's row. */
+interface Ranked {
+  threadId: number;
+  at: DayOrder;
+  why: TodayWhy;
+}
 
 /** Each thread once, the first group that claims it (§1). */
 const dedupe = (placed: readonly Placed[]): Placed[] => {
@@ -579,16 +594,15 @@ export class TodayService {
   /**
    * Plan 204 revision 10: where each thread sits now, once, by `TODAY_GROUP_ORDER`. One calculation for the list and the
    * sidebar's count, before any thread is read: what's in Spam or Trash is left out by the caller, and comes back with it.
+   * The seventh panel round (revision 1): every dated item and promise that shows is ranked by its group (by when, not by
+   * kind) and its order there, and each conversation's row is its first (`dedupe`), that exact item.
    */
   private async places(now: number, settings: AppSettings, o: { count?: boolean } = {}): Promise<Placed[]> {
     const { store } = this.b;
     const placed: Placed[] = [];
     const items = settings.dated?.enabled ? await this.datedRows() : [];
-    // a thread's strongest place, and in it its soonest item
-    const best = new Map<number, { place: DatedPlace; row: DatedRow }>();
-    const rank: Record<DatedPlace, number> = { missed: 0, deadlines: 1, plans: 2, needsYou: 3, comingUp: 4, hidden: 5 };
-    // the fifth panel round (revision 9): what each conversation has that would show, before `best` and `dedupe` keep one;
-    // the count says none of it, so it gathers none
+    // the fifth panel round (revision 9): what each conversation has that would show, before `dedupe` keeps one; the count
+    // says none of it, so it gathers none
     const collect = !o.count;
     const candidates = new Map<number, AlsoCandidate[]>();
     const candidate = (threadId: number, c: AlsoCandidate) => {
@@ -596,66 +610,86 @@ export class TodayService {
       if (list) list.push(c);
       else candidates.set(threadId, [c]);
     };
-    for (const row of items) {
-      const place = datedPlace(row, now);
-      if (place === "hidden") continue;
-      if (collect && !putOff(row, now)) candidate(row.threadId, { key: `d:${row.id}`, kind: row.kind, text: row.text, dueDay: row.dueDay, dueAt: row.dueAt, timed: row.timed, dated: row.dated });
-      const was = best.get(row.threadId);
-      if (!was || rank[place] < rank[was.place] || (rank[place] === rank[was.place] && byDay(row, was.row) < 0)) best.set(row.threadId, { place, row });
-    }
+    const ranked: Record<"missed" | "today" | "soon" | "comingUp", Ranked[]> = { missed: [], today: [], soon: [], comingUp: [] };
+    const asks: DatedRow[] = [];
     const datedWhy = (row: DatedRow, missed: boolean): TodayWhy => ({ kind: "dated", text: row.text, dueAt: row.dueAt, ...(missed ? { missed } : {}), item: { id: row.id, revision: row.revision, kind: row.kind, dueDay: row.dueDay, timed: row.timed, dated: row.dated } });
-    const ofPlace = (place: DatedPlace) => [...best.values()].filter((b) => b.place === place).map((b) => ({ threadId: b.row.threadId, at: b.row as DayOrder, why: datedWhy(b.row, place === "missed") }));
+    const today = dayKeyOf(now);
+    for (const row of items) {
+      const group = datedGroupAt(row, now, today);
+      if (group === null) continue;
+      if (collect && !putOff(row, now)) candidate(row.threadId, { key: `d:${row.id}`, kind: row.kind, text: row.text, dueDay: row.dueDay, dueAt: row.dueAt, timed: row.timed, dated: row.dated });
+      // Coming up is never counted, nor before what's waiting
+      if (o.count && group === "comingUp") continue;
+      if (group === "needsYou") asks.push(row);
+      else ranked[group].push({ threadId: row.threadId, at: row, why: datedWhy(row, group === "missed") });
+    }
     const active = settings.followups?.enabled ? await store.followups.active() : [];
     // after the panel: the row carries the promise it shows, what D, Done and Not a task act on
     // the fourth panel round (revision 9): who it's to, so a promise's row names and pictures them, not you (the last sender)
     const promiseWhy = (r: FollowupRow, missed = false): TodayWhy => ({ kind: "promise", text: r.text, dueAt: r.dueAt, personName: r.personName, personEmail: r.personEmail, sentAt: r.sentAt, ...(missed ? { missed } : {}), promise: { id: r.id, revision: r.revision, dated: r.dated } });
-    // the third panel round (revision 5): your promises by their day, beside the dated items: Missed, Deadlines (due today),
-    // Coming up; the fourth (revision 8): one due with no day is Needs you's
+    // the third panel round (revision 5): your promises by their day, beside the dated items; the fourth (revision 8): one
+    // due with no day is Needs you's. A promise's moment is its day's (v9 says a time in its words alone): never timed here
     const promises = active.filter((r) => r.kind === "promise");
-    for (const r of collect ? promises : []) {
-      // a promise's moment is its day's (v9 says a time in its words alone): it's never timed here
-      if (promisePlace(r, now) !== "hidden" && !putOff(r, now)) candidate(r.threadId, { key: `p:${r.id}`, kind: "promise", text: r.text, dueDay: dayKeyOf(r.dueAt), dueAt: r.dueAt, timed: false, dated: r.dated });
+    const owedNow: FollowupRow[] = [];
+    for (const r of promises) {
+      const group = promiseGroupAt(r, now, today);
+      if (group === null) continue;
+      if (collect && !putOff(r, now)) candidate(r.threadId, { key: `p:${r.id}`, kind: "promise", text: r.text, dueDay: dayKeyOf(r.dueAt), dueAt: r.dueAt, timed: false, dated: r.dated });
+      if (o.count && group === "comingUp") continue;
+      if (group === "needsYou") owedNow.push(r);
+      else ranked[group].push({ threadId: r.threadId, at: { dueDay: dayKeyOf(r.dueAt), dueAt: r.dueAt, timed: false }, why: promiseWhy(r, group === "missed") });
     }
-    const promisesIn = (place: PromisePlace) => promises.filter((r) => promisePlace(r, now) === place).map((r) => ({ threadId: r.threadId, at: { dueDay: dayKeyOf(r.dueAt), dueAt: r.dueAt, timed: false }, why: promiseWhy(r, place === "missed") }));
-    // Missed: the most recently due first
-    for (const m of [...ofPlace("missed"), ...promisesIn("missed")].sort((a, b) => b.at.dueAt - a.at.dueAt)) placed.push({ group: "missed", threadId: m.threadId, why: m.why });
-    for (const d of [...ofPlace("deadlines"), ...promisesIn("deadlines")].sort((a, b) => byDay(a.at, b.at))) placed.push({ group: "deadlines", threadId: d.threadId, why: d.why });
-    for (const p of ofPlace("plans").sort((a, b) => byDay(a.at, b.at))) placed.push({ group: "plans", threadId: p.threadId, why: p.why });
     // the third panel round (revision 4): a conversation with an open promise of yours shows that promise, the one due
     // soonest, carried so Done, Not a task and Later act on exactly it; one put off with Later (the fifth panel round) is
-    // none's until it's back, and a conversation whose only open promise it is isn't waiting meanwhile (the stores' rule)
+    // none's until it's back, and a conversation whose only open promise it is isn't waiting meanwhile (the stores' rule).
+    // The seventh (revision 1): an ask's row takes it only from the same group or an earlier one (one with no day is Needs
+    // you's whenever it shows), so a person's question isn't put under next week's promise. The count needs none of it:
+    // the row is Needs you's and counted either way
     const owed = new Map<number, FollowupRow>();
-    for (const r of promises) {
+    const owedAsk = new Map<number, FollowupRow>();
+    const soonest = (map: Map<number, FollowupRow>, r: FollowupRow) => {
+      const was = map.get(r.threadId);
+      if (!was || r.dueAt < was.dueAt || (r.dueAt === was.dueAt && r.id < was.id)) map.set(r.threadId, r);
+    };
+    for (const r of collect ? promises : []) {
       if (promiseOver(r, now) || promiseDeferred(r, now)) continue;
-      const was = owed.get(r.threadId);
-      if (!was || r.dueAt < was.dueAt || (r.dueAt === was.dueAt && r.id < was.id)) owed.set(r.threadId, r);
+      soonest(owed, r);
+      const group = r.dated ? promiseGroupAt(r, now, today) : "needsYou";
+      if (group !== null && TODAY_GROUP_ORDER.indexOf(group) <= NEEDS_YOU_AT) soonest(owedAsk, r);
     }
+    // Missed: the most recently due first; Today: the timed by time, then the rest; Soon and Coming up by day
+    for (const m of ranked.missed.sort((a, b) => b.at.dueAt - a.at.dueAt)) placed.push({ group: "missed", threadId: m.threadId, why: m.why });
+    for (const d of ranked.today.sort(byTime)) placed.push({ group: "today", threadId: d.threadId, why: d.why });
     // Needs you: people waiting on an answer. A person's ask first, newest first, before what's waiting (so it's the
     // row's line, and counted), unless you'd promised them something there (Codex code review: "could you send that
     // report?" after you said you would is about your promise); then your promises that are due and name no day (the
     // fourth panel round, revision 8), the longest due first. The sixth panel round (change 4): no nudges, what you wait
     // on from others (Follow-ups and the Inbox's top keep them), here or in the count; their conversation keeps an ask, a
     // promise or a reminder it has
-    const asks = [...best.values()].filter((b) => b.place === "needsYou").sort((x, y) => y.row.arrivedAt - x.row.arrivedAt || y.row.id - x.row.id);
-    for (const b of asks) {
-      const promise = owed.get(b.row.threadId);
-      placed.push({ group: "needsYou", threadId: b.row.threadId, why: promise ? promiseWhy(promise) : datedWhy(b.row, false) });
+    for (const ask of asks.sort((x, y) => y.arrivedAt - x.arrivedAt || y.id - x.id)) {
+      const promise = owedAsk.get(ask.threadId);
+      placed.push({ group: "needsYou", threadId: ask.threadId, why: promise ? promiseWhy(promise) : datedWhy(ask, false) });
     }
-    for (const p of promisesIn("needsYou").sort((a, b) => a.at.dueAt - b.at.dueAt)) placed.push({ group: "needsYou", threadId: p.threadId, why: p.why });
-    // the count reads none of what follows: what's waiting is its own indexed count there, and Reminders and Coming up
-    // come after it, so they never take a waiting thread from it
-    if (o.count) return dedupe(placed);
-    // one bounded read of what's waiting (revision 12): `needsYou` over the newest `NEEDS_WALK`
+    for (const r of owedNow.sort((a, b) => a.dueAt - b.dueAt)) placed.push({ group: "needsYou", threadId: r.threadId, why: promiseWhy(r) });
+    const soon = ranked.soon.sort((a, b) => byDay(a.at, b.at)).map((s): Placed => ({ group: "soon", threadId: s.threadId, why: s.why }));
+    // the count reads none of what's waiting (its own indexed count there, the stores' `countWith`), nor Reminders and
+    // Coming up, which never take a waiting thread from it
+    if (o.count) return dedupe([...placed, ...soon]);
+    // one bounded read of what's waiting (revision 12): `needsYou` over the newest `NEEDS_WALK`. A conversation with a
+    // task of its own in Soon is that task (plan 204 §1: a bill's thread waiting on a reply is the bill), as the count has it
+    const soonThreads = new Set(soon.map((s) => s.threadId));
     for (const w of await store.today.waitingPage({ now, after: null, limit: NEEDS_WALK })) {
+      if (soonThreads.has(w.id)) continue;
       const promise = owed.get(w.id);
       placed.push({ group: "needsYou", threadId: w.id, why: promise ? promiseWhy(promise) : { kind: "waiting", wrote: w.hasSent }, waiting: true });
     }
+    placed.push(...soon);
     const endOfDay = new Date(now);
     endOfDay.setHours(23, 59, 59, 999);
     const reminders = (await this.b.reminders.refresh()).reminders.filter((r) => r.dueAt <= endOfDay.getTime()).sort((a, b) => a.dueAt - b.dueAt);
     for (const r of reminders) placed.push({ group: "reminders", threadId: r.threadId, why: { kind: "reminder", dueAt: r.dueAt } });
     // Coming up: dated items, and (after the panel) your dated promises due in the next two weeks, soonest first
-    for (const c of [...ofPlace("comingUp"), ...promisesIn("comingUp")].sort((a, b) => byDay(a.at, b.at))) placed.push({ group: "comingUp", threadId: c.threadId, why: c.why });
+    for (const c of ranked.comingUp.sort((a, b) => byDay(a.at, b.at))) placed.push({ group: "comingUp", threadId: c.threadId, why: c.why });
     return withAlso(dedupe(placed), candidates);
   }
 
@@ -805,10 +839,10 @@ export class TodayService {
   }
 
   /**
-   * The sidebar's number: Missed, Deadlines and Needs you, each thread once (revision 10; the third panel round: not
-   * Plans). What's waiting is plan 145's indexed count, less what's placed in a group that isn't counted (a waiting
-   * thread with a Plan is the Plan, revision 3); the rest are the placed threads that are neither in Trash or Spam nor
-   * already waiting. Null during plan 17's backfill.
+   * The sidebar's number: the rows `todayCounted` counts, each thread once (revision 10; the seventh panel round: Missed,
+   * Today, Needs you and Soon, a row whose own item is a Plan's kind not). What's waiting is plan 145's indexed count, less
+   * what's placed as a row that isn't counted (a waiting thread with a Plan is the Plan, revision 3); the rest are the
+   * placed threads that are neither in Trash or Spam nor already waiting. Null during plan 17's backfill.
    */
   async withCount(counts: Counts): Promise<Counts> {
     const { store } = this.b;
@@ -818,8 +852,8 @@ export class TodayService {
     const settings = await readSettings(store);
     const now = this.b.now();
     const placed = await this.places(now, settings, { count: true });
-    const counted = placed.filter((p) => TODAY_COUNTED.has(p.group)).map((p) => p.threadId);
-    const uncounted = placed.filter((p) => !TODAY_COUNTED.has(p.group)).map((p) => p.threadId);
+    const counted = placed.filter((p) => todayCounted(p.group, p.why.item?.kind)).map((p) => p.threadId);
+    const uncounted = placed.filter((p) => !todayCounted(p.group, p.why.item?.kind)).map((p) => p.threadId);
     const { needs, extra } = await store.today.countWith(counted, now, uncounted);
     return { ...counts, today: needs + extra };
   }
@@ -874,7 +908,7 @@ export class TodayService {
     if (now - prepareTimeToday(prepareAt, now) > NOTIFY_WITHIN_MS) return;
     if ((await store.settings.get<string>(NOTIFIED_KEY, "")) === day) return;
     const list = await this.list([]);
-    const count = list.sections.filter((x) => TODAY_COUNTED.has(x.kind)).reduce((n, x) => n + x.items.length, 0);
+    const count = list.sections.reduce((n, x) => n + x.items.filter((i) => todayCounted(x.kind, i.why.item?.kind)).length, 0);
     if (!count) return;
     await store.settings.set(NOTIFIED_KEY, day);
     // how many, and never who or what
