@@ -99,7 +99,7 @@ describe("reading dates in mail you got (plan 204)", () => {
   });
 
   it("is frozen at its version: a change to the words is a new version", () => {
-    expect(DATED_PROMPT_VERSION).toBe(11);
+    expect(DATED_PROMPT_VERSION).toBe(12);
     expect(readDatesTask(input()).system).toMatchSnapshot();
   });
 
@@ -113,7 +113,8 @@ describe("reading dates in mail you got (plan 204)", () => {
     expect(en).toContain("This is about listings only: what a group's mail requires of the reader by a day is theirs (above)");
     // Margaret's meeting named by her son; her prescription and library hold
     expect(en).toContain('or a meeting of the reader\'s that a person\'s mail names ("your meeting with Ms. Greer is Tuesday the 17th")');
-    expect(en).toContain('A prescription, a library hold or a recalled book is never a "delivery"');
+    // (v12: "ready for pickup" named, after Haiku took a pharmacy's pickup notice as a delivery again, 7 in 10)
+    expect(en).toContain('A prescription or a library hold "ready for pickup", or a recalled book, is never a "delivery"');
     expect(en).toContain('"Pick up the lisinopril prescription", "Return Statistical Rethinking to the library"');
     // Jordan's and Diego's "before Monday", Priya's "by then", Jonah's soft day, a card's month
     expect(en).toContain('"Before" a day is the day before it, in any language: "before Monday" and "antes del lunes" in a mail of Wednesday the 11th are Sunday the 15th');
@@ -128,6 +129,25 @@ describe("reading dates in mail you got (plan 204)", () => {
     expect(es).toContain('"Llamar a la abuela esta semana"');
     expect(es).toContain('"Firmar el MSA de Kestrel-Brightwood"');
     expect(es).toContain('"Recoger la receta de lisinopril"');
+  });
+
+  it("prompt v12 (plan 210's second iteration): a bill on AutoPay isn't a 'pay'; an invitation says it's one; a meeting's start is its time; a zone with the reader's clock is theirs", () => {
+    const en = readDatesTask(input()).system;
+    // round 10: "Pay" on an AutoPay bill
+    expect(en).toContain('A bill the mail says is paid automatically ("AutoPay is on", "no action needed", "will be charged automatically to your card", "se cargará automáticamente") is never a "pay": the reader has nothing to pay. At most it\'s a "renew" saying what happens, never "Pay …": "Brightline bill charged automatically ($84.20)".');
+    // an invitation that read as an accepted appointment; without the listing's reminder Haiku took a PTA newsletter's
+    // calendar as events (4 in 26 readings of dated-147, none in 20 with it)
+    expect(en).toContain('A calendar\'s invitation to the reader that they haven\'t answered ("has invited you", "Invitation:", "Going? Yes / No / Maybe") isn\'t an appointment they\'ve accepted: its text says it\'s an invitation: "Invited: Advent Wreath Committee". (An event a newsletter lists is still no item, below.)');
+    // a closing thanks already asks nothing (v11's "only thanks" line; the eval's cases): words for it made Haiku take a
+    // "just so you know" as an ask and a prescription as a delivery again
+    expect(en).toContain('A person\'s mail that only thanks, tells or says what they\'ll do: nothing in it is asked of the reader.');
+    expect(en).not.toContain("closes the conversation");
+    // the eval: an invitation's "7pm – 8:30pm" read as a window (no time), and its own zone named in its words (two clocks)
+    expect(en).toContain('A meeting\'s start and end ("7pm – 8:30pm", "10:00 to 11:00") is no window: its time is when it starts.');
+    expect(en).toContain('A zone the mail names by its region or its abbreviation ("Eastern Time", "Central European Time", "CET") that keeps the reader\'s clock on that day is the reader\'s own.');
+    const es = readDatesTask(input({ language: "es" })).system;
+    expect(es).toContain('"Factura de Brightline con cargo automático ($84.20)"');
+    expect(es).toContain('"Invitación: Comité de la Corona de Adviento"');
   });
 
   it("prompt v11: a deadline quoted as 'before' a day the model gave as that day is the day before (en, es); never an event's, a timed one's, or one already earlier", () => {
@@ -384,8 +404,8 @@ describe("reading dates in mail you got (plan 204)", () => {
   });
 
   it("a small window holds the whole conversation with the server: a bad answer and its repair still fit", async () => {
-    // v11's words (an ask, a Plan's window, an alert's words and deadline, a move's time and words, cold outreach, offers, a failed payment, the open items' days, a time in another zone, a newsletter's listing, a group's required act, "before" a day, soft days, a replaced promise) need a little over 5,800 (v10 4,700, v9 4,200, v8 3,700), past the 5,500 the app warns below for the filter: a window between them reads only the mail's first 200 tokens. A window that holds them with a bad answer and its repair
-    const window = 5900;
+    // v12's words (an ask, a Plan's window, an alert's words and deadline, a move's time and words, cold outreach, offers, a failed payment, the open items' days, a time in another zone, a newsletter's listing, a group's required act, "before" a day, soft days, a replaced promise, AutoPay, invitations, a meeting's start, a zone with the reader's clock) need a little over 6,100 (v11 5,800, v10 4,700, v9 4,200, v8 3,700), past the 5,500 the app warns below for the filter: a window between them reads only the mail's first 200 tokens. A window that holds them with a bad answer and its repair
+    const window = 6200;
     const budget = datedBudget(window);
     const fitted = fitDates(input({ text: "word ".repeat(1200), outputTokens: budget.outputTokens }), budget.promptChars);
     const sizes: number[] = [];

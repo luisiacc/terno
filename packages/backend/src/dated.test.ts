@@ -5,12 +5,12 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createAi, promptText, type AiOptions, type Completion, type CompletionRequest, type ProviderConfig } from "@terno/ai";
+import { createAi, DATED_PROMPT_VERSION, promptText, type AiOptions, type Completion, type CompletionRequest, type ProviderConfig } from "@terno/ai";
 import { todayCounted, type DatedRow } from "@terno/core";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { demoRegistry } from "@terno/mail";
 import { msg, threadOf } from "@terno/store/conformance";
-import type { IncomingMessage } from "@terno/store";
+import { DATED_NOTHING_ASKED_SINCE, type IncomingMessage } from "@terno/store";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 import { checkDates } from "./dated";
@@ -179,6 +179,16 @@ describe("the local checks (plan 204 §3)", () => {
       const drinks = { ...ask, text: "Tell Maya about drinks", quote: "Drinks when you're back from Chicago" };
       expect(checkDates({ items: [drinks], settled: [] }, fyi).rows).toEqual([]);
       expect(checkDates({ items: [drinks], settled: [] }, { ...fyi, text: "Drinks when you're back from Chicago?" }).rows).toHaveLength(1);
+    });
+    it("plan 210 (iteration 2): a sentence that only informs ('just so you know', 'FYI', 'para que sepas') is no ask; one that also asks still is", () => {
+      const told = (quote: string) => checkDates({ items: [{ ...ask, text: "Answer Priya about the caterer", quote }], settled: [] }, { ...from(true, "to"), text: `Oren, could you send me the venue contract? ${quote}\n\nThanks both,\nPriya` }).rows;
+      expect(told("Lucía, just so you know, the caterer is confirmed.")).toEqual([]);
+      expect(told("FYI the caterer is confirmed")).toEqual([]);
+      expect(told("Para que sepas, el catering está confirmado.")).toEqual([]);
+      expect(told("Lucía, just so you know, the caterer is confirmed. Can you tell them about the vegan option?")).toHaveLength(1);
+      expect(told("FYI the caterer is confirmed, please send them the headcount")).toHaveLength(1);
+      expect(told("Para que sepas, el catering está confirmado. ¿Puedes mandarles el número de invitados?")).toHaveLength(1);
+      expect(told("The caterer is confirmed, can you send them the headcount")).toHaveLength(1);
     });
     describe("never one addressed by name to another of the mail's recipients (the seventh panel round)", () => {
       const asks = (text: string, quote: string, reader: { name: string; addressed: "to" | "cc" | "none" }, others: string[], due: string | null = null) =>
@@ -1135,6 +1145,45 @@ describe("Today's groups (§1)", () => {
     expect(await backend.store.dated.get(row.id)).toMatchObject({ state: "dismissed", closedReason: "expired" });
   });
 
+  it("plan 210 (iteration 2): a waiting conversation is Needs you's only when the reader found something asked in their latest message; one it hasn't read keeps plan 145's rule", async () => {
+    const { client, model, receive, read, raw, clock } = await setup();
+    // the worker's readings are the ones Needs you trusts
+    expect(DATED_PROMPT_VERSION).toBeGreaterThanOrEqual(DATED_NOTHING_ASKED_SINCE);
+    const marisa = { name: "Marisa Gil", email: "marisa@people.test" };
+    model.answer = (req) => (promptText(req.messages[0]!.content).includes("the address") ? reply([{ kind: "ask", text: "Send Jo the address", quote: "could you send me the address", due: null, time: null }]) : reply());
+    let changes = 0;
+    client.on("todayChanged", () => changes++);
+    const thanks = await receive({ from: marisa, subject: "Re: la cena", bodyText: "¡Gracias a ti! Aquí tienes tu casa, cuando quieras.", providerThreadId: "marisa" });
+    const asks = await receive({ from: { name: "Jo Bennett", email: "jo@people.test" }, subject: "Re: photos", bodyText: "Thanks so much, that's perfect! Could you send me the address for Saturday?", providerThreadId: "jo" });
+    const unread = await receive({ from: { name: "Sam Ortega", email: "sam@people.test" }, subject: "Re: the lease", bodyText: "Thanks so much, that's perfect!", providerThreadId: "sam" }, false);
+    await read();
+    // each reading tells Today, nothing found too (it can take a conversation out): Marisa's and Jo's
+    await expect.poll(() => changes).toBeGreaterThanOrEqual(2);
+    const waiting = (...ids: number[]) => raw.run(`UPDATE threads SET waiting_since = ?, has_sent = 1 WHERE id IN (${ids.map(() => "?").join(", ")})`, clock.now - 60_000, ...ids);
+    waiting(thanks, asks, unread);
+    const shown = async () => {
+      const list = await client.call("today.list", { heldIds: [] });
+      return { ids: new Set(list.sections.flatMap((x) => x.items.map((i) => i.thread.id))), sidebar: (await client.call("counts.get", {})).today };
+    };
+    expect(await shown()).toEqual({ ids: new Set([asks, unread]), sidebar: 2 });
+    // newer mail from Marisa nobody has read: plan 145's rule again
+    clock.now += 60_000;
+    await receive({ from: marisa, subject: "Re: la cena", bodyText: "Por cierto, ¿te paso la receta?", providerThreadId: "marisa" }, false);
+    waiting(thanks);
+    expect(await shown()).toEqual({ ids: new Set([thanks, asks, unread]), sidebar: 3 });
+  });
+
+  it("plan 210 (iteration 2): Clear AI data forgets what was read with nothing asked: plan 145's rule again", async () => {
+    const { client, receive, read, raw, clock } = await setup();
+    const thanks = await receive({ from: { name: "Marisa Gil", email: "marisa@people.test" }, subject: "Re: la cena", bodyText: "Aquí tienes tu casa, cuando quieras.", providerThreadId: "marisa" });
+    await read();
+    raw.run("UPDATE threads SET waiting_since = ?, has_sent = 1 WHERE id = ?", clock.now - 60_000, thanks);
+    expect((await client.call("counts.get", {})).today).toBe(0);
+    await client.call("ai.summaries.clear", {});
+    expect((await client.call("today.list", { heldIds: [] })).sections.flatMap((x) => x.items.map((i) => i.thread.id))).toEqual([thanks]);
+    expect((await client.call("counts.get", {})).today).toBe(1);
+  });
+
   it("the clock re-arms for the next change, and turning it off empties the dated groups", async () => {
     const { backend, client, model, receive, read } = await setup();
     model.answer = () => reply([bill]);
@@ -1316,9 +1365,10 @@ describe("the fifth panel round: a promise's own Later", () => {
   it("plan 210 (Codex code review): waiting conversations showing your promises go by the promises' days, as your own promises do, not by their newest mail", async () => {
     const { client, receive, read, raw, clock } = await setup();
     await client.call("settings.update", { followups: { enabled: true } });
-    const elena = await receive({ from: { name: "Elena", email: "elena@acme.test" }, subject: "Re: the deck", bodyText: "Looking forward to it.", providerThreadId: "elena" });
+    // plan 210 (iteration 2): mail the dated reader didn't read (not live) keeps plan 145's waiting rule
+    const elena = await receive({ from: { name: "Elena", email: "elena@acme.test" }, subject: "Re: the deck", bodyText: "Looking forward to it.", providerThreadId: "elena" }, false);
     clock.now += 60_000;
-    const ned = await receive({ from: { name: "Ned", email: "ned@people.test" }, subject: "Re: the plan", bodyText: "Looking forward to it.", providerThreadId: "ned" });
+    const ned = await receive({ from: { name: "Ned", email: "ned@people.test" }, subject: "Re: the plan", bodyText: "Looking forward to it.", providerThreadId: "ned" }, false);
     await read();
     raw.run("UPDATE threads SET waiting_since = ?, has_sent = 1 WHERE id IN (?, ?)", clock.now - 60_000, elena, ned);
     // both past their week's lead: each conversation is waiting, showing its promise; Ned wrote last, Elena's is due first
@@ -1333,7 +1383,8 @@ describe("the fifth panel round: a promise's own Later", () => {
     await client.call("settings.update", { followups: { enabled: true } });
     model.answer = (req) => (promptText(req.messages[0]!.content).includes("budget") ? reply([{ kind: "ask", text: "Answer Elena about the budget", quote: "what's the budget", due: null, time: null }]) : reply());
     const elena = await receive({ from: { name: "Elena", email: "elena@acme.test" }, subject: "Re: the deck", bodyText: "Thanks! Separately, what's the budget?", providerThreadId: "elena" });
-    const ned = await receive({ from: { name: "Ned", email: "ned@people.test" }, subject: "Re: the plan", bodyText: "Looking forward to it.", providerThreadId: "ned" });
+    // plan 210 (iteration 2): Ned's, which the dated reader didn't read (not live), keeps plan 145's waiting rule
+    const ned = await receive({ from: { name: "Ned", email: "ned@people.test" }, subject: "Re: the plan", bodyText: "Looking forward to it.", providerThreadId: "ned" }, false);
     await read();
     raw.run("UPDATE threads SET waiting_since = ?, has_sent = 1 WHERE id IN (?, ?)", clock.now - 60_000, elena, ned);
     // past their week's lead: the conversations are Needs you's, Ned's showing his promise; Elena's promise is Coming up's,
@@ -1627,12 +1678,16 @@ describe("the seventh panel round: the groups go by when, not by kind (change 1;
     const got = async (key: string, from = power) => receive({ from, subject: `Re ${key}`, bodyText: key === "the slides" ? "Hi, could you check the slides?" : `About the ${key}: ${items[key]!.quote}.`, providerThreadId: key });
     const t: Record<string, number> = {};
     for (const key of Object.keys(items)) if (key !== "card locked") t[key] = await got(key, key === "the slides" ? { name: "Mariana Paz", email: "mariana@studio.test" } : power);
-    t["waiting"] = await receive({ from: { name: "Ned", email: "ned@people.test" }, subject: "Lunch?", bodyText: "Are you free for lunch next week?", providerThreadId: "ned" });
+    // plan 210 (iteration 2): not read by the dated reader (not live), so plan 145's waiting rule
+    t["waiting"] = await receive({ from: { name: "Ned", email: "ned@people.test" }, subject: "Lunch?", bodyText: "Are you free for lunch next week?", providerThreadId: "ned" }, false);
     await read();
     // the alert came two days ago: within its week
     clock.now = at(2026, 11, 16, 9);
     t["card locked"] = await got("card locked");
     await read();
+    // plan 210 (iteration 2): the renewal's reading asked nothing, which takes its conversation out of Needs you; read before
+    // that rule (a prompt before v12), it's waiting by plan 145's
+    raw.run("UPDATE dated_nothing_asked SET prompt_version = 11 WHERE message_id IN (SELECT id FROM messages WHERE thread_id = ?)", t["insurance December"]);
     for (const key of ["flight tonight", "dinner Friday", "invoice Saturday", "insurance December", "waiting"]) raw.run("UPDATE threads SET waiting_since = ?, has_sent = 1 WHERE id = ?", clock.now - 60_000, t[key]);
     clock.now = at(2026, 11, 18, 10);
     const r = await today(client);
@@ -1669,7 +1724,8 @@ describe("the seventh panel round: the groups go by when, not by kind (change 1;
     };
     const t: Record<string, number> = {};
     for (const key of Object.keys(items)) t[key] = await receive({ subject: `Re ${key}`, bodyText: `About ${key}: ${items[key]!.map((i) => i.quote).join(", ")}.`, providerThreadId: key });
-    t["waiting"] = await receive({ from: { name: "Ned", email: "ned@people.test" }, subject: "Lunch?", bodyText: "Are you free for lunch next week?", providerThreadId: "ned" });
+    // plan 210 (iteration 2): not read by the dated reader (not live), so plan 145's waiting rule
+    t["waiting"] = await receive({ from: { name: "Ned", email: "ned@people.test" }, subject: "Lunch?", bodyText: "Are you free for lunch next week?", providerThreadId: "ned" }, false);
     await read();
     // all of them waiting on your answer: each conversation's own item claims it first
     for (const key of Object.keys(t)) raw.run("UPDATE threads SET waiting_since = ?, has_sent = 1 WHERE id = ?", clock.now - 60_000, t[key]);
