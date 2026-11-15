@@ -73,7 +73,9 @@ function whenOf(item: Pick<TodayItem, "thread" | "why">, now: number): { text: s
     const short = dueShort(timed ? at : day, timed, now);
     return { text: time ? `${short} ${time}` : short, tone: datedDay(day, now).near === "today" ? "today" : "later" };
   };
-  const came = { text: t("whatMatters.since", { day: listDate(thread.lastDate, now) }), tone: "none" as const };
+  // mid-phrase, "Yesterday" is a word like any other: "since yesterday", "desde ayer"
+  const day = listDate(thread.lastDate, now);
+  const came = { text: t("whatMatters.since", { day: day === t("date.yesterday") ? day.toLocaleLowerCase(getLocale()) : day }), tone: "none" as const };
   if (why.kind === "reminder" && why.dueAt !== undefined) return { text: dueShort(why.dueAt, true, now), tone: "none" };
   if (why.kind === "dated" && why.item) {
     const it = why.item;

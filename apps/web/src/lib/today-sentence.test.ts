@@ -81,6 +81,9 @@ describe("todayWhen: the briefing's column, in the list's words, and how pressin
     expect(todayWhen(dated("alert", "Card frozen", 10, { dated: false }), NOW)).toEqual({ text: "since Nov 1", tone: "none" });
     expect(todayWhen(dated("ask", "Answer Owen", 13, { dated: false }), NOW)).toEqual({ text: "since Nov 1", tone: "none" });
     expect(todayWhen(item({ kind: "waiting" }), NOW)).toEqual({ text: "since Nov 1", tone: "none" });
+    // after the screenshots: mid-phrase, yesterday in lower case
+    const yesterday = { ...item({ kind: "waiting" }), thread: { ...thread, lastDate: at(12, 15) } };
+    expect(todayWhen(yesterday, NOW).text).toBe("since yesterday");
   });
 
   it("a promise: its day, Missed, or none when it named none", () => {
