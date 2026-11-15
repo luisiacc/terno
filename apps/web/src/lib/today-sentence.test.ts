@@ -7,7 +7,7 @@ import { setLocale } from "@terno/i18n";
 import en from "@terno/i18n/locales/en";
 import es from "@terno/i18n/locales/es";
 import { afterEach, describe, expect, it } from "vitest";
-import { groupLine, todaySentence, todayWhen } from "./today-sentence";
+import { groupLine, historySentence, historyWhen, todaySentence, todayWhen } from "./today-sentence";
 
 // Friday 13 November 2026, 9:30 in the machine's own time (the panel's morning)
 const NOW = new Date(2026, 10, 13, 9, 30).getTime();
@@ -93,3 +93,29 @@ describe("Spanish", () => {
     expect(groupLine("missed", 2)).toBe("2 cosas que se te pasaron");
   });
 });
+
+describe("the history's lines (plan 210)", () => {
+  const line = (kind: "pay" | "alert" | "promise", outcome: "done" | "dismissed" | "settled" | "over", at: number, text = "Pay $187.42 for the electricity bill") => ({ thread, kind, outcome, text, key: { at, src: kind === "promise" ? (1 as const) : (0 as const), id: 1 } });
+
+  it("says the item as the open part did, and in the column what happened and when", () => {
+    expect(historySentence(line("pay", "done", at(13, 8)))).toBe("Pay $187.42 for the electricity bill.");
+    expect(historySentence(line("alert", "settled", at(12), "Payment declined"))).toBe("Payment declined, the email says.");
+    expect(historySentence(line("promise", "dismissed", at(10), "Send Jess the deck"))).toBe("You said you'd send Jess the deck.");
+    expect(historySentence(line("pay", "done", at(10), " "))).toBe("Your statement is ready.");
+    expect(historyWhen(line("pay", "done", at(13, 8)), NOW)).toBe("Done today");
+    expect(historyWhen(line("pay", "dismissed", at(12, 9)), NOW)).toBe("Not a task yesterday");
+    expect(historyWhen(line("promise", "dismissed", at(11)), NOW)).toBe("Not a promise Wed");
+    expect(historyWhen(line("pay", "settled", at(2)), NOW)).toBe("Settled Nov 2");
+    expect(historyWhen(line("pay", "over", at(9)), NOW)).toBe("Over Mon");
+    expect(groupLine("history", 40)).toBe("Earlier");
+  });
+
+  it("in Spanish", () => {
+    setLocale("es", es);
+    expect(historyWhen(line("pay", "done", at(13, 8)), NOW)).toBe("Hecho hoy");
+    expect(historyWhen(line("pay", "over", at(11)), NOW)).toBe("Pasó el mié");
+    expect(historySentence(line("promise", "done", at(11), "enviar a Valeria los ajustes"))).toBe("Dijiste que ibas a enviar a Valeria los ajustes.");
+    expect(groupLine("history", 3)).toBe("Antes");
+  });
+});
+

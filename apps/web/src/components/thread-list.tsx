@@ -103,7 +103,7 @@ function TopHeading({ kind, top, name, count }: { kind: TopSectionKind; top: num
 }
 
 /** Each of Today's sections has a heading of its own, in the sections' style. */
-const SECTION_NAME = { missed: "today.missed", today: "today.today", needsYou: "today.needsYou", soon: "today.soon", reminders: "today.reminders", comingUp: "today.comingUp" } as const satisfies Record<TodayGroup["kind"], string>;
+const SECTION_NAME = { missed: "today.missed", today: "today.today", needsYou: "today.needsYou", soon: "today.soon", reminders: "today.reminders", comingUp: "today.comingUp", history: "today.history" } as const satisfies Record<TodayGroup["kind"], string>;
 
 /** Plan 162 (Codex review): a section's name, said to assistive tech by its first row (the drawn heading is aria-hidden) */
 function sectionName(kind: TodayGroup["kind"]): string;
