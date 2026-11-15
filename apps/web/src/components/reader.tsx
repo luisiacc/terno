@@ -1112,7 +1112,9 @@ function ReaderContent() {
   const selectedId = useApp((s) => s.selectedId);
   const page = useAppearance((s) => s.layout === "list");
   // plan 204, the UI experiment: Split's pane beside Today's feed is the feed's (its toolbar closes it)
-  const feedPane = !page && feedLook(useApp((s) => s.today), useWmLook((s) => s.look));
+  const inToday = useApp((s) => s.today);
+  const look = useWmLook((s) => s.look);
+  const feedPane = !page && feedLook(inToday, look);
   // the dock sits over the conversation's foot in either layout (plan 158: Split's too), so its end (the reply bar) scrolls clear of it
   // plan 115: and the pinned draft sits over its foot in either layout: the last message scrolls clear of the taller one
   const dock = bottomInset(useSnack((s) => s.inset), usePinnedInset());
