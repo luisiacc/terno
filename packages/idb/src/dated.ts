@@ -1,5 +1,5 @@
-import { addressKey, ANSWERED_KINDS, DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, senderIsPerson, THREAD_SCOPED_KINDS, type DatedRow } from "@terno/core";
-import { DATED_MARK_MS, DATED_SCAN_MARK_MS, datedTab, NEW_MAIL_MS, readerIn, recipientList, type ClosedAt, type DatedFinish, type DatedFinishOutcome, type DatedMark, type DatedSnapshot, type DatedSource } from "@terno/store";
+import { addressKey, ANSWERED_KINDS, DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, senderIsPerson, THREAD_SCOPED_KINDS, waitingCutoff, type DatedRow } from "@terno/core";
+import { DATED_MARK_MS, DATED_SCAN_MARK_MS, datedTab, NEW_MAIL_MS, readerIn, readNothingAsked, recipientList, type ClosedAt, type DatedFinish, type DatedFinishOutcome, type DatedMark, type DatedSnapshot, type DatedSource } from "@terno/store";
 import { received, receivedOwn } from "./ai-summaries";
 import { T, type Ctx, type R } from "./mail";
 
@@ -33,6 +33,8 @@ export function markDatedMail(c: Ctx, messageIds: readonly number[], now: number
 export function mergeDated(c: Ctx, into: number, from: number): void {
   const marks = T(c, "ai_dated_mail");
   for (const m of marks.by("thread", from)) marks.update(m, { thread_id: into });
+  const read = T(c, "dated_nothing_asked");
+  for (const r of read.by("thread", from)) read.update(r, { thread_id: into });
   const rows = T(c, "dated_items");
   for (const r of rows.by("fk_thread_id", from)) rows.update(r, { thread_id: into, revision: r.revision + 1 });
 }
@@ -203,6 +205,10 @@ export function finishDated(c: Ctx, w: DatedFinish): DatedFinishOutcome {
     // its new words, if it gives some, in the same write (the fifth panel round)
     if (r && r.state === "open" && reaches(r, src)) rows.update(r, { due_day: m.dueDay, due_at: m.dueAt, timed: m.timed ? 1 : 0, dated: 1, act_at: m.actAt, ...(m.text ? { text: m.text } : {}) });
   }
+  // plan 210 (iteration 2): as SQL's, in the same command
+  const read = T(c, "dated_nothing_asked");
+  if (readNothingAsked(w)) read.put({ message_id: w.messageId, thread_id: src.threadId, arrived_at: src.date, prompt_version: w.promptVersion });
+  else read.delete(w.messageId);
   marks.deleteRow(mark);
   return "written";
 }
@@ -257,7 +263,11 @@ export function pruneDated(c: Ctx, now: number): number {
   const rows = T(c, "dated_items");
   const old = [...rows.by("state", "done"), ...rows.by("state", "dismissed"), ...rows.by("state", "settled")].filter((r) => (r.closed_at ?? r.created_at) < now - DATED_CLOSED_KEEP_MS);
   for (const r of old) rows.deleteRow(r);
-  return old.length;
+  // past the waiting window, no conversation it's the latest of is waiting
+  const read = T(c, "dated_nothing_asked");
+  const past = [...read.all()].filter((r) => r.arrived_at < waitingCutoff(now));
+  for (const r of past) read.deleteRow(r);
+  return old.length + past.length;
 }
 
 export function clearDated(c: Ctx): void {
@@ -265,4 +275,6 @@ export function clearDated(c: Ctx): void {
   for (const r of rows.all()) rows.deleteRow(r);
   const marks = T(c, "ai_dated_mail");
   for (const r of marks.all()) marks.deleteRow(r);
+  const read = T(c, "dated_nothing_asked");
+  for (const r of read.all()) read.deleteRow(r);
 }

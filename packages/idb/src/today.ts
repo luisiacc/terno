@@ -1,5 +1,5 @@
 import { isAcknowledgment, looksLikeAcknowledgment, saysNoReplyNeeded, waitingCutoff, type DigestItem } from "@terno/core";
-import { NEEDS_WALK, needsYou, summaryAsksNothing, type DigestFact, type DigestStored, type WaitingRow } from "@terno/store";
+import { DATED_NOTHING_ASKED_SINCE, NEEDS_WALK, needsYou, summaryAsksNothing, type DigestFact, type DigestStored, type WaitingRow } from "@terno/store";
 import { inboxHiddenTest, T, type Ctx, type R } from "./mail";
 
 /** Plan 145 on IndexedDB, like SQL's (packages/db/src/today.ts). */
@@ -47,15 +47,19 @@ function needsRows(c: Ctx, walk: NeedsWalk): WaitingRow[] {
 
 const shown = (c: Ctx, threadId: number): R[] => T(c, "messages").by("fk_thread_id", threadId).filter((m) => !m.is_draft && !m.is_spam && !m.is_trash);
 
-/** As SQL's (packages/db/src/today.ts): not handled, not an acknowledgment, and no current summary that gives the reader nothing to do. */
+/** As SQL's (packages/db/src/today.ts): not read with nothing asked, not handled, not an acknowledgment, and no current summary that gives the reader nothing to do. */
 function stillWaiting(c: Ctx, threadId: number, ack: number | undefined, now: number): boolean {
   // the fourth panel read: they said no answer is needed ("No action needed!"), in its first words
   if (saysNoReplyNeeded(T(c, "threads").get(threadId)?.snippet as string | null | undefined)) return false;
+  // their latest message, found once and only when a rule below needs it
+  let latest: R | null | undefined;
+  const last = () => (latest !== undefined ? latest : (latest = shown(c, threadId).filter((m) => !m.is_sent).sort((a, b) => b.date - a.date || b.id - a.id)[0] ?? null));
+  // plan 210 (iteration 2, the owner: "only when something is asked"): the dated reader read it with nothing asked of the
+  // reader, as SQL's
+  const read = T(c, "dated_nothing_asked").by("thread", threadId).filter((r) => r.prompt_version >= DATED_NOTHING_ASKED_SINCE);
+  if (read.length && read.some((r) => r.message_id === last()?.id)) return false;
   const items = T(c, "dated_items").by("fk_thread_id", threadId).filter((d) => d.state === "done" || d.state === "dismissed" || d.state === "settled" || (d.deferred_until ?? 0) > now);
-  if (items.length) {
-    const last = shown(c, threadId).filter((m) => !m.is_sent).sort((a, b) => b.date - a.date || b.id - a.id)[0];
-    if (last && items.some((d) => d.message_id === last.id)) return false;
-  }
+  if (items.length && items.some((d) => d.message_id === last()?.id)) return false;
   // Codex code review (round 4): a promise of yours there closed since their latest message, with none still open, is the
   // row you handled
   const promises = T(c, "followups").by("fk_thread_id", threadId).filter((f) => f.kind === "promise");
@@ -64,8 +68,8 @@ function stillWaiting(c: Ctx, threadId: number, ack: number | undefined, now: nu
   if (open.length && open.every((f) => (f.deferred_until ?? 0) > now)) return false;
   const kept = promises.filter((f) => (f.state === "done" || f.state === "dismissed") && f.closed_at != null);
   if (kept.length && !open.length) {
-    const last = shown(c, threadId).filter((m) => !m.is_sent).sort((a, b) => b.date - a.date || b.id - a.id)[0];
-    if (last && kept.some((f) => (f.closed_at as number) >= last.date)) return false;
+    const m = last();
+    if (m && kept.some((f) => (f.closed_at as number) >= m.date)) return false;
   }
   if (ack !== undefined) {
     const body = c.body(ack);

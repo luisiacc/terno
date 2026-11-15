@@ -12,7 +12,7 @@ import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { IdbMailStore } from "@terno/idb";
 import { demoRegistry } from "@terno/mail";
 import { generateDataset } from "@terno/mock-data";
-import { NEEDS_WALK, type MailStore } from "@terno/store";
+import { DATED_NOTHING_ASKED_SINCE, NEEDS_WALK, type MailStore } from "@terno/store";
 import { msg, seedDatedItems } from "@terno/store/conformance";
 import { afterAll, describe, expect, it } from "vitest";
 import { copyMailbox, LARGE_MAILBOX } from "../../db/src/test/perf-mailbox";
@@ -39,9 +39,22 @@ async function needsAtBound(store: MailStore, client: RpcClient, accountId: numb
   const text = "Thanks! Here are the notes from this morning's call, with the numbers we went through and the plan for next week.";
   const out = Array.from({ length: NEEDS_WALK }, (_, i) => msg({ accountId, date: at(i) - 500, providerMsgId: `needs-${i}-out`, providerThreadId: `needs-${i}`, from: me, to: [who(i)], isSent: true, isRead: true, listId: null, subject: `Notes ${i}` }));
   const back = Array.from({ length: NEEDS_WALK }, (_, i) => msg({ accountId, date: at(i), providerMsgId: `needs-${i}-in`, providerThreadId: `needs-${i}`, from: who(i), to: [me], isRead: false, listId: null, subject: `Re: Notes ${i}`, inReplyTo: `needs-${i}-out`, snippet: text, bodyText: text }));
-  for (const batch of [out, back]) for (let i = 0; i < batch.length; i += 500) await store.sync.ingest(batch.slice(i, i + 500), { applyFilters: false, now, classifier: null });
+  // plan 210 (iteration 2): an earlier message of theirs the dated reader read with nothing asked, so each conversation
+  // reads what was read and its latest message, and stays (the latest isn't the one read)
+  const earlier = Array.from({ length: NEEDS_WALK }, (_, i) => msg({ accountId, date: at(i) - 250, providerMsgId: `needs-${i}-in-0`, providerThreadId: `needs-${i}`, from: who(i), to: [me], isRead: true, listId: null, subject: `Re: Notes ${i}`, inReplyTo: `needs-${i}-out`, bodyText: "Got it." }));
+  const marked: number[] = [];
+  for (const batch of [out, earlier, back]) {
+    for (let i = 0; i < batch.length; i += 500) {
+      const r = await store.sync.ingest(batch.slice(i, i + 500), { applyFilters: false, now, classifier: null, ...(batch === earlier ? { datedMail: { since: null } } : {}) });
+      if (batch === earlier) marked.push(...r.inserted);
+    }
+  }
   // one snapshot: threadOf reads the whole mailbox each time
   const threads = new Map((await store.debug.snapshot()).messages.map((m) => [m.providerMsgId, m.threadId]));
+  const read = new Set(marked);
+  const marks = (await store.dated.marks.page(null, 10 * NEEDS_WALK)).filter((m) => read.has(m.messageId));
+  expect(marks).toHaveLength(NEEDS_WALK);
+  for (const m of marks) expect(await store.dated.finish({ messageId: m.messageId, threadId: m.threadId, fromScan: false, rows: [], settled: [], now, model: "m", provider: "p", promptVersion: DATED_NOTHING_ASKED_SINCE, clearGeneration: store.dated.clearGeneration() })).toBe("written");
   const body = JSON.stringify({ summary: "Notes from the call.", items: [{ kind: "fact", text: "The plan for next week is in the notes." }] });
   let written = 0;
   for (let i = 0; i < NEEDS_WALK; i++) {

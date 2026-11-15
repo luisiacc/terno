@@ -1,5 +1,5 @@
 import { isAcknowledgment, looksLikeAcknowledgment, saysNoReplyNeeded, waitingCutoff, type DigestItem } from "@terno/core";
-import { NEEDS_WALK, needsYou, summaryAsksNothing, type DigestFact, type DigestStored, type WaitingRow } from "@terno/store";
+import { DATED_NOTHING_ASKED_SINCE, NEEDS_WALK, needsYou, summaryAsksNothing, type DigestFact, type DigestStored, type WaitingRow } from "@terno/store";
 import { inboxHiding, shownSql } from "./queries";
 import type { Db } from "./sqlite";
 
@@ -28,19 +28,34 @@ function needsRows(db: Db, now: number): WaitingRow[] {
 }
 
 /**
- * Not handled, not an acknowledgment, and no current summary that gives the reader nothing to do or answer (see
+ * Not read by the dated reader with nothing asked (plan 210), not handled, not an acknowledgment, and no current summary that gives the reader nothing to do or answer (see
  * packages/store/src/today.ts). Handled (Codex code review): a dated item read from their latest message is done, not a
  * task, settled or put off till later; it's read from the item, so the item's Undo brings the conversation back as it was.
  */
 function stillWaiting(db: Db, threadId: number, snippet: string | null, now: number): boolean {
   // the fourth panel read: they said no answer is needed ("No action needed!"), in its first words
   if (saysNoReplyNeeded(snippet)) return false;
-  // the thread's items first (most have none): its latest message is read only when one is handled
+  const ack = looksLikeAcknowledgment(snippet);
+  // their latest message, looked up once and only when a rule below needs it; its text in the same statement when the
+  // snippet starts like a thanks
+  let latest: { id: number; date: number; text: string | null } | null | undefined;
+  const last = () =>
+    latest !== undefined
+      ? latest
+      : (latest =
+          db.get<{ id: number; date: number; text: string | null }>(
+            `SELECT m.id, m.date, CASE WHEN ? THEN (SELECT coalesce(b.body_text, b.body_preview) FROM message_bodies b WHERE b.message_id = m.id) END AS text
+             FROM messages m INDEXED BY messages_thread WHERE m.thread_id = ? AND m.is_sent = 0 AND m.is_draft = 0 AND m.is_spam = 0 AND m.is_trash = 0 ORDER BY m.date DESC, m.id DESC LIMIT 1`,
+            ack ? 1 : 0,
+            threadId,
+          ) ?? null);
+  // plan 210 (iteration 2, the owner: "only when something is asked"): the dated reader read their latest message and found
+  // nothing asked of the reader. Mail it hasn't read (off, older, still queued) keeps plan 145's rule; newer mail isn't the one read
+  const read = db.all<{ message_id: number }>("SELECT message_id FROM dated_nothing_asked INDEXED BY dated_nothing_asked_thread WHERE thread_id = ? AND prompt_version >= ?", threadId, DATED_NOTHING_ASKED_SINCE);
+  if (read.length && read.some((r) => r.message_id === last()?.id)) return false;
+  // the thread's items (most have none): a dated item read from their latest message, handled
   const handled = db.all<{ message_id: number }>("SELECT message_id FROM dated_items INDEXED BY dated_thread WHERE thread_id = ? AND (state IN ('done', 'dismissed', 'settled') OR deferred_until > ?)", threadId, now);
-  if (handled.length) {
-    const last = db.get<{ id: number }>("SELECT id FROM messages INDEXED BY messages_thread WHERE thread_id = ? AND is_sent = 0 AND is_draft = 0 AND is_spam = 0 AND is_trash = 0 ORDER BY date DESC, id DESC LIMIT 1", threadId);
-    if (last && handled.some((h) => h.message_id === last.id)) return false;
-  }
+  if (handled.length && handled.some((h) => h.message_id === last()?.id)) return false;
   // Codex code review (round 4): a promise of yours there closed (Done, Not a promise) since their latest message, with
   // none still open, is the row you handled; from the promises' states, so Undo brings the conversation back, and newer
   // mail from them too
@@ -51,17 +66,10 @@ function stillWaiting(db: Db, threadId: number, snippet: string | null, now: num
   // plan 204 (the fifth panel round): its only open promises put off with Later, it waits for them (Undo brings it back)
   if (kept && kept.deferred > 0 && kept.open === 0) return false;
   if (kept?.at != null && kept.open === 0) {
-    const last = db.get<{ date: number }>("SELECT date FROM messages INDEXED BY messages_thread WHERE thread_id = ? AND is_sent = 0 AND is_draft = 0 AND is_spam = 0 AND is_trash = 0 ORDER BY date DESC, id DESC LIMIT 1", threadId);
-    if (last && kept.at >= last.date) return false;
+    const m = last();
+    if (m && kept.at >= m.date) return false;
   }
-  if (looksLikeAcknowledgment(snippet)) {
-    const last = db.get<{ text: string | null }>(
-      `SELECT coalesce(b.body_text, b.body_preview) AS text FROM messages m INDEXED BY messages_thread LEFT JOIN message_bodies b ON b.message_id = m.id
-       WHERE m.thread_id = ? AND m.is_sent = 0 AND m.is_draft = 0 AND m.is_spam = 0 AND m.is_trash = 0 ORDER BY m.date DESC, m.id DESC LIMIT 1`,
-      threadId,
-    );
-    if (isAcknowledgment(last?.text)) return false;
-  }
+  if (ack && isAcknowledgment(last()?.text)) return false;
   const summary = db.get<{ state: string; prompt_version: number | null; body_json: string | null; generated_at: number | null }>("SELECT state, prompt_version, body_json, generated_at FROM ai_summaries WHERE thread_id = ?", threadId);
   if (!summaryAsksNothing(summary)) return true;
   // current: nothing the thread shows arrived after it was written
