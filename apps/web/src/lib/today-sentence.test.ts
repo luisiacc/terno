@@ -14,7 +14,7 @@ import { dayHeading } from "./when";
 const NOW = new Date(2026, 10, 13, 9, 30).getTime();
 const at = (d: number, h = 0, m = 0) => new Date(2026, 10, d, h, m).getTime();
 const thread = { id: 1, subject: "Your statement is ready", fromName: "Hill Country Power & Water", fromEmail: "ebill@example.com", snippet: "", lastDate: at(1, 5, 30) } as ThreadSummary;
-const item = (why: TodayWhy, more: Partial<TodayItem> = {}): TodayItem => ({ thread, why, ...more });
+const item = (why: TodayWhy, more: Partial<TodayItem> = {}): TodayItem => ({ id: "dated:1", thread, why, ...more });
 const dated = (kind: NonNullable<TodayWhy["item"]>["kind"], text: string, day: number, o: { missed?: boolean; timed?: { h: number; m: number }; dated?: boolean } = {}): TodayItem =>
   item({ kind: "dated", text, dueAt: o.timed ? at(day, o.timed.h, o.timed.m) : at(day, 9), missed: o.missed, item: { id: 1, revision: 0, kind, dueDay: `2026-11-${String(day).padStart(2, "0")}`, timed: !!o.timed, dated: o.dated ?? true } });
 const promise = (text: string, day?: number, missed = false): TodayItem => item({ kind: "promise", text, dueAt: day === undefined ? undefined : at(day, 9), missed, personName: "Marcus Feld", promise: { id: 2, revision: 0, dated: day !== undefined } });
@@ -142,3 +142,36 @@ describe("the history's lines (plan 210)", () => {
   });
 });
 
+
+describe("plan 210 (iteration 2): one time per row, a request shown early, a broken promise", () => {
+  const dueAt = (day: number, h: number, m = 0) => at(day, h, m);
+  it("the reader's time, and the mail's own in brackets only when its zone isn't the reader's", () => {
+    const rfp = item({ kind: "dated", text: "Submit the RFP response", dueAt: dueAt(16, 16), item: { id: 1, revision: 0, kind: "respond", dueDay: "2026-11-16", timed: true, dated: true, note: "5:00 PM ET" } });
+    expect(todayWhen(rfp, NOW)).toEqual({ text: "Mon 4:00 PM (5:00 PM ET)", tone: "later" });
+    expect(todaySentence(rfp)).toBe("Submit the RFP response.");
+    const local = item({ kind: "dated", text: "Standup", dueAt: dueAt(16, 16), item: { id: 1, revision: 0, kind: "respond", dueDay: "2026-11-16", timed: true, dated: true } });
+    expect(todayWhen(local, NOW).text).toBe("Mon 4:00 PM");
+    // a promise whose words state its time: the column says it, the sentence doesn't
+    const call = item({ kind: "promise", text: "call Marcus", dueAt: dueAt(16, 19), promise: { id: 2, revision: 0, dated: true, timed: true, note: "4:00 PM PT" } });
+    expect(todayWhen(call, NOW).text).toBe("Mon 7:00 PM (4:00 PM PT)");
+    expect(todaySentence(call)).toBe("You said you'd call Marcus.");
+  });
+
+  it("a person's request shown before its day says what it's by, quietly", () => {
+    const renewal = item({ kind: "dated", text: "Set up the renewal call", dueAt: at(30, 9), item: { id: 1, revision: 0, kind: "respond", dueDay: "2026-11-30", timed: false, dated: true, early: true } });
+    expect(todayWhen(renewal, NOW, "today")).toEqual({ text: "by Nov 30", tone: "none" });
+  });
+
+  it("a promise broken and given a new day keeps its first day, in Missed's weight, under the new one", () => {
+    const owen = item({ kind: "promise", text: "send the pen test summary", dueAt: at(16, 9), promise: { id: 2, revision: 0, dated: true, promisedAt: at(10, 9) } });
+    expect(todayWhen(owen, NOW, "day:2026-11-16")).toEqual({ text: "Mon · promised Tue", tone: "missed" });
+  });
+
+  it("in Spanish", () => {
+    setLocale("es", es);
+    const renewal = item({ kind: "dated", text: "x", dueAt: at(30, 9), item: { id: 1, revision: 0, kind: "respond", dueDay: "2026-11-30", timed: false, dated: true, early: true } });
+    expect(todayWhen(renewal, NOW, "today").text).toBe("para el 30 nov");
+    const owen = item({ kind: "promise", text: "x", dueAt: at(16, 9), promise: { id: 2, revision: 0, dated: true, promisedAt: at(10, 9) } });
+    expect(todayWhen(owen, NOW, "day:2026-11-16").text).toBe("lun · era para el mar");
+  });
+});

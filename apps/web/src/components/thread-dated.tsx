@@ -12,6 +12,7 @@ import { presetLabel, presetWhen } from "~/lib/reminders";
 import { actOnThreadItem } from "~/lib/today-task";
 import { client } from "~/rpc/connection";
 import { useApp } from "~/state/app";
+import { useFeedTarget } from "~/state/today";
 import { AI_CARD, AI_INSET, AI_TITLE } from "./ai-card";
 import { WhenForm } from "./when-fields";
 
@@ -90,36 +91,44 @@ export default function ThreadDated({ detail }: { detail: ThreadDetail }) {
   const threadId = detail.thread.id;
   const hidden = detail.thread.inTrash || detail.thread.inSpam;
   const [rows, setRows] = useState<readonly DatedRow[]>([]);
+  // plan 210 (iteration 2): the item the feed's open row is (its every member), highlighted, shown whatever the limit; a
+  // history line's closed item read too
+  const target = useFeedTarget(threadId);
+  const targetIds = target.filter((r) => r.source === "dated").map((r) => r.id);
+  const include = targetIds.length === 1 ? targetIds[0] : undefined;
   useEffect(() => {
     if (!on || hidden) return setRows([]);
     let live = true;
-    const read = () => void client.call("dated.ofThread", { threadId }).then((r) => live && setRows(r.rows), () => {});
+    const read = () => void client.call("dated.ofThread", { threadId, ...(include !== undefined ? { include } : {}) }).then((r) => live && setRows(r.rows), () => {});
     read();
     const off = client.on("todayChanged", read);
     return () => {
       live = false;
       off();
     };
-  }, [on, hidden, threadId]);
+  }, [on, hidden, threadId, include]);
   const now = Date.now();
-  const shown = rows
+  const targeted = (r: DatedRow) => targetIds.includes(r.id);
+  const open = rows
     .map((r) => ({ r, at: conversationItem(r, now) }))
     .filter((x): x is { r: DatedRow; at: { missed: boolean } } => x.at !== null)
-    .sort((a, b) => a.r.dueAt - b.r.dueAt)
-    .slice(0, SHOWN);
+    .sort((a, b) => a.r.dueAt - b.r.dueAt);
+  const closed = rows.filter((r) => r.state !== "open" && targeted(r)).map((r) => ({ r, at: null }));
+  const shown = [...open.filter((x, i) => i < SHOWN || targeted(x.r)), ...closed];
   if (!shown.length) return null;
   return (
     // the summary card's surface and inset (plan 181): a model's reading, not the sender's words
     <section aria-label={t("dated.section")} data-testid="thread-dated" className={cn(AI_CARD, AI_INSET, "mb-4")}>
       <ul>
         {shown.map(({ r, at }) => {
-          const line = datedLine(r, at.missed, now);
+          const line = at ? datedLine(r, at.missed, now) : datedText(r);
           return (
-            <li key={r.id} data-testid="thread-dated-item" data-kind={r.kind} className="flex min-h-11 items-center gap-3 text-sm">
-              <span data-testid="thread-dated-text" className={cn(AI_TITLE, "min-w-0 flex-1 wrap-anywhere tabular")}>{line}</span>
+            // plan 210 (iteration 2): the feed's open row's item, marked as the hover's fill marks a row
+            <li key={r.id} data-testid="thread-dated-item" data-kind={r.kind} data-target={targeted(r) || undefined} data-closed={at === null || undefined} className="-mx-2 flex min-h-11 items-center gap-3 rounded-md px-2 text-sm data-target:bg-row-hover">
+              <span data-testid="thread-dated-text" className={cn(AI_TITLE, "min-w-0 flex-1 wrap-anywhere tabular", at === null && "text-muted-foreground")}>{line}</span>
               {/* after the panel: Remove beside Done, quieter (Done is what's usually meant); the third panel round:
-                  Later between them, as quiet */}
-              <span className="flex shrink-0 items-center gap-1.5">
+                  Later between them, as quiet. A closed one (a history line opened) has none: it's done */}
+              {at !== null && <span className="flex shrink-0 items-center gap-1.5">
                 <Button variant="outline" size="sm" className="text-foreground" data-testid="thread-dated-done" aria-label={t("dated.doneItem", { text: datedText(r) })} onClick={() => void actOnThreadItem(threadId, r, "done")}>
                   {t("dated.done")}
                 </Button>
@@ -127,7 +136,7 @@ export default function ThreadDated({ detail }: { detail: ThreadDetail }) {
                 <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" data-testid="thread-dated-dismiss" aria-label={t("dated.removeItem", { text: datedText(r) })} onClick={() => void actOnThreadItem(threadId, r, "dismiss")}>
                   {t("dated.remove")}
                 </Button>
-              </span>
+              </span>}
             </li>
           );
         })}

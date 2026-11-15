@@ -1,10 +1,8 @@
 import { todayAvailable } from "~/lib/ai";
-import { addressKey, dayKeyOf, DIGEST_ROW_ID, inDayOrder, todayCounted, type DigestItem, type DigestRow, type HistoryKey, type TodayGroupKind, type TodayHistoryItem, type TodayItem, type TodayList, type TodayWhy, type ThreadSummary } from "@terno/core";
+import { addressKey, dayKeyOf, DIGEST_FEED_ROW, DIGEST_ROW_ID, inDayOrder, type DigestItem, type DigestRow, type FeedRowId, type HistoryKey, type ItemRef, type TodayCounts, type TodayGroupKind, type TodayHistoryItem, type TodayItem, type TodayList, type TodayWhy, type ThreadSummary } from "@terno/core";
 import { t } from "@terno/i18n";
 import { create } from "zustand";
-import { listDate } from "~/lib/format";
-import { alsoLine, datedLine, datedText, promiseLine, taskOf, type TodayTask } from "~/lib/dated";
-import { dueTimeLeft } from "~/lib/when";
+import { alsoLine, taskOf, type TodayTask } from "~/lib/dated";
 import { client } from "~/rpc/connection";
 import type { Undo } from "~/lib/snack";
 import { getApp, navigate, setApp, useApp } from "./app";
@@ -26,11 +24,27 @@ export const groupDay = (kind: FeedGroupKind): string | null => (kind.startsWith
 /** The headings' order: Missed, Today, the days in theirs, the history (as text: a day's key sorts as its day). */
 const rankOf = (kind: FeedGroupKind): string => (kind === "missed" ? "0" : kind === "today" ? "1" : kind === "history" ? "3" : `2${kind.slice(4)}`);
 
-export interface TodayGroup {
-  /** plan 166, after the owner's second look: Needs you is one group again ("they're really the same"); plan 204 adds Missed and Coming up; plan 210 the history, and groups by day */
-  kind: FeedGroupKind;
-  /** the row it begins at */
-  at: number;
+/**
+ * Plan 210 (iteration 2, the owner: "a row per item"): one of the feed's rows, by its own identity (`FeedRowId`: an item's,
+ * a waiting conversation's, a reminder's, the digest's), never its conversation's: two items of one conversation are two
+ * rows, each opened, walked by j/k, held and acted on apart. Its conversation is what opening it shows.
+ */
+export interface FeedRow {
+  id: FeedRowId;
+  /** the conversation it opens (the digest's row: `DIGEST_ROW_ID`) */
+  threadId: number;
+  /** its heading; none for the digest's */
+  group?: FeedGroupKind;
+  /** an open-part row: what the backend said of it */
+  entry?: TodayItem;
+  /** a history line */
+  line?: TodayHistoryItem;
+  /** what its Done, Remove, Later and D act on; none for a waiting row, a reminder, a history line or a held row */
+  task?: TodayTask;
+  /** one of Coming up's, under its day while Coming up is open: drawn quietly */
+  ahead?: boolean;
+  /** no longer the backend's (done, settled, moved) but kept where it was while it's open or checked: words only */
+  held?: boolean;
 }
 
 /**
@@ -60,33 +74,26 @@ export interface DigestDone {
 }
 
 interface TodayState {
-  groups: TodayGroup[];
-  /** plan 204: the threads the list's counted groups hold (the sidebar's count until its own arrives): no cap, so it's all of them */
-  counted: number;
+  /**
+   * plan 210 (iteration 2): the feed's rows in order (the open part, held rows where they were, the digest's, the history),
+   * each by its own id; the list keeps their conversations once each (`useList`), for what acts on conversations
+   */
+  rows: readonly FeedRow[];
+  /** plan 210 (iteration 2): the header's numbers ("6 today · 8 this week"), the backend's projection's */
+  counts: TodayCounts;
   /** plan 204: what Coming up holds, shown or not (never counted) */
   comingUp: number;
-  /** plan 210: Coming up's rows while it's open, under their days: drawn quietly */
-  ahead: ReadonlySet<number>;
   /** plan 204: Coming up open under the rest (closed by default; remembered on this machine) */
   comingUpOpen: boolean;
-  /**
-   * plan 204 (after the panel): the task each row stands for, a dated item or a promise of yours: what its Done, Not a
-   * task, Later and D act on, and what leads the row (its line first, its due day where the date is)
-   */
-  tasks: ReadonlyMap<number, TodayTask>;
-  /** plan 204, the UI experiment: each row's item as the backend said it (a promise's day known), what a feed's sentence is made from */
-  entries: ReadonlyMap<number, TodayItem>;
-  /** plan 210: the history's lines loaded so far, by thread (what each says, and its key) */
-  history: ReadonlyMap<number, TodayHistoryItem>;
-  /** each row's group, by thread (held rows keep theirs): the feed's headings follow the rows, whatever leaves */
-  kinds: ReadonlyMap<number, FeedGroupKind>;
   /** plan 204 (after the panel, fix 10): the row whose task Later's "Pick a date…" is choosing a moment for */
-  laterPick: { threadId: number; task: TodayTask; next?: number } | null;
+  laterPick: { rowId: FeedRowId; task: TodayTask; next?: FeedRowId } | null;
   /**
    * plan 210 (iteration 1): the feed item whose Later menu is open (its button, or b), with the task as it was when it
    * opened: a reload meanwhile can't move its presets to another item; `next`, where the keys go once it's acted on
    */
-  laterMenu: { threadId: number; task: TodayTask; next?: number } | null;
+  laterMenu: { rowId: FeedRowId; task: TodayTask; next?: FeedRowId } | null;
+  /** plan 210 (iteration 2): the row the right-click menu was opened on, whose task its Done, Remove and Later are */
+  menuRow: FeedRowId | null;
   digest: DigestRow | null;
   /** the conversation opened from the digest page: its Back returns there, and only it shows one (plan 161) */
   fromDigest: number | null;
@@ -110,13 +117,62 @@ function storedComingUp(): boolean {
   }
 }
 
-export const useToday = create<TodayState>(() => ({ groups: [], counted: 0, comingUp: 0, ahead: new Set(), comingUpOpen: storedComingUp(), tasks: new Map(), entries: new Map(), history: new Map(), kinds: new Map(), laterPick: null, laterMenu: null, digest: null, fromDigest: null, pick: null, movedTo: new Map(), notNewsletters: new Set() }));
+export const useToday = create<TodayState>(() => ({ rows: [], counts: { missed: 0, today: 0, thisWeek: 0 }, comingUp: 0, comingUpOpen: storedComingUp(), laterPick: null, laterMenu: null, menuRow: null, digest: null, fromDigest: null, pick: null, movedTo: new Map(), notNewsletters: new Set() }));
 
-/** Plan 204 (after the panel): a Today row's task, only while Today is what's shown (one Map read: other rows never re-render). */
-export function useTodayTask(threadId: number | null | undefined): TodayTask | undefined {
-  const task = useToday((s) => (threadId == null ? undefined : s.tasks.get(threadId)));
-  return useApp((s) => s.today) ? task : undefined;
+/**
+ * Plan 210 (iteration 2): which row the feed has open, and the one a conversation was put away from (Esc, the reader's
+ * Close, a second click), where j/k go on from. The app's `selectedId` stays the open conversation; this says which of its
+ * rows. `moves` counts the feed's own selections, so an Undo restores its row only when none came since.
+ */
+export const useFeedRow = create<{ opened: FeedRowId | null; cursor: FeedRowId | null; moves: number }>(() => ({ opened: null, cursor: null, moves: 0 }));
+
+/** The feed opens this row (its conversation is the app's to open), or none. */
+export function openFeedRow(id: FeedRowId | null): void {
+  useFeedRow.setState(({ moves }) => ({ opened: id, ...(id !== null ? { cursor: null } : {}), moves: moves + 1 }));
 }
+
+/** A row by its id, from the rows loaded. */
+export const feedRow = (id: FeedRowId | null | undefined): FeedRow | undefined => (id == null ? undefined : useToday.getState().rows.find((r) => r.id === id));
+
+/**
+ * The row of this conversation the feed means: the right-click menu's (`menuRow`), else the open one, else its first with
+ * a task. Plan 210 (iteration 2): what the menu's, the palette's and the reader's Done, Remove and Later act on.
+ */
+function pickRow(rows: readonly FeedRow[], threadId: number | null | undefined, prefer: readonly (FeedRowId | null)[]): FeedRow | undefined {
+  if (threadId == null) return undefined;
+  for (const id of prefer) {
+    const r = id === null ? undefined : rows.find((x) => x.id === id);
+    if (r?.threadId === threadId) return r;
+  }
+  return rows.find((r) => r.threadId === threadId && r.task);
+}
+
+export const rowOfThread = (threadId: number | null | undefined): FeedRow | undefined => pickRow(useToday.getState().rows, threadId, [useToday.getState().menuRow, useFeedRow.getState().opened]);
+
+/** Plan 204 (after the panel): a What matters row's task for a conversation, with its row, only while What matters is shown. */
+export function useTodayTask(threadId: number | null | undefined): { rowId: FeedRowId; task: TodayTask } | undefined {
+  const opened = useFeedRow((s) => s.opened);
+  const row = useToday((s) => pickRow(s.rows, threadId, [s.menuRow, opened]));
+  const today = useApp((s) => s.today);
+  return today && row?.task ? { rowId: row.id, task: row.task } : undefined;
+}
+
+/**
+ * Plan 210 (iteration 2): the items the feed's open row is, while it's this conversation's: what the reader's line
+ * highlights (a merged row's every member; a history line's closed item). Empty otherwise.
+ */
+export function useFeedTarget(threadId: number): readonly ItemRef[] {
+  const opened = useFeedRow((s) => s.opened);
+  const row = useToday((s) => (opened === null ? undefined : s.rows.find((r) => r.id === opened)));
+  const today = useApp((s) => s.today);
+  if (!today || row?.threadId !== threadId) return NO_TARGET;
+  if (row.line) return [row.line.item];
+  const members = row.entry?.why.members;
+  if (members) return members;
+  const task = row.task;
+  return task?.kind === "dated" ? [{ source: "dated", id: task.item.id }] : task?.kind === "promise" ? [{ source: "promise", id: task.id }] : NO_TARGET;
+}
+const NO_TARGET: readonly ItemRef[] = [];
 
 /** Plan 204: Coming up opens under the rest, or closes; the list is read again with it (held rows and the selection kept). */
 export function setComingUpOpen(open: boolean): void {
@@ -230,6 +286,18 @@ export function installToday(): void {
     if (getApp().today) void reloadList({ keepSelection: true });
   });
 
+  // plan 210 (iteration 2): the feed's open row is one of the open conversation's: another conversation opened by other
+  // means (the reader's arrows, a search, a link) opens its first row; none open, none
+  useApp.subscribe((s, prev) => {
+    if (s.selectedId === prev.selectedId) return;
+    const { opened } = useFeedRow.getState();
+    if (s.selectedId === null || s.selectedId === DIGEST_ROW_ID) {
+      if (opened !== null && !(s.selectedId === DIGEST_ROW_ID && opened === DIGEST_FEED_ROW)) useFeedRow.setState({ opened: s.selectedId === DIGEST_ROW_ID ? DIGEST_FEED_ROW : null });
+      return;
+    }
+    if (feedRow(opened)?.threadId === s.selectedId) return;
+    useFeedRow.setState(({ moves }) => ({ opened: useToday.getState().rows.find((r) => r.threadId === s.selectedId)?.id ?? null, moves: moves + 1 }));
+  });
   // no provider any more: no row, no list. The digest's data stays until Clear AI data.
   useApp.subscribe((s) => {
     // plan 147: a way back to the digest goes with it, and whatever brings Today back (a preview's Cancel) leaves again.
@@ -247,25 +315,6 @@ const inInbox = (digest: DigestRow): number => digest.liveIds.length + (digest.r
 /** What the digest's row says, and the header's way to it (plan 161). */
 export const digestLabel = (digest: DigestRow): string =>
   digest.state === "pending" ? t("today.digest.preparing") : digest.state === "failed" ? t("today.digest.failedShort") : digest.automated ? t("today.digest.automatedRow", { count: digest.liveIds.length }) : inInbox(digest) ? t("today.digest.row", { count: inInbox(digest) }) : t("today.digest.archivedRow", { count: Math.max(0, digest.items.length - (digest.readIds?.length ?? 0)) });
-
-const whyLine = (item: TodayList["sections"][number]["items"][number], why: TodayWhy, task: TodayTask | null): string => {
-  const { thread, summary } = item;
-  // after the second panel round: where the right column says when, the line is the task alone ("Pay $187.42 for the
-  // electricity bill", "You said: send the agenda"), so the amount fits; the conversation's line keeps the whole wording
-  const bare = task?.when != null;
-  // plan 204: "Due Friday · Pay the electricity bill", "Tomorrow 7:40 · Flight to Madrid", "Was due Tuesday · …"
-  if (why.kind === "dated") {
-    if (why.item && !bare) return datedLine({ ...why.item, dueAt: why.dueAt ?? 0, text: why.text ?? "" }, why.missed === true);
-    // the right column says the day; a timed one not due today keeps its time here: "7:40 AM · Flight to Madrid"
-    const time = why.item && why.dueAt != null ? dueTimeLeft(why.dueAt, why.item.timed) : null;
-    const text = why.text && why.item ? datedText({ kind: why.item.kind, text: why.text }) : why.text;
-    return time && text ? t("today.why.line", { when: time, text }) : (text ?? thread.snippet);
-  }
-  // after the panel: "Due today · You said: send the agenda", "Was due Tuesday · You said: …"
-  if (why.kind === "promise") return bare ? t("today.why.promise", { text: why.text ?? "" }) : promiseLine({ text: why.text ?? "", dueAt: why.dueAt, dated: why.promise?.dated ?? why.missed === true }, why.missed === true);
-  if (why.kind === "reminder") return why.dueAt ? `${t("today.why.reminder", { when: listDate(why.dueAt) })} · ${thread.snippet}` : thread.snippet;
-  return summary ?? thread.snippet;
-};
 
 /** A promise in Coming up or Missed names a day (only dated ones are placed there), whatever an older backend said of it. */
 const dayKnown = (why: TodayWhy, kind: TodayGroupKind): TodayWhy => (why.promise && why.promise.dated === undefined && (kind === "comingUp" || why.missed) ? { ...why, promise: { ...why.promise, dated: true } } : why);
@@ -314,124 +363,111 @@ export function flattenToday(list: TodayList, before: readonly ThreadSummary[]):
 }
 
 /**
- * The same, its maps published only when asked (Codex code review of plan 210): the list publishes them with the rows,
- * in the commit that shows them, so an answer it drops (a newer one came, the list moved on) changes nothing.
+ * The rows the feed holds where they are while they leave the backend's answer (revision 9): the open one, and the rows of
+ * checked conversations. Plan 210 (iteration 2): by their ids; a history line is the history's, never held.
+ */
+export function heldRows(): FeedRowId[] {
+  const s = getApp();
+  const { opened } = useFeedRow.getState();
+  const open = feedRow(opened);
+  const ids = new Set<FeedRowId>();
+  if (open && !open.line && open.threadId === s.selectedId && open.threadId !== DIGEST_ROW_ID) ids.add(open.id);
+  if (s.checked.size) for (const r of useToday.getState().rows) if (!r.line && s.checked.has(r.threadId) && r.threadId !== DIGEST_ROW_ID) ids.add(r.id);
+  return [...ids].slice(0, 500);
+}
+
+/**
+ * Plan 210 (iteration 2): an answer as the feed's rows and the list's threads (each conversation once, in the rows' order),
+ * its rows published only when asked (Codex code review of plan 210): the list publishes them with its threads, in the
+ * commit that shows them, so an answer it drops changes nothing.
  */
 export function todayAnswer(list: TodayList, before: readonly ThreadSummary[]): { items: ThreadSummary[]; publish: () => void } {
-  const groups: TodayGroup[] = [];
-  const items: ThreadSummary[] = [];
-  const counted = new Set<number>();
-  const tasks = new Map<number, TodayTask>();
-  const entries = new Map<number, TodayItem>();
   const open = useToday.getState().comingUpOpen;
   const comingUp = list.sections.reduce((n, x) => n + (x.kind === "comingUp" ? x.items.length : 0), 0);
-  const ahead = new Set<number>();
+  const rows: FeedRow[] = [];
   for (const group of feedGroups(list, open)) {
-    if (!group.items.length) continue;
-    groups.push({ kind: group.kind, at: items.length });
     for (const { item, section } of group.items) {
       const why = dayKnown(item.why, section);
       const task = taskOf(why);
-      items.push({ ...item.thread, snippet: whyLine(item, why, task) });
-      entries.set(item.thread.id, why === item.why ? item : { ...item, why });
-      if (section === "comingUp") ahead.add(item.thread.id);
-      // the header's "N need you", what the sidebar's number counts (the backend's own rule: never a Plan's kind, nor a reminder)
-      if (todayCounted(section, item.why)) counted.add(item.thread.id);
-      // the fifth panel round (change 6): the conversation's next item, said on the row's second line
-      if (task) tasks.set(item.thread.id, item.also ? { ...task, also: alsoLine(item.also) } : task);
+      const entry = why === item.why ? item : { ...item, why };
+      rows.push({ id: item.id, threadId: item.thread.id, group: group.kind, entry, ...(task ? { task: item.also ? { ...task, also: alsoLine(item.also) } : task } : {}), ...(section === "comingUp" ? { ahead: true } : {}) });
     }
   }
-  // plan 166: a held row stays in the group it was in. At a group's first place it sits above that group's heading (it
-  // went under the next one's), and a group it was the last of keeps its heading for it
-  const prior = useToday.getState().groups;
-  for (const thread of list.held) {
-    const was = before.findIndex((t) => t.id === thread.id);
-    const kind = was < 0 ? undefined : prior.filter((g) => g.at <= was).at(-1)?.kind;
-    let at = was < 0 ? items.length : Math.min(was, items.length);
-    if (kind !== undefined) {
-      const mine = groups.findIndex((g) => g.kind === kind);
-      if (mine >= 0) at = Math.max(groups[mine]!.at, Math.min(at, groups[mine + 1]?.at ?? items.length));
-      else {
-        // its group has gone: where that group would be, under its own heading again
-        const next = groups.find((g) => rankOf(g.kind) > rankOf(kind));
-        at = next?.at ?? items.length;
+  // held rows where they were: after the nearest row before them that's still here, in their own group (a row the
+  // selection keeps, words only: what it was is no longer the backend's to act on)
+  const prior = useToday.getState().rows;
+  const keep = new Set(heldRows());
+  const here = new Set(rows.map((r) => r.id));
+  prior.forEach((was, i) => {
+    if (!keep.has(was.id) || here.has(was.id)) return;
+    let at = 0;
+    for (let k = i - 1; k >= 0; k--) {
+      const idx = rows.findIndex((r) => r.id === prior[k]!.id);
+      if (idx >= 0) {
+        at = idx + 1;
+        break;
       }
     }
-    items.splice(at, 0, thread);
-    if (was < 0) continue;
-    for (const g of groups) if (g.at > at || (g.at === at && g.kind !== kind)) g.at++;
-    if (kind !== undefined && !groups.some((g) => g.kind === kind)) {
-      groups.push({ kind, at });
-      groups.sort((a, b) => a.at - b.at);
-    }
+    const { task: _task, ...words } = was;
+    rows.splice(at, 0, { ...words, held: true });
+    here.add(was.id);
+  });
+  // plan 204 (after the panel, revision 10): the digest is the open part's last row, under no heading of its own
+  if (list.digest) rows.push({ id: DIGEST_FEED_ROW, threadId: DIGEST_ROW_ID });
+  // plan 210: the history after the automated section, its first page (or as deep as the list had it): a line per item
+  for (const line of list.history?.items ?? []) {
+    if (here.has(line.id)) continue;
+    here.add(line.id);
+    rows.push({ id: line.id, threadId: line.thread.id, group: "history", line });
   }
-  // plan 204 (after the panel, revision 10, superseding plan 162's place in the header): the digest is the list's last
-  // option again, after held rows and never before a person, under no heading of its own (a gap sets it apart)
-  if (list.digest) items.push(digestThread());
-  // plan 210: the history after the automated section, its first page (or as deep as the list had it)
-  const history = new Map<number, TodayHistoryItem>();
-  const listed = new Set(items.map((t) => t.id));
-  if (list.history?.items.length) {
-    groups.push({ kind: "history", at: items.length });
-    for (const line of list.history.items) {
-      if (listed.has(line.thread.id)) continue;
-      history.set(line.thread.id, line);
-      items.push(line.thread);
-    }
+  // the list's threads: each once, in the rows' order, as the backend or the list had them
+  const threads = new Map<number, ThreadSummary>();
+  const had = new Map(before.map((t) => [t.id, t]));
+  for (const section of list.sections) for (const item of section.items) threads.set(item.thread.id, item.thread);
+  for (const line of list.history?.items ?? []) if (!threads.has(line.thread.id)) threads.set(line.thread.id, line.thread);
+  const items: ThreadSummary[] = [];
+  const listed = new Set<number>();
+  for (const r of rows) {
+    if (listed.has(r.threadId)) continue;
+    const thread = r.threadId === DIGEST_ROW_ID ? digestThread() : (threads.get(r.threadId) ?? had.get(r.threadId));
+    if (!thread) continue;
+    listed.add(r.threadId);
+    items.push(thread);
   }
-  // what each row's heading is: where a group starts, a held row in its own group's run
-  const kinds = new Map<number, FeedGroupKind>();
-  for (let i = 0, g = 0; i < items.length; i++) {
-    while (g + 1 < groups.length && groups[g + 1]!.at <= i) g++;
-    if (groups[g] && groups[g]!.at <= i && items[i]!.id !== DIGEST_ROW_ID) kinds.set(items[i]!.id, groups[g]!.kind);
-  }
-  const publish = () => useToday.setState(({ notNewsletters }) => ({ groups, counted: counted.size, comingUp, ahead, tasks, entries, history, kinds, digest: list.digest && withoutSenders(list.digest, notNewsletters) }));
+  const shown = rows.filter((r) => listed.has(r.threadId));
+  const publish = () => useToday.setState(({ notNewsletters }) => ({ rows: shown, counts: list.counts, comingUp, digest: list.digest && withoutSenders(list.digest, notNewsletters) }));
   return { items, publish };
 }
 
 /**
- * Rows left Today's list before it reloads (Done, Archive, anything `patchRows` takes out): its groups' starts, which are
- * positions (where a held row goes next time), are found again from the rows that are left (Codex code review). A group
- * goes with its last row.
+ * Conversations left the list before it reloads (Archive, anything `patchRows` takes out): their rows go with them, every
+ * row of each (Codex code review: the headings follow the rows that are left).
  */
 export function todayRowsLeft(items: readonly ThreadSummary[]): void {
   if (!getApp().today) return;
-  const { kinds } = useToday.getState();
-  const groups: TodayGroup[] = [];
-  let prev: FeedGroupKind | undefined;
-  for (let i = 0; i < items.length; i++) {
-    const id = items[i]!.id;
-    if (id === DIGEST_ROW_ID) continue;
-    const kind = kinds.get(id) ?? prev;
-    if (kind !== undefined && kind !== prev) groups.push({ kind, at: i });
-    prev = kind;
-  }
-  useToday.setState({ groups });
+  const here = new Set(items.map((t) => t.id));
+  useToday.setState(({ rows }) => ({ rows: rows.filter((r) => here.has(r.threadId)) }));
 }
 
 /**
- * Plan 210: lines of a history page the list has just taken (in the commit that shows their rows): they join the
- * history's map and group. A page's key travels as the list's cursor, never kept here, so a page the list drops moves
- * nothing (Codex code review).
+ * Plan 210: lines of a history page the list has just taken (in the commit that shows their threads): they join the rows
+ * once each, by their ids, whatever conversation they're of. A page's key travels as the list's cursor, never kept here,
+ * so a page the list drops moves nothing (Codex code review).
  */
 export function publishHistory(fresh: readonly TodayHistoryItem[]): void {
   if (!fresh.length) return;
-  useToday.setState(({ history, kinds }) => {
-    const nextHistory = new Map(history);
-    const nextKinds = new Map(kinds);
-    for (const line of fresh) {
-      nextHistory.set(line.thread.id, line);
-      nextKinds.set(line.thread.id, "history");
-    }
-    return { history: nextHistory, kinds: nextKinds };
+  useToday.setState(({ rows }) => {
+    const have = new Set(rows.map((r) => r.id));
+    const more = fresh.filter((line) => !have.has(line.id) && (have.add(line.id), true)).map((line): FeedRow => ({ id: line.id, threadId: line.thread.id, group: "history", line }));
+    return more.length ? { rows: [...rows, ...more] } : {};
   });
 }
 
-/** Plan 210: the deepest history line these rows hold, what a reload asks down to (so it keeps the depth it had). */
-export function historyThrough(items: readonly ThreadSummary[]): HistoryKey | null {
-  const { history } = useToday.getState();
-  for (let i = items.length - 1; i >= 0; i--) {
-    const line = history.get(items[i]!.id);
+/** Plan 210: the deepest history line the feed holds, what a reload asks down to (so it keeps the depth it had). */
+export function historyThrough(): HistoryKey | null {
+  const { rows } = useToday.getState();
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const line = rows[i]!.line;
     if (line) return line.key;
   }
   return null;
@@ -440,4 +476,3 @@ export function historyThrough(items: readonly ThreadSummary[]): HistoryKey | nu
 /** Plan 210: the list's cursor for a history key, and back (the list's cursor carries the key's three parts). */
 export const historyCursor = (key: HistoryKey | null | undefined): { lastDate: number; id: number; src: 0 | 1 } | null => (key ? { lastDate: key.at, id: key.id, src: key.src } : null);
 export const cursorKey = (c: { lastDate: number; id: number; src?: 0 | 1 }): HistoryKey => ({ at: c.lastDate, id: c.id, src: c.src ?? 0 });
-

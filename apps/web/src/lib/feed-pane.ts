@@ -1,26 +1,26 @@
-import { listScroller } from "~/lib/list-scroller";
 import { listLayout } from "~/lib/page";
-import { focusFeedItem, useFeedCursor } from "~/lib/feed-focus";
+import { feedPlace, feedScroller, focusFeedItem } from "~/lib/feed-focus";
 import { getApp, setApp } from "~/state/app";
-import { useList } from "~/state/list";
+import { useFeedRow } from "~/state/today";
 
 /**
  * Plan 204 (the feed), plan 210: Esc, the reader's Close and a click on the open item, in Split: the conversation open
- * beside Today's feed goes, and the feed has the room again; the keyboard is back on the item it was opened from (quietly:
- * no ring after a key or a click, plan 54), which keeps the place (`useFeedCursor`). False where there's none to put away.
- * Here, not in the feed's component, so the keyboard and the reader reach it without the feed's parts.
+ * beside Today's feed goes, and the feed has the room again; the keyboard is back on the row it was opened from (quietly:
+ * no ring after a key or a click, plan 54), which keeps the place (`useFeedRow.cursor`). Iteration 2: that row, not its
+ * conversation's first. False where there's none to put away. Here, not in the feed's component, so the keyboard and the
+ * reader reach it without the feed's parts.
  */
 export function closeFeedConversation(): boolean {
   const s = getApp();
-  const id = s.selectedId;
-  if (id === null || listLayout() || !s.today) return false;
-  const index = useList.getState().index.get(id);
+  if (s.selectedId === null || listLayout() || !s.today) return false;
+  const row = feedPlace();
+  useFeedRow.setState(({ moves }) => ({ opened: null, cursor: row, moves: moves + 1 }));
   setApp({ selectedId: null });
-  useFeedCursor.setState({ id });
-  // once the feed has its width back (its items rewrap), the item is in view if it went out of it, and has the keyboard
-  requestAnimationFrame(() => {
-    if (index !== undefined) listScroller.scrollToIndex?.(index);
-    requestAnimationFrame(() => focusFeedItem(id));
-  });
+  // once the feed has its width back (its items rewrap), the row is in view if it went out of it, and has the keyboard
+  if (row !== null)
+    requestAnimationFrame(() => {
+      feedScroller.toRow?.(row);
+      requestAnimationFrame(() => focusFeedItem(row));
+    });
   return true;
 }

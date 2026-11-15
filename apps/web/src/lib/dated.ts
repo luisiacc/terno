@@ -172,7 +172,7 @@ export function taskOf(why: TodayWhy, now = Date.now()): TodayTask | null {
       kind: "promise",
       id: why.promise.id,
       revision: why.promise.revision,
-      when: dated ? dueShort(why.dueAt!, false, now) : null,
+      when: dated ? dueShort(why.dueAt!, why.promise.timed === true, now) : null,
       due: dated ? promiseWhen({ dueAt: why.dueAt, dated }, why.missed === true, now) : null,
       dated,
       text: why.text ?? null,
