@@ -77,7 +77,6 @@ function ItemLater({ threadId, row }: { threadId: number; row: DatedRow }) {
           <WhenForm
             start={laterStart(span, now)}
             before={span.before}
-            from={span.from}
             notes={laterNote(span)}
             testPrefix="thread-dated-later"
             submit={t("dated.laterSet")}

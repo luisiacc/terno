@@ -33,7 +33,6 @@ export function TodayLaterDialog() {
           <WhenForm
             start={laterStart(span)}
             before={span.before}
-            from={span.from}
             notes={laterNote(span)}
             testPrefix="today-later"
             submit={t("dated.laterSet")}

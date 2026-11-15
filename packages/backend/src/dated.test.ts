@@ -6,7 +6,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createAi, promptText, type AiOptions, type Completion, type CompletionRequest, type ProviderConfig } from "@terno/ai";
-import type { DatedRow } from "@terno/core";
+import { TODAY_COUNTED, type DatedRow } from "@terno/core";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { demoRegistry } from "@terno/mail";
 import { msg, threadOf } from "@terno/store/conformance";
@@ -721,7 +721,7 @@ describe("the third panel round", () => {
   const followup = (thread: number, text: string, dueAt: number, o: { kind?: string; state?: string; dated?: number; message?: number; revision?: number } = {}) =>
     [`INSERT INTO followups (thread_id, message_id, item, kind, text, person_name, person_email, sent_at, due_at, dated, state, revision, created_at) VALUES (?, ?, 0, ?, ?, 'Elena', 'elena@acme.test', ?, ?, ?, ?, ?, ?)`, thread, o.message ?? 900_000 + thread, o.kind ?? "promise", text, NOW - 3 * DAY, dueAt, o.dated ?? 1, o.state ?? "open", o.revision ?? 0, NOW] as const;
 
-  it("change 3: a promise due today is a deadline from its day's start, by day with the dated items; a nudge stays in Needs you", async () => {
+  it("change 3: a promise is a deadline from a week before its day (the fifth panel round), by day with the dated items; a nudge stays in Needs you", async () => {
     const { client, model, receive, read, raw, clock, sections } = await setup();
     await client.call("settings.update", { followups: { enabled: true } });
     model.answer = (req) => (promptText(req.messages[0]!.content).includes("electricity") ? reply([bill]) : reply());
@@ -735,19 +735,22 @@ describe("the third panel round", () => {
     clock.now = at(2026, 11, 19, 8);
     expect(await sections()).toEqual({ deadlines: [agenda, billThread], needsYou: [nudge] });
     expect((await client.call("counts.get", {})).today).toBe(3);
-    // the day before: Coming up
-    clock.now = at(2026, 11, 18, 10);
-    expect(await sections()).toMatchObject({ deadlines: [billThread], comingUp: [agenda] });
+    // the fifth panel round: a week before its day, from 9:00, as a request's (the bill's week starts a day later)
+    clock.now = at(2026, 11, 12, 9);
+    expect(await sections()).toMatchObject({ deadlines: [agenda], comingUp: [billThread] });
+    clock.now = at(2026, 11, 12, 8, 59);
+    expect(await sections()).toMatchObject({ comingUp: [agenda, billThread] });
   });
 
-  it("change 2: a waiting conversation with your promise shows the one due soonest, exactly; Later keeps it the conversation's, at its new day", async () => {
+  it("change 2: a waiting conversation with your promise shows the one due soonest, exactly; one put off is none's until it's back (the fifth panel round)", async () => {
     const { client, receive, raw, clock } = await setup();
     await client.call("settings.update", { followups: { enabled: true } });
     // Elena's "gentle nudge" on the October update, after Priya promised it
     const elena = await receive({ from: { name: "Elena", email: "elena@acme.test" }, subject: "Re: October update", bodyText: "Gentle nudge on the October update, by Monday if you can." });
     raw.run("UPDATE threads SET waiting_since = ?, has_sent = 1 WHERE id = ?", clock.now - 60_000, elena);
-    raw.run(...followup(elena, "send the board deck", at(2026, 11, 20, 9), { message: 900_001 }));
-    raw.run(...followup(elena, "send the October update", at(2026, 11, 17, 9), { message: 900_002, revision: 2 }));
+    // past their week's lead (Coming up's), so the conversation is Needs you's
+    raw.run(...followup(elena, "send the board deck", at(2026, 11, 28, 9), { message: 900_001 }));
+    raw.run(...followup(elena, "send the October update", at(2026, 11, 25, 9), { message: 900_002, revision: 2 }));
     clock.now = at(2026, 11, 14, 10);
     const row = async () => {
       const list = await client.call("today.list", { heldIds: [] });
@@ -755,17 +758,25 @@ describe("the third panel round", () => {
       return list.sections[0]!.items[0]!;
     };
     const first = await row();
-    expect(first).toMatchObject({ thread: { id: elena }, why: { kind: "promise", text: "send the October update", dueAt: at(2026, 11, 17, 9), promise: { revision: 2, dated: true } } });
+    expect(first).toMatchObject({ thread: { id: elena }, why: { kind: "promise", text: "send the October update", dueAt: at(2026, 11, 25, 9), promise: { revision: 2, dated: true } } });
     // its line is the promise, so no summary is read for it
     expect(first.summary).toBeUndefined();
     expect((await client.call("counts.get", {})).today).toBe(1);
-    // Later on exactly it: the deck is now the soonest
-    await client.call("followups.act", { id: first.why.promise!.id, revision: 2, action: "later", dueAt: at(2026, 11, 23, 9) });
+    // Later on exactly it: its day stays, and the deck is the conversation's promise meanwhile
+    await client.call("followups.act", { id: first.why.promise!.id, revision: 2, action: "later", dueAt: at(2026, 11, 26, 9) });
     const second = await row();
-    expect(second.why).toMatchObject({ text: "send the board deck", dueAt: at(2026, 11, 20, 9) });
-    // Done on the deck: the October update is the conversation's promise again, at its new day
+    expect(second.why).toMatchObject({ text: "send the board deck", dueAt: at(2026, 11, 28, 9) });
+    // Done on the deck: the conversation's only open promise is put off, so it waits for it in Coming up, not counted
     await client.call("followups.act", { id: second.why.promise!.id, revision: second.why.promise!.revision, action: "done" });
-    expect((await row()).why).toMatchObject({ text: "send the October update", dueAt: at(2026, 11, 23, 9), promise: { id: first.why.promise!.id } });
+    const waits = await client.call("today.list", { heldIds: [] });
+    expect(waits.sections.map((x) => [x.kind, x.items.map((i) => i.thread.id)])).toEqual([["comingUp", [elena]]]);
+    expect(waits.sections[0]!.items[0]!.why).toMatchObject({ text: "send the October update", dueAt: at(2026, 11, 25, 9), promise: { id: first.why.promise!.id } });
+    expect((await client.call("counts.get", {})).today).toBe(0);
+    // back after its day: Missed, for a week from then
+    clock.now = at(2026, 11, 26, 9);
+    const back = await client.call("today.list", { heldIds: [] });
+    expect(back.sections.map((x) => [x.kind, x.items.map((i) => i.thread.id)])).toEqual([["missed", [elena]]]);
+    expect((await client.call("counts.get", {})).today).toBe(1);
   });
 
   it("Codex code review (round 4): an ask in a conversation where you'd promised them something shows your promise", async () => {
@@ -774,14 +785,15 @@ describe("the third panel round", () => {
     model.answer = () => reply([{ kind: "ask", text: "Send Elena the report", quote: "could you send that report", due: null, time: null }]);
     const elena = await receive({ from: { name: "Elena", email: "elena@acme.test" }, subject: "Re: the report", bodyText: "Hi, could you send that report?" });
     await read();
-    raw.run(...followup(elena, "send the report", at(2026, 11, 20, 9), { revision: 3 }));
+    // past its week's lead, so the conversation is the ask's (the fifth panel round)
+    raw.run(...followup(elena, "send the report", at(2026, 11, 28, 9), { revision: 3 }));
     clock.now = at(2026, 11, 14, 10);
     const list = await client.call("today.list", { heldIds: [] });
     expect(list.sections.map((x) => x.kind)).toEqual(["needsYou"]);
     expect(list.sections[0]!.items[0]).toMatchObject({ thread: { id: elena }, why: { kind: "promise", text: "send the report", promise: { revision: 3 } } });
   });
 
-  it("change 6: Later before a timed item's own moment while it's ahead, anywhere once Missed; a dated promise's Later is another day", async () => {
+  it("change 6: Later before a timed item's own moment while it's ahead, anywhere once Missed; a promise's Later any moment, its day kept (the fifth panel round)", async () => {
     const { client, model, receive, read, raw, clock } = await setup();
     await client.call("settings.update", { followups: { enabled: true } });
     model.answer = (req) => (promptText(req.messages[0]!.content).includes("payroll") ? reply([{ kind: "pay", text: "Fund payroll", quote: "payroll by 1:00 PM", due: "2026-11-13", time: "13:00" }]) : reply());
@@ -796,13 +808,14 @@ describe("the third panel round", () => {
     clock.now = at(2026, 11, 14, 10);
     const [missed] = (await client.call("dated.ofThread", { threadId: payroll })).rows;
     await client.call("dated.act", { id: missed!.id, revision: missed!.revision, action: "later", until: at(2026, 11, 16, 9) });
-    // a promise due today: Later today would leave it today's
+    // a promise due today: Later today is its own, so it leaves Deadlines until then
     const thread = await receive({ from: { name: "Tom", email: "tom@people.test" }, subject: "The agenda", bodyText: "Looking forward to it." });
     raw.run(...followup(thread, "send the agenda", at(2026, 11, 14, 9), { state: "due" }));
     raw.run(...followup(thread, "call back", at(2026, 11, 14, 9), { state: "due", dated: 0, message: 900_100 }));
     const [dated, undated] = (await followupRows(client)).sort((a, b) => Number(b.dated) - Number(a.dated));
-    await expect(client.call("followups.act", { id: dated!.id, revision: dated!.revision, action: "later", dueAt: at(2026, 11, 14, 15) })).rejects.toMatchObject({ code: "BAD_REQUEST" });
-    await client.call("followups.act", { id: dated!.id, revision: dated!.revision, action: "later", dueAt: at(2026, 11, 15, 9) });
+    const later = await client.call("followups.act", { id: dated!.id, revision: dated!.revision, action: "later", dueAt: at(2026, 11, 14, 15) });
+    expect(later.row).toMatchObject({ dueAt: at(2026, 11, 14, 9), deferredUntil: at(2026, 11, 14, 15), state: "open" });
+    expect((await client.call("today.list", { heldIds: [] })).sections.find((x) => x.kind === "deadlines")?.items.some((i) => i.thread.id === thread) ?? false).toBe(false);
     await client.call("followups.act", { id: undated!.id, revision: undated!.revision, action: "later", dueAt: at(2026, 11, 14, 15) });
   });
 });
@@ -839,6 +852,65 @@ describe("the fourth panel round", () => {
     // a dated promise of yours due today is still Deadlines'
     raw.run(...followup(promised, "send the slides", at(2026, 11, 18, 17), { message: 900_500 }));
     expect((await client.call("today.list", { heldIds: [] })).sections.map((x) => x.kind)).toEqual(["deadlines", "needsYou", "plans"]);
+  });
+});
+
+describe("the fifth panel round: a promise's own Later", () => {
+  const followup = (thread: number, text: string, dueAt: number, o: { message?: number } = {}) =>
+    [`INSERT INTO followups (thread_id, message_id, item, kind, text, person_name, person_email, sent_at, due_at, dated, state, revision, created_at) VALUES (?, ?, 0, 'promise', ?, 'Elena', 'elena@acme.test', ?, ?, 1, 'open', 0, ?)`, thread, o.message ?? 900_000 + thread, text, NOW - 3 * DAY, dueAt, NOW] as const;
+  /** the list, its header's count (the counted groups' rows) and the sidebar's, together */
+  const today = async (client: RpcClient) => {
+    const list = await client.call("today.list", { heldIds: [] });
+    const header = list.sections.filter((x) => TODAY_COUNTED.has(x.kind)).reduce((n, x) => n + x.items.length, 0);
+    return { groups: list.sections.map((x) => [x.kind, x.items.map((i) => [i.thread.id, i.why.kind])]), header, sidebar: (await client.call("counts.get", {})).today };
+  };
+
+  it("put off, a waiting conversation's only promise is none's until it's back, an ask there still Needs you's; Undo brings it back; the counts agree", async () => {
+    const { client, model, receive, read, raw, clock } = await setup();
+    await client.call("settings.update", { followups: { enabled: true } });
+    model.answer = (req) => (promptText(req.messages[0]!.content).includes("budget") ? reply([{ kind: "ask", text: "Answer Elena about the budget", quote: "what's the budget", due: null, time: null }]) : reply());
+    const elena = await receive({ from: { name: "Elena", email: "elena@acme.test" }, subject: "Re: the deck", bodyText: "Thanks! Separately, what's the budget?", providerThreadId: "elena" });
+    const ned = await receive({ from: { name: "Ned", email: "ned@people.test" }, subject: "Re: the plan", bodyText: "Looking forward to it.", providerThreadId: "ned" });
+    await read();
+    raw.run("UPDATE threads SET waiting_since = ?, has_sent = 1 WHERE id IN (?, ?)", clock.now - 60_000, elena, ned);
+    // past their week's lead: the conversations are Needs you's, each showing its promise
+    raw.run(...followup(elena, "send the deck", at(2026, 11, 28, 9)));
+    raw.run(...followup(ned, "send the plan", at(2026, 11, 27, 9)));
+    clock.now = at(2026, 11, 14, 10);
+    expect(await today(client)).toEqual({ groups: [["needsYou", [[elena, "promise"], [ned, "promise"]]]], header: 2, sidebar: 2 });
+    const [deck, plan] = [(await followupRows(client)).find((r) => r.threadId === elena)!, (await followupRows(client)).find((r) => r.threadId === ned)!];
+    // Ned's only promise, put off: his conversation waits for it in Coming up; Elena's, put off: her ask is the row
+    const offNed = await client.call("followups.act", { id: plan.id, revision: plan.revision, action: "later", dueAt: at(2026, 11, 20, 9) });
+    await client.call("followups.act", { id: deck.id, revision: deck.revision, action: "later", dueAt: at(2026, 11, 20, 9) });
+    expect(await today(client)).toEqual({ groups: [["needsYou", [[elena, "dated"]]], ["comingUp", [[ned, "promise"]]]], header: 1, sidebar: 1 });
+    // Undo: Ned's conversation as it was, and its promise its row
+    await client.call("followups.undo", { undoId: offNed.undoId! });
+    expect(await today(client)).toEqual({ groups: [["needsYou", [[elena, "dated"], [ned, "promise"]]]], header: 2, sidebar: 2 });
+    // its Later's moment: Elena's promise is her row again; Ned's is a week before its day, Deadlines'
+    clock.now = at(2026, 11, 20, 9);
+    expect(await today(client)).toEqual({ groups: [["deadlines", [[ned, "promise"]]], ["needsYou", [[elena, "promise"]]]], header: 2, sidebar: 2 });
+  });
+
+  it("Later on an overdue promise keeps its day and Undo's revision: it doesn't come due again at once", async () => {
+    const { backend, client, receive, raw, clock } = await setup();
+    await client.call("settings.update", { followups: { enabled: true } });
+    const thread = await receive({ from: { name: "Elena", email: "elena@acme.test" }, subject: "The deck", bodyText: "Looking forward to it." });
+    raw.run(...followup(thread, "send the deck", at(2026, 11, 9, 9)));
+    await backend.followups.look();
+    const [row] = await followupRows(client);
+    expect(row).toMatchObject({ state: "due", inboxState: "onTop" });
+    const later = await client.call("followups.act", { id: row!.id, revision: row!.revision, action: "later", dueAt: clock.now + 2 * DAY });
+    expect(later.row).toMatchObject({ state: "open", inboxState: "none", dueAt: at(2026, 11, 9, 9), deferredUntil: clock.now + 2 * DAY, revision: row!.revision + 1 });
+    expect(backend.followups.nextAt).toBe(clock.now + 2 * DAY);
+    expect((await today(client)).groups).toEqual([["comingUp", [[thread, "promise"]]]]);
+    await client.call("followups.undo", { undoId: later.undoId! });
+    expect((await followupRows(client))[0]).toMatchObject({ state: "due", inboxState: "onTop", deferredUntil: null });
+    expect((await today(client)).groups).toEqual([["missed", [[thread, "promise"]]]]);
+    // a nudge's Later still moves its moment (sent after her mail, so it's still unanswered)
+    raw.run("INSERT INTO followups (thread_id, message_id, item, kind, text, person_name, person_email, sent_at, due_at, dated, state, revision, created_at) VALUES (?, 900500, 100, 'awaiting', '', 'Elena', 'elena@acme.test', ?, ?, 0, 'due', 0, ?)", thread, clock.now, at(2026, 11, 9, 9), NOW);
+    const nudge = (await followupRows(client)).find((r) => r.kind === "awaiting")!;
+    const moved = await client.call("followups.act", { id: nudge.id, revision: nudge.revision, action: "later", dueAt: clock.now + DAY });
+    expect(moved.row).toMatchObject({ dueAt: clock.now + DAY, deferredUntil: null, state: "open" });
   });
 });
 

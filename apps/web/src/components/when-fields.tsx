@@ -96,19 +96,18 @@ export function WhenFields({ when, testPrefix, describedBy, onEnter }: { when: R
 }
 
 /**
- * A moment of your own, set with a button: the date and time above, why it can't be set yet under them (past, after
- * `before`: a Plan's end, or before `from`: a dated promise's next day), and the button. The clock is read again on
+ * A moment of your own, set with a button: the date and time above, why it can't be set yet under them (past, or after
+ * `before`: a Plan's end), and the button. The clock is read again on
  * submit, since the moment can pass while it's open. Plan 87's reminder, plan 162's follow-up Later and plan 204's Later
  * share it.
  */
-export function WhenForm({ start, testPrefix, submit, onSet, before = null, from = null, notes, formTestId, className, noteClassName }: { start: number; testPrefix: string; submit: string; onSet: (at: number) => void; /** the moment it must come before */ before?: number | null; /** the first moment it may be */ from?: number | null; /** what's said when it's before `from`, or at or after `before` (by default, "before it ends") */ notes?: { early: string; late: string }; formTestId?: string; className?: string; noteClassName?: string }) {
+export function WhenForm({ start, testPrefix, submit, onSet, before = null, notes, formTestId, className, noteClassName }: { start: number; testPrefix: string; submit: string; onSet: (at: number) => void; /** the moment it must come before */ before?: number | null; /** what's said when it's at or after `before` (by default, "before it ends") */ notes?: { late: string }; formTestId?: string; className?: string; noteClassName?: string }) {
   const when = useWhen(start);
   const formRef = useRef<HTMLFormElement>(null);
   const noteId = useId();
   const [, recheck] = useState(0);
   const late = before !== null && when.ready && when.chosen >= before;
-  const early = from !== null && when.ready && when.chosen < from;
-  const shown = { ...when, past: when.past || late || early };
+  const shown = { ...when, past: when.past || late };
   return (
     <form
       ref={formRef}
@@ -116,7 +115,7 @@ export function WhenForm({ start, testPrefix, submit, onSet, before = null, from
       data-testid={formTestId}
       onSubmit={(e) => {
         e.preventDefault();
-        if (!when.ready || late || early) return;
+        if (!when.ready || late) return;
         if (when.chosen <= Date.now()) return recheck((n) => n + 1);
         onSet(when.chosen);
       }}
@@ -124,7 +123,7 @@ export function WhenForm({ start, testPrefix, submit, onSet, before = null, from
       <WhenFields when={shown} testPrefix={testPrefix} describedBy={noteId} onEnter={() => formRef.current?.requestSubmit()} />
       {shown.past && (
         <p id={noteId} className={cn("text-xs text-destructive-ink", noteClassName)} data-testid={`${testPrefix}-past`}>
-          {when.past ? t("remind.past") : early ? (notes?.early ?? t("dated.laterNextDay")) : (notes?.late ?? t("dated.laterPastEnd"))}
+          {when.past ? t("remind.past") : (notes?.late ?? t("dated.laterPastEnd"))}
         </p>
       )}
       <Button type="submit" size="sm" data-testid={`${testPrefix}-set`} disabled={shown.past || !when.ready} className="self-end">

@@ -78,18 +78,18 @@ describe("a Today row's task (plan 204, after the panel)", () => {
     expect(laterChoices({ ...plan, item: { ...plan.item, dueDay: "2026-11-12" }, dueAt: new Date(2026, 10, 12, 9).getTime() }, now).map((p) => p.id)).toEqual(["laterToday"]);
   });
 
-  it("the third panel round: a timed item still ahead keeps only what's before its moment; Missed, every preset; a dated promise, another day", () => {
+  it("the third panel round: a timed item still ahead keeps only what's before its moment; Missed, every preset; a dated promise, every preset (its own Later)", () => {
     const now = new Date(2026, 10, 12, 10, 0).getTime();
     // a 1:00 PM payroll at 10:00: Later today is 1:00 PM, not before it
     const payroll = { kind: "dated" as const, item: { ...item, kind: "pay" as const, dueDay: "2026-11-12", timed: true }, when: null, due: null, dueAt: new Date(2026, 10, 12, 13).getTime() };
     expect(laterChoices(payroll, now)).toEqual([]);
-    expect(laterWindow(payroll, now)).toEqual({ from: null, before: payroll.dueAt, limit: "due" });
+    expect(laterWindow(payroll, now)).toEqual({ before: payroll.dueAt, limit: "due" });
     expect(laterNote(laterWindow(payroll, now)).late).toBe("Pick a time before it’s due.");
     // the same at 2:00 PM (its moment passed) and once Missed: every preset
     expect(laterChoices(payroll, new Date(2026, 10, 12, 14).getTime()).map((p) => p.id)).toEqual(["laterToday", "tomorrow", "weekend", "nextWeek"]);
     expect(laterChoices({ ...payroll, item: { ...payroll.item, dueDay: "2026-11-11" }, dueAt: new Date(2026, 10, 11, 13).getTime() }, now).map((p) => p.id)).toEqual(["laterToday", "tomorrow", "weekend", "nextWeek"]);
-    // a dated promise of yours: not later today (it'd still be today's)
-    expect(laterChoices({ kind: "promise", id: 7, revision: 3, when: "Today", due: "Due today", dated: true }, now).map((p) => p.id)).toEqual(["tomorrow", "weekend", "nextWeek"]);
+    // a dated promise of yours due today: later today too, since its Later is its own and its day stays (the fifth panel round)
+    expect(laterChoices({ kind: "promise", id: 7, revision: 3, when: "Today", due: "Due today", dated: true }, now).map((p) => p.id)).toEqual(["laterToday", "tomorrow", "weekend", "nextWeek"]);
     // the picker starts an hour before the moment when tomorrow at 9 is past it
     expect(laterStart(laterWindow(payroll, now), now)).toBe(new Date(2026, 10, 12, 12).getTime());
   });

@@ -20,6 +20,7 @@ import {
   nextTodayChange,
   promisePlace,
   promiseOver,
+  promiseDeferred,
   dayKeyOf,
   TODAY_COUNTED,
   type DatedPlace,
@@ -574,10 +575,11 @@ export class TodayService {
     for (const d of [...ofPlace("deadlines"), ...promisesIn("deadlines")].sort((a, b) => byDay(a.at, b.at))) placed.push({ group: "deadlines", threadId: d.threadId, why: d.why });
     for (const p of ofPlace("plans").sort((a, b) => byDay(a.at, b.at))) placed.push({ group: "plans", threadId: p.threadId, why: p.why });
     // the third panel round (revision 4): a conversation with an open promise of yours shows that promise, the one due
-    // soonest, carried so Done, Not a task and Later act on exactly it; one put off with Later keeps it, at its new day
+    // soonest, carried so Done, Not a task and Later act on exactly it; one put off with Later (the fifth panel round) is
+    // none's until it's back, and a conversation whose only open promise it is isn't waiting meanwhile (the stores' rule)
     const owed = new Map<number, FollowupRow>();
     for (const r of promises) {
-      if (promiseOver(r, now)) continue;
+      if (promiseOver(r, now) || promiseDeferred(r, now)) continue;
       const was = owed.get(r.threadId);
       if (!was || r.dueAt < was.dueAt || (r.dueAt === was.dueAt && r.id < was.id)) owed.set(r.threadId, r);
     }
