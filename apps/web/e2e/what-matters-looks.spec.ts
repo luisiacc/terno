@@ -40,8 +40,24 @@ for (const look of ["chat", "brief"] as const) {
     const open = item.getByTestId(look === "chat" ? "wm-open" : "wm-item-open");
 
     await scenario("one plain sentence, under its group; nothing opens by itself, so the feed has the reader's room", async () => {
-      await expect(item).toContainText(/Wire payroll, due today at 1:00\sPM\./, { timeout: 15_000 });
-      await expect(item).toContainText("PayBridge");
+      await expect(item).toContainText("Wire payroll.", { timeout: 15_000 });
+      if (look === "chat") await expect(item).toContainText(/1:00\sPM · PayBridge/);
+      else {
+        // after the UI panel: when in a column of its own, the list's words, the accent for today; who under the sentence,
+        // never the email's date
+        await expect(item.getByTestId("wm-when")).toHaveText(/^1:00\sPM$/);
+        await expect(item).toHaveAttribute("data-tone", "today");
+        await expect(item.getByTestId("wm-meta")).toHaveText("PayBridge");
+        // Done and Later in words, out of sight (and out of the pointer's way) until the item is hovered, focused or open
+        const controls = item.getByTestId("wm-controls");
+        await expect(controls).toHaveCSS("opacity", "0");
+        await item.hover();
+        await expect(controls).toHaveCSS("opacity", "1");
+        await expect(item.getByTestId("wm-done")).toHaveAccessibleName("Done");
+        await expect(item.getByTestId("wm-done")).toHaveAccessibleDescription("Wire payroll.");
+        await expect(item.getByTestId("wm-later")).toHaveAccessibleName("Later");
+        await page.mouse.move(0, 0);
+      }
       await expect(feed.getByTestId(look === "chat" ? "wm-divider" : "wm-heading").first()).toBeVisible();
       await expect(page.getByTestId("reader")).toHaveCount(0);
       await axeBothModes(page, '[data-testid="wm-feed"]');
@@ -53,6 +69,7 @@ for (const look of ["chat", "brief"] as const) {
       await expect(page.locator("#reader-subject")).toHaveText("Payroll run");
       await expect(item).toHaveAttribute("data-open");
       await expect(feed).toBeVisible();
+      if (look === "brief") await expect(item.getByTestId("wm-controls")).toHaveCSS("opacity", "1");
       await page.keyboard.press("Escape");
       await expect(page.getByTestId("reader")).toHaveCount(0);
       await expect(item).not.toHaveAttribute("data-open");
