@@ -164,6 +164,53 @@ describe("the local checks (plan 204 §3)", () => {
       expect(checkDates({ items: [drinks], settled: [] }, fyi).rows).toEqual([]);
       expect(checkDates({ items: [drinks], settled: [] }, { ...fyi, text: "Drinks when you're back from Chicago?" }).rows).toHaveLength(1);
     });
+    describe("never for credentials or an ID (the seventh panel round, revision 7)", () => {
+      const secrets: [string, string][] = [
+        ["Send Priya the code", "Could you text me the 6-digit code you just got?"],
+        ["Send Dan your account details", "can you send me your account and routing number so I can pay you back"],
+        ["Answer IT about the portal", "What's your password for the portal?"],
+        ["Send Sam a scan of your ID", "Please email me a scan of your passport before the trip."],
+        ["Enviarle a Marta una foto de la INE", "¿Me puedes mandar una foto de tu INE por ambos lados?"],
+        ["Responder a Pablo", "Pásame tu contraseña del banco cuando puedas."],
+        ["Enviar el código a Luis", "Envíame el código de verificación que te llegó."],
+        ["Responder a Ana", "¿Me compartes el número de tarjeta para la reserva?"],
+      ];
+      const asking = ([text, quote]: [string, string]) => ({ ...base, text: `Hi, ${quote} Thanks!`, sender: { person: true }, reader: { name: "Nora Quill", addressed: "to" as const }, item: { kind: "ask", text, quote, due: null, time: null } });
+      it("an ask for a password, a code, an account, card or routing number, or an ID is dropped, in English and Spanish", () => {
+        for (const s of secrets) {
+          const { item, ...input } = asking(s);
+          expect(checkDates({ items: [item], settled: [] }, input).rows, s[1]).toEqual([]);
+        }
+      });
+      it("a real ask that names the same words isn't: a trip's passport, a security deposit, code to review", () => {
+        const fine: [string, string][] = [
+          ["Tell Mom about your passport", "Tell me if your passport is still valid for the trip?"],
+          ["Answer Jo about the deposit", "Can you send me the security deposit receipt?"],
+          ["Answer Kai about the code", "Could you send me the code you wrote for the parser?"],
+          ["Responder a Ana", "¿Me mandas la foto del grupo?"],
+        ];
+        for (const s of fine) {
+          const { item, ...input } = asking(s);
+          expect(checkDates({ items: [item], settled: [] }, input).rows, s[1]).toHaveLength(1);
+        }
+      });
+      it("with a day it's no request either, and it leaves the mail's real ask beside it", () => {
+        const { item, ...input } = asking(secrets[0]!);
+        const text = `${input.text} And could you look over the budget?`;
+        const real = { kind: "ask", text: "Answer about the budget", quote: "could you look over the budget", due: null, time: null };
+        expect(checkDates({ items: [{ ...item, due: "2026-11-13" }], settled: [] }, { ...input, text }).rows).toEqual([]);
+        expect(checkDates({ items: [{ ...item, due: "2026-11-13" }, real], settled: [] }, { ...input, text }).rows.map((r) => r.text)).toEqual(["Answer about the budget"]);
+      });
+      it("a later message's day doesn't turn an open ask into a request for one: the ask stays as it was", () => {
+        const open = new Map([["o1", { id: 4, revision: 2, kind: "ask", dueDay: "2026-11-09", text: "Answer Dan about the refund" } as DatedRow]]);
+        const { item: _item, ...input } = asking(secrets[1]!);
+        const out = checkDates({ items: [], settled: [], moved: [{ label: "o1", due: "2026-11-13", time: null, evidence: secrets[1]![1] }] }, { ...input, open });
+        expect(out).toMatchObject({ rows: [], settled: [], moved: [] });
+        // and an ordinary day still does
+        const fine = checkDates({ items: [], settled: [], moved: [{ label: "o1", due: "2026-11-13", time: null, evidence: "Thanks!" }] }, { ...input, open });
+        expect(fine.settled).toEqual([{ id: 4, revision: 2 }]);
+      });
+    });
   });
   it("the 14-day check keeps nothing already over", () => {
     const old = { ...base, arrivedAt: NOW - 10 * DAY, fromScan: true };

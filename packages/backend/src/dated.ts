@@ -86,14 +86,28 @@ function askAllowed(quote: string, said: string, o: { sender?: { person: boolean
   return nameWords(o.reader.name).some((w) => where.includes(` ${w} `));
 }
 
+// a verb that asks for it, then within the sentence what it asks for; read without accents, so "envíame" is "enviame"
+const SEND_VERB = String.raw`send|share|give|provide|forward|e-?mail|text|tell|reply with|respond with|confirm|need|what['’]?s|what is|(?:envi|mand|pas|indic|proporcion|confirm)(?:as?|es?|ar)(?:me|nos)?|compart(?:es?|as?|ir)(?:me|nos)?|dame|danos|darme|darnos|dime|decirme|responde(?:me)? con|necesito|cual es`;
+const SECRET = String.raw`password|passcode|passphrase|pin (?:number|code)|(?:one[- ]time|verification|security|login|sign[- ]in|access|authentication|2fa|6[- ]digit|six[- ]digit) code|otp|code (?:we|i|you|they) (?:just )?(?:sent|texted|emailed|got|received)|(?:bank )?account (?:number|no|details)|bank details|card (?:number|details)|cvv|cvc|routing (?:number|no)|iban|swift code|sort code|social security|ssn|(?:scan|copy|photo|picture) of (?:your |the )?(?:id|passport|driver['’]?s licen[cs]e)|(?:id|passport|licen[cs]e) (?:scan|copy|number|details)|contrasena|(?:tu|su) (?:clave|nip|pin)|codigo (?:de (?:verificacion|seguridad|acceso|confirmacion)|otp|que (?:te|le) (?:llego|enviamos|mandamos|envie|mande))|numero de (?:cuenta|tarjeta|ruta|seguro social)|datos (?:bancarios|de (?:la|tu|su) tarjeta)|clabe|(?:foto|copia|escaneo|numero) de (?:tu |su |la )?(?:ine|dni|cedula|pasaporte|identificacion|licencia)`;
+const ASKS_FOR_SECRETS = new RegExp(String.raw`\b(?:${SEND_VERB})\b[^.!?\n]{0,60}?\b(?:${SECRET})\b`, "i");
+
+/**
+ * The seventh panel round (revision 7): an ask, or the request it turns into with a day, never asks the reader to send a
+ * password, a one-time code, an account, card or routing number, or an ID (en, es), whatever the model made of it: read
+ * on its words and its quote. Pure.
+ */
+export function asksForSecrets(item: { text: string; quote: string }): boolean {
+  return ASKS_FOR_SECRETS.test(`${item.text}\n${item.quote}`.normalize("NFD").replace(/\p{M}/gu, ""));
+}
+
 type Move = Omit<DatedResult["moved"][number], "text" | "textEvidence"> & Partial<Pick<DatedResult["moved"][number], "text" | "textEvidence">>;
 
 /**
  * §3's local checks, before anything's stored: the quote is the mail's (its text or subject), the kind is one of ours, a
  * day parses and is worth keeping (`datedTiming`), at most `DATED_ITEMS_MAX`, one per kind, day and time; an ask only from
- * a person to the reader (`askAllowed`), and one with a day, so allowed, is the request it is (`respond`); a settlement names
- * an item it was shown and quotes the mail; a move gives a new day or, for a timed item, a new moment, and its new words
- * only with the mail's own. Pure.
+ * a person to the reader (`askAllowed`) and never for credentials or an ID (`asksForSecrets`), and one with a day, so
+ * allowed, is the request it is (`respond`); a settlement names an item it was shown and quotes the mail; a move gives a new
+ * day or, for a timed item, a new moment, and its new words only with the mail's own. Pure.
  */
 export function checkDates(result: { items: readonly (Omit<DatedResult["items"][number], "kind"> & { kind: string })[]; settled: DatedResult["settled"]; moved?: readonly Move[] }, input: { text: string; subject: string; arrivedAt: number; open: ReadonlyMap<string, DatedRow>; promises?: ReadonlyMap<string, Pick<FollowupRow, "id" | "revision">>; fromScan: boolean; now: number; sender?: { person: boolean }; reader?: { name: string; addressed: "to" | "cc" | "none" } }): { rows: DatedWrite[]; settled: { id: number; revision: number }[]; moved: { id: number; dueDay: string; dueAt: number; timed: boolean; actAt: number; text?: string }[]; movedPromises: { id: number; revision: number; dueAt: number }[] } {
   const said = `${norm(input.subject)}\n${norm(input.text)}`;
@@ -115,9 +129,12 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
   for (const m of result.moved ?? []) {
     const row = input.open.get(m.label);
     if (!row || row.kind !== "ask" || settledIds.has(row.id) || !quoted(m.evidence)) continue;
+    const request = { kind: "respond" as const, text: newWords(m) ?? row.text, quote: m.evidence, due: m.due, time: m.time };
+    // revision 7: a request for credentials or an ID neither becomes one nor answers the ask, which stays as it was
+    if (asksForSecrets(request)) continue;
     settled.push({ id: row.id, revision: row.revision });
     settledIds.add(row.id);
-    answered.push({ kind: "respond", text: newWords(m) ?? row.text, quote: m.evidence, due: m.due, time: m.time });
+    answered.push(request);
   }
   const moved = (result.moved ?? []).flatMap((m) => {
     const row = input.open.get(m.label);
@@ -134,7 +151,7 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
   // a moved item keeps its id: the same kind on its new day isn't added again (Codex review of the fixes)
   const seen = new Set<string>(moved.map((m) => itemKey(m.kind, m)));
   // revision 2 of the fourth round: an ask with a day is an ask first (a person, to the reader), then the request it is
-  const datedAsk = (i: { kind: string; due: string | null; quote: string }) => i.kind === "ask" && !!i.due && askAllowed(i.quote, said, input);
+  const datedAsk = (i: { kind: string; text: string; due: string | null; quote: string }) => i.kind === "ask" && !!i.due && askAllowed(i.quote, said, input) && !asksForSecrets(i);
   // the eval: a person's request with a day is the `respond`, never also an undated ask beside it
   const requested = [...answered, ...result.items].some((i) => (i.kind === "respond" || datedAsk(i)) && quoted(i.quote));
   // the fourth panel read: a person who says no answer is needed ("No need to reply now") asks nothing
@@ -145,7 +162,7 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     // an ask is never a dated kind's substitute: one with a day is a request with a day, if it's an ask at all
     if (item.kind === "ask" && item.due && !datedAsk(item)) continue;
     const kind = (item.kind === "ask" && item.due ? "respond" : item.kind) as DatedKind;
-    if (kind === "ask" && (requested || noReply || !askAllowed(item.quote, said, input))) continue;
+    if (kind === "ask" && (requested || noReply || !askAllowed(item.quote, said, input) || asksForSecrets(item))) continue;
     const timing = datedTiming({ kind, due: item.due, time: item.time, arrivedAt: input.arrivedAt });
     if (!timing) continue;
     // the 14-day check keeps nothing already over (§6)
