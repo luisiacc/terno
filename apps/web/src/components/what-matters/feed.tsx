@@ -1,5 +1,5 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { DIGEST_ROW_ID, type ThreadSummary } from "@terno/core";
+import { DIGEST_ROW_ID, localDay, type ThreadSummary } from "@terno/core";
 import { getLocale, t } from "@terno/i18n";
 import { Skeleton } from "@terno/ui/components/skeleton";
 import { Sun } from "@terno/ui/icons";
@@ -8,6 +8,7 @@ import { memo, useEffect, useId, useMemo, useRef } from "react";
 import type { TodayTask } from "~/lib/dated";
 import { useDesign } from "~/lib/design";
 import { listDate } from "~/lib/format";
+import { dayHeading } from "~/lib/when";
 import { LIST_TITLE } from "~/lib/list-title";
 import { installScrollHairline } from "~/lib/scroll-hairline";
 import { pressRow, releaseRow } from "~/lib/select";
@@ -16,7 +17,7 @@ import { useFeedCursor } from "~/lib/feed-focus";
 import { closeFeedConversation } from "~/lib/feed-pane";
 import { getApp, useApp } from "~/state/app";
 import { listAnchor, loadMore, useList } from "~/state/list";
-import { digestFrom, digestLabel, useToday, type FeedGroupKind } from "~/state/today";
+import { digestFrom, digestLabel, groupDay, useToday, type FeedGroupKind } from "~/state/today";
 import { EmptyState } from "../empty-state";
 import { listScroller } from "../thread-list";
 import { ThreadMenu } from "../thread-menu";
@@ -38,7 +39,12 @@ type FeedRow =
   | { type: "item"; key: string; id: number; index: number; kind: FeedGroupKind | undefined }
   | { type: "digest"; key: string; index: number };
 
-const SECTION_NAME = { missed: "today.missed", today: "today.today", needsYou: "today.needsYou", soon: "today.soon", reminders: "today.reminders", comingUp: "today.comingUp", history: "today.history" } as const satisfies Record<FeedGroupKind, string>;
+/** A group's heading: Missed, Today, a day ahead in the when column's day words (plan 210), Earlier. */
+function headingName(kind: FeedGroupKind): string {
+  const day = groupDay(kind);
+  if (day !== null) return dayHeading(localDay(day)?.getTime() ?? Date.now());
+  return t(kind === "missed" ? "today.missed" : kind === "today" ? "today.today" : "today.history");
+}
 
 /** The list's rows with a heading where each group begins (a held row keeps its group's), and the digest. */
 function feedRows(items: readonly ThreadSummary[], kinds: ReadonlyMap<number, FeedGroupKind>): FeedRow[] {
@@ -220,8 +226,8 @@ export function WhatMattersFeed() {
 /** A group's heading: its name, over a hairline. */
 function Heading({ kind }: { kind: FeedGroupKind }) {
   return (
-    <h2 data-testid="wm-heading" data-kind={kind} className="hairline-b mx-3 mb-1 pt-5 pb-1.5 text-sm font-medium text-foreground">
-      {t(SECTION_NAME[kind])}
+    <h2 data-testid="wm-heading" data-kind={groupDay(kind) === null ? kind : "day"} data-day={groupDay(kind) ?? undefined} className="hairline-b mx-3 mb-1 pt-5 pb-1.5 text-sm font-medium text-foreground">
+      {headingName(kind)}
     </h2>
   );
 }
@@ -245,15 +251,17 @@ const FeedItem = memo(function FeedItem({ id, thread, group }: { id: number; thr
 function OpenItem({ id, thread, group, open, cursor }: { id: number; thread: ThreadSummary; group: FeedGroupKind | undefined; open: boolean; cursor: boolean }) {
   const entry = useToday((s) => s.entries.get(id));
   const task = useToday((s) => s.tasks.get(id));
+  // plan 210: one of Coming up's, under its day while Coming up is open: quiet
+  const ahead = useToday((s) => s.ahead.has(id));
   const sentence = useMemo(() => (entry ? todaySentence(entry) : thread.subject || t("common.noSubject")), [entry, thread.subject]);
   // a held row (no longer Today's) says only the day it came, quietly
-  // its weight by its group (plan 204's seventh round: Missed, Today, Soon by when), its column in the list's words
-  const when = useMemo(() => (entry ? todayWhen(entry, Date.now(), group) : { text: listDate(thread.lastDate), tone: "none" as const }), [entry, group, thread.lastDate]);
+  // its weight by its group (plan 210: Missed and Today's dated items strong, a day ahead quiet), its column in the list's words
+  const when = useMemo(() => (entry ? todayWhen(entry, Date.now(), group, ahead) : { text: listDate(thread.lastDate), tone: "none" as const }), [entry, group, ahead, thread.lastDate]);
   const sender = senderOf(thread, task);
   // the briefing's second line: who (whom a promise of yours was made to), and the conversation's next item; never the
   // email's date, which read as the due day (after the UI panel): the right column says when
   const who = task?.kind === "promise" && task.person ? t("whatMatters.to", { name: task.person.name }) : sender;
-  return <Item id={id} sentence={sentence} meta={task?.also ? `${who} · ${task.also}` : who} when={when.text} tone={when.tone} task={task} open={open} cursor={cursor} later={group === "comingUp"} />;
+  return <Item id={id} sentence={sentence} meta={task?.also ? `${who} · ${task.also}` : who} when={when.text} tone={when.tone} task={task} open={open} cursor={cursor} later={ahead} />;
 }
 
 interface ItemProps {
@@ -299,7 +307,7 @@ const WHEN_INK: Record<TodayTone, string> = {
 function Item({ id, sentence, meta, when, tone, task, open, cursor = false, later, past = false, digest = false }: ItemProps) {
   const textId = useId();
   return (
-    <div data-thread-id={menuId(id)} data-item-id={id} data-testid="wm-item" data-open={open || undefined} data-cursor={cursor || undefined} data-history={past || undefined} data-digest={digest || undefined} data-tone={tone} className="group/item relative rounded-lg not-data-open:hover:bg-row-hover data-cursor:bg-row-hover data-open:bg-row-selected">
+    <div data-thread-id={menuId(id)} data-item-id={id} data-testid="wm-item" data-open={open || undefined} data-cursor={cursor || undefined} data-history={past || undefined} data-digest={digest || undefined} data-ahead={(later && !past) || undefined} data-tone={tone} className="group/item relative rounded-lg not-data-open:hover:bg-row-hover data-cursor:bg-row-hover data-open:bg-row-selected">
       <button type="button" data-testid="wm-item-open" title={`${sentence}\n${meta}`} aria-expanded={open} onClick={() => openItem(id)} className="flex w-full min-w-0 items-start gap-4 rounded-lg px-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring">
         <span className="min-w-0 flex-1">
           <span id={textId} data-testid="wm-sentence" className={cn("line-clamp-2 text-base text-pretty group-data-open/item:text-row-selected-foreground", later ? "text-muted-foreground" : SENTENCE_INK[tone])}>

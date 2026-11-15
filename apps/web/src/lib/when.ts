@@ -99,6 +99,16 @@ export function boundaryDay(ms: number): string {
 }
 
 /**
+ * Plan 210: a day's heading in What matters, in the when column's day words, as a heading: "Tomorrow"; the weekday this
+ * week ("Wednesday", "Miércoles"); further, the day with its date ("Mon, Nov 30", "Lun, 30 nov").
+ */
+export function dayHeading(ms: number, now = Date.now()): string {
+  const days = daysAway(ms, now);
+  const text = days === 1 ? t("today.when.tomorrow") : days > 1 && days < 7 ? fmt().weekdayLong.format(ms) : whenDay(ms, now).replace(".", "");
+  return text.charAt(0).toLocaleUpperCase(getLocale()) + text.slice(1);
+}
+
+/**
  * Plan 204: the day a dated line names, near or not: today, tomorrow, yesterday; the weekday within 6 days either way
  * ("Friday", "viernes"); further, its date ("Nov 21", "21 nov"). The words for the near three are the line's own.
  */

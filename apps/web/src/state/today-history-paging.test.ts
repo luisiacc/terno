@@ -16,7 +16,7 @@ const { useToday } = await import("~/state/today");
 
 const thread = (id: number) => ({ id, lastDate: 1000 - id, subject: `S ${id}`, fromName: "A", categoryIds: [], unread: false }) as unknown as ThreadSummary;
 const line = (id: number): TodayHistoryItem => ({ thread: thread(id), key: { at: 10_000 - id, src: 0, id }, outcome: "done", kind: "pay", text: `Pay ${id}` });
-const answer = (lines: number[], next: number | null) => ({ sections: [{ kind: "needsYou", items: [{ thread: thread(1), why: { kind: "waiting", wrote: true } }] }], digest: null, now: 0, held: [], history: { items: lines.map(line), next: next === null ? null : line(next).key } });
+const answer = (lines: number[], next: number | null) => ({ sections: [{ kind: "today", items: [{ thread: thread(1), why: { kind: "waiting", wrote: true } }] }], digest: null, now: 0, held: [], history: { items: lines.map(line), next: next === null ? null : line(next).key } });
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((done) => (resolve = done));

@@ -80,8 +80,11 @@ export interface TodayItem {
   also?: TodayAlso;
 }
 
-/** Plan 204: every row that's for today, each thread once, in `TODAY_GROUP_ORDER` (the seventh panel round: by when); Coming up last, and never counted. */
-export type TodaySection = { kind: TodayGroupKind; items: TodayItem[] };
+/**
+ * Plan 204: every row that's for today, each thread once, in `TODAY_GROUP_ORDER`; Coming up last, and never counted. Plan
+ * 210 (by day): a day of its own and Coming up come as a section per day, in order, each with its `day` ("YYYY-MM-DD").
+ */
+export type TodaySection = { kind: TodayGroupKind; day?: string; items: TodayItem[] };
 
 export interface DigestItem {
   threadId: number;

@@ -23,7 +23,7 @@ const { useList, reloadList } = await import("~/state/list");
 const thread = (id: number) => ({ id, accountId: 1, subject: `t${id}`, snippet: "", fromName: "A", fromEmail: "a@x.test", lastDate: 1e9 - id, messageCount: 1, unread: false, starred: false, hasAttachments: false, categoryIds: [], inInbox: true, inSpam: false, inTrash: false }) as unknown as ThreadSummary;
 function list(ids: number[], held: number[] = []): TodayList {
   // as the backend: only what the sections don't already hold
-  return { sections: [{ kind: "needsYou", items: ids.map((id) => ({ thread: thread(id), why: { kind: "waiting" } })), more: 0 }], digest: null, now: 1e9, held: held.filter((id) => !ids.includes(id)).map(thread) } as unknown as TodayList;
+  return { sections: [{ kind: "today", items: ids.map((id) => ({ thread: thread(id), why: { kind: "waiting" } })), more: 0 }], digest: null, now: 1e9, held: held.filter((id) => !ids.includes(id)).map(thread) } as unknown as TodayList;
 }
 const shown = () => useList.getState().items.map((t) => t.id);
 

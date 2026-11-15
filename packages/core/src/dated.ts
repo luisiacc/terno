@@ -361,53 +361,73 @@ export function nextTodayChange(items: readonly Pick<DatedRow, "kind" | "state" 
     consider(dayEnd(dayKeyOf(p.dueAt)));
     consider(promiseMissedUntil(p));
   }
-  // Codex code review: a row's words are by the day ("Tomorrow 7:40", "Due Friday"): while one shows, midnight changes them
-  // (an ask's and an undated alert's aren't: they say no day), and (the seventh panel round) moves what's Soon's on its
-  // day into Today
-  if (items.some((r) => r.kind !== "ask" && !undatedAlert(r) && datedPlace(r, now) !== "hidden") || promises.some((p) => promisePlace(p, now) !== "hidden")) consider(dayAt(new Date(startOfDay(now)), 1, 0));
+  // Codex code review: a row's words are by the day ("Tomorrow 7:40", "Due Friday"): while one shows, midnight changes them.
+  // Plan 210 (by day): so do the headings ("Tomorrow" becomes Today's) and what has no date ("since Wed")
+  if (items.some((r) => datedPlace(r, now) !== "hidden") || promises.some((p) => promisePlace(p, now) !== "hidden")) consider(dayAt(new Date(startOfDay(now)), 1, 0));
   return Number.isFinite(next) ? next : null;
 }
 
 /**
- * Today's sections in the order they're shown. The seventh panel round (change 1): they go by when, not by kind: Missed;
- * Today (what's due or happens today, and alerts while they show); Needs you (people waiting on an answer); Soon (what's
- * due after today, within its lead); Reminders; Coming up (behind its toggle). It's also the claim order: a conversation's
- * row is its first task in it (`places()`).
+ * What Matters' groups in the order they're shown, by day (plan 210, the owner, replacing plan 204's seventh-round groups):
+ * Missed; Today (what's due or happens today, and everything with no date that needs you now: a person's ask, a promise of
+ * yours that named no day, an alert that named none, what's waiting on you, your reminders due today); a day of its own
+ * for each day ahead whose items' time to act has come (`day`, with its day); Coming up (behind its toggle), by day too.
+ * It's also the claim order: a conversation's row is its first task in it, days in their order (`places()`).
  */
-export const TODAY_GROUP_ORDER = ["missed", "today", "needsYou", "soon", "reminders", "comingUp"] as const;
+export const TODAY_GROUP_ORDER = ["missed", "today", "day", "comingUp"] as const;
 export type TodayGroupKind = (typeof TODAY_GROUP_ORDER)[number];
 
-/** Where a task (a dated item, a promise of yours) can sit: Reminders hold your reminders alone. */
-export type TaskGroup = Exclude<TodayGroupKind, "reminders">;
+/** Where a task (a dated item, a promise of yours) sits: its group, and for a day of its own or Coming up, its day ("YYYY-MM-DD"). */
+export type TaskPlace = { group: "missed" | "today"; day: null } | { group: "day" | "comingUp"; day: string };
 
-const COUNTED_GROUPS: ReadonlySet<TodayGroupKind> = new Set(["missed", "today", "needsYou", "soon"]);
-
-/**
- * What "N need you" counts, the header's, the sidebar's and the morning notice's (the seventh panel round, revision 2): a
- * row in Missed, Today, Needs you or Soon, unless its own item is a Plan's kind (an event or a delivery: something
- * happening to you, wherever it sits). `kind` is the row's own item's (`why.item.kind`); a promise or a waiting row has none.
- */
-export const todayCounted = (group: TodayGroupKind, kind?: DatedKind): boolean => COUNTED_GROUPS.has(group) && (kind === undefined || datedGroup(kind) !== "plans");
+const COUNTED_GROUPS: ReadonlySet<TodayGroupKind> = new Set(["missed", "today", "day"]);
 
 /**
- * The seventh panel round (revision 6): the group an item shows in, assigned after `datedPlace` has said whether it shows
- * (eligibility, expiry, Later), from the item's own day: Today on or after its day, Soon before it. An ask is Needs you's;
- * an alert is Today's while it shows (an undated one's stored day is for order only, an ask's is its arrival: neither
- * makes anything Today). Null: not shown. `today`, `now`'s day, for a caller placing many.
+ * What "N need you" counts, the header's, the sidebar's and the morning notice's (plan 204's rule, plan 210's groups): a
+ * row in Missed, Today or a day ahead, unless it's your reminder or its own item is a Plan's kind (an event or a delivery:
+ * something happening to you, wherever it sits). `why` is the row's: its kind, and its own item's (a promise or a waiting
+ * row has none). Coming up never counts.
  */
-export function datedGroupAt(r: Parameters<typeof datedPlace>[0], now: number, today = dayKeyOf(now)): TaskGroup | null {
-  const place = datedPlace(r, now);
-  if (place === "hidden") return null;
-  if (place === "missed" || place === "comingUp" || place === "needsYou") return place;
-  return r.kind === "alert" || r.dueDay <= today ? "today" : "soon";
+export const todayCounted = (group: TodayGroupKind, why: { kind: string; item?: { kind: DatedKind } }): boolean => COUNTED_GROUPS.has(group) && why.kind !== "reminder" && (why.item === undefined || datedGroup(why.item.kind) !== "plans");
+
+const TODAY: TaskPlace = { group: "today", day: null };
+const MISSED: TaskPlace = { group: "missed", day: null };
+
+/**
+ * Coming up's day for what isn't shown yet: its own day ahead; put off past its day, or with no day of its own (an ask, an
+ * alert that named none, a promise that did), the day its Later ends.
+ */
+function comingUpDay(own: string | null, deferredUntil: number | null | undefined, today: string): string {
+  if (own !== null && own > today) return own;
+  const back = deferredUntil != null ? dayKeyOf(deferredUntil) : null;
+  return back !== null && back > today ? back : (own ?? back ?? today);
 }
 
-/** The same for a promise of yours: an undated one due is Needs you's, a dated one Today's on its day and Soon's before. */
-export function promiseGroupAt(r: PromiseFacts, now: number, today = dayKeyOf(now)): TaskGroup | null {
+/**
+ * Plan 210 (by day): the group an item shows in, and its day, assigned after `datedPlace` has said whether it shows
+ * (eligibility, expiry, Later), from the item's own day: Today on or before it, its own day ahead. What has no date (an
+ * ask, an alert that named none) is Today's while it shows; a dated alert is its day's, as anything dated. Null: not
+ * shown. `today`, `now`'s day, for a caller placing many.
+ */
+export function datedGroupAt(r: Parameters<typeof datedPlace>[0], now: number, today = dayKeyOf(now)): TaskPlace | null {
+  const place = datedPlace(r, now);
+  if (place === "hidden") return null;
+  if (place === "missed") return MISSED;
+  const undated = r.kind === "ask" || undatedAlert(r);
+  if (place === "comingUp") return { group: "comingUp", day: comingUpDay(undated ? null : r.dueDay, r.deferredUntil, today) };
+  if (undated || r.dueDay <= today) return TODAY;
+  return { group: "day", day: r.dueDay };
+}
+
+/** The same for a promise of yours: an undated one due is Today's, a dated one Today's on its day and its day's before. */
+export function promiseGroupAt(r: PromiseFacts, now: number, today = dayKeyOf(now)): TaskPlace | null {
   const place = promisePlace(r, now);
   if (place === "hidden") return null;
-  if (place === "missed" || place === "comingUp" || place === "needsYou") return place;
-  return dayKeyOf(r.dueAt) <= today ? "today" : "soon";
+  if (place === "missed") return MISSED;
+  if (place === "needsYou") return TODAY;
+  const day = dayKeyOf(r.dueAt);
+  if (place === "comingUp") return { group: "comingUp", day: comingUpDay(r.dated ? day : null, r.deferredUntil, today) };
+  return day <= today ? TODAY : { group: "day", day };
 }
 
 const MONTHS = "jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|ene(?:ro)?|febrero|marzo|abr(?:il)?|mayo|junio|julio|ago(?:sto)?|sept?(?:iembre)?|setiembre|octubre|noviembre|dic(?:iembre)?";

@@ -55,14 +55,13 @@ export type TodayTone = "missed" | "today" | "later" | "none";
 
 /**
  * The feed's right column (after the UI panel), in the list's own words: its short day ("Wed", "Tomorrow", "Nov 30")
- * and a timed item's time ("2:00 PM", "Mon 7:40 AM"); Missed's "Was due Wed"; nothing for an alert that named no day;
- * for what has no day of its own, the day it came, which the column shows quietly. Its weight follows the item's group
- * where the group is by when (plan 204's seventh round): Missed, Today (an alert while it shows, a Plan today), Soon and
- * Coming up; elsewhere (Needs you, Reminders) by its own day.
+ * and a timed item's time ("2:00 PM", "Mon 7:40 AM"); Missed's "Was due Wed"; for what has no date (plan 210, the owner:
+ * it sits in Today), when it came, "since Wed", quietly; a reminder, its time. Its weight follows the item's group: Missed
+ * and Today's dated items strong, what's undated in Today quiet; a day ahead and Coming up's rows (`ahead`) quiet.
  */
-export function todayWhen(item: Pick<TodayItem, "thread" | "why">, now = Date.now(), group?: FeedGroupKind): { text: string | null; tone: TodayTone } {
+export function todayWhen(item: Pick<TodayItem, "thread" | "why">, now = Date.now(), group?: FeedGroupKind, ahead = false): { text: string | null; tone: TodayTone } {
   const when = whenOf(item, now);
-  const tone: TodayTone = group === "missed" ? "missed" : group === "today" ? "today" : group === "soon" || group === "comingUp" ? "later" : when.tone;
+  const tone: TodayTone = ahead || group?.startsWith("day:") ? "later" : group === "missed" ? "missed" : group === "today" ? (when.tone === "none" ? "none" : "today") : when.tone;
   return { text: when.text, tone };
 }
 
@@ -74,18 +73,18 @@ function whenOf(item: Pick<TodayItem, "thread" | "why">, now: number): { text: s
     const short = dueShort(timed ? at : day, timed, now);
     return { text: time ? `${short} ${time}` : short, tone: datedDay(day, now).near === "today" ? "today" : "later" };
   };
-  const came = { text: listDate(thread.lastDate, now), tone: "none" as const };
+  const came = { text: t("whatMatters.since", { day: listDate(thread.lastDate, now) }), tone: "none" as const };
+  if (why.kind === "reminder" && why.dueAt !== undefined) return { text: dueShort(why.dueAt, true, now), tone: "none" };
   if (why.kind === "dated" && why.item) {
     const it = why.item;
-    if (it.kind === "ask") return came;
-    if (!it.dated) return { text: null, tone: it.kind === "alert" ? "today" : "none" };
+    if (it.kind === "ask" || !it.dated) return came;
     const dueAt = why.dueAt ?? 0;
     const day = localDay(it.dueDay)?.getTime() ?? dueAt;
     if (why.missed) return { text: was(day), tone: "missed" };
     return ahead(day, dueAt, it.timed);
   }
   if (why.kind === "promise") {
-    if (why.promise?.dated !== true || why.dueAt === undefined) return { text: null, tone: "none" };
+    if (why.promise?.dated !== true || why.dueAt === undefined) return came;
     if (why.missed) return { text: was(why.dueAt), tone: "missed" };
     return ahead(why.dueAt, why.dueAt, false);
   }
