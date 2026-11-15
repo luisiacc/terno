@@ -4,6 +4,7 @@ import { keepInPage } from "@terno/store/list";
 import { followupsOffered } from "~/lib/ai";
 import { prune } from "~/lib/selection";
 import { activeFilter } from "~/lib/unread-filter";
+import { feedLook, useWmLook } from "~/lib/what-matters-look";
 import { DIGEST_ROW_ID, matchesFilter } from "@terno/core";
 import { flushSync } from "react-dom";
 import { create } from "zustand";
@@ -82,6 +83,8 @@ function rememberPlace(selectedId: number | null): void {
 
 /** What a list's first page opens: where it was left, else its nearest row now, else the top. */
 function openedOn(place: Place | undefined, items: readonly ThreadSummary[]): number | null {
+  // plan 204, the UI experiment: Today as a feed opens nothing by itself (a conversation comes in beside it when asked for)
+  if ((!place || place.selectedId === null) && feedLook(getApp().today, useWmLook.getState().look)) return null;
   // plan 161: Today's first row is the digest's; a list opens on its first conversation, unless that's all there is
   if (!place || place.selectedId === null) return (items.find((t) => t.id !== DIGEST_ROW_ID) ?? items[0])?.id ?? null;
   const id = place.selectedId;
