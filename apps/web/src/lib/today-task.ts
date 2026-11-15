@@ -69,8 +69,7 @@ function actOnKeyTarget(action: "done" | "dismiss"): boolean {
   const target = keyTarget();
   if (!target) return false;
   void actOnTodayRow(target.id, target.task, action);
-  const { next } = target;
-  if (next !== undefined) requestAnimationFrame(() => focusFeedItem(next));
+  keysOnTo(target.next);
   return true;
 }
 
@@ -90,10 +89,24 @@ export function laterOnSelected(): boolean {
   return true;
 }
 
-/** Plan 204 (after the panel, fix 10): Later's "Pick a date…", a moment of your own in its own window. */
-export function openTodayLater(threadId: number, task: TodayTask): void {
-  useToday.setState({ laterPick: { threadId, task } });
+/** The keys on to `next` once the item has gone, as after D (a frame: the feed draws the rows that are left). */
+const keysOnTo = (next: number | undefined): void => {
+  if (next !== undefined) requestAnimationFrame(() => focusFeedItem(next));
+};
+
+/**
+ * Plan 204 (after the panel, fix 10): Later's "Pick a date…", a moment of your own in its own window; `next`, where the
+ * keys go once it's set (b from another item than the open one: Codex code review of plan 210's iteration 1).
+ */
+export function openTodayLater(threadId: number, task: TodayTask, next?: number): void {
+  useToday.setState({ laterPick: { threadId, task, ...(next !== undefined ? { next } : {}) } });
   setApp({ dialog: "todayLater" });
+}
+
+/** The picker's moment: the act, for the task it opened for, and the keys on as from the menu's presets. */
+export function laterFromPicker(pick: { threadId: number; task: TodayTask; next?: number }, at: number): void {
+  void actOnTodayRow(pick.threadId, pick.task, "later", at);
+  keysOnTo(pick.next);
 }
 
 const laterButton = (id: number): HTMLElement | null => document.querySelector<HTMLElement>(`[data-testid=wm-feed] [data-item-id="${id}"] [data-testid=wm-later]`);
@@ -104,7 +117,7 @@ const laterButton = (id: number): HTMLElement | null => document.querySelector<H
  * open can't move the choice to another item; the act is revision-checked as any.
  */
 export function openLater(threadId: number, task: TodayTask, next?: number): void {
-  if (!laterButton(threadId)) return openTodayLater(threadId, task);
+  if (!laterButton(threadId)) return openTodayLater(threadId, task, next);
   // the menu holds the app's keys while it's open (D or e under it would reach the mail behind)
   useToday.setState({ laterMenu: { threadId, task, ...(next !== undefined ? { next } : {}) } });
   setApp({ menuOpen: true });
@@ -122,5 +135,12 @@ export function laterFromMenu(threadId: number, task: TodayTask, at: number): vo
   const next = useToday.getState().laterMenu?.next;
   closeLater();
   void actOnTodayRow(threadId, task, "later", at);
-  if (next !== undefined) requestAnimationFrame(() => focusFeedItem(next));
+  keysOnTo(next);
+}
+
+/** The menu's "Pick a date…": the picker, for the same task, the keys' next item with it. */
+export function pickFromMenu(threadId: number, task: TodayTask): void {
+  const next = useToday.getState().laterMenu?.next;
+  closeLater();
+  openTodayLater(threadId, task, next);
 }

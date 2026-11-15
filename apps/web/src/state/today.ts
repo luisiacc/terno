@@ -81,7 +81,7 @@ interface TodayState {
   /** each row's group, by thread (held rows keep theirs): the feed's headings follow the rows, whatever leaves */
   kinds: ReadonlyMap<number, FeedGroupKind>;
   /** plan 204 (after the panel, fix 10): the row whose task Later's "Pick a date…" is choosing a moment for */
-  laterPick: { threadId: number; task: TodayTask } | null;
+  laterPick: { threadId: number; task: TodayTask; next?: number } | null;
   /**
    * plan 210 (iteration 1): the feed item whose Later menu is open (its button, or b), with the task as it was when it
    * opened: a reload meanwhile can't move its presets to another item; `next`, where the keys go once it's acted on

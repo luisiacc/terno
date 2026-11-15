@@ -178,14 +178,14 @@ async function run(kind: "SQLite" | "IndexedDB", budget: { spread: Gate; bound: 
     // as a mailbox has them: the items spread over the coming weeks, a few for today, the rest Coming up
     await measure("spread", NOW, budget.spread);
     // the bound: every item's time to act has come, and the list holds all 1,000, a conversation once (each of SEVERAL and
-    // MIXED with its next item said beside it; each of MIXED Today's Plan)
+    // MIXED with its next item said beside it; each of MIXED Today's ask, the person before the Plan: plan 210, iteration 1)
     clock.now = NOW + 2 * DAY;
     backend.today.touched();
     const listed = await client.call("today.list", { heldIds: [] });
     const all = listed.sections.flatMap((x) => x.items);
     expect(all.length).toBeGreaterThanOrEqual(1000 - SEVERAL - 2 * MIXED);
     expect(all.filter((i) => i.also).length).toBe(SEVERAL + MIXED);
-    expect(listed.sections.find((x) => x.kind === "today")?.items.filter((i) => i.why.item?.kind === "event").length).toBe(MIXED);
+    expect(listed.sections.find((x) => x.kind === "today")?.items.filter((i) => i.why.item?.kind === "ask" && i.also?.kind === "event").length).toBe(MIXED);
     await measure("all showing", NOW + 2 * DAY, budget.bound);
     // plan 204, the second panel round: Needs you full (NEEDS_WALK conversations), each on the tighter rule's slowest
     // path: a snippet that starts like a thanks (its body read), a body that says more, a current summary to parse

@@ -148,17 +148,18 @@ describe("AI labels and help", () => {
     expect(datedReaderLine(full({ provider: "none" }), "offer")).toBeNull();
     expect(datedReaderLine(null, "settings")).toBeNull();
     // both keys: drafting is Claude's, the dated reader a small job, OpenAI's
-    expect(datedReaderLine(full({ provider: "anthropic", keys: { anthropic: key, openai: key } }), "offer")).toBe("Terno sends each new message’s text to OpenAI to find these; nothing else leaves your Mac for them.");
-    expect(datedReaderLine(full({ provider: "anthropic", keys: { anthropic: key } }), "settings")).toBe("To find bills, trips and requests, Terno sends each new message’s text to Claude (Anthropic); nothing else leaves your Mac for them.");
+    expect(datedReaderLine(full({ provider: "anthropic", keys: { anthropic: key, openai: key } }), "offer")).toBe("Terno sends each new message (its text, subject and names, with what it already found there) to OpenAI to find these; nothing else leaves your Mac for them.");
+    expect(datedReaderLine(full({ provider: "anthropic", keys: { anthropic: key } }), "settings")).toBe("To find bills, trips and requests, Terno sends each new message (its text, subject and names, with what it already found there) to Claude (Anthropic); nothing else leaves your Mac for them.");
     // a relay in front of OpenAI, a server of the user's own, a local kind on another machine: where it really goes
     expect(datedReaderLine(full({ provider: "anthropic", keys: { anthropic: key, openai: key }, profiles: { openai: { model: "", baseURL: "https://relay.example.test/v1" } } }), "offer")).toContain("to OpenAI (relay.example.test) to find");
     expect(datedReaderLine(full({ provider: "compatible", preset: "custom", baseURL: "https://ai.example.test/v1" }), "offer")).toContain("to ai.example.test to find");
     expect(datedReaderLine(full({ provider: "ollama", local: false, baseURL: "http://gpu.lan:11434/v1" }), "offer")).toContain("to gpu.lan:11434 to find");
     // on this Mac: it stays here
-    expect(datedReaderLine(full({ provider: "ollama", local: true }), "offer")).toBe("Terno reads each new message’s text with Ollama on this Mac to find these; nothing leaves your Mac.");
-    expect(datedReaderLine(full({ provider: "compatible", preset: "custom", baseURL: "http://127.0.0.1:8080/v1", local: true }), "settings")).toBe("To find bills, trips and requests, Terno reads each new message’s text with Local server on this Mac; nothing leaves it.");
+    expect(datedReaderLine(full({ provider: "ollama", local: true }), "offer")).toBe("Terno reads each new message with Ollama on this Mac to find these; nothing leaves your Mac for them.");
+    expect(datedReaderLine(full({ provider: "compatible", preset: "custom", baseURL: "http://127.0.0.1:8080/v1", local: true }), "settings")).toBe("To find bills, trips and requests, Terno reads each new message with Local server on this Mac; nothing leaves your Mac for them.");
     setLocale("es", es);
-    expect(datedReaderLine(full({ provider: "anthropic", keys: { anthropic: key, openai: key } }), "offer")).toBe("Terno envía el texto de cada mensaje nuevo a OpenAI para encontrarlos; nada más sale de tu Mac para esto.");
+    expect(datedReaderLine(full({ provider: "anthropic", keys: { anthropic: key, openai: key } }), "offer")).toBe("Terno envía cada mensaje nuevo (su texto, asunto y nombres, con lo que ya encontró ahí) a OpenAI para encontrarlos; nada más sale de tu Mac para esto.");
+    expect(datedReaderLine(full({ provider: "ollama", local: true }), "offer")).toBe("Terno lee cada mensaje nuevo con Ollama en este Mac para encontrarlos; nada sale de tu Mac para esto.");
   });
 
   it("plan 131: Settings → AI names every cloud provider mail may go to, by the backend's rules, and what goes", () => {

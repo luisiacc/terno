@@ -1,7 +1,7 @@
 import { t } from "@terno/i18n";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@terno/ui/components/dialog";
 import { laterNote, laterStart, laterWindow } from "~/lib/dated";
-import { actOnTodayRow } from "~/lib/today-task";
+import { laterFromPicker } from "~/lib/today-task";
 import { setApp } from "~/state/app";
 import { useToday } from "~/state/today";
 import { WhenForm } from "./when-fields";
@@ -34,7 +34,7 @@ export function TodayLaterDialog() {
             submit={t("dated.laterSet")}
             onSet={(at) => {
               close();
-              if (pick) void actOnTodayRow(pick.threadId, task, "later", at);
+              if (pick) laterFromPicker(pick, at);
             }}
           />
         )}

@@ -8,7 +8,7 @@ import { CalendarClock, ChevronDown } from "@terno/ui/icons";
 import { useEffect } from "react";
 import { laterChoices, type TodayTask } from "~/lib/dated";
 import { presetLabel, presetWhen } from "~/lib/reminders";
-import { actOnTodayRow, closeLater, laterFromMenu, openLater, openTodayLater } from "~/lib/today-task";
+import { actOnTodayRow, closeLater, laterFromMenu, openLater, pickFromMenu } from "~/lib/today-task";
 import { useToday } from "~/state/today";
 
 /**
@@ -31,10 +31,7 @@ function LaterItems({ threadId, task }: { threadId: number; task: TodayTask }) {
       {presets.length > 0 && <DropdownMenuSeparator />}
       <DropdownMenuItem
         data-testid="wm-later-pick"
-        onClick={() => {
-          closeLater();
-          openTodayLater(threadId, task);
-        }}
+        onClick={() => pickFromMenu(threadId, task)}
       >
         <CalendarClock />
         <span className="min-w-0 flex-1 truncate">{t("dated.pickDate")}</span>
