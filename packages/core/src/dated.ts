@@ -301,6 +301,8 @@ export function nextTodayChange(items: readonly Pick<DatedRow, "kind" | "state" 
     if (p.kind !== "promise" || (p.state !== "open" && p.state !== "due")) continue;
     if (!p.dated) {
       consider(followupWakeAt(p));
+      // Codex code review: put off until before its moment, its conversation waits again when the Later ends (stillWaiting)
+      if (p.deferredUntil != null) consider(p.deferredUntil);
       continue;
     }
     const showsAt = promiseShowsAt(p);

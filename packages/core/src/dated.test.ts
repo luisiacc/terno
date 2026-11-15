@@ -170,6 +170,9 @@ describe("where a promise of yours sits (plan 204 §1, the third panel round)", 
     expect(promisePlace({ ...undated, state: "due" }, at(2026, 11, 13))).toBe("hidden");
     expect(promisePlace(undated, at(2026, 11, 14, 9))).toBe("needsYou");
     expect(nextTodayChange([], [undated], at(2026, 11, 13))).toBe(at(2026, 11, 14, 9));
+    // Codex code review: put off until before its moment, the clock still wakes as the Later ends (its conversation waits again)
+    const early = { kind: "promise", state: "open", dated: false, dueAt: at(2026, 11, 15, 9), deferredUntil: at(2026, 11, 14, 11) };
+    expect(nextTodayChange([], [early], at(2026, 11, 14, 10))).toBe(at(2026, 11, 14, 11));
   });
   it("undated: Needs you's once due (it has no day to sit under), and never Missed (the fourth panel round)", () => {
     const undated = { kind: "promise", state: "open", dated: false, dueAt: at(2026, 11, 12, 9) };
