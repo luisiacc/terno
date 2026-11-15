@@ -534,12 +534,12 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
         const a = await got();
         await finish(a.id, a.thread, { rows: [item({ dueDay: "2026-11-20", dueAt: local(20), actAt: local(13) })] });
         const [row] = await store.dated.ofThread(a.thread);
-        const group = async () => datedGroupAt((await store.dated.get(row!.id))!, at);
-        expect(await group()).toBe("soon");
+        const group = async () => datedGroupAt((await store.dated.get(row!.id))!, at)?.group ?? null;
+        expect(await group()).toBe("day");
         const done = (await store.dated.update(row!.id, row!.revision, { state: "done", closedReason: "user", closedAt: at }))!;
         expect(await group()).toBeNull();
         expect(await store.dated.restore([{ snapshot: done, expectRevision: done.revision + 1 }])).toBe(1);
-        expect(await group()).toBe("soon");
+        expect(await group()).toBe("day");
         // Later, then their mail moves it to today at 5 PM, then Later's Undo: today's, at its new moment
         const back = (await store.dated.get(row!.id))!;
         const later = (await store.dated.update(row!.id, back.revision, { deferredUntil: local(17) }))!;

@@ -1,5 +1,5 @@
 import { todayAvailable } from "~/lib/ai";
-import { addressKey, DIGEST_ROW_ID, todayCounted, TODAY_GROUP_ORDER, type DigestItem, type DigestRow, type HistoryKey, type TodayGroupKind, type TodayHistoryItem, type TodayItem, type TodayList, type TodayWhy, type ThreadSummary } from "@terno/core";
+import { addressKey, dayKeyOf, DIGEST_ROW_ID, todayCounted, type DigestItem, type DigestRow, type HistoryKey, type TodayGroupKind, type TodayHistoryItem, type TodayItem, type TodayList, type TodayWhy, type ThreadSummary } from "@terno/core";
 import { t } from "@terno/i18n";
 import { create } from "zustand";
 import { listDate } from "~/lib/format";
@@ -14,11 +14,20 @@ import { reloadList } from "./list";
  * Plan 145: Today's shape on the list: which rows begin a section, and the digest. Rows themselves are the ordinary
  * thread rows, with what they say in the snippet's place.
  */
-/** plan 210: the open part's groups, and the history below them (What matters drawn as the feed) */
-export type FeedGroupKind = TodayGroupKind | "history";
+/**
+ * Plan 210: the feed's headings: Missed, Today, a day ahead (`day:YYYY-MM-DD`, Coming up's joining their day while it's
+ * open: the owner, by day, not by kind), and the history below them.
+ */
+export type FeedGroupKind = "missed" | "today" | `day:${string}` | "history";
+
+/** A feed heading's day ("YYYY-MM-DD"), or null for Missed, Today and the history. */
+export const groupDay = (kind: FeedGroupKind): string | null => (kind.startsWith("day:") ? kind.slice(4) : null);
+
+/** The headings' order: Missed, Today, the days in theirs, the history (as text: a day's key sorts as its day). */
+const rankOf = (kind: FeedGroupKind): string => (kind === "missed" ? "0" : kind === "today" ? "1" : kind === "history" ? "3" : `2${kind.slice(4)}`);
 
 export interface TodayGroup {
-  /** plan 166, after the owner's second look: Needs you is one group again ("they're really the same"); plan 204 adds Missed and Coming up, and (the seventh panel round) Today and Soon: by when, not by kind; plan 210 the history */
+  /** plan 166, after the owner's second look: Needs you is one group again ("they're really the same"); plan 204 adds Missed and Coming up; plan 210 the history, and groups by day */
   kind: FeedGroupKind;
   /** the row it begins at */
   at: number;
@@ -56,6 +65,8 @@ interface TodayState {
   counted: number;
   /** plan 204: what Coming up holds, shown or not (never counted) */
   comingUp: number;
+  /** plan 210: Coming up's rows while it's open, under their days: drawn quietly */
+  ahead: ReadonlySet<number>;
   /** plan 204: Coming up open under the rest (closed by default; remembered on this machine) */
   comingUpOpen: boolean;
   /**
@@ -94,7 +105,7 @@ function storedComingUp(): boolean {
   }
 }
 
-export const useToday = create<TodayState>(() => ({ groups: [], counted: 0, comingUp: 0, comingUpOpen: storedComingUp(), tasks: new Map(), entries: new Map(), history: new Map(), kinds: new Map(), laterPick: null, digest: null, fromDigest: null, pick: null, movedTo: new Map(), notNewsletters: new Set() }));
+export const useToday = create<TodayState>(() => ({ groups: [], counted: 0, comingUp: 0, ahead: new Set(), comingUpOpen: storedComingUp(), tasks: new Map(), entries: new Map(), history: new Map(), kinds: new Map(), laterPick: null, digest: null, fromDigest: null, pick: null, movedTo: new Map(), notNewsletters: new Set() }));
 
 /** Plan 204 (after the panel): a Today row's task, only while Today is what's shown (one Map read: other rows never re-render). */
 export function useTodayTask(threadId: number | null | undefined): TodayTask | undefined {
@@ -275,11 +286,44 @@ function digestThread(): ThreadSummary {
   return { id: DIGEST_ROW_ID, accountId: 0, subject: t("today.newsletters"), snippet: "", fromName: t("today.newsletters"), fromEmail: "", lastDate: 0, messageCount: 1, unread: false, starred: false, hasAttachments: false, categoryIds: [], inInbox: false, inSpam: false, inTrash: false } as unknown as ThreadSummary;
 }
 
-const GROUP_ORDER: readonly FeedGroupKind[] = [...TODAY_GROUP_ORDER, "history"];
+/** A row's moment if it's timed (a timed dated item's): a day's timed rows come first, by it. */
+const timedAt = (item: TodayItem): number | null => (item.why.kind === "dated" && item.why.item?.timed && item.why.dueAt !== undefined ? item.why.dueAt : null);
 
 /**
- * The sections as one list, in `TODAY_GROUP_ORDER` and all of them (plan 204: no cap); Coming up only while it's open.
- * Held rows stay where they were until the selection lets go (revision 9).
+ * Plan 210: the sections as the feed's groups, in order: Missed, Today, then a group per day ahead; while it's open, Coming
+ * up's rows join their day's (one whose day is already here, Today's), the timed first by time, then the rest as they came.
+ */
+function feedGroups(list: TodayList, open: boolean): { kind: FeedGroupKind; items: { item: TodayItem; section: TodayGroupKind }[] }[] {
+  const today = dayKeyOf(list.now || Date.now());
+  const groups = new Map<FeedGroupKind, { item: TodayItem; section: TodayGroupKind }[]>();
+  for (const section of list.sections) {
+    if (section.kind === "comingUp" && !open) continue;
+    const day = section.day ?? null;
+    const kind: FeedGroupKind = section.kind === "missed" ? "missed" : day === null || day <= today ? "today" : `day:${day}`;
+    const rows = groups.get(kind) ?? [];
+    for (const item of section.items) rows.push({ item, section: section.kind });
+    groups.set(kind, rows);
+  }
+  return [...groups.entries()]
+    .sort(([a], [b]) => (rankOf(a) < rankOf(b) ? -1 : rankOf(a) > rankOf(b) ? 1 : 0))
+    .map(([kind, items]) => {
+      // a day with Coming up's rows in it: the timed by time, then the rest in the order they came (the backend's)
+      if (kind !== "missed" && items.some((r) => r.section === "comingUp") && items.some((r) => r.section !== "comingUp")) {
+        const order = new Map(items.map((r, i) => [r, i]));
+        items.sort((a, b) => {
+          const [x, y] = [timedAt(a.item), timedAt(b.item)];
+          if (x !== null && y !== null) return x - y || order.get(a)! - order.get(b)!;
+          if (x !== null || y !== null) return x !== null ? -1 : 1;
+          return order.get(a)! - order.get(b)!;
+        });
+      }
+      return { kind, items };
+    });
+}
+
+/**
+ * The sections as one list, in their groups and all of them (plan 204: no cap); Coming up only while it's open (plan 210:
+ * under their days). Held rows stay where they were until the selection lets go (revision 9).
  */
 export function flattenToday(list: TodayList, before: readonly ThreadSummary[]): ThreadSummary[] {
   const answer = todayAnswer(list, before);
@@ -298,22 +342,19 @@ export function todayAnswer(list: TodayList, before: readonly ThreadSummary[]): 
   const tasks = new Map<number, TodayTask>();
   const entries = new Map<number, TodayItem>();
   const open = useToday.getState().comingUpOpen;
-  let comingUp = 0;
-  const sections = [...list.sections].sort((a, b) => GROUP_ORDER.indexOf(a.kind) - GROUP_ORDER.indexOf(b.kind));
-  for (const section of sections) {
-    if (section.kind === "comingUp") {
-      comingUp = section.items.length;
-      if (!open) continue;
-    }
-    if (!section.items.length) continue;
-    groups.push({ kind: section.kind, at: items.length });
-    for (const item of section.items) {
-      const why = dayKnown(item.why, section.kind);
+  const comingUp = list.sections.reduce((n, x) => n + (x.kind === "comingUp" ? x.items.length : 0), 0);
+  const ahead = new Set<number>();
+  for (const group of feedGroups(list, open)) {
+    if (!group.items.length) continue;
+    groups.push({ kind: group.kind, at: items.length });
+    for (const { item, section } of group.items) {
+      const why = dayKnown(item.why, section);
       const task = taskOf(why);
       items.push({ ...item.thread, snippet: whyLine(item, why, task) });
       entries.set(item.thread.id, why === item.why ? item : { ...item, why });
-      // the header's "N need you", what the sidebar's number counts (the backend's own rule: never a Plan's kind)
-      if (todayCounted(section.kind, item.why.item?.kind)) counted.add(item.thread.id);
+      if (section === "comingUp") ahead.add(item.thread.id);
+      // the header's "N need you", what the sidebar's number counts (the backend's own rule: never a Plan's kind, nor a reminder)
+      if (todayCounted(section, item.why)) counted.add(item.thread.id);
       // the fifth panel round (change 6): the conversation's next item, said on the row's second line
       if (task) tasks.set(item.thread.id, item.also ? { ...task, also: alsoLine(item.also) } : task);
     }
@@ -330,7 +371,7 @@ export function todayAnswer(list: TodayList, before: readonly ThreadSummary[]): 
       if (mine >= 0) at = Math.max(groups[mine]!.at, Math.min(at, groups[mine + 1]?.at ?? items.length));
       else {
         // its group has gone: where that group would be, under its own heading again
-        const next = groups.find((g) => GROUP_ORDER.indexOf(g.kind) > GROUP_ORDER.indexOf(kind));
+        const next = groups.find((g) => rankOf(g.kind) > rankOf(kind));
         at = next?.at ?? items.length;
       }
     }
@@ -362,7 +403,7 @@ export function todayAnswer(list: TodayList, before: readonly ThreadSummary[]): 
     while (g + 1 < groups.length && groups[g + 1]!.at <= i) g++;
     if (groups[g] && groups[g]!.at <= i && items[i]!.id !== DIGEST_ROW_ID) kinds.set(items[i]!.id, groups[g]!.kind);
   }
-  const publish = () => useToday.setState(({ notNewsletters }) => ({ groups, counted: counted.size, comingUp, tasks, entries, history, kinds, digest: list.digest && withoutSenders(list.digest, notNewsletters) }));
+  const publish = () => useToday.setState(({ notNewsletters }) => ({ groups, counted: counted.size, comingUp, ahead, tasks, entries, history, kinds, digest: list.digest && withoutSenders(list.digest, notNewsletters) }));
   return { items, publish };
 }
 
