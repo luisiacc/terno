@@ -612,3 +612,7 @@ Six of seven picked B, the briefing (would use daily 7.1, the list 6.1, the chat
 
 Tests: `today-sentence.test.ts` now covers `todayWhen` (today, later, Missed, a timed item, an undated alert, an ask, a promise, Spanish); the e2e checks the column, the tone, the second line, the controls hidden and shown, and their names. Screenshots: `/tmp/terno-scratch/p204/panel/shots-ui-b2/` (axe clean on all seven, the feed alone, hovered and with an email open, light and dark).
 
+
+### Closing the email beside the briefing (the owner, 2026-11-14)
+
+The reader beside Today's feed (Split only, never the Inbox's or List's) ends its toolbar with a quiet X after Forward, past a hairline, its glyph on the conversation's right edge as the first glyph is on its left; "Close email" to a screen reader ("Cerrar correo"), its tooltip Close with Esc. It and a second click on the open item do what Esc does (`lib/feed-pane.ts`): the feed has its width back, the item keeps the keyboard (focused quietly, no ring) and the place (`useFeedCursor`: marked with the hover's fill, and j/k go on from it); the item's `aria-expanded` says whether its email is open. No motion is added. The e2e covers the X (name, place on Forward's line, axe in both modes), the second click, the kept place with k/j, and no X in the Inbox's reader.
