@@ -11,7 +11,8 @@ import { create } from "zustand";
 import { client } from "~/rpc/connection";
 import { getApp, getSelectionWriteRevision, inPlainInbox, setApp, setListAutoSelection, useApp } from "./app";
 import { noteRows, useActionRows } from "./action-preview";
-import { appendHistory, cursorKey, flattenToday, historyCursor, historyThrough, todayRowsLeft, useToday } from "./today";
+import { cursorKey, historyCursor, historyThrough, publishHistory, todayAnswer, todayRowsLeft, useToday } from "./today";
+import type { TodayHistoryItem } from "@terno/core";
 /** plan 210: the most history lines one page asks for (the backend's bound) */
 const HISTORY_PAGE_MAX = 100;
 import { useFollowups } from "./followups";
@@ -187,7 +188,9 @@ export function onlyOnTop(t: { id: number; inInbox?: boolean; categoryIds: reado
   return t.categoryIds.some((id) => hidden.includes(id));
 }
 
-type Paged = { items: ThreadSummary[]; nextCursor: ListCursor | null };
+type Paged = { items: ThreadSummary[]; nextCursor: ListCursor | null; /** plan 210: a page's history lines, published with its rows */ history?: readonly TodayHistoryItem[]; /** Today's first answer's maps, published with its rows */ publish?: () => void };
+/** What only Today's pages carry (plan 210): read from any page. */
+const today = (page: object): Pick<Paged, "history" | "publish"> => page as Pick<Paged, "history" | "publish">;
 /** A page's continuation: a date and an id (the Inbox's), with plan 210's history adding which table's id it is. */
 export type ListCursor = { lastDate: number; id: number; src?: 0 | 1 };
 
@@ -268,12 +271,13 @@ async function fetchPage(cursor?: ListCursor, limit = PAGE) {
     const heldIds = [...new Set([...s.checked, ...open])].filter((id) => !history.has(id)).slice(0, 500);
     if (cursor) {
       const page = await client.call("today.history", { after: cursorKey(cursor), limit: Math.min(limit, HISTORY_PAGE_MAX), heldIds });
-      return { items: appendHistory(page, shown.index), nextCursor: historyCursor(page.next) };
+      return { items: page.items.map((line) => line.thread), nextCursor: historyCursor(page.next), history: page.items };
     }
     // a reload of the list on screen keeps the history as deep as it was loaded (the same key), another starts at its top
     const through = shown.itemsKey === listKey() ? historyThrough(shown.items) : null;
     const list = await client.call("today.list", { heldIds, ...(feed ? { history: { through } } : {}) });
-    return { items: flattenToday(list, useList.getState().items), nextCursor: historyCursor(list.history?.next) };
+    const answer = todayAnswer(list, useList.getState().items);
+    return { items: answer.items, nextCursor: historyCursor(list.history?.next), publish: answer.publish };
   }
   if (s.followups) {
     if (cursor) return { items: [], nextCursor: null };
@@ -394,6 +398,7 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
   const place = !sameView && !options.keepSelection && placeOf !== null ? places.get(placeOf) : undefined;
   const limit = sameView ? Math.min(Math.max(PAGE, current.items.length + (options.grow ? PAGE : 0)), WINDOW_PAGE) : place ? Math.min(Math.max(PAGE, place.rows), WINDOW_PAGE) : PAGE;
   const editsAtStart = edits;
+  const depthAtStart = historyDepth.moved;
   const scope = currentScope();
   // the filtered mailbox's unread count, alongside the page (a search shows its own result count)
   const counting = scope?.kind === "view" && scope.filter === "unread" ? client.call("threads.scopeCount", { scope }).catch(() => null) : null;
@@ -404,7 +409,13 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
     // it leave its rows out as they arrive, so what the window counts is rows it shows (Codex review)
     const top = ("top" in page && page.top) || NO_TOP;
     const onTop = new Set(top.ids);
-    const join = (more: Paged) => ({ ...page, items: [...page.items, ...(onTop.size ? more.items.filter((t) => !onTop.has(t.id)) : more.items)], nextCursor: more.nextCursor });
+    const join = (more: Paged) => {
+      // plan 210: a history page's rows and lines join once each, whatever the rows already hold (Codex code review)
+      const have = more.history ? new Set(page.items.map((t) => t.id)) : null;
+      const rows = (onTop.size ? more.items.filter((t) => !onTop.has(t.id)) : more.items).filter((t) => !have?.has(t.id));
+      const lines = more.history?.filter((l) => !have!.has(l.thread.id));
+      return { ...page, items: [...page.items, ...rows], nextCursor: more.nextCursor, ...(lines ? { history: [...(today(page).history ?? []), ...lines] } : {}) };
+    };
     // plan 24, R4: the whole loaded window, however deep, in pieces (a refresh that waited behind a page must not shrink the list
     // under the cursor). In List every refresh of the same list does it (an undo, a bulk result, new mail); Split keeps its cap,
     // unless asked to keep it (`keepWindow`: the window, without moving to its anchor)
@@ -428,6 +439,11 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
         if (mine !== seq || connection !== client.connectionVersion) return;
         page = join(more);
       }
+    }
+    // plan 210 (Codex code review): a history page taken while this waited went deeper than this asked: ask again, as deep
+    if (sameView && historyDepth.moved !== depthAtStart) {
+      void reloadList({ ...options, keepSelection: true });
+      return;
     }
     if (edits !== editsAtStart) {
       // an optimistic edit landed meanwhile: this answer may predate it (an archived row back, a read one unread)
@@ -458,6 +474,10 @@ export async function reloadList(options: { keepSelection?: boolean; grow?: bool
     if (arrived.length) listArrival.arm?.();
     const commit = (fn: () => void) => (restore || arrives || arrived.length ? flushSync(fn) : fn());
     commit(() => {
+      // Today's maps and the history's lines with the rows they describe, never before (Codex code review of plan 210)
+      today(page).publish?.();
+      const lines = today(page).history;
+      if (lines) publishHistory(lines);
       inboxTop.ids = top.ids;
       inboxTop.pinned = top.pinned;
       inboxTop.total = top.total;
@@ -533,6 +553,12 @@ async function loadNextPage(): Promise<boolean> {
     const seen = new Set(useList.getState().items.map((t) => t.id));
     const fresh = page.items.filter((t) => !seen.has(t.id));
     const items = [...useList.getState().items, ...(activeFilter(getApp()) ? heldOnly(fresh) : fresh)];
+    // plan 210: the history lines of the rows taken, published with them; a reload in flight asks again, deeper
+    const lines = today(page).history;
+    if (lines) {
+      publishHistory(lines.filter((l) => !seen.has(l.thread.id)));
+      historyDepth.moved++;
+    }
     useList.setState({ items, index: indexOf(items), nextCursor: page.nextCursor, loadingMore: false });
     // a filtered search may answer a page with nothing kept (and more after it): nothing on screen would ask for the next one
     if (fresh.length === 0 && page.nextCursor) void loadMore();
@@ -660,6 +686,9 @@ export function takeEmptied(key: string | null): boolean {
   emptied.key = null;
   return true;
 }
+
+/** plan 210: how many history pages the list has taken (an object property, as the rename's): a reload compares it */
+const historyDepth = { moved: 0 };
 
 /** plan 107: a rename being followed (an object property: memory note react-compiler-module-let) */
 export const followedRename: { from: string | null; to: string | null } = { from: null, to: null };

@@ -23,10 +23,10 @@ function message(server: DevServerFixture, key: string, from: { name: string; em
 }
 
 /** a dated item on its own conversation, written as the reader writes one; closed at `closedAt`, or left open (due today 1 PM) */
-async function item(server: DevServerFixture, key: string, text: string, closedAt: number | null) {
+async function item(server: DevServerFixture, key: string, text: string, closedAt: number | null, inbox = false) {
   const store = server.backend.store;
   const db = sqlDb(store);
-  await store.sync.ingest([message(server, key, { name: "Billing", email: `${key}@bills.test` }, `${text} (${key})`, `${text}. Due today.`, closedAt === null ? E2E_NOW : closedAt - HOUR, closedAt === null ? { isRead: false, inInbox: true } : {})], { applyFilters: false, now: E2E_NOW, classifier: null });
+  await store.sync.ingest([message(server, key, { name: "Billing", email: `${key}@bills.test` }, `${text} (${key})`, `${text}. Due today.`, closedAt === null ? E2E_NOW : closedAt - HOUR, closedAt === null ? { isRead: false, inInbox: true } : { inInbox: inbox })], { applyFilters: false, now: E2E_NOW, classifier: null });
   const m = db.get<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages WHERE provider_msg_id = ?", key)!;
   await store.dated.marks.queueScan([m.id], E2E_NOW);
   const due = new Date(E2E_NOW);
@@ -83,7 +83,8 @@ test("the open part, the automated section and the history under Earlier, paged 
   await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" }, dated: { enabled: true, scanAnswered: true } }, dev);
   await item(server, "payroll", "Wire payroll", null);
   // the history: closings an hour apart, the newest an hour ago (Bill 59), the oldest 60 hours ago (Bill 0)
-  for (let i = 0; i < CLOSED; i++) await item(server, `bill-${i}`, `Pay bill ${i}`, E2E_NOW - (CLOSED - i) * HOUR);
+  // every other one still in the Inbox: the Inbox's rows and the history's are the same conversations
+  for (let i = 0; i < CLOSED; i++) await item(server, `bill-${i}`, `Pay bill ${i}`, E2E_NOW - (CLOSED - i) * HOUR, i % 2 === 0);
   // automated mail: the section between the open part and the history
   await server.backend.store.sync.ingest([message(server, "news-1", { name: "Weekly News", email: "news@weekly.test" }, "Weekly issue", "This week's issue.", E2E_NOW - HOUR, { isRead: false, inInbox: true, listId: "weekly-1" })], { applyFilters: false, now: E2E_NOW, classifier: null });
   sqlDb(server.backend.store).run("UPDATE threads SET person = 0 WHERE subject = 'Weekly issue'");
@@ -114,6 +115,19 @@ test("the open part, the automated section and the history under Earlier, paged 
     // nothing to act on in a history line
     await expect(newest.getByTestId("wm-done")).toHaveCount(0);
     await axeBothModes(page, '[data-testid="wm-feed"]');
+  });
+
+  await scenario("Codex code review: back from the Inbox to a deep line, the history comes back whole, the Inbox's conversations too", async () => {
+    await reach(page, "Pay bill 2.");
+    await line(page, "Pay bill 2.").getByTestId("wm-item-open").click();
+    await expect(page.getByTestId("reader")).toBeVisible();
+    await page.getByTestId("nav-inbox").click();
+    await expect(page.getByTestId("thread-list")).toBeVisible();
+    await page.getByTestId("nav-today").click();
+    await expect(line(page, "Pay bill 2.")).toHaveAttribute("data-open", "true", { timeout: 15_000 });
+    const history = (await walk(page)).rows.filter((r) => r.kind === "history").map((r) => Number(/bill (\d+)/.exec(r.text)?.[1]));
+    expect(history).toEqual(Array.from({ length: CLOSED }, (_, i) => CLOSED - 1 - i));
+    await page.keyboard.press("Escape");
   });
 
   await scenario("Done moves a line to the top of the history, quiet and saying so; Undo puts it back in the open part", async () => {

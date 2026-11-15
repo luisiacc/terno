@@ -164,3 +164,15 @@ Done (or Not a task) closes the shown item; its row leaves at once as now; the r
 
 "What matters" / "Lo importante" for the sidebar, the title and the palette (`today.title`); the count unchanged.
 
+## What the code review changed
+
+**Round 1** (Codex, read-only, `/tmp/terno-scratch/p204/ui-variants/review-210-1.out`): 7 findings, all fixed, each with a test that fails without it.
+
+1. **Back from the Inbox, a deep history lost the Inbox's conversations.** A history page was deduplicated against the list on screen (the Inbox's rows) while the window was being restored, and its cursor moved past what it dropped. Pages are now joined against the window being built, never the one shown (e2e: a deep line open, the Inbox and back, all sixty lines in order, half of them Inbox conversations).
+2. **A page the list dropped still changed Today's maps.** Today's answer and a history page now publish their maps in the commit that shows their rows (`todayAnswer(…).publish`, `publishHistory`), so a late page, or a reload a newer one replaced, changes nothing (`today-history-paging.test.ts`, `today.test.ts`).
+3. **A reload whose loaded lines had all left ended the history.** Down to a line with nothing left above it, the answer's continuation is that line, never null (`today-history.test.ts`).
+4. **IndexedDB sorted every closed row for each page.** A closing-time order in memory (`ClosedOrder`, as `ThreadOrder` is for threads), kept as rows change and built once; a page is a binary search and a walk. The perf gate now pages through 20,000 closed rows (both stores, first and deep pages under half a millisecond).
+5. **A reload that waited while a page went deeper shrank the history back.** A reload compares how many history pages the list took while it waited and asks again, as deep (`today-history-paging.test.ts`).
+6. **SQLite's deep page walked the newer closings again.** The key is a row value, `(closed_at, id) < (?, ?)`, which the index seeks (`history-plan.test.ts` asserts the plan).
+7. **A long walk past left-out rows held the event loop.** The walk gives the turn back between reads within the backend's slice budget (`today-history.test.ts`).
+

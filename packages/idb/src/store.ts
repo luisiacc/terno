@@ -1,4 +1,5 @@
 import { ASK_MATCH_MESSAGES, ASK_MATCH_PARTS, CORPUS_TEXTS_MAX, finishBodyClose, rankSentRefs, readPassages, readThreadContext, type SentRef } from "@terno/store";
+import { ClosedOrder } from "./closed-order";
 import { countWith, needsCount, needsWalk, type NeedsWalk, messagesHere, senders, allDigests, beginDigest, clearDigests, digestFacts, digestLive, digestRead, getDigest, latestDigest, pendingDigestDays, pruneDigests, waitingAmong, waitingPage, writeDigest } from "./today";
 import { clearReplies, finishReply, getReply, transitionReply } from "./replies";
 import { datedAnswered, settleAnswered, activeDated, closedDatedPage, newestClosedDated, clearDated, datedMarkCount, datedMarkPage, datedScanCandidates, datedSource, finishDated, getDated, markDatedMail, openDatedFor, pruneDated, pruneDatedMarks, queueDatedScan, restoreDated, threadDated, datedWritten, updateDated } from "./dated";
@@ -306,11 +307,13 @@ export class IdbMailStore implements MailStore {
     const filterOrders = Object.fromEntries(LIST_FILTERS.map((f) => [f, new ThreadOrder(db, FILTER_TEST[f])])) as Record<ListFilter, ThreadOrder>;
     const facts = new FactsQueue(db);
     const scopes = new ScopeIndex(db);
+    const closedOrders = { dated: new ClosedOrder(db, "dated_items", (r) => r.state !== "open"), followups: new ClosedOrder(db, "followups", (r) => r.kind === "promise" && (r.state === "done" || r.state === "dismissed")) };
     const bodies = db.table<R>("message_bodies");
     this.c = {
       db,
       order,
       filterOrders,
+      closedOrders,
       facts,
       scopes,
       uuid: () => o.platform.uuid(),
