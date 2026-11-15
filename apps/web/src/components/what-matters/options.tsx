@@ -39,13 +39,26 @@ export function WhatMattersOptions() {
     <Popover open={open} onOpenChange={setOpen}>
       <Tooltip>
         <TooltipTrigger
-          render={<PopoverTrigger render={<Button variant="ghost" size="icon-sm" aria-label={t("whatMatters.options")} data-testid="wm-options" className="no-drag shrink-0 text-muted-foreground hover:text-foreground" />} />}
+          render={<PopoverTrigger render={<Button variant="ghost" size="icon-sm" aria-label={t("whatMatters.options")} data-testid="wm-options" className="no-drag mr-1 shrink-0 text-muted-foreground hover:text-foreground" />} />}
         >
           <Settings2 />
         </TooltipTrigger>
         <TooltipContent>{t("whatMatters.options")}</TooltipContent>
       </Tooltip>
-      <PopoverContent align="end" data-testid="wm-options-panel" aria-label={t("whatMatters.options")}>
+      {/* its keys are its own (Codex code review): D, j/k or e never reach the mail behind it; Esc closes it here (in the
+          popup's portal it wouldn't reach Base UI's listener), as ai-provenance's does */}
+      <PopoverContent
+        align="end"
+        data-testid="wm-options-panel"
+        aria-label={t("whatMatters.options")}
+        onKeyDown={(e) => {
+          e.stopPropagation();
+          if (e.key === "Escape" && !e.nativeEvent.isComposing) {
+            e.preventDefault();
+            setOpen(false);
+          }
+        }}
+      >
         <div className="flex items-start gap-3">
           <div className="min-w-0 flex-1">
             <p id={labelId} className="text-sm font-medium">
