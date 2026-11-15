@@ -1,9 +1,9 @@
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuShortcut, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuShortcut, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
 import { Shortcut } from "@terno/ui/components/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
-import { Ban, CalendarClock, ChevronDown, CircleCheck, Clock, Ellipsis } from "@terno/ui/icons";
+import { CalendarClock, ChevronDown } from "@terno/ui/icons";
 import { laterChoices, type TodayTask } from "~/lib/dated";
 import { presetLabel, presetWhen } from "~/lib/reminders";
 import { actOnTodayRow } from "~/lib/today-task";
@@ -32,41 +32,6 @@ function LaterItems({ threadId, task }: { threadId: number; task: TodayTask }) {
         <span className="min-w-0 flex-1 truncate">{t("dated.pickDate")}</span>
       </DropdownMenuItem>
     </>
-  );
-}
-
-/** The chat note's one quiet control for its task: Done, Not a task, and Later with its presets. */
-export function NoteTaskMenu({ threadId, task }: { threadId: number; task: TodayTask }) {
-  return (
-    <DropdownMenu>
-      <Tooltip>
-        <TooltipTrigger render={<DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label={t("whatMatters.more")} data-testid="wm-note-more" className="text-muted-foreground hover:text-foreground" />} />}>
-          <Ellipsis />
-        </TooltipTrigger>
-        <TooltipContent>{t("whatMatters.more")}</TooltipContent>
-      </Tooltip>
-      <DropdownMenuContent align="start" sideOffset={4} className="w-max min-w-56" data-testid="wm-note-menu">
-        <DropdownMenuItem data-testid="wm-done" onClick={() => void actOnTodayRow(threadId, task, "done")}>
-          <CircleCheck />
-          <span className="min-w-0 flex-1 truncate">{t("dated.done")}</span>
-          <DropdownMenuShortcut>D</DropdownMenuShortcut>
-        </DropdownMenuItem>
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger data-testid="wm-later">
-            <Clock />
-            <span className="min-w-0 flex-1 truncate">{t("dated.later")}</span>
-          </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent className="w-max min-w-60">
-            <LaterItems threadId={threadId} task={task} />
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem data-testid="wm-dismiss" onClick={() => void actOnTodayRow(threadId, task, "dismiss")}>
-          <Ban />
-          <span className="min-w-0 flex-1 truncate">{t("dated.notTask")}</span>
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
   );
 }
 

@@ -443,10 +443,10 @@ test.describe("axe", { tag: ["@variant", "@variant-relief"] }, () => {
     test("Today, the digest, an AI rule and Writing style", async ({ app: page, server }) => {
       await start(page, server, { ai: { provider: "fake", model: "demo" }, today: { digest: true, prepareAt: "00:00" } });
       await page.getByTestId("nav-today").click();
-      // plan 204 (after the panel): the digest's row is the list's last
+      // plan 204 (after the panel): the digest's item is the feed's last open one
       await (await digestRow(page)).scrollIntoViewIfNeeded();
       // plan 204: the dates offer in its header, while dates aren't read
-      await clean(page, "Today", ['[data-keep-scroll="list"]', "[data-testid=today-line]", "[data-testid=today-dated-offer]"]);
+      await clean(page, "Today", "[data-testid=wm-feed]");
       await (await digestRow(page)).click();
       await page.getByTestId("digest-page").waitFor();
       await clean(page, "the digest", "[data-testid=digest-page]");

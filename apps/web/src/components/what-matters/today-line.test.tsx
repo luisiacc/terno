@@ -8,7 +8,7 @@ import { expect, it, vi } from "vitest";
 vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
 vi.mock("~/rpc/connection", () => ({ client: { call: vi.fn(async () => null), on: () => () => {}, connectionVersion: 1 } }));
 
-const { TodayLine } = await import("./thread-list");
+const { TodayLine } = await import("./today-line");
 const { useApp, getApp } = await import("~/state/app");
 const { useToday } = await import("~/state/today");
 

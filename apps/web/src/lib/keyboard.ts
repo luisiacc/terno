@@ -20,7 +20,7 @@ import { printCommand } from "~/lib/print-open";
 import { checkForUpdates } from "~/lib/updates";
 import { closeEmptySearch, focusRows, focusSearch, listScroller } from "~/components/thread-list";
 import { closeFeedConversation } from "~/lib/feed-pane";
-import { useFeedCursor } from "~/lib/what-matters-look";
+import { useFeedCursor } from "~/lib/feed-focus";
 import { snackbarControls } from "~/components/category-snackbar";
 import { setListFilter, toggleUnreadFilter } from "~/lib/unread";
 import { closePage, currentPage, goBack, goForward, listLayout, openThread, uncoverList } from "~/lib/page";
@@ -160,10 +160,8 @@ function escape() {
   if (s.selectedId !== null && useSummaries.getState().byThread.get(s.selectedId)?.kind === "running") return void stopSummary(s.selectedId);
   // plan 161, pass 2: a newsletter the digest opened goes back to the digest first, as its "Back to the digest" does
   if (backToDigest()) return;
-  // plan 162 (after ai162-r02): the digest page gives its keys back to the list, at the digest's way in
-  // (List's digest is a page over the list: Esc closes it as any page, back to the list, Codex review)
-  if (!(listLayout() && currentPage() !== "list") && digestHasKeys()) return void digestKeys.current!.leave();
-  // plan 204, the UI experiment: Today's feed puts away the conversation open beside it
+  // plan 204 (the feed), plan 210: What matters' feed puts away what's open beside it, a conversation or the digest's page
+  // (whose keys were the page's), back on its item; List's digest is a page over the feed: Esc closes it as any page
   if (!s.checked.size && !s.scope && closeFeedConversation()) return;
   if (listLayout() && currentPage() !== "list") { markSelectionIntent(); closePage({ focus: true }); }
   // plan 161, pass 2: a matched conversation open in the reader closes first, back to the rule; then the preview ends

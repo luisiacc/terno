@@ -145,9 +145,6 @@ export interface TaskPerson {
   email: string;
 }
 
-/** What a Today row shows of its task: when (or explicitly no day), and whose it is. */
-export type TodayRowTask = { when: string | null; due: string | null; noDay?: boolean; person?: TaskPerson; also?: string };
-
 /** The fourth panel round (revision 9): the person a promise is with; with no name, their address's local part. */
 function personOf(why: TodayWhy): TaskPerson | undefined {
   const email = why.personEmail?.trim() ?? "";

@@ -181,8 +181,8 @@ const STEPS = {
   async digest(d) {
     const { page } = d;
     await d.go("today");
-    await page.getByTestId("today-heading").waitFor({ timeout: 30_000 });
-    const row = page.getByTestId("digest-row").first();
+    await page.getByTestId("wm-heading").first().waitFor({ timeout: 30_000 });
+    const row = page.locator("[data-testid=wm-item][data-digest]").first();
     await row.waitFor({ timeout: JOB_MS });
     await row.click();
     await page.getByTestId("digest-page").waitFor({ timeout: 30_000 });

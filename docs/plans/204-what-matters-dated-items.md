@@ -714,3 +714,7 @@ Tests: `today-sentence.test.ts` now covers `todayWhen` (today, later, Missed, a 
 ### Closing the email beside the briefing (the owner, 2026-11-14)
 
 The reader beside Today's feed (Split only, never the Inbox's or List's) ends its toolbar with a quiet X after Forward, past a hairline, its glyph on the conversation's right edge as the first glyph is on its left; "Close email" to a screen reader ("Cerrar correo"), its tooltip Close with Esc. It and a second click on the open item do what Esc does (`lib/feed-pane.ts`): the feed has its width back, the item keeps the keyboard (focused quietly, no ring) and the place (`useFeedCursor`: marked with the hover's fill, and j/k go on from it); the item's `aria-expanded` says whether its email is open. No motion is added. The e2e covers the X (name, place on Forward's line, axe in both modes), the second click, the kept place with k/j, and no X in the Inbox's reader.
+
+### The feed replaces the list rows (2026-11-14)
+
+The owner made the briefing the only What matters view (plan 210, "The owner made the feed the only view"). The list rows this plan built for it (the task line leading the row, its due day in the date's place, a promise's person, `also`, `noDay`, the headings and the digest's row in the list) are gone; the feed says the same in its sentence, its right column and its second line, from the same `useToday` maps. Everything below the renderer (the groups, the tasks, the counts, Done, Not a task, Later) is unchanged.

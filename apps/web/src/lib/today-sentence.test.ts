@@ -7,7 +7,7 @@ import { setLocale } from "@terno/i18n";
 import en from "@terno/i18n/locales/en";
 import es from "@terno/i18n/locales/es";
 import { afterEach, describe, expect, it } from "vitest";
-import { groupLine, historySentence, historyWhen, todaySentence, todayWhen } from "./today-sentence";
+import { historySentence, historyWhen, todaySentence, todayWhen } from "./today-sentence";
 
 // Friday 13 November 2026, 9:30 in the machine's own time (the panel's morning)
 const NOW = new Date(2026, 10, 13, 9, 30).getTime();
@@ -22,35 +22,39 @@ afterEach(() => setLocale("en", en));
 
 describe("todaySentence (en)", () => {
   it("an item is its own words, the day left to the column", () => {
-    expect(todaySentence(dated("pay", "Pay $187.42 for the electricity bill", 11, { missed: true }), NOW)).toBe("Pay $187.42 for the electricity bill.");
-    expect(todaySentence(dated("renew", "Renew pingwire.dev for €14.90.", 19), NOW)).toBe("Renew pingwire.dev for €14.90.");
-    expect(todaySentence(dated("ask", "Can you pick up Saturday nights?", 13, { dated: false }), NOW)).toBe("Can you pick up Saturday nights?");
+    expect(todaySentence(dated("pay", "Pay $187.42 for the electricity bill", 11, { missed: true }))).toBe("Pay $187.42 for the electricity bill.");
+    expect(todaySentence(dated("renew", "Renew pingwire.dev for €14.90.", 19))).toBe("Renew pingwire.dev for €14.90.");
+    expect(todaySentence(dated("ask", "Can you pick up Saturday nights?", 13, { dated: false }))).toBe("Can you pick up Saturday nights?");
   });
 
   it("an alert is the email's word", () => {
-    expect(todaySentence(dated("alert", "Payment declined for $142.67", 10, { dated: false }), NOW)).toBe("Payment declined for $142.67, the email says.");
+    expect(todaySentence(dated("alert", "Payment declined for $142.67", 10, { dated: false }))).toBe("Payment declined for $142.67, the email says.");
   });
 
   it("a promise of yours, in your words", () => {
-    expect(todaySentence(promise("call Marcus at 4:00 PM PT", 13), NOW)).toBe("You said you'd call Marcus at 4:00 PM PT.");
-    expect(todaySentence(promise("Send Elena the October update", 16), NOW)).toBe("You said you'd send Elena the October update.");
-    expect(todaySentence(promise("RSVP to Lena"), NOW)).toBe("You said you'd RSVP to Lena.");
+    expect(todaySentence(promise("call Marcus at 4:00 PM PT", 13))).toBe("You said you'd call Marcus at 4:00 PM PT.");
+    expect(todaySentence(promise("Send Elena the October update", 16))).toBe("You said you'd send Elena the October update.");
+    expect(todaySentence(promise("RSVP to Lena"))).toBe("You said you'd RSVP to Lena.");
   });
 
-  it("waiting, nudges and reminders: who and what, never more than the list knows", () => {
-    expect(todaySentence(item({ kind: "waiting", wrote: true }), NOW)).toBe("Hill Country Power & Water wrote back about “Your statement is ready”.");
-    expect(todaySentence(item({ kind: "waiting" }, { summary: "Tanya asks whether you can cover Saturday" }), NOW)).toBe("Tanya asks whether you can cover Saturday.");
-    expect(todaySentence(item({ kind: "nudge", personName: "Megan Cole", sentAt: at(7) }), NOW)).toBe("No reply from Megan Cole in 6 days.");
-    expect(todaySentence(item({ kind: "reminder", dueAt: at(13, 9) }), NOW)).toBe("Your reminder for “Your statement is ready”.");
+  it("waiting and reminders: who and what, never more than the list knows", () => {
+    expect(todaySentence(item({ kind: "waiting", wrote: true }))).toBe("Hill Country Power & Water wrote back about “Your statement is ready”.");
+    expect(todaySentence(item({ kind: "waiting" }, { summary: "Tanya asks whether you can cover Saturday" }))).toBe("Tanya asks whether you can cover Saturday.");
+    expect(todaySentence(item({ kind: "reminder", dueAt: at(13, 9) }))).toBe("Your reminder for “Your statement is ready”.");
   });
 
   it("no words: the subject, never an empty line", () => {
-    expect(todaySentence(dated("pay", "  ", 16), NOW)).toBe("Your statement is ready.");
+    expect(todaySentence(dated("pay", "  ", 16))).toBe("Your statement is ready.");
   });
 
-  it("the chat's group lines count", () => {
-    expect(groupLine("missed", 3)).toBe("3 things you missed");
-    expect(groupLine("plans", 1)).toBe("1 plan ahead");
+  it("plan 204's groups by when set the weight: Missed and Today strong, Soon and Coming up quiet, whatever the day says", () => {
+    // an alert while it shows is Today's, its column empty
+    expect(todayWhen(dated("alert", "Card frozen", 10, { dated: false }), NOW, "today")).toEqual({ text: null, tone: "today" });
+    expect(todayWhen(dated("pay", "Pay", 16), NOW, "soon")).toEqual({ text: "Mon", tone: "later" });
+    expect(todayWhen(dated("event", "Dentist", 20), NOW, "comingUp").tone).toBe("later");
+    expect(todayWhen(dated("pay", "Pay", 11, { missed: true }), NOW, "missed").tone).toBe("missed");
+    // Needs you keeps the item's own: an ask says the day it came, quietly
+    expect(todayWhen(dated("ask", "Answer Owen", 13, { dated: false }), NOW, "needsYou")).toEqual({ text: "Nov 1", tone: "none" });
   });
 });
 
@@ -85,12 +89,11 @@ describe("todayWhen: the briefing's column, in the list's words, and how pressin
 describe("Spanish", () => {
   it("the same facts in Spanish", () => {
     setLocale("es", es);
-    expect(todaySentence(dated("alert", "Tarjeta bloqueada", 16), NOW)).toBe("Tarjeta bloqueada, según el correo.");
-    expect(todaySentence(promise("enviar a Valeria los ajustes", 11, true), NOW)).toBe("Dijiste que ibas a enviar a Valeria los ajustes.");
-    expect(todaySentence(item({ kind: "waiting" }), NOW)).toBe("Hill Country Power & Water te escribió sobre «Your statement is ready».");
+    expect(todaySentence(dated("alert", "Tarjeta bloqueada", 16))).toBe("Tarjeta bloqueada, según el correo.");
+    expect(todaySentence(promise("enviar a Valeria los ajustes", 11, true))).toBe("Dijiste que ibas a enviar a Valeria los ajustes.");
+    expect(todaySentence(item({ kind: "waiting" }))).toBe("Hill Country Power & Water te escribió sobre «Your statement is ready».");
     expect(todayWhen(dated("pay", "Pagar", 11, { missed: true }), NOW).text).toBe("Venció el mié");
     expect(todayWhen(dated("pay", "Pagar", 13), NOW).text).toBe("Hoy");
-    expect(groupLine("missed", 2)).toBe("2 cosas que se te pasaron");
   });
 });
 
@@ -107,7 +110,6 @@ describe("the history's lines (plan 210)", () => {
     expect(historyWhen(line("promise", "dismissed", at(11)), NOW)).toBe("Not a promise Wed");
     expect(historyWhen(line("pay", "settled", at(2)), NOW)).toBe("Settled Nov 2");
     expect(historyWhen(line("pay", "over", at(9)), NOW)).toBe("Over Mon");
-    expect(groupLine("history", 40)).toBe("Earlier");
   });
 
   it("in Spanish", () => {
@@ -115,7 +117,6 @@ describe("the history's lines (plan 210)", () => {
     expect(historyWhen(line("pay", "done", at(13, 8)), NOW)).toBe("Hecho hoy");
     expect(historyWhen(line("pay", "over", at(11)), NOW)).toBe("Pasó el mié");
     expect(historySentence(line("promise", "done", at(11), "enviar a Valeria los ajustes"))).toBe("Dijiste que ibas a enviar a Valeria los ajustes.");
-    expect(groupLine("history", 3)).toBe("Antes");
   });
 });
 

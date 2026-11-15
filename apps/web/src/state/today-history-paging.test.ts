@@ -10,7 +10,6 @@ import type { ThreadSummary, TodayHistoryItem } from "@terno/core";
 const rpc = vi.hoisted(() => ({ call: vi.fn() }));
 vi.mock("~/rpc/connection", () => ({ client: { call: rpc.call, on: () => () => {}, connectionVersion: 1 } }));
 vi.stubGlobal("matchMedia", (media: string) => ({ media, matches: false, addEventListener() {}, removeEventListener() {} }));
-localStorage.setItem("terno.wm.look", "brief");
 const { setApp } = await import("~/state/app");
 const { useList, loadMore, reloadList } = await import("~/state/list");
 const { useToday } = await import("~/state/today");

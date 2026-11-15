@@ -35,7 +35,6 @@ import { Sidebar } from "./components/sidebar";
 import { PaneHandle } from "./components/pane-handle";
 import { skipToList, ThreadList } from "./components/thread-list";
 import { WhatMattersFeed } from "./components/what-matters/feed";
-import { feedLook, useWmLook } from "~/lib/what-matters-look";
 import { EngineStopped } from "./components/diag/engine-stopped";
 import { unsavedDraftWork } from "./lib/drafts";
 import { startMailbox, useGateBlocks, useMailbox } from "./lib/mailbox";
@@ -142,10 +141,9 @@ export function App() {
   const pinnedAsk = usePinnedAsk((s) => s.pinned !== null) && askShown;
   const page = usePage();
   const covered = page !== "list";
-  // plan 204, the UI experiment: Today as a feed (chat or briefing). In Split, with nothing open beside it, it takes the
-  // reader's room too, and a conversation opened from it comes in on the right as the reader always does
-  const look = useWmLook((s) => s.look);
-  const feed = feedLook(useApp((s) => s.today), look);
+  // plan 210: What matters is a feed (the owner made it the only view). In Split, with nothing open beside it, it takes
+  // the reader's room too, and a conversation opened from it comes in on the right as the reader always does
+  const feed = useApp((s) => s.today);
   const feedWide = feed && !list && selectedId === null && !many && !composing && !heldView && !pinned && !pinnedAsk;
   useEffect(() => installKeyboard(), []);
   // plan 188: the list's news where focus isn't (a mailbox opened from the sidebar, the selection's size)
@@ -200,7 +198,7 @@ export function App() {
             inert={covered}
             data-covered={covered || undefined}
           >
-            {feed && look !== "list" ? <WhatMattersFeed look={look} /> : <ThreadList />}
+            {feed ? <WhatMattersFeed /> : <ThreadList />}
           </div>
           {list && page !== "list" && <PageLayer page={page} />}
           {/* plan 115: the pinned draft, over the list or its page, kept while other mail is read */}

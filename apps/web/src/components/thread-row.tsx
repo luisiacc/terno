@@ -27,7 +27,6 @@ import { rowLine } from "~/lib/followups";
 import { useFollowups } from "~/state/followups";
 import { onlyOnTop } from "~/state/list";
 import { useExcerpts } from "~/state/excerpts";
-import type { TodayRowTask } from "~/lib/dated";
 
 export interface ThreadRowProps {
   thread: ThreadSummary;
@@ -53,20 +52,8 @@ export interface ThreadRowProps {
   lines?: RowLines;
   /** plan 24: List's rows offer the pointer a checkbox, in the avatar's place or the marks' column */
   pick?: boolean;
-  /** plan 162 (Codex review): the first row of a Today section says the section's name to assistive tech (a heading can't sit in a listbox) */
-  section?: string;
   /** plan 188: its place in the list, from 1 (aria-posinset; the list writes the size) */
   position?: number;
-  /**
-   * plan 204 (after the panel): a Today row with a dated item or a promise of yours: the task leads (its line, which is the
-   * row's snippet, in the row's ink where the subject is, the subject quiet in the preview's place) and its due day is the
-   * row's date. Heights don't change. After the second panel round the line is the task alone where the date says when;
-   * `due` says it in words to a screen reader, after the task (the date is hidden from it). The fourth panel round: a
-   * promise with no day leaves the date empty (`noDay`), and a promise's row names and pictures its `person`, not the
-   * conversation's last sender (you); the thread's own data is unchanged. The fifth: an alert with no day leaves it empty
-   * too, and `also` (the conversation's next item) takes the quiet subject's place.
-   */
-  task?: TodayRowTask;
 }
 
 /**
@@ -76,7 +63,7 @@ export interface ThreadRowProps {
  * checking one re-renders one. The design picks the layout inside it (classic,
  * avatar, large avatar); the shell, roles, ids and handlers are the same in all.
  */
-export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact, wide = false, showAccount, icons, layout, review = null, pinnedTop = false, reminderTop = false, match = null, lines = 1, pick = false, section, position, task }: ThreadRowProps) {
+export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact, wide = false, showAccount, icons, layout, review = null, pinnedTop = false, reminderTop = false, match = null, lines = 1, pick = false, position }: ThreadRowProps) {
   renderProbe("ThreadRow");
   /** the open thread (the cursor; the listbox's active descendant) */
   const selected = useApp((s) => s.selectedId === thread.id);
@@ -141,9 +128,7 @@ export const ThreadRow = memo(function ThreadRow({ thread, top, height, compact,
       excerpt={excerpt}
       lines={lines}
       pick={pick}
-      section={section}
       position={position}
-      task={task}
       interactive
     />
   );
@@ -195,7 +180,7 @@ function useOwed(thread: Pick<ThreadSummary, "id">, reminderTop?: boolean) {
  * extra 2 px off the pane's edge; the gutter it leaves before the 20 px text line is the marks' column). The marks share
  * that column, centred 13 px in: the unread dot or a checked row's check, never both. The open row is its fill alone (no rail: the owner's call). What keys or a menu act on is outlined in the focus ring.
  */
-export const ROW_SHAPE = "before:absolute before:inset-y-px before:right-2 before:left-1.5 before:rounded-(--row-radius)";
+const ROW_SHAPE = "before:absolute before:inset-y-px before:right-2 before:left-1.5 before:rounded-(--row-radius)";
 /** plan 24: the avatar (or the unread dot) and List's pointer checkbox trading places; the box keeps its colour change */
 const SWAP = "transition-[opacity,scale,visibility,color,background-color,border-color] duration-slow";
 /** what gives way to the box while a selection is being made (the list's data-many) */
@@ -287,7 +272,7 @@ function RowDate({ thread, reminderTop, fallback, className, title }: { thread: 
   return <span data-testid="row-date" data-due-at={dueAt ?? undefined} title={title} className={className}>{dueAt !== null ? reminderShort(dueAt) : fallback}</span>;
 }
 
-export function ThreadRowView({ thread, top, height, compact, wide, icons, layout, review, pinnedTop = false, reminderTop, selected, checked, included, pending, inSelection, account, categories, inCategory = null, kept = false, hasDraft, code, reminder, remindersList, interactive, match, excerpt, lines: previewLines = 1, pick = false, section, position, task }: ViewProps) {
+export function ThreadRowView({ thread, top, height, compact, wide, icons, layout, review, pinnedTop = false, reminderTop, selected, checked, included, pending, inSelection, account, categories, inCategory = null, kept = false, hasDraft, code, reminder, remindersList, interactive, match, excerpt, lines: previewLines = 1, pick = false, position }: ViewProps) {
   const cats = thread.categoryIds.length ? categories.filter((c) => c.id !== inCategory && thread.categoryIds.includes(c.id)) : [];
   const classic = layout === "classic";
   const big = layout === "large-avatar";
@@ -311,11 +296,9 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
   // the open and checked rows keep the selection's. An unread line's search marks take its weight (never lighter than it;
   // every design's unread weight is at least its semibold), a read line's stay semibold, a step above it
   const tone = thread.unread ? "[&_mark]:[font-weight:inherit]" : !opened && !checked && "text-(--row-read-ink)";
-  // the fourth panel round (revision 9): a promise's row is about the person you made it to
-  const who = task?.person;
   const from = (
     <span data-testid="row-from" className={cn("min-w-0 truncate", thread.unread ? "type-row-from-strong" : "type-row-from", tone)}>
-      <Marked text={who?.name ?? thread.fromName} needles={match?.from} />
+      <Marked text={thread.fromName} needles={match?.from} />
     </span>
   );
   // plan 188: after the sender, what the dot, the star and the pin show, said (never last, after the whole preview); the
@@ -406,14 +389,7 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
     </span>
   );
   const date =
-    task?.when ? (
-      // plan 204 (after the panel): when it's due, not when it came; the line says it in words (so it isn't said twice)
-      <span aria-hidden data-testid="row-date" data-task className={cn("text-xs tabular", thread.unread ? "font-medium text-foreground" : "text-muted-foreground")}>{task.when}</span>
-    ) : task?.noDay ? (
-      // the fourth panel round: a promise that names no day says none (the mail's date would read as its day); the fifth,
-      // an alert that named none too
-      <span aria-hidden data-testid="row-date" data-task data-no-day />
-    ) : reminderTop && reminder?.due ? (
+    reminderTop && reminder?.due ? (
       // plan 87: on the Inbox's top, the time it came back, in the attention ink (the mail's own date would read as out of order)
       <span data-testid="row-date" data-reminder className={cn("flex items-center gap-1 text-xs font-medium tabular", opened || checked ? "" : "text-unread-ink")}>
         <AlarmClock aria-hidden data-testid="row-reminder" data-due className="size-3" />
@@ -435,37 +411,6 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
       {subjectWords}
     </span>
   );
-  /**
-   * Plan 204 (after the panel, revision 8): a task row leads with the task. Three lines: the task where the subject is, in
-   * the row's ink and the subject's type; the subject quiet where the preview is. No preview: the task alone on the
-   * subject's line. Read in that order too (the task before the subject).
-   */
-  // after the second panel round: the date says when to the eye; this says it to a screen reader, after the task
-  const taskDue = task?.due && <span className="sr-only">, {task.due},</span>;
-  /**
-   * The fifth panel round (change 6): the conversation's next item, where the subject is quiet beside the task ("Also Thu
-   * 9:00 AM · Board meeting"), in the subject's place and ink; with no such line, said after the task.
-   */
-  const taskSecond = (className: string) =>
-    task?.also ? (
-      <span data-testid="row-also" className={className}>
-        {task.also}
-      </span>
-    ) : (
-      <span data-testid="row-subject" className={className}>
-        {subjectWords}
-      </span>
-    );
-  const taskLine = task && (
-    <>
-      <span data-testid="row-task" className={cn("min-w-0 truncate", thread.unread ? "type-row-subject-strong" : "type-row-subject")}>
-        {thread.snippet}
-      </span>
-      {taskDue}
-      {noPreview && task.also && <span className="sr-only">. {task.also}</span>}
-    </>
-  );
-  const taskSubject = task && taskSecond(cn("type-row-snippet min-w-0 truncate", quiet));
   // plan 142: gated on the row's every state, as Draft's ink is (contrast.ts)
   const owedInk = "text-draft-foreground";
   const snippet = <RowSnippet thread={thread} reminderTop={reminderTop} ink={owedInk} quiet={quiet} match={match} excerpt={excerpt} lead={LEAD.own} two={previewLines === 2} />;
@@ -508,11 +453,11 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
       onClick={toggles ? (e) => { e.stopPropagation(); toggleRow(thread.id); } : undefined}
     >
       <SenderAvatar
-        name={who?.name ?? thread.fromName}
-        email={who ? who.email : thread.fromEmail}
+        name={thread.fromName}
+        email={thread.fromEmail}
         // plan 22: never an icon for spam, whatever the view or the search (nor until the backend says a row stopped being spam)
-        icon={icons && (!who || who.email !== "") && !thread.inSpam && !thread.hasSpam && !thread.spamHeld}
-        person={who ? true : thread.person === true}
+        icon={icons && !thread.inSpam && !thread.hasSpam && !thread.spamHeld}
+        person={thread.person === true}
         className={cn(
           compact
             ? "size-(--avatar-row-compact) text-[length:calc(var(--avatar-row-compact)*0.42)]"
@@ -581,13 +526,13 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
       {firstLine}
       {/* (with no preview, NO_PREVIEW_GAP above it: two lines read as one block otherwise, the owner) */}
       <div className={cn("flex min-w-0 items-baseline gap-1.5", noPreview && !answer && "mt-1")}>
-        {taskLine || subject}
+        {subject}
         {draft}
         {noPreview && !answer && accountShown}
       </div>
       {(!noPreview || answer) && (
         <div className={cn("flex min-w-0", previewLines === 2 ? "min-h-[calc(var(--type-row-snippet-leading)*2)] items-start" : "items-baseline")}>
-          {answer || taskSubject || snippet}
+          {answer || snippet}
           {accountShown}
         </div>
       )}
@@ -638,7 +583,6 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
       )}
       style={{ transform: `translateY(${top}px)`, height }}
     >
-      {section && <span className="sr-only">{section}, </span>}
       {/* plan 158: the open row's mark, straight inside the selection's rounded edge; none while several are checked */}
       {/* (a checked row's mark is its check, on the same column) */}
       {included !== undefined && (
@@ -665,14 +609,14 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
           {/* plan 193: subject then preview, one flowing line (plan 160's subject column left a gap before every short
               subject's preview); the preview is what gives way; the meta columns follow it on the right */}
           <span className="flex min-w-0 flex-1 items-center gap-1.5">
-            {task ? <><span data-testid="row-task" className={cn(FLOWING_SUBJECT, subjectInk)}>{thread.snippet}</span>{taskDue}</> : <span data-testid="row-subject" className={cn(FLOWING_SUBJECT, subjectInk)}>{subjectWords}</span>}
+            <span data-testid="row-subject" className={cn(FLOWING_SUBJECT, subjectInk)}>{subjectWords}</span>
             {/* what a row is, not a column: beside the subject, so the columns on the right never move */}
             {draft}
             {keptTag}
             {placeTag}
             {reminder && !reminderTop && bell}
             {/* (Review's answers and the subject share what's short, so neither goes whole) */}
-            {answer ? <span className="ml-auto flex min-w-0 justify-end">{answer}</span> : task ? taskSecond(cn("ml-1.5 min-w-0 flex-1 truncate text-xs", PREVIEW_INK)) : <WideSnippet thread={thread} reminderTop={reminderTop} ink={owedInk} quiet={PREVIEW_INK} match={match} excerpt={excerpt} />}
+            {answer ? <span className="ml-auto flex min-w-0 justify-end">{answer}</span> : <WideSnippet thread={thread} reminderTop={reminderTop} ink={owedInk} quiet={PREVIEW_INK} match={match} excerpt={excerpt} />}
           </span>
           {accountTag}
           <span data-testid="row-marks" className="flex shrink-0 items-center justify-end gap-1.5">
@@ -693,10 +637,9 @@ export function ThreadRowView({ thread, top, height, compact, wide, icons, layou
           </span>
           {/* (a few characters of subject stay whatever the width: the sender's column gives way first) */}
           <span className="flex min-w-16 flex-1 items-center gap-2">
-            {/* plan 204 (after the panel): a task row's task where the subject is, the subject quiet after it */}
-            {task ? <><span data-testid="row-task" className={cn(FLOWING_SUBJECT, subjectInk)}>{thread.snippet}</span>{taskDue}</> : <span data-testid="row-subject" className={cn(FLOWING_SUBJECT, subjectInk)}>{subjectWords}</span>}
+            <span data-testid="row-subject" className={cn(FLOWING_SUBJECT, subjectInk)}>{subjectWords}</span>
             {draft}
-            {task ? taskSecond(cn("type-row-snippet min-w-0 flex-1 truncate", PREVIEW_INK)) : <RowTail thread={thread} reminderTop={reminderTop} ink={owedInk} quiet={PREVIEW_INK} match={match} excerpt={excerpt} />}
+            <RowTail thread={thread} reminderTop={reminderTop} ink={owedInk} quiet={PREVIEW_INK} match={match} excerpt={excerpt} />
           </span>
           {answer}
           {accountTag}
