@@ -2654,7 +2654,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "today.tip.body": "Hoy reúne lo que prometiste, quién espera tu respuesta y lo que vence. Lee lo que hay en este Mac.",
   "today.settings.pro": "Hoy es una función de Pro",
   "today.settings.proHint": "Aparece en la barra lateral mientras la IA de Pro esté activada en el modo desarrollador.",
-  "today.settings.show": "Mostrar Hoy",
+  "today.settings.show": "Mostrar Lo importante",
   "today.settings.finished": "Mostrar lo terminado",
   "today.settings.finishedHint": "Lo hecho, lo que no era tarea y lo pasado quedan en Antes. Desactivado, solo se ve lo pendiente.",
   "today.settings.prepareAt": "Preparar a las",
