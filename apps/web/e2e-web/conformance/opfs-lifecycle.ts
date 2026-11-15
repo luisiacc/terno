@@ -52,7 +52,7 @@ export function defineOpfsLifecycle(driver: SqliteDriver, pool: SAHPoolUtil, dir
 
     it("a step that fails leaves the file at its version, and a later open can still read it", () => {
       // the newest step that creates a table, with that table already there
-      const creating = [...MIGRATIONS].reverse().find((m) => /CREATE TABLE/i.test(m.sql))!;
+      const creating = [...MIGRATIONS].reverse().find((m) => /CREATE TABLE/i.test(m.sql) && !/RENAME TO/i.test(m.sql))!; // a rebuild (create, copy, rename) replays cleanly: not a step whose replay fails
       mailboxAt(driver, "/lifecycle-conflict.db", creating.version - 1);
       const raw = new Db(driver, "/lifecycle-conflict.db");
       raw.exec(creating.sql);

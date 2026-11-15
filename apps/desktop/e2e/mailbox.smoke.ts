@@ -175,7 +175,7 @@ test("a step that fails: the gate names it, Try Again tries once more, the file 
   const userData = profile("conflict");
   const db = join(userData, "terno.db");
   // the newest step that creates a table, with that table already there (a hand-edited or half-restored file)
-  const creating = [...MIGRATIONS].reverse().find((m) => /CREATE TABLE/i.test(m.sql))!;
+  const creating = [...MIGRATIONS].reverse().find((m) => /CREATE TABLE/i.test(m.sql) && !/RENAME TO/i.test(m.sql))!; // a rebuild (create, copy, rename) replays cleanly: not a step whose replay fails
   oldMailbox(db, { version: creating.version - 1 });
   const raw = new DatabaseSync(db);
   raw.exec(creating.sql);

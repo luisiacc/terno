@@ -17,7 +17,7 @@ afterEach(() => {
 });
 
 /** the newest step that creates a table: run twice it fails, and it needs a page of its own (whatever came after it) */
-const CREATING = [...MIGRATIONS].reverse().find((m) => /CREATE TABLE/i.test(m.sql))!;
+const CREATING = [...MIGRATIONS].reverse().find((m) => /CREATE TABLE/i.test(m.sql) && !/RENAME TO/i.test(m.sql))!; // a rebuild (create, copy, rename) replays cleanly: not a step whose replay fails
 
 function at(version: number): { dir: string; path: string; db: Db } {
   const dir = mkdtempSync(join(tmpdir(), "terno-open-"));
