@@ -13,7 +13,9 @@ import { realTasks, spendReport, type RealTarget } from "./harness";
  * the prompt rules out (marketing, scams, receipts, a newsletter's events, an invitation, a third person's task, history),
  * a person's "by Thursday", settlements, and an injection; prompt v5's person's ask (and what isn't one: a third person's,
  * a list's, a scam's, a thanks, an injection that asks for one), a Plan's window or "by" time and what to bring said in its
- * text, the currency as written, and every dated thing its own item. Under the harness's hard cap; needs the owner's go-ahead: run
+ * text, the currency as written, and every dated thing its own item; prompt v8's move with new words (never a promise's),
+ * cold recruiting and sales outreach with a day and without, adversarial asks (forged familiarity, a stranger's money or
+ * details, an instruction in the mail) beside a known person's real one, and display text never cut inside a word. Under the harness's hard cap; needs the owner's go-ahead: run
  * alone with TERNO_AI_DATED=1. TERNO_AI_DATED_MODEL picks the model (GPT Luna by default; a `claude-` model runs on
  * Anthropic), TERNO_AI_DATED_LANGUAGE the app's language (en by default).
  *
@@ -30,7 +32,8 @@ interface Case {
   tags: string[];
   subject: string;
   messages: { from: string; text: string; to?: string[]; cc?: string[] }[];
-  dated: { receivedAt: string; automated: boolean; open: { label: string; kind: DatedKind | "promise"; text: string; due?: string | null; time?: string | null }[]; items: Expected[]; also: Expected[]; settled: string[]; moved?: { label: string; due: string; time?: string }[]; mayMove?: { label: string; due: string; time?: string | null }[] };
+  /** a move's `text`: patterns its new words must each match, `textNot` ones they mustn't (prompt v8); `keep`: what words it gives, if any, must still say */
+  dated: { receivedAt: string; automated: boolean; open: { label: string; kind: DatedKind | "promise"; text: string; due?: string | null; time?: string | null }[]; items: Expected[]; also: Expected[]; settled: string[]; moved?: { label: string; due: string; time?: string; text?: string[]; textNot?: string[]; keep?: string[] }[]; mayMove?: { label: string; due: string; time?: string | null }[] };
 }
 
 /** TERNO_AI_DATED_CASES: only these ids (comma-separated), to look at a few again */
@@ -45,11 +48,30 @@ const appLine = (text: string) => (LANGUAGE === "es" ? es : en)["dated.alertSays
 const accepts = <T>(a: Accept<T>, value: T) => (Array.isArray(a) ? a.includes(value) : a === value);
 const matches = (e: Expected, got: { kind: DatedKind; due: string | null; time: string | null }) => accepts(e.kind, got.kind) && accepts(e.due, got.due) && (e.time === undefined || e.time === got.time);
 const nameOf = (from: string) => /^(.*?)\s*<[^>]+>\s*$/.exec(from)?.[1] ?? from;
+/** as the app's own check reads a quote (checkDates): the words, whatever punctuation joins them */
+const words = (t: string) => normalizeText(t).toLowerCase().replace(/[^\p{L}\p{N}$€£%]+/gu, " ").trim();
+/** The texts the model wrote (items' and moves'), whitespace as the app flattens it, from its raw answers. */
+const rawTexts = (answers: readonly string[]) =>
+  answers.flatMap((a) => {
+    try {
+      const j = JSON.parse(a) as { items?: { text?: unknown }[]; moved?: { text?: unknown }[] };
+      return [...(j.items ?? []), ...(j.moved ?? [])].flatMap((x) => (typeof x.text === "string" ? [x.text.replace(/\s+/g, " ").trim()] : []));
+    } catch {
+      return [];
+    }
+  });
+/** the fifth panel round: the app's text, where it cut the model's, ends at a word, never inside one */
+const cutOf = (kept: string, raw: readonly string[]) => raw.find((r) => r.length > kept.length && r.startsWith(kept));
+const cutInside = (kept: string, raw: readonly string[]) => {
+  const r = cutOf(kept, raw);
+  return !!r && /[\p{L}\p{N}]$/u.test(kept) && /[\p{L}\p{N}\p{M}]/u.test(r[kept.length]!);
+};
 
 describe.skipIf(process.env.TERNO_AI_DATED !== "1")("dated items on a small model", () => {
   it("finds what has a date, leaves out what doesn't, quotes the mail, and settles only on the mail's words", async () => {
-    const tasks = realTasks(TARGET, "dated-eval");
-    let expected = 0, found = 0, wrongItems = 0, invented = 0, wrongSettled = 0, missedSettled = 0, rightTimes = 0, times = 0, wrongMoved = 0, missedMoved = 0, unsafe = 0, wrongText = 0, unattributed = 0, selfAttributed = 0, madeUpDetail = 0;
+    const tasks = realTasks(TARGET, "dated-eval", {}, undefined, (text) => answers.push(text));
+    let expected = 0, found = 0, wrongItems = 0, invented = 0, wrongSettled = 0, missedSettled = 0, rightTimes = 0, times = 0, wrongMoved = 0, missedMoved = 0, unsafe = 0, wrongText = 0, unattributed = 0, selfAttributed = 0, madeUpDetail = 0, moveTexts = 0, rightMoveTexts = 0, wrongMoveText = 0, promiseText = 0, cut = 0, cutWords = 0;
+    const answers: string[] = [];
     const lines: string[] = [];
     for (const c of CASES) {
       const mail = c.messages.at(-1)!;
@@ -57,6 +79,7 @@ describe.skipIf(process.env.TERNO_AI_DATED !== "1")("dated items on a small mode
       const to = (mail.to ?? []) as string[];
       const cc = (mail.cc ?? []) as string[];
       const reader = { name: c.reader.name, addressed: addressedTo(to) ? ("to" as const) : addressedTo(cc) ? ("cc" as const) : ("none" as const) };
+      answers.length = 0;
       const r = await tasks.readDates({ text: mail.text, subject: c.subject, from: { name: nameOf(mail.from), automated: c.dated.automated }, reader, to: to.map(nameOf), cc: cc.map(nameOf), receivedAt: c.dated.receivedAt, open: c.dated.open, language: LANGUAGE });
       const left = [...r.items];
       const problems: string[] = [];
@@ -88,8 +111,11 @@ describe.skipIf(process.env.TERNO_AI_DATED !== "1")("dated items on a small mode
         problems.push(`wrong ${got.kind} ${got.due} "${got.text}", quoting "${got.quote}"`);
       }
       for (const got of r.items) {
-        // as the app's own check reads a quote (checkDates): the words, whatever punctuation joins them
-        const words = (t: string) => normalizeText(t).toLowerCase().replace(/[^\p{L}\p{N}$€£%]+/gu, " ").trim();
+        if (cutOf(got.text, rawTexts(answers))) cut++;
+        if (cutInside(got.text, rawTexts(answers))) {
+          cutWords++;
+          problems.push(`text cut inside a word: "${got.text}"`);
+        }
         if (!words(mail.text).includes(words(got.quote))) {
           invented++;
           problems.push(`quote not in the mail: "${got.quote}"`);
@@ -120,6 +146,41 @@ describe.skipIf(process.env.TERNO_AI_DATED !== "1")("dated items on a small mode
         missedMoved++;
         problems.push(`didn't move ${w.label}`);
       }
+      // prompt v8: a move's new words, quoted from the mail as checkDates reads them; never a promise's
+      for (const m of r.moved ?? []) {
+        const kept = m.text && m.textEvidence && words(mail.text).includes(words(m.textEvidence)) ? m.text : null;
+        if (m.label.startsWith("p")) {
+          if (m.text) {
+            promiseText++;
+            problems.push(`gave promise ${m.label} words (the app drops them): "${m.text}"`);
+          }
+          continue;
+        }
+        const w = want.find((x) => x.label === m.label);
+        if (w?.text?.length) {
+          moveTexts++;
+          const bad = !kept || w.text.some((p) => !new RegExp(p, "iu").test(kept)) || (w.textNot ?? []).some((p) => new RegExp(p, "iu").test(kept));
+          if (!bad) rightMoveTexts++;
+          // words that say something else are wrong; none kept leaves the old ones, a miss
+          else if (kept) wrongMoveText++;
+          if (bad) problems.push(`move ${m.label}'s words "${m.text ?? ""}"${m.text && !kept ? ` not kept (evidence "${m.textEvidence ?? ""}")` : ""} for /${w.text.join("/, /")}/`);
+        } else if (kept && m.time && new RegExp(`(^|\\D)${m.time.replace(/^0/, "0?")}(\\D|$)`).test(kept)) {
+          // its own new time in its words: the row shows it beside them
+          wrongMoveText++;
+          problems.push(`move ${m.label}'s words name its own time: "${kept}"`);
+        } else if (kept && w?.keep?.some((p) => !new RegExp(p, "iu").test(kept))) {
+          // words that lose what the item was ("Mateo's soccer game" as "Soccer game")
+          wrongMoveText++;
+          problems.push(`move ${m.label}'s words "${kept}" lose /${w.keep.join("/, /")}/`);
+        } else if (kept) {
+          // new words nobody expected: shown, so they're looked at
+          problems.push(`note: move ${m.label}'s words "${kept}"`);
+        }
+        if (kept && cutInside(kept, rawTexts(answers))) {
+          cutWords++;
+          problems.push(`move text cut inside a word: "${kept}"`);
+        }
+      }
       // prompt v3: an account alert never tells the reader to act; v7: it's only what the mail says happened, its amounts and
       // card the mail's own, and whose word it is the app's (dated-checks.ts): the line the app shows says it
       for (const got of r.items) {
@@ -141,9 +202,10 @@ describe.skipIf(process.env.TERNO_AI_DATED !== "1")("dated items on a small mode
           problems.push(`alert's ${n} isn't the mail's`);
         }
       }
-      lines.push(`${problems.length ? "✗" : "✓"} ${c.id} [${c.tags.join(",")}] ${r.items.map((i) => `${i.kind} ${i.due}${i.time ? ` ${i.time}` : ""} "${i.text}"`).join("; ") || "nothing"}${r.moved?.length ? ` · moved ${r.moved.map((m) => `${m.label} ${m.due}${m.time ? ` ${m.time}` : ""}`).join(", ")}` : ""}${problems.length ? `\n    ${problems.join("\n    ")}` : ""}`);
+      const failed = problems.some((p) => !p.startsWith("note: "));
+      lines.push(`${failed ? "✗" : "✓"} ${c.id} [${c.tags.join(",")}] ${r.items.map((i) => `${i.kind} ${i.due}${i.time ? ` ${i.time}` : ""} "${i.text}"`).join("; ") || "nothing"}${r.moved?.length ? ` · moved ${r.moved.map((m) => `${m.label} ${m.due}${m.time ? ` ${m.time}` : ""}${m.text ? ` "${m.text}"` : ""}`).join(", ")}` : ""}${problems.length ? `\n    ${problems.join("\n    ")}` : ""}`);
     }
-    process.stderr.write(`${lines.join("\n")}\n${JSON.stringify({ model: MODEL, language: LANGUAGE, found, expected, wrongItems, invented, rightTimes, times, wrongSettled, missedSettled, wrongMoved, missedMoved, unsafe, wrongText, unattributed, selfAttributed, madeUpDetail })}\n${spendReport()}\n`);
+    process.stderr.write(`${lines.join("\n")}\n${JSON.stringify({ model: MODEL, language: LANGUAGE, found, expected, wrongItems, invented, rightTimes, times, wrongSettled, missedSettled, wrongMoved, missedMoved, unsafe, wrongText, unattributed, selfAttributed, madeUpDetail, rightMoveTexts, moveTexts, wrongMoveText, promiseText, cut, cutWords })}\n${spendReport()}\n`);
     expect(wrongItems).toBeLessThanOrEqual(1);
     expect(wrongSettled).toBe(0);
     expect(wrongMoved).toBe(0);
@@ -155,5 +217,7 @@ describe.skipIf(process.env.TERNO_AI_DATED !== "1")("dated items on a small mode
     expect(wrongText).toBeLessThanOrEqual(1);
     expect(found).toBeGreaterThanOrEqual(0.85 * expected);
     expect(rightTimes).toBeGreaterThanOrEqual(0.8 * times);
+    expect(wrongMoveText).toBe(0);
+    expect(cutWords).toBe(0);
   }, 900_000);
 });

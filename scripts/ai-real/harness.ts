@@ -53,13 +53,25 @@ export function adjustRequests(inner: ModelTransport, adjust: (req: CompletionRe
   return { ...inner, complete: (req) => inner.complete(adjust(req)), ...(inner.stream ? { stream: (req: CompletionRequest) => inner.stream!(adjust(req)) } : {}) };
 }
 
+/** Sees each answer as it comes back: what the model wrote, before the app's validation (plan 204's word cut). */
+export function observeCompletions(inner: ModelTransport, see: (text: string) => void): ModelTransport {
+  return {
+    ...inner,
+    complete: async (req) => {
+      const c = await inner.complete(req);
+      see(c.text);
+      return c;
+    },
+  };
+}
+
 export interface RealTarget {
   provider: "anthropic" | "openai" | "jev";
   model: string;
 }
 
 /** Tasks on a real model, under the ledger: the same createAi the app uses. */
-export function realTasks(target: RealTarget, label: string, options: AiOptions = {}, adjust?: (req: CompletionRequest) => CompletionRequest): AiTasks {
+export function realTasks(target: RealTarget, label: string, options: AiOptions = {}, adjust?: (req: CompletionRequest) => CompletionRequest, see?: (text: string) => void): AiTasks {
   const keys = realKeys();
   const config: ProviderConfig = {
     id: target.provider,
@@ -73,7 +85,10 @@ export function realTasks(target: RealTarget, label: string, options: AiOptions 
   const ledger = fileLedger();
   return createAi(config, {
     ...options,
-    wrapTransport: (transport) => budgeted(adjust ? adjustRequests(transport, adjust) : transport, target.model, ledger, label),
+    wrapTransport: (transport) => {
+      const wrapped = budgeted(adjust ? adjustRequests(transport, adjust) : transport, target.model, ledger, label);
+      return see ? observeCompletions(wrapped, see) : wrapped;
+    },
     ...(target.provider === "jev" ? {} : { transport: transportFor(config) }),
   });
 }
