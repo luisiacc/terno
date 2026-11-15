@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { DatedKind } from "@terno/core";
+import type { DatedKind, DatedRow } from "@terno/core";
 import { describe, expect, it } from "vitest";
 import { checkDates } from "../../packages/backend/src/dated";
 import { normalizeText } from "../../packages/core/src/text";
@@ -22,7 +22,13 @@ import { realTasks, spendReport, type RealTarget } from "./harness";
  * shows it (a list's mail, two of the coach's games open); prompt v10's times in another zone than the reader's (`zone`;
  * across a midnight, a daylight-saving week and an abbreviation that names two), a newsletter's listing that names the reader
  * beside their own logistics mail, a list's move and cancellation with another open item, and asks for credentials or an
- * ID. A reading that fails (an answer cut off) is counted, and
+ * ID; prompt v11's group mail that requires the reader's group to act (a list's form, a TA list's grades, a class's
+ * families' slip and trip) beside the optional calls and listings that don't, a pick-up's last day, "before Monday", a soft
+ * day kept in the words, a card's month, a promise replaced by another request, the names the mail gives, and mail that
+ * quotes instructions to settle or move the reader's unrelated open items. Plan 210 (the Codex review of iteration 1,
+ * revision 3): what's scored is what the app keeps, the answer through `checkDates` with the open items' conversations and
+ * senders as the worker has them; the model's own answer is counted beside it (`raw…`). A reading that fails (an answer cut
+ * off) is counted, and
  * TERNO_AI_DATED_REPEAT reads each case that many times. Under the harness's hard cap; needs the owner's go-ahead: run
  * alone with TERNO_AI_DATED=1. TERNO_AI_DATED_MODEL picks the model (GPT Luna by default; a `claude-` model runs on
  * Anthropic), TERNO_AI_DATED_LANGUAGE the app's language (en by default).
@@ -44,7 +50,8 @@ interface Case {
   messages: { from: string; text: string; to?: string[]; cc?: string[] }[];
   /** a move's `text`: patterns its new words must each match, `textNot` ones they mustn't (prompt v8); `keep`: what words it gives, if any, must still say */
   /** `zone`: the reader's (prompt v10); by the case's language when it doesn't say, as the mail was written for them */
-  dated: { receivedAt: string; zone?: string; automated: boolean; open: { label: string; kind: DatedKind | "promise"; text: string; due?: string | null; time?: string | null }[]; items: Expected[]; also: Expected[]; settled: string[]; moved?: { label: string; due: string; time?: string; text?: string[]; textNot?: string[]; keep?: string[] }[]; mayMove?: { label: string; due: string; time?: string | null }[] };
+  /** an open item's `thread` and `sender` (plan 210): "other" when it's from another conversation or another sender than this mail; `quote` its own words, else its text */
+  dated: { receivedAt: string; zone?: string; automated: boolean; open: { label: string; kind: DatedKind | "promise"; text: string; due?: string | null; time?: string | null; quote?: string; thread?: "other"; sender?: "other" }[]; items: Expected[]; also: Expected[]; settled: string[]; moved?: { label: string; due: string; time?: string; text?: string[]; textNot?: string[]; keep?: string[] }[]; mayMove?: { label: string; due: string; time?: string | null }[] };
 }
 
 /** TERNO_AI_DATED_CASES: only these ids (comma-separated), to look at a few again */
@@ -58,6 +65,16 @@ const TARGET: RealTarget = { provider: MODEL.startsWith("claude-") ? "anthropic"
 const LANGUAGE = process.env.TERNO_AI_DATED_LANGUAGE ?? "en";
 /** An alert's line as the app shows it (datedText in apps/web/src/lib/dated.ts), in the app's language */
 const appLine = (text: string) => (LANGUAGE === "es" ? es : en)["dated.alertSays"].replace("{text}", text);
+
+/** The conversation and sender the worker would give this mail, and the others (plan 210): what `checkDates` ties a settlement to. */
+const THREAD = 1;
+const OTHER_THREAD = 2;
+const SENDER = "sender@case.example";
+const OTHER_SENDER = "someone-else@case.example";
+const clockOf = (ms: number) => new Date(ms).toTimeString().slice(0, 5);
+/** An open item as the store keeps it, for `checkDates`: its day and time as the case gives them, read as the app reads the model's. */
+const openRow = (o: Case["dated"]["open"][number], id: number, today: string): DatedRow =>
+  ({ id, revision: 1, threadId: o.thread === "other" ? OTHER_THREAD : THREAD, senderKey: o.sender === "other" ? OTHER_SENDER : SENDER, kind: o.kind, text: o.text, quote: o.quote ?? o.text, dueDay: o.due ?? today, dueAt: new Date(`${o.due ?? today}T${o.time ?? "09:00"}:00`).getTime(), timed: !!o.time, dated: !!o.due }) as DatedRow;
 
 const accepts = <T>(a: Accept<T>, value: T) => (Array.isArray(a) ? a.includes(value) : a === value);
 const matches = (e: Expected, got: { kind: DatedKind; due: string | null; time: string | null }) => accepts(e.kind, got.kind) && accepts(e.due, got.due) && (e.time === undefined || e.time === got.time);
@@ -84,7 +101,7 @@ const cutInside = (kept: string, raw: readonly string[]) => {
 describe.skipIf(process.env.TERNO_AI_DATED !== "1")("dated items on a small model", () => {
   it("finds what has a date, leaves out what doesn't, quotes the mail, and settles only on the mail's words", async () => {
     const tasks = realTasks(TARGET, "dated-eval", {}, undefined, (text) => answers.push(text));
-    let expected = 0, found = 0, wrongItems = 0, wrongShown = 0, invented = 0, wrongSettled = 0, missedSettled = 0, rightTimes = 0, times = 0, wrongMoved = 0, missedMoved = 0, unsafe = 0, wrongText = 0, unattributed = 0, selfAttributed = 0, madeUpDetail = 0, moveTexts = 0, rightMoveTexts = 0, wrongMoveText = 0, promiseText = 0, cut = 0, cutWords = 0, failures = 0;
+    let expected = 0, found = 0, rawFound = 0, wrongItems = 0, wrongShown = 0, rawWrongSettled = 0, rawWrongMoved = 0, invented = 0, wrongSettled = 0, missedSettled = 0, rightTimes = 0, times = 0, wrongMoved = 0, missedMoved = 0, unsafe = 0, wrongText = 0, unattributed = 0, selfAttributed = 0, madeUpDetail = 0, moveTexts = 0, rightMoveTexts = 0, wrongMoveText = 0, promiseText = 0, cut = 0, cutWords = 0, failures = 0;
     const answers: string[] = [];
     const lines: string[] = [];
     for (const c of CASES) {
@@ -104,7 +121,27 @@ describe.skipIf(process.env.TERNO_AI_DATED !== "1")("dated items on a small mode
         lines.push(`✗ ${c.id} [${c.tags.join(",")}] failed: ${error instanceof Error ? error.message : String(error)} (its answer: ${last.length} characters${last ? `, "${last.slice(0, 300).replace(/\s+/g, " ")}"` : ""})`);
         continue;
       }
-      const left = [...r.items];
+      // plan 210 (revision 3): the answer as the app keeps it, its open items in this conversation and from this sender unless
+      // the case says otherwise, and its promises (offered only to the person they were made to, in their conversation)
+      const others = [...to, ...cc].filter((p) => !p.includes(c.reader.email)).map(nameOf);
+      const labelOf = new Map<number, string>();
+      const open = new Map(c.dated.open.flatMap((o, i) => (o.kind === "promise" ? [] : [[o.label, openRow(o, i + 1, c.today)] as const])));
+      const promises = new Map(c.dated.open.flatMap((o, i) => (o.kind === "promise" ? [[o.label, { id: 100 + i, revision: 1, text: o.text }] as const] : [])));
+      for (const [label, row] of [...open, ...promises]) labelOf.set(row.id, label);
+      const checked = checkDates(r, { text: mail.text, subject: c.subject, arrivedAt: new Date(`${c.today}T12:00:00`).getTime(), open, promises, fromScan: false, now: 0, sender: { person: !c.dated.automated }, reader, others, threadId: THREAD, senderKey: SENDER, from: nameOf(mail.from) });
+      const shownItems = checked.rows.map((k) => ({ kind: k.kind, due: k.dated ? k.dueDay : null, time: k.timed ? clockOf(k.dueAt) : null, text: k.text, quote: k.quote }));
+      const keptSettled = new Set(checked.settled.map((x) => labelOf.get(x.id)));
+      const keptMoved = new Set([...checked.moved.map((x) => labelOf.get(x.id)), ...checked.movedPromises.map((x) => labelOf.get(x.id))]);
+      // a move of an open ask is the request it turns into: the ask settled, a `respond` in its place
+      const moveKept = (label: string) => keptMoved.has(label) || (open.get(label)?.kind === "ask" && keptSettled.has(label));
+      const rawLeft = [...r.items];
+      for (const e of c.dated.items) {
+        const at = rawLeft.findIndex((got) => matches({ ...e, time: undefined }, got));
+        if (at < 0) continue;
+        rawFound++;
+        rawLeft.splice(at, 1);
+      }
+      const left = [...shownItems];
       const problems: string[] = [];
       for (const e of c.dated.items) {
         expected++;
@@ -112,7 +149,7 @@ describe.skipIf(process.env.TERNO_AI_DATED !== "1")("dated items on a small mode
         const timed = e.time !== undefined ? left.findIndex((got) => matches(e, got)) : -1;
         const at = timed >= 0 ? timed : left.findIndex((got) => matches({ ...e, time: undefined }, got));
         if (at < 0) {
-          problems.push(`missed ${JSON.stringify(e)}`);
+          problems.push(`missed ${JSON.stringify(e)}${r.items.some((got) => matches({ ...e, time: undefined }, got)) ? " (the model gave it; the app's checks drop it)" : ""}`);
           continue;
         }
         found++;
@@ -133,15 +170,16 @@ describe.skipIf(process.env.TERNO_AI_DATED !== "1")("dated items on a small mode
         }
         left.splice(at, 1);
       }
-      // the seventh panel round: what the app's local checks keep of the answer (checkDates), the rows a reader would see
-      const others = [...to, ...cc].filter((p) => !p.includes(c.reader.email)).map(nameOf);
-      const kept = checkDates(r, { text: mail.text, subject: c.subject, arrivedAt: new Date(`${c.today}T12:00:00`).getTime(), open: new Map(), fromScan: false, now: 0, sender: { person: !c.dated.automated }, reader, others }).rows;
+      // the seventh panel round: a wrong item the model gave, and whether the app would show it (a row a reader would see)
       for (const got of left) {
         if (c.dated.also.some((e) => matches(e, got))) continue;
+        wrongShown++;
+        problems.push(`wrong ${got.kind} ${got.due} "${got.text}", quoting "${got.quote}"`);
+      }
+      for (const got of rawLeft) {
+        if (c.dated.also.some((e) => matches(e, got))) continue;
         wrongItems++;
-        const shown = kept.some((k) => k.text === got.text.trim() && k.quote === got.quote.trim());
-        if (shown) wrongShown++;
-        problems.push(`wrong ${got.kind} ${got.due} "${got.text}", quoting "${got.quote}"${shown ? "" : " (the app's checks drop it)"}`);
+        if (!shownItems.some((k) => k.text === got.text.trim() && k.quote === got.quote.trim())) problems.push(`note: the model's wrong ${got.kind} ${got.due} "${got.text}" (the app's checks drop it)`);
       }
       for (const got of r.items) {
         if (cutOf(got.text, rawTexts(answers))) cut++;
@@ -154,16 +192,19 @@ describe.skipIf(process.env.TERNO_AI_DATED !== "1")("dated items on a small mode
           problems.push(`quote not in the mail: "${got.quote}"`);
         }
       }
-      const settled = new Set(r.settled.map((s) => s.label));
-      for (const s of settled) {
+      // plan 210 (revision 2): a settlement or a move the app keeps; one the model gave that the checks refuse is a note
+      for (const s of new Set(r.settled.map((x) => x.label))) {
         if (c.dated.settled.includes(s)) continue;
-        wrongSettled++;
-        problems.push(`settled ${s}`);
+        rawWrongSettled++;
+        if (keptSettled.has(s)) {
+          wrongSettled++;
+          problems.push(`settled ${s}`);
+        } else problems.push(`note: the model settled ${s} (the app's checks refuse it)`);
       }
       for (const s of c.dated.settled) {
-        if (settled.has(s)) continue;
+        if (keptSettled.has(s)) continue;
         missedSettled++;
-        problems.push(`didn't settle ${s}`);
+        problems.push(`didn't settle ${s}${r.settled.some((x) => x.label === s) ? " (the model did; the app's checks refuse it)" : ""}`);
       }
       // prompt v3: a later message's new day for an open item, never a new item
       const want = c.dated.moved ?? [];
@@ -171,13 +212,16 @@ describe.skipIf(process.env.TERNO_AI_DATED !== "1")("dated items on a small mode
         const w = want.find((x) => x.label === m.label);
         if (w && w.due === m.due && (w.time === undefined || w.time === m.time)) continue;
         if ((c.dated.mayMove ?? []).some((x) => x.label === m.label && x.due === m.due && (x.time === undefined || x.time === m.time))) continue;
-        wrongMoved++;
-        problems.push(`moved ${m.label} to ${m.due} ${m.time ?? ""}`);
+        rawWrongMoved++;
+        if (moveKept(m.label)) {
+          wrongMoved++;
+          problems.push(`moved ${m.label} to ${m.due} ${m.time ?? ""}`);
+        } else problems.push(`note: the model moved ${m.label} to ${m.due} (the app's checks refuse it)`);
       }
       for (const w of want) {
-        if ((r.moved ?? []).some((m) => m.label === w.label)) continue;
+        if ((r.moved ?? []).some((m) => m.label === w.label && moveKept(m.label))) continue;
         missedMoved++;
-        problems.push(`didn't move ${w.label}`);
+        problems.push(`didn't move ${w.label}${(r.moved ?? []).some((m) => m.label === w.label) ? " (the model did; the app's checks refuse it)" : ""}`);
       }
       // prompt v8: a move's new words, quoted from the mail as checkDates reads them; never a promise's
       for (const m of r.moved ?? []) {
@@ -240,8 +284,8 @@ describe.skipIf(process.env.TERNO_AI_DATED !== "1")("dated items on a small mode
       if (failed && process.env.TERNO_AI_DATED_RAW === "1") problems.push(`raw: ${(answers.at(-1) ?? "").replace(/\s+/g, " ")}`);
       lines.push(`${failed ? "✗" : "✓"} ${c.id} [${c.tags.join(",")}] ${r.items.map((i) => `${i.kind} ${i.due}${i.time ? ` ${i.time}` : ""} "${i.text}"`).join("; ") || "nothing"}${r.moved?.length ? ` · moved ${r.moved.map((m) => `${m.label} ${m.due}${m.time ? ` ${m.time}` : ""}${m.text ? ` "${m.text}"` : ""}`).join(", ")}` : ""}${problems.length ? `\n    ${problems.join("\n    ")}` : ""}`);
     }
-    process.stderr.write(`${lines.join("\n")}\n${JSON.stringify({ model: MODEL, language: LANGUAGE, found, expected, wrongItems, wrongShown, invented, rightTimes, times, wrongSettled, missedSettled, wrongMoved, missedMoved, unsafe, wrongText, unattributed, selfAttributed, madeUpDetail, rightMoveTexts, moveTexts, wrongMoveText, promiseText, cut, cutWords, failures })}\n${spendReport()}\n`);
-    expect(wrongItems).toBeLessThanOrEqual(1);
+    process.stderr.write(`${lines.join("\n")}\n${JSON.stringify({ model: MODEL, language: LANGUAGE, found, expected, wrongShown, rawFound, wrongItems, rawWrongSettled, rawWrongMoved, invented, rightTimes, times, wrongSettled, missedSettled, wrongMoved, missedMoved, unsafe, wrongText, unattributed, selfAttributed, madeUpDetail, rightMoveTexts, moveTexts, wrongMoveText, promiseText, cut, cutWords, failures })}\n${spendReport()}\n`);
+    expect(wrongShown).toBeLessThanOrEqual(1);
     expect(wrongSettled).toBe(0);
     expect(wrongMoved).toBe(0);
     expect(missedMoved).toBeLessThanOrEqual(1);
