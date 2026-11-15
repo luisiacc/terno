@@ -6,8 +6,8 @@ import { bodyUpgradePending, BodyUpgradeRequired, BODY_UPGRADE_APPLICATION_ID, B
 import { unsubscribeBodyParts, decodeBodyPart } from "@terno/store";
 import { countWith, needsCount, messagesHere, senders, allDigests, beginDigest, clearDigests, digestFacts, digestLive, digestRead, getDigest, latestDigest, pendingDigestDays, pruneDigests, waitingAmong, waitingPage, writeDigest } from "./today";
 import { clearReplies, finishReply, getReply, transitionReply } from "./replies";
-import { activeDated, clearDated, datedAnswered, settleAnswered, datedMarkCount, datedMarkPage, datedScanCandidates, datedSource, finishDated, getDated, markDatedMail, openDatedFor, pruneDated, pruneDatedMarks, queueDatedScan, restoreDated, threadDated, datedWritten, updateDated } from "./dated";
-import { activeFollowups, claimFollowupNotice, clearFollowups, closeAnsweredFollowups, endFollowupTop, finishFollowups, followupLiveSent, followupScanCandidates, followupSendConfirmed, followupSource, getFollowup, makeFollowupsDue, nextFollowupDue, pruneFollowups, pruneSentMarks, queueScan, restoreFollowups, sentMarkCount, sentMarkPage, threadFollowups, updateFollowup } from "./followups";
+import { activeDated, closedDatedPage, newestClosedDated, clearDated, datedAnswered, settleAnswered, datedMarkCount, datedMarkPage, datedScanCandidates, datedSource, finishDated, getDated, markDatedMail, openDatedFor, pruneDated, pruneDatedMarks, queueDatedScan, restoreDated, threadDated, datedWritten, updateDated } from "./dated";
+import { activeFollowups, closedFollowupPage, newestClosedFollowup, claimFollowupNotice, clearFollowups, closeAnsweredFollowups, endFollowupTop, finishFollowups, followupLiveSent, followupScanCandidates, followupSendConfirmed, followupSource, getFollowup, makeFollowupsDue, nextFollowupDue, pruneFollowups, pruneSentMarks, queueScan, restoreFollowups, sentMarkCount, sentMarkPage, threadFollowups, updateFollowup } from "./followups";
 import { addAskTurn, askAccountsOf, askHeaders, askMatching, askNewest, askText, askTurnCount, askTurns, clearAsk, listAskConversations, removeAskConversation, removeAskForAccount, restoreAskConversation } from "./ask";
 import { retainBody, observeBodyRetirement, bodyReadReference, sqlBodyParts, cleanupBodies, finishBodyStage, withBodySelection, hydrateBodyReference, stageBody, prepareBodyMatches, withBodyMatches } from "./body-parts";
 import { sqlCaptureRepairs, sqlCaptureStorage } from "./capture-repair";
@@ -1160,6 +1160,8 @@ export class SqlMailStore implements MailStore {
     finish: async (w) => (w.clearGeneration === this.followupClears ? finishFollowups(this.db, w) : "gone"),
     active: async () => activeFollowups(this.db),
     ofThread: async (id) => threadFollowups(this.db, id),
+    closedPage: async (o) => closedFollowupPage(this.db, o),
+    newestClosed: async (ids, since) => newestClosedFollowup(this.db, ids, since),
     get: async (id) => getFollowup(this.db, id),
     nextDue: async () => nextFollowupDue(this.db),
     makeDue: async (now) => makeFollowupsDue(this.db, now),
@@ -1193,6 +1195,8 @@ export class SqlMailStore implements MailStore {
     finish: async (w) => (w.clearGeneration === this.datedClears ? finishDated(this.db, w) : "gone"),
     active: async () => activeDated(this.db),
     ofThread: async (id) => threadDated(this.db, id),
+    closedPage: async (o) => closedDatedPage(this.db, o),
+    newestClosed: async (ids, since) => newestClosedDated(this.db, ids, since),
     written: async (keys) => datedWritten(this.db, keys),
     get: async (id) => getDated(this.db, id),
     update: async (id, revision, patch, schedule) => updateDated(this.db, id, revision, patch, schedule),

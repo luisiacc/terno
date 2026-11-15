@@ -1,5 +1,6 @@
 import { addressKey, type FollowupRow } from "@terno/core";
-import { FOLLOWUP_CLOSED_KEEP_MS, FOLLOWUPS_ACTIVE_MAX, recipientList, SCAN_MARK_MS, SENT_MARK_MS, type FollowupFinish, type FollowupFinishOutcome, type FollowupSnapshot, type FollowupSource, type SentMark } from "@terno/store";
+import { FOLLOWUP_CLOSED_KEEP_MS, FOLLOWUPS_ACTIVE_MAX, recipientList, SCAN_MARK_MS, SENT_MARK_MS, type ClosedAt, type FollowupFinish, type FollowupFinishOutcome, type FollowupSnapshot, type FollowupSource, type SentMark } from "@terno/store";
+import { closedPage, newestClosedOf } from "./dated";
 import { T, type Ctx, type R } from "./mail";
 
 /** Plan 142 on IndexedDB, like SQL's (packages/db/src/followups.ts). */
@@ -170,6 +171,17 @@ export function activeFollowups(c: Ctx): FollowupRow[] {
   const rows = T(c, "followups");
   return [...rows.by("state", "open"), ...rows.by("state", "due")].sort(byDue).slice(0, FOLLOWUPS_ACTIVE_MAX).map(toRow);
 }
+/** Plan 210: your closed promises newest first by `(closed_at, id)`, strictly after `after` (SQLite's `followups_closed`). */
+export function closedFollowupPage(c: Ctx, o: { since: number; after: ClosedAt | null; limit: number }): FollowupRow[] {
+  const rows = T(c, "followups");
+  return closedPage([...rows.by("state", "done"), ...rows.by("state", "dismissed")].filter((r) => r.kind === "promise"), o).map(toRow);
+}
+
+export function newestClosedFollowup(c: Ctx, threadIds: readonly number[], since: number): Map<number, ClosedAt> {
+  const rows = T(c, "followups");
+  return newestClosedOf([...new Set(threadIds)].flatMap((id) => rows.by("fk_thread_id", id).filter((r) => r.kind === "promise" && (r.state === "done" || r.state === "dismissed"))), since);
+}
+
 export const threadFollowups = (c: Ctx, threadId: number): FollowupRow[] => T(c, "followups").by("fk_thread_id", threadId).filter(live).sort(byDue).map(toRow);
 export function getFollowup(c: Ctx, id: number): FollowupRow | null {
   const r = T(c, "followups").get(id);

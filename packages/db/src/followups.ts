@@ -1,6 +1,7 @@
 import { addressKey, type FollowupRow } from "@terno/core";
-import { FOLLOWUP_CLOSED_KEEP_MS, FOLLOWUPS_ACTIVE_MAX, recipientList, SCAN_MARK_MS, SENT_MARK_MS, type FollowupFinish, type FollowupFinishOutcome, type FollowupSnapshot, type FollowupSource, type SentMark } from "@terno/store";
+import { FOLLOWUP_CLOSED_KEEP_MS, FOLLOWUPS_ACTIVE_MAX, recipientList, SCAN_MARK_MS, SENT_MARK_MS, type ClosedAt, type FollowupFinish, type FollowupFinishOutcome, type FollowupSnapshot, type FollowupSource, type SentMark } from "@terno/store";
 import { ownAddresses } from "./facts";
+import { newestBy } from "./dated";
 import type { Db } from "./sqlite";
 
 /** Plan 142 on SQLite (v52; v58 a promise's Later): see packages/store/src/followups.ts. */
@@ -163,6 +164,25 @@ export function finishFollowups(db: Db, w: FollowupFinish): FollowupFinishOutcom
 
 export const activeFollowups = (db: Db): FollowupRow[] => db.all<Raw>("SELECT * FROM followups INDEXED BY followups_active WHERE state IN ('open','due') ORDER BY due_at, id LIMIT ?", FOLLOWUPS_ACTIVE_MAX).map(toRow);
 export const threadFollowups = (db: Db, threadId: number): FollowupRow[] => db.all<Raw>("SELECT * FROM followups WHERE thread_id = ? AND state IN ('open','due') ORDER BY due_at, id", threadId).map(toRow);
+/** Plan 210: your closed promises by closing time (`followups_closed`), strictly after `after`, newest first. */
+export function closedFollowupPage(db: Db, o: { since: number; after: ClosedAt | null; limit: number }): FollowupRow[] {
+  const { after } = o;
+  return db
+    .all<Raw>(
+      `SELECT * FROM followups INDEXED BY followups_closed WHERE kind = 'promise' AND state IN ('done','dismissed') AND closed_at >= ?${after ? " AND (closed_at < ? OR (closed_at = ? AND id < ?))" : ""} ORDER BY closed_at DESC, id DESC LIMIT ?`,
+      o.since,
+      ...(after ? [after.at, after.at, after.id] : []),
+      o.limit,
+    )
+    .map(toRow);
+}
+
+/** Plan 210: each thread's newest closed promise since `since`, by its thread index. */
+export function newestClosedFollowup(db: Db, threadIds: readonly number[], since: number): Map<number, ClosedAt> {
+  const rows = threadIds.length ? db.all<{ thread_id: number; closed_at: number; id: number }>("SELECT thread_id, closed_at, id FROM followups INDEXED BY followups_thread WHERE thread_id IN (SELECT value FROM json_each(?)) AND kind = 'promise' AND state IN ('done','dismissed') AND closed_at >= ?", JSON.stringify([...new Set(threadIds)]), since) : [];
+  return newestBy(rows);
+}
+
 export function getFollowup(db: Db, id: number): FollowupRow | null {
   const r = db.get<Raw>("SELECT * FROM followups WHERE id = ?", id);
   return r ? toRow(r) : null;
