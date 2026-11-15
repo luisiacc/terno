@@ -582,3 +582,19 @@ Not this round: one card for the conversation's items (the date line, the promis
 ### Revisions after the Codex code review of the fifth round
 
 - **The promise's Later (`/tmp/terno-scratch/p204/review-10.out`, 2 points, each with a test that fails without it):** an undated promise put off until before its own moment wakes Today when its Later ends (`nextTodayChange` considers `deferredUntil` before the undated branch's `continue`), so its waiting conversation and the counts come back on time; and one urgency order, `byUrgency` in `@terno/core` (due first, then `followupWakeAt`), sorts the follow-ups list's threads in the backend and picks a row's promise in the renderer (`mostUrgent`, under `rowLine` and `useOwed`), so a thread placed by promise B never shows put-off promise A's words and day.
+
+### Revisions after the Codex review of the sixth round's changes
+
+Codex (read-only, `/tmp/terno-scratch/p204/critique-7.out`) raised 12 points; taken as follows.
+
+1. and 9. **No invented confirmation deadline:** an appointment's "Reply C to confirm" goes in the event's text ("Sofia's cleaning (reply C to confirm)"), not a `respond` with a day the mail doesn't give (which a reply would also answer).
+2. **An undated alert's lifecycle is one rule** from `arrivedAt` and `dated`, shared by `datedPlace`, `datedOver`, `nextTodayChange` and the conversation's line: Deadlines for a week from its arrival, never Missed, then over; Later past the week keeps it (never over while deferred), as for dated items.
+3. **A delivery's scope is enforced where context is chosen and where it's written:** both stores' `openFor` leave out another conversation's deliveries before their limit, and `finishDated` refuses a move or a settlement of another conversation's delivery.
+4. **An ask is moved or settled only from its own conversation** (the same rule as a delivery's), and backend tests give a plain-address sender valid quotes with harmful demands: nothing is executed, and nothing outside its conversation moves.
+5. **No local "drop the alert beside a bill":** prompt v9 says an alert and a payment for the same bill are one item, the payment, its text saying what failed; an unrelated alert beside a bill stays.
+6. **The Plan's lead applies to stored items too, read-time:** where an item shows is the earlier of its stored `actAt` and its kind's lead before its day (`datedPlace`, `nextTodayChange`), so open events show three days ahead without a rescheduling pass. Alerts and offers already stored aren't cleaned: they turn over with new mail.
+7. **Nudges leave `places()`,** before dedupe, for the list and the count alike; a thread with a nudge and an ask, promise or reminder keeps those; Follow-ups and the Inbox's top are unchanged.
+8. **Prompt v9's offers improve extracted asks only;** a waiting conversation stays as plan 145 and its summary rule decide.
+10. **The move and Later Undo contracts stay** (dated moves keep the revision; promise moves their own path), with conformance for a refused foreign-conversation move.
+11. **The soccer case is reproduced as the reader sees it:** the list's mail with the competing open items and the sender's classification, read several times to measure how often it's missed before changing the prompt; fictional, beside `dated-070`.
+12. **The perf gate** at 50k threads and 1,000 active items holds with the earlier Plans; copy in en and es together.
