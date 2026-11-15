@@ -25,7 +25,9 @@ import { realTasks, spendReport, type RealTarget } from "./harness";
  * ID; prompt v11's group mail that requires the reader's group to act (a list's form, a TA list's grades, a class's
  * families' slip and trip) beside the optional calls and listings that don't, a pick-up's last day, "before Monday", a soft
  * day kept in the words, a card's month, a promise replaced by another request, the names the mail gives, and mail that
- * quotes instructions to settle or move the reader's unrelated open items. Plan 210 (the Codex review of iteration 1,
+ * quotes instructions to settle or move the reader's unrelated open items; prompt v12's bills on AutoPay (never "Pay …",
+ * beside one whose AutoPay failed), an unanswered invitation's words beside a confirmed appointment's, and a closing thanks
+ * (en, es) beside one that still asks a small thing. Plan 210 (the Codex review of iteration 1,
  * revision 3): what's scored is what the app keeps, the answer through `checkDates` with the open items' conversations and
  * senders as the worker has them; the model's own answer is counted beside it (`raw…`). A reading that fails (an answer cut
  * off) is counted, and
@@ -172,7 +174,16 @@ describe.skipIf(process.env.TERNO_AI_DATED !== "1")("dated items on a small mode
       }
       // the seventh panel round: a wrong item the model gave, and whether the app would show it (a row a reader would see)
       for (const got of left) {
-        if (c.dated.also.some((e) => matches(e, got))) continue;
+        const allowed = c.dated.also.find((e) => matches(e, got));
+        if (allowed) {
+          // prompt v12: what may show may still not say this (an AutoPay bill's notice is never "Pay …")
+          for (const pattern of allowed.textNot ?? []) {
+            if (!new RegExp(pattern, "iu").test(got.text)) continue;
+            wrongText++;
+            problems.push(`text "${got.text}" has /${pattern}/`);
+          }
+          continue;
+        }
         wrongShown++;
         problems.push(`wrong ${got.kind} ${got.due} "${got.text}", quoting "${got.quote}"`);
       }
