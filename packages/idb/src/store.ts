@@ -1,6 +1,6 @@
 import { ASK_MATCH_MESSAGES, ASK_MATCH_PARTS, CORPUS_TEXTS_MAX, finishBodyClose, rankSentRefs, readPassages, readThreadContext, type SentRef } from "@terno/store";
 import { ClosedOrder } from "./closed-order";
-import { countWith, needsCount, needsWalk, type NeedsWalk, messagesHere, senders, allDigests, beginDigest, clearDigests, digestFacts, digestLive, digestRead, getDigest, latestDigest, pendingDigestDays, pruneDigests, waitingAmong, waitingPage, writeDigest } from "./today";
+import { actOnItems, itemMembers, linkItems, liveAmong, restoreItems, needsCount, needsWalk, type NeedsWalk, messagesHere, senders, allDigests, beginDigest, clearDigests, digestFacts, digestLive, digestRead, getDigest, latestDigest, pendingDigestDays, pruneDigests, waitingAmong, waitingPage, writeDigest } from "./today";
 import { clearReplies, finishReply, getReply, transitionReply } from "./replies";
 import { datedAnswered, settleAnswered, activeDated, closedDatedPage, newestClosedDated, clearDated, datedMarkCount, datedMarkPage, datedScanCandidates, datedSource, finishDated, getDated, markDatedMail, openDatedFor, pruneDated, pruneDatedMarks, queueDatedScan, restoreDated, threadDated, datedWritten, updateDated } from "./dated";
 import { activeFollowups, closedFollowupPage, newestClosedFollowup, claimFollowupNotice, clearFollowups, closeAnsweredFollowups, endFollowupTop, finishFollowups, followupLiveSent, followupScanCandidates, followupSendConfirmed, followupSource, getFollowup, makeFollowupsDue, nextFollowupDue, pruneFollowups, pruneSentMarks, queueScan, restoreFollowups, sentMarkCount, sentMarkPage, threadFollowups, updateFollowup } from "./followups";
@@ -2007,7 +2007,12 @@ export class IdbMailStore implements MailStore {
   readonly today: MailStore["today"] = {
     waitingPage: (o) => this.needs(o.now, (walk) => waitingPage(this.c, o, walk)),
     waitingAmong: (ids, now) => this.needs(now, (walk) => waitingAmong(this.c, ids, walk)),
-    countWith: (ids, now, uncounted) => this.needs(now, (walk) => countWith(this.c, ids, walk, uncounted)),
+    liveAmong: (ids) => this.read(() => liveAmong(this.c, ids)),
+    // plan 210 (iteration 2): items and promises are early tables; a write is one command over both
+    members: (keys) => this.early(() => itemMembers(this.c, keys)),
+    link: (o) => this.command(() => linkItems(this.c, o)),
+    act: (changes) => this.command(() => actOnItems(this.c, changes)),
+    restore: (snapshots) => this.command(() => restoreItems(this.c, snapshots)),
     needsCount: (now) => this.needs(now, (walk) => needsCount(this.c, walk)),
     digestFacts: (ids) => this.read(() => digestFacts(this.c, ids)),
     digestLive: (ids) => this.read(() => digestLive(this.c, ids)),

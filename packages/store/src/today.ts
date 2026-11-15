@@ -1,4 +1,21 @@
-import { addressKey, CALENDAR_ANSWER_PREFIXES, SUMMARY_WHO_ACTS_SINCE, type DigestItem, type DigestState } from "@terno/core";
+import { addressKey, CALENDAR_ANSWER_PREFIXES, SUMMARY_WHO_ACTS_SINCE, type DatedRow, type DigestItem, type DigestState, type FollowupRow, type ItemRef } from "@terno/core";
+import type { DatedSnapshot } from "./dated";
+import type { FollowupSnapshot } from "./followups";
+
+/**
+ * Plan 210 (iteration 2): one act on the items a row is, each at the revision it was seen at. A dated item's patch is
+ * `dated.update`'s, a promise's `followups.update`'s.
+ */
+export interface ItemChanges {
+  dated: readonly { id: number; revision: number; patch: Partial<Pick<DatedRow, "state" | "deferredUntil" | "closedReason" | "closedAt">> }[];
+  promises: readonly { id: number; revision: number; patch: Partial<Pick<FollowupRow, "state" | "dueAt" | "deferredUntil" | "inboxState" | "closedReason" | "closedAt">> }[];
+}
+
+/** What an act changed, as it was before: Undo restores each row while its revision is still the act's. */
+export interface ItemSnapshots {
+  dated: readonly DatedSnapshot[];
+  promises: readonly FollowupSnapshot[];
+}
 
 /**
  * Plan 145's reads and table, the part both stores share (`packages/db/src/today.ts`, `packages/idb/src/today.ts`). The
@@ -91,14 +108,33 @@ export interface TodayStore {
   waitingPage(o: { now: number; after: { lastDate: number; id: number } | null; limit: number }): Promise<{ id: number; lastDate: number; /** why `needsYou` let it in: you've written in it (else: new, from someone you write to) */ hasSent: boolean }[]>;
   /** which of these threads the Inbox holds as waiting (a due follow-up may be one too: it counts once) */
   waitingAmong(threadIds: readonly number[], now: number): Promise<number[]>;
-  /** how many `waitingPage` would walk: the sidebar's number, on every count */
+  /** how many `waitingPage` would walk: plan 145's own number (the Today perf gate's baseline) */
   needsCount(now: number): Promise<number>;
   /**
-   * Plan 204: the sidebar's number in one walk: what's waiting (`needsCount`) less those placed in a group that isn't
-   * counted (`uncounted`: a waiting thread with a Plan shows as the Plan, so the count agrees with the list), and how many
-   * of these counted threads (Missed, Deadlines, follow-ups) are neither waiting already nor in Spam or Trash
+   * Plan 210 (iteration 2): of these threads, those whose rows may show: still here, and in neither Spam nor Trash (one read
+   * for every item the count places; replaces plan 204's `countWith` thread arithmetic, which the projection now does)
    */
-  countWith(threadIds: readonly number[], now: number, uncounted?: readonly number[]): Promise<{ needs: number; extra: number }>;
+  liveAmong(threadIds: readonly number[]): Promise<Set<number>>;
+  /**
+   * Plan 210 (iteration 2): every dated item and promise, in any state, that belongs to one of these canonical items (keys,
+   * `refKey`: the item itself and those whose `sameAs` is it). One indexed read a key: what an act on a merged row and a
+   * history page resolve membership by
+   */
+  members(keys: readonly string[]): Promise<{ dated: DatedRow[]; promises: FollowupRow[] }>;
+  /**
+   * Plan 210 (iteration 2): duplicate membership and related details, as the backend's matcher found them. `same`: the item
+   * is the same thing as `sameAs` (a canonical's key); `details`: the dated item is a detail of `detailOf`. Written only on
+   * rows still open, and never over a membership already set (a canonical keeps its id as evidence arrives). How many it set
+   */
+  link(o: { same: readonly { item: ItemRef; sameAs: string }[]; details: readonly { id: number; detailOf: number }[] }): Promise<number>;
+  /**
+   * Plan 210 (iteration 2): an act on a row, on every item it is at once (Done, Remove, Later on a merged one), each at the
+   * revision it was read at: all or none (null: one changed since). Each row's revision ups, as `dated.update` and
+   * `followups.update` do; what comes back is what Undo puts back
+   */
+  act(changes: ItemChanges): Promise<ItemSnapshots | null>;
+  /** Its Undo: every row only if none changed since (all or none; false: one had) */
+  restore(snapshots: ItemSnapshots): Promise<boolean>;
   /** of these messages, those that qualify; `arrivedAt` also for those that don't is what a walk stops on */
   digestFacts(messageIds: readonly number[]): Promise<{ facts: DigestFact[]; oldest: number | null }>;
   /** of these listed threads, how many are still as a digest would act on them: in the Inbox and unread */

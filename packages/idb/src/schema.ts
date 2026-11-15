@@ -113,10 +113,11 @@ export const TABLES: readonly (TableSpec & { memoryOnly?: boolean; early?: boole
   { name: "ai_sent_mail", key: ["message_id"], indexes: { ...fk("message_id"), thread: ["thread_id"] } },
   { name: "ai_digests", early: true, key: ["day"], indexes: {} },
   { name: "ai_prepared_replies", early: true, key: ["thread_id"], indexes: {} },
-  { name: "followups", early: true, key: ["id"], autoId: true, indexes: { ...fk("thread_id"), identity: ["message_id", "item"], state: ["state"], top: ["inbox_state"] } },
+  // plan 210 (iteration 2): `same` holds a duplicate's canonical (in memory, a null left out: no version bump)
+  { name: "followups", early: true, key: ["id"], autoId: true, indexes: { ...fk("thread_id"), identity: ["message_id", "item"], state: ["state"], top: ["inbox_state"], same: ["same_as"] } },
   // plan 204: as plan 142's; `open` and `sender` hold only open rows (SQL's partial indexes)
   { name: "ai_dated_mail", key: ["message_id"], indexes: { ...fk("message_id"), thread: ["thread_id"] } },
-  { name: "dated_items", early: true, key: ["id"], autoId: true, indexes: { ...fk("thread_id"), identity: ["message_id", "item"], message: ["message_id"], state: ["state"], sender: { columns: ["sender_key"], where: (r) => r.state === "open" } } },
+  { name: "dated_items", early: true, key: ["id"], autoId: true, indexes: { ...fk("thread_id"), identity: ["message_id", "item"], message: ["message_id"], state: ["state"], sender: { columns: ["sender_key"], where: (r) => r.state === "open" }, same: ["same_as"] } },
   // plan 210 (iteration 2): read by the dated reader with nothing asked of the reader, by thread for Needs you
   { name: "dated_nothing_asked", key: ["message_id"], indexes: { ...fk("message_id"), thread: ["thread_id"] } },
   { name: "send_copies", early: true, key: ["opId"], indexes: fk("accountId") },

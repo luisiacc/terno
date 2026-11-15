@@ -1,5 +1,7 @@
-import { isAcknowledgment, looksLikeAcknowledgment, saysNoReplyNeeded, waitingCutoff, type DigestItem } from "@terno/core";
-import { DATED_NOTHING_ASKED_SINCE, NEEDS_WALK, needsYou, summaryAsksNothing, type DigestFact, type DigestStored, type WaitingRow } from "@terno/store";
+import { isAcknowledgment, looksLikeAcknowledgment, parseRef, refKey, saysNoReplyNeeded, waitingCutoff, type DatedRow, type DigestItem, type FollowupRow, type ItemRef } from "@terno/core";
+import { DATED_NOTHING_ASKED_SINCE, NEEDS_WALK, needsYou, summaryAsksNothing, type DigestFact, type DigestStored, type ItemChanges, type ItemSnapshots, type WaitingRow } from "@terno/store";
+import { getDated, restoreDated, updateDated } from "./dated";
+import { getFollowup, restoreFollowups, updateFollowup } from "./followups";
 import { inboxHiding, shownSql } from "./queries";
 import type { Db } from "./sqlite";
 
@@ -89,13 +91,72 @@ export function waitingAmong(db: Db, threadIds: readonly number[], now: number):
   return needsRows(db, now).filter((r) => wanted.has(r.id)).map((r) => r.id);
 }
 
-export function countWith(db: Db, threadIds: readonly number[], now: number, uncounted: readonly number[] = []): { needs: number; extra: number } {
-  const elsewhere = new Set(uncounted);
-  const rows = needsRows(db, now).filter((r) => !elsewhere.has(r.id));
-  if (!threadIds.length) return { needs: rows.length, extra: 0 };
-  const waiting = new Set(rows.map((r) => r.id));
-  const live = db.all<{ id: number }>("SELECT id FROM threads WHERE id IN (SELECT value FROM json_each(?)) AND in_spam = 0 AND in_trash = 0", JSON.stringify([...new Set(threadIds)]));
-  return { needs: rows.length, extra: live.filter((r) => !waiting.has(r.id)).length };
+/** Plan 210 (iteration 2): of these threads, those still here and in neither Spam nor Trash: one read. */
+export function liveAmong(db: Db, threadIds: readonly number[]): Set<number> {
+  if (!threadIds.length) return new Set();
+  return new Set(db.all<{ id: number }>("SELECT id FROM threads WHERE id IN (SELECT value FROM json_each(?)) AND in_spam = 0 AND in_trash = 0", JSON.stringify([...new Set(threadIds)])).map((r) => r.id));
+}
+
+/** Plan 210 (iteration 2): the dated items and promises of these canonical items, any state: by id, and by `same_as`'s index. */
+export function itemMembers(db: Db, keys: readonly string[]): { dated: DatedRow[]; promises: FollowupRow[] } {
+  const refs = [...new Set(keys)].flatMap((key) => {
+    const ref = parseRef(key);
+    return ref ? [{ key, ref }] : [];
+  });
+  if (!refs.length) return { dated: [], promises: [] };
+  const ids = (source: ItemRef["source"]) => JSON.stringify(refs.filter((r) => r.ref.source === source).map((r) => r.ref.id));
+  const all = JSON.stringify(refs.map((r) => r.key));
+  const dated = db.all<{ id: number }>("SELECT id FROM dated_items WHERE id IN (SELECT value FROM json_each(?)) UNION SELECT id FROM dated_items INDEXED BY dated_same WHERE same_as IN (SELECT value FROM json_each(?)) ORDER BY id", ids("dated"), all);
+  const promises = db.all<{ id: number }>("SELECT id FROM followups WHERE id IN (SELECT value FROM json_each(?)) AND kind = 'promise' UNION SELECT id FROM followups INDEXED BY followups_same WHERE same_as IN (SELECT value FROM json_each(?)) AND kind = 'promise' ORDER BY id", ids("promise"), all);
+  return { dated: dated.map((r) => getDated(db, r.id)!), promises: promises.map((r) => getFollowup(db, r.id)!) };
+}
+
+/** Each table's name and its open rows, as SQL. */
+const TABLE = { dated: "dated_items", promise: "followups" } as const;
+const OPEN = { dated: "state = 'open'", promise: "kind = 'promise' AND state IN ('open','due')" } as const;
+
+/**
+ * Plan 210 (iteration 2): membership as the backend's matcher found it, on open rows, never over one already set, never a
+ * chain (the target is a canonical, and an item others are the same as isn't made anyone's). It's no choice of the user's,
+ * so no revision moves: an Undo taken before it still applies.
+ */
+export function linkItems(db: Db, o: { same: readonly { item: ItemRef; sameAs: string }[]; details: readonly { id: number; detailOf: number }[] }): number {
+  return db.tx(() => {
+    let n = 0;
+    for (const { item, sameAs } of o.same) {
+      const target = parseRef(sameAs);
+      if (!target || sameAs === refKey(item)) continue;
+      const canonical = db.get<{ same_as: string | null }>(`SELECT same_as FROM ${TABLE[target.source]} WHERE id = ?${target.source === "promise" ? " AND kind = 'promise'" : ""}`, target.id);
+      if (!canonical || canonical.same_as !== null) continue;
+      if (db.get("SELECT 1 FROM dated_items INDEXED BY dated_same WHERE same_as = ? UNION ALL SELECT 1 FROM followups INDEXED BY followups_same WHERE same_as = ? LIMIT 1", refKey(item), refKey(item))) continue;
+      n += Number(db.run(`UPDATE ${TABLE[item.source]} SET same_as = ? WHERE id = ? AND same_as IS NULL AND ${OPEN[item.source]}`, sameAs, item.id).changes);
+    }
+    for (const d of o.details) {
+      if (d.id === d.detailOf || !db.get("SELECT 1 FROM dated_items WHERE id = ?", d.detailOf)) continue;
+      n += Number(db.run("UPDATE dated_items SET detail_of = ? WHERE id = ? AND detail_of IS NULL AND state = 'open'", d.detailOf, d.id).changes);
+    }
+    return n;
+  });
+}
+
+const atRevision = (db: Db, table: string, id: number, revision: number): boolean => !!db.get(`SELECT 1 FROM ${table} WHERE id = ? AND revision = ?`, id, revision);
+
+/** Plan 210 (iteration 2): one act on every item a row is, each at the revision it was seen at, or on none. */
+export function actOnItems(db: Db, changes: ItemChanges): ItemSnapshots | null {
+  return db.tx(() => {
+    if (!changes.dated.every((c) => atRevision(db, "dated_items", c.id, c.revision)) || !changes.promises.every((c) => atRevision(db, "followups", c.id, c.revision))) return null;
+    return { dated: changes.dated.map((c) => updateDated(db, c.id, c.revision, c.patch)!), promises: changes.promises.map((c) => updateFollowup(db, c.id, c.revision, c.patch)!) };
+  });
+}
+
+/** Its Undo: every row still at the revision the act left, or none restored. */
+export function restoreItems(db: Db, s: ItemSnapshots): boolean {
+  return db.tx(() => {
+    if (!s.dated.every((r) => atRevision(db, "dated_items", r.id, r.revision + 1)) || !s.promises.every((r) => atRevision(db, "followups", r.id, r.revision + 1))) return false;
+    restoreDated(db, s.dated.map((snapshot) => ({ snapshot, expectRevision: snapshot.revision + 1 })));
+    restoreFollowups(db, s.promises.map((snapshot) => ({ snapshot, expectRevision: snapshot.revision + 1 })));
+    return true;
+  });
 }
 
 export function needsCount(db: Db, now: number): number {
