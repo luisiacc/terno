@@ -278,8 +278,8 @@ export function defineTodayConformance(fresh: () => Promise<MailStore>): void {
       const DAY = 86_400_000;
       const ingest = async (m: Partial<IncomingMessage>, dated = false) =>
         (await store.sync.ingest([msg({ listId: null, isRead: false, to: [me], ...m, accountId: accountId_() })], { applyFilters: false, now: NOW, classifier: null, ...(dated ? { datedMail: { since: null } } : {}) })).inserted[0]!;
-      const read = (messageId: number, thread: number, rows: Parameters<MailStore["dated"]["finish"]>[0]["rows"], promptVersion = DATED_NOTHING_ASKED_SINCE, readWhole = true) =>
-        store.dated.finish({ messageId, threadId: thread, fromScan: false, settled: [], now: NOW, model: "m", provider: "p", promptVersion, readWhole, clearGeneration: store.dated.clearGeneration(), rows });
+      const read = (messageId: number, thread: number, rows: Parameters<MailStore["dated"]["finish"]>[0]["rows"], promptVersion = DATED_NOTHING_ASKED_SINCE, nothingAsked = true) =>
+        store.dated.finish({ messageId, threadId: thread, fromScan: false, settled: [], now: NOW, model: "m", provider: "p", promptVersion, nothingAsked, clearGeneration: store.dated.clearGeneration(), rows });
       /** you wrote, they answered (marked for the dated reader) */
       const talk = async (name: string, date: number, text: string) => {
         const email = `${name.toLowerCase()}@people.test`;
@@ -340,7 +340,7 @@ export function defineTodayConformance(fresh: () => Promise<MailStore>): void {
       await ingest({ date: NOW - 3500, providerMsgId: "Gus-out", rfcMessageId: "gus-out@x", from: me, to: [gus], isSent: true, isRead: true, subject: "Dinner" });
       const message = await ingest({ date: NOW - 1000, providerMsgId: "Gus-in", rfcMessageId: "gus-in@x", from: gus, subject: "Re: Dinner", inReplyTo: "gus-out@x", references: ["gus-out@x"], bodyText: "Thanks so much, that's perfect!" });
       const thread = await threadOf(store, "Gus-in");
-      expect(await store.dated.finish({ messageId: message, threadId: thread, fromScan: false, settled: [], rows: [], now: NOW, model: "m", provider: "p", promptVersion: DATED_NOTHING_ASKED_SINCE, readWhole: true, clearGeneration: store.dated.clearGeneration() })).toBe("written");
+      expect(await store.dated.finish({ messageId: message, threadId: thread, fromScan: false, settled: [], rows: [], now: NOW, model: "m", provider: "p", promptVersion: DATED_NOTHING_ASKED_SINCE, nothingAsked: true, clearGeneration: store.dated.clearGeneration() })).toBe("written");
       expect(await store.today.waitingAmong([thread], NOW)).toEqual([]);
       // an older message of his that joins the two by its references: the one read is still his latest, on the survivor
       await ingest({ date: NOW - 3000, providerMsgId: "Gus-bridge", rfcMessageId: "gus-bridge@x", from: gus, subject: "Re: Dinner", inReplyTo: "gus-b@x", references: ["gus-b@x", "gus-out@x"], bodyText: "Saturday?" });

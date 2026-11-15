@@ -1,4 +1,4 @@
-import { AiError, DATED_PROMPT_VERSION, DATED_TEXT_CHARS, costAt, datedBudget, fitDates, priceOf, type AiTasks, type DatedResult } from "@terno/ai";
+import { AiError, DATED_PROMPT_VERSION, DATED_SUBJECT_CHARS, DATED_TEXT_CHARS, costAt, datedBudget, fitDates, priceOf, type AiTasks, type DatedResult } from "@terno/ai";
 import { addressKey, saysNoReplyNeeded, DATED_ITEMS_MAX, DATED_KINDS, DATED_OPEN_SHOWN, followupDue, validFollowupDate, type FollowupRow, DATED_SCAN_DAYS, DATED_SCAN_MAX, datedOver, dayKeyOf, datedTiming, dayEnd, hasTimeCue, laterBefore, normalizeText, withoutQuotes, type AiErrorKind, type DatedKind, type DatedRow } from "@terno/core";
 import { captureError } from "@terno/core/diag";
 import { RpcError, type AppSettings } from "@terno/core/rpc";
@@ -135,19 +135,24 @@ const ASKS_FOR_SECRETS = new RegExp(String.raw`\b(?:${SEND_VERB})\b[^.!?\n]{0,60
 /**
  * Plan 210 (iteration 2): an ask now keeps its conversation in Needs you, so a sentence that says it only informs ("Nora,
  * just so you know, the caterer is confirmed", "FYI…", "para que sepas…") is never one, whatever the model made of it (Haiku
- * did, 7 in 15 readings in Spanish on prompt v12). Conservative (the Codex code review): after the lead-in, what it says
- * mustn't ask, need, want, tell the reader to do something or speak to them ("FYI, send me the contract", "FYI, I need your
- * approval", "para que sepas, necesito que me envíes…" are asks). Read without accents. Pure.
+ * did, 7 in 15 readings in Spanish on prompt v12). Conservative (the Codex code review, two rounds): after the lead-in, it
+ * must state something about something ("the caterer is confirmed", "el catering está confirmado") and mustn't ask, need,
+ * want, tell the reader to do something or speak to them ("FYI, send me the contract", "FYI, I need your approval", "FYI,
+ * fill out the form", "para que sepas, completa el formulario" are asks). Read without accents. Pure.
  */
 const TELLS = /^(?:[\p{L}'’.-]+(?: [\p{L}'’.-]+)?,\s*)?(?:just so you know|just a heads[- ]up|heads[- ]up|fyi|for your information|(?:solo )?para que (?:lo )?sepas|te aviso que)\b[\s,:;.-]*/iu;
 const STILL_ASKS = new RegExp(
   String.raw`[?¿]|\b(?:${SEND_VERB}|please|could|can|would|will you|let me|approve|sign|review|check|call|reply|answer|pay|bring|book|schedule|want|wanted|like|need|needs|must|should|you|your|yours|yourself|por favor|puedes|podrias|puede|podria|avisame|necesit\w*|quier\w*|quisier\w*|gustaria|firm\w*|revis\w*|llam\w*|respond\w*|contest\w*|pag\w*|tra[ei]\w*|reserv\w*|hay que|tienes que|tiene que|debes|deberias|te|ti|tu|tus|usted|ustedes|contigo)\b`,
   "i",
 );
+/** round 2: what follows the lead-in is a statement about something ("the caterer is confirmed"), never a bare imperative ("fill out the form") */
+const STATES = /^(?:the|our|my|his|her|their|its|this|that|these|those|it|everything|el|la|los|las|lo|nuestro|nuestra|nuestros|nuestras|mi|mis|su|sus|este|esta|estos|estas|ese|esa|todo)\b[^.!;]*?\b(?:is|are|was|were|has|have|had|got|esta|estan|es|son|fue|fueron|quedo|quedaron|ha|han|sigue|siguen)\b/i;
 export function onlyTells(quote: string): boolean {
   const q = quote.trim().normalize("NFD").replace(/\p{M}/gu, "").replace(/^[^\p{L}]+/u, "");
   const lead = TELLS.exec(q);
-  return !!lead && !q.includes("?") && !STILL_ASKS.test(q.slice(lead[0].length));
+  if (!lead || q.includes("?")) return false;
+  const rest = q.slice(lead[0].length);
+  return STATES.test(rest) && !STILL_ASKS.test(rest);
 }
 
 /**
@@ -169,7 +174,7 @@ type Move = Omit<DatedResult["moved"][number], "text" | "textEvidence"> & Partia
  * day or, for a timed item, a new moment, and its new words only with the mail's own. Plan 210 (the Codex review of iteration
  * 1, revision 2): a settlement or a move rests on evidence tied to that item (`tiedTo`). Pure.
  */
-export function checkDates(result: { items: readonly (Omit<DatedResult["items"][number], "kind"> & { kind: string })[]; settled: DatedResult["settled"]; moved?: readonly Move[] }, input: { text: string; subject: string; arrivedAt: number; open: ReadonlyMap<string, DatedRow>; promises?: ReadonlyMap<string, Pick<FollowupRow, "id" | "revision"> & { text?: string }>; fromScan: boolean; now: number; sender?: { person: boolean }; reader?: { name: string; addressed: "to" | "cc" | "none" }; others?: readonly string[]; threadId?: number; senderKey?: string; from?: string }): { rows: DatedWrite[]; settled: { id: number; revision: number }[]; moved: { id: number; dueDay: string; dueAt: number; timed: boolean; actAt: number; text?: string }[]; movedPromises: { id: number; revision: number; dueAt: number }[] } {
+export function checkDates(result: { items: readonly (Omit<DatedResult["items"][number], "kind"> & { kind: string })[]; settled: DatedResult["settled"]; moved?: readonly Move[] }, input: { text: string; subject: string; arrivedAt: number; open: ReadonlyMap<string, DatedRow>; promises?: ReadonlyMap<string, Pick<FollowupRow, "id" | "revision"> & { text?: string }>; fromScan: boolean; now: number; sender?: { person: boolean }; reader?: { name: string; addressed: "to" | "cc" | "none" }; others?: readonly string[]; threadId?: number; senderKey?: string; from?: string }): { rows: DatedWrite[]; settled: { id: number; revision: number }[]; moved: { id: number; dueDay: string; dueAt: number; timed: boolean; actAt: number; text?: string }[]; movedPromises: { id: number; revision: number; dueAt: number }[]; asked: boolean } {
   const said = `${norm(input.subject)}\n${norm(input.text)}`;
   const quoted = (words: string) => {
     const w = norm(words);
@@ -287,24 +292,29 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
   const requested = (ask: { text: string; quote: string }) => requests.some((r) => sameThing(r, ask));
   // the fourth panel read: a person who says no answer is needed ("No need to reply now") asks nothing
   const noReply = saysNoReplyNeeded(input.text);
+  let asked = false;
   for (const item of candidates) {
-    if (rows.length >= DATED_ITEMS_MAX) break;
     if (!KINDS.has(item.kind) || !item.text.trim() || !quoted(item.quote)) continue;
     // an ask is never a dated kind's substitute: one with a day is a request with a day, if it's an ask at all
     if (item.kind === "ask" && item.due && !datedAsk(item)) continue;
     const kind = (item.kind === "ask" && item.due ? "respond" : item.kind) as DatedKind;
     if (kind === "ask" && (requested(item) || noReply || onlyTells(item.quote) || !askAllowed(item.quote, said, input.text, input))) continue;
+    // plan 210 (the Codex code review of iteration 2): a request of the reader, kept below or not (a day already past or
+    // over in a scan, a duplicate, past the bound): never "nothing asked"
+    if (kind === "ask" || kind === "respond") asked = true;
     const timing = datedTiming({ kind, due: item.due, time: item.time, arrivedAt: input.arrivedAt });
     if (!timing) continue;
     // the 14-day check keeps nothing already over (§6)
     if (input.fromScan && timing.dated && dayEnd(timing.dueDay) <= input.now) continue;
+    // the bound, after a request past it is still known
+    if (rows.length >= DATED_ITEMS_MAX) continue;
     const key = itemKey(kind, timing);
     if (movedKeys.has(key)) continue;
     if (rows.some((r) => itemKey(r.kind, r) === key && (!TWO_A_DAY.has(kind) || sameThing(r, item)))) continue;
     rows.push({ kind, item: rows.length, text: item.text.trim(), quote: item.quote.trim(), ...timing });
   }
   const movedPromises = promiseMoves.filter((m) => !replaced.has(m)).map(({ p, day }) => ({ id: p.id, revision: p.revision, dueAt: followupDue({ kind: "promise", sentAt: input.arrivedAt, due: day, nudgeAfterDays: 0 }).dueAt }));
-  return { rows, settled, moved: moved.map(({ kind: _kind, ...m }) => m), movedPromises };
+  return { rows, settled, moved: moved.map(({ kind: _kind, ...m }) => m), movedPromises, asked };
 }
 
 export class DatedWorker {
@@ -540,10 +550,10 @@ export class DatedWorker {
       // only what was really sent, after fitting to the window, may be named back (Codex review)
       const sent = new Set(input.open.map((o) => o.label));
       const checked = checkDates(result, { text, subject: src.subject, arrivedAt: src.date, open: new Map([...labels].filter(([l]) => sent.has(l))), promises: new Map([...promises].filter(([l]) => sent.has(l))), fromScan, now, sender: { person: src.person }, reader, others, threadId: src.threadId, senderKey: src.senderKey, from: input.from.name });
-      // plan 210 (iteration 2, the Codex code review): "nothing asked" only of a message the model saw all of, never one cut
-      // to the window or to the reader's limit
-      const readWhole = whole && text.length <= DATED_TEXT_CHARS && input.text === text;
-      const write = { messageId: src.id, threadId: src.threadId, fromScan, rows: checked.rows, settled: checked.settled, moved: checked.moved, movedPromises: checked.movedPromises, now, model: ai.model, provider: ai.providerId, promptVersion: DATED_PROMPT_VERSION, readWhole, clearGeneration };
+      // plan 210 (iteration 2, the Codex code review): "nothing asked" only of a message the model saw all of (never one cut
+      // to the window or the reader's limit, nor a subject past what's sent), and in which the checks found no request at all
+      const readWhole = whole && text.length <= DATED_TEXT_CHARS && input.text === text && src.subject.length <= DATED_SUBJECT_CHARS;
+      const write = { messageId: src.id, threadId: src.threadId, fromScan, rows: checked.rows, settled: checked.settled, moved: checked.moved, movedPromises: checked.movedPromises, now, model: ai.model, provider: ai.providerId, promptVersion: DATED_PROMPT_VERSION, nothingAsked: readWhole && !checked.asked, clearGeneration };
       const outcome = await store.dated.finish(write);
       this.attempts.delete(src.id);
       // a merge moved it under the request: read again on its new thread (revision 6)
