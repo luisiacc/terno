@@ -1,7 +1,7 @@
 import type { AppSettings } from "./rpc/contract";
 import type { ThreadSummary } from "./types";
 import { aiReady } from "./ai-routing";
-import type { DatedKind } from "./dated";
+import type { DatedKind, TodayGroupKind } from "./dated";
 import { withoutQuotes } from "./text";
 
 /** Plan 145: what needs you today, and newsletters folded into one digest. Local but for the digest, which is its own opt-in. */
@@ -78,8 +78,8 @@ export interface TodayItem {
   also?: TodayAlso;
 }
 
-/** Plan 204: every row that's for today, each thread once, in `TODAY_GROUP_ORDER`; Coming up last, and never counted. */
-export type TodaySection = { kind: "missed" | "deadlines" | "needsYou" | "plans" | "reminders" | "comingUp"; items: TodayItem[] };
+/** Plan 204: every row that's for today, each thread once, in `TODAY_GROUP_ORDER` (the seventh panel round: by when); Coming up last, and never counted. */
+export type TodaySection = { kind: TodayGroupKind; items: TodayItem[] };
 
 export interface DigestItem {
   threadId: number;

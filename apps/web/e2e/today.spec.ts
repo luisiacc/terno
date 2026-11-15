@@ -613,11 +613,46 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
   const row = (page: Page, text: string) => page.getByTestId("thread-row").filter({ hasText: text });
   const headings = (page: Page) => page.getByTestId("today-heading").evaluateAll((els) => els.map((e) => e.getAttribute("data-kind")));
   const list = (page: Page) => page.locator('[data-keep-scroll="list"]');
-  /** the fourth panel round: Needs you (the demo's waiting rows) comes before Plans, so a Plan can be past the virtualized list's first screen */
+  /** Needs you (the demo's waiting rows) comes before Soon (the seventh panel round), so what's Soon's can be past the virtualized list's first screen */
   const reach = async (page: Page, text: string) => {
     await expect.poll(async () => (await row(page, text).count()) > 0 || (await list(page).evaluate((el) => { el.scrollTop += el.clientHeight / 2; }), false)).toBe(true);
   };
   const toTop = (page: Page) => list(page).evaluate((el) => { el.scrollTop = 0; });
+  /** the heading a row is under: the nearest drawn above it */
+  const groupOf = (l: Locator) =>
+    l.evaluate((el) => {
+      const top = el.getBoundingClientRect().top;
+      let best: { top: number; kind: string | null } | null = null;
+      for (const h of document.querySelectorAll("[data-testid=today-heading]")) {
+        const at = h.getBoundingClientRect().top;
+        if (at < top && (!best || at > best.top)) best = { top: at, kind: h.getAttribute("data-kind") };
+      }
+      return best?.kind ?? null;
+    });
+  /** put off: out of Soon; with Coming up open (as a scenario before left it) it's there, under that heading, at the end */
+  const leftSoon = (page: Page, text: string) => expect.poll(async () => ((await row(page, text).count()) ? groupOf(row(page, text)) : "gone")).toMatch(/^(gone|comingUp)$/);
+  /**
+   * A row wherever it is: from the top, down until it's in the list's view (a row just drawn where the list was before
+   * the scroll can still be in the DOM for a frame, so being there isn't enough).
+   */
+  const show = async (page: Page, text: string) => {
+    await toTop(page);
+    const inView = () =>
+      row(page, text)
+        .first()
+        .evaluate((el) => {
+          const r = el.getBoundingClientRect();
+          const box = el.closest('[data-keep-scroll="list"]')!.getBoundingClientRect();
+          return r.top >= box.top && r.bottom <= box.bottom;
+        }, undefined, { timeout: 500 })
+        .catch(() => false);
+    // down half a screen at a time; from the end, round again (the row may come with a reload)
+    for (let i = 0; i < 80 && !(await inView()); i++) {
+      await list(page).evaluate((el) => { el.scrollTop = el.scrollTop + el.clientHeight >= el.scrollHeight - 1 ? 0 : el.scrollTop + el.clientHeight / 2; });
+      await page.waitForTimeout(50);
+    }
+    expect(await inView()).toBe(true);
+  };
 
   test("turned on from Today's header; a bill, a flight and a renewal from new mail; Missed; Done from the menu with Undo; Coming up by keyboard; the reader's line", async ({ app: page, server }) => {
     await settingUp(page, server, { ai: { provider: "fake", model: "demo" } });
@@ -644,12 +679,13 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       expect(await server.backend.store.dated.marks.count()).toBe(0);
     });
 
-    await scenario("new mail with a date: the bill under Deadlines, the flight under Plans, the renewal under Coming up, closed", async () => {
+    await scenario("new mail with a date: the flight and the bill under Soon, by day, after Needs you; the renewal under Coming up, closed", async () => {
       await received(server, "bill-1", { name: "City Power", email: "billing@citypower.test" }, "Electricity bill", "Hello. Your electricity bill of $84.20 is due 2026-10-24. Thank you.");
       await received(server, "flight-1", { name: "Iberia", email: "no-reply@iberia.test" }, "Flight to Madrid", "Your flight on 2026-10-23 at 07:40 leaves from terminal 4.");
       await received(server, "renew-1", { name: "Domains Co", email: "billing@domains.test" }, "Domain renewal", "Your domain renews soon. Payment is due 2026-11-01.");
       server.backend.dated.wake();
-      await expect(row(page, "Electricity bill")).toBeVisible({ timeout: 15_000 });
+      await expect.poll(async () => (await server.backend.store.dated.active()).length, { timeout: 15_000 }).toBe(3);
+      await reach(page, "Electricity bill");
       // after the panel: the task first, where the subject is, in the row's ink; the subject quiet under it; when it's due
       // where the date is
       await expect(row(page, "Electricity bill").getByTestId("row-task")).toHaveText("Electricity bill");
@@ -660,13 +696,15 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       await expect(flight.getByTestId("row-subject")).toHaveText("Flight to Madrid");
       await expect(flight.getByTestId("row-date")).toHaveText("Tomorrow");
       await expect(flight.getByTestId("row-snippet")).toHaveCount(0);
-      // read in that order too: the task, when (the date is hidden from a screen reader), then the subject
-      await expect(flight).toHaveAccessibleName(/^Plans, Iberia.*Flight to Madrid\s*, Tomorrow \d{1,2}:\d{2}\s?(AM|PM)?,\s*Flight to Madrid/);
+      // read in that order too: the task, when (the date is hidden from a screen reader), then the subject; Soon's first
+      // row (tomorrow's, before Saturday's) says its section's name
+      await expect(flight).toHaveAccessibleName(/^Soon, Iberia.*Flight to Madrid\s*, Tomorrow \d{1,2}:\d{2}\s?(AM|PM)?,\s*Flight to Madrid/);
       const ink = (l: Locator) => l.evaluate((el) => getComputedStyle(el).color);
       expect(await ink(flight.getByTestId("row-task"))).toBe(await ink(flight.getByTestId("row-from")));
       expect(await ink(flight.getByTestId("row-subject"))).not.toBe(await ink(flight.getByTestId("row-from")));
-      expect(await headings(page)).toEqual(expect.arrayContaining(["deadlines", "plans"]));
-      expect((await headings(page)).indexOf("deadlines")).toBeLessThan((await headings(page)).indexOf("plans"));
+      expect(await headings(page)).toEqual(expect.arrayContaining(["soon"]));
+      expect(await headings(page)).not.toEqual(expect.arrayContaining(["today"]));
+      await expect(page.getByTestId("today-heading").and(page.locator('[data-kind="soon"]'))).toHaveText("Soon");
       await toTop(page);
       // later than its time to act: not a row, only the header's quiet count
       await expect(row(page, "Domain renewal")).toHaveCount(0);
@@ -736,7 +774,7 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
     });
 
     await scenario("Done from the row's menu (D beside it), Not a task and Later; each leaves Today, and Undo (z) brings it back", async () => {
-      await page.locator('[data-keep-scroll="list"]').evaluate((el) => { el.scrollTop = 0; });
+      await show(page, "Electricity bill");
       const snack = page.locator("[data-testid=snack]");
       // after the second panel round: gone from Today at once, even the open row (not held in place: the user finished it)
       const gone = () => expect(row(page, "Electricity bill")).toHaveCount(0);
@@ -767,6 +805,8 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       }
       await page.keyboard.press("Escape");
       if (await page.getByTestId("menu-dated-done").isVisible()) await page.keyboard.press("Escape");
+      // closing a menu gives the list its keys back, which may scroll it to its cursor: the bill sits past Needs you
+      await show(page, "Electricity bill");
       await row(page, "Electricity bill").click({ button: "right" });
       await page.getByTestId("menu-dated-done").click();
       await gone();
@@ -776,6 +816,7 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
 
       // D: the selected row's Done, the same snack and Undo. The row goes and the next one is selected, as after Archive;
       // z brings it back in its place, selected
+      await show(page, "Electricity bill");
       await row(page, "Electricity bill").click();
       const ids = await order();
       const bill = await row(page, "Electricity bill").getAttribute("data-thread-id");
@@ -787,7 +828,9 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       await expect(snack).toContainText("Done: Electricity bill");
       await undo();
       await expect(cursor).toHaveAttribute("data-thread-id", bill!);
-      expect(await order()).toEqual(ids);
+      // in its place among its neighbours (the list draws a few rows more or less around it, past Needs you)
+      const near = (all: (string | null)[]) => all.slice(Math.max(0, all.indexOf(bill) - 2), all.indexOf(bill) + 3);
+      expect(near(await order())).toEqual(near(ids));
       if (SHOTS) {
         for (const mode of ["light", "dark"] as const) {
           await page.emulateMedia({ colorScheme: mode });
@@ -812,6 +855,7 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       await expect(page.locator(`[data-testid=thread-row][data-thread-id="${kept}"]`)).toBeVisible();
 
       // Not a task: out of Today, said so, with Undo
+      await show(page, "Electricity bill");
       await row(page, "Electricity bill").click({ button: "right" });
       await page.getByTestId("menu-dated-dismiss").click();
       await gone();
@@ -829,7 +873,7 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       await expect(page.getByTestId("menu-dated-later-nextWeek")).toHaveCount(0);
       await page.keyboard.press("Escape");
       if (await page.getByTestId("menu-dated-done").isVisible()) await page.keyboard.press("Escape");
-      await toTop(page);
+      await show(page, "Electricity bill");
       await row(page, "Electricity bill").click({ button: "right" });
       await page.getByTestId("menu-dated-later").click();
       await page.getByTestId("menu-dated-later-pick").click();
@@ -841,7 +885,7 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       expect((await new AxeBuilder({ page }).include("[data-testid=today-later-dialog]").analyze()).violations).toEqual([]);
       await dialog.getByTestId("today-later-set").click();
       await expect(dialog).toHaveCount(0);
-      await gone();
+      await leftSoon(page, "Electricity bill");
       await expect(snack).toContainText("Later: Electricity bill");
       await undo();
       await page.keyboard.press("Escape");
@@ -874,26 +918,19 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       await expect(agenda.getByTestId("row-subject")).toHaveText("The agenda");
       // the fourth panel round (revision 9): named for the person you made it to, not you (the last to write)
       await expect(agenda.getByTestId("row-from")).toHaveText("Tom Reed");
-      // one that named no day is Needs you's, and its row says no day (never the mail's date); Needs you above Plans
+      // one that named no day is Needs you's, and its row says no day (never the mail's date); Today above Needs you, and
+      // Needs you above Soon (the seventh panel round)
       const call = row(page, "Callback for Tom");
       await expect(call.getByTestId("row-task")).toHaveText("You said: call Tom back");
       await expect(call.getByTestId("row-date")).toHaveAttribute("data-no-day");
       await expect(call.getByTestId("row-date")).toHaveText("");
-      const groupOf = (l: Locator) =>
-        l.evaluate((el) => {
-          const top = el.getBoundingClientRect().top;
-          let best: { top: number; kind: string | null } | null = null;
-          for (const h of document.querySelectorAll("[data-testid=today-heading]")) {
-            const at = h.getBoundingClientRect().top;
-            if (at < top && (!best || at > best.top)) best = { top: at, kind: h.getAttribute("data-kind") };
-          }
-          return best?.kind ?? null;
-        });
       expect(await groupOf(call)).toBe("needsYou");
-      expect(await groupOf(agenda)).toBe("deadlines");
-      const kinds = await headings(page);
-      expect(kinds.indexOf("needsYou")).toBeGreaterThan(kinds.indexOf("deadlines"));
-      expect(kinds.indexOf("needsYou")).toBeLessThan(kinds.indexOf("plans"));
+      expect(await groupOf(agenda)).toBe("today");
+      await expect(page.getByTestId("today-heading").and(page.locator('[data-kind="today"]'))).toHaveText("Today");
+      // first after what's Missed
+      const kinds = (await headings(page)).filter((k) => k !== "missed");
+      expect(kinds[0]).toBe("today");
+      expect(kinds.indexOf("needsYou")).toBeGreaterThan(0);
       if (SHOTS) {
         for (const mode of ["light", "dark"] as const) {
           await page.emulateMedia({ colorScheme: mode });
@@ -944,6 +981,7 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
     });
 
     await scenario("the reader's line: on the AI card's surface, with its Done, Later and Not a task", async () => {
+      await show(page, "Electricity bill");
       await row(page, "Electricity bill").click();
       const line = page.getByTestId("thread-dated");
       await expect(line).toBeVisible();
@@ -996,7 +1034,7 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       // Tomorrow: the row leaves Today as from its own menu, and z brings it back, open with its line
       await later.click();
       await page.getByTestId("thread-dated-later-tomorrow").click();
-      await expect(row(page, "Electricity bill")).toHaveCount(0);
+      await leftSoon(page, "Electricity bill");
       await expect(page.locator("[data-testid=snack]")).toContainText("Later: Electricity bill");
       await expect.poll(async () => (await server.backend.store.dated.active()).find((r) => r.text === "Electricity bill")?.deferredUntil ?? null).not.toBeNull();
       await focusList(page);
@@ -1029,6 +1067,8 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
     await scenario("a person's ask (the third panel round): Needs you, its words first, the day it came; its line in the conversation", async () => {
       await received(server, "ask-1", { name: "Mariana Paz", email: "mariana@studio.test" }, "Rebranding", "Hi! Can you send me a quote for the rebranding?");
       server.backend.dated.wake();
+      // Needs you's first row, under Today's
+      await toTop(page);
       const ask = row(page, "Rebranding");
       await expect(ask.getByTestId("row-task")).toHaveText("Answer Mariana Paz", { timeout: 15_000 });
       await expect(ask.getByTestId("row-subject")).toHaveText("Rebranding");
@@ -1066,22 +1106,24 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       ];
       expect(await store.dated.finish({ messageId: m.id, threadId: m.thread_id, fromScan: true, rows, settled: [], now: E2E_NOW, model: "demo", provider: "fake", promptVersion: 1, clearGeneration: store.dated.clearGeneration() })).toBe("written");
       server.backend.today.changed();
-      await toTop(page);
-      // the draft is the row's (Deadlines); the meeting, Coming up's, which this conversation held from view, is its second line
+      await expect.poll(async () => (await server.backend.today.list([])).sections.some((s) => s.items.some((i) => i.thread.id === m.thread_id))).toBe(true);
+      await show(page, "Send Jess your draft");
+      // the draft is the row's (Soon); the meeting, Coming up's, which this conversation held from view, is its second line
       await expect(jess().getByTestId("row-task")).toHaveText("Send Jess your draft", { timeout: 15_000 });
       await expect(jess().getByTestId("row-also")).toHaveText("Also Mon 9:00 AM · Board meeting");
       await expect(jess().getByTestId("row-subject")).toHaveCount(0);
       await expect(jess().getByTestId("row-date")).toHaveText("Sat");
       await expect(jess()).toHaveAccessibleName(/Send Jess your draft\s*, Due Saturday,\s*Also Mon 9:00\sAM · Board meeting/);
       // where its neighbour's quiet subject is (on the task's text edge when it has a line of its own), and the row no
-      // taller than its neighbour
+      // taller than its neighbour (your promise of the deck, beside it in Soon)
       const at = (l: Locator) =>
         l.evaluate((e) => {
           const r = e.getBoundingClientRect();
           const own = e.closest("[data-testid=thread-row]")!.getBoundingClientRect();
           return { top: r.top - own.top, left: r.left - own.left, height: own.height };
         });
-      const [also, task, beside] = [await at(jess().getByTestId("row-also")), await at(jess().getByTestId("row-task")), await at(row(page, "The agenda").getByTestId("row-subject"))];
+      await expect(row(page, "The deck").getByTestId("row-subject")).toBeVisible();
+      const [also, task, beside] = [await at(jess().getByTestId("row-also")), await at(jess().getByTestId("row-task")), await at(row(page, "The deck").getByTestId("row-subject"))];
       expect(Math.abs(also.top - beside.top)).toBeLessThanOrEqual(1);
       if (Math.abs(also.top - task.top) > 1) expect(Math.abs(also.left - task.left)).toBeLessThanOrEqual(1);
       expect(also.height).toBe(beside.height);
@@ -1089,12 +1131,15 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       // an alert that named no day says none, not the day it came
       await received(server, "alert-1", { name: "Tri-River", email: "alerts@tririverfcu.org" }, "Card payment failed", "Your card payment failed at Corner Market.");
       server.backend.dated.wake();
+      // an alert is Today's while it shows (the seventh panel round): at the top, under Today
+      await toTop(page);
       const alert = row(page, "Card payment failed");
       await expect(alert.getByTestId("row-task")).toHaveText("Card payment failed, the email says", { timeout: 15_000 });
       await expect(alert.getByTestId("row-date")).toHaveAttribute("data-no-day");
       await expect(alert.getByTestId("row-date")).toHaveText("");
 
       // D acts on the row's own item; the meeting is then the conversation's row, in Coming up; Undo puts the draft back
+      await show(page, "Send Jess your draft");
       await jess().click();
       await focusList(page);
       await page.keyboard.press("d");
@@ -1108,7 +1153,7 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       await expect(board.getByTestId("row-subject")).toHaveText("Board meeting");
       await expect(board.getByTestId("row-also")).toHaveCount(0);
       await page.keyboard.press("z");
-      await toTop(page);
+      await show(page, "Send Jess your draft");
       await expect(jess().getByTestId("row-also")).toHaveText("Also Mon 9:00 AM · Board meeting");
       await page.keyboard.press("Escape");
     });
@@ -1157,6 +1202,8 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       for (const shape of shapes) {
         await settingUp(page, server, { density: "comfortable", layout: "split", ...shape });
         await page.getByTestId("nav-today").click();
+        // Soon's, past Needs you's rows (the seventh panel round)
+        await show(page, "Send Jess your draft");
         await expect(jess().getByTestId("row-also")).toHaveText("Also Mon 9:00 AM · Board meeting");
         const name = Object.values(shape).join("-");
         for (const width of [1440, 1100]) {

@@ -214,4 +214,18 @@ describe("the conversation's line (plan 204, the sixth panel round, revision 2)"
     const bill = { ...alert, kind: "pay" as const, ...datedTiming({ kind: "pay", due: "2026-11-12", arrivedAt: arrived })! };
     expect(conversationItem(bill, new Date(2026, 10, 13, 10).getTime())).toEqual({ missed: true });
   });
+
+  it("the seventh panel round: in Soon or in Today an item keeps its own words; its group changes neither the line nor Missed", async () => {
+    const { conversationItem, datedWhen } = await import("./dated");
+    const { datedGroupAt, datedTiming } = await import("@terno/core");
+    const arrived = new Date(2026, 10, 10, 14).getTime();
+    const row = (kind: "pay" | "event", due: string, time: string | null) => ({ id: 1, threadId: 1, messageId: 1, item: 0, kind, text: "x", quote: "x", senderKey: "s", ...datedTiming({ kind, due, time, arrivedAt: arrived })!, deferredUntil: null, arrivedAt: arrived, state: "open" as const, closedReason: null, closedAt: null, fromScan: false, revision: 0, model: null, provider: null, createdAt: arrived });
+    const bill = row("pay", "2026-11-13", null);
+    const visit = row("event", "2026-11-12", "15:00");
+    const now = new Date(2026, 10, 12, 10).getTime();
+    expect([datedGroupAt(bill, now), datedGroupAt(visit, now)]).toEqual(["soon", "today"]);
+    expect(datedWhen(bill, false, now)).toBe("Due tomorrow");
+    expect(datedWhen(visit, false, now)).toBe("Today 3:00 PM");
+    expect([conversationItem(bill, now), conversationItem(visit, now)]).toEqual([{ missed: false }, { missed: false }]);
+  });
 });

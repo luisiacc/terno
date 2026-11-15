@@ -1,5 +1,5 @@
 import { todayAvailable } from "~/lib/ai";
-import { addressKey, DIGEST_ROW_ID, TODAY_COUNTED, TODAY_GROUP_ORDER, type DigestItem, type DigestRow, type TodayGroupKind, type TodayList, type TodayWhy, type ThreadSummary } from "@terno/core";
+import { addressKey, DIGEST_ROW_ID, todayCounted, TODAY_GROUP_ORDER, type DigestItem, type DigestRow, type TodayGroupKind, type TodayList, type TodayWhy, type ThreadSummary } from "@terno/core";
 import { t } from "@terno/i18n";
 import { create } from "zustand";
 import { listDate } from "~/lib/format";
@@ -15,7 +15,7 @@ import { reloadList } from "./list";
  * thread rows, with what they say in the snippet's place.
  */
 export interface TodayGroup {
-  /** plan 166, after the owner's second look: Needs you is one group again ("they're really the same"); plan 204 adds Missed, Deadlines, Plans and Coming up */
+  /** plan 166, after the owner's second look: Needs you is one group again ("they're really the same"); plan 204 adds Missed and Coming up, and (the seventh panel round) Today and Soon: by when, not by kind */
   kind: TodayGroupKind;
   /** the row it begins at */
   at: number;
@@ -295,8 +295,8 @@ export function flattenToday(list: TodayList, before: readonly ThreadSummary[]):
       const why = dayKnown(item.why, section.kind);
       const task = taskOf(why);
       items.push({ ...item.thread, snippet: whyLine(item, why, task) });
-      // the header's "N need you", what the sidebar's number counts (the backend's own rule)
-      if (TODAY_COUNTED.has(section.kind)) counted.add(item.thread.id);
+      // the header's "N need you", what the sidebar's number counts (the backend's own rule: never a Plan's kind)
+      if (todayCounted(section.kind, item.why.item?.kind)) counted.add(item.thread.id);
       // the fifth panel round (change 6): the conversation's next item, said on the row's second line
       if (task) tasks.set(item.thread.id, item.also ? { ...task, also: alsoLine(item.also) } : task);
     }
