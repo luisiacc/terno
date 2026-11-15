@@ -3,7 +3,7 @@ import { addressKey, saysNoReplyNeeded, DATED_ITEMS_MAX, DATED_KINDS, DATED_OPEN
 import { captureError } from "@terno/core/diag";
 import { RpcError, type AppSettings } from "@terno/core/rpc";
 import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
-import { type DatedMark, type DatedSnapshot, type DatedSource, type DatedWrite, type MailStore } from "@terno/store";
+import { readNothingAsked, type DatedMark, type DatedSnapshot, type DatedSource, type DatedWrite, type MailStore } from "@terno/store";
 import { DailyLimitError, MonthlyLimitError } from "./ai-limiter";
 import { UI_LOCALE_KEY } from "./forwarding";
 import { contextOf, namesApart, namesItem, norm, otherIds, paragraphsOf, plainEvidence, sameObject, sameThing, saysReplaced, saysWhen, sentencesOf, settlesKind } from "./dated-evidence";
@@ -109,6 +109,18 @@ function toAnother(quote: string, text: string, reader: string, others: readonly
   const theirs = new Set(others.flatMap(nameWords).filter((w) => !mine.has(w)));
   const to = addressedTo(quote, text);
   return to.some((w) => theirs.has(w)) && !to.some((w) => mine.has(w));
+}
+
+/**
+ * Plan 210 (iteration 2): an ask now keeps its conversation in Needs you, so a sentence that says it only informs ("Nora,
+ * just so you know, the caterer is confirmed", "FYI…", "para que sepas…") and asks nothing (no question, no "please") is never one, whatever the
+ * model made of it (Haiku did, 7 in 15 readings in Spanish on prompt v12). Pure.
+ */
+const TELLS = /^(?:[\p{L}'’.-]+(?: [\p{L}'’.-]+)?,\s*)?(?:just so you know|just a heads[- ]up|heads[- ]up|fyi|for your information|(?:solo )?para que (?:lo )?sepas|te aviso que)\b/iu;
+const ASKS = /[?¿]|\b(?:please|could|can you|would you|let me know|por favor|puedes|podr[ií]as|av[ií]same|dime)\b/iu;
+export function onlyTells(quote: string): boolean {
+  const q = quote.trim().replace(/^[^\p{L}]+/u, "");
+  return TELLS.test(q) && !ASKS.test(q);
 }
 
 /**
@@ -275,7 +287,7 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     // an ask is never a dated kind's substitute: one with a day is a request with a day, if it's an ask at all
     if (item.kind === "ask" && item.due && !datedAsk(item)) continue;
     const kind = (item.kind === "ask" && item.due ? "respond" : item.kind) as DatedKind;
-    if (kind === "ask" && (requested(item) || noReply || !askAllowed(item.quote, said, input.text, input))) continue;
+    if (kind === "ask" && (requested(item) || noReply || onlyTells(item.quote) || !askAllowed(item.quote, said, input.text, input))) continue;
     const timing = datedTiming({ kind, due: item.due, time: item.time, arrivedAt: input.arrivedAt });
     if (!timing) continue;
     // the 14-day check keeps nothing already over (§6)
@@ -527,7 +539,9 @@ export class DatedWorker {
       // a merge moved it under the request: read again on its new thread (revision 6)
       if (outcome === "moved") this.again = true;
       if (outcome === "written" && checked.movedPromises.length) this.host.promisesMoved();
-      if (outcome === "written" && (checked.rows.length || checked.settled.length || checked.moved.length || checked.movedPromises.length)) this.host.changed();
+      // plan 210 (iteration 2): nothing asked of the reader takes a waiting conversation out of Needs you, in the same write
+      const quiet = readNothingAsked({ rows: checked.rows, promptVersion: DATED_PROMPT_VERSION });
+      if (outcome === "written" && (quiet || checked.rows.length || checked.settled.length || checked.moved.length || checked.movedPromises.length)) this.host.changed();
       return "next";
     } catch (error) {
       // Spam or Trash meanwhile: never asked about again; an open item gone to Spam: asked again without it
