@@ -44,11 +44,16 @@ export function TodayDatedOffer({ className }: { className?: string }) {
     return (
       <p data-testid="today-dated-offer" className={line}>
         <span>{t("today.dated.offer")}</span>
-        {reader && <span data-testid="today-dated-privacy">{reader}</span>}
         <span className="inline-flex items-center gap-x-2">
           <Button variant="link" data-testid="today-dated-on" onClick={() => void saveDated({ enabled: true }).then(handBack)}>{t("today.dated.turnOn")}</Button>
           <CloseButton label={t("today.dated.dismiss")} data-testid="today-dated-dismiss" onClick={() => void saveDated({ offerDismissed: true }).then(handBack)} />
         </span>
+        {/* a line of its own under the offer and its answers, so they stay together */}
+        {reader && (
+          <span data-testid="today-dated-privacy" className="basis-full">
+            {reader}
+          </span>
+        )}
       </p>
     );
   }
