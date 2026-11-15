@@ -808,6 +808,26 @@ describe("a move may carry the item's new words (the fifth panel round, change 2
     await client.call("dated.undo", { undoId: later.undoId! });
     expect(await backend.store.dated.get(row!.id)).toMatchObject({ text: "Soccer game (arrive 7:30)", dueAt: at(2026, 11, 14, 8), deferredUntil: null, state: "open" });
   });
+  it("Codex code review of the seventh round: a call in another zone, then a move of its time alone, through the reader: the same day in the mail's zone, its note following", async () => {
+    const { backend, client, model, receive, read } = await setup();
+    model.answer = (req) => {
+      const p = promptText(req.messages[0]!.content);
+      // the item's own day as the reader's prompt shows it, whatever this machine's zone
+      const day = /o1 \(event, (\d{4}-\d{2}-\d{2})/.exec(p)?.[1];
+      if (day) return reply([], [], [{ label: "o1", due: day, time: "22:00 America/Los_Angeles", evidence: "move it to 10 PM PT" }]);
+      return reply([{ kind: "event", text: "Call with Marcus (11:00 PM PT)", quote: "Thursday, December 10 at 11:00 PM PT", due: "2026-12-10", time: "23:00 America/Los_Angeles" }]);
+    };
+    const marcus = { name: "Marcus Bell", email: "marcus@harbor.test" };
+    const thread = await receive({ from: marcus, subject: "Our call", bodyText: "Booked our call for Thursday, December 10 at 11:00 PM PT.", providerThreadId: "call" });
+    await read();
+    const [row] = (await client.call("dated.ofThread", { threadId: thread })).rows;
+    // 23:00 PST is 07:00 UTC on the 11th
+    expect(row).toMatchObject({ dueAt: Date.UTC(2026, 11, 11, 7), text: "Call with Marcus (11:00 PM PT)" });
+    await receive({ from: marcus, subject: "Re: Our call", bodyText: "Could we move it to 10 PM PT instead? Sorry!", providerThreadId: "call" });
+    await read();
+    // 22:00 PST on the 10th, not the 11th: an hour earlier, never a day later
+    expect(await backend.store.dated.get(row!.id)).toMatchObject({ dueAt: Date.UTC(2026, 11, 11, 6), text: "Call with Marcus (10:00 PM PT)" });
+  });
 });
 
 describe("a later message moves a promise you made (the second panel round)", () => {
