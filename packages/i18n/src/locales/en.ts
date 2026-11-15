@@ -2635,6 +2635,7 @@ It contains none of your mail, contacts, settings or keys.
   "whatMatters.feed.label": "Today's items",
   "whatMatters.feed.end": "That's everything for now.",
   "whatMatters.open": "Open email",
+  "whatMatters.closeEmail": "Close email",
   "whatMatters.more": "More",
   "whatMatters.to": "To {name}",
   "whatMatters.group.missed": { one: "# thing you missed", other: "# things you missed" },
