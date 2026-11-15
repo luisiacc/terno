@@ -714,3 +714,14 @@ Two ways to draw the same Today, behind one temporary switch, the list staying t
 
 **Left as it is, being an experiment:** search (/) has no field in the feed; the feed's render counts aren't asserted by a perf gate; the briefing keeps room for its two controls on every item.
 
+### After the panel compared the three (2026-11-14)
+
+Six of seven picked B, the briefing (would use daily 7.1, the list 6.1, the chat 4.3); the owner picked it. Its four fixes, from the reviews (`/tmp/terno-scratch/p204/panel/reviews-ui/`):
+
+1. **When, in a column of its own** (Theo, Diego: "I can't scan urgency, so I have to read every row"; "the only date you show in a fixed spot is the email's"). `todayWhen` gives the right column the list's words: the short day ("Today", "Tomorrow", "Mon", "Nov 30"), a timed item's time ("2:00 PM", "Mon 7:40 AM"), Missed's "Was due Wed", nothing for an alert that named no day, and the day an ask or a reply you owe came, quietly. The sentence no longer says the day (so "Renew pingwire.dev. It renews Thursday" is gone), and the second line is who (a promise's "To Marcus Feld") and the conversation's next item, never the email's date.
+2. **Done and Later in words** (Margaret: "I wouldn't press a button I can't read"): the reader's line's buttons, Done the secondary (its key D in the tooltip) and Later the quiet one with its presets, each described by the item's sentence. Shown on hover, on focus and on the open item, over the second line's end: hidden, they take no room and can't be clicked.
+3. **Weight for what's pressing** (Priya: payroll looked like a renewal; Sam: flat): Missed, due or happening today, and an alert with no day read in the ink at a medium weight; days away, regular. The column's "Today" is the accent at rest (the ink under the pointer, the selection's ink on the open item, the pairs `CONTRAST_PAIRS` holds; the accent on the hover's fill fails AA in nine palettes, so it isn't added); Missed's day is the ink, medium; days away and the day something came, muted. No red.
+4. **Readable with an email open** (Jordan, María: the overview collapsed into paragraphs): the sentence is two lines at most (the rest in the item's name and title), the second line one, the column stays (at least 5rem, so the controls never reach into it), the items a little tighter. With an email open, Jordan's feed shows nine items, as the list shows eight.
+
+Tests: `today-sentence.test.ts` now covers `todayWhen` (today, later, Missed, a timed item, an undated alert, an ask, a promise, Spanish); the e2e checks the column, the tone, the second line, the controls hidden and shown, and their names. Screenshots: `/tmp/terno-scratch/p204/panel/shots-ui-b2/` (axe clean on all seven, the feed alone, hovered and with an email open, light and dark).
+
