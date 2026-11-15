@@ -34,6 +34,8 @@ import { SnackDock } from "./components/snack-dock";
 import { Sidebar } from "./components/sidebar";
 import { PaneHandle } from "./components/pane-handle";
 import { skipToList, ThreadList } from "./components/thread-list";
+import { WhatMattersFeed } from "./components/what-matters/feed";
+import { feedLook, useWmLook } from "~/lib/what-matters-look";
 import { EngineStopped } from "./components/diag/engine-stopped";
 import { unsavedDraftWork } from "./lib/drafts";
 import { startMailbox, useGateBlocks, useMailbox } from "./lib/mailbox";
@@ -140,6 +142,11 @@ export function App() {
   const pinnedAsk = usePinnedAsk((s) => s.pinned !== null) && askShown;
   const page = usePage();
   const covered = page !== "list";
+  // plan 204, the UI experiment: Today as a feed (chat or briefing). In Split, with nothing open beside it, it takes the
+  // reader's room too, and a conversation opened from it comes in on the right as the reader always does
+  const look = useWmLook((s) => s.look);
+  const feed = feedLook(useApp((s) => s.today), look);
+  const feedWide = feed && !list && selectedId === null && !many && !composing && !heldView && !pinned && !pinnedAsk;
   useEffect(() => installKeyboard(), []);
   // plan 188: the list's news where focus isn't (a mailbox opened from the sidebar, the selection's size)
   useEffect(() => installListSpeech(), []);
@@ -183,7 +190,7 @@ export function App() {
         <Sidebar />
         {/* plan 188: the one polite voice for what changes where focus isn't */}
         <Announcer />
-        <section id="app-list" role={list ? "main" : undefined} aria-label={list ? undefined : t("list.label")} className={cn("hairline-l relative min-h-0", !list && "hairline-r hairline-strong")}>
+        <section id="app-list" role={list ? "main" : undefined} aria-label={list ? undefined : t("list.label")} className={cn("hairline-l relative min-h-0", !list && !feedWide && "hairline-r hairline-strong", feedWide && "col-span-2")}>
           {/* under a page the list stays laid out (scroll, measured rows, mounted rows) but isn't painted or reachable */}
           <div
             // test builds only: the perf gate's injected regression (a list remounted by every page change) must fail it
@@ -193,7 +200,7 @@ export function App() {
             inert={covered}
             data-covered={covered || undefined}
           >
-            <ThreadList />
+            {feed && look !== "list" ? <WhatMattersFeed look={look} /> : <ThreadList />}
           </div>
           {list && page !== "list" && <PageLayer page={page} />}
           {/* plan 115: the pinned draft, over the list or its page, kept while other mail is read */}
@@ -201,8 +208,10 @@ export function App() {
           {list && pinned && <PinnedDraft key={pinned} overList={page === "list"} beside={pinnedAsk} />}
           {/* plan 158: toasts sit over the pane that isn't being worked in: List's one pane keeps room under its rows for it */}
           {list && <SnackDock over={page === "list" ? "list" : "reader"} />}
+          {/* the feed alone (plan 204's experiment): the toasts sit over it, there being no reader */}
+          {feedWide && <SnackDock over="list" />}
         </section>
-        {!list && (
+        {!list && !feedWide && (
           <main className="relative min-h-0" style={composeInset ? { paddingBottom: composeInset } : undefined}>
             {/* the reader pane: a bulk selection, else a new message being written, else the conversation; one that fails to render is that pane only */}
             <PaneBoundary area="reader" resetKey={selectedId} readerThreadId={!many && !composing && !heldView ? selectedId : null}>
@@ -219,7 +228,7 @@ export function App() {
             all content is (a box-less one: they're still placed on the grid) */}
         <div role="region" aria-label={t("panes.sizes")} className="contents">
           <PaneHandle pane="sidebar" />
-          {!list && <PaneHandle pane="list" />}
+          {!list && !feedWide && <PaneHandle pane="list" />}
         </div>
       </div>
       <CommandPalette />
