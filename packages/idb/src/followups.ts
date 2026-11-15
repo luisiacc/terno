@@ -1,6 +1,5 @@
 import { addressKey, type FollowupRow } from "@terno/core";
 import { FOLLOWUP_CLOSED_KEEP_MS, FOLLOWUPS_ACTIVE_MAX, recipientList, SCAN_MARK_MS, SENT_MARK_MS, type ClosedAt, type FollowupFinish, type FollowupFinishOutcome, type FollowupSnapshot, type FollowupSource, type SentMark } from "@terno/store";
-import { newestClosedOf } from "./dated";
 import { T, type Ctx, type R } from "./mail";
 
 /** Plan 142 on IndexedDB, like SQL's (packages/db/src/followups.ts). */
@@ -177,8 +176,7 @@ export function closedFollowupPage(c: Ctx, o: { since: number; after: ClosedAt |
 }
 
 export function newestClosedFollowup(c: Ctx, threadIds: readonly number[], since: number): Map<number, ClosedAt> {
-  const rows = T(c, "followups");
-  return newestClosedOf([...new Set(threadIds)].flatMap((id) => rows.by("fk_thread_id", id).filter((r) => r.kind === "promise" && (r.state === "done" || r.state === "dismissed"))), since);
+  return c.closedOrders.followups.newest(T(c, "followups"), threadIds, since);
 }
 
 export const threadFollowups = (c: Ctx, threadId: number): FollowupRow[] => T(c, "followups").by("fk_thread_id", threadId).filter(live).sort(byDue).map(toRow);

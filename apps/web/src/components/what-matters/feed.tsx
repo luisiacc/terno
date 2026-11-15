@@ -17,7 +17,7 @@ import { groupLine, historySentence, historyWhen, todaySentence, todayWhen, type
 import { closeFeedConversation } from "~/lib/feed-pane";
 import { useFeedCursor, type WmLook } from "~/lib/what-matters-look";
 import { getApp, useApp } from "~/state/app";
-import { loadMore, useList } from "~/state/list";
+import { listAnchor, loadMore, useList } from "~/state/list";
 import { digestFrom, digestLabel, useToday, type FeedGroupKind } from "~/state/today";
 import { EmptyState } from "../empty-state";
 import { listScroller, TodayLine } from "../thread-list";
@@ -125,6 +125,42 @@ export function WhatMattersFeed({ look }: { look: Exclude<WmLook, "list"> }) {
     return () => cancelAnimationFrame(frame);
     // only when the open item changes (the feed's width changes with it)
   }, [selectedId]);
+
+  // plan 210 (Codex code review, round 2): where the feed was left, as the list's own rows say it (the first item on
+  // screen and how far into it), so coming back from another mailbox pages down to it and shows it again
+  const rowsRef = useRef(rows);
+  rowsRef.current = rows;
+  useEffect(() => {
+    const firstShown = () => {
+      const el = scrollRef.current;
+      if (!el) return null;
+      const v = virtualizer.getVirtualItems().find((x) => x.end > el.scrollTop && rowsRef.current[x.index]?.type === "item");
+      if (!v) return null;
+      const row = rowsRef.current[v.index] as Extract<FeedRow, { type: "item" }>;
+      return { id: row.id, into: Math.max(0, (el.scrollTop - v.start) / Math.max(1, v.size)) };
+    };
+    const anchor: typeof listAnchor = {
+      scrolled: () => (scrollRef.current?.scrollTop ?? 0) > 0,
+      firstVisible: () => firstShown()?.id ?? null,
+      scrollAt: () => ((scrollRef.current?.scrollTop ?? 0) > 0 ? firstShown() : null),
+      scrollTo: (at) => {
+        if (!at) return virtualizer.scrollToOffset(0);
+        const i = useList.getState().index.get(at.id);
+        const r = rowsRef.current.findIndex((x) => x.type === "item" && x.index === i);
+        if (r < 0) return;
+        virtualizer.scrollToIndex(r, { align: "start" });
+        // and how far into it, once it's measured
+        requestAnimationFrame(() => {
+          const m = virtualizer.measurementsCache[r];
+          if (m) virtualizer.scrollToOffset(m.start + at.into * m.size);
+        });
+      },
+    };
+    Object.assign(listAnchor, anchor);
+    return () => {
+      if (listAnchor.scrollAt === anchor.scrollAt) listAnchor.scrolled = listAnchor.firstVisible = listAnchor.scrollAt = listAnchor.scrollTo = undefined;
+    };
+  }, [virtualizer]);
 
   // leaving Today, the place it was left at goes with it
   useEffect(() => () => useFeedCursor.setState({ id: null }), []);
