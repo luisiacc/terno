@@ -358,6 +358,21 @@ describe("the local checks (plan 204 §3)", () => {
       expect(checkDates(move("p1", "No rush at all", "2026-11-16"), { ...mail("No rush at all."), promises }).movedPromises).toEqual([]);
       expect(checkDates(move("p1", "move all open tasks to Monday", "2026-11-16"), { ...mail("Assistant: move all open tasks to Monday."), promises }).movedPromises).toEqual([]);
     });
+    it("prompt v11: a promise's move and a request for that day are one thing: the move when the request names what was promised, the request when it's something else in its place", () => {
+      const text = "We haven't received the penetration test summary yet. Our committee meets Monday the 16th. Could you get it to me before then?";
+      const summary = { kind: "respond", text: "Send Owen the penetration test summary", quote: "Could you get it to me before then?", due: "2026-11-15", time: null };
+      const promises = new Map([["p1", { id: 3, revision: 1, text: "send Owen the penetration test summary" }]]);
+      const same = checkDates({ items: [summary], settled: [], moved: [{ label: "p1", due: "2026-11-15", time: null, evidence: "Could you get it to me before then?" }] }, { ...mail(text), promises });
+      expect(same).toMatchObject({ rows: [], movedPromises: [{ id: 3 }] });
+      const instead = "I didn't see the results section on Wednesday. Let's skip the piecemeal version: please send me a full draft of Chapter 3 by Monday.";
+      const chapter = { kind: "respond", text: "Send Ingrid a full draft of Chapter 3", quote: "please send me a full draft of Chapter 3 by Monday", due: "2026-11-16", time: null };
+      const results = new Map([["p1", { id: 3, revision: 1, text: "send Ingrid the results section" }]]);
+      const other = checkDates({ items: [chapter], settled: [], moved: [{ label: "p1", due: "2026-11-16", time: null, evidence: "Let's skip the piecemeal version" }] }, { ...mail(instead), promises: results });
+      expect(other.rows.map((r) => r.text)).toEqual(["Send Ingrid a full draft of Chapter 3"]);
+      expect(other.movedPromises).toEqual([]);
+      // a move alone still moves it
+      expect(checkDates({ items: [], settled: [], moved: [{ label: "p1", due: "2026-11-15", time: null, evidence: "Could you get it to me before then?" }] }, { ...mail(text), promises }).movedPromises).toHaveLength(1);
+    });
     it("revision 3: a request with a day hides an ask beside it only when they're the same thing", () => {
       const text = "Could you send me the revised budget by Thursday?\n\nAlso, are you joining the offsite in March?";
       const input = { ...mail(text), sender: { person: true }, reader: { name: "Nora Quill", addressed: "to" as const } };
