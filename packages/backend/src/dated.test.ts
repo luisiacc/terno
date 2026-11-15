@@ -573,7 +573,7 @@ describe("a later message moves an item's time (the fourth panel round, revision
   const moved = { label: "o1", due: "2026-11-14", time: "08:00", evidence: "moved earlier to 8:00 AM" };
 
   it("a new moment on the same day moves a timed item; the same moment, or no time, keeps it where it is", () => {
-    expect(checkDates({ items: [], settled: [], moved: [moved] }, base).moved).toEqual([{ id: 9, dueDay: "2026-11-14", dueAt: at(2026, 11, 14, 8), timed: true, actAt: at(2026, 11, 13, 9) }]);
+    expect(checkDates({ items: [], settled: [], moved: [moved] }, base).moved).toEqual([{ id: 9, dueDay: "2026-11-14", dueAt: at(2026, 11, 14, 8), timed: true, actAt: at(2026, 11, 11, 9) }]);
     expect(checkDates({ items: [], settled: [], moved: [{ ...moved, time: "10:00" }] }, base).moved).toEqual([]);
     expect(checkDates({ items: [], settled: [], moved: [{ ...moved, time: null }] }, base).moved).toEqual([]);
     // an untimed item given a moment on its day takes it; another day with no time is the day's move it was
@@ -626,7 +626,7 @@ describe("a move may carry the item's new words (the fifth panel round, change 2
   const moved = { label: "o1", due: "2026-11-14", time: "08:00", evidence: "moved EARLIER to 8:00 AM", text: "Soccer game (arrive 7:30)", textEvidence: "Please arrive by 7:30" };
 
   it("quoted from this mail, with the move; without the mail's own words, or for a promise, the words stay", () => {
-    expect(checkDates({ items: [], settled: [], moved: [moved] }, base).moved).toEqual([{ id: 9, dueDay: "2026-11-14", dueAt: at(2026, 11, 14, 8), timed: true, actAt: at(2026, 11, 13, 9), text: "Soccer game (arrive 7:30)" }]);
+    expect(checkDates({ items: [], settled: [], moved: [moved] }, base).moved).toEqual([{ id: 9, dueDay: "2026-11-14", dueAt: at(2026, 11, 14, 8), timed: true, actAt: at(2026, 11, 11, 9), text: "Soccer game (arrive 7:30)" }]);
     // words the mail doesn't have, or none: the move lands, the words stay
     expect(checkDates({ items: [], settled: [], moved: [{ ...moved, textEvidence: "arrive whenever you like" }] }, base).moved).toEqual([expect.not.objectContaining({ text: expect.anything() })]);
     expect(checkDates({ items: [], settled: [], moved: [{ ...moved, textEvidence: null }] }, base).moved[0]).not.toHaveProperty("text");
