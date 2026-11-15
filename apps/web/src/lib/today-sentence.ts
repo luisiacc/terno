@@ -1,4 +1,4 @@
-import { localDay, type TodayHistoryItem, type TodayItem } from "@terno/core";
+import { datedGroup, localDay, type TodayHistoryItem, type TodayItem } from "@terno/core";
 import { getLocale, t } from "@terno/i18n";
 import { listDate } from "~/lib/format";
 import { datedDay, dueShort, dueTimeLeft } from "~/lib/when";
@@ -57,11 +57,13 @@ export type TodayTone = "missed" | "today" | "later" | "none";
  * The feed's right column (after the UI panel), in the list's own words: its short day ("Wed", "Tomorrow", "Nov 30")
  * and a timed item's time ("2:00 PM", "Mon 7:40 AM"); Missed's "Was due Wed"; for what has no date (plan 210, the owner:
  * it sits in Today), when it came, "since Wed", quietly; a reminder, its time. Its weight follows the item's group: Missed
- * and Today's dated items strong, what's undated in Today quiet; a day ahead and Coming up's rows (`ahead`) quiet.
+ * and Today's dated tasks strong, what's undated in Today and its plans quiet; a day ahead and Coming up's rows (`ahead`) quiet.
  */
 export function todayWhen(item: Pick<TodayItem, "thread" | "why">, now = Date.now(), group?: FeedGroupKind, ahead = false): { text: string | null; tone: TodayTone } {
   const when = whenOf(item, now);
-  const tone: TodayTone = ahead || group?.startsWith("day:") ? "later" : group === "missed" ? "missed" : group === "today" ? (when.tone === "none" ? "none" : "today") : when.tone;
+  // plan 210 (iteration 1): a plan or a delivery sits under the day's tasks, drawn as quietly as a day ahead's
+  const plan = item.why.kind === "dated" && item.why.item !== undefined && datedGroup(item.why.item.kind) === "plans";
+  const tone: TodayTone = ahead || group?.startsWith("day:") || (plan && group !== "missed") ? "later" : group === "missed" ? "missed" : group === "today" ? (when.tone === "none" ? "none" : "today") : when.tone;
   return { text: when.text, tone };
 }
 

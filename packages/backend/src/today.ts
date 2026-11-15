@@ -23,6 +23,8 @@ import {
   promiseDeferred,
   dayKeyOf,
   todayCounted,
+  dayTier,
+  inDayOrder,
   type DatedRow,
   type TodayAlso,
   type TodayGroupKind,
@@ -72,18 +74,6 @@ const byDay = (a: DayOrder, b: DayOrder): number =>
   // YYYY-MM-DD keys compare as text; `localeCompare` cost more than the rest of a sort at the bound
   (a.dueDay < b.dueDay ? -1 : a.dueDay > b.dueDay ? 1 : 0) || (a.timed === b.timed ? a.dueAt - b.dueAt : a.timed ? -1 : 1);
 
-/**
- * The seventh panel round: Today's items, the timed first by their time, then the untimed (a promise's moment is its day's)
- * as they came due; an item still on from last night (a Plan at 23:00) is among the timed, first.
- */
-const byTime = (a: { at: DayOrder }, b: { at: DayOrder }): number => (a.at.timed === b.at.timed ? a.at.dueAt - b.at.dueAt : a.at.timed ? -1 : 1);
-
-/** A moment's time of day, in minutes (plan 210: a day's timed rows by it, whichever day they were first due). */
-const clockOf = (ms: number): number => {
-  const d = new Date(ms);
-  return d.getHours() * 60 + d.getMinutes();
-};
-
 /** A dated item or a promise of yours, ranked in its group before `dedupe` picks each conversation's row. */
 interface Ranked {
   threadId: number;
@@ -97,6 +87,17 @@ interface Ranked {
 const dedupe = (placed: readonly Placed[]): Placed[] => {
   const taken = new Set<number>();
   return placed.filter((p) => !taken.has(p.threadId) && taken.add(p.threadId));
+};
+
+/**
+ * Plan 210 (iteration 1): Today's rows in their day's order once each conversation has its row: what's waiting and your
+ * reminders, which claim a conversation only after its own items, take their tier's place (people before your reminders,
+ * both before plans), each tier keeping its order. Other groups stay as they are.
+ */
+const todayRanked = (placed: readonly Placed[]): Placed[] => {
+  const today = placed.filter((p) => p.group === "today").sort((a, b) => dayTier(a.why) - dayTier(b.why));
+  let i = 0;
+  return placed.map((p) => (p.group === "today" ? today[i++]! : p));
 };
 
 /** A thread's place in Today before it's read (revision 10). */
@@ -670,27 +671,28 @@ export class TodayService {
       const group = r.dated ? promiseGroupAt(r, now, today)?.group : "today";
       if (group === "missed" || group === "today") soonest(owedAsk, r);
     }
-    // Missed: the most recently due first; Today: the timed by time, then the rest; each day ahead and Coming up by their
-    // day, the timed first by time, then the rest
+    // Missed: the most recently due first
     for (const m of ranked.missed.sort((a, b) => b.at.dueAt - a.at.dueAt)) placed.push({ group: "missed", threadId: m.threadId, why: m.why });
-    for (const d of ranked.today.sort(byTime)) placed.push({ group: "today", threadId: d.threadId, why: d.why });
-    // Then Today's what needs you now (plan 210: Needs you's, by the owner's "Under Today"). A person's ask first, newest
-    // first, before what's waiting (so it's the row's line, and counted), unless you'd promised them something there
-    // (Codex code review: "could you send that report?" after you said you would is about your promise); then your
-    // promises that are due and name no day (the fourth panel round, revision 8), the longest due first. The sixth panel
-    // round (change 4): no nudges, what you wait on from others (Follow-ups and the Inbox's top keep them), here or in the
-    // count; their conversation keeps an ask, a promise or a reminder it has
+    // Today (plan 210, iteration 1: one order inside a day, `inDayOrder`, before each conversation's row is chosen, so a
+    // conversation with a bill and a dinner today is the bill): what's due, the timed by their time; your promises due
+    // (those that name no day, the fourth panel round's revision 8, among them); a person's ask, newest first (the owner's
+    // "Under Today"), unless you'd promised them something there (Codex code review: "could you send that report?" after
+    // you said you would is about your promise); then plans and deliveries, by their time. The sixth panel round
+    // (change 4): no nudges, what you wait on from others, here or in the count
+    const todays: Placed[] = ranked.today.map((d) => ({ group: "today", threadId: d.threadId, why: d.why }));
     for (const ask of asks.sort((x, y) => y.arrivedAt - x.arrivedAt || y.id - x.id)) {
       const promise = owedAsk.get(ask.threadId);
-      placed.push({ group: "today", threadId: ask.threadId, why: promise ? promiseWhy(promise) : datedWhy(ask, false) });
+      todays.push({ group: "today", threadId: ask.threadId, why: promise ? promiseWhy(promise) : datedWhy(ask, false) });
     }
-    for (const r of owedNow.sort((a, b) => a.dueAt - b.dueAt)) placed.push({ group: "today", threadId: r.threadId, why: promiseWhy(r) });
-    // (Codex code review: by the day it's under, then the timed by their time of day, then the rest; never the original
-    // day first, which two put off to the same day don't share)
-    const byItsDay = (a: Ranked, b: Ranked): number => (a.day! < b.day! ? -1 : a.day! > b.day! ? 1 : a.at.timed && b.at.timed ? clockOf(a.at.dueAt) - clockOf(b.at.dueAt) || a.at.dueAt - b.at.dueAt : byTime(a, b));
+    for (const r of owedNow) todays.push({ group: "today", threadId: r.threadId, why: promiseWhy(r) });
+    placed.push(...todays.sort((a, b) => inDayOrder(a.why, b.why, false)));
+    // each day ahead and Coming up: by the day it's under, then the same order, a timed row by its time of day (Codex code
+    // review: never the original day first, which two put off to the same day don't share)
+    const byItsDay = (a: Ranked, b: Ranked): number => (a.day! < b.day! ? -1 : a.day! > b.day! ? 1 : inDayOrder(a.why, b.why, true));
     const days = ranked.day.sort(byItsDay).map((s): Placed => ({ group: "day", day: s.day, threadId: s.threadId, why: s.why }));
     // the count reads none of what's waiting (its own indexed count there, the stores' `countWith`), nor your reminders
-    // and Coming up, which never take a waiting thread from it
+    // and Coming up, which never take a waiting thread from it. A conversation's own items claim it before its waiting row
+    // (revision 3: a waiting thread with a Plan is the Plan), here and in the list alike
     if (o.count) return dedupe([...placed, ...days]);
     // one bounded read of what's waiting (revision 12): `needsYou` over the newest `NEEDS_WALK`. A conversation with a
     // task of its own on a day ahead is that task (plan 204 §1: a bill's thread waiting on a reply is the bill), as the
@@ -702,14 +704,14 @@ export class TodayService {
       placed.push({ group: "today", threadId: w.id, why: promise ? promiseWhy(promise) : { kind: "waiting", wrote: w.hasSent }, waiting: true });
     }
     placed.push(...days);
-    // your reminders due today: Today's, after the rest (a conversation's task or waiting row claims it first)
+    // your reminders due today: Today's (a conversation's task or waiting row claims it first)
     const endOfDay = new Date(now);
     endOfDay.setHours(23, 59, 59, 999);
     const reminders = (await this.b.reminders.refresh()).reminders.filter((r) => r.dueAt <= endOfDay.getTime()).sort((a, b) => a.dueAt - b.dueAt);
     for (const r of reminders) placed.push({ group: "today", threadId: r.threadId, why: { kind: "reminder", dueAt: r.dueAt } });
     // Coming up: dated items, and (after the panel) your dated promises due in the next two weeks, by their day
     for (const c of ranked.comingUp.sort(byItsDay)) placed.push({ group: "comingUp", day: c.day, threadId: c.threadId, why: c.why });
-    return withAlso(dedupe(placed), candidates);
+    return withAlso(todayRanked(dedupe(placed)), candidates);
   }
 
   /**

@@ -333,7 +333,7 @@ describe("plan 204: Missed, Today, Needs you, Soon, Reminders and Coming up (the
     expect(useToday.getState().counted).toBe(6);
   });
 
-  it("plan 210: Coming up's row on a day that has rows joins its heading, the timed first by time; one whose day has come is Today's", () => {
+  it("plan 210: Coming up's row on a day that has rows joins its heading in the day's order (iteration 1: tasks, then plans by time); one whose day has come is Today's", () => {
     const parcel = dated(11, "delivery", "Your parcel arrives", 13, { timed: true, h: 8 });
     const late = { ...dated(12, "pay", "Pay the late fee", 10), why: { ...dated(12, "pay", "Pay the late fee", 10).why, dueAt: at(12, 9) } };
     const sections = (): TodayList => ({
@@ -352,8 +352,8 @@ describe("plan 204: Missed, Today, Needs you, Soon, Reminders and Coming up (the
     expect(useToday.getState().comingUp).toBe(2);
     useToday.setState({ comingUpOpen: true });
     const rows = flattenToday(sections(), []);
-    // the parcel at 8:00 before the flight at 9:00, then the bill; the late fee with Today's
-    expect(rows.map((r) => r.id)).toEqual([4, 12, 11, 6, 3]);
+    // the bill first (a task), then the plans by time: the parcel at 8:00 before the flight at 9:00; the late fee with Today's
+    expect(rows.map((r) => r.id)).toEqual([4, 12, 3, 11, 6]);
     expect(groups()).toEqual([["today", 0], ["day:2026-11-13", 2]]);
     expect(useToday.getState().kinds.get(11)).toBe("day:2026-11-13");
     expect([...useToday.getState().ahead].sort()).toEqual([11, 12]);

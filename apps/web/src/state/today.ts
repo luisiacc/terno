@@ -1,5 +1,5 @@
 import { todayAvailable } from "~/lib/ai";
-import { addressKey, dayKeyOf, DIGEST_ROW_ID, todayCounted, type DigestItem, type DigestRow, type HistoryKey, type TodayGroupKind, type TodayHistoryItem, type TodayItem, type TodayList, type TodayWhy, type ThreadSummary } from "@terno/core";
+import { addressKey, dayKeyOf, DIGEST_ROW_ID, inDayOrder, todayCounted, type DigestItem, type DigestRow, type HistoryKey, type TodayGroupKind, type TodayHistoryItem, type TodayItem, type TodayList, type TodayWhy, type ThreadSummary } from "@terno/core";
 import { t } from "@terno/i18n";
 import { create } from "zustand";
 import { listDate } from "~/lib/format";
@@ -291,16 +291,9 @@ function digestThread(): ThreadSummary {
   return { id: DIGEST_ROW_ID, accountId: 0, subject: t("today.newsletters"), snippet: "", fromName: t("today.newsletters"), fromEmail: "", lastDate: 0, messageCount: 1, unread: false, starred: false, hasAttachments: false, categoryIds: [], inInbox: false, inSpam: false, inTrash: false } as unknown as ThreadSummary;
 }
 
-/** A row's time of day if it's timed (a timed dated item's): a day's timed rows come first, by it (put off, it may have been due another day). */
-function timedAt(item: TodayItem): number | null {
-  if (item.why.kind !== "dated" || !item.why.item?.timed || item.why.dueAt === undefined) return null;
-  const d = new Date(item.why.dueAt);
-  return d.getHours() * 60 + d.getMinutes();
-}
-
 /**
  * Plan 210: the sections as the feed's groups, in order: Missed, Today, then a group per day ahead; while it's open, Coming
- * up's rows join their day's (one whose day is already here, Today's), the timed first by time, then the rest as they came.
+ * up's rows join their day's (one whose day is already here, Today's), in the day's one order (`inDayOrder`).
  */
 function feedGroups(list: TodayList, open: boolean): { kind: FeedGroupKind; items: { item: TodayItem; section: TodayGroupKind }[] }[] {
   const today = dayKeyOf(list.now || Date.now());
@@ -316,15 +309,11 @@ function feedGroups(list: TodayList, open: boolean): { kind: FeedGroupKind; item
   return [...groups.entries()]
     .sort(([a], [b]) => (rankOf(a) < rankOf(b) ? -1 : rankOf(a) > rankOf(b) ? 1 : 0))
     .map(([kind, items]) => {
-      // a day with Coming up's rows in it: the timed by time, then the rest in the order they came (the backend's)
+      // a day with Coming up's rows in it: the backend's one order inside a day (plan 210, iteration 1: tasks, your
+      // promises, people, then plans by their time), ties as they came
       if (kind !== "missed" && items.some((r) => r.section === "comingUp") && items.some((r) => r.section !== "comingUp")) {
         const order = new Map(items.map((r, i) => [r, i]));
-        items.sort((a, b) => {
-          const [x, y] = [timedAt(a.item), timedAt(b.item)];
-          if (x !== null && y !== null) return x - y || order.get(a)! - order.get(b)!;
-          if (x !== null || y !== null) return x !== null ? -1 : 1;
-          return order.get(a)! - order.get(b)!;
-        });
+        items.sort((a, b) => inDayOrder(a.item.why, b.item.why, kind !== "today") || order.get(a)! - order.get(b)!);
       }
       return { kind, items };
     });

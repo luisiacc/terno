@@ -40,6 +40,25 @@ async function item(server: DevServerFixture, key: string, text: string, closedA
   return m.thread_id;
 }
 
+/** plan 210 (iteration 1): one conversation with several of the reader's items today: a kind, its words, its hour (or none) */
+async function items(server: DevServerFixture, key: string, rows: { kind: "pay" | "event" | "delivery"; text: string; hour: number | null }[]) {
+  const store = server.backend.store;
+  const db = sqlDb(store);
+  const text = rows.map((r) => `${r.text}.`).join(" ");
+  await store.sync.ingest([message(server, key, { name: "Lumen", email: `${key}@lumen.test` }, `About ${key}`, text, E2E_NOW, { isRead: false, inInbox: true })], { applyFilters: false, now: E2E_NOW, classifier: null });
+  const m = db.get<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages WHERE provider_msg_id = ?", key)!;
+  await store.dated.marks.queueScan([m.id], E2E_NOW);
+  const day0 = new Date(E2E_NOW);
+  const day = `${day0.getFullYear()}-${String(day0.getMonth() + 1).padStart(2, "0")}-${String(day0.getDate()).padStart(2, "0")}`;
+  const moment = (hour: number | null) => {
+    const d = new Date(E2E_NOW);
+    d.setHours(hour ?? 23, hour === null ? 59 : 0, 0, 0);
+    return d.getTime();
+  };
+  await store.dated.finish({ messageId: m.id, threadId: m.thread_id, fromScan: true, rows: rows.map((r, i) => ({ kind: r.kind, item: i, text: r.text, quote: `${r.text}.`, dueDay: day, dueAt: moment(r.hour), timed: r.hour !== null, dated: true, actAt: E2E_NOW - 86_400_000 })), settled: [], now: E2E_NOW, model: "demo", provider: "fake", promptVersion: 1, clearGeneration: store.dated.clearGeneration() });
+  return m.thread_id;
+}
+
 const feed = (page: Page) => page.getByTestId("wm-feed");
 const line = (page: Page, text: string) => feed(page).locator("[data-thread-id]").filter({ hasText: text });
 const scroller = (page: Page) => feed(page).locator('[data-keep-scroll="list"]');
@@ -413,3 +432,51 @@ test("the owner's inbox-zero setting: the gear on What matters' title row hides 
   });
 });
 
+
+test("plan 210 (iteration 1): inside a day, tasks before plans; a conversation with both is its task; the item's keys in its tooltips", async ({ app: page, server }) => {
+  await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" }, dated: { enabled: true, scanAnswered: true } }, dev);
+  // a breakfast at 9:00 and a parcel today, then the payroll at 1:00 PM; one conversation with a dinner at 8:00 and a deposit
+  await items(server, "breakfast", [{ kind: "event", text: "Team breakfast", hour: 9 }]);
+  await items(server, "parcel", [{ kind: "delivery", text: "Your parcel arrives", hour: null }]);
+  await item(server, "payroll", "Wire payroll", null);
+  await items(server, "mixed", [
+    { kind: "event", text: "Dinner at Lumen", hour: 8 },
+    { kind: "pay", text: "Pay the deposit", hour: null },
+  ]);
+  // written behind the reader's back: What matters reads its items again
+  server.backend.today.changed();
+  await fresh(page);
+  await page.getByTestId("nav-today").click();
+  await expect(line(page, "Wire payroll")).toBeVisible({ timeout: 15_000 });
+
+  await scenario("the payroll and the deposit (tasks), then the breakfast and the parcel (plans, quieter); the deposit's conversation is the deposit, the dinner its second line", async () => {
+    const order = (await walk(page)).rows.filter((r) => r.kind === "open").map((r) => r.text);
+    const today = order.filter((t) => /payroll|deposit|breakfast|parcel|Dinner/.test(t));
+    expect(today).toEqual(["Wire payroll.", "Pay the deposit.", "Team breakfast.", "Your parcel arrives."]);
+    await reach(page, "Pay the deposit");
+    const deposit = openLine(page, "Pay the deposit");
+    await expect(deposit.getByTestId("wm-meta")).toContainText("Dinner at Lumen");
+    await expect(deposit).toHaveAttribute("data-tone", "today");
+    await reach(page, "Team breakfast");
+    await expect(openLine(page, "Team breakfast")).toHaveAttribute("data-tone", "later");
+    await reach(page, "Pay the deposit");
+    // D on it is the deposit's
+    await deposit.getByTestId("wm-item-open").focus();
+    await page.keyboard.press("d");
+    await expect(page.getByTestId("snack")).toContainText("Done: Pay the deposit");
+    await page.keyboard.press("z");
+    await expect(openLine(page, "Pay the deposit")).toBeVisible();
+  });
+
+  await scenario("Done's and Later's tooltips say their keys", async () => {
+    await reach(page, "Wire payroll");
+    const it = openLine(page, "Wire payroll");
+    await it.hover();
+    await expect(it.getByTestId("wm-done")).toHaveAttribute("aria-keyshortcuts", "d");
+    await expect(it.getByTestId("wm-later")).toHaveAttribute("aria-keyshortcuts", "b");
+    await it.getByTestId("wm-later").hover();
+    await expect(page.locator("[data-slot=tooltip-content]")).toContainText("Later");
+    await expect(page.locator("[data-slot=tooltip-content]")).toContainText("B");
+    await page.mouse.move(0, 0);
+  });
+});

@@ -1,7 +1,7 @@
 import type { AppSettings } from "./rpc/contract";
 import type { ThreadSummary } from "./types";
 import { aiReady } from "./ai-routing";
-import type { DatedKind, TodayGroupKind } from "./dated";
+import { datedGroup, type DatedKind, type TodayGroupKind } from "./dated";
 import { withoutQuotes } from "./text";
 
 /** Plan 145: what needs you today, and newsletters folded into one digest. Local but for the digest, which is its own opt-in. */
@@ -54,6 +54,40 @@ export interface TodayWhy {
   item?: { id: number; revision: number; kind: DatedKind; dueDay: string; timed: boolean; dated: boolean };
   /** plan 204 (Codex review): the promise this row shows, what D, Done and Remove act on (never the thread's most urgent) */
   promise?: { id: number; revision: number; /** it names a day (`FollowupRow.dated`): only then does its line say "Due …" */ dated?: boolean };
+}
+
+/**
+ * Plan 210 (iteration 1, Codex's critique point 4): what a row is, inside a day, by what it costs to miss: a cutoff or
+ * another task due (0), a promise of yours (1), a person waiting on you (2: their ask, a conversation waiting on your
+ * answer), your reminder (3), then a plan or a delivery (4), which the feed draws quieter.
+ */
+export function dayTier(why: Pick<TodayWhy, "kind" | "item">): number {
+  if (why.kind === "dated") return !why.item ? 0 : why.item.kind === "ask" ? 2 : datedGroup(why.item.kind) === "plans" ? 4 : 0;
+  return why.kind === "promise" ? 1 : why.kind === "waiting" ? 2 : 3;
+}
+
+const timedWhy = (why: Pick<TodayWhy, "kind" | "item">): boolean => why.kind === "dated" && why.item?.timed === true;
+
+/** A moment's time of day, in minutes. */
+const minuteOfDay = (ms: number): number => {
+  const d = new Date(ms);
+  return d.getHours() * 60 + d.getMinutes();
+};
+
+/**
+ * Plan 210 (iteration 1): the one order inside a day, the backend's before each conversation's row is chosen and the
+ * renderer's where Coming up joins a day: by `dayTier`, then the timed first, by their time, then the rest as they came
+ * due. People waiting keep the order they came in (0: a stable sort keeps it). `clock`: a day ahead's timed rows go by
+ * their time of day (put off, they may first have been due another day); Today's by their moment, so a Plan still on
+ * from last night comes first.
+ */
+export function inDayOrder(a: Pick<TodayWhy, "kind" | "item" | "dueAt">, b: Pick<TodayWhy, "kind" | "item" | "dueAt">, clock: boolean): number {
+  const tier = dayTier(a) - dayTier(b);
+  if (tier !== 0 || dayTier(a) === 2) return tier;
+  const [ta, tb] = [timedWhy(a), timedWhy(b)];
+  if (ta !== tb) return ta ? -1 : 1;
+  const [x, y] = [a.dueAt ?? 0, b.dueAt ?? 0];
+  return ta && clock ? minuteOfDay(x) - minuteOfDay(y) || x - y : x - y;
 }
 
 /**

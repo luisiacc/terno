@@ -99,6 +99,10 @@ export function defineTodayConformance(fresh: () => Promise<MailStore>): void {
       // the seventh panel round: a waiting thread placed as a counted row (Soon's bill) counts once, as waiting, beside one
       // placed as an uncounted row (Today's appointment) and a counted one that isn't waiting
       expect(await store.today.countWith([a.thread, notice.thread], NOW, [b.thread])).toEqual({ needs: 1, extra: 1 });
+      // plan 210 (iteration 1): a waiting conversation with a bill and a dinner on one day is placed as the bill (counted,
+      // once, as waiting), one with only a dinner as the dinner (not counted): the header's, the sidebar's and the
+      // notice's numbers are the same rows in both stores
+      expect(await store.today.countWith([a.thread, a.thread], NOW, [b.thread])).toEqual({ needs: 1, extra: 0 });
       // someone they've written to, from a tagged address: their one new conversation counts, in both stores
       await store.sync.ingest([msg({ date: NOW - 700, providerMsgId: "to-dia", providerThreadId: "to-dia", from: me, to: [{ name: "Dia", email: "dia@people.test" }], isSent: true, subject: "Hello", accountId: accountId_(), listId: null })], { applyFilters: false, now: NOW, classifier: null });
       const dia = await put({ listId: null, from: { name: "Dia", email: "dia+work@people.test" }, date: NOW - 600, subject: "Something new" });
