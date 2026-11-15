@@ -92,10 +92,13 @@ export interface DatedFinish {
   fromScan: boolean;
   /** rows to add; none is a valid answer, which still consumes the mark */
   rows: readonly DatedWrite[];
-  /** open items this message settled: only the exact row it was shown, at the revision it was shown */
+  /**
+   * open items this message settled: only the exact row it was shown, at the revision it was shown, of its thread or its
+   * sender (the sixth panel round: a delivery or an ask only of its thread, `THREAD_SCOPED_KINDS`)
+   */
   settled: readonly { id: number; revision: number }[];
   /**
-   * After the panel: open items this message gives a new day. Applied to an open row of this thread or sender whatever its
+   * After the panel: open items this message gives a new day. Applied to an open row it may reach (as `settled`) whatever its
    * revision (Codex review of the fixes: a Later meanwhile mustn't lose the mail's new day); it keeps its deferral. `text`:
    * its new words, in the same write (the fifth panel round); without it the words stay. Neither is in a snapshot, so an
    * Undo of a Later before or after keeps the move's day and words.
@@ -145,7 +148,10 @@ export interface DatedStore {
   /** received mail since then a check could read, newest first: inbound, not a draft, sent, spam or trash, not from the user, not already marked or read */
   scanCandidates(since: number, limit: number): Promise<number[]>;
   source(messageId: number): Promise<DatedSource | null>;
-  /** open items a message could settle: its thread's and its sender's, from messages older than it, newest first, at most `limit` */
+  /**
+   * open items a message could settle: its thread's and its sender's (a delivery or an ask only its thread's: the sixth panel
+   * round), from messages older than it, newest first, at most `limit`
+   */
   openFor(o: { threadId: number; senderKey: string; before: number; limit: number }): Promise<DatedRow[]>;
   /** Results, settlements and consuming the mark, in one commit that checks the clear generation and the source (revision 6). */
   finish(write: DatedFinish): Promise<DatedFinishOutcome>;

@@ -1,4 +1,4 @@
-import { addressKey, ANSWERED_KINDS, DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, senderIsPerson, type DatedRow } from "@terno/core";
+import { addressKey, ANSWERED_KINDS, DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, senderIsPerson, THREAD_SCOPED_KINDS, type DatedRow } from "@terno/core";
 import { DATED_MARK_MS, DATED_SCAN_MARK_MS, datedTab, NEW_MAIL_MS, readerIn, recipientList, type DatedFinish, type DatedFinishOutcome, type DatedMark, type DatedSnapshot, type DatedSource } from "@terno/store";
 import { OWN_SENDER_SQL, RECEIVED_SQL } from "./ai-summaries";
 import { ownAddresses } from "./facts";
@@ -8,6 +8,8 @@ import type { Db } from "./sqlite";
 
 /** `ANSWERED_KINDS` as SQL's list: what a send of yours answers */
 const ANSWERED_SQL = `kind IN (${ANSWERED_KINDS.map((k) => `'${k}'`).join(", ")})`;
+/** the sixth panel round: what the sender's mail may reach elsewhere (`THREAD_SCOPED_KINDS` only from their own conversation) */
+const SENDER_REACHES_SQL = `kind NOT IN (${THREAD_SCOPED_KINDS.map((k) => `'${k}'`).join(", ")})`;
 
 interface Raw {
   id: number; thread_id: number; message_id: number; item: number; kind: DatedRow["kind"]; text: string; quote: string; sender_key: string; due_day: string; due_at: number; timed: number; dated: number; act_at: number;
@@ -99,7 +101,7 @@ export function datedSource(db: Db, messageId: number): DatedSource | null {
 
 export function openDatedFor(db: Db, o: { threadId: number; senderKey: string; before: number; limit: number }): DatedRow[] {
   return db.all<Raw>(
-    `SELECT * FROM dated_items WHERE id IN (SELECT id FROM dated_items INDEXED BY dated_thread WHERE thread_id = ? AND state = 'open' UNION SELECT id FROM dated_items INDEXED BY dated_sender WHERE sender_key = ? AND state = 'open')
+    `SELECT * FROM dated_items WHERE id IN (SELECT id FROM dated_items INDEXED BY dated_thread WHERE thread_id = ? AND state = 'open' UNION SELECT id FROM dated_items INDEXED BY dated_sender WHERE sender_key = ? AND state = 'open' AND ${SENDER_REACHES_SQL})
        AND arrived_at < ?
        AND NOT EXISTS (SELECT 1 FROM messages x INDEXED BY messages_thread WHERE x.thread_id = dated_items.thread_id AND x.is_spam = 1)
      ORDER BY arrived_at DESC, id DESC LIMIT ?`,
@@ -182,7 +184,7 @@ export function finishDated(db: Db, w: DatedFinish): DatedFinishOutcome {
     }
     for (const s of w.settled) {
       db.run(
-        "UPDATE dated_items SET state = 'settled', closed_reason = 'settled', closed_at = ?, revision = revision + 1 WHERE id = ? AND revision = ? AND state = 'open' AND (thread_id = ? OR sender_key = ?)",
+        `UPDATE dated_items SET state = 'settled', closed_reason = 'settled', closed_at = ?, revision = revision + 1 WHERE id = ? AND revision = ? AND state = 'open' AND (thread_id = ? OR (sender_key = ? AND ${SENDER_REACHES_SQL}))`,
         w.now, s.id, s.revision, src.threadId, src.senderKey,
       );
     }
@@ -196,7 +198,7 @@ export function finishDated(db: Db, w: DatedFinish): DatedFinishOutcome {
       db.run(
         // the revision stays: a Later just before stays undoable, and the move changes no choice of the user's (Codex review);
         // its new words, if it gives some, in the same write (the fifth panel round)
-        "UPDATE dated_items SET due_day = ?, due_at = ?, timed = ?, dated = 1, act_at = ?, text = coalesce(?, text) WHERE id = ? AND state = 'open' AND (thread_id = ? OR sender_key = ?)",
+        `UPDATE dated_items SET due_day = ?, due_at = ?, timed = ?, dated = 1, act_at = ?, text = coalesce(?, text) WHERE id = ? AND state = 'open' AND (thread_id = ? OR (sender_key = ? AND ${SENDER_REACHES_SQL}))`,
         m.dueDay, m.dueAt, m.timed ? 1 : 0, m.actAt, m.text ?? null, m.id, src.threadId, src.senderKey,
       );
     }
