@@ -123,7 +123,7 @@ export class TodayService {
   /** plan 210 (iteration 2): duplicate membership, reconciled before any projection */
   private readonly links = new TodayLinks();
   /** plan 210 (iteration 2): the items' places, the list's and the count's, until the clock or the items move them */
-  private readonly placing: ({ dated: readonly DatedRow[]; promises: string; at: number; until: number; items: PlacedItem[] } | null)[] = [null, null];
+  private placing: { dated: readonly DatedRow[]; promises: string; at: number; until: number; items: PlacedItem[] } | null = null;
   /** plan 210 (iteration 2): what each act on items changed, for its Undo */
   private readonly undo = new Map<string, ItemSnapshots>();
   private undoSeq = 0;
@@ -586,17 +586,19 @@ export class TodayService {
 
   /**
    * Where the items sit changes only at the moments `nextTodayChange` knows (and midnight): between them, and while the items
-   * are the same (the cached dated rows, the promises as read), the count reuses it. The count runs on every mailbox change.
+   * are the same (the cached dated rows, the promises as read), the count reuses it: the count runs on every mailbox change.
+   * The list places afresh (it's read when something changed, and finding the next moment would cost it as much again).
    */
   private placed(dated: readonly DatedRow[], promises: readonly FollowupRow[], now: number, count: boolean): PlacedItem[] {
-    const key = promises.map((r) => `${r.id}.${r.revision}.${r.state}.${r.deferredUntil ?? ""}.${r.sameAs ?? ""}`).join();
-    const was = this.placing[count ? 1 : 0];
+    if (!count) return placeItems(dated, promises, now);
+    const key = promises.map((r) => `${r.id}.${r.revision}.${r.state}.${r.dueAt}.${r.deferredUntil ?? ""}.${r.sameAs ?? ""}`).join();
+    const was = this.placing;
     if (was && was.dated === dated && was.promises === key && now >= was.at && now < was.until) return was.items;
     const midnight = new Date(now);
     midnight.setHours(24, 0, 0, 0);
     const until = Math.min(nextTodayChange(dated, promises, now) ?? Infinity, midnight.getTime());
     const items = placeItems(dated, promises, now, { count });
-    this.placing[count ? 1 : 0] = { dated, promises: key, at: now, until, items };
+    this.placing = { dated, promises: key, at: now, until, items };
     return items;
   }
 
