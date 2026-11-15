@@ -1,5 +1,5 @@
 import { addressKey, ANSWERED_KINDS, DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, senderIsPerson, THREAD_SCOPED_KINDS, type DatedRow } from "@terno/core";
-import { DATED_MARK_MS, DATED_SCAN_MARK_MS, datedTab, NEW_MAIL_MS, readerIn, recipientList, type DatedFinish, type DatedFinishOutcome, type DatedMark, type DatedSnapshot, type DatedSource } from "@terno/store";
+import { DATED_MARK_MS, DATED_SCAN_MARK_MS, datedTab, NEW_MAIL_MS, readerIn, recipientList, type ClosedAt, type DatedFinish, type DatedFinishOutcome, type DatedMark, type DatedSnapshot, type DatedSource } from "@terno/store";
 import { OWN_SENDER_SQL, RECEIVED_SQL } from "./ai-summaries";
 import { ownAddresses } from "./facts";
 import type { Db } from "./sqlite";
@@ -211,6 +211,35 @@ export const activeDated = (db: Db): DatedRow[] => db.all<Raw>("SELECT * FROM da
 export const datedWritten = (db: Db, keys: readonly string[]): Set<string> =>
   new Set([...new Set(keys)].filter((key) => db.get<{ written: number }>("SELECT written FROM correspondents WHERE email = ?", key)?.written === 1));
 export const threadDated = (db: Db, threadId: number): DatedRow[] => db.all<Raw>("SELECT * FROM dated_items INDEXED BY dated_thread WHERE thread_id = ? AND state = 'open' ORDER BY act_at, id", threadId).map(toRow);
+/** Plan 210: closed rows by closing time (`dated_closed`), strictly after `after`, newest first. */
+export function closedDatedPage(db: Db, o: { since: number; after: ClosedAt | null; limit: number }): DatedRow[] {
+  const { after } = o;
+  return db
+    .all<Raw>(
+      `SELECT * FROM dated_items INDEXED BY dated_closed WHERE state <> 'open' AND closed_at >= ?${after ? " AND (closed_at < ? OR (closed_at = ? AND id < ?))" : ""} ORDER BY closed_at DESC, id DESC LIMIT ?`,
+      o.since,
+      ...(after ? [after.at, after.at, after.id] : []),
+      o.limit,
+    )
+    .map(toRow);
+}
+
+/** Plan 210: each thread's newest closing since `since`, by its thread index. */
+export function newestClosedDated(db: Db, threadIds: readonly number[], since: number): Map<number, ClosedAt> {
+  const rows = threadIds.length ? db.all<{ thread_id: number; closed_at: number; id: number }>("SELECT thread_id, closed_at, id FROM dated_items INDEXED BY dated_thread WHERE thread_id IN (SELECT value FROM json_each(?)) AND state <> 'open' AND closed_at >= ?", JSON.stringify([...new Set(threadIds)]), since) : [];
+  return newestBy(rows);
+}
+
+/** Of these closings, each thread's newest by `(closed_at, id)`. */
+export function newestBy(rows: readonly { thread_id: number; closed_at: number; id: number }[]): Map<number, ClosedAt> {
+  const out = new Map<number, ClosedAt>();
+  for (const r of rows) {
+    const was = out.get(r.thread_id);
+    if (!was || r.closed_at > was.at || (r.closed_at === was.at && r.id > was.id)) out.set(r.thread_id, { at: r.closed_at, id: r.id });
+  }
+  return out;
+}
+
 export function getDated(db: Db, id: number): DatedRow | null {
   const r = db.get<Raw>("SELECT * FROM dated_items WHERE id = ?", id);
   return r ? toRow(r) : null;

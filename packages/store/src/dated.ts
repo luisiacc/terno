@@ -132,6 +132,12 @@ export interface DatedSnapshot {
 
 export const datedSnapshotOf = (r: DatedRow): DatedSnapshot => ({ id: r.id, revision: r.revision, state: r.state, deferredUntil: r.deferredUntil, closedReason: r.closedReason, closedAt: r.closedAt });
 
+/** Plan 210: a closed row's place in its table's history order: when it closed, then its id. */
+export interface ClosedAt {
+  at: number;
+  id: number;
+}
+
 export interface DatedStore {
   marks: {
     /** oldest first, by the message's date */
@@ -158,6 +164,13 @@ export interface DatedStore {
   /** open, by `act_at`, at most `DATED_ACTIVE_MAX` */
   active(): Promise<DatedRow[]>;
   ofThread(threadId: number): Promise<DatedRow[]>;
+  /**
+   * Plan 210: closed rows (done, dismissed, settled) closed since `since`, newest first by `(closed_at, id)`, strictly after
+   * `after`, at most `limit`: what What matters' history pages through (an index by closing time, both stores).
+   */
+  closedPage(o: { since: number; after: ClosedAt | null; limit: number }): Promise<DatedRow[]>;
+  /** Plan 210: each of these threads' newest closing since `since` (by `(closed_at, id)`), by thread; none, not in the map */
+  newestClosed(threadIds: readonly number[], since: number): Promise<Map<number, ClosedAt>>;
   /**
    * The senders among these (`addressKey`s) the user has written to (plan 17's correspondents), by key: one indexed
    * lookup each. After the fourth panel round, a sender named like a security desk you correspond with is trusted.

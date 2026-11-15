@@ -609,5 +609,60 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
         expect((await store.dated.active()).map((x) => x.threadId)).toEqual([a.thread]);
       });
     });
+    describe("the history's reads (plan 210)", () => {
+      /** items on their own threads, closed at these moments (null: left open), the rows newest first as they'll page */
+      async function closedItems(at: (number | null)[], state: "done" | "dismissed" | "settled" = "done") {
+        const s = await setup();
+        const rows: { id: number; thread: number; at: number | null }[] = [];
+        for (const [i, when] of at.entries()) {
+          const m = await s.got({ subject: `Bill ${i}`, providerMsgId: `h-${i}` });
+          await s.finish(m.id, m.thread, { rows: [s.item()] });
+          const [row] = await s.store.dated.ofThread(m.thread);
+          if (when !== null) await s.store.dated.update(row!.id, row!.revision, { state, closedReason: state === "dismissed" ? "user" : state, closedAt: when });
+          rows.push({ id: row!.id, thread: m.thread, at: when });
+        }
+        return { ...s, rows };
+      }
+
+      it("pages closed rows newest first by closing time then id, strictly after a key, never an open one nor one closed before the window", async () => {
+        const { store, rows } = await closedItems([NOW - 3000, NOW - 1000, null, NOW - 1000, NOW - 2 * DATED_CLOSED_KEEP_MS, NOW - 2000]);
+        const want = rows.filter((r) => r.at !== null && r.at >= NOW - DATED_CLOSED_KEEP_MS).sort((a, b) => b.at! - a.at! || b.id - a.id).map((r) => r.id);
+        const since = NOW - DATED_CLOSED_KEEP_MS;
+        expect((await store.dated.closedPage({ since, after: null, limit: 10 })).map((r) => r.id)).toEqual(want);
+        // two at a time, each page strictly after the last one's key: every row once, in order
+        const paged: number[] = [];
+        let after: { at: number; id: number } | null = null;
+        for (;;) {
+          const page = await store.dated.closedPage({ since, after, limit: 2 });
+          if (!page.length) break;
+          paged.push(...page.map((r) => r.id));
+          const last = page.at(-1)!;
+          after = { at: last.closedAt!, id: last.id };
+        }
+        expect(paged).toEqual(want);
+        // the same moment: the higher id first, and a key between them splits them
+        const [a, b] = rows.filter((r) => r.at === NOW - 1000).sort((x, y) => y.id - x.id);
+        expect((await store.dated.closedPage({ since, after: { at: NOW - 1000, id: a!.id }, limit: 1 })).map((r) => r.id)).toEqual([b!.id]);
+      });
+
+      it("takes every closed state, and each thread's newest closing by its thread", async () => {
+        const s = await closedItems([NOW - 5000], "settled");
+        const m = await s.got({ subject: "Two items", providerMsgId: "h-two" });
+        await s.finish(m.id, m.thread, { rows: [s.item(), s.item({ item: 1, text: "Renew the domain" })] });
+        const [first, second] = await s.store.dated.ofThread(m.thread);
+        await s.store.dated.update(first!.id, first!.revision, { state: "dismissed", closedReason: "expired", closedAt: NOW - 4000 });
+        await s.store.dated.update(second!.id, second!.revision, { state: "done", closedReason: "user", closedAt: NOW - 100 });
+        const since = NOW - DATED_CLOSED_KEEP_MS;
+        expect((await s.store.dated.closedPage({ since, after: null, limit: 10 })).map((r) => [r.id, r.state])).toEqual([[second!.id, "done"], [first!.id, "dismissed"], [s.rows[0]!.id, "settled"]]);
+        const newest = await s.store.dated.newestClosed([m.thread, s.rows[0]!.thread, 987_654], since);
+        expect(newest).toEqual(new Map([[m.thread, { at: NOW - 100, id: second!.id }], [s.rows[0]!.thread, { at: NOW - 5000, id: s.rows[0]!.id }]]));
+        expect(await s.store.dated.newestClosed([], since)).toEqual(new Map());
+        // reopened (Undo), it leaves both
+        const back = await s.store.dated.get(second!.id);
+        await s.store.dated.update(back!.id, back!.revision, { state: "open", closedReason: null, closedAt: null });
+        expect((await s.store.dated.newestClosed([m.thread], since)).get(m.thread)).toEqual({ at: NOW - 4000, id: first!.id });
+        expect((await s.store.dated.closedPage({ since, after: null, limit: 10 })).map((r) => r.id)).not.toContain(second!.id);
+      });
+    });
   });
 }
