@@ -59,4 +59,26 @@ export async function measureDated(o: WorkloadMailbox): Promise<void> {
   expect(openFor).toBeLessThanOrEqual(5 * o.budget);
   expect(thread).toBeLessThanOrEqual(5 * o.budget);
   expect(source).toBeLessThanOrEqual(5 * o.budget);
+
+  // plan 210: What matters' history pages through the closed rows by closing time. The thousand closed, a minute apart
+  // (a heavy quarter's closings, each on its own conversation): its first page, a deep one, and each thread's newest
+  // closing for a page's conversations, as the history reads them
+  for (const [n, { id }] of (await store.dated.active()).entries()) {
+    const row = (await store.dated.get(id))!;
+    await store.dated.update(row.id, row.revision, { state: n % 4 ? "done" : "dismissed", closedReason: "user", closedAt: o.now - n * 60_000 });
+  }
+  const since = o.now - 90 * 86_400_000;
+  const all = await store.dated.closedPage({ since, after: null, limit: DATED_ACTIVE_MAX });
+  expect(all).toHaveLength(DATED_ACTIVE_MAX);
+  const deepKey = { at: all[900]!.closedAt!, id: all[900]!.id };
+  const first = await timed(40, () => store.dated.closedPage({ since, after: null, limit: 100 }));
+  const deep = await timed(40, () => store.dated.closedPage({ since, after: deepKey, limit: 100 }));
+  const threads = all.slice(0, 100).map((r) => r.threadId);
+  const newest = await timed(40, () => store.dated.newestClosed(threads, since));
+  const promises = await timed(40, () => store.followups.closedPage({ since, after: null, limit: 100 }));
+  o.log(`History: a first page of closed items ${first.toFixed(2)} ms, a deep one ${deep.toFixed(2)} ms, a page's newest closings ${newest.toFixed(2)} ms, closed promises ${promises.toFixed(2)} ms`);
+  expect(first).toBeLessThanOrEqual(5 * o.budget);
+  expect(deep).toBeLessThanOrEqual(5 * o.budget);
+  expect(newest).toBeLessThanOrEqual(5 * o.budget);
+  expect(promises).toBeLessThanOrEqual(5 * o.budget);
 }
