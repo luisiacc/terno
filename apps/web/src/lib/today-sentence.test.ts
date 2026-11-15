@@ -8,6 +8,7 @@ import en from "@terno/i18n/locales/en";
 import es from "@terno/i18n/locales/es";
 import { afterEach, describe, expect, it } from "vitest";
 import { historySentence, historyWhen, todaySentence, todayWhen } from "./today-sentence";
+import { dayHeading } from "./when";
 
 // Friday 13 November 2026, 9:30 in the machine's own time (the panel's morning)
 const NOW = new Date(2026, 10, 13, 9, 30).getTime();
@@ -47,14 +48,17 @@ describe("todaySentence (en)", () => {
     expect(todaySentence(dated("pay", "  ", 16))).toBe("Your statement is ready.");
   });
 
-  it("plan 204's groups by when set the weight: Missed and Today strong, Soon and Coming up quiet, whatever the day says", () => {
-    // an alert while it shows is Today's, its column empty
-    expect(todayWhen(dated("alert", "Card frozen", 10, { dated: false }), NOW, "today")).toEqual({ text: null, tone: "today" });
-    expect(todayWhen(dated("pay", "Pay", 16), NOW, "soon")).toEqual({ text: "Mon", tone: "later" });
-    expect(todayWhen(dated("event", "Dentist", 20), NOW, "comingUp").tone).toBe("later");
+  it("plan 210's groups by day set the weight: Missed and Today's dated items strong; what's undated in Today, a day ahead and Coming up quiet", () => {
+    expect(todayWhen(dated("pay", "Pay", 13), NOW, "today")).toEqual({ text: "Today", tone: "today" });
+    // a Plan still on from last night is Today's
+    expect(todayWhen(dated("event", "Party", 12, { timed: { h: 23, m: 0 } }), NOW, "today").tone).toBe("today");
+    // what has no date sits in Today, its column saying when it came, quietly (the owner: so it isn't read as due today)
+    expect(todayWhen(dated("alert", "Card frozen", 10, { dated: false }), NOW, "today")).toEqual({ text: "since Nov 1", tone: "none" });
+    expect(todayWhen(dated("ask", "Answer Owen", 13, { dated: false }), NOW, "today")).toEqual({ text: "since Nov 1", tone: "none" });
+    expect(todayWhen(item({ kind: "reminder", dueAt: at(13, 9) }), NOW, "today")).toEqual({ text: expect.stringMatching(/^9:00\sAM$/), tone: "none" });
+    expect(todayWhen(dated("pay", "Pay", 14), NOW, "day:2026-11-14")).toEqual({ text: "Tomorrow", tone: "later" });
+    expect(todayWhen(dated("pay", "Pay", 13), NOW, "today", true).tone).toBe("later");
     expect(todayWhen(dated("pay", "Pay", 11, { missed: true }), NOW, "missed").tone).toBe("missed");
-    // Needs you keeps the item's own: an ask says the day it came, quietly
-    expect(todayWhen(dated("ask", "Answer Owen", 13, { dated: false }), NOW, "needsYou")).toEqual({ text: "Nov 1", tone: "none" });
   });
 });
 
@@ -73,16 +77,28 @@ describe("todayWhen: the briefing's column, in the list's words, and how pressin
     expect(todayWhen(dated("event", "Game", 14, { timed: { h: 10, m: 0 } }), NOW).text).toMatch(/^Tomorrow 10:00\sAM$/);
   });
 
-  it("an alert with no day says none and is pressing; an ask and a waiting reply show the day they came, quietly", () => {
-    expect(todayWhen(dated("alert", "Card frozen", 10, { dated: false }), NOW)).toEqual({ text: null, tone: "today" });
-    expect(todayWhen(dated("ask", "Answer Owen", 13, { dated: false }), NOW)).toEqual({ text: "Nov 1", tone: "none" });
-    expect(todayWhen(item({ kind: "waiting" }), NOW)).toEqual({ text: "Nov 1", tone: "none" });
+  it("what has no date (an alert that named none, an ask, a waiting reply) says since when, quietly (plan 210)", () => {
+    expect(todayWhen(dated("alert", "Card frozen", 10, { dated: false }), NOW)).toEqual({ text: "since Nov 1", tone: "none" });
+    expect(todayWhen(dated("ask", "Answer Owen", 13, { dated: false }), NOW)).toEqual({ text: "since Nov 1", tone: "none" });
+    expect(todayWhen(item({ kind: "waiting" }), NOW)).toEqual({ text: "since Nov 1", tone: "none" });
   });
 
   it("a promise: its day, Missed, or none when it named none", () => {
     expect(todayWhen(promise("call Marcus", 13), NOW)).toEqual({ text: "Today", tone: "today" });
     expect(todayWhen(promise("send the slip", 11, true), NOW)).toEqual({ text: "Was due Wed", tone: "missed" });
-    expect(todayWhen(promise("send the draft"), NOW)).toEqual({ text: null, tone: "none" });
+    expect(todayWhen(promise("send the draft"), NOW)).toEqual({ text: "since Nov 1", tone: "none" });
+  });
+});
+
+describe("a day's heading (plan 210: by day)", () => {
+  it("Tomorrow, the weekday this week, the day with its date beyond; capitalised, en and es", () => {
+    expect(dayHeading(at(14, 9), NOW)).toBe("Tomorrow");
+    expect(dayHeading(at(17, 9), NOW)).toBe("Tuesday");
+    expect(dayHeading(at(30, 9), NOW)).toBe("Mon, Nov 30");
+    setLocale("es", es);
+    expect(dayHeading(at(14, 9), NOW)).toBe("Mañana");
+    expect(dayHeading(at(17, 9), NOW)).toBe("Martes");
+    expect(dayHeading(at(30, 9), NOW)).toMatch(/^Lun, 30 nov$/);
   });
 });
 
@@ -94,6 +110,7 @@ describe("Spanish", () => {
     expect(todaySentence(item({ kind: "waiting" }))).toBe("Hill Country Power & Water te escribió sobre «Your statement is ready».");
     expect(todayWhen(dated("pay", "Pagar", 11, { missed: true }), NOW).text).toBe("Venció el mié");
     expect(todayWhen(dated("pay", "Pagar", 13), NOW).text).toBe("Hoy");
+    expect(todayWhen(item({ kind: "waiting" }), NOW).text).toBe("desde 1 nov");
   });
 });
 

@@ -115,7 +115,7 @@ describe("the list", () => {
     raw.run("UPDATE threads SET has_sent = 0 WHERE id = ?", colleague);
     for (let i = 0; i < 2; i++) raw.run("UPDATE threads SET has_sent = 0 WHERE id = ?", await put({ from: { name: "Svc", email: "service@machine.test" } }));
     const list = await client.call("today.list", { heldIds: [] });
-    const needs = list.sections.find((s) => s.kind === "needsYou")!;
+    const needs = list.sections.find((s) => s.kind === "today")!;
     expect(new Set(needs.items.map((i) => i.thread.id))).toEqual(new Set([yours, colleague]));
     expect((await client.call("counts.get", {})).today).toBe(2);
   });
@@ -125,7 +125,7 @@ describe("the list", () => {
     const ids: number[] = [];
     for (let i = 0; i < 15; i++) ids.push(await put());
     const list = await client.call("today.list", { heldIds: [] });
-    const needs = list.sections.find((s) => s.kind === "needsYou")!;
+    const needs = list.sections.find((s) => s.kind === "today")!;
     expect(needs.items).toHaveLength(15);
     expect(needs.items.map((i) => i.why.kind)).toEqual(Array(15).fill("waiting"));
     expect((await client.call("counts.get", {})).today).toBe(15);
@@ -148,7 +148,7 @@ describe("the list", () => {
     const list = await client.call("today.list", { heldIds: [] });
     const sections = list.sections.map((s) => [s.kind, s.items.map((i) => i.thread.id)]);
     // plan 204, the fourth panel round: a promise of yours that's due, undated, is Needs you's (it has no day)
-    expect(sections).toEqual([["needsYou", [t]]]);
+    expect(sections).toEqual([["today", [t]]]);
     expect(list.sections[0]!.items[0]!.why.kind).toBe("promise");
     expect((await client.call("counts.get", {})).today).toBe(1);
   });

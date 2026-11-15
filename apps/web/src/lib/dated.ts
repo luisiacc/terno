@@ -91,7 +91,7 @@ const conversationEnd = (r: DatedRow): number => (datedGroup(r.kind) === "plans"
  */
 export function conversationItem(r: DatedRow, now: number): { missed: boolean } | null {
   if (r.state !== "open") return null;
-  const group = datedGroupAt(r, now);
+  const group = datedGroupAt(r, now)?.group ?? null;
   if (group === "missed") return { missed: true };
   if (group !== null) return { missed: false };
   return now < conversationEnd(r) ? { missed: false } : null;

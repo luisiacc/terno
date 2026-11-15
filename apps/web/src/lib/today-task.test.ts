@@ -39,7 +39,8 @@ const today = (): TodayList =>
     digest: null,
     sections: [
       { kind: "today", items: [1, 2, 3].filter((id) => !done.has(id * 10)).map((id) => ({ thread: thread(id), why: { kind: "dated", text: `Task ${id}`, dueAt: 2e12, item: item(id) } })) },
-      { kind: "needsYou", items: [...promised].filter(([, id]) => !done.has(id)).map(([threadId, id]) => ({ thread: thread(threadId), why: { kind: "promise", text: "send the agenda", dueAt: 2e12, personName: "Ana", sentAt: 1e9, promise: { id, revision: 1, dated: false } } })) },
+      // (a day ahead's: a heading of its own after Today's)
+      { kind: "day", day: "2026-11-20", items: [...promised].filter(([, id]) => !done.has(id)).map(([threadId, id]) => ({ thread: thread(threadId), why: { kind: "promise", text: "send the agenda", dueAt: 2e12, personName: "Ana", sentAt: 1e9, promise: { id, revision: 1, dated: false } } })) },
     ],
   }) as unknown as TodayList;
 const shown = () => useList.getState().items.map((t) => t.id);
@@ -155,15 +156,15 @@ describe("Done means gone (plan 204, after the second panel round)", () => {
   it("the headings follow the rows that are left, before the list reloads (Codex code review)", async () => {
     promised.set(4, 400);
     await reloadList();
-    expect(useToday.getState().groups).toEqual([{ kind: "today", at: 0 }, { kind: "needsYou", at: 3 }]);
+    expect(useToday.getState().groups).toEqual([{ kind: "today", at: 0 }, { kind: "day:2026-11-20", at: 3 }]);
     fake.handlers["today.list"] = () => new Promise(() => {}); // the reload never answers: what's shown is the optimistic list
     await actOnTodayRow(1, useToday.getState().tasks.get(1)!, "done");
     expect(shown()).toEqual([2, 3, 4]);
-    expect(useToday.getState().groups).toEqual([{ kind: "today", at: 0 }, { kind: "needsYou", at: 2 }]);
+    expect(useToday.getState().groups).toEqual([{ kind: "today", at: 0 }, { kind: "day:2026-11-20", at: 2 }]);
     await actOnTodayRow(2, useToday.getState().tasks.get(2)!, "done");
     await actOnTodayRow(3, useToday.getState().tasks.get(3)!, "done");
     expect(shown()).toEqual([4]);
-    expect(useToday.getState().groups).toEqual([{ kind: "needsYou", at: 0 }]);
+    expect(useToday.getState().groups).toEqual([{ kind: "day:2026-11-20", at: 0 }]);
   });
 
   it("outside Today nothing leaves the list", async () => {
