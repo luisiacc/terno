@@ -197,6 +197,33 @@ describe("reading dates in mail you got (plan 204)", () => {
     expect(read([{ ...call, text: "Sofia's cleaning (reply C to confirm)" }], { moved: [move({})] }).moved[0]).toMatchObject({ text: null });
   });
 
+  describe("Codex code review of the seventh round, second pass", () => {
+    type Moved = { label: string; due: string; time: string | null; evidence: string; text: string | null; textEvidence: string | null };
+    const move = (over: Partial<Moved>): Moved => ({ label: "o1", due: "2026-07-11", time: "20:00 America/Los_Angeles", evidence: "move it to 8 PM PT", text: null, textEvidence: null, ...over });
+    const read = (zone: string, open: DatedInput["open"], w: { items?: ReturnType<typeof item>[]; moved?: Moved[] }) => {
+      const v = readDatesTask(input({ zone, open })).validate({ items: w.items ?? [], settled: [], moved: w.moved ?? [] });
+      if (!v.ok) throw new Error("rejected");
+      return v.value;
+    };
+    const early = { label: "o1", kind: "event" as const, text: "Call with Marcus (6:00 AM PT)", due: "2026-07-11", time: "09:00" };
+    it("a time-only move keeps the item's own day in the mail's zone, not the nearest such time", () => {
+    // July 11 at 6 AM PT (09:00 in New York) moved "to 8 PM PT" is that evening, July 11 at 23:00 here, not the 8 PM before it
+    expect(read("America/New_York", [early], { moved: [move({})] }).moved[0]).toMatchObject({ due: "2026-07-11", time: "23:00", text: "Call with Marcus (8:00 PM PT)" });
+    });
+    it("the note follows any move given in a zone, across a clock change too", () => {
+    // for a Madrid reader, October 22 at 4 PM PT and October 29 at 5 PM PT are both 01:00 the next day (Europe changes its clocks
+    // between them): the note still follows the mail's new time
+    const october = { label: "o1", kind: "event" as const, text: "Call with Marcus (4:00 PM PT)", due: "2026-10-23", time: "01:00" };
+    expect(read("Europe/Madrid", [october], { moved: [move({ due: "2026-10-29", time: "17:00 America/Los_Angeles", evidence: "next Thursday at 5 PM PT" })] }).moved[0]).toMatchObject({ due: "2026-10-30", time: "01:00", text: "Call with Marcus (5:00 PM PT)" });
+    });
+    it("a zone that reads like one but the runtime doesn't know never throws", () => {
+    // a zone that reads like one but the runtime doesn't know: the day kept, no time, and the rest of the reading survives
+    const v = read("America/New_York", [early], { items: [item({ kind: "event", due: "2026-07-12", time: "09:00 Europe/Barcelona" }), item()], moved: [move({ time: "09:00 Europe/Barcelona" })] });
+    expect(v.moved[0]).toMatchObject({ due: "2026-07-11", time: null, text: null });
+    expect(v.items.map((i) => [i.due, i.time])).toEqual([["2026-07-12", null], ["2026-03-20", null]]);
+    });
+  });
+
   it("has a limit on every input", () => {
     const prompt = datedPrompt(input({ text: "t".repeat(100_000), subject: "s".repeat(1000), from: { name: "n".repeat(1000), automated: true }, open: Array.from({ length: 50 }, (_, i) => ({ label: `o${i + 1}`, kind: "pay" as const, text: "x".repeat(1000) })) }));
     expect(prompt.length).toBeLessThan(9_000);
