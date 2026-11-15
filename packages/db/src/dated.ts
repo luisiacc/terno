@@ -1,5 +1,5 @@
-import { addressKey, ANSWERED_KINDS, DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, senderIsPerson, THREAD_SCOPED_KINDS, type DatedRow } from "@terno/core";
-import { DATED_MARK_MS, DATED_SCAN_MARK_MS, datedTab, NEW_MAIL_MS, readerIn, recipientList, type ClosedAt, type DatedFinish, type DatedFinishOutcome, type DatedMark, type DatedSnapshot, type DatedSource } from "@terno/store";
+import { addressKey, ANSWERED_KINDS, DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, senderIsPerson, THREAD_SCOPED_KINDS, waitingCutoff, type DatedRow } from "@terno/core";
+import { DATED_MARK_MS, DATED_SCAN_MARK_MS, datedTab, NEW_MAIL_MS, readerIn, readNothingAsked, recipientList, type ClosedAt, type DatedFinish, type DatedFinishOutcome, type DatedMark, type DatedSnapshot, type DatedSource } from "@terno/store";
 import { OWN_SENDER_SQL, RECEIVED_SQL } from "./ai-summaries";
 import { ownAddresses } from "./facts";
 import type { Db } from "./sqlite";
@@ -36,6 +36,7 @@ export function markDatedMail(db: Db, messageIds: readonly number[], now: number
 /** A merge: the marks follow their messages, and the items their thread (a new revision: what was shown has moved). */
 export function mergeDated(db: Db, into: number, from: number): void {
   db.run("UPDATE ai_dated_mail SET thread_id = ? WHERE thread_id = ?", into, from);
+  db.run("UPDATE dated_nothing_asked SET thread_id = ? WHERE thread_id = ?", into, from);
   db.run("UPDATE OR IGNORE dated_items SET thread_id = ?, revision = revision + 1 WHERE thread_id = ?", into, from);
 }
 
@@ -202,6 +203,10 @@ export function finishDated(db: Db, w: DatedFinish): DatedFinishOutcome {
         m.dueDay, m.dueAt, m.timed ? 1 : 0, m.actAt, m.text ?? null, m.id, src.threadId, src.senderKey,
       );
     }
+    // plan 210 (iteration 2): read with nothing asked of the reader, which Needs you reads while it's their latest; a reading
+    // again (the 14-day check) that finds a request takes it back
+    if (readNothingAsked(w)) db.run("INSERT OR REPLACE INTO dated_nothing_asked (message_id, thread_id, arrived_at, prompt_version) VALUES (?, ?, ?, ?)", w.messageId, src.threadId, src.date, w.promptVersion);
+    else db.run("DELETE FROM dated_nothing_asked WHERE message_id = ?", w.messageId);
     db.run("DELETE FROM ai_dated_mail WHERE message_id = ?", w.messageId);
     return "written";
   });
@@ -267,12 +272,17 @@ export function restoreDated(db: Db, rows: readonly { snapshot: DatedSnapshot; e
 }
 
 export function pruneDated(db: Db, now: number): number {
-  return Number(db.run("DELETE FROM dated_items WHERE state != 'open' AND coalesce(closed_at, created_at) < ?", now - DATED_CLOSED_KEEP_MS).changes);
+  return db.tx(() =>
+    Number(db.run("DELETE FROM dated_items WHERE state != 'open' AND coalesce(closed_at, created_at) < ?", now - DATED_CLOSED_KEEP_MS).changes) +
+    // past the waiting window, no conversation it's the latest of is waiting
+    Number(db.run("DELETE FROM dated_nothing_asked WHERE arrived_at < ?", waitingCutoff(now)).changes),
+  );
 }
 
 export function clearDated(db: Db): void {
   db.tx(() => {
     db.run("DELETE FROM dated_items");
     db.run("DELETE FROM ai_dated_mail");
+    db.run("DELETE FROM dated_nothing_asked");
   });
 }

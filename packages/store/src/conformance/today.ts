@@ -1,4 +1,6 @@
+import { WAITING_WINDOW_MS } from "@terno/core";
 import { describe, expect, it } from "vitest";
+import { DATED_NOTHING_ASKED_SINCE } from "../dated";
 import type { MailStore } from "../mail-store";
 import type { IncomingMessage } from "../types";
 import { msg, threadOf, withAccounts } from "./fixtures";
@@ -269,6 +271,82 @@ export function defineTodayConformance(fresh: () => Promise<MailStore>): void {
       const budget = (await store.followups.marks.page(null, 10)).at(-1)!.messageId;
       await store.followups.finish({ messageId: budget, threadId: open.thread, fromScan: false, rows: [{ kind: "promise", item: 0, text: "send the budget", quote: "Also the budget", personName: "Lou", personEmail: "lou@people.test", dueAt: NOW + 3 * DAY, dated: true }], kept: [], now: NOW, model: "m", provider: "p", promptVersion: 1, clearGeneration: store.followups.clearGeneration() });
       expect(await store.today.waitingAmong([open.thread], NOW)).toEqual([open.thread]);
+    });
+
+    it("plan 210 (iteration 2): a conversation is Needs you's only when the dated reader found something asked in their latest message; mail it hasn't read keeps plan 145's rule", async () => {
+      const { store } = await setup();
+      const DAY = 86_400_000;
+      const ingest = async (m: Partial<IncomingMessage>, dated = false) =>
+        (await store.sync.ingest([msg({ listId: null, isRead: false, to: [me], ...m, accountId: accountId_() })], { applyFilters: false, now: NOW, classifier: null, ...(dated ? { datedMail: { since: null } } : {}) })).inserted[0]!;
+      const read = (messageId: number, thread: number, rows: Parameters<MailStore["dated"]["finish"]>[0]["rows"], promptVersion = DATED_NOTHING_ASKED_SINCE) =>
+        store.dated.finish({ messageId, threadId: thread, fromScan: false, settled: [], now: NOW, model: "m", provider: "p", promptVersion, clearGeneration: store.dated.clearGeneration(), rows });
+      /** you wrote, they answered (marked for the dated reader) */
+      const talk = async (name: string, date: number, text: string) => {
+        const email = `${name.toLowerCase()}@people.test`;
+        await ingest({ date: date - 500, providerMsgId: `${name}-out`, providerThreadId: name, from: me, to: [{ name, email }], isSent: true, isRead: true, subject: `About ${name}` });
+        const message = await ingest({ date, providerMsgId: `${name}-in`, providerThreadId: name, from: { name, email }, subject: `Re: About ${name}`, inReplyTo: `${name}-out`, snippet: text, bodyText: text }, true);
+        return { message, thread: await threadOf(store, `${name}-in`) };
+      };
+      const ask = { kind: "ask" as const, item: 0, text: "Answer Bea about the keys", quote: "can you leave the keys", dueDay: "2026-11-05", dueAt: NOW, timed: false, dated: false, actAt: NOW };
+      const pay = { kind: "pay" as const, item: 0, text: "Pay Cleo $40", quote: "$40 by Friday", dueDay: "2026-11-06", dueAt: NOW + DAY, timed: false, dated: true, actAt: NOW };
+      const thanks = await talk("Ana", NOW - 9000, "Aquí tienes tu casa, cuando quieras. Un abrazo");
+      const asked = await talk("Bea", NOW - 8000, "Thanks so much! Can you leave the keys with Sam?");
+      const other = await talk("Cleo", NOW - 7000, "Lovely evening. The $40 for the tickets is due by Friday.");
+      const queued = await talk("Dia", NOW - 6000, "Thanks so much, that's perfect!");
+      const older = await talk("Eve", NOW - 5000, "Thanks so much, that's perfect!");
+      const newer = await talk("Fay", NOW - 4000, "Thanks so much, that's perfect!");
+      const all = [thanks, asked, other, queued, older, newer].map((c) => c.thread);
+      expect(new Set(await store.today.waitingAmong(all, NOW))).toEqual(new Set(all));
+      const before = await store.today.needsCount(NOW);
+
+      expect(await read(thanks.message, thanks.thread, [])).toBe("written");
+      expect(await read(asked.message, asked.thread, [ask])).toBe("written");
+      // a bill isn't a question for the reader: the bill shows on its own day, the conversation isn't waiting on an answer
+      expect(await read(other.message, other.thread, [pay])).toBe("written");
+      // a reading before the rule's prompt says nothing either way
+      expect(await read(older.message, older.thread, [], DATED_NOTHING_ASKED_SINCE - 1)).toBe("written");
+      expect(await read(newer.message, newer.thread, [])).toBe("written");
+      const still = [asked.thread, queued.thread, older.thread];
+      expect(new Set(await store.today.waitingAmong(all, NOW))).toEqual(new Set(still));
+      expect(new Set((await store.today.waitingPage({ now: NOW, after: null, limit: 50 })).map((p) => p.id).filter((id) => all.includes(id)))).toEqual(new Set(still));
+      expect(await store.today.needsCount(NOW)).toBe(before - 3);
+      expect((await store.today.countWith([], NOW)).needs).toBe(before - 3);
+
+      // newer mail from them: the rule looks at their latest message, which nobody has read yet
+      await ingest({ date: NOW - 500, providerMsgId: "Fay-in-2", providerThreadId: "Fay", from: { name: "Fay", email: "fay@people.test" }, subject: "Re: About Fay", inReplyTo: "Fay-in", bodyText: "Oh, and one more thing." });
+      expect(await store.today.waitingAmong([newer.thread], NOW)).toEqual([newer.thread]);
+
+      // the 14-day check reads it again and finds a question this time: back
+      expect(await store.dated.marks.queueScan([thanks.message], NOW)).toBe(1);
+      expect(await read(thanks.message, thanks.thread, [ask])).toBe("written");
+      expect(await store.today.waitingAmong([thanks.thread], NOW)).toEqual([thanks.thread]);
+
+      // Clear AI data: nothing read, so plan 145's rule again
+      await store.dated.clear();
+      expect(new Set(await store.today.waitingAmong(all, NOW))).toEqual(new Set(all));
+      expect(await store.today.needsCount(NOW)).toBe(before);
+    });
+
+    it("plan 210 (iteration 2): what was read with nothing asked follows a merge, and goes past the waiting window", async () => {
+      const { store } = await setup();
+      const ingest = async (m: Partial<IncomingMessage>) =>
+        (await store.sync.ingest([msg({ listId: null, isRead: false, to: [me], ...m, accountId: accountId_() })], { applyFilters: false, now: NOW, classifier: null, datedMail: { since: null } })).inserted[0]!;
+      const gus = { name: "Gus", email: "gus@people.test" };
+      // two conversations with Gus: one he started, and your dinner invitation he thanked you for (read: nothing asked)
+      await ingest({ date: NOW - 4000, providerMsgId: "Gus-b", rfcMessageId: "gus-b@x", from: gus, subject: "Plans", bodyText: "Free this weekend?" });
+      await ingest({ date: NOW - 3500, providerMsgId: "Gus-out", rfcMessageId: "gus-out@x", from: me, to: [gus], isSent: true, isRead: true, subject: "Dinner" });
+      const message = await ingest({ date: NOW - 1000, providerMsgId: "Gus-in", rfcMessageId: "gus-in@x", from: gus, subject: "Re: Dinner", inReplyTo: "gus-out@x", references: ["gus-out@x"], bodyText: "Thanks so much, that's perfect!" });
+      const thread = await threadOf(store, "Gus-in");
+      expect(await store.dated.finish({ messageId: message, threadId: thread, fromScan: false, settled: [], rows: [], now: NOW, model: "m", provider: "p", promptVersion: DATED_NOTHING_ASKED_SINCE, clearGeneration: store.dated.clearGeneration() })).toBe("written");
+      expect(await store.today.waitingAmong([thread], NOW)).toEqual([]);
+      // an older message of his that joins the two by its references: the one read is still his latest, on the survivor
+      await ingest({ date: NOW - 3000, providerMsgId: "Gus-bridge", rfcMessageId: "gus-bridge@x", from: gus, subject: "Re: Dinner", inReplyTo: "gus-b@x", references: ["gus-b@x", "gus-out@x"], bodyText: "Saturday?" });
+      const merged = await threadOf(store, "Gus-in");
+      expect(await threadOf(store, "Gus-b")).toBe(merged);
+      expect(await store.today.waitingAmong([merged], NOW)).toEqual([]);
+      // past the waiting window it's pruned (nothing waits by then anyway): read at NOW again, plan 145's rule is back
+      expect(await store.dated.prune(NOW + WAITING_WINDOW_MS)).toBe(1);
+      expect(await store.today.waitingAmong([merged], NOW)).toEqual([merged]);
     });
 
     it("digestLive: only what's in the Inbox and unread", async () => {
