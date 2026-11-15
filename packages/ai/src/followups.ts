@@ -8,7 +8,8 @@ import type { StructuredTask } from "./ladder";
  */
 /** 8 (plan 204's user panel): a conditional, a joke or banter isn't a promise */
 /** 9 (plan 204's fifth panel round): a promise's text names what, to whom where it matters, and the time it states ("call Marcus at 4:00 PM", not "call") */
-export const FOLLOWUP_PROMPT_VERSION = 9;
+/** 10 (plan 204's seventh panel round): undertaking something, alone or for the team, is a promise; reporting a plan ("our plan is to email him the draft", "Legal will prepare it") isn't */
+export const FOLLOWUP_PROMPT_VERSION = 10;
 export const FOLLOWUP_MAX_TOKENS = 2500;
 export const FOLLOWUP_RECIPIENTS_MAX = 20;
 export const FOLLOWUP_FILES_MAX = 10;
@@ -79,7 +80,7 @@ Return:
 - "awaiting": the labels of who should answer, when expectsReply.
 - "kept": open promises this message keeps, each { "label", "evidence" } with its label from <open_promises> (p1, p2…), where evidence is their exact words from <own_text> that keep it: sending what was promised, or saying it's done. "Sorry, need one more day" keeps nothing. If in doubt, leave it out.
 
-Something someone else has under way ("quedó en revisión con el banco") isn't their promise. What they take on is: "de nuestra parte", "vamos a revisar", "we'll look into it". When they list several things they'll do, note each one as its own promise: a list headed "de nuestra parte" is that many promises. Nobody is awaited from an automated address (notifications@, noreply@).`;
+What they undertake themselves, alone or for their team, is a promise: "I'll send it Friday", "we'll send it Friday", "we'll look into it", "de nuestra parte enviamos el contrato el lunes". What they only report isn't: something someone else has under way ("quedó en revisión con el banco"), or a plan, theirs or a team's, that they tell about without taking it on ("our plan is to email him the draft", "Legal will prepare the documentation", "el equipo va a revisar los precios"). When they list several things they undertake, note each one as its own promise: a list headed "de nuestra parte" is that many promises. Nobody is awaited from an automated address (notifications@, noreply@).`;
 };
 
 const dataText = (text: string) => text.replace(/<(\s*\/?\s*)(own_text|answering|subject|recipients|files|open_promises)\b/giu, "‹$1$2");
