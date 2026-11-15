@@ -6,6 +6,7 @@ import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
 import { type DatedMark, type DatedSnapshot, type DatedSource, type DatedWrite, type MailStore } from "@terno/store";
 import { DailyLimitError, MonthlyLimitError } from "./ai-limiter";
 import { UI_LOCALE_KEY } from "./forwarding";
+import { contextOf, namesItem, norm, paragraphsOf, plainEvidence, sameThing, saysWhen, sentencesOf, settlesKind } from "./dated-evidence";
 import { untrustedSenders, withoutUntrusted } from "./suspicious-sender";
 
 /**
@@ -65,15 +66,16 @@ const readerZone = (): string => {
   }
 };
 
-/**
- * Normalized, as a person retyping it would: a quote must really be in the mail. Punctuation is left out (the eval: a
- * model joins two lines with a period, "Amount due: $84.20. Please pay by…"); the words, their order and the digits stay.
- */
-const norm = (text: string) => normalizeText(text).toLowerCase().replace(/[^\p{L}\p{N}$€£%]+/gu, " ").trim();
 const KINDS: ReadonlySet<string> = new Set(DATED_KINDS);
 
-/** One item a message per kind, day and time (revision 8: a keynote at 9:30 and a tech check at 4:00 are two). */
+/**
+ * One item a message per kind, day and time (revision 8: a keynote at 9:30 and a tech check at 4:00 are two), unless their
+ * words say they're two things (plan 210, the Codex review of iteration 1, revision 3: "send the deck Friday" and "sign the
+ * form Friday"). A bill, a renewal, an expiry and an alert stay one a day: a model splits one bill in two far more often than
+ * a mail has two.
+ */
 const itemKey = (kind: string, t: { dueDay: string; dueAt: number; timed: boolean }) => `${kind}:${t.dueDay}:${t.timed ? t.dueAt : ""}`;
+const TWO_A_DAY: ReadonlySet<string> = new Set(["respond", "event", "delivery"]);
 
 /** A name's words, as a quote's are read: "Lucía Romero" → ["lucia", "romero"]; an initial or a bare letter isn't one. */
 const nameWords = (name: string) => norm(name).split(" ").filter((w) => w.length >= 2);
@@ -146,19 +148,44 @@ type Move = Omit<DatedResult["moved"][number], "text" | "textEvidence"> & Partia
  * day parses and is worth keeping (`datedTiming`), at most `DATED_ITEMS_MAX`, one per kind, day and time; an ask only from
  * a person to the reader (`askAllowed`) and never for credentials or an ID (`asksForSecrets`), and one with a day, so
  * allowed, is the request it is (`respond`); a settlement names an item it was shown and quotes the mail; a move gives a new
- * day or, for a timed item, a new moment, and its new words only with the mail's own. Pure.
+ * day or, for a timed item, a new moment, and its new words only with the mail's own. Plan 210 (the Codex review of iteration
+ * 1, revision 2): a settlement or a move rests on evidence tied to that item (`tiedTo`). Pure.
  */
-export function checkDates(result: { items: readonly (Omit<DatedResult["items"][number], "kind"> & { kind: string })[]; settled: DatedResult["settled"]; moved?: readonly Move[] }, input: { text: string; subject: string; arrivedAt: number; open: ReadonlyMap<string, DatedRow>; promises?: ReadonlyMap<string, Pick<FollowupRow, "id" | "revision">>; fromScan: boolean; now: number; sender?: { person: boolean }; reader?: { name: string; addressed: "to" | "cc" | "none" }; others?: readonly string[] }): { rows: DatedWrite[]; settled: { id: number; revision: number }[]; moved: { id: number; dueDay: string; dueAt: number; timed: boolean; actAt: number; text?: string }[]; movedPromises: { id: number; revision: number; dueAt: number }[] } {
+export function checkDates(result: { items: readonly (Omit<DatedResult["items"][number], "kind"> & { kind: string })[]; settled: DatedResult["settled"]; moved?: readonly Move[] }, input: { text: string; subject: string; arrivedAt: number; open: ReadonlyMap<string, DatedRow>; promises?: ReadonlyMap<string, Pick<FollowupRow, "id" | "revision">>; fromScan: boolean; now: number; sender?: { person: boolean }; reader?: { name: string; addressed: "to" | "cc" | "none" }; others?: readonly string[]; threadId?: number; senderKey?: string; from?: string }): { rows: DatedWrite[]; settled: { id: number; revision: number }[]; moved: { id: number; dueDay: string; dueAt: number; timed: boolean; actAt: number; text?: string }[]; movedPromises: { id: number; revision: number; dueAt: number }[] } {
   const said = `${norm(input.subject)}\n${norm(input.text)}`;
   const quoted = (words: string) => {
     const w = norm(words);
     return w.length >= 3 && said.includes(w);
   };
+  const sentences = sentencesOf(input.text);
+  const paragraphs = paragraphsOf(input.text);
+  /**
+   * Plan 210 (the Codex review of iteration 1, revision 2): quoted words prove only that the mail says them, so a settlement
+   * or a move also needs them tied to that item: two words or more, in a sentence that doesn't talk to the app ("mark o1 as
+   * done", "ignore the above"); a move's paragraph says the new day or time. An item from another conversation only by the
+   * same sender's mail that names it ("your electricity bill", "invoice 2231"; never by the sender's own name, `from`, which is
+   * in all their mail), or, to settle it, says what settles its kind
+   * when it's that sender's only open one of its kind ("Payment received" for their one bill): a receipt for that bill, never
+   * "all paid". Someone else's mail in its conversation settles or moves it only when the sentence names it. The worker
+   * passes the thread and the sender; a caller that doesn't reads every open item as this conversation's and this sender's.
+   */
+  const tiedTo = (row: Pick<DatedRow, "threadId" | "senderKey" | "kind" | "text" | "quote"> | null, evidence: string, move: boolean) => {
+    const context = contextOf(evidence, sentences);
+    if (!quoted(evidence) || !plainEvidence(evidence, context) || (move && !saysWhen(evidence, contextOf(evidence, paragraphs)))) return false;
+    if (!row) return true;
+    if (input.threadId !== undefined && row.threadId !== input.threadId) {
+      if (row.senderKey !== input.senderKey) return false;
+      const theirs = [...input.open.values()].filter((r) => r.senderKey === row.senderKey && r.kind === row.kind);
+      return namesItem(row, `${input.subject}\n${context}`, input.from) || (!move && theirs.length === 1 && settlesKind(row.kind, `${evidence}\n${context}`));
+    }
+    if (input.senderKey !== undefined && row.senderKey !== input.senderKey) return namesItem(row, context, input.from);
+    return true;
+  };
   // the fifth panel round: an item's new words, only quoted from this mail; an o item's alone (a promise's are yours)
   const newWords = (m: Move) => (m.text?.trim() && m.textEvidence && quoted(m.textEvidence) ? m.text.trim() : undefined);
   const settled = result.settled.flatMap((s) => {
     const row = input.open.get(s.label);
-    return row && quoted(s.evidence) ? [{ id: row.id, revision: row.revision }] : [];
+    return row && tiedTo(row, s.evidence, false) ? [{ id: row.id, revision: row.revision }] : [];
   });
   // after the panel: a new day for an open item, quoted, from this message's own day; one it settles isn't moved
   const settledIds = new Set(settled.map((s) => s.id));
@@ -171,7 +198,7 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
   const refused = (i: { kind: string; text: string; quote: string }) => (i.kind === "ask" || i.kind === "respond") && (asksForSecrets(i) || toAnother(i.quote, input.text, input.reader?.name ?? "", input.others));
   for (const m of result.moved ?? []) {
     const row = input.open.get(m.label);
-    if (!row || row.kind !== "ask" || settledIds.has(row.id) || !quoted(m.evidence)) continue;
+    if (!row || row.kind !== "ask" || settledIds.has(row.id) || !tiedTo(row, m.evidence, true)) continue;
     const request = { kind: "respond" as const, text: newWords(m) ?? row.text, quote: m.evidence, due: m.due, time: m.time };
     // revision 7: a request for credentials or an ID neither becomes one nor answers the ask, which stays as it was; nor
     // does one the mail addresses to another of its recipients (the seventh panel round)
@@ -182,7 +209,7 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
   }
   const moved = (result.moved ?? []).flatMap((m) => {
     const row = input.open.get(m.label);
-    if (!row || row.kind === "ask" || settledIds.has(row.id) || !quoted(m.evidence)) return [];
+    if (!row || row.kind === "ask" || settledIds.has(row.id) || !tiedTo(row, m.evidence, true)) return [];
     const timing = datedTiming({ kind: row.kind, due: m.due, time: m.time, arrivedAt: input.arrivedAt });
     // the fourth panel round (revision 5): a new moment on the same day moves it too ("the game is moved earlier to 8:00");
     // the same day with no time keeps the item's own; an untimed item's 9:00 is a default, so "at 9:00" gives it a time
@@ -192,13 +219,15 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     return [{ id: row.id, kind: row.kind, dueDay: timing.dueDay, dueAt: timing.dueAt, timed: timing.timed, actAt: timing.actAt, ...(text ? { text } : {}) }];
   });
   const rows: DatedWrite[] = [];
-  // a moved item keeps its id: the same kind on its new day isn't added again (Codex review of the fixes)
-  const seen = new Set<string>(moved.map((m) => itemKey(m.kind, m)));
+  // a moved item keeps its id: the same kind on its new day isn't added again (Codex review of the fixes), whatever its words
+  const movedKeys = new Set<string>(moved.map((m) => itemKey(m.kind, m)));
   // revision 2 of the fourth round: an ask with a day is an ask first (a person, to the reader), then the request it is
   const datedAsk = (i: { kind: string; due: string | null; quote: string }) => i.kind === "ask" && !!i.due && askAllowed(i.quote, said, input.text, input);
   const candidates = [...answered, ...result.items].filter((i) => !refused(i));
-  // the eval: a person's request with a day is the `respond`, never also an undated ask beside it
-  const requested = candidates.some((i) => (i.kind === "respond" || datedAsk(i)) && quoted(i.quote));
+  // the eval: a person's request with a day is the `respond`, never also an undated ask beside it for the same thing; an ask
+  // about something else stays (plan 210, the Codex review of iteration 1, revision 3)
+  const requests = candidates.filter((i) => (i.kind === "respond" || datedAsk(i)) && quoted(i.quote));
+  const requested = (ask: { text: string; quote: string }) => requests.some((r) => sameThing(r, ask, sentences));
   // the fourth panel read: a person who says no answer is needed ("No need to reply now") asks nothing
   const noReply = saysNoReplyNeeded(input.text);
   for (const item of candidates) {
@@ -207,20 +236,21 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     // an ask is never a dated kind's substitute: one with a day is a request with a day, if it's an ask at all
     if (item.kind === "ask" && item.due && !datedAsk(item)) continue;
     const kind = (item.kind === "ask" && item.due ? "respond" : item.kind) as DatedKind;
-    if (kind === "ask" && (requested || noReply || !askAllowed(item.quote, said, input.text, input))) continue;
+    if (kind === "ask" && (requested(item) || noReply || !askAllowed(item.quote, said, input.text, input))) continue;
     const timing = datedTiming({ kind, due: item.due, time: item.time, arrivedAt: input.arrivedAt });
     if (!timing) continue;
     // the 14-day check keeps nothing already over (§6)
     if (input.fromScan && timing.dated && dayEnd(timing.dueDay) <= input.now) continue;
     const key = itemKey(kind, timing);
-    if (seen.has(key)) continue;
-    seen.add(key);
+    if (movedKeys.has(key)) continue;
+    if (rows.some((r) => itemKey(r.kind, r) === key && (!TWO_A_DAY.has(kind) || sameThing(r, item, sentences)))) continue;
     rows.push({ kind, item: rows.length, text: item.text.trim(), quote: item.quote.trim(), ...timing });
   }
   // a promise of yours: its day from this message (the person you made it to), as follow-ups place a dated promise
   const movedPromises = (result.moved ?? []).flatMap((m) => {
     const p = input.promises?.get(m.label);
-    const day = p && quoted(m.evidence) ? validFollowupDate(m.due, input.arrivedAt) : null;
+    // offered only to the person it was made to, in its conversation: tied by its words and the day they say
+    const day = p && tiedTo(null, m.evidence, true) ? validFollowupDate(m.due, input.arrivedAt) : null;
     return p && day ? [{ id: p.id, revision: p.revision, dueAt: followupDue({ kind: "promise", sentAt: input.arrivedAt, due: day, nudgeAfterDays: 0 }).dueAt }] : [];
   });
   return { rows, settled, moved: moved.map(({ kind: _kind, ...m }) => m), movedPromises };
@@ -458,7 +488,7 @@ export class DatedWorker {
       const now = this.host.now();
       // only what was really sent, after fitting to the window, may be named back (Codex review)
       const sent = new Set(input.open.map((o) => o.label));
-      const checked = checkDates(result, { text, subject: src.subject, arrivedAt: src.date, open: new Map([...labels].filter(([l]) => sent.has(l))), promises: new Map([...promises].filter(([l]) => sent.has(l))), fromScan, now, sender: { person: src.person }, reader, others });
+      const checked = checkDates(result, { text, subject: src.subject, arrivedAt: src.date, open: new Map([...labels].filter(([l]) => sent.has(l))), promises: new Map([...promises].filter(([l]) => sent.has(l))), fromScan, now, sender: { person: src.person }, reader, others, threadId: src.threadId, senderKey: src.senderKey, from: input.from.name });
       const outcome = await store.dated.finish({ messageId: src.id, threadId: src.threadId, fromScan, rows: checked.rows, settled: checked.settled, moved: checked.moved, movedPromises: checked.movedPromises, now, model: ai.model, provider: ai.providerId, promptVersion: DATED_PROMPT_VERSION, clearGeneration });
       this.attempts.delete(src.id);
       // a merge moved it under the request: read again on its new thread (revision 6)
