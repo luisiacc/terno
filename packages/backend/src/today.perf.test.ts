@@ -85,6 +85,36 @@ async function severalPerThread(store: MailStore, accountId: number, now: number
   while (!(await store.facts.idle())) await store.facts.backfill({ limit: 5000 });
 }
 
+/**
+ * The seventh panel round (revision 12): conversations waiting on you in the Inbox, each with a Plan today, a bill Soon and
+ * a person's ask, so every group's ranking and the count's uncounted path (a waiting conversation that's Today's Plan) run
+ * at the bound. Among the soonest, as above.
+ */
+const MIXED = 50;
+
+async function mixedPerThread(store: MailStore, accountId: number, now: number) {
+  const me = { name: "Me", email: "me@perf.test" };
+  const who = (i: number) => ({ name: `Client ${i}`, email: `client${i}@mixed.test` });
+  const sent = Array.from({ length: MIXED }, (_, i) => msg({ accountId, from: me, to: [who(i)], isSent: true, isRead: true, inInbox: false, listId: null, providerMsgId: `mixed-${i}-out`, providerThreadId: `mixed-${i}`, subject: `Visit ${i}`, date: now - 7_200_000 - i, bodyText: "See you then." }));
+  const came = Array.from({ length: MIXED }, (_, i) => msg({ accountId, from: who(i), to: [me], isRead: false, listId: null, providerMsgId: `mixed-${i}-in`, providerThreadId: `mixed-${i}`, subject: `Re: Visit ${i}`, date: now - 3_600_000 - i, bodyText: "The visit is on Monday at 3:00; the invoice is due Friday. Could you confirm the address?" }));
+  // not marked for the follow-ups reader: nothing reads in the background while the gate measures
+  await store.sync.ingest(sent, { applyFilters: false, now, classifier: null });
+  const ins = (await store.sync.ingest(came, { applyFilters: false, now, classifier: null, datedMail: { since: null } })).inserted;
+  expect(ins.length).toBe(MIXED);
+  // three hours after the bound's moment: Today's there
+  const visit = now + 2 * DAY + 3 * 3_600_000;
+  for (let i = 0; i < MIXED; i++) {
+    const src = (await store.dated.source(ins[i]!))!;
+    const rows = [
+      { kind: "event" as const, item: 0, text: "The visit", quote: "The visit is on Monday at 3:00", dueDay: todayKey(visit), dueAt: visit, timed: true, dated: true, actAt: now + 30_000 + i },
+      { kind: "pay" as const, item: 1, text: "Pay the invoice", quote: "the invoice is due Friday", dueDay: todayKey(now + 5 * DAY), dueAt: now + 5 * DAY, timed: false, dated: true, actAt: now + 30_000 + i },
+      { kind: "ask" as const, item: 2, text: "Confirm the address", quote: "Could you confirm the address?", dueDay: todayKey(src.date), dueAt: src.date, timed: false, dated: false, actAt: now + 30_000 + i },
+    ];
+    expect(await store.dated.finish({ messageId: ins[i]!, threadId: src.threadId, fromScan: false, rows, settled: [], now, model: "m", provider: "p", promptVersion: 1, clearGeneration: store.dated.clearGeneration() })).toBe("written");
+  }
+  while (!(await store.facts.idle())) await store.facts.backfill({ limit: 5000 });
+}
+
 async function run(kind: "SQLite" | "IndexedDB", budget: { spread: Gate; bound: Gate; needs: Gate; busyMs: number }) {
   const platform = { uuid: () => crypto.randomUUID(), yield: () => new Promise<void>((resolve) => setImmediate(resolve)) };
   let store: MailStore | undefined;
@@ -109,6 +139,7 @@ async function run(kind: "SQLite" | "IndexedDB", budget: { spread: Gate; bound: 
     await seedDatedItems({ store: backend.store, accountId, now: NOW, budget: MULT, log: () => {} });
     // the soonest stay at the bound: these take the place of the furthest SEVERAL * 2 of those
     await severalPerThread(backend.store, accountId, NOW);
+    await mixedPerThread(backend.store, accountId, NOW);
     await client.call("settings.update", { dated: { enabled: true }, followups: { enabled: true } });
     // a turn between calls, as between two requests: the store answers synchronously on SQLite
     const turn = () => new Promise<void>((resolve) => setImmediate(resolve));
@@ -146,13 +177,15 @@ async function run(kind: "SQLite" | "IndexedDB", budget: { spread: Gate; bound: 
     };
     // as a mailbox has them: the items spread over the coming weeks, a few for today, the rest Coming up
     await measure("spread", NOW, budget.spread);
-    // the bound: every item's time to act has come, and the list holds all 1,000, a conversation once (each of SEVERAL
-    // with its next item said beside it)
+    // the bound: every item's time to act has come, and the list holds all 1,000, a conversation once (each of SEVERAL and
+    // MIXED with its next item said beside it; each of MIXED Today's Plan)
     clock.now = NOW + 2 * DAY;
     backend.today.touched();
-    const all = (await client.call("today.list", { heldIds: [] })).sections.flatMap((x) => x.items);
-    expect(all.length).toBeGreaterThanOrEqual(1000 - SEVERAL);
-    expect(all.filter((i) => i.also).length).toBe(SEVERAL);
+    const listed = await client.call("today.list", { heldIds: [] });
+    const all = listed.sections.flatMap((x) => x.items);
+    expect(all.length).toBeGreaterThanOrEqual(1000 - SEVERAL - 2 * MIXED);
+    expect(all.filter((i) => i.also).length).toBe(SEVERAL + MIXED);
+    expect(listed.sections.find((x) => x.kind === "today")?.items.filter((i) => i.why.item?.kind === "event").length).toBe(MIXED);
     await measure("all showing", NOW + 2 * DAY, budget.bound);
     // plan 204, the second panel round: Needs you full (NEEDS_WALK conversations), each on the tighter rule's slowest
     // path: a snippet that starts like a thanks (its body read), a body that says more, a current summary to parse
