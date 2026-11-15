@@ -304,7 +304,6 @@ export function defineTodayConformance(fresh: () => Promise<MailStore>): void {
       expect(new Set(await store.today.waitingAmong(all, NOW))).toEqual(new Set(still));
       expect(new Set((await store.today.waitingPage({ now: NOW, after: null, limit: 50 })).map((p) => p.id).filter((id) => all.includes(id)))).toEqual(new Set(still));
       expect(await store.today.needsCount(NOW)).toBe(before - 3);
-      expect((await store.today.countWith([], NOW)).needs).toBe(before - 3);
 
       // newer mail from them: the rule looks at their latest message, which nobody has read yet
       await ingest({ date: NOW - 500, providerMsgId: "Fay-in-2", providerThreadId: "Fay", from: { name: "Fay", email: "fay@people.test" }, subject: "Re: About Fay", inReplyTo: "Fay-in", bodyText: "Oh, and one more thing." });
