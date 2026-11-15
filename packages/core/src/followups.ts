@@ -135,9 +135,17 @@ export function validFollowupDate(due: string | null | undefined, sentAt: number
   return day.getTime() >= sent && day.getTime() <= limit.getTime() ? due : null;
 }
 
-/** The thread's most urgent, for a row: due first, soonest first. */
-export function mostUrgent<T extends Pick<FollowupRow, "state" | "dueAt" | "id">>(rows: readonly T[]): T | undefined {
-  return [...rows].sort((a, b) => (a.state === "due" ? 0 : 1) - (b.state === "due" ? 0 : 1) || a.dueAt - b.dueAt || a.id - b.id)[0];
+type Urgency = Pick<FollowupRow, "state" | "dueAt" | "id"> & { deferredUntil?: number | null };
+
+/**
+ * Due first, then the soonest to wake (`followupWakeAt`: a promise's Later counts). One order for the follow-ups list's
+ * threads and a row's line (Codex code review of plan 204's fifth round): a thread placed by one promise shows that one.
+ */
+export const byUrgency = (a: Urgency, b: Urgency): number => (a.state === "due" ? 0 : 1) - (b.state === "due" ? 0 : 1) || followupWakeAt(a) - followupWakeAt(b) || a.id - b.id;
+
+/** The thread's most urgent, for a row (`byUrgency`). */
+export function mostUrgent<T extends Urgency>(rows: readonly T[]): T | undefined {
+  return [...rows].sort(byUrgency)[0];
 }
 
 /** Whole days since it was sent, for "hasn't replied in 5 days": 0 until a full day has passed (plan 161: "yet", never "in 1 day" minutes after). */
