@@ -44,7 +44,7 @@ interface Case {
 const ONLY = process.env.TERNO_AI_DATED_CASES?.split(",").filter(Boolean);
 /** TERNO_AI_DATED_REPEAT: each case read this many times, to measure how often a reading goes wrong (the sixth panel round's soccer game) */
 const REPEAT = Math.max(1, Number(process.env.TERNO_AI_DATED_REPEAT ?? 1));
-const CASES: Case[] = readFileSync(join(import.meta.dirname, "corpus", "dated", "dated.jsonl"), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line) as Case).filter((c) => !ONLY || ONLY.includes(c.id)).flatMap((c) => Array.from({ length: REPEAT }, () => c));
+const CASES: Case[] = readFileSync(join(import.meta.dirname, "corpus", "dated", "dated.jsonl"), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line) as Case).filter((c) => !ONLY?.length || ONLY.includes(c.id)).flatMap((c) => Array.from({ length: REPEAT }, () => c));
 const MODEL = process.env.TERNO_AI_DATED_MODEL ?? "gpt-6-luna";
 const TARGET: RealTarget = { provider: MODEL.startsWith("claude-") ? "anthropic" : "openai", model: MODEL };
 const LANGUAGE = process.env.TERNO_AI_DATED_LANGUAGE ?? "en";
