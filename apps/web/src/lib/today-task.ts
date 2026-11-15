@@ -1,5 +1,5 @@
 import type { FollowupRow } from "@terno/core";
-import { focusedFeedItem, useFeedCursor } from "~/lib/feed-focus";
+import { focusedFeedItem, focusFeedItem, useFeedCursor } from "~/lib/feed-focus";
 import { leaveRows, type LeftRows } from "~/lib/actions";
 import { actOnDated, actOnTask, type DatedRef, type TodayTask } from "~/lib/dated";
 import { actOnFollowup } from "~/lib/followups";
@@ -55,6 +55,13 @@ export function doneOnSelected(): boolean {
   if (id === null || s.scope || (s.checked.size > 0 && !(s.checked.size === 1 && s.checked.has(id)))) return false;
   const task = useToday.getState().tasks.get(id);
   if (!task) return false;
+  // (Codex code review, round 2) the keyboard on another item than the open one: it goes on to the item after it (else
+  // the one before), as the open one would, so a second D is that one's, never the open conversation's
+  const focused = id !== s.selectedId && focusedFeedItem() === id;
+  const { items, index } = useList.getState();
+  const at = index.get(id);
+  const next = focused && at !== undefined ? (items[at + 1] ?? items[at - 1])?.id : undefined;
   void actOnTodayRow(id, task, "done");
+  if (next !== undefined) requestAnimationFrame(() => focusFeedItem(next));
   return true;
 }

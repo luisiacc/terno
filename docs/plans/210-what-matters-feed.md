@@ -260,3 +260,12 @@ Not changed, and why:
 - **11. A conversation on two history pages when its newest closing is from a sender untrusted later**: plan 210's known limit (an item stored before the sender guard); very rare, and the line it shows is true.
 
 Also from the run: test:all's two visual baselines (Settings → General, en and es) were updated for plan 210's own rows ("Show What matters", "Show finished items"); the apps/site render test fails as on the base (unrelated); the Today perf gate's "spread: added" was 2.6 ms against 2 under a load of 11 and 1.5 alone.
+
+**Round 2** (`/tmp/terno-scratch/p204/ui-variants/review-feed-2.out`): four findings on the fixes, all fixed with tests:
+
+1. D on an item other than the open one left the keys nowhere, so a second D finished the open conversation: the keys go on to the item after it (else before), as the open one would (e2e).
+2. An item drawn in the overscan, past the feed's edge, was focused out of sight: `focusFeed` brings the item into view whether it's drawn or not (unit, `feed-focus.test.ts`).
+3. F6 into the feed lost its ring: only the app's answers to a key (Esc, the reader's Close, j/k) clear it; F6 and the skip link keep it (unit).
+4. Two timed items put off to the same day went by their original moments: a day's timed rows go by their time of day, in the backend and in the renderer's merge (backend test with a 6:00 PM item due a day before a 1:00 PM one).
+
+Two rounds, the cap.

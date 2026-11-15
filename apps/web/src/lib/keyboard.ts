@@ -59,7 +59,7 @@ function followCursor(id: number, before: Element | null): void {
     if (listShown && before && before !== document.body && !before.closest("[data-list-section]")) focusRows();
     // plan 210 (Codex code review): the feed's items are buttons of their own: the keys go with the item j/k opened, so
     // Enter and D are that one's
-    else if (getApp().today && before?.closest("[data-testid=wm-feed]")) requestAnimationFrame(() => getApp().selectedId === id && focusFeed());
+    else if (getApp().today && before?.closest("[data-testid=wm-feed]")) requestAnimationFrame(() => getApp().selectedId === id && focusFeed({ quiet: true }));
     return;
   }
   const said = useList.getState().items.find((t) => t.id === id);

@@ -298,6 +298,8 @@ test("an item: one sentence, when in its column, who under it; its conversation 
     await page.keyboard.press("d");
     await expect(page.getByTestId("snack")).toContainText("Done: Pay the rent");
     await expect(openLine(page, "Wire payroll")).toHaveAttribute("data-open", "true");
+    // round 2: the keys go on to another item, never nowhere (a second D would have been the open one's)
+    await expect.poll(() => page.evaluate(() => document.activeElement?.getAttribute("data-testid"))).toBe("wm-item-open");
     await page.keyboard.press("z");
     await expect(openLine(page, "Pay the rent")).toBeVisible();
     // j opens the next item and the keys go with it: Enter and D are that one's

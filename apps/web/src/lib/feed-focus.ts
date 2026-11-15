@@ -14,11 +14,14 @@ export const useFeedCursor = create<{ id: number | null }>(() => ({ id: null }))
 /** An item's own control in the feed (the digest's too, which has no conversation), if it's drawn. */
 const itemButton = (id: number): HTMLElement | null => document.querySelector<HTMLElement>(`[data-testid=wm-feed] [data-item-id="${id}"] [data-testid=wm-item-open]`);
 
-/** The keys on an item the app moved them to: quietly, and with no ring (plan 54: never after a key the app answered). */
-function land(el: HTMLElement | null): void {
+/**
+ * The keys on an item the app moved them to, quietly. `quiet`: after a key the app answered (Esc, the reader's Close, j/k)
+ * no ring (plan 54); F6 and the skip link move as Tab does, and keep it (Codex code review, round 2).
+ */
+function land(el: HTMLElement | null, quiet: boolean): void {
   if (!el) return;
   focusQuietly(el);
-  hideFocusRing();
+  if (quiet) hideFocusRing();
 }
 
 /**
@@ -27,30 +30,32 @@ function land(el: HTMLElement | null): void {
  * One the feed has scrolled out of its drawn window is brought into view first (Codex code review). False when the feed
  * has no item.
  */
-export function focusFeed(): boolean {
+export function focusFeed(o: { quiet?: boolean } = {}): boolean {
+  const quiet = o.quiet === true;
   const id = getApp().selectedId ?? useFeedCursor.getState().id;
   const first = () => document.querySelector<HTMLElement>("[data-testid=wm-feed] [data-testid=wm-item-open]");
-  const el = id === null ? first() : itemButton(id);
-  if (el) {
-    land(el);
-    return true;
-  }
   const index = id === null ? undefined : useList.getState().index.get(id);
   if (id === null || index === undefined) {
-    land(first());
+    land(first(), quiet);
     return first() !== null;
   }
+  // in view first, drawn or not: a drawn one may be in the overscan, past the edge (Codex code review, round 2)
   listScroller.scrollToIndex?.(index);
+  const el = itemButton(id);
+  if (el) {
+    land(el, quiet);
+    return true;
+  }
   // drawn once the feed has measured its window (two frames: the scroll, then the rows it brings)
-  requestAnimationFrame(() => requestAnimationFrame(() => land(itemButton(id) ?? first())));
+  requestAnimationFrame(() => requestAnimationFrame(() => land(itemButton(id) ?? first(), quiet)));
   return true;
 }
 
-/** The item put away has the keys again (once the feed has drawn it: a frame more while it's being drawn). */
+/** The item put away has the keys again (once the feed has drawn it: a frame more while it's being drawn), with no ring. */
 export function focusFeedItem(id: number): void {
   const el = itemButton(id);
-  if (el) land(el);
-  else requestAnimationFrame(() => land(itemButton(id)));
+  if (el) land(el, true);
+  else requestAnimationFrame(() => land(itemButton(id), true));
 }
 
 /**
