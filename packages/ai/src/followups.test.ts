@@ -27,8 +27,17 @@ describe("reading what you sent (plan 142)", () => {
     expect(es).toContain('"enviar a Tom el contrato", "llamar a Marcus a las 16:00", never just "llamar"');
   });
 
+  it("prompt v10 (plan 204's seventh panel round): undertaking something, alone or for the team, is a promise; reporting someone's or a team's plan isn't", () => {
+    const en = readSentMailTask(input()).system;
+    expect(en).toContain('What they undertake themselves, alone or for their team, is a promise: "I\'ll send it Friday", "we\'ll send it Friday", "we\'ll look into it", "de nuestra parte enviamos el contrato el lunes".');
+    expect(en).toContain('or a plan, theirs or a team\'s, that they tell about without taking it on ("our plan is to email him the draft", "Legal will prepare the documentation", "el equipo va a revisar los precios")');
+    // replaced, not added to: v9 took any "vamos a revisar" and any list headed "de nuestra parte" as theirs
+    expect(en).not.toContain('What they take on is: "de nuestra parte", "vamos a revisar"');
+    expect(en).toContain('When they list several things they undertake, note each one as its own promise');
+  });
+
   it("is frozen at its version: a change to the words is a new version", () => {
-    expect(FOLLOWUP_PROMPT_VERSION).toBe(9);
+    expect(FOLLOWUP_PROMPT_VERSION).toBe(10);
     expect(readSentMailTask(input()).system).toMatchSnapshot();
   });
 
@@ -48,8 +57,8 @@ describe("reading what you sent (plan 142)", () => {
   });
 
   it("a small window holds the whole conversation with the server: a bad answer and its repair still fit", async () => {
-    // v9's words (what, to whom and when in a promise's text) need a little over 2,000
-    const window = 2100;
+    // v10's words (what, to whom and when in a promise's text; an undertaking against a plan reported) need a little over 2,100 (v9 2,000)
+    const window = 2200;
     const budget = followupBudget(window);
     const fitted = fitSentMail(input({ ownText: "o".repeat(6000), answering: "a".repeat(3000), outputTokens: budget.outputTokens }), budget.promptChars);
     const sizes: number[] = [];
