@@ -582,3 +582,22 @@ Not this round: one card for the conversation's items (the date line, the promis
 ### Revisions after the Codex code review of the fifth round
 
 - **The promise's Later (`/tmp/terno-scratch/p204/review-10.out`, 2 points, each with a test that fails without it):** an undated promise put off until before its own moment wakes Today when its Later ends (`nextTodayChange` considers `deferredUntil` before the undated branch's `continue`), so its waiting conversation and the counts come back on time; and one urgency order, `byUrgency` in `@terno/core` (due first, then `followupWakeAt`), sorts the follow-ups list's threads in the backend and picks a row's promise in the renderer (`mostUrgent`, under `rowLine` and `useOwed`), so a thread placed by promise B never shows put-off promise A's words and day.
+
+
+## The UI experiment (2026-11-14)
+
+> right now the experience is the same ui as the inbox, what if we go with a chat-like ui but you can't write to it, each message is short explaining what it is, with a small button to go to that email thread (it would open right there as a side panel on the right)
+
+Two ways to draw the same Today, behind one temporary switch, the list staying the default, for the panel to compare. **An experiment:** nothing here is decided, and whichever loses goes.
+
+- **The switch.** `lib/what-matters-look.ts`: `?wm=list|chat|brief` for one load (what the panel's screenshots use), else Settings → Dev's "Today's layout (experiment)" kept on this machine, else the list.
+- **The same data and acts.** The feed (`components/what-matters/feed.tsx`) draws the list's own rows (`useList`: the order, held rows, the digest's place) with Today's maps (each row's group and task, and now its item, `useToday.entries`). So j/k, D, the right-click menu (`ThreadMenu` around it), Done's Undo, Later's presets, Coming up's toggle and every reload behave as on the list. Nothing in the list or its rows changed.
+- **The sentences** (`lib/today-sentence.ts`, en and es): made here from the item's kind, words, day and Missed, no model. The item's words are placed in a frame that says only what's known ("{text}, due Monday.", "{text}. It was due Wednesday.", "You said you'd {text} today.", "Tomorrow at 7:40 AM: {text}.", an alert "{text}, the email says. The deadline is Monday."); an ask, an undated alert or anything without a day is its words alone; no words, the subject.
+- **Where the conversation opens.** In Split, with nothing open, the feed takes the reader's room as well (its column centred); an item opened comes in on the right as the reader always does, the feed narrowing to the list's width with the open item kept in view; Esc puts it away (back on the item). Today as a feed opens nothing by itself. In List, an item opens as its page, as a row does.
+- **A, chat (the owner's).** A note per item on the AI card's surface (a chat bubble's corner), its sentence, the conversation's next item under it, a small "Open email" button and a "More" menu with Done (D), Later (presets, a moment of your own) and Not a task. Who and when sit under the note, as a chat's time. Groups are a quiet line between hairlines ("3 things you missed", "8 things due soon"), a heading to a screen reader (BoardUI's labelled divider, ported as `SeparatorLabel`). It ends with "That's everything for now." No input, nothing to answer.
+- **B, briefing.** The list's section names over a hairline, one sentence an item, "sender · day" quietly under it; the whole item opens it; Done and Later on hover, on focus and on the open item.
+
+**Tests.** `today-sentence.test.ts` (en and es: bills, renewals, expiries, alerts, Plans, asks, promises, waiting, nudges, reminders, no words); `what-matters-looks.spec.ts` (chat and brief: the sentence, nothing opened by itself, open beside the feed and Esc, D and z, axe in light and dark); the panel's capture ran axe on every persona's feeds in both modes, all clean.
+
+**Left as it is, being an experiment:** search (/) has no field in the feed; the feed's render counts aren't asserted by a perf gate; the briefing keeps room for its two controls on every item.
+
