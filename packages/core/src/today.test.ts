@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { aiFeaturesAvailable, nextPrepareAt, prepareTimeToday, todayKey } from "./today";
+import { aiFeaturesAvailable, dayTier, inDayOrder, nextPrepareAt, prepareTimeToday, todayKey, type TodayWhy } from "./today";
 
 const settings = (provider: string, over = {}) => ({ ai: { provider, model: "m", needsKey: false, hasKey: false, keyConfirmed: false, keyUnreadable: false, keys: {}, ...over } }) as never;
 
@@ -51,5 +51,41 @@ describe("when it's prepared", () => {
       const d = new Date(at);
       expect([d.getHours(), d.getMinutes()]).toEqual([8, 0]);
     }
+  });
+});
+
+describe("one order inside a day (plan 210, iteration 1)", () => {
+  const at = (d: number, h: number, m = 0) => new Date(2026, 10, d, h, m).getTime();
+  const dated = (kind: NonNullable<TodayWhy["item"]>["kind"], dueAt: number, timed = false): TodayWhy => ({ kind: "dated", dueAt, item: { id: dueAt, revision: 0, kind, dueDay: "2026-11-18", timed, dated: true } });
+  const named = new Map<TodayWhy, string>();
+  const as = (name: string, why: TodayWhy) => (named.set(why, name), why);
+  const sorted = (rows: TodayWhy[], clock = false) => [...rows].sort((a, b) => inDayOrder(a, b, clock)).map((w) => named.get(w));
+
+  it("tasks, your promises, people, your reminders, then plans and deliveries", () => {
+    expect([dated("pay", 0), dated("respond", 0), dated("alert", 0)].map(dayTier)).toEqual([0, 0, 0]);
+    expect(dayTier({ kind: "promise" })).toBe(1);
+    expect([dayTier(dated("ask", 0)), dayTier({ kind: "waiting" })]).toEqual([2, 2]);
+    expect(dayTier({ kind: "reminder" })).toBe(3);
+    expect([dayTier(dated("event", 0)), dayTier(dated("delivery", 0))]).toEqual([4, 4]);
+  });
+
+  it("the timed first by their time inside a tier; people as they came; a day ahead's timed by their time of day", () => {
+    const rows = [
+      as("lunch 12:30", dated("event", at(18, 12, 30), true)),
+      as("parcel", dated("delivery", at(18, 0))),
+      as("ask", dated("ask", at(17, 9))),
+      as("waiting", { kind: "waiting" }),
+      as("promise", { kind: "promise", dueAt: at(18, 0) }),
+      as("rent", dated("pay", at(18, 0))),
+      as("payroll 13:00", dated("respond", at(18, 13), true)),
+      as("reminder", { kind: "reminder", dueAt: at(18, 9) }),
+      as("breakfast 9:00", dated("event", at(18, 9), true)),
+    ];
+    expect(sorted(rows)).toEqual(["payroll 13:00", "rent", "promise", "ask", "waiting", "reminder", "breakfast 9:00", "lunch 12:30", "parcel"]);
+    // Today: a plan still on from last night first; a day ahead: by the time of day (two put off to it from other days)
+    const lastNight = as("last night 23:00", dated("event", at(17, 23), true));
+    const morning = as("morning 8:00", dated("event", at(18, 8), true));
+    expect(sorted([morning, lastNight])).toEqual(["last night 23:00", "morning 8:00"]);
+    expect(sorted([lastNight, morning], true)).toEqual(["morning 8:00", "last night 23:00"]);
   });
 });

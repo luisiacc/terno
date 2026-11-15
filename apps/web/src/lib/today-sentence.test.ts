@@ -48,10 +48,11 @@ describe("todaySentence (en)", () => {
     expect(todaySentence(dated("pay", "  ", 16))).toBe("Your statement is ready.");
   });
 
-  it("plan 210's groups by day set the weight: Missed and Today's dated items strong; what's undated in Today, a day ahead and Coming up quiet", () => {
+  it("plan 210's groups by day set the weight: Missed and Today's dated tasks strong; what's undated in Today, its plans, a day ahead and Coming up quiet", () => {
     expect(todayWhen(dated("pay", "Pay", 13), NOW, "today")).toEqual({ text: "Today", tone: "today" });
-    // a Plan still on from last night is Today's
-    expect(todayWhen(dated("event", "Party", 12, { timed: { h: 23, m: 0 } }), NOW, "today").tone).toBe("today");
+    // a Plan still on from last night is Today's, drawn quietly under the day's tasks (plan 210, iteration 1), as a delivery is
+    expect(todayWhen(dated("event", "Party", 12, { timed: { h: 23, m: 0 } }), NOW, "today").tone).toBe("later");
+    expect(todayWhen(dated("delivery", "Parcel", 13), NOW, "today").tone).toBe("later");
     // what has no date sits in Today, its column saying when it came, quietly (the owner: so it isn't read as due today)
     expect(todayWhen(dated("alert", "Card frozen", 10, { dated: false }), NOW, "today")).toEqual({ text: "since Nov 1", tone: "none" });
     expect(todayWhen(dated("ask", "Answer Owen", 13, { dated: false }), NOW, "today")).toEqual({ text: "since Nov 1", tone: "none" });
