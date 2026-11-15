@@ -728,7 +728,7 @@ export class TodayService {
     if (!(await this.available(settings))) return { items: [], next: null };
     const placed = o.placed ?? (await this.places(now, settings));
     const exclude = new Set([...placed.map((p) => p.threadId), ...o.heldIds]);
-    return historyPage(store, { now, after: o.after, through: o.through ?? null, limit: o.limit ?? HISTORY_PAGE, exclude, dated: settings.dated?.enabled === true, promises: settings.followups?.enabled === true });
+    return historyPage(store, { now, after: o.after, through: o.through ?? null, limit: o.limit ?? HISTORY_PAGE, exclude, dated: settings.dated?.enabled === true, promises: settings.followups?.enabled === true, yieldTurn: () => this.b.yieldTurn(), sliceMs: this.b.options.sliceBudgetMs });
   }
 
   async list(heldIds: readonly number[], ask: { history?: { through: HistoryKey | null } } = {}): Promise<TodayList> {

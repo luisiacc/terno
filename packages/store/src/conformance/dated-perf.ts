@@ -10,11 +10,11 @@ const SENDERS = 10;
  * Plan 204's open set at its bound in a 50k+ mailbox: 1,000 received messages from ten senders, each with one open item,
  * written as the worker writes them (marked by ingest, then a finish each). Archived mail, so nothing else's view changes.
  */
-export async function seedDatedItems(o: WorkloadMailbox): Promise<{ id: number; thread: number; senderKey: string; date: number }[]> {
+export async function seedDatedItems(o: WorkloadMailbox, round = 0): Promise<{ id: number; thread: number; senderKey: string; date: number }[]> {
   const { store, accountId } = o;
   const out: { id: number; thread: number; senderKey: string; date: number }[] = [];
   for (let slice = 0; slice < DATED_ACTIVE_MAX / 100; slice++) {
-    const batch = Array.from({ length: 100 }, (_, i) => msg({ accountId, from: { name: "Biller", email: `biller${(slice * 100 + i) % SENDERS}@perf.test` }, to: [{ name: "Me", email: "me@perf.test" }], inInbox: false, providerMsgId: `dated-${slice}-${i}`, subject: `Bill ${slice}-${i}`, date: o.now - 10_000 - slice * 100 - i, bodyText: "Due on the 20th" }));
+    const batch = Array.from({ length: 100 }, (_, i) => msg({ accountId, from: { name: "Biller", email: `biller${(slice * 100 + i) % SENDERS}@perf.test` }, to: [{ name: "Me", email: "me@perf.test" }], inInbox: false, providerMsgId: round ? `dated-r${round}-${slice}-${i}` : `dated-${slice}-${i}`, subject: `Bill ${round}-${slice}-${i}`, date: o.now - 10_000 - round * 1000 - slice * 100 - i, bodyText: "Due on the 20th" }));
     const r = await store.sync.ingest(batch, { applyFilters: false, now: o.now, classifier: null, datedMail: { since: null } });
     for (const id of r.inserted) {
       const src = (await store.dated.source(id))!;
@@ -60,17 +60,27 @@ export async function measureDated(o: WorkloadMailbox): Promise<void> {
   expect(thread).toBeLessThanOrEqual(5 * o.budget);
   expect(source).toBeLessThanOrEqual(5 * o.budget);
 
-  // plan 210: What matters' history pages through the closed rows by closing time. The thousand closed, a minute apart
-  // (a heavy quarter's closings, each on its own conversation): its first page, a deep one, and each thread's newest
-  // closing for a page's conversations, as the history reads them
-  for (const [n, { id }] of (await store.dated.active()).entries()) {
-    const row = (await store.dated.get(id))!;
-    await store.dated.update(row.id, row.revision, { state: n % 4 ? "done" : "dismissed", closedReason: "user", closedAt: o.now - n * 60_000 });
+  // plan 210: What matters' history pages through the closed rows by closing time. Twenty thousand closed within the keep
+  // (the thousand open, closed, twenty times: far past a heavy quarter, each on its own conversation): its first page, a
+  // deep one, and each thread's newest closing for a page's conversations, as the history reads them
+  const CLOSED_ROUNDS = 20;
+  let closed = 0;
+  const closeAll = async () => {
+    for (const { id } of await store.dated.active()) {
+      const row = (await store.dated.get(id))!;
+      await store.dated.update(row.id, row.revision, { state: closed % 4 ? "done" : "dismissed", closedReason: "user", closedAt: o.now - closed * 60_000 });
+      closed++;
+    }
+  };
+  await closeAll();
+  for (let round = 1; round < CLOSED_ROUNDS; round++) {
+    await seedDatedItems(o, round);
+    await closeAll();
   }
   const since = o.now - 90 * 86_400_000;
-  const all = await store.dated.closedPage({ since, after: null, limit: DATED_ACTIVE_MAX });
-  expect(all).toHaveLength(DATED_ACTIVE_MAX);
-  const deepKey = { at: all[900]!.closedAt!, id: all[900]!.id };
+  const all = await store.dated.closedPage({ since, after: null, limit: CLOSED_ROUNDS * DATED_ACTIVE_MAX });
+  expect(all).toHaveLength(CLOSED_ROUNDS * DATED_ACTIVE_MAX);
+  const deepKey = { at: all[19_000]!.closedAt!, id: all[19_000]!.id };
   const first = await timed(40, () => store.dated.closedPage({ since, after: null, limit: 100 }));
   const deep = await timed(40, () => store.dated.closedPage({ since, after: deepKey, limit: 100 }));
   const threads = all.slice(0, 100).map((r) => r.threadId);
