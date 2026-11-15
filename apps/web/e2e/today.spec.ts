@@ -1050,6 +1050,69 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       await expect(row(page, "Rebranding")).toHaveCount(0);
     });
 
+    /** the fifth panel round: Jess's draft and her board meeting, from one mail */
+    const jess = () => row(page, "Send Jess your draft");
+    await scenario("the fifth panel round: a conversation's next item on the row's second line, D on its own; an alert with no day says none", async () => {
+      const store = server.backend.store;
+      // written as the reader would (the demo model gives one mail's items one text, its subject)
+      const m = await received(server, "board-1", { name: "Jess Okafor", email: "jess@board.test" }, "Board meeting", "Board meeting is locked: Monday at 9:00. Could you send me your draft by Saturday?", false);
+      await store.dated.marks.queueScan([m.id], E2E_NOW);
+      const DAY = 86_400_000;
+      const saturday = new Date(2026, 9, 24, 9, 0).getTime();
+      const meeting = new Date(2026, 9, 26, 9, 0).getTime();
+      const rows = [
+        { kind: "respond" as const, item: 0, text: "Send Jess your draft", quote: "send me your draft by Saturday", dueDay: "2026-10-24", dueAt: saturday, timed: false, dated: true, actAt: saturday - 7 * DAY },
+        { kind: "event" as const, item: 1, text: "Board meeting", quote: "Board meeting is locked", dueDay: "2026-10-26", dueAt: meeting, timed: true, dated: true, actAt: meeting - DAY },
+      ];
+      expect(await store.dated.finish({ messageId: m.id, threadId: m.thread_id, fromScan: true, rows, settled: [], now: E2E_NOW, model: "demo", provider: "fake", promptVersion: 1, clearGeneration: store.dated.clearGeneration() })).toBe("written");
+      server.backend.today.changed();
+      await toTop(page);
+      // the draft is the row's (Deadlines); the meeting, Coming up's, which this conversation held from view, is its second line
+      await expect(jess().getByTestId("row-task")).toHaveText("Send Jess your draft", { timeout: 15_000 });
+      await expect(jess().getByTestId("row-also")).toHaveText("Also Mon 9:00 AM · Board meeting");
+      await expect(jess().getByTestId("row-subject")).toHaveCount(0);
+      await expect(jess().getByTestId("row-date")).toHaveText("Sat");
+      await expect(jess()).toHaveAccessibleName(/Send Jess your draft\s*, Due Saturday,\s*Also Mon 9:00\sAM · Board meeting/);
+      // where its neighbour's quiet subject is (on the task's text edge when it has a line of its own), and the row no
+      // taller than its neighbour
+      const at = (l: Locator) =>
+        l.evaluate((e) => {
+          const r = e.getBoundingClientRect();
+          const own = e.closest("[data-testid=thread-row]")!.getBoundingClientRect();
+          return { top: r.top - own.top, left: r.left - own.left, height: own.height };
+        });
+      const [also, task, beside] = [await at(jess().getByTestId("row-also")), await at(jess().getByTestId("row-task")), await at(row(page, "The agenda").getByTestId("row-subject"))];
+      expect(Math.abs(also.top - beside.top)).toBeLessThanOrEqual(1);
+      if (Math.abs(also.top - task.top) > 1) expect(Math.abs(also.left - task.left)).toBeLessThanOrEqual(1);
+      expect(also.height).toBe(beside.height);
+
+      // an alert that named no day says none, not the day it came
+      await received(server, "alert-1", { name: "Tri-River", email: "alerts@tririverfcu.org" }, "Card payment failed", "Your card payment failed at Corner Market.");
+      server.backend.dated.wake();
+      const alert = row(page, "Card payment failed");
+      await expect(alert.getByTestId("row-task")).toHaveText("Card payment failed, the email says", { timeout: 15_000 });
+      await expect(alert.getByTestId("row-date")).toHaveAttribute("data-no-day");
+      await expect(alert.getByTestId("row-date")).toHaveText("");
+
+      // D acts on the row's own item; the meeting is then the conversation's row, in Coming up; Undo puts the draft back
+      await jess().click();
+      await focusList(page);
+      await page.keyboard.press("d");
+      await expect(page.locator("[data-testid=snack]")).toContainText("Done: Send Jess your draft");
+      await expect(jess()).toHaveCount(0);
+      await expect.poll(async () => (await store.dated.ofThread(m.thread_id)).map((r) => r.text)).toEqual(["Board meeting"]);
+      const toEnd = () => list(page).evaluate((el) => { el.scrollTop = el.scrollHeight; });
+      // (a Plan on another day: the right column says the day, the line keeps the time)
+      const board = row(page, "Board meeting").filter({ has: page.locator("[data-testid=row-task]", { hasText: /^9:00\sAM · Board meeting$/ }) });
+      await expect.poll(async () => (await toEnd(), await board.count())).toBe(1);
+      await expect(board.getByTestId("row-subject")).toHaveText("Board meeting");
+      await expect(board.getByTestId("row-also")).toHaveCount(0);
+      await page.keyboard.press("z");
+      await toTop(page);
+      await expect(jess().getByTestId("row-also")).toHaveText("Also Mon 9:00 AM · Board meeting");
+      await page.keyboard.press("Escape");
+    });
+
     await scenario("Settings → AI: its group beside the digest's, on, naming who reads the mail", async () => {
       await page.getByTestId("open-settings").click();
       await page.getByTestId("tab-ai").click();
@@ -1071,7 +1134,7 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
 
     // the screenshots AGENTS.md asks for: the groups, in every design, light and dark (looked at, not compared)
     if (SHOTS) {
-      test.setTimeout(120_000);
+      test.setTimeout(240_000);
       for (const design of ["macos", "atelier", "lumen", "luma", "graphite"] as const) {
         await settingUp(page, server, { design });
         await expect(page.locator(`html[data-design=${design}]`)).toHaveCount(1);
@@ -1086,6 +1149,24 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
           await page.emulateMedia({ colorScheme: mode });
           await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-dated-${design}-${mode}.png` });
         }
+        await page.emulateMedia({ colorScheme: "light" });
+      }
+      // the fifth panel round: the second line in each row shape (avatar, large avatar, classic; one line; List's table), at
+      // 1440 and 1100, light and dark
+      const shapes = [{ design: "macos" }, { design: "lumen" }, { design: "graphite" }, { design: "macos", density: "compact" }, { design: "macos", layout: "list" }] as const;
+      for (const shape of shapes) {
+        await settingUp(page, server, { density: "comfortable", layout: "split", ...shape });
+        await page.getByTestId("nav-today").click();
+        await expect(jess().getByTestId("row-also")).toHaveText("Also Mon 9:00 AM · Board meeting");
+        const name = Object.values(shape).join("-");
+        for (const width of [1440, 1100]) {
+          await page.setViewportSize({ width, height: 900 });
+          for (const mode of ["light", "dark"] as const) {
+            await page.emulateMedia({ colorScheme: mode });
+            await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-also-${name}-${width}-${mode}.png` });
+          }
+        }
+        await page.setViewportSize({ width: 1440, height: 900 });
         await page.emulateMedia({ colorScheme: "light" });
       }
     }

@@ -3,7 +3,7 @@ import { addressKey, DIGEST_ROW_ID, TODAY_COUNTED, TODAY_GROUP_ORDER, type Diges
 import { t } from "@terno/i18n";
 import { create } from "zustand";
 import { listDate } from "~/lib/format";
-import { datedLine, datedText, promiseLine, taskOf, type TodayTask } from "~/lib/dated";
+import { alsoLine, datedLine, datedText, promiseLine, taskOf, type TodayTask } from "~/lib/dated";
 import { dueTimeLeft } from "~/lib/when";
 import { client } from "~/rpc/connection";
 import type { Undo } from "~/lib/snack";
@@ -298,7 +298,8 @@ export function flattenToday(list: TodayList, before: readonly ThreadSummary[]):
       items.push({ ...item.thread, snippet: whyLine(item, why, task) });
       // the header's "N need you", what the sidebar's number counts (the backend's own rule)
       if (TODAY_COUNTED.has(section.kind)) counted.add(item.thread.id);
-      if (task) tasks.set(item.thread.id, task);
+      // the fifth panel round (change 6): the conversation's next item, said on the row's second line
+      if (task) tasks.set(item.thread.id, item.also ? { ...task, also: alsoLine(item.also) } : task);
     }
   }
   // plan 166: a held row stays in the group it was in. At a group's first place it sits above that group's heading (it

@@ -53,11 +53,28 @@ export interface TodayWhy {
   promise?: { id: number; revision: number; /** it names a day (`FollowupRow.dated`): only then does its line say "Due …" */ dated?: boolean };
 }
 
+/**
+ * The fifth panel round (change 6): another open item of the row's conversation that would show in Today (not put off,
+ * not over), the soonest, so a second date isn't hidden under the first: "Also Thu 9:00 AM · Board meeting".
+ */
+export interface TodayAlso {
+  /** a dated item's kind, or a promise of yours */
+  kind: DatedKind | "promise";
+  text: string;
+  dueDay: string;
+  dueAt: number;
+  timed: boolean;
+  /** false: it names no day (an ask, an alert that named none, a promise with no day): its words alone */
+  dated: boolean;
+}
+
 export interface TodayItem {
   thread: ThreadSummary;
   why: TodayWhy;
   /** the stored summary's first sentence, only when it's current */
   summary?: string;
+  /** a row with a task of its own: its conversation's next one (never what the row's D, Done and Later act on) */
+  also?: TodayAlso;
 }
 
 /** Plan 204: every row that's for today, each thread once, in `TODAY_GROUP_ORDER`; Coming up last, and never counted. */
