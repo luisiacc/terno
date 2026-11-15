@@ -86,18 +86,23 @@ function askAllowed(quote: string, said: string, o: { sender?: { person: boolean
   return nameWords(o.reader.name).some((w) => where.includes(` ${w} `));
 }
 
+type Move = Omit<DatedResult["moved"][number], "text" | "textEvidence"> & Partial<Pick<DatedResult["moved"][number], "text" | "textEvidence">>;
+
 /**
  * §3's local checks, before anything's stored: the quote is the mail's (its text or subject), the kind is one of ours, a
  * day parses and is worth keeping (`datedTiming`), at most `DATED_ITEMS_MAX`, one per kind, day and time; an ask only from
  * a person to the reader (`askAllowed`), and one with a day, so allowed, is the request it is (`respond`); a settlement names
- * an item it was shown and quotes the mail; a move gives a new day or, for a timed item, a new moment. Pure.
+ * an item it was shown and quotes the mail; a move gives a new day or, for a timed item, a new moment, and its new words
+ * only with the mail's own. Pure.
  */
-export function checkDates(result: { items: readonly (Omit<DatedResult["items"][number], "kind"> & { kind: string })[]; settled: DatedResult["settled"]; moved?: DatedResult["moved"] }, input: { text: string; subject: string; arrivedAt: number; open: ReadonlyMap<string, DatedRow>; promises?: ReadonlyMap<string, Pick<FollowupRow, "id" | "revision">>; fromScan: boolean; now: number; sender?: { person: boolean }; reader?: { name: string; addressed: "to" | "cc" | "none" } }): { rows: DatedWrite[]; settled: { id: number; revision: number }[]; moved: { id: number; dueDay: string; dueAt: number; timed: boolean; actAt: number }[]; movedPromises: { id: number; revision: number; dueAt: number }[] } {
+export function checkDates(result: { items: readonly (Omit<DatedResult["items"][number], "kind"> & { kind: string })[]; settled: DatedResult["settled"]; moved?: readonly Move[] }, input: { text: string; subject: string; arrivedAt: number; open: ReadonlyMap<string, DatedRow>; promises?: ReadonlyMap<string, Pick<FollowupRow, "id" | "revision">>; fromScan: boolean; now: number; sender?: { person: boolean }; reader?: { name: string; addressed: "to" | "cc" | "none" } }): { rows: DatedWrite[]; settled: { id: number; revision: number }[]; moved: { id: number; dueDay: string; dueAt: number; timed: boolean; actAt: number; text?: string }[]; movedPromises: { id: number; revision: number; dueAt: number }[] } {
   const said = `${norm(input.subject)}\n${norm(input.text)}`;
   const quoted = (words: string) => {
     const w = norm(words);
     return w.length >= 3 && said.includes(w);
   };
+  // the fifth panel round: an item's new words, only quoted from this mail; an o item's alone (a promise's are yours)
+  const newWords = (m: Move) => (m.text?.trim() && m.textEvidence && quoted(m.textEvidence) ? m.text.trim() : undefined);
   const settled = result.settled.flatMap((s) => {
     const row = input.open.get(s.label);
     return row && quoted(s.evidence) ? [{ id: row.id, revision: row.revision }] : [];
@@ -112,7 +117,7 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     if (!row || row.kind !== "ask" || settledIds.has(row.id) || !quoted(m.evidence)) continue;
     settled.push({ id: row.id, revision: row.revision });
     settledIds.add(row.id);
-    answered.push({ kind: "respond", text: row.text, quote: m.evidence, due: m.due, time: m.time });
+    answered.push({ kind: "respond", text: newWords(m) ?? row.text, quote: m.evidence, due: m.due, time: m.time });
   }
   const moved = (result.moved ?? []).flatMap((m) => {
     const row = input.open.get(m.label);
@@ -121,7 +126,9 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     // the fourth panel round (revision 5): a new moment on the same day moves it too ("the game is moved earlier to 8:00");
     // the same day with no time keeps the item's own; an untimed item's 9:00 is a default, so "at 9:00" gives it a time
     const changed = timing && (timing.dueDay !== row.dueDay || (timing.timed && (!row.timed || timing.dueAt !== row.dueAt)));
-    return changed ? [{ id: row.id, kind: row.kind, dueDay: timing.dueDay, dueAt: timing.dueAt, timed: timing.timed, actAt: timing.actAt }] : [];
+    if (!changed) return [];
+    const text = newWords(m);
+    return [{ id: row.id, kind: row.kind, dueDay: timing.dueDay, dueAt: timing.dueAt, timed: timing.timed, actAt: timing.actAt, ...(text ? { text } : {}) }];
   });
   const rows: DatedWrite[] = [];
   // a moved item keeps its id: the same kind on its new day isn't added again (Codex review of the fixes)

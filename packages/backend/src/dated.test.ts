@@ -26,7 +26,8 @@ afterEach(async () => {
 });
 
 type Item = { kind: string; text: string; quote: string; due: string | null; time: string | null };
-const reply = (items: Item[] = [], settled: { label: string; evidence: string }[] = [], moved: { label: string; due: string; time: string | null; evidence: string }[] = []): Completion => ({ text: JSON.stringify({ items, settled, moved }), stop: "end" });
+type Moved = { label: string; due: string; time: string | null; evidence: string; text?: string | null; textEvidence?: string | null };
+const reply = (items: Item[] = [], settled: { label: string; evidence: string }[] = [], moved: Moved[] = []): Completion => ({ text: JSON.stringify({ items, settled, moved: moved.map((m) => ({ text: null, textEvidence: null, ...m })) }), stop: "end" });
 const bill: Item = { kind: "pay", text: "Pay the electricity bill", quote: "due on November 20", due: "2026-11-20", time: null };
 const BILL_TEXT = "Your electricity bill of $54.20 is due on November 20.";
 
@@ -615,6 +616,55 @@ describe("a later message moves an item's time (the fourth panel round, revision
     await receive({ from: coach, subject: "Re: Saturday", bodyText: "The game is still on, rain or shine.", providerThreadId: "game" });
     await read();
     expect((await backend.store.dated.active()).map((r) => [r.id, r.dueAt])).toEqual([[row!.id, at(2026, 11, 14, 8)]]);
+  });
+});
+
+describe("a move may carry the item's new words (the fifth panel round, change 2)", () => {
+  const game = { id: 9, revision: 2, kind: "event", text: "Soccer game (arrive 9:30)", dueDay: "2026-11-14", dueAt: at(2026, 11, 14, 10), timed: true } as DatedRow;
+  const text = "Saturday's game vs the Rattlers is moved EARLIER to 8:00 AM. Please arrive by 7:30.";
+  const base = { text, subject: "Re: Saturday", arrivedAt: NOW, open: new Map([["o1", game]]), fromScan: false, now: NOW };
+  const moved = { label: "o1", due: "2026-11-14", time: "08:00", evidence: "moved EARLIER to 8:00 AM", text: "Soccer game (arrive 7:30)", textEvidence: "Please arrive by 7:30" };
+
+  it("quoted from this mail, with the move; without the mail's own words, or for a promise, the words stay", () => {
+    expect(checkDates({ items: [], settled: [], moved: [moved] }, base).moved).toEqual([{ id: 9, dueDay: "2026-11-14", dueAt: at(2026, 11, 14, 8), timed: true, actAt: at(2026, 11, 13, 9), text: "Soccer game (arrive 7:30)" }]);
+    // words the mail doesn't have, or none: the move lands, the words stay
+    expect(checkDates({ items: [], settled: [], moved: [{ ...moved, textEvidence: "arrive whenever you like" }] }, base).moved).toEqual([expect.not.objectContaining({ text: expect.anything() })]);
+    expect(checkDates({ items: [], settled: [], moved: [{ ...moved, textEvidence: null }] }, base).moved[0]).not.toHaveProperty("text");
+    expect(checkDates({ items: [], settled: [], moved: [{ ...moved, text: " " }] }, base).moved[0]).not.toHaveProperty("text");
+    // no move (the same moment), no new words
+    expect(checkDates({ items: [], settled: [], moved: [{ ...moved, time: "10:00" }] }, base).moved).toEqual([]);
+    // a promise of yours keeps its words: another person's can't become "You said"
+    const promises = new Map([["p1", { id: 5, revision: 1 }]]);
+    const out = checkDates({ items: [], settled: [], moved: [{ ...moved, label: "p1", due: "2026-11-13" }] }, { ...base, promises });
+    expect(out.movedPromises).toEqual([{ id: 5, revision: 1, dueAt: expect.any(Number) }]);
+    expect(JSON.stringify(out)).not.toContain("arrive 7:30");
+  });
+
+  it("an ask a day turns into a request keeps its words, unless the move gives new ones from the mail", () => {
+    const ask = { id: 4, revision: 2, kind: "ask", dueDay: "2026-11-09", text: "Answer Mariana about a rebranding quote" } as DatedRow;
+    const mail = { ...base, text: "Can you send me the quote by Friday? Two options, please.", open: new Map([["o1", ask]]), sender: { person: true }, reader: { name: "Lucía", addressed: "to" as const } };
+    const dated = { label: "o1", due: "2026-11-13", time: null, evidence: "send me the quote by Friday" };
+    expect(checkDates({ items: [], settled: [], moved: [dated] }, mail).rows).toEqual([expect.objectContaining({ kind: "respond", text: "Answer Mariana about a rebranding quote" })]);
+    expect(checkDates({ items: [], settled: [], moved: [{ ...dated, text: "Send Mariana two quote options", textEvidence: "Two options, please" }] }, mail).rows).toEqual([expect.objectContaining({ kind: "respond", text: "Send Mariana two quote options" })]);
+    expect(checkDates({ items: [], settled: [], moved: [{ ...dated, text: "Send Mariana two quote options", textEvidence: "three options" }] }, mail).rows).toEqual([expect.objectContaining({ text: "Answer Mariana about a rebranding quote" })]);
+  });
+
+  it("the game's words with its time, through the reader; Later, then the move, then Undo keeps both and gives back the deferral", async () => {
+    const { backend, client, model, receive, read } = await setup();
+    model.answer = (req) => {
+      const p = promptText(req.messages[0]!.content);
+      if (p.includes("moved EARLIER")) return reply([], [], [moved]);
+      return reply([{ kind: "event", text: "Soccer game (arrive 9:30)", quote: "game on Saturday at 10:00", due: "2026-11-14", time: "10:00" }]);
+    };
+    const coach = { name: "Coach Ray", email: "ray@club.test" };
+    const thread = await receive({ from: coach, subject: "Saturday", bodyText: "Reminder: the game on Saturday at 10:00. Arrive by 9:30.", providerThreadId: "game" });
+    await read();
+    const [row] = (await client.call("dated.ofThread", { threadId: thread })).rows;
+    const later = await client.call("dated.act", { id: row!.id, revision: row!.revision, action: "later", until: at(2026, 11, 12, 9) });
+    await receive({ from: coach, subject: "Re: Saturday", bodyText: text, providerThreadId: "game" });
+    await read();
+    await client.call("dated.undo", { undoId: later.undoId! });
+    expect(await backend.store.dated.get(row!.id)).toMatchObject({ text: "Soccer game (arrive 7:30)", dueAt: at(2026, 11, 14, 8), deferredUntil: null, state: "open" });
   });
 });
 
