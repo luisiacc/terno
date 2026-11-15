@@ -164,6 +164,48 @@ describe("the local checks (plan 204 §3)", () => {
       expect(checkDates({ items: [drinks], settled: [] }, fyi).rows).toEqual([]);
       expect(checkDates({ items: [drinks], settled: [] }, { ...fyi, text: "Drinks when you're back from Chicago?" }).rows).toHaveLength(1);
     });
+    describe("never one addressed by name to another of the mail's recipients (the seventh panel round)", () => {
+      const asks = (text: string, quote: string, reader: { name: string; addressed: "to" | "cc" | "none" }, others: string[], due: string | null = null) =>
+        checkDates({ items: [{ kind: "ask", text: "Answer about it", quote, due, time: null }], settled: [] }, { ...base, text, sender: { person: true }, reader, others }).rows;
+      const nora = { name: "Nora Quill", addressed: "to" as const };
+      it("dated-053: Oren's request in a mail to Oren and the reader isn't the reader's, quoted with his name or without it", () => {
+        const text = "Oren, could you send me the signed venue contract? Nora, just so you know, the caterer is confirmed.\n\nThanks both,\nPriya";
+        expect(asks(text, "could you send me the signed venue contract", nora, ["Oren Vale"])).toEqual([]);
+        expect(asks(text, "Oren, could you send me the signed venue contract?", nora, ["Oren Vale"])).toEqual([]);
+        expect(asks(`Hi Oren, can you send me the contract?`, "can you send me the contract", nora, ["Oren Vale"])).toEqual([]);
+        // with a day it's no request of the reader's either
+        expect(asks(text, "could you send me the signed venue contract", nora, ["Oren Vale"], "2026-11-13")).toEqual([]);
+        // the names come from the recipients: without them, as before
+        expect(asks(text, "could you send me the signed venue contract", nora, [])).toHaveLength(1);
+      });
+      it("dated-052: one that names the reader stays, even only copied, even beside the other's name", () => {
+        const text = "Oren, welcome aboard! Glad to have you on the team.\n\nNora, could you share the brand guidelines with Oren when you get a chance?\n\nMira";
+        const cc = { name: "Nora Quill", addressed: "cc" as const };
+        expect(asks(text, "could you share the brand guidelines with Oren", cc, ["Oren Vale"])).toHaveLength(1);
+        expect(asks(text, "Nora, could you share the brand guidelines with Oren when you get a chance?", cc, ["Oren Vale"])).toHaveLength(1);
+        expect(asks("Nora and Oren, could you check the venue?", "could you check the venue", nora, ["Oren Vale"])).toHaveLength(1);
+        // a name that's also a word isn't a vocative without its comma ("Will you…"), nor one mentioned later in the sentence
+        expect(asks("Will you send me the deck before Friday?", "Will you send me the deck", nora, ["Will Park"])).toHaveLength(1);
+        expect(asks("Could you ask Oren for the deck?", "Could you ask Oren for the deck", nora, ["Oren Vale"])).toHaveLength(1);
+        // a name shared with the reader's (a family's surname) is the reader's
+        expect(asks("Quill, can you bring the cake?", "can you bring the cake", nora, ["Ada Quill"])).toHaveLength(1);
+      });
+      it("in Spanish too: \"Marta, ¿puedes…?\" is Marta's; \"¿Lucía, puedes…?\" the reader's", () => {
+        const lucia = { name: "Lucía Romero", addressed: "to" as const };
+        const text = "Hola a las dos.\n\nMarta, ¿puedes mandarme el presupuesto del local? Lucía, te aviso que el catering ya está confirmado.";
+        expect(asks(text, "¿puedes mandarme el presupuesto del local?", lucia, ["Marta Gil"])).toEqual([]);
+        expect(asks(text, "Marta, ¿puedes mandarme el presupuesto del local?", lucia, ["Marta Gil"])).toEqual([]);
+        expect(asks("Hola. ¿Lucía, puedes mandarme el presupuesto del local?", "puedes mandarme el presupuesto del local", lucia, ["Marta Gil"])).toHaveLength(1);
+        expect(asks("Lucía y Marta, ¿pueden revisar el local?", "pueden revisar el local", lucia, ["Marta Gil"])).toHaveLength(1);
+      });
+      it("a later message's day addressed to another doesn't turn the reader's open ask into a request, nor answer it", () => {
+        const open = new Map([["o1", { id: 4, revision: 2, kind: "ask", dueDay: "2026-11-09", text: "Answer Priya about the contract" } as DatedRow]]);
+        const text = "Oren, can you send it by Friday? Thanks!";
+        const move = (evidence: string) => checkDates({ items: [], settled: [], moved: [{ label: "o1", due: "2026-11-13", time: null, evidence }] }, { ...base, text, open, sender: { person: true }, reader: nora, others: ["Oren Vale"] });
+        expect(move("can you send it by Friday")).toMatchObject({ rows: [], settled: [], moved: [] });
+        expect(move("Thanks!").settled).toEqual([{ id: 4, revision: 2 }]);
+      });
+    });
     describe("never for credentials or an ID (the seventh panel round, revision 7)", () => {
       const secrets: [string, string][] = [
         ["Send Priya the code", "Could you text me the 6-digit code you just got?"],
@@ -267,6 +309,19 @@ describe("the reader", () => {
     const local = new Date(instant);
     const [row] = (await client.call("dated.ofThread", { threadId: thread })).rows;
     expect(row).toMatchObject({ text: "Call with Marcus (4:00 PM PT)", dueAt: instant, dueDay: `${local.getFullYear()}-${String(local.getMonth() + 1).padStart(2, "0")}-${String(local.getDate()).padStart(2, "0")}`, timed: true });
+  });
+
+  it("the seventh panel round: the mail's other recipients reach the ask's check by name, and never the model's request", async () => {
+    const { backend, model, receive, read } = await setup();
+    const priya = { name: "Priya Nair", email: "priya@events.test" };
+    const oren = { name: "Oren Vale", email: "oren@events.test" };
+    const text = "Oren, could you send me the signed venue contract? Thanks both!";
+    model.answer = () => reply([{ kind: "ask", text: "Answer Priya about the contract", quote: "could you send me the signed venue contract", due: null, time: null }]);
+    await receive({ from: priya, to: [oren, me], subject: "Venue", bodyText: text });
+    const mine = await receive({ from: priya, to: [me], subject: "Venue", bodyText: text.replace("Oren,", "Nora,") });
+    await read();
+    expect((await backend.store.dated.active()).map((r) => r.threadId)).toEqual([mine]);
+    expect(promptText(model.requests[0]!.messages[0]!.content)).not.toContain(oren.email);
   });
 
   it("never asks about Spam, Trash, Promotions or Social, nor automated mail with no time cue; a person's mail is read whatever its words", async () => {

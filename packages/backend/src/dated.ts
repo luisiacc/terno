@@ -81,13 +81,43 @@ const nameWords = (name: string) => norm(name).split(" ").filter((w) => w.length
 /** How far before an ask's quote the reader's name may be ("Nora, could you…" quoted from "could you"): a few words. */
 const NAMED_BEFORE_CHARS = 24;
 
+/** Folded as `norm` folds a name, punctuation and line ends kept, so a sentence and a vocative comma can still be found. */
+const fold = (text: string) => normalizeText(text).replace(/[^\S\n]+/g, " ");
+
+/**
+ * Who an ask is addressed to by name: the words before the first comma or colon of the sentence it's in, when that's a
+ * vocative of three words or fewer ("Oren, could you…", "Hi Oren, can you…", "¿Marta, puedes…?"); never a bare first word,
+ * as "Will you…" isn't to Will. The sentence is the mail's, from its start (or its line's) to the quote's end, or the
+ * quote's own when the model joined two lines. Words as `nameWords` reads them.
+ */
+function addressedTo(quote: string, text: string): string[] {
+  const flat = fold(text);
+  const q = fold(quote).trim();
+  const at = q ? flat.indexOf(q) : -1;
+  const sentence = (at < 0 ? q : flat.slice(0, at + q.length)).replace(/[\s.!?]+$/u, "").split(/[.!?\n]/u).pop()!;
+  const lead = sentence.replace(/^[^\p{L}\p{N}]+/u, "");
+  const comma = lead.search(/[,:]/u);
+  const vocative = comma > 0 ? norm(lead.slice(0, comma)).split(" ") : [];
+  return vocative.length <= 3 ? vocative.filter((w) => w.length >= 2) : [];
+}
+
+/** The seventh panel round: addressed by name to another of the mail's recipients, and not to the reader too. */
+function toAnother(quote: string, text: string, reader: string, others: readonly string[] = []): boolean {
+  const mine = new Set(nameWords(reader));
+  const theirs = new Set(others.flatMap(nameWords).filter((w) => !mine.has(w)));
+  const to = addressedTo(quote, text);
+  return to.some((w) => theirs.has(w)) && !to.some((w) => mine.has(w));
+}
+
 /**
  * The third panel round (revision 1): who an ask may be from and to, read here and not only from the model: a person
  * (`senderIsPerson`, never a list, bulk or no-reply address), and the reader addressed in To or named where the mail asks.
- * `said` is the mail as `norm` reads it.
+ * The seventh panel round: never one the mail addresses by name to another of its recipients ("Oren, could you send me the
+ * contract?" to Oren and the reader), unless it names the reader there too. `said` is the mail as `norm` reads it, `text` as
+ * it was written; `others` the other recipients' names, never an address.
  */
-function askAllowed(quote: string, said: string, o: { sender?: { person: boolean }; reader?: { name: string; addressed: "to" | "cc" | "none" } }): boolean {
-  if (!o.sender?.person || !o.reader) return false;
+function askAllowed(quote: string, said: string, text: string, o: { sender?: { person: boolean }; reader?: { name: string; addressed: "to" | "cc" | "none" }; others?: readonly string[] }): boolean {
+  if (!o.sender?.person || !o.reader || toAnother(quote, text, o.reader.name, o.others)) return false;
   if (o.reader.addressed === "to") return true;
   const q = norm(quote);
   const at = said.indexOf(q);
@@ -118,7 +148,7 @@ type Move = Omit<DatedResult["moved"][number], "text" | "textEvidence"> & Partia
  * allowed, is the request it is (`respond`); a settlement names an item it was shown and quotes the mail; a move gives a new
  * day or, for a timed item, a new moment, and its new words only with the mail's own. Pure.
  */
-export function checkDates(result: { items: readonly (Omit<DatedResult["items"][number], "kind"> & { kind: string })[]; settled: DatedResult["settled"]; moved?: readonly Move[] }, input: { text: string; subject: string; arrivedAt: number; open: ReadonlyMap<string, DatedRow>; promises?: ReadonlyMap<string, Pick<FollowupRow, "id" | "revision">>; fromScan: boolean; now: number; sender?: { person: boolean }; reader?: { name: string; addressed: "to" | "cc" | "none" } }): { rows: DatedWrite[]; settled: { id: number; revision: number }[]; moved: { id: number; dueDay: string; dueAt: number; timed: boolean; actAt: number; text?: string }[]; movedPromises: { id: number; revision: number; dueAt: number }[] } {
+export function checkDates(result: { items: readonly (Omit<DatedResult["items"][number], "kind"> & { kind: string })[]; settled: DatedResult["settled"]; moved?: readonly Move[] }, input: { text: string; subject: string; arrivedAt: number; open: ReadonlyMap<string, DatedRow>; promises?: ReadonlyMap<string, Pick<FollowupRow, "id" | "revision">>; fromScan: boolean; now: number; sender?: { person: boolean }; reader?: { name: string; addressed: "to" | "cc" | "none" }; others?: readonly string[] }): { rows: DatedWrite[]; settled: { id: number; revision: number }[]; moved: { id: number; dueDay: string; dueAt: number; timed: boolean; actAt: number; text?: string }[]; movedPromises: { id: number; revision: number; dueAt: number }[] } {
   const said = `${norm(input.subject)}\n${norm(input.text)}`;
   const quoted = (words: string) => {
     const w = norm(words);
@@ -139,8 +169,9 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     const row = input.open.get(m.label);
     if (!row || row.kind !== "ask" || settledIds.has(row.id) || !quoted(m.evidence)) continue;
     const request = { kind: "respond" as const, text: newWords(m) ?? row.text, quote: m.evidence, due: m.due, time: m.time };
-    // revision 7: a request for credentials or an ID neither becomes one nor answers the ask, which stays as it was
-    if (asksForSecrets(request)) continue;
+    // revision 7: a request for credentials or an ID neither becomes one nor answers the ask, which stays as it was; nor
+    // does one the mail addresses to another of its recipients (the seventh panel round)
+    if (asksForSecrets(request) || toAnother(m.evidence, input.text, input.reader?.name ?? "", input.others)) continue;
     settled.push({ id: row.id, revision: row.revision });
     settledIds.add(row.id);
     answered.push(request);
@@ -160,7 +191,7 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
   // a moved item keeps its id: the same kind on its new day isn't added again (Codex review of the fixes)
   const seen = new Set<string>(moved.map((m) => itemKey(m.kind, m)));
   // revision 2 of the fourth round: an ask with a day is an ask first (a person, to the reader), then the request it is
-  const datedAsk = (i: { kind: string; text: string; due: string | null; quote: string }) => i.kind === "ask" && !!i.due && askAllowed(i.quote, said, input) && !asksForSecrets(i);
+  const datedAsk = (i: { kind: string; text: string; due: string | null; quote: string }) => i.kind === "ask" && !!i.due && askAllowed(i.quote, said, input.text, input) && !asksForSecrets(i);
   // the eval: a person's request with a day is the `respond`, never also an undated ask beside it
   const requested = [...answered, ...result.items].some((i) => (i.kind === "respond" || datedAsk(i)) && quoted(i.quote));
   // the fourth panel read: a person who says no answer is needed ("No need to reply now") asks nothing
@@ -171,7 +202,7 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     // an ask is never a dated kind's substitute: one with a day is a request with a day, if it's an ask at all
     if (item.kind === "ask" && item.due && !datedAsk(item)) continue;
     const kind = (item.kind === "ask" && item.due ? "respond" : item.kind) as DatedKind;
-    if (kind === "ask" && (requested || noReply || !askAllowed(item.quote, said, input) || asksForSecrets(item))) continue;
+    if (kind === "ask" && (requested || noReply || !askAllowed(item.quote, said, input.text, input) || asksForSecrets(item))) continue;
     const timing = datedTiming({ kind, due: item.due, time: item.time, arrivedAt: input.arrivedAt });
     if (!timing) continue;
     // the 14-day check keeps nothing already over (§6)
@@ -408,6 +439,9 @@ export class DatedWorker {
       // names only: who the reader is and how it reached them, so a task for someone else stays theirs (the eval)
       const nameOf = (p: { name: string; email: string }) => p.name || p.email.split("@")[0]!;
       const reader = { name: (await store.accounts.get(src.accountId))?.displayName ?? "", addressed: src.readerIn };
+      // the seventh panel round: the mail's other recipients, by name, for an ask addressed to one of them ("Oren, could you…")
+      const own = new Set((await store.accounts.list()).map((a) => addressKey(a.email)));
+      const others = [...src.to, ...src.cc].filter((p) => !own.has(addressKey(p.email))).map(nameOf);
       // the third panel round: "a person" as the ask's local check reads it (a role address you never wrote to isn't one)
       const input = fitDates({ text, subject: src.subject, from: { name: src.fromName || src.fromEmail.split("@")[0]!, automated: src.automated || !src.person }, reader, to: src.to.map(nameOf), cc: src.cc.map(nameOf), receivedAt: inWords(src.date, language), zone: readerZone(), open: [...[...labels].map(([label, r]) => ({ label, kind: r.kind as DatedKind | "promise", text: r.text, due: r.dated ? r.dueDay : null, time: r.timed ? clockOf(r.dueAt) : null })), ...[...promises].map(([label, p]) => ({ label, kind: "promise" as const, text: p.text, due: p.dated ? dayKeyOf(p.dueAt) : null }))], language, outputTokens: budget.outputTokens }, budget.promptChars);
       // a change of provider or key, the setting, Spam meanwhile: each stops it, at the provider too
@@ -419,7 +453,7 @@ export class DatedWorker {
       const now = this.host.now();
       // only what was really sent, after fitting to the window, may be named back (Codex review)
       const sent = new Set(input.open.map((o) => o.label));
-      const checked = checkDates(result, { text, subject: src.subject, arrivedAt: src.date, open: new Map([...labels].filter(([l]) => sent.has(l))), promises: new Map([...promises].filter(([l]) => sent.has(l))), fromScan, now, sender: { person: src.person }, reader });
+      const checked = checkDates(result, { text, subject: src.subject, arrivedAt: src.date, open: new Map([...labels].filter(([l]) => sent.has(l))), promises: new Map([...promises].filter(([l]) => sent.has(l))), fromScan, now, sender: { person: src.person }, reader, others });
       const outcome = await store.dated.finish({ messageId: src.id, threadId: src.threadId, fromScan, rows: checked.rows, settled: checked.settled, moved: checked.moved, movedPromises: checked.movedPromises, now, model: ai.model, provider: ai.providerId, promptVersion: DATED_PROMPT_VERSION, clearGeneration });
       this.attempts.delete(src.id);
       // a merge moved it under the request: read again on its new thread (revision 6)
