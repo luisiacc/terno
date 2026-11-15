@@ -191,3 +191,66 @@ test("the list look has no history; drawn as the feed, the same What matters has
   await reach(page, "Pay the old bill");
   await expect(line(page, "Pay the old bill")).toHaveAttribute("data-history", "true");
 });
+
+test("the owner's inbox-zero setting: the gear on What matters' title row hides the finished items and shows them again; Settings has the same switch, and More settings opens it", async ({ app: page, server }) => {
+  await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" }, dated: { enabled: true, scanAnswered: true } }, dev);
+  await item(server, "payroll", "Wire payroll", null);
+  await item(server, "closed-1", "Pay the old bill", E2E_NOW - HOUR);
+  await page.evaluate(() => localStorage.setItem("terno.wm.look", "brief"));
+  await fresh(page);
+  await page.getByTestId("nav-today").click();
+  await expect(line(page, "Wire payroll")).toBeVisible({ timeout: 15_000 });
+  const earlier = feed(page).locator('[data-testid="wm-heading"][data-kind="history"]');
+  const gear = page.getByTestId("wm-options");
+  const toggle = page.getByTestId("wm-options-finished");
+
+  await scenario("the gear: on the title's row, named; its switch hides the history at once, and shows it again", async () => {
+    await expect(gear).toHaveAccessibleName("What matters options");
+    const mid = async (id: string) => page.getByTestId(id).evaluate((el) => { const r = el.getBoundingClientRect(); return r.top + r.height / 2; });
+    expect(Math.abs((await mid("wm-options")) - (await mid("list-title")))).toBeLessThanOrEqual(2);
+    await reach(page, "Pay the old bill");
+    await gear.click();
+    await expect(page.getByTestId("wm-options-panel")).toBeVisible();
+    await expect(toggle).toHaveAccessibleName("Show finished items");
+    await expect(toggle).toHaveAttribute("aria-checked", "true");
+    await axeBothModes(page, '[data-testid="wm-options-panel"]');
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-checked", "false");
+    await expect(earlier).toHaveCount(0);
+    await expect(feed(page).locator("[data-history]")).toHaveCount(0);
+    await expect.poll(async () => ((await server.backend.server.invoke("app.bootstrap", {}, dev)) as { settings: { today: { finished?: boolean } } }).settings.today.finished).toBe(false);
+    // Done still takes a line off the top, with its Undo
+    await page.keyboard.press("Escape");
+    await reach(page, "Wire payroll");
+    await line(page, "Wire payroll").getByTestId("wm-item-open").click();
+    await page.keyboard.press("d");
+    await expect(line(page, "Wire payroll")).toHaveCount(0);
+    await expect(page.getByTestId("snack")).toContainText("Done: Wire payroll");
+    await page.keyboard.press("z");
+    await expect(line(page, "Wire payroll")).toBeVisible();
+    await page.keyboard.press("Escape");
+    // shown again: the history comes back
+    await gear.click();
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-checked", "true");
+    await page.keyboard.press("Escape");
+    await reach(page, "Pay the old bill");
+    await expect(line(page, "Pay the old bill")).toHaveAttribute("data-history", "true");
+  });
+
+  await scenario("More settings opens Settings at the same switch, which changes it too", async () => {
+    await gear.click();
+    await page.getByTestId("wm-options-more").click();
+    const row = page.getByTestId("today-finished");
+    await expect(row).toBeVisible();
+    await expect(row).toBeInViewport();
+    await expect(row).toHaveAttribute("aria-checked", "true");
+    await row.click();
+    await expect(row).toHaveAttribute("aria-checked", "false");
+    await page.keyboard.press("Escape");
+    await expect(earlier).toHaveCount(0);
+    await gear.click();
+    await expect(toggle).toHaveAttribute("aria-checked", "false");
+  });
+});
+

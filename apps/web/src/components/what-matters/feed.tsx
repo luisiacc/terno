@@ -23,6 +23,7 @@ import { EmptyState } from "../empty-state";
 import { listScroller, TodayLine } from "../thread-list";
 import { ThreadMenu } from "../thread-menu";
 import { TodayDatedOffer } from "../today-dated-offer";
+import { WhatMattersOptions } from "./options";
 import { BriefTaskControls, NoteTaskMenu } from "./task-menus";
 
 /**
@@ -182,9 +183,11 @@ export function WhatMattersFeed({ look }: { look: Exclude<WmLook, "list"> }) {
       <header ref={headerRef} className="drag-region scroll-hairline shrink-0 pb-2">
         <div className={cn(COLUMN, chat ? "pl-9" : "pl-8")}>
           <div className="flex h-(--pane-bar) items-center">
-            <h1 className={cn("min-w-0 truncate", LIST_TITLE[design.variants.listHeader === "title" ? "title" : "display"])} data-testid="list-title">
+            <h1 className={cn("min-w-0 flex-1 truncate", LIST_TITLE[design.variants.listHeader === "title" ? "title" : "display"])} data-testid="list-title">
               {t("today.title")}
             </h1>
+            {/* plan 210 (the owner): its options where it is, on the title's row */}
+            <WhatMattersOptions />
           </div>
           <div className="-mt-1.5">
             <TodayLine />
