@@ -8,7 +8,7 @@ import { WhenForm } from "./when-fields";
 
 /**
  * Plan 204 (after the panel, fix 10): a Today row's Later at a moment of your own, the reminder's date and time (plan 87),
- * in Later's window (the third panel round: before a timed item's moment, a Plan's end; a dated promise, another day).
+ * in Later's window (the third panel round: before a timed item's moment, a Plan's end; a promise of yours, any moment).
  */
 export function openTodayLater(threadId: number, task: TodayTask): void {
   useToday.setState({ laterPick: { threadId, task } });
