@@ -375,6 +375,8 @@ test("the owner's inbox-zero setting: the gear on What matters' title row hides 
     await gear.click();
     await expect(page.getByTestId("wm-options-panel")).toBeVisible();
     await expect(toggle).toHaveAccessibleName("Show finished items");
+    // plan 210 (iteration 1): who reads the mail for it, where its options are
+    await expect(page.getByTestId("wm-options-privacy")).toHaveText(/^To find bills, trips and requests, Terno reads each new message’s text with .+ on this Mac; nothing leaves it\.$/);
     await expect(toggle).toHaveAttribute("aria-checked", "true");
     await axeBothModes(page, '[data-testid="wm-options-panel"]');
     await toggle.click();
@@ -421,6 +423,7 @@ test("the owner's inbox-zero setting: the gear on What matters' title row hides 
     await page.getByTestId("wm-options-more").click();
     const row = page.getByTestId("today-finished");
     await expect(row).toBeVisible();
+    await expect(page.getByTestId("today-privacy")).toContainText("To find bills, trips and requests, Terno reads each new message’s text with");
     await expect(row).toBeInViewport();
     await expect(row).toHaveAttribute("aria-checked", "true");
     await row.click();

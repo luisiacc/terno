@@ -4,7 +4,7 @@ import { setLocale, t } from "@terno/i18n";
 import en from "@terno/i18n/locales/en";
 import es from "@terno/i18n/locales/es";
 import { afterEach, describe, expect, it } from "vitest";
-import { aiReady, askOffered, choiceLabel, choiceOf, disclosureLine, draftingOffered, errorHelp, mailDestinations, followupsOffered, helperElsewhere, OUTPUT_LABEL, presetLabel, privacyLine, providerName, repliesOffered, routeOf, routingLine, summariesOffered, todayOffered, writingModel, writingTarget } from "./ai";
+import { aiReady, askOffered, choiceLabel, choiceOf, datedReaderLine, disclosureLine, draftingOffered, errorHelp, mailDestinations, followupsOffered, helperElsewhere, OUTPUT_LABEL, presetLabel, privacyLine, providerName, repliesOffered, routeOf, routingLine, summariesOffered, todayOffered, writingModel, writingTarget } from "./ai";
 
 const ai = (over: Partial<AiSettings>) => ({ provider: "none", preset: null, baseURL: null, local: false, ...over }) as AiSettings;
 
@@ -140,6 +140,25 @@ describe("AI labels and help", () => {
     expect(privacyLine(ai({ provider: "openai", keys: { anthropic: { hasKey: true, keyHint: null } }, profiles: {} } as Partial<AiSettings>))).toMatch(/^Sent to Claude \(Anthropic\): /);
     setLocale("es", es);
     expect(privacyLine(ai({ provider: "ollama", local: true }))).toBe("Nada sale de este Mac.");
+  });
+
+  it("plan 210 (iteration 1): What matters names where the dated reader's job goes, never the main provider when it differs", () => {
+    const full = (over: Partial<AiSettings>) => ai({ keys: {}, model: "m", profiles: {}, ...over });
+    const key = { hasKey: true, keyHint: null };
+    expect(datedReaderLine(full({ provider: "none" }), "offer")).toBeNull();
+    expect(datedReaderLine(null, "settings")).toBeNull();
+    // both keys: drafting is Claude's, the dated reader a small job, OpenAI's
+    expect(datedReaderLine(full({ provider: "anthropic", keys: { anthropic: key, openai: key } }), "offer")).toBe("Terno sends each new message’s text to OpenAI to find these; nothing else leaves your Mac for them.");
+    expect(datedReaderLine(full({ provider: "anthropic", keys: { anthropic: key } }), "settings")).toBe("To find bills, trips and requests, Terno sends each new message’s text to Claude (Anthropic); nothing else leaves your Mac for them.");
+    // a relay in front of OpenAI, a server of the user's own, a local kind on another machine: where it really goes
+    expect(datedReaderLine(full({ provider: "anthropic", keys: { anthropic: key, openai: key }, profiles: { openai: { model: "", baseURL: "https://relay.example.test/v1" } } }), "offer")).toContain("to OpenAI (relay.example.test) to find");
+    expect(datedReaderLine(full({ provider: "compatible", preset: "custom", baseURL: "https://ai.example.test/v1" }), "offer")).toContain("to ai.example.test to find");
+    expect(datedReaderLine(full({ provider: "ollama", local: false, baseURL: "http://gpu.lan:11434/v1" }), "offer")).toContain("to gpu.lan:11434 to find");
+    // on this Mac: it stays here
+    expect(datedReaderLine(full({ provider: "ollama", local: true }), "offer")).toBe("Terno reads each new message’s text with Ollama on this Mac to find these; nothing leaves your Mac.");
+    expect(datedReaderLine(full({ provider: "compatible", preset: "custom", baseURL: "http://127.0.0.1:8080/v1", local: true }), "settings")).toBe("To find bills, trips and requests, Terno reads each new message’s text with Local server on this Mac; nothing leaves it.");
+    setLocale("es", es);
+    expect(datedReaderLine(full({ provider: "anthropic", keys: { anthropic: key, openai: key } }), "offer")).toBe("Terno envía el texto de cada mensaje nuevo a OpenAI para encontrarlos; nada más sale de tu Mac para esto.");
   });
 
   it("plan 131: Settings → AI names every cloud provider mail may go to, by the backend's rules, and what goes", () => {

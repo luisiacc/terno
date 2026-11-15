@@ -659,6 +659,8 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
     await scenario("the header offers it while it's off, and turning it on asks about the last 14 days once", async () => {
       const offer = page.getByTestId("today-dated-offer");
       await expect(offer).toContainText("Show bills, trips and requests here.");
+      // plan 210 (iteration 1): who would read the mail, by where the dated reader's job goes (the offline model: here)
+      await expect(offer.getByTestId("today-dated-privacy")).toHaveText(/^Terno reads each new message’s text with .+ on this Mac to find these; nothing leaves your Mac\.$/);
       await expect(offer.getByTestId("today-dated-dismiss")).toHaveAccessibleName("Don’t offer bills, trips and requests again");
       if (SHOTS) await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-dated-offer-light.png` });
       await offer.getByTestId("today-dated-on").click();

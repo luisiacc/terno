@@ -317,5 +317,11 @@ export async function answerScan(check: boolean, save: (patch: { scanAnswered: t
   return true;
 }
 
-/** The offer's words: "Check the last 14 days too? 23 messages, about $0.02."; no cost where it's free (a model of the user's own). */
-export const scanOfferText = (offer: { count: number; usd: number | null }): string => (offer.usd !== null && offer.usd > 0 ? t("today.dated.scanCost", { count: offer.count, usd: usd(offer.usd) }) : t("today.dated.scan", { count: offer.count }));
+/**
+ * The offer's words: "Check the last 14 days too? 23 messages, about $0.02."; under a cent, "less than a cent" (plan 210,
+ * iteration 1: "about $0.00" read as nothing, or as a fault); no cost where it's free (a model of the user's own) or unknown.
+ */
+export function scanOfferText(offer: { count: number; usd: number | null }): string {
+  if (offer.usd === null || !(offer.usd > 0)) return t("today.dated.scan", { count: offer.count });
+  return offer.usd < 0.01 ? t("today.dated.scanTiny", { count: offer.count }) : t("today.dated.scanCost", { count: offer.count, usd: usd(offer.usd) });
+}
