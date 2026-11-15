@@ -273,7 +273,7 @@ describe("plan 204: Missed, Today, Needs you, Soon, Reminders and Coming up (the
     expect(useToday.getState().tasks.get(5)).toMatchObject({ when: "Tue", due: "Due Tuesday" });
   });
 
-  it("after the panel: each row's task, what D, Done, Not a task and Later act on, with its due day for the date's place", () => {
+  it("after the panel: each row's task, what D, Done, Remove and Later act on, with its due day for the date's place", () => {
     flattenToday(full(), []);
     const tasks = useToday.getState().tasks;
     // Missed says its day; a deadline tomorrow, "Tomorrow"; an alert that named none, no day at all (the fifth panel

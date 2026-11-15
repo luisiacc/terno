@@ -16,7 +16,7 @@ function leaving(threadId: number): LeftRows | undefined {
 }
 
 /**
- * Plan 204 (after the second panel round): Done, Not a task and Later on a Today row's task. Done means gone: the row
+ * Plan 204 (after the second panel round): Done, Remove and Later on a Today row's task. Done means gone: the row
  * leaves Today at once and the cursor moves on, as after Archive (it isn't held in place as a row that leaves on its own
  * is, revision 9: this one the user finished). Undo (the snack's, z) brings it back in its place, selected.
  */
@@ -25,7 +25,7 @@ export function actOnTodayRow(threadId: number, task: TodayTask, action: TaskAct
 }
 
 /**
- * The conversation's line acts on its own item (Done, Not a task, and Later to a moment); when that item is the one its
+ * The conversation's line acts on its own item (Done, Remove, and Later to a moment); when that item is the one its
  * Today row stands for, the row leaves as it would from the row's own act, with its Undo and a failure's way back.
  */
 export function actOnThreadItem(threadId: number, item: Pick<DatedRef, "id" | "revision"> & { text?: string | null }, action: TaskAction, at?: number): Promise<void> {
@@ -34,7 +34,7 @@ export function actOnThreadItem(threadId: number, item: Pick<DatedRef, "id" | "r
 }
 
 /**
- * The conversation's promise controls (Done, Later, Not a task), as its item line (Codex code review): on the promise
+ * The conversation's promise controls (Done, Later, Remove), as its item line (Codex code review): on the promise
  * its Today row stands for, the row leaves as from the row's own Done; on any other, follow-ups' own act.
  */
 export function actOnThreadPromise(row: FollowupRow, action: TaskAction, at?: number): Promise<void> {

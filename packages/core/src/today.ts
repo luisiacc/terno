@@ -52,7 +52,7 @@ export interface TodayWhy {
   missed?: boolean;
   /** plan 204: a dated item, what the row's Done, Later and Undo act on */
   item?: { id: number; revision: number; kind: DatedKind; dueDay: string; timed: boolean; dated: boolean };
-  /** plan 204 (Codex review): the promise this row shows, what D, Done and Not a task act on (never the thread's most urgent) */
+  /** plan 204 (Codex review): the promise this row shows, what D, Done and Remove act on (never the thread's most urgent) */
   promise?: { id: number; revision: number; /** it names a day (`FollowupRow.dated`): only then does its line say "Due …" */ dated?: boolean };
 }
 
@@ -169,7 +169,7 @@ export function historyAfter(key: HistoryKey, src: 0 | 1): { at: number; id: num
   return { at: key.at, id: src === 0 ? 0 : Number.MAX_SAFE_INTEGER };
 }
 
-/** What happened to the item: done, not a task (a promise: not a promise), settled by later mail, or over (retired when its time passed). */
+/** What happened to the item: done, removed (once "not a task"), settled by later mail, or over (retired when its time passed). */
 export type HistoryOutcome = "done" | "dismissed" | "settled" | "over";
 
 export interface TodayHistoryItem {

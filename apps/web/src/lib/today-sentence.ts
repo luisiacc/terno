@@ -104,10 +104,11 @@ export function historySentence(line: Pick<TodayHistoryItem, "kind" | "text" | "
   return ended(line.kind === "alert" ? t("dated.alertSays", { text }) : text);
 }
 
-/** Plan 210: the history's right-hand column, what happened and when: "Done today", "Not a task Wed", "Over Nov 2" (es "Hecho el mié"). */
+/** Plan 210: the history's right-hand column, what happened and when: "Done today", "Removed Wed", "Over Nov 2" (es "Hecho el mié"). */
 export function historyWhen(line: Pick<TodayHistoryItem, "outcome" | "kind" | "key">, now = Date.now()): string {
   const near = datedDay(line.key.at, now).near;
   const day = near ? t(`today.also.${near}`) : t("today.also.on", { day: dueShort(line.key.at, false, now) });
-  return t(`whatMatters.history.${line.outcome === "dismissed" && line.kind === "promise" ? "notPromise" : line.outcome}`, { day });
+  // plan 210 (iteration 1, the owner): "Not a task" is "Remove", for an item and a promise alike
+  return t(`whatMatters.history.${line.outcome === "dismissed" ? "removed" : line.outcome}`, { day });
 }
 

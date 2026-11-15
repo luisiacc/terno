@@ -636,7 +636,7 @@ export class TodayService {
       else ranked[at.group].push({ threadId: row.threadId, at: row, why: datedWhy(row, at.group === "missed"), day: at.day });
     }
     const active = settings.followups?.enabled ? await store.followups.active() : [];
-    // after the panel: the row carries the promise it shows, what D, Done and Not a task act on
+    // after the panel: the row carries the promise it shows, what D, Done and Remove act on
     // the fourth panel round (revision 9): who it's to, so a promise's row names and pictures them, not you (the last sender)
     const promiseWhy = (r: FollowupRow, missed = false): TodayWhy => ({ kind: "promise", text: r.text, dueAt: r.dueAt, personName: r.personName, personEmail: r.personEmail, sentAt: r.sentAt, ...(missed ? { missed } : {}), promise: { id: r.id, revision: r.revision, dated: r.dated } });
     // the third panel round (revision 5): your promises by their day, beside the dated items; the fourth (revision 8): one
@@ -653,7 +653,7 @@ export class TodayService {
       else ranked[at.group].push({ threadId: r.threadId, at: { dueDay: dayKeyOf(r.dueAt), dueAt: r.dueAt, timed: false }, why: promiseWhy(r, at.group === "missed"), day: at.day });
     }
     // the third panel round (revision 4): a conversation with an open promise of yours shows that promise, the one due
-    // soonest, carried so Done, Not a task and Later act on exactly it; one put off with Later (the fifth panel round) is
+    // soonest, carried so Done, Remove and Later act on exactly it; one put off with Later (the fifth panel round) is
     // none's until it's back, and a conversation whose only open promise it is isn't waiting meanwhile (the stores' rule).
     // The seventh (revision 1): an ask's row takes it only from the same group or an earlier one (plan 210: Missed or
     // Today; one with no day is Today's whenever it shows), so a person's question isn't put under next week's promise. The

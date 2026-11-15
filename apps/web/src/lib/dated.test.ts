@@ -29,12 +29,12 @@ beforeEach(() => {
 
 describe("a Today row's task (plan 204, after the panel)", () => {
   const item = { id: 30, revision: 2, kind: "event" as const, dueDay: "2026-11-12", timed: true, dated: true };
-  it("Not a task: a date is dismissed by its own act, a promise by follow-ups' (the one the row shows), each with Undo", async () => {
+  it("Remove: a date is dismissed by its own act, a promise by follow-ups' (the one the row shows), each with Undo", async () => {
     await actOnTask({ kind: "dated", item, when: null, due: null, dueAt: 0 }, "dismiss");
     await actOnTask({ kind: "promise", id: 7, revision: 3, when: null, due: null }, "dismiss");
     expect(calls).toEqual(["dated.act", "followups.act"]);
     expect(params).toEqual([{ id: 30, revision: 2, action: "dismiss" }, { id: 7, revision: 3, action: "dismiss" }]);
-    expect(said).toEqual([{ text: "Removed from Today", undo: true }, { text: "Removed from Today", undo: true }]);
+    expect(said).toEqual([{ text: "Removed from What matters", undo: true }, { text: "Removed from What matters", undo: true }]);
   });
 
   it("Done and Later say so; a promise's Later moves its due moment", async () => {
@@ -51,7 +51,7 @@ describe("a Today row's task (plan 204, after the panel)", () => {
     await actOnTask(bill, "later", 1234);
     expect(said).toEqual([
       { text: "Done: Pay $187.42 for the utility bill", undo: true },
-      { text: "Not a task: send the agenda", undo: true },
+      { text: "Removed from What matters: send the agenda", undo: true },
       { text: "Later: Pay $187.42 for the utility bill", undo: true },
     ]);
     // a task with no words of its own: the plain ones
@@ -65,7 +65,7 @@ describe("a Today row's task (plan 204, after the panel)", () => {
     expect(text).toBe("Done: Renew the commercial general liability insurance policy…");
     expect(text.length).toBeLessThanOrEqual("Done: ".length + 60);
     // one word with no space near the end is cut where it must be
-    expect(taskSaid("dismiss", "x".repeat(80))).toBe(`Not a task: ${"x".repeat(59)}…`);
+    expect(taskSaid("dismiss", "x".repeat(80))).toBe(`Removed from What matters: ${"x".repeat(59)}…`);
     expect(taskSaid("later", "  ")).toBe("Moved to later");
   });
 

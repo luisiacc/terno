@@ -25,7 +25,7 @@ import { AI_ACTIONS, AI_CARD, AI_GLYPH, AI_HEADER, AI_PAD, AI_TITLE, AiProvenanc
 import FollowupsTip from "./followups-tip";
 import { WhenForm } from "./when-fields";
 
-/** The dated line's quiet buttons (thread-dated's Later and Not a task), for a promise's. */
+/** The dated line's quiet buttons (thread-dated's Later and Remove), for a promise's. */
 const QUIET = { variant: "ghost", className: "text-muted-foreground hover:text-foreground" } as const;
 
 /**
@@ -75,7 +75,7 @@ function Line({ row, messages }: { row: FollowupRow; messages: readonly MessageD
           )
         ) : (
           // the fourth panel round (revision 10): a promise is a task, so its buttons are the dated line's, in its
-          // weights: Done outline, Later and Not a task ghost
+          // weights: Done outline, Later and Remove ghost
           <Button variant="outline" size="sm" className="text-foreground" data-testid="followup-done" onClick={() => void actOnThreadPromise(row, "done")}>{t("followup.done")}</Button>
         )}
         <DropdownMenu>
@@ -116,7 +116,7 @@ function Line({ row, messages }: { row: FollowupRow; messages: readonly MessageD
         </Popover>
         {/* a nudge's dismissal keeps its words and weight: it isn't a task */}
         <Button size="sm" data-testid="followup-dismiss" {...(awaiting ? { variant: "outline", className: "text-foreground" } : QUIET)} onClick={() => void actOnThreadPromise(row, "dismiss")}>
-          {t(awaiting ? "followup.dismiss" : "followup.notTask")}
+          {t(awaiting ? "followup.dismiss" : "followup.remove")}
         </Button>
         {/* where it came from, named ("Your message, Oct 22"), its words (the quote) on hover; nothing when it's the one
             message on screen */}

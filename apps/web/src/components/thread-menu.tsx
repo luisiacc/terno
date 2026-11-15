@@ -439,7 +439,7 @@ function TaskItems({ threadId }: { threadId: number }) {
   return (
     <>
       <Item icon={<CircleCheck />} label={t("dated.done")} command="today.done" testId="menu-dated-done" onClick={() => void actOnTodayRow(threadId, task, "done")} />
-      <Item icon={<Ban />} label={t("dated.notTask")} command="today.remove" testId="menu-dated-dismiss" onClick={() => void actOnTodayRow(threadId, task, "dismiss")} />
+      <Item icon={<Ban />} label={t("dated.remove")} command="today.remove" testId="menu-dated-dismiss" onClick={() => void actOnTodayRow(threadId, task, "dismiss")} />
       <ContextMenuSub>
         <ContextMenuSubTrigger data-testid="menu-dated-later">
           <Clock />

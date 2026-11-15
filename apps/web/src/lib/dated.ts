@@ -124,7 +124,7 @@ export function promiseWhen(o: { dueAt?: number; dated: boolean }, missed: boole
 export const promiseLine = (o: { text: string; dueAt?: number; dated: boolean }, missed: boolean, now = Date.now()): string => line(promiseWhen(o, missed, now), t("today.why.promise", { text: o.text }));
 
 /**
- * Plan 204 (after the panel): what a Today row's Done, Not a task, Later and D act on: its dated item, or the promise of
+ * Plan 204 (after the panel): what a Today row's Done, Remove, Later and D act on: its dated item, or the promise of
  * yours it shows (`why.promise`, exactly: never the thread's most urgent). `when` is the right column's due day, `due`
  * the same in words for a screen reader (that column is hidden from it; after the second panel round); `dueAt`, what
  * Later's window is read from (`laterWindow`); a promise's `dated`, whether it names a day. The fourth panel round: a
@@ -226,8 +226,8 @@ export function laterStart(w: LaterWindow, now = Date.now()): number {
   return Math.ceil(Math.max(now + 15 * minute, w.before - HOUR) / minute) * minute;
 }
 
-const SAID = { done: "dated.snack.done", dismiss: "dated.snack.dismissed", later: "dated.snack.later" } as const;
-const SAID_ITEM = { done: "dated.snack.doneItem", dismiss: "dated.snack.dismissedItem", later: "dated.snack.laterItem" } as const;
+const SAID = { done: "dated.snack.done", dismiss: "dated.snack.removed", later: "dated.snack.later" } as const;
+const SAID_ITEM = { done: "dated.snack.doneItem", dismiss: "dated.snack.removedItem", later: "dated.snack.laterItem" } as const;
 /** A task's words in the snack, at most: one line beside its Undo (the snack ellipsizes what's left over too) */
 const SAID_MAX = 60;
 
@@ -240,8 +240,8 @@ function shortened(text: string): string {
 }
 
 /**
- * The fourth panel round (change 9, revision 11): what the snack says of Done, Not a task and Later, naming the task so
- * its Undo says what it undoes: "Done: Pay $187.42 for the utility bill", "Not a task: …", "Later: …". One formatter for
+ * The fourth panel round (change 9, revision 11): what the snack says of Done, Remove and Later, naming the task so
+ * its Undo says what it undoes: "Done: Pay $187.42 for the utility bill", "Removed from What matters: …", "Later: …". One formatter for
  * the row's menu, D, the palette, the conversation's line and the promise card. The words are the task's as it was acted
  * on (a reload can't name what replaced it); with none, the plain "Marked done".
  */
@@ -251,7 +251,7 @@ export function taskSaid(action: "done" | "dismiss" | "later", text: string | nu
 }
 
 /**
- * Done, Not a task and Later (plan 204 §5, after the panel), each with Undo that puts the exact item back, as follow-ups'
+ * Done, Remove and Later (plan 204 §5, after the panel), each with Undo that puts the exact item back, as follow-ups'
  * act. Today reloads on the backend's `todayChanged`. `left`: the Today row it took out of the list (after the second
  * panel round), which its Undo puts back selected, and a failure brings back.
  */

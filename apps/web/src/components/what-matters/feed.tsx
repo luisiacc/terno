@@ -273,7 +273,7 @@ interface ItemProps {
   open: boolean;
   /** Coming up's: quieter */
   later: boolean;
-  /** plan 210: a history line (done, not a task, settled, over) */
+  /** plan 210: a history line (done, removed, settled, over) */
   past?: boolean;
   /** the item a conversation was just put away from: marked quietly (the hover's fill), where j/k go on from */
   cursor?: boolean;
