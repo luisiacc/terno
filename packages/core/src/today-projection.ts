@@ -231,15 +231,17 @@ export function projectRows(items: readonly PlacedItem[], f: Pick<ProjectionFact
     if (represented.has(w.id)) continue;
     waiting.push({ id: waitingRowId(w.id), threadId: w.id, group: "today", day: null, why: { kind: "waiting", wrote: w.hasSent }, waiting: true, dueAt: w.lastDate, came: w.lastDate });
   }
-  const counts = countsOf([...placed, ...waiting], f.now);
+  const all = placed.concat(waiting);
+  const counts = countsOf(all, f.now);
   if (o.count) return { rows: [], counts };
   // your reminder on a conversation with no row of its own (one that has one already brings it to you)
-  const shown = new Set([...placed, ...waiting].map((p) => p.threadId));
+  const shown = new Set<number>();
+  for (const p of all) shown.add(p.threadId);
   const reminders: Placed[] = [...f.reminders]
     .sort((a, b) => a.dueAt - b.dueAt)
     .filter((r) => !shown.has(r.threadId) && f.live(r.threadId))
     .map((r) => ({ id: reminderRowId(r.threadId), threadId: r.threadId, group: "today", day: null, why: { kind: "reminder", dueAt: r.dueAt }, dueAt: r.dueAt, came: r.dueAt }));
-  return { rows: ordered([...placed, ...waiting, ...reminders]), counts };
+  return { rows: ordered(all.concat(reminders)), counts };
 }
 
 /** The header's and the badge's buckets (`TodayCounts`): what `todayCounted` counts, by the group it's under. */
@@ -261,7 +263,13 @@ function countsOf(rows: readonly Placed[], now: number): TodayCounts {
  * day (two put off to one day).
  */
 function ordered(rows: readonly Placed[]): ProjectedRow[] {
-  const of = (g: TodayGroupKind) => rows.filter((r) => r.group === g);
+  const groups = new Map<TodayGroupKind, Placed[]>();
+  for (const r of rows) {
+    const list = groups.get(r.group);
+    if (list) list.push(r);
+    else groups.set(r.group, [r]);
+  }
+  const of = (g: TodayGroupKind) => groups.get(g) ?? [];
   const missed = of("missed").sort((a, b) => b.dueAt - a.dueAt);
   // Today's people as they came: a person's ask newest first, then waiting conversations newest first
   const todays = of("today");
@@ -269,5 +277,6 @@ function ordered(rows: readonly Placed[]): ProjectedRow[] {
   const rest = todays.filter((r) => !asks.includes(r));
   const today = sortInDay([...rest.filter((r) => !r.waiting), ...asks, ...rest.filter((r) => r.waiting)], (r) => r.why, false);
   const byItsDay = (list: Placed[]) => sortInDay(list, (r) => r.why, true, (r) => r.day!);
-  return [...missed, ...today, ...byItsDay(of("day")), ...byItsDay(of("comingUp"))].map(({ dueAt: _dueAt, came: _came, ...r }) => r);
+  // (the ordering's own fields ride along, unread: no copy of every row at the 1,000-item bound)
+  return missed.concat(today, byItsDay(of("day")), byItsDay(of("comingUp")));
 }
