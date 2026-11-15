@@ -21,9 +21,9 @@ export const DATED_SCAN_MARK_MS = 14 * 86_400_000;
  */
 export const DATED_NOTHING_ASKED_SINCE = 12;
 
-/** A reading that records "nothing asked": a trusted prompt, and no request of the reader (`ask`, `respond`) kept. */
-export const readNothingAsked = (w: Pick<DatedFinish, "rows" | "promptVersion">): boolean =>
-  w.promptVersion != null && w.promptVersion >= DATED_NOTHING_ASKED_SINCE && !w.rows.some((r) => ANSWERED_KINDS.includes(r.kind));
+/** A reading that records "nothing asked": of the whole message, at a trusted prompt, and no request of the reader (`ask`, `respond`) kept. */
+export const readNothingAsked = (w: Pick<DatedFinish, "rows" | "promptVersion" | "readWhole">): boolean =>
+  w.readWhole === true && w.promptVersion != null && w.promptVersion >= DATED_NOTHING_ASKED_SINCE && !w.rows.some((r) => ANSWERED_KINDS.includes(r.kind));
 
 export interface DatedMark {
   messageId: number;
@@ -126,6 +126,11 @@ export interface DatedFinish {
   model: string | null;
   provider: string | null;
   promptVersion: number | null;
+  /**
+   * Plan 210 (the Codex code review of iteration 2): the model saw the whole message (not cut to the window or the reader's
+   * limit, its body captured in full). Only such a reading may say nothing was asked; absent, it says nothing either way.
+   */
+  readWhole?: boolean;
   clearGeneration: number;
 }
 
