@@ -2634,6 +2634,8 @@ It contains none of your mail, contacts, settings or keys.
   "whatMatters.options": "What matters options",
   "whatMatters.menu.remove": "Remove from What matters",
   "whatMatters.menu.removeKeeps": "The email stays",
+  // plan 210 (iteration 4): the palette's Done, Later and Remove with nothing selected in What matters
+  "whatMatters.selectFirst": "Select an item first",
   "whatMatters.moreSettings": "More settings…",
   "whatMatters.history.done": "Done {day}",
   "whatMatters.history.removed": "Removed {day}",
