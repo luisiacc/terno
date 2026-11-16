@@ -517,8 +517,19 @@ export function withZoneNote(text: string, time: string | null): string | null {
 }
 
 const WEEKDAY: Record<string, number> = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6, domingo: 0, lunes: 1, martes: 2, miercoles: 3, jueves: 4, viernes: 5, sabado: 6 };
+// iteration 4's code review (Codex): a named calendar date too, its month checked ("before November 20", "before Nov. 20th",
+// "before 20 November", "antes del 20 de noviembre"); a bare "may" after a day is a verb ("before the 20th may be too late")
+const MONTH: Record<string, number> = {
+  january: 0, february: 1, march: 2, april: 3, may: 4, june: 5, july: 6, august: 7, september: 8, october: 9, november: 10, december: 11,
+  jan: 0, feb: 1, mar: 2, apr: 3, jun: 5, jul: 6, aug: 7, sep: 8, sept: 8, oct: 9, nov: 10, dec: 11,
+  enero: 0, febrero: 1, marzo: 2, abril: 3, mayo: 4, junio: 5, julio: 6, agosto: 7, septiembre: 8, setiembre: 8, octubre: 9, noviembre: 10, diciembre: 11, ene: 0, abr: 3, ago: 7, dic: 11,
+};
+const MONTHS = Object.keys(MONTH).sort((a, b) => b.length - a.length).join("|");
 // "before Monday", "before the 20th", "antes del lunes", "antes del día 20"; never a time ("before 5 PM", "antes de las 18:00")
-const BEFORE = /\b(?:before|antes del?)\s+(?:(?:next|this|el|pr[oó]ximo)\s+)?(?:(sunday|monday|tuesday|wednesday|thursday|friday|saturday|domingo|lunes|martes|miercoles|jueves|viernes|sabado)\b|(?:the\s+|dia\s+)?(\d{1,2})(?:st|nd|rd|th)?\b(?!\s*(?::|[ap]\.?\s?m\b|h\b|hrs?\b|horas?\b)))/gu;
+const BEFORE = new RegExp(
+  String.raw`\b(?:before|antes del?)\s+(?:(?:next|this|el|pr[oó]ximo)\s+)?(?:(?<weekday>sunday|monday|tuesday|wednesday|thursday|friday|saturday|domingo|lunes|martes|miercoles|jueves|viernes|sabado)\b|(?<month>${MONTHS})\.?\s+(?<day>\d{1,2})(?:st|nd|rd|th)?\b(?!\s*(?::|[ap]\.?\s?m\b|h\b|hrs?\b|horas?\b))|(?:the\s+|dia\s+)?(?<date>\d{1,2})(?:st|nd|rd|th)?\b(?!\s*(?::|[ap]\.?\s?m\b|h\b|hrs?\b|horas?\b))(?:\s+(?:(?:of|de)\s+)?(?!may\s+(?:be|not|have|need|want|still|also|well)\b)(?<of>${MONTHS})\b)?)`,
+  "gu",
+);
 const plain = (text: string) => text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
 // a deadline's kinds: an event or a delivery "before" something is when it happens, not a last day; plan 210 (iteration 3,
 // revision 11): nor an expiry or a renewal's, whose day is the one the mail names ("renew before it expires on the 19th")
@@ -560,7 +571,12 @@ export function beforeOf(kind: string, due: string | null, time: string | null, 
     const sentence = words.slice(sentenceStart, sentenceEnd);
     return !NOT_BEFORE.test(words.slice(clauseStart, start)) && !NOT_AFTER.test(words.slice(end, clauseEnd)) && (ASKS.test(sentence) || words[sentenceEnd] === "?" || sentence.includes("¿"));
   };
-  const names = (d: Date, b: RegExpMatchArray) => (b[1] ? WEEKDAY[b[1]] === d.getUTCDay() : Number(b[2]) === d.getUTCDate());
+  const names = (d: Date, b: RegExpMatchArray) => {
+    const g = b.groups ?? {};
+    if (g.weekday) return WEEKDAY[g.weekday] === d.getUTCDay();
+    const month = g.month ?? g.of;
+    return Number(g.day ?? g.date) === d.getUTCDate() && (month === undefined || MONTH[month] === d.getUTCMonth());
+  };
   const befores = [...words.matchAll(BEFORE)].filter((b) => asked(b.index!, b.index! + b[0].length));
   // the day it names given as that day (moved back), or the day before it already (kept)
   if (befores.some((b) => names(at, b))) return { due: iso(new Date(at.getTime() - 86_400_000)), before: due };

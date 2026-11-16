@@ -229,6 +229,23 @@ describe("reading dates in mail you got (plan 204)", () => {
     expect(readDatesTask(input({ language: "es" })).system).toContain('"Enviar la solicitud de la beca Brightwater"');
   });
 
+  it("iteration 4's code review: 'before' a named calendar date keeps its boundary, its month checked (en, es)", () => {
+    const read = (i: Partial<{ kind: string; quote: string; due: string | null; time: string | null }>, text = i.quote ?? "") => {
+      const v = readDatesTask(input({ text })).validate({ replaced: [], items: [item(i)], settled: [], moved: [] });
+      if (!v.ok) throw new Error("rejected");
+      return { due: v.value.items[0]!.due, before: v.value.items[0]!.before ?? null };
+    };
+    for (const quote of ["Please send the signed form before November 20.", "Please send the signed form before Nov. 20th, 2026.", "Please send the signed form before 20 November.", "Por favor envía el formulario firmado antes del 20 de noviembre."]) {
+      expect(read({ kind: "respond", quote, due: "2026-11-20" }), quote).toEqual({ due: "2026-11-19", before: "2026-11-20" });
+      expect(read({ kind: "respond", quote, due: "2026-11-19" }), quote).toEqual({ due: "2026-11-19", before: "2026-11-20" });
+    }
+    // another month is another day: never this one's boundary
+    expect(read({ kind: "respond", quote: "Please send the signed form before December 20.", due: "2026-11-20" })).toEqual({ due: "2026-11-20", before: null });
+    expect(read({ kind: "respond", quote: "Por favor envía el formulario antes del 20 de diciembre.", due: "2026-11-20" })).toEqual({ due: "2026-11-20", before: null });
+    // "may" after a day is a verb
+    expect(read({ kind: "respond", quote: "Please send it before the 20th; may I also ask for the receipts?", due: "2026-11-20" })).toEqual({ due: "2026-11-19", before: "2026-11-20" });
+  });
+
   it("iteration 4's code review: a time in another zone keeps the instant it names in the hour the reader's clock repeats", () => {
     // Sunday November 1, 2026: New York's 4:30 AM (EST) is Los Angeles' second 1:30 AM (PST), 09:30 UTC
     const v = readDatesTask(input({ zone: "America/Los_Angeles" })).validate({ replaced: [], items: [item({ kind: "event", text: "Flight to Boston", quote: "departs Sunday at 4:30 AM", due: "2026-11-01", time: "04:30 America/New_York at New York" })], settled: [], moved: [] });
