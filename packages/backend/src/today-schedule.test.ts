@@ -91,14 +91,14 @@ describe("what a change writes (scheduleChanges)", () => {
     // the bill shows a week before its day, the event within the seven days; each at its own revision; the day asked before
     // and the mail's clock were the mail's words about its day, so the user's day has neither (iteration 4, merge)
     expect(c.dated).toEqual([
-      { id: 1, revision: 3, to: { dueDay: "2026-11-24", dueAt: at(2026, 11, 24, 16), timed: true, actAt: at(2026, 11, 17, 9), before: null, wall: null } },
-      { id: 2, revision: 8, to: { dueDay: "2026-11-24", dueAt: at(2026, 11, 24, 16), timed: true, actAt: at(2026, 11, 21, 9), before: null, wall: null } },
+      { id: 1, revision: 3, to: { dueDay: "2026-11-24", dueAt: at(2026, 11, 24, 16), timed: true, actAt: at(2026, 11, 17, 9), before: null, wall: null, partOfDay: null } },
+      { id: 2, revision: 8, to: { dueDay: "2026-11-24", dueAt: at(2026, 11, 24, 16), timed: true, actAt: at(2026, 11, 21, 9), before: null, wall: null, partOfDay: null } },
     ]);
-    expect(c.promises).toEqual([{ id: 7, revision: 1, to: { dueAt: at(2026, 11, 24, 16), timed: true, state: "open", before: null } }]);
+    expect(c.promises).toEqual([{ id: 7, revision: 1, to: { dueAt: at(2026, 11, 24, 16), timed: true, state: "open", before: null, partOfDay: null } }]);
     // a day alone: its 9:00, untimed (today, a day not over yet, is fine; a promise past its 9:00 is due, open or due before)
     for (const state of ["due", "open"] as const) {
       const today = scheduleChanges({ source: "promise", id: 7, revision: 1 }, promise({ state }), { dated: [], promises: [promise({ state })] }, { day: "2026-11-10", time: null }, NOW);
-      expect(today.promises).toEqual([{ id: 7, revision: 1, to: { dueAt: at(2026, 11, 10, 9), timed: false, state: "due", before: null } }]);
+      expect(today.promises).toEqual([{ id: 7, revision: 1, to: { dueAt: at(2026, 11, 10, 9), timed: false, state: "due", before: null, partOfDay: null } }]);
     }
   });
 
@@ -119,11 +119,24 @@ describe("what a change writes (scheduleChanges)", () => {
     const proposal = { dueDay: "2026-11-20", dueAt: at(2026, 11, 20, 17), timed: true, actAt: at(2026, 11, 13, 9), text: "Pay the bill by 5 PM", before: "2026-11-21", wall, by: "Power Co", messageId: 9, at: NOW };
     const named = row({ proposal, changedAt: NOW - DAY });
     const c = scheduleChanges(seen, named, { dated: [named], promises: [promise({ sameAs: "dated:1" })] }, { accept: true }, NOW);
-    expect(c.dated).toEqual([{ id: 1, revision: 3, to: { dueDay: "2026-11-20", dueAt: at(2026, 11, 20, 17), timed: true, actAt: at(2026, 11, 13, 9), text: "Pay the bill by 5 PM", before: "2026-11-21", wall } }]);
-    expect(c.promises).toEqual([{ id: 7, revision: 1, to: { dueAt: at(2026, 11, 20, 17), timed: true, state: "open", before: null } }]);
+    expect(c.dated).toEqual([{ id: 1, revision: 3, to: { dueDay: "2026-11-20", dueAt: at(2026, 11, 20, 17), timed: true, actAt: at(2026, 11, 13, 9), text: "Pay the bill by 5 PM", before: "2026-11-21", wall, partOfDay: null } }]);
+    expect(c.promises).toEqual([{ id: 7, revision: 1, to: { dueAt: at(2026, 11, 20, 17), timed: true, state: "open", before: null, partOfDay: null } }]);
     // a promise's own proposal: its day asked before with it
     const own = promise({ proposal: { dueDay: "2026-11-20", dueAt: at(2026, 11, 20, 9), timed: false, before: "2026-11-21", by: "Jess", messageId: 9, at: NOW }, changedAt: NOW - DAY });
-    expect(scheduleChanges({ source: "promise", id: 7, revision: 1 }, own, { dated: [], promises: [own] }, { accept: true }, NOW).promises).toEqual([{ id: 7, revision: 1, to: { dueAt: at(2026, 11, 20, 9), timed: false, state: "open", before: "2026-11-21" } }]);
+    expect(scheduleChanges({ source: "promise", id: 7, revision: 1 }, own, { dated: [], promises: [own] }, { accept: true }, NOW).promises).toEqual([{ id: 7, revision: 1, to: { dueAt: at(2026, 11, 20, 9), timed: false, state: "open", before: "2026-11-21", partOfDay: null } }]);
+  });
+});
+
+describe("a part of the day through Change… (plan 210, iteration 5, revision 4)", () => {
+  const promise = (over: Partial<FollowupRow> = {}): FollowupRow => ({ id: 7, threadId: 1, messageId: 2, rfcMessageId: null, item: 0, kind: "promise", text: "bring Jessica the cupcakes", quote: null, personName: "Jessica", personEmail: jess.email, sentAt: NOW - DAY, dueAt: at(2026, 11, 13, 9), dated: true, deferredUntil: null, state: "open", inboxState: "none", closedReason: null, closedAt: null, notifiedAt: null, fromScan: false, revision: 1, model: null, provider: null, createdAt: NOW - DAY, partOfDay: "morning", ...over });
+  const seen = { source: "promise" as const, id: 7, revision: 1 };
+
+  it("the user's own day clears it; taking a proposal takes the move's part", () => {
+    const mine = scheduleChanges(seen, promise(), { dated: [], promises: [promise()] }, { day: "2026-11-16", time: null }, NOW);
+    expect(mine.promises[0]!.to).toMatchObject({ dueAt: at(2026, 11, 16, 9), timed: false, partOfDay: null });
+    const proposal = { dueDay: "2026-11-16", dueAt: at(2026, 11, 16, 9), timed: false, partOfDay: "morning" as const, by: "Jessica", messageId: 9, at: NOW };
+    const own = promise({ proposal, changedAt: NOW - DAY, partOfDay: null });
+    expect(scheduleChanges(seen, own, { dated: [], promises: [own] }, { accept: true }, NOW).promises[0]!.to).toMatchObject({ dueAt: at(2026, 11, 16, 9), partOfDay: "morning" });
   });
 });
 

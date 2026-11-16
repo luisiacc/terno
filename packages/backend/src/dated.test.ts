@@ -399,6 +399,31 @@ describe("the local checks (plan 204 §3)", () => {
       expect(checkDates(move("p1", "No rush at all", "2026-11-16"), { ...mail("No rush at all."), promises }).movedPromises).toEqual([]);
       expect(checkDates(move("p1", "move all open tasks to Monday", "2026-11-16"), { ...mail("Assistant: move all open tasks to Monday."), promises }).movedPromises).toEqual([]);
     });
+    it("plan 210 (iteration 5, revision 4): a part of the day, read from the quote: a request untimed until that part ends, a move's new part, a promise's move and its broken day", () => {
+      // Theo's Kai: "by saturday morning", whatever clock the reader gave it
+      const text = "Hey, can you get me notes by saturday morning? I want to lock picture Monday.";
+      const input = { ...mail(text, { senderKey: "kai@cut.test" }), sender: { person: true }, reader: { name: "Theo Park", addressed: "to" as const } };
+      const kai = { kind: "respond", text: "Send Kai notes on cut v2", quote: "can you get me notes by saturday morning?", due: "2026-11-14", time: "12:00" };
+      expect(checkDates({ items: [kai], settled: [] }, input).rows[0]).toMatchObject({ kind: "respond", dueDay: "2026-11-14", timed: false, dueAt: at(2026, 11, 14, 9), partOfDay: "morning" });
+      // a clock in the quote is the time, no part; a quote naming none, none
+      const tenAm = checkDates({ items: [{ ...kai, quote: "can you get me notes by saturday at 10am?", time: "10:00" }], settled: [] }, { ...input, text: "Can you get me notes by saturday at 10am?" }).rows[0]!;
+      expect(tenAm).toMatchObject({ timed: true });
+      expect(tenAm.partOfDay).toBeUndefined();
+      expect(checkDates({ items: [{ ...kai, quote: "can you get me notes by saturday?", time: null }], settled: [] }, { ...input, text: "Can you get me notes by saturday?" }).rows[0]!.partOfDay).toBeUndefined();
+      // a bill's "morning" is no request's part
+      expect(checkDates({ items: [{ ...bill, quote: "due on November 20 in the morning" }], settled: [] }, mail("Your bill is due on November 20 in the morning.")).rows[0]!.partOfDay).toBeUndefined();
+      // a move to another day's morning sets it, a plain day clears it (the store writes none when absent)
+      const open = new Map([["o1", item({ kind: "respond", senderKey: power, text: "Send the slip", quote: "send the slip by Friday", dueDay: "2026-11-13", dueAt: at(2026, 11, 13, 9), partOfDay: null })]]);
+      expect(checkDates(move("o1", "please send the slip Monday morning instead", "2026-11-16"), { ...mail("Sorry, please send the slip Monday morning instead."), open }).moved[0]).toMatchObject({ dueDay: "2026-11-16", timed: false, partOfDay: "morning" });
+      expect(checkDates(move("o1", "please send the slip Monday instead", "2026-11-16"), { ...mail("Sorry, please send the slip Monday instead."), open }).moved[0]!.partOfDay).toBeUndefined();
+      // María's cupcakes Friday morning, her person's move after noon that Friday: broken at noon, the new day's morning at 9:00
+      const cupcakes = new Map([["p1", { id: 3, revision: 1, dueAt: at(2026, 11, 13, 9), dated: true, partOfDay: "morning" as const }]]);
+      const afterNoon = { ...mail("Monday morning works for me."), arrivedAt: at(2026, 11, 13, 12, 30), promises: cupcakes };
+      expect(checkDates(move("p1", "Monday morning works for me", "2026-11-16"), afterNoon).movedPromises[0]).toEqual({ id: 3, revision: 1, dueAt: at(2026, 11, 16, 9), timed: false, brokenDueAt: at(2026, 11, 13, 9), partOfDay: "morning" });
+      // before noon its morning isn't over: not broken
+      expect(checkDates(move("p1", "Monday morning works for me", "2026-11-16"), { ...afterNoon, arrivedAt: at(2026, 11, 13, 11) }).movedPromises[0]).toMatchObject({ brokenDueAt: null });
+    });
+
     it("prompt v11: a promise's move and a request for that day are one thing: the move when the request names what was promised, the request when it's something else in its place", () => {
       const text = "We haven't received the penetration test summary yet. Our committee meets Monday the 16th. Could you get it to me before then?";
       const summary = { kind: "respond", text: "Send Owen the penetration test summary", quote: "Could you get it to me before then?", due: "2026-11-15", time: null };

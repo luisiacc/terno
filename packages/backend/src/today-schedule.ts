@@ -60,7 +60,7 @@ export function scheduleChanges(seen: ItemSeen, named: DatedRow | FollowupRow, m
     // the named one as it was seen; the others while they're open, and never an ask (it has no day to change)
     if (!mine && (r.state !== "open" || r.kind === "ask")) continue;
     if (mine && accepted) {
-      dated.push({ id: r.id, revision: seen.revision, to: { dueDay: accepted.dueDay, dueAt: accepted.dueAt, timed: accepted.timed, actAt: accepted.actAt ?? r.actAt, ...(accepted.text ? { text: accepted.text } : {}), before: accepted.before ?? null, wall: accepted.wall ?? null } });
+      dated.push({ id: r.id, revision: seen.revision, to: { dueDay: accepted.dueDay, dueAt: accepted.dueAt, timed: accepted.timed, actAt: accepted.actAt ?? r.actAt, ...(accepted.text ? { text: accepted.text } : {}), before: accepted.before ?? null, wall: accepted.wall ?? null, partOfDay: accepted.partOfDay ?? null } });
       continue;
     }
     // as a mail arriving now would place it: shown within its kind's lead of the new day, never more than a year ahead
@@ -69,8 +69,9 @@ export function scheduleChanges(seen: ItemSeen, named: DatedRow | FollowupRow, m
       if (mine) throw new RpcError("BAD_REQUEST", L("errors.dated.changeFar"));
       continue;
     }
-    // the day asked before and the mail's clock were the mail's words about its day: the user's own day has neither
-    dated.push({ id: r.id, revision: mine ? seen.revision : r.revision, to: { dueDay: timing.dueDay, dueAt: timing.dueAt, timed: timing.timed, actAt: timing.actAt, before: null, wall: null } });
+    // the day asked before, the mail's clock and the part of its day (iteration 5) were the mail's words about its day: the
+    // user's own day has none
+    dated.push({ id: r.id, revision: mine ? seen.revision : r.revision, to: { dueDay: timing.dueDay, dueAt: timing.dueAt, timed: timing.timed, actAt: timing.actAt, before: null, wall: null, partOfDay: null } });
   }
   const promises: ScheduleChanges["promises"][number][] = [];
   for (const r of members.promises) {
@@ -80,7 +81,7 @@ export function scheduleChanges(seen: ItemSeen, named: DatedRow | FollowupRow, m
     const timed = mine && accepted ? accepted.timed : time !== null;
     // ahead, it's open again (out of the Inbox's top); a moment already reached is due in the change's own transaction, never
     // left for follow-ups' next look (its revision would make the change's own Undo refuse: Codex's code review, iteration 4)
-    promises.push({ id: r.id, revision: mine ? seen.revision : r.revision, to: { dueAt, timed, state: dueAt > now ? "open" : "due", before: mine && accepted ? (accepted.before ?? null) : null } });
+    promises.push({ id: r.id, revision: mine ? seen.revision : r.revision, to: { dueAt, timed, state: dueAt > now ? "open" : "due", before: mine && accepted ? (accepted.before ?? null) : null, partOfDay: mine && accepted ? (accepted.partOfDay ?? null) : null } });
   }
   return { at: now, dated, promises };
 }
