@@ -197,9 +197,23 @@ export function finishFollowups(c: Ctx, w: FollowupFinish): FollowupFinishOutcom
   const mine = own(c);
   let active = rows.by("state", "open").length + rows.by("state", "due").length;
   const later = T(c, "messages").by("fk_thread_id", src.threadId).some((m) => m.date > src.date && m.is_sent && !m.is_draft && !m.is_trash && !m.is_spam && !String(m.provider_msg_id ?? "").startsWith("local:"));
+  // as SQL's (plan 210, round 14's faults, the second morning): a promise said again is the older's
+  const renewed = new Map<number, number>();
+  const renew = (r: FollowupFinish["rows"][number], to: NonNullable<FollowupFinish["rows"][number]["renews"]>): boolean => {
+    const again = [...renewed.values()].includes(to.id);
+    const p = again ? undefined : rows.get(to.id);
+    const older = p && p.revision === to.revision && p.thread_id === src.threadId && p.kind === "promise" && live(p) ? p : null;
+    if (!again && !older) return false;
+    if (older && (r.dated || older.dated === 0)) {
+      rows.update(older, { due_at: r.dueAt, dated: r.dated ? 1 : 0, state: r.dueAt > w.now ? "open" : older.state, inbox_state: "none", broken_due_at: older.broken_due_at ?? to.brokenDueAt, timed: r.timed ? 1 : 0, before_day: null, part_of_day: r.partOfDay ?? null, revision: older.revision + 1 });
+    }
+    renewed.set(r.item, to.id);
+    return true;
+  };
   for (const r of w.rows) {
     if (r.kind === "awaiting" && (later || replied(c, mine, { accountId: src.accountId, threadId: src.threadId, sentAt: src.date, rfcMessageId: src.rfcMessageId }))) continue;
     if (rows.by("identity", w.messageId, r.item).length) continue;
+    if (r.kind === "promise" && r.renews && renew(r, r.renews)) continue;
     if (active >= FOLLOWUPS_ACTIVE_MAX) {
       if (r.kind === "awaiting") continue;
       const oldest = [...rows.by("state", "open"), ...rows.by("state", "due")].filter((x) => x.kind === "awaiting").sort((a, b) => a.sent_at - b.sent_at || a.id - b.id)[0];
@@ -225,7 +239,9 @@ export function finishFollowups(c: Ctx, w: FollowupFinish): FollowupFinishOutcom
       continue;
     }
     // plan 210 (iteration 4): a promise that only holds it is stored with it, once (no revision moves)
-    const p = rows.by("identity", w.messageId, v.item).find((x) => x.kind === "promise" && live(x) && x.answers == null && x.holds == null);
+    // (its own row, or the older one it said again)
+    const renewedRow = renewed.has(v.item) ? rows.get(renewed.get(v.item)!) : undefined;
+    const p = [...rows.by("identity", w.messageId, v.item), ...(renewedRow ? [renewedRow] : [])].find((x) => x.kind === "promise" && live(x) && x.answers == null && x.holds == null);
     if (v.verdict === "holding") {
       if (p) rows.update(p, { holds: r.id });
       continue;

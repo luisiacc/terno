@@ -952,6 +952,32 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
         expect(await store.dated.get(request.id)).toMatchObject({ state: "settled", closedReason: "answered", revision: request.revision + 1 });
       });
 
+      it("plan 210 (round 14's faults, the second morning): a promise said again moves the open one it renews, never a row beside it, its first missed day kept and a verdict on it reaching the older; one changed since is a row of its own", async () => {
+        const { store, request, reply, read, promise } = await talk();
+        const first = await reply();
+        await read(first, { rows: [promise()] });
+        const [older] = await store.followups.ofThread(first.thread);
+        // said again for a later morning (read twice from one reply), with its verdict on the request
+        const again = await reply();
+        const renews = { id: older!.id, revision: older!.revision, brokenDueAt: NOW + DAY };
+        const later = { dueAt: NOW + 3 * DAY, partOfDay: "morning" as const, renews };
+        await read(again, { rows: [promise({ text: "send the signed form", ...later }), promise({ item: 1, ...later })], verdicts: [{ request: { id: request.id, revision: request.revision }, verdict: "promise", item: 0 }] });
+        expect(await store.followups.ofThread(first.thread)).toHaveLength(1);
+        expect(await store.followups.get(older!.id)).toMatchObject({ text: older!.text, dueAt: NOW + 3 * DAY, dated: true, partOfDay: "morning", brokenDueAt: NOW + DAY, answers: request.id, state: "open", revision: older!.revision + 1 });
+        // one with no day leaves its day; another move keeps the first missed day
+        const undated = await reply();
+        await read(undated, { rows: [promise({ dated: false, dueAt: NOW + 5 * DAY, renews: { ...renews, revision: older!.revision + 1, brokenDueAt: null } })] });
+        expect(await store.followups.get(older!.id)).toMatchObject({ dueAt: NOW + 3 * DAY, dated: true, revision: older!.revision + 1 });
+        const third = await reply();
+        await read(third, { rows: [promise({ dueAt: NOW + 4 * DAY, renews: { ...renews, revision: older!.revision + 1, brokenDueAt: NOW + 3 * DAY } })] });
+        expect(await store.followups.get(older!.id)).toMatchObject({ dueAt: NOW + 4 * DAY, brokenDueAt: NOW + DAY, partOfDay: null });
+        expect(await store.followups.ofThread(first.thread)).toHaveLength(1);
+        // changed since it was shown: a row of its own
+        const stale = await reply();
+        await read(stale, { rows: [promise({ renews })] });
+        expect(await store.followups.ofThread(first.thread)).toHaveLength(2);
+      });
+
       it("plan 210 (iteration 4): a promise that only holds it is stored with it, once, the request open; never one that answers it, never from a reply that isn't yours for certain", async () => {
         const { store, request, reply, read, promise } = await talk();
         const shown = { id: request.id, revision: request.revision };

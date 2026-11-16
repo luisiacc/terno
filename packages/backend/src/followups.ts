@@ -1,12 +1,12 @@
 import { AiError, FOLLOWUP_ANSWERING_CHARS, FOLLOWUP_OPEN_MAX, FOLLOWUP_OWN_CHARS, FOLLOWUP_PROMPT_VERSION, FOLLOWUP_REQUESTS_MAX, fitSentMail, followupBudget, costAt, priceOf, type AiTasks, type SentMailResult } from "@terno/ai";
-import { ANSWERED_KINDS, automatedLevel, byUrgency, followupDue, NUDGE_DEFAULT, followupWakeAt, normalizeText, promiseOver, readCorpus, refKey, SCAN_DAYS, SCAN_MESSAGES_MAX, SCAN_PROMISE_OVERDUE_MS, SCAN_WAIT_STALE_MS, validFollowupDate, withNeeds, withoutQuotes, followupNotice, type AiErrorKind, type DatedRow, type FollowupRow, type FollowupsSnapshot, type MailNotice, type ThreadSummary } from "@terno/core";
+import { addressKey, ANSWERED_KINDS, automatedLevel, dayKeyOf, dueCutoff, byUrgency, followupDue, NUDGE_DEFAULT, followupWakeAt, normalizeText, promiseOver, readCorpus, refKey, SCAN_DAYS, SCAN_MESSAGES_MAX, SCAN_PROMISE_OVERDUE_MS, SCAN_WAIT_STALE_MS, validFollowupDate, withNeeds, withoutQuotes, followupNotice, type AiErrorKind, type DatedRow, type FollowupRow, type FollowupsSnapshot, type MailNotice, type ThreadSummary } from "@terno/core";
 import { captureError } from "@terno/core/diag";
 import { RpcError, type AppSettings } from "@terno/core/rpc";
 import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
 import { AWAITING_ITEM, HELD_REQUEST_CLOSED, type FollowupFinish, type FollowupSnapshot, type FollowupSource, type FollowupWrite, type MailStore, type SentMark } from "@terno/store";
 import { DailyLimitError, MonthlyLimitError } from "./ai-limiter";
 import { UI_LOCALE_KEY } from "./forwarding";
-import { contextOf, plainEvidence, sentencesOf } from "./dated-evidence";
+import { contextOf, plainEvidence, sameObject, sentencesOf } from "./dated-evidence";
 import { promiseMoment } from "./promise-time";
 
 const MAX_DELAY = 2 ** 31 - 1;
@@ -131,6 +131,26 @@ function wordsAt(text: string, words: string, from = 0): number {
   return -1;
 }
 
+/**
+ * Plan 210 (round 14's faults, the second morning): the open promise of yours a new one says again: to the same person, in
+ * this conversation (`open`, newest first), of the same deliverable (`sameObject`: Theo's "full written update" for Monday
+ * morning after Friday's "full written update with the numbers and the board deck appendix"), never two deliverables to one
+ * person ("the board deck", "the signed term sheet"), one this reply keeps, or one that only holds a request. The older's
+ * day counts as missed (`brokenDueAt`) only when it was over before this was said, as a person's move reads it, and only
+ * when this one moves it (it names a day, or the older named none).
+ */
+export function renewedPromise(p: FollowupWrite, open: Iterable<FollowupRow>, o: { kept: ReadonlySet<number>; sentAt: number }): FollowupWrite["renews"] {
+  if (p.kind !== "promise" || !p.personEmail) return undefined;
+  const person = addressKey(p.personEmail);
+  for (const x of open) {
+    if (x.kind !== "promise" || x.holds != null || o.kept.has(x.id) || !x.personEmail || addressKey(x.personEmail) !== person || !sameObject(x.text, p.text)) continue;
+    const moves = p.dated || !x.dated;
+    const broken = moves && x.dated && dueCutoff(dayKeyOf(x.dueAt), x.partOfDay) <= o.sentAt ? x.dueAt : null;
+    return { id: x.id, revision: x.revision, brokenDueAt: broken };
+  }
+  return undefined;
+}
+
 export function checkSentMail(result: SentMailResult, input: { ownText: string; recipients: readonly { label: string; name: string; email: string }[]; open: ReadonlyMap<string, FollowupRow>; requests?: ReadonlyMap<string, Pick<DatedRow, "id" | "revision">>; sentAt: number; nudgeAfterDays: number }): { rows: FollowupWrite[]; kept: { id: number; revision: number }[]; verdicts: Verdict[] } {
   const own = norm(input.ownText);
   const byLabel = new Map(input.recipients.map((r) => [r.label, r]));
@@ -164,6 +184,12 @@ export function checkSentMail(result: SentMailResult, input: { ownText: string; 
     const row = input.open.get(k.label);
     return row && ownPieces(k.evidence, own) ? [{ id: row.id, revision: row.revision }] : [];
   });
+  // plan 210 (round 14's faults, the second morning): a promise said again is the older one's, never a row beside it
+  const keptIds = new Set(kept.map((k) => k.id));
+  for (const r of rows) {
+    const renews = renewedPromise(r, input.open.values(), { kept: keptIds, sentAt: input.sentAt });
+    if (renews) r.renews = renews;
+  }
   /**
    * Plan 210 (iteration 3, the Codex review's revision 1): a verdict on a request it was shown, evidence-checked like the rest:
    * their words, two or more, never words to the app. Done now settles it; a concrete promise kept above links it (one
