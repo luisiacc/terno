@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { canLapse, datedGroupAt, datedTiming, lapsesUnlessRenewed, needsPresence, nextTodayChange, type DatedKind, type DatedRow } from "./dated";
 import type { FollowupRow } from "./followups";
 import { placedThreads, placeItems, projectToday, type ProjectionFacts } from "./today-projection";
-import { splitZoneNote, statedClock, weekEndDay } from "./today-items";
+import { splitZoneNote, statedClock } from "./today-items";
 
 const at = (y: number, m: number, d: number, h = 0, min = 0) => new Date(y, m - 1, d, h, min).getTime();
 // a Wednesday
@@ -50,8 +50,8 @@ describe("a row per item", () => {
     const waiting = [4, 5, 6].map((id) => ({ id, lastDate: NOW - id, hasSent: true }));
     const { rows, counts } = projectToday(facts({ dated: [plan, ask], waiting }));
     expect(rows.filter((r) => r.waiting).map((r) => r.threadId)).toEqual([4, 6]);
-    // the plan isn't counted; the ask and the two waiting conversations are Today's
-    expect(counts).toEqual({ missed: 0, today: 3, thisWeek: 0 });
+    // the plan isn't counted; the ask and the two waiting conversations are Today's "Waiting on you"
+    expect(counts).toEqual({ missed: 0, today: 0, waiting: 3 });
     // your promise to them behind Coming up says nothing yet: their conversation waiting on you is its own row meanwhile
     const later = promise(at(2026, 11, 30, 9), { threadId: 6 });
     expect(projectToday(facts({ promises: [later], waiting })).rows.filter((r) => r.waiting).map((r) => r.threadId)).toEqual([4, 5, 6]);
@@ -121,10 +121,13 @@ describe("early, broken, one time", () => {
     expect(rows.find((r) => r.id === `dated:${far.id}`)!.why.item).toMatchObject({ early: true });
     // without it, a week before (Coming up meanwhile)
     expect(rows.find((r) => r.id === `dated:${late.id}`)!.group).toBe("comingUp");
-    expect(counts.today).toBe(1);
+    expect(counts).toEqual({ missed: 0, today: 0, waiting: 1 });
+    expect(rows.find((r) => r.id === `dated:${far.id}`)!.part).toBe("waiting");
     // on its day it's due today, as any request
-    const due = projectToday(facts({ now: at(2026, 11, 30, 9), dated: [far] })).rows[0]!;
-    expect(due.why.item?.early).toBeUndefined();
+    const due = projectToday(facts({ now: at(2026, 11, 30, 9), dated: [far] }));
+    expect(due.rows[0]!.why.item?.early).toBeUndefined();
+    // a deadline, not Waiting (revision 8)
+    expect([due.rows[0]!.part, due.counts]).toEqual([undefined, { missed: 0, today: 1, waiting: 0 }]);
   });
 
   it("a delivery, needing someone there or not, shows as its seven days begin (plan 210, iteration 3); the clock agrees", () => {
@@ -181,28 +184,53 @@ describe("early, broken, one time", () => {
   });
 });
 
-describe("the header's numbers", () => {
-  it("Today, this week through Sunday, Missed; never a Plan, a reminder nor Coming up", () => {
+describe("the header's numbers (plan 210, iteration 3, revision 8)", () => {
+  it("missed, today and waiting, disjoint; never a Plan, a reminder, a day ahead nor Coming up", () => {
     const rows = [
       dated("pay", "2026-11-17"), // Missed
       dated("pay", "2026-11-18"), // Today
-      dated("ask", null), // Today
+      dated("respond", "2026-11-18"), // a request due today: a deadline, Today
+      dated("ask", null), // Waiting on you
+      dated("respond", "2026-11-27", { early: true }), // shown early: Waiting on you
       dated("event", "2026-11-18", {}, "19:00"), // Today, a Plan
-      dated("pay", "2026-11-21"), // Saturday: this week
-      dated("renew", "2026-11-22"), // Sunday: this week
-      dated("pay", "2026-11-24"), // next Tuesday: a day ahead, not this week
+      dated("pay", "2026-11-21"), // a day ahead
       dated("respond", "2026-12-10"), // Coming up
     ];
-    const { counts } = projectToday(facts({ dated: rows, reminders: [{ threadId: 99, dueAt: NOW }] }));
-    expect(counts).toEqual({ missed: 1, today: 2, thisWeek: 2 });
+    const waiting = [{ id: 50, lastDate: NOW - 5, hasSent: true }];
+    const { counts } = projectToday(facts({ dated: rows, waiting, reminders: [{ threadId: 99, dueAt: NOW }] }));
+    expect(counts).toEqual({ missed: 1, today: 2, waiting: 3 });
     // the count's projection agrees with the list's
-    expect(projectToday(facts({ dated: rows }), { count: true }).counts).toEqual(counts);
+    expect(projectToday(facts({ dated: rows, waiting }), { count: true }).counts).toEqual(counts);
+  });
+});
+
+describe("Waiting on you, a part of Today (plan 210, iteration 3, revision 8)", () => {
+  it("after Today's own (its quiet rows too); requests shown early by their day, soonest first, then the undated as they came, newest first", () => {
+    const bill = dated("pay", "2026-11-18", { threadId: 1 });
+    const plan = dated("event", "2026-11-18", { threadId: 2 }, "19:00");
+    const later = dated("respond", "2026-11-28", { threadId: 3, early: true, arrivedAt: at(2026, 11, 17, 8) });
+    const sooner = dated("respond", "2026-11-20", { threadId: 4, early: true, arrivedAt: at(2026, 11, 16, 8) });
+    const ask = dated("ask", null, { threadId: 5, arrivedAt: at(2026, 11, 17, 12) });
+    const waiting = [{ id: 6, lastDate: at(2026, 11, 18, 8), hasSent: true }, { id: 7, lastDate: at(2026, 11, 16, 8), hasSent: false }];
+    const { rows } = projectToday(facts({ dated: [later, ask, bill, sooner, plan], waiting, reminders: [{ threadId: 8, dueAt: NOW }] }));
+    expect(rows.map((r) => [r.id, r.part ?? null])).toEqual([
+      [`dated:${bill.id}`, null],
+      ["reminder:8", null],
+      [`dated:${plan.id}`, null],
+      [`dated:${sooner.id}`, "waiting"],
+      [`dated:${later.id}`, "waiting"],
+      ["waiting:6", "waiting"],
+      [`dated:${ask.id}`, "waiting"],
+      ["waiting:7", "waiting"],
+    ]);
   });
 
-  it("the week ends on Sunday", () => {
-    expect(weekEndDay(at(2026, 11, 18, 10))).toBe("2026-11-22");
-    expect(weekEndDay(at(2026, 11, 22, 23))).toBe("2026-11-22");
-    expect(weekEndDay(at(2026, 11, 23, 0))).toBe("2026-11-29");
+  it("a row's id stays as its tier changes: shown early, then due today", () => {
+    const request = dated("respond", "2026-11-20", { threadId: 3, early: true });
+    const before = projectToday(facts({ dated: [request] })).rows[0]!;
+    const on = projectToday(facts({ now: at(2026, 11, 20, 9), dated: [request] })).rows[0]!;
+    expect([before.id, before.part]).toEqual([`dated:${request.id}`, "waiting"]);
+    expect([on.id, on.part]).toEqual([`dated:${request.id}`, undefined]);
   });
 });
 

@@ -21,24 +21,24 @@ const root = createRoot(host);
 const line = () => host.querySelector("[data-testid=today-line]")!.textContent;
 const toggle = () => host.querySelector<HTMLButtonElement>("[data-testid=today-coming-up]");
 
-async function show(today: number, o: { missed?: number; thisWeek?: number; comingUp?: number; open?: boolean } = {}) {
+async function show(today: number, o: { missed?: number; waiting?: number; comingUp?: number; open?: boolean } = {}) {
   await act(async () => {
     useApp.setState({ counts: { ...getApp().counts, today: 99, inboxWaiting: 165 } });
-    useToday.setState({ counts: { missed: o.missed ?? 0, today, thisWeek: o.thisWeek ?? 0 }, comingUp: o.comingUp ?? 0, comingUpOpen: o.open ?? false });
+    useToday.setState({ counts: { missed: o.missed ?? 0, today, waiting: o.waiting ?? 0 }, comingUp: o.comingUp ?? 0, comingUpOpen: o.open ?? false });
     root.render(<TodayLine />);
   });
 }
 
-it("today and this week, Missed first when any, and nothing else: no cap, never the Waiting count nor the badge's sum", async () => {
-  await show(6, { thisWeek: 8 });
-  expect(line()).toBe("6 today · 8 this week");
-  expect(line()).not.toMatch(/165|99|waiting|newest|See all/);
+it("plan 210 (iteration 3): missed, today and waiting, each unsaid at zero; no cap, never the Inbox's count nor the badge's sum", async () => {
+  await show(3, { missed: 1, waiting: 5 });
+  expect(line()).toBe("1 missed · 3 today · 5 waiting");
+  expect(line()).not.toMatch(/165|99|this week|newest|See all/);
   expect(toggle()).toBeNull();
-  await show(6, { missed: 2, thisWeek: 8 });
-  expect(line()).toBe("2 missed · 6 today · 8 this week");
+  await show(6, { waiting: 8 });
+  expect(line()).toBe("6 today · 8 waiting");
   // a part that's nothing isn't said
-  await show(0, { thisWeek: 1 });
-  expect(line()).toBe("1 this week");
+  await show(0, { waiting: 1 });
+  expect(line()).toBe("1 waiting");
   await show(0);
   expect(line()).toBe("");
 });
@@ -49,8 +49,10 @@ it("in Spanish too", async () => {
   const { default: en } = await import("@terno/i18n/locales/en");
   setLocale("es", es);
   try {
-    await show(6, { thisWeek: 8 });
-    expect(line()).toBe("6 hoy · 8 esta semana");
+    await show(3, { missed: 1, waiting: 5 });
+    expect(line()).toBe("1 se te pasó · 3 hoy · 5 te esperan");
+    await show(0, { waiting: 1 });
+    expect(line()).toBe("1 te espera");
   } finally {
     setLocale("en", en);
   }

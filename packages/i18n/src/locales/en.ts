@@ -2647,6 +2647,8 @@ It contains none of your mail, contacts, settings or keys.
   "whatMatters.automatedLine": "Newsletters and notifications",
   // plan 210 (the owner): what has no date sits in Today, its column saying when it came, so it isn't read as due today
   "whatMatters.since": "since {day}",
+  // plan 210 (iteration 3, the owner): people's asks and requests shown early, a quiet part of Today
+  "whatMatters.waitingOnYou": "Waiting on you",
   "whatMatters.by": "by {day}",
   "whatMatters.promised": "{when} · promised {day}",
   "whatMatters.zoned": "{when} ({time})",
@@ -2656,7 +2658,7 @@ It contains none of your mail, contacts, settings or keys.
   "whatMatters.say.reminder": "Your reminder for “{subject}”.",
   "today.line.missed": { one: "# missed", other: "# missed" },
   "today.line.today": { one: "# today", other: "# today" },
-  "today.line.thisWeek": { one: "# this week", other: "# this week" },
+  "today.line.waiting": { one: "# waiting", other: "# waiting" },
   "today.line.joined": "{a} · {b}",
   "today.line.comingUp": { one: "# coming up", other: "# coming up" },
   "today.line.hideComingUp": "Hide coming up",

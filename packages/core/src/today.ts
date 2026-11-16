@@ -155,25 +155,38 @@ export interface TodayItem {
 }
 
 /**
- * Plan 210 (iteration 2): the header's numbers and the sidebar's ("6 today · 8 this week"; the badge Missed + Today). What
- * counts is `todayCounted`'s (never a Plan's kind, nor a reminder, nor Coming up): `missed`, the rows under Missed; `today`,
- * those under Today (due or happening today, what has no date, a person's request shown early); `thisWeek`, those under a
- * day ahead through the week's end (`weekEndDay`, Sunday).
+ * Plan 210 (iteration 3, revision 8, the owner's "'Waiting on you' in Today"): the header's numbers and the sidebar's ("1
+ * missed · 3 today · 5 waiting"; the badge Missed + Today), disjoint. What counts is `todayCounted`'s (never a Plan's kind,
+ * nor a reminder, nor a day ahead, nor Coming up): `missed`, the rows under Missed; `today`, Today's own (due or happening
+ * today, a promise of yours that named no day, an alert that named none); `waiting`, Today's "Waiting on you" part
+ * (`waitsOnYou`: a person's ask, a conversation waiting on your answer, a request shown before its day).
  */
 export interface TodayCounts {
   missed: number;
   today: number;
-  thisWeek: number;
+  waiting: number;
 }
 
-/** The sidebar's badge and the morning notice: what's Missed and what's Today's. */
-export const todayBadge = (c: TodayCounts): number => c.missed + c.today;
+/**
+ * Plan 210 (iteration 3, revision 8): a row of Today's "Waiting on you" part, people waiting on you (`dayTier`'s 2): their
+ * ask, a conversation waiting on your answer, a request shown before its day. A request due today is a deadline.
+ */
+export const waitsOnYou = (why: Pick<TodayWhy, "kind" | "item">): boolean => dayTier(why) === 2;
+
+/** Plan 210 (iteration 3): a part of a group: Today's "Waiting on you" */
+export type TodayPart = "waiting";
+
+/**
+ * The sidebar's badge and the morning notice: what's Missed and what's Today's, as before iteration 3: Today's group,
+ * its "Waiting on you" part included (it's inside Today), so the badge is the sum of what the header says.
+ */
+export const todayBadge = (c: TodayCounts): number => c.missed + c.today + c.waiting;
 
 /**
  * Plan 204: every row that's for today, each thread once, in `TODAY_GROUP_ORDER`; Coming up last, and never counted. Plan
  * 210 (by day): a day of its own and Coming up come as a section per day, in order, each with its `day` ("YYYY-MM-DD").
  */
-export type TodaySection = { kind: TodayGroupKind; day?: string; items: TodayItem[] };
+export type TodaySection = { kind: TodayGroupKind; day?: string; /** plan 210 (iteration 3): Today's "Waiting on you" */ part?: TodayPart; items: TodayItem[] };
 
 export interface DigestItem {
   threadId: number;

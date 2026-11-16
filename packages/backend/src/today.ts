@@ -652,7 +652,7 @@ export class TodayService {
     const { store } = this.b;
     const now = this.b.now();
     const settings = await readSettings(store);
-    const none = { missed: 0, today: 0, thisWeek: 0 };
+    const none = { missed: 0, today: 0, waiting: 0 };
     if (!(await this.available(settings))) return { sections: [], digest: null, now, counts: none };
     // Trash and Spam hide a row, and it comes back with its thread (the projection read it from these summaries)
     const { rows: shown, counts, threads } = await this.project(now, settings);
@@ -664,8 +664,9 @@ export class TodayService {
       const item: TodayItem = { id: r.id, thread: threads.get(r.threadId)!, why: r.why, ...(r.waiting ? lines.get(r.threadId) : {}), ...(r.also ? { also: r.also } : {}) };
       const last = sections.at(-1);
       const day = r.day ?? undefined;
-      if (last?.kind === r.group && last.day === day) last.items.push(item);
-      else sections.push({ kind: r.group, ...(day ? { day } : {}), items: [item] });
+      // plan 210 (iteration 3): Today's "Waiting on you" is a section of its own, after Today's
+      if (last?.kind === r.group && last.day === day && last.part === r.part) last.items.push(item);
+      else sections.push({ kind: r.group, ...(day ? { day } : {}), ...(r.part ? { part: r.part } : {}), items: [item] });
     }
     const history = ask.history && settings.today?.finished !== false ? await this.history({ after: null, through: ask.history.through, held }) : undefined;
     return { sections, digest: await this.digestRow(), now, counts, ...(history ? { history } : {}) };

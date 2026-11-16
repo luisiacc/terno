@@ -1,7 +1,7 @@
 import { datedGroup, datedGroupAt, dayKeyOf, promiseGroupAt, shownEarly, todayCounted, type DatedRow, type TaskPlace, type TodayGroupKind } from "./dated";
 import type { FollowupRow } from "./followups";
-import { sortInDay, type TodayAlso, type TodayCounts, type TodayWhy } from "./today";
-import { clockHolds, refKey, reminderRowId, splitZoneNote, statedClock, waitingRowId, weekEndDay, type FeedRowId, type ItemRef } from "./today-items";
+import { sortInDay, waitsOnYou, type TodayAlso, type TodayCounts, type TodayPart, type TodayWhy } from "./today";
+import { clockHolds, refKey, reminderRowId, splitZoneNote, statedClock, waitingRowId, type FeedRowId, type ItemRef } from "./today-items";
 
 /**
  * Plan 210 (iteration 2, the owner: "a row per item"; Codex's design): What matters is one projection, the list's, the
@@ -38,6 +38,8 @@ export interface ProjectedRow {
   also?: TodayAlso;
   /** a conversation waiting on you, whose line is its summary's */
   waiting?: boolean;
+  /** plan 210 (iteration 3, revision 8): Today's "Waiting on you" part (`waitsOnYou`); its id stays as its tier changes */
+  part?: TodayPart;
 }
 
 /** One item, or the true duplicates of one: its id the canonical's key, shown as `lead`. */
@@ -215,24 +217,25 @@ export function projectRows(items: readonly PlacedItem[], f: Pick<ProjectionFact
     }
     const plan = lead.source === "dated" && datedGroup(lead.row.kind) === "plans";
     if (!plan && at.group !== "comingUp") represented.add(lead.row.threadId);
-    // the count needs only what `todayCounted` reads: no words made
+    const early = lead.source === "dated" && at.group === "today" && shownEarly(lead.row, today);
+    // the count needs only what `todayCounted` and `waitsOnYou` read: no words made
     const why: TodayWhy = o.count
-      ? lead.source === "dated" ? { kind: "dated", item: { id: lead.row.id, revision: 0, kind: lead.row.kind, dueDay: "", timed: false, dated: true } } : { kind: "promise" }
+      ? lead.source === "dated" ? { kind: "dated", item: { id: lead.row.id, revision: 0, kind: lead.row.kind, dueDay: "", timed: false, dated: true, ...(early ? { early } : {}) } } : { kind: "promise" }
       : lead.source === "dated"
-        ? datedWhy(lead.row, at.group === "missed", at.group === "today" && shownEarly(lead.row, today), item.members)
+        ? datedWhy(lead.row, at.group === "missed", early, item.members)
         : promiseWhy(lead.row, at.group === "missed", item.members, f.zone);
     const came = lead.source === "dated" ? lead.row.arrivedAt : lead.row.sentAt;
-    placed.push({ id: item.id, threadId: lead.row.threadId, group: at.group, day: at.day, why, dueAt: lead.row.dueAt, came, ...(detail && !o.count ? { also: alsoOf(detail) } : {}) });
+    placed.push({ id: item.id, threadId: lead.row.threadId, group: at.group, day: at.day, why, dueAt: lead.row.dueAt, came, ...(at.group === "today" && waitsOnYou(why) ? { part: "waiting" as const } : {}), ...(detail && !o.count ? { also: alsoOf(detail) } : {}) });
   }
   // what's waiting on you (the owner's round 10: only when something is asked; the stores' `stillWaiting` says so), unless
   // an item of the conversation already says it
   const waiting: Placed[] = [];
   for (const w of f.waiting) {
     if (represented.has(w.id)) continue;
-    waiting.push({ id: waitingRowId(w.id), threadId: w.id, group: "today", day: null, why: { kind: "waiting", wrote: w.hasSent }, waiting: true, dueAt: w.lastDate, came: w.lastDate });
+    waiting.push({ id: waitingRowId(w.id), threadId: w.id, group: "today", day: null, why: { kind: "waiting", wrote: w.hasSent }, waiting: true, part: "waiting", dueAt: w.lastDate, came: w.lastDate });
   }
   const all = placed.concat(waiting);
-  const counts = countsOf(all, f.now);
+  const counts = countsOf(all);
   if (o.count) return { rows: [], counts };
   // your reminder on a conversation with no row of its own (one that has one already brings it to you)
   const shown = new Set<number>();
@@ -244,23 +247,24 @@ export function projectRows(items: readonly PlacedItem[], f: Pick<ProjectionFact
   return { rows: ordered(all.concat(reminders)), counts };
 }
 
-/** The header's and the badge's buckets (`TodayCounts`): what `todayCounted` counts, by the group it's under. */
-function countsOf(rows: readonly Placed[], now: number): TodayCounts {
-  const end = weekEndDay(now);
-  const counts: TodayCounts = { missed: 0, today: 0, thisWeek: 0 };
+/** The header's and the badge's buckets (`TodayCounts`), disjoint: what `todayCounted` counts, by its group and Today's part. */
+function countsOf(rows: readonly Placed[]): TodayCounts {
+  const counts: TodayCounts = { missed: 0, today: 0, waiting: 0 };
   for (const r of rows) {
     if (!todayCounted(r.group, r.why)) continue;
     if (r.group === "missed") counts.missed++;
-    else if (r.group === "today") counts.today++;
-    else if (r.group === "day" && r.day !== null && r.day <= end) counts.thisWeek++;
+    else if (r.part === "waiting") counts.waiting++;
+    else counts.today++;
   }
   return counts;
 }
 
 /**
- * The feed's order: Missed, the most recently due first; Today in `sortInDay`'s order (asks and waiting conversations as
- * they came, newest first); each day ahead, then Coming up, by its day and then the same order, a timed row by its time of
- * day (two put off to one day).
+ * The feed's order: Missed, the most recently due first; Today in `sortInDay`'s order, then its "Waiting on you" part (plan
+ * 210, iteration 3, revision 8: requests shown early by their own day, soonest first, then what has none, asks and waiting
+ * conversations as they came, newest first); each day ahead, then Coming up, by its day and then the same order, a timed
+ * row by its time of day (two put off to one day). The quiet rows (a plan happening today, your reminder) stay Today's own,
+ * above the part: a sub-heading holds only its own rows.
  */
 function ordered(rows: readonly Placed[]): ProjectedRow[] {
   const groups = new Map<TodayGroupKind, Placed[]>();
@@ -271,11 +275,12 @@ function ordered(rows: readonly Placed[]): ProjectedRow[] {
   }
   const of = (g: TodayGroupKind) => groups.get(g) ?? [];
   const missed = of("missed").sort((a, b) => b.dueAt - a.dueAt);
-  // Today's people as they came: a person's ask newest first, then waiting conversations newest first
   const todays = of("today");
-  const asks = todays.filter((r) => r.why.kind === "dated" && (r.why.item?.kind === "ask" || r.why.item?.early)).sort((a, b) => b.came - a.came);
-  const rest = todays.filter((r) => !asks.includes(r));
-  const today = sortInDay([...rest.filter((r) => !r.waiting), ...asks, ...rest.filter((r) => r.waiting)], (r) => r.why, false);
+  const own = todays.filter((r) => r.part !== "waiting");
+  // Waiting on you: what has a day by it, soonest first; then the rest as it came, newest first
+  const dated = todays.filter((r) => r.part === "waiting" && r.why.item?.early).sort((a, b) => a.dueAt - b.dueAt);
+  const undated = todays.filter((r) => r.part === "waiting" && !r.why.item?.early).sort((a, b) => b.came - a.came);
+  const today = sortInDay(own, (r) => r.why, false).concat(dated, undated);
   const byItsDay = (list: Placed[]) => sortInDay(list, (r) => r.why, true, (r) => r.day!);
   // (the ordering's own fields ride along, unread: no copy of every row at the 1,000-item bound)
   return missed.concat(today, byItsDay(of("day")), byItsDay(of("comingUp")));
