@@ -229,6 +229,12 @@ describe("the conversation's line keeps the whole wording (plan 204, after the s
     expect(taskOf({ ...why, item: { ...item, dated: true } }, now)).toMatchObject({ when: "Tomorrow", due: "Due tomorrow" });
     expect(taskOf({ ...why, item: { ...item, dated: true } }, now)!.noDay).toBeUndefined();
   });
+  it("iteration 5's code review: a promise's task carries the part of its day, for Remind me's limit", async () => {
+    const { taskOf } = await import("./dated");
+    const now = new Date(2026, 10, 12, 10, 0).getTime();
+    const promise = { id: 4, revision: 1, dated: true, timed: false, part: "morning" as const };
+    expect(taskOf({ kind: "promise", text: "send the cupcakes", dueAt: new Date(2026, 10, 13, 9).getTime(), promise }, now)).toMatchObject({ kind: "promise", part: "morning" });
+  });
 });
 
 describe("a row's second item (plan 204, the fifth panel round, change 6)", () => {

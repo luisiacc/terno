@@ -1,4 +1,4 @@
-import { dayEnd, dayKeyOf, DIGEST_ROW_ID, promiseDay, type FeedRowId, type FollowupRow } from "@terno/core";
+import { dayKeyOf, DIGEST_ROW_ID, dueCutoff, promiseDay, type FeedRowId, type FollowupRow, type PartOfDay } from "@terno/core";
 import { feedPlace, focusedFeedItem, focusFeedItem } from "~/lib/feed-focus";
 import type { LeftRows } from "~/lib/actions";
 import { actOnDated, actOnTask, type DatedRef, type TodayTask } from "~/lib/dated";
@@ -124,20 +124,21 @@ export function actOnReaderItem(threadId: number, item: ReaderItem, action: Task
  * Remind me never offers a preset past it ("Later today 1:00 PM" for a 12:30 reservation).
  */
 export function remindLimit(target: { task: TodayTask } | { item: ReaderItem }, now = Date.now()): number | null {
-  let at: { dueAt: number; timed: boolean; day: string } | null = null;
+  // iteration 5's code review: an untimed one's day ends at its part's end ("Friday morning": noon), as Missed reads it
+  let at: { dueAt: number; timed: boolean; day: string; part: PartOfDay | null } | null = null;
   if ("task" in target) {
     const { task } = target;
-    if (task.kind === "dated") at = task.item.dated ? { dueAt: task.dueAt, timed: task.item.timed, day: task.item.dueDay } : null;
-    else at = task.dated && task.dueAt !== undefined ? { dueAt: task.dueAt, timed: task.timed === true, day: dayKeyOf(task.dueAt) } : null;
+    if (task.kind === "dated") at = task.item.dated ? { dueAt: task.dueAt, timed: task.item.timed, day: task.item.dueDay, part: task.item.part ?? null } : null;
+    else at = task.dated && task.dueAt !== undefined ? { dueAt: task.dueAt, timed: task.timed === true, day: dayKeyOf(task.dueAt), part: task.part ?? null } : null;
   } else if (target.item.source === "dated") {
     const r = target.item.row;
-    at = r.dated && r.kind !== "ask" ? { dueAt: r.dueAt, timed: r.timed, day: r.dueDay } : null;
+    at = r.dated && r.kind !== "ask" ? { dueAt: r.dueAt, timed: r.timed, day: r.dueDay, part: r.partOfDay ?? null } : null;
   } else {
     const r = target.item.row;
     const d = promiseDay(r, now);
-    at = d.dated ? { dueAt: d.dueAt, timed: r.timed === true && d.dueAt === r.dueAt, day: dayKeyOf(d.dueAt) } : null;
+    at = d.dated ? { dueAt: d.dueAt, timed: r.timed === true && d.dueAt === r.dueAt, day: dayKeyOf(d.dueAt), part: d.part } : null;
   }
-  const limit = at === null ? null : at.timed ? at.dueAt : dayEnd(at.day);
+  const limit = at === null ? null : at.timed ? at.dueAt : dueCutoff(at.day, at.part);
   return limit !== null && limit > now ? limit : null;
 }
 

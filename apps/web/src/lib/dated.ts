@@ -165,7 +165,7 @@ export const promiseLine = (o: { text: string; dueAt?: number; dated: boolean },
  */
 export type TodayTask = (
   | { kind: "dated"; item: DatedRef; when: string | null; due: string | null; dueAt: number; noDay?: boolean; text?: string | null }
-  | { kind: "promise"; id: number; revision: number; when: string | null; due: string | null; dated?: boolean; noDay?: boolean; person?: TaskPerson; text?: string | null; /** plan 210 (iteration 4): its moment and whether it's a time, where Change… starts */ dueAt?: number; timed?: boolean; /** plan 210 (iteration 4): the reply's other promises the row shows, acted on with it */ with?: ItemSeen[] }
+  | { kind: "promise"; id: number; revision: number; when: string | null; due: string | null; dated?: boolean; noDay?: boolean; person?: TaskPerson; text?: string | null; /** plan 210 (iteration 4): its moment and whether it's a time, where Change… starts */ dueAt?: number; timed?: boolean; /** plan 210 (iteration 5's code review): the part of its day it sits under, where its day ends */ part?: PartOfDay | null;/** plan 210 (iteration 4): the reply's other promises the row shows, acted on with it */ with?: ItemSeen[] }
 ) & {
   /** the fifth panel round (change 6): its conversation's next item, in words ("Also Thu 9:00 AM · Board meeting"), never what it acts on */
   also?: string;
@@ -208,7 +208,7 @@ export function taskOf(why: TodayWhy, now = Date.now()): TodayTask | null {
       dated,
       text: why.text ?? null,
       // a promise with no day says none (the fourth panel round): the mail's date beside it would read as one
-      ...(!dated ? { noDay: true } : { dueAt: why.dueAt!, timed: why.promise.timed === true }),
+      ...(!dated ? { noDay: true } : { dueAt: why.dueAt!, timed: why.promise.timed === true, ...(why.promise.part ? { part: why.promise.part } : {}) }),
       ...(person ? { person } : {}),
       ...(why.with?.length ? { with: why.with } : {}),
     };
