@@ -56,14 +56,26 @@ export interface TodayWhy {
    * shown in Today's people before its day ("by Nov 30"); `note`, the mail's own time in its zone when it isn't the reader's
    * ("5:00 PM ET"), taken out of `text` for the when column (one time per row)
    */
-  item?: { id: number; revision: number; kind: DatedKind; dueDay: string; timed: boolean; dated: boolean; early?: boolean; note?: string | null };
+  item?: { id: number; revision: number; kind: DatedKind; dueDay: string; timed: boolean; dated: boolean; early?: boolean; note?: string | null; /** plan 210 (iteration 4): the day the mail asked for it before ("before Mon"), the day after `dueDay` */ before?: string | null };
   /**
    * plan 204 (Codex review): the promise this row shows, what D, Done and Remove act on (never the thread's most urgent).
    * Plan 210 (iteration 2): `timed`, its words state a time (`dueAt` is it); `note`, that time as written when its zone isn't
    * the reader's. Iteration 3 (`promiseDay`): `said`, a day it was given and missed while it sits under a live one ("You said
    * Tue 10 (missed)"); `needed`, the day the other person needs it, when the column says it ("needed Mon")
    */
-  promise?: { id: number; revision: number; /** it names a day (`FollowupRow.dated`): only then does its line say "Due …" */ dated?: boolean; timed?: boolean; note?: string | null; said?: number | null; needed?: number | null };
+  promise?: {
+    id: number;
+    revision: number;
+    /** it names a day (`FollowupRow.dated`): only then does its line say "Due …" */
+    dated?: boolean;
+    timed?: boolean;
+    note?: string | null;
+    said?: number | null;
+    needed?: number | null;
+    /** plan 210 (iteration 4, revision 11, `promiseDay`): `needed` is the day before this one ("needed before Mon"); `before`, the day it sits under is ("before Mon") */
+    neededBefore?: string | null;
+    before?: string | null;
+  };
   /**
    * Plan 210 (iteration 2): every item this row is (true duplicates: the same dinner from the restaurant and from a friend,
    * an errand read as a bill and as your promise), the shown one first: what Done, Later and Remove act on, all at once

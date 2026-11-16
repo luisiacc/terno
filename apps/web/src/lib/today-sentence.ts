@@ -78,8 +78,20 @@ export function todayWhen(item: Pick<TodayItem, "thread" | "why">, now = Date.no
 /** Plan 210 (iteration 3): a promise's missed day, past for certain ("You said Tue 10 (missed)", "You said yesterday (missed)"). */
 const missedDay = (day: number, now: number): string => (datedDay(day, now).near === "yesterday" ? t("whatMatters.saidMissedYesterday") : t("whatMatters.saidMissed", { day: pastDay(day, now) }));
 
-/** …and the day it's needed by, after what the column already says ("Wed · needed Fri", "… · needed today"). */
-function needed(when: string, day: number, now: number): string {
+/**
+ * Plan 210 (iteration 4, revision 11): the day the mail asked for it before, said as the mail said it ("before Mon", never
+ * the Sunday it sorts under), while that Sunday is still ahead; null on the day itself ("Today" says it plainly).
+ */
+function beforeWords(before: string | null | undefined, due: number, now: number): string | null {
+  const day = before ? localDay(before)?.getTime() : undefined;
+  if (day === undefined || datedDay(due, now).near === "today" || due <= now) return null;
+  return datedDay(day, now).near === "tomorrow" ? t("whatMatters.beforeTomorrow") : t("whatMatters.before", { day: dueShort(day, false, now) });
+}
+
+/** …and the day it's needed by, after what the column already says ("Wed · needed Fri", "… · needed today"); before a day, as the mail said it ("… · needed before Mon"). */
+function needed(when: string, day: number, now: number, before?: string | null): string {
+  const by = before ? localDay(before)?.getTime() : undefined;
+  if (by !== undefined && datedDay(day, now).near !== "today" && day > now) return datedDay(by, now).near === "tomorrow" ? t("whatMatters.neededBeforeTomorrow", { when }) : t("whatMatters.neededBefore", { when, day: dueShort(by, false, now) });
   const near = datedDay(day, now).near;
   if (near === "today") return t("whatMatters.neededToday", { when });
   if (near === "tomorrow") return t("whatMatters.neededTomorrow", { when });
@@ -109,12 +121,15 @@ function whenOf(item: Pick<TodayItem, "thread" | "why">, now: number): { text: s
     const at = ahead(day, dueAt, it.timed);
     // a person's request shown before its day (plan 210, iteration 2): what it's by, quietly, among the people; iteration 3:
     // with its time, and the mail's own in its zone when that isn't the reader's ("by Fri 5:00 PM (6:00 PM ET)")
+    const before = beforeWords(it.before, day, now);
     if (it.early) {
+      if (before) return { text: before, tone: "none" };
       // mid-phrase, "Tomorrow" is a word like any other: "by tomorrow 5:00 PM"
       const tomorrow = t("today.when.tomorrow");
       const by = at.text.startsWith(tomorrow) ? tomorrow.toLocaleLowerCase(getLocale()) + at.text.slice(tomorrow.length) : at.text;
       return { text: t("whatMatters.by", { day: zoned(by, it.timed ? it.note : null) }), tone: "none" };
     }
+    if (before) return { ...at, text: before };
     return { ...at, text: zoned(at.text, it.timed ? it.note : null) };
   }
   if (why.kind === "promise") {
@@ -125,10 +140,11 @@ function whenOf(item: Pick<TodayItem, "thread" | "why">, now: number): { text: s
     const text = zoned(at.text, p.timed ? p.note : null);
     // plan 210 (iteration 3, the owner): a day it was given and missed is said first, in Missed's weight, with the day it's
     // needed by, under that live day (never moved to Missed): "You said Tue 10 (missed) · needed Mon"
-    if (p.said != null) return { text: needed(missedDay(p.said, now), p.needed ?? why.dueAt, now), tone: "missed" };
+    if (p.said != null) return { text: needed(missedDay(p.said, now), p.needed ?? why.dueAt, now, p.neededBefore), tone: "missed" };
     // the request it answers needs it another day: "Wed · needed Fri"
-    if (p.needed != null) return { ...at, text: needed(text, p.needed, now) };
-    return { ...at, text };
+    if (p.needed != null) return { ...at, text: needed(text, p.needed, now, p.neededBefore) };
+    // plan 210 (iteration 4): its day is the one before a day its person named: "before Mon"
+    return { ...at, text: beforeWords(p.before, why.dueAt, now) ?? text };
   }
   return came;
 }

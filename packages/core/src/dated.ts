@@ -361,7 +361,7 @@ export function datedPlace(r: Pick<DatedRow, "kind" | "state" | "dueDay" | "dueA
  * (iteration 3): `brokenDueAt`, the day its person moved it from after that day had passed; `needed`, the moment of the
  * open dated request it answers (`FollowupRow.answers`, given by `withNeeds`): what `promiseDay` reads.
  */
-export type PromiseFacts = { kind: string; state: string; dated: boolean; dueAt: number; deferredUntil?: number | null; brokenDueAt?: number | null; needed?: number | null };
+export type PromiseFacts = { kind: string; state: string; dated: boolean; dueAt: number; deferredUntil?: number | null; brokenDueAt?: number | null; needed?: number | null; before?: string | null; neededBefore?: string | null };
 
 /** Plan 210 (iteration 3, the Codex review's revision 3): a promise's days, one resolver for its place, its clock and its words. */
 export interface PromiseDay {
@@ -372,6 +372,12 @@ export interface PromiseDay {
   said: number | null;
   /** the day the other person needs it, said beside the day it sits under: "needed Mon" */
   needed: number | null;
+  /**
+   * plan 210 (iteration 4, revision 11): the day it's needed before ("needed before Mon"), when `needed` is a day before one
+   * the mail named; `before`, the same of the day it sits under when nothing else is said beside it ("before Mon")
+   */
+  neededBefore: string | null;
+  before: string | null;
 }
 
 /**
@@ -381,14 +387,17 @@ export interface PromiseDay {
  * the two. A request's other day beside a promise still ahead is said as needed. Pure.
  */
 export function promiseDay(r: PromiseFacts, now: number): PromiseDay {
-  const own: PromiseDay = { dueAt: r.dueAt, dated: r.dated, said: null, needed: null };
-  if (r.brokenDueAt != null) return { ...own, said: r.brokenDueAt, needed: r.dueAt };
+  // plan 210 (iteration 4, revision 11): a day asked before ("before Mon"), its person's own or the request's, said with it
+  const before = r.before ?? null;
+  const theirs = r.neededBefore ?? null;
+  const own: PromiseDay = { dueAt: r.dueAt, dated: r.dated, said: null, needed: null, neededBefore: null, before };
+  if (r.brokenDueAt != null) return { ...own, said: r.brokenDueAt, needed: r.dueAt, neededBefore: before, before: null };
   const need = r.needed ?? null;
   if (need === null) return own;
-  if (!r.dated) return { dueAt: need, dated: true, said: null, needed: null };
-  if (now < dayEnd(dayKeyOf(r.dueAt))) return { ...own, needed: dayKeyOf(need) === dayKeyOf(r.dueAt) ? null : need };
-  if (now < dayEnd(dayKeyOf(need))) return { dueAt: need, dated: true, said: r.dueAt, needed: need };
-  return { ...own, dueAt: Math.max(r.dueAt, need) };
+  if (!r.dated) return { dueAt: need, dated: true, said: null, needed: null, neededBefore: null, before: theirs };
+  if (now < dayEnd(dayKeyOf(r.dueAt))) return dayKeyOf(need) === dayKeyOf(r.dueAt) ? { ...own, before: before ?? theirs } : { ...own, needed: need, neededBefore: theirs };
+  if (now < dayEnd(dayKeyOf(need))) return { dueAt: need, dated: true, said: r.dueAt, needed: need, neededBefore: theirs, before: null };
+  return { ...own, dueAt: Math.max(r.dueAt, need), before: null };
 }
 
 /** The facts the place and the clock read: its day as `promiseDay` resolves it (most promises: as they are). */

@@ -66,13 +66,14 @@ export interface DatedInput {
 
 /** Days and times in the reader's zone (`DatedInput.zone`), whatever zone the mail gave them in. */
 export interface DatedResult {
-  items: { kind: DatedKind; text: string; quote: string; due: string | null; time: string | null }[];
+  /** `before`: the day the mail asked for it before (plan 210, iteration 4), `due` the day before it; absent or null, none */
+  items: { kind: DatedKind; text: string; quote: string; due: string | null; time: string | null; before?: string | null }[];
   settled: { label: string; evidence: string }[];
   /**
    * open items this message gives a new day ("Friday at the latest"): never also in `items`. `text`: the item's new words
    * when the message changes them ("arrive by 7:30"), with `textEvidence` the mail's own; both or neither (the fifth panel round)
    */
-  moved: { label: string; due: string; time: string | null; evidence: string; text: string | null; textEvidence: string | null }[];
+  moved: { label: string; due: string; time: string | null; evidence: string; text: string | null; textEvidence: string | null; before?: string | null }[];
   /** plan 210 (iteration 3): promises (p labels) this message replaces with a different request, and the mail's words that say so */
   replaced: { label: string; evidence: string }[];
 }
@@ -415,37 +416,51 @@ const BEFORE = /\b(?:before|antes del?)\s+(?:(?:next|this|el|pr[oó]ximo)\s+)?(?
 const plain = (text: string) => text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
 // a deadline's kinds: an event or a delivery "before" something is when it happens, not a last day; plan 210 (iteration 3,
 // revision 11): nor an expiry or a renewal's, whose day is the one the mail names ("renew before it expires on the 19th")
-const DEADLINES: ReadonlySet<string> = new Set(["pay", "respond", "alert"]);
+// plan 210 (iteration 4): and a promise's move ("could you get them to me before then?")
+const DEADLINES: ReadonlySet<string> = new Set(["pay", "respond", "alert", "promise"]);
 // The Codex code review of v11 (point 6): the "before" is a deadline only in a sentence that asks for something by then, and
 // never negated or a lower bound ("do not submit before Monday", "opens before Monday", "anything before Monday won't count")
 const ASKS = /\b(?:please|could you|can you|would you|let me know|need|needs|must|due|have to|has to|send|pay|submit|return|sign|confirm|por favor|necesito|necesitamos|necesita|puedes|podrias|puede|debe|deben|tienes que|hay que|favor de|envia\w*|manda\w*|paga|pague|confirm\w*|entrega\w*|avisame)\b/u;
 const NOT_BEFORE = /\b(?:not|no|never|don'?t|doesn'?t|cannot|can'?t|nunca|ni|tampoco|earliest|starting|starts?|opens?|after|desde|a partir|despues)\b/u;
 const NOT_AFTER = /\b(?:won'?t|will not|isn'?t|is not|aren'?t|are not|not be|no se|no cuenta|no valen?|no sera)\b/u;
 
+/** "before then", "antes de eso": the day the paragraph named just before (plan 210, iteration 4) */
+const BEFORE_THEN = /\b(?:before then|before that(?: day| date)?|antes de (?:eso|entonces|esa fecha|ese dia))\b/gu;
+
 /**
  * Plan 210 (prompt v11): "before Monday", "antes del lunes", "before the 20th" and "antes del día 20" are due the day before.
  * The prompt says so, and a small model still gave the day it names now and then (Luna in Spanish, the panel's Fer): a
  * deadline whose words (its quote's paragraph, `said`) ask for it "before" a day, given on that very day with no time, is
  * moved back one. One already a day earlier, or on another, is left as it is; so is one whose "before" is negated or a lower
- * bound, or in a sentence that asks for nothing (the Codex code review of v11).
+ * bound, or in a sentence that asks for nothing (the Codex code review of v11). Plan 210 (iteration 4, revision 11): the
+ * day it was asked before is kept apart (`before`), whichever day the model gave of the two, so the row says "before Mon"
+ * while it sorts by the Sunday; "before then" counts when its paragraph names that day. A promise's move (`kind` "promise")
+ * is a deadline too.
  */
-export function dayBefore(kind: string, due: string | null, time: string | null, said: string): string | null {
+export function beforeOf(kind: string, due: string | null, time: string | null, said: string): { due: string | null; before: string | null } {
   const day = due ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(due) : null;
-  if (!due || !day || time || !DEADLINES.has(kind)) return due;
+  if (!due || !day || time || !DEADLINES.has(kind)) return { due, before: null };
   const at = new Date(Date.UTC(Number(day[1]), Number(day[2]) - 1, Number(day[3])));
+  const next = new Date(at.getTime() + 86_400_000);
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
   const words = plain(said);
-  const named = [...words.matchAll(BEFORE)].some((b) => {
-    if (b[1] ? WEEKDAY[b[1]] !== at.getUTCDay() : Number(b[2]) !== at.getUTCDate()) return false;
-    const start = b.index!;
-    const end = start + b[0].length;
+  const asked = (start: number, end: number) => {
     // its clause (to a comma, a semicolon or a sentence's end) and its sentence
     const clauseStart = Math.max(...[".", ";", ",", "!", "?", "\n", ":"].map((c) => words.lastIndexOf(c, start))) + 1;
     const clauseEnd = Math.min(...[".", ";", ",", "!", "?", "\n"].map((c) => (words.indexOf(c, end) < 0 ? words.length : words.indexOf(c, end))));
     const sentenceStart = Math.max(...[".", "!", "?", "\n"].map((c) => words.lastIndexOf(c, start))) + 1;
     const sentenceEnd = Math.min(...[".", "!", "?", "\n"].map((c) => (words.indexOf(c, end) < 0 ? words.length : words.indexOf(c, end))));
     return !NOT_BEFORE.test(words.slice(clauseStart, start)) && !NOT_AFTER.test(words.slice(end, clauseEnd)) && ASKS.test(words.slice(sentenceStart, sentenceEnd));
-  });
-  return named ? new Date(at.getTime() - 86_400_000).toISOString().slice(0, 10) : due;
+  };
+  const names = (d: Date, b: RegExpMatchArray) => (b[1] ? WEEKDAY[b[1]] === d.getUTCDay() : Number(b[2]) === d.getUTCDate());
+  const befores = [...words.matchAll(BEFORE)].filter((b) => asked(b.index!, b.index! + b[0].length));
+  // the day it names given as that day (moved back), or the day before it already (kept)
+  if (befores.some((b) => names(at, b))) return { due: iso(new Date(at.getTime() - 86_400_000)), before: due };
+  if (befores.some((b) => names(next, b))) return { due, before: iso(next) };
+  const then = [...words.matchAll(BEFORE_THEN)].some((b) => asked(b.index!, b.index! + b[0].length));
+  if (then && saysDay(words.slice(0, words.search(BEFORE_THEN)), iso(at), { weekdays: true })) return { due: iso(new Date(at.getTime() - 86_400_000)), before: due };
+  if (then && saysDay(words.slice(0, words.search(BEFORE_THEN)), iso(next), { weekdays: true })) return { due, before: iso(next) };
+  return { due, before: null };
 }
 
 /** The paragraph of the mail a quote is from, or the quote itself (the subject, a quote joined from two). */
@@ -456,7 +471,7 @@ function paragraphOf(quote: string, text: string): string {
 }
 
 /**
- * Plan 210 (iteration 3): the words `dayBefore` reads for a deadline: its quote's paragraph, or, when that doesn't say its
+ * Plan 210 (iteration 3): the words `beforeOf` reads for a deadline: its quote's paragraph, or, when that doesn't say its
  * day at all, the whole mail, where the day came from (Haiku quoted "No pudimos cobrar tu suscripción" for a bill the mail
  * asks to fix "antes del lunes 16", 5 in 5 in Spanish).
  */
@@ -464,6 +479,9 @@ function deadlineWords(quote: string, due: string | null, text: string): string 
   const paragraph = paragraphOf(quote, text);
   return due && !saysDay(paragraph, due, { slack: 1 }) ? text : paragraph;
 }
+
+/** An item at the day `beforeOf` read, with the day it's asked before only when there's one. */
+const withBefore = <T extends { due: string | null }>(i: T, b: { due: string | null; before: string | null }): T & { before?: string | null } => ({ ...i, due: b.due, ...(b.before ? { before: b.before } : {}) });
 
 /** Shape only: whether a quote is the mail's, and a date one to keep, are the backend's local checks (`checkDates`). */
 export function readDatesTask(input: DatedInput): StructuredTask<Wire, DatedResult> {
@@ -487,7 +505,7 @@ export function readDatesTask(input: DatedInput): StructuredTask<Wire, DatedResu
       value: {
         items: w.items
           .map((i) => ({ kind: i.kind.trim().toLowerCase(), text: cutAtClause(withoutIdentifiers(alertText(i.kind, i.text)), TEXT_CHARS), quote: clean(i.quote, QUOTE_CHARS), ...local(blankToNull(i.due), blankToNull(i.time)) }))
-          .map((i) => ({ ...i, due: dayBefore(i.kind, i.due, i.time, deadlineWords(i.quote, i.due, input.text)) }))
+          .map((i) => withBefore(i, beforeOf(i.kind, i.due, i.time, deadlineWords(i.quote, i.due, input.text))))
           .filter((i): i is DatedResult["items"][number] => isKind(i.kind) && !!i.text && !!i.quote)
           .slice(0, DATED_ITEMS_MAX),
         settled: w.settled
@@ -521,7 +539,10 @@ export function readDatesTask(input: DatedInput): StructuredTask<Wire, DatedResu
               }
             }
             const both = !!text && !!textEvidence;
-            return { label, due: at.due ?? "", time: at.time, evidence, text: both ? text : null, textEvidence: both ? textEvidence : null };
+            // plan 210 (iteration 4, revision 11): a move "before" a day is asked as an item's is (a promise's too)
+            const kind = label.startsWith("p") ? "promise" : (was?.kind ?? "");
+            const asked = at.due ? beforeOf(kind, at.due, at.time, deadlineWords(evidence, at.due, input.text)) : { due: at.due, before: null };
+            return { label, due: asked.due ?? "", time: at.time, evidence, text: both ? text : null, textEvidence: both ? textEvidence : null, ...(asked.before ? { before: asked.before } : {}) };
           })
           .filter((m) => m.label && m.due && m.evidence),
         // only a promise's label: an open item is settled or moved, never replaced
