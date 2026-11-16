@@ -43,6 +43,9 @@ describe("one thing, read twice", () => {
     expect(sameErrand(dated("pay", "Pay the bus fee"), promise("pay the bus fee"))).toBe(false);
     expect(sameErrand(dated("pay", "Pay $12 for the bus"), promise("send the signed slip and $12 for the bus", { threadId: 2 }))).toBe(false);
     expect(sameErrand(dated("pay", "Pay $54.20 for electricity"), promise("send the slip and $12"))).toBe(false);
+    // plan 210 (iteration 3): a promise its reply linked to a request is that request's by the link, never merged by words
+    expect(sameErrand(dated("respond", "Send the revised budget"), promise("send the budget", { answers: 77 }))).toBe(false);
+    expect(sameErrand(dated("pay", "Pay $12 for the bus"), promise("send the signed slip and $12", { quote: "I'll send the signed slip and $12 for the bus", answers: 77 }))).toBe(true);
   });
 
   it("a request asked again in the conversation is one; two different requests of one person are two", () => {
