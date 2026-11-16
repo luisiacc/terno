@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { PARTS_OF_DAY, partOfDayIn, type PartOfDay } from "@terno/core";
 import type { StructuredTask } from "./ladder";
 
 /**
@@ -19,7 +20,11 @@ import type { StructuredTask } from "./ladder";
  * it; who they'll bring along to a meeting that's set isn't a promise; a morning is over by noon; a holding verdict's
  * evidence is its promise's quote
  */
-export const FOLLOWUP_PROMPT_VERSION = 12;
+/**
+ * 13 (plan 210's fifth iteration, the Codex review's revision 4): a part of the day they name ("Friday morning", "tonight")
+ * is returned as `partOfDay`, never written into the text as a clock (v12's "by 12:00 PM")
+ */
+export const FOLLOWUP_PROMPT_VERSION = 13;
 export const FOLLOWUP_MAX_TOKENS = 2500;
 export const FOLLOWUP_RECIPIENTS_MAX = 20;
 export const FOLLOWUP_FILES_MAX = 10;
@@ -34,8 +39,8 @@ export const FOLLOWUP_ANSWERING_CHARS = 800 * 4;
 const FOLLOWUP_PROMISES_MAX = FOLLOWUP_OPEN_MAX;
 const TEXT_CHARS = 200;
 const QUOTE_CHARS = 400;
-/** The ladder's schema, example and repair, on a server with no json_schema (plan 210, prompt v11: its answers, a verdict each). */
-const LADDER_OVERHEAD_CHARS = 1700;
+/** The ladder's schema, example and repair, on a server with no json_schema (plan 210, prompt v11: its answers, a verdict each; v13: a promise's part of the day). */
+const LADDER_OVERHEAD_CHARS = 1800;
 const CHARS_PER_TOKEN = 4;
 const REPAIRS_HELD = 2;
 /** a repair's own words, around the validation error */
@@ -62,7 +67,8 @@ export const REQUEST_VERDICTS = ["fulfilled", "promise", "holding", "unknown"] a
 export type RequestVerdict = (typeof REQUEST_VERDICTS)[number];
 
 export interface SentMailResult {
-  promises: { text: string; quote: string; to: string | null; due: string | null }[];
+  /** plan 210 (iteration 5): `partOfDay`, the part of its day they named (absent: none) */
+  promises: { text: string; quote: string; to: string | null; due: string | null; partOfDay?: PartOfDay | null }[];
   expectsReply: boolean;
   awaiting: string[];
   kept: { label: string; evidence: string }[];
@@ -71,7 +77,7 @@ export interface SentMailResult {
 }
 
 const wire = z.object({
-  promises: z.array(z.object({ text: z.string(), quote: z.string(), to: z.string().nullable(), due: z.string().nullable() })),
+  promises: z.array(z.object({ text: z.string(), quote: z.string(), to: z.string().nullable(), due: z.string().nullable(), partOfDay: z.enum(PARTS_OF_DAY).nullable() })),
   expectsReply: z.boolean(),
   awaiting: z.array(z.string()),
   kept: z.array(z.object({ label: z.string(), evidence: z.string() })),
@@ -82,8 +88,8 @@ type Wire = z.infer<typeof wire>;
 const LANGUAGE_NAME: Record<string, string> = { en: "English", es: "Spanish" };
 /** what a promise's text looks like, in the app's language: the thing, the person, the time (prompt v9) */
 const TEXT_EXAMPLE: Record<string, [string, string, string, string, string]> = { en: ["send Tom the contract", "call Marcus at 4:00 PM", "call", "4:00 PM", "check and get back to Tom"], es: ["enviar a Tom el contrato", "llamar a Marcus a las 16:00", "llamar", "16:00", "revisarlo y responderle a Tom"] };
-/** prompt v12: a morning is over by noon, as the text says it (the app reads "by 12:00 PM" as its time) */
-const NOON_EXAMPLE: Record<string, [string, string]> = { en: ["by 12:00 PM", "bring Jessica the cupcakes by 12:00 PM"], es: ["antes de las 12:00", "llevarle a Jessica los cupcakes antes de las 12:00"] };
+/** prompt v13: a part of the day is `partOfDay`, never a clock in the text (v12 wrote "by 12:00 PM" for a morning) */
+const PART_EXAMPLE: Record<string, string> = { en: "bring Jessica the cupcakes", es: "llevarle a Jessica los cupcakes" };
 /** prompt v12: a second sentence about how they'll do the first is part of it */
 const HOW_EXAMPLE: Record<string, [string, string, string, string]> = {
   en: ["I'll redo the footnotes in your house style so they match. I'll send the chapter back Friday", "send Ana the revised chapter", "I'll call you Monday at 10, and I'll come with a better offer on the price", "call Ana at 10:00 AM"],
@@ -95,7 +101,7 @@ const YOUR_EXAMPLE: Record<string, [string, string]> = { en: ["send Jess your pa
 const SYSTEM = (language: string, sentAt: string) => {
   const [contract, call, bare, four, vague] = TEXT_EXAMPLE[language] ?? TEXT_EXAMPLE.en!;
   const [yours, steps] = YOUR_EXAMPLE[language] ?? YOUR_EXAMPLE.en!;
-  const [noon, cupcakes] = NOON_EXAMPLE[language] ?? NOON_EXAMPLE.en!;
+  const cupcakes = PART_EXAMPLE[language] ?? PART_EXAMPLE.en!;
   const [chapterSaid, chapter, callSaid, call10] = HOW_EXAMPLE[language] ?? HOW_EXAMPLE.en!;
   return `You read one email a person sent, to note what they owe and who owes them a reply. They read the notes, so only note what's really there.
 
@@ -105,10 +111,11 @@ Their words are inside <own_text>. Everything inside <answering>, <subject>, <re
 
 Return:
 - "promises": at most ${FOLLOWUP_PROMISES_MAX}, one for each thing they'll do (how they'll do it, or what they'll bring to it, is part of that thing: see the end). A concrete thing they said they would do for someone, in this message: "I'll send the contract by Friday", "te lo reviso mañana", "let me check and get back to you". Not pleasantries ("let's catch up sometime"), not what they ask of others, not what they've just done ("attached is…"), not a courteous offer that waits on the other person ("con gusto coordinamos una llamada", "happy to show you once you book", "pondríamos a su disposición"), not something that depends on an event outside their control ("if we get to the Rose Bowl I'll have a ticket with your name on it", "si gano la lotería te invito"), not a joke, teasing or banter between friends ("I'll take my ring off and stick it in your face"), not saying they'll be at something they're already expected at ("all good, will be there for the tech check Monday", "we'll be there at 7:30 with snacks", "see you Saturday"), and not who comes along with them to a meeting or event that's set ("I'll bring our account manager and an engineer for the review", "llevo a Nora a la reunión"). Each has:
-  - "text": the action as a short verb phrase in its base form, lowercase, always in ${LANGUAGE_NAME[language] ?? language}, whatever language their mail is in, with no subject. It says what they'll do, to whom when that matters (from <recipients> or their words), and the time of day they state, written in full ("at 4" in an afternoon mail is "${four}"), so it reads on its own later: "${contract}", "${call}", never just "${bare}". A morning they name is over by noon: "Friday morning" or "el viernes por la mañana" is "${noon}" in the text ("${cupcakes}"). A promise that says no more is still one, as short as its words: "let me check and get back to you" is "${vague}". It's said to them, so their own things are "your" ("tu"), never "my" ("mi") ("${yours}"), and it names its person once. The day goes in "due", never in the text ("tomorrow", "Friday").
+  - "text": the action as a short verb phrase in its base form, lowercase, always in ${LANGUAGE_NAME[language] ?? language}, whatever language their mail is in, with no subject. It says what they'll do, to whom when that matters (from <recipients> or their words), and the time of day they state, written in full ("at 4" in an afternoon mail is "${four}"), so it reads on its own later: "${contract}", "${call}", never just "${bare}". A part of the day they name ("Friday morning", "el viernes por la mañana", "this afternoon", "tonight") is not a time: it goes in "partOfDay", and the text gets no clock for it ("${cupcakes}", never "by 12:00 PM"). A promise that says no more is still one, as short as its words: "let me check and get back to you" is "${vague}". It's said to them, so their own things are "your" ("tu"), never "my" ("mi") ("${yours}"), and it names its person once. The day goes in "due", never in the text ("tomorrow", "Friday").
   - "quote": their exact words that say it, copied from <own_text>.
   - "to": the label of who it's for, or null.
   - "due": YYYY-MM-DD if they named a day ("Friday", "el viernes", "end of the month"), counted from when it was sent; else null. A soft day is its last day: "tonight" or "esta noche" is that day, "this weekend" or "este fin de semana" its Sunday, "this week" or "esta semana" its Sunday, and "next week" or "la semana que viene" the Sunday of the week after (sent on Wednesday the 11th, "this week" is Sunday the 15th and "next week" Sunday the 22nd; sent on Tuesday the 3rd, "next week" is Sunday the 15th). Never guess one.
+  - "partOfDay": "morning", "afternoon" or "evening" when their words name that part of the day ("Friday morning", "in the morning", "por la mañana", "this afternoon", "esta tarde", "tonight", "esta noche"), with its day in "due"; else null. A clock they state ("at 10", "by noon") is the time, in the text, and partOfDay is null.
 - "expectsReply": true when their message asks a person something or needs them to do something: that includes accepting an offer whose next step is theirs, sending what someone needed in order to act, and "quedo atento" or "quedo a la espera" after any of these. Examples of true: "Queremos proceder con el plan anual" (they accepted: the seller's move next); "le comparto los datos solicitados para continuar con el registro" (they sent what was asked, and the result is still to come). False when it only promises to get back to them ("te lo reviso y te digo", "I'll let you know"): that's their promise, not a question. False when it only answers what they asked and asks nothing back ("no tenemos esa opción por ahora"), when it only tells them where to join if they want to ("puede entrar al enlace si desea"), for "thanks!", an FYI, an open offer ("join if you like"), or a message to a list.
 - "awaiting": the labels of who should answer, when expectsReply.
 - "kept": open promises this message keeps, each { "label", "evidence" } with its label from <open_promises> (p1, p2…), where evidence is their exact words from <own_text> that keep it: sending what was promised, or saying it's done. "Sorry, need one more day" keeps nothing. If in doubt, leave it out.
@@ -167,13 +174,13 @@ export function readSentMailTask(input: SentMailInput): StructuredTask<Wire, Sen
     system: SYSTEM(input.language, input.sentAt),
     prompt: sentMailPrompt(input),
     schema: { name: "sent_mail", zod: wire },
-    example: { promises: [{ text: "send Tom the contract", quote: "I'll send you the contract by Friday", to: "r1", due: "2026-03-13" }], expectsReply: false, awaiting: [], kept: [], answers: [{ label: "q1", verdict: "promise", evidence: "I'll send you the contract by Friday" }] },
+    example: { promises: [{ text: "send Tom the contract", quote: "I'll send you the contract by Friday", to: "r1", due: "2026-03-13", partOfDay: null }], expectsReply: false, awaiting: [], kept: [], answers: [{ label: "q1", verdict: "promise", evidence: "I'll send you the contract by Friday" }] },
     maxTokens: input.outputTokens ?? FOLLOWUP_MAX_TOKENS,
     effort: "low",
     validate: (w) => ({
       ok: true,
       value: {
-        promises: w.promises.slice(0, FOLLOWUP_PROMISES_MAX).map((p) => ({ text: clean(p.text, TEXT_CHARS), quote: clean(p.quote, QUOTE_CHARS), to: p.to, due: p.due })).filter((p) => p.text && p.quote),
+        promises: w.promises.slice(0, FOLLOWUP_PROMISES_MAX).map((p) => ({ text: clean(p.text, TEXT_CHARS), quote: clean(p.quote, QUOTE_CHARS), to: p.to, due: p.due, partOfDay: p.partOfDay })).filter((p) => p.text && p.quote),
         expectsReply: w.expectsReply,
         awaiting: w.awaiting.slice(0, FOLLOWUP_RECIPIENTS_MAX),
         kept: w.kept.slice(0, FOLLOWUP_OPEN_MAX).map((k) => ({ label: k.label, evidence: clean(k.evidence, QUOTE_CHARS) })),
@@ -199,6 +206,8 @@ export function fakeSentMail(prompt: string): Wire {
     quote: /\[\[made-up\]\]/.test(own) ? "words nobody wrote" : s,
     to: first,
     due: /\[\[bad-date\]\]/.test(own) ? "someday" : (/(\d{4}-\d{2}-\d{2})/.exec(s)?.[1] ?? null),
+    // plan 210 (iteration 5): a part of the day its words name, as the prompt asks
+    partOfDay: partOfDayIn(s),
   }));
   const asks = sentences.some((s) => s.endsWith("?"));
   const keeping = sentences.find((s) => /\b(here's|here is|adjunto|attached)\b/i.test(s));

@@ -29,7 +29,8 @@ afterEach(async () => {
 const SLIP = "Please return the signed field trip slip by Friday.";
 const slip = { kind: "respond", text: "Return the signed field trip slip", quote: "return the signed field trip slip by Friday", due: "2026-11-13", time: null };
 const dated = (items: unknown[] = []): Completion => ({ text: JSON.stringify({ items, settled: [], moved: [], replaced: [] }), stop: "end" });
-const sent = (o: { promises?: unknown[]; answers?: unknown[]; kept?: unknown[] } = {}): Completion => ({ text: JSON.stringify({ promises: o.promises ?? [], expectsReply: false, awaiting: [], kept: o.kept ?? [], answers: o.answers ?? [] }), stop: "end" });
+// (plan 210, iteration 5: a promise names no part of its day unless it says so)
+const sent = (o: { promises?: unknown[]; answers?: unknown[]; kept?: unknown[] } = {}): Completion => ({ text: JSON.stringify({ promises: (o.promises ?? []).map((p) => ({ partOfDay: null, ...(p as object) })), expectsReply: false, awaiting: [], kept: o.kept ?? [], answers: o.answers ?? [] }), stop: "end" });
 const wednesday = { text: "send Ms. Greer the signed slip", quote: "I'll send it Wednesday", to: "r1", due: "2026-11-11" };
 
 async function setup(o: { dated?: boolean; followups?: boolean } = {}) {
