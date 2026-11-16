@@ -2,7 +2,7 @@ import type { AppSettings } from "./rpc/contract";
 import type { ThreadSummary } from "./types";
 import { aiReady } from "./ai-routing";
 import { datedGroup, type DatedKind, type TodayGroupKind } from "./dated";
-import type { FeedRowId, ItemRef } from "./today-items";
+import type { FeedRowId, ItemRef, ItemSeen } from "./today-items";
 import { withoutQuotes } from "./text";
 
 /** Plan 145: what needs you today, and newsletters folded into one digest. Local but for the digest, which is its own opt-in. */
@@ -81,6 +81,12 @@ export interface TodayWhy {
    * an errand read as a bill and as your promise), the shown one first: what Done, Later and Remove act on, all at once
    */
   members?: ItemRef[];
+  /**
+   * Plan 210 (iteration 4, "one reply, one row"): the other promises of this reply to its person, each its own item (its own
+   * duplicates, its own request), at the revisions shown: the row's Done, Remove and Later name them with its own, all or
+   * none. Not `members`: the reader keeps each a line of its own, and an act on one of them alone leaves the row
+   */
+  with?: ItemSeen[];
 }
 
 /**
@@ -180,8 +186,11 @@ export interface TodayItem {
   why: TodayWhy;
   /** the stored summary's first sentence, only when it's current */
   summary?: string;
-  /** plan 210 (iteration 2): a related detail of its item (a return leg), never another obligation */
-  also?: TodayAlso;
+  /**
+   * plan 210 (iteration 2): a related detail of its item (a return leg), never another obligation; iteration 4: the other
+   * promises of its reply (`TodayWhy.with`), a line each
+   */
+  also?: TodayAlso[];
   /**
    * plan 210 (iteration 3, revision 10): a dated item's own sender, from its message (Margaret's premium from Lakeshore
    * Mutual, never "Gary", who wrote last in the conversation); absent for a promise, a waiting row or a reminder

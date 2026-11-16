@@ -15,6 +15,8 @@ export const SCAN_PROMISE_OVERDUE_MS = 7 * 86_400_000;
 export const SCAN_WAIT_STALE_MS = 14 * 86_400_000;
 export const SCAN_MESSAGES_MAX = 300;
 export const SCAN_DAYS = 30;
+/** Plan 210 (iteration 4): a reply's promises at most (the follow-ups reader keeps ten), what its row acts on with its lead */
+export const FOLLOWUP_REPLY_MAX = 10;
 
 export interface FollowupRow {
   id: number;

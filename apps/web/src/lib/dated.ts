@@ -1,4 +1,4 @@
-import { alertUntil, askUntil, datedGroup, datedGroupAt, dayEnd, defaultRemindAt, laterBefore, localDay, planEnd, remindPresets, undatedAlert, type DatedKind, type DatedRow, type RemindPreset, type TodayAlso, type TodayWhy } from "@terno/core";
+import { alertUntil, askUntil, datedGroup, datedGroupAt, dayEnd, defaultRemindAt, laterBefore, localDay, planEnd, remindPresets, undatedAlert, type DatedKind, type DatedRow, type ItemSeen, type RemindPreset, type TodayAlso, type TodayWhy } from "@terno/core";
 import { getLocale, t } from "@terno/i18n";
 import { useEffect, useState } from "react";
 import { usd } from "~/lib/ai";
@@ -136,7 +136,7 @@ export const promiseLine = (o: { text: string; dueAt?: number; dated: boolean },
  */
 export type TodayTask = (
   | { kind: "dated"; item: DatedRef; when: string | null; due: string | null; dueAt: number; noDay?: boolean; text?: string | null }
-  | { kind: "promise"; id: number; revision: number; when: string | null; due: string | null; dated?: boolean; noDay?: boolean; person?: TaskPerson; text?: string | null; /** plan 210 (iteration 4): its moment and whether it's a time, where Change… starts */ dueAt?: number; timed?: boolean }
+  | { kind: "promise"; id: number; revision: number; when: string | null; due: string | null; dated?: boolean; noDay?: boolean; person?: TaskPerson; text?: string | null; /** plan 210 (iteration 4): its moment and whether it's a time, where Change… starts */ dueAt?: number; timed?: boolean; /** plan 210 (iteration 4): the reply's other promises the row shows, acted on with it */ with?: ItemSeen[] }
 ) & {
   /** the fifth panel round (change 6): its conversation's next item, in words ("Also Thu 9:00 AM · Board meeting"), never what it acts on */
   also?: string;
@@ -181,6 +181,7 @@ export function taskOf(why: TodayWhy, now = Date.now()): TodayTask | null {
       // a promise with no day says none (the fourth panel round): the mail's date beside it would read as one
       ...(!dated ? { noDay: true } : { dueAt: why.dueAt!, timed: why.promise.timed === true }),
       ...(person ? { person } : {}),
+      ...(why.with?.length ? { with: why.with } : {}),
     };
   }
   return null;
@@ -275,7 +276,7 @@ export async function actOnDated(item: Pick<DatedRef, "id" | "revision"> & { tex
 export async function actOnTask(task: TodayTask, action: "done" | "dismiss" | "later", at?: number, left?: LeftRows): Promise<void> {
   if (task.kind === "dated") return actOnDated({ ...task.item, text: task.text }, action, at, left);
   try {
-    const { undoId } = await client.call("followups.act", { id: task.id, revision: task.revision, action, ...(at !== undefined ? { dueAt: at } : {}) });
+    const { undoId } = await client.call("followups.act", { id: task.id, revision: task.revision, action, ...(at !== undefined ? { dueAt: at } : {}), ...(task.with ? { with: task.with } : {}) });
     said(action, task.text, undoId === null ? null : () => client.call("followups.undo", { undoId }).then(() => undefined), "followup.undo", left);
   } catch (error) {
     left?.failed();

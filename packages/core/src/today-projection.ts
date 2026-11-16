@@ -1,7 +1,9 @@
 import { ANSWERED_KINDS, datedGroup, datedGroupAt, dayKeyOf, displayBucket, promiseBroken, promiseDay, promiseGroupAt, SHOWN_DAYS, shownEarly, todayCounted, type DatedRow, type TaskPlace, type TodayGroupKind } from "./dated";
 import type { FollowupRow } from "./followups";
+import { addressKey } from "./people";
+import { normalizeText } from "./text";
 import { sortInDay, waitsOnYou, type TodayAlso, type TodayCounts, type TodayPart, type TodayWhy } from "./today";
-import { clockHolds, refKey, reminderRowId, splitZoneNote, statedClock, waitingRowId, type FeedRowId, type ItemRef } from "./today-items";
+import { clockHolds, refKey, reminderRowId, splitZoneNote, statedClock, waitingRowId, type FeedRowId, type ItemRef, type ItemSeen } from "./today-items";
 
 /**
  * Plan 210 (iteration 2, the owner: "a row per item"; Codex's design): What matters is one projection, the list's, the
@@ -35,7 +37,11 @@ export interface ProjectedRow {
   /** a day of its own's, or Coming up's */
   day: string | null;
   why: TodayWhy;
-  also?: TodayAlso;
+  /**
+   * plan 210 (iteration 2): a related detail of its item (a return leg); iteration 4: the other promises of its reply
+   * (`replyKey`), a line each
+   */
+  also?: TodayAlso[];
   /** a conversation waiting on you, whose line is its summary's */
   waiting?: boolean;
   /** plan 210 (iteration 3, revision 8): Today's "Waiting on you" part (`waitsOnYou`); its id stays as its tier changes */
@@ -186,6 +192,15 @@ function promiseWhy(r: NeedingPromise, missed: boolean, members: ItemRef[], zone
 /** A related detail as the row's second line says it. */
 const alsoOf = (r: DatedRow): TodayAlso => ({ kind: r.kind, text: r.timed ? splitZoneNote(r.text).text : r.text, dueDay: r.dueDay, dueAt: r.dueAt, timed: r.timed, dated: r.dated });
 
+/** Plan 210 (iteration 4): another promise of the row's reply as its line says it, a time its words state in the when. */
+function alsoOfPromise(r: NeedingPromise): TodayAlso {
+  const clock = r.timed ? statedClock(r.text) : null;
+  return { kind: "promise", text: clock ? clock.rest : r.text, dueDay: dayKeyOf(r.dueAt), dueAt: r.dueAt, timed: clock !== null, dated: r.dated };
+}
+
+/** What a reply's row names besides its lead for Done, Remove and Later: each other item's lead, at the revision shown. */
+const seenOf = (l: Logical): ItemSeen => ({ source: l.lead.source, id: l.lead.row.id, revision: l.lead.row.revision });
+
 interface Placed extends ProjectedRow {
   /** the moment it's ordered by in Missed (the most recently due first) */
   dueAt: number;
@@ -201,6 +216,64 @@ export interface PlacedItem {
   at: TaskPlace;
   /** its related detail, shown as its Also while it shows */
   detail?: DatedRow;
+  /** plan 210 (iteration 4): the other promises of its reply to its person (`replyKey`), in their order: its Also lines */
+  with?: Logical[];
+}
+
+/**
+ * Plan 210 (iteration 4, the owner's "one reply, one row"; Codex revision 4): your promises from one sent message to one
+ * person are one row. Presentation only, never identity: each stays its own item (its duplicates, the request it answers),
+ * so the reader and the history keep them apart and `samePromise` stays what it was. The key: the message and the person
+ * (their address, else their name); none with neither, as a reply to several people can't say whose a promise is.
+ */
+export function replyKey(p: Pick<FollowupRow, "messageId" | "personEmail" | "personName">): string | null {
+  const who = p.personEmail ? addressKey(p.personEmail) : p.personName ? normalizeText(p.personName).replace(/\s+/gu, " ").trim() : "";
+  return who ? `${p.messageId} ${who}` : null;
+}
+
+/** Whether any two promises came from one message: only then can a reply's group form (most mailboxes: none). */
+function sharesMessage(promises: readonly FollowupRow[]): boolean {
+  const seen = new Set<number>();
+  for (const p of promises) {
+    if (seen.has(p.messageId)) return true;
+    seen.add(p.messageId);
+  }
+  return false;
+}
+
+/**
+ * The placed items with a reply's promises as one: the group's lead is its first dated promise that shows (in the order the
+ * reply said them), else its first that shows, and it keeps its own place, id and members; every other is its `with`, one
+ * not showing yet too (an undated promise before its day comes: Done on the row finishes it, it never comes back alone).
+ * Only items a promise of yours leads: one an event or a request leads (your promise to attend, an errand read twice) is
+ * that item's row, apart. Grouped where they're placed, before the count leaves Coming up out, so the list and the count
+ * agree on what's one row. `hidden`: the items a promise leads that show nowhere now.
+ */
+function byReply(placed: readonly PlacedItem[], hidden: readonly Logical[]): PlacedItem[] {
+  const groups = new Map<string, { placed: PlacedItem[]; all: Logical[] }>();
+  const add = (item: Logical, at?: PlacedItem) => {
+    const key = item.lead.source === "promise" ? replyKey(item.lead.row) : null;
+    if (key === null) return;
+    const g = groups.get(key) ?? { placed: [], all: [] };
+    groups.set(key, g);
+    g.all.push(item);
+    if (at) g.placed.push(at);
+  };
+  for (const p of placed) add(p.item, p);
+  for (const item of hidden) add(item);
+  const leads = new Map<PlacedItem, Logical[]>();
+  const folded = new Set<Logical>();
+  const said = (a: Logical, b: Logical) => a.lead.row.item - b.lead.row.item || a.lead.row.id - b.lead.row.id;
+  for (const g of groups.values()) {
+    if (g.all.length < 2 || !g.placed.length) continue;
+    const shows = [...g.placed].sort((a, b) => said(a.item, b.item));
+    const lead = shows.find((p) => (p.item.lead.row as FollowupRow).dated) ?? shows[0]!;
+    const others = g.all.filter((l) => l !== lead.item).sort(said);
+    leads.set(lead, others);
+    for (const l of others) folded.add(l);
+  }
+  if (!leads.size) return [...placed];
+  return placed.flatMap((p) => (folded.has(p.item) ? [] : leads.has(p) ? [{ ...p, with: leads.get(p)! }] : [p]));
 }
 
 /**
@@ -212,22 +285,27 @@ export interface PlacedItem {
 export function placeItems(dated: readonly DatedRow[], promises: readonly NeedingPromise[], now: number, o: { count?: boolean } = {}): PlacedItem[] {
   const today = dayKeyOf(now);
   dated = withoutAnswered(dated, promises);
+  // (iteration 4) a reply's promises are grouped where they're placed, then the count leaves Coming up out
+  const grouping = sharesMessage(promises);
+  const hidden: Logical[] = [];
+  const finish = (out: PlacedItem[]) => (grouping ? byReply(out, hidden) : out).filter((p) => !(o.count && p.at.group === "comingUp"));
   // most mailboxes link nothing: each item is its own, placed where it is, and nothing is grouped (every count runs this
   // over the 1,000-item bound)
   if (!dated.some((r) => r.sameAs != null || r.detailOf != null) && !promises.some((r) => r.sameAs != null)) {
     const out: PlacedItem[] = [];
-    const keep = (at: TaskPlace | null): at is TaskPlace => at !== null && !(o.count && at.group === "comingUp");
     for (const row of dated) {
       const at = datedGroupAt(row, now, today);
       const lead = { source: "dated" as const, row };
-      if (keep(at)) out.push({ item: { id: own("dated", row.id), lead, members: [{ source: "dated", id: row.id }], entries: [lead] }, at });
+      if (at !== null) out.push({ item: { id: own("dated", row.id), lead, members: [{ source: "dated", id: row.id }], entries: [lead] }, at });
     }
     for (const row of promises) {
       const at = promiseGroupAt(row, now, today);
       const lead = { source: "promise" as const, row };
-      if (keep(at)) out.push({ item: { id: own("promise", row.id), lead, members: [{ source: "promise", id: row.id }], entries: [lead] }, at });
+      const item: Logical = { id: own("promise", row.id), lead, members: [{ source: "promise", id: row.id }], entries: [lead] };
+      if (at !== null) out.push({ item, at });
+      else if (grouping) hidden.push(item);
     }
-    return out;
+    return finish(out);
   }
   const where = new Map<number, TaskPlace | null>();
   const placeOf = (r: DatedRow) => {
@@ -249,11 +327,14 @@ export function placeItems(dated: readonly DatedRow[], promises: readonly Needin
   for (const item of items) {
     const { lead } = item;
     const at = lead.source === "dated" ? placeOf(lead.row) : promiseGroupAt(lead.row, now, today);
-    if (at === null || (o.count && at.group === "comingUp")) continue;
+    if (at === null) {
+      if (grouping && lead.source === "promise") hidden.push(item);
+      continue;
+    }
     const detail = lead.source === "dated" ? details.get(lead.row.id) : undefined;
     out.push({ item, at, ...(detail ? { detail } : {}) });
   }
-  return out;
+  return finish(out);
 }
 
 /**
@@ -283,7 +364,7 @@ export function projectRows(items: readonly PlacedItem[], f: Pick<ProjectionFact
   // conversation waiting on you is a row of its own meanwhile (their nudge on a promise due next week)
   const represented = new Set<number>();
   for (const placedItem of items) {
-    const { item, detail } = placedItem;
+    const { item, detail, with: others } = placedItem;
     let { at } = placedItem;
     let { lead } = item;
     // (Codex code review of iteration 2) the canonical's conversation in Spam or Trash: a live member shows the same row
@@ -303,6 +384,7 @@ export function projectRows(items: readonly PlacedItem[], f: Pick<ProjectionFact
       : lead.source === "dated"
         ? datedWhy(lead.row, at.group === "missed", early, item.members, item.entries.length > 1 ? item.entries.flatMap((e) => (e !== lead && e.source === "dated" ? [e.row] : [])) : undefined)
         : promiseWhy(lead.row, at.group === "missed", item.members, f.zone, f.now);
+    if (others && !o.count) why.with = others.map(seenOf);
     const came = lead.source === "dated" ? lead.row.arrivedAt : lead.row.sentAt;
     // (fields set as they apply, not spread: this runs over the 1,000-item bound on every read)
     const row: Placed = { id: item.id, threadId: lead.row.threadId, group: at.group, day: at.day, why, dueAt: why.dueAt ?? lead.row.dueAt, came };
@@ -314,7 +396,8 @@ export function projectRows(items: readonly PlacedItem[], f: Pick<ProjectionFact
     if (!o.count) {
       if (at.day !== null) row.bucket = bucketOf(at.day);
       if (lead.source === "dated") row.source = { messageId: lead.row.messageId, senderKey: lead.row.senderKey };
-      if (detail) row.also = alsoOf(detail);
+      if (detail) row.also = [alsoOf(detail)];
+      else if (others) row.also = others.map((l) => (l.lead.source === "promise" ? alsoOfPromise(l.lead.row) : alsoOf(l.lead.row)));
     }
     placed.push(row);
   }

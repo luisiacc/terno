@@ -469,7 +469,7 @@ export function todayAnswer(list: TodayList, before: readonly ThreadSummary[]): 
       const why = dayKnown(item.why, section);
       const task = taskOf(why);
       const entry = why === item.why ? item : { ...item, why };
-      rows.push({ id: item.id, threadId: item.thread.id, group: group.kind, entry, ...(task ? { task: item.also ? { ...task, also: alsoLine(item.also) } : task } : {}), ...(section === "comingUp" ? { ahead: true } : {}) });
+      rows.push({ id: item.id, threadId: item.thread.id, group: group.kind, entry, ...(task ? { task: item.also?.length ? { ...task, also: item.also.map((a) => alsoLine(a)).join(" · ") } : task } : {}), ...(section === "comingUp" ? { ahead: true } : {}) });
     }
   }
   // held rows where they were: after the nearest row before them that's still here, in their own group (a row the
