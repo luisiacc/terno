@@ -1,7 +1,7 @@
-import { datedGroup, localDay, type TodayHistoryItem, type TodayItem } from "@terno/core";
+import { datedGroup, localDay, type PartOfDay, type TodayHistoryItem, type TodayItem } from "@terno/core";
 import { getLocale, t } from "@terno/i18n";
 import { listDate } from "~/lib/format";
-import { datedDay, dueShort, dueTimeLeft, pastDay, reminderTime } from "~/lib/when";
+import { datedDay, dueShort, dueTimeLeft, partDay, partInSentence, pastDay, reminderTime } from "~/lib/when";
 import type { FeedGroupKind } from "~/state/today";
 
 /**
@@ -101,9 +101,14 @@ function travelWhen(travel: { day: string; time: string; place: string }, now: n
 }
 
 /** …and the day it's needed by, after what the column already says ("Wed · needed Fri", "… · needed today"); before a day, as the mail said it ("… · needed before Mon"). */
-function needed(when: string, day: number, now: number, before?: string | null): string {
+function needed(when: string, day: number, now: number, before?: string | null, part?: PartOfDay | null): string {
   const by = before ? localDay(before)?.getTime() : undefined;
   if (by !== undefined && datedDay(day, now).near !== "today" && day > now) return datedDay(by, now).near === "tomorrow" ? t("whatMatters.neededBeforeTomorrow", { when }) : t("whatMatters.neededBefore", { when, day: dueShort(by, false, now) });
+  // plan 210 (iteration 5): the part of that day it's asked for ("… · needed Sat morning", "… · needed this morning")
+  if (part) {
+    const p = partDay(day, part, now);
+    return p.near ? t("whatMatters.neededPart", { when, part: partInSentence(p.text) }) : t("whatMatters.needed", { when, day: p.text });
+  }
   const near = datedDay(day, now).near;
   if (near === "today") return t("whatMatters.neededToday", { when });
   if (near === "tomorrow") return t("whatMatters.neededTomorrow", { when });
@@ -116,12 +121,12 @@ function needed(when: string, day: number, now: number, before?: string | null):
  * needed Mon"), else the request's other day ("Wed · needed Fri"), else the day it's asked before ("before Mon"). The
  * feed's column and the reader's line say it alike (iteration 4, merge).
  */
-export function promiseDayWords(p: { said?: number | null; needed?: number | null; neededBefore?: string | null; before?: string | null }, dueAt: number, own: string, now: number): { text: string; missed: boolean } {
+export function promiseDayWords(p: { said?: number | null; needed?: number | null; neededBefore?: string | null; before?: string | null; neededPart?: PartOfDay | null }, dueAt: number, own: string, now: number): { text: string; missed: boolean } {
   // plan 210 (iteration 3, the owner): a day it was given and missed is said first, in Missed's weight, with the day it's
   // needed by, under that live day (never moved to Missed): "You said Tue 10 (missed) · needed Mon"
-  if (p.said != null) return { text: needed(missedDay(p.said, now), p.needed ?? dueAt, now, p.neededBefore), missed: true };
+  if (p.said != null) return { text: needed(missedDay(p.said, now), p.needed ?? dueAt, now, p.neededBefore, p.neededPart), missed: true };
   // the request it answers needs it another day: "Wed · needed Fri"
-  if (p.needed != null) return { text: needed(own, p.needed, now, p.neededBefore), missed: false };
+  if (p.needed != null) return { text: needed(own, p.needed, now, p.neededBefore, p.neededPart), missed: false };
   // plan 210 (iteration 4): its day is the one before a day its person named: "before Mon"
   return { text: beforeWords(p.before, dueAt, now) ?? own, missed: false };
 }
@@ -131,11 +136,16 @@ function whenOf(item: Pick<TodayItem, "thread" | "why">, now: number): { text: s
   // plan 210 (iteration 2): one time per row, the reader's, and the mail's own in brackets when its zone isn't theirs
   const zoned = (text: string, note: string | null | undefined): string => (note ? t("whatMatters.zoned", { when: text, time: note }) : text);
   const was = (day: number): string => (datedDay(day, now).near === "yesterday" ? t("today.due.wasYesterday") : t("today.due.wasOn", { day: dueShort(day, false, now) }));
-  const ahead = (day: number, at: number, timed: boolean): { text: string; tone: TodayTone } => {
+  const ahead = (day: number, at: number, timed: boolean, part?: PartOfDay | null): { text: string; tone: TodayTone } => {
+    const tone = datedDay(day, now).near === "today" ? "today" : "later";
+    // plan 210 (iteration 5, revision 4): a part of the day, never a clock ("This morning", "Tomorrow morning", "Fri morning")
+    if (part && !timed) return { text: partDay(day, part, now).text, tone };
     const time = dueTimeLeft(at, timed, now);
     const short = dueShort(timed ? at : day, timed, now);
-    return { text: time ? `${short} ${time}` : short, tone: datedDay(day, now).near === "today" ? "today" : "later" };
+    return { text: time ? `${short} ${time}` : short, tone };
   };
+  // plan 210 (iteration 5): missed after this morning's noon, the day still today: "Was due this morning"
+  const wasPart = (day: number, part: PartOfDay | null | undefined): string | null => (part && datedDay(day, now).near === "today" ? t("today.due.wasPart", { when: partInSentence(partDay(day, part, now).text) }) : null);
   // mid-phrase, "Yesterday" is a word like any other: "since yesterday", "desde ayer"
   const day = listDate(thread.lastDate, now);
   const came = { text: t("whatMatters.since", { day: day === t("date.yesterday") ? day.toLocaleLowerCase(getLocale()) : day }), tone: "none" as const };
@@ -145,13 +155,16 @@ function whenOf(item: Pick<TodayItem, "thread" | "why">, now: number): { text: s
     if (it.kind === "ask" || !it.dated) return came;
     const dueAt = why.dueAt ?? 0;
     const day = localDay(it.dueDay)?.getTime() ?? dueAt;
-    if (why.missed) return { text: was(day), tone: "missed" };
-    const at = ahead(day, dueAt, it.timed);
+    if (why.missed) return { text: (!it.timed && wasPart(day, it.part)) || was(day), tone: "missed" };
+    const at = ahead(day, dueAt, it.timed, it.part);
     // a person's request shown before its day (plan 210, iteration 2): what it's by, quietly, among the people; iteration 3:
     // with its time, and the mail's own in its zone when that isn't the reader's ("by Fri 5:00 PM (6:00 PM ET)")
     const before = beforeWords(it.before, day, now);
     if (it.early) {
       if (before) return { text: before, tone: "none" };
+      // plan 210 (iteration 5): "by tomorrow morning", "by Sat morning" (es "para mañana por la mañana", "para el sáb por la mañana")
+      const part = it.part && !it.timed ? partDay(day, it.part, now) : null;
+      if (part) return { text: part.near ? t("whatMatters.byNear", { when: partInSentence(part.text) }) : t("whatMatters.by", { day: part.text }), tone: "none" };
       // mid-phrase, "Tomorrow" is a word like any other: "by tomorrow 5:00 PM"
       const tomorrow = t("today.when.tomorrow");
       const by = at.text.startsWith(tomorrow) ? tomorrow.toLocaleLowerCase(getLocale()) + at.text.slice(tomorrow.length) : at.text;
@@ -165,8 +178,8 @@ function whenOf(item: Pick<TodayItem, "thread" | "why">, now: number): { text: s
   if (why.kind === "promise") {
     const p = why.promise;
     if (p?.dated !== true || why.dueAt === undefined) return came;
-    if (why.missed) return { text: was(why.dueAt), tone: "missed" };
-    const at = ahead(why.dueAt, why.dueAt, p.timed === true);
+    if (why.missed) return { text: (p.timed !== true && wasPart(why.dueAt, p.part)) || was(why.dueAt), tone: "missed" };
+    const at = ahead(why.dueAt, why.dueAt, p.timed === true, p.part);
     const words = promiseDayWords(p, why.dueAt, zoned(at.text, p.timed ? p.note : null), now);
     return words.missed ? { text: words.text, tone: "missed" } : { ...at, text: words.text };
   }

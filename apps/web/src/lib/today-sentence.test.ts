@@ -231,6 +231,31 @@ describe("plan 210 (iteration 2): one time per row, a request shown early, a bro
     expect(todayWhen(marcus, NOW, "waiting").text).toBe("antes del lun");
   });
 
+  it("plan 210 (iteration 5, revision 4): a part of the day is said as a part, never a clock; missed after its noon", () => {
+    // NOW is Friday the 13th, 9:30: María's cupcakes this morning, Margaret's key tomorrow morning, Kai's notes by Sat morning
+    const cupcakes = item({ kind: "promise", text: "bring Jessica the cupcakes", dueAt: at(13, 9), promise: { id: 2, revision: 0, dated: true, part: "morning" } });
+    expect(todayWhen(cupcakes, NOW, "today")).toEqual({ text: "This morning", tone: "today" });
+    const key = item({ kind: "promise", text: "drop Phil the spare key", dueAt: at(14, 9), promise: { id: 3, revision: 0, dated: true, part: "morning" } });
+    expect(todayWhen(key, NOW, "day:2026-11-14").text).toBe("Tomorrow morning");
+    const library = item({ kind: "promise", text: "scan both papers at the library", dueAt: at(17, 9), promise: { id: 4, revision: 0, dated: true, part: "morning" } });
+    expect(todayWhen(library, NOW, "day:2026-11-17").text).toBe("Tue morning");
+    const kai = item({ kind: "dated", text: "Send Kai notes on cut v2", dueAt: at(14, 9), item: { id: 1, revision: 0, kind: "respond", dueDay: "2026-11-14", timed: false, dated: true, early: true, part: "morning" } });
+    expect(todayWhen(kai, NOW, "waiting")).toEqual({ text: "by tomorrow morning", tone: "none" });
+    expect(todayWhen({ ...kai, why: { ...kai.why, dueAt: at(16, 9), item: { ...kai.why.item!, dueDay: "2026-11-16" } } }, NOW, "waiting").text).toBe("by Mon morning");
+    // missed at noon the same day: "Was due this morning", never "by 12:00 PM"
+    expect(todayWhen({ ...cupcakes, why: { ...cupcakes.why, missed: true } }, at(13, 12), "missed")).toEqual({ text: "Was due this morning", tone: "missed" });
+    // a request it answers, needed tomorrow morning
+    const notes = item({ kind: "promise", text: "send Kai notes", dueAt: at(13, 9), promise: { id: 5, revision: 0, dated: true, needed: at(14, 9), neededPart: "morning" } });
+    expect(todayWhen(notes, NOW, "today").text).toBe("Today · needed tomorrow morning");
+    setLocale("es", es);
+    expect(todayWhen(cupcakes, NOW, "today").text).toBe("Esta mañana");
+    expect(todayWhen(key, NOW, "day:2026-11-14").text).toBe("Mañana por la mañana");
+    expect(todayWhen(library, NOW, "day:2026-11-17").text).toBe("mar por la mañana");
+    expect(todayWhen(kai, NOW, "waiting").text).toBe("para mañana por la mañana");
+    expect(todayWhen({ ...cupcakes, why: { ...cupcakes.why, missed: true } }, at(13, 12), "missed").text).toBe("Venció esta mañana");
+    expect(todayWhen(notes, NOW, "today").text).toBe("Hoy · lo necesitan mañana por la mañana");
+  });
+
   it("plan 210 (iteration 4, revision 10): travel says the mail's clock with the place, never the reader's", () => {
     // Theo's tech check, 4:00 PM in Austin (2:00 PM where he reads it)
     const check = item({ kind: "dated", text: "Tech check", dueAt: at(16, 14), item: { id: 1, revision: 0, kind: "event", dueDay: "2026-11-16", timed: true, dated: true, travel: { day: "2026-11-16", time: "16:00", place: "Austin" } } });

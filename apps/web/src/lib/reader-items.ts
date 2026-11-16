@@ -1,4 +1,4 @@
-import { dayEnd, dayKeyOf, promiseDay, refKey, withNeeds, withoutAnswered, type DatedRow, type FollowupRow, type ItemRef, type NeedingPromise } from "@terno/core";
+import { dayKeyOf, dueCutoff, promiseDay, refKey, withNeeds, withoutAnswered, type DatedRow, type FollowupRow, type ItemRef, type NeedingPromise } from "@terno/core";
 import { t } from "@terno/i18n";
 import { conversationItem, datedLine, datedText, promiseWhen } from "~/lib/dated";
 import { followupLine } from "~/lib/followups";
@@ -70,7 +70,7 @@ export function readerItems({ dated, followups, target, chosen, now }: ReaderInp
     const open = openPromise(row);
     if (!open && !targetKeys.has(refKey(ref))) continue;
     const day = promiseDay(row, now);
-    items.push({ key: refKey(ref), ref, open, missed: open && day.dated && now >= dayEnd(dayKeyOf(day.dueAt)), dueAt: day.dueAt, source: "promise", row });
+    items.push({ key: refKey(ref), ref, open, missed: open && day.dated && now >= dueCutoff(dayKeyOf(day.dueAt), day.part), dueAt: day.dueAt, source: "promise", row });
   }
   if (!items.length) return NONE;
   // one thing read twice is one line: the feed's open row's members together, else each with its canonical
@@ -114,7 +114,7 @@ export function readerLine(item: ReaderItem, now = Date.now()): string {
  */
 function promiseLineWhen(row: NeedingPromise, missed: boolean, now: number): string | null {
   const day = promiseDay(row, now);
-  const own = promiseWhen(day, missed, now);
+  const own = promiseWhen({ ...day, partOfDay: day.part }, missed, now);
   return own === null || missed ? own : promiseDayWords(day, day.dueAt, own, now).text;
 }
 
