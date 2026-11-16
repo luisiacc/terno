@@ -1,4 +1,4 @@
-import { addressKey, ANSWERED_KINDS, DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, parseHandedTo, DATED_MUTE_NAME_MAX, DATED_MUTES_MAX, muteKey, senderIsPerson, THREAD_SCOPED_KINDS, waitingCutoff, type DatedMute, type DatedMuteOn, type DatedRow } from "@terno/core";
+import { addressKey, ANSWERED_KINDS, DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, parseHandedTo, DATED_MUTE_NAME_MAX, DATED_MUTES_MAX, muteKey, senderIsPerson, THREAD_SCOPED_KINDS, waitingCutoff, type DatedMute, type DatedMuteOn, type DatedRow, type DatedWall } from "@terno/core";
 import { DATED_MARK_MS, DATED_SCAN_MARK_MS, datedTab, NEW_MAIL_MS, readerIn, readNothingAsked, recipientList, type ClosedAt, type DatedFinish, type DatedFinishOutcome, type DatedMuteAdded, type DatedMark, type DatedSnapshot, type DatedSource } from "@terno/store";
 import { received, receivedOwn } from "./ai-summaries";
 import { remarkReplies } from "./followups";
@@ -15,7 +15,16 @@ const toRow = (r: R): DatedRow => ({
   handedTo: parseHandedTo(r.handed_to),
   // plan 210 (iteration 4, revision 7): absent before it
   settledBy: r.settled_by ?? null, settledAt: r.settled_at ?? null,
+  // plan 210 (iteration 4): as SQL's v67, none on a row stored before them
+  before: r.before_day ?? null, confirms: r.confirms ?? null, wall: wallOf(r.wall),
 });
+
+/** Plan 210 (iteration 4, revision 10): the mail's own clock as stored (an object, as SQL's JSON reads); one that doesn't read is none. */
+const wallOf = (w: unknown): DatedWall | null => {
+  const x = w as Partial<DatedWall> | null | undefined;
+  return x && typeof x.day === "string" && typeof x.time === "string" && typeof x.zone === "string" ? { day: x.day, time: x.time, zone: x.zone, place: typeof x.place === "string" ? x.place : null } : null;
+};
+const wallRecord = (w: DatedWall | null | undefined): DatedWall | null => (w ? { day: w.day, time: w.time, zone: w.zone, place: w.place } : null);
 
 const byAct = (a: R, b: R) => a.act_at - b.act_at || a.id - b.id;
 
@@ -185,8 +194,16 @@ export function finishDated(c: Ctx, w: DatedFinish): DatedFinishOutcome {
     rows.put({
       thread_id: src.threadId, message_id: w.messageId, item: r.item, kind: r.kind, text: r.text, quote: r.quote, sender_key: src.senderKey, due_day: r.dueDay, due_at: r.dueAt, timed: r.timed ? 1 : 0, dated: r.dated ? 1 : 0, act_at: r.actAt,
       deferred_until: null, arrived_at: src.date, state: "open", closed_reason: null, closed_at: null, from_scan: w.fromScan ? 1 : 0, revision: 0, model: w.model, provider: w.provider, prompt_version: w.promptVersion, created_at: w.now, early: r.early ? 1 : 0, lapses: r.lapses ? 1 : 0,
+      before_day: r.before ?? null, confirms: null, wall: wallRecord(r.wall),
     });
     open++;
+  }
+  // plan 210 (iteration 4, revision 11): as SQL's, an ask that confirms an event of this message, linked to that event's row
+  for (const r of w.rows) {
+    if (r.confirmsItem === undefined) continue;
+    const event = rows.by("identity", w.messageId, r.confirmsItem).find((x) => x.kind === "event");
+    const ask = rows.by("identity", w.messageId, r.item).find((x) => x.kind === "ask" && x.confirms == null);
+    if (event && ask) rows.update(ask, { confirms: event.id });
   }
   for (const s of w.settled) {
     const r = rows.get(s.id);
@@ -207,14 +224,14 @@ export function finishDated(c: Ctx, w: DatedFinish): DatedFinishOutcome {
     // plan 210 (iteration 4): as SQL's, a promise whose day the user chose keeps it, the move kept for them
     if (proposedMove(followups, p, { dueAt: m.dueAt, timed: m.timed ?? false }, src, w)) continue;
     // plan 210 (iteration 2): its first broken day kept, and whether its new moment is a stated time (absent: as it was)
-    followups.update(p, { due_at: m.dueAt, dated: 1, state: m.dueAt > w.now ? "open" : p.state, inbox_state: "none", broken_due_at: p.broken_due_at ?? m.brokenDueAt ?? null, ...(m.timed !== undefined ? { timed: m.timed ? 1 : 0 } : {}), revision: p.revision + 1 });
+    followups.update(p, { due_at: m.dueAt, dated: 1, state: m.dueAt > w.now ? "open" : p.state, inbox_state: "none", broken_due_at: p.broken_due_at ?? m.brokenDueAt ?? null, ...(m.timed !== undefined ? { timed: m.timed ? 1 : 0 } : {}), before_day: m.before ?? null, revision: p.revision + 1 });
   }
   for (const m of w.moved ?? []) {
     const r = rows.get(m.id);
     // plan 210 (iteration 4): as SQL's, an item whose day the user chose keeps it, the move (and its words) kept for them
     if (r && r.state === "open" && reaches(r, src) && proposedMove(rows, r, { dueDay: m.dueDay, dueAt: m.dueAt, timed: m.timed, actAt: m.actAt, ...(m.text ? { text: m.text } : {}) }, src, w)) continue;
     // its new words, if it gives some, in the same write (the fifth panel round)
-    if (r && r.state === "open" && reaches(r, src)) rows.update(r, { due_day: m.dueDay, due_at: m.dueAt, timed: m.timed ? 1 : 0, dated: 1, act_at: m.actAt, ...(m.text ? { text: m.text } : {}) });
+    if (r && r.state === "open" && reaches(r, src)) rows.update(r, { due_day: m.dueDay, due_at: m.dueAt, timed: m.timed ? 1 : 0, dated: 1, act_at: m.actAt, ...(m.text ? { text: m.text } : {}), before_day: m.before ?? null, wall: wallRecord(m.wall) });
   }
   // plan 210 (iteration 3): as SQL's, a request a reply of yours already followed goes to the follow-ups reader with it again
   if (w.replies && w.rows.some((r) => ANSWERED_KINDS.includes(r.kind) && !kinds.has(r.kind))) remarkReplies(c, src.threadId, src.date, w.replies.since, w.now);

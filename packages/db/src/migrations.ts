@@ -1570,6 +1570,16 @@ ALTER TABLE dated_items ADD COLUMN settled_at INTEGER;
 ALTER TABLE followups ADD COLUMN settled_by INTEGER;
 ALTER TABLE followups ADD COLUMN settled_at INTEGER;
 ` },
+  // plan 210 (iteration 4, revisions 10 and 11): the day a request was asked before (`before_day`, on an item and on a
+  // promise its person moved), the event an ask confirms (`confirms`, its id), and the mail's own clock in another zone
+  // (`wall`, JSON: day, time, IANA zone, place). Shape only: nullable columns, no rewrite; rows stored before it have none
+  // (nothing guessed for them). v65, v66, v68 to v70 are iteration 4's other parts
+  { version: 67, name: "What matters: before a day, a confirmation's event, the mail's own clock (plan 210, iteration 4)", sql: `
+ALTER TABLE dated_items ADD COLUMN before_day TEXT;
+ALTER TABLE dated_items ADD COLUMN confirms INTEGER;
+ALTER TABLE dated_items ADD COLUMN wall TEXT;
+ALTER TABLE followups ADD COLUMN before_day TEXT;
+` },
   // plan 210 (iteration 4, Change…): an item whose day and time the user changed (`changed_at`, null: the mail's schedule),
   // its schedule before that change (`changed_from`, the one change event an item keeps, for Earlier's "Changed" line), and a
   // later mail's move kept for the user rather than applied (`proposal`), on a dated item and a promise alike. Shape only:

@@ -153,6 +153,7 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
           changedAt: null, changedFrom: null, proposal: null,
           // plan 210 (iteration 4): handed to nobody
           handedTo: null,
+          before: null, confirms: null, wall: null,
         });
         // read once: a second answer finds no mark and changes nothing
         expect(await finish(a.id, a.thread, { rows: [item({ item: 2 })] })).toBe("gone");
@@ -715,6 +716,44 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
         const c = await got({ inReplyTo: "fresh@x", references: ["fresh@x"], date: NOW - 1000 });
         await finish(c.id, c.thread, { movedPromises: [{ id: fresh.row.id, revision: fresh.row.revision, dueAt: NOW + 2 * DAY, brokenDueAt: null }] });
         expect(await store.followups.get(fresh.row.id)).toMatchObject({ dueAt: NOW + 2 * DAY, brokenDueAt: null, timed: false });
+      });
+
+      it("plan 210 (iteration 4): the day asked before, a confirmation's event and the mail's own clock round-trip, through a move and a promise's move", async () => {
+        const { store, got, item, finish, promise } = await items();
+        const wall = { day: "2026-11-16", time: "16:00", zone: "America/Chicago", place: "Austin" };
+        const a = await got({ providerMsgId: "it4", subject: "it4" });
+        await finish(a.id, a.thread, {
+          rows: [
+            item({ kind: "respond", text: "Send Owen the SOC 2 report", dueDay: "2026-11-15", before: "2026-11-16" }),
+            item({ item: 1, kind: "event", text: "Tech check", timed: true, wall }),
+            item({ item: 2, kind: "ask", text: "Reply C to confirm the tech check", dated: false, confirmsItem: 1 }),
+            // a link to a row that isn't this message's event links nothing
+            item({ item: 3, kind: "ask", text: "Answer Owen", dated: false, confirmsItem: 0 }),
+          ],
+        });
+        const rows = new Map((await store.dated.ofThread(a.thread)).map((r) => [r.item, r]));
+        expect(rows.get(0)).toMatchObject({ before: "2026-11-16", confirms: null, wall: null });
+        expect(rows.get(1)).toMatchObject({ before: null, wall });
+        expect(rows.get(2)!.confirms).toBe(rows.get(1)!.id);
+        expect(rows.get(3)!.confirms).toBeNull();
+        // a move sets them at its new moment, or clears them (absent: none)
+        const b = await got({ providerMsgId: "it4b", subject: "it4b" });
+        const moved = { wall: { ...wall, time: "17:00" }, before: "2026-11-18" };
+        await finish(b.id, b.thread, { moved: [{ id: rows.get(0)!.id, dueDay: "2026-11-17", dueAt: NOW + 8 * DAY, timed: false, actAt: NOW, before: moved.before }, { id: rows.get(1)!.id, dueDay: "2026-11-16", dueAt: NOW + 6 * DAY, timed: true, actAt: NOW, wall: moved.wall }] });
+        expect(await store.dated.get(rows.get(0)!.id)).toMatchObject({ dueDay: "2026-11-17", before: "2026-11-18", wall: null });
+        expect(await store.dated.get(rows.get(1)!.id)).toMatchObject({ before: null, wall: moved.wall });
+        const c = await got({ providerMsgId: "it4c", subject: "it4c" });
+        await finish(c.id, c.thread, { moved: [{ id: rows.get(0)!.id, dueDay: "2026-11-19", dueAt: NOW + 9 * DAY, timed: false, actAt: NOW }, { id: rows.get(1)!.id, dueDay: "2026-11-17", dueAt: NOW + 7 * DAY, timed: false, actAt: NOW }] });
+        expect(await store.dated.get(rows.get(0)!.id)).toMatchObject({ before: null, wall: null });
+        expect((await store.dated.get(rows.get(1)!.id))!.wall).toBeNull();
+        // a promise its person moved "before" a day keeps that day; one moved without, none
+        const p = await promise("before");
+        const reply = await got({ inReplyTo: "before@x", references: ["before@x"], date: NOW - 3000 });
+        await finish(reply.id, reply.thread, { movedPromises: [{ id: p.row.id, revision: p.row.revision, dueAt: NOW + 3 * DAY, before: "2026-11-14" }] });
+        expect((await store.followups.get(p.row.id))!.before).toBe("2026-11-14");
+        const again = await got({ inReplyTo: "before@x", references: ["before@x"], date: NOW - 2000 });
+        await finish(again.id, again.thread, { movedPromises: [{ id: p.row.id, revision: p.row.revision + 1, dueAt: NOW + 4 * DAY }] });
+        expect((await store.followups.get(p.row.id))!.before).toBeNull();
       });
 
       it("links duplicates to a canonical and details to their item, on open rows only, never over one set nor in a chain, and the revision stays", async () => {
