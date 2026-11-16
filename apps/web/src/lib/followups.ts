@@ -42,15 +42,48 @@ export const anyFollowupOnTop = (): boolean => on() && useFollowups.getState().o
 
 const personOf = (row: FollowupRow): string | null => row.personName || row.personEmail?.split("@")[0] || null;
 
-/** "You told Tom you'd send the contract", "Ana hasn't replied in 5 days", and "yet" until a whole day has passed (plan 161). */
-export function followupLine(row: FollowupRow, now = Date.now()): string {
+/**
+ * "You told Tom you'd send the contract", "Ana hasn't replied in 5 days", and "yet" until a whole day has passed (plan 161).
+ * Plan 210 (iteration 3): a promise never names its person twice ("You told Jess Okafor you'd send Jess the script" is
+ * "You told Jess you'd send the script"); where the words can't lose the name ("email Jess"), they keep it and the line
+ * doesn't add it ("You said you'd email Jess"). `short`: the person by their first name, as the reader's line says them.
+ */
+export function followupLine(row: FollowupRow, now = Date.now(), { short = false }: { short?: boolean } = {}): string {
   const name = personOf(row);
   if (row.kind === "awaiting") {
     const who = name ?? t("followup.someone");
     const days = followupDaysSince(row.sentAt, now);
     return days === 0 ? t("followup.awaitingYet", { name: who }) : t("followup.awaiting", { name: who, count: days });
   }
-  return name ? t("followup.promise", { name, text: row.text }) : t("followup.promiseNoName", { text: row.text });
+  if (!name) return t("followup.promiseNoName", { text: row.text });
+  const first = name.split(/\s+/)[0] || name;
+  const text = withoutPerson(row.text, [name, first]);
+  return text === null ? t("followup.promiseNoName", { text: row.text }) : t("followup.promise", { name: short ? first : name, text });
+}
+
+/** After a preposition, to the person ("send the script to Jess", "enviar a Valeria el guion"): it goes with them. */
+const TO_PERSON = "(?:to|with|for|a|con|para)";
+/** A thing given ("send Jess the script", "mandarle a Jess los papeles"): the name before it can go. */
+const THING = "(?:the|a|an|your|my|his|her|their|our|its|this|that|these|those|both|all|some|every|el|la|los|las|un|una|unos|unas|tu|tus|su|sus|mi|mis|este|esta|estos|estas|ese|esa)";
+
+/**
+ * A promise's words without its person, when the sentence stands without them; the words as they are when they don't name
+ * them; null when they name them and can't lose it ("email Jess", "review Jess's deck").
+ */
+export function withoutPerson(text: string, names: readonly string[]): string | null {
+  const shown = [...new Set(names.map((n) => n.trim()).filter(Boolean))].sort((a, b) => b.length - a.length);
+  const mention = (n: string) => `(?<![\\p{L}\\p{N}])${n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\p{L}\\p{N}])`;
+  // the person themselves, never their possession ("Jess's deck" keeps her)
+  const word = (n: string) => `${mention(n)}(?!['’])`;
+  const named = (s: string) => shown.some((n) => new RegExp(mention(n), "iu").test(s));
+  if (!named(text)) return text;
+  let out = text;
+  for (const n of shown) {
+    out = out.replace(new RegExp(`\\s+${TO_PERSON}\\s+${word(n)}`, "giu"), "");
+    out = out.replace(new RegExp(`(^|\\s)${word(n)}\\s+(?=${THING}(?![\\p{L}]))`, "giu"), "$1");
+  }
+  out = out.replace(/\s{2,}/g, " ").trim();
+  return named(out) || out.split(" ").length < 2 ? null : out;
 }
 
 /**
