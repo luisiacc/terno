@@ -14,7 +14,7 @@ import { msg, threadOf } from "@terno/store/conformance";
 import type { IncomingMessage } from "@terno/store";
 import { afterEach, describe, expect, it } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
-import { checkSentMail, onlyHolds } from "./followups";
+import { checkSentMail, onlyHolds, yourWords } from "./followups";
 
 const at = (y: number, m: number, d: number, h = 0, min = 0) => new Date(y, m - 1, d, h, min).getTime();
 // Tuesday 10 November 2026
@@ -122,6 +122,11 @@ describe("a reply's checked verdict (the Codex review of iteration 3, revision 1
     expect(one("holding", "I'll send it Wednesday", [promise])).toEqual([]);
     expect(one("holding", "Let me check my calendar and get back to you", [])).toEqual([]);
     expect(checkSentMail({ promises: [holding, promise], expectsReply: false, awaiting: [], kept: [], answers: [{ label: "q1", verdict: "fulfilled", evidence: "I'll send it Wednesday" }] }, { ...base, ownText }).verdicts).toEqual([{ request: { id: 7, revision: 2 }, verdict: "promise", item: 1 }]);
+    // iteration 4 (prompt v12's eval): a promise is said to you, "your", never "my", whatever the model wrote
+    expect(yourWords("send Asha my script")).toBe("send Asha your script");
+    expect(yourWords("enviarle a Jess el escaneo de mi pasaporte y mis fotos")).toBe("enviarle a Jess el escaneo de tu pasaporte y tus fotos");
+    expect(yourWords("My notes to Dana, para mí, drive 5 mi east")).toBe("Your notes to Dana, para mí, drive 5 mi east");
+    expect(checkSentMail({ promises: [{ ...promise, text: "send Ms. Greer my slip" }], expectsReply: false, awaiting: [], kept: [], answers: [] }, base).rows[0]!.text).toBe("send Ms. Greer your slip");
     expect(onlyHolds("lo reviso y te aviso")).toBe(true);
     expect(onlyHolds("I'll check the numbers and send you the report Friday")).toBe(false);
     expect(onlyHolds("te lo mando el lunes")).toBe(false);
