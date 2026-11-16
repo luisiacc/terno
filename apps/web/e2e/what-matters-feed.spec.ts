@@ -536,3 +536,95 @@ test("plan 210 (iteration 1): inside a day, tasks before plans; iteration 2: a c
     await page.mouse.move(0, 0);
   });
 });
+
+/** plan 210 (iteration 3): any dated item on a conversation of its own, by its day from today and its kind */
+async function dated(server: DevServerFixture, key: string, from: string, row: { kind: "pay" | "respond" | "ask" | "event"; text: string; days: number; hour?: number; early?: boolean }) {
+  const store = server.backend.store;
+  const db = sqlDb(store);
+  const arrived = E2E_NOW - HOUR;
+  await store.sync.ingest([message(server, key, { name: from, email: `${key}@people.test` }, `About ${key}`, `${row.text}.`, arrived, { isRead: false, inInbox: true })], { applyFilters: false, now: E2E_NOW, classifier: null });
+  const m = db.get<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages WHERE provider_msg_id = ?", key)!;
+  await store.dated.marks.queueScan([m.id], E2E_NOW);
+  const at = new Date(E2E_NOW);
+  at.setDate(at.getDate() + row.days);
+  at.setHours(row.hour ?? 9, 0, 0, 0);
+  const day = `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, "0")}-${String(at.getDate()).padStart(2, "0")}`;
+  const ask = row.kind === "ask";
+  const act = row.days > 7 ? at.getTime() - 7 * 86_400_000 : arrived;
+  await store.dated.finish({ messageId: m.id, threadId: m.thread_id, fromScan: true, rows: [{ kind: row.kind, item: 0, text: row.text, quote: `${row.text}.`, dueDay: day, dueAt: ask ? arrived : at.getTime(), timed: row.hour !== undefined, dated: !ask, actAt: act, ...(row.early ? { early: true } : {}) }], settled: [], now: E2E_NOW, model: "demo", provider: "fake", promptVersion: 1, clearGeneration: store.dated.clearGeneration() });
+}
+
+test("plan 210 (iteration 3): the header says missed, today and waiting; Waiting on you is Today's quiet part; Coming up is a disclosure, by day then by week", async ({ app: page, server }) => {
+  await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" }, dated: { enabled: true, scanAnswered: true } }, dev);
+  await dated(server, "water", "City Water", { kind: "pay", text: "Pay the water bill", days: -2 });
+  await item(server, "payroll", "Wire payroll", null);
+  await dated(server, "rfp", "Owen Hale", { kind: "respond", text: "Send Owen the RFP response", days: 3, hour: 17, early: true });
+  await dated(server, "bio", "Inés Ruiz", { kind: "respond", text: "Send Inés your bio", days: 1, hour: 12, early: true });
+  await dated(server, "quote", "Mariana Paz", { kind: "ask", text: "Answer Mariana about the rebranding quote", days: 0 });
+  await dated(server, "keynote", "Shipfast", { kind: "event", text: "Shipfast Summit keynote", days: 5, hour: 19 });
+  await dated(server, "dues", "Rowing Club", { kind: "pay", text: "Pay the club dues", days: 10 });
+  await dated(server, "passport", "Passport Office", { kind: "pay", text: "Pay the passport renewal fee", days: 40 });
+  await dated(server, "insurance", "Lakeshore Mutual", { kind: "pay", text: "Pay the home insurance premium", days: 75 });
+  server.backend.today.changed();
+  await fresh(page);
+  await page.evaluate(() => localStorage.removeItem("terno.today.comingUp"));
+  await fresh(page);
+  await page.getByTestId("nav-today").click();
+  await expect(line(page, "Wire payroll")).toBeVisible({ timeout: 15_000 });
+
+  await scenario("the header's three numbers, disjoint; the badge their sum", async () => {
+    // (the demo mailbox's own conversations waiting on you are among the waiting)
+    await expect(page.getByTestId("today-needs")).toHaveText(/^1 missed · 1 today · \d+ waiting$/);
+    const waiting = Number(/(\d+) waiting/.exec(await page.getByTestId("today-needs").innerText())![1]);
+    expect(waiting).toBeGreaterThanOrEqual(3);
+    await expect(page.getByTestId("nav-today")).toContainText(String(2 + waiting));
+  });
+
+  await scenario("Waiting on you under Today's own: the dated by their day, soonest first, keeping their time; then the asks", async () => {
+    const { rows } = await walk(page);
+    // these rows and the headings (the demo's own waiting conversations aside: they came before Mariana's ask, newest first)
+    const ours = /^(Pay the water bill|Wire payroll|Send Inés your bio|Send Owen the RFP response|Answer Mariana about the rebranding quote|Shipfast Summit keynote)\.$/;
+    const order = rows.filter((r) => r.kind.startsWith("#") || (r.kind === "open" && ours.test(r.text))).map((r) => (r.kind === "open" ? r.text : r.kind));
+    expect(order.slice(0, 10)).toEqual(["#missed", "Pay the water bill.", "#today", "Wire payroll.", "#waiting", "Send Inés your bio.", "Send Owen the RFP response.", "Answer Mariana about the rebranding quote.", "#day", "Shipfast Summit keynote."]);
+    await reach(page, "Send Owen the RFP response");
+    await expect(openLine(page, "Send Owen the RFP response").getByTestId("wm-when")).toHaveText(/^by \w{3} 5:00\sPM$/);
+    await expect(openLine(page, "Send Inés your bio").getByTestId("wm-when")).toHaveText(/^by tomorrow 12:00\sPM$/);
+    await expect(openLine(page, "Send Owen the RFP response")).toHaveAttribute("data-tone", "none");
+    // the keynote five days out is under its day (the seven days whole); Coming up holds the rest, closed
+    await reach(page, "Shipfast Summit keynote");
+    await expect(line(page, "Pay the club dues")).toHaveCount(0);
+  });
+
+  await scenario("Coming up opens as a disclosure: its rows under their day, past two weeks their week; the same words open or shut", async () => {
+    const toggle = page.getByTestId("today-coming-up");
+    await expect(toggle).toHaveText("3 coming up");
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await expect(toggle).toHaveText("3 coming up");
+    const { rows } = await walk(page);
+    const order = rows.filter((r) => r.kind === "open" || r.kind.startsWith("#")).map((r) => (r.kind === "open" ? r.text : r.kind));
+    // (the demo's own Coming up, if any, joins these days: only ours and the headings after the keynote)
+    const after = order.slice(order.indexOf("Shipfast Summit keynote.") + 1).filter((t) => t.startsWith("#") || /^Pay the (club dues|passport renewal fee|home insurance premium)\.$/.test(t));
+    expect(after.slice(0, 6)).toEqual(["#day", "Pay the club dues.", "#week", "Pay the passport renewal fee.", "#week", "Pay the home insurance premium."]);
+    await reach(page, "Pay the home insurance premium");
+    await expect(feed(page).locator('[data-testid="wm-heading"][data-kind="week"]').last()).toHaveText(/^Week of \w{3} \d{1,2}(, \d{4})?$/);
+    await axeBothModes(page, '[data-testid="wm-feed"]');
+  });
+
+  const shots = process.env.WM_IT3_SHOTS;
+  if (shots) {
+    for (const mode of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme: mode });
+      await scroller(page).evaluate((el) => (el.scrollTop = 0));
+      await page.waitForTimeout(300);
+      await page.screenshot({ path: `${shots}/${test.info().project.name}-top-${mode}.png` });
+      await reach(page, "Shipfast Summit keynote");
+      // the keynote's day at the top: Coming up's days and weeks under it
+      await line(page, "Shipfast Summit keynote").evaluate((el) => el.scrollIntoView({ block: "start" }));
+      await page.waitForTimeout(300);
+      await page.screenshot({ path: `${shots}/${test.info().project.name}-coming-up-${mode}.png` });
+    }
+    await page.emulateMedia({ colorScheme: "light" });
+  }
+});
