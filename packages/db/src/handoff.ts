@@ -5,7 +5,8 @@ import type { Db } from "./sqlite";
 /**
  * Plan 210 (iteration 4): a forward's hand-off, in the commit that records its send as confirmed (`ops.complete`): its items
  * close as handed to whom it was sent to, when the row's own item is still open as it was handed (`handoffCloses`), and the
- * forward gets its own wait. True when it closed anything. See packages/store/src/handoff.ts.
+ * forward gets its own wait, whether or not its items could close (a Change, Later or settlement since keeps an item open,
+ * never the forward's wait on its person: Codex's code review). True when it closed anything. See packages/store/src/handoff.ts.
  */
 export function handoffConfirmed(db: Db, targetJson: string, messageId: number, now: number, o: { followup?: boolean; nudgeAfterDays?: number }): boolean {
   const h = handoffOfTarget(targetJson);
@@ -14,7 +15,6 @@ export function handoffConfirmed(db: Db, targetJson: string, messageId: number, 
   const to = m?.is_sent === 1 ? handedToOf(m.to_json) : null;
   if (!m || !to) return false;
   const closing = handoffCloses(h, (i) => db.get<{ state: string; revision: number }>(`SELECT state, revision FROM ${i.source === "dated" ? "dated_items" : "followups"} WHERE id = ?`, i.id) ?? null);
-  if (!closing.length) return false;
   for (const i of closing) {
     const p = handedPatch(i, to, now);
     if (i.source === "dated") db.run("UPDATE dated_items SET state = ?, closed_reason = ?, closed_at = ?, handed_to = ?, revision = revision + 1 WHERE id = ? AND revision = ?", p.state, p.closedReason, p.closedAt, p.handedTo, i.id, i.revision);
@@ -30,5 +30,5 @@ export function handoffConfirmed(db: Db, targetJson: string, messageId: number, 
       m.thread_id, messageId, m.rfc_message_id, wait.item, wait.personName, wait.personEmail, m.date, wait.dueAt, wait.dated ? 1 : 0, now,
     );
   }
-  return true;
+  return closing.length > 0;
 }
