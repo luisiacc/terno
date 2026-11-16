@@ -60,6 +60,14 @@ export interface FollowupWrite {
   timed?: boolean;
   /** plan 210 (iteration 5, revision 4): the part of its day it's promised for (`FollowupRow.partOfDay`); absent, the whole day */
   partOfDay?: PartOfDay | null;
+  /**
+   * Plan 210 (round 14's faults, the second morning): a promise you'd already made, still open, said again (the same person,
+   * conversation and deliverable: Theo's "full written update" for Monday morning after Friday's): that row takes it, never
+   * a second row beside it. The older takes this one's moment when this one names a day or the older named none, its
+   * first missed day kept (`brokenDueAt`, as a person's move keeps it), and a verdict on this item reaches it. Only at the
+   * revision shown, an open promise of this conversation: otherwise this is a row of its own. Absent: a new promise
+   */
+  renews?: { id: number; revision: number; brokenDueAt: number | null };
 }
 
 export interface FollowupFinish {

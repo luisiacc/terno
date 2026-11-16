@@ -116,6 +116,38 @@ describe("the worker", () => {
     expect(sent).not.toContain(tom.email);
   });
 
+  it("plan 210 (round 14's faults, the second morning): a promise said again to the same person for the same deliverable moves the open one, never sits beside it; two deliverables stay two", async () => {
+    const at = (d: number, h: number) => new Date(2026, 10, d, h).getTime();
+    const run = async (later: { at: number; promise: { text: string; quote: string; due: string; partOfDay?: string } }) => {
+      const { backend, model, clock, send, drained } = await setup();
+      const friday = "I'll send the full written update by Friday with the numbers and the board deck appendix.";
+      model.answer = () => reply({ promises: [{ text: "send Tom the full written update with the numbers and the board deck appendix", quote: friday, to: "r1", due: "2026-11-06" }] });
+      await send({ providerThreadId: "update", rfcMessageId: "u1@test", subject: "Q3 update", bodyText: friday });
+      backend.followups.wake();
+      await drained();
+      const [first] = await backend.store.followups.active();
+      clock.now = later.at;
+      model.answer = () => reply({ promises: [{ partOfDay: null, ...later.promise, to: "r1" }] });
+      await send({ providerThreadId: "update", rfcMessageId: "u2@test", inReplyTo: "u1@test", references: ["u1@test"], subject: "Re: Q3 update", bodyText: later.promise.quote });
+      backend.followups.wake();
+      await drained();
+      return { first: first!, rows: await backend.store.followups.active() };
+    };
+    // Friday evening, before Friday was over: the open one sits under Monday morning, nothing missed
+    const monday = { text: "send Tom the full written update", quote: "You'll have the full written update Monday morning, before I board for Austin.", due: "2026-11-09", partOfDay: "morning" };
+    const moved = await run({ at: at(6, 20), promise: monday });
+    expect(moved.rows).toHaveLength(1);
+    expect(moved.rows[0]).toMatchObject({ id: moved.first.id, text: moved.first.text, partOfDay: "morning", brokenDueAt: null, state: "open" });
+    expect(new Date(moved.rows[0]!.dueAt).getDate()).toBe(9);
+    // said again after Friday was over: Friday kept as the day it missed
+    const late = await run({ at: at(7, 10), promise: monday });
+    expect(late.rows).toHaveLength(1);
+    expect(late.rows[0]).toMatchObject({ id: late.first.id, brokenDueAt: late.first.dueAt });
+    // another deliverable to the same person is a promise of its own
+    const other = await run({ at: at(6, 20), promise: { text: "send Tom the signed term sheet", quote: "I'll send the signed term sheet Monday morning.", due: "2026-11-09" } });
+    expect(other.rows.map((r) => r.text).sort()).toEqual(["send Tom the full written update with the numbers and the board deck appendix", "send Tom the signed term sheet"]);
+  });
+
   it("off, first sync, a template and bulk mail aren't read", async () => {
     const { backend, model, send, drained, client, account } = await setup();
     await send({}, false);

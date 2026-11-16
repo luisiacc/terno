@@ -216,11 +216,29 @@ export function finishFollowups(db: Db, w: FollowupFinish): FollowupFinishOutcom
       src.threadId, w.messageId, src.rfcMessageId, r.item, r.kind, r.text, r.quote, r.personName, r.personEmail, src.date, r.dueAt, r.dated ? 1 : 0, w.fromScan ? 1 : 0, w.model, w.provider, w.promptVersion, w.now, r.timed ? 1 : 0, r.partOfDay ?? null,
     ).changes;
     const later = db.get("SELECT 1 FROM messages INDEXED BY messages_thread WHERE thread_id = ? AND date > ? AND is_sent = 1 AND is_draft = 0 AND is_trash = 0 AND is_spam = 0 AND provider_msg_id NOT LIKE 'local:%' LIMIT 1", src.threadId, src.date);
+    // plan 210 (round 14's faults, the second morning): a promise said again is the older's (`FollowupWrite.renews`): each
+    // such item and the row that took it
+    const renewed = new Map<number, number>();
+    const renew = (r: FollowupFinish["rows"][number], to: NonNullable<FollowupFinish["rows"][number]["renews"]>): boolean => {
+      // (one promise read twice from this reply: the first moved it, the other is it all the same)
+      const again = [...renewed.values()].includes(to.id);
+      const older = again ? null : db.get<{ dated: number }>("SELECT dated FROM followups WHERE id = ? AND revision = ? AND thread_id = ? AND kind = 'promise' AND state IN ('open','due')", to.id, to.revision, src.threadId);
+      if (!again && !older) return false;
+      if (older && (r.dated || older.dated === 0)) {
+        db.run(
+          "UPDATE followups SET due_at = ?, dated = ?, state = CASE WHEN ? > ? THEN 'open' ELSE state END, inbox_state = 'none', broken_due_at = coalesce(broken_due_at, ?), timed = ?, before_day = NULL, part_of_day = ?, revision = revision + 1 WHERE id = ?",
+          r.dueAt, r.dated ? 1 : 0, r.dueAt, w.now, to.brokenDueAt, r.timed ? 1 : 0, r.partOfDay ?? null, to.id,
+        );
+      }
+      renewed.set(r.item, to.id);
+      return true;
+    };
     for (const r of w.rows) {
       if (r.kind === "awaiting" && (later || replied(db, own, { accountId: src.accountId, threadId: src.threadId, sentAt: src.date, rfcMessageId: src.rfcMessageId }))) continue;
       // a reply read again (a re-mark) keeps the rows it wrote, and never takes a wait's place for one (Codex code review of
       // plan 210's iteration 3; IndexedDB's order)
       if (db.get("SELECT 1 FROM followups WHERE message_id = ? AND item = ?", w.messageId, r.item)) continue;
+      if (r.kind === "promise" && r.renews && renew(r, r.renews)) continue;
       if (active >= FOLLOWUPS_ACTIVE_MAX) {
         if (r.kind === "awaiting") continue;
         // a promise takes the place of the oldest wait
@@ -243,14 +261,14 @@ export function finishFollowups(db: Db, w: FollowupFinish): FollowupFinishOutcom
         settle(r.id, r.revision);
         continue;
       }
+      // the promise this reply made (its own row, or the older one it said again), an open one, linked once
+      const p = db.get<{ id: number }>("SELECT id FROM followups WHERE ((message_id = ? AND item = ?) OR id = ?) AND kind = 'promise' AND state IN ('open','due') AND answers IS NULL AND holds IS NULL", w.messageId, v.item, renewed.get(v.item) ?? -1);
+      if (!p) continue;
       // plan 210 (iteration 4): a promise that only holds it is stored with it, once (as a link, no revision moves)
       if (v.verdict === "holding") {
-        db.run("UPDATE followups SET holds = ? WHERE message_id = ? AND item = ? AND kind = 'promise' AND state IN ('open','due') AND answers IS NULL AND holds IS NULL", r.id, w.messageId, v.item);
+        db.run("UPDATE followups SET holds = ? WHERE id = ?", r.id, p.id);
         continue;
       }
-      // the promise this reply made (its own row, an open one), linked once
-      const p = db.get<{ id: number }>("SELECT id FROM followups WHERE message_id = ? AND item = ? AND kind = 'promise' AND state IN ('open','due') AND answers IS NULL AND holds IS NULL", w.messageId, v.item);
-      if (!p) continue;
       db.run("UPDATE followups SET answers = ? WHERE id = ?", r.id, p.id);
       apart(db, p.id, r.id);
     }
