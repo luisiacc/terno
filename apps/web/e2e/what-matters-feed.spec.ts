@@ -695,7 +695,7 @@ test("plan 210 (iteration 4): 'to do today'; a broken promise first in Waiting o
     await reach(page, "send Jess the full");
     const row = openLine(page, "send Jess the full");
     await expect(row).toHaveAttribute("data-tone", "missed");
-    await expect(row.getByTestId("wm-when")).toHaveText(/^You said \w{3} \d{1,2} \(missed\) · needed \w{3}$/);
+    await expect(row.getByTestId("wm-when")).toHaveText(/^You said \w{3} \d{1,2} \(missed\) ·\sneeded \w{3}$/);
   });
 
   await scenario("the sentence keeps two thirds of the row; beside the reader the when column goes under it", async () => {

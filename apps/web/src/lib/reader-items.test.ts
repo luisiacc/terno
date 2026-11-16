@@ -103,14 +103,14 @@ describe("the reader's one line (plan 210, iteration 3, Codex revision 10)", () 
     const broken = promise({ id: 9, text: "send Jess the script", dueAt: at(25), brokenDueAt: at(20) });
     const r = read({ dated: [], followups: [broken] });
     expect(r.top).toMatchObject({ key: "promise:9", missed: false, dueAt: at(25) });
-    expect(readerLine(r.top!, NOW)).toBe("You said Tue 20 (missed) · needed Sun · You told Jess you’d send the script");
+    expect(readerLine(r.top!, NOW)).toBe("You said Tue 20 (missed) ·\u00a0needed Sun · You told Jess you’d send the script");
     // it said Wednesday (over), the request it answers needs it Saturday: under Saturday, not Missed
     const late = promise({ id: 9, text: "send Jess the script", dueAt: at(21), answers: 1 });
     const answered = read({ dated: [draft], followups: [late] });
     expect(answered.top).toMatchObject({ key: "promise:9", missed: false, dueAt: at(24) });
-    expect(readerLine(answered.top!, NOW)).toBe("You said yesterday (missed) · needed Sat · You told Jess you’d send the script");
+    expect(readerLine(answered.top!, NOW)).toBe("You said yesterday (missed) ·\u00a0needed Sat · You told Jess you’d send the script");
     // its own day ahead, the request's later: its own day, and the request's beside it
-    expect(readerLine(read({ dated: [draft], followups: [{ ...late, dueAt: at(23) }] }).top!, NOW)).toBe("Due tomorrow · needed Sat · You told Jess you’d send the script");
+    expect(readerLine(read({ dated: [draft], followups: [{ ...late, dueAt: at(23) }] }).top!, NOW)).toBe("Due tomorrow ·\u00a0needed Sat · You told Jess you’d send the script");
   });
 
   it("the open row's item not read yet (its answer on its way) leaves the soonest on top, never nothing", () => {
