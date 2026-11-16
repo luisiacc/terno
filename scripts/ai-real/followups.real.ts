@@ -136,7 +136,10 @@ interface V11 {
   promises: [number, number];
   due?: string[];
   words?: string[];
+  /** v12: ones no promise's text may match */
   wordsNot?: string[];
+  /** v12: the first promise's time ("HH:MM", local), when its words say a part of the day: never later */
+  time?: string;
 }
 const local = (y: number, m: number, d: number, h: number, min = 0) => new Date(y, m - 1, d, h, min).getTime();
 const MON_NOV = ["Monday, 9 November 2026, 19:10", local(2026, 11, 9, 19, 10)] as [string, number];
@@ -183,56 +186,104 @@ const V11_CASES: V11[] = [
   { id: "f11-22", text: "I'll send you my passport scan and the photos Monday so you can fill in the form and print it.", to: "Jess", sent: THU_NIGHT, promises: [1, 1], due: ["2026-11-16"], words: ["your passport", "Jess"], wordsNot: ["\\bmy\\b", "Jess.*Jess"] },
   { id: "f11-23", text: "Te mando el escaneo de mi pasaporte y las fotos el lunes para que llenes el formulario.", es: true, to: "Jess", sent: JUEVES_NOCHE, promises: [1, 1], due: ["2026-11-16"], words: ["pasaporte", "Jess"], wordsNot: ["\\bmi\\b", "Jess.*Jess"] },
 ];
-const V11_REPEAT = Math.max(1, Number(process.env.TERNO_AI_FOLLOWUPS_REPEAT ?? 5));
-/** TERNO_AI_FOLLOWUPS_CASES: only these v11 ids (comma-separated), to look at a few again */
-const V11_ONLY = process.env.TERNO_AI_FOLLOWUPS_CASES?.split(",").filter(Boolean);
+/**
+ * Prompt v12 (plan 210, iteration 4): fictionalized from round 12's panel. A second sentence about how or with what you'll
+ * do the first is one promise (Diego's green calibrated to the printer's profile, Priya's call and the flexibility she'll
+ * bring to it); who comes with you to a meeting you're confirming is no promise, while the agenda you'll send is (Jordan);
+ * a morning promise is over by noon (María's cupcakes "Friday morning at drop-off"); a reply that only holds a request
+ * gives "holding" with its words (Margaret's calendar). `time`: the first promise's moment, by the clock, when right.
+ */
+const TUE_NOV = ["Tuesday, 3 November 2026, 15:02", local(2026, 11, 3, 15, 2)] as [string, number];
+const MARTES_NOV = ["martes, 3 de noviembre de 2026, 15:02", local(2026, 11, 3, 15, 2)] as [string, number];
+const WED_NIGHT = ["Wednesday, 11 November 2026, 20:10", local(2026, 11, 11, 20, 10)] as [string, number];
+const MIERCOLES_NOCHE = ["miércoles, 11 de noviembre de 2026, 20:10", local(2026, 11, 11, 20, 10)] as [string, number];
+const THU_MORNING = ["Thursday, 12 November 2026, 07:55", local(2026, 11, 12, 7, 55)] as [string, number];
+const JUEVES_MANANA = ["jueves, 12 de noviembre de 2026, 07:55", local(2026, 11, 12, 7, 55)] as [string, number];
+const V12_CASES: V11[] = [
+  // Diego: the second sentence says how the first is done: one promise, the delivery's, with its day
+  { id: "f12-01", text: "¡Qué bueno que les gustaron! Anotados los tres ajustes; el verde lo calibro con el perfil de la imprenta para que no se vuelva a oscurecer.\n\nClaro, el jueves te los mando sin falta.", es: true, to: "Carla", sent: LUNES_NOV, answering: "¿Me mandas los ajustes el jueves?", request: { text: "Mandarle a Carla los ajustes de las etiquetas", due: "2026-11-12", verdict: ["promise"] }, promises: [1, 1], due: ["2026-11-12"], words: ["ajustes"] },
+  { id: "f12-02", text: "So glad you liked them! Noted all three changes; I'll match the green to the printer's profile so it doesn't go dark again.\n\nSure, I'll send them over Thursday without fail.", to: "Carla", sent: MON_NOV, answering: "Could you send the label changes by Thursday?", request: { text: "Send Carla the label changes", due: "2026-11-12", verdict: ["promise"] }, promises: [1, 1], due: ["2026-11-12"], words: ["changes"] },
+  // Priya: the call, and what she'll come with to it: one promise, the call's
+  { id: "f12-03", text: "Thanks for being upfront, I really appreciate it. Let's talk. I'll call you tomorrow at 4pm PT, and I'll come with some flexibility on the equity side.", to: "Marcus", sent: THU_MORNING, answering: "I have another offer and need to decide by Monday. Can we talk about the equity?", request: { text: "Answer Marcus about the equity", due: "2026-11-15", verdict: ["promise"] }, promises: [1, 1], due: ["2026-11-13"], words: ["call", "Marcus", "4(:00)?\\s*(PM|p\\.m\\.)|16:00"] },
+  { id: "f12-04", text: "Gracias por ser tan directo, de verdad lo aprecio. Hablemos. Te llamo mañana a las 4 de la tarde, hora del Pacífico, y voy con algo de flexibilidad en la parte de acciones.", es: true, to: "Marcus", sent: JUEVES_MANANA, answering: "Tengo otra oferta y debo decidir antes del lunes. ¿Podemos hablar de las acciones?", request: { text: "Responderle a Marcus sobre las acciones", due: "2026-11-15", verdict: ["promise"] }, promises: [1, 1], due: ["2026-11-13"], words: ["llamar", "Marcus"] },
+  // Jordan: who comes along to the meeting he confirms is no promise; the agenda is ("antes del viernes 13" may be read as Thursday)
+  { id: "f12-05", text: "Grace, confirmed, thank you. I'll bring our account manager, Nora, and our solutions engineer for the Denver conversation.\n\nI'll send the agenda by Friday the 13th so Patrick has it ahead of time.", to: "Grace", sent: TUE_NOV, answering: "Confirming our quarterly review: Tuesday, Nov 17 at 2:00 PM at our office. We'd like to cover adoption and the expansion to our Denver sites.", promises: [1, 1], due: ["2026-11-13"], words: ["agenda"], wordsNot: ["Nora", "engineer", "bring"] },
+  { id: "f12-06", text: "Grace, confirmado, gracias. Llevo a Nora, nuestra gerente de cuenta, y a nuestro ingeniero de soluciones para la conversación de Denver.\n\nTe mando la agenda antes del viernes 13 para que Patricio la tenga con tiempo.", es: true, to: "Grace", sent: MARTES_NOV, answering: "Confirmo nuestra revisión trimestral: martes 17 de noviembre a las 14:00 en nuestra oficina. Queremos hablar de la adopción y de la expansión a Denver.", promises: [1, 1], due: ["2026-11-13", "2026-11-12"], words: ["agenda"], wordsNot: ["Nora", "ingeniero", "llevar"] },
+  // María: what they asked her to bring is a promise, and a morning one is over by noon
+  { id: "f12-07", text: "Count me in! I'll bring two dozen cupcakes (nut-free, labeled) Friday morning at drop-off.", to: "Jessica", sent: WED_NIGHT, answering: "We still need cupcakes or anything individually wrapped for Friday's bake sale.", promises: [1, 1], due: ["2026-11-13"], time: "12:00", words: ["cupcakes"] },
+  { id: "f12-08", text: "¡Cuenten conmigo! Llevo dos docenas de cupcakes (sin nueces, etiquetados) el viernes por la mañana a la entrada.", es: true, to: "Jessica", sent: MIERCOLES_NOCHE, answering: "Todavía nos faltan cupcakes o algo envuelto individualmente para la venta del viernes.", promises: [1, 1], due: ["2026-11-13"], time: "12:00", words: ["cupcakes"] },
+  // Margaret: the questions are a promise; the calendar only holds her request, and says so
+  { id: "f12-09", text: "Dolores,\n\nYes, I'll email the discussion questions to everyone by Sunday. I need to look at my calendar for December and will get back to you.\n\nMargaret", to: "Dolores", sent: TUE_NOV, answering: "Could you send the discussion questions before the 17th? And can you host in December? Let me know by the 16th.", request: { text: "Tell Dolores whether you can host in December", due: "2026-11-16", verdict: ["holding"] }, promises: [1, 2] },
+  { id: "f12-10", text: "Dolores:\n\nSí, el domingo les mando a todas las preguntas para comentar. Tengo que ver mi agenda de diciembre y te digo.\n\nMargarita", es: true, to: "Dolores", sent: MARTES_NOV, answering: "¿Me mandas las preguntas antes del 17? ¿Y puedes recibirnos en diciembre? Avísame antes del 16.", request: { text: "Decirle a Dolores si puedes recibirlas en diciembre", due: "2026-11-16", verdict: ["holding"] }, promises: [1, 2] },
+];
 
-describe.skipIf(process.env.TERNO_AI_FOLLOWUPS !== "1")("follow-ups prompt v11 (plan 210, iteration 3)", () => {
-  const tasks = () => realTasks(TARGET, "followups-eval");
+const REPEAT = Math.max(1, Number(process.env.TERNO_AI_FOLLOWUPS_REPEAT ?? 5));
+/** TERNO_AI_FOLLOWUPS_CASES: only these ids (comma-separated), to look at a few again */
+const ONLY = process.env.TERNO_AI_FOLLOWUPS_CASES?.split(",").filter(Boolean);
+const localDay = (ms: number) => `${new Date(ms).getFullYear()}-${String(new Date(ms).getMonth() + 1).padStart(2, "0")}-${String(new Date(ms).getDate()).padStart(2, "0")}`;
+const clock = (ms: number) => `${String(new Date(ms).getHours()).padStart(2, "0")}:${String(new Date(ms).getMinutes()).padStart(2, "0")}`;
 
-  it("a verdict on the conversation's request, soft days, no promise to be where expected, one delivery one promise, \"your\": none wrong shown", async () => {
-    let readings = 0, found = 0, wrongShown = 0, failures = 0;
-    const lines: string[] = [];
-    for (const c of V11_CASES.filter((x) => !V11_ONLY || V11_ONLY.includes(x.id))) {
-      for (let n = 0; n < V11_REPEAT; n++) {
-        readings++;
-        const recipients = [{ label: "r1", name: c.to ?? "Tom", email: "them@example.test" }];
-        let r: Awaited<ReturnType<ReturnType<typeof tasks>["readSentMail"]>>;
-        try {
-          r = await tasks().readSentMail({ ownText: c.text, ...(c.answering ? { answering: c.answering } : {}), subject: "Re: this week", recipients: recipients.map(({ label, name }) => ({ label, name })), attachments: c.attachments ?? [], openPromises: [], ...(c.request ? { requests: [{ label: "q1", text: c.request.text, due: c.request.due }] } : {}), sentAt: c.sent[0], language: c.es ? "es" : "en" });
-        } catch (error) {
-          failures++;
-          lines.push(`${c.id}: failed (${error instanceof Error ? error.message.slice(0, 80) : "error"})`);
-          continue;
-        }
-        const checked = checkSentMail(r, { ownText: c.text, recipients, open: new Map(), requests: new Map(c.request ? [["q1", { id: 1, revision: 0 }]] : []), sentAt: c.sent[1], nudgeAfterDays: 5 });
-        const promises = checked.rows.filter((x) => x.kind === "promise");
-        const wrong: string[] = [];
-        const missed: string[] = [];
-        if (promises.length > c.promises[1]) wrong.push(`${promises.length} promises: ${promises.map((p) => `"${p.text}"`).join(", ")}`);
-        if (promises.length < c.promises[0]) missed.push("no promise");
-        const first = promises[0];
-        if (first && c.due) {
-          const localDay = first.dated ? `${new Date(first.dueAt).getFullYear()}-${String(new Date(first.dueAt).getMonth() + 1).padStart(2, "0")}-${String(new Date(first.dueAt).getDate()).padStart(2, "0")}` : null;
-          if (localDay === null) missed.push("undated");
-          else if (!c.due.includes(localDay)) wrong.push(`due ${localDay}`);
-        }
-        if (first && c.wordsNot?.some((p) => new RegExp(p, "iu").test(first.text))) wrong.push(`words "${first.text}"`);
-        if (first && c.words && !c.words.every((p) => new RegExp(p, "iu").test(first.text))) missed.push(`words "${first.text}"`);
-        if (c.request) {
-          const applied = checked.verdicts[0]?.verdict ?? null;
-          if (applied && !c.request.verdict.includes(applied)) wrong.push(`verdict ${applied} (model: ${r.answers?.map((a) => `${a.label} ${a.verdict} "${a.evidence}"`).join("; ") ?? "none"})`);
-          const right = c.request.verdict.find((v) => v === "fulfilled" || v === "promise");
-          if (right && applied !== right) missed.push(`verdict ${applied ?? "none"} (model: ${r.answers?.map((a) => `${a.verdict} "${a.evidence}"`).join("; ") ?? "none"})`);
-        }
-        if (wrong.length) {
-          wrongShown++;
-          lines.push(`${c.id} WRONG: ${wrong.join("; ")}`);
-        } else if (missed.length) lines.push(`${c.id} missed: ${missed.join("; ")}`);
-        else found++;
+/** Each case read `REPEAT` times, scored on what the app keeps (`checkSentMail`): what's wrong shown, what's missed. */
+async function score(cases: readonly V11[], prompt: string): Promise<number> {
+  const tasks = realTasks(TARGET, "followups-eval");
+  let readings = 0, found = 0, wrongShown = 0, failures = 0;
+  const lines: string[] = [];
+  for (const c of cases.filter((x) => !ONLY || ONLY.includes(x.id))) {
+    for (let n = 0; n < REPEAT; n++) {
+      readings++;
+      const recipients = [{ label: "r1", name: c.to ?? "Tom", email: "them@example.test" }];
+      let r: Awaited<ReturnType<typeof tasks.readSentMail>>;
+      try {
+        r = await tasks.readSentMail({ ownText: c.text, ...(c.answering ? { answering: c.answering } : {}), subject: "Re: this week", recipients: recipients.map(({ label, name }) => ({ label, name })), attachments: c.attachments ?? [], openPromises: [], ...(c.request ? { requests: [{ label: "q1", text: c.request.text, due: c.request.due }] } : {}), sentAt: c.sent[0], language: c.es ? "es" : "en" });
+      } catch (error) {
+        failures++;
+        lines.push(`${c.id}: failed (${error instanceof Error ? error.message.slice(0, 80) : "error"})`);
+        continue;
       }
+      const checked = checkSentMail(r, { ownText: c.text, recipients, open: new Map(), requests: new Map(c.request ? [["q1", { id: 1, revision: 0 }]] : []), sentAt: c.sent[1], nudgeAfterDays: 5 });
+      const promises = checked.rows.filter((x) => x.kind === "promise");
+      const wrong: string[] = [];
+      const missed: string[] = [];
+      if (promises.length > c.promises[1]) wrong.push(`${promises.length} promises: ${promises.map((p) => `"${p.text}"`).join(", ")}`);
+      if (promises.length < c.promises[0]) missed.push("no promise");
+      // the first that names a day, when one should (a reply's undated hold may come first)
+      const first = c.due ? (promises.find((p) => p.dated) ?? promises[0]) : promises[0];
+      if (first && c.due) {
+        if (!first.dated) missed.push("undated");
+        else if (!c.due.includes(localDay(first.dueAt))) wrong.push(`due ${localDay(first.dueAt)}`);
+      }
+      // a morning promise over by noon: its moment the clock's, and never later
+      if (first && c.time) {
+        if (!first.timed) missed.push(`no time ("${first.text}")`);
+        else if (clock(first.dueAt) > c.time) wrong.push(`time ${clock(first.dueAt)} ("${first.text}")`);
+        else if (clock(first.dueAt) !== c.time) missed.push(`time ${clock(first.dueAt)}`);
+      }
+      if (promises.some((p) => c.wordsNot?.some((w) => new RegExp(w, "iu").test(p.text)))) wrong.push(`words ${promises.map((p) => `"${p.text}"`).join(", ")}`);
+      if (first && c.words && !c.words.every((p) => new RegExp(p, "iu").test(first.text))) missed.push(`words "${first.text}"`);
+      if (c.request) {
+        const applied = checked.verdicts[0]?.verdict ?? null;
+        if (applied && !c.request.verdict.includes(applied)) wrong.push(`verdict ${applied} (model: ${r.answers?.map((a) => `${a.label} ${a.verdict} "${a.evidence}"`).join("; ") ?? "none"})`);
+        // the first verdict listed is the one to find, unless that's "unknown" (anything listed is allowed)
+        const right = c.request.verdict[0] !== "unknown" ? c.request.verdict[0] : undefined;
+        if (right && applied !== right) missed.push(`verdict ${applied ?? "none"} (model: ${r.answers?.map((a) => `${a.verdict} "${a.evidence}"`).join("; ") ?? "none"})`);
+      }
+      if (wrong.length) {
+        wrongShown++;
+        lines.push(`${c.id} WRONG: ${wrong.join("; ")}`);
+      } else if (missed.length) lines.push(`${c.id} missed: ${missed.join("; ")}`);
+      else found++;
     }
-    process.stderr.write(`${lines.join("\n")}\n${JSON.stringify({ model: MODEL, prompt: "v11", readings, found, wrongShown, failures })}\n${spendReport()}\n`);
-    expect(wrongShown).toBe(0);
+  }
+  process.stderr.write(`${lines.join("\n")}\n${JSON.stringify({ model: MODEL, prompt, readings, found, wrongShown, failures })}\n${spendReport()}\n`);
+  return wrongShown;
+}
+
+describe.skipIf(process.env.TERNO_AI_FOLLOWUPS !== "1")("follow-ups prompts v11 and v12 (plan 210, iterations 3 and 4)", () => {
+  it.skipIf(process.env.TERNO_AI_FOLLOWUPS_V11 === "0")("v11: a verdict on the conversation's request, soft days, no promise to be where expected, one delivery one promise, \"your\": none wrong shown", async () => {
+    expect(await score(V11_CASES, "v11")).toBe(0);
+  }, 1_800_000);
+
+  it("v12: a second sentence about how one promise, who comes along no promise, a morning over by noon, a holding reply: none wrong shown", async () => {
+    expect(await score(V12_CASES, "v12")).toBe(0);
   }, 1_800_000);
 });
