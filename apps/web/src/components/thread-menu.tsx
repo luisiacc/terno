@@ -441,6 +441,8 @@ function TaskItems({ threadId }: { threadId: number }) {
   // plan 210 (iteration 2): the row right-clicked (or open) of this conversation: its own task, never a sibling's
   const row = useTodayTask(threadId, "menu");
   const keepsId = useId();
+  const changeId = useId();
+  const handId = useId();
   if (!row) return null;
   const { rowId, task } = row;
   const now = Date.now();
@@ -470,11 +472,26 @@ function TaskItems({ threadId }: { threadId: number }) {
           </ContextMenuItem>
         </ContextMenuSubContent>
       </ContextMenuSub>
-      {/* plan 210 (iteration 4): the item's own day and time (a person's ask has none) */}
-      {change && <Item icon={<CalendarDays />} label={t("dated.change")} testId="menu-dated-change" onClick={() => openChange(change)} />}
+      {/* plan 210 (iteration 4): the item's own day and time (a person's ask has none); iteration 5: its key (⇧B) and what it
+          does under it, as Remove's note, so it reads apart from Later */}
+      {change && (
+        <>
+          <ContextMenuItem data-testid="menu-dated-change" data-wide aria-describedby={changeId} onClick={() => openChange(change)}>
+            <CalendarDays />
+            <span className="min-w-0 flex-1 truncate">{t("dated.change")}</span>
+            {hint("today.change")}
+          </ContextMenuItem>
+          <MenuNote id={changeId} testId="menu-dated-change-note" text={t("whatMatters.menu.changeSets")} />
+        </>
+      )}
       {/* plan 210 (iteration 4): Hand to…, an inline forward asking someone to take care of it (its composer takes focus, as
-          Forward's does) */}
-      <Item icon={<Forward />} label={t("whatMatters.handTo.action")} testId="menu-dated-hand" onClick={() => { handOff.pending = true; void handTo(seenOfTask(task), rowId, othersOfTask(task)); }} />
+          Forward's does); iteration 5: its key (⇧F) and its note */}
+      <ContextMenuItem data-testid="menu-dated-hand" data-wide aria-describedby={handId} onClick={() => { handOff.pending = true; void handTo(seenOfTask(task), rowId, othersOfTask(task)); }}>
+        <Forward />
+        <span className="min-w-0 flex-1 truncate">{t("whatMatters.handTo.action")}</span>
+        {hint("today.handTo")}
+      </ContextMenuItem>
+      <MenuNote id={handId} testId="menu-dated-hand-note" text={t("whatMatters.menu.handForwards")} />
       {/* plan 210 (iteration 3): Remove says what it removes from, last of What matters' own and a separator away from the
           mail's (Delete further on), with what it leaves under it, at its label's edge, as the menu's other notes */}
       <ContextMenuItem data-testid="menu-dated-dismiss" data-wide aria-describedby={keepsId} onClick={() => void actOnTodayRow(rowId, task, "dismiss")}>
@@ -482,11 +499,18 @@ function TaskItems({ threadId }: { threadId: number }) {
         <span className="min-w-0 flex-1 truncate">{t("whatMatters.menu.remove")}</span>
         {hint("today.remove")}
       </ContextMenuItem>
-      <p id={keepsId} className="ps-[calc(1rem+1.15em)] pb-1 text-sm" data-testid="menu-dated-keeps">
-        <span className="text-xs text-muted-foreground">{t("whatMatters.menu.removeKeeps")}</span>
-      </p>
+      <MenuNote id={keepsId} testId="menu-dated-keeps" text={t("whatMatters.menu.removeKeeps")} />
       <ContextMenuSeparator />
     </>
+  );
+}
+
+/** What a What matters act does, under its label at its edge, quietly (its item's `aria-describedby`). */
+function MenuNote({ id, testId, text }: { id: string; testId: string; text: string }) {
+  return (
+    <p id={id} className="ps-[calc(1rem+1.15em)] pb-1 text-sm" data-testid={testId}>
+      <span className="text-xs text-muted-foreground">{text}</span>
+    </p>
   );
 }
 

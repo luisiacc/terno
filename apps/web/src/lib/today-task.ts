@@ -3,6 +3,8 @@ import { feedPlace, focusedFeedItem, focusFeedItem } from "~/lib/feed-focus";
 import type { LeftRows } from "~/lib/actions";
 import { actOnDated, actOnTask, type DatedRef, type TodayTask } from "~/lib/dated";
 import { actOnFollowup } from "~/lib/followups";
+import { changeOfItem, changeOfTask, openChange } from "~/lib/change";
+import { handTo, othersOfTask, seenOfReaderItem, seenOfTask } from "~/lib/hand-to";
 import { closePage, currentPage, listLayout } from "~/lib/page";
 import type { ReaderItem } from "~/lib/reader-items";
 import { getApp, openedByApp, setApp, setAppOpened } from "~/state/app";
@@ -205,6 +207,26 @@ export function laterOnSelected(): boolean {
   if (!target) return false;
   if ("item" in target) openReaderLater();
   else openLater(target.row.id, target.row.task, target.next);
+  return true;
+}
+
+/**
+ * Plan 210 (iteration 5): ⇧B opens Change… on the key's item, for it as it is now; one with no day to change (a person's
+ * ask) leaves the key alone. Only a day set there moves the item, with its own Undo.
+ */
+export function changeOnSelected(): boolean {
+  const target = keyTarget();
+  const change = !target ? null : "item" in target ? changeOfItem(target.item) : changeOfTask(target.row.task);
+  if (!change) return false;
+  openChange(change);
+  return true;
+}
+
+/** Plan 210 (iteration 5): ⇧F hands the key's item to someone, its forward opening in the reader as the menu's does. */
+export function handOnSelected(): boolean {
+  const target = keyTarget();
+  if (!target) return false;
+  void ("item" in target ? handTo(seenOfReaderItem(target.item)) : handTo(seenOfTask(target.row.task), target.row.id, othersOfTask(target.row.task)));
   return true;
 }
 

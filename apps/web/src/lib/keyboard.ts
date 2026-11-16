@@ -14,7 +14,7 @@ import { loadThread, useThreads } from "~/state/threads";
 import { acceptSuggestion, answerReview, rejectSuggestion } from "~/lib/categorize";
 import { leaveReview } from "~/lib/review";
 import { backToDigest, digestHasKeys, digestKeys, openFeedRow, useFeedRow, useToday } from "~/state/today";
-import { doneOnSelected, laterOnSelected, removeOnSelected } from "~/lib/today-task";
+import { changeOnSelected, doneOnSelected, handOnSelected, laterOnSelected, removeOnSelected } from "~/lib/today-task";
 import { conversationKeys } from "~/lib/conversation-keys";
 import { printCommand } from "~/lib/print-open";
 import { checkForUpdates } from "~/lib/updates";
@@ -312,6 +312,9 @@ const DECIDES: Partial<Record<Command, () => boolean>> = {
   // plan 210 (iteration 1, the owner): Later (b) and Remove (⇧D) on that same item, by the same rule
   "today.later": () => !digestHasKeys() && laterOnSelected(),
   "today.remove": () => !digestHasKeys() && removeOnSelected(),
+  // plan 210 (iteration 5): Change… (⇧B) and Hand to… (⇧F) on that same item
+  "today.change": () => !digestHasKeys() && changeOnSelected(),
+  "today.handTo": () => !digestHasKeys() && handOnSelected(),
 };
 
 const hasTargets = () => {

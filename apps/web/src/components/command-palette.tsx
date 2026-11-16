@@ -536,12 +536,12 @@ export function CommandPalette() {
       add({ id: "dated.done", group: "item", label: t("dated.done"), icon: <CircleCheck />, shortcut: keysOf("today.done"), testId: "palette-dated-done", keywords: english("dated.done"), run: () => actOn("done") });
       // plan 210 (iteration 1): Later's picker for the item as it is now (once the palette has gone), and Remove, with their keys
       add({ id: "dated.later", group: "item", label: t("palette.todayLater"), icon: <Clock />, shortcut: keysOf("today.later"), testId: "palette-dated-later", keywords: english("palette.todayLater"), takesFocus: true, run: () => requestAnimationFrame(later) });
-      // plan 210 (iteration 4): Change…, the item's own day and time, in the dialog once the palette has gone (no key of its own)
+      // plan 210 (iteration 4): Change…, the item's own day and time, in the dialog once the palette has gone (iteration 5: ⇧B)
       const change = readerItem ? changeOfItem(readerItem) : todayTask ? changeOfTask(todayTask.task) : null;
-      if (change) add({ id: "dated.change", group: "item", label: t("palette.todayChange"), icon: <CalendarDays />, testId: "palette-dated-change", keywords: english("palette.todayChange"), takesFocus: true, run: () => requestAnimationFrame(() => openChange(change)) });
+      if (change) add({ id: "dated.change", group: "item", label: t("palette.todayChange"), icon: <CalendarDays />, shortcut: keysOf("today.change"), testId: "palette-dated-change", keywords: english("palette.todayChange"), takesFocus: true, run: () => requestAnimationFrame(() => openChange(change)) });
       // plan 210 (iteration 4): Hand to…, the item's forward opening in the reader (its To field focused) once the palette has gone
       const hand = () => void (readerItem ? handTo(seenOfReaderItem(readerItem)) : todayTask && handTo(seenOfTask(todayTask.task), todayTask.rowId, othersOfTask(todayTask.task)));
-      add({ id: "dated.handTo", group: "item", label: t("whatMatters.handTo.action"), icon: <Forward />, testId: "palette-dated-hand", ...synonyms("palette.alias.handTo", english("whatMatters.handTo.action")), takesFocus: true, run: () => requestAnimationFrame(hand) });
+      add({ id: "dated.handTo", group: "item", label: t("whatMatters.handTo.action"), icon: <Forward />, shortcut: keysOf("today.handTo"), testId: "palette-dated-hand", ...synonyms("palette.alias.handTo", english("whatMatters.handTo.action")), takesFocus: true, run: () => requestAnimationFrame(hand) });
       add({ id: "dated.dismiss", group: "item", label: t("palette.todayRemove"), icon: <Ban />, shortcut: keysOf("today.remove"), testId: "palette-dated-dismiss", ...synonyms("palette.alias.todayRemove", english("palette.todayRemove")), run: () => actOn("dismiss") });
     } else if (inToday && targets === 0) {
       // plan 210 (iteration 4, design point 2): with nothing selected in What matters its three acts are still there to be

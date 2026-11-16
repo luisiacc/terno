@@ -162,6 +162,9 @@ const en = {
   "shortcuts.todayDone": "Mark a What matters item done",
   "shortcuts.todayLater": "Put a What matters item off until later",
   "shortcuts.todayRemove": "Remove an item from What matters",
+  // plan 210 (iteration 5): ⇧B and ⇧F
+  "shortcuts.todayChange": "Change a What matters item's day and time",
+  "shortcuts.todayHandTo": "Hand a What matters item to someone",
   "shortcuts.goReminders": "Go to Reminders",
   "date.yesterday": "Yesterday",
 
@@ -2637,6 +2640,9 @@ It contains none of your mail, contacts, settings or keys.
   "whatMatters.options": "What matters options",
   "whatMatters.menu.remove": "Remove from What matters",
   "whatMatters.menu.removeKeeps": "The email stays",
+  // plan 210 (iteration 5): what Change… and Hand to… do, under each, as Remove's note is
+  "whatMatters.menu.changeSets": "Sets its own day",
+  "whatMatters.menu.handForwards": "Forwards it to someone",
   // plan 210 (iteration 4): the palette's Done, Later and Remove with nothing selected in What matters
   "whatMatters.selectFirst": "Select an item first",
   "whatMatters.moreSettings": "More settings…",

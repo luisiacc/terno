@@ -37,6 +37,10 @@ export type Command =
   | "today.later"
   /** plan 210 (iteration 1, the owner): Remove that item from What matters (once "Not a task"), with its Undo */
   | "today.remove"
+  /** plan 210 (iteration 5): Change… that item's own day and time, its form opened for the item as it is then */
+  | "today.change"
+  /** plan 210 (iteration 5): Hand to… someone, its forward opened in the reader */
+  | "today.handTo"
   | "message.next"
   | "message.prev"
   | "message.toggleAll"
@@ -166,6 +170,10 @@ export const DEFAULT_BINDINGS: readonly Binding[] = [
   // Trash's, and m stays free for mute (plan 206)
   { keys: "b", command: "today.later" },
   { keys: "shift+d", command: "today.remove" },
+  // plan 210 (iteration 5): each beside its sibling: b puts the item off, ⇧B changes its own day; f forwards the email, ⇧F
+  // hands the item to someone (a forward asking them to take care of it)
+  { keys: "shift+b", command: "today.change" },
+  { keys: "shift+f", command: "today.handTo" },
   // plan 158: within the open conversation, on letters every keyboard types without Option (j and k are the list's, n a suggestion's)
   { keys: "shift+n", command: "message.next" },
   { keys: "shift+p", command: "message.prev" },

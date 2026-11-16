@@ -156,6 +156,8 @@ const es = {
   "shortcuts.todayDone": "Marcar como hecho en Lo importante",
   "shortcuts.todayLater": "Dejar para más tarde en Lo importante",
   "shortcuts.todayRemove": "Quitar de Lo importante",
+  "shortcuts.todayChange": "Cambiar el día y la hora de algo en Lo importante",
+  "shortcuts.todayHandTo": "Delegar algo de Lo importante en otra persona",
   "shortcuts.goReminders": "Ir a Recordatorios",
   "date.yesterday": "Ayer",
 
@@ -2620,6 +2622,8 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "whatMatters.options": "Opciones de Lo importante",
   "whatMatters.menu.remove": "Quitar de Lo importante",
   "whatMatters.menu.removeKeeps": "El correo se queda",
+  "whatMatters.menu.changeSets": "Le pones tú el día",
+  "whatMatters.menu.handForwards": "Se lo reenvía a alguien",
   "whatMatters.moreSettings": "Más ajustes…",
   "whatMatters.selectFirst": "Primero elige un elemento",
   "whatMatters.history.done": "Hecho {day}",
