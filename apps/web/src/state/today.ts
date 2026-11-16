@@ -17,9 +17,10 @@ import { reloadList } from "./list";
  * Plan 210: the feed's headings: Missed, Today, a day ahead (`day:YYYY-MM-DD`; the owner, by day, not by kind), and the
  * history below them. Iteration 3: Today's "Waiting on you" (`waiting`), a quiet sub-heading inside Today. Iteration 4
  * (the Codex review's revision 9): Coming up is the feed's last part, behind its own disclosure, its rows under buckets of
- * their own (`coming:YYYY-MM-DD`, `coming:week:YYYY-MM-DD`), never joining the days above.
+ * their own (`coming:YYYY-MM-DD`, `coming:week:YYYY-MM-DD`), never joining the days above. Iteration 5 (revision 5):
+ * Ahead (`ahead`), what shows past the seven days, one heading after them with no date in it, before Coming up.
  */
-export type FeedGroupKind = "missed" | "today" | "waiting" | `day:${string}` | `week:${string}` | `coming:${string}` | "history";
+export type FeedGroupKind = "missed" | "today" | "waiting" | `day:${string}` | `week:${string}` | "ahead" | `coming:${string}` | "history";
 
 /** Plan 210 (iteration 4): a Coming up bucket's own key (`displayBucket`'s: a day, or `week:` and its Monday), or null. */
 export const comingBucket = (kind: FeedGroupKind | undefined): string | null => (kind?.startsWith("coming:") ? kind.slice(7) : null);
@@ -37,11 +38,11 @@ export const groupWeek = (kind: FeedGroupKind): string | null => {
 };
 
 /**
- * The headings' order: Missed, Today, its Waiting on you, the days in theirs, Coming up's buckets in theirs, the history
- * (as text: a day's key sorts as its day; "~" after every digit).
+ * The headings' order: Missed, Today, its Waiting on you, the days in theirs, Ahead (iteration 5), Coming up's buckets in
+ * theirs, the history (as text: a day's key sorts as its day).
  */
 // (a week's buckets come after every day's: the days end on a Sunday, its Monday is past them)
-const rankOf = (kind: FeedGroupKind): string => (kind === "missed" ? "0" : kind === "today" ? "1" : kind === "waiting" ? "1w" : kind === "history" ? "3" : `2${comingBucket(kind) !== null ? "~" : ""}${groupDay(kind) ?? groupWeek(kind)}`);
+const rankOf = (kind: FeedGroupKind): string => (kind === "missed" ? "0" : kind === "today" ? "1" : kind === "waiting" ? "1w" : kind === "ahead" ? "3" : kind === "history" ? "5" : `${comingBucket(kind) !== null ? "4" : "2"}${groupDay(kind) ?? groupWeek(kind)}`);
 
 /**
  * Plan 210 (iteration 2, the owner: "a row per item"): one of the feed's rows, by its own identity (`FeedRowId`: an item's,
@@ -400,7 +401,7 @@ export const digestLabel = (digest: DigestRow): string =>
   digest.state === "pending" ? t("today.digest.preparing") : digest.state === "failed" ? t("today.digest.failedShort") : digest.automated ? t("today.digest.automatedRow", { count: digest.liveIds.length }) : inInbox(digest) ? t("today.digest.row", { count: inInbox(digest) }) : t("today.digest.archivedRow", { count: Math.max(0, digest.items.length - (digest.readIds?.length ?? 0)) });
 
 /** A promise in Coming up or Missed names a day (only dated ones are placed there), whatever an older backend said of it. */
-const dayKnown = (why: TodayWhy, kind: TodayGroupKind): TodayWhy => (why.promise && why.promise.dated === undefined && (kind === "comingUp" || why.missed) ? { ...why, promise: { ...why.promise, dated: true } } : why);
+const dayKnown = (why: TodayWhy, kind: TodayGroupKind): TodayWhy => (why.promise && why.promise.dated === undefined && (kind === "comingUp" || kind === "ahead" || why.missed) ? { ...why, promise: { ...why.promise, dated: true } } : why);
 
 /** Plan 204 (after the panel, revision 10): the digest's place in the list, its last option; no thread has its id (it's never checked or acted on). */
 function digestThread(): ThreadSummary {
@@ -411,7 +412,8 @@ function digestThread(): ThreadSummary {
  * Plan 210: the sections as the feed's groups, in order: Missed, Today, then a group per day ahead. Iteration 3 (revision
  * 9): a heading ahead is the section's bucket, the backend's (`displayBucket`): its day for the first two weeks, then its
  * week, whose rows go by their own days. Iteration 4 (revision 9): while it's open, Coming up's rows are its own buckets
- * after them all, in the backend's order, never joining a day above.
+ * after them all, in the backend's order, never joining a day above. Iteration 5 (revision 5): what shows past the seven
+ * days is one group, Ahead, by the backend's order (its rows' own days), between the days and Coming up.
  */
 function feedGroups(list: TodayList, open: boolean): { kind: FeedGroupKind; items: { item: TodayItem; section: TodayGroupKind }[] }[] {
   const today = dayKeyOf(list.now || Date.now());
@@ -422,7 +424,7 @@ function feedGroups(list: TodayList, open: boolean): { kind: FeedGroupKind; item
     const bucket = section.bucket ?? day;
     // (Today's "Waiting on you" is its own heading, under Today's: plan 210, iteration 3)
     const kind: FeedGroupKind =
-      section.kind === "comingUp" ? `coming:${bucket ?? today}` : section.kind === "missed" ? "missed" : section.part === "waiting" ? "waiting" : day === null || day <= today ? "today" : bucket!.startsWith("week:") ? (bucket as `week:${string}`) : `day:${day}`;
+      section.kind === "comingUp" ? `coming:${bucket ?? today}` : section.kind === "ahead" ? "ahead" : section.kind === "missed" ? "missed" : section.part === "waiting" ? "waiting" : day === null || day <= today ? "today" : bucket!.startsWith("week:") ? (bucket as `week:${string}`) : `day:${day}`;
     const rows = groups.get(kind) ?? [];
     for (const item of section.items) rows.push({ item, section: section.kind });
     groups.set(kind, rows);

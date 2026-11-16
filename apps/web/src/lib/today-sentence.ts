@@ -63,7 +63,8 @@ export type TodayTone = "missed" | "today" | "later" | "none";
  * The feed's right column (after the UI panel), in the list's own words: its short day ("Wed", "Tomorrow", "Nov 30")
  * and a timed item's time ("2:00 PM", "Mon 7:40 AM"); Missed's "Was due Wed"; for what has no date (plan 210, the owner:
  * it sits in Today), when it came, "since Wed", quietly; a reminder, its time. Its weight follows the item's group: Missed
- * and Today's dated tasks strong, what's undated in Today and its plans quiet; a day ahead and Coming up's rows (`ahead`) quiet.
+ * and Today's dated tasks strong, what's undated in Today and its plans quiet; a day ahead, Ahead's (iteration 5: each its
+ * own date) and Coming up's rows (`ahead`) quiet.
  */
 export function todayWhen(item: Pick<TodayItem, "thread" | "why">, now = Date.now(), group?: FeedGroupKind, ahead = false): { text: string | null; tone: TodayTone } {
   const when = whenOf(item, now);
@@ -71,7 +72,7 @@ export function todayWhen(item: Pick<TodayItem, "thread" | "why">, now = Date.no
   const plan = item.why.kind === "dated" && item.why.item !== undefined && datedGroup(item.why.item.kind) === "plans";
   // (a promise broken and given a new day keeps the late mark wherever it sits: plan 210, iteration 2)
   // (Today's "Waiting on you" is quiet: who's waiting, and by when, not what's due today: plan 210, iteration 3)
-  const tone: TodayTone = when.tone === "missed" ? "missed" : ahead || group?.startsWith("day:") || group?.startsWith("week:") || (plan && group !== "missed") ? "later" : group === "missed" ? "missed" : group === "waiting" ? "none" : group === "today" ? (when.tone === "none" ? "none" : "today") : when.tone;
+  const tone: TodayTone = when.tone === "missed" ? "missed" : ahead || group === "ahead" || group?.startsWith("day:") || group?.startsWith("week:") || (plan && group !== "missed") ? "later" : group === "missed" ? "missed" : group === "waiting" ? "none" : group === "today" ? (when.tone === "none" ? "none" : "today") : when.tone;
   return { text: when.text, tone };
 }
 

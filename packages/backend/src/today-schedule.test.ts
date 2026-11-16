@@ -149,8 +149,10 @@ describe("Change… through the backend", () => {
     expect(later.row).toMatchObject({ deferredUntil: at(2026, 11, 11, 9) });
     const { undoId } = await client.call("today.schedule", { item: { source: "dated", id: row.id, revision: later.row!.revision }, to: { day: "2026-11-24", time: "16:00" } });
     expect(await backend.store.dated.get(row.id)).toMatchObject({ dueDay: "2026-11-24", dueAt: at(2026, 11, 24, 16), timed: true, deferredUntil: null, changedAt: NOW + 120_000, changedFrom: { dueDay: "2026-11-13", timed: false } });
-    // a person's request, shown from its arrival: still Waiting on you, now "by Tue 24 4:00 PM"
-    expect(await placed()).toEqual([[`dated:${row.id}`, "today"]]);
+    // a person's request, shown from its arrival: past the seven days now, so Ahead's under its own day (plan 210,
+    // iteration 5), no longer Waiting on you
+    expect(await placed()).toEqual([[`dated:${row.id}`, "day:2026-11-24"]]);
+    expect((await list()).sections.map((x) => x.kind)).toEqual(["ahead"]);
     expect((await list()).sections[0]!.items[0]!.why).toMatchObject({ dueAt: at(2026, 11, 24, 16), item: { dueDay: "2026-11-24", timed: true } });
     const history = (await list(true)).history!;
     expect(history.items).toEqual([expect.objectContaining({ id: `change:dated:${row.id}`, item: { source: "dated", id: row.id }, outcome: "changed", kind: "respond", text: "Send Jess the sponsor script", key: { at: NOW + 120_000, src: 2, id: row.id } })]);

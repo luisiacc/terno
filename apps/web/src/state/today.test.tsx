@@ -384,6 +384,46 @@ describe("plan 204: Missed, Today, a day ahead and Coming up (plan 210: by day, 
     expect(getApp().selectedId).toBe(4);
   });
 
+  it("plan 210 (iteration 5, revision 5): Ahead is one heading after the days, before the digest and Coming up, its rows by their own days, each its date in its column; closing Coming up on its row falls back to Ahead's last", async () => {
+    const { setComingUpOpen } = await import("./today");
+    const { todayWhen } = await import("~/lib/today-sentence");
+    useToday.setState({ comingUpOpen: true });
+    const visa = dated(21, "renew", "Renew the visa", 30);
+    const passport = dated(22, "renew", "Renew the passport", 24);
+    const digest = { day: day(12), state: "ready" as const, items: [], automated: true, liveIds: [] };
+    const sections: TodayList = {
+      now,
+      counts: NO_COUNTS,
+      digest,
+      sections: [
+        { kind: "today", items: [dated(4, "pay", "Pay the rent", 12)] as never },
+        { kind: "day", day: day(13), items: [dated(3, "pay", "Pay the electricity bill", 13)] as never },
+        // the backend's order: by day, a section per day
+        { kind: "ahead", day: day(24), items: [passport] as never },
+        { kind: "ahead", day: day(30), items: [visa] as never },
+        { kind: "comingUp", day: day(20), bucket: day(20), items: [dated(10, "renew", "Renew the domain", 20)] as never },
+      ],
+    };
+    flattenToday(sections, []);
+    expect(useToday.getState().rows.map((r) => [r.id, r.group ?? null])).toEqual([
+      ["dated:40", "today"],
+      ["dated:30", "day:2026-11-13"],
+      ["dated:220", "ahead"],
+      ["dated:210", "ahead"],
+      ["digest", null],
+      ["dated:100", "coming:2026-11-20"],
+    ]);
+    // its column: the row's own date, quietly
+    const row = useToday.getState().rows[2]!;
+    expect(todayWhen({ ...row.entry!, thread: { ...row.entry!.thread, lastDate: now } }, now, row.group)).toEqual({ text: "Nov 24", tone: "later" });
+    // Coming up closed while the reader is open on its row: the feed is on Ahead's last row, never the digest's
+    useFeedRow.setState({ opened: "dated:100", cursor: null });
+    setApp({ selectedId: 10 });
+    setComingUpOpen(false);
+    expect(useFeedRow.getState()).toMatchObject({ opened: null, cursor: "dated:210" });
+    expect(getApp().selectedId).toBeNull();
+  });
+
   it("Coming up's open or closed is remembered, and storage that refuses changes nothing else", async () => {
     const { setComingUpOpen } = await import("./today");
     setComingUpOpen(true);

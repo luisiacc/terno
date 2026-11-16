@@ -212,14 +212,21 @@ describe("one reply, one row (plan 210, iteration 4)", () => {
 });
 
 describe("early, broken, one time", () => {
-  it("a person's request with a far day shows from its arrival in Today's people, and counts there", () => {
+  it("a person's request shows from its arrival: past the seven days under Ahead by its day (iteration 5, revision 5), never counted; within them in Today's people, counted there", () => {
     const far = dated("respond", "2026-11-30", { threadId: 1, early: true, arrivedAt: at(2026, 11, 17, 9) });
     const late = dated("respond", "2026-11-30", { threadId: 2, arrivedAt: at(2026, 11, 17, 9) });
-    const { rows, counts } = projectToday(facts({ dated: [far, late] }));
+    const ahead = projectToday(facts({ dated: [far, late] }));
+    expect(ahead.rows.map((r) => [r.id, r.group, r.day, r.part ?? null, r.bucket ?? null])).toEqual([
+      [`dated:${far.id}`, "ahead", "2026-11-30", null, null],
+      // without it, a week before (Coming up meanwhile)
+      [`dated:${late.id}`, "comingUp", "2026-11-30", null, "2026-11-30"],
+    ]);
+    expect(ahead.rows[0]!.why.item?.early).toBeUndefined();
+    expect(ahead.counts).toEqual({ missed: 0, today: 0, waiting: 0, overdue: 0 });
+    // the 23rd brings its day within the seven: Today's people, counted as waiting
+    const { rows, counts } = projectToday(facts({ now: at(2026, 11, 23, 10), dated: [far, late] }));
     expect(rows.filter((r) => r.group === "today").map((r) => r.id)).toEqual([`dated:${far.id}`]);
     expect(rows.find((r) => r.id === `dated:${far.id}`)!.why.item).toMatchObject({ early: true });
-    // without it, a week before (Coming up meanwhile)
-    expect(rows.find((r) => r.id === `dated:${late.id}`)!.group).toBe("comingUp");
     expect(counts).toEqual({ missed: 0, today: 0, waiting: 1, overdue: 0 });
     expect(rows.find((r) => r.id === `dated:${far.id}`)!.part).toBe("waiting");
     // on its day it's due today, as any request
@@ -244,9 +251,10 @@ describe("early, broken, one time", () => {
     const domain = (lapses: boolean) => dated("renew", "2026-12-07", { lapses, arrivedAt: at(2026, 11, 2, 9) });
     // a week's lead: Coming up on the 10th; lapsing: 30 days, so under its day already
     expect(datedGroupAt(domain(false), now)).toEqual({ group: "comingUp", day: "2026-12-07" });
-    expect(datedGroupAt(domain(true), now)).toEqual({ group: "day", day: "2026-12-07" });
+    // (iteration 5: shown past the seven days, under Ahead)
+    expect(datedGroupAt(domain(true), now)).toEqual({ group: "ahead", day: "2026-12-07" });
     // read as expire it's the same either way
-    expect(datedGroupAt({ ...domain(true), kind: "expire" }, now)).toEqual({ group: "day", day: "2026-12-07" });
+    expect(datedGroupAt({ ...domain(true), kind: "expire" }, now)).toEqual({ group: "ahead", day: "2026-12-07" });
     expect(lapsesUnlessRenewed("Para no perder tu dominio ni el correo asociado, renueva antes de la fecha de vencimiento:")).toBe(true);
     expect(lapsesUnlessRenewed("To keep your apps available, renew your membership ($99 USD/year) before it expires.")).toBe(true);
     expect(lapsesUnlessRenewed("Auto-renew is off for pingwire.dev.")).toBe(true);
@@ -383,7 +391,8 @@ describe("the header's numbers (plan 210, iteration 3, revision 8)", () => {
       dated("pay", "2026-11-18"), // Today
       dated("respond", "2026-11-18"), // a request due today: a deadline, Today
       dated("ask", null), // Waiting on you
-      dated("respond", "2026-11-27", { early: true }), // shown early: Waiting on you
+      dated("respond", "2026-11-24", { early: true }), // shown early: Waiting on you
+      dated("respond", "2026-11-27", { early: true }), // shown early past the seven days: Ahead (iteration 5), never counted
       dated("event", "2026-11-18", {}, "19:00"), // Today, a Plan
       dated("pay", "2026-11-21"), // a day ahead
       dated("respond", "2026-12-10"), // Coming up
@@ -396,6 +405,25 @@ describe("the header's numbers (plan 210, iteration 3, revision 8)", () => {
     expect(projectToday(facts({ dated: rows, waiting, reminders }), { count: true }).counts).toEqual(counts);
     // a reminder on a conversation with a row of its own is that row (counted once), and one in Trash none
     expect(projectToday(facts({ dated: rows, waiting, reminders: [{ threadId: 50, dueAt: NOW }, { threadId: 98, dueAt: NOW }], live: (id) => id !== 98 }), { count: true }).counts).toEqual({ missed: 1, today: 2, waiting: 3, overdue: 0 });
+  });
+});
+
+describe("Ahead (plan 210, iteration 5, revision 5)", () => {
+  it("what shows past the seven days is one group after them, by its own days, no bucket of its own; Coming up after it, apart", () => {
+    const bill = dated("pay", "2026-11-21", { threadId: 1 });
+    const visa = dated("expire", "2026-12-08", { threadId: 2 });
+    const passport = dated("expire", "2026-11-30", { threadId: 3 });
+    const domain = dated("renew", "2026-11-30", { threadId: 4, lapses: true }, "09:00");
+    const rent = dated("pay", "2026-11-28", { threadId: 5 });
+    const { rows, counts } = projectToday(facts({ dated: [visa, rent, passport, bill, domain] }));
+    expect(rows.map((r) => [r.id, r.group, r.day, r.bucket ?? null])).toEqual([
+      [`dated:${bill.id}`, "day", "2026-11-21", "2026-11-21"],
+      [`dated:${domain.id}`, "ahead", "2026-11-30", null],
+      [`dated:${passport.id}`, "ahead", "2026-11-30", null],
+      [`dated:${visa.id}`, "ahead", "2026-12-08", null],
+      [`dated:${rent.id}`, "comingUp", "2026-11-28", "2026-11-28"],
+    ]);
+    expect(counts).toEqual({ missed: 0, today: 0, waiting: 0, overdue: 0 });
   });
 });
 
@@ -428,7 +456,7 @@ describe("Coming up's buckets (plan 210, iteration 3, revision 9)", () => {
 });
 
 describe("Waiting on you, a part of Today (plan 210, iteration 3, revision 8)", () => {
-  it("after Today's own (its quiet rows too); requests within the seven days by their day, the undated as they came, newest first, then requests due later (iteration 4)", () => {
+  it("after Today's own (its quiet rows too); requests within the seven days by their day, the undated as they came, newest first; a request due later is Ahead's (iteration 5)", () => {
     const bill = dated("pay", "2026-11-18", { threadId: 1 });
     const plan = dated("event", "2026-11-18", { threadId: 2 }, "19:00");
     const later = dated("respond", "2026-11-28", { threadId: 3, early: true, arrivedAt: at(2026, 11, 17, 8) });
@@ -444,8 +472,9 @@ describe("Waiting on you, a part of Today (plan 210, iteration 3, revision 8)", 
       ["waiting:6", "waiting"],
       [`dated:${ask.id}`, "waiting"],
       ["waiting:7", "waiting"],
-      [`dated:${later.id}`, "waiting"],
+      [`dated:${later.id}`, null],
     ]);
+    expect(rows.at(-1)!.group).toBe("ahead");
   });
 
   it("iteration 4 (revision 8): a promise broken with a live day ahead is first, by that day, counted once as waiting in the list and the count alike", () => {
@@ -463,13 +492,14 @@ describe("Waiting on you, a part of Today (plan 210, iteration 3, revision 8)", 
       [`promise:${moved.id}`, "today", "waiting"],
       [`promise:${mine[0]!.id}`, "today", "waiting"],
       [`dated:${friday.id}`, "today", "waiting"],
-      [`dated:${december.id}`, "today", "waiting"],
+      // (iteration 5, revision 5: Gary's December request is Ahead's, by its day, never Waiting on you's)
+      [`dated:${december.id}`, "ahead", null],
     ]);
     // its column as it was: the missed day said, the day it's needed by, never Missed's bucket
     expect(rows[1]!.why).toMatchObject({ dueAt: at(2026, 11, 21, 9), promise: { said: at(2026, 11, 16, 9) } });
     expect(rows[1]!.why.missed).toBeUndefined();
     // (iteration 5, revision 6) the two broken promises are overdue, a part of waiting
-    expect(counts).toEqual({ missed: 0, today: 1, waiting: 4, overdue: 2 });
+    expect(counts).toEqual({ missed: 0, today: 1, waiting: 3, overdue: 2 });
     expect(projectToday(f, { count: true }).counts).toEqual(counts);
     // put off with Later: behind Coming up, neither shown nor counted
     const off = { ...moved, deferredUntil: at(2026, 11, 20, 9) };

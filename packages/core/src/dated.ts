@@ -634,28 +634,49 @@ export function nextTodayChange(items: readonly Pick<DatedRow, "kind" | "state" 
  * What Matters' groups in the order they're shown, by day (plan 210, the owner, replacing plan 204's seventh-round groups):
  * Missed; Today (what's due or happens today, and everything with no date that needs you now: a person's ask, a promise of
  * yours that named no day, an alert that named none, what's waiting on you, your reminders due today); a day of its own
- * for each day ahead whose items' time to act has come (`day`, with its day); Coming up (behind its toggle), by day too.
- * It's also the claim order: a conversation's row is its first task in it, days in their order (`places()`).
+ * for each day of the seven ahead whose items' time to act has come (`day`, with its day); Ahead (plan 210, iteration 5,
+ * the Codex review's revision 5: what a longer lead or a person's early request shows past the seven days, one group by
+ * the items' own days, under no dated heading); Coming up (behind its toggle), by day too. It's also the claim order: a
+ * conversation's row is its first task in it, days in their order (`places()`).
  */
-export const TODAY_GROUP_ORDER = ["missed", "today", "day", "comingUp"] as const;
+export const TODAY_GROUP_ORDER = ["missed", "today", "day", "ahead", "comingUp"] as const;
 export type TodayGroupKind = (typeof TODAY_GROUP_ORDER)[number];
 
-/** Where a task (a dated item, a promise of yours) sits: its group, and for a day of its own or Coming up, its day ("YYYY-MM-DD"). */
-export type TaskPlace = { group: "missed" | "today"; day: null } | { group: "day" | "comingUp"; day: string };
+/** Where a task (a dated item, a promise of yours) sits: its group, and for a day ahead, Ahead or Coming up, its day ("YYYY-MM-DD"). */
+export type TaskPlace = { group: "missed" | "today"; day: null } | { group: "day" | "ahead" | "comingUp"; day: string };
 
 const COUNTED_GROUPS: ReadonlySet<TodayGroupKind> = new Set(["missed", "today"]);
 
 /**
  * What "N need you" counts, the header's, the sidebar's and the morning notice's (plan 204's rule, plan 210's groups): a
  * row in Missed or Today, unless its own item is a Plan's kind (an event or a delivery: something happening to you,
- * wherever it sits). `why` is the row's: its kind, and its own item's (a promise or a waiting row has none). A day ahead
- * and Coming up never count (plan 210, iteration 3: "this week" went with the header's third part). Plan 210 (iteration
- * 4, revision 8): your reminder due today counts, a thing to do drawn under Today ("3 to do today" says what it counts).
+ * wherever it sits). `why` is the row's: its kind, and its own item's (a promise or a waiting row has none). A day ahead,
+ * Ahead and Coming up never count (plan 210, iteration 3: "this week" went with the header's third part). Plan 210
+ * (iteration 4, revision 8): your reminder due today counts, a thing to do drawn under Today ("3 to do today" says what it
+ * counts).
  */
 export const todayCounted = (group: TodayGroupKind, why: { kind: string; item?: { kind: DatedKind } }): boolean => COUNTED_GROUPS.has(group) && (why.item === undefined || datedGroup(why.item.kind) !== "plans");
 
 const TODAY: TaskPlace = { group: "today", day: null };
 const MISSED: TaskPlace = { group: "missed", day: null };
+
+/** The last of the seven days after `today` ("YYYY-MM-DD"), its one entry kept: a list places the 1,000-item bound on every read. */
+let lastShown = { today: "", last: "" };
+function lastShownDay(today: string): string {
+  if (lastShown.today !== today) {
+    const d = localDay(today);
+    if (!d) return today;
+    d.setDate(d.getDate() + SHOWN_DAYS);
+    lastShown = { today, last: dayKeyOf(d.getTime()) };
+  }
+  return lastShown.last;
+}
+
+/**
+ * Plan 210 (iteration 5, the Codex review's revision 5): a shown item's day ahead, by where it is: one of the seven days,
+ * its own heading (`day`); past them, Ahead's (`ahead`), never a heading of its own above earlier days.
+ */
+const dayOrAhead = (day: string, today: string): TaskPlace => (day > lastShownDay(today) ? { group: "ahead", day } : { group: "day", day });
 
 /** Plan 210 (iteration 3, revision 9): a day ahead is its own heading for the first two weeks, then its week's. */
 export const DAY_HEADINGS_DAYS = 14;
@@ -691,9 +712,9 @@ function comingUpDay(own: string | null, deferredUntil: number | null | undefine
 
 /**
  * Plan 210 (by day): the group an item shows in, and its day, assigned after `datedPlace` has said whether it shows
- * (eligibility, expiry, Later), from the item's own day: Today on or before it, its own day ahead. What has no date (an
- * ask, an alert that named none) is Today's while it shows; a dated alert is its day's, as anything dated. Null: not
- * shown. `today`, `now`'s day, for a caller placing many.
+ * (eligibility, expiry, Later), from the item's own day: Today on or before it, its own day within the seven ahead, Ahead
+ * past them (iteration 5, revision 5). What has no date (an ask, an alert that named none) is Today's while it shows; a
+ * dated alert is its day's, as anything dated. Null: not shown. `today`, `now`'s day, for a caller placing many.
  */
 export function datedGroupAt(r: Parameters<typeof datedPlace>[0], now: number, today = dayKeyOf(now)): TaskPlace | null {
   const place = datedPlace(r, now);
@@ -701,14 +722,17 @@ export function datedGroupAt(r: Parameters<typeof datedPlace>[0], now: number, t
   if (place === "missed") return MISSED;
   const undated = r.kind === "ask" || undatedAlert(r);
   if (place === "comingUp") return { group: "comingUp", day: comingUpDay(undated ? null : r.dueDay, r.deferredUntil, today) };
-  // plan 210 (iteration 2): a request shown from its arrival is Today's (its people) until its day
-  if (undated || r.dueDay <= today || shownEarly(r, today)) return TODAY;
-  return { group: "day", day: r.dueDay };
+  if (undated || r.dueDay <= today) return TODAY;
+  // plan 210 (iteration 2): a request shown from its arrival is Today's (its people) until its day; iteration 5 (revision
+  // 5, the owner): only within the seven days, a request due later being Ahead's like anything else that far
+  const at = dayOrAhead(r.dueDay, today);
+  return at.group === "day" && shownEarly(r, today) ? TODAY : at;
 }
 
 /**
- * The same for a promise of yours: an undated one due is Today's, a dated one Today's on its day and its day's before.
- * Plan 210 (iteration 4, revision 8): one broken with a live day ahead (`promiseBroken`) is Today's at any distance.
+ * The same for a promise of yours: an undated one due is Today's, a dated one Today's on its day and its day's before
+ * (Ahead's past the seven days). Plan 210 (iteration 4, revision 8): one broken with a live day (`promiseBroken`) is Today's
+ * at any distance.
  */
 export function promiseGroupAt(r: PromiseFacts, now: number, today = dayKeyOf(now)): TaskPlace | null {
   if (promiseBroken(r, now)) return TODAY;
@@ -719,7 +743,7 @@ export function promiseGroupAt(r: PromiseFacts, now: number, today = dayKeyOf(no
   if (place === "needsYou") return TODAY;
   const day = dayKeyOf(r.dueAt);
   if (place === "comingUp") return { group: "comingUp", day: comingUpDay(r.dated ? day : null, r.deferredUntil, today) };
-  return day <= today ? TODAY : { group: "day", day };
+  return day <= today ? TODAY : dayOrAhead(day, today);
 }
 
 const MONTHS = "jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|ene(?:ro)?|febrero|marzo|abr(?:il)?|mayo|junio|julio|ago(?:sto)?|sept?(?:iembre)?|setiembre|octubre|noviembre|dic(?:iembre)?";
