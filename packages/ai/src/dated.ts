@@ -34,6 +34,9 @@ export const DATED_SUBJECT_CHARS = 200;
 export const DATED_FROM_CHARS = 100;
 /** §3: the message's text, at most 1,500 tokens */
 export const DATED_TEXT_CHARS = 1500 * 4;
+/** Plan 210 (iteration 5, revision 3): the second look's sentences, at most two and this many characters in all */
+export const DATED_AGAIN_SENTENCES = 2;
+export const DATED_AGAIN_CHARS = 1000;
 const OPEN_TEXT_CHARS = 200;
 const TEXT_CHARS = 120;
 const QUOTE_CHARS = 400;
@@ -64,6 +67,12 @@ export interface DatedInput {
   /** the app's: `text` in each item is for the reader */
   language: string;
   outputTokens?: number;
+  /**
+   * Plan 210 (iteration 5, revision 3): the second look: at most two of the mail's sentences (`DATED_AGAIN_CHARS` in all) that
+   * hold a day and a time or a closing and that the first reading noted nothing for, asked about again with the mail around
+   * them as context. Absent: a first reading.
+   */
+  again?: readonly string[];
 }
 
 /** Days and times in the reader's zone (`DatedInput.zone`), whatever zone the mail gave them in. */
@@ -208,7 +217,7 @@ Not items:
 - A date that's only history: "you joined on…", "your order of March 3".`;
 };
 
-const dataText = (text: string) => text.replace(/<(\s*\/?\s*)(subject|from|recipients|open_items|mail)\b/giu, "‹$1$2");
+const dataText = (text: string) => text.replace(/<(\s*\/?\s*)(subject|from|recipients|open_items|mail|look_again)\b/giu, "‹$1$2");
 const RECIPIENTS_SHOWN = 10;
 const ADDRESSED: Record<DatedInput["reader"]["addressed"], string> = { to: "The reader is one of the people it's addressed to.", cc: "The reader is only copied on it (Cc), not addressed.", none: "The reader isn't named among its recipients (a list, or a blind copy)." };
 
@@ -224,7 +233,27 @@ export function datedPrompt(input: DatedInput): string {
     `<recipients>\nTo: ${input.to.slice(0, RECIPIENTS_SHOWN).map((n) => dataText(n.slice(0, DATED_FROM_CHARS))).join(", ") || "(none named)"}${input.cc.length ? `\nCc: ${input.cc.slice(0, RECIPIENTS_SHOWN).map((n) => dataText(n.slice(0, DATED_FROM_CHARS))).join(", ")}` : ""}\n</recipients>`,
     ...(open ? [`<open_items>\n${open}\n</open_items>`] : []),
     `<mail>\n${dataText(input.text.slice(0, DATED_TEXT_CHARS))}\n</mail>`,
+    ...(input.again?.length ? [AGAIN, `<look_again>\n${againOf(input.again).map((s) => `- ${dataText(s)}`).join("\n")}\n</look_again>`] : []),
   ].join("\n\n");
+}
+
+/**
+ * Plan 210 (iteration 5, revision 3): the second look's own words, outside the blocks (ours, not the mail's). The system
+ * prompt and its rules are the first reading's, unchanged: only what to read again is said here.
+ */
+const AGAIN = `A first reading of this mail noted nothing for the sentences in <look_again>. Each gives a day with a time or a closing, so look at each once more, by the rules above: when it's something of the reader's that happens then (a meeting, a gathering, a class, an appointment or a booking of theirs, or of a group they're in that a person tells them about) or something they have to do by then, note it as you would have, its quote copied from that sentence, and a time given without AM or PM at the hour its kind makes likely (a club's, a dinner's or a party's "7:00" is 19:00). Leave out what the rules leave out: a newsletter's or an announcement list's listing, an optional call (a webinar, a sign-up), a marketing deadline, a receipt, a charge made by itself, a date that's only history, and someone else's task or deadline. The rest of the mail is context only: note nothing else from it. "settled", "moved" and "replaced" stay empty.`;
+
+/** The second look's sentences within their bounds: two at most, `DATED_AGAIN_CHARS` in all, each whole. */
+function againOf(sentences: readonly string[]): string[] {
+  const kept: string[] = [];
+  let left = DATED_AGAIN_CHARS;
+  for (const s of sentences.slice(0, DATED_AGAIN_SENTENCES)) {
+    const flat = s.replace(/\s+/g, " ").trim();
+    if (!flat || flat.length > left) continue;
+    kept.push(flat);
+    left -= flat.length;
+  }
+  return kept;
 }
 
 /** The whole request within the window, on a server that also gets the schema and repairs (plan 142 revision 12). */
