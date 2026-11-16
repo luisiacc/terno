@@ -526,7 +526,9 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     const timing = partTiming(row.kind, m.evidence, atInstant(datedTiming({ kind: row.kind, due: m.due, time: m.time, arrivedAt: input.arrivedAt }), m.at), input.arrivedAt);
     // the fourth panel round (revision 5): a new moment on the same day moves it too ("the game is moved earlier to 8:00");
     // the same day with no time keeps the item's own; an untimed item's 9:00 is a default, so "at 9:00" gives it a time
-    const changed = timing && (timing.dueDay !== row.dueDay || (timing.timed && (!row.timed || timing.dueAt !== row.dueAt)));
+    // plan 210 (iteration 5's code review): and a part of the day the mail names that isn't the row's ("Monday afternoon
+    // instead" for Monday morning's), at that part; one it doesn't name keeps the row's
+    const changed = timing && (timing.dueDay !== row.dueDay || (timing.timed && (!row.timed || timing.dueAt !== row.dueAt)) || (!!timing.partOfDay && timing.partOfDay !== (row.partOfDay ?? null)));
     const text = newWords(m);
     if (!changed) {
       // plan 210 (iteration 4, revision 12): its own moment again with new words, the mail's own, changes the words and keeps
@@ -670,8 +672,10 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     const time = item.time ?? (kind === "event" && due && !item.wall ? startOf(item.quote, due) : null);
     const timing = atInstant(datedTiming({ kind, due, time, arrivedAt: input.arrivedAt }), item.at);
     if (!timing) continue;
-    // the 14-day check keeps nothing already over (§6)
-    if (input.fromScan && timing.dated && dayEnd(timing.dueDay) <= input.now) continue;
+    // plan 210 (iteration 5's code review): its part of the day read first, so the 14-day check keeps nothing already over
+    // (§6) at that part's end too: a morning's request after its noon
+    const parted = partTiming(kind, item.quote, timing, input.arrivedAt)!;
+    if (input.fromScan && parted.dated && (parted.partOfDay ? dueCutoff(parted.dueDay, parted.partOfDay) : dayEnd(parted.dueDay)) <= input.now) continue;
     // the bound, after a request past it is still known
     if (rows.length >= DATED_ITEMS_MAX) continue;
     const key = itemKey(kind, timing);
@@ -685,7 +689,7 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     // are no items; iteration 4 (revision 12): a delivery only estimated is none either
     if (handledItself({ kind, text: item.text, quote: item.quote }, { subject: input.subject, paragraphs, tied: tiedWords(item.quote).slice(0, FACT_WORDS_MAX), from: input.from })) continue;
     if (kind === "delivery" && estimateOnly(contextOf(item.quote, paragraphs), timing.dueDay, input.arrivedAt)) continue;
-    rows.push({ kind, item: rows.length, text: item.text.trim(), quote: item.quote.trim(), ...partTiming(kind, item.quote, timing, input.arrivedAt)!, ...(shownEarly(kind, item, words, said, input) ? { early: true } : {}), ...(canLapse(kind) && lapsesUnlessRenewed(words) ? { lapses: true } : {}), ...(before && timing.dated && !timing.timed ? { before } : {}), ...(item.wall && timing.timed && wallHolds(item.wall, timing.dueAt) ? { wall: item.wall } : {}) });
+    rows.push({ kind, item: rows.length, text: item.text.trim(), quote: item.quote.trim(), ...parted,...(shownEarly(kind, item, words, said, input) ? { early: true } : {}), ...(canLapse(kind) && lapsesUnlessRenewed(words) ? { lapses: true } : {}), ...(before && timing.dated && !timing.timed ? { before } : {}), ...(item.wall && timing.timed && wallHolds(item.wall, timing.dueAt) ? { wall: item.wall } : {}) });
   }
   /**
    * Plan 210 (iteration 3, revision 4, the owner's "Close replaced promises"): a promise its person's later mail in its
