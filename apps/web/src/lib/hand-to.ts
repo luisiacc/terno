@@ -63,7 +63,12 @@ export async function handTo(seen: ItemSeen, rowId?: FeedRowId): Promise<boolean
   if (mine !== handing) return false;
   if (rowId !== undefined && getApp().today) openFeedRow(rowId);
   // the conversation open, as Forward from the list opens it (List: as its page)
-  if (getApp().selectedId !== h.threadId || (listLayout() && currentPage() === "list")) openThread(h.threadId);
+  if (getApp().selectedId !== h.threadId || (listLayout() && currentPage() === "list")) {
+    openThread(h.threadId);
+    // the reader mounts for it first, so the forward lands in that reader (a draft it left there is resumed in it)
+    await new Promise((r) => requestAnimationFrame(r));
+    if (mine !== handing || getApp().selectedId !== h.threadId) return false;
+  }
   const landing = await composeLanding("forward", h.threadId, 0, undefined, undefined, { sourceId: h.messageId, handoff: { handoff: { items: h.items }, line: handOffLine(h.text, h.dueAt) } });
   return landing.kind !== "none";
 }

@@ -37,14 +37,15 @@ const FEED = '[data-testid="wm-feed"]';
 const openItem = (page: Page) => page.locator(`${FEED} [data-testid=wm-item]:not([data-history])`).filter({ hasText: "Sign the field trip form" });
 const historyItem = (page: Page) => page.locator(`${FEED} [data-testid=wm-item][data-history]`).filter({ hasText: "Sign the field trip form" });
 
-/** Down the virtualized feed from its top until the history's line is drawn (Earlier is the feed's last part). */
+/** To the virtualized feed's end until the history's line is drawn (Earlier is the feed's last part, read again as it comes). */
 async function reachEarlier(page: Page): Promise<void> {
   const scroller = page.locator(`${FEED} [data-keep-scroll="list"]`);
-  await scroller.evaluate((el) => (el.scrollTop = 0));
-  for (let i = 0; i < 120 && !(await historyItem(page).count()); i++) {
-    await scroller.evaluate((el) => (el.scrollTop += el.clientHeight * 0.7));
-    await page.waitForTimeout(80);
-  }
+  await expect
+    .poll(async () => {
+      await scroller.evaluate((el) => (el.scrollTop = el.scrollHeight));
+      return historyItem(page).count();
+    }, { timeout: 30_000 })
+    .toBe(1);
   await historyItem(page).scrollIntoViewIfNeeded();
   await expect(historyItem(page)).toBeVisible();
 }
@@ -72,12 +73,24 @@ test("Hand to… from the item's menu: an inline forward with its line; Undo sen
   const held = page.getByTestId("held-message");
   const line = "Could you take care of this: sign the field trip form (by today)?";
 
-  await scenario("the item's menu: Hand to… after Later; it opens the conversation with a forward of it in the reader, its line written, To taking the recipient", async () => {
+  await scenario("the palette's Hand to… on the open item: the forward in the reader with its line; put away, it waits as a draft", async () => {
+    await openItem(page).getByTestId("wm-item-open").click();
+    await expect(page.getByTestId("reader")).toBeVisible();
+    await page.keyboard.press("ControlOrMeta+k");
+    await page.getByTestId("palette-dated-hand").click();
+    await expect(composer).toBeVisible();
+    await expect(body.locator("p").first()).toHaveText(line);
+    await page.getByTestId("reader-close").click();
+    await expect(composer).toHaveCount(0);
+  });
+
+  await scenario("the item's menu: Hand to… after Later; it opens the conversation's forward again (resumed: its line once), To taking the recipient", async () => {
     await openItem(page).click({ button: "right" });
     const hand = page.getByTestId("menu-dated-hand");
     await expect(hand).toHaveText("Hand to…");
     await hand.click();
     await expect(composer).toBeVisible();
+    await expect(body.locator("p").filter({ hasText: "Could you take care of this" })).toHaveCount(1);
     await expect(page.getByTestId("reader").getByTestId("composer")).toBeVisible();
     await expect(page.getByTestId("compose-subject")).toHaveValue(/^Fwd: Field trip form/);
     await expect(body.locator("p").first()).toHaveText(line);
@@ -115,7 +128,7 @@ test("Hand to… from the item's menu: an inline forward with its line; Undo sen
     // its row is held in place while its conversation stays open (the feed's rule for what leaves on its own); put away, gone
     await page.getByTestId("reader-close").click();
     await expect(openItem(page)).toHaveCount(0);
-    await expect.poll(async () => (await reachEarlier(page).then(() => true, () => false)), { timeout: 15_000 }).toBe(true);
+    await reachEarlier(page);
     await expect(historyItem(page).getByTestId("wm-when")).toHaveText("Handed to jess today");
     const waits = (await server.backend.store.followups.active()).filter((r) => r.kind === "awaiting" && r.personEmail === jess);
     expect(waits).toHaveLength(1);
@@ -143,7 +156,7 @@ test("Hand to… from the reader's line, in Spanish: the forward's line and Earl
   await expect.poll(async () => (await server.backend.store.dated.get(form.id))!.closedReason, { timeout: 15_000 }).toBe("handed");
   await page.getByTestId("reader-close").click();
   await expect(openItem(page)).toHaveCount(0);
-  await expect.poll(async () => (await reachEarlier(page).then(() => true, () => false)), { timeout: 15_000 }).toBe(true);
+  await reachEarlier(page);
   await expect(historyItem(page).getByTestId("wm-when")).toHaveText("Delegado a Jess hoy");
   await shoot(page, "earlier-es");
   await server.backend.server.invoke("settings.update", { language: "en" }, dev);
