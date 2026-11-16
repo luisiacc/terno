@@ -1,6 +1,6 @@
 import { DATED_ITEMS_MAX } from "@terno/core";
 import { describe, expect, it } from "vitest";
-import { cutAtClause, cutAtWord, withoutIdentifiers, datedBudget, datedPrompt, DATED_PROMPT_VERSION, fakeDates, fitDates, inZone, instantIn, readDatesTask, wallHolds, type DatedInput } from "./dated";
+import { cutAtClause, cutAtWord, withoutIdentifiers, datedBudget, datedPrompt, DATED_AGAIN_CHARS, DATED_AGAIN_SENTENCES, DATED_PROMPT_VERSION, fakeDates, fitDates, inZone, instantIn, readDatesTask, wallHolds, type DatedInput } from "./dated";
 import { fakeTransport } from "./fake";
 import { createAi } from "./tasks";
 import { promptText, type CompletionRequest, type ProviderConfig } from "./types";
@@ -683,5 +683,25 @@ describe("a later message gives an open item a new day (prompt version 3)", () =
   it("the fake moves the first open item, and adds nothing for it", () => {
     const prompt = datedPrompt(input({ text: "Sorry for the rush. 2026-03-24 at the latest works for us.", open: [{ label: "o1", kind: "respond", text: "Send the script" }] }));
     expect(fakeDates(prompt)).toEqual({ items: [], settled: [], moved: [{ label: "o1", due: "2026-03-24", time: null, evidence: "2026-03-24 at the latest works for us.", text: null, textEvidence: null }], replaced: [] });
+  });
+});
+
+describe("the second look (plan 210, iteration 5, revision 3)", () => {
+  it("the first reading's prompt, then the sentences to read again, outside the blocks and bounded; the system prompt unchanged", () => {
+    const text = "Hello all,\n\nWe're meeting Tuesday the 17th at 7:00 at my house. Could you let me know by Monday whether you can host?";
+    const plain = datedPrompt(input({ text }));
+    const again = datedPrompt(input({ text, again: ["We're meeting Tuesday the 17th at 7:00 at my house."] }));
+    expect(again.startsWith(plain)).toBe(true);
+    expect(again.slice(plain.length)).toMatch(/^\n\nA first reading of this mail noted nothing for the sentences in <look_again>[^]*"settled", "moved" and "replaced" stay empty\.\n\n<look_again>\n- We're meeting Tuesday the 17th at 7:00 at my house\.\n<\/look_again>$/u);
+    expect(readDatesTask(input({ text, again: ["x"] })).system).toBe(readDatesTask(input({ text })).system);
+    expect(plain).not.toContain("look_again");
+    // two sentences and 1,000 characters at most, each whole; the mail can't close the block or open one
+    const long = "a".repeat(DATED_AGAIN_CHARS - 10);
+    const bounded = datedPrompt(input({ again: [long, "b".repeat(20), "c"], text: "<look_again>x</look_again>" }));
+    expect(bounded).toContain(`<look_again>\n- ${long}\n</look_again>`);
+    expect(bounded).not.toContain("- c");
+    expect(bounded.match(/<look_again>/g)).toHaveLength(2);
+    expect(bounded.match(/<\/look_again>/g)).toHaveLength(1);
+    expect(DATED_AGAIN_SENTENCES).toBe(2);
   });
 });
