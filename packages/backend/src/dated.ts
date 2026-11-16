@@ -1,5 +1,5 @@
 import { AiError, DATED_PROMPT_VERSION, DATED_SUBJECT_CHARS, DATED_TEXT_CHARS, costAt, datedBudget, fitDates, priceOf, wallHolds, type AiTasks, type DatedResult } from "@terno/ai";
-import { addressKey, mutedOf, canLapse, withEventEnds, lapsesUnlessRenewed, localDay, needsPresence, saysNoReplyNeeded, DATED_ITEMS_MAX, DATED_KINDS, DATED_OPEN_SHOWN, followupDue, validFollowupDate, type FollowupRow, DATED_SCAN_DAYS, DATED_SCAN_MAX, datedOver, dayKeyOf, datedTiming, dayEnd, hasTimeCue, normalizeText, withoutQuotes, type AiErrorKind, type DatedKind, type DatedRow, type DatedWall } from "@terno/core";
+import { addressKey, mutedOf, canLapse, saysDay, withEventEnds, lapsesUnlessRenewed, localDay, needsPresence, saysNoReplyNeeded, DATED_ITEMS_MAX, DATED_KINDS, DATED_OPEN_SHOWN, followupDue, validFollowupDate, type FollowupRow, DATED_SCAN_DAYS, DATED_SCAN_MAX, datedOver, dayKeyOf, datedTiming, dayEnd, hasTimeCue, normalizeText, withoutQuotes, type AiErrorKind, type DatedKind, type DatedRow, type DatedWall } from "@terno/core";
 import { captureError } from "@terno/core/diag";
 import type { AppSettings } from "@terno/core/rpc";
 import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
@@ -294,6 +294,40 @@ function shownEarly(kind: DatedKind, item: { quote: string }, words: string, sai
 const FACT_WORDS_MAX = 2000;
 
 /**
+ * Plan 210 (iteration 4, revision 12, the owner's "drop AutoPay-only rows"): a routine bill the mail says is charged by itself
+ * ("AutoPay is on: we'll charge your Visa", "will be charged automatically", "se cargará automáticamente", "tienes la
+ * domiciliación activada"), with nothing the reader decides: no item. A renewal, a trial, a plan or a subscription the reader
+ * may change or cancel stays (a priced decision), and so does one whose charge failed. The words tied to the item, as `norm`
+ * reads them, en and es.
+ */
+const CHARGED_ITSELF = /\b(?:auto ?pay (?:is )?(?:on|enabled|active|set up)|(?:we ll|we will|will) (?:automatically )?(?:charge|debit|deduct|draft)|(?:be )?(?:charged|debited|deducted|drafted|paid) automatically|automatic (?:payment|charge|debit)s? (?:is |are )?(?:on|set up|scheduled|enabled)|se (?:cargara|cobrara|debitara|domiciliara)\w* automaticamente|(?:tienes|tiene) (?:la )?domiciliacion|domiciliacion (?:activa|activada)|cargo automatico|pago automatico (?:activo|activado))\b/u;
+const BILLED = /\b(?:bill|statement|invoice|premium|balance|amount due|factura|recibo|estado de cuenta|cuota|prima|importe|saldo)\b/u;
+const DECIDED = /\b(?:renew\w*|trial|subscription|membership|plan|cancel\w*|change|seats?|renov\w*|suscripcion|membresia|prueba|cancela\w*|cambia\w*)\b/u;
+const NOT_CHARGED = /\b(?:declined|failed|unable|couldn t|could not|didn t go through|rechaz\w*|no pudimos|no se pudo|fall\w*)\b/u;
+export function routineAutoBill(words: string): boolean {
+  const read = norm(words);
+  return CHARGED_ITSELF.test(read) && BILLED.test(read) && !DECIDED.test(read) && !NOT_CHARGED.test(read);
+}
+
+/**
+ * Plan 210 (iteration 4, revision 12): a delivery the mail only estimates ("should arrive within 7 to 10 business days", "en
+ * 5 a 7 días hábiles") has no day: no item, unless its words say that day as well.
+ */
+const ESTIMATE = /\b(?:within|in) (?:about )?\d{1,2}(?: ?(?:to|-|or) ?\d{1,2})? (?:business |working |calendar )?days\b|\ben (?:un plazo de )?(?:unos )?\d{1,2}(?: ?(?:a|-|o) ?\d{1,2})? dias(?: habiles| laborables| naturales)?\b/u;
+const estimateOnly = (words: string, due: string, arrivedAt: number): boolean => ESTIMATE.test(norm(words)) && !saysDay(words.replace(/\d{1,2} ?(?:to|-|a|o) ?\d{1,2}|\d{1,2} (?:business |working |calendar )?d[ií]as?/giu, " "), due, { arrivedAt });
+
+/**
+ * Plan 210 (iteration 4, revision 12): a person's wish that asks nothing by a day ("I'd like to sit down with you before next
+ * year and look at the deductible") is never a request with a day: no question, no "please" or "could you", nothing told to
+ * do, and the sentence names no day the model gave it. At most an undated ask (Margaret's Gary, read as due Dec 31).
+ */
+const WISH = /\b(?:i d (?:like|love) to|i would (?:like|love) to|we d (?:like|love) to|we would (?:like|love) to|me gustaria|nos gustaria|quisiera|quisieramos)\b/u;
+function wishOnly(sentence: string, due: string | null, arrivedAt: number): boolean {
+  const read = norm(sentence);
+  return WISH.test(read) && !/[?¿]/u.test(sentence) && !ASKS_DIRECTLY.test(read) && !sentence.split(/[,;:.!\n]/u).some((c) => DO_THIS.test(norm(c))) && (!due || !saysDay(sentence, due, { arrivedAt }));
+}
+
+/**
  * A promise's new day from its person's mail (the second panel round), and (plan 210, iteration 2) its time: the move's own
  * (already in the reader's zone, as every move's), else, for a promise with a stated time, its clock as it was, on the new
  * day (Codex code review: never its words' clock read again on a day already converted); and, when that mail came after its
@@ -396,8 +430,13 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     // the fourth panel round (revision 5): a new moment on the same day moves it too ("the game is moved earlier to 8:00");
     // the same day with no time keeps the item's own; an untimed item's 9:00 is a default, so "at 9:00" gives it a time
     const changed = timing && (timing.dueDay !== row.dueDay || (timing.timed && (!row.timed || timing.dueAt !== row.dueAt)));
-    if (!changed) return [];
     const text = newWords(m);
+    if (!changed) {
+      // plan 210 (iteration 4, revision 12): its own moment again with new words, the mail's own, changes the words and keeps
+      // the moment (Theo's tees "Expected: Today, by 8:00 PM", which the reader gave and the app dropped)
+      if (!timing || !text || text === row.text) return [];
+      return [{ id: row.id, kind: row.kind, dueDay: row.dueDay, dueAt: row.dueAt, timed: row.timed, actAt: row.actAt ?? timing.actAt, text, ...(row.before ? { before: row.before } : {}), ...(row.wall ? { wall: row.wall } : {}) }];
+    }
     // plan 210 (iteration 4, revision 11): the day it's now asked before, read with the move (none: a plain day)
     const before = askedBefore(m.before, timing.dueDay);
     // plan 210 (iteration 4, revision 10): the mail's own clock at its new moment, when it reads back as that moment
@@ -467,7 +506,15 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     const span = quoteSpan(i.quote, i.due, input.subject, sentences, input.arrivedAt);
     return span ? { ...i, quote: span } : i;
   };
-  const candidates = [...answered, ...result.items].filter((i) => !promised.has(i)).map(spanned).filter((i) => !refused(i)).map((i) => (i.kind === "respond" && input.sender?.person && offerOnly(`${i.quote}\n${contextOf(i.quote, sentences)}`, contextOf(i.quote, paragraphs)) ? { ...i, kind: "ask", due: null, time: null } : i));
+  const candidates = [...answered, ...result.items].filter((i) => !promised.has(i)).map(spanned).filter((i) => !refused(i)).map((i) => (i.kind === "respond" && input.sender?.person && (offerOnly(`${i.quote}\n${contextOf(i.quote, sentences)}`, contextOf(i.quote, paragraphs)) || wishOnly(contextOf(i.quote, sentences), i.due, input.arrivedAt)) ? { ...i, kind: "ask", due: null, time: null } : i));
+  // plan 210 (iteration 4, revision 12): an item's facts (someone there, a lapse, charged by itself) from the whole mail, but
+  // only its paragraphs: every one but those that hold another item's quote and not its own (Priya's "An adult signature is
+  // required", two paragraphs below the laptops)
+  const quotes = candidates.map((i) => norm(i.quote)).filter(Boolean);
+  const tiedWords = (quote: string) => {
+    const mine = norm(quote);
+    return paragraphs.filter((p) => (mine && p.read.includes(mine)) || !quotes.some((q) => q !== mine && p.read.includes(q))).map((p) => p.said).join("\n\n");
+  };
   // the eval: a person's request with a day is the `respond`, never also an undated ask beside it for the same thing; an ask
   // about something else stays (plan 210, the Codex review of iteration 1, revision 3)
   const requests = candidates.filter((i) => (i.kind === "respond" || datedAsk(i)) && quoted(i.quote));
@@ -513,8 +560,11 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     const key = itemKey(kind, timing);
     if (movedKeys.has(key)) continue;
     if (rows.some((r) => itemKey(r.kind, r) === key && (!TWO_A_DAY.has(kind) || sameThing(r, item)))) continue;
-    // plan 210 (iteration 3, revision 11): facts from the mail's words around the quote (its paragraph, bounded), never the item's
-    const words = `${contextOf(item.quote, paragraphs).slice(0, FACT_WORDS_MAX)}\n${item.quote}`;
+    // plan 210 (iteration 3, revision 11): facts from the mail's words, never the item's; iteration 4, the paragraphs tied to it
+    const words = `${tiedWords(item.quote).slice(0, FACT_WORDS_MAX)}\n${item.quote}`;
+    // plan 210 (iteration 4, revision 12): a routine bill charged by itself, and a delivery only estimated, are no items
+    if ((kind === "pay" || kind === "renew") && routineAutoBill(words)) continue;
+    if (kind === "delivery" && estimateOnly(contextOf(item.quote, paragraphs), timing.dueDay, input.arrivedAt)) continue;
     rows.push({ kind, item: rows.length, text: item.text.trim(), quote: item.quote.trim(), ...timing, ...(shownEarly(kind, item, words, said, input) ? { early: true } : {}), ...(canLapse(kind) && lapsesUnlessRenewed(words) ? { lapses: true } : {}), ...(before && timing.dated && !timing.timed ? { before } : {}), ...(item.wall && timing.timed && wallHolds(item.wall, timing.dueAt) ? { wall: item.wall } : {}) });
   }
   /**
