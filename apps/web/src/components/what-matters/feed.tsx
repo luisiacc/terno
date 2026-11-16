@@ -279,7 +279,8 @@ export function WhatMattersFeed() {
                 const row = rows[v.index]!;
                 return (
                   <div key={v.key} data-index={v.index} ref={virtualizer.measureElement} className="absolute inset-x-0 top-0" style={{ transform: `translateY(${v.start}px)` }}>
-                    <div className={COLUMN}>
+                    {/* (a query container: a row lays its when column out by the feed's own width, plan 210, iteration 4) */}
+                    <div className={cn(COLUMN, "@container")}>
                       {row.type === "heading" ? <Heading kind={row.kind} /> : row.type === "comingUp" ? <ComingUpHeading /> : row.type === "item" ? <FeedItem row={row.row} thread={items[index.get(row.row.threadId) ?? -1]} /> : <DigestItem />}
                     </div>
                   </div>
@@ -333,7 +334,7 @@ function ComingUpHeading({ empty = false }: { /** under the empty feed's words, 
       onOpenChange={setComingUpOpen}
       render={<h2 data-testid="wm-heading" data-kind="comingUp" className={empty ? "mt-2 text-sm font-normal text-muted-foreground" : "hairline-b mx-3 mb-1 pt-5 pb-1.5 text-sm font-medium text-foreground"} />}
     >
-      <CollapsibleTrigger data-testid="wm-coming-up" aria-controls={FEED_ROWS_ID} className={cn("w-auto gap-1 text-[length:inherit] leading-[inherit] font-[inherit] [&>[data-slot=collapsible-chevron]]:ms-0 [&>[data-slot=collapsible-chevron]]:size-3.5", empty ? "text-muted-foreground hover:text-foreground" : "text-foreground")}>
+      <CollapsibleTrigger data-testid="wm-coming-up" aria-controls={FEED_ROWS_ID} className={cn("w-auto gap-1 text-[length:inherit] leading-[inherit] [&>[data-slot=collapsible-chevron]]:ms-0 [&>[data-slot=collapsible-chevron]]:size-3.5", empty ? "font-normal text-muted-foreground hover:text-foreground" : "font-medium text-foreground")}>
         {t("whatMatters.comingUp", { count })}
       </CollapsibleTrigger>
     </Collapsible>
@@ -374,9 +375,13 @@ function OpenItem({ row, thread, open, cursor }: { row: FeedRow; thread: ThreadS
  * While Done and Later show (hover, focus, the open item, their Later menu open), the second line ends before them: they are
  * `--wm-controls` wide (measured) from 0.5rem in, and the line's end is 0.75rem in (the item's padding), or past the when
  * column (at least 5rem) and its 1rem gap; a wider column only leaves more room. Never under them (plan 210, iteration 1).
+ * Iteration 4: in a narrow feed the when column is under the sentence, so the second line is the row's whole width: their
+ * width (`ROOM_NARROW`); else beside the column (`ROOM_BESIDE_WHEN`, the feed's width wide enough).
  */
 const ROOM_BESIDE_WHEN =
-  "group-hover/item:pr-[max(0px,calc(var(--wm-controls,7.5rem)-6rem))] group-has-focus-reveal/item:pr-[max(0px,calc(var(--wm-controls,7.5rem)-6rem))] group-data-open/item:pr-[max(0px,calc(var(--wm-controls,7.5rem)-6rem))] group-has-[[aria-expanded=true]]/item:pr-[max(0px,calc(var(--wm-controls,7.5rem)-6rem))]";
+  "@min-[30rem]:group-hover/item:pr-[max(0px,calc(var(--wm-controls,7.5rem)-6rem))] @min-[30rem]:group-has-focus-reveal/item:pr-[max(0px,calc(var(--wm-controls,7.5rem)-6rem))] @min-[30rem]:group-data-open/item:pr-[max(0px,calc(var(--wm-controls,7.5rem)-6rem))] @min-[30rem]:group-has-[[aria-expanded=true]]/item:pr-[max(0px,calc(var(--wm-controls,7.5rem)-6rem))]";
+const ROOM_NARROW =
+  "@max-[30rem]:group-hover/item:pr-(--wm-controls,7.5rem) @max-[30rem]:group-has-focus-reveal/item:pr-(--wm-controls,7.5rem) @max-[30rem]:group-data-open/item:pr-(--wm-controls,7.5rem) @max-[30rem]:group-has-[[aria-expanded=true]]/item:pr-(--wm-controls,7.5rem)";
 const ROOM = "group-hover/item:pr-(--wm-controls,7.5rem) group-has-focus-reveal/item:pr-(--wm-controls,7.5rem) group-data-open/item:pr-(--wm-controls,7.5rem) group-has-[[aria-expanded=true]]/item:pr-(--wm-controls,7.5rem)";
 
 interface ItemProps {
@@ -429,23 +434,30 @@ function Item({ row, sentence, meta, when, tone, task, open, cursor = false, lat
   return (
     // the right-click menu is the conversation's, its task this row's (plan 210, iteration 2: `menuRow`)
     <div data-thread-id={menuId(row.threadId)} data-row-id={row.id} data-held={row.held || undefined} data-testid="wm-item" onContextMenu={() => useToday.setState({ menuRow: row.id })} data-open={open || undefined} data-cursor={cursor || undefined} data-history={past || undefined} data-digest={digest || undefined} data-ahead={(later && !past) || undefined} data-tone={tone} className="group/item relative rounded-lg not-data-open:hover:bg-row-hover data-cursor:bg-row-hover data-open:bg-row-selected">
-      <button type="button" data-testid="wm-item-open" title={`${sentence}\n${meta}`} aria-expanded={open} onClick={() => openItem(row)} className="flex w-full min-w-0 items-start gap-4 rounded-lg px-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring">
-        <span className="min-w-0 flex-1">
-          {/* plan 210 (iteration 3): Coming up's sentences in the row ink, not a fade (its column stays quiet) */}
-          <span id={textId} data-testid="wm-sentence" className={cn("line-clamp-2 text-base text-pretty group-data-open/item:text-row-selected-foreground", past ? "text-muted-foreground" : SENTENCE_INK[tone])}>
-            {sentence}
-          </span>
-          {/* while Done and Later show over its end, it ends (in an ellipsis) before them: a little before, beside the right
-              column (at least 5rem, so they reach no further into it), else their width */}
-          <span data-testid="wm-meta" className={cn("mt-0.5 block truncate text-sm group-data-open/item:text-row-selected-foreground", past ? "text-muted-foreground" : "text-row-preview", task && (when ? ROOM_BESIDE_WHEN : ROOM))}>
-            {meta}
-          </span>
+      {/* plan 210 (iteration 4, design point 2): the sentence keeps at least two thirds of the row: the when column is at
+          most a third (its words wrap there); in a narrow feed (the reader open beside it) it goes under the sentence, on a
+          line of its own above who, so "You said you'd…" is never crushed beside it */}
+      <button type="button" data-testid="wm-item-open" title={`${sentence}\n${meta}`} aria-expanded={open} onClick={() => openItem(row)} className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-4 rounded-lg px-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring @max-[30rem]:grid-cols-1">
+        {/* plan 210 (iteration 3): Coming up's sentences in the row ink, not a fade (its column stays quiet) */}
+        <span id={textId} data-testid="wm-sentence" className={cn("col-start-1 row-start-1 line-clamp-2 text-base text-pretty group-data-open/item:text-row-selected-foreground", past ? "text-muted-foreground" : SENTENCE_INK[tone])}>
+          {sentence}
         </span>
         {when && (
-          <span data-testid="wm-when" className={cn("min-w-20 shrink-0 pt-px text-right text-sm whitespace-nowrap tabular group-data-open/item:text-row-selected-foreground", past ? "text-muted-foreground" : WHEN_INK[tone])}>
+          <span
+            data-testid="wm-when"
+            className={cn(
+              "col-start-2 row-span-2 row-start-1 max-w-[calc(100cqw/3-1.5rem)] min-w-20 pt-px text-right text-sm text-balance tabular group-data-open/item:text-row-selected-foreground @max-[30rem]:col-start-1 @max-[30rem]:row-span-1 @max-[30rem]:row-start-2 @max-[30rem]:mt-0.5 @max-[30rem]:max-w-none @max-[30rem]:min-w-0 @max-[30rem]:pt-0 @max-[30rem]:text-left",
+              past ? "text-muted-foreground" : WHEN_INK[tone],
+            )}
+          >
             {when}
           </span>
         )}
+        {/* while Done and Later show over its end, it ends (in an ellipsis) before them: a little before, beside the right
+            column (at least 5rem, so they reach no further into it), else their width */}
+        <span data-testid="wm-meta" className={cn("col-start-1 row-start-2 mt-0.5 block min-w-0 truncate text-sm group-data-open/item:text-row-selected-foreground @max-[30rem]:row-start-3", past ? "text-muted-foreground" : "text-row-preview", task && (when ? cn(ROOM_BESIDE_WHEN, ROOM_NARROW) : ROOM))}>
+          {meta}
+        </span>
       </button>
       {task && (
         <div
