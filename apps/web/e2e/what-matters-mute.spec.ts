@@ -176,3 +176,46 @@ for (const language of ["en", "es"] as const) {
     }
   });
 }
+
+/**
+ * Plan 210 (round 14's faults): a long sender's offer ("Don't show deliveries from Northgate Business Store") crushed the
+ * snack's first line to "R… 2 La…". The status and the item's words keep their line; the offer wraps beside them; Undo stays.
+ */
+for (const language of ["en", "es"] as const) {
+  test(`plan 210 (round 14's faults): a long sender's offer never crushes the snack's first line (${language})`, async ({ app: page, server }) => {
+    await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" }, dated: { enabled: true, scanAnswered: true }, language }, dev);
+    await item(server, "stands", "2 Laptop stands arrive", "delivery", { name: "Northgate Business Store", email: "orders@northgate.test", listId: "<orders.northgate.test>" }, 14);
+    await page.addInitScript((l) => localStorage.setItem("terno:language", l), language);
+    await fresh(page);
+    await page.getByTestId("nav-today").click();
+    await expect(openLine(page, "2 Laptop stands arrive")).toBeVisible({ timeout: 15_000 });
+    await remove(page, "2 Laptop stands arrive");
+    const offer = page.getByTestId("snack-secondary");
+    await expect(offer).toHaveText(language === "en" ? "Don’t show deliveries from Northgate Business Store" : "No mostrar entregas de Northgate Business Store");
+    const message = page.getByTestId("snack-message");
+    await expect(message.locator("p").first()).toHaveText(language === "en" ? "Removed" : "Quitado");
+    // the first line whole, the item's words under it readable, the offer whole on its lines, Undo beside them
+    const fit = await message.evaluate((el) => {
+      const [status, words] = [...el.querySelectorAll("p")] as HTMLElement[];
+      const button = document.querySelector<HTMLElement>("[data-testid=snack-secondary]")!;
+      const said = button.querySelector<HTMLElement>("span") ?? button;
+      return { width: el.getBoundingClientRect().width, status: status!.scrollWidth <= status!.clientWidth, words: words!.clientWidth, offer: said.scrollHeight <= said.clientHeight + 1 };
+    });
+    expect(fit.width).toBeGreaterThanOrEqual(128);
+    expect(fit.status).toBe(true);
+    expect(fit.words).toBeGreaterThanOrEqual(120);
+    expect(fit.offer).toBe(true);
+    await expect(page.getByTestId("snack-action")).toBeVisible();
+    await axeBothModes(page, '[data-testid="snack"]');
+    const shots = process.env.WM_MUTE_SHOTS;
+    if (shots) {
+      for (const mode of ["light", "dark"] as const) {
+        await page.emulateMedia({ colorScheme: mode });
+        await page.screenshot({ path: join(shots, `long-offer-${language}-${mode}.png`) });
+      }
+      await page.emulateMedia({ colorScheme: "light" });
+    }
+    await page.keyboard.press("z");
+    await expect(openLine(page, "2 Laptop stands arrive")).toBeVisible();
+  });
+}

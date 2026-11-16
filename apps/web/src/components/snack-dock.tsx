@@ -105,7 +105,9 @@ function Row({ snack }: { snack: Snack }) {
   return (
     <div className="flex min-h-9 items-center gap-2 py-1.5 pr-1.5 pl-3">
       {TONE_ICON[snack.tone]}
-      <div className="min-w-0 flex-1 text-sm" data-testid="snack-message">
+      {/* plan 210 (round 14's faults): beside an offer the message keeps room for its first line ("Removed" and the item's
+          words); a long offer wraps beside it instead ("Don't show deliveries from Northgate Business Store" had crushed it to "R…") */}
+      <div className={cn("min-w-0 flex-1 text-sm", snack.secondary && "min-w-32")} data-testid="snack-message">
         <p className={cn(wraps ? "line-clamp-3" : "truncate", snack.tone === "error" && "text-destructive-ink")} title={snack.message}>
           {snack.message}
         </p>
@@ -116,8 +118,8 @@ function Row({ snack }: { snack: Snack }) {
         )}
       </div>
       {snack.secondary && (
-        <Button variant="ghost" size="xs" data-testid="snack-secondary" aria-label={snack.secondary.name} onClick={() => runAction("secondary")} className={SNACK_QUIET}>
-          {snack.secondary.label}
+        <Button variant="ghost" size="xs" data-testid="snack-secondary" aria-label={snack.secondary.name} title={snack.secondary.label} onClick={() => runAction("secondary")} className={cn(SNACK_QUIET, "h-auto min-h-6 min-w-0 shrink py-1 text-start whitespace-normal")}>
+          <span className="line-clamp-2 text-balance">{snack.secondary.label}</span>
         </Button>
       )}
       {snack.action && <SnackPill label={snack.action.label} name={nameOf(snack.action, snack)} onClick={() => runAction("action")} shortcut={z ? "z" : undefined} />}
