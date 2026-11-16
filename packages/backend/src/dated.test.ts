@@ -2751,6 +2751,20 @@ describe("plan 210 (iteration 4): Mute this kind or sender (the Codex review's r
     expect((await shown(client)).length).toBe(1);
   });
 
+  it("events muted, an event's 'Reply C to confirm' still shows until the event, in the list and on the reader's line (Codex's code review, iteration 4)", async () => {
+    const { backend, client, model, receive, read } = await setup();
+    const DENTIST = "Hi! Sofia is scheduled for her cleaning with Dr. Alvarez on Nov 24 at 3:40 PM.\n\nReply C to confirm or call us to reschedule.";
+    model.answer = () => reply([{ kind: "event", text: "Sofia's cleaning with Dr. Alvarez", quote: "on Nov 24 at 3:40 PM", due: "2026-11-24", time: "15:40" }, { kind: "ask", text: "Reply C to confirm Sofia's cleaning", quote: "Reply C to confirm", due: null, time: null }]);
+    const thread = await receive({ from: { name: "Alvarez Dental", email: "office@dental.test" }, subject: "Sofia's cleaning", bodyText: DENTIST });
+    await read();
+    const rows = await backend.store.dated.ofThread(thread);
+    const ask = rows.find((r) => r.kind === "ask")!;
+    expect(ask.confirms).toBe(rows.find((r) => r.kind === "event")!.id);
+    await client.call("dated.mute", { on: "kind", key: "event" });
+    expect(await shown(client)).toEqual([`dated:${ask.id}`]);
+    expect((await client.call("dated.ofThread", { threadId: thread })).rows.map((r) => [r.kind, r.eventEnd! > NOW])).toEqual([["ask", true]]);
+  });
+
   it("Remove offers its kind once, then its sender once, then nothing; a request offers only its sender; at the bound a mute is refused in words", async () => {
     const { backend, client, model, receive, read } = await setup();
     model.answer = () => reply([parcel]);
