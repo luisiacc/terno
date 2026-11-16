@@ -133,15 +133,15 @@ describe("the list", () => {
     expect(dates).toEqual([...dates].sort((a, b) => b - a));
   });
 
-  it("plan 210 (iteration 2): two due promises in one conversation are two rows, counted each; your reminder there brings nothing more", async () => {
+  it("plan 210 (iteration 2): two due promises in one conversation are two rows, counted each; your reminder there brings nothing more; (iteration 4) a reply's two to one person, one row", async () => {
     const { backend, client, account, clock } = await setup();
     await client.call("settings.update", { followups: { enabled: true } });
     const me = { name: "Me", email: account.email };
     const m = msg({ accountId: account.id, from: me, to: [{ name: "Tom", email: "tom@acme.test" }], isSent: true, inInbox: true, date: clock.now - 86_400_000, providerMsgId: "s-1", subject: "The contract" });
     const r = await backend.store.sync.ingest([m], { applyFilters: false, now: clock.now, classifier: null, liveSent: { wanted: true } });
     const t = await threadOf(backend.store, "s-1");
-    const row = (item: number, text: string) => ({ kind: "promise" as const, item, text, quote: "I'll send it", personName: "Tom", personEmail: "tom@acme.test", dueAt: clock.now + 1000, dated: false });
-    const finished = await backend.store.followups.finish({ messageId: r.inserted[0]!, threadId: t, fromScan: false, now: clock.now, kept: [], model: "m", provider: "p", promptVersion: 1, clearGeneration: backend.store.followups.clearGeneration(), rows: [row(0, "send the contract"), row(1, "and the deck")] });
+    const row = (item: number, text: string, who = "Tom") => ({ kind: "promise" as const, item, text, quote: "I'll send it", personName: who, personEmail: `${who.toLowerCase()}@acme.test`, dueAt: clock.now + 1000, dated: false });
+    const finished = await backend.store.followups.finish({ messageId: r.inserted[0]!, threadId: t, fromScan: false, now: clock.now, kept: [], model: "m", provider: "p", promptVersion: 1, clearGeneration: backend.store.followups.clearGeneration(), rows: [row(0, "send the contract"), row(1, "and the deck", "Ana"), row(2, "book the room")] });
     expect(finished).not.toBe("gone");
     clock.now += 5000;
     await client.call("reminders.set", { threadIds: [t], dueAt: clock.now - 500, kind: "always" });
@@ -150,6 +150,8 @@ describe("the list", () => {
     // plan 204, the fourth panel round: a promise of yours that's due, undated, is Today's (it has no day)
     expect(sections).toEqual([["today", [t, t]]]);
     expect(list.sections[0]!.items.map((i) => [i.why.kind, i.why.text])).toEqual([["promise", "send the contract"], ["promise", "and the deck"]]);
+    // (iteration 4) the reply's two to Tom are one row, the second its Also line
+    expect(list.sections[0]!.items[0]!.also).toMatchObject([{ kind: "promise", text: "book the room" }]);
     expect((await client.call("counts.get", {})).today).toBe(2);
   });
 });

@@ -119,10 +119,78 @@ describe("duplicates and related details", () => {
     const back = dated("event", "2026-11-22", { threadId: 1, text: "Return flight to Madrid", detailOf: out.id }, "18:10");
     const before = projectToday(facts({ dated: [out, back] })).rows;
     expect(before.map((r) => r.id)).toEqual([`dated:${out.id}`]);
-    expect(before[0]!.also).toMatchObject({ text: "Return flight to Madrid", dueDay: "2026-11-22", timed: true });
+    expect(before[0]!.also).toMatchObject([{ text: "Return flight to Madrid", dueDay: "2026-11-22", timed: true }]);
     // the day after the outbound flight, the trip's row is the return leg's, under its own day (a Plan's lead is three days)
     const after = projectToday(facts({ now: at(2026, 11, 19, 10), dated: [out, back] })).rows;
     expect(after.map((r) => [r.id, r.group])).toEqual([[`dated:${back.id}`, "day"]]);
+  });
+});
+
+describe("one reply, one row (plan 210, iteration 4)", () => {
+  // Diego: "el verde lo calibro con el perfil de la imprenta… el jueves te los mando": two promises of one reply to Valeria
+  const reply = (more: Partial<FollowupRow>[]) => more.map((m, item) => promise(at(2026, 11, 19, 9), { messageId: 43, item, personEmail: "Valeria@CafeOrigen.mx", personName: "Valeria", ...m }));
+
+  it("Diego: the dated one leads, under its day; the other is its Also line, named for its acts, never a member", () => {
+    const [green, send] = reply([{ text: "calibrate the green with the printer's profile", dated: false, dueAt: NOW - 3_600_000 }, { text: "send Valeria the three changes" }]);
+    // alone, the undated one would be Today's own, counted
+    expect(projectToday(facts({ promises: [green!] }), { count: true }).counts.today).toBe(1);
+    const { rows, counts } = projectToday(facts({ promises: [green!, send!] }));
+    expect(rows.map((r) => [r.id, r.group, r.day])).toEqual([[`promise:${send!.id}`, "day", "2026-11-19"]]);
+    expect(rows[0]!.why.with).toEqual([{ source: "promise", id: green!.id, revision: 0 }]);
+    // its members are its own item's: the reader keeps the other a line of its own, an act on it alone leaves the row
+    expect(rows[0]!.why.members).toBeUndefined();
+    expect(rows[0]!.also).toEqual([{ kind: "promise", text: "calibrate the green with the printer's profile", dueDay: "2026-11-18", dueAt: NOW - 3_600_000, timed: false, dated: false }]);
+    // one row, and the count says so (the day ahead isn't counted)
+    expect(counts).toEqual({ missed: 0, today: 0, waiting: 0 });
+    expect(projectToday(facts({ promises: [green!, send!] }), { count: true }).counts).toEqual(counts);
+  });
+
+  it("Priya: both dated, the first said leads (the call at 4:00 PM), the other said with its day; with no dated one, the first", () => {
+    const [call, equity] = reply([{ text: "call Marcus at 4:00 PM", timed: true, dueAt: at(2026, 11, 19, 16) }, { text: "bring flexibility on the equity side to Marcus", dueAt: at(2026, 11, 19, 9) }]);
+    const [row] = projectToday(facts({ promises: [equity!, call!] })).rows;
+    expect(row).toMatchObject({ id: `promise:${call!.id}`, why: { text: "call Marcus", with: [{ source: "promise", id: equity!.id }] } });
+    expect(row!.also).toMatchObject([{ text: "bring flexibility on the equity side to Marcus", dueDay: "2026-11-19", dated: true, timed: false }]);
+    const [a, b] = reply([{ dated: false, dueAt: NOW - 1 }, { dated: false, dueAt: NOW - 2 }]);
+    expect(projectToday(facts({ promises: [b!, a!] })).rows.map((r) => r.id)).toEqual([`promise:${a!.id}`]);
+  });
+
+  it("another person, another message, or no one named: rows of their own", () => {
+    const [mine, theirs] = reply([{}, { personEmail: "pablo@cafeorigen.mx", personName: "Pablo" }]);
+    expect(projectToday(facts({ promises: [mine!, theirs!] })).rows).toHaveLength(2);
+    const [x, y] = reply([{}, { messageId: 44 }]);
+    expect(projectToday(facts({ promises: [x!, y!] })).rows).toHaveLength(2);
+    const [p, q] = reply([{ personEmail: null, personName: null }, { personEmail: null, personName: null }]);
+    expect(projectToday(facts({ promises: [p!, q!] })).rows).toHaveLength(2);
+    // by the address as compared everywhere, else the name
+    const [m, n] = reply([{ personEmail: null, personName: "Valeria " }, { personEmail: null, personName: "valeria" }]);
+    expect(projectToday(facts({ promises: [m!, n!] })).rows).toHaveLength(1);
+  });
+
+  it("a promise an event leads (Jordan's who comes along) stays the event's row; attendance and the reply apart", () => {
+    const qbr = dated("event", "2026-11-19", { threadId: 1, text: "Q4 business review" }, "14:00");
+    const [bring, agenda] = reply([{ dated: false, dueAt: NOW - 1, sameAs: `dated:${qbr.id}` }, { text: "send Grace the agenda" }]);
+    const { rows } = projectToday(facts({ dated: [qbr], promises: [bring!, agenda!] }));
+    expect(rows.map((r) => r.id).sort()).toEqual([`dated:${qbr.id}`, `promise:${agenda!.id}`].sort());
+    expect(rows.find((r) => r.id === `promise:${agenda!.id}`)!.why.with).toBeUndefined();
+  });
+
+  it("grouped where they're placed: a lead behind Coming up takes the other with it in the list and in the count alike; one closed, the other is its own row", () => {
+    const [green, send] = reply([{ dated: false, dueAt: NOW - 1 }, { dueAt: at(2026, 12, 18, 9) }]);
+    expect(projectToday(facts({ promises: [green!, send!] })).rows.map((r) => [r.id, r.group])).toEqual([[`promise:${send!.id}`, "comingUp"]]);
+    expect(projectToday(facts({ promises: [green!, send!] }), { count: true }).counts.today).toBe(0);
+    // an undated one not showing yet is the row's too: Done on the row finishes it, so it never comes back alone
+    const notYet = { ...green!, dueAt: at(2026, 11, 23, 9) };
+    expect(projectToday(facts({ promises: [notYet] })).rows).toEqual([]);
+    const [row0] = projectToday(facts({ promises: [notYet, send!] })).rows;
+    expect(row0).toMatchObject({ id: `promise:${send!.id}`, why: { with: [{ id: green!.id }] }, also: [{ dated: false }] });
+    // a reply none of whose promises shows has no row
+    expect(projectToday(facts({ promises: [notYet, { ...notYet, id: 901, item: 1 }] })).rows).toEqual([]);
+    // Done on the lead alone (the reader's line): the other is a row of its own again
+    expect(projectToday(facts({ promises: [green!] })).rows.map((r) => r.id)).toEqual([`promise:${green!.id}`]);
+    // a duplicate of either is still that item's member, under the reply's row
+    const twin = { ...green!, id: 900, item: 5, sameAs: `promise:${green!.id}` };
+    const [row] = projectToday(facts({ promises: [green!, send!, twin] })).rows;
+    expect(row!.why.with).toEqual([{ source: "promise", id: green!.id, revision: 0 }]);
   });
 });
 

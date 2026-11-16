@@ -85,6 +85,14 @@ describe("the reader's one line (plan 210, iteration 3, Codex revision 10)", () 
     expect(keys(read({ target: [{ source: "dated", id: 99 }] }))).toEqual(["dated:2", "dated:1"]);
     expect(read({ dated: [], followups: [] }).top).toBeNull();
   });
+
+  it("plan 210 (iteration 4): a reply's row targets its lead's item only, so its other promises stay lines of their own, each acted on alone", () => {
+    // one reply to Jess: the script Thursday, and an undated promise the row says as its Also
+    const deck = promise({ id: 11, item: 1, text: "send Jess the deck notes", dated: false, dueAt: at(27) });
+    const r = read({ dated: [], followups: [script, deck], target: [{ source: "promise", id: 9 }] });
+    expect(keys(r)).toEqual(["promise:9", "promise:11"]);
+    expect(r.targeted).toBe(true);
+  });
 });
 
 describe("the summary's To do, less what the line says (Codex revision 10)", () => {
