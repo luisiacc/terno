@@ -297,19 +297,19 @@ describe("a part of the day (plan 210, iteration 5, revision 4)", () => {
     const answering = { ...friMorning, needed: sat };
     expect(promiseDay(answering, at(2026, 11, 13, 11, 59))).toMatchObject({ dueAt: friMorning.dueAt, said: null, needed: sat, part: "morning" });
     expect(promiseDay(answering, at(2026, 11, 13, 12))).toMatchObject({ dueAt: sat, said: friMorning.dueAt, part: null });
-    expect(promiseBroken(answering, at(2026, 11, 13, 12))).toBe(true);
+    expect(promiseBroken(answering, at(2026, 11, 13, 12))).toBe("ahead");
     expect(nextTodayChange([], [answering], at(2026, 11, 13, 10))).toBe(at(2026, 11, 13, 12));
     // the request's own morning ends its live day too
     const theirs = { ...answering, neededPart: "morning" as const };
     expect(promiseDay(theirs, at(2026, 11, 13, 12))).toMatchObject({ dueAt: sat, part: "morning", neededPart: "morning" });
-    expect(promiseBroken(theirs, at(2026, 11, 14, 11, 59))).toBe(true);
-    expect(promiseBroken(theirs, at(2026, 11, 14, 12))).toBe(false);
+    expect(promiseBroken(theirs, at(2026, 11, 14, 11, 59))).toBe("today");
+    expect(promiseBroken(theirs, at(2026, 11, 14, 12))).toBeNull();
     expect(promisePlace(theirs, at(2026, 11, 14, 12))).toBe("missed");
   });
   it("a promise its person moved past its morning keeps the new day's part", () => {
     const moved = { ...friMorning, dueAt: at(2026, 11, 16, 9), brokenDueAt: friMorning.dueAt, partOfDay: "afternoon" as const };
     expect(promiseDay(moved, at(2026, 11, 16, 17, 59))).toMatchObject({ said: friMorning.dueAt, part: "afternoon", neededPart: "afternoon" });
-    expect(promiseBroken(moved, at(2026, 11, 16, 17, 59))).toBe(true);
+    expect(promiseBroken(moved, at(2026, 11, 16, 17, 59))).toBe("today");
     expect(promisePlace(moved, at(2026, 11, 16, 18))).toBe("missed");
   });
   it("a promise for a part of the day: its start, or an hour before it ends once begun, never past it", () => {
