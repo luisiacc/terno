@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { aiFeaturesAvailable, dayTier, inDayOrder, nextPrepareAt, prepareTimeToday, sortInDay, todayKey, type TodayWhy } from "./today";
+import { aiFeaturesAvailable, dayOrderKey, dayTier, nextPrepareAt, prepareTimeToday, sortInDay, sortToday, todayKey, todayOrderKey, type TodayWhy } from "./today";
 
 const settings = (provider: string, over = {}) => ({ ai: { provider, model: "m", needsKey: false, hasKey: false, keyConfirmed: false, keyUnreadable: false, keys: {}, ...over } }) as never;
 
@@ -59,7 +59,9 @@ describe("one order inside a day (plan 210, iteration 1)", () => {
   const dated = (kind: NonNullable<TodayWhy["item"]>["kind"], dueAt: number, timed = false): TodayWhy => ({ kind: "dated", dueAt, item: { id: dueAt, revision: 0, kind, dueDay: "2026-11-18", timed, dated: true } });
   const named = new Map<TodayWhy, string>();
   const as = (name: string, why: TodayWhy) => (named.set(why, name), why);
-  const sorted = (rows: TodayWhy[], clock = false) => [...rows].sort((a, b) => inDayOrder(a, b, clock)).map((w) => named.get(w));
+  const first = new Set<TodayWhy>();
+  const today = (rows: TodayWhy[]) => sortToday(rows, (w) => w, (w) => first.has(w)).map((w) => named.get(w));
+  const ahead = (rows: TodayWhy[]) => sortInDay(rows, (w) => w, () => "2026-11-18").map((w) => named.get(w));
 
   it("tasks, your promises, people, your reminders, then plans and deliveries", () => {
     expect([dated("pay", 0), dated("respond", 0), dated("alert", 0)].map(dayTier)).toEqual([0, 0, 0]);
@@ -69,7 +71,7 @@ describe("one order inside a day (plan 210, iteration 1)", () => {
     expect([dayTier(dated("event", 0)), dayTier(dated("delivery", 0))]).toEqual([4, 4]);
   });
 
-  it("Today: the whole day's first by tier, then what has a time by its time whatever its tier (iteration 4), people last as they came; a day ahead's tier first, timed by their time of day", () => {
+  it("Today (iteration 5, revision 7): what you do before what happens to you, each by its time and then the untimed; people last as they came. A day ahead: tier first, timed by their time of day", () => {
     const rows = [
       as("lunch 12:30", dated("event", at(18, 12, 30), true)),
       as("parcel", dated("delivery", at(18, 0))),
@@ -81,17 +83,30 @@ describe("one order inside a day (plan 210, iteration 1)", () => {
       as("reminder", { kind: "reminder", dueAt: at(18, 9) }),
       as("breakfast 9:00", dated("event", at(18, 9), true)),
     ];
-    expect(sorted(rows)).toEqual(["rent", "promise", "parcel", "reminder", "breakfast 9:00", "lunch 12:30", "payroll 13:00", "ask", "waiting"]);
+    expect(today(rows)).toEqual(["reminder", "payroll 13:00", "rent", "promise", "breakfast 9:00", "lunch 12:30", "parcel", "ask", "waiting"]);
     // a day ahead: by tier, the timed first in each
-    expect(sorted(rows, true)).toEqual(["payroll 13:00", "rent", "promise", "ask", "waiting", "reminder", "breakfast 9:00", "lunch 12:30", "parcel"]);
-    // Today: a plan still on from last night first; a day ahead: by the time of day (two put off to it from other days)
+    expect(ahead(rows)).toEqual(["payroll 13:00", "rent", "promise", "ask", "waiting", "reminder", "breakfast 9:00", "lunch 12:30", "parcel"]);
+    // Today: a plan still on from last night first (by its instant); a day ahead: by the time of day (two put off to it)
     const lastNight = as("last night 23:00", dated("event", at(17, 23), true));
     const morning = as("morning 8:00", dated("event", at(18, 8), true));
-    expect(sorted([morning, lastNight])).toEqual(["last night 23:00", "morning 8:00"]);
-    expect(sorted([lastNight, morning], true)).toEqual(["morning 8:00", "last night 23:00"]);
+    expect(today([morning, lastNight])).toEqual(["last night 23:00", "morning 8:00"]);
+    expect(ahead([lastNight, morning])).toEqual(["morning 8:00", "last night 23:00"]);
   });
 
-  it("a whole list in the same order, each key read once: by its day first when given, ties as they came", () => {
+  it("Today (revision 7's case): a 4:00 PM promise and an untimed payment before a 9:00 AM delivery; a broken promise needed today before all", () => {
+    const delivery = as("delivery 9:00", dated("delivery", at(18, 9), true));
+    const promise = as("promise 16:00", { kind: "promise", dueAt: at(18, 16), promise: { id: 1, revision: 0, timed: true } });
+    const payment = as("payment", dated("pay", at(18, 9)));
+    expect(today([delivery, promise, payment])).toEqual(["promise 16:00", "payment", "delivery 9:00"]);
+    const broken = as("broken", { kind: "promise", dueAt: at(18, 9), promise: { id: 2, revision: 0 } });
+    first.add(broken);
+    expect(today([delivery, promise, payment, broken])).toEqual(["broken", "promise 16:00", "payment", "delivery 9:00"]);
+    // one key, so the order is one order: every pair agrees with the whole list's
+    const keys = [delivery, promise, payment, broken].map((w) => todayOrderKey(w, first.has(w)));
+    expect(keys.map((k) => k.length)).toEqual([5, 5, 5, 5]);
+  });
+
+  it("a whole list ahead in the same order, each key read once: by its day first, ties as they came", () => {
     const rows = [
       { day: "2026-11-20", why: as("concert", dated("event", at(20, 19), true)) },
       { day: "2026-11-19", why: as("parcel", dated("delivery", at(19, 0))) },
@@ -100,9 +115,7 @@ describe("one order inside a day (plan 210, iteration 1)", () => {
       { day: "2026-11-19", why: as("ana", { kind: "waiting" }) },
       { day: "2026-11-19", why: as("tax", dated("pay", at(19, 0))) },
     ];
-    expect(sortInDay(rows, (r) => r.why, true, (r) => r.day).map((r) => named.get(r.why))).toEqual(["tax", "ned", "ana", "parcel", "rent", "concert"]);
-    // without days, the comparator's order
-    const whys = rows.map((r) => r.why);
-    expect(sortInDay(whys, (w) => w, false).map((w) => named.get(w))).toEqual(sorted(whys));
+    expect(sortInDay(rows, (r) => r.why, (r) => r.day).map((r) => named.get(r.why))).toEqual(["tax", "ned", "ana", "parcel", "rent", "concert"]);
+    expect(dayOrderKey(rows[0]!.why)).toEqual([4, 0, 19 * 60, at(20, 19)]);
   });
 });

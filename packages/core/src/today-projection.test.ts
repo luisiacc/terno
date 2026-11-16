@@ -67,7 +67,8 @@ describe("a row per item", () => {
   it("your reminder is a row only on a conversation with none of its own", () => {
     const bill = dated("pay", "2026-11-18", { threadId: 2 });
     const { rows } = projectToday(facts({ dated: [bill], reminders: [{ threadId: 2, dueAt: NOW }, { threadId: 8, dueAt: NOW + 1 }] }));
-    expect(rows.map((r) => r.id)).toEqual([`dated:${bill.id}`, "reminder:8"]);
+    // (iteration 5, revision 7: a to-do with a time, by its time, before the untimed)
+    expect(rows.map((r) => r.id)).toEqual(["reminder:8", `dated:${bill.id}`]);
   });
 });
 
@@ -436,8 +437,8 @@ describe("Waiting on you, a part of Today (plan 210, iteration 3, revision 8)", 
     const waiting = [{ id: 6, lastDate: at(2026, 11, 18, 8), hasSent: true }, { id: 7, lastDate: at(2026, 11, 16, 8), hasSent: false }];
     const { rows } = projectToday(facts({ dated: [later, ask, bill, sooner, plan], waiting, reminders: [{ threadId: 8, dueAt: NOW }] }));
     expect(rows.map((r) => [r.id, r.part ?? null])).toEqual([
-      [`dated:${bill.id}`, null],
       ["reminder:8", null],
+      [`dated:${bill.id}`, null],
       [`dated:${plan.id}`, null],
       [`dated:${sooner.id}`, "waiting"],
       ["waiting:6", "waiting"],
@@ -519,13 +520,13 @@ describe("Waiting on you, a part of Today (plan 210, iteration 3, revision 8)", 
     expect(projectToday(trash, { count: true }).counts).toEqual({ missed: 0, today: 1, waiting: 0, overdue: 0 });
   });
 
-  it("iteration 4: Today's own rows with a time go by it whatever they are (Priya's payroll 1:00 PM, the 1:1 at 2:00 PM, Marcus at 4:00 PM)", () => {
+  it("iteration 5 (revision 7): Today's to-dos first, by their time then the untimed (Priya's payroll 1:00 PM, Marcus at 4:00 PM, rent), then what happens (the 1:1 at 2:00 PM)", () => {
     const payroll = dated("pay", "2026-11-18", { threadId: 1 }, "13:00");
     const oneOnOne = dated("event", "2026-11-18", { threadId: 2 }, "14:00");
     const marcus = promise(at(2026, 11, 18, 16), { threadId: 3, timed: true, text: "call Marcus at 4:00 PM" });
     const rent = dated("pay", "2026-11-18", { threadId: 4 });
     const { rows } = projectToday(facts({ dated: [oneOnOne, payroll, rent], promises: [marcus], zone: Intl.DateTimeFormat().resolvedOptions().timeZone }));
-    expect(rows.map((r) => r.id)).toEqual([`dated:${rent.id}`, `dated:${payroll.id}`, `dated:${oneOnOne.id}`, `promise:${marcus.id}`]);
+    expect(rows.map((r) => r.id)).toEqual([`dated:${payroll.id}`, `promise:${marcus.id}`, `dated:${rent.id}`, `dated:${oneOnOne.id}`]);
   });
 
   it("a row's id stays as its tier changes: shown early, then due today", () => {
