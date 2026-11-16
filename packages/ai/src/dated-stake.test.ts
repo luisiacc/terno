@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cutAtClause } from "./dated";
+import { cutAtClause, renewalBefore } from "./dated";
 import { heldStake, orphanedConsequence } from "./dated-stake";
 
 // fictionalized from round 13's panel mail (Margaret's tax installment and policy, Priya's receipts, Sam's lease and Tunewave)
@@ -57,5 +57,18 @@ describe("plan 210 (iteration 5, revision 9): the stake is a condition, held to 
     expect(orphanedConsequence("Pay the bill", ", or the parcel leaves the plan")).toBe(-1);
     // inside a bracket: whole or not at all
     expect(cutAtClause("Pay $1,486.00 for the Lakeshore Mutual homeowners policy renewal premium (policy ends Dec 1, if unpaid by Nov 25)", 100)).not.toMatch(/\(policy ends Dec 1\)/u);
+  });
+});
+
+describe("plan 210 (iteration 5): a renewal's own \"before\" a day", () => {
+  it("its words saying before its day sort it under the day before, keeping the day asked before; the mail's words never do", () => {
+    expect(renewalBefore("2026-11-19", null, "Cambiar o cancelar Creatix Cloud antes del 19 nov")).toEqual({ due: "2026-11-18", before: "2026-11-19" });
+    expect(renewalBefore("2026-11-14", null, "Cancel Tipotec Pro before Saturday or pay USD 29.00/month")).toEqual({ due: "2026-11-13", before: "2026-11-14" });
+    // already the day before
+    expect(renewalBefore("2026-11-18", null, "Cancel Creatix before Nov 19")).toEqual({ due: "2026-11-18", before: "2026-11-19" });
+    // no "before" a day, a time, a lower bound: as it was
+    expect(renewalBefore("2026-11-19", null, "Renew bakehouse.dev before it expires (auto-renew is off)")).toEqual({ due: "2026-11-19", before: null });
+    expect(renewalBefore("2026-11-19", "17:00", "Cancel before the 19th")).toEqual({ due: "2026-11-19", before: null });
+    expect(renewalBefore("2026-11-19", null, "Don't cancel before the 19th")).toEqual({ due: "2026-11-19", before: null });
   });
 });
