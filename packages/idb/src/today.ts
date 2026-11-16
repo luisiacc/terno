@@ -32,7 +32,10 @@ export function needsWalk(c: Ctx, now: number): NeedsWalk {
     rows.push({ id, lastDate: t.last_date, from: String(t.last_from_email), subject: String(t.subject), hasSent: t.has_sent === 1 });
     if (rows.length >= NEEDS_WALK) break;
   }
-  const needs = needsYou(rows, (key) => correspondents.get(key) as { written: number; own: number } | undefined);
+  // plan 210 (iteration 4): as SQL's, a muted sender's conversations aren't waiting on you, nothing recorded for them; left
+  // out here, before any acknowledgment's body is read ahead for them (Codex's code review)
+  const muted = mutedSenders(c);
+  const needs = needsYou(rows, (key) => correspondents.get(key) as { written: number; own: number } | undefined).filter((r) => !(muted.size && muted.has(addressKey(r.from))));
   const acks = new Map<number, number>();
   for (const r of needs) {
     if (!looksLikeAcknowledgment(threads.get(r.id)?.snippet as string | null | undefined)) continue;
@@ -44,9 +47,7 @@ export function needsWalk(c: Ctx, now: number): NeedsWalk {
 
 /** What a walk lets in that's still waiting on the reader, its acknowledgments' bodies read ahead: never wider than `needsYou`. */
 function needsRows(c: Ctx, walk: NeedsWalk): WaitingRow[] {
-  // plan 210 (iteration 4): as SQL's, a muted sender's conversations aren't waiting on you, and nothing is recorded for them
-  const muted = mutedSenders(c);
-  return walk.rows.filter((r) => !(muted.size && muted.has(addressKey(r.from))) && stillWaiting(c, r.id, walk.acks.get(r.id), walk.now));
+  return walk.rows.filter((r) => stillWaiting(c, r.id, walk.acks.get(r.id), walk.now));
 }
 
 const shown = (c: Ctx, threadId: number): R[] => T(c, "messages").by("fk_thread_id", threadId).filter((m) => !m.is_draft && !m.is_spam && !m.is_trash);

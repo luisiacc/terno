@@ -42,3 +42,23 @@ it("an acknowledgment's body, not in memory after a reopen, is read ahead and de
   expect(await store.today.needsCount(NOW)).toBe(1);
   expect(await store.today.waitingAmong([thanks, asks], NOW)).toEqual([asks]);
 });
+
+it("a muted sender's acknowledgment body is never read ahead: their conversation isn't waiting on you (Codex's code review of plan 210's iteration 4)", async () => {
+  const name = crypto.randomUUID();
+  let store = await open(name);
+  const [accountId] = await withAccounts(store, 1);
+  const email = "ana@people.test";
+  await ingest(store, [msg({ accountId: accountId!, date: NOW - 9500, providerMsgId: "ana-out", providerThreadId: "ana", from: me, to: [{ name: "Ana", email }], isSent: true, isRead: true, listId: null, subject: "About Ana" })], NOW);
+  await ingest(store, [msg({ accountId: accountId!, date: NOW - 9000, providerMsgId: "ana-in", providerThreadId: "ana", from: { name: "Ana", email }, to: [me], isRead: false, listId: null, subject: "Re: About Ana", inReplyTo: "ana-out", snippet: "Thanks, see you", bodyText: "Thanks, see you" })], NOW);
+  const thread = await threadOf(store, "ana-in");
+  expect(await store.dated.mutes.add({ on: "sender", key: email, name: "Ana", at: NOW })).toBe("added");
+  await store.close();
+
+  store = await open(name);
+  const c = (store as unknown as { c: Ctx }).c;
+  await store.today.digestLive([]);
+  const last = c.db.table("messages").by("fk_thread_id", thread).find((m) => !m.is_sent)!;
+  expect(await store.today.waitingAmong([thread], NOW)).toEqual([]);
+  expect(await store.today.needsCount(NOW)).toBe(0);
+  expect(c.db.table("message_bodies").get(last.id as number)).toBeUndefined();
+});
