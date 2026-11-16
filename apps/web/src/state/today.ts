@@ -177,6 +177,15 @@ export function useFeedTarget(threadId: number): readonly ItemRef[] {
 }
 const NO_TARGET: readonly ItemRef[] = [];
 
+/**
+ * The feed's rows standing for an item: its own, or a merged row it's a member of (plan 210, iteration 2). What leaves with
+ * the item's act, and (iteration 3) the row the reader's line opens when the item is chosen there.
+ */
+export function feedRowsOfItem(ref: ItemRef): FeedRow[] {
+  const own = (r: FeedRow) => (ref.source === "dated" ? r.task?.kind === "dated" && r.task.item.id === ref.id : r.task?.kind === "promise" && r.task.id === ref.id);
+  return useToday.getState().rows.filter((r) => own(r) || r.entry?.why.members?.some((m) => m.source === ref.source && m.id === ref.id));
+}
+
 /** Plan 204: Coming up opens under the rest, or closes; the list is read again with it (held rows and the selection kept). */
 export function setComingUpOpen(open: boolean): void {
   try {

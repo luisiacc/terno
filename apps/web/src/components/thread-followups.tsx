@@ -11,8 +11,7 @@ import { followupsOffered, modelName } from "~/lib/ai";
 import { whenDate } from "~/lib/when";
 import { useCanDraft } from "~/lib/ai-draft-state";
 import { laterPresets } from "~/lib/dated";
-import { followupLine, followupWhen } from "~/lib/followups";
-import { actOnThreadPromise } from "~/lib/today-task";
+import { actOnFollowup, followupLine, followupWhen } from "~/lib/followups";
 import { useDrafts } from "~/lib/drafts";
 import { presetLabel, presetWhen } from "~/lib/reminders";
 import { revealSummaryMessage } from "~/lib/summaries";
@@ -20,36 +19,30 @@ import { nudge, nudgeDraft, nudgeState, openNudge } from "~/lib/followup-nudge";
 import { useAiDraft } from "~/lib/ai-draft";
 import { offerTip, usePendingTip } from "~/lib/tips";
 import { useApp } from "~/state/app";
-import { useFeedTarget } from "~/state/today";
-import { historyWhen } from "~/lib/today-sentence";
-import { client } from "~/rpc/connection";
 import { useFollowups } from "~/state/followups";
 import { AI_ACTIONS, AI_CARD, AI_GLYPH, AI_HEADER, AI_PAD, AI_TITLE, AiProvenance, messageSource } from "./ai-card";
 import FollowupsTip from "./followups-tip";
 import { WhenForm } from "./when-fields";
 
-/** The dated line's quiet buttons (thread-dated's Later and Remove), for a promise's. */
-const QUIET = { variant: "ghost", className: "text-muted-foreground hover:text-foreground" } as const;
-
 /**
  * Plan 161: the line in the AI suggestions' anatomy. Pass 3: on their card too, as Reply ready is (plan 148 left a card out
  * of its scope; raters read the bare line as mail metadata): the fact is the title ("Waiting for Arjun’s reply", plan 162), when it
- * comes back is under it, then the buttons, the source, and who found it at the row's end.
+ * comes back is under it, then the buttons, the source, and who found it at the row's end. A wait's only: a promise of yours
+ * is on the reader's line (plan 210, iteration 3).
  */
-function Line({ row, messages, target = false }: { row: FollowupRow; messages: readonly MessageDetail[]; target?: boolean }) {
+function Line({ row, messages }: { row: FollowupRow; messages: readonly MessageDetail[] }) {
   const line = followupLine(row);
-  // the fourth panel round (revision 10): a promise of yours says its day ("Due Tuesday"), or none; a nudge, when it comes back
+  // when it comes back
   const when = followupWhen(row);
   // plan 147: a follow-up stays readable when its key goes; a nudge is a draft, and can't be written
   const canNudge = useCanDraft();
   const now = new Date();
-  const awaiting = row.kind === "awaiting";
-  // plan 204 (the fifth panel round): a promise's Later is its own, so any moment ahead, as a nudge's
+  // any moment ahead
   const later = laterPresets({ before: null, limit: null }, now.getTime());
   const mine = useApp((s) => s.accounts).map((a) => a.email);
   const source = messageSource(messages, row.messageId, mine);
   // the nudge Write a follow-up made, still a draft: the line offers it rather than another
-  const drafted = useDrafts((s) => (awaiting ? nudgeDraft(row.threadId, s.drafts) !== null : false));
+  const drafted = useDrafts((s) => nudgeDraft(row.threadId, s.drafts) !== null);
   // plan 162 (after ai162-r03): "Open your follow-up" only once it has words; while the composer asks or writes, the
   // card says so and takes you to that draft (it offered to open it over an empty body)
   const nudging = useAiDraft((s) => (drafted ? nudgeState(s.sessions[nudgeDraft(row.threadId) ?? ""]?.phase) : null));
@@ -57,7 +50,7 @@ function Line({ row, messages, target = false }: { row: FollowupRow; messages: r
   // its own moment starts where the reminder's own picker does (plan 87): the next sensible moment, never one already past
   const [picking, setPicking] = useState(false);
   return (
-    <div data-testid="followup-line" data-kind={row.kind} data-state={row.state} data-target={target || undefined} className={cn(AI_CARD, AI_PAD)}>
+    <div data-testid="followup-line" data-kind={row.kind} data-state={row.state} className={cn(AI_CARD, AI_PAD)}>
       {/* the news first, at the text's size: it's what the card is */}
       <p data-testid="followup-header" className={AI_HEADER}>
         <Clock aria-hidden className={cn(AI_GLYPH, "text-sm")} />
@@ -65,24 +58,18 @@ function Line({ row, messages, target = false }: { row: FollowupRow; messages: r
       </p>
       {when && <p data-testid="followup-due" className="text-sm text-muted-foreground tabular">{when}</p>}
       <div className={cn(AI_ACTIONS, "mt-3")} data-testid="followup-actions">
-        {awaiting ? (
-          drafted && nudging === "writing" ? (
-            // plan 162 (after ai162-r05): its words without a spinner: the composer's "Writing…" is the one working mark
-            <Button size="sm" variant="outline" className="text-foreground" data-testid="followup-nudging" aria-disabled onClick={() => void openNudge(row.threadId)}>{t("followup.nudging")}</Button>
-          ) : drafted && nudging === "waiting" ? (
-            <Button size="sm" data-testid="followup-nudge" onClick={() => void openNudge(row.threadId)}>{t("followup.nudge")}</Button>
-          ) : drafted ? (
-            <Button size="sm" data-testid="followup-open-nudge" onClick={() => void openNudge(row.threadId)}>{t("followup.openNudge")}</Button>
-          ) : (
-            canNudge && <Button size="sm" data-testid="followup-nudge" onClick={() => void nudge(row)}>{t("followup.nudge")}</Button>
-          )
+        {drafted && nudging === "writing" ? (
+          // plan 162 (after ai162-r05): its words without a spinner: the composer's "Writing…" is the one working mark
+          <Button size="sm" variant="outline" className="text-foreground" data-testid="followup-nudging" aria-disabled onClick={() => void openNudge(row.threadId)}>{t("followup.nudging")}</Button>
+        ) : drafted && nudging === "waiting" ? (
+          <Button size="sm" data-testid="followup-nudge" onClick={() => void openNudge(row.threadId)}>{t("followup.nudge")}</Button>
+        ) : drafted ? (
+          <Button size="sm" data-testid="followup-open-nudge" onClick={() => void openNudge(row.threadId)}>{t("followup.openNudge")}</Button>
         ) : (
-          // the fourth panel round (revision 10): a promise is a task, so its buttons are the dated line's, in its
-          // weights: Done outline, Later and Remove ghost
-          <Button variant="outline" size="sm" className="text-foreground" data-testid="followup-done" onClick={() => void actOnThreadPromise(row, "done")}>{t("followup.done")}</Button>
+          canNudge && <Button size="sm" data-testid="followup-nudge" onClick={() => void nudge(row)}>{t("followup.nudge")}</Button>
         )}
         <DropdownMenu>
-          <DropdownMenuTrigger render={<Button ref={laterRef} size="sm" data-testid="followup-later" {...(awaiting ? { variant: "outline", className: "text-foreground" } : QUIET)} />}>
+          <DropdownMenuTrigger render={<Button ref={laterRef} size="sm" variant="outline" className="text-foreground" data-testid="followup-later" />}>
             {t("followup.later")}
             <ChevronDown aria-hidden />
           </DropdownMenuTrigger>
@@ -90,7 +77,7 @@ function Line({ row, messages, target = false }: { row: FollowupRow; messages: r
               shortcut row, the moment each resolves to in the shortcut's place, and nothing in it shrinks */}
           <DropdownMenuContent align="start" className="w-max" data-testid="followup-later-menu">
             {later.map((p) => (
-              <DropdownMenuItem key={p.id} data-testid={`followup-later-${p.id}`} onClick={() => void actOnThreadPromise(row, "later", p.at)}>
+              <DropdownMenuItem key={p.id} data-testid={`followup-later-${p.id}`} onClick={() => void actOnFollowup(row, "later", p.at)}>
                 <span className="whitespace-nowrap">{presetLabel(p.id)}</span>
                 <DropdownMenuShortcut data-testid="followup-later-when" className="tracking-normal whitespace-nowrap tabular-nums">{presetWhen(p, now.getTime())}</DropdownMenuShortcut>
               </DropdownMenuItem>
@@ -112,14 +99,14 @@ function Line({ row, messages, target = false }: { row: FollowupRow; messages: r
               onSet={(at) => {
                 setPicking(false);
                 laterRef.current?.focus({ preventScroll: true });
-                void actOnThreadPromise(row, "later", at);
+                void actOnFollowup(row, "later", at);
               }}
             />
           </PopoverContent>
         </Popover>
         {/* a nudge's dismissal keeps its words and weight: it isn't a task */}
-        <Button size="sm" data-testid="followup-dismiss" {...(awaiting ? { variant: "outline", className: "text-foreground" } : QUIET)} onClick={() => void actOnThreadPromise(row, "dismiss")}>
-          {t(awaiting ? "followup.dismiss" : "followup.remove")}
+        <Button size="sm" variant="outline" className="text-foreground" data-testid="followup-dismiss" onClick={() => void actOnFollowup(row, "dismiss")}>
+          {t("followup.dismiss")}
         </Button>
         {/* where it came from, named ("Your message, Oct 22"), its words (the quote) on hover; nothing when it's the one
             message on screen */}
@@ -148,64 +135,29 @@ function Line({ row, messages, target = false }: { row: FollowupRow; messages: r
 }
 
 /**
- * Plan 210 (iteration 2, Codex code review): a history line's promise, closed: its words and what happened, marked as the
- * feed's open row's, nothing to act on (it's done).
+ * Plan 142 §7: a quiet card for each wait in this conversation, above its summary. Plan 210 (iteration 3, Codex revision
+ * 10): a promise of yours is one of the conversation's items, on the reader's line with its dated ones (`ThreadItems`); a
+ * nudge (waiting on their reply) isn't a task, and keeps its card here.
  */
-function ClosedPromise({ row }: { row: FollowupRow }) {
-  const outcome = row.state === "done" ? "done" : "dismissed";
-  return (
-    <div data-testid="followup-line" data-kind={row.kind} data-state={row.state} data-target className={cn(AI_CARD, AI_PAD)}>
-      <p data-testid="followup-header" className={AI_HEADER}>
-        <Clock aria-hidden className={cn(AI_GLYPH, "text-sm")} />
-        <span data-testid="followup-text" className={cn(AI_TITLE, "text-sm text-muted-foreground")}>{t("today.why.promise", { text: row.text })}</span>
-      </p>
-      <p data-testid="followup-due" className="text-sm text-muted-foreground tabular">{historyWhen({ outcome, kind: "promise", key: { at: row.closedAt ?? row.createdAt, src: 1, id: row.id } })}</p>
-    </div>
-  );
-}
-
-/** Plan 142 §7: a quiet line for each thing this conversation holds, in the conversation's text column, above its summary. */
 export default function ThreadFollowups({ detail }: { detail: ThreadDetail }) {
   const enabled = useApp(followupsOffered);
-  // plan 210 (iteration 2): the promise the feed's open row is, marked; a closed one (a history line) read on its own
-  const target = useFeedTarget(detail.thread.id);
   const rows = useFollowups((s) => s.byThread.get(detail.thread.id));
-  const closedId = target.find((r) => r.source === "promise" && !rows?.some((x) => x.id === r.id))?.id;
-  const [closed, setClosed] = useState<FollowupRow | null>(null);
-  useEffect(() => {
-    setClosed(null);
-    if (closedId === undefined || !enabled) return;
-    let live = true;
-    void client.call("followups.get", { id: closedId }).then((r) => live && setClosed(r.row && r.row.threadId === detail.thread.id && r.row.state !== "open" && r.row.state !== "due" ? r.row : null), () => {});
-    return () => {
-      live = false;
-    };
-  }, [closedId, enabled, detail.thread.id]);
-  const hidden = !enabled || detail.thread.inTrash || detail.thread.inSpam;
-  const shown = !hidden ? rows : undefined;
+  const shown = enabled && !detail.thread.inTrash && !detail.thread.inSpam ? rows : undefined;
+  const waits = shown?.filter((r) => r.kind === "awaiting") ?? [];
   const tipFor = usePendingTip("followups-first");
   const fresh = shown?.some((r) => !r.fromScan);
   useEffect(() => {
     if (fresh) offerTip("followups-first", detail.thread.id);
   }, [fresh, detail.thread.id]);
-  if (closed && !hidden && !shown?.length) {
-    return (
-      <section className="mb-4 space-y-3" aria-label={t("followups.title")} data-testid="thread-followups">
-        <ClosedPromise row={closed} />
-      </section>
-    );
-  }
-  if (!shown?.length) return null;
+  const tip = tipFor === detail.thread.id ? shown?.[0] : undefined;
+  if (!waits.length && !tip) return null;
   return (
     // no hairline of its own: the message's divider under it would make two
     <section className="mb-4 space-y-3" aria-label={t("followups.title")} data-testid="thread-followups">
-      {shown.map((row) => (
-        <Line key={row.id} row={row} messages={detail.messages} target={target.some((r) => r.source === "promise" && r.id === row.id)} />
+      {waits.map((row) => (
+        <Line key={row.id} row={row} messages={detail.messages} />
       ))}
-      {closed && <ClosedPromise row={closed} />}
-      {tipFor === detail.thread.id && (
-        <FollowupsTip kind={shown[0]!.kind} name={shown[0]!.personName?.split(/\s+/)[0] || null} />
-      )}
+      {tip && <FollowupsTip kind={tip.kind} name={tip.personName?.split(/\s+/)[0] || null} />}
     </section>
   );
 }

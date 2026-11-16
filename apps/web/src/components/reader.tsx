@@ -70,7 +70,8 @@ import { RemindPicker } from "./remind-picker";
 import DigestPage from "./digest-page";
 import ReplyReady, { replyAllTo } from "./reply-ready";
 import ThreadFollowups from "./thread-followups";
-import ThreadDated from "./thread-dated";
+import ThreadItems, { useReaderItems } from "./thread-items";
+import { readerText } from "~/lib/reader-items";
 import ThreadSummary from "./thread-summary";
 
 
@@ -1090,14 +1091,17 @@ export function Reader() {
 function Thread({ detail, account, cats, summaryShown }: { detail: ThreadDetail; account: Account | undefined; cats: Category[]; summaryShown: boolean }) {
   const fold = useFold(detail.messages);
   const cardHeader = useDesign().variants.readerHeader === "sender-card";
+  // plan 210 (iteration 3): the conversation's items resolved once, for their line and for what the summary leaves out
+  const items = useReaderItems(detail);
+  const shownItems = items.ready && items.top?.open ? [items.top, ...items.others] : items.others;
   return (
     <MessageMenu threadId={detail.thread.id}>
       <div data-conversation-menu>
         {/* inside the menu: Lumen's card can stand for the message (plan 59) */}
         <ReaderHeader detail={detail} account={account} cats={cats} fold={fold} />
-        <ThreadDated detail={detail} />
+        <ThreadItems detail={detail} items={items} />
         <ThreadFollowups detail={detail} />
-        {summaryShown && <ThreadSummary detail={detail} />}
+        {summaryShown && <ThreadSummary detail={detail} said={shownItems.map(readerText)} />}
         <ThreadAttachments messages={detail.messages} />
         <Conversation threadId={detail.thread.id} messages={detail.messages} fold={fold} icons={iconsFor(detail.thread)} people={detail.thread.person === true} headless={cardHeader} />
         {/* plan 182: what was just sent from here, where its copy will be, through its Undo window */}

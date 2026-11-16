@@ -6,7 +6,7 @@ import { actOnFollowup } from "~/lib/followups";
 import { closePage, currentPage, listLayout } from "~/lib/page";
 import { getApp, setApp, setAppOpened } from "~/state/app";
 import { listKey, noteEdit, reloadList } from "~/state/list";
-import { feedRow, rowOfThread, useFeedRow, useToday, type FeedRow } from "~/state/today";
+import { feedRow, feedRowsOfItem, rowOfThread, useFeedRow, useToday, type FeedRow } from "~/state/today";
 
 type TaskAction = "done" | "dismiss" | "later";
 
@@ -67,14 +67,8 @@ export function actOnTodayRow(rowId: FeedRowId, task: TodayTask, action: TaskAct
   return actOnTask(task, action, at, leaveFeedRows([rowId]));
 }
 
-/** The feed's rows standing for this item: its own, or a merged row it's a member of. */
-function rowsOfItem(source: "dated" | "promise", id: number): FeedRowId[] {
-  const own = (r: FeedRow) => (source === "dated" ? r.task?.kind === "dated" && r.task.item.id === id : r.task?.kind === "promise" && r.task.id === id);
-  return useToday
-    .getState()
-    .rows.filter((r) => own(r) || r.entry?.why.members?.some((m) => m.source === source && m.id === id))
-    .map((r) => r.id);
-}
+/** The feed's rows standing for this item, by their ids. */
+const rowsOfItem = (source: "dated" | "promise", id: number): FeedRowId[] => feedRowsOfItem({ source, id }).map((r) => r.id);
 
 /**
  * The conversation's line acts on its own item (Done, Remove, and Later to a moment); the feed's rows standing for it leave
