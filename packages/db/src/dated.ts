@@ -1,9 +1,21 @@
-import { addressKey, ANSWERED_KINDS, DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, senderIsPerson, THREAD_SCOPED_KINDS, waitingCutoff, type DatedRow } from "@terno/core";
+import { addressKey, ANSWERED_KINDS, DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, senderIsPerson, THREAD_SCOPED_KINDS, waitingCutoff, type DatedRow, type DatedWall } from "@terno/core";
 import { DATED_MARK_MS, DATED_SCAN_MARK_MS, datedTab, NEW_MAIL_MS, readerIn, readNothingAsked, recipientList, type ClosedAt, type DatedFinish, type DatedFinishOutcome, type DatedMark, type DatedSnapshot, type DatedSource } from "@terno/store";
 import { OWN_SENDER_SQL, RECEIVED_SQL } from "./ai-summaries";
 import { ownAddresses } from "./facts";
 import { remarkReplies } from "./followups";
 import type { Db } from "./sqlite";
+
+/** Plan 210 (iteration 4, revision 10): the mail's own clock, kept as JSON (v67); one that doesn't read is none. */
+const wallOf = (json: string | null): DatedWall | null => {
+  if (!json) return null;
+  try {
+    const w = JSON.parse(json) as Partial<DatedWall>;
+    return typeof w.day === "string" && typeof w.time === "string" && typeof w.zone === "string" ? { day: w.day, time: w.time, zone: w.zone, place: typeof w.place === "string" ? w.place : null } : null;
+  } catch {
+    return null;
+  }
+};
+const wallJson = (w: DatedWall | null | undefined): string | null => (w ? JSON.stringify({ day: w.day, time: w.time, zone: w.zone, place: w.place }) : null);
 
 /** Plan 204 on SQLite (v56, v57 admits `ask`): see packages/store/src/dated.ts. */
 
@@ -14,11 +26,13 @@ interface Raw {
   id: number; thread_id: number; message_id: number; item: number; kind: DatedRow["kind"]; text: string; quote: string; sender_key: string; due_day: string; due_at: number; timed: number; dated: number; act_at: number;
   deferred_until: number | null; arrived_at: number; state: DatedRow["state"]; closed_reason: string | null; closed_at: number | null; from_scan: number; revision: number; model: string | null; provider: string | null; created_at: number;
   early: number; same_as: string | null; detail_of: number | null; lapses: number;
+  before_day: string | null; confirms: number | null; wall: string | null;
 }
 const toRow = (r: Raw): DatedRow => ({
   id: r.id, threadId: r.thread_id, messageId: r.message_id, item: r.item, kind: r.kind, text: r.text, quote: r.quote, senderKey: r.sender_key, dueDay: r.due_day, dueAt: r.due_at, timed: r.timed === 1, dated: r.dated === 1, actAt: r.act_at,
   deferredUntil: r.deferred_until, arrivedAt: r.arrived_at, state: r.state, closedReason: r.closed_reason, closedAt: r.closed_at, fromScan: r.from_scan === 1, revision: r.revision, model: r.model, provider: r.provider, createdAt: r.created_at,
   early: r.early === 1, sameAs: r.same_as ?? null, detailOf: r.detail_of ?? null, lapses: r.lapses === 1,
+  before: r.before_day ?? null, confirms: r.confirms ?? null, wall: wallOf(r.wall),
 });
 
 /** Ingest's part (in its transaction): received live mail, by the new-mail rule, and since the feature went on. */
@@ -136,10 +150,16 @@ export function finishDated(db: Db, w: DatedFinish): DatedFinishOutcome {
         open--;
       }
       open += Number(db.run(
-        `INSERT OR IGNORE INTO dated_items (thread_id, message_id, item, kind, text, quote, sender_key, due_day, due_at, timed, dated, act_at, deferred_until, arrived_at, state, from_scan, revision, model, provider, prompt_version, created_at, early, lapses)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 'open', ?, 0, ?, ?, ?, ?, ?, ?)`,
-        src.threadId, w.messageId, r.item, r.kind, r.text, r.quote, src.senderKey, r.dueDay, r.dueAt, r.timed ? 1 : 0, r.dated ? 1 : 0, r.actAt, src.date, w.fromScan ? 1 : 0, w.model, w.provider, w.promptVersion, w.now, r.early ? 1 : 0, r.lapses ? 1 : 0,
+        `INSERT OR IGNORE INTO dated_items (thread_id, message_id, item, kind, text, quote, sender_key, due_day, due_at, timed, dated, act_at, deferred_until, arrived_at, state, from_scan, revision, model, provider, prompt_version, created_at, early, lapses, before_day, wall)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 'open', ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        src.threadId, w.messageId, r.item, r.kind, r.text, r.quote, src.senderKey, r.dueDay, r.dueAt, r.timed ? 1 : 0, r.dated ? 1 : 0, r.actAt, src.date, w.fromScan ? 1 : 0, w.model, w.provider, w.promptVersion, w.now, r.early ? 1 : 0, r.lapses ? 1 : 0, r.before ?? null, wallJson(r.wall),
       ).changes);
+    }
+    // plan 210 (iteration 4, revision 11): an ask that confirms an event of this message, linked to that event's row
+    for (const r of w.rows) {
+      if (r.confirmsItem === undefined) continue;
+      const event = db.get<{ id: number }>("SELECT id FROM dated_items WHERE message_id = ? AND item = ? AND kind = 'event'", w.messageId, r.confirmsItem);
+      if (event) db.run("UPDATE dated_items SET confirms = ? WHERE message_id = ? AND item = ? AND kind = 'ask' AND confirms IS NULL", event.id, w.messageId, r.item);
     }
     for (const s of w.settled) {
       db.run(
@@ -158,16 +178,18 @@ export function finishDated(db: Db, w: DatedFinish): DatedFinishOutcome {
       db.run(
         // plan 210 (iteration 2): its first broken day kept (a second move after another broken day keeps the first), and
         // whether its new moment is a stated time (absent: as it was)
-        "UPDATE followups SET due_at = ?, dated = 1, state = CASE WHEN ? > ? THEN 'open' ELSE state END, inbox_state = 'none', broken_due_at = coalesce(broken_due_at, ?), timed = coalesce(?, timed), revision = revision + 1 WHERE id = ? AND revision = ? AND thread_id = ? AND kind = 'promise' AND state IN ('open','due')",
-        m.dueAt, m.dueAt, w.now, m.brokenDueAt ?? null, m.timed === undefined ? null : m.timed ? 1 : 0, m.id, m.revision, src.threadId,
+        // plan 210 (iteration 4): the day its person asked for it before, or none
+        "UPDATE followups SET due_at = ?, dated = 1, state = CASE WHEN ? > ? THEN 'open' ELSE state END, inbox_state = 'none', broken_due_at = coalesce(broken_due_at, ?), timed = coalesce(?, timed), before_day = ?, revision = revision + 1 WHERE id = ? AND revision = ? AND thread_id = ? AND kind = 'promise' AND state IN ('open','due')",
+        m.dueAt, m.dueAt, w.now, m.brokenDueAt ?? null, m.timed === undefined ? null : m.timed ? 1 : 0, m.before ?? null, m.id, m.revision, src.threadId,
       );
     }
     for (const m of w.moved ?? []) {
       db.run(
         // the revision stays: a Later just before stays undoable, and the move changes no choice of the user's (Codex review);
         // its new words, if it gives some, in the same write (the fifth panel round)
-        `UPDATE dated_items SET due_day = ?, due_at = ?, timed = ?, dated = 1, act_at = ?, text = coalesce(?, text) WHERE id = ? AND state = 'open' AND (thread_id = ? OR (sender_key = ? AND ${SENDER_REACHES_SQL}))`,
-        m.dueDay, m.dueAt, m.timed ? 1 : 0, m.actAt, m.text ?? null, m.id, src.threadId, src.senderKey,
+        // plan 210 (iteration 4): and the day it's asked before and the mail's own clock at its new moment, or none
+        `UPDATE dated_items SET due_day = ?, due_at = ?, timed = ?, dated = 1, act_at = ?, text = coalesce(?, text), before_day = ?, wall = ? WHERE id = ? AND state = 'open' AND (thread_id = ? OR (sender_key = ? AND ${SENDER_REACHES_SQL}))`,
+        m.dueDay, m.dueAt, m.timed ? 1 : 0, m.actAt, m.text ?? null, m.before ?? null, wallJson(m.wall), m.id, src.threadId, src.senderKey,
       );
     }
     // plan 210 (iteration 3): a request a reply of yours already followed goes to the follow-ups reader with that reply again, for its verdict

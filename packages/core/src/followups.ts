@@ -59,6 +59,11 @@ export interface FollowupRow {
    * checked verdict: while the promise is open the request is its row's, its day carried (`promiseDay`). Null: none
    */
   answers?: number | null;
+  /**
+   * Plan 210 (iteration 4, revision 11): the day its person asked for it before, when their mail moved it ("before then",
+   * the Monday): `dueAt` is the day before; its row says "needed before Mon". Null: none, or stored before it.
+   */
+  before?: string | null;
 }
 
 export interface FollowupsSetting {

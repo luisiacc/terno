@@ -1,4 +1,4 @@
-import { addressKey, ANSWERED_KINDS, tabOfCode, type DatedKind, type DatedRow, type DatedState } from "@terno/core";
+import { addressKey, ANSWERED_KINDS, tabOfCode, type DatedKind, type DatedRow, type DatedState, type DatedWall } from "@terno/core";
 
 /**
  * Plan 204: dated items, from mail the user got.
@@ -99,6 +99,15 @@ export interface DatedWrite {
   early?: boolean;
   /** plan 210 (iteration 3): it lapses unless renewed (`DatedRow.lapses`); absent, not */
   lapses?: boolean;
+  /** plan 210 (iteration 4, revision 11): the day the mail asked for it before (`DatedRow.before`); absent, none */
+  before?: string | null;
+  /**
+   * plan 210 (iteration 4, revision 11): the event this ask confirms, as one of this message's own rows (its `item`): stored as
+   * that row's id (`DatedRow.confirms`) when it's written in the same commit, else nothing (the ask is kept unlinked)
+   */
+  confirmsItem?: number;
+  /** plan 210 (iteration 4, revision 10): the mail's own clock in another zone (`DatedRow.wall`); absent, none */
+  wall?: DatedWall | null;
 }
 
 export interface DatedFinish {
@@ -119,7 +128,17 @@ export interface DatedFinish {
    * its new words, in the same write (the fifth panel round); without it the words stay. Neither is in a snapshot, so an
    * Undo of a Later before or after keeps the move's day and words.
    */
-  moved?: readonly { id: number; dueDay: string; dueAt: number; timed: boolean; actAt: number; text?: string }[];
+  moved?: readonly {
+    id: number;
+    dueDay: string;
+    dueAt: number;
+    timed: boolean;
+    actAt: number;
+    text?: string;
+    /** plan 210 (iteration 4): the day it's asked before, and the mail's own clock, at its new moment: absent or null, none (a move clears them) */
+    before?: string | null;
+    wall?: DatedWall | null;
+  }[];
   /**
    * The second panel round: promises of yours (plan 142's rows) this message gives a new day. Only at the revision the
    * reader saw (a Later or Done since wins), on this thread, still open or due; the revision bumps (an older Undo is
@@ -136,6 +155,8 @@ export interface DatedFinish {
     brokenDueAt?: number | null;
     /** plan 210 (iteration 2): `dueAt` is a time its words state (`FollowupRow.timed`) */
     timed?: boolean;
+    /** plan 210 (iteration 4, revision 11): the day its person asked for it before (`FollowupRow.before`): absent or null, none */
+    before?: string | null;
   }[];
   /**
    * Plan 210 (iteration 3, the owner's "Close replaced promises"): promises of yours this message replaced with a new

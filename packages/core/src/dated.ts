@@ -101,6 +101,38 @@ export interface DatedRow {
    * takes an expiry's lead whatever kind it was read as. Absent: not (stored before it; no backfill).
    */
   lapses?: boolean;
+  /**
+   * Plan 210 (iteration 4, revision 11): the day the mail asked for it before ("before Monday", "before then"), YYYY-MM-DD,
+   * the day after `dueDay` (which sorts it): what its row says ("before Mon"). Absent or null: none, or stored before it
+   * (never guessed for old rows).
+   */
+  before?: string | null;
+  /**
+   * Plan 210 (iteration 4, revision 11): the event an ask confirms ("Reply C to confirm"), that event's id: the ask waits
+   * from its mail's day and ends with that event (`withEventEnds`), never at `askEnd`, and is never merged with it.
+   */
+  confirms?: number | null;
+  /**
+   * Plan 210 (iteration 4, revision 11): read, never stored: the moment the event it confirms is over (`withEventEnds`); 0
+   * when that event is no longer open.
+   */
+  eventEnd?: number | null;
+  /** Plan 210 (iteration 4, revision 10): the mail's own clock in another zone, checked (`DatedWall`); absent or null: none */
+  wall?: DatedWall | null;
+}
+
+/**
+ * Plan 210 (iteration 4, revision 10): a time the mail gives in a zone not the reader's, as the mail gives it, beside the
+ * instant it was converted to (`dueAt`): its day and clock there, the zone's IANA name, and the place it's in when the mail
+ * names one away from the reader (travel: "Mon 4:00 PM Austin"); null, a zone the mail named ("4:00 PM PT").
+ */
+export interface DatedWall {
+  /** YYYY-MM-DD */
+  day: string;
+  /** HH:MM */
+  time: string;
+  zone: string;
+  place: string | null;
 }
 
 export interface DatedSetting {

@@ -1561,6 +1561,16 @@ ALTER TABLE dated_items ADD COLUMN lapses INTEGER NOT NULL DEFAULT 0;
   { version: 64, name: "What matters: a confirmed send stays yours for certain (plan 210, iteration 3)", sql: `
 ALTER TABLE messages ADD COLUMN sent_confirmed INTEGER NOT NULL DEFAULT 0;
 ` },
+  // plan 210 (iteration 4, revisions 10 and 11): the day a request was asked before (`before_day`, on an item and on a
+  // promise its person moved), the event an ask confirms (`confirms`, its id), and the mail's own clock in another zone
+  // (`wall`, JSON: day, time, IANA zone, place). Shape only: nullable columns, no rewrite; rows stored before it have none
+  // (nothing guessed for them). v65, v66, v68 to v70 are iteration 4's other parts
+  { version: 67, name: "What matters: before a day, a confirmation's event, the mail's own clock (plan 210, iteration 4)", sql: `
+ALTER TABLE dated_items ADD COLUMN before_day TEXT;
+ALTER TABLE dated_items ADD COLUMN confirms INTEGER;
+ALTER TABLE dated_items ADD COLUMN wall TEXT;
+ALTER TABLE followups ADD COLUMN before_day TEXT;
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

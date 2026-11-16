@@ -33,6 +33,8 @@ import { assertCertain, UNCERTAINTY_KEY, UncertainWriteError } from "./uncertain
  * Version 34 adds received-mail marks and dated items (SQL v56, plan 204).
  * Version 35 adds what the dated reader read with nothing asked of the reader (SQL v60, plan 210).
  * SQL v64 (plan 210) adds `messages.sent_confirmed`: absent on older records reads as not confirmed, so no version change.
+ * SQL v67 (plan 210, iteration 4) adds `dated_items.before_day`, `confirms` and `wall` and `followups.before_day`: absent on
+ * older records reads as none, so no version change.
  */
 export { IDB_VERSION };
 /** the SQL schema this one mirrors (migration ids are shared across adapters) */

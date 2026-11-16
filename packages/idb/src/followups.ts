@@ -4,7 +4,7 @@ import { T, type Ctx, type R } from "./mail";
 
 /** Plan 142 on IndexedDB, like SQL's (packages/db/src/followups.ts). */
 
-const toRow = (r: R): FollowupRow => ({ id: r.id, threadId: r.thread_id, messageId: r.message_id, rfcMessageId: r.rfc_message_id ?? null, item: r.item, kind: r.kind, text: r.text, quote: r.quote ?? null, personName: r.person_name ?? null, personEmail: r.person_email ?? null, sentAt: r.sent_at, dueAt: r.due_at, dated: r.dated === 1, deferredUntil: r.deferred_until ?? null, state: r.state, inboxState: r.inbox_state, closedReason: r.closed_reason ?? null, closedAt: r.closed_at ?? null, notifiedAt: r.notified_at ?? null, fromScan: r.from_scan === 1, revision: r.revision, model: r.model ?? null, provider: r.provider ?? null, createdAt: r.created_at, sameAs: r.same_as ?? null, brokenDueAt: r.broken_due_at ?? null, timed: r.timed === 1, answers: r.answers ?? null });
+const toRow = (r: R): FollowupRow => ({ id: r.id, threadId: r.thread_id, messageId: r.message_id, rfcMessageId: r.rfc_message_id ?? null, item: r.item, kind: r.kind, text: r.text, quote: r.quote ?? null, personName: r.person_name ?? null, personEmail: r.person_email ?? null, sentAt: r.sent_at, dueAt: r.due_at, dated: r.dated === 1, deferredUntil: r.deferred_until ?? null, state: r.state, inboxState: r.inbox_state, closedReason: r.closed_reason ?? null, closedAt: r.closed_at ?? null, notifiedAt: r.notified_at ?? null, fromScan: r.from_scan === 1, revision: r.revision, model: r.model ?? null, provider: r.provider ?? null, createdAt: r.created_at, sameAs: r.same_as ?? null, brokenDueAt: r.broken_due_at ?? null, timed: r.timed === 1, answers: r.answers ?? null, before: r.before_day ?? null });
 
 function own(c: Ctx): Set<string> {
   const out = new Set<string>();
