@@ -26,8 +26,12 @@ export const ANSWERED_KINDS: readonly DatedKind[] = ["respond", "ask"];
 export const DATED_LEAD_DAYS: Readonly<Record<DatedKind, number>> = { pay: 7, renew: 7, expire: 30, respond: 7, alert: 0, event: 3, delivery: 0, ask: 0 };
 /** Missed keeps an item this long, then it's the Earlier tab's (plan 205; the owner, 2026-11-13). */
 export const MISSED_DAYS = 7;
-/** Coming up looks this far ahead. */
-export const COMING_UP_DAYS = 14;
+/**
+ * Plan 210 (iteration 3, the owner's "7 days whole"): what's due today and in the seven local days after it shows under its
+ * day, whatever its kind's lead (a plan and a delivery quietly); a longer lead still brings something further out forward.
+ * Everything else not yet shown is Coming up's, at any distance (no horizon: the open set's bound keeps it finite).
+ */
+export const SHOWN_DAYS = 7;
 /** The sixth panel round (change 1): an alert that names no day is Deadlines' this many days from its arrival, never Missed. */
 export const ALERT_DAYS = 7;
 /** ...and sits among the deadlines as if due its third day (its stored `dueDay`, for order only). */
@@ -181,6 +185,13 @@ function leadStart(kind: DatedKind, day: Date): number {
 }
 
 /**
+ * Plan 210 (iteration 3, revision 6): the one seven-day predicate, a dated item's and a promise's alike: something due on
+ * `day` shows from its lead's moment or from the midnight that brings its day within `SHOWN_DAYS`, whichever is first
+ * (by wall clock across DST). Expiry and an active Later are applied after it, by the caller.
+ */
+export const shownBy = (lead: number, day: Date): number => Math.min(lead, dayAt(day, -SHOWN_DAYS, 0));
+
+/**
  * The sixth panel round (revision 6): when an item shows, read here rather than stored, so an item kept under a shorter lead
  * shows by today's without a rescheduling pass: the earlier of its stored `actAt` and its kind's lead before its day, never
  * before its mail came (as `datedTiming`). An alert, a delivery and what has no day keep their stored moment.
@@ -193,9 +204,12 @@ function showsFrom(r: Pick<DatedRow, "kind" | "dueDay" | "dated" | "actAt" | "ar
     const day = r.kind === "delivery" ? localDay(r.dueDay) : null;
     if (day) return Math.max(r.arrivedAt, dayAt(day, -1, 0));
   }
-  if (!r.dated || r.kind === "alert" || r.kind === "delivery" || r.kind === "ask") return r.actAt;
+  if (!r.dated || r.kind === "ask") return r.actAt;
   const day = localDay(r.dueDay);
-  return day ? Math.max(r.arrivedAt, Math.min(r.actAt, leadStart(r.kind, day))) : r.actAt;
+  if (!day) return r.actAt;
+  // (an alert shows at once and a delivery on its day: theirs is stored)
+  const lead = r.kind === "alert" || r.kind === "delivery" ? r.actAt : Math.min(r.actAt, leadStart(r.kind, day));
+  return Math.max(r.arrivedAt, shownBy(lead, day));
 }
 
 /**
@@ -257,12 +271,11 @@ export function datedPlace(r: Pick<DatedRow, "kind" | "state" | "dueDay" | "dueA
   } else {
     const missedAt = dayEnd(r.dueDay);
     if (now >= missedAt) {
-      if (deferred) return showsAt - now <= COMING_UP_DAYS * 86_400_000 ? "comingUp" : "hidden";
+      if (deferred) return "comingUp";
       return now < missedUntil(r) ? "missed" : "hidden";
     }
   }
-  if (showsAt <= now) return group;
-  return showsAt - now <= COMING_UP_DAYS * 86_400_000 ? "comingUp" : "hidden";
+  return showsAt <= now ? group : "comingUp";
 }
 
 /** A promise of yours, as Today places it (plan 142's row); `deferredUntil` its Later (the fifth panel round). */
@@ -277,9 +290,13 @@ const promiseDue = (r: PromiseFacts, now: number): boolean => !promiseDeferred(r
 /** When a dated promise leaves Missed: as a dated item does (`missedUntil`), a week after its day, or after a Later past it. */
 const promiseMissedUntil = (r: PromiseFacts): number => missedUntil({ dueDay: dayKeyOf(r.dueAt), deferredUntil: r.deferredUntil ?? null });
 
-/** The fifth panel round: a dated promise shows a request's lead before its day (a week, at 9:00), or from its Later. */
+/**
+ * The fifth panel round: a dated promise shows a request's lead before its day (a week, at 9:00), or from its Later. Plan 210
+ * (iteration 3): within the seven days as a dated item is (`shownBy`).
+ */
 const promiseShowsAt = (r: PromiseFacts): number => {
-  const lead = dayAt(new Date(startOfDay(r.dueAt)), -DATED_LEAD_DAYS.respond, REMIND_MORNING);
+  const day = new Date(startOfDay(r.dueAt));
+  const lead = shownBy(dayAt(day, -DATED_LEAD_DAYS.respond, REMIND_MORNING), day);
   return r.deferredUntil != null ? Math.max(lead, r.deferredUntil) : lead;
 };
 
@@ -298,7 +315,7 @@ export type PromisePlace = "missed" | "deadlines" | "needsYou" | "comingUp" | "h
 /**
  * The third panel round (revision 5): where a promise of yours sits, by the calendar day of its `dueAt`. One rule for the
  * list, the count and the clock. The fifth panel round: Deadlines from a request's lead before its day (`promiseShowsAt`),
- * unless put off with Later (Coming up while within its two weeks, else hidden); Missed once its day is over, for
+ * unless put off with Later (Coming up; plan 210, iteration 3: at any distance); Missed once its day is over, for
  * `MISSED_DAYS` (from a Later that ran past it: a deferred one is never Missed); Needs you: undated and due, not put off
  * (the fourth panel round: it has no day to sit under). A nudge isn't a promise: it's Needs you's, by `dueAt`.
  */
@@ -308,11 +325,10 @@ export function promisePlace(r: PromiseFacts, now: number): PromisePlace {
   const deferred = promiseDeferred(r, now);
   const showsAt = promiseShowsAt(r);
   if (now >= dayEnd(dayKeyOf(r.dueAt))) {
-    if (deferred) return showsAt - now <= COMING_UP_DAYS * 86_400_000 ? "comingUp" : "hidden";
+    if (deferred) return "comingUp";
     return promiseOver(r, now) ? "hidden" : "missed";
   }
-  if (showsAt <= now) return "deadlines";
-  return showsAt - now <= COMING_UP_DAYS * 86_400_000 ? "comingUp" : "hidden";
+  return showsAt <= now ? "deadlines" : "comingUp";
 }
 
 /**
@@ -358,13 +374,11 @@ export function nextTodayChange(items: readonly Pick<DatedRow, "kind" | "state" 
   const consider = (at: number) => {
     if (at > now && at < next) next = at;
   };
-  const ahead = COMING_UP_DAYS * 86_400_000;
   for (const r of items) {
     if (r.state !== "open") continue;
     const from = showsFrom(r);
     const showsAt = r.deferredUntil !== null ? Math.max(from, r.deferredUntil) : from;
     consider(showsAt);
-    consider(showsAt - ahead);
     if (r.deferredUntil !== null) consider(r.deferredUntil);
     if (datedGroup(r.kind) === "plans") consider(planEnd(r));
     else if (r.kind === "ask") consider(askEnd(r));
@@ -386,7 +400,6 @@ export function nextTodayChange(items: readonly Pick<DatedRow, "kind" | "state" 
     }
     const showsAt = promiseShowsAt(p);
     consider(showsAt);
-    consider(showsAt - ahead);
     if (p.deferredUntil != null) consider(p.deferredUntil);
     consider(dayEnd(dayKeyOf(p.dueAt)));
     consider(promiseMissedUntil(p));
