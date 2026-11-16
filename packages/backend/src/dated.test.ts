@@ -527,6 +527,8 @@ describe("plan 210 (iteration 3)", () => {
         [SAM, "Skip the methods section entirely"],
         // the code review of iteration 3: a denial before the quote, in its clause of the mail
         ["About the methods section: don't skip the methods section; please send me a full draft of Chapter 2 by Monday.", "skip the methods section"],
+        // the code review's second round: words between the denial and the replacing word
+        ["About the methods section: don't, under any circumstances, skip the methods section; please send me a full draft of Chapter 2 by Monday.", "skip the methods section"],
       ] as const) expect(checkDates(replacing(evidence), { ...mail(text), promises }).replaced, text).toEqual([]);
       const es = "Lucía:\n\nNo olvides el marco teórico; envíame el borrador completo del capítulo 2 antes del lunes.\n\nTeresa";
       const capitulo = { kind: "respond", text: "Enviar a Teresa el borrador completo del capítulo 2", quote: "envíame el borrador completo del capítulo 2 antes del lunes", due: "2026-11-15", time: null };
