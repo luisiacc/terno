@@ -1285,9 +1285,11 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       await page.getByTestId("open-settings").click();
       await page.getByTestId("tab-ai").click();
       const group = page.getByTestId("ai-dated");
-      await expect(group).toContainText("Bills, trips and requests");
+      // plan 210 (iteration 3): the feature by its name, and who reads its mail, in one line
+      await expect(group).toContainText("What matters");
       await expect(group.getByTestId("ai-dated-switch")).toBeChecked();
-      await expect(group).toContainText("Reads new mail with");
+      await expect(group).toContainText(/What matters: \S/);
+      await expect(group).not.toContainText("digest");
       await group.scrollIntoViewIfNeeded();
       if (SHOTS) {
         for (const mode of ["light", "dark"] as const) {

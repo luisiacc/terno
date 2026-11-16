@@ -73,7 +73,7 @@ describe("Settings → AI", () => {
     expect($(host, "ai-key-row-openai")).not.toBeNull();
     expect($(host, "ai-model")).toBeNull();
     expect($(host, "ai-models")).toBeNull();
-    expect($(host, "ai-routing")!.textContent).toBe("Drafting, Ask your mail and rules run on Claude (Anthropic); summaries, follow-ups and the digest on OpenAI. Terno picks the model for each.");
+    expect($(host, "ai-routing")!.textContent).toBe("What matters, summaries, follow-ups and the newsletter digest run on OpenAI; drafting, Ask your mail and rules on Claude (Anthropic). Terno picks the model for each.");
     // nothing asks which models exist there: Terno doesn't offer them
     await act(async () => new Promise((r) => setTimeout(r, 450)));
     expect(calls().some(([method]) => method === "ai.listModels")).toBe(false);
@@ -158,7 +158,7 @@ describe("Settings → AI", () => {
     useApp.setState({ devAi: { anthropic: true, openai: true, jev: true }, settings: { ...s, devAi: true } } as never);
     const host = await render(<AiTab settings={{ ...s, devAi: true }} update={vi.fn() as never} />);
     for (const id of ["ai-provider", "ai-model", "ai-key-anthropic", "ai-key-openai", "ai-test"]) expect($(host, id), id).toBeNull();
-    expect($(host, "ai-routing")!.textContent).toBe("Drafting, Ask your mail and rules run on Claude (Anthropic); summaries, follow-ups and the digest on OpenAI. Terno picks the model for each. Smart categories run on JEV.");
+    expect($(host, "ai-routing")!.textContent).toBe("What matters, summaries, follow-ups and the newsletter digest run on OpenAI; drafting, Ask your mail and rules on Claude (Anthropic). Terno picks the model for each. Smart categories run on JEV.");
     expect(host.querySelector('[data-testid$="-target"]')).toBeNull();
   });
 });
