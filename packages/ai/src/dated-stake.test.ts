@@ -23,6 +23,11 @@ describe("plan 210 (iteration 5, revision 9): the stake is a condition, held to 
     const GASTOS = "Los libros de octubre cierran el día 20. Sube los comprobantes antes de esa fecha; lo que falte después se reportará a tu gerente.";
     expect(heldStake("respond", "Subir 6 comprobantes (se reporta a tu gerente)", GASTOS)).toBe("Subir 6 comprobantes");
     expect(heldStake("respond", "Subir 6 comprobantes (faltantes se reportan a tu gerente)", GASTOS)).toBe("Subir 6 comprobantes (faltantes se reportan a tu gerente)");
+    // iteration 5's code review (point 5): any condition in the mail is no support for this one's consequence
+    expect(heldStake("pay", "Pay the tax installment (or policy ends Dec 1)", "Please pay the tax installment by November 25. If you have any questions, call us.")).toBe("Pay the tax installment");
+    expect(heldStake("pay", "Pagar la cuota (o la póliza termina el 1 dic)", "Please pay the installment by November 25. If you have any questions, call us.")).toBe("Pagar la cuota");
+    // a Spanish bracket on an English mail that says it on its condition, with its day, stays
+    expect(heldStake("pay", "Pagar la prima (o la póliza termina el 1 dic)", POLICY)).toBe("Pagar la prima (o la póliza termina el 1 dic)");
     // a condition left alone once what happens is gone says nothing: the bracket goes whole
     expect(heldStake("pay", "Pagar $1,512.00 de la póliza de Lakeview (si no, la póliza termina el 1 dic)", "Your policy renews on December 1. Please pay by November 25.")).toBe("Pagar $1,512.00 de la póliza de Lakeview");
   });

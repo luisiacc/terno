@@ -68,11 +68,17 @@ function clauseHolds(clause: string, sentences: readonly string[], conditioned: 
     const before = ws.slice(Math.max(0, at - 3), at).join(" ");
     return without || !NEGATION.test(before) || NOT_TO.test(before);
   });
-  // said as a condition: the mail must say something happens on one (in any of its sentences: an English mail read for a
-  // Spanish reader says it in other words), and never deny what this clause says
-  if (conditional) return support.length > 0 || (sentences.some((s) => SENTENCE_CONDITION.test(s)) && !denied(anchors, sentences));
+  // said as a condition: the mail says this consequence, or (an English mail read for a Spanish reader says it in other
+  // words) one sentence says something happens on a condition with the clause's own numbers ("ends Dec 1": a "1"), and the
+  // mail never denies it. Iteration 5's code review (point 5): never on any condition in the mail ("If you have any
+  // questions, call us" is no "or policy ends Dec 1")
+  // (with the sentence after it: "…will end at 12:01 a.m. on December 1" is read as two)
+  if (conditional) return support.length > 0 || (sentences.some((s, k) => SENTENCE_CONDITION.test(s) && CONSEQUENCE.test(s) && numbersIn(read).every((n) => `${s} ${sentences[k + 1] ?? ""}`.split(" ").includes(n))) && !denied(anchors, sentences));
   return support.length > 0 && support.every((s) => !SENTENCE_CONDITION.test(s));
 }
+
+/** a clause's own numbers, as `plain` reads them ("dec 1" is "1"; "12 01 am" is "12" and "01") */
+const numbersIn = (read: string) => read.split(" ").filter((w) => /^\d+$/u.test(w));
 
 /** Whether the mail denies a consequence ("there is no late fee", "we won't suspend it"). */
 function denied(anchors: readonly string[], sentences: readonly string[]): boolean {
