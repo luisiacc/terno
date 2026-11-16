@@ -216,14 +216,22 @@ function selfOffer(sentences: string, paragraph: string): boolean {
  * Plan 210 (iteration 3, point 7): mail the reader is only copied on to know about it ("Diego, te copio para que estés al
  * tanto", "cc'ing you for visibility", "FYI") asks them nothing, whatever it says they'll do ("Diego las monta en las
  * etiquetas esa misma semana"): a request from it is the reader's only when its sentence speaks to them by name and isn't
- * that line itself. `read`: the mail as `norm` reads it.
+ * that line itself. `read`: the mail as `norm` reads it. The code review of iteration 3: that line may still ask them
+ * something directly ("Diego, FYI, could you review the colors by Friday?"), and then it's theirs.
  */
 const COPIED = /\b(?:te copio|te pongo en copia|te incluyo en copia|(?:cc ing|cc d|copying|looping in) you|(?:for|so) (?:you re|you are) in the loop|for your (?:information|visibility|awareness|reference)|for visibility|fyi|para que (?:estes|este|esten) (?:al tanto|al pendiente|enterad\w*)|para tu (?:informacion|conocimiento))\b/u;
+// a request made to them: a question, "could you…", "¿puedes…?", or a clause that starts with what they're to do
+const ASKS_DIRECTLY = /\b(?:please|could you|can you|would you|will you|would you mind|need you to|want you to|por favor|puedes|podrias|podria|necesito que|te pido que)\b/u;
+const DO_THIS = /^(?:review|send|sign|check|call|reply|answer|approve|confirm|fill|submit|bring|book|pay|update|revisa|revisen|envia(?:me|nos)?|manda(?:me|nos)?|firma|llama(?:me|nos)?|responde(?:me|nos)?|aprueba|confirma(?:me|nos)?|llena|trae|paga|actualiza)\b/u;
+function asksDirectly(sentence: string): boolean {
+  return /[?¿]/u.test(sentence) || ASKS_DIRECTLY.test(norm(sentence)) || sentence.split(/[,;:.!\n]/u).some((clause) => DO_THIS.test(norm(clause)));
+}
 function onlyCopied(item: { quote: string }, text: string, sentences: Sentences, reader: { name: string; addressed: "to" | "cc" | "none" } | undefined): boolean {
   if (reader?.addressed !== "cc" || !COPIED.test(norm(text))) return false;
   const sentence = contextOf(item.quote, sentences);
   const mine = new Set(nameWords(reader.name));
-  return COPIED.test(norm(sentence)) || !addressedTo(item.quote, text).some((w) => mine.has(w));
+  if (!addressedTo(item.quote, text).some((w) => mine.has(w))) return true;
+  return COPIED.test(norm(sentence)) && !asksDirectly(sentence);
 }
 
 /**

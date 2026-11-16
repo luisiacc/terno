@@ -657,6 +657,19 @@ describe("plan 210 (iteration 3)", () => {
       // FYI to the copied reader in English
       expect(checkDates({ items: [{ ...mount, text: "Mount the final art", quote: "Diego will mount them that week" }], settled: [] }, person("Ana, could you send the final art by Monday? Diego will mount them that week. Cc'ing you for visibility, Diego.", { addressed: "cc", others: ["Ana Lugo"] })).rows).toEqual([]);
     });
+    it("the copy line that also asks the copied reader something by name is theirs (en, es; the code review of iteration 3)", () => {
+      const cc = { addressed: "cc" as const, others: ["Ana Lugo"] };
+      const review = { kind: "respond", text: "Review the label colors", quote: "Diego, FYI, could you review the colors by Friday?", due: "2026-11-20", time: null };
+      const en = "Ana, could you send the final art by Monday?\n\nDiego, FYI, could you review the colors by Friday?\n\nCarla";
+      expect(checkDates({ items: [review], settled: [] }, person(en, cc))).toMatchObject({ rows: [{ kind: "respond", text: "Review the label colors" }], asked: true });
+      const es = "Ana, ¿nos mandas las ilustraciones finales el lunes?\n\nDiego, te copio para que estés al tanto: revisa los colores antes del viernes.\n\nCarla";
+      const revisar = { ...review, text: "Revisar los colores de las etiquetas", quote: "Diego, te copio para que estés al tanto: revisa los colores antes del viernes." };
+      expect(checkDates({ items: [revisar], settled: [] }, person(es, cc))).toMatchObject({ rows: [{ kind: "respond" }], asked: true });
+      // the line alone, or telling them what someone else will do, still asks them nothing
+      const told = "Ana, ¿nos mandas las ilustraciones finales el lunes?\n\nDiego, te copio para que estés al tanto; cuando Ana las entregue te las reenvío.\n\nCarla";
+      expect(checkDates({ items: [{ ...revisar, quote: "Diego, te copio para que estés al tanto" }], settled: [] }, person(told, cc))).toMatchObject({ rows: [], asked: false });
+      expect(checkDates({ items: [{ ...review, quote: "Diego, FYI, the vendor ships the labels Friday." }], settled: [] }, person("Diego, FYI, the vendor ships the labels Friday.", cc)).rows).toEqual([]);
+    });
     it("an automated sender's cancellation of the reader's appointment may ask them to book again; nothing else of theirs asks", () => {
       const dental = "Dear Margaret,\n\nYour appointment on Thursday, November 12, 2026 at 9:00 AM with Dr. Steven Kline has been cancelled because Dr. Kline is out of the office.\n\nWe apologize for the inconvenience. Please call (614) 555-0147 to choose a new time.\n\nBrightway Dental";
       const call = ask("Call Brightway Dental to choose a new time", "Please call (614) 555-0147 to choose a new time.");
