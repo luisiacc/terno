@@ -1,5 +1,6 @@
 import { DATED_ITEMS_MAX, DATED_KINDS, DATED_OPEN_SHOWN, saysDay, ZONE_NOTE, type DatedKind, type DatedWall } from "@terno/core";
 import { z } from "zod";
+import { CONSEQUENCE, heldStake, orphanedConsequence } from "./dated-stake";
 import type { StructuredTask } from "./ladder";
 
 /**
@@ -335,8 +336,9 @@ export function cutAtClause(text: string, max: number): string {
   return clauseCut(flat, max, null)!.replace(DANGLING, "…");
 }
 
-/** A stake's words: what happens, what it costs (en, es). */
+/** A stake's words: what happens, what it costs (en, es); iteration 5: whatever a stake's clause says happens (`CONSEQUENCE`). */
 const STAKE_WORDS = /\b(?:held|holds?|paus\w*|suspen\w*|disabled|clos\w*|locked|lapse\w*|expir\w*|cancel\w*|fees?|costs?|charged?|penalt\w*|interest|los[et]s?|flagged|retenid\w*|bloque\w*|vence\w*|caduc\w*|recargos?|multas?|penaliz\w*|interes\w*|cuesta\w*|pierde\w*|cobr\w*|cargos?)\b/iu;
+const CONSEQUENCE_AT = new RegExp(CONSEQUENCE.source, "iu");
 const MONEY = /(?:\b[A-Z]{2,3})?[$€£]\s?\d[\d.,]*\d|\d[\d.,]*\d?\s?(?:€|£|\b(?:USD|EUR|MXN|GBP|CAD)\b)/gu;
 const UNLESS = /\b(?:unless|otherwise|or else|a menos que|de lo contrario|si no)\b/giu;
 const UNLESS_AT = new RegExp(`^(?:${UNLESS.source})`, "iu");
@@ -356,7 +358,7 @@ function stakeSpans(flat: string): [number, number][] {
     if (flat[i] === "(" && depth++ === 0) open = i;
     else if (flat[i] === ")" && depth > 0 && --depth === 0) {
       const inside = flat.slice(open + 1, i);
-      if (new RegExp(MONEY.source, "u").test(inside) || /\d\s?%/u.test(inside) || STAKE_WORDS.test(inside)) spans.push([open, i + 1]);
+      if (new RegExp(MONEY.source, "u").test(inside) || /\d\s?%/u.test(inside) || STAKE_WORDS.test(inside) || CONSEQUENCE_AT.test(inside)) spans.push([open, i + 1]);
     }
   }
   for (const m of flat.matchAll(UNLESS)) {
@@ -387,7 +389,9 @@ function clauseCut(flat: string, max: number, keeps: ((end: number) => boolean) 
     const dash = /[–—-]/u.test(next ?? "") && flat[i + 2] === " ";
     const outer = depth === 0 && ((stop && next === " ") || (c === " " && (next === "(" || dash)));
     const within = depth === 1 && stop && next === " " && i < room;
-    if ((outer || within) && i >= CLAUSE_MIN && (!keeps || keeps(i))) [end, inner] = [i, within];
+    // plan 210 (iteration 5, revision 9): never a cut that keeps what happens and drops its condition ("…the parcel leaves
+    // the plan…" from "…the parcel leaves the plan if it's missed")
+    if ((outer || within) && i >= CLAUSE_MIN && (!keeps || keeps(i)) && orphanedConsequence(flat.slice(0, i), flat.slice(i + 1)) < 0) [end, inner] = [i, within];
     if (c === "(") depth++;
     else if (c === ")") depth = Math.max(0, depth - 1);
   }
@@ -397,6 +401,9 @@ function clauseCut(flat: string, max: number, keeps: ((end: number) => boolean) 
   // a word's cut inside a bracket ends before it, when there's enough before
   const open = cut.lastIndexOf("(");
   if (!end && open > cut.lastIndexOf(")") && open >= CLAUSE_MIN) cut = cut.slice(0, open);
+  // a word's cut that keeps what happens without its condition ends before that clause, or before its first word
+  const orphan = end ? -1 : orphanedConsequence(cut, flat.slice(cut.length));
+  if (orphan >= 0) cut = orphan >= CLAUSE_MIN ? cut.slice(0, orphan) : cutAtWord(cut, Math.max(1, cut.search(CONSEQUENCE_AT)));
   return `${cut.replace(/[\s,;:.!?(–—-]+$/u, "")}…`;
 }
 /** v6's words, which a model may still give: the app says whose word an alert is, so the model's own goes (en, es) */
@@ -664,6 +671,9 @@ export function readDatesTask(input: DatedInput): StructuredTask<Wire, DatedResu
     return wall ? { ...at, wall } : at;
   };
   const open = new Map(input.open.map((o) => [o.label, o]));
+  // plan 210 (iteration 5, revision 9): a stake is held to the mail's words before anything is cut
+  const mail = `${input.subject}\n${input.text}`;
+  const words = (kind: string, text: string) => cutAtClause(withoutIdentifiers(heldStake(kind, alertText(kind, text), mail)), TEXT_CHARS);
   return {
     system: SYSTEM(input.language, input.receivedAt, input.zone),
     prompt: datedPrompt(input),
@@ -675,7 +685,7 @@ export function readDatesTask(input: DatedInput): StructuredTask<Wire, DatedResu
       ok: true,
       value: {
         items: w.items
-          .map((i) => ({ kind: i.kind.trim().toLowerCase(), text: cutAtClause(withoutIdentifiers(alertText(i.kind, i.text)), TEXT_CHARS), quote: clean(i.quote, QUOTE_CHARS), ...local(blankToNull(i.due), blankToNull(i.time)) }))
+          .map((i) => ({ kind: i.kind.trim().toLowerCase(), text: words(i.kind.trim().toLowerCase(), i.text), quote: clean(i.quote, QUOTE_CHARS), ...local(blankToNull(i.due), blankToNull(i.time)) }))
           .map((i) => withBefore(i, beforeOf(i.kind, i.due, i.time, deadlineWords(i.quote, i.due, input.text))))
           .filter((i): i is DatedResult["items"][number] => isKind(i.kind) && !!i.text && !!i.quote)
           .slice(0, DATED_ITEMS_MAX),
@@ -690,10 +700,10 @@ export function readDatesTask(input: DatedInput): StructuredTask<Wire, DatedResu
             const label = m.label.trim();
             const due = m.due.trim();
             const evidence = clean(m.evidence, QUOTE_CHARS);
-            let text = m.text ? cutAtClause(withoutIdentifiers(m.text), TEXT_CHARS) : "";
+            const was = open.get(label);
+            let text = m.text ? words(label.startsWith("o") ? (was?.kind ?? "") : "", m.text) : "";
             let textEvidence = m.textEvidence ? clean(m.textEvidence, QUOTE_CHARS) : "";
             const zoned = zonedTime(blankToNull(m.time));
-            const was = open.get(label);
             // the Codex code review of the seventh round: the time alone, in another zone, read against the item's own moment
             // the Codex code review of v11 (point 7): a move whose words name its date ("Friday November 20 at 10 PM PT") is read
             // on that date even when it's the item's own day in the reader's zone; only a move of the time alone is anchored
