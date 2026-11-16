@@ -232,6 +232,17 @@ describe("iteration 5's code review", () => {
       expect(await run(HANNAH, { automated: false, shown: [ask], answer: [{ kind: "respond", text: "Tell Hannah who did your 409A", quote: "We grant options on Friday, November 20 at 9:00.", due: "2026-11-20", time: null }] })).toEqual([]);
     });
 
+    it("the Codex code review: never another of its kind on another day, by the look's whole words (another card, another amount)", async () => {
+      // two cards of one name, told apart only by their quotes' endings
+      const CARDS = "Your Meridian Business Platinum card ending in 4417 expires on December 31, 2026.\nYour Meridian Business Platinum card ending in 8822 expires on January 31, 2027.";
+      const first = { kind: "expire" as const, text: "Update the Meridian Business Platinum card", quote: "Your Meridian Business Platinum card ending in 4417 expires on December 31, 2026.", due: "2026-12-31", time: null };
+      const other = { ...first, quote: "Your Meridian Business Platinum card ending in 8822 expires on January 31, 2027.", due: "2027-01-31" };
+      expect(await run(CARDS, { first: [first], answer: [other] })).toEqual([other.text]);
+      // another amount of one name
+      const DUES = "Your Harbor Club dues of $120.00 are due December 15, 2026.";
+      expect(await run(DUES, { shown: [{ kind: "pay", text: "Pay the Harbor Club dues of $95.00", due: "2026-11-15" }], answer: [{ kind: "pay", text: "Pay the Harbor Club dues", quote: DUES, due: "2026-12-15", time: null }] })).toEqual(["Pay the Harbor Club dues"]);
+    });
+
     it("never a day already past its Missed window", async () => {
       const RFP = "Dear Jordan,\n\nKey dates:\nWritten questions due: November 6, 2026\nResponses due: November 20, 2026, 5:00 PM Eastern\n\nAlicia";
       const responses = { kind: "respond" as const, text: "Submit the Meridian RFP response", quote: "Responses due: November 20, 2026, 5:00 PM Eastern", due: "2026-11-20", time: "17:00" };
