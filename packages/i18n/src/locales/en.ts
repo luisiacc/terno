@@ -2710,6 +2710,8 @@ It contains none of your mail, contacts, settings or keys.
   "today.line.today": { one: "# to do today", other: "# to do today" },
   "today.line.waiting": { one: "# waiting", other: "# waiting" },
   "today.line.joined": "{a} · {b}",
+  // plan 210 (iteration 5, revision 6; the owner): of those waiting, your promises broken and needed on a day ahead
+  "today.line.overdue": { one: "{waiting}, # overdue", other: "{waiting}, # overdue" },
   // plan 210 (iteration 4, revision 9): the feed's last heading, a disclosure
   "whatMatters.comingUp": { one: "Coming up · #", other: "Coming up · #" },
   "today.dated.offer": "Show bills, trips and requests here.",

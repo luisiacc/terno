@@ -213,6 +213,11 @@ export interface TodayCounts {
   missed: number;
   today: number;
   waiting: number;
+  /**
+   * plan 210 (iteration 5, revision 6; the owner: "… · 5 waiting, 1 overdue"): of `waiting`, your promises broken and needed
+   * on a day still ahead (`promiseBroken`'s `ahead`): a subset, said beside it, never added to the badge
+   */
+  overdue: number;
 }
 
 /**
@@ -226,7 +231,8 @@ export type TodayPart = "waiting";
 
 /**
  * The sidebar's badge and the morning notice: what's Missed and what's Today's, as before iteration 3: Today's group,
- * its "Waiting on you" part included (it's inside Today), so the badge is the sum of what the header says.
+ * its "Waiting on you" part included (it's inside Today), so the badge is the sum of what the header says. Overdue is a
+ * part of waiting, so it adds nothing (iteration 5).
  */
 export const todayBadge = (c: TodayCounts): number => c.missed + c.today + c.waiting;
 

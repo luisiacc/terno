@@ -6,9 +6,12 @@ import { useToday } from "~/state/today";
  * Plan 210 (iteration 3, revision 8, the owner's "'Waiting on you' in Today"): the header's numbers, "1 missed · 3 to do
  * today · 5 waiting" (iteration 4: what Today counts is what's to do, your reminders with it, never its plans), disjoint,
  * so the sidebar's badge reads as the sum of what's said; a part that's nothing isn't said. Null: nothing to say.
+ * Iteration 5 (revision 6, the owner): of those waiting, your broken promises needed on a day ahead, beside it ("5 waiting,
+ * 1 overdue"), a part of it and never added again.
  */
 export function todayCountsLine(c: TodayCounts): string | null {
-  const parts = [c.missed > 0 && t("today.line.missed", { count: c.missed }), c.today > 0 && t("today.line.today", { count: c.today }), c.waiting > 0 && t("today.line.waiting", { count: c.waiting })].filter((p): p is string => typeof p === "string");
+  const waiting = c.waiting > 0 ? t("today.line.waiting", { count: c.waiting }) : null;
+  const parts = [c.missed > 0 && t("today.line.missed", { count: c.missed }), c.today > 0 && t("today.line.today", { count: c.today }), waiting !== null && (c.overdue > 0 ? t("today.line.overdue", { count: c.overdue, waiting }) : waiting)].filter((p): p is string => typeof p === "string");
   return parts.length ? parts.reduce((a, b) => t("today.line.joined", { a, b })) : null;
 }
 

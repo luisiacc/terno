@@ -219,18 +219,24 @@ describe("a promise's day (plan 210, iteration 3: one resolver)", () => {
     expect(promiseDay(answering, at(2026, 11, 10, 23))).toEqual({ dueAt: tue, dated: true, said: null, needed: fri, neededBefore: null, before: null, part: null, neededPart: null });
     expect(promiseDay(answering, at(2026, 11, 11))).toEqual({ dueAt: fri, dated: true, said: tue, needed: fri, neededBefore: null, before: null, part: null, neededPart: null });
     // (iteration 4, revision 8) broken with a live day ahead: Today's, wherever that day is (`promiseBroken`), unless put off
-    expect(promiseBroken(answering, at(2026, 11, 10, 23))).toBe(false);
-    expect(promiseBroken(answering, at(2026, 11, 11))).toBe(true);
+    expect(promiseBroken(answering, at(2026, 11, 10, 23))).toBeNull();
+    expect(promiseBroken(answering, at(2026, 11, 11))).toBe("ahead");
     expect(promiseGroupAt(answering, at(2026, 11, 11))).toEqual({ group: "today", day: null });
     expect(promiseGroupAt(answering, at(2026, 11, 13, 12))).toEqual({ group: "today", day: null });
     const later = { ...answering, deferredUntil: at(2026, 11, 12, 9) };
-    expect(promiseBroken(later, at(2026, 11, 11))).toBe(false);
+    expect(promiseBroken(later, at(2026, 11, 11))).toBeNull();
     expect(promiseGroupAt(later, at(2026, 11, 11))).toEqual({ group: "comingUp", day: "2026-11-13" });
-    expect(promiseBroken(later, at(2026, 11, 12, 9))).toBe(true);
+    expect(promiseBroken(later, at(2026, 11, 12, 9))).toBe("ahead");
     const far = { ...own, dueAt: at(2026, 12, 4, 9), brokenDueAt: tue };
     expect(promiseGroupAt(far, at(2026, 11, 11))).toEqual({ group: "today", day: null });
-    expect(promiseBroken(answering, at(2026, 11, 14))).toBe(false);
-    expect(promiseBroken({ ...answering, state: "done" }, at(2026, 11, 11))).toBe(false);
+    expect(promiseBroken(answering, at(2026, 11, 14))).toBeNull();
+    expect(promiseBroken({ ...answering, state: "done" }, at(2026, 11, 11))).toBeNull();
+    // (iteration 5, revision 6) needed today or on a day ahead, resolved once; midnight turns the one into the other, and the
+    // clock wakes for it
+    expect(promiseBroken(answering, at(2026, 11, 12, 23, 59))).toBe("ahead");
+    expect(nextTodayChange([], [answering], at(2026, 11, 12, 23, 59))).toBe(at(2026, 11, 13));
+    expect(promiseBroken(answering, at(2026, 11, 13))).toBe("today");
+    expect(promiseBroken(answering, at(2026, 11, 13, 23, 59))).toBe("today");
     // both over: Missed, from the later
     expect(promiseDay(answering, at(2026, 11, 14))).toMatchObject({ dueAt: fri, said: null });
     expect(promisePlace(answering, at(2026, 11, 14))).toBe("missed");

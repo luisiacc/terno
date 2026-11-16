@@ -476,15 +476,25 @@ function effective<T extends PromiseFacts>(r: T, now: number): T {
 export const promiseDeferred = (r: PromiseFacts, now: number): boolean => r.deferredUntil != null && r.deferredUntil > now;
 
 /**
- * Plan 210 (iteration 4, the Codex review's revision 8; the owner: "Today, Waiting on you"): a promise given a day and
- * missed (`promiseDay`'s `said`) that sits under a live day still ahead or today, not put off with Later. Someone is
- * waiting on it: it's Today's, first in its Waiting on you, in Missed's weight, counted once as waiting. One fact, read by
- * the place (`promiseGroupAt`) and by the projection's part and order alike, the list's and the count's.
+ * Plan 210 (iteration 5, the Codex review's revision 6): a promise broken and still needed, by its live day.
+ * `today`: needed today, Today's own first row, counted as to do today (round 12's row, which reviewers called the best on
+ * screen). `ahead`: needed on a day still ahead, first in Today's Waiting on you, counted as waiting and as overdue.
  */
-export function promiseBroken(r: PromiseFacts, now: number): boolean {
-  if (r.kind !== "promise" || (r.state !== "open" && r.state !== "due") || (r.brokenDueAt == null && r.needed == null) || promiseDeferred(r, now)) return false;
+export type BrokenPromise = "today" | "ahead";
+
+/**
+ * Plan 210 (iteration 4, the Codex review's revision 8; the owner: "Today, Waiting on you"): a promise given a day and
+ * missed (`promiseDay`'s `said`) that sits under a live day, today or ahead, not put off with Later; null otherwise.
+ * Someone is waiting on it, so it's Today's at any distance, in Missed's weight. Iteration 5 (revision 6): which live day,
+ * resolved here once from `promiseDay` and read by the place (`promiseGroupAt`) and by the projection's part, order and
+ * counts alike, the list's and the count's. Midnight turns `ahead` into `today` (`nextTodayChange` wakes then: the promise
+ * shows).
+ */
+export function promiseBroken(r: PromiseFacts, now: number): BrokenPromise | null {
+  if (r.kind !== "promise" || (r.state !== "open" && r.state !== "due") || (r.brokenDueAt == null && r.needed == null) || promiseDeferred(r, now)) return null;
   const d = promiseDay(r, now);
-  return d.said != null && d.dated && now < promiseCutoff(d.dueAt, d.part);
+  if (d.said == null || !d.dated || now >= promiseCutoff(d.dueAt, d.part)) return null;
+  return dayKeyOf(d.dueAt) === dayKeyOf(now) ? "today" : "ahead";
 }
 
 /** Due by now: the follow-ups worker marks it `due` at `followupWakeAt`, and a promise read before it ran is due all the same. */

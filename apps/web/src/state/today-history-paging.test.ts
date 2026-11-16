@@ -16,7 +16,7 @@ const { useToday } = await import("~/state/today");
 
 const thread = (id: number) => ({ id, lastDate: 1000 - id, subject: `S ${id}`, fromName: "A", categoryIds: [], unread: false }) as unknown as ThreadSummary;
 const line = (id: number): TodayHistoryItem => ({ id: `dated:${id}`, item: { source: "dated", id }, thread: thread(id), key: { at: 10_000 - id, src: 0, id }, outcome: "done", kind: "pay", text: `Pay ${id}` });
-const answer = (lines: number[], next: number | null) => ({ sections: [{ kind: "today", items: [{ id: "waiting:1", thread: thread(1), why: { kind: "waiting", wrote: true } }] }], digest: null, now: 0, counts: { missed: 0, today: 0, waiting: 1 }, history: { items: lines.map(line), next: next === null ? null : line(next).key } });
+const answer = (lines: number[], next: number | null) => ({ sections: [{ kind: "today", items: [{ id: "waiting:1", thread: thread(1), why: { kind: "waiting", wrote: true } }] }], digest: null, now: 0, counts: { missed: 0, today: 0, waiting: 1, overdue: 0 }, history: { items: lines.map(line), next: next === null ? null : line(next).key } });
 const line12 = () => useToday.getState().rows.find((r) => r.id === "dated:12");
 function deferred<T>() {
   let resolve!: (value: T) => void;

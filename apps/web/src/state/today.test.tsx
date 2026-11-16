@@ -50,7 +50,7 @@ describe("Back to the digest (plan 161)", () => {
 const ids = (rows: readonly { id: number }[]) => rows.map((r) => r.id);
 /** the feed's rows: [row id, conversation, heading] */
 const feed = () => useToday.getState().rows.map((r) => [r.id, r.threadId, r.group ?? null]);
-const NO_COUNTS = { missed: 0, today: 0, waiting: 0 };
+const NO_COUNTS = { missed: 0, today: 0, waiting: 0, overdue: 0 };
 
 describe("plan 210 (iteration 2): a row per item", () => {
   const thread = (id: number) => ({ id, snippet: `snippet ${id}`, fromName: "Ana" }) as never;
@@ -65,7 +65,7 @@ describe("plan 210 (iteration 2): a row per item", () => {
     const list: TodayList = {
       now: 0,
       digest: null,
-      counts: { missed: 0, today: 0, waiting: 3 },
+      counts: { missed: 0, today: 0, waiting: 3, overdue: 0 },
       sections: [
         {
           kind: "today",
@@ -83,7 +83,7 @@ describe("plan 210 (iteration 2): a row per item", () => {
     // each its own task: what its D, Done and Later act on
     expect(useToday.getState().rows.map((r) => (r.task?.kind === "promise" ? r.task.id : null))).toEqual([31, 32, null, null]);
     // the header's numbers are the backend's projection's
-    expect(useToday.getState().counts).toEqual({ missed: 0, today: 0, waiting: 3 });
+    expect(useToday.getState().counts).toEqual({ missed: 0, today: 0, waiting: 3, overdue: 0 });
   });
 
   it("a held row (the open one, by its id) stays at its place, its sibling of the same conversation leaving as it may; words only", () => {
@@ -239,13 +239,13 @@ describe("plan 204: Missed, Today, a day ahead and Coming up (plan 210: by day, 
   it("plan 210 (iteration 3): Today's Waiting on you is a heading of its own after Today's, before the days; its rows keep their ids", () => {
     const today = { kind: "today" as const, items: [dated(4, "pay", "Pay the rent", 12)] as never };
     const waiting = { kind: "today" as const, part: "waiting" as const, items: [{ id: "waiting:8", thread: thread(8), why: { kind: "waiting", wrote: true } }] as never };
-    flattenToday({ now, counts: { missed: 0, today: 1, waiting: 1 }, digest: null, sections: [today, waiting, ...byDay("day", [dated(3, "pay", "Pay the electricity bill", 13)])] }, []);
+    flattenToday({ now, counts: { missed: 0, today: 1, waiting: 1, overdue: 0 }, digest: null, sections: [today, waiting, ...byDay("day", [dated(3, "pay", "Pay the electricity bill", 13)])] }, []);
     expect(useToday.getState().rows.map((r) => [r.id, r.group])).toEqual([
       ["dated:40", "today"],
       ["waiting:8", "waiting"],
       ["dated:30", "day:2026-11-13"],
     ]);
-    expect(useToday.getState().counts).toEqual({ missed: 0, today: 1, waiting: 1 });
+    expect(useToday.getState().counts).toEqual({ missed: 0, today: 1, waiting: 1, overdue: 0 });
   });
 
   it("each kind's day in words for a screen reader; a timed item keeps its time in Missed", () => {
