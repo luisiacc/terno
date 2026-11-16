@@ -185,22 +185,26 @@ export function datedTiming(o: { kind: DatedKind; due: string | null | undefined
 }
 
 /** 9:00 its kind's lead before a day, by wall clock across DST (an alert shows at once and a delivery on its day: theirs is stored). */
-function leadStart(kind: DatedKind, day: Date, lapses = false): number {
-  return dayAt(day, -DATED_LEAD_DAYS[lapses ? "expire" : kind], REMIND_MORNING);
+function leadStart(kind: DatedKind, day: Date): number {
+  return dayAt(day, -DATED_LEAD_DAYS[kind], REMIND_MORNING);
 }
 
 /**
  * Plan 210 (iteration 3, revision 6): the one seven-day predicate, a dated item's and a promise's alike: something due on
- * `day` shows from its lead's moment or from the midnight that brings its day within `SHOWN_DAYS`, whichever is first
- * (by wall clock across DST). Expiry and an active Later are applied after it, by the caller.
+ * `day` shows from the midnight that brings its day within `SHOWN_DAYS`, or from 9:00 its lead before when that lead is
+ * longer (`leadDays`; null: none, an alert's and a delivery's moment is stored), and never after `stored` (a moment kept
+ * from an earlier, longer lead). By wall clock across DST. Expiry and an active Later are applied after it, by the caller.
+ * One date made, whichever it is (a list places the 1,000-item bound on every read).
  */
-export const shownBy = (lead: number, day: Date): number => Math.min(lead, dayAt(day, -SHOWN_DAYS, 0));
+export function shownFrom(day: Date, leadDays: number | null, stored = Infinity): number {
+  return Math.min(stored, leadDays !== null && leadDays > SHOWN_DAYS ? dayAt(day, -leadDays, REMIND_MORNING) : dayAt(day, -SHOWN_DAYS, 0));
+}
 
 /**
  * The sixth panel round (revision 6): when an item shows, read here rather than stored, so an item kept under a shorter lead
  * shows by today's without a rescheduling pass: the earlier of its stored `actAt` and its kind's lead before its day, never
  * before its mail came (as `datedTiming`). An alert, a delivery and what has no day keep their stored moment. Plan 210
- * (iteration 3): within its seven days whatever its lead (`shownBy`); one that lapses unless renewed on an expiry's lead.
+ * (iteration 3): within its seven days whatever its lead (`shownFrom`); one that lapses unless renewed on an expiry's lead.
  */
 function showsFrom(r: Pick<DatedRow, "kind" | "dueDay" | "dated" | "actAt" | "arrivedAt" | "early" | "lapses">): number {
   // plan 210 (iteration 2): shown early, read from the item (a move keeps it): a person's request from its arrival (a
@@ -210,8 +214,8 @@ function showsFrom(r: Pick<DatedRow, "kind" | "dueDay" | "dated" | "actAt" | "ar
   const day = localDay(r.dueDay);
   if (!day) return r.actAt;
   // (an alert shows at once and a delivery on its day: theirs is stored)
-  const lead = r.kind === "alert" || r.kind === "delivery" ? r.actAt : Math.min(r.actAt, leadStart(r.kind, day, r.lapses === true));
-  return Math.max(r.arrivedAt, shownBy(lead, day));
+  const lead = r.kind === "alert" || r.kind === "delivery" ? null : DATED_LEAD_DAYS[r.lapses ? "expire" : r.kind];
+  return Math.max(r.arrivedAt, shownFrom(day, lead, r.actAt));
 }
 
 /**
@@ -334,11 +338,10 @@ const promiseMissedUntil = (r: PromiseFacts): number => missedUntil({ dueDay: da
 
 /**
  * The fifth panel round: a dated promise shows a request's lead before its day (a week, at 9:00), or from its Later. Plan 210
- * (iteration 3): within the seven days as a dated item is (`shownBy`).
+ * (iteration 3): within the seven days as a dated item is (`shownFrom`).
  */
 const promiseShowsAt = (r: PromiseFacts): number => {
-  const day = new Date(startOfDay(r.dueAt));
-  const lead = shownBy(dayAt(day, -DATED_LEAD_DAYS.respond, REMIND_MORNING), day);
+  const lead = shownFrom(new Date(startOfDay(r.dueAt)), DATED_LEAD_DAYS.respond);
   return r.deferredUntil != null ? Math.max(lead, r.deferredUntil) : lead;
 };
 

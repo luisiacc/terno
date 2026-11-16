@@ -86,7 +86,7 @@ describe("duplicates and related details", () => {
     const friend = dated("event", "2026-11-18", { threadId: 2, sameAs: `dated:${restaurant.id}`, text: "Dinner at Juniper & Rye (car pickup 7:05)" }, "19:30");
     const [row] = projectToday(facts({ dated: [restaurant, friend] })).rows;
     expect(row!.why.text).toBe("Juniper & Rye reservation, party of 4, Chef's counter (car pickup 7:05)");
-    expect(row!.messageId).toBe(49);
+    expect(row!.source).toEqual({ messageId: 49, senderKey: "a@b.c" });
     // a detail already said, or a zone note, isn't said twice; one bracket of its own takes the rest
     expect(withMembersDetails("Dinner (car pickup 7:05)", [friend])).toBe("Dinner (car pickup 7:05)");
     expect(withMembersDetails("Dinner (party of 4)", [friend])).toBe("Dinner (party of 4; car pickup 7:05)");
