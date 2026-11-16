@@ -244,6 +244,60 @@ describe("a promise that answers a request keeps its deadline (iteration 3)", ()
   });
 });
 
+describe("one reply, one row (iteration 4, the Codex review's revision 4)", () => {
+  const green = { text: "recalibrate the green for Ms. Greer", quote: "I'll recalibrate the green first", to: "r1", due: null };
+
+  it("a reply's promises to one person are one row; Done on it finishes every one, its duplicates and the request it answers, Undo all of them", async () => {
+    const { backend, client, model, request, reply, datedDone, followupsDone, rows } = await setup();
+    model.dated = () => dated([slip]);
+    const asked = await request();
+    await datedDone();
+    const [req] = await backend.store.dated.ofThread(asked.thread);
+    model.sent = () => sent({ promises: [green, wednesday], answers: [{ label: "q1", verdict: "promise", evidence: "I'll send it Wednesday" }] });
+    await reply(asked, "Thanks! I'll recalibrate the green first. I'll send it Wednesday.");
+    await followupsDone();
+    const promises = (await backend.store.followups.ofThread(asked.thread)).filter((p) => p.kind === "promise").sort((a, b) => a.item - b.item);
+    const [first, send] = promises;
+    expect(send).toMatchObject({ answers: req!.id, dated: true });
+    // one row, the dated one leading, the other its Also line and named for its acts
+    const list = await rows();
+    expect(list.map((r) => r.id)).toEqual([`promise:${send!.id}`]);
+    expect(list[0]!.why.with).toEqual([{ source: "promise", id: first!.id, revision: first!.revision }]);
+    expect(list[0]!.also).toMatchObject([{ kind: "promise", text: green.text, dated: false }]);
+    // Done on the row: both promises and the request, at once
+    const { undoId } = await client.call("followups.act", { id: send!.id, revision: send!.revision, action: "done", with: list[0]!.why.with! });
+    for (const p of promises) expect(await backend.store.followups.get(p.id)).toMatchObject({ state: "done" });
+    expect(await backend.store.dated.get(req!.id)).toMatchObject({ state: "settled" });
+    expect(await rows()).toEqual([]);
+    // Undo: every one back
+    await client.call("followups.undo", { undoId: undoId! });
+    for (const p of promises) expect((await backend.store.followups.get(p.id))!.state).toMatch(/open|due/);
+    expect(await backend.store.dated.get(req!.id)).toMatchObject({ state: "open" });
+    expect((await rows()).map((r) => r.id)).toEqual([`promise:${send!.id}`]);
+  });
+
+  it("all or none: one of them changed since it was shown, nothing is done; one acted on alone (the reader's line) leaves the row the other's", async () => {
+    const { backend, client, model, request, reply, datedDone, followupsDone, rows } = await setup();
+    model.dated = () => dated([slip]);
+    const asked = await request();
+    await datedDone();
+    model.sent = () => sent({ promises: [green, wednesday], answers: [{ label: "q1", verdict: "promise", evidence: "I'll send it Wednesday" }] });
+    await reply(asked, "Thanks! I'll recalibrate the green first. I'll send it Wednesday.");
+    await followupsDone();
+    const [first, send] = (await backend.store.followups.ofThread(asked.thread)).filter((p) => p.kind === "promise").sort((a, b) => a.item - b.item);
+    const shown = (await rows())[0]!.why.with!;
+    await expect(client.call("followups.act", { id: send!.id, revision: send!.revision, action: "done", with: [{ ...shown[0]!, revision: shown[0]!.revision + 1 }] })).rejects.toMatchObject({ code: "STALE" });
+    expect(await backend.store.followups.get(send!.id)).toMatchObject({ state: send!.state });
+    // the reader's line: the green alone; the row stays, its Also gone
+    await client.call("followups.act", { id: first!.id, revision: first!.revision, action: "done" });
+    expect(await backend.store.followups.get(send!.id)).toMatchObject({ state: send!.state });
+    const [row] = await rows();
+    expect(row).toMatchObject({ id: `promise:${send!.id}` });
+    expect(row!.why.with).toBeUndefined();
+    expect(row!.also).toBeUndefined();
+  });
+});
+
 describe("whichever reader finishes first (revision 1)", () => {
   it("follow-ups first: your reply waits for its conversation's mail to be read, then its verdict applies", async () => {
     const { backend, model, request, reply, datedDone, followupsDone, sentPrompts } = await setup();

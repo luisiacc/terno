@@ -22,7 +22,7 @@ import {
   type ProviderDescriptor,
   type DevAiProvider,
 } from "../ai";
-import type { FollowupRow, FollowupsSetting, FollowupsSnapshot } from "../followups";
+import { FOLLOWUP_REPLY_MAX, type FollowupRow, type FollowupsSetting, type FollowupsSnapshot } from "../followups";
 import type { DatedRow, DatedSetting } from "../dated";
 import { HANDOFF_ITEMS_MAX, type Handoff, type HandoffItem } from "../handoff";
 import type { DatedMute, MuteOffer } from "../dated-mutes";
@@ -1253,7 +1253,13 @@ export const contract = {
   "followups.list": m<FollowupsSnapshot>()(empty),
   /** the threads of these rows, for the list and the Inbox's top: one a thread (revision 10) */
   "followups.threads": m<{ items: ThreadSummary[] }>()(z.object({ onTop: z.boolean(), accountId: id.optional() })),
-  "followups.act": m<{ undoId: string | null; row: FollowupRow | null }>()(z.object({ id, revision: z.number().int().min(0), action: z.enum(["done", "dismiss", "later"]), dueAt: z.number().int().optional() })),
+  /**
+   * plan 210 (iteration 4): `with`, the other promises a reply's row shows (`TodayWhy.with`), acted on with it, all or none;
+   * a promise acted on alone (the reader's line) names none
+   */
+  "followups.act": m<{ undoId: string | null; row: FollowupRow | null }>()(
+    z.object({ id, revision: z.number().int().min(0), action: z.enum(["done", "dismiss", "later"]), dueAt: z.number().int().optional(), with: z.array(z.object({ source: z.enum(["dated", "promise"]), id, revision: z.number().int().min(0) })).max(FOLLOWUP_REPLY_MAX).optional() }),
+  ),
   "followups.undo": m<{ ok: true }>()(z.object({ undoId: z.string().min(1).max(64) })),
   /** the Inbox's top ends for this thread: it was opened and stayed on screen */
   "followups.seen": m<{ ok: true }>()(z.object({ threadId: id })),

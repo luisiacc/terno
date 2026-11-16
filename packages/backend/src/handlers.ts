@@ -1527,9 +1527,10 @@ export function createHandlers(b: Backend): Handlers {
     "followups.threads": async ({ onTop, accountId }) => ({ items: await b.followups.threads(onTop, accountId) }),
     // plan 210 (iteration 2): a promise of yours is acted on with every item it's the same thing as (What matters' one act);
     // a wait, as plan 142's
-    "followups.act": async ({ id, revision, action, dueAt }) => {
+    // (iteration 4) a reply's row names its other promises (`with`): one act, all or none
+    "followups.act": async ({ id, revision, action, dueAt, with: others }) => {
       if ((await b.store.followups.get(id))?.kind !== "promise") return b.followups.act(id, revision, action, dueAt);
-      const { undoId } = await b.today.act([{ source: "promise", id, revision }], action, action === "later" ? (dueAt ?? b.now()) : undefined);
+      const { undoId } = await b.today.act([{ source: "promise", id, revision }, ...(others ?? [])], action, action === "later" ? (dueAt ?? b.now()) : undefined);
       return { undoId, row: await b.store.followups.get(id) };
     },
     "followups.undo": async ({ undoId }) => {

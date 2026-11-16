@@ -273,9 +273,17 @@ describe("plan 204: Missed, Today, a day ahead and Coming up (plan 210: by day, 
 
   it("a related detail (a return leg) is said on its row's second line; nothing else is", () => {
     const back = { kind: "event" as const, text: "Return flight to Madrid", dueDay: day(17), dueAt: at(17, 9), timed: true, dated: true };
-    flattenToday(list({ today: [dated(4, "pay", "Pay the rent", 12)], day: [{ ...dated(3, "event", "Flight to Austin", 13, { timed: true }), also: back } as never] }), []);
+    flattenToday(list({ today: [dated(4, "pay", "Pay the rent", 12)], day: [{ ...dated(3, "event", "Flight to Austin", 13, { timed: true }), also: [back] } as never] }), []);
     expect(taskOfThread(3)).toMatchObject({ also: "Also Tue 9:00 AM · Return flight to Madrid" });
     expect(taskOfThread(4)).not.toHaveProperty("also");
+  });
+
+  it("plan 210 (iteration 4): a reply's row says its other promises, a line each, and its task names them for Done, Remove and Later", () => {
+    const green = { kind: "promise" as const, text: "calibrate the green with the printer's profile", dueDay: day(12), dueAt: at(12, 9), timed: false, dated: false };
+    const call = { kind: "promise" as const, text: "call Marcus", dueDay: day(13), dueAt: at(13, 16), timed: true, dated: true };
+    const why = { kind: "promise", text: "send Valeria the three changes", dueAt: at(12, 18), promise: { id: 31, revision: 2, dated: true }, with: [{ source: "promise", id: 32, revision: 0 }, { source: "promise", id: 33, revision: 1 }] };
+    flattenToday(list({ today: [{ id: "promise:31", thread: thread(3), why, also: [green, call] } as never] }), []);
+    expect(taskOfThread(3)).toMatchObject({ kind: "promise", id: 31, with: why.with, also: "Also: You said: calibrate the green with the printer's profile · Also tomorrow 4:00 PM · You said: call Marcus" });
   });
 
   it("plan 210 (iteration 4, revision 9): Coming up's rows only while it's open, quiet, in buckets of their own after every day and the digest, never joining a day above", () => {
