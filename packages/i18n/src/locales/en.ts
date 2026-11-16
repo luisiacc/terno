@@ -2684,7 +2684,8 @@ It contains none of your mail, contacts, settings or keys.
   "today.line.today": { one: "# to do today", other: "# to do today" },
   "today.line.waiting": { one: "# waiting", other: "# waiting" },
   "today.line.joined": "{a} · {b}",
-  "today.line.comingUp": { one: "# coming up", other: "# coming up" },
+  // plan 210 (iteration 4, revision 9): the feed's last heading, a disclosure
+  "whatMatters.comingUp": { one: "Coming up · #", other: "Coming up · #" },
   "today.dated.offer": "Show bills, trips and requests here.",
   "today.dated.turnOn": "Turn on",
   "today.dated.dismiss": "Don’t offer bills, trips and requests again",

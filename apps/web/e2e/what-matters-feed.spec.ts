@@ -595,20 +595,30 @@ test("plan 210 (iteration 3): the header says missed, today and waiting; Waiting
     await expect(line(page, "Pay the club dues")).toHaveCount(0);
   });
 
-  await scenario("Coming up opens as a disclosure: its rows under their day, past two weeks their week; the same words open or shut", async () => {
-    const toggle = page.getByTestId("today-coming-up");
-    await expect(toggle).toHaveText("3 coming up");
+  await scenario("Coming up is the feed's last heading, a disclosure: its rows in buckets of their own, by day then past two weeks by week; the same words open or shut", async () => {
+    // (iteration 4, revision 9) never in the header
+    await expect(page.getByTestId("today-line")).not.toContainText(/coming up/i);
+    const toggle = page.getByTestId("wm-coming-up");
+    await scroller(page).evaluate((el) => (el.scrollTop = el.scrollHeight));
+    await expect(toggle).toHaveText("Coming up · 3");
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
     await toggle.click();
     await expect(toggle).toHaveAttribute("aria-expanded", "true");
-    await expect(toggle).toHaveText("3 coming up");
+    await expect(toggle).toHaveText("Coming up · 3");
     const { rows } = await walk(page);
     const order = rows.filter((r) => r.kind === "open" || r.kind.startsWith("#")).map((r) => (r.kind === "open" ? r.text : r.kind));
-    // (the demo's own Coming up, if any, joins these days: only ours and the headings after the keynote)
-    const after = order.slice(order.indexOf("Shipfast Summit keynote.") + 1).filter((t) => t.startsWith("#") || /^Pay the (club dues|passport renewal fee|home insurance premium)\.$/.test(t));
-    expect(after.slice(0, 6)).toEqual(["#day", "Pay the club dues.", "#week", "Pay the passport renewal fee.", "#week", "Pay the home insurance premium."]);
+    // after every day of the open part: Coming up's heading, then its buckets (the demo's own Coming up, if any, in them too)
+    const ours = /^Pay the (club dues|passport renewal fee|home insurance premium)\.$/;
+    const from = order.indexOf("#comingUp");
+    expect(from).toBeGreaterThan(order.indexOf("Shipfast Summit keynote."));
+    expect(order.slice(from + 1).filter((t) => ours.test(t))).toEqual(["Pay the club dues.", "Pay the passport renewal fee.", "Pay the home insurance premium."]);
+    // each of ours under a bucket heading of Coming up's, never a day of the open part
+    for (const text of ["Pay the club dues.", "Pay the passport renewal fee.", "Pay the home insurance premium."]) {
+      const at = order.indexOf(text);
+      expect(order.slice(from, at).filter((t) => t.startsWith("#")).at(-1)).toBe("#coming");
+    }
     await reach(page, "Pay the home insurance premium");
-    await expect(feed(page).locator('[data-testid="wm-heading"][data-kind="week"]').last()).toHaveText(/^Week of \w{3} \d{1,2}(, \d{4})?$/);
+    await expect(feed(page).locator('[data-testid="wm-heading"][data-kind="coming"]').last()).toHaveText(/^Week of \w{3} \d{1,2}(, \d{4})?$/);
     await axeBothModes(page, '[data-testid="wm-feed"]');
   });
 
