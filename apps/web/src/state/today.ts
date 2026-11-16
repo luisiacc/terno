@@ -143,11 +143,20 @@ export const useToday = create<TodayState>(() => ({ rows: [], counts: { missed: 
  * Close, a second click), where j/k go on from. The app's `selectedId` stays the open conversation; this says which of its
  * rows. `moves` counts the feed's own selections, so an Undo restores its row only when none came since.
  */
-export const useFeedRow = create<{ opened: FeedRowId | null; cursor: FeedRowId | null; moves: number }>(() => ({ opened: null, cursor: null, moves: 0 }));
+export const useFeedRow = create<{
+  opened: FeedRowId | null;
+  cursor: FeedRowId | null;
+  moves: number;
+  /**
+   * plan 210 (iteration 4): the row Done (or Remove, Later) went on to from one the user had open: its mail opened by the
+   * app, but the reading is still theirs, so the next Done goes on again (`leaveFeedRows`)
+   */
+  carried: FeedRowId | null;
+}>(() => ({ opened: null, cursor: null, moves: 0, carried: null }));
 
 /** The feed opens this row (its conversation is the app's to open), or none. */
 export function openFeedRow(id: FeedRowId | null): void {
-  useFeedRow.setState(({ moves }) => ({ opened: id, ...(id !== null ? { cursor: null } : {}), moves: moves + 1 }));
+  useFeedRow.setState(({ moves }) => ({ opened: id, ...(id !== null ? { cursor: null } : {}), moves: moves + 1, carried: null }));
 }
 
 /**
