@@ -6,7 +6,7 @@ import type { LeftRows } from "~/lib/actions";
 import { muteOfferAction } from "~/lib/dated-mutes";
 import { registerUndo, snack, type SnackAction } from "~/lib/snack";
 import { client } from "~/rpc/connection";
-import { alertSays, placeClock } from "~/lib/today-sentence";
+import { alertSays, attendsLine, placeClock } from "~/lib/today-sentence";
 import { datedDay, dueShort, partDay, partInSentence, reminderTime } from "~/lib/when";
 
 /** Plan 204: a dated item as Today's row carries it, what Done and Later act on. */
@@ -132,6 +132,8 @@ export function conversationItem(r: DatedRow, now: number): { missed: boolean } 
  * that names no day, "Also: Answer Mariana about the quote". An alert says whose word it is, as everywhere.
  */
 export function alsoLine(o: TodayAlso, now = Date.now()): string {
+  // plan 210 (iteration 5, R9): your promise to attend the row's event, in your words, no day of its own
+  if (o.attends) return attendsLine(o.text);
   const text = o.kind === "promise" ? t("today.why.promise", { text: o.text }) : datedText({ kind: o.kind, text: o.text });
   if (!o.dated) return t("today.also.bare", { text });
   const day = dayOf(o);

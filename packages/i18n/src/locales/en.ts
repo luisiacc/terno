@@ -2704,6 +2704,8 @@ It contains none of your mail, contacts, settings or keys.
   "whatMatters.travel": "{when} {place}",
   "whatMatters.zoned": "{when} ({time})",
   "whatMatters.say.promise": "You said you'd {text}.",
+  // plan 210 (iteration 5, R9): your promise to come to an event or bring someone, on the event's row (a line, no full stop)
+  "whatMatters.also.attends": "You said you'd {text}",
   "whatMatters.say.wrote": "{name} wrote to you about “{subject}”.",
   "whatMatters.say.replied": "{name} wrote back about “{subject}”.",
   "whatMatters.say.reminder": "Your reminder for “{subject}”.",

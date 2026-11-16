@@ -246,8 +246,12 @@ describe("a row's second item (plan 204, the fifth panel round, change 6)", () =
     expect(alsoLine({ kind: "pay", text: "Renew the lease", dueDay: "2026-11-30", dueAt: new Date(2026, 10, 30, 9).getTime(), timed: false, dated: true }, now)).toBe("Also Nov 30 · Renew the lease");
     expect(alsoLine({ kind: "ask", text: "Answer Jess about the budget", dueDay: "2026-11-13", dueAt: now, timed: false, dated: false }, now)).toBe("Also: Answer Jess about the budget");
     expect(alsoLine({ kind: "alert", text: "Debit card frozen", dueDay: "2026-11-16", dueAt: now, timed: false, dated: false }, now)).toBe("Also: Debit card frozen, the email says");
+    // plan 210 (iteration 5, R9): your promise to attend the row's event or bring someone, in your words, no day
+    const bring = { kind: "promise" as const, text: "Bring Nina and the SE.", dueDay: "2026-11-14", dueAt: now, timed: false, dated: false, attends: true };
+    expect(alsoLine(bring, now)).toBe("You said you'd bring Nina and the SE");
     setLocale("es", es);
     try {
+      expect(alsoLine({ ...bring, text: "llevar a Nina y al ingeniero" }, now)).toBe("Dijiste que ibas a llevar a Nina y al ingeniero");
       expect(alsoLine(board, now)).toBe("También el jue 09:00 · Board meeting");
       expect(alsoLine({ kind: "promise", text: "enviar la presentación", dueDay: "2026-11-15", dueAt: new Date(2026, 10, 15, 9).getTime(), timed: false, dated: true }, now)).toBe("También mañana · Dijiste: enviar la presentación");
     } finally {

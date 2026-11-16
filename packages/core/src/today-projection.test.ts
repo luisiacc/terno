@@ -1,6 +1,6 @@
 /** Plan 210 (iteration 2): a row per item, one projection for the feed, the counts and the notice. */
 import { describe, expect, it } from "vitest";
-import { canLapse, datedGroupAt, datedTiming, displayBucket, lapsesUnlessRenewed, needsPresence, nextTodayChange, promiseOver, type DatedKind, type DatedRow } from "./dated";
+import { canLapse, datedGroupAt, datedTiming, dayKeyOf, displayBucket, lapsesUnlessRenewed, needsPresence, nextTodayChange, promiseOver, type DatedKind, type DatedRow } from "./dated";
 import type { FollowupRow } from "./followups";
 import { placedThreads, placeItems, projectToday, withMembersDetails, withNeeds, type ProjectionFacts } from "./today-projection";
 import { splitZoneNote, statedClock } from "./today-items";
@@ -188,6 +188,12 @@ describe("one reply, one row (plan 210, iteration 4)", () => {
     const { rows } = projectToday(facts({ dated: [qbr], promises: [bring!, agenda!] }));
     expect(rows.map((r) => r.id).sort()).toEqual([`dated:${qbr.id}`, `promise:${agenda!.id}`].sort());
     expect(rows.find((r) => r.id === `promise:${agenda!.id}`)!.why.with).toBeUndefined();
+    // (iteration 5, R9) what you said you'd bring is the event's line, in your words, no day of its own
+    expect(rows.find((r) => r.id === `dated:${qbr.id}`)!.also).toEqual([{ kind: "promise", text: bring!.text, dueDay: dayKeyOf(NOW - 1), dueAt: NOW - 1, timed: false, dated: false, attends: true }]);
+    // an errand read as a bill and as your promise says nothing more: the same thing twice is one row, one line
+    const bus = dated("pay", "2026-11-20", { threadId: 2 });
+    const mine = promise(at(2026, 11, 20, 9), { threadId: 2, sameAs: `dated:${bus.id}` });
+    expect(projectToday(facts({ dated: [bus], promises: [mine] })).rows[0]!.also).toBeUndefined();
   });
 
   it("grouped where they're placed: a lead behind Coming up takes the other with it in the list and in the count alike; one closed, the other is its own row", () => {
