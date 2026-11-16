@@ -32,8 +32,9 @@ describe("a Today row's task (plan 204, after the panel)", () => {
   it("Remove: a date is dismissed by its own act, a promise by follow-ups' (the one the row shows), each with Undo", async () => {
     await actOnTask({ kind: "dated", item, when: null, due: null, dueAt: 0 }, "dismiss");
     await actOnTask({ kind: "promise", id: 7, revision: 3, when: null, due: null }, "dismiss");
-    expect(calls).toEqual(["dated.act", "followups.act"]);
-    expect(params).toEqual([{ id: 30, revision: 2, action: "dismiss" }, { id: 7, revision: 3, action: "dismiss" }]);
+    // plan 210 (iteration 4): a date's Remove asks what its snack may offer to mute (a promise is yours: nothing)
+    expect(calls).toEqual(["dated.act", "dated.muteOffer", "followups.act"]);
+    expect(params).toEqual([{ id: 30, revision: 2, action: "dismiss" }, { id: 30 }, { id: 7, revision: 3, action: "dismiss" }]);
     expect(said).toEqual([{ text: "Removed from What matters", undo: true }, { text: "Removed from What matters", undo: true }]);
   });
 
