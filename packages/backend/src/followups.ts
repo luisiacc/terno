@@ -76,6 +76,17 @@ type Verdict = NonNullable<FollowupFinish["verdicts"]>[number];
 
 export const onlyHolds = (quote: string): boolean => HOLDS.test(normalizeText(quote).toLowerCase()) && !DELIVERS.test(normalizeText(quote).toLowerCase());
 
+/**
+ * Plan 210 (iteration 4): a promise's text is said to you, so your things are "your", never "my" (prompt v11's rule, which
+ * Haiku still breaks about one reading in ten: "send Asha my script", "el escaneo de mi pasaporte"). "mí" ("para mí") is
+ * another word and stays, and so is a word that isn't one's own ("5 mi away").
+ */
+export const yourWords = (text: string): string =>
+  text.replace(/(?<![\p{L}\p{N}'’])(?<!\d\s)(my|mi|mis)(?=\s+\p{L})/giu, (w) => {
+    const to = ({ my: "your", mi: "tu", mis: "tus" } as const)[w.toLowerCase() as "my" | "mi" | "mis"];
+    return w[0] === w[0]!.toUpperCase() ? to[0]!.toUpperCase() + to.slice(1) : to;
+  });
+
 /** Plan 210 (iteration 3): a verdict's words, or a promise's, are the same words: one holds the other. */
 const sameWords = (a: string, b: string): boolean => {
   const x = norm(a).toLowerCase();
@@ -101,7 +112,7 @@ export function checkSentMail(result: SentMailResult, input: { ownText: string; 
     const day = followupDue({ kind: "promise", sentAt: input.sentAt, due, nudgeAfterDays: input.nudgeAfterDays });
     // plan 210 (iteration 2): a time its words state is its moment
     const { dueAt, timed } = promiseMoment(p.text, due, day, input.sentAt);
-    rows.push({ kind: "promise", item, text: p.text, quote: p.quote, personName: to?.name || null, personEmail: to?.email ?? null, dueAt, dated: day.dated, ...(timed ? { timed } : {}) });
+    rows.push({ kind: "promise", item, text: yourWords(p.text), quote: p.quote, personName: to?.name || null, personEmail: to?.email ?? null, dueAt, dated: day.dated, ...(timed ? { timed } : {}) });
   });
   if (result.expectsReply) {
     const who = result.awaiting.flatMap((label) => person.get(label) ?? []).filter((r) => isPerson(r.email));
