@@ -7,6 +7,7 @@
  */
 import type { FollowupRow, ThreadSummary, TodayList } from "@terno/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ReaderItem } from "./reader-items";
 
 const fake = vi.hoisted(() => {
   const g = globalThis as Record<string, unknown>;
@@ -368,5 +369,15 @@ describe("plan 210 (iteration 5, R7): how far Remind me may go for the item in h
     // a promise of yours by its day; one that named none, any time
     expect(remindLimit({ task: { kind: "promise", id: 2, revision: 0, when: null, due: null, dated: true, dueAt: at(13, 16), timed: true } }, now)).toBe(at(13, 16));
     expect(remindLimit({ task: { kind: "promise", id: 2, revision: 0, when: null, due: null, dated: false, noDay: true } }, now)).toBeNull();
+  });
+
+  it("iteration 5's code review: a part of the day ends where its part does, the row's, the promise's and the reader's alike", () => {
+    // Kai's "by Saturday morning": over at noon, so "Saturday afternoon" is never offered
+    const morning = { task: { kind: "dated" as const, item: { id: 1, revision: 0, kind: "respond" as const, dated: true, dueDay: "2026-11-14", timed: false, part: "morning" as const }, when: null, due: null, dueAt: at(14, 9) } };
+    expect(remindLimit(morning, now)).toBe(at(14, 12));
+    expect(remindLimit({ task: { kind: "promise", id: 2, revision: 0, when: null, due: null, dated: true, dueAt: at(13, 9), timed: false, part: "morning" } }, now)).toBe(at(13, 12));
+    const reader = (row: object, source: "dated" | "promise") => ({ item: { source, row } as unknown as ReaderItem });
+    expect(remindLimit(reader({ kind: "respond", dated: true, dueDay: "2026-11-14", dueAt: at(14, 13), timed: false, partOfDay: "afternoon" }, "dated"), now)).toBe(at(14, 18));
+    expect(remindLimit(reader({ id: 3, kind: "promise", state: "open", dated: true, dueAt: at(13, 9), timed: false, partOfDay: "morning", sentAt: at(11, 9) }, "promise"), now)).toBe(at(13, 12));
   });
 });
