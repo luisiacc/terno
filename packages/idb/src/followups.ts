@@ -4,7 +4,7 @@ import { T, type Ctx, type R } from "./mail";
 
 /** Plan 142 on IndexedDB, like SQL's (packages/db/src/followups.ts). */
 
-const toRow = (r: R): FollowupRow => ({ id: r.id, threadId: r.thread_id, messageId: r.message_id, rfcMessageId: r.rfc_message_id ?? null, item: r.item, kind: r.kind, text: r.text, quote: r.quote ?? null, personName: r.person_name ?? null, personEmail: r.person_email ?? null, sentAt: r.sent_at, dueAt: r.due_at, dated: r.dated === 1, deferredUntil: r.deferred_until ?? null, state: r.state, inboxState: r.inbox_state, closedReason: r.closed_reason ?? null, closedAt: r.closed_at ?? null, notifiedAt: r.notified_at ?? null, fromScan: r.from_scan === 1, revision: r.revision, model: r.model ?? null, provider: r.provider ?? null, createdAt: r.created_at, sameAs: r.same_as ?? null, brokenDueAt: r.broken_due_at ?? null, timed: r.timed === 1, answers: r.answers ?? null });
+const toRow = (r: R): FollowupRow => ({ id: r.id, threadId: r.thread_id, messageId: r.message_id, rfcMessageId: r.rfc_message_id ?? null, item: r.item, kind: r.kind, text: r.text, quote: r.quote ?? null, personName: r.person_name ?? null, personEmail: r.person_email ?? null, sentAt: r.sent_at, dueAt: r.due_at, dated: r.dated === 1, deferredUntil: r.deferred_until ?? null, state: r.state, inboxState: r.inbox_state, closedReason: r.closed_reason ?? null, closedAt: r.closed_at ?? null, notifiedAt: r.notified_at ?? null, fromScan: r.from_scan === 1, revision: r.revision, model: r.model ?? null, provider: r.provider ?? null, createdAt: r.created_at, sameAs: r.same_as ?? null, brokenDueAt: r.broken_due_at ?? null, timed: r.timed === 1, answers: r.answers ?? null, settledBy: r.settled_by ?? null, settledAt: r.settled_at ?? null });
 
 function own(c: Ctx): Set<string> {
   const out = new Set<string>();
@@ -213,7 +213,7 @@ export function finishFollowups(c: Ctx, w: FollowupFinish): FollowupFinishOutcom
   const yours = mark.confirmed === 1 || trustedSend(T(c, "messages").get(w.messageId) ?? {});
   const dated = T(c, "dated_items");
   const settle = (r: R, revision: number) => {
-    if (r.revision === revision) dated.update(r, { state: "settled", closed_reason: "answered", closed_at: w.now, revision: r.revision + 1 });
+    if (r.revision === revision) dated.update(r, { state: "settled", closed_reason: "answered", closed_at: w.now, settled_by: w.messageId, settled_at: src.date, revision: r.revision + 1 });
   };
   for (const v of yours ? (w.verdicts ?? []) : []) {
     const r = answerable(c, v.request.id, src);
@@ -232,7 +232,7 @@ export function finishFollowups(c: Ctx, w: FollowupFinish): FollowupFinishOutcom
   for (const k of w.kept) {
     const r = rows.get(k.id);
     if (r && r.revision === k.revision && r.thread_id === src.threadId && r.kind === "promise" && live(r)) {
-      rows.update(r, { state: "done", closed_reason: "kept", closed_at: w.now, inbox_state: "none", revision: r.revision + 1 });
+      rows.update(r, { state: "done", closed_reason: "kept", closed_at: w.now, settled_by: w.messageId, settled_at: src.date, inbox_state: "none", revision: r.revision + 1 });
       // plan 210 (iteration 3): what it promised to a request is sent: the request is answered with it
       const request = yours && r.answers != null ? answerable(c, r.answers, src) : null;
       if (request) settle(request, request.revision);

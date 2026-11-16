@@ -179,7 +179,8 @@ function outcomeOf(item: ReaderItem): string {
   const state = item.row.state;
   // plan 210 (iteration 3): a promise its person replaced says so
   const outcome = item.source === "promise" && item.row.closedReason === "replaced" ? "replaced" : state === "done" ? "done" : state === "settled" ? "settled" : "dismissed";
-  return historyWhen({ outcome, kind: item.source === "dated" ? item.row.kind : "promise", key: { at: item.row.closedAt ?? item.row.createdAt, src: item.source === "dated" ? 0 : 1, id: item.row.id } });
+  // (plan 210, iteration 4, revision 7: settled by mail, that mail's day and how)
+  return historyWhen({ outcome, kind: item.source === "dated" ? item.row.kind : "promise", key: { at: item.row.closedAt ?? item.row.createdAt, src: item.source === "dated" ? 0 : 1, id: item.row.id }, on: item.row.settledAt ?? undefined, reason: item.row.closedReason });
 }
 
 /**

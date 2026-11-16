@@ -101,6 +101,13 @@ export interface DatedRow {
    * takes an expiry's lead whatever kind it was read as. Absent: not (stored before it; no backfill).
    */
   lapses?: boolean;
+  /**
+   * Plan 210 (iteration 4, revision 7): what mail settled it, the message and its date, the day its history line says
+   * ("Paid Mon"); its closing (`closedAt`) stays when it was read, the history's order. Null: not settled by mail, or settled
+   * before it (no backfill).
+   */
+  settledBy?: number | null;
+  settledAt?: number | null;
 }
 
 export interface DatedSetting {

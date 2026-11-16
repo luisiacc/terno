@@ -2621,6 +2621,8 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "whatMatters.history.done": "Hecho {day}",
   "whatMatters.history.removed": "Quitado {day}",
   "whatMatters.history.settled": "Resuelto {day}",
+  "whatMatters.history.paid": "Pagado {day}",
+  "whatMatters.history.answered": "Respondido {day}",
   "whatMatters.history.over": "Pasó {day}",
   "whatMatters.history.replaced": "Reemplazado {day}",
   "whatMatters.automatedLine": "Boletines y notificaciones",

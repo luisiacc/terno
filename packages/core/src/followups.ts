@@ -59,6 +59,9 @@ export interface FollowupRow {
    * checked verdict: while the promise is open the request is its row's, its day carried (`promiseDay`). Null: none
    */
   answers?: number | null;
+  /** Plan 210 (iteration 4, revision 7): the sent mail that kept it, or the person's that replaced it, and that mail's date */
+  settledBy?: number | null;
+  settledAt?: number | null;
 }
 
 export interface FollowupsSetting {

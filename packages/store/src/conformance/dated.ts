@@ -228,7 +228,10 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
         // the sender, elsewhere, at the revision shown: settled
         const paid = await got({ date: NOW - 6000 });
         await finish(paid.id, paid.thread, { settled: [{ id: pay.id, revision: pay.revision }] });
-        expect(await store.dated.get(pay.id)).toMatchObject({ state: "settled", closedReason: "settled", closedAt: NOW, revision: pay.revision + 1 });
+        // plan 210 (iteration 4, revision 7): the settling mail and its date beside the closing (read now)
+        expect(pay.settledBy ?? null).toBeNull();
+        expect(await store.dated.get(pay.id)).toMatchObject({ state: "settled", closedReason: "settled", closedAt: NOW, settledBy: paid.id, settledAt: NOW - 6000, revision: pay.revision + 1 });
+        expect((await store.dated.closedPage({ since: 0, after: null, limit: 10 })).find((r) => r.id === pay.id)).toMatchObject({ settledBy: paid.id, settledAt: NOW - 6000 });
         // someone else, on its thread: settled
         const r = await store.sync.ingest([msg({ accountId, from: shop, to: [me], inReplyTo: "b0@x", references: ["b0@x"], subject: "Re", date: NOW - 5000 })], { applyFilters: false, now: NOW, classifier: null, datedMail: { since: null } });
         await finish(r.inserted[0]!, bill.thread, { settled: [{ id: renew.id, revision: renew.revision }] });
@@ -321,7 +324,7 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
         // their mail, after it, on its thread, at the revision seen: the promise closes as replaced, the request is open
         const ingrid = await reply();
         await finish(ingrid.id, ingrid.thread, { rows: [chapter], replaced: [{ id: promise!.id, revision: promise!.revision, item: 0 }] });
-        expect(await store.followups.get(promise!.id)).toMatchObject({ state: "dismissed", closedReason: "replaced", closedAt: NOW, inboxState: "none", revision: promise!.revision + 1 });
+        expect(await store.followups.get(promise!.id)).toMatchObject({ state: "dismissed", closedReason: "replaced", closedAt: NOW, settledBy: ingrid.id, settledAt: NOW - 1000, inboxState: "none", revision: promise!.revision + 1 });
         expect((await store.dated.ofThread(thread)).filter((x) => x.text === "Send a full draft of Chapter 2" && x.state === "open")).not.toHaveLength(0);
         // history reads it as closed
         expect((await store.followups.closedPage({ since: 0, after: null, limit: 10 })).map((p) => [p.id, p.closedReason])).toEqual([[promise!.id, "replaced"]]);
@@ -833,7 +836,8 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
         // read again: its verdict on the request it answers
         await store.followups.marks.queueScan([r.id], NOW);
         await read(r, { verdicts: [v(request)] });
-        expect(await store.dated.get(request.id)).toMatchObject({ state: "settled", closedReason: "answered", closedAt: NOW, revision: request.revision + 1 });
+        // plan 210 (iteration 4, revision 7): the reply and its date
+        expect(await store.dated.get(request.id)).toMatchObject({ state: "settled", closedReason: "answered", closedAt: NOW, settledBy: r.id, settledAt: NOW - 5000, revision: request.revision + 1 });
       });
 
       it("a promise answers it: the request stays open, linked once; a kept promise settles it; a holding reply or none leaves it", async () => {

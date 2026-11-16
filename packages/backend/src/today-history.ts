@@ -129,7 +129,11 @@ export async function historyPage(store: MailStore, o: HistoryAsk): Promise<Toda
     if (!thread || thread.inSpam || thread.inTrash || o.held.has(id) || !group || group.open || !group.newest || historyOrder(group.newest, head.key) !== 0) continue;
     // plan 210 (iteration 3): a request finished with the promise that answered it is that promise's line
     if (row.src === 0 && row.closedReason === ANSWERED_WITH_PROMISE) continue;
-    items.push({ id, item: { source: sourceOf(row.src), id: row.id }, thread, key: head.key, outcome: outcomeOf(row), kind: row.src === 0 ? row.kind : "promise", text: row.text });
+    const line: TodayHistoryItem = { id, item: { source: sourceOf(row.src), id: row.id }, thread, key: head.key, outcome: outcomeOf(row), kind: row.src === 0 ? row.kind : "promise", text: row.text };
+    // plan 210 (iteration 4, revision 7): settled by mail, the line says that mail's day and how
+    if (row.settledAt != null) line.on = row.settledAt;
+    if (row.closedReason) line.reason = row.closedReason;
+    items.push(line);
     if (!o.through && items.length >= o.limit) {
       next = head.key;
       break;

@@ -125,7 +125,7 @@ describe("Spanish", () => {
 });
 
 describe("the history's lines (plan 210)", () => {
-  const line = (kind: "pay" | "alert" | "promise", outcome: "done" | "dismissed" | "settled" | "over" | "replaced", at: number, text = "Pay $187.42 for the electricity bill") => ({ thread, kind, outcome, text, key: { at, src: kind === "promise" ? (1 as const) : (0 as const), id: 1 } });
+  const line = (kind: "pay" | "alert" | "respond" | "promise", outcome: "done" | "dismissed" | "settled" | "over" | "replaced", at: number, text = "Pay $187.42 for the electricity bill", more: { on?: number; reason?: string } = {}) => ({ thread, kind, outcome, text, key: { at, src: kind === "promise" ? (1 as const) : (0 as const), id: 1 }, ...more });
 
   it("says the item as the open part did, and in the column what happened and when", () => {
     expect(historySentence(line("pay", "done", at(13, 8)))).toBe("Pay $187.42 for the electricity bill.");
@@ -137,7 +137,12 @@ describe("the history's lines (plan 210)", () => {
     expect(historyWhen(line("pay", "done", at(13, 8)), NOW)).toBe("Done today");
     expect(historyWhen(line("pay", "dismissed", at(12, 9)), NOW)).toBe("Removed yesterday");
     expect(historyWhen(line("promise", "dismissed", at(11)), NOW)).toBe("Removed Wed");
-    expect(historyWhen(line("pay", "settled", at(2)), NOW)).toBe("Settled Nov 2");
+    // plan 210 (iteration 4, revision 7): settled by mail, how and the day that mail came, not the day it was read
+    expect(historyWhen(line("pay", "settled", at(2)), NOW)).toBe("Paid Nov 2");
+    expect(historyWhen(line("pay", "settled", at(13, 8), undefined, { on: at(9, 18), reason: "settled" }), NOW)).toBe("Paid Mon");
+    expect(historyWhen(line("respond", "settled", at(13, 8), undefined, { on: at(12, 7), reason: "answered" }), NOW)).toBe("Answered yesterday");
+    expect(historyWhen(line("alert", "settled", at(13, 8), undefined, { on: at(11), reason: "settled" }), NOW)).toBe("Settled Wed");
+    expect(historyWhen(line("promise", "done", at(13, 8), undefined, { on: at(10), reason: "kept" }), NOW)).toBe("Done Tue");
     expect(historyWhen(line("pay", "over", at(9)), NOW)).toBe("Over Mon");
     // plan 210 (iteration 3): a promise its person replaced with another request
     expect(historyWhen(line("promise", "replaced", at(12, 9)), NOW)).toBe("Replaced yesterday");
@@ -149,6 +154,8 @@ describe("the history's lines (plan 210)", () => {
     expect(historyWhen(line("pay", "over", at(11)), NOW)).toBe("Pasó el mié");
     expect(historyWhen(line("promise", "dismissed", at(11)), NOW)).toBe("Quitado el mié");
     expect(historyWhen(line("promise", "replaced", at(11)), NOW)).toBe("Reemplazado el mié");
+    expect(historyWhen(line("pay", "settled", at(13, 8), undefined, { on: at(11), reason: "settled" }), NOW)).toBe("Pagado el mié");
+    expect(historyWhen(line("respond", "settled", at(13, 8), undefined, { on: at(12), reason: "answered" }), NOW)).toBe("Respondido ayer");
     expect(historySentence(line("alert", "settled", at(12), "Pago rechazado de $1,186.40 en la Visa…"))).toBe("Según el correo: Pago rechazado de $1,186.40 en la Visa…");
     expect(historySentence(line("promise", "done", at(11), "enviar a Valeria los ajustes"))).toBe("Dijiste que ibas a enviar a Valeria los ajustes.");
   });

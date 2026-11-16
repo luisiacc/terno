@@ -659,7 +659,7 @@ describe("migration v57: an ask (plan 204, after the third panel round)", () => 
     const before = db.all<Record<string, unknown>>("SELECT * FROM dated_items ORDER BY id");
     expect(migrate(db)).toEqual({ from: 56, to: SCHEMA_VERSION });
     // v61's columns at their defaults (plan 210, iteration 2)
-    expect(db.all<Record<string, unknown>>("SELECT * FROM dated_items ORDER BY id")).toEqual(before.map((r) => ({ ...r, early: 0, same_as: null, detail_of: null, lapses: 0 })));
+    expect(db.all<Record<string, unknown>>("SELECT * FROM dated_items ORDER BY id")).toEqual(before.map((r) => ({ ...r, early: 0, same_as: null, detail_of: null, lapses: 0, settled_by: null, settled_at: null })));
     expect(db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'dated_items' AND sql IS NOT NULL ORDER BY name").map((r) => r.name)).toEqual(["dated_closed", "dated_open", "dated_same", "dated_sender", "dated_thread"]);
     expect(db.get("SELECT name FROM sqlite_master WHERE name = 'dated_items_v57'")).toBeUndefined();
     // an ask now; the next id is past the pruned one, as before the upgrade
@@ -681,7 +681,7 @@ describe("migration v58: a promise's Later (plan 204, the fifth panel round)", (
     const before = db.all<Record<string, unknown>>("SELECT * FROM followups ORDER BY id");
     expect(before).toHaveLength(1);
     expect(migrate(db)).toEqual({ from: 57, to: SCHEMA_VERSION });
-    expect(db.all<Record<string, unknown>>("SELECT * FROM followups ORDER BY id")).toEqual(before.map((r) => ({ ...r, deferred_until: null, same_as: null, broken_due_at: null, timed: 0, answers: null })));
+    expect(db.all<Record<string, unknown>>("SELECT * FROM followups ORDER BY id")).toEqual(before.map((r) => ({ ...r, deferred_until: null, same_as: null, broken_due_at: null, timed: 0, answers: null, settled_by: null, settled_at: null })));
     expect(db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'followups' AND sql IS NOT NULL ORDER BY name").map((r) => r.name)).toEqual(["followups_active", "followups_answers", "followups_closed", "followups_same", "followups_thread", "followups_top"]);
   });
 });
@@ -703,8 +703,8 @@ describe("migration v61: What matters' items (plan 210, iteration 2)", () => {
     const dated = db.all<Record<string, unknown>>("SELECT * FROM dated_items ORDER BY id");
     const followups = db.all<Record<string, unknown>>("SELECT * FROM followups ORDER BY id");
     expect(migrate(db)).toEqual({ from: 60, to: SCHEMA_VERSION });
-    expect(db.all<Record<string, unknown>>("SELECT * FROM dated_items ORDER BY id")).toEqual(dated.map((r) => ({ ...r, early: 0, same_as: null, detail_of: null, lapses: 0 })));
-    expect(db.all<Record<string, unknown>>("SELECT * FROM followups ORDER BY id")).toEqual(followups.map((r) => ({ ...r, same_as: null, broken_due_at: null, timed: 0, answers: null })));
+    expect(db.all<Record<string, unknown>>("SELECT * FROM dated_items ORDER BY id")).toEqual(dated.map((r) => ({ ...r, early: 0, same_as: null, detail_of: null, lapses: 0, settled_by: null, settled_at: null })));
+    expect(db.all<Record<string, unknown>>("SELECT * FROM followups ORDER BY id")).toEqual(followups.map((r) => ({ ...r, same_as: null, broken_due_at: null, timed: 0, answers: null, settled_by: null, settled_at: null })));
     // `same_as` by index, only where it's set
     expect(db.get<{ sql: string }>("SELECT sql FROM sqlite_master WHERE name = 'dated_same'")!.sql).toMatch(/WHERE same_as IS NOT NULL/);
     expect(db.get<{ sql: string }>("SELECT sql FROM sqlite_master WHERE name = 'followups_same'")!.sql).toMatch(/WHERE same_as IS NOT NULL/);
@@ -728,7 +728,7 @@ describe("migration v62: a promise answers a request (plan 210, iteration 3)", (
     const followups = db.all<Record<string, unknown>>("SELECT * FROM followups ORDER BY id");
     const marks = db.all<Record<string, unknown>>("SELECT * FROM ai_sent_mail ORDER BY message_id");
     expect(migrate(db)).toEqual({ from: 61, to: SCHEMA_VERSION });
-    expect(db.all<Record<string, unknown>>("SELECT * FROM followups ORDER BY id")).toEqual(followups.map((r) => ({ ...r, answers: null })));
+    expect(db.all<Record<string, unknown>>("SELECT * FROM followups ORDER BY id")).toEqual(followups.map((r) => ({ ...r, answers: null, settled_by: null, settled_at: null })));
     expect(db.all<Record<string, unknown>>("SELECT * FROM ai_sent_mail ORDER BY message_id")).toEqual(marks.map((r) => ({ ...r, confirmed: 0 })));
     expect(db.get<{ sql: string }>("SELECT sql FROM sqlite_master WHERE name = 'followups_answers'")!.sql).toMatch(/WHERE answers IS NOT NULL/);
     expect(db.all<{ detail: string }>("EXPLAIN QUERY PLAN SELECT id FROM followups WHERE answers = 7").map((r) => r.detail).join(" ")).toMatch(/followups_answers/);
@@ -746,7 +746,7 @@ describe("migration v63: an item that lapses unless renewed (plan 210, iteration
     );
     const before = db.all<Record<string, unknown>>("SELECT * FROM dated_items ORDER BY id");
     expect(migrate(db)).toEqual({ from: 61, to: SCHEMA_VERSION });
-    expect(db.all<Record<string, unknown>>("SELECT * FROM dated_items ORDER BY id")).toEqual(before.map((r) => ({ ...r, lapses: 0 })));
+    expect(db.all<Record<string, unknown>>("SELECT * FROM dated_items ORDER BY id")).toEqual(before.map((r) => ({ ...r, lapses: 0, settled_by: null, settled_at: null })));
   });
 });
 
@@ -757,6 +757,28 @@ describe("migration v64: a confirmed send stays yours for certain (plan 210, ite
     expect(before.length).toBeGreaterThan(0);
     expect(migrate(db)).toEqual({ from: 63, to: SCHEMA_VERSION });
     expect(db.all<Record<string, unknown>>("SELECT * FROM messages ORDER BY id")).toEqual(before.map((r) => ({ ...r, sent_confirmed: 0 })));
+  });
+});
+
+describe("migration v65: the mail that settled an item, and its date (plan 210, iteration 4, revision 7)", () => {
+  it("adds both columns to both tables, empty, every row kept as it was (shape only, no backfill)", () => {
+    const { db } = legacyMail(64, { threads: 2, seed: 11 });
+    const thread = db.get<{ id: number }>("SELECT id FROM threads ORDER BY id LIMIT 1")!.id;
+    db.run(
+      `INSERT INTO dated_items (thread_id, message_id, item, kind, text, quote, sender_key, due_day, due_at, timed, dated, act_at, arrived_at, state, closed_reason, closed_at, revision, created_at)
+       VALUES (?, 1, 0, 'pay', 'Pay the bill', 'due Friday', 'a@b.mx', '2026-12-07', 5, 0, 1, 4, 3, 'settled', 'settled', 9, 2, 2)`,
+      thread,
+    );
+    db.run(
+      `INSERT INTO followups (thread_id, message_id, item, kind, text, sent_at, due_at, dated, state, inbox_state, closed_reason, closed_at, revision, created_at)
+       VALUES (?, 1, 0, 'promise', 'send the deck', 3, 5, 1, 'done', 'none', 'kept', 9, 2, 2)`,
+      thread,
+    );
+    const dated = db.all<Record<string, unknown>>("SELECT * FROM dated_items ORDER BY id");
+    const followups = db.all<Record<string, unknown>>("SELECT * FROM followups ORDER BY id");
+    expect(migrate(db)).toEqual({ from: 64, to: SCHEMA_VERSION });
+    expect(db.all<Record<string, unknown>>("SELECT * FROM dated_items ORDER BY id")).toEqual(dated.map((r) => ({ ...r, settled_by: null, settled_at: null })));
+    expect(db.all<Record<string, unknown>>("SELECT * FROM followups ORDER BY id")).toEqual(followups.map((r) => ({ ...r, settled_by: null, settled_at: null })));
   });
 });
 
