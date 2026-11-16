@@ -38,7 +38,7 @@ export function useWhen(start: number) {
  * segment by segment in the app's locale. `testPrefix` names their test ids
  * (`remind` → remind-date, remind-time…).
  */
-export function WhenFields({ when, testPrefix, describedBy, onEnter }: { when: ReturnType<typeof useWhen>; testPrefix: string; describedBy?: string; onEnter?: () => void }) {
+export function WhenFields({ when, testPrefix, describedBy, onEnter, noTime = false }: { when: ReturnType<typeof useWhen>; testPrefix: string; describedBy?: string; onEnter?: () => void; /** a day alone (plan 210, Change… on an item with no time): no time field */ noTime?: boolean }) {
   const { day, setDay, minutes, setMinutes, setComplete, past } = when;
   const [calendarOpen, setCalendarOpen] = useState(false);
   const today = midnight(new Date());
@@ -78,7 +78,7 @@ export function WhenFields({ when, testPrefix, describedBy, onEnter }: { when: R
           />
         </PopoverContent>
       </Popover>
-      <TimeField
+      {!noTime && <TimeField
         data-testid={`${testPrefix}-time`}
         aria-label={t("remind.time")}
         locale={tag()}
@@ -90,7 +90,7 @@ export function WhenFields({ when, testPrefix, describedBy, onEnter }: { when: R
         isInvalid={past}
         aria-describedby={past ? describedBy : undefined}
         className="w-30 shrink-0"
-      />
+      />}
     </div>
   );
 }

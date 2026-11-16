@@ -7,7 +7,7 @@ import { CategoryDot } from "@terno/ui/components/category-dot";
 import { cn } from "@terno/ui/lib/utils";
 import { Chip } from "@terno/ui/components/chip";
 import { Command, CommandDescription, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from "@terno/ui/components/command";
-import { Archive, AtSign, Ban, AlarmClock, AlarmClockOff, ListChecks, BookmarkPlus, CalendarClock, CheckCheck, CircleCheck, Clock, Copy, FileDown, Focus, FolderInput, Forward, Keyboard, Link, Mail, MailOpen, Moon, OctagonAlert, Palette, Paperclip, Pin, PinOff, PinTop, Inbox, Layers, ListFilter, Mails, PenLine, Plus, Printer, RefreshCw, Reply, ReplyAll, RotateCw, Search, Send, Sparkles, Star, Sun, Tag, NotepadText, Trash2, Undo2, Users } from "@terno/ui/icons";
+import { Archive, AtSign, Ban, AlarmClock, AlarmClockOff, ListChecks, BookmarkPlus, CalendarClock, CalendarDays, CheckCheck, CircleCheck, Clock, Copy, FileDown, Focus, FolderInput, Forward, Keyboard, Link, Mail, MailOpen, Moon, OctagonAlert, Palette, Paperclip, Pin, PinOff, PinTop, Inbox, Layers, ListFilter, Mails, PenLine, Plus, Printer, RefreshCw, Reply, ReplyAll, RotateCw, Search, Send, Sparkles, Star, Sun, Tag, NotepadText, Trash2, Undo2, Users } from "@terno/ui/icons";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { fitWholeRows, markMore } from "@terno/ui/lib/whole-rows";
 import { act, openCompose, targetRows, toggleStar, undoLast } from "~/lib/actions";
@@ -31,6 +31,7 @@ import { getApp, navigate, setApp, useApp } from "~/state/app";
 import { openRemind, presetLabel, presetWhen, setReminder, clearReminder, useReminders } from "~/lib/reminders";
 import { useReaderHeld, useTodayTask } from "~/state/today";
 import { actOnReaderItem, actOnTodayRow, openLater, openReaderLater } from "~/lib/today-task";
+import { changeOfItem, changeOfTask, openChange } from "~/lib/change";
 import { draftCommands, type DraftCommands } from "~/lib/draft-commands";
 import { isInstruction } from "~/lib/imperative";
 import { askFrom, paletteBack, handBackKeysNow, paletteFrom, paletteKeys, paletteReturn, returnPaletteFocus, setPalettePage, usePalettePage } from "~/lib/palette-open";
@@ -493,6 +494,9 @@ export function CommandPalette() {
       add({ id: "dated.done", group: "conversation", label: t("dated.done"), icon: <CircleCheck />, shortcut: keysOf("today.done"), testId: "palette-dated-done", keywords: english("dated.done"), run: () => actOn("done") });
       // plan 210 (iteration 1): Later's picker for the item as it is now (once the palette has gone), and Remove, with their keys
       add({ id: "dated.later", group: "conversation", label: t("palette.todayLater"), icon: <Clock />, shortcut: keysOf("today.later"), testId: "palette-dated-later", keywords: english("palette.todayLater"), takesFocus: true, run: () => requestAnimationFrame(later) });
+      // plan 210 (iteration 4): Change…, the item's own day and time, in the dialog once the palette has gone (no key of its own)
+      const change = readerItem ? changeOfItem(readerItem) : todayTask ? changeOfTask(todayTask.task) : null;
+      if (change) add({ id: "dated.change", group: "conversation", label: t("palette.todayChange"), icon: <CalendarDays />, testId: "palette-dated-change", keywords: english("palette.todayChange"), takesFocus: true, run: () => requestAnimationFrame(() => openChange(change)) });
       add({ id: "dated.dismiss", group: "conversation", label: t("palette.todayRemove"), icon: <Ban />, shortcut: keysOf("today.remove"), testId: "palette-dated-dismiss", ...synonyms("palette.alias.todayRemove", english("palette.todayRemove")), run: () => actOn("dismiss") });
     }
     // plan 132 §7: the open conversation, never in spam or trash; no shortcut of its own
