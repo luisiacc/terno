@@ -972,7 +972,7 @@ export class DatedWorker {
       };
       // plan 210 (iteration 5, revision 3): a dated sentence the reading noted nothing for is asked about once more, before
       // the one finish: Spam, a mute and the settings read again first, its one claim on the mark, the text already read
-      const looked = await secondLook(await read(input), { text, subject: src.subject, arrivedAt: src.date, automated: input.from.automated, shown: input.open, input, promptChars: budget.promptChars }, {
+      const looked = await secondLook(await read(input), { text, subject: src.subject, arrivedAt: src.date, automated: input.from.automated, from: input.from.name, shown: input.open, input, promptChars: budget.promptChars }, {
         recheck: async () => {
           const current = await this.host.settings();
           if (!current.dated.enabled || !(await this.host.allowed(current))) return "stop";

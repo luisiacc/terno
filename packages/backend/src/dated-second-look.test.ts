@@ -51,11 +51,12 @@ describe("which sentences get a second look", () => {
     expect(look(REGISTRATION, { automated: true })).toEqual([CLOSES]);
     // the meeting quoted, or its day returned with a quote the mail doesn't hold word for word: covered
     expect(look(BOOK_CLUB, { first: { ...none, items: [HOST, { kind: "event", text: "Book club", quote: "We're meeting Tuesday the 17th at 7:00", due: "2026-11-17", time: "19:00" }] } })).toEqual([]);
-    expect(look(BOOK_CLUB, { first: { ...none, items: [HOST, { kind: "event", text: "Book club", quote: "book club at Dolores's", due: "2026-11-17", time: "19:00" }] } })).toEqual([]);
+    // (iteration 5's code review, point 3: only when its words name the same thing: the book)
+    expect(look(BOOK_CLUB, { first: { ...none, items: [HOST, { kind: "event", text: "Book club: The Lighthouse Keeper's Daughter", quote: "book club at Dolores's", due: "2026-11-17", time: "19:00" }] } })).toEqual([]);
     // a settlement's or a move's evidence, and an open item's day it was shown (a reminder of it)
     expect(look(REGISTRATION, { first: { ...none, settled: [{ label: "o1", evidence: "Your enrollment window closes Wednesday" }] } })).toEqual([]);
     expect(look(REGISTRATION, { first: { ...none, moved: [{ label: "o1", due: "2026-12-09", time: "23:59", evidence: "enrollment window closes", text: null, textEvidence: null }] } })).toEqual([]);
-    expect(look(REGISTRATION, { shown: [{ due: "2026-12-09" }] })).toEqual([]);
+    expect(look(REGISTRATION, { shown: [{ due: "2026-12-09", text: "Register for spring classes (enrollment window)" }] })).toEqual([]);
     // es
     const es = "Hola a todas:\n\nNos reunimos el martes 17 a las 19:00 en mi casa. ¿Me avisas antes del lunes 16 si puedes ser anfitriona en diciembre?\n\nDolores";
     expect(look(es, { first: { ...none, items: [{ ...HOST, quote: "Me avisas antes del lunes 16 si puedes ser anfitriona en diciembre", due: "2026-11-15" }] } })).toEqual(["Nos reunimos el martes 17 a las 19:00 en mi casa."]);
@@ -65,7 +66,7 @@ describe("which sentences get a second look", () => {
   it("never what the checks would refuse: a receipt, a charge made by itself, a sale's end, a scam's pressure, en and es", () => {
     expect(look("Payment received on Tuesday, November 17 at 10:15. Thank you!")).toEqual([]);
     expect(look("Se cobró tu suscripción el martes 17 de noviembre a las 10:15.")).toEqual([]);
-    expect(look("Your bill of $64.20 is due November 20 at 5 PM.\n\nAutoPay is on: we'll charge your Visa.")).toEqual([]);
+    expect(look("Your bill of $64.20 is due November 20 at 5 PM.\n\nAutoPay is on: we'll charge your Visa on the due date.")).toEqual([]);
     expect(look("Tu plan se renueva automáticamente el 20 de noviembre a las 9:00.")).toEqual([]);
     expect(look("50% off everything: the sale ends Sunday, November 15 at midnight!")).toEqual([]);
     expect(look("Your account will be suspended within 24 hours. Verify your account by November 11 at 5 PM.")).toEqual([]);
@@ -141,6 +142,27 @@ describe("the second look's one call (pure, with fakes)", () => {
     expect(await secondLook(first, o, deps({ read: async () => Promise.reject(error) }).d)).toEqual({ result: first, asked: 1, complete: false, error });
     // the first reading's own signal ended it: that's the worker's to handle, never the look's
     await expect(secondLook(first, o, deps({ read: async () => Promise.reject(error), aborted: () => true }).d)).rejects.toBe(error);
+  });
+});
+
+describe("iteration 5's code review", () => {
+  it("AutoPay said in the mail rejects only the obligation it's about, with the checks' vetoes (point 2)", () => {
+    expect(look("AutoPay is on. Your card has expired. Please pay invoice 3318 by November 25 at 5 PM.")).toEqual(["Please pay invoice 3318 by November 25 at 5 PM."]);
+    expect(look("AutoPay is on for your electricity account.\n\nThe lease renewal form is due November 25 at 5 PM.")).toEqual(["The lease renewal form is due November 25 at 5 PM."]);
+    expect(look("AutoPay is on. A balance of $40.00 remains, due November 25 at 5 PM.")).toEqual(["A balance of $40.00 remains, due November 25 at 5 PM."]);
+    expect(look("Your plan renews automatically each year.\n\nYour free trial ends November 25 at 11:59 PM.")).toEqual(["Your free trial ends November 25 at 11:59 PM."]);
+    // its own: still never asked
+    expect(look("Your plan will renew automatically on November 25 at 9:00.")).toEqual([]);
+  });
+
+  it("a day returned or shown covers only a sentence about the same thing (point 3)", () => {
+    const report = { kind: "respond" as const, text: "Send Ana the Q3 report", quote: "Please send me the Q3 report by Friday, November 20 at noon.", due: "2026-11-20", time: "12:00" };
+    expect(look("Please send me the Q3 report by Friday, November 20 at noon. The lease renewal closes Friday, November 20 at 5 PM.", { first: { ...none, items: [report] } })).toEqual(["The lease renewal closes Friday, November 20 at 5 PM."]);
+    expect(look("The lease renewal closes Friday, November 20 at 5 PM.", { shown: [{ kind: "pay", text: "Pay the Brightline bill", due: "2026-11-20" }] })).toEqual(["The lease renewal closes Friday, November 20 at 5 PM."]);
+    // a statement's due date beside the balance the reading quoted, and a reminder naming the open item: the same thing
+    const balance = { kind: "pay" as const, text: "Pay $215.50 for the Cobaltline card", quote: "Statement balance: $215.50", due: "2026-11-25", time: null };
+    expect(look("Statement balance: $215.50\nPayment due date: November 25, 2026", { first: { ...none, items: [balance] } })).toEqual([]);
+    expect(look("Reminder: the lease renewal closes Friday, November 20 at 5 PM.", { shown: [{ kind: "respond", text: "Return the lease renewal form", due: "2026-11-20" }] })).toEqual([]);
   });
 });
 
