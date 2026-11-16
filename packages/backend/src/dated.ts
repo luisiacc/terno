@@ -1,5 +1,5 @@
 import { AiError, DATED_PROMPT_VERSION, DATED_SUBJECT_CHARS, DATED_TEXT_CHARS, costAt, datedBudget, fitDates, priceOf, type AiTasks, type DatedResult } from "@terno/ai";
-import { addressKey, localDay, needsPresence, saysNoReplyNeeded, DATED_ITEMS_MAX, DATED_KINDS, DATED_OPEN_SHOWN, followupDue, validFollowupDate, type FollowupRow, DATED_SCAN_DAYS, DATED_SCAN_MAX, datedOver, dayKeyOf, datedTiming, dayEnd, hasTimeCue, normalizeText, withoutQuotes, type AiErrorKind, type DatedKind, type DatedRow } from "@terno/core";
+import { addressKey, canLapse, lapsesUnlessRenewed, localDay, needsPresence, saysNoReplyNeeded, DATED_ITEMS_MAX, DATED_KINDS, DATED_OPEN_SHOWN, followupDue, validFollowupDate, type FollowupRow, DATED_SCAN_DAYS, DATED_SCAN_MAX, datedOver, dayKeyOf, datedTiming, dayEnd, hasTimeCue, normalizeText, withoutQuotes, type AiErrorKind, type DatedKind, type DatedRow } from "@terno/core";
 import { captureError } from "@terno/core/diag";
 import type { AppSettings } from "@terno/core/rpc";
 import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
@@ -168,12 +168,16 @@ type Move = Omit<DatedResult["moved"][number], "text" | "textEvidence"> & Partia
 /**
  * Plan 210 (iteration 2, the panel's A5 and A6), decided once as an item is read, never on a count: a person's request to the
  * reader (`askAllowed`) shows from its arrival, in Today's people with its day ("by Nov 30"); a delivery that needs someone
- * there (a signature) from the day before.
+ * there (a signature) from the day before. Iteration 3 (revision 11): `words`, the mail's own around the quote, never the
+ * item's.
  */
-function shownEarly(kind: DatedKind, item: { text: string; quote: string }, said: string, input: Parameters<typeof checkDates>[1]): boolean {
+function shownEarly(kind: DatedKind, item: { quote: string }, words: string, said: string, input: Parameters<typeof checkDates>[1]): boolean {
   if (kind === "respond") return askAllowed(item.quote, said, input.text, input);
-  return kind === "delivery" && needsPresence(item.text, item.quote);
+  return kind === "delivery" && needsPresence(words);
 }
+
+/** Plan 210 (iteration 3, revision 11): how much of the mail around a quote its facts are read from */
+const FACT_WORDS_MAX = 2000;
 
 /**
  * A promise's new day from its person's mail (the second panel round), and (plan 210, iteration 2) its time: the move's own
@@ -340,7 +344,9 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     const key = itemKey(kind, timing);
     if (movedKeys.has(key)) continue;
     if (rows.some((r) => itemKey(r.kind, r) === key && (!TWO_A_DAY.has(kind) || sameThing(r, item)))) continue;
-    rows.push({ kind, item: rows.length, text: item.text.trim(), quote: item.quote.trim(), ...timing, ...(shownEarly(kind, item, said, input) ? { early: true } : {}) });
+    // plan 210 (iteration 3, revision 11): facts from the mail's words around the quote (its paragraph, bounded), never the item's
+    const words = `${contextOf(item.quote, paragraphs).slice(0, FACT_WORDS_MAX)}\n${item.quote}`;
+    rows.push({ kind, item: rows.length, text: item.text.trim(), quote: item.quote.trim(), ...timing, ...(shownEarly(kind, item, words, said, input) ? { early: true } : {}), ...(canLapse(kind) && lapsesUnlessRenewed(words) ? { lapses: true } : {}) });
   }
   const movedPromises = promiseMoves.filter((m) => !replaced.has(m)).map(({ p, day, time }) => ({ id: p.id, revision: p.revision, ...movedPromise(p, day, time, input.arrivedAt) }));
   return { rows, settled, moved: moved.map(({ kind: _kind, ...m }) => m), movedPromises, asked };
