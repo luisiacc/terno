@@ -231,6 +231,16 @@ describe("plan 210 (iteration 2): one time per row, a request shown early, a bro
     expect(todayWhen(marcus, NOW, "waiting").text).toBe("antes del lun");
   });
 
+  it("plan 210 (iteration 4, revision 10): travel says the mail's clock with the place, never the reader's", () => {
+    // Theo's tech check, 4:00 PM in Austin (2:00 PM where he reads it)
+    const check = item({ kind: "dated", text: "Tech check", dueAt: at(16, 14), item: { id: 1, revision: 0, kind: "event", dueDay: "2026-11-16", timed: true, dated: true, travel: { day: "2026-11-16", time: "16:00", place: "Austin" } } });
+    expect(todayWhen(check, NOW, "day:2026-11-16").text).toMatch(/^Mon 4:00\sPM Austin$/);
+    const today = item({ kind: "dated", text: "Flight to Denver", dueAt: at(13, 17), item: { id: 1, revision: 0, kind: "event", dueDay: "2026-11-13", timed: true, dated: true, travel: { day: "2026-11-13", time: "18:05", place: "Austin" } } });
+    expect(todayWhen(today, NOW, "today").text).toMatch(/^6:05\sPM Austin$/);
+    setLocale("es", es);
+    expect(todayWhen(check, NOW, "day:2026-11-16").text).toBe("lun 16:00 en Austin");
+  });
+
   it("in Spanish", () => {
     setLocale("es", es);
     const renewal = item({ kind: "dated", text: "x", dueAt: at(30, 9), item: { id: 1, revision: 0, kind: "respond", dueDay: "2026-11-30", timed: false, dated: true, early: true } });

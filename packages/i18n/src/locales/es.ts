@@ -2657,6 +2657,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "whatMatters.neededBeforeTomorrow": "{when} · lo necesitan antes de mañana",
   "whatMatters.before": "antes del {day}",
   "whatMatters.beforeTomorrow": "antes de mañana",
+  "whatMatters.travel": "{when} en {place}",
   "whatMatters.zoned": "{when} ({time})",
   "whatMatters.say.promise": "Dijiste que ibas a {text}.",
   "whatMatters.say.wrote": "{name} te escribió sobre «{subject}».",
