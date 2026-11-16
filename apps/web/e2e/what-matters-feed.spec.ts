@@ -574,7 +574,7 @@ test("plan 210 (iteration 3): the header says missed, today and waiting; Waiting
 
   await scenario("the header's three numbers, disjoint; the badge their sum", async () => {
     // (the demo mailbox's own conversations waiting on you are among the waiting)
-    await expect(page.getByTestId("today-needs")).toHaveText(/^1 missed · 1 today · \d+ waiting$/);
+    await expect(page.getByTestId("today-needs")).toHaveText(/^1 missed · 1 to do today · \d+ waiting$/);
     const waiting = Number(/(\d+) waiting/.exec(await page.getByTestId("today-needs").innerText())![1]);
     expect(waiting).toBeGreaterThanOrEqual(3);
     await expect(page.getByTestId("nav-today")).toContainText(String(2 + waiting));

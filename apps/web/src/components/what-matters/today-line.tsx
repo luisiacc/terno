@@ -4,9 +4,9 @@ import type { TodayCounts } from "@terno/core";
 import { setComingUpOpen, useToday } from "~/state/today";
 
 /**
- * Plan 210 (iteration 3, revision 8, the owner's "'Waiting on you' in Today"): the header's numbers, "1 missed · 3 today · 5
- * waiting", disjoint, so the sidebar's badge reads as the sum of what's said; a part that's nothing isn't said. Null:
- * nothing to say.
+ * Plan 210 (iteration 3, revision 8, the owner's "'Waiting on you' in Today"): the header's numbers, "1 missed · 3 to do
+ * today · 5 waiting" (iteration 4: what Today counts is what's to do, your reminders with it, never its plans), disjoint,
+ * so the sidebar's badge reads as the sum of what's said; a part that's nothing isn't said. Null: nothing to say.
  */
 export function todayCountsLine(c: TodayCounts): string | null {
   const parts = [c.missed > 0 && t("today.line.missed", { count: c.missed }), c.today > 0 && t("today.line.today", { count: c.today }), c.waiting > 0 && t("today.line.waiting", { count: c.waiting })].filter((p): p is string => typeof p === "string");

@@ -2644,7 +2644,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "whatMatters.say.replied": "{name} respondió sobre «{subject}».",
   "whatMatters.say.reminder": "Tu recordatorio de «{subject}».",
   "today.line.missed": { one: "# se te pasó", other: "# se te pasaron" },
-  "today.line.today": { one: "# hoy", other: "# hoy" },
+  "today.line.today": { one: "# por hacer hoy", other: "# por hacer hoy" },
   "today.line.waiting": { one: "# te espera", other: "# te esperan" },
   "today.line.joined": "{a} · {b}",
   "today.line.comingUp": { one: "# próximo", other: "# próximos" },

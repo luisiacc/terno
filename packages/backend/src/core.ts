@@ -414,7 +414,11 @@ export class BackendCore {
     this.reminders = new Reminders({
       store: this.store,
       now: () => this.now(),
-      emit: (snapshot) => this.server.emit("reminders", snapshot),
+      emit: (snapshot) => {
+        this.server.emit("reminders", snapshot);
+        // plan 210 (iteration 4): What matters draws and counts your reminders due today
+        this.today.changed();
+      },
       notify: (notice) => this.attention.remind(notice),
       runBudgeted: (items, work) => this.runBudgeted(items, work),
       log: (level, message, extra) => this.log(level, message, extra),

@@ -99,15 +99,32 @@ interface DayKey {
   timed: boolean;
   at: number;
   dueAt: number;
+  /** Today's order (`clock` false): its day's whole first, then its times */
+  today: boolean;
 }
 
 function dayKey(why: DayWhy, clock: boolean): DayKey {
-  const timed = timedWhy(why);
+  // plan 210 (iteration 4): your reminder is at its time in Today's schedule, as a timed item is
+  const timed = timedWhy(why) || (!clock && why.kind === "reminder");
   const dueAt = why.dueAt ?? 0;
-  return { tier: dayTier(why), timed, at: timed && clock ? minuteOfDay(dueAt) : dueAt, dueAt };
+  return { tier: dayTier(why), timed, at: timed && clock ? minuteOfDay(dueAt) : dueAt, dueAt, today: !clock };
 }
 
-const byDayKey = (x: DayKey, y: DayKey): number => (x.tier !== y.tier || x.tier === 2 ? x.tier - y.tier : x.timed !== y.timed ? (x.timed ? -1 : 1) : x.at - y.at || x.dueAt - y.dueAt);
+/**
+ * Plan 210 (iteration 4, the Codex review's revision 8): Today's own rows as a day's calendar has them: what's for the whole
+ * day first, by tier, then what has a time, by that time whatever its tier (Priya's payroll at 1:00 PM, the 1:1 at 2:00 PM,
+ * Marcus at 4:00 PM), the tier only between rows at one moment. A day ahead's keep the tier first (put off to that day,
+ * its times are the rows' own). People waiting (tier 2) keep the order they came in, in Today after the rest.
+ */
+const byDayKey = (x: DayKey, y: DayKey): number => {
+  if (x.today) {
+    // (people waiting are Today's own part, after the rest: never interleaved, so the order stays one order)
+    if (x.tier === 2 || y.tier === 2) return Number(x.tier === 2) - Number(y.tier === 2);
+    if (x.timed !== y.timed) return x.timed ? 1 : -1;
+    return x.timed ? x.at - y.at || x.tier - y.tier : x.tier - y.tier || x.dueAt - y.dueAt;
+  }
+  return x.tier !== y.tier || x.tier === 2 ? x.tier - y.tier : x.timed !== y.timed ? (x.timed ? -1 : 1) : x.at - y.at || x.dueAt - y.dueAt;
+};
 
 /**
  * Plan 210 (iteration 1): the one order inside a day, the backend's before each conversation's row is chosen and the

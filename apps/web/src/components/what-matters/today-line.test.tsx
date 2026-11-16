@@ -29,13 +29,13 @@ async function show(today: number, o: { missed?: number; waiting?: number; comin
   });
 }
 
-it("plan 210 (iteration 3): missed, today and waiting, each unsaid at zero; no cap, never the Inbox's count nor the badge's sum", async () => {
+it("plan 210 (iteration 3): missed, to do today (iteration 4) and waiting, each unsaid at zero; no cap, never the Inbox's count nor the badge's sum", async () => {
   await show(3, { missed: 1, waiting: 5 });
-  expect(line()).toBe("1 missed · 3 today · 5 waiting");
+  expect(line()).toBe("1 missed · 3 to do today · 5 waiting");
   expect(line()).not.toMatch(/165|99|this week|newest|See all/);
   expect(toggle()).toBeNull();
   await show(6, { waiting: 8 });
-  expect(line()).toBe("6 today · 8 waiting");
+  expect(line()).toBe("6 to do today · 8 waiting");
   // a part that's nothing isn't said
   await show(0, { waiting: 1 });
   expect(line()).toBe("1 waiting");
@@ -50,7 +50,7 @@ it("in Spanish too", async () => {
   setLocale("es", es);
   try {
     await show(3, { missed: 1, waiting: 5 });
-    expect(line()).toBe("1 se te pasó · 3 hoy · 5 te esperan");
+    expect(line()).toBe("1 se te pasó · 3 por hacer hoy · 5 te esperan");
     await show(0, { waiting: 1 });
     expect(line()).toBe("1 te espera");
   } finally {

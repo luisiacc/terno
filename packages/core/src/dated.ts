@@ -369,6 +369,18 @@ function effective<T extends PromiseFacts>(r: T, now: number): T {
 /** Put off with Later until a moment still ahead: no row's promise meanwhile, and never Missed nor over. */
 export const promiseDeferred = (r: PromiseFacts, now: number): boolean => r.deferredUntil != null && r.deferredUntil > now;
 
+/**
+ * Plan 210 (iteration 4, the Codex review's revision 8; the owner: "Today, Waiting on you"): a promise given a day and
+ * missed (`promiseDay`'s `said`) that sits under a live day still ahead or today, not put off with Later. Someone is
+ * waiting on it: it's Today's, first in its Waiting on you, in Missed's weight, counted once as waiting. One fact, read by
+ * the place (`promiseGroupAt`) and by the projection's part and order alike, the list's and the count's.
+ */
+export function promiseBroken(r: PromiseFacts, now: number): boolean {
+  if (r.kind !== "promise" || (r.state !== "open" && r.state !== "due") || (r.brokenDueAt == null && r.needed == null) || promiseDeferred(r, now)) return false;
+  const d = promiseDay(r, now);
+  return d.said != null && d.dated && now < dayEnd(dayKeyOf(d.dueAt));
+}
+
 /** Due by now: the follow-ups worker marks it `due` at `followupWakeAt`, and a promise read before it ran is due all the same. */
 const promiseDue = (r: PromiseFacts, now: number): boolean => !promiseDeferred(r, now) && (r.state === "due" || (r.state === "open" && followupWakeAt(r) <= now));
 
@@ -516,11 +528,12 @@ const COUNTED_GROUPS: ReadonlySet<TodayGroupKind> = new Set(["missed", "today"])
 
 /**
  * What "N need you" counts, the header's, the sidebar's and the morning notice's (plan 204's rule, plan 210's groups): a
- * row in Missed or Today, unless it's your reminder or its own item is a Plan's kind (an event or a delivery: something
- * happening to you, wherever it sits). `why` is the row's: its kind, and its own item's (a promise or a waiting row has
- * none). A day ahead and Coming up never count (plan 210, iteration 3: "this week" went with the header's third part).
+ * row in Missed or Today, unless its own item is a Plan's kind (an event or a delivery: something happening to you,
+ * wherever it sits). `why` is the row's: its kind, and its own item's (a promise or a waiting row has none). A day ahead
+ * and Coming up never count (plan 210, iteration 3: "this week" went with the header's third part). Plan 210 (iteration
+ * 4, revision 8): your reminder due today counts, a thing to do drawn under Today ("3 to do today" says what it counts).
  */
-export const todayCounted = (group: TodayGroupKind, why: { kind: string; item?: { kind: DatedKind } }): boolean => COUNTED_GROUPS.has(group) && why.kind !== "reminder" && (why.item === undefined || datedGroup(why.item.kind) !== "plans");
+export const todayCounted = (group: TodayGroupKind, why: { kind: string; item?: { kind: DatedKind } }): boolean => COUNTED_GROUPS.has(group) && (why.item === undefined || datedGroup(why.item.kind) !== "plans");
 
 const TODAY: TaskPlace = { group: "today", day: null };
 const MISSED: TaskPlace = { group: "missed", day: null };
@@ -574,8 +587,12 @@ export function datedGroupAt(r: Parameters<typeof datedPlace>[0], now: number, t
   return { group: "day", day: r.dueDay };
 }
 
-/** The same for a promise of yours: an undated one due is Today's, a dated one Today's on its day and its day's before. */
+/**
+ * The same for a promise of yours: an undated one due is Today's, a dated one Today's on its day and its day's before.
+ * Plan 210 (iteration 4, revision 8): one broken with a live day ahead (`promiseBroken`) is Today's at any distance.
+ */
 export function promiseGroupAt(r: PromiseFacts, now: number, today = dayKeyOf(now)): TaskPlace | null {
+  if (promiseBroken(r, now)) return TODAY;
   r = effective(r, now);
   const place = promisePlace(r, now);
   if (place === "hidden") return null;

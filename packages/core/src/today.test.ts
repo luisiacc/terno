@@ -69,7 +69,7 @@ describe("one order inside a day (plan 210, iteration 1)", () => {
     expect([dayTier(dated("event", 0)), dayTier(dated("delivery", 0))]).toEqual([4, 4]);
   });
 
-  it("the timed first by their time inside a tier; people as they came; a day ahead's timed by their time of day", () => {
+  it("Today: the whole day's first by tier, then what has a time by its time whatever its tier (iteration 4), people last as they came; a day ahead's tier first, timed by their time of day", () => {
     const rows = [
       as("lunch 12:30", dated("event", at(18, 12, 30), true)),
       as("parcel", dated("delivery", at(18, 0))),
@@ -81,7 +81,9 @@ describe("one order inside a day (plan 210, iteration 1)", () => {
       as("reminder", { kind: "reminder", dueAt: at(18, 9) }),
       as("breakfast 9:00", dated("event", at(18, 9), true)),
     ];
-    expect(sorted(rows)).toEqual(["payroll 13:00", "rent", "promise", "ask", "waiting", "reminder", "breakfast 9:00", "lunch 12:30", "parcel"]);
+    expect(sorted(rows)).toEqual(["rent", "promise", "parcel", "reminder", "breakfast 9:00", "lunch 12:30", "payroll 13:00", "ask", "waiting"]);
+    // a day ahead: by tier, the timed first in each
+    expect(sorted(rows, true)).toEqual(["payroll 13:00", "rent", "promise", "ask", "waiting", "reminder", "breakfast 9:00", "lunch 12:30", "parcel"]);
     // Today: a plan still on from last night first; a day ahead: by the time of day (two put off to it from other days)
     const lastNight = as("last night 23:00", dated("event", at(17, 23), true));
     const morning = as("morning 8:00", dated("event", at(18, 8), true));

@@ -571,7 +571,9 @@ export class TodayService {
     const items = this.placed(dated, await this.needs(dated, promises), now, o.count === true);
     const endOfDay = new Date(now);
     endOfDay.setHours(23, 59, 59, 999);
-    const reminders = o.count ? [] : (await this.b.reminders.refresh()).reminders.filter((r) => r.dueAt <= endOfDay.getTime()).map((r) => ({ threadId: r.threadId, dueAt: r.dueAt }));
+    // plan 210 (iteration 4, revision 8): your reminders due today are Today's to do, drawn and counted alike; the count reads
+    // them as stored (a few, at most `REMINDERS_MAX`), the list as the reminders' own look has them (answered ones ended)
+    const reminders = (o.count ? await store.reminders.list() : (await this.b.reminders.refresh()).reminders).filter((r) => r.dueAt <= endOfDay.getTime()).map((r) => ({ threadId: r.threadId, dueAt: r.dueAt }));
     const ids = [...placedThreads(items), ...reminders.map((r) => r.threadId)];
     const waiting = await store.today.waitingPage({ now, after: null, limit: NEEDS_WALK });
     // (the zone's read only for the rows' words: an Intl formatter is dear on every count)
