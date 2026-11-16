@@ -422,6 +422,16 @@ describe("the local checks (plan 204 §3)", () => {
       const open = new Map([["o1", item({ kind: "respond", senderKey: power, text: "Send the slip", quote: "send the slip by Friday", dueDay: "2026-11-13", dueAt: at(2026, 11, 13, 9), partOfDay: null })]]);
       expect(checkDates(move("o1", "please send the slip Monday morning instead", "2026-11-16"), { ...mail("Sorry, please send the slip Monday morning instead."), open }).moved[0]).toMatchObject({ dueDay: "2026-11-16", timed: false, partOfDay: "morning" });
       expect(checkDates(move("o1", "please send the slip Monday instead", "2026-11-16"), { ...mail("Sorry, please send the slip Monday instead."), open }).moved[0]!.partOfDay).toBeUndefined();
+      // iteration 5's code review: the same day's other part moves it ("Monday afternoon instead" for Monday morning's); the
+      // same day said again with no part, or its own part, doesn't
+      const budget = new Map([["o1", item({ kind: "respond", senderKey: power, text: "Send the budget", quote: "send me the budget Monday morning", dueDay: "2026-11-16", dueAt: at(2026, 11, 16, 9), partOfDay: "morning" })]]);
+      expect(checkDates(move("o1", "You can send me the budget on Monday afternoon instead", "2026-11-16"), { ...mail("You can send me the budget on Monday afternoon instead."), open: budget }).moved).toMatchObject([{ id: 9, dueDay: "2026-11-16", timed: false, partOfDay: "afternoon" }]);
+      expect(checkDates(move("o1", "send me the budget on Monday", "2026-11-16"), { ...mail("Just checking: send me the budget on Monday."), open: budget }).moved).toEqual([]);
+      expect(checkDates(move("o1", "send me the budget Monday morning", "2026-11-16"), { ...mail("Again: send me the budget Monday morning."), open: budget }).moved).toEqual([]);
+      // the 14-day check: a morning's request read after its noon is over, before it isn't
+      const scan = { ...input, arrivedAt: at(2026, 11, 12, 8), fromScan: true };
+      expect(checkDates({ items: [kai], settled: [] }, { ...scan, now: at(2026, 11, 14, 13) }).rows).toEqual([]);
+      expect(checkDates({ items: [kai], settled: [] }, { ...scan, now: at(2026, 11, 14, 11) }).rows).toHaveLength(1);
       // María's cupcakes Friday morning, her person's move after noon that Friday: broken at noon, the new day's morning at 9:00
       const cupcakes = new Map([["p1", { id: 3, revision: 1, dueAt: at(2026, 11, 13, 9), dated: true, partOfDay: "morning" as const }]]);
       const afterNoon = { ...mail("Monday morning works for me."), arrivedAt: at(2026, 11, 13, 12, 30), promises: cupcakes };
