@@ -124,6 +124,11 @@ describe("a reply's checked verdict (the Codex review of iteration 3, revision 1
     expect(one("Yes, I'd use them again. ... We've used Calder Valuation")).toEqual([]);
     expect(one("We've used Calder Valuation ... and they were cheap")).toEqual([]);
     expect(one("We've used Calder Valuation ... Yes")).toEqual([]);
+    // the Codex code review: a piece is their words whole, never a word's tail ("able" inside "unable" is no yes)
+    const declined = "I'm unable to attend the meeting. Thanks for asking.";
+    expect(one("able to attend the meeting ... Thanks for asking.", "fulfilled", declined)).toEqual([]);
+    expect(one("able to attend the meeting", "fulfilled", declined)).toEqual([]);
+    expect(one("unable to attend the meeting ... Thanks for asking.", "fulfilled", declined)).toHaveLength(1);
     // their own ellipsis is read whole
     expect(one("Well... yes, I'll do it", "fulfilled", "Well... yes, I'll do it.")).toHaveLength(1);
     // a kept promise's evidence the same way
