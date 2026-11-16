@@ -5,7 +5,7 @@ import type { AppSettings } from "@terno/core/rpc";
 import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
 import { readNothingAsked, type DatedMark, type DatedSource, type DatedWrite, type MailStore } from "@terno/store";
 import { DailyLimitError, MonthlyLimitError } from "./ai-limiter";
-import { withoutMuted } from "./dated-mutes";
+import { silenced, silenceOf, withoutMuted } from "./dated-mutes";
 import { UI_LOCALE_KEY } from "./forwarding";
 import { bareDayAhead, contextOf, insideQuotes, quoteSpan, type Sentences, namesApart, namesItem, negatedReceipt, norm, otherAmounts, otherIds, paragraphsOf, plainEvidence, replacesPlainly, sameObject, sameThing, saysReplaced, saysWhen, sentencesOf, settlesKind } from "./dated-evidence";
 import { untrustedSenders, withoutUntrusted } from "./suspicious-sender";
@@ -807,8 +807,8 @@ export class DatedWorker {
     // the owner's rule: mail in Spam reaches no AI, the whole thread's
     if (!src || src.draft || src.sent || src.own || src.spam || src.trash || src.threadSpam) return drop();
     // plan 210 (iteration 4, revision 2): a muted sender's mail isn't read for What matters at all, before its body or a
-    // provider is reached; not read later either (Unmute is for mail from then on)
-    if ((await this.muted()).senders.has(src.senderKey)) return drop();
+    // provider is reached; not read later either (Unmute is for mail from then on: one queued while they were muted stays unread)
+    if (silenced(src, await silenceOf(store))) return drop();
     // after the fourth panel round: a sender named like a security desk is read for nothing (no item, settlement or move),
     // unless you've written to them (Codex's second pass)
     if ((await untrustedSenders([src.fromEmail], (keys) => store.dated.written(keys))).size) return drop();
@@ -968,12 +968,12 @@ export class DatedWorker {
   private async scanPicks(now: number): Promise<number[]> {
     const { store } = this.host;
     const walked = await store.dated.scanCandidates(now - DATED_SCAN_DAYS * 86_400_000, SCAN_WALK);
-    // plan 210 (iteration 4): a muted sender's mail is neither counted nor read
-    const muted = await this.muted();
+    // plan 210 (iteration 4): a muted sender's mail is neither counted nor read, nor what came before their Unmute
+    const silence = await silenceOf(store);
     // newest first: whether each is worth reading by itself, and who and where it's from
     const seen: { s: DatedSource; worth: boolean }[] = [];
     await this.host.runBudgeted(walked, async (chunk) => {
-      const sources = (await Promise.all(chunk.map((id) => store.dated.source(id)))).filter((s): s is DatedSource => !!s && !s.spam && !s.trash && !s.threadSpam && !s.draft && !s.sent && !s.own && s.tab !== "social" && s.tab !== "promotions" && !muted.senders.has(s.senderKey));
+      const sources = (await Promise.all(chunk.map((id) => store.dated.source(id)))).filter((s): s is DatedSource => !!s && !s.spam && !s.trash && !s.threadSpam && !s.draft && !s.sent && !s.own && s.tab !== "social" && s.tab !== "promotions" && !silenced(s, silence));
       // round 2: a body not here yet can't be judged; it's read, and the worker waits for it (the filter errs towards reading)
       const judged = sources.filter((s) => s.automated && (s.bodyState === "full" || s.bodyUnavailable));
       const texts = judged.length ? await store.aiSummaries.text(judged.map((s) => ({ messageId: s.id, limit: DATED_TEXT_CHARS }))) : new Map<number, string | null>();

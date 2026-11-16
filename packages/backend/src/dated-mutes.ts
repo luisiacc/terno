@@ -13,6 +13,27 @@ import type { MailStore } from "@terno/store";
 const OFFERED_KEY = "whatMatters:muteOffered";
 const OFFERED_MAX = 500;
 
+/**
+ * Codex's code review of iteration 4: Unmute is for mail from then on, so it keeps when each sender was unmuted (the newest
+ * 500, as `[key, at]`): their mail from before it, queued or consumed unread while they were muted, is never read later.
+ */
+const UNMUTED_KEY = "whatMatters:unmutedAt";
+const UNMUTED_MAX = 500;
+
+/** What the reader leaves unread: the muted senders, and when each one unmuted was. */
+export interface DatedSilence {
+  muted: DatedMuted;
+  unmutedAt: ReadonlyMap<string, number>;
+}
+
+export async function silenceOf(store: MailStore): Promise<DatedSilence> {
+  const [list, unmuted] = await Promise.all([store.dated.mutes.list(), store.settings.get<[string, number][]>(UNMUTED_KEY, [])]);
+  return { muted: mutedOf(list), unmutedAt: new Map(unmuted) };
+}
+
+/** A message the reader never reads: its sender's muted, or it's from before they were unmuted. */
+export const silenced = (s: { senderKey: string; date: number }, x: DatedSilence): boolean => x.muted.senders.has(s.senderKey) || s.date < (x.unmutedAt.get(s.senderKey) ?? -Infinity);
+
 export interface DatedMutesHost {
   readonly store: MailStore;
   now(): number;
@@ -72,8 +93,16 @@ export class DatedMutes {
 
   /** What's muted shows again, as it is; mail from then on is read again (what came meanwhile stays unread). */
   async unmute(on: DatedMuteOn, key: string): Promise<DatedMute | null> {
-    const removed = await this.host.store.dated.mutes.remove(on, key);
-    if (removed) this.host.changed(await this.muted());
+    const { store } = this.host;
+    // the boundary first, so the reader never sees the sender unmuted without it
+    const sender = on === "sender" ? muteKey(on, key) : null;
+    if (sender !== null && (await this.muted()).senders.has(sender)) {
+      const at = this.host.now();
+      await store.settings.update<[string, number][], void>(UNMUTED_KEY, [], (was) => ({ value: [...was.filter(([k]) => k !== sender), [sender, at] as [string, number]].slice(-UNMUTED_MAX), result: undefined }));
+    }
+    const removed = await store.dated.mutes.remove(on, key);
+    if (!removed) return null;
+    this.host.changed(await this.muted());
     return removed;
   }
 }
