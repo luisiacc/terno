@@ -76,6 +76,12 @@ export interface FollowupRow {
    * the Monday): `dueAt` is the day before; its row says "needed before Mon". Null: none, or stored before it.
    */
   before?: string | null;
+  /**
+   * Plan 210 (iteration 4, the Codex review's revision 4): the dated request this promise only holds ("let me check my
+   * calendar and get back to you"), by its reply's checked verdict: the request is the row, never this; it closes with the
+   * request (`FollowupWorker.retire`). Null: none
+   */
+  holds?: number | null;
 }
 
 export interface FollowupsSetting {

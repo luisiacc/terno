@@ -284,6 +284,8 @@ function byReply(placed: readonly PlacedItem[], hidden: readonly Logical[]): Pla
  */
 export function placeItems(dated: readonly DatedRow[], promises: readonly NeedingPromise[], now: number, o: { count?: boolean } = {}): PlacedItem[] {
   const today = dayKeyOf(now);
+  // (iteration 4, the Codex review's revision 4) a promise that only holds a request is never a row: the request is
+  if (promises.some((p) => p.holds != null)) promises = promises.filter((p) => p.holds == null);
   dated = withoutAnswered(dated, promises);
   // (iteration 4) a reply's promises are grouped where they're placed, then the count leaves Coming up out
   const grouping = sharesMessage(promises);

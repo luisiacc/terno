@@ -60,7 +60,8 @@ export function readerItems({ dated, followups, target, chosen, now }: ReaderInp
     else if (row.state !== "open" && targetKeys.has(refKey(ref))) items.push({ key: refKey(ref), ref, open: false, missed: false, dueAt: row.dueAt, source: "dated", row });
   }
   for (const row of followups) {
-    if (row.kind !== "promise") continue;
+    // plan 210 (iteration 4): a promise that only holds a request ("let me check and get back to you") is the request's
+    if (row.kind !== "promise" || row.holds != null) continue;
     const ref = { source: "promise", id: row.id } as const;
     const open = openPromise(row);
     if (!open && !targetKeys.has(refKey(ref))) continue;

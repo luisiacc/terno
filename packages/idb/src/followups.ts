@@ -5,7 +5,7 @@ import { scheduleFields } from "./schedule";
 
 /** Plan 142 on IndexedDB, like SQL's (packages/db/src/followups.ts). */
 
-const toRow = (r: R): FollowupRow => ({ id: r.id, threadId: r.thread_id, messageId: r.message_id, rfcMessageId: r.rfc_message_id ?? null, item: r.item, kind: r.kind, text: r.text, quote: r.quote ?? null, personName: r.person_name ?? null, personEmail: r.person_email ?? null, sentAt: r.sent_at, dueAt: r.due_at, dated: r.dated === 1, deferredUntil: r.deferred_until ?? null, state: r.state, inboxState: r.inbox_state, closedReason: r.closed_reason ?? null, closedAt: r.closed_at ?? null, notifiedAt: r.notified_at ?? null, fromScan: r.from_scan === 1, revision: r.revision, model: r.model ?? null, provider: r.provider ?? null, createdAt: r.created_at, sameAs: r.same_as ?? null, brokenDueAt: r.broken_due_at ?? null, timed: r.timed === 1, answers: r.answers ?? null, ...scheduleFields(r), handedTo: parseHandedTo(r.handed_to), settledBy: r.settled_by ?? null, settledAt: r.settled_at ?? null, before: r.before_day ?? null });
+const toRow = (r: R): FollowupRow => ({ id: r.id, threadId: r.thread_id, messageId: r.message_id, rfcMessageId: r.rfc_message_id ?? null, item: r.item, kind: r.kind, text: r.text, quote: r.quote ?? null, personName: r.person_name ?? null, personEmail: r.person_email ?? null, sentAt: r.sent_at, dueAt: r.due_at, dated: r.dated === 1, deferredUntil: r.deferred_until ?? null, state: r.state, inboxState: r.inbox_state, closedReason: r.closed_reason ?? null, closedAt: r.closed_at ?? null, notifiedAt: r.notified_at ?? null, fromScan: r.from_scan === 1, revision: r.revision, model: r.model ?? null, provider: r.provider ?? null, createdAt: r.created_at, sameAs: r.same_as ?? null, brokenDueAt: r.broken_due_at ?? null, timed: r.timed === 1, answers: r.answers ?? null, ...scheduleFields(r), handedTo: parseHandedTo(r.handed_to), settledBy: r.settled_by ?? null, settledAt: r.settled_at ?? null, before: r.before_day ?? null, holds: r.holds ?? null });
 
 export function own(c: Ctx): Set<string> {
   const out = new Set<string>();
@@ -224,8 +224,13 @@ export function finishFollowups(c: Ctx, w: FollowupFinish): FollowupFinishOutcom
       settle(r, r.revision);
       continue;
     }
+    // plan 210 (iteration 4): a promise that only holds it is stored with it, once (no revision moves)
+    const p = rows.by("identity", w.messageId, v.item).find((x) => x.kind === "promise" && live(x) && x.answers == null && x.holds == null);
+    if (v.verdict === "holding") {
+      if (p) rows.update(p, { holds: r.id });
+      continue;
+    }
     // the promise this reply made (its own row, an open one), linked once
-    const p = rows.by("identity", w.messageId, v.item).find((x) => x.kind === "promise" && live(x) && x.answers == null);
     if (!p) continue;
     rows.update(p, { answers: r.id });
     apart(c, p.id, r.id);
