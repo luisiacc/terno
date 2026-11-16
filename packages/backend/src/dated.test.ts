@@ -680,6 +680,21 @@ describe("plan 210 (iteration 3)", () => {
       expect(checkDates({ items: [{ ...revisar, quote: "Diego, te copio para que estés al tanto" }], settled: [] }, person(told, cc))).toMatchObject({ rows: [], asked: false });
       expect(checkDates({ items: [{ ...review, quote: "Diego, FYI, the vendor ships the labels Friday." }], settled: [] }, person("Diego, FYI, the vendor ships the labels Friday.", cc)).rows).toEqual([]);
     });
+    it("a request the other checks know, a 'let me know' or the sender's need, is the copied reader's when it names them; FYI doesn't veto it (en, es; the code review's second round)", () => {
+      const cc = { addressed: "cc" as const, others: ["Ana Lugo"] };
+      for (const [quote, text] of [
+        ["Diego, FYI, let me know your availability by Friday.", "Let Carla know your availability"],
+        ["Diego, FYI, I need your approval by Friday.", "Approve the label art"],
+        ["Diego, te copio para que estés al tanto: avísame tu disponibilidad antes del viernes.", "Avisarle a Carla tu disponibilidad"],
+        ["Diego, te copio para que estés al tanto: necesito tu visto bueno antes del viernes.", "Dar el visto bueno a las etiquetas"],
+      ] as const) {
+        const mail = `Ana, could you send the final art by Monday?\n\n${quote}\n\nCarla`;
+        expect(checkDates({ items: [{ kind: "respond", text, quote, due: "2026-11-20", time: null }], settled: [] }, person(mail, cc)), quote).toMatchObject({ rows: [{ kind: "respond", text }], asked: true });
+      }
+      // the line alone, with a task said of someone else, still asks nothing
+      const told = "Ana, ¿nos mandas las ilustraciones finales el lunes?\n\nDiego, te copio para que estés al tanto; cuando Ana las entregue te las reenvío.\n\nCarla";
+      expect(checkDates({ items: [{ kind: "respond", text: "Revisar las ilustraciones", quote: "Diego, te copio para que estés al tanto", due: "2026-11-20", time: null }], settled: [] }, person(told, cc))).toMatchObject({ rows: [], asked: false });
+    });
     it("an automated sender's cancellation of the reader's appointment may ask them to book again; nothing else of theirs asks", () => {
       const dental = "Dear Margaret,\n\nYour appointment on Thursday, November 12, 2026 at 9:00 AM with Dr. Steven Kline has been cancelled because Dr. Kline is out of the office.\n\nWe apologize for the inconvenience. Please call (614) 555-0147 to choose a new time.\n\nBrightway Dental";
       const call = ask("Call Brightway Dental to choose a new time", "Please call (614) 555-0147 to choose a new time.");
