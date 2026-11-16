@@ -17,6 +17,9 @@ export function todayCountsLine(c: TodayCounts): string | null {
  * Coming up's disclosure in the sentence's size and line: quiet until hovered or open, its chevron beside its words (the
  * catalog's Collapsible trigger, as an earlier answer's sources are on Ask's page)
  */
+/** The feed's rows, what Coming up's disclosure shows more of (its rows join their days there: no panel of its own) */
+export const FEED_ROWS_ID = "wm-feed-rows";
+
 const DISCLOSURE = "no-drag w-auto gap-1 text-[length:inherit] leading-[inherit] font-normal text-muted-foreground hover:text-foreground data-panel-open:text-foreground [&>[data-slot=collapsible-chevron]]:ms-0 [&>[data-slot=collapsible-chevron]]:size-3.5";
 
 /**
@@ -37,7 +40,7 @@ export function TodayLine() {
       {said && <span data-testid="today-needs" className="text-foreground">{said}</span>}
       {comingUp > 0 && (
         <Collapsible open={open} onOpenChange={setComingUpOpen} render={<span />}>
-          <CollapsibleTrigger data-testid="today-coming-up" className={DISCLOSURE}>
+          <CollapsibleTrigger data-testid="today-coming-up" aria-controls={FEED_ROWS_ID} className={DISCLOSURE}>
             {t("today.line.comingUp", { count: comingUp })}
           </CollapsibleTrigger>
         </Collapsible>

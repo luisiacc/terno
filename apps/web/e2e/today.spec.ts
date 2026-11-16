@@ -705,9 +705,10 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       // tomorrow, at its time; a day ahead's weight is the quiet one
       await expect(flight.getByTestId("wm-when")).toHaveText(/^Tomorrow 7:40\sAM$/);
       await expect(flight).toHaveAttribute("data-tone", "later");
-      // plan 210 (the owner): by day: what needs you now under Today, then a heading per day ahead, in order
+      // plan 210 (the owner): by day: what needs you now under Today (iteration 3: people waiting on you its quiet part),
+      // then a heading per day ahead, in order
       const ks = await kinds(page);
-      expect(ks.filter((k) => k !== "history" && k !== "missed")).toEqual(["today", "day", "day"]);
+      expect(ks.filter((k) => k !== "history" && k !== "missed")).toEqual(["today", "waiting", "day", "day"]);
       await expect.poll(() => groupOf(page, "Flight to Madrid")).toBe("day");
       await reach(page, "Flight to Madrid");
       const days = page.locator(`${FEED} [data-testid=wm-heading][data-kind=day]`);
@@ -759,7 +760,8 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       expect(await groupOf(page, "Domain renewal")).toBe("comingUp");
       expect(await groupOf(page, "Club dues")).toBe("comingUp");
       expect((await kinds(page)).filter((k) => k !== "history").slice(-2)).toEqual(["day", "week"]);
-      await expect(page.locator(`${FEED} [data-testid=wm-heading][data-kind=week]`)).toHaveText("Week of Nov 30");
+      const week = page.locator(`${FEED} [data-testid=wm-heading][data-kind=week]`);
+      await expect.poll(async () => (await toEnd(page), await week.textContent())).toBe("Week of Nov 30");
       // the heading on its items' text line
       await expect.poll(async () => (await toEnd(page), await item(page, "Domain renewal").count())).toBe(1);
       const left = async (l: Locator) => l.evaluate((el) => el.getBoundingClientRect().left + parseFloat(getComputedStyle(el).paddingLeft));
@@ -852,7 +854,8 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       await expect(open(page)).toHaveAttribute("data-thread-id", bill!);
       // in its place among its neighbours (the feed draws a few items more or less around it, past Needs you)
       const near = (all: (string | null)[]) => all.slice(Math.max(0, all.indexOf(bill) - 2), all.indexOf(bill) + 3);
-      expect(near(await order())).toEqual(near(ids));
+      // (only the rows drawn both times: the virtualized feed may draw one more past its end)
+      expect(near(await order()).filter((id) => ids.includes(id))).toEqual(near(ids));
       // on a conversation with no task it does nothing
       const waiting = page.locator(`${FEED} [data-testid=wm-item][data-thread-id]`).filter({ hasNot: page.getByTestId("wm-controls") }).first();
       const kept = await waiting.getAttribute("data-thread-id");
@@ -1118,7 +1121,8 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
     await scenario("a person's ask (the third panel round): Needs you, in its words, the day it came; its line in the conversation", async () => {
       await received(server, "ask-1", { name: "Mariana Paz", email: "mariana@studio.test" }, "Rebranding", "Hi! Can you send me a quote for the rebranding?");
       server.backend.dated.wake();
-      await expect.poll(() => groupOf(page, "Answer Mariana Paz"), { timeout: 15_000 }).toBe("today");
+      // (plan 210, iteration 3: Today's "Waiting on you")
+      await expect.poll(() => groupOf(page, "Answer Mariana Paz"), { timeout: 15_000 }).toBe("waiting");
       await show(page, "Answer Mariana Paz");
       const ask = item(page, "Answer Mariana Paz");
       await expect(ask.getByTestId("wm-sentence")).toHaveText("Answer Mariana Paz.");

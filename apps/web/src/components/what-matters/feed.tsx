@@ -26,7 +26,7 @@ import { ThreadMenu } from "../thread-menu";
 import { TodayDatedOffer } from "../today-dated-offer";
 import { WhatMattersOptions } from "./options";
 import { BriefTaskControls } from "./task-menus";
-import { TodayLine } from "./today-line";
+import { FEED_ROWS_ID, TodayLine } from "./today-line";
 
 /**
  * Plan 204's briefing, which the owner made What matters' only view (plan 210): a feed drawn from Today's rows (plan 210,
@@ -224,7 +224,7 @@ export function WhatMattersFeed() {
         </div>
       </header>
       <ThreadMenu>
-        <div ref={scrollRef} data-keep-scroll="list" aria-busy={loading || undefined} className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain">
+        <div ref={scrollRef} id={FEED_ROWS_ID} data-keep-scroll="list" aria-busy={loading || undefined} className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain">
           <div ref={sentinelRef} aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-px" />
           {loading && items.length === 0 ? (
             <div className={cn(COLUMN, "space-y-4 pt-4")}>
