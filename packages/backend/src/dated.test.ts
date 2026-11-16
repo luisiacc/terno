@@ -846,6 +846,16 @@ describe("plan 210 (iteration 4)", () => {
       const dated = "It should arrive within 3 business days, by Thursday, November 19.";
       expect(checkDates({ items: [{ ...delivery, quote: dated }], settled: [] }, { ...base, text: dated, subject: "Your debit card" }).rows).toHaveLength(1);
     });
+    it("a reply to the sender asked by a day is the one reply: an undated ask to answer them beside it goes (Karin's outage); another person's or another thing's stays", () => {
+      const KARIN = "Nora,\n\nI need a reply from you today with:\n1. An ETA for restore,\n2. What happened, and\n3. How Quillworks intends to handle credits under the SLA.\n\nI have to brief our COO at 3pm Central.\n\nKarin Halvorsen";
+      const person = { sender: { person: true }, reader: { name: "Nora Quill", addressed: "to" as const }, from: "Karin Halvorsen" };
+      const reply = { kind: "respond", text: "Reply to Karin Halvorsen with the restore ETA, cause and SLA credits (COO briefing 3:00 PM CT)", quote: "I need a reply from you today with:", due: "2026-11-10", time: null };
+      const again = { kind: "ask", text: "Answer Karin about the outage, COO briefing 3:00 PM CT", quote: "I have to brief our COO at 3pm Central.", due: null, time: null };
+      expect(checkDates({ items: [reply, again], settled: [] }, { ...base, text: KARIN, subject: "URGENT: dashboard down", ...person }).rows.map((r) => r.kind)).toEqual(["respond"]);
+      // a request that isn't a reply (send the deck) keeps an ask about something else
+      const deck = { ...reply, text: "Send Karin the incident report" };
+      expect(checkDates({ items: [deck, again], settled: [] }, { ...base, text: KARIN, subject: "URGENT: dashboard down", ...person }).rows.map((r) => r.kind)).toEqual(["respond", "ask"]);
+    });
     it("a person's wish with no question is never a request with a day (Margaret's Gary): at most an undated ask", () => {
       const GARY = "Hi Margaret,\n\nThe premium went up about $94, mostly the roof age. I'd like to sit down with you before next year and look at the deductible.\n\nIn the meantime, Lakeshore needs the updated worksheet signed. Please sign and send it back to me by the end of the month.";
       const person = { sender: { person: true }, reader: { name: "Margaret Hale", addressed: "to" as const } };

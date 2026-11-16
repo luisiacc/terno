@@ -256,6 +256,9 @@ const REBOOK = /\b(?:(?:choose|pick|book|schedule|find|set up|arrange) (?:a )?ne
 const CONFIRM_BY_REPLY = /\b(?:(?:reply|respond|text|answer|write back)(?: with)?(?: (?:the letter )?[a-z0-9]{1,3})? to confirm|confirm by (?:replying|reply|texting|responding)|(?:responde|responda|contesta|conteste|escribe|escriba|envia|envie|manda|mande)(?:nos)?(?: con)?(?: (?:la letra )?[a-z0-9]{1,3})? para confirmar|confirm\w* respondiendo)\b/u;
 const confirmsByReply = (words: string): boolean => CONFIRM_BY_REPLY.test(norm(words));
 
+/** Plan 210 (iteration 4): a request's words that are a reply to someone ("Reply to Karin…", "Answer Karin about…", "Responder a Karin…"). */
+const REPLY_TO = /^(?:reply|respond|answer|write back|get back)\b|^(?:responder|responderle|contestar|contestarle|escribir|escribirle)\b/u;
+
 /**
  * The seventh panel round (revision 7): an ask, or the request it turns into with a day, never asks the reader to send a
  * password, a one-time code, an account, card or routing number, or an ID (en, es), whatever the model made of it: read
@@ -517,7 +520,11 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
   // the eval: a person's request with a day is the `respond`, never also an undated ask beside it for the same thing; an ask
   // about something else stays (plan 210, the Codex review of iteration 1, revision 3)
   const requests = candidates.filter((i) => (i.kind === "respond" || datedAsk(i)) && quoted(i.quote));
-  const requested = (ask: { text: string; quote: string }) => requests.some((r) => sameThing(r, ask));
+  // plan 210 (iteration 4): a reply to the sender asked by a day is the one reply: an undated "answer them about…" beside it
+  // is that reply again (Haiku gave Karin's outage both, its ask quoting "I have to brief our COO at 3pm Central")
+  const sender = nameWords(input.from ?? "");
+  const replyTo = (text: string) => REPLY_TO.test(norm(text)) && sender.some((w) => ` ${norm(text)} `.includes(` ${w} `));
+  const requested = (ask: { text: string; quote: string }) => requests.some((r) => sameThing(r, ask) || (replyTo(r.text) && replyTo(ask.text)));
   // the fourth panel read: a person who says no answer is needed ("No need to reply now") asks nothing
   const noReply = saysNoReplyNeeded(input.text);
   // plan 210 (iteration 3, point 7): an automated sender's mail that cancels the reader's appointment may ask them to book again
