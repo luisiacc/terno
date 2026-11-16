@@ -539,6 +539,13 @@ Design point 5 with Codex revision 10, and point 8's reader, menu and settings p
 
 **Known limits.** A promise's line no longer shows its source ("Your message, Nov 6 →") or who found it, as the dated line never did; the wait's card keeps both. The To do filter is lexical: a To do worded with other verbs than the item stays. A history line's closed promise is read when it's opened (`followups.get`), so its line comes a read later than the conversation.
 
+##### What the code review changed (iteration 3's reader line)
+
+Codex's review of the reader line (`/tmp/terno-scratch/p204/review-it3.out`, points 2 and 6; its other points are the reading's, placement's and promises' parts):
+
+1. **The keys follow a choice made in the reader** (P1). An item chosen from "Also in this conversation" that has no feed row (behind Coming up, held) led the reader alone, but D, ⇧D and b still acted on the feed's open row, so D finished an item the reader no longer showed. The reader now shares its choice while it leads (`useReaderChoice` in `state/today.ts`, set by `useReaderItems`, cleared when the conversation is left or the choice no longer holds). `keyTarget` in `today-task.ts` resolves it before the open row unless the keyboard is on another row of the feed: D and ⇧D act on the reader's item (`actOnReaderItem`, which the line's own buttons use too), and b opens the reader's own Later menu (`openReaderLater`; it holds the app's keys while it's open, as the feed's Later does). The palette's Done, Later and Remove follow the same choice. The right-click menu is unchanged: it is opened on a feed row and acts on that row. Tests: `today-task.test.ts` (D, ⇧D and b on the chosen item, the open row untouched; another conversation open, the row's item again) and `thread-items.test.tsx` (the choice is shared only while it leads, and cleared when the conversation is left).
+2. **A history line's closed item waits for its own read** (P2). The dated read's answer was tagged with its conversation only, so opening a closed item's history line beside an open sibling kept the sibling's answer "ready", and the sibling's Done briefly led until the new read (`include`) answered. Answers now carry the conversation and the item asked for. The reader is ready only for that pair, and the last answer is kept only through a re-read of the same pair. Test: `thread-items.test.tsx` (the history line opened beside an open sibling draws nothing until its own read answers, then the closed item leads).
+
 
 #### How iteration 3's placement was built
 
