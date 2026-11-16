@@ -153,3 +153,28 @@ describe("⌘Enter that no form took (plan 158)", () => {
     uninstall();
   });
 });
+
+describe("Esc with a popover open (plan 210, iteration 4, merge)", () => {
+  it("is the popover's, even with the keyboard still on what opened it: the conversation beside What matters' feed stays; with none open, Esc puts it away", () => {
+    const doc = document as unknown as { addEventListener: unknown; removeEventListener: unknown; querySelector: (s: string) => unknown };
+    let onKey!: (e: unknown) => void;
+    doc.addEventListener = (type: string, f: (e: unknown) => void) => { if (type === "keydown") onKey = f; };
+    doc.removeEventListener = () => {};
+    const uninstall = installKeyboard();
+    const press = () => {
+      const e = { key: "Escape", metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, repeat: false, isComposing: false, defaultPrevented: false, preventDefault() { e.defaultPrevented = true; } };
+      onKey(e);
+    };
+    useAppearance.setState({ layout: "split" });
+    setApp({ today: true, selectedId: 3, compose: null, dialog: null, menuOpen: false, checked: new Set(), scope: null, query: "" });
+    const query = doc.querySelector;
+    // the reader's Change… popover, open (Base UI's own listener closes it)
+    doc.querySelector = (selector: string) => (selector.includes("popover-content") ? {} : null);
+    press();
+    expect(getApp().selectedId).toBe(3);
+    doc.querySelector = query;
+    press();
+    expect(getApp().selectedId).toBeNull();
+    uninstall();
+  });
+});
