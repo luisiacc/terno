@@ -954,9 +954,10 @@ export class DatedWorker {
     const extra = include === undefined ? null : await dated.get(include);
     const rows = [...(await dated.ofThread(threadId)), ...(extra && extra.threadId === threadId && extra.state !== "open" ? [extra] : [])];
     // plan 210 (iteration 4): an open item of a muted sender or kind is hidden here too (a history line's own stays)
+    // (an ask's event is found before anything is hidden, as in the list)
     const muted = await this.muted();
-    const shown = rows.filter((r) => r.state !== "open" || withoutMuted([r], muted).length);
-    return [...withEventEnds(await withoutUntrusted(shown, (keys) => dated.written(keys)))];
+    const shown = withEventEnds(rows).filter((r) => r.state !== "open" || withoutMuted([r], muted).length);
+    return [...(await withoutUntrusted(shown, (keys) => dated.written(keys)))];
   }
 
   // ─── §6: the one-time check ──────────────────────────────────────────────

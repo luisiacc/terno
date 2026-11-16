@@ -646,7 +646,9 @@ export class TodayService {
     // Codex's second pass: an item stored from a suspicious sender before the guard isn't shown nor counted; plan 210
     // (iteration 4): nor one of a muted sender or kind (hidden, not closed: Unmute brings it back), the mutes read once here
     const [open, muted] = await Promise.all([dated.active(), this.b.mutes.muted()]);
-    const rows = withEventEnds(await withoutUntrusted(withoutMuted(open, muted), (keys) => dated.written(keys)));
+    // an ask's event is found among every open item before any is hidden: muting events never ends their "Reply C to
+    // confirm" (Codex's code review of iteration 4)
+    const rows = await withoutUntrusted(withoutMuted(withEventEnds(open), muted), (keys) => dated.written(keys));
     if (generation === this.datedGeneration) this.datedCache = { generation, rows };
     return rows;
   }
