@@ -638,3 +638,195 @@ test("plan 210 (iteration 3): the header says missed, today and waiting; Waiting
     await page.emulateMedia({ colorScheme: "light" });
   }
 });
+
+/** plan 210 (iteration 4): a promise of yours to `who`, on a conversation of its own, its day `days` from today; broken: the day it had first, missed */
+async function promised(server: DevServerFixture, key: string, who: { name: string; email: string }, text: string, o: { days: number; brokenDays?: number }) {
+  const store = server.backend.store;
+  const db = sqlDb(store);
+  const acct = db.get<{ id: number; email: string }>("SELECT id, email FROM accounts ORDER BY id LIMIT 1")!;
+  // (since follow-ups went on: an older send is never read without a yes)
+  const sentAt = E2E_NOW - 60_000;
+  await store.sync.ingest([message(server, key, { name: "Me", email: acct.email }, `About ${key}`, `I'll ${text}.`, sentAt, { isSent: true, to: [who] })], { applyFilters: false, now: E2E_NOW, classifier: null, liveSent: { wanted: true } });
+  const m = db.get<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages WHERE provider_msg_id = ?", key)!;
+  const day = (n: number) => {
+    const d = new Date(E2E_NOW);
+    d.setDate(d.getDate() + n);
+    d.setHours(9, 0, 0, 0);
+    return d.getTime();
+  };
+  await store.followups.finish({ messageId: m.id, threadId: m.thread_id, fromScan: false, rows: [{ kind: "promise", item: 0, text, quote: `I'll ${text}`, personName: who.name, personEmail: who.email, dueAt: day(o.days), dated: true }], kept: [], now: E2E_NOW, model: "demo", provider: "fake", promptVersion: 1, clearGeneration: store.followups.clearGeneration() });
+  if (o.brokenDays !== undefined) db.run("UPDATE followups SET broken_due_at = ? WHERE thread_id = ?", day(o.brokenDays), m.thread_id);
+  return m.thread_id;
+}
+
+test("plan 210 (iteration 4): 'to do today'; a broken promise first in Waiting on you; Coming up the last heading, out of j/k while closed; the sentence keeps its width beside the reader; the palette with nothing selected; the menu's More", async ({ app: page, server }) => {
+  await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" }, dated: { enabled: true, scanAnswered: true }, followups: { enabled: true } }, dev);
+  await dated(server, "water", "City Water", { kind: "pay", text: "Pay the water bill", days: -2 });
+  await item(server, "payroll", "Wire payroll", null);
+  await dated(server, "rfp", "Owen Hale", { kind: "respond", text: "Send Owen the RFP response", days: 3, hour: 17, early: true });
+  await dated(server, "yearend", "Gary Lee", { kind: "respond", text: "Send Gary the year-end numbers", days: 20, early: true });
+  await dated(server, "quote", "Mariana Paz", { kind: "ask", text: "Answer Mariana about the rebranding quote", days: 0 });
+  await dated(server, "keynote", "Shipfast", { kind: "event", text: "Shipfast Summit keynote", days: 5, hour: 19 });
+  await dated(server, "dues", "Rowing Club", { kind: "pay", text: "Pay the club dues", days: 10 });
+  await dated(server, "passport", "Passport Office", { kind: "pay", text: "Pay the passport renewal fee", days: 40 });
+  await promised(server, "script", { name: "Jess Okafor", email: "jess@railyard.test" }, "send Jess the full Railyard integration script for brand and legal review", { days: 3, brokenDays: -2 });
+  server.backend.today.changed();
+  await page.evaluate(() => localStorage.removeItem("terno.today.comingUp"));
+  await fresh(page);
+  await page.getByTestId("nav-today").click();
+  await expect(line(page, "Wire payroll")).toBeVisible({ timeout: 15_000 });
+  const script = "You said you'd send Jess the full Railyard integration script for brand and legal review.";
+
+  await scenario("the header says what it counts: to do today, apart from what's waiting; the badge their sum", async () => {
+    await expect(page.getByTestId("today-needs")).toHaveText(/^1 missed · 1 to do today · \d+ waiting$/);
+    const waiting = Number(/(\d+) waiting/.exec(await page.getByTestId("today-needs").innerText())![1]);
+    await expect(page.getByTestId("nav-today")).toContainText(String(2 + waiting));
+  });
+
+  await scenario("Waiting on you: the broken promise first, in Missed's weight; then this week's requests; the asks; a request due later last", async () => {
+    const { rows } = await walk(page);
+    const from = rows.findIndex((r) => r.kind === "#waiting");
+    const to = rows.findIndex((r, i) => i > from && r.kind.startsWith("#"));
+    const waiting = rows.slice(from + 1, to).filter((r) => r.kind === "open").map((r) => r.text);
+    expect(waiting[0]).toBe(script);
+    const ours = waiting.filter((t) => /^(You said you'd send Jess|Send Owen the RFP response|Answer Mariana|Send Gary the year-end numbers)/.test(t));
+    expect(ours).toEqual([script, "Send Owen the RFP response.", "Answer Mariana about the rebranding quote.", "Send Gary the year-end numbers."]);
+    expect(waiting.at(-1)).toBe("Send Gary the year-end numbers.");
+    await reach(page, "send Jess the full");
+    const row = openLine(page, "send Jess the full");
+    await expect(row).toHaveAttribute("data-tone", "missed");
+    await expect(row.getByTestId("wm-when")).toHaveText(/^You said \w{3} \d{1,2} \(missed\) · needed \w{3}$/);
+  });
+
+  await scenario("the sentence keeps two thirds of the row; beside the reader the when column goes under it", async () => {
+    await reach(page, "send Jess the full");
+    const row = openLine(page, "send Jess the full");
+    const box = async (id: string) => row.getByTestId(id).evaluate((el) => el.getBoundingClientRect().toJSON() as DOMRect);
+    const whole = async () => row.getByTestId("wm-item-open").evaluate((el) => el.getBoundingClientRect().width - 24);
+    expect((await box("wm-sentence")).width).toBeGreaterThanOrEqual((await whole()) * 0.66);
+    expect((await box("wm-when")).top).toBeLessThan((await box("wm-sentence")).bottom);
+    await row.getByTestId("wm-item-open").click();
+    await expect(page.getByTestId("reader")).toBeVisible();
+    await expect(row).toHaveAttribute("data-open", "true");
+    // narrow: under the sentence, above who, the sentence the row's whole width
+    await expect.poll(async () => (await box("wm-when")).top >= (await box("wm-sentence")).bottom - 1).toBe(true);
+    expect((await box("wm-meta")).top).toBeGreaterThanOrEqual((await box("wm-when")).bottom - 1);
+    expect((await box("wm-sentence")).width).toBeGreaterThanOrEqual((await whole()) * 0.9);
+    await expect(row.getByTestId("wm-sentence")).toContainText("You said you'd send Jess the full");
+  });
+
+  await scenario("the menu: What matters' own and Reply; the mail's under More", async () => {
+    await openLine(page, "send Jess the full").click({ button: "right" });
+    await expect(page.getByTestId("menu-dated-done")).toBeVisible();
+    await expect(page.getByTestId("menu-reply")).toBeVisible();
+    await expect(page.getByTestId("menu-archive")).toHaveCount(0);
+    await expect(page.getByTestId("menu-trash")).toHaveCount(0);
+    await page.getByTestId("menu-more").hover();
+    await expect(page.getByTestId("menu-more-list").getByTestId("menu-trash")).toBeVisible();
+    await expect(page.getByTestId("menu-more-list").getByTestId("menu-archive")).toBeVisible();
+    await page.keyboard.press("Escape");
+    if (await page.getByTestId("menu-dated-done").isVisible()) await page.keyboard.press("Escape");
+  });
+
+  await scenario("with nothing selected, the palette lists Done, Later and Remove, unavailable, and says why", async () => {
+    // a second click puts the conversation away: nothing selected
+    if (await page.getByTestId("reader").count()) await feed(page).locator("[data-open] [data-testid=wm-item-open]").first().click();
+    await expect(page.getByTestId("reader")).toHaveCount(0);
+    await page.keyboard.press("ControlOrMeta+k");
+    for (const id of ["palette-dated-done", "palette-dated-later", "palette-dated-dismiss"]) {
+      const it = page.getByTestId(id);
+      await expect(it).toBeVisible();
+      await expect(it).toHaveAttribute("aria-disabled", "true");
+      await expect(it).toContainText("Select an item first");
+    }
+    await page.keyboard.press("Escape");
+  });
+
+  await scenario("Coming up is the feed's last heading; open, j walks its rows; closed on one of them, the feed is on the row above it and j never reaches them", async () => {
+    await expect(page.getByTestId("today-line")).not.toContainText(/coming up/i);
+    const toggle = page.getByTestId("wm-coming-up");
+    await scroller(page).evaluate((el) => (el.scrollTop = el.scrollHeight));
+    await expect(toggle).toHaveText("Coming up · 2");
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await reach(page, "Pay the club dues");
+    await openLine(page, "Pay the club dues").getByTestId("wm-item-open").click();
+    await expect(openLine(page, "Pay the club dues")).toHaveAttribute("data-open", "true");
+    await page.keyboard.press("j");
+    await expect(openLine(page, "Pay the passport renewal fee")).toHaveAttribute("data-open", "true");
+    // closed on it: the reader put away, the feed on the last row above Coming up
+    await scroller(page).evaluate((el) => (el.scrollTop = el.scrollHeight));
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await expect(page.getByTestId("reader")).toHaveCount(0);
+    await expect(line(page, "Pay the passport renewal fee")).toHaveCount(0);
+    const cursor = feed(page).locator("[data-testid=wm-item][data-cursor]");
+    await expect.poll(async () => (await scroller(page).evaluate((el) => (el.scrollTop = el.scrollHeight)), await cursor.count())).toBe(1);
+    await expect(cursor).not.toHaveAttribute("data-ahead", "true");
+    // j from the keynote never opens one of Coming up's rows
+    await reach(page, "Shipfast Summit keynote");
+    await openLine(page, "Shipfast Summit keynote").getByTestId("wm-item-open").click();
+    for (let i = 0; i < 3; i++) {
+      await page.keyboard.press("j");
+      await expect(feed(page).locator("[data-testid=wm-item][data-open][data-ahead]")).toHaveCount(0);
+    }
+    await page.keyboard.press("Escape");
+  });
+
+  const shots = process.env.WM_IT4_SHOTS;
+  if (shots) {
+    for (const language of ["en", "es"] as const) {
+      await server.backend.server.invoke("settings.update", { language }, dev);
+      await fresh(page);
+      await page.getByTestId("nav-today").click();
+      await expect(line(page, "Wire payroll")).toBeVisible({ timeout: 15_000 });
+      for (const width of [1440, 1100]) {
+        await page.setViewportSize({ width, height: 900 });
+        for (const mode of ["light", "dark"] as const) {
+          await page.emulateMedia({ colorScheme: mode });
+          const name = (what: string) => `${shots}/${what}-${language}-${width}-${mode}.png`;
+          if (await page.getByTestId("reader").count()) await feed(page).locator("[data-open] [data-testid=wm-item-open]").first().click();
+          await expect(page.getByTestId("reader")).toHaveCount(0);
+          const toggle = page.getByTestId("wm-coming-up");
+          // (the feed draws what's near its view: down to its end until the disclosure is drawn)
+          const toEnd = async () => {
+            for (let i = 0; i < 30 && !(await toggle.isVisible()); i++) {
+              await scroller(page).evaluate((el) => (el.scrollTop = el.scrollHeight));
+              await page.waitForTimeout(100);
+            }
+          };
+          await toEnd();
+          if ((await toggle.getAttribute("aria-expanded")) === "true") await toggle.click();
+          await scroller(page).evaluate((el) => (el.scrollTop = 0));
+          await page.waitForTimeout(300);
+          await page.screenshot({ path: name("feed-top") });
+          await toEnd();
+          await page.waitForTimeout(300);
+          await page.screenshot({ path: name("coming-up-closed") });
+          await toggle.click();
+          await page.waitForTimeout(300);
+          await scroller(page).evaluate((el) => (el.scrollTop = el.scrollHeight));
+          await page.waitForTimeout(300);
+          await page.screenshot({ path: name("coming-up-open") });
+          await toEnd();
+          await toggle.click();
+          await reach(page, "Railyard");
+          await openLine(page, "Railyard").getByTestId("wm-item-open").click();
+          await page.waitForTimeout(400);
+          await page.screenshot({ path: name("reader-long-row") });
+          await openLine(page, "Railyard").click({ button: "right" });
+          await page.waitForTimeout(200);
+          await page.screenshot({ path: name("menu") });
+          await page.getByTestId("menu-more").hover();
+          await page.waitForTimeout(300);
+          await page.screenshot({ path: name("menu-more") });
+          await page.keyboard.press("Escape");
+          if (await page.getByTestId("menu-dated-done").isVisible()) await page.keyboard.press("Escape");
+        }
+      }
+    }
+    await server.backend.server.invoke("settings.update", { language: "en" }, dev);
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.setViewportSize({ width: 1440, height: 900 });
+  }
+});
