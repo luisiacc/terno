@@ -1263,10 +1263,10 @@ describe("the third panel round", () => {
     clock.now = at(2026, 11, 19, 8);
     expect(await sections()).toEqual({ today: [agenda], day: [billThread] });
     expect((await client.call("counts.get", {})).today).toBe(1);
-    // the fifth panel round: a week before its day, from 9:00, as a request's (the bill's week starts a day later)
-    clock.now = at(2026, 11, 12, 9);
+    // plan 210 (iteration 3): from the midnight its seven days begin, as a dated item's (the bill's begin a day later)
+    clock.now = at(2026, 11, 12, 0);
     expect(await sections()).toMatchObject({ day: [agenda], comingUp: [billThread] });
-    clock.now = at(2026, 11, 12, 8, 59);
+    clock.now = at(2026, 11, 11, 23, 59);
     expect(await sections()).toMatchObject({ comingUp: [agenda, billThread] });
   });
 
@@ -1840,7 +1840,7 @@ describe("plan 210 (iteration 2): duplicates, a broken promise, early and one ti
     expect(await backend.store.followups.get(before!.id)).toMatchObject({ brokenDueAt: at(2026, 11, 10, 9) });
   });
 
-  it("a delivery that needs someone there shows from the day before; one that doesn't, on its day", async () => {
+  it("a delivery that needs someone there is read as early; within the seven days (plan 210, iteration 3) both show under their day", async () => {
     const { backend, client, model, receive, read, clock } = await setup();
     model.answer = (req) =>
       promptText(req.messages[0]!.content).includes("signature")
@@ -1853,7 +1853,7 @@ describe("plan 210 (iteration 2): duplicates, a broken promise, early and one ti
     expect((await backend.store.dated.active()).map((r) => [r.threadId, r.early])).toEqual(expect.arrayContaining([[laptops, true], [parcel, false]]));
     clock.now = at(2026, 11, 20, 8);
     const list = await client.call("today.list", { held: [] });
-    expect(list.sections.map((x) => [x.kind, x.day, x.items.map((i) => i.thread.id)])).toEqual([["day", "2026-11-21", [laptops]], ["comingUp", "2026-11-21", [parcel]]]);
+    expect(list.sections.map((x) => [x.kind, x.day, x.items.map((i) => i.thread.id)])).toEqual([["day", "2026-11-21", [laptops, parcel]]]);
   });
 
   it("one time per row: the mail's own time in its zone leaves the words for the when column", async () => {
