@@ -98,6 +98,21 @@ describe("the reader's one line (plan 210, iteration 3, Codex revision 10)", () 
     expect(read({ followups: [answering], target: [{ source: "dated", id: 1 }] }).top?.key).toBe("dated:1");
   });
 
+  it("iteration 4, merge: a promise's line says the days its feed row says: broken with a live day ahead (never Missed), or the day the request it answers is needed", () => {
+    // Jess moved it to Sunday after Tuesday the 20th went by: "You said Tue 20 (missed) · needed Sun", as the row's column
+    const broken = promise({ id: 9, text: "send Jess the script", dueAt: at(25), brokenDueAt: at(20) });
+    const r = read({ dated: [], followups: [broken] });
+    expect(r.top).toMatchObject({ key: "promise:9", missed: false, dueAt: at(25) });
+    expect(readerLine(r.top!, NOW)).toBe("You said Tue 20 (missed) · needed Sun · You told Jess you’d send the script");
+    // it said Wednesday (over), the request it answers needs it Saturday: under Saturday, not Missed
+    const late = promise({ id: 9, text: "send Jess the script", dueAt: at(21), answers: 1 });
+    const answered = read({ dated: [draft], followups: [late] });
+    expect(answered.top).toMatchObject({ key: "promise:9", missed: false, dueAt: at(24) });
+    expect(readerLine(answered.top!, NOW)).toBe("You said yesterday (missed) · needed Sat · You told Jess you’d send the script");
+    // its own day ahead, the request's later: its own day, and the request's beside it
+    expect(readerLine(read({ dated: [draft], followups: [{ ...late, dueAt: at(23) }] }).top!, NOW)).toBe("Due tomorrow · needed Sat · You told Jess you’d send the script");
+  });
+
   it("the open row's item not read yet (its answer on its way) leaves the soonest on top, never nothing", () => {
     expect(keys(read({ target: [{ source: "dated", id: 99 }] }))).toEqual(["dated:2", "dated:1"]);
     expect(read({ dated: [], followups: [] }).top).toBeNull();
