@@ -363,3 +363,22 @@ export function insideQuotes(words: string, text: string): boolean {
   const count = (c: string) => before.split(c).length - 1;
   return count('"') % 2 === 1 || count("“") > count("”") || count("«") > count("»");
 }
+
+/**
+ * Plan 210 (iteration 4, the Codex review's revision 5): an item's quote the mail doesn't hold, verbatim, is the mail's only
+ * when one span of it, and only one, says both what the quote names (every naming word of it: the action or the object) and
+ * the item's day: the subject, or one sentence of the text, never joined across the two (Priya's Pagewise renewal, quoted
+ * "renews on November 18, 2026" from the subject's "renews on November 18" and a body line's "November 18, 2026"). That
+ * span, as written, is then the quote, and every ordinary check reads it. Null: none or several (ambiguous), a quote with no
+ * naming word (a date alone), or an item with no day. Never for a settlement's, a move's or a replacement's evidence.
+ */
+export function quoteSpan(quote: string, due: string | null, subject: string, sentences: Sentences, arrivedAt: number): string | null {
+  const named = namingWords(quote);
+  if (!due || !named.size) return null;
+  const spans = [subject.trim(), ...sentences.map((s) => s.said)].filter(Boolean);
+  const holding = spans.filter((s) => {
+    const words = namingWords(s);
+    return [...named].every((w) => words.has(w)) && saysDay(s, due, { slack: 1, arrivedAt });
+  });
+  return new Set(holding.map(norm)).size === 1 ? holding[0]! : null;
+}
