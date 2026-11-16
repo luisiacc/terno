@@ -81,6 +81,23 @@ describe("the reader's one line (plan 210, iteration 3, Codex revision 10)", () 
     expect(read({ followups: [kept], target: [{ source: "promise", id: 9 }] }).top?.key).toBe("promise:9");
   });
 
+  it("plan 210 (iteration 4): a request an open promise answers is never a line of its own, the feed's rule; closed, or the matcher's one item, it is", () => {
+    // Theo: "You told Jess you'd send the script" answers Jess's "send the Railyard script for review"
+    const answering = promise({ id: 9, text: "send Jess the script", answers: 1 });
+    const r = read({ followups: [answering], target: [{ source: "promise", id: 9 }] });
+    expect(keys(r)).toEqual(["promise:9", "dated:2"]);
+    // its reading asked again (one item with it) goes too
+    const again = dated({ id: 3, text: "Send Jess your draft, please", sameAs: "dated:1" });
+    expect(keys(read({ dated: [draft, board, again], followups: [answering], target: [{ source: "promise", id: 9 }] }))).toEqual(["promise:9", "dated:2"]);
+    // the promise kept or removed: the request is its own line again
+    expect(keys(read({ followups: [{ ...answering, state: "done", closedAt: at(21) }] }))).toEqual(["dated:2", "dated:1"]);
+    // the matcher made them one item: that item's line, once
+    const merged = promise({ id: 9, text: "send Jess the script", answers: 1, sameAs: "dated:1" });
+    expect(keys(read({ followups: [merged], target: [{ source: "dated", id: 1 }, { source: "promise", id: 9 }] }))).toEqual(["dated:1", "dated:2"]);
+    // a history line of the request itself still leads when it's what the feed opened
+    expect(read({ followups: [answering], target: [{ source: "dated", id: 1 }] }).top?.key).toBe("dated:1");
+  });
+
   it("the open row's item not read yet (its answer on its way) leaves the soonest on top, never nothing", () => {
     expect(keys(read({ target: [{ source: "dated", id: 99 }] }))).toEqual(["dated:2", "dated:1"]);
     expect(read({ dated: [], followups: [] }).top).toBeNull();
