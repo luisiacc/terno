@@ -1,7 +1,8 @@
 import { listLayout } from "~/lib/page";
 import { feedPlace, feedScroller, focusFeedItem } from "~/lib/feed-focus";
 import { getApp, setApp } from "~/state/app";
-import { useFeedRow } from "~/state/today";
+import { reloadList } from "~/state/list";
+import { feedRow, useFeedRow } from "~/state/today";
 
 /**
  * Plan 204 (the feed), plan 210: Esc, the reader's Close and a click on the open item, in Split: the conversation open
@@ -14,8 +15,12 @@ export function closeFeedConversation(): boolean {
   const s = getApp();
   if (s.selectedId === null || listLayout() || !s.today) return false;
   const row = feedPlace();
+  // plan 210 (iteration 4): a row held only because its conversation was open (it left the backend's answer meanwhile: handed
+  // on by a confirmed forward, settled) is held no longer once that conversation is put away: the list reads again
+  const held = feedRow(useFeedRow.getState().opened)?.held === true;
   useFeedRow.setState(({ moves }) => ({ opened: null, cursor: row, moves: moves + 1 }));
   setApp({ selectedId: null });
+  if (held) void reloadList({ keepSelection: true });
   // once the feed has its width back (its items rewrap), the row is in view if it went out of it, and has the keyboard
   if (row !== null)
     requestAnimationFrame(() => {

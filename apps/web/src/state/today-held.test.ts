@@ -73,3 +73,26 @@ it("a row opened while a refresh was on its way is asked for again, held, rather
   await vi.waitFor(() => expect(shown()).toEqual([10, 11, 12]));
   expect(calls.map((c) => c.held)).toEqual([["waiting:10"], ["waiting:12"]]);
 });
+
+it("plan 210 (iteration 4): a row held only because its conversation was open leaves once that conversation is put away", async () => {
+  const { closeFeedConversation } = await import("~/lib/feed-pane");
+  answer = async () => list([10, 11]);
+  setApp({ today: true, view: "all", selectedId: null, checked: new Set() });
+  await reloadList({ keepSelection: true });
+  await vi.waitFor(() => expect(shown()).toEqual([10, 11]));
+  open(11);
+  // handed on (a confirmed forward) while open: held where it was
+  answer = async () => list([10]);
+  await reloadList({ keepSelection: true });
+  expect(useToday.getState().rows.find((r) => r.threadId === 11)?.held).toBe(true);
+  calls.length = 0;
+  expect(closeFeedConversation()).toBe(true);
+  await vi.waitFor(() => expect(shown()).toEqual([10]));
+  expect(calls.at(-1)!.held).toEqual([]);
+  // a row still the backend's isn't read again for being put away
+  open(10);
+  calls.length = 0;
+  expect(closeFeedConversation()).toBe(true);
+  await new Promise((r) => setTimeout(r, 20));
+  expect(calls).toEqual([]);
+});
