@@ -155,6 +155,29 @@ describe("the list", () => {
     expect((await client.call("counts.get", {})).today).toBe(2);
   });
 
+  it("plan 210 (iteration 5, revision 4): a promise for this morning is Today's until 11:59 and Missed at noon with no mail in between, the clock waking for it", async () => {
+    const { backend, client, account, clock } = await setup();
+    await client.call("settings.update", { followups: { enabled: true } });
+    const me = { name: "Me", email: account.email };
+    const m = msg({ accountId: account.id, from: me, to: [{ name: "Jessica", email: "jessica@school.test" }], isSent: true, inInbox: true, date: clock.now - 86_400_000, providerMsgId: "s-cupcakes", subject: "Bake sale" });
+    const r = await backend.store.sync.ingest([m], { applyFilters: false, now: clock.now, classifier: null, liveSent: { wanted: true } });
+    const t = await threadOf(backend.store, "s-cupcakes");
+    const quote = "I'll bring two dozen cupcakes Friday morning at drop-off.";
+    await backend.store.followups.finish({ messageId: r.inserted[0]!, threadId: t, fromScan: false, now: clock.now, kept: [], model: "m", provider: "p", promptVersion: 1, clearGeneration: backend.store.followups.clearGeneration(), rows: [{ kind: "promise", item: 0, text: "bring Jessica the cupcakes", quote, personName: "Jessica", personEmail: "jessica@school.test", dueAt: clock.now, dated: true, partOfDay: "morning" }] });
+    clock.now = new Date(2026, 10, 5, 11, 59).getTime();
+    const before = await client.call("today.list", { held: [] });
+    expect(before.sections.map((s) => s.kind)).toEqual(["today"]);
+    expect(before.sections[0]!.items[0]!.why).toMatchObject({ text: "bring Jessica the cupcakes", promise: { part: "morning" } });
+    expect(before.counts).toMatchObject({ missed: 0, today: 1 });
+    await backend.today.armClock();
+    expect(backend.today.clockNextAt).toBe(new Date(2026, 10, 5, 12).getTime());
+    clock.now = new Date(2026, 10, 5, 12).getTime();
+    const after = await client.call("today.list", { held: [] });
+    expect(after.sections.map((s) => s.kind)).toEqual(["missed"]);
+    expect(after.counts).toMatchObject({ missed: 1, today: 0 });
+    expect((await client.call("counts.get", {})).today).toBe(1);
+  });
+
   it("plan 210 (iteration 4, revision 8): your reminder due today is Today's to do, in the header's numbers and the badge alike; setting one says so", async () => {
     const { client, put, clock } = await setup();
     const quiet = await put({}, false);

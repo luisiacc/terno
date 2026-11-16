@@ -1,5 +1,5 @@
 import { AiError, DATED_PROMPT_VERSION, DATED_SUBJECT_CHARS, DATED_TEXT_CHARS, costAt, datedBudget, fitDates, priceOf, wallHolds, type AiTasks, type DatedResult } from "@terno/ai";
-import { addressKey, mutedOf, canLapse, saysDay, withEventEnds, lapsesUnlessRenewed, localDay, needsPresence, saysNoReplyNeeded, DATED_ITEMS_MAX, DATED_KINDS, DATED_OPEN_SHOWN, followupDue, validFollowupDate, type FollowupRow, DATED_SCAN_DAYS, DATED_SCAN_MAX, datedOver, dayKeyOf, datedTiming, dayEnd, hasTimeCue, normalizeText, withoutQuotes, type AiErrorKind, type DatedKind, type DatedRow, type DatedTiming, type DatedWall } from "@terno/core";
+import { addressKey, mutedOf, canLapse, saysDay, withEventEnds, lapsesUnlessRenewed, localDay, needsPresence, saysNoReplyNeeded, DATED_ITEMS_MAX, DATED_KINDS, DATED_OPEN_SHOWN, followupDue, validFollowupDate, type FollowupRow, DATED_SCAN_DAYS, DATED_SCAN_MAX, datedOver, dayKeyOf, datedTiming, dayEnd, dueCutoff, hasTimeCue, partMoment, partOfDayIn, type PartOfDay, normalizeText, withoutQuotes, type AiErrorKind, type DatedKind, type DatedRow, type DatedTiming, type DatedWall } from "@terno/core";
 import { captureError } from "@terno/core/diag";
 import type { AppSettings } from "@terno/core/rpc";
 import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
@@ -293,6 +293,18 @@ const nextDay = (day: string): string => {
 const askedBefore = (before: string | null | undefined, due: string): string | null => (before && before === nextDay(due) ? before : null);
 
 /**
+ * Plan 210 (iteration 5, revision 4): a request for a part of its day ("can you get me notes by saturday morning?"), read
+ * locally from its quote (en and es; the reader's prompt is untouched): untimed whatever clock the reader gave it (its quote
+ * states none), over at that part's end. Only a person's request with a day; anything else as it is.
+ */
+const partTiming = (kind: string, quote: string, timing: DatedTiming | null, arrivedAt: number): (DatedTiming & { partOfDay?: PartOfDay }) | null => {
+  const part = kind === "respond" && timing?.dated ? partOfDayIn(quote) : null;
+  if (!part || !timing) return timing;
+  const day = timing.timed ? datedTiming({ kind: "respond", due: timing.dueDay, time: null, arrivedAt }) : timing;
+  return day ? { ...day, partOfDay: part } : timing;
+};
+
+/**
  * Plan 210 (iteration 2, the panel's A5 and A6), decided once as an item is read, never on a count: a person's request to the
  * reader (`askAllowed`) shows from its arrival, in Today's people with its day ("by Nov 30"); a delivery that needs someone
  * there (a signature) from the day before. Iteration 3 (revision 11): `words`, the mail's own around the quote, never the
@@ -350,9 +362,14 @@ function wishOnly(sentence: string, due: string | null, arrivedAt: number): bool
  * day (Codex code review: never its words' clock read again on a day already converted); and, when that mail came after its
  * day was over, the day it had (`brokenDueAt`: its row keeps saying "You said Tue 10 (missed)").
  */
-function movedPromise(p: { dueAt?: number; dated?: boolean; timed?: boolean }, day: string, time: string | null, arrivedAt: number): { dueAt: number; timed: boolean; brokenDueAt: number | null } {
+function movedPromise(p: { dueAt?: number; dated?: boolean; timed?: boolean; partOfDay?: PartOfDay | null }, day: string, time: string | null, arrivedAt: number, evidence = ""): { dueAt: number; timed: boolean; brokenDueAt: number | null; partOfDay?: PartOfDay } {
   const due = followupDue({ kind: "promise", sentAt: arrivedAt, due: day, nudgeAfterDays: 0 });
-  const broken = p.dated && p.dueAt !== undefined && dayEnd(dayKeyOf(p.dueAt)) <= arrivedAt ? p.dueAt : null;
+  // plan 210 (iteration 5, revision 4): broken once its part of the day was over ("Friday morning": noon), and the part of
+  // its new day the mail names ("Saturday morning", no clock), at that part's moment
+  const broken = p.dated && p.dueAt !== undefined && dueCutoff(dayKeyOf(p.dueAt), p.partOfDay) <= arrivedAt ? p.dueAt : null;
+  const part = time === null ? partOfDayIn(evidence) : null;
+  const partAt = part ? partMoment(day, part, arrivedAt) : null;
+  if (part && partAt !== null) return { dueAt: partAt, timed: false, brokenDueAt: broken, partOfDay: part };
   const was = p.timed && p.dueAt !== undefined ? new Date(p.dueAt) : null;
   const clock = time ?? (was ? `${was.getHours()}:${String(was.getMinutes()).padStart(2, "0")}` : null);
   const at = clock ? localDay(day) : null;
@@ -372,7 +389,7 @@ function movedPromise(p: { dueAt?: number; dated?: boolean; timed?: boolean }, d
  * day or, for a timed item, a new moment, and its new words only with the mail's own. Plan 210 (the Codex review of iteration
  * 1, revision 2): a settlement or a move rests on evidence tied to that item (`tiedTo`). Pure.
  */
-export function checkDates(result: { items: readonly (Omit<DatedResult["items"][number], "kind"> & { kind: string })[]; settled: DatedResult["settled"]; moved?: readonly Move[]; replaced?: DatedResult["replaced"] }, input: { text: string; subject: string; arrivedAt: number; open: ReadonlyMap<string, DatedRow>; promises?: ReadonlyMap<string, Pick<FollowupRow, "id" | "revision"> & Partial<Pick<FollowupRow, "text" | "dueAt" | "dated" | "timed">>>; fromScan: boolean; now: number; sender?: { person: boolean }; reader?: { name: string; addressed: "to" | "cc" | "none" }; others?: readonly string[]; threadId?: number; senderKey?: string; from?: string; paysInThread?: number }): { rows: DatedWrite[]; settled: { id: number; revision: number }[]; moved: { id: number; dueDay: string; dueAt: number; timed: boolean; actAt: number; text?: string; before?: string | null; wall?: DatedWall | null }[]; movedPromises: { id: number; revision: number; dueAt: number; timed: boolean; brokenDueAt: number | null; before?: string | null }[]; replaced: { id: number; revision: number; item: number }[]; asked: boolean } {
+export function checkDates(result: { items: readonly (Omit<DatedResult["items"][number], "kind"> & { kind: string })[]; settled: DatedResult["settled"]; moved?: readonly Move[]; replaced?: DatedResult["replaced"] }, input: { text: string; subject: string; arrivedAt: number; open: ReadonlyMap<string, DatedRow>; promises?: ReadonlyMap<string, Pick<FollowupRow, "id" | "revision"> & Partial<Pick<FollowupRow, "text" | "dueAt" | "dated" | "timed" | "partOfDay">>>; fromScan: boolean; now: number; sender?: { person: boolean }; reader?: { name: string; addressed: "to" | "cc" | "none" }; others?: readonly string[]; threadId?: number; senderKey?: string; from?: string; paysInThread?: number }): { rows: DatedWrite[]; settled: { id: number; revision: number }[]; moved: { id: number; dueDay: string; dueAt: number; timed: boolean; actAt: number; text?: string; before?: string | null; wall?: DatedWall | null; partOfDay?: PartOfDay }[]; movedPromises: { id: number; revision: number; dueAt: number; timed: boolean; brokenDueAt: number | null; before?: string | null; partOfDay?: PartOfDay }[]; replaced: { id: number; revision: number; item: number }[]; asked: boolean } {
   const said = `${norm(input.subject)}\n${norm(input.text)}`;
   const quoted = (words: string) => {
     const w = norm(words);
@@ -443,7 +460,7 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
   const moved = (result.moved ?? []).flatMap((m) => {
     const row = input.open.get(m.label);
     if (!row || row.kind === "ask" || settledIds.has(row.id) || !tiedTo(row, m.evidence, { due: m.due, timeOnly: m.due === row.dueDay && !!m.time })) return [];
-    const timing = atInstant(datedTiming({ kind: row.kind, due: m.due, time: m.time, arrivedAt: input.arrivedAt }), m.at);
+    const timing = partTiming(row.kind, m.evidence, atInstant(datedTiming({ kind: row.kind, due: m.due, time: m.time, arrivedAt: input.arrivedAt }), m.at), input.arrivedAt);
     // the fourth panel round (revision 5): a new moment on the same day moves it too ("the game is moved earlier to 8:00");
     // the same day with no time keeps the item's own; an untimed item's 9:00 is a default, so "at 9:00" gives it a time
     const changed = timing && (timing.dueDay !== row.dueDay || (timing.timed && (!row.timed || timing.dueAt !== row.dueAt)));
@@ -452,13 +469,13 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
       // plan 210 (iteration 4, revision 12): its own moment again with new words, the mail's own, changes the words and keeps
       // the moment (Theo's tees "Expected: Today, by 8:00 PM", which the reader gave and the app dropped)
       if (!timing || !text || text === row.text) return [];
-      return [{ id: row.id, kind: row.kind, dueDay: row.dueDay, dueAt: row.dueAt, timed: row.timed, actAt: row.actAt ?? timing.actAt, text, ...(row.before ? { before: row.before } : {}), ...(row.wall ? { wall: row.wall } : {}) }];
+      return [{ id: row.id, kind: row.kind, dueDay: row.dueDay, dueAt: row.dueAt, timed: row.timed, actAt: row.actAt ?? timing.actAt, text, ...(row.before ? { before: row.before } : {}), ...(row.wall ? { wall: row.wall } : {}), ...(row.partOfDay ? { partOfDay: row.partOfDay } : {}) }];
     }
     // plan 210 (iteration 4, revision 11): the day it's now asked before, read with the move (none: a plain day)
     const before = askedBefore(m.before, timing.dueDay);
     // plan 210 (iteration 4, revision 10): the mail's own clock at its new moment, when it reads back as that moment
     const wall = m.wall && timing.timed && wallHolds(m.wall, timing.dueAt) ? m.wall : null;
-    return [{ id: row.id, kind: row.kind, dueDay: timing.dueDay, dueAt: timing.dueAt, timed: timing.timed, actAt: timing.actAt, ...(text ? { text } : {}), ...(before ? { before } : {}), ...(wall ? { wall } : {}) }];
+    return [{ id: row.id, kind: row.kind, dueDay: timing.dueDay, dueAt: timing.dueAt, timed: timing.timed, actAt: timing.actAt, ...(text ? { text } : {}), ...(before ? { before } : {}), ...(wall ? { wall } : {}), ...(timing.partOfDay ? { partOfDay: timing.partOfDay } : {}) }];
   });
   const rows: DatedWrite[] = [];
   // a moved item keeps its id: the same kind on its new day isn't added again (Codex review of the fixes), whatever its words
@@ -590,7 +607,7 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     // plan 210 (iteration 4, revision 12): a routine bill charged by itself, and a delivery only estimated, are no items
     if ((kind === "pay" || kind === "renew") && routineAutoBill(words)) continue;
     if (kind === "delivery" && estimateOnly(contextOf(item.quote, paragraphs), timing.dueDay, input.arrivedAt)) continue;
-    rows.push({ kind, item: rows.length, text: item.text.trim(), quote: item.quote.trim(), ...timing, ...(shownEarly(kind, item, words, said, input) ? { early: true } : {}), ...(canLapse(kind) && lapsesUnlessRenewed(words) ? { lapses: true } : {}), ...(before && timing.dated && !timing.timed ? { before } : {}), ...(item.wall && timing.timed && wallHolds(item.wall, timing.dueAt) ? { wall: item.wall } : {}) });
+    rows.push({ kind, item: rows.length, text: item.text.trim(), quote: item.quote.trim(), ...partTiming(kind, item.quote, timing, input.arrivedAt)!, ...(shownEarly(kind, item, words, said, input) ? { early: true } : {}), ...(canLapse(kind) && lapsesUnlessRenewed(words) ? { lapses: true } : {}), ...(before && timing.dated && !timing.timed ? { before } : {}), ...(item.wall && timing.timed && wallHolds(item.wall, timing.dueAt) ? { wall: item.wall } : {}) });
   }
   /**
    * Plan 210 (iteration 3, revision 4, the owner's "Close replaced promises"): a promise its person's later mail in its
@@ -612,8 +629,8 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     return request ? [{ id: p.id, revision: p.revision, item: request.item }] : [];
   });
   const gone = new Set(replacements.map((r) => r.id));
-  const movedPromises = promiseMoves.filter((m) => !replaced.has(m) && !gone.has(m.p.id)).map(({ p, day, time, before }) => {
-    const at = movedPromise(p, day, time, input.arrivedAt);
+  const movedPromises = promiseMoves.filter((m) => !replaced.has(m) && !gone.has(m.p.id)).map(({ p, day, time, before, evidence }) => {
+    const at = movedPromise(p, day, time, input.arrivedAt, evidence);
     return { id: p.id, revision: p.revision, ...at, ...(before && !at.timed ? { before } : {}) };
   });
   return { rows, settled, moved: moved.map(({ kind: _kind, ...m }) => m), movedPromises, replaced: replacements, asked };
