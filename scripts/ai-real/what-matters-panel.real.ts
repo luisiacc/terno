@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { Backend, plaintextCipher, type SecretCipher } from "../../packages/backend/src/backend";
@@ -11,7 +11,7 @@ import type { DatedRow } from "../../packages/core/src/dated";
 import type { FollowupRow } from "../../packages/core/src/followups";
 import { msg } from "../../packages/store/src/conformance/fixtures";
 import { realAiFactory } from "../../apps/backend-dev/src/real-ai";
-import { DATED_PROMPT_VERSION, FOLLOWUP_PROMPT_VERSION, SUMMARY_PROMPT_VERSION } from "../../packages/ai/src";
+import { createAi, DATED_PROMPT_VERSION, FOLLOWUP_PROMPT_VERSION, SUMMARY_PROMPT_VERSION, type ModelTransport } from "../../packages/ai/src";
 import { realKeys, spendReport } from "./harness";
 
 /**
@@ -155,11 +155,32 @@ function alsoOf(threadId: number, a: TodayAlso, rows: readonly DatedRow[], promi
 }
 
 /**
+ * Plan 210 (iteration 3): each request's answer, beside the database (`readings.jsonl`), so a miss is traced to the model or
+ * the app's checks. Only what the model was given and said: the system prompt's first line, the last message's text (the
+ * mail, the persona's own fixture), the answer; never a header or a key (the transport sees neither).
+ */
+function loggedCreate(dir: string): typeof createAi {
+  const file = join(dir, "readings.jsonl");
+  const logged = (t: ModelTransport): ModelTransport => ({
+    ...t,
+    async complete(req) {
+      const out = await t.complete(req);
+      const system = typeof req.system === "string" ? req.system : JSON.stringify(req.system);
+      const last = req.messages[req.messages.length - 1];
+      const input = typeof last?.content === "string" ? last.content : JSON.stringify(last?.content ?? "");
+      appendFileSync(file, `${JSON.stringify({ task: system.split("\n", 1)[0]!.slice(0, 120), input: input.slice(0, 6000), output: out.text, stop: out.stop })}\n`);
+      return out;
+    },
+  });
+  return (config, options) => createAi(config, { ...options, wrapTransport: (t) => logged(options?.wrapTransport ? options.wrapTransport(t) : t) });
+}
+
+/**
  * What Today shows, written beside the database: the packets' and the item scorer's source. Each section with its day,
  * each row with its own item and its Also line by identity (plan 210: scored by item, never by conversation).
  */
 async function writeToday(backend: Backend, client: RpcClient, dir: string, persona: string) {
-  const list = await client.call("today.list", { heldIds: [] });
+  const list = await client.call("today.list", { held: [] });
   const rows = await backend.store.dated.active();
   const followups = await backend.store.followups.active();
   const dated = new Map(rows.map((r) => [r.id, r]));
@@ -167,7 +188,7 @@ async function writeToday(backend: Backend, client: RpcClient, dir: string, pers
   const section = (x: TodaySection) => ({
     kind: x.kind,
     day: x.day ?? null,
-    items: x.items.map((i) => ({ threadId: i.thread.id, from: i.thread.fromName, subject: i.thread.subject, snippet: i.thread.snippet, why: i.why, summary: i.summary ?? null, own: ownOf(i, dated, promises), also: i.also ? { ...i.also, ...alsoOf(i.thread.id, i.also, rows, followups) } : null })),
+    items: x.items.map((i) => ({ id: i.id, threadId: i.thread.id, from: i.thread.fromName, subject: i.thread.subject, snippet: i.thread.snippet, why: i.why, summary: i.summary ?? null, own: ownOf(i, dated, promises), also: i.also ? { ...i.also, ...alsoOf(i.thread.id, i.also, rows, followups) } : null })),
   });
   writeFileSync(join(dir, "today.json"), JSON.stringify({ persona, zone: Intl.DateTimeFormat().resolvedOptions().timeZone, at: new Date(NOW).toString(), sections: list.sections.map(section), dated: rows, followups }, null, 2));
   return { list, rows };
@@ -210,7 +231,7 @@ describe.skipIf(process.env.TERNO_PANEL !== "1" || process.env.TERNO_PANEL_RELIS
       // the clock runs from where it's set, as a wall clock would: the limiter's minute is measured on it, and a stopped
       // clock holds the 21st request of a minute for good
       const clock = { base: PHASE_ONE, from: Date.now(), set(at: number) { this.base = at; this.from = Date.now(); } };
-      const backend = new Backend({ dbPath: join(dir, "terno.db"), version: "panel", cipher: heldKeys(), providers: demoRegistry, autoSync: false, aiFactory: realAiFactory(), now: () => clock.base + (Date.now() - clock.from) });
+      const backend = new Backend({ dbPath: join(dir, "terno.db"), version: "panel", cipher: heldKeys(), providers: demoRegistry, autoSync: false, aiFactory: realAiFactory(loggedCreate(dir)), now: () => clock.base + (Date.now() - clock.from) });
       await backend.store.ready;
       await backend.ready;
       try {
