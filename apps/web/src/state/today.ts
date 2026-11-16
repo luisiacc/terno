@@ -1,5 +1,5 @@
 import { todayAvailable } from "~/lib/ai";
-import { addressKey, dayKeyOf, DIGEST_FEED_ROW, DIGEST_ROW_ID, inDayOrder, type DigestItem, type DigestRow, type FeedRowId, type HistoryKey, type ItemRef, type TodayCounts, type TodayGroupKind, type TodayHistoryItem, type TodayItem, type TodayList, type TodayWhy, type ThreadSummary } from "@terno/core";
+import { addressKey, dayKeyOf, DIGEST_FEED_ROW, DIGEST_ROW_ID, type DigestItem, type DigestRow, type FeedRowId, type HistoryKey, type ItemRef, type TodayCounts, type TodayGroupKind, type TodayHistoryItem, type TodayItem, type TodayList, type TodayWhy, type ThreadSummary } from "@terno/core";
 import { t } from "@terno/i18n";
 import { create } from "zustand";
 import { alsoLine, taskOf, type TodayTask } from "~/lib/dated";
@@ -14,21 +14,34 @@ import { reloadList } from "./list";
  * thread rows, with what they say in the snippet's place.
  */
 /**
- * Plan 210: the feed's headings: Missed, Today, a day ahead (`day:YYYY-MM-DD`, Coming up's joining their day while it's
- * open: the owner, by day, not by kind), and the history below them. Iteration 3: Today's "Waiting on you" (`waiting`), a
- * quiet sub-heading inside Today.
+ * Plan 210: the feed's headings: Missed, Today, a day ahead (`day:YYYY-MM-DD`; the owner, by day, not by kind), and the
+ * history below them. Iteration 3: Today's "Waiting on you" (`waiting`), a quiet sub-heading inside Today. Iteration 4
+ * (the Codex review's revision 9): Coming up is the feed's last part, behind its own disclosure, its rows under buckets of
+ * their own (`coming:YYYY-MM-DD`, `coming:week:YYYY-MM-DD`), never joining the days above.
  */
-export type FeedGroupKind = "missed" | "today" | "waiting" | `day:${string}` | `week:${string}` | "history";
+export type FeedGroupKind = "missed" | "today" | "waiting" | `day:${string}` | `week:${string}` | `coming:${string}` | "history";
 
-/** A feed heading's day ("YYYY-MM-DD"), or null for Missed, Today, a week and the history. */
-export const groupDay = (kind: FeedGroupKind): string | null => (kind.startsWith("day:") ? kind.slice(4) : null);
+/** Plan 210 (iteration 4): a Coming up bucket's own key (`displayBucket`'s: a day, or `week:` and its Monday), or null. */
+export const comingBucket = (kind: FeedGroupKind | undefined): string | null => (kind?.startsWith("coming:") ? kind.slice(7) : null);
+
+/** A feed heading's day ("YYYY-MM-DD"), or null for Missed, Today, a week and the history (iteration 4: Coming up's too). */
+export const groupDay = (kind: FeedGroupKind): string | null => {
+  const k = comingBucket(kind) ?? kind;
+  return k.startsWith("day:") ? k.slice(4) : comingBucket(kind) !== null && !k.startsWith("week:") ? k : null;
+};
 
 /** Plan 210 (iteration 3, revision 9): a week's heading's Monday ("YYYY-MM-DD"), past the first two weeks' days; else null. */
-export const groupWeek = (kind: FeedGroupKind): string | null => (kind.startsWith("week:") ? kind.slice(5) : null);
+export const groupWeek = (kind: FeedGroupKind): string | null => {
+  const k = comingBucket(kind) ?? kind;
+  return k.startsWith("week:") ? k.slice(5) : null;
+};
 
-/** The headings' order: Missed, Today, its Waiting on you, the days in theirs, the history (as text: a day's key sorts as its day). */
+/**
+ * The headings' order: Missed, Today, its Waiting on you, the days in theirs, Coming up's buckets in theirs, the history
+ * (as text: a day's key sorts as its day; "~" after every digit).
+ */
 // (a week's buckets come after every day's: the days end on a Sunday, its Monday is past them)
-const rankOf = (kind: FeedGroupKind): string => (kind === "missed" ? "0" : kind === "today" ? "1" : kind === "waiting" ? "1w" : kind === "history" ? "3" : `2${groupDay(kind) ?? groupWeek(kind)}`);
+const rankOf = (kind: FeedGroupKind): string => (kind === "missed" ? "0" : kind === "today" ? "1" : kind === "waiting" ? "1w" : kind === "history" ? "3" : `2${comingBucket(kind) !== null ? "~" : ""}${groupDay(kind) ?? groupWeek(kind)}`);
 
 /**
  * Plan 210 (iteration 2, the owner: "a row per item"): one of the feed's rows, by its own identity (`FeedRowId`: an item's,
@@ -47,7 +60,7 @@ export interface FeedRow {
   line?: TodayHistoryItem;
   /** what its Done, Remove, Later and D act on; none for a waiting row, a reminder, a history line or a held row */
   task?: TodayTask;
-  /** one of Coming up's, under its day while Coming up is open: drawn quietly */
+  /** one of Coming up's, under its bucket while Coming up is open: drawn quietly */
   ahead?: boolean;
   /** no longer the backend's (done, settled, moved) but kept where it was while it's open or checked: words only */
   held?: boolean;
@@ -89,7 +102,7 @@ interface TodayState {
   counts: TodayCounts;
   /** plan 204: what Coming up holds, shown or not (never counted) */
   comingUp: number;
-  /** plan 204: Coming up open under the rest (closed by default; remembered on this machine) */
+  /** plan 204: Coming up open under the rest (closed by default; remembered on this machine; iteration 4: the feed's last part) */
   comingUpOpen: boolean;
   /** plan 204 (after the panel, fix 10): the row whose task Later's "Pick a date…" is choosing a moment for */
   laterPick: { rowId: FeedRowId; task: TodayTask; next?: FeedRowId } | null;
@@ -213,15 +226,35 @@ export function feedRowsOfItem(ref: ItemRef): FeedRow[] {
   return useToday.getState().rows.filter((r) => own(r) || r.entry?.why.members?.some((m) => m.source === ref.source && m.id === ref.id));
 }
 
-/** Plan 204: Coming up opens under the rest, or closes; the list is read again with it (held rows and the selection kept). */
+/**
+ * Plan 204: Coming up opens under the rest, or closes; the list is read again with it (held rows and the selection kept).
+ * Plan 210 (iteration 4, revision 9): closing it while the feed is on one of its rows (open beside the feed, or where a
+ * conversation was put away), the feed is on the last row above it instead, and that row's conversation is put away, as
+ * Esc does: its rows leave the feed, and j/k never walk them while it's closed.
+ */
 export function setComingUpOpen(open: boolean): void {
   try {
     localStorage.setItem(COMING_UP_KEY, open ? "open" : "closed");
   } catch {
     // remembered for this session only
   }
+  if (!open) leaveComingUp();
   useToday.setState({ comingUpOpen: open });
   if (getApp().today) void reloadList({ keepSelection: true });
+}
+
+/** Closing Coming up: the feed's place on one of its rows moves to the row above it, its conversation put away. */
+function leaveComingUp(): void {
+  const { rows } = useToday.getState();
+  const { opened, cursor } = useFeedRow.getState();
+  const app = getApp();
+  const open = feedRow(opened);
+  const shown = open !== undefined && app.selectedId === open.threadId;
+  const place = shown ? open : feedRow(cursor);
+  if (!place || comingBucket(place.group) === null) return;
+  const above = rows.slice(0, rows.indexOf(place)).reverse().find((r) => comingBucket(r.group) === null && r.threadId !== DIGEST_ROW_ID);
+  useFeedRow.setState(({ moves }) => ({ opened: shown ? null : opened, cursor: above?.id ?? null, moves: moves + 1 }));
+  if (shown) setApp({ selectedId: null });
 }
 
 /** Plan 166: an item's sender, as the list of senders that aren't newsletters keys it. */
@@ -366,40 +399,32 @@ function digestThread(): ThreadSummary {
 }
 
 /**
- * Plan 210: the sections as the feed's groups, in order: Missed, Today, then a group per day ahead; while it's open, Coming
- * up's rows join their day's (one whose day is already here, Today's), in the day's one order (`inDayOrder`). Iteration 3
- * (revision 9): a heading ahead is the section's bucket, the backend's (`displayBucket`): its day for the first two weeks,
- * then its week, whose rows go by their own days.
+ * Plan 210: the sections as the feed's groups, in order: Missed, Today, then a group per day ahead. Iteration 3 (revision
+ * 9): a heading ahead is the section's bucket, the backend's (`displayBucket`): its day for the first two weeks, then its
+ * week, whose rows go by their own days. Iteration 4 (revision 9): while it's open, Coming up's rows are its own buckets
+ * after them all, in the backend's order, never joining a day above.
  */
-function feedGroups(list: TodayList, open: boolean): { kind: FeedGroupKind; items: { item: TodayItem; section: TodayGroupKind; day: string }[] }[] {
+function feedGroups(list: TodayList, open: boolean): { kind: FeedGroupKind; items: { item: TodayItem; section: TodayGroupKind }[] }[] {
   const today = dayKeyOf(list.now || Date.now());
-  const groups = new Map<FeedGroupKind, { item: TodayItem; section: TodayGroupKind; day: string }[]>();
+  const groups = new Map<FeedGroupKind, { item: TodayItem; section: TodayGroupKind }[]>();
   for (const section of list.sections) {
     if (section.kind === "comingUp" && !open) continue;
     const day = section.day ?? null;
     const bucket = section.bucket ?? day;
     // (Today's "Waiting on you" is its own heading, under Today's: plan 210, iteration 3)
-    const kind: FeedGroupKind = section.kind === "missed" ? "missed" : section.part === "waiting" ? "waiting" : day === null || day <= today ? "today" : bucket!.startsWith("week:") ? (bucket as `week:${string}`) : `day:${day}`;
+    const kind: FeedGroupKind =
+      section.kind === "comingUp" ? `coming:${bucket ?? today}` : section.kind === "missed" ? "missed" : section.part === "waiting" ? "waiting" : day === null || day <= today ? "today" : bucket!.startsWith("week:") ? (bucket as `week:${string}`) : `day:${day}`;
     const rows = groups.get(kind) ?? [];
-    for (const item of section.items) rows.push({ item, section: section.kind, day: day ?? "" });
+    for (const item of section.items) rows.push({ item, section: section.kind });
     groups.set(kind, rows);
   }
-  return [...groups.entries()]
-    .sort(([a], [b]) => (rankOf(a) < rankOf(b) ? -1 : rankOf(a) > rankOf(b) ? 1 : 0))
-    .map(([kind, items]) => {
-      // a day (or a week) with Coming up's rows in it: by their days, then the backend's one order inside a day (plan 210,
-      // iteration 1: tasks, your promises, people, then plans by their time), ties as they came
-      if (kind !== "missed" && items.some((r) => r.section === "comingUp") && items.some((r) => r.section !== "comingUp")) {
-        const order = new Map(items.map((r, i) => [r, i]));
-        items.sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0) || inDayOrder(a.item.why, b.item.why, kind !== "today") || order.get(a)! - order.get(b)!);
-      }
-      return { kind, items };
-    });
+  return [...groups.entries()].sort(([a], [b]) => (rankOf(a) < rankOf(b) ? -1 : rankOf(a) > rankOf(b) ? 1 : 0)).map(([kind, items]) => ({ kind, items }));
 }
 
 /**
- * The sections as one list, in their groups and all of them (plan 204: no cap); Coming up only while it's open (plan 210:
- * under their days). Held rows stay where they were until the selection lets go (revision 9).
+ * The sections as one list, in their groups and all of them (plan 204: no cap); Coming up only while it's open (plan 210,
+ * iteration 4: its own buckets, after the automated section). Held rows stay where they were until the selection lets go
+ * (revision 9).
  */
 export function flattenToday(list: TodayList, before: readonly ThreadSummary[]): ThreadSummary[] {
   const answer = todayAnswer(list, before);
@@ -457,8 +482,12 @@ export function todayAnswer(list: TodayList, before: readonly ThreadSummary[]): 
     rows.splice(at, 0, { ...words, held: true });
     here.add(was.id);
   });
-  // plan 204 (after the panel, revision 10): the digest is the open part's last row, under no heading of its own
-  if (list.digest) rows.push({ id: DIGEST_FEED_ROW, threadId: DIGEST_ROW_ID });
+  // plan 204 (after the panel, revision 10): the digest is the open part's last row, under no heading of its own; plan 210
+  // (iteration 4): Coming up's buckets come after it, the feed's last part before the history
+  if (list.digest) {
+    const coming = rows.findIndex((r) => comingBucket(r.group) !== null);
+    rows.splice(coming < 0 ? rows.length : coming, 0, { id: DIGEST_FEED_ROW, threadId: DIGEST_ROW_ID });
+  }
   // plan 210: the history after the automated section, its first page (or as deep as the list had it): a line per item
   for (const line of list.history?.items ?? []) {
     if (here.has(line.id)) continue;

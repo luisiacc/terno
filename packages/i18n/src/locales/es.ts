@@ -2649,7 +2649,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "today.line.today": { one: "# por hacer hoy", other: "# por hacer hoy" },
   "today.line.waiting": { one: "# te espera", other: "# te esperan" },
   "today.line.joined": "{a} · {b}",
-  "today.line.comingUp": { one: "# próximo", other: "# próximos" },
+  "whatMatters.comingUp": { one: "Más adelante · #", other: "Más adelante · #" },
   "today.dated.offer": "Muestra aquí facturas, viajes y peticiones.",
   "today.dated.turnOn": "Activar",
   "today.dated.dismiss": "No volver a ofrecer facturas, viajes y peticiones",

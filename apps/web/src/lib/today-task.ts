@@ -31,7 +31,9 @@ function leaveFeedRows(ids: readonly FeedRowId[]): LeftRows | undefined {
     if (listLayout() && currentPage() === "thread") closePage({ focus: true });
     else {
       const at = rows.indexOf(open);
-      const next = rows.slice(at + 1).find((r) => !gone.has(r.id)) ?? rows.slice(0, at).reverse().find((r) => !gone.has(r.id));
+      // (plan 210, iteration 4: never the automated section's page, which sits between the open part and Coming up)
+      const stays = (r: FeedRow) => !gone.has(r.id) && r.threadId !== DIGEST_ROW_ID;
+      const next = rows.slice(at + 1).find(stays) ?? rows.slice(0, at).reverse().find(stays);
       useFeedRow.setState(({ moves }) => ({ opened: next?.id ?? null, moves: moves + 1 }));
       // opened by the app, as Archive's next is: not read until chosen (Codex code review of iteration 2)
       setAppOpened(next ? next.threadId : null);
