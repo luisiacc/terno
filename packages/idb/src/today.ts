@@ -1,6 +1,6 @@
-import { isAcknowledgment, looksLikeAcknowledgment, parseRef, refKey, saysNoReplyNeeded, waitingCutoff, type DatedRow, type DigestItem, type FollowupRow, type ItemRef } from "@terno/core";
+import { addressKey, isAcknowledgment, looksLikeAcknowledgment, parseRef, refKey, saysNoReplyNeeded, waitingCutoff, type DatedRow, type DigestItem, type FollowupRow, type ItemRef } from "@terno/core";
 import { DATED_NOTHING_ASKED_SINCE, NEEDS_WALK, needsYou, summaryAsksNothing, type DigestFact, type DigestStored, type ItemChanges, type ItemSnapshots, type WaitingRow } from "@terno/store";
-import { datedRow, restoreDated, updateDated } from "./dated";
+import { datedRow, mutedSenders, restoreDated, updateDated } from "./dated";
 import { followupRow, restoreFollowups, updateFollowup } from "./followups";
 import { inboxHiddenTest, T, type Ctx, type R } from "./mail";
 
@@ -44,7 +44,9 @@ export function needsWalk(c: Ctx, now: number): NeedsWalk {
 
 /** What a walk lets in that's still waiting on the reader, its acknowledgments' bodies read ahead: never wider than `needsYou`. */
 function needsRows(c: Ctx, walk: NeedsWalk): WaitingRow[] {
-  return walk.rows.filter((r) => stillWaiting(c, r.id, walk.acks.get(r.id), walk.now));
+  // plan 210 (iteration 4): as SQL's, a muted sender's conversations aren't waiting on you, and nothing is recorded for them
+  const muted = mutedSenders(c);
+  return walk.rows.filter((r) => !(muted.size && muted.has(addressKey(r.from))) && stillWaiting(c, r.id, walk.acks.get(r.id), walk.now));
 }
 
 const shown = (c: Ctx, threadId: number): R[] => T(c, "messages").by("fk_thread_id", threadId).filter((m) => !m.is_draft && !m.is_spam && !m.is_trash);

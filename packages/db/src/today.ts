@@ -1,6 +1,6 @@
-import { isAcknowledgment, looksLikeAcknowledgment, parseRef, refKey, saysNoReplyNeeded, waitingCutoff, type DatedRow, type DigestItem, type FollowupRow, type ItemRef } from "@terno/core";
+import { addressKey, isAcknowledgment, looksLikeAcknowledgment, parseRef, refKey, saysNoReplyNeeded, waitingCutoff, type DatedRow, type DigestItem, type FollowupRow, type ItemRef } from "@terno/core";
 import { DATED_NOTHING_ASKED_SINCE, NEEDS_WALK, needsYou, summaryAsksNothing, type DigestFact, type DigestStored, type ItemChanges, type ItemSnapshots, type WaitingRow } from "@terno/store";
-import { datedRow, restoreDated, updateDated, type DatedRaw } from "./dated";
+import { datedRow, mutedSenders, restoreDated, updateDated, type DatedRaw } from "./dated";
 import { followupRow, restoreFollowups, updateFollowup, type FollowupRaw } from "./followups";
 import { inboxHiding, shownSql } from "./queries";
 import type { Db } from "./sqlite";
@@ -25,8 +25,11 @@ function needsRows(db: Db, now: number): WaitingRow[] {
     rows.map((r) => ({ id: r.id, lastDate: r.last_date, from: r.last_from_email, subject: r.subject, hasSent: r.has_sent === 1 })),
     (key) => db.get<{ written: number; own: number }>("SELECT written, own FROM correspondents WHERE email = ?", key),
   );
+  // plan 210 (iteration 4): a muted sender's conversations aren't waiting on you in What matters, read once a walk; nothing
+  // is recorded for them (`dated_nothing_asked`), so Unmute brings them back as they are
+  const muted = mutedSenders(db);
   // plan 204, the second panel round (plan 145's rule, tighter): on what needsYou let in, never widening it
-  return needs.filter((r) => stillWaiting(db, r.id, snippets.get(r.id) ?? null, now));
+  return needs.filter((r) => !(muted.size && muted.has(addressKey(r.from))) && stillWaiting(db, r.id, snippets.get(r.id) ?? null, now));
 }
 
 /**
