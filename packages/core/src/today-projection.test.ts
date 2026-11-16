@@ -240,6 +240,13 @@ describe("early, broken, one time", () => {
       expect(projectToday(facts({ dated: [dated("respond", "2026-11-22", { threadId: 9 })] })).rows[0]!.why.item!.before).toBeUndefined();
     });
 
+    it("plan 210 (iteration 4, revision 10): a timed event with a place keeps the mail's clock for its row; one with a zone alone doesn't travel", () => {
+      const wall = { day: "2026-11-19", time: "16:00", zone: "America/Chicago", place: "Austin" };
+      const check = dated("event", "2026-11-19", { threadId: 9, wall }, "14:00");
+      expect(projectToday(facts({ dated: [check] })).rows[0]!.why.item!.travel).toEqual({ day: "2026-11-19", time: "16:00", place: "Austin" });
+      expect(projectToday(facts({ dated: [{ ...check, wall: { ...wall, place: null } }] })).rows[0]!.why.item!.travel).toBeUndefined();
+    });
+
     it("a request whose promise is closed is its own row again; one the matcher made the same item is that item's row", () => {
       const deck = dated("respond", "2026-11-23", { threadId: 9 });
       expect(projectToday(facts({ dated: [deck], promises: [] })).rows.map((r) => r.id)).toEqual([`dated:${deck.id}`]);

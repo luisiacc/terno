@@ -1,7 +1,7 @@
 import { datedGroup, localDay, type TodayHistoryItem, type TodayItem } from "@terno/core";
 import { getLocale, t } from "@terno/i18n";
 import { listDate } from "~/lib/format";
-import { datedDay, dueShort, dueTimeLeft, pastDay } from "~/lib/when";
+import { datedDay, dueShort, dueTimeLeft, pastDay, reminderTime } from "~/lib/when";
 import type { FeedGroupKind } from "~/state/today";
 
 /**
@@ -88,6 +88,18 @@ function beforeWords(before: string | null | undefined, due: number, now: number
   return datedDay(day, now).near === "tomorrow" ? t("whatMatters.beforeTomorrow") : t("whatMatters.before", { day: dueShort(day, false, now) });
 }
 
+/**
+ * Plan 210 (iteration 4, revision 10): an event away from the reader, in the place's own time, as the mail gives it: "Mon
+ * 4:00 PM Austin", "4:00 PM Austin" today. Its day is the place's (a late hour there can be tomorrow here).
+ */
+function travelWhen(travel: { day: string; time: string; place: string }, now: number): string {
+  const day = localDay(travel.day)?.getTime() ?? now;
+  const [h, m] = travel.time.split(":").map(Number) as [number, number];
+  const clock = reminderTime(new Date(2000, 0, 1, h, m).getTime());
+  const when = datedDay(day, now).near === "today" ? clock : `${dueShort(day, false, now)} ${clock}`;
+  return t("whatMatters.travel", { when, place: travel.place });
+}
+
 /** …and the day it's needed by, after what the column already says ("Wed · needed Fri", "… · needed today"); before a day, as the mail said it ("… · needed before Mon"). */
 function needed(when: string, day: number, now: number, before?: string | null): string {
   const by = before ? localDay(before)?.getTime() : undefined;
@@ -130,6 +142,8 @@ function whenOf(item: Pick<TodayItem, "thread" | "why">, now: number): { text: s
       return { text: t("whatMatters.by", { day: zoned(by, it.timed ? it.note : null) }), tone: "none" };
     }
     if (before) return { ...at, text: before };
+    // plan 210 (iteration 4, revision 10): travel says the mail's clock at the place, the reader's own left to the reader
+    if (it.timed && it.travel) return { ...at, text: travelWhen(it.travel, now) };
     return { ...at, text: zoned(at.text, it.timed ? it.note : null) };
   }
   if (why.kind === "promise") {

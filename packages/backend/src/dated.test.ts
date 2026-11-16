@@ -6,7 +6,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createAi, DATED_PROMPT_VERSION, DATED_TEXT_CHARS, promptText, type AiOptions, type Completion, type CompletionRequest, type ProviderConfig } from "@terno/ai";
-import type { DatedRow } from "@terno/core";
+import { dayKeyOf, type DatedRow } from "@terno/core";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { demoRegistry } from "@terno/mail";
 import { msg, threadOf } from "@terno/store/conformance";
@@ -811,6 +811,33 @@ describe("plan 210 (iteration 4)", () => {
       const request = { kind: "respond", text: "Send Owen the SOC 2 report", quote: "Could you get the SOC 2 report to me before then?", due: "2026-11-15", time: null, before: "2026-11-16" };
       expect(checkDates({ items: [request], settled: [] }, owen).movedPromises).toMatchObject([{ id: 5, before: "2026-11-16" }]);
       expect(checkDates({ items: [], settled: [], moved: [{ label: "p1", due: "2026-11-16", time: null, evidence: "Could you get the SOC 2 report to me before then?" }] }, owen).movedPromises[0]!.before).toBeUndefined();
+    });
+  });
+
+  describe("revision 10: travel keeps the mail's clock", () => {
+    const TECH = "Quick logistics:\n\n- Tech check: Monday the 16th at 4:00 PM in the Main Hall (Palmer Events Center, Austin)";
+    // 4:00 PM in Austin, whatever the machine's zone: the instant's wall in Chicago
+    const instant = Date.UTC(2026, 10, 16, 22, 0);
+    const local = new Date(instant);
+    const due = dayKeyOf(instant);
+    const time = `${String(local.getHours()).padStart(2, "0")}:${String(local.getMinutes()).padStart(2, "0")}`;
+    const wall = { day: "2026-11-16", time: "16:00", zone: "America/Chicago", place: "Austin" };
+    const check = { kind: "event", text: "Tech check for Shipfast Summit", quote: "Tech check: Monday the 16th at 4:00 PM", due, time, wall };
+    it("kept beside the instant when it reads back as it; dropped when it doesn't, or the item has no time", () => {
+      const mail = { ...base, text: TECH, subject: "Shipfast Summit keynote" };
+      expect(checkDates({ items: [check], settled: [] }, mail).rows[0]).toMatchObject({ dueAt: instant, wall });
+      expect(checkDates({ items: [{ ...check, wall: { ...wall, time: "15:00" } }], settled: [] }, mail).rows[0]!.wall).toBeUndefined();
+      expect(checkDates({ items: [{ ...check, time: null }], settled: [] }, mail).rows[0]!.wall).toBeUndefined();
+    });
+    it("a move carries the mail's clock at its new moment, or none", () => {
+      const row = { id: 1, revision: 1, threadId: 1, senderKey: "noor@shipfast.test", kind: "event", text: "Tech check", quote: "Tech check: Monday the 16th at 4:00 PM", dueDay: due, dueAt: instant, timed: true, wall } as DatedRow;
+      const later = Date.UTC(2026, 10, 16, 23, 0);
+      const at5 = new Date(later);
+      const text = "The tech check moves to 5:00 PM Monday the 16th, same hall.";
+      const mail = { ...base, text, subject: "Re: Shipfast Summit", open: new Map([["o1", row]]), threadId: 1, senderKey: "noor@shipfast.test" };
+      const move = { label: "o1", due: dayKeyOf(later), time: `${String(at5.getHours()).padStart(2, "0")}:${String(at5.getMinutes()).padStart(2, "0")}`, evidence: "The tech check moves to 5:00 PM Monday the 16th" };
+      expect(checkDates({ items: [], settled: [], moved: [{ ...move, wall: { ...wall, time: "17:00" } }] }, mail).moved[0]).toMatchObject({ dueAt: later, wall: { ...wall, time: "17:00" } });
+      expect(checkDates({ items: [], settled: [], moved: [move] }, mail).moved[0]!.wall).toBeUndefined();
     });
   });
 

@@ -2664,6 +2664,8 @@ It contains none of your mail, contacts, settings or keys.
   "whatMatters.neededBeforeTomorrow": "{when} · needed before tomorrow",
   "whatMatters.before": "before {day}",
   "whatMatters.beforeTomorrow": "before tomorrow",
+  // plan 210 (iteration 4, revision 10): an event away from the reader, in the place's time: "Mon 4:00 PM Austin"
+  "whatMatters.travel": "{when} {place}",
   "whatMatters.zoned": "{when} ({time})",
   "whatMatters.say.promise": "You said you'd {text}.",
   "whatMatters.say.wrote": "{name} wrote to you about “{subject}”.",
