@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { amountsOf, bareDayAhead, insideQuotes, namingWords, negatedReceipt, otherAmounts, otherIds, replacesPlainly, scamPressure, settlesKind } from "./dated-evidence";
+import { amountsOf, bareDayAhead, insideQuotes, namingWords, negatedReceipt, otherAmounts, otherIds, replacesPlainly, scamPressure, settlesKind, startClock } from "./dated-evidence";
 
 describe("plan 210 (iteration 3, revision 5): amounts are read whole", () => {
   it("a currency amount is one token, whatever its separators or sign; a number alone isn't one", () => {
@@ -118,5 +118,22 @@ describe("iteration 4's code review: a scam's pressure, read locally (en, es)", 
       "Can you send me the deck within 2 hours?",
       "Tu tarjeta fue bloqueada tras un cargo de $412.18. Llama al número al reverso de tu tarjeta.",
     ]) expect(scamPressure(text), text).toBe(false);
+  });
+});
+
+describe("plan 210 (iteration 5, V2): an event's start in its own quote", () => {
+  it("one start, a range's end left out, on the clock it names", () => {
+    expect(startClock("Monday Nov 16, 2026 · 4pm – 5pm (Pacific Time)")).toEqual({ time: "16:00", zone: "America/Los_Angeles" });
+    expect(startClock("We're meeting Tuesday the 17th at 7:30 PM at my house")).toEqual({ time: "19:30", zone: null });
+    expect(startClock("el martes 24 de noviembre a las 19:00 h")).toEqual({ time: "19:00", zone: null });
+    expect(startClock("Thursday, 10:00 AM to 11:30 AM ET")).toEqual({ time: "10:00", zone: "America/New_York" });
+    expect(startClock("Check-in from 3:00 p.m. on Friday")).toEqual({ time: "15:00", zone: null });
+  });
+  it("none for a bare 7:00, two starts, no clock, or a zone that reads two ways or isn't a region's", () => {
+    expect(startClock("We're meeting Tuesday the 17th at 7:00 at my house")).toBeNull();
+    expect(startClock("Doors 6:30 PM, show 8:00 PM")).toBeNull();
+    expect(startClock("Tuesday the 17th")).toBeNull();
+    expect(startClock("Monday at 10:00 AM CST")).toBeNull();
+    expect(startClock("lunes a las 18:00 hora de Lima")).toBeNull();
   });
 });

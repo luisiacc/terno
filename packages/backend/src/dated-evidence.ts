@@ -399,3 +399,52 @@ const STILL_TO_COME = /\b(?:will|unless|failure|fail to|if you don t|if you do n
 export function scamPressure(text: string): boolean {
   return sentencesOf(text).some(({ read }) => WITHIN_HOURS.test(read) && (DEMANDS.test(read) || (LOSS.test(read) && STILL_TO_COME.test(read))));
 }
+
+// Plan 210 (iteration 5, V2): an event's start in its own quote, for a model that gave none (round 13: Theo's all-hands,
+// "Monday Nov 16, 2026 · 4pm – 5pm (Pacific Time)", came back with no time on v15 3 times in 5 on Luna, never on v14)
+const CLOCK_12 = /\b(\d{1,2})(?::(\d{2}))?\s?([ap])\.?\s?m\b\.?/giu;
+const CLOCK_24 = /\b(\d{1,2}):(\d{2})\b(?!\s?[ap]\.?\s?m\b)(\s?(?:h|hrs?|horas?)\b(?!\s+(?:de|del)\b))?/giu;
+/** what ends a range: "4pm – 5pm", "10:00 to 11:00", "de 9:00 a 11:00" */
+const RANGE_END = /^\s*(?:[–—-]|to|until|till|a|hasta)\s*$/iu;
+/** a zone the quote names that reads one way, and where */
+const QUOTE_ZONES: Readonly<Record<string, string>> = {
+  pt: "America/Los_Angeles", pst: "America/Los_Angeles", pdt: "America/Los_Angeles", pacific: "America/Los_Angeles",
+  mt: "America/Denver", mst: "America/Denver", mdt: "America/Denver", mountain: "America/Denver",
+  ct: "America/Chicago", cdt: "America/Chicago", central: "America/Chicago",
+  et: "America/New_York", est: "America/New_York", edt: "America/New_York", eastern: "America/New_York",
+  cet: "Europe/Paris", cest: "Europe/Paris", gmt: "UTC", utc: "UTC",
+};
+/** a word that names a zone: an abbreviation, a region's time, "hora de…" */
+const ZONE_WORD = /\b(?:[A-Z]{1,4}T|UTC|GMT|Pacific|Mountain|Central|Eastern|Atlantic|hora (?:de|del))\b/u;
+
+/**
+ * The one time an event's quote says it starts, on the clock it names: "4pm – 5pm (Pacific Time)" is 16:00 Pacific, "at
+ * 7:30 PM" 19:30 with no zone (the reader's), "19:00 h" 19:00. Null when it says none, two, a bare "7:00" (morning or
+ * evening?), or a zone that reads two ways ("CST", "IST") or isn't a region's ("hora de Lima").
+ */
+export function startClock(quote: string): { time: string; zone: string | null } | null {
+  const found: { at: number; end: number; h: number; m: number }[] = [];
+  for (const c of quote.matchAll(CLOCK_12)) {
+    const h = Number(c[1]);
+    if (h < 1 || h > 12) return null;
+    found.push({ at: c.index, end: c.index + c[0].length, h: (h % 12) + (c[3]!.toLowerCase() === "p" ? 12 : 0), m: Number(c[2] ?? 0) });
+  }
+  for (const c of quote.matchAll(CLOCK_24)) {
+    if (found.some((f) => c.index >= f.at && c.index < f.end)) continue;
+    const h = Number(c[1]);
+    const m = Number(c[2]);
+    if (h > 23 || m > 59) return null;
+    // "7:00" alone could be morning or evening; "07:00", "19:00" or "7:00 h" says which
+    if (h < 13 && !c[1]!.startsWith("0") && !c[3]) return null;
+    found.push({ at: c.index, end: c.index + c[0].length, h, m });
+  }
+  found.sort((a, b) => a.at - b.at);
+  // a range's end is no second start
+  const starts = found.filter((f, i) => i === 0 || !RANGE_END.test(quote.slice(found[i - 1]!.end, f.at)));
+  if (starts.length !== 1) return null;
+  const s = starts[0]!;
+  const named = ZONE_WORD.exec(quote.slice(found.at(-1)!.end));
+  const zone = named ? (QUOTE_ZONES[named[0].toLowerCase()] ?? null) : null;
+  if (named && !zone) return null;
+  return { time: `${String(s.h).padStart(2, "0")}:${String(s.m).padStart(2, "0")}`, zone };
+}

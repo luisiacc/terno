@@ -1,4 +1,4 @@
-import { AiError, DATED_PROMPT_VERSION, DATED_SUBJECT_CHARS, DATED_TEXT_CHARS, costAt, datedBudget, fitDates, priceOf, wallHolds, type AiTasks, type DatedResult } from "@terno/ai";
+import { AiError, DATED_PROMPT_VERSION, DATED_SUBJECT_CHARS, DATED_TEXT_CHARS, costAt, datedBudget, fitDates, inZone, priceOf, wallHolds, type AiTasks, type DatedResult } from "@terno/ai";
 import { addressKey, mutedOf, canLapse, saysDay, withEventEnds, lapsesUnlessRenewed, localDay, needsPresence, saysNoReplyNeeded, DATED_ITEMS_MAX, DATED_KINDS, DATED_OPEN_SHOWN, followupDue, validFollowupDate, type FollowupRow, DATED_SCAN_DAYS, DATED_SCAN_MAX, datedOver, dayKeyOf, datedTiming, dayEnd, dueCutoff, hasTimeCue, partMoment, partOfDayIn, type PartOfDay, normalizeText, withoutQuotes, type AiErrorKind, type DatedKind, type DatedRow, type DatedTiming, type DatedWall } from "@terno/core";
 import { captureError } from "@terno/core/diag";
 import type { AppSettings } from "@terno/core/rpc";
@@ -9,7 +9,7 @@ import { silenced, silenceOf, withoutMuted } from "./dated-mutes";
 import { secondLook } from "./dated-second-look";
 import { UI_LOCALE_KEY } from "./forwarding";
 import { handledItself } from "./dated-automatic";
-import { bareDayAhead, contextOf, insideQuotes, quoteSpan, type Sentences, namesApart, namesItem, negatedReceipt, norm, otherAmounts, otherIds, paragraphsOf, plainEvidence, replacesPlainly, sameObject, sameThing, saysReplaced, saysWhen, scamPressure, sentencesOf, settlesKind } from "./dated-evidence";
+import { bareDayAhead, contextOf, insideQuotes, quoteSpan, type Sentences, namesApart, namesItem, namingWords, negatedReceipt, norm, otherAmounts, otherIds, paragraphsOf, plainEvidence, replacesPlainly, sameObject, sameThing, saysReplaced, saysWhen, scamPressure, sentencesOf, settlesKind, startClock } from "./dated-evidence";
 import { mayRelay, relayedAsk, relays, type Relay } from "./dated-relay";
 import { untrustedSenders, withoutUntrusted } from "./suspicious-sender";
 
@@ -324,6 +324,29 @@ type Move = Omit<DatedResult["moved"][number], "text" | "textEvidence"> & Partia
 const atInstant = (timing: DatedTiming | null, at: number | undefined): DatedTiming | null =>
   timing?.timed && at !== undefined && dayKeyOf(at) === timing.dueDay && clockOf(at) === clockOf(timing.dueAt) ? { ...timing, dueAt: at } : timing;
 
+/**
+ * Plan 210 (iteration 5, V2): the one start time an event's quote states (`startClock`), on the reader's clock: a zone it
+ * names is converted, and one that moves it to another day gives none.
+ */
+function startOf(quote: string, due: string): string | null {
+  const start = startClock(quote);
+  if (!start) return null;
+  const here = readerZone();
+  if (!start.zone || start.zone === here) return start.time;
+  const at = inZone({ due, time: start.time }, start.zone, here);
+  return at.time && at.due === due ? at.time : null;
+}
+
+/** what any parcel's words say, naming none ("arriving", "llega", "your order") */
+const PARCEL_WORDS = new Set(["arriving", "arrive", "arrives", "delivery", "delivered", "deliver", "package", "parcel", "order", "shipment", "shipped", "coming", "llega", "llegan", "entrega", "paquete", "pedido", "envio", "orden"]);
+/** Plan 210 (iteration 5, V2): two parcels' words name the same thing: a word of what's coming, never a parcel's own or the sender's. */
+function sameParcel(a: string, b: string, from = ""): boolean {
+  const skip = namingWords(from);
+  const words = (t: string) => new Set([...namingWords(t)].filter((w) => !PARCEL_WORDS.has(w) && !skip.has(w) && !/\d/.test(w)));
+  const mine = words(a);
+  return [...words(b)].some((w) => mine.has(w));
+}
+
 /** The day after a YYYY-MM-DD day. */
 const nextDay = (day: string): string => {
   const d = localDay(day);
@@ -455,6 +478,22 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
   };
   // the fifth panel round: an item's new words, only quoted from this mail; an o item's alone (a promise's are yours)
   const newWords = (m: Move) => (m.text?.trim() && m.textEvidence && quoted(m.textEvidence) ? m.text.trim() : undefined);
+  /**
+   * Plan 210 (iteration 5, V2): a delivery of the one parcel already on its way in this conversation is that item moved, with
+   * its new words, never a second item (round 13: Diego's monitor arm, its estimate expiring into Earlier beside the new
+   * day's row). Only when the model neither moved nor settled it, and its words name it; checked as any move. One the checks
+   * refuse is the item it was, unless it says the day the open one already has.
+   */
+  const parcels = [...input.open.entries()].filter(([, r]) => r.kind === "delivery" && (input.threadId === undefined || r.threadId === input.threadId));
+  const touched = new Set([...(result.moved ?? []).map((m) => m.label), ...result.settled.map((x) => x.label)]);
+  const parcelMoves = new Map<string, (typeof result.items)[number]>();
+  for (const i of result.items) {
+    if (i.kind !== "delivery" || !i.due) continue;
+    const same = parcels.filter(([label, r]) => !touched.has(label) && !parcelMoves.has(label) && sameParcel(r.text, i.text, input.from));
+    if (same.length === 1) parcelMoves.set(same[0]![0], i);
+  }
+  const allMoved: readonly Move[] = [...(result.moved ?? []), ...[...parcelMoves].map(([label, i]) => ({ label, due: i.due!, time: i.time, evidence: i.quote, text: i.text, textEvidence: i.quote, ...(i.at !== undefined ? { at: i.at } : {}), ...(i.wall ? { wall: i.wall } : {}) }))];
+  const asParcels = new Set(parcelMoves.values());
   const settled = result.settled.flatMap((s) => {
     const row = input.open.get(s.label);
     return row && tiedTo(row, s.evidence, null) ? [{ id: row.id, revision: row.revision }] : [];
@@ -481,7 +520,7 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     settledIds.add(row.id);
     answered.push(request);
   }
-  const moved = (result.moved ?? []).flatMap((m) => {
+  const moved = allMoved.flatMap((m) => {
     const row = input.open.get(m.label);
     if (!row || row.kind === "ask" || settledIds.has(row.id) || !tiedTo(row, m.evidence, { due: m.due, timeOnly: m.due === row.dueDay && !!m.time })) return [];
     const timing = partTiming(row.kind, m.evidence, atInstant(datedTiming({ kind: row.kind, due: m.due, time: m.time, arrivedAt: input.arrivedAt }), m.at), input.arrivedAt);
@@ -500,6 +539,13 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     // plan 210 (iteration 4, revision 10): the mail's own clock at its new moment, when it reads back as that moment
     const wall = m.wall && timing.timed && wallHolds(m.wall, timing.dueAt) ? m.wall : null;
     return [{ id: row.id, kind: row.kind, dueDay: timing.dueDay, dueAt: timing.dueAt, timed: timing.timed, actAt: timing.actAt, ...(text ? { text } : {}), ...(before ? { before } : {}), ...(wall ? { wall } : {}), ...(timing.partOfDay ? { partOfDay: timing.partOfDay } : {}) }];
+  });
+  // plan 210 (iteration 5, V2): a parcel's new mail the checks didn't take as a move stays its item, unless it says the open one's own day
+  const items = result.items.filter((i) => {
+    if (!asParcels.has(i)) return true;
+    const label = [...parcelMoves].find(([, x]) => x === i)![0];
+    const row = input.open.get(label)!;
+    return !moved.some((m) => m.id === row.id) && i.due !== row.dueDay;
   });
   const rows: DatedWrite[] = [];
   // a moved item keeps its id: the same kind on its new day isn't added again (Codex review of the fixes), whatever its words
@@ -536,7 +582,7 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
   const replacing = new Set((result.replaced ?? []).map((x) => x.label));
   const requestMoves = [...(input.promises ?? new Map()).entries()].flatMap(([label, p]) => {
     if (!p.text || movedByModel.has(p.id) || replacing.has(label)) return [];
-    const request = result.items.find((i) => (i.kind === "respond" || i.kind === "ask") && !!i.due && sameObject(i.text, p.text!) && !saysReplaced(contextOf(i.quote, paragraphs)));
+    const request = items.find((i) => (i.kind === "respond" || i.kind === "ask") && !!i.due && sameObject(i.text, p.text!) && !saysReplaced(contextOf(i.quote, paragraphs)));
     return request ? promiseMove({ label, due: request.due!, time: request.time, evidence: request.quote, before: request.before }) : [];
   });
   const promiseMoves = [...modelMoves, ...requestMoves];
@@ -552,7 +598,7 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
   for (const m of promiseMoves) {
     const words = m.p.text;
     if (words === undefined) continue;
-    const sameDay = result.items.filter((i) => (i.kind === "respond" || (i.kind === "ask" && !!i.due)) && i.due === m.day);
+    const sameDay = items.filter((i) => (i.kind === "respond" || (i.kind === "ask" && !!i.due)) && i.due === m.day);
     const naming = sameDay.filter((i) => sameObject(i.text, words));
     if (naming.length) for (const i of naming) promised.add(i);
     else if (sameDay.some((i) => saysReplaced(`${contextOf(i.quote, paragraphs)}\n${contextOf(m.evidence, paragraphs)}`))) replaced.add(m);
@@ -564,7 +610,7 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     const span = quoteSpan(i.quote, i.due, input.subject, sentences, input.arrivedAt);
     return span ? { ...i, quote: span } : i;
   };
-  const candidates = [...answered, ...result.items].filter((i) => !promised.has(i)).map(spanned).filter((i) => !refused(i)).map((i) => (i.kind === "respond" && input.sender?.person && (offerOnly(`${i.quote}\n${contextOf(i.quote, sentences)}`, contextOf(i.quote, paragraphs)) || wishOnly(contextOf(i.quote, sentences), i.due, input.arrivedAt)) ? { ...i, kind: "ask", due: null, time: null } : i));
+  const candidates = [...answered, ...items].filter((i) => !promised.has(i)).map(spanned).filter((i) => !refused(i)).map((i) => (i.kind === "respond" && input.sender?.person && (offerOnly(`${i.quote}\n${contextOf(i.quote, sentences)}`, contextOf(i.quote, paragraphs)) || wishOnly(contextOf(i.quote, sentences), i.due, input.arrivedAt)) ? { ...i, kind: "ask", due: null, time: null } : i));
   // plan 210 (iteration 4, revision 12): an item's facts (someone there, a lapse, charged by itself) from the whole mail, but
   // only its paragraphs: every one but those that hold another item's quote and not its own (Priya's "An adult signature is
   // required", two paragraphs below the laptops)
@@ -619,7 +665,10 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     const due = item.due && (kind === "respond" || kind === "pay") ? bareDayAhead(item.due, contextOf(item.quote, paragraphs), dayKeyOf(input.arrivedAt)) : item.due;
     // plan 210 (iteration 4, revision 11): the day it was asked before, rolled with a bare day read forward
     const before = due && item.before ? askedBefore(due === item.due ? item.before : nextDay(due), due) : null;
-    const timing = atInstant(datedTiming({ kind, due, time: item.time, arrivedAt: input.arrivedAt }), item.at);
+    // plan 210 (iteration 5, V2): an event its quote gives one start time for, given none, takes it (on the reader's clock);
+    // never one the model put on a place's clock (travel: the quote's time is that place's)
+    const time = item.time ?? (kind === "event" && due && !item.wall ? startOf(item.quote, due) : null);
+    const timing = atInstant(datedTiming({ kind, due, time, arrivedAt: input.arrivedAt }), item.at);
     if (!timing) continue;
     // the 14-day check keeps nothing already over (§6)
     if (input.fromScan && timing.dated && dayEnd(timing.dueDay) <= input.now) continue;
