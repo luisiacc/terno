@@ -30,16 +30,17 @@ export type ItemNow = (item: HandoffItem) => { state: string; revision: number }
 const isOpen = (item: HandoffItem, state: string): boolean => state === "open" || (item.source === "promise" && state === "due");
 
 /**
- * Which of a hand-off's items close: none unless every item the row named is still open at the revision it was handed at (a
- * Done, Later, Remove or settlement since wins); then those and every other member still open at its revision.
+ * Which of a hand-off's items close, row by row (a forward can hand on several, `mergeHandoffs`): none of a row unless every
+ * item it named is still open at the revision it was handed at (a Done, Later, Remove or settlement since wins); then those
+ * and every other member of it still open at its revision.
  */
 export function handoffCloses(h: Handoff, now: ItemNow): HandoffItem[] {
   const at = (i: HandoffItem) => {
     const r = now(i);
     return !!r && r.revision === i.revision && isOpen(i, r.state);
   };
-  if (!h.items.filter((i) => i.named).every(at)) return [];
-  return h.items.filter(at);
+  const lost = new Set(h.items.filter((i) => i.named && !at(i)).map((i) => i.row ?? 0));
+  return h.items.filter((i) => !lost.has(i.row ?? 0) && at(i));
 }
 
 /** The patch a closing item takes: handed (done), or a request a handed promise answered (settled, as Done leaves it). */

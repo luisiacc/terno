@@ -110,6 +110,21 @@ export function defineHandoffConformance(fresh: () => Promise<MailStore>, reopen
       expect(await store.dated.get(bus.id)).toMatchObject({ state: "done", closedReason: null, handedTo: null });
     });
 
+    it("a forward that hands on two rows closes each by its own item: one put off since stays, the other closes (Codex's code review, iteration 4)", async () => {
+      const { store, form, bus, forward, send } = await setup();
+      const h = handing({ source: "dated", id: form.id, revision: form.revision, named: true }, { source: "dated", id: bus.id, revision: bus.revision, named: true, row: 1 });
+      const d = await forward(h);
+      // the rows kept with the draft and carried by the send
+      expect(parseHandoff(d.handoff_json)).toEqual(h);
+      const q = await send(d.id, d.generation!, d.revision);
+      await store.dated.update(bus.id, bus.revision, { deferredUntil: NOW + DAY });
+      expect((await store.ops.complete(q.opId, { providerMsgId: "fwd-rows" }, NOW, {})).handed).toBe(true);
+      expect(await store.dated.get(form.id)).toMatchObject({ state: "done", closedReason: HANDED });
+      expect(await store.dated.get(bus.id)).toMatchObject({ state: "open", deferredUntil: NOW + DAY, handedTo: null });
+      // a row that names no item of its own is no hand-off
+      expect((await forward(handing({ source: "dated", id: form.id, revision: form.revision, named: true }, { source: "dated", id: bus.id, revision: bus.revision, row: 1 }))).handoff_json ?? null).toBeNull();
+    });
+
     it("a failed send or one of uncertain delivery claims nothing", async () => {
       const { store, form, forward, send } = await setup();
       const h = handing({ source: "dated", id: form.id, revision: form.revision, named: true });

@@ -2637,6 +2637,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "whatMatters.handTo.lineUndated": "¿Puedes encargarte de esto: {item}?",
   "whatMatters.handTo.pinned": "El borrador de esta conversación es una respuesta. Envíalo o descártalo y luego delega esto.",
   "whatMatters.handTo.tooMany": "Esto es demasiado grande para delegarlo en un solo reenvío. Reenvía el correo.",
+  "whatMatters.handTo.full": "Este reenvío ya delega todo lo que cabe en uno. Envíalo primero y luego delega esto.",
   "whatMatters.handTo.failed": "No se pudo empezar el reenvío: {error}",
   "whatMatters.automatedLine": "Boletines y notificaciones",
   "whatMatters.privacy.cloud": "Terno envía cada mensaje nuevo (su texto, asunto y nombres, con lo que ya encontró ahí) a {destination} para encontrarlos; nada más sale de tu Mac para esto.",

@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { shallow } from "zustand/shallow";
-import { formatAddressList, UNDO_SEND_DEFAULT, type Address, type AttachmentRef, type Handoff, type ThreadDetail } from "@terno/core";
+import { formatAddressList, mergeHandoffs, UNDO_SEND_DEFAULT, type Address, type AttachmentRef, type Handoff, type ThreadDetail } from "@terno/core";
 import { attachmentUploading, draftAttachmentBudget } from "./attachments";
 import { breadcrumb, captureUi } from "~/lib/diag";
 import { useDraftRecovery } from "~/lib/draft-recovery-ui";
@@ -705,8 +705,10 @@ async function openLanding(mode: DraftMode, threadId: number | null, attempt: nu
 /**
  * Plan 210 (iteration 4): a hand-off into the forward it landed on, through the draft machinery (an edit, saved like typing):
  * the hand-off kept with the draft, and its line above what's written: alone in an empty body, a paragraph of its own over
- * authored words, never twice (a second Hand to… of the same item finds it there). Not a forward (the conversation's pinned
- * reply, which r / a / f never convert): it says so, and nothing changes. False when nothing was handed.
+ * authored words, never twice (a second Hand to… of the same item finds it there). Another item handed into a forward that
+ * already hands one on joins it (`mergeHandoffs`: its line and its items both, so the confirmed send closes both); past the
+ * bound it says so. Not a forward (the conversation's pinned reply, which r / a / f never convert): it says so, and nothing
+ * changes. False when nothing was handed.
  */
 export function handOffInto(key: string, h: ForwardHandoff): boolean {
   const d = materialize(key);
@@ -715,7 +717,12 @@ export function handOffInto(key: string, h: ForwardHandoff): boolean {
     snack.error(t("whatMatters.handTo.pinned"));
     return false;
   }
-  const patch: Partial<DraftFields> = { handoff: h.handoff };
+  const handoff = mergeHandoffs(d.handoff, h.handoff);
+  if (!handoff) {
+    snack.error(t("whatMatters.handTo.full"));
+    return false;
+  }
+  const patch: Partial<DraftFields> = { handoff };
   if (!d.bodyText.includes(h.line)) {
     const empty = d.bodyText.trim() === "";
     patch.bodyText = empty ? h.line : `${h.line}\n\n${d.bodyText}`;
