@@ -439,6 +439,8 @@ export function startClock(quote: string): { time: string; zone: string | null }
     found.push({ at: c.index, end: c.index + c[0].length, h, m });
   }
   found.sort((a, b) => a.at - b.at);
+  // a window is no start: "between 12 and 2 PM", "12–2 PM" (its start said with no clock of its own), "entre las 9:00 y las 14:00"
+  if (/\b(?:between|entre|window|ventana)\b/iu.test(quote) || found.some((f) => /(?<![:\d])\b\d{1,2}\s*(?:[–—-]|to|a|and|y)\s*$/iu.test(quote.slice(0, f.at)))) return null;
   // a range's end is no second start
   const starts = found.filter((f, i) => i === 0 || !RANGE_END.test(quote.slice(found[i - 1]!.end, f.at)));
   if (starts.length !== 1) return null;

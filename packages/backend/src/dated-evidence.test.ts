@@ -126,6 +126,7 @@ describe("plan 210 (iteration 5, V2): an event's start in its own quote", () => 
     expect(startClock("Monday Nov 16, 2026 · 4pm – 5pm (Pacific Time)")).toEqual({ time: "16:00", zone: "America/Los_Angeles" });
     expect(startClock("We're meeting Tuesday the 17th at 7:30 PM at my house")).toEqual({ time: "19:30", zone: null });
     expect(startClock("el martes 24 de noviembre a las 19:00 h")).toEqual({ time: "19:00", zone: null });
+    expect(startClock("lunes 16 nov 2026 · 16:00 – 17:00")).toEqual({ time: "16:00", zone: null });
     expect(startClock("Thursday, 10:00 AM to 11:30 AM ET")).toEqual({ time: "10:00", zone: "America/New_York" });
     expect(startClock("Check-in from 3:00 p.m. on Friday")).toEqual({ time: "15:00", zone: null });
   });
@@ -135,5 +136,9 @@ describe("plan 210 (iteration 5, V2): an event's start in its own quote", () => 
     expect(startClock("Tuesday the 17th")).toBeNull();
     expect(startClock("Monday at 10:00 AM CST")).toBeNull();
     expect(startClock("lunes a las 18:00 hora de Lima")).toBeNull();
+    // a window has no start of its own (the full round: "Furnace service, 12–2 PM" read as 14:00)
+    expect(startClock("Thursday, November 12, 12–2 PM")).toBeNull();
+    expect(startClock("between 12 and 2 PM on Thursday")).toBeNull();
+    expect(startClock("el jueves entre las 9:00 y las 14:00")).toBeNull();
   });
 });
