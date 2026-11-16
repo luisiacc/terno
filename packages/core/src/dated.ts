@@ -329,10 +329,31 @@ export const planEnd = (r: Pick<DatedRow, "dueDay" | "dueAt" | "timed">): number
 export const askEnd = (r: Pick<DatedRow, "arrivedAt">): number => r.arrivedAt + WAITING_WINDOW_MS;
 
 /**
+ * Plan 210 (iteration 4, revision 11): when an ask is over: with the event it confirms ("Reply C to confirm", `eventEnd`, read
+ * by `withEventEnds`), else Needs you's window (`askEnd`).
+ */
+export const askUntil = (r: Pick<DatedRow, "arrivedAt" | "eventEnd">): number => (r.eventEnd != null ? r.eventEnd : askEnd(r));
+
+/**
+ * Plan 210 (iteration 4, revision 11): each ask that confirms an event with that event's end (`eventEnd`: `planEnd`), or 0
+ * when the event is no longer among the open rows (settled, over, removed: nothing left to confirm). What places, retires or
+ * shows items reads them through this. The rest as they are; a set with no such ask is returned as it is (nothing copied).
+ */
+export function withEventEnds<T extends Pick<DatedRow, "id" | "kind" | "state" | "dueDay" | "dueAt" | "timed" | "confirms" | "eventEnd">>(rows: readonly T[]): readonly T[] {
+  if (!rows.some((r) => r.confirms != null)) return rows;
+  const events = new Map(rows.flatMap((r) => (r.kind === "event" && r.state === "open" ? [[r.id, r] as const] : [])));
+  return rows.map((r) => {
+    if (r.confirms == null) return r;
+    const event = events.get(r.confirms);
+    return { ...r, eventEnd: event ? planEnd(event) : 0 };
+  });
+}
+
+/**
  * Revision 8: where an item sits now. One rule for the list, the count and the timer. Later (`deferredUntil`) is honoured in
  * every group: a deferred item is never Missed.
  */
-export function datedPlace(r: Pick<DatedRow, "kind" | "state" | "dueDay" | "dueAt" | "timed" | "dated" | "actAt" | "deferredUntil" | "arrivedAt" | "early" | "lapses">, now: number): DatedPlace {
+export function datedPlace(r: Pick<DatedRow, "kind" | "state" | "dueDay" | "dueAt" | "timed" | "dated" | "actAt" | "deferredUntil" | "arrivedAt" | "early" | "lapses" | "eventEnd">, now: number): DatedPlace {
   if (r.state !== "open") return "hidden";
   const group = datedGroup(r.kind);
   const deferred = r.deferredUntil !== null && r.deferredUntil > now;
@@ -342,7 +363,7 @@ export function datedPlace(r: Pick<DatedRow, "kind" | "state" | "dueDay" | "dueA
     if (now >= planEnd(r)) return "hidden";
   } else if (group === "needsYou") {
     // an ask is never Missed: it waits in Needs you until its window ends, a Later past that included
-    if (now >= askEnd(r)) return "hidden";
+    if (now >= askUntil(r)) return "hidden";
   } else if (undatedAlert(r)) {
     // it has no day to miss: Deadlines' until its week ends, then over
     if (now >= alertUntil(r)) return "hidden";
@@ -472,11 +493,11 @@ export function laterBefore(r: Pick<DatedRow, "kind" | "dueDay" | "dueAt" | "tim
  * Codex code review: an item whose time in Today is over for good: a Plan that's ended, a deadline past Missed's days and
  * not moved on with Later. It's retired (`expired`), so the open set holds only what can still show (its bound of 1,000).
  */
-export function datedOver(r: Pick<DatedRow, "kind" | "state" | "dueDay" | "dueAt" | "timed" | "dated" | "deferredUntil" | "arrivedAt">, now: number): boolean {
+export function datedOver(r: Pick<DatedRow, "kind" | "state" | "dueDay" | "dueAt" | "timed" | "dated" | "deferredUntil" | "arrivedAt" | "eventEnd">, now: number): boolean {
   if (r.state !== "open") return false;
   if (datedGroup(r.kind) === "plans") return now >= planEnd(r);
   // an ask's window doesn't move with Later: one put off past it is over at its end
-  if (r.kind === "ask") return now >= askEnd(r);
+  if (r.kind === "ask") return now >= askUntil(r);
   // its week counts from a Later's end, so it's never over while put off
   if (undatedAlert(r)) return now >= alertUntil(r);
   if (r.deferredUntil !== null && r.deferredUntil > now) return false;
@@ -496,7 +517,7 @@ export function missedUntil(r: Pick<DatedRow, "dueDay" | "deferredUntil">): numb
  * Revision 11: the next moment, strictly after `now`, at which Today changes by the clock alone: an item showing,
  * entering Coming up, a day ending (Missed), Missed ending, a Plan ending, a deferral ending, a promise's day ending.
  */
-export function nextTodayChange(items: readonly Pick<DatedRow, "kind" | "state" | "dueDay" | "dueAt" | "timed" | "dated" | "actAt" | "deferredUntil" | "arrivedAt" | "early" | "lapses">[], promises: readonly PromiseFacts[], now: number): number | null {
+export function nextTodayChange(items: readonly Pick<DatedRow, "kind" | "state" | "dueDay" | "dueAt" | "timed" | "dated" | "actAt" | "deferredUntil" | "arrivedAt" | "early" | "lapses" | "eventEnd">[], promises: readonly PromiseFacts[], now: number): number | null {
   let next = Infinity;
   const consider = (at: number) => {
     if (at > now && at < next) next = at;
@@ -508,7 +529,7 @@ export function nextTodayChange(items: readonly Pick<DatedRow, "kind" | "state" 
     consider(showsAt);
     if (r.deferredUntil !== null) consider(r.deferredUntil);
     if (datedGroup(r.kind) === "plans") consider(planEnd(r));
-    else if (r.kind === "ask") consider(askEnd(r));
+    else if (r.kind === "ask") consider(askUntil(r));
     else if (undatedAlert(r)) consider(alertUntil(r));
     else {
       consider(dayEnd(r.dueDay));

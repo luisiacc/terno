@@ -22,6 +22,7 @@ import {
   projectRows,
   refKey,
   todayBadge,
+  withEventEnds,
   withNeeds,
   type DatedRow,
   type Counts,
@@ -635,7 +636,7 @@ export class TodayService {
     if (this.datedCache?.generation === generation) return this.datedCache.rows;
     const { dated } = this.b.store;
     // Codex's second pass: an item stored from a suspicious sender before the guard isn't shown nor counted
-    const rows = await withoutUntrusted(await dated.active(), (keys) => dated.written(keys));
+    const rows = withEventEnds(await withoutUntrusted(await dated.active(), (keys) => dated.written(keys)));
     if (generation === this.datedGeneration) this.datedCache = { generation, rows };
     return rows;
   }

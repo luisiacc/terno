@@ -177,7 +177,8 @@ export function findLinks(dated: readonly DatedRow[], promises: readonly Followu
     if (r.kind === "event" && r.timed) push(byMoment, r.dueAt, r);
     if (r.kind === "event") push(byMessage, r.messageId, r);
     if (r.kind === "event") push(eventsByDay, `${r.threadId}:${r.dueDay}`, r);
-    if (ERRANDS.has(r.kind)) push(datedByThread, r.threadId, r);
+    // plan 210 (iteration 4, revision 11): an ask that confirms an event is that event's, never one item with another
+    if (ERRANDS.has(r.kind) && r.confirms == null) push(datedByThread, r.threadId, r);
   }
   for (const p of promises) {
     if (p.kind !== "promise") continue;
@@ -227,7 +228,7 @@ export function findLinks(dated: readonly DatedRow[], promises: readonly Followu
       const outbound = byMessage.get(r.messageId)?.filter((o) => isDetailOf(r, o)).sort((a, b) => a.dueAt - b.dueAt)[0];
       if (outbound) out.details.push({ id: r.id, detailOf: outbound.id });
     }
-    if (ERRANDS.has(r.kind)) {
+    if (ERRANDS.has(r.kind) && r.confirms == null) {
       const asked = datedByThread.get(r.threadId)?.find((o) => o.id !== r.id && older(o, r) && sameRequest(o, r));
       if (asked) join("dated", r, canonicalOf("dated", asked));
       const promise = promisesByThread.get(r.threadId)?.find((p) => errand(r, p));

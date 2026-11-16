@@ -1,5 +1,5 @@
 import { AiError, DATED_PROMPT_VERSION, DATED_SUBJECT_CHARS, DATED_TEXT_CHARS, costAt, datedBudget, fitDates, priceOf, type AiTasks, type DatedResult } from "@terno/ai";
-import { addressKey, canLapse, lapsesUnlessRenewed, localDay, needsPresence, saysNoReplyNeeded, DATED_ITEMS_MAX, DATED_KINDS, DATED_OPEN_SHOWN, followupDue, validFollowupDate, type FollowupRow, DATED_SCAN_DAYS, DATED_SCAN_MAX, datedOver, dayKeyOf, datedTiming, dayEnd, hasTimeCue, normalizeText, withoutQuotes, type AiErrorKind, type DatedKind, type DatedRow } from "@terno/core";
+import { addressKey, canLapse, withEventEnds, lapsesUnlessRenewed, localDay, needsPresence, saysNoReplyNeeded, DATED_ITEMS_MAX, DATED_KINDS, DATED_OPEN_SHOWN, followupDue, validFollowupDate, type FollowupRow, DATED_SCAN_DAYS, DATED_SCAN_MAX, datedOver, dayKeyOf, datedTiming, dayEnd, hasTimeCue, normalizeText, withoutQuotes, type AiErrorKind, type DatedKind, type DatedRow } from "@terno/core";
 import { captureError } from "@terno/core/diag";
 import type { AppSettings } from "@terno/core/rpc";
 import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
@@ -250,6 +250,13 @@ const CANCELLED = /\b(?:appointment|visit|reservation|booking|session|class|cita
 const REBOOK = /\b(?:(?:choose|pick|book|schedule|find|set up|arrange) (?:a )?new (?:time|date|appointment|slot)|reschedul\w*|rebook\w*|(?:elegir|escoger|agendar|programar|buscar|reservar) (?:una )?nueva (?:fecha|hora|cita)|reprogram\w*|reagend\w*)\b/u;
 
 /**
+ * Plan 210 (iteration 4, revision 11): asked to confirm by replying ("Reply C to confirm", "reply YES to confirm your
+ * appointment", "confirm by replying", "Responde C para confirmar"), read as `norm` reads it, en and es.
+ */
+const CONFIRM_BY_REPLY = /\b(?:(?:reply|respond|text|answer|write back)(?: with)?(?: (?:the letter )?[a-z0-9]{1,3})? to confirm|confirm by (?:replying|reply|texting|responding)|(?:responde|responda|contesta|conteste|escribe|escriba|envia|envie|manda|mande)(?:nos)?(?: con)?(?: (?:la letra )?[a-z0-9]{1,3})? para confirmar|confirm\w* respondiendo)\b/u;
+const confirmsByReply = (words: string): boolean => CONFIRM_BY_REPLY.test(norm(words));
+
+/**
  * The seventh panel round (revision 7): an ask, or the request it turns into with a day, never asks the reader to send a
  * password, a one-time code, an account, card or routing number, or an ID (en, es), whatever the model made of it: read
  * on its words and its quote. Pure.
@@ -468,8 +475,19 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
   const cancelled = [...input.open.values()].some((r) => r.kind === "event" && settledIds.has(r.id)) || CANCELLED.test(norm(input.text));
   const rebooks = (ask: { quote: string }) => cancelled && input.reader?.addressed === "to" && REBOOK.test(norm(contextOf(ask.quote, sentences)));
   let asked = false;
-  for (const item of candidates) {
+  // plan 210 (iteration 4, revision 11): "Reply C to confirm" is an ask that waits on the reader from its mail's day and ends
+  // with the event it confirms (this mail's one event), whatever day the model gave it (v13 dated it on the mail's own day,
+  // so it was dropped as past); read after every other item, so that event's row is known
+  const day = dayKeyOf(input.arrivedAt);
+  const confirming = new Set(candidates.filter((i) => (i.kind === "ask" || (i.kind === "respond" && (!i.due || i.due <= nextDay(day)))) && confirmsByReply(`${i.quote}\n${contextOf(i.quote, sentences)}`)));
+  for (const item of [...candidates.filter((i) => !confirming.has(i)), ...confirming]) {
     if (!KINDS.has(item.kind) || !item.text.trim() || !quoted(item.quote)) continue;
+    const events = confirming.has(item) ? rows.filter((r) => r.kind === "event") : [];
+    if (events.length === 1 && !rows.some((r) => r.confirmsItem !== undefined) && (input.reader?.addressed === "to" || askAllowed(item.quote, said, input.text, input))) {
+      asked = true;
+      if (rows.length < DATED_ITEMS_MAX) rows.push({ kind: "ask", item: rows.length, text: item.text.trim(), quote: item.quote.trim(), ...datedTiming({ kind: "ask", due: null, arrivedAt: input.arrivedAt })!, confirmsItem: events[0]!.item });
+      continue;
+    }
     // an ask is never a dated kind's substitute: one with a day is a request with a day, if it's an ask at all
     if (item.kind === "ask" && item.due && !datedAsk(item)) continue;
     const kind = (item.kind === "ask" && item.due ? "respond" : item.kind) as DatedKind;
@@ -668,7 +686,7 @@ export class DatedWorker {
   async retire(): Promise<number> {
     const { store } = this.host;
     const now = this.host.now();
-    const over = (await store.dated.active()).filter((r) => datedOver(r, now));
+    const over = withEventEnds(await store.dated.active()).filter((r) => datedOver(r, now));
     let n = 0;
     await this.host.runBudgeted(over, async (chunk) => {
       for (const r of chunk) if (await store.dated.update(r.id, r.revision, { state: "dismissed", closedReason: "expired", closedAt: now }, { dueDay: r.dueDay, dueAt: r.dueAt })) n++;
@@ -855,7 +873,7 @@ export class DatedWorker {
     // plan 210 (iteration 2): a history line opened shows its own closed item, of this conversation only
     const extra = include === undefined ? null : await dated.get(include);
     const rows = [...(await dated.ofThread(threadId)), ...(extra && extra.threadId === threadId && extra.state !== "open" ? [extra] : [])];
-    return [...(await withoutUntrusted(rows, (keys) => dated.written(keys)))];
+    return [...withEventEnds(await withoutUntrusted(rows, (keys) => dated.written(keys)))];
   }
 
   // ─── §6: the one-time check ──────────────────────────────────────────────

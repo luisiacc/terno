@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { isAcknowledgment, looksLikeAcknowledgment, saysNoReplyNeeded } from "./today";
-import { alertUntil, ANSWERED_KINDS, askEnd, datedGroup, datedGroupAt, datedOver, datedPlace, datedTiming, hasTimeCue, laterBefore, nextTodayChange, planEnd, promiseDay, promiseGroupAt, promiseOver, promisePlace, todayCounted, TODAY_GROUP_ORDER, type DatedKind, type DatedRow } from "./dated";
+import { alertUntil, ANSWERED_KINDS, askEnd, datedGroup, datedGroupAt, datedOver, datedPlace, datedTiming, hasTimeCue, laterBefore, nextTodayChange, planEnd, withEventEnds, promiseDay, promiseGroupAt, promiseOver, promisePlace, todayCounted, TODAY_GROUP_ORDER, type DatedKind, type DatedRow } from "./dated";
 import { WAITING_WINDOW_MS } from "./people";
 
 const at = (y: number, m: number, d: number, h = 0, min = 0) => new Date(y, m - 1, d, h, min).getTime();
@@ -409,6 +409,26 @@ describe("an ask (after the third panel round, revision 2)", () => {
     expect(nextTodayChange([ask], [], at(2026, 11, 10, 15))).toBe(at(2026, 11, 11));
     expect(nextTodayChange([ask], [], askEnd(ask) - 60_000)).toBe(askEnd(ask));
     expect(nextTodayChange([ask], [], askEnd(ask))).toBeNull();
+  });
+  it("plan 210 (iteration 4, revision 11): one that confirms an event (\"Reply C\") waits from its day and ends with that event, never at its window", () => {
+    // an appointment past Needs you's window (30 days): the confirmation waits until the appointment is over
+    const cleaning = { id: 1, ...item("event", "2026-12-24", "15:40", { arrivedAt: arrived }) } as DatedRow;
+    const confirm = { id: 2, ...ask, confirms: 1 } as DatedRow;
+    const [, linked] = withEventEnds([cleaning, confirm]);
+    expect(linked!.eventEnd).toBe(planEnd(cleaning));
+    expect(datedPlace(linked!, askEnd(ask))).toBe("needsYou");
+    expect(datedOver(linked!, askEnd(ask))).toBe(false);
+    expect(datedPlace(linked!, planEnd(cleaning) - 1)).toBe("needsYou");
+    expect(datedPlace(linked!, planEnd(cleaning))).toBe("hidden");
+    expect(datedOver(linked!, planEnd(cleaning))).toBe(true);
+    expect(nextTodayChange([linked!], [], planEnd(cleaning) - 60_000)).toBe(planEnd(cleaning));
+    // the event no longer open (cancelled, settled): nothing to confirm
+    const [, alone] = withEventEnds([{ ...cleaning, state: "settled" }, confirm]);
+    expect(datedOver(alone!, at(2026, 11, 10, 15))).toBe(true);
+    expect(withEventEnds([confirm])[0]!.eventEnd).toBe(0);
+    // a set with none is returned as it is
+    const plain = [cleaning, ask as DatedRow];
+    expect(withEventEnds(plain)).toBe(plain);
   });
   it("a send of yours answers it, as it answers a request with a day", () => {
     expect(ANSWERED_KINDS).toEqual(["respond", "ask"]);

@@ -1,4 +1,4 @@
-import { alertUntil, askEnd, datedGroup, datedGroupAt, dayEnd, defaultRemindAt, laterBefore, localDay, planEnd, remindPresets, undatedAlert, type DatedKind, type DatedRow, type RemindPreset, type TodayAlso, type TodayWhy } from "@terno/core";
+import { alertUntil, askUntil, datedGroup, datedGroupAt, dayEnd, defaultRemindAt, laterBefore, localDay, planEnd, remindPresets, undatedAlert, type DatedKind, type DatedRow, type RemindPreset, type TodayAlso, type TodayWhy } from "@terno/core";
 import { getLocale, t } from "@terno/i18n";
 import { useEffect, useState } from "react";
 import { usd } from "~/lib/ai";
@@ -83,7 +83,7 @@ export const datedLine = (o: DatedFacts, missed: boolean, now = Date.now()): str
  * When an item stops being its conversation's: a Plan's end, an ask's window, an undated alert's week (the sixth panel
  * round: never Missed), a deadline's day (Missed then says it, by `datedPlace`).
  */
-const conversationEnd = (r: DatedRow): number => (datedGroup(r.kind) === "plans" ? planEnd(r) : r.kind === "ask" ? askEnd(r) : undatedAlert(r) ? alertUntil(r) : dayEnd(r.dueDay));
+const conversationEnd = (r: DatedRow): number => (datedGroup(r.kind) === "plans" ? planEnd(r) : r.kind === "ask" ? askUntil(r) : undatedAlert(r) ? alertUntil(r) : dayEnd(r.dueDay));
 
 /**
  * The conversation's line for an item, by Today's rule (`datedGroupAt`, the group its row would be in): still to act on,
