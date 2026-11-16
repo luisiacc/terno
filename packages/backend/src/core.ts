@@ -26,6 +26,7 @@ import { TodayService } from "./today";
 import { AskService } from "./ask";
 import { FollowupWorker } from "./followups";
 import { DatedWorker } from "./dated";
+import { DatedMutes } from "./dated-mutes";
 import { SummaryWorker } from "./summaries";
 import { WritingService } from "./writing";
 import { Attention, type AttentionHost } from "./attention";
@@ -305,6 +306,8 @@ export class BackendCore {
   readonly followups: FollowupWorker;
   /** plan 204: dated items in mail the user got */
   readonly dated: DatedWorker;
+  /** plan 210 (iteration 4): the senders and kinds muted in What matters */
+  readonly mutes: DatedMutes;
   /** plan 133: drafting: what goes into a draft, and the learner, asleep until the feature is used */
   readonly writing: WritingService;
   /** plan 18: recipient and body suggestions, in memory, built on first use */
@@ -409,6 +412,14 @@ export class BackendCore {
       statusChanged: (status) => this.server.emit("datedStatus", status, { origins: ["renderer", "dev"] }),
       runBudgeted: (items, work) => this.runBudgeted(items, work),
       log: (level, message, extra) => this.log(level, message, extra),
+    });
+    this.mutes = new DatedMutes({
+      store: this.store,
+      now: () => this.now(),
+      changed: (muted) => {
+        this.dated.mutesChanged(muted);
+        this.today.changed();
+      },
     });
     this.facts = new FactsBackfill(this);
     this.reminders = new Reminders({

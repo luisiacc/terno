@@ -1,10 +1,11 @@
 import { AiError, DATED_PROMPT_VERSION, DATED_SUBJECT_CHARS, DATED_TEXT_CHARS, costAt, datedBudget, fitDates, priceOf, type AiTasks, type DatedResult } from "@terno/ai";
-import { addressKey, canLapse, lapsesUnlessRenewed, localDay, needsPresence, saysNoReplyNeeded, DATED_ITEMS_MAX, DATED_KINDS, DATED_OPEN_SHOWN, followupDue, validFollowupDate, type FollowupRow, DATED_SCAN_DAYS, DATED_SCAN_MAX, datedOver, dayKeyOf, datedTiming, dayEnd, hasTimeCue, normalizeText, withoutQuotes, type AiErrorKind, type DatedKind, type DatedRow } from "@terno/core";
+import { addressKey, mutedOf, canLapse, lapsesUnlessRenewed, localDay, needsPresence, saysNoReplyNeeded, DATED_ITEMS_MAX, DATED_KINDS, DATED_OPEN_SHOWN, followupDue, validFollowupDate, type FollowupRow, DATED_SCAN_DAYS, DATED_SCAN_MAX, datedOver, dayKeyOf, datedTiming, dayEnd, hasTimeCue, normalizeText, withoutQuotes, type AiErrorKind, type DatedKind, type DatedRow } from "@terno/core";
 import { captureError } from "@terno/core/diag";
 import type { AppSettings } from "@terno/core/rpc";
 import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
 import { readNothingAsked, type DatedMark, type DatedSource, type DatedWrite, type MailStore } from "@terno/store";
 import { DailyLimitError, MonthlyLimitError } from "./ai-limiter";
+import { withoutMuted } from "./dated-mutes";
 import { UI_LOCALE_KEY } from "./forwarding";
 import { bareDayAhead, contextOf, insideQuotes, type Sentences, namesApart, namesItem, negatedReceipt, norm, otherAmounts, otherIds, paragraphsOf, plainEvidence, replacesPlainly, sameObject, sameThing, saysReplaced, saysWhen, sentencesOf, settlesKind } from "./dated-evidence";
 import { untrustedSenders, withoutUntrusted } from "./suspicious-sender";
@@ -604,10 +605,26 @@ export class DatedWorker {
     const { store } = this.host;
     const src = await store.dated.source(leaving.messageId);
     if (!src || src.spam || src.trash || src.threadSpam || src.threadId !== leaving.threadId) return leaving.stop.abort();
+    // plan 210 (iteration 4): a sender muted meanwhile, before anything leaves
+    if ((await this.muted()).senders.has(leaving.senderKey)) return leaving.stop.abort();
     // Codex code review: the open items it carries are material too; one whose conversation went to Spam stops it
     if (!leaving.open.length) return;
     const still = new Set((await store.dated.openFor({ threadId: leaving.threadId, senderKey: leaving.senderKey, before: leaving.date, limit: DATED_OPEN_SHOWN })).map((r) => r.id));
     if (leaving.open.some((id) => !still.has(id))) leaving.stop.abort();
+  }
+
+  /** Plan 210 (iteration 4): what the reader muted, read where it's needed (a table bounded at 200). */
+  private async muted() {
+    return mutedOf(await this.host.store.dated.mutes.list());
+  }
+
+  /**
+   * Plan 210 (iteration 4): a sender just muted: a reading of theirs on its way stops (the store refuses its finish too),
+   * and its mark goes when it's considered again. An Unmute changes nothing here: mail from then on is read.
+   */
+  mutesChanged(muted: { senders: ReadonlySet<string> }): void {
+    const leaving = this.leaving;
+    if (leaving && muted.senders.has(leaving.senderKey)) leaving.stop.abort();
   }
 
   private async drain(): Promise<void> {
@@ -687,6 +704,9 @@ export class DatedWorker {
     };
     // the owner's rule: mail in Spam reaches no AI, the whole thread's
     if (!src || src.draft || src.sent || src.own || src.spam || src.trash || src.threadSpam) return drop();
+    // plan 210 (iteration 4, revision 2): a muted sender's mail isn't read for What matters at all, before its body or a
+    // provider is reached; not read later either (Unmute is for mail from then on)
+    if ((await this.muted()).senders.has(src.senderKey)) return drop();
     // after the fourth panel round: a sender named like a security desk is read for nothing (no item, settlement or move),
     // unless you've written to them (Codex's second pass)
     if ((await untrustedSenders([src.fromEmail], (keys) => store.dated.written(keys))).size) return drop();
@@ -831,7 +851,10 @@ export class DatedWorker {
     // plan 210 (iteration 2): a history line opened shows its own closed item, of this conversation only
     const extra = include === undefined ? null : await dated.get(include);
     const rows = [...(await dated.ofThread(threadId)), ...(extra && extra.threadId === threadId && extra.state !== "open" ? [extra] : [])];
-    return [...(await withoutUntrusted(rows, (keys) => dated.written(keys)))];
+    // plan 210 (iteration 4): an open item of a muted sender or kind is hidden here too (a history line's own stays)
+    const muted = await this.muted();
+    const shown = rows.filter((r) => r.state !== "open" || withoutMuted([r], muted).length);
+    return [...(await withoutUntrusted(shown, (keys) => dated.written(keys)))];
   }
 
   // ─── §6: the one-time check ──────────────────────────────────────────────
@@ -843,10 +866,12 @@ export class DatedWorker {
   private async scanPicks(now: number): Promise<number[]> {
     const { store } = this.host;
     const walked = await store.dated.scanCandidates(now - DATED_SCAN_DAYS * 86_400_000, SCAN_WALK);
+    // plan 210 (iteration 4): a muted sender's mail is neither counted nor read
+    const muted = await this.muted();
     // newest first: whether each is worth reading by itself, and who and where it's from
     const seen: { s: DatedSource; worth: boolean }[] = [];
     await this.host.runBudgeted(walked, async (chunk) => {
-      const sources = (await Promise.all(chunk.map((id) => store.dated.source(id)))).filter((s): s is DatedSource => !!s && !s.spam && !s.trash && !s.threadSpam && !s.draft && !s.sent && !s.own && s.tab !== "social" && s.tab !== "promotions");
+      const sources = (await Promise.all(chunk.map((id) => store.dated.source(id)))).filter((s): s is DatedSource => !!s && !s.spam && !s.trash && !s.threadSpam && !s.draft && !s.sent && !s.own && s.tab !== "social" && s.tab !== "promotions" && !muted.senders.has(s.senderKey));
       // round 2: a body not here yet can't be judged; it's read, and the worker waits for it (the filter errs towards reading)
       const judged = sources.filter((s) => s.automated && (s.bodyState === "full" || s.bodyUnavailable));
       const texts = judged.length ? await store.aiSummaries.text(judged.map((s) => ({ messageId: s.id, limit: DATED_TEXT_CHARS }))) : new Map<number, string | null>();

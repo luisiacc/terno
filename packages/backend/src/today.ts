@@ -55,6 +55,7 @@ import { readerZone } from "./promise-time";
 import { progressReporter } from "./scope";
 import { aiAllowed, readSettings } from "./settings";
 import { withoutQuotes } from "./summaries";
+import { withoutMuted } from "./dated-mutes";
 import { historyPage } from "./today-history";
 import { TodayLinks } from "./today-links";
 import { scheduleChanges, type ScheduleAsk } from "./today-schedule";
@@ -639,8 +640,10 @@ export class TodayService {
     const generation = this.datedGeneration;
     if (this.datedCache?.generation === generation) return this.datedCache.rows;
     const { dated } = this.b.store;
-    // Codex's second pass: an item stored from a suspicious sender before the guard isn't shown nor counted
-    const rows = await withoutUntrusted(await dated.active(), (keys) => dated.written(keys));
+    // Codex's second pass: an item stored from a suspicious sender before the guard isn't shown nor counted; plan 210
+    // (iteration 4): nor one of a muted sender or kind (hidden, not closed: Unmute brings it back), the mutes read once here
+    const [open, muted] = await Promise.all([dated.active(), this.b.mutes.muted()]);
+    const rows = await withoutUntrusted(withoutMuted(open, muted), (keys) => dated.written(keys));
     if (generation === this.datedGeneration) this.datedCache = { generation, rows };
     return rows;
   }
