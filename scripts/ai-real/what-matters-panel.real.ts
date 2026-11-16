@@ -188,6 +188,8 @@ async function writeToday(backend: Backend, client: RpcClient, dir: string, pers
   const section = (x: TodaySection) => ({
     kind: x.kind,
     day: x.day ?? null,
+    part: x.part ?? null,
+    bucket: x.bucket ?? null,
     items: x.items.map((i) => ({ id: i.id, threadId: i.thread.id, from: i.thread.fromName, subject: i.thread.subject, snippet: i.thread.snippet, why: i.why, summary: i.summary ?? null, own: ownOf(i, dated, promises), also: i.also ? { ...i.also, ...alsoOf(i.thread.id, i.also, rows, followups) } : null })),
   });
   writeFileSync(join(dir, "today.json"), JSON.stringify({ persona, zone: Intl.DateTimeFormat().resolvedOptions().timeZone, at: new Date(NOW).toString(), sections: list.sections.map(section), dated: rows, followups }, null, 2));
