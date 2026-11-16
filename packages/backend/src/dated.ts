@@ -816,7 +816,9 @@ export class DatedWorker {
     if (silenced(src, await silenceOf(store))) return drop();
     // after the fourth panel round: a sender named like a security desk is read for nothing (no item, settlement or move),
     // unless you've written to them (Codex's second pass)
-    if ((await untrustedSenders([src.fromEmail], (keys) => store.dated.written(keys))).size) return drop();
+    // plan 210 (iteration 4's code review): and one named like the reader's own organization's ("lumora-io.co" for lumora.io)
+    const accounts = await store.accounts.list();
+    if ((await untrustedSenders([src.fromEmail], (keys) => store.dated.written(keys), accounts.map((a) => a.email))).size) return drop();
     if (heldSenders.has(src.senderKey)) return { hold: src.senderKey };
     // what came before it went on is read only with the check's yes
     if (mark.source === "live" && settings.dated.enabledAt !== null && src.date < settings.dated.enabledAt) return drop();
@@ -844,7 +846,7 @@ export class DatedWorker {
       const nameOf = (p: { name: string; email: string }) => p.name || p.email.split("@")[0]!;
       const reader = { name: (await store.accounts.get(src.accountId))?.displayName ?? "", addressed: src.readerIn };
       // the seventh panel round: the mail's other recipients, by name, for an ask addressed to one of them ("Oren, could you…")
-      const own = new Set((await store.accounts.list()).map((a) => addressKey(a.email)));
+      const own = new Set(accounts.map((a) => addressKey(a.email)));
       const others = [...src.to, ...src.cc].filter((p) => !own.has(addressKey(p.email))).map(nameOf);
       // the third panel round: "a person" as the ask's local check reads it (a role address you never wrote to isn't one)
       const input = fitDates({ text, subject: src.subject, from: { name: src.fromName || src.fromEmail.split("@")[0]!, automated: src.automated || !src.person }, reader, to: src.to.map(nameOf), cc: src.cc.map(nameOf), receivedAt: inWords(src.date, language), zone: readerZone(), open: [...[...labels].map(([label, r]) => ({ label, kind: r.kind as DatedKind | "promise", text: r.text, due: r.dated ? r.dueDay : null, time: r.timed ? clockOf(r.dueAt) : null })), ...[...promises].map(([label, p]) => ({ label, kind: "promise" as const, text: p.text, due: p.dated ? dayKeyOf(p.dueAt) : null }))], language, outputTokens: budget.outputTokens }, budget.promptChars);
