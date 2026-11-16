@@ -110,7 +110,7 @@ describe("Hand to…", () => {
   it("resolves the row as Done would, with the message its forward forwards; a revision seen before a change is stale", async () => {
     const { client, source, form } = await setup();
     const h = await client.call("today.handoff", { source: "dated", id: form.id, revision: form.revision });
-    expect(h).toEqual({ threadId: source.thread, messageId: source.id, items: [{ source: "dated", id: form.id, revision: form.revision, named: true }] });
+    expect(h).toEqual({ threadId: source.thread, messageId: source.id, items: [{ source: "dated", id: form.id, revision: form.revision, named: true }], text: "Sign the field trip form", dueAt: form.dueAt });
     await expect(client.call("today.handoff", { source: "dated", id: form.id, revision: form.revision + 1 })).rejects.toMatchObject({ code: "STALE" });
   });
 

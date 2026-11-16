@@ -212,6 +212,8 @@ export function convertFields(d: DraftFields, mode: Exclude<DraftMode, "new">, d
     inReplyToMessageId: sourceId === undefined && mode !== "forward" && d.mode !== "forward" && d.mode !== "new" ? d.inReplyToMessageId : fresh.inReplyToMessageId,
     forwardOfMessageId: fresh.forwardOfMessageId,
     uiState: "open",
+    // plan 210 (iteration 4): a hand-off is a forward's: turned into a reply, it hands nothing on (its Undo brings it back)
+    ...(mode !== "forward" && { handoff: null }),
   };
 }
 

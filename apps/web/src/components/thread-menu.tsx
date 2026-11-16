@@ -93,6 +93,7 @@ import { useToday, useTodayTask } from "~/state/today";
 import { laterChoices } from "~/lib/dated";
 import { changeOfTask, openChange } from "~/lib/change";
 import { actOnTodayRow, openTodayLater } from "~/lib/today-task";
+import { handTo, seenOfTask } from "~/lib/hand-to";
 import { fitWholeRows } from "@terno/ui/lib/whole-rows";
 
 /** What the open menu acts on: explicit threads, or a "select all N" scope. Set at right-click; rows never read it. */
@@ -471,6 +472,9 @@ function TaskItems({ threadId }: { threadId: number }) {
       </ContextMenuSub>
       {/* plan 210 (iteration 4): the item's own day and time (a person's ask has none) */}
       {change && <Item icon={<CalendarDays />} label={t("dated.change")} testId="menu-dated-change" onClick={() => openChange(change)} />}
+      {/* plan 210 (iteration 4): Hand to…, an inline forward asking someone to take care of it (its composer takes focus, as
+          Forward's does) */}
+      <Item icon={<Forward />} label={t("whatMatters.handTo.action")} testId="menu-dated-hand" onClick={() => { handOff.pending = true; void handTo(seenOfTask(task), rowId); }} />
       {/* plan 210 (iteration 3): Remove says what it removes from, last of What matters' own and a separator away from the
           mail's (Delete further on), with what it leaves under it, at its label's edge, as the menu's other notes */}
       <ContextMenuItem data-testid="menu-dated-dismiss" data-wide aria-describedby={keepsId} onClick={() => void actOnTodayRow(rowId, task, "dismiss")}>

@@ -1303,9 +1303,10 @@ export const contract = {
   /** plan 210: the history's lines strictly after `after`, at most `limit`; held rows are left out as the list leaves them */
   /**
    * Plan 210 (iteration 4): Hand to…: the item as it was seen, resolved as an act on its row would be (its members, what a
-   * promise of it answers), with the message its forward forwards. Nothing changes until that forward's send is confirmed
+   * promise of it answers), with the message its forward forwards and the item's words and day (null: none named) for its
+   * line. Nothing changes until that forward's send is confirmed
    */
-  "today.handoff": m<{ threadId: number; messageId: number; items: HandoffItem[] }>()(z.object({ source: z.enum(["dated", "promise"]), id, revision: z.number().int().min(0) }).strict()),
+  "today.handoff": m<{ threadId: number; messageId: number; items: HandoffItem[]; text: string; dueAt: number | null }>()(z.object({ source: z.enum(["dated", "promise"]), id, revision: z.number().int().min(0) }).strict()),
   "today.history": m<TodayHistoryPage>()(z.object({ after: historyKey, limit: z.number().int().min(1).max(100).default(HISTORY_PAGE), held: z.array(feedRowId).max(500).default([]) })),
   "today.digest": m<DigestRow | null>()(z.object({ day: z.string().max(10).optional() })),
   /** a person's try again */
