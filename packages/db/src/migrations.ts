@@ -1541,6 +1541,14 @@ CREATE INDEX followups_same ON followups(same_as) WHERE same_as IS NOT NULL;
 DROP INDEX dated_closed_thread;
 DROP INDEX followups_closed_thread;
 ` },
+  // plan 210 (iteration 3): a promise's request (`answers`, a dated item's id, which its reply's checked verdict links), and
+  // a sent mark from Terno's own confirmed send (`confirmed`: a reply whose verdict may settle a request without Gmail's
+  // SENT label). Shape only: a nullable column, a constant default, and a partial index that holds nothing yet
+  { version: 62, name: "What matters: a promise answers a request (plan 210)", sql: `
+ALTER TABLE followups ADD COLUMN answers INTEGER;
+ALTER TABLE ai_sent_mail ADD COLUMN confirmed INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX followups_answers ON followups(answers) WHERE answers IS NOT NULL;
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

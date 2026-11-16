@@ -6,7 +6,7 @@ import { bodyUpgradePending, BodyUpgradeRequired, BODY_UPGRADE_APPLICATION_ID, B
 import { unsubscribeBodyParts, decodeBodyPart } from "@terno/store";
 import { actOnItems, itemMembers, linkItems, liveAmong, needsCount, restoreItems, messagesHere, senders, allDigests, beginDigest, clearDigests, digestFacts, digestLive, digestRead, getDigest, latestDigest, pendingDigestDays, pruneDigests, waitingAmong, waitingPage, writeDigest } from "./today";
 import { clearReplies, finishReply, getReply, transitionReply } from "./replies";
-import { activeDated, closedDatedPage, clearDated, datedAnswered, settleAnswered, datedMarkCount, datedMarkPage, datedScanCandidates, datedSource, finishDated, getDated, markDatedMail, openDatedFor, pruneDated, pruneDatedMarks, queueDatedScan, restoreDated, threadDated, datedWritten, updateDated } from "./dated";
+import { activeDated, closedDatedPage, clearDated, datedMarkCount, datedPendingOn, datedMarkPage, datedScanCandidates, datedSource, finishDated, getDated, markDatedMail, openDatedFor, pruneDated, pruneDatedMarks, queueDatedScan, restoreDated, threadDated, datedWritten, updateDated } from "./dated";
 import { activeFollowups, closedFollowupPage, claimFollowupNotice, clearFollowups, closeAnsweredFollowups, endFollowupTop, finishFollowups, followupLiveSent, followupScanCandidates, followupSendConfirmed, followupSource, getFollowup, makeFollowupsDue, nextFollowupDue, pruneFollowups, pruneSentMarks, queueScan, restoreFollowups, sentMarkCount, sentMarkPage, threadFollowups, updateFollowup } from "./followups";
 import { addAskTurn, askAccountsOf, askHeaders, askMatching, askNewest, askText, askTurnCount, askTurns, clearAsk, listAskConversations, removeAskConversation, removeAskForAccount, restoreAskConversation } from "./ask";
 import { retainBody, observeBodyRetirement, bodyReadReference, sqlBodyParts, cleanupBodies, finishBodyStage, withBodySelection, hydrateBodyReference, stageBody, prepareBodyMatches, withBodyMatches } from "./body-parts";
@@ -647,8 +647,6 @@ export class SqlMailStore implements MailStore {
         if (newMail) markNewMail(this.db, result.inserted, now, newMail);
         // plan 142: mail you sent from elsewhere ends the waits before it, and is read if the feature is on
         if (liveSent) followupLiveSent(this.db, result.inserted, now, liveSent.wanted, liveSent.since);
-        // plan 204: a reply of yours answers the requests before it on its thread (inserted, or a draft that came back sent)
-        datedAnswered(this.db, result.touchedThreads, now);
         // plan 204: received mail the dated reader wants, by the same rule as new mail's
         if (datedMail) markDatedMail(this.db, result.inserted, now, datedMail.since);
         const touched = new Set(result.touchedThreads);
@@ -742,8 +740,6 @@ export class SqlMailStore implements MailStore {
           if (before && (before.is_sent !== r.is_sent || before.is_draft !== r.is_draft || before.is_spam !== r.is_spam)) for (const t of ownMailChanged(this.db, u.messageId)) threads.add(t);
         }
         recomputeThreads(this.db, threads);
-        // plan 204: a message that turned out to be a sent one (a draft sent elsewhere, its Sent location) answers requests
-        datedAnswered(this.db, threads, Date.now());
         return { touched: [...threads], ...reconciliation };
       }),
     remove: async (ids, check) => { check?.(); return { touched: [...deleteMessages(this.db, ids)] }; },
@@ -791,9 +787,6 @@ export class SqlMailStore implements MailStore {
         const localId = (JSON.parse(op.target_json) as { messageIds?: number[] }).messageIds?.[0];
         // plan 142 revision 3: only a confirmed send closes a wait, in the commit that records it
         if (op.kind === "send" && localId) followupSendConfirmed(this.db, localId, now, o?.followup === true, o?.since);
-        // Terno's own send, confirmed: trusted as it is
-        const sentHere = op.kind === "send" && localId ? this.db.get<{ thread_id: number; date: number }>("SELECT thread_id, date FROM messages WHERE id = ?", localId) : undefined;
-        if (sentHere) settleAnswered(this.db, sentHere.thread_id, sentHere.date, now);
         if (op.kind === "send" && result && localId) {
           if (result.providerMsgId) {
             const changed = this.db.run("UPDATE messages SET provider_msg_id = ? WHERE id = ? AND provider_msg_id LIKE 'local:%'", result.providerMsgId, localId);
@@ -1190,6 +1183,7 @@ export class SqlMailStore implements MailStore {
       consume: async (id) => void this.db.run("DELETE FROM ai_dated_mail WHERE message_id = ?", id),
       clear: async () => void this.db.run("DELETE FROM ai_dated_mail"),
       prune: async (now) => pruneDatedMarks(this.db, now),
+      pendingOn: async (threadId, before) => datedPendingOn(this.db, threadId, before),
     },
     scanCandidates: async (since, limit) => datedScanCandidates(this.db, since, limit),
     source: async (id) => datedSource(this.db, id),

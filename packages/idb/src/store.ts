@@ -2,7 +2,7 @@ import { ASK_MATCH_MESSAGES, ASK_MATCH_PARTS, CORPUS_TEXTS_MAX, finishBodyClose,
 import { ClosedOrder } from "./closed-order";
 import { actOnItems, itemMembers, linkItems, liveAmong, restoreItems, needsCount, needsWalk, type NeedsWalk, messagesHere, senders, allDigests, beginDigest, clearDigests, digestFacts, digestLive, digestRead, getDigest, latestDigest, pendingDigestDays, pruneDigests, waitingAmong, waitingPage, writeDigest } from "./today";
 import { clearReplies, finishReply, getReply, transitionReply } from "./replies";
-import { datedAnswered, settleAnswered, activeDated, closedDatedPage, clearDated, datedMarkCount, datedMarkPage, datedScanCandidates, datedSource, finishDated, getDated, markDatedMail, openDatedFor, pruneDated, pruneDatedMarks, queueDatedScan, restoreDated, threadDated, datedWritten, updateDated } from "./dated";
+import { activeDated, closedDatedPage, clearDated, datedMarkCount, datedPendingOn, datedMarkPage, datedScanCandidates, datedSource, finishDated, getDated, markDatedMail, openDatedFor, pruneDated, pruneDatedMarks, queueDatedScan, restoreDated, threadDated, datedWritten, updateDated } from "./dated";
 import { activeFollowups, closedFollowupPage, claimFollowupNotice, clearFollowups, closeAnsweredFollowups, endFollowupTop, finishFollowups, followupLiveSent, followupScanCandidates, followupSendConfirmed, followupSource, getFollowup, makeFollowupsDue, nextFollowupDue, pruneFollowups, pruneSentMarks, queueScan, restoreFollowups, sentMarkCount, sentMarkPage, threadFollowups, updateFollowup } from "./followups";
 import { findLinked, newestLinked } from "./links";
 import { addAskTurn, askAccountsOf, askCandidates, askHeaders, askNewest, askTurnCount, askTurns, clearAsk, listAskConversations, removeAskConversation, removeAskForAccount, restoreAskConversation } from "./ask";
@@ -1285,8 +1285,6 @@ export class IdbMailStore implements MailStore {
           if (newMail) markNewMail(this.c, result.inserted, now, newMail);
         // plan 142: mail you sent from elsewhere ends the waits before it, and is read if the feature is on
         if (liveSent) followupLiveSent(this.c, result.inserted, now, liveSent.wanted, liveSent.since);
-        // plan 204: a reply of yours answers the requests before it on its thread (inserted, or a draft that came back sent)
-        datedAnswered(this.c, result.touchedThreads, now);
         // plan 204: received mail the dated reader wants, by the same rule as new mail's
         if (datedMail) markDatedMail(this.c, result.inserted, now, datedMail.since);
           const touched = new Set(result.touchedThreads);
@@ -1375,8 +1373,6 @@ export class IdbMailStore implements MailStore {
             if (after.is_sent !== m.is_sent || after.is_draft !== m.is_draft || after.is_spam !== m.is_spam) for (const t of ownMailChanged(this.db, m.id)) threads.add(t);
           }
           recomputeThreads(this.c, threads);
-          // plan 204: a message that turned out to be a sent one (a draft sent elsewhere, its Sent location) answers requests
-          datedAnswered(this.c, threads, Date.now());
           return { touched: [...threads], ...reconciliation };
         },
         { durability: "relaxed" },
@@ -1447,9 +1443,6 @@ export class IdbMailStore implements MailStore {
         const localId = (JSON.parse(op.target_json) as { messageIds?: number[] }).messageIds?.[0];
         // plan 142 revision 3: only a confirmed send closes a wait, in the commit that records it
         if (op.kind === "send" && localId) followupSendConfirmed(this.c, localId, now, o?.followup === true, o?.since);
-        // Terno's own send, confirmed: trusted as it is
-        const sentHere = op.kind === "send" && localId ? T(this.c, "messages").get(localId) : undefined;
-        if (sentHere) settleAnswered(this.c, sentHere.thread_id, sentHere.date, now);
         if (op.kind === "send" && result && localId) {
           const messages = T(this.c, "messages");
           const local = messages.get(localId);
@@ -2097,6 +2090,7 @@ export class IdbMailStore implements MailStore {
         for (const r of marks.all()) marks.deleteRow(r);
       }),
       prune: (now) => this.command(() => pruneDatedMarks(this.c, now)),
+      pendingOn: (threadId, before) => this.read(() => datedPendingOn(this.c, threadId, before)),
     },
     scanCandidates: (since, limit) => this.read(() => datedScanCandidates(this.c, since, limit)),
     source: (id) => this.read(() => datedSource(this.c, id)),

@@ -1,6 +1,7 @@
 import { addressKey, ANSWERED_KINDS, DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, senderIsPerson, THREAD_SCOPED_KINDS, waitingCutoff, type DatedRow } from "@terno/core";
 import { DATED_MARK_MS, DATED_SCAN_MARK_MS, datedTab, NEW_MAIL_MS, readerIn, readNothingAsked, recipientList, type ClosedAt, type DatedFinish, type DatedFinishOutcome, type DatedMark, type DatedSnapshot, type DatedSource } from "@terno/store";
 import { received, receivedOwn } from "./ai-summaries";
+import { remarkReplies } from "./followups";
 import { T, type Ctx, type R } from "./mail";
 
 /** Plan 204 on IndexedDB, like SQL's (packages/db/src/dated.ts). */
@@ -52,6 +53,9 @@ export function datedMarkPage(c: Ctx, after: { arrivedAt: number; messageId: num
 }
 
 export const datedMarkCount = (c: Ctx): number => T(c, "ai_dated_mail").size;
+
+/** Plan 210 (iteration 3): a message of this conversation from before then still to be read. */
+export const datedPendingOn = (c: Ctx, threadId: number, before: number): boolean => T(c, "ai_dated_mail").by("thread", threadId).some((m) => m.arrived_at < before);
 
 /** Not marked, not read: what a check may still take. */
 const unread = (c: Ctx, id: number): boolean => !T(c, "ai_dated_mail").has(id) && T(c, "dated_items").count("message", id) === 0;
@@ -121,39 +125,6 @@ export function openDatedFor(c: Ctx, o: { threadId: number; senderKey: string; b
   return [...found.values()].filter((r) => r.arrived_at < o.before && !inSpam(r.thread_id)).sort((a, b) => b.arrived_at - a.arrived_at || b.id - a.id).slice(0, o.limit).map(toRow);
 }
 
-/** As SQL's (packages/db/src/dated.ts): mail that is yours for certain, never a forged From nor a local copy not confirmed. */
-const trustedSend = (m: R): boolean => !!m.is_sent && !m.is_draft && !m.is_spam && !m.is_trash && !String(m.provider_msg_id ?? "local:").startsWith("local:") && String(m.gmail_labels ?? "").includes('"SENT"');
-
-const lastTrustedSend = (c: Ctx, threadId: number): number | null => {
-  let at: number | null = null;
-  for (const m of T(c, "messages").by("fk_thread_id", threadId)) if (trustedSend(m) && (at === null || m.date > at)) at = m.date;
-  return at;
-};
-
-/** A reply of yours at `before` answers the thread's open requests from messages before it. */
-export function settleAnswered(c: Ctx, threadId: number, before: number, now: number): number {
-  const rows = T(c, "dated_items");
-  let n = 0;
-  for (const r of rows.by("fk_thread_id", threadId)) {
-    if (r.state !== "open" || !ANSWERED_KINDS.includes(r.kind) || r.arrived_at >= before) continue;
-    rows.update(r, { state: "settled", closed_reason: "answered", closed_at: now, revision: r.revision + 1 });
-    n++;
-  }
-  return n;
-}
-
-/** As SQL's: the threads an ingest or a reconciliation touched, by their newest trusted send. */
-export function datedAnswered(c: Ctx, threadIds: Iterable<number>, now: number): number {
-  const rows = T(c, "dated_items");
-  let n = 0;
-  for (const threadId of threadIds) {
-    if (!rows.by("fk_thread_id", threadId).some((r) => r.state === "open")) continue;
-    const at = lastTrustedSend(c, threadId);
-    if (at !== null) n += settleAnswered(c, threadId, at, now);
-  }
-  return n;
-}
-
 export function finishDated(c: Ctx, w: DatedFinish): DatedFinishOutcome {
   const marks = T(c, "ai_dated_mail");
   const mark = marks.get(w.messageId);
@@ -167,17 +138,9 @@ export function finishDated(c: Ctx, w: DatedFinish): DatedFinishOutcome {
   if (src.threadId !== w.threadId) return "moved";
   const rows = T(c, "dated_items");
   let open = rows.count("state", "open");
-  let repliedAt: number | undefined;
   for (const r of w.rows) {
     if (rows.by("identity", w.messageId, r.item).length) continue;
-    // a request read after your reply is stored answered (Codex code review of the fixes)
-    if (ANSWERED_KINDS.includes(r.kind) && (repliedAt ??= lastTrustedSend(c, src.threadId) ?? -1) > src.date) {
-      rows.put({
-        thread_id: src.threadId, message_id: w.messageId, item: r.item, kind: r.kind, text: r.text, quote: r.quote, sender_key: src.senderKey, due_day: r.dueDay, due_at: r.dueAt, timed: r.timed ? 1 : 0, dated: r.dated ? 1 : 0, act_at: r.actAt,
-        deferred_until: null, arrived_at: src.date, state: "settled", closed_reason: "answered", closed_at: w.now, from_scan: w.fromScan ? 1 : 0, revision: 0, model: w.model, provider: w.provider, prompt_version: w.promptVersion, created_at: w.now, early: r.early ? 1 : 0,
-      });
-      continue;
-    }
+    // plan 210 (iteration 3): a request read after your reply is stored open like any other: only a reply's verdict settles it
     if (open >= DATED_ACTIVE_MAX) {
       // the bound keeps the soonest: the furthest of them all isn't added
       let furthest: R | undefined;
@@ -208,6 +171,8 @@ export function finishDated(c: Ctx, w: DatedFinish): DatedFinishOutcome {
     // its new words, if it gives some, in the same write (the fifth panel round)
     if (r && r.state === "open" && reaches(r, src)) rows.update(r, { due_day: m.dueDay, due_at: m.dueAt, timed: m.timed ? 1 : 0, dated: 1, act_at: m.actAt, ...(m.text ? { text: m.text } : {}) });
   }
+  // plan 210 (iteration 3): as SQL's, a request a reply of yours already followed goes to the follow-ups reader with it again
+  if (w.replies && w.rows.some((r) => ANSWERED_KINDS.includes(r.kind))) remarkReplies(c, src.threadId, src.date, w.replies.since, w.now);
   // plan 210 (iteration 2): as SQL's, in the same command
   const read = T(c, "dated_nothing_asked");
   if (readNothingAsked(w)) read.put({ message_id: w.messageId, thread_id: src.threadId, arrived_at: src.date, prompt_version: w.promptVersion });
@@ -260,7 +225,10 @@ export function restoreDated(c: Ctx, list: readonly { snapshot: DatedSnapshot; e
 
 export function pruneDated(c: Ctx, now: number): number {
   const rows = T(c, "dated_items");
-  const old = [...rows.by("state", "done"), ...rows.by("state", "dismissed"), ...rows.by("state", "settled")].filter((r) => (r.closed_at ?? r.created_at) < now - DATED_CLOSED_KEEP_MS);
+  // plan 210 (iteration 3): never a request an open promise of yours answers
+  const followups = T(c, "followups");
+  const answered = (id: number) => followups.by("answers", id).some((f) => f.state === "open" || f.state === "due");
+  const old = [...rows.by("state", "done"), ...rows.by("state", "dismissed"), ...rows.by("state", "settled")].filter((r) => (r.closed_at ?? r.created_at) < now - DATED_CLOSED_KEEP_MS && !answered(r.id));
   for (const r of old) rows.deleteRow(r);
   // past the waiting window, no conversation it's the latest of is waiting
   const read = T(c, "dated_nothing_asked");
