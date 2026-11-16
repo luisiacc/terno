@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { isAcknowledgment, looksLikeAcknowledgment, saysNoReplyNeeded } from "./today";
-import { alertUntil, ANSWERED_KINDS, askEnd, datedGroup, datedGroupAt, datedOver, datedPlace, datedTiming, hasTimeCue, laterBefore, nextTodayChange, planEnd, promiseGroupAt, promiseOver, promisePlace, todayCounted, TODAY_GROUP_ORDER, type DatedKind, type DatedRow } from "./dated";
+import { alertUntil, ANSWERED_KINDS, askEnd, datedGroup, datedGroupAt, datedOver, datedPlace, datedTiming, hasTimeCue, laterBefore, nextTodayChange, planEnd, promiseDay, promiseGroupAt, promiseOver, promisePlace, todayCounted, TODAY_GROUP_ORDER, type DatedKind, type DatedRow } from "./dated";
 import { WAITING_WINDOW_MS } from "./people";
 
 const at = (y: number, m: number, d: number, h = 0, min = 0) => new Date(y, m - 1, d, h, min).getTime();
@@ -204,6 +204,28 @@ describe("a Plan's lead, read when placed (the sixth panel round, change 3 and r
     const after = { ...bill, deferredUntil: at(2026, 12, 30, 9) };
     expect(datedPlace(after, at(2026, 11, 25))).toBe("comingUp");
     expect(datedPlace(after, at(2026, 12, 30, 9))).toBe("missed");
+  });
+});
+
+describe("a promise's day (plan 210, iteration 3: one resolver)", () => {
+  const tue = at(2026, 11, 10, 9);
+  const fri = at(2026, 11, 13, 9);
+  it("its own; its person's new one, the day they moved it from said; the request's still ahead once its own is over", () => {
+    const own = { kind: "promise", state: "open", dated: true, dueAt: tue };
+    expect(promiseDay(own, at(2026, 11, 9))).toEqual({ dueAt: tue, dated: true, said: null, needed: null });
+    expect(promiseDay({ ...own, dueAt: fri, brokenDueAt: tue }, at(2026, 11, 11))).toEqual({ dueAt: fri, dated: true, said: tue, needed: fri });
+    const answering = { ...own, needed: fri };
+    expect(promiseDay(answering, at(2026, 11, 10, 23))).toEqual({ dueAt: tue, dated: true, said: null, needed: fri });
+    expect(promiseDay(answering, at(2026, 11, 11))).toEqual({ dueAt: fri, dated: true, said: tue, needed: fri });
+    expect(promiseGroupAt(answering, at(2026, 11, 11))).toEqual({ group: "day", day: "2026-11-13" });
+    expect(promiseGroupAt(answering, at(2026, 11, 13, 12))).toEqual({ group: "today", day: null });
+    // both over: Missed, from the later
+    expect(promiseDay(answering, at(2026, 11, 14))).toMatchObject({ dueAt: fri, said: null });
+    expect(promisePlace(answering, at(2026, 11, 14))).toBe("missed");
+    // the clock wakes as its own day ends (the request's day takes over)
+    expect(nextTodayChange([], [{ ...answering, dueAt: at(2026, 11, 10, 9), deferredUntil: null }], at(2026, 11, 10, 12))).toBe(at(2026, 11, 11));
+    // named no day: the request's
+    expect(promiseDay({ ...answering, dated: false, dueAt: at(2026, 11, 12, 9) }, at(2026, 11, 9))).toEqual({ dueAt: fri, dated: true, said: null, needed: null });
   });
 });
 

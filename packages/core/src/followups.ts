@@ -49,11 +49,16 @@ export interface FollowupRow {
   sameAs?: string | null;
   /**
    * Plan 210 (iteration 2): the first day it was promised for, when the person's mail gave it a new one after that day had
-   * passed (captured at the move, from that mail's date): its row says "promised Tue". Null: never broken, or moved before.
+   * passed (captured at the move, from that mail's date): its row says "You said Tue 10 (missed)". Null: never broken, or moved before.
    */
   brokenDueAt?: number | null;
   /** Plan 210 (iteration 2): `dueAt` is a time its words state ("call Marcus at 4:00 PM"), not the day's default */
   timed?: boolean;
+  /**
+   * Plan 210 (iteration 3): the dated request (`DatedRow.id`, an `ask` or `respond`) this promise answers, by its reply's
+   * checked verdict: while the promise is open the request is its row's, its day carried (`promiseDay`). Null: none
+   */
+  answers?: number | null;
 }
 
 export interface FollowupsSetting {
