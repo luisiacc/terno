@@ -779,8 +779,8 @@ describe("migration v68: Change… (plan 210, iteration 4)", () => {
     const dated = db.all<Record<string, unknown>>("SELECT * FROM dated_items ORDER BY id");
     const followups = db.all<Record<string, unknown>>("SELECT * FROM followups ORDER BY id");
     expect(migrate(db)).toEqual({ from: 64, to: SCHEMA_VERSION });
-    expect(db.all<Record<string, unknown>>("SELECT * FROM dated_items ORDER BY id")).toEqual(dated.map((r) => ({ ...r, ...CHANGE_V68 })));
-    expect(db.all<Record<string, unknown>>("SELECT * FROM followups ORDER BY id")).toEqual(followups.map((r) => ({ ...r, ...CHANGE_V68 })));
+    expect(db.all<Record<string, unknown>>("SELECT * FROM dated_items ORDER BY id")).toEqual(dated.map((r) => ({ ...r, ...CHANGE_V68, handed_to: null })));
+    expect(db.all<Record<string, unknown>>("SELECT * FROM followups ORDER BY id")).toEqual(followups.map((r) => ({ ...r, ...CHANGE_V68, handed_to: null })));
   });
 });
 
@@ -800,8 +800,8 @@ describe("migration v70: Hand to… (plan 210, iteration 4)", () => {
     const followups = db.all<Record<string, unknown>>("SELECT * FROM followups ORDER BY id");
     expect(migrate(db)).toEqual({ from: 64, to: SCHEMA_VERSION });
     expect(db.all<Record<string, unknown>>("SELECT * FROM drafts ORDER BY id")).toEqual(drafts.map((r) => ({ ...r, handoff_json: null })));
-    expect(db.all<Record<string, unknown>>("SELECT * FROM dated_items ORDER BY id")).toEqual(dated.map((r) => ({ ...r, handed_to: null })));
-    expect(db.all<Record<string, unknown>>("SELECT * FROM followups ORDER BY id")).toEqual(followups.map((r) => ({ ...r, handed_to: null })));
+    expect(db.all<Record<string, unknown>>("SELECT * FROM dated_items ORDER BY id")).toEqual(dated.map((r) => ({ ...r, ...CHANGE_V68, handed_to: null })));
+    expect(db.all<Record<string, unknown>>("SELECT * FROM followups ORDER BY id")).toEqual(followups.map((r) => ({ ...r, ...CHANGE_V68, handed_to: null })));
   });
 });
 
