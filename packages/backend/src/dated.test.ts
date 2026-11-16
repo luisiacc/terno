@@ -28,6 +28,8 @@ afterEach(async () => {
 type Item = { kind: string; text: string; quote: string; due: string | null; time: string | null };
 type Moved = { label: string; due: string; time: string | null; evidence: string; text?: string | null; textEvidence?: string | null };
 const reply = (items: Item[] = [], settled: { label: string; evidence: string }[] = [], moved: Moved[] = []): Completion => ({ text: JSON.stringify({ items, settled, moved: moved.map((m) => ({ text: null, textEvidence: null, ...m })), replaced: [] }), stop: "end" });
+/** plan 210 (iteration 5): the readings, without a second look's (`<look_again>`, dated-second-look.test.ts) */
+const readings = (requests: readonly CompletionRequest[]) => requests.filter((r) => !promptText(r.messages[0]!.content).includes("<look_again>"));
 const bill: Item = { kind: "pay", text: "Pay the electricity bill", quote: "due on November 20", due: "2026-11-20", time: null };
 const BILL_TEXT = "Your electricity bill of $54.20 is due on November 20.";
 
@@ -1111,7 +1113,7 @@ describe("the reader", () => {
     expect((await client.call("dated.scan", {})).queued).toBe(2);
     await client.call("settings.update", { dated: { scanAnswered: true } });
     await read();
-    expect(model.requests).toHaveLength(2);
+    expect(readings(model.requests)).toHaveLength(2);
     expect((await backend.store.dated.active()).map((r) => r.dueDay)).toEqual(["2026-11-20"]);
     // answered: it's once, so nothing is read twice
     expect((await client.call("dated.scan", {})).queued).toBe(0);
@@ -1292,8 +1294,8 @@ describe("the Codex code review", () => {
     model.gate = null;
     release();
     await expect.poll(() => backend.store.dated.marks.count()).toBe(0);
-    expect(model.requests).toHaveLength(2);
-    expect(promptText(model.requests[1]!.messages[0]!.content)).not.toContain("<open_items>");
+    expect(readings(model.requests)).toHaveLength(2);
+    expect(promptText(readings(model.requests)[1]!.messages[0]!.content)).not.toContain("<open_items>");
   });
 
   it("#2: what's over for good is retired, so the open set holds only what can still show", async () => {

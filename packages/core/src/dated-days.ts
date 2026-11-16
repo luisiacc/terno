@@ -104,3 +104,24 @@ export function saysDay(words: string, due: string, o: { slack?: number; arrived
 export function saysClock(words: string): boolean {
   return /\b\d{1,2}:\d{2}\b|\b\d{1,2}\s?(?:a\.?\s?m\b|p\.?\s?m\b)|\b\d{1,2}\s?h\b|\b(?:noon|midnight|mediodia|medianoche)\b|\ba las? \d{1,2}\b/.test(plain(words));
 }
+
+/**
+ * Plan 210 (iteration 5, revision 3): whether some words name a day from the mail's own on (`arrivedAt`), as `saysDay` reads
+ * one: the second look's sentence. A date judges by itself (a month and day with no year is this year's, or the next one's
+ * when this year's is half a year gone: a December mail's "January 5"); a weekday, "the 17th", "tomorrow" or "this week" with
+ * no date beside it is ahead. Never a date that isn't one ("64.20", "13/45").
+ */
+export function namesDayFrom(words: string, arrivedAt: number): boolean {
+  const said = daysSaid(words, true);
+  const arrived = localDayStart(arrivedAt);
+  const year = new Date(arrived).getUTCFullYear();
+  const valid = (month: number, day: number) => month >= 1 && month <= 12 && day >= 1 && day <= 31;
+  const dates = said.filter((s): s is { month: number; day: number; year?: number } => "month" in s && valid(s.month, s.day));
+  if (dates.length) {
+    return dates.some((s) => {
+      const at = (y: number) => Date.UTC(y, s.month - 1, s.day);
+      return s.year !== undefined ? at(s.year) >= arrived : at(year) >= arrived || at(year) < arrived - 183 * 86_400_000;
+    });
+  }
+  return said.some((s) => !("month" in s) && (!("day" in s) || (s.day >= 1 && s.day <= 31)));
+}

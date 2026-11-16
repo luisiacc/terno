@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { saysClock, saysDay } from "./dated-days";
+import { namesDayFrom, saysClock, saysDay } from "./dated-days";
 
 // Thursday, November 12, 2026, noon
 const ARRIVED = new Date(2026, 10, 12, 12).getTime();
@@ -39,5 +39,13 @@ describe("whether words say a day (plan 210, the Codex code review of v11)", () 
   it("a clock time", () => {
     for (const w of ["moved earlier to 8:00", "now at 8 AM", "a las 8", "10 p.m. PT", "at noon"]) expect(saysClock(w), w).toBe(true);
     for (const w of ["same place as planned", "in 24 hours", "Field 4"]) expect(saysClock(w), w).toBe(false);
+  });
+});
+
+describe("whether words name a day from the mail's own on (plan 210, iteration 5, revision 3)", () => {
+  it("a date by itself, this year's or, half a year gone, the next one's; a weekday, an ordinal or 'tomorrow' alone ahead", () => {
+    for (const w of ["Tuesday the 17th at 7:00", "closes Wednesday, December 9", "el martes 17 a las 19:00", "on 11/12", "tomorrow at 9", "due 2026-11-20", "this week"]) expect(namesDayFrom(w, ARRIVED), w).toBe(true);
+    for (const w of ["Delivered: Thursday, October 29", "entregado el 29 de octubre", "returned 10/31/2026", "due 2025-11-20", "Amount due: 64.20", "13/45", "no day here at 7:00"]) expect(namesDayFrom(w, ARRIVED), w).toBe(false);
+    expect(namesDayFrom("reopens January 5", new Date(2026, 11, 20).getTime())).toBe(true);
   });
 });

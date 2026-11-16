@@ -6,6 +6,7 @@ import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
 import { readNothingAsked, type DatedMark, type DatedSource, type DatedWrite, type MailStore } from "@terno/store";
 import { DailyLimitError, MonthlyLimitError } from "./ai-limiter";
 import { silenced, silenceOf, withoutMuted } from "./dated-mutes";
+import { secondLook } from "./dated-second-look";
 import { UI_LOCALE_KEY } from "./forwarding";
 import { bareDayAhead, contextOf, insideQuotes, quoteSpan, type Sentences, namesApart, namesItem, negatedReceipt, norm, otherAmounts, otherIds, paragraphsOf, plainEvidence, replacesPlainly, sameObject, sameThing, saysReplaced, saysWhen, scamPressure, sentencesOf, settlesKind } from "./dated-evidence";
 import { untrustedSenders, withoutUntrusted } from "./suspicious-sender";
@@ -882,8 +883,28 @@ export class DatedWorker {
       // a change of provider or key, the setting, Spam meanwhile: each stops it, at the provider too
       const signal = AbortSignal.any([generation.signal, asked.signal, stop.signal]);
       if (signal.aborted) return await drop();
-      const result = await ai.readDates(input, signal);
-      if (signal.aborted) throw new AiError(L("errors.ai.cancelled"), "cancelled");
+      const read = async (i: typeof input) => {
+        const r = await ai.readDates(i, signal);
+        if (signal.aborted) throw new AiError(L("errors.ai.cancelled"), "cancelled");
+        return r;
+      };
+      // plan 210 (iteration 5, revision 3): a dated sentence the reading noted nothing for is asked about once more, before
+      // the one finish: Spam, a mute and the settings read again first, its one claim on the mark, the text already read
+      const looked = await secondLook(await read(input), { text, subject: src.subject, arrivedAt: src.date, automated: input.from.automated, shown: input.open, input, promptChars: budget.promptChars }, {
+        recheck: async () => {
+          const current = await this.host.settings();
+          if (!current.dated.enabled || !(await this.host.allowed(current))) return "stop";
+          const at = await store.dated.source(src.id);
+          if (!at || at.spam || at.trash || at.threadSpam || at.threadId !== src.threadId || silenced(at, await silenceOf(store))) return "drop";
+          return "go";
+        },
+        claim: () => store.dated.marks.claimLook(src.id, this.host.now()),
+        read,
+        aborted: () => signal.aborted,
+      });
+      if (looked === "drop") return await drop();
+      if (looked === "stop") return "stop";
+      const result = looked.result;
       const fromScan = mark.source === "scan";
       const now = this.host.now();
       // only what was really sent, after fitting to the window, may be named back (Codex review)
@@ -893,8 +914,9 @@ export class DatedWorker {
       const paysInThread = result.settled.length ? (await store.dated.ofThread(src.threadId)).filter((r) => r.kind === "pay").length : 0;
       const checked = checkDates(result, { text, subject: src.subject, arrivedAt: src.date, open: new Map([...labels].filter(([l]) => sent.has(l))), promises: new Map([...promises].filter(([l]) => sent.has(l))), fromScan, now, sender: { person: src.person }, reader, others, threadId: src.threadId, senderKey: src.senderKey, from: input.from.name, paysInThread });
       // plan 210 (iteration 2, the Codex code review): "nothing asked" only of a message the model saw all of (never one cut
-      // to the window or the reader's limit, nor a subject past what's sent), and in which the checks found no request at all
-      const readWhole = whole && text.length <= DATED_TEXT_CHARS && input.text === text && src.subject.length <= DATED_SUBJECT_CHARS;
+      // to the window or the reader's limit, nor a subject past what's sent), and in which the checks found no request at all;
+      // iteration 5 (revision 3): nor while a second look it needed is incomplete (claimed before, or failed)
+      const readWhole = whole && text.length <= DATED_TEXT_CHARS && input.text === text && src.subject.length <= DATED_SUBJECT_CHARS && looked.complete;
       const replies = this.host.replies();
       const write = { messageId: src.id, threadId: src.threadId, fromScan, rows: checked.rows, settled: checked.settled, moved: checked.moved, movedPromises: checked.movedPromises, replaced: checked.replaced, now, model: ai.model, provider: ai.providerId, promptVersion: DATED_PROMPT_VERSION, nothingAsked: readWhole && !checked.asked, ...(replies ? { replies } : {}), clearGeneration };
       const outcome = await store.dated.finish(write);
@@ -905,7 +927,8 @@ export class DatedWorker {
       // plan 210 (iteration 2): nothing asked of the reader takes a waiting conversation out of Needs you, in the same write
       const quiet = readNothingAsked(write);
       if (outcome === "written" && (quiet || checked.rows.length || checked.settled.length || checked.moved.length || checked.movedPromises.length || checked.replaced.length)) this.host.changed();
-      return "next";
+      // a second look that failed after the reading was written: its provider's hold or pause, the mark already gone
+      return looked.error === undefined ? "next" : await this.failed(null, looked.error);
     } catch (error) {
       // Spam or Trash meanwhile: never asked about again; an open item gone to Spam: asked again without it
       if (stop.signal.aborted) {
@@ -930,7 +953,8 @@ export class DatedWorker {
     return { text: withoutQuotes(raw), whole: raw.length < DATED_TEXT_CHARS * 2 && !src.bodyUnavailable };
   }
 
-  private async failed(mark: DatedMark, error: unknown): Promise<"next" | "stop"> {
+  /** `mark` null: a second look's failure after its reading was written (plan 210, iteration 5): the mark's gone, the hold applies */
+  private async failed(mark: DatedMark | null, error: unknown): Promise<"next" | "stop"> {
     const { store } = this.host;
     if (error instanceof DailyLimitError || error instanceof MonthlyLimitError) {
       this.limited = new Date(this.host.now()).toDateString();
@@ -952,16 +976,16 @@ export class DatedWorker {
       case "invalid_output":
       case "refused":
       case "unsupported":
-        await store.dated.marks.consume(mark.messageId);
+        if (mark) await store.dated.marks.consume(mark.messageId);
         return "next";
       case "rate_limited":
       case "unavailable":
       case "timeout": {
-        const tries = (this.attempts.get(mark.messageId) ?? 0) + 1;
-        if (tries >= MAX_ATTEMPTS) {
+        const tries = mark ? (this.attempts.get(mark.messageId) ?? 0) + 1 : 0;
+        if (mark && tries >= MAX_ATTEMPTS) {
           this.attempts.delete(mark.messageId);
           await store.dated.marks.consume(mark.messageId);
-        } else this.attempts.set(mark.messageId, tries);
+        } else if (mark) this.attempts.set(mark.messageId, tries);
         this.heldUntil = this.host.now() + RETRY_WAIT_MS;
         if (kind === "rate_limited" && !this.retryTimer) {
           this.retryTimer = setTimeout(() => {
