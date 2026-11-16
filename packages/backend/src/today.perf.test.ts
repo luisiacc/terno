@@ -236,7 +236,8 @@ async function run(kind: "SQLite" | "IndexedDB", budget: { spread: Gate; bound: 
     // conversations two and three rows each, their promises too), and no row says another's
     expect(all.length).toBeGreaterThanOrEqual(1000);
     expect(new Set(all.map((i) => i.id)).size).toBe(all.length);
-    expect(all.filter((i) => i.also).length).toBe(0);
+    // (iteration 4) but for SEVERAL's replies, each two promises to one person: one row, the other its Also line
+    expect(all.filter((i) => i.also).map((i) => i.also!.map((a) => a.kind))).toEqual(Array(SEVERAL).fill(["promise"]));
     // (the asks are Today's "Waiting on you", its own section: plan 210, iteration 3)
     expect(listed.sections.find((x) => x.kind === "today" && x.part === "waiting")?.items.filter((i) => i.why.item?.kind === "ask").length).toBe(MIXED);
     await measure("all showing", NOW + 2 * DAY, budget.bound);
