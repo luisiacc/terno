@@ -635,3 +635,40 @@ The Codex code review of the merged series (`/tmp/terno-scratch/p204/review-it3.
 - **FYI over a direct request (P2).** `onlyCopied` refused any request whose sentence held the copy line, so "Diego, FYI, could you review the colors by Friday?" to Diego in Cc was lost. A sentence that speaks to the copied reader by name and asks them directly (a question, "could you", "please", "¿puedes…?", or a clause starting with what they're to do: "te copio para que estés al tanto: revisa los colores…") is theirs, the copy line or not; the line alone ("te copio para que estés al tanto; cuando Ana las entregue te las reenvío"), "FYI, the vendor ships the labels Friday" and a task said of the reader without their name still give them nothing.
 
 Tests run: `pnpm --filter @terno/backend typecheck`, `oxlint --deny-warnings` on the changed files, `vitest run --project unit` on `backend/dated.test.ts`, `backend/dated-evidence.test.ts` and `ai/dated.test.ts`. No prompt words changed, so no real-model eval.
+
+
+
+##### What the code review changed (iteration 3's promises and placement)
+
+Codex reviewed the merged series (`/tmp/terno-scratch/p204/review-it3.out`). Seven of its findings are on the promises and the placement. Each fix has a test that fails without it.
+
+- **A promise to attend is about attending, and nothing else (finding 3).** `attendsEvent` used to look for attending words anywhere in the promise's quote. So "send the slides for the tech check", quoted from "I'll attend the tech check and send its slides tonight", was merged into the event: Done on the event finished the slides, and the event's expiry hid them. Now only the promise's own words count. They must say it attends (`ATTEND`), and must not also hand something over (`DELIVERS`, en and es: send, bring, sign, pay, enviar, mandar, traer…). Test: `today-links.test.ts` (the slides quote, a promise that attends and sends, a Spanish one).
+- **Done settles the whole request (finding 4).** The projection hides a promise's request together with every reading the matcher merged into it. Done used to settle only `answers`, so a second reading came back as its own row. `TodayService.act` now expands the request through its canonical membership (`today.members`) and settles every open member in the same act. Undo restores them all. Test: `promise-answers.test.ts` (the school asks twice).
+- **A late verdict separates the promise from its request (finding 5).** If follow-ups read the reply first, the matcher could merge the promise with the request by their words before the verdict linked them. Setting `answers` left that merge in place, so Remove and Later then acted on both. Now, in the verdict's own commit, both stores (`apart`) undo the merge. A promise joined to the request's item leaves it. A promise that was the item's canonical keeps everything else, and the request becomes the canonical of its own readings. No revision moves, as with `link`. Conformance covers both canonicals.
+- **A confirmed send stays trusted (finding 7).** Terno's confirmed send was trusted only through its sent mark, and finishing the read consumed the mark. So a request read later (with the dated reader paused) never got that reply's verdict. Migration **v64** (shape only) adds `messages.sent_confirmed`, set in the commit that confirms the send. IndexedDB treats an absent field as not confirmed, with no version bump. Both stores' `TRUSTED_SENT` now include it, so `remarkReplies` marks a confirmed reply again. A mark's `confirmed` from before v64 still counts. Tests: conformance (a confirmed reply, read, then a late request settles through it), `migrations.test.ts` and the shipped hash.
+- **A verdict needs the revision it was shown at (finding 8).** Both stores' `finishFollowups` now compare the request's current revision with `v.request.revision` before either branch. A request put off with Later while the reply was being read is neither linked nor settled. Conformance.
+- **Reading a reply again evicts nothing (finding 9).** At 1,000 active rows, SQLite evicted the oldest wait before discovering that `INSERT OR IGNORE` was replaying a row it already had. It now checks `(message_id, item)` first, as IndexedDB did. Conformance: a wait and 999 promises, the reply read again, the wait kept.
+- **Members are read in one query (finding 12).** SQLite's `itemMembers` selected the ids and then read each row again: about 1,000 reads for 1,000 linked requests, on the list, the count and the clock alike. It now reads whole rows in one query a table. IndexedDB maps the records it already found. `needs()` uses a set instead of `includes`. Test: `packages/db/src/today-members.test.ts` (at most two reads for 1,000 items; 1,502 before).
+
+**Perf.** The Today gate has a new scenario: linked requests at the combined bounds. Follow-ups are at their bound, 900 promises answer requests that have since closed, and the dated set and Needs you are both full. It ran in three interleaved rounds against `a7e1a5ad7` with the same scenario, budgets loosened only to print every number.
+
+| SQLite, linked scenario | list p95 | added | longest turn |
+| --- | --- | --- | --- |
+| Before (load 2–8) | 75.7–80.6 ms | 11.8–12.7 ms | 96–104 ms |
+| After (load 2–3) | 55.6–70.9 ms | 9.4–10.3 ms | 92–134 ms (one spike) |
+
+On IndexedDB, before and after are the same: list 15.0–16.6 ms, added 1.8–2.5, longest turn 21–22.
+
+SQLite is over the 60 ms ceiling on both sides, and most of that isn't Today's work. In this mailbox, plan 145's own walk takes about 48 ms, against 35 in the scenario before it. The second Coming up seed alone, without the links, takes the list to about 60 ms and the longest turn to about 81. So the scenario has a budget of its own, explained in the gate:
+
+- SQLite: list 85, added 12, walk 60, count 70, longest turn 120 ms.
+- IndexedDB: 20 / 4 / 12 / 15, under the usual 60 ms turn.
+
+At the real budgets, SQLite still fails on two earlier scenarios that this change doesn't reach:
+
+- **Needs you at its bound:** longest turn 61.8 and 61.0 ms. The base measured 58.1–61.9 this session.
+- **Coming up far:** 72.5 ms. The base measured 72.6–73.7.
+
+IndexedDB passes every scenario. `migrations.perf.test.ts` passes with v64.
+
+**Ran:** typecheck (all packages); oxlint on `packages/backend/src`, `packages/db/src`, `packages/idb/src` and the conformance suite; and the unit tests: `today-links`, `promise-answers`, `dated`, `today`, `followups`, `today-history`, `db/migrations*`, `today-members`, `portable`, `ingest`, `outbox`, `idb.store`, and both stores' full conformance. 1,735 tests passed. Not run: e2e (no flow's screens changed), `pnpm test:all`, a second Codex round.
