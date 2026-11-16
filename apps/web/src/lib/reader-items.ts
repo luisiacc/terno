@@ -1,7 +1,8 @@
-import { dayEnd, dayKeyOf, refKey, withoutAnswered, type DatedRow, type FollowupRow, type ItemRef } from "@terno/core";
+import { dayEnd, dayKeyOf, promiseDay, refKey, withNeeds, withoutAnswered, type DatedRow, type FollowupRow, type ItemRef, type NeedingPromise } from "@terno/core";
 import { t } from "@terno/i18n";
-import { conversationItem, datedLine, datedText } from "~/lib/dated";
-import { followupLine, followupWhen } from "~/lib/followups";
+import { conversationItem, datedLine, datedText, promiseWhen } from "~/lib/dated";
+import { followupLine } from "~/lib/followups";
+import { promiseDayWords } from "~/lib/today-sentence";
 
 /**
  * Plan 210 (iteration 3, Codex revision 10): the reader's one model of a conversation's items. What the feed's open row is
@@ -18,7 +19,7 @@ export type ReaderItem = {
   missed: boolean;
   /** for the order: soonest first */
   dueAt: number;
-} & ({ source: "dated"; row: DatedRow } | { source: "promise"; row: FollowupRow });
+} & ({ source: "dated"; row: DatedRow } | { source: "promise"; /** with the day of the request it answers, as the feed reads it */ row: NeedingPromise });
 
 export interface ReaderItems {
   top: ReaderItem | null;
@@ -59,13 +60,17 @@ export function readerItems({ dated, followups, target, chosen, now }: ReaderInp
     if (at) items.push({ key: refKey(ref), ref, open: true, missed: at.missed, dueAt: row.dueAt, source: "dated", row });
     else if (row.state !== "open" && targetKeys.has(refKey(ref))) items.push({ key: refKey(ref), ref, open: false, missed: false, dueAt: row.dueAt, source: "dated", row });
   }
-  for (const row of followups) {
+  // (iteration 4, merge) each promise with the day of the request it answers and the day it sits under, as the feed's row
+  // has them (`promiseDay`): a promise broken with a live day ahead isn't missed, and its line says the days the row says
+  const requests = new Map(dated.map((r) => [r.id, r]));
+  for (const row of withNeeds(followups, requests)) {
     // plan 210 (iteration 4): a promise that only holds a request ("let me check and get back to you") is the request's
     if (row.kind !== "promise" || row.holds != null) continue;
     const ref = { source: "promise", id: row.id } as const;
     const open = openPromise(row);
     if (!open && !targetKeys.has(refKey(ref))) continue;
-    items.push({ key: refKey(ref), ref, open, missed: open && row.dated && now >= dayEnd(dayKeyOf(row.dueAt)), dueAt: row.dueAt, source: "promise", row });
+    const day = promiseDay(row, now);
+    items.push({ key: refKey(ref), ref, open, missed: open && day.dated && now >= dayEnd(dayKeyOf(day.dueAt)), dueAt: day.dueAt, source: "promise", row });
   }
   if (!items.length) return NONE;
   // one thing read twice is one line: the feed's open row's members together, else each with its canonical
@@ -99,8 +104,18 @@ export function readerItems({ dated, followups, target, chosen, now }: ReaderInp
 export function readerLine(item: ReaderItem, now = Date.now()): string {
   if (item.source === "dated") return item.open ? datedLine(item.row, item.missed, now) : datedText(item.row);
   const words = followupLine(item.row, now, { short: true });
-  const when = item.open ? followupWhen(item.row, now) : null;
+  const when = item.open ? promiseLineWhen(item.row, item.missed, now) : null;
   return when ? t("today.why.line", { when, text: words }) : words;
+}
+
+/**
+ * An open promise's when, in the reader's words ("Due Sunday", "Was due Wednesday"), with what the feed's row says beside
+ * its day (`promiseDayWords`): "You said Tue 20 (missed) · needed Sun", "Due Wednesday · needed Fri".
+ */
+function promiseLineWhen(row: NeedingPromise, missed: boolean, now: number): string | null {
+  const day = promiseDay(row, now);
+  const own = promiseWhen(day, missed, now);
+  return own === null || missed ? own : promiseDayWords(day, day.dueAt, own, now).text;
 }
 
 /** What its buttons name it by: the task's own words ("Done: Pay the electricity bill"). */

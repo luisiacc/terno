@@ -110,6 +110,22 @@ function needed(when: string, day: number, now: number, before?: string | null):
   return t("whatMatters.needed", { when, day: dueShort(day, false, now) });
 }
 
+/**
+ * A promise's days beyond its own, from `promiseDay`'s facts, after its own day as the caller says it (`own`: the feed's
+ * "Wed", the reader's "Due Wednesday"): a day it was given and missed first, in Missed's weight ("You said Tue 10 (missed) ·
+ * needed Mon"), else the request's other day ("Wed · needed Fri"), else the day it's asked before ("before Mon"). The
+ * feed's column and the reader's line say it alike (iteration 4, merge).
+ */
+export function promiseDayWords(p: { said?: number | null; needed?: number | null; neededBefore?: string | null; before?: string | null }, dueAt: number, own: string, now: number): { text: string; missed: boolean } {
+  // plan 210 (iteration 3, the owner): a day it was given and missed is said first, in Missed's weight, with the day it's
+  // needed by, under that live day (never moved to Missed): "You said Tue 10 (missed) · needed Mon"
+  if (p.said != null) return { text: needed(missedDay(p.said, now), p.needed ?? dueAt, now, p.neededBefore), missed: true };
+  // the request it answers needs it another day: "Wed · needed Fri"
+  if (p.needed != null) return { text: needed(own, p.needed, now, p.neededBefore), missed: false };
+  // plan 210 (iteration 4): its day is the one before a day its person named: "before Mon"
+  return { text: beforeWords(p.before, dueAt, now) ?? own, missed: false };
+}
+
 function whenOf(item: Pick<TodayItem, "thread" | "why">, now: number): { text: string | null; tone: TodayTone } {
   const { thread, why } = item;
   // plan 210 (iteration 2): one time per row, the reader's, and the mail's own in brackets when its zone isn't theirs
@@ -151,14 +167,8 @@ function whenOf(item: Pick<TodayItem, "thread" | "why">, now: number): { text: s
     if (p?.dated !== true || why.dueAt === undefined) return came;
     if (why.missed) return { text: was(why.dueAt), tone: "missed" };
     const at = ahead(why.dueAt, why.dueAt, p.timed === true);
-    const text = zoned(at.text, p.timed ? p.note : null);
-    // plan 210 (iteration 3, the owner): a day it was given and missed is said first, in Missed's weight, with the day it's
-    // needed by, under that live day (never moved to Missed): "You said Tue 10 (missed) · needed Mon"
-    if (p.said != null) return { text: needed(missedDay(p.said, now), p.needed ?? why.dueAt, now, p.neededBefore), tone: "missed" };
-    // the request it answers needs it another day: "Wed · needed Fri"
-    if (p.needed != null) return { ...at, text: needed(text, p.needed, now, p.neededBefore) };
-    // plan 210 (iteration 4): its day is the one before a day its person named: "before Mon"
-    return { ...at, text: beforeWords(p.before, why.dueAt, now) ?? text };
+    const words = promiseDayWords(p, why.dueAt, zoned(at.text, p.timed ? p.note : null), now);
+    return words.missed ? { text: words.text, tone: "missed" } : { ...at, text: words.text };
   }
   return came;
 }
