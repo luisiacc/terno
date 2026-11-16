@@ -421,6 +421,12 @@ describe("time cues (§3)", () => {
     ["Your free trial ends Nov 20", ""],
     ["Can you send it by Thursday?", ""],
     ["Pago rechazado", ""],
+    // plan 210 (iteration 4, P3): Priya's Spendly mail, a bare day of the month and "by then"
+    ["7 transactions on your Lumora card are missing receipts or memos ($2,941.18 total).\n\nOctober books close on the 20th. Please add receipts by then so finance can close the month.", "You have 7 transactions missing receipts"],
+    ["Please have it in on the 5th.", ""],
+    ["Entrégalo el día 20, por favor.", ""],
+    ["Add them by then so we can wrap up.", ""],
+    ["Los libros cierran pronto.", ""],
   ])("reads %j %j", (text, subject) => expect(hasTimeCue(text, subject)).toBe(true));
   it.each([
     ["Thanks, that sounds great!", "Re: lunch"],
