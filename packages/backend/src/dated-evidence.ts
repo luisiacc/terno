@@ -179,6 +179,32 @@ export function otherMonths(item: { text: string; quote: string }, words: string
   return [...monthsOf(words)].some((m) => !mine.has(m));
 }
 
+/** a day beside a month ("December 31", "Dec 4", "31st", "el 1 de diciembre"), as `norm` reads it; a year ("2026") is none */
+const DAY_NUMBER = /^\d{1,2}(?:st|nd|rd|th)?$/u;
+/** The months some words name as a period, not a date's ("the November electricity invoice", "la factura de diciembre"). */
+function periodsOf(words: string): Set<number> {
+  const ws = norm(words).split(" ");
+  const out = new Set<number>();
+  ws.forEach((w, i) => {
+    const month = MONTH_WORDS.find(([re]) => re.test(w))?.[1];
+    if (!month) return;
+    const before = ws[i - 1] ?? "";
+    const dated = DAY_NUMBER.test(ws[i + 1] ?? "") || DAY_NUMBER.test(before) || ((before === "of" || before === "de") && DAY_NUMBER.test(ws[i - 2] ?? ""));
+    if (!dated) out.add(month);
+  });
+  return out;
+}
+
+/**
+ * The Codex code review of round 14's faults: words that name a period the item's words don't ("Pay the December electricity
+ * invoice" beside "Pay the November electricity invoice") are another period's bill, when the item names a month at all. A
+ * month said as a date's ("expires Friday, December 4") is a day, not a period: the domain's renewal and its expiry stay one.
+ */
+export function otherPeriod(item: { text: string; quote: string }, words: string): boolean {
+  const mine = monthsOf(`${item.text}\n${item.quote}`);
+  return mine.size > 0 && [...periodsOf(words)].some((m) => !mine.has(m));
+}
+
 /**
  * The Codex code review of v11 (point 2): words that give an identifier the item doesn't have, and none it has ("Payment
  * received for invoice 1001" against invoice 1002), are about something else.
