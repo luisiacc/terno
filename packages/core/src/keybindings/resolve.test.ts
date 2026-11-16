@@ -256,6 +256,17 @@ describe("selection and triage bindings (plan 06)", () => {
     expect(shortcutsFor("today.remove")).toEqual(["shift+d"]);
   });
 
+  it("plan 210 (iteration 5): ⇧B Change…, ⇧F Hand to…, each beside its sibling (b, f); never while typing, under a menu or with character keys off", () => {
+    expect(run([key("B", { shift: true })])).toBe("today.change");
+    expect(run([key("F", { shift: true })])).toBe("today.handTo");
+    expect(run([key("f")])).toBe("compose.forward");
+    expect(run([key("b", { meta: true, shift: true })])).toBe("compose.bcc");
+    for (const c of [{ ...ctx, editable: true }, { ...ctx, dialogOpen: true }, { ...ctx, characterKeys: false }]) {
+      for (const k of [key("B", { shift: true }), key("F", { shift: true })]) expect(run([k], c), JSON.stringify([k, c])).toBeNull();
+    }
+    expect([shortcutsFor("today.change"), shortcutsFor("today.handTo")]).toEqual([["shift+b"], ["shift+f"]]);
+  });
+
   it("⇧F10 and the ContextMenu key open the context menu", () => {
     expect(run([key("F10", { shift: true })])).toBe("list.menu");
     expect(run([key("ContextMenu")])).toBe("list.menu");

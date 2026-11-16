@@ -22,7 +22,8 @@ vi.mock("~/rpc/connection", () => ({
   },
 }));
 
-const { actOnThreadItem, actOnThreadPromise, actOnTodayRow, doneOnSelected, laterFromPicker, laterOnSelected, remindLimit, removeOnSelected } = await import("./today-task");
+const { actOnThreadItem, actOnThreadPromise, actOnTodayRow, changeOnSelected, doneOnSelected, handOnSelected, laterFromPicker, laterOnSelected, remindLimit, removeOnSelected } = await import("./today-task");
+const { useChangePick } = await import("~/lib/change");
 const { getApp, openedByApp, setApp } = await import("~/state/app");
 const { reloadList } = await import("~/state/list");
 const { feedRow, installToday, openFeedRow, useFeedRow, useReaderChoice, useToday } = await import("~/state/today");
@@ -297,6 +298,25 @@ describe("Done means gone (plan 204, after the second panel round; plan 210, ite
     setApp({ today: false });
     expect(removeOnSelected()).toBe(false);
     expect(laterOnSelected()).toBe(false);
+    expect(getApp().dialog).toBe(null);
+  });
+
+  it("plan 210 (iteration 5): ⇧B opens Change… for the key's item as it is, ⇧F asks to hand it on; both leave the key alone where b and ⇧D do", async () => {
+    open("dated:20");
+    expect(changeOnSelected()).toBe(true);
+    expect(getApp().dialog).toBe("todayChange");
+    expect(useChangePick.getState().target).toMatchObject({ source: "dated", id: 20, revision: 1 });
+    setApp({ dialog: null });
+    useChangePick.setState({ target: null });
+    const asked: unknown[] = [];
+    fake.handlers["today.handoff"] = async (p) => (asked.push(p), new Promise(() => {}));
+    expect(handOnSelected()).toBe(true);
+    await vi.waitFor(() => expect(asked).toEqual([{ source: "dated", id: 20, revision: 1 }]));
+    delete fake.handlers["today.handoff"];
+    setApp({ checked: new Set([1, 2]) });
+    expect([changeOnSelected(), handOnSelected()]).toEqual([false, false]);
+    setApp({ checked: new Set(), today: false });
+    expect([changeOnSelected(), handOnSelected()]).toEqual([false, false]);
     expect(getApp().dialog).toBe(null);
   });
 

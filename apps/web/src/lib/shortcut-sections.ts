@@ -65,6 +65,8 @@ export const SECTIONS: { title: Label; rows: [Command, Label][] }[] = [
       ["today.done", "shortcuts.todayDone"],
       ["today.later", "shortcuts.todayLater"],
       ["today.remove", "shortcuts.todayRemove"],
+      ["today.change", "shortcuts.todayChange"],
+      ["today.handTo", "shortcuts.todayHandTo"],
       ["action.undo", "common.undo"],
       ["thread.print", "shortcuts.print"],
       ["thread.exportPdf", "shortcuts.exportPdf"],
