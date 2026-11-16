@@ -607,19 +607,41 @@ export function beforeOf(kind: string, due: string | null, time: string | null, 
     const sentence = words.slice(sentenceStart, sentenceEnd);
     return !NOT_BEFORE.test(words.slice(clauseStart, start)) && !NOT_AFTER.test(words.slice(end, clauseEnd)) && (ASKS.test(sentence) || words[sentenceEnd] === "?" || sentence.includes("¿"));
   };
-  const names = (d: Date, b: RegExpMatchArray) => {
-    const g = b.groups ?? {};
-    if (g.weekday) return WEEKDAY[g.weekday] === d.getUTCDay();
-    const month = g.month ?? g.of;
-    return Number(g.day ?? g.date) === d.getUTCDate() && (month === undefined || MONTH[month] === d.getUTCMonth());
-  };
   const befores = [...words.matchAll(BEFORE)].filter((b) => asked(b.index!, b.index! + b[0].length));
   // the day it names given as that day (moved back), or the day before it already (kept)
-  if (befores.some((b) => names(at, b))) return { due: iso(new Date(at.getTime() - 86_400_000)), before: due };
-  if (befores.some((b) => names(next, b))) return { due, before: iso(next) };
+  if (befores.some((b) => namesDay(at, b))) return { due: iso(new Date(at.getTime() - 86_400_000)), before: due };
+  if (befores.some((b) => namesDay(next, b))) return { due, before: iso(next) };
   const then = [...words.matchAll(BEFORE_THEN)].some((b) => asked(b.index!, b.index! + b[0].length));
   if (then && saysDay(words.slice(0, words.search(BEFORE_THEN)), iso(at), { weekdays: true })) return { due: iso(new Date(at.getTime() - 86_400_000)), before: due };
   if (then && saysDay(words.slice(0, words.search(BEFORE_THEN)), iso(next), { weekdays: true })) return { due, before: iso(next) };
+  return { due, before: null };
+}
+
+/** Whether a "before" (`BEFORE`'s match) names a day: its weekday, or its date with its month when it says one. */
+function namesDay(d: Date, b: RegExpMatchArray): boolean {
+  const g = b.groups ?? {};
+  if (g.weekday) return WEEKDAY[g.weekday] === d.getUTCDay();
+  const month = g.month ?? g.of;
+  return Number(g.day ?? g.date) === d.getUTCDate() && (month === undefined || MONTH[month] === d.getUTCMonth());
+}
+
+/**
+ * Plan 210 (iteration 5): a renewal's day is the one its mail names ("renew before it expires on the 19th" is the 19th), so
+ * the mail's words never move it; but its own words saying "before" that day ("Cancel Tipotec Pro before Sat", "Cambiar o
+ * cancelar Creatix antes del 19 nov") ask it before, as a deadline's do: it sorts under the day before and keeps the day
+ * asked before (round 13: "antes del 19" under the 19th read as wrong). A time, or no such words: as it was.
+ */
+export function renewalBefore(due: string | null, time: string | null, text: string): { due: string | null; before: string | null } {
+  const day = due ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(due) : null;
+  if (!due || !day || time) return { due, before: null };
+  const at = new Date(Date.UTC(Number(day[1]), Number(day[2]) - 1, Number(day[3])));
+  const next = new Date(at.getTime() + 86_400_000);
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  const words = plain(text);
+  // never one negated or a lower bound ("not before Monday", "after Monday")
+  const befores = [...words.matchAll(BEFORE)].filter((b) => !NOT_BEFORE.test(words.slice(0, b.index!).trim().split(/\s+/u).slice(-4).join(" ")));
+  if (befores.some((b) => namesDay(at, b))) return { due: iso(new Date(at.getTime() - 86_400_000)), before: due };
+  if (befores.some((b) => namesDay(next, b))) return { due, before: iso(next) };
   return { due, before: null };
 }
 
@@ -686,7 +708,8 @@ export function readDatesTask(input: DatedInput): StructuredTask<Wire, DatedResu
       value: {
         items: w.items
           .map((i) => ({ kind: i.kind.trim().toLowerCase(), text: words(i.kind.trim().toLowerCase(), i.text), quote: clean(i.quote, QUOTE_CHARS), ...local(blankToNull(i.due), blankToNull(i.time)) }))
-          .map((i) => withBefore(i, beforeOf(i.kind, i.due, i.time, deadlineWords(i.quote, i.due, input.text))))
+          // plan 210 (iteration 5): a renewal's own words "before the 19th" are asked before it, as a deadline's are
+          .map((i) => withBefore(i, i.kind === "renew" ? renewalBefore(i.due, i.time, i.text) : beforeOf(i.kind, i.due, i.time, deadlineWords(i.quote, i.due, input.text))))
           .filter((i): i is DatedResult["items"][number] => isKind(i.kind) && !!i.text && !!i.quote)
           .slice(0, DATED_ITEMS_MAX),
         settled: w.settled
