@@ -1,4 +1,4 @@
-import { ANSWERED_KINDS, datedGroup, datedGroupAt, dayKeyOf, displayBucket, promiseBroken, promiseDay, promiseGroupAt, SHOWN_DAYS, shownEarly, todayCounted, type BrokenPromise, type DatedRow, type TaskPlace, type TodayGroupKind } from "./dated";
+import { ANSWERED_KINDS, datedGroup, datedGroupAt, dayKeyOf, displayBucket, promiseBroken, promiseDay, promiseGroupAt, shownEarly, todayCounted, type BrokenPromise, type DatedRow, type TaskPlace, type TodayGroupKind } from "./dated";
 import type { FollowupRow } from "./followups";
 import type { PartOfDay } from "./part-of-day";
 import { addressKey } from "./people";
@@ -401,7 +401,7 @@ export function projectRows(items: readonly PlacedItem[], f: Pick<ProjectionFact
     if (broken) row.broken = broken;
     if (broken === "ahead" || (broken === null && at.group === "today" && waitsOnYou(why))) row.part = "waiting";
     if (!o.count) {
-      if (at.day !== null) row.bucket = bucketOf(at.day);
+      if (at.day !== null && at.group !== "ahead") row.bucket = bucketOf(at.day);
       if (lead.source === "dated") row.source = { messageId: lead.row.messageId, senderKey: lead.row.senderKey };
       if (detail) row.also = [alsoOf(detail)];
       else if (others) row.also = others.map((l) => (l.lead.source === "promise" ? alsoOfPromise(l.lead.row) : alsoOf(l.lead.row)));
@@ -427,7 +427,7 @@ export function projectRows(items: readonly PlacedItem[], f: Pick<ProjectionFact
   const rows = all.concat(reminders);
   const counts = countsOf(rows);
   if (o.count) return { rows: [], counts };
-  return { rows: ordered(rows, f.now), counts };
+  return { rows: ordered(rows), counts };
 }
 
 /**
@@ -449,13 +449,15 @@ function countsOf(rows: readonly Placed[]): TodayCounts {
 
 /**
  * The feed's order: Missed, the most recently due first; Today's own by one key (iteration 5, revision 7: `sortToday`, a
- * broken promise needed today first, then what you do before what happens to you, each by its time and then the untimed), then its "Waiting on you" part (iteration 4, the Codex review's revision 8: a promise broken with a live
- * day ahead first, by that day; then requests shown early whose day is within the seven days, soonest first; then what has
- * none, asks and waiting conversations as they came, newest first; then requests due later, soonest first); each day
- * ahead, then Coming up, by its day and then the same order, a timed row by its time of day (two put off to one day). The
- * quiet rows (a plan happening today, your reminder) stay Today's own, above the part: a sub-heading holds only its own rows.
+ * broken promise needed today first, then what you do before what happens to you, each by its time and then the
+ * untimed), then its "Waiting on you" part (iteration 4, the Codex review's revision 8: a promise broken and needed on a
+ * day ahead first, by that day; then requests shown early, all within the seven days since iteration 5, soonest first;
+ * then what has none, asks and waiting conversations as they came, newest first); each day of the seven ahead, then
+ * Ahead (iteration 5, revision 5), then Coming up, by its day and then the same order, a timed row by its time of day (two
+ * put off to one day). The quiet rows (a plan happening today, your reminder) stay Today's own, above the part: a
+ * sub-heading holds only its own rows.
  */
-function ordered(rows: readonly Placed[], now: number): ProjectedRow[] {
+function ordered(rows: readonly Placed[]): ProjectedRow[] {
   const groups = new Map<TodayGroupKind, Placed[]>();
   for (const r of rows) {
     const list = groups.get(r.group);
@@ -466,19 +468,12 @@ function ordered(rows: readonly Placed[], now: number): ProjectedRow[] {
   const missed = of("missed").sort((a, b) => b.dueAt - a.dueAt);
   const todays = of("today");
   const own = todays.filter((r) => r.part !== "waiting");
-  // Waiting on you: the broken promises, by their day; the requests due within the seven days, soonest first; the rest as
-  // it came, newest first; the requests due later, soonest first
-  const week = new Date(now);
-  week.setHours(0, 0, 0, 0);
-  week.setDate(week.getDate() + SHOWN_DAYS + 1);
   const soonest = (a: Placed, b: Placed) => a.dueAt - b.dueAt;
   const broken = todays.filter((r) => r.broken === "ahead").sort(soonest);
-  const dated = todays.filter((r) => r.part === "waiting" && !r.broken && r.why.item?.early);
-  const near = dated.filter((r) => r.dueAt < week.getTime()).sort(soonest);
-  const far = dated.filter((r) => r.dueAt >= week.getTime()).sort(soonest);
+  const dated = todays.filter((r) => r.part === "waiting" && !r.broken && r.why.item?.early).sort(soonest);
   const undated = todays.filter((r) => r.part === "waiting" && !r.broken && !r.why.item?.early).sort((a, b) => b.came - a.came);
-  const today = sortToday(own, (r) => r.why, (r) => r.broken === "today").concat(broken, near, undated, far);
+  const today = sortToday(own, (r) => r.why, (r) => r.broken === "today").concat(broken, dated, undated);
   const byItsDay = (list: Placed[]) => sortInDay(list, (r) => r.why, (r) => r.day!);
   // (the ordering's own fields ride along, unread: no copy of every row at the 1,000-item bound)
-  return missed.concat(today, byItsDay(of("day")), byItsDay(of("comingUp")));
+  return missed.concat(today, byItsDay(of("day")), byItsDay(of("ahead")), byItsDay(of("comingUp")));
 }

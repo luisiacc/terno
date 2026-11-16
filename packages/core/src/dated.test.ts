@@ -605,8 +605,22 @@ describe("the groups go by day (plan 210, the owner, replacing plan 204's sevent
   const missed = { group: "missed", day: null };
   const day = (d: string) => ({ group: "day", day: d });
   const comingUp = (d: string) => ({ group: "comingUp", day: d });
-  it("Missed, Today, a day of its own, Coming up", () => {
-    expect(TODAY_GROUP_ORDER).toEqual(["missed", "today", "day", "comingUp"]);
+  it("Missed, Today, a day of its own, Ahead (iteration 5), Coming up", () => {
+    expect(TODAY_GROUP_ORDER).toEqual(["missed", "today", "day", "ahead", "comingUp"]);
+  });
+  it("iteration 5 (revision 5): shown past the seven days, Ahead's by its own day, never counted; the midnight that brings its day within them, its own heading's", () => {
+    // a passport's 30 days: shown from the 10th
+    const passport = item("expire", "2026-11-28");
+    const ahead = (d: string) => ({ group: "ahead", day: d });
+    // day +8 is Ahead's; day +7 is its own
+    expect(datedGroupAt(passport, at(2026, 11, 20, 23, 59))).toEqual(ahead("2026-11-28"));
+    expect(datedGroupAt(passport, at(2026, 11, 21, 0))).toEqual(day("2026-11-28"));
+    expect(nextTodayChange([passport], [], at(2026, 11, 20, 23, 59))).toBe(at(2026, 11, 21));
+    expect(todayCounted("ahead", { kind: "dated", item: { kind: "expire" } })).toBe(false);
+    // a person's request shown from its arrival: Today's people within the seven days, Ahead's past them
+    const deck = { ...item("respond", "2026-11-28"), early: true };
+    expect(datedGroupAt(deck, at(2026, 11, 20, 23, 59))).toEqual(ahead("2026-11-28"));
+    expect(datedGroupAt(deck, at(2026, 11, 21, 0))).toEqual(today);
   });
   it("a deadline and a Plan: their own day within their lead, Today on it, then Missed or over; Coming up by its day before", () => {
     const bill = item("pay", "2026-11-20");

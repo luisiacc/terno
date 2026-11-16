@@ -2647,6 +2647,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "whatMatters.to": "Para {name}",
   "whatMatters.since": "desde {day}",
   "whatMatters.waitingOnYou": "Te esperan",
+  "whatMatters.ahead": "Para ir resolviendo",
   "whatMatters.weekOf": "Semana del {day}",
   "whatMatters.by": "para el {day}",
   "whatMatters.byNear": "para {when}",

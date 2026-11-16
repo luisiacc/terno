@@ -2668,6 +2668,8 @@ It contains none of your mail, contacts, settings or keys.
   "whatMatters.since": "since {day}",
   // plan 210 (iteration 3, the owner): people's asks and requests shown early, a quiet part of Today
   "whatMatters.waitingOnYou": "Waiting on you",
+  // plan 210 (iteration 5, revision 5; the owner): what shows past the seven days, one heading with no date in it
+  "whatMatters.ahead": "Ahead",
   // plan 210 (iteration 3): Coming up past its first two weeks, by week
   "whatMatters.weekOf": "Week of {day}",
   "whatMatters.by": "by {day}",

@@ -50,13 +50,13 @@ type Drawn =
 /** Plan 210 (iteration 4): Coming up's disclosure, one per feed, its key stable whatever's under it. */
 const COMING_UP_KEY = "coming-up";
 
-/** A group's heading: Missed, Today, its Waiting on you, a day ahead in the when column's day words (plan 210), Earlier. */
+/** A group's heading: Missed, Today, its Waiting on you, a day ahead in the when column's day words (plan 210), Ahead (iteration 5), Earlier. */
 function headingName(kind: FeedGroupKind): string {
   const day = groupDay(kind);
   if (day !== null) return dayHeading(localDay(day)?.getTime() ?? Date.now());
   const week = groupWeek(kind);
   if (week !== null) return weekHeading(localDay(week)?.getTime() ?? Date.now());
-  return t(kind === "missed" ? "today.missed" : kind === "today" ? "today.today" : kind === "waiting" ? "whatMatters.waitingOnYou" : "today.history");
+  return t(kind === "missed" ? "today.missed" : kind === "today" ? "today.today" : kind === "waiting" ? "whatMatters.waitingOnYou" : kind === "ahead" ? "whatMatters.ahead" : "today.history");
 }
 
 /**
