@@ -15,7 +15,7 @@ vi.mock("~/rpc/connection", () => ({ client: { call: async (method: string) => (
 const { composeLanding, handOffInto } = await import("./compose");
 const { replyFields } = await import("./compose-fields");
 const { createDraft, editDraft, forgetDraft, materialize, useDrafts } = await import("./drafts");
-const { handOffLine } = await import("./hand-to");
+const { handOffLine, othersOfTask, seenOfTask } = await import("./hand-to");
 const { setApp } = await import("~/state/app");
 const { runUndo, useSnack } = await import("./snack");
 
@@ -57,6 +57,15 @@ describe("the line", () => {
     setLocale("es", es);
     expect(handOffLine("Firmar el permiso", at(18), NOW)).toBe("¿Puedes encargarte de esto: firmar el permiso (para el mié)?");
     expect(handOffLine("Pagar el autobús", at(13, 17), NOW)).toBe("¿Puedes encargarte de esto: pagar el autobús (para hoy)?");
+  });
+});
+
+describe("what a row hands (iteration 4, merge)", () => {
+  it("a reply's row hands its other promises with it, as its Done takes them; a dated row or a promise alone, only itself", () => {
+    const also = [{ source: "promise" as const, id: 8, revision: 1 }];
+    const reply = { kind: "promise" as const, id: 7, revision: 3, when: null, due: null, with: also };
+    expect([seenOfTask(reply), othersOfTask(reply)]).toEqual([{ source: "promise", id: 7, revision: 3 }, also]);
+    expect(othersOfTask({ ...reply, with: undefined })).toEqual([]);
   });
 });
 

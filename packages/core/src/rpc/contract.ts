@@ -1320,7 +1320,8 @@ export const contract = {
    * promise of it answers), with the message its forward forwards and the item's words and day (null: none named) for its
    * line. Nothing changes until that forward's send is confirmed
    */
-  "today.handoff": m<{ threadId: number; messageId: number; items: HandoffItem[]; text: string; dueAt: number | null }>()(z.object({ source: z.enum(["dated", "promise"]), id, revision: z.number().int().min(0) }).strict()),
+  // plan 210 (iteration 4, merge): `with`, a reply's row's other promises (`TodayWhy.with`), handed with it as its Done takes them
+  "today.handoff": m<{ threadId: number; messageId: number; items: HandoffItem[]; text: string; dueAt: number | null }>()(z.object({ source: z.enum(["dated", "promise"]), id, revision: z.number().int().min(0), with: z.array(z.object({ source: z.literal("promise"), id, revision: z.number().int().min(0) })).max(FOLLOWUP_REPLY_MAX).optional() }).strict()),
   "today.history": m<TodayHistoryPage>()(z.object({ after: historyKey, limit: z.number().int().min(1).max(100).default(HISTORY_PAGE), held: z.array(feedRowId).max(500).default([]) })),
   "today.digest": m<DigestRow | null>()(z.object({ day: z.string().max(10).optional() })),
   /** a person's try again */

@@ -163,6 +163,27 @@ describe("Hand to…", () => {
     expect(await item()).toMatchObject({ state: "open", revision: form.revision, handedTo: null });
   });
 
+  it("a reply's row hands its other promises with it, as its Done takes them; one changed since is stale (iteration 4, merge)", async () => {
+    const { backend, client, account } = await setup();
+    const mine = msg({ accountId: account.id, from: { name: "Me", email: account.email }, to: [school], isSent: true, inInbox: false, subject: "The trip", date: NOW - 1000, providerMsgId: "mine-1", rfcMessageId: "mine-1@x" });
+    const sent = await backend.store.sync.ingest([mine], { applyFilters: false, now: NOW, classifier: null, liveSent: { wanted: true } });
+    const thread = await threadOf(backend.store, "mine-1");
+    const promise = (item: number, text: string, dated: boolean) => ({ kind: "promise" as const, item, text, quote: text, personName: school.name, personEmail: school.email, dueAt: NOW + DAY, dated });
+    await backend.store.followups.finish({ messageId: sent.inserted[0]!, threadId: thread, fromScan: false, rows: [promise(0, "send the signed slip", true), promise(1, "bring the snacks", false)], kept: [], now: NOW, model: "m", provider: "p", promptVersion: 1, clearGeneration: backend.store.followups.clearGeneration() });
+    const [slip, snacks] = (await backend.store.followups.ofThread(thread)).filter((p) => p.kind === "promise").sort((a, b) => a.item - b.item);
+    // one row, the slip leading, the snacks its Also line
+    const row = (await client.call("today.list", { held: [] })).sections.flatMap((x) => x.items).find((i) => i.id === `promise:${slip!.id}`)!;
+    expect(row.why.with).toEqual([{ source: "promise", id: snacks!.id, revision: snacks!.revision }]);
+    const h = await client.call("today.handoff", { source: "promise", id: slip!.id, revision: slip!.revision, with: [{ source: "promise", id: snacks!.id, revision: snacks!.revision }] });
+    expect(h.items).toEqual([
+      { source: "promise", id: slip!.id, revision: slip!.revision, named: true },
+      { source: "promise", id: snacks!.id, revision: snacks!.revision, named: true },
+    ]);
+    expect(h).toMatchObject({ threadId: thread, text: "send the signed slip" });
+    // the Also line changed since it was shown: the row isn't handed as it was
+    await expect(client.call("today.handoff", { source: "promise", id: slip!.id, revision: slip!.revision, with: [{ source: "promise", id: snacks!.id, revision: snacks!.revision + 1 }] })).rejects.toMatchObject({ code: "STALE" });
+  });
+
   it("an agent's save can't set a hand-off", async () => {
     const { backend, account, form, source } = await setup();
     const [c, s] = createMemoryTransportPair();

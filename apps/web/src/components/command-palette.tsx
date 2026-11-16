@@ -32,7 +32,7 @@ import { openRemind, presetLabel, presetWhen, setReminder, clearReminder, useRem
 import { useReaderHeld, useTodayTask } from "~/state/today";
 import { actOnReaderItem, actOnTodayRow, openLater, openReaderLater } from "~/lib/today-task";
 import { changeOfItem, changeOfTask, openChange } from "~/lib/change";
-import { handTo, seenOfReaderItem, seenOfTask } from "~/lib/hand-to";
+import { handTo, othersOfTask, seenOfReaderItem, seenOfTask } from "~/lib/hand-to";
 import { draftCommands, type DraftCommands } from "~/lib/draft-commands";
 import { isInstruction } from "~/lib/imperative";
 import { askFrom, paletteBack, handBackKeysNow, paletteFrom, paletteKeys, paletteReturn, returnPaletteFocus, setPalettePage, usePalettePage } from "~/lib/palette-open";
@@ -502,7 +502,7 @@ export function CommandPalette() {
       if (change) add({ id: "dated.change", group: "conversation", label: t("palette.todayChange"), icon: <CalendarDays />, testId: "palette-dated-change", keywords: english("palette.todayChange"), takesFocus: true, run: () => requestAnimationFrame(() => openChange(change)) });
       add({ id: "dated.dismiss", group: "conversation", label: t("palette.todayRemove"), icon: <Ban />, shortcut: keysOf("today.remove"), testId: "palette-dated-dismiss", ...synonyms("palette.alias.todayRemove", english("palette.todayRemove")), run: () => actOn("dismiss") });
       // plan 210 (iteration 4): Hand to…, the item's forward opening in the reader (its To field focused) once the palette has gone
-      const hand = () => void (readerItem ? handTo(seenOfReaderItem(readerItem)) : todayTask && handTo(seenOfTask(todayTask.task), todayTask.rowId));
+      const hand = () => void (readerItem ? handTo(seenOfReaderItem(readerItem)) : todayTask && handTo(seenOfTask(todayTask.task), todayTask.rowId, othersOfTask(todayTask.task)));
       add({ id: "dated.handTo", group: "conversation", label: t("whatMatters.handTo.action"), icon: <Forward />, testId: "palette-dated-hand", ...synonyms("palette.alias.handTo", english("whatMatters.handTo.action")), takesFocus: true, run: () => requestAnimationFrame(hand) });
     } else if (inToday && targets === 0) {
       // plan 210 (iteration 4, design point 2): with nothing selected in What matters its three acts are still there to be
