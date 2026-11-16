@@ -73,6 +73,9 @@ const periodsDiffer = (a: string, b: string): boolean => {
  */
 export function sameErrand(d: DatedRow, p: FollowupRow): boolean {
   if (d.threadId !== p.threadId || !ERRANDS.has(d.kind) || p.kind !== "promise") return false;
+  // plan 210 (iteration 3): a promise its reply's verdict linked to a request (`answers`) is that request's by the link, never
+  // merged with a request by its words: its row carries the request's day
+  if (p.answers != null && (d.kind === "respond" || d.kind === "ask")) return false;
   if (periodsDiffer(`${d.text}\n${d.quote}`, `${p.text}\n${p.quote ?? ""}`)) return false;
   if (shares(amounts(`${d.text}\n${d.quote}`), amounts(`${p.text}\n${p.quote ?? ""}`)) && shares(objectWords(d.text, d.quote), objectWords(p.text, p.quote))) return true;
   return (d.kind === "respond" || d.kind === "ask") && sameObject(d.text, p.text);

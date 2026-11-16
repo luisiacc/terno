@@ -389,6 +389,9 @@ export class BackendCore {
       statusChanged: (status) => this.server.emit("followupsStatus", status, { origins: ["renderer", "dev"] }),
       notify: (notice) => this.attention.remind(notice),
       summaries: (ids) => this.store.threads.summaries(ids),
+      // plan 210 (iteration 3): a reply waits only on a reader that's running
+      datedPending: async (threadId, before) => this.dated.isActive && !this.dated.blockedBy && (await this.store.dated.marks.pendingOn(threadId, before)),
+      requestsAnswered: () => this.today.changed(),
       runBudgeted: (items, work) => this.runBudgeted(items, work),
       log: (level, message, extra) => this.log(level, message, extra),
     });
@@ -401,6 +404,8 @@ export class BackendCore {
       begin: (requestId, clientId) => this.aiService.begin(requestId, clientId),
       changed: () => this.today.changed(),
       promisesMoved: () => void this.followups.look().catch(() => {}),
+      replies: () => (this.followups.isActive ? { since: this.followups.since } : undefined),
+      caughtUp: () => this.followups.wake(),
       statusChanged: (status) => this.server.emit("datedStatus", status, { origins: ["renderer", "dev"] }),
       runBudgeted: (items, work) => this.runBudgeted(items, work),
       log: (level, message, extra) => this.log(level, message, extra),

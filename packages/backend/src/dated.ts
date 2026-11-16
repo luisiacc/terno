@@ -36,6 +36,13 @@ export interface DatedHost {
   changed(): void;
   /** a promise of yours got a new day: follow-ups look again (their snapshot to the windows, their timer) */
   promisesMoved(): void;
+  /**
+   * Plan 210 (iteration 3): follow-ups is on, since when: a request read after a reply of yours sends that reply to it again,
+   * for its verdict (`DatedFinish.replies`); undefined, off
+   */
+  replies(): { since: number | null } | undefined;
+  /** Plan 210 (iteration 3): the reader read what it could: a reply of yours waiting on it (or marked again) may be read */
+  caughtUp(): void;
   statusChanged(status: { blockedBy: { kind: AiErrorKind; message: string } | null }): void;
   /** work over a list in the backend's slices */
   runBudgeted<T>(items: readonly T[], work: (chunk: T[]) => void | Promise<void>): Promise<void>;
@@ -477,6 +484,7 @@ export class DatedWorker {
       } while (this.again && this.isActive && !this.paused && !this.limited);
     } finally {
       this.running = false;
+      this.host.caughtUp();
     }
   }
 
@@ -586,7 +594,8 @@ export class DatedWorker {
       // plan 210 (iteration 2, the Codex code review): "nothing asked" only of a message the model saw all of (never one cut
       // to the window or the reader's limit, nor a subject past what's sent), and in which the checks found no request at all
       const readWhole = whole && text.length <= DATED_TEXT_CHARS && input.text === text && src.subject.length <= DATED_SUBJECT_CHARS;
-      const write = { messageId: src.id, threadId: src.threadId, fromScan, rows: checked.rows, settled: checked.settled, moved: checked.moved, movedPromises: checked.movedPromises, now, model: ai.model, provider: ai.providerId, promptVersion: DATED_PROMPT_VERSION, nothingAsked: readWhole && !checked.asked, clearGeneration };
+      const replies = this.host.replies();
+      const write = { messageId: src.id, threadId: src.threadId, fromScan, rows: checked.rows, settled: checked.settled, moved: checked.moved, movedPromises: checked.movedPromises, now, model: ai.model, provider: ai.providerId, promptVersion: DATED_PROMPT_VERSION, nothingAsked: readWhole && !checked.asked, ...(replies ? { replies } : {}), clearGeneration };
       const outcome = await store.dated.finish(write);
       this.attempts.delete(src.id);
       // a merge moved it under the request: read again on its new thread (revision 6)
