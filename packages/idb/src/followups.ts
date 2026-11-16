@@ -1,4 +1,4 @@
-import { addressKey, ANSWERED_KINDS, type FollowupRow } from "@terno/core";
+import { addressKey, ANSWERED_KINDS, refKey, type FollowupRow } from "@terno/core";
 import { FOLLOWUP_CLOSED_KEEP_MS, FOLLOWUPS_ACTIVE_MAX, recipientList, SCAN_MARK_MS, SENT_MARK_MS, type ClosedAt, type FollowupFinish, type FollowupFinishOutcome, type FollowupSnapshot, type FollowupSource, type SentMark } from "@terno/store";
 import { T, type Ctx, type R } from "./mail";
 
@@ -148,6 +148,22 @@ function answerable(c: Ctx, id: number, src: { threadId: number; date: number })
   return r && r.state === "open" && (ANSWERED_KINDS as readonly string[]).includes(r.kind) && r.thread_id === src.threadId && r.arrived_at < src.date ? r : null;
 }
 
+/** As SQL's (`apart`): a promise its verdict links to a request is never one item with it; no revision moves. */
+function apart(c: Ctx, promiseId: number, requestId: number): void {
+  const [promise, request] = [refKey({ source: "promise", id: promiseId }), refKey({ source: "dated", id: requestId })];
+  const followups = T(c, "followups");
+  const dated = T(c, "dated_items");
+  const p = followups.get(promiseId)!;
+  const r = dated.get(requestId)!;
+  if ((p.same_as ?? promise) !== (r.same_as ?? request)) return;
+  if (p.same_as != null) {
+    followups.update(p, { same_as: null });
+    return;
+  }
+  dated.update(r, { same_as: null });
+  for (const x of dated.by("same", promise)) if ((ANSWERED_KINDS as readonly string[]).includes(x.kind)) dated.update(x, { same_as: request });
+}
+
 export function finishFollowups(c: Ctx, w: FollowupFinish): FollowupFinishOutcome {
   const marks = T(c, "ai_sent_mail");
   const mark = marks.get(w.messageId);
@@ -182,13 +198,17 @@ export function finishFollowups(c: Ctx, w: FollowupFinish): FollowupFinishOutcom
   };
   for (const v of yours ? (w.verdicts ?? []) : []) {
     const r = answerable(c, v.request.id, src);
-    if (!r) continue;
-    if (v.verdict === "fulfilled") settle(r, v.request.revision);
-    else {
-      // the promise this reply made (its own row, an open one), linked once
-      const p = rows.by("identity", w.messageId, v.item).find((x) => x.kind === "promise" && live(x) && x.answers == null);
-      if (p) rows.update(p, { answers: r.id });
+    // as SQL's: either verdict only on the request as it was shown
+    if (!r || r.revision !== v.request.revision) continue;
+    if (v.verdict === "fulfilled") {
+      settle(r, r.revision);
+      continue;
     }
+    // the promise this reply made (its own row, an open one), linked once
+    const p = rows.by("identity", w.messageId, v.item).find((x) => x.kind === "promise" && live(x) && x.answers == null);
+    if (!p) continue;
+    rows.update(p, { answers: r.id });
+    apart(c, p.id, r.id);
   }
   for (const k of w.kept) {
     const r = rows.get(k.id);
