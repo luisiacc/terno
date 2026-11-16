@@ -88,15 +88,16 @@ describe("what a change writes (scheduleChanges)", () => {
     const asked = row({ id: 4, kind: "ask", sameAs: "dated:1" });
     const c = scheduleChanges(seen, row(), { dated: [row(), twin, closed, asked], promises: [promise({ sameAs: "dated:1" })] }, { day: "2026-11-24", time: "16:00" }, NOW);
     expect(c.at).toBe(NOW);
-    // the bill shows a week before its day, the event within the seven days; each at its own revision
+    // the bill shows a week before its day, the event within the seven days; each at its own revision; the day asked before
+    // and the mail's clock were the mail's words about its day, so the user's day has neither (iteration 4, merge)
     expect(c.dated).toEqual([
-      { id: 1, revision: 3, to: { dueDay: "2026-11-24", dueAt: at(2026, 11, 24, 16), timed: true, actAt: at(2026, 11, 17, 9) } },
-      { id: 2, revision: 8, to: { dueDay: "2026-11-24", dueAt: at(2026, 11, 24, 16), timed: true, actAt: at(2026, 11, 21, 9) } },
+      { id: 1, revision: 3, to: { dueDay: "2026-11-24", dueAt: at(2026, 11, 24, 16), timed: true, actAt: at(2026, 11, 17, 9), before: null, wall: null } },
+      { id: 2, revision: 8, to: { dueDay: "2026-11-24", dueAt: at(2026, 11, 24, 16), timed: true, actAt: at(2026, 11, 21, 9), before: null, wall: null } },
     ]);
-    expect(c.promises).toEqual([{ id: 7, revision: 1, to: { dueAt: at(2026, 11, 24, 16), timed: true, state: "open" } }]);
+    expect(c.promises).toEqual([{ id: 7, revision: 1, to: { dueAt: at(2026, 11, 24, 16), timed: true, state: "open", before: null } }]);
     // a day alone: its 9:00, untimed (today, a day not over yet, is fine; a promise past its 9:00 keeps its state)
     const today = scheduleChanges({ source: "promise", id: 7, revision: 1 }, promise({ state: "due" }), { dated: [], promises: [promise({ state: "due" })] }, { day: "2026-11-10", time: null }, NOW);
-    expect(today.promises).toEqual([{ id: 7, revision: 1, to: { dueAt: at(2026, 11, 10, 9), timed: false, state: "due" } }]);
+    expect(today.promises).toEqual([{ id: 7, revision: 1, to: { dueAt: at(2026, 11, 10, 9), timed: false, state: "due", before: null } }]);
   });
 
   it("refuses what it can't do, saying why: changed since, a moment past, a year away, an ask's", () => {
@@ -111,12 +112,16 @@ describe("what a change writes (scheduleChanges)", () => {
     expect(() => scheduleChanges(seen, row(), members, { accept: true }, NOW)).toThrow(expect.objectContaining({ code: "STALE" }));
   });
 
-  it("taking a proposal: the named item gets the mail's day, moment and words exactly; the others its day", () => {
-    const proposal = { dueDay: "2026-11-20", dueAt: at(2026, 11, 20, 17), timed: true, actAt: at(2026, 11, 13, 9), text: "Pay the bill by 5 PM", by: "Power Co", messageId: 9, at: NOW };
+  it("taking a proposal: the named item gets the mail's day, moment and words exactly (its day asked before and clock too); the others its day", () => {
+    const wall = { day: "2026-11-20", time: "16:00", zone: "America/Chicago", place: "Austin" };
+    const proposal = { dueDay: "2026-11-20", dueAt: at(2026, 11, 20, 17), timed: true, actAt: at(2026, 11, 13, 9), text: "Pay the bill by 5 PM", before: "2026-11-21", wall, by: "Power Co", messageId: 9, at: NOW };
     const named = row({ proposal, changedAt: NOW - DAY });
     const c = scheduleChanges(seen, named, { dated: [named], promises: [promise({ sameAs: "dated:1" })] }, { accept: true }, NOW);
-    expect(c.dated).toEqual([{ id: 1, revision: 3, to: { dueDay: "2026-11-20", dueAt: at(2026, 11, 20, 17), timed: true, actAt: at(2026, 11, 13, 9), text: "Pay the bill by 5 PM" } }]);
-    expect(c.promises).toEqual([{ id: 7, revision: 1, to: { dueAt: at(2026, 11, 20, 17), timed: true, state: "open" } }]);
+    expect(c.dated).toEqual([{ id: 1, revision: 3, to: { dueDay: "2026-11-20", dueAt: at(2026, 11, 20, 17), timed: true, actAt: at(2026, 11, 13, 9), text: "Pay the bill by 5 PM", before: "2026-11-21", wall } }]);
+    expect(c.promises).toEqual([{ id: 7, revision: 1, to: { dueAt: at(2026, 11, 20, 17), timed: true, state: "open", before: null } }]);
+    // a promise's own proposal: its day asked before with it
+    const own = promise({ proposal: { dueDay: "2026-11-20", dueAt: at(2026, 11, 20, 9), timed: false, before: "2026-11-21", by: "Jess", messageId: 9, at: NOW }, changedAt: NOW - DAY });
+    expect(scheduleChanges({ source: "promise", id: 7, revision: 1 }, own, { dated: [], promises: [own] }, { accept: true }, NOW).promises).toEqual([{ id: 7, revision: 1, to: { dueAt: at(2026, 11, 20, 9), timed: false, state: "open", before: "2026-11-21" } }]);
   });
 });
 

@@ -1,22 +1,11 @@
-import { addressKey, ANSWERED_KINDS, DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, parseHandedTo, DATED_MUTE_NAME_MAX, DATED_MUTES_MAX, muteKey, senderIsPerson, THREAD_SCOPED_KINDS, waitingCutoff, type DatedMute, type DatedMuteOn, type DatedRow, type DatedWall } from "@terno/core";
+import { addressKey, ANSWERED_KINDS, DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, parseHandedTo, DATED_MUTE_NAME_MAX, DATED_MUTES_MAX, muteKey, senderIsPerson, THREAD_SCOPED_KINDS, waitingCutoff, type DatedMute, type DatedMuteOn, type DatedRow } from "@terno/core";
 import { DATED_MARK_MS, DATED_SCAN_MARK_MS, datedTab, NEW_MAIL_MS, readerIn, readNothingAsked, recipientList, type ClosedAt, type DatedFinish, type DatedFinishOutcome, type DatedMuteAdded, type DatedMark, type DatedSnapshot, type DatedSource } from "@terno/store";
 import { OWN_SENDER_SQL, RECEIVED_SQL } from "./ai-summaries";
 import { ownAddresses } from "./facts";
 import { remarkReplies } from "./followups";
-import { proposedMove, scheduleFields } from "./schedule";
+import { proposedMove, scheduleFields, wallJson, wallOf } from "./schedule";
 import type { Db } from "./sqlite";
 
-/** Plan 210 (iteration 4, revision 10): the mail's own clock, kept as JSON (v67); one that doesn't read is none. */
-const wallOf = (json: string | null): DatedWall | null => {
-  if (!json) return null;
-  try {
-    const w = JSON.parse(json) as Partial<DatedWall>;
-    return typeof w.day === "string" && typeof w.time === "string" && typeof w.zone === "string" ? { day: w.day, time: w.time, zone: w.zone, place: typeof w.place === "string" ? w.place : null } : null;
-  } catch {
-    return null;
-  }
-};
-const wallJson = (w: DatedWall | null | undefined): string | null => (w ? JSON.stringify({ day: w.day, time: w.time, zone: w.zone, place: w.place }) : null);
 
 /** Plan 204 on SQLite (v56, v57 admits `ask`): see packages/store/src/dated.ts. */
 
@@ -216,7 +205,7 @@ export function finishDated(db: Db, w: DatedFinish): DatedFinishOutcome {
     }
     for (const m of w.movedPromises ?? []) {
       // plan 210 (iteration 4): a promise whose day the user chose keeps it; the move is kept for them to take or leave
-      if (proposedMove(db, "followups", { id: m.id, revision: m.revision, threadId: src.threadId }, { dueAt: m.dueAt, timed: m.timed ?? false }, src, w)) continue;
+      if (proposedMove(db, "followups", { id: m.id, revision: m.revision, threadId: src.threadId }, { dueAt: m.dueAt, timed: m.timed ?? false, before: m.before ?? null }, src, w)) continue;
       db.run(
         // plan 210 (iteration 2): its first broken day kept (a second move after another broken day keeps the first), and
         // whether its new moment is a stated time (absent: as it was)
@@ -227,7 +216,7 @@ export function finishDated(db: Db, w: DatedFinish): DatedFinishOutcome {
     }
     for (const m of w.moved ?? []) {
       // plan 210 (iteration 4): likewise an item whose day the user chose: the mail's day (and words) wait as a proposal
-      if (proposedMove(db, "dated_items", { id: m.id, threadId: src.threadId, senderKey: src.senderKey, reaches: SENDER_REACHES_SQL }, { dueDay: m.dueDay, dueAt: m.dueAt, timed: m.timed, actAt: m.actAt, ...(m.text ? { text: m.text } : {}) }, src, w)) continue;
+      if (proposedMove(db, "dated_items", { id: m.id, threadId: src.threadId, senderKey: src.senderKey, reaches: SENDER_REACHES_SQL }, { dueDay: m.dueDay, dueAt: m.dueAt, timed: m.timed, actAt: m.actAt, ...(m.text ? { text: m.text } : {}), before: m.before ?? null, wall: m.wall ?? null }, src, w)) continue;
       db.run(
         // the revision stays: a Later just before stays undoable, and the move changes no choice of the user's (Codex review);
         // its new words, if it gives some, in the same write (the fifth panel round)

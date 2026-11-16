@@ -60,7 +60,7 @@ export function scheduleChanges(seen: ItemSeen, named: DatedRow | FollowupRow, m
     // the named one as it was seen; the others while they're open, and never an ask (it has no day to change)
     if (!mine && (r.state !== "open" || r.kind === "ask")) continue;
     if (mine && accepted) {
-      dated.push({ id: r.id, revision: seen.revision, to: { dueDay: accepted.dueDay, dueAt: accepted.dueAt, timed: accepted.timed, actAt: accepted.actAt ?? r.actAt, ...(accepted.text ? { text: accepted.text } : {}) } });
+      dated.push({ id: r.id, revision: seen.revision, to: { dueDay: accepted.dueDay, dueAt: accepted.dueAt, timed: accepted.timed, actAt: accepted.actAt ?? r.actAt, ...(accepted.text ? { text: accepted.text } : {}), before: accepted.before ?? null, wall: accepted.wall ?? null } });
       continue;
     }
     // as a mail arriving now would place it: shown within its kind's lead of the new day, never more than a year ahead
@@ -69,7 +69,8 @@ export function scheduleChanges(seen: ItemSeen, named: DatedRow | FollowupRow, m
       if (mine) throw new RpcError("BAD_REQUEST", L("errors.dated.changeFar"));
       continue;
     }
-    dated.push({ id: r.id, revision: mine ? seen.revision : r.revision, to: { dueDay: timing.dueDay, dueAt: timing.dueAt, timed: timing.timed, actAt: timing.actAt } });
+    // the day asked before and the mail's clock were the mail's words about its day: the user's own day has neither
+    dated.push({ id: r.id, revision: mine ? seen.revision : r.revision, to: { dueDay: timing.dueDay, dueAt: timing.dueAt, timed: timing.timed, actAt: timing.actAt, before: null, wall: null } });
   }
   const promises: ScheduleChanges["promises"][number][] = [];
   for (const r of members.promises) {
@@ -78,7 +79,7 @@ export function scheduleChanges(seen: ItemSeen, named: DatedRow | FollowupRow, m
     const dueAt = mine && accepted ? accepted.dueAt : momentOf(day, time);
     const timed = mine && accepted ? accepted.timed : time !== null;
     // ahead, it's open again (out of the Inbox's top); a day already reached keeps its state, and comes due as any
-    promises.push({ id: r.id, revision: mine ? seen.revision : r.revision, to: { dueAt, timed, state: dueAt > now ? "open" : r.state } });
+    promises.push({ id: r.id, revision: mine ? seen.revision : r.revision, to: { dueAt, timed, state: dueAt > now ? "open" : r.state, before: mine && accepted ? (accepted.before ?? null) : null } });
   }
   return { at: now, dated, promises };
 }

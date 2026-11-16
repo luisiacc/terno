@@ -154,6 +154,12 @@ export interface DatedWall {
   place: string | null;
 }
 
+/** A stored wall clock (an object, or SQL's JSON already parsed), or null when it doesn't read as one. */
+export const readWall = (w: unknown): DatedWall | null => {
+  const x = w as Partial<DatedWall> | null | undefined;
+  return x && typeof x === "object" && typeof x.day === "string" && typeof x.time === "string" && typeof x.zone === "string" ? { day: x.day, time: x.time, zone: x.zone, place: typeof x.place === "string" ? x.place : null } : null;
+};
+
 export interface DatedSetting {
   enabled: boolean;
   /** the moment it went on: mail from before it is never read without a yes */

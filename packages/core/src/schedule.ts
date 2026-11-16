@@ -1,3 +1,5 @@
+import { readWall, type DatedWall } from "./dated";
+
 /**
  * Plan 210 (iteration 4, the owner's "Change…"): the user may change an item's day and time (a dated item, a promise of
  * yours). From then on its schedule is the user's (`changedAt`): a later mail's move doesn't override it, it's kept as a
@@ -25,6 +27,9 @@ export interface ScheduleProposal {
   timed: boolean;
   actAt?: number;
   text?: string;
+  /** plan 210 (iteration 4, merge): the move's day asked before ("before Mon") and the mail's own clock, as a move writes them */
+  before?: string;
+  wall?: DatedWall;
   by: string;
   messageId: number;
   at: number;
@@ -56,18 +61,21 @@ export function parseSchedule(json: string | null | undefined): ItemSchedule | n
 }
 
 export const proposalJson = (p: ScheduleProposal): string =>
-  JSON.stringify({ dueDay: p.dueDay, dueAt: p.dueAt, timed: p.timed, ...(p.actAt !== undefined ? { actAt: p.actAt } : {}), ...(p.text ? { text: p.text } : {}), by: p.by.slice(0, PROPOSAL_BY_MAX), messageId: p.messageId, at: p.at });
+  JSON.stringify({ dueDay: p.dueDay, dueAt: p.dueAt, timed: p.timed, ...(p.actAt !== undefined ? { actAt: p.actAt } : {}), ...(p.text ? { text: p.text } : {}), ...(p.before ? { before: p.before } : {}), ...(p.wall ? { wall: p.wall } : {}), by: p.by.slice(0, PROPOSAL_BY_MAX), messageId: p.messageId, at: p.at });
 
 /** A stored proposal, or null. */
 export function parseProposal(json: string | null | undefined): ScheduleProposal | null {
   const r = record(json);
   if (!r || !isDay(r.dueDay) || !isMoment(r.dueAt) || typeof r.by !== "string" || !isMoment(r.messageId) || !isMoment(r.at)) return null;
+  const wall = readWall(r.wall);
   return {
     dueDay: r.dueDay,
     dueAt: r.dueAt,
     timed: r.timed === true,
     ...(isMoment(r.actAt) ? { actAt: r.actAt } : {}),
     ...(typeof r.text === "string" && r.text ? { text: r.text } : {}),
+    ...(isDay(r.before) ? { before: r.before } : {}),
+    ...(wall ? { wall } : {}),
     by: r.by.slice(0, PROPOSAL_BY_MAX),
     messageId: r.messageId,
     at: r.at,
