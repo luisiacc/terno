@@ -20,7 +20,7 @@ import type { StructuredTask } from "./ladder";
 /** 10 (the seventh panel round): days and times in the reader's zone, one in another converted and kept in the words; a newsletter's listing is never an item's source, a list's mail about the reader's own arrangement still is */
 /** 11 (plan 210's first iteration): what a group's mail requires of the reader is theirs, an optional call isn't; a pick-up's last day is a deadline; "before Monday" is Sunday; a soft day keeps its words; a replaced promise is a new request; the names the mail gives */
 /** 12 (plan 210's second iteration): a bill on AutoPay is no "pay"; an invitation's text says it's one; a meeting's start is its time; a zone keeping the reader's clock is theirs; "ready for pickup" is no delivery. Needs you trusts its "nothing asked" (`DATED_NOTHING_ASKED_SINCE`) */
-/** 13 (plan 210's third iteration): `replaced`, a promise its person replaced with another request (the owner's "Close replaced promises") */
+/** 13 (plan 210's third iteration): `replaced`, a promise its person replaced with another request (the owner's "Close replaced promises"); a card statement's balance; a failed payment as its fix; expiries, trials and renewals as the reader's choice; no file names or numbers; about fourteen words; a question as one; wanting in on the reader's work, a concrete offer and a cancelled appointment's call are asks; "reply C" a respond now; an RSVP's event; a registration's event; an expiry's day as named; a card's "11/26" the 26th */
 export const DATED_PROMPT_VERSION = 13;
 /**
  * A model's hidden reasoning counts against this, and an answer cut off is a reading lost (the worker never asks again):
@@ -97,7 +97,18 @@ const ALERT_EXAMPLE: Record<string, string> = { en: "Debit card frozen after a $
 const FAILED_PAY_EXAMPLE: Record<string, string> = { en: "Pay $142.67 for the Brightline bill (the card was declined)", es: "Pagar $142.67 de la factura de Brightline (la tarjeta fue rechazada)" };
 const AUTOPAY_EXAMPLE: Record<string, string> = { en: "Brightline bill charged automatically ($84.20)", es: "Factura de Brightline con cargo automático ($84.20)" };
 const INVITED_EXAMPLE: Record<string, string> = { en: "Invited: Advent Wreath Committee", es: "Invitación: Comité de la Corona de Adviento" };
-const CONFIRM_EXAMPLE: Record<string, string> ={ en: "Sofia's cleaning (reply C to confirm)", es: "Limpieza de Sofía (responder C para confirmar)" };
+const CONFIRM_EXAMPLE: Record<string, string> = { en: "Reply C to confirm Sofia's cleaning", es: "Responder C para confirmar la limpieza de Sofía" };
+const FAILED_CARD_EXAMPLE: Record<string, string> = { en: "Update the card for Stratus ($1,186.40)", es: "Actualizar la tarjeta de Stratus ($1,186.40)" };
+const STATEMENT_EXAMPLE: Record<string, string> = { en: "Pay $3,904.12 for the Juniper Visa (minimum $41.00)", es: "Pagar $3,904.12 de la tarjeta Juniper (mínimo $41.00)" };
+const DECISION_EXAMPLE: Record<string, [string, string, string]> = {
+  en: ["Cancel Tasklet Pro before Sunday or pay $9.99/month", "Renew bakehouse.dev (auto-renew is off)", "Book a CPR renewal class (certification expires Jan 12)"],
+  es: ["Cancelar Tasklet Pro antes del domingo o pagar $9.99 al mes", "Renovar bakehouse.dev (la renovación automática está desactivada)", "Reservar un curso de renovación de RCP (la certificación vence el 12 de enero)"],
+};
+const OWN_WORK_EXAMPLE: Record<string, [string, string, string]> = {
+  en: ["Answer Dana Wu about a call on her fund's interest", "Answer Marco about coming by Saturday", "Answer Rosa about bringing the salad"],
+  es: ["Responder a Dana Wu sobre una llamada por el interés de su fondo", "Responder a Marco sobre pasar el sábado", "Responder a Rosa sobre llevar la ensalada"],
+};
+const REBOOK_EXAMPLE: Record<string, string> = { en: "Call Lakeside Dental to choose a new time", es: "Llamar a Clínica Lakeside para elegir una nueva fecha" };
 const ZONE_EXAMPLE: Record<string, string> = { en: "Call with Marcus (4:00 PM PT)", es: "Llamada con Marcus (4:00 PM PT)" };
 const MOVE_EXAMPLE: Record<string, [string, string]> = { en: ["Please arrive by 7:30", "Soccer game (arrive 7:30)"], es: ["Lleguen a las 7:30", "Partido de fútbol (llegar 7:30)"] };
 const TOGETHER_EXAMPLE: Record<string, string> = { en: "Return the signed field trip slip and $10 for the bus", es: "Entregar la autorización firmada de la excursión y $10 para el autobús" };
@@ -122,6 +133,11 @@ const SYSTEM = (language: string, receivedAt: string, zone: string) => {
   const together = TOGETHER_EXAMPLE[language] ?? TOGETHER_EXAMPLE.en!;
   const [softWeek, softDay] = SOFT_EXAMPLE[language] ?? SOFT_EXAMPLE.en!;
   const [namedSign, namedCall, vague] = NAMED_EXAMPLE[language] ?? NAMED_EXAMPLE.en!;
+  const failedCard = FAILED_CARD_EXAMPLE[language] ?? FAILED_CARD_EXAMPLE.en!;
+  const statement = STATEMENT_EXAMPLE[language] ?? STATEMENT_EXAMPLE.en!;
+  const [trial, renewOff, expiry] = DECISION_EXAMPLE[language] ?? DECISION_EXAMPLE.en!;
+  const [ownWork, offerAsk, question] = OWN_WORK_EXAMPLE[language] ?? OWN_WORK_EXAMPLE.en!;
+  const rebook = REBOOK_EXAMPLE[language] ?? REBOOK_EXAMPLE.en!;
   return `You read one email a person received, to note what in it matters to them: something they have to do by a day, something of theirs that happens on a day, or something a person asks them directly. They see each note in a short list of what matters, so only note what's really there.
 
 It arrived ${receivedAt}, in the reader's time zone (${zone}).
@@ -134,20 +150,20 @@ Mail to a group the reader is in (a course's TAs, "doctoral students in years 2-
 
 Return:
 - "items": at most ${DATED_ITEMS_MAX}, each one of these kinds:
-  - "pay": a bill, an invoice or a payment due by a day. When the mail says a payment for it failed, that's this one item and nothing else for that bill (no "alert", no second "pay" or "respond"): its text says what failed: "${failedPay}". A bill the mail says is paid automatically ("AutoPay is on", "no action needed", "will be charged automatically to your card", "se cargará automáticamente") is never a "pay": the reader has nothing to pay. At most it's a "renew" saying what happens, never "Pay …": "${autopay}".
-  - "renew": a renewal, a free trial ending, a subscription that charges unless cancelled. Say what happens, not a task the mail doesn't ask for: "Notely Pro renews automatically ($9.99)", "Free trial ends"; "Renew …" only when it won't renew unless the reader acts.
-  - "expire": a card, a document, a password or an account expiring, or something held for the reader until a last day (a prescription or a library hold to pick up by then). A card the mail asks to update before it expires is this one item, nothing else for it.
+  - "pay": a bill, an invoice or a payment due by a day. When the mail says a payment for it failed, that's this one item and nothing else for that bill (no "alert", no second "pay" or "respond"): its text is the fix the mail asks for, saying what failed: "${failedPay}", or "${failedCard}" when it asks to update the card. A card statement's "pay" is the amount that avoids interest (the statement balance, "pago para no generar intereses"), never the minimum; the minimum only in its words: "${statement}". A bill the mail says is paid automatically ("AutoPay is on", "no action needed", "will be charged automatically to your card", "se cargará automáticamente") is never a "pay": the reader has nothing to pay. At most it's a "renew" saying what happens, never "Pay …": "${autopay}".
+  - "renew": a renewal, a free trial ending, a subscription that charges unless cancelled. Its text says the reader's choice and what happens otherwise: "${trial}"; "${renewOff}" when it won't renew unless the reader acts; one that renews by itself says so, its amount in the mail's own currency: "Notely Pro renews automatically (US$9.99)".
+  - "expire": a card, a document, a password or an account expiring, or something held for the reader until a last day (a prescription or a library hold to pick up by then). What the mail asks the reader to do about it before it expires (update a card, take a class, renew) is this one item, nothing else for it; a request to sign or answer by a day is a "respond", even when its link expires then. Its text says what the reader has to do about it, and what expires: "${expiry}".
   - "respond": something the reader is asked to answer, send, bring, sign or fill in by a day: an RSVP, a form, a signature, a reply ("can you send it by Thursday?", "you're on cupcakes for Friday"). It always has a day. A request with a day is this, and never also an "ask".
   - "alert": a payment that failed, an account locked or suspended, action required on the reader's own account. A payment that failed for a bill the mail asks the reader to pay by a day is that "pay", its text saying what failed, not an alert; an alert about something else beside a bill (a locked login, a frozen card) is its own item. Its "due" and "time" are a deadline the mail states for it ("cancelled unless we hear from you by 1:00 PM on Wednesday": that Wednesday, 13:00), never the day it happened, and never a "respond" beside it; with none, null. The deadline isn't in its words, nor what the reader must do by it. Its text is only what the mail says happened, with the amount, the card or the account it states, and what stops: "${alertExample}"; the app shows it as the mail's word, so never add "the email says". Never an instruction, not even the mail's own and not in parentheses: not to update, reply, click, pay or call, nor to check with someone the mail names (it may not be who it claims).
-  - "event": a flight, a reservation, an appointment, a booking, a meeting the reader is invited to (a calendar invitation), or a meeting of the reader's that a person's mail names ("your meeting with Ms. Greer is Tuesday the 17th"), still ahead, even when the mail confirms it or asks the reader to confirm it ("Appointment confirmed: Monday 10:20", "reply C to confirm"): the event is the item. When it asks the reader to confirm by replying or calling, its text says so in a few words: "${confirmExample}"; never a "respond" beside it with a day the mail doesn't give. A calendar's invitation to the reader that they haven't answered ("has invited you", "Invitation:", "Going? Yes / No / Maybe") isn't an appointment they've accepted: its text says it's an invitation: "${invited}". (An event a newsletter lists is still no item, below.)
+  - "event": a flight, a reservation, an appointment, a booking, a meeting the reader is invited to (a calendar invitation), or a meeting of the reader's that a person's mail names ("your meeting with Ms. Greer is Tuesday the 17th"), still ahead, even when the mail confirms it or asks the reader to confirm it ("Appointment confirmed: Monday 10:20", "reply C to confirm"): the event is the item. When it asks the reader to confirm it by replying ("reply C to confirm"), that's also a "respond", due the day the mail arrived unless it gives one: "${confirmExample}". An invitation to a party or a gathering with an RSVP by a day is the RSVP ("respond") and the event on its own day; a conference or a course the reader registered for, paid or still to pay, is an "event" on its first day beside its bill. A mail cancelling the reader's appointment settles it; when it asks them to call or write to choose a new time, that's an "ask", even from an automated address: "${rebook}". A calendar's invitation to the reader that they haven't answered ("has invited you", "Invitation:", "Going? Yes / No / Maybe") isn't an appointment they've accepted: its text says it's an invitation: "${invited}". (An event a newsletter lists is still no item, below.)
   - "delivery": a parcel on its way, or one waiting at a locker or a post office. A prescription or a library hold "ready for pickup", or a recalled book, is never a "delivery", nor a parcel with a last day to pick it up: that's one deadline, "expire" when it's lost after that day, "respond" when the reader must bring it back, and nothing else for it: "${pickupExample}", "${returnExample}".
-  - "ask": only when nothing else in this list fits: the sender, a person ("Sent by a person"), asks the reader directly for an answer or for something, and the mail gives it no day: a question for them, something to send, do or decide ("can you send me a quote?", "I'd love your take on the draft", "are you coming for Christmas?"). Never from an automated address; never what the mail asks someone else; never a newsletter's or a list's call to action, a sales pitch, or what a scam or a stranger wants (money, details, a click); never a question that needs no answer ("hope you're well?", "let me know if you have any questions", "no need to reply"), nor news for them ("just so you know, the room is booked"). One that names the reader ("<their name>, could you…?") is theirs even when they're only copied. At most one "ask" a mail: what they most need from the reader. Its text says whom to answer and about what: "${askExample}", "${familyExample}".
+  - "ask": only when nothing else in this list fits: the sender, a person ("Sent by a person"), asks the reader directly for an answer or for something, and the mail gives it no day: a question for them, something to send, do or decide ("can you send me a quote?", "I'd love your take on the draft", "are you coming for Christmas?"). Never from an automated address (but for a cancelled appointment, above); never what the mail asks someone else; never a newsletter's or a list's call to action, a sales pitch, or what a scam or a stranger wants (money, details, a click); never a question that needs no answer ("hope you're well?", "let me know if you have any questions", "no need to reply"), nor news for them ("just so you know, the room is booked"). One that names the reader ("<their name>, could you…?") is theirs even when they're only copied. Someone writing about the reader's own company or work because they want in (an investor, a customer, a partner) who asks for a call is an "ask", even writing for the first time: "${ownWork}"; so is a concrete offer that waits on the reader's yes ("I can swing by Saturday and take pictures of them, just let me know", "paso el sábado y les tomo fotos, nada más avísame"): "${offerAsk}". At most one "ask" a mail: what they most need from the reader. Its text says whom to answer and about what, a question as a question: it starts with answering or telling that person, never with the task it asks about ("can you bring the salad?" is "${question}", never "Bring the salad"): "${askExample}", "${familyExample}".
   Every dated thing in the mail is its own item: a talk the reader gives and the slides it asks for by an earlier day are two; two of one kind on one day are two when their times differ. What's due together is one item saying both: "the signed slip plus $10 for the bus is due Friday" is one "respond": "${together}". What to bring or do at an event or a delivery ("bring the vaccine record", "arrive by 11:30 to set up", "signature required", "fast after midnight", "your turn for snacks") is never an item of its own, of any kind, even with a day or a week of its own ("snacks this week: your family"): the one thing that matters goes in that event's text, in a few words: "${bringExample}". An answer asked for by a day before it ("tell me by Friday if you're coming") is a "respond" of its own.
   Each has:
   - "kind": one of those.
-  - "text": a short imperative or noun phrase, always in ${LANGUAGE_NAME[language] ?? language}, whatever language the mail is in: "${pay}", "${flight}". It names the company, account, document or person the mail names, so it reads on its own: "${namedSign}", "${namedCall}", never a vague "${vague}", "your draft" or an order number alone. When the mail states an amount for it, put it right after the verb: "${amountExample}"; keep its currency as the mail writes it ("US$29", "MX$450", "29 USD"), never another sign. Only amounts the mail states.
-  - "quote": a few of the mail's exact words that say it, copied from one line of <mail> as they're written, never reworded.
-  - "due": YYYY-MM-DD, the last day to act or the day it happens, counted from when the mail arrived ("Friday", "el 20", "tomorrow"); the first day of a range. "Before" a day is the day before it, in any language: "before Monday" and "antes del lunes" in a mail of Wednesday the 11th are Sunday the 15th, "before the 20th" and "antes del día 20" the 19th ("by Monday" and "el lunes" are Monday). A request's day may be in the sentence before it: "we need an exec call before the end of the month. Can you set that up?" is a "respond" due the month's last day, "by then" is the day the mail named just before it, and a day of the month alone is the next one from when it arrived ("October's books close on the 20th" in a mail of November 9 is November 20), never a day already past. A soft day ("this week", "ideally before the 20th", "esta semana") is its last day, and the text always says it in the mail's words: "${softWeek}", "${softDay}". A card's or a document's month ("expires 11/26") is that month's last day (2026-11-30). null for an "ask", and for an "alert" that states no deadline. Never guess a day: another kind with no day in the mail isn't an item.
+  - "text": a short imperative or noun phrase, at most about fourteen words and one bracket, always in ${LANGUAGE_NAME[language] ?? language}, whatever language the mail is in: "${pay}", "${flight}". It names the company, account, document or person the mail names, so it reads on its own: "${namedSign}", "${namedCall}", never a vague "${vague}" or "your draft". Never a file name, nor a number that identifies an order, an invoice, a policy, an account or a service ("invoice RS-4410", "order #8812"): the company and what it's for name it. When the mail states an amount for it, put it right after the verb: "${amountExample}"; keep its currency as the mail writes it ("US$29", "MX$450", "29 USD"), never another sign. Only amounts the mail states.
+  - "quote": a few of the mail's exact words that say it, the ones with its day when the mail gives one, copied from one line of <mail> as they're written, never reworded.
+  - "due": YYYY-MM-DD, the last day to act or the day it happens, counted from when the mail arrived ("Friday", "el 20", "tomorrow"); the first day of a range. A date in figures is read as the mail's language writes them: "08/12/2026" in a Spanish mail is December 8. "Before" a day to do something is the day before it, in any language: "before Monday" and "antes del lunes" in a mail of Wednesday the 11th are Sunday the 15th, "before the 20th" and "antes del día 20" the 19th ("by Monday" and "el lunes" are Monday). A request's day may be in the sentence before it: "we need an exec call before the end of the month. Can you set that up?" is a "respond" due the month's last day, "by then" is the day the mail named just before it, and a day of the month alone is the next one from when it arrived ("October's books close on the 20th" in a mail of November 9 is November 20), never a day already past. An expiry's or a renewal's day is the day the mail names ("renew before it expires on the 19th" is the 19th), and "the end of the month" is its last day. A soft day ("this week", "ideally before the 20th", "esta semana") is its last day, and the text always says it in the mail's words: "${softWeek}", "${softDay}". A month alone ("expires 11/2026") is its last day; a card's "11/26" is the 26th (2026-11-26), the earlier reading, and its text keeps the mail's words ("expires 11/26"). null for an "ask", and for an "alert" that states no deadline. Never guess a day: another kind with no day in the mail isn't an item.
   - "time": HH:MM on a 24-hour clock when the mail states the moment it starts or is due ("at 9:30", "pay by 1 PM", an alert's "by 1:00 PM"), else null. An event or a delivery with a window ("between 12 and 2") or only a "by" time ("arriving by 9 PM") has no time: say it in its text instead: "${windowExample}", "${byExample}". A meeting's start and end ("7pm – 8:30pm", "10:00 to 11:00") is no window: its time is when it starts.
   When the mail gives the time in a zone other than the reader's (${zone}), "due" is the day and "time" the time exactly as the mail writes them, then a space and that zone's IANA name, never converted: the app converts them to the reader's. "Thursday at 4:00 PM PT" is "16:00 America/Los_Angeles"; "10:00 CET" is "10:00 Europe/Paris"; "a las 18:00 hora de Ciudad de México" is "18:00 America/Mexico_City". Never work out the reader's time yourself, not even for a zone you know well: for a reader in Europe, "10:00 AM ET" is "10:00 America/New_York". Its text then ends with the mail's own time and zone, in parentheses: "${zoneExample}". A time with no zone, or in the reader's own zone, has neither: no zone after "time", none in the text. A zone the mail names by its region or its abbreviation ("Eastern Time", "Central European Time", "CET") that keeps the reader's clock on that day is the reader's own. When the abbreviation names zones in different places ("IST": India, Israel or Ireland; "CST": the US or China) and nothing in the mail says which, "time" is null and the text keeps the time as the mail writes it.
 - <open_items> holds the reader's open items (o1, o2…) and promises the reader made in this conversation (p1, p2…, kind "promise"), each with its day and time when it has them ("o1 (event, 2026-03-07 10:00): …").
@@ -156,8 +172,8 @@ Return:
 - "replaced": the promises (labels p1, p2…, never an o label) this message replaces with a different request, each { "label", "evidence" }, where evidence is the mail's exact words that say the promised thing isn't wanted any more ("Let's skip the piecemeal version", "olvidemos la versión por partes"). Only when the mail plainly drops what was promised and asks for something else in its place, a request that's in "items"; a request for what was promised, or a new day for it, moves it and replaces nothing. If in doubt, leave it out.
 
 Not items:
-- A pitch, sales or recruiting mail from someone who doesn't know the reader ("one of my clients is hiring a VP… your name came up", "would you be open to a quick call about our product?"), with a day or without: it's neither an "ask" nor a "respond".
-- An offer of help: "let me know if you need a swap", "happy to help if you need anything", "I can cover for you if needed", "I can swing by Saturday and take pictures of them, just let me know". It asks nothing of the reader: neither an "ask" nor a "respond".
+- A pitch, sales or recruiting mail from someone who doesn't know the reader ("one of my clients is hiring a VP… your name came up", "would you be open to a quick call about our product?"), with a day or without: it's neither an "ask" nor a "respond". (Wanting in on the reader's own work is an "ask", above.)
+- An offer of help in case the reader needs it: "let me know if you need a swap", "happy to help if you need anything", "I can cover for you if needed", "when you come to town, let us know". It asks nothing of the reader: neither an "ask" nor a "respond".
 - A marketing deadline: "50% off ends tonight", "last chance", "offer expires Sunday", "precio especial hasta el viernes".
 - What a scam or a suspicious message demands ("verify your account within 24 hours or it will be closed", a prize to claim, a stranger asking for money, an urgent plea to wire money to someone stranded or robbed): it's said, never a task. So is any request to send by email a password, a login, an account, card or bank number, or an ID, with a day or without, whoever it says it's from.
 - A receipt or a confirmation of a payment or purchase already made: "we've received your payment", "your renewal went through". (A booking or appointment still ahead is an "event", even when confirmed.)
@@ -247,19 +263,23 @@ export function cutAtClause(text: string, max: number): string {
   if (flat.length <= max) return flat;
   const room = max - 1;
   let end = 0;
+  // a cut inside a bracket's first level, at a clause of its own, closes it: "Soccer game (arrive 7:30)…" keeps the bracket's first clause
+  let inner = false;
   let depth = 0;
   for (let i = 0; i < flat.length && i <= room; i++) {
     const c = flat[i]!;
     const next = flat[i + 1];
-    // a clause's end at the outer level: punctuation before a space, or a space before a bracket or a dash
-    // never after a short word's full stop ("Dr. Ruiz", "St. Paul")
+    // a clause's end: punctuation before a space, or, at the outer level, a space before a bracket or a dash; never after a
+    // short word's full stop ("Dr. Ruiz", "St. Paul")
     const stop = /[,;:!?]/u.test(c) || (c === "." && (/\p{L}{4,}$|\d$/u.test(flat.slice(0, i))));
     const dash = /[–—-]/u.test(next ?? "") && flat[i + 2] === " ";
-    const ends = depth === 0 && ((stop && next === " ") || (c === " " && (next === "(" || dash)));
-    if (ends && i >= CLAUSE_MIN) end = i;
+    const outer = depth === 0 && ((stop && next === " ") || (c === " " && (next === "(" || dash)));
+    const within = depth === 1 && stop && next === " " && i < room;
+    if ((outer || within) && i >= CLAUSE_MIN) [end, inner] = [i, within];
     if (c === "(") depth++;
     else if (c === ")") depth = Math.max(0, depth - 1);
   }
+  if (inner) return `${flat.slice(0, end).replace(/[\s,;:.!?–—-]+$/u, "")})…`;
   let cut = end ? flat.slice(0, end) : cutAtWord(flat, room);
   // a word's cut inside a bracket ends before it, when there's enough before
   const open = cut.lastIndexOf("(");
@@ -274,6 +294,17 @@ const alertText = (kind: string, text: string) => {
   const bare = text.replace(SAID_AFTER, "").replace(SAID_BEFORE, "");
   return bare ? bare.charAt(0).toLocaleUpperCase() + bare.slice(1) : text;
 };
+// Plan 210 (iteration 3, point 6): the number that identifies an order, an invoice, a policy or a service is never in the
+// sentence, whatever the model wrote ("invoice RS-77120", "factura EP-4471", "order #IH-55018", "policy HO-3-55120847",
+// "servicio 4517 2290 3381"): its label stays when it's part of the sentence ("the Expo Pan invoice"), a bracket of it alone
+// goes. A card's or an account's last digits aren't one ("Visa ending in 4242")
+const LABEL = String.raw`invoice|order|policy|service|reference|confirmation|factura|pedido|orden|p[oó]liza|servicio|folio|referencia`;
+const NUMBERED = String.raw`(?:no\.?|number|n[uú]m\.?)?\s*#?\s?(?=[A-Z0-9-]*\d{3})[A-Z0-9][A-Z0-9-]*(?:\s\d{3,})*(?![\p{L}\p{N}])`;
+const IDENTIFIER = new RegExp(String.raw`\s*\((?:${LABEL})\.?\s*${NUMBERED}\)|\b(${LABEL})\b\s*${NUMBERED}|\s*#[A-Z0-9-]*\d{3}[A-Z0-9-]*`, "giu");
+export function withoutIdentifiers(text: string): string {
+  const out = text.replace(IDENTIFIER, (_m, label?: string) => (label ? label : "")).replace(/\s{2,}/gu, " ").replace(/\s+([,.;:)])/gu, "$1").trim();
+  return out || text;
+}
 const KINDS: ReadonlySet<string> = new Set(DATED_KINDS);
 const isKind = (kind: string): kind is DatedKind => KINDS.has(kind);
 const blankToNull = (value: string | null) => (value?.trim() ? value.trim() : null);
@@ -415,6 +446,16 @@ function paragraphOf(quote: string, text: string): string {
   return (q && text.split(/\n\s*\n/u).find((p) => flat(p).includes(q))) || quote;
 }
 
+/**
+ * Plan 210 (iteration 3): the words `dayBefore` reads for a deadline: its quote's paragraph, or, when that doesn't say its
+ * day at all, the whole mail, where the day came from (Haiku quoted "No pudimos cobrar tu suscripción" for a bill the mail
+ * asks to fix "antes del lunes 16", 5 in 5 in Spanish).
+ */
+function deadlineWords(quote: string, due: string | null, text: string): string {
+  const paragraph = paragraphOf(quote, text);
+  return due && !saysDay(paragraph, due, { slack: 1 }) ? text : paragraph;
+}
+
 /** Shape only: whether a quote is the mail's, and a date one to keep, are the backend's local checks (`checkDates`). */
 export function readDatesTask(input: DatedInput): StructuredTask<Wire, DatedResult> {
   const zonedTime = (time: string | null) => (time ? /^(\d{1,2}:\d{2})\s+(\S+)$/.exec(time) : null);
@@ -436,8 +477,8 @@ export function readDatesTask(input: DatedInput): StructuredTask<Wire, DatedResu
       ok: true,
       value: {
         items: w.items
-          .map((i) => ({ kind: i.kind.trim().toLowerCase(), text: cutAtClause(alertText(i.kind, i.text), TEXT_CHARS), quote: clean(i.quote, QUOTE_CHARS), ...local(blankToNull(i.due), blankToNull(i.time)) }))
-          .map((i) => ({ ...i, due: dayBefore(i.kind, i.due, i.time, paragraphOf(i.quote, input.text)) }))
+          .map((i) => ({ kind: i.kind.trim().toLowerCase(), text: cutAtClause(withoutIdentifiers(alertText(i.kind, i.text)), TEXT_CHARS), quote: clean(i.quote, QUOTE_CHARS), ...local(blankToNull(i.due), blankToNull(i.time)) }))
+          .map((i) => ({ ...i, due: dayBefore(i.kind, i.due, i.time, deadlineWords(i.quote, i.due, input.text)) }))
           .filter((i): i is DatedResult["items"][number] => isKind(i.kind) && !!i.text && !!i.quote)
           .slice(0, DATED_ITEMS_MAX),
         settled: w.settled
@@ -451,7 +492,7 @@ export function readDatesTask(input: DatedInput): StructuredTask<Wire, DatedResu
             const label = m.label.trim();
             const due = m.due.trim();
             const evidence = clean(m.evidence, QUOTE_CHARS);
-            let text = m.text ? cutAtClause(m.text, TEXT_CHARS) : "";
+            let text = m.text ? cutAtClause(withoutIdentifiers(m.text), TEXT_CHARS) : "";
             let textEvidence = m.textEvidence ? clean(m.textEvidence, QUOTE_CHARS) : "";
             const zoned = zonedTime(blankToNull(m.time));
             const was = open.get(label);

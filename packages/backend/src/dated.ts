@@ -73,7 +73,8 @@ const KINDS: ReadonlySet<string> = new Set(DATED_KINDS);
  * form Friday"). A bill, a renewal, an expiry and an alert stay one a day: a model splits one bill in two far more often than
  * a mail has two.
  */
-const itemKey = (kind: string, t: { dueDay: string; dueAt: number; timed: boolean }) => `${kind}:${t.dueDay}:${t.timed ? t.dueAt : ""}`;
+// plan 210 (iteration 3): a renewal and an expiry on one day are one thing (Haiku gave a domain "Renew …" as both, 1 in 5)
+const itemKey = (kind: string, t: { dueDay: string; dueAt: number; timed: boolean }) => `${kind === "renew" ? "expire" : kind}:${t.dueDay}:${t.timed ? t.dueAt : ""}`;
 const TWO_A_DAY: ReadonlySet<string> = new Set(["respond", "event", "delivery"]);
 
 /** A name's words, as a quote's are read: "Lucía Romero" → ["lucia", "romero"]; an initial or a bare letter isn't one. */
@@ -160,13 +161,27 @@ export function onlyTells(quote: string): boolean {
  * nothing, so it's never an ask: a condition about the reader's visit or need, a "let me know", no question and nothing else
  * asked ("when you get a chance, let me know what you think of the draft" is one). The sentence as `norm` reads it, en and es.
  */
-const COURTESY_IF = /\b(?:when(?:ever)? you(?: re| are)? (?:come|coming|visit|visiting|next in|in town|back|around|passing through|pass through|over here|here)|if you(?: re| are)? ever (?:in|around|back|over|passing|here)|next time you(?: re| are)? (?:in|around|here|over|back)|if you (?:ever )?need (?:anything|something|a hand|help)|cuando (?:vengas|vengan|pases|pasen|estes|esten|andes|regreses|vuelvas)|si (?:vienes|pasas|andas|estas por)|la proxima vez que (?:vengas|pases|estes)|si (?:necesitas|ocupas) (?:algo|cualquier cosa|ayuda))\b/u;
-const LET_KNOW = /\b(?:let (?:me|us) know|give (?:me|us) a (?:shout|call|ring|heads up)|drop (?:me|us) a line|avisa(?:me|nos)|me avisas|nos avisas|dime|escribe(?:me|nos)|llama(?:me|nos))\b/u;
+const COURTESY_IF = /\b(?:if (?:something|anything)(?: s| is)? (?:in the way|comes up)|si algo te lo impide|si surge algo|when(?:ever)? you(?: re| are)? (?:come|coming|visit|visiting|next in|in town|back|around|passing through|pass through|over here|here)|if you(?: re| are)? ever (?:in|around|back|over|passing|here)|next time you(?: re| are)? (?:in|around|here|over|back)|if you (?:ever )?need (?:anything|something|a hand|help)|cuando (?:vengas|vengan|pases|pasen|estes|esten|andes|regreses|vuelvas)|si (?:vienes|pasas|andas|estas por)|la proxima vez que (?:vengas|pases|estes)|si (?:necesitas|ocupas) (?:algo|cualquier cosa|ayuda))\b/u;
+const LET_KNOW = /\b(?:let (?:me|us) know|tell me|dimelo|give (?:me|us) a (?:shout|call|ring|heads up)|drop (?:me|us) a line|avisa(?:me|nos)|me avisas|nos avisas|dime|escribe(?:me|nos)|llama(?:me|nos))\b/u;
 const ASKS_MORE = /\b(?:please|could|can|would|will you|send|bring|need you|want you|por favor|puedes|podrias|envia\w*|manda\w*|trae\w*|necesito que)\b/u;
 export function courtesyOnly(sentence: string): boolean {
   if (/[?¿]/u.test(sentence)) return false;
   const read = norm(sentence);
   return COURTESY_IF.test(read) && LET_KNOW.test(read) && !ASKS_MORE.test(read.replace(COURTESY_IF, " ").replace(LET_KNOW, " "));
+}
+
+/**
+ * Plan 210 (iteration 3, point 7): the sender's own offer that waits on the reader's yes ("If it's easier, I can swing by
+ * Saturday morning and take pictures of them. Just let me know.", "paso el sábado y les tomo fotos, nada más avísame") is an
+ * ask with no day: the day is the offer's, not one the reader must meet (Luna made it a request due the Friday, 1 in 5).
+ * Never one that gives a deadline ("I can take them if you send them by Friday").
+ */
+const OFFERS = /\b(?:i can|i could|i d be happy to|i m happy to|happy to|we can|we could|puedo|podria|te puedo|paso|pasamos|con gusto te)\b/u;
+const DEADLINE_CUE = /\b(?:by|before|no later than|until|deadline|due|antes|a mas tardar|hasta el|para el|limite)\b/u;
+function offerOnly(sentences: string): boolean {
+  const read = norm(sentences);
+  // "swing by Saturday" is a visit, not a deadline
+  return OFFERS.test(read) && LET_KNOW.test(read) && !DEADLINE_CUE.test(read.replace(/\b(?:swing|come|stop|drop|pop|pass) by\b/gu, " "));
 }
 
 /**
@@ -329,7 +344,7 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
   // 1): with more than one promise offered, the sentence names this one apart from the others ("the report can wait until
   // Friday" moves the report, never the budget); naming none of them, it moves none
   const offered = [...(input.promises ?? new Map()).values()].map((p) => ({ id: p.id, text: p.text ?? "", quote: "", dueDay: "" }));
-  const promiseMoves = (result.moved ?? []).flatMap((m) => {
+  const promiseMove = (m: Pick<Move, "label" | "due" | "time" | "evidence">) => {
     const p = input.promises?.get(m.label);
     if (!p || !tiedTo(null, m.evidence, { due: m.due, timeOnly: false })) return [];
     if (offered.length > 1) {
@@ -340,7 +355,24 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     }
     const day = validFollowupDate(m.due, input.arrivedAt);
     return day ? [{ p, day, time: m.time ?? null, evidence: m.evidence }] : [];
+  };
+  const modelMoves = (result.moved ?? []).flatMap(promiseMove);
+  /**
+   * Plan 210 (iteration 3, point 7): a request with a day, from the promise's person (the only one it's offered to), for what
+   * was promised (`sameObject`) is that promise's move, whatever the model called it: Haiku read David's chase ("she needs
+   * both papers by Monday") as a request to send the papers, beside the promise it should have moved (2 in 5). Its quote is
+   * the move's evidence, checked as a move's is; the pair rule below then keeps the move alone.
+   */
+  // never one the mail replaces (a request that says what it replaces names it too: "a full draft of Chapter 2 (replaces the
+  // marco teórico)")
+  const movedByModel = new Set(modelMoves.map((m) => m.p.id));
+  const replacing = new Set((result.replaced ?? []).map((x) => x.label));
+  const requestMoves = [...(input.promises ?? new Map()).entries()].flatMap(([label, p]) => {
+    if (!p.text || movedByModel.has(p.id) || replacing.has(label)) return [];
+    const request = result.items.find((i) => (i.kind === "respond" || i.kind === "ask") && !!i.due && sameObject(i.text, p.text!) && !saysReplaced(contextOf(i.quote, paragraphs)));
+    return request ? promiseMove({ label, due: request.due!, time: request.time, evidence: request.quote }) : [];
   });
+  const promiseMoves = [...modelMoves, ...requestMoves];
   /**
    * Plan 210 (prompt v11): a promise's move and a request for that same day, from one mail, can be one thing. The move, when
    * the request names what was promised ("we haven't received the summary: could you get it to me before then?"); the
@@ -358,7 +390,8 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     if (naming.length) for (const i of naming) promised.add(i);
     else if (sameDay.some((i) => saysReplaced(`${contextOf(i.quote, paragraphs)}\n${contextOf(m.evidence, paragraphs)}`))) replaced.add(m);
   }
-  const candidates = [...answered, ...result.items].filter((i) => !refused(i) && !promised.has(i));
+  // plan 210 (iteration 3, point 7): a person's offer that waits on the reader's yes is an ask, never a request with a day
+  const candidates = [...answered, ...result.items].filter((i) => !refused(i) && !promised.has(i)).map((i) => (i.kind === "respond" && input.sender?.person && offerOnly(`${i.quote}\n${contextOf(i.quote, sentences)}`) ? { ...i, kind: "ask", due: null, time: null } : i));
   // the eval: a person's request with a day is the `respond`, never also an undated ask beside it for the same thing; an ask
   // about something else stays (plan 210, the Codex review of iteration 1, revision 3)
   const requests = candidates.filter((i) => (i.kind === "respond" || datedAsk(i)) && quoted(i.quote));
@@ -374,7 +407,9 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     // an ask is never a dated kind's substitute: one with a day is a request with a day, if it's an ask at all
     if (item.kind === "ask" && item.due && !datedAsk(item)) continue;
     const kind = (item.kind === "ask" && item.due ? "respond" : item.kind) as DatedKind;
-    if (kind === "ask" && (requested(item) || noReply || onlyTells(item.quote) || courtesyOnly(contextOf(item.quote, sentences)) || !(askAllowed(item.quote, said, input.text, input) || rebooks(item)))) continue;
+    // plan 210 (iteration 3): an offer is its own question, never hidden by a request about the same papers
+    const around = `${item.quote}\n${contextOf(item.quote, sentences)}`;
+    if (kind === "ask" && ((requested(item) && !offerOnly(around)) || noReply || onlyTells(item.quote) || courtesyOnly(around) || !(askAllowed(item.quote, said, input.text, input) || rebooks(item)))) continue;
     // plan 210 (the Codex code review of iteration 2): a request of the reader, kept below or not (a day already past or
     // over in a scan, a duplicate, past the bound): never "nothing asked"
     if (kind === "ask" || kind === "respond") asked = true;
@@ -405,7 +440,8 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     const named = offered.filter((o) => namesItem(o, paragraph, input.from));
     const mine = offered.find((o) => o.id === p.id)!;
     if (!named.some((o) => o.id === p.id) || !namesApart(mine, named, paragraph, input.from)) return [];
-    const request = rows.find((r) => (r.kind === "respond" || r.kind === "ask") && !sameObject(r.text, p.text!));
+    // what the mail asks (its quote) or the model's words for it: one that names the old deliverable beside the new is still new
+    const request = rows.find((r) => (r.kind === "respond" || r.kind === "ask") && !(sameObject(r.text, p.text!) && sameObject(r.quote, p.text!)));
     return request ? [{ id: p.id, revision: p.revision, item: request.item }] : [];
   });
   const gone = new Set(replacements.map((r) => r.id));
