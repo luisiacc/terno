@@ -137,6 +137,24 @@ describe("findLinks", () => {
     expect(attendsEvent(promise("ir al partido de Sofía y mandar las fotos", { threadId: 20, dueAt: local(9) }), [partido])).toBeNull();
   });
 
+  it("plan 210 (iteration 3, the code review's second round): your reply read as two promises of one thing, one answering a request; neither brings the request back into their item", () => {
+    const sentence = "I'll scan both papers and email them to you Monday";
+    const request = dated("respond", "Scan and email both papers", { threadId: 30, quote: "scan and email both papers", createdAt: 200 });
+    const scan = promise("scan both papers", { threadId: 30, messageId: 500, quote: "I'll scan both papers", createdAt: 100 });
+    const email = promise("email both papers", { threadId: 30, messageId: 500, quote: sentence, createdAt: 100, answers: request.id });
+    // by their words, the request and the reading that doesn't carry the link are one errand
+    expect([samePromise(scan, email), sameErrand(request, scan)]).toEqual([true, true]);
+    // as a start reads them: the twins one item, the request its own
+    expect(findLinks([request], [scan, email], all).same).toEqual([{ item: { source: "promise", id: email.id }, sameAs: `promise:${scan.id}` }]);
+    // the request still in the twin's item (stored before its verdict): the answering reading never joins it
+    expect(findLinks([{ ...request, sameAs: `promise:${scan.id}` }], [scan, email], all).same).toEqual([]);
+    // nor does the request join the answering reading's item
+    expect(findLinks([request], [scan, { ...email, sameAs: `promise:${scan.id}` }], all).same).toEqual([]);
+    // a promise of that reply that's something else is matched as before
+    const budget = promise("send the budget", { threadId: 30, messageId: 500, quote: "I'll send the budget", createdAt: 100 });
+    expect(findLinks([dated("respond", "Send the revised budget", { threadId: 30, createdAt: 200 })], [budget, email], all).same).toHaveLength(1);
+  });
+
   it("a trip's return leg is linked as a detail", () => {
     const out = dated("event", "Flight to Austin", { messageId: 900, dueDay: "2026-11-20" });
     const back = dated("event", "Return flight", { messageId: 900, dueDay: "2026-11-24", dueAt: T + 4 * 86_400_000 });
