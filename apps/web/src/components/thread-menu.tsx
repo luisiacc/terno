@@ -791,36 +791,10 @@ function MenuItems() {
   const folderAccount = scope ? null : folderAccountOf(rows);
   const anyFolder = useApp((s) => folderAccount !== null && s.folders.some((f) => f.accountId === folderAccount && f.selectable && f.path.length > 0));
 
-  return (
+  // the mail's own actions: the menu's on a list's row; under "More" on a What matters item's (plan 210, iteration 4), where
+  // the old "More" is folded in rather than a submenu in a submenu
+  const mail = (nested: boolean) => (
     <>
-      {/* what the menu acts on, above its actions: the sender in the ink, the whole subject under it (two lines at most) */}
-      {count > 1 && (
-        <>
-          <div className="px-2 pt-1 pb-1.5 text-xs font-semibold" data-testid="menu-count">
-            {scope ? t("selection.scope", { count, label: scope.label }) : t("common.conversations", { count })}
-          </div>
-          <ContextMenuSeparator />
-        </>
-      )}
-      {elsewhere && (
-        <>
-          <div className="px-2 pt-1 pb-1.5 text-xs" data-testid="menu-target" title={targetName(elsewhere)}>
-            <p className="truncate font-semibold">{elsewhere.fromName || elsewhere.fromEmail}</p>
-            <p className="line-clamp-2 text-muted-foreground [overflow-wrap:anywhere]">{elsewhere.subject || noSubject()}</p>
-          </div>
-          <ContextMenuSeparator />
-        </>
-      )}
-      {single && <ReviewItems thread={single} />}
-      {single && <TaskItems threadId={single.id} />}
-      {single && (
-        <>
-          <Item icon={<Reply />} label={t("actions.reply")} command="compose.reply" onClick={() => reply("reply")} testId="menu-reply" />
-          {replyAllOffered && <Item icon={<ReplyAll />} label={t("actions.replyAll")} command="compose.replyAll" onClick={() => reply("replyAll")} testId="menu-reply-all" />}
-          <Item icon={<Forward />} label={t("actions.forward")} command="compose.forward" onClick={() => reply("forward")} testId="menu-forward" />
-          <ContextMenuSeparator />
-        </>
-      )}
       {(archivable ? triage : [...wayBack, ...triage]).map((it) => (
         <Item key={it.testId} {...it} />
       ))}
@@ -869,16 +843,82 @@ function MenuItems() {
         </ContextMenuSubContent>
       </ContextMenuSub>
       <ContextMenuSeparator />
-      <ContextMenuSub>
-        <ContextMenuSubTrigger data-testid="menu-more">
-          <Ellipsis />
-          <span className="min-w-0 flex-1 truncate">{t("threadMenu.more")}</span>
-        </ContextMenuSubTrigger>
-        {/* plan 158: everything else, under small labels; a row with several answers opens them beside it */}
-        <ContextMenuSubContent className="w-80" data-testid="menu-more-list">
-          <MoreItems spam={spam} single={single} code={code} view={view} ids={ids} scope={scope !== null} sender={sender} categories={categories} filedIn={filedIn} />
-        </ContextMenuSubContent>
-      </ContextMenuSub>
+      {nested ? (
+        <MoreItems spam={spam} single={single} code={code} view={view} ids={ids} scope={scope !== null} sender={sender} categories={categories} filedIn={filedIn} />
+      ) : (
+        <ContextMenuSub>
+          <ContextMenuSubTrigger data-testid="menu-more">
+            <Ellipsis />
+            <span className="min-w-0 flex-1 truncate">{t("threadMenu.more")}</span>
+          </ContextMenuSubTrigger>
+          {/* plan 158: everything else, under small labels; a row with several answers opens them beside it */}
+          <ContextMenuSubContent className="w-80" data-testid="menu-more-list">
+            <MoreItems spam={spam} single={single} code={code} view={view} ids={ids} scope={scope !== null} sender={sender} categories={categories} filedIn={filedIn} />
+          </ContextMenuSubContent>
+        </ContextMenuSub>
+      )}
+    </>
+  );
+  const replyItem = single && <Item icon={<Reply />} label={t("actions.reply")} command="compose.reply" onClick={() => reply("reply")} testId="menu-reply" />;
+  const replyRest = single && (
+    <>
+      {replyAllOffered && <Item icon={<ReplyAll />} label={t("actions.replyAll")} command="compose.replyAll" onClick={() => reply("replyAll")} testId="menu-reply-all" />}
+      <Item icon={<Forward />} label={t("actions.forward")} command="compose.forward" onClick={() => reply("forward")} testId="menu-forward" />
+    </>
+  );
+
+  return (
+    <>
+      {/* what the menu acts on, above its actions: the sender in the ink, the whole subject under it (two lines at most) */}
+      {count > 1 && (
+        <>
+          <div className="px-2 pt-1 pb-1.5 text-xs font-semibold" data-testid="menu-count">
+            {scope ? t("selection.scope", { count, label: scope.label }) : t("common.conversations", { count })}
+          </div>
+          <ContextMenuSeparator />
+        </>
+      )}
+      {elsewhere && (
+        <>
+          <div className="px-2 pt-1 pb-1.5 text-xs" data-testid="menu-target" title={targetName(elsewhere)}>
+            <p className="truncate font-semibold">{elsewhere.fromName || elsewhere.fromEmail}</p>
+            <p className="line-clamp-2 text-muted-foreground [overflow-wrap:anywhere]">{elsewhere.subject || noSubject()}</p>
+          </div>
+          <ContextMenuSeparator />
+        </>
+      )}
+      {single && <ReviewItems thread={single} />}
+      {single && task ? (
+        // plan 210 (iteration 4, design point 2): a What matters item's menu is short: its own Done, Later and Remove, and
+        // Reply; the mail's actions (Delete with them) under "More"
+        <>
+          <TaskItems threadId={single.id} />
+          {replyItem}
+          <ContextMenuSeparator />
+          <ContextMenuSub>
+            <ContextMenuSubTrigger data-testid="menu-more">
+              <Ellipsis />
+              <span className="min-w-0 flex-1 truncate">{t("threadMenu.more")}</span>
+            </ContextMenuSubTrigger>
+            <ContextMenuSubContent className="w-80" data-testid="menu-more-list">
+              {replyRest}
+              <ContextMenuSeparator />
+              {mail(true)}
+            </ContextMenuSubContent>
+          </ContextMenuSub>
+        </>
+      ) : (
+        <>
+          {single && (
+            <>
+              {replyItem}
+              {replyRest}
+              <ContextMenuSeparator />
+            </>
+          )}
+          {mail(false)}
+        </>
+      )}
     </>
   );
 }
