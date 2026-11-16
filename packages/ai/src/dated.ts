@@ -70,15 +70,16 @@ export interface DatedInput {
 export interface DatedResult {
   /**
    * `before`: the day the mail asked for it before (plan 210, iteration 4), `due` the day before it; `wall`, the mail's own
-   * clock in its zone and the place it named (revision 10). Absent or null: none
+   * clock in its zone and the place it named (revision 10); `at`, the instant a time given in another zone names, read on
+   * that zone's clock (iteration 4's code review: the reader's day and time can name two). Absent or null: none
    */
-  items: { kind: DatedKind; text: string; quote: string; due: string | null; time: string | null; before?: string | null; wall?: DatedWall | null }[];
+  items: { kind: DatedKind; text: string; quote: string; due: string | null; time: string | null; before?: string | null; wall?: DatedWall | null; at?: number }[];
   settled: { label: string; evidence: string }[];
   /**
    * open items this message gives a new day ("Friday at the latest"): never also in `items`. `text`: the item's new words
    * when the message changes them ("arrive by 7:30"), with `textEvidence` the mail's own; both or neither (the fifth panel round)
    */
-  moved: { label: string; due: string; time: string | null; evidence: string; text: string | null; textEvidence: string | null; before?: string | null; wall?: DatedWall | null }[];
+  moved: { label: string; due: string; time: string | null; evidence: string; text: string | null; textEvidence: string | null; before?: string | null; wall?: DatedWall | null; at?: number }[];
   /** plan 210 (iteration 3): promises (p labels) this message replaces with a different request, and the mail's words that say so */
   replaced: { label: string; evidence: string }[];
 }
@@ -462,9 +463,20 @@ export function wallHolds(wall: Pick<DatedWall, "day" | "time" | "zone">, ms: nu
 }
 
 export function inZone(at: { due: string; time: string }, from: string, to: string): { due: string; time: string | null } {
+  const { due, time } = converted(at, from, to);
+  return { due, time };
+}
+
+/**
+ * `inZone` with the instant it read (`at`), when it read one: plan 210 (iteration 4's code review, Codex), the reader's day
+ * and time alone can name two instants in the hour their clock shows twice (Sunday November 1, 2026, 4:30 AM in New York is
+ * 1:30 AM a second time in Los Angeles), so what was checked on the mail's clock is carried, never read back from the reader's.
+ */
+function converted(at: { due: string; time: string }, from: string, to: string): { due: string; time: string | null; at?: number } {
   if (from === to || !/^\d{4}-\d{2}-\d{2}$/.test(at.due) || !/^\d{1,2}:\d{2}$/.test(at.time)) return at;
   const ms = instantIn(at.due, at.time, from);
-  return (ms === null ? null : wallIn(ms, to)) ?? { due: at.due, time: null };
+  const here = ms === null ? null : wallIn(ms, to);
+  return here && ms !== null ? { ...here, at: ms } : { due: at.due, time: null };
 }
 
 /**
@@ -474,12 +486,10 @@ export function inZone(at: { due: string; time: string }, from: string, to: stri
  * 6 AM PT moved to "8 PM PT" that evening (its second pass: not the nearest 8 PM, the day before). A zone the runtime doesn't
  * know keeps the day and loses the time, as `inZone` does.
  */
-export function movedInZone(at: { due: string; time: string }, from: string, to: string, was: { due: string; time: string | null }): { due: string; time: string | null } {
+export function movedInZone(at: { due: string; time: string }, from: string, to: string, was: { due: string; time: string | null }): { due: string; time: string | null; at?: number } {
   const anchor = instantIn(was.due, was.time ?? "12:00", to);
   const day = anchor === null ? null : wallIn(anchor, from)?.due;
-  if (!day) return inZone(at, from, to);
-  const ms = instantIn(day, at.time, from);
-  return (ms === null ? null : wallIn(ms, to)) ?? { due: at.due, time: null };
+  return converted(day ? { due: day, time: at.time } : at, from, to);
 }
 
 // an item's words ending in the mail's own time and zone (prompt v10): `ZONE_NOTE`, core's, which What matters' rows read too
@@ -579,7 +589,11 @@ function deadlineWords(quote: string, due: string | null, text: string): string 
 }
 
 /** An item at the day `beforeOf` read, with the day it's asked before only when there's one. */
-const withBefore = <T extends { due: string | null }>(i: T, b: { due: string | null; before: string | null }): T & { before?: string | null } => ({ ...i, due: b.due, ...(b.before ? { before: b.before } : {}) });
+// an instant read on the mail's clock goes with its day: a day "before" moved is a day without it (iteration 4's code review)
+const withBefore = <T extends { due: string | null; at?: number }>(i: T, b: { due: string | null; before: string | null }): T & { before?: string | null } => {
+  const { at, ...rest } = i;
+  return { ...rest, due: b.due, ...(b.before ? { before: b.before } : {}), ...(at !== undefined && b.due === i.due ? { at } : {}) } as T & { before?: string | null };
+};
 
 /** Shape only: whether a quote is the mail's, and a date one to keep, are the backend's local checks (`checkDates`). */
 export function readDatesTask(input: DatedInput): StructuredTask<Wire, DatedResult> {
@@ -589,19 +603,19 @@ export function readDatesTask(input: DatedInput): StructuredTask<Wire, DatedResu
    * Plan 210 (iteration 4, revision 10): the mail's own clock beside the reader's, read back from the converted instant on
    * the mail's zone (so it's the instant's, whatever was written), with the place it named; none in the reader's own zone
    */
-  const wallFor = (at: { due: string | null; time: string | null }, zoned: RegExpExecArray | null): DatedWall | null => {
-    if (!zoned || !at.due || !at.time || zoned[2] === input.zone) return null;
-    const ms = instantIn(at.due, at.time, input.zone);
-    const there = ms === null ? null : wallIn(ms, zoned[2]!);
+  const wallFor = (instant: number | undefined, zoned: RegExpExecArray | null): DatedWall | null => {
+    if (!zoned || instant === undefined || zoned[2] === input.zone) return null;
+    // the instant read on the mail's clock, never the reader's day and time read again (iteration 4's code review)
+    const there = wallIn(instant, zoned[2]!);
     const place = zoned[3]?.trim().replace(/[.,;)]+$/u, "") || null;
     return there ? { day: there.due, time: there.time, zone: zoned[2]!, place } : null;
   };
   // prompt v10: a time given in another zone ("16:00 America/Los_Angeles"), in the reader's
-  const local = (due: string | null, time: string | null): { due: string | null; time: string | null; wall?: DatedWall | null } => {
+  const local = (due: string | null, time: string | null): { due: string | null; time: string | null; wall?: DatedWall | null; at?: number } => {
     const zoned = zonedTime(time);
     if (!zoned) return { due, time };
-    const at = due ? inZone({ due, time: zoned[1]! }, zoned[2]!, input.zone) : { due, time: zoned[1]! };
-    const wall = wallFor(at, zoned);
+    const at = due ? converted({ due, time: zoned[1]! }, zoned[2]!, input.zone) : { due, time: zoned[1]! };
+    const wall = wallFor("at" in at ? at.at : undefined, zoned);
     return wall ? { ...at, wall } : at;
   };
   const open = new Map(input.open.map((o) => [o.label, o]));
@@ -652,11 +666,11 @@ export function readDatesTask(input: DatedInput): StructuredTask<Wire, DatedResu
             }
             const both = !!text && !!textEvidence;
             // plan 210 (iteration 4, revision 10): the mail's own clock at its new moment
-            const wall = wallFor(at, zoned);
+            const wall = wallFor(at.at, zoned);
             // plan 210 (iteration 4, revision 11): a move "before" a day is asked as an item's is (a promise's too)
             const kind = label.startsWith("p") ? "promise" : (was?.kind ?? "");
             const asked = at.due ? beforeOf(kind, at.due, at.time, deadlineWords(evidence, at.due, input.text)) : { due: at.due, before: null };
-            return { label, due: asked.due ?? "", time: at.time, evidence, text: both ? text : null, textEvidence: both ? textEvidence : null, ...(asked.before ? { before: asked.before } : {}), ...(wall ? { wall } : {}) };
+            return { label, due: asked.due ?? "", time: at.time, evidence, text: both ? text : null, textEvidence: both ? textEvidence : null, ...(asked.before ? { before: asked.before } : {}), ...(wall ? { wall } : {}), ...(at.at !== undefined && asked.due === at.due ? { at: at.at } : {}) };
           })
           .filter((m) => m.label && m.due && m.evidence),
         // only a promise's label: an open item is settled or moved, never replaced
