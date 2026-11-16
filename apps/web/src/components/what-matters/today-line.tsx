@@ -1,5 +1,5 @@
 import { t } from "@terno/i18n";
-import { Button } from "@terno/ui/components/button";
+import { Collapsible, CollapsibleTrigger } from "@terno/ui/components/collapsible";
 import type { TodayCounts } from "@terno/core";
 import { setComingUpOpen, useToday } from "~/state/today";
 
@@ -13,14 +13,19 @@ export function todayCountsLine(c: TodayCounts): string | null {
   return parts.length ? parts.reduce((a, b) => t("today.line.joined", { a, b })) : null;
 }
 
-/** the count's quiet link, as the list header's (its size and line the sentence's) */
-const COUNT_LINK = "no-drag align-baseline text-[length:inherit] leading-[inherit] font-normal text-muted-foreground hover:text-foreground aria-pressed:text-foreground aria-pressed:underline";
+/**
+ * Coming up's disclosure in the sentence's size and line: quiet until hovered or open, its chevron beside its words (the
+ * catalog's Collapsible trigger, as an earlier answer's sources are on Ask's page)
+ */
+const DISCLOSURE = "no-drag w-auto gap-1 text-[length:inherit] leading-[inherit] font-normal text-muted-foreground hover:text-foreground data-panel-open:text-foreground [&>[data-slot=collapsible-chevron]]:ms-0 [&>[data-slot=collapsible-chevron]]:size-3.5";
 
 /**
  * Plan 161: What matters' numbers in words, under its title. Pass 3: one sentence, never a second total to read against
  * the Inbox's. Plan 204: the feed holds all of it (no cap), so the sentence is the count; after it, Coming up's quiet
  * toggle ("4 coming up"), which opens its lines under the rest. Plan 210: the feed's own, since the feed is the only view;
- * iteration 3: its numbers by when and who ("1 missed · 3 today · 5 waiting"), the backend's projection's.
+ * iteration 3: its numbers by when and who ("1 missed · 3 today · 5 waiting"), the backend's projection's; Coming up the
+ * catalog's disclosure (its words the same open or shut, its chevron turning), open until closed (remembered on this
+ * machine), its rows drawn in the feed under their days and weeks.
  */
 export function TodayLine() {
   const counts = useToday((s) => s.counts);
@@ -31,9 +36,11 @@ export function TodayLine() {
     <p data-testid="today-line" className="type-list-subtitle flex min-w-0 flex-wrap items-center gap-x-2 text-muted-foreground tabular">
       {said && <span data-testid="today-needs" className="text-foreground">{said}</span>}
       {comingUp > 0 && (
-        <Button variant="link-secondary" data-testid="today-coming-up" aria-expanded={open} className={COUNT_LINK} onClick={() => setComingUpOpen(!open)}>
-          {open ? t("today.line.hideComingUp") : t("today.line.comingUp", { count: comingUp })}
-        </Button>
+        <Collapsible open={open} onOpenChange={setComingUpOpen} render={<span />}>
+          <CollapsibleTrigger data-testid="today-coming-up" className={DISCLOSURE}>
+            {t("today.line.comingUp", { count: comingUp })}
+          </CollapsibleTrigger>
+        </Collapsible>
       )}
     </p>
   );

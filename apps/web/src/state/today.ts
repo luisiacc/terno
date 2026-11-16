@@ -17,13 +17,17 @@ import { reloadList } from "./list";
  * open: the owner, by day, not by kind), and the history below them. Iteration 3: Today's "Waiting on you" (`waiting`), a
  * quiet sub-heading inside Today.
  */
-export type FeedGroupKind = "missed" | "today" | "waiting" | `day:${string}` | "history";
+export type FeedGroupKind = "missed" | "today" | "waiting" | `day:${string}` | `week:${string}` | "history";
 
-/** A feed heading's day ("YYYY-MM-DD"), or null for Missed, Today and the history. */
+/** A feed heading's day ("YYYY-MM-DD"), or null for Missed, Today, a week and the history. */
 export const groupDay = (kind: FeedGroupKind): string | null => (kind.startsWith("day:") ? kind.slice(4) : null);
 
+/** Plan 210 (iteration 3, revision 9): a week's heading's Monday ("YYYY-MM-DD"), past the first two weeks' days; else null. */
+export const groupWeek = (kind: FeedGroupKind): string | null => (kind.startsWith("week:") ? kind.slice(5) : null);
+
 /** The headings' order: Missed, Today, its Waiting on you, the days in theirs, the history (as text: a day's key sorts as its day). */
-const rankOf = (kind: FeedGroupKind): string => (kind === "missed" ? "0" : kind === "today" ? "1" : kind === "waiting" ? "1w" : kind === "history" ? "3" : `2${kind.slice(4)}`);
+// (a week's buckets come after every day's: the days end on a Sunday, its Monday is past them)
+const rankOf = (kind: FeedGroupKind): string => (kind === "missed" ? "0" : kind === "today" ? "1" : kind === "waiting" ? "1w" : kind === "history" ? "3" : `2${groupDay(kind) ?? groupWeek(kind)}`);
 
 /**
  * Plan 210 (iteration 2, the owner: "a row per item"): one of the feed's rows, by its own identity (`FeedRowId`: an item's,
@@ -341,28 +345,31 @@ function digestThread(): ThreadSummary {
 
 /**
  * Plan 210: the sections as the feed's groups, in order: Missed, Today, then a group per day ahead; while it's open, Coming
- * up's rows join their day's (one whose day is already here, Today's), in the day's one order (`inDayOrder`).
+ * up's rows join their day's (one whose day is already here, Today's), in the day's one order (`inDayOrder`). Iteration 3
+ * (revision 9): a heading ahead is the section's bucket, the backend's (`displayBucket`): its day for the first two weeks,
+ * then its week, whose rows go by their own days.
  */
-function feedGroups(list: TodayList, open: boolean): { kind: FeedGroupKind; items: { item: TodayItem; section: TodayGroupKind }[] }[] {
+function feedGroups(list: TodayList, open: boolean): { kind: FeedGroupKind; items: { item: TodayItem; section: TodayGroupKind; day: string }[] }[] {
   const today = dayKeyOf(list.now || Date.now());
-  const groups = new Map<FeedGroupKind, { item: TodayItem; section: TodayGroupKind }[]>();
+  const groups = new Map<FeedGroupKind, { item: TodayItem; section: TodayGroupKind; day: string }[]>();
   for (const section of list.sections) {
     if (section.kind === "comingUp" && !open) continue;
     const day = section.day ?? null;
+    const bucket = section.bucket ?? day;
     // (Today's "Waiting on you" is its own heading, under Today's: plan 210, iteration 3)
-    const kind: FeedGroupKind = section.kind === "missed" ? "missed" : section.part === "waiting" ? "waiting" : day === null || day <= today ? "today" : `day:${day}`;
+    const kind: FeedGroupKind = section.kind === "missed" ? "missed" : section.part === "waiting" ? "waiting" : day === null || day <= today ? "today" : bucket!.startsWith("week:") ? (bucket as `week:${string}`) : `day:${day}`;
     const rows = groups.get(kind) ?? [];
-    for (const item of section.items) rows.push({ item, section: section.kind });
+    for (const item of section.items) rows.push({ item, section: section.kind, day: day ?? "" });
     groups.set(kind, rows);
   }
   return [...groups.entries()]
     .sort(([a], [b]) => (rankOf(a) < rankOf(b) ? -1 : rankOf(a) > rankOf(b) ? 1 : 0))
     .map(([kind, items]) => {
-      // a day with Coming up's rows in it: the backend's one order inside a day (plan 210, iteration 1: tasks, your
-      // promises, people, then plans by their time), ties as they came
+      // a day (or a week) with Coming up's rows in it: by their days, then the backend's one order inside a day (plan 210,
+      // iteration 1: tasks, your promises, people, then plans by their time), ties as they came
       if (kind !== "missed" && items.some((r) => r.section === "comingUp") && items.some((r) => r.section !== "comingUp")) {
         const order = new Map(items.map((r, i) => [r, i]));
-        items.sort((a, b) => inDayOrder(a.item.why, b.item.why, kind !== "today") || order.get(a)! - order.get(b)!);
+        items.sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0) || inDayOrder(a.item.why, b.item.why, kind !== "today") || order.get(a)! - order.get(b)!);
       }
       return { kind, items };
     });

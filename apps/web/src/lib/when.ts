@@ -99,6 +99,14 @@ export function boundaryDay(ms: number): string {
 }
 
 /**
+ * Plan 210 (iteration 3, revision 9): a week's heading in What matters past its first two weeks, by its Monday: "Week of
+ * Dec 7", the year when it isn't this one's ("Week of Jan 4, 2027"; es "Semana del 7 dic").
+ */
+export function weekHeading(monday: number, now = Date.now()): string {
+  return t("whatMatters.weekOf", { day: dayOf(monday, now) });
+}
+
+/**
  * Plan 210: a day's heading in What matters, in the when column's day words, as a heading: "Tomorrow"; the weekday this
  * week ("Wednesday", "Miércoles"); further, the day with its date ("Mon, Nov 30", "Lun, 30 nov").
  */

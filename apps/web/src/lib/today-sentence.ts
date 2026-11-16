@@ -65,7 +65,7 @@ export function todayWhen(item: Pick<TodayItem, "thread" | "why">, now = Date.no
   const plan = item.why.kind === "dated" && item.why.item !== undefined && datedGroup(item.why.item.kind) === "plans";
   // (a promise broken and given a new day keeps the late mark wherever it sits: plan 210, iteration 2)
   // (Today's "Waiting on you" is quiet: who's waiting, and by when, not what's due today: plan 210, iteration 3)
-  const tone: TodayTone = when.tone === "missed" ? "missed" : ahead || group?.startsWith("day:") || (plan && group !== "missed") ? "later" : group === "missed" ? "missed" : group === "waiting" ? "none" : group === "today" ? (when.tone === "none" ? "none" : "today") : when.tone;
+  const tone: TodayTone = when.tone === "missed" ? "missed" : ahead || group?.startsWith("day:") || group?.startsWith("week:") || (plan && group !== "missed") ? "later" : group === "missed" ? "missed" : group === "waiting" ? "none" : group === "today" ? (when.tone === "none" ? "none" : "today") : when.tone;
   return { text: when.text, tone };
 }
 

@@ -1,6 +1,6 @@
 /** Plan 210 (iteration 2): a row per item, one projection for the feed, the counts and the notice. */
 import { describe, expect, it } from "vitest";
-import { canLapse, datedGroupAt, datedTiming, lapsesUnlessRenewed, needsPresence, nextTodayChange, type DatedKind, type DatedRow } from "./dated";
+import { canLapse, datedGroupAt, datedTiming, displayBucket, lapsesUnlessRenewed, needsPresence, nextTodayChange, type DatedKind, type DatedRow } from "./dated";
 import type { FollowupRow } from "./followups";
 import { placedThreads, placeItems, projectToday, type ProjectionFacts } from "./today-projection";
 import { splitZoneNote, statedClock } from "./today-items";
@@ -201,6 +201,34 @@ describe("the header's numbers (plan 210, iteration 3, revision 8)", () => {
     expect(counts).toEqual({ missed: 1, today: 2, waiting: 3 });
     // the count's projection agrees with the list's
     expect(projectToday(facts({ dated: rows, waiting }), { count: true }).counts).toEqual(counts);
+  });
+});
+
+describe("Coming up's buckets (plan 210, iteration 3, revision 9)", () => {
+  it("a day for the first two weeks (through the Sunday that ends them), then its week, with the year's own Monday", () => {
+    // Sunday Nov 15: the 29th is a Sunday, its own day; the 30th starts a week
+    expect(displayBucket("2026-11-29", "2026-11-15")).toBe("2026-11-29");
+    expect(displayBucket("2026-11-30", "2026-11-15")).toBe("week:2026-11-30");
+    expect(displayBucket("2026-12-09", "2026-11-15")).toBe("week:2026-12-07");
+    // a Wednesday: the fourteenth day is a Wednesday, its week stays days to its Sunday (no week split)
+    expect(displayBucket("2026-12-06", "2026-11-18")).toBe("2026-12-06");
+    expect(displayBucket("2026-12-07", "2026-11-18")).toBe("week:2026-12-07");
+    // across the year
+    expect(displayBucket("2027-01-03", "2026-12-20")).toBe("2027-01-03");
+    expect(displayBucket("2027-01-06", "2026-12-20")).toBe("week:2027-01-04");
+  });
+
+  it("each row ahead carries its bucket apart from its own day, in order; the count makes none", () => {
+    const near = dated("pay", "2026-11-28", { threadId: 1 });
+    const far = dated("pay", "2026-12-17", { threadId: 2 });
+    const farther = dated("renew", "2027-01-20", { threadId: 3 });
+    const { rows } = projectToday(facts({ dated: [farther, far, near] }));
+    expect(rows.map((r) => [r.group, r.day, r.bucket])).toEqual([
+      ["comingUp", "2026-11-28", "2026-11-28"],
+      ["comingUp", "2026-12-17", "week:2026-12-14"],
+      ["comingUp", "2027-01-20", "week:2027-01-18"],
+    ]);
+    expect(rows.map((r) => r.id)).toEqual([`dated:${near.id}`, `dated:${far.id}`, `dated:${farther.id}`]);
   });
 });
 

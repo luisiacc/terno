@@ -1263,6 +1263,26 @@ describe("Today's groups (§1)", () => {
   });
 });
 
+describe("plan 210 (iteration 3): the seven days whole, Coming up without a horizon, by week past two", () => {
+  it("a bill a week out shows under its day; ones 30 and 60 days out are Coming up's, each under its week's bucket; nothing is lost", async () => {
+    const { client, model, receive, read } = await setup();
+    const due = (d: string) => ({ kind: "pay", text: `Pay the bill due ${d}`, quote: `due on ${d}`, due: d, time: null });
+    model.answer = (req) => {
+      const p = promptText(req.messages[0]!.content);
+      return reply([due(p.includes("Week") ? "2026-11-17" : p.includes("Month") ? "2026-12-10" : "2027-01-09")]);
+    };
+    for (const [subject, d] of [["Week", "2026-11-17"], ["Month", "2026-12-10"], ["Two", "2027-01-09"]] as const) await receive({ subject, bodyText: `Your bill is due on ${d}.` });
+    await read();
+    const list = await client.call("today.list", { held: [] });
+    // Tue Nov 10: the 17th is the seventh day; the days run through Sunday Nov 29, then weeks by their Monday
+    expect(list.sections.map((x) => [x.kind, x.day, x.bucket])).toEqual([
+      ["day", "2026-11-17", "2026-11-17"],
+      ["comingUp", "2026-12-10", "week:2026-12-07"],
+      ["comingUp", "2027-01-09", "week:2027-01-04"],
+    ]);
+  });
+});
+
 describe("the third panel round", () => {
   const followup = (thread: number, text: string, dueAt: number, o: { kind?: string; state?: string; dated?: number; message?: number; revision?: number } = {}) =>
     [`INSERT INTO followups (thread_id, message_id, item, kind, text, person_name, person_email, sent_at, due_at, dated, state, revision, created_at) VALUES (?, ?, 0, ?, ?, 'Elena', 'elena@acme.test', ?, ?, ?, ?, ?, ?)`, thread, o.message ?? 900_000 + thread, o.kind ?? "promise", text, NOW - 3 * DAY, dueAt, o.dated ?? 1, o.state ?? "open", o.revision ?? 0, NOW] as const;

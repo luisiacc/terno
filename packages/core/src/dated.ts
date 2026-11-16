@@ -478,6 +478,27 @@ export const todayCounted = (group: TodayGroupKind, why: { kind: string; item?: 
 const TODAY: TaskPlace = { group: "today", day: null };
 const MISSED: TaskPlace = { group: "missed", day: null };
 
+/** Plan 210 (iteration 3, revision 9): a day ahead is its own heading for the first two weeks, then its week's. */
+export const DAY_HEADINGS_DAYS = 14;
+
+/**
+ * Plan 210 (iteration 3, revision 9): where a row ahead is drawn, apart from its own day: the day itself ("YYYY-MM-DD") through
+ * the Sunday that ends the week of today's fourteenth day after (so no week is split), then its week, Monday to Sunday,
+ * local ("week:YYYY-MM-DD", its Monday). Data, not drawing: the projection gives it, the feed draws its buckets in order.
+ */
+export function displayBucket(day: string, today: string): string {
+  const d = localDay(day);
+  const from = localDay(today);
+  if (!d || !from) return day;
+  const sinceMonday = (x: Date) => (x.getDay() + 6) % 7;
+  const last = new Date(from);
+  last.setDate(last.getDate() + DAY_HEADINGS_DAYS);
+  last.setDate(last.getDate() + 6 - sinceMonday(last));
+  if (d.getTime() <= last.getTime()) return day;
+  d.setDate(d.getDate() - sinceMonday(d));
+  return `week:${dayKeyOf(d.getTime())}`;
+}
+
 /**
  * Coming up's day for what isn't shown yet: the day it shows again, the later of its own day and its Later's (put off past
  * its day, Codex code review: the 22nd's for a bill due the 18th put off to the 22nd); with no day of its own (an ask, an
