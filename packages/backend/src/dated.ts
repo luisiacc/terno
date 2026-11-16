@@ -10,6 +10,7 @@ import { secondLook } from "./dated-second-look";
 import { UI_LOCALE_KEY } from "./forwarding";
 import { handledItself } from "./dated-automatic";
 import { bareDayAhead, contextOf, insideQuotes, quoteSpan, type Sentences, namesApart, namesItem, negatedReceipt, norm, otherAmounts, otherIds, paragraphsOf, plainEvidence, replacesPlainly, sameObject, sameThing, saysReplaced, saysWhen, scamPressure, sentencesOf, settlesKind } from "./dated-evidence";
+import { mayRelay, relayedAsk, relays, type Relay } from "./dated-relay";
 import { untrustedSenders, withoutUntrusted } from "./suspicious-sender";
 
 /**
@@ -125,13 +126,16 @@ function toAnother(quote: string, text: string, reader: string, others: readonly
 
 /**
  * The third panel round (revision 1): who an ask may be from and to, read here and not only from the model: a person
- * (`senderIsPerson`, never a list, bulk or no-reply address), and the reader addressed in To or named where the mail asks.
+ * (`senderIsPerson`, never a list, bulk or no-reply address, but for a person's ask it relays), and the reader addressed in
+ * To or named where the mail asks.
  * The seventh panel round: never one the mail addresses by name to another of its recipients ("Oren, could you send me the
  * contract?" to Oren and the reader), unless it names the reader there too. `said` is the mail as `norm` reads it, `text` as
  * it was written; `others` the other recipients' names, never an address.
  */
-function askAllowed(quote: string, said: string, text: string, o: { sender?: { person: boolean }; reader?: { name: string; addressed: "to" | "cc" | "none" }; others?: readonly string[] }): boolean {
-  if (!o.sender?.person || !o.reader || toAnother(quote, text, o.reader.name, o.others)) return false;
+function askAllowed(quote: string, said: string, text: string, o: { sender?: { person: boolean }; reader?: { name: string; addressed: "to" | "cc" | "none" }; others?: readonly string[]; relay?: Relay | null }): boolean {
+  // plan 210 (iteration 5, revision 8): or a person's ask a service relays (`relayedAsk`), quoted from the relay's own words;
+  // the service is still no person
+  if (!(o.sender?.person || relays(o.relay, quote)) || !o.reader || toAnother(quote, text, o.reader.name, o.others)) return false;
   if (o.reader.addressed === "to") return true;
   const q = norm(quote);
   const at = said.indexOf(q);
@@ -221,6 +225,16 @@ function selfOffer(sentences: string, paragraph: string): boolean {
 }
 
 /**
+ * Plan 210 (iteration 5): a reminder of what the reader said they'd do ("Margaret, you said you'd do the discussion questions
+ * this time, thank you!") asks nothing new: their promise is follow-ups' (Haiku made it an ask, 1 in 5, once v16 let two
+ * asks stand). Never one whose sentence also asks ("you said you'd send it: could you do it by Friday?").
+ */
+const YOUR_WORD = /\b(?:you said you d|you said you would|you said you ll|you offered to|you promised|you volunteered|you mentioned you d|dijiste que|quedaste en|te ofreciste a|prometiste|te comprometiste a)\b/u;
+function yourOwnWord(sentence: string): boolean {
+  return YOUR_WORD.test(norm(sentence)) && !asksDirectly(sentence);
+}
+
+/**
  * Plan 210 (iteration 3, point 7): mail the reader is only copied on to know about it ("Diego, te copio para que estés al
  * tanto", "cc'ing you for visibility", "FYI") asks them nothing, whatever it says they'll do ("Diego las monta en las
  * etiquetas esa misma semana"): a request from it is the reader's only when its sentence speaks to them by name and isn't
@@ -263,6 +277,33 @@ const confirmsByReply = (words: string): boolean => CONFIRM_BY_REPLY.test(norm(w
 
 /** Plan 210 (iteration 4): a request's words that are a reply to someone ("Reply to Karin…", "Answer Karin about…", "Responder a Karin…"). */
 const REPLY_TO = /^(?:reply|respond|answer|write back|get back)\b|^(?:responder|responderle|contestar|contestarle|escribir|escribirle)\b/u;
+/** a list's line: "1. An ETA", "- the deck", "• the form" */
+const LIST_LINE = /^\s*(?:[-–•*·]|\d{1,2}[.)])\s+/u;
+
+/**
+ * Plan 210 (iteration 5, revision 8): one thing asked is part of another's request only when its quote is in that request's
+ * own sentence or in the list the request introduces (Karin's "I need a reply from you today with: 1. An ETA…"); two
+ * questions from one sender otherwise stay two (María's Elena: the head count by Sunday, and "can you bring the tamales?").
+ */
+function partOfRequest(request: string, quote: string, sentences: Sentences, paragraphs: Sentences): boolean {
+  const q = norm(quote);
+  const r = norm(request);
+  if (!q || !r) return false;
+  if (norm(contextOf(request, sentences)).includes(q)) return true;
+  const lines = paragraphs.find((p) => p.read.includes(r))?.said.split("\n") ?? [];
+  const at = lines.findIndex((l) => norm(l).includes(r) || r.includes(norm(l)));
+  if (at < 0) return false;
+  const introduces = /:\s*$/u.test(lines[at]!);
+  return lines.slice(at + 1).some((l) => (introduces || LIST_LINE.test(l)) && !!norm(l) && (norm(l).includes(q) || q.includes(norm(l))));
+}
+
+/**
+ * Plan 210 (iteration 5, R10): an ask turned into a request by a mail that names another thing keeps whom it answers, never
+ * the old question ("Answer Elena about working Thanksgiving" moved by "Let me know by Sunday if it's you, Chris and both
+ * kids" is "Answer Elena", by Sunday).
+ */
+const ABOUT = /^(.*?)\s+(?:about|on|regarding|whether|if|sobre|acerca de|si)\s+/iu;
+const whomOnly = (text: string): string => (REPLY_TO.test(norm(text)) ? (ABOUT.exec(text)?.[1] ?? text) : text);
 
 /**
  * The seventh panel round (revision 7): an ask, or the request it turns into with a day, never asks the reader to send a
@@ -371,7 +412,7 @@ function movedPromise(p: { dueAt?: number; dated?: boolean; timed?: boolean; par
  * day or, for a timed item, a new moment, and its new words only with the mail's own. Plan 210 (the Codex review of iteration
  * 1, revision 2): a settlement or a move rests on evidence tied to that item (`tiedTo`). Pure.
  */
-export function checkDates(result: { items: readonly (Omit<DatedResult["items"][number], "kind"> & { kind: string })[]; settled: DatedResult["settled"]; moved?: readonly Move[]; replaced?: DatedResult["replaced"] }, input: { text: string; subject: string; arrivedAt: number; open: ReadonlyMap<string, DatedRow>; promises?: ReadonlyMap<string, Pick<FollowupRow, "id" | "revision"> & Partial<Pick<FollowupRow, "text" | "dueAt" | "dated" | "timed" | "partOfDay">>>; fromScan: boolean; now: number; sender?: { person: boolean }; reader?: { name: string; addressed: "to" | "cc" | "none" }; others?: readonly string[]; threadId?: number; senderKey?: string; from?: string; paysInThread?: number }): { rows: DatedWrite[]; settled: { id: number; revision: number }[]; moved: { id: number; dueDay: string; dueAt: number; timed: boolean; actAt: number; text?: string; before?: string | null; wall?: DatedWall | null; partOfDay?: PartOfDay }[]; movedPromises: { id: number; revision: number; dueAt: number; timed: boolean; brokenDueAt: number | null; before?: string | null; partOfDay?: PartOfDay }[]; replaced: { id: number; revision: number; item: number }[]; asked: boolean } {
+export function checkDates(result: { items: readonly (Omit<DatedResult["items"][number], "kind"> & { kind: string })[]; settled: DatedResult["settled"]; moved?: readonly Move[]; replaced?: DatedResult["replaced"] }, input: { text: string; subject: string; arrivedAt: number; open: ReadonlyMap<string, DatedRow>; promises?: ReadonlyMap<string, Pick<FollowupRow, "id" | "revision"> & Partial<Pick<FollowupRow, "text" | "dueAt" | "dated" | "timed" | "partOfDay">>>; fromScan: boolean; now: number; sender?: { person: boolean }; reader?: { name: string; addressed: "to" | "cc" | "none" }; others?: readonly string[]; threadId?: number; senderKey?: string; from?: string; paysInThread?: number; relay?: Relay | null }): { rows: DatedWrite[]; settled: { id: number; revision: number }[]; moved: { id: number; dueDay: string; dueAt: number; timed: boolean; actAt: number; text?: string; before?: string | null; wall?: DatedWall | null; partOfDay?: PartOfDay }[]; movedPromises: { id: number; revision: number; dueAt: number; timed: boolean; brokenDueAt: number | null; before?: string | null; partOfDay?: PartOfDay }[]; replaced: { id: number; revision: number; item: number }[]; asked: boolean } {
   const said = `${norm(input.subject)}\n${norm(input.text)}`;
   const quoted = (words: string) => {
     const w = norm(words);
@@ -431,7 +472,8 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
   for (const m of result.moved ?? []) {
     const row = input.open.get(m.label);
     if (!row || row.kind !== "ask" || settledIds.has(row.id) || !tiedTo(row, m.evidence, { due: m.due, timeOnly: false })) continue;
-    const request = { kind: "respond" as const, text: newWords(m) ?? row.text, quote: m.evidence, due: m.due, time: m.time };
+    // plan 210 (iteration 5): with no new words, the old question's only when the mail's sentence names it
+    const request = { kind: "respond" as const, text: newWords(m) ?? (namesItem(row, contextOf(m.evidence, sentences), input.from) ? row.text : whomOnly(row.text)), quote: m.evidence, due: m.due, time: m.time };
     // revision 7: a request for credentials or an ID neither becomes one nor answers the ask, which stays as it was; nor
     // does one the mail addresses to another of its recipients (the seventh panel round)
     if (refused(request)) continue;
@@ -535,10 +577,13 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
   // about something else stays (plan 210, the Codex review of iteration 1, revision 3)
   const requests = candidates.filter((i) => (i.kind === "respond" || datedAsk(i)) && quoted(i.quote));
   // plan 210 (iteration 4): a reply to the sender asked by a day is the one reply: an undated "answer them about…" beside it
-  // is that reply again (Haiku gave Karin's outage both, its ask quoting "I have to brief our COO at 3pm Central")
+  // whose own sentence asks nothing is that reply again (Haiku gave Karin's outage both, its ask quoting "I have to brief our
+  // COO at 3pm Central"). Iteration 5 (revision 8): never one that asks something of its own ("can you bring the tamales?",
+  // dropped beside Elena's head count in round 13), unless its quote is in the request's own sentence or list
   const sender = nameWords(input.from ?? "");
   const replyTo = (text: string) => REPLY_TO.test(norm(text)) && sender.some((w) => ` ${norm(text)} `.includes(` ${w} `));
-  const requested = (ask: { text: string; quote: string }) => requests.some((r) => sameThing(r, ask) || (replyTo(r.text) && replyTo(ask.text)));
+  const partOf = (r: { quote: string }, x: { quote: string }) => partOfRequest(r.quote, x.quote, sentences, paragraphs);
+  const requested = (ask: { text: string; quote: string }) => requests.some((r) => sameThing(r, ask) || partOf(r, ask) || (replyTo(r.text) && replyTo(ask.text) && !asksDirectly(contextOf(ask.quote, sentences))));
   // the fourth panel read: a person who says no answer is needed ("No need to reply now") asks nothing
   const noReply = saysNoReplyNeeded(input.text);
   // plan 210 (iteration 3, point 7): an automated sender's mail that cancels the reader's appointment may ask them to book again
@@ -563,7 +608,7 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     const kind = (item.kind === "ask" && item.due ? "respond" : item.kind) as DatedKind;
     // plan 210 (iteration 3): an offer is its own question, never hidden by a request about the same papers
     const around = `${item.quote}\n${contextOf(item.quote, sentences)}`;
-    if (kind === "ask" && ((requested(item) && !offerOnly(around, contextOf(item.quote, paragraphs))) || noReply || onlyTells(item.quote) || onlyTells(contextOf(item.quote, sentences)) || courtesyOnly(around) || selfOffer(around, contextOf(item.quote, paragraphs)) || !(askAllowed(item.quote, said, input.text, input) || rebooks(item)))) continue;
+    if (kind === "ask" && ((requested(item) && !offerOnly(around, contextOf(item.quote, paragraphs))) || noReply || onlyTells(item.quote) || onlyTells(contextOf(item.quote, sentences)) || courtesyOnly(around) || selfOffer(around, contextOf(item.quote, paragraphs)) || yourOwnWord(contextOf(item.quote, sentences)) || !(askAllowed(item.quote, said, input.text, input) || rebooks(item)))) continue;
     // plan 210 (iteration 4's code review): what a scam says happened or demands is no item, an alert, a request or an
     // expiry (prompt v15, and this backstop); never "something asked" either
     if (PRESSED.has(kind) && scamPressure(`${input.subject}\n${tiedWords(item.quote).slice(0, FACT_WORDS_MAX)}\n${item.quote}`)) continue;
@@ -582,8 +627,9 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     if (rows.length >= DATED_ITEMS_MAX) continue;
     const key = itemKey(kind, timing);
     if (movedKeys.has(key)) continue;
-    // plan 210 (iteration 4): two replies to the sender on one day are the one reply (Haiku split Karin's numbered list, 1 in 5)
-    if (rows.some((r) => itemKey(r.kind, r) === key && (!TWO_A_DAY.has(kind) || sameThing(r, item) || (kind === "respond" && replyTo(r.text) && replyTo(item.text))))) continue;
+    // plan 210 (iteration 4): two replies to the sender on one day are the one reply (Haiku split Karin's numbered list, 1 in 5);
+    // iteration 5 (revision 8): when one's quote is in the other's own sentence or list
+    if (rows.some((r) => itemKey(r.kind, r) === key && (!TWO_A_DAY.has(kind) || sameThing(r, item) || (kind === "respond" && replyTo(r.text) && replyTo(item.text) && (partOf(r, item) || partOf(item, r)))))) continue;
     // plan 210 (iteration 3, revision 11): facts from the mail's words, never the item's; iteration 4, the paragraphs tied to it
     const words = `${tiedWords(item.quote).slice(0, FACT_WORDS_MAX)}\n${item.quote}`;
     // plan 210 (iteration 5, revision 1): a plan that renews by itself and a bill paid by itself or already, in its own words,
@@ -836,11 +882,16 @@ export class DatedWorker {
     if (mark.source === "live" && settings.dated.enabledAt !== null && src.date < settings.dated.enabledAt) return drop();
     // revision 5: what could settle an open item is read before any cost filter
     const open = await store.dated.openFor({ threadId: src.threadId, senderKey: src.senderKey, before: src.date, limit: DATED_OPEN_SHOWN });
-    if (!open.length && (src.tab === "social" || src.tab === "promotions")) return drop();
+    // plan 210 (iteration 5, revision 8): Social and Promotions only for a person's ask a service relays (its body tells)
+    const filtered = !open.length && (src.tab === "social" || src.tab === "promotions");
+    if (filtered && !mayRelay(src.subject) && src.bodyState !== "full") return drop();
     if (src.bodyState !== "full" && !src.bodyUnavailable) return { hold: src.senderKey };
     const { text, whole } = await this.text(src);
-    // a cost filter, not a judgment (§3): a person's mail is read whatever its words
-    if (!open.length && src.automated && !hasTimeCue(text, src.subject)) return drop();
+    const readerName = accounts.find((a) => a.id === src.accountId)?.displayName ?? "";
+    const relay = src.person ? null : relayedAsk(src.subject, text, src.fromName || src.fromEmail.split("@")[0]!, readerName);
+    if (filtered && !relay) return drop();
+    // a cost filter, not a judgment (§3): a person's mail is read whatever its words, and so is a person's relayed ask
+    if (!open.length && src.automated && !relay && !hasTimeCue(text, src.subject)) return drop();
     if (!text.trim() && !src.subject.trim()) return drop();
     const asked = this.host.begin(`dated:${mark.messageId}`, "dated-worker");
     const stop = new AbortController();
@@ -856,7 +907,7 @@ export class DatedWorker {
       const budget = datedBudget(ai.contextTokens);
       // names only: who the reader is and how it reached them, so a task for someone else stays theirs (the eval)
       const nameOf = (p: { name: string; email: string }) => p.name || p.email.split("@")[0]!;
-      const reader = { name: (await store.accounts.get(src.accountId))?.displayName ?? "", addressed: src.readerIn };
+      const reader = { name: readerName, addressed: src.readerIn };
       // the seventh panel round: the mail's other recipients, by name, for an ask addressed to one of them ("Oren, could you…")
       const own = new Set(accounts.map((a) => addressKey(a.email)));
       const others = [...src.to, ...src.cc].filter((p) => !own.has(addressKey(p.email))).map(nameOf);
@@ -894,7 +945,7 @@ export class DatedWorker {
       // plan 210 (iteration 3, revision 5): a receipt's one bill is counted in the store, never among the labels sent; read
       // only when the model settled something
       const paysInThread = result.settled.length ? (await store.dated.ofThread(src.threadId)).filter((r) => r.kind === "pay").length : 0;
-      const checked = checkDates(result, { text, subject: src.subject, arrivedAt: src.date, open: new Map([...labels].filter(([l]) => sent.has(l))), promises: new Map([...promises].filter(([l]) => sent.has(l))), fromScan, now, sender: { person: src.person }, reader, others, threadId: src.threadId, senderKey: src.senderKey, from: input.from.name, paysInThread });
+      const checked = checkDates(result, { text, subject: src.subject, arrivedAt: src.date, open: new Map([...labels].filter(([l]) => sent.has(l))), promises: new Map([...promises].filter(([l]) => sent.has(l))), fromScan, now, sender: { person: src.person }, reader, others, threadId: src.threadId, senderKey: src.senderKey, from: input.from.name, paysInThread, relay });
       // plan 210 (iteration 2, the Codex code review): "nothing asked" only of a message the model saw all of (never one cut
       // to the window or the reader's limit, nor a subject past what's sent), and in which the checks found no request at all;
       // iteration 5 (revision 3): nor while a second look it needed is incomplete (claimed before, or failed)
@@ -1013,14 +1064,22 @@ export class DatedWorker {
     const walked = await store.dated.scanCandidates(now - DATED_SCAN_DAYS * 86_400_000, SCAN_WALK);
     // plan 210 (iteration 4): a muted sender's mail is neither counted nor read, nor what came before their Unmute
     const silence = await silenceOf(store);
+    const readers = new Map((await store.accounts.list()).map((a) => [a.id, a.displayName ?? ""]));
     // newest first: whether each is worth reading by itself, and who and where it's from
     const seen: { s: DatedSource; worth: boolean }[] = [];
     await this.host.runBudgeted(walked, async (chunk) => {
-      const sources = (await Promise.all(chunk.map((id) => store.dated.source(id)))).filter((s): s is DatedSource => !!s && !s.spam && !s.trash && !s.threadSpam && !s.draft && !s.sent && !s.own && s.tab !== "social" && s.tab !== "promotions" && !silenced(s, silence));
+      const sources = (await Promise.all(chunk.map((id) => store.dated.source(id)))).filter((s): s is DatedSource => !!s && !s.spam && !s.trash && !s.threadSpam && !s.draft && !s.sent && !s.own && !silenced(s, silence));
+      // plan 210 (iteration 5, revision 8): Social and Promotions only for a person's ask a service relays, read in its body
+      const social = (s: DatedSource) => s.tab === "social" || s.tab === "promotions";
       // round 2: a body not here yet can't be judged; it's read, and the worker waits for it (the filter errs towards reading)
-      const judged = sources.filter((s) => s.automated && (s.bodyState === "full" || s.bodyUnavailable));
+      const judged = sources.filter((s) => (s.automated || social(s)) && (s.bodyState === "full" || s.bodyUnavailable));
       const texts = judged.length ? await store.aiSummaries.text(judged.map((s) => ({ messageId: s.id, limit: DATED_TEXT_CHARS }))) : new Map<number, string | null>();
-      for (const s of sources) seen.push({ s, worth: !s.automated || (s.bodyState !== "full" && !s.bodyUnavailable) || hasTimeCue(withoutQuotes(texts.get(s.id) ?? ""), s.subject) });
+      for (const s of sources) {
+        const text = withoutQuotes(texts.get(s.id) ?? "");
+        const relayed = !s.person && texts.has(s.id) && !!relayedAsk(s.subject, text, s.fromName || s.fromEmail.split("@")[0]!, readers.get(s.accountId) ?? "");
+        if (social(s) && !relayed) continue;
+        seen.push({ s, worth: !s.automated || relayed || (s.bodyState !== "full" && !s.bodyUnavailable) || hasTimeCue(text, s.subject) });
+      }
     });
     // round 2: a later message from the sender or the conversation of one it reads ("Paid in full") may settle it: it's read too
     const oldest = new Map<string, number>();
