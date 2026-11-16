@@ -681,8 +681,8 @@ describe("migration v58: a promise's Later (plan 204, the fifth panel round)", (
     const before = db.all<Record<string, unknown>>("SELECT * FROM followups ORDER BY id");
     expect(before).toHaveLength(1);
     expect(migrate(db)).toEqual({ from: 57, to: SCHEMA_VERSION });
-    expect(db.all<Record<string, unknown>>("SELECT * FROM followups ORDER BY id")).toEqual(before.map((r) => ({ ...r, deferred_until: null, same_as: null, broken_due_at: null, timed: 0 })));
-    expect(db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'followups' AND sql IS NOT NULL ORDER BY name").map((r) => r.name)).toEqual(["followups_active", "followups_closed", "followups_same", "followups_thread", "followups_top"]);
+    expect(db.all<Record<string, unknown>>("SELECT * FROM followups ORDER BY id")).toEqual(before.map((r) => ({ ...r, deferred_until: null, same_as: null, broken_due_at: null, timed: 0, answers: null })));
+    expect(db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'followups' AND sql IS NOT NULL ORDER BY name").map((r) => r.name)).toEqual(["followups_active", "followups_answers", "followups_closed", "followups_same", "followups_thread", "followups_top"]);
   });
 });
 
@@ -704,7 +704,7 @@ describe("migration v61: What matters' items (plan 210, iteration 2)", () => {
     const followups = db.all<Record<string, unknown>>("SELECT * FROM followups ORDER BY id");
     expect(migrate(db)).toEqual({ from: 60, to: SCHEMA_VERSION });
     expect(db.all<Record<string, unknown>>("SELECT * FROM dated_items ORDER BY id")).toEqual(dated.map((r) => ({ ...r, early: 0, same_as: null, detail_of: null, lapses: 0 })));
-    expect(db.all<Record<string, unknown>>("SELECT * FROM followups ORDER BY id")).toEqual(followups.map((r) => ({ ...r, same_as: null, broken_due_at: null, timed: 0 })));
+    expect(db.all<Record<string, unknown>>("SELECT * FROM followups ORDER BY id")).toEqual(followups.map((r) => ({ ...r, same_as: null, broken_due_at: null, timed: 0, answers: null })));
     // `same_as` by index, only where it's set
     expect(db.get<{ sql: string }>("SELECT sql FROM sqlite_master WHERE name = 'dated_same'")!.sql).toMatch(/WHERE same_as IS NOT NULL/);
     expect(db.get<{ sql: string }>("SELECT sql FROM sqlite_master WHERE name = 'followups_same'")!.sql).toMatch(/WHERE same_as IS NOT NULL/);
@@ -712,6 +712,26 @@ describe("migration v61: What matters' items (plan 210, iteration 2)", () => {
     // a line per closed item now: no conversation's newest closing is read
     for (const name of ["dated_closed_thread", "followups_closed_thread"]) expect(db.get("SELECT 1 FROM sqlite_master WHERE name = ?", name)).toBeUndefined();
     for (const name of ["dated_closed", "followups_closed"]) expect(db.get("SELECT 1 FROM sqlite_master WHERE name = ?", name)).toBeDefined();
+  });
+});
+
+describe("migration v62: a promise answers a request (plan 210, iteration 3)", () => {
+  it("adds a promise's request and a confirmed send's mark at their defaults, every row kept (no backfill: an old send isn't an answer), and finds a request's promises by index", () => {
+    const { db } = legacyMail(61, { threads: 2, seed: 11 });
+    const m = db.get<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages ORDER BY id LIMIT 1")!;
+    db.run(
+      `INSERT INTO followups (thread_id, message_id, item, kind, text, sent_at, due_at, dated, state, revision, created_at)
+       VALUES (?, 2, 0, 'promise', 'send the slip', 1, 5, 1, 'open', 3, 2)`,
+      m.thread_id,
+    );
+    db.run("INSERT INTO ai_sent_mail (message_id, thread_id, sent_at, queued_at, source) VALUES (?, ?, 1, 2, 'live')", m.id, m.thread_id);
+    const followups = db.all<Record<string, unknown>>("SELECT * FROM followups ORDER BY id");
+    const marks = db.all<Record<string, unknown>>("SELECT * FROM ai_sent_mail ORDER BY message_id");
+    expect(migrate(db)).toEqual({ from: 61, to: SCHEMA_VERSION });
+    expect(db.all<Record<string, unknown>>("SELECT * FROM followups ORDER BY id")).toEqual(followups.map((r) => ({ ...r, answers: null })));
+    expect(db.all<Record<string, unknown>>("SELECT * FROM ai_sent_mail ORDER BY message_id")).toEqual(marks.map((r) => ({ ...r, confirmed: 0 })));
+    expect(db.get<{ sql: string }>("SELECT sql FROM sqlite_master WHERE name = 'followups_answers'")!.sql).toMatch(/WHERE answers IS NOT NULL/);
+    expect(db.all<{ detail: string }>("EXPLAIN QUERY PLAN SELECT id FROM followups WHERE answers = 7").map((r) => r.detail).join(" ")).toMatch(/followups_answers/);
   });
 });
 

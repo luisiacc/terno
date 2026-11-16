@@ -67,8 +67,20 @@ export interface FollowupFinish {
   fromScan: boolean;
   /** rows to add; none is a valid answer, which still consumes the mark */
   rows: readonly FollowupWrite[];
-  /** open promises this message kept: only the exact row it was shown, at the revision it was shown */
+  /**
+   * open promises this message kept: only the exact row it was shown, at the revision it was shown. Plan 210 (iteration 3):
+   * a request a kept promise answers (`FollowupRow.answers`) is settled with it, when the reply is yours for certain
+   */
   kept: readonly { id: number; revision: number }[];
+  /**
+   * Plan 210 (iteration 3, the Codex review's revision 1): this reply's checked verdict on the conversation's requests it
+   * was shown (dated `ask`/`respond` items), the only authority over them a reply has. `fulfilled`: the request is settled
+   * (`answered`), at the revision shown; `promise`: this message's promise `item` answers it (`FollowupRow.answers`), the
+   * request open, its day carried. A holding reply or no verdict leaves it as it is. Applied only to an open request of this
+   * reply's conversation that came before it, and only when the reply is yours for certain (Gmail's SENT label, or Terno's
+   * own confirmed send: `followupSendConfirmed`). Absent: none
+   */
+  verdicts?: readonly ({ request: { id: number; revision: number }; verdict: "fulfilled" } | { request: { id: number; revision: number }; verdict: "promise"; item: number })[];
   /** a wait is added only if no reply or later send has come */
   now: number;
   model: string | null;

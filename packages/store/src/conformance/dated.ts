@@ -1,6 +1,7 @@
 import { DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, datedGroupAt } from "@terno/core";
 import { describe, expect, it } from "vitest";
 import { DATED_MARK_MS, DATED_SCAN_MARK_MS, type DatedFinish, type DatedWrite } from "../dated";
+import { FOLLOWUPS_ACTIVE_MAX, type FollowupFinish, type FollowupWrite } from "../followups";
 import type { MailStore } from "../mail-store";
 import type { IncomingMessage } from "../types";
 import { msg, threadOf, withAccounts } from "./fixtures";
@@ -247,64 +248,32 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
         expect(active[0]).toMatchObject({ messageId: b.id, item: 1 });
         expect(active.at(-1)!.actAt).toBe(NOW + (DATED_ACTIVE_MAX - 1) * 1000);
         expect(active.some((r) => r.messageId === b.id && r.item === 0)).toBe(false);
-        // a request already answered (your reply came first) is stored closed, and evicts nothing (Codex review, round 2)
+        // plan 210 (iteration 3): a request read after your reply is stored open like any other (only a verdict settles it)
         const replied = await got({ rfcMessageId: "full@x", date: NOW - 9000 });
         await store.sync.ingest([msg({ accountId, from: me, to: [bank], isSent: true, inInbox: false, gmailLabels: ["SENT"], inReplyTo: "full@x", references: ["full@x"], subject: "Re", date: NOW - 8000 })], { applyFilters: false, now: NOW, classifier: null });
-        const furthest = (await store.dated.active()).at(-1)!;
         await finish(replied.id, replied.thread, { rows: [item({ kind: "respond", item: 0, actAt: NOW - 1 })] });
-        expect((await store.dated.active()).at(-1)).toEqual(furthest);
+        expect((await store.dated.active())[0]).toMatchObject({ messageId: replied.id, kind: "respond", state: "open" });
         expect(await store.dated.active()).toHaveLength(DATED_ACTIVE_MAX);
       });
     });
 
     describe("reading and changing them", () => {
-      it("a message you send answers the requests before it on its thread, not a bill nor a later request nor another thread's", async () => {
-        const { store, accountId, got, item, finish } = await setup();
-        const ask = await got({ rfcMessageId: "ask@x", date: NOW - 5000 });
-        await finish(ask.id, ask.thread, { rows: [item({ kind: "respond", text: "Send the deck" }), item({ kind: "pay", item: 1, dueDay: "2026-11-21" })] });
-        const elsewhere = await got({ date: NOW - 4000 });
-        await finish(elsewhere.id, elsewhere.thread, { rows: [item({ kind: "respond", text: "Answer Tom" })] });
-        // your reply on the first thread, from elsewhere (sync)
-        await store.sync.ingest([msg({ accountId, from: me, to: [bank], isSent: true, inInbox: false, gmailLabels: ["SENT"], inReplyTo: "ask@x", references: ["ask@x"], subject: "Re", date: NOW - 3000 })], { applyFilters: false, now: NOW, classifier: null });
-        const open = await store.dated.active();
-        expect(open.map((r) => [r.threadId, r.kind]).sort()).toEqual([[ask.thread, "pay"], [elsewhere.thread, "respond"]].sort());
-        const answered = (await store.dated.ofThread(ask.thread)).find((r) => r.kind === "respond");
-        expect(answered).toBeUndefined();
-        // a request read after your reply is stored answered (the reader finishing late, or the 14-day check)
-        const late = await got({ inReplyTo: "ask@x", references: ["ask@x"], date: NOW - 3500 });
-        await finish(late.id, late.thread, { rows: [item({ kind: "respond", text: "Send the deck too" })] });
-        expect((await store.dated.ofThread(ask.thread)).some((r) => r.kind === "respond")).toBe(false);
-      });
-
-      it("the third panel round: an ask is kept undated, and a message you send answers it as it answers a request with a day", async () => {
+      it("plan 210 (iteration 3): a message you send settles nothing by itself, from sync or read late, an ask or a request", async () => {
         const { store, accountId, got, item, finish } = await setup();
         const ana = { name: "Ana Ruiz", email: "ana@studio.test" };
         const ask = await got({ from: ana, rfcMessageId: "quote@x", date: NOW - 5000 });
         const asked = item({ kind: "ask", text: "Answer Ana about a quote", quote: "can you send me a quote", dueDay: "2026-11-13", dueAt: NOW - 5000, dated: false, actAt: NOW - 5000 });
-        await finish(ask.id, ask.thread, { rows: [asked, item({ kind: "pay", item: 1, dueDay: "2026-11-21" })] });
+        await finish(ask.id, ask.thread, { rows: [asked, item({ kind: "respond", item: 1, text: "Send the deck" })] });
         const [row] = (await store.dated.ofThread(ask.thread)).filter((r) => r.kind === "ask");
         expect(row).toMatchObject({ kind: "ask", text: "Answer Ana about a quote", dated: false, timed: false, state: "open", arrivedAt: ask.m.date });
         await store.sync.ingest([msg({ accountId, from: me, to: [ana], isSent: true, inInbox: false, gmailLabels: ["SENT"], inReplyTo: "quote@x", references: ["quote@x"], subject: "Re", date: NOW - 3000 })], { applyFilters: false, now: NOW, classifier: null });
-        expect((await store.dated.get(row!.id))).toMatchObject({ state: "settled", closedReason: "answered", revision: row!.revision + 1 });
-        expect((await store.dated.active()).map((r) => r.kind)).toEqual(["pay"]);
-        // read after your reply: stored answered, never open
+        expect((await store.dated.ofThread(ask.thread)).map((r) => r.kind).sort()).toEqual(["ask", "respond"]);
+        expect(await store.dated.get(row!.id)).toMatchObject({ state: "open", revision: row!.revision });
+        // read after your reply: open too
         const late = await got({ from: ana, inReplyTo: "quote@x", references: ["quote@x"], date: NOW - 3500 });
         await finish(late.id, late.thread, { rows: [{ ...asked, text: "Answer Ana about the dates" }] });
         expect(late.thread).toBe(ask.thread);
-        expect((await store.dated.ofThread(ask.thread)).map((r) => r.kind)).toEqual(["pay"]);
-      });
-
-      it("Codex code review of the fixes: a forged From claiming your address, in the Inbox, answers nothing", async () => {
-        const { store, accountId, got, item, finish } = await setup();
-        const ask = await got({ rfcMessageId: "ask2@x", date: NOW - 5000 });
-        await finish(ask.id, ask.thread, { rows: [item({ kind: "respond", text: "Send the deck" })] });
-        // what IMAP marks sent because its From is yours, in the Inbox or in an archive folder (round 2)
-        await store.sync.ingest([msg({ accountId, from: me, to: [bank], isSent: true, inInbox: true, inReplyTo: "ask2@x", references: ["ask2@x"], subject: "Re", date: NOW - 3000 })], { applyFilters: false, now: NOW, classifier: null });
-        await store.sync.ingest([msg({ accountId, from: me, to: [bank], isSent: true, inInbox: false, inReplyTo: "ask2@x", references: ["ask2@x"], subject: "Re", date: NOW - 2500 })], { applyFilters: false, now: NOW, classifier: null });
-        expect((await store.dated.ofThread(ask.thread)).map((r) => r.kind)).toEqual(["respond"]);
-        // Gmail's SENT label is yours for certain, in the Inbox or not (a reply to yourself too)
-        await store.sync.ingest([msg({ accountId, from: me, to: [bank], isSent: true, inInbox: true, gmailLabels: ["SENT", "INBOX"], inReplyTo: "ask2@x", references: ["ask2@x"], subject: "Re", date: NOW - 2000 })], { applyFilters: false, now: NOW, classifier: null });
-        expect(await store.dated.ofThread(ask.thread)).toEqual([]);
+        expect((await store.dated.ofThread(ask.thread)).map((r) => r.kind).sort()).toEqual(["ask", "ask", "respond"]);
       });
 
       it("the second panel round: a later message moves your promise's day, only at the revision seen and on its thread", async () => {
@@ -788,6 +757,159 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
         expect(later?.promises).toHaveLength(1);
         expect((await store.followups.get(slip.row.id))!.deferredUntil).toBe(NOW + DAY);
         expect(await store.today.act({ dated: [], promises: [] })).toEqual({ dated: [], promises: [] });
+      });
+    });
+    describe("a reply's verdict on a request (plan 210, iteration 3)", () => {
+      /** a request of the reader's, and your replies on its conversation; follow-ups' finish on a reply */
+      async function talk() {
+        const s = await setup();
+        const { store, accountId, got, item, finish } = s;
+        const asked = await got({ rfcMessageId: "ask@v", date: NOW - 9000 });
+        await finish(asked.id, asked.thread, { rows: [item({ kind: "respond", text: "Send the signed form", dueDay: "2026-11-20" }), item({ kind: "pay", item: 1 })] });
+        const rows = await store.dated.ofThread(asked.thread);
+        const request = rows.find((r) => r.kind === "respond")!;
+        const bill = rows.find((r) => r.kind === "pay")!;
+        let n = 0;
+        const reply = async (over: Partial<IncomingMessage> = {}, at = NOW - 5000 + n * 100, liveSent: { wanted: boolean } | null = { wanted: true }) => {
+          n++;
+          const m = msg({ accountId, from: me, to: [bank], isSent: true, inInbox: false, gmailLabels: ["SENT"], inReplyTo: "ask@v", references: ["ask@v"], subject: "Re", date: at, ...over });
+          const r = await store.sync.ingest([m], { applyFilters: false, now: NOW, classifier: null, ...(liveSent ? { liveSent } : {}) });
+          return { id: r.inserted[0]!, thread: await threadOf(store, m.providerMsgId!) };
+        };
+        const read = (r: { id: number; thread: number }, over: Partial<FollowupFinish> = {}) =>
+          store.followups.finish({ messageId: r.id, threadId: r.thread, fromScan: false, rows: [], kept: [], now: NOW, model: "m", provider: "p", promptVersion: 11, clearGeneration: store.followups.clearGeneration(), ...over });
+        const promise = (over: Partial<FollowupWrite> = {}): FollowupWrite => ({ kind: "promise", item: 0, text: "send the bank the signed form", quote: "I'll send it Wednesday", personName: "Bank", personEmail: bank.email, dueAt: NOW + DAY, dated: true, ...over });
+        return { ...s, asked, request, bill, reply, read, promise };
+      }
+
+      it("a send settles nothing; its verdict settles only the request it was shown, at its revision, of its conversation and from before it", async () => {
+        const { store, got, item, finish, asked, request, bill, reply, read } = await talk();
+        const elsewhere = await got({ date: NOW - 8000 });
+        await finish(elsewhere.id, elsewhere.thread, { rows: [item({ kind: "respond", text: "Answer Tom" })] });
+        const [other] = await store.dated.ofThread(elsewhere.thread);
+        const r = await reply();
+        expect(r.thread).toBe(asked.thread);
+        expect(await store.dated.get(request.id)).toMatchObject({ state: "open", revision: request.revision });
+        // a request after it, a bill, another conversation's, a revision since: nothing
+        const after = await got({ inReplyTo: "ask@v", references: ["ask@v"], date: NOW - 1000 });
+        await finish(after.id, after.thread, { rows: [item({ kind: "respond", text: "Send the copy too" })] });
+        const later = (await store.dated.ofThread(asked.thread)).find((x) => x.messageId === after.id)!;
+        const v = (row: { id: number; revision: number }) => ({ request: { id: row.id, revision: row.revision }, verdict: "fulfilled" as const });
+        expect(await read(r, { verdicts: [v(later), v(bill), v(other!), { ...v(request), request: { id: request.id, revision: request.revision + 1 } }] })).toBe("written");
+        for (const x of [request, later, bill, other!]) expect(await store.dated.get(x.id)).toMatchObject({ state: "open", revision: x.revision });
+        // read again: its verdict on the request it answers
+        await store.followups.marks.queueScan([r.id], NOW);
+        await read(r, { verdicts: [v(request)] });
+        expect(await store.dated.get(request.id)).toMatchObject({ state: "settled", closedReason: "answered", closedAt: NOW, revision: request.revision + 1 });
+      });
+
+      it("a promise answers it: the request stays open, linked once; a kept promise settles it; a holding reply or none leaves it", async () => {
+        const { store, request, reply, read, promise } = await talk();
+        const first = await reply();
+        await read(first, { rows: [promise(), promise({ item: 1, text: "check and get back to the bank", quote: "let me check" })], verdicts: [{ request: { id: request.id, revision: request.revision }, verdict: "promise", item: 0 }] });
+        const promises = await store.followups.ofThread(first.thread);
+        const sends = promises.find((p) => p.item === 0)!;
+        expect(sends).toMatchObject({ answers: request.id, revision: 0 });
+        expect(promises.find((p) => p.item === 1)!.answers).toBeNull();
+        expect(await store.dated.get(request.id)).toMatchObject({ state: "open", revision: request.revision });
+        // another reply's promise answers it too (each carries its day); the first keeps its link
+        const second = await reply();
+        await read(second, { rows: [promise({ text: "send it Friday" })], verdicts: [{ request: { id: request.id, revision: request.revision }, verdict: "promise", item: 0 }] });
+        expect((await store.followups.ofThread(second.thread)).filter((p) => p.answers === request.id)).toHaveLength(2);
+        expect((await store.followups.get(sends.id))!.answers).toBe(request.id);
+        // "Here it is": the promise kept, the request answered with it
+        const third = await reply();
+        await read(third, { kept: [{ id: sends.id, revision: sends.revision }] });
+        expect(await store.followups.get(sends.id)).toMatchObject({ state: "done", closedReason: "kept" });
+        expect(await store.dated.get(request.id)).toMatchObject({ state: "settled", closedReason: "answered", revision: request.revision + 1 });
+      });
+
+      it("only a reply that's yours for certain decides: a forged From or another IMAP client's send doesn't; Terno's own confirmed send does", async () => {
+        const { store, accountId, asked, request, reply, read } = await talk();
+        const v = { request: { id: request.id, revision: request.revision }, verdict: "fulfilled" as const };
+        const imap = await reply({ gmailLabels: [] });
+        await read(imap, { verdicts: [v] });
+        expect((await store.dated.get(request.id))!.state).toBe("open");
+        const send = await store.compose.queueSend({ accountId, to: [bank], cc: [], bcc: [], subject: "Re", bodyText: "Here it is", inReplyToMessageId: asked.id, recordReply: false, now: NOW });
+        expect(send.threadId).toBe(asked.thread);
+        await store.ops.claimReady(NOW, 20);
+        await store.ops.complete(send.opId, { providerMsgId: "confirmed-1" }, NOW, { followup: true });
+        expect((await store.followups.marks.page(null, 10)).map((m) => m.messageId)).toContain(send.messageId);
+        expect(await read({ id: send.messageId, thread: send.threadId }, { verdicts: [v] })).toBe("written");
+        expect(await store.dated.get(request.id)).toMatchObject({ state: "settled", closedReason: "answered" });
+      });
+
+      it("a request read after replies of yours marks the first few again for their verdict: yours for certain, since follow-ups went on, not marked now", async () => {
+        const { store, accountId, got, item, finish } = await setup();
+        const asked = await got({ rfcMessageId: "late@v", date: NOW - 20_000 });
+        const sent = async (at: number, over: Partial<IncomingMessage> = {}) => {
+          const m = msg({ accountId, from: me, to: [bank], isSent: true, inInbox: false, gmailLabels: ["SENT"], inReplyTo: "late@v", references: ["late@v"], subject: "Re", date: at, ...over });
+          return (await store.sync.ingest([m], { applyFilters: false, now: NOW, classifier: null })).inserted[0]!;
+        };
+        const before = await sent(NOW - 19_000);
+        const forged = await sent(NOW - 18_000, { gmailLabels: [] });
+        const replies = [await sent(NOW - 17_000), await sent(NOW - 16_000), await sent(NOW - 15_000), await sent(NOW - 14_000)];
+        const marked = async () => (await store.followups.marks.page(null, 20)).map((m) => m.messageId);
+        expect(await marked()).toEqual([]);
+        // a bill read late, or follow-ups off: nothing
+        await finish(asked.id, asked.thread, { rows: [item({ kind: "pay" })], replies: { since: NOW - 18_500 } });
+        expect(await marked()).toEqual([]);
+        const again = await got({ inReplyTo: "late@v", references: ["late@v"], date: NOW - 19_500 });
+        await finish(again.id, again.thread, { rows: [item({ kind: "respond" })] });
+        expect(await marked()).toEqual([]);
+        // a request: the first three since then, not the forged one nor one from before
+        const third = await got({ inReplyTo: "late@v", references: ["late@v"], date: NOW - 19_400 });
+        await finish(third.id, third.thread, { rows: [item({ kind: "ask", dated: false })], replies: { since: NOW - 18_500 } });
+        expect(await marked()).toEqual(replies.slice(0, 3));
+        expect(await marked()).not.toContain(before);
+        expect(await marked()).not.toContain(forged);
+      });
+
+      it("a message of the conversation still to be read holds what came after it", async () => {
+        const { store, got, finish } = await setup();
+        const a = await got({ date: NOW - 5000 });
+        expect(await store.dated.marks.pendingOn(a.thread, NOW - 4000)).toBe(true);
+        expect(await store.dated.marks.pendingOn(a.thread, NOW - 6000)).toBe(false);
+        expect(await store.dated.marks.pendingOn(a.thread + 1000, NOW)).toBe(false);
+        await finish(a.id, a.thread);
+        expect(await store.dated.marks.pendingOn(a.thread, NOW)).toBe(false);
+      });
+
+      it("a closed request an open promise answers outlives the keep; one whose promise closed doesn't", async () => {
+        const { store, request, reply, read, promise } = await talk();
+        const r = await reply();
+        await read(r, { rows: [promise()], verdicts: [{ request: { id: request.id, revision: request.revision }, verdict: "promise", item: 0 }] });
+        await store.dated.update(request.id, request.revision, { state: "settled", closedReason: "settled", closedAt: NOW });
+        const later = NOW + DATED_CLOSED_KEEP_MS + DAY;
+        await store.dated.prune(later);
+        expect(await store.dated.get(request.id)).not.toBeNull();
+        const [p] = (await store.followups.ofThread(r.thread)).filter((x) => x.answers === request.id);
+        await store.followups.update(p!.id, p!.revision, { state: "done", closedAt: NOW, closedReason: "user" });
+        await store.dated.prune(later);
+        expect(await store.dated.get(request.id)).toBeNull();
+      });
+
+      it("at the bound (1,001): a promise isn't added past it, the linked one stays linked; one retired frees its place", async () => {
+        const { store, request, reply, read, promise } = await talk();
+        const r = await reply();
+        await read(r, { rows: Array.from({ length: FOLLOWUPS_ACTIVE_MAX }, (_, i) => promise({ item: 10 + i, dueAt: NOW + DAY + i })), verdicts: [{ request: { id: request.id, revision: request.revision }, verdict: "promise", item: 10 }] });
+        const active = await store.followups.active();
+        expect(active).toHaveLength(FOLLOWUPS_ACTIVE_MAX);
+        const linked = active.find((p) => p.answers === request.id)!;
+        expect(linked.item).toBe(10);
+        const more = await reply();
+        await read(more, { rows: [promise({ item: 0 })] });
+        expect(await store.followups.active()).toHaveLength(FOLLOWUPS_ACTIVE_MAX);
+        expect((await store.followups.ofThread(more.thread)).some((p) => p.messageId === more.id)).toBe(false);
+        expect(await store.followups.get(linked.id)).toMatchObject({ answers: request.id, state: "open" });
+        expect(await store.dated.get(request.id)).toMatchObject({ state: "open" });
+        // one past its day retired (as `retire` does): the next promise has its place
+        const last = active.at(-1)!;
+        await store.followups.update(last.id, last.revision, { state: "dismissed", closedReason: "expired", closedAt: NOW });
+        const next = await reply();
+        await read(next, { rows: [promise({ item: 0 })] });
+        expect(await store.followups.active()).toHaveLength(FOLLOWUPS_ACTIVE_MAX);
+        expect((await store.followups.active()).some((p) => p.messageId === next.id)).toBe(true);
       });
     });
   });

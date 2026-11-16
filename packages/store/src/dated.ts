@@ -148,6 +148,13 @@ export interface DatedFinish {
    * recorded (`readNothingAsked` also checks the rows); absent, the reading says nothing either way.
    */
   nothingAsked?: boolean;
+  /**
+   * Plan 210 (iteration 3, the Codex review's revision 1): follow-ups is on (since `since`, null: always). A request this
+   * message gives (`ask`, `respond`) that a reply of yours already followed was never shown to the follow-ups reader: the
+   * first few such replies (yours for certain, by Gmail's SENT label, to someone else, sent since then, not marked now) are
+   * marked again, in this commit, for their verdict on it. Absent: follow-ups is off, and a reply decides nothing
+   */
+  replies?: { since: number | null };
   clearGeneration: number;
 }
 
@@ -184,6 +191,11 @@ export interface DatedStore {
     clear(): Promise<void>;
     /** live marks past `DATED_MARK_MS`, scan marks past `DATED_SCAN_MARK_MS` */
     prune(now: number): Promise<number>;
+    /**
+     * Plan 210 (iteration 3): a message of this conversation from before `before` is still to be read: a reply of yours
+     * after it waits for its requests (the follow-ups reader's verdict is on what's known)
+     */
+    pendingOn(threadId: number, before: number): Promise<boolean>;
   };
   /** received mail since then a check could read, newest first: inbound, not a draft, sent, spam or trash, not from the user, not already marked or read */
   scanCandidates(since: number, limit: number): Promise<number[]>;
@@ -220,7 +232,7 @@ export interface DatedStore {
   update(id: number, revision: number, patch: Partial<Pick<DatedRow, "state" | "deferredUntil" | "closedReason" | "closedAt">>, schedule?: { dueDay: string; dueAt: number }): Promise<DatedSnapshot | null>;
   /** Undo: each row only if nothing else changed it since */
   restore(rows: readonly { snapshot: DatedSnapshot; expectRevision: number }[]): Promise<number>;
-  /** closed rows past `DATED_CLOSED_KEEP_MS`, and "nothing asked" of mail older than the waiting window (`waitingCutoff`) */
+  /** closed rows past `DATED_CLOSED_KEEP_MS` but a request a promise of yours answers (plan 210, iteration 3), and "nothing asked" of mail older than the waiting window (`waitingCutoff`) */
   prune(now: number): Promise<number>;
   /** Clear AI data: rows, marks and what was read with nothing asked; ups the generation */
   clear(): Promise<void>;
