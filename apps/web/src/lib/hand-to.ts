@@ -41,21 +41,25 @@ export function handOffLine(text: string, dueAt: number | null, now = Date.now()
 /** The item a feed row's task is, as it was seen. */
 export const seenOfTask = (task: TodayTask): ItemSeen => (task.kind === "dated" ? { source: "dated", id: task.item.id, revision: task.item.revision } : { source: "promise", id: task.id, revision: task.revision });
 
+/** A reply's row's other promises (its Also lines), handed with it as the row's Done takes them (iteration 4, merge). */
+export const othersOfTask = (task: TodayTask): ItemSeen[] => (task.kind === "promise" ? (task.with ?? []) : []);
+
 /** The item the reader's line shows, as it was read. */
 export const seenOfReaderItem = (item: ReaderItem): ItemSeen => ({ source: item.source, id: item.row.id, revision: item.row.revision });
 
 let handing = 0;
 
 /**
- * Hand to…: the item resolved as Done on its row would be (its members, what a promise of it answers), its conversation
- * open (the row's, when it's a feed row), and the forward opened there with the hand-off. False when nothing opened (it
- * changed meanwhile, a newer Hand to… took over, or the conversation's draft is a pinned reply).
+ * Hand to…: the item resolved as Done on its row would be (its members, what a promise of it answers, a reply's row's
+ * other promises: `others`), its conversation open (the row's, when it's a feed row), and the forward opened there with
+ * the hand-off. False when nothing opened (it changed meanwhile, a newer Hand to… took over, or the conversation's draft is
+ * a pinned reply).
  */
-export async function handTo(seen: ItemSeen, rowId?: FeedRowId): Promise<boolean> {
+export async function handTo(seen: ItemSeen, rowId?: FeedRowId, others: readonly ItemSeen[] = []): Promise<boolean> {
   const mine = ++handing;
   let h: Awaited<ReturnType<typeof client.call<"today.handoff">>>;
   try {
-    h = await client.call("today.handoff", seen);
+    h = await client.call("today.handoff", others.length ? { ...seen, with: others.map((o) => ({ source: "promise" as const, id: o.id, revision: o.revision })) } : seen);
   } catch (error) {
     snack.error(t("whatMatters.handTo.failed", { error: error instanceof Error ? error.message : String(error) }));
     return false;

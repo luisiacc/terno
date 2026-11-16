@@ -1578,7 +1578,7 @@ export function createHandlers(b: Backend): Handlers {
     "ai.ask": (p, ctx) => b.ask.ask(p, ctx.clientId),
     "today.list": ({ held, history }) => b.today.list(held, { history }),
     "today.history": ({ after, limit, held }) => b.today.history({ after, limit, held }),
-    "today.handoff": (seen) => b.today.handoff(seen),
+    "today.handoff": ({ with: others, ...seen }) => b.today.handoff(seen, others ?? []),
     "today.digest": () => b.today.digestRow(),
     "today.digestRetry": async () => {
       await b.today.retry();

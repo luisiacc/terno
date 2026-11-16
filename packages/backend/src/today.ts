@@ -894,16 +894,19 @@ export class TodayService {
   /**
    * Plan 210 (iteration 4): Hand to…: what the row's hand-off will close when its forward is confirmed, resolved as Done on
    * it would be (its members, what its promises answer), each at its revision now; and the message its forward forwards
-   * (the named item's own). Nothing changes here: the forward's confirmed send closes them (`handoffConfirmed`).
+   * (the named item's own). Nothing changes here: the forward's confirmed send closes them (`handoffConfirmed`). A reply's
+   * row hands its other promises (`others`, its `TodayWhy.with`) with it, as its Done takes them, each named at the revision
+   * shown, so the confirmation closes all of them or none (iteration 4, merge).
    */
-  async handoff(seen: ItemSeen): Promise<{ threadId: number; messageId: number; items: HandoffItem[]; text: string; dueAt: number | null }> {
+  async handoff(seen: ItemSeen, others: readonly ItemSeen[] = []): Promise<{ threadId: number; messageId: number; items: HandoffItem[]; text: string; dueAt: number | null }> {
     const { store } = this.b;
     const stale = () => new RpcError("STALE", L(seen.source === "promise" ? "errors.followups.changed" : "errors.dated.changed"));
     return this.links.exclusive(async () => {
-      const { at, datedNow, promisesNow, answered } = await this.rowItems([seen], true);
+      const { at, datedNow, promisesNow, answered } = await this.rowItems([seen, ...others], true);
       const own = seen.source === "dated" ? datedNow.find((r) => r.id === seen.id) : promisesNow.find((r) => r.id === seen.id);
-      // handed as it was seen: one changed or closed since is stale, as an act on it would be
+      // handed as it was seen: one changed or closed since is stale, as an act on it would be (the row's other promises too)
       if (!own || own.revision !== seen.revision || !(own.state === "open" || own.state === "due")) throw stale();
+      if (others.some((o) => !promisesNow.some((r) => r.id === o.id && r.revision === o.revision && (r.state === "open" || r.state === "due")))) throw stale();
       const named = (source: "dated" | "promise", id: number) => at.has(refKey({ source, id }));
       const items: HandoffItem[] = [
         ...datedNow.map((r) => ({ source: "dated" as const, id: r.id, revision: r.revision, ...(named("dated", r.id) && { named: true }) })),
