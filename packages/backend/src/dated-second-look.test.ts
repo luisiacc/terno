@@ -243,6 +243,17 @@ describe("iteration 5's code review", () => {
       expect(await run(DUES, { shown: [{ kind: "pay", text: "Pay the Harbor Club dues of $95.00", due: "2026-11-15" }], answer: [{ kind: "pay", text: "Pay the Harbor Club dues", quote: DUES, due: "2026-12-15", time: null }] })).toEqual(["Pay the Harbor Club dues"]);
     });
 
+    it("the Codex code review: never another period's bill on another day; a month said as a day isn't a period (the domain's expiry above)", async () => {
+      const BILL = "Your December electricity invoice is due December 21, 2026.";
+      const december = { kind: "pay" as const, text: "Pay the December electricity invoice", quote: BILL, due: "2026-12-21", time: null };
+      expect(await run(BILL, { shown: [{ kind: "pay", text: "Pay the November electricity invoice", due: "2026-11-20" }], answer: [december] })).toEqual([december.text]);
+      const FACTURA = "Tu factura de luz de diciembre vence el 21 de diciembre de 2026.";
+      const diciembre = { kind: "pay" as const, text: "Pagar la factura de luz de diciembre", quote: FACTURA, due: "2026-12-21", time: null };
+      expect(await run(FACTURA, { shown: [{ kind: "pay", text: "Pagar la factura de luz de noviembre", due: "2026-11-20" }], answer: [diciembre] })).toEqual([diciembre.text]);
+      // the same bill, its month said only as its day: still one
+      expect(await run(BILL, { shown: [{ kind: "pay", text: "Pay the December electricity invoice", due: "2026-12-20" }], answer: [december] })).toEqual([]);
+    });
+
     it("never a day already past its Missed window", async () => {
       const RFP = "Dear Jordan,\n\nKey dates:\nWritten questions due: November 6, 2026\nResponses due: November 20, 2026, 5:00 PM Eastern\n\nAlicia";
       const responses = { kind: "respond" as const, text: "Submit the Meridian RFP response", quote: "Responses due: November 20, 2026, 5:00 PM Eastern", due: "2026-11-20", time: "17:00" };

@@ -1,7 +1,7 @@
 import { DATED_AGAIN_CHARS, DATED_AGAIN_SENTENCES, fitDates, type DatedInput, type DatedResult } from "@terno/ai";
 import { DATED_KINDS, datedGroup, dayEnd, missedUntil, namesDayFrom, saysClock, saysDay, type DatedKind } from "@terno/core";
 import { handledItself } from "./dated-automatic";
-import { namesOtherThan, namesSpecifically, norm, otherAmounts, otherIds, paragraphsOf, scamPressure, sentencesOf, sentencesWith, settlesKind, type Sentences } from "./dated-evidence";
+import { namesOtherThan, namesSpecifically, norm, otherAmounts, otherIds, otherPeriod, paragraphsOf, scamPressure, sentencesOf, sentencesWith, settlesKind, type Sentences } from "./dated-evidence";
 
 /**
  * Plan 210 (iteration 5, revision 3, the owner's "a second look at a dated sentence that got no item"): a sentence of a read
@@ -168,8 +168,8 @@ function repeats(x: { kind: string; text: string; quote: string; due: string | n
     // family is the same item whatever day each reading gave it, when the look's words name nothing the other's don't
     // beyond its kind ("expires"); never another part of it ("written questions" beside an RFP's response). The Codex code
     // review: never another of its kind either, by the look's whole words: another card's ending ("8822" beside "4417"),
-    // another amount
-    if (otherIds(item, words) || otherAmounts(item, words)) return false;
+    // another amount, another period's bill ("December electricity invoice" beside November's)
+    if (otherIds(item, words) || otherAmounts(item, words) || otherPeriod(item, words)) return false;
     return !!e.kind && familyOf(e.kind) === familyOf(x.kind) && !namesOtherThan(item, x.text.replace(KIND_WORDS, " "), o.from);
   });
 }
