@@ -1,4 +1,4 @@
-import { dayEnd, dayKeyOf, refKey, type DatedRow, type FollowupRow, type ItemRef } from "@terno/core";
+import { dayEnd, dayKeyOf, refKey, withoutAnswered, type DatedRow, type FollowupRow, type ItemRef } from "@terno/core";
 import { t } from "@terno/i18n";
 import { conversationItem, datedLine, datedText } from "~/lib/dated";
 import { followupLine, followupWhen } from "~/lib/followups";
@@ -48,7 +48,11 @@ const openPromise = (r: FollowupRow): boolean => r.state === "open" || r.state =
 export function readerItems({ dated, followups, target, chosen, now }: ReaderInput): ReaderItems {
   const targetKeys = new Set(target.map(refKey));
   const items: ReaderItem[] = [];
+  // plan 210 (iteration 4, design point 2): a request an open promise of yours answers is that promise's line, never a
+  // line of its own ("Also in this conversation"): the feed's rule (`withoutAnswered`), a history line's closed one aside
+  const shown = new Set(withoutAnswered(dated, followups).map((r) => r.id));
   for (const row of dated) {
+    if (!shown.has(row.id) && !targetKeys.has(refKey({ source: "dated", id: row.id }))) continue;
     const ref = { source: "dated", id: row.id } as const;
     const at = conversationItem(row, now);
     // a closed one only as what a history line names; one over (a plan ended) not at all
