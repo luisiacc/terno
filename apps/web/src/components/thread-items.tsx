@@ -223,7 +223,7 @@ function ItemProposal({ item, target, proposal }: { item: ReaderItem; target: Ch
     <p data-testid="thread-dated-proposal" className="-mt-1 flex flex-wrap items-baseline gap-x-1.5 pb-2 text-sm text-muted-foreground tabular">
       <span data-testid="thread-dated-proposal-text">{proposalSaid(proposal, now)}</span>
       <span aria-hidden>·</span>
-      <Button variant="link" size="xs" className="h-auto p-0 text-sm" data-testid="thread-dated-proposal-use" aria-label={t("dated.proposalUseItem", { when, text: readerText(item) })} onClick={() => void changeItem(target, { accept: true, when })}>
+      <Button variant="link-secondary" size="xs" className="text-sm font-medium" data-testid="thread-dated-proposal-use" aria-label={t("dated.proposalUseItem", { when, text: readerText(item) })} onClick={() => void changeItem(target, { accept: true, when })}>
         {t("dated.proposalUse")}
       </Button>
     </p>

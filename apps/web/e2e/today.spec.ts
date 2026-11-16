@@ -818,7 +818,8 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       await expect(page.getByTestId("menu-dated-later")).toContainText("B");
       const menuOrder = await page.locator("[role=menu]").first().evaluate((menu) => [...menu.children].map((el) => el.getAttribute("data-testid") ?? el.getAttribute("role") ?? el.getAttribute("data-slot")));
       const at = menuOrder.indexOf("menu-dated-dismiss");
-      expect(menuOrder.slice(at - 2, at + 3)).toEqual(["menu-dated-done", "menu-dated-later", "menu-dated-dismiss", "menu-dated-keeps", "separator"]);
+      // (iteration 4: Change… beside Later)
+      expect(menuOrder.slice(at - 3, at + 3)).toEqual(["menu-dated-done", "menu-dated-later", "menu-dated-change", "menu-dated-dismiss", "menu-dated-keeps", "separator"]);
       expect(menuOrder.indexOf("menu-trash")).toBeGreaterThan(at + 3);
       // Later replaces Remind me on a task's item: every preset that applies now, and a day of your own
       await expect(page.getByTestId("menu-remind-always")).toHaveCount(0);
