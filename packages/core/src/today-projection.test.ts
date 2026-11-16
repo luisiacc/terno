@@ -114,12 +114,18 @@ describe("duplicates and related details", () => {
     expect(row).toMatchObject({ id: `dated:${bus.id}`, why: { kind: "promise", promise: { id: mine.id } } });
   });
 
-  it("a return leg is its outbound flight's Also, and a row of its own once that flight is over", () => {
+  it("a return leg is its outbound flight's Also and a quiet row of its own on its day (iteration 4), alone once that flight is over", () => {
     const out = dated("event", "2026-11-18", { threadId: 1, text: "Flight to Austin" }, "12:00");
     const back = dated("event", "2026-11-22", { threadId: 1, text: "Return flight to Madrid", detailOf: out.id }, "18:10");
-    const before = projectToday(facts({ dated: [out, back] })).rows;
-    expect(before.map((r) => r.id)).toEqual([`dated:${out.id}`]);
-    expect(before[0]!.also).toMatchObject({ text: "Return flight to Madrid", dueDay: "2026-11-22", timed: true });
+    const before = projectToday(facts({ dated: [out, back] }));
+    expect(before.rows.map((r) => [r.id, r.group, r.day])).toEqual([[`dated:${out.id}`, "today", null], [`dated:${back.id}`, "day", "2026-11-22"]]);
+    expect(before.rows[0]!.also).toMatchObject({ text: "Return flight to Madrid", dueDay: "2026-11-22", timed: true });
+    expect(before.rows[1]!.also).toBeUndefined();
+    // a Plan: never counted, under its own day or Today
+    expect(before.counts).toEqual({ missed: 0, today: 0, waiting: 0 });
+    // past the seven days, behind Coming up like any row of that day
+    const far = { ...back, dueDay: "2026-12-02", dueAt: at(2026, 12, 2, 18, 10) };
+    expect(projectToday(facts({ dated: [out, far] })).rows.map((r) => [r.id, r.group, r.day])).toEqual([[`dated:${out.id}`, "today", null], [`dated:${back.id}`, "comingUp", "2026-12-02"]]);
     // the day after the outbound flight, the trip's row is the return leg's, under its own day (a Plan's lead is three days)
     const after = projectToday(facts({ now: at(2026, 11, 19, 10), dated: [out, back] })).rows;
     expect(after.map((r) => [r.id, r.group])).toEqual([[`dated:${back.id}`, "day"]]);
