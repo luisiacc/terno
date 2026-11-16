@@ -86,7 +86,7 @@ async function setup(o: { dated?: boolean; followups?: boolean } = {}) {
     backend.followups.wake();
     await expect.poll(() => backend.store.followups.marks.count()).toBe(0);
   };
-  const rows = async (): Promise<(TodayItem & { section: string })[]> => (await client.call("today.list", { held: [] })).sections.flatMap((x) => x.items.map((i) => ({ ...i, section: x.day ? `${x.kind}:${x.day}` : x.kind })));
+  const rows = async (): Promise<(TodayItem & { section: string })[]> => (await client.call("today.list", { held: [] })).sections.flatMap((x) => x.items.map((i) => ({ ...i, section: x.day ? `${x.kind}:${x.day}` : x.part ? `${x.kind}:${x.part}` : x.kind })));
   const sentPrompts = () => model.requests.filter((r) => r.schema?.name === "sent_mail").map((r) => promptText(r.messages[0]!.content));
   return { backend, client, model, clock, ingest, request, reply, datedDone, followupsDone, rows, sentPrompts };
 }
@@ -153,12 +153,14 @@ describe("a promise that answers a request keeps its deadline (iteration 3)", ()
     let list = await rows();
     expect(list.map((r) => [r.id, r.section])).toEqual([[`promise:${promise!.id}`, "day:2026-11-11"]]);
     expect(list[0]!.why.promise).toMatchObject({ needed: at(2026, 11, 13, 9) });
-    // Thursday: Wednesday missed, the row under Friday ("You said Wed 11 (missed) · needed Fri"), never Missed
+    // Thursday: Wednesday missed, Friday still ahead ("You said Wed 11 (missed) · needed Fri"): never Missed, and (iteration 4,
+    // revision 8: the owner's "Today, Waiting on you") the school is waiting on it now, so it's first in Today's Waiting on
+    // you, counted once there, no longer under Friday
     clock.now = at(2026, 11, 12, 10);
     list = await rows();
-    expect(list.map((r) => [r.id, r.section])).toEqual([[`promise:${promise!.id}`, "day:2026-11-13"]]);
+    expect(list.map((r) => [r.id, r.section])).toEqual([[`promise:${promise!.id}`, "today:waiting"]]);
     expect(list[0]!.why.promise).toMatchObject({ said: at(2026, 11, 11, 9), needed: at(2026, 11, 13, 9) });
-    expect((await client.call("today.list", { held: [] })).counts.missed).toBe(0);
+    expect((await client.call("today.list", { held: [] })).counts).toEqual({ missed: 0, today: 0, waiting: 1 });
     // Done on its row: the promise and the request together, and no history line of the request's own
     const now = (await backend.store.followups.get(promise!.id))!;
     const { undoId } = await client.call("followups.act", { id: now.id, revision: now.revision, action: "done" });
@@ -215,7 +217,7 @@ describe("a promise that answers a request keeps its deadline (iteration 3)", ()
     await client.call("followups.act", { id: promise!.id, revision: promise!.revision, action: "dismiss" });
     expect(await backend.store.dated.get(req!.id)).toMatchObject({ state: "open" });
     // (a person's request, shown from its arrival among the people: plan 210, iteration 2)
-    expect((await rows()).map((r) => [r.id, r.section])).toEqual([[`dated:${req!.id}`, "today"]]);
+    expect((await rows()).map((r) => [r.id, r.section])).toEqual([[`dated:${req!.id}`, "today:waiting"]]);
     // Margaret: "let me check my calendar and get back to you": the request stays the row, its day kept
     const other = await request();
     await datedDone();
