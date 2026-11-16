@@ -856,6 +856,10 @@ describe("plan 210 (iteration 4)", () => {
       // a request that isn't a reply (send the deck) keeps an ask about something else
       const deck = { ...reply, text: "Send Karin the incident report" };
       expect(checkDates({ items: [deck, again], settled: [] }, { ...base, text: KARIN, subject: "URGENT: dashboard down", ...person }).rows.map((r) => r.kind)).toEqual(["respond", "ask"]);
+      // her numbered list read as a second reply that day: one (Haiku, 1 in 5 in Spanish)
+      const eta = { kind: "respond", text: "Responder a Karin sobre el tiempo de restauración", quote: "An ETA for restore,", due: "2026-11-10", time: null };
+      expect(checkDates({ items: [reply, eta], settled: [] }, { ...base, text: KARIN, subject: "URGENT: dashboard down", ...person }).rows.map((r) => r.text)).toEqual([reply.text]);
+      expect(checkDates({ items: [deck, eta], settled: [] }, { ...base, text: KARIN, subject: "URGENT: dashboard down", ...person }).rows).toHaveLength(2);
     });
     it("a person's wish with no question is never a request with a day (Margaret's Gary): at most an undated ask", () => {
       const GARY = "Hi Margaret,\n\nThe premium went up about $94, mostly the roof age. I'd like to sit down with you before next year and look at the deductible.\n\nIn the meantime, Lakeshore needs the updated worksheet signed. Please sign and send it back to me by the end of the month.";
