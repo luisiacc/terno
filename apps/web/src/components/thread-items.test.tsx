@@ -88,6 +88,24 @@ describe("the reader's items, read (plan 210, iteration 3)", () => {
     expect(seen!.top?.key).toBe("dated:5");
   });
 
+  it("a history line's closed item opened beside an open sibling: nothing is drawn until its own read answers (Codex code review of iteration 3)", async () => {
+    await render(7);
+    await answer(0, [dated(2, 7, "Board meeting", NOW + DAY)]);
+    expect(seen!.top?.key).toBe("dated:2");
+    // the history line of a closed item of the same conversation opens: its read asks for it (`include`)
+    await act(async () => {
+      useApp.setState({ today: true });
+      useToday.setState({ rows: [{ id: "history:dated:3", threadId: 7, line: { item: { source: "dated", id: 3 } } } as never] });
+      useFeedRow.setState({ opened: "history:dated:3" });
+    });
+    expect(vi.mocked(client.call).mock.calls.at(-1)).toEqual(["dated.ofThread", { threadId: 7, include: 3 }]);
+    // the sibling's answer isn't this item's: no line (and no Done of the sibling's) until the item's own read answers
+    expect(seen!.ready).toBe(false);
+    await answer(1, [dated(2, 7, "Board meeting", NOW + DAY), { ...dated(3, 7, "Pay the rent", NOW - DAY), state: "done", closedAt: NOW - 1 }]);
+    expect(seen!.ready).toBe(true);
+    expect([seen!.top?.key, seen!.top?.open]).toEqual(["dated:3", false]);
+  });
+
   it("an item with no row in the feed (another mailbox) is chosen here: it leads, the other under it", async () => {
     await render(7);
     await answer(0, [dated(1, 7, "Send Jess your draft", NOW + 2 * DAY), dated(2, 7, "Board meeting", NOW + DAY)]);
