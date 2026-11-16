@@ -23,7 +23,9 @@ afterEach(() => {
   }
 });
 
-const PREV = SCHEMA_VERSION - 1;
+// the step before the last, and the one before it (numbers may skip: parallel work lands its steps in order)
+const PREV = MIGRATIONS.at(-2)!.version;
+const PREV2 = MIGRATIONS.at(-3)!.version;
 const GiB = 2 ** 30;
 
 function workdir() {
@@ -97,16 +99,16 @@ describe("prepareUpgrade (plan 95)", () => {
 
   it("a retry after a migration failed halfway keeps the backup from before the upgrade started", async () => {
     const w = workdir();
-    oldMailbox(w.db, PREV - 1, 2);
+    oldMailbox(w.db, PREV2, 2);
     const first = await prepareUpgrade(w.db, opts(w, { now: () => 1_000 }));
-    expect(first.backup!.fromSchema).toBe(PREV - 1);
+    expect(first.backup!.fromSchema).toBe(PREV2);
     // one step went through, the next failed: the file is in between
     const db = new Db(nodeSqliteDriver, w.db);
     db.exec(MIGRATIONS.find((m) => m.version === PREV)!.sql);
     db.exec(`PRAGMA user_version = ${PREV}`);
     db.close();
     const again = await prepareUpgrade(w.db, opts(w, { now: () => 2_000 }));
-    expect(again).toMatchObject({ from: PREV, made: false, backup: { id: first.backup!.id, fromSchema: PREV - 1 } });
+    expect(again).toMatchObject({ from: PREV, made: false, backup: { id: first.backup!.id, fromSchema: PREV2 } });
     expect(listBackups(w.backups).map((b) => b.id)).toEqual([first.backup!.id]);
   });
 

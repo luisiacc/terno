@@ -21,6 +21,7 @@ export * from "./followups";
 export * from "./dated";
 export * from "./dated-days";
 export * from "./schedule";
+export * from "./dated-mutes";
 export * from "./themes";
 export * from "./list-filter";
 export * from "./people";

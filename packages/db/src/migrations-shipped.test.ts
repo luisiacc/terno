@@ -73,6 +73,7 @@ const SHIPPED: [number, string][] = [
   [63, "8a4fea0bfb72f979"],
   [64, "f7952a8e2750bcd3"],
   [68, "93d0b1b7c0b2f8ed"],
+  [69, "6dccfa7a7add1588"],
   [70, "57da758690a600f4"],
 ];
 

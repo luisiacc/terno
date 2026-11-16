@@ -821,3 +821,17 @@ describe("migration v60: what the dated reader read with nothing asked (plan 210
     expect(db.get<{ n: number }>("SELECT count(*) AS n FROM dated_nothing_asked")!.n).toBe(0);
   });
 });
+
+describe("migration v69: muted senders and kinds (plan 210, iteration 4)", () => {
+  it("adds an empty table keyed by what's muted, every message kept; a target outside sender and kind is refused", () => {
+    const { db } = legacyMail(64, { threads: 2, seed: 12 });
+    const before = db.all<Record<string, unknown>>("SELECT id, thread_id FROM messages ORDER BY id");
+    expect(migrate(db)).toEqual({ from: 64, to: SCHEMA_VERSION });
+    expect(db.get<{ n: number }>("SELECT count(*) AS n FROM dated_mutes")!.n).toBe(0);
+    expect(db.all<Record<string, unknown>>("SELECT id, thread_id FROM messages ORDER BY id")).toEqual(before);
+    expect(db.all<{ name: string }>("SELECT name FROM pragma_table_info('dated_mutes') ORDER BY cid").map((r) => r.name)).toEqual(["target", "key", "name", "created_at"]);
+    db.run("INSERT INTO dated_mutes (target, key, created_at) VALUES ('kind', 'delivery', 1)");
+    expect(() => db.run("INSERT INTO dated_mutes (target, key, created_at) VALUES ('kind', 'delivery', 2)")).toThrow();
+    expect(() => db.run("INSERT INTO dated_mutes (target, key, created_at) VALUES ('thread', '5', 1)")).toThrow();
+  });
+});

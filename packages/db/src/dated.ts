@@ -1,5 +1,5 @@
-import { addressKey, ANSWERED_KINDS, DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, parseHandedTo, senderIsPerson, THREAD_SCOPED_KINDS, waitingCutoff, type DatedRow } from "@terno/core";
-import { DATED_MARK_MS, DATED_SCAN_MARK_MS, datedTab, NEW_MAIL_MS, readerIn, readNothingAsked, recipientList, type ClosedAt, type DatedFinish, type DatedFinishOutcome, type DatedMark, type DatedSnapshot, type DatedSource } from "@terno/store";
+import { addressKey, ANSWERED_KINDS, DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, parseHandedTo, DATED_MUTE_NAME_MAX, DATED_MUTES_MAX, muteKey, senderIsPerson, THREAD_SCOPED_KINDS, waitingCutoff, type DatedMute, type DatedMuteOn, type DatedRow } from "@terno/core";
+import { DATED_MARK_MS, DATED_SCAN_MARK_MS, datedTab, NEW_MAIL_MS, readerIn, readNothingAsked, recipientList, type ClosedAt, type DatedFinish, type DatedFinishOutcome, type DatedMuteAdded, type DatedMark, type DatedSnapshot, type DatedSource } from "@terno/store";
 import { OWN_SENDER_SQL, RECEIVED_SQL } from "./ai-summaries";
 import { ownAddresses } from "./facts";
 import { remarkReplies } from "./followups";
@@ -118,18 +118,53 @@ export function openDatedFor(db: Db, o: { threadId: number; senderKey: string; b
   ).map(toRow);
 }
 
+// ─── plan 210 (iteration 4, revision 2): what the reader muted ───
+
+const toMute = (r: { target: DatedMuteOn; key: string; name: string; created_at: number }): DatedMute => ({ on: r.target, key: r.key, name: r.name, at: r.created_at });
+
+export const datedMutes = (db: Db): DatedMute[] => db.all<Parameters<typeof toMute>[0]>("SELECT * FROM dated_mutes ORDER BY created_at DESC, target, key").map(toMute);
+
+/** Normalized as `muteKey` says (a key it refuses throws); at `DATED_MUTES_MAX`, refused, never one dropped for it. */
+export function addDatedMute(db: Db, m: DatedMute): DatedMuteAdded {
+  const key = muteKey(m.on, m.key);
+  if (key === null) throw new TypeError("not a sender or a kind");
+  return db.tx(() => {
+    if (db.get("SELECT 1 FROM dated_mutes WHERE target = ? AND key = ?", m.on, key)) return "already";
+    if (db.get<{ n: number }>("SELECT count(*) AS n FROM dated_mutes")!.n >= DATED_MUTES_MAX) return "full";
+    db.run("INSERT INTO dated_mutes (target, key, name, created_at) VALUES (?, ?, ?, ?)", m.on, key, m.on === "sender" ? m.name.trim().slice(0, DATED_MUTE_NAME_MAX) : "", m.at);
+    return "added";
+  });
+}
+
+export function removeDatedMute(db: Db, on: DatedMuteOn, key: string): DatedMute | null {
+  const k = muteKey(on, key);
+  if (k === null) return null;
+  return db.tx(() => {
+    const r = db.get<Parameters<typeof toMute>[0]>("SELECT * FROM dated_mutes WHERE target = ? AND key = ?", on, k);
+    if (r) db.run("DELETE FROM dated_mutes WHERE target = ? AND key = ?", on, k);
+    return r ? toMute(r) : null;
+  });
+}
+
+/** The muted senders' keys: one read of a table bounded at 200 (Needs you's walk reads it once). */
+export const mutedSenders = (db: Db): Set<string> => new Set(db.all<{ key: string }>("SELECT key FROM dated_mutes WHERE target = 'sender'").map((r) => r.key));
+
 export function finishDated(db: Db, w: DatedFinish): DatedFinishOutcome {
   return db.tx(() => {
     if (!db.get("SELECT 1 FROM ai_dated_mail WHERE message_id = ?", w.messageId)) return "gone";
     const src = datedSource(db, w.messageId);
-    if (!src || src.spam || src.trash || src.draft || src.threadSpam) {
+    // plan 210 (iteration 4): a sender muted while it was read: nothing it read is kept, and it isn't read again
+    if (!src || src.spam || src.trash || src.draft || src.threadSpam || db.get("SELECT 1 FROM dated_mutes WHERE target = 'sender' AND key = ?", src.senderKey)) {
       db.run("DELETE FROM ai_dated_mail WHERE message_id = ?", w.messageId);
       return "gone";
     }
     // a merge since it was read: the mark stays, and the worker reads it again on its thread
     if (src.threadId !== w.threadId) return "moved";
     let open = db.get<{ n: number }>("SELECT COUNT(*) AS n FROM dated_items INDEXED BY dated_open WHERE state = 'open'")!.n;
+    // plan 210 (iteration 4): a muted kind's new items aren't stored; its settlements and moves below still are
+    const kinds = new Set(db.all<{ key: string }>("SELECT key FROM dated_mutes WHERE target = 'kind'").map((r) => r.key));
     for (const r of w.rows) {
+      if (kinds.has(r.kind)) continue;
       if (db.get("SELECT 1 FROM dated_items WHERE message_id = ? AND item = ?", w.messageId, r.item)) continue;
       // plan 210 (iteration 3): a request read after your reply is stored open like any other: only a reply's verdict settles it
       if (open >= DATED_ACTIVE_MAX) {
@@ -179,7 +214,7 @@ export function finishDated(db: Db, w: DatedFinish): DatedFinishOutcome {
       );
     }
     // plan 210 (iteration 3): a request a reply of yours already followed goes to the follow-ups reader with that reply again, for its verdict
-    if (w.replies && w.rows.some((r) => ANSWERED_KINDS.includes(r.kind))) remarkReplies(db, src.threadId, src.date, w.replies.since, w.now);
+    if (w.replies && w.rows.some((r) => ANSWERED_KINDS.includes(r.kind) && !kinds.has(r.kind))) remarkReplies(db, src.threadId, src.date, w.replies.since, w.now);
     // plan 210 (iteration 2): read with nothing asked of the reader, which Needs you reads while it's their latest; a reading
     // again (the 14-day check) that finds a request takes it back
     if (readNothingAsked(w)) db.run("INSERT OR REPLACE INTO dated_nothing_asked (message_id, thread_id, arrived_at, prompt_version) VALUES (?, ?, ?, ?)", w.messageId, src.threadId, src.date, w.promptVersion);

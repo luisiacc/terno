@@ -55,6 +55,8 @@ describe("why a mailbox couldn't open (plan 95)", () => {
     for (let i = 0; i < 50; i++) db.run("INSERT INTO accounts (kind, email, display_name, provider_config, created_at) VALUES ('imap', ?, '', '{}', 0)", `a${i}@example.test`);
     const schema = () => db.all("SELECT type, name, sql FROM sqlite_master ORDER BY type, name");
     const before = schema();
+    // no free pages either (an earlier step that dropped an index leaves some, which the step could take)
+    db.exec("VACUUM");
     const pages = db.get<{ page_count: number }>("PRAGMA page_count")!.page_count;
     // not one page more: whatever the last step writes doesn't fit
     db.exec(`PRAGMA max_page_count = ${pages}`);

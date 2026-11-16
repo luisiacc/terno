@@ -1573,6 +1573,17 @@ ALTER TABLE followups ADD COLUMN changed_at INTEGER;
 ALTER TABLE followups ADD COLUMN changed_from TEXT;
 ALTER TABLE followups ADD COLUMN proposal TEXT;
 ` },
+  // plan 210 (iteration 4, revision 2): senders and kinds the reader muted in What matters, read before any reading and in
+  // the reader's commit. Shape only: an empty table, bounded at 200 by the store
+  { version: 69, name: "What matters: muted senders and kinds (plan 210, iteration 4)", sql: `
+CREATE TABLE dated_mutes (
+  target TEXT NOT NULL CHECK (target IN ('sender', 'kind')),
+  key TEXT NOT NULL,
+  name TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (target, key)
+) WITHOUT ROWID;
+` },
   // plan 210 (iteration 4, Hand to…): a forward's hand-off of What matters' items, kept with its draft (copied onto its send
   // op's target when queued, which needs no column), and whom a confirmed forward handed an item to. Shape only: nullable
   // columns, no rewrite, no index (a draft's is read with its row, an item's with its row). v65 to v69 are iteration 4's others
