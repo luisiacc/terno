@@ -52,6 +52,21 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
+describe("the reader's line (plan 210, iteration 5, R8)", () => {
+  it("the sentence is a line of its own, the card's width; its controls are under it, on its edge, in their order", async () => {
+    await render(row());
+    const line = q("thread-dated-item")!;
+    // a column: the sentence first, the controls after it, nothing beside the sentence
+    expect(line.className).toContain("flex-col");
+    expect([...line.children].map((c) => (c as HTMLElement).dataset.testid)).toEqual(["thread-dated-text", "thread-dated-controls"]);
+    expect(q("thread-dated-text")!.className).toContain("w-full");
+    expect([...q("thread-dated-controls")!.querySelectorAll("button")].map((b) => b.dataset.testid)).toEqual(["thread-dated-done", "thread-dated-later", "thread-dated-change", "thread-dated-hand", "thread-dated-dismiss"]);
+    // a history line opened: what happened, under the sentence too
+    await render(row({ state: "done", closedAt: NOW }), false);
+    expect([...q("thread-dated-item")!.children].map((c) => (c as HTMLElement).dataset.testid)).toEqual(["thread-dated-text", "thread-dated-outcome"]);
+  });
+});
+
 describe("Change… on the reader's line (plan 210, iteration 4)", () => {
   it("an open item with a day has Change…, named for a screen reader; a person's ask and a closed item have none", async () => {
     await render(row());

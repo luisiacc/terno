@@ -276,12 +276,14 @@ export default function ThreadItems({ detail, items }: { detail: ThreadDetail; i
         data-kind={top.source === "dated" ? top.row.kind : "promise"}
         data-target={targeted || undefined}
         data-closed={!top.open || undefined}
-        className="flex min-h-11 items-center gap-3 py-1.5 text-sm"
+        // plan 210 (iteration 5, R8): the sentence on a line of its own, the card's whole width, and its controls under it on
+        // the same edge (Done's outline on the sentence's first letter), never five controls squeezing it into a column
+        className="flex flex-col items-start gap-2 pt-3 pb-2.5 text-sm"
       >
-        <span data-testid="thread-dated-text" className={cn(AI_TITLE, "min-w-0 flex-1 wrap-anywhere tabular", !top.open && "text-muted-foreground")}>{readerLine(top, now)}</span>
+        <span data-testid="thread-dated-text" className={cn(AI_TITLE, "w-full min-w-0 text-pretty wrap-anywhere tabular", !top.open && "text-muted-foreground")}>{readerLine(top, now)}</span>
         {top.open ? (
-          // Done outlined (what's usually meant), Later and Remove quiet beside it
-          <span className="flex shrink-0 items-center gap-1.5">
+          // Done outlined (what's usually meant), Later and Remove quiet beside it; on a narrow card they wrap, never shrink
+          <span data-testid="thread-dated-controls" className="flex flex-wrap items-center gap-1.5">
             <Button ref={doneRef} variant="outline" size="sm" className="text-foreground" data-testid="thread-dated-done" aria-label={t("dated.doneItem", { text })} onClick={() => void actOnReaderItem(threadId, top, "done")}>
               {t("dated.done")}
             </Button>
