@@ -3,6 +3,7 @@ import { DATED_MARK_MS, DATED_SCAN_MARK_MS, datedTab, NEW_MAIL_MS, readerIn, rea
 import { OWN_SENDER_SQL, RECEIVED_SQL } from "./ai-summaries";
 import { ownAddresses } from "./facts";
 import { remarkReplies } from "./followups";
+import { proposedMove, scheduleFields } from "./schedule";
 import type { Db } from "./sqlite";
 
 /** Plan 204 on SQLite (v56, v57 admits `ask`): see packages/store/src/dated.ts. */
@@ -14,11 +15,12 @@ interface Raw {
   id: number; thread_id: number; message_id: number; item: number; kind: DatedRow["kind"]; text: string; quote: string; sender_key: string; due_day: string; due_at: number; timed: number; dated: number; act_at: number;
   deferred_until: number | null; arrived_at: number; state: DatedRow["state"]; closed_reason: string | null; closed_at: number | null; from_scan: number; revision: number; model: string | null; provider: string | null; created_at: number;
   early: number; same_as: string | null; detail_of: number | null; lapses: number;
+  changed_at: number | null; changed_from: string | null; proposal: string | null;
 }
 const toRow = (r: Raw): DatedRow => ({
   id: r.id, threadId: r.thread_id, messageId: r.message_id, item: r.item, kind: r.kind, text: r.text, quote: r.quote, senderKey: r.sender_key, dueDay: r.due_day, dueAt: r.due_at, timed: r.timed === 1, dated: r.dated === 1, actAt: r.act_at,
   deferredUntil: r.deferred_until, arrivedAt: r.arrived_at, state: r.state, closedReason: r.closed_reason, closedAt: r.closed_at, fromScan: r.from_scan === 1, revision: r.revision, model: r.model, provider: r.provider, createdAt: r.created_at,
-  early: r.early === 1, sameAs: r.same_as ?? null, detailOf: r.detail_of ?? null, lapses: r.lapses === 1,
+  early: r.early === 1, sameAs: r.same_as ?? null, detailOf: r.detail_of ?? null, lapses: r.lapses === 1, ...scheduleFields(r),
 });
 
 /** Ingest's part (in its transaction): received live mail, by the new-mail rule, and since the feature went on. */
@@ -155,6 +157,8 @@ export function finishDated(db: Db, w: DatedFinish): DatedFinishOutcome {
       db.run("UPDATE followups SET state = 'dismissed', closed_reason = 'replaced', closed_at = ?, inbox_state = 'none', revision = revision + 1 WHERE id = ?", w.now, r.id);
     }
     for (const m of w.movedPromises ?? []) {
+      // plan 210 (iteration 4): a promise whose day the user chose keeps it; the move is kept for them to take or leave
+      if (proposedMove(db, "followups", { id: m.id, revision: m.revision, threadId: src.threadId }, { dueAt: m.dueAt, timed: m.timed ?? false }, src, w)) continue;
       db.run(
         // plan 210 (iteration 2): its first broken day kept (a second move after another broken day keeps the first), and
         // whether its new moment is a stated time (absent: as it was)
@@ -163,6 +167,8 @@ export function finishDated(db: Db, w: DatedFinish): DatedFinishOutcome {
       );
     }
     for (const m of w.moved ?? []) {
+      // plan 210 (iteration 4): likewise an item whose day the user chose: the mail's day (and words) wait as a proposal
+      if (proposedMove(db, "dated_items", { id: m.id, threadId: src.threadId, senderKey: src.senderKey, reaches: SENDER_REACHES_SQL }, { dueDay: m.dueDay, dueAt: m.dueAt, timed: m.timed, actAt: m.actAt, ...(m.text ? { text: m.text } : {}) }, src, w)) continue;
       db.run(
         // the revision stays: a Later just before stays undoable, and the move changes no choice of the user's (Codex review);
         // its new words, if it gives some, in the same write (the fifth panel round)

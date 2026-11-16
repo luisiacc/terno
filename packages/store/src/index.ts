@@ -29,6 +29,7 @@ export * from "./followups";
 export * from "./dated";
 export * from "./replies";
 export * from "./today";
+export * from "./schedule";
 export * from "./writing";
 export * from "./folder-move";
 

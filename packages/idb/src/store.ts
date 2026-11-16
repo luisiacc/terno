@@ -1,6 +1,7 @@
 import { ASK_MATCH_MESSAGES, ASK_MATCH_PARTS, CORPUS_TEXTS_MAX, finishBodyClose, rankSentRefs, readPassages, readThreadContext, type SentRef } from "@terno/store";
 import { ClosedOrder } from "./closed-order";
 import { actOnItems, fromOf, itemMembers, linkItems, liveAmong, restoreItems, needsCount, needsWalk, type NeedsWalk, messagesHere, senders, allDigests, beginDigest, clearDigests, digestFacts, digestLive, digestRead, getDigest, latestDigest, pendingDigestDays, pruneDigests, waitingAmong, waitingPage, writeDigest } from "./today";
+import { scheduleItems, unscheduleItems } from "./schedule";
 import { clearReplies, finishReply, getReply, transitionReply } from "./replies";
 import { activeDated, closedDatedPage, clearDated, datedMarkCount, datedPendingOn, datedMarkPage, datedScanCandidates, datedSource, finishDated, getDated, markDatedMail, openDatedFor, pruneDated, pruneDatedMarks, queueDatedScan, restoreDated, threadDated, datedWritten, updateDated } from "./dated";
 import { activeFollowups, closedFollowupPage, claimFollowupNotice, clearFollowups, closeAnsweredFollowups, endFollowupTop, finishFollowups, followupLiveSent, followupScanCandidates, followupSendConfirmed, followupSource, getFollowup, makeFollowupsDue, nextFollowupDue, pruneFollowups, pruneSentMarks, queueScan, restoreFollowups, sentMarkCount, sentMarkPage, threadFollowups, updateFollowup } from "./followups";
@@ -2006,6 +2007,9 @@ export class IdbMailStore implements MailStore {
     link: (o) => this.command(() => linkItems(this.c, o)),
     act: (changes) => this.command(() => actOnItems(this.c, changes)),
     restore: (snapshots) => this.command(() => restoreItems(this.c, snapshots)),
+    // plan 210 (iteration 4, Change…): one command over both tables, as an act
+    schedule: (changes) => this.command(() => scheduleItems(this.c, changes)),
+    unschedule: (snapshots) => this.command(() => unscheduleItems(this.c, snapshots)),
     needsCount: (now) => this.needs(now, (walk) => needsCount(this.c, walk)),
     digestFacts: (ids) => this.read(() => digestFacts(this.c, ids)),
     digestLive: (ids) => this.read(() => digestLive(this.c, ids)),

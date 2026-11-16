@@ -1,6 +1,7 @@
 import { addressKey, CALENDAR_ANSWER_PREFIXES, SUMMARY_WHO_ACTS_SINCE, type DatedRow, type DigestItem, type DigestState, type FollowupRow, type ItemRef } from "@terno/core";
 import type { DatedSnapshot } from "./dated";
 import type { FollowupSnapshot } from "./followups";
+import type { ScheduleChanges, ScheduleSnapshots } from "./schedule";
 
 /**
  * Plan 210 (iteration 2): one act on the items a row is, each at the revision it was seen at. A dated item's patch is
@@ -141,6 +142,13 @@ export interface TodayStore {
   act(changes: ItemChanges): Promise<ItemSnapshots | null>;
   /** Its Undo: every row only if none changed since (all or none; false: one had) */
   restore(snapshots: ItemSnapshots): Promise<boolean>;
+  /**
+   * Plan 210 (iteration 4, Change…): a new day and time on every item a row is, each at the revision it was read at and still
+   * open, all or none (null: one changed or closed since); see `ScheduleChanges`. What comes back is what its Undo puts back
+   */
+  schedule(changes: ScheduleChanges): Promise<ScheduleSnapshots | null>;
+  /** Its Undo: every field of every row back, only if none changed since (all or none; false: one had) */
+  unschedule(snapshots: ScheduleSnapshots): Promise<boolean>;
   /** of these messages, those that qualify; `arrivedAt` also for those that don't is what a walk stops on */
   digestFacts(messageIds: readonly number[]): Promise<{ facts: DigestFact[]; oldest: number | null }>;
   /** of these listed threads, how many are still as a digest would act on them: in the Inbox and unread */

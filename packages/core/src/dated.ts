@@ -1,6 +1,7 @@
 import { REMIND_MORNING } from "./reminders";
 import { followupWakeAt, localDay } from "./followups";
 import { WAITING_WINDOW_MS } from "./people";
+import type { ItemSchedule, ScheduleProposal } from "./schedule";
 
 /**
  * Plan 204: dated items, what incoming mail says has a date that matters to the reader (a bill due, a renewal, a flight).
@@ -101,6 +102,15 @@ export interface DatedRow {
    * takes an expiry's lead whatever kind it was read as. Absent: not (stored before it; no backfill).
    */
   lapses?: boolean;
+  /**
+   * Plan 210 (iteration 4, Change…): when the user last changed its day or time (its schedule is theirs from then on: a later
+   * mail's move is a `proposal`, never applied), and its schedule before that change (Earlier's "Changed" line). Absent or
+   * null: never changed, the mail's schedule
+   */
+  changedAt?: number | null;
+  changedFrom?: ItemSchedule | null;
+  /** Plan 210 (iteration 4): a later mail's move of a user-scheduled item, waiting for the user's "Use". Null: none */
+  proposal?: ScheduleProposal | null;
 }
 
 export interface DatedSetting {

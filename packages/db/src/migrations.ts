@@ -1561,6 +1561,18 @@ ALTER TABLE dated_items ADD COLUMN lapses INTEGER NOT NULL DEFAULT 0;
   { version: 64, name: "What matters: a confirmed send stays yours for certain (plan 210, iteration 3)", sql: `
 ALTER TABLE messages ADD COLUMN sent_confirmed INTEGER NOT NULL DEFAULT 0;
 ` },
+  // plan 210 (iteration 4, Change…): an item whose day and time the user changed (`changed_at`, null: the mail's schedule),
+  // its schedule before that change (`changed_from`, the one change event an item keeps, for Earlier's "Changed" line), and a
+  // later mail's move kept for the user rather than applied (`proposal`), on a dated item and a promise alike. Shape only:
+  // nullable columns, no rewrite, no index (both tables are bounded and read whole). v65 to v67 are iteration 4's other parts
+  { version: 68, name: "What matters: Change… (plan 210, iteration 4)", sql: `
+ALTER TABLE dated_items ADD COLUMN changed_at INTEGER;
+ALTER TABLE dated_items ADD COLUMN changed_from TEXT;
+ALTER TABLE dated_items ADD COLUMN proposal TEXT;
+ALTER TABLE followups ADD COLUMN changed_at INTEGER;
+ALTER TABLE followups ADD COLUMN changed_from TEXT;
+ALTER TABLE followups ADD COLUMN proposal TEXT;
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;
