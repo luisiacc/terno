@@ -296,11 +296,13 @@ const alertText = (kind: string, text: string) => {
 };
 // Plan 210 (iteration 3, point 6): the number that identifies an order, an invoice, a policy or a service is never in the
 // sentence, whatever the model wrote ("invoice RS-77120", "factura EP-4471", "order #IH-55018", "policy HO-3-55120847",
-// "servicio 4517 2290 3381"): its label stays when it's part of the sentence ("the Expo Pan invoice"), a bracket of it alone
+// "servicio 4517 2290 3381"), nor a file's name in brackets: its label stays when it's part of the sentence ("the Expo Pan invoice"), a bracket of it alone
 // goes. A card's or an account's last digits aren't one ("Visa ending in 4242")
 const LABEL = String.raw`invoice|order|policy|service|reference|confirmation|factura|pedido|orden|p[oó]liza|servicio|folio|referencia`;
 const NUMBERED = String.raw`(?:no\.?|number|n[uú]m\.?)?\s*#?\s?(?=[A-Z0-9-]*\d{3})[A-Z0-9][A-Z0-9-]*(?:\s\d{3,})*(?![\p{L}\p{N}])`;
-const IDENTIFIER = new RegExp(String.raw`\s*\((?:${LABEL})\.?\s*${NUMBERED}\)|\b(${LABEL})\b\s*${NUMBERED}|\s*#[A-Z0-9-]*\d{3}[A-Z0-9-]*`, "giu");
+// and a bracket of a file's name alone ("(Kestrel_MSA_2026.pdf)", Haiku 1 in 5)
+const FILE = String.raw`\s*\(\s*[\p{L}\p{N}_.-]+\.(?:pdf|docx?|xlsx?|pptx?|csv|zip|png|jpe?g|txt)\s*\)`;
+const IDENTIFIER = new RegExp(String.raw`${FILE}|\s*\((?:${LABEL})\.?\s*${NUMBERED}\)|\b(${LABEL})\b\s*${NUMBERED}|\s*#[A-Z0-9-]*\d{3}[A-Z0-9-]*`, "giu");
 export function withoutIdentifiers(text: string): string {
   const out = text.replace(IDENTIFIER, (_m, label?: string) => (label ? label : "")).replace(/\s{2,}/gu, " ").replace(/\s+([,.;:)])/gu, "$1").trim();
   return out || text;

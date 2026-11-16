@@ -392,6 +392,7 @@ describe("reading dates in mail you got (plan 204)", () => {
     expect(withoutIdentifiers("Inkhaus order #IH-55018 (adult signature required)")).toBe("Inkhaus order (adult signature required)");
     expect(withoutIdentifiers("Pay $1,486.00 for the Lakeshore Mutual homeowners policy HO-3-55120847 renewal premium")).toBe("Pay $1,486.00 for the Lakeshore Mutual homeowners policy renewal premium");
     expect(withoutIdentifiers("Pagar $1,247.00 del recibo de luz LuzMex (servicio 4517 2290 3381)")).toBe("Pagar $1,247.00 del recibo de luz LuzMex");
+    expect(withoutIdentifiers("Firmar el MSA de expansión de Halvorsen (Quillworks_Halvorsen_MSA_Expansion_2026.pdf)")).toBe("Firmar el MSA de expansión de Halvorsen");
     for (const kept of ["Pay $142.67 for the Brightline bill (the Visa ending 2291 was declined)", "Order a new card for the service desk", "Flight AP 0017 to Madrid"]) expect(withoutIdentifiers(kept)).toBe(kept);
     // through the reading
     expect(validate({ items: [item({ text: "Pay $612.00 for the Basebox invoice BB-20931" })], settled: [], moved: [] }).items[0]!.text).toBe("Pay $612.00 for the Basebox invoice");
