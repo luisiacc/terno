@@ -1,5 +1,5 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { DIGEST_ROW_ID, localDay, type FeedRowId, type ThreadSummary } from "@terno/core";
+import { DIGEST_ROW_ID, localDay, type FeedRowId, type ThreadSummary, type TodayItem } from "@terno/core";
 import { getLocale, t } from "@terno/i18n";
 import { Skeleton } from "@terno/ui/components/skeleton";
 import { Sun } from "@terno/ui/icons";
@@ -86,8 +86,12 @@ function openItem(row: FeedRow): void {
   releaseRow(row.threadId);
 }
 
-/** Who an item is from, as the feed says it: a promise's person (you sent its last message), else the sender. */
-const senderOf = (thread: ThreadSummary, task: TodayTask | undefined): string => (task?.kind === "promise" && task.person ? task.person.name : thread.fromName || thread.fromEmail);
+/**
+ * Who an item is from, as the feed says it: a promise's person (you sent its last message); a dated item's own sender, from
+ * its message (plan 210, iteration 3: not the conversation's latest, "Gary" on Lakeshore's premium); else the sender.
+ */
+const senderOf = (thread: ThreadSummary, task: TodayTask | undefined, entry: TodayItem | undefined): string =>
+  task?.kind === "promise" && task.person ? task.person.name : entry?.from ? entry.from.name || entry.from.email : thread.fromName || thread.fromEmail;
 
 /** The right-click menu is a conversation's: the digest's item has none (its row on the list has none either). */
 const menuId = (id: number): number | undefined => (id === DIGEST_ROW_ID ? undefined : id);
@@ -298,7 +302,7 @@ function OpenItem({ row, thread, open, cursor }: { row: FeedRow; thread: ThreadS
   const sentence = useMemo(() => (entry ? todaySentence(entry) : thread.subject || t("common.noSubject")), [entry, thread.subject]);
   // its weight by its group (plan 210: Missed and Today's dated items strong, a day ahead quiet), its column in the list's words
   const when = useMemo(() => (entry ? todayWhen(entry, Date.now(), group, ahead) : { text: listDate(thread.lastDate), tone: "none" as const }), [entry, group, ahead, thread.lastDate]);
-  const sender = senderOf(thread, task);
+  const sender = senderOf(thread, task, entry);
   // the briefing's second line: who (whom a promise of yours was made to), and its related detail (a return leg); never
   // the email's date, which read as the due day (after the UI panel): the right column says when
   const who = task?.kind === "promise" && task.person ? t("whatMatters.to", { name: task.person.name }) : sender;

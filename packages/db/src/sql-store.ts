@@ -4,7 +4,7 @@ import { publishBody } from "@terno/store";
 import { resolvable, parseSearch, searchTerms } from "@terno/core";
 import { bodyUpgradePending, BodyUpgradeRequired, BODY_UPGRADE_APPLICATION_ID, BODY_READY_APPLICATION_ID } from "./body-upgrade";
 import { unsubscribeBodyParts, decodeBodyPart } from "@terno/store";
-import { actOnItems, itemMembers, linkItems, liveAmong, needsCount, restoreItems, messagesHere, senders, allDigests, beginDigest, clearDigests, digestFacts, digestLive, digestRead, getDigest, latestDigest, pendingDigestDays, pruneDigests, waitingAmong, waitingPage, writeDigest } from "./today";
+import { actOnItems, fromOf, itemMembers, linkItems, liveAmong, needsCount, restoreItems, messagesHere, senders, allDigests, beginDigest, clearDigests, digestFacts, digestLive, digestRead, getDigest, latestDigest, pendingDigestDays, pruneDigests, waitingAmong, waitingPage, writeDigest } from "./today";
 import { clearReplies, finishReply, getReply, transitionReply } from "./replies";
 import { activeDated, closedDatedPage, clearDated, datedAnswered, settleAnswered, datedMarkCount, datedMarkPage, datedScanCandidates, datedSource, finishDated, getDated, markDatedMail, openDatedFor, pruneDated, pruneDatedMarks, queueDatedScan, restoreDated, threadDated, datedWritten, updateDated } from "./dated";
 import { activeFollowups, closedFollowupPage, claimFollowupNotice, clearFollowups, closeAnsweredFollowups, endFollowupTop, finishFollowups, followupLiveSent, followupScanCandidates, followupSendConfirmed, followupSource, getFollowup, makeFollowupsDue, nextFollowupDue, pruneFollowups, pruneSentMarks, queueScan, restoreFollowups, sentMarkCount, sentMarkPage, threadFollowups, updateFollowup } from "./followups";
@@ -1120,6 +1120,7 @@ export class SqlMailStore implements MailStore {
     digestRead: async (ids) => digestRead(this.db, ids),
     messagesHere: async (ids) => messagesHere(this.db, ids),
     senders: async (ids) => senders(this.db, ids),
+    fromOf: async (ids) => fromOf(this.db, ids),
     digest: {
       get: async (day) => getDigest(this.db, day),
       latest: async (day) => latestDigest(this.db, day),

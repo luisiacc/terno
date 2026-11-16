@@ -152,6 +152,11 @@ export interface TodayItem {
   summary?: string;
   /** plan 210 (iteration 2): a related detail of its item (a return leg), never another obligation */
   also?: TodayAlso;
+  /**
+   * plan 210 (iteration 3, revision 10): a dated item's own sender, from its message (Margaret's premium from Lakeshore
+   * Mutual, never "Gary", who wrote last in the conversation); absent for a promise, a waiting row or a reminder
+   */
+  from?: { name: string; email: string };
 }
 
 /**

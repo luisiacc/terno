@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { canLapse, datedGroupAt, datedTiming, displayBucket, lapsesUnlessRenewed, needsPresence, nextTodayChange, type DatedKind, type DatedRow } from "./dated";
 import type { FollowupRow } from "./followups";
-import { placedThreads, placeItems, projectToday, type ProjectionFacts } from "./today-projection";
+import { placedThreads, placeItems, projectToday, withMembersDetails, type ProjectionFacts } from "./today-projection";
 import { splitZoneNote, statedClock } from "./today-items";
 
 const at = (y: number, m: number, d: number, h = 0, min = 0) => new Date(y, m - 1, d, h, min).getTime();
@@ -79,6 +79,20 @@ describe("duplicates and related details", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ id: `dated:${restaurant.id}`, threadId: 1 });
     expect(rows[0]!.why.members).toEqual([{ source: "dated", id: restaurant.id }, { source: "dated", id: friend.id }]);
+  });
+
+  it("plan 210 (iteration 3): a merged row keeps what its members add (Priya's car pickup from Jess's note), and says its own message", () => {
+    const restaurant = dated("event", "2026-11-18", { threadId: 1, messageId: 49, text: "Juniper & Rye reservation, party of 4, Chef's counter" }, "19:30");
+    const friend = dated("event", "2026-11-18", { threadId: 2, sameAs: `dated:${restaurant.id}`, text: "Dinner at Juniper & Rye (car pickup 7:05)" }, "19:30");
+    const [row] = projectToday(facts({ dated: [restaurant, friend] })).rows;
+    expect(row!.why.text).toBe("Juniper & Rye reservation, party of 4, Chef's counter (car pickup 7:05)");
+    expect(row!.messageId).toBe(49);
+    // a detail already said, or a zone note, isn't said twice; one bracket of its own takes the rest
+    expect(withMembersDetails("Dinner (car pickup 7:05)", [friend])).toBe("Dinner (car pickup 7:05)");
+    expect(withMembersDetails("Dinner (party of 4)", [friend])).toBe("Dinner (party of 4; car pickup 7:05)");
+    expect(withMembersDetails("Dinner", [{ ...friend, text: "Dinner at 7:30 (7:30 PM ET)", timed: true }])).toBe("Dinner");
+    // the count makes no words
+    expect(projectToday(facts({ dated: [restaurant, friend] }), { count: true }).rows).toEqual([]);
   });
 
   it("Codex code review: the canonical's conversation in Trash, a live member shows the same row", () => {

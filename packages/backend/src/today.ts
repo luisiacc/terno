@@ -659,9 +659,13 @@ export class TodayService {
     // a waiting row's line is its current summary, read together, for the first rows only
     const lined = shown.filter((r) => r.waiting).slice(0, SUMMARY_LINES_MAX).map((r) => r.threadId);
     const lines = new Map(await Promise.all(lined.map(async (id) => [id, await this.summaryLine(id)] as const)));
+    // plan 210 (iteration 3, revision 10): each dated row's own sender, one read for them all
+    const sent = shown.flatMap((r) => (r.messageId !== undefined ? [r.messageId] : []));
+    const from = sent.length ? await store.today.fromOf(sent) : new Map<number, { name: string; email: string }>();
     const sections: TodaySection[] = [];
     for (const r of shown) {
-      const item: TodayItem = { id: r.id, thread: threads.get(r.threadId)!, why: r.why, ...(r.waiting ? lines.get(r.threadId) : {}), ...(r.also ? { also: r.also } : {}) };
+      const sender = r.messageId !== undefined ? from.get(r.messageId) : undefined;
+      const item: TodayItem = { id: r.id, thread: threads.get(r.threadId)!, why: r.why, ...(r.waiting ? lines.get(r.threadId) : {}), ...(r.also ? { also: r.also } : {}), ...(sender ? { from: sender } : {}) };
       const last = sections.at(-1);
       const day = r.day ?? undefined;
       // plan 210 (iteration 3): Today's "Waiting on you" is a section of its own, after Today's
