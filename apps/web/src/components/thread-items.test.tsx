@@ -11,7 +11,7 @@ vi.mock("~/rpc/connection", () => ({ client: { call: vi.fn(), on: vi.fn((name: s
 
 const { client } = await import("~/rpc/connection");
 const { useApp } = await import("~/state/app");
-const { useToday, useFeedRow } = await import("~/state/today");
+const { useToday, useFeedRow, useReaderChoice } = await import("~/state/today");
 const { useReaderItems } = await import("./thread-items");
 type Model = ReturnType<typeof useReaderItems>;
 
@@ -113,5 +113,16 @@ describe("the reader's items, read (plan 210, iteration 3)", () => {
     expect(seen!.top?.key).toBe("dated:1");
     expect(seen!.others.map((o) => o.key)).toEqual(["dated:2"]);
     expect(useFeedRow.getState().opened).toBeNull();
+  });
+
+  it("a choice with no feed row is shared while it leads: the keys and the palette act on it, until the conversation is left (Codex code review of iteration 3)", async () => {
+    await render(7);
+    await answer(0, [dated(1, 7, "Send Jess your draft", NOW + 2 * DAY), dated(2, 7, "Board meeting", NOW + DAY)]);
+    // the soonest leads by itself: nothing chosen, so the feed's row is what the keys act on
+    expect(useReaderChoice.getState().held).toBeNull();
+    await act(async () => seen!.choose(seen!.others[0]!));
+    expect(useReaderChoice.getState().held).toMatchObject({ threadId: 7, item: { key: "dated:1" } });
+    await render(8);
+    expect(useReaderChoice.getState().held).toBeNull();
   });
 });

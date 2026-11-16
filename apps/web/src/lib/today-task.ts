@@ -4,9 +4,10 @@ import type { LeftRows } from "~/lib/actions";
 import { actOnDated, actOnTask, type DatedRef, type TodayTask } from "~/lib/dated";
 import { actOnFollowup } from "~/lib/followups";
 import { closePage, currentPage, listLayout } from "~/lib/page";
+import type { ReaderItem } from "~/lib/reader-items";
 import { getApp, setApp, setAppOpened } from "~/state/app";
 import { listKey, noteEdit, reloadList } from "~/state/list";
-import { feedRow, feedRowsOfItem, rowOfThread, useFeedRow, useToday, type FeedRow } from "~/state/today";
+import { feedRow, feedRowsOfItem, readerHeld, rowOfThread, useFeedRow, useReaderChoice, useToday, type FeedRow } from "~/state/today";
 
 type TaskAction = "done" | "dismiss" | "later";
 
@@ -88,18 +89,42 @@ export function actOnThreadPromise(row: FollowupRow, action: TaskAction, at?: nu
   return actOnFollowup(row, action, at, rows.length ? leaveFeedRows(rows) : undefined);
 }
 
+/** Done, Later and Remove on the reader's item, its feed rows leaving with it (its line, and D, b and ⇧D while it leads by a choice made there). */
+export function actOnReaderItem(threadId: number, item: ReaderItem, action: TaskAction, at?: number): Promise<void> {
+  return item.source === "dated" ? actOnThreadItem(threadId, item.row, action, at) : actOnThreadPromise(item.row, action, at);
+}
+
+/** The reader's Later menu, opened (its button, b): it holds the app's keys while it's open, as the feed's does. */
+export function openReaderLater(): void {
+  useReaderChoice.setState({ later: true });
+  setApp({ menuOpen: true });
+}
+
+/** The reader's Later menu closes (chosen, Esc, a click away, or its item gone). */
+export function closeReaderLater(): void {
+  if (!useReaderChoice.getState().later) return;
+  useReaderChoice.setState({ later: false });
+  setApp({ menuOpen: false });
+}
+
 /**
  * What D, b and ⇧D act on: What matters' row with a task (plan 204, after the panel, fix 2; plan 210's iteration 1 for b and
- * ⇧D). Anywhere else, on a row without one, or among several checked, nothing (null: the key is left alone).
+ * ⇧D), or the reader's item while it leads by a choice made there (iteration 3, code review). Anywhere else, on a row
+ * without one, or among several checked, nothing (null: the key is left alone).
  */
-function keyTarget(): { row: FeedRow & { task: TodayTask }; next: FeedRowId | undefined } | null {
+function keyTarget(): { row: FeedRow & { task: TodayTask }; next: FeedRowId | undefined } | { threadId: number; item: ReaderItem } | null {
   const s = getApp();
   if (!s.today) return null;
   // plan 210 (Codex code review): in the feed, the row the keyboard is on (Tab to another, D finishes that one), else the
   // open one, else the one a conversation was just put away from
   const focused = focusedFeedItem();
+  const one = (threadId: number) => !s.scope && (s.checked.size === 0 || (s.checked.size === 1 && s.checked.has(threadId)));
+  // (iteration 3, code review) an item chosen in the reader with no row of its own leads there: the keys are its, never
+  // the open row's item it took the place of, unless they're on another row of the feed
+  const held = focused === null || focused === useFeedRow.getState().opened ? readerHeld(s.selectedId) : null;
+  if (held && s.selectedId !== null) return one(s.selectedId) ? { threadId: s.selectedId, item: held } : null;
   const row = feedRow(focused ?? feedPlace()) ?? (s.selectedId !== null && s.selectedId !== DIGEST_ROW_ID ? rowOfThread(s.selectedId) : undefined);
-  if (!row?.task || s.scope || (s.checked.size > 0 && !(s.checked.size === 1 && s.checked.has(row.threadId)))) return null;
+  if (!row?.task || !one(row.threadId)) return null;
   // (Codex code review, round 2) the keyboard on another row than the open one: it goes on to the row after it (else the
   // one before), as the open one would, so a second D is that one's, never the open conversation's
   const { rows } = useToday.getState();
@@ -113,8 +138,11 @@ function keyTarget(): { row: FeedRow & { task: TodayTask }; next: FeedRowId | un
 function actOnKeyTarget(action: "done" | "dismiss"): boolean {
   const target = keyTarget();
   if (!target) return false;
-  void actOnTodayRow(target.row.id, target.row.task, action);
-  keysOnTo(target.next);
+  if ("item" in target) void actOnReaderItem(target.threadId, target.item, action);
+  else {
+    void actOnTodayRow(target.row.id, target.row.task, action);
+    keysOnTo(target.next);
+  }
   return true;
 }
 
@@ -130,7 +158,8 @@ export const removeOnSelected = (): boolean => actOnKeyTarget("dismiss");
 export function laterOnSelected(): boolean {
   const target = keyTarget();
   if (!target) return false;
-  openLater(target.row.id, target.row.task, target.next);
+  if ("item" in target) openReaderLater();
+  else openLater(target.row.id, target.row.task, target.next);
   return true;
 }
 
