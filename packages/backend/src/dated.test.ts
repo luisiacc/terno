@@ -1080,6 +1080,23 @@ describe("plan 210 (iteration 5): the reading", () => {
     expect(checkDates({ items: [reply, eta], settled: [] }, { ...base, text: KARIN, subject: "Outage", from: "Karin Halvorsen", ...person }).rows.map((r) => r.kind)).toEqual(["respond"]);
   });
 
+  it("V2: an event's one start time in its quote, given none, is its time; a bare 7:00, two times, or a place's clock leave it untimed", () => {
+    const text = "Book club: we're meeting Tuesday the 17th at 7:30 PM at my house.";
+    const club = { kind: "event", text: "Book club", quote: "we're meeting Tuesday the 17th at 7:30 PM at my house", due: "2026-11-17", time: null };
+    expect(checkDates({ items: [club], settled: [] }, { ...base, text, subject: "Book club" }).rows[0]).toMatchObject({ timed: true, dueAt: at(2026, 11, 17, 19, 30) });
+    const bare = "Book club: we're meeting Tuesday the 17th at 7:00 at my house.";
+    expect(checkDates({ items: [{ ...club, quote: "we're meeting Tuesday the 17th at 7:00 at my house" }], settled: [] }, { ...base, text: bare, subject: "Book club" }).rows[0]).toMatchObject({ timed: false });
+    // on the clock it names: Theo's all-hands, 4pm Pacific, read wherever the reader is (none when that's another day there)
+    const invite = "Pingwire all-hands\nMonday Nov 16, 2026 · 4pm – 5pm (Pacific Time)";
+    const allHands = { kind: "event", text: "Invited: Pingwire all-hands", quote: "Monday Nov 16, 2026 · 4pm – 5pm (Pacific Time)", due: "2026-11-16", time: null };
+    const instant = Date.UTC(2026, 10, 17, 0, 0);
+    const row = checkDates({ items: [allHands], settled: [] }, { ...base, text: invite, subject: "Invitation" }).rows[0]!;
+    if (dayKeyOf(instant) === "2026-11-16") expect(row).toMatchObject({ timed: true, dueAt: instant });
+    else expect(row.timed).toBe(false);
+    // a model's own time stays its own
+    expect(checkDates({ items: [{ ...club, time: "19:00" }], settled: [] }, { ...base, text, subject: "Book club" }).rows[0]).toMatchObject({ dueAt: at(2026, 11, 17, 19, 0) });
+  });
+
   it("revision 8, through the worker: Social mail reaches the model only for a person's relayed ask, which is kept; the service stays no person", async () => {
     const { backend, model, receive, read } = await setup();
     const linkwell = { name: "Linkwell", email: "messages-noreply@linkwell.test" };
@@ -1096,6 +1113,21 @@ describe("plan 210 (iteration 5): the reading", () => {
     expect((await backend.store.dated.active()).map((r) => [r.kind, r.text])).toEqual([["ask", "Answer Ines Duarte about leading a workshop session"]]);
   });
 
+  it("V2: a delivery of the parcel already open in its conversation moves it, its new words with it; another thing is its own", () => {
+    const parcel = { id: 11, revision: 1, threadId: 20, senderKey: "orders@shop.test", kind: "delivery", text: "Monitor arm and drawing tablet arriving", quote: "Arrives between Thursday 12 and Friday 13 November", dueDay: "2026-11-12", dueAt: at(2026, 11, 12, 9), timed: false, dated: true } as DatedRow;
+    const text = "Your dual monitor arm and drawing tablet arrive tomorrow, Friday November 13, between 9:00 and 14:00.";
+    const item = { kind: "delivery", text: "Dual monitor arm and drawing tablet arriving, 9:00–14:00", quote: text, due: "2026-11-13", time: null };
+    const mail = { ...base, text, subject: "Arriving tomorrow", arrivedAt: at(2026, 11, 12, 8), now: at(2026, 11, 12, 8), open: new Map([["o1", parcel]]), threadId: 20, senderKey: "shipping@shop.test", from: "Shop" };
+    const out = checkDates({ items: [item], settled: [] }, mail);
+    expect(out.rows).toEqual([]);
+    expect(out.moved).toMatchObject([{ id: 11, dueDay: "2026-11-13", text: item.text }]);
+    // the model's own move of it is the move, once
+    expect(checkDates({ items: [item], settled: [], moved: [{ label: "o1", due: "2026-11-13", time: null, evidence: text }] }, mail).moved).toHaveLength(1);
+    // another thing from the same shop is a new item
+    const shoes = { kind: "delivery", text: "Running shoes arriving", quote: "Your running shoes arrive Friday November 13", due: "2026-11-13", time: null };
+    const other = checkDates({ items: [shoes], settled: [] }, { ...mail, text: "Your running shoes arrive Friday November 13." });
+    expect([other.rows.length, other.moved.length]).toEqual([1, 0]);
+  });
 });
 
 describe("the reader", () => {
