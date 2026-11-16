@@ -185,10 +185,10 @@ export function courtesyOnly(sentence: string): boolean {
  */
 const OFFERS = /\b(?:i can|i could|i d be happy to|i m happy to|happy to|we can|we could|puedo|podria|te puedo|paso|pasamos|con gusto te)\b/u;
 const DEADLINE_CUE = /\b(?:by|before|no later than|until|deadline|due|antes|a mas tardar|hasta el|para el|limite)\b/u;
-function offerOnly(sentences: string): boolean {
+function offerOnly(sentences: string, paragraph: string): boolean {
   const read = norm(sentences);
-  // "swing by Saturday" is a visit, not a deadline
-  return OFFERS.test(read) && LET_KNOW.test(read) && !DEADLINE_CUE.test(read.replace(/\b(?:swing|come|stop|drop|pop|pass) by\b/gu, " "));
+  // "swing by Saturday" is a visit, not a deadline; its "just let me know" may be the next sentence
+  return OFFERS.test(read) && LET_KNOW.test(norm(paragraph)) && !DEADLINE_CUE.test(read.replace(/\b(?:swing|come|stop|drop|pop|pass) by\b/gu, " "));
 }
 
 /**
@@ -411,7 +411,7 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     else if (sameDay.some((i) => saysReplaced(`${contextOf(i.quote, paragraphs)}\n${contextOf(m.evidence, paragraphs)}`))) replaced.add(m);
   }
   // plan 210 (iteration 3, point 7): a person's offer that waits on the reader's yes is an ask, never a request with a day
-  const candidates = [...answered, ...result.items].filter((i) => !refused(i) && !promised.has(i)).map((i) => (i.kind === "respond" && input.sender?.person && offerOnly(`${i.quote}\n${contextOf(i.quote, sentences)}`) ? { ...i, kind: "ask", due: null, time: null } : i));
+  const candidates = [...answered, ...result.items].filter((i) => !refused(i) && !promised.has(i)).map((i) => (i.kind === "respond" && input.sender?.person && offerOnly(`${i.quote}\n${contextOf(i.quote, sentences)}`, contextOf(i.quote, paragraphs)) ? { ...i, kind: "ask", due: null, time: null } : i));
   // the eval: a person's request with a day is the `respond`, never also an undated ask beside it for the same thing; an ask
   // about something else stays (plan 210, the Codex review of iteration 1, revision 3)
   const requests = candidates.filter((i) => (i.kind === "respond" || datedAsk(i)) && quoted(i.quote));
@@ -429,7 +429,7 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     const kind = (item.kind === "ask" && item.due ? "respond" : item.kind) as DatedKind;
     // plan 210 (iteration 3): an offer is its own question, never hidden by a request about the same papers
     const around = `${item.quote}\n${contextOf(item.quote, sentences)}`;
-    if (kind === "ask" && ((requested(item) && !offerOnly(around)) || noReply || onlyTells(item.quote) || courtesyOnly(around) || selfOffer(around, contextOf(item.quote, paragraphs)) || !(askAllowed(item.quote, said, input.text, input) || rebooks(item)))) continue;
+    if (kind === "ask" && ((requested(item) && !offerOnly(around, contextOf(item.quote, paragraphs))) || noReply || onlyTells(item.quote) || onlyTells(contextOf(item.quote, sentences)) || courtesyOnly(around) || selfOffer(around, contextOf(item.quote, paragraphs)) || !(askAllowed(item.quote, said, input.text, input) || rebooks(item)))) continue;
     // plan 210 (the Codex code review of iteration 2): a request of the reader, kept below or not (a day already past or
     // over in a scan, a duplicate, past the bound): never "nothing asked"
     if (kind === "ask" || kind === "respond") asked = true;
