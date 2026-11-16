@@ -1,7 +1,7 @@
 import { isAcknowledgment, looksLikeAcknowledgment, parseRef, refKey, saysNoReplyNeeded, waitingCutoff, type DatedRow, type DigestItem, type FollowupRow, type ItemRef } from "@terno/core";
 import { DATED_NOTHING_ASKED_SINCE, NEEDS_WALK, needsYou, summaryAsksNothing, type DigestFact, type DigestStored, type ItemChanges, type ItemSnapshots, type WaitingRow } from "@terno/store";
-import { getDated, restoreDated, updateDated } from "./dated";
-import { getFollowup, restoreFollowups, updateFollowup } from "./followups";
+import { datedRow, restoreDated, updateDated, type DatedRaw } from "./dated";
+import { followupRow, restoreFollowups, updateFollowup, type FollowupRaw } from "./followups";
 import { inboxHiding, shownSql } from "./queries";
 import type { Db } from "./sqlite";
 
@@ -106,9 +106,10 @@ export function itemMembers(db: Db, keys: readonly string[]): { dated: DatedRow[
   if (!refs.length) return { dated: [], promises: [] };
   const ids = (source: ItemRef["source"]) => JSON.stringify(refs.filter((r) => r.ref.source === source).map((r) => r.ref.id));
   const all = JSON.stringify(refs.map((r) => r.key));
-  const dated = db.all<{ id: number }>("SELECT id FROM dated_items WHERE id IN (SELECT value FROM json_each(?)) UNION SELECT id FROM dated_items INDEXED BY dated_same WHERE same_as IN (SELECT value FROM json_each(?)) ORDER BY id", ids("dated"), all);
-  const promises = db.all<{ id: number }>("SELECT id FROM followups WHERE id IN (SELECT value FROM json_each(?)) AND kind = 'promise' UNION SELECT id FROM followups INDEXED BY followups_same WHERE same_as IN (SELECT value FROM json_each(?)) AND kind = 'promise' ORDER BY id", ids("promise"), all);
-  return { dated: dated.map((r) => getDated(db, r.id)!), promises: promises.map((r) => getFollowup(db, r.id)!) };
+  // whole rows in one read a table (Codex code review of iteration 3: a row each was a thousand reads for a thousand links)
+  const dated = db.all<DatedRaw>("SELECT * FROM dated_items WHERE id IN (SELECT value FROM json_each(?) UNION SELECT id FROM dated_items INDEXED BY dated_same WHERE same_as IN (SELECT value FROM json_each(?))) ORDER BY id", ids("dated"), all);
+  const promises = db.all<FollowupRaw>("SELECT * FROM followups WHERE kind = 'promise' AND id IN (SELECT value FROM json_each(?) UNION SELECT id FROM followups INDEXED BY followups_same WHERE same_as IN (SELECT value FROM json_each(?))) ORDER BY id", ids("promise"), all);
+  return { dated: dated.map(datedRow), promises: promises.map(followupRow) };
 }
 
 /** Each table's name and its open rows, as SQL. */

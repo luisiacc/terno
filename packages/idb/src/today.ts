@@ -1,7 +1,7 @@
 import { isAcknowledgment, looksLikeAcknowledgment, parseRef, refKey, saysNoReplyNeeded, waitingCutoff, type DatedRow, type DigestItem, type FollowupRow, type ItemRef } from "@terno/core";
 import { DATED_NOTHING_ASKED_SINCE, NEEDS_WALK, needsYou, summaryAsksNothing, type DigestFact, type DigestStored, type ItemChanges, type ItemSnapshots, type WaitingRow } from "@terno/store";
-import { getDated, restoreDated, updateDated } from "./dated";
-import { getFollowup, restoreFollowups, updateFollowup } from "./followups";
+import { datedRow, restoreDated, updateDated } from "./dated";
+import { followupRow, restoreFollowups, updateFollowup } from "./followups";
 import { inboxHiddenTest, T, type Ctx, type R } from "./mail";
 
 /** Plan 145 on IndexedDB, like SQL's (packages/db/src/today.ts). */
@@ -111,18 +111,20 @@ const isOpen = (source: ItemRef["source"], r: R): boolean => (source === "dated"
 
 /** Plan 210 (iteration 2): the dated items and promises of these canonical items, any state: by id, and by `same`. */
 export function itemMembers(c: Ctx, keys: readonly string[]): { dated: DatedRow[]; promises: FollowupRow[] } {
-  const ids = { dated: new Set<number>(), promise: new Set<number>() };
+  // as SQL's: the rows as found, each once, never looked up again
+  const found = { dated: new Map<number, R>(), promise: new Map<number, R>() };
   const dated = T(c, "dated_items");
   const followups = T(c, "followups");
   for (const key of new Set(keys)) {
     const ref = parseRef(key);
     if (!ref) continue;
-    if (ref.source === "dated" ? dated.has(ref.id) : followups.get(ref.id)?.kind === "promise") ids[ref.source].add(ref.id);
-    for (const r of dated.by("same", key)) ids.dated.add(r.id);
-    for (const r of followups.by("same", key)) if (r.kind === "promise") ids.promise.add(r.id);
+    const own = ref.source === "dated" ? dated.get(ref.id) : followups.get(ref.id);
+    if (own && (ref.source === "dated" || own.kind === "promise")) found[ref.source].set(own.id, own);
+    for (const r of dated.by("same", key)) found.dated.set(r.id, r);
+    for (const r of followups.by("same", key)) if (r.kind === "promise") found.promise.set(r.id, r);
   }
-  const sorted = (s: Set<number>) => [...s].sort((a, b) => a - b);
-  return { dated: sorted(ids.dated).map((id) => getDated(c, id)!), promises: sorted(ids.promise).map((id) => getFollowup(c, id)!) };
+  const sorted = (m: Map<number, R>) => [...m.values()].sort((a, b) => a.id - b.id);
+  return { dated: sorted(found.dated).map(datedRow), promises: sorted(found.promise).map(followupRow) };
 }
 
 /** Plan 210 (iteration 2): as SQL's: on open rows, never over one set, never a chain; no revision moves (no choice of the user's). */
