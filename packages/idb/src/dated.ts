@@ -13,6 +13,8 @@ const toRow = (r: R): DatedRow => ({
   // plan 210 (iteration 2): a row stored before them has none
   early: r.early === 1, sameAs: r.same_as ?? null, detailOf: r.detail_of ?? null, lapses: r.lapses === 1, ...scheduleFields(r),
   handedTo: parseHandedTo(r.handed_to),
+  // plan 210 (iteration 4, revision 7): absent before it
+  settledBy: r.settled_by ?? null, settledAt: r.settled_at ?? null,
 });
 
 const byAct = (a: R, b: R) => a.act_at - b.act_at || a.id - b.id;
@@ -188,7 +190,7 @@ export function finishDated(c: Ctx, w: DatedFinish): DatedFinishOutcome {
   }
   for (const s of w.settled) {
     const r = rows.get(s.id);
-    if (r && r.revision === s.revision && r.state === "open" && reaches(r, src)) rows.update(r, { state: "settled", closed_reason: "settled", closed_at: w.now, revision: r.revision + 1 });
+    if (r && r.revision === s.revision && r.state === "open" && reaches(r, src)) rows.update(r, { state: "settled", closed_reason: "settled", closed_at: w.now, settled_by: w.messageId, settled_at: src.date, revision: r.revision + 1 });
   }
   const followups = T(c, "followups");
   // plan 210 (iteration 3, revision 4): as SQL's, a promise its person replaced, closed with the request that replaces it
@@ -197,7 +199,7 @@ export function finishDated(c: Ctx, w: DatedFinish): DatedFinishOutcome {
     const p = followups.get(r.id);
     if (!p || p.revision !== r.revision || p.thread_id !== src.threadId || p.kind !== "promise" || (p.state !== "open" && p.state !== "due")) continue;
     if (!p.person_email || addressKey(String(p.person_email)) !== src.senderKey || p.sent_at >= src.date) continue;
-    followups.update(p, { state: "dismissed", closed_reason: "replaced", closed_at: w.now, inbox_state: "none", revision: p.revision + 1 });
+    followups.update(p, { state: "dismissed", closed_reason: "replaced", closed_at: w.now, settled_by: w.messageId, settled_at: src.date, inbox_state: "none", revision: p.revision + 1 });
   }
   for (const m of w.movedPromises ?? []) {
     const p = followups.get(m.id);

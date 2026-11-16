@@ -327,6 +327,13 @@ export interface TodayHistoryItem {
   text: string;
   /** plan 210 (iteration 4): `handed`'s person, as the confirmed forward went ("Handed to Jess Tue") */
   handedTo?: import("./handoff").HandedTo;
+  /**
+   * plan 210 (iteration 4, revision 7): the day the mail that settled it came (`settledAt`), what its column says ("Paid
+   * Mon"); absent, the closing's (`key.at`). The history's order stays the closing's
+   */
+  on?: number;
+  /** plan 210 (iteration 4): how mail settled it, its `closedReason` ("answered": your reply did), for the column's verb */
+  reason?: string | null;
 }
 
 export interface TodayHistoryPage {

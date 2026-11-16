@@ -113,6 +113,13 @@ export interface DatedRow {
   proposal?: ScheduleProposal | null;
   /** Plan 210 (iteration 4): whom it was handed to (`closedReason` `handed`), as the confirmed forward went. Absent: not handed */
   handedTo?: import("./handoff").HandedTo | null;
+  /**
+   * Plan 210 (iteration 4, revision 7): what mail settled it, the message and its date, the day its history line says
+   * ("Paid Mon"); its closing (`closedAt`) stays when it was read, the history's order. Null: not settled by mail, or settled
+   * before it (no backfill).
+   */
+  settledBy?: number | null;
+  settledAt?: number | null;
 }
 
 export interface DatedSetting {

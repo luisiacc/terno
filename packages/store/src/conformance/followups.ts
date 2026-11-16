@@ -134,7 +134,9 @@ export function defineFollowupsConformance(fresh: () => Promise<MailStore>, reop
         expect((await store.followups.get(row!.id))!.state).toBe("open");
         const c = await sent({ providerMsgId: "t2", rfcMessageId: "t2@x", inReplyTo: "t1@x", references: ["t1@x"], date: NOW - 500 });
         await finish(c.id, c.thread, { kept: [{ id: row!.id, revision: row!.revision }] });
-        expect(await store.followups.get(row!.id)).toMatchObject({ state: "done", closedReason: "kept" });
+        // plan 210 (iteration 4, revision 7): the send that kept it, and its date
+        expect(await store.followups.get(row!.id)).toMatchObject({ state: "done", closedReason: "kept", closedAt: NOW, settledBy: c.id, settledAt: NOW - 500 });
+        expect((await store.followups.closedPage({ since: 0, after: null, limit: 10 })).find((r) => r.id === row!.id)).toMatchObject({ settledBy: c.id, settledAt: NOW - 500 });
       });
 
       it("a clear refuses a write that started before it", async () => {

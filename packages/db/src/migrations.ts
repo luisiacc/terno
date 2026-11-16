@@ -1561,6 +1561,15 @@ ALTER TABLE dated_items ADD COLUMN lapses INTEGER NOT NULL DEFAULT 0;
   { version: 64, name: "What matters: a confirmed send stays yours for certain (plan 210, iteration 3)", sql: `
 ALTER TABLE messages ADD COLUMN sent_confirmed INTEGER NOT NULL DEFAULT 0;
 ` },
+  // plan 210 (iteration 4, revision 7): what mail settled an item, and its date, which its history line says ("Paid Mon")
+  // while the history keeps its order by the closing. Shape only: nullable columns, no default to write, no backfill (an
+  // item settled before it says the day it closed, as it did)
+  { version: 65, name: "What matters: the mail that settled an item, and its date (plan 210, iteration 4)", sql: `
+ALTER TABLE dated_items ADD COLUMN settled_by INTEGER;
+ALTER TABLE dated_items ADD COLUMN settled_at INTEGER;
+ALTER TABLE followups ADD COLUMN settled_by INTEGER;
+ALTER TABLE followups ADD COLUMN settled_at INTEGER;
+` },
   // plan 210 (iteration 4, Change…): an item whose day and time the user changed (`changed_at`, null: the mail's schedule),
   // its schedule before that change (`changed_from`, the one change event an item keeps, for Earlier's "Changed" line), and a
   // later mail's move kept for the user rather than applied (`proposal`), on a dated item and a promise alike. Shape only:

@@ -144,14 +144,20 @@ export function historySentence(line: Pick<TodayHistoryItem, "kind" | "text" | "
   return ended(line.kind === "alert" ? alertSays(text) : text);
 }
 
-/** Plan 210: the history's right-hand column, what happened and when: "Done today", "Removed Wed", "Over Nov 2" (es "Hecho el mié"). */
-export function historyWhen(line: Pick<TodayHistoryItem, "outcome" | "kind" | "key" | "handedTo">, now = Date.now()): string {
-  const near = datedDay(line.key.at, now).near;
-  const day = near ? t(`today.also.${near}`) : t("today.also.on", { day: dueShort(line.key.at, false, now) });
+/**
+ * Plan 210: the history's right-hand column, what happened and when: "Done today", "Removed Wed", "Over Nov 2" (es "Hecho
+ * el mié"). Iteration 4 (revision 7): settled by mail, the day that mail came ("Paid Mon", "Answered Tue"), never the day
+ * it was read; a bill it settled is paid, a request your reply settled is answered.
+ */
+export function historyWhen(line: Pick<TodayHistoryItem, "outcome" | "kind" | "key" | "on" | "reason" | "handedTo">, now = Date.now()): string {
+  const at = line.on ?? line.key.at;
+  const near = datedDay(at, now).near;
+  const day = near ? t(`today.also.${near}`) : t("today.also.on", { day: dueShort(at, false, now) });
   // plan 210 (iteration 4): handed on, to whom ("Handed to Jess Tue"), by first name as the reader's line says people
   if (line.outcome === "handed") return line.handedTo ? t("whatMatters.history.handed", { name: firstName(line.handedTo), day }) : t("whatMatters.history.done", { day });
+  const settled = line.outcome !== "settled" ? null : line.reason === "answered" ? "answered" : line.kind === "pay" ? "paid" : "settled";
   // plan 210 (iteration 1, the owner): "Not a task" is "Remove", for an item and a promise alike
-  return t(`whatMatters.history.${line.outcome === "dismissed" ? "removed" : line.outcome}`, { day });
+  return t(`whatMatters.history.${settled ?? (line.outcome === "dismissed" ? "removed" : line.outcome)}`, { day });
 }
 
 /** A person by their first name, else their address's local part. */

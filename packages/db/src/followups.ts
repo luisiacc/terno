@@ -9,11 +9,11 @@ import type { Db } from "./sqlite";
 interface Raw {
   id: number; thread_id: number; message_id: number; rfc_message_id: string | null; item: number; kind: FollowupRow["kind"]; text: string; quote: string | null; person_name: string | null; person_email: string | null;
   sent_at: number; due_at: number; dated: number; deferred_until: number | null; state: FollowupRow["state"]; inbox_state: FollowupRow["inboxState"]; closed_reason: string | null; closed_at: number | null; notified_at: number | null; from_scan: number; revision: number; model: string | null; provider: string | null; created_at: number;
-  same_as: string | null; broken_due_at: number | null; timed: number; answers: number | null;
+  same_as: string | null; broken_due_at: number | null; timed: number; answers: number | null; settled_by: number | null; settled_at: number | null;
   changed_at: number | null; changed_from: string | null; proposal: string | null;
   handed_to?: string | null;
 }
-const toRow = (r: Raw): FollowupRow => ({ id: r.id, threadId: r.thread_id, messageId: r.message_id, rfcMessageId: r.rfc_message_id, item: r.item, kind: r.kind, text: r.text, quote: r.quote, personName: r.person_name, personEmail: r.person_email, sentAt: r.sent_at, dueAt: r.due_at, dated: r.dated === 1, deferredUntil: r.deferred_until ?? null, state: r.state, inboxState: r.inbox_state, closedReason: r.closed_reason, closedAt: r.closed_at, notifiedAt: r.notified_at, fromScan: r.from_scan === 1, revision: r.revision, model: r.model, provider: r.provider, createdAt: r.created_at, sameAs: r.same_as ?? null, brokenDueAt: r.broken_due_at ?? null, timed: r.timed === 1, answers: r.answers ?? null, ...scheduleFields(r), handedTo: parseHandedTo(r.handed_to) });
+const toRow = (r: Raw): FollowupRow => ({ id: r.id, threadId: r.thread_id, messageId: r.message_id, rfcMessageId: r.rfc_message_id, item: r.item, kind: r.kind, text: r.text, quote: r.quote, personName: r.person_name, personEmail: r.person_email, sentAt: r.sent_at, dueAt: r.due_at, dated: r.dated === 1, deferredUntil: r.deferred_until ?? null, state: r.state, inboxState: r.inbox_state, closedReason: r.closed_reason, closedAt: r.closed_at, notifiedAt: r.notified_at, fromScan: r.from_scan === 1, revision: r.revision, model: r.model, provider: r.provider, createdAt: r.created_at, sameAs: r.same_as ?? null, brokenDueAt: r.broken_due_at ?? null, timed: r.timed === 1, answers: r.answers ?? null, ...scheduleFields(r), handedTo: parseHandedTo(r.handed_to), settledBy: r.settled_by ?? null, settledAt: r.settled_at ?? null });
 
 /** Yours and for someone else: mail only to your own addresses says nothing to anyone. */
 function toSomeoneElse(db: Db, to: string, cc: string): boolean {
@@ -233,7 +233,8 @@ export function finishFollowups(db: Db, w: FollowupFinish): FollowupFinishOutcom
     }
     // plan 210 (iteration 3): only a reply that's yours for certain decides anything about a request
     const yours = mark.confirmed === 1 || !!db.get(`SELECT 1 FROM messages WHERE id = ? AND ${TRUSTED_SENT}`, w.messageId);
-    const settle = (id: number, revision: number) => db.run("UPDATE dated_items SET state = 'settled', closed_reason = 'answered', closed_at = ?, revision = revision + 1 WHERE id = ? AND revision = ? AND state = 'open'", w.now, id, revision);
+    // plan 210 (iteration 4, revision 7): the reply that settled it and its date beside the closing
+    const settle = (id: number, revision: number) => db.run("UPDATE dated_items SET state = 'settled', closed_reason = 'answered', closed_at = ?, settled_by = ?, settled_at = ?, revision = revision + 1 WHERE id = ? AND revision = ? AND state = 'open'", w.now, w.messageId, src.date, id, revision);
     for (const v of yours ? (w.verdicts ?? []) : []) {
       const r = answerable(db, v.request.id, src);
       // either verdict only on the request as it was shown: one put off (Later) or moved meanwhile isn't decided by it
@@ -249,7 +250,7 @@ export function finishFollowups(db: Db, w: FollowupFinish): FollowupFinishOutcom
       apart(db, p.id, r.id);
     }
     for (const k of w.kept) {
-      const kept = db.run("UPDATE followups SET state = 'done', closed_reason = 'kept', closed_at = ?, inbox_state = 'none', revision = revision + 1 WHERE id = ? AND revision = ? AND thread_id = ? AND kind = 'promise' AND state IN ('open','due')", w.now, k.id, k.revision, src.threadId).changes;
+      const kept = db.run("UPDATE followups SET state = 'done', closed_reason = 'kept', closed_at = ?, settled_by = ?, settled_at = ?, inbox_state = 'none', revision = revision + 1 WHERE id = ? AND revision = ? AND thread_id = ? AND kind = 'promise' AND state IN ('open','due')", w.now, w.messageId, src.date, k.id, k.revision, src.threadId).changes;
       // plan 210 (iteration 3): what it promised to a request is sent: the request is answered with it
       const answers = kept && yours ? db.get<{ answers: number | null }>("SELECT answers FROM followups WHERE id = ?", k.id)?.answers : null;
       const r = answers == null ? null : answerable(db, answers, src);

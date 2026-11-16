@@ -179,7 +179,11 @@ export async function historyPage(store: MailStore, o: HistoryAsk): Promise<Toda
     // plan 210 (iteration 3): a request finished with the promise that answered it is that promise's line
     if (row.src === 0 && row.closedReason === ANSWERED_WITH_PROMISE) continue;
     const outcome = outcomeOf(row);
-    items.push({ id, item: { source: sourceOf(row.src), id: row.id }, thread, key: head.key, outcome, kind: row.src === 0 ? row.kind : "promise", text: row.text, ...(outcome === "handed" && row.handedTo && { handedTo: row.handedTo }) });
+    const line: TodayHistoryItem = { id, item: { source: sourceOf(row.src), id: row.id }, thread, key: head.key, outcome, kind: row.src === 0 ? row.kind : "promise", text: row.text, ...(outcome === "handed" && row.handedTo && { handedTo: row.handedTo }) };
+    // plan 210 (iteration 4, revision 7): settled by mail, the line says that mail's day and how
+    if (row.settledAt != null) line.on = row.settledAt;
+    if (row.closedReason) line.reason = row.closedReason;
+    items.push(line);
     if (!o.through && items.length >= o.limit) {
       next = head.key;
       break;
