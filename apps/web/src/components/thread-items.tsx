@@ -11,6 +11,7 @@ import { changeItem, changeOfItem, proposalSaid, whenSaid, type ChangeTarget } f
 import { itemLaterWindow, laterNote, laterPresets, laterStart, type LaterWindow } from "~/lib/dated";
 import { readerItems, readerLine, readerText, type ReaderItem, type ReaderItems } from "~/lib/reader-items";
 import { presetLabel, presetWhen } from "~/lib/reminders";
+import { handTo, seenOfReaderItem } from "~/lib/hand-to";
 import { historyWhen } from "~/lib/today-sentence";
 import { actOnReaderItem, closeReaderLater, openReaderLater } from "~/lib/today-task";
 import { client } from "~/rpc/connection";
@@ -285,6 +286,10 @@ export default function ThreadItems({ detail, items }: { detail: ThreadDetail; i
             </Button>
             <ItemLater key={top.key} item={top} act={(at) => void actOnReaderItem(threadId, top, "later", at)} />
             {change && <ItemChange key={`change:${top.key}`} item={top} target={change} />}
+            {/* plan 210 (iteration 4): Hand to…, the forward opening under this line, in the reader */}
+            <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" data-testid="thread-dated-hand" aria-label={t("whatMatters.handTo.item", { text })} onClick={() => void handTo(seenOfReaderItem(top))}>
+              {t("whatMatters.handTo.action")}
+            </Button>
             <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" data-testid="thread-dated-dismiss" aria-label={t("dated.removeItem", { text })} onClick={() => void actOnReaderItem(threadId, top, "dismiss")}>
               {t("dated.remove")}
             </Button>

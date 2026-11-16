@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { shallow } from "zustand/shallow";
-import { formatAddressList, UNDO_SEND_DEFAULT, type Address, type AttachmentRef, type ThreadDetail } from "@terno/core";
+import { formatAddressList, UNDO_SEND_DEFAULT, type Address, type AttachmentRef, type Handoff, type ThreadDetail } from "@terno/core";
 import { attachmentUploading, draftAttachmentBudget } from "./attachments";
 import { breadcrumb, captureUi } from "~/lib/diag";
 import { useDraftRecovery } from "~/lib/draft-recovery-ui";
@@ -601,6 +601,19 @@ export interface ComposeOpenOptions {
   only?: Address;
   /** told the moment the draft is known, before anything takes focus or paints, so its row shows with it */
   onLanded?: (landing: Exclude<ComposeLanding, { kind: "none" }>) => void;
+  /**
+   * plan 210 (iteration 4, Hand to…): a forward that hands an item of What matters on. Wherever it lands (a new forward, the
+   * conversation's draft converted or resumed, the pinned one), the hand-off is saved with it and its line goes above what's
+   * written, once, never over it (`handOffInto`). A pinned reply isn't turned into a forward: it says so and keeps its words
+   */
+  handoff?: ForwardHandoff;
+}
+
+/** Plan 210 (iteration 4): what Hand to… gives the forward it opens. */
+export interface ForwardHandoff {
+  handoff: Handoff;
+  /** "Could you take care of this: Sign the field trip form (by Fri)?", in the app's language */
+  line: string;
 }
 type LandingCell = { landing: ComposeLanding; options: ComposeOpenOptions | undefined };
 function land(cell: LandingCell, kind: "created" | "resumed" | "converted" | "pinned", key: string): void {
@@ -621,7 +634,9 @@ setForwardOpenProbe(() => openingNow > 0);
  * failed, or there's no single target.
  */
 export async function composeLanding(mode: DraftMode = "new", threadId: number | null = getApp().selectedId, attempt = 0, prefill?: (accountId: number) => Partial<DraftFields>, from?: number, options?: ComposeOpenOptions): Promise<ComposeLanding> {
-  const landing = await openLanding(mode, threadId, attempt, prefill, from, options);
+  let landing = await openLanding(mode, threadId, attempt, prefill, from, options);
+  // plan 210 (iteration 4): Hand to…'s forward, wherever it landed; nowhere it can't (a pinned reply), it says so
+  if (options?.handoff && mode === "forward" && landing.kind !== "none" && !handOffInto(landing.key, options.handoff)) landing = NOWHERE;
   if (strandedWords.size) {
     // a new message opened over the conversation isn't what they were written for (it only says which one's selected)
     if (threadId !== null && landing.kind !== "none" && mode !== "new") placeStrandedWords(threadId, landing.key);
@@ -685,6 +700,29 @@ async function openLanding(mode: DraftMode, threadId: number | null, attempt: nu
   if (outcome === "stale" && attempt < 2) return openLanding(mode, threadId, attempt + 1, prefill, from, options);
   snack.error(t(mode === "forward" ? "compose.openFailed.forward" : "compose.openFailed.reply"));
   return cell.landing;
+}
+
+/**
+ * Plan 210 (iteration 4): a hand-off into the forward it landed on, through the draft machinery (an edit, saved like typing):
+ * the hand-off kept with the draft, and its line above what's written: alone in an empty body, a paragraph of its own over
+ * authored words, never twice (a second Hand to… of the same item finds it there). Not a forward (the conversation's pinned
+ * reply, which r / a / f never convert): it says so, and nothing changes. False when nothing was handed.
+ */
+export function handOffInto(key: string, h: ForwardHandoff): boolean {
+  const d = materialize(key);
+  if (!d || d.sending || d.recovery) return false;
+  if (d.mode !== "forward") {
+    snack.error(t("whatMatters.handTo.pinned"));
+    return false;
+  }
+  const patch: Partial<DraftFields> = { handoff: h.handoff };
+  if (!d.bodyText.includes(h.line)) {
+    const empty = d.bodyText.trim() === "";
+    patch.bodyText = empty ? h.line : `${h.line}\n\n${d.bodyText}`;
+    // a plain draft stays plain; a rich one gains the line as its first paragraph
+    if (d.bodyHtml) patch.bodyHtml = empty ? toEmailHtml(fromPlainText(h.line)) : `${toEmailHtml(fromPlainText(h.line))}${d.bodyHtml}`;
+  }
+  return editDraft(key, patch);
 }
 
 /** The same open, for every caller that doesn't need to know where it landed. */

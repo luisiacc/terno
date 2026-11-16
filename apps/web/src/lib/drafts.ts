@@ -106,11 +106,13 @@ export interface LocalDraft {
   attachmentOwner?: boolean;
   /** the last save was refused for good (too long): no automatic retries */
   tooLong: boolean;
+  /** plan 210 (iteration 4): Hand to…'s hand-off, saved with the forward (only a forward keeps one) */
+  handoff?: import("@terno/core").Handoff | null;
 }
 
 export type DraftFields = Pick<
   LocalDraft,
-  "showSourceContext" | "attachments" | "accountId" | "threadId" | "mode" | "toText" | "ccText" | "bccText" | "auto" | "subject" | "subjectEdited" | "bodyText" | "bodyHtml" | "quotedText" | "includeQuote" | "replyContext" | "inReplyToMessageId" | "forwardOfMessageId" | "uiState"
+  "showSourceContext" | "attachments" | "accountId" | "threadId" | "mode" | "toText" | "ccText" | "bccText" | "auto" | "subject" | "subjectEdited" | "bodyText" | "bodyHtml" | "quotedText" | "includeQuote" | "replyContext" | "inReplyToMessageId" | "forwardOfMessageId" | "uiState" | "handoff"
 >;
 
 interface DraftsState {
@@ -271,14 +273,15 @@ export function fromServer(d: Draft): LocalDraft {
     bodyVersion: 0,
     canonical: false,
     tooLong: false,
+    handoff: d.handoff ?? null,
   };
 }
 
 /** A draft's content, without its identity or save state (its body as the editor has it now). */
 export function fieldsOf(d: LocalDraft): DraftFields {
   const cur = materialize(d.key) ?? d;
-  const { showSourceContext, attachments, accountId, threadId, mode, toText, ccText, bccText, auto, subject, subjectEdited, bodyText, bodyHtml, quotedText, includeQuote, replyContext, inReplyToMessageId, forwardOfMessageId, uiState } = cur;
-  return { showSourceContext, attachments, accountId, threadId, mode, toText, ccText, bccText, auto, subject, subjectEdited, bodyText, bodyHtml, quotedText, includeQuote, replyContext, inReplyToMessageId, forwardOfMessageId, uiState };
+  const { showSourceContext, attachments, accountId, threadId, mode, toText, ccText, bccText, auto, subject, subjectEdited, bodyText, bodyHtml, quotedText, includeQuote, replyContext, inReplyToMessageId, forwardOfMessageId, uiState, handoff } = cur;
+  return { showSourceContext, attachments, accountId, threadId, mode, toText, ccText, bccText, auto, subject, subjectEdited, bodyText, bodyHtml, quotedText, includeQuote, replyContext, inReplyToMessageId, forwardOfMessageId, uiState, handoff: handoff ?? null };
 }
 
 // ───────────────────────────── the editor's body ─────────────────────────────
@@ -908,6 +911,8 @@ function save(key: string, copy = false, persistNew = false): Promise<void> {
     forwardOfMessageId: d.forwardOfMessageId,
     showSourceContext: d.showSourceContext ?? false,
     uiState: d.uiState,
+    // plan 210 (iteration 4): only a forward keeps one (the store drops it from anything else)
+    handoff: d.mode === "forward" ? d.handoff ?? null : null,
   };
   if (get(key) !== d || writers.get(key) !== w || w.operation !== operation) return Promise.resolve();
   publishWriter(w, d, saving, !copy);

@@ -890,7 +890,7 @@ export class TodayService {
    * it would be (its members, what its promises answer), each at its revision now; and the message its forward forwards
    * (the named item's own). Nothing changes here: the forward's confirmed send closes them (`handoffConfirmed`).
    */
-  async handoff(seen: ItemSeen): Promise<{ threadId: number; messageId: number; items: HandoffItem[] }> {
+  async handoff(seen: ItemSeen): Promise<{ threadId: number; messageId: number; items: HandoffItem[]; text: string; dueAt: number | null }> {
     const { store } = this.b;
     const stale = () => new RpcError("STALE", L(seen.source === "promise" ? "errors.followups.changed" : "errors.dated.changed"));
     return this.links.exclusive(async () => {
@@ -908,7 +908,7 @@ export class TodayService {
       const thread = (await store.threads.summaries([own.threadId]))[0];
       // a conversation in Spam or Trash, or gone, isn't handed on from What matters
       if (!thread || thread.inSpam || thread.inTrash) throw stale();
-      return { threadId: own.threadId, messageId: own.messageId, items };
+      return { threadId: own.threadId, messageId: own.messageId, items, text: own.text, dueAt: own.dated ? own.dueAt : null };
     });
   }
 
