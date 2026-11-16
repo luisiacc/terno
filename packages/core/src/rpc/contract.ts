@@ -72,7 +72,7 @@ const historyKey = z.object({ at: z.number().int().nonnegative(), src: z.union([
 /** plan 210 (iteration 2): a What matters row's id ("dated:42", "promise:7", "waiting:12", "reminder:12") */
 const feedRowId = z.string().regex(/^(?:dated|promise|waiting|reminder):\d{1,15}$/);
 /** plan 210 (iteration 4): a hand-off saved with its forward's draft (`parseHandoff` reads it back the same way) */
-const handoff = z.object({ items: z.array(z.object({ source: z.enum(["dated", "promise"]), id, revision: z.number().int().min(0), named: z.boolean().optional(), answered: z.boolean().optional() }).strict()).min(1).max(HANDOFF_ITEMS_MAX) }).strict();
+const handoff = z.object({ items: z.array(z.object({ source: z.enum(["dated", "promise"]), id, revision: z.number().int().min(0), named: z.boolean().optional(), answered: z.boolean().optional(), row: z.number().int().min(0).max(HANDOFF_ITEMS_MAX - 1).optional() }).strict()).min(1).max(HANDOFF_ITEMS_MAX) }).strict();
 /** days of mail an account downloads (settings, an account, connecting one) */
 const syncWindow = z.number().int().min(7).max(3650);
 const ids = z.array(id).min(1).max(5000);

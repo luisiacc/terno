@@ -88,6 +88,19 @@ describe("the forward option (handOffInto)", () => {
     expect(materialize(key)!.bodyText).toBe(`${LINE}\n\nHi Jess,\nthanks!`);
   });
 
+  it("a second item handed into the same forward joins it, its line and its items both; past the bound it says so and changes nothing (Codex's code review, iteration 4)", () => {
+    const key = createDraft(replyFields("forward", detail, source));
+    expect(handOffInto(key, { handoff, line: LINE })).toBe(true);
+    const BUS = "Could you take care of this: pay $12 for the bus (by Fri)?";
+    expect(handOffInto(key, { handoff: { items: [{ source: "dated", id: 43, revision: 1, named: true }] }, line: BUS })).toBe(true);
+    expect(materialize(key)).toMatchObject({ bodyText: `${BUS}\n\n${LINE}`, handoff: { items: [...handoff.items, { source: "dated", id: 43, revision: 1, named: true, row: 1 }] } });
+    const before = useDrafts.getState().drafts[key];
+    const many = { items: Array.from({ length: 31 }, (_, i) => ({ source: "dated" as const, id: 200 + i, revision: 0, ...(i === 0 && { named: true }) })) };
+    expect(handOffInto(key, { handoff: many, line: "Could you take care of all this?" })).toBe(false);
+    expect(useDrafts.getState().drafts[key]).toBe(before);
+    expect(useSnack.getState().current?.message).toMatch(/Send it first/);
+  });
+
   it("a reply (the conversation's pinned draft) isn't made a forward: it says so and keeps its words", () => {
     const key = createDraft(replyFields("reply", detail, source));
     editDraft(key, { bodyText: "Will do" });

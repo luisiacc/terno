@@ -2656,6 +2656,7 @@ It contains none of your mail, contacts, settings or keys.
   "whatMatters.handTo.lineUndated": "Could you take care of this: {item}?",
   "whatMatters.handTo.pinned": "This conversation’s draft is a reply. Send or discard it first, then hand this on.",
   "whatMatters.handTo.tooMany": "This item is too big to hand on in one forward. Forward the email instead.",
+  "whatMatters.handTo.full": "This forward already hands on as much as one can. Send it first, then hand this on.",
   "whatMatters.handTo.failed": "Couldn’t start the forward: {error}",
   "whatMatters.to": "To {name}",
   "whatMatters.privacy.cloud": "Terno sends each new message (its text, subject and names, with what it already found there) to {destination} to find these; nothing else leaves your Mac for them.",
