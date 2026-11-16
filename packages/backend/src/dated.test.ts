@@ -2620,7 +2620,7 @@ describe("plan 210 (iteration 4): Mute this kind or sender (the Codex review's r
   const shown = async (client: RpcClient) => (await client.call("today.list", { held: [] })).sections.flatMap((x) => x.items.map((i) => i.id));
 
   it("a muted sender's mail reaches no model and isn't read later; their items hide (never closed) and come back on Unmute", async () => {
-    const { backend, client, model, receive, read } = await setup();
+    const { backend, client, model, clock, receive, read } = await setup();
     model.answer = () => reply([bill]);
     const thread = await receive();
     await read();
@@ -2639,22 +2639,49 @@ describe("plan 210 (iteration 4): Mute this kind or sender (the Codex review's r
     await read();
     expect(model.requests).toHaveLength(2);
     expect(JSON.stringify(model.requests[1]!.messages)).not.toContain("power.test");
-    // the 14-day check counts none of theirs either (their reminder, consumed unread, counts once they're unmuted)
+    // the 14-day check counts none of theirs either, nor once they're unmuted: their reminder, consumed unread while muted,
+    // never comes back to be read (Codex's code review of iteration 4)
     const offered = (await client.call("dated.scanOffer", {})).count;
     expect((await client.call("dated.unmute", { on: "sender", key: "BILLING@power.test" })).mute).toMatchObject({ key: "billing@power.test" });
-    expect((await client.call("dated.scanOffer", {})).count).toBe(offered + 1);
+    expect((await client.call("dated.scanOffer", {})).count).toBe(offered);
     expect(await shown(client)).toContain(`dated:${item!.id}`);
     // what came while muted isn't read now: Unmute is for mail from then on
     await read();
     expect(model.requests).toHaveLength(2);
     model.answer = () => reply([bill]);
+    clock.now += 120_000;
     await receive({ subject: "Final notice", bodyText: "Final notice: your bill is due on November 20." });
     await read();
     expect(model.requests).toHaveLength(3);
   });
 
+  it("a muted sender's mail still queued when they're unmuted is never read (Codex's code review of iteration 4)", async () => {
+    const { backend, client, model, clock, receive, read } = await setup();
+    // the reader busy with another sender's mail, so theirs waits in the queue
+    let release!: () => void;
+    model.gate = new Promise((r) => (release = r));
+    model.answer = () => reply([parcel]);
+    await receive({ from: shop, subject: "Shipped", bodyText: PARCEL_TEXT });
+    await expect.poll(() => model.requests.length).toBe(1);
+    await client.call("dated.mute", { on: "sender", key: power.email, name: power.name });
+    await receive();
+    await client.call("dated.unmute", { on: "sender", key: power.email });
+    expect(await backend.store.dated.marks.count()).toBe(2);
+    model.gate = null;
+    release();
+    await read();
+    expect(model.requests).toHaveLength(1);
+    expect((await backend.store.dated.active()).map((r) => r.kind)).toEqual(["delivery"]);
+    // theirs from then on is read
+    model.answer = () => reply([bill]);
+    clock.now += 120_000;
+    await receive({ subject: "Final notice", bodyText: "Final notice: your bill is due on November 20." });
+    await read();
+    expect(model.requests).toHaveLength(2);
+  });
+
   it("muting a sender stops a reading of theirs on its way; one muted without a word is refused at the finish", async () => {
-    const { backend, client, model, receive } = await setup();
+    const { backend, client, model, clock, receive } = await setup();
     let release!: () => void;
     model.gate = new Promise((r) => (release = r));
     model.answer = () => reply([bill]);
@@ -2672,6 +2699,8 @@ describe("plan 210 (iteration 4): Mute this kind or sender (the Codex review's r
 
     // straight in the store (another window's write, say): the reader's own commit refuses it
     await client.call("dated.unmute", { on: "sender", key: power.email });
+    // mail from after the Unmute
+    clock.now += 120_000;
     model.gate = new Promise((r) => (release = r));
     await receive({ subject: "Reminder" });
     backend.dated.wake();
