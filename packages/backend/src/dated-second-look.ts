@@ -166,7 +166,10 @@ function repeats(x: { kind: string; text: string; quote: string; due: string | n
     if ((!!x.due && e.due === x.due) || (x.kind === "event" && e.kind === "event")) return true;
     // round 14's faults (Priya's card, Dec 31 from the first reading and Dec 26 from the look): the same thing in the same
     // family is the same item whatever day each reading gave it, when the look's words name nothing the other's don't
-    // beyond its kind ("expires"); never another part of it ("written questions" beside an RFP's response)
+    // beyond its kind ("expires"); never another part of it ("written questions" beside an RFP's response). The Codex code
+    // review: never another of its kind either, by the look's whole words: another card's ending ("8822" beside "4417"),
+    // another amount
+    if (otherIds(item, words) || otherAmounts(item, words)) return false;
     return !!e.kind && familyOf(e.kind) === familyOf(x.kind) && !namesOtherThan(item, x.text.replace(KIND_WORDS, " "), o.from);
   });
 }
