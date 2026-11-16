@@ -672,3 +672,24 @@ At the real budgets, SQLite still fails on two earlier scenarios that this chang
 IndexedDB passes every scenario. `migrations.perf.test.ts` passes with v64.
 
 **Ran:** typecheck (all packages); oxlint on `packages/backend/src`, `packages/db/src`, `packages/idb/src` and the conformance suite; and the unit tests: `today-links`, `promise-answers`, `dated`, `today`, `followups`, `today-history`, `db/migrations*`, `today-members`, `portable`, `ingest`, `outbox`, `idb.store`, and both stores' full conformance. 1,735 tests passed. Not run: e2e (no flow's screens changed), `pnpm test:all`, a second Codex round.
+
+##### What the code review's second round changed (iteration 3)
+
+Codex reviewed the fixes above a second time (`/tmp/terno-scratch/p204/review-it3b.out`) and found five more problems. Four are fixed here, one commit each. Each fix has a test that fails without it.
+
+- **A denial reaches across the words between (finding 1, P1).** `replacesPlainly` looked for a denial only in the three words before a replacing word. So "Don't, under any circumstances, skip the methods section; please send the full draft by Monday", quoted as "skip the methods section", still closed the promise. Now any denial earlier in the replacing word's clause (not, never, -n't, no, ni, nunca) makes the replacement ambiguous, and an ambiguous replacement replaces nothing. A denial in another clause still doesn't count ("Don't worry about it. Skip the methods section…"). Tests: `dated-evidence.test.ts` (en, es) and `dated.test.ts` (through `checkDates`).
+- **A reply's other reading of the promise goes with it (finding 2).** A reply read as "scan both papers" and "email both papers" could leave the first reading in the request's item when the verdict linked the second. After a restart, the matcher joined the linked one back through its twin. So Remove and Later again acted on the request. Two changes fix this:
+  - **The stores.** In both stores, `apart` now takes every open promise of the reply that the matcher made one item with the request or with the linked promise. Each of them answers the request too (`answers`). They leave the request's item together. If one of them led the item, the request and its own readings go to an item of their own, and a reading that stood alone joins its twin. If something else led, the readings move under the linked promise's item. No revision moves.
+  - **The matcher.** `findLinks` gives a promise's twin (`samePromise`) the same `answers`. It never joins a promise into the item of the request it answers, nor that request into the promise's item. Data stored before this fix can't bring the request back either.
+  - **Tests.** `today-links.test.ts` covers the review's case, the request left in the twin's item, and another promise of that reply still matched as before. Both stores' conformance covers three cases: the first reading leads, both readings are in the item, and the request leads.
+- **A copy line that asks in ordinary words (finding 3).** Two sentences to the reader in Cc produced no rows and `asked: false`: "Diego, FYI, let me know your availability by Friday" and "Diego, FYI, I need your approval by Friday". `asksDirectly` now also knows the request words the other checks use: a "let me know" (`LET_KNOW`), and the sender's need or want ("I need", "we'd like", "you'll need to", "necesito", "quiero que", "tienes que"). The copy line alone still asks nothing: "te copio para que estés al tanto; cuando Ana las entregue te las reenvío". Test: `dated.test.ts` (en, es).
+- **"Let me know and…" is the sender's reassurance only when it says so (finding 4).** `noticeOnly` used to accept any clause that went on with "and", "so" or "y". So "When you're back, let me know and approve the final draft" produced no row. Now what follows must be the sender speaking for themselves: "and we'll work it out", "and I'll pick you up", "so I can…", "y lo arreglamos", "y te ayudo". A clause that asks the reader for more is an ask: "and approve…", "so the team can start", "y aprueba…", "y luego aprueba…". Test: `dated.test.ts` (en, es).
+
+**Finding 5 is left to the owner:** the linked-requests perf scenario's SQLite budget (120 ms longest turn against iteration 3's 60 ms).
+
+No prompt words changed, so no real-model eval was run.
+
+**Ran:**
+- typecheck (all packages)
+- `oxlint --deny-warnings` on the changed files
+- unit tests: `today-links`, `promise-answers`, `dated`, `dated-evidence`, `today`, `followups`, `today-history`, `db/today-members`, `ai/dated`, and both stores' full conformance. 1,714 passed, 1 skipped.
