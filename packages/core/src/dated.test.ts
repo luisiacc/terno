@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { isAcknowledgment, looksLikeAcknowledgment, saysNoReplyNeeded } from "./today";
-import { alertUntil, ANSWERED_KINDS, askEnd, datedGroup, datedGroupAt, datedOver, datedPlace, datedTiming, hasTimeCue, laterBefore, nextTodayChange, planEnd, promiseDay, promiseGroupAt, promiseOver, promisePlace, todayCounted, TODAY_GROUP_ORDER, type DatedKind, type DatedRow } from "./dated";
+import { alertUntil, ANSWERED_KINDS, askEnd, datedGroup, datedGroupAt, datedOver, datedPlace, datedTiming, hasTimeCue, laterBefore, nextTodayChange, planEnd, promiseBroken, promiseDay, promiseGroupAt, promiseOver, promisePlace, todayCounted, TODAY_GROUP_ORDER, type DatedKind, type DatedRow } from "./dated";
 import { WAITING_WINDOW_MS } from "./people";
 
 const at = (y: number, m: number, d: number, h = 0, min = 0) => new Date(y, m - 1, d, h, min).getTime();
@@ -217,8 +217,19 @@ describe("a promise's day (plan 210, iteration 3: one resolver)", () => {
     const answering = { ...own, needed: fri };
     expect(promiseDay(answering, at(2026, 11, 10, 23))).toEqual({ dueAt: tue, dated: true, said: null, needed: fri });
     expect(promiseDay(answering, at(2026, 11, 11))).toEqual({ dueAt: fri, dated: true, said: tue, needed: fri });
-    expect(promiseGroupAt(answering, at(2026, 11, 11))).toEqual({ group: "day", day: "2026-11-13" });
+    // (iteration 4, revision 8) broken with a live day ahead: Today's, wherever that day is (`promiseBroken`), unless put off
+    expect(promiseBroken(answering, at(2026, 11, 10, 23))).toBe(false);
+    expect(promiseBroken(answering, at(2026, 11, 11))).toBe(true);
+    expect(promiseGroupAt(answering, at(2026, 11, 11))).toEqual({ group: "today", day: null });
     expect(promiseGroupAt(answering, at(2026, 11, 13, 12))).toEqual({ group: "today", day: null });
+    const later = { ...answering, deferredUntil: at(2026, 11, 12, 9) };
+    expect(promiseBroken(later, at(2026, 11, 11))).toBe(false);
+    expect(promiseGroupAt(later, at(2026, 11, 11))).toEqual({ group: "comingUp", day: "2026-11-13" });
+    expect(promiseBroken(later, at(2026, 11, 12, 9))).toBe(true);
+    const far = { ...own, dueAt: at(2026, 12, 4, 9), brokenDueAt: tue };
+    expect(promiseGroupAt(far, at(2026, 11, 11))).toEqual({ group: "today", day: null });
+    expect(promiseBroken(answering, at(2026, 11, 14))).toBe(false);
+    expect(promiseBroken({ ...answering, state: "done" }, at(2026, 11, 11))).toBe(false);
     // both over: Missed, from the later
     expect(promiseDay(answering, at(2026, 11, 14))).toMatchObject({ dueAt: fri, said: null });
     expect(promisePlace(answering, at(2026, 11, 14))).toBe("missed");
@@ -545,7 +556,7 @@ describe("the groups go by day (plan 210, the owner, replacing plan 204's sevent
   it("the clock wakes at midnight while only an ask shows: its \"since\" and the day names move on", () => {
     expect(nextTodayChange([item("ask", null)], [], at(2026, 11, 12, 15))).toBe(at(2026, 11, 13));
   });
-  it("what's counted: a row in Missed or Today, unless it's your reminder or its own item is a Plan's kind; a day ahead no longer (plan 210, iteration 3)", () => {
+  it("what's counted: a row in Missed or Today, unless its own item is a Plan's kind (your reminder counts: iteration 4); a day ahead no longer (plan 210, iteration 3)", () => {
     for (const group of ["missed", "today"] as const) {
       expect(todayCounted(group, { kind: "waiting" })).toBe(true);
       expect(todayCounted(group, { kind: "promise" })).toBe(true);
@@ -554,7 +565,7 @@ describe("the groups go by day (plan 210, the owner, replacing plan 204's sevent
       expect(todayCounted(group, { kind: "dated", item: { kind: "ask" } })).toBe(true);
       expect(todayCounted(group, { kind: "dated", item: { kind: "event" } })).toBe(false);
       expect(todayCounted(group, { kind: "dated", item: { kind: "delivery" } })).toBe(false);
-      expect(todayCounted(group, { kind: "reminder" })).toBe(false);
+      expect(todayCounted(group, { kind: "reminder" })).toBe(true);
     }
     expect(todayCounted("comingUp", { kind: "dated", item: { kind: "pay" } })).toBe(false);
     expect(todayCounted("day", { kind: "dated", item: { kind: "pay" } })).toBe(false);

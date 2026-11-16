@@ -178,7 +178,8 @@ describe("early, broken, one time", () => {
   it("a broken promise given a new day keeps its first one, under the new day, not Missed", () => {
     const moved = promise(at(2026, 11, 23, 9), { brokenDueAt: at(2026, 11, 17, 9) });
     const [row] = projectToday(facts({ promises: [moved] })).rows;
-    expect(row).toMatchObject({ group: "day", day: "2026-11-23", why: { promise: { said: at(2026, 11, 17, 9), needed: at(2026, 11, 23, 9) } } });
+    // (iteration 4, revision 8) someone waits on it: Today's Waiting on you, its column as it was
+    expect(row).toMatchObject({ group: "today", day: null, part: "waiting", why: { dueAt: at(2026, 11, 23, 9), promise: { said: at(2026, 11, 17, 9), needed: at(2026, 11, 23, 9) } } });
     expect(row!.why.missed).toBeUndefined();
   });
 
@@ -191,9 +192,9 @@ describe("early, broken, one time", () => {
       const mine = promise(at(2026, 11, 17, 9), { threadId: 9, answers: slip.id });
       const { rows, counts } = projectToday(facts({ dated: [slip], promises: linked(slip, mine) }));
       expect(rows).toHaveLength(1);
-      expect(rows[0]).toMatchObject({ id: `promise:${mine.id}`, group: "day", day: "2026-11-20", why: { dueAt: slip.dueAt, promise: { said: mine.dueAt, needed: slip.dueAt, dated: true } } });
+      expect(rows[0]).toMatchObject({ id: `promise:${mine.id}`, group: "today", day: null, part: "waiting", why: { dueAt: slip.dueAt, promise: { said: mine.dueAt, needed: slip.dueAt, dated: true } } });
       expect(rows[0]!.why.missed).toBeUndefined();
-      expect(counts.missed).toBe(0);
+      expect(counts).toEqual({ missed: 0, today: 0, waiting: 1 });
       // past the request's day too: Missed, from the later day, its column "Was due Fri" (nothing said beside)
       const after = projectToday(facts({ now: at(2026, 11, 21, 10), dated: [slip], promises: linked(slip, mine) })).rows;
       expect(after).toHaveLength(1);
@@ -220,7 +221,7 @@ describe("early, broken, one time", () => {
     it("the person's new day comes first; a closed request or an undated ask carries nothing", () => {
       const deck = dated("respond", "2026-11-26", { threadId: 9 });
       const moved = promise(at(2026, 11, 23, 9), { threadId: 9, answers: deck.id, brokenDueAt: at(2026, 11, 17, 9) });
-      expect(projectToday(facts({ dated: [deck], promises: linked(deck, moved) })).rows[0]).toMatchObject({ day: "2026-11-23", why: { promise: { said: at(2026, 11, 17, 9), needed: at(2026, 11, 23, 9) } } });
+      expect(projectToday(facts({ dated: [deck], promises: linked(deck, moved) })).rows[0]).toMatchObject({ group: "today", part: "waiting", why: { dueAt: at(2026, 11, 23, 9), promise: { said: at(2026, 11, 17, 9), needed: at(2026, 11, 23, 9) } } });
       const closed = { ...deck, state: "settled" as const };
       expect(withNeeds([moved], new Map([[deck.id, closed]]))[0]!.needed).toBeUndefined();
       const ask = dated("ask", null, { threadId: 9 });
@@ -253,7 +254,7 @@ describe("early, broken, one time", () => {
 });
 
 describe("the header's numbers (plan 210, iteration 3, revision 8)", () => {
-  it("missed, today and waiting, disjoint; never a Plan, a reminder, a day ahead nor Coming up", () => {
+  it("missed, today and waiting, disjoint; never a Plan, a day ahead nor Coming up; your reminder is Today's (iteration 4)", () => {
     const rows = [
       dated("pay", "2026-11-17"), // Missed
       dated("pay", "2026-11-18"), // Today
@@ -265,10 +266,13 @@ describe("the header's numbers (plan 210, iteration 3, revision 8)", () => {
       dated("respond", "2026-12-10"), // Coming up
     ];
     const waiting = [{ id: 50, lastDate: NOW - 5, hasSent: true }];
-    const { counts } = projectToday(facts({ dated: rows, waiting, reminders: [{ threadId: 99, dueAt: NOW }] }));
-    expect(counts).toEqual({ missed: 1, today: 2, waiting: 3 });
+    const reminders = [{ threadId: 99, dueAt: NOW }];
+    const { counts } = projectToday(facts({ dated: rows, waiting, reminders }));
+    expect(counts).toEqual({ missed: 1, today: 3, waiting: 3 });
     // the count's projection agrees with the list's
-    expect(projectToday(facts({ dated: rows, waiting }), { count: true }).counts).toEqual(counts);
+    expect(projectToday(facts({ dated: rows, waiting, reminders }), { count: true }).counts).toEqual(counts);
+    // a reminder on a conversation with a row of its own is that row (counted once), and one in Trash none
+    expect(projectToday(facts({ dated: rows, waiting, reminders: [{ threadId: 50, dueAt: NOW }, { threadId: 98, dueAt: NOW }], live: (id) => id !== 98 }), { count: true }).counts).toEqual({ missed: 1, today: 2, waiting: 3 });
   });
 });
 
@@ -301,7 +305,7 @@ describe("Coming up's buckets (plan 210, iteration 3, revision 9)", () => {
 });
 
 describe("Waiting on you, a part of Today (plan 210, iteration 3, revision 8)", () => {
-  it("after Today's own (its quiet rows too); requests shown early by their day, soonest first, then the undated as they came, newest first", () => {
+  it("after Today's own (its quiet rows too); requests within the seven days by their day, the undated as they came, newest first, then requests due later (iteration 4)", () => {
     const bill = dated("pay", "2026-11-18", { threadId: 1 });
     const plan = dated("event", "2026-11-18", { threadId: 2 }, "19:00");
     const later = dated("respond", "2026-11-28", { threadId: 3, early: true, arrivedAt: at(2026, 11, 17, 8) });
@@ -314,11 +318,50 @@ describe("Waiting on you, a part of Today (plan 210, iteration 3, revision 8)", 
       ["reminder:8", null],
       [`dated:${plan.id}`, null],
       [`dated:${sooner.id}`, "waiting"],
-      [`dated:${later.id}`, "waiting"],
       ["waiting:6", "waiting"],
       [`dated:${ask.id}`, "waiting"],
       ["waiting:7", "waiting"],
+      [`dated:${later.id}`, "waiting"],
     ]);
+  });
+
+  it("iteration 4 (revision 8): a promise broken with a live day ahead is first, by that day, counted once as waiting in the list and the count alike", () => {
+    // Jordan: "You said Tue 17 (missed) · needed Mon"; a request of Tomás's due Friday; Gary's due in December
+    const deck = dated("respond", "2026-11-23", { threadId: 9 });
+    const mine = withNeeds([promise(at(2026, 11, 17, 9), { threadId: 9, answers: deck.id })], new Map([[deck.id, deck]]));
+    const moved = promise(at(2026, 11, 21, 9), { threadId: 10, brokenDueAt: at(2026, 11, 16, 9) });
+    const friday = dated("respond", "2026-11-20", { threadId: 11, early: true });
+    const december = dated("respond", "2026-12-31", { threadId: 12, early: true });
+    const bill = dated("pay", "2026-11-18", { threadId: 13 });
+    const f = facts({ dated: [deck, friday, december, bill], promises: [...mine, moved] });
+    const { rows, counts } = projectToday(f);
+    expect(rows.map((r) => [r.id, r.group, r.part ?? null])).toEqual([
+      [`dated:${bill.id}`, "today", null],
+      [`promise:${moved.id}`, "today", "waiting"],
+      [`promise:${mine[0]!.id}`, "today", "waiting"],
+      [`dated:${friday.id}`, "today", "waiting"],
+      [`dated:${december.id}`, "today", "waiting"],
+    ]);
+    // its column as it was: the missed day said, the day it's needed by, never Missed's bucket
+    expect(rows[1]!.why).toMatchObject({ dueAt: at(2026, 11, 21, 9), promise: { said: at(2026, 11, 16, 9) } });
+    expect(rows[1]!.why.missed).toBeUndefined();
+    expect(counts).toEqual({ missed: 0, today: 1, waiting: 4 });
+    expect(projectToday(f, { count: true }).counts).toEqual(counts);
+    // put off with Later: behind Coming up, neither shown nor counted
+    const off = { ...moved, deferredUntil: at(2026, 11, 20, 9) };
+    expect(projectToday(facts({ promises: [off] })).rows.map((r) => r.group)).toEqual(["comingUp"]);
+    expect(projectToday(facts({ promises: [off] }), { count: true }).counts).toEqual({ missed: 0, today: 0, waiting: 0 });
+    // its live day over too: Missed
+    expect(projectToday(facts({ now: at(2026, 11, 22, 10), promises: [moved] })).rows.map((r) => r.group)).toEqual(["missed"]);
+  });
+
+  it("iteration 4: Today's own rows with a time go by it whatever they are (Priya's payroll 1:00 PM, the 1:1 at 2:00 PM, Marcus at 4:00 PM)", () => {
+    const payroll = dated("pay", "2026-11-18", { threadId: 1 }, "13:00");
+    const oneOnOne = dated("event", "2026-11-18", { threadId: 2 }, "14:00");
+    const marcus = promise(at(2026, 11, 18, 16), { threadId: 3, timed: true, text: "call Marcus at 4:00 PM" });
+    const rent = dated("pay", "2026-11-18", { threadId: 4 });
+    const { rows } = projectToday(facts({ dated: [oneOnOne, payroll, rent], promises: [marcus], zone: Intl.DateTimeFormat().resolvedOptions().timeZone }));
+    expect(rows.map((r) => r.id)).toEqual([`dated:${rent.id}`, `dated:${payroll.id}`, `dated:${oneOnOne.id}`, `promise:${marcus.id}`]);
   });
 
   it("a row's id stays as its tier changes: shown early, then due today", () => {

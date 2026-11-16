@@ -2677,7 +2677,8 @@ It contains none of your mail, contacts, settings or keys.
   "whatMatters.say.replied": "{name} wrote back about “{subject}”.",
   "whatMatters.say.reminder": "Your reminder for “{subject}”.",
   "today.line.missed": { one: "# missed", other: "# missed" },
-  "today.line.today": { one: "# today", other: "# today" },
+  // plan 210 (iteration 4, revision 8): what it counts is what's to do (your reminders too), not Today's plans
+  "today.line.today": { one: "# to do today", other: "# to do today" },
   "today.line.waiting": { one: "# waiting", other: "# waiting" },
   "today.line.joined": "{a} · {b}",
   "today.line.comingUp": { one: "# coming up", other: "# coming up" },
