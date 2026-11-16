@@ -6,7 +6,7 @@ vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, remo
 vi.mock("~/rpc/connection", () => ({ client: { call: vi.fn(), on: () => () => {}, connectionVersion: 1 } }));
 vi.mock("~/lib/open-dwell", () => ({ onExplicitOpen: () => {}, noteExplicitOpen: () => {} }));
 
-const { followupLine, followupWhen } = await import("./followups");
+const { followupLine, followupWhen, withoutPerson } = await import("./followups");
 const { setLocale } = await import("@terno/i18n");
 const en = (await import("@terno/i18n/locales/en")).default;
 const es = (await import("@terno/i18n/locales/es")).default;
@@ -50,5 +50,37 @@ describe("the follow-up's line (plan 161)", () => {
     expect(followupLine(row(), NOW)).toBe("Esperando la respuesta de Arjun Ramírez");
     expect(followupWhen(row(), NOW)).toMatch(/^Vuelve a tu Entrada mar, 27 oct, 09:00 si no hay respuesta$/);
     expect(followupWhen(row({ kind: "promise", dated: true }), NOW)).toBe("Vence el martes");
+  });
+});
+
+/** Plan 210 (iteration 3): Jess's promise, as the reader's line and the lists say it. */
+const jess = (o: Partial<FollowupRow>) => row({ kind: "promise", personName: "Jess Okafor", personEmail: "jess@board.test", dated: true, ...o });
+const script = jess({ text: "send Jess the script" });
+
+describe("a promise never names its person twice (plan 210, iteration 3)", () => {
+  it("the person goes from the words when they stand without them", () => {
+    expect(withoutPerson("send Jess the script", ["Jess Okafor", "Jess"])).toBe("send the script");
+    expect(withoutPerson("send the script to Jess Okafor", ["Jess Okafor", "Jess"])).toBe("send the script");
+    expect(withoutPerson("share the deck with Jess", ["Jess Okafor", "Jess"])).toBe("share the deck");
+    expect(withoutPerson("enviar a Valeria Ochoa el guion", ["Valeria Ochoa", "Valeria"])).toBe("enviar el guion");
+    expect(withoutPerson("send the contract", ["Tom Reed", "Tom"])).toBe("send the contract");
+  });
+
+  it("where they can't, the words keep the name and the line doesn't add it", () => {
+    expect(withoutPerson("email Jess", ["Jess Okafor", "Jess"])).toBeNull();
+    expect(withoutPerson("review Jess's deck", ["Jess Okafor", "Jess"])).toBeNull();
+    expect(withoutPerson("enviar a Valeria Ochoa", ["Valeria Ochoa", "Valeria"])).toBeNull();
+    // a name inside another word is no mention
+    expect(withoutPerson("send the Jessup file", ["Jess"])).toBe("send the Jessup file");
+  });
+
+  it("the reader's line, the lists' line, in English and Spanish", () => {
+    expect(followupLine(script, NOW, { short: true })).toBe("You told Jess you’d send the script");
+    expect(followupLine(script, NOW)).toBe("You told Jess Okafor you’d send the script");
+    expect(followupLine(jess({ text: "email Jess" }), NOW, { short: true })).toBe("You said you’d email Jess");
+    setLocale("es", es as never);
+    const valeria = jess({ personName: "Valeria Ochoa", text: "enviar a Valeria Ochoa" });
+    expect(followupLine(valeria, NOW, { short: true })).toBe("Dijiste que ibas a enviar a Valeria Ochoa");
+    expect(followupLine(jess({ personName: "Valeria Ochoa", text: "enviar el guion a Valeria" }), NOW, { short: true })).toBe("Le dijiste a Valeria que ibas a enviar el guion");
   });
 });
