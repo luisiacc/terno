@@ -313,6 +313,26 @@ describe("one reply, one row (iteration 4, the Codex review's revision 4)", () =
     expect((await rows()).map((r) => r.id)).toEqual([`promise:${send!.id}`]);
   });
 
+  it("Mute beside it (iteration 4, merge): the sender muted, their request is hidden, never closed; your reply's promises are yours, still one row with its Also line, and its Done still finishes the request they answer", async () => {
+    const { backend, client, model, request, reply, datedDone, followupsDone, rows } = await setup();
+    model.dated = () => dated([slip]);
+    const asked = await request();
+    await datedDone();
+    const [req] = await backend.store.dated.ofThread(asked.thread);
+    model.sent = () => sent({ promises: [green, wednesday], answers: [{ label: "q1", verdict: "promise", evidence: "I'll send it Wednesday" }] });
+    await reply(asked, "Thanks! I'll recalibrate the green first. I'll send it Wednesday.");
+    await followupsDone();
+    const [first, send] = (await backend.store.followups.ofThread(asked.thread)).filter((p) => p.kind === "promise").sort((a, b) => a.item - b.item);
+    await client.call("dated.mute", { on: "sender", key: school.email, name: school.name });
+    expect((await client.call("dated.ofThread", { threadId: asked.thread })).rows).toEqual([]);
+    const [row] = await rows();
+    expect(row).toMatchObject({ id: `promise:${send!.id}`, why: { with: [{ source: "promise", id: first!.id }] }, also: [{ text: green.text }] });
+    expect(await backend.store.dated.get(req!.id)).toMatchObject({ state: "open" });
+    await client.call("followups.act", { id: send!.id, revision: send!.revision, action: "done", with: row!.why.with! });
+    expect(await backend.store.dated.get(req!.id)).toMatchObject({ state: "settled" });
+    expect(await rows()).toEqual([]);
+  });
+
   it("all or none: one of them changed since it was shown, nothing is done; one acted on alone (the reader's line) leaves the row the other's", async () => {
     const { backend, client, model, request, reply, datedDone, followupsDone, rows } = await setup();
     model.dated = () => dated([slip]);
