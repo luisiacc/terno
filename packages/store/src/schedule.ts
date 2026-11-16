@@ -1,4 +1,4 @@
-import { dayKeyOf, proposerOf, type DatedRow, type DatedWall, type FollowupRow, type FollowupState, type ItemSchedule, type ScheduleProposal } from "@terno/core";
+import { dayKeyOf, proposerOf, type DatedRow, type DatedWall, type FollowupRow, type FollowupState, type ItemSchedule, type PartOfDay, type ScheduleProposal } from "@terno/core";
 import type { DatedFinish, DatedSource } from "./dated";
 
 /**
@@ -7,13 +7,13 @@ import type { DatedFinish, DatedSource } from "./dated";
  * its Later cleared, any proposal taken away, `changed_at` the act's moment and `changed_from` its schedule as it was (the
  * one change event an item keeps); a promise's broken day goes (the day is the user's now). Its Undo puts every field back
  * exactly, or none when one changed since. The day asked before ("before Mon") and the mail's own clock (iteration 4's
- * reading) are the mail's words about its schedule, so a change of the user's has none, and an accepted proposal the move's.
+ * reading), and the part of its day (iteration 5), are the mail's words about its schedule, so a change of the user's has none, and an accepted proposal the move's.
  */
 export interface ScheduleChanges {
   /** the act's moment: `changedAt` */
   at: number;
-  dated: readonly { id: number; revision: number; to: { dueDay: string; dueAt: number; timed: boolean; actAt: number; /** an accepted proposal's new words */ text?: string; /** the day asked before and the mail's clock: an accepted proposal's; absent, none */ before?: string | null; wall?: DatedWall | null } }[];
-  promises: readonly { id: number; revision: number; to: { dueAt: number; timed: boolean; /** open when its new moment is ahead, else due */ state: FollowupState; /** an accepted proposal's day asked before; absent, none */ before?: string | null } }[];
+  dated: readonly { id: number; revision: number; to: { dueDay: string; dueAt: number; timed: boolean; actAt: number; /** an accepted proposal's new words */ text?: string; /** the day asked before and the mail's clock: an accepted proposal's; absent, none */ before?: string | null; wall?: DatedWall | null; /** plan 210 (iteration 5): the part of its day, an accepted proposal's; absent, none (a change of the user's is a day) */ partOfDay?: PartOfDay | null } }[];
+  promises: readonly { id: number; revision: number; to: { dueAt: number; timed: boolean; /** open when its new moment is ahead, else due */ state: FollowupState; /** an accepted proposal's day asked before; absent, none */ before?: string | null; /** plan 210 (iteration 5): an accepted proposal's part of its day; absent, none */ partOfDay?: PartOfDay | null } }[];
 }
 
 /**
@@ -40,6 +40,8 @@ export interface DatedScheduleSnapshot {
   proposal: ScheduleProposal | null;
   before: string | null;
   wall: DatedWall | null;
+  /** plan 210 (iteration 5, revision 4): a change clears it, its Undo puts it back */
+  partOfDay: PartOfDay | null;
 }
 
 /** A promise's, likewise (its state and Inbox top too: one past its day comes back open). */
@@ -57,6 +59,7 @@ export interface PromiseScheduleSnapshot {
   changedFrom: ItemSchedule | null;
   proposal: ScheduleProposal | null;
   before: string | null;
+  partOfDay: PartOfDay | null;
 }
 
 export interface ScheduleSnapshots {
@@ -69,12 +72,12 @@ export interface ScheduleSnapshots {
  * the mail's clock (all a move writes, so taking it is the move exactly), and who said it.
  */
 export const proposalOf = (
-  to: { dueDay?: string; dueAt: number; timed: boolean; actAt?: number; text?: string; before?: string | null; wall?: DatedWall | null },
+  to: { dueDay?: string; dueAt: number; timed: boolean; actAt?: number; text?: string; before?: string | null; wall?: DatedWall | null; partOfDay?: PartOfDay | null },
   src: Pick<DatedSource, "fromName" | "fromEmail">,
   w: Pick<DatedFinish, "messageId" | "now">,
 ): ScheduleProposal => ({
   dueDay: to.dueDay ?? dayKeyOf(to.dueAt), dueAt: to.dueAt, timed: to.timed, ...(to.actAt !== undefined ? { actAt: to.actAt } : {}), ...(to.text ? { text: to.text } : {}),
-  ...(to.before ? { before: to.before } : {}), ...(to.wall ? { wall: to.wall } : {}),
+  ...(to.before ? { before: to.before } : {}), ...(to.wall ? { wall: to.wall } : {}), ...(to.partOfDay ? { partOfDay: to.partOfDay } : {}),
   by: proposerOf({ name: src.fromName, email: src.fromEmail }), messageId: w.messageId, at: w.now,
 });
 
@@ -83,10 +86,10 @@ export const datedScheduleOf = (r: Pick<DatedRow, "dueDay" | "dueAt" | "timed" |
 
 export const datedScheduleSnapshot = (r: DatedRow): DatedScheduleSnapshot => ({
   id: r.id, revision: r.revision, dueDay: r.dueDay, dueAt: r.dueAt, timed: r.timed, dated: r.dated, actAt: r.actAt, text: r.text, deferredUntil: r.deferredUntil,
-  changedAt: r.changedAt ?? null, changedFrom: r.changedFrom ?? null, proposal: r.proposal ?? null, before: r.before ?? null, wall: r.wall ?? null,
+  changedAt: r.changedAt ?? null, changedFrom: r.changedFrom ?? null, proposal: r.proposal ?? null, before: r.before ?? null, wall: r.wall ?? null, partOfDay: r.partOfDay ?? null,
 });
 
 export const promiseScheduleSnapshot = (r: FollowupRow): PromiseScheduleSnapshot => ({
   id: r.id, revision: r.revision, state: r.state, inboxState: r.inboxState, dueAt: r.dueAt, dated: r.dated, timed: r.timed === true, brokenDueAt: r.brokenDueAt ?? null, deferredUntil: r.deferredUntil,
-  changedAt: r.changedAt ?? null, changedFrom: r.changedFrom ?? null, proposal: r.proposal ?? null, before: r.before ?? null,
+  changedAt: r.changedAt ?? null, changedFrom: r.changedFrom ?? null, proposal: r.proposal ?? null, before: r.before ?? null, partOfDay: r.partOfDay ?? null,
 });

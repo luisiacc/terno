@@ -1,4 +1,4 @@
-import { DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, datedGroupAt } from "@terno/core";
+import { DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, datedGroupAt, type PartOfDay } from "@terno/core";
 import { describe, expect, it } from "vitest";
 import { DATED_MARK_MS, DATED_SCAN_MARK_MS, type DatedFinish, type DatedWrite } from "../dated";
 import { AWAITING_ITEM, FOLLOWUPS_ACTIVE_MAX, type FollowupFinish, type FollowupWrite } from "../followups";
@@ -154,6 +154,8 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
           // plan 210 (iteration 4): handed to nobody
           handedTo: null,
           before: null, confirms: null, wall: null,
+          // plan 210 (iteration 5): the whole day
+          partOfDay: null,
         });
         // read once: a second answer finds no mark and changes nothing
         expect(await finish(a.id, a.thread, { rows: [item({ item: 2 })] })).toBe("gone");
@@ -674,11 +676,11 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
       /** a dated item and two promises of yours, each on a conversation of its own, plus a second dated item */
       async function items() {
         const s = await setup();
-        const promise = async (key: string, over: { text?: string; timed?: boolean; dueAt?: number; item?: number } = {}) => {
+        const promise = async (key: string, over: { text?: string; timed?: boolean; dueAt?: number; item?: number; partOfDay?: PartOfDay } = {}) => {
           const m = msg({ accountId: s.accountId, from: me, to: [bank], isSent: true, inInbox: false, rfcMessageId: `${key}@x`, date: NOW - 9000, providerMsgId: `${key}-sent` });
           const r = await s.store.sync.ingest([m], { applyFilters: false, now: NOW, classifier: null, liveSent: { wanted: true } });
           const thread = await threadOf(s.store, `${key}-sent`);
-          await s.store.followups.finish({ messageId: r.inserted[0]!, threadId: thread, fromScan: false, rows: [{ kind: "promise", item: over.item ?? 0, text: over.text ?? "send the slip and $12", quote: "I'll send the slip", personName: "Bank", personEmail: bank.email, dueAt: over.dueAt ?? NOW + DAY, dated: true, ...(over.timed !== undefined ? { timed: over.timed } : {}) }], kept: [], now: NOW, model: "m", provider: "p", promptVersion: 1, clearGeneration: s.store.followups.clearGeneration() });
+          await s.store.followups.finish({ messageId: r.inserted[0]!, threadId: thread, fromScan: false, rows: [{ kind: "promise", item: over.item ?? 0, text: over.text ?? "send the slip and $12", quote: "I'll send the slip", personName: "Bank", personEmail: bank.email, dueAt: over.dueAt ?? NOW + DAY, dated: true, ...(over.timed !== undefined ? { timed: over.timed } : {}), ...(over.partOfDay ? { partOfDay: over.partOfDay } : {}) }], kept: [], now: NOW, model: "m", provider: "p", promptVersion: 1, clearGeneration: s.store.followups.clearGeneration() });
           return { thread, row: (await s.store.followups.ofThread(thread))[0]! };
         };
         const dated = async (key: string, over: Partial<DatedWrite> = {}) => {
@@ -754,6 +756,36 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
         const again = await got({ inReplyTo: "before@x", references: ["before@x"], date: NOW - 2000 });
         await finish(again.id, again.thread, { movedPromises: [{ id: p.row.id, revision: p.row.revision + 1, dueAt: NOW + 4 * DAY }] });
         expect((await store.followups.get(p.row.id))!.before).toBeNull();
+      });
+
+      it("plan 210 (iteration 5): a part of the day round-trips on a request and a promise, through a move and a promise's move, and after the store opens again", async () => {
+        const { store, got, item, finish, promise } = await items();
+        const a = await got({ providerMsgId: "it5", subject: "it5" });
+        await finish(a.id, a.thread, { rows: [item({ kind: "respond", text: "Send Kai notes on cut v2", dueDay: "2026-11-14", partOfDay: "morning" }), item({ item: 1, kind: "pay", text: "Pay the bill" })] });
+        const rows = new Map((await store.dated.ofThread(a.thread)).map((r) => [r.item, r]));
+        expect(rows.get(0)!.partOfDay).toBe("morning");
+        expect(rows.get(1)!.partOfDay).toBeNull();
+        // a move sets the new day's part, or clears it (absent: the whole day)
+        const b = await got({ providerMsgId: "it5b", subject: "it5b" });
+        await finish(b.id, b.thread, { moved: [{ id: rows.get(0)!.id, dueDay: "2026-11-15", dueAt: NOW + 8 * DAY, timed: false, actAt: NOW, partOfDay: "evening" }] });
+        expect(await store.dated.get(rows.get(0)!.id)).toMatchObject({ dueDay: "2026-11-15", partOfDay: "evening" });
+        const c = await got({ providerMsgId: "it5c", subject: "it5c" });
+        await finish(c.id, c.thread, { moved: [{ id: rows.get(0)!.id, dueDay: "2026-11-16", dueAt: NOW + 9 * DAY, timed: false, actAt: NOW }] });
+        expect((await store.dated.get(rows.get(0)!.id))!.partOfDay).toBeNull();
+        // a promise written for a morning; its person's move gives it an afternoon, then the whole day
+        const p = await promise("part", { partOfDay: "morning" });
+        expect(p.row.partOfDay).toBe("morning");
+        const reply = await got({ inReplyTo: "part@x", references: ["part@x"], date: NOW - 3000 });
+        await finish(reply.id, reply.thread, { movedPromises: [{ id: p.row.id, revision: p.row.revision, dueAt: NOW + 3 * DAY, partOfDay: "afternoon" }] });
+        expect((await store.followups.get(p.row.id))!.partOfDay).toBe("afternoon");
+        const other = await promise("whole", { partOfDay: "evening" });
+        const again = await got({ inReplyTo: "whole@x", references: ["whole@x"], date: NOW - 2000 });
+        await finish(again.id, again.thread, { movedPromises: [{ id: other.row.id, revision: other.row.revision, dueAt: NOW + 4 * DAY }] });
+        expect((await store.followups.get(other.row.id))!.partOfDay).toBeNull();
+        const kept = (await store.followups.get(p.row.id))!;
+        const next = await reopen(store);
+        expect(await next.followups.get(p.row.id)).toEqual(kept);
+        expect((await next.dated.get(rows.get(1)!.id))!.partOfDay).toBeNull();
       });
 
       it("links duplicates to a canonical and details to their item, on open rows only, never over one set nor in a chain, and the revision stays", async () => {

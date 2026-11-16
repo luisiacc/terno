@@ -25,6 +25,8 @@ const ADDED: Record<number, { dated?: Record<string, null>; followups?: Record<s
   67: { dated: { before_day: null, confirms: null, wall: null }, followups: { before_day: null } },
   68: { dated: { changed_at: null, changed_from: null, proposal: null }, followups: { changed_at: null, changed_from: null, proposal: null } },
   70: { dated: { handed_to: null }, followups: { handed_to: null }, drafts: { handoff_json: null } },
+  // (iteration 5)
+  71: { dated: { part_of_day: null }, followups: { part_of_day: null } },
 };
 /** the columns `table` gains migrating from `from` to today's schema, from iteration 4's migrations */
 const addedSince = (from: number, table: "dated" | "followups" | "drafts"): Record<string, null> =>
@@ -816,6 +818,25 @@ describe("migration v70: Hand to… (plan 210, iteration 4)", () => {
     expect(db.all<Record<string, unknown>>("SELECT * FROM drafts ORDER BY id")).toEqual(drafts.map((r) => ({ ...r, ...addedSince(69, "drafts") })));
     expect(db.all<Record<string, unknown>>("SELECT * FROM dated_items ORDER BY id")).toEqual(dated.map((r) => ({ ...r, ...addedSince(69, "dated") })));
     expect(db.all<Record<string, unknown>>("SELECT * FROM followups ORDER BY id")).toEqual(followups.map((r) => ({ ...r, ...addedSince(69, "followups") })));
+  });
+});
+
+describe("migration v71: a part of the day (plan 210, iteration 5)", () => {
+  it("adds the part at none, every item and promise kept as it was, for the whole day (shape only, no backfill)", () => {
+    const { db } = legacyMail(70, { threads: 2, seed: 12 });
+    const thread = db.get<{ id: number }>("SELECT id FROM threads ORDER BY id LIMIT 1")!.id;
+    db.run(
+      `INSERT INTO dated_items (thread_id, message_id, item, kind, text, quote, sender_key, due_day, due_at, timed, dated, act_at, arrived_at, state, revision, created_at)
+       VALUES (?, 1, 0, 'respond', 'Send Kai notes', 'by saturday morning', 'a@b.mx', '2026-12-05', 5, 0, 1, 4, 3, 'open', 2, 2)`,
+      thread,
+    );
+    db.run(`INSERT INTO followups (thread_id, message_id, item, kind, text, sent_at, due_at, dated, timed, state, revision, created_at) VALUES (?, 2, 0, 'promise', 'bring the cupcakes by 12:00 PM', 1, 5, 1, 1, 'open', 3, 2)`, thread);
+    const dated = db.all<Record<string, unknown>>("SELECT * FROM dated_items ORDER BY id");
+    const followups = db.all<Record<string, unknown>>("SELECT * FROM followups ORDER BY id");
+    expect(migrate(db)).toEqual({ from: 70, to: SCHEMA_VERSION });
+    expect(db.all<Record<string, unknown>>("SELECT * FROM dated_items ORDER BY id")).toEqual(dated.map((r) => ({ ...r, ...addedSince(70, "dated") })));
+    expect(db.all<Record<string, unknown>>("SELECT * FROM followups ORDER BY id")).toEqual(followups.map((r) => ({ ...r, ...addedSince(70, "followups") })));
+    expect(addedSince(70, "dated")).toEqual({ part_of_day: null });
   });
 });
 

@@ -31,11 +31,11 @@ export function defineScheduleConformance(fresh: () => Promise<MailStore>, reope
         await finish(m.id, m.thread, { rows: [item(over)] });
         return { thread: m.thread, row: (await store.dated.ofThread(m.thread))[0]! };
       };
-      const promise = async (key: string, over: { dueAt?: number; timed?: boolean } = {}) => {
+      const promise = async (key: string, over: { dueAt?: number; timed?: boolean; partOfDay?: "morning" | "afternoon" | "evening" } = {}) => {
         const m = msg({ accountId: accountId!, from: me, to: [elena], isSent: true, inInbox: false, rfcMessageId: `${key}@x`, date: NOW - 9000, providerMsgId: `${key}-sent` });
         const r = await store.sync.ingest([m], { applyFilters: false, now: NOW, classifier: null, liveSent: { wanted: true } });
         const thread = await threadOf(store, `${key}-sent`);
-        await store.followups.finish({ messageId: r.inserted[0]!, threadId: thread, fromScan: false, rows: [{ kind: "promise", item: 0, text: "send the script", quote: "I'll send the script", personName: elena.name, personEmail: elena.email, dueAt: over.dueAt ?? NOW + DAY, dated: true, ...(over.timed !== undefined ? { timed: over.timed } : {}) }], kept: [], now: NOW, model: "m", provider: "p", promptVersion: 1, clearGeneration: store.followups.clearGeneration() });
+        await store.followups.finish({ messageId: r.inserted[0]!, threadId: thread, fromScan: false, rows: [{ kind: "promise", item: 0, text: "send the script", quote: "I'll send the script", personName: elena.name, personEmail: elena.email, dueAt: over.dueAt ?? NOW + DAY, dated: true, ...(over.timed !== undefined ? { timed: over.timed } : {}), ...(over.partOfDay ? { partOfDay: over.partOfDay } : {}) }], kept: [], now: NOW, model: "m", provider: "p", promptVersion: 1, clearGeneration: store.followups.clearGeneration() });
         return { thread, row: (await store.followups.ofThread(thread))[0]! };
       };
       /** a later message from Elena on that conversation */
@@ -55,8 +55,8 @@ export function defineScheduleConformance(fresh: () => Promise<MailStore>, reope
         promises: [{ id: script.row.id, revision: script.row.revision, to: { dueAt: NOW + 5 * DAY, timed: false, state: "open" } }],
       });
       expect(snapshots).toEqual({
-        dated: [{ id: slip.row.id, revision: was.dated.revision, dueDay: "2026-11-20", dueAt: NOW + 7 * DAY, timed: false, dated: true, actAt: NOW + 4 * DAY, text: "Send Elena the signed slip", deferredUntil: NOW + 2 * DAY, changedAt: null, changedFrom: null, proposal: null, before: null, wall: null }],
-        promises: [{ id: script.row.id, revision: script.row.revision, state: "open", inboxState: "none", dueAt: NOW + DAY, dated: true, timed: false, brokenDueAt: null, deferredUntil: null, changedAt: null, changedFrom: null, proposal: null, before: null }],
+        dated: [{ id: slip.row.id, revision: was.dated.revision, dueDay: "2026-11-20", dueAt: NOW + 7 * DAY, timed: false, dated: true, actAt: NOW + 4 * DAY, text: "Send Elena the signed slip", deferredUntil: NOW + 2 * DAY, changedAt: null, changedFrom: null, proposal: null, before: null, wall: null, partOfDay: null }],
+        promises: [{ id: script.row.id, revision: script.row.revision, state: "open", inboxState: "none", dueAt: NOW + DAY, dated: true, timed: false, brokenDueAt: null, deferredUntil: null, changedAt: null, changedFrom: null, proposal: null, before: null, partOfDay: null }],
       });
       expect(await store.dated.get(slip.row.id)).toMatchObject({
         dueDay: "2026-11-23", dueAt: NOW + 10 * DAY, timed: true, dated: true, actAt: NOW + 3 * DAY, deferredUntil: null, text: "Send Elena the signed slip",
@@ -191,6 +191,34 @@ export function defineScheduleConformance(fresh: () => Promise<MailStore>, reope
       expect(proposed).toMatchObject({ dueDay: "2026-11-23", before: null, wall: null, proposal: { dueDay: "2026-11-17", before: "2026-11-18", wall: there } });
       await store.today.schedule({ at: NOW + 1, dated: [{ id: talk.row.id, revision: proposed.revision, to: { dueDay: "2026-11-17", dueAt: NOW + 4 * DAY, timed: true, actAt: NOW, before: proposed.proposal!.before, wall: proposed.proposal!.wall } }], promises: [] });
       expect(await store.dated.get(talk.row.id)).toMatchObject({ dueDay: "2026-11-17", before: "2026-11-18", wall: there, proposal: null });
+    });
+
+    it("a part of the day is the mail's word about its day: Change clears it, its Undo puts it back, and taking a proposal takes the move's (plan 210, iteration 5)", async () => {
+      const { store, dated, promise, reply, finish } = await setup();
+      const notes = await dated("notes", { text: "Send Kai notes", partOfDay: "morning" });
+      const cupcakes = await promise("cupcakes", { dueAt: NOW + DAY, partOfDay: "morning" });
+      const was = { dated: (await store.dated.get(notes.row.id))!, promise: (await store.followups.get(cupcakes.row.id))! };
+      expect([was.dated.partOfDay, was.promise.partOfDay]).toEqual(["morning", "morning"]);
+      const s = (await store.today.schedule({
+        at: NOW,
+        dated: [{ id: notes.row.id, revision: was.dated.revision, to: { dueDay: "2026-11-23", dueAt: NOW + 10 * DAY, timed: false, actAt: NOW + 3 * DAY } }],
+        promises: [{ id: cupcakes.row.id, revision: was.promise.revision, to: { dueAt: NOW + 5 * DAY, timed: false, state: "open" } }],
+      }))!;
+      expect([s.dated[0]!.partOfDay, s.promises[0]!.partOfDay]).toEqual(["morning", "morning"]);
+      expect((await store.dated.get(notes.row.id))!.partOfDay).toBeNull();
+      expect((await store.followups.get(cupcakes.row.id))!.partOfDay).toBeNull();
+      expect(await store.today.unschedule(s)).toBe(true);
+      expect(await store.dated.get(notes.row.id)).toEqual({ ...was.dated, revision: was.dated.revision + 2 });
+      expect(await store.followups.get(cupcakes.row.id)).toEqual({ ...was.promise, revision: was.promise.revision + 2 });
+      // changed to a day; Kai's later mail asks for the same day's morning: a new schedule, kept as a proposal with its part
+      const mine = (await store.dated.get(notes.row.id))!;
+      await store.today.schedule({ at: NOW, dated: [{ id: notes.row.id, revision: mine.revision, to: { dueDay: "2026-11-23", dueAt: NOW + 10 * DAY, timed: false, actAt: NOW + 3 * DAY } }], promises: [] });
+      const moved = await reply("notes", NOW - 1000);
+      await finish(moved.id, moved.thread, { moved: [{ id: notes.row.id, dueDay: "2026-11-23", dueAt: NOW + 10 * DAY, timed: false, actAt: NOW + 3 * DAY, partOfDay: "morning" }] });
+      const proposed = (await store.dated.get(notes.row.id))!;
+      expect(proposed).toMatchObject({ partOfDay: null, proposal: { dueDay: "2026-11-23", partOfDay: "morning" } });
+      await store.today.schedule({ at: NOW + 1, dated: [{ id: notes.row.id, revision: proposed.revision, to: { dueDay: "2026-11-23", dueAt: NOW + 10 * DAY, timed: false, actAt: NOW + 3 * DAY, partOfDay: proposed.proposal!.partOfDay ?? null } }], promises: [] });
+      expect(await store.dated.get(notes.row.id)).toMatchObject({ partOfDay: "morning", proposal: null });
     });
 
     it("a later mail's move of a promise the user changed is a proposal only at the revision the reader saw, on its thread", async () => {

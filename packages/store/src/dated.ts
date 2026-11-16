@@ -1,4 +1,4 @@
-import { addressKey, ANSWERED_KINDS, tabOfCode, type DatedKind, type DatedMute, type DatedMuteOn, type DatedRow, type DatedState, type DatedWall } from "@terno/core";
+import { addressKey, ANSWERED_KINDS, tabOfCode, type DatedKind, type DatedMute, type DatedMuteOn, type DatedRow, type DatedState, type DatedWall, type PartOfDay } from "@terno/core";
 
 /**
  * Plan 204: dated items, from mail the user got.
@@ -108,6 +108,8 @@ export interface DatedWrite {
   confirmsItem?: number;
   /** plan 210 (iteration 4, revision 10): the mail's own clock in another zone (`DatedRow.wall`); absent, none */
   wall?: DatedWall | null;
+  /** plan 210 (iteration 5, revision 4): the part of its day it's asked for (`DatedRow.partOfDay`); absent, the whole day */
+  partOfDay?: PartOfDay | null;
 }
 
 export interface DatedFinish {
@@ -138,6 +140,8 @@ export interface DatedFinish {
     /** plan 210 (iteration 4): the day it's asked before, and the mail's own clock, at its new moment: absent or null, none (a move clears them) */
     before?: string | null;
     wall?: DatedWall | null;
+    /** plan 210 (iteration 5, revision 4): the part of its new day: absent or null, the whole day (a move clears it) */
+    partOfDay?: PartOfDay | null;
   }[];
   /**
    * The second panel round: promises of yours (plan 142's rows) this message gives a new day. Only at the revision the
@@ -157,6 +161,8 @@ export interface DatedFinish {
     timed?: boolean;
     /** plan 210 (iteration 4, revision 11): the day its person asked for it before (`FollowupRow.before`): absent or null, none */
     before?: string | null;
+    /** plan 210 (iteration 5, revision 4): the part of its new day (`FollowupRow.partOfDay`): absent or null, the whole day */
+    partOfDay?: PartOfDay | null;
   }[];
   /**
    * Plan 210 (iteration 3, the owner's "Close replaced promises"): promises of yours this message replaced with a new
