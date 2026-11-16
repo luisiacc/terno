@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, cpSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 import { Backend, plaintextCipher, type SecretCipher } from "../../packages/backend/src/backend";
 import { createMemoryTransportPair, RpcClient } from "../../packages/core/src/rpc";
@@ -23,13 +24,21 @@ import { realKeys, spendReport } from "./harness";
  * live only in this process (`heldKeys`): the database holds handles that open nothing, whatever way the run ends, and
  * the copy is left on the demo's provider, so the app opens it with no key. Nothing reaches a mail server (the demo
  * registry, no sync). Run alone: TERNO_AI_REAL=1 TERNO_PANEL=1, in the persona's zone (TZ).
+ *
+ * The second morning (plan 210, TERNO_PANEL_DAY2=1): the same mailbox on Saturday 2026-11-14 09:30, after Friday as the
+ * persona lived it (`<id>.day1.json`: what they did on the feed and the mail they sent; `<id>.day2.json`: the mail that came
+ * in overnight), on a copy of Friday's database, so reviewers can judge whether the feed keeps its word.
  */
 const DIR = process.env.TERNO_PANEL_DIR ?? "/tmp/terno-scratch/p204/panel";
 /** where each persona's database goes (a proof run keeps its own, beside the round's) */
 const DB = process.env.TERNO_PANEL_DB ?? join(DIR, "db");
+/** the second morning's: a copy of `DB`'s, played on to Saturday */
+const DB2 = process.env.TERNO_PANEL_DB2 ?? join(DIR, "db-day2");
+const DAY2 = process.env.TERNO_PANEL_DAY2 === "1";
 const ONLY = process.env.TERNO_PANEL_ONLY?.split(",");
 const PHASE_ONE = new Date(2026, 10, 10, 9, 0).getTime();
 const NOW = new Date(2026, 10, 13, 9, 30).getTime();
+const SATURDAY = new Date(2026, 10, 14, 9, 30).getTime();
 const DAY = 86_400_000;
 
 interface Person { name: string; email: string }
@@ -122,6 +131,16 @@ const manifestOf = (id: string) => ({
   key: sha(mailFile(id, ".key")),
 });
 
+/** The second morning's: Friday's reading it went on from, and Friday's acts, the night's mail and Saturday's key as on disk. */
+const manifestOfDay2 = (id: string) => ({
+  friday: manifestOf(id),
+  day2: 1,
+  morning: SATURDAY,
+  day1: sha(mailFile(id, ".day1")),
+  incoming: sha(mailFile(id, ".day2")),
+  key: sha(mailFile(id, ".key.day2")),
+});
+
 /** A day key in the run's zone (the persona's), as the app's. */
 const dayOf = (ms: number): string => {
   const d = new Date(ms);
@@ -177,10 +196,11 @@ function loggedCreate(dir: string): typeof createAi {
 
 /**
  * What Today shows, written beside the database: the packets' and the item scorer's source. Each section with its day,
- * each row with its own item and its Also line by identity (plan 210: scored by item, never by conversation).
+ * each row with its own item and its Also line by identity (plan 210: scored by item, never by conversation). The second
+ * morning's also has the history's first page (Earlier): what Friday's acts and the night's mail closed.
  */
-async function writeToday(backend: Backend, client: RpcClient, dir: string, persona: string) {
-  const list = await client.call("today.list", { held: [] });
+async function writeToday(backend: Backend, client: RpcClient, dir: string, persona: string, at = NOW, withHistory = false) {
+  const list = await client.call("today.list", { held: [], ...(withHistory && { history: { through: null } }) });
   const rows = await backend.store.dated.active();
   const followups = await backend.store.followups.active();
   const dated = new Map(rows.map((r) => [r.id, r]));
@@ -192,7 +212,8 @@ async function writeToday(backend: Backend, client: RpcClient, dir: string, pers
     bucket: x.bucket ?? null,
     items: x.items.map((i) => ({ id: i.id, threadId: i.thread.id, from: i.thread.fromName, subject: i.thread.subject, snippet: i.thread.snippet, why: i.why, summary: i.summary ?? null, own: ownOf(i, dated, promises), also: i.also ? i.also.map((a) => ({ ...a, ...alsoOf(i.thread.id, a, rows, followups) })) : null })),
   });
-  writeFileSync(join(dir, "today.json"), JSON.stringify({ persona, zone: Intl.DateTimeFormat().resolvedOptions().timeZone, at: new Date(NOW).toString(), sections: list.sections.map(section), dated: rows, followups }, null, 2));
+  const history = list.history?.items.map((h) => ({ id: h.id, item: h.item, threadId: h.thread.id, from: h.thread.fromName, subject: h.thread.subject, outcome: h.outcome, kind: h.kind, text: h.text, at: h.key.at, on: h.on ?? null, reason: h.reason ?? null }));
+  writeFileSync(join(dir, "today.json"), JSON.stringify({ persona, zone: Intl.DateTimeFormat().resolvedOptions().timeZone, at: new Date(at).toString(), sections: list.sections.map(section), ...(history && { history }), dated: rows, followups }, null, 2));
   return { list, rows };
 }
 
@@ -203,10 +224,12 @@ async function writeToday(backend: Backend, client: RpcClient, dir: string, pers
 describe.skipIf(process.env.TERNO_PANEL !== "1" || process.env.TERNO_PANEL_RELIST !== "1")("What matters again, on each persona's kept database", () => {
   for (const id of ONLY ?? ["theo", "maria", "diego", "jordan", "margaret", "sam", "priya"]) {
     it(id, { timeout: 300_000 }, async () => {
-      const dir = join(DB, id);
+      // the second morning's database relists at Saturday's morning
+      const dir = join(DAY2 ? DB2 : DB, id);
+      const morning = DAY2 ? SATURDAY : NOW;
       const kept = existsSync(join(dir, "manifest.json")) ? readFileSync(join(dir, "manifest.json"), "utf8") : null;
-      if (kept !== JSON.stringify(manifestOf(id))) throw new Error(`${id}: the kept database was read with other prompts, mail, keys, zone or settings (${kept ?? "no manifest"}); read the mailbox again`);
-      const backend = new Backend({ dbPath: join(dir, "terno.db"), version: "panel", cipher: plaintextCipher, providers: demoRegistry, autoSync: false, now: () => NOW });
+      if (kept !== JSON.stringify(DAY2 ? manifestOfDay2(id) : manifestOf(id))) throw new Error(`${id}: the kept database was read with other prompts, mail, keys, zone or settings (${kept ?? "no manifest"}); read the mailbox again`);
+      const backend = new Backend({ dbPath: join(dir, "terno.db"), version: "panel", cipher: plaintextCipher, providers: demoRegistry, autoSync: false, now: () => morning });
       await backend.store.ready;
       await backend.ready;
       try {
@@ -214,8 +237,8 @@ describe.skipIf(process.env.TERNO_PANEL !== "1" || process.env.TERNO_PANEL_RELIS
         backend.connect(s, { clientId: "renderer", origin: "renderer" });
         const client = new RpcClient(c);
         backend.today.touched();
-        const { list, rows } = await writeToday(backend, client, dir, id);
-        console.log(`${id} (relisted): ${list.sections.map((x) => `${x.kind} ${x.items.length}`).join(", ")}; ${rows.length} dated open`);
+        const { list, rows } = await writeToday(backend, client, dir, id, morning, DAY2);
+        console.log(`${id} (relisted):${list.sections.map((x) => `${x.kind} ${x.items.length}`).join(", ")}; ${rows.length} dated open`);
       } finally {
         await backend.stop();
       }
@@ -223,7 +246,7 @@ describe.skipIf(process.env.TERNO_PANEL !== "1" || process.env.TERNO_PANEL_RELIS
   }
 });
 
-describe.skipIf(process.env.TERNO_PANEL !== "1" || process.env.TERNO_PANEL_RELIST === "1")("What matters, on each persona's mailbox", () => {
+describe.skipIf(process.env.TERNO_PANEL !== "1" || process.env.TERNO_PANEL_RELIST === "1" || DAY2)("What matters, on each persona's mailbox", () => {
   const boxes = (ONLY ?? ["theo", "maria", "diego", "jordan", "margaret", "sam", "priya"]).map((id) => JSON.parse(readFileSync(join(DIR, "mail", `${id}.json`), "utf8")) as Box);
   for (const box of boxes) {
     it(box.id, { timeout: 1_800_000 }, async () => {
@@ -273,6 +296,144 @@ describe.skipIf(process.env.TERNO_PANEL !== "1" || process.env.TERNO_PANEL_RELIS
         console.log(`${box.id}: ${list.sections.map((x) => `${x.kind} ${x.items.length}`).join(", ")}; ${rows.length} dated open; ${spendReport()}`);
       } finally {
         // the copy keeps not even a handle, however the run ended: the app opens it on the demo's provider
+        for (const name of await backend.store.secrets.names().catch(() => [])) await backend.store.secrets.delete(name).catch(() => {});
+        await backend.stop();
+      }
+    });
+  }
+});
+
+/** The second morning's Friday (plan 210): what the persona did on the feed, by the item's source mail and kind. */
+interface Day1Action { at: string; message: string; kind: string; do: "done" | "remove" | "later" | "change"; until?: string; day?: string; time?: string | null; why: string }
+/** …and the mail they sent, a reply in its conversation (`replyTo`, a fixture id), at its moment. */
+interface Day1Sent { id: string; replyTo: string; thread: string; at: string; to: Person[]; cc?: Person[]; subject: string; text: string; why: string }
+interface Day1 { id: string; actions: Day1Action[]; sent: Day1Sent[] }
+
+/** An item's family, as the panel's scorer matches them: a promise of yours, a plan, or a task. */
+const familyOf = (kind: string): string => (kind === "promise" ? "promise" : kind === "event" || kind === "delivery" ? "plan" : "task");
+
+const localAt = (s: string): number => new Date(s).getTime();
+
+describe.skipIf(process.env.TERNO_PANEL !== "1" || process.env.TERNO_PANEL_RELIST === "1" || !DAY2)("What matters the morning after, on each persona's Friday", () => {
+  for (const id of ONLY ?? ["theo", "maria", "diego", "jordan", "margaret", "sam", "priya"]) {
+    it(id, { timeout: 3_600_000 }, async () => {
+      const box = JSON.parse(readFileSync(mailFile(id, ""), "utf8")) as Box;
+      const day1 = JSON.parse(readFileSync(mailFile(id, ".day1"), "utf8")) as Day1;
+      const night = (JSON.parse(readFileSync(mailFile(id, ".day2"), "utf8")) as { messages: Mail[] }).messages;
+      // Friday's reading, as the code would still make it: the morning after goes on from that one alone
+      const base = join(DB, id);
+      const kept = existsSync(join(base, "manifest.json")) ? readFileSync(join(base, "manifest.json"), "utf8") : null;
+      if (kept !== JSON.stringify(manifestOf(id))) throw new Error(`${id}: Friday's database was read with other prompts, mail, keys, zone or settings (${kept ?? "no manifest"}); read Friday again first`);
+      const dir = join(DB2, id);
+      rmSync(dir, { recursive: true, force: true });
+      cpSync(base, dir, { recursive: true });
+      for (const f of ["today.json", "manifest.json"]) rmSync(join(dir, f), { force: true });
+      if (existsSync(join(dir, "readings.jsonl"))) renameSync(join(dir, "readings.jsonl"), join(dir, "readings.day1.jsonl"));
+      // the clock from Friday's morning on, running as a wall clock would (the limiter's minute), moved to each event's
+      // moment and never back
+      const clock = {
+        base: NOW,
+        from: Date.now(),
+        now() {
+          return this.base + (Date.now() - this.from);
+        },
+        set(at: number) {
+          this.base = Math.max(at, this.now());
+          this.from = Date.now();
+        },
+      };
+      const backend = new Backend({ dbPath: join(dir, "terno.db"), version: "panel", cipher: heldKeys(), providers: demoRegistry, autoSync: false, aiFactory: realAiFactory(loggedCreate(dir)), now: () => clock.now() });
+      await backend.store.ready;
+      await backend.ready;
+      const ro = new DatabaseSync(join(dir, "terno.db"), { readOnly: true });
+      try {
+        const [c, s] = createMemoryTransportPair();
+        backend.connect(s, { clientId: "renderer", origin: "renderer" });
+        const client = new RpcClient(c);
+        const account = (await backend.store.accounts.list())[0]!;
+        const keys = realKeys();
+        await client.call("ai.setKey", { provider: "anthropic", value: keys.anthropic });
+        await client.call("ai.setKey", { provider: "openai", value: keys.openai });
+        await client.call("settings.update", { ai: { provider: "anthropic" } });
+        // a fixture's message to the database's: the mailbox's by its provider id, Friday's sent mail by what its send made
+        const sentIds = new Map<string, number>();
+        const lookup = ro.prepare("select id from messages where provider_msg_id = ?");
+        const idOf = (fixture: string): number | undefined => sentIds.get(fixture) ?? (lookup.get(`${box.id}-${fixture}`) as { id: number } | undefined)?.id;
+        const log: object[] = [];
+
+        /** One of Friday's acts, as the feed's row makes it: on the row's own item, at the revision the row shows. */
+        async function act(a: Day1Action): Promise<string> {
+          const messageId = idOf(a.message);
+          if (messageId === undefined) return "skipped: no such message";
+          const rows = (await client.call("today.list", { held: [] })).sections.flatMap((x) => x.items);
+          let target: { source: "dated" | "promise"; id: number; revision: number; text: string; with?: { source: "dated" | "promise"; id: number; revision: number }[] } | null = null;
+          if (a.kind === "promise") {
+            const open = (await backend.store.followups.active()).filter((p) => p.messageId === messageId);
+            const row = rows.find((i) => i.why.kind === "promise" && i.why.promise && open.some((p) => p.id === i.why.promise!.id));
+            const p = row ? open.find((x) => x.id === row.why.promise!.id)! : open[0];
+            if (p) target = { source: "promise", id: p.id, revision: row?.why.promise!.revision ?? p.revision, text: p.text, ...(row?.why.with && { with: row.why.with }) };
+          } else {
+            // the item of that kind before one of its family; the one a row shows before one it doesn't
+            const open = (await backend.store.dated.active()).filter((r) => r.messageId === messageId && familyOf(r.kind) === familyOf(a.kind)).sort((x, y) => Number(y.kind === a.kind) - Number(x.kind === a.kind));
+            const r = open.find((x) => rows.some((i) => i.why.item?.id === x.id)) ?? open[0];
+            if (r) target = { source: "dated", id: r.id, revision: rows.find((i) => i.why.item?.id === r.id)?.why.item?.revision ?? r.revision, text: r.text };
+          }
+          if (!target) return "skipped: no open item of that kind (closed by mail already, or not read so)";
+          if (a.do === "change") {
+            await client.call("today.schedule", { item: { source: target.source, id: target.id, revision: target.revision }, to: { day: a.day!, time: a.time ?? null } });
+          } else {
+            const action = a.do === "remove" ? "dismiss" : a.do;
+            const until = a.until ? localAt(a.until) : undefined;
+            if (target.source === "dated") await client.call("dated.act", { id: target.id, revision: target.revision, action, ...(action === "later" && { until }) });
+            else await client.call("followups.act", { id: target.id, revision: target.revision, action, ...(action === "later" && { dueAt: until }), ...(target.with && { with: target.with }) });
+          }
+          return `${a.do} ${target.source}#${target.id}: ${target.text}`;
+        }
+
+        /** Friday's mail, sent as the app sends it: a reply through the outbox, whose sent copy the follow-ups read. */
+        async function send(m: Day1Sent): Promise<string> {
+          const inReplyToMessageId = idOf(m.replyTo);
+          if (inReplyToMessageId === undefined) throw new Error(`${m.id} replies to ${m.replyTo}, which isn't in the database`);
+          const sent = await client.call("compose.send", { accountId: account.id, to: m.to, cc: m.cc ?? [], bcc: [], subject: m.subject, bodyText: m.text, inReplyToMessageId });
+          // autoSync is off: the outbox's worker runs here, as the app's runs once a send is queued (the demo provider takes it)
+          if ((await backend.runWorker()) < 1) throw new Error(`${m.id} wasn't sent`);
+          sentIds.set(m.id, sent.messageId);
+          await drained(backend);
+          return `sent as message ${sent.messageId} in thread ${sent.threadId}`;
+        }
+
+        /** The night's mail, live, as it arrives. */
+        async function arrive(m: Mail): Promise<string> {
+          await backend.ingestSliced([incoming(box, account.id, m, false)], false, undefined, undefined, undefined, undefined, undefined, true);
+          await drained(backend);
+          return "arrived";
+        }
+
+        // Friday after the morning's look, then the night: each at its own moment; at the same minute a send, then an act
+        const events = [
+          ...day1.sent.map((m) => ({ at: localAt(m.at), order: 0, what: `${m.id} (sent)`, run: () => send(m) })),
+          ...day1.actions.map((a) => ({ at: localAt(a.at), order: 1, what: `${a.message} ${a.kind} (${a.do})`, run: () => act(a) })),
+          ...night.map((m) => ({ at: atOf(m), order: 2, what: `${m.id} (${m.from.name})`, run: () => arrive(m) })),
+        ].sort((x, y) => x.at - y.at || x.order - y.order);
+        for (const e of events) {
+          clock.set(e.at);
+          const result = await e.run().catch((error: unknown) => `failed: ${error instanceof Error ? error.message : String(error)}`);
+          log.push({ at: new Date(e.at).toString(), event: e.what, result });
+          console.log(`${id} ${dayOf(e.at)} ${new Date(e.at).toTimeString().slice(0, 5)} ${e.what}: ${result}`);
+        }
+        await drained(backend);
+        clock.set(SATURDAY);
+        backend.today.touched();
+        const { list, rows } = await writeToday(backend, client, dir, id, SATURDAY, true);
+        // beside the database, for the panel's tools: the sent copies' fixture ids, and what each of Friday's events did
+        writeFileSync(join(dir, "sent-ids.json"), JSON.stringify(Object.fromEntries([...sentIds].map(([fixture, message]) => [message, fixture])), null, 2));
+        writeFileSync(join(dir, "day1-applied.json"), JSON.stringify(log, null, 2));
+        await client.call("settings.update", { ai: { provider: "fake", model: "demo" } });
+        writeFileSync(join(dir, "manifest.json"), JSON.stringify(manifestOfDay2(id)));
+        console.log(`${id} (Saturday): ${list.sections.map((x) => `${x.kind} ${x.items.length}`).join(", ")}; ${list.history?.items.length ?? 0} in Earlier; ${rows.length} dated open; ${spendReport()}`);
+      } finally {
+        ro.close();
+        // as Friday's: no key nor handle left behind, however the run ended
         for (const name of await backend.store.secrets.names().catch(() => [])) await backend.store.secrets.delete(name).catch(() => {});
         await backend.stop();
       }
