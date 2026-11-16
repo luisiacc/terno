@@ -105,6 +105,30 @@ describe("Done means gone (plan 204, after the second panel round; plan 210, ite
     expect(useFeedRow.getState().cursor).not.toBe("dated:30");
   });
 
+  it("Codex's code review of iteration 4: Undo brings the row back open as the user had it: click A, Done, Undo, Done goes on to B with its mail", async () => {
+    open("dated:10");
+    expect(openedByApp(1)).toBe(false);
+    expect(doneOnSelected()).toBe(true);
+    expect([useFeedRow.getState().opened, getApp().selectedId]).toEqual(["dated:20", 2]);
+    await vi.waitFor(() => expect(useSnack.getState().undo).toBeTruthy());
+    await undo();
+    expect([useFeedRow.getState().opened, getApp().selectedId]).toEqual(["dated:10", 1]);
+    expect(openedByApp(1)).toBe(false);
+    expect(useFeedRow.getState().carried).toBeNull();
+    expect(doneOnSelected()).toBe(true);
+    expect([useFeedRow.getState().opened, getApp().selectedId]).toEqual(["dated:20", 2]);
+    // one the app opened comes back as the app's: its Done puts the reader away
+    await vi.waitFor(() => expect(useSnack.getState().current?.message).toBe("Done: Task 1"));
+    await undo();
+    const { setAppOpened } = await import("~/state/app");
+    useFeedRow.setState({ opened: "dated:10", carried: null });
+    setAppOpened(1);
+    expect(doneOnSelected()).toBe(true);
+    await vi.waitFor(() => expect(useSnack.getState().current?.message).toBe("Done: Task 1"));
+    await undo();
+    expect([useFeedRow.getState().opened, getApp().selectedId, openedByApp(1)]).toEqual(["dated:10", 1, true]);
+  });
+
   it("Codex code review, round 2: Undo after leaving What matters opens nothing in the mailbox shown now", async () => {
     expect(doneOnSelected()).toBe(true);
     await vi.waitFor(() => expect(useSnack.getState().undo).toBeTruthy());

@@ -24,8 +24,10 @@ function leaveFeedRows(ids: readonly FeedRowId[]): LeftRows | undefined {
   const { rows } = useToday.getState();
   const gone = new Set(ids.filter((id) => rows.some((r) => r.id === id)));
   if (!s.today || !gone.size) return undefined;
-  const { opened } = useFeedRow.getState();
-  const before = { opened, selectedId: s.selectedId };
+  const { opened, carried } = useFeedRow.getState();
+  // how it was open too (the user's own choice, or the app's; a Done that went on from the user's), so an Undo restores the
+  // reader as the user had it and a Done after it goes on as it would have (Codex's code review of iteration 4)
+  const before = { opened, carried, selectedId: s.selectedId, byApp: s.selectedId !== null && openedByApp(s.selectedId) };
   const open = feedRow(opened);
   // a read that started before this act may bring the row back: the list asks again (as `patchRows` does)
   noteEdit();
@@ -65,8 +67,9 @@ function leaveFeedRows(ids: readonly FeedRowId[]): LeftRows | undefined {
     await reloadList({ keepSelection: true });
     // the open row back, unless another was opened since (Codex's design: a newer selection wins, a sibling row included)
     if (useFeedRow.getState().moves !== moved || getApp().selectedId !== where.selectedId || listKey() !== where.key || before.opened === null || !useToday.getState().rows.some((r) => r.id === before.opened)) return;
-    useFeedRow.setState(({ moves }) => ({ opened: before.opened, moves: moves + 1 }));
-    setAppOpened(before.selectedId);
+    useFeedRow.setState(({ moves }) => ({ opened: before.opened, carried: before.carried, moves: moves + 1 }));
+    if (before.byApp) setAppOpened(before.selectedId);
+    else setApp({ selectedId: before.selectedId });
   };
   return {
     async undo(run) {
