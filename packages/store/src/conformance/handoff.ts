@@ -88,7 +88,7 @@ export function defineHandoffConformance(fresh: () => Promise<MailStore>, reopen
       expect(await store.followups.ofThread(q.threadId)).toEqual([]);
     });
 
-    it("a change since wins: the row's item put off, done or settled meanwhile is never claimed, nor its members", async () => {
+    it("a change since wins: the row's item put off, done or settled meanwhile is never claimed, nor its members; the forward still waits on its person (Codex's code review, iteration 4)", async () => {
       const { store, form, bus, forward, send } = await setup();
       const d = await forward(handing({ source: "dated", id: form.id, revision: form.revision, named: true }, { source: "dated", id: bus.id, revision: bus.revision }));
       const q = await send(d.id, d.generation!, d.revision);
@@ -97,7 +97,7 @@ export function defineHandoffConformance(fresh: () => Promise<MailStore>, reopen
       expect(done.handed).toBeUndefined();
       expect(await store.dated.get(form.id)).toMatchObject({ state: "open", deferredUntil: NOW + DAY, handedTo: null });
       expect(await store.dated.get(bus.id)).toMatchObject({ state: "open", revision: bus.revision });
-      expect(await store.followups.ofThread(q.threadId)).toEqual([]);
+      expect(await store.followups.ofThread(q.threadId)).toEqual([expect.objectContaining({ kind: "awaiting", item: AWAITING_ITEM, messageId: q.messageId, personEmail: jess.email, state: "open" })]);
     });
 
     it("a member changed since stays as it is; the row's own item closes", async () => {
