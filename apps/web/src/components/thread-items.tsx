@@ -238,7 +238,8 @@ function outcomeOf(item: ReaderItem): string {
   // (iteration 4) one handed on by a confirmed forward says to whom
   const handed = state === "done" && item.row.closedReason === HANDED && item.row.handedTo ? item.row.handedTo : undefined;
   const outcome = item.source === "promise" && item.row.closedReason === "replaced" ? "replaced" : handed ? "handed" : state === "done" ? "done" : state === "settled" ? "settled" : "dismissed";
-  return historyWhen({ outcome, kind: item.source === "dated" ? item.row.kind : "promise", key: { at: item.row.closedAt ?? item.row.createdAt, src: item.source === "dated" ? 0 : 1, id: item.row.id }, ...(handed && { handedTo: handed }) });
+  // (plan 210, iteration 4, revision 7: settled by mail, that mail's day and how)
+  return historyWhen({ outcome, kind: item.source === "dated" ? item.row.kind : "promise", key: { at: item.row.closedAt ?? item.row.createdAt, src: item.source === "dated" ? 0 : 1, id: item.row.id }, ...(handed && { handedTo: handed }), on: item.row.settledAt ?? undefined, reason: item.row.closedReason });
 }
 
 /**

@@ -66,6 +66,9 @@ export interface FollowupRow {
   proposal?: ScheduleProposal | null;
   /** Plan 210 (iteration 4): whom it was handed to (`closedReason` `handed`), as the confirmed forward went. Absent: not handed */
   handedTo?: import("./handoff").HandedTo | null;
+  /** Plan 210 (iteration 4, revision 7): the sent mail that kept it, or the person's that replaced it, and that mail's date */
+  settledBy?: number | null;
+  settledAt?: number | null;
 }
 
 export interface FollowupsSetting {

@@ -14,14 +14,14 @@ const SENDER_REACHES_SQL = `kind NOT IN (${THREAD_SCOPED_KINDS.map((k) => `'${k}
 interface Raw {
   id: number; thread_id: number; message_id: number; item: number; kind: DatedRow["kind"]; text: string; quote: string; sender_key: string; due_day: string; due_at: number; timed: number; dated: number; act_at: number;
   deferred_until: number | null; arrived_at: number; state: DatedRow["state"]; closed_reason: string | null; closed_at: number | null; from_scan: number; revision: number; model: string | null; provider: string | null; created_at: number;
-  early: number; same_as: string | null; detail_of: number | null; lapses: number;
+  early: number; same_as: string | null; detail_of: number | null; lapses: number; settled_by: number | null; settled_at: number | null;
   changed_at: number | null; changed_from: string | null; proposal: string | null;
   handed_to?: string | null;
 }
 const toRow = (r: Raw): DatedRow => ({
   id: r.id, threadId: r.thread_id, messageId: r.message_id, item: r.item, kind: r.kind, text: r.text, quote: r.quote, senderKey: r.sender_key, dueDay: r.due_day, dueAt: r.due_at, timed: r.timed === 1, dated: r.dated === 1, actAt: r.act_at,
   deferredUntil: r.deferred_until, arrivedAt: r.arrived_at, state: r.state, closedReason: r.closed_reason, closedAt: r.closed_at, fromScan: r.from_scan === 1, revision: r.revision, model: r.model, provider: r.provider, createdAt: r.created_at,
-  early: r.early === 1, sameAs: r.same_as ?? null, detailOf: r.detail_of ?? null, lapses: r.lapses === 1, ...scheduleFields(r),
+  early: r.early === 1, sameAs: r.same_as ?? null, detailOf: r.detail_of ?? null, lapses: r.lapses === 1, ...scheduleFields(r), settledBy: r.settled_by ?? null, settledAt: r.settled_at ?? null,
   handedTo: parseHandedTo(r.handed_to),
 });
 
@@ -182,8 +182,9 @@ export function finishDated(db: Db, w: DatedFinish): DatedFinishOutcome {
     }
     for (const s of w.settled) {
       db.run(
-        `UPDATE dated_items SET state = 'settled', closed_reason = 'settled', closed_at = ?, revision = revision + 1 WHERE id = ? AND revision = ? AND state = 'open' AND (thread_id = ? OR (sender_key = ? AND ${SENDER_REACHES_SQL}))`,
-        w.now, s.id, s.revision, src.threadId, src.senderKey,
+        // plan 210 (iteration 4, revision 7): the settling mail and its date beside the closing
+        `UPDATE dated_items SET state = 'settled', closed_reason = 'settled', closed_at = ?, settled_by = ?, settled_at = ?, revision = revision + 1 WHERE id = ? AND revision = ? AND state = 'open' AND (thread_id = ? OR (sender_key = ? AND ${SENDER_REACHES_SQL}))`,
+        w.now, w.messageId, src.date, s.id, s.revision, src.threadId, src.senderKey,
       );
     }
     // plan 210 (iteration 3, revision 4): a promise its person replaced, closed with the request that replaces it
@@ -191,7 +192,7 @@ export function finishDated(db: Db, w: DatedFinish): DatedFinishOutcome {
       if (!db.get("SELECT 1 FROM dated_items WHERE message_id = ? AND item = ?", w.messageId, r.item)) continue;
       const p = db.get<{ person_email: string | null; sent_at: number }>("SELECT person_email, sent_at FROM followups WHERE id = ? AND revision = ? AND thread_id = ? AND kind = 'promise' AND state IN ('open','due')", r.id, r.revision, src.threadId);
       if (!p?.person_email || addressKey(p.person_email) !== src.senderKey || p.sent_at >= src.date) continue;
-      db.run("UPDATE followups SET state = 'dismissed', closed_reason = 'replaced', closed_at = ?, inbox_state = 'none', revision = revision + 1 WHERE id = ?", w.now, r.id);
+      db.run("UPDATE followups SET state = 'dismissed', closed_reason = 'replaced', closed_at = ?, settled_by = ?, settled_at = ?, inbox_state = 'none', revision = revision + 1 WHERE id = ?", w.now, w.messageId, src.date, r.id);
     }
     for (const m of w.movedPromises ?? []) {
       // plan 210 (iteration 4): a promise whose day the user chose keeps it; the move is kept for them to take or leave

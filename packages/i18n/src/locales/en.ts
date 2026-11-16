@@ -2641,6 +2641,9 @@ It contains none of your mail, contacts, settings or keys.
   "whatMatters.history.done": "Done {day}",
   "whatMatters.history.removed": "Removed {day}",
   "whatMatters.history.settled": "Settled {day}",
+  // plan 210 (iteration 4, revision 7): settled by mail, the day that mail came
+  "whatMatters.history.paid": "Paid {day}",
+  "whatMatters.history.answered": "Answered {day}",
   "whatMatters.history.over": "Over {day}",
   "whatMatters.history.replaced": "Replaced {day}",
   "whatMatters.history.changed": "Changed {day}",
