@@ -175,16 +175,32 @@ describe("plan 210 (iteration 2): one time per row, a request shown early, a bro
     expect(todayWhen(dated("ask", "Answer Owen", 13, { dated: false }), NOW, "waiting")).toEqual({ text: "since Nov 1", tone: "none" });
   });
 
-  it("a promise broken and given a new day keeps its first day, in Missed's weight, under the new one", () => {
-    const owen = item({ kind: "promise", text: "send the pen test summary", dueAt: at(16, 9), promise: { id: 2, revision: 0, dated: true, promisedAt: at(10, 9) } });
-    expect(todayWhen(owen, NOW, "day:2026-11-16")).toEqual({ text: "Mon · promised Tue", tone: "missed" });
+  it("a promise said and missed, under its live day, says both in Missed's weight; one ahead says the day it's needed by", () => {
+    // Owen moved it to Monday after Tuesday the 10th passed (iteration 3: replaces iteration 2's "Mon · promised Tue")
+    const owen = item({ kind: "promise", text: "send the pen test summary", dueAt: at(16, 9), promise: { id: 2, revision: 0, dated: true, said: at(10, 9), needed: at(16, 9) } });
+    expect(todayWhen(owen, NOW, "day:2026-11-16")).toEqual({ text: "You said Tue 10 (missed) · needed Mon", tone: "missed" });
+    // María said yesterday; the school needs it today
+    const slip = item({ kind: "promise", text: "send the slip", dueAt: at(13, 9), promise: { id: 3, revision: 0, dated: true, said: at(12, 9), needed: at(13, 9) } });
+    expect(todayWhen(slip, NOW, "today")).toEqual({ text: "You said yesterday (missed) · needed today", tone: "missed" });
+    // a week and more ago: its date
+    const old = item({ kind: "promise", text: "x", dueAt: at(16, 9), promise: { id: 4, revision: 0, dated: true, said: at(2, 9), needed: at(16, 9) } });
+    expect(todayWhen(old, NOW, "day:2026-11-16").text).toBe("You said Nov 2 (missed) · needed Mon");
+    // ahead of the request's day
+    const deck = item({ kind: "promise", text: "x", dueAt: at(17, 9), promise: { id: 5, revision: 0, dated: true, needed: at(19, 9) } });
+    expect(todayWhen(deck, NOW, "day:2026-11-17")).toEqual({ text: "Tue · needed Thu", tone: "later" });
+    const tomorrow = item({ kind: "promise", text: "x", dueAt: at(13, 15), promise: { id: 6, revision: 0, dated: true, timed: true, needed: at(14, 9) } });
+    expect(todayWhen(tomorrow, NOW, "today").text).toBe("3:00 PM · needed tomorrow");
   });
 
   it("in Spanish", () => {
     setLocale("es", es);
     const renewal = item({ kind: "dated", text: "x", dueAt: at(30, 9), item: { id: 1, revision: 0, kind: "respond", dueDay: "2026-11-30", timed: false, dated: true, early: true } });
     expect(todayWhen(renewal, NOW, "today").text).toBe("para el 30 nov");
-    const owen = item({ kind: "promise", text: "x", dueAt: at(16, 9), promise: { id: 2, revision: 0, dated: true, promisedAt: at(10, 9) } });
-    expect(todayWhen(owen, NOW, "day:2026-11-16").text).toBe("lun · era para el mar");
+    const owen = item({ kind: "promise", text: "x", dueAt: at(16, 9), promise: { id: 2, revision: 0, dated: true, said: at(10, 9), needed: at(16, 9) } });
+    expect(todayWhen(owen, NOW, "day:2026-11-16").text).toBe("Dijiste el mar 10 (se pasó) · lo necesitan el lun");
+    const slip = item({ kind: "promise", text: "x", dueAt: at(13, 9), promise: { id: 3, revision: 0, dated: true, said: at(12, 9), needed: at(13, 9) } });
+    expect(todayWhen(slip, NOW, "today").text).toBe("Dijiste ayer (se pasó) · lo necesitan hoy");
+    const deck = item({ kind: "promise", text: "x", dueAt: at(17, 9), promise: { id: 5, revision: 0, dated: true, needed: at(19, 9) } });
+    expect(todayWhen(deck, NOW, "day:2026-11-17").text).toBe("mar · lo necesitan el jue");
   });
 });

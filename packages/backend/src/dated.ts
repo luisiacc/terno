@@ -183,7 +183,7 @@ const FACT_WORDS_MAX = 2000;
  * A promise's new day from its person's mail (the second panel round), and (plan 210, iteration 2) its time: the move's own
  * (already in the reader's zone, as every move's), else, for a promise with a stated time, its clock as it was, on the new
  * day (Codex code review: never its words' clock read again on a day already converted); and, when that mail came after its
- * day was over, the day it had (`brokenDueAt`: its row keeps saying "promised Tue").
+ * day was over, the day it had (`brokenDueAt`: its row keeps saying "You said Tue 10 (missed)").
  */
 function movedPromise(p: { dueAt?: number; dated?: boolean; timed?: boolean }, day: string, time: string | null, arrivedAt: number): { dueAt: number; timed: boolean; brokenDueAt: number | null } {
   const due = followupDue({ kind: "promise", sentAt: arrivedAt, due: day, nudgeAfterDays: 0 });

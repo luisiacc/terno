@@ -60,9 +60,10 @@ export interface TodayWhy {
   /**
    * plan 204 (Codex review): the promise this row shows, what D, Done and Remove act on (never the thread's most urgent).
    * Plan 210 (iteration 2): `timed`, its words state a time (`dueAt` is it); `note`, that time as written when its zone isn't
-   * the reader's; `promisedAt`, the day it was first promised for, when it was broken and then given a new one ("promised Tue")
+   * the reader's. Iteration 3 (`promiseDay`): `said`, a day it was given and missed while it sits under a live one ("You said
+   * Tue 10 (missed)"); `needed`, the day the other person needs it, when the column says it ("needed Mon")
    */
-  promise?: { id: number; revision: number; /** it names a day (`FollowupRow.dated`): only then does its line say "Due …" */ dated?: boolean; timed?: boolean; note?: string | null; promisedAt?: number | null };
+  promise?: { id: number; revision: number; /** it names a day (`FollowupRow.dated`): only then does its line say "Due …" */ dated?: boolean; timed?: boolean; note?: string | null; said?: number | null; needed?: number | null };
   /**
    * Plan 210 (iteration 2): every item this row is (true duplicates: the same dinner from the restaurant and from a friend,
    * an errand read as a bill and as your promise), the shown one first: what Done, Later and Remove act on, all at once

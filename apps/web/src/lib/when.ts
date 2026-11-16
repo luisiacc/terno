@@ -93,6 +93,14 @@ export function whenDay(ms: number, now = Date.now()): string {
   return (new Date(ms).getFullYear() === new Date(now).getFullYear() ? f.dated : f.datedYear).format(ms);
 }
 
+/**
+ * Plan 210 (iteration 3): a past day said beside a day ahead, so it can't be read as the next one: its weekday and date
+ * within the week ("Tue 10", "mar 10"), further its date ("Nov 2", "2 nov").
+ */
+export function pastDay(ms: number, now = Date.now()): string {
+  return Math.abs(daysAway(ms, now)) < 7 ? `${fmt().weekday.format(ms).replace(".", "")} ${new Date(ms).getDate()}` : dayOf(ms, now);
+}
+
 /** Plan 162: a boundary in time, never ambiguous: the day with its year, "Apr 25, 2026" (what a search went back to). */
 export function boundaryDay(ms: number): string {
   return fmt().year.format(ms);

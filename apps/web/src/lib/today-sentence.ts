@@ -1,7 +1,7 @@
 import { datedGroup, localDay, type TodayHistoryItem, type TodayItem } from "@terno/core";
 import { getLocale, t } from "@terno/i18n";
 import { listDate } from "~/lib/format";
-import { datedDay, dueShort, dueTimeLeft } from "~/lib/when";
+import { datedDay, dueShort, dueTimeLeft, pastDay } from "~/lib/when";
 import type { FeedGroupKind } from "~/state/today";
 
 /**
@@ -69,6 +69,17 @@ export function todayWhen(item: Pick<TodayItem, "thread" | "why">, now = Date.no
   return { text: when.text, tone };
 }
 
+/** Plan 210 (iteration 3): a promise's missed day, past for certain ("You said Tue 10 (missed)", "You said yesterday (missed)"). */
+const missedDay = (day: number, now: number): string => (datedDay(day, now).near === "yesterday" ? t("whatMatters.saidMissedYesterday") : t("whatMatters.saidMissed", { day: pastDay(day, now) }));
+
+/** …and the day it's needed by, after what the column already says ("Wed · needed Fri", "… · needed today"). */
+function needed(when: string, day: number, now: number): string {
+  const near = datedDay(day, now).near;
+  if (near === "today") return t("whatMatters.neededToday", { when });
+  if (near === "tomorrow") return t("whatMatters.neededTomorrow", { when });
+  return t("whatMatters.needed", { when, day: dueShort(day, false, now) });
+}
+
 function whenOf(item: Pick<TodayItem, "thread" | "why">, now: number): { text: string | null; tone: TodayTone } {
   const { thread, why } = item;
   // plan 210 (iteration 2): one time per row, the reader's, and the mail's own in brackets when its zone isn't theirs
@@ -106,8 +117,11 @@ function whenOf(item: Pick<TodayItem, "thread" | "why">, now: number): { text: s
     if (why.missed) return { text: was(why.dueAt), tone: "missed" };
     const at = ahead(why.dueAt, why.dueAt, p.timed === true);
     const text = zoned(at.text, p.timed ? p.note : null);
-    // broken and given a new day: its first day stays said, in Missed's weight, under the new day (never moved to Missed)
-    if (p.promisedAt != null) return { text: t("whatMatters.promised", { when: text, day: dueShort(p.promisedAt, false, now) }), tone: "missed" };
+    // plan 210 (iteration 3, the owner): a day it was given and missed is said first, in Missed's weight, with the day it's
+    // needed by, under that live day (never moved to Missed): "You said Tue 10 (missed) · needed Mon"
+    if (p.said != null) return { text: needed(missedDay(p.said, now), p.needed ?? why.dueAt, now), tone: "missed" };
+    // the request it answers needs it another day: "Wed · needed Fri"
+    if (p.needed != null) return { ...at, text: needed(text, p.needed, now) };
     return { ...at, text };
   }
   return came;
