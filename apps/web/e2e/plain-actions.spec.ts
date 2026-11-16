@@ -341,8 +341,8 @@ test.describe("actions in plain English (plan 143)", () => {
     await expect(page.getByTestId("snack")).toContainText("Archived 2 conversations");
     // z undoes (⌘Z too, in the flow before)
     await expect(page.getByTestId("snack-action")).toHaveAttribute("aria-keyshortcuts", UNDO_KEYS);
-    // plan 161, pass 2: the keycap is the platform's undo; bare z still works
-    await expect(page.getByTestId("snack-action").locator("[data-key]")).toHaveAttribute("data-key", /^(⌘Z|Ctrl\+Z)$/);
+    // plan 161, pass 2: both keys work; plan 210 (iteration 4): the keycap is one, the one the shortcuts help names first (Z)
+    await expect(page.getByTestId("snack-action").locator("[data-key]")).toHaveAttribute("data-key", "Z");
     await page.keyboard.press("z");
     await expect(page.getByTestId("snack").filter({ hasText: "Moved 2 conversations back to the Inbox" })).toBeVisible();
     await focusList(page);
