@@ -3,7 +3,8 @@ import { getLocale, t } from "@terno/i18n";
 import { useEffect, useState } from "react";
 import { usd } from "~/lib/ai";
 import type { LeftRows } from "~/lib/actions";
-import { registerUndo, snack } from "~/lib/snack";
+import { muteOfferAction } from "~/lib/dated-mutes";
+import { registerUndo, snack, type SnackAction } from "~/lib/snack";
 import { client } from "~/rpc/connection";
 import { alertSays } from "~/lib/today-sentence";
 import { datedDay, dueShort, reminderTime } from "~/lib/when";
@@ -261,7 +262,9 @@ export async function actOnDated(item: Pick<DatedRef, "id" | "revision"> & { tex
   const text = item.text;
   try {
     const { undoId } = await client.call("dated.act", { id: item.id, revision: item.revision, action, ...(until !== undefined ? { until } : {}) });
-    said(action, text, undoId === null ? null : () => client.call("dated.undo", { undoId }).then(() => undefined), "dated.undo", left);
+    // plan 210 (iteration 4, the owner): after Remove, once per kind and per sender, the snack offers to hide more like it
+    const offer = action === "dismiss" ? await muteOfferAction(item.id) : undefined;
+    said(action, text, undoId === null ? null : () => client.call("dated.undo", { undoId }).then(() => undefined), "dated.undo", left, offer);
   } catch (error) {
     left?.failed();
     snack.error((error as { message?: string }).message ?? t("dated.actFailed"));
@@ -281,9 +284,14 @@ export async function actOnTask(task: TodayTask, action: "done" | "dismiss" | "l
 }
 
 /** The snack, naming the task, with Undo when there's one (the row it took out back with it). */
-function said(action: "done" | "dismiss" | "later", text: string | null | undefined, run: (() => Promise<void>) | null, name: "dated.undo" | "followup.undo", left?: LeftRows): void {
+function said(action: "done" | "dismiss" | "later", text: string | null | undefined, run: (() => Promise<void>) | null, name: "dated.undo" | "followup.undo", left?: LeftRows, secondary?: SnackAction): void {
   const undo = run && registerUndo(() => (left ? left.undo(run) : run()));
-  snack.success(taskSaid(action, text), undo ? { action: { label: t("common.undo"), name: t(name), undo } } : {});
+  const undoing = undo ? { action: { label: t("common.undo"), name: t(name), undo } } : {};
+  // plan 210 (iteration 4): with Mute's offer beside Undo the first line has little room, so it says what happened and
+  // the task's words go under it
+  const words = text?.trim();
+  if (secondary) snack.success(t(SAID[action]), { ...undoing, secondary, ...(words ? { description: shortened(words) } : {}) });
+  else snack.success(taskSaid(action, text), undoing);
 }
 
 /**

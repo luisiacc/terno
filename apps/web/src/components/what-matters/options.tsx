@@ -6,11 +6,13 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/to
 import { Settings2 } from "@terno/ui/icons";
 import { useId, useState } from "react";
 import { datedReaderLine } from "~/lib/ai";
+import { useDatedMutes } from "~/lib/dated-mutes";
 import { reconcileSettings } from "~/lib/appearance";
 import { snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
 import { setApp, useApp } from "~/state/app";
 import { openFound } from "../settings/find-open";
+import { MutedList } from "./muted-list";
 
 /** The finished items' switch, saved at once wherever it's changed (Settings has the same row: `general.todayFinished`). */
 async function saveFinished(finished: boolean): Promise<void> {
@@ -19,6 +21,24 @@ async function saveFinished(finished: boolean): Promise<void> {
   } catch (error) {
     snack.error(error instanceof Error ? error.message : String(error));
   }
+}
+
+/**
+ * Plan 210 (iteration 4): what's muted, with Unmute, while the popover is open (read only then); nothing muted, nothing
+ * shown here (Settings says how muting comes about).
+ */
+function MutedSection({ fallback }: { fallback: () => HTMLElement | null }) {
+  const [mutes, setMutes] = useDatedMutes();
+  const titleId = useId();
+  if (!mutes?.length) return null;
+  return (
+    <section aria-labelledby={titleId} data-testid="wm-options-muted" className="flex flex-col gap-1 border-t border-hairline pt-2">
+      <p id={titleId} className="text-sm font-medium">
+        {t("dated.mute.title")}
+      </p>
+      <MutedList mutes={mutes} setMutes={setMutes} testId="wm-muted" labelledBy={titleId} fallback={fallback} />
+    </section>
+  );
 }
 
 /**
@@ -73,6 +93,7 @@ export function WhatMattersOptions() {
           </div>
           <Switch aria-labelledby={labelId} aria-describedby={hintId} checked={finished} data-testid="wm-options-finished" onCheckedChange={(on) => void saveFinished(on)} />
         </div>
+        <MutedSection fallback={() => document.querySelector<HTMLElement>("[data-testid=wm-options-finished]")} />
         {reader && (
           <p data-testid="wm-options-privacy" className="text-xs text-muted-foreground">
             {reader}
