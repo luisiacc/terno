@@ -183,12 +183,12 @@ describe("the list", () => {
     const quiet = await put({}, false);
     let changed = 0;
     client.on("todayChanged", () => changed++);
-    expect((await client.call("today.list", { held: [] })).counts).toEqual({ missed: 0, today: 0, waiting: 0 });
+    expect((await client.call("today.list", { held: [] })).counts).toEqual({ missed: 0, today: 0, waiting: 0, overdue: 0 });
     await client.call("reminders.set", { threadIds: [quiet], dueAt: clock.now + 3_600_000, kind: "always" });
     await vi.waitFor(() => expect(changed).toBeGreaterThan(0));
     const list = await client.call("today.list", { held: [] });
     expect(list.sections.flatMap((s) => s.items.map((i) => [i.id, i.why.kind]))).toEqual([[`reminder:${quiet}`, "reminder"]]);
-    expect(list.counts).toEqual({ missed: 0, today: 1, waiting: 0 });
+    expect(list.counts).toEqual({ missed: 0, today: 1, waiting: 0, overdue: 0 });
     expect((await client.call("counts.get", {})).today).toBe(1);
     // tomorrow's is neither drawn nor counted today
     await client.call("reminders.set", { threadIds: [quiet], dueAt: clock.now + 2 * 86_400_000, kind: "always" });

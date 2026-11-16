@@ -161,7 +161,7 @@ describe("a promise that answers a request keeps its deadline (iteration 3)", ()
     list = await rows();
     expect(list.map((r) => [r.id, r.section])).toEqual([[`promise:${promise!.id}`, "today:waiting"]]);
     expect(list[0]!.why.promise).toMatchObject({ said: at(2026, 11, 11, 9), needed: at(2026, 11, 13, 9) });
-    expect((await client.call("today.list", { held: [] })).counts).toEqual({ missed: 0, today: 0, waiting: 1 });
+    expect((await client.call("today.list", { held: [] })).counts).toEqual({ missed: 0, today: 0, waiting: 1, overdue: 1 });
     // Done on its row: the promise and the request together, and no history line of the request's own
     const now = (await backend.store.followups.get(promise!.id))!;
     const { undoId } = await client.call("followups.act", { id: now.id, revision: now.revision, action: "done" });

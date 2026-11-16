@@ -136,7 +136,7 @@ function storedComingUp(): boolean {
   }
 }
 
-export const useToday = create<TodayState>(() => ({ rows: [], counts: { missed: 0, today: 0, waiting: 0 }, comingUp: 0, comingUpOpen: storedComingUp(), laterPick: null, laterMenu: null, menuRow: null, digest: null, fromDigest: null, pick: null, movedTo: new Map(), notNewsletters: new Set() }));
+export const useToday = create<TodayState>(() => ({ rows: [], counts: { missed: 0, today: 0, waiting: 0, overdue: 0 }, comingUp: 0, comingUpOpen: storedComingUp(), laterPick: null, laterMenu: null, menuRow: null, digest: null, fromDigest: null, pick: null, movedTo: new Map(), notNewsletters: new Set() }));
 
 /**
  * Plan 210 (iteration 2): which row the feed has open, and the one a conversation was put away from (Esc, the reader's

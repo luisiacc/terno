@@ -51,7 +51,7 @@ describe("a row per item", () => {
     const { rows, counts } = projectToday(facts({ dated: [plan, ask], waiting }));
     expect(rows.filter((r) => r.waiting).map((r) => r.threadId)).toEqual([4, 6]);
     // the plan isn't counted; the ask and the two waiting conversations are Today's "Waiting on you"
-    expect(counts).toEqual({ missed: 0, today: 0, waiting: 3 });
+    expect(counts).toEqual({ missed: 0, today: 0, waiting: 3, overdue: 0 });
     // your promise to them behind Coming up says nothing yet: their conversation waiting on you is its own row meanwhile
     const later = promise(at(2026, 11, 30, 9), { threadId: 6 });
     expect(projectToday(facts({ promises: [later], waiting })).rows.filter((r) => r.waiting).map((r) => r.threadId)).toEqual([4, 5, 6]);
@@ -122,7 +122,7 @@ describe("duplicates and related details", () => {
     expect(before.rows[0]!.also).toMatchObject([{ text: "Return flight to Madrid", dueDay: "2026-11-22", timed: true }]);
     expect(before.rows[1]!.also).toBeUndefined();
     // a Plan: never counted, under its own day or Today
-    expect(before.counts).toEqual({ missed: 0, today: 0, waiting: 0 });
+    expect(before.counts).toEqual({ missed: 0, today: 0, waiting: 0, overdue: 0 });
     // past the seven days, behind Coming up like any row of that day
     const far = { ...back, dueDay: "2026-12-02", dueAt: at(2026, 12, 2, 18, 10) };
     expect(projectToday(facts({ dated: [out, far] })).rows.map((r) => [r.id, r.group, r.day])).toEqual([[`dated:${out.id}`, "today", null], [`dated:${back.id}`, "comingUp", "2026-12-02"]]);
@@ -147,7 +147,7 @@ describe("one reply, one row (plan 210, iteration 4)", () => {
     expect(rows[0]!.why.members).toBeUndefined();
     expect(rows[0]!.also).toEqual([{ kind: "promise", text: "calibrate the green with the printer's profile", dueDay: "2026-11-18", dueAt: NOW - 3_600_000, timed: false, dated: false }]);
     // one row, and the count says so (the day ahead isn't counted)
-    expect(counts).toEqual({ missed: 0, today: 0, waiting: 0 });
+    expect(counts).toEqual({ missed: 0, today: 0, waiting: 0, overdue: 0 });
     expect(projectToday(facts({ promises: [green!, send!] }), { count: true }).counts).toEqual(counts);
   });
 
@@ -219,13 +219,13 @@ describe("early, broken, one time", () => {
     expect(rows.find((r) => r.id === `dated:${far.id}`)!.why.item).toMatchObject({ early: true });
     // without it, a week before (Coming up meanwhile)
     expect(rows.find((r) => r.id === `dated:${late.id}`)!.group).toBe("comingUp");
-    expect(counts).toEqual({ missed: 0, today: 0, waiting: 1 });
+    expect(counts).toEqual({ missed: 0, today: 0, waiting: 1, overdue: 0 });
     expect(rows.find((r) => r.id === `dated:${far.id}`)!.part).toBe("waiting");
     // on its day it's due today, as any request
     const due = projectToday(facts({ now: at(2026, 11, 30, 9), dated: [far] }));
     expect(due.rows[0]!.why.item?.early).toBeUndefined();
     // a deadline, not Waiting (revision 8)
-    expect([due.rows[0]!.part, due.counts]).toEqual([undefined, { missed: 0, today: 1, waiting: 0 }]);
+    expect([due.rows[0]!.part, due.counts]).toEqual([undefined, { missed: 0, today: 1, waiting: 0, overdue: 0 }]);
   });
 
   it("a delivery, needing someone there or not, shows as its seven days begin (plan 210, iteration 3); the clock agrees", () => {
@@ -278,7 +278,7 @@ describe("early, broken, one time", () => {
       expect(rows).toHaveLength(1);
       expect(rows[0]).toMatchObject({ id: `promise:${mine.id}`, group: "today", day: null, part: "waiting", why: { dueAt: slip.dueAt, promise: { said: mine.dueAt, needed: slip.dueAt, dated: true } } });
       expect(rows[0]!.why.missed).toBeUndefined();
-      expect(counts).toEqual({ missed: 0, today: 0, waiting: 1 });
+      expect(counts).toEqual({ missed: 0, today: 0, waiting: 1, overdue: 1 });
       // past the request's day too: Missed, from the later day, its column "Was due Fri" (nothing said beside)
       const after = projectToday(facts({ now: at(2026, 11, 21, 10), dated: [slip], promises: linked(slip, mine) })).rows;
       expect(after).toHaveLength(1);
@@ -390,11 +390,11 @@ describe("the header's numbers (plan 210, iteration 3, revision 8)", () => {
     const waiting = [{ id: 50, lastDate: NOW - 5, hasSent: true }];
     const reminders = [{ threadId: 99, dueAt: NOW }];
     const { counts } = projectToday(facts({ dated: rows, waiting, reminders }));
-    expect(counts).toEqual({ missed: 1, today: 3, waiting: 3 });
+    expect(counts).toEqual({ missed: 1, today: 3, waiting: 3, overdue: 0 });
     // the count's projection agrees with the list's
     expect(projectToday(facts({ dated: rows, waiting, reminders }), { count: true }).counts).toEqual(counts);
     // a reminder on a conversation with a row of its own is that row (counted once), and one in Trash none
-    expect(projectToday(facts({ dated: rows, waiting, reminders: [{ threadId: 50, dueAt: NOW }, { threadId: 98, dueAt: NOW }], live: (id) => id !== 98 }), { count: true }).counts).toEqual({ missed: 1, today: 2, waiting: 3 });
+    expect(projectToday(facts({ dated: rows, waiting, reminders: [{ threadId: 50, dueAt: NOW }, { threadId: 98, dueAt: NOW }], live: (id) => id !== 98 }), { count: true }).counts).toEqual({ missed: 1, today: 2, waiting: 3, overdue: 0 });
   });
 });
 
@@ -467,14 +467,56 @@ describe("Waiting on you, a part of Today (plan 210, iteration 3, revision 8)", 
     // its column as it was: the missed day said, the day it's needed by, never Missed's bucket
     expect(rows[1]!.why).toMatchObject({ dueAt: at(2026, 11, 21, 9), promise: { said: at(2026, 11, 16, 9) } });
     expect(rows[1]!.why.missed).toBeUndefined();
-    expect(counts).toEqual({ missed: 0, today: 1, waiting: 4 });
+    // (iteration 5, revision 6) the two broken promises are overdue, a part of waiting
+    expect(counts).toEqual({ missed: 0, today: 1, waiting: 4, overdue: 2 });
     expect(projectToday(f, { count: true }).counts).toEqual(counts);
     // put off with Later: behind Coming up, neither shown nor counted
     const off = { ...moved, deferredUntil: at(2026, 11, 20, 9) };
     expect(projectToday(facts({ promises: [off] })).rows.map((r) => r.group)).toEqual(["comingUp"]);
-    expect(projectToday(facts({ promises: [off] }), { count: true }).counts).toEqual({ missed: 0, today: 0, waiting: 0 });
+    expect(projectToday(facts({ promises: [off] }), { count: true }).counts).toEqual({ missed: 0, today: 0, waiting: 0, overdue: 0 });
     // its live day over too: Missed
     expect(projectToday(facts({ now: at(2026, 11, 22, 10), promises: [moved] })).rows.map((r) => r.group)).toEqual(["missed"]);
+  });
+
+  it("iteration 5 (revision 6): needed today, a broken promise is Today's own first row, counted to do today; needed ahead, Waiting on you's and overdue; midnight moves it", () => {
+    // María: "You said Tue 10 (missed) · needed today"
+    const slip = promise(at(2026, 11, 18, 9), { threadId: 20, text: "send Ms. Ruiz the signed slip", brokenDueAt: at(2026, 11, 10, 9) });
+    const bill = dated("pay", "2026-11-18", { threadId: 21 });
+    const plan = dated("event", "2026-11-18", { threadId: 22 }, "19:00");
+    const f = facts({ dated: [bill, plan], promises: [slip] });
+    const { rows, counts } = projectToday(f);
+    expect(rows.map((r) => [r.id, r.group, r.part ?? null])).toEqual([
+      [`promise:${slip.id}`, "today", null],
+      [`dated:${bill.id}`, "today", null],
+      [`dated:${plan.id}`, "today", null],
+    ]);
+    expect(rows[0]!.why.promise).toMatchObject({ said: at(2026, 11, 10, 9) });
+    expect(counts).toEqual({ missed: 0, today: 2, waiting: 0, overdue: 0 });
+    expect(projectToday(f, { count: true }).counts).toEqual(counts);
+    // the day before its live day it was ahead: Waiting on you's, overdue; at midnight, Today's own
+    const eve = facts({ now: at(2026, 11, 17, 23, 59), promises: [slip] });
+    expect(projectToday(eve).rows.map((r) => [r.group, r.part ?? null])).toEqual([["today", "waiting"]]);
+    expect(projectToday(eve, { count: true }).counts).toEqual({ missed: 0, today: 0, waiting: 1, overdue: 1 });
+    const midnight = facts({ now: at(2026, 11, 18), promises: [slip] });
+    expect(projectToday(midnight).rows.map((r) => [r.group, r.part ?? null])).toEqual([["today", null]]);
+    expect(projectToday(midnight, { count: true }).counts).toEqual({ missed: 0, today: 1, waiting: 0, overdue: 0 });
+    // put off with Later: neither
+    expect(projectToday(facts({ promises: [{ ...slip, deferredUntil: at(2026, 11, 18, 15) }] }), { count: true }).counts).toEqual({ missed: 0, today: 0, waiting: 0, overdue: 0 });
+  });
+
+  it("iteration 5 (revision 6): a reply's row and a duplicate shown for a canonical in Trash read the lead it shows, in both paths", () => {
+    // one reply to Jess: the broken dated one leads, needed today; the other its Also line; one row, counted once
+    const lead = promise(at(2026, 11, 18, 9), { threadId: 30, messageId: 77, item: 0, brokenDueAt: at(2026, 11, 12, 9) });
+    const other = promise(at(2026, 11, 18, 9), { threadId: 30, messageId: 77, item: 1, dated: false, dueAt: NOW - 1 });
+    const grouped = facts({ promises: [lead, other] });
+    expect(projectToday(grouped).rows.map((r) => [r.id, r.part ?? null, r.why.with?.length ?? 0])).toEqual([[`promise:${lead.id}`, null, 1]]);
+    expect(projectToday(grouped, { count: true }).counts).toEqual({ missed: 0, today: 1, waiting: 0, overdue: 0 });
+    // the canonical (needed ahead) in Trash; its live duplicate, needed today, is the row and decides it
+    const canonical = promise(at(2026, 11, 21, 9), { threadId: 31, brokenDueAt: at(2026, 11, 12, 9) });
+    const twin = promise(at(2026, 11, 18, 9), { threadId: 32, brokenDueAt: at(2026, 11, 12, 9), sameAs: `promise:${canonical.id}` });
+    const trash = facts({ promises: [canonical, twin], live: (id) => id !== 31 });
+    expect(projectToday(trash).rows.map((r) => [r.id, r.threadId, r.part ?? null])).toEqual([[`promise:${canonical.id}`, 32, null]]);
+    expect(projectToday(trash, { count: true }).counts).toEqual({ missed: 0, today: 1, waiting: 0, overdue: 0 });
   });
 
   it("iteration 4: Today's own rows with a time go by it whatever they are (Priya's payroll 1:00 PM, the 1:1 at 2:00 PM, Marcus at 4:00 PM)", () => {

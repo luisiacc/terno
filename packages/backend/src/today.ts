@@ -681,7 +681,7 @@ export class TodayService {
     const { store } = this.b;
     const now = this.b.now();
     const settings = await readSettings(store);
-    const none = { missed: 0, today: 0, waiting: 0 };
+    const none = { missed: 0, today: 0, waiting: 0, overdue: 0 };
     if (!(await this.available(settings))) return { sections: [], digest: null, now, counts: none };
     // Trash and Spam hide a row, and it comes back with its thread (the projection read it from these summaries)
     const { rows: shown, counts, threads } = await this.project(now, settings);
