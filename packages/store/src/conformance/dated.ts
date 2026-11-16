@@ -149,7 +149,7 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
         expect(active.map((r) => r.item)).toEqual([1, 0]);
         expect(active[1]).toEqual({
           id: active[1]!.id, threadId: a.thread, messageId: a.id, item: 0, kind: "pay", text: "Pay the electricity bill", quote: "due on November 20", senderKey: "bills@bank.test", dueDay: "2026-11-20", dueAt: NOW + 7 * DAY, timed: false, dated: true, actAt: NOW + 4 * DAY,
-          deferredUntil: null, arrivedAt: a.m.date, state: "open", closedReason: null, closedAt: null, fromScan: false, revision: 0, model: "m", provider: "p", createdAt: NOW, early: false, sameAs: null, detailOf: null, lapses: false,
+          deferredUntil: null, arrivedAt: a.m.date, state: "open", closedReason: null, closedAt: null, fromScan: false, revision: 0, model: "m", provider: "p", createdAt: NOW, early: false, sameAs: null, detailOf: null, lapses: false, settledBy: null, settledAt: null,
           changedAt: null, changedFrom: null, proposal: null,
           // plan 210 (iteration 4): handed to nobody
           handedTo: null,
