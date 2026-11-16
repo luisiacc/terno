@@ -60,7 +60,9 @@ describe("Change… on the reader's line (plan 210, iteration 4)", () => {
     // beside Later, before Remove
     const buttons = [...q("thread-dated-item")!.querySelectorAll("button")].map((b) => b.dataset.testid);
     expect(buttons.indexOf("thread-dated-change")).toBe(buttons.indexOf("thread-dated-later") + 1);
-    expect(buttons.indexOf("thread-dated-dismiss")).toBe(buttons.indexOf("thread-dated-change") + 1);
+    // Hand to… (iteration 4's other part) sits between Change… and Remove
+    expect(buttons.indexOf("thread-dated-hand")).toBe(buttons.indexOf("thread-dated-change") + 1);
+    expect(buttons.indexOf("thread-dated-dismiss")).toBe(buttons.indexOf("thread-dated-hand") + 1);
     await render(row({ kind: "ask", dated: false }));
     expect(q("thread-dated-change")).toBeNull();
     await render(row({ state: "done", closedAt: NOW }), false);
