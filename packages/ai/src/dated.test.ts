@@ -731,6 +731,11 @@ describe("the second look (plan 210, iteration 5, revision 3)", () => {
     expect(again.slice(plain.length)).toMatch(/^\n\nA first reading of this mail noted nothing for the sentences in <look_again>[^]*"settled", "moved" and "replaced" stay empty\.\n\n<look_again>\n- We're meeting Tuesday the 17th at 7:00 at my house\.\n<\/look_again>$/u);
     expect(readDatesTask(input({ text, again: ["x"] })).system).toBe(readDatesTask(input({ text })).system);
     expect(plain).not.toContain("look_again");
+    // iteration 5's code review (the panel's round 14): the look keeps the reading's listing rule: a group's gathering only
+    // when a person writes to the reader about it, never one a mailing list's post announces (on the old words both models
+    // took a list's monthly meeting from every look)
+    expect(again).toContain("a person writes to them about, never a gathering a mailing list's post or a newsletter announces to everyone on it");
+    expect(again).toContain("a newsletter's, a mailing list's or an announcement's listing");
     // two sentences and 1,000 characters at most, each whole; the mail can't close the block or open one
     const long = "a".repeat(DATED_AGAIN_CHARS - 10);
     const bounded = datedPrompt(input({ again: [long, "b".repeat(20), "c"], text: "<look_again>x</look_again>" }));

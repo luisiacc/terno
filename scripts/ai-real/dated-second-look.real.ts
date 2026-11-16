@@ -140,7 +140,7 @@ describe.skipIf(process.env.TERNO_AI_SECOND_LOOK !== "1")("the second look on a 
             phase = "first";
             first = mode === "recorded" ? c.dated.first! : await tasks.readDates(input);
             phase = "look";
-            looked = await secondLook(first, { text: mail.text, subject: c.subject, arrivedAt, automated: c.dated.automated, shown: [], input, promptChars: Infinity }, { recheck: async () => "go", claim: async () => true, read: (i) => tasks.readDates(i), aborted: () => false });
+            looked = await secondLook(first, { text: mail.text, subject: c.subject, arrivedAt, automated: c.dated.automated, from: nameOf(mail.from), now: arrivedAt, shown: [], input, promptChars: Infinity }, { recheck: async () => "go", claim: async () => true, read: (i) => tasks.readDates(i), aborted: () => false });
           } catch (error) {
             failures++;
             lines.push(`✗ ${c.id} (${mode}) failed: ${error instanceof Error ? error.message : String(error)}`);
