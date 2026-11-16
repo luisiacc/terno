@@ -1626,6 +1626,18 @@ ALTER TABLE followups ADD COLUMN handed_to TEXT;
 ALTER TABLE dated_items ADD COLUMN part_of_day TEXT;
 ALTER TABLE followups ADD COLUMN part_of_day TEXT;
 ` },
+  // plan 210 (iteration 5, revision 2): one kind muted from one sender ("deliveries from Parcelo"), Remove's narrow offer,
+  // beside v69's table (its CHECK and key untouched). Keyed by sender first: the reader's commit reads a sender's pairs.
+  // Shape only: an empty table, bounded at 200 by the store. v71 and v73 are iteration 5's others
+  { version: 72, name: "What matters: a kind muted from one sender (plan 210, iteration 5)", sql: `
+CREATE TABLE dated_mute_pairs (
+  sender_key TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  name TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (sender_key, kind)
+) WITHOUT ROWID;
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

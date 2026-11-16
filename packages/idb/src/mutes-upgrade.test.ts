@@ -24,7 +24,7 @@ it("a version-35 mailbox gains an empty store; its mail and waiting conversation
   await source.close();
   // the same image as version 35 wrote it: no `dated_mutes`, logical schema 60
   const raw = await request(indexedDB.open(databaseName(name)));
-  const image = (await physicalImage(raw)).filter((s) => s.name !== "dated_mutes").map((s) => (s.name === "meta" ? { ...s, values: s.values.map((v, i) => (s.keys[i] === "logicalSchema" ? 60 : v)) } : s));
+  const image = (await physicalImage(raw)).filter((s) => s.name !== "dated_mutes" && s.name !== "dated_mute_pairs").map((s) => (s.name === "meta" ? { ...s, values: s.values.map((v, i) => (s.keys[i] === "logicalSchema" ? 60 : v)) } : s));
   raw.close();
   const old = indexedDB.open(databaseName(legacyName), 35);
   old.onupgradeneeded = () => {
@@ -48,6 +48,40 @@ it("a version-35 mailbox gains an empty store; its mail and waiting conversation
   const db = await request(indexedDB.open(databaseName(legacyName)));
   expect(db.version).toBe(IDB_VERSION);
   expect(db.objectStoreNames.contains("dated_mutes")).toBe(true);
+  db.close();
+  await reopened.close();
+});
+
+/** Plan 210 (iteration 5): version 37 adds `dated_mute_pairs`. A version-36 mailbox opens with it empty, its mutes kept. */
+it("a version-36 mailbox gains an empty pair store; its mutes stay, and a pair is kept after a reopen", async () => {
+  const name = crypto.randomUUID(), legacyName = crypto.randomUUID();
+  const source = await open(name);
+  await withAccounts(source, 1);
+  expect(await source.dated.mutes.add({ on: "kind", key: "pay", name: "", at: NOW })).toBe("added");
+  await source.close();
+  // the same image as version 36 wrote it: no `dated_mute_pairs`, logical schema 69
+  const raw = await request(indexedDB.open(databaseName(name)));
+  const image = (await physicalImage(raw)).filter((s) => s.name !== "dated_mute_pairs").map((s) => (s.name === "meta" ? { ...s, values: s.values.map((v, i) => (s.keys[i] === "logicalSchema" ? 69 : v)) } : s));
+  raw.close();
+  const old = indexedDB.open(databaseName(legacyName), 36);
+  old.onupgradeneeded = () => {
+    for (const s of image) {
+      const os = old.result.createObjectStore(s.name, { keyPath: s.keyPath, autoIncrement: s.autoIncrement });
+      for (const index of s.indexes) os.createIndex(index.name, index.keyPath, index);
+      s.values.forEach((row, i) => os.put(row, s.keys[i]));
+    }
+  };
+  (await request(old)).close();
+
+  const upgraded = await open(legacyName);
+  expect(await upgraded.dated.mutes.list()).toEqual([{ on: "kind", key: "pay", name: "", at: NOW }]);
+  expect(await upgraded.dated.mutes.add({ on: "pair", key: "delivery|Track+eu@Parcelo.test", name: "Parcelo", at: NOW + 1 })).toBe("added");
+  await upgraded.close();
+  const reopened = await open(legacyName);
+  expect((await reopened.dated.mutes.list()).map((m) => [m.on, m.key])).toEqual([["pair", "delivery|track@parcelo.test"], ["kind", "pay"]]);
+  const db = await request(indexedDB.open(databaseName(legacyName)));
+  expect(db.version).toBe(IDB_VERSION);
+  expect(db.objectStoreNames.contains("dated_mute_pairs")).toBe(true);
   db.close();
   await reopened.close();
 });

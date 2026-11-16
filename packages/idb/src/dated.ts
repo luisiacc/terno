@@ -1,4 +1,4 @@
-import { addressKey, ANSWERED_KINDS, DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, parseHandedTo, readPartOfDay, DATED_MUTE_NAME_MAX, DATED_MUTES_MAX, muteKey, senderIsPerson, THREAD_SCOPED_KINDS, waitingCutoff, type DatedMute, type DatedMuteOn, readWall, type DatedRow } from "@terno/core";
+import { addressKey, ANSWERED_KINDS, DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, parseHandedTo, readPartOfDay, DATED_MUTE_NAME_MAX, DATED_MUTE_PAIRS_MAX, DATED_MUTES_MAX, muteKey, pairKey, pairOf, senderIsPerson, THREAD_SCOPED_KINDS, waitingCutoff, type DatedMute, type DatedMuteOn, readWall, type DatedRow } from "@terno/core";
 import { DATED_MARK_MS, DATED_SCAN_MARK_MS, datedTab, NEW_MAIL_MS, readerIn, readNothingAsked, recipientList, type ClosedAt, type DatedFinish, type DatedFinishOutcome, type DatedMuteAdded, type DatedMark, type DatedSnapshot, type DatedSource } from "@terno/store";
 import { received, receivedOwn } from "./ai-summaries";
 import { remarkReplies } from "./followups";
@@ -137,26 +137,45 @@ export function openDatedFor(c: Ctx, o: { threadId: number; senderKey: string; b
 // ─── plan 210 (iteration 4, revision 2): what the reader muted, as SQL's ───
 
 const toMute = (r: R): DatedMute => ({ on: r.target, key: r.key, name: r.name ?? "", at: r.created_at });
+// iteration 5: a pair (`dated_mute_pairs`, version 37) reads as a mute of its own target, keyed as `pairKey` writes it
+const pairMute = (r: R): DatedMute => ({ on: "pair", key: pairKey(r.kind, r.sender_key), name: r.name ?? "", at: r.created_at });
+const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
-export const datedMutes = (c: Ctx): DatedMute[] => [...T(c, "dated_mutes").all()].sort((a, b) => b.created_at - a.created_at || (a.target < b.target ? -1 : a.target > b.target ? 1 : 0) || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0)).map(toMute);
+export const datedMutes = (c: Ctx): DatedMute[] =>
+  [...[...T(c, "dated_mutes").all()].map(toMute), ...[...T(c, "dated_mute_pairs").all()].map(pairMute)].sort((a, b) => b.at - a.at || cmp(a.on, b.on) || cmp(a.key, b.key));
 
 export function addDatedMute(c: Ctx, m: DatedMute): DatedMuteAdded {
   const key = muteKey(m.on, m.key);
-  if (key === null) throw new TypeError("not a sender or a kind");
+  if (key === null) throw new TypeError("not a sender, a kind or a pair");
+  const name = m.on === "kind" ? "" : m.name.trim().slice(0, DATED_MUTE_NAME_MAX);
+  if (m.on === "pair") {
+    const { kind, sender } = pairOf(key)!;
+    const pairs = T(c, "dated_mute_pairs");
+    if (pairs.has(sender, kind)) return "already";
+    if (pairs.size >= DATED_MUTE_PAIRS_MAX) return "full";
+    pairs.insert({ sender_key: sender, kind, name, created_at: m.at });
+    return "added";
+  }
   const mutes = T(c, "dated_mutes");
   if (mutes.has(m.on, key)) return "already";
   if (mutes.size >= DATED_MUTES_MAX) return "full";
-  mutes.insert({ target: m.on, key, name: m.on === "sender" ? m.name.trim().slice(0, DATED_MUTE_NAME_MAX) : "", created_at: m.at });
+  mutes.insert({ target: m.on, key, name, created_at: m.at });
   return "added";
 }
 
 export function removeDatedMute(c: Ctx, on: DatedMuteOn, key: string): DatedMute | null {
   const k = muteKey(on, key);
-  const r = k === null ? undefined : T(c, "dated_mutes").delete(on, k);
+  if (k === null) return null;
+  if (on === "pair") {
+    const { kind, sender } = pairOf(k)!;
+    const r = T(c, "dated_mute_pairs").delete(sender, kind);
+    return r ? pairMute(r) : null;
+  }
+  const r = T(c, "dated_mutes").delete(on, k);
   return r ? toMute(r) : null;
 }
 
-/** The muted senders' keys, by the in-memory index (Needs you's walk reads them once). */
+/** The muted senders' keys, by the in-memory index (Needs you's walk reads them once; pairs never reach it). */
 export const mutedSenders = (c: Ctx): Set<string> => new Set(T(c, "dated_mutes").by("target", "sender").map((r) => String(r.key)));
 
 export function finishDated(c: Ctx, w: DatedFinish): DatedFinishOutcome {
@@ -174,7 +193,8 @@ export function finishDated(c: Ctx, w: DatedFinish): DatedFinishOutcome {
   const rows = T(c, "dated_items");
   let open = rows.count("state", "open");
   // plan 210 (iteration 4): a muted kind's new items aren't stored; its settlements and moves below still are
-  const kinds = new Set(T(c, "dated_mutes").by("target", "kind").map((r) => String(r.key)));
+  // (iteration 5) nor are a kind's muted for this sender alone (its pairs, by sender): the rest of their mail is
+  const kinds = new Set([...T(c, "dated_mutes").by("target", "kind").map((r) => String(r.key)), ...T(c, "dated_mute_pairs").by("sender", src.senderKey).map((r) => String(r.kind))]);
   for (const r of w.rows) {
     if (kinds.has(r.kind)) continue;
     if (rows.by("identity", w.messageId, r.item).length) continue;

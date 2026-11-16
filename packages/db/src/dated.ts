@@ -1,4 +1,4 @@
-import { addressKey, ANSWERED_KINDS, DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, parseHandedTo, readPartOfDay, DATED_MUTE_NAME_MAX, DATED_MUTES_MAX, muteKey, senderIsPerson, THREAD_SCOPED_KINDS, waitingCutoff, type DatedMute, type DatedMuteOn, type DatedRow } from "@terno/core";
+import { addressKey, ANSWERED_KINDS, DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, parseHandedTo, readPartOfDay, DATED_MUTE_NAME_MAX, DATED_MUTE_PAIRS_MAX, DATED_MUTES_MAX, muteKey, pairOf, senderIsPerson, THREAD_SCOPED_KINDS, waitingCutoff, type DatedMute, type DatedMuteOn, type DatedRow } from "@terno/core";
 import { DATED_MARK_MS, DATED_SCAN_MARK_MS, datedTab, NEW_MAIL_MS, readerIn, readNothingAsked, recipientList, type ClosedAt, type DatedFinish, type DatedFinishOutcome, type DatedMuteAdded, type DatedMark, type DatedSnapshot, type DatedSource } from "@terno/store";
 import { OWN_SENDER_SQL, RECEIVED_SQL } from "./ai-summaries";
 import { ownAddresses } from "./facts";
@@ -127,16 +127,27 @@ export function openDatedFor(db: Db, o: { threadId: number; senderKey: string; b
 
 const toMute = (r: { target: DatedMuteOn; key: string; name: string; created_at: number }): DatedMute => ({ on: r.target, key: r.key, name: r.name, at: r.created_at });
 
-export const datedMutes = (db: Db): DatedMute[] => db.all<Parameters<typeof toMute>[0]>("SELECT * FROM dated_mutes ORDER BY created_at DESC, target, key").map(toMute);
+// iteration 5: the pairs (`dated_mute_pairs`, v72) read as mutes of their own target, keyed as `pairKey` writes them
+const ALL_MUTES_SQL = "SELECT target, key, name, created_at FROM dated_mutes UNION ALL SELECT 'pair', kind || '|' || sender_key, name, created_at FROM dated_mute_pairs";
 
-/** Normalized as `muteKey` says (a key it refuses throws); at `DATED_MUTES_MAX`, refused, never one dropped for it. */
+export const datedMutes = (db: Db): DatedMute[] => db.all<Parameters<typeof toMute>[0]>(`${ALL_MUTES_SQL} ORDER BY created_at DESC, target, key`).map(toMute);
+
+/** Normalized as `muteKey` says (a key it refuses throws); at the bound, refused, never one dropped for it. */
 export function addDatedMute(db: Db, m: DatedMute): DatedMuteAdded {
   const key = muteKey(m.on, m.key);
-  if (key === null) throw new TypeError("not a sender or a kind");
+  if (key === null) throw new TypeError("not a sender, a kind or a pair");
+  const name = m.on === "kind" ? "" : m.name.trim().slice(0, DATED_MUTE_NAME_MAX);
   return db.tx(() => {
+    if (m.on === "pair") {
+      const { kind, sender } = pairOf(key)!;
+      if (db.get("SELECT 1 FROM dated_mute_pairs WHERE sender_key = ? AND kind = ?", sender, kind)) return "already";
+      if (db.get<{ n: number }>("SELECT count(*) AS n FROM dated_mute_pairs")!.n >= DATED_MUTE_PAIRS_MAX) return "full";
+      db.run("INSERT INTO dated_mute_pairs (sender_key, kind, name, created_at) VALUES (?, ?, ?, ?)", sender, kind, name, m.at);
+      return "added";
+    }
     if (db.get("SELECT 1 FROM dated_mutes WHERE target = ? AND key = ?", m.on, key)) return "already";
     if (db.get<{ n: number }>("SELECT count(*) AS n FROM dated_mutes")!.n >= DATED_MUTES_MAX) return "full";
-    db.run("INSERT INTO dated_mutes (target, key, name, created_at) VALUES (?, ?, ?, ?)", m.on, key, m.on === "sender" ? m.name.trim().slice(0, DATED_MUTE_NAME_MAX) : "", m.at);
+    db.run("INSERT INTO dated_mutes (target, key, name, created_at) VALUES (?, ?, ?, ?)", m.on, key, name, m.at);
     return "added";
   });
 }
@@ -145,13 +156,19 @@ export function removeDatedMute(db: Db, on: DatedMuteOn, key: string): DatedMute
   const k = muteKey(on, key);
   if (k === null) return null;
   return db.tx(() => {
+    if (on === "pair") {
+      const { kind, sender } = pairOf(k)!;
+      const r = db.get<{ name: string; created_at: number }>("SELECT name, created_at FROM dated_mute_pairs WHERE sender_key = ? AND kind = ?", sender, kind);
+      if (r) db.run("DELETE FROM dated_mute_pairs WHERE sender_key = ? AND kind = ?", sender, kind);
+      return r ? { on, key: k, name: r.name, at: r.created_at } : null;
+    }
     const r = db.get<Parameters<typeof toMute>[0]>("SELECT * FROM dated_mutes WHERE target = ? AND key = ?", on, k);
     if (r) db.run("DELETE FROM dated_mutes WHERE target = ? AND key = ?", on, k);
     return r ? toMute(r) : null;
   });
 }
 
-/** The muted senders' keys: one read of a table bounded at 200 (Needs you's walk reads it once). */
+/** The muted senders' keys: one read of a table bounded at 200 (Needs you's walk reads it once; pairs never reach it). */
 export const mutedSenders = (db: Db): Set<string> => new Set(db.all<{ key: string }>("SELECT key FROM dated_mutes WHERE target = 'sender'").map((r) => r.key));
 
 export function finishDated(db: Db, w: DatedFinish): DatedFinishOutcome {
@@ -167,7 +184,8 @@ export function finishDated(db: Db, w: DatedFinish): DatedFinishOutcome {
     if (src.threadId !== w.threadId) return "moved";
     let open = db.get<{ n: number }>("SELECT COUNT(*) AS n FROM dated_items INDEXED BY dated_open WHERE state = 'open'")!.n;
     // plan 210 (iteration 4): a muted kind's new items aren't stored; its settlements and moves below still are
-    const kinds = new Set(db.all<{ key: string }>("SELECT key FROM dated_mutes WHERE target = 'kind'").map((r) => r.key));
+    // (iteration 5) nor are a kind's muted for this sender alone (its pairs, by the key's prefix): the rest of their mail is
+    const kinds = new Set(db.all<{ key: string }>("SELECT key FROM dated_mutes WHERE target = 'kind' UNION ALL SELECT kind FROM dated_mute_pairs WHERE sender_key = ?", src.senderKey).map((r) => r.key));
     for (const r of w.rows) {
       if (kinds.has(r.kind)) continue;
       if (db.get("SELECT 1 FROM dated_items WHERE message_id = ? AND item = ?", w.messageId, r.item)) continue;
