@@ -1,9 +1,9 @@
-import { addressKey, ANSWERED_KINDS, DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, parseHandedTo, DATED_MUTE_NAME_MAX, DATED_MUTES_MAX, muteKey, senderIsPerson, THREAD_SCOPED_KINDS, waitingCutoff, type DatedMute, type DatedMuteOn, type DatedRow, type DatedWall } from "@terno/core";
+import { addressKey, ANSWERED_KINDS, DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, parseHandedTo, DATED_MUTE_NAME_MAX, DATED_MUTES_MAX, muteKey, senderIsPerson, THREAD_SCOPED_KINDS, waitingCutoff, type DatedMute, type DatedMuteOn, readWall, type DatedRow } from "@terno/core";
 import { DATED_MARK_MS, DATED_SCAN_MARK_MS, datedTab, NEW_MAIL_MS, readerIn, readNothingAsked, recipientList, type ClosedAt, type DatedFinish, type DatedFinishOutcome, type DatedMuteAdded, type DatedMark, type DatedSnapshot, type DatedSource } from "@terno/store";
 import { received, receivedOwn } from "./ai-summaries";
 import { remarkReplies } from "./followups";
 import { T, type Ctx, type R } from "./mail";
-import { proposedMove, scheduleFields } from "./schedule";
+import { proposedMove, scheduleFields, wallRecord } from "./schedule";
 
 /** Plan 204 on IndexedDB, like SQL's (packages/db/src/dated.ts). */
 
@@ -16,15 +16,9 @@ const toRow = (r: R): DatedRow => ({
   // plan 210 (iteration 4, revision 7): absent before it
   settledBy: r.settled_by ?? null, settledAt: r.settled_at ?? null,
   // plan 210 (iteration 4): as SQL's v67, none on a row stored before them
-  before: r.before_day ?? null, confirms: r.confirms ?? null, wall: wallOf(r.wall),
+  before: r.before_day ?? null, confirms: r.confirms ?? null, wall: readWall(r.wall),
 });
 
-/** Plan 210 (iteration 4, revision 10): the mail's own clock as stored (an object, as SQL's JSON reads); one that doesn't read is none. */
-const wallOf = (w: unknown): DatedWall | null => {
-  const x = w as Partial<DatedWall> | null | undefined;
-  return x && typeof x.day === "string" && typeof x.time === "string" && typeof x.zone === "string" ? { day: x.day, time: x.time, zone: x.zone, place: typeof x.place === "string" ? x.place : null } : null;
-};
-const wallRecord = (w: DatedWall | null | undefined): DatedWall | null => (w ? { day: w.day, time: w.time, zone: w.zone, place: w.place } : null);
 
 const byAct = (a: R, b: R) => a.act_at - b.act_at || a.id - b.id;
 
@@ -222,14 +216,14 @@ export function finishDated(c: Ctx, w: DatedFinish): DatedFinishOutcome {
     const p = followups.get(m.id);
     if (!p || p.revision !== m.revision || p.thread_id !== src.threadId || p.kind !== "promise" || (p.state !== "open" && p.state !== "due")) continue;
     // plan 210 (iteration 4): as SQL's, a promise whose day the user chose keeps it, the move kept for them
-    if (proposedMove(followups, p, { dueAt: m.dueAt, timed: m.timed ?? false }, src, w)) continue;
+    if (proposedMove(followups, p, { dueAt: m.dueAt, timed: m.timed ?? false, before: m.before ?? null }, src, w)) continue;
     // plan 210 (iteration 2): its first broken day kept, and whether its new moment is a stated time (absent: as it was)
     followups.update(p, { due_at: m.dueAt, dated: 1, state: m.dueAt > w.now ? "open" : p.state, inbox_state: "none", broken_due_at: p.broken_due_at ?? m.brokenDueAt ?? null, ...(m.timed !== undefined ? { timed: m.timed ? 1 : 0 } : {}), before_day: m.before ?? null, revision: p.revision + 1 });
   }
   for (const m of w.moved ?? []) {
     const r = rows.get(m.id);
     // plan 210 (iteration 4): as SQL's, an item whose day the user chose keeps it, the move (and its words) kept for them
-    if (r && r.state === "open" && reaches(r, src) && proposedMove(rows, r, { dueDay: m.dueDay, dueAt: m.dueAt, timed: m.timed, actAt: m.actAt, ...(m.text ? { text: m.text } : {}) }, src, w)) continue;
+    if (r && r.state === "open" && reaches(r, src) && proposedMove(rows, r, { dueDay: m.dueDay, dueAt: m.dueAt, timed: m.timed, actAt: m.actAt, ...(m.text ? { text: m.text } : {}), before: m.before ?? null, wall: m.wall ?? null }, src, w)) continue;
     // its new words, if it gives some, in the same write (the fifth panel round)
     if (r && r.state === "open" && reaches(r, src)) rows.update(r, { due_day: m.dueDay, due_at: m.dueAt, timed: m.timed ? 1 : 0, dated: 1, act_at: m.actAt, ...(m.text ? { text: m.text } : {}), before_day: m.before ?? null, wall: wallRecord(m.wall) });
   }

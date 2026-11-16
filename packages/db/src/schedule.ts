@@ -1,5 +1,5 @@
-import { dayKeyOf, parseProposal, parseSchedule, proposalJson, proposerOf, scheduleJson, type ItemSchedule, type ScheduleProposal } from "@terno/core";
-import type { DatedFinish, DatedScheduleSnapshot, DatedSource, PromiseScheduleSnapshot, ScheduleChanges, ScheduleSnapshots } from "@terno/store";
+import { dayKeyOf, parseProposal, parseSchedule, proposalJson, readWall, scheduleJson, type DatedWall, type ItemSchedule, type ScheduleProposal } from "@terno/core";
+import { proposalOf, type DatedFinish, type DatedScheduleSnapshot, type DatedSource, type PromiseScheduleSnapshot, type ScheduleChanges, type ScheduleSnapshots } from "@terno/store";
 import type { Db } from "./sqlite";
 
 /** Plan 210 (iteration 4, Change…) on SQLite (v68): see packages/store/src/schedule.ts. */
@@ -13,18 +13,28 @@ export const scheduleFields = (r: { changed_at?: number | null; changed_from?: s
 
 interface DatedRaw {
   id: number; revision: number; due_day: string; due_at: number; timed: number; dated: number; act_at: number; text: string; deferred_until: number | null;
-  changed_at: number | null; changed_from: string | null; proposal: string | null;
+  changed_at: number | null; changed_from: string | null; proposal: string | null; before_day: string | null; wall: string | null;
 }
 interface PromiseRaw {
   id: number; revision: number; state: PromiseScheduleSnapshot["state"]; inbox_state: PromiseScheduleSnapshot["inboxState"]; due_at: number; dated: number; timed: number; broken_due_at: number | null; deferred_until: number | null;
-  changed_at: number | null; changed_from: string | null; proposal: string | null;
+  changed_at: number | null; changed_from: string | null; proposal: string | null; before_day: string | null;
 }
 
+/** Plan 210 (iteration 4, revision 10): the mail's own clock, kept as JSON (v67); one that doesn't read is none. */
+export const wallOf = (json: string | null): DatedWall | null => {
+  try {
+    return json ? readWall(JSON.parse(json)) : null;
+  } catch {
+    return null;
+  }
+};
+export const wallJson = (w: DatedWall | null | undefined): string | null => (w ? JSON.stringify({ day: w.day, time: w.time, zone: w.zone, place: w.place }) : null);
+
 const datedSnapshot = (r: DatedRaw): DatedScheduleSnapshot => ({
-  id: r.id, revision: r.revision, dueDay: r.due_day, dueAt: r.due_at, timed: r.timed === 1, dated: r.dated === 1, actAt: r.act_at, text: r.text, deferredUntil: r.deferred_until ?? null, ...scheduleFields(r),
+  id: r.id, revision: r.revision, dueDay: r.due_day, dueAt: r.due_at, timed: r.timed === 1, dated: r.dated === 1, actAt: r.act_at, text: r.text, deferredUntil: r.deferred_until ?? null, ...scheduleFields(r), before: r.before_day ?? null, wall: wallOf(r.wall),
 });
 const promiseSnapshot = (r: PromiseRaw): PromiseScheduleSnapshot => ({
-  id: r.id, revision: r.revision, state: r.state, inboxState: r.inbox_state, dueAt: r.due_at, dated: r.dated === 1, timed: r.timed === 1, brokenDueAt: r.broken_due_at ?? null, deferredUntil: r.deferred_until ?? null, ...scheduleFields(r),
+  id: r.id, revision: r.revision, state: r.state, inboxState: r.inbox_state, dueAt: r.due_at, dated: r.dated === 1, timed: r.timed === 1, brokenDueAt: r.broken_due_at ?? null, deferredUntil: r.deferred_until ?? null, ...scheduleFields(r), before: r.before_day ?? null,
 });
 
 const json = (v: ItemSchedule | null): string | null => (v ? scheduleJson(v) : null);
@@ -39,15 +49,15 @@ export function scheduleItems(db: Db, c: ScheduleChanges): ScheduleSnapshots | n
     c.dated.forEach(({ id, to }, i) => {
       const r = dated[i]!;
       db.run(
-        "UPDATE dated_items SET due_day = ?, due_at = ?, timed = ?, dated = 1, act_at = ?, text = coalesce(?, text), deferred_until = NULL, changed_at = ?, changed_from = ?, proposal = NULL, revision = revision + 1 WHERE id = ?",
-        to.dueDay, to.dueAt, to.timed ? 1 : 0, to.actAt, to.text ?? null, c.at, scheduleJson({ dueDay: r.due_day, dueAt: r.due_at, timed: r.timed === 1, dated: r.dated === 1 }), id,
+        "UPDATE dated_items SET due_day = ?, due_at = ?, timed = ?, dated = 1, act_at = ?, text = coalesce(?, text), before_day = ?, wall = ?, deferred_until = NULL, changed_at = ?, changed_from = ?, proposal = NULL, revision = revision + 1 WHERE id = ?",
+        to.dueDay, to.dueAt, to.timed ? 1 : 0, to.actAt, to.text ?? null, to.before ?? null, wallJson(to.wall), c.at, scheduleJson({ dueDay: r.due_day, dueAt: r.due_at, timed: r.timed === 1, dated: r.dated === 1 }), id,
       );
     });
     c.promises.forEach(({ id, to }, i) => {
       const r = promises[i]!;
       db.run(
-        "UPDATE followups SET due_at = ?, dated = 1, timed = ?, state = ?, inbox_state = 'none', broken_due_at = NULL, deferred_until = NULL, changed_at = ?, changed_from = ?, proposal = NULL, revision = revision + 1 WHERE id = ?",
-        to.dueAt, to.timed ? 1 : 0, to.state, c.at, scheduleJson({ dueDay: dayKeyOf(r.due_at), dueAt: r.due_at, timed: r.timed === 1, dated: r.dated === 1 }), id,
+        "UPDATE followups SET due_at = ?, dated = 1, timed = ?, state = ?, inbox_state = 'none', broken_due_at = NULL, before_day = ?, deferred_until = NULL, changed_at = ?, changed_from = ?, proposal = NULL, revision = revision + 1 WHERE id = ?",
+        to.dueAt, to.timed ? 1 : 0, to.state, to.before ?? null, c.at, scheduleJson({ dueDay: dayKeyOf(r.due_at), dueAt: r.due_at, timed: r.timed === 1, dated: r.dated === 1 }), id,
       );
     });
     return { dated: dated.map((r) => datedSnapshot(r!)), promises: promises.map((r) => promiseSnapshot(r!)) };
@@ -61,14 +71,14 @@ export function unscheduleItems(db: Db, s: ScheduleSnapshots): boolean {
     if (!s.dated.every((r) => at("dated_items", r.id, r.revision + 1)) || !s.promises.every((r) => at("followups", r.id, r.revision + 1))) return false;
     for (const r of s.dated) {
       db.run(
-        "UPDATE dated_items SET due_day = ?, due_at = ?, timed = ?, dated = ?, act_at = ?, text = ?, deferred_until = ?, changed_at = ?, changed_from = ?, proposal = ?, revision = revision + 1 WHERE id = ?",
-        r.dueDay, r.dueAt, r.timed ? 1 : 0, r.dated ? 1 : 0, r.actAt, r.text, r.deferredUntil, r.changedAt, json(r.changedFrom), proposal(r.proposal), r.id,
+        "UPDATE dated_items SET due_day = ?, due_at = ?, timed = ?, dated = ?, act_at = ?, text = ?, before_day = ?, wall = ?, deferred_until = ?, changed_at = ?, changed_from = ?, proposal = ?, revision = revision + 1 WHERE id = ?",
+        r.dueDay, r.dueAt, r.timed ? 1 : 0, r.dated ? 1 : 0, r.actAt, r.text, r.before, wallJson(r.wall), r.deferredUntil, r.changedAt, json(r.changedFrom), proposal(r.proposal), r.id,
       );
     }
     for (const r of s.promises) {
       db.run(
-        "UPDATE followups SET state = ?, inbox_state = ?, due_at = ?, dated = ?, timed = ?, broken_due_at = ?, deferred_until = ?, changed_at = ?, changed_from = ?, proposal = ?, revision = revision + 1 WHERE id = ?",
-        r.state, r.inboxState, r.dueAt, r.dated ? 1 : 0, r.timed ? 1 : 0, r.brokenDueAt, r.deferredUntil, r.changedAt, json(r.changedFrom), proposal(r.proposal), r.id,
+        "UPDATE followups SET state = ?, inbox_state = ?, due_at = ?, dated = ?, timed = ?, broken_due_at = ?, before_day = ?, deferred_until = ?, changed_at = ?, changed_from = ?, proposal = ?, revision = revision + 1 WHERE id = ?",
+        r.state, r.inboxState, r.dueAt, r.dated ? 1 : 0, r.timed ? 1 : 0, r.brokenDueAt, r.before, r.deferredUntil, r.changedAt, json(r.changedFrom), proposal(r.proposal), r.id,
       );
     }
     return true;
@@ -86,7 +96,7 @@ export function proposedMove(
   db: Db,
   table: "dated_items" | "followups",
   at: { id: number; threadId: number; revision?: number; senderKey?: string; reaches?: string },
-  to: { dueDay?: string; dueAt: number; timed: boolean; actAt?: number; text?: string },
+  to: { dueDay?: string; dueAt: number; timed: boolean; actAt?: number; text?: string; before?: string | null; wall?: DatedWall | null },
   src: Pick<DatedSource, "fromName" | "fromEmail">,
   w: Pick<DatedFinish, "messageId" | "now">,
 ): boolean {
@@ -98,7 +108,7 @@ export function proposedMove(
       : { sql: "revision = ? AND thread_id = ? AND kind = 'promise' AND state IN ('open','due')", params: [at.revision ?? -1, at.threadId] };
   const same = row.due_at === to.dueAt && (row.timed === 1) === to.timed && !to.text;
   if (same && row.proposal === null) return true;
-  const kept = same ? null : proposalJson({ dueDay: to.dueDay ?? dayKeyOf(to.dueAt), dueAt: to.dueAt, timed: to.timed, ...(to.actAt !== undefined ? { actAt: to.actAt } : {}), ...(to.text ? { text: to.text } : {}), by: proposerOf({ name: src.fromName, email: src.fromEmail }), messageId: w.messageId, at: w.now });
+  const kept = same ? null : proposalJson(proposalOf(to, src, w));
   db.run(`UPDATE ${table} SET proposal = ?, revision = revision + 1 WHERE id = ? AND ${guard.sql}`, kept, at.id, ...guard.params);
   return true;
 }
