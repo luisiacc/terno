@@ -269,6 +269,16 @@ export function disclosureLine(ai: AiSettings): string {
   return ai.provider === "none" ? t("ai.privacy.off") : t("ai.privacy.local");
 }
 
+/**
+ * Plan 210 (iteration 5; Margaret, three panel rounds): what the providers mail goes to keep of it, and for how long, in one
+ * sentence beside the disclosure. Terno knows neither their terms nor the account's own settings (both vary by account and
+ * change), so it never states a period: it says where that's written. Null where nothing leaves this Mac.
+ */
+export function keepsLine(ai: AiSettings): string | null {
+  const names = mailDestinations(ai);
+  return names.length ? t("ai.disclosure.keeps", { count: names.length, providers: namesList(names) }) : null;
+}
+
 /** How a model answers (keys: read with t()). */
 export const OUTPUT_LABEL = {
   json_schema: "ai.output.jsonSchema",

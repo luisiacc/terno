@@ -4,7 +4,7 @@ import { setLocale, t } from "@terno/i18n";
 import en from "@terno/i18n/locales/en";
 import es from "@terno/i18n/locales/es";
 import { afterEach, describe, expect, it } from "vitest";
-import { aiReady, askOffered, choiceLabel, choiceOf, datedReaderLine, disclosureLine, draftingOffered, errorHelp, mailDestinations, followupsOffered, helperElsewhere, OUTPUT_LABEL, presetLabel, privacyLine, providerName, repliesOffered, routeOf, routingLine, summariesOffered, todayOffered, writingModel, writingTarget } from "./ai";
+import { aiReady, askOffered, choiceLabel, choiceOf, datedReaderLine, disclosureLine, draftingOffered, errorHelp, keepsLine, mailDestinations, followupsOffered, helperElsewhere, OUTPUT_LABEL, presetLabel, privacyLine, providerName, repliesOffered, routeOf, routingLine, summariesOffered, todayOffered, writingModel, writingTarget } from "./ai";
 
 const ai = (over: Partial<AiSettings>) => ({ provider: "none", preset: null, baseURL: null, local: false, ...over }) as AiSettings;
 
@@ -191,8 +191,15 @@ describe("AI labels and help", () => {
     expect(disclosureLine(full({ provider: "ollama", local: true }))).toBe("Nothing leaves this Mac.");
     expect(disclosureLine(full({ provider: "openai", keys: { openai: key } }))).toBe("OpenAI receives a conversation’s text when you use an AI feature on it, and mail as it comes in or goes out for the background features you turn on below.");
     expect(disclosureLine(full({ provider: "anthropic", keys: { anthropic: key, openai: key } }))).toMatch(/^Claude \(Anthropic\) and OpenAI receive a conversation’s text/);
+    // plan 210 (iteration 5): what they keep, and for how long, is theirs to say: no period claimed, where it's written named
+    expect(keepsLine(full({ provider: "openai", keys: { openai: key } }))).toBe("How long OpenAI keeps what it receives, and what for, is set by its own API data policy, not by Terno: read it on its website.");
+    expect(keepsLine(full({ provider: "anthropic", keys: { anthropic: key, openai: key } }))).toMatch(/^How long Claude \(Anthropic\) and OpenAI keep what they receive/);
+    expect(keepsLine(full({ provider: "ollama", local: true }))).toBeNull();
+    expect(keepsLine(full({ provider: "none" }))).toBeNull();
+    expect(keepsLine(full({ provider: "openai", keys: { openai: key } }))).not.toMatch(/\d/);
     setLocale("es", es);
     expect(disclosureLine(full({ provider: "anthropic", keys: { anthropic: key, openai: key } }))).toMatch(/^Claude \(Anthropic\) y OpenAI reciben el texto de una conversación/);
+    expect(keepsLine(full({ provider: "openai", keys: { openai: key } }))).toBe("Cuánto tiempo guarda OpenAI lo que recibe, y para qué, lo decide su propia política de datos de la API, no Terno: consúltala en su sitio web.");
   });
 
   it("helps by the kind of failure, naming a local provider", () => {

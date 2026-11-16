@@ -19,6 +19,7 @@ import {
   CLOUD_CHOICES,
   DEFAULT_ENDPOINT,
   disclosureLine,
+  keepsLine,
   endpointOf,
   errorHelp,
   hostOf,
@@ -132,6 +133,12 @@ function KeyRow({ ai, provider, label, name, placeholder, testId }: { ai: AiSett
 
 type Catalog = { providers: ProviderDescriptor[]; presets: PresetDescriptor[] };
 type Discovery = { state: "idle" } | { state: "loading" } | { state: "done"; models: ModelInfo[] } | { state: "error"; message: string };
+
+/** Where mail goes, then (plan 210, iteration 5) what's kept there and where that's written: the privacy note's words. */
+const withKeeps = (ai: AiSettings): string => {
+  const keeps = keepsLine(ai);
+  return keeps ? `${disclosureLine(ai)} ${keeps}` : disclosureLine(ai);
+};
 
 export function AiTab({ settings, update }: { settings: AppSettings; update: SettingsUpdate }) {
   const { ai } = settings;
@@ -270,7 +277,7 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
   if (ai.fromEnv) {
     return (
       <div data-testid="ai-tab">
-        <SettingsGroup footer={<PrivacyNote testId="ai-privacy" title={t("ai.privacy")}>{disclosureLine(ai)}</PrivacyNote>}>
+        <SettingsGroup footer={<PrivacyNote testId="ai-privacy" title={t("ai.privacy")}>{withKeeps(ai)}</PrivacyNote>}>
           <SettingsRow find="ai.devNote" label={t("settings.dev.aiNote")} hint={t("settings.dev.aiNote.hint")} testId="ai-dev-note">
             {() => (
               <Button variant="outline" size="sm" data-testid="ai-dev-open" onClick={() => openSettingsTab("dev")}>
@@ -290,7 +297,7 @@ export function AiTab({ settings, update }: { settings: AppSettings; update: Set
       <SettingsGroup
         footer={
           <PrivacyNote testId="ai-privacy" title={!keyed && ai.provider !== "none" && !ai.local && hostOf(ai) ? t("ai.privacyHost", { host: hostOf(ai)! }) : t("ai.privacy")}>
-            {disclosureLine(ai)}
+            {withKeeps(ai)}
           </PrivacyNote>
         }
       >
