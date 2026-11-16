@@ -30,7 +30,7 @@ interface Scripted extends MailProvider {
   sent: ProviderOp[];
 }
 
-async function setup() {
+async function setup(row: Partial<DatedWrite> = {}) {
   const providers = new Map<number, Scripted>();
   const registry: ProviderRegistry = {
     create(ctx) {
@@ -93,7 +93,7 @@ async function setup() {
   const r = await backend.store.sync.ingest([m], { applyFilters: false, now: NOW, classifier: null, datedMail: { since: null } });
   const source = { id: r.inserted[0]!, thread: await threadOf(backend.store, "school-1") };
   const write = (over: Partial<DatedWrite>): DatedWrite => ({ kind: "respond", item: 0, text: "Sign the field trip form", quote: "sign it by Friday", dueDay: "2026-11-20", dueAt: NOW + 7 * DAY, timed: false, dated: true, actAt: NOW, ...over });
-  await backend.store.dated.finish({ messageId: source.id, threadId: source.thread, fromScan: false, rows: [write({})], settled: [], now: NOW, model: "m", provider: "p", promptVersion: 1, clearGeneration: backend.store.dated.clearGeneration() });
+  await backend.store.dated.finish({ messageId: source.id, threadId: source.thread, fromScan: false, rows: [write(row)], settled: [], now: NOW, model: "m", provider: "p", promptVersion: 1, clearGeneration: backend.store.dated.clearGeneration() });
   const [form] = await backend.store.dated.ofThread(source.thread);
   /** Hand to… as the app does it: the hand-off asked for, a forward saved with it, ready to send */
   const forward = async () => {
@@ -110,8 +110,15 @@ describe("Hand to…", () => {
   it("resolves the row as Done would, with the message its forward forwards; a revision seen before a change is stale", async () => {
     const { client, source, form } = await setup();
     const h = await client.call("today.handoff", { source: "dated", id: form.id, revision: form.revision });
-    expect(h).toEqual({ threadId: source.thread, messageId: source.id, items: [{ source: "dated", id: form.id, revision: form.revision, named: true }], text: "Sign the field trip form", dueAt: form.dueAt });
+    expect(h).toEqual({ threadId: source.thread, messageId: source.id, items: [{ source: "dated", id: form.id, revision: form.revision, named: true }], text: "Sign the field trip form", dueAt: form.dueAt, timed: false, partOfDay: null });
     await expect(client.call("today.handoff", { source: "dated", id: form.id, revision: form.revision + 1 })).rejects.toMatchObject({ code: "STALE" });
+  });
+
+  it("round 14's faults: a timed item's time and an untimed one's part of the day come with its day, for the line", async () => {
+    const timed = await setup({ text: "Wire $187,420.55 for Lumora payroll", dueDay: "2026-11-13", dueAt: NOW + 3 * 3_600_000, timed: true });
+    expect(await timed.client.call("today.handoff", { source: "dated", id: timed.form.id, revision: timed.form.revision })).toMatchObject({ dueAt: NOW + 3 * 3_600_000, timed: true, partOfDay: null });
+    const part = await setup({ partOfDay: "morning" });
+    expect(await part.client.call("today.handoff", { source: "dated", id: part.form.id, revision: part.form.revision })).toMatchObject({ timed: false, partOfDay: "morning" });
   });
 
   it("the draft keeps it; held for Undo and then cancelled, nothing closes and the draft is back with it", async () => {

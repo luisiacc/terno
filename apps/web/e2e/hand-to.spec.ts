@@ -71,7 +71,8 @@ test("Hand to… from the item's menu: an inline forward with its line; Undo sen
   const composer = page.getByTestId("composer");
   const body = page.getByTestId("compose-body");
   const held = page.getByTestId("held-message");
-  const line = "Could you take care of this: sign the field trip form (by today)?";
+  // round 14's faults: a timed item says its time too
+  const line = /^Could you take care of this: sign the field trip form \(by today \d{1,2}:\d{2}\s?[AP]M\)\?$/;
 
   await scenario("the palette's Hand to… on the open item: the forward in the reader with its line; put away, it waits as a draft", async () => {
     await openItem(page).getByTestId("wm-item-open").click();
@@ -148,7 +149,7 @@ test("Hand to… from the reader's line, in Spanish: the forward's line and Earl
   await expect(hand).toHaveAccessibleName("Delegar: Sign the field trip form");
   await hand.click();
   const body = page.getByTestId("compose-body");
-  await expect(body.locator("p").first()).toHaveText("¿Puedes encargarte de esto: sign the field trip form (para hoy)?");
+  await expect(body.locator("p").first()).toHaveText(/^¿Puedes encargarte de esto: sign the field trip form \(para hoy \d{1,2}:\d{2}\)\?$/);
   await addRecipients(page, "compose-to", `Jess Okafor <${jess}>`);
   await shoot(page, "forward-es");
   await body.click();
