@@ -113,6 +113,24 @@ describe("a reply's checked verdict (the Codex review of iteration 3, revision 1
     expect(checkSentMail({ promises: [{ ...promise, quote: "words nobody wrote" }], expectsReply: false, awaiting: [], kept: [], answers: [{ label: "q1", verdict: "promise", evidence: "I'll send it Wednesday" }] }, base).verdicts).toEqual([]);
   });
 
+  it("round 14's faults (Priya's 409A): evidence shortened with an ellipsis is its pieces, each their words in order, two words or more", () => {
+    const ownText = "Hi Hannah,\n\nCongrats on the extension!\n\nWe've used Calder Valuation for our last two. Sarah Kim ran both (sarah@calder-valuation.example). Two weeks start to finish, very responsive.\n\nYes, I'd use them again.\n\nPriya";
+    const one = (evidence: string, verdict: "fulfilled" | "promise" = "fulfilled", text = ownText) => checkSentMail({ promises: [], expectsReply: false, awaiting: [], kept: [], answers: [{ label: "q1", verdict, evidence }] }, { ...base, ownText: text }).verdicts;
+    // the panel's own answer
+    expect(one("We've used Calder Valuation for our last two. ... Yes, I'd use them again.")).toEqual([{ request: { id: 7, revision: 2 }, verdict: "fulfilled" }]);
+    expect(one("We've used Calder Valuation… Yes, I'd use them again")).toHaveLength(1);
+    expect(one("We've used Calder Valuation [...] I'd use them again")).toHaveLength(1);
+    // out of order, a piece they didn't write, a piece of one word: nothing
+    expect(one("Yes, I'd use them again. ... We've used Calder Valuation")).toEqual([]);
+    expect(one("We've used Calder Valuation ... and they were cheap")).toEqual([]);
+    expect(one("We've used Calder Valuation ... Yes")).toEqual([]);
+    // their own ellipsis is read whole
+    expect(one("Well... yes, I'll do it", "fulfilled", "Well... yes, I'll do it.")).toHaveLength(1);
+    // a kept promise's evidence the same way
+    const open = new Map([["p1", { id: 3, revision: 1 } as never]]);
+    expect(checkSentMail({ promises: [], expectsReply: false, awaiting: [], kept: [{ label: "p1", evidence: "We've used Calder Valuation ... Yes, I'd use them again" }], answers: [] }, { ...base, ownText, open }).kept).toEqual([{ id: 3, revision: 1 }]);
+  });
+
   it("a promise that only holds it holds it, whatever the model called it (iteration 4); a \"done\" that's a promise's words is that promise", () => {
     const ownText = "Let me check my calendar and get back to you. I'll send it Wednesday.";
     const holding = { text: "check and get back to Ms. Greer", quote: "Let me check my calendar and get back to you", to: "r1", due: null };
