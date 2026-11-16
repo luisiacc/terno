@@ -248,6 +248,12 @@ export interface DatedStore {
      * after it waits for its requests (the follow-ups reader's verdict is on what's known)
      */
     pendingOn(threadId: number, before: number): Promise<boolean>;
+    /**
+     * Plan 210 (iteration 5, revision 3): the mark's one second look, claimed before it's asked: true the first time, false
+     * once claimed or with no mark, so a failure, a retry or a restart never asks it again (the mark keeps the claim until
+     * it's consumed)
+     */
+    claimLook(messageId: number, now: number): Promise<boolean>;
   };
   /** received mail since then a check could read, newest first: inbound, not a draft, sent, spam or trash, not from the user, not already marked or read */
   scanCandidates(since: number, limit: number): Promise<number[]>;
