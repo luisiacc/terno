@@ -583,6 +583,9 @@ describe("plan 210 (iteration 3)", () => {
       // no promise offered: the request stands, and the offer beside it, quoted from mid-sentence, is its own ask
       const partial = ask("Answer David about taking pictures of the papers", "I can swing by Saturday morning and take pictures of them with my phone. Just let me know.");
       expect(checkDates({ items: [papers, partial], settled: [] }, david).rows.map((r) => r.kind)).toEqual(["respond", "ask"]);
+      // its "just let me know" the next sentence, outside the quote (Luna)
+      const bare = ask("Answer David about taking pictures of the papers", "I can swing by Saturday morning and take pictures of them with my phone");
+      expect(checkDates({ items: [papers, bare], settled: [] }, david).rows.map((r) => r.kind)).toEqual(["respond", "ask"]);
       expect(checkDates({ items: [papers, { ...partial, kind: "respond", due: "2026-11-14" }], settled: [] }, david).rows.map((r) => [r.kind, r.dated])).toEqual([["respond", true], ["ask", false]]);
       // one for something else leaves the promise where it was
       const other = checkDates({ items: [{ ...papers, text: "Book a table for Ms. Greer" }], settled: [] }, { ...david, promises });
@@ -611,6 +614,10 @@ describe("plan 210 (iteration 3)", () => {
       const expire = { kind: "expire", text: "Renew quillworks.dev before it expires", quote: "Expiry date: 19/11/2026", due: "2026-11-19", time: null };
       expect(checkDates({ items: [renew, expire], settled: [] }, { ...base, text: domain }).rows.map((r) => r.kind)).toEqual(["renew"]);
       expect(checkDates({ items: [renew, { ...expire, due: "2026-11-20" }], settled: [] }, { ...base, text: domain }).rows).toHaveLength(2);
+    });
+    it("a sentence that only informs is no ask whatever part of it the model quoted (Haiku quoted 'the caterer is confirmed')", () => {
+      const text = "Nora, just so you know, the caterer is confirmed for Friday.";
+      expect(checkDates({ items: [ask("Answer Priya about the caterer", "the caterer is confirmed")], settled: [] }, person(text)).rows).toEqual([]);
     });
     it("the sender saying what they can do asks nothing; an offer that waits on a yes still does", () => {
       const nina = "I think we need an exec-to-exec call (our CRO with their new CIO) before the end of the month. Can you set that up? I can prep the usage story.";
