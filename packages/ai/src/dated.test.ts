@@ -94,6 +94,9 @@ describe("reading dates in mail you got (plan 204)", () => {
     });
     // the fifth panel round: cut at a word, never inside one
     expect(v.items.map((i) => i.text)).toEqual(["Debit card ending in 4821 frozen after an unrecognized $412.18 charge at Gulfway Fuel on March 2…", "Tarjeta bloqueada tras un cargo de $412.18", "Payroll funding of $48,210.55 failed"]);
+    // plan 210 (iteration 3): a trailing instruction goes (en, es); one inside what happened stays
+    const told = validate({ items: [item({ kind: "alert", text: "Streamly subscription payment failed; update the payment method to keep watching", due: null }), item({ kind: "alert", text: "El pago de la suscripción de Streamly no se procesó; actualizar el método de pago", due: null }), item({ kind: "alert", text: "Payment to update your plan failed", due: null })], settled: [], moved: [] });
+    expect(told.items.map((i) => i.text)).toEqual(["Streamly subscription payment failed", "El pago de la suscripción de Streamly no se procesó", "Payment to update your plan failed"]);
     // only an alert's: another kind keeps its words
     expect(validate({ items: [item({ text: "Pay what the email says" })], settled: [], moved: [] }).items[0]!.text).toBe("Pay what the email says");
   });
