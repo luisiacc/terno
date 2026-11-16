@@ -8,6 +8,7 @@ import {
   DIGEST_KEEP_DAYS,
   DIGEST_WINDOW_MS,
   findCode,
+  HANDOFF_ITEMS_MAX,
   languageName,
   NOT_NEWSLETTER_NAME_MAX,
   NOT_NEWSLETTERS_MAX,
@@ -28,6 +29,7 @@ import {
   type DigestItem,
   type DigestRow,
   type FeedRowId,
+  type HandoffItem,
   type ItemSeen,
   type NotNewsletter,
   type ProjectedRow,
@@ -831,6 +833,30 @@ export class TodayService {
    * all or none. Its Undo puts every one back. A promise of yours goes through here from anywhere (the feed, the
    * conversation's card), so a duplicate is never left behind.
    */
+  /**
+   * The items an act on a row is (Codex code review of iteration 2: read alone with the matcher, `links.exclusive`): every
+   * item it's the same thing as, the named ones whatever their state (one closed since is stale), the others while they're
+   * open; with `answering`, the open requests (every reading) the row's promises answer, which Done finishes with them.
+   */
+  private async rowItems(seen: readonly ItemSeen[], answering: boolean): Promise<{ at: Map<string, number>; datedNow: DatedRow[]; promisesNow: FollowupRow[]; answered: DatedRow[] }> {
+    const { store } = this.b;
+    const named = await Promise.all(seen.map((r) => (r.source === "dated" ? store.dated.get(r.id) : store.followups.get(r.id))));
+    if (named.some((r) => !r)) throw new RpcError("STALE", L(seen[0]?.source === "promise" ? "errors.followups.changed" : "errors.dated.changed"));
+    const { dated, promises } = await store.today.members(named.map((r, i) => r!.sameAs ?? refKey(seen[i]!)));
+    const at = new Map(seen.map((r) => [refKey(r), r.revision]));
+    const datedNow = dated.filter((r) => at.has(refKey({ source: "dated", id: r.id })) || r.state === "open");
+    const promisesNow = promises.filter((r) => at.has(refKey({ source: "promise", id: r.id })) || r.state === "open" || r.state === "due");
+    // plan 210 (iteration 3, the Codex review's revision 3): Done on a promise finishes the request it answers with it (its
+    // Undo puts both back); Remove and Later are the promise's alone. Hidden from the history: the promise's line says it
+    const asking = answering ? [...new Set(promisesNow.flatMap((p) => (p.answers != null ? [p.answers] : [])))] : [];
+    const asked = (await Promise.all(asking.map((id) => store.dated.get(id)))).filter((r): r is DatedRow => r?.state === "open");
+    // (Codex code review of iteration 3) the request's item, every reading of it: the projection hides them with the
+    // promise (`withoutAnswered`), so they're settled with it, at once, and come back with its Undo
+    const actedOn = new Set(datedNow.map((r) => r.id));
+    const answered = asked.length ? (await store.today.members(asked.map((r) => r.sameAs ?? refKey({ source: "dated", id: r.id })))).dated.filter((r) => r.state === "open" && !actedOn.has(r.id)) : [];
+    return { at, datedNow, promisesNow, answered };
+  }
+
   async act(seen: readonly ItemSeen[], action: "done" | "dismiss" | "later", until?: number): Promise<{ undoId: string | null }> {
     const { store } = this.b;
     const now = this.b.now();
@@ -838,24 +864,10 @@ export class TodayService {
     if (action === "later" && (until === undefined || until <= now)) throw new RpcError("BAD_REQUEST", L("errors.dated.later"));
     // (Codex code review of iteration 2) alone with the matcher: no member joins between reading the members and the write
     const before = await this.links.exclusive(async () => {
-      const named = await Promise.all(seen.map((r) => (r.source === "dated" ? store.dated.get(r.id) : store.followups.get(r.id))));
-      if (named.some((r) => !r)) throw stale();
-      const { dated, promises } = await store.today.members(named.map((r, i) => r!.sameAs ?? refKey(seen[i]!)));
-      const at = new Map(seen.map((r) => [refKey(r), r.revision]));
-      // the named ones whatever their state (one closed since is stale), the others while they're open
-      const datedNow = dated.filter((r) => at.has(refKey({ source: "dated", id: r.id })) || r.state === "open");
-      const promisesNow = promises.filter((r) => at.has(refKey({ source: "promise", id: r.id })) || r.state === "open" || r.state === "due");
+      const { at, datedNow, promisesNow, answered } = await this.rowItems(seen, action === "done");
       // the third panel round: Later's own rule on each dated one (a timed item still ahead, before its moment; a Plan, its end)
       if (action === "later" && datedNow.some((r) => (laterBefore(r, now) ?? Infinity) <= until!)) throw new RpcError("BAD_REQUEST", L("errors.dated.laterLate"));
       const patch = patchesFor(action, now, until);
-      // plan 210 (iteration 3, the Codex review's revision 3): Done on a promise finishes the request it answers with it (its
-      // Undo puts both back); Remove and Later are the promise's alone. Hidden from the history: the promise's line says it
-      const answering = action === "done" ? [...new Set(promisesNow.flatMap((p) => (p.answers != null ? [p.answers] : [])))] : [];
-      const asked = (await Promise.all(answering.map((id) => store.dated.get(id)))).filter((r): r is DatedRow => r?.state === "open");
-      // (Codex code review of iteration 3) the request's item, every reading of it: the projection hides them with the
-      // promise (`withoutAnswered`), so they're settled with it, at once, and come back with its Undo
-      const actedOn = new Set(datedNow.map((r) => r.id));
-      const answered = asked.length ? (await store.today.members(asked.map((r) => r.sameAs ?? refKey({ source: "dated", id: r.id })))).dated.filter((r) => r.state === "open" && !actedOn.has(r.id)) : [];
       return store.today.act({
         dated: [
           ...datedNow.map((r) => ({ id: r.id, revision: at.get(refKey({ source: "dated", id: r.id })) ?? r.revision, patch: patch.dated })),
@@ -871,6 +883,39 @@ export class TodayService {
     this.changed();
     if (before.promises.length) await this.b.followups.look();
     return { undoId };
+  }
+
+  /**
+   * Plan 210 (iteration 4): Hand to…: what the row's hand-off will close when its forward is confirmed, resolved as Done on
+   * it would be (its members, what its promises answer), each at its revision now; and the message its forward forwards
+   * (the named item's own). Nothing changes here: the forward's confirmed send closes them (`handoffConfirmed`).
+   */
+  async handoff(seen: ItemSeen): Promise<{ threadId: number; messageId: number; items: HandoffItem[] }> {
+    const { store } = this.b;
+    const stale = () => new RpcError("STALE", L(seen.source === "promise" ? "errors.followups.changed" : "errors.dated.changed"));
+    return this.links.exclusive(async () => {
+      const { at, datedNow, promisesNow, answered } = await this.rowItems([seen], true);
+      const own = seen.source === "dated" ? datedNow.find((r) => r.id === seen.id) : promisesNow.find((r) => r.id === seen.id);
+      // handed as it was seen: one changed or closed since is stale, as an act on it would be
+      if (!own || own.revision !== seen.revision || !(own.state === "open" || own.state === "due")) throw stale();
+      const named = (source: "dated" | "promise", id: number) => at.has(refKey({ source, id }));
+      const items: HandoffItem[] = [
+        ...datedNow.map((r) => ({ source: "dated" as const, id: r.id, revision: r.revision, ...(named("dated", r.id) && { named: true }) })),
+        ...promisesNow.map((r) => ({ source: "promise" as const, id: r.id, revision: r.revision, ...(named("promise", r.id) && { named: true }) })),
+        ...answered.map((r) => ({ source: "dated" as const, id: r.id, revision: r.revision, answered: true })),
+      ];
+      if (items.length > HANDOFF_ITEMS_MAX) throw new RpcError("BAD_REQUEST", L("whatMatters.handTo.tooMany"));
+      const thread = (await store.threads.summaries([own.threadId]))[0];
+      // a conversation in Spam or Trash, or gone, isn't handed on from What matters
+      if (!thread || thread.inSpam || thread.inTrash) throw stale();
+      return { threadId: own.threadId, messageId: own.messageId, items };
+    });
+  }
+
+  /** Plan 210 (iteration 4): a forward's confirmed send closed its hand-off's items: the list, the count and Follow-ups follow. */
+  handed(): void {
+    this.changed();
+    void this.b.followups.look().catch((error: unknown) => captureError(error, { code: "ai.failed" }));
   }
 
   /** An act's Undo: every item back as it was, or none when one changed since. */

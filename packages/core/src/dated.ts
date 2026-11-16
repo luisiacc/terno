@@ -111,6 +111,8 @@ export interface DatedRow {
   changedFrom?: ItemSchedule | null;
   /** Plan 210 (iteration 4): a later mail's move of a user-scheduled item, waiting for the user's "Use". Null: none */
   proposal?: ScheduleProposal | null;
+  /** Plan 210 (iteration 4): whom it was handed to (`closedReason` `handed`), as the confirmed forward went. Absent: not handed */
+  handedTo?: import("./handoff").HandedTo | null;
 }
 
 export interface DatedSetting {

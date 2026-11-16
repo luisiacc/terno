@@ -1,4 +1,4 @@
-import { defaultRemindAt, refKey, type DatedRow, type FollowupRow, type ScheduleProposal, type ThreadDetail } from "@terno/core";
+import { defaultRemindAt, HANDED, refKey, type DatedRow, type FollowupRow, type ScheduleProposal, type ThreadDetail } from "@terno/core";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuShortcut, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
@@ -234,8 +234,10 @@ function ItemProposal({ item, target, proposal }: { item: ReaderItem; target: Ch
 function outcomeOf(item: ReaderItem): string {
   const state = item.row.state;
   // plan 210 (iteration 3): a promise its person replaced says so
-  const outcome = item.source === "promise" && item.row.closedReason === "replaced" ? "replaced" : state === "done" ? "done" : state === "settled" ? "settled" : "dismissed";
-  return historyWhen({ outcome, kind: item.source === "dated" ? item.row.kind : "promise", key: { at: item.row.closedAt ?? item.row.createdAt, src: item.source === "dated" ? 0 : 1, id: item.row.id } });
+  // (iteration 4) one handed on by a confirmed forward says to whom
+  const handed = state === "done" && item.row.closedReason === HANDED && item.row.handedTo ? item.row.handedTo : undefined;
+  const outcome = item.source === "promise" && item.row.closedReason === "replaced" ? "replaced" : handed ? "handed" : state === "done" ? "done" : state === "settled" ? "settled" : "dismissed";
+  return historyWhen({ outcome, kind: item.source === "dated" ? item.row.kind : "promise", key: { at: item.row.closedAt ?? item.row.createdAt, src: item.source === "dated" ? 0 : 1, id: item.row.id }, ...(handed && { handedTo: handed }) });
 }
 
 /**

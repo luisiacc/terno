@@ -1,5 +1,5 @@
 import { AiError, FOLLOWUP_ANSWERING_CHARS, FOLLOWUP_OPEN_MAX, FOLLOWUP_OWN_CHARS, FOLLOWUP_PROMPT_VERSION, FOLLOWUP_REQUESTS_MAX, fitSentMail, followupBudget, costAt, priceOf, type AiTasks, type SentMailResult } from "@terno/ai";
-import { ANSWERED_KINDS, automatedLevel, byUrgency, followupDue, followupWakeAt, normalizeText, promiseOver, readCorpus, refKey, SCAN_DAYS, SCAN_MESSAGES_MAX, SCAN_PROMISE_OVERDUE_MS, SCAN_WAIT_STALE_MS, validFollowupDate, withNeeds, withoutQuotes, followupNotice, type AiErrorKind, type DatedRow, type FollowupRow, type FollowupsSnapshot, type MailNotice, type ThreadSummary } from "@terno/core";
+import { ANSWERED_KINDS, automatedLevel, byUrgency, followupDue, NUDGE_DEFAULT, followupWakeAt, normalizeText, promiseOver, readCorpus, refKey, SCAN_DAYS, SCAN_MESSAGES_MAX, SCAN_PROMISE_OVERDUE_MS, SCAN_WAIT_STALE_MS, validFollowupDate, withNeeds, withoutQuotes, followupNotice, type AiErrorKind, type DatedRow, type FollowupRow, type FollowupsSnapshot, type MailNotice, type ThreadSummary } from "@terno/core";
 import { captureError } from "@terno/core/diag";
 import { RpcError, type AppSettings } from "@terno/core/rpc";
 import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
@@ -152,6 +152,7 @@ export function scanKeeps(row: Pick<FollowupWrite, "kind" | "dueAt">, sentAt: nu
 export class FollowupWorker {
   private active = false;
   private enabledAt: number | null = null;
+  private nudgeDays: number = NUDGE_DEFAULT;
   /** the one request running, and whose: an account's opt-out stops it */
   private reading: { accountId: number; controller: AbortController } | null = null;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -181,6 +182,10 @@ export class FollowupWorker {
   get since(): number | null {
     return this.enabledAt;
   }
+  /** plan 210 (iteration 4): when a wait comes due, as set (a handed forward's own wait is seeded with it) */
+  get nudgeAfterDays(): number {
+    return this.nudgeDays;
+  }
   /** a live timer waiting on a provider (null otherwise); for tests */
   get retrying(): ReturnType<typeof setTimeout> | null {
     return this.retryTimer;
@@ -193,9 +198,10 @@ export class FollowupWorker {
   }
 
   async start(): Promise<void> {
-    const { enabled, enabledAt } = (await this.host.settings()).followups;
+    const { enabled, enabledAt, nudgeAfterDays } = (await this.host.settings()).followups;
     this.active = enabled;
     this.enabledAt = enabledAt;
+    this.nudgeDays = nudgeAfterDays;
     if (this.stopped) return;
     await this.look();
     if (this.active) this.wake();
@@ -243,6 +249,7 @@ export class FollowupWorker {
     const off = this.active && !on;
     this.active = on;
     this.enabledAt = settings.followups.enabledAt;
+    this.nudgeDays = settings.followups.nudgeAfterDays;
     const wasPaused = this.paused !== null;
     this.paused = null;
     if (wasPaused) this.host.statusChanged(this.status());

@@ -1,5 +1,5 @@
 import { RpcError, type Draft, type DraftAddress, type Handlers } from "@terno/core/rpc";
-import { agentsMaySend, capFilterName, categoryRule, folderRule, isFilterable, similarValue, COUNT_CAP, type AlwaysScope, LEARNED_FILTER_NAME, messageOf, proposeLearnedFilters, listFilterOf, LIST_FILTERS, matchExcerpt, parseSearch, resolveSearch, rowMatchOf, searchWithFilter, type ThreadAction, type AccountPrefs, PINS_MAX, REMINDERS_MAX, SCHEDULED_MAX, FORWARD_ADDRESSES_MAX_CHARS } from "@terno/core";
+import { agentsMaySend, parseHandoff, capFilterName, categoryRule, folderRule, isFilterable, similarValue, COUNT_CAP, type AlwaysScope, LEARNED_FILTER_NAME, messageOf, proposeLearnedFilters, listFilterOf, LIST_FILTERS, matchExcerpt, parseSearch, resolveSearch, rowMatchOf, searchWithFilter, type ThreadAction, type AccountPrefs, PINS_MAX, REMINDERS_MAX, SCHEDULED_MAX, FORWARD_ADDRESSES_MAX_CHARS } from "@terno/core";
 import { L } from "@terno/i18n";
 import { movedNothing, SearchCancelledError, StaleCursorError, type AddedBy, type DraftRow, type FolderMoved, type MessageState } from "@terno/store";
 import { GMAIL_SCOPES } from "@terno/mail/portable";
@@ -69,6 +69,8 @@ function toDraft(r: DraftRow): Draft {
     presentationThreadId: r.presentation_thread_id ?? null,
     uiState: r.ui_state,
     updatedAt: r.updated_at,
+    // plan 210 (iteration 4): a forward's hand-off, as stored (only a forward keeps one)
+    handoff: parseHandoff(r.handoff_json ?? null),
   };
 }
 
@@ -1151,7 +1153,8 @@ export function createHandlers(b: Backend): Handlers {
 
     "drafts.save": async (p, ctx) => {
       // a rich body only from the renderer (an agent's save is plain text, and rewrites the body)
-      const saved = await store.drafts.save(ctx.origin === "renderer" ? p : { ...p, bodyHtml: "" }, b.now());
+      // (plan 210, iteration 4: a hand-off is set only by Hand to… in the app; an agent's save keeps what's stored)
+      const saved = await store.drafts.save(ctx.origin === "renderer" ? p : { ...p, bodyHtml: "", handoff: undefined }, b.now());
       // plan 94: an edit to a scheduled draft (another window still had it open) wins: it is a draft again
       if (saved && (b.scheduled.has(saved.id) || (p.id !== undefined && b.scheduled.has(p.id)))) {
         if (await store.scheduled.delete(saved.id)) b.server.emit("drafts", { reason: "scheduled" });
@@ -1569,6 +1572,7 @@ export function createHandlers(b: Backend): Handlers {
     "ai.ask": (p, ctx) => b.ask.ask(p, ctx.clientId),
     "today.list": ({ held, history }) => b.today.list(held, { history }),
     "today.history": ({ after, limit, held }) => b.today.history({ after, limit, held }),
+    "today.handoff": (seen) => b.today.handoff(seen),
     "today.digest": () => b.today.digestRow(),
     "today.digestRetry": async () => {
       await b.today.retry();

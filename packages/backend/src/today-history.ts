@@ -1,4 +1,4 @@
-import { changeLineId, DATED_CLOSED_KEEP_MS, historyAfter, historyOrder, refKey, type HistorySource, type DatedRow, type FeedRowId, type FollowupRow, type HistoryKey, type HistoryOutcome, type ItemRef, type ThreadSummary, type TodayHistoryItem, type TodayHistoryPage } from "@terno/core";
+import { changeLineId, DATED_CLOSED_KEEP_MS, HANDED, historyAfter, historyOrder, refKey, type HistorySource, type DatedRow, type FeedRowId, type FollowupRow, type HistoryKey, type HistoryOutcome, type ItemRef, type ThreadSummary, type TodayHistoryItem, type TodayHistoryPage } from "@terno/core";
 import { ANSWERED_WITH_PROMISE, type ClosedAt, type MailStore } from "@terno/store";
 import { withoutUntrusted } from "./suspicious-sender";
 
@@ -44,8 +44,9 @@ export interface HistoryAsk {
   sliceMs: number;
 }
 
-// plan 210 (iteration 3, revision 4): a promise its person replaced (`finishDated`) is neither done nor removed
-const outcomeOf = (r: { state: string; closedReason: string | null }): HistoryOutcome => (r.closedReason === "replaced" ? "replaced" : r.state === "done" ? "done" : r.state === "settled" ? "settled" : r.closedReason === "expired" ? "over" : "dismissed");
+// plan 210 (iteration 3, revision 4): a promise its person replaced (`finishDated`) is neither done nor removed; (iteration 4)
+// one handed to a person by a confirmed forward says to whom
+const outcomeOf = (r: { state: string; closedReason: string | null }): HistoryOutcome => (r.closedReason === "replaced" ? "replaced" : r.closedReason === HANDED && r.state === "done" ? "handed" : r.state === "done" ? "done" : r.state === "settled" ? "settled" : r.closedReason === "expired" ? "over" : "dismissed");
 
 type Row = (DatedRow & { src: 0 }) | (FollowupRow & { src: 1 });
 /** plan 210 (iteration 4): an open item the user changed, at its change */
@@ -177,7 +178,8 @@ export async function historyPage(store: MailStore, o: HistoryAsk): Promise<Toda
     if (!thread || thread.inSpam || thread.inTrash || o.held.has(id) || !group || group.open || !group.newest || historyOrder(group.newest, head.key) !== 0) continue;
     // plan 210 (iteration 3): a request finished with the promise that answered it is that promise's line
     if (row.src === 0 && row.closedReason === ANSWERED_WITH_PROMISE) continue;
-    items.push({ id, item: { source: sourceOf(row.src), id: row.id }, thread, key: head.key, outcome: outcomeOf(row), kind: row.src === 0 ? row.kind : "promise", text: row.text });
+    const outcome = outcomeOf(row);
+    items.push({ id, item: { source: sourceOf(row.src), id: row.id }, thread, key: head.key, outcome, kind: row.src === 0 ? row.kind : "promise", text: row.text, ...(outcome === "handed" && row.handedTo && { handedTo: row.handedTo }) });
     if (!o.through && items.length >= o.limit) {
       next = head.key;
       break;

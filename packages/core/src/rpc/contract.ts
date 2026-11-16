@@ -24,6 +24,7 @@ import {
 } from "../ai";
 import type { FollowupRow, FollowupsSetting, FollowupsSnapshot } from "../followups";
 import type { DatedRow, DatedSetting } from "../dated";
+import { HANDOFF_ITEMS_MAX, type Handoff, type HandoffItem } from "../handoff";
 import { HISTORY_PAGE, NOT_NEWSLETTERS_OVER, type DigestRow, type NotNewsletter, type TodayHistoryPage, type TodayList, type TodaySetting } from "../today";
 import type { AiPrepareReply, AiReplyEvent, PreparedReply, RepliesSetting } from "../replies";
 import type { ActionPreviewInfo, ActionRowTag, AiActionApplied, AiActionCheck, AiActionEvent, AiActionStart } from "../actions";
@@ -69,6 +70,8 @@ const id = z.number().int().positive();
 const historyKey = z.object({ at: z.number().int().nonnegative(), src: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]), id });
 /** plan 210 (iteration 2): a What matters row's id ("dated:42", "promise:7", "waiting:12", "reminder:12") */
 const feedRowId = z.string().regex(/^(?:dated|promise|waiting|reminder):\d{1,15}$/);
+/** plan 210 (iteration 4): a hand-off saved with its forward's draft (`parseHandoff` reads it back the same way) */
+const handoff = z.object({ items: z.array(z.object({ source: z.enum(["dated", "promise"]), id, revision: z.number().int().min(0), named: z.boolean().optional(), answered: z.boolean().optional() }).strict()).min(1).max(HANDOFF_ITEMS_MAX) }).strict();
 /** days of mail an account downloads (settings, an account, connecting one) */
 const syncWindow = z.number().int().min(7).max(3650);
 const ids = z.array(id).min(1).max(5000);
@@ -477,6 +480,8 @@ export interface Draft {
   presentationThreadId?: number | null;
   uiState: "open" | "collapsed";
   updatedAt: number;
+  /** plan 210 (iteration 4): a forward that hands an item of What matters to its recipient (null: none) */
+  handoff?: Handoff | null;
 }
 
 export interface AiTestResult {
@@ -1084,6 +1089,8 @@ export const contract = {
       forwardOfMessageId: id.nullable().optional(),
       showSourceContext: z.boolean().optional(),
       uiState: z.enum(["open", "collapsed"]).optional(),
+      // plan 210 (iteration 4): kept only on a forward; absent keeps what's stored, null clears it
+      handoff: handoff.nullable().optional(),
     }),
   ),
   /** plan 18: a draft or a recipient field opened: the autocomplete models restore or build (once) */
@@ -1294,6 +1301,11 @@ export const contract = {
   // plan 210: with `history`, the history's first page too, or down to and including `through` (a reload keeping its depth)
   "today.list": m<TodayList>()(z.object({ held: z.array(feedRowId).max(500).default([]), history: z.object({ through: historyKey.nullable() }).optional() })),
   /** plan 210: the history's lines strictly after `after`, at most `limit`; held rows are left out as the list leaves them */
+  /**
+   * Plan 210 (iteration 4): Hand to…: the item as it was seen, resolved as an act on its row would be (its members, what a
+   * promise of it answers), with the message its forward forwards. Nothing changes until that forward's send is confirmed
+   */
+  "today.handoff": m<{ threadId: number; messageId: number; items: HandoffItem[] }>()(z.object({ source: z.enum(["dated", "promise"]), id, revision: z.number().int().min(0) }).strict()),
   "today.history": m<TodayHistoryPage>()(z.object({ after: historyKey, limit: z.number().int().min(1).max(100).default(HISTORY_PAGE), held: z.array(feedRowId).max(500).default([]) })),
   "today.digest": m<DigestRow | null>()(z.object({ day: z.string().max(10).optional() })),
   /** a person's try again */

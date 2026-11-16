@@ -32,7 +32,8 @@ import { COOLDOWN_TICKETS, bindCooldown, decodeCooldown, encodeCooldown, mailbox
 import { keptThreads, resolveSimilarPage, similarOffers, similarScopesOf } from "./similar";
 import { removeStorage, storageThreads } from "./storage";
 import { assetAccounting } from "./asset-accounting";
-import { attachmentMessageBudgetAsync } from "@terno/core";
+import { attachmentMessageBudgetAsync, parseHandoff } from "@terno/core";
+import { handoffConfirmed } from "./handoff";
 import { mergeBefore, sameImapLocations, reaffirmSavedFlagIntent, acceptFlagObservation, flagEpochs, flagReconciliation, flagObservationValid, flagTick, initializeFlagStep, rearmFlagEffects, settleFlagEffects, startFlagObservation } from "@terno/store";
 import { bindIdbPromotedFlags, idbFlags, idbFlagSnapshots, prepareIdbFlagPage } from "./flag-intents";
 import { appendAsset, assetError, assetRef, assetRow, createAsset, ASSET_CLEANUP_STEPS, cleanupAssets, validateAssetCreation, linkAssets, sealAsset, stageAttachments, validateAssets } from "@terno/store";
@@ -1444,6 +1445,8 @@ export class IdbMailStore implements MailStore {
         const localId = (JSON.parse(op.target_json) as { messageIds?: number[] }).messageIds?.[0];
         // plan 142 revision 3: only a confirmed send closes a wait, in the commit that records it
         if (op.kind === "send" && localId) followupSendConfirmed(this.c, localId, now, o?.followup === true, o?.since);
+        // plan 210 (iteration 4): as SQL's: a forward's hand-off closes its items here, and nowhere else
+        const handed = op.kind === "send" && !!localId && handoffConfirmed(this.c, op.target_json, localId, now, o ?? {});
         if (op.kind === "send" && result && localId) {
           const messages = T(this.c, "messages");
           const local = messages.get(localId);
@@ -1457,7 +1460,7 @@ export class IdbMailStore implements MailStore {
             if (row) touched.push(adoptProviderThread(this.c, row.thread_id, op.account_id, result.providerThreadId, undefined, deltas));
           }
         }
-        return { touched, deltas, ...(refreshNeeded && { flagReconcileAccounts: [op.account_id] }) };
+        return { touched, deltas, ...(handed && { handed }), ...(refreshNeeded && { flagReconcileAccounts: [op.account_id] }) };
       }),
     fail: (id, error, retryable, now, park) =>
       this.preparedFlagOutcome(id, () => {
@@ -1718,7 +1721,9 @@ export class IdbMailStore implements MailStore {
           preparedRecipients ?? undefined,
         );
         const localId = ingest.inserted[0]!;
-        const opId = enqueueOp(this.c, { accountId: p.accountId, kind: "send", target: { messageIds: [localId] }, payload }, p.now)!;
+        // plan 210 (iteration 4): the forward's hand-off goes with its send, its draft's as it was at this revision
+        const handoff = draft?.mode === "forward" ? parseHandoff(draft.handoff_json ?? null) : null;
+        const opId = enqueueOp(this.c, { accountId: p.accountId, kind: "send", target: { messageIds: [localId], ...(handoff && { handoff }) }, payload }, p.now)!;
         if (account.kind === "imap") { if (!preparedRecipients) throw new RpcError("BAD_REQUEST", L("errors.accountGone")); reserveRecipientReceipt(idbRecipientReceipts(this.db), opId, p.accountId, p.now, preparedRecipients); }
         if (account.kind === "imap") reserveSendCopy(idbSendCopies(this.db), opId, p.accountId, p.now, p.to.length + p.cc.length + p.bcc.length, !!(cfg.config as { appendToSent?: boolean }).appendToSent);
         linkAssets(idbAssets(this.db), "op", opId, attachments);
