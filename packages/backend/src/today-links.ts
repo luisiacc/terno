@@ -110,25 +110,38 @@ const ATTEND = /(?<![\p{L}])(?:attend(?:ing)?|be (?:there|at|in)|join(?:ing)?|co
 const DELIVERS = /(?<![\p{L}])(?:send(?:ing)?|bring(?:ing)?|share|sign|pay|e-?mail|forward|submit|upload|deliver|prepare|enviar(?:é)?|env[ií]o|mandar(?:é)?|mando|traer(?:é)?|traigo|compartir(?:é)?|firmar(?:é)?|pagar(?:é)?|subir(?:é)?|entregar(?:é)?|preparar(?:é)?)(?![\p{L}])/iu;
 
 /**
+ * Plan 210 (iteration 4): what you'll bring to an event, or who comes with you: "bring … for/to the <event>" (Jordan's
+ * "I'll bring our CSM, Nina, and our solutions engineer for the Memphis conversation"), en and es; the words after "for"
+ * or "to" are what it names.
+ */
+const BRINGS = /(?<![\p{L}])(?:bring(?:ing)?|traer(?:é)?|traigo|llevar(?:é)?|llevo)(?![\p{L}])[^.;]*?(?<![\p{L}])(?:for|to|para|al?)\s+(?:the|this|our|your|that|la|el|los|las|esta|este|ese|esa|nuestra|nuestro|tu)\s+([^.;,]+)/iu;
+
+/**
  * Plan 210 (iteration 3, revision 9): your promise to attend is the event it names, in the same conversation, on its day:
  * the event's words in the promise's (the attending words aside: "attend the tech check", "I'll be there for the tech
  * check"), and, when several of that day's events share them, the promise's own time. Never by a shared day alone: "I'll be
- * there for the tech check" isn't that evening's keynote. The event leads the row. `events`: the conversation's that day.
- * The promise's own words say it's to attend, and only that (Codex code review): its quote is the sentence it came from,
- * which may say more ("I'll attend the tech check and send its slides tonight": the slides are a promise of their own, and
- * Done on the event, or its day passing, must never finish them).
+ * there for the tech check" isn't that evening's keynote. The event leads the row. The promise's own words say it's to
+ * attend, and only that (Codex code review): its quote is the sentence it came from, which may say more ("I'll attend the
+ * tech check and send its slides tonight": the slides are a promise of their own, and Done on the event, or its day
+ * passing, must never finish them). Iteration 4: so is what you'll bring to it or who comes with you ("bring … for/to the
+ * <event>": named by the words after "for", or the conversation's only event when they name none), and a promise with no
+ * day, among the conversation's events. `events`: the conversation's that day, or (no day) all of its open ones.
  */
 export function attendsEvent(p: FollowupRow, events: readonly DatedRow[]): DatedRow | null {
-  if (p.kind !== "promise" || !p.dated || !events.length) return null;
+  if (p.kind !== "promise" || !events.length) return null;
   ATTEND.lastIndex = 0;
-  if (!ATTEND.test(p.text) || DELIVERS.test(p.text)) return null;
-  const day = dayKeyOf(p.dueAt);
-  const same = events.filter((e) => e.kind === "event" && e.threadId === p.threadId && e.dueDay === day);
-  const words = namingWords(p.text.replace(ATTEND, " "));
+  const brings = BRINGS.exec(p.text);
+  const attends = !brings && ATTEND.test(p.text);
+  // what it hands over besides: the bring itself aside ("bring … for the"), nothing
+  if ((!brings && !attends) || DELIVERS.test(brings ? p.text.replace(brings[0].slice(0, brings[0].length - brings[1]!.length), " ") : p.text)) return null;
+  const day = p.dated ? dayKeyOf(p.dueAt) : null;
+  const same = events.filter((e) => e.kind === "event" && e.threadId === p.threadId && (day === null || e.dueDay === day));
+  const words = namingWords(brings ? brings[1]! : p.text.replace(ATTEND, " "));
   let named = same.filter((e) => shares(words, namingWords(e.text)));
   // several named: the promise's time picks one
-  if (named.length > 1 && p.timed) named = named.filter((e) => e.timed && e.dueAt === p.dueAt);
-  return named.length === 1 ? named[0]! : null;
+  if (named.length > 1 && p.dated && p.timed) named = named.filter((e) => e.timed && e.dueAt === p.dueAt);
+  if (named.length === 1) return named[0]!;
+  return brings && !named.length && same.length === 1 ? same[0]! : null;
 }
 
 const TRAVEL = /\b(flights?|vuelos?|trains?|tren(?:es)?|ferr(?:y|ies)|return|regreso|vuelta)\b/iu;
@@ -166,6 +179,8 @@ export function findLinks(dated: readonly DatedRow[], promises: readonly Followu
   const datedByThread = new Map<number, DatedRow[]>();
   /** plan 210 (iteration 3): a conversation's events of a day ("thread:day"), what a promise to attend may name */
   const eventsByDay = new Map<string, DatedRow[]>();
+  /** (iteration 4) a conversation's events, what a promise with no day may name */
+  const eventsByThread = new Map<number, DatedRow[]>();
   const promisesByThread = new Map<number, FollowupRow[]>();
   const promisesByMessage = new Map<number, FollowupRow[]>();
   const push = <K, V>(m: Map<K, V[]>, k: K, v: V) => {
@@ -177,6 +192,7 @@ export function findLinks(dated: readonly DatedRow[], promises: readonly Followu
     if (r.kind === "event" && r.timed) push(byMoment, r.dueAt, r);
     if (r.kind === "event") push(byMessage, r.messageId, r);
     if (r.kind === "event") push(eventsByDay, `${r.threadId}:${r.dueDay}`, r);
+    if (r.kind === "event") push(eventsByThread, r.threadId, r);
     if (ERRANDS.has(r.kind)) push(datedByThread, r.threadId, r);
   }
   for (const p of promises) {
@@ -219,6 +235,7 @@ export function findLinks(dated: readonly DatedRow[], promises: readonly Followu
     out.same.push({ item: { source, id: row.id }, sameAs: to });
   };
   const isFresh = (source: ItemRef["source"], r: { id: number; threadId: number }) => fresh(own(source, r), r.threadId);
+  const eventsOf = (p: FollowupRow) => (p.dated ? eventsByDay.get(`${p.threadId}:${dayKeyOf(p.dueAt)}`) : eventsByThread.get(p.threadId)) ?? [];
   for (const r of dated) {
     if (!isFresh("dated", r)) continue;
     const other = r.kind === "event" && r.timed ? byMoment.get(r.dueAt)?.find((o) => o.id !== r.id && older(o, r) && sameEvent(o, r)) : undefined;
@@ -236,10 +253,7 @@ export function findLinks(dated: readonly DatedRow[], promises: readonly Followu
       else if (promise) join("promise", promise, canonicalOf("dated", r));
     }
     // plan 210 (iteration 3): a promise already here to attend this new event joins it, the event leading
-    if (r.kind === "event") {
-      const events = eventsByDay.get(`${r.threadId}:${r.dueDay}`) ?? [];
-      for (const p of promisesByThread.get(r.threadId) ?? []) if (attendsEvent(p, events) === r) join("promise", p, canonicalOf("dated", r));
-    }
+    if (r.kind === "event") for (const p of promisesByThread.get(r.threadId) ?? []) if (attendsEvent(p, eventsOf(p)) === r) join("promise", p, canonicalOf("dated", r));
   }
   for (const p of promises) {
     if (p.kind !== "promise" || !isFresh("promise", p)) continue;
@@ -249,7 +263,7 @@ export function findLinks(dated: readonly DatedRow[], promises: readonly Followu
     if (same && !promiseOlder(p, same)) join("promise", p, canonicalOf("dated", same));
     else if (same) join("dated", same, canonicalOf("promise", p));
     // plan 210 (iteration 3): your promise to attend is the event it names, whichever came first: the event leads
-    const event = attendsEvent(p, eventsByDay.get(`${p.threadId}:${dayKeyOf(p.dueAt)}`) ?? []);
+    const event = attendsEvent(p, eventsOf(p));
     if (event) join("promise", p, canonicalOf("dated", event));
   }
   return out;

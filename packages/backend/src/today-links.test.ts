@@ -137,6 +137,37 @@ describe("findLinks", () => {
     expect(attendsEvent(promise("ir al partido de Sofía y mandar las fotos", { threadId: 20, dueAt: local(9) }), [partido])).toBeNull();
   });
 
+  it("plan 210 (iteration 4): who comes with you to an event, or what you'll bring to it, is the event's, with a day or none; never what you'll send besides", () => {
+    const local = (h: number, d = 17) => new Date(2026, 10, d, h).getTime();
+    // Jordan: "confirmed, thank you. I'll bring our CSM, Nina, and our solutions engineer for the Memphis conversation"
+    const qbr = dated("event", "Q4 business review with Halvorsen Logistics", { threadId: 16, messageId: 21, dueDay: "2026-11-17", dueAt: local(14) });
+    const bring = promise("bring your CSM Nina and your solutions engineer for the Memphis conversation", { threadId: 16, messageId: 22, dated: false, dueAt: local(9, 9) });
+    // the words after "for" name no event: the conversation's only one
+    expect(attendsEvent(bring, [qbr])).toBe(qbr);
+    expect(findLinks([qbr], [bring], all).same).toEqual([{ item: { source: "promise", id: bring.id }, sameAs: `dated:${qbr.id}` }]);
+    // the reply's other promise is its own: the agenda isn't brought, it's sent
+    const agenda = promise("send Grace the agenda", { threadId: 16, messageId: 22, item: 1, dueAt: local(9, 13) });
+    expect(attendsEvent(agenda, [qbr])).toBeNull();
+    expect(findLinks([qbr], [bring, agenda], all).same.map((l) => l.item.id)).toEqual([bring.id]);
+    // two events in the conversation: only the one its words name, else neither
+    const dinner = dated("event", "Team dinner after the review", { threadId: 16, messageId: 21, item: 1, dueDay: "2026-11-17", dueAt: local(19) });
+    expect(attendsEvent(bring, [qbr, dinner])).toBeNull();
+    expect(attendsEvent(promise("bring the printed deck to the Halvorsen meeting", { threadId: 16, dated: false }), [qbr, dinner])).toBe(qbr);
+    // with a day: that day's event; what it hands over besides is its own
+    expect(attendsEvent(promise("bring snacks for the game", { threadId: 16, dueAt: local(9) }), [qbr])).toBe(qbr);
+    expect(attendsEvent(promise("bring snacks for the game", { threadId: 16, dueAt: local(9, 18) }), [qbr])).toBeNull();
+    expect(attendsEvent(promise("bring the deck to the review and send the notes after", { threadId: 16, dated: false }), [qbr])).toBeNull();
+    // another conversation's event, never; nor a bring with no event it's for
+    expect(attendsEvent({ ...bring, threadId: 17 }, [qbr])).toBeNull();
+    expect(attendsEvent(promise("bring the signed lease", { threadId: 16, dated: false }), [qbr])).toBeNull();
+    // in Spanish
+    const partido = dated("event", "Partido de fútbol de Sofía", { threadId: 20, dueDay: "2026-11-16", dueAt: local(10, 16) });
+    expect(attendsEvent(promise("llevar los bocadillos para el partido", { threadId: 20, dated: false }), [partido])).toBe(partido);
+    // an undated promise to attend, by the event's words, among the conversation's events
+    expect(attendsEvent(promise("attend the Halvorsen meeting", { threadId: 16, dated: false }), [qbr, dinner])).toBe(qbr);
+    expect(attendsEvent(promise("be there", { threadId: 16, dated: false }), [qbr])).toBeNull();
+  });
+
   it("plan 210 (iteration 3, the code review's second round): your reply read as two promises of one thing, one answering a request; neither brings the request back into their item", () => {
     const sentence = "I'll scan both papers and email them to you Monday";
     const request = dated("respond", "Scan and email both papers", { threadId: 30, quote: "scan and email both papers", createdAt: 200 });
