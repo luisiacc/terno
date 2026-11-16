@@ -6,7 +6,7 @@ import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
 import { readNothingAsked, type DatedMark, type DatedSource, type DatedWrite, type MailStore } from "@terno/store";
 import { DailyLimitError, MonthlyLimitError } from "./ai-limiter";
 import { UI_LOCALE_KEY } from "./forwarding";
-import { bareDayAhead, contextOf, insideQuotes, namesApart, namesItem, negatedReceipt, norm, otherAmounts, otherIds, paragraphsOf, plainEvidence, replacesPlainly, sameObject, sameThing, saysReplaced, saysWhen, sentencesOf, settlesKind } from "./dated-evidence";
+import { bareDayAhead, contextOf, insideQuotes, type Sentences, namesApart, namesItem, negatedReceipt, norm, otherAmounts, otherIds, paragraphsOf, plainEvidence, replacesPlainly, sameObject, sameThing, saysReplaced, saysWhen, sentencesOf, settlesKind } from "./dated-evidence";
 import { untrustedSenders, withoutUntrusted } from "./suspicious-sender";
 
 /**
@@ -162,6 +162,43 @@ export function onlyTells(quote: string): boolean {
 }
 
 /**
+ * Plan 210 (iteration 3, point 7): a courtesy that waits on the reader's coming or needing something ("Cuando vengas a
+ * Tepoz avísanos, aquí tienes tu casa", "if you're ever in town, let us know", "let me know if you need anything") asks
+ * nothing, so it's never an ask: a condition about the reader's visit or need, a "let me know", no question and nothing else
+ * asked ("when you get a chance, let me know what you think of the draft" is one). The sentence as `norm` reads it, en and es.
+ */
+const COURTESY_IF = /\b(?:when(?:ever)? you(?: re| are)? (?:come|coming|visit|visiting|next in|in town|back|around|passing through|pass through|over here|here)|if you(?: re| are)? ever (?:in|around|back|over|passing|here)|next time you(?: re| are)? (?:in|around|here|over|back)|if you (?:ever )?need (?:anything|something|a hand|help)|cuando (?:vengas|vengan|pases|pasen|estes|esten|andes|regreses|vuelvas)|si (?:vienes|pasas|andas|estas por)|la proxima vez que (?:vengas|pases|estes)|si (?:necesitas|ocupas) (?:algo|cualquier cosa|ayuda))\b/u;
+const LET_KNOW = /\b(?:let (?:me|us) know|give (?:me|us) a (?:shout|call|ring|heads up)|drop (?:me|us) a line|avisa(?:me|nos)|me avisas|nos avisas|dime|escribe(?:me|nos)|llama(?:me|nos))\b/u;
+const ASKS_MORE = /\b(?:please|could|can|would|will you|send|bring|need you|want you|por favor|puedes|podrias|envia\w*|manda\w*|trae\w*|necesito que)\b/u;
+export function courtesyOnly(sentence: string): boolean {
+  if (/[?¿]/u.test(sentence)) return false;
+  const read = norm(sentence);
+  return COURTESY_IF.test(read) && LET_KNOW.test(read) && !ASKS_MORE.test(read.replace(COURTESY_IF, " ").replace(LET_KNOW, " "));
+}
+
+/**
+ * Plan 210 (iteration 3, point 7): mail the reader is only copied on to know about it ("Diego, te copio para que estés al
+ * tanto", "cc'ing you for visibility", "FYI") asks them nothing, whatever it says they'll do ("Diego las monta en las
+ * etiquetas esa misma semana"): a request from it is the reader's only when its sentence speaks to them by name and isn't
+ * that line itself. `read`: the mail as `norm` reads it.
+ */
+const COPIED = /\b(?:te copio|te pongo en copia|te incluyo en copia|(?:cc ing|cc d|copying|looping in) you|(?:for|so) (?:you re|you are) in the loop|for your (?:information|visibility|awareness|reference)|for visibility|fyi|para que (?:estes|este|esten) (?:al tanto|al pendiente|enterad\w*)|para tu (?:informacion|conocimiento))\b/u;
+function onlyCopied(item: { quote: string }, text: string, sentences: Sentences, reader: { name: string; addressed: "to" | "cc" | "none" } | undefined): boolean {
+  if (reader?.addressed !== "cc" || !COPIED.test(norm(text))) return false;
+  const sentence = contextOf(item.quote, sentences);
+  const mine = new Set(nameWords(reader.name));
+  return COPIED.test(norm(sentence)) || !addressedTo(item.quote, text).some((w) => mine.has(w));
+}
+
+/**
+ * Plan 210 (iteration 3, point 7): the one ask an automated sender may make: the reader's appointment it cancels (settled in
+ * this reading, or said cancelled in the mail) and asks them to book again ("Please call (614) 555-0147 to choose a new
+ * time"), to the reader in To. Read on the ask's sentence, en and es.
+ */
+const CANCELLED = /\b(?:appointment|visit|reservation|booking|session|class|cita|consulta|reserva\w*|sesion|clase)\b(?: \S+){0,20}? (?:cancel\w*|anulad\w*)\b/u;
+const REBOOK = /\b(?:(?:choose|pick|book|schedule|find|set up|arrange) (?:a )?new (?:time|date|appointment|slot)|reschedul\w*|rebook\w*|(?:elegir|escoger|agendar|programar|buscar|reservar) (?:una )?nueva (?:fecha|hora|cita)|reprogram\w*|reagend\w*)\b/u;
+
+/**
  * The seventh panel round (revision 7): an ask, or the request it turns into with a day, never asks the reader to send a
  * password, a one-time code, an account, card or routing number, or an ID (en, es), whatever the model made of it: read
  * on its words and its quote. Pure.
@@ -269,7 +306,8 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
   // revision 7 and the seventh panel round: no request of the reader's, an ask or a `respond` however it came, asks for
   // credentials or an ID, or is addressed by name to another recipient (Codex code review of the seventh round: a model's own
   // `respond` too, and before `requested`, so a refused one never hides a real ask)
-  const refused = (i: { kind: string; text: string; quote: string }) => (i.kind === "ask" || i.kind === "respond") && (asksForSecrets(i) || toAnother(i.quote, input.text, input.reader?.name ?? "", input.others));
+  // plan 210 (iteration 3, point 7): nor one from mail the reader is only copied on to know about it
+  const refused = (i: { kind: string; text: string; quote: string }) => (i.kind === "ask" || i.kind === "respond") && (asksForSecrets(i) || toAnother(i.quote, input.text, input.reader?.name ?? "", input.others) || onlyCopied(i, input.text, sentences, input.reader));
   for (const m of result.moved ?? []) {
     const row = input.open.get(m.label);
     if (!row || row.kind !== "ask" || settledIds.has(row.id) || !tiedTo(row, m.evidence, { due: m.due, timeOnly: false })) continue;
@@ -338,13 +376,16 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
   const requested = (ask: { text: string; quote: string }) => requests.some((r) => sameThing(r, ask));
   // the fourth panel read: a person who says no answer is needed ("No need to reply now") asks nothing
   const noReply = saysNoReplyNeeded(input.text);
+  // plan 210 (iteration 3, point 7): an automated sender's mail that cancels the reader's appointment may ask them to book again
+  const cancelled = [...input.open.values()].some((r) => r.kind === "event" && settledIds.has(r.id)) || CANCELLED.test(norm(input.text));
+  const rebooks = (ask: { quote: string }) => cancelled && input.reader?.addressed === "to" && REBOOK.test(norm(contextOf(ask.quote, sentences)));
   let asked = false;
   for (const item of candidates) {
     if (!KINDS.has(item.kind) || !item.text.trim() || !quoted(item.quote)) continue;
     // an ask is never a dated kind's substitute: one with a day is a request with a day, if it's an ask at all
     if (item.kind === "ask" && item.due && !datedAsk(item)) continue;
     const kind = (item.kind === "ask" && item.due ? "respond" : item.kind) as DatedKind;
-    if (kind === "ask" && (requested(item) || noReply || onlyTells(item.quote) || !askAllowed(item.quote, said, input.text, input))) continue;
+    if (kind === "ask" && (requested(item) || noReply || onlyTells(item.quote) || courtesyOnly(contextOf(item.quote, sentences)) || !(askAllowed(item.quote, said, input.text, input) || rebooks(item)))) continue;
     // plan 210 (the Codex code review of iteration 2): a request of the reader, kept below or not (a day already past or
     // over in a scan, a duplicate, past the bound): never "nothing asked"
     if (kind === "ask" || kind === "respond") asked = true;
