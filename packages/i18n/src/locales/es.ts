@@ -2615,6 +2615,8 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "whatMatters.feed.label": "Lo de hoy",
   "whatMatters.closeEmail": "Cerrar correo",
   "whatMatters.options": "Opciones de Lo importante",
+  "whatMatters.menu.remove": "Quitar de Lo importante",
+  "whatMatters.menu.removeKeeps": "El correo se queda",
   "whatMatters.moreSettings": "Más ajustes…",
   "whatMatters.history.done": "Hecho {day}",
   "whatMatters.history.removed": "Quitado {day}",
