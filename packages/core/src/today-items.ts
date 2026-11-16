@@ -1,4 +1,3 @@
-import { dayKeyOf } from "./dated";
 
 /**
  * Plan 210 (iteration 2, the owner: "a row per item"): What matters' rows are items, each with its own identity, never a
@@ -101,17 +100,6 @@ export function statedClock(text: string): StatedClock | null {
   if (zone === undefined) return null;
   const said = m[0].trim().replace(/^(?:at|by|a las|antes de las)\s+/iu, "");
   return { time: `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`, zone, note: said, rest: `${text.slice(0, m.index)}${text.slice(m.index + m[0].length)}`.replace(/\s{2,}/gu, " ").trim() };
-}
-
-/**
- * Plan 210 (iteration 2, the header "6 today · 8 this week"): the last day of the reader's week, Monday to Sunday, local:
- * "this week" runs from tomorrow through it (on a Sunday, nothing).
- */
-export function weekEndDay(now: number): string {
-  const d = new Date(now);
-  const fromMonday = (d.getDay() + 6) % 7;
-  d.setDate(d.getDate() + (6 - fromMonday));
-  return dayKeyOf(d.getTime());
 }
 
 /**

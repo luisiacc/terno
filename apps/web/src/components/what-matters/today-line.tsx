@@ -4,12 +4,12 @@ import type { TodayCounts } from "@terno/core";
 import { setComingUpOpen, useToday } from "~/state/today";
 
 /**
- * Plan 210 (iteration 2, the owner): the header's numbers, "6 today · 8 this week", with what's Missed first when there's
- * some ("2 missed · 6 today"), so the sidebar's badge (Missed + Today) reads as the sum of what's said; a part that's
- * nothing isn't said. Null: nothing to say.
+ * Plan 210 (iteration 3, revision 8, the owner's "'Waiting on you' in Today"): the header's numbers, "1 missed · 3 today · 5
+ * waiting", disjoint, so the sidebar's badge reads as the sum of what's said; a part that's nothing isn't said. Null:
+ * nothing to say.
  */
 export function todayCountsLine(c: TodayCounts): string | null {
-  const parts = [c.missed > 0 && t("today.line.missed", { count: c.missed }), c.today > 0 && t("today.line.today", { count: c.today }), c.thisWeek > 0 && t("today.line.thisWeek", { count: c.thisWeek })].filter((p): p is string => typeof p === "string");
+  const parts = [c.missed > 0 && t("today.line.missed", { count: c.missed }), c.today > 0 && t("today.line.today", { count: c.today }), c.waiting > 0 && t("today.line.waiting", { count: c.waiting })].filter((p): p is string => typeof p === "string");
   return parts.length ? parts.reduce((a, b) => t("today.line.joined", { a, b })) : null;
 }
 
@@ -20,7 +20,7 @@ const COUNT_LINK = "no-drag align-baseline text-[length:inherit] leading-[inheri
  * Plan 161: What matters' numbers in words, under its title. Pass 3: one sentence, never a second total to read against
  * the Inbox's. Plan 204: the feed holds all of it (no cap), so the sentence is the count; after it, Coming up's quiet
  * toggle ("4 coming up"), which opens its lines under the rest. Plan 210: the feed's own, since the feed is the only view;
- * iteration 2: its numbers by when ("6 today · 8 this week"), the backend's projection's.
+ * iteration 3: its numbers by when and who ("1 missed · 3 today · 5 waiting"), the backend's projection's.
  */
 export function TodayLine() {
   const counts = useToday((s) => s.counts);

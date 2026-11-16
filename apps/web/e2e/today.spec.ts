@@ -185,13 +185,13 @@ test.describe("What matters and its digest (plan 145)", () => {
     await show(page, "Can you make the 19th");
     // plan 166: an item leads with its own words: no "Your turn: they replied ·" before them
     await expect(item(page, "Can you make the 19th")).not.toContainText("Your turn");
-    // pass 3: one sentence, never a second total to read against the Inbox's; plan 210 (iteration 2): by when, "6 today ·
-    // 8 this week", and the sidebar's badge is Missed and Today's
-    await expect(page.getByTestId("today-needs")).toHaveText(/^(\d+ missed · )?\d+ today( · \d+ this week)?$/);
+    // pass 3: one sentence, never a second total to read against the Inbox's; plan 210 (iteration 3): by when and who, "1
+    // missed · 3 today · 5 waiting", and the sidebar's badge is their sum
+    await expect(page.getByTestId("today-needs")).toHaveText(/^(?:\d+ missed|\d+ today|\d+ waiting)(?: · (?:\d+ today|\d+ waiting))*$/);
     const sidebar = (await page.getByTestId("nav-today").innerText()).match(/\d+/)?.[0];
-    const said = (await page.getByTestId("today-needs").innerText()).match(/(?:(\d+) missed · )?(\d+) today/)!;
-    if (sidebar) expect(Number(sidebar)).toBe(Number(said[1] ?? 0) + Number(said[2]));
-    await expect(page.getByTestId("today-line")).not.toContainText(/waiting|\d+ to reply/);
+    const said = [...(await page.getByTestId("today-needs").innerText()).matchAll(/(\d+) (?:missed|today|waiting)/g)].reduce((n, m) => n + Number(m[1]), 0);
+    if (sidebar) expect(Number(sidebar)).toBe(said);
+    await expect(page.getByTestId("today-line")).not.toContainText(/this week|\d+ to reply/);
     // the owner: "Your turn" and "Waiting for your reply" are the same thing: one heading, and the new conversation is
     // under it in its own words, no reason before them
     expect((await kinds(page)).filter((k) => k !== "history")).toEqual(["today"]);

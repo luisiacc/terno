@@ -160,6 +160,13 @@ describe("plan 210 (iteration 2): one time per row, a request shown early, a bro
   it("a person's request shown before its day says what it's by, quietly", () => {
     const renewal = item({ kind: "dated", text: "Set up the renewal call", dueAt: at(30, 9), item: { id: 1, revision: 0, kind: "respond", dueDay: "2026-11-30", timed: false, dated: true, early: true } });
     expect(todayWhen(renewal, NOW, "today")).toEqual({ text: "by Nov 30", tone: "none" });
+    // plan 210 (iteration 3): Today's Waiting on you, quiet; a timed one keeps its time and the mail's zone when it differs
+    expect(todayWhen(renewal, NOW, "waiting")).toEqual({ text: "by Nov 30", tone: "none" });
+    const rfp = item({ kind: "dated", text: "Submit the RFP", dueAt: dueAt(20, 16), item: { id: 1, revision: 0, kind: "respond", dueDay: "2026-11-20", timed: true, dated: true, early: true, note: "5:00 PM ET" } });
+    expect(todayWhen(rfp, NOW, "waiting")).toEqual({ text: "by Nov 20 4:00 PM (5:00 PM ET)", tone: "none" });
+    const soon = item({ kind: "dated", text: "Send the bio", dueAt: dueAt(14, 12), item: { id: 1, revision: 0, kind: "respond", dueDay: "2026-11-14", timed: true, dated: true, early: true } });
+    expect(todayWhen(soon, NOW, "waiting").text).toMatch(/^by tomorrow 12:00\sPM$/);
+    expect(todayWhen(dated("ask", "Answer Owen", 13, { dated: false }), NOW, "waiting")).toEqual({ text: "since Nov 1", tone: "none" });
   });
 
   it("a promise broken and given a new day keeps its first day, in Missed's weight, under the new one", () => {

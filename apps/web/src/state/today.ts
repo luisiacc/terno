@@ -14,15 +14,16 @@ import { reloadList } from "./list";
  */
 /**
  * Plan 210: the feed's headings: Missed, Today, a day ahead (`day:YYYY-MM-DD`, Coming up's joining their day while it's
- * open: the owner, by day, not by kind), and the history below them.
+ * open: the owner, by day, not by kind), and the history below them. Iteration 3: Today's "Waiting on you" (`waiting`), a
+ * quiet sub-heading inside Today.
  */
-export type FeedGroupKind = "missed" | "today" | `day:${string}` | "history";
+export type FeedGroupKind = "missed" | "today" | "waiting" | `day:${string}` | "history";
 
 /** A feed heading's day ("YYYY-MM-DD"), or null for Missed, Today and the history. */
 export const groupDay = (kind: FeedGroupKind): string | null => (kind.startsWith("day:") ? kind.slice(4) : null);
 
-/** The headings' order: Missed, Today, the days in theirs, the history (as text: a day's key sorts as its day). */
-const rankOf = (kind: FeedGroupKind): string => (kind === "missed" ? "0" : kind === "today" ? "1" : kind === "history" ? "3" : `2${kind.slice(4)}`);
+/** The headings' order: Missed, Today, its Waiting on you, the days in theirs, the history (as text: a day's key sorts as its day). */
+const rankOf = (kind: FeedGroupKind): string => (kind === "missed" ? "0" : kind === "today" ? "1" : kind === "waiting" ? "1w" : kind === "history" ? "3" : `2${kind.slice(4)}`);
 
 /**
  * Plan 210 (iteration 2, the owner: "a row per item"): one of the feed's rows, by its own identity (`FeedRowId`: an item's,
@@ -79,7 +80,7 @@ interface TodayState {
    * each by its own id; the list keeps their conversations once each (`useList`), for what acts on conversations
    */
   rows: readonly FeedRow[];
-  /** plan 210 (iteration 2): the header's numbers ("6 today · 8 this week"), the backend's projection's */
+  /** plan 210 (iteration 3): the header's numbers ("1 missed · 3 today · 5 waiting"), the backend's projection's */
   counts: TodayCounts;
   /** plan 204: what Coming up holds, shown or not (never counted) */
   comingUp: number;
@@ -117,7 +118,7 @@ function storedComingUp(): boolean {
   }
 }
 
-export const useToday = create<TodayState>(() => ({ rows: [], counts: { missed: 0, today: 0, thisWeek: 0 }, comingUp: 0, comingUpOpen: storedComingUp(), laterPick: null, laterMenu: null, menuRow: null, digest: null, fromDigest: null, pick: null, movedTo: new Map(), notNewsletters: new Set() }));
+export const useToday = create<TodayState>(() => ({ rows: [], counts: { missed: 0, today: 0, waiting: 0 }, comingUp: 0, comingUpOpen: storedComingUp(), laterPick: null, laterMenu: null, menuRow: null, digest: null, fromDigest: null, pick: null, movedTo: new Map(), notNewsletters: new Set() }));
 
 /**
  * Plan 210 (iteration 2): which row the feed has open, and the one a conversation was put away from (Esc, the reader's
@@ -348,7 +349,8 @@ function feedGroups(list: TodayList, open: boolean): { kind: FeedGroupKind; item
   for (const section of list.sections) {
     if (section.kind === "comingUp" && !open) continue;
     const day = section.day ?? null;
-    const kind: FeedGroupKind = section.kind === "missed" ? "missed" : day === null || day <= today ? "today" : `day:${day}`;
+    // (Today's "Waiting on you" is its own heading, under Today's: plan 210, iteration 3)
+    const kind: FeedGroupKind = section.kind === "missed" ? "missed" : section.part === "waiting" ? "waiting" : day === null || day <= today ? "today" : `day:${day}`;
     const rows = groups.get(kind) ?? [];
     for (const item of section.items) rows.push({ item, section: section.kind });
     groups.set(kind, rows);
