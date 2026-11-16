@@ -597,6 +597,9 @@ const WORDS = [
   "action required", "payment failed", "payment declined", "card declined", "suspend\\w*", "locked", "verify", "past due",
   "acci[oó]n requerida", "pago (?:rechazado|fallido)", "tarjeta rechazada", "suspendid\\w*", "bloquead\\w*", "verifica\\w*",
   "invoice", "bill", "statement", "payment", "factura", "pago", "recibo", "cuota",
+  // plan 210 (iteration 4, P3): a deadline said around a bare day ("October books close on the 20th. Please add receipts by
+  // then": Priya's Spendly mail never reached the model)
+  "by then", "until then", "para entonces", "close[sd]?", "closing", "cierr[ae]\\w*",
 ];
 const CUE = new RegExp(
   [
@@ -604,6 +607,9 @@ const CUE = new RegExp(
     // 2026-11-20, 20/11, 11/20/2026, 20.11.2026
     "\\b\\d{4}-\\d{1,2}-\\d{1,2}\\b",
     "\\b\\d{1,2}[/.]\\d{1,2}(?:[/.]\\d{2,4})?\\b",
+    // plan 210 (iteration 4, P3): a bare day of the month: "the 20th", "on the 5th", "el día 20"
+    "\\b\\d{1,2}(?:st|nd|rd|th)\\b",
+    "\\bel d[ií]a \\d{1,2}\\b",
     // Nov 20, 20 Nov, 20 de noviembre
     `\\b(?:${MONTHS})\\.?\\s+\\d{1,2}\\b`,
     `\\b\\d{1,2}(?:st|nd|rd|th)?\\s+(?:de\\s+)?(?:${MONTHS})\\b`,
