@@ -52,27 +52,28 @@ test.describe("follow-ups (plan 142)", () => {
       if (SHOTS) await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-top-light.png` });
     });
 
-    await scenario("the thread's line: its quote, → and its actions", async () => {
+    await scenario("the thread's line: the promise on the reader's one line, with its actions", async () => {
       await rows(page).first().click();
-      const line = page.getByTestId("followup-line");
-      await expect(line).toBeVisible();
-      // the fourth panel round (revision 10): a promise that named no day says none, never the moment it's placed at
-      await expect(page.getByTestId("followup-due")).toHaveCount(0);
+      // plan 210 (iteration 3, Codex revision 10): a promise is one of the conversation's items, in the dated line's one
+      // design; the nudges' card isn't drawn for it
+      const line = page.getByTestId("thread-dated-item");
+      await expect(line).toHaveAttribute("data-source", "promise");
+      await expect(page.getByTestId("followup-line")).toHaveCount(0);
+      // the fourth panel round (revision 10): a promise that named no day says none, never the moment it's placed at; the
+      // person once, by their first name
+      await expect(line.getByTestId("thread-dated-text")).toHaveText("You told Tom you’d send the contract");
       // one vocabulary with the conversation's dated line, in its weights: Done outlined, Later and Remove quiet
-      await expect(page.getByTestId("followup-done")).toHaveText("Done");
-      await expect(page.getByTestId("followup-later")).toHaveText("Later");
-      await expect(page.getByTestId("followup-dismiss")).toHaveText("Remove");
+      await expect(line.getByTestId("thread-dated-done")).toHaveText("Done");
+      await expect(line.getByTestId("thread-dated-later")).toHaveText("Later");
+      await expect(line.getByTestId("thread-dated-dismiss")).toHaveText("Remove");
       const look = (id: string) => page.getByTestId(id).evaluate((el) => { const s = getComputedStyle(el); return { color: s.color, border: s.borderTopColor, background: s.backgroundColor }; });
-      expect(await look("followup-later")).toEqual(await look("followup-dismiss"));
-      expect((await look("followup-done")).border).not.toBe("rgba(0, 0, 0, 0)");
-      expect((await look("followup-dismiss")).border).toBe("rgba(0, 0, 0, 0)");
+      expect(await look("thread-dated-later")).toEqual(await look("thread-dated-dismiss"));
+      expect((await look("thread-dated-done")).border).not.toBe("rgba(0, 0, 0, 0)");
+      expect((await look("thread-dated-dismiss")).border).toBe("rgba(0, 0, 0, 0)");
       // plan 161, pass 3: on the AI card, as Reply ready is: its edge on the subject's line, its text inset
       const left = async (id: string) => (await page.getByTestId(id).first().boundingBox())!.x;
-      expect(Math.abs((await left("followup-line")) - (await left("reader-subject")))).toBeLessThanOrEqual(1);
-      expect((await left("followup-text")) - (await left("followup-line"))).toBeGreaterThanOrEqual(12);
-      await page.getByTestId("followup-go").hover();
-      await expect(page.getByTestId("followup-quote")).toContainText("I'll send the contract");
-      await page.mouse.move(0, 0);
+      expect(Math.abs((await left("thread-dated")) - (await left("reader-subject")))).toBeLessThanOrEqual(1);
+      expect((await left("thread-dated-text")) - (await left("thread-dated"))).toBeGreaterThanOrEqual(12);
       if (SHOTS) {
         await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-thread-light.png` });
         await page.emulateMedia({ colorScheme: "dark" });
@@ -80,7 +81,7 @@ test.describe("follow-ups (plan 142)", () => {
         await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-thread-dark.png` });
         await page.emulateMedia({ colorScheme: "light" });
       }
-      expect((await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=thread-followups]").analyze()).violations).toEqual([]);
+      expect((await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=thread-dated]").analyze()).violations).toEqual([]);
     });
 
     await scenario("opening ended the top; Follow-ups keeps it", async () => {
@@ -92,10 +93,10 @@ test.describe("follow-ups (plan 142)", () => {
 
     await scenario("Done, with Undo that puts the row back", async () => {
       await rows(page).first().click();
-      await page.getByTestId("followup-done").click();
-      await expect(page.getByTestId("thread-followups")).toHaveCount(0);
+      await page.getByTestId("thread-dated-done").click();
+      await expect(page.getByTestId("thread-dated")).toHaveCount(0);
       await page.locator("[data-testid=snack]").getByRole("button", { name: /undo/i }).click();
-      await expect(page.getByTestId("followup-line")).toBeVisible();
+      await expect(page.getByTestId("thread-dated-item")).toBeVisible();
     });
   });
 
@@ -278,7 +279,8 @@ test.describe("follow-ups (plan 142)", () => {
 
   test("the line beside its neighbours in every design; plan 161, pass 3: nothing in its menu or popover is clipped, light and dark, 1440 and 1100", { tag: "@design" }, async ({ app: page, server }) => {
     await settingUp(page, server, { ai: { provider: "fake", model: "demo" }, followups: { enabled: true, scanAnswered: true } });
-    await tracked(server, "The contract", "promise", true);
+    // plan 210 (iteration 3): a wait's card (a promise is on the reader's line, its Later today.spec's)
+    await tracked(server, "The contract", "awaiting", true);
     await fresh(page);
     await rows(page).first().click();
     await expect(page.getByTestId("followup-line")).toBeVisible();

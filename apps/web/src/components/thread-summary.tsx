@@ -9,6 +9,7 @@ import { ArrowRight, Reply } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { routeOf } from "~/lib/ai";
+import { repeatsItem } from "~/lib/reader-items";
 import { messageDate } from "~/lib/format";
 import { bodyArrivedForSummary, dismissSummary, loadSummary, revealSummaryMessage, setSummaryOpen, stopSummary, summarizable, summarize, useSummaries } from "~/lib/summaries";
 import { replyFromItem } from "~/lib/summary-reply";
@@ -89,9 +90,14 @@ export function summaryText(summary: Pick<AiSummary, "summary" | "items">): stri
   return [summary.summary.trim(), ...summary.items.map((i) => `${t(`summary.kind.${i.kind}`)}: ${i.text}`)].join("\n");
 }
 
-function Ready({ summary, messages }: { summary: AiSummary; messages: readonly MessageDetail[] }) {
+/** Plan 210 (iteration 3, Codex revision 10): what it asks of you that the reader's line already says isn't said twice. */
+const ASKED = new Set<AiSummaryItem["kind"]>(["action"]);
+
+function Ready({ summary, messages, said }: { summary: AiSummary; messages: readonly MessageDetail[]; said: readonly string[] }) {
   const open = useSummaries((s) => s.open);
   const mine = useApp((s) => s.accounts).map((a) => a.email);
+  // in this view only: the summary itself (and Copy) keeps every item
+  const items = summary.items.filter((i) => !ASKED.has(i.kind) || !repeatsItem(i.text, said));
   return (
     <Collapsible open={open} onOpenChange={setSummaryOpen} data-testid="summary-block" data-state="ready" className={CARD}>
       {/* plan 181: one row, open or closed: the name (its chevron beside it, the trigger as wide as its words), then who
@@ -114,7 +120,7 @@ function Ready({ summary, messages }: { summary: AiSummary; messages: readonly M
           <p data-testid="summary-text" className="max-w-(--read-max) text-sm leading-relaxed wrap-anywhere whitespace-pre-line text-pretty">
             {summary.summary}
           </p>
-          {summary.items.length > 0 && <ul className="mt-2 max-w-(--read-max)" data-testid="summary-items">{summary.items.map((item) => <Item key={`${item.messageId}:${item.kind}:${item.text}`} item={item} mine={mine} from={messages.find((m) => m.id === item.messageId)} source={messageSource(messages, item.messageId, mine)} short={messageSourceShort(messages, item.messageId)} />)}</ul>}
+          {items.length > 0 && <ul className="mt-2 max-w-(--read-max)" data-testid="summary-items">{items.map((item) => <Item key={`${item.messageId}:${item.kind}:${item.text}`} item={item} mine={mine} from={messages.find((m) => m.id === item.messageId)} source={messageSource(messages, item.messageId, mine)} short={messageSourceShort(messages, item.messageId)} />)}</ul>}
         </div>
       </CollapsiblePanel>
     </Collapsible>
@@ -146,7 +152,7 @@ const openSettings = () => setApp({ dialog: "settings", settingsTab: "ai" });
  * as part of the mail. It appears only when there's something to say; nothing for pending or failed (Settings says
  * why), and nothing in spam or trash.
  */
-export default function ThreadSummary({ detail }: { detail: ThreadDetail }) {
+export default function ThreadSummary({ detail, said = [] }: { detail: ThreadDetail; /** what the reader's line already says (plan 210, iteration 3) */ said?: readonly string[] }) {
   const threadId = detail.thread.id;
   const ui = useSummaries((s) => s.byThread.get(threadId));
   const ai = useApp((s) => s.settings?.ai);
@@ -186,7 +192,7 @@ export default function ThreadSummary({ detail }: { detail: ThreadDetail }) {
   const content = (() => {
     switch (ui?.kind) {
       case "ready":
-        return <Ready summary={ui.summary} messages={detail.messages} />;
+        return <Ready summary={ui.summary} messages={detail.messages} said={said} />;
       case "running":
         return (
           <Line
