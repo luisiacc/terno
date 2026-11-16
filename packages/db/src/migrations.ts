@@ -1570,6 +1570,13 @@ ALTER TABLE dated_items ADD COLUMN settled_at INTEGER;
 ALTER TABLE followups ADD COLUMN settled_by INTEGER;
 ALTER TABLE followups ADD COLUMN settled_at INTEGER;
 ` },
+  // plan 210 (iteration 4, the Codex review's revision 4): a promise that only holds a request ("I'll check my calendar and get
+  // back to you") is stored with it (`holds`, the dated item's id, which its reply's checked verdict names), and is no row of
+  // its own. Shape only: a nullable column, no rewrite, no index (it's read with the open promises); rows stored before it
+  // hold nothing (no backfill: their verdict wasn't kept). v65 is the feed's placement
+  { version: 66, name: "What matters: a promise that holds a request (plan 210, iteration 4)", sql: `
+ALTER TABLE followups ADD COLUMN holds INTEGER;
+` },
   // plan 210 (iteration 4, revisions 10 and 11): the day a request was asked before (`before_day`, on an item and on a
   // promise its person moved), the event an ask confirms (`confirms`, its id), and the mail's own clock in another zone
   // (`wall`, JSON: day, time, IANA zone, place). Shape only: nullable columns, no rewrite; rows stored before it have none

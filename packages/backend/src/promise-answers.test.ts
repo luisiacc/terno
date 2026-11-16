@@ -6,7 +6,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createAi, promptText, type AiOptions, type Completion, type CompletionRequest, type ProviderConfig } from "@terno/ai";
+import { createAi, promptText, type AiOptions, type Completion, type CompletionRequest, type ProviderConfig, type SentMailResult } from "@terno/ai";
 import type { TodayItem } from "@terno/core";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { demoRegistry } from "@terno/mail";
@@ -112,10 +112,15 @@ describe("a reply's checked verdict (the Codex review of iteration 3, revision 1
     expect(checkSentMail({ promises: [{ ...promise, quote: "words nobody wrote" }], expectsReply: false, awaiting: [], kept: [], answers: [{ label: "q1", verdict: "promise", evidence: "I'll send it Wednesday" }] }, base).verdicts).toEqual([]);
   });
 
-  it("a promise that only holds it links nothing; a \"done\" that's a promise's words is that promise", () => {
+  it("a promise that only holds it holds it, whatever the model called it (iteration 4); a \"done\" that's a promise's words is that promise", () => {
     const ownText = "Let me check my calendar and get back to you. I'll send it Wednesday.";
     const holding = { text: "check and get back to Ms. Greer", quote: "Let me check my calendar and get back to you", to: "r1", due: null };
-    expect(checkSentMail({ promises: [holding], expectsReply: false, awaiting: [], kept: [], answers: [{ label: "q1", verdict: "promise", evidence: "Let me check my calendar and get back to you" }] }, { ...base, ownText }).verdicts).toEqual([]);
+    const one = (verdict: "promise" | "holding" | "fulfilled", evidence: string, promises: SentMailResult["promises"] = [holding]) => checkSentMail({ promises, expectsReply: false, awaiting: [], kept: [], answers: [{ label: "q1", verdict, evidence }] }, { ...base, ownText }).verdicts;
+    expect(one("holding", "Let me check my calendar and get back to you")).toEqual([{ request: { id: 7, revision: 2 }, verdict: "holding", item: 0 }]);
+    expect(one("promise", "Let me check my calendar and get back to you")).toEqual([{ request: { id: 7, revision: 2 }, verdict: "holding", item: 0 }]);
+    // a "holding" whose words send something, or with no promise of those words kept above: nothing
+    expect(one("holding", "I'll send it Wednesday", [promise])).toEqual([]);
+    expect(one("holding", "Let me check my calendar and get back to you", [])).toEqual([]);
     expect(checkSentMail({ promises: [holding, promise], expectsReply: false, awaiting: [], kept: [], answers: [{ label: "q1", verdict: "fulfilled", evidence: "I'll send it Wednesday" }] }, { ...base, ownText }).verdicts).toEqual([{ request: { id: 7, revision: 2 }, verdict: "promise", item: 1 }]);
     expect(onlyHolds("lo reviso y te aviso")).toBe(true);
     expect(onlyHolds("I'll check the numbers and send you the report Friday")).toBe(false);
@@ -216,6 +221,31 @@ describe("a promise that answers a request keeps its deadline (iteration 3)", ()
     expect(await backend.store.dated.get(second!.id)).toMatchObject({ state: "open" });
     expect((await backend.store.followups.ofThread(other.thread)).every((p) => p.answers == null)).toBe(true);
     expect((await rows()).some((r) => r.id === `dated:${second!.id}`)).toBe(true);
+  });
+
+  it("iteration 4: Margaret's \"I'll check my calendar and get back to you\" is stored with the request it holds, and no row while it stands; it ends with the request, with no line of its own", async () => {
+    const { backend, client, model, request, reply, datedDone, followupsDone, rows } = await setup();
+    model.dated = () => dated([slip]);
+    const asked = await request();
+    await datedDone();
+    const [req] = await backend.store.dated.ofThread(asked.thread);
+    model.sent = () => sent({ promises: [{ text: "check your calendar and get back to Ms. Greer", quote: "I need to look at my calendar and will get back to you", to: "r1", due: null }], answers: [{ label: "q1", verdict: "holding", evidence: "I need to look at my calendar and will get back to you" }] });
+    await reply(asked, "I need to look at my calendar and will get back to you.");
+    await followupsDone();
+    const [hold] = (await backend.store.followups.ofThread(asked.thread)).filter((p) => p.kind === "promise");
+    expect(hold).toMatchObject({ holds: req!.id, answers: null });
+    // the request is the row, never the hold, even once the hold comes due
+    expect((await rows()).map((r) => r.id)).toEqual([`dated:${req!.id}`]);
+    await backend.store.followups.makeDue(hold!.dueAt + 1);
+    expect((await rows()).map((r) => r.id)).toEqual([`dated:${req!.id}`]);
+    // the request done: the hold ends with it, its line the request's
+    const now = (await backend.store.dated.get(req!.id))!;
+    await client.call("dated.act", { id: now.id, revision: now.revision, action: "done" });
+    expect(await rows()).toEqual([]);
+    expect(await backend.followups.retire()).toBe(1);
+    expect(await backend.store.followups.get(hold!.id)).toMatchObject({ state: "dismissed", closedReason: "held" });
+    const history = (await client.call("today.list", { held: [], history: { through: null } })).history!;
+    expect(history.items.map((h) => h.id)).toEqual([`dated:${req!.id}`]);
   });
 
   it("done now (\"here's the slip\") settles the request; a send alone, follow-ups off, or a failed reading settles nothing", async () => {
