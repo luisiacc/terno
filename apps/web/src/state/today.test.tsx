@@ -7,7 +7,7 @@ vi.mock("~/rpc/connection", () => ({ client: { call: vi.fn(async () => ({})), on
 
 const { digestPick, flattenToday, heldRows, historyThrough, installToday, keepDigestPick, publishHistory, todayAnswer, useFeedRow, useToday } = await import("./today");
 installToday();
-const { setApp } = await import("./app");
+const { getApp, setApp } = await import("./app");
 const { laterWindow } = await import("~/lib/dated");
 
 const ai = { provider: "ollama", model: "m", local: true, needsKey: false, keys: {} };
@@ -278,26 +278,39 @@ describe("plan 204: Missed, Today, a day ahead and Coming up (plan 210: by day, 
     expect(taskOfThread(4)).not.toHaveProperty("also");
   });
 
-  it("Coming up's rows only while it's open, under their days, quiet; a row on a day with rows joins its heading in the day's order", () => {
+  it("plan 210 (iteration 4, revision 9): Coming up's rows only while it's open, quiet, in buckets of their own after every day and the digest, never joining a day above", () => {
     useToday.setState({ comingUpOpen: true });
     flattenToday(full(), []);
-    expect(useToday.getState().rows.at(-1)).toMatchObject({ id: "dated:100", group: "day:2026-11-20", ahead: true });
+    expect(useToday.getState().rows.at(-1)).toMatchObject({ id: "dated:100", group: "coming:2026-11-20", ahead: true });
     const parcel = dated(11, "delivery", "Your parcel arrives", 13, { timed: true, h: 8 });
+    const digest = { day: day(12), state: "ready" as const, items: [], automated: true, liveIds: [] };
     const sections: TodayList = {
       now,
       counts: NO_COUNTS,
-      digest: null,
+      digest,
       sections: [
         { kind: "today", items: [dated(4, "pay", "Pay the rent", 12)] as never },
         { kind: "day", day: day(13), items: [dated(6, "event", "Flight to Madrid", 13, { timed: true, h: 9 }), dated(3, "pay", "Pay the electricity bill", 13)] as never },
-        { kind: "comingUp", day: day(13), items: [parcel] as never },
+        // put off to a day that already has rows: its own bucket all the same
+        { kind: "comingUp", day: day(13), bucket: day(13), items: [parcel] as never },
       ],
     };
-    // the bill first (a task), then the plans by time: the parcel at 8:00 before the flight at 9:00
-    expect(ids(flattenToday(sections, []))).toEqual([4, 3, 11, 6]);
+    flattenToday(sections, []);
+    expect(useToday.getState().rows.map((r) => [r.id, r.group ?? null])).toEqual([
+      ["dated:40", "today"],
+      ["dated:60", "day:2026-11-13"],
+      ["dated:30", "day:2026-11-13"],
+      ["digest", null],
+      ["dated:110", "coming:2026-11-13"],
+    ]);
+    // closed: none of its rows (j/k walk only what's drawn), counted for its disclosure
+    useToday.setState({ comingUpOpen: false });
+    flattenToday(sections, []);
+    expect(useToday.getState().rows.map((r) => r.id)).toEqual(["dated:40", "dated:60", "dated:30", "digest"]);
+    expect(useToday.getState().comingUp).toBe(1);
   });
 
-  it("plan 210 (iteration 3, revision 9): past two weeks Coming up's rows go under their week's heading, by their days, a day ahead's joining it; ids stay", () => {
+  it("plan 210 (iteration 3, revision 9): past two weeks Coming up's rows go under their week's heading, by their days; ids stay", () => {
     useToday.setState({ comingUpOpen: true });
     // Thursday Nov 12: its days run through Sunday the 29th; Dec 2 and Dec 4 are the week of Nov 30's
     const passport = dated(10, "renew", "Renew the passport", 26);
@@ -322,17 +335,45 @@ describe("plan 204: Missed, Today, a day ahead and Coming up (plan 210: by day, 
       ],
     };
     flattenToday(sections, []);
+    // (iteration 4) Coming up's buckets are its own, after the feed's own week
     expect(useToday.getState().rows.map((r) => [r.id, r.group, r.ahead === true])).toEqual([
-      ["dated:100", "day:2026-11-26", true],
-      ["dated:130", "week:2026-11-30", true],
       ["dated:140", "week:2026-11-30", false],
-      ["dated:120", "week:2026-11-30", true],
+      ["dated:100", "coming:2026-11-26", true],
+      ["dated:130", "coming:week:2026-11-30", true],
+      ["dated:120", "coming:week:2026-11-30", true],
     ]);
     // closed: only what's shown, the expiry under its week
     useToday.setState({ comingUpOpen: false });
     flattenToday(sections, []);
     expect(useToday.getState().rows.map((r) => [r.id, r.group])).toEqual([["dated:140", "week:2026-11-30"]]);
     expect(useToday.getState().comingUp).toBe(3);
+  });
+
+  it("plan 210 (iteration 4): closing Coming up on one of its rows puts the feed on the last row above it, that row's conversation put away", async () => {
+    const { setComingUpOpen } = await import("./today");
+    useToday.setState({ comingUpOpen: true });
+    flattenToday(full(), []);
+    // open beside the feed
+    useFeedRow.setState({ opened: "dated:100", cursor: null });
+    setApp({ selectedId: 10 });
+    setComingUpOpen(false);
+    expect(useFeedRow.getState()).toMatchObject({ opened: null, cursor: "dated:30" });
+    expect(getApp().selectedId).toBeNull();
+    // put away there (the cursor on it): the same row above, nothing to close
+    useToday.setState({ comingUpOpen: true });
+    flattenToday(full(), []);
+    setApp({ selectedId: null });
+    useFeedRow.setState({ opened: null, cursor: "dated:100" });
+    setComingUpOpen(false);
+    expect(useFeedRow.getState()).toMatchObject({ opened: null, cursor: "dated:30" });
+    // on a row of the open part: nothing moves
+    useToday.setState({ comingUpOpen: true });
+    flattenToday(full(), []);
+    useFeedRow.setState({ opened: "dated:40", cursor: null });
+    setApp({ selectedId: 4 });
+    setComingUpOpen(false);
+    expect(useFeedRow.getState()).toMatchObject({ opened: "dated:40", cursor: null });
+    expect(getApp().selectedId).toBe(4);
   });
 
   it("Coming up's open or closed is remembered, and storage that refuses changes nothing else", async () => {

@@ -19,7 +19,7 @@ const host = document.createElement("div");
 document.body.append(host);
 const root = createRoot(host);
 const line = () => host.querySelector("[data-testid=today-line]")!.textContent;
-const toggle = () => host.querySelector<HTMLButtonElement>("[data-testid=today-coming-up]");
+const toggle = () => host.querySelector("[data-testid=today-coming-up], [data-testid=wm-coming-up]");
 
 async function show(today: number, o: { missed?: number; waiting?: number; comingUp?: number; open?: boolean } = {}) {
   await act(async () => {
@@ -58,23 +58,10 @@ it("in Spanish too", async () => {
   }
 });
 
-it("plan 210 (iteration 3): Coming up is the catalog's disclosure after the count, named by what it holds, open or shut, and stays as left", async () => {
+it("plan 210 (iteration 4, revision 9): Coming up isn't said in the header (it's the feed's last heading), open or shut", async () => {
   await show(2, { comingUp: 4 });
-  expect(toggle()!.textContent).toBe("4 coming up");
-  expect(toggle()!.getAttribute("aria-expanded")).toBe("false");
-  // the catalog's trigger: a button with its chevron
-  expect(toggle()!.tagName).toBe("BUTTON");
-  expect(toggle()!.querySelector("[data-slot=collapsible-chevron]")).not.toBeNull();
-  await act(async () => toggle()!.click());
-  expect(useToday.getState().comingUpOpen).toBe(true);
-  expect(localStorage.getItem("terno.today.comingUp")).toBe("open");
-  expect(toggle()!.textContent).toBe("4 coming up");
-  expect(toggle()!.getAttribute("aria-expanded")).toBe("true");
-  await act(async () => toggle()!.click());
-  expect(useToday.getState().comingUpOpen).toBe(false);
-  await show(2, { comingUp: 4, open: true });
-  expect(toggle()!.getAttribute("aria-expanded")).toBe("true");
-  // nothing coming up, nothing to open
-  await show(2, { comingUp: 0, open: true });
+  expect(line()).toBe("2 to do today");
   expect(toggle()).toBeNull();
+  await show(2, { comingUp: 4, open: true });
+  expect(line()).toBe("2 to do today");
 });

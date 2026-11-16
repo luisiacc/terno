@@ -1,6 +1,7 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { DIGEST_ROW_ID, localDay, type FeedRowId, type ThreadSummary, type TodayItem } from "@terno/core";
 import { getLocale, t } from "@terno/i18n";
+import { Collapsible, CollapsibleTrigger } from "@terno/ui/components/collapsible";
 import { Skeleton } from "@terno/ui/components/skeleton";
 import { Sun } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
@@ -19,14 +20,17 @@ import { closeFeedConversation } from "~/lib/feed-pane";
 import { listLayout } from "~/lib/page";
 import { getApp, useApp } from "~/state/app";
 import { listAnchor, loadMore, useList } from "~/state/list";
-import { digestLabel, feedRow, groupDay, groupWeek, openFeedRow, useFeedRow, useToday, type FeedGroupKind, type FeedRow } from "~/state/today";
+import { comingBucket, digestLabel, feedRow, groupDay, groupWeek, openFeedRow, setComingUpOpen, useFeedRow, useToday, type FeedGroupKind, type FeedRow } from "~/state/today";
 import { EmptyState } from "../empty-state";
 import { listScroller } from "~/lib/list-scroller";
 import { ThreadMenu } from "../thread-menu";
 import { TodayDatedOffer } from "../today-dated-offer";
 import { WhatMattersOptions } from "./options";
 import { BriefTaskControls } from "./task-menus";
-import { FEED_ROWS_ID, TodayLine } from "./today-line";
+import { TodayLine } from "./today-line";
+
+/** The feed's rows, what Coming up's disclosure shows more of (its rows join the feed there: no panel of its own) */
+export const FEED_ROWS_ID = "wm-feed-rows";
 
 /**
  * Plan 204's briefing, which the owner made What matters' only view (plan 210): a feed drawn from Today's rows (plan 210,
@@ -40,7 +44,11 @@ import { FEED_ROWS_ID, TodayLine } from "./today-line";
 type Drawn =
   | { type: "heading"; key: string; kind: FeedGroupKind }
   | { type: "item"; key: string; row: FeedRow }
-  | { type: "digest"; key: string; row: FeedRow };
+  | { type: "digest"; key: string; row: FeedRow }
+  | { type: "comingUp"; key: string };
+
+/** Plan 210 (iteration 4): Coming up's disclosure, one per feed, its key stable whatever's under it. */
+const COMING_UP_KEY = "coming-up";
 
 /** A group's heading: Missed, Today, its Waiting on you, a day ahead in the when column's day words (plan 210), Earlier. */
 function headingName(kind: FeedGroupKind): string {
@@ -51,16 +59,31 @@ function headingName(kind: FeedGroupKind): string {
   return t(kind === "missed" ? "today.missed" : kind === "today" ? "today.today" : kind === "waiting" ? "whatMatters.waitingOnYou" : "today.history");
 }
 
-/** The rows with a heading where each group begins (a held row keeps its group's), and the digest's. */
-function drawn(rows: readonly FeedRow[]): Drawn[] {
+/**
+ * The rows with a heading where each group begins (a held row keeps its group's), and the digest's. Plan 210 (iteration 4,
+ * revision 9): Coming up's disclosure after the open part and the automated section, before the history, when anything is
+ * coming up (`comingUp`), its buckets under it while it's open, each heading keyed by its bucket.
+ */
+function drawn(rows: readonly FeedRow[], comingUp: number): Drawn[] {
   const out: Drawn[] = [];
   let prev: FeedGroupKind | undefined;
+  let disclosed = comingUp === 0;
   for (const row of rows) {
     if (row.threadId === DIGEST_ROW_ID) {
       out.push({ type: "digest", key: row.id, row });
       continue;
     }
     const kind = row.group ?? prev;
+    if (!disclosed && (comingBucket(kind) !== null || kind === "history")) {
+      out.push({ type: "comingUp", key: COMING_UP_KEY });
+      disclosed = true;
+    }
+    if (comingBucket(kind) !== null && kind !== prev) {
+      out.push({ type: "heading", key: `h-${kind}`, kind: kind! });
+      prev = kind;
+      out.push({ type: "item", key: row.id, row });
+      continue;
+    }
     // Waiting on you is a part of Today (plan 210, iteration 3): Today's heading stands above it even when Today has no
     // rows of its own
     if (kind === "waiting" && prev !== "today" && prev !== "waiting") out.push({ type: "heading", key: `h-today-${row.id}`, kind: "today" });
@@ -69,6 +92,7 @@ function drawn(rows: readonly FeedRow[]): Drawn[] {
     prev = kind;
     out.push({ type: "item", key: row.id, row });
   }
+  if (!disclosed) out.push({ type: "comingUp", key: COMING_UP_KEY });
   return out;
 }
 
@@ -104,9 +128,10 @@ export function WhatMattersFeed() {
   const index = useList((s) => s.index);
   const loading = useList((s) => s.loading);
   const feed = useToday((s) => s.rows);
-  const rows = useMemo(() => drawn(feed), [feed]);
+  const comingUp = useToday((s) => s.comingUp);
+  const rows = useMemo(() => drawn(feed, comingUp), [feed, comingUp]);
   /** each row's place among what's drawn, by its id */
-  const placeOf = useMemo(() => new Map(rows.flatMap((r, i) => (r.type !== "heading" ? [[r.key, i] as const] : []))), [rows]);
+  const placeOf = useMemo(() => new Map(rows.flatMap((r, i) => (r.type === "item" || r.type === "digest" ? [[r.key, i] as const] : []))), [rows]);
   const design = useDesign();
   const scrollRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLElement>(null);
@@ -114,7 +139,7 @@ export function WhatMattersFeed() {
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: (i) => (rows[i]!.type === "heading" ? 44 : 68),
+    estimateSize: (i) => (rows[i]!.type === "heading" || rows[i]!.type === "comingUp" ? 44 : 68),
     getItemKey: (i) => rows[i]!.key,
     overscan: 6,
     paddingEnd: 24,
@@ -205,11 +230,15 @@ export function WhatMattersFeed() {
   }, []);
 
   const virtualItems = virtualizer.getVirtualItems();
-  // plan 210: the history's next page as the feed nears its end, as the Inbox's (the list keeps its cursor)
+  // plan 210: the history's next page as the feed nears its end, as the Inbox's (the list keeps its cursor). Iteration 4
+  // (revision 9): Earlier's own boundary: only as the drawn window comes near its end, and again once each page lands;
+  // never because rows above it came or went (Coming up opened or closed), which moves no history line
   const last = virtualItems.at(-1)?.index;
+  const nearEnd = last !== undefined && last >= rows.length - 15;
+  const historyLines = useMemo(() => feed.reduce((n, r) => n + (r.line ? 1 : 0), 0), [feed]);
   useEffect(() => {
-    if (last !== undefined && last >= rows.length - 15) void loadMore();
-  }, [last, rows.length]);
+    if (nearEnd) void loadMore();
+  }, [nearEnd, historyLines]);
   return (
     <section ref={sectionRef} className="relative flex h-full min-h-0 flex-col bg-pane" data-testid="wm-feed" data-controls-key={controlsKey}>
       <header ref={headerRef} className="drag-region scroll-hairline shrink-0 pb-2">
@@ -239,8 +268,11 @@ export function WhatMattersFeed() {
                 </div>
               ))}
             </div>
-          ) : rows.length === 0 ? (
-            <EmptyState icon={<Sun className="mb-2 size-7 text-muted-foreground" aria-hidden />} title={t("today.empty")} />
+          ) : feed.length === 0 ? (
+            // (plan 210, iteration 4: nothing now, Coming up's disclosure under the words, so what's ahead is a click away)
+            <EmptyState icon={<Sun className="mb-2 size-7 text-muted-foreground" aria-hidden />} title={t("today.empty")}>
+              {comingUp > 0 && <ComingUpHeading empty />}
+            </EmptyState>
           ) : (
             <div aria-label={t("whatMatters.feed.label")} role="group" className="relative" style={{ height: virtualizer.getTotalSize() }}>
               {virtualItems.map((v) => {
@@ -248,7 +280,7 @@ export function WhatMattersFeed() {
                 return (
                   <div key={v.key} data-index={v.index} ref={virtualizer.measureElement} className="absolute inset-x-0 top-0" style={{ transform: `translateY(${v.start}px)` }}>
                     <div className={COLUMN}>
-                      {row.type === "heading" ? <Heading kind={row.kind} /> : row.type === "item" ? <FeedItem row={row.row} thread={items[index.get(row.row.threadId) ?? -1]} /> : <DigestItem />}
+                      {row.type === "heading" ? <Heading kind={row.kind} /> : row.type === "comingUp" ? <ComingUpHeading /> : row.type === "item" ? <FeedItem row={row.row} thread={items[index.get(row.row.threadId) ?? -1]} /> : <DigestItem />}
                     </div>
                   </div>
                 );
@@ -266,6 +298,13 @@ export function WhatMattersFeed() {
  * group of its own: a quiet sub-heading, no hairline, on the same line as the headings and the rows' words.
  */
 function Heading({ kind }: { kind: FeedGroupKind }) {
+  // plan 210 (iteration 4): a Coming up bucket, a quiet sub-heading under its disclosure, as Waiting on you is under Today
+  if (comingBucket(kind) !== null)
+    return (
+      <h3 data-testid="wm-heading" data-kind="coming" data-day={groupDay(kind) ?? groupWeek(kind) ?? undefined} className="mx-3 mb-0.5 pt-4 pb-1 text-sm font-medium text-muted-foreground">
+        {headingName(kind)}
+      </h3>
+    );
   if (kind === "waiting")
     return (
       <h3 data-testid="wm-heading" data-kind="waiting" className="mx-3 mb-0.5 pt-4 pb-1 text-sm font-medium text-muted-foreground">
@@ -276,6 +315,28 @@ function Heading({ kind }: { kind: FeedGroupKind }) {
     <h2 data-testid="wm-heading" data-kind={groupDay(kind) !== null ? "day" : groupWeek(kind) !== null ? "week" : kind} data-day={groupDay(kind) ?? groupWeek(kind) ?? undefined} className="hairline-b mx-3 mb-1 pt-5 pb-1.5 text-sm font-medium text-foreground">
       {headingName(kind)}
     </h2>
+  );
+}
+
+/**
+ * Plan 210 (iteration 4, the Codex review's revision 9; the owner: "Coming up as the feed's last heading, closed, with its
+ * count"): a heading among the feed's, its words the catalog's disclosure ("Coming up · 3", its chevron turning, the same
+ * words open or shut), closed until opened and remembered as left on this machine. Opening it draws its buckets in place
+ * under it; the header keeps missed · to do today · waiting.
+ */
+function ComingUpHeading({ empty = false }: { /** under the empty feed's words, quietly, rather than among headings */ empty?: boolean }) {
+  const count = useToday((s) => s.comingUp);
+  const open = useToday((s) => s.comingUpOpen);
+  return (
+    <Collapsible
+      open={open}
+      onOpenChange={setComingUpOpen}
+      render={<h2 data-testid="wm-heading" data-kind="comingUp" className={empty ? "mt-2 text-sm font-normal text-muted-foreground" : "hairline-b mx-3 mb-1 pt-5 pb-1.5 text-sm font-medium text-foreground"} />}
+    >
+      <CollapsibleTrigger data-testid="wm-coming-up" aria-controls={FEED_ROWS_ID} className={cn("w-auto gap-1 text-[length:inherit] leading-[inherit] font-[inherit] [&>[data-slot=collapsible-chevron]]:ms-0 [&>[data-slot=collapsible-chevron]]:size-3.5", empty ? "text-muted-foreground hover:text-foreground" : "text-foreground")}>
+        {t("whatMatters.comingUp", { count })}
+      </CollapsibleTrigger>
+    </Collapsible>
   );
 }
 

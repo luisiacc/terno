@@ -1,7 +1,6 @@
 import { t } from "@terno/i18n";
-import { Collapsible, CollapsibleTrigger } from "@terno/ui/components/collapsible";
 import type { TodayCounts } from "@terno/core";
-import { setComingUpOpen, useToday } from "~/state/today";
+import { useToday } from "~/state/today";
 
 /**
  * Plan 210 (iteration 3, revision 8, the owner's "'Waiting on you' in Today"): the header's numbers, "1 missed · 3 to do
@@ -14,37 +13,18 @@ export function todayCountsLine(c: TodayCounts): string | null {
 }
 
 /**
- * Coming up's disclosure in the sentence's size and line: quiet until hovered or open, its chevron beside its words (the
- * catalog's Collapsible trigger, as an earlier answer's sources are on Ask's page)
- */
-/** The feed's rows, what Coming up's disclosure shows more of (its rows join their days there: no panel of its own) */
-export const FEED_ROWS_ID = "wm-feed-rows";
-
-const DISCLOSURE = "no-drag w-auto gap-1 text-[length:inherit] leading-[inherit] font-normal text-muted-foreground hover:text-foreground data-panel-open:text-foreground [&>[data-slot=collapsible-chevron]]:ms-0 [&>[data-slot=collapsible-chevron]]:size-3.5";
-
-/**
  * Plan 161: What matters' numbers in words, under its title. Pass 3: one sentence, never a second total to read against
- * the Inbox's. Plan 204: the feed holds all of it (no cap), so the sentence is the count; after it, Coming up's quiet
- * toggle ("4 coming up"), which opens its lines under the rest. Plan 210: the feed's own, since the feed is the only view;
- * iteration 3: its numbers by when and who ("1 missed · 3 today · 5 waiting"), the backend's projection's; Coming up the
- * catalog's disclosure (its words the same open or shut, its chevron turning), open until closed (remembered on this
- * machine), its rows drawn in the feed under their days and weeks.
+ * the Inbox's. Plan 204: the feed holds all of it (no cap), so the sentence is the count. Plan 210: the feed's own, since
+ * the feed is the only view; iteration 3: its numbers by when and who ("1 missed · 3 to do today · 5 waiting"), the
+ * backend's projection's. Iteration 4 (the Codex review's revision 9): Coming up isn't said here: it's the feed's last
+ * heading, its own disclosure ("Coming up · 3").
  */
 export function TodayLine() {
   const counts = useToday((s) => s.counts);
-  const comingUp = useToday((s) => s.comingUp);
-  const open = useToday((s) => s.comingUpOpen);
   const said = todayCountsLine(counts);
   return (
     <p data-testid="today-line" className="type-list-subtitle flex min-w-0 flex-wrap items-center gap-x-2 text-muted-foreground tabular">
       {said && <span data-testid="today-needs" className="text-foreground">{said}</span>}
-      {comingUp > 0 && (
-        <Collapsible open={open} onOpenChange={setComingUpOpen} render={<span />}>
-          <CollapsibleTrigger data-testid="today-coming-up" aria-controls={FEED_ROWS_ID} className={DISCLOSURE}>
-            {t("today.line.comingUp", { count: comingUp })}
-          </CollapsibleTrigger>
-        </Collapsible>
-      )}
     </p>
   );
 }

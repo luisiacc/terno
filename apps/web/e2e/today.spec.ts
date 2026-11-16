@@ -708,17 +708,20 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       // plan 210 (the owner): by day: what needs you now under Today (iteration 3: people waiting on you its quiet part),
       // then a heading per day ahead, in order
       const ks = await kinds(page);
-      expect(ks.filter((k) => k !== "history" && k !== "missed")).toEqual(["today", "waiting", "day", "day"]);
+      // (iteration 4: Coming up the last heading, closed)
+      expect(ks.filter((k) => k !== "history" && k !== "missed")).toEqual(["today", "waiting", "day", "day", "comingUp"]);
       await expect.poll(() => groupOf(page, "Flight to Madrid")).toBe("day");
       await reach(page, "Flight to Madrid");
       const days = page.locator(`${FEED} [data-testid=wm-heading][data-kind=day]`);
       await expect(days.first()).toHaveText("Tomorrow");
       await expect(days.nth(1)).toHaveText("Saturday");
       await toTop(page);
-      // later than its time to act: not an item, only the header's quiet count
+      // later than its time to act: not an item, only Coming up's count, the feed's last heading (iteration 4)
       await expect(item(page, "Domain renewal")).toHaveCount(0);
-      await expect(page.getByTestId("today-coming-up")).toHaveText("2 coming up");
-      await expect(page.getByTestId("today-coming-up")).toHaveAttribute("aria-expanded", "false");
+      await expect(page.getByTestId("today-line")).not.toContainText(/coming up/i);
+      await toEnd(page);
+      await expect(page.getByTestId("wm-coming-up")).toHaveText("Coming up · 2");
+      await expect(page.getByTestId("wm-coming-up")).toHaveAttribute("aria-expanded", "false");
     });
 
     await scenario("a date that passed with nothing done: Missed, first", async () => {
@@ -740,12 +743,13 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
     });
 
     await scenario("Coming up opens and closes by keyboard, its rows under their days and, past two weeks, their weeks, and stays open after a reload", async () => {
-      const toggle = page.getByTestId("today-coming-up");
+      const toggle = page.getByTestId("wm-coming-up");
+      await toEnd(page);
       await toggle.focus();
       await page.keyboard.press("Enter");
       await expect(toggle).toHaveAttribute("aria-expanded", "true");
       // plan 210 (iteration 3): the catalog's disclosure: the same words open or shut, its chevron turned
-      await expect(toggle).toHaveText("2 coming up");
+      await expect(toggle).toHaveText("Coming up · 2");
       await expect(toggle.locator("[data-slot=collapsible-chevron]")).toHaveCount(1);
       await expect(toggle).toBeFocused();
       // last, past the demo's Needs you (the feed is virtualized: scrolled to its end, focus left on the toggle)
@@ -756,16 +760,17 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       // its words in the row's ink, not a fade (its column stays quiet)
       const ink = async (l: Locator) => l.evaluate((el) => getComputedStyle(el).color);
       expect(await ink(renewal.getByTestId("wm-sentence"))).not.toBe(await ink(renewal.getByTestId("wm-meta")));
-      // plan 210: under its own day's heading; iteration 3: the dues six weeks out under their week's, last
+      // plan 210: under its own day's heading; iteration 3: the dues six weeks out under their week's, last; iteration 4:
+      // Coming up's own buckets, under its heading
       expect(await groupOf(page, "Domain renewal")).toBe("comingUp");
       expect(await groupOf(page, "Club dues")).toBe("comingUp");
-      expect((await kinds(page)).filter((k) => k !== "history").slice(-2)).toEqual(["day", "week"]);
-      const week = page.locator(`${FEED} [data-testid=wm-heading][data-kind=week]`);
+      expect((await kinds(page)).filter((k) => k !== "history").slice(-3)).toEqual(["comingUp", "coming", "coming"]);
+      const week = page.locator(`${FEED} [data-testid=wm-heading][data-kind=coming]`).last();
       await expect.poll(async () => (await toEnd(page), await week.textContent())).toBe("Week of Nov 30");
       // the heading on its items' text line
       await expect.poll(async () => (await toEnd(page), await item(page, "Domain renewal").count())).toBe(1);
       const left = async (l: Locator) => l.evaluate((el) => el.getBoundingClientRect().left + parseFloat(getComputedStyle(el).paddingLeft));
-      expect(Math.abs((await left(page.locator(`${FEED} [data-testid=wm-heading][data-kind=day]`).last())) - (await left(renewal.getByTestId("wm-sentence"))))).toBeLessThanOrEqual(1);
+      expect(Math.abs((await left(page.locator(`${FEED} [data-testid=wm-heading][data-kind=coming]`).first())) - (await left(renewal.getByTestId("wm-sentence"))))).toBeLessThanOrEqual(1);
       if (SHOTS) {
         for (const mode of ["light", "dark"] as const) {
           await page.emulateMedia({ colorScheme: mode });
@@ -782,6 +787,7 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
         const results = await new AxeBuilder({ page }).include(FEED).analyze();
         expect(results.violations.map((v) => `${mode} ${v.id}: ${v.nodes[0]?.html.slice(0, 120)}`)).toEqual([]);
       }
+      await toEnd(page);
       await toggle.focus();
       await page.keyboard.press("Space");
       await expect(toggle).toHaveAttribute("aria-expanded", "false");
@@ -791,7 +797,7 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       await expect(toggle).toHaveAttribute("aria-expanded", "true");
       await fresh(page);
       await page.getByTestId("nav-today").click();
-      await expect(page.getByTestId("today-coming-up")).toHaveAttribute("aria-expanded", "true");
+      await expect.poll(async () => (await toEnd(page), await page.getByTestId("wm-coming-up").getAttribute("aria-expanded"))).toBe("true");
       await expect.poll(async () => (await toEnd(page), await item(page, "Domain renewal").count())).toBe(1);
     });
 
