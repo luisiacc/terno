@@ -12,7 +12,7 @@ import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { IdbMailStore } from "@terno/idb";
 import { demoRegistry } from "@terno/mail";
 import { generateDataset } from "@terno/mock-data";
-import { DATED_NOTHING_ASKED_SINCE, NEEDS_WALK, type MailStore } from "@terno/store";
+import { DATED_NOTHING_ASKED_SINCE, FOLLOWUPS_ACTIVE_MAX, NEEDS_WALK, type MailStore } from "@terno/store";
 import { msg, seedDatedItems } from "@terno/store/conformance";
 import { afterAll, describe, expect, it } from "vitest";
 import { copyMailbox, LARGE_MAILBOX } from "../../db/src/test/perf-mailbox";
@@ -26,7 +26,7 @@ const dir = mkdtempSync(join(tmpdir(), "terno-today-perf-"));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
 /** list: today.list; added: what the count adds to plan 145's; needs and count: absolute, so a slower Needs you shows (plan 204, the second panel round) */
-type Gate = { listMs: number; addedMs: number; needsMs: number; countMs: number };
+type Gate = { listMs: number; addedMs: number; needsMs: number; countMs: number; /** this scenario's longest turn, when not the run's */ busyMs?: number };
 
 const p95 = (times: number[]) => [...times].sort((a, b) => a - b)[Math.floor(times.length * 0.95) - 1]!;
 
@@ -128,7 +128,39 @@ async function mixedPerThread(store: MailStore, accountId: number, now: number) 
   while (!(await store.facts.idle())) await store.facts.backfill({ limit: 5000 });
 }
 
-async function run(kind: "SQLite" | "IndexedDB", budget: { spread: Gate; bound: Gate; needs: Gate; busyMs: number }) {
+/**
+ * Plan 210 (iteration 3, Codex code review): follow-ups at its bound, every promise beside SEVERAL's answering a request
+ * (`answers`, linked by its reply's verdict, as the reader writes it), each in a conversation of its own. Returns the
+ * requests: closed afterwards, each is read by id with the promises (`today.members`, one batch), never among the open set.
+ */
+const LINKED = FOLLOWUPS_ACTIVE_MAX - 2 * SEVERAL;
+
+async function linkedRequests(store: MailStore, accountId: number, now: number): Promise<{ id: number; revision: number }[]> {
+  const me = { name: "Me", email: "me@perf.test" };
+  const who = (i: number) => ({ name: `Parent ${i}`, email: `parent${i}@linked.test` });
+  const asked = Array.from({ length: LINKED }, (_, i) => msg({ accountId, from: who(i), to: [me], inInbox: false, listId: null, providerMsgId: `linked-${i}-in`, providerThreadId: `linked-${i}`, subject: `Form ${i}`, date: now - 5 * 3_600_000 - i, bodyText: "Could you send the signed form by Friday?" }));
+  const replies = Array.from({ length: LINKED }, (_, i) => msg({ accountId, from: me, to: [who(i)], isSent: true, isRead: true, inInbox: false, listId: null, gmailLabels: ["SENT"], providerMsgId: `linked-${i}-out`, providerThreadId: `linked-${i}`, subject: `Re: Form ${i}`, date: now - 4 * 3_600_000 - i, bodyText: "I'll send it Wednesday." }));
+  const ins: number[] = [];
+  const outs: number[] = [];
+  for (let i = 0; i < LINKED; i += 500) ins.push(...(await store.sync.ingest(asked.slice(i, i + 500), { applyFilters: false, now, classifier: null, datedMail: { since: null } })).inserted);
+  for (let i = 0; i < LINKED; i += 500) outs.push(...(await store.sync.ingest(replies.slice(i, i + 500), { applyFilters: false, now, classifier: null, liveSent: { wanted: true } })).inserted);
+  expect([ins.length, outs.length]).toEqual([LINKED, LINKED]);
+  const requests: { id: number; revision: number }[] = [];
+  for (let i = 0; i < LINKED; i++) {
+    const src = (await store.dated.source(ins[i]!))!;
+    const row = { kind: "respond" as const, item: 0, text: "Send the signed form", quote: "send the signed form by Friday", dueDay: todayKey(now + 3 * DAY), dueAt: now + 3 * DAY, timed: false, dated: true, actAt: now + i };
+    expect(await store.dated.finish({ messageId: ins[i]!, threadId: src.threadId, fromScan: false, rows: [row], settled: [], now, model: "m", provider: "p", promptVersion: 1, clearGeneration: store.dated.clearGeneration() })).toBe("written");
+    const [request] = await store.dated.ofThread(src.threadId);
+    requests.push({ id: request!.id, revision: request!.revision });
+    const promise = { kind: "promise" as const, item: 0, text: "send the signed form", quote: "I'll send it Wednesday", personName: who(i).name, personEmail: who(i).email, dueAt: now + ((i % 5) + 1) * DAY, dated: true };
+    expect(await store.followups.finish({ messageId: outs[i]!, threadId: src.threadId, fromScan: false, rows: [promise], kept: [], verdicts: [{ request: requests[i]!, verdict: "promise", item: 0 }], now, model: "m", provider: "p", promptVersion: 11, clearGeneration: store.followups.clearGeneration() })).toBe("written");
+  }
+  // the facts of what came in, as above
+  while (!(await store.facts.idle())) await store.facts.backfill({ limit: 5000 });
+  return requests;
+}
+
+async function run(kind: "SQLite" | "IndexedDB", budget: { spread: Gate; bound: Gate; needs: Gate; linked: Gate; busyMs: number }) {
   const platform = { uuid: () => crypto.randomUUID(), yield: () => new Promise<void>((resolve) => setImmediate(resolve)) };
   let store: MailStore | undefined;
   let accountId: number;
@@ -163,7 +195,8 @@ async function run(kind: "SQLite" | "IndexedDB", budget: { spread: Gate; bound: 
       const counts: number[] = [];
       // plan 145's own count, in the same turns: what this plan adds is the difference
       const needs: number[] = [];
-      const loop = watchLoop(budget.busyMs * MULT);
+      const busyMs = gate.busyMs ?? budget.busyMs;
+      const loop = watchLoop(busyMs * MULT);
       for (let i = 0; i < 20; i++) {
         await turn();
         let t = performance.now();
@@ -182,7 +215,7 @@ async function run(kind: "SQLite" | "IndexedDB", budget: { spread: Gate; bound: 
       const report = loop.stop();
       const added = p95(counts) - p95(needs);
       process.stderr.write(`[${kind}] ${label}: today.list p95 ${p95(lists).toFixed(1)} ms, count p95 ${p95(counts).toFixed(1)} ms (plan 145's ${p95(needs).toFixed(1)}, so ${added.toFixed(1)} added), longest busy ${report.longest.busy.toFixed(1)} ms\n`);
-      expect(report.longest.busy).toBeLessThanOrEqual(budget.busyMs * MULT);
+      expect(report.longest.busy).toBeLessThanOrEqual(busyMs * MULT);
       expect(p95(lists)).toBeLessThanOrEqual(gate.listMs * MULT);
       expect(added).toBeLessThanOrEqual(gate.addedMs * MULT);
       expect(p95(needs)).toBeLessThanOrEqual(gate.needsMs * MULT);
@@ -220,14 +253,34 @@ async function run(kind: "SQLite" | "IndexedDB", budget: { spread: Gate; bound: 
     expect(far.reduce((n, x) => n + x.items.length, 0)).toBeGreaterThanOrEqual(1000);
     expect(far.some((x) => x.bucket?.startsWith("week:"))).toBe(true);
     await measure("Coming up far, Needs you at its bound", NOW + 2 * DAY, budget.needs);
+    // plan 210 (iteration 3, Codex code review): the combined bounds: follow-ups full, every promise there but SEVERAL's
+    // answering a request closed since (each read by id, in one batch, by the list, the count and the clock alike), the
+    // dated set full again (Coming up far), Needs you full
+    const farOpen = await backend.store.dated.active();
+    expect(await backend.store.today.act({ dated: farOpen.map((r) => ({ id: r.id, revision: r.revision, patch: { state: "dismissed", closedReason: "user", closedAt: NOW + 2 * DAY } })), promises: [] })).not.toBeNull();
+    const requests = await linkedRequests(backend.store, accountId, NOW + 2 * DAY);
+    expect(await backend.store.today.act({ dated: requests.map((r) => ({ id: r.id, revision: r.revision, patch: { state: "dismissed", closedReason: "user", closedAt: NOW + 2 * DAY } })), promises: [] })).not.toBeNull();
+    await seedDatedItems({ store: backend.store, accountId, now: NOW + 2 * DAY, budget: MULT, log: () => {} }, 2, true);
+    backend.today.touched();
+    const promises = await backend.store.followups.active();
+    expect(promises).toHaveLength(FOLLOWUPS_ACTIVE_MAX);
+    expect(promises.filter((p) => p.answers != null)).toHaveLength(LINKED);
+    expect((await backend.store.dated.active()).length).toBeGreaterThanOrEqual(1000);
+    await measure("Linked requests at the combined bounds", NOW + 2 * DAY, budget.linked);
   } finally {
     await backend.stop();
   }
 }
 
+// plan 210 (iteration 3, Codex code review): the combined bounds are this gate's largest state, and on SQLite they're over the
+// 60 ms ceiling before and after the batched read (base a7e1a5ad7, three rounds at load 2 to 8: list p95 75 to 81 ms, longest
+// turn 96 to 104; with it, at load 2 to 3: 56 to 71 and 92 to 134). Most of it isn't Today's: plan 145's own walk is about
+// 48 ms in this mailbox (35 in the scenario before), and the second Coming up seed alone takes the list to about 60 ms and the
+// turn to about 81. So `linked` holds what was measured, and what Today adds for 900 linked requests (about 10 ms; 12 to 13
+// when each was read again by id) is its tightest part. The read count itself is held in packages/db/src/today-members.test.ts.
 describe("Today at 50k threads with 1,000 dated items (plan 204 revision 12)", () => {
   // the count is plan 145's walk and what this plan adds to it: at most 2 ms spread, 4 ms with a thousand threads to check
   // Needs you's own walk: about 7 ms (SQLite) and 5 ms (IndexedDB) as mailboxes have it, about 28 and 8 with all 2,000 on its slowest path
-  it("SQLite", async () => run("SQLite", { spread: { listMs: 20, addedMs: 2, needsMs: 12, countMs: 14 }, bound: { listMs: 30, addedMs: 4, needsMs: 12, countMs: 14 }, needs: { listMs: 45, addedMs: 5, needsMs: 40, countMs: 42 }, busyMs: 60 }), 600_000);
-  it("IndexedDB", async () => run("IndexedDB", { spread: { listMs: 20, addedMs: 2, needsMs: 10, countMs: 12 }, bound: { listMs: 30, addedMs: 4, needsMs: 10, countMs: 12 }, needs: { listMs: 15, addedMs: 3, needsMs: 12, countMs: 14 }, busyMs: 60 }), 900_000);
+  it("SQLite", async () => run("SQLite", { spread: { listMs: 20, addedMs: 2, needsMs: 12, countMs: 14 }, bound: { listMs: 30, addedMs: 4, needsMs: 12, countMs: 14 }, needs: { listMs: 45, addedMs: 5, needsMs: 40, countMs: 42 }, linked: { listMs: 85, addedMs: 12, needsMs: 60, countMs: 70, busyMs: 120 }, busyMs: 60 }), 600_000);
+  it("IndexedDB", async () => run("IndexedDB", { spread: { listMs: 20, addedMs: 2, needsMs: 10, countMs: 12 }, bound: { listMs: 30, addedMs: 4, needsMs: 10, countMs: 12 }, needs: { listMs: 15, addedMs: 3, needsMs: 12, countMs: 14 }, linked: { listMs: 20, addedMs: 4, needsMs: 12, countMs: 15 }, busyMs: 60 }), 900_000);
 });

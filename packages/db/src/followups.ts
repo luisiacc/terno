@@ -254,6 +254,9 @@ export function closedFollowupPage(db: Db, o: { since: number; after: ClosedAt |
     .map(toRow);
 }
 
+/** Plan 210 (iteration 3, Codex code review): a whole row as read, for a batch read elsewhere (`itemMembers`). */
+export { toRow as followupRow, type Raw as FollowupRaw };
+
 export function getFollowup(db: Db, id: number): FollowupRow | null {
   const r = db.get<Raw>("SELECT * FROM followups WHERE id = ?", id);
   return r ? toRow(r) : null;

@@ -198,6 +198,9 @@ export function closedDatedPage(db: Db, o: { since: number; after: ClosedAt | nu
     .map(toRow);
 }
 
+/** Plan 210 (iteration 3, Codex code review): a whole row as read, for a batch read elsewhere (`itemMembers`). */
+export { toRow as datedRow, type Raw as DatedRaw };
+
 export function getDated(db: Db, id: number): DatedRow | null {
   const r = db.get<Raw>("SELECT * FROM dated_items WHERE id = ?", id);
   return r ? toRow(r) : null;

@@ -614,8 +614,9 @@ export class TodayService {
   private async needs(dated: readonly DatedRow[], promises: readonly FollowupRow[]): Promise<NeedingPromise[]> {
     if (!promises.some((p) => p.answers != null)) return [...promises];
     const known = new Map(dated.map((r) => [r.id, r]));
-    const missing = [...new Set(promises.flatMap((p) => (p.answers != null && !known.has(p.answers) ? [p.answers] : [])))];
-    if (missing.length) for (const r of (await this.b.store.today.members(missing.map((id) => refKey({ source: "dated", id })))).dated) if (missing.includes(r.id)) known.set(r.id, r);
+    const missing = new Set(promises.flatMap((p) => (p.answers != null && !known.has(p.answers) ? [p.answers] : [])));
+    // (one read for all of them; the members that join them aren't wanted here)
+    if (missing.size) for (const r of (await this.b.store.today.members([...missing].map((id) => refKey({ source: "dated", id })))).dated) if (missing.has(r.id)) known.set(r.id, r);
     return withNeeds(promises, known);
   }
 

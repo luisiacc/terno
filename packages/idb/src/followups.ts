@@ -244,6 +244,9 @@ export function closedFollowupPage(c: Ctx, o: { since: number; after: ClosedAt |
 }
 
 export const threadFollowups = (c: Ctx, threadId: number): FollowupRow[] => T(c, "followups").by("fk_thread_id", threadId).filter(live).sort(byDue).map(toRow);
+/** As SQL's: a whole row as stored, for a batch read elsewhere (`itemMembers`). */
+export { toRow as followupRow };
+
 export function getFollowup(c: Ctx, id: number): FollowupRow | null {
   const r = T(c, "followups").get(id);
   return r ? toRow(r) : null;

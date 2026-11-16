@@ -201,6 +201,9 @@ export function closedDatedPage(c: Ctx, o: { since: number; after: ClosedAt | nu
 
 
 export const threadDated = (c: Ctx, threadId: number): DatedRow[] => T(c, "dated_items").by("fk_thread_id", threadId).filter((r) => r.state === "open").sort(byAct).map(toRow);
+/** As SQL's: a whole row as stored, for a batch read elsewhere (`itemMembers`). */
+export { toRow as datedRow };
+
 export function getDated(c: Ctx, id: number): DatedRow | null {
   const r = T(c, "dated_items").get(id);
   return r ? toRow(r) : null;
