@@ -25,7 +25,7 @@ vi.mock("~/rpc/connection", () => ({
 const { actOnThreadItem, actOnThreadPromise, actOnTodayRow, doneOnSelected, laterFromPicker, laterOnSelected, removeOnSelected } = await import("./today-task");
 const { getApp, openedByApp, setApp } = await import("~/state/app");
 const { reloadList } = await import("~/state/list");
-const { feedRow, installToday, openFeedRow, useFeedRow, useToday } = await import("~/state/today");
+const { feedRow, installToday, openFeedRow, useFeedRow, useReaderChoice, useToday } = await import("~/state/today");
 const { resetSnacks, runUndo, useSnack } = await import("~/lib/snack");
 installToday();
 
@@ -255,6 +255,32 @@ describe("Done means gone (plan 204, after the second panel round; plan 210, ite
     expect(removeOnSelected()).toBe(false);
     expect(laterOnSelected()).toBe(false);
     expect(getApp().dialog).toBe(null);
+  });
+
+  it("plan 210 (iteration 3, code review): an item chosen in the reader with no feed row leads there: D, ⇧D and b are its, never the open row's", async () => {
+    const acts: unknown[] = [];
+    fake.handlers["dated.act"] = async (p) => (acts.push(p), { undoId: null });
+    // the open row is item 2's (conversation 2); the reader's line chose its item 9, behind Coming up (no row)
+    const chosen = { key: "dated:90", ref: { source: "dated", id: 90 }, open: true, missed: false, dueAt: 2e12, source: "dated", row: { id: 90, threadId: 2, revision: 3, text: "Task 9" } } as never;
+    useReaderChoice.setState({ held: { threadId: 2, item: chosen } });
+    try {
+      expect(doneOnSelected()).toBe(true);
+      expect(removeOnSelected()).toBe(true);
+      await vi.waitFor(() => expect(acts).toEqual([{ id: 90, revision: 3, action: "done" }, { id: 90, revision: 3, action: "dismiss" }]));
+      // the open row stays, open: it wasn't what the keys acted on
+      expect(shown()).toEqual(["dated:10", "dated:20", "dated:50", "dated:30"]);
+      expect(useFeedRow.getState().opened).toBe("dated:20");
+      // b: the reader's own Later, not the row's picker
+      expect(laterOnSelected()).toBe(true);
+      expect([useReaderChoice.getState().later, getApp().menuOpen, getApp().dialog, useToday.getState().laterPick]).toEqual([true, true, null, null]);
+      // another conversation open: the choice isn't its, the open row's item is what D acts on
+      open("dated:10");
+      expect(doneOnSelected()).toBe(true);
+      await vi.waitFor(() => expect(acts.at(-1)).toEqual({ id: 10, revision: 1, action: "done" }));
+    } finally {
+      useReaderChoice.setState({ held: null, later: false });
+      setApp({ menuOpen: false });
+    }
   });
 
   it("outside What matters nothing leaves the feed", async () => {

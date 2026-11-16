@@ -3,6 +3,7 @@ import { addressKey, dayKeyOf, DIGEST_FEED_ROW, DIGEST_ROW_ID, inDayOrder, type 
 import { t } from "@terno/i18n";
 import { create } from "zustand";
 import { alsoLine, taskOf, type TodayTask } from "~/lib/dated";
+import type { ReaderItem } from "~/lib/reader-items";
 import { client } from "~/rpc/connection";
 import type { Undo } from "~/lib/snack";
 import { getApp, navigate, setApp, useApp } from "./app";
@@ -134,6 +135,27 @@ export const useFeedRow = create<{ opened: FeedRowId | null; cursor: FeedRowId |
 /** The feed opens this row (its conversation is the app's to open), or none. */
 export function openFeedRow(id: FeedRowId | null): void {
   useFeedRow.setState(({ moves }) => ({ opened: id, ...(id !== null ? { cursor: null } : {}), moves: moves + 1 }));
+}
+
+/**
+ * Plan 210 (iteration 3, code review): the reader's top item while it leads by a choice made there, with no feed row of its
+ * own (behind Coming up, held): what D, b and ⇧D and the palette's Done, Later and Remove act on for its conversation, never
+ * the open row's item it took the place of. The reader sets it while the choice holds; `later`, the reader's Later menu
+ * open (its button, or b on that item).
+ */
+export const useReaderChoice = create<{ held: { threadId: number; item: ReaderItem } | null; later: boolean }>(() => ({ held: null, later: false }));
+
+/** The reader's chosen item of this conversation, while What matters is shown (else the feed's row is what's acted on). */
+export const readerHeld = (threadId: number | null | undefined): ReaderItem | null => {
+  const held = useReaderChoice.getState().held;
+  return getApp().today && threadId != null && held?.threadId === threadId ? held.item : null;
+};
+
+/** `readerHeld`, as the palette reads it. */
+export function useReaderHeld(threadId: number | null | undefined): ReaderItem | null {
+  const today = useApp((s) => s.today);
+  const item = useReaderChoice((s) => (threadId != null && s.held?.threadId === threadId ? s.held.item : null));
+  return today ? item : null;
 }
 
 /** A row by its id, from the rows loaded. */

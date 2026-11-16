@@ -11,11 +11,11 @@ import { itemLaterWindow, laterNote, laterPresets, laterStart, type LaterWindow 
 import { readerItems, readerLine, readerText, type ReaderItem, type ReaderItems } from "~/lib/reader-items";
 import { presetLabel, presetWhen } from "~/lib/reminders";
 import { historyWhen } from "~/lib/today-sentence";
-import { actOnThreadItem, actOnThreadPromise } from "~/lib/today-task";
+import { actOnReaderItem, closeReaderLater, openReaderLater } from "~/lib/today-task";
 import { client } from "~/rpc/connection";
 import { getApp, useApp } from "~/state/app";
 import { useFollowups } from "~/state/followups";
-import { feedRowsOfItem, openFeedRow, useFeedTarget } from "~/state/today";
+import { feedRowsOfItem, openFeedRow, useFeedTarget, useReaderChoice } from "~/state/today";
 import { AI_CARD, AI_INSET, AI_TITLE } from "./ai-card";
 import { WhenForm } from "./when-fields";
 
@@ -77,6 +77,7 @@ export function useReaderItems(detail: ThreadDetail): ReaderModel {
   }, [closedId, threadId]);
   // chosen from the line under the top one, while the feed's open row is the same (another row opened: its item leads)
   const [chosen, setChosen] = useState<{ threadId: number; target: string; key: string } | null>(null);
+  const chosenKey = chosen?.threadId === threadId && chosen.target === targetKey ? chosen.key : null;
   const readNow = read?.threadId === threadId && read.include === include;
   const ready = (!datedOn || readNow) && (closedId === undefined || closed?.id === closedId);
   const closedRow = closedId !== undefined && closed?.id === closedId ? closed.row : null;
@@ -84,12 +85,25 @@ export function useReaderItems(detail: ThreadDetail): ReaderModel {
     dated: datedOn && readNow ? read.rows : [],
     followups: promisesOn ? [...(followups ?? []), ...(closedRow ? [closedRow] : [])] : [],
     target,
-    chosen: chosen?.threadId === threadId && chosen.target === targetKey ? chosen.key : null,
+    chosen: chosenKey,
     now: Date.now(),
   });
+  // (code review) the choice leads with no feed row of its own: D, b, ⇧D and the palette act on it, not the open row's item
+  const held = ready && items.top?.open && items.top.key === chosenKey ? items.top : null;
+  useEffect(() => {
+    const was = useReaderChoice.getState().held;
+    const same = held ? was?.threadId === threadId && was.item.key === held.key && was.item.row.revision === held.row.revision : was === null;
+    if (!same) useReaderChoice.setState({ held: held ? { threadId, item: held } : null });
+  });
+  useEffect(
+    () => () => {
+      if (useReaderChoice.getState().held?.threadId === threadId) useReaderChoice.setState({ held: null });
+    },
+    [threadId],
+  );
   const choose = (item: ReaderItem) => {
     // the feed's row for it, when the feed has one: opening it there keeps the feed, the keys (D, b, ⇧D) and the reader on
-    // one item; else (another mailbox, behind Coming up) it leads here alone
+    // one item; else (another mailbox, behind Coming up) it leads here, the keys and the palette with it (`useReaderChoice`)
     const row = feedRowsOfItem(item.ref).find((r) => r.threadId === threadId && !r.held && !r.line);
     if (row && getApp().today) return openFeedRow(row.id);
     setChosen({ threadId, target: targetKey, key: item.key });
@@ -104,6 +118,9 @@ export function useReaderItems(detail: ThreadDetail): ReaderModel {
  */
 function ItemLater({ item, act }: { item: ReaderItem; act: (at: number) => void }) {
   const triggerRef = useRef<HTMLButtonElement>(null);
+  // the app's (b opens it on a chosen item); an item that goes takes its open menu with it, and the app's keys come back
+  const open = useReaderChoice((s) => s.later);
+  useEffect(() => closeReaderLater, []);
   const [picking, setPicking] = useState(false);
   const now = Date.now();
   const span: LaterWindow = item.source === "dated" ? itemLaterWindow(item.row, now) : { before: null, limit: null };
@@ -111,7 +128,7 @@ function ItemLater({ item, act }: { item: ReaderItem; act: (at: number) => void 
   const back = () => triggerRef.current?.focus({ preventScroll: true });
   return (
     <>
-      <DropdownMenu>
+      <DropdownMenu open={open} onOpenChange={(next) => (next ? openReaderLater() : closeReaderLater())}>
         <DropdownMenuTrigger render={<Button ref={triggerRef} variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" data-testid="thread-dated-later" aria-label={t("dated.laterItem", { text: readerText(item) })} />}>
           {t("dated.later")}
           <ChevronDown aria-hidden />
@@ -165,12 +182,6 @@ function outcomeOf(item: ReaderItem): string {
   return historyWhen({ outcome, kind: item.source === "dated" ? item.row.kind : "promise", key: { at: item.row.closedAt ?? item.row.createdAt, src: item.source === "dated" ? 0 : 1, id: item.row.id } });
 }
 
-/** Done, Later and Remove act on the item, its feed rows leaving with it (a merged row's every member, the backend's one act). */
-function act(threadId: number, item: ReaderItem, action: "done" | "dismiss" | "later", at?: number): void {
-  if (item.source === "dated") void actOnThreadItem(threadId, item.row, action, at);
-  else void actOnThreadPromise(item.row, action, at);
-}
-
 /**
  * Plan 210 (iteration 3, Codex revision 10): the conversation's items on the AI card's surface at its top, one line on top in
  * one design for a dated item and a promise of yours ("Due Friday · Pay the electricity bill", "Due today · You told Jess
@@ -209,11 +220,11 @@ export default function ThreadItems({ detail, items }: { detail: ThreadDetail; i
         {top.open ? (
           // Done outlined (what's usually meant), Later and Remove quiet beside it
           <span className="flex shrink-0 items-center gap-1.5">
-            <Button ref={doneRef} variant="outline" size="sm" className="text-foreground" data-testid="thread-dated-done" aria-label={t("dated.doneItem", { text })} onClick={() => act(threadId, top, "done")}>
+            <Button ref={doneRef} variant="outline" size="sm" className="text-foreground" data-testid="thread-dated-done" aria-label={t("dated.doneItem", { text })} onClick={() => void actOnReaderItem(threadId, top, "done")}>
               {t("dated.done")}
             </Button>
-            <ItemLater key={top.key} item={top} act={(at) => act(threadId, top, "later", at)} />
-            <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" data-testid="thread-dated-dismiss" aria-label={t("dated.removeItem", { text })} onClick={() => act(threadId, top, "dismiss")}>
+            <ItemLater key={top.key} item={top} act={(at) => void actOnReaderItem(threadId, top, "later", at)} />
+            <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" data-testid="thread-dated-dismiss" aria-label={t("dated.removeItem", { text })} onClick={() => void actOnReaderItem(threadId, top, "dismiss")}>
               {t("dated.remove")}
             </Button>
           </span>
