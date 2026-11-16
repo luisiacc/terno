@@ -102,7 +102,7 @@ describe("reading dates in mail you got (plan 204)", () => {
   });
 
   it("is frozen at its version: a change to the words is a new version", () => {
-    expect(DATED_PROMPT_VERSION).toBe(14);
+    expect(DATED_PROMPT_VERSION).toBe(15);
     expect(readDatesTask(input()).system).toMatchSnapshot();
   });
 
@@ -214,6 +214,19 @@ describe("reading dates in mail you got (plan 204)", () => {
     const bill = "Intentamos cobrar tu factura de $86.30, pero el pago fue rechazado. Por favor paga antes del lunes 9 de marzo.";
     expect(due({ kind: "pay", quote: "Intentamos cobrar tu factura de $86.30", due: "2026-03-09" }, bill)).toBe("2026-03-08");
     expect(due({ kind: "pay", quote: "Intentamos cobrar tu factura de $86.30", due: "2026-03-09" }, "Intentamos cobrar tu factura de $86.30.\n\nNo cobramos nada antes del lunes 9.")).toBe("2026-03-09");
+  });
+
+  it("prompt v15 (iteration 4's code review): a scam is no item, not even an alert; a provider's own report stays one; the reader's own unsubmitted draft is theirs", () => {
+    const en = readDatesTask(input()).system;
+    // round 13: v14's "stays an alert" made Theo's and Priya's phishing alerts
+    expect(en).not.toContain("stays an alert");
+    expect(en).toContain("A security notice from the reader's own provider that only reports what happened (a new sign-in, a password changed, a card frozen after a charge) is an alert, never an instruction; a scam or a suspicious message is no item at all, not even an alert (below).");
+    expect(en).toContain('- A scam or a suspicious message: no item at all, of any kind, not even an alert, whatever it says happened.');
+    expect(en).toContain('when it threatens a loss within hours ("terminated in 24 hours", "suspended within 12 hours", "bloqueada en 12 horas")');
+    // round 13: Sam's saved abstract, read as a list's optional call
+    expect(en).toContain('What the reader already started is theirs, never an optional call: a mail saying their own draft, application or registration is saved or incomplete but not submitted ("your application is saved but hasn\'t been submitted"), with the day it closes, is a "respond" due then');
+    expect(en).toContain('"Submit the Brightwater Fellowship application"');
+    expect(readDatesTask(input({ language: "es" })).system).toContain('"Enviar la solicitud de la beca Brightwater"');
   });
 
   it("plan 210 (iteration 4, revision 11): the day it's asked before is kept apart, whichever of the two days the model gave; 'before then' by its paragraph's day; a promise's move too", () => {
@@ -550,8 +563,8 @@ describe("reading dates in mail you got (plan 204)", () => {
   });
 
   it("a small window holds the whole conversation with the server: a bad answer and its repair still fit", async () => {
-    // v12's words (an ask, a Plan's window, an alert's words and deadline, a move's time and words, cold outreach, offers, a failed payment, the open items' days, a time in another zone, a newsletter's listing, a group's required act, "before" a day, soft days, a replaced promise, AutoPay, invitations, a meeting's start, a zone with the reader's clock; v13: a replaced promise, a statement's balance, the fix, the reader's choice, what asks, an RSVP's event, no identifiers; v14: the stake, the object, travel, a confirmation, an alert's step, a wish, a same-day move) need a little under 8,400 (v13 7,200, v12 6,100, v11 5,800, v10 4,700, v9 4,200, v8 3,700), past the 5,500 the app warns below for the filter: a window between them reads only the mail's first 200 tokens. A window that holds them with a bad answer and its repair
-    const window = 8400;
+    // v12's words (an ask, a Plan's window, an alert's words and deadline, a move's time and words, cold outreach, offers, a failed payment, the open items' days, a time in another zone, a newsletter's listing, a group's required act, "before" a day, soft days, a replaced promise, AutoPay, invitations, a meeting's start, a zone with the reader's clock; v13: a replaced promise, a statement's balance, the fix, the reader's choice, what asks, an RSVP's event, no identifiers; v14: the stake, the object, travel, a confirmation, an alert's step, a wish, a same-day move; v15: a scam no item, the reader's own unsubmitted draft) need a little under 8,800 (v14 8,400, v13 7,200, v12 6,100, v11 5,800, v10 4,700, v9 4,200, v8 3,700), past the 5,500 the app warns below for the filter: a window between them reads only the mail's first 200 tokens. A window that holds them with a bad answer and its repair
+    const window = 8800;
     const budget = datedBudget(window);
     const fitted = fitDates(input({ text: "word ".repeat(1200), outputTokens: budget.outputTokens }), budget.promptChars);
     const sizes: number[] = [];
