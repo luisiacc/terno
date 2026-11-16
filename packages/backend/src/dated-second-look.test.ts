@@ -13,7 +13,7 @@ import { msg, threadOf } from "@terno/store/conformance";
 import type { IncomingMessage } from "@terno/store";
 import { afterEach, describe, expect, it } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
-import { holdsMoment, lookAt, secondLook, type LookDeps } from "./dated-second-look";
+import { cardMonths, holdsMoment, lookAt, secondLook, type LookDeps } from "./dated-second-look";
 
 const at = (y: number, m: number, d: number, h = 0, min = 0) => new Date(y, m - 1, d, h, min).getTime();
 // Tuesday, November 10, 2026
@@ -165,6 +165,25 @@ describe("iteration 5's code review", () => {
     expect(look("Reminder: the lease renewal closes Friday, November 20 at 5 PM.", { shown: [{ kind: "respond", text: "Return the lease renewal form", due: "2026-11-20" }] })).toEqual([]);
   });
 
+  it("round 14's faults: a card's figures and its day in words are one card, whichever the first reading took (Priya's Meridian)", () => {
+    const CARD = "Priya Natarajan,\n\nYour Meridian Business Platinum card ending in 4417 expires at the end of December (12/26). Your replacement card has shipped and should arrive within 7–10 business days.\n\nTo avoid interruptions, activate the new card when it arrives and update it with merchants that bill you automatically before your current card expires on December 31, 2026.\n\nMeridian Card Services | Log in to manage your account.";
+    const o = { automated: true, from: "Meridian Business Card" };
+    // the day in words (the panel's first reading)
+    const words = { kind: "expire" as const, text: "Activate the Meridian Business Platinum card and update automatic-billing merchants (expires Dec 31)", quote: "update it with merchants that bill you automatically before your current card expires on December 31, 2026.", due: "2026-12-31", time: null };
+    expect(look(CARD, { ...o, first: { ...none, items: [words] } })).toEqual([]);
+    // the figures alone, the 26th (the reading's card rule)
+    const figures = { kind: "expire" as const, text: "Update merchants with the new Meridian Business Platinum card (expires 12/26)", quote: "Your Meridian Business Platinum card ending in 4417 expires at the end of December (12/26).", due: "2026-12-26", time: null };
+    expect(look(CARD, { ...o, first: { ...none, items: [figures] } })).toEqual([]);
+    // an open item of the card, shown to a reminder of it
+    expect(look(CARD, { ...o, shown: [{ kind: "expire", text: "Update merchants for the Meridian Business Platinum card", due: "2026-12-31" }] })).toEqual([]);
+    // another card's month, or nothing returned: still asked
+    expect(look(CARD, o)).toHaveLength(2);
+    expect(cardMonths("Your card expires at the end of December (12/26).")).toEqual(["2026-12"]);
+    expect(cardMonths("Tu tarjeta vence 03/27.")).toEqual(["2027-03"]);
+    expect(cardMonths("We'll see you 12/26 at the party.")).toEqual([]);
+    expect(cardMonths("Your card expires 12/26/2026.")).toEqual([]);
+  });
+
   it("a list's post the reader isn't named on gets no second look; one sent to them through a list still does (finding 9)", () => {
     const post = "Hola a todos:\n\nYo los acentos en versales los dejo siempre.\n\nPor cierto, la reunión mensual de la lista es el jueves 19 a las 20:00 en la cantina de siempre.\n\nHéctor";
     expect(look(post, { automated: true })).toHaveLength(1);
@@ -200,6 +219,17 @@ describe("iteration 5's code review", () => {
       const declaration = { kind: "respond" as const, text: "Presentar la declaración mensual de octubre", quote: "Recuerda que vence el 17.", due: "2026-11-17", time: null };
       expect(await run(LUCIA, { automated: false, shown: [pay], answer: [declaration] })).toEqual([]);
       expect(await run(LUCIA, { automated: false, shown: [{ ...pay, due: "2026-11-18" }], answer: [declaration] })).toEqual([declaration.text]);
+    });
+
+    it("round 14's faults: the same thing in the same family whatever day each reading gave it, never another part of it", async () => {
+      const DOMAIN = "Hi Priya,\n\nPlease renew lumora.io by Monday, November 30 to keep your email running.\n\nIf it isn't renewed, your lumora.io domain expires Friday, December 4 at 11:59 PM.\n\nHarborDNS";
+      const renew = { kind: "renew" as const, text: "Renew the lumora.io domain", quote: "Please renew lumora.io by Monday, November 30 to keep your email running.", due: "2026-11-30", time: null };
+      const expiry = { kind: "expire" as const, text: "lumora.io domain expires (Dec 4)", quote: "If it isn't renewed, your lumora.io domain expires Friday, December 4 at 11:59 PM.", due: "2026-12-04", time: "23:59" };
+      expect(await run(DOMAIN, { first: [renew], answer: [expiry] })).toEqual([]);
+      // an ask the look gives a day for: the same request
+      const HANNAH = "Hi Priya,\n\nWho did your 409A, and would you use them again? We grant options on Friday, November 20 at 9:00.\n\nHannah";
+      const ask = { kind: "ask", text: "Answer Hannah about your 409A provider", due: null };
+      expect(await run(HANNAH, { automated: false, shown: [ask], answer: [{ kind: "respond", text: "Tell Hannah who did your 409A", quote: "We grant options on Friday, November 20 at 9:00.", due: "2026-11-20", time: null }] })).toEqual([]);
     });
 
     it("never a day already past its Missed window", async () => {

@@ -40,6 +40,33 @@ const BILLING = /\b(?:pay\w*|paid|bill\w*|invoice\w*|charg\w*|renew\w*|subscript
 /** a stay's check-out ("Check-out: Wednesday, November 18 (11:00 AM)"): the stay's detail, never an event of its own */
 const CHECK_OUT = /\b(?:check ?out|checkout|salida del (?:hotel|alojamiento|apartamento))\b/u;
 
+/**
+ * Plan 210 (round 14's faults): a card's expiry in figures ("expires at the end of December (12/26)", "exp. 11/27", "vence
+ * 12/26"), as its month ("2026-12"). The reading's card rule: the figures alone are the 26th, the earlier reading (the Codex
+ * review of v11, kept in v16), and a day the mail says in words for that card ("before your current card expires on December
+ * 31, 2026") is that day. Either way the figures and the words are one card, so here they name one month: a day of it
+ * returned for the same card covers the other sentence, whichever reading the first one took.
+ */
+const CARD_EXPIRY = /\b(?:expir\w*|exp|valid thru|good thru|vence\w*|vencimiento|caduca\w*)\b/u;
+const CARD_FIGURE = /(?<![\d/.])(0?[1-9]|1[0-2])\/(\d{2})(?![\d/.]\d)/gu;
+export function cardMonths(words: string): string[] {
+  if (!CARD_EXPIRY.test(norm(words))) return [];
+  return [...words.matchAll(CARD_FIGURE)].map((m) => `20${m[2]}-${m[1]!.padStart(2, "0")}`);
+}
+/** whether some words say a date in a month ("2026-12"), as `saysDay` reads one (a weekday alone names no month's day) */
+function saysDayIn(words: string, month: string): boolean {
+  const [y, m] = month.split("-").map(Number) as [number, number];
+  const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  for (let d = 1; d <= last; d++) if (saysDay(words, `${month}-${String(d).padStart(2, "0")}`, { weekdays: false })) return true;
+  return false;
+}
+/** whether a sentence is on an item's day: it says that day, or the same card's month, by its own figures or the item's */
+function onDay(said: string, due: string, quote: string, arrivedAt: number): boolean {
+  if (saysDay(said, due, { arrivedAt })) return true;
+  if (cardMonths(said).includes(due.slice(0, 7))) return true;
+  return cardMonths(quote).some((month) => saysDayIn(said, month));
+}
+
 export interface LookInput {
   /** the mail as the first reading read it (quotes stripped) */
   text: string;
@@ -95,7 +122,7 @@ export function lookAt(i: LookInput): string[] {
     for (const n of at) covered.add(n);
     if (!due) return;
     const near = new Set(at.map(paragraphOf));
-    for (const n of moments) if (saysDay(sentences[n]!.said, due, { arrivedAt: i.arrivedAt }) && sameThing(item, sentences[n]!, near.has(paragraphOf(n)))) covered.add(n);
+    for (const n of moments) if (onDay(sentences[n]!.said, due, item.quote, i.arrivedAt) && sameThing(item, sentences[n]!, near.has(paragraphOf(n)))) covered.add(n);
   };
   for (const x of i.first.items) cover(x, x.due);
   for (const x of i.first.settled) cover({ quote: x.evidence });
@@ -122,8 +149,9 @@ export function lookAt(i: LookInput): string[] {
 /**
  * Iteration 5's code review (the panel's round 14): what a look returns that's already there, or already gone, is dropped:
  * one that names an item the first reading returned, or an open item of its conversation or sender, on the same day (Diego's
- * October declaration, Priya's PC 7 flight read twice), another moment of an event already there (a flight's arrival, a
- * stay's last day), a check-out of its own, and a day already past its Missed window (Jordan's questions due Nov 6).
+ * October declaration, Priya's PC 7 flight read twice) or of the same family on any day (round 14's faults: Priya's card),
+ * another moment of an event already there (a flight's arrival, a stay's last day), a check-out of its own, and a day already
+ * past its Missed window (Jordan's questions due Nov 6).
  */
 function repeats(x: { kind: string; text: string; quote: string; due: string | null }, there: readonly { kind?: string; text: string; quote: string; due?: string | null }[], o: { from?: string; now?: number }): boolean {
   if (x.kind === "event" && (CHECK_OUT.test(norm(x.quote)) || CHECK_OUT.test(norm(x.text)))) return true;
@@ -132,8 +160,26 @@ function repeats(x: { kind: string; text: string; quote: string; due: string | n
     if (over <= o.now) return true;
   }
   const words = `${x.text}\n${x.quote}`;
-  return there.some((e) => namesSpecifically({ text: e.text, quote: e.quote }, words, o.from) && ((!!x.due && e.due === x.due) || (x.kind === "event" && e.kind === "event")));
+  return there.some((e) => {
+    const item = { text: e.text, quote: e.quote };
+    if (!namesSpecifically(item, words, o.from)) return false;
+    if ((!!x.due && e.due === x.due) || (x.kind === "event" && e.kind === "event")) return true;
+    // round 14's faults (Priya's card, Dec 31 from the first reading and Dec 26 from the look): the same thing in the same
+    // family is the same item whatever day each reading gave it, when the look's words name nothing the other's don't
+    // beyond its kind ("expires"); never another part of it ("written questions" beside an RFP's response)
+    return !!e.kind && familyOf(e.kind) === familyOf(x.kind) && !namesOtherThan(item, x.text.replace(KIND_WORDS, " "), o.from);
+  });
 }
+
+/**
+ * Plan 210 (round 14's faults): the kinds that can be one thing read twice: what an account, a card or a plan needs (a
+ * payment, a renewal, an expiry), what a person asks (with a day or without), an event, a delivery, an alert. A pay and a
+ * respond of one declaration are two things on two days.
+ */
+const FAMILY: Record<string, string> = { pay: "account", renew: "account", expire: "account", respond: "request", ask: "request" };
+const familyOf = (kind: string): string => FAMILY[kind] ?? kind;
+/** a kind's own verbs, which say what happens to the thing, not which thing ("expires", "renew", "update", "vence") */
+const KIND_WORDS = /\b(?:expir\w*|renew\w*|updat\w*|activat\w*|venc\w*|caduc\w*|renov\w*|actualiz\w*)\b/giu;
 
 /** What a second look gives `consider`: the reading to check (the first's, with the look's items), and whether it's whole. */
 export interface Looked {
