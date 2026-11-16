@@ -1,5 +1,5 @@
 import { AiError, DATED_PROMPT_VERSION, DATED_SUBJECT_CHARS, DATED_TEXT_CHARS, costAt, datedBudget, fitDates, priceOf, wallHolds, type AiTasks, type DatedResult } from "@terno/ai";
-import { addressKey, mutedOf, canLapse, saysDay, withEventEnds, lapsesUnlessRenewed, localDay, needsPresence, saysNoReplyNeeded, DATED_ITEMS_MAX, DATED_KINDS, DATED_OPEN_SHOWN, followupDue, validFollowupDate, type FollowupRow, DATED_SCAN_DAYS, DATED_SCAN_MAX, datedOver, dayKeyOf, datedTiming, dayEnd, hasTimeCue, normalizeText, withoutQuotes, type AiErrorKind, type DatedKind, type DatedRow, type DatedWall } from "@terno/core";
+import { addressKey, mutedOf, canLapse, saysDay, withEventEnds, lapsesUnlessRenewed, localDay, needsPresence, saysNoReplyNeeded, DATED_ITEMS_MAX, DATED_KINDS, DATED_OPEN_SHOWN, followupDue, validFollowupDate, type FollowupRow, DATED_SCAN_DAYS, DATED_SCAN_MAX, datedOver, dayKeyOf, datedTiming, dayEnd, hasTimeCue, normalizeText, withoutQuotes, type AiErrorKind, type DatedKind, type DatedRow, type DatedTiming, type DatedWall } from "@terno/core";
 import { captureError } from "@terno/core/diag";
 import type { AppSettings } from "@terno/core/rpc";
 import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
@@ -273,6 +273,14 @@ export function asksForSecrets(item: { text: string; quote: string }): boolean {
 
 type Move = Omit<DatedResult["moved"][number], "text" | "textEvidence"> & Partial<Pick<DatedResult["moved"][number], "text" | "textEvidence">>;
 
+/**
+ * Plan 210 (iteration 4's code review, Codex): a time the mail gave in another zone is the instant the reader read on that
+ * zone's clock (`at`), kept when the reader's day and time name it: in the hour the reader's clock shows twice they name two,
+ * and the local day and time alone would give the first (New York's 4:30 AM on November 1, 2026 is Los Angeles' second 1:30).
+ */
+const atInstant = (timing: DatedTiming | null, at: number | undefined): DatedTiming | null =>
+  timing?.timed && at !== undefined && dayKeyOf(at) === timing.dueDay && clockOf(at) === clockOf(timing.dueAt) ? { ...timing, dueAt: at } : timing;
+
 /** The day after a YYYY-MM-DD day. */
 const nextDay = (day: string): string => {
   const d = localDay(day);
@@ -311,6 +319,7 @@ const CHARGED_ITSELF = /\b(?:auto ?pay (?:is )?(?:on|enabled|active|set up)|(?:w
 const BILLED = /\b(?:bill|statement|invoice|premium|balance|amount due|factura|recibo|estado de cuenta|cuota|prima|importe|saldo)\b/u;
 const DECIDED = /\b(?:renew\w*|trial|subscription|membership|plan|cancel\w*|change|seats?|renov\w*|suscripcion|membresia|prueba|cancela\w*|cambia\w*)\b/u;
 const NOT_CHARGED = /\b(?:declined|failed|unable|couldn t|could not|didn t go through|rechaz\w*|no pudimos|no se pudo|fall\w*)\b/u;
+const CONDITIONAL_CHARGE = /\b(?:fees?|penalty|penalties|interest|finance charges?|if|unless|should|in case|otherwise|recargos?|multas?|penalizacion\w*|comision\w*|intereses|si|salvo|a menos que|en caso)\b/u;
 export function routineAutoBill(words: string): boolean {
   const read = norm(words);
   if (!BILLED.test(read) || DECIDED.test(read) || NOT_CHARGED.test(read)) return false;
@@ -320,7 +329,6 @@ export function routineAutoBill(words: string): boolean {
 /**
  * Plan 210 (iteration 4, revision 12): a delivery the mail only estimates ("should arrive within 7 to 10 business days", "en
  * 5 a 7 días hábiles") has no day: no item, unless its words say that day as well.
-const CONDITIONAL_CHARGE = /\b(?:fees?|penalty|penalties|interest|finance charges?|if|unless|should|in case|otherwise|recargos?|multas?|penalizacion\w*|comision\w*|intereses|si|salvo|a menos que|en caso)\b/u;
  */
 const ESTIMATE = /\b(?:within|in) (?:about )?\d{1,2}(?: ?(?:to|-|or) ?\d{1,2})? (?:business |working |calendar )?days\b|\ben (?:un plazo de )?(?:unos )?\d{1,2}(?: ?(?:a|-|o) ?\d{1,2})? dias(?: habiles| laborables| naturales)?\b/u;
 const estimateOnly = (words: string, due: string, arrivedAt: number): boolean => ESTIMATE.test(norm(words)) && !saysDay(words.replace(/\d{1,2} ?(?:to|-|a|o) ?\d{1,2}|\d{1,2} (?:business |working |calendar )?d[ií]as?/giu, " "), due, { arrivedAt });
@@ -435,7 +443,7 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
   const moved = (result.moved ?? []).flatMap((m) => {
     const row = input.open.get(m.label);
     if (!row || row.kind === "ask" || settledIds.has(row.id) || !tiedTo(row, m.evidence, { due: m.due, timeOnly: m.due === row.dueDay && !!m.time })) return [];
-    const timing = datedTiming({ kind: row.kind, due: m.due, time: m.time, arrivedAt: input.arrivedAt });
+    const timing = atInstant(datedTiming({ kind: row.kind, due: m.due, time: m.time, arrivedAt: input.arrivedAt }), m.at);
     // the fourth panel round (revision 5): a new moment on the same day moves it too ("the game is moved earlier to 8:00");
     // the same day with no time keeps the item's own; an untimed item's 9:00 is a default, so "at 9:00" gives it a time
     const changed = timing && (timing.dueDay !== row.dueDay || (timing.timed && (!row.timed || timing.dueAt !== row.dueAt)));
@@ -557,6 +565,9 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     // plan 210 (iteration 3): an offer is its own question, never hidden by a request about the same papers
     const around = `${item.quote}\n${contextOf(item.quote, sentences)}`;
     if (kind === "ask" && ((requested(item) && !offerOnly(around, contextOf(item.quote, paragraphs))) || noReply || onlyTells(item.quote) || onlyTells(contextOf(item.quote, sentences)) || courtesyOnly(around) || selfOffer(around, contextOf(item.quote, paragraphs)) || !(askAllowed(item.quote, said, input.text, input) || rebooks(item)))) continue;
+    // plan 210 (iteration 4's code review): what a scam says happened or demands is no item, an alert, a request or an
+    // expiry (prompt v15, and this backstop); never "something asked" either
+    if (PRESSED.has(kind) && scamPressure(`${input.subject}\n${tiedWords(item.quote).slice(0, FACT_WORDS_MAX)}\n${item.quote}`)) continue;
     // plan 210 (the Codex code review of iteration 2): a request of the reader, kept below or not (a day already past or
     // over in a scan, a duplicate, past the bound): never "nothing asked"
     if (kind === "ask" || kind === "respond") asked = true;
@@ -564,14 +575,11 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     const due = item.due && (kind === "respond" || kind === "pay") ? bareDayAhead(item.due, contextOf(item.quote, paragraphs), dayKeyOf(input.arrivedAt)) : item.due;
     // plan 210 (iteration 4, revision 11): the day it was asked before, rolled with a bare day read forward
     const before = due && item.before ? askedBefore(due === item.due ? item.before : nextDay(due), due) : null;
-    const timing = datedTiming({ kind, due, time: item.time, arrivedAt: input.arrivedAt });
+    const timing = atInstant(datedTiming({ kind, due, time: item.time, arrivedAt: input.arrivedAt }), item.at);
     if (!timing) continue;
     // the 14-day check keeps nothing already over (§6)
     if (input.fromScan && timing.dated && dayEnd(timing.dueDay) <= input.now) continue;
     // the bound, after a request past it is still known
-    // plan 210 (iteration 4's code review): what a scam says happened or demands is no item, an alert, a request or an
-    // expiry (prompt v15, and this backstop); never "something asked" either
-    if (PRESSED.has(kind) && scamPressure(`${input.subject}\n${tiedWords(item.quote).slice(0, FACT_WORDS_MAX)}\n${item.quote}`)) continue;
     if (rows.length >= DATED_ITEMS_MAX) continue;
     const key = itemKey(kind, timing);
     if (movedKeys.has(key)) continue;

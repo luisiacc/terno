@@ -11,7 +11,7 @@ import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { demoRegistry } from "@terno/mail";
 import { msg, threadOf } from "@terno/store/conformance";
 import { DATED_NOTHING_ASKED_SINCE, type IncomingMessage } from "@terno/store";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 import { checkDates } from "./dated";
 
@@ -964,6 +964,34 @@ describe("plan 210 (iteration 4's code review)", () => {
     // the bill's own charge, said plainly, is still no item
     expect(pay("Your invoice is due November 20. AutoPay is on: we'll charge your Visa ending 4821 that day.")).toBe(0);
     expect(pay("Your invoice is due November 20. We will charge your card on file automatically.")).toBe(0);
+  });
+
+  describe("a time in another zone keeps the instant it named, in the hour the reader's clock shows twice (Codex)", () => {
+    // the reader in Los Angeles (Node re-reads TZ when it's assigned, in this file's fork)
+    let ambient: string | undefined;
+    beforeAll(() => {
+      ambient = process.env.TZ;
+      process.env.TZ = "America/Los_Angeles";
+    });
+    afterAll(() => {
+      if (ambient === undefined) delete process.env.TZ;
+      else process.env.TZ = ambient;
+    });
+    it("New York's 4:30 AM on Sunday, November 1, 2026 is Los Angeles' second 1:30, stored as that instant, for an item and a move", () => {
+      const first = Date.UTC(2026, 10, 1, 8, 30);
+      const second = Date.UTC(2026, 10, 1, 9, 30);
+      expect([dayKeyOf(first), new Date(first).getHours(), dayKeyOf(second), new Date(second).getHours()]).toEqual(["2026-11-01", 1, "2026-11-01", 1]);
+      const text = "Your flight departs Sunday at 4:30 AM from JFK.";
+      const flight = { kind: "event", text: "Flight to Boston", quote: "Your flight departs Sunday at 4:30 AM", due: "2026-11-01", time: "01:30", at: second, wall: { day: "2026-11-01", time: "04:30", zone: "America/New_York", place: "New York" } };
+      const mail = { ...base, text, subject: "Your flight", arrivedAt: Date.UTC(2026, 9, 20, 17) };
+      expect(checkDates({ items: [flight], settled: [] }, mail).rows[0]).toMatchObject({ dueAt: second, wall: flight.wall });
+      // an instant that isn't the day and time given is the day and time's
+      expect(checkDates({ items: [{ ...flight, at: second + DAY }], settled: [] }, mail).rows[0]!.dueAt).toBe(first);
+      // a move to it
+      const row = { id: 1, revision: 1, threadId: 1, senderKey: "air@example.test", kind: "event", text: "Flight to Boston", quote: "Your flight departs", dueDay: "2026-10-31", dueAt: Date.UTC(2026, 10, 1, 1), timed: true } as DatedRow;
+      const moved = checkDates({ items: [], settled: [], moved: [{ label: "o1", due: "2026-11-01", time: "01:30", evidence: "Your flight departs Sunday at 4:30 AM", at: second, wall: flight.wall }] }, { ...mail, open: new Map([["o1", row]]), threadId: 1, senderKey: "air@example.test" }).moved[0]!;
+      expect(moved).toMatchObject({ dueAt: second, wall: flight.wall });
+    });
   });
 });
 
