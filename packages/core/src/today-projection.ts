@@ -45,8 +45,8 @@ export interface ProjectedRow {
    * day for the first two weeks, then its week ("week:YYYY-MM-DD")
    */
   bucket?: string;
-  /** plan 210 (iteration 3, revision 10): a dated item's own message, whose sender the row names */
-  messageId?: number;
+  /** plan 210 (iteration 3, revision 10): a dated item's own message and its sender's `addressKey`, whom the row names */
+  source?: { messageId: number; senderKey: string };
 }
 
 /** One item, or the true duplicates of one: its id the canonical's key, shown as `lead`. */
@@ -257,10 +257,18 @@ export function projectRows(items: readonly PlacedItem[], f: Pick<ProjectionFact
     const why: TodayWhy = o.count
       ? lead.source === "dated" ? { kind: "dated", item: { id: lead.row.id, revision: 0, kind: lead.row.kind, dueDay: "", timed: false, dated: true, ...(early ? { early } : {}) } } : { kind: "promise" }
       : lead.source === "dated"
-        ? datedWhy(lead.row, at.group === "missed", early, item.members, item.entries.flatMap((e) => (e !== lead && e.source === "dated" ? [e.row] : [])))
+        ? datedWhy(lead.row, at.group === "missed", early, item.members, item.entries.length > 1 ? item.entries.flatMap((e) => (e !== lead && e.source === "dated" ? [e.row] : [])) : undefined)
         : promiseWhy(lead.row, at.group === "missed", item.members, f.zone);
     const came = lead.source === "dated" ? lead.row.arrivedAt : lead.row.sentAt;
-    placed.push({ id: item.id, threadId: lead.row.threadId, group: at.group, day: at.day, why, dueAt: lead.row.dueAt, came, ...(at.group === "today" && waitsOnYou(why) ? { part: "waiting" as const } : {}), ...(at.day !== null && !o.count ? { bucket: bucketOf(at.day) } : {}), ...(lead.source === "dated" && !o.count ? { messageId: lead.row.messageId } : {}), ...(detail && !o.count ? { also: alsoOf(detail) } : {}) });
+    // (fields set as they apply, not spread: this runs over the 1,000-item bound on every read)
+    const row: Placed = { id: item.id, threadId: lead.row.threadId, group: at.group, day: at.day, why, dueAt: lead.row.dueAt, came };
+    if (at.group === "today" && waitsOnYou(why)) row.part = "waiting";
+    if (!o.count) {
+      if (at.day !== null) row.bucket = bucketOf(at.day);
+      if (lead.source === "dated") row.source = { messageId: lead.row.messageId, senderKey: lead.row.senderKey };
+      if (detail) row.also = alsoOf(detail);
+    }
+    placed.push(row);
   }
   // what's waiting on you (the owner's round 10: only when something is asked; the stores' `stillWaiting` says so), unless
   // an item of the conversation already says it

@@ -659,18 +659,36 @@ export class TodayService {
     // a waiting row's line is its current summary, read together, for the first rows only
     const lined = shown.filter((r) => r.waiting).slice(0, SUMMARY_LINES_MAX).map((r) => r.threadId);
     const lines = new Map(await Promise.all(lined.map(async (id) => [id, await this.summaryLine(id)] as const)));
-    // plan 210 (iteration 3, revision 10): each dated row's own sender, one read for them all
-    const sent = shown.flatMap((r) => (r.messageId !== undefined ? [r.messageId] : []));
-    const from = sent.length ? await store.today.fromOf(sent) : new Map<number, { name: string; email: string }>();
-    const sections: TodaySection[] = [];
+    // plan 210 (iteration 3, revision 10): each dated row's own sender: the conversation's latest when it's theirs (most
+    // are), else its message's, one read for those
+    const senders: ({ name: string; email: string } | undefined)[] = [];
+    const elsewhere: number[] = [];
     for (const r of shown) {
-      const sender = r.messageId !== undefined ? from.get(r.messageId) : undefined;
-      const item: TodayItem = { id: r.id, thread: threads.get(r.threadId)!, why: r.why, ...(r.waiting ? lines.get(r.threadId) : {}), ...(r.also ? { also: r.also } : {}), ...(sender ? { from: sender } : {}) };
+      const t = r.source ? threads.get(r.threadId) : undefined;
+      const theirs = t && addressKey(t.fromEmail) === r.source!.senderKey;
+      senders.push(theirs ? { name: t.fromName, email: t.fromEmail } : undefined);
+      if (r.source && !theirs) elsewhere.push(r.source.messageId);
+    }
+    const from = elsewhere.length ? await store.today.fromOf(elsewhere) : null;
+    const sections: TodaySection[] = [];
+    for (const [i, r] of shown.entries()) {
+      const sender = senders[i] ?? (r.source && from ? from.get(r.source.messageId) : undefined);
+      const item: TodayItem = { id: r.id, thread: threads.get(r.threadId)!, why: r.why };
+      const summary = r.waiting ? lines.get(r.threadId)?.summary : undefined;
+      if (summary !== undefined) item.summary = summary;
+      if (r.also) item.also = r.also;
+      if (sender) item.from = sender;
       const last = sections.at(-1);
       const day = r.day ?? undefined;
       // plan 210 (iteration 3): Today's "Waiting on you" is a section of its own, after Today's
       if (last?.kind === r.group && last.day === day && last.part === r.part) last.items.push(item);
-      else sections.push({ kind: r.group, ...(day ? { day } : {}), ...(r.part ? { part: r.part } : {}), ...(r.bucket ? { bucket: r.bucket } : {}), items: [item] });
+      else {
+        const section: TodaySection = { kind: r.group, items: [item] };
+        if (day) section.day = day;
+        if (r.part) section.part = r.part;
+        if (r.bucket) section.bucket = r.bucket;
+        sections.push(section);
+      }
     }
     const history = ask.history && settings.today?.finished !== false ? await this.history({ after: null, through: ask.history.through, held }) : undefined;
     return { sections, digest: await this.digestRow(), now, counts, ...(history ? { history } : {}) };

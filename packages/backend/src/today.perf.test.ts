@@ -201,12 +201,25 @@ async function run(kind: "SQLite" | "IndexedDB", budget: { spread: Gate; bound: 
     expect(all.length).toBeGreaterThanOrEqual(1000);
     expect(new Set(all.map((i) => i.id)).size).toBe(all.length);
     expect(all.filter((i) => i.also).length).toBe(0);
-    expect(listed.sections.find((x) => x.kind === "today")?.items.filter((i) => i.why.item?.kind === "ask").length).toBe(MIXED);
+    // (the asks are Today's "Waiting on you", its own section: plan 210, iteration 3)
+    expect(listed.sections.find((x) => x.kind === "today" && x.part === "waiting")?.items.filter((i) => i.why.item?.kind === "ask").length).toBe(MIXED);
     await measure("all showing", NOW + 2 * DAY, budget.bound);
     // plan 204, the second panel round: Needs you full (NEEDS_WALK conversations), each on the tighter rule's slowest
     // path: a snippet that starts like a thanks (its body read), a body that says more, a current summary to parse
     await needsAtBound(backend.store, client, accountId, NOW + 2 * DAY);
     await measure("Needs you at its bound", NOW + 2 * DAY, budget.needs);
+    // plan 210 (iteration 3, revision 12): Coming up without a horizon: the 1,000 items' days from two weeks to almost a
+    // year ahead, every one Coming up's (open in the feed: the backend lists them either way), each under its day or its
+    // week (`displayBucket`), its sender read with the rest (`fromOf`); Needs you still at its bound, so the list and the
+    // mailbox's counts after it in one turn are this plan's longest
+    const open = await backend.store.dated.active();
+    expect(await backend.store.today.act({ dated: open.map((r) => ({ id: r.id, revision: r.revision, patch: { state: "dismissed", closedReason: "user", closedAt: NOW + 2 * DAY } })), promises: [] })).not.toBeNull();
+    await seedDatedItems({ store: backend.store, accountId, now: NOW + 2 * DAY, budget: MULT, log: () => {} }, 1, true);
+    backend.today.touched();
+    const far = (await client.call("today.list", { held: [] })).sections.filter((x) => x.kind === "comingUp");
+    expect(far.reduce((n, x) => n + x.items.length, 0)).toBeGreaterThanOrEqual(1000);
+    expect(far.some((x) => x.bucket?.startsWith("week:"))).toBe(true);
+    await measure("Coming up far, Needs you at its bound", NOW + 2 * DAY, budget.needs);
   } finally {
     await backend.stop();
   }

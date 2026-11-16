@@ -11,8 +11,10 @@ const COLD_MS = 8;
 /**
  * Plan 204's open set at its bound in a 50k+ mailbox: 1,000 received messages from ten senders, each with one open item,
  * written as the worker writes them (marked by ingest, then a finish each). Archived mail, so nothing else's view changes.
+ * `far` (plan 210, iteration 3: Coming up has no horizon): their days spread from two weeks to almost a year ahead, each
+ * acted on a week before (a bill's lead): with the open set emptied first, they fill the bound, every one Coming up's.
  */
-export async function seedDatedItems(o: WorkloadMailbox, round = 0): Promise<{ id: number; thread: number; senderKey: string; date: number }[]> {
+export async function seedDatedItems(o: WorkloadMailbox, round = 0, far = false): Promise<{ id: number; thread: number; senderKey: string; date: number }[]> {
   const { store, accountId } = o;
   const out: { id: number; thread: number; senderKey: string; date: number }[] = [];
   for (let slice = 0; slice < DATED_ACTIVE_MAX / 100; slice++) {
@@ -25,7 +27,11 @@ export async function seedDatedItems(o: WorkloadMailbox, round = 0): Promise<{ i
   }
   let n = 0;
   for (const { id, thread } of out) {
-    const row: DatedWrite = { kind: n % 3 ? "pay" : "event", item: 0, text: "Pay the bill", quote: "Due on the 20th", dueDay: "2026-11-20", dueAt: o.now + 86_400_000 + n, timed: false, dated: true, actAt: o.now + n * 60_000, };
+    const ahead = new Date(o.now);
+    ahead.setDate(ahead.getDate() + 15 + (n % 340));
+    const row: DatedWrite = far
+      ? { kind: n % 3 ? "pay" : "event", item: 0, text: "Pay the bill", quote: "Due on the 20th", dueDay: `${ahead.getFullYear()}-${String(ahead.getMonth() + 1).padStart(2, "0")}-${String(ahead.getDate()).padStart(2, "0")}`, dueAt: ahead.getTime(), timed: false, dated: true, actAt: ahead.getTime() - 7 * 86_400_000 }
+      : { kind: n % 3 ? "pay" : "event", item: 0, text: "Pay the bill", quote: "Due on the 20th", dueDay: "2026-11-20", dueAt: o.now + 86_400_000 + n, timed: false, dated: true, actAt: o.now + n * 60_000 };
     n++;
     expect(await store.dated.finish({ messageId: id, threadId: thread, fromScan: false, rows: [row], settled: [], now: o.now, model: "m", provider: "p", promptVersion: 1, clearGeneration: store.dated.clearGeneration() })).toBe("written");
   }
