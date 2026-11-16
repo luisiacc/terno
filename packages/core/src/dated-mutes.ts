@@ -1,4 +1,4 @@
-import { addressKey } from "./people";
+import { addressKey, automatedLevel } from "./people";
 import { DATED_KINDS, type DatedKind } from "./dated";
 
 /**
@@ -31,8 +31,11 @@ export interface DatedMute {
   at: number;
 }
 
-/** What Remove's snack offers to mute (once each): the kind of what was removed, or its sender, by name. */
-export type MuteOffer = { on: "kind"; key: DatedKind } | { on: "sender"; key: string; name: string };
+/**
+ * What Remove's snack offers to mute (once each): that kind from that sender, or the sender alone with positive evidence
+ * they're a machine; never anything of someone the user has written to. A whole kind is only Settings' to hide.
+ */
+export type MuteOffer = { on: "pair"; key: string; kind: DatedKind; name: string } | { on: "sender"; key: string; name: string };
 
 /** What the reader and the feed test against, read once from the list. */
 export interface DatedMuted {
@@ -95,8 +98,15 @@ export const isMuted = (r: { senderKey: string; kind: DatedKind }, m: DatedMuted
 export const anyMuted = (m: DatedMuted): boolean => m.senders.size > 0 || m.kinds.size > 0 || m.pairs.size > 0;
 
 /**
- * The kinds Remove's snack may offer to mute ("Don't show deliveries like this"): what mail tells the reader, never a
- * person's request of them (`ask`, `respond`), which only their sender may be muted for: one wrong click mustn't hide
- * every request.
+ * The kinds Settings may hide whole (iteration 5: Remove's snack offers no whole kind): what mail tells the reader, never
+ * a person's request of them (`ask`, `respond`): one wrong choice mustn't hide every request.
  */
-export const OFFERED_MUTE_KINDS: readonly DatedKind[] = ["pay", "renew", "expire", "alert", "event", "delivery"];
+export const WHOLE_MUTE_KINDS: readonly DatedKind[] = ["pay", "renew", "expire", "alert", "event", "delivery"];
+
+/**
+ * Positive evidence a sender is a machine, which offering them alone needs: list or bulk headers on their mail, or a
+ * no-reply address (plan 17's level 2). A role address ("orders@") isn't enough: a person may answer it. Whether the user
+ * has written to them is checked apart (`dated.written`), before any offer and again on taking it.
+ */
+export const automatedSender = (src: { automated: boolean; fromEmail: string }): boolean =>
+  src.automated || automatedLevel({ from_email: src.fromEmail, list_id: null, is_bulk: 0, gmail_labels: null, is_spam: 0 }) === 2;

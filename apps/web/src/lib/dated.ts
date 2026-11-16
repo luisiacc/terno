@@ -292,7 +292,7 @@ export async function actOnDated(item: Pick<DatedRef, "id" | "revision"> & { tex
   const text = item.text;
   try {
     const { undoId } = await client.call("dated.act", { id: item.id, revision: item.revision, action, ...(until !== undefined ? { until } : {}) });
-    // plan 210 (iteration 4, the owner): after Remove, once per kind and per sender, the snack offers to hide more like it
+    // plan 210 (iteration 4, the owner; iteration 5 narrows it): after Remove, once, the snack offers to hide that kind from that sender
     const offer = action === "dismiss" ? await muteOfferAction(item.id) : undefined;
     said(action, text, undoId === null ? null : () => client.call("dated.undo", { undoId }).then(() => undefined), "dated.undo", left, offer);
   } catch (error) {
@@ -320,7 +320,8 @@ function said(action: "done" | "dismiss" | "later", text: string | null | undefi
   // plan 210 (iteration 4): with Mute's offer beside Undo the first line has little room, so it says what happened and
   // the task's words go under it
   const words = text?.trim();
-  if (secondary) snack.success(t(SAID[action]), { ...undoing, secondary, ...(words ? { description: shortened(words) } : {}) });
+  // (iteration 5) the narrow offer names a kind and a sender, so the line before it is one word: "Removed"
+  if (secondary) snack.success(t(action === "dismiss" ? "dated.snack.removedOffer" : SAID[action]), { ...undoing, secondary, ...(words ? { description: shortened(words) } : {}) });
   else snack.success(taskSaid(action, text), undoing);
 }
 

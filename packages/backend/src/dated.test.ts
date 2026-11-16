@@ -2864,33 +2864,133 @@ describe("plan 210 (iteration 4): Mute this kind or sender (the Codex review's r
     expect((await client.call("dated.ofThread", { threadId: thread })).rows.map((r) => [r.kind, r.eventEnd! > NOW])).toEqual([["ask", true]]);
   });
 
-  it("Remove offers its kind once, then its sender once, then nothing; a request offers only its sender; at the bound a mute is refused in words", async () => {
-    const { backend, client, model, receive, read } = await setup();
-    model.answer = () => reply([parcel]);
-    for (const n of [1, 2, 3]) await receive({ from: shop, subject: `Shipped ${n}`, bodyText: PARCEL_TEXT, providerThreadId: `ship-${n}` });
-    await read();
-    const items = await backend.store.dated.active();
-    expect(items).toHaveLength(3);
-    const remove = async (r: DatedRow) => {
-      await client.call("dated.act", { id: r.id, revision: r.revision, action: "dismiss" });
-      return (await client.call("dated.muteOffer", { id: r.id })).offer;
-    };
-    // not removed: nothing to offer
-    expect((await client.call("dated.muteOffer", { id: items[0]!.id })).offer).toBeNull();
-    expect(await remove(items[0]!)).toEqual({ on: "kind", key: "delivery" });
-    expect(await remove(items[1]!)).toEqual({ on: "sender", key: "track@parcel.test", name: "Parcel Co" });
-    expect(await remove(items[2]!)).toBeNull();
-    // a person's request: never "requests like this", only its sender
-    model.answer = () => reply([{ kind: "respond", text: "Send Ana the deck", quote: "send me the deck by November 20", due: "2026-11-20", time: null }]);
-    await receive({ from: { name: "Ana", email: "ana@people.test" }, subject: "Deck", bodyText: "Could you send me the deck by November 20?" });
-    await read();
-    const ask = (await backend.store.dated.active()).find((r) => r.kind === "respond");
-    if (ask) expect(await remove(ask)).toEqual({ on: "sender", key: "ana@people.test", name: "Ana" });
-    // the bound: refused, nothing dropped for it
+  it("at the bound a mute is refused in words; a whole kind that isn't ours is refused", async () => {
+    const { backend, client } = await setup();
     for (let i = 0; i < 200; i++) await backend.store.dated.mutes.add({ on: "sender", key: `s${i}@x.test`, name: "", at: i });
     await expect(client.call("dated.mute", { on: "kind", key: "pay" })).rejects.toThrow(/200/);
     await expect(client.call("dated.mute", { on: "kind", key: "newsletter" })).rejects.toThrow();
     expect((await client.call("dated.mutes", {})).mutes).toHaveLength(200);
+    // pairs have their own bound, and say so in their own words
+    for (let i = 0; i < 200; i++) await backend.store.dated.mutes.add({ on: "pair", key: `pay|s${i}@x.test`, name: "", at: i });
+    await expect(client.call("dated.mute", { on: "pair", key: "delivery|track@parcel.test", name: "Parcel Co" })).rejects.toThrow(/200 kinds of mail from particular senders/);
+  });
+});
+
+describe("plan 210 (iteration 5): Remove's narrow offer, a kind from one sender (the Codex review's revision 2)", () => {
+  // a machine by its headers (a list), as a shop's tracking mail is
+  const parcelo = { name: "Parcelo", email: "Track+eu@Parcelo.test" };
+  const fromParcelo = (n: number | string, over: Partial<IncomingMessage> = {}): Partial<IncomingMessage> => ({ from: parcelo, subject: `Shipped ${n}`, bodyText: PARCEL_TEXT, providerThreadId: `ship-${n}`, listId: "<updates.parcelo.test>", ...over });
+  const parcel: Item = { kind: "delivery", text: "Package arrives", quote: "arrives on November 12", due: "2026-11-12", time: null };
+  const PARCEL_TEXT = "Your package arrives on November 12.";
+  const shown = async (client: RpcClient) => (await client.call("today.list", { held: [] })).sections.flatMap((x) => x.items.map((i) => i.id));
+  const removing = (client: RpcClient) => async (r: DatedRow) => {
+    await client.call("dated.act", { id: r.id, revision: r.revision, action: "dismiss" });
+    return (await client.call("dated.muteOffer", { id: r.id })).offer;
+  };
+  const sendTo = (receive: Awaited<ReturnType<typeof setup>>["receive"], to: { name: string; email: string }, n = "out") => receive({ from: me, to: [to], isSent: true, inInbox: false, isRead: true, subject: "Where is it?", bodyText: "Any news?", providerThreadId: n });
+
+  it("offers that kind from its sender once, then (a machine) the sender alone once, then nothing; another kind of theirs is its own pair; never a whole kind", async () => {
+    const { backend, client, model, receive, read } = await setup();
+    model.answer = () => reply([parcel]);
+    for (const n of [1, 2, 3]) await receive(fromParcelo(n));
+    await read();
+    model.answer = () => reply([bill]);
+    await receive(fromParcelo("bill", { subject: "Your invoice", bodyText: BILL_TEXT }));
+    await read();
+    const items = await backend.store.dated.active();
+    const deliveries = items.filter((r) => r.kind === "delivery");
+    expect(deliveries).toHaveLength(3);
+    const remove = removing(client);
+    // not removed: nothing to offer
+    expect((await client.call("dated.muteOffer", { id: deliveries[0]!.id })).offer).toBeNull();
+    expect(await remove(deliveries[0]!)).toEqual({ on: "pair", key: "delivery|track@parcelo.test", kind: "delivery", name: "Parcelo" });
+    expect(await remove(deliveries[1]!)).toEqual({ on: "sender", key: "track@parcelo.test", name: "Parcelo" });
+    expect(await remove(deliveries[2]!)).toBeNull();
+    expect(await remove(items.find((r) => r.kind === "pay")!)).toEqual({ on: "pair", key: "pay|track@parcelo.test", kind: "pay", name: "Parcelo" });
+  });
+
+  it("a person is offered their kind, never themselves alone; someone you've written to is offered nothing", async () => {
+    const { backend, client, model, receive, read } = await setup();
+    const ana = { name: "Ana", email: "ana@people.test" };
+    const jess = { name: "Jess Alvarez", email: "jess@studio.test" };
+    model.answer = () => reply([{ kind: "event", text: "Studio party", quote: "party on November 20", due: "2026-11-20", time: null }]);
+    for (const n of [1, 2]) await receive({ from: ana, subject: `Party ${n}`, bodyText: "Come to the party on November 20.", providerThreadId: `party-${n}` });
+    await receive({ from: jess, subject: "Party", bodyText: "Come to the party on November 20.", providerThreadId: "jess" });
+    await read();
+    const remove = removing(client);
+    const [a1, a2] = (await backend.store.dated.active()).filter((r) => r.senderKey === "ana@people.test");
+    expect(await remove(a1!)).toEqual({ on: "pair", key: "event|ana@people.test", kind: "event", name: "Ana" });
+    // a correspondent (no list, no no-reply address) is never offered alone
+    expect(await remove(a2!)).toBeNull();
+    // Jess: you've written to her, so nothing at all
+    await sendTo(receive, jess);
+    const j = (await backend.store.dated.active()).find((r) => r.senderKey === "jess@studio.test")!;
+    expect(await remove(j)).toBeNull();
+  });
+
+  it("a send between the offer and taking it refuses the mute in words, and nothing is hidden", async () => {
+    const { backend, client, model, receive, read } = await setup();
+    model.answer = () => reply([parcel]);
+    await receive(fromParcelo(1));
+    await receive(fromParcelo(2));
+    await read();
+    const [first, second] = await backend.store.dated.active();
+    const offer = await removing(client)(first!);
+    expect(offer).toMatchObject({ on: "pair", key: "delivery|track@parcelo.test" });
+    await sendTo(receive, parcelo);
+    await expect(client.call("dated.mute", { on: "pair", key: offer!.key, name: offer!.name })).rejects.toThrow("You’ve written to Parcelo, so What matters keeps showing their mail.");
+    // the sender alone likewise
+    await expect(client.call("dated.mute", { on: "sender", key: "track@parcelo.test", name: "Parcelo" })).rejects.toThrow(/written to Parcelo/);
+    expect((await client.call("dated.mutes", {})).mutes).toEqual([]);
+    expect(await shown(client)).toEqual([`dated:${second!.id}`]);
+  });
+
+  it("a pair hides and suppresses that kind from that sender only: their mail is still read, their other kind kept, a settlement goes through; Unmute shows what was there, its Undo hides it again", async () => {
+    const { backend, client, model, receive, read } = await setup();
+    model.answer = () => reply([parcel, bill]);
+    const thread = await receive(fromParcelo("order", { bodyText: `${PARCEL_TEXT} ${BILL_TEXT}` }));
+    await read();
+    // another sender's delivery
+    model.answer = () => reply([parcel]);
+    await receive({ from: { name: "Post", email: "post@post.test" }, subject: "Letter", bodyText: PARCEL_TEXT, providerThreadId: "post" });
+    await read();
+    const open = await backend.store.dated.active();
+    const box = open.find((r) => r.kind === "delivery" && r.threadId === thread)!;
+    const pay = open.find((r) => r.kind === "pay")!;
+    const letter = open.find((r) => r.kind === "delivery" && r.threadId !== thread)!;
+    // a pair's kind is one of ours as written, its sender normalized
+    await expect(client.call("dated.mute", { on: "pair", key: "Delivery|track@parcelo.test", name: "Parcelo" })).rejects.toThrow();
+    expect((await client.call("dated.mute", { on: "pair", key: "delivery|TRACK+x@parcelo.test", name: "Parcelo" })).mute).toMatchObject({ on: "pair", key: "delivery|track@parcelo.test", name: "Parcelo" });
+    expect((await shown(client)).sort()).toEqual([`dated:${pay.id}`, `dated:${letter.id}`].sort());
+    expect((await client.call("dated.ofThread", { threadId: thread })).rows.map((r) => r.kind)).toEqual(["pay"]);
+    expect((await backend.store.dated.get(box.id))!.state).toBe("open");
+    // their next mail is read (the provider is asked): a second parcel isn't kept, the first one's delivery settles it, a new bill is
+    const asked = model.requests.length;
+    // what it sees open, newest first: the bill (o1), the parcel (o2)
+    model.answer = () => reply([{ ...parcel, text: "Second package arrives", quote: "second package arrives on November 13", due: "2026-11-13" }, { ...bill, text: "Pay the late fee", quote: "due on November 21", due: "2026-11-21" }], [{ label: "o2", evidence: "Your package was delivered" }]);
+    await receive(fromParcelo("order", { subject: "Re: Shipped", bodyText: "Your package was delivered today. Your second package arrives on November 13. A late fee is due on November 21." }));
+    await read();
+    expect(model.requests.length).toBe(asked + 1);
+    expect((await backend.store.dated.get(box.id))!.state).toBe("settled");
+    expect((await backend.store.dated.active()).filter((r) => r.threadId === thread).map((r) => r.kind)).toEqual(["pay", "pay"]);
+    // Unmute: what's still open shows again; Undo of the Unmute (the snack's) hides it again where it was in the list
+    const before = (await client.call("dated.mutes", {})).mutes;
+    const removed = (await client.call("dated.unmute", { on: "pair", key: "delivery|track@parcelo.test" })).mute!;
+    expect((await shown(client))).toContain(`dated:${letter.id}`);
+    expect((await client.call("dated.mute", { on: removed.on, key: removed.key, name: removed.name, at: removed.at })).mute).toEqual(removed);
+    expect((await client.call("dated.mutes", {})).mutes).toEqual(before);
+  });
+
+  it("a pair never reaches Needs you: a conversation waiting on you stays while their request kind is hidden", async () => {
+    const { backend, client, model, receive, read } = await setup();
+    const sam = { name: "Sam", email: "sam@people.test" };
+    model.answer = () => reply([{ kind: "respond", text: "Send Sam the deck", quote: "send me the deck by November 20", due: "2026-11-20", time: null }]);
+    await receive({ from: me, to: [sam], isSent: true, inInbox: false, isRead: true, subject: "Deck", bodyText: "Here's the outline.", providerThreadId: "deck", rfcMessageId: "deck@t" });
+    const thread = await receive({ from: sam, subject: "Re: Deck", bodyText: "Could you send me the deck by November 20?", providerThreadId: "deck", inReplyTo: "deck@t", references: ["deck@t"] });
+    await read();
+    await backend.store.dated.mutes.add({ on: "pair", key: "respond|sam@people.test", name: "Sam", at: NOW });
+    expect(await backend.store.today.waitingAmong([thread], NOW)).toEqual([thread]);
+    expect((await client.call("dated.ofThread", { threadId: thread })).rows).toEqual([]);
   });
 });
 

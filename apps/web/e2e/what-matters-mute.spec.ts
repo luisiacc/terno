@@ -1,8 +1,10 @@
 /**
- * Plan 210 (iteration 4, the owner's "Mute this kind/sender"): after Remove, the snack offers once to hide more of its kind,
- * then its sender, each with its own Undo; What matters' gear and Settings list what's hidden, each with Show again, by
- * keyboard and named for screen readers; axe in light and dark.
+ * Plan 210 (iteration 4, the owner's "Mute this kind/sender"; iteration 5's narrow offer): after Remove, the snack offers
+ * once to hide that kind from that sender, then (a machine only) the sender alone, each with its own Undo; never a person
+ * alone. What matters' gear and Settings list what's hidden, each with Show again, by keyboard and named for screen
+ * readers; a whole kind is hidden from Settings only; axe in light and dark.
  */
+import { join } from "node:path";
 import type { Page } from "@playwright/test";
 import type { IncomingMessage } from "@terno/store";
 import { sqlDb } from "../../backend-dev/src/server";
@@ -12,14 +14,17 @@ import { axeBothModes, expect, fresh, scenario, test, type DevServerFixture } fr
 test.use({ backendOptions: { network: true }, today: true });
 
 const dev = { clientId: "setup", origin: "dev" as const };
-const parcel = { name: "Parcel Co", email: "track@parcel.test" };
+// a machine by its headers (a list), as a shop's tracking mail is
+const parcelo = { name: "Parcelo", email: "track@parcelo.test", listId: "<updates.parcelo.test>" };
+// a shop's address, no list: maybe a person, so never offered alone
+const lamps = { name: "Lamp Shop", email: "orders@lamps.test", listId: null };
 
 /** an open item due today at `hour`, on its own conversation from `from`, written as the reader writes one */
-async function item(server: DevServerFixture, key: string, text: string, kind: "pay" | "delivery", from: { name: string; email: string }, hour: number) {
+async function item(server: DevServerFixture, key: string, text: string, kind: "pay" | "delivery", from: { name: string; email: string; listId: string | null }, hour: number) {
   const store = server.backend.store;
   const db = sqlDb(store);
   const acct = db.get<{ id: number; email: string }>("SELECT id, email FROM accounts ORDER BY id LIMIT 1")!;
-  const m: IncomingMessage = { accountId: acct.id, providerMsgId: key, providerThreadId: key, rfcMessageId: `<${key}@e2e.test>`, inReplyTo: null, references: [], from, to: [{ name: "", email: acct.email }], cc: [], bcc: [], subject: `${text} (${key})`, date: E2E_NOW, snippet: `${text}.`, bodyText: `${text}.`, bodyHtml: null, bodyState: "full", listId: null, isRead: false, isStarred: false, inInbox: true, isSent: false, isDraft: false, isTrash: false, isSpam: false, hasAttachments: false, size: 1200 } as unknown as IncomingMessage;
+  const m: IncomingMessage = { accountId: acct.id, providerMsgId: key, providerThreadId: key, rfcMessageId: `<${key}@e2e.test>`, inReplyTo: null, references: [], from: { name: from.name, email: from.email }, to: [{ name: "", email: acct.email }], cc: [], bcc: [], subject: `${text} (${key})`, date: E2E_NOW, snippet: `${text}.`, bodyText: `${text}.`, bodyHtml: null, bodyState: "full", listId: from.listId, isRead: false, isStarred: false, inInbox: true, isSent: false, isDraft: false, isTrash: false, isSpam: false, hasAttachments: false, size: 1200 } as unknown as IncomingMessage;
   await store.sync.ingest([m], { applyFilters: false, now: E2E_NOW, classifier: null });
   const row = db.get<{ id: number; thread_id: number }>("SELECT id, thread_id FROM messages WHERE provider_msg_id = ?", key)!;
   await store.dated.marks.queueScan([row.id], E2E_NOW);
@@ -38,84 +43,136 @@ async function remove(page: Page, text: string): Promise<void> {
   if ((await openLine(page, text).getAttribute("data-open")) === null) await openLine(page, text).getByTestId("wm-item-open").click();
   await expect(openLine(page, text)).toHaveAttribute("data-open");
   await page.keyboard.press("Shift+D");
-  // with Mute's offer, the task's words are under the first line
-  await expect(snack(page)).toContainText("Removed from What matters");
   await expect(snack(page)).toContainText(text);
 }
 
-test("plan 210 (iteration 4): Remove offers to hide its kind, then its sender, each with Undo; the gear and Settings list what's hidden, with Show again", async ({ app: page, server }) => {
+async function seed(server: DevServerFixture) {
   await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" }, dated: { enabled: true, scanAnswered: true } }, dev);
-  await item(server, "box1", "First parcel arrives", "delivery", parcel, 14);
-  await item(server, "box2", "Second parcel arrives", "delivery", parcel, 15);
-  await item(server, "box4", "Third parcel arrives", "delivery", parcel, 17);
-  await item(server, "lamp", "Lamp arrives", "delivery", { name: "Lamp Shop", email: "orders@lamps.test" }, 16);
-  await item(server, "rent", "Pay the rent", "pay", { name: "Billing", email: "rent@bills.test" }, 13);
+  await item(server, "box1", "First parcel arrives", "delivery", parcelo, 14);
+  await item(server, "box2", "Second parcel arrives", "delivery", parcelo, 15);
+  await item(server, "box4", "Third parcel arrives", "delivery", parcelo, 17);
+  await item(server, "inv", "Pay the Parcelo invoice", "pay", parcelo, 12);
+  await item(server, "lamp", "Lamp arrives", "delivery", lamps, 16);
+  await item(server, "shade", "Shade arrives", "delivery", lamps, 18);
+  await item(server, "rent", "Pay the rent", "pay", { name: "Billing", email: "rent@bills.test", listId: null }, 13);
+}
+
+test("plan 210 (iteration 5): Remove offers that kind from its sender, then a machine alone, each with Undo; the gear and Settings list what's hidden, with Show again; a whole kind only from Settings", async ({ app: page, server }) => {
+  await seed(server);
   await fresh(page);
   await page.getByTestId("nav-today").click();
   await expect(openLine(page, "First parcel arrives")).toBeVisible({ timeout: 15_000 });
 
-  await scenario("the first Remove of a delivery offers its kind beside Undo; taken, every delivery hides, and its Undo (z) brings them back", async () => {
+  await scenario("the first Remove offers deliveries from that sender beside Undo; taken, only theirs hide (their bill and another shop's delivery stay), and its Undo (z) brings them back", async () => {
     await remove(page, "First parcel arrives");
+    // with Mute's offer, the first line says what happened and the task's words are under it
+    await expect(snack(page)).toContainText("Removed");
     const offer = page.getByTestId("snack-secondary");
-    await expect(offer).toHaveText("Don’t show deliveries");
+    await expect(offer).toHaveText("Don’t show deliveries from Parcelo");
     await offer.click();
-    await expect(snack(page)).toContainText("You won’t see deliveries in What matters");
+    await expect(snack(page)).toContainText("You won’t see deliveries from Parcelo in What matters");
     // the open row (the next, opened by the Remove) stays in place while it's open; the others go at once
     await expect(openLine(page, "Third parcel arrives")).toHaveCount(0);
-    await expect(openLine(page, "Lamp arrives")).toHaveCount(0);
-    await expect(openLine(page, "Pay the rent")).toBeVisible();
+    await expect(openLine(page, "Pay the Parcelo invoice")).toBeVisible();
+    await expect(openLine(page, "Lamp arrives")).toBeVisible();
     await page.keyboard.press("z");
     await expect(openLine(page, "Third parcel arrives")).toBeVisible();
-    await expect(openLine(page, "Lamp arrives")).toBeVisible();
   });
 
-  await scenario("the next Remove from the same sender offers the sender (the kind was offered once); taken, only theirs hide", async () => {
+  await scenario("the next Remove from that machine offers it alone, once; a shop that may be a person is offered its kind, never itself", async () => {
     await remove(page, "Second parcel arrives");
-    const offer = page.getByTestId("snack-secondary");
-    await expect(offer).toHaveText("Don’t show Parcel Co");
-    await offer.click();
-    await expect(snack(page)).toContainText("Nothing from Parcel Co will show in What matters");
-    await expect(openLine(page, "Third parcel arrives")).toHaveCount(0);
-    await expect(openLine(page, "Lamp arrives")).toBeVisible();
-    // the kind is never offered again; another sender is, once
-    await remove(page, "Lamp arrives");
-    await expect(page.getByTestId("snack-secondary")).toHaveText("Don’t show Lamp Shop");
+    await expect(page.getByTestId("snack-secondary")).toHaveText("Don’t show anything from Parcelo");
     await page.keyboard.press("z");
-    await expect(openLine(page, "Lamp arrives")).toBeVisible();
+    await expect(openLine(page, "Second parcel arrives")).toBeVisible();
+    await remove(page, "Lamp arrives");
+    await expect(page.getByTestId("snack-secondary")).toHaveText("Don’t show deliveries from Lamp Shop");
+    // taken this time: kept for the lists below
+    await page.getByTestId("snack-secondary").click();
+    await expect(snack(page)).toContainText("You won’t see deliveries from Lamp Shop in What matters");
+    await expect(openLine(page, "Shade arrives")).toHaveCount(0);
+    // Parcelo's next: both of theirs were offered once, so the snack is the plain one
+    await remove(page, "Third parcel arrives");
+    await expect(snack(page)).toContainText("Removed");
+    await expect(page.getByTestId("snack-secondary")).toHaveCount(0);
   });
 
-  await scenario("the gear lists the hidden sender, named for screen readers; Show again by keyboard brings their items back", async () => {
+  await scenario("the gear lists the pair by both, the address beside it, named for screen readers; Show again by keyboard brings it back", async () => {
     if (await page.getByTestId("reader").count()) await page.keyboard.press("Escape");
     await page.getByTestId("wm-options").click();
     const section = page.getByTestId("wm-options-muted");
     await expect(section).toBeVisible();
     await expect(page.getByTestId("wm-muted")).toHaveAccessibleName("Hidden from What matters");
-    await expect(page.getByTestId("wm-muted-item")).toHaveText(["Parcel Cotrack@parcel.testShow again"]);
+    await expect(page.getByTestId("wm-muted-item")).toHaveText(["Deliveries from Lamp Shoporders@lamps.testShow again"]);
     const show = page.getByTestId("wm-muted-unmute");
     await expect(show).toHaveAccessibleName("Show again");
-    await expect(show).toHaveAccessibleDescription("Parcel Co");
+    await expect(show).toHaveAccessibleDescription("Deliveries from Lamp Shop");
     await axeBothModes(page, '[data-testid="wm-options-panel"]');
     await show.focus();
     await page.keyboard.press("Enter");
-    await expect(snack(page)).toContainText("You’ll see Parcel Co in What matters again");
+    await expect(snack(page)).toContainText("You’ll see deliveries from Lamp Shop in What matters again");
     await expect(section).toHaveCount(0);
     await page.keyboard.press("Escape");
-    await expect(openLine(page, "Third parcel arrives")).toBeVisible();
+    await expect(openLine(page, "Shade arrives")).toBeVisible();
   });
 
-  await scenario("Settings → What matters: nothing hidden says how it comes about; a hidden kind is from any sender, and Show again empties it", async () => {
+  await scenario("Settings → What matters: nothing hidden says how it comes about; a whole kind is hidden from its menu, from any sender, and a pair is listed by both", async () => {
     await page.getByTestId("wm-options").click();
     await page.getByTestId("wm-options-more").click();
-    const list = page.getByTestId("today-muted");
-    await expect(page.getByTestId("today-muted-list-empty")).toHaveText("Nothing is hidden. When you remove an item, you can choose to hide others like it.");
-    await server.backend.server.invoke("dated.mute", { on: "kind", key: "delivery" }, dev);
-    await expect(page.getByTestId("today-muted-list-item")).toHaveText(["DeliveriesFrom any senderShow again"]);
-    await expect(page.getByTestId("today-muted-list-unmute")).toHaveAccessibleName("Show again");
-    await expect(page.getByTestId("today-muted-list-unmute")).toHaveAccessibleDescription("Deliveries");
+    await expect(page.getByTestId("today-muted-list-empty")).toHaveText("Nothing is hidden. When you remove an item, you can hide that kind of mail from its sender.");
+    const hide = page.getByTestId("today-hide-kind");
+    await expect(hide).toHaveAccessibleName("Hide a kind from every sender…");
+    // by keyboard: the menu offers the kinds mail tells you about, never a person's requests
+    await hide.focus();
+    await page.keyboard.press("Enter");
+    const menu = page.getByTestId("today-hide-kind-menu");
+    await expect(menu.getByRole("menuitem")).toHaveText(["Bills", "Renewals", "Expirations", "Alerts", "Events", "Deliveries"]);
+    await menu.getByRole("menuitem", { name: "Bills" }).click();
+    await expect(snack(page)).toContainText("You won’t see bills in What matters");
+    await server.backend.server.invoke("dated.mute", { on: "pair", key: "delivery|track@parcelo.test", name: "Parcelo" }, dev);
+    // the same moment (the app's clock is held here): by target, then key
+    await expect(page.getByTestId("today-muted-list-item")).toHaveText(["BillsFrom any senderShow again", "Deliveries from Parcelotrack@parcelo.testShow again"]);
+    await expect(page.getByTestId("today-muted-list-unmute").last()).toHaveAccessibleDescription("Deliveries from Parcelo");
+    // bills hidden: the menu no longer offers them
+    await hide.click();
+    await expect(menu.getByRole("menuitem")).toHaveText(["Renewals", "Expirations", "Alerts", "Events", "Deliveries"]);
+    await page.keyboard.press("Escape");
     await axeBothModes(page, '[data-testid="today-muted"]');
-    await page.getByTestId("today-muted-list-unmute").click();
+    await page.getByTestId("today-muted-list-unmute").first().click();
+    await page.getByTestId("today-muted-list-unmute").first().click();
     await expect(page.getByTestId("today-muted-list-empty")).toBeVisible();
-    await expect(list).toBeVisible();
     await page.keyboard.press("Escape");
   });
 });
+
+/** The toast's offer and Settings' list in light and dark, en and es, for the plan's record (WM_MUTE_SHOTS=<dir>). */
+for (const language of ["en", "es"] as const) {
+  test(`plan 210 (iteration 5): the offer and the list, pictured (${language})`, async ({ app: page, server }) => {
+    const shots = process.env.WM_MUTE_SHOTS;
+    test.skip(!shots, "pictures only when asked for");
+    await seed(server);
+    await server.backend.server.invoke("settings.update", { language }, dev);
+    await page.addInitScript((l) => localStorage.setItem("terno:language", l), language);
+    await fresh(page);
+    await expect(page.locator("html")).toHaveAttribute("lang", new RegExp(`^${language}(?:-|$)`));
+    await page.getByTestId("nav-today").click();
+    await expect(openLine(page, "First parcel arrives")).toBeVisible({ timeout: 15_000 });
+    await remove(page, "First parcel arrives");
+    await expect(page.getByTestId("snack-secondary")).toBeVisible();
+    for (const mode of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme: mode });
+      await page.screenshot({ path: join(shots!, `offer-${language}-${mode}.png`) });
+    }
+    await page.getByTestId("snack-secondary").click();
+    await page.emulateMedia({ colorScheme: "light" });
+    await server.backend.server.invoke("dated.mute", { on: "kind", key: "event" }, dev);
+    if (await page.getByTestId("reader").count()) await page.keyboard.press("Escape");
+    await page.getByTestId("wm-options").click();
+    await page.getByTestId("wm-options-more").click();
+    await expect(page.getByTestId("today-muted-list-item")).toHaveCount(2);
+    await page.getByTestId("today-muted").scrollIntoViewIfNeeded();
+    for (const mode of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme: mode });
+      await page.screenshot({ path: join(shots!, `settings-${language}-${mode}.png`) });
+    }
+  });
+}

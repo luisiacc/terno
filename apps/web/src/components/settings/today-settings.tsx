@@ -6,7 +6,7 @@ import { Time, TimeField } from "@terno/ui/components/time-field";
 import { aiAllowed, datedReaderLine } from "~/lib/ai";
 import { useDatedMutes } from "~/lib/dated-mutes";
 import { useApp } from "~/state/app";
-import { MutedList } from "../what-matters/muted-list";
+import { HideWholeKind, MutedList } from "../what-matters/muted-list";
 import { openSettingsTab, SettingsGroup, SettingsRow, type SettingsUpdate } from "./parts";
 
 /** Plan 145 §5: Settings → General → Today. */
@@ -37,7 +37,13 @@ export default function TodaySettings({ settings, update }: { settings: AppSetti
       </SettingsRow>
       {/* plan 210 (iteration 4): what's muted, with Unmute; empty, how muting comes about */}
       <SettingsRow find="general.todayMuted" label={t("dated.mute.title")} hint={t("dated.mute.hint")} stacked testId="today-muted">
-        {(a) => <MutedList mutes={mutes} setMutes={setMutes} testId="today-muted-list" labelledBy={a["aria-labelledby"]} describedBy={a["aria-describedby"]} fallback={() => document.querySelector<HTMLElement>("[data-testid=today-finished]")} empty />}
+        {(a) => (
+          <div className="flex flex-col gap-1.5">
+            <MutedList mutes={mutes} setMutes={setMutes} testId="today-muted-list" labelledBy={a["aria-labelledby"]} describedBy={a["aria-describedby"]} fallback={() => document.querySelector<HTMLElement>("[data-testid=today-finished]")} empty />
+            {/* plan 210 (iteration 5): a whole kind is hidden only from here */}
+            <HideWholeKind mutes={mutes} />
+          </div>
+        )}
       </SettingsRow>
       <SettingsRow find="general.todayAt" label={t("today.settings.prepareAt")} hint={t("today.settings.prepareAtHint")}>
         {(a) => (

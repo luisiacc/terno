@@ -1,15 +1,15 @@
-import { DATED_MUTES_MAX, isMuted, muteKey, mutedOf, OFFERED_MUTE_KINDS, type DatedKind, type DatedMute, type DatedMuteOn, type DatedMuted, type MuteOffer } from "@terno/core";
+import { anyMuted, automatedSender, DATED_MUTE_PAIRS_MAX, DATED_MUTES_MAX, isMuted, muteKey, mutedOf, pairKey, pairOf, type DatedKind, type DatedMute, type DatedMuteOn, type DatedMuted, type MuteOffer } from "@terno/core";
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import type { MailStore } from "@terno/store";
 
 /**
  * Plan 210 (iteration 4, the owner's "Mute this kind/sender"; the Codex review's revision 2): what the reader said not to
- * show in What matters, kept by the store (`dated.mutes`). Here: what Remove's snack offers (once per sender and per kind),
+ * show in What matters, kept by the store (`dated.mutes`). Here: what Remove’s snack offers (once per kind from a sender, and per sender),
  * muting and unmuting, and telling the reader and the feed. Nothing here is logged or sent anywhere.
  */
 
-/** what's been offered once, in the store's own small values: a memory of offers (dropping the oldest loses nothing) */
+/** what’s been offered once (`pair:…`, `sender:…`; iteration 4’s `kind:…` left as they were), in the store’s own small values: a memory of offers (dropping the oldest loses nothing) */
 const OFFERED_KEY = "whatMatters:muteOffered";
 const OFFERED_MAX = 500;
 
@@ -53,39 +53,51 @@ export class DatedMutes {
   }
 
   /**
-   * After Remove (the user's own, on this item): its kind, the first time an item of that kind is removed, unless it's a
-   * person's request (`OFFERED_MUTE_KINDS`); else its sender, the first time theirs is. Each is offered once, ever; nothing
-   * already muted is offered. Null: nothing to offer.
+   * After Remove (the user's own, on this item). Iteration 5 (the owner's narrow offer): that kind from that sender, the
+   * first time it's removed; else the sender alone, the first time theirs is, only with positive evidence they're a
+   * machine (`automatedSender`). Nothing at all for someone the user has written to (checked here and again on taking
+   * it), and never a whole kind (Settings' to hide). Each is offered once, ever; nothing already muted is offered. Null:
+   * nothing to offer.
    */
   async offer(id: number): Promise<MuteOffer | null> {
     const { store } = this.host;
     const row = await store.dated.get(id);
-    if (!row || row.state !== "dismissed" || row.closedReason !== "user") return null;
-    const muted = await this.muted();
-    const kind = `kind:${row.kind}`;
-    const sender = `sender:${row.senderKey}`;
-    const name = async () => {
-      const from = (await store.today.fromOf([row.messageId])).get(row.messageId);
-      return from?.name.trim() || from?.email.trim() || row.senderKey;
-    };
+    if (!row || row.state !== "dismissed" || row.closedReason !== "user" || muteKey("sender", row.senderKey) === null) return null;
+    const [muted, written, src, from] = await Promise.all([this.muted(), store.dated.written([row.senderKey]), store.dated.source(row.messageId), store.today.fromOf([row.messageId])]);
+    if (written.has(row.senderKey) || muted.senders.has(row.senderKey)) return null;
+    const pair = pairKey(row.kind, row.senderKey);
+    const alone = !!src && src.senderKey === row.senderKey && automatedSender(src);
+    const sent = from.get(row.messageId);
+    const name = sent?.name.trim() || sent?.email.trim() || row.senderKey;
     return store.settings.update<string[], MuteOffer | null>(OFFERED_KEY, [], (offered) => {
       const said = new Set(offered);
       const pick: MuteOffer | null =
-        OFFERED_MUTE_KINDS.includes(row.kind) && !muted.kinds.has(row.kind) && !said.has(kind) ? { on: "kind", key: row.kind } : !muted.senders.has(row.senderKey) && !said.has(sender) && muteKey("sender", row.senderKey) ? { on: "sender", key: row.senderKey, name: "" } : null;
+        !muted.kinds.has(row.kind) && !muted.pairs.has(pair) && !said.has(`pair:${pair}`) ? { on: "pair", key: pair, kind: row.kind, name }
+        : alone && !said.has(`sender:${row.senderKey}`) ? { on: "sender", key: row.senderKey, name }
+        : null;
       if (!pick) return { value: offered, result: null };
-      return { value: [...offered, pick.on === "kind" ? kind : sender].slice(-OFFERED_MAX), result: pick };
-    }).then(async (pick) => (pick?.on === "sender" ? { ...pick, name: await name() } : pick));
+      return { value: [...offered, `${pick.on}:${pick.key}`].slice(-OFFERED_MAX), result: pick };
+    });
   }
 
-  /** At the bound, refused in plain words (nothing is dropped for it). Null: it was muted already. */
+  /**
+   * At the bound, refused in plain words (nothing is dropped for it). Null: it was muted already. A new sender or pair
+   * (not an Unmute's Undo, which puts back what was: `at`) is refused for someone the user has written to since it was
+   * offered: their mail is never hidden by an offer they've outgrown.
+   */
   async mute(m: { on: DatedMuteOn; key: string; name?: string; at?: number }): Promise<DatedMute | null> {
     const key = muteKey(m.on, m.key);
     if (key === null) throw new RpcError("BAD_REQUEST", L("errors.dated.muteInvalid"));
+    const { store } = this.host;
+    const sender = m.on === "sender" ? key : m.on === "pair" ? pairOf(key)!.sender : null;
+    if (sender !== null && m.at === undefined && (await store.dated.written([sender])).has(sender)) {
+      throw new RpcError("BAD_REQUEST", L("errors.dated.muteWritten", { sender: m.name?.trim() || sender }));
+    }
     const now = this.host.now();
     // an Undo of an Unmute puts it back where it was in the list
-    const mute: DatedMute = { on: m.on, key, name: m.on === "sender" ? (m.name ?? "") : "", at: m.at !== undefined && m.at <= now ? m.at : now };
-    const added = await this.host.store.dated.mutes.add(mute);
-    if (added === "full") throw new RpcError("BAD_REQUEST", L("errors.dated.mutesFull", { count: DATED_MUTES_MAX }));
+    const mute: DatedMute = { on: m.on, key, name: m.on === "kind" ? "" : (m.name ?? ""), at: m.at !== undefined && m.at <= now ? m.at : now };
+    const added = await store.dated.mutes.add(mute);
+    if (added === "full") throw new RpcError("BAD_REQUEST", m.on === "pair" ? L("errors.dated.mutePairsFull", { count: DATED_MUTE_PAIRS_MAX }) : L("errors.dated.mutesFull", { count: DATED_MUTES_MAX }));
     if (added === "already") return null;
     this.host.changed(await this.muted());
     return mute;
@@ -107,5 +119,5 @@ export class DatedMutes {
   }
 }
 
-/** Plan 210 (iteration 4): open items of a muted sender or kind are hidden wherever they'd show, never closed. */
-export const withoutMuted = <T extends { senderKey: string; kind: DatedKind }>(rows: readonly T[], muted: DatedMuted): T[] => (muted.senders.size || muted.kinds.size ? rows.filter((r) => !isMuted(r, muted)) : [...rows]);
+/** Plan 210 (iteration 4): open items of a muted sender or kind (iteration 5: or that kind from that sender) are hidden wherever they’d show, never closed. */
+export const withoutMuted = <T extends { senderKey: string; kind: DatedKind }>(rows: readonly T[], muted: DatedMuted): T[] => (anyMuted(muted) ? rows.filter((r) => !isMuted(r, muted)) : [...rows]);
