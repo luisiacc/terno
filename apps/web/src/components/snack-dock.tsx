@@ -183,6 +183,8 @@ export function SnackDock({ over }: { /** what it stands over: List's rows, or a
   // plan 158: Split's dock is over the reader; List's over its one pane. Plan 162 (after ai162-r02): it stands on a
   // page's own foot bar (the digest's Archive), so neither hides the other
   const lift = useSnack((s) => s.pageLift);
+  /** an Undo on its way (its act and what it puts back): said on the dock, so a test can wait for it to land */
+  const undoing = useSnack((s) => s.undoing > 0);
   /** over a conversation or a new message (Split's reader, List's page): on its column, its background */
   const overReader = over === "reader";
   // a confirmation with nothing to offer is about the list it was said in: another one makes it stale (plan 158). The
@@ -241,7 +243,7 @@ export function SnackDock({ over }: { /** what it stands over: List's rows, or a
   const spoken = current && !inert && hushed !== current.heard ? current.spoken : "";
   const alert = current?.tone === "error";
   return (
-    <section aria-label={t("snack.dock")} data-testid="snack-dock" data-over={overReader ? "reader" : "list"} style={{ "--dock-lift": `${lift}px` } as React.CSSProperties} className={cn("pointer-events-none absolute bottom-[calc(var(--float-inset)+var(--dock-lift))] z-10 flex flex-col justify-end", overReader ? "@container inset-x-0 pe-(--scrollbar-w)" : "inset-x-(--float-inset) items-center")}>
+    <section aria-label={t("snack.dock")} data-testid="snack-dock" data-over={overReader ? "reader" : "list"} data-undoing={undoing || undefined} style={{ "--dock-lift": `${lift}px` } as React.CSSProperties} className={cn("pointer-events-none absolute bottom-[calc(var(--float-inset)+var(--dock-lift))] z-10 flex flex-col justify-end", overReader ? "@container inset-x-0 pe-(--scrollbar-w)" : "inset-x-(--float-inset) items-center")}>
       <div role="status" aria-live="polite" aria-atomic className="sr-only" data-testid="snack-live">
         {!alert && spoken && <span key={current?.heard}>{spoken}</span>}
       </div>

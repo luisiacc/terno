@@ -22,10 +22,30 @@ export function closeFeedConversation(): boolean {
   setApp({ selectedId: null });
   if (held) void reloadList({ keepSelection: true });
   // once the feed has its width back (its items rewrap), the row is in view if it went out of it, and has the keyboard
-  if (row !== null)
+  if (row !== null) {
+    const still = restoring(useFeedRow.getState().moves);
     requestAnimationFrame(() => {
+      if (!still()) return;
       feedScroller.toRow?.(row);
-      requestAnimationFrame(() => focusFeedItem(row));
+      requestAnimationFrame(() => still() && focusFeedItem(row, still));
     });
+  }
   return true;
+}
+
+/** The latest put-away's place: an older one's frames still on their way land nowhere. */
+let putAway = 0;
+
+/**
+ * Codex's code review of iteration 4: the frames that bring the keys back land only while nothing moved since: no later
+ * put-away, no row chosen or conversation opened, and the keys nowhere or still where they were (Esc on "Pay the rent", then
+ * the keys on "Wire payroll" before the frames came, used to take them back to the rent, so Enter opened the rent).
+ */
+function restoring(moves: number): () => boolean {
+  const token = ++putAway;
+  const from = document.activeElement;
+  return () => {
+    const now = document.activeElement;
+    return token === putAway && useFeedRow.getState().moves === moves && getApp().selectedId === null && (now === null || now === document.body || now === from);
+  };
 }
