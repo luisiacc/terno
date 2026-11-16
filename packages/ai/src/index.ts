@@ -21,4 +21,4 @@ export * from "./prices";
 export * from "./spend";
 export * from "./stream";
 // plan 210 (iteration 2): a promise's stated time in another zone, read in the reader's as an item's is
-export { inZone } from "./dated";
+export { inZone, wallHolds } from "./dated";

@@ -1,6 +1,6 @@
 import { DATED_ITEMS_MAX } from "@terno/core";
 import { describe, expect, it } from "vitest";
-import { cutAtClause, cutAtWord, withoutIdentifiers, datedBudget, datedPrompt, DATED_PROMPT_VERSION, fakeDates, fitDates, readDatesTask, type DatedInput } from "./dated";
+import { cutAtClause, cutAtWord, withoutIdentifiers, datedBudget, datedPrompt, DATED_PROMPT_VERSION, fakeDates, fitDates, inZone, instantIn, readDatesTask, wallHolds, type DatedInput } from "./dated";
 import { fakeTransport } from "./fake";
 import { createAi } from "./tasks";
 import { promptText, type CompletionRequest, type ProviderConfig } from "./types";
@@ -309,6 +309,38 @@ describe("reading dates in mail you got (plan 204)", () => {
     expect(read("Europe/London", { moved: [{ label: "o1", due: "2026-11-21", time: "20:00 America/Los_Angeles", evidence: "moved to 8 PM", text: null, textEvidence: null }] }).moved[0]).toMatchObject({ due: "2026-11-22", time: "04:00" });
   });
 
+  it("plan 210 (iteration 4, revision 10): a clock change's policy: a skipped time names no instant, a repeated one its first", () => {
+    // spring forward: 2:30 doesn't happen (New York, Madrid); the day is kept and the time lost
+    expect(instantIn("2026-03-08", "02:30", "America/New_York")).toBeNull();
+    expect(instantIn("2026-03-29", "02:30", "Europe/Madrid")).toBeNull();
+    expect(inZone({ due: "2026-03-08", time: "02:30" }, "America/New_York", "Europe/Madrid")).toEqual({ due: "2026-03-08", time: null });
+    // fall back: 1:30 in New York and 2:30 in Madrid happen twice: the first (daylight time) whichever side of UTC
+    expect(instantIn("2026-11-01", "01:30", "America/New_York")).toBe(Date.UTC(2026, 10, 1, 5, 30));
+    expect(instantIn("2026-10-25", "02:30", "Europe/Madrid")).toBe(Date.UTC(2026, 9, 25, 0, 30));
+    // an ordinary time reads back as itself; an abbreviation is no zone
+    expect(instantIn("2026-11-16", "16:00", "America/Chicago")).toBe(Date.UTC(2026, 10, 16, 22, 0));
+    expect(instantIn("2026-11-16", "16:00", "CST")).toBeNull();
+    expect(wallHolds({ day: "2026-11-16", time: "16:00", zone: "America/Chicago" }, Date.UTC(2026, 10, 16, 22, 0))).toBe(true);
+    expect(wallHolds({ day: "2026-11-16", time: "16:00", zone: "America/Chicago" }, Date.UTC(2026, 10, 16, 21, 0))).toBe(false);
+  });
+
+  it("plan 210 (iteration 4, revision 10): travel in the place's time: Theo's tech check in Austin, read by a reader in Pacific time", () => {
+    const read = (time: string, zone = "America/Los_Angeles") => {
+      const v = readDatesTask(input({ zone })).validate({ replaced: [], items: [item({ kind: "event", text: "Tech check for Shipfast Summit", quote: "Tech check: Monday the 16th at 4:00 PM", due: "2026-11-16", time })], settled: [], moved: [] });
+      if (!v.ok) throw new Error("rejected");
+      return v.value.items[0]!;
+    };
+    expect(read("16:00 America/Chicago at Austin")).toMatchObject({ due: "2026-11-16", time: "14:00", wall: { day: "2026-11-16", time: "16:00", zone: "America/Chicago", place: "Austin" } });
+    // a zone the mail named, no place: its clock kept all the same
+    expect(read("16:00 America/Chicago")).toMatchObject({ time: "14:00", wall: { time: "16:00", zone: "America/Chicago", place: null } });
+    // the reader's own zone: no wall; an abbreviation: no time, no wall
+    expect(read("16:00 America/Chicago at Austin", "America/Chicago").wall).toBeUndefined();
+    expect(read("16:00 CST at Austin")).toMatchObject({ time: null });
+    expect(read("16:00 CST at Austin").wall).toBeUndefined();
+    // a late hour there is the next day here (a red-eye's 23:30 in Honolulu)
+    expect(read("23:30 Pacific/Honolulu at Honolulu", "America/New_York")).toMatchObject({ due: "2026-11-17", time: "04:30", wall: { day: "2026-11-16", time: "23:30", place: "Honolulu" } });
+  });
+
   it("Codex code review of the seventh round: a time-only move in another zone is read against the item's own moment, never a day further, and its zone note follows the new time", () => {
     type Moved = { label: string; due: string; time: string | null; evidence: string; text: string | null; textEvidence: string | null };
     const call = { label: "o1", kind: "event" as const, text: "Call with Marcus (11:00 PM PT)", due: "2026-07-11", time: "02:00" };
@@ -322,7 +354,7 @@ describe("reading dates in mail you got (plan 204)", () => {
     // extraction: July 10 at 23:00 PT is July 11 at 02:00 in New York
     expect(read([], { items: [item({ kind: "event", text: "Call with Marcus (11:00 PM PT)", due: "2026-07-10", time: "23:00 America/Los_Angeles" })] }).items[0]).toMatchObject({ due: "2026-07-11", time: "02:00" });
     // then "move it to 10 PM PT", the item's own (New York) day beside it: still July 10 in PT, 01:00 on July 11 here, not July 12
-    expect(read([call], { moved: [move({})] }).moved[0]).toEqual({ label: "o1", due: "2026-07-11", time: "01:00", evidence: "move it to 10 PM PT", text: "Call with Marcus (10:00 PM PT)", textEvidence: "move it to 10 PM PT" });
+    expect(read([call], { moved: [move({})] }).moved[0]).toEqual({ label: "o1", due: "2026-07-11", time: "01:00", evidence: "move it to 10 PM PT", text: "Call with Marcus (10:00 PM PT)", textEvidence: "move it to 10 PM PT", wall: { day: "2026-07-10", time: "22:00", zone: "America/Los_Angeles", place: null } });
     // a move that names its day in the mail's zone is read as given: July 12 at 22:00 PT is July 13 at 01:00 here
     expect(read([call], { moved: [move({ due: "2026-07-12" })] }).moved[0]).toMatchObject({ due: "2026-07-13", time: "01:00", text: "Call with Marcus (10:00 PM PT)" });
     // moved to a time in the reader's own zone: the note goes; the same time again changes no words
