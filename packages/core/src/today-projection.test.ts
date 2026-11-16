@@ -1,6 +1,6 @@
 /** Plan 210 (iteration 2): a row per item, one projection for the feed, the counts and the notice. */
 import { describe, expect, it } from "vitest";
-import { datedGroupAt, datedTiming, needsPresence, nextTodayChange, type DatedKind, type DatedRow } from "./dated";
+import { canLapse, datedGroupAt, datedTiming, lapsesUnlessRenewed, needsPresence, nextTodayChange, type DatedKind, type DatedRow } from "./dated";
 import type { FollowupRow } from "./followups";
 import { placedThreads, placeItems, projectToday, type ProjectionFacts } from "./today-projection";
 import { splitZoneNote, statedClock, weekEndDay } from "./today-items";
@@ -127,13 +127,35 @@ describe("early, broken, one time", () => {
     expect(due.why.item?.early).toBeUndefined();
   });
 
-  it("a delivery that needs someone there shows from the day before; the clock agrees", () => {
-    const parcel = dated("delivery", "2026-11-21", { early: true });
-    expect(datedGroupAt(parcel, at(2026, 11, 19, 23))).toMatchObject({ group: "comingUp" });
-    expect(datedGroupAt(parcel, at(2026, 11, 20, 0))).toEqual({ group: "day", day: "2026-11-21" });
-    expect(nextTodayChange([parcel], [], at(2026, 11, 19, 23))).toBe(at(2026, 11, 20, 0));
-    expect(needsPresence("Laptops arrive Saturday", "Adult signature required")).toBe(true);
+  it("a delivery, needing someone there or not, shows as its seven days begin (plan 210, iteration 3); the clock agrees", () => {
+    const parcel = dated("delivery", "2026-11-21", { early: true, arrivedAt: at(2026, 11, 2, 9) });
+    expect(datedGroupAt(parcel, at(2026, 11, 13, 23))).toMatchObject({ group: "comingUp" });
+    expect(datedGroupAt(parcel, at(2026, 11, 14, 0))).toEqual({ group: "day", day: "2026-11-21" });
+    expect(nextTodayChange([parcel], [], at(2026, 11, 13, 23))).toBe(at(2026, 11, 14, 0));
+    // revision 11: the mail's words (the quote's paragraph), never the item's
+    expect(needsPresence("Your laptops arrive Saturday. Adult signature required.")).toBe(true);
     expect(needsPresence("Your order arrives Saturday")).toBe(false);
+  });
+
+  it("revision 11: what lapses unless renewed takes an expiry's 30 days whatever kind it was read as; what renews by itself doesn't", () => {
+    const now = at(2026, 11, 10, 10);
+    const domain = (lapses: boolean) => dated("renew", "2026-12-07", { lapses, arrivedAt: at(2026, 11, 2, 9) });
+    // a week's lead: Coming up on the 10th; lapsing: 30 days, so under its day already
+    expect(datedGroupAt(domain(false), now)).toEqual({ group: "comingUp", day: "2026-12-07" });
+    expect(datedGroupAt(domain(true), now)).toEqual({ group: "day", day: "2026-12-07" });
+    // read as expire it's the same either way
+    expect(datedGroupAt({ ...domain(true), kind: "expire" }, now)).toEqual({ group: "day", day: "2026-12-07" });
+    expect(lapsesUnlessRenewed("Para no perder tu dominio ni el correo asociado, renueva antes de la fecha de vencimiento:")).toBe(true);
+    expect(lapsesUnlessRenewed("To keep your apps available, renew your membership ($99 USD/year) before it expires.")).toBe(true);
+    expect(lapsesUnlessRenewed("Auto-renew is off for pingwire.dev.")).toBe(true);
+    expect(lapsesUnlessRenewed("Your domain pingwire.dev expires on November 19.")).toBe(true);
+    expect(lapsesUnlessRenewed("Your Loomcast Business plan will renew automatically on December 1, 2026.")).toBe(false);
+    expect(lapsesUnlessRenewed("Tu suscripción anual se renovará automáticamente el 19 de noviembre.")).toBe(false);
+    expect(lapsesUnlessRenewed("AutoPay is on. We'll charge your account on Nov 24.")).toBe(false);
+    expect(lapsesUnlessRenewed("Your plan renews Dec 1, charged by the card on file automatically.")).toBe(false);
+    expect(lapsesUnlessRenewed("La renovación automática está desactivada: tu dominio vence el 8 de diciembre.")).toBe(true);
+    expect(canLapse("renew") && canLapse("expire") && canLapse("pay") && canLapse("respond")).toBe(true);
+    expect(canLapse("event") || canLapse("delivery") || canLapse("alert") || canLapse("ask")).toBe(false);
   });
 
   it("a broken promise given a new day keeps its first one, under the new day, not Missed", () => {
