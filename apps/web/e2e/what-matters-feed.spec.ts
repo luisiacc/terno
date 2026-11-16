@@ -452,10 +452,11 @@ test("plan 210 (iteration 1): inside a day, tasks before plans; iteration 2: a c
   await page.getByTestId("nav-today").click();
   await expect(line(page, "Wire payroll")).toBeVisible({ timeout: 15_000 });
 
-  await scenario("the payroll and the deposit (tasks), then the dinner, the breakfast and the parcel (plans by time, quieter); the deposit's conversation is two rows, its dinner its own", async () => {
+  await scenario("the deposit (a task), then the parcel (a plan, quieter), then the dinner, the breakfast and the payroll by their time; the deposit's conversation is two rows, its dinner its own", async () => {
     const order = (await walk(page)).rows.filter((r) => r.kind === "open").map((r) => r.text);
     const today = order.filter((t) => /payroll|deposit|breakfast|parcel|Dinner/.test(t));
-    expect(today).toEqual(["Wire payroll.", "Pay the deposit.", "Dinner at Lumen.", "Team breakfast.", "Your parcel arrives."]);
+    // (iteration 4, revision 8: Today's whole-day rows first, tasks before plans; then the timed by their time whatever their kind)
+    expect(today).toEqual(["Pay the deposit.", "Your parcel arrives.", "Dinner at Lumen.", "Team breakfast.", "Wire payroll."]);
     await reach(page, "Pay the deposit");
     const deposit = openLine(page, "Pay the deposit");
     await expect(deposit.getByTestId("wm-meta")).not.toContainText("Dinner at Lumen");
