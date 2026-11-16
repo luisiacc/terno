@@ -588,6 +588,14 @@ describe("plan 210 (iteration 3)", () => {
         expect(checkDates({ items: [ask("Answer Sergio", quote)], settled: [] }, person(text)), text).toMatchObject({ rows: [], asked: false });
       }
     });
+    it("a 'let me know and…' is a courtesy only when the 'and' is the sender's own reassurance; one that asks the reader for more is an ask (en, es; the code review's second round)", () => {
+      for (const [text, quote] of ([["When you're back, let me know and approve the final draft.", "When you're back, let me know and approve the final draft"], ["Cuando regreses, avísame y aprueba el borrador final.", "Cuando regreses, avísame y aprueba el borrador final"], ["Cuando regreses, avísame y luego aprueba el borrador.", "Cuando regreses, avísame y luego aprueba el borrador"], ["When you're back, let me know so the team can start.", "When you're back, let me know so the team can start"]] as const)) {
+        expect(checkDates({ items: [ask("Answer Sergio", quote)], settled: [] }, person(text)), text).toMatchObject({ rows: [{ kind: "ask" }], asked: true });
+      }
+      for (const [text, quote] of ([["When you're back, let me know and I'll pick you up.", "When you're back, let me know"], ["Cuando vengas a Tepoz, avísame y lo arreglamos.", "Cuando vengas a Tepoz, avísame"], ["Si necesitas algo, avísame y te ayudo.", "Si necesitas algo, avísame"]] as const)) {
+        expect(checkDates({ items: [ask("Answer Sergio", quote)], settled: [] }, person(text)), text).toMatchObject({ rows: [], asked: false });
+      }
+    });
     it("a chase from the promise's person: a request for what was promised is the promise's move, the offer beside it an ask", () => {
       const text = "Hi Mom,\n\nJust checking, did you get a chance to scan those? I didn't see an email yesterday. Your meeting with Ms. Greer is Tuesday the 17th and she needs both papers by Monday so she can prepare.\n\nIf it's easier, I can swing by Saturday morning and take pictures of them with my phone. Just let me know.\n\nDavid";
       const david = { ...person(text), reader: { name: "Ruth Novak", addressed: "to" as const }, from: "David Novak" };
