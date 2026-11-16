@@ -33,10 +33,11 @@ import { assertCertain, UNCERTAINTY_KEY, UncertainWriteError } from "./uncertain
  * Version 34 adds received-mail marks and dated items (SQL v56, plan 204).
  * Version 35 adds what the dated reader read with nothing asked of the reader (SQL v60, plan 210).
  * SQL v64 (plan 210) adds `messages.sent_confirmed`: absent on older records reads as not confirmed, so no version change.
+ * Version 36 adds the senders and kinds muted in What matters (SQL v69, plan 210, iteration 4).
  */
 export { IDB_VERSION };
 /** the SQL schema this one mirrors (migration ids are shared across adapters) */
-export const LOGICAL_SCHEMA = 60;
+export const LOGICAL_SCHEMA = 69;
 /** the last logical schema that changed what the instant search index holds (its snapshots carry it) */
 export const SEARCH_SCHEMA = 7;
 
@@ -122,6 +123,8 @@ export const TABLES: readonly (TableSpec & { memoryOnly?: boolean; early?: boole
   { name: "dated_items", early: true, key: ["id"], autoId: true, indexes: { ...fk("thread_id"), identity: ["message_id", "item"], message: ["message_id"], state: ["state"], sender: { columns: ["sender_key"], where: (r) => r.state === "open" }, same: ["same_as"] } },
   // plan 210 (iteration 2): read by the dated reader with nothing asked of the reader, by thread for Needs you
   { name: "dated_nothing_asked", key: ["message_id"], indexes: { ...fk("message_id"), thread: ["thread_id"] } },
+  // plan 210 (iteration 4): senders and kinds muted in What matters, by what they are (Needs you reads the senders)
+  { name: "dated_mutes", early: true, key: ["target", "key"], indexes: { target: ["target"] } },
   { name: "send_copies", early: true, key: ["opId"], indexes: fk("accountId") },
   { name: "send_copy_bytes", key: ["id"], lazy: true },
   { name: "recipient_receipts", early: true, key: ["opId"], indexes: fk("accountId") },
@@ -400,6 +403,8 @@ export async function openIdb(factory: IDBFactory, name: string): Promise<IDBDat
       if (event.oldVersion >= 1 && event.oldVersion < 34) for (const name of ["ai_dated_mail", "dated_items"]) if (!db.objectStoreNames.contains(name)) db.createObjectStore(name);
       // plan 210 (likewise)
       if (event.oldVersion >= 1 && event.oldVersion < 35 && !db.objectStoreNames.contains("dated_nothing_asked")) db.createObjectStore("dated_nothing_asked");
+      // plan 210, iteration 4 (likewise)
+      if (event.oldVersion >= 1 && event.oldVersion < 36 && !db.objectStoreNames.contains("dated_mutes")) db.createObjectStore("dated_mutes");
       // plan 144 (likewise)
       if (event.oldVersion >= 1 && event.oldVersion < 31 && !db.objectStoreNames.contains("ai_prepared_replies")) db.createObjectStore("ai_prepared_replies");
       // plan 142 (likewise)

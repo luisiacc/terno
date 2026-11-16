@@ -19,6 +19,7 @@ export * from "./today-projection";
 export * from "./followups";
 export * from "./dated";
 export * from "./dated-days";
+export * from "./dated-mutes";
 export * from "./themes";
 export * from "./list-filter";
 export * from "./people";

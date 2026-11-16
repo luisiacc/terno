@@ -1,5 +1,5 @@
-import { addressKey, ANSWERED_KINDS, DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, senderIsPerson, THREAD_SCOPED_KINDS, waitingCutoff, type DatedRow } from "@terno/core";
-import { DATED_MARK_MS, DATED_SCAN_MARK_MS, datedTab, NEW_MAIL_MS, readerIn, readNothingAsked, recipientList, type ClosedAt, type DatedFinish, type DatedFinishOutcome, type DatedMark, type DatedSnapshot, type DatedSource } from "@terno/store";
+import { addressKey, ANSWERED_KINDS, DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, DATED_MUTE_NAME_MAX, DATED_MUTES_MAX, muteKey, senderIsPerson, THREAD_SCOPED_KINDS, waitingCutoff, type DatedMute, type DatedMuteOn, type DatedRow } from "@terno/core";
+import { DATED_MARK_MS, DATED_SCAN_MARK_MS, datedTab, NEW_MAIL_MS, readerIn, readNothingAsked, recipientList, type ClosedAt, type DatedFinish, type DatedFinishOutcome, type DatedMuteAdded, type DatedMark, type DatedSnapshot, type DatedSource } from "@terno/store";
 import { received, receivedOwn } from "./ai-summaries";
 import { remarkReplies } from "./followups";
 import { T, type Ctx, type R } from "./mail";
@@ -125,12 +125,38 @@ export function openDatedFor(c: Ctx, o: { threadId: number; senderKey: string; b
   return [...found.values()].filter((r) => r.arrived_at < o.before && !inSpam(r.thread_id)).sort((a, b) => b.arrived_at - a.arrived_at || b.id - a.id).slice(0, o.limit).map(toRow);
 }
 
+// ─── plan 210 (iteration 4, revision 2): what the reader muted, as SQL's ───
+
+const toMute = (r: R): DatedMute => ({ on: r.target, key: r.key, name: r.name ?? "", at: r.created_at });
+
+export const datedMutes = (c: Ctx): DatedMute[] => [...T(c, "dated_mutes").all()].sort((a, b) => b.created_at - a.created_at || (a.target < b.target ? -1 : a.target > b.target ? 1 : 0) || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0)).map(toMute);
+
+export function addDatedMute(c: Ctx, m: DatedMute): DatedMuteAdded {
+  const key = muteKey(m.on, m.key);
+  if (key === null) throw new TypeError("not a sender or a kind");
+  const mutes = T(c, "dated_mutes");
+  if (mutes.has(m.on, key)) return "already";
+  if (mutes.size >= DATED_MUTES_MAX) return "full";
+  mutes.insert({ target: m.on, key, name: m.on === "sender" ? m.name.trim().slice(0, DATED_MUTE_NAME_MAX) : "", created_at: m.at });
+  return "added";
+}
+
+export function removeDatedMute(c: Ctx, on: DatedMuteOn, key: string): DatedMute | null {
+  const k = muteKey(on, key);
+  const r = k === null ? undefined : T(c, "dated_mutes").delete(on, k);
+  return r ? toMute(r) : null;
+}
+
+/** The muted senders' keys, by the in-memory index (Needs you's walk reads them once). */
+export const mutedSenders = (c: Ctx): Set<string> => new Set(T(c, "dated_mutes").by("target", "sender").map((r) => String(r.key)));
+
 export function finishDated(c: Ctx, w: DatedFinish): DatedFinishOutcome {
   const marks = T(c, "ai_dated_mail");
   const mark = marks.get(w.messageId);
   if (!mark) return "gone";
   const src = datedSource(c, w.messageId);
-  if (!src || src.spam || src.trash || src.draft || src.threadSpam) {
+  // plan 210 (iteration 4): a sender muted while it was read: nothing it read is kept, and it isn't read again
+  if (!src || src.spam || src.trash || src.draft || src.threadSpam || T(c, "dated_mutes").has("sender", src.senderKey)) {
     marks.deleteRow(mark);
     return "gone";
   }
@@ -138,7 +164,10 @@ export function finishDated(c: Ctx, w: DatedFinish): DatedFinishOutcome {
   if (src.threadId !== w.threadId) return "moved";
   const rows = T(c, "dated_items");
   let open = rows.count("state", "open");
+  // plan 210 (iteration 4): a muted kind's new items aren't stored; its settlements and moves below still are
+  const kinds = new Set(T(c, "dated_mutes").by("target", "kind").map((r) => String(r.key)));
   for (const r of w.rows) {
+    if (kinds.has(r.kind)) continue;
     if (rows.by("identity", w.messageId, r.item).length) continue;
     // plan 210 (iteration 3): a request read after your reply is stored open like any other: only a reply's verdict settles it
     if (open >= DATED_ACTIVE_MAX) {
@@ -180,7 +209,7 @@ export function finishDated(c: Ctx, w: DatedFinish): DatedFinishOutcome {
     if (r && r.state === "open" && reaches(r, src)) rows.update(r, { due_day: m.dueDay, due_at: m.dueAt, timed: m.timed ? 1 : 0, dated: 1, act_at: m.actAt, ...(m.text ? { text: m.text } : {}) });
   }
   // plan 210 (iteration 3): as SQL's, a request a reply of yours already followed goes to the follow-ups reader with it again
-  if (w.replies && w.rows.some((r) => ANSWERED_KINDS.includes(r.kind))) remarkReplies(c, src.threadId, src.date, w.replies.since, w.now);
+  if (w.replies && w.rows.some((r) => ANSWERED_KINDS.includes(r.kind) && !kinds.has(r.kind))) remarkReplies(c, src.threadId, src.date, w.replies.since, w.now);
   // plan 210 (iteration 2): as SQL's, in the same command
   const read = T(c, "dated_nothing_asked");
   if (readNothingAsked(w)) read.put({ message_id: w.messageId, thread_id: src.threadId, arrived_at: src.date, prompt_version: w.promptVersion });

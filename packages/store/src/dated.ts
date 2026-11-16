@@ -1,4 +1,4 @@
-import { addressKey, ANSWERED_KINDS, tabOfCode, type DatedKind, type DatedRow, type DatedState } from "@terno/core";
+import { addressKey, ANSWERED_KINDS, tabOfCode, type DatedKind, type DatedMute, type DatedMuteOn, type DatedRow, type DatedState } from "@terno/core";
 
 /**
  * Plan 204: dated items, from mail the user got.
@@ -186,7 +186,22 @@ export interface ClosedAt {
   id: number;
 }
 
+/** Plan 210 (iteration 4): a mute's add: new, there already, or refused at `DATED_MUTES_MAX` (nothing evicted). */
+export type DatedMuteAdded = "added" | "already" | "full";
+
 export interface DatedStore {
+  /**
+   * Plan 210 (iteration 4, revision 2): senders and kinds not shown in What matters, keyed as `muteKey` normalizes them
+   * (a key it refuses throws). `finish` reads them in its own commit: a muted sender's reading writes nothing and consumes
+   * its mark ("gone"); a muted kind's rows aren't added, its settlements and moves are. Clear AI data keeps them.
+   */
+  mutes: {
+    /** newest first, at most `DATED_MUTES_MAX` */
+    list(): Promise<DatedMute[]>;
+    add(m: DatedMute): Promise<DatedMuteAdded>;
+    /** the mute removed, or null if there was none */
+    remove(on: DatedMuteOn, key: string): Promise<DatedMute | null>;
+  };
   marks: {
     /** oldest first, by the message's date */
     page(after: { arrivedAt: number; messageId: number } | null, limit: number): Promise<DatedMark[]>;

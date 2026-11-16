@@ -1561,6 +1561,17 @@ ALTER TABLE dated_items ADD COLUMN lapses INTEGER NOT NULL DEFAULT 0;
   { version: 64, name: "What matters: a confirmed send stays yours for certain (plan 210, iteration 3)", sql: `
 ALTER TABLE messages ADD COLUMN sent_confirmed INTEGER NOT NULL DEFAULT 0;
 ` },
+  // plan 210 (iteration 4, revision 2): senders and kinds the reader muted in What matters, read before any reading and in
+  // the reader's commit. Shape only: an empty table, bounded at 200 by the store
+  { version: 69, name: "What matters: muted senders and kinds (plan 210, iteration 4)", sql: `
+CREATE TABLE dated_mutes (
+  target TEXT NOT NULL CHECK (target IN ('sender', 'kind')),
+  key TEXT NOT NULL,
+  name TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (target, key)
+) WITHOUT ROWID;
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;
