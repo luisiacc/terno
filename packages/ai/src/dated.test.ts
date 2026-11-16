@@ -1,6 +1,6 @@
 import { DATED_ITEMS_MAX } from "@terno/core";
 import { describe, expect, it } from "vitest";
-import { cutAtClause, cutAtWord, datedBudget, datedPrompt, DATED_PROMPT_VERSION, fakeDates, fitDates, readDatesTask, type DatedInput } from "./dated";
+import { cutAtClause, cutAtWord, withoutIdentifiers, datedBudget, datedPrompt, DATED_PROMPT_VERSION, fakeDates, fitDates, readDatesTask, type DatedInput } from "./dated";
 import { fakeTransport } from "./fake";
 import { createAi } from "./tasks";
 import { promptText, type CompletionRequest, type ProviderConfig } from "./types";
@@ -103,6 +103,27 @@ describe("reading dates in mail you got (plan 204)", () => {
     expect(readDatesTask(input()).system).toMatchSnapshot();
   });
 
+  it("prompt v13 (plan 210, iteration 3): replaced promises, a statement's balance, the fix, the reader's choice, no identifiers, a question as one, what asks", () => {
+    const en = readDatesTask(input()).system;
+    expect(en).toContain('- "replaced": the promises (labels p1, p2…, never an o label) this message replaces with a different request');
+    expect(en).toContain('A card statement\'s "pay" is the amount that avoids interest (the statement balance, "pago para no generar intereses"), never the minimum');
+    expect(en).toContain('"Cancel Tasklet Pro before Sunday or pay $9.99/month"; "Renew bakehouse.dev (auto-renew is off)" when it won\'t renew unless the reader acts');
+    expect(en).toContain('"Book a CPR renewal class (certification expires Jan 12)"');
+    expect(en).toContain("at most about fourteen words and one bracket");
+    expect(en).toContain('Never a file name, nor a number that identifies an order, an invoice, a policy, an account or a service');
+    expect(en).toContain('("can you bring the salad?" is "Answer Rosa about bringing the salad", never "Bring the salad")');
+    expect(en).toContain("Someone writing about the reader's own company or work because they want in (an investor, a customer, a partner) who asks for a call is an \"ask\"");
+    expect(en).toContain('an "ask", even from an automated address: "Call Lakeside Dental to choose a new time"');
+    expect(en).toContain('An invitation to a party or a gathering with an RSVP by a day is the RSVP ("respond") and the event on its own day');
+    expect(en).toContain('a card\'s "11/26" is the 26th (2026-11-26), the earlier reading, and its text keeps the mail\'s words ("expires 11/26")');
+    expect(en).toContain('An expiry\'s or a renewal\'s day is the day the mail names ("renew before it expires on the 19th" is the 19th), and "the end of the month" is its last day.');
+    expect(en).toContain('A date in figures is read as the mail\'s language writes them: "08/12/2026" in a Spanish mail is December 8.');
+    const es = readDatesTask(input({ language: "es" })).system;
+    expect(es).toContain('"Actualizar la tarjeta de Stratus ($1,186.40)"');
+    expect(es).toContain('"Cancelar Tasklet Pro antes del domingo o pagar $9.99 al mes"');
+    expect(es).toContain('"Responder a Rosa sobre llevar la ensalada"');
+  });
+
   it("prompt v11 (plan 210): a group's required act is the reader's, an optional call isn't; a pick-up's last day is a deadline; 'before Monday' is Sunday; soft days keep their words; a replaced promise is a new request; the names the mail gives", () => {
     const en = readDatesTask(input()).system;
     // the panel: Sam's progress report (a list to doctoral students) and grading deadline (a TA list), María's field trip
@@ -117,14 +138,15 @@ describe("reading dates in mail you got (plan 204)", () => {
     expect(en).toContain('A prescription or a library hold "ready for pickup", or a recalled book, is never a "delivery"');
     expect(en).toContain('"Pick up the lisinopril prescription", "Return Statistical Rethinking to the library"');
     // Jordan's and Diego's "before Monday", Priya's "by then", Jonah's soft day, a card's month
-    expect(en).toContain('"Before" a day is the day before it, in any language: "before Monday" and "antes del lunes" in a mail of Wednesday the 11th are Sunday the 15th');
+    expect(en).toContain('"Before" a day to do something is the day before it, in any language: "before Monday" and "antes del lunes" in a mail of Wednesday the 11th are Sunday the 15th');
     expect(en).toContain('"by then" is the day the mail named just before it');
     expect(en).toContain('the text always says it in the mail\'s words: "Call Grandma this week", "Send Jonah $48.20 for the cabin (ideally before the 20th)"');
-    expect(en).toContain('A card\'s or a document\'s month ("expires 11/26") is that month\'s last day (2026-11-30)');
+    // plan 210 (iteration 3): withdrawn for the 26th
+    expect(en).not.toContain("is that month's last day (2026-11-30)");
     // Sam's Chapter 2, and the promise re-dated as it was
     expect(en).toContain('a new day for what was promised ("we haven\'t received the report yet, could you get it to me before Monday?") moves it, and nothing else. A different thing asked for in its place ("skip the piecemeal version: please send me a full draft of Chapter 2 by Monday") is a new "respond", and the promise isn\'t moved at all: it\'s "replaced" (below).');
     // the round's vaguer texts
-    expect(en).toContain('It names the company, account, document or person the mail names, so it reads on its own: "Sign the Kestrel-Brightwood MSA", "Set up an exec call with Marlowe", never a vague "the final MSA", "your draft" or an order number alone.');
+    expect(en).toContain('It names the company, account, document or person the mail names, so it reads on its own: "Sign the Kestrel-Brightwood MSA", "Set up an exec call with Marlowe", never a vague "the final MSA" or "your draft".');
     const es = readDatesTask(input({ language: "es" })).system;
     expect(es).toContain('"Llamar a la abuela esta semana"');
     expect(es).toContain('"Firmar el MSA de Kestrel-Brightwood"');
@@ -174,6 +196,10 @@ describe("reading dates in mail you got (plan 204)", () => {
     expect(due({ kind: "renew", quote: "Please renew before the 9th to keep your apps on the store", due: "2026-12-09" })).toBe("2026-12-09");
     expect(due({ kind: "expire", quote: "renueva antes del día 8 por favor", due: "2026-12-08" })).toBe("2026-12-08");
     expect(due({ kind: "respond", quote: "Please sign and send it back before the end of the month", due: "2026-11-30" })).toBe("2026-11-30");
+    // a quote whose paragraph says no day: the mail's words where its day came from (Haiku, in Spanish)
+    const hornea = "Hola Lucía:\n\nNo pudimos cobrar tu suscripción de Hornea Pro a la tarjeta registrada.\n\nPor favor actualiza tu método de pago antes del lunes 16 de noviembre. Después de esa fecha tu cuenta pasa al plan gratuito.";
+    expect(due({ kind: "pay", quote: "No pudimos cobrar tu suscripción de Hornea Pro a la tarjeta registrada.", due: "2026-11-16" }, hornea)).toBe("2026-11-15");
+    expect(due({ kind: "pay", quote: "No pudimos cobrar tu suscripción de Hornea Pro a la tarjeta registrada.", due: "2026-11-16" }, hornea.replace("antes del lunes", "el lunes"))).toBe("2026-11-16");
     // the Codex code review of v11 (point 6): a negated "before" or a lower bound isn't a deadline, nor a sentence that asks nothing
     expect(due({ kind: "respond", quote: "please submit on Monday", due: "2026-11-16" }, "Do not submit before Monday; please submit on Monday.")).toBe("2026-11-16");
     expect(due({ kind: "respond", quote: "Send your entry on Monday", due: "2026-11-16" }, "Send your entry on Monday. Entries sent before Monday won't count.")).toBe("2026-11-16");
@@ -190,15 +216,15 @@ describe("reading dates in mail you got (plan 204)", () => {
     const en = readDatesTask(input()).system;
     // the eval: said in the ask's own line, Haiku dropped a colleague's real ask (2 in 11); among what isn't an item, none
     // v11: Margaret's son's offer to come by Saturday, which Luna made a request (1 in 5)
-    expect(en).toContain('- An offer of help: "let me know if you need a swap", "happy to help if you need anything", "I can cover for you if needed", "I can swing by Saturday and take pictures of them, just let me know". It asks nothing of the reader: neither an "ask" nor a "respond".');
+    expect(en).toContain('- An offer of help in case the reader needs it: "let me know if you need a swap", "happy to help if you need anything", "I can cover for you if needed", "when you come to town, let us know". It asks nothing of the reader: neither an "ask" nor a "respond".');
     expect(en).toContain('Its "due" and "time" are a deadline the mail states for it ("cancelled unless we hear from you by 1:00 PM on Wednesday": that Wednesday, 13:00), never the day it happened, and never a "respond" beside it; with none, null.');
     expect(en).toContain('null for an "ask", and for an "alert" that states no deadline.');
-    expect(en).toContain('its text says so in a few words: "Sofia\'s cleaning (reply C to confirm)"; never a "respond" beside it with a day the mail doesn\'t give.');
-    expect(en).toContain('that\'s this one item and nothing else for that bill (no "alert", no second "pay" or "respond"): its text says what failed: "Pay $142.67 for the Brightline bill (the card was declined)"');
+    expect(en).toContain('When it asks the reader to confirm it by replying ("reply C to confirm"), that\'s also a "respond", due the day the mail arrived unless it gives one: "Reply C to confirm Sofia\'s cleaning".');
+    expect(en).toContain('that\'s this one item and nothing else for that bill (no "alert", no second "pay" or "respond"): its text is the fix the mail asks for, saying what failed: "Pay $142.67 for the Brightline bill (the card was declined)", or "Update the card for Stratus ($1,186.40)" when it asks to update the card.');
     expect(en).toContain('an alert about something else beside a bill (a locked login, a frozen card) is its own item');
     expect(en).toContain('"textEvidence" the mail\'s exact words that say it, from one line of <mail>');
     const es = readDatesTask(input({ language: "es" })).system;
-    expect(es).toContain('"Limpieza de Sofía (responder C para confirmar)"');
+    expect(es).toContain('"Responder C para confirmar la limpieza de Sofía"');
     expect(es).toContain('"Pagar $142.67 de la factura de Brightline (la tarjeta fue rechazada)"');
     // a model's hidden reasoning counts against the ceiling: the soccer game's reading ran Luna past 2,000
     expect(readDatesTask(input()).maxTokens).toBe(3000);
@@ -342,9 +368,12 @@ describe("reading dates in mail you got (plan 204)", () => {
     expect(cutAtClause("Pay $142.67 for the Brightline bill", 120)).toBe("Pay $142.67 for the Brightline bill");
     // the last clause that fits whole: before a comma, a bracket it can't close, a dash, a sentence's end
     expect(cutAtClause("$1,186.40 Pingwire team payment failed on Visa ending in 4242; production deployments will pause and preview deployments", 100)).toBe("$1,186.40 Pingwire team payment failed on Visa ending in 4242…");
-    expect(cutAtClause("Business visa biometrics and document submission (arrive 15 minutes early; bring passport and copy, two photos, the form)", 120)).toBe("Business visa biometrics and document submission…");
+    expect(cutAtClause("Business visa biometrics and document submission (arrive 15 minutes early; bring passport and copy, two photos, the form)", 120)).toBe("Business visa biometrics and document submission (arrive 15 minutes early; bring passport and copy, two photos)…");
     expect(cutAtClause("Renew the Appvault Developer Program membership ($99 USD/year) — apps leave the store and builds stop when it lapses", 90)).toBe("Renew the Appvault Developer Program membership ($99 USD/year)…");
     expect(cutAtClause("Pagar $1,247.00 del recibo de luz LuzMex, con fecha límite el lunes y recargo del 10% después de esa fecha", 60)).toBe("Pagar $1,247.00 del recibo de luz LuzMex…");
+    // inside a bracket that can't close, at a clause of its own, closed (Luna's move words for the game, in Spanish)
+    expect(cutAtClause("Partido de los Halcones Sub-9 contra los Linces (llegar 7:30; llevar espinilleras, botella de agua con nombre y merienda de la familia Romero)", 120)).toBe("Partido de los Halcones Sub-9 contra los Linces (llegar 7:30; llevar espinilleras)…");
+    expect(cutAtClause("Partido de los Halcones Sub-9 contra los Linces (llegar 7:30; llevar espinilleras, botella de agua con nombre y merienda de la familia Romero)", 70)).toBe("Partido de los Halcones Sub-9 contra los Linces (llegar 7:30)…");
     // a short word's full stop isn't a sentence's end, nor a decimal point
     expect(cutAtClause("Dentist appointment with Dr. Ruiz at the Lakeside clinic on the second floor, bring the card", 80)).toBe("Dentist appointment with Dr. Ruiz at the Lakeside clinic on the second floor…");
     // one clause longer than all of it: at a word, with an ellipsis, and before a bracket it can't close
@@ -355,6 +384,17 @@ describe("reading dates in mail you got (plan 204)", () => {
       expect(cut.length, text).toBeLessThanOrEqual(60);
       expect(cut.endsWith("…"), text).toBe(true);
     }
+  });
+
+  it("plan 210 (iteration 3, point 6): no number that identifies an order, an invoice, a policy or a service in the sentence; a card's last digits stay", () => {
+    expect(withoutIdentifiers("Pay $1,295.00 for the Revenue Summit registration (invoice RS-77120)")).toBe("Pay $1,295.00 for the Revenue Summit registration");
+    expect(withoutIdentifiers("Pagar $3,200.00 MXN de la factura EP-4471 de Expo Pan (pase completo)")).toBe("Pagar $3,200.00 MXN de la factura de Expo Pan (pase completo)");
+    expect(withoutIdentifiers("Inkhaus order #IH-55018 (adult signature required)")).toBe("Inkhaus order (adult signature required)");
+    expect(withoutIdentifiers("Pay $1,486.00 for the Lakeshore Mutual homeowners policy HO-3-55120847 renewal premium")).toBe("Pay $1,486.00 for the Lakeshore Mutual homeowners policy renewal premium");
+    expect(withoutIdentifiers("Pagar $1,247.00 del recibo de luz LuzMex (servicio 4517 2290 3381)")).toBe("Pagar $1,247.00 del recibo de luz LuzMex");
+    for (const kept of ["Pay $142.67 for the Brightline bill (the Visa ending 2291 was declined)", "Order a new card for the service desk", "Flight AP 0017 to Madrid"]) expect(withoutIdentifiers(kept)).toBe(kept);
+    // through the reading
+    expect(validate({ items: [item({ text: "Pay $612.00 for the Basebox invoice BB-20931" })], settled: [], moved: [] }).items[0]!.text).toBe("Pay $612.00 for the Basebox invoice");
   });
 
   it("cuts long words, and leaves the dates as they came for the backend's checks", () => {
@@ -428,8 +468,8 @@ describe("reading dates in mail you got (plan 204)", () => {
   });
 
   it("a small window holds the whole conversation with the server: a bad answer and its repair still fit", async () => {
-    // v12's words (an ask, a Plan's window, an alert's words and deadline, a move's time and words, cold outreach, offers, a failed payment, the open items' days, a time in another zone, a newsletter's listing, a group's required act, "before" a day, soft days, a replaced promise, AutoPay, invitations, a meeting's start, a zone with the reader's clock) need a little over 6,100 (v11 5,800, v10 4,700, v9 4,200, v8 3,700), past the 5,500 the app warns below for the filter: a window between them reads only the mail's first 200 tokens. A window that holds them with a bad answer and its repair
-    const window = 6500;
+    // v12's words (an ask, a Plan's window, an alert's words and deadline, a move's time and words, cold outreach, offers, a failed payment, the open items' days, a time in another zone, a newsletter's listing, a group's required act, "before" a day, soft days, a replaced promise, AutoPay, invitations, a meeting's start, a zone with the reader's clock; v13: a replaced promise, a statement's balance, the fix, the reader's choice, what asks, an RSVP's event, no identifiers) need a little over 7,200 (v12 6,100, v11 5,800, v10 4,700, v9 4,200, v8 3,700), past the 5,500 the app warns below for the filter: a window between them reads only the mail's first 200 tokens. A window that holds them with a bad answer and its repair
+    const window = 7300;
     const budget = datedBudget(window);
     const fitted = fitDates(input({ text: "word ".repeat(1200), outputTokens: budget.outputTokens }), budget.promptChars);
     const sizes: number[] = [];

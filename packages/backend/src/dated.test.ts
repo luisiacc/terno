@@ -537,7 +537,8 @@ describe("plan 210 (iteration 3)", () => {
       expect(checkDates({ items: [], settled: [], replaced: [{ label: "p1", evidence: "Let's skip the piecemeal version" }] }, { ...mail(), promises }).replaced).toEqual([]);
       expect(checkDates({ ...replacing(), items: [{ ...chapter, quote: "send the whole of chapter two" }] }, { ...mail(), promises }).replaced).toEqual([]);
       // the request is for what was promised: that's a move, never a replacement
-      expect(checkDates({ ...replacing(), items: [{ ...chapter, text: "Send Ingrid the revised methods section" }] }, { ...mail(), promises }).replaced).toEqual([]);
+      const reAsk = "I didn't see the methods section on Wednesday. Let's skip the piecemeal version: please send me the revised methods section by Monday.";
+      expect(checkDates({ ...replacing(), items: [{ ...chapter, text: "Send Ingrid the revised methods section", quote: "please send me the revised methods section by Monday" }] }, { ...mail(reAsk), promises }).replaced).toEqual([]);
       // an open item's label, or a promise not offered
       expect(checkDates(replacing(undefined, "o1"), { ...mail(), promises }).replaced).toEqual([]);
       expect(checkDates(replacing(undefined, "p2"), { ...mail(), promises }).replaced).toEqual([]);
@@ -568,6 +569,52 @@ describe("plan 210 (iteration 3)", () => {
       for (const [text, quote] of ([["When you get a chance, let me know what you think of the draft.", "let me know what you think of the draft"], ["Cuando vengas, ¿me traes el libro?", "¿me traes el libro?"], ["When you're back in town, could you bring the drill? Let me know.", "could you bring the drill"]] as const)) {
         expect(checkDates({ items: [ask("Answer Sergio", quote)], settled: [] }, person(text)).rows, text).toHaveLength(1);
       }
+    });
+    it("a chase from the promise's person: a request for what was promised is the promise's move, the offer beside it an ask", () => {
+      const text = "Hi Mom,\n\nJust checking, did you get a chance to scan those? I didn't see an email yesterday. Your meeting with Ms. Greer is Tuesday the 17th and she needs both papers by Monday so she can prepare.\n\nIf it's easier, I can swing by Saturday morning and take pictures of them with my phone. Just let me know.\n\nDavid";
+      const david = { ...person(text), reader: { name: "Ruth Novak", addressed: "to" as const }, from: "David Novak" };
+      const papers = { kind: "respond", text: "Send both insurance papers to Ms. Greer", quote: "she needs both papers by Monday", due: "2026-11-16", time: null };
+      const swing = ask("Answer David about coming by Saturday", "I can swing by Saturday morning and take pictures of them with my phone");
+      const promises = new Map([["p1", { id: 3, revision: 1, text: "scan and email David the insurance papers" }]]);
+      const out = checkDates({ items: [papers, swing], settled: [] }, { ...david, promises });
+      expect(out.movedPromises).toMatchObject([{ id: 3, revision: 1 }]);
+      expect(new Date(out.movedPromises[0]!.dueAt).getDate()).toBe(16);
+      expect(out.rows.map((r) => [r.kind, r.text])).toEqual([["ask", "Answer David about coming by Saturday"]]);
+      // no promise offered: the request stands, and the offer beside it, quoted from mid-sentence, is its own ask
+      const partial = ask("Answer David about taking pictures of the papers", "I can swing by Saturday morning and take pictures of them with my phone. Just let me know.");
+      expect(checkDates({ items: [papers, partial], settled: [] }, david).rows.map((r) => r.kind)).toEqual(["respond", "ask"]);
+      expect(checkDates({ items: [papers, { ...partial, kind: "respond", due: "2026-11-14" }], settled: [] }, david).rows.map((r) => [r.kind, r.dated])).toEqual([["respond", true], ["ask", false]]);
+      // one for something else leaves the promise where it was
+      const other = checkDates({ items: [{ ...papers, text: "Book a table for Ms. Greer" }], settled: [] }, { ...david, promises });
+      expect(other).toMatchObject({ movedPromises: [], rows: [{ kind: "respond" }] });
+      // the offer read as a request with a day (Luna, 1 in 5) is the ask it is, undated; one with a deadline stays a request
+      const offer = { kind: "respond", text: "Tell David if he should come by Saturday", quote: "If it's easier, I can swing by Saturday morning and take pictures of them with my phone. Just let me know.", due: "2026-11-14", time: null };
+      expect(checkDates({ items: [offer], settled: [] }, david).rows.map((r) => [r.kind, r.dated])).toEqual([["ask", false]]);
+      const deadline = "I can print them for you if you send them by Friday. Let me know.";
+      expect(checkDates({ items: [{ ...offer, quote: deadline }], settled: [] }, { ...david, text: deadline }).rows.map((r) => r.kind)).toEqual(["respond"]);
+      // a request that names what it replaces is never the replaced promise's move (Haiku: "… chapter 2 (replaces the marco teórico)")
+      const teresa = "Lucía:\n\nNo me llegó el marco teórico el miércoles. Olvidemos la versión por partes: envíame el borrador completo del capítulo 2 antes del lunes.\n\nTeresa";
+      const chapter = { kind: "respond", text: "Send Teresa the full draft of chapter 2 (replaces the marco teórico)", quote: "envíame el borrador completo del capítulo 2 antes del lunes", due: "2026-11-15", time: null };
+      const marco = new Map([["p1", { id: 4, revision: 2, text: "enviar a Teresa el marco teórico" }]]);
+      for (const replaced of [[{ label: "p1", evidence: "Olvidemos la versión por partes" }], []]) {
+        const out = checkDates({ items: [chapter], settled: [], replaced }, { ...person(teresa), from: "Teresa Villalba", promises: marco });
+        expect(out.rows.map((r) => r.kind), String(replaced.length)).toEqual(["respond"]);
+        expect(out.movedPromises).toEqual([]);
+        expect(out.replaced).toHaveLength(replaced.length);
+      }
+      // the model's own move wins
+      expect(checkDates({ items: [papers], settled: [], moved: [{ label: "p1", due: "2026-11-16", time: null, evidence: "she needs both papers by Monday" }] }, { ...david, promises })).toMatchObject({ rows: [], movedPromises: [{ id: 3 }] });
+    });
+    it("a renewal and an expiry of one day from one mail are one row", () => {
+      const domain = "The following domain is about to expire:\n\nDomain: quillworks.dev\nExpiry date: 19/11/2026\nAuto-renew: OFF\n\nRenew now at namefort.example.";
+      const renew = { kind: "renew", text: "Renew quillworks.dev (auto-renew is off)", quote: "Auto-renew: OFF", due: "2026-11-19", time: null };
+      const expire = { kind: "expire", text: "Renew quillworks.dev before it expires", quote: "Expiry date: 19/11/2026", due: "2026-11-19", time: null };
+      expect(checkDates({ items: [renew, expire], settled: [] }, { ...base, text: domain }).rows.map((r) => r.kind)).toEqual(["renew"]);
+      expect(checkDates({ items: [renew, { ...expire, due: "2026-11-20" }], settled: [] }, { ...base, text: domain }).rows).toHaveLength(2);
+    });
+    it("Ingrid's 'if something's in the way, tell me' is a courtesy too (en, es)", () => {
+      expect(checkDates({ items: [ask("Tell Ingrid if something is in the way", "If something's in the way, tell me")], settled: [] }, person("If something's in the way, tell me, and we'll work it out.")).rows).toEqual([]);
+      expect(checkDates({ items: [ask("Decirle a Teresa si algo te lo impide", "Si algo te lo impide, dímelo")], settled: [] }, person("Si algo te lo impide, dímelo y lo resolvemos.")).rows).toEqual([]);
     });
     it("only copied to know about it, a task said of the reader isn't theirs; one that speaks to them by name still is", () => {
       const carla = "Hola Ana Sofía,\n\nAna, ¿nos mandas las ilustraciones finales el lunes 16? Diego las monta en las etiquetas esa misma semana.\n\nDiego, te copio para que estés al tanto; cuando Ana las entregue te las reenvío.\n\nCarla";
