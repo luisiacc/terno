@@ -814,6 +814,35 @@ describe("plan 210 (iteration 4)", () => {
       expect(checkDates({ items: [], settled: [], moved: [{ label: "p1", due: "2026-11-16", time: null, evidence: "Could you get the SOC 2 report to me before then?" }] }, owen).movedPromises[0]!.before).toBeUndefined();
     });
   });
+
+  describe("revision 11: \"Reply C to confirm\" is an ask linked to its event", () => {
+    const DENTIST = "Hi Maria!\n\nThis is a reminder that Sofia is scheduled for her 6-month cleaning and x-rays with Dr. Alvarez on Nov 24 at 3:40 PM.\n\nReply C to confirm or call us at 512-555-0127 to reschedule.\n\nSmiles,\nThe team at Alvarez Family Dental";
+    const arrivedAt = at(2026, 11, 5, 16, 40);
+    const mail = { ...base, text: DENTIST, subject: "Sofia's cleaning - please confirm", arrivedAt, now: arrivedAt, sender: { person: false }, reader: { name: "María Delgado", addressed: "to" as const } };
+    const cleaning = { kind: "event", text: "Sofia's cleaning and x-rays with Dr. Alvarez", quote: "on Nov 24 at 3:40 PM", due: "2026-11-24", time: "15:40" };
+    const confirm = { kind: "respond", text: "Reply C to confirm Sofia's cleaning", quote: "Reply C to confirm", due: "2026-11-05", time: null };
+    it("v13's respond on the mail's day, or v14's ask, is an undated ask from that day linked to the event, even from an automated sender", () => {
+      for (const asked of [confirm, { ...confirm, kind: "ask", due: null }, { ...confirm, due: "2026-11-06" }]) {
+        const out = checkDates({ items: [asked, cleaning], settled: [] }, mail);
+        expect(out.rows.map((r) => [r.item, r.kind, r.dated, r.confirmsItem])).toEqual([[0, "event", true, undefined], [1, "ask", false, 0]]);
+        expect(out.asked).toBe(true);
+      }
+      // es
+      const es = "¡Hola! Te recordamos que Sofía tiene su limpieza el martes 24 de noviembre a las 15:40. Responde C para confirmar o llámanos para cambiar la cita.";
+      const out = checkDates({ items: [{ kind: "event", text: "Limpieza de Sofía", quote: "el martes 24 de noviembre a las 15:40", due: "2026-11-24", time: "15:40" }, { kind: "ask", text: "Responder C para confirmar la limpieza de Sofía", quote: "Responde C para confirmar", due: null, time: null }], settled: [] }, { ...mail, text: es });
+      expect(out.rows.map((r) => [r.kind, r.confirmsItem])).toEqual([["event", undefined], ["ask", 0]]);
+    });
+    it("a confirmation with a day of its own stays a request; with no event, or two, nothing is linked", () => {
+      const text = DENTIST.replace("Reply C to confirm", "Reply C to confirm by November 20");
+      const dated = checkDates({ items: [cleaning, { ...confirm, quote: "Reply C to confirm by November 20", due: "2026-11-20" }], settled: [] }, { ...mail, text });
+      expect(dated.rows.map((r) => [r.kind, r.dueDay, r.confirmsItem])).toEqual([["event", "2026-11-24", undefined], ["respond", "2026-11-20", undefined]]);
+      // no event: an automated sender's ask isn't kept, its respond on the mail's day is (as before)
+      expect(checkDates({ items: [{ ...confirm, kind: "ask", due: null }], settled: [] }, mail).rows).toEqual([]);
+      expect(checkDates({ items: [confirm], settled: [] }, mail).rows.map((r) => [r.kind, r.confirmsItem])).toEqual([["respond", undefined]]);
+      // only copied: no ask of an automated sender's
+      expect(checkDates({ items: [cleaning, { ...confirm, kind: "ask", due: null }], settled: [] }, { ...mail, reader: { name: "María Delgado", addressed: "cc" } }).rows.map((r) => r.kind)).toEqual(["event"]);
+    });
+  });
 });
 
 describe("the reader", () => {

@@ -94,6 +94,16 @@ describe("findLinks", () => {
     expect(findLinks([a, b], [], after(b.id)).same).toEqual([]);
   });
 
+  it("plan 210 (iteration 4, revision 11): an ask that confirms an event is never one item with another request or a promise", () => {
+    const cleaning = dated("event", "Sofia's cleaning", { threadId: 8, senderKey: "dental@x.test" });
+    const confirm = dated("ask", "Reply C to confirm Sofia's cleaning", { threadId: 8, senderKey: "dental@x.test", quote: "Reply C to confirm", dated: false, confirms: cleaning.id });
+    const again = dated("ask", "Reply C to confirm Sofia's cleaning", { threadId: 8, senderKey: "dental@x.test", quote: "Reply C to confirm", dated: false });
+    const mine = promise("confirm Sofia's cleaning", { threadId: 8 });
+    expect(findLinks([cleaning, confirm, again], [mine], all).same.filter((l) => l.item.id === confirm.id || l.sameAs === `dated:${confirm.id}`)).toEqual([]);
+    // without the link, the two asks are one (as before)
+    expect(findLinks([cleaning, { ...confirm, confirms: null }, again], [], all).same).toEqual([{ item: { source: "dated", id: again.id }, sameAs: `dated:${confirm.id}` }]);
+  });
+
   it("a bill and a later promise: the promise joins the bill; a promise before the bill: the bill joins the promise", () => {
     const bill = dated("pay", "Pay $12 for the bus");
     const mine = promise("send the slip and $12 for the bus");
