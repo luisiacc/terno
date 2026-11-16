@@ -1028,6 +1028,35 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
           expect((await store.today.members([`dated:${request.id}`])).promises).toEqual([]);
         }
       });
+
+      it("the code review's second round: the reply's other reading of the promise leaves the request's item with it and answers it too, whichever led", async () => {
+        const twins = async (links: (ids: { scan: number; email: number; request: number }) => { item: { source: "dated" | "promise"; id: number }; sameAs: string }[]) => {
+          const t = await talk();
+          const r = await t.reply();
+          const rows = [t.promise({ text: "scan the signed form", quote: "I'll scan the signed form" }), t.promise({ item: 1, text: "email the signed form", quote: "I'll scan the signed form and email it Wednesday" })];
+          await t.read(r, { rows });
+          const mine = await t.store.followups.ofThread(r.thread);
+          const [scan, email] = [mine.find((x) => x.item === 0)!, mine.find((x) => x.item === 1)!];
+          const same = links({ scan: scan.id, email: email.id, request: t.request.id });
+          expect(await t.store.today.link({ same, details: [] })).toBe(same.length);
+          await t.store.followups.marks.queueScan([r.id], NOW);
+          await t.read(r, { rows, verdicts: [{ request: { id: t.request.id, revision: t.request.revision }, verdict: "promise", item: 1 }] });
+          const now = { scan: (await t.store.followups.get(scan.id))!, email: (await t.store.followups.get(email.id))!, request: (await t.store.dated.get(t.request.id))! };
+          expect([now.scan.answers, now.email.answers, now.scan.revision, now.email.revision]).toEqual([t.request.id, t.request.id, scan.revision, email.revision]);
+          expect(now.request).toMatchObject({ sameAs: null, state: "open", revision: t.request.revision });
+          expect((await t.store.today.members([`dated:${t.request.id}`])).promises).toEqual([]);
+          return { ...now, ids: { scan: scan.id, email: email.id } };
+        };
+        // the review's case: the first reading leads the request's item, the linked one apart
+        const a = await twins(({ scan, request }) => [{ item: { source: "dated", id: request }, sameAs: `promise:${scan}` }]);
+        expect([a.scan.sameAs, a.email.sameAs]).toEqual([null, `promise:${a.ids.scan}`]);
+        // both readings in it
+        const b = await twins(({ scan, email, request }) => [{ item: { source: "dated", id: request }, sameAs: `promise:${scan}` }, { item: { source: "promise", id: email }, sameAs: `promise:${scan}` }]);
+        expect([b.scan.sameAs, b.email.sameAs]).toEqual([null, `promise:${b.ids.scan}`]);
+        // the request leads both: they leave it together, the linked one theirs
+        const c = await twins(({ scan, email, request }) => [{ item: { source: "promise", id: scan }, sameAs: `dated:${request}` }, { item: { source: "promise", id: email }, sameAs: `dated:${request}` }]);
+        expect([c.scan.sameAs, c.email.sameAs]).toEqual([`promise:${c.ids.email}`, null]);
+      });
     });
   });
 }

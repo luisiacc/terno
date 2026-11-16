@@ -155,20 +155,32 @@ function answerable(c: Ctx, id: number, src: { threadId: number; date: number })
   return r && r.state === "open" && (ANSWERED_KINDS as readonly string[]).includes(r.kind) && r.thread_id === src.threadId && r.arrived_at < src.date ? r : null;
 }
 
-/** As SQL's (`apart`): a promise its verdict links to a request is never one item with it; no revision moves. */
+/**
+ * As SQL's (`apart`): a promise its verdict links to a request is never one item with it, nor are the reply's other readings
+ * of it (the code review's second round), which answer the request too; no revision moves.
+ */
 function apart(c: Ctx, promiseId: number, requestId: number): void {
-  const [promise, request] = [refKey({ source: "promise", id: promiseId }), refKey({ source: "dated", id: requestId })];
+  const key = (id: number) => refKey({ source: "promise", id });
+  const [promise, request] = [key(promiseId), refKey({ source: "dated", id: requestId })];
   const followups = T(c, "followups");
   const dated = T(c, "dated_items");
   const p = followups.get(promiseId)!;
   const r = dated.get(requestId)!;
-  if ((p.same_as ?? promise) !== (r.same_as ?? request)) return;
-  if (p.same_as != null) {
-    followups.update(p, { same_as: null });
+  const [item, mine] = [r.same_as ?? request, p.same_as ?? promise];
+  const canonical = (x: R) => x.same_as ?? key(x.id);
+  const readings = followups
+    .by("fk_thread_id", p.thread_id)
+    .filter((x) => x.message_id === p.message_id && x.kind === "promise" && live(x) && (x.id === promiseId || canonical(x) === item || canonical(x) === mine))
+    .map((x) => (x.id !== promiseId && x.answers == null ? followups.update(x, { answers: requestId }) : x));
+  if (!readings.some((x) => canonical(x) === item)) return;
+  if (readings.some((x) => key(x.id) === item)) {
+    dated.update(r, { same_as: null });
+    for (const x of dated.by("same", item)) if ((ANSWERED_KINDS as readonly string[]).includes(x.kind)) dated.update(x, { same_as: request });
+    for (const x of readings) if (x.same_as == null && key(x.id) !== item && !followups.count("same", key(x.id)) && !dated.count("same", key(x.id))) followups.update(x, { same_as: item });
     return;
   }
-  dated.update(r, { same_as: null });
-  for (const x of dated.by("same", promise)) if ((ANSWERED_KINDS as readonly string[]).includes(x.kind)) dated.update(x, { same_as: request });
+  const lead = mine === item ? promise : mine;
+  for (const x of readings) if (x.same_as === item) followups.update(x, { same_as: key(x.id) === lead ? null : lead });
 }
 
 export function finishFollowups(c: Ctx, w: FollowupFinish): FollowupFinishOutcome {

@@ -164,18 +164,36 @@ function answerable(db: Db, id: number, src: { threadId: number; date: number })
  * read first, the request later): undone in the verdict's commit, so Remove and Later stay the promise's alone. The promise
  * joined to the request's item leaves it; a promise that's the item's canonical keeps the rest, and the request with the
  * requests one with it (its readings) become their own item, the request their canonical. As `link`, no revision moves.
+ * The code review's second round: the reply's other readings go with the promise. Its open promises the matcher made one
+ * item with the request or with the promise (the same promise read twice, "scan both papers" and "email both papers")
+ * answer the request too, and leave the request's item together, so no reading left behind brings it back after a start.
  */
 function apart(db: Db, promiseId: number, requestId: number): void {
-  const [promise, request] = [refKey({ source: "promise", id: promiseId }), refKey({ source: "dated", id: requestId })];
-  const p = db.get<{ same_as: string | null }>("SELECT same_as FROM followups WHERE id = ?", promiseId)!;
+  const key = (id: number) => refKey({ source: "promise", id });
+  const [promise, request] = [key(promiseId), refKey({ source: "dated", id: requestId })];
+  const p = db.get<{ message_id: number; same_as: string | null }>("SELECT message_id, same_as FROM followups WHERE id = ?", promiseId)!;
   const r = db.get<{ same_as: string | null }>("SELECT same_as FROM dated_items WHERE id = ?", requestId)!;
-  if ((p.same_as ?? promise) !== (r.same_as ?? request)) return;
-  if (p.same_as !== null) {
-    db.run("UPDATE followups SET same_as = NULL WHERE id = ?", promiseId);
+  const [item, mine] = [r.same_as ?? request, p.same_as ?? promise];
+  const canonical = (x: { id: number; same_as: string | null }) => x.same_as ?? key(x.id);
+  const readings = db
+    .all<{ id: number; same_as: string | null }>("SELECT id, same_as FROM followups WHERE message_id = ? AND kind = 'promise' AND state IN ('open','due')", p.message_id)
+    .filter((x) => x.id === promiseId || canonical(x) === item || canonical(x) === mine);
+  for (const x of readings) if (x.id !== promiseId) db.run("UPDATE followups SET answers = ? WHERE id = ? AND answers IS NULL", requestId, x.id);
+  if (!readings.some((x) => canonical(x) === item)) return;
+  if (readings.some((x) => key(x.id) === item)) {
+    // a reading leads the request's item: the request and its own readings leave it, the request theirs; a reading on its
+    // own (no item of its own) joins the one its twin leads
+    db.run("UPDATE dated_items SET same_as = NULL WHERE id = ?", requestId);
+    db.run(`UPDATE dated_items SET same_as = ? WHERE id IN (SELECT id FROM dated_items INDEXED BY dated_same WHERE same_as = ?) AND kind IN (${ANSWERED_KINDS.map((k) => `'${k}'`).join(", ")})`, request, item);
+    for (const x of readings) {
+      const leads = db.get("SELECT 1 FROM followups INDEXED BY followups_same WHERE same_as = ?1 UNION ALL SELECT 1 FROM dated_items INDEXED BY dated_same WHERE same_as = ?1 LIMIT 1", key(x.id));
+      if (x.same_as === null && key(x.id) !== item && !leads) db.run("UPDATE followups SET same_as = ? WHERE id = ?", item, x.id);
+    }
     return;
   }
-  db.run("UPDATE dated_items SET same_as = NULL WHERE id = ?", requestId);
-  db.run(`UPDATE dated_items SET same_as = ? WHERE id IN (SELECT id FROM dated_items INDEXED BY dated_same WHERE same_as = ?) AND kind IN (${ANSWERED_KINDS.map((k) => `'${k}'`).join(", ")})`, request, promise);
+  // something else leads it: the readings in it leave together, for the promise's item (the promise's own, if it was in it)
+  const lead = mine === item ? promise : mine;
+  for (const x of readings) if (x.same_as === item) db.run("UPDATE followups SET same_as = ? WHERE id = ?", key(x.id) === lead ? null : lead, x.id);
 }
 
 export function finishFollowups(db: Db, w: FollowupFinish): FollowupFinishOutcome {

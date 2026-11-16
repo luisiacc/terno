@@ -154,7 +154,10 @@ export interface Links {
  * What the items not looked at yet (`fresh`) are the same as, or a detail of, among every open one: each newer one joins the
  * older's canonical, so a canonical keeps its id as evidence arrives. A link found in this pass is counted at once
  * (Codex code review of iteration 2): what joins an item that has just joined another joins that one's canonical, never
- * makes a chain the store would refuse. Bucketed (by moment, conversation, message), never every pair.
+ * makes a chain the store would refuse. Bucketed (by moment, conversation, message), never every pair. Plan 210 (iteration 3,
+ * the code review's second round): a promise that answers a request (`answers`) is never joined into that request's item,
+ * nor is the request joined into its; and its twin (`samePromise`, the same promise read twice from your reply) answers
+ * what it answers, so neither reading brings the request back through the other.
  */
 export function findLinks(dated: readonly DatedRow[], promises: readonly FollowupRow[], fresh: (key: string, threadId: number) => boolean): Links {
   const out: Links = { same: [], details: [] };
@@ -181,14 +184,36 @@ export function findLinks(dated: readonly DatedRow[], promises: readonly Followu
     push(promisesByThread, p.threadId, p);
     push(promisesByMessage, p.messageId, p);
   }
+  // what each promise answers: its own link, else a twin's (only messages that answer something are read)
+  const answers = new Map<number, number>();
+  for (const p of promises) {
+    if (p.kind !== "promise" || p.answers == null) continue;
+    answers.set(p.id, p.answers);
+    for (const o of promisesByMessage.get(p.messageId) ?? []) if (o.answers == null && !answers.has(o.id) && samePromise(o, p)) answers.set(o.id, p.answers);
+  }
+  const answeredBy = new Map<number, FollowupRow[]>();
+  for (const p of promises) {
+    const r = answers.get(p.id);
+    if (r !== undefined) push(answeredBy, r, p);
+  }
+  const datedById = new Map(dated.map((r) => [r.id, r]));
+  const errand = (d: DatedRow, p: FollowupRow) => sameErrand(d, answers.has(p.id) && p.answers == null ? { ...p, answers: answers.get(p.id)! } : p);
   // each item's canonical, this pass's links included; an item others are the same as is never made anyone's
   const joined = new Map<string, string>();
   const canonicals = new Set<string>([...dated, ...promises].flatMap((r) => (r.sameAs ? [r.sameAs] : [])));
   const own = (source: ItemRef["source"], r: { id: number }) => refKey({ source, id: r.id });
   const canonicalOf = (source: ItemRef["source"], r: { id: number; sameAs?: string | null }) => r.sameAs ?? joined.get(own(source, r)) ?? own(source, r);
+  /** a promise and the request it answers never one item, whichever joins the other */
+  const keptApart = (source: ItemRef["source"], row: { id: number }, to: string): boolean => {
+    if (source === "promise") {
+      const r = datedById.get(answers.get(row.id) ?? -1);
+      return !!r && canonicalOf("dated", r) === to;
+    }
+    return (answeredBy.get(row.id) ?? []).some((p) => canonicalOf("promise", p) === to);
+  };
   const join = (source: ItemRef["source"], row: { id: number; sameAs?: string | null }, to: string) => {
     const key = own(source, row);
-    if (row.sameAs || joined.has(key) || canonicals.has(key) || to === key) return;
+    if (row.sameAs || joined.has(key) || canonicals.has(key) || to === key || keptApart(source, row, to)) return;
     joined.set(key, to);
     canonicals.add(to);
     out.same.push({ item: { source, id: row.id }, sameAs: to });
@@ -205,7 +230,7 @@ export function findLinks(dated: readonly DatedRow[], promises: readonly Followu
     if (ERRANDS.has(r.kind)) {
       const asked = datedByThread.get(r.threadId)?.find((o) => o.id !== r.id && older(o, r) && sameRequest(o, r));
       if (asked) join("dated", r, canonicalOf("dated", asked));
-      const promise = promisesByThread.get(r.threadId)?.find((p) => sameErrand(r, p));
+      const promise = promisesByThread.get(r.threadId)?.find((p) => errand(r, p));
       // the newer joins the older's canonical
       if (promise && promiseOlder(promise, r)) join("dated", r, canonicalOf("promise", promise));
       else if (promise) join("promise", promise, canonicalOf("dated", r));
@@ -220,9 +245,9 @@ export function findLinks(dated: readonly DatedRow[], promises: readonly Followu
     if (p.kind !== "promise" || !isFresh("promise", p)) continue;
     const twin = promisesByMessage.get(p.messageId)?.find((o) => o.id !== p.id && older(o, p) && samePromise(o, p));
     if (twin) join("promise", p, canonicalOf("promise", twin));
-    const errand = datedByThread.get(p.threadId)?.find((d) => sameErrand(d, p));
-    if (errand && !promiseOlder(p, errand)) join("promise", p, canonicalOf("dated", errand));
-    else if (errand) join("dated", errand, canonicalOf("promise", p));
+    const same = datedByThread.get(p.threadId)?.find((d) => errand(d, p));
+    if (same && !promiseOlder(p, same)) join("promise", p, canonicalOf("dated", same));
+    else if (same) join("dated", same, canonicalOf("promise", p));
     // plan 210 (iteration 3): your promise to attend is the event it names, whichever came first: the event leads
     const event = attendsEvent(p, eventsByDay.get(`${p.threadId}:${dayKeyOf(p.dueAt)}`) ?? []);
     if (event) join("promise", p, canonicalOf("dated", event));
