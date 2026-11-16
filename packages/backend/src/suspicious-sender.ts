@@ -13,6 +13,8 @@ import { registrableDomain, senderHost } from "./icons/domain";
 const WORDS: ReadonlySet<string> = new Set([
   "alert", "alerts", "secure", "security", "verify", "verification", "login", "signin", "account", "accounts", "support", "update", "updates",
   "seguridad", "verifica", "verificar", "verificacion", "acceso", "cuenta", "cuentas", "alerta", "alertas", "soporte",
+  // plan 210 (iteration 4's code review): a helpdesk's and a credential's words too
+  "helpdesk", "validate", "validation", "appeal", "appeals", "recovery", "password", "validar", "validacion", "recuperacion", "contrasena",
 ]);
 
 /** The registrable domain, or, for a name the list doesn't hold (`.test`, `.local`), its last two labels. */
@@ -30,8 +32,8 @@ export type WrittenTo = (senderKeys: readonly string[]) => Promise<ReadonlySet<s
  * user has never written to. Someone you correspond with (jane@acme-support.com, your consultant) keeps her asks and
  * invoices, whatever her domain's words. Asks the store only when a sender looks suspicious, so most reads ask nothing.
  */
-export async function untrustedSenders(emails: Iterable<string>, writtenTo: WrittenTo): Promise<Set<string>> {
-  const suspicious = [...new Set([...emails].map(addressKey))].filter(suspiciousSender);
+export async function untrustedSenders(emails: Iterable<string>, writtenTo: WrittenTo, own: readonly string[] = []): Promise<Set<string>> {
+  const suspicious = [...new Set([...emails].map(addressKey))].filter((key) => suspiciousSender(key) || impersonates(key, own));
   if (!suspicious.length) return new Set();
   const trusted = await writtenTo(suspicious);
   return new Set(suspicious.filter((key) => !trusted.has(key)));
@@ -49,4 +51,22 @@ export function suspiciousSender(email: string): boolean {
   const name = site?.split(".")[0] ?? "";
   if (!name.includes("-")) return false;
   return name.split("-").some((w) => WORDS.has(w));
+}
+
+/**
+ * Plan 210 (iteration 4's code review): a site named like the reader's own organization's with a word joined by a hyphen
+ * isn't theirs: the panel's "it-helpdesk@lumora-io.co" to priya@lumora.io, while Lumora writes from lumora.io. `own` is the
+ * reader's accounts' addresses; their site's name, four letters or more, is one of the sender's hyphenated words, and the
+ * sites differ. Like `suspiciousSender`, the caller trusts whoever the user has written to.
+ */
+export function impersonates(email: string, own: readonly string[]): boolean {
+  const site = siteOf(email);
+  const name = site?.split(".")[0] ?? "";
+  if (!site || !name.includes("-")) return false;
+  const words = name.split("-");
+  return own.some((mine) => {
+    const theirs = siteOf(mine);
+    const label = theirs?.split(".")[0] ?? "";
+    return !!theirs && theirs !== site && label.length >= 4 && words.includes(label);
+  });
 }
