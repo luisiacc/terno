@@ -97,6 +97,11 @@ describe("reading dates in mail you got (plan 204)", () => {
     // plan 210 (iteration 3): a trailing instruction goes (en, es); one inside what happened stays
     const told = validate({ items: [item({ kind: "alert", text: "Streamly subscription payment failed; update the payment method to keep watching", due: null }), item({ kind: "alert", text: "El pago de la suscripción de Streamly no se procesó; actualizar el método de pago", due: null }), item({ kind: "alert", text: "Payment to update your plan failed", due: null })], settled: [], moved: [] });
     expect(told.items.map((i) => i.text)).toEqual(["Streamly subscription payment failed", "El pago de la suscripción de Streamly no se procesó", "Payment to update your plan failed"]);
+    // plan 210 (iteration 5): said as what must be done, or in a bracket (Haiku on v16's first words, 4 in 10)
+    const must = validate({ items: [item({ kind: "alert", text: "Streamly payment failed for your subscription (update your payment method to keep watching)", due: null }), item({ kind: "alert", text: "Pago de la suscripción de Streamly rechazado; falta actualizar el método de pago", due: null }), item({ kind: "alert", text: "Pago de la suscripción de Streamly rechazado (hay que actualizar el método de pago para seguir viendo)", due: null })], settled: [], moved: [] });
+    expect(must.items.map((i) => i.text)).toEqual(["Streamly payment failed for your subscription", "Pago de la suscripción de Streamly rechazado", "Pago de la suscripción de Streamly rechazado"]);
+    // a bracket of details stays
+    expect(validate({ items: [item({ kind: "alert", text: "Card frozen after a $412.18 charge (card ending 4821)", due: null })], settled: [], moved: [] }).items[0]!.text).toBe("Card frozen after a $412.18 charge (card ending 4821)");
     // only an alert's: another kind keeps its words
     expect(validate({ items: [item({ text: "Pay what the email says" })], settled: [], moved: [] }).items[0]!.text).toBe("Pay what the email says");
   });
