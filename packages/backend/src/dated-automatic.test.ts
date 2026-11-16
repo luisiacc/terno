@@ -31,6 +31,17 @@ describe("plan 210 (iteration 5, revision 1): a plan that renews by itself and a
     expect(handled("pay", "Pagar $300.00 de Northwind", "Queda un saldo pendiente de $300.00 con vencimiento el 30 de noviembre", "Recibimos tu pago de $200.00. Queda un saldo pendiente de $300.00 con vencimiento el 30 de noviembre.")).toBe(false);
   });
 
+  it("iteration 5's code review (point 1): another invoice paid, said in generic words, never pays this one", () => {
+    // the shared noun and "your" pick out nothing; the month says it's another period's
+    const TWO = "Your October invoice has been paid in full. Your November invoice for $300 is due November 30.";
+    expect(handled("pay", "Pay $300 for the November invoice", "Your November invoice for $300 is due November 30", TWO)).toBe(false);
+    expect(handled("pay", "Pay $300 for the November invoice", "Your November invoice for $300 is due November 30", "Your November invoice for $300 is due November 30. Your previous invoice has been paid in full.")).toBe(false);
+    expect(handled("pay", "Pay the Northwind invoice", "Your invoice is due November 30", "Hello,\n\nYour invoice is due November 30.\n\nThank you for your payment last month.")).toBe(false);
+    expect(handled("pay", "Pagar la factura de noviembre ($300)", "Tu factura de noviembre por $300 vence el 30 de noviembre", "Tu factura de octubre ya está pagada. Tu factura de noviembre por $300 vence el 30 de noviembre.")).toBe(false);
+    // its own words still say it: its number, its amount, or the sentence right after its own
+    expect(handled("pay", "Pay $300 for the November invoice", "Your November invoice for $300 is due November 30", "Your November invoice for $300 is due November 30. The $300 has been paid in full.")).toBe(true);
+  });
+
   it("a fee, a condition or a negation is no affirmation: \"we will charge a late fee unless paid\" is a bill to pay", () => {
     expect(handled("pay", "Pay the Northwind invoice", "Your invoice is due November 20", "Your invoice is due November 20. We will charge a $25 late fee unless it's paid by then.")).toBe(false);
     expect(handled("pay", "Pay the Northwind invoice", "Your invoice is due November 20", "Your invoice is due November 20. If you've set up AutoPay, we'll charge your card on file that day.")).toBe(false);
