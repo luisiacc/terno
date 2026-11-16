@@ -1,4 +1,4 @@
-import { DIGEST_ROW_ID, type FeedRowId, type FollowupRow } from "@terno/core";
+import { dayEnd, dayKeyOf, DIGEST_ROW_ID, promiseDay, type FeedRowId, type FollowupRow } from "@terno/core";
 import { feedPlace, focusedFeedItem, focusFeedItem } from "~/lib/feed-focus";
 import type { LeftRows } from "~/lib/actions";
 import { actOnDated, actOnTask, type DatedRef, type TodayTask } from "~/lib/dated";
@@ -114,6 +114,29 @@ export function actOnThreadPromise(row: FollowupRow, action: TaskAction, at?: nu
 /** Done, Later and Remove on the reader's item, its feed rows leaving with it (its line, and D, b and ⇧D while it leads by a choice made there). */
 export function actOnReaderItem(threadId: number, item: ReaderItem, action: TaskAction, at?: number): Promise<void> {
   return item.source === "dated" ? actOnThreadItem(threadId, item.row, action, at) : actOnThreadPromise(item.row, action, at);
+}
+
+/**
+ * Plan 210 (iteration 5, R7): the moment after which a reminder about the item in hand comes too late: its time, or its
+ * day's end when it has none; null when it names no day or its moment has passed (any moment ahead will do). The palette's
+ * Remind me never offers a preset past it ("Later today 1:00 PM" for a 12:30 reservation).
+ */
+export function remindLimit(target: { task: TodayTask } | { item: ReaderItem }, now = Date.now()): number | null {
+  let at: { dueAt: number; timed: boolean; day: string } | null = null;
+  if ("task" in target) {
+    const { task } = target;
+    if (task.kind === "dated") at = task.item.dated ? { dueAt: task.dueAt, timed: task.item.timed, day: task.item.dueDay } : null;
+    else at = task.dated && task.dueAt !== undefined ? { dueAt: task.dueAt, timed: task.timed === true, day: dayKeyOf(task.dueAt) } : null;
+  } else if (target.item.source === "dated") {
+    const r = target.item.row;
+    at = r.dated && r.kind !== "ask" ? { dueAt: r.dueAt, timed: r.timed, day: r.dueDay } : null;
+  } else {
+    const r = target.item.row;
+    const d = promiseDay(r, now);
+    at = d.dated ? { dueAt: d.dueAt, timed: r.timed === true && d.dueAt === r.dueAt, day: dayKeyOf(d.dueAt) } : null;
+  }
+  const limit = at === null ? null : at.timed ? at.dueAt : dayEnd(at.day);
+  return limit !== null && limit > now ? limit : null;
 }
 
 /** The reader's Later menu, opened (its button, b): it holds the app's keys while it's open, as the feed's does. */

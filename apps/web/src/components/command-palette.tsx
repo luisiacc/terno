@@ -29,8 +29,10 @@ import { checkForUpdates, installUpdate, useHasUpdates, useUpdates } from "~/lib
 import { englishWords as english } from "~/lib/palette-words";
 import { getApp, navigate, setApp, useApp } from "~/state/app";
 import { openRemind, presetLabel, presetWhen, setReminder, clearReminder, useReminders } from "~/lib/reminders";
-import { useReaderHeld, useTodayTask } from "~/state/today";
-import { actOnReaderItem, actOnTodayRow, openLater, openReaderLater } from "~/lib/today-task";
+import { useReaderHeld, useToday, useTodayTask, type FeedRow } from "~/state/today";
+import { actOnReaderItem, actOnTodayRow, openLater, openReaderLater, remindLimit } from "~/lib/today-task";
+import { readerText, type ReaderItem } from "~/lib/reader-items";
+import { historySentence, todaySentence } from "~/lib/today-sentence";
 import { changeOfItem, changeOfTask, openChange } from "~/lib/change";
 import { handTo, othersOfTask, seenOfReaderItem, seenOfTask } from "~/lib/hand-to";
 import { draftCommands, type DraftCommands } from "~/lib/draft-commands";
@@ -95,6 +97,8 @@ function runInDraft(key: string, fn: (c: DraftCommands) => void) {
 
 const HEADINGS: Record<PaletteGroup, (count: number) => string | undefined> = {
   draft: () => t("palette.group.draft"),
+  // (plan 210, iteration 5: the item's own words, drawn where the groups are)
+  item: () => undefined,
   recent: () => t("palette.group.recent"),
   conversation: (count) => t("palette.group.conversation", { count }),
   start: () => undefined,
@@ -146,6 +150,31 @@ function useFoundMail(query: string, on: boolean, accountId: number | null, filt
 }
 
 /** The conversation the actions under it change: its subject in the ink, who it's from muted (one line, the subject first to go) */
+/**
+ * Plan 210 (iteration 5, R7): the What matters item in hand, by its own words (the feed's sentence, the reader's line's
+ * words), over its Done, Later, Change…, Hand to… and Remove: what they act on, said before the email's actions.
+ */
+function ItemHeading({ words }: { words: string }) {
+  return (
+    <span className="block min-w-0 truncate text-foreground" data-testid="palette-item">
+      {words}
+    </span>
+  );
+}
+
+/** A feed row's words, as the feed says them; a history line or a held row has no task, so none. */
+const rowWords = (row: FeedRow | undefined): string | null => (row?.entry ? todaySentence(row.entry) : null);
+
+/** The reader's chosen item, in the feed's words: a promise of yours as "You said you'd …", an alert as the email's word. */
+const readerWords = (item: ReaderItem): string => historySentence({ kind: item.source === "dated" ? item.row.kind : "promise", text: readerText(item), thread: { subject: "" } as ThreadSummary });
+
+/** Plan 210 (iteration 5, R7): the words that name the item's own Later, which Remind me stops answering to while it's in hand. */
+const notLater = (list: readonly string[]): string[] => {
+  const later = new Set([t("palette.todayLater"), ...english("palette.todayLater")].map(bareWord));
+  return list.filter((w) => !later.has(bareWord(w)));
+};
+const bareWord = (w: string): string => normalizeText(w.replace(/…$/u, "")).trim();
+
 function TargetHeading({ row }: { row: ThreadSummary }) {
   return (
     <span className="flex min-w-0 items-baseline gap-1.5" data-testid="palette-target">
@@ -234,6 +263,10 @@ export function CommandPalette() {
   const readerItem = useReaderHeld(open ? single : null);
   // plan 210 (iteration 4): What matters is shown (its acts are listed, unavailable, with nothing to act on)
   const inToday = useApp((s) => open && s.today);
+  // plan 210 (iteration 5, R7): a What matters item in hand: its acts lead under its words, and Remind me (the email's) never
+  // offers a moment past the item's own
+  const itemInHand = Boolean(readerItem || todayTask);
+  const itemWords = useToday((s) => (readerItem ? readerWords(readerItem) : todayTask ? rowWords(s.rows.find((r) => r.id === todayTask.rowId)) : null));
   // the unread filter applies to a mailbox (not "Review")
   // the unread toggle's state: Unread on or not (another filter on: it switches to Unread)
   const filter = useApp((s) => (open && s.reviewCategoryId === null && !s.reminders && !s.followups && !s.today ? (isUnreadOnly(s) ? "on" : "off") : null));
@@ -270,6 +303,7 @@ export function CommandPalette() {
   // read once per open: what was run, when, and the draft it was opened from
   const usage = useMemo(() => (open ? readUsage() : NO_USAGE), [open]);
   const now = useMemo(() => (open ? Date.now() : 0), [open]);
+  const remindBy = !open ? null : readerItem ? remindLimit({ item: readerItem }, now) : todayTask ? remindLimit({ task: todayTask.task }, now) : null;
   const draftKey = open ? paletteFrom.draftKey : null;
   const draft = open ? draftCommands(draftKey) : null;
   const draftState = draft?.state();
@@ -450,7 +484,10 @@ export function CommandPalette() {
       if (!scoped && anyPinned) add({ id: "thread.unpin", group: inHand, label: t("actions.unpin"), icon: <PinTop className="fill-star text-star" />, ...(anyUnpinned ? {} : { shortcut: keysOf("thread.pin") }), testId: "palette-unpin", ...withEnglish([t("actions.unpin"), ...english("actions.unpin")], "palette.alias.unpin"), run: () => void unpinThreads() });
       if (scoped || rows.some((r) => r.unread)) add({ id: "thread.markRead", group: inHand, label: t("palette.markRead"), icon: <MailOpen />, shortcut: keysOf("thread.markRead"), ...withEnglish(english("palette.markRead"), "palette.alias.markRead"), run: () => void act("markRead", undefined, { announce: true }) });
       if (scoped || rows.some((r) => !r.unread)) add({ id: "thread.markUnread", group: inHand, label: t("palette.markUnread"), icon: <Mail />, shortcut: keysOf("thread.toggleRead"), ...withEnglish(english("palette.markUnread"), "palette.alias.markUnread"), run: () => void act("markUnread", undefined, { announce: true }) });
-      if (!scoped) add({ id: "thread.remind", group: inHand, label: t("palette.remind"), icon: <AlarmClock />, shortcut: keysOf("thread.remind"), testId: "palette-remind", ...withEnglish(english("palette.remind"), "palette.alias.remind"), page: "remind" });
+      // plan 210 (iteration 5, R7): with a What matters item in hand its Later is the item's own, so Remind me answers
+      // "later" no more (never "Remind me… (later)" above Later…): it's the email's
+      const remindWords = withEnglish(english("palette.remind"), "palette.alias.remind");
+      if (!scoped) add({ id: "thread.remind", group: inHand, label: t("palette.remind"), icon: <AlarmClock />, shortcut: keysOf("thread.remind"), testId: "palette-remind", ...(itemInHand ? { aliases: notLater(remindWords.aliases), keywords: notLater(remindWords.keywords) } : remindWords), page: "remind" });
       // a "select all N" moves nothing in the palette: the picker says why (moves need selected conversations)
       add({ id: "thread.move", group: inHand, label: t("palette.move"), icon: <FolderInput />, shortcut: keysOf("thread.move"), testId: "palette-move", ...withEnglish(english("palette.move"), "palette.alias.move"), ...(scoped ? { run: () => setApp({ dialog: "categoryPicker", pickerMode: "move" }) } : { page: "move" as const }) });
       add({ id: "thread.addTo", group: inHand, label: t("palette.addToCategory"), icon: <Tag />, testId: "palette-add-to", keywords: english("palette.addToCategory"), page: "addTo" });
@@ -478,7 +515,8 @@ export function CommandPalette() {
       if (!scoped) {
         const kinds: [ReminderKind, PaletteGroup, "remind.menu" | "remind.menuNoReply"][] = [["always", "remindAlways", "remind.menu"], ["noReply", "remindNoReply", "remind.menuNoReply"]];
         for (const [kind, group, kindKey] of kinds) {
-          for (const p of remindPresets(new Date(now), kind)) {
+          // (plan 210, iteration 5, R7: never a moment past the item in hand's own)
+          for (const p of remindPresets(new Date(now), kind).filter((p) => remindBy === null || p.at < remindBy)) {
             const id = `remind:${kind}:${p.id}`;
             const set = () => void setReminder(ids(), p.at, kind);
             const hint = presetWhen(p, now);
@@ -490,20 +528,21 @@ export function CommandPalette() {
         if (reminder) add({ id: "remind:clear", group: "remindClear", label: t("remind.clear"), icon: <AlarmClockOff />, testId: "palette-remind-clear", run: () => void clearReminder([reminder.threadId]) });
       }
     }
-    // plan 204 §5, after the panel: the selected Today row's task (a date or a promise of yours), Done (D) and Remove
-    if ((readerItem || todayTask) && single !== null) {
+    // plan 204 §5, after the panel: the selected Today row's task (a date or a promise of yours), Done (D) and Remove.
+    // Plan 210 (iteration 5, R7): its own group, first, under its words: Done, Later, Change…, Hand to…, Remove
+    if (itemInHand && single !== null) {
       const actOn = (action: "done" | "dismiss") => void (readerItem ? actOnReaderItem(single, readerItem, action) : todayTask && actOnTodayRow(todayTask.rowId, todayTask.task, action));
       const later = () => (readerItem ? openReaderLater() : todayTask && openLater(todayTask.rowId, todayTask.task));
-      add({ id: "dated.done", group: "conversation", label: t("dated.done"), icon: <CircleCheck />, shortcut: keysOf("today.done"), testId: "palette-dated-done", keywords: english("dated.done"), run: () => actOn("done") });
+      add({ id: "dated.done", group: "item", label: t("dated.done"), icon: <CircleCheck />, shortcut: keysOf("today.done"), testId: "palette-dated-done", keywords: english("dated.done"), run: () => actOn("done") });
       // plan 210 (iteration 1): Later's picker for the item as it is now (once the palette has gone), and Remove, with their keys
-      add({ id: "dated.later", group: "conversation", label: t("palette.todayLater"), icon: <Clock />, shortcut: keysOf("today.later"), testId: "palette-dated-later", keywords: english("palette.todayLater"), takesFocus: true, run: () => requestAnimationFrame(later) });
+      add({ id: "dated.later", group: "item", label: t("palette.todayLater"), icon: <Clock />, shortcut: keysOf("today.later"), testId: "palette-dated-later", keywords: english("palette.todayLater"), takesFocus: true, run: () => requestAnimationFrame(later) });
       // plan 210 (iteration 4): Change…, the item's own day and time, in the dialog once the palette has gone (no key of its own)
       const change = readerItem ? changeOfItem(readerItem) : todayTask ? changeOfTask(todayTask.task) : null;
-      if (change) add({ id: "dated.change", group: "conversation", label: t("palette.todayChange"), icon: <CalendarDays />, testId: "palette-dated-change", keywords: english("palette.todayChange"), takesFocus: true, run: () => requestAnimationFrame(() => openChange(change)) });
-      add({ id: "dated.dismiss", group: "conversation", label: t("palette.todayRemove"), icon: <Ban />, shortcut: keysOf("today.remove"), testId: "palette-dated-dismiss", ...synonyms("palette.alias.todayRemove", english("palette.todayRemove")), run: () => actOn("dismiss") });
+      if (change) add({ id: "dated.change", group: "item", label: t("palette.todayChange"), icon: <CalendarDays />, testId: "palette-dated-change", keywords: english("palette.todayChange"), takesFocus: true, run: () => requestAnimationFrame(() => openChange(change)) });
       // plan 210 (iteration 4): Hand to…, the item's forward opening in the reader (its To field focused) once the palette has gone
       const hand = () => void (readerItem ? handTo(seenOfReaderItem(readerItem)) : todayTask && handTo(seenOfTask(todayTask.task), todayTask.rowId, othersOfTask(todayTask.task)));
-      add({ id: "dated.handTo", group: "conversation", label: t("whatMatters.handTo.action"), icon: <Forward />, testId: "palette-dated-hand", ...synonyms("palette.alias.handTo", english("whatMatters.handTo.action")), takesFocus: true, run: () => requestAnimationFrame(hand) });
+      add({ id: "dated.handTo", group: "item", label: t("whatMatters.handTo.action"), icon: <Forward />, testId: "palette-dated-hand", ...synonyms("palette.alias.handTo", english("whatMatters.handTo.action")), takesFocus: true, run: () => requestAnimationFrame(hand) });
+      add({ id: "dated.dismiss", group: "item", label: t("palette.todayRemove"), icon: <Ban />, shortcut: keysOf("today.remove"), testId: "palette-dated-dismiss", ...synonyms("palette.alias.todayRemove", english("palette.todayRemove")), run: () => actOn("dismiss") });
     } else if (inToday && targets === 0) {
       // plan 210 (iteration 4, design point 2): with nothing selected in What matters its three acts are still there to be
       // found, unavailable, saying what they need (a row chosen, then D, B, ⇧D or here)
@@ -757,7 +796,7 @@ export function CommandPalette() {
           {aboutMail && mailRows}
           {groups.map(({ group, commands: list }) => (
             // an ASCII value: cmdk finds a group to sort it by its URL-encoded value (a heading with spaces never matched)
-            <CommandGroup key={group} value={group} heading={group === "snippetsManage" && snippets.length === 0 && !query ? t("palette.snippets.empty") : group === "conversation" && named ? <TargetHeading row={named} /> : HEADINGS[group](targets)} data-group={group}>
+            <CommandGroup key={group} value={group} heading={group === "snippetsManage" && snippets.length === 0 && !query ? t("palette.snippets.empty") : group === "item" && itemWords ? <ItemHeading words={itemWords} /> : group === "conversation" && named ? <TargetHeading row={named} /> : HEADINGS[group](targets)} data-group={group}>
               {list.map(({ command: c, alias }) => {
                 return (
                   <CommandItem key={`${group}:${c.id}`} value={itemValue(c)} disabled={c.disabled} data-testid={c.testId} data-command={c.id} data-variant={c.destructive ? "destructive" : undefined} onSelect={() => select(c)}>

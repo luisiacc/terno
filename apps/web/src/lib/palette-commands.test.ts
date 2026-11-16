@@ -186,6 +186,18 @@ describe("palette groups", () => {
     expect(a[2]!.commands.map((c) => c.command.id)).toEqual([`thread.${CONVERSATION_LEAD}`, `thread.${CONVERSATION_LEAD + 1}`, "other"]);
   });
 
+  it("plan 210 (iteration 5, R7): a What matters item in hand leads, all its acts in their order, before its email's; typing, it's in hand too, never in Recent", () => {
+    const item = ["dated.done", "dated.later", "dated.change", "dated.handTo", "dated.dismiss"].map((id) => cmd(id, "item", { label: id === "dated.later" ? "Later…" : id }));
+    const remind = cmd("thread.remind", "conversation", { label: "Remind me…", aliases: ["snooze"] });
+    const list = [cmd("go.inbox", "goTo"), remind, cmd("thread.archive", "conversation"), ...item];
+    const used = new Map([["dated.done", { n: 50, at: 0 }]]);
+    const a = arrange(list, "root", "", used, 0);
+    expect(a.map((g) => g.group)).toEqual(["item", "conversation", "goTo"]);
+    expect(a[0]!.commands.map((c) => c.command.id)).toEqual(["dated.done", "dated.later", "dated.change", "dated.handTo", "dated.dismiss"]);
+    // "later" finds the item's Later first; Remind me, with no "later" among its words here, isn't offered for it
+    expect(arrange(list, "root", "later", new Map(), 0).map((g) => [g.group, g.commands.map((c) => c.command.id)])).toEqual([["item", ["dated.later"]]]);
+  });
+
   it("keeps a typo, leaves out letters scattered through a long label", () => {
     expect(arrange([archive], "root", "arhcive", new Map(), 0)).toHaveLength(1);
     const list = [cmd("filter.unread", "actions", { label: "Show unread only", search: "Show unread only unread filter" }), cmd("addTo:1", "actions", { label: "Add to Clientes", search: "add to Clientes", searchOnly: true }), archive];
