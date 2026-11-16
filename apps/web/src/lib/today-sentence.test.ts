@@ -125,7 +125,7 @@ describe("Spanish", () => {
 });
 
 describe("the history's lines (plan 210)", () => {
-  const line = (kind: "pay" | "alert" | "promise", outcome: "done" | "dismissed" | "settled" | "over", at: number, text = "Pay $187.42 for the electricity bill") => ({ thread, kind, outcome, text, key: { at, src: kind === "promise" ? (1 as const) : (0 as const), id: 1 } });
+  const line = (kind: "pay" | "alert" | "promise", outcome: "done" | "dismissed" | "settled" | "over" | "replaced", at: number, text = "Pay $187.42 for the electricity bill") => ({ thread, kind, outcome, text, key: { at, src: kind === "promise" ? (1 as const) : (0 as const), id: 1 } });
 
   it("says the item as the open part did, and in the column what happened and when", () => {
     expect(historySentence(line("pay", "done", at(13, 8)))).toBe("Pay $187.42 for the electricity bill.");
@@ -137,6 +137,8 @@ describe("the history's lines (plan 210)", () => {
     expect(historyWhen(line("promise", "dismissed", at(11)), NOW)).toBe("Removed Wed");
     expect(historyWhen(line("pay", "settled", at(2)), NOW)).toBe("Settled Nov 2");
     expect(historyWhen(line("pay", "over", at(9)), NOW)).toBe("Over Mon");
+    // plan 210 (iteration 3): a promise its person replaced with another request
+    expect(historyWhen(line("promise", "replaced", at(12, 9)), NOW)).toBe("Replaced yesterday");
   });
 
   it("in Spanish", () => {
@@ -144,6 +146,7 @@ describe("the history's lines (plan 210)", () => {
     expect(historyWhen(line("pay", "done", at(13, 8)), NOW)).toBe("Hecho hoy");
     expect(historyWhen(line("pay", "over", at(11)), NOW)).toBe("Pasó el mié");
     expect(historyWhen(line("promise", "dismissed", at(11)), NOW)).toBe("Quitado el mié");
+    expect(historyWhen(line("promise", "replaced", at(11)), NOW)).toBe("Reemplazado el mié");
     expect(historySentence(line("promise", "done", at(11), "enviar a Valeria los ajustes"))).toBe("Dijiste que ibas a enviar a Valeria los ajustes.");
   });
 });

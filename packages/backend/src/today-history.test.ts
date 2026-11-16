@@ -11,7 +11,7 @@ import { historyPage, type HistoryAsk } from "./today-history";
 
 const NOW = 100 * 86_400_000;
 const MIN = 60_000;
-type Closed = { id: number; threadId: number; closedAt: number | null; senderKey?: string; sameAs?: string | null; state?: string };
+type Closed = { id: number; threadId: number; closedAt: number | null; senderKey?: string; sameAs?: string | null; state?: string; closedReason?: string };
 
 /** a store of closed rows (newest first by closing, then id): dated items and promises; `spam` threads are in Spam */
 function fakeStore(datedRows: Closed[], promiseRows: Closed[] = [], spam: ReadonlySet<number> = new Set()) {
@@ -72,6 +72,11 @@ describe("historyPage", () => {
     expect(after.items.map((i) => i.id)).toEqual(["dated:71"]);
     // a held row has none
     expect((await historyPage(store, ask({ held: new Set(["promise:9"]) }))).items.map((i) => i.id)).toEqual(["dated:1", "dated:71"]);
+  });
+
+  it("plan 210 (iteration 3, revision 4): a promise its person replaced says so, apart from Done and Remove", async () => {
+    const { store } = fakeStore([], [{ id: 3, threadId: 3, closedAt: NOW - MIN, state: "dismissed", closedReason: "replaced" }, { id: 4, threadId: 4, closedAt: NOW - 2 * MIN, state: "dismissed" }, { id: 5, threadId: 5, closedAt: NOW - 3 * MIN }]);
+    expect((await historyPage(store, ask({}))).items.map((i) => [i.id, i.outcome])).toEqual([["promise:3", "replaced"], ["promise:4", "dismissed"], ["promise:5", "done"]]);
   });
 
   it("true duplicates: one line at their newest closing, whichever table; none while one is open; once across pages", async () => {

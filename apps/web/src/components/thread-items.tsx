@@ -156,7 +156,8 @@ function ItemLater({ item, act }: { item: ReaderItem; act: (at: number) => void 
 /** What happened to a closed item, as its history line says it ("Done Tuesday"). */
 function outcomeOf(item: ReaderItem): string {
   const state = item.row.state;
-  const outcome = state === "done" ? "done" : state === "settled" ? "settled" : "dismissed";
+  // plan 210 (iteration 3): a promise its person replaced says so
+  const outcome = item.source === "promise" && item.row.closedReason === "replaced" ? "replaced" : state === "done" ? "done" : state === "settled" ? "settled" : "dismissed";
   return historyWhen({ outcome, kind: item.source === "dated" ? item.row.kind : "promise", key: { at: item.row.closedAt ?? item.row.createdAt, src: item.source === "dated" ? 0 : 1, id: item.row.id } });
 }
 
