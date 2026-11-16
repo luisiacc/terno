@@ -229,6 +229,22 @@ describe("reading dates in mail you got (plan 204)", () => {
     expect(readDatesTask(input({ language: "es" })).system).toContain('"Enviar la solicitud de la beca Brightwater"');
   });
 
+  it("iteration 4's code review: a time in another zone keeps the instant it names in the hour the reader's clock repeats", () => {
+    // Sunday November 1, 2026: New York's 4:30 AM (EST) is Los Angeles' second 1:30 AM (PST), 09:30 UTC
+    const v = readDatesTask(input({ zone: "America/Los_Angeles" })).validate({ replaced: [], items: [item({ kind: "event", text: "Flight to Boston", quote: "departs Sunday at 4:30 AM", due: "2026-11-01", time: "04:30 America/New_York at New York" })], settled: [], moved: [] });
+    if (!v.ok) throw new Error("rejected");
+    expect(v.value.items[0]).toMatchObject({ due: "2026-11-01", time: "01:30", at: Date.UTC(2026, 10, 1, 9, 30), wall: { day: "2026-11-01", time: "04:30", zone: "America/New_York", place: "New York" } });
+    // a move to that moment too
+    const call = { label: "o1", kind: "event" as const, text: "Flight to Boston", due: "2026-10-31", time: "18:00" };
+    const m = readDatesTask(input({ zone: "America/Los_Angeles", open: [call] })).validate({ replaced: [], items: [], settled: [], moved: [{ label: "o1", due: "2026-11-01", time: "04:30 America/New_York", evidence: "moved to Sunday November 1 at 4:30 AM ET", text: null, textEvidence: null }] });
+    if (!m.ok) throw new Error("rejected");
+    expect(m.value.moved[0]).toMatchObject({ due: "2026-11-01", time: "01:30", at: Date.UTC(2026, 10, 1, 9, 30), wall: { time: "04:30", zone: "America/New_York" } });
+    // the reader's own zone: no instant carried, the app reads its day and time
+    const own = readDatesTask(input({ zone: "America/New_York" })).validate({ replaced: [], items: [item({ kind: "event", quote: "departs Sunday at 4:30 AM", due: "2026-11-01", time: "04:30" })], settled: [], moved: [] });
+    if (!own.ok) throw new Error("rejected");
+    expect(own.value.items[0]!.at).toBeUndefined();
+  });
+
   it("plan 210 (iteration 4, revision 11): the day it's asked before is kept apart, whichever of the two days the model gave; 'before then' by its paragraph's day; a promise's move too", () => {
     const read = (i: Partial<{ kind: string; quote: string; due: string | null; time: string | null }>, text = i.quote ?? "") => {
       const v = readDatesTask(input({ text })).validate({ replaced: [], items: [item(i)], settled: [], moved: [] });
@@ -372,7 +388,7 @@ describe("reading dates in mail you got (plan 204)", () => {
     // extraction: July 10 at 23:00 PT is July 11 at 02:00 in New York
     expect(read([], { items: [item({ kind: "event", text: "Call with Marcus (11:00 PM PT)", due: "2026-07-10", time: "23:00 America/Los_Angeles" })] }).items[0]).toMatchObject({ due: "2026-07-11", time: "02:00" });
     // then "move it to 10 PM PT", the item's own (New York) day beside it: still July 10 in PT, 01:00 on July 11 here, not July 12
-    expect(read([call], { moved: [move({})] }).moved[0]).toEqual({ label: "o1", due: "2026-07-11", time: "01:00", evidence: "move it to 10 PM PT", text: "Call with Marcus (10:00 PM PT)", textEvidence: "move it to 10 PM PT", wall: { day: "2026-07-10", time: "22:00", zone: "America/Los_Angeles", place: null } });
+    expect(read([call], { moved: [move({})] }).moved[0]).toEqual({ label: "o1", due: "2026-07-11", time: "01:00", evidence: "move it to 10 PM PT", text: "Call with Marcus (10:00 PM PT)", textEvidence: "move it to 10 PM PT", wall: { day: "2026-07-10", time: "22:00", zone: "America/Los_Angeles", place: null }, at: Date.UTC(2026, 6, 11, 5, 0) });
     // a move that names its day in the mail's zone is read as given: July 12 at 22:00 PT is July 13 at 01:00 here
     expect(read([call], { moved: [move({ due: "2026-07-12" })] }).moved[0]).toMatchObject({ due: "2026-07-13", time: "01:00", text: "Call with Marcus (10:00 PM PT)" });
     // moved to a time in the reader's own zone: the note goes; the same time again changes no words
