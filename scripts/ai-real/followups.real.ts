@@ -138,8 +138,15 @@ interface V11 {
   words?: string[];
   /** v12: ones no promise's text may match */
   wordsNot?: string[];
-  /** v12: the first promise's time ("HH:MM", local), when its words say a part of the day: never later */
+  /** v12: the first promise's time ("HH:MM", local), when its words state one: never later */
   time?: string;
+  /**
+   * v13: the first promise's part of the day, when its words name one ("Friday morning", "tonight"): another part is
+   * wrong, none is missed, and so is a clock it never stated (timed, or "12:00 PM" in its words: v12's habit); `null`, it
+   * must have none. `partOn`: by the day it's read for (the library's morning is Tuesday's, never Wednesday's email)
+   */
+  part?: "morning" | "afternoon" | "evening" | null;
+  partOn?: Record<string, "morning" | "afternoon" | "evening" | null>;
 }
 const local = (y: number, m: number, d: number, h: number, min = 0) => new Date(y, m - 1, d, h, min).getTime();
 const MON_NOV = ["Monday, 9 November 2026, 19:10", local(2026, 11, 9, 19, 10)] as [string, number];
@@ -209,12 +216,42 @@ const V12_CASES: V11[] = [
   // Jordan: who comes along to the meeting he confirms is no promise; the agenda is ("antes del viernes 13" may be read as Thursday)
   { id: "f12-05", text: "Grace, confirmed, thank you. I'll bring our account manager, Nora, and our solutions engineer for the Denver conversation.\n\nI'll send the agenda by Friday the 13th so Patrick has it ahead of time.", to: "Grace", sent: TUE_NOV, answering: "Confirming our quarterly review: Tuesday, Nov 17 at 2:00 PM at our office. We'd like to cover adoption and the expansion to our Denver sites.", promises: [1, 1], due: ["2026-11-13"], words: ["agenda"], wordsNot: ["Nora", "engineer", "bring"] },
   { id: "f12-06", text: "Grace, confirmado, gracias. Llevo a Nora, nuestra gerente de cuenta, y a nuestro ingeniero de soluciones para la conversación de Denver.\n\nTe mando la agenda antes del viernes 13 para que Patricio la tenga con tiempo.", es: true, to: "Grace", sent: MARTES_NOV, answering: "Confirmo nuestra revisión trimestral: martes 17 de noviembre a las 14:00 en nuestra oficina. Queremos hablar de la adopción y de la expansión a Denver.", promises: [1, 1], due: ["2026-11-13", "2026-11-12"], words: ["agenda"], wordsNot: ["Nora", "ingeniero", "llevar"] },
-  // María: what they asked her to bring is a promise, and a morning one is over by noon
-  { id: "f12-07", text: "Count me in! I'll bring two dozen cupcakes (nut-free, labeled) Friday morning at drop-off.", to: "Jessica", sent: WED_NIGHT, answering: "We still need cupcakes or anything individually wrapped for Friday's bake sale.", promises: [1, 1], due: ["2026-11-13"], time: "12:00", words: ["cupcakes"] },
-  { id: "f12-08", text: "¡Cuenten conmigo! Llevo dos docenas de cupcakes (sin nueces, etiquetados) el viernes por la mañana a la entrada.", es: true, to: "Jessica", sent: MIERCOLES_NOCHE, answering: "Todavía nos faltan cupcakes o algo envuelto individualmente para la venta del viernes.", promises: [1, 1], due: ["2026-11-13"], time: "12:00", words: ["cupcakes"] },
+  // María: what they asked her to bring is a promise, and a morning one is that day's morning (v13: a part, never "12:00")
+  { id: "f12-07", text: "Count me in! I'll bring two dozen cupcakes (nut-free, labeled) Friday morning at drop-off.", to: "Jessica", sent: WED_NIGHT, answering: "We still need cupcakes or anything individually wrapped for Friday's bake sale.", promises: [1, 1], due: ["2026-11-13"], part: "morning", words: ["cupcakes"] },
+  { id: "f12-08", text: "¡Cuenten conmigo! Llevo dos docenas de cupcakes (sin nueces, etiquetados) el viernes por la mañana a la entrada.", es: true, to: "Jessica", sent: MIERCOLES_NOCHE, answering: "Todavía nos faltan cupcakes o algo envuelto individualmente para la venta del viernes.", promises: [1, 1], due: ["2026-11-13"], part: "morning", words: ["cupcakes"] },
   // Margaret: the questions are a promise; the calendar only holds her request, and says so
   { id: "f12-09", text: "Dolores,\n\nYes, I'll email the discussion questions to everyone by Sunday. I need to look at my calendar for December and will get back to you.\n\nMargaret", to: "Dolores", sent: TUE_NOV, answering: "Could you send the discussion questions before the 17th? And can you host in December? Let me know by the 16th.", request: { text: "Tell Dolores whether you can host in December", due: "2026-11-16", verdict: ["holding"] }, promises: [1, 2] },
   { id: "f12-10", text: "Dolores:\n\nSí, el domingo les mando a todas las preguntas para comentar. Tengo que ver mi agenda de diciembre y te digo.\n\nMargarita", es: true, to: "Dolores", sent: MARTES_NOV, answering: "¿Me mandas las preguntas antes del 17? ¿Y puedes recibirnos en diciembre? Avísame antes del 16.", request: { text: "Decirle a Dolores si puedes recibirlas en diciembre", due: "2026-11-16", verdict: ["holding"] }, promises: [1, 2] },
+];
+
+/**
+ * Prompt v13 (plan 210, iteration 5, the Codex review's revision 4): a part of the day is returned, never written as a clock.
+ * Fictionalized from round 13's panel: María's cupcakes "Friday morning at drop-off" (f12-07, f12-08), Margaret's spare key
+ * "in the morning" before the plumber and the library "Tuesday morning" before Wednesday's email, "tonight", "this afternoon",
+ * "first thing tomorrow"; a clock beside a part is the time; a promise naming none has none. en and es.
+ */
+const FRI_MORNING = ["Friday, 13 November 2026, 08:20", local(2026, 11, 13, 8, 20)] as [string, number];
+const VIERNES_MANANA = ["viernes, 13 de noviembre de 2026, 08:20", local(2026, 11, 13, 8, 20)] as [string, number];
+const CLOCK_WORDS = ["12:00", "\\bnoon\\b", "mediod[ií]a", "\\b\\d{1,2}(:\\d{2})?\\s*(AM|PM)\\b"];
+const V13_CASES: V11[] = [
+  // Margaret: the spare key, Saturday morning, before the plumber comes
+  { id: "f13-01", text: "Phil, don't worry about it. I'll drop the spare key off at your place Saturday morning before the plumber comes.", to: "Phil", sent: THU_NIGHT, answering: "The plumber is coming Saturday at noon and I still don't have a key to let him in.", promises: [1, 1], due: ["2026-11-14"], part: "morning", words: ["key"], wordsNot: CLOCK_WORDS },
+  { id: "f13-02", text: "Felipe, no te preocupes. Te dejo la llave de repuesto en tu casa el sábado por la mañana, antes de que llegue el plomero.", es: true, to: "Felipe", sent: JUEVES_NOCHE, answering: "El plomero viene el sábado al mediodía y todavía no tengo llave para abrirle.", promises: [1, 1], due: ["2026-11-14"], part: "morning", words: ["llave"], wordsNot: CLOCK_WORDS },
+  // Margaret: the library's morning is Tuesday's; the email is Wednesday's, with no part
+  { id: "f13-03", text: "David, I will go to the library Tuesday morning and scan both papers, and I'll email them to you Wednesday.", to: "David", sent: FRI_MORNING, answering: "Mom, the insurance company needs the declarations page and the certificate. Can you get them to me?", promises: [1, 2], due: ["2026-11-17", "2026-11-18"], partOn: { "2026-11-17": "morning", "2026-11-18": null }, wordsNot: CLOCK_WORDS },
+  { id: "f13-04", text: "David, el martes por la mañana voy a la biblioteca a escanear los dos papeles, y el miércoles te los mando por correo.", es: true, to: "David", sent: VIERNES_MANANA, answering: "Mamá, la aseguradora necesita la página de declaraciones y el certificado. ¿Me los puedes mandar?", promises: [1, 2], due: ["2026-11-17", "2026-11-18"], partOn: { "2026-11-17": "morning", "2026-11-18": null }, wordsNot: CLOCK_WORDS },
+  // tonight, this afternoon, first thing tomorrow
+  { id: "f13-05", text: "Thanks for the call. I'll send you the notes tonight.", to: "Dana", sent: MON_MAR, promises: [1, 1], due: ["2026-03-02"], part: "evening", words: ["notes"], wordsNot: CLOCK_WORDS },
+  { id: "f13-06", text: "Gracias por la llamada. Esta noche te mando las notas.", es: true, to: "Dana", sent: LUNES_MAR, promises: [1, 1], due: ["2026-03-02"], part: "evening", words: ["notas"], wordsNot: CLOCK_WORDS },
+  { id: "f13-07", text: "Got the lease, thanks. I'll read it this afternoon and send you my comments.", to: "Rosa", sent: MON_MAR, promises: [1, 1], due: ["2026-03-02"], part: "afternoon", words: ["lease|comments"], wordsNot: CLOCK_WORDS },
+  { id: "f13-08", text: "Recibí el contrato, gracias. Lo leo esta tarde y te mando mis comentarios.", es: true, to: "Rosa", sent: LUNES_MAR, promises: [1, 1], due: ["2026-03-02"], part: "afternoon", words: ["contrato|comentarios"], wordsNot: CLOCK_WORDS },
+  { id: "f13-09", text: "Signed, I'll send the form back first thing tomorrow.", to: "Omar", sent: MON_MAR, promises: [1, 1], due: ["2026-03-03"], part: "morning", words: ["form"], wordsNot: CLOCK_WORDS },
+  // a clock beside the part is the time, and no part
+  { id: "f13-10", text: "Sorry I missed you. I'll call you Friday morning at 10.", to: "Marcus", sent: MON_MAR, promises: [1, 1], due: ["2026-03-06"], time: "10:00", part: null, words: ["call", "Marcus"] },
+  { id: "f13-11", text: "Perdona que no te contesté. Te llamo el viernes por la mañana a las 10.", es: true, to: "Marcus", sent: LUNES_MAR, promises: [1, 1], due: ["2026-03-06"], time: "10:00", part: null, words: ["llamar", "Marcus"] },
+  // a promise naming no part has none
+  { id: "f13-12", text: "Thanks! I'll send you the deck Friday.", to: "Jess", sent: MON_MAR, promises: [1, 1], due: ["2026-03-06"], part: null, words: ["deck"], wordsNot: CLOCK_WORDS },
+  { id: "f13-13", text: "¡Gracias! El viernes te mando la presentación.", es: true, to: "Jess", sent: LUNES_MAR, promises: [1, 1], due: ["2026-03-06"], part: null, words: ["presentaci[oó]n"], wordsNot: CLOCK_WORDS },
 ];
 
 const REPEAT = Math.max(1, Number(process.env.TERNO_AI_FOLLOWUPS_REPEAT ?? 5));
@@ -258,6 +295,15 @@ async function score(cases: readonly V11[], prompt: string): Promise<number> {
         else if (clock(first.dueAt) > c.time) wrong.push(`time ${clock(first.dueAt)} ("${first.text}")`);
         else if (clock(first.dueAt) !== c.time) missed.push(`time ${clock(first.dueAt)}`);
       }
+      // v13: the part of the day as the app keeps it (a part on the wrong day, or one never said, is wrong; none is missed),
+      // and never a clock the words didn't state
+      const parted = c.partOn ? promises.filter((p) => p.dated) : first && c.part !== undefined ? [first] : [];
+      for (const p of parted) {
+        const want = c.partOn ? (c.partOn[localDay(p.dueAt)] ?? null) : (c.part ?? null);
+        const got = p.partOfDay ?? null;
+        if (got !== want) (got !== null ? wrong : missed).push(`part ${got ?? "none"} for ${want ?? "none"} on ${localDay(p.dueAt)} ("${p.text}")`);
+        if (want && p.timed) wrong.push(`timed ${clock(p.dueAt)} ("${p.text}")`);
+      }
       if (promises.some((p) => c.wordsNot?.some((w) => new RegExp(w, "iu").test(p.text)))) wrong.push(`words ${promises.map((p) => `"${p.text}"`).join(", ")}`);
       if (first && c.words && !c.words.every((p) => new RegExp(p, "iu").test(first.text))) missed.push(`words "${first.text}"`);
       if (c.request) {
@@ -283,7 +329,11 @@ describe.skipIf(process.env.TERNO_AI_FOLLOWUPS !== "1")("follow-ups prompts v11 
     expect(await score(V11_CASES, "v11")).toBe(0);
   }, 1_800_000);
 
-  it("v12: a second sentence about how one promise, who comes along no promise, a morning over by noon, a holding reply: none wrong shown", async () => {
+  it.skipIf(process.env.TERNO_AI_FOLLOWUPS_V12 === "0")("v12: a second sentence about how one promise, who comes along no promise, a morning that day's part, a holding reply: none wrong shown", async () => {
     expect(await score(V12_CASES, "v12")).toBe(0);
+  }, 1_800_000);
+
+  it("v13: a part of the day returned, never a clock in the words, on its own day; a clock beside it the time: none wrong shown", async () => {
+    expect(await score([...V12_CASES.filter((c) => c.part !== undefined), ...V13_CASES], "v13")).toBe(0);
   }, 1_800_000);
 });
