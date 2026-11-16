@@ -64,14 +64,42 @@ const STOP = new Set(
 /** "receipts" and "receipt" are one word; a short one keeps its end */
 const stem = (w: string) => (w.length > 4 && w.endsWith("s") ? w.slice(0, -1) : w);
 
+// Plan 210 (iteration 3, revision 5): a currency amount, read whole before the words are split ("$8,432.17", "US$29",
+// "MX$450", "€5.862,00", "1.105,00 €", "29 USD"), or a number grouped in thousands with cents ("8,432.17") alone
+const NUMBER = String.raw`\d{1,3}(?:[,.  ]\d{3})+(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?`;
+const AMOUNT = new RegExp(
+  [
+    String.raw`(?:\b[A-Z]{2,3})?[$€£]\s?(?:${NUMBER})(?:\s?[A-Z]{3}\b)?`,
+    String.raw`(?<![\p{L}\p{N}.,])(?:${NUMBER})\s?(?:[€£$]|(?:USD|EUR|MXN|GBP|CAD|AUD|pesos|d[oó]lares|dollars|euros)\b)`,
+    String.raw`(?<![\p{L}\p{N}.,$€£])(?:\d{1,3}(?:,\d{3})+\.\d{2}|\d{1,3}(?:\.\d{3})+,\d{2})(?![\p{N}])`,
+  ].join("|"),
+  "gu",
+);
+/** An amount as one token, its value whatever the separators ("$8,432.17" and "8.432,17 €" are "¤8432.17", "$1,105.00" "¤1105"). */
+function amountToken(raw: string): string {
+  const digits = raw.replace(/[^\d.,]/gu, "");
+  // the last separator is the decimal point when one or two digits follow it, else every separator groups thousands
+  const last = Math.max(digits.lastIndexOf("."), digits.lastIndexOf(","));
+  const decimal = last >= 0 && /^\d{1,2}$/u.test(digits.slice(last + 1));
+  const whole = (decimal ? digits.slice(0, last) : digits).replace(/[.,]/gu, "");
+  const cents = decimal ? digits.slice(last + 1).padEnd(2, "0") : "00";
+  return `¤${Number(whole)}${cents === "00" ? "" : `.${cents}`}`;
+}
+
+/** The amounts some text states, each as one token (`amountToken`). */
+export function amountsOf(text: string): Set<string> {
+  return new Set([...text.matchAll(AMOUNT)].map((m) => amountToken(m[0])));
+}
+
 /**
- * The words that name a thing in some text: four letters or more and not in `STOP`, or a number of three characters or more
- * that isn't a year ("$54", "2231"). `names: false` leaves out a capitalized word past the first, a name, so two requests to
- * Mariana aren't one thing because both say "Mariana".
+ * The words that name a thing in some text: four letters or more and not in `STOP`, a currency amount whole ("¤8432.17",
+ * never "432" and "17": plan 210, iteration 3), or another number of three characters or more that isn't a year ("2231").
+ * `names: false` leaves out a capitalized word past the first, a name, so two requests to Mariana aren't one thing because
+ * both say "Mariana".
  */
 export function namingWords(text: string, o: { names: boolean } = { names: true }): Set<string> {
-  const out = new Set<string>();
-  text.split(/[^\p{L}\p{M}\p{N}$€£]+/u).filter(Boolean).forEach((raw, i) => {
+  const out = amountsOf(text);
+  text.replace(AMOUNT, " ").split(/[^\p{L}\p{M}\p{N}$€£]+/u).filter(Boolean).forEach((raw, i) => {
     const w = normalizeText(raw).replace(/[^\p{L}\p{N}$€£]/gu, "");
     if (!w) return;
     if (/\d/.test(w)) {
@@ -86,7 +114,7 @@ export function namingWords(text: string, o: { names: boolean } = { names: true 
 }
 
 const shares = (a: ReadonlySet<string>, b: ReadonlySet<string>) => [...a].some((w) => b.has(w));
-/** an identifier: a number of three digits or more that isn't an amount or a year ("invoice 1001", "order BD-55018") */
+/** an identifier: a number of three digits or more that isn't an amount (`amountsOf`'s are whole) or a year ("invoice 1001", "order BD-55018") */
 const idsOf = (words: ReadonlySet<string>) => new Set([...words].filter((w) => /^\d+$/.test(w)));
 /** the words of an item that can name it: its text's and quote's, without the sender's own name (in every mail they send) */
 const itemWords = (item: { text: string; quote: string }, from: string) => {
@@ -109,6 +137,16 @@ export function namesItem(item: { text: string; quote: string }, words: string, 
 export function otherIds(item: { text: string; quote: string }, words: string): boolean {
   const mine = idsOf(namingWords(`${item.text}\n${item.quote}`));
   const said = idsOf(namingWords(words));
+  return mine.size > 0 && said.size > 0 && !shares(mine, said);
+}
+
+/**
+ * Plan 210 (iteration 3, revision 5): words that state an amount the item doesn't, and none it does ("we received your
+ * payment of $61.00" against a bill of $54.20), are about another payment, unless they're its receipt (`checkDates`).
+ */
+export function otherAmounts(item: { text: string; quote: string }, words: string): boolean {
+  const mine = amountsOf(`${item.text}\n${item.quote}`);
+  const said = amountsOf(words);
   return mine.size > 0 && said.size > 0 && !shares(mine, said);
 }
 
@@ -208,10 +246,20 @@ const SETTLES: Partial<Record<string, RegExp>> = {
 // "all accounts are paid", "every appointment is cancelled": said of everyone, it settles nobody's one thing
 const BLANKET = /\b(?:all|every|everyone|everything|any|todos|todas|cada|cualquier)\b/u;
 
+// plan 210 (iteration 3, revision 5): a receipt said not to have happened, in the three words before it ("we have not
+// received your payment", "we haven't received", "no hemos recibido tu pago", "aún no recibimos tu pago"), as `norm` reads it
+const NOT_YET = /\b(?:not|never|t|no|nunca|aun|todavia)\b/u;
+
+/** Plan 210 (iteration 3): whether some words deny a receipt ("we have not received your payment"): no bill is paid by them. */
+export function negatedReceipt(words: string): boolean {
+  const read = norm(words);
+  return [...read.matchAll(new RegExp(SETTLES.pay!.source, "gu"))].some((m) => NOT_YET.test(read.slice(0, m.index).trim().split(" ").slice(-3).join(" ")));
+}
+
 /** Whether some words say what settles an item of a kind, of the reader's own: "Payment received" a bill, "cancelled" a booking. */
 export function settlesKind(kind: string, words: string): boolean {
   const read = norm(words);
-  return (SETTLES[kind]?.test(read) ?? false) && !BLANKET.test(read);
+  return (SETTLES[kind]?.test(read) ?? false) && !BLANKET.test(read) && !(kind === "pay" && negatedReceipt(words));
 }
 
 /**

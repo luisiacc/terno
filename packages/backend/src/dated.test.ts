@@ -471,6 +471,54 @@ describe("the local checks (plan 204 §3)", () => {
   });
 });
 
+describe("plan 210 (iteration 3)", () => {
+  const base = { text: BILL_TEXT, subject: "Your bill", arrivedAt: NOW, open: new Map<string, DatedRow>(), fromScan: false, now: NOW };
+  const bank = "notificaciones@banconopal.test";
+  const card = (o: Partial<DatedRow> = {}) => ({ id: 9, revision: 2, threadId: 1, senderKey: bank, kind: "pay", text: "Pagar $1,105.00 de la Tarjeta de Crédito Nopal Oro", quote: "Pago mínimo: $1,105.00", dueDay: "2026-11-12", dueAt: at(2026, 11, 12, 9), timed: false, ...o }) as DatedRow;
+  const RECEIPT = "Estimado DIEGO:\n\nRecibimos tu pago por $8,432.17 a tu Tarjeta de Crédito Nopal Oro terminación 6631, aplicado el 12/11/2026 a las 08:41 h.\n\nFolio de operación: 0098124417";
+  const receipt = (o: { threadId?: number; senderKey?: string; text?: string; paysInThread?: number } = {}) => ({ ...base, text: o.text ?? RECEIPT, subject: "Recibimos tu pago de Tarjeta Nopal Oro", threadId: o.threadId ?? 1, senderKey: o.senderKey ?? bank, from: "Banco Nopal", paysInThread: o.paysInThread ?? 1 });
+  const settle = (evidence = "Recibimos tu pago por $8,432.17") => ({ items: [], settled: [{ label: "o1", evidence }] });
+
+  describe("revision 5: paid is paid, narrowly", () => {
+    it("Diego's card, read as its minimum or its balance: the bank's receipt in its conversation settles it", () => {
+      expect(checkDates(settle(), { ...receipt(), open: new Map([["o1", card()]]) }).settled).toEqual([{ id: 9, revision: 2 }]);
+      const balance = card({ text: "Pagar $8,432.17 de la Tarjeta de Crédito Nopal Oro", quote: "Pago para no generar intereses: $8,432.17" });
+      expect(checkDates(settle(), { ...receipt(), open: new Map([["o1", balance]]) }).settled).toEqual([{ id: 9, revision: 2 }]);
+    });
+    it("another amount settles only as the bill's own sender's receipt, in its conversation, its one open bill there", () => {
+      const open = new Map([["o1", card()]]);
+      // two bills in the conversation (counted by the store, whatever was sent): neither by another amount
+      expect(checkDates(settle(), { ...receipt({ paysInThread: 2 }), open }).settled).toEqual([]);
+      // not counted (a caller that doesn't say): never
+      expect(checkDates(settle(), { ...receipt(), paysInThread: undefined, open }).settled).toEqual([]);
+      // another conversation of the same sender's: another amount is another payment
+      expect(checkDates(settle(), { ...receipt({ threadId: 8 }), open }).settled).toEqual([]);
+      // another sender in its conversation
+      expect(checkDates(settle(), { ...receipt({ senderKey: "pagos@otrobanco.test" }), open }).settled).toEqual([]);
+      // the same amount from another conversation of the sender's, naming it, still settles it (as before)
+      const paid = card({ threadId: 7, text: "Pagar $8,432.17 de la Tarjeta de Crédito Nopal Oro", quote: "Pago para no generar intereses: $8,432.17" });
+      expect(checkDates(settle(), { ...receipt({ threadId: 8 }), open: new Map([["o1", paid]]) }).settled).toHaveLength(1);
+    });
+    it("an amount that names one of two bills settles it, never the other", () => {
+      const two = new Map([["o1", card()], ["o2", card({ id: 10, text: "Pagar $8,432.17 de la Tarjeta de Crédito Nopal Oro", quote: "Pago para no generar intereses: $8,432.17", dueDay: "2026-11-13" })]]);
+      const out = checkDates({ items: [], settled: [{ label: "o1", evidence: "Recibimos tu pago por $8,432.17" }, { label: "o2", evidence: "Recibimos tu pago por $8,432.17" }] }, { ...receipt({ paysInThread: 2 }), open: two });
+      expect(out.settled).toEqual([{ id: 10, revision: 2 }]);
+    });
+    it("an invoice number the bill doesn't have settles nothing, receipt or not", () => {
+      const invoice = card({ text: "Pay invoice 1002 ($54.20)", quote: "Invoice 1002 is due on November 12" });
+      const text = "Payment received for invoice 1001 ($61.00). Thank you!";
+      expect(checkDates(settle("Payment received for invoice 1001"), { ...receipt({ text }), open: new Map([["o1", invoice]]) }).settled).toEqual([]);
+    });
+    it("a receipt said not to have happened settles no bill, the same amount or another (en, es)", () => {
+      const open = new Map([["o1", card()]]);
+      for (const text of ["We have not received your payment of $1,105.00 for your Nopal Oro card.", "Aún no recibimos tu pago por $1,105.00 de tu Tarjeta de Crédito Nopal Oro."]) {
+        const evidence = /received your payment|recibimos tu pago/.exec(text)![0];
+        expect(checkDates(settle(evidence), { ...receipt({ text }), open }).settled, text).toEqual([]);
+      }
+    });
+  });
+});
+
 describe("the reader", () => {
   it("off (the default): nothing is marked and nothing is asked", async () => {
     const { backend, model, receive } = await setup({ enabled: false });
@@ -615,6 +663,28 @@ describe("the reader", () => {
     await receive({ subject: "Thanks", bodyText: "Payment received, thank you.", listId: "billing.power.test" });
     await read();
     expect((await backend.store.dated.active()).map((r) => r.text).sort()).toEqual(["Pay the electricity bill", "Pay the water bill"]);
+  });
+
+  it("plan 210 (iteration 3, revision 5): the bank's receipt with another amount settles its card in its conversation, counted in the store: never with a second bill there", async () => {
+    for (const second of [false, true]) {
+      const { model, receive, read, backend } = await setup();
+      const nopal = { name: "Banco Nopal", email: "notificaciones@banconopal.test" };
+      const minimum: Item = { kind: "pay", text: "Pagar $1,105.00 de la Tarjeta de Crédito Nopal Oro", quote: "Pago mínimo: $1,105.00", due: "2026-11-12", time: null };
+      const fee: Item = { kind: "pay", text: "Pagar $45.00 de la anualidad", quote: "Anualidad: $45.00", due: "2026-11-13", time: null };
+      model.answer = (req) => {
+        const p = promptText(req.messages[0]!.content);
+        if (p.includes("Recibimos tu pago")) return reply([], [{ label: "o1", evidence: "Recibimos tu pago por $8,432.17" }]);
+        return reply(p.includes("Anualidad") ? [fee] : [minimum]);
+      };
+      await receive({ from: nopal, subject: "Tu estado de cuenta", bodyText: "Pago para no generar intereses: $8,432.17\nPago mínimo: $1,105.00\nFecha límite de pago: 12 de noviembre de 2026", providerThreadId: "nopal" });
+      if (second) await receive({ from: nopal, subject: "Re: Tu estado de cuenta", bodyText: "Anualidad: $45.00, cargo el 13 de noviembre de 2026.", providerThreadId: "nopal" });
+      await read();
+      // the receipt is offered the newest open item only (o1): the card's minimum, or the fee beside it
+      if (second) model.answer = (req) => (promptText(req.messages[0]!.content).includes("Recibimos tu pago") ? reply([], [{ label: "o2", evidence: "Recibimos tu pago por $8,432.17" }]) : reply());
+      await receive({ from: nopal, subject: "Re: Tu estado de cuenta", bodyText: "Recibimos tu pago por $8,432.17 a tu Tarjeta de Crédito Nopal Oro terminación 6631.", providerThreadId: "nopal" });
+      await read();
+      expect((await backend.store.dated.active()).map((r) => r.text).sort(), String(second)).toEqual(second ? ["Pagar $1,105.00 de la Tarjeta de Crédito Nopal Oro", "Pagar $45.00 de la anualidad"] : []);
+    }
   });
 
   it("after the fourth panel round: a sender named like a security desk is never asked about, and keeps nothing", async () => {

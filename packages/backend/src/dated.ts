@@ -6,7 +6,7 @@ import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
 import { readNothingAsked, type DatedMark, type DatedSource, type DatedWrite, type MailStore } from "@terno/store";
 import { DailyLimitError, MonthlyLimitError } from "./ai-limiter";
 import { UI_LOCALE_KEY } from "./forwarding";
-import { contextOf, namesApart, namesItem, norm, otherIds, paragraphsOf, plainEvidence, sameObject, sameThing, saysReplaced, saysWhen, sentencesOf, settlesKind } from "./dated-evidence";
+import { contextOf, namesApart, namesItem, negatedReceipt, norm, otherAmounts, otherIds, paragraphsOf, plainEvidence, sameObject, sameThing, saysReplaced, saysWhen, sentencesOf, settlesKind } from "./dated-evidence";
 import { untrustedSenders, withoutUntrusted } from "./suspicious-sender";
 
 /**
@@ -203,7 +203,7 @@ function movedPromise(p: { dueAt?: number; dated?: boolean; timed?: boolean }, d
  * day or, for a timed item, a new moment, and its new words only with the mail's own. Plan 210 (the Codex review of iteration
  * 1, revision 2): a settlement or a move rests on evidence tied to that item (`tiedTo`). Pure.
  */
-export function checkDates(result: { items: readonly (Omit<DatedResult["items"][number], "kind"> & { kind: string })[]; settled: DatedResult["settled"]; moved?: readonly Move[] }, input: { text: string; subject: string; arrivedAt: number; open: ReadonlyMap<string, DatedRow>; promises?: ReadonlyMap<string, Pick<FollowupRow, "id" | "revision"> & Partial<Pick<FollowupRow, "text" | "dueAt" | "dated" | "timed">>>; fromScan: boolean; now: number; sender?: { person: boolean }; reader?: { name: string; addressed: "to" | "cc" | "none" }; others?: readonly string[]; threadId?: number; senderKey?: string; from?: string }): { rows: DatedWrite[]; settled: { id: number; revision: number }[]; moved: { id: number; dueDay: string; dueAt: number; timed: boolean; actAt: number; text?: string }[]; movedPromises: { id: number; revision: number; dueAt: number; timed: boolean; brokenDueAt: number | null }[]; asked: boolean } {
+export function checkDates(result: { items: readonly (Omit<DatedResult["items"][number], "kind"> & { kind: string })[]; settled: DatedResult["settled"]; moved?: readonly Move[] }, input: { text: string; subject: string; arrivedAt: number; open: ReadonlyMap<string, DatedRow>; promises?: ReadonlyMap<string, Pick<FollowupRow, "id" | "revision"> & Partial<Pick<FollowupRow, "text" | "dueAt" | "dated" | "timed">>>; fromScan: boolean; now: number; sender?: { person: boolean }; reader?: { name: string; addressed: "to" | "cc" | "none" }; others?: readonly string[]; threadId?: number; senderKey?: string; from?: string; paysInThread?: number }): { rows: DatedWrite[]; settled: { id: number; revision: number }[]; moved: { id: number; dueDay: string; dueAt: number; timed: boolean; actAt: number; text?: string }[]; movedPromises: { id: number; revision: number; dueAt: number; timed: boolean; brokenDueAt: number | null }[]; asked: boolean } {
   const said = `${norm(input.subject)}\n${norm(input.text)}`;
   const quoted = (words: string) => {
     const w = norm(words);
@@ -228,6 +228,12 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     if (!quoted(evidence) || !plainEvidence(evidence, context) || (move && !saysWhen(evidence, contextOf(evidence, paragraphs), move, input.arrivedAt))) return false;
     if (!row) return true;
     if (otherIds(row, context)) return false;
+    // plan 210 (iteration 3, revision 5): paid is paid, narrowly. A receipt said not to have happened settles no bill; one
+    // naming another amount settles it only as its own sender's receipt in its own conversation, the one open bill there
+    // (counted in the store: Diego's card read as its $1,105.00 minimum, paid with "Recibimos tu pago por $8,432.17")
+    if (!move && row.kind === "pay" && negatedReceipt(`${evidence}\n${context}`)) return false;
+    const receipt = !move && row.kind === "pay" && input.threadId !== undefined && row.threadId === input.threadId && row.senderKey === input.senderKey && input.paysInThread === 1 && settlesKind("pay", `${evidence}\n${context}`);
+    if (otherAmounts(row, context) && !receipt) return false;
     const named = [...input.open.values()].filter((r) => namesItem(r, context, input.from));
     if (named.length && !namesApart(row, named, context, input.from)) return false;
     if (input.threadId !== undefined && row.threadId !== input.threadId) {
@@ -576,7 +582,10 @@ export class DatedWorker {
       const now = this.host.now();
       // only what was really sent, after fitting to the window, may be named back (Codex review)
       const sent = new Set(input.open.map((o) => o.label));
-      const checked = checkDates(result, { text, subject: src.subject, arrivedAt: src.date, open: new Map([...labels].filter(([l]) => sent.has(l))), promises: new Map([...promises].filter(([l]) => sent.has(l))), fromScan, now, sender: { person: src.person }, reader, others, threadId: src.threadId, senderKey: src.senderKey, from: input.from.name });
+      // plan 210 (iteration 3, revision 5): a receipt's one bill is counted in the store, never among the labels sent; read
+      // only when the model settled something
+      const paysInThread = result.settled.length ? (await store.dated.ofThread(src.threadId)).filter((r) => r.kind === "pay").length : 0;
+      const checked = checkDates(result, { text, subject: src.subject, arrivedAt: src.date, open: new Map([...labels].filter(([l]) => sent.has(l))), promises: new Map([...promises].filter(([l]) => sent.has(l))), fromScan, now, sender: { person: src.person }, reader, others, threadId: src.threadId, senderKey: src.senderKey, from: input.from.name, paysInThread });
       // plan 210 (iteration 2, the Codex code review): "nothing asked" only of a message the model saw all of (never one cut
       // to the window or the reader's limit, nor a subject past what's sent), and in which the checks found no request at all
       const readWhole = whole && text.length <= DATED_TEXT_CHARS && input.text === text && src.subject.length <= DATED_SUBJECT_CHARS;
