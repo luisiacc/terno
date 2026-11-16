@@ -447,6 +447,19 @@ describe("reading dates in mail you got (plan 204)", () => {
     }
   });
 
+  it("plan 210 (iteration 4, revision 12): a stated consequence and the amount are kept whole: the words before them are cut instead", () => {
+    // the stake's bracket kept, what's before it cut at a clause
+    expect(cutAtClause("Decide on the Creatix Cloud annual plan renewal before Thursday, November 19, with the Visa ending 2207 on file (cancelling later costs 50%)", 100)).toBe("Decide on the Creatix Cloud annual plan renewal before Thursday… (cancelling later costs 50%)");
+    expect(cutAtClause("Upload the W-9 for Pingwire Inc. in the Hexdash partner portal by Wednesday, November 11 ($18,000 payout held until mid-December)", 90)).toBe("Upload the W-9 for Pingwire Inc. in the Hexdash… ($18,000 payout held until mid-December)");
+    // an "unless" clause whole or not at all, never left hanging
+    expect(cutAtClause("Cancel the Tasklet Pro trial in the account settings before Sunday unless you want to keep paying $9.99 a month", 100)).toBe("Cancel the Tasklet Pro trial in the account settings… unless you want to keep paying $9.99 a month");
+    expect(cutAtClause("Cancel the Tasklet Pro trial in the account settings before Sunday unless you want to keep paying $9.99 a month", 40)).not.toMatch(/\b(?:unless|or)…$/u);
+    // a cut that keeps the amount is taken as before; a bracket of details is still cut at its clause
+    expect(cutAtClause("Pay $1,186.40 for the Pingwire team on Stratus, then update the card on file before Monday, November 16", 60)).toBe("Pay $1,186.40 for the Pingwire team on Stratus…");
+    expect(cutAtClause("Partido de los Halcones Sub-9 contra los Linces (llegar 7:30; llevar espinilleras, botella de agua con nombre y merienda de la familia Romero)", 70)).toBe("Partido de los Halcones Sub-9 contra los Linces (llegar 7:30)…");
+    for (const text of ["Decide on the Creatix Cloud annual plan renewal before Thursday, November 19 (cancelling later costs 50%)", "Upload the W-9 for Pingwire ($18,000 held)"]) expect(cutAtClause(text, 120)).toBe(text);
+  });
+
   it("plan 210 (iteration 3, point 6): no number that identifies an order, an invoice, a policy or a service in the sentence; a card's last digits stay", () => {
     expect(withoutIdentifiers("Pay $1,295.00 for the Revenue Summit registration (invoice RS-77120)")).toBe("Pay $1,295.00 for the Revenue Summit registration");
     expect(withoutIdentifiers("Pagar $3,200.00 MXN de la factura EP-4471 de Expo Pan (pase completo)")).toBe("Pagar $3,200.00 MXN de la factura de Expo Pan (pase completo)");
