@@ -1,5 +1,5 @@
 import { lapsesUnlessRenewed } from "@terno/core";
-import { contextOf, namesItem, norm, otherAmounts, otherIds, sentencesOf, type Sentences } from "./dated-evidence";
+import { contextOf, namesItem, namesSpecifically, norm, otherAmounts, otherIds, otherMonths, sentencesOf, sentencesWith, type Sentences } from "./dated-evidence";
 
 /**
  * Plan 210 (iteration 5, revision 1; the owner: "for things that are auto-renewed like a plan or an invoice that was paid
@@ -28,7 +28,9 @@ const AUTOMATIC = new RegExp(
 );
 /** paid: this invoice, settled ("paid in full", "has been paid", "payment received") */
 const PAID = /\b(?:paid in full|(?:has|have) been paid|was paid|is (?:now )?paid|status paid|payment (?:was |has been )?(?:received|processed|completed?|successful)|(?:we ve |we have )?received your payment|thank you for your payment|(?:ya )?(?:esta|fue|ha sido) pagad[ao]|pagad[ao] (?:en su totalidad|por completo)|pago (?:recibido|realizado|procesado|completado)|(?:recibimos|hemos recibido) (?:tu|su) pago|gracias por (?:tu|su) pago)\b/u;
-const AFFIRMS = new RegExp(`\\b(?:${AUTOMATIC.source})\\b|${PAID.source}`, "u");
+const BY_ITSELF = new RegExp(`\\b(?:${AUTOMATIC.source})\\b`, "u");
+/** a sentence that goes on about the one before it ("It has been paid in full.", "Ya está pagada.") */
+const ANAPHOR = /^(?:it|this|that|which|ya|esta|este|fue|ha sido)\b/u;
 /** a sentence that offers, conditions or charges something else is no affirmation ("If you have automatic renewal turned on…", "Set up AutoPay so…", "We will charge a $25 late fee") */
 const NOT_AFFIRMED = /\b(?:if|unless|should|in case|otherwise|whether|set up|sign up|enroll|turn on|activate|fees?|penalty|penalties|interest|finance charges?|si|salvo|a menos que|en caso|activa|domicilia|inscribete|recargos?|multas?|penalizacion\w*|comision\w*|intereses)\b/u;
 const NEGATED = /\b(?:not|no|never|won t|will not|isn t|aren t|wasn t|haven t|hasn t|nunca|aun no|todavia no)\b/u;
@@ -78,9 +80,18 @@ export function handledItself(item: ItemWords, mail: { subject: string; paragrap
   // a request to pay it: in its own sentence, or one that names it (a neighbour's "please pay by then" is another invoice's)
   const mine = norm(self.quote);
   if (sentences.some((s) => ASKS_TO_PAY.test(s.read) && !another(s.said) && (mine.includes(s.read) || namesItem(self, s.said, mail.from)))) return false;
-  return sentences.some((s) => {
-    if (!ofItem(s) || NOT_AFFIRMED.test(s.read)) return false;
-    const m = AFFIRMS.exec(s.read);
+  // plan 210 (iteration 5's code review, point 1): paid is this invoice's only on words that pick it out: its own sentence,
+  // the one right after it going on about it ("It has been paid in full"), or one with its number, amount or a word of its
+  // own; never "your invoice" alone ("Your October invoice has been paid in full. Your November invoice for $300 is due…")
+  const quoted = new Set(sentencesWith(item.quote, sentences));
+  const paidOf = (s: { said: string; read: string }, n: number) => quoted.has(n) || (quoted.has(n - 1) && ANAPHOR.test(s.read)) || namesSpecifically(self, s.said, mail.from);
+  const affirmed = (s: { read: string }, re: RegExp) => {
+    const m = re.exec(s.read);
     return !!m && !NEGATED.test(s.read.slice(0, m.index).trim().split(" ").slice(-4).join(" "));
+  };
+  return sentences.some((s, n) => {
+    // another period's bill, by its month, is another bill
+    if (!ofItem(s) || otherMonths(self, s.said) || NOT_AFFIRMED.test(s.read)) return false;
+    return affirmed(s, BY_ITSELF) || (affirmed(s, PAID) && paidOf(s, n));
   });
 }

@@ -131,6 +131,45 @@ export function namesItem(item: { text: string; quote: string }, words: string, 
 }
 
 /**
+ * Plan 210 (iteration 5's code review): the nouns any bill, plan or deadline has ("invoice", "payment", "the due date"): a
+ * shared one says nothing about which. Stemmed as `namingWords` reads them.
+ */
+const GENERIC = new Set(
+  (
+    "invoice bill statement payment balance amount total account premium plan subscription membership renewal date deadline " +
+    "minimum order full paid factura recibo cuenta saldo importe monto cuota prima plazo fecha vencimiento suscripcion " +
+    "membresia renovacion pedido pago pagada pagado"
+  ).split(" "),
+);
+
+/**
+ * Plan 210 (iteration 5's code review, points 1 and 3): words that name this item apart from any other of its kind: an
+ * identifier or an amount of its own, or a word of its that isn't a generic noun ("Northwind's invoice 2231", "the lease",
+ * "The Lighthouse Keeper's Daughter"), never "your invoice" or "the due date" alone. The sender's name is no one's word.
+ */
+export function namesSpecifically(item: { text: string; quote: string }, words: string, from = ""): boolean {
+  const said = namingWords(words);
+  return [...itemWords(item, from)].some((w) => said.has(w) && !GENERIC.has(w));
+}
+
+/** The months some words name, en and es ("October", "oct", "octubre"), as numbers. */
+const MONTH_WORDS: [RegExp, number][] = [
+  [/^(?:jan(?:uary)?|enero|ene)$/u, 1], [/^(?:feb(?:ruary)?|febrero)$/u, 2], [/^(?:march|marzo)$/u, 3], [/^(?:april|abril|abr)$/u, 4],
+  [/^mayo$/u, 5], [/^(?:june|junio)$/u, 6], [/^(?:july|julio)$/u, 7], [/^(?:august|agosto|aug)$/u, 8],
+  [/^(?:sept?(?:ember)?|septiembre|setiembre)$/u, 9], [/^(?:oct(?:ober)?|octubre)$/u, 10], [/^(?:nov(?:ember)?|noviembre)$/u, 11], [/^(?:dec(?:ember)?|diciembre|dic)$/u, 12],
+];
+const monthsOf = (words: string) => new Set(norm(words).split(" ").flatMap((w) => MONTH_WORDS.filter(([re]) => re.test(w)).map(([, n]) => n)));
+
+/**
+ * Plan 210 (iteration 5's code review, point 1): words that name a month the item's own words don't ("Your October invoice
+ * has been paid" beside November's), about another period's bill.
+ */
+export function otherMonths(item: { text: string; quote: string }, words: string): boolean {
+  const mine = monthsOf(`${item.text}\n${item.quote}`);
+  return [...monthsOf(words)].some((m) => !mine.has(m));
+}
+
+/**
  * The Codex code review of v11 (point 2): words that give an identifier the item doesn't have, and none it has ("Payment
  * received for invoice 1001" against invoice 1002), are about something else.
  */
