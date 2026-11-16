@@ -268,7 +268,7 @@ describe("plan 204: Missed, Today, a day ahead and Coming up (plan 210: by day, 
     expect(taskOfThread(5)).toMatchObject({ when: null, noDay: true });
     expect(laterWindow(taskOfThread(6)!)).toEqual({ before: at(13, 7, 40), limit: "starts" });
     flattenToday(list({ today: [{ id: "promise:31", thread: thread(3), why: { kind: "promise", text: "send the agenda", dueAt: at(12, 18), promise: { id: 31, revision: 2, dated: true } } } as never] }), []);
-    expect(taskOfThread(3)).toEqual({ kind: "promise", id: 31, revision: 2, when: "Today", due: "Due today", dated: true, text: "send the agenda" });
+    expect(taskOfThread(3)).toEqual({ kind: "promise", id: 31, revision: 2, when: "Today", due: "Due today", dated: true, text: "send the agenda", dueAt: at(12, 18), timed: false });
   });
 
   it("a related detail (a return leg) is said on its row's second line; nothing else is", () => {

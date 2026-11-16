@@ -29,6 +29,7 @@ import { installNetworkEvents } from "~/lib/network";
 import { Reader } from "./components/reader";
 import { RemindDialog } from "./components/remind-dialog";
 import { TodayLaterDialog } from "./components/today-later-dialog";
+import { TodayChangeDialog } from "./components/change-form";
 import { SelectionBar } from "./components/selection-bar";
 import { SnackDock } from "./components/snack-dock";
 import { Sidebar } from "./components/sidebar";
@@ -238,6 +239,7 @@ export function App() {
       {dialog === "print" && <PrintSheet />}
       {dialog === "remind" && <RemindDialog />}
       {dialog === "todayLater" && <TodayLaterDialog />}
+      {dialog === "todayChange" && <TodayChangeDialog />}
       {fresh && dialog === null && needsFirstRun() && <FirstRun />}
       {/* inside the settings sheet it opens over the sheet (a nested dialog) */}
       {dialog !== "settings" && <ReportPreview />}
