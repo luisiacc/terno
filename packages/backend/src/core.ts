@@ -428,7 +428,7 @@ export class BackendCore {
       emit: (snapshot) => {
         this.server.emit("reminders", snapshot);
         // plan 210 (iteration 4): What matters draws and counts your reminders due today
-        this.today.changed();
+        this.today.remindersChanged();
       },
       notify: (notice) => this.attention.remind(notice),
       runBudgeted: (items, work) => this.runBudgeted(items, work),

@@ -989,6 +989,17 @@ export class TodayService {
     void this.armClock().catch((error: unknown) => captureError(error, { code: "ai.failed" }));
   }
 
+  /**
+   * Plan 210 (iteration 4): your reminders changed (set, cleared, come due: the reminders' own look says so, only when they
+   * did): the list and the count read again. No item moved, so the cached items and the clock stay (midnight, which brings
+   * tomorrow's reminders into today, is the clock's already).
+   */
+  remindersChanged(): void {
+    if (this.stopped) return;
+    this.b.server.emit("todayChanged", {}, { origins: ["renderer", "dev"] });
+    this.b.countsChanged();
+  }
+
   /** Revision 11: one timer for the next moment Today changes by the clock alone; none when there's no such moment. */
   async armClock(): Promise<void> {
     // Codex code review: only the newest call arms, so two at once can't leave a timer behind
