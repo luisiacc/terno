@@ -4,7 +4,9 @@ import { Button } from "@terno/ui/components/button";
 import { Switch } from "@terno/ui/components/switch";
 import { Time, TimeField } from "@terno/ui/components/time-field";
 import { aiAllowed, datedReaderLine } from "~/lib/ai";
+import { useDatedMutes } from "~/lib/dated-mutes";
 import { useApp } from "~/state/app";
+import { MutedList } from "../what-matters/muted-list";
 import { openSettingsTab, SettingsGroup, SettingsRow, type SettingsUpdate } from "./parts";
 
 /** Plan 145 §5: Settings → General → Today. */
@@ -15,6 +17,7 @@ export default function TodaySettings({ settings, update }: { settings: AppSetti
   const [h = 8, m = 0] = (today?.prepareAt ?? "08:00").split(":").map(Number);
   // plan 210 (iteration 1): who reads the mail for it, by where the dated reader's job goes
   const reader = datedReaderLine(settings.ai, "settings");
+  const [mutes, setMutes] = useDatedMutes();
   return (
     <SettingsGroup title={t("today.title")} testId="today-settings" footer={reader && <span data-testid="today-privacy">{reader}</span>}>
       {proOff && (
@@ -31,6 +34,10 @@ export default function TodaySettings({ settings, update }: { settings: AppSetti
       </SettingsRow>
       <SettingsRow find="general.todayFinished" label={t("today.settings.finished")} hint={t("today.settings.finishedHint")}>
         {(a) => <Switch {...a} checked={today?.finished !== false} data-testid="today-finished" onCheckedChange={(finished) => void update({ today: { finished } })} />}
+      </SettingsRow>
+      {/* plan 210 (iteration 4): what's muted, with Unmute; empty, how muting comes about */}
+      <SettingsRow find="general.todayMuted" label={t("dated.mute.title")} hint={t("dated.mute.hint")} stacked testId="today-muted">
+        {(a) => <MutedList mutes={mutes} setMutes={setMutes} testId="today-muted-list" labelledBy={a["aria-labelledby"]} describedBy={a["aria-describedby"]} fallback={() => document.querySelector<HTMLElement>("[data-testid=today-finished]")} empty />}
       </SettingsRow>
       <SettingsRow find="general.todayAt" label={t("today.settings.prepareAt")} hint={t("today.settings.prepareAtHint")}>
         {(a) => (

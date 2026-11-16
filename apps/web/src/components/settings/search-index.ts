@@ -60,6 +60,7 @@ export const SETTINGS_INDEX = [
   { id: "general.language", tab: "general", label: "language.label", hint: "language.hint", words: "settings.find.words.language" },
   { id: "general.today", tab: "general", group: "today.title", label: "today.settings.show", when: ai },
   { id: "general.todayFinished", tab: "general", group: "today.title", label: "today.settings.finished", hint: "today.settings.finishedHint", words: "settings.find.words.finished", when: ai },
+  { id: "general.todayMuted", tab: "general", group: "today.title", label: "dated.mute.title", hint: "dated.mute.hint", words: "settings.find.words.muted", when: ai },
   { id: "general.todayAt", tab: "general", group: "today.title", label: "today.settings.prepareAt", hint: "today.settings.prepareAtHint", when: ai },
   { id: "general.todayNotify", tab: "general", group: "today.title", label: "today.settings.notify", hint: "today.settings.notifyHint", when: ai },
   { id: "general.syncWindow", tab: "general", group: "settings.general.sync", label: "settings.general.syncWindow", hint: "settings.general.syncWindow.hint", words: "settings.find.words.syncWindow" },
