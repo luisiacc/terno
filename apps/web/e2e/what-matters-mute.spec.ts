@@ -219,3 +219,63 @@ for (const language of ["en", "es"] as const) {
     await expect(openLine(page, "2 Laptop stands arrive")).toBeVisible();
   });
 }
+
+/**
+ * The Codex code review of round 14's faults: in Split's reader at its minimum width the offer beside the message shrank to a
+ * sliver, and Spanish "Deshacer" pushed the close button out of the card. Narrow, the offer has its own line under the first,
+ * its words on the message's; the first line keeps the status, Undo and the close button inside the card.
+ */
+for (const language of ["en", "es"] as const) {
+  test(`plan 210 (round 14's faults, code review): in the narrowest reader the offer has its own line (${language})`, async ({ app: page, server }) => {
+    await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" }, dated: { enabled: true, scanAnswered: true }, language }, dev);
+    await item(server, "stands", "2 Laptop stands arrive", "delivery", { name: "Northgate Business Store", email: "orders@northgate.test", listId: "<orders.northgate.test>" }, 14);
+    await page.addInitScript((l) => localStorage.setItem("terno:language", l), language);
+    await fresh(page);
+    await page.getByTestId("nav-today").click();
+    await expect(openLine(page, "2 Laptop stands arrive")).toBeVisible({ timeout: 15_000 });
+    // the item open beside the feed (Split's reader), the window narrowed until the reader is at its minimum
+    await openLine(page, "2 Laptop stands arrive").getByTestId("wm-item-open").click();
+    await expect(page.getByTestId("reader")).toBeVisible();
+    // (the sidebar and the list give way first, each to its own minimum)
+    const measure = () => page.evaluate(() => ({ reader: document.querySelector("[data-testid=reader]")!.getBoundingClientRect().width, min: parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--reader-min")) }));
+    let width = 1440;
+    for (let m = await measure(); m.reader > m.min + 0.5; m = await measure()) {
+      width -= Math.ceil(m.reader - m.min);
+      await page.setViewportSize({ width, height: 900 });
+    }
+    const { min } = await measure();
+    expect(Math.round((await measure()).reader)).toBe(Math.round(min));
+    await remove(page, "2 Laptop stands arrive");
+    await expect(page.getByTestId("snack-dock")).toHaveAttribute("data-over", "reader");
+    const offer = page.getByTestId("snack-secondary");
+    await expect(offer).toHaveText(language === "en" ? "Don’t show deliveries from Northgate Business Store" : "No mostrar entregas de Northgate Business Store");
+    const fit = await page.getByTestId("snack").evaluate((card) => {
+      const box = (el: Element) => el.getBoundingClientRect();
+      const q = (id: string) => card.querySelector<HTMLElement>(`[data-testid=${id}]`)!;
+      const [status, words] = [...q("snack-message").querySelectorAll("p")] as HTMLElement[];
+      const said = q("snack-secondary").querySelector("span")!;
+      return { card: box(card), message: box(q("snack-message")), pill: box(q("snack-action")), close: box(q("snack-close")), offer: box(said), status: status!.scrollWidth <= status!.clientWidth, words: words!.clientWidth, offerWhole: said.scrollHeight <= said.clientHeight + 1 };
+    });
+    // the first line: the status whole, the item's words readable, Undo and the close button inside the card
+    expect(fit.status).toBe(true);
+    expect(fit.words).toBeGreaterThanOrEqual(100);
+    expect(fit.close.right).toBeLessThanOrEqual(fit.card.right);
+    expect(fit.pill.right).toBeLessThanOrEqual(fit.close.left);
+    // the offer under it, whole, its words on the message's line
+    expect(fit.offer.top).toBeGreaterThanOrEqual(Math.max(fit.message.bottom, fit.pill.bottom) - 1);
+    expect(fit.offerWhole).toBe(true);
+    expect(Math.abs(fit.offer.left - fit.message.left)).toBeLessThanOrEqual(1);
+    expect(fit.offer.bottom).toBeLessThanOrEqual(fit.card.bottom);
+    await axeBothModes(page, '[data-testid="snack"]');
+    const shots = process.env.WM_MUTE_SHOTS;
+    if (shots) {
+      for (const mode of ["light", "dark"] as const) {
+        await page.emulateMedia({ colorScheme: mode });
+        await page.screenshot({ path: join(shots, `narrow-offer-${language}-${mode}.png`) });
+      }
+      await page.emulateMedia({ colorScheme: "light" });
+    }
+    await page.keyboard.press("z");
+    await expect(openLine(page, "2 Laptop stands arrive")).toBeVisible();
+  });
+}
