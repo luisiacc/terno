@@ -66,7 +66,7 @@ import {
 
 const id = z.number().int().positive();
 /** plan 210: a history line's key (`HistoryKey`) */
-const historyKey = z.object({ at: z.number().int().nonnegative(), src: z.union([z.literal(0), z.literal(1)]), id });
+const historyKey = z.object({ at: z.number().int().nonnegative(), src: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]), id });
 /** plan 210 (iteration 2): a What matters row's id ("dated:42", "promise:7", "waiting:12", "reminder:12") */
 const feedRowId = z.string().regex(/^(?:dated|promise|waiting|reminder):\d{1,15}$/);
 /** days of mail an account downloads (settings, an account, connecting one) */
@@ -1259,6 +1259,18 @@ export const contract = {
   /** plan 204: Done, Dismiss and Later on a dated item, each with an exact Undo; never MCP */
   "dated.act": m<{ undoId: string | null; row: DatedRow | null }>()(z.object({ id, revision: z.number().int().min(0), action: z.enum(["done", "dismiss", "later"]), until: z.number().int().optional() })),
   "dated.undo": m<{ ok: true }>()(z.object({ undoId: z.string().min(1).max(64) })),
+  /**
+   * Plan 210 (iteration 4, Change…): a dated item's or a promise's new day (`day`, local) and, when `time` ("HH:MM"), its
+   * time; or, with `accept`, the move a later mail proposed for it. On every item it's the same thing as, at the revision
+   * seen, all or none, with an exact Undo (`today.scheduleUndo`); never MCP
+   */
+  "today.schedule": m<{ undoId: string }>()(
+    z.object({
+      item: z.object({ source: z.enum(["dated", "promise"]), id, revision: z.number().int().min(0) }),
+      to: z.union([z.object({ day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), time: z.string().regex(/^\d{2}:\d{2}$/).nullable() }), z.object({ accept: z.literal(true) })]),
+    }),
+  ),
+  "today.scheduleUndo": m<{ ok: true }>()(z.object({ undoId: z.string().min(1).max(64) })),
   /** a thread's open items, for the reader's line */
   /** plan 210 (iteration 2): with `include`, that item too whatever its state (a history line opened: its closed item) */
   "dated.ofThread": m<{ rows: DatedRow[] }>()(z.object({ threadId: id, include: id.optional() })),

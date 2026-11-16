@@ -1,4 +1,4 @@
-import { DATED_CLOSED_KEEP_MS, historyAfter, historyOrder, refKey, type DatedRow, type FeedRowId, type FollowupRow, type HistoryKey, type HistoryOutcome, type ItemRef, type ThreadSummary, type TodayHistoryItem, type TodayHistoryPage } from "@terno/core";
+import { changeLineId, DATED_CLOSED_KEEP_MS, historyAfter, historyOrder, refKey, type HistorySource, type DatedRow, type FeedRowId, type FollowupRow, type HistoryKey, type HistoryOutcome, type ItemRef, type ThreadSummary, type TodayHistoryItem, type TodayHistoryPage } from "@terno/core";
 import { ANSWERED_WITH_PROMISE, type ClosedAt, type MailStore } from "@terno/store";
 import { withoutUntrusted } from "./suspicious-sender";
 
@@ -34,6 +34,11 @@ export interface HistoryAsk {
   held: ReadonlySet<FeedRowId>;
   dated: boolean;
   promises: boolean;
+  /**
+   * Plan 210 (iteration 4, Change…): the open items the user changed (as the open part reads them: trusted, within the
+   * bounds), each a "Changed" line at the moment of its change while it's open. Absent: none
+   */
+  changed?: { dated: readonly DatedRow[]; promises: readonly FollowupRow[] };
   /** Codex code review: a walk past many left-out rows gives the event loop back between reads, within the slice's budget */
   yieldTurn: () => Promise<void>;
   sliceMs: number;
@@ -43,10 +48,29 @@ export interface HistoryAsk {
 const outcomeOf = (r: { state: string; closedReason: string | null }): HistoryOutcome => (r.closedReason === "replaced" ? "replaced" : r.state === "done" ? "done" : r.state === "settled" ? "settled" : r.closedReason === "expired" ? "over" : "dismissed");
 
 type Row = (DatedRow & { src: 0 }) | (FollowupRow & { src: 1 });
-const sourceOf = (src: 0 | 1): ItemRef["source"] => (src === 0 ? "dated" : "promise");
-const keyOf = (r: Row): string => r.sameAs ?? refKey({ source: sourceOf(r.src), id: r.id });
+/** plan 210 (iteration 4): an open item the user changed, at its change */
+type Changed = (DatedRow & { src: 2 }) | (FollowupRow & { src: 3 });
+const sourceOf = (src: HistorySource): ItemRef["source"] => (src % 2 === 0 ? "dated" : "promise");
+const keyOf = (r: Row | Changed): string => r.sameAs ?? refKey({ source: sourceOf(r.src), id: r.id });
 const closingOf = (r: Row): HistoryKey => ({ at: r.closedAt!, src: r.src, id: r.id });
 const open = (r: { state: string }): boolean => r.state === "open" || r.state === "due";
+
+/**
+ * Plan 210 (iteration 4): an open item's "Changed" line, one a canonical item (its members change together) at its newest
+ * change in the keep's window, strictly after `after`, newest first. From what's in hand: no read.
+ */
+function changedLines(o: Pick<HistoryAsk, "changed" | "after">, since: number): { row: Changed; key: HistoryKey }[] {
+  if (!o.changed) return [];
+  const newest = new Map<string, { row: Changed; key: HistoryKey }>();
+  const rows: Changed[] = [...o.changed.dated.map((r) => ({ ...r, src: 2 as const })), ...o.changed.promises.map((r) => ({ ...r, src: 3 as const }))];
+  for (const row of rows) {
+    if (row.changedAt == null || row.changedAt < since || (row.state !== "open" && row.state !== "due")) continue;
+    const key: HistoryKey = { at: row.changedAt, src: row.src, id: row.id };
+    const was = newest.get(keyOf(row));
+    if (!was || historyOrder(key, was.key) < 0) newest.set(keyOf(row), { row, key });
+  }
+  return [...newest.values()].filter((c) => !o.after || historyOrder(c.key, o.after) > 0).sort((a, b) => historyOrder(a.key, b.key));
+}
 
 export async function historyPage(store: MailStore, o: HistoryAsk): Promise<TodayHistoryPage> {
   const since = o.now - DATED_CLOSED_KEEP_MS;
@@ -105,16 +129,40 @@ export async function historyPage(store: MailStore, o: HistoryAsk): Promise<Toda
   };
   const datedTrusted = async (rows: Row[]) => (await trusted(rows as DatedRow[])) as Row[];
   const all = async (rows: Row[]) => rows;
+  // plan 210 (iteration 4): the "Changed" lines, from the open items in hand (bounded), one a canonical item at its newest
+  // change, strictly after `after`, newest first; their conversations read once with the page's
+  const changes = changedLines(o, since);
+  const unread = [...new Set(changes.map((c) => c.row.threadId))].filter((id) => !threads.has(id));
+  if (unread.length) {
+    const byId = new Map((await store.threads.summaries(unread)).map((t) => [t.id, t]));
+    for (const id of unread) threads.set(id, byId.get(id) ?? null);
+  }
   const items: TodayHistoryItem[] = [];
   let next: HistoryKey | null = null;
   for (;;) {
     await Promise.all([fill(dated, datedTrusted), fill(promises, all)]);
-    const heads = [dated.buf[0], promises.buf[0]].filter((r): r is Row => !!r).map((r) => ({ key: closingOf(r), source: r.src === 0 ? dated : promises }));
+    const heads: { key: HistoryKey; source: Source<Row> | null }[] = [dated.buf[0], promises.buf[0]].filter((r): r is Row => !!r).map((r) => ({ key: closingOf(r), source: r.src === 0 ? dated : promises }));
+    if (changes[0]) heads.push({ key: changes[0].key, source: null });
     if (!heads.length) {
       next = null;
       break;
     }
     const head = heads.sort((a, b) => historyOrder(a.key, b.key))[0]!;
+    if (!head.source) {
+      if (o.through && historyOrder(head.key, o.through) > 0) {
+        next = items.at(-1)?.key ?? o.through;
+        break;
+      }
+      const { row } = changes.shift()!;
+      const thread = threads.get(row.threadId);
+      if (!thread || thread.inSpam || thread.inTrash) continue;
+      items.push({ id: changeLineId(keyOf(row)), item: { source: sourceOf(row.src), id: row.id }, thread, key: head.key, outcome: "changed", kind: row.src === 2 ? row.kind : "promise", text: row.text });
+      if (!o.through && items.length >= o.limit) {
+        next = head.key;
+        break;
+      }
+      continue;
+    }
     if (o.through && historyOrder(head.key, o.through) > 0) {
       // past the line the renderer had: the rest is the next page's, from the last line here, or (none left above it, all
       // gone meanwhile: Codex code review) from that line itself, so nothing older is lost
