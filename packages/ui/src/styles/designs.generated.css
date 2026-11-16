@@ -156,6 +156,7 @@
   --draft-shadow: 0 1px 2px color-mix(in oklab, var(--shadow-color) 40%, transparent), 0 8px 24px -12px var(--shadow-color);
   --depth-raised: 0 1px 2px 0 color-mix(in oklab, var(--shadow-color) 50%, transparent);
   --depth-raised-sheen: none;
+  --depth-raised-lift: 0 1px 2px 0 color-mix(in oklab, var(--shadow-color) 50%, transparent);
   --depth-edge: var(--border);
   --depth-edge-firm: var(--input);
   --depth-segment: 0 1px 2px 0 color-mix(in oklab, var(--shadow-color) 50%, transparent);
@@ -334,6 +335,7 @@
   --draft-shadow: 0 0 transparent;
   --depth-raised: 0 1px 2px 0 color-mix(in oklab, var(--shadow-color) 50%, transparent);
   --depth-raised-sheen: none;
+  --depth-raised-lift: 0 1px 2px 0 color-mix(in oklab, var(--shadow-color) 50%, transparent);
   --depth-edge: var(--border);
   --depth-edge-firm: var(--input);
   --depth-segment: 0 1px 2px 0 color-mix(in oklab, var(--shadow-color) 50%, transparent);
@@ -512,6 +514,7 @@
   --draft-shadow: 0 1px 2px color-mix(in oklab, var(--shadow-color) 40%, transparent), 0 8px 24px -12px var(--shadow-color);
   --depth-raised: inset 0 0 0 1px color-mix(in oklab, var(--highlight) 45%, transparent), inset 0 1px var(--highlight), 0 1px 1px var(--shadow-color), 0 2px 4px -2px var(--shadow-color);
   --depth-raised-sheen: linear-gradient(to bottom, color-mix(in oklab, var(--highlight) 55%, transparent), transparent 70%);
+  --depth-raised-lift: 0 1px 1px var(--shadow-color), 0 2px 4px -2px var(--shadow-color);
   --depth-edge: var(--depth-rim);
   --depth-edge-firm: var(--control-edge);
   --depth-segment: 0 0 0 1px var(--depth-rim), inset 0 0 0 1px color-mix(in oklab, var(--highlight) 45%, transparent), inset 0 1px var(--highlight), 0 1px 1px var(--shadow-color), 0 2px 4px -2px var(--shadow-color);
@@ -690,6 +693,7 @@
   --draft-shadow: 0 0 transparent;
   --depth-raised: 0 1px 2px 0 color-mix(in oklab, var(--shadow-color) 50%, transparent);
   --depth-raised-sheen: none;
+  --depth-raised-lift: 0 1px 2px 0 color-mix(in oklab, var(--shadow-color) 50%, transparent);
   --depth-edge: var(--border);
   --depth-edge-firm: var(--input);
   --depth-segment: 0 1px 2px 0 color-mix(in oklab, var(--shadow-color) 50%, transparent);
@@ -868,6 +872,7 @@
   --draft-shadow: 0 0 transparent;
   --depth-raised: 0 1px 2px 0 color-mix(in oklab, var(--shadow-color) 50%, transparent);
   --depth-raised-sheen: none;
+  --depth-raised-lift: 0 1px 2px 0 color-mix(in oklab, var(--shadow-color) 50%, transparent);
   --depth-edge: var(--border);
   --depth-edge-firm: var(--input);
   --depth-segment: 0 1px 2px 0 color-mix(in oklab, var(--shadow-color) 50%, transparent);
@@ -1046,6 +1051,7 @@
   --draft-shadow: 0 0 transparent;
   --depth-raised: 0 1px 2px 0 color-mix(in oklab, var(--shadow-color) 50%, transparent);
   --depth-raised-sheen: none;
+  --depth-raised-lift: 0 1px 2px 0 color-mix(in oklab, var(--shadow-color) 50%, transparent);
   --depth-edge: var(--border);
   --depth-edge-firm: var(--input);
   --depth-segment: 0 1px 2px 0 color-mix(in oklab, var(--shadow-color) 50%, transparent);

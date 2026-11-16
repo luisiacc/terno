@@ -275,9 +275,9 @@ function ReplyGroup({ replyTo, everyone, quiet }: { replyTo: string; everyone: s
  * ghost look (no fill, sheen, shadow, border or dividers; its size kept, so nothing moves): still there, still R and F.
  * Here, never in ButtonGroup's defaults.
  */
-const QUIET = "border-transparent bg-transparent bg-none shadow-none divide-transparent [text-shadow:none]";
-/** …and its words in the toolbar's ghost ink */
-const QUIET_ITEM = "text-foreground-soft hover:text-foreground";
+const QUIET = "border-transparent bg-transparent bg-none shadow-none after:shadow-none divide-transparent [text-shadow:none]";
+/** …and its words in the toolbar's ghost ink, its hover the ghost's plain fill */
+const QUIET_ITEM = "text-foreground-soft hover:text-foreground hover:bg-none press:bg-none aria-expanded:bg-none";
 
 /**
  * Plan 209: Reply that opens a choice says so with a chevron, inside it. Reply that doesn't keeps the chevron's room as

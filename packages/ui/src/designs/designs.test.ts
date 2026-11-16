@@ -143,6 +143,7 @@ describe("designs (plan 15)", () => {
       expect(DEPTHS.flat).toEqual({
         "--depth-raised": xs,
         "--depth-raised-sheen": "none",
+        "--depth-raised-lift": xs,
         "--depth-edge": "var(--border)",
         "--depth-edge-firm": "var(--input)",
         "--depth-segment": xs,

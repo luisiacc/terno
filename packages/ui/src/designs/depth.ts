@@ -18,6 +18,9 @@ export const DEPTH_VARS = [
    * light (a background image over its colour), and its border at rest and when firm (hover, open, pressed) */
   "--depth-raised",
   "--depth-raised-sheen",
+  /** the same lift without the rim and lit edge, for a raised control whose items fill over its inside (the button group):
+   * it casts this, and an overlay above the items draws the whole of --depth-raised, so a hovered item keeps the rim */
+  "--depth-raised-lift",
   "--depth-edge",
   "--depth-edge-firm",
   /** the segmented control's chosen item, which has no border (its rim is in the shadow), in light and in dark */
@@ -61,7 +64,8 @@ const NONE = "0 0 transparent";
 
 /** Raised, inside a border that is its rim: a white ring, the lit top edge, a contact shadow and a soft drop */
 // (UI rating relief-r01: the inner ring and the drop softened, as the raised pills read heavy across a bar of them)
-const RAISED = `inset 0 0 0 1px ${mix("--highlight", 45)}, inset 0 1px var(--highlight), 0 1px 1px var(--shadow-color), 0 2px 4px -2px var(--shadow-color)`;
+const LIFT = "0 1px 1px var(--shadow-color), 0 2px 4px -2px var(--shadow-color)";
+const RAISED = `inset 0 0 0 1px ${mix("--highlight", 45)}, inset 0 1px var(--highlight), ${LIFT}`;
 /** The same with its rim drawn in the shadow, for a raised thing without a border */
 const RIMMED = `0 0 0 1px var(--depth-rim), ${RAISED}`;
 /** The ink, lit along its top edge more faintly (white on black reads strong), over the same shadows */
@@ -73,6 +77,7 @@ export const DEPTHS: Record<DepthId, Record<DepthVar, string>> = {
   flat: {
     "--depth-raised": XS,
     "--depth-raised-sheen": "none",
+    "--depth-raised-lift": XS,
     "--depth-edge": "var(--border)",
     "--depth-edge-firm": "var(--input)",
     "--depth-segment": XS,
@@ -98,6 +103,7 @@ export const DEPTHS: Record<DepthId, Record<DepthVar, string>> = {
   relief: {
     "--depth-raised": RAISED,
     "--depth-raised-sheen": `linear-gradient(to bottom, ${mix("--highlight", 55)}, transparent 70%)`,
+    "--depth-raised-lift": LIFT,
     "--depth-edge": "var(--depth-rim)",
     "--depth-edge-firm": "var(--control-edge)",
     "--depth-segment": RIMMED,

@@ -7,7 +7,7 @@ import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import type { Locator, Page } from "@playwright/test";
-import { expect, fresh, scenario, test } from "./fixtures";
+import { expect, fresh, openRow, scenario, test } from "./fixtures";
 
 // the real components, rendered to markup as controls.spec.ts does (helpers/controls-markup.ts says why)
 const ui = new URL("../../../packages/ui/", import.meta.url);
@@ -42,6 +42,37 @@ test.describe("Relief (plan 208)", () => {
       expect(await layers(page.getByTestId("segmented-on"))).toBeGreaterThanOrEqual(5);
       // a field is sunk
       expect(await insets(page.getByTestId("group"))).toBeGreaterThanOrEqual(1);
+    });
+    await scenario("the reader's Reply · Forward: hovered, Reply keeps the group's rim, lit edge and sheen", async () => {
+      await fresh(page);
+      await openRow(page, 0);
+      // the rim and lit edge are an overlay above the items, so a hovered item's fill never covers them (the owner: a
+      // hovered Reply lost both), and the item keeps the sheen over its fill, as the outline button does
+      const reply = page.getByTestId("action-reply");
+      const group = reply.locator("xpath=..");
+      expect(await insets(group)).toBe(0);
+      expect(await group.evaluate((el) => (getComputedStyle(el, "::after").boxShadow.match(/inset/g) ?? []).length)).toBe(2);
+      await reply.hover();
+      await expect(reply).toHaveCSS("background-image", /linear-gradient/);
+      // …and drawn on screen, in both modes: over the hovered Reply, the line inside the rim is lit above the fill below
+      // its words (unfixed, the fill covered the line and the two were one grey)
+      await page.addStyleTag({ content: "[data-slot=button-group-item]{transition:none!important}" });
+      const box = (await group.boundingBox())!;
+      const r = (await reply.boundingBox())!;
+      const x = r.x + r.width / 2 - box.x;
+      for (const colorScheme of ["light", "dark"] as const) {
+        await page.emulateMedia({ colorScheme });
+        const png = (await group.screenshot()).toString("base64");
+        const [top, low] = await page.evaluate(async ({ png, width, points }) => {
+          const bitmap = await createImageBitmap(await (await fetch(`data:image/png;base64,${png}`)).blob());
+          const ctx = new OffscreenCanvas(bitmap.width, bitmap.height).getContext("2d")!;
+          ctx.drawImage(bitmap, 0, 0);
+          const scale = bitmap.width / width;
+          return points.map(([px, py]) => ctx.getImageData(Math.round(px * scale), Math.round(py * scale), 1, 1).data.slice(0, 3).reduce((a, b) => a + b, 0) / 3);
+        }, { png, width: box.width, points: [[x, 1], [x, box.height - 5]] });
+        expect(top - low, `${colorScheme}: the lit edge over the hovered Reply`).toBeGreaterThan(6);
+      }
+      await page.emulateMedia({ colorScheme: "light" });
     });
     await scenario("Settings: raised cards, the pale switch with its rim and a plain disc, the chosen tab lifted", async () => {
       await fresh(page);

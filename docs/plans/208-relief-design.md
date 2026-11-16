@@ -237,3 +237,9 @@ The owner, with a picture of another app's pale sidebar beside a white content c
 ## Renumbered
 
 Written as plan 204 (and its app-wide part as 205) on its branch while main took 204 for What matters, which names 205–207 as its next plans. On landing, Relief became 208 and the app-wide fixes 209, in the code's comments and tests as well.
+
+## The button group's hover (the owner, after landing)
+
+Hovering Reply in the reader's Reply · Forward group looked broken: the group drew its white inner ring and lit top edge as inset shadows on itself, and its sheen as its background, so a hovered item's opaque `bg-muted` painted over all three. Reply went flat beside Forward, its edge cut off at the divider. A new depth variable, `--depth-raised-lift`, is the raised shadow without the rim (flat: `xs`, so flat designs draw exactly what they did). The group casts only that, and an `::after` overlay above the items draws the whole `--depth-raised`. Its outer parts are clipped by the group's `overflow-hidden`, so only the rim shows. A filled item (hover, press, open, pressed) keeps the sheen over its fill, as a hovered outline button does. The reader's quiet group drops the overlay and the item sheen with the rest of its depth. `relief.spec.ts` reads the hovered Reply's pixels in both modes: the line inside the rim is lit above the fill.
+
+Codex code review: a keyboard press (Space on an unhovered item) lost the sheen, so `press:` keeps it too, and the first test only checked computed styles, so it now reads pixels.
