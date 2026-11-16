@@ -6,7 +6,7 @@ import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
 import { readNothingAsked, type DatedMark, type DatedSource, type DatedWrite, type MailStore } from "@terno/store";
 import { DailyLimitError, MonthlyLimitError } from "./ai-limiter";
 import { UI_LOCALE_KEY } from "./forwarding";
-import { bareDayAhead, contextOf, insideQuotes, type Sentences, namesApart, namesItem, negatedReceipt, norm, otherAmounts, otherIds, paragraphsOf, plainEvidence, replacesPlainly, sameObject, sameThing, saysReplaced, saysWhen, sentencesOf, settlesKind } from "./dated-evidence";
+import { bareDayAhead, contextOf, insideQuotes, quoteSpan, type Sentences, namesApart, namesItem, negatedReceipt, norm, otherAmounts, otherIds, paragraphsOf, plainEvidence, replacesPlainly, sameObject, sameThing, saysReplaced, saysWhen, sentencesOf, settlesKind } from "./dated-evidence";
 import { untrustedSenders, withoutUntrusted } from "./suspicious-sender";
 
 /**
@@ -438,7 +438,13 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     else if (sameDay.some((i) => saysReplaced(`${contextOf(i.quote, paragraphs)}\n${contextOf(m.evidence, paragraphs)}`))) replaced.add(m);
   }
   // plan 210 (iteration 3, point 7): a person's offer that waits on the reader's yes is an ask, never a request with a day
-  const candidates = [...answered, ...result.items].filter((i) => !refused(i) && !promised.has(i)).map((i) => (i.kind === "respond" && input.sender?.person && offerOnly(`${i.quote}\n${contextOf(i.quote, sentences)}`, contextOf(i.quote, paragraphs)) ? { ...i, kind: "ask", due: null, time: null } : i));
+  // plan 210 (iteration 4, revision 5): a quote not the mail's, verbatim, is the one span that holds what it names and its day
+  const spanned = <T extends { quote: string; due: string | null }>(i: T): T => {
+    if (quoted(i.quote)) return i;
+    const span = quoteSpan(i.quote, i.due, input.subject, sentences, input.arrivedAt);
+    return span ? { ...i, quote: span } : i;
+  };
+  const candidates = [...answered, ...result.items].filter((i) => !promised.has(i)).map(spanned).filter((i) => !refused(i)).map((i) => (i.kind === "respond" && input.sender?.person && offerOnly(`${i.quote}\n${contextOf(i.quote, sentences)}`, contextOf(i.quote, paragraphs)) ? { ...i, kind: "ask", due: null, time: null } : i));
   // the eval: a person's request with a day is the `respond`, never also an undated ask beside it for the same thing; an ask
   // about something else stays (plan 210, the Codex review of iteration 1, revision 3)
   const requests = candidates.filter((i) => (i.kind === "respond" || datedAsk(i)) && quoted(i.quote));

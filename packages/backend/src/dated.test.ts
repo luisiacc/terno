@@ -752,6 +752,43 @@ describe("plan 210 (iteration 3)", () => {
   });
 });
 
+describe("plan 210 (iteration 4)", () => {
+  const base = { text: BILL_TEXT, subject: "Your bill", arrivedAt: NOW, open: new Map<string, DatedRow>(), fromScan: false, now: NOW };
+
+  describe("revision 5: a quote not the mail's verbatim", () => {
+    const PAGEWISE = "Hi Priya,\n\nThis is a reminder that the Lumora workspace on Pagewise renews soon.\n\nPlan: Team, annual\nSeats: 32\nRenewal date: November 18, 2026\nAmount: $6,144.00 (billed to Visa ending 4417)\n\nNeed to change seats before you're billed? Workspace owners can adjust them in Settings → Billing until the renewal date.";
+    const mail = { ...base, text: PAGEWISE, subject: "Your Pagewise Team plan renews on November 18" };
+    const renewal = { kind: "renew", text: "Lumora Team plan renews automatically ($6,144.00)", quote: "renews on November 18, 2026", due: "2026-11-18", time: null };
+
+    it("Priya's Pagewise: a quote joined from the subject and a body line is the one span holding its words and its day", () => {
+      const out = checkDates({ items: [renewal], settled: [] }, mail);
+      expect(out.rows.map((r) => [r.kind, r.dueDay, r.quote])).toEqual([["renew", "2026-11-18", "Your Pagewise Team plan renews on November 18"]]);
+    });
+    it("refused when no span holds both, or two do (ambiguous), or the quote names nothing but a date, or the item has no day", () => {
+      // no span says "renews" with the day: the subject says another day
+      expect(checkDates({ items: [renewal], settled: [] }, { ...mail, subject: "Your Pagewise plan renews soon" }).rows).toEqual([]);
+      // two spans do: the subject and a sentence that says it again
+      const twice = { ...mail, text: `${PAGEWISE}\n\nYour plan renews on November 18 at midnight.` };
+      expect(checkDates({ items: [renewal], settled: [] }, twice).rows).toEqual([]);
+      // a date alone names nothing
+      expect(checkDates({ items: [{ ...renewal, quote: "on November 18th, 2026" }], settled: [] }, mail).rows).toEqual([]);
+      // an alert with no day: never repaired
+      expect(checkDates({ items: [{ kind: "alert", text: "Plan renews", quote: "renews on the Pagewise plan", due: null, time: null }], settled: [] }, mail).rows).toEqual([]);
+    });
+    it("every ordinary check reads the span: a span from another person's request is still theirs", () => {
+      const text = "Hi all,\n\nOren, could you send me the signed contract by Friday, November 13?\n\nThanks";
+      const ask = { kind: "respond", text: "Send the signed contract", quote: "send the signed contract by November 13", due: "2026-11-13", time: null };
+      const out = checkDates({ items: [ask], settled: [] }, { ...base, text, subject: "Contract", sender: { person: true }, reader: { name: "Me", addressed: "to" }, others: ["Oren Katz"] });
+      expect(out.rows).toEqual([]);
+    });
+    it("never a settlement's evidence", () => {
+      const row = { id: 1, revision: 1, threadId: 1, senderKey: "billing@pagewise.test", kind: "renew", text: "Lumora Team plan renews", quote: "Renewal date: November 18, 2026", dueDay: "2026-11-18", dueAt: at(2026, 11, 18, 9), timed: false } as DatedRow;
+      const out = checkDates({ items: [], settled: [{ label: "o1", evidence: "plan renewed on November 18, 2026" }] }, { ...mail, subject: "Your Pagewise Team plan renewed on November 18", open: new Map([["o1", row]]) });
+      expect(out.settled).toEqual([]);
+    });
+  });
+});
+
 describe("the reader", () => {
   it("off (the default): nothing is marked and nothing is asked", async () => {
     const { backend, model, receive } = await setup({ enabled: false });
