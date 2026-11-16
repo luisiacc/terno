@@ -232,6 +232,40 @@ export function cutAtWord(text: string, max: number): string {
   }
   return flat.slice(0, end).replace(/[\s,;:(–—-]+$/u, "");
 }
+
+/** Shorter than this, a clause cut says too little ("Pay…"): the cut falls back to a word. */
+const CLAUSE_MIN = 16;
+
+/**
+ * Plan 210 (iteration 3, revision 11): what the reader sees is never a sentence cut mid-clause. Within `max`, it's whole;
+ * past it, it ends at the last clause that fits whole (before a comma, a semicolon, a colon, a dash, a sentence's end, or a
+ * bracket it can't close) with an ellipsis; only a first clause longer than all of it is cut at a word, with an ellipsis
+ * too. The ellipsis says it's cut, so an alert's line never adds ", the email says" after it (the app's `alertSays`).
+ */
+export function cutAtClause(text: string, max: number): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  if (flat.length <= max) return flat;
+  const room = max - 1;
+  let end = 0;
+  let depth = 0;
+  for (let i = 0; i < flat.length && i <= room; i++) {
+    const c = flat[i]!;
+    const next = flat[i + 1];
+    // a clause's end at the outer level: punctuation before a space, or a space before a bracket or a dash
+    // never after a short word's full stop ("Dr. Ruiz", "St. Paul")
+    const stop = /[,;:!?]/u.test(c) || (c === "." && (/\p{L}{4,}$|\d$/u.test(flat.slice(0, i))));
+    const dash = /[–—-]/u.test(next ?? "") && flat[i + 2] === " ";
+    const ends = depth === 0 && ((stop && next === " ") || (c === " " && (next === "(" || dash)));
+    if (ends && i >= CLAUSE_MIN) end = i;
+    if (c === "(") depth++;
+    else if (c === ")") depth = Math.max(0, depth - 1);
+  }
+  let cut = end ? flat.slice(0, end) : cutAtWord(flat, room);
+  // a word's cut inside a bracket ends before it, when there's enough before
+  const open = cut.lastIndexOf("(");
+  if (!end && open > cut.lastIndexOf(")") && open >= CLAUSE_MIN) cut = cut.slice(0, open);
+  return `${cut.replace(/[\s,;:.!?(–—-]+$/u, "")}…`;
+}
 /** v6's words, which a model may still give: the app says whose word an alert is, so the model's own goes (en, es) */
 const SAID_AFTER = /[\s,;:.(—–-]*\b(?:the (?:e-?mail|mail|message|bank|sender) (?:says|claims|reports)|(?:says|according to) the (?:e-?mail|mail|message)|seg[uú]n (?:el|la) (?:correo|mensaje|e-?mail|banco|remitente)|(?:dice|indica|informa) el (?:correo|mensaje|banco))\)?[\s.]*$/iu;
 const SAID_BEFORE = /^\s*(?:the (?:e-?mail|mail|message) says|according to the (?:e-?mail|mail|message)|seg[uú]n el (?:correo|mensaje)|el (?:correo|mensaje) dice)\s*(?:that|que)?[\s,:]*/iu;
@@ -339,8 +373,9 @@ const WEEKDAY: Record<string, number> = { sunday: 0, monday: 1, tuesday: 2, wedn
 // "before Monday", "before the 20th", "antes del lunes", "antes del día 20"; never a time ("before 5 PM", "antes de las 18:00")
 const BEFORE = /\b(?:before|antes del?)\s+(?:(?:next|this|el|pr[oó]ximo)\s+)?(?:(sunday|monday|tuesday|wednesday|thursday|friday|saturday|domingo|lunes|martes|miercoles|jueves|viernes|sabado)\b|(?:the\s+|dia\s+)?(\d{1,2})(?:st|nd|rd|th)?\b(?!\s*(?::|[ap]\.?\s?m\b|h\b|hrs?\b|horas?\b)))/gu;
 const plain = (text: string) => text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
-// a deadline's kinds: an event or a delivery "before" something is when it happens, not a last day
-const DEADLINES: ReadonlySet<string> = new Set(["pay", "renew", "expire", "respond", "alert"]);
+// a deadline's kinds: an event or a delivery "before" something is when it happens, not a last day; plan 210 (iteration 3,
+// revision 11): nor an expiry or a renewal's, whose day is the one the mail names ("renew before it expires on the 19th")
+const DEADLINES: ReadonlySet<string> = new Set(["pay", "respond", "alert"]);
 // The Codex code review of v11 (point 6): the "before" is a deadline only in a sentence that asks for something by then, and
 // never negated or a lower bound ("do not submit before Monday", "opens before Monday", "anything before Monday won't count")
 const ASKS = /\b(?:please|could you|can you|would you|let me know|need|needs|must|due|have to|has to|send|pay|submit|return|sign|confirm|por favor|necesito|necesitamos|necesita|puedes|podrias|puede|debe|deben|tienes que|hay que|favor de|envia\w*|manda\w*|paga|pague|confirm\w*|entrega\w*|avisame)\b/u;
@@ -401,7 +436,7 @@ export function readDatesTask(input: DatedInput): StructuredTask<Wire, DatedResu
       ok: true,
       value: {
         items: w.items
-          .map((i) => ({ kind: i.kind.trim().toLowerCase(), text: cutAtWord(alertText(i.kind, i.text), TEXT_CHARS), quote: clean(i.quote, QUOTE_CHARS), ...local(blankToNull(i.due), blankToNull(i.time)) }))
+          .map((i) => ({ kind: i.kind.trim().toLowerCase(), text: cutAtClause(alertText(i.kind, i.text), TEXT_CHARS), quote: clean(i.quote, QUOTE_CHARS), ...local(blankToNull(i.due), blankToNull(i.time)) }))
           .map((i) => ({ ...i, due: dayBefore(i.kind, i.due, i.time, paragraphOf(i.quote, input.text)) }))
           .filter((i): i is DatedResult["items"][number] => isKind(i.kind) && !!i.text && !!i.quote)
           .slice(0, DATED_ITEMS_MAX),
@@ -416,7 +451,7 @@ export function readDatesTask(input: DatedInput): StructuredTask<Wire, DatedResu
             const label = m.label.trim();
             const due = m.due.trim();
             const evidence = clean(m.evidence, QUOTE_CHARS);
-            let text = m.text ? cutAtWord(m.text, TEXT_CHARS) : "";
+            let text = m.text ? cutAtClause(m.text, TEXT_CHARS) : "";
             let textEvidence = m.textEvidence ? clean(m.textEvidence, QUOTE_CHARS) : "";
             const zoned = zonedTime(blankToNull(m.time));
             const was = open.get(label);
@@ -431,7 +466,7 @@ export function readDatesTask(input: DatedInput): StructuredTask<Wire, DatedResu
             if (label.startsWith("o") && at.time && (zoned || at.time !== was?.time)) {
               const noted = withZoneNote(text && textEvidence ? text : (was?.text ?? ""), zoned ? zoned[1]! : null);
               if (noted !== null) {
-                text = cutAtWord(noted, TEXT_CHARS);
+                text = cutAtClause(noted, TEXT_CHARS);
                 textEvidence ||= evidence;
               }
             }

@@ -17,6 +17,12 @@ const bare = (s: string): string => s.trim().replace(/[\s.;,:]+$/u, "");
 /** A frame's full stop after a question or an exclamation is one mark too many. */
 const tidy = (s: string): string => s.replace(/([!?…])\.$/u, "$1").replace(/\s{2,}/gu, " ");
 
+/**
+ * An alert's words with whose word they are (plan 204, the fourth round). Plan 210 (iteration 3): a text the app cut ends in
+ * an ellipsis and never gains ", the email says" after it: its attribution comes first ("The email says: …").
+ */
+export const alertSays = (text: string): string => t(text.endsWith("…") ? "dated.alertSaysCut" : "dated.alertSays", { text });
+
 /** A sentence of its own: a full stop unless it ends in one already. */
 const ended = (s: string): string => (/[.!?…]$/u.test(s) ? s : `${s}.`);
 
@@ -34,7 +40,7 @@ export function todaySentence(item: Pick<TodayItem, "thread" | "why" | "summary"
     const text = bare(why.text ?? "");
     if (!text) return ended(subject);
     // an alert is what the mail says happened, never a fact of ours (plan 204, the fourth round): it says whose word it is
-    return ended(why.item?.kind === "alert" ? t("dated.alertSays", { text }) : text);
+    return ended(why.item?.kind === "alert" ? alertSays(text) : text);
   }
   if (why.kind === "promise") {
     const text = verbFirst(bare(why.text ?? ""));
@@ -114,7 +120,7 @@ export function historySentence(line: Pick<TodayHistoryItem, "kind" | "text" | "
   const text = bare(line.text);
   if (!text) return ended(line.thread.subject?.trim() || t("common.noSubject"));
   if (line.kind === "promise") return tidy(t("whatMatters.say.promise", { text: verbFirst(text) }));
-  return ended(line.kind === "alert" ? t("dated.alertSays", { text }) : text);
+  return ended(line.kind === "alert" ? alertSays(text) : text);
 }
 
 /** Plan 210: the history's right-hand column, what happened and when: "Done today", "Removed Wed", "Over Nov 2" (es "Hecho el mié"). */

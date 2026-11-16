@@ -65,8 +65,8 @@ const CASES: Case[] = readFileSync(join(import.meta.dirname, "corpus", "dated", 
 const MODEL = process.env.TERNO_AI_DATED_MODEL ?? "gpt-6-luna";
 const TARGET: RealTarget = { provider: MODEL.startsWith("claude-") ? "anthropic" : "openai", model: MODEL };
 const LANGUAGE = process.env.TERNO_AI_DATED_LANGUAGE ?? "en";
-/** An alert's line as the app shows it (datedText in apps/web/src/lib/dated.ts), in the app's language */
-const appLine = (text: string) => (LANGUAGE === "es" ? es : en)["dated.alertSays"].replace("{text}", text);
+/** An alert's line as the app shows it (`alertSays` in apps/web/src/lib/today-sentence.ts), in the app's language: a cut one says whose word first */
+const appLine = (text: string) => (LANGUAGE === "es" ? es : en)[text.endsWith("…") ? "dated.alertSaysCut" : "dated.alertSays"].replace("{text}", text);
 
 /** The conversation and sender the worker would give this mail, and the others (plan 210): what `checkDates` ties a settlement to. */
 const THREAD = 1;
@@ -93,17 +93,27 @@ const rawTexts = (answers: readonly string[]) =>
       return [];
     }
   });
-/** the fifth panel round: the app's text, where it cut the model's, ends at a word, never inside one */
-const cutOf = (kept: string, raw: readonly string[]) => raw.find((r) => r.length > kept.length && r.startsWith(kept));
+/** the fifth panel round: the app's text, where it cut the model's, ends at a word, never inside one; plan 210 (iteration 3): with an ellipsis */
+const cutOf = (kept: string, raw: readonly string[]) => {
+  const k = kept.replace(/…$/u, "");
+  return raw.find((r) => r.length > k.length && r.startsWith(k));
+};
 const cutInside = (kept: string, raw: readonly string[]) => {
+  const k = kept.replace(/…$/u, "");
   const r = cutOf(kept, raw);
-  return !!r && /[\p{L}\p{N}]$/u.test(kept) && /[\p{L}\p{N}\p{M}]/u.test(r[kept.length]!);
+  return !!r && /[\p{L}\p{N}]$/u.test(k) && /[\p{L}\p{N}\p{M}]/u.test(r[k.length]!);
+};
+/** plan 210 (iteration 3, revision 11): a cut that falls inside a clause (not before a comma, a bracket, a dash or a sentence's end) */
+const cutMidClause = (kept: string, raw: readonly string[]) => {
+  const k = kept.replace(/…$/u, "");
+  const r = cutOf(kept, raw);
+  return !!r && !/^\s*(?:[,;:.!?(]|[–—-]\s)/u.test(r.slice(k.length));
 };
 
 describe.skipIf(process.env.TERNO_AI_DATED !== "1")("dated items on a small model", () => {
   it("finds what has a date, leaves out what doesn't, quotes the mail, and settles only on the mail's words", async () => {
     const tasks = realTasks(TARGET, "dated-eval", {}, undefined, (text) => answers.push(text));
-    let expected = 0, found = 0, rawFound = 0, wrongItems = 0, wrongShown = 0, rawWrongSettled = 0, rawWrongMoved = 0, invented = 0, wrongSettled = 0, missedSettled = 0, rightTimes = 0, times = 0, wrongMoved = 0, missedMoved = 0, unsafe = 0, wrongText = 0, unattributed = 0, selfAttributed = 0, madeUpDetail = 0, moveTexts = 0, rightMoveTexts = 0, wrongMoveText = 0, promiseText = 0, cut = 0, cutWords = 0, failures = 0;
+    let expected = 0, found = 0, rawFound = 0, wrongItems = 0, wrongShown = 0, rawWrongSettled = 0, rawWrongMoved = 0, invented = 0, wrongSettled = 0, missedSettled = 0, rightTimes = 0, times = 0, wrongMoved = 0, missedMoved = 0, unsafe = 0, wrongText = 0, unattributed = 0, selfAttributed = 0, madeUpDetail = 0, moveTexts = 0, rightMoveTexts = 0, wrongMoveText = 0, promiseText = 0, cut = 0, cutWords = 0, midClause = 0, failures = 0;
     const answers: string[] = [];
     const lines: string[] = [];
     for (const c of CASES) {
@@ -194,6 +204,10 @@ describe.skipIf(process.env.TERNO_AI_DATED !== "1")("dated items on a small mode
       }
       for (const got of r.items) {
         if (cutOf(got.text, rawTexts(answers))) cut++;
+        if (cutMidClause(got.text, rawTexts(answers))) {
+          midClause++;
+          problems.push(`note: text cut inside a clause: "${got.text}"`);
+        }
         if (cutInside(got.text, rawTexts(answers))) {
           cutWords++;
           problems.push(`text cut inside a word: "${got.text}"`);
@@ -295,7 +309,7 @@ describe.skipIf(process.env.TERNO_AI_DATED !== "1")("dated items on a small mode
       if (failed && process.env.TERNO_AI_DATED_RAW === "1") problems.push(`raw: ${(answers.at(-1) ?? "").replace(/\s+/g, " ")}`);
       lines.push(`${failed ? "✗" : "✓"} ${c.id} [${c.tags.join(",")}] ${r.items.map((i) => `${i.kind} ${i.due}${i.time ? ` ${i.time}` : ""} "${i.text}"`).join("; ") || "nothing"}${r.moved?.length ? ` · moved ${r.moved.map((m) => `${m.label} ${m.due}${m.time ? ` ${m.time}` : ""}${m.text ? ` "${m.text}"` : ""}`).join(", ")}` : ""}${problems.length ? `\n    ${problems.join("\n    ")}` : ""}`);
     }
-    process.stderr.write(`${lines.join("\n")}\n${JSON.stringify({ model: MODEL, language: LANGUAGE, found, expected, wrongShown, rawFound, wrongItems, rawWrongSettled, rawWrongMoved, invented, rightTimes, times, wrongSettled, missedSettled, wrongMoved, missedMoved, unsafe, wrongText, unattributed, selfAttributed, madeUpDetail, rightMoveTexts, moveTexts, wrongMoveText, promiseText, cut, cutWords, failures })}\n${spendReport()}\n`);
+    process.stderr.write(`${lines.join("\n")}\n${JSON.stringify({ model: MODEL, language: LANGUAGE, found, expected, wrongShown, rawFound, wrongItems, rawWrongSettled, rawWrongMoved, invented, rightTimes, times, wrongSettled, missedSettled, wrongMoved, missedMoved, unsafe, wrongText, unattributed, selfAttributed, madeUpDetail, rightMoveTexts, moveTexts, wrongMoveText, promiseText, cut, cutWords, midClause, failures })}\n${spendReport()}\n`);
     expect(wrongShown).toBeLessThanOrEqual(1);
     expect(wrongSettled).toBe(0);
     expect(wrongMoved).toBe(0);

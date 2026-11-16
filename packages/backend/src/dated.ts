@@ -6,7 +6,7 @@ import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
 import { readNothingAsked, type DatedMark, type DatedSource, type DatedWrite, type MailStore } from "@terno/store";
 import { DailyLimitError, MonthlyLimitError } from "./ai-limiter";
 import { UI_LOCALE_KEY } from "./forwarding";
-import { contextOf, insideQuotes, namesApart, namesItem, negatedReceipt, norm, otherAmounts, otherIds, paragraphsOf, plainEvidence, replacesPlainly, sameObject, sameThing, saysReplaced, saysWhen, sentencesOf, settlesKind } from "./dated-evidence";
+import { bareDayAhead, contextOf, insideQuotes, namesApart, namesItem, negatedReceipt, norm, otherAmounts, otherIds, paragraphsOf, plainEvidence, replacesPlainly, sameObject, sameThing, saysReplaced, saysWhen, sentencesOf, settlesKind } from "./dated-evidence";
 import { untrustedSenders, withoutUntrusted } from "./suspicious-sender";
 
 /**
@@ -337,7 +337,9 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     // plan 210 (the Codex code review of iteration 2): a request of the reader, kept below or not (a day already past or
     // over in a scan, a duplicate, past the bound): never "nothing asked"
     if (kind === "ask" || kind === "respond") asked = true;
-    const timing = datedTiming({ kind, due: item.due, time: item.time, arrivedAt: input.arrivedAt });
+    // plan 210 (iteration 3, revision 11): a deadline's bare day of the month read into the past is the next one
+    const due = item.due && (kind === "respond" || kind === "pay") ? bareDayAhead(item.due, contextOf(item.quote, paragraphs), dayKeyOf(input.arrivedAt)) : item.due;
+    const timing = datedTiming({ kind, due, time: item.time, arrivedAt: input.arrivedAt });
     if (!timing) continue;
     // the 14-day check keeps nothing already over (§6)
     if (input.fromScan && timing.dated && dayEnd(timing.dueDay) <= input.now) continue;
