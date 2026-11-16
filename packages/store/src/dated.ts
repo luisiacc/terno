@@ -221,9 +221,12 @@ export interface DatedStore {
    * Plan 210 (iteration 4, revision 2): senders and kinds not shown in What matters, keyed as `muteKey` normalizes them
    * (a key it refuses throws). `finish` reads them in its own commit: a muted sender's reading writes nothing and consumes
    * its mark ("gone"); a muted kind's rows aren't added, its settlements and moves are. Clear AI data keeps them.
+   * Iteration 5: a `pair` (`pairKey`, one kind from one sender) is kept apart (`DATED_MUTE_PAIRS_MAX` its own bound) and
+   * read by `finish` for its sender only: that kind's new rows from them aren't added; their reading, their other kinds,
+   * settlements and moves are kept, and it never reaches Needs you's walk.
    */
   mutes: {
-    /** newest first, at most `DATED_MUTES_MAX` */
+    /** newest first, every target together: at most `DATED_MUTES_MAX` senders and kinds and `DATED_MUTE_PAIRS_MAX` pairs */
     list(): Promise<DatedMute[]>;
     add(m: DatedMute): Promise<DatedMuteAdded>;
     /** the mute removed, or null if there was none */

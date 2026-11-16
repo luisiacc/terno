@@ -38,10 +38,11 @@ import { assertCertain, UNCERTAINTY_KEY, UncertainWriteError } from "./uncertain
  * older records reads as none, so no version change.
  * SQL v71 (plan 210, iteration 5) adds `dated_items.part_of_day` and `followups.part_of_day`: absent on older records reads as
  * the whole day, so no version change.
+ * Version 37 adds a kind muted from one sender in What matters (SQL v72, plan 210, iteration 5).
  */
 export { IDB_VERSION };
 /** the SQL schema this one mirrors (migration ids are shared across adapters) */
-export const LOGICAL_SCHEMA = 69;
+export const LOGICAL_SCHEMA = 72;
 /** the last logical schema that changed what the instant search index holds (its snapshots carry it) */
 export const SEARCH_SCHEMA = 7;
 
@@ -129,6 +130,8 @@ export const TABLES: readonly (TableSpec & { memoryOnly?: boolean; early?: boole
   { name: "dated_nothing_asked", key: ["message_id"], indexes: { ...fk("message_id"), thread: ["thread_id"] } },
   // plan 210 (iteration 4): senders and kinds muted in What matters, by what they are (Needs you reads the senders)
   { name: "dated_mutes", early: true, key: ["target", "key"], indexes: { target: ["target"] } },
+  // plan 210 (iteration 5): a kind muted from one sender, by sender (the reader's finish reads one sender's)
+  { name: "dated_mute_pairs", early: true, key: ["sender_key", "kind"], indexes: { sender: ["sender_key"] } },
   { name: "send_copies", early: true, key: ["opId"], indexes: fk("accountId") },
   { name: "send_copy_bytes", key: ["id"], lazy: true },
   { name: "recipient_receipts", early: true, key: ["opId"], indexes: fk("accountId") },
@@ -409,6 +412,8 @@ export async function openIdb(factory: IDBFactory, name: string): Promise<IDBDat
       if (event.oldVersion >= 1 && event.oldVersion < 35 && !db.objectStoreNames.contains("dated_nothing_asked")) db.createObjectStore("dated_nothing_asked");
       // plan 210, iteration 4 (likewise)
       if (event.oldVersion >= 1 && event.oldVersion < 36 && !db.objectStoreNames.contains("dated_mutes")) db.createObjectStore("dated_mutes");
+      // plan 210, iteration 5 (likewise)
+      if (event.oldVersion >= 1 && event.oldVersion < 37 && !db.objectStoreNames.contains("dated_mute_pairs")) db.createObjectStore("dated_mute_pairs");
       // plan 144 (likewise)
       if (event.oldVersion >= 1 && event.oldVersion < 31 && !db.objectStoreNames.contains("ai_prepared_replies")) db.createObjectStore("ai_prepared_replies");
       // plan 142 (likewise)

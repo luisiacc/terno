@@ -920,3 +920,24 @@ describe("migration v69: muted senders and kinds (plan 210, iteration 4)", () =>
     expect(() => db.run("INSERT INTO dated_mutes (target, key, created_at) VALUES ('thread', '5', 1)")).toThrow();
   });
 });
+
+describe("migration v72: a kind muted from one sender (plan 210, iteration 5)", () => {
+  it("adds an empty companion table keyed by sender and kind, v69's table and every message kept as they were", () => {
+    const { db } = legacyMail(70, { threads: 2, seed: 12 });
+    db.run("INSERT INTO dated_mutes (target, key, name, created_at) VALUES ('sender', 'ana@people.test', 'Ana', 1)");
+    const before = db.all<Record<string, unknown>>("SELECT id, thread_id FROM messages ORDER BY id");
+    const mutes = db.all<Record<string, unknown>>("SELECT * FROM dated_mutes");
+    const mutesSql = db.get<{ sql: string }>("SELECT sql FROM sqlite_master WHERE name = 'dated_mutes'")!.sql;
+    expect(migrate(db)).toEqual({ from: 70, to: SCHEMA_VERSION });
+    expect(db.get<{ n: number }>("SELECT count(*) AS n FROM dated_mute_pairs")!.n).toBe(0);
+    expect(db.all<Record<string, unknown>>("SELECT id, thread_id FROM messages ORDER BY id")).toEqual(before);
+    // v69's CHECK and key untouched: a pair is never a target there
+    expect(db.get<{ sql: string }>("SELECT sql FROM sqlite_master WHERE name = 'dated_mutes'")!.sql).toBe(mutesSql);
+    expect(db.all<Record<string, unknown>>("SELECT * FROM dated_mutes")).toEqual(mutes);
+    expect(() => db.run("INSERT INTO dated_mutes (target, key, created_at) VALUES ('pair', 'delivery|a@b.test', 1)")).toThrow();
+    expect(db.all<{ name: string }>("SELECT name FROM pragma_table_info('dated_mute_pairs') ORDER BY cid").map((r) => r.name)).toEqual(["sender_key", "kind", "name", "created_at"]);
+    db.run("INSERT INTO dated_mute_pairs (sender_key, kind, created_at) VALUES ('track@parcelo.test', 'delivery', 1)");
+    db.run("INSERT INTO dated_mute_pairs (sender_key, kind, created_at) VALUES ('track@parcelo.test', 'pay', 1)");
+    expect(() => db.run("INSERT INTO dated_mute_pairs (sender_key, kind, created_at) VALUES ('track@parcelo.test', 'delivery', 2)")).toThrow();
+  });
+});
