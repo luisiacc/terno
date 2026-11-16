@@ -42,14 +42,17 @@ export function useReaderItems(detail: ThreadDetail): ReaderModel {
   // a history line's closed item: its own read, as the feed opened it
   const datedTarget = target.filter((r) => r.source === "dated").map((r) => r.id);
   const include = datedTarget.length === 1 ? datedTarget[0] : undefined;
-  const [read, setRead] = useState<{ threadId: number; rows: readonly DatedRow[] } | null>(null);
+  // an answer is this conversation's and this item's (Codex code review of iteration 3: a history line's closed item opened
+  // beside an open sibling waits for its own read, so the sibling's Done is never on top meanwhile)
+  const [read, setRead] = useState<{ threadId: number; include: number | undefined; rows: readonly DatedRow[] } | null>(null);
   useEffect(() => {
     if (!datedOn) return;
     let live = true;
     let seq = 0;
     const ask = () => {
       const mine = ++seq;
-      const keep = (rows: readonly DatedRow[] | null) => live && mine === seq && setRead((held) => ({ threadId, rows: rows ?? (held?.threadId === threadId ? held.rows : []) }));
+      // the last answer is kept through a re-read of the same conversation and item, never another's
+      const keep = (rows: readonly DatedRow[] | null) => live && mine === seq && setRead((held) => ({ threadId, include, rows: rows ?? (held?.threadId === threadId && held.include === include ? held.rows : []) }));
       void client.call("dated.ofThread", { threadId, ...(include !== undefined ? { include } : {}) }).then((r) => keep(r.rows), () => keep(null));
     };
     ask();
@@ -74,10 +77,11 @@ export function useReaderItems(detail: ThreadDetail): ReaderModel {
   }, [closedId, threadId]);
   // chosen from the line under the top one, while the feed's open row is the same (another row opened: its item leads)
   const [chosen, setChosen] = useState<{ threadId: number; target: string; key: string } | null>(null);
-  const ready = (!datedOn || read?.threadId === threadId) && (closedId === undefined || closed?.id === closedId);
+  const readNow = read?.threadId === threadId && read.include === include;
+  const ready = (!datedOn || readNow) && (closedId === undefined || closed?.id === closedId);
   const closedRow = closedId !== undefined && closed?.id === closedId ? closed.row : null;
   const items = readerItems({
-    dated: datedOn && read?.threadId === threadId ? read.rows : [],
+    dated: datedOn && readNow ? read.rows : [],
     followups: promisesOn ? [...(followups ?? []), ...(closedRow ? [closedRow] : [])] : [],
     target,
     chosen: chosen?.threadId === threadId && chosen.target === targetKey ? chosen.key : null,
