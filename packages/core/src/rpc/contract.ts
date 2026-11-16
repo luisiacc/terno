@@ -1294,11 +1294,11 @@ export const contract = {
   "dated.scan": m<{ queued: number }>()(empty),
   /** plan 210 (iteration 4): what's muted in What matters, newest first; never MCP */
   "dated.mutes": m<{ mutes: DatedMute[] }>()(empty),
-  /** after Remove on this item: what its snack offers to mute, once per kind and sender (null: nothing) */
+  /** after Remove on this item: what its snack offers to mute, once per kind from a sender (iteration 5: a pair) or per automated sender (null: nothing) */
   "dated.muteOffer": m<{ offer: MuteOffer | null }>()(z.object({ id })),
-  /** null: muted already; at the bound, refused in words. `at`: an Unmute's Undo puts it back where it was */
-  "dated.mute": m<{ mute: DatedMute | null }>()(z.object({ on: z.enum(["sender", "kind"]), key: z.string().trim().min(1).max(320), name: z.string().max(2000).optional(), at: z.number().int().optional() })),
-  "dated.unmute": m<{ mute: DatedMute | null }>()(z.object({ on: z.enum(["sender", "kind"]), key: z.string().trim().min(1).max(320) })),
+  /** null: muted already; at the bound, or a new sender or pair someone you have written to, refused in words. `at`: an Unmute’s Undo puts it back where it was */
+  "dated.mute": m<{ mute: DatedMute | null }>()(z.object({ on: z.enum(["sender", "kind", "pair"]), key: z.string().trim().min(1).max(340), name: z.string().max(2000).optional(), at: z.number().int().optional() })),
+  "dated.unmute": m<{ mute: DatedMute | null }>()(z.object({ on: z.enum(["sender", "kind", "pair"]), key: z.string().trim().min(1).max(340) })),
 
   // plan 141. All renderer-only: none of these is in MCP_ALLOWED, since a question and its answers are mail content.
   /**

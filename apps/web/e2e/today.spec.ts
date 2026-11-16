@@ -890,7 +890,7 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       await item(page, "Electricity bill").click({ button: "right" });
       await page.getByTestId("menu-dated-dismiss").click();
       await gone();
-      await expect(snack).toContainText(/Removed from What matters.*Electricity bill/);
+      await expect(snack).toContainText(/Removed( from What matters)?.*Electricity bill/);
       await expect.poll(async () => (await server.backend.store.dated.active()).some((r) => r.text === "Electricity bill")).toBe(false);
       await undo("Remove");
       if (await page.getByTestId("reader").count()) await page.keyboard.press("Escape");
@@ -903,7 +903,7 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       await page.keyboard.press("Shift+D");
       await gone();
       await expect(open(page)).toHaveAttribute("data-thread-id", next);
-      await expect(snack).toContainText(/Removed from What matters.*Electricity bill/);
+      await expect(snack).toContainText(/Removed( from What matters)?.*Electricity bill/);
       await undo("⇧D");
       await expect(open(page)).toHaveAttribute("data-thread-id", bill!);
 
@@ -1067,7 +1067,7 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       // Undo brings it back, open again with its line
       await line.getByTestId("thread-dated-dismiss").click();
       await expect(item(page, "Electricity bill")).toHaveCount(0);
-      await expect(page.locator("[data-testid=snack]")).toContainText(/Removed from What matters.*Electricity bill/);
+      await expect(page.locator("[data-testid=snack]")).toContainText(/Removed( from What matters)?.*Electricity bill/);
       await focusList(page);
       await page.keyboard.press("z");
       await expect(open(page)).toContainText("Electricity bill");

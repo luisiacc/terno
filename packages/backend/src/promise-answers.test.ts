@@ -324,7 +324,8 @@ describe("one reply, one row (iteration 4, the Codex review's revision 4)", () =
     await reply(asked, "Thanks! I'll recalibrate the green first. I'll send it Wednesday.");
     await followupsDone();
     const [first, send] = (await backend.store.followups.ofThread(asked.thread)).filter((p) => p.kind === "promise").sort((a, b) => a.item - b.item);
-    await client.call("dated.mute", { on: "sender", key: school.email, name: school.name });
+    // iteration 5: a new mute of someone you've written to is refused, so this is one from before (an Unmute's Undo puts one back)
+    await client.call("dated.mute", { on: "sender", key: school.email, name: school.name, at: 0 });
     expect((await client.call("dated.ofThread", { threadId: asked.thread })).rows).toEqual([]);
     const [row] = await rows();
     expect(row).toMatchObject({ id: `promise:${send!.id}`, why: { with: [{ source: "promise", id: first!.id }] }, also: [{ text: green.text }] });
