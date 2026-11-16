@@ -3,14 +3,14 @@ import type { FollowupRow } from "./followups";
 import type { PartOfDay } from "./part-of-day";
 import { addressKey } from "./people";
 import { normalizeText } from "./text";
-import { sortInDay, waitsOnYou, type TodayAlso, type TodayCounts, type TodayPart, type TodayWhy } from "./today";
+import { sortInDay, sortToday, waitsOnYou, type TodayAlso, type TodayCounts, type TodayPart, type TodayWhy } from "./today";
 import { clockHolds, refKey, reminderRowId, splitZoneNote, statedClock, waitingRowId, type FeedRowId, type ItemRef, type ItemSeen } from "./today-items";
 
 /**
  * Plan 210 (iteration 2, the owner: "a row per item"; Codex's design): What matters is one projection, the list's, the
  * sidebar's count's and the morning notice's alike. Bounded facts (the open dated items and promises with their duplicate
  * membership and related details, the conversations waiting on you, your reminders, which threads are in Spam or Trash) →
- * canonical items (one per set of true duplicates) → placement and order (`datedGroupAt`, `promiseGroupAt`, `sortInDay`) →
+ * canonical items (one per set of true duplicates) → placement and order (`datedGroupAt`, `promiseGroupAt`, `sortToday`, `sortInDay`) →
  * rows and the counts' buckets. Pure: both stores give the facts, nothing here reads a store, and nothing is subtracted from
  * a thread count any more.
  */
@@ -351,7 +351,7 @@ export function placeItems(dated: readonly DatedRow[], promises: readonly Needin
 export const placedThreads = (items: readonly PlacedItem[]): number[] => [...new Set(items.flatMap((p) => p.item.entries.map((e) => e.row.threadId)))];
 
 /**
- * Plan 210 (iteration 2): every row, in `TODAY_GROUP_ORDER` (Missed by the most recently due; Today by `sortInDay`; each
+ * Plan 210 (iteration 2): every row, in `TODAY_GROUP_ORDER` (Missed by the most recently due; Today by `sortToday`; each
  * day ahead and Coming up by their day, then the same order), and the counts. `count`: only the counts are wanted (nothing
  * ordered, no words made, no reminders).
  */
@@ -448,8 +448,8 @@ function countsOf(rows: readonly Placed[]): TodayCounts {
 }
 
 /**
- * The feed's order: Missed, the most recently due first; Today in `sortInDay`'s order (iteration 4: the whole day's first,
- * then by time), then its "Waiting on you" part (iteration 4, the Codex review's revision 8: a promise broken with a live
+ * The feed's order: Missed, the most recently due first; Today's own by one key (iteration 5, revision 7: `sortToday`, a
+ * broken promise needed today first, then what you do before what happens to you, each by its time and then the untimed), then its "Waiting on you" part (iteration 4, the Codex review's revision 8: a promise broken with a live
  * day ahead first, by that day; then requests shown early whose day is within the seven days, soonest first; then what has
  * none, asks and waiting conversations as they came, newest first; then requests due later, soonest first); each day
  * ahead, then Coming up, by its day and then the same order, a timed row by its time of day (two put off to one day). The
@@ -465,9 +465,7 @@ function ordered(rows: readonly Placed[], now: number): ProjectedRow[] {
   const of = (g: TodayGroupKind) => groups.get(g) ?? [];
   const missed = of("missed").sort((a, b) => b.dueAt - a.dueAt);
   const todays = of("today");
-  // (iteration 5, revision 6) a broken promise needed today leads Today's own
-  const brokenToday = todays.filter((r) => r.broken === "today").sort((a, b) => a.dueAt - b.dueAt);
-  const own = todays.filter((r) => r.part !== "waiting" && r.broken !== "today");
+  const own = todays.filter((r) => r.part !== "waiting");
   // Waiting on you: the broken promises, by their day; the requests due within the seven days, soonest first; the rest as
   // it came, newest first; the requests due later, soonest first
   const week = new Date(now);
@@ -479,8 +477,8 @@ function ordered(rows: readonly Placed[], now: number): ProjectedRow[] {
   const near = dated.filter((r) => r.dueAt < week.getTime()).sort(soonest);
   const far = dated.filter((r) => r.dueAt >= week.getTime()).sort(soonest);
   const undated = todays.filter((r) => r.part === "waiting" && !r.broken && !r.why.item?.early).sort((a, b) => b.came - a.came);
-  const today = brokenToday.concat(sortInDay(own, (r) => r.why, false), broken, near, undated, far);
-  const byItsDay = (list: Placed[]) => sortInDay(list, (r) => r.why, true, (r) => r.day!);
+  const today = sortToday(own, (r) => r.why, (r) => r.broken === "today").concat(broken, near, undated, far);
+  const byItsDay = (list: Placed[]) => sortInDay(list, (r) => r.why, (r) => r.day!);
   // (the ordering's own fields ride along, unread: no copy of every row at the 1,000-item bound)
   return missed.concat(today, byItsDay(of("day")), byItsDay(of("comingUp")));
 }

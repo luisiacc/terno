@@ -115,56 +115,57 @@ const minuteOfDay = (ms: number): number => {
 
 type DayWhy = Pick<TodayWhy, "kind" | "item" | "dueAt" | "promise">;
 
-/** What `inDayOrder` compares of a row, read once: its tier, timed or not, its moment (or time of day), its moment. */
-interface DayKey {
-  tier: number;
-  timed: boolean;
-  at: number;
-  dueAt: number;
-  /** Today's order (`clock` false): its day's whole first, then its times */
-  today: boolean;
-}
+/** A row's place in an order, read once: numbers compared in turn, the first that differs deciding (lexicographic). */
+type OrderKey = readonly number[];
 
-function dayKey(why: DayWhy, clock: boolean): DayKey {
-  // plan 210 (iteration 4): your reminder is at its time in Today's schedule, as a timed item is
-  const timed = timedWhy(why) || (!clock && why.kind === "reminder");
-  const dueAt = why.dueAt ?? 0;
-  return { tier: dayTier(why), timed, at: timed && clock ? minuteOfDay(dueAt) : dueAt, dueAt, today: !clock };
-}
-
-/**
- * Plan 210 (iteration 4, the Codex review's revision 8): Today's own rows as a day's calendar has them: what's for the whole
- * day first, by tier, then what has a time, by that time whatever its tier (Priya's payroll at 1:00 PM, the 1:1 at 2:00 PM,
- * Marcus at 4:00 PM), the tier only between rows at one moment. A day ahead's keep the tier first (put off to that day,
- * its times are the rows' own). People waiting (tier 2) keep the order they came in, in Today after the rest.
- */
-const byDayKey = (x: DayKey, y: DayKey): number => {
-  if (x.today) {
-    // (people waiting are Today's own part, after the rest: never interleaved, so the order stays one order)
-    if (x.tier === 2 || y.tier === 2) return Number(x.tier === 2) - Number(y.tier === 2);
-    if (x.timed !== y.timed) return x.timed ? 1 : -1;
-    return x.timed ? x.at - y.at || x.tier - y.tier : x.tier - y.tier || x.dueAt - y.dueAt;
-  }
-  return x.tier !== y.tier || x.tier === 2 ? x.tier - y.tier : x.timed !== y.timed ? (x.timed ? -1 : 1) : x.at - y.at || x.dueAt - y.dueAt;
+const byOrderKey = (x: OrderKey, y: OrderKey): number => {
+  for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return x[i]! - y[i]!;
+  return 0;
 };
 
 /**
- * Plan 210 (iteration 1): the one order inside a day, the backend's before each conversation's row is chosen and the
- * renderer's where Coming up joins a day: by `dayTier`, then the timed first, by their time, then the rest as they came
- * due. People waiting keep the order they came in (0: a stable sort keeps it). `clock`: a day ahead's timed rows go by
- * their time of day (put off, they may first have been due another day); Today's by their moment, so a Plan still on
- * from last night comes first.
+ * Plan 210 (iteration 5, the Codex review's revision 7; the owner: "things to do before what happens to you"): Today's own
+ * rows by one key, in turn: a broken promise needed today first (`first`); then what you do before what happens to you
+ * (a plan or a delivery); among each, what has a time by its instant (your reminder at its time too), then what has none,
+ * by tier (a deadline, your promise, your reminder) and when it came due. People waiting (tier 2: Waiting on you's part)
+ * come after it all and keep the order they came in (the rest of their key is equal).
  */
-export const inDayOrder = (a: DayWhy, b: DayWhy, clock: boolean): number => byDayKey(dayKey(a, clock), dayKey(b, clock));
+export function todayOrderKey(why: DayWhy, first = false): OrderKey {
+  const tier = dayTier(why);
+  if (tier === 2) return [1, 2, 0, 0, 0];
+  const timed = timedWhy(why) || why.kind === "reminder";
+  const dueAt = why.dueAt ?? 0;
+  return [first ? 0 : 1, tier === 4 ? 1 : 0, timed ? 0 : 1, timed ? dueAt : tier, timed ? tier : dueAt];
+}
 
 /**
- * The same order for a whole list, each row's key read once (the backend sorts up to the 1,000-item bound on every count):
- * by `day` first when given (a day ahead's and Coming up's rows, under their days), ties as they came.
+ * Plan 210 (iteration 1): a day ahead's order (its own day's heading, Ahead's, Coming up's): by `dayTier`, the timed first
+ * by their time of day (put off to that day from others, the times are the rows' own), then the rest as they came due.
+ * People waiting keep the order they came in.
  */
-export function sortInDay<T>(rows: readonly T[], why: (row: T) => DayWhy, clock: boolean, day?: (row: T) => string): T[] {
-  const keyed = rows.map((row, i) => ({ row, i, day: day?.(row) ?? "", key: dayKey(why(row), clock) }));
-  keyed.sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : byDayKey(a.key, b.key) || a.i - b.i));
+export function dayOrderKey(why: DayWhy): OrderKey {
+  const tier = dayTier(why);
+  if (tier === 2) return [2, 0, 0, 0];
+  const timed = timedWhy(why);
+  const dueAt = why.dueAt ?? 0;
+  return [tier, timed ? 0 : 1, timed ? minuteOfDay(dueAt) : dueAt, dueAt];
+}
+
+/** Rows in a key's order, each key read once (the backend sorts up to the 1,000-item bound on every list); ties as they came. */
+function sortByKey<T>(rows: readonly T[], key: (row: T) => OrderKey): T[] {
+  const keyed = rows.map((row, i) => ({ row, i, key: key(row) }));
+  keyed.sort((a, b) => byOrderKey(a.key, b.key) || a.i - b.i);
   return keyed.map((k) => k.row);
+}
+
+/** Today's own rows (`todayOrderKey`); `first`, the broken promise needed today (`promiseBroken`'s `today`). */
+export const sortToday = <T>(rows: readonly T[], why: (row: T) => DayWhy, first: (row: T) => boolean): T[] => sortByKey(rows, (row) => todayOrderKey(why(row), first(row)));
+
+/** Rows ahead (`dayOrderKey`), their own day first ("YYYY-MM-DD", which sorts as text). */
+export function sortInDay<T>(rows: readonly T[], why: (row: T) => DayWhy, day: (row: T) => string): T[] {
+  const days = [...new Set(rows.map(day))].sort();
+  const rank = new Map(days.map((d, i) => [d, i]));
+  return sortByKey(rows, (row) => [rank.get(day(row))!, ...dayOrderKey(why(row))]);
 }
 
 /**

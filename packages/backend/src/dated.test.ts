@@ -1440,7 +1440,7 @@ describe("after the panel", () => {
     expect((await client.call("counts.get", {})).today).toBe(1);
   });
 
-  it("inside a group: by day, then the timed ones by time, then the untimed; Today's, the whole day's first, then the timed by time", async () => {
+  it("inside a group: by day, then the timed ones by time, then the untimed; Today's too (iteration 5, revision 7: to-dos by their time, then the untimed)", async () => {
     const { client, model, receive, read, clock } = await setup();
     model.answer = (req) => {
       const p = promptText(req.messages[0]!.content);
@@ -1456,10 +1456,10 @@ describe("after the panel", () => {
     // plan 210: a heading per day, in order, each with the timed first by time, then the untimed
     const days = (await client.call("today.list", { held: [] })).sections.map((x) => [x.kind, x.day, x.items.map((i) => i.thread.id)]);
     expect(days).toEqual([["day", "2026-11-12", [bill]], ["day", "2026-11-13", [payroll, domain]]]);
-    // the seventh panel round: on the 13th the bill is Missed; iteration 4 (revision 8, "Today's timed rows by time"): Today
-    // has what's for the whole day first (the domain), then what has a time, by that time (the payroll at 1:00 PM)
+    // the seventh panel round: on the 13th the bill is Missed; iteration 5 (revision 7, one key): Today's to-dos with a time
+    // first, by it (the payroll at 1:00 PM), then the untimed (the domain)
     clock.now = at(2026, 11, 13, 10);
-    expect((await client.call("today.list", { held: [] })).sections.map((x) => [x.kind, x.items.map((i) => i.thread.id)])).toEqual([["missed", [bill]], ["today", [domain, payroll]]]);
+    expect((await client.call("today.list", { held: [] })).sections.map((x) => [x.kind, x.items.map((i) => i.thread.id)])).toEqual([["missed", [bill]], ["today", [payroll, domain]]]);
     // Codex code review of the fixes: Coming up orders the same way (earlier, the untimed 9:00 came first)
     clock.now = at(2026, 11, 8, 10);
     const coming = (await client.call("today.list", { held: [] })).sections.filter((x) => x.kind === "comingUp");
@@ -1500,10 +1500,10 @@ describe("after the panel", () => {
     await receive({ subject: "Payroll", bodyText: "Your plan renews today, and fund payroll by 1:00 PM." });
     await read();
     clock.now = at(2026, 11, 13, 10);
-    // (plan 210, iteration 2: a row per item, so the timed one is never hidden behind the other; iteration 4: Today's whole
-    // day first, then the timed by time)
+    // (plan 210, iteration 2: a row per item, so the timed one is never hidden behind the other; iteration 5, revision 7:
+    // Today's to-dos by their time, then the untimed)
     const rows = (await client.call("today.list", { held: [] })).sections.find((x) => x.kind === "today")!.items;
-    expect(rows.map((r) => r.why)).toMatchObject([{ text: "Renew the plan", item: { timed: false } }, { text: "Fund payroll", item: { timed: true } }]);
+    expect(rows.map((r) => r.why)).toMatchObject([{ text: "Fund payroll", item: { timed: true } }, { text: "Renew the plan", item: { timed: false } }]);
   });
 });
 
@@ -2201,8 +2201,8 @@ describe("the sixth panel round: nudges leave Today (change 4, revision 7)", () 
     const list = await client.call("today.list", { held: [] });
     const groups = list.sections.map((x) => [x.kind, x.items.map((i) => [i.thread.id, i.why.kind])]);
     // plan 210: your reminder due today is Today's (iteration 1: your promise before a person's ask; iteration 3: the ask is
-    // Today's "Waiting on you", after Today's own)
-    expect(groups).toEqual([["today", [[withPromise, "promise"], [withReminder, "reminder"]]], ["today", [[withAsk, "dated"]]]]);
+    // Today's "Waiting on you", after Today's own; iteration 5, revision 7: your reminder at its time, before the untimed)
+    expect(groups).toEqual([["today", [[withReminder, "reminder"], [withPromise, "promise"]]], ["today", [[withAsk, "dated"]]]]);
     expect(list.sections.flatMap((x) => x.items).every((i) => i.also === undefined)).toBe(true);
     // the header's "to do today" (the promise and, iteration 4, your reminder due today) and Waiting (the ask) are the sidebar's
     expect([list.counts, (await client.call("counts.get", {})).today]).toEqual([{ missed: 0, today: 2, waiting: 1, overdue: 0 }, 3]);
@@ -2355,9 +2355,10 @@ describe("the seventh panel round: the groups go by when, not by kind (change 1;
       // the flight's mail asked nothing (the reader's verdict), so neither is waiting
       // plan 210 (iteration 3, revision 8): the people are Today's "Waiting on you", after Today's own (its plans too),
       // what has no day as it came, newest first
-      // plan 210 (iteration 4, revision 8): Today's own rows, what's for the whole day first by tier (the alert and the rent,
-      // then the parcel), then what has a time by that time whatever its tier (the standup at noon, the flight at 6:00 PM)
-      ["today", [t["card locked"], t["rent today"], t["parcel today"], t["standup at noon"], t["flight tonight"]]],
+      // plan 210 (iteration 5, revision 7): Today's own by one key: what you do, the timed by time (the standup at noon), then
+      // the untimed (the alert and the rent, as they came due); then what happens, the timed (the flight at 6:00 PM), then
+      // the untimed (the parcel)
+      ["today", [t["standup at noon"], t["card locked"], t["rent today"], t["flight tonight"], t["parcel today"]]],
       ["today:waiting", [t["waiting"], t["the slides"], t["insurance December"]]],
       ["day", [t["dinner Friday"]]],
       ["day", [t["invoice Saturday"]]],
