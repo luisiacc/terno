@@ -1,4 +1,4 @@
-import { addressKey, ANSWERED_KINDS, type FollowupRow } from "@terno/core";
+import { addressKey, ANSWERED_KINDS, refKey, type FollowupRow } from "@terno/core";
 import { FOLLOWUP_CLOSED_KEEP_MS, FOLLOWUPS_ACTIVE_MAX, recipientList, SCAN_MARK_MS, SENT_MARK_MS, type ClosedAt, type FollowupFinish, type FollowupFinishOutcome, type FollowupSnapshot, type FollowupSource, type SentMark } from "@terno/store";
 import { ownAddresses } from "./facts";
 import type { Db } from "./sqlite";
@@ -155,6 +155,26 @@ function answerable(db: Db, id: number, src: { threadId: number; date: number })
   return r && r.state === "open" && (ANSWERED_KINDS as readonly string[]).includes(r.kind) && r.thread_id === src.threadId && r.arrived_at < src.date ? r : null;
 }
 
+/**
+ * Plan 210 (iteration 3, Codex code review): a promise its reply's verdict links to a request (`answers`) is that request's
+ * by the link, never one item with it. The matcher may have made them one by their words before the verdict came (follow-ups
+ * read first, the request later): undone in the verdict's commit, so Remove and Later stay the promise's alone. The promise
+ * joined to the request's item leaves it; a promise that's the item's canonical keeps the rest, and the request with the
+ * requests one with it (its readings) become their own item, the request their canonical. As `link`, no revision moves.
+ */
+function apart(db: Db, promiseId: number, requestId: number): void {
+  const [promise, request] = [refKey({ source: "promise", id: promiseId }), refKey({ source: "dated", id: requestId })];
+  const p = db.get<{ same_as: string | null }>("SELECT same_as FROM followups WHERE id = ?", promiseId)!;
+  const r = db.get<{ same_as: string | null }>("SELECT same_as FROM dated_items WHERE id = ?", requestId)!;
+  if ((p.same_as ?? promise) !== (r.same_as ?? request)) return;
+  if (p.same_as !== null) {
+    db.run("UPDATE followups SET same_as = NULL WHERE id = ?", promiseId);
+    return;
+  }
+  db.run("UPDATE dated_items SET same_as = NULL WHERE id = ?", requestId);
+  db.run(`UPDATE dated_items SET same_as = ? WHERE id IN (SELECT id FROM dated_items INDEXED BY dated_same WHERE same_as = ?) AND kind IN (${ANSWERED_KINDS.map((k) => `'${k}'`).join(", ")})`, request, promise);
+}
+
 export function finishFollowups(db: Db, w: FollowupFinish): FollowupFinishOutcome {
   return db.tx(() => {
     const mark = db.get<{ confirmed: number }>("SELECT confirmed FROM ai_sent_mail WHERE message_id = ?", w.messageId);
@@ -174,6 +194,9 @@ export function finishFollowups(db: Db, w: FollowupFinish): FollowupFinishOutcom
     const later = db.get("SELECT 1 FROM messages INDEXED BY messages_thread WHERE thread_id = ? AND date > ? AND is_sent = 1 AND is_draft = 0 AND is_trash = 0 AND is_spam = 0 AND provider_msg_id NOT LIKE 'local:%' LIMIT 1", src.threadId, src.date);
     for (const r of w.rows) {
       if (r.kind === "awaiting" && (later || replied(db, own, { accountId: src.accountId, threadId: src.threadId, sentAt: src.date, rfcMessageId: src.rfcMessageId }))) continue;
+      // a reply read again (a re-mark) keeps the rows it wrote, and never takes a wait's place for one (Codex code review of
+      // plan 210's iteration 3; IndexedDB's order)
+      if (db.get("SELECT 1 FROM followups WHERE message_id = ? AND item = ?", w.messageId, r.item)) continue;
       if (active >= FOLLOWUPS_ACTIVE_MAX) {
         if (r.kind === "awaiting") continue;
         // a promise takes the place of the oldest wait
@@ -189,10 +212,17 @@ export function finishFollowups(db: Db, w: FollowupFinish): FollowupFinishOutcom
     const settle = (id: number, revision: number) => db.run("UPDATE dated_items SET state = 'settled', closed_reason = 'answered', closed_at = ?, revision = revision + 1 WHERE id = ? AND revision = ? AND state = 'open'", w.now, id, revision);
     for (const v of yours ? (w.verdicts ?? []) : []) {
       const r = answerable(db, v.request.id, src);
-      if (!r) continue;
-      if (v.verdict === "fulfilled") settle(r.id, v.request.revision);
+      // either verdict only on the request as it was shown: one put off (Later) or moved meanwhile isn't decided by it
+      if (!r || r.revision !== v.request.revision) continue;
+      if (v.verdict === "fulfilled") {
+        settle(r.id, r.revision);
+        continue;
+      }
       // the promise this reply made (its own row, an open one), linked once
-      else db.run("UPDATE followups SET answers = ? WHERE message_id = ? AND item = ? AND kind = 'promise' AND state IN ('open','due') AND answers IS NULL", r.id, w.messageId, v.item);
+      const p = db.get<{ id: number }>("SELECT id FROM followups WHERE message_id = ? AND item = ? AND kind = 'promise' AND state IN ('open','due') AND answers IS NULL", w.messageId, v.item);
+      if (!p) continue;
+      db.run("UPDATE followups SET answers = ? WHERE id = ?", r.id, p.id);
+      apart(db, p.id, r.id);
     }
     for (const k of w.kept) {
       const kept = db.run("UPDATE followups SET state = 'done', closed_reason = 'kept', closed_at = ?, inbox_state = 'none', revision = revision + 1 WHERE id = ? AND revision = ? AND thread_id = ? AND kind = 'promise' AND state IN ('open','due')", w.now, k.id, k.revision, src.threadId).changes;

@@ -1,7 +1,7 @@
 import { DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, datedGroupAt } from "@terno/core";
 import { describe, expect, it } from "vitest";
 import { DATED_MARK_MS, DATED_SCAN_MARK_MS, type DatedFinish, type DatedWrite } from "../dated";
-import { FOLLOWUPS_ACTIVE_MAX, type FollowupFinish, type FollowupWrite } from "../followups";
+import { AWAITING_ITEM, FOLLOWUPS_ACTIVE_MAX, type FollowupFinish, type FollowupWrite } from "../followups";
 import type { MailStore } from "../mail-store";
 import type { IncomingMessage } from "../types";
 import { msg, threadOf, withAccounts } from "./fixtures";
@@ -943,6 +943,70 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
         await read(next, { rows: [promise({ item: 0 })] });
         expect(await store.followups.active()).toHaveLength(FOLLOWUPS_ACTIVE_MAX);
         expect((await store.followups.active()).some((p) => p.messageId === next.id)).toBe(true);
+      });
+
+      it("Codex code review: either verdict only at the revision the request was shown at; one put off meanwhile isn't linked nor settled", async () => {
+        const { store, request, reply, read, promise } = await talk();
+        const shown = { id: request.id, revision: request.revision };
+        await store.dated.update(request.id, request.revision, { deferredUntil: NOW + DAY });
+        const r = await reply();
+        await read(r, { rows: [promise()], verdicts: [{ request: shown, verdict: "promise", item: 0 }] });
+        expect((await store.followups.ofThread(r.thread)).find((p) => p.kind === "promise")!.answers).toBeNull();
+        await store.followups.marks.queueScan([r.id], NOW);
+        await read(r, { verdicts: [{ request: shown, verdict: "fulfilled" }] });
+        expect(await store.dated.get(request.id)).toMatchObject({ state: "open", deferredUntil: NOW + DAY, revision: request.revision + 1 });
+      });
+
+      it("Codex code review: a reply read again at the bound keeps its rows and takes no wait's place", async () => {
+        const { store, accountId, reply, read, promise } = await talk();
+        // the oldest wait, on a conversation of its own
+        const m = msg({ accountId, from: me, to: [shop], isSent: true, inInbox: false, gmailLabels: ["SENT"], subject: "Order", date: NOW - 50_000, providerMsgId: "wait-sent" });
+        const waited = (await store.sync.ingest([m], { applyFilters: false, now: NOW, classifier: null, liveSent: { wanted: true } })).inserted[0]!;
+        await read({ id: waited, thread: await threadOf(store, "wait-sent") }, { rows: [{ kind: "awaiting", item: AWAITING_ITEM, text: "a reply from the shop", quote: null, personName: "Shop", personEmail: shop.email, dueAt: NOW + 3 * DAY, dated: false }] });
+        const wait = (await store.followups.active()).find((x) => x.kind === "awaiting")!;
+        expect(wait).toBeDefined();
+        const r = await reply();
+        const rows = Array.from({ length: FOLLOWUPS_ACTIVE_MAX - 1 }, (_, i) => promise({ item: 10 + i, dueAt: NOW + DAY + i }));
+        await read(r, { rows });
+        expect(await store.followups.active()).toHaveLength(FOLLOWUPS_ACTIVE_MAX);
+        // read again (a re-mark, as a request read late asks): the same rows, the wait kept
+        await store.followups.marks.queueScan([r.id], NOW);
+        expect(await read(r, { rows })).toBe("written");
+        expect(await store.followups.get(wait.id)).toMatchObject({ state: "open" });
+        expect(await store.followups.active()).toHaveLength(FOLLOWUPS_ACTIVE_MAX);
+      });
+
+      it("Codex code review: a promise made one item with its request by words before its verdict came is apart from it once linked, whichever was the canonical", async () => {
+        // the promise the canonical: the request and its other reading leave it, the request theirs
+        {
+          const { store, got, item, finish, request, reply, read, promise } = await talk();
+          const again = await got({ inReplyTo: "ask@v", references: ["ask@v"], date: NOW - 8500 });
+          await finish(again.id, again.thread, { rows: [item({ kind: "respond", text: "Send the signed form" })] });
+          const twin = (await store.dated.ofThread(again.thread)).find((x) => x.messageId === again.id)!;
+          const r = await reply();
+          await read(r, { rows: [promise()] });
+          const p = (await store.followups.ofThread(r.thread)).find((x) => x.kind === "promise")!;
+          expect(await store.today.link({ same: [{ item: { source: "dated", id: request.id }, sameAs: `promise:${p.id}` }, { item: { source: "dated", id: twin.id }, sameAs: `promise:${p.id}` }], details: [] })).toBe(2);
+          await store.followups.marks.queueScan([r.id], NOW);
+          await read(r, { rows: [promise()], verdicts: [{ request: { id: request.id, revision: request.revision }, verdict: "promise", item: 0 }] });
+          expect(await store.followups.get(p.id)).toMatchObject({ answers: request.id, sameAs: null, revision: p.revision });
+          expect(await store.dated.get(request.id)).toMatchObject({ sameAs: null, state: "open", revision: request.revision });
+          expect((await store.dated.get(twin.id))!.sameAs).toBe(`dated:${request.id}`);
+          const members = await store.today.members([`promise:${p.id}`]);
+          expect([members.dated.map((x) => x.id), members.promises.map((x) => x.id)]).toEqual([[], [p.id]]);
+        }
+        // the request the canonical: the promise leaves it
+        {
+          const { store, request, reply, read, promise } = await talk();
+          const r = await reply();
+          await read(r, { rows: [promise()] });
+          const p = (await store.followups.ofThread(r.thread)).find((x) => x.kind === "promise")!;
+          expect(await store.today.link({ same: [{ item: { source: "promise", id: p.id }, sameAs: `dated:${request.id}` }], details: [] })).toBe(1);
+          await store.followups.marks.queueScan([r.id], NOW);
+          await read(r, { rows: [promise()], verdicts: [{ request: { id: request.id, revision: request.revision }, verdict: "promise", item: 0 }] });
+          expect(await store.followups.get(p.id)).toMatchObject({ answers: request.id, sameAs: null });
+          expect((await store.today.members([`dated:${request.id}`])).promises).toEqual([]);
+        }
       });
     });
   });
