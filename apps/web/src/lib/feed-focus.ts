@@ -59,11 +59,14 @@ export function focusFeed(o: { quiet?: boolean } = {}): boolean {
   return true;
 }
 
-/** The row put away has the keys again (once the feed has drawn it: a frame more while it's being drawn), with no ring. */
-export function focusFeedItem(id: FeedRowId): void {
+/**
+ * The row put away has the keys again (once the feed has drawn it: a frame more while it's being drawn), with no ring;
+ * `still`: whether that's still wanted when the frame comes (nothing moved the keys meanwhile).
+ */
+export function focusFeedItem(id: FeedRowId, still: () => boolean = () => true): void {
   const el = itemButton(id);
   if (el) land(el, true);
-  else requestAnimationFrame(() => land(itemButton(id), true));
+  else requestAnimationFrame(() => still() && land(itemButton(id), true));
 }
 
 /**

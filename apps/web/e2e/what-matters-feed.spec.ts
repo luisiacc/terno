@@ -300,6 +300,7 @@ test("an item: one sentence, when in its column, who under it; its conversation 
     await expect(feed(page).locator("[data-thread-id]:not([data-history])").filter({ hasText: "Wire payroll" })).toHaveCount(0);
     await page.keyboard.press("z");
     await expect(feed(page).locator("[data-thread-id]:not([data-history])").filter({ hasText: "Wire payroll" })).toBeVisible();
+    await expect(page.locator("[data-testid=snack-dock][data-undoing]")).toHaveCount(0);
   });
 
   await scenario("Codex code review: the wide feed is the page's main landmark; D finishes the item the keyboard is on; j takes the keys with the item it opens", async () => {
@@ -321,6 +322,8 @@ test("an item: one sentence, when in its column, who under it; its conversation 
     await expect.poll(() => page.evaluate(() => document.activeElement?.getAttribute("data-testid"))).toBe("wm-item-open");
     await page.keyboard.press("z");
     await expect(openLine(page, "Pay the rent")).toBeVisible();
+    // the Undo landed whole (the row back is only its first part; what it puts back follows), before the next keys
+    await expect(page.locator("[data-testid=snack-dock][data-undoing]")).toHaveCount(0);
     // j opens the next item and the keys go with it: Enter and D are that one's
     await page.keyboard.press("Escape");
     await openLine(page, "Wire payroll").getByTestId("wm-item-open").focus();
