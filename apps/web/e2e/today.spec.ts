@@ -971,16 +971,18 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
         }
         await page.emulateMedia({ colorScheme: "light" });
       }
-      // its card in the conversation says its day, never the moment it's placed at, with the dated line's words
+      // its line in the conversation says its day, never the moment it's placed at: the dated line's one design (plan 210,
+      // iteration 3), its person once
       await show(page, "send the agenda");
       await agenda.click();
-      const card = page.getByTestId("followup-line");
-      await expect(card).toBeVisible();
-      await expect(card.getByTestId("followup-text")).toHaveText("You told Tom Reed you’d send the agenda");
-      await expect(card.getByTestId("followup-due")).toHaveText("Due today");
-      await expect(card.getByTestId("followup-done")).toHaveText("Done");
-      await expect(card.getByTestId("followup-later")).toHaveText("Later");
-      await expect(card.getByTestId("followup-dismiss")).toHaveText("Remove");
+      const card = page.getByTestId("thread-dated-item");
+      await expect(card).toHaveAttribute("data-source", "promise");
+      await expect(card).toHaveAttribute("data-target", "true");
+      await expect(card.getByTestId("thread-dated-text")).toHaveText("Due today · You told Tom you’d send the agenda");
+      await expect(card.getByTestId("thread-dated-done")).toHaveText("Done");
+      await expect(card.getByTestId("thread-dated-later")).toHaveText("Later");
+      await expect(card.getByTestId("thread-dated-dismiss")).toHaveText("Remove");
+      await expect(page.getByTestId("followup-line")).toHaveCount(0);
       if (SHOTS) {
         for (const mode of ["light", "dark"] as const) {
           await page.emulateMedia({ colorScheme: mode });
@@ -1164,6 +1166,18 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       const target = page.locator("[data-testid=thread-dated-item][data-target]");
       await expect(target).toHaveCount(1);
       await expect(target.getByTestId("thread-dated-text")).toContainText("Send Jess your draft");
+      // plan 210 (iteration 3, Codex revision 10): the row's item is the one line on top, with the one Done; the meeting is
+      // the quiet line under it
+      const also = page.getByTestId("thread-dated-also");
+      await expect(page.getByTestId("thread-dated-item")).toHaveCount(1);
+      await expect(page.getByTestId("thread-dated-done")).toHaveCount(1);
+      await expect(also).toContainText("Also in this conversation");
+      await expect(also.getByTestId("thread-dated-also-item")).toHaveText(["Saturday 8:00 AM · Board meeting"]);
+      for (const mode of ["light", "dark"] as const) {
+        await page.emulateMedia({ colorScheme: mode });
+        expect((await new AxeBuilder({ page }).include("[data-testid=thread-dated]").analyze()).violations, mode).toEqual([]);
+      }
+      await page.emulateMedia({ colorScheme: "light" });
       // the meeting's row: the same conversation, its line now the meeting's, nothing reopened
       const subject = await page.getByTestId("reader-subject").innerText();
       await board().click();
@@ -1171,6 +1185,26 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       await expect(jess()).not.toHaveAttribute("data-open", "true");
       await expect(page.getByTestId("reader-subject")).toHaveText(subject);
       await expect(target.getByTestId("thread-dated-text")).toContainText("Board meeting");
+      await expect(page.getByTestId("thread-dated-done")).toHaveCount(1);
+      await expect(also.getByTestId("thread-dated-also-item")).toHaveText([/Send Jess your draft$/]);
+      // chosen from the line under it, the draft leads, and the feed's open row is its row (the keys act on it)
+      await also.getByTestId("thread-dated-also-item").click();
+      await expect(target.getByTestId("thread-dated-text")).toContainText("Send Jess your draft");
+      await expect(jess()).toHaveAttribute("data-open", "true");
+      await expect(board()).not.toHaveAttribute("data-open", "true");
+      await expect(page.getByTestId("thread-dated-done")).toBeFocused();
+      await expect(also.getByTestId("thread-dated-also-item")).toHaveText(["Saturday 8:00 AM · Board meeting"]);
+      // Done on the top line: the draft goes, the meeting stays (now the line, alone), Undo brings the draft back
+      await page.getByTestId("thread-dated-done").click();
+      await expect(page.locator("[data-testid=snack]")).toContainText("Done: Send Jess your draft");
+      await expect(jess()).toHaveCount(0);
+      await expect(board()).toHaveCount(1);
+      await focusList(page);
+      await page.keyboard.press("z");
+      await expect(jess()).toHaveCount(1);
+      await expect.poll(async () => (await store.dated.ofThread(m.thread_id)).map((r) => r.text).sort()).toEqual(["Board meeting", "Send Jess your draft"]);
+      await board().click();
+      await expect(board()).toHaveAttribute("data-open", "true");
       if (SHOTS) {
         for (const mode of ["light", "dark"] as const) {
           await page.emulateMedia({ colorScheme: mode });

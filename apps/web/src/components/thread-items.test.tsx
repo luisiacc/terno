@@ -1,0 +1,99 @@
+// @vitest-environment jsdom
+import type { DatedRow, ThreadDetail } from "@terno/core";
+import { act } from "react";
+import { createRoot } from "react-dom/client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+vi.hoisted(() => Object.assign(globalThis, { matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) }));
+const listeners = vi.hoisted(() => new Map<string, () => void>());
+vi.mock("~/rpc/connection", () => ({ client: { call: vi.fn(), on: vi.fn((name: string, fn: () => void) => (listeners.set(name, fn), () => listeners.delete(name))), connectionVersion: 1 } }));
+
+const { client } = await import("~/rpc/connection");
+const { useApp } = await import("~/state/app");
+const { useToday, useFeedRow } = await import("~/state/today");
+const { useReaderItems } = await import("./thread-items");
+type Model = ReturnType<typeof useReaderItems>;
+
+/** Plan 210 (iteration 3, Codex revision 10): the reader model's reads, as the reader holds them. */
+const NOW = Date.now();
+const dated = (id: number, threadId: number, text: string, dueAt: number): DatedRow =>
+  ({ id, threadId, messageId: 1, item: 0, kind: "respond", text, quote: "", senderKey: "s", dueDay: new Date(dueAt).toISOString().slice(0, 10), dueAt, timed: false, dated: true, actAt: NOW - 1, deferredUntil: null, arrivedAt: NOW - 1, state: "open", closedReason: null, closedAt: null, fromScan: false, revision: 1, model: null, provider: null, createdAt: NOW - 1 }) as DatedRow;
+const detail = (id: number) => ({ thread: { id, inTrash: false, inSpam: false }, messages: [] }) as unknown as ThreadDetail;
+const DAY = 86_400_000;
+
+let seen: Model | null = null;
+function Probe({ id }: { id: number }) {
+  seen = useReaderItems(detail(id));
+  return null;
+}
+
+let root: ReturnType<typeof createRoot> | null = null;
+async function render(id: number) {
+  if (!root) {
+    const host = document.createElement("div");
+    document.body.append(host);
+    root = createRoot(host);
+  }
+  await act(async () => root!.render(<Probe id={id} />));
+}
+
+/** Answers held until the test lets each go, in any order. */
+const pending: { threadId: number; resolve: (rows: DatedRow[]) => void }[] = [];
+beforeEach(() => {
+  pending.length = 0;
+  vi.mocked(client.call).mockImplementation(((method: string, args: { threadId: number }) =>
+    method === "dated.ofThread" ? new Promise((resolve) => pending.push({ threadId: args.threadId, resolve: (rows) => resolve({ rows }) })) : Promise.resolve({})) as never);
+  useApp.setState({ devAi: null, today: false, settings: { dated: { enabled: true }, followups: { enabled: false } } } as never);
+  useToday.setState({ rows: [] });
+  useFeedRow.setState({ opened: null, cursor: null, moves: 0 });
+});
+afterEach(() => {
+  act(() => root?.unmount());
+  root = null;
+  seen = null;
+});
+
+const answer = async (i: number, rows: DatedRow[]) => act(async () => pending[i]!.resolve(rows));
+
+describe("the reader's items, read (plan 210, iteration 3)", () => {
+  it("nothing is drawn until this conversation's read answers, then the soonest leads with no row of the feed open", async () => {
+    await render(7);
+    expect(seen!.ready).toBe(false);
+    await answer(0, [dated(1, 7, "Send Jess your draft", NOW + 2 * DAY), dated(2, 7, "Board meeting", NOW + DAY)]);
+    expect(seen!.ready).toBe(true);
+    expect(seen!.top?.key).toBe("dated:2");
+    expect(seen!.others.map((o) => o.key)).toEqual(["dated:1"]);
+  });
+
+  it("an older read answering last is dropped: what's shown is the latest", async () => {
+    await render(7);
+    await answer(0, [dated(1, 7, "Send Jess your draft", NOW + 2 * DAY), dated(2, 7, "Board meeting", NOW + DAY)]);
+    // What matters changed twice: two reads on their way, the first answering last (with the meeting since done)
+    await act(async () => listeners.get("todayChanged")!());
+    await act(async () => listeners.get("todayChanged")!());
+    await answer(2, [dated(1, 7, "Send Jess your draft", NOW + 2 * DAY)]);
+    await answer(1, [dated(1, 7, "Send Jess your draft", NOW + 2 * DAY), dated(2, 7, "Board meeting", NOW + DAY)]);
+    expect(seen!.top?.key).toBe("dated:1");
+    expect(seen!.others).toEqual([]);
+  });
+
+  it("a conversation left before its read answers never shows its items in the next", async () => {
+    await render(7);
+    await render(8);
+    await answer(0, [dated(1, 7, "Send Jess your draft", NOW + DAY)]);
+    expect(seen!.ready).toBe(false);
+    expect(seen!.top).toBeNull();
+    await answer(1, [dated(5, 8, "Pay the rent", NOW + DAY)]);
+    expect(seen!.top?.key).toBe("dated:5");
+  });
+
+  it("an item with no row in the feed (another mailbox) is chosen here: it leads, the other under it", async () => {
+    await render(7);
+    await answer(0, [dated(1, 7, "Send Jess your draft", NOW + 2 * DAY), dated(2, 7, "Board meeting", NOW + DAY)]);
+    await act(async () => seen!.choose(seen!.others[0]!));
+    expect(seen!.top?.key).toBe("dated:1");
+    expect(seen!.others.map((o) => o.key)).toEqual(["dated:2"]);
+    expect(useFeedRow.getState().opened).toBeNull();
+  });
+});
