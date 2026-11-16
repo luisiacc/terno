@@ -88,7 +88,7 @@ async function setup(o: { dated?: boolean; followups?: boolean } = {}) {
   };
   const rows = async (): Promise<(TodayItem & { section: string })[]> => (await client.call("today.list", { held: [] })).sections.flatMap((x) => x.items.map((i) => ({ ...i, section: x.day ? `${x.kind}:${x.day}` : x.kind })));
   const sentPrompts = () => model.requests.filter((r) => r.schema?.name === "sent_mail").map((r) => promptText(r.messages[0]!.content));
-  return { backend, client, model, clock, request, reply, datedDone, followupsDone, rows, sentPrompts };
+  return { backend, client, model, clock, ingest, request, reply, datedDone, followupsDone, rows, sentPrompts };
 }
 
 describe("a reply's checked verdict (the Codex review of iteration 3, revision 1)", () => {
@@ -161,6 +161,34 @@ describe("a promise that answers a request keeps its deadline (iteration 3)", ()
     await client.call("followups.undo", { undoId: undoId! });
     expect(await backend.store.followups.get(promise!.id)).toMatchObject({ state: "due" });
     expect(await backend.store.dated.get(req!.id)).toMatchObject({ state: "open", closedReason: null });
+    expect((await rows()).map((r) => r.id)).toEqual([`promise:${promise!.id}`]);
+  });
+
+  it("Codex code review: Done on the promise settles every reading of the request it answers (one item), and its Undo brings them all back", async () => {
+    const { backend, client, model, ingest, request, reply, datedDone, followupsDone, rows } = await setup();
+    model.dated = () => dated([slip]);
+    const asked = await request();
+    await datedDone();
+    // the school asks again: a second reading of the same request, made one item with the first
+    const again = await ingest({ from: school, to: [me], isSent: false, inInbox: true, bodyText: SLIP, inReplyTo: asked.rfc, references: [asked.rfc] });
+    expect(again.thread).toBe(asked.thread);
+    await datedDone();
+    const readings = (await backend.store.dated.ofThread(asked.thread)).filter((r) => r.kind === "respond");
+    expect(readings).toHaveLength(2);
+    expect(await rows()).toHaveLength(1);
+    expect((await Promise.all(readings.map((r) => backend.store.dated.get(r.id)))).filter((r) => r!.sameAs !== null)).toHaveLength(1);
+    model.sent = () => sent({ promises: [wednesday], answers: [{ label: "q1", verdict: "promise", evidence: "I'll send it Wednesday" }] });
+    await reply(again, "Thanks! I'll send it Wednesday.");
+    await followupsDone();
+    const [promise] = (await backend.store.followups.ofThread(asked.thread)).filter((p) => p.kind === "promise");
+    expect(promise!.answers).not.toBeNull();
+    expect((await rows()).map((r) => r.id)).toEqual([`promise:${promise!.id}`]);
+    const now = (await backend.store.followups.get(promise!.id))!;
+    const { undoId } = await client.call("followups.act", { id: now.id, revision: now.revision, action: "done" });
+    for (const r of readings) expect(await backend.store.dated.get(r.id)).toMatchObject({ state: "settled" });
+    expect(await rows()).toEqual([]);
+    await client.call("followups.undo", { undoId: undoId! });
+    for (const r of readings) expect(await backend.store.dated.get(r.id)).toMatchObject({ state: "open", closedReason: null });
     expect((await rows()).map((r) => r.id)).toEqual([`promise:${promise!.id}`]);
   });
 

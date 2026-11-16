@@ -846,8 +846,12 @@ export class TodayService {
       const patch = patchesFor(action, now, until);
       // plan 210 (iteration 3, the Codex review's revision 3): Done on a promise finishes the request it answers with it (its
       // Undo puts both back); Remove and Later are the promise's alone. Hidden from the history: the promise's line says it
-      const answering = action === "done" ? [...new Set(promisesNow.flatMap((p) => (p.answers != null && !datedNow.some((r) => r.id === p.answers) ? [p.answers] : [])))] : [];
-      const answered = (await Promise.all(answering.map((id) => store.dated.get(id)))).filter((r): r is DatedRow => r?.state === "open");
+      const answering = action === "done" ? [...new Set(promisesNow.flatMap((p) => (p.answers != null ? [p.answers] : [])))] : [];
+      const asked = (await Promise.all(answering.map((id) => store.dated.get(id)))).filter((r): r is DatedRow => r?.state === "open");
+      // (Codex code review of iteration 3) the request's item, every reading of it: the projection hides them with the
+      // promise (`withoutAnswered`), so they're settled with it, at once, and come back with its Undo
+      const actedOn = new Set(datedNow.map((r) => r.id));
+      const answered = asked.length ? (await store.today.members(asked.map((r) => r.sameAs ?? refKey({ source: "dated", id: r.id })))).dated.filter((r) => r.state === "open" && !actedOn.has(r.id)) : [];
       return store.today.act({
         dated: [
           ...datedNow.map((r) => ({ id: r.id, revision: at.get(refKey({ source: "dated", id: r.id })) ?? r.revision, patch: patch.dated })),
