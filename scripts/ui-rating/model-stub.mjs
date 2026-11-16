@@ -341,6 +341,8 @@ export function sentMail(prompt) {
         quote: s,
         to: people[0]?.label ?? null,
         due: day >= 0 && sentDay ? iso(nextWeekday(sentDay, day)) : null,
+        // plan 210 (iteration 5, prompt v13): no part of the day
+        partOfDay: null,
       };
     });
   const asks = sentences.some((s) => s.endsWith("?")) || /let me know|quedo atent|quedo a la espera/i.test(own);

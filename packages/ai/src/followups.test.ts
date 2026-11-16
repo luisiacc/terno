@@ -53,17 +53,32 @@ describe("reading what you sent (plan 142)", () => {
     expect(es).toContain('"calibrar el verde y enviarle a Valeria los tres ajustes"');
   });
 
-  it("prompt v12 (plan 210, iteration 4): a sentence about how or with what is part of the promise; who comes along isn't one; a morning is over by noon; a holding verdict quotes its promise", () => {
+  it("prompt v12 (plan 210, iteration 4): a sentence about how or with what is part of the promise; who comes along isn't one; a holding verdict quotes its promise", () => {
     const en = readSentMailTask(input()).system;
     expect(en).toContain('"promises": at most 10, one for each thing they\'ll do (how they\'ll do it, or what they\'ll bring to it, is part of that thing: see the end).');
     expect(en).toContain('and not who comes along with them to a meeting or event that\'s set ("I\'ll bring our account manager and an engineer for the review", "llevo a Nora a la reunión").');
-    expect(en).toContain('A morning they name is over by noon: "Friday morning" or "el viernes por la mañana" is "by 12:00 PM" in the text ("bring Jessica the cupcakes by 12:00 PM").');
     expect(en).toContain('sent on Tuesday the 3rd, "next week" is Sunday the 15th)');
     expect(en).toContain('A sentence or a clause that only says how they\'ll do another promise of the message, or with what (what they\'ll have ready, bring to it or come with), is part of that promise, never its own, whichever comes first: "I\'ll redo the footnotes in your house style so they match. I\'ll send the chapter back Friday" is one promise, "send Ana the revised chapter" due Friday;');
     expect(en).toContain('That promise is still in "promises", and evidence is its quote.');
     const es = readSentMailTask(input({ language: "es" })).system;
-    expect(es).toContain('is "antes de las 12:00" in the text ("llevarle a Jessica los cupcakes antes de las 12:00")');
     expect(es).toContain('"te llamo el lunes a las 10, y voy con una mejor oferta en el precio" is one, "llamar a Ana a las 10:00"');
+  });
+
+  it("prompt v13 (plan 210, iteration 5): a part of the day is its own field, never a clock in the text", () => {
+    const en = readSentMailTask(input()).system;
+    expect(en).toContain('A part of the day they name ("Friday morning", "el viernes por la mañana", "this afternoon", "tonight") is not a time: it goes in "partOfDay", and the text gets no clock for it ("bring Jessica the cupcakes", never "by 12:00 PM").');
+    expect(en).toContain('- "partOfDay": "morning", "afternoon" or "evening" when their words name that part of the day');
+    expect(en).not.toContain("is over by noon");
+    expect(readSentMailTask(input({ language: "es" })).system).toContain('("llevarle a Jessica los cupcakes", never "by 12:00 PM")');
+    // the wire takes the part or none, and nothing else
+    const task = readSentMailTask(input());
+    const answer = (partOfDay: unknown) => task.schema.zod.safeParse({ promises: [{ text: "t", quote: "q", to: null, due: "2026-11-20", partOfDay }], expectsReply: false, awaiting: [], kept: [], answers: [] }).success;
+    expect([answer("morning"), answer(null), answer("noon")]).toEqual([true, true, false]);
+  });
+
+  it("the fake reads a part of the day from the words, as the prompt asks", async () => {
+    const r = await createAi(config, { transport: fakeTransport() }).readSentMail(input({ ownText: "I'll bring the cupcakes 2026-11-20 morning." }));
+    expect(r.promises[0]).toMatchObject({ due: "2026-11-20", partOfDay: "morning" });
   });
 
   it("the conversation's requests are material, labelled, with their day, at most five, and can't close their block", () => {
@@ -76,7 +91,7 @@ describe("reading what you sent (plan 142)", () => {
   });
 
   it("is frozen at its version: a change to the words is a new version", () => {
-    expect(FOLLOWUP_PROMPT_VERSION).toBe(12);
+    expect(FOLLOWUP_PROMPT_VERSION).toBe(13);
     expect(readSentMailTask(input()).system).toMatchSnapshot();
   });
 
@@ -96,9 +111,9 @@ describe("reading what you sent (plan 142)", () => {
   });
 
   it("a small window holds the whole conversation with the server: a bad answer and its repair still fit", async () => {
-    // v12's words (a sentence about how one promise, who comes along, a morning over by noon) need a little over 3,300 (v11
+    // v13's words (a promise's part of the day, its field in the schema) need a little under 3,500 (v12 3,300, v11
     // 2,900, v10 2,100)
-    const window = 3400;
+    const window = 3500;
     const budget = followupBudget(window);
     const fitted = fitSentMail(input({ ownText: "o".repeat(6000), answering: "a".repeat(3000), outputTokens: budget.outputTokens }), budget.promptChars);
     const sizes: number[] = [];

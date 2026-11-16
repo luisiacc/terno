@@ -110,9 +110,10 @@ export function checkSentMail(result: SentMailResult, input: { ownText: string; 
     const to = p.to ? person.get(p.to) : undefined;
     const due = validFollowupDate(p.due, input.sentAt);
     const day = followupDue({ kind: "promise", sentAt: input.sentAt, due, nudgeAfterDays: input.nudgeAfterDays });
-    // plan 210 (iteration 2): a time its words state is its moment
-    const { dueAt, timed } = promiseMoment(p.text, due, day, input.sentAt);
-    rows.push({ kind: "promise", item, text: yourWords(p.text), quote: p.quote, personName: to?.name || null, personEmail: to?.email ?? null, dueAt, dated: day.dated, ...(timed ? { timed } : {}) });
+    // plan 210 (iteration 2): a time its words state is its moment; iteration 5, only one its quote states, and a part of its
+    // day stored, never written as a clock
+    const { dueAt, timed, text, partOfDay } = promiseMoment({ text: p.text, quote: p.quote, day: due, part: p.partOfDay ?? null }, day, input.sentAt);
+    rows.push({ kind: "promise", item, text: yourWords(text), quote: p.quote, personName: to?.name || null, personEmail: to?.email ?? null, dueAt, dated: day.dated, ...(timed ? { timed } : {}), ...(partOfDay ? { partOfDay } : {}) });
   });
   if (result.expectsReply) {
     const who = result.awaiting.flatMap((label) => person.get(label) ?? []).filter((r) => isPerson(r.email));
