@@ -7,7 +7,7 @@ import { readNothingAsked, type DatedMark, type DatedSource, type DatedWrite, ty
 import { DailyLimitError, MonthlyLimitError } from "./ai-limiter";
 import { silenced, silenceOf, withoutMuted } from "./dated-mutes";
 import { UI_LOCALE_KEY } from "./forwarding";
-import { bareDayAhead, contextOf, insideQuotes, quoteSpan, type Sentences, namesApart, namesItem, negatedReceipt, norm, otherAmounts, otherIds, paragraphsOf, plainEvidence, replacesPlainly, sameObject, sameThing, saysReplaced, saysWhen, sentencesOf, settlesKind } from "./dated-evidence";
+import { bareDayAhead, contextOf, insideQuotes, quoteSpan, type Sentences, namesApart, namesItem, negatedReceipt, norm, otherAmounts, otherIds, paragraphsOf, plainEvidence, replacesPlainly, sameObject, sameThing, saysReplaced, saysWhen, scamPressure, sentencesOf, settlesKind } from "./dated-evidence";
 import { untrustedSenders, withoutUntrusted } from "./suspicious-sender";
 
 /**
@@ -84,6 +84,8 @@ const KINDS: ReadonlySet<string> = new Set(DATED_KINDS);
 // plan 210 (iteration 3): a renewal and an expiry on one day are one thing (Haiku gave a domain "Renew …" as both, 1 in 5)
 const itemKey = (kind: string, t: { dueDay: string; dueAt: number; timed: boolean }) => `${kind === "renew" ? "expire" : kind}:${t.dueDay}:${t.timed ? t.dueAt : ""}`;
 const TWO_A_DAY: ReadonlySet<string> = new Set(["respond", "event", "delivery"]);
+/** the kinds a scam's pressure makes (`scamPressure`): a bill, a booking or a parcel keep their own checks */
+const PRESSED: ReadonlySet<string> = new Set(["alert", "respond", "expire", "ask"]);
 
 /** A name's words, as a quote's are read: "Lucía Romero" → ["lucia", "romero"]; an initial or a bare letter isn't one. */
 const nameWords = (name: string) => norm(name).split(" ").filter((w) => w.length >= 2);
@@ -551,6 +553,9 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     // plan 210 (iteration 3): an offer is its own question, never hidden by a request about the same papers
     const around = `${item.quote}\n${contextOf(item.quote, sentences)}`;
     if (kind === "ask" && ((requested(item) && !offerOnly(around, contextOf(item.quote, paragraphs))) || noReply || onlyTells(item.quote) || onlyTells(contextOf(item.quote, sentences)) || courtesyOnly(around) || selfOffer(around, contextOf(item.quote, paragraphs)) || !(askAllowed(item.quote, said, input.text, input) || rebooks(item)))) continue;
+    // plan 210 (iteration 4's code review): what a scam says happened or demands is no item, an alert, a request or an
+    // expiry (prompt v15, and this backstop); never "something asked" either
+    if (PRESSED.has(kind) && scamPressure(`${input.subject}\n${tiedWords(item.quote).slice(0, FACT_WORDS_MAX)}\n${item.quote}`)) continue;
     // plan 210 (the Codex code review of iteration 2): a request of the reader, kept below or not (a day already past or
     // over in a scan, a duplicate, past the bound): never "nothing asked"
     if (kind === "ask" || kind === "respond") asked = true;

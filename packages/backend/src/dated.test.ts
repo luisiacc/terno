@@ -931,6 +931,31 @@ describe("plan 210 (iteration 4)", () => {
   });
 });
 
+describe("plan 210 (iteration 4's code review)", () => {
+  const base = { text: BILL_TEXT, subject: "Your bill", arrivedAt: NOW, open: new Map<string, DatedRow>(), fromScan: false, now: NOW };
+
+  it("a scam's alert, request or expiry is no item: the panel's phishing (round 13), read locally, en and es", () => {
+    const STRIKE = 'Dear Creator,\n\nYour channel "Theo Marsh" has received a third copyright strike due to multiple claims on your recent videos.\n\nYour channel will be PERMANENTLY TERMINATED in 24 hours unless you verify your identity and submit an appeal.\n\nSubmit appeal: https://yt-partner-review.example/appeal?ch=theomarsh';
+    const strike = { kind: "alert", text: "Third copyright strike on Theo Marsh channel", quote: "received a third copyright strike due to multiple claims on your recent videos", due: "2026-11-11", time: null };
+    const read = (items: Item[], text: string, subject: string) => checkDates({ items, settled: [] }, { ...base, text, subject }).rows;
+    expect(read([strike], STRIKE, "FINAL NOTICE: Copyright strike — channel termination in 24 hours")).toEqual([]);
+    expect(read([{ ...strike, kind: "respond", text: "Verify identity and appeal the copyright strike" }], STRIKE, "Copyright strike")).toEqual([]);
+    const PASSWORD = "Dear priya@lumora.example,\n\nYour mailbox password is set to expire TODAY. To avoid losing access to email, you must re-validate your credentials immediately.\n\nFailure to validate within 12 hours will result in your account being suspended and pending messages deleted.";
+    const expires = { kind: "alert", text: "Lumora mailbox password expires; account suspension threatened", quote: "Failure to validate within 12 hours will result in your account being suspended and pending messages deleted.", due: "2026-11-10", time: "19:12" };
+    expect(read([expires], PASSWORD, "[ACTION REQUIRED] Your password expires today")).toEqual([]);
+    expect(read([{ ...expires, kind: "expire", quote: "Your mailbox password is set to expire TODAY." }], PASSWORD, "[ACTION REQUIRED] Your password expires today")).toEqual([]);
+    const BANCO = "Detectamos un acceso inusual a tu Banca en Línea.\n\nPor tu seguridad, debes validar tu identidad en las próximas 12 horas.\n\nSi no lo haces, tu cuenta será bloqueada.";
+    expect(read([{ kind: "alert", text: "Acceso inusual a la Banca en Línea", quote: "Detectamos un acceso inusual a tu Banca en Línea.", due: null, time: null }], BANCO, "Aviso de seguridad")).toEqual([]);
+    // a provider's own report stays, and so does a deadline given as a day; a bill threatened with a cut-off keeps its own checks
+    const FROZEN = "Hi Nora,\n\nWe've frozen your debit card ending in 7730 after a $412.18 charge at Fuel Stop 9 that doesn't match your usual spending.\n\nIf you don't recognize it, call the number on the back of your card.";
+    expect(read([{ kind: "alert", text: "Debit card ending 7730 frozen after a $412.18 charge", quote: "We've frozen your debit card ending in 7730 after a $412.18 charge", due: null, time: null }], FROZEN, "We froze your debit card")).toHaveLength(1);
+    const HOLD = "We've placed a temporary hold on your debit card ending in 2290. If we haven't heard from you by 1:00 PM on Wednesday, November 11, the card will be cancelled.";
+    expect(read([{ kind: "alert", text: "Debit card ending 2290 on hold", quote: "If we haven't heard from you by 1:00 PM on Wednesday, November 11, the card will be cancelled.", due: "2026-11-11", time: "13:00" }], HOLD, "Your debit card is on hold")).toHaveLength(1);
+    const CUTOFF = "Your electricity bill of $54.20 is due on November 20. Your service will be suspended in 48 hours after that unless payment is received.";
+    expect(read([bill], CUTOFF, "Your bill")).toHaveLength(1);
+  });
+});
+
 describe("the reader", () => {
   it("off (the default): nothing is marked and nothing is asked", async () => {
     const { backend, model, receive } = await setup({ enabled: false });
