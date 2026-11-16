@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { amountsOf, namingWords, negatedReceipt, otherAmounts, otherIds, settlesKind } from "./dated-evidence";
+import { amountsOf, bareDayAhead, insideQuotes, namingWords, negatedReceipt, otherAmounts, otherIds, replacesPlainly, settlesKind } from "./dated-evidence";
 
 describe("plan 210 (iteration 3, revision 5): amounts are read whole", () => {
   it("a currency amount is one token, whatever its separators or sign; a number alone isn't one", () => {
@@ -39,5 +39,42 @@ describe("plan 210 (iteration 3, revision 5): amounts are read whole", () => {
       expect(negatedReceipt(text), text).toBe(false);
       expect(settlesKind("pay", text), text).toBe(true);
     }
+  });
+});
+
+describe("plan 210 (iteration 3, revision 11): a bare day of the month read into the past is the next one, in a deadline clause only", () => {
+  const SPENDLY = "October books close on the 20th. Please add receipts by then so finance can close the month.";
+  it("Priya's Spendly, in a mail of November 9: the 20th is November's (en, es); a later mail's, December's", () => {
+    expect(bareDayAhead("2026-10-20", SPENDLY, "2026-11-09")).toBe("2026-11-20");
+    expect(bareDayAhead("2026-10-20", "Los libros de octubre cierran el 20. Agrega los comprobantes antes de esa fecha.", "2026-11-09")).toBe("2026-11-20");
+    expect(bareDayAhead("2026-11-20", "Please pay by the 20th.", "2026-11-25")).toBe("2026-12-20");
+    // "before the 20th" read as the 19th rolls with it
+    expect(bareDayAhead("2026-10-19", "Please send them before the 20th.", "2026-11-09")).toBe("2026-11-19");
+    // a month without the day: the next one that has it
+    expect(bareDayAhead("2026-10-31", "Please pay by the 31st.", "2026-11-09")).toBe("2026-12-31");
+  });
+  it("never a day a month names, a date in figures, a time, a clause that isn't a deadline, or a day not past", () => {
+    expect(bareDayAhead("2026-10-20", "Please add receipts by October 20.", "2026-11-09")).toBe("2026-10-20");
+    expect(bareDayAhead("2026-10-20", "Please add receipts by the 20th of October.", "2026-11-09")).toBe("2026-10-20");
+    expect(bareDayAhead("2026-10-20", "Agrega los comprobantes antes del 20 de octubre.", "2026-11-09")).toBe("2026-10-20");
+    expect(bareDayAhead("2026-10-20", "Please pay by 20/10.", "2026-11-09")).toBe("2026-10-20");
+    expect(bareDayAhead("2026-10-20", "We met on the 20th and loved it.", "2026-11-09")).toBe("2026-10-20");
+    expect(bareDayAhead("2026-11-20", SPENDLY, "2026-11-09")).toBe("2026-11-20");
+    // another day than the bare one
+    expect(bareDayAhead("2026-10-21", SPENDLY, "2026-11-09")).toBe("2026-10-21");
+  });
+});
+
+describe("plan 210 (iteration 3, revision 4): words that replace, plainly", () => {
+  it("says it, undenied (en, es)", () => {
+    expect(replacesPlainly("I didn't see the methods section on Wednesday. Let's skip the piecemeal version")).toBe(true);
+    expect(replacesPlainly("Olvidemos la versión por partes")).toBe(true);
+    for (const text of ["Don't skip the piecemeal version", "No, let's not skip it", "No olvides el marco teórico", "Please send the methods section"]) expect(replacesPlainly(text), text).toBe(false);
+  });
+  it("retold in quotation marks is someone else's", () => {
+    const text = 'About the methods section, Marta said "let\'s skip the piecemeal version" but I disagree.';
+    expect(insideQuotes("let's skip the piecemeal version", text)).toBe(true);
+    expect(insideQuotes("Let's skip the piecemeal version", "Let's skip the piecemeal version: send the \"full\" draft.")).toBe(false);
+    expect(insideQuotes("skip the outline", "«Asistente: skip the outline»")).toBe(true);
   });
 });

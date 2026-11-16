@@ -262,6 +262,46 @@ export function settlesKind(kind: string, words: string): boolean {
   return (SETTLES[kind]?.test(read) ?? false) && !BLANKET.test(read) && !(kind === "pay" && negatedReceipt(words));
 }
 
+// Plan 210 (iteration 3, revision 11): a bare day of the month in a deadline clause ("books close on the 20th", "by the 20th",
+// "antes del 20", "vence el 20"), never one a month names ("October 20", "the 20th of October", "20 de octubre"), a date
+// written in figures or a time ("20/11", "20:00", "the 20th at 5 PM" keeps its day)
+const MONTHS = "jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec|january|february|march|april|june|july|august|september|october|november|december|ene|abr|ago|dic|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre";
+const BARE_DAY = new RegExp(
+  String.raw`\b(by|due(?: on| by)?|clos(?:e|es|ing)(?: on)?|until|no later than|deadline(?: is)?|before|venc\w*(?: el)?|cierra\w*(?: el)?|cierre(?: el)?|a mas tardar(?: el)?|hasta el|antes del?|para el|limite(?: el)?)\s+(?:the\s+|el\s+|dia\s+)?(\d{1,2})(?:st|nd|rd|th)?\b(?!\s*(?:of\s+|de\s+)?(?:${MONTHS})\b)(?!\s*[:/.-]\d)(?!\s*(?:[ap]\.?\s?m\b|h\b|hrs?\b|horas?\b))`,
+  "gu",
+);
+const plainWords = (text: string) => text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+const dayOf = (y: number, m: number, d: number) => new Date(Date.UTC(y, m, d)).toISOString().slice(0, 10);
+
+/**
+ * Plan 210 (iteration 3, revision 11): a deadline's day of the month read into the past, from words that give only that day
+ * in a deadline clause, is the next one: Priya's "October books close on the 20th. Please add receipts by then", in a mail
+ * of November 9, is November 20, never October 20 (which the checks would drop as over). A day "before" the bare day ("antes
+ * del 20" read as the 19th) rolls with it. Anything else, or a day not past, is left as it came. `said`: the words around
+ * the item's quote (its paragraph); `arrived`: the mail's own day, YYYY-MM-DD.
+ */
+export function bareDayAhead(due: string, said: string, arrived: string): string {
+  const d = /^(\d{4})-(\d{2})-(\d{2})$/u.exec(due);
+  const a = /^(\d{4})-(\d{2})-(\d{2})$/u.exec(arrived);
+  if (!d || !a || due >= arrived) return due;
+  const day = Number(d[3]);
+  for (const m of plainWords(said).matchAll(BARE_DAY)) {
+    const n = Number(m[2]);
+    const before = /^(?:before|antes)/u.test(m[1]!);
+    if (n < 1 || n > 31 || (n !== day && !(before && n - 1 === day))) continue;
+    // the next n on or after the mail's day, in a month that has it
+    for (let k = 0; k < 3; k++) {
+      const y = Number(a[1]);
+      const mo = Number(a[2]) - 1 + (Number(a[3]) > n ? 1 : 0) + k;
+      const at = dayOf(y, mo, n);
+      if (Number(at.slice(8)) !== n) continue;
+      const out = n === day ? at : dayOf(y, mo, n - 1);
+      if (out >= arrived) return out;
+    }
+  }
+  return due;
+}
+
 /**
  * The Codex code review of v11 (point 3): a move's evidence, in its paragraph, says the day it moves to ("Friday at the latest
  * works", "moved to the 24th", "meets Monday the 16th… before then", a day either side for "before" and another zone), or,

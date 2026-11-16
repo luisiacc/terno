@@ -1,6 +1,6 @@
 import { DATED_ITEMS_MAX } from "@terno/core";
 import { describe, expect, it } from "vitest";
-import { cutAtWord, datedBudget, datedPrompt, DATED_PROMPT_VERSION, fakeDates, fitDates, readDatesTask, type DatedInput } from "./dated";
+import { cutAtClause, cutAtWord, datedBudget, datedPrompt, DATED_PROMPT_VERSION, fakeDates, fitDates, readDatesTask, type DatedInput } from "./dated";
 import { fakeTransport } from "./fake";
 import { createAi } from "./tasks";
 import { promptText, type CompletionRequest, type ProviderConfig } from "./types";
@@ -93,7 +93,7 @@ describe("reading dates in mail you got (plan 204)", () => {
       moved: [],
     });
     // the fifth panel round: cut at a word, never inside one
-    expect(v.items.map((i) => i.text)).toEqual(["Debit card ending in 4821 frozen after an unrecognized $412.18 charge at Gulfway Fuel on March 2, with online transfers", "Tarjeta bloqueada tras un cargo de $412.18", "Payroll funding of $48,210.55 failed"]);
+    expect(v.items.map((i) => i.text)).toEqual(["Debit card ending in 4821 frozen after an unrecognized $412.18 charge at Gulfway Fuel on March 2…", "Tarjeta bloqueada tras un cargo de $412.18", "Payroll funding of $48,210.55 failed"]);
     // only an alert's: another kind keeps its words
     expect(validate({ items: [item({ text: "Pay what the email says" })], settled: [], moved: [] }).items[0]!.text).toBe("Pay what the email says");
   });
@@ -169,6 +169,11 @@ describe("reading dates in mail you got (plan 204)", () => {
     expect(due({ kind: "respond", quote: "antes de las 18:00 del lunes", due: "2026-11-16" })).toBe("2026-11-16");
     expect(due({ kind: "respond", quote: "before Monday", due: "2026-11-16", time: "17:00" })).toBe("2026-11-16");
     expect(due({ kind: "event", quote: "the dinner before Monday's launch", due: "2026-11-16" })).toBe("2026-11-16");
+    // plan 210 (iteration 3, revision 11): an expiry's or a renewal's day is the one the mail names, and "the end of the month" is its last day
+    expect(due({ kind: "expire", quote: "Please renew before the 19th, when your domain expires", due: "2026-11-19" })).toBe("2026-11-19");
+    expect(due({ kind: "renew", quote: "Please renew before the 9th to keep your apps on the store", due: "2026-12-09" })).toBe("2026-12-09");
+    expect(due({ kind: "expire", quote: "renueva antes del día 8 por favor", due: "2026-12-08" })).toBe("2026-12-08");
+    expect(due({ kind: "respond", quote: "Please sign and send it back before the end of the month", due: "2026-11-30" })).toBe("2026-11-30");
     // the Codex code review of v11 (point 6): a negated "before" or a lower bound isn't a deadline, nor a sentence that asks nothing
     expect(due({ kind: "respond", quote: "please submit on Monday", due: "2026-11-16" }, "Do not submit before Monday; please submit on Monday.")).toBe("2026-11-16");
     expect(due({ kind: "respond", quote: "Send your entry on Monday", due: "2026-11-16" }, "Send your entry on Monday. Entries sent before Monday won't count.")).toBe("2026-11-16");
@@ -333,6 +338,25 @@ describe("reading dates in mail you got (plan 204)", () => {
     expect(v.settled.length).toBeLessThanOrEqual(10);
   });
 
+  it("plan 210 (iteration 3, revision 11): a long text ends at a whole clause with an ellipsis, never mid-clause", () => {
+    expect(cutAtClause("Pay $142.67 for the Brightline bill", 120)).toBe("Pay $142.67 for the Brightline bill");
+    // the last clause that fits whole: before a comma, a bracket it can't close, a dash, a sentence's end
+    expect(cutAtClause("$1,186.40 Pingwire team payment failed on Visa ending in 4242; production deployments will pause and preview deployments", 100)).toBe("$1,186.40 Pingwire team payment failed on Visa ending in 4242…");
+    expect(cutAtClause("Business visa biometrics and document submission (arrive 15 minutes early; bring passport and copy, two photos, the form)", 120)).toBe("Business visa biometrics and document submission…");
+    expect(cutAtClause("Renew the Appvault Developer Program membership ($99 USD/year) — apps leave the store and builds stop when it lapses", 90)).toBe("Renew the Appvault Developer Program membership ($99 USD/year)…");
+    expect(cutAtClause("Pagar $1,247.00 del recibo de luz LuzMex, con fecha límite el lunes y recargo del 10% después de esa fecha", 60)).toBe("Pagar $1,247.00 del recibo de luz LuzMex…");
+    // a short word's full stop isn't a sentence's end, nor a decimal point
+    expect(cutAtClause("Dentist appointment with Dr. Ruiz at the Lakeside clinic on the second floor, bring the card", 80)).toBe("Dentist appointment with Dr. Ruiz at the Lakeside clinic on the second floor…");
+    // one clause longer than all of it: at a word, with an ellipsis, and before a bracket it can't close
+    expect(cutAtClause("Send the signed lease to the landlord", 30)).toBe("Send the signed lease to the…");
+    expect(cutAtClause("Return the signed field trip permission slip for the Hidden Springs Nature Center (with $10", 85)).toBe("Return the signed field trip permission slip for the Hidden Springs Nature Center…");
+    for (const text of ["x".repeat(500), "Send the signed lease to the landlord and the agency before the end of the month, together with the deposit", "🎉".repeat(80)]) {
+      const cut = cutAtClause(text, 60);
+      expect(cut.length, text).toBeLessThanOrEqual(60);
+      expect(cut.endsWith("…"), text).toBe(true);
+    }
+  });
+
   it("cuts long words, and leaves the dates as they came for the backend's checks", () => {
     const v = validate({ items: [item({ text: "t".repeat(500), quote: "q".repeat(1000), due: "someday", time: "late" })], settled: [], moved: [] });
     expect(v.items[0]!.text.length).toBeLessThanOrEqual(120);
@@ -371,7 +395,7 @@ describe("reading dates in mail you got (plan 204)", () => {
       ["o1", "Soccer game (arrive 7:30)", "Please arrive by 7:30"],
       ["o2", null, null],
       ["o3", null, null],
-      ["o4", "Soccer game at Riverside Park field 3 with the whole team, arrive early to warm up and bring the orange jerseys and", "word ".repeat(80)],
+      ["o4", "Soccer game at Riverside Park field 3 with the whole team…", "word ".repeat(80)],
     ]);
   });
 
