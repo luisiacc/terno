@@ -1,4 +1,4 @@
-import { addressKey, ANSWERED_KINDS, DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, parseHandedTo, DATED_MUTE_NAME_MAX, DATED_MUTES_MAX, muteKey, senderIsPerson, THREAD_SCOPED_KINDS, waitingCutoff, type DatedMute, type DatedMuteOn, type DatedRow } from "@terno/core";
+import { addressKey, ANSWERED_KINDS, DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, parseHandedTo, readPartOfDay, DATED_MUTE_NAME_MAX, DATED_MUTES_MAX, muteKey, senderIsPerson, THREAD_SCOPED_KINDS, waitingCutoff, type DatedMute, type DatedMuteOn, type DatedRow } from "@terno/core";
 import { DATED_MARK_MS, DATED_SCAN_MARK_MS, datedTab, NEW_MAIL_MS, readerIn, readNothingAsked, recipientList, type ClosedAt, type DatedFinish, type DatedFinishOutcome, type DatedMuteAdded, type DatedMark, type DatedSnapshot, type DatedSource } from "@terno/store";
 import { OWN_SENDER_SQL, RECEIVED_SQL } from "./ai-summaries";
 import { ownAddresses } from "./facts";
@@ -19,6 +19,7 @@ interface Raw {
   changed_at: number | null; changed_from: string | null; proposal: string | null;
   handed_to?: string | null;
   before_day: string | null; confirms: number | null; wall: string | null;
+  part_of_day: string | null;
 }
 const toRow = (r: Raw): DatedRow => ({
   id: r.id, threadId: r.thread_id, messageId: r.message_id, item: r.item, kind: r.kind, text: r.text, quote: r.quote, senderKey: r.sender_key, dueDay: r.due_day, dueAt: r.due_at, timed: r.timed === 1, dated: r.dated === 1, actAt: r.act_at,
@@ -26,6 +27,7 @@ const toRow = (r: Raw): DatedRow => ({
   early: r.early === 1, sameAs: r.same_as ?? null, detailOf: r.detail_of ?? null, lapses: r.lapses === 1, ...scheduleFields(r), settledBy: r.settled_by ?? null, settledAt: r.settled_at ?? null,
   handedTo: parseHandedTo(r.handed_to),
   before: r.before_day ?? null, confirms: r.confirms ?? null, wall: wallOf(r.wall),
+  partOfDay: readPartOfDay(r.part_of_day),
 });
 
 /** Ingest's part (in its transaction): received live mail, by the new-mail rule, and since the feature went on. */
@@ -178,9 +180,9 @@ export function finishDated(db: Db, w: DatedFinish): DatedFinishOutcome {
         open--;
       }
       open += Number(db.run(
-        `INSERT OR IGNORE INTO dated_items (thread_id, message_id, item, kind, text, quote, sender_key, due_day, due_at, timed, dated, act_at, deferred_until, arrived_at, state, from_scan, revision, model, provider, prompt_version, created_at, early, lapses, before_day, wall)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 'open', ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        src.threadId, w.messageId, r.item, r.kind, r.text, r.quote, src.senderKey, r.dueDay, r.dueAt, r.timed ? 1 : 0, r.dated ? 1 : 0, r.actAt, src.date, w.fromScan ? 1 : 0, w.model, w.provider, w.promptVersion, w.now, r.early ? 1 : 0, r.lapses ? 1 : 0, r.before ?? null, wallJson(r.wall),
+        `INSERT OR IGNORE INTO dated_items (thread_id, message_id, item, kind, text, quote, sender_key, due_day, due_at, timed, dated, act_at, deferred_until, arrived_at, state, from_scan, revision, model, provider, prompt_version, created_at, early, lapses, before_day, wall, part_of_day)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 'open', ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        src.threadId, w.messageId, r.item, r.kind, r.text, r.quote, src.senderKey, r.dueDay, r.dueAt, r.timed ? 1 : 0, r.dated ? 1 : 0, r.actAt, src.date, w.fromScan ? 1 : 0, w.model, w.provider, w.promptVersion, w.now, r.early ? 1 : 0, r.lapses ? 1 : 0, r.before ?? null, wallJson(r.wall), r.partOfDay ?? null,
       ).changes);
     }
     // plan 210 (iteration 4, revision 11): an ask that confirms an event of this message, linked to that event's row
@@ -205,24 +207,25 @@ export function finishDated(db: Db, w: DatedFinish): DatedFinishOutcome {
     }
     for (const m of w.movedPromises ?? []) {
       // plan 210 (iteration 4): a promise whose day the user chose keeps it; the move is kept for them to take or leave
-      if (proposedMove(db, "followups", { id: m.id, revision: m.revision, threadId: src.threadId }, { dueAt: m.dueAt, timed: m.timed ?? false, before: m.before ?? null }, src, w)) continue;
+      if (proposedMove(db, "followups", { id: m.id, revision: m.revision, threadId: src.threadId }, { dueAt: m.dueAt, timed: m.timed ?? false, before: m.before ?? null, partOfDay: m.partOfDay ?? null }, src, w)) continue;
       db.run(
         // plan 210 (iteration 2): its first broken day kept (a second move after another broken day keeps the first), and
         // whether its new moment is a stated time (absent: as it was)
-        // plan 210 (iteration 4): the day its person asked for it before, or none
-        "UPDATE followups SET due_at = ?, dated = 1, state = CASE WHEN ? > ? THEN 'open' ELSE state END, inbox_state = 'none', broken_due_at = coalesce(broken_due_at, ?), timed = coalesce(?, timed), before_day = ?, revision = revision + 1 WHERE id = ? AND revision = ? AND thread_id = ? AND kind = 'promise' AND state IN ('open','due')",
-        m.dueAt, m.dueAt, w.now, m.brokenDueAt ?? null, m.timed === undefined ? null : m.timed ? 1 : 0, m.before ?? null, m.id, m.revision, src.threadId,
+        // plan 210 (iteration 4): the day its person asked for it before, or none; iteration 5, the part of its new day, or none
+        "UPDATE followups SET due_at = ?, dated = 1, state = CASE WHEN ? > ? THEN 'open' ELSE state END, inbox_state = 'none', broken_due_at = coalesce(broken_due_at, ?), timed = coalesce(?, timed), before_day = ?, part_of_day = ?, revision = revision + 1 WHERE id = ? AND revision = ? AND thread_id = ? AND kind = 'promise' AND state IN ('open','due')",
+        m.dueAt, m.dueAt, w.now, m.brokenDueAt ?? null, m.timed === undefined ? null : m.timed ? 1 : 0, m.before ?? null, m.partOfDay ?? null, m.id, m.revision, src.threadId,
       );
     }
     for (const m of w.moved ?? []) {
       // plan 210 (iteration 4): likewise an item whose day the user chose: the mail's day (and words) wait as a proposal
-      if (proposedMove(db, "dated_items", { id: m.id, threadId: src.threadId, senderKey: src.senderKey, reaches: SENDER_REACHES_SQL }, { dueDay: m.dueDay, dueAt: m.dueAt, timed: m.timed, actAt: m.actAt, ...(m.text ? { text: m.text } : {}), before: m.before ?? null, wall: m.wall ?? null }, src, w)) continue;
+      if (proposedMove(db, "dated_items", { id: m.id, threadId: src.threadId, senderKey: src.senderKey, reaches: SENDER_REACHES_SQL }, { dueDay: m.dueDay, dueAt: m.dueAt, timed: m.timed, actAt: m.actAt, ...(m.text ? { text: m.text } : {}), before: m.before ?? null, wall: m.wall ?? null, partOfDay: m.partOfDay ?? null }, src, w)) continue;
       db.run(
         // the revision stays: a Later just before stays undoable, and the move changes no choice of the user's (Codex review);
         // its new words, if it gives some, in the same write (the fifth panel round)
-        // plan 210 (iteration 4): and the day it's asked before and the mail's own clock at its new moment, or none
-        `UPDATE dated_items SET due_day = ?, due_at = ?, timed = ?, dated = 1, act_at = ?, text = coalesce(?, text), before_day = ?, wall = ? WHERE id = ? AND state = 'open' AND (thread_id = ? OR (sender_key = ? AND ${SENDER_REACHES_SQL}))`,
-        m.dueDay, m.dueAt, m.timed ? 1 : 0, m.actAt, m.text ?? null, m.before ?? null, wallJson(m.wall), m.id, src.threadId, src.senderKey,
+        // plan 210 (iteration 4): and the day it's asked before and the mail's own clock at its new moment, or none; iteration
+        // 5, the part of its new day, or none
+        `UPDATE dated_items SET due_day = ?, due_at = ?, timed = ?, dated = 1, act_at = ?, text = coalesce(?, text), before_day = ?, wall = ?, part_of_day = ? WHERE id = ? AND state = 'open' AND (thread_id = ? OR (sender_key = ? AND ${SENDER_REACHES_SQL}))`,
+        m.dueDay, m.dueAt, m.timed ? 1 : 0, m.actAt, m.text ?? null, m.before ?? null, wallJson(m.wall), m.partOfDay ?? null, m.id, src.threadId, src.senderKey,
       );
     }
     // plan 210 (iteration 3): a request a reply of yours already followed goes to the follow-ups reader with that reply again, for its verdict

@@ -1618,6 +1618,14 @@ ALTER TABLE drafts ADD COLUMN handoff_json TEXT;
 ALTER TABLE dated_items ADD COLUMN handed_to TEXT;
 ALTER TABLE followups ADD COLUMN handed_to TEXT;
 ` },
+  // plan 210 (iteration 5, revision 4): the part of its day a request or a promise is for ("Friday morning", "tonight"),
+  // stored rather than written into its words as a clock; over at that part's end. Shape only: nullable columns, no rewrite,
+  // no index (both tables are bounded and read whole); rows stored before it are for the whole day (no backfill). v72 and
+  // v73 are iteration 5's other parts
+  { version: 71, name: "What matters: a part of the day (plan 210, iteration 5)", sql: `
+ALTER TABLE dated_items ADD COLUMN part_of_day TEXT;
+ALTER TABLE followups ADD COLUMN part_of_day TEXT;
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

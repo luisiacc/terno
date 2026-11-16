@@ -1,4 +1,5 @@
 import { readWall, type DatedWall } from "./dated";
+import { isPartOfDay, type PartOfDay } from "./part-of-day";
 
 /**
  * Plan 210 (iteration 4, the owner's "Change…"): the user may change an item's day and time (a dated item, a promise of
@@ -30,6 +31,8 @@ export interface ScheduleProposal {
   /** plan 210 (iteration 4, merge): the move's day asked before ("before Mon") and the mail's own clock, as a move writes them */
   before?: string;
   wall?: DatedWall;
+  /** plan 210 (iteration 5, revision 4): the move's part of its new day ("Saturday morning"), as a move writes it */
+  partOfDay?: PartOfDay;
   by: string;
   messageId: number;
   at: number;
@@ -61,7 +64,7 @@ export function parseSchedule(json: string | null | undefined): ItemSchedule | n
 }
 
 export const proposalJson = (p: ScheduleProposal): string =>
-  JSON.stringify({ dueDay: p.dueDay, dueAt: p.dueAt, timed: p.timed, ...(p.actAt !== undefined ? { actAt: p.actAt } : {}), ...(p.text ? { text: p.text } : {}), ...(p.before ? { before: p.before } : {}), ...(p.wall ? { wall: p.wall } : {}), by: p.by.slice(0, PROPOSAL_BY_MAX), messageId: p.messageId, at: p.at });
+  JSON.stringify({ dueDay: p.dueDay, dueAt: p.dueAt, timed: p.timed, ...(p.actAt !== undefined ? { actAt: p.actAt } : {}), ...(p.text ? { text: p.text } : {}), ...(p.before ? { before: p.before } : {}), ...(p.wall ? { wall: p.wall } : {}), ...(p.partOfDay ? { partOfDay: p.partOfDay } : {}), by: p.by.slice(0, PROPOSAL_BY_MAX), messageId: p.messageId, at: p.at });
 
 /** A stored proposal, or null. */
 export function parseProposal(json: string | null | undefined): ScheduleProposal | null {
@@ -76,6 +79,7 @@ export function parseProposal(json: string | null | undefined): ScheduleProposal
     ...(typeof r.text === "string" && r.text ? { text: r.text } : {}),
     ...(isDay(r.before) ? { before: r.before } : {}),
     ...(wall ? { wall } : {}),
+    ...(isPartOfDay(r.partOfDay) ? { partOfDay: r.partOfDay } : {}),
     by: r.by.slice(0, PROPOSAL_BY_MAX),
     messageId: r.messageId,
     at: r.at,

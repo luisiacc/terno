@@ -1,4 +1,4 @@
-import { addressKey, type FollowupKind, type FollowupRow, type FollowupState } from "@terno/core";
+import { addressKey, type FollowupKind, type FollowupRow, type FollowupState, type PartOfDay } from "@terno/core";
 import type { ClosedAt } from "./dated";
 
 /**
@@ -58,6 +58,8 @@ export interface FollowupWrite {
   dated: boolean;
   /** plan 210 (iteration 2): `dueAt` is a time its words state (`FollowupRow.timed`); absent, not */
   timed?: boolean;
+  /** plan 210 (iteration 5, revision 4): the part of its day it's promised for (`FollowupRow.partOfDay`); absent, the whole day */
+  partOfDay?: PartOfDay | null;
 }
 
 export interface FollowupFinish {
