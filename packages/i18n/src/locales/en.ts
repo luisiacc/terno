@@ -2671,6 +2671,21 @@ It contains none of your mail, contacts, settings or keys.
   // plan 210 (iteration 3): Coming up past its first two weeks, by week
   "whatMatters.weekOf": "Week of {day}",
   "whatMatters.by": "by {day}",
+  // plan 210 (iteration 5): a part of the day, never a clock
+  "whatMatters.byNear": "by {when}",
+  "whatMatters.part.today.morning": "This morning",
+  "whatMatters.part.today.afternoon": "This afternoon",
+  "whatMatters.part.today.evening": "Tonight",
+  "whatMatters.part.tomorrow.morning": "Tomorrow morning",
+  "whatMatters.part.tomorrow.afternoon": "Tomorrow afternoon",
+  "whatMatters.part.tomorrow.evening": "Tomorrow evening",
+  "whatMatters.part.on.morning": "{day} morning",
+  "whatMatters.part.on.afternoon": "{day} afternoon",
+  "whatMatters.part.on.evening": "{day} evening",
+  "whatMatters.neededPart": "{when} · needed {part}",
+  "today.due.part": "Due {when}",
+  "today.due.partOn": "Due {when}",
+  "today.due.wasPart": "Was due {when}",
   // plan 210 (iteration 3, the owner): a promise's missed day, said while it sits under a live one, and the day it's needed by
   // (iteration 4, merge: a no-break space after the dot keeps it with the words after it when the column wraps)
   "whatMatters.saidMissed": "You said {day} (missed)",

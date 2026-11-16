@@ -141,6 +141,30 @@ describe("the conversation's line keeps the whole wording (plan 204, after the s
     expect(promiseLine({ text: "send the agenda", dueAt: facts.dueAt, dated: true }, false, now)).toBe("Due today · You said: send the agenda");
     expect(promiseLine({ text: "call back", dated: false }, false, now)).toBe("You said: call back");
   });
+  it("plan 210 (iteration 5, revision 4): a part of the day in the reader's line, never a clock; missed after its noon (en, es)", async () => {
+    const { datedLine, promiseLine } = await import("./dated");
+    const { setLocale } = await import("@terno/i18n");
+    const { default: en } = await import("@terno/i18n/locales/en");
+    const { default: es } = await import("@terno/i18n/locales/es");
+    // Thursday 12 November 2026, 10:00
+    const now = new Date(2026, 10, 12, 10, 0).getTime();
+    const kai = { kind: "respond" as const, dueDay: "2026-11-14", dueAt: new Date(2026, 10, 14, 9).getTime(), timed: false, dated: true, text: "Send Kai notes on cut v2", partOfDay: "morning" as const };
+    expect(datedLine(kai, false, now)).toBe("Due Saturday morning · Send Kai notes on cut v2");
+    expect(datedLine({ ...kai, dueDay: "2026-11-13" }, false, now)).toBe("Due tomorrow morning · Send Kai notes on cut v2");
+    const cupcakes = { text: "bring Jessica the cupcakes", dueAt: new Date(2026, 10, 12, 9).getTime(), dated: true, partOfDay: "morning" as const };
+    expect(promiseLine(cupcakes, false, now)).toBe("Due this morning · You said: bring Jessica the cupcakes");
+    expect(promiseLine(cupcakes, true, new Date(2026, 10, 12, 12).getTime())).toBe("Was due this morning · You said: bring Jessica the cupcakes");
+    // a day later it's yesterday's, as any
+    expect(promiseLine(cupcakes, true, new Date(2026, 10, 13, 12).getTime())).toBe("Was due yesterday · You said: bring Jessica the cupcakes");
+    setLocale("es", es);
+    try {
+      expect(datedLine(kai, false, now)).toBe("Vence el sábado por la mañana · Send Kai notes on cut v2");
+      expect(promiseLine(cupcakes, false, now)).toMatch(/^Vence esta mañana · /u);
+      expect(promiseLine(cupcakes, true, new Date(2026, 10, 12, 12).getTime())).toMatch(/^Venció esta mañana · /u);
+    } finally {
+      setLocale("en", en);
+    }
+  });
   it("the Codex code review of the fourth round: an alert is the mail's word, the app saying so after the model's words (en, es)", async () => {
     const { datedLine, datedText } = await import("./dated");
     const { setLocale } = await import("@terno/i18n");

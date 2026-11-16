@@ -1,4 +1,4 @@
-import { dayEnd, dayKeyOf, followupDaysSince, mostUrgent, type FollowupRow } from "@terno/core";
+import { dayKeyOf, dueCutoff, followupDaysSince, mostUrgent, type FollowupRow } from "@terno/core";
 import type { FollowupsSnapshot } from "@terno/core";
 import { t } from "@terno/i18n";
 import { followupsOffered } from "~/lib/ai";
@@ -93,7 +93,8 @@ export function withoutPerson(text: string, names: readonly string[]): string | 
  * placed at (a "9:00 AM" no one said); one that named no day says none (null).
  */
 export function followupWhen(row: FollowupRow, now = Date.now()): string | null {
-  if (row.kind === "promise") return row.dated ? promiseWhen(row, now >= dayEnd(dayKeyOf(row.dueAt)), now) : null;
+  // (plan 210, iteration 5: a part of its day is over at that part's end)
+  if (row.kind === "promise") return row.dated ? promiseWhen(row, now >= dueCutoff(dayKeyOf(row.dueAt), row.partOfDay), now) : null;
   const date = reminderDated(row.dueAt, now);
   if (row.state === "due") return t("followup.dueNow", { date });
   return t("followup.dueOnAwaiting", { date });

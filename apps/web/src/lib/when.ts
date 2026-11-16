@@ -1,3 +1,4 @@
+import type { PartOfDay } from "@terno/core";
 import { getLocale, t } from "@terno/i18n";
 
 /** Plan 87's moments in words (plan 94's scheduled sends say theirs the same way); no imports of the app. */
@@ -146,6 +147,23 @@ export function dueShort(ms: number, timed: boolean, now = Date.now()): string {
   if (days === -1) return t("date.yesterday");
   return Math.abs(days) < 7 ? fmt().weekday.format(ms).replace(".", "") : dayOf(ms, now);
 }
+
+/**
+ * Plan 210 (iteration 5, revision 4): a part of a day, as the column says a day: "This morning", "Tomorrow morning", "Fri
+ * morning", "Nov 21 afternoon" (es "Esta mañana", "Mañana por la mañana", "vie por la mañana"); `long`, a line's weekday
+ * ("Friday morning", "viernes por la mañana"). `near`: today's or tomorrow's, which a sentence lowercases ("Due this
+ * morning"); the others go after "el" in Spanish ("Vence el viernes por la mañana"). Never a clock: a part isn't one.
+ */
+export function partDay(ms: number, part: PartOfDay, now = Date.now(), long = false): { text: string; near: boolean } {
+  const days = daysAway(ms, now);
+  if (days === 0) return { text: t(`whatMatters.part.today.${part}`), near: true };
+  if (days === 1) return { text: t(`whatMatters.part.tomorrow.${part}`), near: true };
+  const day = long ? datedDay(ms, now).text : dueShort(ms, false, now);
+  return { text: t(`whatMatters.part.on.${part}`, { day }), near: false };
+}
+
+/** A near part's words inside a sentence: "this morning", "mañana por la mañana". */
+export const partInSentence = (text: string): string => text.charAt(0).toLocaleLowerCase(getLocale()) + text.slice(1);
 
 /** What `dueShort` can't say: the time of a timed one not due today (Codex code review: "Tomorrow" alone lost "7:40"). */
 export const dueTimeLeft = (ms: number, timed: boolean, now = Date.now()): string | null => (timed && daysAway(ms, now) !== 0 ? fmt().time.format(ms) : null);

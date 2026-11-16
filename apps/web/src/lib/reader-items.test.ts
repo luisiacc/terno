@@ -113,6 +113,19 @@ describe("the reader's one line (plan 210, iteration 3, Codex revision 10)", () 
     expect(readerLine(read({ dated: [draft], followups: [{ ...late, dueAt: at(23) }] }).top!, NOW)).toBe("Due tomorrow ·\u00a0needed Sat · You told Jess you’d send the script");
   });
 
+  it("plan 210 (iteration 5): a promise for this morning is missed in the reader once noon has passed, its line saying the part", () => {
+    // NOW is 4:00 PM on the 22nd: its morning is over
+    const cupcakes = promise({ id: 9, text: "bring Jess the cupcakes", dueAt: at(22), partOfDay: "morning" });
+    const r = read({ dated: [], followups: [cupcakes] });
+    expect(r.top).toMatchObject({ key: "promise:9", missed: true });
+    expect(readerLine(r.top!, NOW)).toBe("Was due this morning · You told Jess you’d bring the cupcakes");
+    // the whole day: still today's
+    expect(read({ dated: [], followups: [{ ...cupcakes, partOfDay: null }] }).top).toMatchObject({ missed: false });
+    // its morning tomorrow, the request it answers Saturday morning
+    const ahead = promise({ id: 9, text: "send Jess the script", dueAt: at(23), partOfDay: "morning", answers: 1 });
+    expect(readerLine(read({ dated: [{ ...draft, partOfDay: "morning" }], followups: [ahead] }).top!, NOW)).toBe("Due tomorrow morning · needed Sat morning · You told Jess you’d send the script");
+  });
+
   it("the open row's item not read yet (its answer on its way) leaves the soonest on top, never nothing", () => {
     expect(keys(read({ target: [{ source: "dated", id: 99 }] }))).toEqual(["dated:2", "dated:1"]);
     expect(read({ dated: [], followups: [] }).top).toBeNull();
