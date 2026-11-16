@@ -95,11 +95,22 @@ function beforeWords(before: string | null | undefined, due: number, now: number
  */
 function travelWhen(travel: { day: string; time: string; place: string }, now: number): string {
   const day = localDay(travel.day)?.getTime() ?? now;
-  const [h, m] = travel.time.split(":").map(Number) as [number, number];
-  const clock = reminderTime(new Date(2000, 0, 1, h, m).getTime());
+  const clock = wallClock(travel.time);
   const when = datedDay(day, now).near === "today" ? clock : `${dueShort(day, false, now)} ${clock}`;
   return t("whatMatters.travel", { when, place: travel.place });
 }
+
+/** A wall clock ("HH:MM") as the app writes times ("4:00 PM", "16:00"), whatever the reader's zone. */
+const wallClock = (time: string): string => {
+  const [h, m] = time.split(":").map(Number) as [number, number];
+  return reminderTime(new Date(2000, 0, 1, h, m).getTime());
+};
+
+/**
+ * Plan 210 (iteration 5, R1): a travel time in its place's clock, with the place ("4:00 PM Austin", es "16:00 en Austin"),
+ * wherever a travel item's time is said (the reader's line too), so one item is never said on two clocks.
+ */
+export const placeClock = (travel: { time: string; place: string }): string => t("whatMatters.travel", { when: wallClock(travel.time), place: travel.place });
 
 /** …and the day it's needed by, after what the column already says ("Wed · needed Fri", "… · needed today"); before a day, as the mail said it ("… · needed before Mon"). */
 function needed(when: string, day: number, now: number, before?: string | null, part?: PartOfDay | null): string {

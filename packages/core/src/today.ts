@@ -169,9 +169,9 @@ export function sortInDay<T>(rows: readonly T[], why: (row: T) => DayWhy, day: (
 }
 
 /**
- * Plan 210 (iteration 2): a related detail of the row's item, said on its second line: a return leg under its outbound flight
- * ("Also Sun 6:10 PM · Return flight to Austin"). Only that (`DatedRow.detailOf`): another obligation of the conversation is
- * a row of its own. Once the row's item is over, the detail is a row of its own.
+ * Plan 210 (iteration 4): another item a row stands for, said on its second line: the other promises of its reply ("Also:
+ * You said: calibrate the green"). Iteration 5: a related detail (a return leg) is no longer one, being a row of its own on
+ * its own day, said once, in its place's clock.
  */
 export interface TodayAlso {
   /** a dated item's kind, or a promise of yours */
@@ -191,10 +191,7 @@ export interface TodayItem {
   why: TodayWhy;
   /** the stored summary's first sentence, only when it's current */
   summary?: string;
-  /**
-   * plan 210 (iteration 2): a related detail of its item (a return leg), never another obligation; iteration 4: the other
-   * promises of its reply (`TodayWhy.with`), a line each
-   */
+  /** plan 210 (iteration 4): the other promises of its reply (`TodayWhy.with`), a line each, never another obligation */
   also?: TodayAlso[];
   /**
    * plan 210 (iteration 3, revision 10): a dated item's own sender, from its message (Margaret's premium from Lakeshore
