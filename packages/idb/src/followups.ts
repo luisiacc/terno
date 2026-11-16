@@ -16,8 +16,11 @@ function own(c: Ctx): Set<string> {
 const live = (r: R) => r.state === "open" || r.state === "due";
 const unconfirmed = (m: R) => String(m.provider_msg_id ?? "local:").startsWith("local:");
 
-/** As SQL's `TRUSTED_SENT` (packages/db/src/followups.ts): mail that is yours for certain, never a forged From nor a local copy not confirmed. */
-const trustedSend = (m: R): boolean => !!m.is_sent && !m.is_draft && !m.is_spam && !m.is_trash && !String(m.provider_msg_id ?? "local:").startsWith("local:") && String(m.gmail_labels ?? "").includes('"SENT"');
+/**
+ * As SQL's `TRUSTED_SENT` (packages/db/src/followups.ts): mail that is yours for certain, never a forged From nor a local
+ * copy not confirmed; Terno's own confirmed send (`sent_confirmed`, absent on older records: not confirmed here) too.
+ */
+const trustedSend = (m: R): boolean => !!m.is_sent && !m.is_draft && !m.is_spam && !m.is_trash && (m.sent_confirmed === 1 || (!String(m.provider_msg_id ?? "local:").startsWith("local:") && String(m.gmail_labels ?? "").includes('"SENT"')));
 
 /** `confirmed`: Terno's own send, confirmed (plan 210, iteration 3): yours for certain without Gmail's label. */
 function markSent(c: Ctx, messageId: number, now: number, source: "live" | "scan", since?: number | null, confirmed = false): void {
@@ -47,6 +50,10 @@ function closeWaitsBefore(c: Ctx, messageId: number, now: number): void {
 }
 
 export function followupSendConfirmed(c: Ctx, messageId: number, now: number, wanted: boolean, since?: number | null): void {
+  // as SQL's: yours for certain for good, not only while its mark waits to be read
+  const messages = T(c, "messages");
+  const m = messages.get(messageId);
+  if (m?.is_sent) messages.update(m, { sent_confirmed: 1 });
   closeWaitsBefore(c, messageId, now);
   // what you sent before you turned it on is read only with a yes
   if (wanted) markSent(c, messageId, now, "live", since, true);

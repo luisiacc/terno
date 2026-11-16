@@ -1555,6 +1555,12 @@ CREATE INDEX followups_answers ON followups(answers) WHERE answers IS NOT NULL;
   { version: 63, name: "What matters: an item that lapses unless renewed (plan 210, iteration 3)", sql: `
 ALTER TABLE dated_items ADD COLUMN lapses INTEGER NOT NULL DEFAULT 0;
 ` },
+  // plan 210 (iteration 3, Codex code review): Terno's own send, confirmed, kept on the message (the sent mark that said so
+  // is consumed when the reply is read), so a request read later still gets that reply's verdict. Shape only: a constant
+  // default, no rewrite; mail sent before it reads as not confirmed here (no backfill: Gmail's SENT label still says so)
+  { version: 64, name: "What matters: a confirmed send stays yours for certain (plan 210, iteration 3)", sql: `
+ALTER TABLE messages ADD COLUMN sent_confirmed INTEGER NOT NULL DEFAULT 0;
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

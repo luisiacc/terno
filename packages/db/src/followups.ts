@@ -21,10 +21,11 @@ function toSomeoneElse(db: Db, to: string, cc: string): boolean {
 /**
  * Codex code review of plan 204's fixes: mail that is yours for certain, not only by its From (IMAP sets `is_sent` for any
  * message claiming your address, in any folder, and the store doesn't keep which folder is Sent): Gmail's SENT label. Never
- * a local copy not confirmed yet. Plan 210 (iteration 3): only such a reply's verdict, or Terno's own confirmed send's (its
- * mark's `confirmed`), settles or links a request; one sent from another IMAP client leaves it for the user's Done.
+ * a local copy not confirmed yet. Plan 210 (iteration 3): only such a reply's verdict, or Terno's own confirmed send's
+ * (`sent_confirmed`, v64: durable, so a request read later can be answered by it too; a mark's `confirmed` from before it),
+ * settles or links a request; one sent from another IMAP client leaves it for the user's Done.
  */
-export const TRUSTED_SENT = "is_sent = 1 AND is_draft = 0 AND is_spam = 0 AND is_trash = 0 AND coalesce(provider_msg_id, 'local:') NOT LIKE 'local:%' AND gmail_labels LIKE '%\"SENT\"%'";
+export const TRUSTED_SENT = "is_sent = 1 AND is_draft = 0 AND is_spam = 0 AND is_trash = 0 AND (sent_confirmed = 1 OR (coalesce(provider_msg_id, 'local:') NOT LIKE 'local:%' AND gmail_labels LIKE '%\"SENT\"%'))";
 
 /** `confirmed`: Terno's own send, confirmed (plan 210, iteration 3): yours for certain without Gmail's label. */
 function markSent(db: Db, messageId: number, now: number, source: "live" | "scan", since?: number | null, confirmed = false): void {
@@ -55,6 +56,8 @@ function closeWaitsBefore(db: Db, messageId: number, now: number): void {
 
 /** In the commit that records a send as done. `wanted`: the feature is on for this account. */
 export function followupSendConfirmed(db: Db, messageId: number, now: number, wanted: boolean, since?: number | null): void {
+  // plan 210 (iteration 3, Codex code review): yours for certain for good, not only while its mark waits to be read
+  db.run("UPDATE messages SET sent_confirmed = 1 WHERE id = ? AND is_sent = 1", messageId);
   closeWaitsBefore(db, messageId, now);
   // what you sent before you turned it on is read only with a yes
   if (wanted) markSent(db, messageId, now, "live", since, true);
