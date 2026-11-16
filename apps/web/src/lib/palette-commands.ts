@@ -8,7 +8,7 @@ import { boost, recentIds, type Usage } from "./palette-usage";
  */
 
 export type PalettePage = "root" | "move" | "addTo" | "remind" | "snippets" | "ask" | "askHistory";
-export type PaletteGroup = "draft" | "recent" | "conversation" | "start" | "goTo" | "actions" | "settings" | "move" | "addTo" | "remindAlways" | "remindNoReply" | "remindClear" | "snippets" | "snippetsManage";
+export type PaletteGroup = "draft" | "item" | "recent" | "conversation" | "start" | "goTo" | "actions" | "settings" | "move" | "addTo" | "remindAlways" | "remindNoReply" | "remindClear" | "snippets" | "snippetsManage";
 
 export interface PaletteCommand {
   /** stable across opens and languages: what usage counts ("thread.archive", "move:12", "remind:always:tomorrow") */
@@ -50,7 +50,8 @@ export interface PaletteCommand {
 export const PAGE_GROUPS: Record<PalettePage, readonly PaletteGroup[]> = {
   // plan 158: what a palette is opened for, ahead of the list of places; the conversation in hand ahead of what was
   // used lately, so Enter on opening is the same (Archive) whatever was done before
-  root: ["draft", "conversation", "recent", "start", "goTo", "actions", "settings"],
+  // plan 210 (iteration 5, R7): a What matters item in hand, its own acts first, under its words, before its email's
+  root: ["draft", "item", "conversation", "recent", "start", "goTo", "actions", "settings"],
   move: ["move"],
   addTo: ["addTo"],
   remind: ["remindAlways", "remindNoReply", "remindClear"],
@@ -77,8 +78,8 @@ export const STRONG = 0.5;
 /** how many of the open conversation's actions lead an empty root: the rest stay under Actions, so Go to stays in view */
 export const CONVERSATION_LEAD = 6;
 
-/** what's about the thing in hand ranks over going elsewhere: the open conversation, and a draft the palette came from */
-const IN_HAND: readonly PaletteGroup[] = ["draft", "conversation"];
+/** what's about the thing in hand ranks over going elsewhere: the open conversation (its What matters item), and a draft the palette came from */
+const IN_HAND: readonly PaletteGroup[] = ["draft", "item", "conversation"];
 
 /** how many recent commands lead an empty root */
 export const RECENT = 4;
@@ -168,7 +169,7 @@ export function arrange(commands: readonly PaletteCommand[], page: PalettePage, 
   let recent: PaletteCommand[] = [];
   if (page === "root") {
     // a draft's and the conversation's commands are already first; recent ones come from everything else at the root (values too)
-    const pool = mine.filter((c) => c.group !== "draft" && c.group !== "conversation" && !c.page && !c.disabled);
+    const pool = mine.filter((c) => !IN_HAND.includes(c.group) && !c.page && !c.disabled);
     const ids = recentIds(usage, new Set(pool.map((c) => c.id)), RECENT);
     const byId = new Map(pool.map((c) => [c.id, c]));
     recent = ids.map((id) => ({ ...byId.get(id)!, group: "recent" as const }));

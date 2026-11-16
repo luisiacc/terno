@@ -22,7 +22,7 @@ vi.mock("~/rpc/connection", () => ({
   },
 }));
 
-const { actOnThreadItem, actOnThreadPromise, actOnTodayRow, doneOnSelected, laterFromPicker, laterOnSelected, removeOnSelected } = await import("./today-task");
+const { actOnThreadItem, actOnThreadPromise, actOnTodayRow, doneOnSelected, laterFromPicker, laterOnSelected, remindLimit, removeOnSelected } = await import("./today-task");
 const { getApp, openedByApp, setApp } = await import("~/state/app");
 const { reloadList } = await import("~/state/list");
 const { feedRow, installToday, openFeedRow, useFeedRow, useReaderChoice, useToday } = await import("~/state/today");
@@ -332,5 +332,21 @@ describe("Done means gone (plan 204, after the second panel round; plan 210, ite
     await actOnTodayRow("dated:20", seen, "done");
     expect(shown()).toEqual(["dated:10", "dated:20", "dated:50", "dated:30"]);
     expect(done.has(20)).toBe(true);
+  });
+});
+
+describe("plan 210 (iteration 5, R7): how far Remind me may go for the item in hand", () => {
+  const at = (d: number, h: number, m = 0) => new Date(2026, 10, d, h, m).getTime();
+  const now = at(12, 10);
+  it("a timed item's own time; an untimed one's day's end; none once passed, nor for what names no day", () => {
+    const item = (o: { dueDay: string; dueAt: number; timed: boolean; dated?: boolean }) => ({ task: { kind: "dated" as const, item: { id: 1, revision: 0, kind: "event" as const, dated: true, ...o }, when: null, due: null, dueAt: o.dueAt } });
+    // the 12:30 reservation: "Later today 1:00 PM" is past it
+    expect(remindLimit(item({ dueDay: "2026-11-12", dueAt: at(12, 12, 30), timed: true }), now)).toBe(at(12, 12, 30));
+    expect(remindLimit(item({ dueDay: "2026-11-14", dueAt: at(14, 9), timed: false }), now)).toBe(at(15, 0));
+    expect(remindLimit(item({ dueDay: "2026-11-12", dueAt: at(12, 9), timed: true }), now)).toBeNull();
+    expect(remindLimit(item({ dueDay: "2026-11-12", dueAt: at(12, 9), timed: false, dated: false }), now)).toBeNull();
+    // a promise of yours by its day; one that named none, any time
+    expect(remindLimit({ task: { kind: "promise", id: 2, revision: 0, when: null, due: null, dated: true, dueAt: at(13, 16), timed: true } }, now)).toBe(at(13, 16));
+    expect(remindLimit({ task: { kind: "promise", id: 2, revision: 0, when: null, due: null, dated: false, noDay: true } }, now)).toBeNull();
   });
 });
