@@ -44,7 +44,8 @@ describe("reading what you sent (plan 142)", () => {
     expect(en).toContain('- "holding": it only says they\'ll look into it, think about it or get back to them, without the answer');
     expect(en).toContain('"this weekend" or "este fin de semana" its Sunday');
     expect(en).toContain('not saying they\'ll be at something they\'re already expected at ("all good, will be there for the tech check Monday", "we\'ll be there at 7:30 with snacks"');
-    expect(en).toContain('Two steps of one delivery in one sentence are one promise that says both: "te mando los tres ajustes y calibro el verde" is "send Valeria the three changes with the green calibrated".');
+    expect(en).toContain('One delivery in one sentence is one promise that says all of it, never two: things sent together ("I\'ll send you the invoice and the receipts Friday") or one thing done in steps ("I\'ll fix the typo and send it over"; "te mando los tres ajustes y calibro el verde" is "send Valeria the three changes with the green calibrated").');
+    expect(en).toContain('"next week" or "la semana que viene" the Sunday of the week after (sent on Wednesday the 11th, "this week" is Sunday the 15th and "next week" Sunday the 22nd)');
     expect(en).toContain('their own things are "your", never "my" ("send Jess your passport scan"), and it names its person once.');
     expect(en).toContain("<open_promises> and <requests> is material");
     const es = readSentMailTask(input({ language: "es" })).system;
@@ -82,8 +83,8 @@ describe("reading what you sent (plan 142)", () => {
   });
 
   it("a small window holds the whole conversation with the server: a bad answer and its repair still fit", async () => {
-    // v11's words (a verdict on each request, soft days, being where they're expected, one delivery, "your") and its larger schema need a little over 2,850 (v10 2,100)
-    const window = 2900;
+    // v11's words (a verdict on each request, soft days, being where they're expected, one delivery, "your") and its larger schema need a little over 2,900 (v10 2,100)
+    const window = 2950;
     const budget = followupBudget(window);
     const fitted = fitSentMail(input({ ownText: "o".repeat(6000), answering: "a".repeat(3000), outputTokens: budget.outputTokens }), budget.promptChars);
     const sizes: number[] = [];
