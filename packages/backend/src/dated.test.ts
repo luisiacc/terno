@@ -612,6 +612,12 @@ describe("plan 210 (iteration 3)", () => {
       expect(checkDates({ items: [renew, expire], settled: [] }, { ...base, text: domain }).rows.map((r) => r.kind)).toEqual(["renew"]);
       expect(checkDates({ items: [renew, { ...expire, due: "2026-11-20" }], settled: [] }, { ...base, text: domain }).rows).toHaveLength(2);
     });
+    it("the sender saying what they can do asks nothing; an offer that waits on a yes still does", () => {
+      const nina = "I think we need an exec-to-exec call (our CRO with their new CIO) before the end of the month. Can you set that up? I can prep the usage story.";
+      expect(checkDates({ items: [ask("Answer Nina about prepping the usage story", "I can prep the usage story")], settled: [] }, person(nina)).rows).toEqual([]);
+      expect(checkDates({ items: [ask("Responder a Nina", "Puedo preparar la historia de uso")], settled: [] }, person("¿Puedes organizarla? Puedo preparar la historia de uso.")).rows).toEqual([]);
+      expect(checkDates({ items: [ask("Answer Marco about coming by Saturday", "I can come by Saturday. Just let me know.")], settled: [] }, person("I can come by Saturday. Just let me know.")).rows).toHaveLength(1);
+    });
     it("Ingrid's 'if something's in the way, tell me' is a courtesy too (en, es)", () => {
       expect(checkDates({ items: [ask("Tell Ingrid if something is in the way", "If something's in the way, tell me")], settled: [] }, person("If something's in the way, tell me, and we'll work it out.")).rows).toEqual([]);
       expect(checkDates({ items: [ask("Decirle a Teresa si algo te lo impide", "Si algo te lo impide, dímelo")], settled: [] }, person("Si algo te lo impide, dímelo y lo resolvemos.")).rows).toEqual([]);

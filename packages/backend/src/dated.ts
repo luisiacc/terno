@@ -192,6 +192,15 @@ function offerOnly(sentences: string): boolean {
 }
 
 /**
+ * Plan 210 (iteration 3): the sender saying what they can do, with nothing to answer ("Can you set that up? I can prep the
+ * usage story": the request is the reader's, the offer is no ask), unlike an offer that waits on the reader's yes ("…just
+ * let me know"). Haiku took Nina's 1 in 1 after v13 named concrete offers as asks.
+ */
+function selfOffer(sentences: string, paragraph: string): boolean {
+  return !/[?¿]/u.test(sentences) && OFFERS.test(norm(sentences)) && !LET_KNOW.test(norm(paragraph));
+}
+
+/**
  * Plan 210 (iteration 3, point 7): mail the reader is only copied on to know about it ("Diego, te copio para que estés al
  * tanto", "cc'ing you for visibility", "FYI") asks them nothing, whatever it says they'll do ("Diego las monta en las
  * etiquetas esa misma semana"): a request from it is the reader's only when its sentence speaks to them by name and isn't
@@ -420,7 +429,7 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     const kind = (item.kind === "ask" && item.due ? "respond" : item.kind) as DatedKind;
     // plan 210 (iteration 3): an offer is its own question, never hidden by a request about the same papers
     const around = `${item.quote}\n${contextOf(item.quote, sentences)}`;
-    if (kind === "ask" && ((requested(item) && !offerOnly(around)) || noReply || onlyTells(item.quote) || courtesyOnly(around) || !(askAllowed(item.quote, said, input.text, input) || rebooks(item)))) continue;
+    if (kind === "ask" && ((requested(item) && !offerOnly(around)) || noReply || onlyTells(item.quote) || courtesyOnly(around) || selfOffer(around, contextOf(item.quote, paragraphs)) || !(askAllowed(item.quote, said, input.text, input) || rebooks(item)))) continue;
     // plan 210 (the Codex code review of iteration 2): a request of the reader, kept below or not (a day already past or
     // over in a scan, a duplicate, past the bound): never "nothing asked"
     if (kind === "ask" || kind === "respond") asked = true;
