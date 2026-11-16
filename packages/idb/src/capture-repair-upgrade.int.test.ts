@@ -1,10 +1,10 @@
 import "fake-indexeddb/auto";
-import { DatabaseSync } from "node:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { IDBFactory } from "fake-indexeddb";
 import { upgradeLegacyBodies, openDatabase, SqlMailStore } from "../../db/src/index";
+import { writeLegacyCopy } from "../../db/src/test/legacy";
 import { IdbMailStore } from "./store";
 import { upgradeLegacyIdbBodies } from "./body-upgrade";
 import { databaseName } from "./schema";
@@ -17,30 +17,18 @@ async function seed(store: MailStore) {
   return { account, before: (await store.debug.snapshot()).messages };
 }
 it("SQL35 upgrades capture schema without changing cached mail, cursor or account incarnation", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "terno-capture-upgrade-")), path = join(dir, "synthetic.db");
+  const dir = mkdtempSync(join(tmpdir(), "terno-capture-upgrade-")), path = join(dir, "synthetic.db"), legacyPath = join(dir, "sql35.db");
   let store: MailStore = new SqlMailStore(openDatabase(path), { platform, instantSearch: false });
   try {
     const { account, before } = await seed(store);
     const reminder={threadId:before[0]!.threadId,dueAt:1000,kind:"always" as const,setAt:1};
     await store.reminders.put([reminder],100);
     await store.accounts.setCursor(account.id, { historyId: "100" }); await store.close();
-    // Remove only migration36's additions (and the later migrations', plan 86's v37, plan 94's v38 and plan 96's v39) to create the exact prior schema shape with populated data.
-    const legacy = new DatabaseSync(path);
-    legacy.exec("DROP TRIGGER IF EXISTS body_fact_body_heads_insert; DROP TRIGGER IF EXISTS body_fact_body_heads_update; DROP TRIGGER IF EXISTS body_fact_body_heads_delete; DROP TRIGGER IF EXISTS body_fact_filters_insert; DROP TRIGGER IF EXISTS body_fact_filters_update; DROP TRIGGER IF EXISTS body_fact_filters_delete; DROP TRIGGER IF EXISTS body_fact_accounts_insert; DROP TRIGGER IF EXISTS body_fact_accounts_update; DROP TRIGGER IF EXISTS body_fact_accounts_delete; DROP TRIGGER IF EXISTS body_fact_secrets_insert; DROP TRIGGER IF EXISTS body_fact_secrets_update; DROP TRIGGER IF EXISTS body_fact_secrets_delete; DROP TRIGGER IF EXISTS body_fact_message_locations_insert; DROP TRIGGER IF EXISTS body_fact_message_locations_update; DROP TRIGGER IF EXISTS body_fact_message_locations_delete; DROP TRIGGER IF EXISTS body_fact_imap_identity_holds_insert; DROP TRIGGER IF EXISTS body_fact_imap_identity_holds_update; DROP TRIGGER IF EXISTS body_fact_imap_identity_holds_delete; DROP TABLE body_protocol;");
-    // Remove the later committed v41-v43 schema before rebuilding the exact SQL35 fixture.
-    legacy.exec("DROP TRIGGER threads_view_unread_ai; DROP TRIGGER threads_view_unread_ad; DROP TRIGGER threads_view_unread_au; DROP TABLE view_unread; DROP TABLE view_unread_backfill; DROP TABLE folder_aliases; ALTER TABLE folders DROP COLUMN except_json");
-    // plan 133's v50, plan 134's v49
-    legacy.exec("ALTER TABLE messages DROP COLUMN sent_confirmed; DROP TABLE dated_mutes; DROP TABLE dated_nothing_asked; DROP TABLE dated_items; DROP TABLE ai_dated_mail; DROP TABLE pins; DROP TABLE ai_digests; DROP TABLE ai_prepared_replies; DROP TABLE followups; DROP TABLE ai_sent_mail; DROP TABLE ai_turns; DROP TABLE ai_conversations; DROP TABLE writing_generations; DROP TABLE writing_profiles; DROP INDEX messages_sent_date; DROP INDEX cls_examples_evidence");
-    // plans 131 and 132's v48
-    legacy.exec("DROP TABLE ai_summaries; DROP TABLE ai_new_mail");
-    // plan 127's v47
-    legacy.exec("DROP INDEX ops_folder_moves");
-    // plan 116's v44
-    legacy.exec("DROP TABLE forward_recipients; DROP TABLE forwards; DROP TABLE forward_eligible; ALTER TABLE categories DROP COLUMN forward_json; ALTER TABLE filters DROP COLUMN forward_json");
-    legacy.exec("ALTER TABLE messages DROP COLUMN unsubscribe");
-    legacy.exec("DROP TABLE scheduled_sends; DROP INDEX threads_unread_tab; DROP INDEX threads_tab_date; DROP INDEX threads_tab_id; DROP INDEX threads_waiting_inbox_tab; ALTER TABLE threads DROP COLUMN tab; ALTER TABLE messages DROP COLUMN category; DELETE FROM settings WHERE key = 'tabs_backfill'");
-    legacy.exec("DROP TRIGGER body_revision_changed; DROP TRIGGER body_head_added; DROP TRIGGER body_head_changed; DROP TRIGGER body_head_removed; DROP TABLE body_heads; DROP TABLE body_parts; DROP TABLE body_captures; ALTER TABLE message_bodies DROP COLUMN capture_id; ALTER TABLE message_bodies DROP COLUMN body_preview; ALTER TABLE message_bodies DROP COLUMN body_revision; DELETE FROM settings WHERE key='body_parts_upgrade'; DROP TRIGGER capture_repair_location_removed; DROP TRIGGER capture_repair_location_changed; DROP TABLE capture_repairs; DROP TABLE capture_repair_usage; PRAGMA user_version=35"); legacy.close();
-    const upgraded = openDatabase(path);
+    // The exact SQL35 install, from its own migrations, holding the same rows (never a later schema with its additions
+    // dropped by hand, which every new migration would have to extend)
+    const source = openDatabase(path);
+    try { writeLegacyCopy(source, legacyPath, 35); } finally { source.close(); }
+    const upgraded = openDatabase(legacyPath);
     await upgradeLegacyBodies(upgraded, platform.yield, async () => {}, () => {});
     store = new SqlMailStore(upgraded, { platform, instantSearch: false });
     expect((await store.debug.snapshot()).messages).toEqual(before);
