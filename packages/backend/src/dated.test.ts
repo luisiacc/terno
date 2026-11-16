@@ -814,6 +814,51 @@ describe("plan 210 (iteration 4)", () => {
     });
   });
 
+  describe("revision 12: what the mail says of an item, and what's no item", () => {
+    it("someone there and a lapse are read in the whole mail, but only its paragraphs tied to the item (Priya's laptops)", () => {
+      const LAPTOPS = "Hello Priya,\n\nYour order will be delivered tomorrow, Saturday, November 14, by 8:00 PM.\n\nItems:\n• 2x Laptop Pro 14\"\n\nDelivery address: Lumora, 548 Market St\nAn adult signature is required. If no one is available, the package will be held at the carrier's Mission St facility.";
+      const laptops = { kind: "delivery", text: "2 Laptop Pro 14\" arriving", quote: "will be delivered tomorrow, Saturday, November 14, by 8:00 PM", due: "2026-11-14", time: null };
+      expect(checkDates({ items: [laptops], settled: [] }, { ...base, text: LAPTOPS, subject: "Out for delivery tomorrow" }).rows[0]!.early).toBe(true);
+      // another item's paragraph says it of that item, not this one
+      const two = `Your order will be delivered tomorrow, Saturday, November 14, by 8:00 PM.\n\nYour other parcel, the monitor, arrives Monday, November 16. An adult signature is required for the monitor.`;
+      const monitor = { kind: "delivery", text: "Monitor arriving", quote: "the monitor, arrives Monday, November 16", due: "2026-11-16", time: null };
+      const rows = checkDates({ items: [laptops, monitor], settled: [] }, { ...base, text: two, subject: "Two parcels" }).rows;
+      expect(rows.map((r) => [r.text, r.early ?? false])).toEqual([["2 Laptop Pro 14\" arriving", false], ["Monitor arriving", true]]);
+    });
+    it("a routine bill charged by itself is no item; a priced renewal or trial, or one whose charge failed, stays (the owner's 'drop AutoPay-only rows')", () => {
+      const read = (text: string, kind = "renew", textOf = "Brightline bill charged automatically ($84.20)") => checkDates({ items: [{ kind, text: textOf, quote: text.split("\n")[0]!, due: "2026-11-20", time: null }], settled: [] }, { ...base, text, subject: "Your statement" }).rows.length;
+      expect(read("Your November statement is ready. Amount due: $84.20\nAutoPay is on: we'll charge your Visa ending in 4821 on Friday, November 20. No action needed.")).toBe(0);
+      expect(read("Amount due: $142.67. Due date: November 20, 2026\nAutoPay is on. We'll charge your Visa ending 2291 on the due date.", "pay", "Pay $142.67 for the Brightline bill")).toBe(0);
+      expect(read("Your auto insurance premium of $142.00 will be charged automatically to your card on file on November 20. You don't need to do anything.")).toBe(0);
+      expect(read("Ya tienes disponible tu factura de noviembre. Importe: 62,40 €\nTienes la domiciliación activada: se cargará automáticamente en tu cuenta el 20 de noviembre.")).toBe(0);
+      // a decision stays: a plan that renews, a trial, a subscription
+      expect(read("Your Pagewise Team plan renews on November 20 and will be charged automatically: $6,144.00. Need to change seats? Adjust them before the renewal date.")).toBe(1);
+      expect(read("Your Notely Pro subscription renews automatically on November 20 (US$9.99).", "renew", "Notely Pro renews automatically (US$9.99)")).toBe(1);
+      // a charge that failed
+      expect(read("We tried to charge your Visa for your November bill of $84.20 on November 20, but the payment was declined. AutoPay couldn't complete this month.", "pay", "Pay $84.20 for the Brightline bill")).toBe(1);
+    });
+    it("a delivery the mail only estimates has no day: no item, unless its words say that day too", () => {
+      const card = "Your Pennant debit card ending in 4421 expires on 11/26. We've mailed your new card to the address on file. It should arrive within 7 to 10 business days.";
+      const delivery = { kind: "delivery", text: "New Pennant debit card arriving", quote: "It should arrive within 7 to 10 business days", due: "2026-11-19", time: null };
+      expect(checkDates({ items: [delivery], settled: [] }, { ...base, text: card, subject: "Your debit card" }).rows).toEqual([]);
+      const es = "Tu nueva tarjeta llegará en 5 a 7 días hábiles.";
+      expect(checkDates({ items: [{ ...delivery, quote: es }], settled: [] }, { ...base, text: es, subject: "Tu tarjeta" }).rows).toEqual([]);
+      const dated = "It should arrive within 3 business days, by Thursday, November 19.";
+      expect(checkDates({ items: [{ ...delivery, quote: dated }], settled: [] }, { ...base, text: dated, subject: "Your debit card" }).rows).toHaveLength(1);
+    });
+    it("a person's wish with no question is never a request with a day (Margaret's Gary): at most an undated ask", () => {
+      const GARY = "Hi Margaret,\n\nThe premium went up about $94, mostly the roof age. I'd like to sit down with you before next year and look at the deductible.\n\nIn the meantime, Lakeshore needs the updated worksheet signed. Please sign and send it back to me by the end of the month.";
+      const person = { sender: { person: true }, reader: { name: "Margaret Hale", addressed: "to" as const } };
+      const sit = { kind: "respond", text: "Meet with Gary to review the deductible", quote: "I'd like to sit down with you before next year and look at the deductible", due: "2026-12-31", time: null };
+      const sign = { kind: "respond", text: "Sign and return the worksheet to Gary", quote: "Please sign and send it back to me by the end of the month", due: "2026-11-30", time: null };
+      const rows = checkDates({ items: [sit, sign], settled: [] }, { ...base, text: GARY, subject: "Your home policy renewal", ...person }).rows;
+      expect(rows.map((r) => [r.kind, r.dated ? r.dueDay : null])).toEqual([["ask", null], ["respond", "2026-11-30"]]);
+      // a wish with its day said, or a question, keeps it
+      const friday = "I'd like to get your answer by Friday, November 13.";
+      expect(checkDates({ items: [{ ...sit, quote: friday, due: "2026-11-13" }], settled: [] }, { ...base, text: friday, subject: "x", ...person }).rows[0]).toMatchObject({ kind: "respond", dueDay: "2026-11-13" });
+    });
+  });
+
   describe("revision 10: travel keeps the mail's clock", () => {
     const TECH = "Quick logistics:\n\n- Tech check: Monday the 16th at 4:00 PM in the Main Hall (Palmer Events Center, Austin)";
     // 4:00 PM in Austin, whatever the machine's zone: the instant's wall in Chicago
@@ -1449,8 +1494,14 @@ describe("a move may carry the item's new words (the fifth panel round, change 2
     expect(checkDates({ items: [], settled: [], moved: [{ ...moved, textEvidence: "arrive whenever you like" }] }, base).moved).toEqual([expect.not.objectContaining({ text: expect.anything() })]);
     expect(checkDates({ items: [], settled: [], moved: [{ ...moved, textEvidence: null }] }, base).moved[0]).not.toHaveProperty("text");
     expect(checkDates({ items: [], settled: [], moved: [{ ...moved, text: " " }] }, base).moved[0]).not.toHaveProperty("text");
-    // no move (the same moment), no new words
-    expect(checkDates({ items: [], settled: [], moved: [{ ...moved, time: "10:00" }] }, base).moved).toEqual([]);
+    // the same moment: no new words, no move; plan 210 (iteration 4, revision 12): new words the mail's own change the words,
+    // the moment kept (Theo's tees, "Expected: Today, by 8:00 PM")
+    expect(checkDates({ items: [], settled: [], moved: [{ ...moved, time: "10:00", text: null, textEvidence: null }] }, base).moved).toEqual([]);
+    expect(checkDates({ items: [], settled: [], moved: [{ ...moved, time: "10:00", text: "Soccer game (arrive 9:30)" }] }, base).moved).toEqual([]);
+    expect(checkDates({ items: [], settled: [], moved: [{ ...moved, time: "10:00" }] }, base).moved).toEqual([{ id: 9, dueDay: "2026-11-14", dueAt: at(2026, 11, 14, 10), timed: true, actAt: at(2026, 11, 11, 9), text: "Soccer game (arrive 7:30)" }]);
+    const tees = { id: 17, revision: 1, kind: "delivery", text: "400 Pingwire tees arriving", dueDay: "2026-11-13", dueAt: at(2026, 11, 13, 9), timed: false, actAt: at(2026, 11, 13, 0) } as DatedRow;
+    const outForDelivery = { text: "Your order is out for delivery!\n\nExpected: Today, by 8:00 PM\n\nSignature required. If no one's there, UPS will leave a notice and try again Monday.", subject: "Out for delivery today", arrivedAt: at(2026, 11, 13, 6, 10), open: new Map([["o1", tees]]), fromScan: false, now: at(2026, 11, 13, 6, 10) };
+    expect(checkDates({ items: [], settled: [], moved: [{ label: "o1", due: "2026-11-13", time: null, evidence: "Expected: Today, by 8:00 PM", text: "400 Pingwire tees, by 8:00 PM (signature required)", textEvidence: "Expected: Today, by 8:00 PM" }] }, outForDelivery).moved).toEqual([{ id: 17, dueDay: "2026-11-13", dueAt: at(2026, 11, 13, 9), timed: false, actAt: at(2026, 11, 13, 0), text: "400 Pingwire tees, by 8:00 PM (signature required)" }]);
     // plan 210 (iteration 2, Codex code review): a promise with a stated time moved by a mail that gives one takes the move's
     // time, already in the reader's zone, on the move's day, never its words' clock read again on that day; with none, its
     // own clock on the new day
