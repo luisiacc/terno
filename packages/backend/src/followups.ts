@@ -94,6 +94,28 @@ const sameWords = (a: string, b: string): boolean => {
   return !!x && !!y && (x.includes(y) || y.includes(x));
 };
 
+const ELLIPSIS = /\s*(?:\[(?:\.{3}|…)\]|\.{3}|…)\s*/u;
+/**
+ * Plan 210 (round 14's faults, Priya's 409A): a verdict's or a kept promise's evidence, as pieces of their own words. The
+ * model shortens a long answer with an ellipsis ("We've used Calder Valuation for our last two. ... Yes, I'd use them
+ * again."), which no text holds whole, so the answer settled nothing: such evidence is its pieces, each of two words or more
+ * and in their words in that order. Words with an ellipsis of their own ("Well... yes") are read whole first. Null: not theirs.
+ */
+export function ownPieces(evidence: string, own: string): string[] | null {
+  const whole = norm(evidence);
+  if (!whole) return null;
+  if (own.includes(whole)) return [whole];
+  const pieces = evidence.split(ELLIPSIS).map(norm).filter((p) => /[\p{L}\p{N}]/u.test(p));
+  if (pieces.length < 2) return null;
+  let from = 0;
+  for (const p of pieces) {
+    const at = own.indexOf(p, from);
+    if (p.split(" ").length < 2 || at < 0) return null;
+    from = at + p.length;
+  }
+  return pieces;
+}
+
 export function checkSentMail(result: SentMailResult, input: { ownText: string; recipients: readonly { label: string; name: string; email: string }[]; open: ReadonlyMap<string, FollowupRow>; requests?: ReadonlyMap<string, Pick<DatedRow, "id" | "revision">>; sentAt: number; nudgeAfterDays: number }): { rows: FollowupWrite[]; kept: { id: number; revision: number }[]; verdicts: Verdict[] } {
   const own = norm(input.ownText);
   const byLabel = new Map(input.recipients.map((r) => [r.label, r]));
@@ -125,7 +147,7 @@ export function checkSentMail(result: SentMailResult, input: { ownText: string; 
   }
   const kept = result.kept.flatMap((k) => {
     const row = input.open.get(k.label);
-    return row && k.evidence && own.includes(norm(k.evidence)) ? [{ id: row.id, revision: row.revision }] : [];
+    return row && ownPieces(k.evidence, own) ? [{ id: row.id, revision: row.revision }] : [];
   });
   /**
    * Plan 210 (iteration 3, the Codex review's revision 1): a verdict on a request it was shown, evidence-checked like the rest:
@@ -137,8 +159,9 @@ export function checkSentMail(result: SentMailResult, input: { ownText: string; 
   const verdicts = (result.answers ?? []).flatMap((a): Verdict[] => {
     const request = input.requests?.get(a.label);
     if (!request || a.verdict === "unknown") return [];
-    if (!own.includes(norm(a.evidence)) || !plainEvidence(a.evidence, contextOf(a.evidence, sentences))) return [];
-    const promise = rows.find((r) => r.kind === "promise" && r.quote && sameWords(r.quote, a.evidence));
+    const pieces = ownPieces(a.evidence, own);
+    if (!pieces || !plainEvidence(pieces.join(" "), pieces.map((p) => contextOf(p, sentences)).join(" "))) return [];
+    const promise = rows.find((r) => r.kind === "promise" && r.quote && pieces.some((p) => sameWords(r.quote!, p)));
     const shown = { id: request.id, revision: request.revision };
     // plan 210 (iteration 4, the Codex review's revision 4): a promise that only holds it is stored with it, whatever the
     // model called it ("holding" kept, no longer dropped); a "holding" whose words also send or sign something links nothing
