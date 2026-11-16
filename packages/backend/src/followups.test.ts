@@ -25,7 +25,7 @@ afterEach(async () => {
   for (const c of cleanups.splice(0).reverse()) await c();
 });
 
-const reply = (o: { promises?: unknown[]; expectsReply?: boolean; awaiting?: string[]; kept?: unknown[] } = {}): Completion => ({ text: JSON.stringify({ promises: o.promises ?? [], expectsReply: o.expectsReply ?? false, awaiting: o.awaiting ?? [], kept: o.kept ?? [] }), stop: "end" });
+const reply = (o: { promises?: unknown[]; expectsReply?: boolean; awaiting?: string[]; kept?: unknown[]; answers?: unknown[] } = {}): Completion => ({ text: JSON.stringify({ promises: o.promises ?? [], expectsReply: o.expectsReply ?? false, awaiting: o.awaiting ?? [], kept: o.kept ?? [], answers: o.answers ?? [] }), stop: "end" });
 const says = { promises: [{ text: "send the contract", quote: "I'll send the contract", to: "r1", due: null }] };
 
 async function setup(o: { enabled?: boolean } = {}) {
