@@ -119,6 +119,12 @@ describe("findLinks", () => {
     expect(attendsEvent({ ...attend, threadId: 16 }, [check])).toBeNull();
     // a promise that isn't to attend is no part of the event
     expect(attendsEvent(promise("send the tech check notes", { threadId: 15, dueAt: local(9) }), [check])).toBeNull();
+    // (Codex code review) a deliverable quoted from a sentence that also says you'll attend is its own, and so is one the
+    // promise's words carry beside attending: Done on the event, or its day passing, never finishes them
+    const slides = promise("send the slides for the tech check", { threadId: 15, dueAt: local(9), quote: "I'll attend the tech check and send its slides tonight" });
+    expect(attendsEvent(slides, [check])).toBeNull();
+    expect(findLinks([check], [slides], all).same).toEqual([]);
+    expect(attendsEvent(promise("attend the tech check and send its slides", { threadId: 15, dueAt: local(9) }), [check])).toBeNull();
     // both events named: the promise's own time picks one; none, neither
     const both = promise("attend the Shipfast Summit", { threadId: 15, dueAt: local(19), timed: true });
     expect(attendsEvent(both, [check, keynote])).toBe(keynote);
@@ -128,6 +134,7 @@ describe("findLinks", () => {
     expect(attendsEvent(promise("ir al partido de Sofía", { threadId: 20, dueAt: local(9) }), [partido])).toBe(partido);
     expect(attendsEvent(promise("enviar las fotos del partido de Sofía", { threadId: 20, dueAt: local(9) }), [partido])).toBeNull();
     expect(attendsEvent(promise("asistir al partido de Sofía", { threadId: 20, dueAt: local(9) }), [partido])).toBe(partido);
+    expect(attendsEvent(promise("ir al partido de Sofía y mandar las fotos", { threadId: 20, dueAt: local(9) }), [partido])).toBeNull();
   });
 
   it("a trip's return leg is linked as a detail", () => {
