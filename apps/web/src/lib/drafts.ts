@@ -911,8 +911,8 @@ function save(key: string, copy = false, persistNew = false): Promise<void> {
     forwardOfMessageId: d.forwardOfMessageId,
     showSourceContext: d.showSourceContext ?? false,
     uiState: d.uiState,
-    // plan 210 (iteration 4): only a forward keeps one (the store drops it from anything else)
-    handoff: d.mode === "forward" ? d.handoff ?? null : null,
+    // plan 210 (iteration 4): only a forward keeps one (the store drops it from anything else, so nothing else says it)
+    ...(d.mode === "forward" && { handoff: d.handoff ?? null }),
   };
   if (get(key) !== d || writers.get(key) !== w || w.operation !== operation) return Promise.resolve();
   publishWriter(w, d, saving, !copy);
