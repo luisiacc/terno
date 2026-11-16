@@ -64,7 +64,8 @@ export function todayWhen(item: Pick<TodayItem, "thread" | "why">, now = Date.no
   // plan 210 (iteration 1): a plan or a delivery sits under the day's tasks, drawn as quietly as a day ahead's
   const plan = item.why.kind === "dated" && item.why.item !== undefined && datedGroup(item.why.item.kind) === "plans";
   // (a promise broken and given a new day keeps the late mark wherever it sits: plan 210, iteration 2)
-  const tone: TodayTone = when.tone === "missed" ? "missed" : ahead || group?.startsWith("day:") || (plan && group !== "missed") ? "later" : group === "missed" ? "missed" : group === "today" ? (when.tone === "none" ? "none" : "today") : when.tone;
+  // (Today's "Waiting on you" is quiet: who's waiting, and by when, not what's due today: plan 210, iteration 3)
+  const tone: TodayTone = when.tone === "missed" ? "missed" : ahead || group?.startsWith("day:") || (plan && group !== "missed") ? "later" : group === "missed" ? "missed" : group === "waiting" ? "none" : group === "today" ? (when.tone === "none" ? "none" : "today") : when.tone;
   return { text: when.text, tone };
 }
 
@@ -88,9 +89,15 @@ function whenOf(item: Pick<TodayItem, "thread" | "why">, now: number): { text: s
     const dueAt = why.dueAt ?? 0;
     const day = localDay(it.dueDay)?.getTime() ?? dueAt;
     if (why.missed) return { text: was(day), tone: "missed" };
-    // a person's request shown before its day (plan 210, iteration 2): what it's by, quietly, among the people
-    if (it.early) return { text: t("whatMatters.by", { day: dueShort(day, false, now) }), tone: "none" };
     const at = ahead(day, dueAt, it.timed);
+    // a person's request shown before its day (plan 210, iteration 2): what it's by, quietly, among the people; iteration 3:
+    // with its time, and the mail's own in its zone when that isn't the reader's ("by Fri 5:00 PM (6:00 PM ET)")
+    if (it.early) {
+      // mid-phrase, "Tomorrow" is a word like any other: "by tomorrow 5:00 PM"
+      const tomorrow = t("today.when.tomorrow");
+      const by = at.text.startsWith(tomorrow) ? tomorrow.toLocaleLowerCase(getLocale()) + at.text.slice(tomorrow.length) : at.text;
+      return { text: t("whatMatters.by", { day: zoned(by, it.timed ? it.note : null) }), tone: "none" };
+    }
     return { ...at, text: zoned(at.text, it.timed ? it.note : null) };
   }
   if (why.kind === "promise") {

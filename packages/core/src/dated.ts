@@ -465,13 +465,13 @@ export type TodayGroupKind = (typeof TODAY_GROUP_ORDER)[number];
 /** Where a task (a dated item, a promise of yours) sits: its group, and for a day of its own or Coming up, its day ("YYYY-MM-DD"). */
 export type TaskPlace = { group: "missed" | "today"; day: null } | { group: "day" | "comingUp"; day: string };
 
-const COUNTED_GROUPS: ReadonlySet<TodayGroupKind> = new Set(["missed", "today", "day"]);
+const COUNTED_GROUPS: ReadonlySet<TodayGroupKind> = new Set(["missed", "today"]);
 
 /**
  * What "N need you" counts, the header's, the sidebar's and the morning notice's (plan 204's rule, plan 210's groups): a
- * row in Missed, Today or a day ahead, unless it's your reminder or its own item is a Plan's kind (an event or a delivery:
- * something happening to you, wherever it sits). `why` is the row's: its kind, and its own item's (a promise or a waiting
- * row has none). Coming up never counts.
+ * row in Missed or Today, unless it's your reminder or its own item is a Plan's kind (an event or a delivery: something
+ * happening to you, wherever it sits). `why` is the row's: its kind, and its own item's (a promise or a waiting row has
+ * none). A day ahead and Coming up never count (plan 210, iteration 3: "this week" went with the header's third part).
  */
 export const todayCounted = (group: TodayGroupKind, why: { kind: string; item?: { kind: DatedKind } }): boolean => COUNTED_GROUPS.has(group) && why.kind !== "reminder" && (why.item === undefined || datedGroup(why.item.kind) !== "plans");
 

@@ -42,11 +42,11 @@ type Drawn =
   | { type: "item"; key: string; row: FeedRow }
   | { type: "digest"; key: string; row: FeedRow };
 
-/** A group's heading: Missed, Today, a day ahead in the when column's day words (plan 210), Earlier. */
+/** A group's heading: Missed, Today, its Waiting on you, a day ahead in the when column's day words (plan 210), Earlier. */
 function headingName(kind: FeedGroupKind): string {
   const day = groupDay(kind);
   if (day !== null) return dayHeading(localDay(day)?.getTime() ?? Date.now());
-  return t(kind === "missed" ? "today.missed" : kind === "today" ? "today.today" : "today.history");
+  return t(kind === "missed" ? "today.missed" : kind === "today" ? "today.today" : kind === "waiting" ? "whatMatters.waitingOnYou" : "today.history");
 }
 
 /** The rows with a heading where each group begins (a held row keeps its group's), and the digest's. */
@@ -59,6 +59,9 @@ function drawn(rows: readonly FeedRow[]): Drawn[] {
       continue;
     }
     const kind = row.group ?? prev;
+    // Waiting on you is a part of Today (plan 210, iteration 3): Today's heading stands above it even when Today has no
+    // rows of its own
+    if (kind === "waiting" && prev !== "today" && prev !== "waiting") out.push({ type: "heading", key: `h-today-${row.id}`, kind: "today" });
     // keyed by the row it stands above: a group can begin twice while the rows and their groups are on their way
     if (kind && kind !== prev) out.push({ type: "heading", key: `h-${kind}-${row.id}`, kind });
     prev = kind;
@@ -252,8 +255,17 @@ export function WhatMattersFeed() {
   );
 }
 
-/** A group's heading: its name, over a hairline. */
+/**
+ * A group's heading: its name, over a hairline. Today's "Waiting on you" (plan 210, iteration 3) is a part of Today, not a
+ * group of its own: a quiet sub-heading, no hairline, on the same line as the headings and the rows' words.
+ */
 function Heading({ kind }: { kind: FeedGroupKind }) {
+  if (kind === "waiting")
+    return (
+      <h3 data-testid="wm-heading" data-kind="waiting" className="mx-3 mb-0.5 pt-4 pb-1 text-sm font-medium text-muted-foreground">
+        {headingName(kind)}
+      </h3>
+    );
   return (
     <h2 data-testid="wm-heading" data-kind={groupDay(kind) === null ? kind : "day"} data-day={groupDay(kind) ?? undefined} className="hairline-b mx-3 mb-1 pt-5 pb-1.5 text-sm font-medium text-foreground">
       {headingName(kind)}
@@ -325,15 +337,16 @@ interface ItemProps {
  * sentences) are the row's preview ink, a step stronger than the muted one and held to AA on every fill a row has (rest,
  * hover, the cursor: CONTRAST_PAIRS' row-preview); on the open item, the selection's ink. The history alone stays muted.
  *
- * After the UI panel: what's Missed or due today reads stronger than what's days away (the ink and a medium weight), and
- * its day in the right column is the accent at rest; days away, the day is quiet. No red: weight and one accent. On the
- * open item every word is the selection's ink (the pairs CONTRAST_PAIRS holds); under the pointer, the accent gives way
- * to the ink (the accent isn't held on the hover's fill).
+ * After the UI panel: what's Missed or due today reads stronger than what's days away (the ink and a medium weight); days
+ * away, the day is quiet. No red: weight alone (plan 210, iteration 3: the accent on today's day read as a meaning of its
+ * own beside the grey ones, so it went). On the open item every word is the selection's ink (the pairs CONTRAST_PAIRS
+ * holds).
  */
 const SENTENCE_INK: Record<TodayTone, string> = { missed: "font-medium text-foreground", today: "font-medium text-foreground", later: "text-foreground", none: "text-foreground" };
 const WHEN_INK: Record<TodayTone, string> = {
   missed: "font-medium text-foreground",
-  today: "font-medium text-primary group-[:hover:not([data-open])]/item:text-foreground group-data-cursor/item:text-foreground",
+  // plan 210 (iteration 3, the panel): one treatment for "Today", the ink and weight, never an accent beside the quiet ones
+  today: "font-medium text-foreground",
   later: "text-row-preview",
   none: "text-row-preview",
 };

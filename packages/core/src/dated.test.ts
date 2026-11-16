@@ -523,8 +523,8 @@ describe("the groups go by day (plan 210, the owner, replacing plan 204's sevent
   it("the clock wakes at midnight while only an ask shows: its \"since\" and the day names move on", () => {
     expect(nextTodayChange([item("ask", null)], [], at(2026, 11, 12, 15))).toBe(at(2026, 11, 13));
   });
-  it("what's counted: a row in Missed, Today or a day ahead, unless it's your reminder or its own item is a Plan's kind", () => {
-    for (const group of ["missed", "today", "day"] as const) {
+  it("what's counted: a row in Missed or Today, unless it's your reminder or its own item is a Plan's kind; a day ahead no longer (plan 210, iteration 3)", () => {
+    for (const group of ["missed", "today"] as const) {
       expect(todayCounted(group, { kind: "waiting" })).toBe(true);
       expect(todayCounted(group, { kind: "promise" })).toBe(true);
       expect(todayCounted(group, { kind: "dated", item: { kind: "pay" } })).toBe(true);
@@ -535,5 +535,6 @@ describe("the groups go by day (plan 210, the owner, replacing plan 204's sevent
       expect(todayCounted(group, { kind: "reminder" })).toBe(false);
     }
     expect(todayCounted("comingUp", { kind: "dated", item: { kind: "pay" } })).toBe(false);
+    expect(todayCounted("day", { kind: "dated", item: { kind: "pay" } })).toBe(false);
   });
 });

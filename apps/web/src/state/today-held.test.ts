@@ -29,7 +29,7 @@ installToday();
 
 const thread = (id: number) => ({ id, accountId: 1, subject: `t${id}`, snippet: "", fromName: "A", fromEmail: "a@x.test", lastDate: 1e9 - id, messageCount: 1, unread: false, starred: false, hasAttachments: false, categoryIds: [], inInbox: true, inSpam: false, inTrash: false }) as unknown as ThreadSummary;
 function list(ids: number[]): TodayList {
-  return { sections: [{ kind: "today", items: ids.map((id) => ({ id: `waiting:${id}`, thread: thread(id), why: { kind: "waiting" } })) }], digest: null, now: 1e9, counts: { missed: 0, today: ids.length, thisWeek: 0 } } as unknown as TodayList;
+  return { sections: [{ kind: "today", items: ids.map((id) => ({ id: `waiting:${id}`, thread: thread(id), why: { kind: "waiting" } })) }], digest: null, now: 1e9, counts: { missed: 0, today: 0, waiting: ids.length } } as unknown as TodayList;
 }
 const shown = () => useToday.getState().rows.map((r) => r.threadId);
 const open = (id: number) => {
