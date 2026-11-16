@@ -1138,6 +1138,15 @@ describe("the reader", () => {
     expect(await backend.store.dated.active()).toHaveLength(1);
   });
 
+  it("plan 210 (iteration 4's code review): a sender named like the reader's own organization is never asked about (Priya's 'lumora-io.co')", async () => {
+    const { client, model, receive, read } = await setup();
+    model.answer = () => reply([{ kind: "alert", text: "Mailbox password expires", quote: "Your mailbox password is set to expire", due: null, time: null }]);
+    const thread = await receive({ from: { name: "Terno IT Helpdesk", email: "it-helpdesk@terno-io.test" }, subject: "[ACTION REQUIRED] Your password expires today", bodyText: "Your mailbox password is set to expire today." });
+    await read();
+    expect(model.requests).toHaveLength(0);
+    expect((await client.call("dated.ofThread", { threadId: thread })).rows).toEqual([]);
+  });
+
   it("Codex's second pass: someone you've written to is trusted, whatever their domain's words", async () => {
     const { backend, model, receive, read, raw } = await setup();
     model.answer = () => reply([bill]);
