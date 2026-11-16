@@ -11,7 +11,7 @@ import { client } from "~/rpc/connection";
 import { getApp, getSelectionWriteRevision, inPlainInbox, setApp, setListAutoSelection, useApp } from "./app";
 import { noteRows, useActionRows } from "./action-preview";
 import { cursorKey, heldRows, historyCursor, historyThrough, publishHistory, todayAnswer, todayRowsLeft } from "./today";
-import type { TodayHistoryItem } from "@terno/core";
+import type { HistoryKey, TodayHistoryItem } from "@terno/core";
 /** plan 210: the most history lines one page asks for (the backend's bound) */
 const HISTORY_PAGE_MAX = 100;
 import { useFollowups } from "./followups";
@@ -191,7 +191,7 @@ type Paged = { items: ThreadSummary[]; nextCursor: ListCursor | null; /** plan 2
 /** What only Today's pages carry (plan 210): read from any page. */
 const today = (page: object): Pick<Paged, "history" | "publish"> => page as Pick<Paged, "history" | "publish">;
 /** A page's continuation: a date and an id (the Inbox's), with plan 210's history adding which table's id it is. */
-export type ListCursor = { lastDate: number; id: number; src?: 0 | 1 };
+export type ListCursor = { lastDate: number; id: number; src?: HistoryKey["src"] };
 
 /**
  * The plain Inbox's first page with its top in front (`top` says what it is); the reader of the answer publishes it

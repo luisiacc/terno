@@ -46,7 +46,7 @@ import {
 import { captureError } from "@terno/core/diag";
 import { RpcError, type AppSettings } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
-import { ANSWERED_WITH_PROMISE, NEEDS_WALK, type DigestStored, type ItemChanges, type ItemSnapshots } from "@terno/store";
+import { ANSWERED_WITH_PROMISE, NEEDS_WALK, type DigestStored, type ItemChanges, type ItemSnapshots, type ScheduleSnapshots } from "@terno/store";
 import { DailyLimitError, MonthlyLimitError } from "./ai-limiter";
 import type { BackendCore as Backend } from "./core";
 import { readerZone } from "./promise-time";
@@ -55,6 +55,7 @@ import { aiAllowed, readSettings } from "./settings";
 import { withoutQuotes } from "./summaries";
 import { historyPage } from "./today-history";
 import { TodayLinks } from "./today-links";
+import { scheduleChanges, type ScheduleAsk } from "./today-schedule";
 import { suspiciousSender, untrustedSenders, withoutUntrusted, type WrittenTo } from "./suspicious-sender";
 
 /**
@@ -129,6 +130,8 @@ export class TodayService {
   /** plan 210 (iteration 2): what each act on items changed, for its Undo */
   private readonly undo = new Map<string, ItemSnapshots>();
   private undoSeq = 0;
+  /** plan 210 (iteration 4): what each change of a day and time changed, for its Undo (Change… is its own act) */
+  private readonly scheduleUndo = new Map<string, ScheduleSnapshots>();
   /** plan 204: the open dated items, until something changes them */
   private datedCache: { generation: number; rows: readonly DatedRow[] } | null = null;
   private datedGeneration = 0;
@@ -656,7 +659,7 @@ export class TodayService {
     const settings = await readSettings(store);
     // plan 210 (the owner): finished items hidden, no history is read at all
     if (!(await this.available(settings)) || settings.today?.finished === false) return { items: [], next: null };
-    return historyPage(store, { now, after: o.after, through: o.through ?? null, limit: o.limit ?? HISTORY_PAGE, held: new Set(o.held), dated: settings.dated?.enabled === true, promises: settings.followups?.enabled === true, yieldTurn: () => this.b.yieldTurn(), sliceMs: this.b.options.sliceBudgetMs });
+    return historyPage(store, { now, after: o.after, through: o.through ?? null, limit: o.limit ?? HISTORY_PAGE, held: new Set(o.held), dated: settings.dated?.enabled === true, promises: settings.followups?.enabled === true, changed: await this.changedItems(settings), yieldTurn: () => this.b.yieldTurn(), sliceMs: this.b.options.sliceBudgetMs });
   }
 
   /**
@@ -878,6 +881,51 @@ export class TodayService {
     await this.b.store.today.restore(before);
     this.changed();
     if (before.promises.length) await this.b.followups.look();
+  }
+
+  // ─── plan 210 (iteration 4): Change… ────────────────────────────────────
+
+  /**
+   * The owner's "Change…": a dated item's or a promise's new day and time (or the move a later mail proposed for it), on it
+   * and every item it's the same thing as, the named one at the revision it was seen at, all or none (`scheduleChanges`).
+   * Its schedule is the user's from then on: a later mail's move is kept as a proposal (both stores' finish). Its Undo
+   * puts every field back exactly.
+   */
+  async schedule(seen: ItemSeen, ask: ScheduleAsk): Promise<{ undoId: string }> {
+    const { store } = this.b;
+    const now = this.b.now();
+    const stale = () => new RpcError("STALE", L(seen.source === "promise" ? "errors.followups.changed" : "errors.dated.changed"));
+    // alone with the matcher, as an act: no member joins between reading the members and the write
+    const before = await this.links.exclusive(async () => {
+      const named = seen.source === "dated" ? await store.dated.get(seen.id) : await store.followups.get(seen.id);
+      if (!named || (seen.source === "promise" && (named as FollowupRow).kind !== "promise")) throw stale();
+      const members = await store.today.members([named.sameAs ?? refKey(seen)]);
+      return store.today.schedule(scheduleChanges(seen, named, members, ask, now));
+    });
+    if (!before) throw stale();
+    const undoId = `s${++this.undoSeq}`;
+    this.scheduleUndo.set(undoId, before);
+    while (this.scheduleUndo.size > UNDO_KEPT) this.scheduleUndo.delete(this.scheduleUndo.keys().next().value!);
+    this.changed();
+    if (before.promises.length) await this.b.followups.look();
+    return { undoId };
+  }
+
+  /** A change's Undo: every item's schedule, Later, change and proposal back as they were, or none when one changed since. */
+  async undoSchedule(undoId: string): Promise<void> {
+    const before = this.scheduleUndo.get(undoId);
+    if (!before) return;
+    this.scheduleUndo.delete(undoId);
+    if (!(await this.b.store.today.unschedule(before))) throw new RpcError("STALE", L(before.dated.length ? "errors.dated.changed" : "errors.followups.changed"));
+    this.changed();
+    if (before.promises.length) await this.b.followups.look();
+  }
+
+  /** Earlier's "Changed" lines: the open items the user changed (shown, as the open part reads them), at most the bound's. */
+  private async changedItems(settings: AppSettings): Promise<{ dated: DatedRow[]; promises: FollowupRow[] }> {
+    const dated = settings.dated?.enabled ? (await this.datedRows()).filter((r) => r.changedAt != null) : [];
+    const promises = settings.followups?.enabled ? (await this.b.store.followups.active()).filter((r) => r.kind === "promise" && r.changedAt != null) : [];
+    return { dated, promises };
   }
 
   // ─── plan 204: what changes by itself ────────────────────────────────────

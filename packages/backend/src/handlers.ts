@@ -1555,6 +1555,12 @@ export function createHandlers(b: Backend): Handlers {
       await b.today.undoAct(undoId);
       return { ok: true };
     },
+    // plan 210 (iteration 4, Change…): its own act, with its own Undo
+    "today.schedule": ({ item, to }) => b.today.schedule(item, "accept" in to ? { accept: true } : { day: to.day, time: to.time }),
+    "today.scheduleUndo": async ({ undoId }) => {
+      await b.today.undoSchedule(undoId);
+      return { ok: true };
+    },
     "dated.ofThread": async ({ threadId, include }) => ({ rows: await b.dated.ofThread(threadId, include) }),
     "dated.status": () => b.dated.status(),
     "dated.scanOffer": () => b.dated.scanOffer(),

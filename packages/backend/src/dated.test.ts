@@ -6,7 +6,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createAi, DATED_PROMPT_VERSION, DATED_TEXT_CHARS, promptText, type AiOptions, type Completion, type CompletionRequest, type ProviderConfig } from "@terno/ai";
-import type { DatedRow } from "@terno/core";
+import type { DatedRow, HistoryKey } from "@terno/core";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { demoRegistry } from "@terno/mail";
 import { msg, threadOf } from "@terno/store/conformance";
@@ -2277,8 +2277,8 @@ describe("What matters' history (plan 210)", () => {
       const row = await rowOf(thread);
       return s.client.call("dated.act", { id: row.id, revision: row.revision, action });
     };
-    const list = (through: { at: number; src: 0 | 1; id: number } | null = null, held: string[] = []) => s.client.call("today.list", { held, history: { through } });
-    const lines = async (through: { at: number; src: 0 | 1; id: number } | null = null) => (await list(through)).history!.items.map((i) => i.thread.id);
+    const list = (through: { at: number; src: HistoryKey["src"]; id: number } | null = null, held: string[] = []) => s.client.call("today.list", { held, history: { through } });
+    const lines = async (through: { at: number; src: HistoryKey["src"]; id: number } | null = null) => (await list(through)).history!.items.map((i) => i.thread.id);
     return { ...s, threads, act, list, lines, rowOf };
   }
 
