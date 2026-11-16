@@ -269,25 +269,32 @@ export interface TodayList {
  */
 export interface HistoryKey {
   at: number;
-  src: 0 | 1;
+  src: HistorySource;
   id: number;
 }
+
+/**
+ * Where a line comes from: a closed dated item (0), a closed promise (1); plan 210 (iteration 4, Change…), an open dated item
+ * the user changed (2) and an open promise (3), at the moment of the change.
+ */
+export type HistorySource = 0 | 1 | 2 | 3;
 
 /** Negative: `a` comes first (newer). */
 export const historyOrder = (a: HistoryKey, b: HistoryKey): number => b.at - a.at || a.src - b.src || b.id - a.id;
 
 /**
- * A table's own key (`closed_at`, id) strictly after a history line: at the line's moment, dated items come before
- * promises, so the dated table takes none of that moment after a promise, and the promises' table all of it after a dated item.
+ * A table's own key (`closed_at`, id) strictly after a history line: at the line's moment, lines of a lower source come
+ * first, so a table takes none of that moment after a line of a higher source, and all of it after a lower one's.
  */
-export function historyAfter(key: HistoryKey, src: 0 | 1): { at: number; id: number } {
+export function historyAfter(key: HistoryKey, src: HistorySource): { at: number; id: number } {
   if (key.src === src) return { at: key.at, id: key.id };
-  return { at: key.at, id: src === 0 ? 0 : Number.MAX_SAFE_INTEGER };
+  return { at: key.at, id: key.src < src ? Number.MAX_SAFE_INTEGER : 0 };
 }
 
 /** What happened to the item: done, removed (once "not a task"), settled by later mail, or over (retired when its time passed). */
 /** plan 210 (iteration 3): `replaced`, a promise its person replaced with another request */
-export type HistoryOutcome = "done" | "dismissed" | "settled" | "over" | "replaced";
+/** plan 210 (iteration 4): `changed`, an open item whose day or time the user changed (its line while it's open) */
+export type HistoryOutcome = "done" | "dismissed" | "settled" | "over" | "replaced" | "changed";
 
 export interface TodayHistoryItem {
   /** plan 210 (iteration 2): its row's identity, the closed item's (a merged one's canonical's) */

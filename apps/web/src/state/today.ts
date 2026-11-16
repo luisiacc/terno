@@ -519,5 +519,5 @@ export function historyThrough(): HistoryKey | null {
 }
 
 /** Plan 210: the list's cursor for a history key, and back (the list's cursor carries the key's three parts). */
-export const historyCursor = (key: HistoryKey | null | undefined): { lastDate: number; id: number; src: 0 | 1 } | null => (key ? { lastDate: key.at, id: key.id, src: key.src } : null);
-export const cursorKey = (c: { lastDate: number; id: number; src?: 0 | 1 }): HistoryKey => ({ at: c.lastDate, id: c.id, src: c.src ?? 0 });
+export const historyCursor = (key: HistoryKey | null | undefined): { lastDate: number; id: number; src: HistoryKey["src"] } | null => (key ? { lastDate: key.at, id: key.id, src: key.src } : null);
+export const cursorKey = (c: { lastDate: number; id: number; src?: HistoryKey["src"] }): HistoryKey => ({ at: c.lastDate, id: c.id, src: c.src ?? 0 });

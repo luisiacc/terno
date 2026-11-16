@@ -76,3 +76,6 @@ export function parseProposal(json: string | null | undefined): ScheduleProposal
 
 /** Who a proposal names: the sender's name, else their address. */
 export const proposerOf = (from: { name: string; email: string }): string => (from.name.trim() || from.email.trim()).slice(0, PROPOSAL_BY_MAX);
+
+/** A "Changed" line's row id in Earlier: never the open row's own (`dated:42`), which the item keeps above. */
+export const changeLineId = (canonical: string): string => `change:${canonical}`;
