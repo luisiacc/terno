@@ -954,6 +954,17 @@ describe("plan 210 (iteration 4's code review)", () => {
     const CUTOFF = "Your electricity bill of $54.20 is due on November 20. Your service will be suspended in 48 hours after that unless payment is received.";
     expect(read([bill], CUTOFF, "Your bill")).toHaveLength(1);
   });
+
+  it("only an unconditional charge of the bill itself is AutoPay: a late fee, or a charge on a condition, leaves the bill (Codex)", () => {
+    const pay = (text: string, quote = "Your invoice is due November 20") => checkDates({ items: [{ kind: "pay", text: "Pay the Brightline invoice", quote, due: "2026-11-20", time: null }], settled: [] }, { ...base, text, subject: "Your invoice" }).rows.length;
+    expect(pay("Your invoice is due November 20. We will charge a $25 late fee if payment is not received.")).toBe(1);
+    expect(pay("Your invoice is due November 20. We will charge interest on any balance left unpaid.")).toBe(1);
+    expect(pay("Your invoice is due November 20. If you've set up AutoPay, we'll charge your card on file that day.")).toBe(1);
+    expect(pay("Tu factura vence el 20 de noviembre. Si no recibimos el pago, se cargará automáticamente un recargo de $25.", "Tu factura vence el 20 de noviembre")).toBe(1);
+    // the bill's own charge, said plainly, is still no item
+    expect(pay("Your invoice is due November 20. AutoPay is on: we'll charge your Visa ending 4821 that day.")).toBe(0);
+    expect(pay("Your invoice is due November 20. We will charge your card on file automatically.")).toBe(0);
+  });
 });
 
 describe("the reader", () => {

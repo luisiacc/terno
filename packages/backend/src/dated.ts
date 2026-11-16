@@ -303,20 +303,24 @@ const FACT_WORDS_MAX = 2000;
  * ("AutoPay is on: we'll charge your Visa", "will be charged automatically", "se cargará automáticamente", "tienes la
  * domiciliación activada"), with nothing the reader decides: no item. A renewal, a trial, a plan or a subscription the reader
  * may change or cancel stays (a priced decision), and so does one whose charge failed. The words tied to the item, as `norm`
- * reads them, en and es.
+ * reads them, en and es. Iteration 4's code review (Codex): only an unconditional charge of the bill itself, sentence by
+ * sentence: "we will charge" counts with what it's charged to ("we'll charge your Visa"), and a sentence with a fee, a
+ * penalty or a condition never does ("We will charge a $25 late fee if payment is not received" is a bill to pay).
  */
-const CHARGED_ITSELF = /\b(?:auto ?pay (?:is )?(?:on|enabled|active|set up)|(?:we ll|we will|will) (?:automatically )?(?:charge|debit|deduct|draft)|(?:be )?(?:charged|debited|deducted|drafted|paid) automatically|automatic (?:payment|charge|debit)s? (?:is |are )?(?:on|set up|scheduled|enabled)|se (?:cargara|cobrara|debitara|domiciliara)\w* automaticamente|(?:tienes|tiene) (?:la )?domiciliacion|domiciliacion (?:activa|activada)|cargo automatico|pago automatico (?:activo|activado))\b/u;
+const CHARGED_ITSELF = /\b(?:auto ?pay (?:is )?(?:on|enabled|active|set up)|(?:we ll|we will|will) automatically (?:charge|debit|deduct|draft)|(?:we ll|we will|will) (?:charge|debit|deduct|draft) (?:it |this |the (?:amount|balance|total|payment) )?(?:to |from )?(?:your|the) (?:visa|mastercard|amex|card|credit card|debit card|account|bank account|checking|savings|payment method)|(?:be )?(?:charged|debited|deducted|drafted|paid) automatically|automatic (?:payment|charge|debit)s? (?:is |are )?(?:on|set up|scheduled|enabled)|se (?:cargara|cobrara|debitara|domiciliara)\w* automaticamente|(?:tienes|tiene) (?:la )?domiciliacion|domiciliacion (?:activa|activada)|cargo automatico|pago automatico (?:activo|activado))\b/u;
 const BILLED = /\b(?:bill|statement|invoice|premium|balance|amount due|factura|recibo|estado de cuenta|cuota|prima|importe|saldo)\b/u;
 const DECIDED = /\b(?:renew\w*|trial|subscription|membership|plan|cancel\w*|change|seats?|renov\w*|suscripcion|membresia|prueba|cancela\w*|cambia\w*)\b/u;
 const NOT_CHARGED = /\b(?:declined|failed|unable|couldn t|could not|didn t go through|rechaz\w*|no pudimos|no se pudo|fall\w*)\b/u;
 export function routineAutoBill(words: string): boolean {
   const read = norm(words);
-  return CHARGED_ITSELF.test(read) && BILLED.test(read) && !DECIDED.test(read) && !NOT_CHARGED.test(read);
+  if (!BILLED.test(read) || DECIDED.test(read) || NOT_CHARGED.test(read)) return false;
+  return sentencesOf(words).some((s) => CHARGED_ITSELF.test(s.read) && !CONDITIONAL_CHARGE.test(s.read));
 }
 
 /**
  * Plan 210 (iteration 4, revision 12): a delivery the mail only estimates ("should arrive within 7 to 10 business days", "en
  * 5 a 7 días hábiles") has no day: no item, unless its words say that day as well.
+const CONDITIONAL_CHARGE = /\b(?:fees?|penalty|penalties|interest|finance charges?|if|unless|should|in case|otherwise|recargos?|multas?|penalizacion\w*|comision\w*|intereses|si|salvo|a menos que|en caso)\b/u;
  */
 const ESTIMATE = /\b(?:within|in) (?:about )?\d{1,2}(?: ?(?:to|-|or) ?\d{1,2})? (?:business |working |calendar )?days\b|\ben (?:un plazo de )?(?:unos )?\d{1,2}(?: ?(?:a|-|o) ?\d{1,2})? dias(?: habiles| laborables| naturales)?\b/u;
 const estimateOnly = (words: string, due: string, arrivedAt: number): boolean => ESTIMATE.test(norm(words)) && !saysDay(words.replace(/\d{1,2} ?(?:to|-|a|o) ?\d{1,2}|\d{1,2} (?:business |working |calendar )?d[ií]as?/giu, " "), due, { arrivedAt });
