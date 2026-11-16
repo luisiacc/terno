@@ -167,14 +167,26 @@ export function onlyTells(quote: string): boolean {
  * Tepoz avísanos, aquí tienes tu casa", "if you're ever in town, let us know", "let me know if you need anything") asks
  * nothing, so it's never an ask: a condition about the reader's visit or need, a "let me know", no question and nothing else
  * asked ("when you get a chance, let me know what you think of the draft" is one). The sentence as `norm` reads it, en and es.
+ * The code review of iteration 3: the "let me know" asks only for notice of that visit or need (nothing after it in its
+ * clause, the condition itself, "let me know when you're in town", or the sender's own "and we'll work it out"); one that
+ * asks for something ("When you're back, let me know what you think of the draft", "dime qué opinas") is an ask.
  */
 const COURTESY_IF = /\b(?:if (?:something|anything)(?: s| is)? (?:in the way|comes up)|si algo te lo impide|si surge algo|when(?:ever)? you(?: re| are)? (?:come|coming|visit|visiting|next in|in town|back|around|passing through|pass through|over here|here)|if you(?: re| are)? ever (?:in|around|back|over|passing|here)|next time you(?: re| are)? (?:in|around|here|over|back)|if you (?:ever )?need (?:anything|something|a hand|help)|cuando (?:vengas|vengan|pases|pasen|estes|esten|andes|regreses|vuelvas)|si (?:vienes|pasas|andas|estas por)|la proxima vez que (?:vengas|pases|estes)|si (?:necesitas|ocupas) (?:algo|cualquier cosa|ayuda))\b/u;
 const LET_KNOW = /\b(?:let (?:me|us) know|tell me|dimelo|give (?:me|us) a (?:shout|call|ring|heads up)|drop (?:me|us) a line|avisa(?:me|nos)|me avisas|nos avisas|dime|escribe(?:me|nos)|llama(?:me|nos))\b/u;
 const ASKS_MORE = /\b(?:please|could|can|would|will you|send|bring|need you|want you|por favor|puedes|podrias|envia\w*|manda\w*|trae\w*|necesito que)\b/u;
+const COURTESY_HERE = new RegExp(`^(?:${COURTESY_IF.source})`, "u");
+const AND_WE = /^(?:and|so|y|e|asi)\b/u;
+/** every "let me know" in these words (a clause, as `norm` reads it) asks only for notice: nothing after it but the courtesy */
+function noticeOnly(clause: string): boolean {
+  return [...clause.matchAll(new RegExp(LET_KNOW.source, "gu"))].every((m) => {
+    const rest = clause.slice(m.index + m[0].length).trim();
+    return !rest || COURTESY_HERE.test(rest) || AND_WE.test(rest);
+  });
+}
 export function courtesyOnly(sentence: string): boolean {
   if (/[?¿]/u.test(sentence)) return false;
   const read = norm(sentence);
-  return COURTESY_IF.test(read) && LET_KNOW.test(read) && !ASKS_MORE.test(read.replace(COURTESY_IF, " ").replace(LET_KNOW, " "));
+  return COURTESY_IF.test(read) && LET_KNOW.test(read) && !ASKS_MORE.test(read.replace(COURTESY_IF, " ").replace(LET_KNOW, " ")) && sentence.split(/[.,;:!\n]/u).every((clause) => noticeOnly(norm(clause)));
 }
 
 /**
