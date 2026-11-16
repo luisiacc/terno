@@ -2632,6 +2632,8 @@ It contains none of your mail, contacts, settings or keys.
   "whatMatters.feed.label": "Today's items",
   "whatMatters.closeEmail": "Close email",
   "whatMatters.options": "What matters options",
+  "whatMatters.menu.remove": "Remove from What matters",
+  "whatMatters.menu.removeKeeps": "The email stays",
   "whatMatters.moreSettings": "More settings…",
   "whatMatters.history.done": "Done {day}",
   "whatMatters.history.removed": "Removed {day}",
