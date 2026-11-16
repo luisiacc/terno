@@ -141,6 +141,9 @@ describe("the history's lines (plan 210)", () => {
     expect(historyWhen(line("pay", "over", at(9)), NOW)).toBe("Over Mon");
     // plan 210 (iteration 3): a promise its person replaced with another request
     expect(historyWhen(line("promise", "replaced", at(12, 9)), NOW)).toBe("Replaced yesterday");
+    // plan 210 (iteration 4): handed on by a confirmed forward, to whom, by first name (an address's local part with none)
+    expect(historyWhen({ ...line("pay", "done", at(10)), outcome: "handed", handedTo: { name: "Jess Okafor", email: "jess@home.test" } }, NOW)).toBe("Handed to Jess Tue");
+    expect(historyWhen({ ...line("promise", "done", at(13, 8)), outcome: "handed", handedTo: { name: "", email: "sam.lee@home.test" } }, NOW)).toBe("Handed to sam.lee today");
   });
 
   it("in Spanish", () => {
@@ -149,6 +152,7 @@ describe("the history's lines (plan 210)", () => {
     expect(historyWhen(line("pay", "over", at(11)), NOW)).toBe("Pasó el mié");
     expect(historyWhen(line("promise", "dismissed", at(11)), NOW)).toBe("Quitado el mié");
     expect(historyWhen(line("promise", "replaced", at(11)), NOW)).toBe("Reemplazado el mié");
+    expect(historyWhen({ ...line("pay", "done", at(10)), outcome: "handed", handedTo: { name: "Jess Okafor", email: "jess@home.test" } }, NOW)).toBe("Delegado a Jess el mar");
     expect(historySentence(line("alert", "settled", at(12), "Pago rechazado de $1,186.40 en la Visa…"))).toBe("Según el correo: Pago rechazado de $1,186.40 en la Visa…");
     expect(historySentence(line("promise", "done", at(11), "enviar a Valeria los ajustes"))).toBe("Dijiste que ibas a enviar a Valeria los ajustes.");
   });

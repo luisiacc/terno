@@ -145,10 +145,15 @@ export function historySentence(line: Pick<TodayHistoryItem, "kind" | "text" | "
 }
 
 /** Plan 210: the history's right-hand column, what happened and when: "Done today", "Removed Wed", "Over Nov 2" (es "Hecho el mié"). */
-export function historyWhen(line: Pick<TodayHistoryItem, "outcome" | "kind" | "key">, now = Date.now()): string {
+export function historyWhen(line: Pick<TodayHistoryItem, "outcome" | "kind" | "key" | "handedTo">, now = Date.now()): string {
   const near = datedDay(line.key.at, now).near;
   const day = near ? t(`today.also.${near}`) : t("today.also.on", { day: dueShort(line.key.at, false, now) });
+  // plan 210 (iteration 4): handed on, to whom ("Handed to Jess Tue"), by first name as the reader's line says people
+  if (line.outcome === "handed") return line.handedTo ? t("whatMatters.history.handed", { name: firstName(line.handedTo), day }) : t("whatMatters.history.done", { day });
   // plan 210 (iteration 1, the owner): "Not a task" is "Remove", for an item and a promise alike
   return t(`whatMatters.history.${line.outcome === "dismissed" ? "removed" : line.outcome}`, { day });
 }
+
+/** A person by their first name, else their address's local part. */
+const firstName = (p: { name: string; email: string }): string => p.name.trim().split(/\s+/)[0] || p.email.split("@")[0] || p.email;
 

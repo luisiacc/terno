@@ -319,6 +319,8 @@ export interface DraftRow {
   ui_state: "open" | "collapsed";
   revision: number;
   updated_at: number;
+  /** plan 210 (iteration 4): a forward's hand-off of What matters' items (`Handoff`, JSON); only on a forward (v70) */
+  handoff_json?: string | null;
 }
 
 /** Plan 94: a draft scheduled to send, as listed (its draft's recipients and subject; no params). */
@@ -375,6 +377,8 @@ export interface DraftInput {
   forwardOfMessageId?: number | null;
   showSourceContext?: boolean;
   uiState?: "open" | "collapsed";
+  /** plan 210 (iteration 4): undefined keeps what's stored, null clears it; kept only while the draft is a forward */
+  handoff?: import("@terno/core").Handoff | null;
 }
 
 /** Plan 107: what an .mbox export reads: an account's own folder (`folder`: its key) or one of its standard rows */

@@ -26,7 +26,8 @@ import { leaveFolder, moveMessagesToFolder, moveThreadsToFolder, settleFolderOp 
 import { carryFolder, clearFolder, countFolderMessages, listFolders, rebuildFolders, replaceFolders } from "./folders";
 import { exportBody, exportIds, exportMessages } from "./folder-export";
 import { COOLDOWN_TICKETS, bindCooldown, decodeCooldown, encodeCooldown, mailboxDigest, mailboxKeyValid, PROVIDER_COOLDOWN_KEY, copyOpAdmission } from "@terno/store";
-import { attachmentMessageBudgetAsync } from "@terno/core";
+import { attachmentMessageBudgetAsync, parseHandoff } from "@terno/core";
+import { handoffConfirmed } from "./handoff";
 import { mergeBefore, sameImapLocations, reaffirmSavedFlagIntent, acceptFlagObservation, flagEpochs, flagReconciliation, flagObservationValid, flagTick, initializeFlagStep, rearmFlagEffects, settleFlagEffects, startFlagObservation } from "@terno/store";
 import { bindSqlPromotedFlags, sqlFlags } from "./flag-intents";
 import { appendAsset, assetError, assetRef, assetRow, createAsset, ASSET_CLEANUP_STEPS, cleanupAssets, validateAssetCreation, linkAssets, sealAsset, stageAttachments, validateAssets } from "@terno/store";
@@ -788,6 +789,8 @@ export class SqlMailStore implements MailStore {
         const localId = (JSON.parse(op.target_json) as { messageIds?: number[] }).messageIds?.[0];
         // plan 142 revision 3: only a confirmed send closes a wait, in the commit that records it
         if (op.kind === "send" && localId) followupSendConfirmed(this.db, localId, now, o?.followup === true, o?.since);
+        // plan 210 (iteration 4): a forward's hand-off closes its items here, as the provider confirmed it, and nowhere else
+        const handed = op.kind === "send" && !!localId && handoffConfirmed(this.db, op.target_json, localId, now, o ?? {});
         if (op.kind === "send" && result && localId) {
           if (result.providerMsgId) {
             const changed = this.db.run("UPDATE messages SET provider_msg_id = ? WHERE id = ? AND provider_msg_id LIKE 'local:%'", result.providerMsgId, localId);
@@ -802,7 +805,7 @@ export class SqlMailStore implements MailStore {
             if (row) touched.push(adoptProviderThread(this.db, row.thread_id, op.account_id, result.providerThreadId, undefined, deltas));
           }
         }
-        return { touched, deltas, ...(refreshNeeded && { flagReconcileAccounts: [op.account_id] }) };
+        return { touched, deltas, ...(handed && { handed }), ...(refreshNeeded && { flagReconcileAccounts: [op.account_id] }) };
       })),
     fail: async (id, error, retryable, now, park) =>
       this.preparedFlagOutcome(id, () => this.db.tx(() => {
@@ -994,7 +997,7 @@ export class SqlMailStore implements MailStore {
       return this.db.tx(() => {
         check();
         // a draft is sent once: sending deletes it, so a second send of the same draft finds nothing
-        const draft = p.draftId === undefined ? undefined : this.db.get<{ account_id: number; revision: number; generation: string; attachments_json: string; reply_context_json: string | null; in_reply_to_message_id: number | null; mode: string; subject: string }>("SELECT account_id, revision, generation, attachments_json, reply_context_json, in_reply_to_message_id, mode, subject FROM drafts WHERE id = ?", p.draftId);
+        const draft = p.draftId === undefined ? undefined : this.db.get<{ account_id: number; revision: number; generation: string; attachments_json: string; reply_context_json: string | null; in_reply_to_message_id: number | null; mode: string; subject: string; handoff_json: string | null }>("SELECT account_id, revision, generation, attachments_json, reply_context_json, in_reply_to_message_id, mode, subject, handoff_json FROM drafts WHERE id = ?", p.draftId);
         if (p.draftId !== undefined && (!draft || (draft.generation ?? "") !== (p.draftGeneration ?? ""))) throw new RpcError("STALE", L("errors.draftGone"), { reason: "draftMissing" });
         if (p.scheduledAt !== undefined && !stillScheduled(this.db, p.draftId, p.scheduledAt)) throw new RpcError("STALE", L("errors.draftGone"), { reason: "unscheduled" });
         if (p.forward && !forwardSendOpen(this.db, p.forward)) throw new RpcError("STALE", L("errors.forwardGone"), { reason: "forwardGone" });
@@ -1071,7 +1074,9 @@ export class SqlMailStore implements MailStore {
         const payloadJson = preparedRecipients
           ? `${JSON.stringify({ ...payload, to: undefined, cc: undefined, bcc: undefined }).slice(0, -1)},"to":${preparedRecipients.toJson},"cc":${preparedRecipients.ccJson},"bcc":${preparedRecipients.bccJson}}`
           : undefined;
-        const opId = enqueueOp(this.db, { accountId: p.accountId, kind: "send", target: { messageIds: [localId] }, payload }, p.now, undefined, payloadJson)!;
+        // plan 210 (iteration 4): the forward's hand-off goes with its send, its draft's as it was at this revision
+        const handoff = draft?.mode === "forward" ? parseHandoff(draft.handoff_json) : null;
+        const opId = enqueueOp(this.db, { accountId: p.accountId, kind: "send", target: { messageIds: [localId], ...(handoff && { handoff }) }, payload }, p.now, undefined, payloadJson)!;
         if (account.kind === "imap") { if (!preparedRecipients) throw new RpcError("BAD_REQUEST", L("errors.accountGone")); reserveRecipientReceipt(sqlRecipientReceipts(this.db), opId, p.accountId, p.now, preparedRecipients); }
         if (account.kind === "imap") reserveSendCopy(sqlSendCopies(this.db), opId, p.accountId, p.now, p.to.length + p.cc.length + p.bcc.length, !!(cfg.config as { appendToSent?: boolean }).appendToSent);
         linkAssets(sqlAssets(this.db), "op", opId, attachments);

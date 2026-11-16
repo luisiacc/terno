@@ -2813,8 +2813,10 @@ export class BackendCore {
       if (op.kind === "send") log.info("send.done", { durationMs: performance.now() - started });
       if (this.stopped && !this.store.isOpen) return;
       // a warning in Terno's words stays a catalog message (see opInfo)
-      const done = await this.store.ops.complete(op.id, { ...result, ...(sendAccepted && { sendAccepted }), ...(warning !== undefined && { warning: encodeText(warning) }) }, this.now(), { followup: this.followups.isActive, since: this.followups.since });
+      const done = await this.store.ops.complete(op.id, { ...result, ...(sendAccepted && { sendAccepted }), ...(warning !== undefined && { warning: encodeText(warning) }) }, this.now(), { followup: this.followups.isActive, since: this.followups.since, nudgeAfterDays: this.followups.nudgeAfterDays });
       if (sending) this.followups.wake();
+      // plan 210 (iteration 4): a forward's hand-off closed its items in that commit: What matters and Follow-ups read again
+      if (done.handed) this.today.handed();
       if (sending && receipt) {
         try {
           const stored = await this.store.sendCopies.get(op.id);

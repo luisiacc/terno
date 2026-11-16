@@ -292,9 +292,9 @@ export function historyAfter(key: HistoryKey, src: HistorySource): { at: number;
 }
 
 /** What happened to the item: done, removed (once "not a task"), settled by later mail, or over (retired when its time passed). */
-/** plan 210 (iteration 3): `replaced`, a promise its person replaced with another request */
+/** plan 210 (iteration 3): `replaced`, a promise its person replaced with another request; (iteration 4) `handed`, handed to a person */
 /** plan 210 (iteration 4): `changed`, an open item whose day or time the user changed (its line while it's open) */
-export type HistoryOutcome = "done" | "dismissed" | "settled" | "over" | "replaced" | "changed";
+export type HistoryOutcome = "done" | "dismissed" | "settled" | "over" | "replaced" | "changed" | "handed";
 
 export interface TodayHistoryItem {
   /** plan 210 (iteration 2): its row's identity, the closed item's (a merged one's canonical's) */
@@ -308,6 +308,8 @@ export interface TodayHistoryItem {
   kind: DatedKind | "promise";
   /** its words, as the open part said them */
   text: string;
+  /** plan 210 (iteration 4): `handed`'s person, as the confirmed forward went ("Handed to Jess Tue") */
+  handedTo?: import("./handoff").HandedTo;
 }
 
 export interface TodayHistoryPage {

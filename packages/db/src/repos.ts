@@ -8,6 +8,7 @@ import { sqlAssets } from "./attachments";
 import {
   accountPrefs,
   canonicalMessageId,
+  parseHandoff,
   withAccountPrefs,
   type Account,
   type AccountKind,
@@ -763,6 +764,12 @@ export function deleteSecret(db: Db, name: string): void {
 // ───────────────────────────── drafts ─────────────────────────────
 
 
+/** A hand-off as a draft keeps it: checked and bounded (`parseHandoff`), else none. */
+const draftHandoff = (h: import("@terno/core").Handoff | null): string | null => {
+  const checked = h ? parseHandoff(h) : null;
+  return checked ? JSON.stringify(checked) : null;
+};
+
 /**
  * Saves a draft (see DraftInput): an insert starts at revision 1 in format 2;
  * an update bumps the revision, unless the stored one isn't the one the edit
@@ -827,6 +834,8 @@ export function saveDraft(db: Db, d: DraftInput, now = Date.now()): DraftRow | n
     in_reply_to_message_id: reply,
     forward_of_message_id: forward,
     ui_state: d.uiState ?? row?.ui_state ?? "open",
+    // plan 210 (iteration 4): a hand-off rides only on a forward (a draft turned into a reply, or whose message went, drops it)
+    handoff_json: mode !== "forward" ? null : d.handoff !== undefined ? draftHandoff(d.handoff) : (row?.handoff_json ?? null),
   };
   const cols = Object.keys(values);
   if (row && (d.baseRevision === undefined || d.baseRevision === row.revision)) {

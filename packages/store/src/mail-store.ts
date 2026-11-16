@@ -442,7 +442,7 @@ export interface MailStore {
     /** Point-read only send control/target metadata, without materializing the immutable wire payload. */
     sendSubmission(id: string): Promise<{ state: OpState; accepted: boolean } | null>;
     /** success, including adopting the provider's ids for a sent message */
-    complete(id: string, result: { providerMsgId?: string; providerThreadId?: string; warning?: string; sendAccepted?: import("./recipient-receipts").AcceptedRecipientEvidence } | void, now: number, o?: { followup?: boolean; since?: number | null }): Promise<{ touched: number[]; deltas: ModelDelta[] } & FlagReconciliation>;
+    complete(id: string, result: { providerMsgId?: string; providerThreadId?: string; warning?: string; sendAccepted?: import("./recipient-receipts").AcceptedRecipientEvidence } | void, now: number, o?: { followup?: boolean; since?: number | null; /** plan 210 (iteration 4): a handed forward's wait comes due after these days */ nudgeAfterDays?: number }): Promise<{ touched: number[]; deltas: ModelDelta[]; /** plan 210 (iteration 4): the send's hand-off closed What matters' items */ handed?: boolean } & FlagReconciliation>;
     /** with `park` (plan 20): the server couldn't be reached, so it waits for resumeNetwork (an outage gives the attempt back) */
     fail(id: string, error: string, retryable: boolean, now: number, park?: OpPark): Promise<OpState>;
     markUnknown(id: string, error: string, now: number, sendAccepted?: import("./recipient-receipts").AcceptedRecipientEvidence): Promise<void>;

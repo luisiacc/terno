@@ -64,6 +64,8 @@ export interface FollowupRow {
   changedAt?: number | null;
   changedFrom?: ItemSchedule | null;
   proposal?: ScheduleProposal | null;
+  /** Plan 210 (iteration 4): whom it was handed to (`closedReason` `handed`), as the confirmed forward went. Absent: not handed */
+  handedTo?: import("./handoff").HandedTo | null;
 }
 
 export interface FollowupsSetting {

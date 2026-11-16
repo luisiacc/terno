@@ -74,6 +74,16 @@ describe("historyPage", () => {
     expect((await historyPage(store, ask({ held: new Set(["promise:9"]) }))).items.map((i) => i.id)).toEqual(["dated:1", "dated:71"]);
   });
 
+  it("plan 210 (iteration 4): an item handed on by a confirmed forward says to whom, apart from Done; a request it settled has no line", async () => {
+    const jess = { name: "Jess Okafor", email: "jess@home.test" };
+    const { store } = fakeStore(
+      [{ id: 1, threadId: 1, closedAt: NOW - MIN, closedReason: "handed", handedTo: jess } as Closed, { id: 2, threadId: 2, closedAt: NOW - 2 * MIN, state: "settled", closedReason: "promise" }, { id: 3, threadId: 3, closedAt: NOW - 3 * MIN }],
+      [{ id: 4, threadId: 4, closedAt: NOW - 4 * MIN, closedReason: "handed", handedTo: jess } as Closed],
+    );
+    const items = (await historyPage(store, ask({}))).items;
+    expect(items.map((i) => [i.id, i.outcome, i.handedTo?.email])).toEqual([["dated:1", "handed", jess.email], ["dated:3", "done", undefined], ["promise:4", "handed", jess.email]]);
+  });
+
   it("plan 210 (iteration 3, revision 4): a promise its person replaced says so, apart from Done and Remove", async () => {
     const { store } = fakeStore([], [{ id: 3, threadId: 3, closedAt: NOW - MIN, state: "dismissed", closedReason: "replaced" }, { id: 4, threadId: 4, closedAt: NOW - 2 * MIN, state: "dismissed" }, { id: 5, threadId: 5, closedAt: NOW - 3 * MIN }]);
     expect((await historyPage(store, ask({}))).items.map((i) => [i.id, i.outcome])).toEqual([["promise:3", "replaced"], ["promise:4", "dismissed"], ["promise:5", "done"]]);

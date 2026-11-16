@@ -1573,6 +1573,14 @@ ALTER TABLE followups ADD COLUMN changed_at INTEGER;
 ALTER TABLE followups ADD COLUMN changed_from TEXT;
 ALTER TABLE followups ADD COLUMN proposal TEXT;
 ` },
+  // plan 210 (iteration 4, Hand to…): a forward's hand-off of What matters' items, kept with its draft (copied onto its send
+  // op's target when queued, which needs no column), and whom a confirmed forward handed an item to. Shape only: nullable
+  // columns, no rewrite, no index (a draft's is read with its row, an item's with its row). v65 to v69 are iteration 4's others
+  { version: 70, name: "What matters: Hand to… (plan 210, iteration 4)", sql: `
+ALTER TABLE drafts ADD COLUMN handoff_json TEXT;
+ALTER TABLE dated_items ADD COLUMN handed_to TEXT;
+ALTER TABLE followups ADD COLUMN handed_to TEXT;
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

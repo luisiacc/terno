@@ -72,6 +72,7 @@ import {
   viewRef,
   type MessageCategory,
   type TabMessage,
+  parseHandoff,
 } from "@terno/core";
 import type { OwnerIdentity } from "@terno/core/rpc";
 import { acceptFlagObservation, bindFlagTarget, flagObservationValid, localFlagIntent, settleFlagEffects, type FlagObservation } from "@terno/store";
@@ -2043,7 +2044,15 @@ const draftRow = (r: R): DraftRow => ({
   ui_state: r.ui_state ?? "open",
   revision: r.revision ?? 1,
   updated_at: r.updated_at,
+  // plan 210 (iteration 4): a draft stored before it has none
+  handoff_json: r.handoff_json ?? null,
 });
+
+/** As SQL's: a hand-off as a draft keeps it, checked and bounded, else none. */
+const draftHandoff = (h: import("@terno/core").Handoff | null): string | null => {
+  const checked = h ? parseHandoff(h) : null;
+  return checked ? JSON.stringify(checked) : null;
+};
 
 /** The same contract as SQL's saveDraft: revisions, stale edits become new drafts, null when gone. */
 export function saveDraft(c: Ctx, d: DraftInput, now: number): DraftRow | null {
@@ -2105,6 +2114,8 @@ export function saveDraft(c: Ctx, d: DraftInput, now: number): DraftRow | null {
     in_reply_to_message_id: reply,
     forward_of_message_id: forward,
     ui_state: d.uiState ?? row?.ui_state ?? "open",
+    // plan 210 (iteration 4): as SQL's: a hand-off rides only on a forward
+    handoff_json: mode !== "forward" ? null : d.handoff !== undefined ? draftHandoff(d.handoff) : (row?.handoff_json ?? null),
     updated_at: now,
   };
   if (row && (d.baseRevision === undefined || d.baseRevision === row.revision)) {
