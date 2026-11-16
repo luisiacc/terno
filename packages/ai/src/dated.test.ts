@@ -220,7 +220,7 @@ describe("reading dates in mail you got (plan 204)", () => {
     expect(en).toContain('Its "due" and "time" are a deadline the mail states for it ("cancelled unless we hear from you by 1:00 PM on Wednesday": that Wednesday, 13:00), never the day it happened, and never a "respond" beside it; with none, null.');
     expect(en).toContain('null for an "ask", and for an "alert" that states no deadline.');
     expect(en).toContain('When it asks the reader to confirm it by replying ("reply C to confirm"), that\'s also a "respond", due the day the mail arrived unless it gives one: "Reply C to confirm Sofia\'s cleaning".');
-    expect(en).toContain('that\'s this one item and nothing else for that bill (no "alert", no second "pay" or "respond"): its text is the fix the mail asks for, saying what failed: "Pay $142.67 for the Brightline bill (the card was declined)", or "Update the card for Stratus ($1,186.40)" when it asks to update the card.');
+    expect(en).toContain('that\'s this one item and nothing else for that bill (no "alert", no second "pay" or "respond"): its text (a "pay"\'s, never an alert\'s) is the fix the mail asks for, saying what failed: "Pay $142.67 for the Brightline bill (the card was declined)", or "Update the card for Stratus ($1,186.40)" when it asks to update the card.');
     expect(en).toContain('an alert about something else beside a bill (a locked login, a frozen card) is its own item');
     expect(en).toContain('"textEvidence" the mail\'s exact words that say it, from one line of <mail>');
     const es = readDatesTask(input({ language: "es" })).system;
@@ -393,6 +393,8 @@ describe("reading dates in mail you got (plan 204)", () => {
     expect(withoutIdentifiers("Pay $1,486.00 for the Lakeshore Mutual homeowners policy HO-3-55120847 renewal premium")).toBe("Pay $1,486.00 for the Lakeshore Mutual homeowners policy renewal premium");
     expect(withoutIdentifiers("Pagar $1,247.00 del recibo de luz LuzMex (servicio 4517 2290 3381)")).toBe("Pagar $1,247.00 del recibo de luz LuzMex");
     expect(withoutIdentifiers("Firmar el MSA de expansión de Halvorsen (Quillworks_Halvorsen_MSA_Expansion_2026.pdf)")).toBe("Firmar el MSA de expansión de Halvorsen");
+    expect(withoutIdentifiers("Pagar $1,295.00 de la factura de Revenue Summit (RS-77120)")).toBe("Pagar $1,295.00 de la factura de Revenue Summit");
+    for (const kept of ["Call with Marcus (4:00 PM PT)", "Pay $54.20 for the bill (2026)", "Flight to Austin (B12)"]) expect(withoutIdentifiers(kept)).toBe(kept);
     for (const kept of ["Pay $142.67 for the Brightline bill (the Visa ending 2291 was declined)", "Order a new card for the service desk", "Flight AP 0017 to Madrid"]) expect(withoutIdentifiers(kept)).toBe(kept);
     // through the reading
     expect(validate({ items: [item({ text: "Pay $612.00 for the Basebox invoice BB-20931" })], settled: [], moved: [] }).items[0]!.text).toBe("Pay $612.00 for the Basebox invoice");
