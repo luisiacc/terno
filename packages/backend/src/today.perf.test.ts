@@ -7,7 +7,7 @@ import "fake-indexeddb/auto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DATED_MUTES_MAX, todayKey } from "@terno/core";
+import { DATED_KINDS, DATED_MUTE_PAIRS_MAX, DATED_MUTES_MAX, todayKey } from "@terno/core";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { IdbMailStore } from "@terno/idb";
 import { demoRegistry } from "@terno/mail";
@@ -189,6 +189,8 @@ async function run(kind: "SQLite" | "IndexedDB", budget: { spread: Gate; bound: 
     // plan 210 (iteration 4): What matters' mutes at their bound, none of them anyone here: every list, count and Needs you
     // walk reads them (one batched read each) and tests every row against them, hiding nothing
     for (let i = 0; i < DATED_MUTES_MAX; i++) await backend.store.dated.mutes.add({ on: "sender", key: `muted${i}@nobody.test`, name: "", at: i });
+    // (iteration 5) and the kinds muted from one sender at theirs: read in the same batched list, tested a row each by key
+    for (let i = 0; i < DATED_MUTE_PAIRS_MAX; i++) await backend.store.dated.mutes.add({ on: "pair", key: `${DATED_KINDS[i % DATED_KINDS.length]}|paired${i}@nobody.test`, name: "", at: i });
     // a turn between calls, as between two requests: the store answers synchronously on SQLite
     const turn = () => new Promise<void>((resolve) => setImmediate(resolve));
     const measure = async (label: string, at: number, gate: Gate) => {
