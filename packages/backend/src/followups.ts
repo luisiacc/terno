@@ -104,16 +104,31 @@ const ELLIPSIS = /\s*(?:\[(?:\.{3}|…)\]|\.{3}|…)\s*/u;
 export function ownPieces(evidence: string, own: string): string[] | null {
   const whole = norm(evidence);
   if (!whole) return null;
-  if (own.includes(whole)) return [whole];
+  if (wordsAt(own, whole) >= 0) return [whole];
   const pieces = evidence.split(ELLIPSIS).map(norm).filter((p) => /[\p{L}\p{N}]/u.test(p));
   if (pieces.length < 2) return null;
   let from = 0;
   for (const p of pieces) {
-    const at = own.indexOf(p, from);
+    const at = wordsAt(own, p, from);
     if (p.split(" ").length < 2 || at < 0) return null;
     from = at + p.length;
   }
   return pieces;
+}
+
+const WORD_CHAR = /[\p{L}\p{M}\p{N}]/u;
+/**
+ * The Codex code review of round 14's faults: where some words stand whole in a text, from `from`, never a word's tail or
+ * head ("able to attend" inside "unable to attend", which a piece would turn into a yes); -1 when they don't.
+ */
+function wordsAt(text: string, words: string, from = 0): number {
+  for (let at = text.indexOf(words, from); at >= 0; at = text.indexOf(words, at + 1)) {
+    const end = at + words.length;
+    const openEdge = !WORD_CHAR.test(words[0]!) || at === 0 || !WORD_CHAR.test(text[at - 1]!);
+    const closeEdge = !WORD_CHAR.test(words[words.length - 1]!) || end === text.length || !WORD_CHAR.test(text[end]!);
+    if (openEdge && closeEdge) return at;
+  }
+  return -1;
 }
 
 export function checkSentMail(result: SentMailResult, input: { ownText: string; recipients: readonly { label: string; name: string; email: string }[]; open: ReadonlyMap<string, FollowupRow>; requests?: ReadonlyMap<string, Pick<DatedRow, "id" | "revision">>; sentAt: number; nudgeAfterDays: number }): { rows: FollowupWrite[]; kept: { id: number; revision: number }[]; verdicts: Verdict[] } {
