@@ -106,16 +106,22 @@ export function samePromise(a: FollowupRow, b: FollowupRow): boolean {
 /** What says you'll be there, en and es: attend, be there, join, come, make it, show up; asistir, ir a, estar ahí, llegar. */
 const ATTEND = /(?<![\p{L}])(?:attend(?:ing)?|be (?:there|at|in)|join(?:ing)?|come|coming|make it|show up|go(?:ing)? to|asistir(?:é)?|ir(?:é)? al?|estar(?:é)? (?:ahí|allí|ahi|alli|en)|llegar(?:é)?(?: a)?|unirme a)(?![\p{L}])/giu;
 
+/** What a promise hands over besides being there, en and es: a thing sent, brought, signed or paid is its own errand. */
+const DELIVERS = /(?<![\p{L}])(?:send(?:ing)?|bring(?:ing)?|share|sign|pay|e-?mail|forward|submit|upload|deliver|prepare|enviar(?:é)?|env[ií]o|mandar(?:é)?|mando|traer(?:é)?|traigo|compartir(?:é)?|firmar(?:é)?|pagar(?:é)?|subir(?:é)?|entregar(?:é)?|preparar(?:é)?)(?![\p{L}])/iu;
+
 /**
  * Plan 210 (iteration 3, revision 9): your promise to attend is the event it names, in the same conversation, on its day:
  * the event's words in the promise's (the attending words aside: "attend the tech check", "I'll be there for the tech
  * check"), and, when several of that day's events share them, the promise's own time. Never by a shared day alone: "I'll be
  * there for the tech check" isn't that evening's keynote. The event leads the row. `events`: the conversation's that day.
+ * The promise's own words say it's to attend, and only that (Codex code review): its quote is the sentence it came from,
+ * which may say more ("I'll attend the tech check and send its slides tonight": the slides are a promise of their own, and
+ * Done on the event, or its day passing, must never finish them).
  */
 export function attendsEvent(p: FollowupRow, events: readonly DatedRow[]): DatedRow | null {
   if (p.kind !== "promise" || !p.dated || !events.length) return null;
   ATTEND.lastIndex = 0;
-  if (!ATTEND.test(`${p.text}\n${p.quote ?? ""}`)) return null;
+  if (!ATTEND.test(p.text) || DELIVERS.test(p.text)) return null;
   const day = dayKeyOf(p.dueAt);
   const same = events.filter((e) => e.kind === "event" && e.threadId === p.threadId && e.dueDay === day);
   const words = namingWords(p.text.replace(ATTEND, " "));
