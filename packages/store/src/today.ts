@@ -11,6 +11,12 @@ export interface ItemChanges {
   promises: readonly { id: number; revision: number; patch: Partial<Pick<FollowupRow, "state" | "dueAt" | "deferredUntil" | "inboxState" | "closedReason" | "closedAt">> }[];
 }
 
+/**
+ * Plan 210 (iteration 3): a request closed with the promise of yours that answered it (Done on the promise's row): it's
+ * that promise's history line, not one of its own.
+ */
+export const ANSWERED_WITH_PROMISE = "promise";
+
 /** What an act changed, as it was before: Undo restores each row while its revision is still the act's. */
 export interface ItemSnapshots {
   dated: readonly DatedSnapshot[];

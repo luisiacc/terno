@@ -22,6 +22,7 @@ import {
   projectRows,
   refKey,
   todayBadge,
+  withNeeds,
   type DatedRow,
   type Counts,
   type DigestItem,
@@ -32,6 +33,7 @@ import {
   type ProjectedRow,
   type PlacedItem,
   type FollowupRow,
+  type NeedingPromise,
   type TodayCounts,
   type ThreadSummary,
   type TodayItem,
@@ -44,7 +46,7 @@ import {
 import { captureError } from "@terno/core/diag";
 import { RpcError, type AppSettings } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
-import { NEEDS_WALK, type DigestStored, type ItemChanges, type ItemSnapshots } from "@terno/store";
+import { ANSWERED_WITH_PROMISE, NEEDS_WALK, type DigestStored, type ItemChanges, type ItemSnapshots } from "@terno/store";
 import { DailyLimitError, MonthlyLimitError } from "./ai-limiter";
 import type { BackendCore as Backend } from "./core";
 import { readerZone } from "./promise-time";
@@ -566,7 +568,7 @@ export class TodayService {
       this.datedGeneration++;
       [dated, promises] = await read();
     }
-    const items = this.placed(dated, promises, now, o.count === true);
+    const items = this.placed(dated, await this.needs(dated, promises), now, o.count === true);
     const endOfDay = new Date(now);
     endOfDay.setHours(23, 59, 59, 999);
     const reminders = o.count ? [] : (await this.b.reminders.refresh()).reminders.filter((r) => r.dueAt <= endOfDay.getTime()).map((r) => ({ threadId: r.threadId, dueAt: r.dueAt }));
@@ -591,9 +593,9 @@ export class TodayService {
    * are the same (the cached dated rows, the promises as read), the count reuses it: the count runs on every mailbox change.
    * The list places afresh (it's read when something changed, and finding the next moment would cost it as much again).
    */
-  private placed(dated: readonly DatedRow[], promises: readonly FollowupRow[], now: number, count: boolean): PlacedItem[] {
+  private placed(dated: readonly DatedRow[], promises: readonly NeedingPromise[], now: number, count: boolean): PlacedItem[] {
     if (!count) return placeItems(dated, promises, now);
-    const key = promises.map((r) => `${r.id}.${r.revision}.${r.state}.${r.dueAt}.${r.deferredUntil ?? ""}.${r.sameAs ?? ""}`).join();
+    const key = promises.map((r) => `${r.id}.${r.revision}.${r.state}.${r.dueAt}.${r.deferredUntil ?? ""}.${r.sameAs ?? ""}.${r.answers ?? ""}.${r.needed ?? ""}`).join();
     const was = this.placing;
     if (was && was.dated === dated && was.promises === key && now >= was.at && now < was.until) return was.items;
     const midnight = new Date(now);
@@ -602,6 +604,19 @@ export class TodayService {
     const items = placeItems(dated, promises, now, { count });
     this.placing = { dated, promises: key, at: now, until, items };
     return items;
+  }
+
+  /**
+   * Plan 210 (iteration 3, the Codex review's revision 2): each promise with the day of the request it answers, the
+   * requests read in one batch: those among the open dated items as they are, the rest (closed, or past the bound) by id.
+   * Most promises answer none: nothing is read.
+   */
+  private async needs(dated: readonly DatedRow[], promises: readonly FollowupRow[]): Promise<NeedingPromise[]> {
+    if (!promises.some((p) => p.answers != null)) return [...promises];
+    const known = new Map(dated.map((r) => [r.id, r]));
+    const missing = [...new Set(promises.flatMap((p) => (p.answers != null && !known.has(p.answers) ? [p.answers] : [])))];
+    if (missing.length) for (const r of (await this.b.store.today.members(missing.map((id) => refKey({ source: "dated", id })))).dated) if (missing.includes(r.id)) known.set(r.id, r);
+    return withNeeds(promises, known);
   }
 
   /** Plan 210 (iteration 2): the header's, the sidebar's and the notice's numbers, as the list has them. */
@@ -829,8 +844,15 @@ export class TodayService {
       // the third panel round: Later's own rule on each dated one (a timed item still ahead, before its moment; a Plan, its end)
       if (action === "later" && datedNow.some((r) => (laterBefore(r, now) ?? Infinity) <= until!)) throw new RpcError("BAD_REQUEST", L("errors.dated.laterLate"));
       const patch = patchesFor(action, now, until);
+      // plan 210 (iteration 3, the Codex review's revision 3): Done on a promise finishes the request it answers with it (its
+      // Undo puts both back); Remove and Later are the promise's alone. Hidden from the history: the promise's line says it
+      const answering = action === "done" ? [...new Set(promisesNow.flatMap((p) => (p.answers != null && !datedNow.some((r) => r.id === p.answers) ? [p.answers] : [])))] : [];
+      const answered = (await Promise.all(answering.map((id) => store.dated.get(id)))).filter((r): r is DatedRow => r?.state === "open");
       return store.today.act({
-        dated: datedNow.map((r) => ({ id: r.id, revision: at.get(refKey({ source: "dated", id: r.id })) ?? r.revision, patch: patch.dated })),
+        dated: [
+          ...datedNow.map((r) => ({ id: r.id, revision: at.get(refKey({ source: "dated", id: r.id })) ?? r.revision, patch: patch.dated })),
+          ...answered.map((r) => ({ id: r.id, revision: r.revision, patch: { state: "settled" as const, closedReason: ANSWERED_WITH_PROMISE, closedAt: now } })),
+        ],
         promises: promisesNow.map((r) => ({ id: r.id, revision: at.get(refKey({ source: "promise", id: r.id })) ?? r.revision, patch: patch.promise })),
       });
     });
@@ -876,7 +898,7 @@ export class TodayService {
     const settings = await readSettings(store);
     if (!(await this.available(settings))) return;
     const items = settings.dated?.enabled ? await this.datedRows() : [];
-    const promises = settings.followups?.enabled ? await store.followups.active() : [];
+    const promises = settings.followups?.enabled ? await this.needs(items, await store.followups.active()) : [];
     const now = this.b.now();
     // plan 210 (Codex code review): midnight too, whatever shows: what's waiting says "since Wed", the history "Done today",
     // and neither is an item the clock knows. Once a day, never a poll
@@ -889,8 +911,9 @@ export class TodayService {
     this.clock = setTimeout(() => {
       this.clock = null;
       this.clockAt = null;
-      // a day's bounds with nothing to read: what's over is retired (Codex code review)
+      // a day's bounds with nothing to read: what's over is retired (Codex code review); a promise too (plan 210, iteration 3)
       void this.b.dated.daily().catch(() => {});
+      void this.b.followups.retire().catch(() => {});
       this.changed();
     }, Math.min(MAX_DELAY, Math.max(0, next - now)));
     (this.clock as { unref?: () => void }).unref?.();

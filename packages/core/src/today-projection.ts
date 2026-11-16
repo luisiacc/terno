@@ -77,15 +77,23 @@ export function withNeeds(promises: readonly FollowupRow[], requests: ReadonlyMa
 
 /**
  * The requests an open promise of yours answers are its row's, not rows of their own (their day is the promise's, said
- * beside it); unless the matcher made them one item already (the same canonical), when that item is the row.
+ * beside it), and so is the request asked again they're one item with; unless the matcher made the promise that item too
+ * (the same canonical), when that item is the row.
  */
 function withoutAnswered(dated: readonly DatedRow[], promises: readonly FollowupRow[]): readonly DatedRow[] {
   if (!promises.some((p) => p.answers != null)) return dated;
   const answered = new Map<number, string>();
   for (const p of promises) if (p.answers != null && (p.state === "open" || p.state === "due")) answered.set(p.answers, p.sameAs ?? own("promise", p.id));
-  return dated.filter((r) => {
+  const keyOf = (r: DatedRow) => r.sameAs ?? own("dated", r.id);
+  // by the request's item: its own key, or its canonical's
+  const hidden = new Map<string, string>();
+  for (const r of dated) {
     const by = answered.get(r.id);
-    return by === undefined || by === (r.sameAs ?? own("dated", r.id));
+    if (by !== undefined) hidden.set(keyOf(r), by);
+  }
+  return dated.filter((r) => {
+    const by = hidden.get(keyOf(r));
+    return by === undefined || by === keyOf(r);
   });
 }
 

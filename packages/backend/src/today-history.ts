@@ -1,5 +1,5 @@
 import { DATED_CLOSED_KEEP_MS, historyAfter, historyOrder, refKey, type DatedRow, type FeedRowId, type FollowupRow, type HistoryKey, type HistoryOutcome, type ItemRef, type ThreadSummary, type TodayHistoryItem, type TodayHistoryPage } from "@terno/core";
-import type { ClosedAt, MailStore } from "@terno/store";
+import { ANSWERED_WITH_PROMISE, type ClosedAt, type MailStore } from "@terno/store";
 import { withoutUntrusted } from "./suspicious-sender";
 
 /**
@@ -126,6 +126,8 @@ export async function historyPage(store: MailStore, o: HistoryAsk): Promise<Toda
     const group = groups.get(id);
     // a merged item's line is its newest closing's, and it has none while any of it is open
     if (!thread || thread.inSpam || thread.inTrash || o.held.has(id) || !group || group.open || !group.newest || historyOrder(group.newest, head.key) !== 0) continue;
+    // plan 210 (iteration 3): a request finished with the promise that answered it is that promise's line
+    if (row.src === 0 && row.closedReason === ANSWERED_WITH_PROMISE) continue;
     items.push({ id, item: { source: sourceOf(row.src), id: row.id }, thread, key: head.key, outcome: outcomeOf(row), kind: row.src === 0 ? row.kind : "promise", text: row.text });
     if (!o.through && items.length >= o.limit) {
       next = head.key;

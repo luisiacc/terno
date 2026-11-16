@@ -1,11 +1,12 @@
-import { AiError, FOLLOWUP_ANSWERING_CHARS, FOLLOWUP_OPEN_MAX, FOLLOWUP_OWN_CHARS, FOLLOWUP_PROMPT_VERSION, fitSentMail, followupBudget, costAt, priceOf, type AiTasks, type SentMailResult } from "@terno/ai";
-import { automatedLevel, byUrgency, followupDue, followupWakeAt, normalizeText, readCorpus, SCAN_DAYS, SCAN_MESSAGES_MAX, SCAN_PROMISE_OVERDUE_MS, SCAN_WAIT_STALE_MS, validFollowupDate, withoutQuotes, followupNotice, type AiErrorKind, type FollowupRow, type FollowupsSnapshot, type MailNotice, type ThreadSummary } from "@terno/core";
+import { AiError, FOLLOWUP_ANSWERING_CHARS, FOLLOWUP_OPEN_MAX, FOLLOWUP_OWN_CHARS, FOLLOWUP_PROMPT_VERSION, FOLLOWUP_REQUESTS_MAX, fitSentMail, followupBudget, costAt, priceOf, type AiTasks, type SentMailResult } from "@terno/ai";
+import { ANSWERED_KINDS, automatedLevel, byUrgency, followupDue, followupWakeAt, normalizeText, promiseOver, readCorpus, refKey, SCAN_DAYS, SCAN_MESSAGES_MAX, SCAN_PROMISE_OVERDUE_MS, SCAN_WAIT_STALE_MS, validFollowupDate, withNeeds, withoutQuotes, followupNotice, type AiErrorKind, type DatedRow, type FollowupRow, type FollowupsSnapshot, type MailNotice, type ThreadSummary } from "@terno/core";
 import { captureError } from "@terno/core/diag";
 import { RpcError, type AppSettings } from "@terno/core/rpc";
 import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
-import { AWAITING_ITEM, type FollowupSnapshot, type FollowupSource, type FollowupWrite, type MailStore, type SentMark } from "@terno/store";
+import { AWAITING_ITEM, type FollowupFinish, type FollowupSnapshot, type FollowupSource, type FollowupWrite, type MailStore, type SentMark } from "@terno/store";
 import { DailyLimitError, MonthlyLimitError } from "./ai-limiter";
 import { UI_LOCALE_KEY } from "./forwarding";
+import { contextOf, plainEvidence, sentencesOf } from "./dated-evidence";
 import { promiseMoment } from "./promise-time";
 
 const MAX_DELAY = 2 ** 31 - 1;
@@ -35,6 +36,13 @@ export interface FollowupHost {
   statusChanged(status: { blockedBy: { kind: AiErrorKind; message: string } | null }): void;
   notify(notice: MailNotice): void;
   summaries(threadIds: readonly number[]): Promise<ThreadSummary[]>;
+  /**
+   * Plan 210 (iteration 3): the dated reader is on, running, and still has mail of this conversation from before then to
+   * read: a reply waits for it, so its verdict is on the requests that mail makes
+   */
+  datedPending(threadId: number, before: number): Promise<boolean>;
+  /** Plan 210 (iteration 3): a reply settled a request or a promise answers one: What matters reads again */
+  requestsAnswered(): void;
   runBudgeted<T>(items: readonly T[], work: (chunk: T[]) => void | Promise<void>): Promise<void>;
   log(level: "info" | "warn" | "error", message: string, extra?: unknown): void;
 }
@@ -57,7 +65,25 @@ const norm = (text: string) => normalizeText(text).replace(/\s+/g, " ").trim();
  * Plan 142's local checks, before anything's stored: a promise's quote and a closure's evidence are the sender's own
  * words, a date must make sense, and a label must be one it was given. Pure, so each can be tested on its own.
  */
-export function checkSentMail(result: SentMailResult, input: { ownText: string; recipients: readonly { label: string; name: string; email: string }[]; open: ReadonlyMap<string, FollowupRow>; sentAt: number; nudgeAfterDays: number }): { rows: FollowupWrite[]; kept: { id: number; revision: number }[] } {
+/**
+ * Plan 210 (iteration 3): a promise that only holds a request ("let me check and get back to you", "I'll check my calendar",
+ * "lo reviso y te aviso"): it answers nothing, whatever the model said. Never one that also sends, pays or signs something.
+ */
+const HOLDS = /\b(?:get back to|let (?:you|him|her|them|us) know|circle back|i(?:'|’)?ll (?:check|look into|think about|find out|see)|let me (?:check|see|look|think|find out|confirm)|te (?:aviso|digo|confirmo|contesto|respondo|cuento)|le (?:aviso|digo|confirmo|contesto|respondo)|(?:lo|la) (?:reviso|veo|pienso|consulto))\b/u;
+const DELIVERS = /\b(?:send|share|forward|attach|pay|sign|submit|book|bring|deliver|transfer|wire|upload|mand\w*|envi\w*|compart\w*|pag\w*|firm\w*|llev\w*|transfier\w*|reserv\w*)\b/u;
+/** One verdict a finish applies. */
+type Verdict = NonNullable<FollowupFinish["verdicts"]>[number];
+
+export const onlyHolds = (quote: string): boolean => HOLDS.test(normalizeText(quote).toLowerCase()) && !DELIVERS.test(normalizeText(quote).toLowerCase());
+
+/** Plan 210 (iteration 3): a verdict's words, or a promise's, are the same words: one holds the other. */
+const sameWords = (a: string, b: string): boolean => {
+  const x = norm(a).toLowerCase();
+  const y = norm(b).toLowerCase();
+  return !!x && !!y && (x.includes(y) || y.includes(x));
+};
+
+export function checkSentMail(result: SentMailResult, input: { ownText: string; recipients: readonly { label: string; name: string; email: string }[]; open: ReadonlyMap<string, FollowupRow>; requests?: ReadonlyMap<string, Pick<DatedRow, "id" | "revision">>; sentAt: number; nudgeAfterDays: number }): { rows: FollowupWrite[]; kept: { id: number; revision: number }[]; verdicts: Verdict[] } {
   const own = norm(input.ownText);
   const byLabel = new Map(input.recipients.map((r) => [r.label, r]));
   // plan 161, real models: Haiku names who it means ("Arjun Ramírez") where the prompt asks for a label ("r1"). A name
@@ -89,7 +115,22 @@ export function checkSentMail(result: SentMailResult, input: { ownText: string; 
     const row = input.open.get(k.label);
     return row && k.evidence && own.includes(norm(k.evidence)) ? [{ id: row.id, revision: row.revision }] : [];
   });
-  return { rows, kept };
+  /**
+   * Plan 210 (iteration 3, the Codex review's revision 1): a verdict on a request it was shown, evidence-checked like the rest:
+   * their words, two or more, never words to the app. Done now settles it; a concrete promise kept above links it (one
+   * that only holds it, "let me check and get back to you", links nothing); a "done" whose words are a promise's is that
+   * promise; anything else leaves it.
+   */
+  const sentences = sentencesOf(input.ownText);
+  const verdicts = (result.answers ?? []).flatMap((a): Verdict[] => {
+    const request = input.requests?.get(a.label);
+    if (!request || (a.verdict !== "fulfilled" && a.verdict !== "promise")) return [];
+    if (!own.includes(norm(a.evidence)) || !plainEvidence(a.evidence, contextOf(a.evidence, sentences))) return [];
+    const promise = rows.find((r) => r.kind === "promise" && r.quote && sameWords(r.quote, a.evidence));
+    if (promise) return onlyHolds(promise.quote!) ? [] : [{ request: { id: request.id, revision: request.revision }, verdict: "promise" as const, item: promise.item }];
+    return a.verdict === "fulfilled" ? [{ request: { id: request.id, revision: request.revision }, verdict: "fulfilled" as const }] : [];
+  });
+  return { rows, kept, verdicts };
 }
 
 /** A check's own rules: past these it's over, and nothing old jumps. */
@@ -242,6 +283,28 @@ export class FollowupWorker {
     this.prunedDay = today;
     await this.host.store.followups.marks.prune(this.host.now());
     await this.host.store.followups.prune(this.host.now());
+    await this.retire();
+  }
+
+  /**
+   * Plan 210 (iteration 3, the Codex review's revision 7): a promise past its day for good (`promiseOver`: its Missed week
+   * over, from the day it sits under, a request it answers included) is retired, as the dated reader retires what's over,
+   * so the open set's bound of 1,000 holds only what can still show. History says "Over".
+   */
+  async retire(): Promise<number> {
+    const { store } = this.host;
+    const now = this.host.now();
+    const promises = (await store.followups.active()).filter((r) => r.kind === "promise");
+    // the requests they answer, in one batch: a request's day still ahead keeps its promise
+    const linked = [...new Set(promises.flatMap((p) => (p.answers == null ? [] : [refKey({ source: "dated", id: p.answers })])))];
+    const requests = linked.length ? (await store.today.members(linked)).dated : [];
+    const over = withNeeds(promises, new Map(requests.map((r) => [r.id, r]))).filter((r) => promiseOver(r, now));
+    let n = 0;
+    await this.host.runBudgeted(over, async (chunk) => {
+      for (const r of chunk) if (await store.followups.update(r.id, r.revision, { state: "dismissed", inboxState: "none", closedReason: "expired", closedAt: now })) n++;
+    });
+    if (n) await this.look();
+    return n;
   }
 
   private async pass(generation: AbortController): Promise<void> {
@@ -295,6 +358,11 @@ export class FollowupWorker {
       left();
       return "hold";
     }
+    // plan 210 (iteration 3): its verdict is on the conversation's requests, so the mail before it is read first
+    if (settings.dated?.enabled && (await this.host.datedPending(src.threadId, src.date))) {
+      left();
+      return "hold";
+    }
     const asked = this.host.begin(`followup:${mark.messageId}`, "followup-worker");
     try {
       const ai = await this.host.forTask();
@@ -303,9 +371,12 @@ export class FollowupWorker {
       if (!own) return await drop();
       const open = (await store.followups.ofThread(src.threadId)).filter((r) => r.kind === "promise" && r.sentAt < src.date).sort((a, b) => b.sentAt - a.sentAt).slice(0, FOLLOWUP_OPEN_MAX);
       const openLabels = new Map(open.map((r, i) => [`p${i + 1}`, r]));
+      // plan 210 (iteration 3): what the conversation asked of you before this, open (a promise may already answer one)
+      const requested = settings.dated?.enabled ? (await store.dated.ofThread(src.threadId)).filter((r) => ANSWERED_KINDS.includes(r.kind) && r.arrivedAt < src.date).sort((a, b) => b.arrivedAt - a.arrivedAt).slice(0, FOLLOWUP_REQUESTS_MAX) : [];
+      const requestLabels = new Map(requested.map((r, i) => [`q${i + 1}`, r]));
       const recipients = [...src.to, ...src.cc].slice(0, 20).map((r, i) => ({ label: `r${i + 1}`, name: r.name || r.email.split("@")[0]!, email: r.email }));
       const budget = followupBudget(ai.contextTokens);
-      const input = fitSentMail({ ownText: own, ...(answering ? { answering } : {}), subject: src.subject, recipients: recipients.map(({ label, name }) => ({ label, name })), attachments: src.attachments, openPromises: [...openLabels].map(([label, r]) => ({ label, text: r.text })), sentAt: inWords(src.date, language), language, outputTokens: budget.outputTokens }, budget.promptChars);
+      const input = fitSentMail({ ownText: own, ...(answering ? { answering } : {}), subject: src.subject, recipients: recipients.map(({ label, name }) => ({ label, name })), attachments: src.attachments, openPromises: [...openLabels].map(([label, r]) => ({ label, text: r.text })), requests: [...requestLabels].map(([label, r]) => ({ label, text: r.text, due: r.dated ? r.dueDay : null })), sentAt: inWords(src.date, language), language, outputTokens: budget.outputTokens }, budget.promptChars);
       // a change of provider or key, the account's switch, the setting: each stops it, at the provider too
       const signal = AbortSignal.any([generation.signal, asked.signal, mine.controller.signal]);
       // the last look before anything leaves
@@ -313,11 +384,17 @@ export class FollowupWorker {
       const result = await ai.readSentMail(input, signal);
       if (signal.aborted) throw new AiError(L("errors.ai.cancelled"), "cancelled");
       if (!(await this.host.accountWanted(src.accountId))) return await drop();
-      const checked = checkSentMail(result, { ownText: own, recipients, open: openLabels, sentAt: src.date, nudgeAfterDays: settings.followups.nudgeAfterDays });
+      // only what was really sent, after fitting to the window, may be named back
+      const shown = new Set((input.requests ?? []).map((r) => r.label));
+      const checked = checkSentMail(result, { ownText: own, recipients, open: openLabels, requests: new Map([...requestLabels].filter(([l]) => shown.has(l))), sentAt: src.date, nudgeAfterDays: settings.followups.nudgeAfterDays });
       const fromScan = mark.source === "scan";
       const now = this.host.now();
       const rows = fromScan ? checked.rows.filter((r) => scanKeeps(r, src.date, now)) : checked.rows;
-      await store.followups.finish({ messageId: src.id, threadId: src.threadId, fromScan, rows, kept: checked.kept, now, model: ai.model, provider: ai.providerId, promptVersion: FOLLOWUP_PROMPT_VERSION, clearGeneration });
+      // a promise a scan leaves out links nothing
+      const verdicts = checked.verdicts.filter((v) => v.verdict === "fulfilled" || rows.some((r) => r.item === v.item));
+      await store.followups.finish({ messageId: src.id, threadId: src.threadId, fromScan, rows, kept: checked.kept, verdicts, now, model: ai.model, provider: ai.providerId, promptVersion: FOLLOWUP_PROMPT_VERSION, clearGeneration });
+      // a request settled or answered: What matters reads again
+      if (verdicts.length) this.host.requestsAnswered();
       this.attempts.delete(src.id);
       await this.look();
       return "next";
