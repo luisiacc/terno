@@ -1,6 +1,7 @@
 import { DATED_AGAIN_CHARS, DATED_AGAIN_SENTENCES, fitDates, type DatedInput, type DatedResult } from "@terno/ai";
 import { namesDayFrom, saysClock, saysDay } from "@terno/core";
-import { norm, scamPressure, sentencesOf, sentencesWith, settlesKind, type Sentences } from "./dated-evidence";
+import { handledItself } from "./dated-automatic";
+import { namesOtherThan, namesSpecifically, norm, otherAmounts, otherIds, paragraphsOf, scamPressure, sentencesOf, sentencesWith, settlesKind, type Sentences } from "./dated-evidence";
 
 /**
  * Plan 210 (iteration 5, revision 3, the owner's "a second look at a dated sentence that got no item"): a sentence of a read
@@ -27,17 +28,15 @@ export function holdsMoment(sentence: string, arrivedAt: number): boolean {
 
 /**
  * What the checks would never keep, read here so it's never asked about (the revision's "local rejections"), as `norm` reads
- * it: something already done (a receipt, a charge made, an order placed), a charge or renewal the mail says happens by itself
- * (unless it says that's off or failed), or a sale's end. Conservative: what slips through is asked, and `checkDates` still
- * reads the answer.
+ * it: something already done (a receipt, a charge made, an order placed), a bill or renewal that the mail says happens by
+ * itself, as `checkDates` reads it of that sentence (`handledItself`: its own words, with every veto: a failed charge, an
+ * expired card, a balance owed, a trial, a request to pay), or a sale's end. Conservative: what slips through is asked, and
+ * `checkDates` still reads the answer.
  */
 const DONE = /\b(?:went through|was successful|has been (?:processed|charged|paid|renewed|delivered)|was (?:charged|paid|renewed|processed|delivered)|we (?:charged|received)|you paid|order (?:of|placed|confirmed)|se (?:cobro|cargo|renovo|proceso|entrego)|fue (?:cobrad|pagad|renovad|procesad|entregad)\w*|pagaste|solicitaste|^(?:delivered|returned|entered|paid|charged|placed|shipped|entregado|devuelto|pagado|cobrado))\b/u;
-const BY_ITSELF = /\b(?:renews? automatically|automatically renew\w*|auto ?renew(?:s|al)? (?:is )?(?:on|enabled|active)|(?:be )?(?:charged|debited|renewed|paid) automatically|automatically (?:charge|debit)\w*|auto ?pay (?:is )?(?:on|enabled|active|set up)|se renueva automaticamente|se renovara automaticamente|se (?:cargara|cobrara) automaticamente|renovacion automatica (?:esta )?activ\w*|domiciliacion (?:activa|activada)|pago automatico (?:activo|activado))\b/u;
-const NOT_BY_ITSELF = /\b(?:off|disabled|not|won t|will not|fail\w*|declin\w*|unable|desactivad\w*|no se|no pudimos|rechaz\w*)\b/u;
 const SALE = /\b(?:sale|\d+% off|discount\w*|deals?|offer ends|promo\w*|coupon\w*|black friday|cyber monday|last chance|descuento\w*|oferta\w*|rebaja\w*|promocion\w*|ultima oportunidad)\b/u;
-
-const byItself = (s: { read: string }) => BY_ITSELF.test(s.read) && !NOT_BY_ITSELF.test(s.read);
-const rejected = (s: { said: string; read: string }) => settlesKind("pay", s.said) || DONE.test(s.read) || SALE.test(s.read) || byItself(s);
+/** a sentence about a bill, a plan or a renewal: what may be paid or renewed by itself */
+const BILLING = /\b(?:pay\w*|paid|bill\w*|invoice\w*|charg\w*|renew\w*|subscription\w*|plan|membership\w*|premium|auto ?pay|balance|amount|due|statement|pag\w*|factura\w*|cobr\w*|carg\w*|renov\w*|suscripcion\w*|membresia\w*|cuota|prima|saldo|importe|recibo\w*|domicilia\w*|vence\w*)\b/u;
 
 export interface LookInput {
   /** the mail as the first reading read it (quotes stripped) */
@@ -46,17 +45,20 @@ export interface LookInput {
   arrivedAt: number;
   /** a list, bulk or no-reply sender (`DatedInput.from.automated`) */
   automated: boolean;
-  /** the open items and promises that reading was shown, by their days: a sentence that says one's day is about it */
-  shown: readonly { due?: string | null }[];
+  /** the sender's name, in all their mail: it names none of their things */
+  from?: string;
+  /** the open items and promises that reading was shown (its conversation's and sender's): a sentence that says one's day and names it is about it */
+  shown: readonly { due?: string | null; text?: string; kind?: string }[];
   first: Pick<DatedResult, "items" | "settled" | "moved" | "replaced">;
 }
 
 /**
  * The sentences a second look asks about, in the mail's order, within its bounds; none when nothing's uncovered. A sentence
  * is covered by any returned item's quote, settlement's, move's or replacement's evidence (the sentence it's in), by a day an
- * item or a move returned, by an open item's day the reading was shown, or by a local rejection; a scam's pressure or a
- * charge made by itself anywhere in the mail rejects all of it. An automated mail
- * with more moments than the bound, or one on a list's line, is a listing (a newsletter's calendar), never asked about.
+ * item, a move or an open item it was shown has, when the sentence is about that same thing (iteration 5's code review,
+ * point 3: it names it apart, or, in a returned item's own paragraph, names nothing else), or by a local rejection; a scam's
+ * pressure anywhere in the mail rejects all of it. An automated mail with more moments than the bound, or one on a list's
+ * line, is a listing (a newsletter's calendar), never asked about.
  */
 export function lookAt(i: LookInput): string[] {
   const sentences: Sentences = sentencesOf(i.text);
@@ -65,23 +67,35 @@ export function lookAt(i: LookInput): string[] {
   // an automated mail's list of moments (a newsletter's calendar, a booking's check-in, check-out and cancellation) was the
   // first reading's whole job: its one item there, or none
   if (i.automated && (moments.length > DATED_AGAIN_SENTENCES || moments.some((n) => LISTED.test(sentences[n]!.said)))) return [];
-  if (scamPressure(`${i.subject}\n${i.text}`) || sentences.some(byItself)) return [];
+  if (scamPressure(`${i.subject}\n${i.text}`)) return [];
+  const paragraphs = paragraphsOf(i.text);
+  const paragraphOf = (n: number) => paragraphs.findIndex((p) => p.read.includes(sentences[n]!.read));
+  // iteration 5's code review (point 2): a bill or a renewal by itself only as the checks read it of this sentence's own
+  // obligation, with their vetoes; never AutoPay said somewhere in the mail for all of it
+  const automatic = (s: { said: string; read: string }) => BILLING.test(s.read) && handledItself({ kind: "pay", text: s.said, quote: s.said }, { subject: i.subject, paragraphs, tied: i.text, from: i.from });
+  const rejected = (s: { said: string; read: string }) => settlesKind("pay", s.said) || DONE.test(s.read) || SALE.test(s.read) || automatic(s);
+  const sameThing = (item: { text: string; quote: string }, s: { said: string }, near: boolean) => !otherIds(item, s.said) && !otherAmounts(item, s.said) && (namesSpecifically(item, s.said, i.from) || (near && !namesOtherThan(item, s.said, i.from)));
   const covered = new Set<number>();
-  // a returned item's day covers the sentences that say it too: the model read that day (a statement's "Payment due date:
-  // November 25" beside the balance it quoted)
-  const cover = (quote: string | null | undefined, due?: string | null) => {
-    if (quote?.trim()) for (const n of sentencesWith(quote, sentences)) covered.add(n);
-    if (due) for (const n of moments) if (saysDay(sentences[n]!.said, due, { arrivedAt: i.arrivedAt })) covered.add(n);
+  // a returned item's day covers a sentence that says it of the same thing: the model read that day (a statement's "Payment
+  // due date: November 25" beside the balance it quoted), never another obligation's on that day
+  const cover = (x: { text?: string | null; quote?: string | null }, due?: string | null) => {
+    const item = { text: x.text ?? "", quote: x.quote?.trim() ?? "" };
+    const at = item.quote ? sentencesWith(item.quote, sentences) : [];
+    for (const n of at) covered.add(n);
+    if (!due) return;
+    const near = new Set(at.map(paragraphOf));
+    for (const n of moments) if (saysDay(sentences[n]!.said, due, { arrivedAt: i.arrivedAt }) && sameThing(item, sentences[n]!, near.has(paragraphOf(n)))) covered.add(n);
   };
-  for (const x of i.first.items) cover(x.quote, x.due);
-  for (const x of i.first.settled) cover(x.evidence);
+  for (const x of i.first.items) cover(x, x.due);
+  for (const x of i.first.settled) cover({ quote: x.evidence });
   for (const x of i.first.moved) {
-    cover(x.evidence, x.due);
-    cover(x.textEvidence);
+    cover({ quote: x.evidence, text: x.text }, x.due);
+    cover({ quote: x.textEvidence });
   }
-  for (const x of i.first.replaced) cover(x.evidence);
-  const days = i.shown.flatMap((o) => (o.due ? [o.due] : []));
-  const left = moments.filter((n) => !covered.has(n) && !rejected(sentences[n]!) && !days.some((d) => saysDay(sentences[n]!.said, d, { arrivedAt: i.arrivedAt })));
+  for (const x of i.first.replaced) cover({ quote: x.evidence });
+  // an open item's day (a reminder of it): only a sentence that names it
+  for (const o of i.shown) if (o.due && o.text) cover({ text: o.text }, o.due);
+  const left = moments.filter((n) => !covered.has(n) && !rejected(sentences[n]!));
   const asked: string[] = [];
   let room = DATED_AGAIN_CHARS;
   for (const n of left) {

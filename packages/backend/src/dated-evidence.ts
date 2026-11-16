@@ -152,6 +152,16 @@ export function namesSpecifically(item: { text: string; quote: string }, words: 
   return [...itemWords(item, from)].some((w) => said.has(w) && !GENERIC.has(w));
 }
 
+/**
+ * Plan 210 (iteration 5's code review, point 3): words that name something the item's own words don't, beyond the generic
+ * nouns ("The lease renewal closes Friday" beside a report due that day; never "Payment due date:" beside a balance).
+ */
+export function namesOtherThan(item: { text: string; quote: string }, words: string, from = ""): boolean {
+  const mine = itemWords(item, from);
+  const sender = namingWords(from);
+  return [...namingWords(words)].some((w) => !mine.has(w) && !sender.has(w) && !GENERIC.has(w));
+}
+
 /** The months some words name, en and es ("October", "oct", "octubre"), as numbers. */
 const MONTH_WORDS: [RegExp, number][] = [
   [/^(?:jan(?:uary)?|enero|ene)$/u, 1], [/^(?:feb(?:ruary)?|febrero)$/u, 2], [/^(?:march|marzo)$/u, 3], [/^(?:april|abril|abr)$/u, 4],
