@@ -76,11 +76,12 @@ export interface FollowupFinish {
    * Plan 210 (iteration 3, the Codex review's revision 1): this reply's checked verdict on the conversation's requests it
    * was shown (dated `ask`/`respond` items), the only authority over them a reply has. `fulfilled`: the request is settled
    * (`answered`), at the revision shown; `promise`: this message's promise `item` answers it (`FollowupRow.answers`), the
-   * request open, its day carried. A holding reply or no verdict leaves it as it is. Applied only to an open request of this
+   * request open, its day carried; `holding` (plan 210, iteration 4): this message's promise `item` only holds it ("let me
+   * check and get back to you", `FollowupRow.holds`), the request open, the row its. No verdict leaves it as it is. Applied only to an open request of this
    * reply's conversation that came before it, and only when the reply is yours for certain (Gmail's SENT label, or Terno's
    * own confirmed send: `followupSendConfirmed`). Absent: none
    */
-  verdicts?: readonly ({ request: { id: number; revision: number }; verdict: "fulfilled" } | { request: { id: number; revision: number }; verdict: "promise"; item: number })[];
+  verdicts?: readonly ({ request: { id: number; revision: number }; verdict: "fulfilled" } | { request: { id: number; revision: number }; verdict: "promise" | "holding"; item: number })[];
   /** a wait is added only if no reply or later send has come */
   now: number;
   model: string | null;

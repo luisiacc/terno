@@ -1561,6 +1561,13 @@ ALTER TABLE dated_items ADD COLUMN lapses INTEGER NOT NULL DEFAULT 0;
   { version: 64, name: "What matters: a confirmed send stays yours for certain (plan 210, iteration 3)", sql: `
 ALTER TABLE messages ADD COLUMN sent_confirmed INTEGER NOT NULL DEFAULT 0;
 ` },
+  // plan 210 (iteration 4, the Codex review's revision 4): a promise that only holds a request ("I'll check my calendar and get
+  // back to you") is stored with it (`holds`, the dated item's id, which its reply's checked verdict names), and is no row of
+  // its own. Shape only: a nullable column, no rewrite, no index (it's read with the open promises); rows stored before it
+  // hold nothing (no backfill: their verdict wasn't kept). v65 is the feed's placement
+  { version: 66, name: "What matters: a promise that holds a request (plan 210, iteration 4)", sql: `
+ALTER TABLE followups ADD COLUMN holds INTEGER;
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

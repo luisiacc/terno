@@ -3,7 +3,7 @@ import { ANSWERED_KINDS, automatedLevel, byUrgency, followupDue, followupWakeAt,
 import { captureError } from "@terno/core/diag";
 import { RpcError, type AppSettings } from "@terno/core/rpc";
 import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
-import { AWAITING_ITEM, type FollowupFinish, type FollowupSnapshot, type FollowupSource, type FollowupWrite, type MailStore, type SentMark } from "@terno/store";
+import { AWAITING_ITEM, HELD_REQUEST_CLOSED, type FollowupFinish, type FollowupSnapshot, type FollowupSource, type FollowupWrite, type MailStore, type SentMark } from "@terno/store";
 import { DailyLimitError, MonthlyLimitError } from "./ai-limiter";
 import { UI_LOCALE_KEY } from "./forwarding";
 import { contextOf, plainEvidence, sentencesOf } from "./dated-evidence";
@@ -118,17 +118,21 @@ export function checkSentMail(result: SentMailResult, input: { ownText: string; 
   /**
    * Plan 210 (iteration 3, the Codex review's revision 1): a verdict on a request it was shown, evidence-checked like the rest:
    * their words, two or more, never words to the app. Done now settles it; a concrete promise kept above links it (one
-   * that only holds it, "let me check and get back to you", links nothing); a "done" whose words are a promise's is that
-   * promise; anything else leaves it.
+   * that only holds it, "let me check and get back to you", holds it: iteration 4); a "done" whose words are a promise's is
+   * that promise; anything else leaves it.
    */
   const sentences = sentencesOf(input.ownText);
   const verdicts = (result.answers ?? []).flatMap((a): Verdict[] => {
     const request = input.requests?.get(a.label);
-    if (!request || (a.verdict !== "fulfilled" && a.verdict !== "promise")) return [];
+    if (!request || a.verdict === "unknown") return [];
     if (!own.includes(norm(a.evidence)) || !plainEvidence(a.evidence, contextOf(a.evidence, sentences))) return [];
     const promise = rows.find((r) => r.kind === "promise" && r.quote && sameWords(r.quote, a.evidence));
-    if (promise) return onlyHolds(promise.quote!) ? [] : [{ request: { id: request.id, revision: request.revision }, verdict: "promise" as const, item: promise.item }];
-    return a.verdict === "fulfilled" ? [{ request: { id: request.id, revision: request.revision }, verdict: "fulfilled" as const }] : [];
+    const shown = { id: request.id, revision: request.revision };
+    // plan 210 (iteration 4, the Codex review's revision 4): a promise that only holds it is stored with it, whatever the
+    // model called it ("holding" kept, no longer dropped); a "holding" whose words also send or sign something links nothing
+    if (promise && onlyHolds(promise.quote!)) return [{ request: shown, verdict: "holding" as const, item: promise.item }];
+    if (promise) return a.verdict === "holding" ? [] : [{ request: shown, verdict: "promise" as const, item: promise.item }];
+    return a.verdict === "fulfilled" ? [{ request: shown, verdict: "fulfilled" as const }] : [];
   });
   return { rows, kept, verdicts };
 }
@@ -295,13 +299,16 @@ export class FollowupWorker {
     const { store } = this.host;
     const now = this.host.now();
     const promises = (await store.followups.active()).filter((r) => r.kind === "promise");
-    // the requests they answer, in one batch: a request's day still ahead keeps its promise
-    const linked = [...new Set(promises.flatMap((p) => (p.answers == null ? [] : [refKey({ source: "dated", id: p.answers })])))];
-    const requests = linked.length ? (await store.today.members(linked)).dated : [];
-    const over = withNeeds(promises, new Map(requests.map((r) => [r.id, r]))).filter((r) => promiseOver(r, now));
+    // the requests they answer or hold, in one batch: a request's day still ahead keeps its promise
+    const linked = [...new Set(promises.flatMap((p) => [p.answers, p.holds].flatMap((id) => (id == null ? [] : [refKey({ source: "dated", id })]))))];
+    const requests = new Map((linked.length ? (await store.today.members(linked)).dated : []).map((r) => [r.id, r]));
+    const over = withNeeds(promises, requests).filter((r) => promiseOver(r, now));
+    // plan 210 (iteration 4): a promise that only held a request ends with it (answered, done, removed, gone): never a row
+    // of its own after it, and no history line (the request's says it)
+    const held = promises.filter((p) => p.holds != null && requests.get(p.holds)?.state !== "open");
     let n = 0;
-    await this.host.runBudgeted(over, async (chunk) => {
-      for (const r of chunk) if (await store.followups.update(r.id, r.revision, { state: "dismissed", inboxState: "none", closedReason: "expired", closedAt: now })) n++;
+    await this.host.runBudgeted([...over.map((r) => ({ r, reason: "expired" })), ...held.map((r) => ({ r, reason: HELD_REQUEST_CLOSED }))], async (chunk) => {
+      for (const { r, reason } of chunk) if (await store.followups.update(r.id, r.revision, { state: "dismissed", inboxState: "none", closedReason: reason, closedAt: now })) n++;
     });
     if (n) await this.look();
     return n;

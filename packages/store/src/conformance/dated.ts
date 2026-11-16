@@ -857,6 +857,36 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
         expect(await store.dated.get(request.id)).toMatchObject({ state: "settled", closedReason: "answered", revision: request.revision + 1 });
       });
 
+      it("plan 210 (iteration 4): a promise that only holds it is stored with it, once, the request open; never one that answers it, never from a reply that isn't yours for certain", async () => {
+        const { store, request, reply, read, promise } = await talk();
+        const shown = { id: request.id, revision: request.revision };
+        const hold = promise({ text: "check your calendar and get back to the bank", quote: "let me check my calendar and get back to you", dated: false });
+        // from another client's send: nothing
+        const imap = await reply({ gmailLabels: [] });
+        await read(imap, { rows: [hold], verdicts: [{ request: shown, verdict: "holding", item: 0 }] });
+        expect((await store.followups.ofThread(imap.thread)).find((p) => p.messageId === imap.id)!.holds).toBeNull();
+        // at another revision: nothing
+        const stale = await reply();
+        await read(stale, { rows: [hold], verdicts: [{ request: { ...shown, revision: shown.revision + 1 }, verdict: "holding", item: 0 }] });
+        expect((await store.followups.ofThread(stale.thread)).find((p) => p.messageId === stale.id)!.holds).toBeNull();
+        // yours, as shown: the hold is stored, nothing else moves
+        const first = await reply();
+        await read(first, { rows: [hold, promise({ item: 1 })], verdicts: [{ request: shown, verdict: "holding", item: 0 }, { request: shown, verdict: "holding", item: 1 }] });
+        const mine = (await store.followups.ofThread(first.thread)).filter((p) => p.messageId === first.id).sort((a, b) => a.item - b.item);
+        expect(mine.map((p) => [p.holds, p.answers, p.revision])).toEqual([[request.id, null, 0], [request.id, null, 0]]);
+        expect(await store.dated.get(request.id)).toMatchObject({ state: "open", revision: request.revision });
+        // read again with a promise verdict: what holds it is never linked as answering it
+        await store.followups.marks.queueScan([first.id], NOW);
+        await read(first, { verdicts: [{ request: shown, verdict: "promise", item: 0 }] });
+        expect(await store.followups.get(mine[0]!.id)).toMatchObject({ holds: request.id, answers: null });
+        // a promise that answers it holds nothing
+        const second = await reply();
+        await read(second, { rows: [promise()], verdicts: [{ request: shown, verdict: "promise", item: 0 }] });
+        await store.followups.marks.queueScan([second.id], NOW);
+        await read(second, { verdicts: [{ request: shown, verdict: "holding", item: 0 }] });
+        expect((await store.followups.ofThread(second.thread)).find((p) => p.messageId === second.id)).toMatchObject({ answers: request.id, holds: null });
+      });
+
       it("only a reply that's yours for certain decides: a forged From or another IMAP client's send doesn't; Terno's own confirmed send does", async () => {
         const { store, accountId, asked, request, reply, read } = await talk();
         const v = { request: { id: request.id, revision: request.revision }, verdict: "fulfilled" as const };

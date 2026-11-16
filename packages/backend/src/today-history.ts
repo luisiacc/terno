@@ -1,5 +1,5 @@
 import { DATED_CLOSED_KEEP_MS, historyAfter, historyOrder, refKey, type DatedRow, type FeedRowId, type FollowupRow, type HistoryKey, type HistoryOutcome, type ItemRef, type ThreadSummary, type TodayHistoryItem, type TodayHistoryPage } from "@terno/core";
-import { ANSWERED_WITH_PROMISE, type ClosedAt, type MailStore } from "@terno/store";
+import { ANSWERED_WITH_PROMISE, HELD_REQUEST_CLOSED, type ClosedAt, type MailStore } from "@terno/store";
 import { withoutUntrusted } from "./suspicious-sender";
 
 /**
@@ -129,6 +129,8 @@ export async function historyPage(store: MailStore, o: HistoryAsk): Promise<Toda
     if (!thread || thread.inSpam || thread.inTrash || o.held.has(id) || !group || group.open || !group.newest || historyOrder(group.newest, head.key) !== 0) continue;
     // plan 210 (iteration 3): a request finished with the promise that answered it is that promise's line
     if (row.src === 0 && row.closedReason === ANSWERED_WITH_PROMISE) continue;
+    // iteration 4: a promise that only held a request closed with it: the request's line says it
+    if (row.src === 1 && row.closedReason === HELD_REQUEST_CLOSED) continue;
     items.push({ id, item: { source: sourceOf(row.src), id: row.id }, thread, key: head.key, outcome: outcomeOf(row), kind: row.src === 0 ? row.kind : "promise", text: row.text });
     if (!o.through && items.length >= o.limit) {
       next = head.key;

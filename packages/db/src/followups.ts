@@ -8,9 +8,9 @@ import type { Db } from "./sqlite";
 interface Raw {
   id: number; thread_id: number; message_id: number; rfc_message_id: string | null; item: number; kind: FollowupRow["kind"]; text: string; quote: string | null; person_name: string | null; person_email: string | null;
   sent_at: number; due_at: number; dated: number; deferred_until: number | null; state: FollowupRow["state"]; inbox_state: FollowupRow["inboxState"]; closed_reason: string | null; closed_at: number | null; notified_at: number | null; from_scan: number; revision: number; model: string | null; provider: string | null; created_at: number;
-  same_as: string | null; broken_due_at: number | null; timed: number; answers: number | null;
+  same_as: string | null; broken_due_at: number | null; timed: number; answers: number | null; holds: number | null;
 }
-const toRow = (r: Raw): FollowupRow => ({ id: r.id, threadId: r.thread_id, messageId: r.message_id, rfcMessageId: r.rfc_message_id, item: r.item, kind: r.kind, text: r.text, quote: r.quote, personName: r.person_name, personEmail: r.person_email, sentAt: r.sent_at, dueAt: r.due_at, dated: r.dated === 1, deferredUntil: r.deferred_until ?? null, state: r.state, inboxState: r.inbox_state, closedReason: r.closed_reason, closedAt: r.closed_at, notifiedAt: r.notified_at, fromScan: r.from_scan === 1, revision: r.revision, model: r.model, provider: r.provider, createdAt: r.created_at, sameAs: r.same_as ?? null, brokenDueAt: r.broken_due_at ?? null, timed: r.timed === 1, answers: r.answers ?? null });
+const toRow = (r: Raw): FollowupRow => ({ id: r.id, threadId: r.thread_id, messageId: r.message_id, rfcMessageId: r.rfc_message_id, item: r.item, kind: r.kind, text: r.text, quote: r.quote, personName: r.person_name, personEmail: r.person_email, sentAt: r.sent_at, dueAt: r.due_at, dated: r.dated === 1, deferredUntil: r.deferred_until ?? null, state: r.state, inboxState: r.inbox_state, closedReason: r.closed_reason, closedAt: r.closed_at, notifiedAt: r.notified_at, fromScan: r.from_scan === 1, revision: r.revision, model: r.model, provider: r.provider, createdAt: r.created_at, sameAs: r.same_as ?? null, brokenDueAt: r.broken_due_at ?? null, timed: r.timed === 1, answers: r.answers ?? null, holds: r.holds ?? null });
 
 /** Yours and for someone else: mail only to your own addresses says nothing to anyone. */
 function toSomeoneElse(db: Db, to: string, cc: string): boolean {
@@ -239,8 +239,13 @@ export function finishFollowups(db: Db, w: FollowupFinish): FollowupFinishOutcom
         settle(r.id, r.revision);
         continue;
       }
+      // plan 210 (iteration 4): a promise that only holds it is stored with it, once (as a link, no revision moves)
+      if (v.verdict === "holding") {
+        db.run("UPDATE followups SET holds = ? WHERE message_id = ? AND item = ? AND kind = 'promise' AND state IN ('open','due') AND answers IS NULL AND holds IS NULL", r.id, w.messageId, v.item);
+        continue;
+      }
       // the promise this reply made (its own row, an open one), linked once
-      const p = db.get<{ id: number }>("SELECT id FROM followups WHERE message_id = ? AND item = ? AND kind = 'promise' AND state IN ('open','due') AND answers IS NULL", w.messageId, v.item);
+      const p = db.get<{ id: number }>("SELECT id FROM followups WHERE message_id = ? AND item = ? AND kind = 'promise' AND state IN ('open','due') AND answers IS NULL AND holds IS NULL", w.messageId, v.item);
       if (!p) continue;
       db.run("UPDATE followups SET answers = ? WHERE id = ?", r.id, p.id);
       apart(db, p.id, r.id);

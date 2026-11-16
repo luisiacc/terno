@@ -154,6 +154,16 @@ describe("one reply, one row (plan 210, iteration 4)", () => {
     expect(projectToday(facts({ promises: [b!, a!] })).rows.map((r) => r.id)).toEqual([`promise:${a!.id}`]);
   });
 
+  it("a promise that only holds a request (Margaret's \"I'll get back to you\") is never a row, nor its reply's Also: the request is the row", () => {
+    const ask = dated("respond", "2026-11-23", { threadId: 1, text: "Tell Valeria whether you can host in December" });
+    const [hold, send] = reply([{ text: "check your calendar and get back to Valeria", dated: false, dueAt: NOW - 1, holds: ask.id }, { text: "email Valeria the questions" }]);
+    const { rows, counts } = projectToday(facts({ dated: [ask], promises: [hold!, send!] }));
+    expect(rows.map((r) => r.id).sort()).toEqual([`dated:${ask.id}`, `promise:${send!.id}`].sort());
+    expect(rows.find((r) => r.id === `promise:${send!.id}`)!.also).toBeUndefined();
+    expect(projectToday(facts({ dated: [ask], promises: [hold!, send!] }), { count: true }).counts).toEqual(counts);
+    expect(projectToday(facts({ promises: [hold!] })).rows).toEqual([]);
+  });
+
   it("another person, another message, or no one named: rows of their own", () => {
     const [mine, theirs] = reply([{}, { personEmail: "pablo@cafeorigen.mx", personName: "Pablo" }]);
     expect(projectToday(facts({ promises: [mine!, theirs!] })).rows).toHaveLength(2);

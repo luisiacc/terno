@@ -92,6 +92,9 @@ describe("the reader's one line (plan 210, iteration 3, Codex revision 10)", () 
     const r = read({ dated: [], followups: [script, deck], target: [{ source: "promise", id: 9 }] });
     expect(keys(r)).toEqual(["promise:9", "promise:11"]);
     expect(r.targeted).toBe(true);
+    // a promise that only holds a request is the request's: never a line of its own
+    const hold = promise({ id: 12, item: 2, text: "check your calendar and get back to Jess", dated: false, holds: 1 });
+    expect(keys(read({ followups: [hold] }))).toEqual(["dated:2", "dated:1"]);
   });
 });
 
