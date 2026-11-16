@@ -379,6 +379,12 @@ export function projectRows(items: readonly PlacedItem[], f: Pick<ProjectionFact
       if (at.day !== null && at.group !== "ahead") row.bucket = bucketOf(at.day);
       if (lead.source === "dated") row.source = { messageId: lead.row.messageId, senderKey: lead.row.senderKey };
       if (others) row.also = others.map((l) => (l.lead.source === "promise" ? alsoOfPromise(l.lead.row) : alsoOf(l.lead.row)));
+      // (iteration 5, R9) your promise to come to an event, or bring someone or something to it, is the event's member
+      // (`attendsEvent`): its words are the event's line, else they'd show nowhere
+      else if (lead.source === "dated" && lead.row.kind === "event" && item.entries.length > 1) {
+        const attends = item.entries.flatMap((e) => (e.source === "promise" ? [{ ...alsoOfPromise(e.row), attends: true }] : []));
+        if (attends.length) row.also = attends;
+      }
     }
     placed.push(row);
   }

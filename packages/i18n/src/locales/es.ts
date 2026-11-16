@@ -2676,6 +2676,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "whatMatters.travel": "{when} en {place}",
   "whatMatters.zoned": "{when} ({time})",
   "whatMatters.say.promise": "Dijiste que ibas a {text}.",
+  "whatMatters.also.attends": "Dijiste que ibas a {text}",
   "whatMatters.say.wrote": "{name} te escribió sobre «{subject}».",
   "whatMatters.say.replied": "{name} respondió sobre «{subject}».",
   "whatMatters.say.reminder": "Tu recordatorio de «{subject}».",

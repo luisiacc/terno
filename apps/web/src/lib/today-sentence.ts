@@ -32,6 +32,12 @@ const ended = (s: string): string => (/[.!?…]$/u.test(s) ? s : `${s}.`);
  */
 const verbFirst = (s: string): string => (/^\p{Lu}\p{Ll}+\b/u.test(s) ? s.charAt(0).toLocaleLowerCase(getLocale()) + s.slice(1) : s);
 
+/**
+ * Plan 210 (iteration 5, R9): your promise to come to an event, or bring someone, on that event's row in your words, as a
+ * line rather than a sentence ("You said you'd bring Nina and the SE").
+ */
+export const attendsLine = (text: string): string => t("whatMatters.also.attends", { text: verbFirst(bare(text)) });
+
 /** The sentence for a Today item, in the app's language. */
 export function todaySentence(item: Pick<TodayItem, "thread" | "why" | "summary">): string {
   const { thread, why } = item;

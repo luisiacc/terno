@@ -182,6 +182,11 @@ export interface TodayAlso {
   timed: boolean;
   /** false: it names no day (an ask, an alert that named none, a promise with no day): its words alone */
   dated: boolean;
+  /**
+   * plan 210 (iteration 5, R9): your promise to come to the row's event or bring someone to it (`attendsEvent`), said on the
+   * event's row in your words ("You said you'd bring Nina and the SE"), no day of its own
+   */
+  attends?: boolean;
 }
 
 export interface TodayItem {
@@ -191,7 +196,10 @@ export interface TodayItem {
   why: TodayWhy;
   /** the stored summary's first sentence, only when it's current */
   summary?: string;
-  /** plan 210 (iteration 4): the other promises of its reply (`TodayWhy.with`), a line each, never another obligation */
+  /**
+   * plan 210 (iteration 4): the other promises of its reply (`TodayWhy.with`), a line each, never another obligation;
+   * iteration 5: on an event's row, your promise to attend it or bring someone (`TodayAlso.attends`)
+   */
   also?: TodayAlso[];
   /**
    * plan 210 (iteration 3, revision 10): a dated item's own sender, from its message (Margaret's premium from Lakeshore
