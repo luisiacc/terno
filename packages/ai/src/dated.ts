@@ -265,6 +265,65 @@ const CLAUSE_MIN = 16;
 export function cutAtClause(text: string, max: number): string {
   const flat = text.replace(/\s+/g, " ").trim();
   if (flat.length <= max) return flat;
+  // plan 210 (iteration 4, revision 12): a stated consequence and the amount are kept whole: a cut that would break or drop
+  // one is no cut, and then what's before the stake is cut instead, the stake kept ("Decide on Creatix Cloud before Thursday…
+  // (cancelling later costs 50%)"); with no room for that, the cut as before, never ending on "unless" or "or"
+  const spans = stakeSpans(flat);
+  if (spans.length) {
+    const kept = clauseCut(flat, max, (end) => spans.every(([, e]) => e <= end));
+    if (kept !== null) return kept;
+    // the stake kept is a bracket or an "unless" clause, never an amount alone, out of its words
+    const stake = spans.filter(([s]) => flat[s] === "(" || UNLESS_AT.test(flat.slice(s))).at(-1);
+    if (stake) {
+      const [start, end] = stake;
+      const tail = flat.slice(start, end);
+      const more = end < flat.length ? "…" : "";
+      const head = flat.slice(0, start).trimEnd();
+      const room = max - tail.length - more.length - 1;
+      if (room > CLAUSE_MIN && head.length >= CLAUSE_MIN) return `${head.length <= room ? head : cutAtClause(head, room)} ${tail}${more}`;
+    }
+  }
+  return clauseCut(flat, max, null)!.replace(DANGLING, "…");
+}
+
+/** A stake's words: what happens, what it costs (en, es). */
+const STAKE_WORDS = /\b(?:held|holds?|paus\w*|suspen\w*|disabled|clos\w*|locked|lapse\w*|expir\w*|cancel\w*|fees?|costs?|charged?|penalt\w*|interest|los[et]s?|flagged|retenid\w*|bloque\w*|vence\w*|caduc\w*|recargos?|multas?|penaliz\w*|interes\w*|cuesta\w*|pierde\w*|cobr\w*|cargos?)\b/iu;
+const MONEY = /(?:\b[A-Z]{2,3})?[$€£]\s?\d[\d.,]*\d|\d[\d.,]*\d?\s?(?:€|£|\b(?:USD|EUR|MXN|GBP|CAD)\b)/gu;
+const UNLESS = /\b(?:unless|otherwise|or else|a menos que|de lo contrario|si no)\b/giu;
+const UNLESS_AT = new RegExp(`^(?:${UNLESS.source})`, "iu");
+/** a cut's last word that leaves its clause hanging ("…unless…", "…or…") */
+const DANGLING = /\s+(?:unless|otherwise|or(?: else)?|a menos que|de lo contrario|si no|o)\s*…$/iu;
+
+/**
+ * Plan 210 (iteration 4, revision 12): what a cut must keep whole, in order: a bracket that states a stake (an amount, a
+ * percentage, what happens: "($18,000 held)", "(deploys pause Mon)"), a clause from "unless" or "otherwise" to its end, and
+ * an amount said anywhere else.
+ */
+function stakeSpans(flat: string): [number, number][] {
+  const spans: [number, number][] = [];
+  let open = -1;
+  let depth = 0;
+  for (let i = 0; i < flat.length; i++) {
+    if (flat[i] === "(" && depth++ === 0) open = i;
+    else if (flat[i] === ")" && depth > 0 && --depth === 0) {
+      const inside = flat.slice(open + 1, i);
+      if (new RegExp(MONEY.source, "u").test(inside) || /\d\s?%/u.test(inside) || STAKE_WORDS.test(inside)) spans.push([open, i + 1]);
+    }
+  }
+  for (const m of flat.matchAll(UNLESS)) {
+    const rest = flat.slice(m.index).search(/[;.)]\s|[;)]$|\.$/u);
+    spans.push([m.index, rest < 0 ? flat.length : m.index + rest]);
+  }
+  for (const m of flat.matchAll(MONEY)) if (!spans.some(([s, e]) => m.index >= s && m.index < e)) spans.push([m.index, m.index + m[0].length]);
+  // one inside another is the outer one's (an "unless" inside a stake's bracket)
+  return spans.filter(([s, e], i) => !spans.some(([s2, e2], j) => j !== i && s2 <= s && e <= e2 && (e2 - s2 > e - s || j < i))).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+}
+
+/**
+ * The cut itself: the last clause end within `max` that `keeps` accepts (null: none, when it's asked to keep something), or,
+ * with no such rule, a word's cut.
+ */
+function clauseCut(flat: string, max: number, keeps: ((end: number) => boolean) | null): string | null {
   const room = max - 1;
   let end = 0;
   // a cut inside a bracket's first level, at a clause of its own, closes it: "Soccer game (arrive 7:30)…" keeps the bracket's first clause
@@ -279,11 +338,12 @@ export function cutAtClause(text: string, max: number): string {
     const dash = /[–—-]/u.test(next ?? "") && flat[i + 2] === " ";
     const outer = depth === 0 && ((stop && next === " ") || (c === " " && (next === "(" || dash)));
     const within = depth === 1 && stop && next === " " && i < room;
-    if ((outer || within) && i >= CLAUSE_MIN) [end, inner] = [i, within];
+    if ((outer || within) && i >= CLAUSE_MIN && (!keeps || keeps(i))) [end, inner] = [i, within];
     if (c === "(") depth++;
     else if (c === ")") depth = Math.max(0, depth - 1);
   }
   if (inner) return `${flat.slice(0, end).replace(/[\s,;:.!?–—-]+$/u, "")})…`;
+  if (!end && keeps) return null;
   let cut = end ? flat.slice(0, end) : cutAtWord(flat, room);
   // a word's cut inside a bracket ends before it, when there's enough before
   const open = cut.lastIndexOf("(");
