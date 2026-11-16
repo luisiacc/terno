@@ -53,7 +53,7 @@ import {
   X,
 } from "@terno/ui/icons";
 import { t } from "@terno/i18n";
-import { useCallback, useEffect, useState, type ReactElement, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useState, type ReactElement, type ReactNode } from "react";
 import { FLOAT_INSET } from "@terno/ui/lib/float-inset";
 import { snack } from "~/lib/snack";
 import { openLink } from "~/lib/open-link";
@@ -277,7 +277,8 @@ export function ThreadMenu({ children }: { children: ReactElement }) {
       />
       <ContextMenuContent
         ref={wholeRows}
-        className="relative w-64"
+        // plan 210 (iteration 3): a step wider with What matters' rows, so "Remove from What matters" and its key fit
+        className="relative w-64 has-data-[wide]:w-76"
         data-testid="thread-menu"
         anchor={anchor}
         side="bottom"
@@ -436,6 +437,7 @@ function RemindSub({ ids, disabled }: { ids: number[]; disabled: boolean }) {
 function TaskItems({ threadId }: { threadId: number }) {
   // plan 210 (iteration 2): the row right-clicked (or open) of this conversation: its own task, never a sibling's
   const row = useTodayTask(threadId, "menu");
+  const keepsId = useId();
   if (!row) return null;
   const { rowId, task } = row;
   const now = Date.now();
@@ -443,7 +445,6 @@ function TaskItems({ threadId }: { threadId: number }) {
   return (
     <>
       <Item icon={<CircleCheck />} label={t("dated.done")} command="today.done" testId="menu-dated-done" onClick={() => void actOnTodayRow(rowId, task, "done")} />
-      <Item icon={<Ban />} label={t("dated.remove")} command="today.remove" testId="menu-dated-dismiss" onClick={() => void actOnTodayRow(rowId, task, "dismiss")} />
       <ContextMenuSub>
         <ContextMenuSubTrigger data-testid="menu-dated-later">
           <Clock />
@@ -465,6 +466,16 @@ function TaskItems({ threadId }: { threadId: number }) {
           </ContextMenuItem>
         </ContextMenuSubContent>
       </ContextMenuSub>
+      {/* plan 210 (iteration 3): Remove says what it removes from, last of What matters' own and a separator away from the
+          mail's (Delete further on), with what it leaves under it, at its label's edge, as the menu's other notes */}
+      <ContextMenuItem data-testid="menu-dated-dismiss" data-wide aria-describedby={keepsId} onClick={() => void actOnTodayRow(rowId, task, "dismiss")}>
+        <Ban />
+        <span className="min-w-0 flex-1 truncate">{t("whatMatters.menu.remove")}</span>
+        {hint("today.remove")}
+      </ContextMenuItem>
+      <p id={keepsId} className="ps-[calc(1rem+1.15em)] pb-1 text-sm" data-testid="menu-dated-keeps">
+        <span className="text-xs text-muted-foreground">{t("whatMatters.menu.removeKeeps")}</span>
+      </p>
       <ContextMenuSeparator />
     </>
   );

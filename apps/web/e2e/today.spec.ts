@@ -791,10 +791,17 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       const order = () => page.locator(`${FEED} [data-testid=wm-item][data-thread-id]`).evaluateAll((els) => els.map((e) => ({ id: e.getAttribute("data-thread-id"), top: e.getBoundingClientRect().top })).sort((a, b) => a.top - b.top).map((r) => r.id));
       await item(page, "Electricity bill").click({ button: "right" });
       await expect(page.getByTestId("menu-dated-done")).toContainText("D");
-      // plan 210 (iteration 1, the owner): "Not a task" is "Remove", and the menu says its key, as Later's does
-      await expect(page.getByTestId("menu-dated-dismiss")).toContainText("Remove");
-      await expect(page.getByTestId("menu-dated-dismiss")).toContainText("⇧D");
+      // plan 210 (iteration 1, the owner): "Not a task" is "Remove", and the menu says its key, as Later's does; iteration
+      // 3: what it removes from, that the email stays, and after Done and Later, a separator away from the mail's actions
+      const remove = page.getByTestId("menu-dated-dismiss");
+      await expect(remove).toContainText("Remove from What matters");
+      await expect(remove).toContainText("⇧D");
+      await expect(remove).toHaveAccessibleDescription("The email stays");
       await expect(page.getByTestId("menu-dated-later")).toContainText("B");
+      const menuOrder = await page.locator("[role=menu]").first().evaluate((menu) => [...menu.children].map((el) => el.getAttribute("data-testid") ?? el.getAttribute("role") ?? el.getAttribute("data-slot")));
+      const at = menuOrder.indexOf("menu-dated-dismiss");
+      expect(menuOrder.slice(at - 2, at + 3)).toEqual(["menu-dated-done", "menu-dated-later", "menu-dated-dismiss", "menu-dated-keeps", "separator"]);
+      expect(menuOrder.indexOf("menu-trash")).toBeGreaterThan(at + 3);
       // Later replaces Remind me on a task's item: every preset that applies now, and a day of your own
       await expect(page.getByTestId("menu-remind-always")).toHaveCount(0);
       await page.getByTestId("menu-dated-later").click();
