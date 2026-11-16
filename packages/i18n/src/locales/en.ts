@@ -2676,6 +2676,11 @@ It contains none of your mail, contacts, settings or keys.
   "whatMatters.needed": "{when} · needed {day}",
   "whatMatters.neededToday": "{when} · needed today",
   "whatMatters.neededTomorrow": "{when} · needed tomorrow",
+  // plan 210 (iteration 4, revision 11): a day the mail asked for it before, said as it said it
+  "whatMatters.neededBefore": "{when} · needed before {day}",
+  "whatMatters.neededBeforeTomorrow": "{when} · needed before tomorrow",
+  "whatMatters.before": "before {day}",
+  "whatMatters.beforeTomorrow": "before tomorrow",
   "whatMatters.zoned": "{when} ({time})",
   "whatMatters.say.promise": "You said you'd {text}.",
   "whatMatters.say.wrote": "{name} wrote to you about “{subject}”.",

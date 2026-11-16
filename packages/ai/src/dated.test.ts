@@ -215,6 +215,32 @@ describe("reading dates in mail you got (plan 204)", () => {
     expect(due({ kind: "pay", quote: "Intentamos cobrar tu factura de $86.30", due: "2026-03-09" }, "Intentamos cobrar tu factura de $86.30.\n\nNo cobramos nada antes del lunes 9.")).toBe("2026-03-09");
   });
 
+  it("plan 210 (iteration 4, revision 11): the day it's asked before is kept apart, whichever of the two days the model gave; 'before then' by its paragraph's day; a promise's move too", () => {
+    const read = (i: Partial<{ kind: string; quote: string; due: string | null; time: string | null }>, text = i.quote ?? "") => {
+      const v = readDatesTask(input({ text })).validate({ replaced: [], items: [item(i)], settled: [], moved: [] });
+      if (!v.ok) throw new Error("rejected");
+      return { due: v.value.items[0]!.due, before: v.value.items[0]!.before ?? null };
+    };
+    expect(read({ kind: "respond", quote: "Could you sign the lease and send it back to me before Monday?", due: "2026-11-16" })).toEqual({ due: "2026-11-15", before: "2026-11-16" });
+    expect(read({ kind: "respond", quote: "Could you sign the lease and send it back to me before Monday?", due: "2026-11-15" })).toEqual({ due: "2026-11-15", before: "2026-11-16" });
+    expect(read({ kind: "respond", quote: "¿Me las puedes enviar antes del día 20?", due: "2026-11-19" })).toEqual({ due: "2026-11-19", before: "2026-11-20" });
+    // Priya's Marcus: "before then", the Monday the paragraph named
+    const marcus = "I want to be transparent: I have another offer, and I need to give them an answer by Monday the 16th. Lumora is my first choice, but there's a gap on equity I'd like to talk through. Would you have 20 minutes before then?";
+    expect(read({ kind: "respond", quote: "Would you have 20 minutes before then?", due: "2026-11-15" }, marcus)).toEqual({ due: "2026-11-15", before: "2026-11-16" });
+    expect(read({ kind: "respond", quote: "Would you have 20 minutes before then?", due: "2026-11-16" }, marcus)).toEqual({ due: "2026-11-15", before: "2026-11-16" });
+    // none: "by", a time, an event, another day, a "before then" with no day before it
+    expect(read({ kind: "respond", quote: "by Monday", due: "2026-11-16" }).before).toBeNull();
+    expect(read({ kind: "respond", quote: "before Monday", due: "2026-11-16", time: "17:00" }).before).toBeNull();
+    expect(read({ kind: "event", quote: "the dinner before Monday's launch", due: "2026-11-16" }).before).toBeNull();
+    expect(read({ kind: "respond", quote: "please send it before Monday", due: "2026-11-12" }).before).toBeNull();
+    expect(read({ kind: "respond", quote: "Could you send them before then?", due: "2026-11-15" }).before).toBeNull();
+    // Jordan's SOC 2 report: Owen's "before then" moves the promise, kept as asked before the Monday
+    const owen = "Following up — we haven't received the SOC 2 report or bridge letter yet. Our vendor risk committee meets Monday the 16th and Brightwater can't be on the agenda without them. Could you get them to me before then?";
+    const moved = readDatesTask(input({ text: owen, open: [{ label: "p1", kind: "promise", text: "send Owen the SOC 2 report", due: "2026-11-10" }] })).validate({ replaced: [], items: [], settled: [], moved: [{ label: "p1", due: "2026-11-15", time: null, evidence: "Could you get them to me before then?", text: null, textEvidence: null }] });
+    if (!moved.ok) throw new Error("rejected");
+    expect(moved.value.moved[0]).toMatchObject({ due: "2026-11-15", before: "2026-11-16" });
+  });
+
   it("prompt v9 (the sixth panel round): an offer isn't an ask; an alert's stated deadline is its day and time; \"reply C to confirm\" in the event's words; a failed payment and its bill are one item", () => {
     const en = readDatesTask(input()).system;
     // the eval: said in the ask's own line, Haiku dropped a colleague's real ask (2 in 11); among what isn't an item, none
