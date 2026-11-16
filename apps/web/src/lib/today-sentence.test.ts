@@ -130,6 +130,8 @@ describe("the history's lines (plan 210)", () => {
   it("says the item as the open part did, and in the column what happened and when", () => {
     expect(historySentence(line("pay", "done", at(13, 8)))).toBe("Pay $187.42 for the electricity bill.");
     expect(historySentence(line("alert", "settled", at(12), "Payment declined"))).toBe("Payment declined, the email says.");
+    // plan 210 (iteration 3): words the app cut never gain ", the email says" after their ellipsis
+    expect(historySentence(line("alert", "settled", at(12), "$1,186.40 Pingwire team payment failed on Visa ending in 4242…"))).toBe("The email says: $1,186.40 Pingwire team payment failed on Visa ending in 4242…");
     expect(historySentence(line("promise", "dismissed", at(10), "Send Jess the deck"))).toBe("You said you'd send Jess the deck.");
     expect(historySentence(line("pay", "done", at(10), " "))).toBe("Your statement is ready.");
     expect(historyWhen(line("pay", "done", at(13, 8)), NOW)).toBe("Done today");
@@ -147,6 +149,7 @@ describe("the history's lines (plan 210)", () => {
     expect(historyWhen(line("pay", "over", at(11)), NOW)).toBe("Pasó el mié");
     expect(historyWhen(line("promise", "dismissed", at(11)), NOW)).toBe("Quitado el mié");
     expect(historyWhen(line("promise", "replaced", at(11)), NOW)).toBe("Reemplazado el mié");
+    expect(historySentence(line("alert", "settled", at(12), "Pago rechazado de $1,186.40 en la Visa…"))).toBe("Según el correo: Pago rechazado de $1,186.40 en la Visa…");
     expect(historySentence(line("promise", "done", at(11), "enviar a Valeria los ajustes"))).toBe("Dijiste que ibas a enviar a Valeria los ajustes.");
   });
 });

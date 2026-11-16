@@ -544,6 +544,16 @@ describe("plan 210 (iteration 3)", () => {
     });
   });
 
+  it("revision 11: a deadline's bare day of the month read into the past is the next one (Priya's Spendly); a day a month names stays over", () => {
+    const text = "Hi Priya,\n\n7 transactions on your Lumora card are missing receipts or memos ($2,941.18 total).\n\nOctober books close on the 20th. Please add receipts by then so finance can close the month; anything missing after that gets flagged to your manager.";
+    const receipts = { kind: "respond", text: "Add receipts for 7 Lumora card transactions in Spendly", quote: "Please add receipts by then", due: "2026-10-20", time: null };
+    const mail = { ...base, text, subject: "You have 7 transactions missing receipts", arrivedAt: at(2026, 11, 9, 8) };
+    expect(checkDates({ items: [receipts], settled: [] }, mail).rows.map((r) => r.dueDay)).toEqual(["2026-11-20"]);
+    // an event isn't a deadline, and "October 20" is October's
+    expect(checkDates({ items: [{ ...receipts, kind: "event" }], settled: [] }, mail).rows).toEqual([]);
+    expect(checkDates({ items: [receipts], settled: [] }, { ...mail, text: text.replace("on the 20th", "on October 20") }).rows).toEqual([]);
+  });
+
   describe("revision 5: paid is paid, narrowly", () => {
     it("Diego's card, read as its minimum or its balance: the bank's receipt in its conversation settles it", () => {
       expect(checkDates(settle(), { ...receipt(), open: new Map([["o1", card()]]) }).settled).toEqual([{ id: 9, revision: 2 }]);

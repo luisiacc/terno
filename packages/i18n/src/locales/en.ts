@@ -3077,6 +3077,8 @@ It contains none of your mail, contacts, settings or keys.
   "dated.laterBeforeStart": "Pick a time before it starts.",
   "dated.laterItem": "Later: {text}",
   "dated.alertSays": "{text}, the email says",
+  // plan 210 (iteration 3): an alert's words the app cut (they end in "…") say whose word they are first
+  "dated.alertSaysCut": "The email says: {text}",
   "dated.undo": "Undo this date",
   "dated.snack.done": "Marked done",
   "dated.snack.later": "Moved to later",

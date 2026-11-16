@@ -3056,6 +3056,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "dated.laterBeforeStart": "Elige un momento antes de que empiece.",
   "dated.laterItem": "Más tarde: {text}",
   "dated.alertSays": "{text}, según el correo",
+  "dated.alertSaysCut": "Según el correo: {text}",
   "dated.undo": "Deshacer esta fecha",
   "dated.snack.done": "Marcado como hecho",
   "dated.snack.later": "Pasado a más tarde",

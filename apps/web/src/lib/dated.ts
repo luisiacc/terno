@@ -5,6 +5,7 @@ import { usd } from "~/lib/ai";
 import type { LeftRows } from "~/lib/actions";
 import { registerUndo, snack } from "~/lib/snack";
 import { client } from "~/rpc/connection";
+import { alertSays } from "~/lib/today-sentence";
 import { datedDay, dueShort, reminderTime } from "~/lib/when";
 
 /** Plan 204: a dated item as Today's row carries it, what Done and Later act on. */
@@ -48,7 +49,7 @@ function dueOn(day: number, time: string | null, now: number): string {
  * it is ("Debit card frozen after a $412.18 charge, the email says"); the app adds it, after the model's words are cut
  * (the Codex code review of the fourth round: a cut lost the model's own). Every place an item's words show goes through it.
  */
-export const datedText = (o: { kind: DatedKind; text: string }): string => (o.kind === "alert" && o.text ? t("dated.alertSays", { text: o.text }) : o.text);
+export const datedText = (o: { kind: DatedKind; text: string }): string => (o.kind === "alert" && o.text ? alertSays(o.text) : o.text);
 
 /** A line: when, then the task ("Due Friday · Pay the electricity bill"); with no day, the task alone. */
 const line = (when: string | null, text: string): string => (when ? t("today.why.line", { when, text }) : text);
