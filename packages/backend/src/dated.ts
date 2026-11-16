@@ -8,6 +8,7 @@ import { DailyLimitError, MonthlyLimitError } from "./ai-limiter";
 import { silenced, silenceOf, withoutMuted } from "./dated-mutes";
 import { secondLook } from "./dated-second-look";
 import { UI_LOCALE_KEY } from "./forwarding";
+import { handledItself } from "./dated-automatic";
 import { bareDayAhead, contextOf, insideQuotes, quoteSpan, type Sentences, namesApart, namesItem, negatedReceipt, norm, otherAmounts, otherIds, paragraphsOf, plainEvidence, replacesPlainly, sameObject, sameThing, saysReplaced, saysWhen, scamPressure, sentencesOf, settlesKind } from "./dated-evidence";
 import { untrustedSenders, withoutUntrusted } from "./suspicious-sender";
 
@@ -320,26 +321,6 @@ function shownEarly(kind: DatedKind, item: { quote: string }, words: string, sai
 const FACT_WORDS_MAX = 2000;
 
 /**
- * Plan 210 (iteration 4, revision 12, the owner's "drop AutoPay-only rows"): a routine bill the mail says is charged by itself
- * ("AutoPay is on: we'll charge your Visa", "will be charged automatically", "se cargará automáticamente", "tienes la
- * domiciliación activada"), with nothing the reader decides: no item. A renewal, a trial, a plan or a subscription the reader
- * may change or cancel stays (a priced decision), and so does one whose charge failed. The words tied to the item, as `norm`
- * reads them, en and es. Iteration 4's code review (Codex): only an unconditional charge of the bill itself, sentence by
- * sentence: "we will charge" counts with what it's charged to ("we'll charge your Visa"), and a sentence with a fee, a
- * penalty or a condition never does ("We will charge a $25 late fee if payment is not received" is a bill to pay).
- */
-const CHARGED_ITSELF = /\b(?:auto ?pay (?:is )?(?:on|enabled|active|set up)|(?:we ll|we will|will) automatically (?:charge|debit|deduct|draft)|(?:we ll|we will|will) (?:charge|debit|deduct|draft) (?:it |this |the (?:amount|balance|total|payment) )?(?:to |from )?(?:your|the) (?:visa|mastercard|amex|card|credit card|debit card|account|bank account|checking|savings|payment method)|(?:be )?(?:charged|debited|deducted|drafted|paid) automatically|automatic (?:payment|charge|debit)s? (?:is |are )?(?:on|set up|scheduled|enabled)|se (?:cargara|cobrara|debitara|domiciliara)\w* automaticamente|(?:tienes|tiene) (?:la )?domiciliacion|domiciliacion (?:activa|activada)|cargo automatico|pago automatico (?:activo|activado))\b/u;
-const BILLED = /\b(?:bill|statement|invoice|premium|balance|amount due|factura|recibo|estado de cuenta|cuota|prima|importe|saldo)\b/u;
-const DECIDED = /\b(?:renew\w*|trial|subscription|membership|plan|cancel\w*|change|seats?|renov\w*|suscripcion|membresia|prueba|cancela\w*|cambia\w*)\b/u;
-const NOT_CHARGED = /\b(?:declined|failed|unable|couldn t|could not|didn t go through|rechaz\w*|no pudimos|no se pudo|fall\w*)\b/u;
-const CONDITIONAL_CHARGE = /\b(?:fees?|penalty|penalties|interest|finance charges?|if|unless|should|in case|otherwise|recargos?|multas?|penalizacion\w*|comision\w*|intereses|si|salvo|a menos que|en caso)\b/u;
-export function routineAutoBill(words: string): boolean {
-  const read = norm(words);
-  if (!BILLED.test(read) || DECIDED.test(read) || NOT_CHARGED.test(read)) return false;
-  return sentencesOf(words).some((s) => CHARGED_ITSELF.test(s.read) && !CONDITIONAL_CHARGE.test(s.read));
-}
-
-/**
  * Plan 210 (iteration 4, revision 12): a delivery the mail only estimates ("should arrive within 7 to 10 business days", "en
  * 5 a 7 días hábiles") has no day: no item, unless its words say that day as well.
  */
@@ -605,8 +586,9 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     if (rows.some((r) => itemKey(r.kind, r) === key && (!TWO_A_DAY.has(kind) || sameThing(r, item) || (kind === "respond" && replyTo(r.text) && replyTo(item.text))))) continue;
     // plan 210 (iteration 3, revision 11): facts from the mail's words, never the item's; iteration 4, the paragraphs tied to it
     const words = `${tiedWords(item.quote).slice(0, FACT_WORDS_MAX)}\n${item.quote}`;
-    // plan 210 (iteration 4, revision 12): a routine bill charged by itself, and a delivery only estimated, are no items
-    if ((kind === "pay" || kind === "renew") && routineAutoBill(words)) continue;
+    // plan 210 (iteration 5, revision 1): a plan that renews by itself and a bill paid by itself or already, in its own words,
+    // are no items; iteration 4 (revision 12): a delivery only estimated is none either
+    if (handledItself({ kind, text: item.text, quote: item.quote }, { subject: input.subject, paragraphs, tied: tiedWords(item.quote).slice(0, FACT_WORDS_MAX), from: input.from })) continue;
     if (kind === "delivery" && estimateOnly(contextOf(item.quote, paragraphs), timing.dueDay, input.arrivedAt)) continue;
     rows.push({ kind, item: rows.length, text: item.text.trim(), quote: item.quote.trim(), ...partTiming(kind, item.quote, timing, input.arrivedAt)!, ...(shownEarly(kind, item, words, said, input) ? { early: true } : {}), ...(canLapse(kind) && lapsesUnlessRenewed(words) ? { lapses: true } : {}), ...(before && timing.dated && !timing.timed ? { before } : {}), ...(item.wall && timing.timed && wallHolds(item.wall, timing.dueAt) ? { wall: item.wall } : {}) });
   }

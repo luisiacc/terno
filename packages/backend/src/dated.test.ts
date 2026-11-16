@@ -97,8 +97,11 @@ describe("the local checks (plan 204 §3)", () => {
     const domain = "Your domain pingwire.dev expires on December 7, 2026.\nAuto-renew is off for this domain.";
     const renew = { kind: "renew", text: "Renew pingwire.dev", quote: "Your domain pingwire.dev expires on December 7, 2026.", due: "2026-12-07", time: null };
     expect(checkDates({ items: [renew], settled: [] }, { ...base, text: domain, subject: "Domain" }).rows[0]).toMatchObject({ lapses: true });
+    // plan 210 (iteration 5, revision 1): one that renews by itself isn't an item at all now; a trial that does still lapses nothing
     const auto = "Your Loomcast plan will renew automatically on December 7, 2026.";
-    expect(checkDates({ items: [{ ...renew, text: "Loomcast renews", quote: auto }], settled: [] }, { ...base, text: auto, subject: "Plan" }).rows[0]!.lapses).toBeUndefined();
+    expect(checkDates({ items: [{ ...renew, text: "Loomcast renews", quote: auto }], settled: [] }, { ...base, text: auto, subject: "Plan" }).rows).toEqual([]);
+    const trial = "Your Loomcast trial ends on December 7, 2026 and then renews automatically at $12/month. Cancel before then if you don't want it.";
+    expect(checkDates({ items: [{ ...renew, text: "Cancel Loomcast before Dec 7 or pay $12/month", quote: "Your Loomcast trial ends on December 7, 2026" }], settled: [] }, { ...base, text: trial, subject: "Plan" }).rows[0]!.lapses).toBeUndefined();
     // never a plan's
     const event = { kind: "event", text: "Membership gala", quote: "Your domain pingwire.dev expires on December 7, 2026.", due: "2026-12-07", time: null };
     expect(checkDates({ items: [event], settled: [] }, { ...base, text: domain, subject: "Domain" }).rows[0]!.lapses).toBeUndefined();
@@ -784,13 +787,16 @@ describe("plan 210 (iteration 4)", () => {
   const base = { text: BILL_TEXT, subject: "Your bill", arrivedAt: NOW, open: new Map<string, DatedRow>(), fromScan: false, now: NOW };
 
   describe("revision 5: a quote not the mail's verbatim", () => {
-    const PAGEWISE = "Hi Priya,\n\nThis is a reminder that the Lumora workspace on Pagewise renews soon.\n\nPlan: Team, annual\nSeats: 32\nRenewal date: November 18, 2026\nAmount: $6,144.00 (billed to Visa ending 4417)\n\nNeed to change seats before you're billed? Workspace owners can adjust them in Settings → Billing until the renewal date.";
+    // iteration 5 (revision 1): billed to the card by itself it's no item at all, so the span is read on a renewal the reader acts on
+    const BILLED = "Hi Priya,\n\nThis is a reminder that the Lumora workspace on Pagewise renews soon.\n\nPlan: Team, annual\nSeats: 32\nRenewal date: November 18, 2026\nAmount: $6,144.00 (billed to Visa ending 4417)\n\nNeed to change seats before you're billed? Workspace owners can adjust them in Settings → Billing until the renewal date.";
+    const PAGEWISE = BILLED.replace(" (billed to Visa ending 4417)", "\nAuto-renew is off for this workspace.");
     const mail = { ...base, text: PAGEWISE, subject: "Your Pagewise Team plan renews on November 18" };
-    const renewal = { kind: "renew", text: "Lumora Team plan renews automatically ($6,144.00)", quote: "renews on November 18, 2026", due: "2026-11-18", time: null };
+    const renewal = { kind: "renew", text: "Renew the Lumora Team plan ($6,144.00)", quote: "renews on November 18, 2026", due: "2026-11-18", time: null };
 
     it("Priya's Pagewise: a quote joined from the subject and a body line is the one span holding its words and its day", () => {
       const out = checkDates({ items: [renewal], settled: [] }, mail);
       expect(out.rows.map((r) => [r.kind, r.dueDay, r.quote])).toEqual([["renew", "2026-11-18", "Your Pagewise Team plan renews on November 18"]]);
+      expect(checkDates({ items: [renewal], settled: [] }, { ...mail, text: BILLED }).rows).toEqual([]);
     });
     it("refused when no span holds both, or two do (ambiguous), or the quote names nothing but a date, or the item has no day", () => {
       // no span says "renews" with the day: the subject says another day
@@ -853,15 +859,15 @@ describe("plan 210 (iteration 4)", () => {
       const rows = checkDates({ items: [laptops, monitor], settled: [] }, { ...base, text: two, subject: "Two parcels" }).rows;
       expect(rows.map((r) => [r.text, r.early ?? false])).toEqual([["2 Laptop Pro 14\" arriving", false], ["Monitor arriving", true]]);
     });
-    it("a routine bill charged by itself is no item; a priced renewal or trial, or one whose charge failed, stays (the owner's 'drop AutoPay-only rows')", () => {
+    it("a routine bill charged by itself is no item, nor (iteration 5, revision 1) a plan that renews by itself; one whose charge failed stays (the owner's 'drop AutoPay-only rows')", () => {
       const read = (text: string, kind = "renew", textOf = "Brightline bill charged automatically ($84.20)") => checkDates({ items: [{ kind, text: textOf, quote: text.split("\n")[0]!, due: "2026-11-20", time: null }], settled: [] }, { ...base, text, subject: "Your statement" }).rows.length;
       expect(read("Your November statement is ready. Amount due: $84.20\nAutoPay is on: we'll charge your Visa ending in 4821 on Friday, November 20. No action needed.")).toBe(0);
       expect(read("Amount due: $142.67. Due date: November 20, 2026\nAutoPay is on. We'll charge your Visa ending 2291 on the due date.", "pay", "Pay $142.67 for the Brightline bill")).toBe(0);
       expect(read("Your auto insurance premium of $142.00 will be charged automatically to your card on file on November 20. You don't need to do anything.")).toBe(0);
       expect(read("Ya tienes disponible tu factura de noviembre. Importe: 62,40 €\nTienes la domiciliación activada: se cargará automáticamente en tu cuenta el 20 de noviembre.")).toBe(0);
-      // a decision stays: a plan that renews, a trial, a subscription
-      expect(read("Your Pagewise Team plan renews on November 20 and will be charged automatically: $6,144.00. Need to change seats? Adjust them before the renewal date.")).toBe(1);
-      expect(read("Your Notely Pro subscription renews automatically on November 20 (US$9.99).", "renew", "Notely Pro renews automatically (US$9.99)")).toBe(1);
+      // iteration 5 (the owner's "nobody cares"): a plan or a subscription that renews by itself goes too, a price or a change it allows notwithstanding
+      expect(read("Your Pagewise Team plan renews on November 20 and will be charged automatically: $6,144.00. Need to change seats? Adjust them before the renewal date.")).toBe(0);
+      expect(read("Your Notely Pro subscription renews automatically on November 20 (US$9.99).", "renew", "Notely Pro renews automatically (US$9.99)")).toBe(0);
       // a charge that failed
       expect(read("We tried to charge your Visa for your November bill of $84.20 on November 20, but the payment was declined. AutoPay couldn't complete this month.", "pay", "Pay $84.20 for the Brightline bill")).toBe(1);
     });
@@ -1020,6 +1026,25 @@ describe("plan 210 (iteration 4's code review)", () => {
       expect(moved).toMatchObject({ dueAt: second, wall: flight.wall });
     });
   });
+});
+
+describe("plan 210 (iteration 5): the reading", () => {
+  const base = { text: BILL_TEXT, subject: "Your bill", arrivedAt: NOW, open: new Map<string, DatedRow>(), fromScan: false, now: NOW };
+  const person = { sender: { person: true }, reader: { name: "Maria Delgado", addressed: "to" as const } };
+
+  it("revision 1: an invoice already paid, or a plan that renews by itself, is no row; mixed invoices keep the one still due", () => {
+    const MIXED = "Hello,\n\nInvoice 2231 ($500.00) has been paid. Invoice 2240 ($300.00) is due November 30. Please pay it by then.";
+    const due = { kind: "pay", text: "Pay $300.00 for the Northwind invoice", quote: "Invoice 2240 ($300.00) is due November 30", due: "2026-11-30", time: null };
+    const paid = { kind: "pay", text: "Pay $500.00 for the Northwind invoice", quote: "Invoice 2231 ($500.00) has been paid", due: "2026-11-30", time: null };
+    expect(checkDates({ items: [paid, due], settled: [] }, { ...base, text: MIXED, subject: "Your invoices" }).rows.map((r) => r.text)).toEqual([due.text]);
+    // a later receipt settles the one it names, never every invoice from its sender
+    const row = (id: number, text: string, quote: string) => ({ id, revision: 1, threadId: 1, senderKey: "ar@northwind.test", kind: "pay", text, quote, dueDay: "2026-11-30", dueAt: NOW, timed: false, dated: true }) as DatedRow;
+    const open = new Map([["o1", row(1, "Pay $500.00 for invoice 2231", "Invoice 2231 ($500.00) is due November 30")], ["o2", row(2, "Pay $300.00 for invoice 2240", "Invoice 2240 ($300.00) is due November 30")]]);
+    const receipt = "Payment received for invoice 2231. Thank you!";
+    const out = checkDates({ items: [], settled: [{ label: "o1", evidence: receipt }, { label: "o2", evidence: receipt }] }, { ...base, text: receipt, subject: "Receipt", open, threadId: 1, senderKey: "ar@northwind.test", from: "Northwind", paysInThread: 2 });
+    expect(out.settled).toEqual([{ id: 1, revision: 1 }]);
+  });
+
 });
 
 describe("the reader", () => {
