@@ -67,9 +67,20 @@ describe("plan 210 (iteration 3, revision 11): a bare day of the month read into
 
 describe("plan 210 (iteration 3, revision 4): words that replace, plainly", () => {
   it("says it, undenied (en, es)", () => {
-    expect(replacesPlainly("I didn't see the methods section on Wednesday. Let's skip the piecemeal version")).toBe(true);
-    expect(replacesPlainly("Olvidemos la versión por partes")).toBe(true);
-    for (const text of ["Don't skip the piecemeal version", "No, let's not skip it", "No olvides el marco teórico", "Please send the methods section"]) expect(replacesPlainly(text), text).toBe(false);
+    const said = (words: string) => replacesPlainly(words, words);
+    expect(said("I didn't see the methods section on Wednesday. Let's skip the piecemeal version")).toBe(true);
+    expect(said("Olvidemos la versión por partes")).toBe(true);
+    for (const text of ["Don't skip the piecemeal version", "No, let's not skip it", "No olvides el marco teórico", "Please send the methods section"]) expect(said(text), text).toBe(false);
+  });
+  it("read in the mail's clause around the quote: a denial before it counts, one in another clause doesn't (en, es; the code review of iteration 3)", () => {
+    const en = "Don't skip the methods section; please send the full draft by Monday.";
+    expect(replacesPlainly("skip the methods section", en)).toBe(false);
+    expect(replacesPlainly("skip the methods section", "Skip the methods section; please send the full draft by Monday.")).toBe(true);
+    expect(replacesPlainly("skip the methods section", "It's not urgent: skip the methods section and send the full draft by Monday.")).toBe(true);
+    expect(replacesPlainly("olvides el marco teórico", "No olvides el marco teórico; mándame el borrador completo antes del lunes.")).toBe(false);
+    expect(replacesPlainly("olvida el marco teórico", "No hay prisa: olvida el marco teórico y mándame el borrador completo.")).toBe(true);
+    // words the mail doesn't hold
+    expect(replacesPlainly("skip the outline", en)).toBe(false);
   });
   it("retold in quotation marks is someone else's", () => {
     const text = 'About the methods section, Marta said "let\'s skip the piecemeal version" but I disagree.';

@@ -322,17 +322,33 @@ export function saysReplaced(words: string): boolean {
 }
 
 // plan 210 (iteration 3, revision 4): "don't skip it", "let's not skip", "no lo olvides": in the three words before
-const NOT_REPLACED = /\b(?:not|never|t|no|ni|nunca)\b/u;
+const NOT_REPLACED = /^(?:not|never|t|no|ni|nunca)$/u;
+const REPLACES_HERE = new RegExp(`^(?:${REPLACES.source})`, "u");
+// a clause ends at a sentence's end, a line, a semicolon, a colon or a dash (never a comma: "don't, please, skip it")
+const CLAUSE_END = /(?<=[.!?;:])\s+|\n+|\s[-–—]\s|[–—]/u;
 
 /**
- * Plan 210 (iteration 3, revision 4): a sentence of these words says a thing replaces another, and isn't denied ("Let's skip
- * the piecemeal version"; never "don't skip the methods section" nor "no olvides el marco teórico").
+ * Plan 210 (iteration 3, revision 4): some words of the mail say a thing replaces another, and aren't denied ("Let's skip
+ * the piecemeal version"; never "don't skip the methods section" nor "no olvides el marco teórico"). The code review of
+ * iteration 3: read in the mail, where the words are, so a denial before the model's quote counts ("Don't skip the methods
+ * section; please send the full draft" quoted as "skip the methods section"): each replacing word in the quote, wherever
+ * the quote is, has no denial in the three words before it in its clause. Words the mail doesn't hold replace nothing.
  */
-export function replacesPlainly(words: string): boolean {
-  return sentencesOf(words).some(({ read }) => {
-    const m = REPLACES.exec(read);
-    return !!m && !NOT_REPLACED.test(read.slice(0, m.index).trim().split(" ").slice(-3).join(" "));
+export function replacesPlainly(evidence: string, text: string): boolean {
+  const q = norm(evidence).split(" ");
+  const words = text.split(CLAUSE_END).flatMap((said, clause) => {
+    const read = norm(said);
+    return read ? read.split(" ").map((word) => ({ word, clause })) : [];
   });
+  const at = words.flatMap((_, i) => (q[0] && q.every((w, j) => words[i + j]?.word === w) ? [i] : []));
+  return (
+    at.length > 0 &&
+    at.every((start) => {
+      const end = start + q.length;
+      const replacing = words.slice(start, end).flatMap((_, k) => (REPLACES_HERE.test(words.slice(start + k, end).map((w) => w.word).join(" ")) ? [start + k] : []));
+      return replacing.length > 0 && replacing.every((k) => !words.slice(Math.max(0, k - 3), k).some((w) => w.clause === words[k]!.clause && NOT_REPLACED.test(w.word)));
+    })
+  );
 }
 
 /** Whether some words are inside quotation marks in their paragraph of the mail (someone else's words, retold): “…”, "…", «…». */

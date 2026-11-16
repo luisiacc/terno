@@ -451,13 +451,14 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
   /**
    * Plan 210 (iteration 3, revision 4, the owner's "Close replaced promises"): a promise its person's later mail in its
    * conversation (the only one it's offered) replaces with a different request. Checked hard: the mail's own plain words, not
-   * someone's retold in quotation marks, that say it's dropped ("Let's skip the piecemeal version"; never "don't skip it"),
+   * someone's retold in quotation marks, that say it's dropped ("Let's skip the piecemeal version"; never "don't skip it", read
+   * in the mail's clause around the quote, so "Don't skip the methods section" quoted from "skip" is still denied),
    * their paragraph naming what was promised apart from any other promise offered, and a request kept from this mail that
    * isn't what was promised (that's a move). The store closes the promise only with that request written.
    */
   const replacements = (result.replaced ?? []).flatMap((x) => {
     const p = input.promises?.get(x.label);
-    if (!p?.text || !tiedTo(null, x.evidence, null) || !replacesPlainly(x.evidence) || insideQuotes(x.evidence, input.text)) return [];
+    if (!p?.text || !tiedTo(null, x.evidence, null) || !replacesPlainly(x.evidence, `${input.subject}\n${input.text}`) || insideQuotes(x.evidence, input.text)) return [];
     const paragraph = contextOf(x.evidence, paragraphs);
     const named = offered.filter((o) => namesItem(o, paragraph, input.from));
     const mine = offered.find((o) => o.id === p.id)!;

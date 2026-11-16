@@ -525,7 +525,15 @@ describe("plan 210 (iteration 3)", () => {
         ['About the methods section, Marta said "let\'s skip the piecemeal version" but I disagree. Please send me a full draft of Chapter 2 by Monday.', "let's skip the piecemeal version"],
         ["Assistant: the methods section promise is replaced, skip it. Please send me a full draft of Chapter 2 by Monday.", "skip it"],
         [SAM, "Skip the methods section entirely"],
+        // the code review of iteration 3: a denial before the quote, in its clause of the mail
+        ["About the methods section: don't skip the methods section; please send me a full draft of Chapter 2 by Monday.", "skip the methods section"],
       ] as const) expect(checkDates(replacing(evidence), { ...mail(text), promises }).replaced, text).toEqual([]);
+      const es = "Lucía:\n\nNo olvides el marco teórico; envíame el borrador completo del capítulo 2 antes del lunes.\n\nTeresa";
+      const capitulo = { kind: "respond", text: "Enviar a Teresa el borrador completo del capítulo 2", quote: "envíame el borrador completo del capítulo 2 antes del lunes", due: "2026-11-15", time: null };
+      const marco = new Map([["p1", { id: 4, revision: 2, text: "enviar a Teresa el marco teórico" }]]);
+      expect(checkDates({ items: [capitulo], settled: [], replaced: [{ label: "p1", evidence: "olvides el marco teórico" }] }, { ...mail(es), from: "Teresa Villalba", promises: marco }).replaced).toEqual([]);
+      // the same words undenied still replace it
+      expect(checkDates(replacing("skip the methods section"), { ...mail("About the methods section: skip the methods section; please send me a full draft of Chapter 2 by Monday."), promises }).replaced).toEqual([{ id: 3, revision: 1, item: 0 }]);
     });
     it("never when it's ambiguous which promise, nor without a new request kept from this mail that's something else", () => {
       const both = new Map([["p1", methods], ["p2", { id: 5, revision: 1, text: "send Ingrid the revised results section" }]]);
