@@ -1,8 +1,8 @@
 /** Plan 210 (iteration 2): a row per item, one projection for the feed, the counts and the notice. */
 import { describe, expect, it } from "vitest";
-import { datedGroupAt, datedTiming, needsPresence, nextTodayChange, type DatedKind, type DatedRow } from "./dated";
+import { datedGroupAt, datedTiming, needsPresence, nextTodayChange, promiseOver, type DatedKind, type DatedRow } from "./dated";
 import type { FollowupRow } from "./followups";
-import { placedThreads, placeItems, projectToday, type ProjectionFacts } from "./today-projection";
+import { placedThreads, placeItems, projectToday, withNeeds, type ProjectionFacts } from "./today-projection";
 import { splitZoneNote, statedClock, weekEndDay } from "./today-items";
 
 const at = (y: number, m: number, d: number, h = 0, min = 0) => new Date(y, m - 1, d, h, min).getTime();
@@ -139,8 +139,62 @@ describe("early, broken, one time", () => {
   it("a broken promise given a new day keeps its first one, under the new day, not Missed", () => {
     const moved = promise(at(2026, 11, 23, 9), { brokenDueAt: at(2026, 11, 17, 9) });
     const [row] = projectToday(facts({ promises: [moved] })).rows;
-    expect(row).toMatchObject({ group: "day", day: "2026-11-23", why: { promise: { promisedAt: at(2026, 11, 17, 9) } } });
+    expect(row).toMatchObject({ group: "day", day: "2026-11-23", why: { promise: { said: at(2026, 11, 17, 9), needed: at(2026, 11, 23, 9) } } });
     expect(row!.why.missed).toBeUndefined();
+  });
+
+  describe("a promise that answers a request keeps its deadline (iteration 3)", () => {
+    const linked = (request: DatedRow, mine: FollowupRow) => withNeeds([mine], new Map([[request.id, request]]));
+
+    it("its own day missed, it sits under the request's day still ahead, the request no row of its own", () => {
+      // María: the school needs the slip Friday; she said Tuesday
+      const slip = dated("respond", "2026-11-20", { threadId: 9, arrivedAt: at(2026, 11, 13, 9) });
+      const mine = promise(at(2026, 11, 17, 9), { threadId: 9, answers: slip.id });
+      const { rows, counts } = projectToday(facts({ dated: [slip], promises: linked(slip, mine) }));
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ id: `promise:${mine.id}`, group: "day", day: "2026-11-20", why: { dueAt: slip.dueAt, promise: { said: mine.dueAt, needed: slip.dueAt, dated: true } } });
+      expect(rows[0]!.why.missed).toBeUndefined();
+      expect(counts.missed).toBe(0);
+      // past the request's day too: Missed, from the later day, its column "Was due Fri" (nothing said beside)
+      const after = projectToday(facts({ now: at(2026, 11, 21, 10), dated: [slip], promises: linked(slip, mine) })).rows;
+      expect(after).toHaveLength(1);
+      expect(after[0]).toMatchObject({ group: "missed", why: { missed: true, dueAt: slip.dueAt } });
+      expect(after[0]!.why.promise?.said).toBeUndefined();
+      expect(promiseOver(linked(slip, mine)[0]!, at(2026, 11, 27, 23))).toBe(false);
+      expect(promiseOver(linked(slip, mine)[0]!, at(2026, 11, 28, 0))).toBe(true);
+    });
+
+    it("its own day ahead, it sits under it and says the request's other day; one that named none sits under the request's", () => {
+      const deck = dated("respond", "2026-11-23", { threadId: 9 });
+      const mine = promise(at(2026, 11, 19, 9), { threadId: 9, answers: deck.id });
+      const [row] = projectToday(facts({ dated: [deck], promises: linked(deck, mine) })).rows;
+      expect(row).toMatchObject({ group: "day", day: "2026-11-19", why: { promise: { needed: deck.dueAt } } });
+      expect(row!.why.promise?.said).toBeUndefined();
+      // the same day: nothing said beside it
+      const same = promise(at(2026, 11, 23, 15), { threadId: 9, answers: deck.id, timed: true });
+      expect(projectToday(facts({ dated: [deck], promises: linked(deck, same) })).rows[0]!.why.promise?.needed).toBeUndefined();
+      // "I'll send it" with no day: the request's day is its own
+      const undated = promise(at(2026, 11, 21, 9), { threadId: 9, answers: deck.id, dated: false });
+      expect(projectToday(facts({ dated: [deck], promises: linked(deck, undated) })).rows.map((r) => [r.id, r.group, r.day])).toEqual([[`promise:${undated.id}`, "day", "2026-11-23"]]);
+    });
+
+    it("the person's new day comes first; a closed request or an undated ask carries nothing", () => {
+      const deck = dated("respond", "2026-11-26", { threadId: 9 });
+      const moved = promise(at(2026, 11, 23, 9), { threadId: 9, answers: deck.id, brokenDueAt: at(2026, 11, 17, 9) });
+      expect(projectToday(facts({ dated: [deck], promises: linked(deck, moved) })).rows[0]).toMatchObject({ day: "2026-11-23", why: { promise: { said: at(2026, 11, 17, 9), needed: at(2026, 11, 23, 9) } } });
+      const closed = { ...deck, state: "settled" as const };
+      expect(withNeeds([moved], new Map([[deck.id, closed]]))[0]!.needed).toBeUndefined();
+      const ask = dated("ask", null, { threadId: 9 });
+      expect(withNeeds([promise(at(2026, 11, 17, 9), { answers: ask.id })], new Map([[ask.id, ask]]))[0]!.needed).toBeUndefined();
+    });
+
+    it("a request whose promise is closed is its own row again; one the matcher made the same item is that item's row", () => {
+      const deck = dated("respond", "2026-11-23", { threadId: 9 });
+      expect(projectToday(facts({ dated: [deck], promises: [] })).rows.map((r) => r.id)).toEqual([`dated:${deck.id}`]);
+      const merged = promise(at(2026, 11, 19, 9), { threadId: 9, answers: deck.id, sameAs: `dated:${deck.id}` });
+      const rows = projectToday(facts({ dated: [deck], promises: linked(deck, merged) })).rows;
+      expect(rows.map((r) => r.id)).toEqual([`dated:${deck.id}`]);
+    });
   });
 
   it("the mail's own time leaves the words for the when column; a promise's stated time too", () => {

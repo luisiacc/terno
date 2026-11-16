@@ -1,4 +1,4 @@
-import { datedGroup, datedGroupAt, dayKeyOf, promiseGroupAt, shownEarly, todayCounted, type DatedRow, type TaskPlace, type TodayGroupKind } from "./dated";
+import { ANSWERED_KINDS, datedGroup, datedGroupAt, dayKeyOf, promiseDay, promiseGroupAt, shownEarly, todayCounted, type DatedRow, type TaskPlace, type TodayGroupKind } from "./dated";
 import type { FollowupRow } from "./followups";
 import { sortInDay, type TodayAlso, type TodayCounts, type TodayWhy } from "./today";
 import { clockHolds, refKey, reminderRowId, splitZoneNote, statedClock, waitingRowId, weekEndDay, type FeedRowId, type ItemRef } from "./today-items";
@@ -16,8 +16,8 @@ export interface ProjectionFacts {
   now: number;
   /** the open dated items the open part may show (the dated setting on, untrusted senders left out), at their bound */
   dated: readonly DatedRow[];
-  /** your open promises (follow-ups on); a nudge isn't one */
-  promises: readonly FollowupRow[];
+  /** your open promises (follow-ups on), with the day of the request each answers (`withNeeds`); a nudge isn't one */
+  promises: readonly NeedingPromise[];
   /** conversations waiting on your answer (`waitingPage`), newest first: in the Inbox, so never Spam or Trash */
   waiting: readonly { id: number; lastDate: number; hasSent: boolean }[];
   /** your reminders due by the end of today (the list's only: never counted) */
@@ -43,7 +43,7 @@ export interface ProjectedRow {
 /** One item, or the true duplicates of one: its id the canonical's key, shown as `lead`. */
 export interface Logical {
   id: FeedRowId;
-  lead: { source: "dated"; row: DatedRow } | { source: "promise"; row: FollowupRow };
+  lead: { source: "dated"; row: DatedRow } | { source: "promise"; row: NeedingPromise };
   members: ItemRef[];
   /** every open member, the lead first: another shows it when the lead's conversation is in Spam or Trash */
   entries: Logical["lead"][];
@@ -51,12 +51,41 @@ export interface Logical {
 
 const own = (source: "dated" | "promise", id: number): string => refKey({ source, id });
 
+/** Plan 210 (iteration 3): a promise of yours with the moment of the open dated request it answers (`promiseDay`'s `needed`). */
+export type NeedingPromise = FollowupRow & { needed?: number | null };
+
+/**
+ * Plan 210 (iteration 3, the Codex review's revision 2): each promise with the day of the request it answers
+ * (`FollowupRow.answers`), from the requests read with it in one batch: only an open request's, and only one with a day
+ * (an undated ask carries none). The others as they are.
+ */
+export function withNeeds(promises: readonly FollowupRow[], requests: ReadonlyMap<number, Pick<DatedRow, "kind" | "state" | "dated" | "dueAt">>): NeedingPromise[] {
+  return promises.map((p) => {
+    const r = p.answers == null ? undefined : requests.get(p.answers);
+    return r && r.state === "open" && r.dated && ANSWERED_KINDS.includes(r.kind) ? { ...p, needed: r.dueAt } : p;
+  });
+}
+
+/**
+ * The requests an open promise of yours answers are its row's, not rows of their own (their day is the promise's, said
+ * beside it); unless the matcher made them one item already (the same canonical), when that item is the row.
+ */
+function withoutAnswered(dated: readonly DatedRow[], promises: readonly FollowupRow[]): readonly DatedRow[] {
+  if (!promises.some((p) => p.answers != null)) return dated;
+  const answered = new Map<number, string>();
+  for (const p of promises) if (p.answers != null && (p.state === "open" || p.state === "due")) answered.set(p.answers, p.sameAs ?? own("promise", p.id));
+  return dated.filter((r) => {
+    const by = answered.get(r.id);
+    return by === undefined || by === (r.sameAs ?? own("dated", r.id));
+  });
+}
+
 /**
  * True duplicates as one item each: grouped by their canonical (`sameAs`, or their own key). The row is the canonical's id
  * whatever happens to its members, so the feed's selection and an act's target never move; it shows the canonical while
  * that's open, else its first open member (a merged dinner whose restaurant mail was settled shows the friend's).
  */
-function logicalItems(dated: readonly DatedRow[], promises: readonly FollowupRow[]): Logical[] {
+function logicalItems(dated: readonly DatedRow[], promises: readonly NeedingPromise[]): Logical[] {
   const groups = new Map<string, Logical>();
   const add = (key: string, entry: Logical["lead"], ref: ItemRef) => {
     const g = groups.get(key);
@@ -90,19 +119,22 @@ function datedWhy(row: DatedRow, missed: boolean, early: boolean, members: ItemR
   };
 }
 
-function promiseWhy(r: FollowupRow, missed: boolean, members: ItemRef[], zone: string): TodayWhy {
+function promiseWhy(r: NeedingPromise, missed: boolean, members: ItemRef[], zone: string, now: number): TodayWhy {
   // a time its words state is the column's (its zone's words in brackets when that isn't the reader's); never in the sentence
   const clock = r.timed ? statedClock(r.text) : null;
   const note = clock?.zone && clock.zone !== zone && clockHolds(r.dueAt, clock) ? clock.note : null;
+  // plan 210 (iteration 3): the day it sits under, and the days said beside it (a missed one, the one it's needed by)
+  const day = promiseDay(r, now);
+  const sitsOnOwn = day.dueAt === r.dueAt;
   return {
     kind: "promise",
     text: clock ? clock.rest : r.text,
-    dueAt: r.dueAt,
+    dueAt: day.dueAt,
     personName: r.personName,
     personEmail: r.personEmail,
     sentAt: r.sentAt,
     ...(missed ? { missed } : {}),
-    promise: { id: r.id, revision: r.revision, dated: r.dated, ...(r.timed ? { timed: true } : {}), ...(note ? { note } : {}), ...(r.brokenDueAt != null ? { promisedAt: r.brokenDueAt } : {}) },
+    promise: { id: r.id, revision: r.revision, dated: day.dated, ...(r.timed && sitsOnOwn ? { timed: true } : {}), ...(note && sitsOnOwn ? { note } : {}), ...(!missed && day.said != null ? { said: day.said } : {}), ...(!missed && day.needed != null ? { needed: day.needed } : {}) },
     ...(members.length > 1 ? { members } : {}),
   };
 }
@@ -131,8 +163,9 @@ export interface PlacedItem {
  * its own). Needs no store: the caller then reads which of their conversations may show (`placedThreads`). `count`: Coming
  * up is never counted nor says a conversation, so it's left out.
  */
-export function placeItems(dated: readonly DatedRow[], promises: readonly FollowupRow[], now: number, o: { count?: boolean } = {}): PlacedItem[] {
+export function placeItems(dated: readonly DatedRow[], promises: readonly NeedingPromise[], now: number, o: { count?: boolean } = {}): PlacedItem[] {
   const today = dayKeyOf(now);
+  dated = withoutAnswered(dated, promises);
   // most mailboxes link nothing: each item is its own, placed where it is, and nothing is grouped (every count runs this
   // over the 1,000-item bound)
   if (!dated.some((r) => r.sameAs != null || r.detailOf != null) && !promises.some((r) => r.sameAs != null)) {
@@ -220,9 +253,9 @@ export function projectRows(items: readonly PlacedItem[], f: Pick<ProjectionFact
       ? lead.source === "dated" ? { kind: "dated", item: { id: lead.row.id, revision: 0, kind: lead.row.kind, dueDay: "", timed: false, dated: true } } : { kind: "promise" }
       : lead.source === "dated"
         ? datedWhy(lead.row, at.group === "missed", at.group === "today" && shownEarly(lead.row, today), item.members)
-        : promiseWhy(lead.row, at.group === "missed", item.members, f.zone);
+        : promiseWhy(lead.row, at.group === "missed", item.members, f.zone, f.now);
     const came = lead.source === "dated" ? lead.row.arrivedAt : lead.row.sentAt;
-    placed.push({ id: item.id, threadId: lead.row.threadId, group: at.group, day: at.day, why, dueAt: lead.row.dueAt, came, ...(detail && !o.count ? { also: alsoOf(detail) } : {}) });
+    placed.push({ id: item.id, threadId: lead.row.threadId, group: at.group, day: at.day, why, dueAt: why.dueAt ?? lead.row.dueAt, came, ...(detail && !o.count ? { also: alsoOf(detail) } : {}) });
   }
   // what's waiting on you (the owner's round 10: only when something is asked; the stores' `stillWaiting` says so), unless
   // an item of the conversation already says it

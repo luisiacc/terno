@@ -2646,7 +2646,12 @@ It contains none of your mail, contacts, settings or keys.
   // plan 210 (the owner): what has no date sits in Today, its column saying when it came, so it isn't read as due today
   "whatMatters.since": "since {day}",
   "whatMatters.by": "by {day}",
-  "whatMatters.promised": "{when} · promised {day}",
+  // plan 210 (iteration 3, the owner): a promise's missed day, said while it sits under a live one, and the day it's needed by
+  "whatMatters.saidMissed": "You said {day} (missed)",
+  "whatMatters.saidMissedYesterday": "You said yesterday (missed)",
+  "whatMatters.needed": "{when} · needed {day}",
+  "whatMatters.neededToday": "{when} · needed today",
+  "whatMatters.neededTomorrow": "{when} · needed tomorrow",
   "whatMatters.zoned": "{when} ({time})",
   "whatMatters.say.promise": "You said you'd {text}.",
   "whatMatters.say.wrote": "{name} wrote to you about “{subject}”.",

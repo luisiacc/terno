@@ -1830,7 +1830,7 @@ describe("plan 210 (iteration 2): duplicates, a broken promise, early and one ti
     const list = await client.call("today.list", { held: [] });
     expect(list.sections.map((x) => [x.kind, x.day])).toEqual([["day", "2026-11-13"]]);
     const row = list.sections[0]!.items[0]!;
-    expect(row.why).toMatchObject({ kind: "promise", promise: { promisedAt: at(2026, 11, 10, 9) } });
+    expect(row.why).toMatchObject({ kind: "promise", promise: { said: at(2026, 11, 10, 9), needed: at(2026, 11, 13, 9) } });
     expect(row.why.missed).toBeUndefined();
     expect(list.counts.missed).toBe(0);
     // the 14th: Friday over too; "Monday works" moves it again, the first broken day kept
