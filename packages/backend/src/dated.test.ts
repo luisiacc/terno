@@ -788,6 +788,32 @@ describe("plan 210 (iteration 4)", () => {
       expect(out.settled).toEqual([]);
     });
   });
+
+  describe("revision 11: the day a request was asked before", () => {
+    const person = { sender: { person: true }, reader: { name: "Priya Natarajan", addressed: "to" as const } };
+    const MARCUS = "I need to give them an answer by Monday the 16th. Would you have 20 minutes before then?";
+    const talk = { kind: "respond", text: "Answer Marcus about a call", quote: "Would you have 20 minutes before then?", due: "2026-11-15", time: null, before: "2026-11-16" };
+    it("is kept beside the day it sorts under, only as the day after it", () => {
+      expect(checkDates({ items: [talk], settled: [] }, { ...base, text: MARCUS, subject: "Timing on my offer", ...person }).rows[0]).toMatchObject({ dueDay: "2026-11-15", before: "2026-11-16" });
+      expect(checkDates({ items: [{ ...talk, before: "2026-11-18" }], settled: [] }, { ...base, text: MARCUS, subject: "Timing on my offer", ...person }).rows[0]!.before).toBeUndefined();
+    });
+    it("rolls with a bare day read forward (\"antes del 20\" read as October's)", () => {
+      const text = "Hola, Lucía:\n\nLos libros de octubre cierran el 20. Por favor sube los recibos antes del 20.";
+      const out = checkDates({ items: [{ kind: "respond", text: "Subir los recibos", quote: "Por favor sube los recibos antes del 20", due: "2026-10-19", time: null, before: "2026-10-20" }], settled: [] }, { ...base, text, subject: "Recibos" });
+      expect(out.rows[0]).toMatchObject({ dueDay: "2026-11-19", before: "2026-11-20" });
+    });
+    it("a promise moved by its person's request \"before then\" keeps it; a move with none clears it", () => {
+      const OWEN = "Following up: we haven't received the SOC 2 report yet. Our vendor risk committee meets Monday the 16th. Could you get the SOC 2 report to me before then?";
+      const promises = new Map([["p1", { id: 5, revision: 1, text: "send Owen the SOC 2 report", dueAt: at(2026, 11, 10, 9), dated: true }]]);
+      const owen = { ...base, text: OWEN, subject: "Re: SOC 2", threadId: 1, senderKey: "owen@brightwater.test", from: "Owen", promises, ...person };
+      const moved = checkDates({ items: [], settled: [], moved: [{ label: "p1", due: "2026-11-15", time: null, evidence: "Could you get the SOC 2 report to me before then?", before: "2026-11-16" }] }, owen).movedPromises;
+      expect(moved).toMatchObject([{ id: 5, before: "2026-11-16" }]);
+      // the request the model gave instead, turned into the move, carries it too
+      const request = { kind: "respond", text: "Send Owen the SOC 2 report", quote: "Could you get the SOC 2 report to me before then?", due: "2026-11-15", time: null, before: "2026-11-16" };
+      expect(checkDates({ items: [request], settled: [] }, owen).movedPromises).toMatchObject([{ id: 5, before: "2026-11-16" }]);
+      expect(checkDates({ items: [], settled: [], moved: [{ label: "p1", due: "2026-11-16", time: null, evidence: "Could you get the SOC 2 report to me before then?" }] }, owen).movedPromises[0]!.before).toBeUndefined();
+    });
+  });
 });
 
 describe("the reader", () => {

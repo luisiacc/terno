@@ -261,6 +261,17 @@ export function asksForSecrets(item: { text: string; quote: string }): boolean {
 
 type Move = Omit<DatedResult["moved"][number], "text" | "textEvidence"> & Partial<Pick<DatedResult["moved"][number], "text" | "textEvidence">>;
 
+/** The day after a YYYY-MM-DD day. */
+const nextDay = (day: string): string => {
+  const d = localDay(day);
+  if (!d) return day;
+  d.setDate(d.getDate() + 1);
+  return dayKeyOf(d.getTime());
+};
+
+/** Plan 210 (iteration 4, revision 11): a day asked before is kept only as the day after the one it sorts under. */
+const askedBefore = (before: string | null | undefined, due: string): string | null => (before && before === nextDay(due) ? before : null);
+
 /**
  * Plan 210 (iteration 2, the panel's A5 and A6), decided once as an item is read, never on a count: a person's request to the
  * reader (`askAllowed`) shows from its arrival, in Today's people with its day ("by Nov 30"); a delivery that needs someone
@@ -303,7 +314,7 @@ function movedPromise(p: { dueAt?: number; dated?: boolean; timed?: boolean }, d
  * day or, for a timed item, a new moment, and its new words only with the mail's own. Plan 210 (the Codex review of iteration
  * 1, revision 2): a settlement or a move rests on evidence tied to that item (`tiedTo`). Pure.
  */
-export function checkDates(result: { items: readonly (Omit<DatedResult["items"][number], "kind"> & { kind: string })[]; settled: DatedResult["settled"]; moved?: readonly Move[]; replaced?: DatedResult["replaced"] }, input: { text: string; subject: string; arrivedAt: number; open: ReadonlyMap<string, DatedRow>; promises?: ReadonlyMap<string, Pick<FollowupRow, "id" | "revision"> & Partial<Pick<FollowupRow, "text" | "dueAt" | "dated" | "timed">>>; fromScan: boolean; now: number; sender?: { person: boolean }; reader?: { name: string; addressed: "to" | "cc" | "none" }; others?: readonly string[]; threadId?: number; senderKey?: string; from?: string; paysInThread?: number }): { rows: DatedWrite[]; settled: { id: number; revision: number }[]; moved: { id: number; dueDay: string; dueAt: number; timed: boolean; actAt: number; text?: string }[]; movedPromises: { id: number; revision: number; dueAt: number; timed: boolean; brokenDueAt: number | null }[]; replaced: { id: number; revision: number; item: number }[]; asked: boolean } {
+export function checkDates(result: { items: readonly (Omit<DatedResult["items"][number], "kind"> & { kind: string })[]; settled: DatedResult["settled"]; moved?: readonly Move[]; replaced?: DatedResult["replaced"] }, input: { text: string; subject: string; arrivedAt: number; open: ReadonlyMap<string, DatedRow>; promises?: ReadonlyMap<string, Pick<FollowupRow, "id" | "revision"> & Partial<Pick<FollowupRow, "text" | "dueAt" | "dated" | "timed">>>; fromScan: boolean; now: number; sender?: { person: boolean }; reader?: { name: string; addressed: "to" | "cc" | "none" }; others?: readonly string[]; threadId?: number; senderKey?: string; from?: string; paysInThread?: number }): { rows: DatedWrite[]; settled: { id: number; revision: number }[]; moved: { id: number; dueDay: string; dueAt: number; timed: boolean; actAt: number; text?: string; before?: string | null }[]; movedPromises: { id: number; revision: number; dueAt: number; timed: boolean; brokenDueAt: number | null; before?: string | null }[]; replaced: { id: number; revision: number; item: number }[]; asked: boolean } {
   const said = `${norm(input.subject)}\n${norm(input.text)}`;
   const quoted = (words: string) => {
     const w = norm(words);
@@ -380,7 +391,9 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     const changed = timing && (timing.dueDay !== row.dueDay || (timing.timed && (!row.timed || timing.dueAt !== row.dueAt)));
     if (!changed) return [];
     const text = newWords(m);
-    return [{ id: row.id, kind: row.kind, dueDay: timing.dueDay, dueAt: timing.dueAt, timed: timing.timed, actAt: timing.actAt, ...(text ? { text } : {}) }];
+    // plan 210 (iteration 4, revision 11): the day it's now asked before, read with the move (none: a plain day)
+    const before = askedBefore(m.before, timing.dueDay);
+    return [{ id: row.id, kind: row.kind, dueDay: timing.dueDay, dueAt: timing.dueAt, timed: timing.timed, actAt: timing.actAt, ...(text ? { text } : {}), ...(before ? { before } : {}) }];
   });
   const rows: DatedWrite[] = [];
   // a moved item keeps its id: the same kind on its new day isn't added again (Codex review of the fixes), whatever its words
@@ -392,7 +405,7 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
   // 1): with more than one promise offered, the sentence names this one apart from the others ("the report can wait until
   // Friday" moves the report, never the budget); naming none of them, it moves none
   const offered = [...(input.promises ?? new Map()).values()].map((p) => ({ id: p.id, text: p.text ?? "", quote: "", dueDay: "" }));
-  const promiseMove = (m: Pick<Move, "label" | "due" | "time" | "evidence">) => {
+  const promiseMove = (m: Pick<Move, "label" | "due" | "time" | "evidence" | "before">) => {
     const p = input.promises?.get(m.label);
     if (!p || !tiedTo(null, m.evidence, { due: m.due, timeOnly: false })) return [];
     if (offered.length > 1) {
@@ -402,7 +415,7 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
       if (!named.some((o) => o.id === p.id) || !namesApart(mine, named, context, input.from)) return [];
     }
     const day = validFollowupDate(m.due, input.arrivedAt);
-    return day ? [{ p, day, time: m.time ?? null, evidence: m.evidence }] : [];
+    return day ? [{ p, day, time: m.time ?? null, evidence: m.evidence, before: askedBefore(m.before, day) }] : [];
   };
   const modelMoves = (result.moved ?? []).flatMap(promiseMove);
   /**
@@ -418,7 +431,7 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
   const requestMoves = [...(input.promises ?? new Map()).entries()].flatMap(([label, p]) => {
     if (!p.text || movedByModel.has(p.id) || replacing.has(label)) return [];
     const request = result.items.find((i) => (i.kind === "respond" || i.kind === "ask") && !!i.due && sameObject(i.text, p.text!) && !saysReplaced(contextOf(i.quote, paragraphs)));
-    return request ? promiseMove({ label, due: request.due!, time: request.time, evidence: request.quote }) : [];
+    return request ? promiseMove({ label, due: request.due!, time: request.time, evidence: request.quote, before: request.before }) : [];
   });
   const promiseMoves = [...modelMoves, ...requestMoves];
   /**
@@ -469,6 +482,8 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     if (kind === "ask" || kind === "respond") asked = true;
     // plan 210 (iteration 3, revision 11): a deadline's bare day of the month read into the past is the next one
     const due = item.due && (kind === "respond" || kind === "pay") ? bareDayAhead(item.due, contextOf(item.quote, paragraphs), dayKeyOf(input.arrivedAt)) : item.due;
+    // plan 210 (iteration 4, revision 11): the day it was asked before, rolled with a bare day read forward
+    const before = due && item.before ? askedBefore(due === item.due ? item.before : nextDay(due), due) : null;
     const timing = datedTiming({ kind, due, time: item.time, arrivedAt: input.arrivedAt });
     if (!timing) continue;
     // the 14-day check keeps nothing already over (§6)
@@ -480,7 +495,7 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     if (rows.some((r) => itemKey(r.kind, r) === key && (!TWO_A_DAY.has(kind) || sameThing(r, item)))) continue;
     // plan 210 (iteration 3, revision 11): facts from the mail's words around the quote (its paragraph, bounded), never the item's
     const words = `${contextOf(item.quote, paragraphs).slice(0, FACT_WORDS_MAX)}\n${item.quote}`;
-    rows.push({ kind, item: rows.length, text: item.text.trim(), quote: item.quote.trim(), ...timing, ...(shownEarly(kind, item, words, said, input) ? { early: true } : {}), ...(canLapse(kind) && lapsesUnlessRenewed(words) ? { lapses: true } : {}) });
+    rows.push({ kind, item: rows.length, text: item.text.trim(), quote: item.quote.trim(), ...timing, ...(shownEarly(kind, item, words, said, input) ? { early: true } : {}), ...(canLapse(kind) && lapsesUnlessRenewed(words) ? { lapses: true } : {}), ...(before && timing.dated && !timing.timed ? { before } : {}) });
   }
   /**
    * Plan 210 (iteration 3, revision 4, the owner's "Close replaced promises"): a promise its person's later mail in its
@@ -502,7 +517,10 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     return request ? [{ id: p.id, revision: p.revision, item: request.item }] : [];
   });
   const gone = new Set(replacements.map((r) => r.id));
-  const movedPromises = promiseMoves.filter((m) => !replaced.has(m) && !gone.has(m.p.id)).map(({ p, day, time }) => ({ id: p.id, revision: p.revision, ...movedPromise(p, day, time, input.arrivedAt) }));
+  const movedPromises = promiseMoves.filter((m) => !replaced.has(m) && !gone.has(m.p.id)).map(({ p, day, time, before }) => {
+    const at = movedPromise(p, day, time, input.arrivedAt);
+    return { id: p.id, revision: p.revision, ...at, ...(before && !at.timed ? { before } : {}) };
+  });
   return { rows, settled, moved: moved.map(({ kind: _kind, ...m }) => m), movedPromises, replaced: replacements, asked };
 }
 

@@ -212,11 +212,11 @@ describe("a promise's day (plan 210, iteration 3: one resolver)", () => {
   const fri = at(2026, 11, 13, 9);
   it("its own; its person's new one, the day they moved it from said; the request's still ahead once its own is over", () => {
     const own = { kind: "promise", state: "open", dated: true, dueAt: tue };
-    expect(promiseDay(own, at(2026, 11, 9))).toEqual({ dueAt: tue, dated: true, said: null, needed: null });
-    expect(promiseDay({ ...own, dueAt: fri, brokenDueAt: tue }, at(2026, 11, 11))).toEqual({ dueAt: fri, dated: true, said: tue, needed: fri });
+    expect(promiseDay(own, at(2026, 11, 9))).toEqual({ dueAt: tue, dated: true, said: null, needed: null, neededBefore: null, before: null });
+    expect(promiseDay({ ...own, dueAt: fri, brokenDueAt: tue }, at(2026, 11, 11))).toEqual({ dueAt: fri, dated: true, said: tue, needed: fri, neededBefore: null, before: null });
     const answering = { ...own, needed: fri };
-    expect(promiseDay(answering, at(2026, 11, 10, 23))).toEqual({ dueAt: tue, dated: true, said: null, needed: fri });
-    expect(promiseDay(answering, at(2026, 11, 11))).toEqual({ dueAt: fri, dated: true, said: tue, needed: fri });
+    expect(promiseDay(answering, at(2026, 11, 10, 23))).toEqual({ dueAt: tue, dated: true, said: null, needed: fri, neededBefore: null, before: null });
+    expect(promiseDay(answering, at(2026, 11, 11))).toEqual({ dueAt: fri, dated: true, said: tue, needed: fri, neededBefore: null, before: null });
     // (iteration 4, revision 8) broken with a live day ahead: Today's, wherever that day is (`promiseBroken`), unless put off
     expect(promiseBroken(answering, at(2026, 11, 10, 23))).toBe(false);
     expect(promiseBroken(answering, at(2026, 11, 11))).toBe(true);
@@ -236,7 +236,22 @@ describe("a promise's day (plan 210, iteration 3: one resolver)", () => {
     // the clock wakes as its own day ends (the request's day takes over)
     expect(nextTodayChange([], [{ ...answering, dueAt: at(2026, 11, 10, 9), deferredUntil: null }], at(2026, 11, 10, 12))).toBe(at(2026, 11, 11));
     // named no day: the request's
-    expect(promiseDay({ ...answering, dated: false, dueAt: at(2026, 11, 12, 9) }, at(2026, 11, 9))).toEqual({ dueAt: fri, dated: true, said: null, needed: null });
+    expect(promiseDay({ ...answering, dated: false, dueAt: at(2026, 11, 12, 9) }, at(2026, 11, 9))).toEqual({ dueAt: fri, dated: true, said: null, needed: null, neededBefore: null, before: null });
+  });
+  it("plan 210 (iteration 4, revision 11): the day it was asked before goes with the day it's said beside", () => {
+    const sat = at(2026, 11, 14, 9);
+    // Jordan's SOC 2 report: Owen moved it "before then" (Monday) after Tuesday had passed: "You said Tue 10 (missed) · needed before Mon"
+    expect(promiseDay({ kind: "promise", state: "open", dated: true, dueAt: sat, brokenDueAt: tue, before: "2026-11-15" }, at(2026, 11, 12))).toEqual({ dueAt: sat, dated: true, said: tue, needed: sat, neededBefore: "2026-11-15", before: null });
+    // moved "before" a day, not broken: the day it sits under is said as before
+    expect(promiseDay({ kind: "promise", state: "open", dated: true, dueAt: sat, before: "2026-11-15" }, at(2026, 11, 12))).toMatchObject({ needed: null, before: "2026-11-15" });
+    // a request asked "before Sat" that it answers: "Tue · needed before Sat", then under it once its own is over
+    const answering = { kind: "promise", state: "open", dated: true, dueAt: tue, needed: fri, neededBefore: "2026-11-14" };
+    expect(promiseDay(answering, at(2026, 11, 10, 12))).toMatchObject({ needed: fri, neededBefore: "2026-11-14", before: null });
+    expect(promiseDay(answering, at(2026, 11, 11))).toMatchObject({ dueAt: fri, said: tue, neededBefore: "2026-11-14" });
+    // named no day: under the request's, "before Sat"
+    expect(promiseDay({ ...answering, dated: false }, at(2026, 11, 9))).toMatchObject({ dueAt: fri, needed: null, before: "2026-11-14" });
+    // over: nothing said
+    expect(promiseDay(answering, at(2026, 11, 14))).toMatchObject({ neededBefore: null, before: null });
   });
 });
 

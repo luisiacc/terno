@@ -234,6 +234,19 @@ describe("early, broken, one time", () => {
       expect(withNeeds([promise(at(2026, 11, 17, 9), { answers: ask.id })], new Map([[ask.id, ask]]))[0]!.needed).toBeUndefined();
     });
 
+    it("plan 210 (iteration 4, revision 11): the day a request was asked before reaches its row and the promise that answers it", () => {
+      const soc = dated("respond", "2026-11-22", { threadId: 9, before: "2026-11-23" });
+      expect(projectToday(facts({ dated: [soc] })).rows[0]!.why.item).toMatchObject({ dueDay: "2026-11-22", before: "2026-11-23" });
+      const mine = promise(at(2026, 11, 20, 9), { threadId: 9, answers: soc.id });
+      expect(linked(soc, mine)[0]).toMatchObject({ needed: soc.dueAt, neededBefore: "2026-11-23" });
+      expect(projectToday(facts({ dated: [soc], promises: linked(soc, mine) })).rows[0]!.why.promise).toMatchObject({ needed: soc.dueAt, neededBefore: "2026-11-23" });
+      // the person's own move "before" a day, broken: said beside the day it sits under
+      const moved = promise(at(2026, 11, 22, 9), { threadId: 9, brokenDueAt: at(2026, 11, 17, 9), before: "2026-11-23" });
+      expect(projectToday(facts({ promises: [moved] })).rows[0]!.why.promise).toMatchObject({ said: at(2026, 11, 17, 9), needed: at(2026, 11, 22, 9), neededBefore: "2026-11-23" });
+      // none stored (a row from before v67): nothing guessed
+      expect(projectToday(facts({ dated: [dated("respond", "2026-11-22", { threadId: 9 })] })).rows[0]!.why.item!.before).toBeUndefined();
+    });
+
     it("a request whose promise is closed is its own row again; one the matcher made the same item is that item's row", () => {
       const deck = dated("respond", "2026-11-23", { threadId: 9 });
       expect(projectToday(facts({ dated: [deck], promises: [] })).rows.map((r) => r.id)).toEqual([`dated:${deck.id}`]);
