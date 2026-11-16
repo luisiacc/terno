@@ -81,6 +81,11 @@ describe("plan 210 (iteration 3, revision 4): words that replace, plainly", () =
     expect(replacesPlainly("olvida el marco teórico", "No hay prisa: olvida el marco teórico y mándame el borrador completo.")).toBe(true);
     // words the mail doesn't hold
     expect(replacesPlainly("skip the outline", en)).toBe(false);
+    // the code review's second round: a denial reaches across the words between it and the replacing word, in its clause
+    expect(replacesPlainly("skip the methods section", "Don't, under any circumstances, skip the methods section; please send the full draft by Monday.")).toBe(false);
+    expect(replacesPlainly("skip the methods section", "Please don't under any circumstances skip the methods section.")).toBe(false);
+    expect(replacesPlainly("olvides el marco teórico", "No, de verdad, por nada del mundo olvides el marco teórico; mándame el borrador completo.")).toBe(false);
+    expect(replacesPlainly("skip the methods section", "Don't worry about it. Skip the methods section; please send the full draft by Monday.")).toBe(true);
   });
   it("retold in quotation marks is someone else's", () => {
     const text = 'About the methods section, Marta said "let\'s skip the piecemeal version" but I disagree.';

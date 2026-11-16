@@ -321,7 +321,7 @@ export function saysReplaced(words: string): boolean {
   return REPLACES.test(norm(words));
 }
 
-// plan 210 (iteration 3, revision 4): "don't skip it", "let's not skip", "no lo olvides": in the three words before
+// plan 210 (iteration 3, revision 4): "don't skip it", "let's not skip", "no lo olvides"; anywhere before it in its clause
 const NOT_REPLACED = /^(?:not|never|t|no|ni|nunca)$/u;
 const REPLACES_HERE = new RegExp(`^(?:${REPLACES.source})`, "u");
 // a clause ends at a sentence's end, a line, a semicolon, a colon or a dash (never a comma: "don't, please, skip it")
@@ -332,7 +332,9 @@ const CLAUSE_END = /(?<=[.!?;:])\s+|\n+|\s[-–—]\s|[–—]/u;
  * the piecemeal version"; never "don't skip the methods section" nor "no olvides el marco teórico"). The code review of
  * iteration 3: read in the mail, where the words are, so a denial before the model's quote counts ("Don't skip the methods
  * section; please send the full draft" quoted as "skip the methods section"): each replacing word in the quote, wherever
- * the quote is, has no denial in the three words before it in its clause. Words the mail doesn't hold replace nothing.
+ * the quote is, has no denial before it in its clause. Words the mail doesn't hold replace nothing. The code review's second
+ * round: a denial reaches across whatever stands between ("Don't, under any circumstances, skip…", "no, de verdad, olvides…"),
+ * so any denial earlier in the clause makes it ambiguous, and an ambiguous replacement replaces nothing.
  */
 export function replacesPlainly(evidence: string, text: string): boolean {
   const q = norm(evidence).split(" ");
@@ -346,7 +348,7 @@ export function replacesPlainly(evidence: string, text: string): boolean {
     at.every((start) => {
       const end = start + q.length;
       const replacing = words.slice(start, end).flatMap((_, k) => (REPLACES_HERE.test(words.slice(start + k, end).map((w) => w.word).join(" ")) ? [start + k] : []));
-      return replacing.length > 0 && replacing.every((k) => !words.slice(Math.max(0, k - 3), k).some((w) => w.clause === words[k]!.clause && NOT_REPLACED.test(w.word)));
+      return replacing.length > 0 && replacing.every((k) => !words.slice(0, k).some((w) => w.clause === words[k]!.clause && NOT_REPLACED.test(w.word)));
     })
   );
 }
