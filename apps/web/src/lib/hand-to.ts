@@ -1,11 +1,11 @@
-import { splitZoneNote, type FeedRowId, type ItemSeen } from "@terno/core";
+import { splitZoneNote, type FeedRowId, type ItemSeen, type PartOfDay } from "@terno/core";
 import { t } from "@terno/i18n";
 import { composeLanding } from "~/lib/compose";
 import type { TodayTask } from "~/lib/dated";
 import { currentPage, listLayout, openThread } from "~/lib/page";
 import type { ReaderItem } from "~/lib/reader-items";
 import { snack } from "~/lib/snack";
-import { datedDay, dueShort } from "~/lib/when";
+import { datedDay, dueShort, partDay, partInSentence, reminderTime } from "~/lib/when";
 import { client } from "~/rpc/connection";
 import { getApp } from "~/state/app";
 import { openFeedRow } from "~/state/today";
@@ -24,18 +24,31 @@ function words(text: string): string {
   return /^\p{Lu}\p{Ll}/u.test(bare) ? bare[0]!.toLocaleLowerCase() + bare.slice(1) : bare;
 }
 
+/** When a handed item is due: its moment, and whether that's a clock time or a part of its day (neither: the whole day). */
+export interface HandOffWhen {
+  dueAt: number | null;
+  timed?: boolean;
+  partOfDay?: PartOfDay | null;
+}
+
 /**
  * "Could you take care of this: sign the field trip form (by Fri)?" (es "¿Puedes encargarte de esto: …"): its day only when
- * it names one still ahead (today, tomorrow, a weekday, a date); none for an undated item or one already past.
+ * it names one still ahead (today, tomorrow, a weekday, a date); none for an undated item or one already past. Round 14's
+ * faults (Priya's payroll wire lost "1:00 PM"): with its time when it has one ("by today 1:00 PM", es "para hoy 13:00"), and
+ * its part of the day when that's what it has ("by tomorrow morning", es "para mañana por la mañana").
  */
-export function handOffLine(text: string, dueAt: number | null, now = Date.now()): string {
+export function handOffLine(text: string, when: HandOffWhen, now = Date.now()): string {
   const item = words(text);
+  const { dueAt } = when;
   const today = new Date(now);
   today.setHours(0, 0, 0, 0);
   if (dueAt === null || dueAt < today.getTime()) return t("whatMatters.handTo.lineUndated", { item });
   const near = datedDay(dueAt, now).near;
-  const day = near === "today" || near === "tomorrow" ? t(`today.also.${near}`) : t("today.also.on", { day: dueShort(dueAt, false, now) });
-  return t("whatMatters.handTo.line", { item, day });
+  const part = !when.timed && when.partOfDay ? partDay(dueAt, when.partOfDay, now) : null;
+  const day = part
+    ? part.near ? partInSentence(part.text) : t("today.also.on", { day: part.text })
+    : near === "today" || near === "tomorrow" ? t(`today.also.${near}`) : t("today.also.on", { day: dueShort(dueAt, false, now) });
+  return t("whatMatters.handTo.line", { item, day: when.timed ? `${day} ${reminderTime(dueAt)}` : day });
 }
 
 /** The item a feed row's task is, as it was seen. */
@@ -73,6 +86,6 @@ export async function handTo(seen: ItemSeen, rowId?: FeedRowId, others: readonly
     await new Promise((r) => requestAnimationFrame(r));
     if (mine !== handing || getApp().selectedId !== h.threadId) return false;
   }
-  const landing = await composeLanding("forward", h.threadId, 0, undefined, undefined, { sourceId: h.messageId, handoff: { handoff: { items: h.items }, line: handOffLine(h.text, h.dueAt) } });
+  const landing = await composeLanding("forward", h.threadId, 0, undefined, undefined, { sourceId: h.messageId, handoff: { handoff: { items: h.items }, line: handOffLine(h.text, h) } });
   return landing.kind !== "none";
 }

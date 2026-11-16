@@ -900,7 +900,7 @@ export class TodayService {
    * row hands its other promises (`others`, its `TodayWhy.with`) with it, as its Done takes them, each named at the revision
    * shown, so the confirmation closes all of them or none (iteration 4, merge).
    */
-  async handoff(seen: ItemSeen, others: readonly ItemSeen[] = []): Promise<{ threadId: number; messageId: number; items: HandoffItem[]; text: string; dueAt: number | null }> {
+  async handoff(seen: ItemSeen, others: readonly ItemSeen[] = []): Promise<{ threadId: number; messageId: number; items: HandoffItem[]; text: string; dueAt: number | null; timed: boolean; partOfDay: NonNullable<DatedRow["partOfDay"]> | null }> {
     const { store } = this.b;
     const stale = () => new RpcError("STALE", L(seen.source === "promise" ? "errors.followups.changed" : "errors.dated.changed"));
     return this.links.exclusive(async () => {
@@ -919,7 +919,8 @@ export class TodayService {
       const thread = (await store.threads.summaries([own.threadId]))[0];
       // a conversation in Spam or Trash, or gone, isn't handed on from What matters
       if (!thread || thread.inSpam || thread.inTrash) throw stale();
-      return { threadId: own.threadId, messageId: own.messageId, items, text: own.text, dueAt: own.dated ? own.dueAt : null };
+      // round 14's faults: its time or its part of the day with its day, for the line ("by today 1:00 PM")
+      return { threadId: own.threadId, messageId: own.messageId, items, text: own.text, dueAt: own.dated ? own.dueAt : null, timed: own.dated && !!own.timed, partOfDay: own.dated ? (own.partOfDay ?? null) : null };
     });
   }
 
