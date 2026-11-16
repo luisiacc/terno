@@ -1,10 +1,10 @@
-import { addressKey, type FollowupRow } from "@terno/core";
+import { addressKey, ANSWERED_KINDS, type FollowupRow } from "@terno/core";
 import { FOLLOWUP_CLOSED_KEEP_MS, FOLLOWUPS_ACTIVE_MAX, recipientList, SCAN_MARK_MS, SENT_MARK_MS, type ClosedAt, type FollowupFinish, type FollowupFinishOutcome, type FollowupSnapshot, type FollowupSource, type SentMark } from "@terno/store";
 import { T, type Ctx, type R } from "./mail";
 
 /** Plan 142 on IndexedDB, like SQL's (packages/db/src/followups.ts). */
 
-const toRow = (r: R): FollowupRow => ({ id: r.id, threadId: r.thread_id, messageId: r.message_id, rfcMessageId: r.rfc_message_id ?? null, item: r.item, kind: r.kind, text: r.text, quote: r.quote ?? null, personName: r.person_name ?? null, personEmail: r.person_email ?? null, sentAt: r.sent_at, dueAt: r.due_at, dated: r.dated === 1, deferredUntil: r.deferred_until ?? null, state: r.state, inboxState: r.inbox_state, closedReason: r.closed_reason ?? null, closedAt: r.closed_at ?? null, notifiedAt: r.notified_at ?? null, fromScan: r.from_scan === 1, revision: r.revision, model: r.model ?? null, provider: r.provider ?? null, createdAt: r.created_at, sameAs: r.same_as ?? null, brokenDueAt: r.broken_due_at ?? null, timed: r.timed === 1 });
+const toRow = (r: R): FollowupRow => ({ id: r.id, threadId: r.thread_id, messageId: r.message_id, rfcMessageId: r.rfc_message_id ?? null, item: r.item, kind: r.kind, text: r.text, quote: r.quote ?? null, personName: r.person_name ?? null, personEmail: r.person_email ?? null, sentAt: r.sent_at, dueAt: r.due_at, dated: r.dated === 1, deferredUntil: r.deferred_until ?? null, state: r.state, inboxState: r.inbox_state, closedReason: r.closed_reason ?? null, closedAt: r.closed_at ?? null, notifiedAt: r.notified_at ?? null, fromScan: r.from_scan === 1, revision: r.revision, model: r.model ?? null, provider: r.provider ?? null, createdAt: r.created_at, sameAs: r.same_as ?? null, brokenDueAt: r.broken_due_at ?? null, timed: r.timed === 1, answers: r.answers ?? null });
 
 function own(c: Ctx): Set<string> {
   const out = new Set<string>();
@@ -16,13 +16,27 @@ function own(c: Ctx): Set<string> {
 const live = (r: R) => r.state === "open" || r.state === "due";
 const unconfirmed = (m: R) => String(m.provider_msg_id ?? "local:").startsWith("local:");
 
-function markSent(c: Ctx, messageId: number, now: number, source: "live" | "scan", since?: number | null): void {
+/** As SQL's `TRUSTED_SENT` (packages/db/src/followups.ts): mail that is yours for certain, never a forged From nor a local copy not confirmed. */
+const trustedSend = (m: R): boolean => !!m.is_sent && !m.is_draft && !m.is_spam && !m.is_trash && !String(m.provider_msg_id ?? "local:").startsWith("local:") && String(m.gmail_labels ?? "").includes('"SENT"');
+
+/** `confirmed`: Terno's own send, confirmed (plan 210, iteration 3): yours for certain without Gmail's label. */
+function markSent(c: Ctx, messageId: number, now: number, source: "live" | "scan", since?: number | null, confirmed = false): void {
   const m = T(c, "messages").get(messageId);
   if (!m || !m.is_sent || m.is_draft || (since != null && m.date < since)) return;
   const mine = own(c);
   if (![...recipientList(m.to_json).addresses, ...recipientList(m.cc_json).addresses].some((a) => !mine.has(addressKey(a)))) return;
   const marks = T(c, "ai_sent_mail");
-  if (!marks.has(messageId)) marks.insert({ message_id: messageId, thread_id: m.thread_id, sent_at: m.date, queued_at: now, source });
+  if (!marks.has(messageId)) marks.insert({ message_id: messageId, thread_id: m.thread_id, sent_at: m.date, queued_at: now, source, confirmed: confirmed ? 1 : 0 });
+}
+
+/** As SQL's: how many of your replies after a request read late are read again for their verdict on it. */
+const REMARKED_REPLIES = 3;
+
+/** As SQL's (`remarkReplies`): in the dated reader's finish. */
+export function remarkReplies(c: Ctx, threadId: number, after: number, since: number | null, now: number): void {
+  const marks = T(c, "ai_sent_mail");
+  const replies = T(c, "messages").by("fk_thread_id", threadId).filter((m) => m.date > after && m.date >= (since ?? 0) && trustedSend(m) && !marks.has(m.id)).sort((a, b) => a.date - b.date || a.id - b.id).slice(0, REMARKED_REPLIES);
+  for (const m of replies) markSent(c, m.id, now, "live", since);
 }
 
 function closeWaitsBefore(c: Ctx, messageId: number, now: number): void {
@@ -35,7 +49,7 @@ function closeWaitsBefore(c: Ctx, messageId: number, now: number): void {
 export function followupSendConfirmed(c: Ctx, messageId: number, now: number, wanted: boolean, since?: number | null): void {
   closeWaitsBefore(c, messageId, now);
   // what you sent before you turned it on is read only with a yes
-  if (wanted) markSent(c, messageId, now, "live", since);
+  if (wanted) markSent(c, messageId, now, "live", since, true);
 }
 
 export function followupLiveSent(c: Ctx, messageIds: readonly number[], now: number, wanted: boolean, since?: number | null): void {
@@ -128,6 +142,12 @@ function replied(c: Ctx, mine: ReadonlySet<string>, row: { accountId: number; th
   });
 }
 
+/** Plan 210 (iteration 3), as SQL's: an open request of this reply's conversation from before it. */
+function answerable(c: Ctx, id: number, src: { threadId: number; date: number }): R | null {
+  const r = T(c, "dated_items").get(id);
+  return r && r.state === "open" && (ANSWERED_KINDS as readonly string[]).includes(r.kind) && r.thread_id === src.threadId && r.arrived_at < src.date ? r : null;
+}
+
 export function finishFollowups(c: Ctx, w: FollowupFinish): FollowupFinishOutcome {
   const marks = T(c, "ai_sent_mail");
   const mark = marks.get(w.messageId);
@@ -154,9 +174,30 @@ export function finishFollowups(c: Ctx, w: FollowupFinish): FollowupFinishOutcom
     rows.put({ thread_id: src.threadId, message_id: w.messageId, rfc_message_id: src.rfcMessageId, item: r.item, kind: r.kind, text: r.text, quote: r.quote, person_name: r.personName, person_email: r.personEmail, sent_at: src.date, due_at: r.dueAt, dated: r.dated ? 1 : 0, deferred_until: null, state: "open", inbox_state: "none", closed_reason: null, closed_at: null, notified_at: null, from_scan: w.fromScan ? 1 : 0, revision: 0, model: w.model, provider: w.provider, prompt_version: w.promptVersion, created_at: w.now, timed: r.timed ? 1 : 0 });
     active++;
   }
+  // plan 210 (iteration 3): only a reply that's yours for certain decides anything about a request
+  const yours = mark.confirmed === 1 || trustedSend(T(c, "messages").get(w.messageId) ?? {});
+  const dated = T(c, "dated_items");
+  const settle = (r: R, revision: number) => {
+    if (r.revision === revision) dated.update(r, { state: "settled", closed_reason: "answered", closed_at: w.now, revision: r.revision + 1 });
+  };
+  for (const v of yours ? (w.verdicts ?? []) : []) {
+    const r = answerable(c, v.request.id, src);
+    if (!r) continue;
+    if (v.verdict === "fulfilled") settle(r, v.request.revision);
+    else {
+      // the promise this reply made (its own row, an open one), linked once
+      const p = rows.by("identity", w.messageId, v.item).find((x) => x.kind === "promise" && live(x) && x.answers == null);
+      if (p) rows.update(p, { answers: r.id });
+    }
+  }
   for (const k of w.kept) {
     const r = rows.get(k.id);
-    if (r && r.revision === k.revision && r.thread_id === src.threadId && r.kind === "promise" && live(r)) rows.update(r, { state: "done", closed_reason: "kept", closed_at: w.now, inbox_state: "none", revision: r.revision + 1 });
+    if (r && r.revision === k.revision && r.thread_id === src.threadId && r.kind === "promise" && live(r)) {
+      rows.update(r, { state: "done", closed_reason: "kept", closed_at: w.now, inbox_state: "none", revision: r.revision + 1 });
+      // plan 210 (iteration 3): what it promised to a request is sent: the request is answered with it
+      const request = yours && r.answers != null ? answerable(c, r.answers, src) : null;
+      if (request) settle(request, request.revision);
+    }
   }
   marks.deleteRow(mark);
   return "written";

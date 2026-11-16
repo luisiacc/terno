@@ -2,12 +2,11 @@ import { addressKey, ANSWERED_KINDS, DATED_ACTIVE_MAX, DATED_CLOSED_KEEP_MS, sen
 import { DATED_MARK_MS, DATED_SCAN_MARK_MS, datedTab, NEW_MAIL_MS, readerIn, readNothingAsked, recipientList, type ClosedAt, type DatedFinish, type DatedFinishOutcome, type DatedMark, type DatedSnapshot, type DatedSource } from "@terno/store";
 import { OWN_SENDER_SQL, RECEIVED_SQL } from "./ai-summaries";
 import { ownAddresses } from "./facts";
+import { remarkReplies } from "./followups";
 import type { Db } from "./sqlite";
 
 /** Plan 204 on SQLite (v56, v57 admits `ask`): see packages/store/src/dated.ts. */
 
-/** `ANSWERED_KINDS` as SQL's list: what a send of yours answers */
-const ANSWERED_SQL = `kind IN (${ANSWERED_KINDS.map((k) => `'${k}'`).join(", ")})`;
 /** the sixth panel round: what the sender's mail may reach elsewhere (`THREAD_SCOPED_KINDS` only from their own conversation) */
 const SENDER_REACHES_SQL = `kind NOT IN (${THREAD_SCOPED_KINDS.map((k) => `'${k}'`).join(", ")})`;
 
@@ -50,6 +49,9 @@ export function datedMarkPage(db: Db, after: { arrivedAt: number; messageId: num
 }
 
 export const datedMarkCount = (db: Db): number => db.get<{ n: number }>("SELECT COUNT(*) AS n FROM ai_dated_mail")!.n;
+
+/** Plan 210 (iteration 3): a message of this conversation from before then still to be read (the marks are few: no index). */
+export const datedPendingOn = (db: Db, threadId: number, before: number): boolean => !!db.get("SELECT 1 FROM ai_dated_mail WHERE thread_id = ? AND arrived_at < ? LIMIT 1", threadId, before);
 
 /** Not marked, not read: what a check may still take. */
 const UNREAD_SQL = "NOT EXISTS (SELECT 1 FROM ai_dated_mail d WHERE d.message_id = m.id) AND NOT EXISTS (SELECT 1 FROM dated_items i WHERE i.message_id = m.id)";
@@ -112,45 +114,8 @@ export function openDatedFor(db: Db, o: { threadId: number; senderKey: string; b
   ).map(toRow);
 }
 
-/**
- * Codex code review of the fixes: mail that is yours for certain, not only by its From (IMAP sets `is_sent` for any
- * message claiming your address, in any folder, and the store doesn't keep which folder is Sent): Gmail's SENT label. Never
- * a local copy not confirmed yet. Terno's own confirmed send is trusted where it's known (`settleAnswered`); a reply sent
- * from another IMAP client leaves the request for the user's Done (round 2: safe over convenient).
- */
-const TRUSTED_SENT = "is_sent = 1 AND is_draft = 0 AND is_spam = 0 AND is_trash = 0 AND coalesce(provider_msg_id, 'local:') NOT LIKE 'local:%' AND gmail_labels LIKE '%\"SENT\"%'";
-
-/** The newest message in this thread that's certainly yours, or null. */
-const lastTrustedSend = (db: Db, threadId: number): number | null =>
-  db.get<{ at: number | null }>(`SELECT max(date) AS at FROM messages INDEXED BY messages_thread WHERE thread_id = ? AND ${TRUSTED_SENT}`, threadId)?.at ?? null;
-
-/** A reply of yours at `before` answers the thread's open requests from messages before it. */
-export function settleAnswered(db: Db, threadId: number, before: number, now: number): number {
-  return Number(db.run(
-    `UPDATE dated_items SET state = 'settled', closed_reason = 'answered', closed_at = ?, revision = revision + 1 WHERE id IN (SELECT id FROM dated_items INDEXED BY dated_thread WHERE thread_id = ? AND state = 'open') AND ${ANSWERED_SQL} AND arrived_at < ?`,
-    now, threadId, before,
-  ).changes);
-}
-
-/**
- * After the panel (Codex review of the fixes, revision 1): a message you sent answers the requests made before it on its
- * thread, as plan 142's `closeWaitsBefore` ends waits; your promise, if it made one, is then the obligation. For the
- * threads an ingest or a flag/location reconciliation touched (a draft sent elsewhere is an update, not an insert), by
- * their newest trusted send. Only requests (`respond`, and an `ask`): a bill isn't paid by writing back.
- */
-export function datedAnswered(db: Db, threadIds: Iterable<number>, now: number): number {
-  let n = 0;
-  for (const threadId of threadIds) {
-    if (!db.get("SELECT 1 FROM dated_items INDEXED BY dated_thread WHERE thread_id = ? AND state = 'open' LIMIT 1", threadId)) continue;
-    const at = lastTrustedSend(db, threadId);
-    if (at !== null) n += settleAnswered(db, threadId, at, now);
-  }
-  return n;
-}
-
 export function finishDated(db: Db, w: DatedFinish): DatedFinishOutcome {
   return db.tx(() => {
-    let repliedAt: number | undefined;
     if (!db.get("SELECT 1 FROM ai_dated_mail WHERE message_id = ?", w.messageId)) return "gone";
     const src = datedSource(db, w.messageId);
     if (!src || src.spam || src.trash || src.draft || src.threadSpam) {
@@ -162,22 +127,13 @@ export function finishDated(db: Db, w: DatedFinish): DatedFinishOutcome {
     let open = db.get<{ n: number }>("SELECT COUNT(*) AS n FROM dated_items INDEXED BY dated_open WHERE state = 'open'")!.n;
     for (const r of w.rows) {
       if (db.get("SELECT 1 FROM dated_items WHERE message_id = ? AND item = ?", w.messageId, r.item)) continue;
-      // before the bound (Codex review, round 2): an answered request is stored closed, and never evicts open work
-      const answered = ANSWERED_KINDS.includes(r.kind) && (repliedAt ??= lastTrustedSend(db, src.threadId) ?? -1) > src.date;
-      if (!answered && open >= DATED_ACTIVE_MAX) {
+      // plan 210 (iteration 3): a request read after your reply is stored open like any other: only a reply's verdict settles it
+      if (open >= DATED_ACTIVE_MAX) {
         // the bound keeps the soonest: the furthest of them all isn't added
         const furthest = db.get<{ id: number; act_at: number }>("SELECT id, act_at FROM dated_items INDEXED BY dated_open WHERE state = 'open' ORDER BY act_at DESC, id DESC LIMIT 1");
         if (!furthest || furthest.act_at <= r.actAt) continue;
         db.run("DELETE FROM dated_items WHERE id = ?", furthest.id);
         open--;
-      }
-      if (answered) {
-        db.run(
-          `INSERT OR IGNORE INTO dated_items (thread_id, message_id, item, kind, text, quote, sender_key, due_day, due_at, timed, dated, act_at, deferred_until, arrived_at, state, closed_reason, closed_at, from_scan, revision, model, provider, prompt_version, created_at, early, lapses)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 'settled', 'answered', ?, ?, 0, ?, ?, ?, ?, ?, ?)`,
-          src.threadId, w.messageId, r.item, r.kind, r.text, r.quote, src.senderKey, r.dueDay, r.dueAt, r.timed ? 1 : 0, r.dated ? 1 : 0, r.actAt, src.date, w.now, w.fromScan ? 1 : 0, w.model, w.provider, w.promptVersion, w.now, r.early ? 1 : 0, r.lapses ? 1 : 0,
-        );
-        continue;
       }
       open += Number(db.run(
         `INSERT OR IGNORE INTO dated_items (thread_id, message_id, item, kind, text, quote, sender_key, due_day, due_at, timed, dated, act_at, deferred_until, arrived_at, state, from_scan, revision, model, provider, prompt_version, created_at, early, lapses)
@@ -207,6 +163,8 @@ export function finishDated(db: Db, w: DatedFinish): DatedFinishOutcome {
         m.dueDay, m.dueAt, m.timed ? 1 : 0, m.actAt, m.text ?? null, m.id, src.threadId, src.senderKey,
       );
     }
+    // plan 210 (iteration 3): a request a reply of yours already followed goes to the follow-ups reader with that reply again, for its verdict
+    if (w.replies && w.rows.some((r) => ANSWERED_KINDS.includes(r.kind))) remarkReplies(db, src.threadId, src.date, w.replies.since, w.now);
     // plan 210 (iteration 2): read with nothing asked of the reader, which Needs you reads while it's their latest; a reading
     // again (the 14-day check) that finds a request takes it back
     if (readNothingAsked(w)) db.run("INSERT OR REPLACE INTO dated_nothing_asked (message_id, thread_id, arrived_at, prompt_version) VALUES (?, ?, ?, ?)", w.messageId, src.threadId, src.date, w.promptVersion);
@@ -262,7 +220,8 @@ export function restoreDated(db: Db, rows: readonly { snapshot: DatedSnapshot; e
 
 export function pruneDated(db: Db, now: number): number {
   return db.tx(() =>
-    Number(db.run("DELETE FROM dated_items WHERE state != 'open' AND coalesce(closed_at, created_at) < ?", now - DATED_CLOSED_KEEP_MS).changes) +
+    // plan 210 (iteration 3): never a request an open promise of yours answers (the projection reads its state)
+    Number(db.run("DELETE FROM dated_items WHERE state != 'open' AND coalesce(closed_at, created_at) < ? AND NOT EXISTS (SELECT 1 FROM followups f INDEXED BY followups_answers WHERE f.answers = dated_items.id AND f.state IN ('open','due'))", now - DATED_CLOSED_KEEP_MS).changes) +
     // past the waiting window, no conversation it's the latest of is waiting
     Number(db.run("DELETE FROM dated_nothing_asked WHERE arrived_at < ?", waitingCutoff(now)).changes),
   );
