@@ -41,7 +41,8 @@ async function setup(o: { enabled?: boolean } = {}) {
       transport: {
         complete: async (req) => {
           model.requests.push(req);
-          if (model.gate) await model.gate;
+          // as a provider's request would, an abort ends the wait (plan 210, iteration 4: a sender muted under it)
+          if (model.gate) await Promise.race([model.gate, new Promise((_, reject) => (req.signal.aborted ? reject(req.signal.reason) : req.signal.addEventListener("abort", () => reject(req.signal.reason), { once: true })))]);
           return model.answer(req);
         },
       },
@@ -2418,6 +2419,145 @@ describe("What matters' history (plan 210)", () => {
     expect(lines.map((i) => [i.thread.id, i.kind, i.outcome])).toEqual([[threads[0]!, "pay", "done"], [third, "promise", "dismissed"], [threads[1]!, "promise", "done"]]);
     const after = await client.call("today.history", { after: lines[0]!.key, limit: 5, held: [] });
     expect(after.items.map((i) => i.thread.id)).toEqual([third, threads[1]!]);
+  });
+});
+
+describe("plan 210 (iteration 4): Mute this kind or sender (the Codex review's revision 2)", () => {
+  const shop = { name: "Parcel Co", email: "Track+eu@Parcel.test" };
+  const parcel: Item = { kind: "delivery", text: "Package arrives", quote: "arrives on November 12", due: "2026-11-12", time: null };
+  const PARCEL_TEXT = "Your package arrives on November 12.";
+  const shown = async (client: RpcClient) => (await client.call("today.list", { held: [] })).sections.flatMap((x) => x.items.map((i) => i.id));
+
+  it("a muted sender's mail reaches no model and isn't read later; their items hide (never closed) and come back on Unmute", async () => {
+    const { backend, client, model, receive, read } = await setup();
+    model.answer = () => reply([bill]);
+    const thread = await receive();
+    await read();
+    expect(model.requests).toHaveLength(1);
+    const [item] = await backend.store.dated.active();
+    expect(await shown(client)).toEqual([`dated:${item!.id}`]);
+    expect((await client.call("dated.mute", { on: "sender", key: power.email, name: power.name })).mute).toMatchObject({ on: "sender", key: "billing@power.test", name: "Power Co" });
+    // hidden wherever it'd show, still open in the store
+    expect(await shown(client)).toEqual([]);
+    expect((await client.call("dated.ofThread", { threadId: thread })).rows).toEqual([]);
+    expect((await backend.store.dated.get(item!.id))!.state).toBe("open");
+    // their next mail: no provider call, its mark consumed, nothing stored; another sender's prompt never names them
+    await receive({ subject: "Reminder", bodyText: "A reminder: your bill is due on November 20." });
+    await receive({ from: shop, subject: "Shipped", bodyText: PARCEL_TEXT });
+    model.answer = () => reply([parcel]);
+    await read();
+    expect(model.requests).toHaveLength(2);
+    expect(JSON.stringify(model.requests[1]!.messages)).not.toContain("power.test");
+    // the 14-day check counts none of theirs either (their reminder, consumed unread, counts once they're unmuted)
+    const offered = (await client.call("dated.scanOffer", {})).count;
+    expect((await client.call("dated.unmute", { on: "sender", key: "BILLING@power.test" })).mute).toMatchObject({ key: "billing@power.test" });
+    expect((await client.call("dated.scanOffer", {})).count).toBe(offered + 1);
+    expect(await shown(client)).toContain(`dated:${item!.id}`);
+    // what came while muted isn't read now: Unmute is for mail from then on
+    await read();
+    expect(model.requests).toHaveLength(2);
+    model.answer = () => reply([bill]);
+    await receive({ subject: "Final notice", bodyText: "Final notice: your bill is due on November 20." });
+    await read();
+    expect(model.requests).toHaveLength(3);
+  });
+
+  it("muting a sender stops a reading of theirs on its way; one muted without a word is refused at the finish", async () => {
+    const { backend, client, model, receive } = await setup();
+    let release!: () => void;
+    model.gate = new Promise((r) => (release = r));
+    model.answer = () => reply([bill]);
+    await receive();
+    backend.dated.wake();
+    await expect.poll(() => model.requests.length).toBe(1);
+    await client.call("dated.mute", { on: "sender", key: power.email });
+    // stopped at the provider, its mark gone, before the model answers
+    await expect.poll(() => backend.store.dated.marks.count()).toBe(0);
+    release();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(await backend.store.dated.active()).toEqual([]);
+    // never asked again
+    expect(model.requests).toHaveLength(1);
+
+    // straight in the store (another window's write, say): the reader's own commit refuses it
+    await client.call("dated.unmute", { on: "sender", key: power.email });
+    model.gate = new Promise((r) => (release = r));
+    await receive({ subject: "Reminder" });
+    backend.dated.wake();
+    await expect.poll(() => model.requests.length).toBe(2);
+    await backend.store.dated.mutes.add({ on: "sender", key: power.email, name: "", at: 0 });
+    release();
+    await expect.poll(() => backend.store.dated.marks.count()).toBe(0);
+    expect(await backend.store.dated.active()).toEqual([]);
+  });
+
+  it("the hold before a request leaves stops it for a sender muted meanwhile", async () => {
+    const { backend, model, receive } = await setup();
+    let release!: () => void;
+    model.gate = new Promise((r) => (release = r));
+    model.answer = () => reply([bill]);
+    await receive();
+    backend.dated.wake();
+    await expect.poll(() => model.requests.length).toBe(1);
+    await backend.store.dated.mutes.add({ on: "sender", key: power.email, name: "", at: 0 });
+    // the limiter's last look, as a repair would take it
+    await backend.dated.holdingUp();
+    model.gate = null;
+    release();
+    await expect.poll(() => backend.store.dated.marks.count()).toBe(0);
+    expect(await backend.store.dated.active()).toEqual([]);
+    expect(model.requests).toHaveLength(1);
+  });
+
+  it("a muted kind writes no new item of it, while its settlement and others' items go through; Unmute shows what was there", async () => {
+    const { backend, client, model, receive, read } = await setup();
+    model.answer = () => reply([parcel]);
+    await receive({ from: shop, subject: "Shipped", bodyText: PARCEL_TEXT, providerThreadId: "ship" });
+    await read();
+    const [box] = await backend.store.dated.active();
+    await client.call("dated.mute", { on: "kind", key: "delivery" });
+    expect(await shown(client)).toEqual([]);
+    // the same conversation: a second parcel (not kept), and the first one delivered (settled)
+    model.answer = () => reply([{ ...parcel, text: "Second package arrives", quote: "second package arrives on November 13", due: "2026-11-13" }], [{ label: "o1", evidence: "Your package was delivered" }]);
+    await receive({ from: shop, subject: "Re: Shipped", bodyText: "Your package was delivered today. Your second package arrives on November 13.", providerThreadId: "ship" });
+    await read();
+    expect((await backend.store.dated.get(box!.id))!.state).toBe("settled");
+    // a bill from another sender is kept as ever
+    model.answer = () => reply([bill]);
+    await receive();
+    await read();
+    expect((await backend.store.dated.active()).map((r) => r.kind)).toEqual(["pay"]);
+    await client.call("dated.unmute", { on: "kind", key: "delivery" });
+    expect((await shown(client)).length).toBe(1);
+  });
+
+  it("Remove offers its kind once, then its sender once, then nothing; a request offers only its sender; at the bound a mute is refused in words", async () => {
+    const { backend, client, model, receive, read } = await setup();
+    model.answer = () => reply([parcel]);
+    for (const n of [1, 2, 3]) await receive({ from: shop, subject: `Shipped ${n}`, bodyText: PARCEL_TEXT, providerThreadId: `ship-${n}` });
+    await read();
+    const items = await backend.store.dated.active();
+    expect(items).toHaveLength(3);
+    const remove = async (r: DatedRow) => {
+      await client.call("dated.act", { id: r.id, revision: r.revision, action: "dismiss" });
+      return (await client.call("dated.muteOffer", { id: r.id })).offer;
+    };
+    // not removed: nothing to offer
+    expect((await client.call("dated.muteOffer", { id: items[0]!.id })).offer).toBeNull();
+    expect(await remove(items[0]!)).toEqual({ on: "kind", key: "delivery" });
+    expect(await remove(items[1]!)).toEqual({ on: "sender", key: "track@parcel.test", name: "Parcel Co" });
+    expect(await remove(items[2]!)).toBeNull();
+    // a person's request: never "requests like this", only its sender
+    model.answer = () => reply([{ kind: "respond", text: "Send Ana the deck", quote: "send me the deck by November 20", due: "2026-11-20", time: null }]);
+    await receive({ from: { name: "Ana", email: "ana@people.test" }, subject: "Deck", bodyText: "Could you send me the deck by November 20?" });
+    await read();
+    const ask = (await backend.store.dated.active()).find((r) => r.kind === "respond");
+    if (ask) expect(await remove(ask)).toEqual({ on: "sender", key: "ana@people.test", name: "Ana" });
+    // the bound: refused, nothing dropped for it
+    for (let i = 0; i < 200; i++) await backend.store.dated.mutes.add({ on: "sender", key: `s${i}@x.test`, name: "", at: i });
+    await expect(client.call("dated.mute", { on: "kind", key: "pay" })).rejects.toThrow(/200/);
+    await expect(client.call("dated.mute", { on: "kind", key: "newsletter" })).rejects.toThrow();
+    expect((await client.call("dated.mutes", {})).mutes).toHaveLength(200);
   });
 });
 

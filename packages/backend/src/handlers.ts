@@ -1559,6 +1559,11 @@ export function createHandlers(b: Backend): Handlers {
     "dated.status": () => b.dated.status(),
     "dated.scanOffer": () => b.dated.scanOffer(),
     "dated.scan": async () => ({ queued: await b.dated.scan() }),
+    // plan 210 (iteration 4): renderer only, as the rest of What matters
+    "dated.mutes": async () => ({ mutes: await b.mutes.list() }),
+    "dated.muteOffer": async ({ id }) => ({ offer: await b.mutes.offer(id) }),
+    "dated.mute": async ({ on, key, name, at }) => ({ mute: await b.mutes.mute({ on, key, ...(name !== undefined ? { name } : {}), ...(at !== undefined ? { at } : {}) }) }),
+    "dated.unmute": async ({ on, key }) => ({ mute: await b.mutes.unmute(on, key) }),
     // plan 141: renderer only; none of these is in MCP_ALLOWED
     "ai.ask": (p, ctx) => b.ask.ask(p, ctx.clientId),
     "today.list": ({ held, history }) => b.today.list(held, { history }),

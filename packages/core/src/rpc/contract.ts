@@ -24,6 +24,7 @@ import {
 } from "../ai";
 import type { FollowupRow, FollowupsSetting, FollowupsSnapshot } from "../followups";
 import type { DatedRow, DatedSetting } from "../dated";
+import type { DatedMute, MuteOffer } from "../dated-mutes";
 import { HISTORY_PAGE, NOT_NEWSLETTERS_OVER, type DigestRow, type NotNewsletter, type TodayHistoryPage, type TodayList, type TodaySetting } from "../today";
 import type { AiPrepareReply, AiReplyEvent, PreparedReply, RepliesSetting } from "../replies";
 import type { ActionPreviewInfo, ActionRowTag, AiActionApplied, AiActionCheck, AiActionEvent, AiActionStart } from "../actions";
@@ -1266,6 +1267,13 @@ export const contract = {
   /** the 14-day check: how many, and what it would cost; then the yes */
   "dated.scanOffer": m<{ count: number; usd: number | null }>()(empty),
   "dated.scan": m<{ queued: number }>()(empty),
+  /** plan 210 (iteration 4): what's muted in What matters, newest first; never MCP */
+  "dated.mutes": m<{ mutes: DatedMute[] }>()(empty),
+  /** after Remove on this item: what its snack offers to mute, once per kind and sender (null: nothing) */
+  "dated.muteOffer": m<{ offer: MuteOffer | null }>()(z.object({ id })),
+  /** null: muted already; at the bound, refused in words. `at`: an Unmute's Undo puts it back where it was */
+  "dated.mute": m<{ mute: DatedMute | null }>()(z.object({ on: z.enum(["sender", "kind"]), key: z.string().trim().min(1).max(320), name: z.string().max(2000).optional(), at: z.number().int().optional() })),
+  "dated.unmute": m<{ mute: DatedMute | null }>()(z.object({ on: z.enum(["sender", "kind"]), key: z.string().trim().min(1).max(320) })),
 
   // plan 141. All renderer-only: none of these is in MCP_ALLOWED, since a question and its answers are mail content.
   /**
