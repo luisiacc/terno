@@ -1,4 +1,5 @@
 import { REMIND_MORNING } from "./reminders";
+import type { ItemSchedule, ScheduleProposal } from "./schedule";
 
 /** Plan 142: Follow-ups: what you promised, and who hasn't replied to you. */
 
@@ -59,6 +60,10 @@ export interface FollowupRow {
    * checked verdict: while the promise is open the request is its row's, its day carried (`promiseDay`). Null: none
    */
   answers?: number | null;
+  /** Plan 210 (iteration 4, Change…): as `DatedRow.changedAt`, `changedFrom` and `proposal`: the user's schedule, and a mail's move kept for them */
+  changedAt?: number | null;
+  changedFrom?: ItemSchedule | null;
+  proposal?: ScheduleProposal | null;
 }
 
 export interface FollowupsSetting {

@@ -26,6 +26,7 @@ import { defineSpamConformance } from "./spam";
 import { defineTodayConformance } from "./today";
 import { defineFollowupsConformance } from "./followups";
 import { defineDatedConformance } from "./dated";
+import { defineScheduleConformance } from "./schedule";
 import { defineWritingConformance } from "./writing";
 import { defineUnsubscribeConformance } from "./unsubscribe";
 import { defineHiddenInboxConformance } from "./hidden-inbox";
@@ -150,7 +151,13 @@ export function defineStoreConformance(name: string, harness: StoreHarness): voi
       const next = await harness.reopen(s);
       open.push(next);
       return next;
-    });    defineAskConformance(fresh, async (s) => {
+    });
+    defineScheduleConformance(fresh, async (s) => {
+      const next = await harness.reopen(s);
+      open.push(next);
+      return next;
+    });
+    defineAskConformance(fresh, async (s) => {
       const next = await harness.reopen(s);
       open.push(next);
       return next;
