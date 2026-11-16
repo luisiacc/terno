@@ -750,6 +750,16 @@ describe("migration v63: an item that lapses unless renewed (plan 210, iteration
   });
 });
 
+describe("migration v64: a confirmed send stays yours for certain (plan 210, iteration 3, Codex code review)", () => {
+  it("adds the fact at its default, not confirmed, every message kept as it was (shape only, no backfill)", () => {
+    const { db } = legacyMail(63, { threads: 2, seed: 11 });
+    const before = db.all<Record<string, unknown>>("SELECT * FROM messages ORDER BY id");
+    expect(before.length).toBeGreaterThan(0);
+    expect(migrate(db)).toEqual({ from: 63, to: SCHEMA_VERSION });
+    expect(db.all<Record<string, unknown>>("SELECT * FROM messages ORDER BY id")).toEqual(before.map((r) => ({ ...r, sent_confirmed: 0 })));
+  });
+});
+
 describe("migration v60: what the dated reader read with nothing asked (plan 210, iteration 2)", () => {
   it("adds an empty table keyed by message and found by thread, every message kept; a row goes with its message", () => {
     const { db } = legacyMail(59, { threads: 2, seed: 10 });

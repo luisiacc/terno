@@ -898,6 +898,26 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
         expect(await marked()).not.toContain(forged);
       });
 
+      it("Codex code review: Terno's confirmed send stays yours for certain once read, so a request read later gets its verdict", async () => {
+        const { store, accountId, got, item, finish } = await setup();
+        const asked = await got({ rfcMessageId: "conf@v", date: NOW - 20_000 }, null);
+        const send = await store.compose.queueSend({ accountId, to: [bank], cc: [], bcc: [], subject: "Re", bodyText: "Here it is", inReplyToMessageId: asked.id, recordReply: false, now: NOW });
+        expect(send.threadId).toBe(asked.thread);
+        await store.ops.claimReady(NOW, 20);
+        await store.ops.complete(send.opId, { providerMsgId: "confirmed-2" }, NOW, { followup: true });
+        // read with nothing to say (the dated reader paused): its mark consumed
+        const read = (over: Partial<FollowupFinish> = {}) => store.followups.finish({ messageId: send.messageId, threadId: send.threadId, fromScan: false, rows: [], kept: [], now: NOW, model: "m", provider: "p", promptVersion: 11, clearGeneration: store.followups.clearGeneration(), ...over });
+        expect(await read()).toBe("written");
+        expect(await store.followups.marks.page(null, 10)).toEqual([]);
+        // the request read late: the confirmed reply is read again, and its verdict decides
+        const later = await got({ inReplyTo: "conf@v", references: ["conf@v"], date: NOW - 19_000 });
+        await finish(later.id, later.thread, { rows: [item({ kind: "respond", text: "Send the signed form" })], replies: { since: NOW - 30_000 } });
+        expect((await store.followups.marks.page(null, 10)).map((m) => m.messageId)).toEqual([send.messageId]);
+        const [request] = (await store.dated.ofThread(asked.thread)).filter((x) => x.kind === "respond");
+        expect(await read({ verdicts: [{ request: { id: request!.id, revision: request!.revision }, verdict: "fulfilled" }] })).toBe("written");
+        expect(await store.dated.get(request!.id)).toMatchObject({ state: "settled", closedReason: "answered" });
+      });
+
       it("a message of the conversation still to be read holds what came after it", async () => {
         const { store, got, finish } = await setup();
         const a = await got({ date: NOW - 5000 });
