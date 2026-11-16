@@ -96,6 +96,11 @@ export interface DatedRow {
   sameAs?: string | null;
   /** Plan 210 (iteration 2): a related detail of this dated item (a return leg under its outbound flight): its `Also` while it shows */
   detailOf?: number | null;
+  /**
+   * Plan 210 (iteration 3, revision 11): it lapses unless the reader acts (`lapsesUnlessRenewed`, the mail's words), so it
+   * takes an expiry's lead whatever kind it was read as. Absent: not (stored before it; no backfill).
+   */
+  lapses?: boolean;
 }
 
 export interface DatedSetting {
@@ -180,8 +185,8 @@ export function datedTiming(o: { kind: DatedKind; due: string | null | undefined
 }
 
 /** 9:00 its kind's lead before a day, by wall clock across DST (an alert shows at once and a delivery on its day: theirs is stored). */
-function leadStart(kind: DatedKind, day: Date): number {
-  return dayAt(day, -DATED_LEAD_DAYS[kind], REMIND_MORNING);
+function leadStart(kind: DatedKind, day: Date, lapses = false): number {
+  return dayAt(day, -DATED_LEAD_DAYS[lapses ? "expire" : kind], REMIND_MORNING);
 }
 
 /**
@@ -194,21 +199,18 @@ export const shownBy = (lead: number, day: Date): number => Math.min(lead, dayAt
 /**
  * The sixth panel round (revision 6): when an item shows, read here rather than stored, so an item kept under a shorter lead
  * shows by today's without a rescheduling pass: the earlier of its stored `actAt` and its kind's lead before its day, never
- * before its mail came (as `datedTiming`). An alert, a delivery and what has no day keep their stored moment.
+ * before its mail came (as `datedTiming`). An alert, a delivery and what has no day keep their stored moment. Plan 210
+ * (iteration 3): within its seven days whatever its lead (`shownBy`); one that lapses unless renewed on an expiry's lead.
  */
-function showsFrom(r: Pick<DatedRow, "kind" | "dueDay" | "dated" | "actAt" | "arrivedAt" | "early">): number {
-  // plan 210 (iteration 2): shown early, read from the item (a move keeps it): a person's request from its arrival, a
-  // delivery that needs someone there from the day before
-  if (r.early && r.dated) {
-    if (r.kind === "respond") return r.arrivedAt;
-    const day = r.kind === "delivery" ? localDay(r.dueDay) : null;
-    if (day) return Math.max(r.arrivedAt, dayAt(day, -1, 0));
-  }
+function showsFrom(r: Pick<DatedRow, "kind" | "dueDay" | "dated" | "actAt" | "arrivedAt" | "early" | "lapses">): number {
+  // plan 210 (iteration 2): shown early, read from the item (a move keeps it): a person's request from its arrival (a
+  // delivery that needs someone there showed from the day before: the seven days hold that now)
+  if (r.early && r.dated && r.kind === "respond") return r.arrivedAt;
   if (!r.dated || r.kind === "ask") return r.actAt;
   const day = localDay(r.dueDay);
   if (!day) return r.actAt;
   // (an alert shows at once and a delivery on its day: theirs is stored)
-  const lead = r.kind === "alert" || r.kind === "delivery" ? r.actAt : Math.min(r.actAt, leadStart(r.kind, day));
+  const lead = r.kind === "alert" || r.kind === "delivery" ? r.actAt : Math.min(r.actAt, leadStart(r.kind, day, r.lapses === true));
   return Math.max(r.arrivedAt, shownBy(lead, day));
 }
 
@@ -223,7 +225,47 @@ export const shownEarly = (r: Pick<DatedRow, "kind" | "dated" | "early" | "dueDa
  * day before. Read once, when the item is read (`checkDates`), never on a count.
  */
 const PRESENCE = /\b(signature|sign(?:ed)? for|adult|someone (?:must|needs? to|has to|should) be (?:home|there|present|available)|must be present|id (?:required|needed)|in person|firma|firmar|adulto|alguien (?:debe|tiene que|necesita) estar|presente)\b/iu;
-export const needsPresence = (text: string, quote = ""): boolean => PRESENCE.test(`${text}\n${quote}`);
+/**
+ * Plan 210 (iteration 3, revision 11): the mail's own words, never the item's (the reader's paraphrase can drop "signature"
+ * or add it): the quote's paragraph, bounded by the caller.
+ */
+export const needsPresence = (words: string): boolean => PRESENCE.test(words);
+
+/**
+ * Plan 210 (iteration 3, revisions 2 and 11): a renewal or an expiry that lapses unless the reader acts, by the mail's own
+ * words: auto-renew off, "renew before", a domain or a membership that expires. Such an item takes an expiry's lead
+ * (`DATED_LEAD_DAYS.expire`) whichever kind it was read as. Words that say it renews by itself ("will renew automatically",
+ * "se renovará automáticamente") are no such fact unless they say it's off. Read once, when the item is read (`checkDates`).
+ */
+/** within one sentence: a dot inside a word ("pingwire.dev") doesn't end it */
+const NEAR = "(?:[^.\\n]|\\.(?=\\S)){0,80}";
+const words = (parts: readonly string[]) => new RegExp(parts.join("|"), "iu");
+/** it says renewing by itself is off */
+const RENEWAL_OFF = words([
+  "auto-?renew(?:al)?\\s+(?:is\\s+)?(?:off|disabled|turned off|not (?:on|enabled|active))",
+  "(?:will not|won't|does not|doesn't|is not set to)\\s+(?:be\\s+)?(?:auto(?:matically|-)?\\s*)?renew",
+  "sin renovaci[oó]n autom[aá]tica",
+  "renovaci[oó]n autom[aá]tica\\s+(?:est[aá]\\s+)?(?:desactivada|apagada)",
+  "no se renovar[aá]",
+]);
+/** it says the reader renews, before a day or to keep it; or a thing of theirs expires */
+const RENEW_TO_KEEP = words([
+  "\\brenew\\w*\\b" + NEAR + "\\bbefore\\b",
+  "\\brenew\\w*(?:\\s+[\\w$.,()/-]+){0,4}\\s+by\\b",
+  "\\b(?:to keep|to avoid losing|so you don't lose)\\b" + NEAR + "\\brenew",
+  "\\bunless (?:you )?renew",
+  "\\b(?:domain|membership|registration|certification|certificate|licen[cs]e|passport)\\b" + NEAR + "\\b(?:expir\\w*|lapse\\w*)",
+  "\\b(?:renuev|renov)\\w*\\b" + NEAR + "\\b(?:antes|a m[aá]s tardar)\\b",
+  "\\bpara no perder\\b",
+  "\\b(?:dominio|membres[ií]a|registro|certificaci[oó]n|certificado|licencia|pasaporte)\\b" + NEAR + "\\b(?:vence\\w*|caduc\\w*|expir\\w*|vencimiento)",
+]);
+/** it says it renews (or is paid) by itself */
+const SELF_RENEWS = words(["\\bautomatic(?:ally)?\\b", "\\bauto-?(?:renew|pay)\\w*\\s+(?:is\\s+)?on\\b", "\\bautom[aá]tic(?:a|o|amente)\\b"]);
+export const lapsesUnlessRenewed = (text: string): boolean => RENEWAL_OFF.test(text) || (RENEW_TO_KEEP.test(text) && !SELF_RENEWS.test(text));
+
+/** The kinds a lapse can be: a renewal, an expiry, and a bill or a request for one (never a plan, an alert or an ask). */
+const LAPSING_KINDS: ReadonlySet<DatedKind> = new Set(["renew", "expire", "pay", "respond"]);
+export const canLapse = (kind: DatedKind): boolean => LAPSING_KINDS.has(kind);
 
 /** An alert that named no day: Deadlines' for its week (`alertUntil`), never Missed. */
 export const undatedAlert = (r: Pick<DatedRow, "kind" | "dated">): boolean => r.kind === "alert" && !r.dated;
@@ -254,7 +296,7 @@ export const askEnd = (r: Pick<DatedRow, "arrivedAt">): number => r.arrivedAt + 
  * Revision 8: where an item sits now. One rule for the list, the count and the timer. Later (`deferredUntil`) is honoured in
  * every group: a deferred item is never Missed.
  */
-export function datedPlace(r: Pick<DatedRow, "kind" | "state" | "dueDay" | "dueAt" | "timed" | "dated" | "actAt" | "deferredUntil" | "arrivedAt" | "early">, now: number): DatedPlace {
+export function datedPlace(r: Pick<DatedRow, "kind" | "state" | "dueDay" | "dueAt" | "timed" | "dated" | "actAt" | "deferredUntil" | "arrivedAt" | "early" | "lapses">, now: number): DatedPlace {
   if (r.state !== "open") return "hidden";
   const group = datedGroup(r.kind);
   const deferred = r.deferredUntil !== null && r.deferredUntil > now;
@@ -369,7 +411,7 @@ export function missedUntil(r: Pick<DatedRow, "dueDay" | "deferredUntil">): numb
  * Revision 11: the next moment, strictly after `now`, at which Today changes by the clock alone: an item showing,
  * entering Coming up, a day ending (Missed), Missed ending, a Plan ending, a deferral ending, a promise's day ending.
  */
-export function nextTodayChange(items: readonly Pick<DatedRow, "kind" | "state" | "dueDay" | "dueAt" | "timed" | "dated" | "actAt" | "deferredUntil" | "arrivedAt" | "early">[], promises: readonly PromiseFacts[], now: number): number | null {
+export function nextTodayChange(items: readonly Pick<DatedRow, "kind" | "state" | "dueDay" | "dueAt" | "timed" | "dated" | "actAt" | "deferredUntil" | "arrivedAt" | "early" | "lapses">[], promises: readonly PromiseFacts[], now: number): number | null {
   let next = Infinity;
   const consider = (at: number) => {
     if (at > now && at < next) next = at;

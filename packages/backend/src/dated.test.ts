@@ -82,6 +82,25 @@ describe("the local checks (plan 204 §3)", () => {
   const base = { text: BILL_TEXT, subject: "Your bill", arrivedAt: NOW, open: new Map<string, DatedRow>(), fromScan: false, now: NOW };
   const row = { id: 9, revision: 2 } as DatedRow;
 
+  it("plan 210 (iteration 3, revision 11): presence and a lapse are read from the mail's paragraph around the quote, never the item's words", () => {
+    const text = "Your laptops arrive Saturday, November 21.\nAn adult signature is required at delivery.\n\nThanks for your order.";
+    const at = { ...base, text, subject: "Laptops" };
+    const laptops = { kind: "delivery", text: "Laptops arrive", quote: "Your laptops arrive Saturday, November 21.", due: "2026-11-21", time: null };
+    expect(checkDates({ items: [laptops], settled: [] }, at).rows[0]).toMatchObject({ early: true });
+    // the item's own words saying "signature" aren't the mail's: nothing there needs anyone
+    const plain = { ...at, text: "Your parcel arrives Saturday, November 21.\n\nThanks for your order." };
+    expect(checkDates({ items: [{ ...laptops, text: "Parcel arrives (signature)", quote: "Your parcel arrives Saturday, November 21." }], settled: [] }, plain).rows[0]!.early).toBeUndefined();
+    // a renewal that lapses unless renewed, read as `renew`; one that renews by itself isn't
+    const domain = "Your domain pingwire.dev expires on December 7, 2026.\nAuto-renew is off for this domain.";
+    const renew = { kind: "renew", text: "Renew pingwire.dev", quote: "Your domain pingwire.dev expires on December 7, 2026.", due: "2026-12-07", time: null };
+    expect(checkDates({ items: [renew], settled: [] }, { ...base, text: domain, subject: "Domain" }).rows[0]).toMatchObject({ lapses: true });
+    const auto = "Your Loomcast plan will renew automatically on December 7, 2026.";
+    expect(checkDates({ items: [{ ...renew, text: "Loomcast renews", quote: auto }], settled: [] }, { ...base, text: auto, subject: "Plan" }).rows[0]!.lapses).toBeUndefined();
+    // never a plan's
+    const event = { kind: "event", text: "Membership gala", quote: "Your domain pingwire.dev expires on December 7, 2026.", due: "2026-12-07", time: null };
+    expect(checkDates({ items: [event], settled: [] }, { ...base, text: domain, subject: "Domain" }).rows[0]!.lapses).toBeUndefined();
+  });
+
   it("a quote that isn't the mail's is dropped: the model can't invent one", () => {
     expect(checkDates({ items: [{ ...bill, quote: "words nobody wrote" }], settled: [] }, base).rows).toEqual([]);
     expect(checkDates({ items: [{ ...bill, quote: "DUE ON  November 20" }], settled: [] }, base).rows).toHaveLength(1);

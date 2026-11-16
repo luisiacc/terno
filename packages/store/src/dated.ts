@@ -97,6 +97,8 @@ export interface DatedWrite {
   actAt: number;
   /** plan 210 (iteration 2): shown before its kind's lead (`DatedRow.early`); absent, not */
   early?: boolean;
+  /** plan 210 (iteration 3): it lapses unless renewed (`DatedRow.lapses`); absent, not */
+  lapses?: boolean;
 }
 
 export interface DatedFinish {

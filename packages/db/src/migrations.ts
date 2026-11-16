@@ -1541,6 +1541,12 @@ CREATE INDEX followups_same ON followups(same_as) WHERE same_as IS NOT NULL;
 DROP INDEX dated_closed_thread;
 DROP INDEX followups_closed_thread;
 ` },
+  // plan 210 (iteration 3, revision 11): an item that lapses unless renewed (auto-renew off, "renew before", a domain that
+  // expires), a fact checked as it's read, takes an expiry's lead whatever its kind. Shape only: a constant default, no
+  // rewrite; rows stored before it read as not lapsing (no backfill). (v62 is the promise's link to its request.)
+  { version: 63, name: "What matters: an item that lapses unless renewed (plan 210, iteration 3)", sql: `
+ALTER TABLE dated_items ADD COLUMN lapses INTEGER NOT NULL DEFAULT 0;
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

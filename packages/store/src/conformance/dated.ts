@@ -148,7 +148,7 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
         expect(active.map((r) => r.item)).toEqual([1, 0]);
         expect(active[1]).toEqual({
           id: active[1]!.id, threadId: a.thread, messageId: a.id, item: 0, kind: "pay", text: "Pay the electricity bill", quote: "due on November 20", senderKey: "bills@bank.test", dueDay: "2026-11-20", dueAt: NOW + 7 * DAY, timed: false, dated: true, actAt: NOW + 4 * DAY,
-          deferredUntil: null, arrivedAt: a.m.date, state: "open", closedReason: null, closedAt: null, fromScan: false, revision: 0, model: "m", provider: "p", createdAt: NOW, early: false, sameAs: null, detailOf: null,
+          deferredUntil: null, arrivedAt: a.m.date, state: "open", closedReason: null, closedAt: null, fromScan: false, revision: 0, model: "m", provider: "p", createdAt: NOW, early: false, sameAs: null, detailOf: null, lapses: false,
         });
         // read once: a second answer finds no mark and changes nothing
         expect(await finish(a.id, a.thread, { rows: [item({ item: 2 })] })).toBe("gone");
@@ -686,6 +686,9 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
         expect(early.early).toBe(true);
         expect((await dated("plain")).early).toBe(false);
         expect(early).toMatchObject({ sameAs: null, detailOf: null });
+        // plan 210 (iteration 3): what lapses unless renewed is kept as read; an item read without it doesn't
+        expect((await dated("lapses", { kind: "renew", lapses: true })).lapses).toBe(true);
+        expect(early.lapses).toBe(false);
         const timed = await promise("timed", { timed: true });
         expect(timed.row).toMatchObject({ timed: true, sameAs: null, brokenDueAt: null });
         expect((await promise("untimed", { text: "send the deck" })).row.timed).toBe(false);
