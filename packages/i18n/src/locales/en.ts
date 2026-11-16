@@ -2671,14 +2671,15 @@ It contains none of your mail, contacts, settings or keys.
   "whatMatters.weekOf": "Week of {day}",
   "whatMatters.by": "by {day}",
   // plan 210 (iteration 3, the owner): a promise's missed day, said while it sits under a live one, and the day it's needed by
+  // (iteration 4, merge: a no-break space after the dot keeps it with the words after it when the column wraps)
   "whatMatters.saidMissed": "You said {day} (missed)",
   "whatMatters.saidMissedYesterday": "You said yesterday (missed)",
-  "whatMatters.needed": "{when} · needed {day}",
-  "whatMatters.neededToday": "{when} · needed today",
-  "whatMatters.neededTomorrow": "{when} · needed tomorrow",
+  "whatMatters.needed": "{when} ·\u00a0needed {day}",
+  "whatMatters.neededToday": "{when} ·\u00a0needed today",
+  "whatMatters.neededTomorrow": "{when} ·\u00a0needed tomorrow",
   // plan 210 (iteration 4, revision 11): a day the mail asked for it before, said as it said it
-  "whatMatters.neededBefore": "{when} · needed before {day}",
-  "whatMatters.neededBeforeTomorrow": "{when} · needed before tomorrow",
+  "whatMatters.neededBefore": "{when} ·\u00a0needed before {day}",
+  "whatMatters.neededBeforeTomorrow": "{when} ·\u00a0needed before tomorrow",
   "whatMatters.before": "before {day}",
   "whatMatters.beforeTomorrow": "before tomorrow",
   // plan 210 (iteration 4, revision 10): an event away from the reader, in the place's time: "Mon 4:00 PM Austin"
