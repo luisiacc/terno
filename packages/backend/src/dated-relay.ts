@@ -1,4 +1,4 @@
-import { namingWords, norm } from "./dated-evidence";
+import { namingWords, norm, sentencesOf } from "./dated-evidence";
 
 /**
  * Plan 210 (iteration 5, revision 8): a person's ask that a service relays to the reader ("@owenhale requested your review on
@@ -12,8 +12,14 @@ import { namingWords, norm } from "./dated-evidence";
 export interface Relay {
   /** who asks, as the mail names them ("@owenhale", "Daniel Ortiz") */
   by: string;
-  /** the relay's words: the subject, the sentence and the block it introduces, where an ask it carries is quoted from */
+  /** the relay's words: the subject, the sentence and the block it introduces */
   block: string;
+  /**
+   * Iteration 5's code review (point 6): what the person asks, where an ask it carries is quoted from: the relay's own
+   * sentence ("@owenhale requested your review on pingwire/cli#812"), or a message's sentences that ask the reader something;
+   * never the service's call or its footer ("Reply to this email directly", "You're receiving this because…")
+   */
+  asks: string[];
   /** the service's name ("Linkwell"): its own words ("Reply on Linkwell") are no one's ask */
   service: string;
 }
@@ -32,6 +38,8 @@ const NOBODY = /^(?:someone|somebody|alguien|you|we|they|it|this|that|your|tu|us
 const MESSAGE = /sent you a|messaged you|envio un mensaje|escribio/u;
 /** a request in a relayed message itself ("any chance you'd be up for it?", "could you…", "¿puedes…?") */
 const ASKS = /[?¿]|\b(?:could you|can you|would you|will you|any chance|are you|do you|please|let me know|puedes|podrias|te gustaria|te animas|me ayudas|por favor|avisame)\b/u;
+/** the service's own call or its footer, never the person's ask */
+const SERVICE_LINE = /\b(?:reply (?:to this|directly|on|in|via)|view (?:it|this|the|on|in|message|conversation)|open (?:it|the app|in)|respond (?:on|in|via)|join (?:the|our)|click|tap|log in|sign in|download|unsubscribe|manage (?:your )?(?:settings|preferences|notifications)|notification settings|you(?: re| are) receiving|this (?:email|message) was sent|help center|privacy|terms|responde\w* (?:en|desde|a este)|ver (?:en|el|la|mensaje)|abrir|darte de baja|date de baja|configuracion|preferencias|recibes este)\b/u;
 /** a network's own words: never a concrete thing asked */
 const GENERIC = new Set(
   "post posted update updates network people profile connection connections conversation community group page follow follower followers reaction comment message messages notification notifications receiving unsubscribe help reply view email directly settings mensaje mensajes notificaciones publicacion responder ayuda".split(" "),
@@ -66,10 +74,16 @@ export function relayedAsk(subject: string, text: string, service: string, reade
       const read = ` ${norm(block)} `;
       if (!ASKS.test(block.toLowerCase()) || !(read.includes(` ${first} `) || /\b(?:you|your|tu|te|usted)\b/u.test(read))) continue;
       if (!concrete(block.replace(line, i === 0 ? "" : line.slice(0, m.index)), new Set([...own, ...namingWords(who)]))) continue;
-      return { by: who, block, service };
+      // what it asks: the message's own sentences that ask, never the service's
+      const message = i === 0 ? blocks.slice(0, 3).join("\n\n") : `${line.slice(m.index + m[0].length)}\n\n${blocks[i] ?? ""}`;
+      const asks = sentencesOf(message).filter((s) => ASKS.test(s.said.toLowerCase()) && !SERVICE_LINE.test(s.read) && !ownWords(s.read, service)).map((s) => s.said);
+      if (!asks.length) continue;
+      return { by: who, block, service, asks };
     }
     if (!concrete(line.slice(m.index + m[0].length), own)) continue;
-    return { by: who, block, service };
+    // the relay's own sentence, from who asks to its end
+    const said = sentencesOf(line.slice(m.index))[0]?.said ?? "";
+    return { by: who, block, service, asks: said ? [said] : [] };
   }
   return null;
 }
@@ -79,9 +93,18 @@ export function mayRelay(subject: string): boolean {
   return RELAY.test(fold(subject)) || /\b(?:review requested|requested your|sent you a|messaged you|asked you|invited you|wants your|needs your|te envio|te pidio|te escribio|solicito tu)\b/iu.test(fold(subject));
 }
 
-/** Whether an ask's quote is the relay's own words (its block), as `norm` reads both. */
+/** Whether some words name the service ("Reply on Linkwell"), as `norm` reads them. */
+const ownWords = (read: string, service: string) => [...namingWords(service)].some((w) => ` ${read} `.includes(` ${w} `));
+
+/**
+ * Whether an ask's quote is what the person asks (iteration 5's code review, point 6): inside one of the relay's asks, or
+ * holding one whole with nothing of the service's (its name, its call, its footer), as `norm` reads them.
+ */
 export function relays(relay: Relay | null | undefined, quote: string): boolean {
   const q = norm(fold(quote));
-  const service = [...namingWords(relay?.service ?? "")];
-  return !!relay && !!q && norm(relay.block).includes(q) && !service.some((w) => ` ${q} `.includes(` ${w} `));
+  if (!relay || !q || !norm(relay.block).includes(q) || ownWords(q, relay.service) || SERVICE_LINE.test(q)) return false;
+  return relay.asks.some((a) => {
+    const ask = norm(fold(a));
+    return !!ask && (ask.includes(q) || q.includes(ask));
+  });
 }

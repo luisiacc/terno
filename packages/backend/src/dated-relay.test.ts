@@ -30,6 +30,16 @@ describe("plan 210 (iteration 5, revision 8): a person's ask a service relays", 
     expect(relays(relay, "Would you be up for leading a session?")).toBe(true);
     expect(relays(relay, "Unsubscribe from Linkwell")).toBe(false);
     expect(relays(null, "Would you be up for leading a session?")).toBe(false);
+    // iteration 5's code review (point 6): only what the person asks, never the service's call or footer, even unnamed
+    const FOOTER = 'Ines Duarte\n\n"Hi Nora, would you be up for leading a session in March?"\n\nYou can reply directly to this email.\n\nPlease update your notification settings.';
+    const footed = relayedAsk("Ines Duarte sent you a message", FOOTER, "Linkwell", "Nora Quill");
+    expect(relays(footed, "would you be up for leading a session in March?")).toBe(true);
+    expect(relays(footed, "You can reply directly to this email.")).toBe(false);
+    expect(relays(footed, "Please update your notification settings.")).toBe(false);
+    const review = relayedAsk("[brightkite/web] Review requested: feat: offline drafts (#233)", REVIEW, "Codeforge", "Nora Quill");
+    expect(relays(review, "@kofi-a requested your review on: brightkite/web#233")).toBe(true);
+    expect(relays(review, "Stores drafts in IndexedDB and syncs on reconnect.")).toBe(false);
+    expect(relays(relayedAsk("Tarea asignada", "Marta Gil te pidió revisar el presupuesto de la campaña de invierno.", "Tablero", "Lucía Romero"), "te pidió revisar el presupuesto")).toBe(true);
     expect(mayRelay("Daniel Ortiz sent you a message")).toBe(true);
     expect(mayRelay("[pingwire/cli] Review requested: feat: parallel uploads (#812)")).toBe(true);
     expect(mayRelay("Owen posted: Shipping v2 today")).toBe(false);
