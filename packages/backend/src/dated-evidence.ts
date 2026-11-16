@@ -382,3 +382,20 @@ export function quoteSpan(quote: string, due: string | null, subject: string, se
   });
   return new Set(holding.map(norm)).size === 1 ? holding[0]! : null;
 }
+
+/**
+ * Plan 210 (iteration 4's code review): prompt v14's "a security notice … stays an alert" turned the panel's phishing into
+ * alerts (Theo's "channel will be PERMANENTLY TERMINATED in 24 hours unless you verify your identity", Priya's "Failure to
+ * validate within 12 hours will result in your account being suspended"). Prompt v15 makes them no item; this is the local
+ * backstop, en and es: a sentence that asks to verify, validate or confirm an account, a password or an identity, to sign in
+ * or to click, or that threatens a loss (deleted, suspended, terminated, blocked) still to come, within a count of hours.
+ * A genuine provider's alert reports what happened ("we froze your card after a $412.18 charge") and gives a day when it
+ * gives one ("by 1:00 PM on Wednesday"), never hours to comply.
+ */
+const WITHIN_HOURS = /\b\d{1,2} ?(?:hours?|hrs?|horas?)\b|\b\d{1,2}h\b/u;
+const DEMANDS = /\b(?:verif\w*|valid[ae]\w*|revalid\w*|authenticat\w*|autentic\w*|sign ?in|log ?in|click|(?:confirm|update|re ?enter|reset) (?:your |the )?(?:account|identity|password|credentials|login|details|information)|confirm\w* (?:tu|su|tus|sus) (?:identidad|cuenta|datos|credenciales|contrasena)|inici\w* sesion|(?:haz|da|de|hacer|dar) clic)\b/u;
+const LOSS = /\b(?:delet\w*|suspen\w*|terminat\w*|deactivat\w*|disabl\w*|lock\w*|block\w*|clos(?:ed|ure)|lose access|loss of|elimin\w*|borra\w*|desactiv\w*|bloque\w*|cerrad\w*|cierre|perder\w*|retenid\w*)\b/u;
+const STILL_TO_COME = /\b(?:will|unless|failure|fail to|if you don t|if you do not|if not|or else|otherwise|si no|de lo contrario|a menos que|sera|seran|quedara|quedaran|se (?:eliminar|suspender|bloquear|cerrar)\w*)\b/u;
+export function scamPressure(text: string): boolean {
+  return sentencesOf(text).some(({ read }) => WITHIN_HOURS.test(read) && (DEMANDS.test(read) || (LOSS.test(read) && STILL_TO_COME.test(read))));
+}

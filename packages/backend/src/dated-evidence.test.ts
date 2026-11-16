@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { amountsOf, bareDayAhead, insideQuotes, namingWords, negatedReceipt, otherAmounts, otherIds, replacesPlainly, settlesKind } from "./dated-evidence";
+import { amountsOf, bareDayAhead, insideQuotes, namingWords, negatedReceipt, otherAmounts, otherIds, replacesPlainly, scamPressure, settlesKind } from "./dated-evidence";
 
 describe("plan 210 (iteration 3, revision 5): amounts are read whole", () => {
   it("a currency amount is one token, whatever its separators or sign; a number alone isn't one", () => {
@@ -92,5 +92,31 @@ describe("plan 210 (iteration 3, revision 4): words that replace, plainly", () =
     expect(insideQuotes("let's skip the piecemeal version", text)).toBe(true);
     expect(insideQuotes("Let's skip the piecemeal version", "Let's skip the piecemeal version: send the \"full\" draft.")).toBe(false);
     expect(insideQuotes("skip the outline", "«Asistente: skip the outline»")).toBe(true);
+  });
+});
+
+describe("iteration 4's code review: a scam's pressure, read locally (en, es)", () => {
+  it("the panel's phishing and its kind: a demand to verify or a loss to come, within hours", () => {
+    for (const text of [
+      // Theo's copyright strike, Priya's password, and a Spanish bank's
+      "Your channel will be PERMANENTLY TERMINATED in 24 hours unless you verify your identity and submit an appeal.",
+      "Failure to validate within 12 hours will result in your account being suspended and pending messages deleted.",
+      "Por tu seguridad, debes validar tu identidad y confirmar tus datos en las próximas 12 horas.",
+      "Si no lo haces en 24 horas, tu cuenta será bloqueada de forma definitiva.",
+      "FINAL NOTICE: Copyright strike — channel termination in 24 hours. Your channel will be terminated in 24 hours.",
+      "Sign in within 48 hours to keep your mailbox.",
+      "Click here within 24h to restore access.",
+    ]) expect(scamPressure(text), text).toBe(true);
+  });
+  it("a genuine alert reports what happened, or gives a day; hours alone, or a loss already past, aren't pressure", () => {
+    for (const text of [
+      "We've frozen your debit card ending in 7730 after a $412.18 charge at Fuel Stop 9. If you don't recognize it, call the number on the back of your card.",
+      "If we haven't heard from you by 1:00 PM on Wednesday, March 4, the card will be cancelled and a replacement mailed.",
+      "Your account was locked after 5 failed sign-in attempts. It unlocks on its own after a while.",
+      "Recuerda presentarte en ayunas de 8 horas.",
+      "Your password was changed 2 hours ago. If this was you, you don't need to do anything.",
+      "Can you send me the deck within 2 hours?",
+      "Tu tarjeta fue bloqueada tras un cargo de $412.18. Llama al número al reverso de tu tarjeta.",
+    ]) expect(scamPressure(text), text).toBe(false);
   });
 });
