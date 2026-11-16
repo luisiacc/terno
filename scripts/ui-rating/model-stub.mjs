@@ -345,7 +345,8 @@ export function sentMail(prompt) {
     });
   const asks = sentences.some((s) => s.endsWith("?")) || /let me know|quedo atent|quedo a la espera/i.test(own);
   void es;
-  return { promises, expectsReply: asks, awaiting: asks ? people.map((p) => p.label) : [], kept: [] };
+  // plan 210 (iteration 3): no verdict on a request (a reply leaves it as it is)
+  return { promises, expectsReply: asks, awaiting: asks ? people.map((p) => p.label) : [], kept: [], answers: [] };
 }
 
 /** Plan 144: mail that asks something wants an answer; thanks, notices and receipts don't. */
