@@ -19,6 +19,7 @@ export * from "./today-projection";
 export * from "./handoff";
 export * from "./followups";
 export * from "./dated";
+export * from "./part-of-day";
 export * from "./dated-days";
 export * from "./schedule";
 export * from "./dated-mutes";

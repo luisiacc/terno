@@ -1,5 +1,6 @@
 import { ANSWERED_KINDS, datedGroup, datedGroupAt, dayKeyOf, displayBucket, promiseBroken, promiseDay, promiseGroupAt, SHOWN_DAYS, shownEarly, todayCounted, type DatedRow, type TaskPlace, type TodayGroupKind } from "./dated";
 import type { FollowupRow } from "./followups";
+import type { PartOfDay } from "./part-of-day";
 import { addressKey } from "./people";
 import { normalizeText } from "./text";
 import { sortInDay, waitsOnYou, type TodayAlso, type TodayCounts, type TodayPart, type TodayWhy } from "./today";
@@ -67,18 +68,19 @@ export interface Logical {
 const own = (source: "dated" | "promise", id: number): string => refKey({ source, id });
 
 /** Plan 210 (iteration 3): a promise of yours with the moment of the open dated request it answers (`promiseDay`'s `needed`). */
-export type NeedingPromise = FollowupRow & { needed?: number | null; neededBefore?: string | null };
+export type NeedingPromise = FollowupRow & { needed?: number | null; neededBefore?: string | null; neededPart?: PartOfDay | null };
 
 /**
  * Plan 210 (iteration 3, the Codex review's revision 2): each promise with the day of the request it answers
  * (`FollowupRow.answers`), from the requests read with it in one batch: only an open request's, and only one with a day
  * (an undated ask carries none). The others as they are.
  */
-export function withNeeds(promises: readonly FollowupRow[], requests: ReadonlyMap<number, Pick<DatedRow, "kind" | "state" | "dated" | "dueAt" | "before">>): NeedingPromise[] {
+export function withNeeds(promises: readonly FollowupRow[], requests: ReadonlyMap<number, Pick<DatedRow, "kind" | "state" | "dated" | "dueAt" | "before" | "partOfDay">>): NeedingPromise[] {
   return promises.map((p) => {
     const r = p.answers == null ? undefined : requests.get(p.answers);
-    // plan 210 (iteration 4, revision 11): with the day it was asked before, when it was ("needed before Mon")
-    return r && r.state === "open" && r.dated && ANSWERED_KINDS.includes(r.kind) ? { ...p, needed: r.dueAt, ...(r.before ? { neededBefore: r.before } : {}) } : p;
+    // plan 210 (iteration 4, revision 11): with the day it was asked before, when it was ("needed before Mon"); iteration 5,
+    // the part of that day it asked for ("by Saturday morning")
+    return r && r.state === "open" && r.dated && ANSWERED_KINDS.includes(r.kind) ? { ...p, needed: r.dueAt, ...(r.before ? { neededBefore: r.before } : {}), ...(r.partOfDay ? { neededPart: r.partOfDay } : {}) } : p;
   });
 }
 
@@ -164,7 +166,7 @@ function datedWhy(row: DatedRow, missed: boolean, early: boolean, members: ItemR
     text: others.length ? withMembersDetails(split.text, others) : split.text,
     dueAt: row.dueAt,
     ...(missed ? { missed } : {}),
-    item: { id: row.id, revision: row.revision, kind: row.kind, dueDay: row.dueDay, timed: row.timed, dated: row.dated, ...(early ? { early } : {}), ...(split.note ? { note: split.note } : {}), ...(row.before ? { before: row.before } : {}), ...(row.timed && row.wall?.place ? { travel: { day: row.wall.day, time: row.wall.time, place: row.wall.place } } : {}) },
+    item: { id: row.id, revision: row.revision, kind: row.kind, dueDay: row.dueDay, timed: row.timed, dated: row.dated, ...(early ? { early } : {}), ...(split.note ? { note: split.note } : {}), ...(row.before ? { before: row.before } : {}), ...(row.timed && row.wall?.place ? { travel: { day: row.wall.day, time: row.wall.time, place: row.wall.place } } : {}), ...(!row.timed && row.partOfDay ? { part: row.partOfDay } : {}) },
     ...(members.length > 1 ? { members } : {}),
   };
 }
@@ -184,7 +186,7 @@ function promiseWhy(r: NeedingPromise, missed: boolean, members: ItemRef[], zone
     personEmail: r.personEmail,
     sentAt: r.sentAt,
     ...(missed ? { missed } : {}),
-    promise: { id: r.id, revision: r.revision, dated: day.dated, ...(r.timed && sitsOnOwn ? { timed: true } : {}), ...(note && sitsOnOwn ? { note } : {}), ...(!missed && day.said != null ? { said: day.said } : {}), ...(!missed && day.needed != null ? { needed: day.needed } : {}), ...(!missed && day.neededBefore ? { neededBefore: day.neededBefore } : {}), ...(!missed && day.before ? { before: day.before } : {}) },
+    promise: { id: r.id, revision: r.revision, dated: day.dated, ...(r.timed && sitsOnOwn ? { timed: true } : {}), ...(note && sitsOnOwn ? { note } : {}), ...(!missed && day.said != null ? { said: day.said } : {}), ...(!missed && day.needed != null ? { needed: day.needed } : {}), ...(!missed && day.neededBefore ? { neededBefore: day.neededBefore } : {}), ...(!missed && day.before ? { before: day.before } : {}), ...(day.part && !(r.timed && sitsOnOwn) ? { part: day.part } : {}), ...(!missed && day.needed != null && day.neededPart ? { neededPart: day.neededPart } : {}) },
     ...(members.length > 1 ? { members } : {}),
   };
 }

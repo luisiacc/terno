@@ -3,6 +3,7 @@ import type { ThreadSummary } from "./types";
 import { aiReady } from "./ai-routing";
 import { datedGroup, type DatedKind, type TodayGroupKind } from "./dated";
 import type { FeedRowId, ItemRef, ItemSeen } from "./today-items";
+import type { PartOfDay } from "./part-of-day";
 import { withoutQuotes } from "./text";
 
 /** Plan 145: what needs you today, and newsletters folded into one digest. Local but for the digest, which is its own opt-in. */
@@ -56,7 +57,7 @@ export interface TodayWhy {
    * shown in Today's people before its day ("by Nov 30"); `note`, the mail's own time in its zone when it isn't the reader's
    * ("5:00 PM ET"), taken out of `text` for the when column (one time per row)
    */
-  item?: { id: number; revision: number; kind: DatedKind; dueDay: string; timed: boolean; dated: boolean; early?: boolean; note?: string | null; /** plan 210 (iteration 4): the day the mail asked for it before ("before Mon"), the day after `dueDay` */ before?: string | null; /** plan 210 (iteration 4, revision 10): travel, the mail's own clock at the place it named ("Mon 4:00 PM Austin") */ travel?: { day: string; time: string; place: string } };
+  item?: { id: number; revision: number; kind: DatedKind; dueDay: string; timed: boolean; dated: boolean; early?: boolean; note?: string | null; /** plan 210 (iteration 4): the day the mail asked for it before ("before Mon"), the day after `dueDay` */ before?: string | null; /** plan 210 (iteration 4, revision 10): travel, the mail's own clock at the place it named ("Mon 4:00 PM Austin") */ travel?: { day: string; time: string; place: string }; /** plan 210 (iteration 5, revision 4): the part of its day it's asked for ("Sat morning") */ part?: PartOfDay | null };
   /**
    * plan 204 (Codex review): the promise this row shows, what D, Done and Remove act on (never the thread's most urgent).
    * Plan 210 (iteration 2): `timed`, its words state a time (`dueAt` is it); `note`, that time as written when its zone isn't
@@ -75,6 +76,9 @@ export interface TodayWhy {
     /** plan 210 (iteration 4, revision 11, `promiseDay`): `needed` is the day before this one ("needed before Mon"); `before`, the day it sits under is ("before Mon") */
     neededBefore?: string | null;
     before?: string | null;
+    /** plan 210 (iteration 5, revision 4, `promiseDay`): the part of the day it sits under ("this morning"), and of the day it's needed by ("needed Sat morning") */
+    part?: PartOfDay | null;
+    neededPart?: PartOfDay | null;
   };
   /**
    * Plan 210 (iteration 2): every item this row is (true duplicates: the same dinner from the restaurant and from a friend,

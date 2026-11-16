@@ -325,6 +325,24 @@ describe("early, broken, one time", () => {
       expect(projectToday(facts({ dated: [dated("respond", "2026-11-22", { threadId: 9 })] })).rows[0]!.why.item!.before).toBeUndefined();
     });
 
+    it("plan 210 (iteration 5, revision 4): a part of the day reaches the row, the promise that answers it, and Missed at noon", () => {
+      // Wednesday at 10:00: Kai's notes by this morning, María's cupcakes this morning
+      const kai = dated("respond", "2026-11-18", { threadId: 9, partOfDay: "morning" });
+      const cupcakes = promise(at(2026, 11, 18, 9), { threadId: 8, partOfDay: "morning" });
+      const { rows } = projectToday(facts({ dated: [kai], promises: [cupcakes] }));
+      expect(rows.find((r) => r.id === `dated:${kai.id}`)!.why.item).toMatchObject({ part: "morning" });
+      expect(rows.find((r) => r.id === `promise:${cupcakes.id}`)).toMatchObject({ group: "today", why: { promise: { part: "morning" } } });
+      // at noon, with no mail: both Missed
+      const noon = projectToday(facts({ now: at(2026, 11, 18, 12), dated: [kai], promises: [cupcakes] }));
+      expect(noon.rows.map((r) => [r.id, r.group])).toEqual(expect.arrayContaining([[`dated:${kai.id}`, "missed"], [`promise:${cupcakes.id}`, "missed"]]));
+      expect(noon.counts.missed).toBe(2);
+      // a promise answering it carries the request's part beside its own day
+      const sat = dated("respond", "2026-11-21", { threadId: 9, partOfDay: "morning" });
+      const mine = promise(at(2026, 11, 20, 9), { threadId: 9, answers: sat.id });
+      expect(linked(sat, mine)[0]).toMatchObject({ neededPart: "morning" });
+      expect(projectToday(facts({ dated: [sat], promises: linked(sat, mine) })).rows[0]!.why.promise).toMatchObject({ needed: sat.dueAt, neededPart: "morning" });
+    });
+
     it("plan 210 (iteration 4, revision 10): a timed event with a place keeps the mail's clock for its row; one with a zone alone doesn't travel", () => {
       const wall = { day: "2026-11-19", time: "16:00", zone: "America/Chicago", place: "Austin" };
       const check = dated("event", "2026-11-19", { threadId: 9, wall }, "14:00");

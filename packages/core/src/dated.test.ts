@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { isAcknowledgment, looksLikeAcknowledgment, saysNoReplyNeeded } from "./today";
 import { alertUntil, ANSWERED_KINDS, askEnd, datedGroup, datedGroupAt, datedOver, datedPlace, datedTiming, hasTimeCue, laterBefore, nextTodayChange, planEnd, withEventEnds, promiseBroken, promiseDay, promiseGroupAt, promiseOver, promisePlace, todayCounted, TODAY_GROUP_ORDER, type DatedKind, type DatedRow } from "./dated";
 import { WAITING_WINDOW_MS } from "./people";
+import { dueCutoff, partMoment, partOfDayIn, saysPart, statesClock } from "./part-of-day";
 
 const at = (y: number, m: number, d: number, h = 0, min = 0) => new Date(y, m - 1, d, h, min).getTime();
 const clock = (ms: number) => { const d = new Date(ms); return [d.getMonth() + 1, d.getDate(), d.getHours(), d.getMinutes()]; };
@@ -9,7 +10,7 @@ const clock = (ms: number) => { const d = new Date(ms); return [d.getMonth() + 1
 const arrived = at(2026, 11, 10, 14);
 const timing = (kind: DatedKind, due: string | null, time: string | null = null, arrivedAt = arrived) => datedTiming({ kind, due, time, arrivedAt });
 
-type Placed = Pick<DatedRow, "kind" | "state" | "dueDay" | "dueAt" | "timed" | "dated" | "actAt" | "deferredUntil" | "arrivedAt">;
+type Placed = Pick<DatedRow, "kind" | "state" | "dueDay" | "dueAt" | "timed" | "dated" | "actAt" | "deferredUntil" | "arrivedAt" | "partOfDay">;
 const item = (kind: DatedKind, due: string | null, time: string | null = null, more: Partial<Placed> = {}): Placed => ({ kind, state: "open", deferredUntil: null, arrivedAt: arrived, ...timing(kind, due, time)!, ...more });
 
 describe("when a dated item shows (plan 204 §2)", () => {
@@ -212,11 +213,11 @@ describe("a promise's day (plan 210, iteration 3: one resolver)", () => {
   const fri = at(2026, 11, 13, 9);
   it("its own; its person's new one, the day they moved it from said; the request's still ahead once its own is over", () => {
     const own = { kind: "promise", state: "open", dated: true, dueAt: tue };
-    expect(promiseDay(own, at(2026, 11, 9))).toEqual({ dueAt: tue, dated: true, said: null, needed: null, neededBefore: null, before: null });
-    expect(promiseDay({ ...own, dueAt: fri, brokenDueAt: tue }, at(2026, 11, 11))).toEqual({ dueAt: fri, dated: true, said: tue, needed: fri, neededBefore: null, before: null });
+    expect(promiseDay(own, at(2026, 11, 9))).toEqual({ dueAt: tue, dated: true, said: null, needed: null, neededBefore: null, before: null, part: null, neededPart: null });
+    expect(promiseDay({ ...own, dueAt: fri, brokenDueAt: tue }, at(2026, 11, 11))).toEqual({ dueAt: fri, dated: true, said: tue, needed: fri, neededBefore: null, before: null, part: null, neededPart: null });
     const answering = { ...own, needed: fri };
-    expect(promiseDay(answering, at(2026, 11, 10, 23))).toEqual({ dueAt: tue, dated: true, said: null, needed: fri, neededBefore: null, before: null });
-    expect(promiseDay(answering, at(2026, 11, 11))).toEqual({ dueAt: fri, dated: true, said: tue, needed: fri, neededBefore: null, before: null });
+    expect(promiseDay(answering, at(2026, 11, 10, 23))).toEqual({ dueAt: tue, dated: true, said: null, needed: fri, neededBefore: null, before: null, part: null, neededPart: null });
+    expect(promiseDay(answering, at(2026, 11, 11))).toEqual({ dueAt: fri, dated: true, said: tue, needed: fri, neededBefore: null, before: null, part: null, neededPart: null });
     // (iteration 4, revision 8) broken with a live day ahead: Today's, wherever that day is (`promiseBroken`), unless put off
     expect(promiseBroken(answering, at(2026, 11, 10, 23))).toBe(false);
     expect(promiseBroken(answering, at(2026, 11, 11))).toBe(true);
@@ -236,12 +237,12 @@ describe("a promise's day (plan 210, iteration 3: one resolver)", () => {
     // the clock wakes as its own day ends (the request's day takes over)
     expect(nextTodayChange([], [{ ...answering, dueAt: at(2026, 11, 10, 9), deferredUntil: null }], at(2026, 11, 10, 12))).toBe(at(2026, 11, 11));
     // named no day: the request's
-    expect(promiseDay({ ...answering, dated: false, dueAt: at(2026, 11, 12, 9) }, at(2026, 11, 9))).toEqual({ dueAt: fri, dated: true, said: null, needed: null, neededBefore: null, before: null });
+    expect(promiseDay({ ...answering, dated: false, dueAt: at(2026, 11, 12, 9) }, at(2026, 11, 9))).toEqual({ dueAt: fri, dated: true, said: null, needed: null, neededBefore: null, before: null, part: null, neededPart: null });
   });
   it("plan 210 (iteration 4, revision 11): the day it was asked before goes with the day it's said beside", () => {
     const sat = at(2026, 11, 14, 9);
     // Jordan's SOC 2 report: Owen moved it "before then" (Monday) after Tuesday had passed: "You said Tue 10 (missed) · needed before Mon"
-    expect(promiseDay({ kind: "promise", state: "open", dated: true, dueAt: sat, brokenDueAt: tue, before: "2026-11-15" }, at(2026, 11, 12))).toEqual({ dueAt: sat, dated: true, said: tue, needed: sat, neededBefore: "2026-11-15", before: null });
+    expect(promiseDay({ kind: "promise", state: "open", dated: true, dueAt: sat, brokenDueAt: tue, before: "2026-11-15" }, at(2026, 11, 12))).toEqual({ dueAt: sat, dated: true, said: tue, needed: sat, neededBefore: "2026-11-15", before: null, part: null, neededPart: null });
     // moved "before" a day, not broken: the day it sits under is said as before
     expect(promiseDay({ kind: "promise", state: "open", dated: true, dueAt: sat, before: "2026-11-15" }, at(2026, 11, 12))).toMatchObject({ needed: null, before: "2026-11-15" });
     // a request asked "before Sat" that it answers: "Tue · needed before Sat", then under it once its own is over
@@ -252,6 +253,78 @@ describe("a promise's day (plan 210, iteration 3: one resolver)", () => {
     expect(promiseDay({ ...answering, dated: false }, at(2026, 11, 9))).toMatchObject({ dueAt: fri, needed: null, before: "2026-11-14" });
     // over: nothing said
     expect(promiseDay(answering, at(2026, 11, 14))).toMatchObject({ neededBefore: null, before: null });
+  });
+});
+
+describe("a part of the day (plan 210, iteration 5, revision 4)", () => {
+  const friMorning = { kind: "promise", state: "open", dated: true, dueAt: at(2026, 11, 13, 9), partOfDay: "morning" as const };
+  it("the cutoff: a morning at noon, an afternoon at 18:00, an evening and a whole day at midnight", () => {
+    expect(dueCutoff("2026-11-13", "morning")).toBe(at(2026, 11, 13, 12));
+    expect(dueCutoff("2026-11-13", "afternoon")).toBe(at(2026, 11, 13, 18));
+    expect(dueCutoff("2026-11-13", "evening")).toBe(at(2026, 11, 14));
+    expect(dueCutoff("2026-11-13", null)).toBe(at(2026, 11, 14));
+    expect(dueCutoff("nope", "morning")).toBeNaN();
+  });
+  it("María's cupcakes Friday morning: Today's until 11:59, Missed at 12:00 with no mail, and the clock wakes for it", () => {
+    expect(promisePlace(friMorning, at(2026, 11, 13, 11, 59))).toBe("deadlines");
+    expect(promiseGroupAt(friMorning, at(2026, 11, 13, 11, 59))).toEqual({ group: "today", day: null });
+    expect(promisePlace(friMorning, at(2026, 11, 13, 12))).toBe("missed");
+    expect(promiseGroupAt(friMorning, at(2026, 11, 13, 12))).toEqual({ group: "missed", day: null });
+    expect(nextTodayChange([], [friMorning], at(2026, 11, 13, 10))).toBe(at(2026, 11, 13, 12));
+    // the whole day, as before
+    expect(promisePlace({ ...friMorning, partOfDay: null }, at(2026, 11, 13, 12))).toBe("deadlines");
+  });
+  it("Theo's Kai: a request for Saturday morning is Missed at noon, the clock waking for it", () => {
+    const kai = item("respond", "2026-11-14", null, { partOfDay: "morning" } as Partial<Placed>) as Placed & { partOfDay: "morning" };
+    expect(datedPlace(kai, at(2026, 11, 14, 11, 59))).toBe("deadlines");
+    expect(datedPlace(kai, at(2026, 11, 14, 12))).toBe("missed");
+    expect(datedGroupAt(kai, at(2026, 11, 14, 12))).toEqual({ group: "missed", day: null });
+    expect(nextTodayChange([kai], [], at(2026, 11, 14, 10))).toBe(at(2026, 11, 14, 12));
+  });
+  it("Later put on before noon keeps it from Missed until the Later ends", () => {
+    const later = { ...friMorning, deferredUntil: at(2026, 11, 13, 15) };
+    expect(promisePlace(later, at(2026, 11, 13, 12))).toBe("comingUp");
+    expect(promisePlace(later, at(2026, 11, 13, 15))).toBe("missed");
+  });
+  it("an answered request with a later live day: past its morning the promise sits under the request's day, said missed", () => {
+    const sat = at(2026, 11, 14, 9);
+    const answering = { ...friMorning, needed: sat };
+    expect(promiseDay(answering, at(2026, 11, 13, 11, 59))).toMatchObject({ dueAt: friMorning.dueAt, said: null, needed: sat, part: "morning" });
+    expect(promiseDay(answering, at(2026, 11, 13, 12))).toMatchObject({ dueAt: sat, said: friMorning.dueAt, part: null });
+    expect(promiseBroken(answering, at(2026, 11, 13, 12))).toBe(true);
+    expect(nextTodayChange([], [answering], at(2026, 11, 13, 10))).toBe(at(2026, 11, 13, 12));
+    // the request's own morning ends its live day too
+    const theirs = { ...answering, neededPart: "morning" as const };
+    expect(promiseDay(theirs, at(2026, 11, 13, 12))).toMatchObject({ dueAt: sat, part: "morning", neededPart: "morning" });
+    expect(promiseBroken(theirs, at(2026, 11, 14, 11, 59))).toBe(true);
+    expect(promiseBroken(theirs, at(2026, 11, 14, 12))).toBe(false);
+    expect(promisePlace(theirs, at(2026, 11, 14, 12))).toBe("missed");
+  });
+  it("a promise its person moved past its morning keeps the new day's part", () => {
+    const moved = { ...friMorning, dueAt: at(2026, 11, 16, 9), brokenDueAt: friMorning.dueAt, partOfDay: "afternoon" as const };
+    expect(promiseDay(moved, at(2026, 11, 16, 17, 59))).toMatchObject({ said: friMorning.dueAt, part: "afternoon", neededPart: "afternoon" });
+    expect(promiseBroken(moved, at(2026, 11, 16, 17, 59))).toBe(true);
+    expect(promisePlace(moved, at(2026, 11, 16, 18))).toBe("missed");
+  });
+  it("a promise for a part of the day: its start, or an hour before it ends once begun, never past it", () => {
+    expect(partMoment("2026-11-13", "morning", at(2026, 11, 12, 20))).toBe(at(2026, 11, 13, 9));
+    expect(partMoment("2026-11-13", "evening", at(2026, 11, 13, 19))).toBe(at(2026, 11, 13, 23));
+    expect(partMoment("2026-11-13", "morning", at(2026, 11, 13, 11, 30))).toBe(at(2026, 11, 13, 12) - 1);
+    expect(partMoment("2026-11-13", "morning", at(2026, 11, 13, 13))).toBeNull();
+  });
+  it("reads a part of the day from the mail's words, en and es; never 'mañana' alone, nor beside a clock", () => {
+    expect(partOfDayIn("I'll bring two dozen cupcakes (nut-free, labeled) Friday morning at drop-off.")).toBe("morning");
+    expect(partOfDayIn("can you get me notes by saturday morning?")).toBe("morning");
+    expect(partOfDayIn("I'll send it tonight")).toBe("evening");
+    expect(partOfDayIn("te lo mando el viernes por la mañana")).toBe("morning");
+    expect(partOfDayIn("lo reviso esta tarde")).toBe("afternoon");
+    expect(partOfDayIn("te lo mando mañana")).toBeNull();
+    expect(partOfDayIn("lo veo más tarde")).toBeNull();
+    expect(partOfDayIn("Friday morning at 10:30")).toBeNull();
+    expect(partOfDayIn("morning or afternoon, whichever works")).toBeNull();
+    expect(saysPart("drop off the spare key at Phil's in the morning", "morning")).toBe(true);
+    expect(statesClock("by noon")).toBe(true);
+    expect(statesClock("Friday morning")).toBe(false);
   });
 });
 

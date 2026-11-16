@@ -82,6 +82,11 @@ export interface FollowupRow {
    * request (`FollowupWorker.retire`). Null: none
    */
   holds?: number | null;
+  /**
+   * Plan 210 (iteration 5, revision 4): the part of its day it was promised for ("Friday morning", "tonight"), never a clock
+   * written into its words; untimed, it's over at that part's end (`dueCutoff`). Absent or null: the whole day.
+   */
+  partOfDay?: import("./part-of-day").PartOfDay | null;
 }
 
 export interface FollowupsSetting {
