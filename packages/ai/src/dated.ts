@@ -413,10 +413,14 @@ const SAID_BEFORE = /^\s*(?:the (?:e-?mail|mail|message) says|according to the (
 // payment method to keep watching", "…no se procesó; actualizar el método de pago"): the prompt says never, and Haiku still
 // did 1 in 11 after v13 made a failed bill's words its fix. Only a clause after a semicolon, a dash or a comma that starts
 // with the instruction (en imperative, es infinitive or imperative)
-const INSTRUCTION_TAIL = /\s*(?:[;—–]|,|\s-\s)\s*(?:please\s+|por favor\s+)?(?:update|reply|respond|click|tap|call|contact|verify|confirm|pay|log ?in|sign ?in|check|visit|go to|actualiz(?:a|ar|e)|respond(?:e|a|er)|contest(?:a|ar)|llam(?:a|ar|e)|contact(?:a|ar|e)|verific(?:a|ar)|confirm(?:a|ar|e)|pag(?:a|ar|ue)|inici(?:a|ar) sesi[oó]n|ingres(?:a|ar)|visit(?:a|ar))\b[^;—–]*$/iu;
+// plan 210 (iteration 5): also when the model says it must be done ("; falta actualizar…", "hay que…", "you need to…"), and
+// a bracket of it ("(update your payment method to keep watching)": Haiku, 4 in 10 on v16's first words)
+const MUST = String.raw`(?:please\s+|por favor\s+)?(?:(?:you\s+)?(?:need|have)\s+to\s+|must\s+|falta\s+|hay\s+que\s+|se\s+necesita\s+|es\s+necesario\s+|debes\s+)?`;
+const INSTRUCTION_BRACKET = new RegExp(String.raw`\s*\(\s*${MUST}(?:update|reply|respond|click|tap|call|contact|verify|confirm|pay|log ?in|sign ?in|check|visit|go to|actualiz(?:a|ar|e)|respond(?:e|a|er)|contest(?:a|ar)|llam(?:a|ar|e)|contact(?:a|ar|e)|verific(?:a|ar)|confirm(?:a|ar|e)|pag(?:a|ar|ue)|inici(?:a|ar) sesi[oó]n|ingres(?:a|ar)|visit(?:a|ar))\b[^()]*\)`, "giu");
+const INSTRUCTION_TAIL = /\s*(?:[;—–]|,|\s-\s)\s*(?:please\s+|por favor\s+)?(?:(?:you\s+)?(?:need|have)\s+to\s+|must\s+|falta\s+|hay\s+que\s+|se\s+necesita\s+|es\s+necesario\s+|debes\s+)?(?:update|reply|respond|click|tap|call|contact|verify|confirm|pay|log ?in|sign ?in|check|visit|go to|actualiz(?:a|ar|e)|respond(?:e|a|er)|contest(?:a|ar)|llam(?:a|ar|e)|contact(?:a|ar|e)|verific(?:a|ar)|confirm(?:a|ar|e)|pag(?:a|ar|ue)|inici(?:a|ar) sesi[oó]n|ingres(?:a|ar)|visit(?:a|ar))\b[^;—–]*$/iu;
 const alertText = (kind: string, text: string) => {
   if (kind.trim().toLowerCase() !== "alert") return text;
-  const bare = text.replace(SAID_AFTER, "").replace(SAID_BEFORE, "").replace(INSTRUCTION_TAIL, "");
+  const bare = text.replace(SAID_AFTER, "").replace(SAID_BEFORE, "").replace(INSTRUCTION_BRACKET, "").replace(INSTRUCTION_TAIL, "").trim();
   return bare ? bare.charAt(0).toLocaleUpperCase() + bare.slice(1) : text;
 };
 // Plan 210 (iteration 3, point 6): the number that identifies an order, an invoice, a policy or a service is never in the
