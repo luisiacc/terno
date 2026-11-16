@@ -566,7 +566,8 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     if (rows.length >= DATED_ITEMS_MAX) continue;
     const key = itemKey(kind, timing);
     if (movedKeys.has(key)) continue;
-    if (rows.some((r) => itemKey(r.kind, r) === key && (!TWO_A_DAY.has(kind) || sameThing(r, item)))) continue;
+    // plan 210 (iteration 4): two replies to the sender on one day are the one reply (Haiku split Karin's numbered list, 1 in 5)
+    if (rows.some((r) => itemKey(r.kind, r) === key && (!TWO_A_DAY.has(kind) || sameThing(r, item) || (kind === "respond" && replyTo(r.text) && replyTo(item.text))))) continue;
     // plan 210 (iteration 3, revision 11): facts from the mail's words, never the item's; iteration 4, the paragraphs tied to it
     const words = `${tiedWords(item.quote).slice(0, FACT_WORDS_MAX)}\n${item.quote}`;
     // plan 210 (iteration 4, revision 12): a routine bill charged by itself, and a delivery only estimated, are no items
