@@ -1,4 +1,4 @@
-import { datedGroup, datedGroupAt, dayKeyOf, promiseGroupAt, shownEarly, todayCounted, type DatedRow, type TaskPlace, type TodayGroupKind } from "./dated";
+import { datedGroup, datedGroupAt, dayKeyOf, displayBucket, promiseGroupAt, shownEarly, todayCounted, type DatedRow, type TaskPlace, type TodayGroupKind } from "./dated";
 import type { FollowupRow } from "./followups";
 import { sortInDay, waitsOnYou, type TodayAlso, type TodayCounts, type TodayPart, type TodayWhy } from "./today";
 import { clockHolds, refKey, reminderRowId, splitZoneNote, statedClock, waitingRowId, type FeedRowId, type ItemRef } from "./today-items";
@@ -40,6 +40,11 @@ export interface ProjectedRow {
   waiting?: boolean;
   /** plan 210 (iteration 3, revision 8): Today's "Waiting on you" part (`waitsOnYou`); its id stays as its tier changes */
   part?: TodayPart;
+  /**
+   * plan 210 (iteration 3, revision 9): a day ahead's or Coming up's heading (`displayBucket`), apart from its own `day`: the
+   * day for the first two weeks, then its week ("week:YYYY-MM-DD")
+   */
+  bucket?: string;
 }
 
 /** One item, or the true duplicates of one: its id the canonical's key, shown as `lead`. */
@@ -199,6 +204,9 @@ export function projectToday(f: ProjectionFacts, o: { count?: boolean } = {}): {
 export function projectRows(items: readonly PlacedItem[], f: Pick<ProjectionFacts, "now" | "waiting" | "reminders" | "live" | "zone">, o: { count?: boolean } = {}): { rows: ProjectedRow[]; counts: TodayCounts } {
   const today = dayKeyOf(f.now);
   const placed: Placed[] = [];
+  // each day's heading once (most rows share a few days)
+  const buckets = new Map<string, string>();
+  const bucketOf = (day: string): string => buckets.get(day) ?? (buckets.set(day, displayBucket(day, today)), buckets.get(day)!);
   // conversations an item of theirs shown now stands for: their ask, request or bill, or your promise to them (a Plan isn't
   // what they asked), so a waiting row there would say the same thing twice. One behind Coming up says nothing yet: the
   // conversation waiting on you is a row of its own meanwhile (their nudge on a promise due next week)
@@ -225,7 +233,7 @@ export function projectRows(items: readonly PlacedItem[], f: Pick<ProjectionFact
         ? datedWhy(lead.row, at.group === "missed", early, item.members)
         : promiseWhy(lead.row, at.group === "missed", item.members, f.zone);
     const came = lead.source === "dated" ? lead.row.arrivedAt : lead.row.sentAt;
-    placed.push({ id: item.id, threadId: lead.row.threadId, group: at.group, day: at.day, why, dueAt: lead.row.dueAt, came, ...(at.group === "today" && waitsOnYou(why) ? { part: "waiting" as const } : {}), ...(detail && !o.count ? { also: alsoOf(detail) } : {}) });
+    placed.push({ id: item.id, threadId: lead.row.threadId, group: at.group, day: at.day, why, dueAt: lead.row.dueAt, came, ...(at.group === "today" && waitsOnYou(why) ? { part: "waiting" as const } : {}), ...(at.day !== null && !o.count ? { bucket: bucketOf(at.day) } : {}), ...(detail && !o.count ? { also: alsoOf(detail) } : {}) });
   }
   // what's waiting on you (the owner's round 10: only when something is asked; the stores' `stillWaiting` says so), unless
   // an item of the conversation already says it

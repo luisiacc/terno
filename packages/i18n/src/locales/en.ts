@@ -2647,6 +2647,8 @@ It contains none of your mail, contacts, settings or keys.
   "whatMatters.since": "since {day}",
   // plan 210 (iteration 3, the owner): people's asks and requests shown early, a quiet part of Today
   "whatMatters.waitingOnYou": "Waiting on you",
+  // plan 210 (iteration 3): Coming up past its first two weeks, by week
+  "whatMatters.weekOf": "Week of {day}",
   "whatMatters.by": "by {day}",
   "whatMatters.promised": "{when} · promised {day}",
   "whatMatters.zoned": "{when} ({time})",
@@ -2659,7 +2661,6 @@ It contains none of your mail, contacts, settings or keys.
   "today.line.waiting": { one: "# waiting", other: "# waiting" },
   "today.line.joined": "{a} · {b}",
   "today.line.comingUp": { one: "# coming up", other: "# coming up" },
-  "today.line.hideComingUp": "Hide coming up",
   "today.dated.offer": "Show bills, trips and requests here.",
   "today.dated.turnOn": "Turn on",
   "today.dated.dismiss": "Don’t offer bills, trips and requests again",

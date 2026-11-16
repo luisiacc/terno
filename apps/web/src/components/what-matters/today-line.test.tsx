@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * Plan 161, pass 3: Today's line says one thing, with no second total to read against the Inbox's. Plan 204: no cap, so
- * nothing past it. Plan 210 (iteration 2, the owner): its numbers by when, "6 today · 8 this week", Missed first when any.
+ * nothing past it. Plan 210 (iteration 3): its numbers by when and who, "1 missed · 3 today · 5 waiting", each unsaid at zero.
  */
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -58,12 +58,21 @@ it("in Spanish too", async () => {
   }
 });
 
-it("plan 204: Coming up's toggle after the count, named by what it holds and whether it's open", async () => {
+it("plan 210 (iteration 3): Coming up is the catalog's disclosure after the count, named by what it holds, open or shut, and stays as left", async () => {
   await show(2, { comingUp: 4 });
   expect(toggle()!.textContent).toBe("4 coming up");
   expect(toggle()!.getAttribute("aria-expanded")).toBe("false");
+  // the catalog's trigger: a button with its chevron
+  expect(toggle()!.tagName).toBe("BUTTON");
+  expect(toggle()!.querySelector("[data-slot=collapsible-chevron]")).not.toBeNull();
+  await act(async () => toggle()!.click());
+  expect(useToday.getState().comingUpOpen).toBe(true);
+  expect(localStorage.getItem("terno.today.comingUp")).toBe("open");
+  expect(toggle()!.textContent).toBe("4 coming up");
+  expect(toggle()!.getAttribute("aria-expanded")).toBe("true");
+  await act(async () => toggle()!.click());
+  expect(useToday.getState().comingUpOpen).toBe(false);
   await show(2, { comingUp: 4, open: true });
-  expect(toggle()!.textContent).toBe("Hide coming up");
   expect(toggle()!.getAttribute("aria-expanded")).toBe("true");
   // nothing coming up, nothing to open
   await show(2, { comingUp: 0, open: true });

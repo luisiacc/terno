@@ -8,7 +8,7 @@ import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef } from "react"
 import type { TodayTask } from "~/lib/dated";
 import { useDesign } from "~/lib/design";
 import { listDate } from "~/lib/format";
-import { dayHeading } from "~/lib/when";
+import { dayHeading, weekHeading } from "~/lib/when";
 import { LIST_TITLE } from "~/lib/list-title";
 import { installScrollHairline } from "~/lib/scroll-hairline";
 import { pressRow, releaseRow } from "~/lib/select";
@@ -19,7 +19,7 @@ import { closeFeedConversation } from "~/lib/feed-pane";
 import { listLayout } from "~/lib/page";
 import { getApp, useApp } from "~/state/app";
 import { listAnchor, loadMore, useList } from "~/state/list";
-import { digestLabel, feedRow, groupDay, openFeedRow, useFeedRow, useToday, type FeedGroupKind, type FeedRow } from "~/state/today";
+import { digestLabel, feedRow, groupDay, groupWeek, openFeedRow, useFeedRow, useToday, type FeedGroupKind, type FeedRow } from "~/state/today";
 import { EmptyState } from "../empty-state";
 import { listScroller } from "~/lib/list-scroller";
 import { ThreadMenu } from "../thread-menu";
@@ -46,6 +46,8 @@ type Drawn =
 function headingName(kind: FeedGroupKind): string {
   const day = groupDay(kind);
   if (day !== null) return dayHeading(localDay(day)?.getTime() ?? Date.now());
+  const week = groupWeek(kind);
+  if (week !== null) return weekHeading(localDay(week)?.getTime() ?? Date.now());
   return t(kind === "missed" ? "today.missed" : kind === "today" ? "today.today" : kind === "waiting" ? "whatMatters.waitingOnYou" : "today.history");
 }
 
@@ -267,7 +269,7 @@ function Heading({ kind }: { kind: FeedGroupKind }) {
       </h3>
     );
   return (
-    <h2 data-testid="wm-heading" data-kind={groupDay(kind) === null ? kind : "day"} data-day={groupDay(kind) ?? undefined} className="hairline-b mx-3 mb-1 pt-5 pb-1.5 text-sm font-medium text-foreground">
+    <h2 data-testid="wm-heading" data-kind={groupDay(kind) !== null ? "day" : groupWeek(kind) !== null ? "week" : kind} data-day={groupDay(kind) ?? groupWeek(kind) ?? undefined} className="hairline-b mx-3 mb-1 pt-5 pb-1.5 text-sm font-medium text-foreground">
       {headingName(kind)}
     </h2>
   );
@@ -319,7 +321,7 @@ interface ItemProps {
   task: TodayTask | undefined;
   /** its conversation is the one open beside the feed */
   open: boolean;
-  /** Coming up's: quieter */
+  /** Coming up's: its column quieter (its words the row's ink: plan 210, iteration 3) */
   later: boolean;
   /** plan 210: a history line (done, removed, settled, over) */
   past?: boolean;
@@ -364,7 +366,8 @@ function Item({ row, sentence, meta, when, tone, task, open, cursor = false, lat
     <div data-thread-id={menuId(row.threadId)} data-row-id={row.id} data-held={row.held || undefined} data-testid="wm-item" onContextMenu={() => useToday.setState({ menuRow: row.id })} data-open={open || undefined} data-cursor={cursor || undefined} data-history={past || undefined} data-digest={digest || undefined} data-ahead={(later && !past) || undefined} data-tone={tone} className="group/item relative rounded-lg not-data-open:hover:bg-row-hover data-cursor:bg-row-hover data-open:bg-row-selected">
       <button type="button" data-testid="wm-item-open" title={`${sentence}\n${meta}`} aria-expanded={open} onClick={() => openItem(row)} className="flex w-full min-w-0 items-start gap-4 rounded-lg px-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring">
         <span className="min-w-0 flex-1">
-          <span id={textId} data-testid="wm-sentence" className={cn("line-clamp-2 text-base text-pretty group-data-open/item:text-row-selected-foreground", later ? (past ? "text-muted-foreground" : "text-row-preview") : SENTENCE_INK[tone])}>
+          {/* plan 210 (iteration 3): Coming up's sentences in the row ink, not a fade (its column stays quiet) */}
+          <span id={textId} data-testid="wm-sentence" className={cn("line-clamp-2 text-base text-pretty group-data-open/item:text-row-selected-foreground", past ? "text-muted-foreground" : SENTENCE_INK[tone])}>
             {sentence}
           </span>
           {/* while Done and Later show over its end, it ends (in an ellipsis) before them: a little before, beside the right

@@ -666,7 +666,7 @@ export class TodayService {
       const day = r.day ?? undefined;
       // plan 210 (iteration 3): Today's "Waiting on you" is a section of its own, after Today's
       if (last?.kind === r.group && last.day === day && last.part === r.part) last.items.push(item);
-      else sections.push({ kind: r.group, ...(day ? { day } : {}), ...(r.part ? { part: r.part } : {}), items: [item] });
+      else sections.push({ kind: r.group, ...(day ? { day } : {}), ...(r.part ? { part: r.part } : {}), ...(r.bucket ? { bucket: r.bucket } : {}), items: [item] });
     }
     const history = ask.history && settings.today?.finished !== false ? await this.history({ after: null, through: ask.history.through, held }) : undefined;
     return { sections, digest: await this.digestRow(), now, counts, ...(history ? { history } : {}) };
