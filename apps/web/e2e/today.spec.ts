@@ -825,8 +825,12 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       const menuOrder = await page.locator("[role=menu]").first().evaluate((menu) => [...menu.children].map((el) => el.getAttribute("data-testid") ?? el.getAttribute("role") ?? el.getAttribute("data-slot")));
       const at = menuOrder.indexOf("menu-dated-dismiss");
       // plan 210 (iteration 4): then Reply, and the mail's actions (Delete among them) under More, nothing else (what's under
-      // More: what-matters-feed.spec); Change… and Hand to… after Later
-      expect(menuOrder.slice(at - 4)).toEqual(["menu-dated-done", "menu-dated-later", "menu-dated-change", "menu-dated-hand", "menu-dated-dismiss", "menu-dated-keeps", "separator", "menu-reply", "separator", "menu-more"]);
+      // More: what-matters-feed.spec); Change… and Hand to… after Later, each (iteration 5) with its key and what it does under it
+      expect(menuOrder.slice(at - 6)).toEqual(["menu-dated-done", "menu-dated-later", "menu-dated-change", "menu-dated-change-note", "menu-dated-hand", "menu-dated-hand-note", "menu-dated-dismiss", "menu-dated-keeps", "separator", "menu-reply", "separator", "menu-more"]);
+      await expect(page.getByTestId("menu-dated-change")).toContainText("⇧B");
+      await expect(page.getByTestId("menu-dated-change")).toHaveAccessibleDescription("Sets its own day");
+      await expect(page.getByTestId("menu-dated-hand")).toContainText("⇧F");
+      await expect(page.getByTestId("menu-dated-hand")).toHaveAccessibleDescription("Forwards it to someone");
       // Later replaces Remind me on a task's item: every preset that applies now, and a day of your own
       await expect(page.getByTestId("menu-remind-always")).toHaveCount(0);
       await page.getByTestId("menu-dated-later").click();

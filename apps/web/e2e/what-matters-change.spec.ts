@@ -108,7 +108,7 @@ test("plan 210 (iteration 4): Change… from the row's menu, the reader's line a
     await reach(page, "Pay the Lumen invoice");
     await openLine(page, "Pay the Lumen invoice").click({ button: "right" });
     const change = page.getByTestId("menu-dated-change");
-    await expect(change).toHaveText("Change…");
+    await expect(change).toHaveText(/^Change…⇧B$/);
     // What matters' own group: right after Later
     const entries = await page.locator("[role=menu] [data-testid^=menu-dated]").evaluateAll((els) => els.map((e) => e.getAttribute("data-testid")));
     expect(entries.indexOf("menu-dated-change")).toBe(entries.indexOf("menu-dated-later") + 1);

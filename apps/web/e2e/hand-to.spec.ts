@@ -87,7 +87,7 @@ test("Hand to… from the item's menu: an inline forward with its line; Undo sen
   await scenario("the item's menu: Hand to… after Later; it opens the conversation's forward again (resumed: its line once), To taking the recipient", async () => {
     await openItem(page).click({ button: "right" });
     const hand = page.getByTestId("menu-dated-hand");
-    await expect(hand).toHaveText("Hand to…");
+    await expect(hand).toHaveText(/^Hand to…⇧F$/);
     await hand.click();
     await expect(composer).toBeVisible();
     await expect(body.locator("p").filter({ hasText: "Could you take care of this" })).toHaveCount(1);
