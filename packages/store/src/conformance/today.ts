@@ -49,6 +49,17 @@ export function defineTodayConformance(fresh: () => Promise<MailStore>): void {
       expect(await store.today.senders([])).toEqual(new Map());
     });
 
+    it("plan 210 (iteration 3): fromOf reads each stored message's sender, name and address, by its id", async () => {
+      const { store, put } = await setup();
+      const bill = await put({ listId: null, from: { name: "Lakeshore Mutual", email: "Billing@Lakeshore.test" } });
+      const nameless = await put({ listId: null, from: { name: "", email: "gary@x.test" } });
+      const found = await store.today.fromOf([bill.message, nameless.message, 987_654]);
+      expect(found.get(bill.message)).toEqual({ name: "Lakeshore Mutual", email: "billing@lakeshore.test" });
+      expect(found.get(nameless.message)).toEqual({ name: "", email: "gary@x.test" });
+      expect(found.size).toBe(2);
+      expect(await store.today.fromOf([])).toEqual(new Map());
+    });
+
     it("what's read, starred, in Spam or Trash, or archived isn't a candidate", async () => {
       const { store, put } = await setup();
       const facts = async (id: number) => (await store.today.digestFacts([id])).facts;

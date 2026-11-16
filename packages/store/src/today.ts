@@ -145,6 +145,11 @@ export interface TodayStore {
   messagesHere(messageIds: readonly number[]): Promise<number[]>;
   /** plan 166: each stored message's sender address, by its id (a digest stored before items carried it) */
   senders(messageIds: readonly number[]): Promise<Map<number, string>>;
+  /**
+   * Plan 210 (iteration 3): each stored message's sender, name and address, by its id: What matters' row names its own
+   * item's sender, not its conversation's latest. One read for the rows a list shows
+   */
+  fromOf(messageIds: readonly number[]): Promise<Map<number, { name: string; email: string }>>;
   digest: {
     get(day: string): Promise<DigestStored | null>;
     /** the newest at or before this day */

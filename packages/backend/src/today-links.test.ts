@@ -1,7 +1,7 @@
 /** Plan 210 (iteration 2, B7): which items are one thing, conservatively, and which is a detail of another. */
 import type { DatedKind, DatedRow, FollowupRow } from "@terno/core";
 import { describe, expect, it } from "vitest";
-import { findLinks, isDetailOf, sameErrand, sameEvent, samePromise, sameRequest, TodayLinks } from "./today-links";
+import { attendsEvent, findLinks, isDetailOf, sameErrand, sameEvent, samePromise, sameRequest, TodayLinks } from "./today-links";
 import type { MailStore } from "@terno/store";
 
 const T = Date.UTC(2026, 10, 20, 0, 30);
@@ -98,6 +98,33 @@ describe("findLinks", () => {
     const early = promise("send the slip and $15 for the museum");
     const later = dated("pay", "Pay $15 for the museum");
     expect(findLinks([later], [early], all).same).toEqual([{ item: { source: "dated", id: later.id }, sameAs: `promise:${early.id}` }]);
+  });
+
+  it("plan 210 (iteration 3): your promise to attend is the event it names, its day and conversation; the event leads, whichever came first", () => {
+    const local = (h: number, m = 0) => new Date(2026, 10, 16, h, m).getTime();
+    const check = dated("event", "Shipfast Summit tech check", { threadId: 15, messageId: 17, dueDay: "2026-11-16", dueAt: local(16) });
+    const keynote = dated("event", "Shipfast Summit keynote", { threadId: 15, messageId: 17, dueDay: "2026-11-16", dueAt: local(19) });
+    const attend = promise("attend the tech check", { threadId: 15, dueAt: local(9), quote: "I'll be there for the tech check" });
+    expect(attendsEvent(attend, [check, keynote])).toBe(check);
+    expect(findLinks([check, keynote], [attend], all).same).toEqual([{ item: { source: "promise", id: attend.id }, sameAs: `dated:${check.id}` }]);
+    // the promise first, the event read later: the event still leads
+    const later = dated("event", "Shipfast Summit tech check", { threadId: 15, messageId: 99, dueDay: "2026-11-16", dueAt: local(16), createdAt: attend.createdAt + 10 });
+    expect(findLinks([later], [attend], all).same).toEqual([{ item: { source: "promise", id: attend.id }, sameAs: `dated:${later.id}` }]);
+    // never that evening's keynote by the day alone, nor an event of another day or conversation
+    expect(attendsEvent(promise("I'll be there for the tech check", { threadId: 15, dueAt: local(9) }), [keynote])).toBeNull();
+    expect(attendsEvent({ ...attend, dueAt: new Date(2026, 10, 17, 9).getTime() }, [check])).toBeNull();
+    expect(attendsEvent({ ...attend, threadId: 16 }, [check])).toBeNull();
+    // a promise that isn't to attend is no part of the event
+    expect(attendsEvent(promise("send the tech check notes", { threadId: 15, dueAt: local(9) }), [check])).toBeNull();
+    // both events named: the promise's own time picks one; none, neither
+    const both = promise("attend the Shipfast Summit", { threadId: 15, dueAt: local(19), timed: true });
+    expect(attendsEvent(both, [check, keynote])).toBe(keynote);
+    expect(attendsEvent({ ...both, timed: false }, [check, keynote])).toBeNull();
+    // in Spanish
+    const partido = dated("event", "Partido de fútbol de Sofía", { threadId: 20, dueDay: "2026-11-16", dueAt: local(10) });
+    expect(attendsEvent(promise("ir al partido de Sofía", { threadId: 20, dueAt: local(9) }), [partido])).toBe(partido);
+    expect(attendsEvent(promise("enviar las fotos del partido de Sofía", { threadId: 20, dueAt: local(9) }), [partido])).toBeNull();
+    expect(attendsEvent(promise("asistir al partido de Sofía", { threadId: 20, dueAt: local(9) }), [partido])).toBe(partido);
   });
 
   it("a trip's return leg is linked as a detail", () => {
