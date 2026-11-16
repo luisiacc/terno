@@ -873,6 +873,7 @@ const es = {
   "ai.privacy.off": "La IA está desactivada.",
   "ai.privacy.local": "Nada sale de este Mac.",
   "ai.privacy.cloud": "Se envía a {host}: tu descripción, los correos y nombres de tus cuentas, los nombres de tus categorías y la fecha de hoy. Nunca el contenido de tus mensajes.",
+  "ai.disclosure.keeps": { one: "Cuánto tiempo guarda {providers} lo que recibe, y para qué, lo decide su propia política de datos de la API, no Terno: consúltala en su sitio web.", other: "Cuánto tiempo guardan {providers} lo que reciben, y para qué, lo deciden sus propias políticas de datos de la API, no Terno: consúltalas en sus sitios web." },
   "ai.disclosure.cloud": { one: "{providers} recibe el texto de una conversación cuando usas una función de IA en ella, y el correo que llega o envías para las funciones en segundo plano que actives abajo.", other: "{providers} reciben el texto de una conversación cuando usas una función de IA en ella, y el correo que llega o envías para las funciones en segundo plano que actives abajo." },
   "ai.output.jsonSchema": "salida estructurada ✓",
   "ai.output.jsonObject": "modo JSON",

@@ -881,6 +881,8 @@ const en = {
   "ai.privacy.off": "AI is off.",
   "ai.privacy.local": "Nothing leaves this Mac.",
   "ai.privacy.cloud": "Sent to {host}: your description, your accounts’ addresses and names, your category names and today’s date. Never the content of your messages.",
+  // plan 210 (iteration 5): no period claimed (Terno can't know a provider's terms or an account's settings): where it's written
+  "ai.disclosure.keeps": { one: "How long {providers} keeps what it receives, and what for, is set by its own API data policy, not by Terno: read it on its website.", other: "How long {providers} keep what they receive, and what for, is set by their own API data policies, not by Terno: read them on their websites." },
   "ai.disclosure.cloud": { one: "{providers} receives a conversation’s text when you use an AI feature on it, and mail as it comes in or goes out for the background features you turn on below.", other: "{providers} receive a conversation’s text when you use an AI feature on it, and mail as it comes in or goes out for the background features you turn on below." },
   "ai.output.jsonSchema": "structured output ✓",
   "ai.output.jsonObject": "JSON mode",
