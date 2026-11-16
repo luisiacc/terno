@@ -297,6 +297,44 @@ describe("plan 204: Missed, Today, a day ahead and Coming up (plan 210: by day, 
     expect(ids(flattenToday(sections, []))).toEqual([4, 3, 11, 6]);
   });
 
+  it("plan 210 (iteration 3, revision 9): past two weeks Coming up's rows go under their week's heading, by their days, a day ahead's joining it; ids stay", () => {
+    useToday.setState({ comingUpOpen: true });
+    // Thursday Nov 12: its days run through Sunday the 29th; Dec 2 and Dec 4 are the week of Nov 30's
+    const passport = dated(10, "renew", "Renew the passport", 26);
+    // (Nov 32 is Dec 2: Date rolls over; the item's day said as December's)
+    const dec = (id: number, kind: "pay" | "renew", text: string, d: number) => {
+      const r = dated(id, kind, text, 30 + d);
+      return { ...r, why: { ...r.why, item: { ...r.why.item, dueDay: `2026-12-0${d}` } } };
+    };
+    const sooner = dec(13, "pay", "Pay the gym", 2);
+    const expiry = dec(14, "renew", "Renew the domain", 3);
+    const insurance = dec(12, "pay", "Pay the insurance", 4);
+    const sections: TodayList = {
+      now,
+      counts: NO_COUNTS,
+      digest: null,
+      sections: [
+        // an expiry's long lead shows it already, a day ahead's, under its week too
+        { kind: "day", day: "2026-12-03", bucket: "week:2026-11-30", items: [expiry] as never },
+        { kind: "comingUp", day: day(26), bucket: day(26), items: [passport] as never },
+        { kind: "comingUp", day: "2026-12-02", bucket: "week:2026-11-30", items: [sooner] as never },
+        { kind: "comingUp", day: "2026-12-04", bucket: "week:2026-11-30", items: [insurance] as never },
+      ],
+    };
+    flattenToday(sections, []);
+    expect(useToday.getState().rows.map((r) => [r.id, r.group, r.ahead === true])).toEqual([
+      ["dated:100", "day:2026-11-26", true],
+      ["dated:130", "week:2026-11-30", true],
+      ["dated:140", "week:2026-11-30", false],
+      ["dated:120", "week:2026-11-30", true],
+    ]);
+    // closed: only what's shown, the expiry under its week
+    useToday.setState({ comingUpOpen: false });
+    flattenToday(sections, []);
+    expect(useToday.getState().rows.map((r) => [r.id, r.group])).toEqual([["dated:140", "week:2026-11-30"]]);
+    expect(useToday.getState().comingUp).toBe(3);
+  });
+
   it("Coming up's open or closed is remembered, and storage that refuses changes nothing else", async () => {
     const { setComingUpOpen } = await import("./today");
     setComingUpOpen(true);

@@ -193,8 +193,15 @@ test.describe("What matters and its digest (plan 145)", () => {
     if (sidebar) expect(Number(sidebar)).toBe(said);
     await expect(page.getByTestId("today-line")).not.toContainText(/this week|\d+ to reply/);
     // the owner: "Your turn" and "Waiting for your reply" are the same thing: one heading, and the new conversation is
-    // under it in its own words, no reason before them
-    expect((await kinds(page)).filter((k) => k !== "history")).toEqual(["today"]);
+    // under it in its own words, no reason before them. Plan 210 (iteration 3, the owner's "'Waiting on you' in Today"):
+    // people waiting on you are Today's quiet "Waiting on you", Today's heading above it though Today has nothing else
+    expect((await kinds(page)).filter((k) => k !== "history")).toEqual(["today", "waiting"]);
+    const waitingHeading = page.locator(`${FEED} [data-testid=wm-heading][data-kind=waiting]`);
+    await expect(waitingHeading).toHaveText("Waiting on you");
+    // a sub-heading on the rows' text line, as the headings are
+    await show(page, "Lunch on Friday?");
+    const textLeft = async (l: Locator) => l.evaluate((el) => el.getBoundingClientRect().left + parseFloat(getComputedStyle(el).paddingLeft));
+    expect(Math.abs((await textLeft(waitingHeading)) - (await textLeft(item(page, "Lunch on Friday?").getByTestId("wm-sentence"))))).toBeLessThanOrEqual(1);
     await show(page, "Lunch on Friday?");
     const lunch = item(page, "Lunch on Friday?");
     await expect(lunch.getByTestId("wm-sentence")).toContainText("Lunch on Friday?");
@@ -682,8 +689,10 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       await received(server, "bill-1", { name: "City Power", email: "billing@citypower.test" }, "Electricity bill", "Hello. Your electricity bill of $84.20 is due 2026-10-24. Thank you.");
       await received(server, "flight-1", { name: "Iberia", email: "no-reply@iberia.test" }, "Flight to Madrid", "Your flight on 2026-10-23 at 07:40 leaves from terminal 4.");
       await received(server, "renew-1", { name: "Domains Co", email: "billing@domains.test" }, "Domain renewal", "Your domain renews soon. Payment is due 2026-11-01.");
+      // plan 210 (iteration 3): Coming up has no horizon: a bill six weeks out is Coming up's, under its week
+      await received(server, "dues-1", { name: "Rowing Club", email: "billing@rowing.test" }, "Club dues", "Hello. Your club dues are due 2026-12-01. Thank you.");
       server.backend.dated.wake();
-      await expect.poll(async () => (await server.backend.store.dated.active()).length, { timeout: 15_000 }).toBe(3);
+      await expect.poll(async () => (await server.backend.store.dated.active()).length, { timeout: 15_000 }).toBe(4);
       await reach(page, "Electricity bill");
       // the item's own words in a sentence, who under it, when it's due in the right-hand column
       const bill = item(page, "Electricity bill");
@@ -707,7 +716,7 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       await toTop(page);
       // later than its time to act: not an item, only the header's quiet count
       await expect(item(page, "Domain renewal")).toHaveCount(0);
-      await expect(page.getByTestId("today-coming-up")).toHaveText("1 coming up");
+      await expect(page.getByTestId("today-coming-up")).toHaveText("2 coming up");
       await expect(page.getByTestId("today-coming-up")).toHaveAttribute("aria-expanded", "false");
     });
 
@@ -729,21 +738,28 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
       await expect(page.locator(`${FEED} [data-testid=wm-heading]`).first()).toHaveText("Missed");
     });
 
-    await scenario("Coming up opens and closes by keyboard, its rows under their days, and stays open after a reload", async () => {
+    await scenario("Coming up opens and closes by keyboard, its rows under their days and, past two weeks, their weeks, and stays open after a reload", async () => {
       const toggle = page.getByTestId("today-coming-up");
       await toggle.focus();
       await page.keyboard.press("Enter");
       await expect(toggle).toHaveAttribute("aria-expanded", "true");
-      await expect(toggle).toHaveText("Hide coming up");
+      // plan 210 (iteration 3): the catalog's disclosure: the same words open or shut, its chevron turned
+      await expect(toggle).toHaveText("2 coming up");
+      await expect(toggle.locator("[data-slot=collapsible-chevron]")).toHaveCount(1);
       await expect(toggle).toBeFocused();
       // last, past the demo's Needs you (the feed is virtualized: scrolled to its end, focus left on the toggle)
       await expect.poll(async () => (await toEnd(page), await item(page, "Domain renewal").count())).toBe(1);
       const renewal = item(page, "Domain renewal");
       await expect(renewal.getByTestId("wm-sentence")).toHaveText("Domain renewal.");
       await expect(renewal).toHaveAttribute("data-tone", "later");
-      // plan 210: under its own day's heading, the last day's
+      // its words in the row's ink, not a fade (its column stays quiet)
+      const ink = async (l: Locator) => l.evaluate((el) => getComputedStyle(el).color);
+      expect(await ink(renewal.getByTestId("wm-sentence"))).not.toBe(await ink(renewal.getByTestId("wm-meta")));
+      // plan 210: under its own day's heading; iteration 3: the dues six weeks out under their week's, last
       expect(await groupOf(page, "Domain renewal")).toBe("comingUp");
-      expect((await kinds(page)).filter((k) => k !== "history").at(-1)).toBe("day");
+      expect(await groupOf(page, "Club dues")).toBe("comingUp");
+      expect((await kinds(page)).filter((k) => k !== "history").slice(-2)).toEqual(["day", "week"]);
+      await expect(page.locator(`${FEED} [data-testid=wm-heading][data-kind=week]`)).toHaveText("Week of Nov 30");
       // the heading on its items' text line
       await expect.poll(async () => (await toEnd(page), await item(page, "Domain renewal").count())).toBe(1);
       const left = async (l: Locator) => l.evaluate((el) => el.getBoundingClientRect().left + parseFloat(getComputedStyle(el).paddingLeft));

@@ -186,7 +186,15 @@ export const todayBadge = (c: TodayCounts): number => c.missed + c.today + c.wai
  * Plan 204: every row that's for today, each thread once, in `TODAY_GROUP_ORDER`; Coming up last, and never counted. Plan
  * 210 (by day): a day of its own and Coming up come as a section per day, in order, each with its `day` ("YYYY-MM-DD").
  */
-export type TodaySection = { kind: TodayGroupKind; day?: string; /** plan 210 (iteration 3): Today's "Waiting on you" */ part?: TodayPart; items: TodayItem[] };
+export type TodaySection = {
+  kind: TodayGroupKind;
+  day?: string;
+  /** plan 210 (iteration 3): Today's "Waiting on you" */
+  part?: TodayPart;
+  /** plan 210 (iteration 3, revision 9): the heading a day ahead's or Coming up's section is drawn under (`displayBucket`) */
+  bucket?: string;
+  items: TodayItem[];
+};
 
 export interface DigestItem {
   threadId: number;

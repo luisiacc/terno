@@ -8,7 +8,7 @@ import en from "@terno/i18n/locales/en";
 import es from "@terno/i18n/locales/es";
 import { afterEach, describe, expect, it } from "vitest";
 import { historySentence, historyWhen, todaySentence, todayWhen } from "./today-sentence";
-import { dayHeading } from "./when";
+import { dayHeading, weekHeading } from "./when";
 
 // Friday 13 November 2026, 9:30 in the machine's own time (the panel's morning)
 const NOW = new Date(2026, 10, 13, 9, 30).getTime();
@@ -103,6 +103,12 @@ describe("a day's heading (plan 210: by day)", () => {
     expect(dayHeading(at(14, 9), NOW)).toBe("Mañana");
     expect(dayHeading(at(17, 9), NOW)).toBe("Martes");
     expect(dayHeading(at(30, 9), NOW)).toMatch(/^Lun, 30 nov$/);
+  });
+  it("plan 210 (iteration 3): past two weeks, a week's heading by its Monday, the year only when it isn't this one's", () => {
+    expect(weekHeading(new Date(2026, 11, 7).getTime(), NOW)).toBe("Week of Dec 7");
+    expect(weekHeading(new Date(2027, 0, 4).getTime(), NOW)).toBe("Week of Jan 4, 2027");
+    setLocale("es", es);
+    expect(weekHeading(new Date(2026, 11, 7).getTime(), NOW)).toBe("Semana del 7 dic");
   });
 });
 
