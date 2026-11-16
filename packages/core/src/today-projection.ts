@@ -204,8 +204,8 @@ export interface PlacedItem {
 
 /**
  * The projection's first step: the canonical items (`logicalItems`) and where each sits (`datedGroupAt`, `promiseGroupAt`),
- * a related detail folded under its item while that item shows (a trip outlives its outbound flight: then it's a row of
- * its own). Needs no store: the caller then reads which of their conversations may show (`placedThreads`). `count`: Coming
+ * a related detail said under its item while that item shows, and a row of its own under its own day all the same (plan
+ * 210, iteration 4: a trip's return leg is Sunday's too). Needs no store: the caller then reads which of their conversations may show (`placedThreads`). `count`: Coming
  * up is never counted nor says a conversation, so it's left out.
  */
 export function placeItems(dated: readonly DatedRow[], promises: readonly NeedingPromise[], now: number, o: { count?: boolean } = {}): PlacedItem[] {
@@ -235,16 +235,15 @@ export function placeItems(dated: readonly DatedRow[], promises: readonly Needin
   };
   const parents = new Map(dated.map((r) => [r.id, r]));
   const details = new Map<number, DatedRow>();
-  const items = logicalItems(
-    dated.filter((r) => {
-      const parent = r.detailOf == null ? undefined : parents.get(r.detailOf);
-      if (!parent || placeOf(parent) === null) return true;
-      const was = details.get(parent.id);
-      if (!was || r.dueAt < was.dueAt || (r.dueAt === was.dueAt && r.id < was.id)) details.set(parent.id, r);
-      return false;
-    }),
-    promises,
-  );
+  // plan 210 (iteration 4, revision 9): a detail is also a quiet row of its own on its own day (a trip's return leg under
+  // its Sunday, where a reader of that day looks), whatever its parent does
+  for (const r of dated) {
+    const parent = r.detailOf == null ? undefined : parents.get(r.detailOf);
+    if (!parent || placeOf(parent) === null) continue;
+    const was = details.get(parent.id);
+    if (!was || r.dueAt < was.dueAt || (r.dueAt === was.dueAt && r.id < was.id)) details.set(parent.id, r);
+  }
+  const items = logicalItems(dated, promises);
   const out: PlacedItem[] = [];
   for (const item of items) {
     const { lead } = item;
