@@ -535,6 +535,50 @@ describe("plan 210 (iteration 3)", () => {
     expect(checkDates({ items: [receipts], settled: [] }, { ...mail, text: text.replace("on the 20th", "on October 20") }).rows).toEqual([]);
   });
 
+  describe("point 7: what asks nothing, and the one ask an automated sender may make", () => {
+    const person = (text: string, o: { addressed?: "to" | "cc"; others?: string[] } = {}) => ({ ...base, text, subject: "Re: hola", sender: { person: true }, reader: { name: "Diego Ramírez Castañeda", addressed: o.addressed ?? ("to" as const) }, others: o.others ?? [] });
+    const ask = (text: string, quote: string) => ({ kind: "ask", text, quote, due: null, time: null });
+
+    it("a courtesy that waits on the reader's visit or need is no ask (en, es); a real ask with the same words still is", () => {
+      const tepoz = "¡Qué gusto saber de ti!\n\nCuando vengas a Tepoz avísanos, aquí tienes tu casa.\n\nUn abrazo, Sergio";
+      const out = checkDates({ items: [ask("Avisarle a Sergio cuando vayas a Tepoz", "Cuando vengas a Tepoz avísanos")], settled: [] }, person(tepoz));
+      expect(out).toMatchObject({ rows: [], asked: false });
+      for (const [text, quote] of ([["If you're ever in Lisbon, let us know. Our door is always open.", "If you're ever in Lisbon, let us know"], ["Great seeing you! Let me know if you need anything for the move.", "Let me know if you need anything"], ["Si necesitas algo, avísame.", "Si necesitas algo, avísame"]] as const)) {
+        expect(checkDates({ items: [ask("Answer Sergio", quote)], settled: [] }, person(text)).rows, text).toEqual([]);
+      }
+      for (const [text, quote] of ([["When you get a chance, let me know what you think of the draft.", "let me know what you think of the draft"], ["Cuando vengas, ¿me traes el libro?", "¿me traes el libro?"], ["When you're back in town, could you bring the drill? Let me know.", "could you bring the drill"]] as const)) {
+        expect(checkDates({ items: [ask("Answer Sergio", quote)], settled: [] }, person(text)).rows, text).toHaveLength(1);
+      }
+    });
+    it("only copied to know about it, a task said of the reader isn't theirs; one that speaks to them by name still is", () => {
+      const carla = "Hola Ana Sofía,\n\nAna, ¿nos mandas las ilustraciones finales el lunes 16? Diego las monta en las etiquetas esa misma semana.\n\nDiego, te copio para que estés al tanto; cuando Ana las entregue te las reenvío.\n\nCarla";
+      const mount = { kind: "respond", text: "Montar las ilustraciones finales en las etiquetas", quote: "Diego las monta en las etiquetas esa misma semana.", due: "2026-11-20", time: null };
+      const copied = person(carla, { addressed: "cc", others: ["Ana Sofía Lugo"] });
+      expect(checkDates({ items: [mount, ask("Responder a Carla", "Diego, te copio para que estés al tanto")], settled: [] }, copied)).toMatchObject({ rows: [], asked: false });
+      // in To, the same words are the model's to judge; one that speaks to the reader by name is theirs
+      expect(checkDates({ items: [mount], settled: [] }, person(carla, { others: ["Ana Sofía Lugo"] })).rows).toHaveLength(1);
+      const colors = { kind: "respond", text: "Revisar los colores de las etiquetas", quote: "Diego, ¿puedes revisar los colores antes del viernes?", due: "2026-11-19", time: null };
+      expect(checkDates({ items: [colors], settled: [] }, person(`${carla}\n\nDiego, ¿puedes revisar los colores antes del viernes?`, { addressed: "cc", others: ["Ana Sofía Lugo"] })).rows).toHaveLength(1);
+      // FYI to the copied reader in English
+      expect(checkDates({ items: [{ ...mount, text: "Mount the final art", quote: "Diego will mount them that week" }], settled: [] }, person("Ana, could you send the final art by Monday? Diego will mount them that week. Cc'ing you for visibility, Diego.", { addressed: "cc", others: ["Ana Lugo"] })).rows).toEqual([]);
+    });
+    it("an automated sender's cancellation of the reader's appointment may ask them to book again; nothing else of theirs asks", () => {
+      const dental = "Dear Margaret,\n\nYour appointment on Thursday, November 12, 2026 at 9:00 AM with Dr. Steven Kline has been cancelled because Dr. Kline is out of the office.\n\nWe apologize for the inconvenience. Please call (614) 555-0147 to choose a new time.\n\nBrightway Dental";
+      const call = ask("Call Brightway Dental to choose a new time", "Please call (614) 555-0147 to choose a new time.");
+      const bulk = (text: string, addressed: "to" | "cc" = "to") => ({ ...base, text, subject: "Your appointment has been cancelled", sender: { person: false }, reader: { name: "Margaret Kowalczyk", addressed } });
+      const appointment = { id: 9, revision: 2, threadId: 1, kind: "event", text: "Brightway Dental appointment with Dr. Steven Kline", quote: "Thursday, November 12, 2026 at 9:00 AM", dueDay: "2026-11-12", dueAt: at(2026, 11, 12, 9), timed: true } as DatedRow;
+      const out = checkDates({ items: [call], settled: [{ label: "o1", evidence: "has been cancelled because Dr. Kline is out of the office" }] }, { ...bulk(dental), open: new Map([["o1", appointment]]) });
+      expect(out.settled).toEqual([{ id: 9, revision: 2 }]);
+      expect(out.rows.map((r) => [r.kind, r.text])).toEqual([["ask", "Call Brightway Dental to choose a new time"]]);
+      // said cancelled in the mail, the appointment not open here
+      expect(checkDates({ items: [call], settled: [] }, bulk(dental)).rows).toHaveLength(1);
+      // a reminder's "call us to reschedule", a sale's "book a new appointment", or the reader only copied: no ask
+      expect(checkDates({ items: [ask("Call to reschedule", "Reply C to confirm or call us at 512-555-0127 to reschedule.")], settled: [] }, bulk("Sofia is scheduled for her cleaning on Nov 24 at 3:40 PM.\n\nReply C to confirm or call us at 512-555-0127 to reschedule.")).rows).toEqual([]);
+      expect(checkDates({ items: [ask("Book a new appointment", "Book a new appointment today")], settled: [] }, bulk("Spring special! Book a new appointment today and save 20%.")).rows).toEqual([]);
+      expect(checkDates({ items: [call], settled: [] }, bulk(dental, "cc")).rows).toEqual([]);
+    });
+  });
+
   describe("revision 5: paid is paid, narrowly", () => {
     it("Diego's card, read as its minimum or its balance: the bank's receipt in its conversation settles it", () => {
       expect(checkDates(settle(), { ...receipt(), open: new Map([["o1", card()]]) }).settled).toEqual([{ id: 9, revision: 2 }]);
