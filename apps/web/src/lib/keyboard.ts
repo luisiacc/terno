@@ -20,6 +20,7 @@ import { printCommand } from "~/lib/print-open";
 import { checkForUpdates } from "~/lib/updates";
 import { closeEmptySearch, focusRows, focusSearch, listScroller } from "~/components/thread-list";
 import { closeFeedConversation } from "~/lib/feed-pane";
+import { popupOpen } from "~/components/composer/controller";
 import { feedPlace, feedScroller, focusFeed } from "~/lib/feed-focus";
 import { snackbarControls } from "~/components/category-snackbar";
 import { setListFilter, toggleUnreadFilter } from "~/lib/unread";
@@ -184,6 +185,9 @@ function filterList(filter: "unread" | undefined) {
 
 /** Esc: Back from a page (List), else a preview's open conversation, else the preview, else the multi-selection ends, else from a search's results to its field (plan 158: the query kept, the field's own Esc leaves). */
 function escape() {
+  // an open popover or menu takes Esc first (its own document listener closes it), even while the keyboard is still on
+  // what opened it: the reader's Change… or Later, opened and Esc'd before focus moved in, never puts the conversation away
+  if (popupOpen()) return;
   const s = getApp();
   // plan 162 (after ai162-r03): a summary being written in the reader stops first, as Esc stops ⌘J and Ask
   if (s.selectedId !== null && useSummaries.getState().byThread.get(s.selectedId)?.kind === "running") return void stopSummary(s.selectedId);
