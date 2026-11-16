@@ -39,7 +39,8 @@ export interface HistoryAsk {
   sliceMs: number;
 }
 
-const outcomeOf = (r: { state: string; closedReason: string | null }): HistoryOutcome => (r.state === "done" ? "done" : r.state === "settled" ? "settled" : r.closedReason === "expired" ? "over" : "dismissed");
+// plan 210 (iteration 3, revision 4): a promise its person replaced (`finishDated`) is neither done nor removed
+const outcomeOf = (r: { state: string; closedReason: string | null }): HistoryOutcome => (r.closedReason === "replaced" ? "replaced" : r.state === "done" ? "done" : r.state === "settled" ? "settled" : r.closedReason === "expired" ? "over" : "dismissed");
 
 type Row = (DatedRow & { src: 0 }) | (FollowupRow & { src: 1 });
 const sourceOf = (src: 0 | 1): ItemRef["source"] => (src === 0 ? "dated" : "promise");

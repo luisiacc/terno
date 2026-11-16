@@ -6,7 +6,7 @@ import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
 import { readNothingAsked, type DatedMark, type DatedSource, type DatedWrite, type MailStore } from "@terno/store";
 import { DailyLimitError, MonthlyLimitError } from "./ai-limiter";
 import { UI_LOCALE_KEY } from "./forwarding";
-import { contextOf, namesApart, namesItem, negatedReceipt, norm, otherAmounts, otherIds, paragraphsOf, plainEvidence, sameObject, sameThing, saysReplaced, saysWhen, sentencesOf, settlesKind } from "./dated-evidence";
+import { contextOf, insideQuotes, namesApart, namesItem, negatedReceipt, norm, otherAmounts, otherIds, paragraphsOf, plainEvidence, replacesPlainly, sameObject, sameThing, saysReplaced, saysWhen, sentencesOf, settlesKind } from "./dated-evidence";
 import { untrustedSenders, withoutUntrusted } from "./suspicious-sender";
 
 /**
@@ -203,7 +203,7 @@ function movedPromise(p: { dueAt?: number; dated?: boolean; timed?: boolean }, d
  * day or, for a timed item, a new moment, and its new words only with the mail's own. Plan 210 (the Codex review of iteration
  * 1, revision 2): a settlement or a move rests on evidence tied to that item (`tiedTo`). Pure.
  */
-export function checkDates(result: { items: readonly (Omit<DatedResult["items"][number], "kind"> & { kind: string })[]; settled: DatedResult["settled"]; moved?: readonly Move[] }, input: { text: string; subject: string; arrivedAt: number; open: ReadonlyMap<string, DatedRow>; promises?: ReadonlyMap<string, Pick<FollowupRow, "id" | "revision"> & Partial<Pick<FollowupRow, "text" | "dueAt" | "dated" | "timed">>>; fromScan: boolean; now: number; sender?: { person: boolean }; reader?: { name: string; addressed: "to" | "cc" | "none" }; others?: readonly string[]; threadId?: number; senderKey?: string; from?: string; paysInThread?: number }): { rows: DatedWrite[]; settled: { id: number; revision: number }[]; moved: { id: number; dueDay: string; dueAt: number; timed: boolean; actAt: number; text?: string }[]; movedPromises: { id: number; revision: number; dueAt: number; timed: boolean; brokenDueAt: number | null }[]; asked: boolean } {
+export function checkDates(result: { items: readonly (Omit<DatedResult["items"][number], "kind"> & { kind: string })[]; settled: DatedResult["settled"]; moved?: readonly Move[]; replaced?: DatedResult["replaced"] }, input: { text: string; subject: string; arrivedAt: number; open: ReadonlyMap<string, DatedRow>; promises?: ReadonlyMap<string, Pick<FollowupRow, "id" | "revision"> & Partial<Pick<FollowupRow, "text" | "dueAt" | "dated" | "timed">>>; fromScan: boolean; now: number; sender?: { person: boolean }; reader?: { name: string; addressed: "to" | "cc" | "none" }; others?: readonly string[]; threadId?: number; senderKey?: string; from?: string; paysInThread?: number }): { rows: DatedWrite[]; settled: { id: number; revision: number }[]; moved: { id: number; dueDay: string; dueAt: number; timed: boolean; actAt: number; text?: string }[]; movedPromises: { id: number; revision: number; dueAt: number; timed: boolean; brokenDueAt: number | null }[]; replaced: { id: number; revision: number; item: number }[]; asked: boolean } {
   const said = `${norm(input.subject)}\n${norm(input.text)}`;
   const quoted = (words: string) => {
     const w = norm(words);
@@ -307,7 +307,7 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
    * Plan 210 (prompt v11): a promise's move and a request for that same day, from one mail, can be one thing. The move, when
    * the request names what was promised ("we haven't received the summary: could you get it to me before then?"); the
    * request, when the mail says it takes the promise's place ("skip the piecemeal version: send me a full draft of Chapter 2
-   * by Monday"), and the promise stays where it was. The Codex code review of v11 (point 5): only on those words; a request
+   * by Monday"), and the promise isn't moved (iteration 3: it closes as replaced when `replaced` passes its checks, below). The Codex code review of v11 (point 5): only on those words; a request
    * for something else beside the move ("The report can wait until Friday. Send the receipt by Friday") leaves both.
    */
   const promised = new Set<object>();
@@ -348,8 +348,26 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     if (rows.some((r) => itemKey(r.kind, r) === key && (!TWO_A_DAY.has(kind) || sameThing(r, item)))) continue;
     rows.push({ kind, item: rows.length, text: item.text.trim(), quote: item.quote.trim(), ...timing, ...(shownEarly(kind, item, said, input) ? { early: true } : {}) });
   }
-  const movedPromises = promiseMoves.filter((m) => !replaced.has(m)).map(({ p, day, time }) => ({ id: p.id, revision: p.revision, ...movedPromise(p, day, time, input.arrivedAt) }));
-  return { rows, settled, moved: moved.map(({ kind: _kind, ...m }) => m), movedPromises, asked };
+  /**
+   * Plan 210 (iteration 3, revision 4, the owner's "Close replaced promises"): a promise its person's later mail in its
+   * conversation (the only one it's offered) replaces with a different request. Checked hard: the mail's own plain words, not
+   * someone's retold in quotation marks, that say it's dropped ("Let's skip the piecemeal version"; never "don't skip it"),
+   * their paragraph naming what was promised apart from any other promise offered, and a request kept from this mail that
+   * isn't what was promised (that's a move). The store closes the promise only with that request written.
+   */
+  const replacements = (result.replaced ?? []).flatMap((x) => {
+    const p = input.promises?.get(x.label);
+    if (!p?.text || !tiedTo(null, x.evidence, null) || !replacesPlainly(x.evidence) || insideQuotes(x.evidence, input.text)) return [];
+    const paragraph = contextOf(x.evidence, paragraphs);
+    const named = offered.filter((o) => namesItem(o, paragraph, input.from));
+    const mine = offered.find((o) => o.id === p.id)!;
+    if (!named.some((o) => o.id === p.id) || !namesApart(mine, named, paragraph, input.from)) return [];
+    const request = rows.find((r) => (r.kind === "respond" || r.kind === "ask") && !sameObject(r.text, p.text!));
+    return request ? [{ id: p.id, revision: p.revision, item: request.item }] : [];
+  });
+  const gone = new Set(replacements.map((r) => r.id));
+  const movedPromises = promiseMoves.filter((m) => !replaced.has(m) && !gone.has(m.p.id)).map(({ p, day, time }) => ({ id: p.id, revision: p.revision, ...movedPromise(p, day, time, input.arrivedAt) }));
+  return { rows, settled, moved: moved.map(({ kind: _kind, ...m }) => m), movedPromises, replaced: replacements, asked };
 }
 
 export class DatedWorker {
@@ -589,15 +607,15 @@ export class DatedWorker {
       // plan 210 (iteration 2, the Codex code review): "nothing asked" only of a message the model saw all of (never one cut
       // to the window or the reader's limit, nor a subject past what's sent), and in which the checks found no request at all
       const readWhole = whole && text.length <= DATED_TEXT_CHARS && input.text === text && src.subject.length <= DATED_SUBJECT_CHARS;
-      const write = { messageId: src.id, threadId: src.threadId, fromScan, rows: checked.rows, settled: checked.settled, moved: checked.moved, movedPromises: checked.movedPromises, now, model: ai.model, provider: ai.providerId, promptVersion: DATED_PROMPT_VERSION, nothingAsked: readWhole && !checked.asked, clearGeneration };
+      const write = { messageId: src.id, threadId: src.threadId, fromScan, rows: checked.rows, settled: checked.settled, moved: checked.moved, movedPromises: checked.movedPromises, replaced: checked.replaced, now, model: ai.model, provider: ai.providerId, promptVersion: DATED_PROMPT_VERSION, nothingAsked: readWhole && !checked.asked, clearGeneration };
       const outcome = await store.dated.finish(write);
       this.attempts.delete(src.id);
       // a merge moved it under the request: read again on its new thread (revision 6)
       if (outcome === "moved") this.again = true;
-      if (outcome === "written" && checked.movedPromises.length) this.host.promisesMoved();
+      if (outcome === "written" && (checked.movedPromises.length || checked.replaced.length)) this.host.promisesMoved();
       // plan 210 (iteration 2): nothing asked of the reader takes a waiting conversation out of Needs you, in the same write
       const quiet = readNothingAsked(write);
-      if (outcome === "written" && (quiet || checked.rows.length || checked.settled.length || checked.moved.length || checked.movedPromises.length)) this.host.changed();
+      if (outcome === "written" && (quiet || checked.rows.length || checked.settled.length || checked.moved.length || checked.movedPromises.length || checked.replaced.length)) this.host.changed();
       return "next";
     } catch (error) {
       // Spam or Trash meanwhile: never asked about again; an open item gone to Spam: asked again without it

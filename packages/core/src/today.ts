@@ -259,7 +259,8 @@ export function historyAfter(key: HistoryKey, src: 0 | 1): { at: number; id: num
 }
 
 /** What happened to the item: done, removed (once "not a task"), settled by later mail, or over (retired when its time passed). */
-export type HistoryOutcome = "done" | "dismissed" | "settled" | "over";
+/** plan 210 (iteration 3): `replaced`, a promise its person replaced with another request */
+export type HistoryOutcome = "done" | "dismissed" | "settled" | "over" | "replaced";
 
 export interface TodayHistoryItem {
   /** plan 210 (iteration 2): its row's identity, the closed item's (a merged one's canonical's) */

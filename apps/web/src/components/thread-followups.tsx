@@ -152,7 +152,7 @@ function Line({ row, messages, target = false }: { row: FollowupRow; messages: r
  * feed's open row's, nothing to act on (it's done).
  */
 function ClosedPromise({ row }: { row: FollowupRow }) {
-  const outcome = row.state === "done" ? "done" : "dismissed";
+  const outcome = row.closedReason === "replaced" ? "replaced" : row.state === "done" ? "done" : "dismissed";
   return (
     <div data-testid="followup-line" data-kind={row.kind} data-state={row.state} data-target className={cn(AI_CARD, AI_PAD)}>
       <p data-testid="followup-header" className={AI_HEADER}>

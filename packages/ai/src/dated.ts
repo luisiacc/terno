@@ -20,7 +20,8 @@ import type { StructuredTask } from "./ladder";
 /** 10 (the seventh panel round): days and times in the reader's zone, one in another converted and kept in the words; a newsletter's listing is never an item's source, a list's mail about the reader's own arrangement still is */
 /** 11 (plan 210's first iteration): what a group's mail requires of the reader is theirs, an optional call isn't; a pick-up's last day is a deadline; "before Monday" is Sunday; a soft day keeps its words; a replaced promise is a new request; the names the mail gives */
 /** 12 (plan 210's second iteration): a bill on AutoPay is no "pay"; an invitation's text says it's one; a meeting's start is its time; a zone keeping the reader's clock is theirs; "ready for pickup" is no delivery. Needs you trusts its "nothing asked" (`DATED_NOTHING_ASKED_SINCE`) */
-export const DATED_PROMPT_VERSION = 12;
+/** 13 (plan 210's third iteration): `replaced`, a promise its person replaced with another request (the owner's "Close replaced promises") */
+export const DATED_PROMPT_VERSION = 13;
 /**
  * A model's hidden reasoning counts against this, and an answer cut off is a reading lost (the worker never asks again):
  * the sixth panel round's soccer game, a list's mail with two of the coach's games open, ran Luna past 2,000 (1 in 30;
@@ -72,6 +73,8 @@ export interface DatedResult {
    * when the message changes them ("arrive by 7:30"), with `textEvidence` the mail's own; both or neither (the fifth panel round)
    */
   moved: { label: string; due: string; time: string | null; evidence: string; text: string | null; textEvidence: string | null }[];
+  /** plan 210 (iteration 3): promises (p labels) this message replaces with a different request, and the mail's words that say so */
+  replaced: { label: string; evidence: string }[];
 }
 
 // `kind` is a string on the wire: one the app doesn't know is dropped, not repaired for. A time the mail gives in another zone
@@ -81,6 +84,7 @@ const wire = z.object({
   items: z.array(z.object({ kind: z.string(), text: z.string(), quote: z.string(), due: z.string().nullable(), time: z.string().nullable() })),
   settled: z.array(z.object({ label: z.string(), evidence: z.string() })),
   moved: z.array(z.object({ label: z.string(), due: z.string(), time: z.string().nullable(), evidence: z.string(), text: z.string().nullable(), textEvidence: z.string().nullable() })),
+  replaced: z.array(z.object({ label: z.string(), evidence: z.string() })),
 });
 type Wire = z.infer<typeof wire>;
 
@@ -148,7 +152,8 @@ Return:
   When the mail gives the time in a zone other than the reader's (${zone}), "due" is the day and "time" the time exactly as the mail writes them, then a space and that zone's IANA name, never converted: the app converts them to the reader's. "Thursday at 4:00 PM PT" is "16:00 America/Los_Angeles"; "10:00 CET" is "10:00 Europe/Paris"; "a las 18:00 hora de Ciudad de México" is "18:00 America/Mexico_City". Never work out the reader's time yourself, not even for a zone you know well: for a reader in Europe, "10:00 AM ET" is "10:00 America/New_York". Its text then ends with the mail's own time and zone, in parentheses: "${zoneExample}". A time with no zone, or in the reader's own zone, has neither: no zone after "time", none in the text. A zone the mail names by its region or its abbreviation ("Eastern Time", "Central European Time", "CET") that keeps the reader's clock on that day is the reader's own. When the abbreviation names zones in different places ("IST": India, Israel or Ireland; "CST": the US or China) and nothing in the mail says which, "time" is null and the text keeps the time as the mail writes it.
 - <open_items> holds the reader's open items (o1, o2…) and promises the reader made in this conversation (p1, p2…, kind "promise"), each with its day and time when it has them ("o1 (event, 2026-03-07 10:00): …").
 - "settled": the open items (labels o1, o2…, never a p label) this message settles, each { "label", "evidence" }, where evidence is the mail's exact words that settle it: "Payment received", "your booking has been cancelled", "your card has been updated". An event the mail cancels ("Thursday's class is cancelled") is settled, never moved. A reminder of the same bill settles nothing. If in doubt, leave it out.
-- "moved": the open items or promises this message gives a new day or a new time ("Friday at the latest works", "we've moved your appointment to the 24th", "Saturday's game is now at 8:00"), each { "label", "due", "time", "evidence", "text", "textEvidence" } with "due" as above (its own day from <open_items> when only the time changes), "time" the new time (its zone as above) or null when the mail gives none, and evidence the mail's exact words. An open item with a new day or time goes here, never also in "items". What the mail asks about a promise is that promise's, never an item of its own: a new day for what was promised ("we haven't received the report yet, could you get it to me before Monday?") moves it, and nothing else. A different thing asked for in its place ("skip the piecemeal version: please send me a full draft of Chapter 2 by Monday") is a new "respond", and the promise isn't moved at all. "text": for an o label only, the item's new text when its text in <open_items> no longer says what this message says (a time to arrive, a window, what to bring), written as an item's text is, keeping what it names (whose game, which appointment), with only what the mail states and without the item's own day or time (the app shows them beside it): "${moveSaid}" makes "${moveText}". Else null, as for most moves: a new day or time alone changes no words, nor does "same place". "textEvidence" the mail's exact words that say it, from one line of <mail> (the one that matters most when the words take from two), else null. Never for a p label: a promise keeps its words. An open item the mail only mentions again with no new day or time (a reminder, a new place) is neither moved nor an item. One it settles isn't moved.
+- "moved": the open items or promises this message gives a new day or a new time ("Friday at the latest works", "we've moved your appointment to the 24th", "Saturday's game is now at 8:00"), each { "label", "due", "time", "evidence", "text", "textEvidence" } with "due" as above (its own day from <open_items> when only the time changes), "time" the new time (its zone as above) or null when the mail gives none, and evidence the mail's exact words. An open item with a new day or time goes here, never also in "items". What the mail asks about a promise is that promise's, never an item of its own: a new day for what was promised ("we haven't received the report yet, could you get it to me before Monday?") moves it, and nothing else. A different thing asked for in its place ("skip the piecemeal version: please send me a full draft of Chapter 2 by Monday") is a new "respond", and the promise isn't moved at all: it's "replaced" (below). "text": for an o label only, the item's new text when its text in <open_items> no longer says what this message says (a time to arrive, a window, what to bring), written as an item's text is, keeping what it names (whose game, which appointment), with only what the mail states and without the item's own day or time (the app shows them beside it): "${moveSaid}" makes "${moveText}". Else null, as for most moves: a new day or time alone changes no words, nor does "same place". "textEvidence" the mail's exact words that say it, from one line of <mail> (the one that matters most when the words take from two), else null. Never for a p label: a promise keeps its words. An open item the mail only mentions again with no new day or time (a reminder, a new place) is neither moved nor an item. One it settles isn't moved.
+- "replaced": the promises (labels p1, p2…, never an o label) this message replaces with a different request, each { "label", "evidence" }, where evidence is the mail's exact words that say the promised thing isn't wanted any more ("Let's skip the piecemeal version", "olvidemos la versión por partes"). Only when the mail plainly drops what was promised and asks for something else in its place, a request that's in "items"; a request for what was promised, or a new day for it, moves it and replaces nothing. If in doubt, leave it out.
 
 Not items:
 - A pitch, sales or recruiting mail from someone who doesn't know the reader ("one of my clients is hiring a VP… your name came up", "would you be open to a quick call about our product?"), with a day or without: it's neither an "ask" nor a "respond".
@@ -389,7 +394,7 @@ export function readDatesTask(input: DatedInput): StructuredTask<Wire, DatedResu
     system: SYSTEM(input.language, input.receivedAt, input.zone),
     prompt: datedPrompt(input),
     schema: { name: "dated_mail", zod: wire },
-    example: { items: [{ kind: "pay", text: "Pay the electricity bill ($54.20)", quote: "Amount due by 20 March", due: "2026-03-20", time: null }], settled: [], moved: [] },
+    example: { items: [{ kind: "pay", text: "Pay the electricity bill ($54.20)", quote: "Amount due by 20 March", due: "2026-03-20", time: null }], settled: [], moved: [], replaced: [] },
     maxTokens: input.outputTokens ?? DATED_MAX_TOKENS,
     effort: "low",
     validate: (w) => ({
@@ -434,6 +439,11 @@ export function readDatesTask(input: DatedInput): StructuredTask<Wire, DatedResu
             return { label, due: at.due ?? "", time: at.time, evidence, text: both ? text : null, textEvidence: both ? textEvidence : null };
           })
           .filter((m) => m.label && m.due && m.evidence),
+        // only a promise's label: an open item is settled or moved, never replaced
+        replaced: w.replaced
+          .slice(0, DATED_OPEN_SHOWN)
+          .map((r) => ({ label: r.label.trim(), evidence: clean(r.evidence, QUOTE_CHARS) }))
+          .filter((r) => /^p\d+$/.test(r.label) && r.evidence),
       },
     }),
   };
@@ -480,5 +490,5 @@ export function fakeDates(prompt: string): Wire {
   // "… by YYYY-MM-DD at the latest" gives the first open item a new day
   const late = sentences.find((s) => /\d{4}-\d{2}-\d{2} at the latest/i.test(s));
   const moved = late && movable[0] && !settled.length ? [{ label: movable[0], due: /(\d{4}-\d{2}-\d{2})/.exec(late)![1]!, time: null, evidence: late, text: null, textEvidence: null }] : [];
-  return { items: moved.length ? items.filter((i) => !late || i.quote !== late) : items, settled, moved };
+  return { items: moved.length ? items.filter((i) => !late || i.quote !== late) : items, settled, moved, replaced: [] };
 }
