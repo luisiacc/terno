@@ -165,6 +165,29 @@ describe("the conversation's line keeps the whole wording (plan 204, after the s
       setLocale("en", en);
     }
   });
+  it("plan 210 (iteration 5, R1): a travel item's time is its place's clock wherever it's said, never the reader's zone (en, es)", async () => {
+    const { datedLine, taskOf } = await import("./dated");
+    const { setLocale } = await import("@terno/i18n");
+    const { default: es } = await import("@terno/i18n/locales/es");
+    const { default: en } = await import("@terno/i18n/locales/en");
+    const now = new Date(2026, 10, 12, 10, 0).getTime();
+    // the return flight leaves Austin at 4:00 PM there: stored at the instant, which the reader's zone may call another hour
+    const dueAt = new Date(2026, 10, 16, 23, 0).getTime();
+    const wall = { day: "2026-11-16", time: "16:00", zone: "America/Chicago", place: "Austin" };
+    const back = { kind: "event" as const, dueDay: "2026-11-16", dueAt, timed: true, dated: true, text: "Return flight to Madrid", wall };
+    expect(datedLine(back, false, now)).toBe("Monday 4:00 PM Austin · Return flight to Madrid");
+    // a zone the mail named with no place stays the reader's
+    expect(datedLine({ ...back, wall: { ...wall, place: null } }, false, now)).toBe("Monday 11:00 PM · Return flight to Madrid");
+    // the row's screen-reader words, from what Today carries
+    const why = { kind: "dated" as const, text: back.text, dueAt, item: { id: 1, revision: 0, kind: "event" as const, dueDay: "2026-11-16", timed: true, dated: true, travel: { day: "2026-11-16", time: "16:00", place: "Austin" } } };
+    expect(taskOf(why, now)?.due).toBe("Monday 4:00 PM Austin");
+    setLocale("es", es);
+    try {
+      expect(datedLine(back, false, now)).toMatch(/^Lunes 16:00 en Austin · Return flight to Madrid$/i);
+    } finally {
+      setLocale("en", en);
+    }
+  });
   it("the Codex code review of the fourth round: an alert is the mail's word, the app saying so after the model's words (en, es)", async () => {
     const { datedLine, datedText } = await import("./dated");
     const { setLocale } = await import("@terno/i18n");

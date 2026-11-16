@@ -115,13 +115,12 @@ describe("duplicates and related details", () => {
     expect(row).toMatchObject({ id: `dated:${bus.id}`, why: { kind: "promise", promise: { id: mine.id } } });
   });
 
-  it("a return leg is its outbound flight's Also and a quiet row of its own on its day (iteration 4), alone once that flight is over", () => {
+  it("a return leg is a quiet row of its own on its day (iteration 4), never also its outbound flight's Also line (iteration 5, R1)", () => {
     const out = dated("event", "2026-11-18", { threadId: 1, text: "Flight to Austin" }, "12:00");
     const back = dated("event", "2026-11-22", { threadId: 1, text: "Return flight to Madrid", detailOf: out.id }, "18:10");
     const before = projectToday(facts({ dated: [out, back] }));
     expect(before.rows.map((r) => [r.id, r.group, r.day])).toEqual([[`dated:${out.id}`, "today", null], [`dated:${back.id}`, "day", "2026-11-22"]]);
-    expect(before.rows[0]!.also).toMatchObject([{ text: "Return flight to Madrid", dueDay: "2026-11-22", timed: true }]);
-    expect(before.rows[1]!.also).toBeUndefined();
+    expect(before.rows.map((r) => r.also)).toEqual([undefined, undefined]);
     // a Plan: never counted, under its own day or Today
     expect(before.counts).toEqual({ missed: 0, today: 0, waiting: 0, overdue: 0 });
     // past the seven days, behind Coming up like any row of that day

@@ -1,4 +1,4 @@
-import { alertUntil, askUntil, datedGroup, datedGroupAt, defaultRemindAt, dueCutoff, laterBefore, localDay, planEnd, remindPresets, undatedAlert, type DatedKind, type DatedRow, type ItemSeen, type PartOfDay, type RemindPreset, type TodayAlso, type TodayWhy } from "@terno/core";
+import { alertUntil, askUntil, datedGroup, datedGroupAt, defaultRemindAt, dueCutoff, laterBefore, localDay, planEnd, remindPresets, undatedAlert, type DatedKind, type DatedRow, type DatedWall, type ItemSeen, type PartOfDay, type RemindPreset, type TodayAlso, type TodayWhy } from "@terno/core";
 import { getLocale, t } from "@terno/i18n";
 import { useEffect, useState } from "react";
 import { usd } from "~/lib/ai";
@@ -6,7 +6,7 @@ import type { LeftRows } from "~/lib/actions";
 import { muteOfferAction } from "~/lib/dated-mutes";
 import { registerUndo, snack, type SnackAction } from "~/lib/snack";
 import { client } from "~/rpc/connection";
-import { alertSays } from "~/lib/today-sentence";
+import { alertSays, placeClock } from "~/lib/today-sentence";
 import { datedDay, dueShort, partDay, partInSentence, reminderTime } from "~/lib/when";
 
 /** Plan 204: a dated item as Today's row carries it, what Done and Later act on. */
@@ -23,6 +23,22 @@ export interface DatedFacts {
   text: string;
   /** plan 210 (iteration 5, revision 4): the part of its day it's asked for ("Due Saturday morning"); absent, the whole day */
   partOfDay?: PartOfDay | null;
+  /**
+   * plan 210 (iteration 4, revision 10): the mail's own clock at a place it named away from the reader, as stored (`wall`,
+   * a dated item's) or as Today's row carries it (`travel`)
+   */
+  wall?: DatedWall | null;
+  travel?: { day: string; time: string; place: string } | null;
+}
+
+/**
+ * Plan 210 (iteration 5, R1): a travel item's day and time as the place says them ("Mon 4:00 PM Austin"), never the reader's
+ * zone's: the feed's column says it so, and the reader's line, the Also line and the screen reader's words follow it.
+ */
+function placeWhen(o: Pick<DatedFacts, "timed" | "wall" | "travel">): { day: number; time: string } | null {
+  const at = o.timed ? (o.travel ?? (o.wall?.place ? { day: o.wall.day, time: o.wall.time, place: o.wall.place } : null)) : null;
+  const day = at ? localDay(at.day)?.getTime() : undefined;
+  return at && day !== undefined ? { day, time: placeClock(at) } : null;
 }
 
 const capital = (s: string): string => s.charAt(0).toLocaleUpperCase(getLocale()) + s.slice(1);
@@ -72,14 +88,16 @@ const line = (when: string | null, text: string): string => (when ? t("today.why
  */
 export function datedWhen(o: Omit<DatedFacts, "text">, missed: boolean, now = Date.now()): string | null {
   if (o.kind === "ask" || !o.dated) return null;
-  const time = o.timed ? reminderTime(o.dueAt) : null;
-  if (missed) return wasDue(dayOf(o), now, time, o.partOfDay);
+  const place = placeWhen(o);
+  const time = place ? place.time : o.timed ? reminderTime(o.dueAt) : null;
+  const day = place ? place.day : dayOf(o);
+  if (missed) return wasDue(day, now, time, o.partOfDay);
   if (datedGroup(o.kind) === "plans") {
-    const d = datedDay(dayOf(o), now);
+    const d = datedDay(day, now);
     const when = d.near === "today" ? t("today.when.today") : d.near === "tomorrow" ? t("today.when.tomorrow") : capital(d.text);
     return time ? `${when} ${time}` : when;
   }
-  return dueOn(dayOf(o), time, now, o.partOfDay);
+  return dueOn(day, time, now, o.partOfDay);
 }
 
 /**
