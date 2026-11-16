@@ -110,6 +110,24 @@ export function defineScheduleConformance(fresh: () => Promise<MailStore>, reope
       expect(await store.followups.get(was.id)).toEqual({ ...was, revision: was.revision + 2 });
     });
 
+    it("a promise changed to a moment already reached is due in the change, as follow-ups would make it, so their next look moves nothing (Codex's code review, iteration 4)", async () => {
+      const { store, promise } = await setup();
+      const soon = await promise("soon", { dueAt: NOW + DAY });
+      const s = (await store.today.schedule({ at: NOW, dated: [], promises: [{ id: soon.row.id, revision: soon.row.revision, to: { dueAt: NOW - 3 * 3_600_000, timed: false, state: "due" } }] }))!;
+      expect(await store.followups.get(soon.row.id)).toMatchObject({ state: "due", inboxState: "onTop", revision: soon.row.revision + 1 });
+      expect(await store.followups.makeDue(NOW)).toEqual([]);
+      expect(await store.today.unschedule(s)).toBe(true);
+      expect(await store.followups.get(soon.row.id)).toEqual({ ...soon.row, revision: soon.row.revision + 2 });
+      // one due already keeps its Inbox top as it was (here, seen)
+      const late = await promise("late", { dueAt: NOW - DAY });
+      await store.followups.makeDue(NOW);
+      const due = (await store.followups.get(late.row.id))!;
+      await store.followups.update(due.id, due.revision, { inboxState: "seen" });
+      const seen = (await store.followups.get(late.row.id))!;
+      await store.today.schedule({ at: NOW, dated: [], promises: [{ id: seen.id, revision: seen.revision, to: { dueAt: NOW - 3 * 3_600_000, timed: false, state: "due" } }] });
+      expect(await store.followups.get(late.row.id)).toMatchObject({ state: "due", inboxState: "seen", revision: seen.revision + 1 });
+    });
+
     it("a later mail's move of an item the user changed is kept as a proposal, its words with it; another item still moves", async () => {
       const { store, dated, reply, finish } = await setup();
       const slip = await dated("slip");
