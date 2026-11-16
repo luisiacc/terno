@@ -187,9 +187,9 @@ test.describe("What matters and its digest (plan 145)", () => {
     await expect(item(page, "Can you make the 19th")).not.toContainText("Your turn");
     // pass 3: one sentence, never a second total to read against the Inbox's; plan 210 (iteration 3): by when and who, "1
     // missed · 3 today · 5 waiting", and the sidebar's badge is their sum
-    await expect(page.getByTestId("today-needs")).toHaveText(/^(?:\d+ missed|\d+ today|\d+ waiting)(?: · (?:\d+ today|\d+ waiting))*$/);
+    await expect(page.getByTestId("today-needs")).toHaveText(/^(?:\d+ missed|\d+ to do today|\d+ waiting)(?: · (?:\d+ to do today|\d+ waiting))*$/);
     const sidebar = (await page.getByTestId("nav-today").innerText()).match(/\d+/)?.[0];
-    const said = [...(await page.getByTestId("today-needs").innerText()).matchAll(/(\d+) (?:missed|today|waiting)/g)].reduce((n, m) => n + Number(m[1]), 0);
+    const said = [...(await page.getByTestId("today-needs").innerText()).matchAll(/(\d+) (?:missed|to do today|waiting)/g)].reduce((n, m) => n + Number(m[1]), 0);
     if (sidebar) expect(Number(sidebar)).toBe(said);
     await expect(page.getByTestId("today-line")).not.toContainText(/this week|\d+ to reply/);
     // the owner: "Your turn" and "Waiting for your reply" are the same thing: one heading, and the new conversation is

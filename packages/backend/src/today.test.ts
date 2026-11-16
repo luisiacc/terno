@@ -152,6 +152,24 @@ describe("the list", () => {
     expect(list.sections[0]!.items.map((i) => [i.why.kind, i.why.text])).toEqual([["promise", "send the contract"], ["promise", "and the deck"]]);
     expect((await client.call("counts.get", {})).today).toBe(2);
   });
+
+  it("plan 210 (iteration 4, revision 8): your reminder due today is Today's to do, in the header's numbers and the badge alike; setting one says so", async () => {
+    const { client, put, clock } = await setup();
+    const quiet = await put({}, false);
+    let changed = 0;
+    client.on("todayChanged", () => changed++);
+    expect((await client.call("today.list", { held: [] })).counts).toEqual({ missed: 0, today: 0, waiting: 0 });
+    await client.call("reminders.set", { threadIds: [quiet], dueAt: clock.now + 3_600_000, kind: "always" });
+    await vi.waitFor(() => expect(changed).toBeGreaterThan(0));
+    const list = await client.call("today.list", { held: [] });
+    expect(list.sections.flatMap((s) => s.items.map((i) => [i.id, i.why.kind]))).toEqual([[`reminder:${quiet}`, "reminder"]]);
+    expect(list.counts).toEqual({ missed: 0, today: 1, waiting: 0 });
+    expect((await client.call("counts.get", {})).today).toBe(1);
+    // tomorrow's is neither drawn nor counted today
+    await client.call("reminders.set", { threadIds: [quiet], dueAt: clock.now + 2 * 86_400_000, kind: "always" });
+    expect((await client.call("today.list", { held: [] })).counts.today).toBe(0);
+    expect((await client.call("counts.get", {})).today).toBe(0);
+  });
 });
 
 describe("the digest", () => {
