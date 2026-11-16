@@ -106,8 +106,36 @@ describe("reading dates in mail you got (plan 204)", () => {
     expect(validate({ items: [item({ text: "Pay what the email says" })], settled: [], moved: [] }).items[0]!.text).toBe("Pay what the email says");
   });
 
+  it("prompt v16 (plan 210, iteration 5): renewals by themselves and bills paid are no items; the stake as a condition; relayed asks; two asks; an event's last day; a hotel's check-in", () => {
+    const en = readDatesTask(input()).system;
+    expect(en).toContain('A plan, a subscription or a membership the mail says renews by itself ("renews automatically on December 1", "will be billed to your card on file"), even at a price the reader may change or with a fee for cancelling later, is no item at all, of any kind: nobody has to act.');
+    expect(en).not.toContain("Notely Pro renews automatically");
+    expect(en).toContain('said as what happens if they don\'t ("or …", "if unpaid", "after Thu"), never as if it had already happened');
+    expect(en).toContain('"Update the card for Stratus (or deploys pause Mon)"');
+    expect(en).toContain('"Attach 4 receipts in Expensely (or card suspended Nov 16)"');
+    expect(en).not.toContain("At most one \"ask\" a mail");
+    expect(en).toContain('Two things the person asks are two items (one with a day is a "respond"), unless one is part of the other\'s request (a list under "reply with:").');
+    expect(en).toContain('A person\'s ask that a service relays to the reader by name (a code host\'s review request, a network\'s message from someone named) is that person\'s "ask", even from the service\'s automated address');
+    expect(en).toContain('Never a network\'s own call or someone\'s post: "Owen posted", "people you may know", "join the conversation".');
+    expect(en).toContain('An event over several days says its last day in its text as the mail does: "Pressline Summit in Denver (Thu–Fri)"');
+    expect(en).toContain('a hotel stay is an event on its check-in day, at its check-in time when the mail states one ("check-in from 3:00 PM" is 15:00)');
+    expect(en).toContain('an invitation\'s "Thu Oct 8 · 2pm – 3pm") is no window: its time is when it starts.');
+    const es = readDatesTask(input({ language: "es" })).system;
+    expect(es).toContain('"Actualizar la tarjeta de Stratus (o se pausan los despliegues el lun)"');
+    expect(es).toContain('"Responder a Inés Duarte sobre su panel"');
+    expect(es).toContain('"Cumbre Pressline en Denver (jue–vie)"');
+  });
+
+  it("v16: the stake is held to the mail before the cut, an item's and a move's; a renewal's own \"before\" is kept", () => {
+    const task = readDatesTask(input({ subject: "Real estate tax installment", text: "Installment amount: $412.00. Due: Friday, November 20, 2026.\n\nMissed installments will remove the parcel from the prepayment plan.", open: [{ label: "o1", kind: "pay", text: "Pay the Marlow County installment", due: "2026-11-13" }] }));
+    const v = task.validate({ items: [{ kind: "pay", text: "Pay $412.00 for the Marlow County tax installment (parcel removed from plan)", quote: "Due: Friday, November 20, 2026", due: "2026-11-20", time: null }, { kind: "renew", text: "Cancel Tipotec Pro before Nov 20", quote: "Due: Friday, November 20, 2026", due: "2026-11-20", time: null }], settled: [], moved: [{ label: "o1", due: "2026-11-20", time: null, evidence: "Due: Friday, November 20, 2026", text: "Pay the Marlow County installment (parcel removed from plan)", textEvidence: "Due: Friday, November 20, 2026" }], replaced: [] });
+    if (!v.ok) throw new Error("invalid");
+    expect(v.value.items.map((i) => [i.text, i.due, i.before ?? null])).toEqual([["Pay $412.00 for the Marlow County tax installment", "2026-11-20", null], ["Cancel Tipotec Pro before Nov 20", "2026-11-19", "2026-11-20"]]);
+    expect(v.value.moved[0]!.text).toBe("Pay the Marlow County installment");
+  });
+
   it("is frozen at its version: a change to the words is a new version", () => {
-    expect(DATED_PROMPT_VERSION).toBe(15);
+    expect(DATED_PROMPT_VERSION).toBe(16);
     expect(readDatesTask(input()).system).toMatchSnapshot();
   });
 
@@ -115,7 +143,8 @@ describe("reading dates in mail you got (plan 204)", () => {
     const en = readDatesTask(input()).system;
     expect(en).toContain('- "replaced": the promises (labels p1, p2…, never an o label) this message replaces with a different request');
     expect(en).toContain('A card statement\'s "pay" is the amount that avoids interest (the statement balance, "pago para no generar intereses"), never the minimum');
-    expect(en).toContain('"Cancel Tasklet Pro before Sunday or pay $9.99/month", or what acting late costs when the mail says so (a fee, a share of the commitment): "Decide on Creatix before Thu (cancelling later costs 50%)"; "Renew bakehouse.dev (auto-renew is off)" when it won\'t renew unless the reader acts');
+    // v16: the reader's choice still, a plan that renews by itself no longer an item (below)
+    expect(en).toContain('Its text says the reader\'s choice and what happens otherwise: "Cancel Tasklet Pro before Sunday or pay $9.99/month", "Renew bakehouse.dev (auto-renew is off)".');
     expect(en).toContain('"Book a CPR renewal class (certification expires Jan 12)"');
     expect(en).toContain("at most about fourteen words and one bracket");
     expect(en).toContain('Never a file name, nor a number that identifies an order, an invoice, a policy, an account or a service');
@@ -165,16 +194,18 @@ describe("reading dates in mail you got (plan 204)", () => {
     const en = readDatesTask(input()).system;
     // round 10: "Pay" on an AutoPay bill
     // v14 (plan 210, iteration 4, the owner's "drop AutoPay-only rows"): no item at all
-    expect(en).toContain('A routine bill the mail says is paid automatically ("AutoPay is on", "no action needed", "will be charged automatically to your card", "se cargará automáticamente": a statement, a premium, a utility or a phone bill) is no item at all, of any kind: the reader has nothing to do.');
+    // v16: or already paid
+    expect(en).toContain('A bill the mail says is paid automatically ("AutoPay is on", "no action needed", "will be charged automatically to your card", "se cargará automáticamente": a statement, a premium, a utility or a phone bill), or already paid ("paid in full", "payment received"), is no item at all, of any kind: the reader has nothing to do.');
     // an invitation that read as an accepted appointment; without the listing's reminder Haiku took a PTA newsletter's
     // calendar as events (4 in 26 readings of dated-147, none in 20 with it)
-    expect(en).toContain('A calendar\'s invitation to the reader that they haven\'t answered ("has invited you", "Invitation:", "Going? Yes / No / Maybe") isn\'t an appointment they\'ve accepted: its text says it\'s an invitation: "Invited: Advent Wreath Committee". (An event a newsletter lists is still no item, below.)');
+    expect(en).toContain('A calendar\'s invitation to the reader that they haven\'t answered ("has invited you", "Invitation:", "Going? Yes / No / Maybe") isn\'t an appointment they\'ve accepted: its text says it\'s an invitation: "Invited: Advent Wreath Committee".');
+    expect(en).toContain("(An event a newsletter lists is still no item, below.)");
     // a closing thanks already asks nothing (v11's "only thanks" line; the eval's cases): words for it made Haiku take a
     // "just so you know" as an ask and a prescription as a delivery again
     expect(en).toContain('A person\'s mail that only thanks, tells or says what they\'ll do: nothing in it is asked of the reader.');
     expect(en).not.toContain("closes the conversation");
     // the eval: an invitation's "7pm – 8:30pm" read as a window (no time), and its own zone named in its words (two clocks)
-    expect(en).toContain('A meeting\'s start and end ("7pm – 8:30pm", "10:00 to 11:00") is no window: its time is when it starts.');
+    expect(en).toContain('A meeting\'s start and end ("7pm – 8:30pm", "10:00 to 11:00", an invitation\'s "Thu Oct 8 · 2pm – 3pm") is no window: its time is when it starts.');
     expect(en).toContain('A zone the mail names by its region or its abbreviation ("Eastern Time", "Central European Time", "CET") that keeps the reader\'s clock on that day is the reader\'s own.');
     const es = readDatesTask(input({ language: "es" })).system;
     expect(es).toContain('"Subir el W-9 de Pingwire ($18,000 retenidos)"');
@@ -601,8 +632,8 @@ describe("reading dates in mail you got (plan 204)", () => {
   });
 
   it("a small window holds the whole conversation with the server: a bad answer and its repair still fit", async () => {
-    // v12's words (an ask, a Plan's window, an alert's words and deadline, a move's time and words, cold outreach, offers, a failed payment, the open items' days, a time in another zone, a newsletter's listing, a group's required act, "before" a day, soft days, a replaced promise, AutoPay, invitations, a meeting's start, a zone with the reader's clock; v13: a replaced promise, a statement's balance, the fix, the reader's choice, what asks, an RSVP's event, no identifiers; v14: the stake, the object, travel, a confirmation, an alert's step, a wish, a same-day move; v15: a scam no item, the reader's own unsubmitted draft) need a little under 8,800 (v14 8,400, v13 7,200, v12 6,100, v11 5,800, v10 4,700, v9 4,200, v8 3,700), past the 5,500 the app warns below for the filter: a window between them reads only the mail's first 200 tokens. A window that holds them with a bad answer and its repair
-    const window = 8800;
+    // v12's words (an ask, a Plan's window, an alert's words and deadline, a move's time and words, cold outreach, offers, a failed payment, the open items' days, a time in another zone, a newsletter's listing, a group's required act, "before" a day, soft days, a replaced promise, AutoPay, invitations, a meeting's start, a zone with the reader's clock; v13: a replaced promise, a statement's balance, the fix, the reader's choice, what asks, an RSVP's event, no identifiers; v14: the stake, the object, travel, a confirmation, an alert's step, a wish, a same-day move; v15: a scam no item, the reader's own unsubmitted draft; v16: renewals by themselves, the stake as a condition, a relayed ask, two asks, an event's last day, a hotel's check-in) need a little over 9,200 (v15 8,800, v14 8,400, v13 7,200, v12 6,100, v11 5,800, v10 4,700, v9 4,200, v8 3,700), past the 5,500 the app warns below for the filter: a window between them reads only the mail's first 200 tokens. A window that holds them with a bad answer and its repair
+    const window = 9300;
     const budget = datedBudget(window);
     const fitted = fitDates(input({ text: "word ".repeat(1200), outputTokens: budget.outputTokens }), budget.promptChars);
     const sizes: number[] = [];

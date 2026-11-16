@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type { DatedKind, DatedRow } from "@terno/core";
 import { describe, expect, it } from "vitest";
 import { checkDates } from "../../packages/backend/src/dated";
+import { relayedAsk } from "../../packages/backend/src/dated-relay";
 import { normalizeText } from "../../packages/core/src/text";
 import en from "../../packages/i18n/src/locales/en";
 import es from "../../packages/i18n/src/locales/es";
@@ -144,8 +145,18 @@ describe.skipIf(process.env.TERNO_AI_DATED !== "1")("dated items on a small mode
       for (const [label, row] of [...open, ...promises]) labelOf.set(row.id, label);
       // plan 210 (iteration 3, revision 5): the conversation's open bills, as the worker counts them in the store
       const paysInThread = [...open.values()].filter((o) => o.kind === "pay" && o.threadId === THREAD).length;
-      const checked = checkDates(r, { text: mail.text, subject: c.subject, arrivedAt: new Date(`${c.today}T12:00:00`).getTime(), open, promises, fromScan: false, now: 0, sender: { person: !c.dated.automated }, reader, others, threadId: THREAD, senderKey: SENDER, from: nameOf(mail.from), paysInThread });
+      // plan 210 (iteration 5, revision 8): a person's ask a service relays, as the worker reads it from an automated sender
+      const relay = c.dated.automated ? relayedAsk(c.subject, mail.text, nameOf(mail.from), c.reader.name) : null;
+      // a case with its own reader's zone is checked on that clock, as the app on the reader's machine would (iteration 5: an
+      // event's start read from its quote is converted to it)
+      const zone = process.env.TZ;
+      if (c.dated.zone) process.env.TZ = c.dated.zone;
+      const checked = checkDates(r, { text: mail.text, subject: c.subject, arrivedAt: new Date(`${c.today}T12:00:00`).getTime(), open, promises, fromScan: false, now: 0, sender: { person: !c.dated.automated }, reader, others, threadId: THREAD, senderKey: SENDER, from: nameOf(mail.from), paysInThread, relay });
       const shownItems = checked.rows.map((k) => ({ kind: k.kind, due: k.dated ? k.dueDay : null, time: k.timed ? clockOf(k.dueAt) : null, text: k.text, quote: k.quote, before: k.before ?? null }));
+      if (c.dated.zone) {
+        if (zone === undefined) delete process.env.TZ;
+        else process.env.TZ = zone;
+      }
       const keptSettled = new Set(checked.settled.map((x) => labelOf.get(x.id)));
       const keptMoved = new Set([...checked.moved.map((x) => labelOf.get(x.id)), ...checked.movedPromises.map((x) => labelOf.get(x.id))]);
       // plan 210 (iteration 3, revision 4): a promise its person replaced, closed by the app
