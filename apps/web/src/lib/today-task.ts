@@ -5,7 +5,7 @@ import { actOnDated, actOnTask, type DatedRef, type TodayTask } from "~/lib/date
 import { actOnFollowup } from "~/lib/followups";
 import { closePage, currentPage, listLayout } from "~/lib/page";
 import type { ReaderItem } from "~/lib/reader-items";
-import { getApp, setApp, setAppOpened } from "~/state/app";
+import { getApp, openedByApp, setApp, setAppOpened } from "~/state/app";
 import { listKey, noteEdit, reloadList } from "~/state/list";
 import { feedRow, feedRowsOfItem, readerHeld, rowOfThread, useFeedRow, useReaderChoice, useToday, type FeedRow } from "~/state/today";
 
@@ -14,7 +14,10 @@ type TaskAction = "done" | "dismiss" | "later";
 /**
  * Plan 210 (iteration 2): rows that leave the feed at once (Done, Remove, Later on them), never their conversation's other
  * rows. The open one moves on, as after Archive: the row after it opens (else the one before, else nothing). Undo (the
- * snack's, z) brings them back with the next read, and the open row with them, when nothing was opened since.
+ * snack's, z) brings them back with the next read, and the open row with them, when nothing was opened since. Iteration 4
+ * (the owner): the next row's mail opens only when the user had the reader open by their own choice (a click, Enter, j/k,
+ * or a Done that went on from such a one); one the app opened, the reader is put away and the feed is on the next row,
+ * its mail unopened. The row the feed was put away on moves to the next likewise.
  */
 function leaveFeedRows(ids: readonly FeedRowId[]): LeftRows | undefined {
   const s = getApp();
@@ -34,9 +37,23 @@ function leaveFeedRows(ids: readonly FeedRowId[]): LeftRows | undefined {
       // (plan 210, iteration 4: never the automated section's page, which sits between the open part and Coming up)
       const stays = (r: FeedRow) => !gone.has(r.id) && r.threadId !== DIGEST_ROW_ID;
       const next = rows.slice(at + 1).find(stays) ?? rows.slice(0, at).reverse().find(stays);
-      useFeedRow.setState(({ moves }) => ({ opened: next?.id ?? null, moves: moves + 1 }));
-      // opened by the app, as Archive's next is: not read until chosen (Codex code review of iteration 2)
-      setAppOpened(next ? next.threadId : null);
+      const byUser = !openedByApp(open.threadId) || useFeedRow.getState().carried === open.id;
+      if (byUser || !next) {
+        useFeedRow.setState(({ moves }) => ({ opened: next?.id ?? null, carried: next?.id ?? null, moves: moves + 1 }));
+        // opened by the app, as Archive's next is: not read until chosen (Codex code review of iteration 2)
+        setAppOpened(next ? next.threadId : null);
+      } else {
+        useFeedRow.setState(({ moves }) => ({ opened: null, cursor: next.id, carried: null, moves: moves + 1 }));
+        setApp({ selectedId: null });
+        keysOnTo(next.id);
+      }
+    }
+  } else {
+    const { cursor } = useFeedRow.getState();
+    if (cursor !== null && gone.has(cursor)) {
+      const at = rows.findIndex((r) => r.id === cursor);
+      const stays = (r: FeedRow) => !gone.has(r.id) && r.threadId !== DIGEST_ROW_ID;
+      useFeedRow.setState({ cursor: (rows.slice(at + 1).find(stays) ?? rows.slice(0, at).reverse().find(stays))?.id ?? null });
     }
   }
   const moved = useFeedRow.getState().moves;

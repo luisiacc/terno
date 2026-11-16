@@ -86,6 +86,25 @@ describe("Done means gone (plan 204, after the second panel round; plan 210, ite
     expect([useFeedRow.getState().opened, getApp().selectedId]).toEqual(["dated:20", 2]);
   });
 
+  it("plan 210 (iteration 4): after Done the next row's mail opens only when the reader was open by the user's own choice (or a Done went on from one); else the reader goes and the feed is on the next row", async () => {
+    // the user's click (open): D goes on to the next, its mail opened, and again from there
+    expect(doneOnSelected()).toBe(true);
+    expect([useFeedRow.getState().opened, getApp().selectedId]).toEqual(["dated:50", 2]);
+    expect(doneOnSelected()).toBe(true);
+    expect([useFeedRow.getState().opened, getApp().selectedId]).toEqual(["dated:30", 3]);
+    // a mail the app opened (no choice of the user's): D puts the reader away, the feed on the next row, nothing opened
+    const { setAppOpened } = await import("~/state/app");
+    useFeedRow.setState({ opened: "dated:10", carried: null });
+    setAppOpened(1);
+    expect(doneOnSelected()).toBe(true);
+    expect(getApp().selectedId).toBeNull();
+    expect(useFeedRow.getState()).toMatchObject({ opened: null, cursor: "dated:30" });
+    // the row the feed was put away on leaves: the feed is on the one after it
+    await vi.waitFor(() => expect(shown()).not.toContain("dated:10"));
+    void actOnTodayRow("dated:30", task("dated:30"), "done");
+    expect(useFeedRow.getState().cursor).not.toBe("dated:30");
+  });
+
   it("Codex code review, round 2: Undo after leaving What matters opens nothing in the mailbox shown now", async () => {
     expect(doneOnSelected()).toBe(true);
     await vi.waitFor(() => expect(useSnack.getState().undo).toBeTruthy());
