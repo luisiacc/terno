@@ -1281,6 +1281,42 @@ describe("plan 210 (iteration 3): the seven days whole, Coming up without a hori
       ["comingUp", "2027-01-09", "week:2027-01-04"],
     ]);
   });
+
+  it("a row names its own item's sender, not the conversation's latest (Margaret's premium from Lakeshore, never Gary)", async () => {
+    const { client, model, receive, read } = await setup();
+    model.answer = (req) => (promptText(req.messages[0]!.content).includes("premium") ? reply([{ kind: "pay", text: "Pay the renewal premium", quote: "Payment due: November 13", due: "2026-11-13", time: null }]) : reply());
+    const thread = await receive({ from: { name: "Lakeshore Mutual", email: "billing@lakeshore.test" }, subject: "Your renewal", bodyText: "Your renewal premium is $1,486.00. Payment due: November 13.", providerThreadId: "policy" });
+    await read();
+    expect(await receive({ from: { name: "Gary", email: "gary@people.test" }, subject: "Re: Your renewal", bodyText: "Looks fine to me.", providerThreadId: "policy" })).toBe(thread);
+    await read();
+    const [row] = (await client.call("today.list", { held: [] })).sections.flatMap((x) => x.items);
+    expect(row!.thread.fromName).toBe("Gary");
+    expect(row!.from).toEqual({ name: "Lakeshore Mutual", email: "billing@lakeshore.test" });
+  });
+
+  it("your promise to attend and the event it names are one row, the event's; the evening's keynote stays its own", async () => {
+    const { client, model, receive, read, raw, clock } = await setup();
+    await client.call("settings.update", { followups: { enabled: true } });
+    model.answer = () =>
+      reply([
+        { kind: "event", text: "Shipfast Summit tech check", quote: "tech check Monday at 4:00 PM", due: "2026-11-16", time: "16:00" },
+        { kind: "event", text: "Shipfast Summit keynote", quote: "keynote Monday at 7:00 PM", due: "2026-11-16", time: "19:00" },
+      ]);
+    const thread = await receive({ from: { name: "Shipfast", email: "events@shipfast.test" }, subject: "Summit", bodyText: "Your tech check Monday at 4:00 PM and the keynote Monday at 7:00 PM.", providerThreadId: "summit" });
+    await read();
+    raw.run(
+      `INSERT INTO followups (thread_id, message_id, item, kind, text, quote, person_name, person_email, sent_at, due_at, dated, state, revision, created_at) VALUES (?, 990777, 0, 'promise', 'attend the tech check', 'I''ll be there for the tech check', 'Shipfast', 'events@shipfast.test', ?, ?, 1, 'open', 0, ?)`,
+      thread, clock.now, at(2026, 11, 16, 9), clock.now + 1,
+    );
+    clock.now = at(2026, 11, 14, 10);
+    const items = (await client.call("today.list", { held: [] })).sections.flatMap((x) => x.items);
+    expect(items.map((i) => [i.why.kind, i.why.text])).toEqual([
+      ["dated", "Shipfast Summit tech check"],
+      ["dated", "Shipfast Summit keynote"],
+    ]);
+    expect(items[0]!.why.members?.map((m) => m.source)).toEqual(["dated", "promise"]);
+    expect(items[1]!.why.members).toBeUndefined();
+  });
 });
 
 describe("the third panel round", () => {

@@ -188,6 +188,10 @@ export const messagesHere = (db: Db, ids: readonly number[]): number[] => db.all
 export const senders = (db: Db, ids: readonly number[]): Map<number, string> =>
   new Map(db.all<{ id: number; from_email: string }>("SELECT id, from_email FROM messages WHERE id IN (SELECT value FROM json_each(?))", JSON.stringify(ids)).map((r) => [r.id, r.from_email]));
 
+/** Plan 210 (iteration 3): see the store's `fromOf`. */
+export const fromOf = (db: Db, ids: readonly number[]): Map<number, { name: string; email: string }> =>
+  new Map(db.all<{ id: number; from_name: string | null; from_email: string | null }>("SELECT id, from_name, from_email FROM messages WHERE id IN (SELECT value FROM json_each(?))", JSON.stringify(ids)).map((r) => [r.id, { name: r.from_name ?? "", email: r.from_email ?? "" }]));
+
 export function digestLive(db: Db, threadIds: readonly number[]): number[] {
   return db.all<{ id: number }>("SELECT id FROM threads WHERE id IN (SELECT value FROM json_each(?)) AND in_inbox = 1 AND unread_count > 0", JSON.stringify(threadIds)).map((r) => r.id);
 }

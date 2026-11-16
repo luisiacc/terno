@@ -45,6 +45,8 @@ export interface ProjectedRow {
    * day for the first two weeks, then its week ("week:YYYY-MM-DD")
    */
   bucket?: string;
+  /** plan 210 (iteration 3, revision 10): a dated item's own message, whose sender the row names */
+  messageId?: number;
 }
 
 /** One item, or the true duplicates of one: its id the canonical's key, shown as `lead`. */
@@ -84,12 +86,37 @@ function logicalItems(dated: readonly DatedRow[], promises: readonly FollowupRow
   return [...groups.values()];
 }
 
-/** The mail's own time out of an item's words when the column says it (one time per row, A7). */
-function datedWhy(row: DatedRow, missed: boolean, early: boolean, members: ItemRef[]): TodayWhy {
-  const split = row.timed ? splitZoneNote(row.text) : { text: row.text, note: null };
+/** An item's words without the mail's own time, when the column says it (one time per row, A7). */
+const wordsOf = (row: DatedRow) => (row.timed ? splitZoneNote(row.text) : { text: row.text, note: null });
+
+/** Letters and digits only, lower case: what a detail is compared by. */
+const plain = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+
+/**
+ * Plan 210 (iteration 3, the panel): what a merged row's other dated members say that its own words don't, as the readers
+ * write details, in brackets: Priya's dinner from the restaurant keeps "car pickup 7:05" from Jess's note. Joined into the
+ * lead's own bracket, or a new one.
+ */
+export function withMembersDetails(text: string, others: readonly DatedRow[]): string {
+  const have = plain(text);
+  const details: string[] = [];
+  for (const o of others) {
+    for (const m of wordsOf(o).text.matchAll(/\(([^()]+)\)/gu)) {
+      const d = m[1]!.trim();
+      const p = plain(d);
+      if (p && !have.includes(p) && !details.some((x) => plain(x) === p)) details.push(d);
+    }
+  }
+  if (!details.length) return text;
+  const more = details.join("; ");
+  return /\)\s*$/u.test(text) ? text.replace(/\)\s*$/u, `; ${more})`) : `${text} (${more})`;
+}
+
+function datedWhy(row: DatedRow, missed: boolean, early: boolean, members: ItemRef[], others: readonly DatedRow[] = []): TodayWhy {
+  const split = wordsOf(row);
   return {
     kind: "dated",
-    text: split.text,
+    text: others.length ? withMembersDetails(split.text, others) : split.text,
     dueAt: row.dueAt,
     ...(missed ? { missed } : {}),
     item: { id: row.id, revision: row.revision, kind: row.kind, dueDay: row.dueDay, timed: row.timed, dated: row.dated, ...(early ? { early } : {}), ...(split.note ? { note: split.note } : {}) },
@@ -230,10 +257,10 @@ export function projectRows(items: readonly PlacedItem[], f: Pick<ProjectionFact
     const why: TodayWhy = o.count
       ? lead.source === "dated" ? { kind: "dated", item: { id: lead.row.id, revision: 0, kind: lead.row.kind, dueDay: "", timed: false, dated: true, ...(early ? { early } : {}) } } : { kind: "promise" }
       : lead.source === "dated"
-        ? datedWhy(lead.row, at.group === "missed", early, item.members)
+        ? datedWhy(lead.row, at.group === "missed", early, item.members, item.entries.flatMap((e) => (e !== lead && e.source === "dated" ? [e.row] : [])))
         : promiseWhy(lead.row, at.group === "missed", item.members, f.zone);
     const came = lead.source === "dated" ? lead.row.arrivedAt : lead.row.sentAt;
-    placed.push({ id: item.id, threadId: lead.row.threadId, group: at.group, day: at.day, why, dueAt: lead.row.dueAt, came, ...(at.group === "today" && waitsOnYou(why) ? { part: "waiting" as const } : {}), ...(at.day !== null && !o.count ? { bucket: bucketOf(at.day) } : {}), ...(detail && !o.count ? { also: alsoOf(detail) } : {}) });
+    placed.push({ id: item.id, threadId: lead.row.threadId, group: at.group, day: at.day, why, dueAt: lead.row.dueAt, came, ...(at.group === "today" && waitsOnYou(why) ? { part: "waiting" as const } : {}), ...(at.day !== null && !o.count ? { bucket: bucketOf(at.day) } : {}), ...(lead.source === "dated" && !o.count ? { messageId: lead.row.messageId } : {}), ...(detail && !o.count ? { also: alsoOf(detail) } : {}) });
   }
   // what's waiting on you (the owner's round 10: only when something is asked; the stores' `stillWaiting` says so), unless
   // an item of the conversation already says it

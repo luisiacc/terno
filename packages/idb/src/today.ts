@@ -201,6 +201,17 @@ export function senders(c: Ctx, ids: readonly number[]): Map<number, string> {
   return out;
 }
 
+/** Plan 210 (iteration 3): see the store's `fromOf`. */
+export function fromOf(c: Ctx, ids: readonly number[]): Map<number, { name: string; email: string }> {
+  const messages = T(c, "messages");
+  const out = new Map<number, { name: string; email: string }>();
+  for (const id of ids) {
+    const m = messages.get(id);
+    if (m) out.set(id, { name: String(m.from_name ?? ""), email: String(m.from_email ?? "") });
+  }
+  return out;
+}
+
 export function digestLive(c: Ctx, threadIds: readonly number[]): number[] {
   const threads = T(c, "threads");
   return threadIds.filter((id) => {
