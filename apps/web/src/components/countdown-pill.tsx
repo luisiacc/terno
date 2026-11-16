@@ -64,17 +64,18 @@ function Ring({ size, countdown }: { size: { w: number; h: number }; countdown: 
 }
 
 /**
- * Plan 161, pass 2: z is the last undo (`undoLast`), as ⌘Z (Ctrl+Z) is: the keycap shows the platform's undo, and
- * `aria-keyshortcuts` names both.
+ * Plan 161, pass 2: z is the last undo (`undoLast`), as ⌘Z (Ctrl+Z) is: `aria-keyshortcuts` names both. Plan 210
+ * (iteration 4): the keycap is one key, the one the shortcuts help names first: Z while single keys are on, else the
+ * platform's undo.
  */
 const UNDO_CHORD = "mod+z";
 // (the shortcut's own test of the platform: lib/select's would pull the list's state into every pill)
-// plan 188 (Codex review): plain Z only while single keys are on (the keycap is ⌘Z, which always works)
+// plan 188 (Codex review): plain Z only while single keys are on (else the keycap is ⌘Z, which always works)
 const undoAria = (keys: boolean) => `${typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform) ? "Meta" : "Control"}+Z${keys ? " Z" : ""}`;
 
 /**
  * A pill whose border drains as its time runs out (the dock's Undo, plan 13; a sent message's Undo send, plan 182), with
- * its key as a quiet keycap while that key runs the same thing (z, the undo, shown as ⌘Z). `busy`: what it started is
+ * its key as a quiet keycap while that key runs the same thing (z, the undo, shown as Z, or ⌘Z with single keys off). `busy`: what it started is
  * under way (its spinner; it can't be pressed again).
  */
 export function CountdownPill({ label, name, onClick, shortcut, disabled, busy, countdown, testId, className, ...data }: { label: string; name?: string; onClick: () => void; shortcut?: string; disabled?: boolean; busy?: boolean; countdown: Countdown; testId: string; className?: string } & { [key: `data-${string}`]: string | boolean | undefined }) {
@@ -113,7 +114,7 @@ export function CountdownPill({ label, name, onClick, shortcut, disabled, busy, 
       {/* (a span, so a long label truncates in a pill held to its column: plan 192's "Next: {category}") */}
       <span className="min-w-0 truncate">{label}</span>
       {/* the key is aria-keyshortcuts; drawn as generated content so the button's text stays its label ("Undo" in "Undo archive") */}
-      {shortcut && <Kbd aria-hidden data-key={chordLabel(shortcut === "z" ? UNDO_CHORD : shortcut)} className="h-4 min-w-4 rounded-full bg-tint px-1 text-2xs shadow-none after:content-[attr(data-key)]" />}
+      {shortcut && <Kbd aria-hidden data-key={chordLabel(shortcut === "z" && !keys ? UNDO_CHORD : shortcut)} className="h-4 min-w-4 rounded-full bg-tint px-1 text-2xs shadow-none after:content-[attr(data-key)]" />}
     </button>
   );
 }
