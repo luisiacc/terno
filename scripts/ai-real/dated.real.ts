@@ -40,7 +40,8 @@ import { realTasks, spendReport, type RealTarget } from "./harness";
  */
 type Accept<T> = T | T[];
 /** `time`: what it must be (null: none); `text`: patterns its words must each match, in either language (prompt v5); `textNot`: ones they mustn't (v10: no zone named when it's the reader's own) */
-interface Expected { kind: Accept<DatedKind>; due: Accept<string | null>; time?: string | null; text?: string[]; textNot?: string[] }
+/** plan 210 (iteration 4): `before`, the day the mail asked for it before (kept by the app); `wall`, the mail's own clock at a place (travel: its time, the place's pattern) */
+interface Expected { kind: Accept<DatedKind>; due: Accept<string | null>; time?: string | null; text?: string[]; textNot?: string[]; before?: string; wall?: { time: string; place: string } }
 interface Case {
   id: string;
   reader: { name: string; email: string };
@@ -113,7 +114,7 @@ const cutMidClause = (kept: string, raw: readonly string[]) => {
 describe.skipIf(process.env.TERNO_AI_DATED !== "1")("dated items on a small model", () => {
   it("finds what has a date, leaves out what doesn't, quotes the mail, and settles only on the mail's words", async () => {
     const tasks = realTasks(TARGET, "dated-eval", {}, undefined, (text) => answers.push(text));
-    let expected = 0, found = 0, rawFound = 0, wrongItems = 0, wrongShown = 0, rawWrongSettled = 0, rawWrongMoved = 0, invented = 0, wrongSettled = 0, missedSettled = 0, rightTimes = 0, times = 0, wrongMoved = 0, missedMoved = 0, unsafe = 0, wrongText = 0, unattributed = 0, selfAttributed = 0, madeUpDetail = 0, moveTexts = 0, rightMoveTexts = 0, wrongMoveText = 0, promiseText = 0, cut = 0, cutWords = 0, midClause = 0, wrongReplaced = 0, missedReplaced = 0, failures = 0;
+    let expected = 0, found = 0, rawFound = 0, wrongItems = 0, wrongShown = 0, rawWrongSettled = 0, rawWrongMoved = 0, invented = 0, wrongSettled = 0, missedSettled = 0, rightTimes = 0, times = 0, wrongMoved = 0, missedMoved = 0, unsafe = 0, wrongText = 0, unattributed = 0, selfAttributed = 0, madeUpDetail = 0, moveTexts = 0, rightMoveTexts = 0, wrongMoveText = 0, promiseText = 0, cut = 0, cutWords = 0, midClause = 0, wrongReplaced = 0, missedReplaced = 0, failures = 0, befores = 0, rightBefores = 0, walls = 0, rightWalls = 0;
     const answers: string[] = [];
     const lines: string[] = [];
     for (const c of CASES) {
@@ -144,7 +145,7 @@ describe.skipIf(process.env.TERNO_AI_DATED !== "1")("dated items on a small mode
       // plan 210 (iteration 3, revision 5): the conversation's open bills, as the worker counts them in the store
       const paysInThread = [...open.values()].filter((o) => o.kind === "pay" && o.threadId === THREAD).length;
       const checked = checkDates(r, { text: mail.text, subject: c.subject, arrivedAt: new Date(`${c.today}T12:00:00`).getTime(), open, promises, fromScan: false, now: 0, sender: { person: !c.dated.automated }, reader, others, threadId: THREAD, senderKey: SENDER, from: nameOf(mail.from), paysInThread });
-      const shownItems = checked.rows.map((k) => ({ kind: k.kind, due: k.dated ? k.dueDay : null, time: k.timed ? clockOf(k.dueAt) : null, text: k.text, quote: k.quote }));
+      const shownItems = checked.rows.map((k) => ({ kind: k.kind, due: k.dated ? k.dueDay : null, time: k.timed ? clockOf(k.dueAt) : null, text: k.text, quote: k.quote, before: k.before ?? null }));
       const keptSettled = new Set(checked.settled.map((x) => labelOf.get(x.id)));
       const keptMoved = new Set([...checked.moved.map((x) => labelOf.get(x.id)), ...checked.movedPromises.map((x) => labelOf.get(x.id))]);
       // plan 210 (iteration 3, revision 4): a promise its person replaced, closed by the app
@@ -183,6 +184,19 @@ describe.skipIf(process.env.TERNO_AI_DATED !== "1")("dated items on a small mode
           times++;
           if (left[at]!.time === e.time) rightTimes++;
           else problems.push(`time ${left[at]!.time} for ${e.time}`);
+        }
+        // plan 210 (iteration 4, revision 11): the day it was asked before, kept apart
+        if (e.before !== undefined) {
+          befores++;
+          if (left[at]!.before === e.before) rightBefores++;
+          else problems.push(`before ${left[at]!.before} for ${e.before}`);
+        }
+        // revision 10: the mail's own clock at the place, as the reader gave it (the app's check of it reads the machine's zone)
+        if (e.wall) {
+          walls++;
+          const raw = r.items.find((i) => i.kind === left[at]!.kind && i.due === left[at]!.due && i.time === left[at]!.time);
+          if (raw?.wall && raw.wall.time === e.wall.time && raw.wall.place && new RegExp(e.wall.place, "iu").test(raw.wall.place)) rightWalls++;
+          else problems.push(`wall ${raw?.wall ? `${raw.wall.time} ${raw.wall.place ?? "(no place)"} ${raw.wall.zone}` : "none"} for ${e.wall.time} ${e.wall.place}`);
         }
         for (const pattern of e.text ?? []) {
           if (new RegExp(pattern, "iu").test(left[at]!.text)) continue;
@@ -323,7 +337,7 @@ describe.skipIf(process.env.TERNO_AI_DATED !== "1")("dated items on a small mode
       if (failed && process.env.TERNO_AI_DATED_RAW === "1") problems.push(`raw: ${(answers.at(-1) ?? "").replace(/\s+/g, " ")}`);
       lines.push(`${failed ? "✗" : "✓"} ${c.id} [${c.tags.join(",")}] ${r.items.map((i) => `${i.kind} ${i.due}${i.time ? ` ${i.time}` : ""} "${i.text}"`).join("; ") || "nothing"}${r.moved?.length ? ` · moved ${r.moved.map((m) => `${m.label} ${m.due}${m.time ? ` ${m.time}` : ""}${m.text ? ` "${m.text}"` : ""}`).join(", ")}` : ""}${r.replaced.length ? ` · replaced ${r.replaced.map((x) => x.label).join(", ")}` : ""}${problems.length ? `\n    ${problems.join("\n    ")}` : ""}`);
     }
-    process.stderr.write(`${lines.join("\n")}\n${JSON.stringify({ model: MODEL, language: LANGUAGE, found, expected, wrongShown, rawFound, wrongItems, rawWrongSettled, rawWrongMoved, invented, rightTimes, times, wrongSettled, missedSettled, wrongMoved, missedMoved, unsafe, wrongText, unattributed, selfAttributed, madeUpDetail, rightMoveTexts, moveTexts, wrongMoveText, promiseText, cut, cutWords, midClause, wrongReplaced, missedReplaced, failures })}\n${spendReport()}\n`);
+    process.stderr.write(`${lines.join("\n")}\n${JSON.stringify({ model: MODEL, language: LANGUAGE, found, expected, wrongShown, rawFound, wrongItems, rawWrongSettled, rawWrongMoved, invented, rightTimes, times, wrongSettled, missedSettled, wrongMoved, missedMoved, unsafe, wrongText, unattributed, selfAttributed, madeUpDetail, rightMoveTexts, moveTexts, wrongMoveText, promiseText, cut, cutWords, midClause, wrongReplaced, missedReplaced, failures, rightBefores, befores, rightWalls, walls })}\n${spendReport()}\n`);
     expect(wrongShown).toBeLessThanOrEqual(1);
     expect(wrongSettled).toBe(0);
     expect(wrongMoved).toBe(0);
