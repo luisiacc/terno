@@ -232,6 +232,8 @@ export function CommandPalette() {
   const todayTask = useTodayTask(open ? single : null);
   // plan 210 (iteration 3, code review): an item chosen in the reader with no feed row leads there; these act on it, as D does
   const readerItem = useReaderHeld(open ? single : null);
+  // plan 210 (iteration 4): What matters is shown (its acts are listed, unavailable, with nothing to act on)
+  const inToday = useApp((s) => open && s.today);
   // the unread filter applies to a mailbox (not "Review")
   // the unread toggle's state: Unread on or not (another filter on: it switches to Unread)
   const filter = useApp((s) => (open && s.reviewCategoryId === null && !s.reminders && !s.followups && !s.today ? (isUnreadOnly(s) ? "on" : "off") : null));
@@ -502,6 +504,14 @@ export function CommandPalette() {
       // plan 210 (iteration 4): Hand to…, the item's forward opening in the reader (its To field focused) once the palette has gone
       const hand = () => void (readerItem ? handTo(seenOfReaderItem(readerItem)) : todayTask && handTo(seenOfTask(todayTask.task), todayTask.rowId));
       add({ id: "dated.handTo", group: "conversation", label: t("whatMatters.handTo.action"), icon: <Forward />, testId: "palette-dated-hand", ...synonyms("palette.alias.handTo", english("whatMatters.handTo.action")), takesFocus: true, run: () => requestAnimationFrame(hand) });
+    } else if (inToday && targets === 0) {
+      // plan 210 (iteration 4, design point 2): with nothing selected in What matters its three acts are still there to be
+      // found, unavailable, saying what they need (a row chosen, then D, B, ⇧D or here)
+      const first = t("whatMatters.selectFirst");
+      const nothing = () => {};
+      add({ id: "dated.done", group: "actions", label: t("dated.done"), icon: <CircleCheck />, shortcut: keysOf("today.done"), hint: first, disabled: true, testId: "palette-dated-done", keywords: english("dated.done"), run: nothing });
+      add({ id: "dated.later", group: "actions", label: t("palette.todayLater"), icon: <Clock />, shortcut: keysOf("today.later"), hint: first, disabled: true, testId: "palette-dated-later", keywords: english("palette.todayLater"), run: nothing });
+      add({ id: "dated.dismiss", group: "actions", label: t("palette.todayRemove"), icon: <Ban />, shortcut: keysOf("today.remove"), hint: first, disabled: true, testId: "palette-dated-dismiss", ...synonyms("palette.alias.todayRemove", english("palette.todayRemove")), run: nothing });
     }
     // plan 132 §7: the open conversation, never in spam or trash; no shortcut of its own
     if (canSummarize && replyable && summarizable(openThread?.thread)) {
