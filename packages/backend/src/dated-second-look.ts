@@ -1,5 +1,5 @@
 import { DATED_AGAIN_CHARS, DATED_AGAIN_SENTENCES, fitDates, type DatedInput, type DatedResult } from "@terno/ai";
-import { namesDayFrom, saysClock, saysDay } from "@terno/core";
+import { DATED_KINDS, datedGroup, dayEnd, missedUntil, namesDayFrom, saysClock, saysDay, type DatedKind } from "@terno/core";
 import { handledItself } from "./dated-automatic";
 import { namesOtherThan, namesSpecifically, norm, otherAmounts, otherIds, paragraphsOf, scamPressure, sentencesOf, sentencesWith, settlesKind, type Sentences } from "./dated-evidence";
 
@@ -37,6 +37,8 @@ const DONE = /\b(?:went through|was successful|has been (?:processed|charged|pai
 const SALE = /\b(?:sale|\d+% off|discount\w*|deals?|offer ends|promo\w*|coupon\w*|black friday|cyber monday|last chance|descuento\w*|oferta\w*|rebaja\w*|promocion\w*|ultima oportunidad)\b/u;
 /** a sentence about a bill, a plan or a renewal: what may be paid or renewed by itself */
 const BILLING = /\b(?:pay\w*|paid|bill\w*|invoice\w*|charg\w*|renew\w*|subscription\w*|plan|membership\w*|premium|auto ?pay|balance|amount|due|statement|pag\w*|factura\w*|cobr\w*|carg\w*|renov\w*|suscripcion\w*|membresia\w*|cuota|prima|saldo|importe|recibo\w*|domicilia\w*|vence\w*)\b/u;
+/** a stay's check-out ("Check-out: Wednesday, November 18 (11:00 AM)"): the stay's detail, never an event of its own */
+const CHECK_OUT = /\b(?:check ?out|checkout|salida del (?:hotel|alojamiento|apartamento))\b/u;
 
 export interface LookInput {
   /** the mail as the first reading read it (quotes stripped) */
@@ -45,8 +47,16 @@ export interface LookInput {
   arrivedAt: number;
   /** a list, bulk or no-reply sender (`DatedInput.from.automated`) */
   automated: boolean;
+  /**
+   * Iteration 5's code review (the panel's Diego, a person's post to a mailing list): the mail has a list header (List-Id or
+   * bulk), and how the reader is among its recipients: a list's post the reader isn't named on is never looked at again
+   */
+  listed?: boolean;
+  addressed?: "to" | "cc" | "none";
   /** the sender's name, in all their mail: it names none of their things */
   from?: string;
+  /** now, for a day already past its Missed window (never returned by a look) */
+  now?: number;
   /** the open items and promises that reading was shown (its conversation's and sender's): a sentence that says one's day and names it is about it */
   shown: readonly { due?: string | null; text?: string; kind?: string }[];
   first: Pick<DatedResult, "items" | "settled" | "moved" | "replaced">;
@@ -58,9 +68,10 @@ export interface LookInput {
  * item, a move or an open item it was shown has, when the sentence is about that same thing (iteration 5's code review,
  * point 3: it names it apart, or, in a returned item's own paragraph, names nothing else), or by a local rejection; a scam's
  * pressure anywhere in the mail rejects all of it. An automated mail with more moments than the bound, or one on a list's
- * line, is a listing (a newsletter's calendar), never asked about.
+ * line, is a listing (a newsletter's calendar), never asked about; nor is a list's post the reader isn't named on.
  */
 export function lookAt(i: LookInput): string[] {
+  if (i.listed && i.addressed === "none") return [];
   const sentences: Sentences = sentencesOf(i.text);
   const moments = sentences.flatMap((s, at) => (holdsMoment(s.said, i.arrivedAt) ? [at] : []));
   if (!moments.length) return [];
@@ -108,6 +119,22 @@ export function lookAt(i: LookInput): string[] {
   return asked;
 }
 
+/**
+ * Iteration 5's code review (the panel's round 14): what a look returns that's already there, or already gone, is dropped:
+ * one that names an item the first reading returned, or an open item of its conversation or sender, on the same day (Diego's
+ * October declaration, Priya's PC 7 flight read twice), another moment of an event already there (a flight's arrival, a
+ * stay's last day), a check-out of its own, and a day already past its Missed window (Jordan's questions due Nov 6).
+ */
+function repeats(x: { kind: string; text: string; quote: string; due: string | null }, there: readonly { kind?: string; text: string; quote: string; due?: string | null }[], o: { from?: string; now?: number }): boolean {
+  if (x.kind === "event" && (CHECK_OUT.test(norm(x.quote)) || CHECK_OUT.test(norm(x.text)))) return true;
+  if (x.due && o.now !== undefined && (DATED_KINDS as readonly string[]).includes(x.kind)) {
+    const over = datedGroup(x.kind as DatedKind) === "plans" ? dayEnd(x.due) : missedUntil({ dueDay: x.due, deferredUntil: null });
+    if (over <= o.now) return true;
+  }
+  const words = `${x.text}\n${x.quote}`;
+  return there.some((e) => namesSpecifically({ text: e.text, quote: e.quote }, words, o.from) && ((!!x.due && e.due === x.due) || (x.kind === "event" && e.kind === "event")));
+}
+
 /** What a second look gives `consider`: the reading to check (the first's, with the look's items), and whether it's whole. */
 export interface Looked {
   result: DatedResult;
@@ -153,5 +180,7 @@ export async function secondLook(first: DatedResult, o: Omit<LookInput, "first">
     const q = norm(quote);
     return !!q && read.some((s) => s.includes(q) || q.includes(s));
   };
-  return { result: { ...first, items: [...first.items, ...again.items.filter((x) => inAsked(x.quote))] }, asked: sentences.length, complete: true };
+  const there = [...first.items, ...o.shown.map((x) => ({ kind: x.kind, text: x.text ?? "", quote: "", due: x.due }))];
+  const found = again.items.filter((x) => inAsked(x.quote) && !repeats(x, there, o));
+  return { result: { ...first, items: [...first.items, ...found] }, asked: sentences.length, complete: true };
 }

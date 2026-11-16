@@ -164,6 +164,53 @@ describe("iteration 5's code review", () => {
     expect(look("Statement balance: $215.50\nPayment due date: November 25, 2026", { first: { ...none, items: [balance] } })).toEqual([]);
     expect(look("Reminder: the lease renewal closes Friday, November 20 at 5 PM.", { shown: [{ kind: "respond", text: "Return the lease renewal form", due: "2026-11-20" }] })).toEqual([]);
   });
+
+  it("a list's post the reader isn't named on gets no second look; one sent to them through a list still does (finding 9)", () => {
+    const post = "Hola a todos:\n\nYo los acentos en versales los dejo siempre.\n\nPor cierto, la reunión mensual de la lista es el jueves 19 a las 20:00 en la cantina de siempre.\n\nHéctor";
+    expect(look(post, { automated: true })).toHaveLength(1);
+    expect(look(post, { automated: true, listed: true, addressed: "none" })).toEqual([]);
+    expect(look(REGISTRATION, { automated: true, listed: true, addressed: "to" })).toEqual([CLOSES]);
+  });
+
+  describe("what a look returns that's already there, or already gone, is dropped (finding 10)", () => {
+    const run = async (text: string, o: { first?: DatedResult["items"]; shown?: Parameters<typeof lookAt>[0]["shown"]; answer: DatedResult["items"]; arrivedAt?: number; now?: number; automated?: boolean }) => {
+      const input: DatedInput = { text, subject: "", from: { name: "Sender", automated: o.automated ?? true }, reader: { name: "Reader", addressed: "to" }, to: [], cc: [], receivedAt: "x", zone: "UTC", open: [], language: "en" };
+      const first = { ...none, items: o.first ?? [] };
+      const r = await secondLook(first, { text, subject: "", arrivedAt: o.arrivedAt ?? NOW, automated: o.automated ?? true, shown: o.shown ?? [], now: o.now ?? NOW, input, promptChars: Infinity }, { recheck: async () => "go", claim: async () => true, read: async () => ({ ...none, items: o.answer }), aborted: () => false });
+      if (typeof r === "string") throw new Error(r);
+      expect(r.asked).toBe(1);
+      return r.result.items.slice(first.items.length).map((x) => x.text);
+    };
+
+    it("a stay's check-out, or another moment of a stay or a flight already there", async () => {
+      const HOTEL = "Your stay is confirmed.\n\nCheck-in: Monday, November 16, 2026 (3:00 PM)\nCheck-out: Wednesday, November 18, 2026 (11:00 AM)\n\nTotal: $764.10 (prepaid)";
+      const stay = { kind: "event" as const, text: "Stay in Chicago", quote: "Check-in: Monday, November 16, 2026 (3:00 PM)", due: "2026-11-16", time: "15:00" };
+      expect(await run(HOTEL, { first: [stay], answer: [{ kind: "event", text: "Hotel Marlowe Fulton Market (check-out Wed)", quote: "Check-out: Wednesday, November 18, 2026 (11:00 AM)", due: "2026-11-18", time: "11:00" }] })).toEqual([]);
+      const CASA = "Llegada: miércoles 25 de noviembre, a partir de las 15:00\nSalida: martes 1 de diciembre, antes de las 11:00";
+      const estancia = { kind: "event" as const, text: "Estancia en Casa Malasaña (salida el 1 dic)", quote: "Llegada: miércoles 25 de noviembre, a partir de las 15:00", due: "2026-11-25", time: "15:00" };
+      expect(await run(CASA, { first: [estancia], answer: [{ kind: "event", text: "Salida de Casa Malasaña (antes de las 11:00)", quote: "Salida: martes 1 de diciembre, antes de las 11:00", due: "2026-12-01", time: null }] })).toEqual([]);
+      const TRIP = "DEPART — Saturday, 05 Dec 2026\nPC 7 · SFO 11:55 PM → BLR 6:05 AM (Mon 07 Dec) via SIN\n\nRETURN — Saturday, 12 Dec 2026\nPC 8 · BLR 1:30 AM → SFO 4:40 PM";
+      const out = { kind: "event" as const, text: "Flight from San Francisco to Bengaluru (arrives Mon 07 Dec)", quote: "DEPART — Saturday, 05 Dec 2026", due: "2026-12-05", time: "23:55" };
+      expect(await run(TRIP, { first: [out], answer: [{ ...out, quote: "PC 7 · SFO 11:55 PM → BLR 6:05 AM (Mon 07 Dec) via SIN" }] })).toEqual([]);
+    });
+
+    it("an open item of its conversation or sender named on the same day; something else that day is kept", async () => {
+      const LUCIA = "Hola Diego:\n\nRecuerda que vence el 17.\n\nLucía";
+      const pay = { kind: "pay", text: "Pagar $3,214.00 de la declaración de octubre", due: "2026-11-17" };
+      const declaration = { kind: "respond" as const, text: "Presentar la declaración mensual de octubre", quote: "Recuerda que vence el 17.", due: "2026-11-17", time: null };
+      expect(await run(LUCIA, { automated: false, shown: [pay], answer: [declaration] })).toEqual([]);
+      expect(await run(LUCIA, { automated: false, shown: [{ ...pay, due: "2026-11-18" }], answer: [declaration] })).toEqual([declaration.text]);
+    });
+
+    it("never a day already past its Missed window", async () => {
+      const RFP = "Dear Jordan,\n\nKey dates:\nWritten questions due: November 6, 2026\nResponses due: November 20, 2026, 5:00 PM Eastern\n\nAlicia";
+      const responses = { kind: "respond" as const, text: "Submit the Meridian RFP response", quote: "Responses due: November 20, 2026, 5:00 PM Eastern", due: "2026-11-20", time: "17:00" };
+      const questions = { kind: "respond" as const, text: "Submit written questions for the Meridian RFP", quote: "Written questions due: November 6, 2026", due: "2026-11-06", time: null };
+      const o = { automated: false, arrivedAt: at(2026, 10, 28, 9), first: [responses], answer: [questions] };
+      expect(await run(RFP, { ...o, now: at(2026, 11, 16, 9) })).toEqual([]);
+      expect(await run(RFP, { ...o, now: at(2026, 11, 12, 9) })).toEqual([questions.text]);
+    });
+  });
 });
 
 // ─── the worker ─────────────────────────────────────────────────────────────
@@ -273,6 +320,18 @@ describe("the second look in the worker", () => {
     backend.dated.wake({ network: true });
     await new Promise((r) => setTimeout(r, 50));
     expect(model.requests.length).toBe(requests);
+  });
+
+  it("iteration 5's code review: a list's post the reader isn't named on is read once, never looked at again; the registrar's list mail to them still is", async () => {
+    const { backend, model, receive, read } = await setup();
+    model.answer = () => reply();
+    await receive(backend, { cc: [], listId: "pageturners.lists.people.test" });
+    await read(backend);
+    expect(model.requests.map(isLook)).toEqual([false]);
+    model.requests.length = 0;
+    await receive(backend, { from: registrar, to: [me], cc: [], subject: "Spring 2027 registration is open", bodyText: REGISTRATION, providerThreadId: "reg", listId: "students.lists.uni.test" });
+    await read(backend);
+    expect(model.requests.map(isLook)).toEqual([false, true]);
   });
 
   it("one claim across a restart: a look cut off by a stop is never asked again, and the reading is still written", async () => {
