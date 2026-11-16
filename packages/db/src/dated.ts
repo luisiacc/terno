@@ -147,6 +147,13 @@ export function finishDated(db: Db, w: DatedFinish): DatedFinishOutcome {
         w.now, s.id, s.revision, src.threadId, src.senderKey,
       );
     }
+    // plan 210 (iteration 3, revision 4): a promise its person replaced, closed with the request that replaces it
+    for (const r of w.replaced ?? []) {
+      if (!db.get("SELECT 1 FROM dated_items WHERE message_id = ? AND item = ?", w.messageId, r.item)) continue;
+      const p = db.get<{ person_email: string | null; sent_at: number }>("SELECT person_email, sent_at FROM followups WHERE id = ? AND revision = ? AND thread_id = ? AND kind = 'promise' AND state IN ('open','due')", r.id, r.revision, src.threadId);
+      if (!p?.person_email || addressKey(p.person_email) !== src.senderKey || p.sent_at >= src.date) continue;
+      db.run("UPDATE followups SET state = 'dismissed', closed_reason = 'replaced', closed_at = ?, inbox_state = 'none', revision = revision + 1 WHERE id = ?", w.now, r.id);
+    }
     for (const m of w.movedPromises ?? []) {
       db.run(
         // plan 210 (iteration 2): its first broken day kept (a second move after another broken day keeps the first), and

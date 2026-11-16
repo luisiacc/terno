@@ -280,3 +280,28 @@ const REPLACES = /\b(?:skip|instead|rather than|in place of|in its place|forget 
 export function saysReplaced(words: string): boolean {
   return REPLACES.test(norm(words));
 }
+
+// plan 210 (iteration 3, revision 4): "don't skip it", "let's not skip", "no lo olvides": in the three words before
+const NOT_REPLACED = /\b(?:not|never|t|no|ni|nunca)\b/u;
+
+/**
+ * Plan 210 (iteration 3, revision 4): a sentence of these words says a thing replaces another, and isn't denied ("Let's skip
+ * the piecemeal version"; never "don't skip the methods section" nor "no olvides el marco teórico").
+ */
+export function replacesPlainly(words: string): boolean {
+  return sentencesOf(words).some(({ read }) => {
+    const m = REPLACES.exec(read);
+    return !!m && !NOT_REPLACED.test(read.slice(0, m.index).trim().split(" ").slice(-3).join(" "));
+  });
+}
+
+/** Whether some words are inside quotation marks in their paragraph of the mail (someone else's words, retold): “…”, "…", «…». */
+export function insideQuotes(words: string, text: string): boolean {
+  const flat = (t: string) => t.replace(/\s+/gu, " ").toLowerCase();
+  const w = flat(words).trim();
+  const paragraph = text.split(/\n\s*\n/u).map(flat).find((p) => p.includes(w));
+  if (!w || !paragraph) return false;
+  const before = paragraph.slice(0, paragraph.indexOf(w));
+  const count = (c: string) => before.split(c).length - 1;
+  return count('"') % 2 === 1 || count("“") > count("”") || count("«") > count("»");
+}

@@ -2622,6 +2622,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "whatMatters.history.removed": "Quitado {day}",
   "whatMatters.history.settled": "Resuelto {day}",
   "whatMatters.history.over": "Pasó {day}",
+  "whatMatters.history.replaced": "Reemplazado {day}",
   "whatMatters.automatedLine": "Boletines y notificaciones",
   "whatMatters.privacy.cloud": "Terno envía cada mensaje nuevo (su texto, asunto y nombres, con lo que ya encontró ahí) a {destination} para encontrarlos; nada más sale de tu Mac para esto.",
   "whatMatters.privacy.cloudSettings": "Para encontrar facturas, viajes y peticiones, Terno envía cada mensaje nuevo (su texto, asunto y nombres, con lo que ya encontró ahí) a {destination}; nada más sale de tu Mac para esto.",

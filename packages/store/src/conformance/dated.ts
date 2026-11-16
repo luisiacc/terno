@@ -298,6 +298,39 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
         expect((await store.followups.get(promise!.id))!.dueAt).toBe(NOW + 3 * DAY);
       });
 
+      it("plan 210 (iteration 3, revision 4): their later mail replaces your promise with a new request: both in one commit, only as the reader saw it", async () => {
+        const { store, accountId, got, item, finish } = await setup();
+        const m = msg({ accountId, from: me, to: [bank], isSent: true, inInbox: false, rfcMessageId: "methods@x", date: NOW - 9000, providerMsgId: "methods-sent" });
+        const r = await store.sync.ingest([m], { applyFilters: false, now: NOW, classifier: null, liveSent: { wanted: true } });
+        const thread = await threadOf(store, "methods-sent");
+        await store.followups.finish({ messageId: r.inserted[0]!, threadId: thread, fromScan: false, rows: [{ kind: "promise", item: 0, text: "send the revised methods section", quote: "I'll send the methods section", personName: "Bank", personEmail: bank.email, dueAt: NOW - DAY, dated: true }], kept: [], now: NOW, model: "m", provider: "p", promptVersion: 1, clearGeneration: store.followups.clearGeneration() });
+        const [promise] = await store.followups.ofThread(thread);
+        const reply = (over: Partial<IncomingMessage> = {}) => got({ inReplyTo: "methods@x", references: ["methods@x"], date: NOW - 1000, ...over });
+        const chapter = item({ kind: "respond", text: "Send a full draft of Chapter 2", quote: "please send me a full draft of Chapter 2 by Monday" });
+        // refused: a revision since, a request this message doesn't write, another sender in the thread, mail from before it
+        const stale = await reply({ date: NOW - 4000 });
+        await finish(stale.id, stale.thread, { rows: [chapter], replaced: [{ id: promise!.id, revision: promise!.revision + 1, item: 0 }] });
+        const none = await reply({ date: NOW - 3500 });
+        await finish(none.id, none.thread, { rows: [], replaced: [{ id: promise!.id, revision: promise!.revision, item: 0 }] });
+        const shopReply = await reply({ from: shop, date: NOW - 3000 });
+        expect(shopReply.thread).toBe(thread);
+        await finish(shopReply.id, shopReply.thread, { rows: [chapter], replaced: [{ id: promise!.id, revision: promise!.revision, item: 0 }] });
+        const before = await reply({ date: NOW - 9500 });
+        await finish(before.id, before.thread, { rows: [chapter], replaced: [{ id: promise!.id, revision: promise!.revision, item: 0 }] });
+        expect(await store.followups.get(promise!.id)).toMatchObject({ state: "open", closedReason: null, revision: promise!.revision });
+        // their mail, after it, on its thread, at the revision seen: the promise closes as replaced, the request is open
+        const ingrid = await reply();
+        await finish(ingrid.id, ingrid.thread, { rows: [chapter], replaced: [{ id: promise!.id, revision: promise!.revision, item: 0 }] });
+        expect(await store.followups.get(promise!.id)).toMatchObject({ state: "dismissed", closedReason: "replaced", closedAt: NOW, inboxState: "none", revision: promise!.revision + 1 });
+        expect((await store.dated.ofThread(thread)).filter((x) => x.text === "Send a full draft of Chapter 2" && x.state === "open")).not.toHaveLength(0);
+        // history reads it as closed
+        expect((await store.followups.closedPage({ since: 0, after: null, limit: 10 })).map((p) => [p.id, p.closedReason])).toEqual([[promise!.id, "replaced"]]);
+        // closed: a second replacement changes nothing
+        const again = await reply({ date: NOW - 500 });
+        await finish(again.id, again.thread, { rows: [chapter], replaced: [{ id: promise!.id, revision: promise!.revision + 1, item: 0 }] });
+        expect(await store.followups.get(promise!.id)).toMatchObject({ state: "dismissed", revision: promise!.revision + 1 });
+      });
+
       it("the fifth panel round: a promise's Later against a move from their mail, in both orders, and its Undo", async () => {
         const { store, accountId, got, finish } = await setup();
         const m = msg({ accountId, from: me, to: [bank], isSent: true, inInbox: false, rfcMessageId: "later@x", date: NOW - 9000, providerMsgId: "l-sent" });

@@ -137,6 +137,13 @@ export interface DatedFinish {
     /** plan 210 (iteration 2): `dueAt` is a time its words state (`FollowupRow.timed`) */
     timed?: boolean;
   }[];
+  /**
+   * Plan 210 (iteration 3, the owner's "Close replaced promises"): promises of yours this message replaced with a new
+   * request (`item`, one of this message's rows). Closed as `replaced` (dismissed) in this commit only when that request's
+   * row is written, the promise still open or due at the revision the reader saw, on this thread, made to this message's
+   * sender before it came; else left as it is.
+   */
+  replaced?: readonly { id: number; revision: number; item: number }[];
   now: number;
   model: string | null;
   provider: string | null;

@@ -160,6 +160,14 @@ export function finishDated(c: Ctx, w: DatedFinish): DatedFinishOutcome {
     if (r && r.revision === s.revision && r.state === "open" && reaches(r, src)) rows.update(r, { state: "settled", closed_reason: "settled", closed_at: w.now, revision: r.revision + 1 });
   }
   const followups = T(c, "followups");
+  // plan 210 (iteration 3, revision 4): as SQL's, a promise its person replaced, closed with the request that replaces it
+  for (const r of w.replaced ?? []) {
+    if (!rows.by("identity", w.messageId, r.item).length) continue;
+    const p = followups.get(r.id);
+    if (!p || p.revision !== r.revision || p.thread_id !== src.threadId || p.kind !== "promise" || (p.state !== "open" && p.state !== "due")) continue;
+    if (!p.person_email || addressKey(String(p.person_email)) !== src.senderKey || p.sent_at >= src.date) continue;
+    followups.update(p, { state: "dismissed", closed_reason: "replaced", closed_at: w.now, inbox_state: "none", revision: p.revision + 1 });
+  }
   for (const m of w.movedPromises ?? []) {
     const p = followups.get(m.id);
     if (!p || p.revision !== m.revision || p.thread_id !== src.threadId || p.kind !== "promise" || (p.state !== "open" && p.state !== "due")) continue;

@@ -2639,6 +2639,7 @@ It contains none of your mail, contacts, settings or keys.
   "whatMatters.history.removed": "Removed {day}",
   "whatMatters.history.settled": "Settled {day}",
   "whatMatters.history.over": "Over {day}",
+  "whatMatters.history.replaced": "Replaced {day}",
   "whatMatters.to": "To {name}",
   "whatMatters.privacy.cloud": "Terno sends each new message (its text, subject and names, with what it already found there) to {destination} to find these; nothing else leaves your Mac for them.",
   "whatMatters.privacy.cloudSettings": "To find bills, trips and requests, Terno sends each new message (its text, subject and names, with what it already found there) to {destination}; nothing else leaves your Mac for them.",

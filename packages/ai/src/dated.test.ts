@@ -20,8 +20,8 @@ const input = (over: Partial<DatedInput> = {}): DatedInput => ({
   ...over,
 });
 const item = (over: Partial<{ kind: string; text: string; quote: string; due: string | null; time: string | null }> = {}) => ({ kind: "pay", text: "Pay the bill", quote: "due 2026-03-20", due: "2026-03-20", time: null, ...over });
-const validate = (w: Parameters<ReturnType<typeof readDatesTask>["validate"]>[0]) => {
-  const v = readDatesTask(input()).validate(w);
+const validate = (w: Omit<Parameters<ReturnType<typeof readDatesTask>["validate"]>[0], "replaced"> & { replaced?: { label: string; evidence: string }[] }) => {
+  const v = readDatesTask(input()).validate({ replaced: [], ...w });
   if (!v.ok) throw new Error("rejected");
   return v.value;
 };
@@ -99,7 +99,7 @@ describe("reading dates in mail you got (plan 204)", () => {
   });
 
   it("is frozen at its version: a change to the words is a new version", () => {
-    expect(DATED_PROMPT_VERSION).toBe(12);
+    expect(DATED_PROMPT_VERSION).toBe(13);
     expect(readDatesTask(input()).system).toMatchSnapshot();
   });
 
@@ -122,7 +122,7 @@ describe("reading dates in mail you got (plan 204)", () => {
     expect(en).toContain('the text always says it in the mail\'s words: "Call Grandma this week", "Send Jonah $48.20 for the cabin (ideally before the 20th)"');
     expect(en).toContain('A card\'s or a document\'s month ("expires 11/26") is that month\'s last day (2026-11-30)');
     // Sam's Chapter 2, and the promise re-dated as it was
-    expect(en).toContain('a new day for what was promised ("we haven\'t received the report yet, could you get it to me before Monday?") moves it, and nothing else. A different thing asked for in its place ("skip the piecemeal version: please send me a full draft of Chapter 2 by Monday") is a new "respond", and the promise isn\'t moved at all.');
+    expect(en).toContain('a new day for what was promised ("we haven\'t received the report yet, could you get it to me before Monday?") moves it, and nothing else. A different thing asked for in its place ("skip the piecemeal version: please send me a full draft of Chapter 2 by Monday") is a new "respond", and the promise isn\'t moved at all: it\'s "replaced" (below).');
     // the round's vaguer texts
     expect(en).toContain('It names the company, account, document or person the mail names, so it reads on its own: "Sign the Kestrel-Brightwood MSA", "Set up an exec call with Marlowe", never a vague "the final MSA", "your draft" or an order number alone.');
     const es = readDatesTask(input({ language: "es" })).system;
@@ -152,7 +152,7 @@ describe("reading dates in mail you got (plan 204)", () => {
 
   it("prompt v11: a deadline quoted as 'before' a day the model gave as that day is the day before (en, es); never an event's, a timed one's, or one already earlier", () => {
     const due = (i: Partial<{ kind: string; quote: string; due: string | null; time: string | null }>, text = i.quote ?? "") => {
-      const v = readDatesTask(input({ text })).validate({ items: [item(i)], settled: [], moved: [] });
+      const v = readDatesTask(input({ text })).validate({ replaced: [], items: [item(i)], settled: [], moved: [] });
       if (!v.ok) throw new Error("rejected");
       return v.value.items[0]!.due;
     };
@@ -224,7 +224,7 @@ describe("reading dates in mail you got (plan 204)", () => {
   it("prompt v10: a day and time in another zone are converted to the reader's, across midnight and daylight saving time; an unknown zone or an abbreviation keeps the day and loses the time", () => {
     type Moved = { label: string; due: string; time: string | null; evidence: string; text: null; textEvidence: null };
     const read = (zone: string, w: { items?: ReturnType<typeof item>[]; moved?: Moved[] }) => {
-      const v = readDatesTask(input({ zone })).validate({ items: w.items ?? [], settled: [], moved: w.moved ?? [] });
+      const v = readDatesTask(input({ zone })).validate({ replaced: [], items: w.items ?? [], settled: [], moved: w.moved ?? [] });
       if (!v.ok) throw new Error("rejected");
       return v.value;
     };
@@ -254,7 +254,7 @@ describe("reading dates in mail you got (plan 204)", () => {
     const call = { label: "o1", kind: "event" as const, text: "Call with Marcus (11:00 PM PT)", due: "2026-07-11", time: "02:00" };
     const task = (open: DatedInput["open"]) => readDatesTask(input({ zone: "America/New_York", open }));
     const read = (open: DatedInput["open"], w: { items?: ReturnType<typeof item>[]; moved?: Moved[] }) => {
-      const v = task(open).validate({ items: w.items ?? [], settled: [], moved: w.moved ?? [] });
+      const v = task(open).validate({ replaced: [], items: w.items ?? [], settled: [], moved: w.moved ?? [] });
       if (!v.ok) throw new Error("rejected");
       return v.value;
     };
@@ -271,7 +271,7 @@ describe("reading dates in mail you got (plan 204)", () => {
     // the move's own words keep their note in step too, and a 24-hour note stays one
     expect(read([call], { moved: [move({ text: "Call with Marcus and Jo (11:00 PM PT)", textEvidence: "Jo will join" })] }).moved[0]).toMatchObject({ text: "Call with Marcus and Jo (10:00 PM PT)", textEvidence: "Jo will join" });
     const andres = { label: "o1", kind: "event" as const, text: "Llamada con Andrés (18:00 hora de Ciudad de México)", due: "2026-11-20", time: "01:00" };
-    expect(readDatesTask(input({ zone: "Europe/Madrid", open: [andres] })).validate({ items: [], settled: [], moved: [move({ due: "2026-11-20", time: "19:30 America/Mexico_City", evidence: "mejor a las 19:30" })] })).toMatchObject({ value: { moved: [{ due: "2026-11-20", time: "02:30", text: "Llamada con Andrés (19:30 hora de Ciudad de México)" }] } });
+    expect(readDatesTask(input({ zone: "Europe/Madrid", open: [andres] })).validate({ replaced: [], items: [], settled: [], moved: [move({ due: "2026-11-20", time: "19:30 America/Mexico_City", evidence: "mejor a las 19:30" })] })).toMatchObject({ value: { moved: [{ due: "2026-11-20", time: "02:30", text: "Llamada con Andrés (19:30 hora de Ciudad de México)" }] } });
     // the Codex code review of v11 (point 7): a move that names the date it's on, the item's own day in the reader's zone, is
     // read on that date, not as a move of the time alone: Friday November 20 at 02:00 ET (Thursday 23:00 PT) moved to "Friday
     // November 20 at 10 PM PT" is Saturday 01:00 here; "10 PM PT" alone stays Thursday in PT, Friday 01:00 here
@@ -287,7 +287,7 @@ describe("reading dates in mail you got (plan 204)", () => {
     type Moved = { label: string; due: string; time: string | null; evidence: string; text: string | null; textEvidence: string | null };
     const move = (over: Partial<Moved>): Moved => ({ label: "o1", due: "2026-07-11", time: "20:00 America/Los_Angeles", evidence: "move it to 8 PM PT", text: null, textEvidence: null, ...over });
     const read = (zone: string, open: DatedInput["open"], w: { items?: ReturnType<typeof item>[]; moved?: Moved[] }) => {
-      const v = readDatesTask(input({ zone, open })).validate({ items: w.items ?? [], settled: [], moved: w.moved ?? [] });
+      const v = readDatesTask(input({ zone, open })).validate({ replaced: [], items: w.items ?? [], settled: [], moved: w.moved ?? [] });
       if (!v.ok) throw new Error("rejected");
       return v.value;
     };
@@ -405,7 +405,7 @@ describe("reading dates in mail you got (plan 204)", () => {
 
   it("a small window holds the whole conversation with the server: a bad answer and its repair still fit", async () => {
     // v12's words (an ask, a Plan's window, an alert's words and deadline, a move's time and words, cold outreach, offers, a failed payment, the open items' days, a time in another zone, a newsletter's listing, a group's required act, "before" a day, soft days, a replaced promise, AutoPay, invitations, a meeting's start, a zone with the reader's clock) need a little over 6,100 (v11 5,800, v10 4,700, v9 4,200, v8 3,700), past the 5,500 the app warns below for the filter: a window between them reads only the mail's first 200 tokens. A window that holds them with a bad answer and its repair
-    const window = 6200;
+    const window = 6500;
     const budget = datedBudget(window);
     const fitted = fitDates(input({ text: "word ".repeat(1200), outputTokens: budget.outputTokens }), budget.promptChars);
     const sizes: number[] = [];
@@ -418,7 +418,7 @@ describe("reading dates in mail you got (plan 204)", () => {
           calls++;
           if (calls === 1) return { text: "x".repeat(req.maxTokens * 4), stop: "end" as const };
           if (calls === 2) return { text: JSON.stringify({ items: Array.from({ length: 12 }, () => ({})) }), stop: "end" as const };
-          return { text: JSON.stringify({ items: [], settled: [], moved: [] }), stop: "end" as const };
+          return { text: JSON.stringify({ items: [], settled: [], moved: [], replaced: [] }), stop: "end" as const };
         },
       },
     });
@@ -432,7 +432,7 @@ describe("the offline model's dates", () => {
   const read = (over: Partial<DatedInput> = {}) => createAi(config, { transport: fakeTransport() }).readDates(input(over));
 
   it("runs through the fake: a bill with its day, quoting the mail", async () => {
-    expect(await read()).toEqual({ items: [{ kind: "pay", text: "Your March bill", quote: "Your electricity bill is due 2026-03-20.", due: "2026-03-20", time: null }], settled: [], moved: [] });
+    expect(await read()).toEqual({ items: [{ kind: "pay", text: "Your March bill", quote: "Your electricity bill is due 2026-03-20.", due: "2026-03-20", time: null }], settled: [], moved: [], replaced: [] });
   });
 
   it("a flight or an appointment is an event, a delivery a delivery, and a time is kept", async () => {
@@ -445,7 +445,7 @@ describe("the offline model's dates", () => {
   it("a failed payment is an alert with no day; nothing with a date is nothing", async () => {
     expect((await read({ text: "Your payment failed. Please update your card." })).items).toEqual([{ kind: "alert", text: "Your March bill", quote: "Your payment failed.", due: null, time: null }]);
     expect((await read({ text: "Pago rechazado." })).items[0]).toMatchObject({ kind: "alert", due: null });
-    expect(await read({ text: "Thanks for writing." })).toEqual({ items: [], settled: [], moved: [] });
+    expect(await read({ text: "Thanks for writing." })).toEqual({ items: [], settled: [], moved: [], replaced: [] });
   });
 
   it("a person's question is an ask, with no day; an automated sender's isn't", async () => {
@@ -472,7 +472,7 @@ describe("the offline model's dates", () => {
 
   it("reads only the mail: words in the subject or the open items don't count", () => {
     const prompt = datedPrompt(input({ text: "Hello.", subject: "due 2026-03-20", open: [{ label: "o1", kind: "pay", text: "payment received" }] }));
-    expect(fakeDates(prompt)).toEqual({ items: [], settled: [], moved: [] });
+    expect(fakeDates(prompt)).toEqual({ items: [], settled: [], moved: [], replaced: [] });
   });
 });
 
@@ -490,6 +490,6 @@ describe("who the reader is (prompt version 2, the eval)", () => {
 describe("a later message gives an open item a new day (prompt version 3)", () => {
   it("the fake moves the first open item, and adds nothing for it", () => {
     const prompt = datedPrompt(input({ text: "Sorry for the rush. 2026-03-24 at the latest works for us.", open: [{ label: "o1", kind: "respond", text: "Send the script" }] }));
-    expect(fakeDates(prompt)).toEqual({ items: [], settled: [], moved: [{ label: "o1", due: "2026-03-24", time: null, evidence: "2026-03-24 at the latest works for us.", text: null, textEvidence: null }] });
+    expect(fakeDates(prompt)).toEqual({ items: [], settled: [], moved: [{ label: "o1", due: "2026-03-24", time: null, evidence: "2026-03-24 at the latest works for us.", text: null, textEvidence: null }], replaced: [] });
   });
 });
