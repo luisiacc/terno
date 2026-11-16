@@ -1,4 +1,4 @@
-import { defaultRemindAt, refKey, type DatedRow, type FollowupRow, type ThreadDetail } from "@terno/core";
+import { defaultRemindAt, refKey, type DatedRow, type FollowupRow, type ScheduleProposal, type ThreadDetail } from "@terno/core";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuShortcut, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
@@ -7,6 +7,7 @@ import { CalendarClock, ChevronDown } from "@terno/ui/icons";
 import { cn } from "@terno/ui/lib/utils";
 import { useEffect, useId, useRef, useState } from "react";
 import { aiAllowed, followupsOffered } from "~/lib/ai";
+import { changeItem, changeOfItem, proposalSaid, whenSaid, type ChangeTarget } from "~/lib/change";
 import { itemLaterWindow, laterNote, laterPresets, laterStart, type LaterWindow } from "~/lib/dated";
 import { readerItems, readerLine, readerText, type ReaderItem, type ReaderItems } from "~/lib/reader-items";
 import { presetLabel, presetWhen } from "~/lib/reminders";
@@ -17,6 +18,7 @@ import { getApp, useApp } from "~/state/app";
 import { useFollowups } from "~/state/followups";
 import { feedRowsOfItem, openFeedRow, useFeedTarget, useReaderChoice } from "~/state/today";
 import { AI_CARD, AI_INSET, AI_TITLE } from "./ai-card";
+import { ChangeForm } from "./change-form";
 import { WhenForm } from "./when-fields";
 
 /** What the reader knows of a conversation's items, and how one is chosen from the line under the top one. */
@@ -174,6 +176,60 @@ function ItemLater({ item, act }: { item: ReaderItem; act: (at: number) => void 
   );
 }
 
+/**
+ * Plan 210 (iteration 4, the owner's "Change…"): the item's own day and time, in the shared form beside its Later, quiet as
+ * Later is. Its schedule is the user's from then on.
+ */
+function ItemChange({ item, target }: { item: ReaderItem; target: ChangeTarget }) {
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const [open, setOpen] = useState(false);
+  const back = () => triggerRef.current?.focus({ preventScroll: true });
+  return (
+    <>
+      <Button ref={triggerRef} variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" data-testid="thread-dated-change" aria-haspopup="dialog" aria-expanded={open} aria-label={t("dated.changeItem", { text: readerText(item) })} onClick={() => setOpen(true)}>
+        {t("dated.change")}
+      </Button>
+      <Popover
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (!next) back();
+        }}
+      >
+        <PopoverContent anchor={triggerRef} align="end" className="w-80" data-testid="thread-dated-change-custom" aria-label={t("dated.changeTitle")}>
+          <ChangeForm
+            target={target}
+            testPrefix="thread-dated-change"
+            onSet={(to) => {
+              setOpen(false);
+              back();
+              void changeItem(target, to);
+            }}
+          />
+        </PopoverContent>
+      </Popover>
+    </>
+  );
+}
+
+/**
+ * Plan 210 (iteration 4): a later mail's move of an item whose day the user chose, under its line: who says what now, and
+ * Use, which takes it (a change like the user's own, with its Undo). Quiet, on the line's edge.
+ */
+function ItemProposal({ item, target, proposal }: { item: ReaderItem; target: ChangeTarget; proposal: ScheduleProposal }) {
+  const now = Date.now();
+  const when = whenSaid(proposal, now);
+  return (
+    <p data-testid="thread-dated-proposal" className="-mt-1 flex flex-wrap items-baseline gap-x-1.5 pb-2 text-sm text-muted-foreground tabular">
+      <span data-testid="thread-dated-proposal-text">{proposalSaid(proposal, now)}</span>
+      <span aria-hidden>·</span>
+      <Button variant="link" size="xs" className="h-auto p-0 text-sm" data-testid="thread-dated-proposal-use" aria-label={t("dated.proposalUseItem", { when, text: readerText(item) })} onClick={() => void changeItem(target, { accept: true, when })}>
+        {t("dated.proposalUse")}
+      </Button>
+    </p>
+  );
+}
+
 /** What happened to a closed item, as its history line says it ("Done Tuesday"). */
 function outcomeOf(item: ReaderItem): string {
   const state = item.row.state;
@@ -205,6 +261,8 @@ export default function ThreadItems({ detail, items }: { detail: ThreadDetail; i
   if (!ready || !top) return null;
   const now = Date.now();
   const text = readerText(top);
+  // plan 210 (iteration 4): an open item with a day to change (a person's ask has none)
+  const change = changeOfItem(top);
   return (
     // the summary card's surface and inset (plan 181): a model's reading, not the sender's words
     <section aria-label={t("dated.section")} data-testid="thread-dated" className={cn(AI_CARD, AI_INSET, "mb-4")}>
@@ -224,6 +282,7 @@ export default function ThreadItems({ detail, items }: { detail: ThreadDetail; i
               {t("dated.done")}
             </Button>
             <ItemLater key={top.key} item={top} act={(at) => void actOnReaderItem(threadId, top, "later", at)} />
+            {change && <ItemChange key={`change:${top.key}`} item={top} target={change} />}
             <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" data-testid="thread-dated-dismiss" aria-label={t("dated.removeItem", { text })} onClick={() => void actOnReaderItem(threadId, top, "dismiss")}>
               {t("dated.remove")}
             </Button>
@@ -233,6 +292,7 @@ export default function ThreadItems({ detail, items }: { detail: ThreadDetail; i
           <span data-testid="thread-dated-outcome" className="shrink-0 text-muted-foreground tabular">{outcomeOf(top)}</span>
         )}
       </div>
+      {change && top.row.proposal && <ItemProposal item={top} target={change} proposal={top.row.proposal} />}
       {others.length > 0 && (
         // the label, then the items one under another on their own edge (wide); narrow, the label above them
         <div role="group" aria-labelledby={alsoId} data-testid="thread-dated-also" className="-mt-1 flex flex-col gap-1 pb-3 text-sm @min-[600px]:flex-row @min-[600px]:gap-x-3">

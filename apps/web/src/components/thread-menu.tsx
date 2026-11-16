@@ -22,6 +22,7 @@ import {
   AlarmClock,
   AlarmClockOff,
   CalendarClock,
+  CalendarDays,
   Check,
   CheckCheck,
   Copy,
@@ -90,6 +91,7 @@ import { reachesSeveral } from "~/lib/compose-fields";
 import { loadThread, useThreads } from "~/state/threads";
 import { useToday, useTodayTask } from "~/state/today";
 import { laterChoices } from "~/lib/dated";
+import { changeOfTask, openChange } from "~/lib/change";
 import { actOnTodayRow, openTodayLater } from "~/lib/today-task";
 import { fitWholeRows } from "@terno/ui/lib/whole-rows";
 
@@ -442,6 +444,7 @@ function TaskItems({ threadId }: { threadId: number }) {
   const { rowId, task } = row;
   const now = Date.now();
   const presets = laterChoices(task, now);
+  const change = changeOfTask(task);
   return (
     <>
       <Item icon={<CircleCheck />} label={t("dated.done")} command="today.done" testId="menu-dated-done" onClick={() => void actOnTodayRow(rowId, task, "done")} />
@@ -466,6 +469,8 @@ function TaskItems({ threadId }: { threadId: number }) {
           </ContextMenuItem>
         </ContextMenuSubContent>
       </ContextMenuSub>
+      {/* plan 210 (iteration 4): the item's own day and time (a person's ask has none) */}
+      {change && <Item icon={<CalendarDays />} label={t("dated.change")} testId="menu-dated-change" onClick={() => openChange(change)} />}
       {/* plan 210 (iteration 3): Remove says what it removes from, last of What matters' own and a separator away from the
           mail's (Delete further on), with what it leaves under it, at its label's edge, as the menu's other notes */}
       <ContextMenuItem data-testid="menu-dated-dismiss" data-wide aria-describedby={keepsId} onClick={() => void actOnTodayRow(rowId, task, "dismiss")}>
