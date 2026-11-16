@@ -14,6 +14,7 @@ import { DATED_NOTHING_ASKED_SINCE, type IncomingMessage } from "@terno/store";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
 import { checkDates } from "./dated";
+import { relayedAsk } from "./dated-relay";
 
 const at = (y: number, m: number, d: number, h = 0, min = 0) => new Date(y, m - 1, d, h, min).getTime();
 const NOW = at(2026, 11, 10, 12);
@@ -1043,6 +1044,56 @@ describe("plan 210 (iteration 5): the reading", () => {
     const receipt = "Payment received for invoice 2231. Thank you!";
     const out = checkDates({ items: [], settled: [{ label: "o1", evidence: receipt }, { label: "o2", evidence: receipt }] }, { ...base, text: receipt, subject: "Receipt", open, threadId: 1, senderKey: "ar@northwind.test", from: "Northwind", paysInThread: 2 });
     expect(out.settled).toEqual([{ id: 1, revision: 1 }]);
+  });
+
+  it("revision 8: a person's ask a service relays is kept from its automated address, only quoted from the relay; the service's own words aren't", () => {
+    const LINKWELL = 'Ines Duarte · Staff Engineer at Northwind\n\n"Hi Nora, we\'re running a paid workshop on incident reviews in March. Would you be up for leading a session?"\n\nReply on Linkwell';
+    const relay = relayedAsk("Ines Duarte sent you a message", LINKWELL, "Linkwell", "Nora Quill");
+    const ask = { kind: "ask", text: "Answer Ines Duarte about leading a workshop session", quote: "Would you be up for leading a session?", due: null, time: null };
+    const mail = { ...base, text: LINKWELL, subject: "Ines Duarte sent you a message", sender: { person: false }, reader: { name: "Nora Quill", addressed: "to" as const }, from: "Linkwell" };
+    expect(checkDates({ items: [ask], settled: [] }, { ...mail, relay }).rows.map((r) => r.kind)).toEqual(["ask"]);
+    // without the relation, an automated address asks nothing; nor does a quote from outside the relay
+    expect(checkDates({ items: [ask], settled: [] }, mail).rows).toEqual([]);
+    expect(checkDates({ items: [{ ...ask, quote: "Reply on Linkwell" }], settled: [] }, { ...mail, relay }).rows).toEqual([]);
+  });
+
+  it("revision 8: two questions from one sender stay two (María's Elena); one in the request's own list is that request (Karin)", () => {
+    const ELENA = "Ok I need numbers! I'm ordering the turkey and they need the order by Monday the 16th. Let me know by Sunday if it's you, Chris and both kids, and whether Chris's mom is coming this year.\n\nAlso can you bring the tamales AND the arroz? Mom says hers is never as good as yours.";
+    const count = { kind: "respond", text: "Answer Elena about who's coming for Thanksgiving", quote: "Let me know by Sunday if it's you, Chris and both kids", due: "2026-11-15", time: null };
+    const tamales = { kind: "ask", text: "Answer Elena about bringing the tamales and the arroz", quote: "Also can you bring the tamales AND the arroz?", due: null, time: null };
+    const mail = { ...base, text: ELENA, subject: "Re: Thanksgiving?? turkey count", from: "Elena Ruiz", ...person };
+    expect(checkDates({ items: [count, tamales], settled: [] }, mail).rows.map((r) => r.kind)).toEqual(["respond", "ask"]);
+    // the old question moved by a sentence about another thing keeps whom it answers, not the old words
+    const old = { id: 7, revision: 1, threadId: 1, senderKey: "elena@family.test", kind: "ask", text: "Answer Elena about working Thanksgiving", quote: "Are you working Thanksgiving?", dueDay: "2026-11-11", dueAt: NOW, timed: false, dated: false } as DatedRow;
+    const moved = checkDates({ items: [tamales], settled: [], moved: [{ label: "o1", due: "2026-11-15", time: null, evidence: count.quote }] }, { ...mail, open: new Map([["o1", old]]), threadId: 1, senderKey: "elena@family.test" });
+    expect(moved.rows.map((r) => [r.kind, r.text])).toEqual([["respond", "Answer Elena"], ["ask", tamales.text]]);
+    // a reminder of what the reader said they'd do asks nothing new (Margaret's discussion questions); one that also asks does
+    const BOOK = "Hello ladies,\n\nMaria, you said you'd do the discussion questions this time, thank you! And could you let me know by Monday the 16th whether you can host in December?";
+    const questions = { kind: "ask", text: "Prepare the discussion questions", quote: "you said you'd do the discussion questions this time", due: null, time: null };
+    expect(checkDates({ items: [questions], settled: [] }, { ...base, text: BOOK, subject: "Book club", from: "Doris Hale", ...person }).rows).toEqual([]);
+    const asks = "Maria, you said you'd bring the chairs: could you drop them off Saturday?";
+    expect(checkDates({ items: [{ ...questions, text: "Answer Doris about the chairs", quote: asks }], settled: [] }, { ...base, text: asks, subject: "Chairs", from: "Doris Hale", ...person }).rows).toHaveLength(1);
+    // a reply's list: the item in it is the reply
+    const KARIN = "Maria,\n\nI need a reply from you today with:\n1. An ETA for restore,\n2. What happened, and\n3. How you'll handle credits.\n\nThanks";
+    const reply = { kind: "respond", text: "Reply to Karin with the ETA, cause and credits", quote: "I need a reply from you today with:", due: "2026-11-10", time: null };
+    const eta = { kind: "ask", text: "Answer Karin about the ETA for restore", quote: "An ETA for restore,", due: null, time: null };
+    expect(checkDates({ items: [reply, eta], settled: [] }, { ...base, text: KARIN, subject: "Outage", from: "Karin Halvorsen", ...person }).rows.map((r) => r.kind)).toEqual(["respond"]);
+  });
+
+  it("revision 8, through the worker: Social mail reaches the model only for a person's relayed ask, which is kept; the service stays no person", async () => {
+    const { backend, model, receive, read } = await setup();
+    const linkwell = { name: "Linkwell", email: "messages-noreply@linkwell.test" };
+    const MESSAGE = 'Ines Duarte · Staff Engineer at Northwind\n\n"Hi Me, we\'re running a paid workshop on incident reviews in March. Would you be up for leading a session?"\n\nReply on Linkwell';
+    // a network's own call isn't read at all
+    await receive({ from: linkwell, subject: "Owen posted: Shipping v2 today", bodyText: "Owen Hale posted: Shipping v2 today!\n\nJoin the conversation", gmailLabels: ["INBOX", "CATEGORY_SOCIAL"], providerThreadId: "lw-2" });
+    await receive({ from: linkwell, subject: "People you may know", bodyText: "People you may know: Owen Hale, Amara Okeke.", gmailLabels: ["INBOX", "CATEGORY_SOCIAL"], providerThreadId: "lw-3" });
+    await read();
+    expect(model.requests).toHaveLength(0);
+    model.answer = () => reply([{ kind: "ask", text: "Answer Ines Duarte about leading a workshop session", quote: "Would you be up for leading a session?", due: null, time: null }]);
+    await receive({ from: linkwell, subject: "Ines Duarte sent you a message", bodyText: MESSAGE, gmailLabels: ["INBOX", "CATEGORY_SOCIAL"], providerThreadId: "lw-1" });
+    await read();
+    expect(model.requests).toHaveLength(1);
+    expect((await backend.store.dated.active()).map((r) => [r.kind, r.text])).toEqual([["ask", "Answer Ines Duarte about leading a workshop session"]]);
   });
 
 });
