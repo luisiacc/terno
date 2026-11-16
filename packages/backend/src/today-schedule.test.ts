@@ -95,9 +95,11 @@ describe("what a change writes (scheduleChanges)", () => {
       { id: 2, revision: 8, to: { dueDay: "2026-11-24", dueAt: at(2026, 11, 24, 16), timed: true, actAt: at(2026, 11, 21, 9), before: null, wall: null } },
     ]);
     expect(c.promises).toEqual([{ id: 7, revision: 1, to: { dueAt: at(2026, 11, 24, 16), timed: true, state: "open", before: null } }]);
-    // a day alone: its 9:00, untimed (today, a day not over yet, is fine; a promise past its 9:00 keeps its state)
-    const today = scheduleChanges({ source: "promise", id: 7, revision: 1 }, promise({ state: "due" }), { dated: [], promises: [promise({ state: "due" })] }, { day: "2026-11-10", time: null }, NOW);
-    expect(today.promises).toEqual([{ id: 7, revision: 1, to: { dueAt: at(2026, 11, 10, 9), timed: false, state: "due", before: null } }]);
+    // a day alone: its 9:00, untimed (today, a day not over yet, is fine; a promise past its 9:00 is due, open or due before)
+    for (const state of ["due", "open"] as const) {
+      const today = scheduleChanges({ source: "promise", id: 7, revision: 1 }, promise({ state }), { dated: [], promises: [promise({ state })] }, { day: "2026-11-10", time: null }, NOW);
+      expect(today.promises).toEqual([{ id: 7, revision: 1, to: { dueAt: at(2026, 11, 10, 9), timed: false, state: "due", before: null } }]);
+    }
   });
 
   it("refuses what it can't do, saying why: changed since, a moment past, a year away, an ask's", () => {
@@ -154,6 +156,18 @@ describe("Change… through the backend", () => {
     await client.call("dated.act", { id: row.id, revision: row.revision + 1, action: "later", until: at(2026, 11, 20, 9) });
     await expect(client.call("today.scheduleUndo", { undoId })).rejects.toMatchObject({ code: "STALE" });
     expect(await backend.store.dated.get(row.id)).toMatchObject({ dueDay: "2026-11-24", changedAt: NOW + 120_000 });
+  });
+
+  it("at noon, tomorrow's promise changed to today with no time is due at once, and its own Undo still works (Codex's code review, iteration 4)", async () => {
+    const { backend, client, clock, raw, receive } = await setup();
+    const thread = await receive();
+    raw.run("INSERT INTO followups (thread_id, message_id, item, kind, text, person_name, person_email, sent_at, due_at, dated, state, created_at) VALUES (?, 999991, 0, 'promise', 'send the script', 'Jess', 'jess@sponsor.test', ?, ?, 1, 'open', ?)", thread, clock.now - DAY, at(2026, 11, 11, 9), clock.now);
+    const [p] = (await backend.store.followups.ofThread(thread)).filter((f) => f.kind === "promise");
+    const { undoId } = await client.call("today.schedule", { item: { source: "promise", id: p!.id, revision: p!.revision }, to: { day: "2026-11-10", time: null } });
+    // today's 9:00 is over: due (on the Inbox's top) in the change itself, so follow-ups' look moves nothing after it
+    expect(await backend.store.followups.get(p!.id)).toMatchObject({ dueAt: at(2026, 11, 10, 9), state: "due", inboxState: "onTop", revision: p!.revision + 1 });
+    await client.call("today.scheduleUndo", { undoId });
+    expect(await backend.store.followups.get(p!.id)).toMatchObject({ dueAt: at(2026, 11, 11, 9), state: "open", inboxState: "none", changedAt: null, revision: p!.revision + 2 });
   });
 
   it("Jess's later 'Friday the 20th' is a proposal on the day the user chose; Use takes it, and its Undo brings the proposal back", async () => {

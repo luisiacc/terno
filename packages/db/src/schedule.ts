@@ -1,5 +1,5 @@
 import { dayKeyOf, parseProposal, parseSchedule, proposalJson, readWall, scheduleJson, type DatedWall, type ItemSchedule, type ScheduleProposal } from "@terno/core";
-import { proposalOf, type DatedFinish, type DatedScheduleSnapshot, type DatedSource, type PromiseScheduleSnapshot, type ScheduleChanges, type ScheduleSnapshots } from "@terno/store";
+import { proposalOf, scheduledInbox, type DatedFinish, type DatedScheduleSnapshot, type DatedSource, type PromiseScheduleSnapshot, type ScheduleChanges, type ScheduleSnapshots } from "@terno/store";
 import type { Db } from "./sqlite";
 
 /** Plan 210 (iteration 4, Change…) on SQLite (v68): see packages/store/src/schedule.ts. */
@@ -16,7 +16,7 @@ interface DatedRaw {
   changed_at: number | null; changed_from: string | null; proposal: string | null; before_day: string | null; wall: string | null;
 }
 interface PromiseRaw {
-  id: number; revision: number; state: PromiseScheduleSnapshot["state"]; inbox_state: PromiseScheduleSnapshot["inboxState"]; due_at: number; dated: number; timed: number; broken_due_at: number | null; deferred_until: number | null;
+  id: number; revision: number; state: PromiseScheduleSnapshot["state"]; inbox_state: PromiseScheduleSnapshot["inboxState"]; from_scan: number; due_at: number; dated: number; timed: number; broken_due_at: number | null; deferred_until: number | null;
   changed_at: number | null; changed_from: string | null; proposal: string | null; before_day: string | null;
 }
 
@@ -56,8 +56,8 @@ export function scheduleItems(db: Db, c: ScheduleChanges): ScheduleSnapshots | n
     c.promises.forEach(({ id, to }, i) => {
       const r = promises[i]!;
       db.run(
-        "UPDATE followups SET due_at = ?, dated = 1, timed = ?, state = ?, inbox_state = 'none', broken_due_at = NULL, before_day = ?, deferred_until = NULL, changed_at = ?, changed_from = ?, proposal = NULL, revision = revision + 1 WHERE id = ?",
-        to.dueAt, to.timed ? 1 : 0, to.state, to.before ?? null, c.at, scheduleJson({ dueDay: dayKeyOf(r.due_at), dueAt: r.due_at, timed: r.timed === 1, dated: r.dated === 1 }), id,
+        "UPDATE followups SET due_at = ?, dated = 1, timed = ?, state = ?, inbox_state = ?, broken_due_at = NULL, before_day = ?, deferred_until = NULL, changed_at = ?, changed_from = ?, proposal = NULL, revision = revision + 1 WHERE id = ?",
+        to.dueAt, to.timed ? 1 : 0, to.state, scheduledInbox({ state: r.state, inboxState: r.inbox_state, fromScan: r.from_scan === 1 }, to.state), to.before ?? null, c.at, scheduleJson({ dueDay: dayKeyOf(r.due_at), dueAt: r.due_at, timed: r.timed === 1, dated: r.dated === 1 }), id,
       );
     });
     return { dated: dated.map((r) => datedSnapshot(r!)), promises: promises.map((r) => promiseSnapshot(r!)) };

@@ -13,8 +13,16 @@ export interface ScheduleChanges {
   /** the act's moment: `changedAt` */
   at: number;
   dated: readonly { id: number; revision: number; to: { dueDay: string; dueAt: number; timed: boolean; actAt: number; /** an accepted proposal's new words */ text?: string; /** the day asked before and the mail's clock: an accepted proposal's; absent, none */ before?: string | null; wall?: DatedWall | null } }[];
-  promises: readonly { id: number; revision: number; to: { dueAt: number; timed: boolean; /** open when its new moment is ahead, else as it was */ state: FollowupState; /** an accepted proposal's day asked before; absent, none */ before?: string | null } }[];
+  promises: readonly { id: number; revision: number; to: { dueAt: number; timed: boolean; /** open when its new moment is ahead, else due */ state: FollowupState; /** an accepted proposal's day asked before; absent, none */ before?: string | null } }[];
 }
+
+/**
+ * A changed promise's Inbox top: open, none; due, as follow-ups' `makeDue` would put it (on top, but a scan's), or as it was
+ * when it was due already. The change writes what the next look would, so that look finds nothing to do and never moves the
+ * revision under the change's own Undo (Codex's code review of iteration 4).
+ */
+export const scheduledInbox = (r: { state: FollowupState; inboxState: FollowupRow["inboxState"]; fromScan: boolean }, state: FollowupState): FollowupRow["inboxState"] =>
+  state !== "due" ? "none" : r.state === "due" ? r.inboxState : r.fromScan ? "none" : "onTop";
 
 /** A dated row's schedule and everything a change touches, as it was: what Undo restores. */
 export interface DatedScheduleSnapshot {

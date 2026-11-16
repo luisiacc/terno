@@ -1,5 +1,5 @@
 import { dayKeyOf, parseProposal, parseSchedule, proposalJson, readWall, scheduleJson, type DatedWall, type ItemSchedule, type ScheduleProposal } from "@terno/core";
-import { proposalOf, type DatedFinish, type DatedScheduleSnapshot, type DatedSource, type PromiseScheduleSnapshot, type ScheduleChanges, type ScheduleSnapshots } from "@terno/store";
+import { proposalOf, scheduledInbox, type DatedFinish, type DatedScheduleSnapshot, type DatedSource, type PromiseScheduleSnapshot, type ScheduleChanges, type ScheduleSnapshots } from "@terno/store";
 import { T, type Ctx, type R } from "./mail";
 import type { Table } from "./mem";
 
@@ -46,7 +46,7 @@ export function scheduleItems(c: Ctx, s: ScheduleChanges): ScheduleSnapshots | n
   s.promises.forEach(({ to }, i) => {
     const r = promises[i]!;
     promiseRows.update(r, {
-      due_at: to.dueAt, dated: 1, timed: to.timed ? 1 : 0, state: to.state, inbox_state: "none", broken_due_at: null, before_day: to.before ?? null, deferred_until: null,
+      due_at: to.dueAt, dated: 1, timed: to.timed ? 1 : 0, state: to.state, inbox_state: scheduledInbox({ state: r.state, inboxState: r.inbox_state, fromScan: r.from_scan === 1 }, to.state), broken_due_at: null, before_day: to.before ?? null, deferred_until: null,
       changed_at: s.at, changed_from: scheduleJson({ dueDay: dayKeyOf(r.due_at), dueAt: r.due_at, timed: r.timed === 1, dated: r.dated === 1 }), proposal: null, revision: r.revision + 1,
     });
   });

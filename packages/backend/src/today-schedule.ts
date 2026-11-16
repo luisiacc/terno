@@ -78,8 +78,9 @@ export function scheduleChanges(seen: ItemSeen, named: DatedRow | FollowupRow, m
     if (!mine && !open(r)) continue;
     const dueAt = mine && accepted ? accepted.dueAt : momentOf(day, time);
     const timed = mine && accepted ? accepted.timed : time !== null;
-    // ahead, it's open again (out of the Inbox's top); a day already reached keeps its state, and comes due as any
-    promises.push({ id: r.id, revision: mine ? seen.revision : r.revision, to: { dueAt, timed, state: dueAt > now ? "open" : r.state, before: mine && accepted ? (accepted.before ?? null) : null } });
+    // ahead, it's open again (out of the Inbox's top); a moment already reached is due in the change's own transaction, never
+    // left for follow-ups' next look (its revision would make the change's own Undo refuse: Codex's code review, iteration 4)
+    promises.push({ id: r.id, revision: mine ? seen.revision : r.revision, to: { dueAt, timed, state: dueAt > now ? "open" : "due", before: mine && accepted ? (accepted.before ?? null) : null } });
   }
   return { at: now, dated, promises };
 }
