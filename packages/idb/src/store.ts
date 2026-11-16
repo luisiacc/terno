@@ -3,7 +3,7 @@ import { ClosedOrder } from "./closed-order";
 import { actOnItems, fromOf, itemMembers, linkItems, liveAmong, restoreItems, needsCount, needsWalk, type NeedsWalk, messagesHere, senders, allDigests, beginDigest, clearDigests, digestFacts, digestLive, digestRead, getDigest, latestDigest, pendingDigestDays, pruneDigests, waitingAmong, waitingPage, writeDigest } from "./today";
 import { scheduleItems, unscheduleItems } from "./schedule";
 import { clearReplies, finishReply, getReply, transitionReply } from "./replies";
-import { activeDated, addDatedMute, datedMutes, removeDatedMute, closedDatedPage, clearDated, datedMarkCount, datedPendingOn, datedMarkPage, datedScanCandidates, datedSource, finishDated, getDated, markDatedMail, openDatedFor, pruneDated, pruneDatedMarks, queueDatedScan, restoreDated, threadDated, datedWritten, updateDated } from "./dated";
+import { activeDated, addDatedMute, datedMutes, removeDatedMute, closedDatedPage, claimDatedLook, clearDated, datedMarkCount, datedPendingOn, datedMarkPage, datedScanCandidates, datedSource, finishDated, getDated, markDatedMail, openDatedFor, pruneDated, pruneDatedMarks, queueDatedScan, restoreDated, threadDated, datedWritten, updateDated } from "./dated";
 import { activeFollowups, closedFollowupPage, claimFollowupNotice, clearFollowups, closeAnsweredFollowups, endFollowupTop, finishFollowups, followupLiveSent, followupScanCandidates, followupSendConfirmed, followupSource, getFollowup, makeFollowupsDue, nextFollowupDue, pruneFollowups, pruneSentMarks, queueScan, restoreFollowups, sentMarkCount, sentMarkPage, threadFollowups, updateFollowup } from "./followups";
 import { findLinked, newestLinked } from "./links";
 import { addAskTurn, askAccountsOf, askCandidates, askHeaders, askNewest, askTurnCount, askTurns, clearAsk, listAskConversations, removeAskConversation, removeAskForAccount, restoreAskConversation } from "./ask";
@@ -2107,6 +2107,7 @@ export class IdbMailStore implements MailStore {
       }),
       prune: (now) => this.command(() => pruneDatedMarks(this.c, now)),
       pendingOn: (threadId, before) => this.read(() => datedPendingOn(this.c, threadId, before)),
+      claimLook: (id, now) => this.command(() => claimDatedLook(this.c, id, now)),
     },
     scanCandidates: (since, limit) => this.read(() => datedScanCandidates(this.c, since, limit)),
     source: (id) => this.read(() => datedSource(this.c, id)),

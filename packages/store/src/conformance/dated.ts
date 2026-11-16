@@ -103,6 +103,23 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
         expect(await back.dated.marks.count()).toBe(1);
       });
 
+      it("plan 210 (iteration 5, revision 3): a mark's second look is claimed once, across a reopen, and never without the mark", async () => {
+        const { store, got } = await setup();
+        const a = await got();
+        const b = await got();
+        expect(await store.dated.marks.claimLook(a.id, NOW)).toBe(true);
+        expect(await store.dated.marks.claimLook(a.id, NOW + 1)).toBe(false);
+        // the mark stays to be read, claimed: a restart reads it again and never asks twice
+        expect((await store.dated.marks.page(null, 10)).map((m) => m.messageId)).toEqual([a.id, b.id]);
+        const back = await reopen(store);
+        expect(await back.dated.marks.claimLook(a.id, NOW + 2)).toBe(false);
+        expect(await back.dated.marks.claimLook(b.id, NOW + 2)).toBe(true);
+        // a finish consumes it as any mark; a consumed or unknown one has nothing to claim
+        await back.dated.finish({ messageId: a.id, threadId: a.thread, fromScan: false, rows: [], settled: [], now: NOW, model: "m", provider: "p", promptVersion: 1, clearGeneration: back.dated.clearGeneration() });
+        expect(await back.dated.marks.claimLook(a.id, NOW + 3)).toBe(false);
+        expect(await back.dated.marks.claimLook(999_999, NOW)).toBe(false);
+      });
+
       it("the source says what the reader needs, without the body", async () => {
         const { store, got } = await setup();
         const promo = await got({ gmailLabels: ["INBOX", "CATEGORY_PROMOTIONS"], listId: "deals.bank.test", subject: "Your bill" });

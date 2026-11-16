@@ -39,6 +39,7 @@ import { assertCertain, UNCERTAINTY_KEY, UncertainWriteError } from "./uncertain
  * SQL v71 (plan 210, iteration 5) adds `dated_items.part_of_day` and `followups.part_of_day`: absent on older records reads as
  * the whole day, so no version change.
  * Version 37 adds a kind muted from one sender in What matters (SQL v72, plan 210, iteration 5).
+ * SQL v73 (plan 210, iteration 5) adds `ai_dated_mail.looked_at`: absent on older marks reads as unclaimed, so no version change.
  */
 export { IDB_VERSION };
 /** the SQL schema this one mirrors (migration ids are shared across adapters) */

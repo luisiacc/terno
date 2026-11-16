@@ -1638,6 +1638,11 @@ CREATE TABLE dated_mute_pairs (
   PRIMARY KEY (sender_key, kind)
 ) WITHOUT ROWID;
 ` },
+  // plan 210 (iteration 5, revision 3): when a received message's one second look was claimed, kept on its mark so a failure,
+  // a retry or a restart never asks it again. Shape only: a nullable column on a small table, no rewrite, no index
+  { version: 73, name: "What matters: the second look's claim (plan 210, iteration 5)", sql: `
+ALTER TABLE ai_dated_mail ADD COLUMN looked_at INTEGER;
+` },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

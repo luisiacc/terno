@@ -840,6 +840,19 @@ describe("migration v71: a part of the day (plan 210, iteration 5)", () => {
   });
 });
 
+describe("migration v73: the second look's claim (plan 210, iteration 5)", () => {
+  it("adds the mark's claim at none, every mark kept as it was (shape only)", () => {
+    // the version just before it, whichever of iteration 5's others came first
+    const before = MIGRATIONS.filter((m) => m.version < 73).at(-1)!.version;
+    const { db } = legacyMail(before, { threads: 2, seed: 13 });
+    const [first, second] = db.all<{ id: number; thread_id: number; date: number }>("SELECT id, thread_id, date FROM messages ORDER BY id LIMIT 2");
+    for (const [m, source] of [[first!, "live"], [second!, "scan"]] as const) db.run("INSERT INTO ai_dated_mail (message_id, thread_id, arrived_at, queued_at, source) VALUES (?, ?, ?, 7, ?)", m.id, m.thread_id, m.date, source);
+    const marks = db.all<Record<string, unknown>>("SELECT * FROM ai_dated_mail ORDER BY message_id");
+    expect(migrate(db)).toEqual({ from: before, to: SCHEMA_VERSION });
+    expect(db.all<Record<string, unknown>>("SELECT * FROM ai_dated_mail ORDER BY message_id")).toEqual(marks.map((r) => ({ ...r, looked_at: null })));
+  });
+});
+
 describe("migration v65: the mail that settled an item, and its date (plan 210, iteration 4, revision 7)", () => {
   it("adds both columns to both tables, empty, every row kept as it was (shape only, no backfill)", () => {
     const { db } = legacyMail(64, { threads: 2, seed: 11 });

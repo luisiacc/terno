@@ -66,6 +66,15 @@ export const datedMarkCount = (c: Ctx): number => T(c, "ai_dated_mail").size;
 /** Plan 210 (iteration 3): a message of this conversation from before then still to be read. */
 export const datedPendingOn = (c: Ctx, threadId: number, before: number): boolean => T(c, "ai_dated_mail").by("thread", threadId).some((m) => m.arrived_at < before);
 
+/** Plan 210 (iteration 5, revision 3): the second look's one claim (SQL v73's `looked_at`, absent on older marks: unclaimed). */
+export function claimDatedLook(c: Ctx, messageId: number, now: number): boolean {
+  const marks = T(c, "ai_dated_mail");
+  const mark = marks.get(messageId);
+  if (!mark || mark.looked_at != null) return false;
+  marks.update(mark, { looked_at: now });
+  return true;
+}
+
 /** Not marked, not read: what a check may still take. */
 const unread = (c: Ctx, id: number): boolean => !T(c, "ai_dated_mail").has(id) && T(c, "dated_items").count("message", id) === 0;
 

@@ -7,7 +7,7 @@ import { unsubscribeBodyParts, decodeBodyPart } from "@terno/store";
 import { actOnItems, fromOf, itemMembers, linkItems, liveAmong, needsCount, restoreItems, messagesHere, senders, allDigests, beginDigest, clearDigests, digestFacts, digestLive, digestRead, getDigest, latestDigest, pendingDigestDays, pruneDigests, waitingAmong, waitingPage, writeDigest } from "./today";
 import { clearReplies, finishReply, getReply, transitionReply } from "./replies";
 import { scheduleItems, unscheduleItems } from "./schedule";
-import { activeDated, addDatedMute, datedMutes, removeDatedMute, closedDatedPage, clearDated, datedMarkCount, datedPendingOn, datedMarkPage, datedScanCandidates, datedSource, finishDated, getDated, markDatedMail, openDatedFor, pruneDated, pruneDatedMarks, queueDatedScan, restoreDated, threadDated, datedWritten, updateDated } from "./dated";
+import { activeDated, addDatedMute, datedMutes, removeDatedMute, closedDatedPage, claimDatedLook, clearDated, datedMarkCount, datedPendingOn, datedMarkPage, datedScanCandidates, datedSource, finishDated, getDated, markDatedMail, openDatedFor, pruneDated, pruneDatedMarks, queueDatedScan, restoreDated, threadDated, datedWritten, updateDated } from "./dated";
 import { activeFollowups, closedFollowupPage, claimFollowupNotice, clearFollowups, closeAnsweredFollowups, endFollowupTop, finishFollowups, followupLiveSent, followupScanCandidates, followupSendConfirmed, followupSource, getFollowup, makeFollowupsDue, nextFollowupDue, pruneFollowups, pruneSentMarks, queueScan, restoreFollowups, sentMarkCount, sentMarkPage, threadFollowups, updateFollowup } from "./followups";
 import { addAskTurn, askAccountsOf, askHeaders, askMatching, askNewest, askText, askTurnCount, askTurns, clearAsk, listAskConversations, removeAskConversation, removeAskForAccount, restoreAskConversation } from "./ask";
 import { retainBody, observeBodyRetirement, bodyReadReference, sqlBodyParts, cleanupBodies, finishBodyStage, withBodySelection, hydrateBodyReference, stageBody, prepareBodyMatches, withBodyMatches } from "./body-parts";
@@ -1198,6 +1198,7 @@ export class SqlMailStore implements MailStore {
       clear: async () => void this.db.run("DELETE FROM ai_dated_mail"),
       prune: async (now) => pruneDatedMarks(this.db, now),
       pendingOn: async (threadId, before) => datedPendingOn(this.db, threadId, before),
+      claimLook: async (id, now) => claimDatedLook(this.db, id, now),
     },
     scanCandidates: async (since, limit) => datedScanCandidates(this.db, since, limit),
     source: async (id) => datedSource(this.db, id),
