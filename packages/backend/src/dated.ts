@@ -193,8 +193,11 @@ export function settledHow(kind: string, evidence: string, sentence?: string): S
 const RESTATES = /(?:^|[,;:(—–-]\s*)(?:i mean|i\.\s?e\.|in other words|to be clear|o sea|osea|es decir|quiero decir|mejor dicho|(?:that is|namely)\s*[,:])/u;
 const restates = (said: string) => RESTATES.test(normalizeText(said).toLowerCase().trim());
 
-/** a mailing's address ("news@", "newsletter@", "marketing@", "promo@", "updates@", "boletin@"), never a person's */
-const BULK_LOCAL = /(?:^|[._+-])(?:news|newsletters?|marketing|promos?|promotions?|campaigns?|mailer|mailings?|digest|bulletin|updates|notifications?|announce\w*|hello|boletin|noticias|novedades|ofertas)(?:$|[._+-])/u;
+/**
+ * a mailing's address ("news@", "newsletter@", "marketing@", "promo@", "updates@", "boletin@"), never a person's. Round two:
+ * never an address a small studio writes from itself ("hello@", "hi@", "contact@", "info@"): its footer tells instead
+ */
+const BULK_LOCAL = /(?:^|[._+-])(?:news|newsletters?|marketing|promos?|promotions?|campaigns?|mailer|mailings?|digest|bulletin|updates|notifications?|announce\w*|boletin|noticias|novedades|ofertas)(?:$|[._+-])/u;
 /** a mailing's footer: unsubscribe, view it in a browser, manage what you get (en, es), as `norm` reads it */
 const BULK_FOOTER = /\b(?:unsubscribe|opt out|view (?:it |this (?:email )?)?in (?:your |a )?browser|manage (?:your )?(?:preferences|subscription|email settings)|update (?:your )?preferences|darte de baja|date de baja|dar(?:se)? de baja|cancelar (?:tu |la )?suscripcion|desuscribir\w*|ver (?:este correo |el correo )?en (?:tu |el )?navegador|(?:administrar|gestionar|actualizar) (?:tus )?preferencias)\b/u;
 

@@ -1902,6 +1902,10 @@ describe("the claims ledger's second batch: a person writing from a role address
     expect(personAtRole({ automated: false, fromEmail: "comunidad@colmena.test", fromName: "Fer Aguirre" }, `${FER}\n\nSi ya no quieres recibir estos correos, date de baja aquí.`, "Diego Ramírez")).toBe(false);
     expect(personAtRole({ automated: false, fromEmail: "boletin@colmena.test", fromName: "Fer Aguirre" }, FER, "Diego Ramírez")).toBe(false);
     expect(personAtRole({ automated: false, fromEmail: "comunidad@colmena.test", fromName: "Fer Aguirre" }, FER, "Diego Ramírez")).toBe(true);
+    // round two: a studio's hello@, hi@, contact@ or info@ signed by its designer is a person; with a mailing's footer, not
+    const STUDIO = "Hi Diego,\n\nCould you send me the final logo files by Friday?\n\nThanks,\nAlex";
+    for (const local of ["hello", "hi", "contact", "info"]) expect(personAtRole({ automated: false, fromEmail: `${local}@studio.test`, fromName: "Alex Rivera" }, STUDIO, "Diego Ramírez"), local).toBe(true);
+    expect(personAtRole({ automated: false, fromEmail: "hello@studio.test", fromName: "Alex Rivera" }, `${STUDIO}\n\nManage preferences · Unsubscribe`, "Diego Ramírez")).toBe(false);
   });
 });
 
