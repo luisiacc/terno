@@ -649,6 +649,11 @@ describe("plan 210 (iteration 3)", () => {
       for (const text of ["Queremos abrir la sucursal de Narvarte el 21 y nos encantaría verte ahí.", "We're opening the new studio on Saturday, November 21 at 6 PM. Join us!"]) {
         expect(checkDates({ items: [{ ...opening, quote: text.split(/(?<=[.!])\s/u)[0]!.replace(/[.!]$/u, "") }], settled: [] }, person(text)).rows, text).toHaveLength(1);
       }
+      // its code review: the invitation in another paragraph, or the subject, is the reader's too
+      const studio = { ...opening, text: "Studio opening", quote: "We're opening the studio on November 21 at 6 PM", due: "2026-11-21" };
+      expect(checkDates({ items: [studio], settled: [] }, person("We're opening the studio on November 21 at 6 PM.\n\nJoin us!")).rows).toHaveLength(1);
+      expect(checkDates({ items: [studio], settled: [] }, { ...person("We're opening the studio on November 21 at 6 PM."), subject: "You're invited: our new studio" }).rows).toHaveLength(1);
+      expect(checkDates({ items: [{ ...opening, quote: "Inauguramos la tienda el 21" }], settled: [] }, { ...person("Inauguramos la tienda el 21."), subject: "Invitación a la inauguración" }).rows).toHaveLength(1);
       // a meeting of theirs with the reader is no business's own: "we meet", "we're moving the call"
       expect(checkDates({ items: [{ ...opening, text: "Kickoff call", quote: "We meet Thursday at 10 for the kickoff" }], settled: [] }, person("We meet Thursday at 10 for the kickoff.")).rows).toHaveLength(1);
     });
