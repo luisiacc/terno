@@ -116,6 +116,16 @@ export function namingWords(text: string, o: { names: boolean } = { names: true 
   return out;
 }
 
+/** what any parcel's words say, naming none ("arriving", "llega", "your order") */
+const PARCEL_WORDS = new Set(["arriving", "arrive", "arrives", "delivery", "delivered", "deliver", "package", "parcel", "order", "shipment", "shipped", "coming", "llega", "llegan", "entrega", "paquete", "pedido", "envio", "orden"]);
+/** Plan 210 (iteration 5, V2): two parcels' words name the same thing: a word of what's coming, never a parcel's own or the sender's. */
+export function sameParcel(a: string, b: string, from = ""): boolean {
+  const skip = namingWords(from);
+  const words = (t: string) => new Set([...namingWords(t)].filter((w) => !PARCEL_WORDS.has(w) && !skip.has(w) && !/\d/.test(w)));
+  const mine = words(a);
+  return [...words(b)].some((w) => mine.has(w));
+}
+
 const shares = (a: ReadonlySet<string>, b: ReadonlySet<string>) => [...a].some((w) => b.has(w));
 /** an identifier: a number of three digits or more that isn't an amount (`amountsOf`'s are whole) or a year ("invoice 1001", "order BD-55018") */
 const idsOf = (words: ReadonlySet<string>) => new Set([...words].filter((w) => /^\d+$/.test(w)));

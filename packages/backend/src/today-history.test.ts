@@ -28,7 +28,7 @@ function fakeStore(datedRows: Closed[], promiseRows: Closed[] = [], spam: Readon
     promises: promises.filter((r) => keys.includes(`promise:${r.id}`) || (r.sameAs != null && keys.includes(r.sameAs))),
   });
   const store = {
-    dated: { closedPage: page(dated), written: async () => new Set<string>() },
+    dated: { closedPage: page(dated), written: async () => new Set<string>(), ofThread: async (id: number) => dated.filter((r) => r.threadId === id && r.state === "open") },
     followups: { closedPage: page(promises) },
     today: { members },
     threads: { summaries: async (ids: readonly number[]) => ids.map((id) => ({ id, inSpam: spam.has(id), inTrash: false }) as ThreadSummary) },
@@ -163,5 +163,18 @@ describe("historyPage", () => {
       { id: 10, threadId: 19, closedAt: NOW - 2 * MIN, state: "settled", closedReason: "reasked", settledBy: 64 },
     ]);
     expect((await historyPage(store, ask({}))).items.map((i) => [i.id, i.reason])).toEqual([["dated:21", "answered"]]);
+  });
+
+  it("the claims ledger's third batch: a parcel's notice over by its day while a newer notice of it is on its way has no line", async () => {
+    // Diego's arm: the first notice (Nov 12–13, stored on the 12th) went over; the next notice of the same arm, moved to
+    // Tuesday, is open. Another parcel over in another conversation keeps its line, and so does one with no newer notice
+    const arm = { kind: "delivery", state: "dismissed", closedReason: "expired" };
+    const { store } = fakeStore([
+      { id: 12, threadId: 20, closedAt: NOW - MIN, ...arm, text: "Llega el brazo articulado doble para monitor", arrivedAt: NOW - 5 * 86_400_000 } as Closed,
+      { id: 28, threadId: 20, closedAt: null, state: "open", kind: "delivery", text: "Llega el brazo articulado doble para monitor, 9–14 h", arrivedAt: NOW - 4 * 86_400_000 } as Closed,
+      { id: 13, threadId: 21, closedAt: NOW - 2 * MIN, ...arm, text: "Llega la lámpara de escritorio", arrivedAt: NOW - 5 * 86_400_000 } as Closed,
+      { id: 29, threadId: 21, closedAt: null, state: "open", kind: "delivery", text: "Llegan las pilas recargables", arrivedAt: NOW - 4 * 86_400_000 } as Closed,
+    ]);
+    expect((await historyPage(store, ask({}))).items.map((i) => i.id)).toEqual(["dated:13"]);
   });
 });

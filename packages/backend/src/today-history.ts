@@ -1,5 +1,6 @@
 import { changeLineId, DATED_CLOSED_KEEP_MS, datedGroup, HANDED, historyAfter, historyOrder, refKey, type HistorySource, type DatedRow, type FeedRowId, type FollowupRow, type HistoryKey, type HistoryOutcome, type ItemRef, type SettledHow, type ThreadSummary, type TodayHistoryItem, type TodayHistoryPage } from "@terno/core";
 import { ANSWERED_WITH_PROMISE, HELD_REQUEST_CLOSED, type ClosedAt, type MailStore } from "@terno/store";
+import { sameParcel } from "./dated-evidence";
 import { withoutUntrusted } from "./suspicious-sender";
 
 /**
@@ -55,6 +56,9 @@ const sourceOf = (src: HistorySource): ItemRef["source"] => (src % 2 === 0 ? "da
 const keyOf = (r: Row | Changed): string => r.sameAs ?? refKey({ source: sourceOf(r.src), id: r.id });
 const closingOf = (r: Row): HistoryKey => ({ at: r.closedAt!, src: r.src, id: r.id });
 const REASKED: SettledHow = "reasked";
+/** the claims ledger's third batch: a parcel over by its day while a newer notice of the same parcel in its conversation is open */
+const superseded = (r: DatedRow, open: readonly DatedRow[] | undefined, from: string): boolean =>
+  r.kind === "delivery" && r.closedReason === "expired" && !!open?.some((o) => o.kind === "delivery" && o.id !== r.id && o.arrivedAt > r.arrivedAt && sameParcel(r.text, o.text, from));
 const open = (r: { state: string }): boolean => r.state === "open" || r.state === "due";
 /** the claims ledger's third batch: the request a promise answers, settled by the very mail that kept the promise */
 const answeredWith = (p: FollowupRow, r: DatedRow | null | undefined): boolean => !!r && r.state === "settled" && r.settledBy != null && r.settledBy === p.settledBy && r.threadId === p.threadId;
@@ -90,7 +94,11 @@ export async function historyPage(store: MailStore, o: HistoryAsk): Promise<Toda
   const groups = new Map<string, { open: boolean; newest: HistoryKey | null }>();
   // the claims ledger's third batch: the request each promise closed by mail answers (`answers`), read with the members
   const requests = new Map<number, DatedRow | null>();
+  // and (Diego's arm) the open items of each conversation with a parcel that's over, for the newer notice that replaced it
+  const openIn = new Map<number, readonly DatedRow[]>();
   const learn = async (rows: readonly Row[]) => {
+    const parcels = [...new Set(rows.flatMap((r) => (r.src === 0 && r.kind === "delivery" && r.closedReason === "expired" && !openIn.has(r.threadId) ? [r.threadId] : [])))];
+    for (const [id, open] of await Promise.all(parcels.map(async (id) => [id, await store.dated.ofThread(id)] as const))) openIn.set(id, open);
     const keys = [...new Set(rows.map(keyOf))].filter((k) => !groups.has(k));
     const asked = [...new Set(rows.flatMap((r) => (r.src === 1 && r.answers != null && r.settledBy != null && !requests.has(r.answers) ? [r.answers] : [])))];
     const askedKeys = asked.map((id) => refKey({ source: "dated", id }));
@@ -189,6 +197,9 @@ export async function historyPage(store: MailStore, o: HistoryAsk): Promise<Toda
     if (row.src === 0 && row.closedReason === ANSWERED_WITH_PROMISE) continue;
     // the claims ledger's third batch: an ask its person asked again with a day lives on as the request that mail made
     if (row.src === 0 && row.closedReason === REASKED) continue;
+    // (Diego's arm) a parcel's notice whose day went by while a newer notice of that parcel is still on its way was replaced,
+    // not over: its line would say "Over yesterday" beside the live delivery
+    if (row.src === 0 && superseded(row, openIn.get(row.threadId), thread.fromName)) continue;
     // iteration 4: a promise that only held a request closed with it: the request's line says it
     if (row.src === 1 && row.closedReason === HELD_REQUEST_CLOSED) continue;
     // the claims ledger's third batch (Theo's script, Margaret's papers): a promise the mail that answered its request also

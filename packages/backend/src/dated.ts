@@ -9,7 +9,7 @@ import { silenced, silenceOf, withoutMuted } from "./dated-mutes";
 import { secondLook } from "./dated-second-look";
 import { UI_LOCALE_KEY } from "./forwarding";
 import { handledItself } from "./dated-automatic";
-import { bareDayAhead, contextOf, insideQuotes, quoteSpan, type Sentences, namesApart, namesItem, namingWords, negatedReceipt, norm, otherAmounts, otherIds, paragraphsOf, plainEvidence, replacesPlainly, sameObject, sameThing, saysReplaced, saysWhen, scamPressure, sentencesOf, settlesKind, startClock, zeroNamesItem, zeroOnly } from "./dated-evidence";
+import { bareDayAhead, contextOf, insideQuotes, quoteSpan, type Sentences, namesApart, namesItem, namingWords, negatedReceipt, norm, otherAmounts, otherIds, paragraphsOf, plainEvidence, replacesPlainly, sameObject, sameParcel, sameThing, saysReplaced, saysWhen, scamPressure, sentencesOf, settlesKind, startClock, zeroNamesItem, zeroOnly } from "./dated-evidence";
 import { mayRelay, relayedAsk, relays, type Relay } from "./dated-relay";
 import { untrustedSenders, withoutUntrusted } from "./suspicious-sender";
 import { sameEvent } from "./today-links";
@@ -546,16 +546,6 @@ function startOf(quote: string, due: string): string | null {
   if (!start.zone || start.zone === here) return start.time;
   const at = inZone({ due, time: start.time }, start.zone, here);
   return at.time && at.due === due ? at.time : null;
-}
-
-/** what any parcel's words say, naming none ("arriving", "llega", "your order") */
-const PARCEL_WORDS = new Set(["arriving", "arrive", "arrives", "delivery", "delivered", "deliver", "package", "parcel", "order", "shipment", "shipped", "coming", "llega", "llegan", "entrega", "paquete", "pedido", "envio", "orden"]);
-/** Plan 210 (iteration 5, V2): two parcels' words name the same thing: a word of what's coming, never a parcel's own or the sender's. */
-function sameParcel(a: string, b: string, from = ""): boolean {
-  const skip = namingWords(from);
-  const words = (t: string) => new Set([...namingWords(t)].filter((w) => !PARCEL_WORDS.has(w) && !skip.has(w) && !/\d/.test(w)));
-  const mine = words(a);
-  return [...words(b)].some((w) => mine.has(w));
 }
 
 /** The day after a YYYY-MM-DD day. */
