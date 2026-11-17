@@ -3595,3 +3595,52 @@ describe("round 19's faults", () => {
     }
   });
 });
+
+describe("plan 211: an account's AI and What matters switches", () => {
+  it.each([["AI off", { ai: false }], ["out of What matters", { feed: false }]] as const)("%s: the reading on its way stops, and what's marked isn't read", async (_name, off) => {
+    const { backend, client, model, receive, account } = await setup();
+    let release!: () => void;
+    model.gate = new Promise((r) => (release = r));
+    model.answer = () => reply([bill]);
+    await receive();
+    backend.dated.wake();
+    await expect.poll(() => model.requests.length).toBe(1);
+    await receive({ subject: "Another bill" });
+    await client.call("accounts.update", { id: account.id, ...off });
+    release();
+    await expect.poll(() => backend.store.dated.marks.count()).toBe(0);
+    expect(model.requests).toHaveLength(1);
+    expect(await backend.store.dated.active()).toEqual([]);
+  });
+
+  it("another account's open item from the same sender goes with a request only while its AI is on", async () => {
+    const { backend, client, model, receive, read } = await setup();
+    const other = (await backend.store.accounts.create({ kind: "imap", email: "b@terno.test", displayName: "B", color: "brown", now: 0 })).account;
+    model.answer = () => reply([{ ...bill, text: "Pay the water bill", quote: "due on November 20" }]);
+    await receive({ accountId: other.id, to: [{ name: "B", email: "b@terno.test" }] });
+    await read();
+    expect((await backend.store.dated.active()).map((r) => r.text)).toEqual(["Pay the water bill"]);
+    model.answer = () => reply();
+    const sent = () => promptText(model.requests.at(-1)!.messages[0]!.content);
+    await receive({ subject: "A reminder" });
+    await read();
+    expect(sent()).toContain("Pay the water bill");
+    await client.call("accounts.update", { id: other.id, ai: false });
+    await receive({ subject: "Another reminder" });
+    await read();
+    expect(sent()).toContain("Another reminder");
+    expect(sent()).not.toContain("Pay the water bill");
+  });
+
+  it("the check of mail already here leaves out an account with AI or What matters off", async () => {
+    const { backend, client, receive, account } = await setup();
+    const other = (await backend.store.accounts.create({ kind: "imap", email: "b@terno.test", displayName: "B", color: "brown", now: 0 })).account;
+    await receive({}, false);
+    await receive({ accountId: other.id, to: [{ name: "B", email: "b@terno.test" }] }, false);
+    expect((await backend.dated.scanOffer()).count).toBe(2);
+    await client.call("accounts.update", { id: other.id, ai: false });
+    expect((await backend.dated.scanOffer()).count).toBe(1);
+    await client.call("accounts.update", { id: account.id, feed: false });
+    expect((await backend.dated.scanOffer()).count).toBe(0);
+  });
+});

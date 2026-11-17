@@ -554,7 +554,8 @@ export class ActionsService {
       // the preview's order, newest first, whatever order a store answers in
       for (const id of slice) {
         const f = facts.get(id);
-        if (!f) continue;
+        // plan 211: an account the AI may not read sends nothing to the check (its conversations stay unchecked: left out)
+        if (!f || !this.b.gate.ai(f.accountId)) continue;
         const { name, domain, subject } = groupOf(f);
         const key = groupKey({ name, domain, subject });
         let g = byKey.get(key);

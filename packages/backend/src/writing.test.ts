@@ -925,3 +925,31 @@ describe("plan 163: ai.readDraft", () => {
     expect(await errorOf(t.client.call("ai.readDraft", { requestId: t.requestId(), text: "x", maybe: [] }))).toMatchObject({ details: { aiErrorKind: "not_configured" } });
   });
 });
+
+describe("plan 211: drafting and an account with AI off", () => {
+  it("refuses from it, and in its conversation from an account that's on, with the plain error; nothing leaves", async () => {
+    const t = await setup({ accounts: 2 });
+    const [a, b] = t.accounts;
+    const { thread } = await t.received({ accountId: b!.id, to: [{ name: b!.displayName, email: b!.email }] });
+    await t.client.call("accounts.update", { id: b!.id, ai: false });
+    const before = t.model.requests.length;
+    for (const asked of [t.compose({ accountId: b!.id }), t.compose({ accountId: a!.id, kind: "reply", threadId: thread })]) {
+      expect(await errorOf(asked)).toMatchObject({ message: "AI is off for this account. Turn it on in Settings → Accounts.", details: { aiErrorKind: "not_configured" } });
+    }
+    expect(t.model.requests).toHaveLength(before);
+    // its own conversations aside, another account drafts as before
+    await done(t.compose({ accountId: a!.id }));
+  });
+
+  it("never borrows the voice of someone written to only from an account with AI off", async () => {
+    const t = await setup({ accounts: 2 });
+    const [a, b] = t.accounts;
+    await t.sentMany(20, () => ({ accountId: b!.id, bodyText: "From the other account to Tom." }));
+    await t.sentMany(20, () => ({ accountId: a!.id, to: [{ name: "X", email: "x@y.test" }] }));
+    await t.learned();
+    await t.client.call("accounts.update", { id: b!.id, ai: false });
+    const r = await done(t.compose({ accountId: a!.id }));
+    expect(r.used.personFromOtherAccount).toBe(false);
+    expect(textOf(last(t))).not.toContain('from="another account"');
+  });
+});

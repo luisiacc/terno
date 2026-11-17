@@ -505,6 +505,22 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
         expect((await of(src.date)).map((x) => x.messageId)).toEqual([bill.id]);
       });
 
+      it("plan 211: openFor leaves out another account's items the AI may not read, before the limit", async () => {
+        const { store, other, got, item, finish } = await setup();
+        // the same sender writes to both accounts: an older item here, a newer one in the other account
+        const here = await got({ from: shop, date: NOW - 5000 });
+        await finish(here.id, here.thread, { rows: [item()] });
+        const r = await store.sync.ingest([msg({ accountId: other, from: shop, to: [me], subject: "Your other order", date: NOW - 4000 })], { applyFilters: false, now: NOW, classifier: null, datedMail: { since: null } });
+        const there = (await store.dated.source(r.inserted[0]!))!;
+        await finish(there.id, there.threadId, { rows: [item()] });
+        const next = await got({ from: shop, date: NOW - 1000 });
+        const src = (await store.dated.source(next.id))!;
+        const of = (excludeAccounts?: number[]) => store.dated.openFor({ threadId: src.threadId, senderKey: src.senderKey, before: src.date, limit: 1, ...(excludeAccounts ? { excludeAccounts } : {}) });
+        expect((await of()).map((x) => x.messageId)).toEqual([there.id]);
+        expect((await of([])).map((x) => x.messageId)).toEqual([there.id]);
+        expect((await of([other])).map((x) => x.messageId)).toEqual([here.id]);
+      });
+
       it("an update can require the day it was decided on: retiring what's over after a move changes nothing (Codex review, round 2)", async () => {
         const { store, got, item, finish } = await setup();
         const a = await got();

@@ -58,6 +58,11 @@ export class ReplyService {
     }
   }
 
+  /** Plan 211: an account's AI went off: a reply being written on its mail stops (the check that `holdingUp` makes, now). */
+  accountOff(_accountId: number): void {
+    void this.holdingUp().catch(() => {});
+  }
+
   private emit(entry: Running, event: AiReplyEvent): void {
     for (const client of entry.listeners) this.b.server.emitTo(client, "aiReply", event);
   }
@@ -81,7 +86,8 @@ export class ReplyService {
   private async notMuted(threadId: number): Promise<boolean> {
     const { store } = this.b;
     const accountId = (await store.threads.summaries([threadId]))[0]?.accountId;
-    if (accountId === undefined) return false;
+    // plan 211: nor a conversation of an account with AI off
+    if (accountId === undefined || !this.b.gate.ai(accountId)) return false;
     const prefs = await readPrefs(store);
     return prefs.global.enabled && prefs.accounts[String(accountId)]?.prepareReplies !== false;
   }

@@ -2588,6 +2588,8 @@ It contains none of your mail, contacts, settings or keys.
   "errors.ai.monthlyLimit": "Automatic AI reached your monthly limit in Settings → AI, so nothing more is spent on your key.",
   "errors.ai.usageNotSaved": "Terno couldn’t save what this request would cost, so it didn’t send it. Automatic AI tries again later.",
   "errors.ai.summaryBlocked": "This conversation is in Spam or Trash, so it can’t be summarized. Move it out and try again.",
+  // plan 211: an account's "Use AI with this account" is off
+  "errors.ai.accountOff": "AI is off for this account. Turn it on in Settings → Accounts.",
   "replies.title": "Reply ready",
   "replies.drafted": "Reply drafted",
   "replies.writing": "Writing a reply…",

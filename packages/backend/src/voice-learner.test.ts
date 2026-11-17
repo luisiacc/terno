@@ -705,3 +705,20 @@ describe("the optional model step (§3)", () => {
 });
 
 void say;
+
+describe("plan 211: an account with AI off", () => {
+  it("leaves 'you' when its AI goes off, and comes back when it's on", async () => {
+    const t = await setup({ accounts: 2 });
+    const [a, b] = t.accounts;
+    await t.sentMany(30, () => ({ accountId: a!.id }));
+    await t.sentMany(20, () => ({ accountId: b!.id }));
+    await t.learned();
+    expect(await rows(t)).toContain("you||50");
+    await t.client.call("accounts.update", { id: b!.id, ai: false });
+    await t.learned();
+    expect(await rows(t)).toContain("you||30");
+    await t.client.call("accounts.update", { id: b!.id, ai: true });
+    await t.learned();
+    expect(await rows(t)).toContain("you||50");
+  });
+});

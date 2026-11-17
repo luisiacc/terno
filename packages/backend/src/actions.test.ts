@@ -946,3 +946,26 @@ describe("what the real-mail panel changed", () => {
   });
 });
 
+
+describe("plan 211: the check and an account with AI off", () => {
+  it("sends nothing of its conversations (they stay unchecked), and a switch going off drops a preview's groups", async () => {
+    const { backend, client, model, account, put, preview, check } = await setup();
+    const other = (await backend.store.accounts.create({ kind: "imap", email: "b@terno.test", displayName: "B", color: "brown", now: 0 })).account;
+    await put({ from: { name: "Ana", email: "ana@acme.test" } });
+    await put({ from: { name: "Zed", email: "zed@other.test" }, accountId: other.id });
+    await client.call("accounts.update", { id: other.id, ai: false });
+    const r = await check(await preview({ meaning: true }));
+    if (r.status !== "done") throw new Error(r.status);
+    const sent = model.checks.map((q) => promptText(q.messages[0]!.content)).join();
+    expect(sent).toContain("acme.test");
+    expect(sent).not.toContain("other.test");
+    expect(r.preview.unchecked).toBe(1);
+    // a preview holding groups goes when an account's AI goes off: nothing it built is sent later
+    const held = await preview({ meaning: true });
+    await check(held);
+    const ended: unknown[] = [];
+    client.on("aiAction", (e) => void ended.push(e));
+    await client.call("accounts.update", { id: account.id, ai: false });
+    await vi.waitFor(() => expect(ended).toContainEqual({ previewId: held.previewId, ended: "failed" }));
+  });
+});

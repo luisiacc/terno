@@ -509,3 +509,20 @@ it("Clear AI data empties it, and none of it is on MCP or in an export", async (
   await client.call("ai.summaries.clear", {});
   expect(await backend.store.followups.active()).toEqual([]);
 });
+
+describe("plan 211: an account's AI and What matters switches", () => {
+  it.each([["AI off", { ai: false }], ["out of What matters", { feed: false }]] as const)("%s: what's in flight stops, and what's marked isn't read", async (_name, off) => {
+    const { backend, client, model, send, account } = await setup();
+    let release!: (c: Completion) => void;
+    model.answer = () => new Promise((r) => (release = r));
+    await send();
+    backend.followups.wake();
+    await expect.poll(() => model.requests.length).toBe(1);
+    await send({ subject: "Another" });
+    await client.call("accounts.update", { id: account.id, ...off });
+    release(reply(says));
+    await expect.poll(() => backend.store.followups.marks.count()).toBe(0);
+    expect(model.requests).toHaveLength(1);
+    expect(await backend.store.followups.active()).toEqual([]);
+  });
+});

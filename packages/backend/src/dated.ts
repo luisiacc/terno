@@ -13,6 +13,7 @@ import { amountsOf, bareDayAhead, contextOf, directsReader, giftCardScam, inside
 import { mayRelay, relayedAsk, relays, type Relay } from "./dated-relay";
 import { untrustedSenders, withoutUntrusted } from "./suspicious-sender";
 import { sameEvent } from "./today-links";
+import type { AccountGate } from "./account-gate";
 
 /**
  * Plan 204 §3: the dated reader. Reads live mail the user got (and, with a yes, the last 14 days), oldest first, and keeps
@@ -34,6 +35,8 @@ export interface DatedHost {
   settings(): Promise<AppSettings>;
   /** the gate (plans 147, 150): AI can run at all */
   allowed(settings: AppSettings): Promise<boolean>;
+  /** plan 211: the accounts' switches: its mail is read only where both AI and What matters are on */
+  readonly gate: Pick<AccountGate, "reads" | "readsOff">;
   forTask(): Promise<AiTasks>;
   /** a request a change of provider aborts */
   begin(requestId: string, clientId: string): { signal: AbortSignal; release: () => void };
@@ -1094,7 +1097,7 @@ export class DatedWorker {
   private readonly attempts = new Map<number, number>();
   private prunedDay: string | null = null;
   /** the request on its way out: checked again as it leaves the limiter, repairs included (revision 3) */
-  private leaving: { messageId: number; threadId: number; senderKey: string; date: number; open: readonly number[]; stop: AbortController } | null = null;
+  private leaving: { messageId: number; threadId: number; accountId: number; senderKey: string; date: number; open: readonly number[]; stop: AbortController } | null = null;
 
   constructor(private readonly host: DatedHost) {}
 
@@ -1185,18 +1188,24 @@ export class DatedWorker {
     if (!leaving || leaving.stop.signal.aborted) return;
     const { store } = this.host;
     const src = await store.dated.source(leaving.messageId);
-    if (!src || src.spam || src.trash || src.threadSpam || src.threadId !== leaving.threadId) return leaving.stop.abort();
+    if (!src || src.spam || src.trash || src.threadSpam || src.threadId !== leaving.threadId || !this.host.gate.reads(src.accountId)) return leaving.stop.abort();
     // plan 210 (iteration 4): a sender muted meanwhile, before anything leaves
     if ((await this.muted()).senders.has(leaving.senderKey)) return leaving.stop.abort();
     // Codex code review: the open items it carries are material too; one whose conversation went to Spam stops it
     if (!leaving.open.length) return;
-    const still = new Set((await store.dated.openFor({ threadId: leaving.threadId, senderKey: leaving.senderKey, before: leaving.date, limit: DATED_OPEN_SHOWN })).map((r) => r.id));
+    const still = new Set((await store.dated.openFor({ threadId: leaving.threadId, senderKey: leaving.senderKey, before: leaving.date, limit: DATED_OPEN_SHOWN, excludeAccounts: this.host.gate.readsOff })).map((r) => r.id));
     if (leaving.open.some((id) => !still.has(id))) leaving.stop.abort();
   }
 
   /** Plan 210 (iteration 4): what the reader muted, read where it's needed (a table bounded at 200). */
   private async muted() {
     return mutedOf(await this.host.store.dated.mutes.list());
+  }
+
+  /** Plan 211: the account's AI or What matters went off: its reading on the way stops, and its marks go as they're reached. */
+  accountOff(accountId: number): void {
+    const leaving = this.leaving;
+    if (leaving?.accountId === accountId) leaving.stop.abort();
   }
 
   /**
@@ -1285,6 +1294,8 @@ export class DatedWorker {
     };
     // the owner's rule: mail in Spam reaches no AI, the whole thread's
     if (!src || src.draft || src.sent || src.own || src.spam || src.trash || src.threadSpam) return drop();
+    // plan 211: nor an account with AI or What matters off (turned back on, its new mail is read)
+    if (!this.host.gate.reads(src.accountId)) return drop();
     // plan 210 (iteration 4, revision 2): a muted sender's mail isn't read for What matters at all, before its body or a
     // provider is reached; not read later either (Unmute is for mail from then on: one queued while they were muted stays unread)
     if (silenced(src, await silenceOf(store))) return drop();
@@ -1297,7 +1308,7 @@ export class DatedWorker {
     // what came before it went on is read only with the check's yes
     if (mark.source === "live" && settings.dated.enabledAt !== null && src.date < settings.dated.enabledAt) return drop();
     // revision 5: what could settle an open item is read before any cost filter
-    const open = await store.dated.openFor({ threadId: src.threadId, senderKey: src.senderKey, before: src.date, limit: DATED_OPEN_SHOWN });
+    const open = await store.dated.openFor({ threadId: src.threadId, senderKey: src.senderKey, before: src.date, limit: DATED_OPEN_SHOWN, excludeAccounts: this.host.gate.readsOff });
     // plan 210 (iteration 5, revision 8): Social and Promotions only for a person's ask a service relays (its body tells)
     const filtered = !open.length && (src.tab === "social" || src.tab === "promotions");
     if (filtered && !mayRelay(src.subject) && src.bodyState !== "full") return drop();
@@ -1313,7 +1324,7 @@ export class DatedWorker {
     if (!text.trim() && !src.subject.trim()) return drop();
     const asked = this.host.begin(`dated:${mark.messageId}`, "dated-worker");
     const stop = new AbortController();
-    this.leaving = { messageId: src.id, threadId: src.threadId, senderKey: src.senderKey, date: src.date, open: open.map((r) => r.id), stop };
+    this.leaving = { messageId: src.id, threadId: src.threadId, accountId: src.accountId, senderKey: src.senderKey, date: src.date, open: open.map((r) => r.id), stop };
     try {
       const ai = await this.host.forTask();
       const language = await this.readerLanguage(settings);
@@ -1346,7 +1357,7 @@ export class DatedWorker {
           const current = await this.host.settings();
           if (!current.dated.enabled || !(await this.host.allowed(current))) return "stop";
           const at = await store.dated.source(src.id);
-          if (!at || at.spam || at.trash || at.threadSpam || at.threadId !== src.threadId || silenced(at, await silenceOf(store))) return "drop";
+          if (!at || at.spam || at.trash || at.threadSpam || at.threadId !== src.threadId || !this.host.gate.reads(at.accountId) || silenced(at, await silenceOf(store))) return "drop";
           return "go";
         },
         claim: () => store.dated.marks.claimLook(src.id, this.host.now()),
@@ -1384,7 +1395,7 @@ export class DatedWorker {
       // Spam or Trash meanwhile: never asked about again; an open item gone to Spam: asked again without it
       if (stop.signal.aborted) {
         const now = await store.dated.source(src.id);
-        if (now && !now.spam && !now.trash && !now.threadSpam && now.threadId === src.threadId) {
+        if (now && !now.spam && !now.trash && !now.threadSpam && now.threadId === src.threadId && this.host.gate.reads(now.accountId)) {
           this.again = true;
           return "stop";
         }
@@ -1486,7 +1497,8 @@ export class DatedWorker {
     // newest first: whether each is worth reading by itself, and who and where it's from
     const seen: { s: DatedSource; worth: boolean }[] = [];
     await this.host.runBudgeted(walked, async (chunk) => {
-      const sources = (await Promise.all(chunk.map((id) => store.dated.source(id)))).filter((s): s is DatedSource => !!s && !s.spam && !s.trash && !s.threadSpam && !s.draft && !s.sent && !s.own && !silenced(s, silence));
+      // plan 211: nor an account with AI or What matters off
+      const sources = (await Promise.all(chunk.map((id) => store.dated.source(id)))).filter((s): s is DatedSource => !!s && !s.spam && !s.trash && !s.threadSpam && !s.draft && !s.sent && !s.own && !silenced(s, silence) && this.host.gate.reads(s.accountId));
       // plan 210 (iteration 5, revision 8): Social and Promotions only for a person's ask a service relays, read in its body
       const social = (s: DatedSource) => s.tab === "social" || s.tab === "promotions";
       // round 2: a body not here yet can't be judged; it's read, and the worker waits for it (the filter errs towards reading)

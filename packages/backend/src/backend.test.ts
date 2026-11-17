@@ -125,6 +125,8 @@ const tick = () => new Promise((r) => setImmediate(r));
 describe("opening", () => {
   it("bootstrap's reads go together: one slow read holds up nothing beside it, and agents never read the owner", async () => {
     const { backend, client } = await setup();
+    // the startup reads first (plan 211: the account gate reads the accounts): what's held below is bootstrap's own
+    await backend.ready;
     const accounts = backend.store.accounts.list.bind(backend.store.accounts);
     let release!: () => void;
     const held = new Promise<void>((resolve) => { release = resolve; });

@@ -250,6 +250,7 @@ export class WritingService {
       now: () => b.now(),
       prefs: () => readPrefs(b.store),
       available: async () => (await aiAllowed(b.store)) && aiCanRun("writing", (await readSettings(b.store)).ai),
+      allowed: (accountId) => b.gate.ai(accountId),
       forVoice: () => b.aiService.forTask("voice", { foreground: false }),
       begin: (requestId, clientId) => b.aiService.begin(requestId, clientId),
       studyProgress: (clientId, progress) => b.server.emitTo(clientId, "aiStudy", progress),
@@ -271,6 +272,28 @@ export class WritingService {
     this.snapshots.delete(session);
     this.snapshots.set(session, snapshot);
     while (this.snapshots.size > SNAPSHOTS_MAX) this.snapshots.delete(this.snapshots.keys().next().value!);
+  }
+
+  /** Plan 211: the account's AI went off: a draft from it stops at the provider, and no snapshot of its mail is used again. */
+  accountOff(accountId: number): void {
+    for (const { accountId: id, controller } of this.asking) if (id === accountId) controller.abort();
+    this.forgetSnapshots();
+  }
+
+  /** Plan 211: a switch moved: snapshots go (one may hold that account's voice), and the merged voice is made again. */
+  accountsChanged(): void {
+    this.forgetSnapshots();
+    this.learner.accountsChanged();
+  }
+
+  /**
+   * Plan 211: the accounts whose mail a draft would carry (the one it's sent from, and the conversation's) must all let
+   * the AI read it: else the plain error, through the catalog.
+   */
+  private async refuseAiOff(p: ComposeParams): Promise<void> {
+    const { gate, store } = this.b;
+    const thread = p.threadId !== undefined ? (await store.threads.summaries([p.threadId]))[0]?.accountId : undefined;
+    if (!gate.ai(p.accountId) || (thread !== undefined && !gate.ai(thread))) throw new AiError(L("errors.ai.accountOff"), "not_configured");
   }
 
   /** A request that stops, at the provider too, the moment the user takes back the permission it runs under. */
@@ -422,10 +445,11 @@ export class WritingService {
       const profile = row && toProfile(row);
       if (profile) chain.push(profile);
     }
-    // §1: this account has never written to them, and another has: that profile is absolute, so it carries over
+    // §1: this account has never written to them, and another has: that profile is absolute, so it carries over (plan
+    // 211: never from an account the AI may not read)
     if (address && !chain.some((p) => p.scope === "person")) {
       for (const other of await store.accounts.list()) {
-        if (other.id === account.id) continue;
+        if (other.id === account.id || !this.b.gate.ai(other.id)) continue;
         const row = await pick(scopeKeys.person(other.id, address));
         const profile = row && toProfile(row, true);
         if (profile) {
@@ -691,6 +715,7 @@ export class WritingService {
       if (!prefs.global.enabled) throw new AiError(L("errors.ai.draftingOff"), "not_configured");
       const account = await store.accounts.get(p.accountId);
       if (!account) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
+      await this.refuseAiOff(p);
       const { key, waiting } = await this.snapshotKey(p, ai, account, prefs);
       if (waiting !== null) return { status: "waitingBody", messageId: waiting };
       const session = `${clientId}\n${p.session}`;
@@ -733,6 +758,8 @@ export class WritingService {
         ...(p.previousDraft !== undefined ? { previousDraft: p.previousDraft } : {}),
         ...(p.attachments?.length ? { attachments: p.attachments } : {}),
       };
+      // plan 211: the last look before it leaves (a snapshot reused, or a switch moved while it assembled)
+      await this.refuseAiOff(p);
       const result = await ai.compose({ ...snapshot.input, task }, { onDelta: o.onDelta, signal, effort: "low", maxTokens: snapshot.maxTokens });
       o.flush();
       if (signal.aborted) throw new AiError(L("errors.ai.cancelled"), "cancelled");

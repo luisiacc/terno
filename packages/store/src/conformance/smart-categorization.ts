@@ -91,6 +91,22 @@ export function defineSmartCategorizationConformance(fresh: () => Promise<MailSt
         expect(rows.find((r) => r.id === kept.id)!.samples).toEqual([]);
       });
 
+      it("plan 211: an account the AI may not read gives no example, even when it holds the newest", async () => {
+        const { store, thread } = await setup();
+        const other = (await store.accounts.create({ kind: "imap", email: "other@example.com", displayName: "Other", color: "brown", now: 0 })).account.id;
+        const category = await store.categories.create("Receipts", "amber");
+        const here = await thread({ subject: "Here", from: { name: "Ana", email: "ana@studio.example" } });
+        await store.categories.add({ categoryId: category.id, threadIds: [here], addedBy: "user", now: NOW });
+        for (let i = 0; i < 4; i++) {
+          const m = msg({ accountId: other, subject: `Other ${i}`, from: { name: "Bo", email: `bo${i}@else.example` }, date: NOW - 60_000 });
+          await store.sync.ingest([m], { applyFilters: true, now: NOW, classifier: null });
+          await store.categories.add({ categoryId: category.id, threadIds: [await threadOf(store, m.providerMsgId!)], addedBy: "user", now: NOW + 1 + i });
+        }
+        const subjects = async (excludeAccounts?: number[]) => (await store.categorize.categoryEvidence({ perCategory: 1, limit: 100, ...(excludeAccounts ? { excludeAccounts } : {}) }))[0]!.samples.map((s) => s.subject);
+        expect(await subjects()).toEqual(["Other 3"]);
+        expect(await subjects([other])).toEqual(["Here"]);
+      });
+
       it("caps samples per category, and keeps the most recently used categories", async () => {
         const { store, thread } = await setup();
         const old = await store.categories.create("Old", "cyan");

@@ -120,6 +120,8 @@ export interface VoiceLearnerHost {
   prefs(): Promise<WritingPrefs>;
   /** plan 157: AI is here (Dev mode's switch on a local build, and a provider that can draft): without it, nothing runs */
   available(): Promise<boolean>;
+  /** plan 211: the account's "Use AI" switch: off, nothing of its mail is learned from, studied, or merged into "you" */
+  allowed(accountId: number): boolean;
   /** the writing task's model, counted as the limiter's `voice` task */
   forVoice(): Promise<AiTasks>;
   begin(requestId: string, clientId: string): { signal: AbortSignal; release: () => void };
@@ -303,6 +305,20 @@ export class VoiceLearner {
     this.wake({ force: true });
   }
 
+  /** Plan 157's per-account rule, and plan 211's: the account's mail is learned from. */
+  private learns(prefs: WritingPrefs, accountId: number): boolean {
+    return usesSentMail(prefs, accountId) && this.host.allowed(accountId);
+  }
+
+  /**
+   * Plan 211: an account's AI switch moved: what's in flight stops (it may be that account's mail), and the next run
+   * merges "you" again from the accounts allowed now (an account turned off goes out of it; back on, it comes back).
+   */
+  accountsChanged(): void {
+    this.withdraw();
+    if (this.active) this.wake({ force: true });
+  }
+
   /** Permission went: a pass in flight doesn't commit, and studies and refreshes stop at the provider too. */
   private withdraw(): void {
     this.epoch++;
@@ -379,7 +395,7 @@ export class VoiceLearner {
     let passed = false;
     for (const account of accounts) {
       if (!live()) return;
-      if (!usesSentMail(prefs, account.id)) continue;
+      if (!this.learns(prefs, account.id)) continue;
       const window = await this.windowOf(account.id);
       if (cp.forced.includes(account.id) || !window || (cp.dirty[String(account.id)] ?? 0) >= passThreshold(window.size)) {
         const next = await this.pass(account, cp, live);
@@ -391,7 +407,7 @@ export class VoiceLearner {
     if (!live()) return;
 
     // who "you" is made of changed, or an account did
-    const merging = accounts.filter((a) => usesSentMail(prefs, a.id)).map((a) => a.id).sort((a, b) => a - b);
+    const merging = accounts.filter((a) => this.learns(prefs, a.id)).map((a) => a.id).sort((a, b) => a - b);
     if (passed || cp.youStale || merging.join() !== cp.merged.join()) cp = await this.mergeYou(cp, merging, epoch);
     if (!live()) return;
     if (passed) await this.refreshJudgments(cp, accounts, prefs, live);
@@ -418,7 +434,7 @@ export class VoiceLearner {
           const usable = new Set(sent.length ? await store.writing.corpus.usable(sent.map((m) => m.id)) : []);
           await this.clock.tick();
           for (const m of sent) {
-            if (!usesSentMail(prefs, m.accountId)) continue;
+            if (!this.learns(prefs, m.accountId)) continue;
             const window = await this.windowOf(m.accountId);
             if (!window) continue;
             const inside = window.has(m.id);
@@ -443,7 +459,7 @@ export class VoiceLearner {
       // pruned past the checkpoint, or another epoch: the headers say what the log can't
       for (const a of accounts) {
         if (!live()) return start;
-        if (!usesSentMail(prefs, a.id)) continue;
+        if (!this.learns(prefs, a.id)) continue;
         const window = await this.windowOf(a.id);
         if (!window) continue;
         const now = new Set((await this.walk(a.id, live)).map((h) => h.id));
@@ -736,7 +752,7 @@ export class VoiceLearner {
     let cp = start;
     const today = dayOf(this.host.now());
     if (cp.refreshDay !== today) cp = { ...cp, refreshDay: today, refreshes: 0 };
-    const allowed = accounts.filter((a) => study.accountIds.includes(a.id) && usesSentMail(prefs, a.id));
+    const allowed = accounts.filter((a) => study.accountIds.includes(a.id) && this.learns(prefs, a.id));
     const { signal: asked, release } = this.host.begin(`voice-refresh:${this.host.now()}`, "voice-learner");
     const signal = AbortSignal.any([asked, this.permission.signal]);
     try {
@@ -788,7 +804,7 @@ export class VoiceLearner {
     const { store } = this.host;
     await this.idle();
     const prefs = await this.host.prefs();
-    const accounts = (await store.accounts.list()).filter((a) => usesSentMail(prefs, a.id));
+    const accounts = (await store.accounts.list()).filter((a) => this.learns(prefs, a.id));
     const targets = await this.studyTargets(accounts);
     if (!targets.length) return { status: "nothing" };
     const ai = await this.host.forVoice();

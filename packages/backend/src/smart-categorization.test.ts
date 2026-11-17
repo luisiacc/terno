@@ -576,3 +576,40 @@ describe("a JEV key (plan 134)", () => {
     expect(t.decisions(a.thread)).toEqual([]);
   });
 });
+
+describe("plan 211: an account with AI off", () => {
+  it("its marked mail isn't sent, and its mark goes", async () => {
+    const t = await mailbox();
+    t.on();
+    const ai = model(() => ({ label: `c${t.invoices}`, confidence: 0.9 }));
+    t.backend.ai = async () => ai;
+    const { thread } = await t.arrive();
+    expect(await t.marks()).toBe(1);
+    await t.client.call("accounts.update", { id: t.acct, ai: false });
+    await t.backend.aiAssist.drain();
+    expect(ai.classify).not.toHaveBeenCalled();
+    expect(t.decisions(thread)).toEqual([]);
+    expect(await t.marks()).toBe(0);
+  });
+
+  it("classifies another account's mail without the examples it holds, and with them once it's back on", async () => {
+    const t = await mailbox();
+    t.on();
+    const ai = model(() => ({ label: null, confidence: 0 }));
+    t.backend.ai = async () => ai;
+    const other = (await t.backend.store.accounts.create({ kind: "imap", email: "b@example.com", displayName: "B", color: "brown", now: 0 })).account.id;
+    const receipts = createCategory(t.db, "Receipts", "rose").id;
+    const placed = ingestMessages(t.db, [incoming(other, { from: { name: "Shop", email: "orders@shop.example" }, subject: "Your receipt", inInbox: false })], NOW);
+    addToCategory(t.db, { categoryId: receipts, threadIds: [...placed.touchedThreads], addedBy: "user", now: NOW - DAY });
+    await t.client.call("accounts.update", { id: other, ai: false });
+    await t.arrive();
+    await t.backend.aiAssist.drain();
+    const sent = (call: number) => ai.classify.mock.calls[call]![0];
+    expect(sent(0).evidence![`c${receipts}`]!.samples).toEqual([]);
+    expect(JSON.stringify(sent(0))).not.toContain("Your receipt");
+    await t.client.call("accounts.update", { id: other, ai: true });
+    await t.arrive();
+    await t.backend.aiAssist.drain();
+    expect(sent(1).evidence![`c${receipts}`]!.samples).toMatchObject([{ subject: "Your receipt" }]);
+  });
+});

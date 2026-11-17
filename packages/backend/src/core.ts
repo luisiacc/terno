@@ -20,6 +20,7 @@ import { Connectivity, type ConnectivityOptions, type NetReason } from "./connec
 import { QuickChecks, type QuickCheckOptions } from "./quick-checks";
 import { AGENT_ARRIVALS_MAX, AgentMailWaits, AgentWaitBusyError, type AgentWaitMatch, type AgentWaitResult } from "./agent-mail-waits";
 import { AiAssist } from "./ai-assist";
+import { AccountGate, type GateChange } from "./account-gate";
 import { ActionsService } from "./actions";
 import { ReplyService } from "./replies";
 import { TodayService } from "./today";
@@ -295,6 +296,8 @@ export class BackendCore {
   /** the only way out of the backend: every outbound request asks it first */
   readonly net: NetworkPolicy;
   readonly aiService: AiService;
+  /** plan 211: each account's two switches (Use AI, Show in What matters), which every worker asks */
+  readonly gate = new AccountGate();
   readonly categorizer: Categorizer;
   readonly aiAssist: AiAssist;
   /** plan 132: summaries of new mail, and by hand; asleep on an empty queue */
@@ -361,6 +364,7 @@ export class BackendCore {
       settings: () => readSettings(this.store),
       // readSettings says `devAi` only on a local build
       runs: (s) => s.summaries.enabled && (!options.devAi || s.devAi) && aiCanRun("summary", s.ai),
+      allowed: (accountId) => this.gate.ai(accountId),
       forTask: (o) => this.aiService.forTask("summary", o),
       begin: (requestId, clientId) => this.aiService.begin(requestId, clientId),
       ready: (threadId) => {
@@ -381,7 +385,8 @@ export class BackendCore {
       settings: () => readSettings(this.store),
       forTask: () => this.aiService.forTask("followup", { foreground: false }),
       begin: (requestId, clientId) => this.aiService.begin(requestId, clientId),
-      accountWanted: async (accountId) => (await this.store.accounts.config<AccountPrefs>(accountId))?.config.followups !== false,
+      // plan 211: and the account's AI and What matters switches
+      accountWanted: async (accountId) => this.gate.reads(accountId) && (await this.store.accounts.config<AccountPrefs>(accountId))?.config.followups !== false,
       signature: async (accountId) => (await this.store.accounts.get(accountId))?.signature ?? "",
       templated: (accountId) => this.writing.learner.templatedIn(accountId),
       emit: (snapshot) => {
@@ -403,6 +408,7 @@ export class BackendCore {
       now: () => this.now(),
       settings: () => readSettings(this.store),
       allowed: async (settings) => aiFeaturesAvailable(settings) && (await aiAllowed(this.store)),
+      gate: this.gate,
       forTask: () => this.aiService.forTask("dated", { foreground: false }),
       begin: (requestId, clientId) => this.aiService.begin(requestId, clientId),
       changed: () => this.today.changed(),
@@ -527,6 +533,7 @@ export class BackendCore {
       now: () => this.now(),
       yieldTurn: () => this.platform.yield(),
     });
+    this.gate.onChange((changes) => this.switchesChanged(changes));
     this.ready = this.init();
     this.server = new RpcServer(createHandlers(this), {
       onError: (error, method, payload) => {
@@ -596,6 +603,8 @@ export class BackendCore {
       const stamp = await this.store.accounts.stamp(id);
       if (stamp) this.cooldownAccounts.set(id, { ...stamp, kind: (await this.store.accounts.get(id))?.kind ?? "" });
     }
+    // plan 211: before any worker asks
+    this.gate.set(await this.store.accounts.list());
     await this.categorizer.load();
     const recovered = await this.store.ops.recover(this.now());
     if (recovered.requeued || recovered.unknown) {
@@ -1377,13 +1386,41 @@ export class BackendCore {
   }
 
   async emitAccounts(): Promise<void> {
-    const accounts = await this.accountViews(await this.store.accounts.list());
+    const stored = await this.store.accounts.list();
+    // plan 211: the workers hear of a switch before any window does
+    this.gate.set(stored);
+    const accounts = await this.accountViews(stored);
     this.server.emit("accounts", accounts);
     if (this.autocomplete.warmed) this.autocomplete.setOwn(accounts.map((a) => a.email));
     // plan 17 (Codex review 1, #7): an account added or removed changed your addresses; its rescan runs now, with or
     // without mail to sync (an empty account brings no change that would wake it). Idle, a wake is one probe.
     this.facts.wake();
     this.tabs.start();
+  }
+
+  /**
+   * Plan 211: an account's switch moved. Turned off, what's in flight on its mail stops in every worker that reads it (as
+   * `followups.accountOff`), and what they hold of it goes (the category examples, the merged voice, the actions' groups);
+   * What matters reads again, so what the account made shows or hides at once. Nothing stored is deleted.
+   */
+  private switchesChanged(changes: readonly GateChange[]): void {
+    for (const { accountId, before, after } of changes) {
+      if (before.ai && !after.ai) {
+        this.summaries.accountOff(accountId);
+        this.replies.accountOff(accountId);
+        this.ask.accountOff(accountId);
+        this.actions.invalidate(accountId);
+        this.writing.accountOff(accountId);
+      }
+      if (before.ai && before.feed && !(after.ai && after.feed)) {
+        this.followups.accountOff(accountId);
+        this.dated.accountOff(accountId);
+      }
+    }
+    // either way: what's built across accounts is built again from those allowed now
+    this.aiAssist.accountsChanged();
+    this.writing.accountsChanged();
+    this.today.changed();
   }
 
   /**
@@ -1457,13 +1494,18 @@ export class BackendCore {
       checkCurrent?.();
       // plan 116: live mail may be forwarded (marked with its insertion), only while a rule forwards
       const forwardEligible = live && this.forwards.isActive;
+      // plan 211: one question a slice (a pass is one account's): an account the AI may not read is marked for nothing
+      const account = pass?.accountId ?? chunk[0]?.accountId;
+      const ai = account === undefined || this.gate.ai(account);
+      const reads = account === undefined || this.gate.reads(account);
       // plan 131 revision 5: and it's new mail the AI features may want, with the message or never (off: this one boolean)
-      const wants = live ? { summary: this.summaries.isActive, category: await this.aiAssist.wanted() } : null;
+      const wants = live && ai ? { summary: this.summaries.isActive, category: await this.aiAssist.wanted() } : null;
       const newMail = wants && (wants.summary || wants.category) ? wants : undefined;
-      // plan 142: mail you sent from elsewhere, only while live; the account's own switch is the worker's to read
-      const liveSent = live ? { wanted: this.followups.isActive, since: this.followups.since } : undefined;
+      // plan 142: mail you sent from elsewhere, only while live (a reply still closes your waits, read or not); the
+      // account's follow-ups switch is the worker's to read
+      const liveSent = live ? { wanted: reads && this.followups.isActive, since: this.followups.since } : undefined;
       // plan 204: live mail you got, for the dated reader (off: this one question)
-      const datedMail = live ? await this.dated.wanted() : undefined;
+      const datedMail = live && reads ? await this.dated.wanted() : undefined;
       const ingest = async (batch: IncomingMessage[]) => (batch.length ? this.store.sync.ingest(batch, { applyFilters, now: this.now(), classifier, observation, check: checkCurrent, forwardEligible, newMail, liveSent, datedMail }) : null);
       // plan 69: a sync pass's slice never overlaps a storage removal unit, and leaves out what one removed
       const write = () => (pass ? this.evictions.ingest(pass.accountId, pass.pass, chunk, ingest) : ingest(chunk));

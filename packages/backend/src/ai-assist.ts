@@ -4,12 +4,15 @@ import { captureError } from "@terno/core/diag";
 import { POLICY, reason, senderVetoed } from "@terno/core";
 import type { CategoryEvidence, MailStore, NewMailMark } from "@terno/store";
 import { DailyLimitError, MonthlyLimitError } from "./ai-limiter";
+import type { AccountGate } from "./account-gate";
 import type { Categorizer } from "./categorizer";
 import { readSettings, readSmartCategorize, stampSmartCategorize } from "./settings";
 
 export interface AiAssistHost {
   readonly store: MailStore;
   readonly categorizer: Categorizer;
+  /** plan 211: the accounts' "Use AI" switches */
+  readonly gate: AccountGate;
   now(): number;
   ai(): Promise<AiTasks>;
   notifyChanged(threadIds: Iterable<number>, views?: boolean): void;
@@ -165,6 +168,15 @@ export class AiAssist {
     else this.wake();
   }
 
+  /**
+   * Plan 211: an account's AI switch moved: nothing in flight goes on (one may be its mail), the examples are read again
+   * from the accounts allowed now, and what's marked is walked again (an account turned off has its marks consumed unread).
+   */
+  accountsChanged(): void {
+    this.evidence = null;
+    this.targetChanged();
+  }
+
   /** The provider changed, or a key that chooses it: nothing further goes to the old one, and what's marked goes to the new one. */
   targetChanged(): void {
     if (this.abort.signal.aborted) return;
@@ -303,9 +315,19 @@ export class AiAssist {
 
   /** The choices, read once; a category's change shows in the list, an example's in the model's version. */
   private async categoryRows(names: readonly { id: number; name: string }[]): Promise<CategoryEvidence[]> {
-    const key = `${this.host.categorizer.examplesVersion}:${JSON.stringify(names.map((c) => [c.id, c.name]))}`;
-    if (this.evidence?.key !== key) this.evidence = { key, rows: await this.host.store.categorize.categoryEvidence({ perCategory: SAMPLES_PER_CATEGORY, limit: MAX_CATEGORIES }) };
+    // plan 211: never an example from an account the AI may not read
+    const excludeAccounts = this.host.gate.aiOff;
+    const key = `${this.host.categorizer.examplesVersion}:${excludeAccounts.join()}:${JSON.stringify(names.map((c) => [c.id, c.name]))}`;
+    if (this.evidence?.key !== key) this.evidence = { key, rows: await this.host.store.categorize.categoryEvidence({ perCategory: SAMPLES_PER_CATEGORY, limit: MAX_CATEGORIES, excludeAccounts }) };
     return this.evidence.rows;
+  }
+
+  /** Plan 211: the thread's account lets the AI read it (asked only while some account doesn't: no read otherwise). */
+  private async accountAllows(threadId: number): Promise<boolean> {
+    const { gate, store } = this.host;
+    if (!gate.aiOff.length) return true;
+    const [thread] = await store.threads.summaries([threadId]);
+    return !thread || gate.ai(thread.accountId);
   }
 
   /** "stop" when the AI can't run at all (not configured, down, at its limit); "wait" at the rate limit; "later" when the thread isn't ready. */
@@ -316,6 +338,8 @@ export class AiAssist {
     if (!this.current(generation) || !settings.aiCategorize || settings.autoCategorize === "off") return "stop";
     if (!model) return "later";
     if (!store.isOpen || !(await store.categorize.aiCandidate(threadId))) return "done";
+    // plan 211: its mark goes unread (turned back on, new mail is read)
+    if (!(await this.accountAllows(threadId))) return "done";
     // the engine's turn, for mail that arrived before a model was ready: what it settles, nothing is sent for
     const engine = await store.categorize.suggestBackfill({ threadIds: [threadId], now: this.host.now(), mode: settings.autoCategorize, model });
     if (engine.touched.length) {
@@ -346,6 +370,8 @@ export class AiAssist {
       return "stop";
     }
     if (!(await this.enabled(generation)) || !this.current(generation)) return "stop";
+    // plan 211: the last look before it leaves
+    if (!(await this.accountAllows(threadId)) || !this.current(generation)) return "done";
     this.calls.push(Date.now());
     try {
       const { source } = set.root;

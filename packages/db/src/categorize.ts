@@ -1070,15 +1070,17 @@ function emptyResult(): ClassifyResult {
  * example or the engine's own filing never speaks for the user. Spam and trash don't either, so it reads a few more
  * than it keeps. A few indexed rows per category, however many examples it holds.
  */
-export function categoryEvidence(db: Db, o: { perCategory: number; limit: number }): CategoryEvidence[] {
+export function categoryEvidence(db: Db, o: { perCategory: number; limit: number; excludeAccounts?: readonly number[] }): CategoryEvidence[] {
   const own = ownAddresses(db);
+  // plan 211: an account the AI may not read gives no example, before the limit (none: the index alone)
+  const excluded = o.excludeAccounts?.length ? JSON.stringify(o.excludeAccounts) : null;
+  const notExcluded = excluded ? " AND (SELECT t.account_id FROM threads t WHERE t.id = cls_examples.thread_id) NOT IN (SELECT value FROM json_each(?))" : "";
   const positives = new Map(db.all<{ category_id: number; n: number }>("SELECT category_id, count(*) AS n FROM cls_examples INDEXED BY cls_examples_cat WHERE label > 0 GROUP BY category_id").map((r) => [r.category_id, r.n]));
   const categories = db.all<{ id: number; name: string }>("SELECT id, name FROM categories ORDER BY position, id").map((c) => {
     const examples = db.all<{ thread_id: number; at: number }>(
       `SELECT thread_id, at FROM cls_examples INDEXED BY cls_examples_evidence
-       WHERE category_id = ? AND label > 0 AND source IN ('user', 'suggestion', 'bulk') ORDER BY at DESC, thread_id DESC LIMIT ?`,
-      c.id,
-      o.perCategory * 3,
+       WHERE category_id = ? AND label > 0 AND source IN ('user', 'suggestion', 'bulk')${notExcluded} ORDER BY at DESC, thread_id DESC LIMIT ?`,
+      c.id, ...(excluded ? [excluded] : []), o.perCategory * 3,
     );
     return { ...c, examples, usedAt: examples[0]?.at ?? 0 };
   });

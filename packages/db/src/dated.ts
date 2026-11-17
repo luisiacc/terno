@@ -116,13 +116,14 @@ export function datedSource(db: Db, messageId: number): DatedSource | null {
   };
 }
 
-export function openDatedFor(db: Db, o: { threadId: number; senderKey: string; before: number; limit: number }): DatedRow[] {
+export function openDatedFor(db: Db, o: { threadId: number; senderKey: string; before: number; limit: number; excludeAccounts?: readonly number[] }): DatedRow[] {
+  const excluded = o.excludeAccounts?.length ? JSON.stringify(o.excludeAccounts) : null;
   return db.all<Raw>(
     `SELECT * FROM dated_items WHERE id IN (SELECT id FROM dated_items INDEXED BY dated_thread WHERE thread_id = ? AND state = 'open' UNION SELECT id FROM dated_items INDEXED BY dated_sender WHERE sender_key = ? AND state = 'open' AND ${SENDER_REACHES_SQL})
        AND arrived_at < ?
-       AND NOT EXISTS (SELECT 1 FROM messages x INDEXED BY messages_thread WHERE x.thread_id = dated_items.thread_id AND x.is_spam = 1)
+       AND NOT EXISTS (SELECT 1 FROM messages x INDEXED BY messages_thread WHERE x.thread_id = dated_items.thread_id AND x.is_spam = 1)${excluded ? "\n       AND (SELECT t.account_id FROM threads t WHERE t.id = dated_items.thread_id) NOT IN (SELECT value FROM json_each(?))" : ""}
      ORDER BY arrived_at DESC, id DESC LIMIT ?`,
-    o.threadId, o.senderKey, o.before, o.limit,
+    o.threadId, o.senderKey, o.before, ...(excluded ? [excluded] : []), o.limit,
   ).map(toRow);
 }
 

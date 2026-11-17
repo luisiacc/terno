@@ -1375,8 +1375,11 @@ export function createHandlers(b: Backend): Handlers {
 
     "accounts.update": async ({ id, ...patch }) => {
       const before = patch.syncWindowDays !== undefined ? await store.accounts.get(id) : null;
-      const account = await store.accounts.update(id, patch);
+      // plan 211: a switch turned off records when (the store keeps the first moment while it stays off)
+      const account = await store.accounts.update(id, patch.ai === false || patch.feed === false ? { ...patch, offAt: b.now() } : patch);
       if (!account) throw new RpcError("NOT_FOUND", L("errors.accountGone"));
+      // plan 211: the workers hear of its switches first: what's in flight on it stops before anything else happens
+      if (patch.ai !== undefined || patch.feed !== undefined) b.gate.put(account);
       // plan 101: a wider effective window downloads the older mail (an override, or one removed for a wider General)
       let result = account;
       if (before) {

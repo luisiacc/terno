@@ -511,3 +511,43 @@ describe("older mail, on a click (the demo's server)", () => {
     expect(done(await ask("lease??")).older.kind).toBe("downloading");
   });
 });
+
+describe("plan 211: an account with AI off", () => {
+  it("isn't searched, named to the planner, or brought back as an earlier turn; the conversation keeps that turn", async () => {
+    const { backend, client, model, put, ask } = await setup();
+    const other = (await backend.store.accounts.create({ kind: "imap", email: "b@terno.test", displayName: "Side job", color: "brown", now: 0 })).account;
+    await put({ subject: "Parking", bodyText: "PARKING-CANARY: your space is P4." }, other.id);
+    model.plan = () => [query({ terms: ["parking"] })];
+    const first = done(await ask("Where do I park?"));
+    expect(first.turn!.sources.map((s) => s.accountId)).toEqual([other.id]);
+    const conversationId = first.turn!.conversationId;
+    await client.call("accounts.update", { id: other.id, ai: false });
+    const here = await put();
+    model.plan = () => [query({ terms: ["lease"] }), query({ terms: ["parking"] })];
+    const follow = done(await ask("When does my lease renew?", { conversationId }));
+    expect(follow.turn!.sources.map((s) => s.messageId)).toEqual([here]);
+    const plan = promptText(model.plans.at(-1)!.messages[0]!.content);
+    const answer = promptText(model.answers.at(-1)!.messages[0]!.content);
+    for (const sent of [plan, answer]) {
+      expect(sent).not.toContain("Where do I park?");
+      expect(sent).not.toContain("PARKING-CANARY");
+      expect(sent).not.toContain("b@terno.test");
+    }
+    // nothing deleted: the conversation still holds it
+    expect((await client.call("ai.askConversation", { conversationId }))!.turns.map((t) => t.question)).toEqual(["Where do I park?", "When does my lease renew?"]);
+  });
+});
+
+describe("plan 211: older mail and an account with AI off", () => {
+  it("its server isn't searched for older mail", async () => {
+    const { backend, client, model, ask, account } = await setup();
+    model.plan = () => [query({ terms: ["lease"] })];
+    const first = done(await ask());
+    const provider = await backend.provider(account.id);
+    const searches: unknown[] = [];
+    provider!.search = async (i) => (searches.push(i), { hits: [], partial: false });
+    await client.call("accounts.update", { id: account.id, ai: false });
+    done(await client.call("ai.askOlder", { requestId: crypto.randomUUID(), conversationId: first.turn!.conversationId, turnId: first.turn!.id, timezone: "UTC" }));
+    expect(searches).toEqual([]);
+  });
+});

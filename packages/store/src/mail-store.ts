@@ -889,8 +889,11 @@ export interface MailStore {
      * or forwarding gets a suggestion instead; a veto or a thread someone decided on gets nothing.
      */
     recordAiFiling(f: { threadId: number; categoryId: number; p: number; explain: Reason[]; suggestExplain: Reason[]; sender: string; encoded: Uint32Array; model: CategorizerModel; now: number }): Promise<{ outcome: import("./types").AiFilingOutcome; deltas: ModelDelta[] }>;
-    /** Plan 134: every category, most recently used first, with its newest threads the user placed by hand, accepted or bulk-added. */
-    categoryEvidence(o: { perCategory: number; limit: number }): Promise<import("./types").CategoryEvidence[]>;
+    /**
+     * Plan 134: every category, most recently used first, with its newest threads the user placed by hand, accepted or
+     * bulk-added. Plan 211: `excludeAccounts`' threads are never samples (the AI may not read them).
+     */
+    categoryEvidence(o: { perCategory: number; limit: number; excludeAccounts?: readonly number[] }): Promise<import("./types").CategoryEvidence[]>;
   };
 
   accounts: {

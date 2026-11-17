@@ -263,7 +263,8 @@ export interface DatedStore {
    * open items a message could settle: its thread's and its sender's (a delivery or an ask only its thread's: the sixth panel
    * round), from messages older than it, newest first, at most `limit`
    */
-  openFor(o: { threadId: number; senderKey: string; before: number; limit: number }): Promise<DatedRow[]>;
+  /** plan 211: `excludeAccounts`' items never go with a request (another account's, the AI may not read), before the limit */
+  openFor(o: { threadId: number; senderKey: string; before: number; limit: number; excludeAccounts?: readonly number[] }): Promise<DatedRow[]>;
   /**
    * Results, settlements and consuming the mark, in one commit that checks the clear generation and the source (revision 6).
    * Plan 210: rows with no `ask` or `respond` at `DATED_NOTHING_ASKED_SINCE` or later also record the message as read with

@@ -1064,10 +1064,14 @@ const EVIDENCE_SOURCES: ReadonlySet<string> = new Set<ExampleSource>(["user", "s
  * example or the engine's own filing never speaks for the user. Spam and trash don't either, so it reads a few more
  * than it keeps. One in-memory walk of the category's examples.
  */
-export function categoryEvidence(c: Ctx, o: { perCategory: number; limit: number }): CategoryEvidence[] {
+export function categoryEvidence(c: Ctx, o: { perCategory: number; limit: number; excludeAccounts?: readonly number[] }): CategoryEvidence[] {
   const examples = T(c, "cls_examples");
   const messages = T(c, "messages");
   const own = ownAddresses(c);
+  // plan 211: an account the AI may not read gives no example, before the limit
+  const excluded = o.excludeAccounts?.length ? new Set(o.excludeAccounts) : null;
+  const threads = T(c, "threads");
+  const allowed = (threadId: number) => !excluded || !excluded.has(threads.get(threadId)?.account_id as number);
   const categories = [...T(c, "categories").all()]
     .sort((a, b) => a.position - b.position || a.id - b.id)
     .map((row) => {
@@ -1076,7 +1080,7 @@ export function categoryEvidence(c: Ctx, o: { perCategory: number; limit: number
       for (const e of examples.by("fk_category_id", row.id)) {
         if (e.label <= 0) continue;
         positives++;
-        if (EVIDENCE_SOURCES.has(e.source)) placed.push(e);
+        if (EVIDENCE_SOURCES.has(e.source) && allowed(e.thread_id as number)) placed.push(e);
       }
       const newest = placed.sort((a, b) => b.at - a.at || b.thread_id - a.thread_id).slice(0, o.perCategory * 3);
       return { id: row.id as number, name: row.name as string, positives, newest, usedAt: (newest[0]?.at as number | undefined) ?? 0 };

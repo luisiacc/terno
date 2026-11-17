@@ -152,7 +152,10 @@ export class AskService {
   private async search(searches: readonly ResolvedSearch[], entry: Asking): Promise<number[]> {
     const score = new Map<number, number>();
     const now = this.b.now();
-    for (const search of searches) {
+    // plan 211: an account the AI may not read is never searched, whatever the plan named
+    const off = this.b.gate.aiOff;
+    for (const plain of searches) {
+      const search = off.length ? { ...plain, excludeAccountIds: [...new Set([...plain.excludeAccountIds, ...off])] } : plain;
       const page = await this.b.store.threads.search({ search, limit: THREADS_PER_QUERY });
       page.items.forEach((t, rank) => {
         // from here on it depends on that account: before anything of its mail is read or sent
@@ -184,7 +187,7 @@ export class AskService {
         if (count >= ASK_TURNS_MAX) throw new RpcError("BAD_REQUEST", L("errors.ai.askTooLong"));
         for (const id of await store.ask.history.accountsOf(p.conversationId)) entry.accounts.add(id);
         const turns = await store.ask.history.turns(p.conversationId);
-        earlier = turns.slice(-EARLIER_TURNS).map((t) => ({ question: t.question, answer: (t.answer ?? "").slice(0, EARLIER_ANSWER_CHARS) }));
+        earlier = this.allowedTurns(turns).slice(-EARLIER_TURNS).map((t) => ({ question: t.question, answer: (t.answer ?? "").slice(0, EARLIER_ANSWER_CHARS) }));
         before = turns.map((t) => t.question);
       }
       const now = this.b.now();
@@ -193,7 +196,8 @@ export class AskService {
         question,
         today,
         timezone: p.timezone,
-        accounts: (await store.accounts.list()).map((a) => ({ name: a.displayName, address: a.email })),
+        // plan 211: only the accounts the AI may read, by name and address
+        accounts: (await store.accounts.list()).filter((a) => this.b.gate.ai(a.id)).map((a) => ({ name: a.displayName, address: a.email })),
         categories: (await store.categories.list()).map((c) => c.name),
         ...(earlier.length ? { earlier: fitPlanEarlier(earlier, planner.contextTokens) } : {}),
       };
@@ -299,6 +303,8 @@ export class AskService {
     const passages = await store.ask.passages({ threadIds: o.threadIds, queries: o.searches, first: o.first, maxMessages: Math.min(ASK_MESSAGES_MAX, budget.maxMessages), maxChars: Math.min(ASK_MAX_CHARS, budget.passageChars), signal });
     if (signal.aborted) throw new AiError(L("errors.ai.cancelled"), "cancelled");
     for (const m of passages.messages) o.entry.accounts.add(m.accountId);
+    // plan 211: an account whose AI went off since the search: nothing of it leaves
+    if (passages.messages.some((m) => !this.b.gate.ai(m.accountId))) throw new AiError(L("errors.ai.cancelled"), "cancelled");
     const drafted = materialOf(passages.messages, o.p.timezone);
     // threads the page didn't reach count too
     const moreMatch = passages.omitted === true || o.threadIds.length > new Set(passages.messages.map((m) => m.threadId)).size;
@@ -404,7 +410,7 @@ export class AskService {
       const fetched = await this.fetchOlder(valid.map((v) => providerQueryOf(v.plan, v.search)), entry, signal, progress);
       if (signal.aborted) throw new AiError(L("errors.ai.cancelled"), "cancelled");
       const threadIds = await this.search(valid.map((v) => v.search), entry);
-      const earlier = turns.slice(-EARLIER_TURNS).filter((t) => t.id !== turn.id).map((t) => ({ question: t.question, answer: (t.answer ?? "").slice(0, EARLIER_ANSWER_CHARS) }));
+      const earlier = this.allowedTurns(turns).slice(-EARLIER_TURNS).filter((t) => t.id !== turn.id).map((t) => ({ question: t.question, answer: (t.answer ?? "").slice(0, EARLIER_ANSWER_CHARS) }));
       // the questions asked before this one: its language may be theirs, however far back
       const before = turns.slice(0, turns.indexOf(turn)).map((t) => t.question);
       if (!threadIds.length && !fetched.ids.length) {
@@ -440,6 +446,8 @@ export class AskService {
     const found: { accountId: number; hit: import("@terno/mail").ProviderHit }[] = [];
     for (const account of accounts) {
       if (signal.aborted) break;
+      // plan 211: what it would find there could never be read
+      if (!this.b.gate.ai(account.id)) continue;
       const before = now - (account.syncWindowDays ?? general) * 86_400_000;
       // nothing older than this account's window can match what the plan's dates allow
       if (queries.every((q) => q.after !== undefined && q.after >= before)) continue;
@@ -528,6 +536,19 @@ export class AskService {
     this.undo.clear();
     await this.b.store.ask.history.clear();
     this.gone(null);
+  }
+
+  /**
+   * Plan 211: an earlier turn that drew on an account whose AI is off isn't sent again as context (it quotes that mail);
+   * the conversation keeps it, and it's sent again once the account's AI is back on.
+   */
+  private allowedTurns(turns: readonly AskTurn[]): AskTurn[] {
+    return turns.filter((t) => t.sources.every((s) => this.b.gate.ai(s.accountId)));
+  }
+
+  /** Plan 211: the account's AI went off: what's asking on its mail stops (what it already answered stays). */
+  accountOff(accountId: number): void {
+    for (const entry of this.asking) if (entry.accounts.has(accountId)) entry.controller.abort();
   }
 
   /** Its answers quote that mail: what drew on it goes, and what's asking on it stops (revision 3). */

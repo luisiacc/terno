@@ -131,7 +131,7 @@ export function datedSource(c: Ctx, messageId: number): DatedSource | null {
   };
 }
 
-export function openDatedFor(c: Ctx, o: { threadId: number; senderKey: string; before: number; limit: number }): DatedRow[] {
+export function openDatedFor(c: Ctx, o: { threadId: number; senderKey: string; before: number; limit: number; excludeAccounts?: readonly number[] }): DatedRow[] {
   const rows = T(c, "dated_items");
   const found = new Map<number, R>();
   for (const r of rows.by("fk_thread_id", o.threadId)) if (r.state === "open") found.set(r.id, r);
@@ -140,7 +140,11 @@ export function openDatedFor(c: Ctx, o: { threadId: number; senderKey: string; b
   const messages = T(c, "messages");
   const spam = new Map<number, boolean>();
   const inSpam = (threadId: number) => spam.get(threadId) ?? spam.set(threadId, messages.by("fk_thread_id", threadId).some((x) => !!x.is_spam)).get(threadId)!;
-  return [...found.values()].filter((r) => r.arrived_at < o.before && !inSpam(r.thread_id)).sort((a, b) => b.arrived_at - a.arrived_at || b.id - a.id).slice(0, o.limit).map(toRow);
+  // plan 211: another account's item the AI may not read never goes with a request
+  const excluded = o.excludeAccounts?.length ? new Set(o.excludeAccounts) : null;
+  const threads = T(c, "threads");
+  const allowed = (threadId: number) => !excluded || !excluded.has(threads.get(threadId)?.account_id as number);
+  return [...found.values()].filter((r) => r.arrived_at < o.before && !inSpam(r.thread_id) && allowed(r.thread_id)).sort((a, b) => b.arrived_at - a.arrived_at || b.id - a.id).slice(0, o.limit).map(toRow);
 }
 
 // ─── plan 210 (iteration 4, revision 2): what the reader muted, as SQL's ───

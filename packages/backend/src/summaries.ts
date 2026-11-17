@@ -38,6 +38,8 @@ export interface SummaryHost {
   settings(): Promise<AppSettings>;
   /** plan 157: the switch, and AI being there at all: off, nothing is marked, queued or sent */
   runs(settings: AppSettings): boolean;
+  /** plan 211: the account's "Use AI" switch (the gate: a lookup) */
+  allowed(accountId: number): boolean;
   forTask(o: { foreground: boolean }): Promise<AiTasks>;
   begin(requestId: string, clientId: string): { signal: AbortSignal; release: () => void };
   /** tells open readers, never MCP */
@@ -174,6 +176,8 @@ export class SummaryWorker {
   private rateTimer: ReturnType<typeof setTimeout> | null = null;
   /** requests in flight, by thread: a request on the same thread joins instead of paying twice */
   private readonly inflight = new Map<number, Promise<Run>>();
+  /** plan 211: each run with its account, so that account's "Use AI" going off stops it at the provider */
+  private readonly runs = new Set<{ accountId: number; controller: AbortController }>();
 
   constructor(private readonly host: SummaryHost) {}
 
@@ -218,6 +222,12 @@ export class SummaryWorker {
       captureError(error, { code: "ai.failed" });
       this.host.log("warn", "summaries stopped", error instanceof Error ? error.message : error);
     });
+  }
+
+  /** Plan 211: the account's AI went off: what's running on its mail stops (by hand too), and its queued rows go when reached. */
+  accountOff(accountId: number): void {
+    for (const r of this.runs) if (r.accountId === accountId) r.controller.abort();
+    this.wake();
   }
 
   /** Settings changed: a key or a provider may unblock it; off, or AI gone, drops the queue and what's running. */
@@ -296,6 +306,11 @@ export class SummaryWorker {
     const sources = await store.aiSummaries.sources(row.threadId);
     // a cascade took the row with the thread
     if (!sources) return "next";
+    // plan 211: an account the AI may not read: nothing queued of it is ever sent (turned back on, new mail is)
+    if (!this.host.allowed(sources.accountId)) {
+      await store.aiSummaries.drop(row.threadId, row.throughMessageId);
+      return "next";
+    }
     const marks = sources.messages.filter((m) => m.markedAt !== null && !m.trash && !m.spam);
     const floor = Math.max(this.host.now() - NEW_MAIL_MS, settings.summaries.enabledAt ?? 0);
     if (summaryBlocked(sources) || !sources.inInbox || sources.tab > 0 || !marks.some((m) => m.markedAt! >= floor)) {
@@ -396,6 +411,17 @@ export class SummaryWorker {
     const { store } = this.host;
     // before anything it writes was read: a clear after this point makes the write refuse itself
     const clearGeneration = store.aiSummaries.clearGeneration();
+    const off = { accountId: sources.accountId, controller: new AbortController() };
+    this.runs.add(off);
+    try {
+      return await this.runFor(sources, row, { ...o, signal: AbortSignal.any([o.signal, off.controller.signal]) }, clearGeneration);
+    } finally {
+      this.runs.delete(off);
+    }
+  }
+
+  private async runFor(sources: SummarySources, row: AiSummaryRow | null, o: { foreground: boolean; signal: AbortSignal; ai?: AiTasks }, clearGeneration: number): Promise<Run> {
+    const { store } = this.host;
     const signal = AbortSignal.any([o.signal, this.cleared.signal]);
     const ai = o.ai ?? (await this.host.forTask({ foreground: o.foreground }));
     const { subject, thread, reader, labels, compact } = await assemble(store, sources, ai.contextTokens);
@@ -408,6 +434,8 @@ export class SummaryWorker {
       if (outcome === "written") this.host.ready(sources.threadId);
       return { outcome, summary: outcome === "written" ? (viewOf(row!) ?? undefined) : undefined };
     }
+    // plan 211: the last look before anything leaves (the limiter may have held it)
+    if (signal.aborted || !this.host.allowed(sources.accountId)) throw new AiError(L("errors.ai.cancelled"), "cancelled");
     const result = await ai.summarize({ subject, thread, reader, language, today: day(this.host.now()), outputTokens: summaryBudget(ai.contextTokens).outputTokens, compact }, signal);
     // a late answer after a cancel, a clear, or the setting going off: nothing is written
     if (signal.aborted) throw new AiError(L("errors.ai.cancelled"), "cancelled");
@@ -431,7 +459,8 @@ export class SummaryWorker {
     const row = await this.host.store.aiSummaries.get(threadId);
     if (!row?.bodyJson) return { state: "none" };
     const sources = await this.host.store.aiSummaries.sources(threadId);
-    if (!sources || summaryBlocked(sources)) return { state: "none" };
+    // plan 211: an account with AI off shows none (kept until Clear AI data: turned back on, it's there again)
+    if (!sources || summaryBlocked(sources) || !this.host.allowed(sources.accountId)) return { state: "none" };
     if (row.state !== "ready" || row.sourceStamp !== sources.stamp) return { state: "stale" };
     const summary = viewOf(row);
     return summary ? { state: "ready", summary } : { state: "none" };
@@ -446,6 +475,7 @@ export class SummaryWorker {
         const sources = await store.aiSummaries.sources(threadId);
         if (!sources) throw new RpcError("NOT_FOUND", L("errors.threadGone"));
         if (summaryBlocked(sources) || !sources.messages.some((m) => !m.trash)) throw new RpcError("BAD_REQUEST", L("errors.ai.summaryBlocked"));
+        if (!this.host.allowed(sources.accountId)) throw new RpcError("BAD_REQUEST", L("errors.ai.accountOff"));
         // the reader is already fetching what's open: it asks again when the text arrives
         const included = sources.messages.filter((m) => !m.trash);
         const newest = [...included].reverse().find((m) => !m.own) ?? included[included.length - 1]!;

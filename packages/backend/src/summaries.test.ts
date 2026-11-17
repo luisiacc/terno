@@ -1020,3 +1020,29 @@ describe("settings", () => {
     });
   });
 });
+
+describe("plan 211: an account with AI off", () => {
+  it("stops what's in flight on its mail, sends nothing queued of it, hides what it made, and refuses by hand; back on, it's there", async () => {
+    const { client, model, arrive, read, row, account } = await setup();
+    const made = await arrive();
+    await until(async () => expect((await row(made.thread))?.state).toBe("ready"));
+    const g = gate();
+    model.answer = (req) => held(req, g.opened);
+    const flying = await arrive({ providerMsgId: "flying", providerThreadId: "flying", rfcMessageId: "<flying@test>", subject: "Flying" });
+    await until(() => expect(model.requests).toHaveLength(2));
+    const queued = await arrive({ providerMsgId: "queued", providerThreadId: "queued", rfcMessageId: "<queued@test>", subject: "Queued" });
+    await client.call("accounts.update", { id: account.id, ai: false });
+    g.open(replying());
+    await settle();
+    expect(model.requests).toHaveLength(2);
+    expect((await row(flying.thread))?.state).not.toBe("ready");
+    expect(await row(queued.thread)).toBeNull();
+    await expect(read(made.thread)).resolves.toEqual({ state: "none" });
+    const refused = await errorOf(client.call("ai.summarize", { threadId: made.thread, requestId: requestId() }));
+    expect(refused).toMatchObject({ code: "BAD_REQUEST", message: "AI is off for this account. Turn it on in Settings → Accounts." });
+    expect(model.requests).toHaveLength(2);
+    // kept until Clear AI data: back on, it shows again
+    await client.call("accounts.update", { id: account.id, ai: true });
+    await expect(read(made.thread)).resolves.toMatchObject({ state: "ready" });
+  });
+});

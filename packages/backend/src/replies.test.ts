@@ -390,3 +390,22 @@ describe("what can happen to a reply", () => {
   });
 
 });
+
+describe("plan 211: an account with AI off", () => {
+  it("prepares nothing on its conversations, and a reply being written on one stops", async () => {
+    const { client, model, put, prepare, row, account } = await setup();
+    let release!: () => void;
+    model.gate = new Promise((r) => (release = r));
+    const writing = await put();
+    expect(await prepare(writing)).toEqual({ status: "started" });
+    await vi.waitFor(() => expect(model.drafts).toHaveLength(1));
+    await client.call("accounts.update", { id: account.id, ai: false });
+    release();
+    for (let i = 0; i < 20; i++) await new Promise((r) => setTimeout(r, 2));
+    expect((await row(writing))?.state ?? "none").not.toBe("ready");
+    const other = await put({ subject: "Later" });
+    expect(await prepare(other)).toEqual({ status: "none" });
+    expect(model.checks).toHaveLength(1);
+    expect(await row(other)).toBeNull();
+  });
+});

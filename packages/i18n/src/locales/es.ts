@@ -2569,6 +2569,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "errors.ai.monthlyLimit": "La IA automática llegó a tu límite mensual en Ajustes → IA, así que no se gasta más con tu clave.",
   "errors.ai.usageNotSaved": "Terno no pudo guardar lo que costaría esta solicitud, así que no la envió. La IA automática lo intentará más tarde.",
   "errors.ai.summaryBlocked": "Esta conversación está en Spam o en la Papelera, así que no se puede resumir. Sácala de ahí y vuelve a intentarlo.",
+  "errors.ai.accountOff": "La IA está desactivada para esta cuenta. Actívala en Ajustes → Cuentas.",
   "replies.title": "Respuesta lista",
   "replies.drafted": "Respuesta redactada",
   "replies.writing": "Escribiendo una respuesta…",
