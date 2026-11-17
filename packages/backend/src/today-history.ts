@@ -110,8 +110,15 @@ export async function historyPage(store: MailStore, o: HistoryAsk): Promise<Toda
     const byId = new Map(summaries.map((t) => [t.id, t]));
     for (const id of fresh) threads.set(id, byId.get(id) ?? null);
     const trustedIds = new Set(kept.map((r) => r.id));
-    // a request whose own line may show (an untrusted sender's has none: the promise's line stays)
-    for (const id of asked) requests.set(id, members.dated.find((r) => r.id === id && trustedIds.has(id)) ?? null);
+    // a request whose own line shows in this view: dated items shown, a trusted sender's, its own item (none joined to
+    // another, none of its members open), in the keep's window and not held open; else the promise's line stays (its code
+    // review: with Dates off, both lines went)
+    for (const id of asked) {
+      const r = members.dated.find((d) => d.id === id);
+      const key = refKey({ source: "dated", id });
+      const alone = !!r && r.sameAs == null && ![...members.dated, ...members.promises].some((m) => m.sameAs === key && open(m));
+      requests.set(id, r && o.dated && trustedIds.has(id) && alone && r.closedAt != null && r.closedAt >= since && !o.held.has(key) ? r : null);
+    }
     const shows = (m: Row) => {
       const t = threads.get(m.threadId);
       return !!t && !t.inSpam && !t.inTrash && (m.src === 1 || trustedIds.has(m.id));

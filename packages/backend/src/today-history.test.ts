@@ -143,6 +143,9 @@ describe("historyPage", () => {
     );
     const { items } = await historyPage(store, ask({}));
     expect(items.map((i) => [i.id, i.outcome, i.reason])).toEqual([["dated:1", "settled", "answered"], ["dated:3", "settled", "answered"], ["promise:3", "done", "kept"], ["promise:5", "done", "kept"]]);
+    // its code review: the request's line not in this view (Dates off, or the request held open), the promise's stays
+    expect((await historyPage(store, ask({ dated: false }))).items.map((i) => i.id)).toEqual(["promise:1", "promise:3", "promise:5"]);
+    expect((await historyPage(store, ask({ held: new Set(["dated:1"]) }))).items.map((i) => i.id)).toEqual(["promise:1", "dated:3", "promise:3", "promise:5"]);
   });
 
   it("the claims ledger's third batch: a plan that's over says its own day, a deadline over still its closing", async () => {
