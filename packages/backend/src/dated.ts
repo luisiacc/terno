@@ -993,7 +993,7 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     const ahead = item.due && (kind === "respond" || kind === "pay") ? bareDayAhead(item.due, contextOf(item.quote, paragraphs), dayKeyOf(input.arrivedAt)) : item.due;
     // round 18 (Jordan's Tallis call, Diego's cowork renewal): a month's end its quote says is that month's last day, never
     // the day before it
-    const due = ahead ? monthEndDay(ahead, item.quote, dayKeyOf(input.arrivedAt)) : ahead;
+    const due = ahead ? monthEndDay(ahead, item.quote, input.arrivedAt) : ahead;
     // plan 210 (iteration 4, revision 11): the day it was asked before, rolled with a bare day read forward; none at a month's end
     const before = due && item.before && due === ahead ? askedBefore(due === item.due ? item.before : nextDay(due), due) : null;
     // plan 210 (iteration 5, V2): an event its quote gives one start time for, given none, takes it (on the reader's clock);

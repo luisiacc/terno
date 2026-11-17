@@ -1,4 +1,4 @@
-import { normalizeText, saysClock, saysDay } from "@terno/core";
+import { dayKeyOf, namesDayFrom, normalizeText, saysClock, saysDay } from "@terno/core";
 
 /**
  * Plan 210, the Codex review of iteration 1 (revisions 2 and 3): what ties the reader's words to one obligation. A quote that's
@@ -468,20 +468,26 @@ const MONTH_END = new RegExp(
 /**
  * Round 18: a deadline the mail states as a month's end is that month's last day. A reading that gave the day before it
  * (the prompt's "before a day is the day before", applied to "before end of the month") is moved to the last day, when its
- * quote says that month's end and never the day it gave. The month: the one named, the next ("end of next month"), or the
- * mail's own. Anything else is left as it came. `arrived`: the mail's own day, YYYY-MM-DD.
+ * quote says that month's end. The month: the one named, the next ("end of next month"), or the mail's own. Its code
+ * review: a day the quote names of its own wins ("Friday before the end of January" is that Friday), unless it is the
+ * month's last day itself ("a fin de mes, el lunes 30 de noviembre"). Anything else is left as it came.
  */
-export function monthEndDay(due: string, quote: string, arrived: string): string {
+export function monthEndDay(due: string, quote: string, arrivedAt: number): string {
   const d = /^(\d{4})-(\d{2})-(\d{2})$/u.exec(due);
-  const a = /^(\d{4})-(\d{2})$/u.exec(arrived.slice(0, 7));
-  if (!d || !a || saysDay(quote, due, { weekdays: false })) return due;
-  for (const m of norm(quote).matchAll(MONTH_END)) {
+  const a = /^(\d{4})-(\d{2})/u.exec(dayKeyOf(arrivedAt));
+  if (!d || !a) return due;
+  const read = norm(quote);
+  // what the quote says beside its month's end
+  const rest = read.replace(MONTH_END, " ");
+  for (const m of read.matchAll(MONTH_END)) {
     const which = m.slice(1).find((x) => x !== undefined)!;
     const [year, month] = [Number(a[1]), Number(a[2]) - 1];
     const named = MONTH_INDEX[which];
     const target = named === undefined ? month + (/^(?:next|proximo)|que viene|proximo|siguiente/u.test(which) ? 1 : 0) : named < month ? named + 12 : named;
     // the day before the target month's last is the one corrected
-    if (dayOf(year, target + 1, -1) === due) return dayOf(year, target + 1, 0);
+    if (dayOf(year, target + 1, -1) !== due) continue;
+    const last = dayOf(year, target + 1, 0);
+    return namesDayFrom(rest, arrivedAt) && !saysDay(rest, last, { arrivedAt }) ? due : last;
   }
   return due;
 }

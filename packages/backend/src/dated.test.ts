@@ -3502,6 +3502,18 @@ describe("round 18's faults", () => {
     expect(ask("I need it before Monday the 30th.", "2026-11-29")).toBe("2026-11-29");
   });
 
+  it("its code review: a day the quote names of its own wins over the month's end, en and es; the month's last day named is still the end", () => {
+    // received Tuesday, January 20, 2026: "Friday before the end of January" is Friday the 30th, never Saturday the 31st
+    const jan20 = at(2026, 1, 20, 9);
+    const contract = (quote: string) => days(checkDates({ items: [{ kind: "respond", text: "Send the signed contract", quote, due: "2026-01-30", time: null }], settled: [] }, person(`Hi Jordan,\n\n${quote}\n\nNina`, { arrivedAt: jan20 })))[0];
+    expect(contract("Please send the signed contract Friday before the end of January.")).toBe("2026-01-30");
+    expect(contract("Mándame el contrato firmado el viernes, antes de fin de mes.")).toBe("2026-01-30");
+    expect(contract("Please send the signed contract by January 30, before the end of the month.")).toBe("2026-01-30");
+    // no day of its own, or the last day itself: the end
+    expect(contract("Please send the signed contract before the end of January.")).toBe("2026-01-31");
+    expect(contract("Mándame el contrato antes de fin de mes, el sábado 31.")).toBe("2026-01-31");
+  });
+
   it("a plan from a proposal the reader hasn't accepted is none; the request it waits on, a bill and an accepted one stand (Diego's workshop; en, es)", () => {
     const FER = "¡Hola Diego!\n\nTe escribo por lo que platicamos en la cocina 😄 ¿Siempre sí te animas a dar el taller \"Identidad para negocios pequeños\" el jueves 19 a las 18:00 en la sala grande?\n\nNecesito que me confirmes antes del lunes para meterlo al newsletter de la comunidad y abrir el registro. Si te late, mándame también un título final y dos líneas de descripción.\n\nGracias!!\nFer";
     // the panel's reading (#66)
