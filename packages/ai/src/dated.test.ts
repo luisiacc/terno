@@ -334,7 +334,7 @@ describe("reading dates in mail you got (plan 204)", () => {
     const move = (due: string, text = ines, said = evidence) => {
       const r = readDatesTask(input({ text, open })).validate({ replaced: [], items: [], settled: [], moved: [{ label: "o2", due, time: null, evidence: said, text: null, textEvidence: null }] });
       if (!r.ok) throw new Error("rejected");
-      return r.value.moved[0];
+      return r.value.moved[0]!;
     };
     // the day before it, or the day it names: either way asked before Wednesday the 18th
     expect(move("2026-11-17")).toMatchObject({ due: "2026-11-17", before: "2026-11-18" });
