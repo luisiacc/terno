@@ -368,17 +368,37 @@ export function negatedReceipt(words: string): boolean {
   return [...read.matchAll(new RegExp(SETTLES.pay!.source, "gu"))].some((m) => NOT_YET.test(read.slice(0, m.index).trim().split(" ").slice(-3).join(" ")));
 }
 
-// plan 210 (round 16's code review): the payer's own word that it's paid (en, es), as `norm` reads it: "just venmo'd you",
-// "paid you back", "sent you the $48.20", "ya te pagué", "te transferí", "te mandé"
-const PAID = /\b(?:paid|venmo d|venmoed|zelled|zelle d|transferred|wired|sent (?:you|it|over|the|your|\$)|pague|pagado|pagada|transferi|deposite|(?:te|le|les) (?:mande|envie))\b/u;
-// in the four words before it, said not to have happened, or only to come, or only if or when: "I have not paid", "haven't",
-// "will have paid", "if I paid", "todavía no te pagué", "cuando te pague", "quieres que te mande"
-const UNPAID = /\b(?:not|never|t|no|nunca|aun|todavia|will|ll|going|gonna|if|once|when|unless|should|would|could|need|needs|have to|si|cuando|que|hasta)\b/u;
+// plan 210 (round 16's code review): the payer's own word that it's paid (en, es), as `norm` reads it. Its second round: a
+// payment by itself ("just venmo'd you", "paid you back", "te transferí", "ya te pagué"); a send only with money in its clause
+// ("sent you the $48.20", "te mandé lo de la luz", never "I sent you the screenshot")
+const PAYS = /\b(?:paid|venmo d|venmoed|zelled|zelle d|transferred|e transferred|wired|deposited|pague|pagado|pagada|transferi|deposite)\b/gu;
+const SENDS = /\b(?:sent|mande|envie)\b/gu;
+const MONEY = /[$€£]|\b\d|\b(?:money|cash|your half|my half|your share|my share|the rent|dinero|plata|lana|tu parte|mi parte|la mitad|lo de)\b/u;
+// anywhere before the verb in its clause: said not to have happened, only to come, or only if or when ("I have not paid",
+// "haven't", "will have paid", "if I paid", "todavía no te pagué", "cuando te pague", "hasta que te mande"); a reported
+// "que" pays ("te confirmo que ya te pagué")
+const UNPAID = /\b(?:not|never|t|no|nunca|aun|todavia|will|ll|going|gonna|if|once|when|unless|until|should|would|could|need|needs|have to|si|cuando|hasta que|en cuanto|antes de que|para que|una vez que|apenas|quieres que|prefieres que|necesitas que)\b/u;
+// courtesies that deny nothing ("No worries, I paid you back", "no te preocupes")
+const COURTESY = /\b(?:no worries|no problem|no rush|don t worry|no te preocupes|no hay (?:problema|prisa|bronca)|no pasa nada)\b/gu;
+// a sentence's clauses: its commas and the like, and the words that join two ("…the screenshot, but I have not paid yet")
+const CLAUSES = /[,;:()–—]|\s-\s|\s(?:but|and|though|although|pero|aunque|sino)\s/iu;
 
-/** Plan 210 (round 16's code review): whether your own words say you've paid (never "I have not paid", "I'll pay"). */
-export function paidSaid(words: string): boolean {
-  const read = norm(words);
-  return [...read.matchAll(new RegExp(PAID.source, "gu"))].some((m) => !UNPAID.test(read.slice(0, m.index).trim().split(" ").slice(-4).join(" ")));
+/**
+ * Plan 210 (round 16's code review): whether your own sentences say you've paid. Its second round: read whole (the sentences
+ * the evidence is in, never only the words it quotes: "paid the $48.20" from "I have not paid the $48.20 yet"), clause by
+ * clause, a payment said in one and denied or conditioned in none; "sí" is a yes before `norm` makes it "si" (if).
+ */
+export function paidSaid(sentences: readonly string[]): boolean {
+  let paid = false;
+  for (const clause of sentences.flatMap((s) => s.split(CLAUSES))) {
+    const read = ` ${norm(clause.replace(/(?<!\p{L})sí(?!\p{L})/giu, "yes")).replace(COURTESY, " ")} `;
+    const sends = MONEY.test(read) ? [...read.matchAll(SENDS)] : [];
+    for (const m of [...read.matchAll(PAYS), ...sends]) {
+      if (UNPAID.test(read.slice(0, m.index))) return false;
+      paid = true;
+    }
+  }
+  return paid;
 }
 
 /** Whether some words say what settles an item of a kind, of the reader's own: "Payment received" a bill, "cancelled" a booking. */

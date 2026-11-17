@@ -113,13 +113,23 @@ describe("findLinks", () => {
     expect(findLinks([cleaning, { ...confirm, confirms: null }, again], [], all).same).toEqual([{ item: { source: "dated", id: again.id }, sameAs: `dated:${confirm.id}` }]);
   });
 
-  it("a bill and a later promise: the promise joins the bill; a promise before the bill: the bill joins the promise", () => {
+  it("a bill and a later promise: the promise joins the bill; a promise before a request: the request joins the promise", () => {
     const bill = dated("pay", "Pay $12 for the bus");
     const mine = promise("send the slip and $12 for the bus");
     expect(findLinks([bill], [mine], all).same).toEqual([{ item: { source: "promise", id: mine.id }, sameAs: `dated:${bill.id}` }]);
     const early = promise("send the slip and $15 for the museum");
-    const later = dated("pay", "Pay $15 for the museum");
+    const later = dated("respond", "Send $15 for the museum");
     expect(findLinks([later], [early], all).same).toEqual([{ item: { source: "dated", id: later.id }, sameAs: `promise:${early.id}` }]);
+  });
+
+  it("round 16's code review, round two: a bill leads whichever came first, so its day, amount and counts stay its own", () => {
+    // "I'll pay $48.20 for the electric bill Sunday" read before Jonah's bill due Friday
+    const sunday = promise("pay Jonah $48.20 for the electric bill", { dueAt: T + 2 * 86_400_000 });
+    const bill = dated("pay", "Pay Jonah $48.20 for the electric bill", { createdAt: sunday.createdAt + 10 });
+    const lead = [{ item: { source: "promise", id: sunday.id }, sameAs: `dated:${bill.id}` }];
+    // the bill looked at (the promise already seen), and the promise looked at (the bill already seen)
+    expect(findLinks([bill], [sunday], (key) => key.startsWith("dated:")).same).toEqual(lead);
+    expect(findLinks([bill], [sunday], (key) => key.startsWith("promise:")).same).toEqual(lead);
   });
 
   it("plan 210 (iteration 3): your promise to attend is the event it names, its day and conversation; the event leads, whichever came first", () => {

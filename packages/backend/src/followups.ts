@@ -271,7 +271,9 @@ export function checkSentMail(result: SentMailResult, input: { ownText: string; 
     const shown = { id: request.id, revision: request.revision };
     // round 16's code review: a bill (from a person this reply writes to) only by your saying it's paid ("just venmo'd you",
     // never "I have not paid it yet"); a promise to pay it links nothing, the bill keeping its own row
-    if (request.kind === "pay") return a.verdict === "fulfilled" && !promise && paidSaid(pieces.join(" ")) ? [{ request: shown, verdict: "fulfilled" as const }] : [];
+    // (its second round: judged on the whole sentences the evidence is in, never the words it quotes alone)
+    const said = [...new Set(pieces.flatMap((p) => [...touches(p, sentences)]))].sort((x, y) => x - y).map((n) => sentences[n]!.said);
+    if (request.kind === "pay") return a.verdict === "fulfilled" && !promise && paidSaid(said.length ? said : pieces) ? [{ request: shown, verdict: "fulfilled" as const }] : [];
     // plan 210 (iteration 4, the Codex review's revision 4): a promise that only holds it is stored with it, whatever the
     // model called it ("holding" kept, no longer dropped); a "holding" whose words also send or sign something links nothing
     if (promise && onlyHolds(promise.quote!)) return [{ request: shown, verdict: "holding" as const, item: promise.item }];

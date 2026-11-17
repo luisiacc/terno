@@ -42,6 +42,8 @@ function amounts(text: string): Set<string> {
   return new Set([...text.matchAll(AMOUNT)].map((m) => (m[1] ?? m[2])!.replace(/,/gu, "").replace(/\.00$/u, "")));
 }
 const ERRANDS: ReadonlySet<string> = new Set(["pay", "respond", "ask", "expire", "renew"]);
+/** Round 16's code review, round two: a bill and your promise to pay it are one item the bill leads, its day and amount the row's. */
+const billLeads = (d: DatedRow): boolean => d.kind === "pay";
 
 /** What an amount is for: three letters or more ("bus" is a thing), never the verbs and small words any errand has. */
 const ERRAND_STOP = new Set(
@@ -268,8 +270,9 @@ export function findLinks(dated: readonly DatedRow[], promises: readonly Followu
       const asked = datedByThread.get(r.threadId)?.find((o) => o.id !== r.id && older(o, r) && sameRequest(o, r));
       if (asked) join("dated", r, canonicalOf("dated", asked));
       const promise = promisesByThread.get(r.threadId)?.find((p) => errand(r, p));
-      // the newer joins the older's canonical
-      if (promise && promiseOlder(promise, r)) join("dated", r, canonicalOf("promise", promise));
+      // the newer joins the older's canonical; round 16's code review, round two: a bill leads whichever came first, so a
+      // promise to pay it on Sunday never takes a bill due Friday out of Today and Missed (`billLeads`)
+      if (promise && promiseOlder(promise, r) && !billLeads(r)) join("dated", r, canonicalOf("promise", promise));
       else if (promise) join("promise", promise, canonicalOf("dated", r));
     }
     // plan 210 (iteration 3): a promise already here to attend this new event joins it, the event leading
@@ -280,7 +283,7 @@ export function findLinks(dated: readonly DatedRow[], promises: readonly Followu
     const twin = promisesByMessage.get(p.messageId)?.find((o) => o.id !== p.id && older(o, p) && samePromise(o, p));
     if (twin) join("promise", p, canonicalOf("promise", twin));
     const same = datedByThread.get(p.threadId)?.find((d) => errand(d, p));
-    if (same && !promiseOlder(p, same)) join("promise", p, canonicalOf("dated", same));
+    if (same && (!promiseOlder(p, same) || billLeads(same))) join("promise", p, canonicalOf("dated", same));
     else if (same) join("dated", same, canonicalOf("promise", p));
     // plan 210 (iteration 3): your promise to attend is the event it names, whichever came first: the event leads
     const event = attendsEvent(p, eventsOf(p));

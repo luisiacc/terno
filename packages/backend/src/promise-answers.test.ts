@@ -580,6 +580,13 @@ describe("a bill from someone your reply writes to (round 16: Sam's electric)", 
     const paid = [{ request: { id: 7, revision: 2 }, verdict: "fulfilled" }];
     for (const yes of ["just venmo'd you the $48.20", "Paid you back for the electric.", "I sent you the $48.20 on Zelle.", "Ya te pagué los $48.20.", "Te transferí lo de la luz."]) expect(done(yes), yes).toEqual(paid);
     for (const no of ["I have not paid the $48.20 yet.", "I haven't paid the electric yet.", "I will have paid you by Friday.", "If I paid you twice, tell me.", "Todavía no te pagué lo de la luz.", "Cuando te pague te aviso.", "Thanks for the electric numbers!"]) expect(done(no), no).toEqual([]);
+    // its second round: the whole sentence the evidence is in, never the words it quotes alone
+    expect(done("I have not paid the $48.20 yet.", "paid the $48.20")).toEqual([]);
+    expect(done("If I paid you twice, tell me.", "paid you twice")).toEqual([]);
+    // a send pays only with money in its clause, and a payment denied in another clause of it pays nothing
+    for (const no of ["I sent you the screenshot, but I have not paid yet.", "I sent you the screenshot.", "Te mandé la foto del recibo.", "Hasta que te mande el dinero, avísame."]) expect(done(no), no).toEqual([]);
+    // a yes, a reported "que", a courtesy, a denial of something else in its own clause: paid
+    for (const yes of ["Sí, ya te pagué.", "Sí ya te pagué los $48.20.", "Te confirmo que ya te pagué.", "No worries, I paid you back.", "No worries I paid you back.", "Te mandé lo de la luz.", "Sorry I couldn't call, but I venmo'd you the $48.20.", "No pude llamarte, pero ya te pagué."]) expect(done(yes), yes).toEqual(paid);
     // a promise to pay it links nothing: the bill keeps its own row
     const promise = { text: "venmo Jonah the $48.20", quote: "I'll venmo you Sunday", to: "r1", due: "2026-11-15", partOfDay: null };
     for (const verdict of ["promise", "fulfilled", "holding"] as const) expect(checkSentMail({ promises: [promise], expectsReply: false, awaiting: [], kept: [], answers: [{ label: "q1", verdict, evidence: "I'll venmo you Sunday" }] }, input("I'll venmo you Sunday.")).verdicts).toEqual([]);
