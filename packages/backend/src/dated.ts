@@ -203,10 +203,22 @@ function noticeOnly(clause: string): boolean {
     return !rest || COURTESY_HERE.test(rest) || AND_WE.test(rest);
   });
 }
+/**
+ * The Codex code review of round 15's second morning: a courtesy tells the reader to do nothing; "If the portal gives you
+ * trouble, call IT and let me know" does (a clause, or a part of one after "and", that starts on something the reader is to
+ * do, once the condition, the sender's own "I can …" and the "let me know" are set aside), and it's an ask.
+ */
+const READER_DOES = /^(?:(?:and|then|just|please|y|luego|nada mas|solo) )*(?:call|phone|email|e mail|text|contact|ask|try|use|go|fill|sign|submit|reach out|check|reset|restart|follow|file|llama|marca|escribe|contacta|pregunta|intenta|usa|ve|llena|firma|envia|revisa|reinicia|sigue)\b/u;
+function readerTold(sentence: string): boolean {
+  return sentence.split(/[.,;:!\n]/u).some((clause) => {
+    const rest = norm(clause).replace(COURTESY_IF, " ").replace(/\b(?:i|we) (?:can|could)\b.*$/u, " ").replace(new RegExp(LET_KNOW.source, "gu"), " ");
+    return rest.split(/\b(?:and|y)\b/u).some((part) => READER_DOES.test(part.trim()));
+  });
+}
 export function courtesyOnly(sentence: string): boolean {
   if (/[?¿]/u.test(sentence)) return false;
   const read = norm(sentence);
-  return COURTESY_IF.test(read) && LET_KNOW.test(read) && !ASKS_MORE.test(read.replace(COURTESY_IF, " ").replace(LET_KNOW, " ").replace(SENDER_CAN, " ")) && sentence.split(/[.,;:!\n]/u).every((clause) => noticeOnly(norm(clause)));
+  return COURTESY_IF.test(read) && LET_KNOW.test(read) && !readerTold(sentence) && !ASKS_MORE.test(read.replace(COURTESY_IF, " ").replace(LET_KNOW, " ").replace(SENDER_CAN, " ")) && sentence.split(/[.,;:!\n]/u).every((clause) => noticeOnly(norm(clause)));
 }
 
 /**
@@ -289,13 +301,24 @@ function offerOnly(sentences: string, paragraph: string): boolean {
  * "I can …" in its quote), from them, in its conversation, and only when what they no longer need to do is what they offered
  * (the verb's stem in the offer's words).
  */
-const WITHDRAWS = /\b(?:no need (?:for (?:me|us) )?to|(?:i|we) (?:won t|will not|don t|do not) need to|no (?:hace|hara) falta que|ya no (?:hace falta|es necesario) que|no es necesario que) (\p{L}+)/gu;
+const WITHDRAWS = /\b(?:no need (?:for (?:me|us) )?to|(?:i|we) (?:won t|will not|don t|do not) need to|no (?:hace|hara) falta que|ya no (?:hace falta|es necesario) que|no es necesario que) (\p{L}+)((?: [\p{L}\p{N}]+)*)/gu;
+/**
+ * The Codex code review of round 15's second morning: a withdrawal said under a condition ("If there's no need for me to come
+ * by tomorrow, let me know", "si no hace falta que pase, avísame") still waits on the reader, so it settles nothing; and what
+ * its clause names past the verb ("send the contract") must be in the offer too, so "no need to send the contract" never
+ * settles an offer to send the budget. Times ("tomorrow then", "el sábado") name nothing offered.
+ */
+const CONDITIONAL = /\b(?:if|whether|in case|unless|en caso de que|a menos que)\b|(?:^|[^\p{L}])si(?![\p{L}])/iu;
+const WHEN_WORDS = new Set("then anymore after today tomorrow tonight weekend morning afternoon evening week monday tuesday wednesday thursday friday saturday sunday instead entonces ahora manana tarde noche semana lunes martes miercoles jueves viernes sabado domingo".split(" "));
 function offerWithdrawn(row: Pick<DatedRow, "quote" | "senderKey" | "threadId">, input: { senderKey?: string; threadId?: number }, sentences: Sentences): boolean {
   if (input.senderKey === undefined || row.senderKey !== input.senderKey || (input.threadId !== undefined && row.threadId !== input.threadId)) return false;
   const offered = norm(row.quote);
   if (!OFFERS.test(offered)) return false;
-  const stems = new Set(offered.split(" ").filter((w) => w.length >= 3).map((w) => w.slice(0, 3)));
-  return sentences.some((s) => !/[?¿]/u.test(s.said) && [...s.read.matchAll(WITHDRAWS)].some((m) => stems.has(m[1]!.slice(0, 3))));
+  const words = offered.split(" ").filter((w) => w.length >= 3);
+  const inOffer = (w: string, n: number) => words.some((o) => o.slice(0, n) === w.slice(0, n));
+  const named = (tail: string) => [...namingWords(tail)].filter((w) => !WHEN_WORDS.has(w));
+  return sentences.some((s) => !/[?¿]/u.test(s.said) && !CONDITIONAL.test(s.said) && s.said.split(/[,;:.!\n]+/u).some((clause) =>
+    [...norm(clause).matchAll(WITHDRAWS)].some((m) => inOffer(m[1]!, 3) && named(m[2]!).every((w) => inOffer(w, 5)))));
 }
 
 /**

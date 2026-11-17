@@ -761,6 +761,10 @@ describe("plan 210 (iteration 3)", () => {
       expect(checkDates({ items: [ask("Answer David about coming by Saturday", "If it's easier, I can swing by Saturday morning and take pictures of them with my phone. Just let me know.")], settled: [] }, person("If it's easier, I can swing by Saturday morning and take pictures of them with my phone. Just let me know.")).rows).toHaveLength(1);
       expect(checkDates({ items: [ask("Send David the papers", "If the scanner is a hassle, please send me photos instead and let me know.")], settled: [] }, person("If the scanner is a hassle, please send me photos instead and let me know.")).rows).toHaveLength(1);
       expect(checkDates({ items: [ask("Answer David", "If the scanner is a hassle, can you tell me which day works?")], settled: [] }, person("If the scanner is a hassle, can you tell me which day works?")).rows).toHaveLength(1);
+      // the Codex code review: trouble with something for the reader to do is an ask (en, es)
+      for (const said of ["If the portal gives you trouble, call IT and let me know.", "If the portal gives you trouble call IT and let me know.", "Si el portal te da problemas, llama a soporte y avísame."]) {
+        expect(checkDates({ items: [ask("Call IT about the portal", said)], settled: [] }, person(said)).rows, said).toHaveLength(1);
+      }
     });
     it("round 15's second morning (Margaret): an offer of theirs that's an open ask is settled by their own mail taking it back, though the reading settled nothing (en, es); never another's, another conversation's, or one they don't take back", () => {
       const david = "david@kowalczyk.test";
@@ -775,6 +779,14 @@ describe("plan 210 (iteration 3)", () => {
       expect(read(thanks, offer, { threadId: 5 })).toEqual([]);
       expect(read("No need for me to come by tomorrow then?")).toEqual([]);
       expect(read("Got them. No need to send the originals.")).toEqual([]);
+      // the Codex code review: a withdrawal under a condition still waits on the reader (en, es)
+      expect(read("If there's no need for me to come by tomorrow, let me know.")).toEqual([]);
+      expect(read("Si ya no hace falta que pase el sábado, avísame.", paso)).toEqual([]);
+      // and it settles only the offer it names: the contract, not the budget
+      const budget = { ...offer, id: 32, text: "Tell Ruth whether to send the budget", quote: "I can send the budget over tonight, just tell me." } as DatedRow;
+      const contract = { ...offer, id: 33, text: "Tell Ruth whether to send the contract", quote: "I can send the contract over tonight, just tell me." } as DatedRow;
+      expect(read("No need for me to send the contract now, I found a copy.", budget)).toEqual([]);
+      expect(read("No need for me to send the contract now, I found a copy.", contract)).toEqual([{ id: 33, revision: 1 }]);
       // an ask that isn't an offer of theirs stays
       expect(read(thanks, { ...offer, text: "Answer David about Thanksgiving", quote: "Are you coming for Thanksgiving?" } as DatedRow)).toEqual([]);
     });
