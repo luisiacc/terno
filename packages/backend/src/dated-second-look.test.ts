@@ -13,7 +13,7 @@ import { msg, threadOf } from "@terno/store/conformance";
 import type { IncomingMessage } from "@terno/store";
 import { afterEach, describe, expect, it } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
-import { cardMonths, holdsMoment, lookAt, secondLook, type LookDeps } from "./dated-second-look";
+import { cardMonths, holdsMoment, lookAt, secondLook, timedByTwins, type LookDeps } from "./dated-second-look";
 
 const at = (y: number, m: number, d: number, h = 0, min = 0) => new Date(y, m - 1, d, h, min).getTime();
 // Tuesday, November 10, 2026
@@ -316,10 +316,46 @@ describe("iteration 5's code review", () => {
     });
 
     it("a request's part of the day comes with the twin's quote, where checkDates reads it", async () => {
-      const NOTES = "Hi Priya,\n\nCould you send me your notes for the board deck, which goes out Saturday, December 5?\n\nMy deadline for them is that Saturday morning.\n\nDaniel";
+      const NOTES = "Hi Priya,\n\nCould you send me your notes for the board deck, which goes out Saturday, December 5? Halvorsen’s deadline is that Saturday morning.\n\nDaniel";
       const req = { kind: "respond" as const, text: "Send Daniel your notes for the board deck", quote: "Could you send me your notes for the board deck, which goes out Saturday, December 5?", due: "2026-12-05", time: null };
-      const morning = { ...req, quote: "My deadline for them is that Saturday morning." };
+      const morning = { ...req, quote: "Halvorsen’s deadline is that Saturday morning." };
       expect(await items(NOTES, [req], [morning])).toEqual([morning]);
+    });
+
+    describe("round 17's code review: only the same item, beside its quote, lends its time; ambiguous, none", () => {
+      const ev = (text: string, quote: string, time: string | null = null) => ({ kind: "event" as const, text, quote, due: "2026-11-20", time });
+      it("a return flight never times the outbound one, en and es, by its way, its places, its number or its route", () => {
+        const AUSTIN = "Flight to Austin — Friday, November 20\nReturn flight from Austin — Friday, November 20, 11:10 PM";
+        const out = ev("Flight to Austin", "Flight to Austin — Friday, November 20");
+        expect(timedByTwins([out], [ev("Return flight from Austin", "Return flight from Austin — Friday, November 20, 11:10 PM", "23:10")], AUSTIN)).toEqual([out]);
+        // the places alone ("to Austin", "from Austin"), with no word for the way back
+        expect(timedByTwins([out], [ev("Flight from Austin", "Return flight from Austin — Friday, November 20, 11:10 PM", "23:10")], AUSTIN)).toEqual([out]);
+        const ES = "Vuelo a Austin — viernes 20 de noviembre\nVuelo de regreso desde Austin — viernes 20 de noviembre, 23:10";
+        const ida = ev("Vuelo a Austin", "Vuelo a Austin — viernes 20 de noviembre");
+        expect(timedByTwins([ida], [ev("Vuelo de regreso desde Austin", "Vuelo de regreso desde Austin — viernes 20 de noviembre, 23:10", "23:10")], ES)).toEqual([ida]);
+        // leaving and getting there, es: the departure's line against the arrival's
+        const LLEGADA = "Salida del vuelo a Austin — viernes 20 de noviembre\nLlegada del vuelo a Austin — viernes 20 de noviembre, 23:10";
+        const salida = ev("Vuelo a Austin", "Salida del vuelo a Austin — viernes 20 de noviembre");
+        expect(timedByTwins([salida], [ev("Vuelo a Austin (llegada)", "Llegada del vuelo a Austin — viernes 20 de noviembre, 23:10", "23:10")], LLEGADA)).toEqual([salida]);
+        // leaving and getting there; two flight numbers; two routes
+        const LEGS = "Pacific Crest PC 7 SFO → AUS: departs Friday, November 20\nPacific Crest PC 9 AUS → SFO: arrives Friday, November 20, 11:10 PM";
+        const leg = ev("Pacific Crest flight PC 7 SFO → AUS (departs)", "Pacific Crest PC 7 SFO → AUS: departs Friday, November 20");
+        const other = ev("Pacific Crest flight (arrives)", "Pacific Crest PC 9 AUS → SFO: arrives Friday, November 20, 11:10 PM", "23:10");
+        expect(timedByTwins([leg], [other], LEGS)).toEqual([leg]);
+        expect(timedByTwins([leg], [{ ...other, text: "Pacific Crest flight PC 9" }], LEGS)).toEqual([leg]);
+        expect(timedByTwins([leg], [{ ...other, text: "Pacific Crest flight AUS → SFO" }], LEGS)).toEqual([leg]);
+      });
+
+      it("never from another paragraph, nor when two untimed items, or two twins, could be the one", () => {
+        const APART = "Flight to Austin — Friday, November 20\n\nYour flight to Austin boards at 11:10 PM, Friday, November 20";
+        const out = ev("Flight to Austin", "Flight to Austin — Friday, November 20");
+        const twin = ev("Flight to Austin", "Your flight to Austin boards at 11:10 PM, Friday, November 20", "23:10");
+        expect(timedByTwins([out], [twin], APART)).toEqual([out]);
+        const TOGETHER = APART.replace("\n\n", "\n");
+        expect(timedByTwins([out], [twin], TOGETHER)).toEqual([{ ...out, time: "23:10" }]);
+        expect(timedByTwins([out, { ...out }], [twin], TOGETHER)).toEqual([out, out]);
+        expect(timedByTwins([out], [twin, { ...twin, time: "22:00" }], TOGETHER)).toEqual([out]);
+      });
     });
   });
 });

@@ -254,7 +254,7 @@ export async function secondLook(first: DatedResult, o: Omit<LookInput, "first">
     return !!q && read.some((s) => s.includes(q) || q.includes(s));
   };
   const asked = again.items.filter((x) => inAsked(x.quote));
-  const items = timedByTwins(first.items, asked, o.from);
+  const items = timedByTwins(first.items, asked, o.text, o.from);
   const there = [...items, ...o.shown.map((x) => ({ kind: x.kind, text: x.text ?? "", quote: "", due: x.due }))];
   const found = asked.filter((x) => !repeats(x, there, o));
   return { result: { ...first, items: [...items, ...found] }, asked: sentences.length, complete: true };
@@ -265,6 +265,48 @@ type Item = DatedResult["items"][number];
 const partOf = (x: Item): boolean => x.kind === "respond" && !!partOfDayIn(x.quote);
 const untimed = (x: Item): boolean => x.time === null && !partOf(x);
 
+/** Two quotes in one paragraph of the mail (or one inside the other's). */
+const together = (a: string, b: string, paragraphs: Sentences): boolean => {
+  const at = sentencesWith(a, paragraphs);
+  return at.length > 0 && sentencesWith(b, paragraphs).some((n) => at.includes(n));
+};
+
+/**
+ * Words that tell two moments of one trip apart, as `norm` reads them: its way (out, back) and its end (leaving, getting
+ * there). One side's word with none of its opposite, against the other's opposite with none of it, is two moments.
+ */
+const WAYS: readonly [RegExp, RegExp][] = [
+  [/\b(?:outbound|outward|ida)\b/u, /\b(?:return\w*|inbound|back|homebound|vuelta|regreso|retorno)\b/u],
+  [/\b(?:depart\w*|leav\w*|takes off|salida|sale|despega)\b/u, /\b(?:arriv\w*|lands?|landing|llegada|llega\w*|aterriza\w*)\b/u],
+];
+/** a flight's number ("PC 7", "UA1234") and a route's ends ("SFO → BLR", "AUS-SFO"), as written */
+const FLIGHT_NO = /\b(?:[A-Z]{2}|[A-Z]\d|\d[A-Z])\s?\d{1,4}\b/gu;
+const ROUTE = /\b([A-Z]{3})\s*(?:→|->|–|—|-|to)\s*([A-Z]{3})\b/gu;
+/** the places a trip goes to and comes from, by name ("to Austin", "desde Austin") */
+const TO = /\b(?:to|into|a|hacia|para)\s+(\p{Lu}[\p{L}'-]*)/gu;
+const FROM = /\b(?:from|desde|de)\s+(\p{Lu}[\p{L}'-]*)/gu;
+const found = (words: string, re: RegExp, key: (m: RegExpMatchArray) => string): Set<string> => new Set([...words.matchAll(re)].map(key));
+/** both name some, and none in common */
+const differ = (a: Set<string>, b: Set<string>): boolean => a.size > 0 && b.size > 0 && ![...a].some((x) => b.has(x));
+
+/**
+ * Round 17's code review: two items of one trip on one day that are two of its moments (out and back, leaving and getting
+ * there), two flights (their numbers or routes differ), or one going to a place the other comes from.
+ */
+function apart(a: string, b: string): boolean {
+  const [ra, rb] = [norm(a), norm(b)];
+  for (const [x, y] of WAYS) {
+    const [ax, ay, bx, by] = [x.test(ra), y.test(ra), x.test(rb), y.test(rb)];
+    if ((ax && !ay && by && !bx) || (ay && !ax && bx && !by)) return true;
+  }
+  const flight = (m: RegExpMatchArray) => m[0].replace(/\s+/gu, "");
+  const route = (m: RegExpMatchArray) => `${m[1]}>${m[2]}`;
+  if (differ(found(a, FLIGHT_NO, flight), found(b, FLIGHT_NO, flight)) || differ(found(a, ROUTE, route), found(b, ROUTE, route))) return true;
+  const place = (m: RegExpMatchArray) => norm(m[1]!);
+  const [toA, fromA, toB, fromB] = [found(a, TO, place), found(a, FROM, place), found(b, TO, place), found(b, FROM, place)];
+  return [...toA].some((p) => fromB.has(p) && !toB.has(p)) || [...toB].some((p) => fromA.has(p) && !toA.has(p));
+}
+
 /**
  * Round 17's faults (Priya's Bengaluru flight, both mornings): the first reading quoted the day's heading ("DEPART —
  * Saturday, 05 Dec 2026") and gave no time; the look, asked about the line with it, returned the same flight at 23:55, which
@@ -272,11 +314,19 @@ const untimed = (x: Item): boolean => x.time === null && !partOf(x);
  * or a request's part of the day, the first item lacks gives it that time: the same item, timed, never a second row. A first
  * item already timed keeps its own, whatever the twin says; the twin is dropped as a repeat either way.
  */
-function timedByTwins(first: readonly Item[], looked: readonly Item[], from?: string): Item[] {
+export function timedByTwins(first: readonly Item[], looked: readonly Item[], text: string, from?: string): Item[] {
+  const paragraphs = paragraphsOf(text);
+  // its code review (a "Flight to Austin" took the "Return flight from Austin" 23:10): the twin is that item only beside its
+  // quote (one paragraph: Priya's heading and the line under it), with nothing that tells the two apart, and only one way
+  const same = (e: Item, x: Item) =>
+    x.kind === e.kind && x.due === e.due && !untimed(x) && namesSpecifically(e, `${x.text}\n${x.quote}`, from) && together(e.quote, x.quote, paragraphs) && !apart(`${e.text}\n${e.quote}`, `${x.text}\n${x.quote}`);
+  const open = first.filter((e) => !!e.due && untimed(e));
   return first.map((e) => {
-    if (!e.due || !untimed(e)) return e;
-    const twin = looked.find((x) => x.kind === e.kind && x.due === e.due && !untimed(x) && namesSpecifically(e, `${x.text}\n${x.quote}`, from));
-    if (!twin) return e;
+    if (!open.includes(e)) return e;
+    const twins = looked.filter((x) => same(e, x));
+    // ambiguous (two twins, or a twin another untimed item could take too): left untimed
+    if (twins.length !== 1 || open.some((o) => o !== e && same(o, twins[0]!))) return e;
+    const twin = twins[0]!;
     // a part of the day lives in its quote; a time in its own fields, the first's quote kept
     if (twin.time === null) return { ...e, quote: twin.quote };
     const { wall, at } = twin;
