@@ -55,6 +55,8 @@ const sourceOf = (src: HistorySource): ItemRef["source"] => (src % 2 === 0 ? "da
 const keyOf = (r: Row | Changed): string => r.sameAs ?? refKey({ source: sourceOf(r.src), id: r.id });
 const closingOf = (r: Row): HistoryKey => ({ at: r.closedAt!, src: r.src, id: r.id });
 const open = (r: { state: string }): boolean => r.state === "open" || r.state === "due";
+/** the claims ledger's third batch: the request a promise answers, settled by the very mail that kept the promise */
+const answeredWith = (p: FollowupRow, r: DatedRow | null | undefined): boolean => !!r && r.state === "settled" && r.settledBy != null && r.settledBy === p.settledBy && r.threadId === p.threadId;
 
 /**
  * Plan 210 (iteration 4): an open item's "Changed" line, one a canonical item (its members change together) at its newest
@@ -85,9 +87,13 @@ export async function historyPage(store: MailStore, o: HistoryAsk): Promise<Toda
   // newest closing, and only when none of it is open (lone items, most, are their own and only member)
   const threads = new Map<number, ThreadSummary | null>();
   const groups = new Map<string, { open: boolean; newest: HistoryKey | null }>();
+  // the claims ledger's third batch: the request each promise closed by mail answers (`answers`), read with the members
+  const requests = new Map<number, DatedRow | null>();
   const learn = async (rows: readonly Row[]) => {
     const keys = [...new Set(rows.map(keyOf))].filter((k) => !groups.has(k));
-    const members = keys.length ? await store.today.members(keys) : { dated: [], promises: [] };
+    const asked = [...new Set(rows.flatMap((r) => (r.src === 1 && r.answers != null && r.settledBy != null && !requests.has(r.answers) ? [r.answers] : [])))];
+    const askedKeys = asked.map((id) => refKey({ source: "dated", id }));
+    const members = keys.length || asked.length ? await store.today.members([...keys, ...askedKeys]) : { dated: [], promises: [] };
     // every member's conversation, and whether its sender is trusted: a merged item's line is its newest closing that may
     // show (Codex code review of iteration 2: one in Trash never hides the others')
     const fresh = [...new Set([...rows, ...members.dated, ...members.promises].map((r) => r.threadId))].filter((id) => !threads.has(id));
@@ -95,6 +101,8 @@ export async function historyPage(store: MailStore, o: HistoryAsk): Promise<Toda
     const byId = new Map(summaries.map((t) => [t.id, t]));
     for (const id of fresh) threads.set(id, byId.get(id) ?? null);
     const trustedIds = new Set(kept.map((r) => r.id));
+    // a request whose own line may show (an untrusted sender's has none: the promise's line stays)
+    for (const id of asked) requests.set(id, members.dated.find((r) => r.id === id && trustedIds.has(id)) ?? null);
     const shows = (m: Row) => {
       const t = threads.get(m.threadId);
       return !!t && !t.inSpam && !t.inTrash && (m.src === 1 || trustedIds.has(m.id));
@@ -180,6 +188,9 @@ export async function historyPage(store: MailStore, o: HistoryAsk): Promise<Toda
     if (row.src === 0 && row.closedReason === ANSWERED_WITH_PROMISE) continue;
     // iteration 4: a promise that only held a request closed with it: the request's line says it
     if (row.src === 1 && row.closedReason === HELD_REQUEST_CLOSED) continue;
+    // the claims ledger's third batch (Theo's script, Margaret's papers): a promise the mail that answered its request also
+    // kept is one thing done, the request's line ("Answered Fri"), as when the two are one item (the request leads)
+    if (row.src === 1 && row.answers != null && answeredWith(row, requests.get(row.answers))) continue;
     const outcome = outcomeOf(row);
     const line: TodayHistoryItem = { id, item: { source: sourceOf(row.src), id: row.id }, thread, key: head.key, outcome, kind: row.src === 0 ? row.kind : "promise", text: row.text, ...(outcome === "handed" && row.handedTo && { handedTo: row.handedTo }) };
     // plan 210 (iteration 4, revision 7): settled by mail, the line says that mail's day and how

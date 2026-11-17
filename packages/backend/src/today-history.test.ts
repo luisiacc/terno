@@ -11,7 +11,7 @@ import { historyPage, type HistoryAsk } from "./today-history";
 
 const NOW = 100 * 86_400_000;
 const MIN = 60_000;
-type Closed = { id: number; threadId: number; closedAt: number | null; senderKey?: string; sameAs?: string | null; state?: string; closedReason?: string; settledAt?: number };
+type Closed = { id: number; threadId: number; closedAt: number | null; senderKey?: string; sameAs?: string | null; state?: string; closedReason?: string; settledAt?: number; settledBy?: number; answers?: number };
 
 /** a store of closed rows (newest first by closing, then id): dated items and promises; `spam` threads are in Spam */
 function fakeStore(datedRows: Closed[], promiseRows: Closed[] = [], spam: ReadonlySet<number> = new Set()) {
@@ -126,5 +126,22 @@ describe("historyPage", () => {
     const { store } = fakeStore([{ id: 50, threadId: 5, closedAt: NOW - 3 * MIN }, { id: 51, threadId: 6, closedAt: NOW - MIN, sameAs: "dated:50" }], [], new Set([6]));
     const top = await historyPage(store, ask({}));
     expect(top.items.map((i) => [i.id, i.item, i.thread.id])).toEqual([["dated:50", { source: "dated", id: 50 }, 5]]);
+  });
+
+  it("the claims ledger's third batch: one delivery that answered a request and kept the promise to it is one line, the request's", async () => {
+    // Theo's script: Jess's request (dated:1) and his promise to send it (promise:1), both closed by his mail (message 75)
+    const sent = { state: "settled", closedReason: "answered", settledBy: 75, settledAt: NOW - 2 * MIN };
+    const { store } = fakeStore(
+      [{ id: 1, threadId: 2, closedAt: NOW - MIN, ...sent }, { id: 3, threadId: 4, closedAt: NOW - 3 * MIN, ...sent, settledBy: 80 }],
+      [
+        { id: 1, threadId: 2, closedAt: NOW - MIN, closedReason: "kept", settledBy: 75, answers: 1 },
+        // a request settled by another mail than the one that kept the promise: two things, two lines
+        { id: 3, threadId: 4, closedAt: NOW - 3 * MIN, closedReason: "kept", settledBy: 81, answers: 3 },
+        // a promise kept while the request it answers is still open: its own line
+        { id: 5, threadId: 6, closedAt: NOW - 4 * MIN, closedReason: "kept", settledBy: 90, answers: 9 },
+      ],
+    );
+    const { items } = await historyPage(store, ask({}));
+    expect(items.map((i) => [i.id, i.outcome, i.reason])).toEqual([["dated:1", "settled", "answered"], ["dated:3", "settled", "answered"], ["promise:3", "done", "kept"], ["promise:5", "done", "kept"]]);
   });
 });
