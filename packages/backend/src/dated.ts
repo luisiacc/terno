@@ -9,7 +9,7 @@ import { silenced, silenceOf, withoutMuted } from "./dated-mutes";
 import { secondLook } from "./dated-second-look";
 import { UI_LOCALE_KEY } from "./forwarding";
 import { handledItself } from "./dated-automatic";
-import { bareDayAhead, contextOf, insideQuotes, quoteSpan, type Sentences, namesApart, namesItem, namingWords, negatedReceipt, norm, otherAmounts, otherIds, paragraphsOf, plainEvidence, replacesPlainly, sameObject, sameParcel, sameThing, saysReplaced, saysWhen, scamPressure, sentencesOf, settlesKind, startClock, zeroNamesItem, zeroOnly } from "./dated-evidence";
+import { bareDayAhead, contextOf, insideQuotes, quoteSpan, type Sentences, namesApart, namesItem, namingWords, negatedReceipt, norm, otherAmounts, otherIds, paragraphsOf, plainEvidence, replacesPlainly, sameObject, sameParcel, sameThing, saysReplaced, saysWhen, scamPressure, sentencesOf, sentencesWith, settlesKind, startClock, zeroNamesItem, zeroOnly } from "./dated-evidence";
 import { mayRelay, relayedAsk, relays, type Relay } from "./dated-relay";
 import { untrustedSenders, withoutUntrusted } from "./suspicious-sender";
 import { sameEvent } from "./today-links";
@@ -568,6 +568,31 @@ const nextDay = (day: string): string => {
   return dayKeyOf(d.getTime());
 };
 
+/**
+ * The claims ledger's third batch (Sam's Tyler: "Lab Report 3 is due this Friday and I don't think I can do a good job on it
+ * by then. Could I have an extension until next Wednesday?"): a person's ask for more time is answered by the deadline it's
+ * about, the day the nearest sentence before it in its paragraph says that is due (from the mail's own day, within two
+ * weeks); never the day it asks for. Read as `norm` reads them, en and es; a deadline already gone ("was due") gives none.
+ */
+const MORE_TIME = /\b(?:extension|extend|more time|extra (?:time|day|days)|prorroga|mas tiempo|(?:unos|un par de) dias mas|extender|ampliar el plazo)\b/u;
+const IS_DUE = /\b(?:due|deadline|vence|vencen|se entrega|hay que entregar|fecha limite|toca entregar)\b/u;
+const WAS_DUE = /\b(?:was due|were due|vencio|vencieron)\b/u;
+const DUE_SCAN_DAYS = 14;
+function dueAskedAbout(quote: string, paragraphs: Sentences, arrivedAt: number): string | null {
+  if (!MORE_TIME.test(norm(quote))) return null;
+  const own = sentencesOf(contextOf(quote, paragraphs));
+  const at = sentencesWith(quote, own)[0];
+  for (let n = (at ?? 0) - 1; n >= 0; n--) {
+    const s = own[n]!;
+    if (!IS_DUE.test(s.read)) continue;
+    if (WAS_DUE.test(s.read)) return null;
+    let day = dayKeyOf(arrivedAt);
+    for (let k = 0; k < DUE_SCAN_DAYS; k++, day = nextDay(day)) if (saysDay(s.said, day, { arrivedAt })) return day;
+    return null;
+  }
+  return null;
+}
+
 /** Plan 210 (iteration 4, revision 11): a day asked before is kept only as the day after the one it sorts under. */
 const askedBefore = (before: string | null | undefined, due: string): string | null => (before && before === nextDay(due) ? before : null);
 
@@ -841,7 +866,12 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     const span = quoteSpan(i.quote, i.due, input.subject, sentences, input.arrivedAt);
     return span ? { ...i, quote: span } : i;
   };
-  const candidates = [...answered, ...items].filter((i) => !promised.has(i)).map(spanned).filter((i) => !refused(i)).map((i) => (i.kind === "respond" && input.sender?.person && (offerOnly(`${i.quote}\n${contextOf(i.quote, sentences)}`, contextOf(i.quote, paragraphs)) || wishOnly(contextOf(i.quote, sentences), i.due, input.arrivedAt)) ? { ...i, kind: "ask", due: null, time: null } : i));
+  const candidates = [...answered, ...items].filter((i) => !promised.has(i)).map(spanned).filter((i) => !refused(i)).map((i) => (i.kind === "respond" && input.sender?.person && (offerOnly(`${i.quote}\n${contextOf(i.quote, sentences)}`, contextOf(i.quote, paragraphs)) || wishOnly(contextOf(i.quote, sentences), i.due, input.arrivedAt)) ? { ...i, kind: "ask", due: null, time: null } : i)).map((i) => {
+    // the claims ledger's third batch: an undated ask for more time carries the day of the deadline it's about (checked as an
+    // ask, then the request with that day)
+    const due = i.kind === "ask" && !i.due && input.sender?.person ? dueAskedAbout(i.quote, paragraphs, input.arrivedAt) : null;
+    return due ? { ...i, due } : i;
+  });
   // plan 210 (iteration 4, revision 12): an item's facts (someone there, a lapse, charged by itself) from the whole mail, but
   // only its paragraphs: every one but those that hold another item's quote and not its own (Priya's "An adult signature is
   // required", two paragraphs below the laptops)

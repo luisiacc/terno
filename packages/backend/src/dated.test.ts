@@ -652,6 +652,20 @@ describe("plan 210 (iteration 3)", () => {
       // a meeting of theirs with the reader is no business's own: "we meet", "we're moving the call"
       expect(checkDates({ items: [{ ...opening, text: "Kickoff call", quote: "We meet Thursday at 10 for the kickoff" }], settled: [] }, person("We meet Thursday at 10 for the kickoff.")).rows).toHaveLength(1);
     });
+    it("the claims ledger's third batch (Sam's Tyler): an ask for more time carries the day of the deadline it's about (en, es); the day it asks for never", () => {
+      // Monday, November 9: the report is due Friday the 13th
+      const TYLER = "Hi Sam,\n\nI'm sorry to ask this but I tested positive for COVID last Tuesday and I've been really behind. Lab Report 3 is due this Friday and I don't think I can do a good job on it by then. Could I have an extension until next Wednesday? I can send the note from Student Health if you need it.\n\nThank you,\nTyler";
+      const extension = ask("Answer Tyler about a Lab Report 3 extension until Wednesday", "Could I have an extension until next Wednesday?");
+      const mail = (text: string) => ({ ...person(text), arrivedAt: at(2026, 11, 9, 8), now: at(2026, 11, 9, 8) });
+      expect(checkDates({ items: [extension], settled: [] }, mail(TYLER)).rows).toEqual([expect.objectContaining({ kind: "respond", dueDay: "2026-11-13", dated: true, text: extension.text })]);
+      const es = "Hola Diego:\n\nEl reporte vence el viernes 13 y no voy a llegar. ¿Me darías una prórroga hasta el martes?\n\nGracias";
+      expect(checkDates({ items: [ask("Responder a Ana sobre la prórroga", "¿Me darías una prórroga hasta el martes?")], settled: [] }, mail(es)).rows.map((r) => [r.kind, r.dueDay])).toEqual([["respond", "2026-11-13"]]);
+      // no deadline named before it, one already gone, or an ask for something else: undated, as it was
+      for (const text of ["Could I have an extension until next Wednesday?", "The report was due Friday. Could I have an extension until next Wednesday?"]) {
+        expect(checkDates({ items: [{ ...extension, quote: "Could I have an extension until next Wednesday?" }], settled: [] }, mail(text)).rows.map((r) => [r.kind, r.dated]), text).toEqual([["ask", false]]);
+      }
+      expect(checkDates({ items: [ask("Answer Tyler about the rubric", "Could you share the rubric?")], settled: [] }, mail("Lab Report 3 is due this Friday. Could you share the rubric?")).rows.map((r) => [r.kind, r.dated])).toEqual([["ask", false]]);
+    });
     it("the Codex code review of the second morning (point 2): a wish's sentence keeps the request and the news beside it (en, es); a wish passed on stays none", () => {
       const mail = (text: string) => ({ ...person(text), arrivedAt: at(2026, 11, 14, 7, 52), now: at(2026, 11, 14, 7, 52) });
       const event = (text: string, quote: string) => ({ kind: "event", text, quote, due: "2026-11-15", time: null });
