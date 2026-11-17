@@ -654,11 +654,8 @@ test.describe("What matters, part one: dated items (plan 204)", () => {
   const reach = async (page: Page, text: string) => {
     await expect.poll(async () => (await item(page, text).count()) > 0 || (await feedList(page).evaluate((el) => { el.scrollTop += el.clientHeight / 2; }), false)).toBe(true);
   };
-  /**
-   * put off: out of Missed and Today, under the day it's back: one of the seven days is its own heading (plan 210, the second
-   * morning), a later one Coming up's (with Coming up open, as a scenario before left it, quietly)
-   */
-  const leftSoon = (page: Page, text: string) => expect.poll(() => groupOf(page, text)).toMatch(/^(gone|day|comingUp)$/);
+  /** put off: out of its day; with Coming up open (as a scenario before left it) it's there, under its day, quietly */
+  const leftSoon = (page: Page, text: string) => expect.poll(() => groupOf(page, text)).toMatch(/^(gone|comingUp)$/);
   /** the open item: the conversation beside the feed */
   const open = (page: Page) => page.locator(`${FEED} [data-testid=wm-item][data-open]`);
 

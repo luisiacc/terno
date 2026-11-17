@@ -57,7 +57,7 @@ describe("a row per item", () => {
     expect(projectToday(facts({ promises: [later], waiting })).rows.filter((r) => r.waiting).map((r) => r.threadId)).toEqual([4, 5, 6]);
   });
 
-  it("the second morning's code review: an item put off under a day ahead says nothing yet, so a newer question in its conversation is its own row, counted, in the list and the count alike", () => {
+  it("the second morning's code review: an item put off to a day ahead is Coming up's and says nothing yet, so a newer question in its conversation is its own row, counted, in the list and the count alike (round 15's second morning: never under that day's heading)", () => {
     // Wednesday's request put off to Thursday morning, then their new question in that conversation
     const ask = { ...dated("respond", "2026-11-18", { threadId: 9 }), deferredUntil: at(2026, 11, 19, 9) };
     const mine = promise(at(2026, 11, 18, 9), { threadId: 10, deferredUntil: at(2026, 11, 20, 9) });
@@ -67,8 +67,8 @@ describe("a row per item", () => {
     expect(rows.map((r) => [r.id, r.group, r.day])).toEqual([
       ["waiting:10", "today", null],
       ["waiting:9", "today", null],
-      [`dated:${ask.id}`, "day", "2026-11-19"],
-      [`promise:${mine.id}`, "day", "2026-11-20"],
+      [`dated:${ask.id}`, "comingUp", "2026-11-19"],
+      [`promise:${mine.id}`, "comingUp", "2026-11-20"],
     ]);
     expect(counts).toEqual({ missed: 0, today: 0, waiting: 2, overdue: 0 });
     expect(projectToday(f, { count: true }).counts).toEqual(counts);
@@ -526,9 +526,9 @@ describe("Waiting on you, a part of Today (plan 210, iteration 3, revision 8)", 
     // (iteration 5, revision 6) the two broken promises are overdue, a part of waiting
     expect(counts).toEqual({ missed: 0, today: 1, waiting: 3, overdue: 2 });
     expect(projectToday(f, { count: true }).counts).toEqual(counts);
-    // put off with Later: out of Today, under the day it comes back (the second morning), never counted
+    // put off with Later: behind Coming up, neither shown nor counted
     const off = { ...moved, deferredUntil: at(2026, 11, 20, 9) };
-    expect(projectToday(facts({ promises: [off] })).rows.map((r) => [r.group, r.bucket])).toEqual([["day", "2026-11-21"]]);
+    expect(projectToday(facts({ promises: [off] })).rows.map((r) => r.group)).toEqual(["comingUp"]);
     expect(projectToday(facts({ promises: [off] }), { count: true }).counts).toEqual({ missed: 0, today: 0, waiting: 0, overdue: 0 });
     // its live day over too: Missed
     expect(projectToday(facts({ now: at(2026, 11, 22, 10), promises: [moved] })).rows.map((r) => r.group)).toEqual(["missed"]);
