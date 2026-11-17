@@ -24,6 +24,30 @@ function words(text: string): string {
   return /^\p{Lu}\p{Ll}/u.test(bare) ? bare[0]!.toLocaleLowerCase() + bare.slice(1) : bare;
 }
 
+/**
+ * The claims ledger's second batch (María's book fair, Priya's deck): an item's words are written to the reader ("send Jess
+ * your board meeting deck draft", "which shift you can take"); in a line to someone else they're the reader's own, or the
+ * receiver is asked for theirs: "my deck draft", "which shift I can take" (es "tu" → "mi", "tus" → "mis", "contigo" →
+ * "conmigo"). A "you" after a verb or a preposition is "me" ("send you the form" → "send me the form"). Only this line.
+ */
+const FROM = String.raw`(?<![\p{L}\p{N}'’-])`;
+const UPTO = String.raw`(?![\p{L}\p{N}'’-])`;
+const MINE: readonly [RegExp, string][] = [
+  [new RegExp(`${FROM}yourself${UPTO}`, "giu"), "myself"],
+  [new RegExp(`${FROM}yours${UPTO}`, "giu"), "mine"],
+  [new RegExp(`${FROM}your${UPTO}`, "giu"), "my"],
+  [new RegExp(`${FROM}you(?:['’]re| are)${UPTO}`, "giu"), "I'm"],
+  [new RegExp(`${FROM}you were${UPTO}`, "giu"), "I was"],
+  [new RegExp(`${FROM}you['’](ve|ll|d)${UPTO}`, "giu"), "I'$1"],
+  [new RegExp(`${FROM}(to|for|with|from|at|about|on|by|of|send|give|tell|meet|remind|ask|call|email|text|cc|let|help|thank|show|pay|owe|join|invite|see|reach|pick) +you${UPTO}`, "giu"), "$1 me"],
+  [new RegExp(`${FROM}you${UPTO}`, "giu"), "I"],
+  [new RegExp(`${FROM}tus${UPTO}`, "giu"), "mis"],
+  [new RegExp(`${FROM}tu${UPTO}`, "giu"), "mi"],
+  [new RegExp(`${FROM}tuy([oa]s?)${UPTO}`, "giu"), "mí$1"],
+  [new RegExp(`${FROM}contigo${UPTO}`, "giu"), "conmigo"],
+];
+const asMine = (text: string): string => MINE.reduce((s, [re, to]) => s.replace(re, to), text);
+
 /** When a handed item is due: its moment, and whether that's a clock time or a part of its day (neither: the whole day). */
 export interface HandOffWhen {
   dueAt: number | null;
@@ -38,7 +62,7 @@ export interface HandOffWhen {
  * its part of the day when that's what it has ("by tomorrow morning", es "para mañana por la mañana").
  */
 export function handOffLine(text: string, when: HandOffWhen, now = Date.now()): string {
-  const item = words(text);
+  const item = asMine(words(text));
   const { dueAt } = when;
   const today = new Date(now);
   today.setHours(0, 0, 0, 0);

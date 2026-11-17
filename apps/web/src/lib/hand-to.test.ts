@@ -71,6 +71,19 @@ describe("the line", () => {
     expect(handOffLine("Mandarle el presupuesto a Kai", { dueAt: at(14), partOfDay: "morning" }, NOW)).toBe("¿Puedes encargarte de esto: mandarle el presupuesto a Kai (para mañana por la mañana)?");
     expect(handOffLine("Mandarle el presupuesto a Kai", { dueAt: at(18), partOfDay: "morning" }, NOW)).toBe("¿Puedes encargarte de esto: mandarle el presupuesto a Kai (para el mié por la mañana)?");
   });
+  it("the claims ledger's second batch: the item's \"you\" is the reader's own once it's handed to someone else (en, es)", () => {
+    // Priya's deck, María's book fair
+    expect(handOffLine("Send Jess your board meeting deck draft", { dueAt: at(17) }, NOW)).toBe("Could you take care of this: send Jess my board meeting deck draft (by Tue)?");
+    expect(handOffLine("Tell Jessica which book fair volunteer shift you can take", { dueAt: at(18) }, NOW)).toBe("Could you take care of this: tell Jessica which book fair volunteer shift I can take (by Wed)?");
+    expect(handOffLine("Tell Ana whether you're coming and if the slides are yours", { dueAt: null }, NOW)).toBe("Could you take care of this: tell Ana whether I'm coming and if the slides are mine?");
+    expect(handOffLine("Ask Dana to send you the signed form", { dueAt: null }, NOW)).toBe("Could you take care of this: ask Dana to send me the signed form?");
+    // a word that only starts like one stays ("young", "youth", "tutor", "turno"), nor one inside another ("thank-you")
+    expect(handOffLine("Send Ms. Greer a thank-you note", { dueAt: null }, NOW)).toBe("Could you take care of this: send Ms. Greer a thank-you note?");
+    expect(handOffLine("Pay the youth league fee", { dueAt: null }, NOW)).toBe("Could you take care of this: pay the youth league fee?");
+    setLocale("es", es);
+    expect(handOffLine("Mandarle a Jess tu borrador de la presentación", { dueAt: at(17) }, NOW)).toBe("¿Puedes encargarte de esto: mandarle a Jess mi borrador de la presentación (para el mar)?");
+    expect(handOffLine("Confirmar tus turnos con el tutor y si el libro es tuyo", { dueAt: null }, NOW)).toBe("¿Puedes encargarte de esto: confirmar mis turnos con el tutor y si el libro es mío?");
+  });
 });
 
 describe("what a row hands (iteration 4, merge)", () => {
