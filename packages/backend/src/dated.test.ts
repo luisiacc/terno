@@ -1536,11 +1536,11 @@ describe("acting on an item (§5)", () => {
     await client.call("dated.undo", { undoId: done.undoId! });
     expect(await sections()).toMatchObject({ day: [thread] });
     const [again] = (await client.call("dated.ofThread", { threadId: thread })).rows;
-    // Later: hidden until then, and never Missed meanwhile
+    // Later: out of Today until then, under the day it's back (the second morning), and never Missed meanwhile
     await client.call("dated.act", { id: again!.id, revision: again!.revision, action: "later", until: at(2026, 11, 22, 9) });
-    expect(await sections()).toMatchObject({ comingUp: [thread] });
+    expect(await sections()).toMatchObject({ day: [thread] });
     clock.now = at(2026, 11, 21, 10);
-    expect(await sections()).toMatchObject({ comingUp: [thread] });
+    expect(await sections()).toMatchObject({ day: [thread] });
     clock.now = at(2026, 11, 22, 9);
     expect(await sections()).toMatchObject({ missed: [thread] });
   });
@@ -1601,8 +1601,9 @@ describe("after the panel", () => {
     // first, by it (the payroll at 1:00 PM), then the untimed (the domain)
     clock.now = at(2026, 11, 13, 10);
     expect((await client.call("today.list", { held: [] })).sections.map((x) => [x.kind, x.items.map((i) => i.thread.id)])).toEqual([["missed", [bill]], ["today", [payroll, domain]]]);
-    // Codex code review of the fixes: Coming up orders the same way (earlier, the untimed 9:00 came first)
-    clock.now = at(2026, 11, 8, 10);
+    // Codex code review of the fixes: Coming up orders the same way (earlier, the untimed 9:00 came first); past the seven
+    // days, as within them they're their days' own (the second morning)
+    clock.now = at(2026, 11, 4, 10);
     const coming = (await client.call("today.list", { held: [] })).sections.filter((x) => x.kind === "comingUp");
     expect(coming.map((x) => [x.day, x.items.map((i) => i.thread.id)])).toEqual([["2026-11-12", [bill]], ["2026-11-13", [payroll, domain]]]);
   });
@@ -1625,11 +1626,15 @@ describe("after the panel", () => {
       const [row] = (await client.call("dated.ofThread", { threadId: thread })).rows;
       await client.call("dated.act", { id: row!.id, revision: row!.revision, action: "later", until: at(2026, 11, 20, 9) });
     }
-    clock.now = at(2026, 11, 15, 10);
+    clock.now = at(2026, 11, 12, 11);
     const coming = (await client.call("today.list", { held: [] })).sections.filter((x) => x.kind === "comingUp");
     // under the 20th, the day they're back (never their own past days): the timed by their time of day (round 2: the 1:00 PM
     // payroll before the 6:00 PM invoice, though the invoice was due a day earlier), then the untimed bill
     expect(coming.map((x) => [x.day, x.items.map((i) => i.thread.id)])).toEqual([["2026-11-20", [payroll, invoice, bill]]]);
+    // the second morning: once the 20th is one of the seven days, they're under its own heading, in the same order
+    clock.now = at(2026, 11, 15, 10);
+    const days = (await client.call("today.list", { held: [] })).sections.map((x) => [x.kind, x.day, x.items.map((i) => i.thread.id)]);
+    expect(days).toEqual([["day", "2026-11-20", [payroll, invoice, bill]]]);
   });
 
   it("Codex code review of the fixes: a thread with two items the same day shows the timed one, with its time", async () => {
@@ -2259,7 +2264,7 @@ describe("the fifth panel round: a promise's own Later", () => {
     const later = await client.call("followups.act", { id: row!.id, revision: row!.revision, action: "later", dueAt: clock.now + 2 * DAY });
     expect(later.row).toMatchObject({ state: "open", inboxState: "none", dueAt: at(2026, 11, 9, 9), deferredUntil: clock.now + 2 * DAY, revision: row!.revision + 1 });
     expect(backend.followups.nextAt).toBe(clock.now + 2 * DAY);
-    expect((await today(client)).groups).toEqual([["comingUp", [[thread, "promise"]]]]);
+    expect((await today(client)).groups).toEqual([["day", [[thread, "promise"]]]]);
     await client.call("followups.undo", { undoId: later.undoId! });
     expect((await followupRows(client))[0]).toMatchObject({ state: "due", inboxState: "onTop", deferredUntil: null });
     expect((await today(client)).groups).toEqual([["missed", [[thread, "promise"]]]]);
