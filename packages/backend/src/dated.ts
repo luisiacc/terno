@@ -720,7 +720,9 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     const sameThread = input.threadId !== undefined && row.threadId === input.threadId && input.paysInThread === 1;
     // (a receipt's label, "AMOUNT PAID: $64.58", says nothing alone: the mail's own words do, "PAYMENT RECEIPT", "Thank you
     // for your payment", and none of it says the payment didn't happen)
-    const statedReceipt = () => PAID_LINE.test(norm(evidence)) && billStated(row) && settlesKind("pay", `${input.subject}\n${input.text}`) && !negatedReceipt(input.text);
+    // (the Codex code review: never one whose mail names another invoice or account than the bill's: "Invoice 1002" with the
+    // same $58.71 is another bill's receipt)
+    const statedReceipt = () => PAID_LINE.test(norm(evidence)) && billStated(row) && !otherIds(row, `${input.subject}\n${input.text}`) && settlesKind("pay", `${input.subject}\n${input.text}`) && !negatedReceipt(input.text);
     const receipt = !move && row.kind === "pay" && row.senderKey === input.senderKey && ((sameThread && settlesKind("pay", `${evidence}\n${context}`)) || statedReceipt());
     if (otherAmounts(row, context) && !receipt) return false;
     // round 16 (Priya's board meeting): the same occasion read twice (Jess's note and the calendar's invitation, one moment,

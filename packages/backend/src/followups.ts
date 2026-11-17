@@ -167,7 +167,8 @@ function joinedLines(evidence: string, ownText: string): string[] | null {
     return marker ? [x, x + marker[0].length] : [x];
   });
   const unitEnd = (x: number) => Math.min(...[...ends].filter((e) => e >= x));
-  const QUALIFIES = /\b(?:but|not|no|never|unless|except|only if|until|pero|sin|nunca|salvo|excepto|a menos que|hasta que|solo si)\b/u;
+  // (the Codex code review: conditions too, "…, provided I get approval", "…, siempre que me lo aprueben")
+  const QUALIFIES = /\b(?:but|not|no|never|unless|except|only|until|if|provided|providing|as long as|assuming|subject to|depending|once|after|pending|pero|sin|nunca|salvo|excepto|a menos que|hasta que|solo|si|siempre que|siempre y cuando|con tal de que|dependiendo|sujeto a|cuando|en cuanto|despues de)\b/u;
   // (or right before the stop that ends one of their sentences, "…3 mm." quoted as "…3 mm;")
   const clauseEnd = (x: number) => (own[x] === "," && !QUALIFIES.test(own.slice(x, unitEnd(x)))) || (/[.!?;:]/u.test(own[x] ?? "") && ends.has(x + 1));
   const wordEnd = (x: number) => x === own.length || !WORD_CHAR.test(own[x]!) || !WORD_CHAR.test(own[x - 1]!);

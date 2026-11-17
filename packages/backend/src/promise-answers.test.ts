@@ -162,6 +162,9 @@ describe("a reply's checked verdict (the Codex review of iteration 3, revision 1
     // never a line clipped before what qualifies it, nor runs out of their order
     const hedged = "Hi Ana,\n\n- I can send the deck, but not until next week.\n- Thursday works for the call.\n\nT";
     expect(one("I can send the deck; Thursday works for the call", hedged)).toEqual([]);
+    // the Codex code review: a condition is a qualifier too (en, es)
+    expect(one("I can send the deck; Thursday works for the call", "Hi Ana,\n\n- I can send the deck, provided I get approval.\n- Thursday works for the call.\n\nT")).toEqual([]);
+    expect(one("Puedo mandar el deck; el jueves me funciona", "Hola Ana,\n\n- Puedo mandar el deck, siempre que me lo aprueben.\n- El jueves me funciona.\n\nT")).toEqual([]);
     expect(one("interface: Audiomesh Duo; mic: a dynamic broadcast mic on a boom arm", rafa)).toEqual([]);
     // round 16 (Theo's notes for Kai): a list's one-word lead-in joins a line of the list, a bullet skipped (en, es)
     const theo = "kai. v2 is the one. notes:\n\n- intro music: \"a bit much\" is exactly right, keep it\n- 3:05 the zoom on the error log is too slow, punch it in\n- thumbnail: perfect. it hurts. ship it\n\nt";

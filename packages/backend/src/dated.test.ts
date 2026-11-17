@@ -3433,9 +3433,13 @@ describe("round 17 (Margaret's water bill): its sender's receipt that states the
   it("a new conversation's receipt, the bill's $58.71 on its own line, pays the bill though it quotes $64.58", () => {
     expect(read(RECEIPT)).toEqual([{ id: 1, revision: 0 }]);
   });
-  it("never one that doesn't state the bill's amount, nor another sender's", () => {
+  it("never one that doesn't state the bill's amount, nor another sender's, nor one naming another invoice", () => {
     expect(read(RECEIPT.replace("$58.71", "$61.20"))).toEqual([]);
     expect(read(RECEIPT, "billing@othertown.test")).toEqual([]);
+    // the Codex code review: the same sender's receipt for invoice 1002, the same $58.71, never pays invoice 1001
+    const invoiced = { ...bill, text: "Pay $58.71 for Acme invoice 1001", quote: "Invoice 1001: $58.71" } as DatedRow;
+    const other = "PAYMENT RECEIPT\n\nInvoice 1002 (due 11/10/2026): $58.71\nLate fee: $5.87\nAMOUNT PAID: $64.58\n\nThank you for your payment.";
+    expect(checkDates({ items: [], settled: [{ label: "o1", evidence: "AMOUNT PAID: $64.58" }] }, { text: other, subject: "Payment receipt", arrivedAt: NOW, open: new Map([["o1", invoiced]]), fromScan: false, now: NOW, threadId: 8, senderKey: city, from: "Acme", paysInThread: 1 }).settled).toEqual([]);
   });
 });
 

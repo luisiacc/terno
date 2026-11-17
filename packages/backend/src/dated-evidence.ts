@@ -552,10 +552,25 @@ export function scamPressure(text: string): boolean {
  * round, after round 16's two said nothing. A gift card bought, given or received with no codes asked back is read as any.
  */
 const GIFT_CARDS = /\b(?:gift ?cards?|e ?gift cards?|itunes cards?|google play cards?|steam cards?|apple cards?|tarjetas? (?:de )?regalo|tarjetas? (?:de )?(?:itunes|google play|apple|steam|amazon))\b/u;
-const CODES_BACK = /\b(?:codes?|pins?|claim numbers?|scratch\w*|photos? of (?:the )?(?:back|cards?|codes?)|pictures? of (?:the )?(?:back|cards?|codes?)|codigos?|rasca\w*|fotos? de (?:los |las )?(?:codigos?|tarjetas?|reverso))\b/u;
+// the codes asked back: scratching the cards, or sending, texting or reading out their codes, PINs or photos (the Codex code
+// review: "do not share the codes" asks nothing back, and a fundraiser's gift cards brought in are a real request)
+const CODES_BACK = new RegExp(
+  [
+    String.raw`\bscratch\w*`,
+    String.raw`\brasca\w*`,
+    String.raw`\b(?:send|text|email|e mail|share|give|forward|read|whatsapp|message)\w* (?:me |us |them |him |her )?(?:\p{L}+ ){0,4}?(?:codes?|pins?|claim numbers?|photos?|pictures?|numbers)\b`,
+    String.raw`\b(?:manda|envia|pasa|comparte|da|dicta|escribe)\w* (?:\p{L}+ ){0,4}?(?:codigos?|pins?|fotos?|numeros)\b`,
+  ].join("|"),
+  "u",
+);
+const DONT = /\b(?:don t|do not|never|no|nunca|no le|no les)\s+(?:\p{L}+ ){0,2}$/u;
 export function giftCardScam(text: string): boolean {
   const read = norm(text);
-  return GIFT_CARDS.test(read) && CODES_BACK.test(read);
+  if (!GIFT_CARDS.test(read)) return false;
+  return read.split(/[.;!?\n]+/u).some((clause) => {
+    const m = CODES_BACK.exec(clause);
+    return !!m && !DONT.test(clause.slice(0, m.index));
+  });
 }
 
 // Plan 210 (iteration 5, V2): an event's start in its own quote, for a model that gave none (round 13: Theo's all-hands,

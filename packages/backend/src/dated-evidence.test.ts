@@ -137,6 +137,10 @@ describe("round 17 (Jordan's CEO from a gmail address): the gift-card scam (en, 
       "Bring a $20 gift card for the white elephant exchange.",
       "Te regalaron una tarjeta de regalo de Liverpool.",
       "Enter your promo code at checkout.",
+      // the Codex code review: a real request that warns against sharing codes
+      "Please bring the gift cards to the school fundraiser on Friday; do not share the codes.",
+      "Trae las tarjetas de regalo a la kermés del viernes, no le pases los códigos a nadie.",
+      "The gift cards have a PIN on the back.",
     ]) expect(giftCardScam(text), text).toBe(false);
   });
 });
