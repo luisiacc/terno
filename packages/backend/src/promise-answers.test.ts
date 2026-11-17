@@ -136,6 +136,28 @@ describe("a reply's checked verdict (the Codex review of iteration 3, revision 1
     expect(checkSentMail({ promises: [], expectsReply: false, awaiting: [], kept: [{ label: "p1", evidence: "We've used Calder Valuation ... Yes, I'd use them again" }], answers: [] }, { ...base, ownText, open }).kept).toEqual([{ id: 3, revision: 1 }]);
   });
 
+  it("the second morning (round 15's Hannah and Rafa, Diego's adjustments): evidence joined from their sentences or lines with no ellipsis is its runs", () => {
+    const hannah = "Hi Hannah,\n\nCongrats on the extension!\n\nWe've used Calder Valuation for our last two. Sarah Kim ran both (sarah@calder-valuation.example). Two weeks start to finish, very responsive.\n\nYes, I'd use them again.\n\nPriya";
+    const rafa = "ha, thank you. the honest answer is 80% room, 20% gear.\n\n- mic: a dynamic broadcast mic on a boom arm, about 4 inches from my face. dynamic is the whole trick, it just doesn't hear the room\n- interface: Audiomesh Duo, gain at about 70%, nothing fancy\n- walls: six cheap acoustic panels behind me and a big rug. the rug did more than any of the gear\n- post: light noise reduction and a compressor, that's it\n\nT";
+    const diego = "Hola Vale!\n\nAquí van los finales de las tres etiquetas de Origen Reserva con los ajustes:\n\n- Chiapas: subí el bloque de notas de cata 3 mm.\n- Veracruz: aclaré el verde y lo calibré con el perfil de la imprenta (el FOGRA39 que nos pasaron), así que en la prueba ya no se debe oscurecer.\n- Oaxaca: ya dice \"Altura: 1,450 msnm\".\n\nDiego";
+    const one = (evidence: string, ownText: string) => checkSentMail({ promises: [], expectsReply: false, awaiting: [], kept: [], answers: [{ label: "q1", verdict: "fulfilled", evidence }] }, { ...base, ownText }).verdicts;
+    // the panel's answers, as the model gave them
+    expect(one("We've used Calder Valuation for our last two. Yes, I'd use them again.", hannah)).toEqual([{ request: { id: 7, revision: 2 }, verdict: "fulfilled" }]);
+    expect(one("mic: a dynamic broadcast mic on a boom arm, about 4 inches from my face. - interface: Audiomesh Duo, gain at about 70%, nothing fancy - walls: six cheap acoustic panels behind me and a big rug.", rafa)).toHaveLength(1);
+    const open = new Map([["p1", { id: 3, revision: 1 } as never]]);
+    const kept = (evidence: string) => checkSentMail({ promises: [], expectsReply: false, awaiting: [], kept: [{ label: "p1", evidence }], answers: [] }, { ...base, ownText: diego, open }).kept;
+    expect(kept("Aquí van los finales de las tres etiquetas de Origen Reserva con los ajustes: - Veracruz: aclaré el verde y lo calibré con el perfil de la imprenta")).toEqual([{ id: 3, revision: 1 }]);
+    // out of order, a run they didn't write, a run of one word: nothing
+    expect(one("Yes, I'd use them again. We've used Calder Valuation for our last two.", hannah)).toEqual([]);
+    expect(one("We've used Calder Valuation for our last two. They were cheap.", hannah)).toEqual([]);
+    expect(one("We've used Calder Valuation for our last two. Priya", hannah)).toEqual([]);
+    // a join only where their sentence or line ends: "I can" of "I can't" never joins another sentence's words
+    const declined = "I can't make Friday. Send it to Ana instead, she has the files.";
+    expect(one("I can send it to Ana instead", declined)).toEqual([]);
+    expect(one("I can't make Friday. she has the files", declined)).toEqual([]);
+    expect(one("I can't make Friday. Send it to Ana instead", declined)).toHaveLength(1);
+  });
+
   it("a promise that only holds it holds it, whatever the model called it (iteration 4); a \"done\" that's a promise's words is that promise", () => {
     const ownText = "Let me check my calendar and get back to you. I'll send it Wednesday.";
     const holding = { text: "check and get back to Ms. Greer", quote: "Let me check my calendar and get back to you", to: "r1", due: null };
@@ -421,6 +443,38 @@ describe("whichever reader finishes first (revision 1)", () => {
     expect(sentPrompts()[1]).toContain("q1: Return the signed field trip slip");
     expect((await backend.store.dated.closedPage({ since: 0, after: null, limit: 10 })).map((r) => [r.state, r.closedReason])).toEqual([["settled", "answered"]]);
   });
+});
+
+describe("an ask you already answered (the second morning: round 15's Hannah and Rafa)", () => {
+  const answer = "Hi,\n\nWe've used Calder Valuation for our last two. Sarah Kim ran both. Two weeks start to finish.\n\nYes, I'd use them again.\n\nPriya";
+  const joined = () => sent({ answers: [{ label: "q1", verdict: "fulfilled", evidence: "We've used Calder Valuation for our last two. Yes, I'd use them again." }] });
+  for (const order of ["the request read first", "your reply read first", "the request read after your reply"] as const) {
+    it(`${order}: the answer joined from their lines settles it`, async () => {
+      const { backend, client, model, request, reply, datedDone, followupsDone, sentPrompts } = await setup({ dated: order !== "the request read after your reply" });
+      let open!: () => void;
+      if (order === "your reply read first") model.datedGate = new Promise((resolve) => (open = resolve));
+      model.dated = () => dated([slip]);
+      model.sent = joined;
+      const asked = await request();
+      if (order === "the request read first") await datedDone();
+      await reply(asked, answer);
+      if (order === "your reply read first") {
+        backend.followups.wake();
+        open();
+        model.datedGate = null;
+        await datedDone();
+      }
+      await followupsDone();
+      if (order === "the request read after your reply") {
+        await client.call("settings.update", { dated: { enabled: true } });
+        await client.call("dated.scan", {});
+        await datedDone();
+        await followupsDone();
+      }
+      expect(sentPrompts().at(-1)).toContain("q1: Return the signed field trip slip");
+      expect((await backend.store.dated.closedPage({ since: 0, after: null, limit: 10 })).map((r) => [r.state, r.closedReason])).toEqual([["settled", "answered"]]);
+    });
+  }
 });
 
 describe("a promise past its day retires (revision 7)", () => {

@@ -99,14 +99,16 @@ const ELLIPSIS = /\s*(?:\[(?:\.{3}|…)\]|\.{3}|…)\s*/u;
  * Plan 210 (round 14's faults, Priya's 409A): a verdict's or a kept promise's evidence, as pieces of their own words. The
  * model shortens a long answer with an ellipsis ("We've used Calder Valuation for our last two. ... Yes, I'd use them
  * again."), which no text holds whole, so the answer settled nothing: such evidence is its pieces, each of two words or more
- * and in their words in that order. Words with an ellipsis of their own ("Well... yes") are read whole first. Null: not theirs.
+ * and in their words in that order. Words with an ellipsis of their own ("Well... yes") are read whole first. The second
+ * morning: the model also joins them with no ellipsis at all (`joinedLines`). Null: not theirs.
  */
-export function ownPieces(evidence: string, own: string): string[] | null {
+export function ownPieces(evidence: string, ownText: string): string[] | null {
+  const own = norm(ownText);
   const whole = norm(evidence);
   if (!whole) return null;
   if (wordsAt(own, whole) >= 0) return [whole];
   const pieces = evidence.split(ELLIPSIS).map(norm).filter((p) => /[\p{L}\p{N}]/u.test(p));
-  if (pieces.length < 2) return null;
+  if (pieces.length < 2) return joinedLines(whole, ownText);
   let from = 0;
   for (const p of pieces) {
     const at = wordsAt(own, p, from);
@@ -129,6 +131,58 @@ function wordsAt(text: string, words: string, from = 0): number {
     if (openEdge && closeEdge) return at;
   }
   return -1;
+}
+
+/** where a sentence or a line of their text ends (a colon's too: "- mic: a dynamic broadcast mic…") */
+const UNIT_END = /(?<=[.!?:;])\s+|\s*\n\s*/u;
+const wordCount = (s: string) => s.split(" ").filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
+
+/**
+ * Plan 210 (the second morning; round 15's Hannah and Rafa): evidence joined from their sentences or lines with nothing
+ * between, the ones skipped left out ("We've used Calder Valuation for our last two. Yes, I'd use them again."; "Aquí van
+ * los finales … con los ajustes: - Veracruz: aclaré el verde…", a list's lines), which no text holds whole, so the answer
+ * settled or kept nothing. Such evidence is its runs: each run their words whole, two words or more, in their order; a join
+ * only where a sentence or a line of theirs ends and the next run begins one, so no run is cut out of a sentence to make
+ * another ("I can" of "I can't" never joins "send it"). The first run may begin, and the last end, inside one, as a quote.
+ */
+function joinedLines(evidence: string, ownText: string): string[] | null {
+  const units = normalizeText(ownText).split(UNIT_END).map(norm).filter(Boolean);
+  // the same text as `norm`'s, each unit's start and end in it
+  const own = units.join(" ");
+  const starts: number[] = [];
+  let next = 0;
+  for (const u of units) {
+    starts.push(next);
+    next += u.length + 1;
+  }
+  const ends = new Set(units.map((u, i) => starts[i]! + u.length));
+  const wordEnd = (x: number) => x === own.length || !WORD_CHAR.test(own[x]!) || !WORD_CHAR.test(own[x - 1]!);
+  const first = [...own].flatMap((c, i) => (c === evidence[0] && (i === 0 || !WORD_CHAR.test(c) || !WORD_CHAR.test(own[i - 1]!)) ? [i] : []));
+  const failed = new Set<string>();
+  const search = (p: number, after: number, runs: string[]): string[] | null => {
+    const key = `${p}:${after}`;
+    if (failed.has(key)) return null;
+    for (const s of runs.length ? starts.filter((x) => x >= after) : first) {
+      let length = 0;
+      while (p + length < evidence.length && s + length < own.length && evidence[p + length] === own[s + length]) length++;
+      // the answer's last run, ending at a word's end
+      if (p + length === evidence.length && wordEnd(s + length)) {
+        const all = [...runs, own.slice(s, s + length)];
+        if (all.length > 1 && all.every((r) => wordCount(r) >= 2)) return all;
+      }
+      // or a run to the end of one of their sentences or lines, the answer going on with another
+      for (let k = length; k > 0; k--) {
+        if (!ends.has(s + k) || evidence[p + k] !== " ") continue;
+        const run = own.slice(s, s + k);
+        if (wordCount(run) < 2) continue;
+        const found = search(p + k + 1, s + k + 1, [...runs, run]);
+        if (found) return found;
+      }
+    }
+    failed.add(key);
+    return null;
+  };
+  return search(0, 0, []);
 }
 
 /**
@@ -182,7 +236,7 @@ export function checkSentMail(result: SentMailResult, input: { ownText: string; 
   }
   const kept = result.kept.flatMap((k) => {
     const row = input.open.get(k.label);
-    return row && ownPieces(k.evidence, own) ? [{ id: row.id, revision: row.revision }] : [];
+    return row && ownPieces(k.evidence, input.ownText) ? [{ id: row.id, revision: row.revision }] : [];
   });
   // plan 210 (round 14's faults, the second morning): a promise said again is the older one's, never a row beside it
   const keptIds = new Set(kept.map((k) => k.id));
@@ -200,7 +254,7 @@ export function checkSentMail(result: SentMailResult, input: { ownText: string; 
   const verdicts = (result.answers ?? []).flatMap((a): Verdict[] => {
     const request = input.requests?.get(a.label);
     if (!request || a.verdict === "unknown") return [];
-    const pieces = ownPieces(a.evidence, own);
+    const pieces = ownPieces(a.evidence, input.ownText);
     if (!pieces || !plainEvidence(pieces.join(" "), pieces.map((p) => contextOf(p, sentences)).join(" "))) return [];
     const promise = rows.find((r) => r.kind === "promise" && r.quote && pieces.some((p) => sameWords(r.quote!, p)));
     const shown = { id: request.id, revision: request.revision };
