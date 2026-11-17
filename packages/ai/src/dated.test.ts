@@ -327,6 +327,28 @@ describe("reading dates in mail you got (plan 204)", () => {
     expect(moved.value.moved[0]).toMatchObject({ due: "2026-11-15", before: "2026-11-16" });
   });
 
+  it("the claims ledger's second batch (Diego's Inés): a move keeps its own \"before\" whatever verb asks; a move to a plain day has none", () => {
+    const ines = "Hola de nuevo, Diego:\n\nPerdona que te escriba otra vez con esto. La imprenta nos ha adelantado el cierre del programa, así que necesitaríamos tu bio y tu foto antes del miércoles 18, en lugar del viernes 20 que te dije.\n\n¡Mil gracias y perdona las prisas!";
+    const evidence = "La imprenta nos ha adelantado el cierre del programa, así que necesitaríamos tu bio y tu foto antes del miércoles 18, en lugar del viernes 20 que te dije.";
+    const open = [{ label: "o2", kind: "respond" as const, text: "Enviar bio y foto para Marca Viva 2026", due: "2026-11-19" }];
+    const move = (due: string, text = ines, said = evidence) => {
+      const r = readDatesTask(input({ text, open })).validate({ replaced: [], items: [], settled: [], moved: [{ label: "o2", due, time: null, evidence: said, text: null, textEvidence: null }] });
+      if (!r.ok) throw new Error("rejected");
+      return r.value.moved[0];
+    };
+    // the day before it, or the day it names: either way asked before Wednesday the 18th
+    expect(move("2026-11-17")).toMatchObject({ due: "2026-11-17", before: "2026-11-18" });
+    expect(move("2026-11-18")).toMatchObject({ due: "2026-11-17", before: "2026-11-18" });
+    // en, "we'd need"
+    const en = "Sorry to write again: the printer moved the program's close, so we'd need your bio and photo before Wednesday the 18th instead of Friday the 20th.";
+    expect(move("2026-11-17", en, en)).toMatchObject({ due: "2026-11-17", before: "2026-11-18" });
+    // a plain day clears it; a lower bound never makes one
+    const plain = "Could you send your bio by Wednesday the 18th instead?";
+    expect(move("2026-11-18", plain, plain).before).toBeUndefined();
+    const lower = "The program opens before Wednesday the 18th, so send your bio by Tuesday the 17th.";
+    expect(move("2026-11-17", lower, lower).before).toBeUndefined();
+  });
+
   it("prompt v9 (the sixth panel round): an offer isn't an ask; an alert's stated deadline is its day and time; \"reply C to confirm\" in the event's words; a failed payment and its bill are one item", () => {
     const en = readDatesTask(input()).system;
     // the eval: said in the ask's own line, Haiku dropped a colleague's real ask (2 in 11); among what isn't an item, none
