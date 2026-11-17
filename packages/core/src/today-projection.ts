@@ -369,6 +369,8 @@ export function projectRows(items: readonly PlacedItem[], f: Pick<ProjectionFact
         ? datedWhy(lead.row, at.group === "missed", early, item.members, item.entries.length > 1 ? item.entries.flatMap((e) => (e !== lead && e.source === "dated" ? [e.row] : [])) : undefined)
         : promiseWhy(lead.row, at.group === "missed", item.members, f.zone, f.now);
     if (others && !o.count) why.with = others.map(seenOf);
+    // round 15's second morning: put off with Later, it says when it's back, never "since …" or its own day
+    if (!o.count && at.group === "comingUp" && lead.row.deferredUntil != null && lead.row.deferredUntil > f.now) why.back = lead.row.deferredUntil;
     const came = lead.source === "dated" ? lead.row.arrivedAt : lead.row.sentAt;
     // (fields set as they apply, not spread: this runs over the 1,000-item bound on every read)
     const row: Placed = { id: item.id, threadId: lead.row.threadId, group: at.group, day: at.day, why, dueAt: why.dueAt ?? lead.row.dueAt, came };

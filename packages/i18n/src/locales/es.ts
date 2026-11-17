@@ -2651,6 +2651,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "whatMatters.privacy.localSettings": "Para encontrar facturas, viajes y peticiones, Terno lee cada mensaje nuevo con {name} en este Mac; nada sale de tu Mac para esto.",
   "whatMatters.to": "Para {name}",
   "whatMatters.since": "desde {day}",
+  "whatMatters.back": "vuelve {when}",
   "whatMatters.waitingOnYou": "Te esperan",
   "whatMatters.ahead": "Para ir resolviendo",
   "whatMatters.weekOf": "Semana del {day}",

@@ -87,7 +87,7 @@ describe("todayWhen: the briefing's column, in the list's words, and how pressin
     expect(todayWhen(yesterday, NOW).text).toBe("since yesterday");
   });
 
-  it("round 15's second morning: an ask says since its own mail, never since the conversation's last message (your own holding reply, their thanks); a promise since you said it", () => {
+  it("round 15's second morning: an ask says since its own mail, never since the conversation's last message (your own holding reply, their thanks); a promise since you said it; a row put off says when it's back", () => {
     // Theo's Marcus: asked Nov 8, Theo's holding reply yesterday at 4:30 PM
     const replied = { ...thread, lastDate: at(12, 16, 30) };
     const marcus = dated("ask", "Answer Marcus Lee about a call", 8, { dated: false });
@@ -98,6 +98,12 @@ describe("todayWhen: the briefing's column, in the list's words, and how pressin
     expect(todayWhen({ ...draft, why: { ...draft.why, sentAt: at(9, 18) }, thread: replied }, NOW).text).toBe("since Nov 9");
     // a conversation waiting on you: since its last message, as before
     expect(todayWhen({ ...item({ kind: "waiting" }), thread: replied }, NOW).text).toBe("since yesterday");
+    // put off with Later and drawn before then (Coming up open): back when, never since, nor its own day
+    expect(todayWhen({ ...marcus, why: { ...marcus.why, came: at(8, 9), back: at(16, 9) } }, NOW, "coming:2026-11-16", true)).toMatchObject({ text: expect.stringMatching(/^back Mon 9:00\sAM$/), tone: "later" });
+    const bill = dated("renew", "Renew the desk", 30);
+    expect(todayWhen({ ...bill, why: { ...bill.why, back: at(14, 9) } }, NOW, "coming:2026-11-30", true).text).toMatch(/^back tomorrow 9:00\sAM$/);
+    setLocale("es", es);
+    expect(todayWhen({ ...bill, why: { ...bill.why, back: at(16, 9) } }, NOW, "coming:2026-11-30", true).text).toMatch(/^vuelve lun/);
   });
 
   it("a promise: its day, Missed, or none when it named none", () => {

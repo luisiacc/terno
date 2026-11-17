@@ -170,6 +170,12 @@ function whenOf(item: Pick<TodayItem, "thread" | "why">, now: number): { text: s
   const day = listDate((why.kind === "dated" ? why.came : why.kind === "promise" ? why.sentAt : undefined) ?? thread.lastDate, now);
   const came = { text: t("whatMatters.since", { day: day === t("date.yesterday") ? day.toLocaleLowerCase(getLocale()) : day }), tone: "none" as const };
   if (why.kind === "reminder" && why.dueAt !== undefined) return { text: dueShort(why.dueAt, true, now), tone: "none" };
+  // round 15's second morning: put off with Later and drawn before then (Coming up open), when it's back ("back Mon 9:00 AM")
+  if (why.back !== undefined) {
+    const back = ahead(why.back, why.back, true).text;
+    const tomorrow = t("today.when.tomorrow");
+    return { text: t("whatMatters.back", { when: back.startsWith(tomorrow) ? tomorrow.toLocaleLowerCase(getLocale()) + back.slice(tomorrow.length) : back }), tone: "none" };
+  }
   if (why.kind === "dated" && why.item) {
     const it = why.item;
     if (it.kind === "ask" || !it.dated) return came;

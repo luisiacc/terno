@@ -53,6 +53,8 @@ export interface TodayWhy {
    * never the conversation's last message (your own holding reply, their thanks)
    */
   came?: number;
+  /** round 15's second morning: put off with Later, when it's back (what its row says if it's ever drawn before then) */
+  back?: number;
   /** a waiting row: you've written in this conversation (else it's new, from someone you write to: `needsYou`'s two reasons) */
   wrote?: boolean;
   /** plan 204: its day is over and nothing was done (a dated item, or a dated promise of yours) */

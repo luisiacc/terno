@@ -2675,6 +2675,8 @@ It contains none of your mail, contacts, settings or keys.
   "whatMatters.automatedLine": "Newsletters and notifications",
   // plan 210 (the owner): what has no date sits in Today, its column saying when it came, so it isn't read as due today
   "whatMatters.since": "since {day}",
+  // round 15's second morning: a row put off with Later, drawn before it's back (Coming up open)
+  "whatMatters.back": "back {when}",
   // plan 210 (iteration 3, the owner): people's asks and requests shown early, a quiet part of Today
   "whatMatters.waitingOnYou": "Waiting on you",
   // plan 210 (iteration 5, revision 5; the owner): what shows past the seven days, one heading with no date in it

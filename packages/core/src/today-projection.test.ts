@@ -72,8 +72,8 @@ describe("a row per item", () => {
     ]);
     expect(counts).toEqual({ missed: 0, today: 0, waiting: 2, overdue: 0 });
     expect(projectToday(f, { count: true }).counts).toEqual(counts);
-    // round 15's second morning: the request says since its own mail
-    expect(rows.filter((r) => r.group === "comingUp").map((r) => r.why.came ?? r.why.sentAt)).toEqual([ask.arrivedAt, mine.sentAt]);
+    // round 15's second morning: each says when it's back, and the request since its own mail
+    expect(rows.filter((r) => r.group === "comingUp").map((r) => [r.why.back, r.why.came ?? r.why.sentAt])).toEqual([[at(2026, 11, 19, 9), ask.arrivedAt], [at(2026, 11, 20, 9), mine.sentAt]]);
     // a day ahead of its own (not put off) still says its conversation
     const due = dated("respond", "2026-11-20", { threadId: 9 });
     expect(projectToday(facts({ dated: [due], waiting: waiting.slice(0, 1) })).rows.map((r) => r.id)).toEqual([`dated:${due.id}`]);
