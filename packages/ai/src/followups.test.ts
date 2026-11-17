@@ -91,7 +91,7 @@ describe("reading what you sent (plan 142)", () => {
   });
 
   it("is frozen at its version: a change to the words is a new version", () => {
-    expect(FOLLOWUP_PROMPT_VERSION).toBe(13);
+    expect(FOLLOWUP_PROMPT_VERSION).toBe(14);
     expect(readSentMailTask(input()).system).toMatchSnapshot();
   });
 
@@ -111,9 +111,9 @@ describe("reading what you sent (plan 142)", () => {
   });
 
   it("a small window holds the whole conversation with the server: a bad answer and its repair still fit", async () => {
-    // v13's words (a promise's part of the day, its field in the schema) need a little under 3,500 (v12 3,300, v11
+    // v14's words (a promise kept through someone) need a little over 3,500 (v13 a little under, v12 3,300, v11
     // 2,900, v10 2,100)
-    const window = 3500;
+    const window = 3600;
     const budget = followupBudget(window);
     const fitted = fitSentMail(input({ ownText: "o".repeat(6000), answering: "a".repeat(3000), outputTokens: budget.outputTokens }), budget.promptChars);
     const sizes: number[] = [];

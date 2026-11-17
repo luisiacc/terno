@@ -147,6 +147,8 @@ interface V11 {
    */
   part?: "morning" | "afternoon" | "evening" | null;
   partOn?: Record<string, "morning" | "afternoon" | "evening" | null>;
+  /** v14: an open promise of theirs, shown as p1, and whether this message keeps it */
+  open?: { text: string; kept: boolean };
 }
 const local = (y: number, m: number, d: number, h: number, min = 0) => new Date(y, m - 1, d, h, min).getTime();
 const MON_NOV = ["Monday, 9 November 2026, 19:10", local(2026, 11, 9, 19, 10)] as [string, number];
@@ -254,6 +256,23 @@ const V13_CASES: V11[] = [
   { id: "f13-13", text: "¡Gracias! El viernes te mando la presentación.", es: true, to: "Jess", sent: LUNES_MAR, promises: [1, 1], due: ["2026-03-06"], part: null, words: ["presentaci[oó]n"], wordsNot: CLOCK_WORDS },
 ];
 
+/**
+ * Prompt v14 (plan 210, the second morning): a promise is kept by sending it through someone who'll pass it on (Jordan's
+ * agenda, sent to Grace "Could you pass it along to Patrick?", kept 0 of 8 on v13 by Luna and Haiku); sending it straight is
+ * kept as before; a delay, or something else sent to someone else, keeps nothing. Fictionalized, en and es.
+ */
+const FRI_NOV = ["Friday, 13 November 2026, 11:20", local(2026, 11, 13, 11, 20)] as [string, number];
+const VIERNES_NOV = ["viernes, 13 de noviembre de 2026, 11:20", local(2026, 11, 13, 11, 20)] as [string, number];
+const V14_CASES: V11[] = [
+  { id: "f14-01", text: "Hannah,\n\nAs promised, here's the run of show for Thursday. Could you pass it along to Victor?\n\n1. Welcome (10 min)\n2. Roadmap review (40 min)\n3. Pricing for next year (20 min)\n\nBest,\nOmar", to: "Hannah", sent: FRI_NOV, open: { text: "send Victor the run of show", kept: true }, promises: [0, 0] },
+  { id: "f14-02", text: "Hannah:\n\nComo te prometí, aquí va el orden del día del jueves. ¿Se lo puedes pasar a Víctor?\n\n1. Bienvenida (10 min)\n2. Revisión del plan (40 min)\n3. Precios del próximo año (20 min)\n\nSaludos,\nOmar", es: true, to: "Hannah", sent: VIERNES_NOV, open: { text: "enviarle a Víctor el orden del día", kept: true }, promises: [0, 0] },
+  { id: "f14-03", text: "Hi Leo, attached is the signed lease for Ana. Could you make sure she gets it today?", to: "Leo", sent: FRI_NOV, open: { text: "send Ana the signed lease", kept: true }, promises: [0, 0] },
+  { id: "f14-04", text: "Here are the slides, as promised. Shout if anything's off.", to: "Dana", sent: FRI_NOV, open: { text: "send Dana the slides", kept: true }, promises: [0, 0] },
+  { id: "f14-05", text: "Mark, here's the budget sheet you asked for.", to: "Mark", sent: FRI_NOV, open: { text: "send Dana the slides", kept: false }, promises: [0, 0] },
+  { id: "f14-06", text: "Hannah, the run of show isn't ready yet; I'll get it to Victor by Monday.", to: "Hannah", sent: FRI_NOV, open: { text: "send Victor the run of show", kept: false }, promises: [0, 1] },
+  { id: "f14-07", text: "Hannah, todavía no tengo el orden del día; se lo mando a Víctor el lunes.", es: true, to: "Hannah", sent: VIERNES_NOV, open: { text: "enviarle a Víctor el orden del día", kept: false }, promises: [0, 1] },
+];
+
 const REPEAT = Math.max(1, Number(process.env.TERNO_AI_FOLLOWUPS_REPEAT ?? 5));
 /** TERNO_AI_FOLLOWUPS_CASES: only these ids (comma-separated), to look at a few again */
 const ONLY = process.env.TERNO_AI_FOLLOWUPS_CASES?.split(",").filter(Boolean);
@@ -271,13 +290,13 @@ async function score(cases: readonly V11[], prompt: string): Promise<number> {
       const recipients = [{ label: "r1", name: c.to ?? "Tom", email: "them@example.test" }];
       let r: Awaited<ReturnType<typeof tasks.readSentMail>>;
       try {
-        r = await tasks.readSentMail({ ownText: c.text, ...(c.answering ? { answering: c.answering } : {}), subject: "Re: this week", recipients: recipients.map(({ label, name }) => ({ label, name })), attachments: c.attachments ?? [], openPromises: [], ...(c.request ? { requests: [{ label: "q1", text: c.request.text, due: c.request.due }] } : {}), sentAt: c.sent[0], language: c.es ? "es" : "en" });
+        r = await tasks.readSentMail({ ownText: c.text, ...(c.answering ? { answering: c.answering } : {}), subject: "Re: this week", recipients: recipients.map(({ label, name }) => ({ label, name })), attachments: c.attachments ?? [], openPromises: c.open ? [{ label: "p1", text: c.open.text }] : [], ...(c.request ? { requests: [{ label: "q1", text: c.request.text, due: c.request.due }] } : {}), sentAt: c.sent[0], language: c.es ? "es" : "en" });
       } catch (error) {
         failures++;
         lines.push(`${c.id}: failed (${error instanceof Error ? error.message.slice(0, 80) : "error"})`);
         continue;
       }
-      const checked = checkSentMail(r, { ownText: c.text, recipients, open: new Map(), requests: new Map(c.request ? [["q1", { id: 1, revision: 0 }]] : []), sentAt: c.sent[1], nudgeAfterDays: 5 });
+      const checked = checkSentMail(r, { ownText: c.text, recipients, open: new Map(c.open ? [["p1", { id: 9, revision: 0, kind: "promise", text: c.open.text } as never]] : []), requests: new Map(c.request ? [["q1", { id: 1, revision: 0 }]] : []), sentAt: c.sent[1], nudgeAfterDays: 5 });
       const promises = checked.rows.filter((x) => x.kind === "promise");
       const wrong: string[] = [];
       const missed: string[] = [];
@@ -313,6 +332,11 @@ async function score(cases: readonly V11[], prompt: string): Promise<number> {
         const right = c.request.verdict[0] !== "unknown" ? c.request.verdict[0] : undefined;
         if (right && applied !== right) missed.push(`verdict ${applied ?? "none"} (model: ${r.answers?.map((a) => `${a.verdict} "${a.evidence}"`).join("; ") ?? "none"})`);
       }
+      if (c.open) {
+        const kept = checked.kept.length > 0;
+        if (kept && !c.open.kept) wrong.push(`kept (model: ${r.kept.map((k) => `"${k.evidence}"`).join("; ")})`);
+        if (!kept && c.open.kept) missed.push(`not kept (model: ${r.kept.map((k) => `"${k.evidence}"`).join("; ") || "none"})`);
+      }
       if (wrong.length) {
         wrongShown++;
         lines.push(`${c.id} WRONG: ${wrong.join("; ")}`);
@@ -333,7 +357,11 @@ describe.skipIf(process.env.TERNO_AI_FOLLOWUPS !== "1")("follow-ups prompts v11 
     expect(await score(V12_CASES, "v12")).toBe(0);
   }, 1_800_000);
 
-  it("v13: a part of the day returned, never a clock in the words, on its own day; a clock beside it the time: none wrong shown", async () => {
+  it.skipIf(process.env.TERNO_AI_FOLLOWUPS_V13 === "0")("v13: a part of the day returned, never a clock in the words, on its own day; a clock beside it the time: none wrong shown", async () => {
     expect(await score([...V12_CASES.filter((c) => c.part !== undefined), ...V13_CASES], "v13")).toBe(0);
+  }, 1_800_000);
+
+  it("v14: a promise kept through someone who'll pass it on; a delay or something else sent keeps nothing: none wrong shown", async () => {
+    expect(await score(V14_CASES, "v14")).toBe(0);
   }, 1_800_000);
 });
