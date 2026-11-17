@@ -26,7 +26,13 @@ const RECURRING = /\b(?:every|each|weekly|daily|cada|todos los|todas las)\b/u;
  */
 const PROPOSES_ASKED = /\b(?:would you (?:like|want|be (?:up for|willing|interested|open|keen)|consider)|are you (?:up for|in|interested|willing|open to|keen)|(?:do|would) you have (?:the )?(?:time|bandwidth|capacity|room)|(?:can|could|would) you take (?:it|this|that) on|up for (?:it|this|that)|interested in|te animas|se animan|te late|les late|te interesa|te da tiempo|tienes tiempo|te gustaria|te apuntas|te sumas|estarias dispuest\w*|aceptas|aceptarias|te lo avientas)\b/u;
 const PROPOSES = /\b(?:if you(?: re| are) (?:in|up for it|interested|keen)|if you accept|if you agree|if you say yes|if you take (?:it|this|the job)|si (?:aceptas|te late|te interesa|te animas|te da tiempo|dices que si|lo tomas|le entras)|propuesta|proposal)\b/u;
-const proposes = (sentences: Sentences): boolean => sentences.some((s) => (/[?¿]/u.test(s.said) && PROPOSES_ASKED.test(s.read)) || PROPOSES.test(s.read));
+/**
+ * Its code review: a bill's or a payment's words, which no proposal is ("¿Te da tiempo de pagar?" asks about a bill owed),
+ * and a request of the reader's own beside the proposal ("please send the signed contract by Friday at 5 PM")
+ */
+const PAYMENT = /\b(?:pay\w*|paid|bill\w*|invoice\w*|charg\w*|balance|amount|statement|premium|subscription\w*|renew\w*|pag\w*|factura\w*|cobr\w*|recibo\w*|saldo|importe|cuota|prima|suscripcion\w*|renov\w*)\b/u;
+const ASKS_OWN = /\b(?:please|could you|can you|need you to|por favor|puedes|podrias|necesito que|mandame|enviame)\b/u;
+const proposing = (s: { said: string; read: string }): boolean => !PAYMENT.test(s.read) && ((/[?¿]/u.test(s.said) && PROPOSES_ASKED.test(s.read)) || PROPOSES.test(s.read));
 
 /** a list's line ("- RevOps Live — Thursday, Dec 3, 1 PM ET", "• Dec 3 — Summit", "1) …") */
 const LISTED = /^\s*(?:[-–—•·*▪]|\d{1,2}[.)])\s/u;
@@ -118,9 +124,12 @@ export function lookAt(i: LookInput): string[] {
   // first reading's whole job: its one item there, or none
   if (i.automated && (moments.length > DATED_AGAIN_SENTENCES || moments.some((n) => LISTED.test(sentences[n]!.said)))) return [];
   if (scamPressure(`${i.subject}\n${i.text}`)) return [];
-  // a proposal the reader hasn't accepted adds no plan or deadline; their own word for it (a promise of theirs it names,
-  // shown with it) is an acceptance, and its days are read again as any
-  if (proposes(sentences) && !i.shown.some((o) => o.kind === "promise" && !!o.text && namesSpecifically({ text: o.text, quote: "" }, i.text, i.from))) return [];
+  // a proposal the reader hasn't accepted adds no plan or deadline: its question and its days go unasked, never a bill's or a
+  // payment's, nor a request of the reader's own beside it (its code review); their own word for it (a promise of theirs the
+  // mail names, shown with it) is an acceptance, and its days are read again as any
+  const accepted = i.shown.some((o) => o.kind === "promise" && !!o.text && namesSpecifically({ text: o.text, quote: "" }, i.text, i.from));
+  const proposal = accepted ? [] : sentences.flatMap((s, n) => (proposing(s) ? [n] : []));
+  const proposed = (n: number) => proposal.length > 0 && (proposal.includes(n) || !(PAYMENT.test(sentences[n]!.read) || ASKS_OWN.test(sentences[n]!.read)));
   const paragraphs = paragraphsOf(i.text);
   const paragraphOf = (n: number) => paragraphs.findIndex((p) => p.read.includes(sentences[n]!.read));
   // iteration 5's code review (point 2): a bill or a renewal by itself only as the checks read it of this sentence's own
@@ -148,7 +157,7 @@ export function lookAt(i: LookInput): string[] {
   for (const x of i.first.replaced) cover({ quote: x.evidence });
   // an open item's day (a reminder of it): only a sentence that names it
   for (const o of i.shown) if (o.due && o.text) cover({ text: o.text }, o.due);
-  const left = moments.filter((n) => !covered.has(n) && !rejected(sentences[n]!));
+  const left = moments.filter((n) => !covered.has(n) && !rejected(sentences[n]!) && !proposed(n));
   const asked: string[] = [];
   let room = DATED_AGAIN_CHARS;
   for (const n of left) {

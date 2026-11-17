@@ -95,6 +95,10 @@ describe("which sentences get a second look", () => {
     // the reader's own word for it (a promise of theirs the mail names) is an acceptance: its days are read again
     const promised = { kind: "promise", text: "send Carla the gift box files", due: null };
     expect(look(CARLA, { first: { ...none, items: [answer] }, shown: [promised] })).toEqual(["La imprenta necesita los archivos a más tardar el 4 de diciembre para entregarnos el 15."]);
+    // its code review: a bill's own deadline in a proposal's mail is still asked about; "¿te da tiempo de pagar?" is no proposal
+    expect(look("Tu factura vence el 20 de noviembre a las 17:00. ¿Te da tiempo de pagar?")).toEqual(["Tu factura vence el 20 de noviembre a las 17:00."]);
+    expect(look(`${CARLA}\n\nPor cierto, tu factura de octubre vence el 25 de noviembre a las 17:00.`, { first: { ...none, items: [answer] } })).toEqual(["Por cierto, tu factura de octubre vence el 25 de noviembre a las 17:00."]);
+    expect(look("Would you be up for leading the workshop on Thursday, November 19 at 3:00 PM? Also, please send the signed contract by Friday, November 13 at 5 PM.")).toEqual(["Also, please send the signed contract by Friday, November 13 at 5 PM."]);
     // a request with a day is no proposal ("could you … by"), nor a question asking whether they can host (the book club)
     expect(look("Could you send me the deck? The board meets Tuesday, November 17 at 9:00 AM.")).toEqual(["The board meets Tuesday, November 17 at 9:00 AM."]);
     expect(look(BOOK_CLUB, { first: { ...none, items: [HOST] } })).toEqual([MEETING]);
