@@ -545,6 +545,19 @@ export function scamPressure(text: string): boolean {
   return sentencesOf(text).some(({ read }) => WITHIN_HOURS.test(read) && (DEMANDS.test(read) || (LOSS.test(read) && STILL_TO_COME.test(read))));
 }
 
+/**
+ * Round 17 (Jordan's j30, a CEO from a gmail address): gift cards bought for someone who wants their codes sent back ("purchase
+ * 6 Apple gift cards at $500 each, scratch the backs and send me photos of the codes", "compra tarjetas de regalo y mándame
+ * los códigos") is the gift-card scam, whoever it claims to be from: never a request. The reading made it one, 1 in 1 this
+ * round, after round 16's two said nothing. A gift card bought, given or received with no codes asked back is read as any.
+ */
+const GIFT_CARDS = /\b(?:gift ?cards?|e ?gift cards?|itunes cards?|google play cards?|steam cards?|apple cards?|tarjetas? (?:de )?regalo|tarjetas? (?:de )?(?:itunes|google play|apple|steam|amazon))\b/u;
+const CODES_BACK = /\b(?:codes?|pins?|claim numbers?|scratch\w*|photos? of (?:the )?(?:back|cards?|codes?)|pictures? of (?:the )?(?:back|cards?|codes?)|codigos?|rasca\w*|fotos? de (?:los |las )?(?:codigos?|tarjetas?|reverso))\b/u;
+export function giftCardScam(text: string): boolean {
+  const read = norm(text);
+  return GIFT_CARDS.test(read) && CODES_BACK.test(read);
+}
+
 // Plan 210 (iteration 5, V2): an event's start in its own quote, for a model that gave none (round 13: Theo's all-hands,
 // "Monday Nov 16, 2026 · 4pm – 5pm (Pacific Time)", came back with no time on v15 3 times in 5 on Luna, never on v14)
 const CLOCK_12 = /\b(\d{1,2})(?::(\d{2}))?\s?([ap])\.?\s?m\b\.?/giu;

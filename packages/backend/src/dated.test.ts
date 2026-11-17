@@ -913,8 +913,11 @@ describe("plan 210 (iteration 3)", () => {
       const mail = { ...receipt({ text, senderKey: "utilitybilling@millbrook.test" }), subject: "Payment receipt - account 21140", from: "City of Millbrook Utilities", open: new Map([["o1", water]]) };
       expect(checkDates(settle("Balance remaining: $0.00"), mail).settled).toEqual([{ id: 9, revision: 2 }]);
       expect(checkDates(settle("Saldo pendiente: $0.00"), { ...mail, text: `${text}\nSaldo pendiente: $0.00` }).settled).toHaveLength(1);
-      // another amount it states is still another payment's, unless it says it's a receipt
-      expect(checkDates(settle("AMOUNT PAID: $64.58"), mail).settled).toEqual([]);
+      // round 17: quoted on its paid line, the receipt that states the bill's own $58.71 pays it too (the reading quoted
+      // "AMOUNT PAID: $64.58" this round, and the bill stayed in Missed); one stating only another amount is still another
+      // payment's
+      expect(checkDates(settle("AMOUNT PAID: $64.58"), mail).settled).toEqual([{ id: 9, revision: 2 }]);
+      expect(checkDates(settle("AMOUNT PAID: $64.58"), { ...mail, text: text.replace("$58.71", "$61.20") }).settled).toEqual([]);
     });
     it("the Codex code review of the second morning (point 1): a zero balance settles a bill only when its mail names that bill, never another invoice's", () => {
       const invoice = card({ senderKey: "billing@acme.test", text: "Pay $58.71 for Acme invoice 1001", quote: "Invoice 1001: $58.71 due 11/20/2026", dueDay: "2026-11-20" });
@@ -3421,6 +3424,33 @@ describe("plan 210 (iteration 5): Remove's narrow offer, a kind from one sender 
 });
 
 const followupRows = async (client: RpcClient) => (await client.call("followups.list", {})).rows;
+
+describe("round 17 (Margaret's water bill): its sender's receipt that states the bill's own amount pays it, whatever total it quotes", () => {
+  const city = "utilitybilling@millbrook.test";
+  const bill = { id: 1, revision: 0, threadId: 8, senderKey: city, kind: "pay", text: "Pay $58.71 for the City of Millbrook utility bill (10% penalty if unpaid)", quote: "Amount due: $58.71", dueDay: "2026-11-10", dueAt: at(2026, 11, 10, 9), timed: false } as DatedRow;
+  const RECEIPT = "CITY OF MILLBROOK - WATER & SEWER\nPAYMENT RECEIPT\n\nAccount: 21140\nPayment date: 11/13/2026 3:08 PM\n\nBill dated 11/02/2026 (due 11/10/2026): $58.71\nLate penalty (10%): $5.87\nAMOUNT PAID: $64.58\nBalance remaining: $0.00\n\nThank you for your payment.";
+  const read = (text: string, senderKey = city) => checkDates({ items: [], settled: [{ label: "o1", evidence: "AMOUNT PAID: $64.58" }] }, { text, subject: "Payment receipt - account 21140", arrivedAt: NOW, open: new Map([["o1", bill]]), fromScan: false, now: NOW, threadId: 31, senderKey, from: "City of Millbrook Utilities", paysInThread: 0 }).settled;
+  it("a new conversation's receipt, the bill's $58.71 on its own line, pays the bill though it quotes $64.58", () => {
+    expect(read(RECEIPT)).toEqual([{ id: 1, revision: 0 }]);
+  });
+  it("never one that doesn't state the bill's amount, nor another sender's", () => {
+    expect(read(RECEIPT.replace("$58.71", "$61.20"))).toEqual([]);
+    expect(read(RECEIPT, "billing@othertown.test")).toEqual([]);
+  });
+});
+
+describe("round 17 (Jordan's j30): the gift-card scam is no request, whoever it claims to be from", () => {
+  it("the panel's mail, as the reading made it a request", () => {
+    const text = "Jordan,\n\nAre you available? I'm in back-to-back board meetings and can't talk, but I need a quick favor handled today.\n\nI want to surprise a few of our top customers with appreciation gifts. Please purchase 6 Apple gift cards at $500 each, scratch the backs and send me photos of the codes. I'll make sure finance reimburses you by end of week.\n\nKeep this between us for now — it's a surprise.\n\nDaniel Park\nCEO, Cobaltline\nSent from my iPhone";
+    const item = { kind: "respond", text: "Buy 6 $500 Apple gift cards and send Daniel photos of the codes", quote: "Please purchase 6 Apple gift cards at $500 each, scratch the backs and send me photos of the codes.", due: "2026-11-12", time: null };
+    const input = { text, subject: "Quick favor — are you available?", arrivedAt: NOW, open: new Map<string, DatedRow>(), fromScan: false, now: NOW, sender: { person: true }, reader: { name: "Jordan Ellis", addressed: "to" as const } };
+    expect(checkDates({ items: [item], settled: [] }, input).rows).toEqual([]);
+    expect(checkDates({ items: [{ ...item, kind: "ask", due: null }], settled: [] }, input).rows).toEqual([]);
+    // a real request beside a gift card with no codes asked back stays
+    const party = "Hi Jordan, for the team party on Friday please bring a $20 gift card for the exchange.";
+    expect(checkDates({ items: [{ kind: "respond", text: "Bring a $20 gift card to the team party", quote: "please bring a $20 gift card for the exchange.", due: "2026-11-13", time: null }], settled: [] }, { ...input, text: party, subject: "Team party" }).rows).toHaveLength(1);
+  });
+});
 
 describe("round 16 (Priya's board meeting): one occasion read twice moves together", () => {
   const nine = at(2026, 11, 19, 9);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { amountsOf, bareDayAhead, insideQuotes, namingWords, negatedReceipt, otherAmounts, otherIds, replacesPlainly, scamPressure, settlesKind, startClock } from "./dated-evidence";
+import { amountsOf, bareDayAhead, giftCardScam, insideQuotes, namingWords, negatedReceipt, otherAmounts, otherIds, replacesPlainly, scamPressure, settlesKind, startClock } from "./dated-evidence";
 
 describe("plan 210 (iteration 3, revision 5): amounts are read whole", () => {
   it("a currency amount is one token, whatever its separators or sign; a number alone isn't one", () => {
@@ -118,6 +118,26 @@ describe("iteration 4's code review: a scam's pressure, read locally (en, es)", 
       "Can you send me the deck within 2 hours?",
       "Tu tarjeta fue bloqueada tras un cargo de $412.18. Llama al número al reverso de tu tarjeta.",
     ]) expect(scamPressure(text), text).toBe(false);
+  });
+});
+
+describe("round 17 (Jordan's CEO from a gmail address): the gift-card scam (en, es)", () => {
+  it("gift cards whose codes are wanted back", () => {
+    for (const text of [
+      "Please purchase 6 Apple gift cards at $500 each, scratch the backs and send me photos of the codes.",
+      "Buy 6 $500 Apple gift cards and send Daniel photos of the codes",
+      "Can you grab four Google Play cards and text me the PINs?",
+      "Compra 5 tarjetas de regalo de Amazon y mándame fotos de los códigos.",
+    ]) expect(giftCardScam(text), text).toBe(true);
+  });
+  it("a gift card bought, given or received, no codes asked back", () => {
+    for (const text of [
+      "Thanks for the Amazon gift card, Sofia loved it!",
+      "Your $50 gift card has been delivered to maria@example.test.",
+      "Bring a $20 gift card for the white elephant exchange.",
+      "Te regalaron una tarjeta de regalo de Liverpool.",
+      "Enter your promo code at checkout.",
+    ]) expect(giftCardScam(text), text).toBe(false);
   });
 });
 

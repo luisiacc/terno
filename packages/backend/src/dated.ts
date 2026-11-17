@@ -9,7 +9,7 @@ import { silenced, silenceOf, withoutMuted } from "./dated-mutes";
 import { secondLook } from "./dated-second-look";
 import { UI_LOCALE_KEY } from "./forwarding";
 import { handledItself } from "./dated-automatic";
-import { bareDayAhead, contextOf, insideQuotes, quoteSpan, type Sentences, namesApart, namesItem, namingWords, negatedReceipt, norm, otherAmounts, otherIds, paragraphsOf, plainEvidence, replacesPlainly, sameObject, sameParcel, sameThing, saysReplaced, saysWhen, scamPressure, sentencesOf, sentencesWith, settlesKind, startClock, zeroNamesItem, zeroOnly } from "./dated-evidence";
+import { amountsOf, bareDayAhead, contextOf, giftCardScam, insideQuotes, quoteSpan, type Sentences, namesApart, namesItem, namingWords, negatedReceipt, norm, otherAmounts, otherIds, paragraphsOf, plainEvidence, replacesPlainly, sameObject, sameParcel, sameThing, saysReplaced, saysWhen, scamPressure, sentencesOf, sentencesWith, settlesKind, startClock, zeroNamesItem, zeroOnly } from "./dated-evidence";
 import { mayRelay, relayedAsk, relays, type Relay } from "./dated-relay";
 import { untrustedSenders, withoutUntrusted } from "./suspicious-sender";
 import { sameEvent } from "./today-links";
@@ -92,6 +92,8 @@ const itemKey = (kind: string, t: { dueDay: string; dueAt: number; timed: boolea
 const TWO_A_DAY: ReadonlySet<string> = new Set(["respond", "ask", "event", "delivery"]);
 /** the kinds a scam's pressure makes (`scamPressure`): a bill, a booking or a parcel keep their own checks */
 const PRESSED: ReadonlySet<string> = new Set(["alert", "respond", "expire", "ask"]);
+/** round 17: a receipt's paid line ("AMOUNT PAID: $64.58", "Total pagado: $64.58", "Payment received: $64.58"), as `norm` reads it */
+const PAID_LINE = /\b(?:amount paid|total paid|paid|payment (?:received|amount)|monto pagado|total pagado|importe pagado|pagado|pago recibido)\b/u;
 
 /** A name's words, as a quote's are read: "Lucía Romero" → ["lucia", "romero"]; an initial or a bare letter isn't one. */
 const nameWords = (name: string) => norm(name).split(" ").filter((w) => w.length >= 2);
@@ -707,7 +709,19 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     // naming another amount settles it only as its own sender's receipt in its own conversation, the one open bill there
     // (counted in the store: Diego's card read as its $1,105.00 minimum, paid with "Recibimos tu pago por $8,432.17")
     if (!move && row.kind === "pay" && negatedReceipt(`${evidence}\n${context}`)) return false;
-    const receipt = !move && row.kind === "pay" && input.threadId !== undefined && row.threadId === input.threadId && row.senderKey === input.senderKey && input.paysInThread === 1 && settlesKind("pay", `${evidence}\n${context}`);
+    // round 17 (Margaret's water bill): its sender's receipt, quoted on its paid line, that states the bill's own amount on a line of its own ("Bill dated
+    // 11/02/2026 (due 11/10/2026): $58.71") pays it, though what it quotes is the total with the late fee ("AMOUNT PAID:
+    // $64.58") and it came as a new conversation
+    const billStated = (r: Pick<DatedRow, "text">) => {
+      const own = amountsOf(r.text);
+      const said = amountsOf(input.text);
+      return own.size > 0 && [...own].every((a) => said.has(a));
+    };
+    const sameThread = input.threadId !== undefined && row.threadId === input.threadId && input.paysInThread === 1;
+    // (a receipt's label, "AMOUNT PAID: $64.58", says nothing alone: the mail's own words do, "PAYMENT RECEIPT", "Thank you
+    // for your payment", and none of it says the payment didn't happen)
+    const statedReceipt = () => PAID_LINE.test(norm(evidence)) && billStated(row) && settlesKind("pay", `${input.subject}\n${input.text}`) && !negatedReceipt(input.text);
+    const receipt = !move && row.kind === "pay" && row.senderKey === input.senderKey && ((sameThread && settlesKind("pay", `${evidence}\n${context}`)) || statedReceipt());
     if (otherAmounts(row, context) && !receipt) return false;
     // round 16 (Priya's board meeting): the same occasion read twice (Jess's note and the calendar's invitation, one moment,
     // one place) is never "another" item the mail must tell this one apart from: Jess's "It's now Monday, Nov 23" moved the
@@ -952,6 +966,8 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     // plan 210 (iteration 4's code review): what a scam says happened or demands is no item, an alert, a request or an
     // expiry (prompt v15, and this backstop); never "something asked" either
     if (PRESSED.has(kind) && scamPressure(`${input.subject}\n${tiedWords(item.quote).slice(0, FACT_WORDS_MAX)}\n${item.quote}`)) continue;
+    // round 17 (Jordan's CEO from a gmail address): gift cards whose codes are wanted back are the gift-card scam, any kind of to-do
+    if (kind !== "event" && kind !== "delivery" && giftCardScam(`${item.text}\n${item.quote}\n${contextOf(item.quote, sentences)}`)) continue;
     // plan 210 (the Codex code review of iteration 2): a request of the reader, kept below or not (a day already past or
     // over in a scan, a duplicate, past the bound): never "nothing asked"
     if (kind === "ask" || kind === "respond") asked = true;
