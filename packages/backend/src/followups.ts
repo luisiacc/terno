@@ -100,6 +100,18 @@ function answersBy(quote: string, piece: string): boolean {
   const [q, p] = [norm(quote).toLowerCase(), norm(piece).toLowerCase()];
   return q.includes(p) || wordCount(q) * 2 >= wordCount(p);
 }
+const WHEN_WORD = /^(?:today|tomorrow|tonight|next|week|weekend|morning|afternoon|evening|monday|tuesday|wednesday|thursday|friday|saturday|sunday|january|february|march|april|june|july|august|september|october|november|december|hoy|manana|semana|lunes|martes|miercoles|jueves|viernes|sabado|domingo|proxima|proximo)$/u;
+/**
+ * The Codex code review of round 18: a promise in the evidence is the answer unless it names something the request doesn't
+ * ("do the merch plug in the next one" beside "Send Kai notes on cut v2"); one naming nothing but times ("send it Friday")
+ * or the request's own thing ("send the final figures Friday") is the answer, however long the evidence around it.
+ */
+function aboutElse(promise: string, request: string | undefined): boolean {
+  if (!request) return false;
+  const asked = namingWords(request, { names: false });
+  const named = [...namingWords(promise, { names: false })].filter((w) => !WHEN_WORD.test(w));
+  return named.length > 0 && !named.some((w) => asked.has(w));
+}
 
 const ELLIPSIS =/\s*(?:\[(?:\.{3}|…)\]|\.{3}|…)\s*/u;
 /**
@@ -313,7 +325,14 @@ export function checkSentMail(result: SentMailResult, input: { ownText: string; 
     // round 18 (Theo's notes for Kai): a promise is the answer when it's what the evidence says, its words most of a piece;
     // one said in passing inside a longer answer ("…drop the merch plug, we'll do it in the next one" among five notes sent)
     // is a promise of its own, and the answer stands
-    const promise = rows.find((r) => r.kind === "promise" && r.quote && pieces.some((p) => answersBy(r.quote!, p)));
+    // (its code review: judged on the whole answer, never one line of a list at a time; and by what the promise is about)
+    const promise = rows.find((r) => r.kind === "promise" && r.quote && pieces.some((p) => sameWords(r.quote!, p)) && (answersBy(r.quote!, pieces.join(" ")) || (request.text !== undefined && !aboutElse(r.text, request.text))));
+    // the code review of round 18: a list's lead-in answers only with a list about what was asked (the lead-in or its lines
+    // name the request's thing: "notes:" for notes); "notes:" over lunch and parking never signs a contract
+    if (pieces.length > 1 && leadIn(pieces[0]!) && request.text) {
+      const asked = namingWords(request.text, { names: false });
+      if (![...namingWords(pieces.join(" "), { names: false })].some((w) => asked.has(w) || asked.has(w.replace(/:$/u, "")))) return [];
+    }
     const shown = { id: request.id, revision: request.revision };
     // round 16's code review: a bill (from a person this reply writes to) only by your saying it's paid ("just venmo'd you",
     // never "I have not paid it yet"); a promise to pay it links nothing, the bill keeping its own row

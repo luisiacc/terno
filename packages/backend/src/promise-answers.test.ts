@@ -182,6 +182,19 @@ describe("a reply's checked verdict (the Codex review of iteration 3, revision 1
     expect(sent("notes:\n\n- intro music: keep it\n- 3:05 the zoom is too slow, punch it in\n- 11:20 to 11:48: use my first take\n- end card: drop the merch plug, we'll do it in the next one", full)).toEqual([{ request: { id: 7, revision: 2 }, verdict: "fulfilled" }]);
     const later = "Not tonight, sorry. we'll do it in the next one\n\nt";
     expect(sent("we'll do it in the next one", later)).toEqual([{ request: { id: 7, revision: 2 }, verdict: "promise", item: 0 }]);
+    // the Codex code review of round 18, with the request's own words as the store gives them:
+    const asked = (text: string) => ({ ...base, requests: new Map([["q1", { id: 7, revision: 2, text }]]) });
+    const verdict = (promises: { text: string; quote: string; to: string; due: string | null }[], evidence: string, ownText: string, request: string) => checkSentMail({ promises, expectsReply: false, awaiting: [], kept: [], answers: [{ label: "q1", verdict: "fulfilled", evidence }] }, { ...asked(request), ownText }).verdicts;
+    // the lead-in alone, the passing promise judged on the whole list: the notes are sent
+    expect(verdict([merch], "notes:", full, "Send Kai notes on cut v2")).toEqual([{ request: { id: 7, revision: 2 }, verdict: "fulfilled" }]);
+    // a longer reply whose promise is the request's own thing, or names nothing else: a promise, never done
+    const finance = "Thanks for following up. I needed to check the final figures with finance first. I'll send it Friday.\n\nD";
+    const figures = { text: "send the final figures Friday", quote: "I'll send it Friday", to: "r1", due: "2026-11-13" };
+    expect(verdict([figures], "Thanks for following up. I needed to check the final figures with finance first. I'll send it Friday", finance, "Send Dana the final figures")).toEqual([{ request: { id: 7, revision: 2 }, verdict: "promise", item: 0 }]);
+    expect(verdict([{ ...figures, text: "send it Friday" }], "Thanks for following up. I needed to check the final figures with finance first. I'll send it Friday", finance, "Send Dana the final figures")).toEqual([{ request: { id: 7, revision: 2 }, verdict: "promise", item: 0 }]);
+    // a lead-in over a list about something else answers nothing
+    const parking = "I have not signed the contract yet. notes:\n\n- lunch is at noon\n- parking is on level 2\n\nT";
+    expect(verdict([], "notes:", parking, "Sign the vendor contract")).toEqual([]);
     expect(one("cambios: - 3:05 el zoom va muy lento", "Listo. cambios:\n- la música se queda\n- 3:05 el zoom va muy lento\n\nT")).toHaveLength(1);
     // never a one-word lead-in at the end, nor a word without its colon
     expect(one("3:05 the zoom on the error log is too slow, punch it in notes:", theo)).toEqual([]);
