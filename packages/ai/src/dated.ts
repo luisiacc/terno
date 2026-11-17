@@ -601,16 +601,19 @@ const BEFORE_THEN = /\b(?:before then|before that(?: day| date)?|antes de (?:eso
  * day it was asked before is kept apart (`before`), whichever day the model gave of the two, so the row says "before Mon"
  * while it sorts by the Sunday; "before then" counts when its paragraph names that day. A promise's move (`kind` "promise")
  * is a deadline too. The claims ledger's second batch (Diego's Inés, "necesitaríamos tu bio y tu foto antes del miércoles
- * 18"): a move's sentence (`moved`) gives the open deadline its new day, so it asks by being one: its "before" is read
- * whatever verb asks (a lower bound or a negation still isn't one); a move to a plain day has none.
+ * 18"): a move's own sentence (`moved`, its evidence) gives the open deadline its new day, so it asks by being one: a
+ * "before" in it is read whatever verb asks (a lower bound or a negation still isn't one); its code review: only in that
+ * sentence ("The reviewers meet before Friday." beside the move is no deadline's), and a move to a plain day has none.
  */
-export function beforeOf(kind: string, due: string | null, time: string | null, said: string, o: { moved?: boolean } = {}): { due: string | null; before: string | null } {
+export function beforeOf(kind: string, due: string | null, time: string | null, said: string, o: { moved?: string } = {}): { due: string | null; before: string | null } {
   const day = due ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(due) : null;
   if (!due || !day || time || !DEADLINES.has(kind)) return { due, before: null };
   const at = new Date(Date.UTC(Number(day[1]), Number(day[2]) - 1, Number(day[3])));
   const next = new Date(at.getTime() + 86_400_000);
   const iso = (d: Date) => d.toISOString().slice(0, 10);
   const words = plain(said);
+  const flat = (t: string) => t.replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  const evidence = o.moved ? flat(plain(o.moved)) : "";
   const asked = (start: number, end: number) => {
     // its clause (to a comma, a semicolon or a sentence's end) and its sentence
     const clauseStart = Math.max(...[".", ";", ",", "!", "?", "\n", ":"].map((c) => words.lastIndexOf(c, start))) + 1;
@@ -619,7 +622,8 @@ export function beforeOf(kind: string, due: string | null, time: string | null, 
     const sentenceEnd = Math.min(...[".", "!", "?", "\n"].map((c) => (words.indexOf(c, end) < 0 ? words.length : words.indexOf(c, end))));
     // plan 210 (iteration 4): a question asks too ("¿Tendrías 20 minutos antes de esa fecha?")
     const sentence = words.slice(sentenceStart, sentenceEnd);
-    return !NOT_BEFORE.test(words.slice(clauseStart, start)) && !NOT_AFTER.test(words.slice(end, clauseEnd)) && (o.moved || ASKS.test(sentence) || words[sentenceEnd] === "?" || sentence.includes("¿"));
+    const own = !!evidence && !!flat(sentence) && (evidence.includes(flat(sentence)) || flat(sentence).includes(evidence));
+    return !NOT_BEFORE.test(words.slice(clauseStart, start)) && !NOT_AFTER.test(words.slice(end, clauseEnd)) && (own || ASKS.test(sentence) || words[sentenceEnd] === "?" || sentence.includes("¿"));
   };
   const befores = [...words.matchAll(BEFORE)].filter((b) => asked(b.index!, b.index! + b[0].length));
   // the day it names given as that day (moved back), or the day before it already (kept)
@@ -761,7 +765,7 @@ export function readDatesTask(input: DatedInput): StructuredTask<Wire, DatedResu
             const wall = wallFor(at.at, zoned);
             // plan 210 (iteration 4, revision 11): a move "before" a day is asked as an item's is (a promise's too)
             const kind = label.startsWith("p") ? "promise" : (was?.kind ?? "");
-            const asked = at.due ? beforeOf(kind, at.due, at.time, deadlineWords(evidence, at.due, input.text), { moved: true }) : { due: at.due, before: null };
+            const asked = at.due ? beforeOf(kind, at.due, at.time, deadlineWords(evidence, at.due, input.text), { moved: evidence }) : { due: at.due, before: null };
             return { label, due: asked.due ?? "", time: at.time, evidence, text: both ? text : null, textEvidence: both ? textEvidence : null, ...(asked.before ? { before: asked.before } : {}), ...(wall ? { wall } : {}), ...(at.at !== undefined && asked.due === at.due ? { at: at.at } : {}) };
           })
           .filter((m) => m.label && m.due && m.evidence),
