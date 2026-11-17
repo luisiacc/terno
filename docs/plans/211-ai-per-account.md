@@ -214,3 +214,80 @@ Design §1, "Where each worker asks", Settings → Accounts, and revisions 1–6
 - `account-gate.test.ts`: the gate, the ordering before the event, ingest.
 - Conformance in both stores: the prefs round-trip, `openFor` and `categoryEvidence` by account, and `DigestFact.accountId`.
 - e2e, one test in `what-matters-feed.spec.ts`: `feed=false` with AI on, and `ai=false` with the feed on, with a local Needs you row.
+
+## Part 2, built
+
+Design §2 and revisions 7–11.
+
+**What changed:**
+- **On by default.** `DEFAULT_DATED` and the follow-ups default are `enabled: true`. A stored `false` stays off. The workers still read the AI gate (plans 147, 150) before anything is read, so with no provider (or Dev mode off on a local build) nothing is sent.
+- **`enabledAt: null`** is what "on by default" stores. What it means for the live marks:
+  - The dated reader's live marks were already bounded by the new-mail rule (`markDatedMail`: three days back at most, `NEW_MAIL_MS`), so null reads nothing older than that.
+  - Follow-ups' live sent marks had no floor with null (`markSent` checks `since` only when it's set). The worker's `since` is now `enabledAt ?? now − 30 days` (`liveSince`), for ingest's marks, a confirmed send's, the dated reader's re-marked replies, and the read itself. Nothing older than the check's own window is read live.
+  - Turned on by hand, `enabledAt` is that moment, as before.
+- **No offers.** Gone: `today-dated-offer.tsx` and its place in the feed's header; Settings' offers in `FollowupsGroup` and `DatedGroup`; `useDatedScanOffer`, `answerScan`, `scanOfferText`; the four RPCs, in the contract and the handlers; `scanAnswered` (both) and `offerDismissed`, from the types, the patch schema and the defaults; the 15 keys, en and es. `datedReaderLine` lost its "offer" wording (and its two keys): who reads the mail is said where What matters' settings are (Settings → What matters, the feed's options). The feed's empty state never said "turn on"; it's unchanged.
+- **Stored answers.** `withoutOffers()` leaves `scanAnswered` and `offerDismissed` out of what's read (`readStoredSettings`), never out of the row: an upgrade that failed reads them again on the next start, whatever was written meanwhile (Codex code review, round 2). The upgrade reads them from the row as written (`readOfferAnswers`). Once it has run they're inert.
+- **The check, per account** (`packages/backend/src/account-checks.ts`). `AccountChecks` keeps each worker's record under its own settings key (`dated:checked`, `followups:checked`). It's a reconcile, serialized on one chain. For each account it:
+  - skips one the gate doesn't allow (`reads`: AI and What matters on), or whose first sync isn't done (`syncState.lastSyncAt` as stored);
+  - checks one never recorded, over the whole window;
+  - re-checks a recorded one that stopped being readable after its check, from the first such moment (revisions 7 and 8): the worker's `accountOff` writes it into the record (`withdrawn`), and it's kept until a check covers it;
+  - asks the feature and AI gate (`active()`) only when something is due, and follow-ups' own per-account switch (`wanted`) last;
+  - asks the feature and the account's switches again inside the check, before and after its picks: off meanwhile, nothing's queued and nothing's recorded;
+  - queues first, then writes the record. A crash between them checks again: the dated reader's candidates keep what's marked, so the same messages are picked and `queueScan` ignores them, never the next ones.
+
+  Each worker's `checkAccount` takes the account's candidates from `max(window start, since)`: the dated reader's `scanPicks` (14 days, ≤ 300, the same filters), follow-ups' 30 days (≤ 300).
+- **The moments.**
+  - The worker's start (`checks.start()` opens them; before it, nothing, since the upgrade may not have written the record yet; never if the upgrade failed).
+  - The feature turning on, and AI becoming available: both reach `settingsChanged`, which reconciles while it's on.
+  - A switch back on: `switchesChanged` reconciles the account in both workers when `ai && feed` becomes true. Follow-ups' own switch back on does too (`accounts.update`).
+  - Every pass that ends with the account synced (revision 9): `mailHere()` after the status is written, on the idle path and on the path that ends offline. A recorded account with no gap owed, or one the gate doesn't allow, is a lookup in memory and nothing else; one owed a gap is checked here too.
+  - An account removed is forgotten: SQLite can give its id to the next account.
+- **The upgrade** (revision 10): `upgradeChecks()` runs in `start()` before either worker starts, once (`checks:version`). Where `scanAnswered` was true, every current account is recorded as checked; otherwise none. An account already off then (its AI, What matters, or for follow-ups its own switch) is recorded with a gap from when it went off: what came since wasn't read live, and isn't what was declined. The pure `migrate()` takes no account snapshot.
+- **The stores** (revision 11). `scanCandidates(since, limit, accountId)` in the contract and both stores:
+  - SQLite, the dated reader's through the account's conversations active in the window (`threads_acct_all`: account, then last date) and their messages in it (`messages_thread`), only those sorted; follow-ups' through `messages_sent_date`, which leads with the account. No migration.
+  - IndexedDB, the dated reader's through the account's conversations (`fk_account_id` on threads, skipping those last active before the window) and their messages; follow-ups' through the account's sent mail (the `sent` index), with what's tracked asked of the conversation's rows. Only the window's are sorted.
+  - What the dated reader's candidates leave out is what something was read from (an item); what's marked stays in (the crash case above).
+
+  Conformance covers both accounts' candidates. The perf conformance (`dated-perf.ts`, `followups-perf.ts`) times them on the mailbox's account and on a small account beside it (40 messages, the 57k mailbox's in another), under `SCAN_MS` (25 ms), and removes the small account after. At 57k threads (the machine loaded), the dated reader's: SQLite 6.7 ms for the mailbox's account (its window, 5,700 messages, sorted), 0.09 ms for the small one; IndexedDB 6.6 ms and 0.05 ms. Follow-ups': SQLite 1.0 and 0.06 ms; IndexedDB 2.4 and 0.05 ms.
+- **The demo and e2e.** The dev server's demo mailbox counts as checked (`countAsChecked`): it's made up, and reading it would be thousands of the offline model's reads at every start. The e2e fixture turns What matters and Follow-ups off, as it does Undo send: a test about them turns them on. Otherwise every test's new and sent mail would be read by the offline model.
+
+**Decided differently, and why:**
+- **The record is `{ accountId: { at, gap? } }`, not `scanned: number[]`.** Revisions 7 and 8 need to know whether the account stopped being readable after its check. An id list can't tell a gap that's been checked from one that hasn't: a switch turned back on while the feature was off, or AI unavailable, would be lost. With the gap in the record, any later moment (the feature on, AI back, a restart, the next pass's end) finds it.
+- **The record is in its own settings key, not in `AppSettings`.** It's the backend's bookkeeping. In `AppSettings` it would reach the renderer, the patch schema and a settings export, where another profile's account ids mean other accounts.
+- **The gap is the record's, not `aiOffAt`/`feedOffAt`** (Codex code review 4). The prefs keep each switch's latest moment only: AI off, What matters off, AI on, AI off again, What matters on, AI on, and the second AI moment hides the first. The worker writes the first moment the account stopped being readable into its record, and keeps it until a check covers it. Follow-ups' own per-account switch going off is a gap too. Part 1's `aiOffAt`/`feedOffAt` are still written, and nothing in part 2 reads them now; worth the owner's look whether to keep them.
+- **"First sync done" is read from the stored account**, not the status in memory: the stored state is what a pass writes before `mailHere`, and the tests can set it.
+- **Follow-ups' drain loop** now stops while a provider's minute is held. The dated reader, on by default, wakes follow-ups each time it catches up. A wake that came in during a failing request used to loop straight back into another request.
+- **A sidebar counts read the backend's stop overtook** says nothing now, instead of rejecting with the store closed. What matters' readers, on by default, change its number often enough that a test's teardown caught it (`ai-filter-output.test.ts`, an unhandled rejection every run).
+- **The backend tests' harnesses** that are about one thing turn the others off: summaries' turns What matters and Follow-ups off, since they'd count those requests too. The dated, follow-ups and promise-answers harnesses turn their feature off and on, so `enabledAt` is the setup's moment.
+
+**Codex code review** (round 1, 6 points; each fixed with a regression test that fails without it):
+1. A crash between the queue and the record could pick the next 300 (the dated reader's candidates left out what was marked). They keep it now, so a check made again picks the same messages.
+2. A check whose account went off meanwhile (or the feature) was recorded as done. The check asks again before and after its picks, says whether it ran, and only a run is recorded.
+3. A failed upgrade started the workers with an empty record, so a declined check would be made. The checks stay closed (`start({ checks: false })`) until a start where the upgrade works.
+4. Switches going off and on in turn lost a gap's start (see above).
+5. SQLite's dated candidates walked every account's mail in the window: 12 ms for a small account at 100k messages. They go through the account's conversations now: 0.2 ms.
+6. IndexedDB walked the account's whole mail, and follow-ups materialized every tracked row. The dated reader's walk goes through the account's conversations (skipping those older than the window); follow-ups' keeps the `sent` index (fewer than the conversations) and asks the conversation's rows. Still a walk of the account's conversations or sent mail: the in-memory tables are hashed, with nothing to seek by date. A date-ordered index there is a change to `mem.ts` this part doesn't make; the perf gate holds at 57k.
+
+**Codex code review, round 2** (4 points):
+1. A failed upgrade, then any settings write, dropped the answers from the row, so the next start would check what was declined. They stay in the row now (see "Stored answers"). Test: `settings-stamp.test.ts`.
+2. An account already off at the upgrade was recorded with no gap, so mail it got while off was never checked. It gets a gap from when it went off. Test: `account-checks.test.ts`.
+3. Not fixed: if the record's write fails after the queue's succeeded, and the app then restarts after the queued mail was read, the next check can take the next 300 in the window. It needs a failed settings write and a restart in that order. The record is the same SQLite file as the queue; an atomic write of both would cross the store's settings and its marks. Left as revision 8's accepted loss, the other way round.
+4. IndexedDB's follow-ups candidates read a conversation's rows once per message you sent in it. They're read once a conversation now (a perf point; the gate holds at 2.6 ms, no behaviour test).
+
+**Tests:**
+- `account-checks.test.ts`:
+  - The bookkeeping, with a store in memory: once per account; nothing before the start, unsynced, not allowed or while inactive; a failed check, or one that couldn't run, isn't recorded; a gap from the first moment it stopped being readable, kept through another; an account removed is forgotten.
+  - The real backend with scripted providers:
+    - a first sync's end queues once (14 days received, 30 days sent), and a second pass doesn't;
+    - a first sync that ends offline is checked;
+    - an AI-off account is never checked, and turned on gets its whole window;
+    - checked, then off and back on: only what came since it went off, and the same for the feed's switch; switches off and on in turn, from the first;
+    - What matters off isn't checked, and turned on is;
+    - the upgrade: answered, then an account added and a restart, and only the new account is checked; never answered, every account is; failing, nothing is checked; an account off at the upgrade, from when it went off.
+- `settings-stamp.test.ts`: the defaults, a stored off, the answers read raw and never shown, and kept in the row through a write.
+- `followups.test.ts`, `dated.test.ts`, `promise-answers.test.ts`: the check by its new path (`check()`: the account synced, then the worker's reconcile), each account's, AI-off and feed-off accounts left out, and made again after a crash before its record, the same messages (none of the next). The harnesses turn the features off then on, so `enabledAt` is the setup's moment, as these tests assume.
+- Conformance, both stores and SQLite-WASM: candidates by account (dated, follow-ups).
+- e2e: `today.spec` (the header asks nothing; the dated test turns it on and nothing old is read), `followups.spec` (Settings asks nothing), and the `scanAnswered` presets gone from the feed's specs.
+- Checked to fail with the fix removed: the pass's hook, the offline hook, the gate check, the gap (both its presence and its `since`), the upgrade, the switch-back trigger, `forget`, follow-ups' held drain, each of the first review's four behaviour fixes (1 to 4), and the second's two (1, 2).
+
+**Run:** typecheck and lint clean; every backend unit file (3,089 tests), the touched web unit files, conformance on SQLite, SQLite-WASM and IndexedDB, the seven touched e2e specs (38 passed, 2 skipped as before), `load.perf.test.ts`, and the workloads gate's dated and follow-ups parts on both stores. The SQLite workloads gate fails one assertion, the dated `active()` read (5.1–6.4 ms against 5 ms) with the machine loaded; it fails the same way on the commit before this part (5.4 ms), and this part doesn't touch that read.
