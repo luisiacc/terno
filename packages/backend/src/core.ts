@@ -1289,7 +1289,16 @@ export class BackendCore {
   }
 
   private async sendCounts(): Promise<void> {
-    const counts = await this.today.withCount(await this.store.threads.counts(this.now()));
+    if (this.stopped) return;
+    // a read the stop overtook (the store closed under it) has nothing to tell: plan 211's readers, on by default, change
+    // What matters' number often enough to be caught there
+    let counts: Awaited<ReturnType<TodayService["withCount"]>>;
+    try {
+      counts = await this.today.withCount(await this.store.threads.counts(this.now()));
+    } catch (error) {
+      if (this.stopped) return;
+      throw error;
+    }
     if (this.stopped) return;
     this.server.emit("counts", counts);
     // plan 41: the Dock shows the sidebar's Inbox number (no query of its own)
