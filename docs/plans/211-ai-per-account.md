@@ -167,3 +167,50 @@ Codex read the plan against the code and made 12 points. These revisions overrid
     - The account filter applies to open rows, counts (today.ts:588), history (`historyPage`, today.ts:666), reminders and the digest's inputs.
     - An `accounts.update` that changes `ai` or `feed` tells Today to recompute and announces it (handlers.ts:1388).
     - The tests set `feed=false, ai=true` and `ai=false, feed=true` separately, including local Needs you rows, never both at once.
+
+## Part 1, built
+
+Design §1, "Where each worker asks", Settings → Accounts, and revisions 1–6 and 12. §2 and revisions 7–11 are part 2's; part 1 only records `aiOffAt` / `feedOffAt`.
+
+**What changed:**
+- **The switches.** `ai` and `feed` in `AccountPrefs`, on plan 142's path: `Account`, `AccountPatch`, `accountPrefs()`, `withAccountPrefs()`, the contract and the handler. Turning one off records `aiOffAt` / `feedOffAt` (the handler passes `offAt`, a backend-only patch field). The first moment is kept while it stays off, and kept again when it's back on, for part 2. The stores share one test of what a patch keeps in the config, `patchesAccountPrefs()`, so a new preference can't miss one of them.
+- **The gate.** `packages/backend/src/account-gate.ts` holds a map of each account's switches. It answers `ai()`, `feed()` and `reads()` (both on), and lists `aiOff` / `readsOff` / `feedOff` for store filters. An account it hasn't heard of is on. It's filled at `init()` (before any worker starts). It's refreshed in `emitAccounts()` before the event goes out, and by `accounts.update` right after the write (`put`). A change is told synchronously to `BackendCore.switchesChanged`, which:
+  - AI off: aborts in flight in summaries, Reply ready, Ask, AI actions (`invalidate`) and drafting;
+  - AI or feed off: aborts in follow-ups and the dated reader;
+  - always: drops the category examples and the voice snapshots, merges "you" again, and recomputes and announces Today and the digest.
+- **The seams** are as the table says, plus revisions 1–5. Two of the store reads gained an account filter, in both stores, applied before the limit (conformance in both): `categorize.categoryEvidence({ excludeAccounts })` and `dated.openFor({ excludeAccounts })`. `DigestFact` gained `accountId`. A filter only applies when some account is off, so the usual path reads nothing more.
+- **The feed** (revision 12). `TodayService` filters by account only while some account is out, with one batched `actionFacts` read:
+  - AI-made rows (dated items, promises, digest lines, history) need `reads()`;
+  - local rows (Needs you, your reminders, the automated list) need `feed()`;
+  - a waiting row's summary line needs `ai()`.
+
+  The dated rows are filtered inside their generation cache, so the count path stays as it was.
+- **UI.** `AccountEditor` shows the two switches (with the plan's copy, en and es) where AI features can run (`aiFeaturesOffered`, Today's rule). With the account's AI off, it hides Follow-ups and the whole `AccountWriting` block (instructions, Reply ready, use general instructions). The settings search index follows the same rules. In `lib/ai.ts`, `aiAllowed`, `summariesOffered`, `followupsOffered` and `repliesOffered` take an optional account. The reader, the thread's items and follow-ups, and the palette's Summarize pass the conversation's account. `canDraft` / `useCanDraft` take the draft's account and its conversation's.
+
+**Decided differently, and why:**
+- **`useSentMail`** has no per-account switch in Settings, so there's nothing to hide. What the account's writing settings hold (instructions, Reply ready, use general) is hidden as a block instead.
+- **The hint copy** is the plan's as written. Beside an "on" switch it describes what "off" does. The neighbouring Gmail switch says "On: …". This is worth the owner's look.
+- **Drafting withdrawal** (Codex code review 3) aborts every drafting request in flight when any account's AI goes off. It doesn't track each request's source accounts. A draft can carry another account's mail through its conversation, a borrowed voice or a contact. The moment is rare, and asked again, the request goes without that account.
+- **"You"** (revision 5, code review 4): until the learner has merged it again, a draft leaves out a "you" merged from an AI-off account. It leaves out a "you" judgment whose last study read one, until a study that didn't.
+- **Ask's earlier turns** (code review 6) are filtered by what each turn drew on (`AskTurn.accountIds`, from the stored `account_ids_json`), not only by what it cited. The accounts named to the planner are tracked apart (`Asking.named`), so the history's provenance isn't widened by them.
+- **The dated reader** (code review 5) aborts a reading that carries any open item when an account goes off. Read again, it goes without that account's items.
+- **The follow-ups list** (the sidebar's view, not the feed) still shows an AI-off account's promises. Its notices don't fire, and the reader hides them. Plan 211 names only the feed.
+
+**Codex code review** (11 points, all fixed with a regression test that fails without the fix):
+1. `ai.readDraft` takes the draft's account and conversation, and refuses.
+2. `resolveIntent` refuses for an AI-off sending or thread account. The contact index's `resolveExact({ excludeAccounts })` leaves out anyone known only through excluded accounts.
+3. Drafting in flight stops on any withdrawal.
+4. "You" is withheld.
+5. A dated reading with another account's open items stops.
+6. Ask's provenance.
+7. Ask's planner accounts.
+8. Follow-ups don't announce a hidden promise.
+9. An open digest page hears `todayDigest` on every switch change.
+10. Drafting controls follow the draft's accounts.
+11. The follow-ups withdrawal test now asserts the abort at the provider, before any answer.
+
+**Tests:**
+- Unit, one per seam, in each worker's file. A sample of them was checked to fail with the check removed.
+- `account-gate.test.ts`: the gate, the ordering before the event, ingest.
+- Conformance in both stores: the prefs round-trip, `openFor` and `categoryEvidence` by account, and `DigestFact.accountId`.
+- e2e, one test in `what-matters-feed.spec.ts`: `feed=false` with AI on, and `ai=false` with the feed on, with a local Needs you row.
