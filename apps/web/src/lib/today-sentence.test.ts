@@ -125,7 +125,7 @@ describe("Spanish", () => {
 });
 
 describe("the history's lines (plan 210)", () => {
-  const line = (kind: "pay" | "alert" | "respond" | "promise", outcome: "done" | "dismissed" | "settled" | "over" | "replaced", at: number, text = "Pay $187.42 for the electricity bill", more: { on?: number; reason?: string } = {}) => ({ thread, kind, outcome, text, key: { at, src: kind === "promise" ? (1 as const) : (0 as const), id: 1 }, ...more });
+  const line = (kind: "pay" | "alert" | "respond" | "promise", outcome: "done" | "dismissed" | "settled" | "over" | "replaced" | "changed", at: number, text = "Pay $187.42 for the electricity bill", more: { on?: number; reason?: string } = {}) => ({ thread, kind, outcome, text, key: { at, src: kind === "promise" ? (1 as const) : (0 as const), id: 1 }, ...more });
 
   it("says the item as the open part did, and in the column what happened and when", () => {
     expect(historySentence(line("pay", "done", at(13, 8)))).toBe("Pay $187.42 for the electricity bill.");
@@ -149,6 +149,8 @@ describe("the history's lines (plan 210)", () => {
     // plan 210 (iteration 4): handed on by a confirmed forward, to whom, by first name (an address's local part with none)
     expect(historyWhen({ ...line("pay", "done", at(10)), outcome: "handed", handedTo: { name: "Jess Okafor", email: "jess@home.test" } }, NOW)).toBe("Handed to Jess Tue");
     expect(historyWhen({ ...line("promise", "done", at(13, 8)), outcome: "handed", handedTo: { name: "", email: "sam.lee@home.test" } }, NOW)).toBe("Handed to sam.lee today");
+    // round 15's second morning: an open item the user changed is still open, never read as finished among Earlier's lines
+    expect(historyWhen(line("respond", "changed", at(12, 16, 50)), NOW)).toBe("Still open · changed yesterday");
   });
 
   it("in Spanish", () => {
@@ -157,6 +159,7 @@ describe("the history's lines (plan 210)", () => {
     expect(historyWhen(line("pay", "over", at(11)), NOW)).toBe("Pasó el mié");
     expect(historyWhen(line("promise", "dismissed", at(11)), NOW)).toBe("Quitado el mié");
     expect(historyWhen(line("promise", "replaced", at(11)), NOW)).toBe("Reemplazado el mié");
+    expect(historyWhen(line("pay", "changed", at(11)), NOW)).toBe("Sigue pendiente · cambiado el mié");
     expect(historyWhen({ ...line("pay", "done", at(10)), outcome: "handed", handedTo: { name: "Jess Okafor", email: "jess@home.test" } }, NOW)).toBe("Delegado a Jess el mar");
     expect(historyWhen(line("pay", "settled", at(13, 8), undefined, { on: at(11), reason: "settled" }), NOW)).toBe("Pagado el mié");
     expect(historyWhen(line("respond", "settled", at(13, 8), undefined, { on: at(12), reason: "answered" }), NOW)).toBe("Respondido ayer");

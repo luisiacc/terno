@@ -2656,7 +2656,8 @@ It contains none of your mail, contacts, settings or keys.
   "whatMatters.history.answered": "Answered {day}",
   "whatMatters.history.over": "Over {day}",
   "whatMatters.history.replaced": "Replaced {day}",
-  "whatMatters.history.changed": "Changed {day}",
+  // round 15's second morning: a change isn't a finish; the line says the item is still open
+  "whatMatters.history.changed": "Still open · changed {day}",
   "whatMatters.history.handed": "Handed to {name} {day}",
   "whatMatters.handTo.action": "Hand to…",
   "whatMatters.handTo.item": "Hand to someone: {text}",

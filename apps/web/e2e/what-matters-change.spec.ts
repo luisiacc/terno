@@ -132,9 +132,9 @@ test("plan 210 (iteration 4): Change… from the row's menu, the reader's line a
     await expect(snack(page)).toContainText("Pay the Lumen invoice");
     await expect.poll(async () => (await itemOf(lumen)).dueDay).toBe(dayKey(5));
     expect(await itemOf(lumen)).toMatchObject({ dueAt: moment(5, 16), timed: true, revision: before.revision + 1 });
-    // Earlier: "Changed today", the item still open above
+    // Earlier: "Still open · changed today" (round 15's second morning: a change is no finish), the item still open above
     await reach(page, "Pay the Lumen invoice", historyLine);
-    await expect(historyLine(page, "Pay the Lumen invoice")).toContainText("Changed today");
+    await expect(historyLine(page, "Pay the Lumen invoice")).toContainText("Still open · changed today");
     expect((await lines()).open).toContain(`dated:${before.id}`);
     expect((await lines()).history).toEqual([`change:dated:${before.id}`]);
     await focusList(page);

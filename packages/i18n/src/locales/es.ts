@@ -2634,7 +2634,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "whatMatters.history.answered": "Respondido {day}",
   "whatMatters.history.over": "Pasó {day}",
   "whatMatters.history.replaced": "Reemplazado {day}",
-  "whatMatters.history.changed": "Cambiado {day}",
+  "whatMatters.history.changed": "Sigue pendiente · cambiado {day}",
   "whatMatters.history.handed": "Delegado a {name} {day}",
   "whatMatters.handTo.action": "Delegar…",
   "whatMatters.handTo.item": "Delegar: {text}",
