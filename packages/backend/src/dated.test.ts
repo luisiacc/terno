@@ -3476,6 +3476,7 @@ describe("round 16 (Priya's board meeting): one occasion read twice moves togeth
 describe("round 18's faults", () => {
   const person = (text: string, o: { arrivedAt?: number; reader?: string; from?: string } = {}) => ({ text, subject: "Re: hola", arrivedAt: o.arrivedAt ?? NOW, open: new Map<string, DatedRow>(), fromScan: false, now: o.arrivedAt ?? NOW, sender: { person: true }, reader: { name: o.reader ?? "Jordan Ellis", addressed: "to" as const }, from: o.from ?? "Nina Alvarez" });
   const days = (r: ReturnType<typeof checkDates>) => r.rows.map((x) => x.dueDay);
+  const kinds = (r: ReturnType<typeof checkDates>) => r.rows.map((x) => x.kind);
 
   it("a month's end the mail states is that month's last day, never the day before it (Jordan's Tallis call, Diego's renewal; en, es)", () => {
     const TALLIS = "Jordan,\n\nHeads up — Tallis is wobbling. Usage is down 38% since September and their renewal ($410k ARR) is December 15.\n\nI think we need an exec-to-exec call (our CRO with their new CIO) before end of the month, otherwise procurement will treat this as a new evaluation. Can you set that up? I can prep the usage story.\n\nNina Alvarez";
@@ -3499,5 +3500,28 @@ describe("round 18's faults", () => {
     expect(ask("I need it by the end of December.", "2026-11-29")).toBe("2026-11-29");
     expect(ask("Envíamelo a finales de mes.", "2026-11-29")).toBe("2026-11-29");
     expect(ask("I need it before Monday the 30th.", "2026-11-29")).toBe("2026-11-29");
+  });
+
+  it("a plan from a proposal the reader hasn't accepted is none; the request it waits on, a bill and an accepted one stand (Diego's workshop; en, es)", () => {
+    const FER = "¡Hola Diego!\n\nTe escribo por lo que platicamos en la cocina 😄 ¿Siempre sí te animas a dar el taller \"Identidad para negocios pequeños\" el jueves 19 a las 18:00 en la sala grande?\n\nNecesito que me confirmes antes del lunes para meterlo al newsletter de la comunidad y abrir el registro. Si te late, mándame también un título final y dos líneas de descripción.\n\nGracias!!\nFer";
+    // the panel's reading (#66)
+    const workshop = { kind: "event", text: "Taller «Identidad para negocios pequeños» en la sala grande", quote: "el jueves 19 a las 18:00 en la sala grande", due: "2026-11-19", time: "18:00" };
+    const confirm = { kind: "respond", text: "Confirmarle a Fer si darás el taller y enviarle título y descripción", quote: "Necesito que me confirmes antes del lunes para meterlo al newsletter de la comunidad y abrir el registro. Si te late, mándame también un título final y dos líneas de descripción.", due: "2026-11-15", time: null };
+    const fer = person(FER, { arrivedAt: at(2026, 11, 11, 16, 30), reader: "Diego Ramírez Castañeda", from: "Fer" });
+    expect(kinds(checkDates({ items: [workshop, confirm], settled: [] }, fer))).toEqual(["respond"]);
+    // accepted: his own open promise to give it, which the mail names, makes it his plan
+    const promises = new Map([["p1", { id: 3, revision: 0, text: "dar el taller «Identidad para negocios pequeños» el jueves 19" }]]);
+    expect(kinds(checkDates({ items: [workshop, confirm], settled: [] }, { ...fer, promises }))).toEqual(["event", "respond"]);
+    // en, a question, or a yes waited on anywhere
+    const lead = { kind: "event", text: "Onboarding workshop", quote: "leading the onboarding workshop on Thursday, November 19 at 3:00 PM", due: "2026-11-19", time: "15:00" };
+    expect(checkDates({ items: [lead], settled: [] }, person("Would you be up for leading the onboarding workshop on Thursday, November 19 at 3:00 PM?")).rows).toEqual([]);
+    const kickoff = { ...lead, text: "Kickoff", quote: "The kickoff is Thursday, November 19 at 3 PM." };
+    expect(checkDates({ items: [kickoff], settled: [] }, person("The kickoff is Thursday, November 19 at 3 PM. If you're in, I'll send the brief.")).rows).toEqual([]);
+    // a bill beside the proposal stands (the proposal's own sentences only); so does a mail that proposes nothing
+    const bill = { kind: "pay", text: "Pagar la factura de octubre", quote: "Tu factura de octubre vence el 20 de noviembre a las 17:00.", due: "2026-11-20", time: "17:00" };
+    expect(kinds(checkDates({ items: [bill, workshop], settled: [] }, { ...fer, text: `${FER}\n\nTu factura de octubre vence el 20 de noviembre a las 17:00.` }))).toEqual(["pay"]);
+    const meeting = { ...lead, quote: "We're meeting Thursday, November 19 at 3:00 PM in the big room." };
+    expect(checkDates({ items: [meeting], settled: [] }, person("We're meeting Thursday, November 19 at 3:00 PM in the big room.")).rows).toHaveLength(1);
+    expect(checkDates({ items: [{ ...meeting, quote: "The board meets Thursday, November 19 at 3:00 PM." }], settled: [] }, person("Could you send me the deck? The board meets Thursday, November 19 at 3:00 PM.")).rows).toHaveLength(1);
   });
 });

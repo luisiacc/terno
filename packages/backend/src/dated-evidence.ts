@@ -662,3 +662,33 @@ export function startClock(quote: string): { time: string; zone: string | null }
   if (named && !zone) return null;
   return { time: `${String(s.h).padStart(2, "0")}:${String(s.m).padStart(2, "0")}`, zone };
 }
+
+/**
+ * The claims ledger's third batch (Diego's workshop Fer still asks about, Carla's gift box he hasn't taken on): a mail that
+ * asks whether the reader will take something on proposes it, and its days are the proposal's. A question that asks it
+ * ("would you like to…?", "are you up for…?", "do you have time…?", "¿te animas…?", "¿te late?", "¿te da tiempo…?"), or words
+ * that wait on the reader's yes anywhere ("if you're in", "if you accept", "si aceptas", "si te late", "propuesta"), as
+ * `norm` reads them.
+ */
+const PROPOSES_ASKED = /\b(?:would you (?:like|want|be (?:up for|willing|interested|open|keen)|consider)|are you (?:up for|in|interested|willing|open to|keen)|(?:do|would) you have (?:the )?(?:time|bandwidth|capacity|room)|(?:can|could|would) you take (?:it|this|that) on|up for (?:it|this|that)|interested in|te animas|se animan|te late|les late|te interesa|te da tiempo|tienes tiempo|te gustaria|te apuntas|te sumas|estarias dispuest\w*|aceptas|aceptarias|te lo avientas)\b/u;
+const PROPOSES = /\b(?:if you(?: re| are) (?:in|up for it|interested|keen)|if you accept|if you agree|if you say yes|if you take (?:it|this|the job)|si (?:aceptas|te late|te interesa|te animas|te da tiempo|dices que si|lo tomas|le entras)|propuesta|proposal)\b/u;
+/**
+ * Its code review: a bill's or a payment's words, which no proposal is ("¿Te da tiempo de pagar?" asks about a bill owed),
+ * and a request of the reader's own beside the proposal ("please send the signed contract by Friday at 5 PM")
+ */
+const PAYMENT = /\b(?:pay\w*|paid|bill\w*|invoice\w*|charg\w*|balance|amount|statement|premium|subscription\w*|renew\w*|pag\w*|factura\w*|cobr\w*|recibo\w*|saldo|importe|cuota|prima|suscripcion\w*|renov\w*)\b/u;
+const ASKS_OWN = /\b(?:please|could you|can you|need you to|por favor|puedes|podrias|necesito que|mandame|enviame)\b/u;
+const proposing = (s: { said: string; read: string }): boolean => !PAYMENT.test(s.read) && ((/[?¿]/u.test(s.said) && PROPOSES_ASKED.test(s.read)) || PROPOSES.test(s.read));
+
+
+/**
+ * The sentences a proposal the reader hasn't accepted holds (`n` of `sentencesOf`): its own (a proposing question, or words
+ * that wait on their yes), and, in a mail that has one, every other but a bill's or a payment's and a request of the
+ * reader's own. Its days are the proposal's: no plan or deadline of theirs. None in a mail that proposes nothing. Read by the
+ * second look (what it never asks about) and by `checkDates` (round 18, the first reading's plan read from it).
+ */
+export function proposedIn(sentences: Sentences): (n: number) => boolean {
+  const own = new Set(sentences.flatMap((s, n) => (proposing(s) ? [n] : [])));
+  if (!own.size) return () => false;
+  return (n) => own.has(n) || !(PAYMENT.test(sentences[n]!.read) || ASKS_OWN.test(sentences[n]!.read));
+}

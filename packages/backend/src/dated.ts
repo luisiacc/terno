@@ -9,7 +9,7 @@ import { silenced, silenceOf, withoutMuted } from "./dated-mutes";
 import { secondLook } from "./dated-second-look";
 import { UI_LOCALE_KEY } from "./forwarding";
 import { handledItself } from "./dated-automatic";
-import { amountsOf, bareDayAhead, contextOf, giftCardScam, insideQuotes, quoteSpan, type Sentences, namesApart, namesItem, namingWords, negatedReceipt, norm, otherAmounts, otherIds, monthEndDay, paragraphsOf, plainEvidence, replacesPlainly, sameObject, sameParcel, sameThing, saysReplaced, saysWhen, scamPressure, sentencesOf, sentencesWith, settlesKind, startClock, zeroNamesItem, zeroOnly } from "./dated-evidence";
+import { amountsOf, bareDayAhead, contextOf, giftCardScam, insideQuotes, quoteSpan, type Sentences, namesApart, namesItem, namingWords, negatedReceipt, norm, otherAmounts, otherIds, monthEndDay, namesSpecifically, paragraphsOf, plainEvidence, proposedIn, replacesPlainly, sameObject, sameParcel, sameThing, saysReplaced, saysWhen, scamPressure, sentencesOf, sentencesWith, settlesKind, startClock, zeroNamesItem, zeroOnly } from "./dated-evidence";
 import { mayRelay, relayedAsk, relays, type Relay } from "./dated-relay";
 import { untrustedSenders, withoutUntrusted } from "./suspicious-sender";
 import { sameEvent } from "./today-links";
@@ -94,6 +94,8 @@ const TWO_A_DAY: ReadonlySet<string> = new Set(["respond", "ask", "event", "deli
 const PRESSED: ReadonlySet<string> = new Set(["alert", "respond", "expire", "ask"]);
 /** round 17: a receipt's paid line ("AMOUNT PAID: $64.58", "Total pagado: $64.58", "Payment received: $64.58"), as `norm` reads it */
 const PAID_LINE = /\b(?:amount paid|total paid|paid|payment (?:received|amount)|monto pagado|total pagado|importe pagado|pagado|pago recibido)\b/u;
+/** round 18: the kinds a proposal's mail still gives: a bill, a request (the answer it waits on), an alert */
+const UNPROPOSED: ReadonlySet<string> = new Set(["respond", "ask", "pay", "alert"]);
 
 /** A name's words, as a quote's are read: "Lucía Romero" → ["lucia", "romero"]; an initial or a bare letter isn't one. */
 const nameWords = (name: string) => norm(name).split(" ").filter((w) => w.length >= 2);
@@ -939,6 +941,18 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
   // plan 210 (iteration 3, point 7): an automated sender's mail that cancels the reader's appointment may ask them to book again
   const cancelled = [...input.open.values()].some((r) => r.kind === "event" && settledIds.has(r.id)) || CANCELLED.test(norm(input.text));
   const rebooks = (ask: { quote: string }) => cancelled && input.reader?.addressed === "to" && REBOOK.test(norm(contextOf(ask.quote, sentences)));
+  /**
+   * Round 18 (Diego's workshop, Thursday's plan while Fer still waits on his yes): a mail that proposes something the reader
+   * hasn't accepted (`proposedIn`, as the second look reads it) gives no plan or deadline from the proposal's sentences: a
+   * bill, a request (the answer it waits on) and an alert stand. Their own word for it, an open promise of theirs the mail
+   * names (their later mail that accepted it), is an acceptance, and its days are read as any.
+   */
+  const accepted = [...(input.promises ?? new Map()).values()].some((p) => !!p.text && namesSpecifically({ text: p.text, quote: "" }, input.text, input.from));
+  const proposed = accepted ? () => false : proposedIn(sentences);
+  const fromProposal = (quote: string) => {
+    const at = sentencesWith(quote, sentences);
+    return at.length > 0 && at.every(proposed);
+  };
   let asked = false;
   // plan 210 (iteration 4, revision 11): "Reply C to confirm" is an ask that waits on the reader from its mail's day and ends
   // with the event it confirms (this mail's one event), whatever day the model gave it (v13 dated it on the mail's own day,
@@ -963,6 +977,8 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     if ((kind === "event" || kind === "ask") && input.sender?.person && wellWishOnly(contextOf(item.quote, sentences))) continue;
     // the claims ledger's third batch: the sender's own opening or launch, the reader not invited, is no plan of theirs
     if (kind === "event" && theirsOnly(contextOf(item.quote, sentences), `${input.subject}\n${input.text}`)) continue;
+    // round 18: a plan or a deadline from a proposal the reader hasn't accepted
+    if (!UNPROPOSED.has(kind) && fromProposal(item.quote)) continue;
     // the second morning's code review: a gathering a list's post offers to whoever on it, the reader not addressed
     if ((kind === "event" || kind === "delivery") && input.listed && input.reader?.addressed === "none" && offeredToTheList(contextOf(item.quote, paragraphs), input.reader)) continue;
     // plan 210 (iteration 4's code review): what a scam says happened or demands is no item, an alert, a request or an

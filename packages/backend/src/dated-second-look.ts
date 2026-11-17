@@ -1,7 +1,7 @@
 import { DATED_AGAIN_CHARS, DATED_AGAIN_SENTENCES, fitDates, type DatedInput, type DatedResult } from "@terno/ai";
 import { DATED_KINDS, datedGroup, dayEnd, missedUntil, namesDayFrom, partOfDayIn, saysClock, saysDay, type DatedKind } from "@terno/core";
 import { handledItself } from "./dated-automatic";
-import { namesOtherThan, namesSpecifically, norm, otherAmounts, otherIds, otherPeriod, paragraphsOf, scamPressure, sentencesOf, sentencesWith, settlesKind, type Sentences } from "./dated-evidence";
+import { namesOtherThan, namesSpecifically, norm, otherAmounts, otherIds, otherPeriod, paragraphsOf, proposedIn, scamPressure, sentencesOf, sentencesWith, settlesKind, type Sentences } from "./dated-evidence";
 
 /**
  * Plan 210 (iteration 5, revision 3, the owner's "a second look at a dated sentence that got no item"): a sentence of a read
@@ -17,23 +17,6 @@ const CLOSING = /\b(?:clos(?:e|es|ing)|deadline|due|expir(?:e|es|ing)|last day|c
 const NOT_A_DAY = /[$€£]\s?\d[\d.,]*|\d[\d.,]*\s?(?:€|£|\b(?:usd|eur|mxn|gbp|cad)\b)|\b\d{1,3}(?:st|nd|rd|th)\s+(?:st|street|ave|avenue|av|blvd|rd|road|floor|fl)\b/giu;
 /** a schedule, not a moment: "runs every Monday at 6:00 AM", "cada lunes" */
 const RECURRING = /\b(?:every|each|weekly|daily|cada|todos los|todas las)\b/u;
-/**
- * The claims ledger's third batch (Diego's workshop Fer still asks about, Carla's gift box he hasn't taken on): a mail that
- * asks whether the reader will take something on proposes it, and its days are the proposal's. A question that asks it
- * ("would you like to…?", "are you up for…?", "do you have time…?", "¿te animas…?", "¿te late?", "¿te da tiempo…?"), or words
- * that wait on the reader's yes anywhere ("if you're in", "if you accept", "si aceptas", "si te late", "propuesta"), as
- * `norm` reads them.
- */
-const PROPOSES_ASKED = /\b(?:would you (?:like|want|be (?:up for|willing|interested|open|keen)|consider)|are you (?:up for|in|interested|willing|open to|keen)|(?:do|would) you have (?:the )?(?:time|bandwidth|capacity|room)|(?:can|could|would) you take (?:it|this|that) on|up for (?:it|this|that)|interested in|te animas|se animan|te late|les late|te interesa|te da tiempo|tienes tiempo|te gustaria|te apuntas|te sumas|estarias dispuest\w*|aceptas|aceptarias|te lo avientas)\b/u;
-const PROPOSES = /\b(?:if you(?: re| are) (?:in|up for it|interested|keen)|if you accept|if you agree|if you say yes|if you take (?:it|this|the job)|si (?:aceptas|te late|te interesa|te animas|te da tiempo|dices que si|lo tomas|le entras)|propuesta|proposal)\b/u;
-/**
- * Its code review: a bill's or a payment's words, which no proposal is ("¿Te da tiempo de pagar?" asks about a bill owed),
- * and a request of the reader's own beside the proposal ("please send the signed contract by Friday at 5 PM")
- */
-const PAYMENT = /\b(?:pay\w*|paid|bill\w*|invoice\w*|charg\w*|balance|amount|statement|premium|subscription\w*|renew\w*|pag\w*|factura\w*|cobr\w*|recibo\w*|saldo|importe|cuota|prima|suscripcion\w*|renov\w*)\b/u;
-const ASKS_OWN = /\b(?:please|could you|can you|need you to|por favor|puedes|podrias|necesito que|mandame|enviame)\b/u;
-const proposing = (s: { said: string; read: string }): boolean => !PAYMENT.test(s.read) && ((/[?¿]/u.test(s.said) && PROPOSES_ASKED.test(s.read)) || PROPOSES.test(s.read));
-
 /** a list's line ("- RevOps Live — Thursday, Dec 3, 1 PM ET", "• Dec 3 — Summit", "1) …") */
 const LISTED = /^\s*(?:[-–—•·*▪]|\d{1,2}[.)])\s/u;
 
@@ -128,8 +111,7 @@ export function lookAt(i: LookInput): string[] {
   // payment's, nor a request of the reader's own beside it (its code review); their own word for it (a promise of theirs the
   // mail names, shown with it) is an acceptance, and its days are read again as any
   const accepted = i.shown.some((o) => o.kind === "promise" && !!o.text && namesSpecifically({ text: o.text, quote: "" }, i.text, i.from));
-  const proposal = accepted ? [] : sentences.flatMap((s, n) => (proposing(s) ? [n] : []));
-  const proposed = (n: number) => proposal.length > 0 && (proposal.includes(n) || !(PAYMENT.test(sentences[n]!.read) || ASKS_OWN.test(sentences[n]!.read)));
+  const proposed = accepted ? () => false : proposedIn(sentences);
   const paragraphs = paragraphsOf(i.text);
   const paragraphOf = (n: number) => paragraphs.findIndex((p) => p.read.includes(sentences[n]!.read));
   // iteration 5's code review (point 2): a bill or a renewal by itself only as the checks read it of this sentence's own
