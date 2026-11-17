@@ -6,7 +6,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createAi, DATED_PROMPT_VERSION, DATED_TEXT_CHARS, promptText, type AiOptions, type Completion, type CompletionRequest, type ProviderConfig } from "@terno/ai";
-import { calendarService, dayKeyOf, type DatedRow, type HistoryKey } from "@terno/core";
+import { calendarService, DATED_SCAN_MAX, dayKeyOf, type DatedRow, type HistoryKey } from "@terno/core";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { demoRegistry } from "@terno/mail";
 import { msg, threadOf } from "@terno/store/conformance";
@@ -3642,6 +3642,17 @@ describe("plan 211: an account's AI and What matters switches", () => {
     await read();
     expect(sent()).toContain("Another reminder");
     expect(sent()).not.toContain("Pay the water bill");
+  });
+
+  it("Codex code review 1: a check made again (a crash before its record) picks the same messages, never the next ones", async () => {
+    const { backend, model, clock, account, check } = await setup();
+    // the reader holds its first request: what's queued stays marked
+    model.gate = new Promise(() => {});
+    const many = Array.from({ length: DATED_SCAN_MAX + 5 }, (_, i) => msg({ accountId: account.id, from: { name: `Person ${i}`, email: `p${i}@people.test` }, to: [me], date: clock.now - DAY - i * 60_000, subject: "Lunch?", bodyText: "Could we meet on Thursday?", providerMsgId: `many-${i}` }));
+    await backend.ingestSliced(many, true);
+    expect(await check()).toBe(DATED_SCAN_MAX);
+    await backend.dated.accountRemoved(account.id);
+    expect(await check()).toBe(0);
   });
 
   it("the check of mail already here is each account's, and leaves out an account with AI or What matters off", async () => {

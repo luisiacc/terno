@@ -258,7 +258,8 @@ export interface DatedStore {
   };
   /**
    * an account's received mail since then a check could read, newest first: inbound, not a draft, sent, spam or trash, not
-   * from the user, not already marked or read (plan 211: one account at a time, read through its own mail, never the box's)
+   * from the user, nothing read from it yet (plan 211: one account at a time, read through its own mail, never the box's;
+   * what's marked stays in, so a check made again picks the same messages, which `queueScan` ignores)
    */
   scanCandidates(since: number, limit: number, accountId: number): Promise<number[]>;
   source(messageId: number): Promise<DatedSource | null>;

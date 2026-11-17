@@ -1132,13 +1132,14 @@ export class DatedWorker {
     return settings.dated.enabled && (await this.host.allowed(settings)) ? { since: settings.dated.enabledAt } : undefined;
   }
 
-  async start(): Promise<void> {
+  /** `checks: false`: the upgrade of the offers' answers failed (Codex code review 3): nothing is checked until a start where it worked. */
+  async start(o: { checks?: boolean } = {}): Promise<void> {
     const settings = await this.host.settings();
     this.active = settings.dated.enabled;
     if (this.stopped) return;
     if (this.active) this.wake();
     // plan 211: accounts synced and never checked (or owed a gap), in the background, while it's on
-    void this.checks.start();
+    if (o.checks !== false) void this.checks.start();
   }
 
   /** Once a day with nothing to read too: the day's bounds, and what's over retired. */
@@ -1239,6 +1240,8 @@ export class DatedWorker {
     const leaving = this.leaving;
     // its open items may be another account's (the same sender's): asked again, it goes without that account's
     if (leaving && (leaving.accountId === accountId || leaving.open.length)) leaving.stop.abort();
+    // plan 211: what comes from now on is owed a check when it's back
+    void this.checks.withdrawn(accountId);
   }
 
   /**
@@ -1556,14 +1559,16 @@ export class DatedWorker {
    * Plan 211: one account's check, queued: its last 14 days, at most `DATED_SCAN_MAX`, by the same picks; from `since` when it's
    * a gap's (a switch off, then on again: revisions 7 and 8), still within the 14 days. `queueScan` ignores what's marked.
    */
-  private async checkAccount(accountId: number, since: number | null): Promise<number> {
+  private async checkAccount(accountId: number, since: number | null): Promise<boolean> {
+    // asked again here, and once the picks are made (Codex code review 2): off meanwhile, it isn't checked, and isn't recorded
+    const allowed = () => this.isActive && this.host.gate.reads(accountId);
+    if (!allowed()) return false;
     const now = this.host.now();
     const from = Math.max(now - DATED_SCAN_DAYS * 86_400_000, since ?? -Infinity);
     const ids = await this.scanPicks(accountId, from);
-    if (!this.isActive || !this.host.gate.reads(accountId)) return 0;
-    const queued = await this.host.store.dated.marks.queueScan(ids, now);
-    if (queued) this.wake();
-    return queued;
+    if (!allowed()) return false;
+    if (await this.host.store.dated.marks.queueScan(ids, now)) this.wake();
+    return true;
   }
 
   status(): { blockedBy: { kind: AiErrorKind; message: string } | null } {

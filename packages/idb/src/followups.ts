@@ -108,11 +108,18 @@ export function pruneSentMarks(c: Ctx, now: number): number {
   return old.length;
 }
 
-/** Plan 211 (revision 11): one account's, through its sent mail (the `sent` index), only the window's sorted. */
+/**
+ * Plan 211 (revision 11, Codex code review 6): one account's, never another's mail: its sent mail (the `sent` index, fewer
+ * than its conversations), the window's taken as it's walked, what's tracked asked of its conversation's rows (an index),
+ * only the window's sorted.
+ */
 export function followupScanCandidates(c: Ctx, since: number, limit: number, accountId: number): number[] {
-  const tracked = new Set([...T(c, "followups").all()].map((r) => r.message_id));
+  const followups = T(c, "followups");
   const out: R[] = [];
-  for (const m of T(c, "messages").by("sent", accountId)) if (!m.is_spam && !m.is_trash && m.date >= since && m.list_id == null && !m.is_bulk && !unconfirmed(m) && !tracked.has(m.id)) out.push(m);
+  for (const m of T(c, "messages").by("sent", accountId)) {
+    if (m.is_spam || m.is_trash || m.date < since || m.list_id != null || m.is_bulk || unconfirmed(m)) continue;
+    if (!followups.by("fk_thread_id", m.thread_id).some((r) => r.message_id === m.id)) out.push(m);
+  }
   return out.sort((a, b) => b.date - a.date || b.id - a.id).slice(0, limit).map((m) => m.id);
 }
 

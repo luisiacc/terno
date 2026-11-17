@@ -483,7 +483,8 @@ export class FollowupWorker {
     return this.paused;
   }
 
-  async start(): Promise<void> {
+  /** `checks: false`: the upgrade of the offers' answers failed (Codex code review 3): nothing is checked until a start where it worked. */
+  async start(o: { checks?: boolean } = {}): Promise<void> {
     const { enabled, enabledAt, nudgeAfterDays } = (await this.host.settings()).followups;
     this.active = enabled;
     this.enabledAt = enabledAt;
@@ -492,7 +493,7 @@ export class FollowupWorker {
     await this.look();
     if (this.active) this.wake();
     // plan 211: accounts synced and never checked (or owed a gap), in the background, while it's on
-    void this.checks.start();
+    if (o.checks !== false) void this.checks.start();
   }
 
   stop(): void {
@@ -514,6 +515,8 @@ export class FollowupWorker {
   accountOff(accountId: number): void {
     if (this.reading?.accountId === accountId) this.reading.controller.abort();
     this.wake();
+    // plan 211: what it sends from now on is owed a check when it's back
+    void this.checks.withdrawn(accountId);
   }
 
   /** Plan 211 (revision 9): an account's sync pass ended with it synced: checked once, a lookup after. */
@@ -940,14 +943,16 @@ export class FollowupWorker {
    * Plan 211: one account's check, queued: its last 30 days, at most `SCAN_MESSAGES_MAX`; from `since` when it's a gap's (a
    * switch off, then on again: revisions 7 and 8), still within the 30 days. `queueScan` ignores what's marked.
    */
-  private async checkAccount(accountId: number, since: number | null): Promise<number> {
+  private async checkAccount(accountId: number, since: number | null): Promise<boolean> {
+    // asked again here, and once the candidates are read (Codex code review 2): off meanwhile, it isn't checked, nor recorded
+    const allowed = async () => this.isActive && (await this.host.accountWanted(accountId));
+    if (!(await allowed())) return false;
     const now = this.host.now();
     const from = Math.max(now - SCAN_DAYS * 86_400_000, since ?? -Infinity);
     const ids = await this.host.store.followups.scanCandidates(from, SCAN_MESSAGES_MAX, accountId);
-    if (!this.isActive || !this.host.inFeed(accountId)) return 0;
-    const queued = await this.host.store.followups.marks.queueScan(ids, now);
-    if (queued) this.wake();
-    return queued;
+    if (!(await allowed())) return false;
+    if (await this.host.store.followups.marks.queueScan(ids, now)) this.wake();
+    return true;
   }
 
   status(): { blockedBy: { kind: AiErrorKind; message: string } | null } {

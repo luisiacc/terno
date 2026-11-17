@@ -740,18 +740,23 @@ export class BackendCore {
       captureError(error, { code: "forward.failed" });
       this.log("warn", "forwards couldn't start", error instanceof Error ? error.message : error);
     });
-    // plan 211 (revision 10): the offers' answers become the accounts already checked, once, before either worker starts
-    await upgradeChecks(this.store, this.now()).catch((error: unknown) => {
-      captureError(error, { code: "ai.failed" });
-      this.log("warn", "the checks' upgrade failed; it is retried on the next start", error instanceof Error ? error.name : "error");
-    });
+    // plan 211 (revision 10): the offers' answers become the accounts already checked, once, before either worker starts;
+    // failed, nothing is checked until a start where it works (Codex code review 3: a declined check would be made)
+    const checks = await upgradeChecks(this.store, this.now()).then(
+      () => true,
+      (error: unknown) => {
+        captureError(error, { code: "ai.failed" });
+        this.log("warn", "the checks' upgrade failed; it is retried on the next start", error instanceof Error ? error.name : "error");
+        return false;
+      },
+    );
     if (this.stopped) return;
     // plan 132: summaries a quit left queued; awaited (one settings read): no sync may start before ingest knows it's on
-    await this.followups.start().catch((error: unknown) => {
+    await this.followups.start({ checks }).catch((error: unknown) => {
       captureError(error, { code: "ai.failed" });
     });
     // plan 204: what a quit left marked; awaited, for ingest's question
-    await this.dated.start().catch((error: unknown) => {
+    await this.dated.start({ checks }).catch((error: unknown) => {
       captureError(error, { code: "ai.failed" });
     });
     await this.summaries.start().catch((error: unknown) => {

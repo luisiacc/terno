@@ -87,9 +87,22 @@ export function pruneDatedMarks(db: Db, now: number): number {
   return Number(db.run("DELETE FROM ai_dated_mail WHERE (source = 'live' AND queued_at < ?) OR (source = 'scan' AND queued_at < ?)", now - DATED_MARK_MS, now - DATED_SCAN_MARK_MS).changes);
 }
 
-/** Plan 211: one account's, through the date index (the window, newest first): never the mailbox. */
+/**
+ * Plan 211 (revision 11, Codex code review 5): one account's, never another's mail: its conversations active since then
+ * (`threads_acct_all`: the account, by last date) and their messages since then (`messages_thread`), only those sorted. Not
+ * read, but what's marked stays in (Codex code review 1): a check made again after a crash picks the same messages, which a
+ * queue ignores, never the next ones.
+ */
 export function datedScanCandidates(db: Db, since: number, limit: number, accountId: number): number[] {
-  return db.all<{ id: number }>(`SELECT m.id FROM messages m INDEXED BY messages_date WHERE m.date >= ? AND m.account_id = ? AND ${RECEIVED_SQL} AND ${UNREAD_SQL} ORDER BY m.date DESC, m.id DESC LIMIT ?`, since, accountId, limit).map((r) => r.id);
+  return db.all<{ id: number }>(
+    `SELECT m.id FROM threads t INDEXED BY threads_acct_all JOIN messages m INDEXED BY messages_thread ON m.thread_id = t.id AND m.date >= ?
+     WHERE t.account_id = ? AND t.in_trash = 0 AND t.in_spam = 0 AND t.last_date >= ? AND ${RECEIVED_SQL} AND NOT EXISTS (SELECT 1 FROM dated_items i WHERE i.message_id = m.id)
+     ORDER BY m.date DESC, m.id DESC LIMIT ?`,
+    since,
+    accountId,
+    since,
+    limit,
+  ).map((r) => r.id);
 }
 
 export function datedSource(db: Db, messageId: number): DatedSource | null {

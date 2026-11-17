@@ -26,11 +26,11 @@ afterEach(async () => {
 
 describe("the checks' bookkeeping", () => {
   /** a host over a settings map and a few accounts, each `synced` and `allowed` as the test says */
-  function fake(accounts: { id: number; synced?: boolean; allowed?: boolean; prefs?: AccountPrefs }[]) {
+  function fake(accounts: { id: number; synced?: boolean; allowed?: boolean }[]) {
     const kept = new Map<string, unknown>();
     const checks: { accountId: number; since: number | null }[] = [];
     const clock = { now: NOW };
-    const state = { active: true, fail: false };
+    const state = { active: true, fail: false, refuse: false };
     const host: AccountChecksHost = {
       key: "k",
       store: {
@@ -43,7 +43,6 @@ describe("the checks' bookkeeping", () => {
         },
         accounts: {
           list: async () => accounts.map((a) => ({ id: a.id, syncState: { lastSyncAt: a.synced === false ? null : NOW - DAY } }) as Account),
-          config: async <T,>(id: number) => ({ config: (accounts.find((a) => a.id === id)?.prefs ?? {}) as T }),
         } as unknown as AccountChecksHost["store"]["accounts"],
       },
       now: () => clock.now,
@@ -51,8 +50,9 @@ describe("the checks' bookkeeping", () => {
       allowed: (id) => accounts.find((a) => a.id === id)?.allowed !== false,
       check: async (accountId, since) => {
         if (state.fail) throw new Error("the store failed");
+        if (state.refuse) return false;
         checks.push({ accountId, since });
-        return 1;
+        return true;
       },
       log: () => {},
     };
@@ -71,7 +71,7 @@ describe("the checks' bookkeeping", () => {
     t.state.active = true;
     await t.checks.reconcile();
     expect(t.made).toEqual([{ accountId: 1, since: null }]);
-    expect(t.kept.get("k")).toEqual({ 1: NOW });
+    expect(t.kept.get("k")).toEqual({ 1: { at: NOW } });
     await t.checks.reconcile();
     await t.checks.synced(1);
     expect(t.made).toHaveLength(1);
@@ -91,17 +91,36 @@ describe("the checks' bookkeeping", () => {
     expect(t.made).toEqual([{ accountId: 1, since: null }]);
   });
 
-  it("a switch that went off after the check and is on again: from the earliest such moment; one before the check, nothing", async () => {
+  it("Codex code review 2: a check that couldn't (off meanwhile) isn't recorded, and is made in full later", async () => {
     const t = fake([{ id: 1 }]);
+    t.state.refuse = true;
     await t.checks.start();
-    t.accounts[0]!.prefs = { aiOffAt: NOW - DAY };
-    await t.checks.reconcile([1]);
+    expect(t.kept.has("k")).toBe(false);
+    t.state.refuse = false;
+    await t.checks.synced(1);
+    expect(t.made).toEqual([{ accountId: 1, since: null }]);
+  });
+
+  it("withdrawn after the check: owed from then, once readable again; the first moment kept until a check covers it (Codex code review 4)", async () => {
+    const t = fake([{ id: 1 }]);
+    // never checked: nothing's owed but the whole window
+    await t.checks.withdrawn(1);
+    await t.checks.start();
+    expect(t.made).toEqual([{ accountId: 1, since: null }]);
+    t.clock.now = NOW + 3_600_000;
+    await t.checks.withdrawn(1);
+    t.accounts[0]!.allowed = false;
+    // off again later, before any check: the gap still starts at the first
+    t.clock.now = NOW + 3 * 3_600_000;
+    await t.checks.withdrawn(1);
+    await t.checks.synced(1);
     expect(t.made).toHaveLength(1);
-    t.accounts[0]!.prefs = { aiOffAt: NOW + 3 * 3_600_000, feedOffAt: NOW + 3_600_000 };
+    t.accounts[0]!.allowed = true;
     t.clock.now = NOW + 5 * 3_600_000;
-    await t.checks.reconcile([1]);
+    // a pass's end finds it too (a lookup: it's owed)
+    await t.checks.synced(1);
     expect(t.made[1]).toEqual({ accountId: 1, since: NOW + 3_600_000 });
-    // owed nothing once checked again
+    expect(t.kept.get("k")).toEqual({ 1: { at: NOW + 5 * 3_600_000 } });
     await t.checks.reconcile([1]);
     expect(t.made).toHaveLength(2);
   });
@@ -186,7 +205,7 @@ describe("in the backend (scripted providers)", () => {
     const sent = (accountId: number, key: string, daysAgo: number) => msg({ accountId, providerMsgId: key, subject: key, from: { name: "Me", email: (sqlDb(backend.store).get<{ email: string }>("SELECT email FROM accounts WHERE id = ?", accountId))!.email }, to: [{ name: "Tom", email: "tom@acme.test" }], isSent: true, inInbox: false, date: clock.now - daysAgo * DAY, bodyText: "I'll send the contract tomorrow." });
     const id = (key: string) => sqlDb(backend.store).get<{ id: number }>("SELECT id FROM messages WHERE provider_msg_id = ?", key)!.id;
     const state = (accountId: number) => JSON.parse(sqlDb(backend.store).get<{ s: string }>("SELECT sync_state s FROM accounts WHERE id = ?", accountId)!.s) as { status: string; lastSyncAt: number | null };
-    const checked = async (key: string) => Object.keys(await backend.store.settings.get<Record<string, number>>(key, {})).map(Number);
+    const checked = async (key: string) => Object.keys(await backend.store.settings.get<Record<string, unknown>>(key, {})).map(Number);
     return { backend, client, clock, ids, scripts: (email: string) => scripts.get(email)!, datedQueued, sentQueued, received, sent, id, state, checked, dir };
   }
 
@@ -267,6 +286,48 @@ describe("in the backend (scripted providers)", () => {
     await t.client.call("accounts.update", { id: a!, feed: true });
     await expect.poll(() => t.datedQueued.length).toBe(3);
     expect(t.datedQueued[2]).toEqual([]);
+  });
+
+  it("Codex code review 4: switches off and on in turn before any check: the gap starts where it first went off", async () => {
+    const t = await setup();
+    const [a] = t.ids;
+    const script = t.scripts("a@example.com");
+    script.first.push(t.received(a!, "before", 5));
+    await t.backend.start();
+    await expect.poll(() => t.datedQueued.length).toBe(1);
+    const at = (hours: number) => void (t.clock.now = NOW + hours * 3_600_000);
+    at(1);
+    await t.client.call("accounts.update", { id: a!, ai: false });
+    at(1.5);
+    script.next = { mail: [t.received(a!, "while-off", 0)], live: true };
+    await t.backend.syncAccount(a!);
+    // AI off, What matters off, AI on, AI off again (its moment written anew), What matters on, AI on
+    for (const [h, patch] of [[2, { feed: false }], [3, { ai: true }], [4, { ai: false }], [5, { feed: true }], [6, { ai: true }]] as const) {
+      at(h);
+      await t.client.call("accounts.update", { id: a!, ...patch });
+    }
+    await expect.poll(() => t.datedQueued.length).toBe(2);
+    expect(t.datedQueued[1]).toEqual([t.id("while-off")]);
+  });
+
+  it("Codex code review 3: the upgrade failing keeps the checks closed: nothing declined is read", async () => {
+    const t = await setup({
+      before: async (backend) => {
+        const get = backend.store.settings.get.bind(backend.store.settings);
+        vi.spyOn(backend.store.settings, "get").mockImplementation(async (key, fallback) => {
+          if (key === "checks:version") throw new Error("the store failed");
+          return get(key, fallback);
+        });
+      },
+    });
+    const [a] = t.ids;
+    t.scripts("a@example.com").first.push(t.received(a!, "bill-2d", 2));
+    await t.backend.start();
+    await expect.poll(() => t.state(a!).lastSyncAt).not.toBeNull();
+    await t.client.call("settings.update", { dated: { enabled: true } });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(t.datedQueued).toEqual([]);
+    expect(t.sentQueued).toEqual([]);
   });
 
   it("What matters turned off isn't checked; turned on, synced accounts are", async () => {

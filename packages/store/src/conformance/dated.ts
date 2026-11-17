@@ -71,26 +71,29 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
         expect([...first, ...rest].map((m) => m.messageId)).toEqual(want);
       });
 
-      it("a check takes received mail not yet read, newest first, once; its marks keep 14 days and a live one 3", async () => {
+      it("a check takes received mail nothing was read from, newest first, once; its marks keep 14 days and a live one 3", async () => {
         const { store, accountId, other, got, item, finish, marked } = await setup();
         const live = await got();
         const older = await got({ date: NOW - 10 * DAY }, null);
         const old = await got({ date: NOW - 5 * DAY }, null);
         await got({ date: NOW - 5 * DAY, isSent: true, from: me, to: [bank], inInbox: false }, null);
         await got({ date: NOW - 5 * DAY, isSpam: true }, null);
+        await got({ date: NOW - 5 * DAY, isTrash: true }, null);
         await got({ date: NOW - 5 * DAY, from: me }, null);
         const read = await got({ date: NOW - 6 * DAY }, null);
         await store.dated.marks.queueScan([read.id], NOW);
         await finish(read.id, read.thread, { rows: [item()], fromScan: true });
         // plan 211: one account's: another's mail, newer, isn't its
         const elsewhere = await got({ date: NOW - 4 * DAY, accountId: other }, null);
-        expect(await store.dated.scanCandidates(NOW - 14 * DAY, 10, accountId)).toEqual([old.id, older.id]);
+        // (what's marked, live or by a check, stays a candidate: a check made again picks the same, never the next; a queue
+        // ignores them, Codex code review 1)
+        expect(await store.dated.scanCandidates(NOW - 14 * DAY, 10, accountId)).toEqual([live.id, old.id, older.id]);
         expect(await store.dated.scanCandidates(NOW - 14 * DAY, 10, other)).toEqual([elsewhere.id]);
-        expect(await store.dated.scanCandidates(NOW - 14 * DAY, 1, accountId)).toEqual([old.id]);
-        expect(await store.dated.scanCandidates(NOW - 7 * DAY, 10, accountId)).toEqual([old.id]);
+        expect(await store.dated.scanCandidates(NOW - 14 * DAY, 2, accountId)).toEqual([live.id, old.id]);
+        expect(await store.dated.scanCandidates(NOW - 7 * DAY, 10, accountId)).toEqual([live.id, old.id]);
         expect(await store.dated.marks.queueScan([old.id, older.id, read.id, live.id], NOW)).toBe(2);
         expect(await store.dated.marks.queueScan([old.id, older.id], NOW)).toBe(0);
-        expect(await store.dated.scanCandidates(NOW - 14 * DAY, 10, accountId)).toEqual([]);
+        expect(await store.dated.scanCandidates(NOW - 14 * DAY, 10, accountId)).toEqual([live.id, old.id, older.id]);
         await store.dated.marks.consume(elsewhere.id);
         expect((await store.dated.marks.page(null, 10)).map((m) => [m.messageId, m.source])).toEqual([[older.id, "scan"], [old.id, "scan"], [live.id, "live"]]);
         expect(await store.dated.marks.prune(NOW + DATED_MARK_MS + 1)).toBe(1);

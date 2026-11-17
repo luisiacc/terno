@@ -100,13 +100,19 @@ export function pruneDatedMarks(c: Ctx, now: number): number {
 }
 
 /**
- * Plan 211 (revision 11): one account's, through its own mail (the account index: the tables are hashed, with no order by
- * date), the window's taken as it's walked and only they sorted: never the mailbox's other accounts, nor a sort of it all.
+ * Plan 211 (revision 11, Codex code review 6): one account's, never another's mail: its conversations active since then
+ * (the account's threads, by their last date: the tables are hashed, with no order to seek by) and only their messages since
+ * then, only those sorted. Not read, but what's marked stays in, as SQLite's (Codex code review 1).
  */
 export function datedScanCandidates(c: Ctx, since: number, limit: number, accountId: number): number[] {
   const own = receivedOwn(c);
+  const messages = T(c, "messages");
+  const items = T(c, "dated_items");
   const out: R[] = [];
-  for (const m of T(c, "messages").by("fk_account_id", accountId)) if (m.date >= since && received(m, own) && unread(c, m.id)) out.push(m);
+  for (const t of T(c, "threads").by("fk_account_id", accountId)) {
+    if (t.in_trash || t.in_spam || t.last_date < since) continue;
+    for (const m of messages.by("fk_thread_id", t.id)) if (m.date >= since && received(m, own) && items.count("message", m.id) === 0) out.push(m);
+  }
   return out.sort((a, b) => b.date - a.date || b.id - a.id).slice(0, limit).map((m) => m.id);
 }
 
