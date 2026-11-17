@@ -86,9 +86,12 @@ function amountToken(raw: string): string {
   return `¤${Number(whole)}${cents === "00" ? "" : `.${cents}`}`;
 }
 
-/** The amounts some text states, each as one token (`amountToken`). */
+/**
+ * The amounts some text states, each as one token (`amountToken`). Plan 210 (the second morning, Margaret's water bill): a
+ * zero ("Balance remaining: $0.00", "Saldo: $0.00") names no bill or payment, so it's never another amount than the item's.
+ */
 export function amountsOf(text: string): Set<string> {
-  return new Set([...text.matchAll(AMOUNT)].map((m) => amountToken(m[0])));
+  return new Set([...text.matchAll(AMOUNT)].map((m) => amountToken(m[0])).filter((a) => a !== "¤0"));
 }
 
 /**

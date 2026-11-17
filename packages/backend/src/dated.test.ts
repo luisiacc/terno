@@ -774,6 +774,15 @@ describe("plan 210 (iteration 3)", () => {
       const paid = card({ threadId: 7, text: "Pagar $8,432.17 de la Tarjeta de Crédito Nopal Oro", quote: "Pago para no generar intereses: $8,432.17" });
       expect(checkDates(settle(), { ...receipt({ threadId: 8 }), open: new Map([["o1", paid]]) }).settled).toHaveLength(1);
     });
+    it("the second morning (Margaret's water bill): a receipt's zero balance is no other amount, so it settles the bill it's in the conversation of", () => {
+      const water = card({ senderKey: "utilitybilling@millbrook.test", text: "Pay $58.71 for the City of Millbrook water and sewer bill (10% penalty if unpaid)", quote: "DUE DATE: 11/10/2026", dueDay: "2026-11-10" });
+      const text = "CITY OF MILLBROOK - WATER & SEWER\nPAYMENT RECEIPT\n\nAccount: 21140\nPayment date: 11/13/2026 3:08 PM\nPaid at: City Hall cashier window\n\nBill dated 11/02/2026 (due 11/10/2026): $58.71\nLate penalty (10%): $5.87\nAMOUNT PAID: $64.58\nBalance remaining: $0.00\n\nThank you for your payment.";
+      const mail = { ...receipt({ text, senderKey: "utilitybilling@millbrook.test" }), subject: "Payment receipt - account 21140", from: "City of Millbrook Utilities", open: new Map([["o1", water]]) };
+      expect(checkDates(settle("Balance remaining: $0.00"), mail).settled).toEqual([{ id: 9, revision: 2 }]);
+      expect(checkDates(settle("Saldo pendiente: $0.00"), { ...mail, text: `${text}\nSaldo pendiente: $0.00` }).settled).toHaveLength(1);
+      // another amount it states is still another payment's, unless it says it's a receipt
+      expect(checkDates(settle("AMOUNT PAID: $64.58"), mail).settled).toEqual([]);
+    });
     it("an amount that names one of two bills settles it, never the other", () => {
       const two = new Map([["o1", card()], ["o2", card({ id: 10, text: "Pagar $8,432.17 de la Tarjeta de Crédito Nopal Oro", quote: "Pago para no generar intereses: $8,432.17", dueDay: "2026-11-13" })]]);
       const out = checkDates({ items: [], settled: [{ label: "o1", evidence: "Recibimos tu pago por $8,432.17" }, { label: "o2", evidence: "Recibimos tu pago por $8,432.17" }] }, { ...receipt({ paysInThread: 2 }), open: two });
