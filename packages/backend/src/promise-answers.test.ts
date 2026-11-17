@@ -541,6 +541,35 @@ describe("an ask you already answered (the second morning: round 15's Hannah and
   }
 });
 
+describe("a bill from someone your reply writes to (round 16: Sam's electric)", () => {
+  it("is among the reply's requests and its verdict pays it; a biller's bill, its sender not written to, isn't offered", async () => {
+    const { backend, model, ingest, reply, datedDone, followupsDone, sentPrompts } = await setup();
+    const jonah = { name: "Jonah", email: "jonah@home.test" };
+    const half = { kind: "pay", text: "Pay Jonah $48.20 for the electric bill", quote: "venmo whenever but ideally before the 20th", due: "2026-11-20", time: null };
+    model.dated = () => dated([half]);
+    const asked = await ingest({ from: jonah, to: [me], isSent: false, inInbox: true, subject: "electric", bodyText: "electric came in at $96.40 so your half is $48.20. venmo whenever but ideally before the 20th" });
+    await datedDone();
+    const [bill] = await backend.store.dated.ofThread(asked.thread);
+    expect(bill).toMatchObject({ kind: "pay", state: "open" });
+    model.sent = () => sent({ answers: [{ label: "q1", verdict: "fulfilled", evidence: "just venmo'd you the $48.20" }] });
+    await reply(asked, "just venmo'd you the $48.20", { to: [jonah] });
+    await followupsDone();
+    expect(sentPrompts().at(-1)).toContain("<requests>\nq1: Pay Jonah $48.20 for the electric bill (by 2026-11-20)\n</requests>");
+    // paid, as Earlier says it
+    expect(await backend.store.dated.get(bill!.id)).toMatchObject({ state: "settled", closedReason: "settled" });
+    // the utility's own bill, the reply written to Jonah: not his to be told
+    const utility = { name: "City Power", email: "billing@citypower.test" };
+    model.dated = () => dated([{ ...half, text: "Pay the electricity bill", quote: "Amount due $96.40 by November 20" }]);
+    const statement = await ingest({ from: utility, to: [me], isSent: false, inInbox: true, subject: "Your statement", bodyText: "Amount due $96.40 by November 20." });
+    await datedDone();
+    expect(await backend.store.dated.ofThread(statement.thread)).toMatchObject([{ kind: "pay", state: "open" }]);
+    model.sent = () => sent();
+    await reply(statement, "can you cover half of this one too?", { to: [jonah] });
+    await followupsDone();
+    expect(sentPrompts().at(-1)).not.toContain("<requests>");
+  });
+});
+
 describe("a promise past its day retires (revision 7)", () => {
   it("its Missed week over, from the day it sits under: one whose request is still ahead stays", async () => {
     const { backend, clock, model, request, reply, datedDone, followupsDone } = await setup();

@@ -76,8 +76,9 @@ export function withNeeds(promises: readonly FollowupRow[], requests: ReadonlyMa
   return promises.map((p) => {
     const r = p.answers == null ? undefined : requests.get(p.answers);
     // plan 210 (iteration 4, revision 11): with the day it was asked before, when it was ("needed before Mon"); iteration 5,
-    // the part of that day it asked for ("by Saturday morning")
-    return r && r.state === "open" && r.dated && ANSWERED_KINDS.includes(r.kind) ? { ...p, needed: r.dueAt, ...(r.before ? { neededBefore: r.before } : {}), ...(r.partOfDay ? { neededPart: r.partOfDay } : {}) } : p;
+    // the part of that day it asked for ("by Saturday morning"); round 16: a bill's day too (a store links a promise to one
+    // only from a reply to its sender: `replyAnswers`)
+    return r && r.state === "open" && r.dated && (ANSWERED_KINDS.includes(r.kind) || r.kind === "pay") ? { ...p, needed: r.dueAt, ...(r.before ? { neededBefore: r.before } : {}), ...(r.partOfDay ? { neededPart: r.partOfDay } : {}) } : p;
   });
 }
 

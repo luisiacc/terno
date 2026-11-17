@@ -1,6 +1,6 @@
 import { REMIND_MORNING } from "./reminders";
 import { followupWakeAt, localDay } from "./followups";
-import { WAITING_WINDOW_MS } from "./people";
+import { addressKey, WAITING_WINDOW_MS } from "./people";
 import type { ItemSchedule, ScheduleProposal } from "./schedule";
 import { dueCutoff, type PartOfDay } from "./part-of-day";
 
@@ -21,6 +21,18 @@ export const datedGroup = (kind: DatedKind): DatedGroup => (kind === "ask" ? "ne
 
 /** What a send of yours on the thread answers (plan 204's answered rule): a request, with a day or without. */
 export const ANSWERED_KINDS: readonly DatedKind[] = ["respond", "ask"];
+
+/**
+ * Plan 210 (round 16, Sam's electric): what a reply of yours may be read as answering. A request, as `ANSWERED_KINDS`; and a
+ * bill from someone the reply writes to (`recipients`: its To and Cc, by `addressKey`), theirs to be told it's paid (a
+ * roommate's "your half is $48.20", answered "just venmo'd you"). A biller's bill, its sender not written to, isn't.
+ */
+export const replyAnswers = (row: { kind: string; senderKey: string }, recipients: ReadonlySet<string>): boolean =>
+  (ANSWERED_KINDS as readonly string[]).includes(row.kind) || (row.kind === "pay" && row.senderKey !== "" && recipients.has(row.senderKey));
+/** How a reply's verdict closes what it settles (`closedReason`): a bill paid ("settled", Earlier's "Paid"), a request answered. */
+export const replyClosedReason = (kind: string): "settled" | "answered" => (kind === "pay" ? "settled" : "answered");
+/** A reply's recipients as `replyAnswers` reads them. */
+export const replyRecipients = (reply: { to: readonly { email: string }[]; cc: readonly { email: string }[] }): Set<string> => new Set([...reply.to, ...reply.cc].map((r) => addressKey(r.email)));
 
 /** How many days before its day an item shows (§2); an alert shows at once and a delivery on its day. */
 /** After the panel (the owner, 2026-11-14): a week for requests from people and for bills, 30 days for expiring documents. */

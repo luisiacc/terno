@@ -1,4 +1,4 @@
-import { addressKey, ANSWERED_KINDS, parseHandedTo, readPartOfDay, refKey, type FollowupRow } from "@terno/core";
+import { addressKey, ANSWERED_KINDS, parseHandedTo, readPartOfDay, refKey, replyAnswers, replyClosedReason, replyRecipients, type FollowupRow } from "@terno/core";
 import { FOLLOWUP_CLOSED_KEEP_MS, FOLLOWUPS_ACTIVE_MAX, recipientList, SCAN_MARK_MS, SENT_MARK_MS, type ClosedAt, type FollowupFinish, type FollowupFinishOutcome, type FollowupSnapshot, type FollowupSource, type SentMark } from "@terno/store";
 import { ownAddresses } from "./facts";
 import { scheduleFields } from "./schedule";
@@ -155,10 +155,13 @@ function replied(db: Db, own: ReadonlySet<string>, row: { accountId: number; thr
   return named.some((m) => !own.has(addressKey(m.from_email)));
 }
 
-/** Plan 210 (iteration 3): an open request of this reply's conversation from before it: what its verdict may reach. */
-function answerable(db: Db, id: number, src: { threadId: number; date: number }): { id: number; revision: number } | null {
-  const r = db.get<{ id: number; revision: number; kind: string; state: string; thread_id: number; arrived_at: number }>("SELECT id, revision, kind, state, thread_id, arrived_at FROM dated_items WHERE id = ?", id);
-  return r && r.state === "open" && (ANSWERED_KINDS as readonly string[]).includes(r.kind) && r.thread_id === src.threadId && r.arrived_at < src.date ? r : null;
+/**
+ * Plan 210 (iteration 3): an open request of this reply's conversation from before it: what its verdict may reach. Round 16:
+ * or a bill from someone the reply writes to (`replyAnswers`), read from the reply's own row, never the reader's word.
+ */
+function answerable(db: Db, id: number, src: { threadId: number; date: number; to: readonly { email: string }[]; cc: readonly { email: string }[] }): { id: number; revision: number; kind: string } | null {
+  const r = db.get<{ id: number; revision: number; kind: string; state: string; thread_id: number; arrived_at: number; sender_key: string }>("SELECT id, revision, kind, state, thread_id, arrived_at, sender_key FROM dated_items WHERE id = ?", id);
+  return r && r.state === "open" && replyAnswers({ kind: r.kind, senderKey: r.sender_key }, replyRecipients(src)) && r.thread_id === src.threadId && r.arrived_at < src.date ? r : null;
 }
 
 /**
@@ -175,7 +178,7 @@ function apart(db: Db, promiseId: number, requestId: number): void {
   const key = (id: number) => refKey({ source: "promise", id });
   const [promise, request] = [key(promiseId), refKey({ source: "dated", id: requestId })];
   const p = db.get<{ message_id: number; same_as: string | null }>("SELECT message_id, same_as FROM followups WHERE id = ?", promiseId)!;
-  const r = db.get<{ same_as: string | null }>("SELECT same_as FROM dated_items WHERE id = ?", requestId)!;
+  const r = db.get<{ same_as: string | null; kind: string }>("SELECT same_as, kind FROM dated_items WHERE id = ?", requestId)!;
   const [item, mine] = [r.same_as ?? request, p.same_as ?? promise];
   const canonical = (x: { id: number; same_as: string | null }) => x.same_as ?? key(x.id);
   const readings = db
@@ -184,10 +187,10 @@ function apart(db: Db, promiseId: number, requestId: number): void {
   for (const x of readings) if (x.id !== promiseId) db.run("UPDATE followups SET answers = ? WHERE id = ? AND answers IS NULL", requestId, x.id);
   if (!readings.some((x) => canonical(x) === item)) return;
   if (readings.some((x) => key(x.id) === item)) {
-    // a reading leads the request's item: the request and its own readings leave it, the request theirs; a reading on its
-    // own (no item of its own) joins the one its twin leads
+    // a reading leads the request's item: the request and its own readings leave it, the request theirs (round 16: a bill's
+    // readings are bills); a reading on its own (no item of its own) joins the one its twin leads
     db.run("UPDATE dated_items SET same_as = NULL WHERE id = ?", requestId);
-    db.run(`UPDATE dated_items SET same_as = ? WHERE id IN (SELECT id FROM dated_items INDEXED BY dated_same WHERE same_as = ?) AND kind IN (${ANSWERED_KINDS.map((k) => `'${k}'`).join(", ")})`, request, item);
+    db.run(`UPDATE dated_items SET same_as = ? WHERE id IN (SELECT id FROM dated_items INDEXED BY dated_same WHERE same_as = ?) AND (kind IN (${ANSWERED_KINDS.map((k) => `'${k}'`).join(", ")}) OR kind = ?)`, request, item, r.kind);
     for (const x of readings) {
       const leads = db.get("SELECT 1 FROM followups INDEXED BY followups_same WHERE same_as = ?1 UNION ALL SELECT 1 FROM dated_items INDEXED BY dated_same WHERE same_as = ?1 LIMIT 1", key(x.id));
       if (x.same_as === null && key(x.id) !== item && !leads) db.run("UPDATE followups SET same_as = ? WHERE id = ?", item, x.id);
@@ -251,8 +254,9 @@ export function finishFollowups(db: Db, w: FollowupFinish): FollowupFinishOutcom
     }
     // plan 210 (iteration 3): only a reply that's yours for certain decides anything about a request
     const yours = mark.confirmed === 1 || !!db.get(`SELECT 1 FROM messages WHERE id = ? AND ${TRUSTED_SENT}`, w.messageId);
-    // plan 210 (iteration 4, revision 7): the reply that settled it and its date beside the closing
-    const settle = (id: number, revision: number) => db.run("UPDATE dated_items SET state = 'settled', closed_reason = 'answered', closed_at = ?, settled_by = ?, settled_at = ?, revision = revision + 1 WHERE id = ? AND revision = ? AND state = 'open'", w.now, w.messageId, src.date, id, revision);
+    // plan 210 (iteration 4, revision 7): the reply that settled it and its date beside the closing; round 16: a bill it
+    // settled is paid (`settled`, as by mail: Earlier's "Paid"), never "Answered"
+    const settle = (r: { id: number; revision: number; kind: string }) => db.run("UPDATE dated_items SET state = 'settled', closed_reason = ?, closed_at = ?, settled_by = ?, settled_at = ?, revision = revision + 1 WHERE id = ? AND revision = ? AND state = 'open'", replyClosedReason(r.kind), w.now, w.messageId, src.date, r.id, r.revision);
     for (const v of yours ? (w.verdicts ?? []) : []) {
       const r = answerable(db, v.request.id, src);
       // either verdict only on the request as it was shown: one put off (Later) or moved meanwhile isn't decided by it
@@ -260,7 +264,7 @@ export function finishFollowups(db: Db, w: FollowupFinish): FollowupFinishOutcom
       if (v.verdict === "fulfilled") {
         // the second morning (Diego's adjustments) and its code review: the promises of yours that answer it are kept with
         // it, only once the verdict has passed the request's revision
-        if (settle(r.id, r.revision).changes) {
+        if (settle(r).changes) {
           db.run("UPDATE followups SET state = 'done', closed_reason = 'kept', closed_at = ?, settled_by = ?, settled_at = ?, inbox_state = 'none', revision = revision + 1 WHERE thread_id = ? AND answers = ? AND kind = 'promise' AND state IN ('open','due') AND sent_at < ? AND message_id <> ?", w.now, w.messageId, src.date, src.threadId, r.id, src.date, w.messageId);
         }
         continue;
@@ -281,7 +285,7 @@ export function finishFollowups(db: Db, w: FollowupFinish): FollowupFinishOutcom
       // plan 210 (iteration 3): what it promised to a request is sent: the request is answered with it
       const answers = kept && yours ? db.get<{ answers: number | null }>("SELECT answers FROM followups WHERE id = ?", k.id)?.answers : null;
       const r = answers == null ? null : answerable(db, answers, src);
-      if (r) settle(r.id, r.revision);
+      if (r) settle(r);
     }
     db.run("DELETE FROM ai_sent_mail WHERE message_id = ?", w.messageId);
     return "written";

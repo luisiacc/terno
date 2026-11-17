@@ -1,5 +1,5 @@
 import { AiError, FOLLOWUP_ANSWERING_CHARS, FOLLOWUP_OPEN_MAX, FOLLOWUP_OWN_CHARS, FOLLOWUP_PROMPT_VERSION, FOLLOWUP_REQUESTS_MAX, fitSentMail, followupBudget, costAt, priceOf, type AiTasks, type SentMailResult } from "@terno/ai";
-import { addressKey, ANSWERED_KINDS, automatedLevel, dayKeyOf, dueCutoff, byUrgency, followupDue, NUDGE_DEFAULT, followupWakeAt, normalizeText, promiseOver, readCorpus, refKey, SCAN_DAYS, SCAN_MESSAGES_MAX, SCAN_PROMISE_OVERDUE_MS, SCAN_WAIT_STALE_MS, validFollowupDate, withNeeds, withoutQuotes, followupNotice, type AiErrorKind, type DatedRow, type FollowupRow, type FollowupsSnapshot, type MailNotice, type ThreadSummary } from "@terno/core";
+import { addressKey, automatedLevel, dayKeyOf, dueCutoff, byUrgency, followupDue, NUDGE_DEFAULT, followupWakeAt, normalizeText, promiseOver, readCorpus, refKey, replyAnswers, replyRecipients, SCAN_DAYS, SCAN_MESSAGES_MAX, SCAN_PROMISE_OVERDUE_MS, SCAN_WAIT_STALE_MS, validFollowupDate, withNeeds, withoutQuotes, followupNotice, type AiErrorKind, type DatedRow, type FollowupRow, type FollowupsSnapshot, type MailNotice, type ThreadSummary } from "@terno/core";
 import { captureError } from "@terno/core/diag";
 import { RpcError, type AppSettings } from "@terno/core/rpc";
 import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
@@ -558,8 +558,10 @@ export class FollowupWorker {
       if (!own) return await drop();
       const open = (await store.followups.ofThread(src.threadId)).filter((r) => r.kind === "promise" && r.sentAt < src.date).sort((a, b) => b.sentAt - a.sentAt).slice(0, FOLLOWUP_OPEN_MAX);
       const openLabels = new Map(open.map((r, i) => [`p${i + 1}`, r]));
-      // plan 210 (iteration 3): what the conversation asked of you before this, open (a promise may already answer one)
-      const requested = settings.dated?.enabled ? (await store.dated.ofThread(src.threadId)).filter((r) => ANSWERED_KINDS.includes(r.kind) && r.arrivedAt < src.date).sort((a, b) => b.arrivedAt - a.arrivedAt).slice(0, FOLLOWUP_REQUESTS_MAX) : [];
+      // plan 210 (iteration 3): what the conversation asked of you before this, open (a promise may already answer one); round
+      // 16: a bill from someone it writes to too (`replyAnswers`)
+      const writesTo = replyRecipients(src);
+      const requested = settings.dated?.enabled ? (await store.dated.ofThread(src.threadId)).filter((r) => replyAnswers(r, writesTo) && r.arrivedAt < src.date).sort((a, b) => b.arrivedAt - a.arrivedAt).slice(0, FOLLOWUP_REQUESTS_MAX) : [];
       const requestLabels = new Map(requested.map((r, i) => [`q${i + 1}`, r]));
       const recipients = [...src.to, ...src.cc].slice(0, 20).map((r, i) => ({ label: `r${i + 1}`, name: r.name || r.email.split("@")[0]!, email: r.email }));
       const budget = followupBudget(ai.contextTokens);

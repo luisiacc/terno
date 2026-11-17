@@ -1,4 +1,4 @@
-import { addressKey, ANSWERED_KINDS, parseHandedTo, readPartOfDay, refKey, type FollowupRow } from "@terno/core";
+import { addressKey, ANSWERED_KINDS, parseHandedTo, readPartOfDay, refKey, replyAnswers, replyClosedReason, replyRecipients, type FollowupRow } from "@terno/core";
 import { FOLLOWUP_CLOSED_KEEP_MS, FOLLOWUPS_ACTIVE_MAX, recipientList, SCAN_MARK_MS, SENT_MARK_MS, type ClosedAt, type FollowupFinish, type FollowupFinishOutcome, type FollowupSnapshot, type FollowupSource, type SentMark } from "@terno/store";
 import { T, type Ctx, type R } from "./mail";
 import { scheduleFields } from "./schedule";
@@ -150,10 +150,10 @@ function replied(c: Ctx, mine: ReadonlySet<string>, row: { accountId: number; th
   });
 }
 
-/** Plan 210 (iteration 3), as SQL's: an open request of this reply's conversation from before it. */
-function answerable(c: Ctx, id: number, src: { threadId: number; date: number }): R | null {
+/** Plan 210 (iteration 3), as SQL's: an open request of this reply's conversation from before it (round 16: or a bill from someone it writes to). */
+function answerable(c: Ctx, id: number, src: { threadId: number; date: number; to: readonly { email: string }[]; cc: readonly { email: string }[] }): R | null {
   const r = T(c, "dated_items").get(id);
-  return r && r.state === "open" && (ANSWERED_KINDS as readonly string[]).includes(r.kind) && r.thread_id === src.threadId && r.arrived_at < src.date ? r : null;
+  return r && r.state === "open" && replyAnswers({ kind: String(r.kind), senderKey: String(r.sender_key ?? "") }, replyRecipients(src)) && r.thread_id === src.threadId && r.arrived_at < src.date ? r : null;
 }
 
 /**
@@ -176,7 +176,7 @@ function apart(c: Ctx, promiseId: number, requestId: number): void {
   if (!readings.some((x) => canonical(x) === item)) return;
   if (readings.some((x) => key(x.id) === item)) {
     dated.update(r, { same_as: null });
-    for (const x of dated.by("same", item)) if ((ANSWERED_KINDS as readonly string[]).includes(x.kind)) dated.update(x, { same_as: request });
+    for (const x of dated.by("same", item)) if ((ANSWERED_KINDS as readonly string[]).includes(x.kind) || x.kind === r.kind) dated.update(x, { same_as: request });
     for (const x of readings) if (x.same_as == null && key(x.id) !== item && !followups.count("same", key(x.id)) && !dated.count("same", key(x.id))) followups.update(x, { same_as: item });
     return;
   }
@@ -229,7 +229,7 @@ export function finishFollowups(c: Ctx, w: FollowupFinish): FollowupFinishOutcom
   const dated = T(c, "dated_items");
   const settle = (r: R, revision: number): boolean => {
     if (r.revision !== revision || r.state !== "open") return false;
-    dated.update(r, { state: "settled", closed_reason: "answered", closed_at: w.now, settled_by: w.messageId, settled_at: src.date, revision: r.revision + 1 });
+    dated.update(r, { state: "settled", closed_reason: replyClosedReason(r.kind), closed_at: w.now, settled_by: w.messageId, settled_at: src.date, revision: r.revision + 1 });
     return true;
   };
   for (const v of yours ? (w.verdicts ?? []) : []) {
