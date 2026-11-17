@@ -144,4 +144,15 @@ describe("historyPage", () => {
     const { items } = await historyPage(store, ask({}));
     expect(items.map((i) => [i.id, i.outcome, i.reason])).toEqual([["dated:1", "settled", "answered"], ["dated:3", "settled", "answered"], ["promise:3", "done", "kept"], ["promise:5", "done", "kept"]]);
   });
+
+  it("the claims ledger's third batch: a plan that's over says its own day, a deadline over still its closing", async () => {
+    // Friday's furnace tune-up retired by Saturday morning's sweep; a bill that left Missed the same morning
+    const friday = NOW - 86_400_000 + 12 * 60 * MIN;
+    const { store } = fakeStore([
+      { id: 13, threadId: 1, closedAt: NOW - MIN, state: "dismissed", closedReason: "expired", kind: "event", dueAt: friday } as Closed,
+      { id: 14, threadId: 2, closedAt: NOW - 2 * MIN, state: "dismissed", closedReason: "expired", dueAt: friday - 8 * 86_400_000 } as Closed,
+    ]);
+    const { items } = await historyPage(store, ask({}));
+    expect(items.map((i) => [i.id, i.outcome, i.key.at, i.on])).toEqual([["dated:13", "over", NOW - MIN, friday], ["dated:14", "over", NOW - 2 * MIN, undefined]]);
+  });
 });

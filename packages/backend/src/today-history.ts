@@ -1,4 +1,4 @@
-import { changeLineId, DATED_CLOSED_KEEP_MS, HANDED, historyAfter, historyOrder, refKey, type HistorySource, type DatedRow, type FeedRowId, type FollowupRow, type HistoryKey, type HistoryOutcome, type ItemRef, type ThreadSummary, type TodayHistoryItem, type TodayHistoryPage } from "@terno/core";
+import { changeLineId, DATED_CLOSED_KEEP_MS, datedGroup, HANDED, historyAfter, historyOrder, refKey, type HistorySource, type DatedRow, type FeedRowId, type FollowupRow, type HistoryKey, type HistoryOutcome, type ItemRef, type ThreadSummary, type TodayHistoryItem, type TodayHistoryPage } from "@terno/core";
 import { ANSWERED_WITH_PROMISE, HELD_REQUEST_CLOSED, type ClosedAt, type MailStore } from "@terno/store";
 import { withoutUntrusted } from "./suspicious-sender";
 
@@ -195,6 +195,9 @@ export async function historyPage(store: MailStore, o: HistoryAsk): Promise<Toda
     const line: TodayHistoryItem = { id, item: { source: sourceOf(row.src), id: row.id }, thread, key: head.key, outcome, kind: row.src === 0 ? row.kind : "promise", text: row.text, ...(outcome === "handed" && row.handedTo && { handedTo: row.handedTo }) };
     // plan 210 (iteration 4, revision 7): settled by mail, the line says that mail's day and how
     if (row.settledAt != null) line.on = row.settledAt;
+    // the claims ledger's third batch (Margaret's furnace tune-up, Priya's dinner): a plan that's over says its own day
+    // ("Over Fri"), never the moment the sweep retired it ("Over today" the next morning)
+    else if (outcome === "over" && row.src === 0 && datedGroup(row.kind) === "plans") line.on = row.dueAt;
     if (row.closedReason) line.reason = row.closedReason;
     items.push(line);
     if (!o.through && items.length >= o.limit) {
