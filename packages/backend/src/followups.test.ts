@@ -397,6 +397,21 @@ describe("when they come due", () => {
     expect(notices).toHaveLength(1);
   });
 
+  it("plan 211 (Codex code review): a promise of an account with AI or What matters off isn't said; back on, it is", async () => {
+    const { backend, client, model, send, drained, clock, notices, account } = await setup();
+    model.answer = () => reply(says);
+    await send();
+    backend.followups.wake();
+    await drained();
+    await client.call("accounts.update", { id: account.id, feed: false });
+    clock.now += 4 * DAY;
+    await backend.followups.look();
+    expect(notices).toEqual([]);
+    await client.call("accounts.update", { id: account.id, feed: true });
+    await backend.followups.look();
+    expect(notices).toHaveLength(1);
+  });
+
   it("no timer while there's nothing", async () => {
     const { backend } = await setup();
     await backend.followups.look();
@@ -520,6 +535,8 @@ describe("plan 211: an account's AI and What matters switches", () => {
     await expect.poll(() => model.requests.length).toBe(1);
     await send({ subject: "Another" });
     await client.call("accounts.update", { id: account.id, ...off });
+    // stopped at the provider, before any answer (Codex code review: the answer's own check would drop it anyway)
+    await expect.poll(() => model.requests[0]!.signal?.aborted).toBe(true);
     release(reply(says));
     await expect.poll(() => backend.store.followups.marks.count()).toBe(0);
     expect(model.requests).toHaveLength(1);

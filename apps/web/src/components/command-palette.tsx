@@ -280,7 +280,7 @@ export function CommandPalette() {
   const canAsk = useApp((s) => open && askOffered(s));
   // plan 211: the open conversation's account's AI too
   const canSummarize = useApp((s) => open && summariesOffered(s, openThread?.thread.accountId));
-  const drafting = useCanDraft();
+  const drafting = useCanDraft({ threadId: openThread?.thread.id });
   const updatesAvailable = useHasUpdates();
   const readyVersion = useUpdates((s) => (open && s.state?.ready && s.state.status !== "installing" ? s.state.ready.version : null));
   const [value, setValue] = useState("");

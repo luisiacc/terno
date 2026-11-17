@@ -71,7 +71,7 @@ function useBodyGlance(draftKey: string | undefined): void {
  * "with AI". An ordinary email leaves it the Sparkles, in the same place.
  */
 export function AiDraftButton({ draftKey, threadId, disabled, testId }: { draftKey?: string; threadId?: number; disabled?: boolean; testId: string }) {
-  const offered = useCanDraft();
+  const offered = useCanDraft({ key: draftKey, threadId });
   const glance = useAiDraftUi((s) => (draftKey ? (s.glances[draftKey] ?? "") : ""));
   const reply = useDrafts((s) => (draftKey ? (s.drafts[draftKey]?.mode ?? "new") !== "new" : false));
   // working, asking, or over a strip (where ⌘J goes to its change field): nothing here to light up
@@ -121,7 +121,7 @@ export function AiDraftButton({ draftKey, threadId, disabled, testId }: { draftK
  * its first line's end (which that line keeps clear), and the editor's description says the same. Nothing on a plain draft.
  */
 export function AiNoteSlot({ draftKey }: { draftKey: string }) {
-  const offered = useCanDraft();
+  const offered = useCanDraft({ key: draftKey });
   useBodyGlance(offered ? draftKey : undefined);
   const note = useNote(draftKey);
   if (!note) return null;

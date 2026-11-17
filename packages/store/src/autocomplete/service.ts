@@ -132,7 +132,7 @@ export class Autocomplete {
   }
 
   /** Plan 133 §5.1: `cold` is never "no such person". */
-  resolveExact(token: string, o: { accountId?: number; limit?: number } = {}): { state: "ready" | "cold"; hits: ContactHit[] } {
+  resolveExact(token: string, o: { accountId?: number; limit?: number; excludeAccounts?: readonly number[] } = {}): { state: "ready" | "cold"; hits: ContactHit[] } {
     const c = this.contacts;
     return c ? { state: "ready", hits: c.resolveExact(token, o) } : { state: "cold", hits: [] };
   }

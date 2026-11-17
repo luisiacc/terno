@@ -73,6 +73,8 @@ export interface AskTurn {
   provider: string | null;
   createdAt: number;
   checks: AskCheck;
+  /** plan 211: every account its answer drew on (cited or not), as stored; absent: none known */
+  accountIds?: number[];
 }
 
 export interface AskConversationSummary {

@@ -319,6 +319,12 @@ export class VoiceLearner {
     if (this.active) this.wake({ force: true });
   }
 
+  /** Plan 211: the accounts "you" was last merged from, and those the last study read: a draft leaves out what came of one now off. */
+  async youSources(): Promise<{ merged: readonly number[]; studied: readonly number[] }> {
+    const [cp, study] = await Promise.all([this.checkpoint(), this.host.store.settings.get<StudyRecord | null>(STUDY_KEY, null)]);
+    return { merged: cp?.merged ?? [], studied: study?.accountIds ?? [] };
+  }
+
   /** Permission went: a pass in flight doesn't commit, and studies and refreshes stop at the provider too. */
   private withdraw(): void {
     this.epoch++;

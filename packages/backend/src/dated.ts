@@ -1205,7 +1205,8 @@ export class DatedWorker {
   /** Plan 211: the account's AI or What matters went off: its reading on the way stops, and its marks go as they're reached. */
   accountOff(accountId: number): void {
     const leaving = this.leaving;
-    if (leaving?.accountId === accountId) leaving.stop.abort();
+    // its open items may be another account's (the same sender's): asked again, it goes without that account's
+    if (leaving && (leaving.accountId === accountId || leaving.open.length)) leaving.stop.abort();
   }
 
   /**

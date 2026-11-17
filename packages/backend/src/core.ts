@@ -387,6 +387,7 @@ export class BackendCore {
       begin: (requestId, clientId) => this.aiService.begin(requestId, clientId),
       // plan 211: and the account's AI and What matters switches
       accountWanted: async (accountId) => this.gate.reads(accountId) && (await this.store.accounts.config<AccountPrefs>(accountId))?.config.followups !== false,
+      inFeed: (accountId) => this.gate.reads(accountId),
       signature: async (accountId) => (await this.store.accounts.get(accountId))?.signature ?? "",
       templated: (accountId) => this.writing.learner.templatedIn(accountId),
       emit: (snapshot) => {
@@ -1415,12 +1416,13 @@ export class BackendCore {
       if (before.ai && before.feed && !(after.ai && after.feed)) {
         this.followups.accountOff(accountId);
         this.dated.accountOff(accountId);
-        this.today.accountOff(accountId);
       }
     }
-    // either way: what's built across accounts is built again from those allowed now
+    // either way: what's built across accounts is built again from those allowed now, and What matters (its digest too)
+    // reads again
     this.aiAssist.accountsChanged();
     this.writing.accountsChanged();
+    this.today.accountsChanged();
     this.today.changed();
   }
 

@@ -23,6 +23,8 @@ const SCAN_TOKENS = { inputTokens: 600, outputTokens: 150 };
 export interface FollowupHost {
   readonly store: MailStore;
   now(): number;
+  /** plan 211: the account's AI and What matters switches both on (a lookup) */
+  inFeed(accountId: number): boolean;
   settings(): Promise<AppSettings>;
   forTask(): Promise<AiTasks>;
   /** a request a change of provider aborts */
@@ -792,12 +794,19 @@ export class FollowupWorker {
   /** A due promise says so, once, per row (revision 7). A nudge doesn't. */
   private async announce(due: readonly FollowupRow[], now: number): Promise<void> {
     if (this.stopped) return;
-    const fresh = due.filter((r) => r.kind === "promise" && !r.fromScan && r.inboxState === "onTop" && followupWakeAt(r) > now - NOTIFY_WINDOW_MS);
+    const promised = due.filter((r) => r.kind === "promise" && !r.fromScan && r.inboxState === "onTop" && followupWakeAt(r) > now - NOTIFY_WINDOW_MS);
+    if (!promised.length) return;
+    const threads = new Map((await this.host.summaries(promised.map((r) => r.threadId))).map((t) => [t.id, t]));
+    // plan 211: a promise of an account with AI or What matters off isn't shown, so it isn't said either (nor claimed: back
+    // on, a promise still due is said then)
+    const fresh = promised.filter((r) => {
+      const t = threads.get(r.threadId);
+      return !t || this.host.inFeed(t.accountId);
+    });
     if (!fresh.length) return;
     const claimed = new Set(await this.host.store.followups.claimNotice(fresh.map((r) => r.id), now));
     const rows = fresh.filter((r) => claimed.has(r.id));
     if (!rows.length) return;
-    const threads = new Map((await this.host.summaries(rows.map((r) => r.threadId))).map((t) => [t.id, t]));
     const shown = rows.filter((r) => {
       const t = threads.get(r.threadId);
       return t && !t.inTrash && !t.inSpam;

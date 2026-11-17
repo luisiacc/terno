@@ -50,6 +50,8 @@ type OlderParams = ParsedParamsOf<"ai.askOlder">;
 
 interface Asking {
   accounts: Set<number>;
+  /** plan 211: the accounts named to the planner (not what the answer drew on, which `accounts` keeps for the history) */
+  named: Set<number>;
   controller: AbortController;
   /** an account or conversation it depends on went: nothing it finishes is kept */
   dead: boolean;
@@ -126,7 +128,7 @@ export class AskService {
   constructor(private readonly b: Backend) {}
 
   private underWay(accounts: Iterable<number>, conversationId: number | null): Asking {
-    const entry: Asking = { accounts: new Set(accounts), controller: new AbortController(), dead: false, conversationId };
+    const entry: Asking = { accounts: new Set(accounts), named: new Set(), controller: new AbortController(), dead: false, conversationId };
     this.asking.add(entry);
     return entry;
   }
@@ -192,12 +194,14 @@ export class AskService {
       }
       const now = this.b.now();
       const today = dayIn(now, p.timezone);
+      // plan 211: only the accounts the AI may read, by name and address; each one's switch going off stops the plan
+      const named = (await store.accounts.list()).filter((a) => this.b.gate.ai(a.id));
+      for (const a of named) entry.named.add(a.id);
       const planInput = {
         question,
         today,
         timezone: p.timezone,
-        // plan 211: only the accounts the AI may read, by name and address
-        accounts: (await store.accounts.list()).filter((a) => this.b.gate.ai(a.id)).map((a) => ({ name: a.displayName, address: a.email })),
+        accounts: named.map((a) => ({ name: a.displayName, address: a.email })),
         categories: (await store.categories.list()).map((c) => c.name),
         ...(earlier.length ? { earlier: fitPlanEarlier(earlier, planner.contextTokens) } : {}),
       };
@@ -543,12 +547,13 @@ export class AskService {
    * the conversation keeps it, and it's sent again once the account's AI is back on.
    */
   private allowedTurns(turns: readonly AskTurn[]): AskTurn[] {
-    return turns.filter((t) => t.sources.every((s) => this.b.gate.ai(s.accountId)));
+    // what it drew on, not only what it cited: a stopped or failed answer cites nothing
+    return turns.filter((t) => [...(t.accountIds ?? []), ...t.sources.map((s) => s.accountId)].every((id) => this.b.gate.ai(id)));
   }
 
   /** Plan 211: the account's AI went off: what's asking on its mail stops (what it already answered stays). */
   accountOff(accountId: number): void {
-    for (const entry of this.asking) if (entry.accounts.has(accountId)) entry.controller.abort();
+    for (const entry of this.asking) if (entry.accounts.has(accountId) || entry.named.has(accountId)) entry.controller.abort();
   }
 
   /** Its answers quote that mail: what drew on it goes, and what's asking on it stops (revision 3). */

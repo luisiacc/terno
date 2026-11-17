@@ -3,8 +3,10 @@ import { create } from "zustand";
 import { docRange } from "~/components/composer/body-text";
 import { controllerFor } from "~/components/composer/controller";
 import { client } from "~/rpc/connection";
-import { draftingOffered } from "./ai";
+import { accountAi, draftingOffered } from "./ai";
+import { useDrafts } from "./drafts";
 import { getApp, useApp } from "~/state/app";
+import { useThreads } from "~/state/threads";
 
 /**
  * Plan 133: AI drafting's state, which the send path can import without depending on `lib/ai-draft.ts` (that imports
@@ -53,11 +55,11 @@ export function glanceNow(key: string): BodyGlance | null {
  */
 export const isNote = (key: string): boolean => {
   const s = useAiDraftUi.getState();
-  return canDraft() && noteState(s.rows[key], glanceNow(key) ?? s.glances[key]);
+  return canDraft(key) && noteState(s.rows[key], glanceNow(key) ?? s.glances[key]);
 };
 
 export function useNote(key: string | undefined): boolean {
-  const offered = useCanDraft();
+  const offered = useCanDraft({ key });
   return useAiDraftUi((s) => offered && key !== undefined && noteState(s.rows[key], s.glances[key]));
 }
 
@@ -99,12 +101,32 @@ export const aiDraftHooks: {
   working: () => false,
 };
 
-/** Plan 147: the feature's own switch, and whether it can run at all. */
-export const canDraft = (): boolean => useAiDraftUi.getState().enabled && draftingOffered(getApp());
+/** Plan 211: where a draft's mail comes from: the account it's sent from, and its conversation's (either may be unknown). */
+interface DraftSources {
+  key?: string;
+  threadId?: number | null;
+}
 
-export function useCanDraft(): boolean {
+const threadAccount = (threadId: number | null | undefined): number | undefined => (threadId == null ? undefined : useThreads.getState().details.get(threadId)?.thread.accountId);
+
+/**
+ * Plan 147: the feature's own switch, and whether it can run at all. Plan 211: for a draft or a conversation, each account
+ * whose mail it would carry lets the AI read it (the backend refuses otherwise, with the plain error).
+ */
+export const canDraft = (on: DraftSources | string = {}): boolean => {
+  const { key, threadId } = typeof on === "string" ? { key: on, threadId: undefined } : on;
+  const draft = key ? useDrafts.getState().drafts[key] : undefined;
+  const app = getApp();
+  return useAiDraftUi.getState().enabled && draftingOffered(app) && accountAi(app, draft?.accountId) && accountAi(app, threadAccount(threadId ?? draft?.threadId));
+};
+
+export function useCanDraft(on: DraftSources = {}): boolean {
   const enabled = useAiDraftUi((s) => s.enabled);
-  return useApp(draftingOffered) && enabled;
+  const sender = useDrafts((s) => (on.key ? s.drafts[on.key]?.accountId : undefined));
+  const draftThread = useDrafts((s) => (on.key ? s.drafts[on.key]?.threadId : undefined));
+  const threadId = on.threadId ?? draftThread ?? null;
+  const conversation = useThreads((s) => (threadId === null ? undefined : s.details.get(threadId)?.thread.accountId));
+  return useApp((s) => draftingOffered(s) && accountAi(s, sender) && accountAi(s, conversation)) && enabled;
 }
 
 /** Whether the feature shows, read once at boot; Settings keeps it current. No side effects, as the contract promises. */

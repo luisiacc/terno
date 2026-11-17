@@ -551,3 +551,36 @@ describe("plan 211: older mail and an account with AI off", () => {
     expect(searches).toEqual([]);
   });
 });
+
+describe("plan 211 (Codex code review): Ask's provenance and its plan", () => {
+  it("a stopped answer that cited nothing still drew on its account: it isn't sent again while that account's AI is off", async () => {
+    const { backend, client, model, put, ask } = await setup();
+    const other = (await backend.store.accounts.create({ kind: "imap", email: "b@terno.test", displayName: "Side job", color: "brown", now: 0 })).account;
+    const store = backend.store;
+    const kept = await store.ask.history.add({ conversationId: null, kind: "question", question: "Where do I park?", answer: "PARKING-CANARY: P4", status: "stopped", sources: [], queries: [], checks: { unlinked: true, unsupported: [] }, accountIds: [other.id], model: "demo", provider: "fake", promptVersion: 1, now: NOW, clearGeneration: store.ask.history.clearGeneration() });
+    await client.call("accounts.update", { id: other.id, ai: false });
+    await put();
+    done(await ask("When does my lease renew?", { conversationId: kept!.conversationId }));
+    const sent = [model.plans.at(-1)!, model.answers.at(-1)!].map((r) => promptText(r.messages[0]!.content)).join("\n");
+    expect(sent).not.toContain("PARKING-CANARY");
+    expect(sent).not.toContain("Where do I park?");
+  });
+
+  it("an account named to the planner going off stops the plan at the provider", async () => {
+    const { backend, client, model, put, ask } = await setup();
+    const other = (await backend.store.accounts.create({ kind: "imap", email: "b@terno.test", displayName: "Side job", color: "brown", now: 0 })).account;
+    await put();
+    let planned!: () => void;
+    const held = new Promise<void>((r) => (planned = r));
+    model.plan = async () => {
+      await held;
+      return [query({ terms: ["lease"] })];
+    };
+    const asking = ask().catch((e: RpcError) => e);
+    await expect.poll(() => model.plans.length).toBe(1);
+    await client.call("accounts.update", { id: other.id, ai: false });
+    expect(model.plans[0]!.signal?.aborted).toBe(true);
+    planned();
+    expect(await asking).toMatchObject({ details: { aiErrorKind: "cancelled" } });
+  });
+});

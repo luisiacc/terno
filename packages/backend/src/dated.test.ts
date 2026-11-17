@@ -3644,3 +3644,26 @@ describe("plan 211: an account's AI and What matters switches", () => {
     expect((await backend.dated.scanOffer()).count).toBe(0);
   });
 });
+
+describe("plan 211 (Codex code review): a reading that carries another account's item", () => {
+  it("stops when that account's AI goes off, and is read again without it", async () => {
+    const { backend, client, model, receive, read } = await setup();
+    const other = (await backend.store.accounts.create({ kind: "imap", email: "b@terno.test", displayName: "B", color: "brown", now: 0 })).account;
+    model.answer = () => reply([{ ...bill, text: "Pay the water bill", quote: "due on November 20" }]);
+    await receive({ accountId: other.id, to: [{ name: "B", email: "b@terno.test" }] });
+    await read();
+    model.answer = () => reply();
+    let release!: () => void;
+    model.gate = new Promise((r) => (release = r));
+    await receive({ subject: "A reminder" });
+    backend.dated.wake();
+    await expect.poll(() => model.requests.length).toBe(2);
+    expect(promptText(model.requests[1]!.messages[0]!.content)).toContain("Pay the water bill");
+    await client.call("accounts.update", { id: other.id, ai: false });
+    expect(model.requests[1]!.signal?.aborted).toBe(true);
+    model.gate = null;
+    release();
+    await expect.poll(() => backend.store.dated.marks.count()).toBe(0);
+    expect(promptText(model.requests.at(-1)!.messages[0]!.content)).not.toContain("Pay the water bill");
+  });
+});

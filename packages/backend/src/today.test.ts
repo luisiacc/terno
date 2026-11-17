@@ -832,7 +832,13 @@ describe("plan 211: the digest and an account's switches", () => {
     await t.letter("Elsewhere", { accountId: other.id });
     await t.client.call("today.list", { held: [] });
     await vi.waitFor(async () => expect((await t.client.call("today.digest", {}))?.items).toHaveLength(2));
+    // Codex code review: an open digest page hears only `todayDigest`: a switch moving says it, off and back on
+    let told = 0;
+    t.client.on("todayDigest", () => told++);
     await t.client.call("accounts.update", { id: other.id, feed: false });
+    await vi.waitFor(() => expect(told).toBe(1));
     expect((await t.client.call("today.digest", {}))!.items.map((i) => i.from)).toEqual(["Stratechery"]);
+    await t.client.call("accounts.update", { id: other.id, feed: true });
+    await vi.waitFor(() => expect(told).toBeGreaterThanOrEqual(2));
   });
 });

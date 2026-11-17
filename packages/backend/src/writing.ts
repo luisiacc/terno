@@ -274,9 +274,13 @@ export class WritingService {
     while (this.snapshots.size > SNAPSHOTS_MAX) this.snapshots.delete(this.snapshots.keys().next().value!);
   }
 
-  /** Plan 211: the account's AI went off: a draft from it stops at the provider, and no snapshot of its mail is used again. */
-  accountOff(accountId: number): void {
-    for (const { accountId: id, controller } of this.asking) if (id === accountId) controller.abort();
+  /**
+   * Plan 211: an account's AI went off. A request may carry its mail without being its (a reply from another account in its
+   * conversation, a voice borrowed from it, a contact learned there), so every drafting request in flight stops: a rare
+   * moment, and asked again it goes without that account. No snapshot of its mail is used again.
+   */
+  accountOff(_accountId: number): void {
+    for (const { controller } of this.asking) controller.abort();
     this.forgetSnapshots();
   }
 
@@ -290,10 +294,10 @@ export class WritingService {
    * Plan 211: the accounts whose mail a draft would carry (the one it's sent from, and the conversation's) must all let
    * the AI read it: else the plain error, through the catalog.
    */
-  private async refuseAiOff(p: ComposeParams): Promise<void> {
+  private async refuseAiOff(p: { accountId?: number; threadId?: number }): Promise<void> {
     const { gate, store } = this.b;
     const thread = p.threadId !== undefined ? (await store.threads.summaries([p.threadId]))[0]?.accountId : undefined;
-    if (!gate.ai(p.accountId) || (thread !== undefined && !gate.ai(thread))) throw new AiError(L("errors.ai.accountOff"), "not_configured");
+    if ((p.accountId !== undefined && !gate.ai(p.accountId)) || (thread !== undefined && !gate.ai(thread))) throw new AiError(L("errors.ai.accountOff"), "not_configured");
   }
 
   /** A request that stops, at the provider too, the moment the user takes back the permission it runs under. */
@@ -439,11 +443,16 @@ export class WritingService {
       const rows = await store.writing.profiles.read(language ? [{ scopeKey, language }, { scopeKey, language: "" }] : [{ scopeKey, language: "" }]);
       return rows[0] ?? null;
     };
+    // plan 211: "you" was merged (and judged) from accounts: one whose AI is off now keeps it out until it's merged again
+    // without it, and keeps its judgment out until a study that didn't read it
+    const you = this.b.gate.aiOff.length ? await this.learner.youSources() : null;
+    const off = (ids: readonly number[]) => ids.some((id) => !this.b.gate.ai(id));
     const chain: VoiceProfile[] = [];
     for (const scopeKey of scopes) {
+      if (scopeKey === scopeKeys.you && you && off(you.merged)) continue;
       const row = await pick(scopeKey);
       const profile = row && toProfile(row);
-      if (profile) chain.push(profile);
+      if (profile) chain.push(scopeKey === scopeKeys.you && you && off(you.studied) ? { ...profile, judgment: null } : profile);
     }
     // §1: this account has never written to them, and another has: that profile is absolute, so it carries over (plan
     // 211: never from an account the AI may not read)
@@ -814,10 +823,12 @@ export class WritingService {
    */
   async readDraft(p: ReadDraftParams, clientId: string): Promise<{ kind: "instruction" | "email"; gaps: number[] }> {
     const { signal: asked, release } = this.b.aiService.begin(p.requestId, clientId);
-    const { signal, done: permissionDone } = this.underPermission(null, asked);
+    const { signal, done: permissionDone } = this.underPermission(p.accountId ?? null, asked);
     try {
       const prefs = await readPrefs(this.b.store);
       if (!prefs.global.enabled) throw new AiError(L("errors.ai.draftingOff"), "not_configured");
+      // plan 211: what's typed in a draft of an account with AI off is that account's mail
+      await this.refuseAiOff(p);
       const maybe = p.maybe.filter((g) => g.from < g.to && g.to <= p.text.length);
       const ai = await this.b.aiService.forTask("intent", { foreground: true });
       return await ai.readDraft({ text: p.text, maybe }, AbortSignal.any([signal, AbortSignal.timeout(READ_DRAFT_DEADLINE_MS)]));
@@ -860,6 +871,8 @@ export class WritingService {
     const { signal, done: permissionDone } = this.underPermission(null, asked);
     void this.learner.activate().catch(() => {});
     try {
+      // plan 211: the sending account's, and the conversation's whose people it reads
+      await this.refuseAiOff({ accountId: p.accountId, threadId: p.surface.kind === "thread" ? p.surface.threadId : undefined });
       const surface = await this.surfaceOf(p.surface as IntentSurfaceParam);
       // warming is what makes names resolvable: the answer to a `wait` comes when it's done, with nothing polling
       const warm = this.b.warmAutocomplete();
@@ -870,7 +883,8 @@ export class WritingService {
         instruction: p.instruction,
         surface,
         lookup: (token) => {
-          const r = this.b.autocomplete.resolveExact(token, p.accountId !== undefined ? { accountId: p.accountId } : {});
+          // plan 211: never someone known only from an account with AI off
+          const r = this.b.autocomplete.resolveExact(token, { ...(p.accountId !== undefined ? { accountId: p.accountId } : {}), excludeAccounts: this.b.gate.aiOff });
           return { state: r.state, hits: r.hits.map((h) => ({ name: h.name, address: h.email.toLowerCase() })) };
         },
         recentThread: (address) => recent.get(address.toLowerCase()) ?? null,

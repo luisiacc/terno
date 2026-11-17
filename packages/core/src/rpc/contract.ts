@@ -1435,6 +1435,9 @@ export const contract = {
       requestId,
       text: z.string().max(WRITING_ONE_OFF_MAX * 4),
       maybe: z.array(z.object({ from: z.number().int().min(0), to: z.number().int().min(0) })).max(FILL_GAPS_MAX),
+      /** plan 211: the draft's account and conversation: an account with AI off reads nothing */
+      accountId: id.optional(),
+      threadId: id.optional(),
     }),
     { timeoutMs: 30_000 },
   ),

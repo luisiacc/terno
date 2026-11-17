@@ -40,6 +40,14 @@ describe("resolveExact (plan 133 §5.1)", () => {
     expect(c.resolveExact("")).toEqual([]);
   });
 
+  it("plan 211: leaves out someone known only through accounts the AI may not read", async () => {
+    const other = { name: "Tom Wu", email: "tom.wu@x.test" };
+    const c = await built([sent([tom]), sent([other], { accountId: 2 }), received(tom, { accountId: 2 })]);
+    expect(new Set(c.resolveExact("tom", { excludeAccounts: [2] }).map((h) => h.email))).toEqual(new Set([tom.email]));
+    expect(c.resolveExact("tom", { excludeAccounts: [1, 2] })).toEqual([]);
+    expect(c.resolveExact("tom", { excludeAccounts: [] })).toHaveLength(2);
+  });
+
   it("ranks who you write to first, and more so on this account; bounded", async () => {
     const other = { name: "Tom Wu", email: "tom.wu@x.test" };
     const c = await built([sent([tom]), sent([other], { accountId: 2 })]);

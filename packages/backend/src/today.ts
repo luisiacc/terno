@@ -229,12 +229,14 @@ export class TodayService {
   }
 
   /**
-   * Plan 211: an account's AI or What matters went off: a digest batch on its way that carries its mail stops (the next one
-   * goes without it), and the automated list is read again. `changed()` (the caller's) redraws the rest.
+   * Plan 211: an account's switch moved: a digest batch on its way that carries mail no longer allowed stops (the next one
+   * goes without it), the automated list is read again, and an open digest page reads its row again (it hears only
+   * `todayDigest`). `changed()` (the caller's) redraws the rest.
    */
-  accountOff(_accountId: number): void {
+  accountsChanged(): void {
     if (this.automated) this.automated = { ...this.automated, at: 0 };
     void this.holdingUp().catch((error: unknown) => captureError(error, { code: "ai.failed" }));
+    this.ended(todayKey(this.b.now()));
   }
 
   /**

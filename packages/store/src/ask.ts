@@ -304,6 +304,7 @@ export const turnOfRow = (r: AskTurnRow): AskTurn => ({
   provider: r.provider,
   createdAt: r.created_at,
   checks: parsed<AskCheck>(r.checks_json, { unlinked: false, unsupported: [] }),
+  accountIds: parsed<number[]>(r.account_ids_json, []),
 });
 
 /** A deleted conversation as Undo brings it back. */

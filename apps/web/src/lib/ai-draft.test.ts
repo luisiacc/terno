@@ -25,11 +25,11 @@ vi.mock("~/rpc/connection", () => ({
     on: (event: string, listener: (payload: unknown) => void) => { rpc.events.set(event, listener); return () => {}; },
   },
 }));
-const threads = vi.hoisted(() => ({ listeners: new Set<(state: unknown) => void>() }));
-vi.mock("~/state/threads", () => ({ invalidateThreads: vi.fn(), loadThread: vi.fn(async () => null), useThreads: { subscribe: (l: (state: unknown) => void) => { threads.listeners.add(l); return () => threads.listeners.delete(l); } } }));
+const threads = vi.hoisted(() => ({ listeners: new Set<(state: unknown) => void>(), details: new Map<number, { thread: { accountId: number } }>() }));
+vi.mock("~/state/threads", () => ({ invalidateThreads: vi.fn(), loadThread: vi.fn(async () => null), useThreads: { getState: () => ({ details: threads.details }), subscribe: (l: (state: unknown) => void) => { threads.listeners.add(l); return () => threads.listeners.delete(l); } } }));
 
 const store = await import("./ai-draft");
-const { aiDraftHooks, noteState, setGlance, useAiDraftUi } = await import("./ai-draft-state");
+const { aiDraftHooks, canDraft, noteState, setGlance, useAiDraftUi } = await import("./ai-draft-state");
 const { sendDraft } = await import("./compose");
 const { newFields } = await import("./compose-fields");
 const drafts = await import("./drafts");
@@ -190,6 +190,24 @@ beforeEach(() => {
   globalThis.localStorage?.clear?.();
 });
 afterEach(() => { for (const key of Object.keys(useDrafts.getState().drafts)) forgetDraft(key); });
+
+describe("plan 211: an account with AI off", () => {
+  it("drafting isn't offered for its drafts, nor for another account's in its conversation", () => {
+    const key = createDraft({ ...newFields(1), mode: "reply", threadId: 7, inReplyToMessageId: 3, toText: "Ana <ana@example.test>", subject: "Re: x", bodyText: "" });
+    expect(canDraft(key)).toBe(true);
+    setApp({ accounts: [{ id: 1, email: "me@example.test", ai: false } as Account, { id: 2, email: "work@example.test" } as Account] });
+    expect(canDraft(key)).toBe(false);
+    setApp({ accounts: [{ id: 1, email: "me@example.test" } as Account, { id: 2, email: "work@example.test", ai: false } as Account] });
+    threads.details.set(7, { thread: { accountId: 2 } });
+    try {
+      expect(canDraft(key)).toBe(false);
+      expect(canDraft({ threadId: 7 })).toBe(false);
+      expect(canDraft()).toBe(true);
+    } finally {
+      threads.details.clear();
+    }
+  });
+});
 
 describe("the stream", () => {
   it("stays out of the document and the draft: deltas are only the preview's, until one commit", async () => {
@@ -1779,7 +1797,8 @@ describe("plan 163: ⌘J on what's written in the body", () => {
     // asked as what they want to say: right for an instruction, still their words for an email
     expect(last("ai.compose").params).toMatchObject({ instruction: UNSURE });
     expect(last("ai.compose").params.draft).toBeUndefined();
-    expect(last("ai.readDraft").params).toEqual({ requestId: expect.any(String), text: UNSURE, maybe: [] });
+    // only what was typed, and (plan 211) whose draft it is, for the account gate
+    expect(last("ai.readDraft").params).toEqual({ requestId: expect.any(String), text: UNSURE, maybe: [], accountId: 1, threadId: 7 });
     // nobody asked who it's for: it's their words, kept where they are
     expect(calls("ai.resolveIntent")).toHaveLength(0);
     expect(store.previewMode(session(key))).toBe("below");

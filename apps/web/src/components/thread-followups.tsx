@@ -35,7 +35,7 @@ function Line({ row, messages }: { row: FollowupRow; messages: readonly MessageD
   // when it comes back
   const when = followupWhen(row);
   // plan 147: a follow-up stays readable when its key goes; a nudge is a draft, and can't be written
-  const canNudge = useCanDraft();
+  const canNudge = useCanDraft({ threadId: row.threadId });
   const now = new Date();
   // any moment ahead
   const later = laterPresets({ before: null, limit: null }, now.getTime());

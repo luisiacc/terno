@@ -953,3 +953,49 @@ describe("plan 211: drafting and an account with AI off", () => {
     expect(textOf(last(t))).not.toContain('from="another account"');
   });
 });
+
+describe("plan 211 (Codex code review): drafting's other paths and an account with AI off", () => {
+  it("the fast read of a draft and where a sentence goes refuse for its account, or its conversation's; nothing leaves", async () => {
+    const t = await setup({ accounts: 2 });
+    const [a, b] = t.accounts;
+    const { thread } = await t.received({ accountId: b!.id, to: [{ name: b!.displayName, email: b!.email }] });
+    await t.client.call("accounts.update", { id: b!.id, ai: false });
+    const off = { message: "AI is off for this account. Turn it on in Settings → Accounts." };
+    expect(await errorOf(t.client.call("ai.readDraft", { requestId: t.requestId(), text: "tell tom it's fine", maybe: [], accountId: b!.id }))).toMatchObject(off);
+    expect(await errorOf(t.client.call("ai.readDraft", { requestId: t.requestId(), text: "tell tom it's fine", maybe: [], accountId: a!.id, threadId: thread }))).toMatchObject(off);
+    expect(await errorOf(t.client.call("ai.resolveIntent", { requestId: t.requestId(), instruction: "tell tom it's fine", surface: { kind: "thread", threadId: thread }, accountId: a!.id }))).toMatchObject(off);
+    expect(t.model.requests).toEqual([]);
+  });
+
+  it("a draft being written stops when any account's AI goes off: it may carry that account's mail", async () => {
+    const t = await setup({ accounts: 2 });
+    const [a, b] = t.accounts;
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    t.model.stream = async function* (req) {
+      yield { type: "delta", text: "<email>Fine" };
+      await held;
+      if (req.signal?.aborted) throw new AiError("stopped", "cancelled");
+      yield* say(" by me.</email>");
+    };
+    const drafting = errorOf(t.compose({ accountId: a!.id }));
+    await vi.waitFor(() => expect(t.model.requests).toHaveLength(1));
+    await t.client.call("accounts.update", { id: b!.id, ai: false });
+    expect(t.model.requests[0]!.signal?.aborted).toBe(true);
+    release();
+    expect(await drafting).toMatchObject({ details: { aiErrorKind: "cancelled" } });
+  });
+
+  it("'you' merged from an account whose AI just went off isn't used until it's merged again without it", async () => {
+    const t = await setup({ accounts: 2 });
+    const [a, b] = t.accounts;
+    await t.sentMany(30, () => ({ accountId: a!.id }));
+    await t.sentMany(20, () => ({ accountId: b!.id }));
+    await t.learned();
+    expect((await done(t.compose({ accountId: a!.id }))).used.levels).toContain("you");
+    // the learner hasn't run since
+    vi.spyOn(t.backend.writing.learner, "wake").mockImplementation(() => {});
+    await t.client.call("accounts.update", { id: b!.id, ai: false });
+    expect((await done(t.compose({ accountId: a!.id, session: "s2" }))).used.levels).not.toContain("you");
+  });
+});

@@ -668,13 +668,19 @@ export async function act(key: string): Promise<void> {
   }
 }
 
+/** Plan 211: the draft's account and conversation, for the backend's account gate. */
+function sourcesOf(key: string): { accountId?: number; threadId?: number } {
+  const d = useDrafts.getState().drafts[key];
+  return d ? { accountId: d.accountId, ...(d.threadId !== null ? { threadId: d.threadId } : {}) } : {};
+}
+
 /** The fast model's read: null when it can't be asked or can't say; "stopped" when Stop or Esc ended it. */
 async function askRead(key: string, text: string, maybe: readonly BodyGap[]): Promise<BodyVerdict | null | "stopped"> {
   if (text.length > READ_DRAFT_MAX) return null;
   const requestId = globalThis.crypto.randomUUID();
   update(key, { phase: "reading", reading: requestId, readFailed: false, live: t("aiDraft.live.reading") });
   try {
-    const r = await client.call("ai.readDraft", { requestId, text, maybe: maybe.map(({ from, to }) => ({ from, to })) });
+    const r = await client.call("ai.readDraft", { requestId, text, maybe: maybe.map(({ from, to }) => ({ from, to })), ...sourcesOf(key) });
     if (session(key)?.reading !== requestId) return "stopped";
     update(key, { reading: null });
     return r;
@@ -716,7 +722,7 @@ async function readAside(key: string, id: string, b: BodyText, found: BodyRead):
     const requestId = id;
     update(key, { reading: requestId });
     try {
-      verdict = await client.call("ai.readDraft", { requestId, text: b.text, maybe: found.maybe.map(({ from, to }) => ({ from, to })) });
+      verdict = await client.call("ai.readDraft", { requestId, text: b.text, maybe: found.maybe.map(({ from, to }) => ({ from, to })), ...sourcesOf(key) });
     } catch {
       // it couldn't say: what they typed stays theirs, and the strip says so (a Stop has already ended the run)
       if (session(key)?.reading === requestId) update(key, { readFailed: true });

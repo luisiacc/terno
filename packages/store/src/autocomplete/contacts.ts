@@ -871,17 +871,21 @@ export class ContactIndex {
    * sentence ("tom") either is someone's token or isn't, and `suggest` would answer "tomorrow" with Tomás. Entries are
    * sorted, so the exact ones open each range and the walk stops there.
    */
-  resolveExact(token: string, o: { accountId?: number; limit?: number } = {}): ContactHit[] {
+  resolveExact(token: string, o: { accountId?: number; limit?: number; excludeAccounts?: readonly number[] } = {}): ContactHit[] {
     const limit = Math.max(1, Math.min(o.limit ?? 8, 20));
     // "jean-luc" is two tokens here: the first says who
     const t = fold(token.trim()).split(TERM_SPLIT).find(Boolean)?.slice(0, MAX_TOKEN);
     if (!t) return [];
     const bytes = encodeString(t);
     const bit = o.accountId === undefined ? 0 : this.accountBit(o.accountId, false);
+    // plan 211: someone known only through accounts the AI may not read isn't anyone's to name to it
+    const off = (o.excludeAccounts ?? []).reduce((mask, id) => (mask | this.accountBit(id, false)) >>> 0, 0);
     const found = new Set<number>();
     const take = (id: number) => {
       const f = this.flags[id]!;
       if (f & DEAD || f & OWN || (f & SPAM && !(this.sent[id]! > 0))) return;
+      const seen = this.accounts[id]!;
+      if (off && seen & off && !((seen & ~off) >>> 0)) return;
       found.add(id);
     };
     const m = this.main;
