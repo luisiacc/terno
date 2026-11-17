@@ -225,7 +225,7 @@ describe("a promise's day (plan 210, iteration 3: one resolver)", () => {
     expect(promiseGroupAt(answering, at(2026, 11, 13, 12))).toEqual({ group: "today", day: null });
     const later = { ...answering, deferredUntil: at(2026, 11, 12, 9) };
     expect(promiseBroken(later, at(2026, 11, 11))).toBeNull();
-    expect(promiseGroupAt(later, at(2026, 11, 11))).toEqual({ group: "day", day: "2026-11-13" });
+    expect(promiseGroupAt(later, at(2026, 11, 11))).toEqual({ group: "day", day: "2026-11-13", notYet: true });
     expect(promiseBroken(later, at(2026, 11, 12, 9))).toBe("ahead");
     const far = { ...own, dueAt: at(2026, 12, 4, 9), brokenDueAt: tue };
     expect(promiseGroupAt(far, at(2026, 11, 11))).toEqual({ group: "today", day: null });
@@ -605,6 +605,8 @@ describe("the groups go by day (plan 210, the owner, replacing plan 204's sevent
   const missed = { group: "missed", day: null };
   const day = (d: string) => ({ group: "day", day: d });
   const comingUp = (d: string) => ({ group: "comingUp", day: d });
+  // put off under one of the seven days: drawn there, not shown yet (the second morning's code review)
+  const notYet = (d: string) => ({ group: "day", day: d, notYet: true });
   it("Missed, Today, a day of its own, Ahead (iteration 5), Coming up", () => {
     expect(TODAY_GROUP_ORDER).toEqual(["missed", "today", "day", "ahead", "comingUp"]);
   });
@@ -638,11 +640,11 @@ describe("the groups go by day (plan 210, the owner, replacing plan 204's sevent
     expect(datedGroupAt(flight, at(2026, 11, 21, 1))).toBeNull();
     // Later past its day keeps it out of Today until then, never Missed: under the day its Later ends (the second morning: one
     // of the seven days is that day's own heading, never a Coming up bucket below later days)
-    expect(datedGroupAt({ ...bill, deferredUntil: at(2026, 11, 22, 9) }, at(2026, 11, 21, 9))).toEqual(day("2026-11-22"));
+    expect(datedGroupAt({ ...bill, deferredUntil: at(2026, 11, 22, 9) }, at(2026, 11, 21, 9))).toEqual(notYet("2026-11-22"));
     // Codex code review: put off past its day before it's come, under the day its Later ends, never its own
-    expect(datedGroupAt({ ...bill, deferredUntil: at(2026, 11, 22, 9) }, at(2026, 11, 15, 9))).toEqual(day("2026-11-22"));
+    expect(datedGroupAt({ ...bill, deferredUntil: at(2026, 11, 22, 9) }, at(2026, 11, 15, 9))).toEqual(notYet("2026-11-22"));
     // put off to a moment before its day: under its own day still
-    expect(datedGroupAt({ ...bill, deferredUntil: at(2026, 11, 15, 9) }, at(2026, 11, 14, 9))).toEqual(day("2026-11-20"));
+    expect(datedGroupAt({ ...bill, deferredUntil: at(2026, 11, 15, 9) }, at(2026, 11, 14, 9))).toEqual(notYet("2026-11-20"));
     // past the seven days, or later today: Coming up's
     expect(datedGroupAt({ ...bill, deferredUntil: at(2026, 11, 30, 9) }, at(2026, 11, 21, 9))).toEqual(comingUp("2026-11-30"));
     expect(datedGroupAt({ ...bill, deferredUntil: at(2026, 11, 21, 15) }, at(2026, 11, 21, 9))).toEqual(comingUp("2026-11-21"));
@@ -655,7 +657,7 @@ describe("the groups go by day (plan 210, the owner, replacing plan 204's sevent
     expect(datedGroupAt(undated, at(2026, 11, 14, 9))).toEqual(today);
     expect(datedGroupAt(undated, at(2026, 11, 17, 14))).toBeNull();
     // put off: under the day its Later ends, that day's heading within the seven days (the second morning), else Coming up's
-    expect(datedGroupAt({ ...undated, deferredUntil: at(2026, 11, 16, 9) }, at(2026, 11, 14, 9))).toEqual(day("2026-11-16"));
+    expect(datedGroupAt({ ...undated, deferredUntil: at(2026, 11, 16, 9) }, at(2026, 11, 14, 9))).toEqual(notYet("2026-11-16"));
     expect(datedGroupAt({ ...undated, deferredUntil: at(2026, 11, 16, 9) }, at(2026, 11, 8, 9))).toEqual(comingUp("2026-11-16"));
     const dated = item("alert", "2026-11-14");
     expect(datedGroupAt(dated, arrived)).toEqual(day("2026-11-14"));

@@ -276,6 +276,9 @@ function byReply(placed: readonly PlacedItem[], hidden: readonly Logical[]): Pla
   return placed.flatMap((p) => (folded.has(p.item) ? [] : leads.has(p) ? [{ ...p, with: leads.get(p)! }] : [p]));
 }
 
+/** Not shown yet: Coming up's, or put off under one of the seven days (`TaskPlace.notYet`); never counted, nor says a conversation. */
+const notShownYet = (at: TaskPlace) => at.group === "comingUp" || ("notYet" in at && at.notYet === true);
+
 /**
  * The projection's first step: the canonical items (`logicalItems`) and where each sits (`datedGroupAt`, `promiseGroupAt`).
  * A related detail (a trip's return leg) is a row of its own under its own day, never also its item's Also line (plan
@@ -290,7 +293,7 @@ export function placeItems(dated: readonly DatedRow[], promises: readonly Needin
   // (iteration 4) a reply's promises are grouped where they're placed, then the count leaves Coming up out
   const grouping = sharesMessage(promises);
   const hidden: Logical[] = [];
-  const finish = (out: PlacedItem[]) => (grouping ? byReply(out, hidden) : out).filter((p) => !(o.count && p.at.group === "comingUp"));
+  const finish = (out: PlacedItem[]) => (grouping ? byReply(out, hidden) : out).filter((p) => !(o.count && notShownYet(p.at)));
   // most mailboxes link nothing: each item is its own, placed where it is, and nothing is grouped (every count runs this
   // over the 1,000-item bound)
   if (!dated.some((r) => r.sameAs != null) && !promises.some((r) => r.sameAs != null)) {
@@ -342,8 +345,9 @@ export function projectRows(items: readonly PlacedItem[], f: Pick<ProjectionFact
   const buckets = new Map<string, string>();
   const bucketOf = (day: string): string => buckets.get(day) ?? (buckets.set(day, displayBucket(day, today)), buckets.get(day)!);
   // conversations an item of theirs shown now stands for: their ask, request or bill, or your promise to them (a Plan isn't
-  // what they asked), so a waiting row there would say the same thing twice. One behind Coming up says nothing yet: the
-  // conversation waiting on you is a row of its own meanwhile (their nudge on a promise due next week)
+  // what they asked), so a waiting row there would say the same thing twice. One behind Coming up, or put off under a day
+  // ahead (the second morning's code review: `notYet`), says nothing yet: the conversation waiting on you is a row of its
+  // own meanwhile (their nudge on a promise due next week, their new question beside an ask put off to Thursday)
   const represented = new Set<number>();
   for (const placedItem of items) {
     const { item, with: others } = placedItem;
@@ -353,12 +357,12 @@ export function projectRows(items: readonly PlacedItem[], f: Pick<ProjectionFact
     if (!f.live(lead.row.threadId)) {
       const alt = item.entries.find((e) => e !== lead && f.live(e.row.threadId));
       const altAt = !alt ? null : alt.source === "dated" ? datedGroupAt(alt.row, f.now, today) : promiseGroupAt(alt.row, f.now, today);
-      if (!alt || !altAt || (o.count && altAt.group === "comingUp")) continue;
+      if (!alt || !altAt || (o.count && notShownYet(altAt))) continue;
       lead = alt;
       at = altAt;
     }
     const plan = lead.source === "dated" && datedGroup(lead.row.kind) === "plans";
-    if (!plan && at.group !== "comingUp") represented.add(lead.row.threadId);
+    if (!plan && !notShownYet(at)) represented.add(lead.row.threadId);
     const early = lead.source === "dated" && at.group === "today" && shownEarly(lead.row, today);
     // the count needs only what `todayCounted` and `waitsOnYou` read: no words made
     const why: TodayWhy = o.count

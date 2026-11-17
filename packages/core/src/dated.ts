@@ -642,8 +642,12 @@ export function nextTodayChange(items: readonly Pick<DatedRow, "kind" | "state" 
 export const TODAY_GROUP_ORDER = ["missed", "today", "day", "ahead", "comingUp"] as const;
 export type TodayGroupKind = (typeof TODAY_GROUP_ORDER)[number];
 
-/** Where a task (a dated item, a promise of yours) sits: its group, and for a day ahead, Ahead or Coming up, its day ("YYYY-MM-DD"). */
-export type TaskPlace = { group: "missed" | "today"; day: null } | { group: "day" | "ahead" | "comingUp"; day: string };
+/**
+ * Where a task (a dated item, a promise of yours) sits: its group, and for a day ahead, Ahead or Coming up, its day
+ * ("YYYY-MM-DD"). `notYet` (the second morning's code review): what isn't shown yet, drawn under one of the seven days
+ * where it comes back (`notYet()`): placed there, but saying nothing yet for its conversation, as in Coming up.
+ */
+export type TaskPlace = { group: "missed" | "today"; day: null } | { group: "day" | "ahead" | "comingUp"; day: string; notYet?: true };
 
 const COUNTED_GROUPS: ReadonlySet<TodayGroupKind> = new Set(["missed", "today"]);
 
@@ -713,11 +717,12 @@ function comingUpDay(own: string | null, deferredUntil: number | null | undefine
 /**
  * Plan 210 (the second morning, Theo's and Priya's asks put off to Monday): what isn't shown yet sits where it comes back.
  * On one of the seven days ahead, that's the day's own heading, as the seven days are whole (never a Coming up bucket for
- * Monday drawn below Friday's heading); later, or later today, Coming up's. A day ahead is never counted, as before.
+ * Monday drawn below Friday's heading); later, or later today, Coming up's. A day ahead is never counted, as before. Its
+ * code review: under a day it's still not shown (`notYet`), so it never stands for its conversation (`projectRows`).
  */
 function notYet(own: string | null, deferredUntil: number | null | undefined, today: string): TaskPlace {
   const day = comingUpDay(own, deferredUntil, today);
-  return day > today && day <= lastShownDay(today) ? { group: "day", day } : { group: "comingUp", day };
+  return day > today && day <= lastShownDay(today) ? { group: "day", day, notYet: true } : { group: "comingUp", day };
 }
 
 /**

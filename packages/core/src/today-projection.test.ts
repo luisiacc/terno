@@ -57,6 +57,26 @@ describe("a row per item", () => {
     expect(projectToday(facts({ promises: [later], waiting })).rows.filter((r) => r.waiting).map((r) => r.threadId)).toEqual([4, 5, 6]);
   });
 
+  it("the second morning's code review: an item put off under a day ahead says nothing yet, so a newer question in its conversation is its own row, counted, in the list and the count alike", () => {
+    // Wednesday's request put off to Thursday morning, then their new question in that conversation
+    const ask = { ...dated("respond", "2026-11-18", { threadId: 9 }), deferredUntil: at(2026, 11, 19, 9) };
+    const mine = promise(at(2026, 11, 18, 9), { threadId: 10, deferredUntil: at(2026, 11, 20, 9) });
+    const waiting = [{ id: 9, lastDate: at(2026, 11, 18, 9, 30), hasSent: false }, { id: 10, lastDate: at(2026, 11, 18, 9, 45), hasSent: true }];
+    const f = facts({ dated: [ask], promises: [mine], waiting });
+    const { rows, counts } = projectToday(f);
+    expect(rows.map((r) => [r.id, r.group, r.day])).toEqual([
+      ["waiting:10", "today", null],
+      ["waiting:9", "today", null],
+      [`dated:${ask.id}`, "day", "2026-11-19"],
+      [`promise:${mine.id}`, "day", "2026-11-20"],
+    ]);
+    expect(counts).toEqual({ missed: 0, today: 0, waiting: 2, overdue: 0 });
+    expect(projectToday(f, { count: true }).counts).toEqual(counts);
+    // a day ahead of its own (not put off) still says its conversation
+    const due = dated("respond", "2026-11-20", { threadId: 9 });
+    expect(projectToday(facts({ dated: [due], waiting: waiting.slice(0, 1) })).rows.map((r) => r.id)).toEqual([`dated:${due.id}`]);
+  });
+
   it("an item in Spam or Trash has no row, and isn't counted", () => {
     const bill = dated("pay", "2026-11-18", { threadId: 9 });
     const { rows, counts } = projectToday(facts({ dated: [bill], live: (id) => id !== 9 }));
