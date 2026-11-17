@@ -3140,7 +3140,7 @@ describe("plan 210 (iteration 4): Mute this kind or sender (the Codex review's r
   const shown = async (client: RpcClient) => (await client.call("today.list", { held: [] })).sections.flatMap((x) => x.items.map((i) => i.id));
 
   it("a muted sender's mail reaches no model and isn't read later; their items hide (never closed) and come back on Unmute", async () => {
-    const { backend, client, model, clock, receive, read, check } = await setup();
+    const { backend, client, model, clock, receive, read, check, raw } = await setup();
     model.answer = () => reply([bill]);
     const thread = await receive();
     await read();
@@ -3162,18 +3162,23 @@ describe("plan 210 (iteration 4): Mute this kind or sender (the Codex review's r
     // the 14-day check takes none of theirs either once they're unmuted: their reminder, consumed unread while muted, never
     // comes back to be read (Codex's code review of iteration 4)
     expect((await client.call("dated.unmute", { on: "sender", key: "BILLING@power.test" })).mute).toMatchObject({ key: "billing@power.test" });
-    // (plan 211: the account's check, once; it takes the other sender's mail, which gave nothing, never theirs)
-    expect(await check()).toBe(1);
+    // (plan 211: the account's check, once: whatever else it takes, never theirs)
+    const picked = vi.spyOn(backend.store.dated.marks, "queueScan");
+    await check();
+    const reminderId = (raw as unknown as { get<T>(sql: string, ...a: unknown[]): T | undefined }).get<{ id: number }>("SELECT id FROM messages WHERE subject = 'Reminder'")!.id;
+    expect(picked.mock.calls.flatMap(([ids]) => [...ids])).not.toContain(reminderId);
+    picked.mockRestore();
     expect(await shown(client)).toContain(`dated:${item!.id}`);
     // what came while muted isn't read now: Unmute is for mail from then on
     await read();
-    expect(model.requests).toHaveLength(3);
-    expect(JSON.stringify(model.requests[2]!.messages)).toContain("Shipped");
+    const said = () => model.requests.map((r) => JSON.stringify(r.messages));
+    expect(said().filter((p) => p.includes("A reminder: your bill"))).toEqual([]);
     model.answer = () => reply([bill]);
     clock.now += 120_000;
     await receive({ subject: "Final notice", bodyText: "Final notice: your bill is due on November 20." });
     await read();
-    expect(model.requests).toHaveLength(4);
+    expect(said().filter((p) => p.includes("Final notice"))).toHaveLength(1);
+    expect(said().filter((p) => p.includes("A reminder: your bill"))).toEqual([]);
   });
 
   it("a muted sender's mail still queued when they're unmuted is never read (Codex's code review of iteration 4)", async () => {

@@ -85,8 +85,10 @@ describe("plan 211: What matters and Follow-ups with no offers", () => {
     expect(read.dated).toEqual({ enabled: false, enabledAt: null });
     expect(read.followups).toEqual({ enabled: false, enabledAt: null, nudgeAfterDays: 5 });
     expect(await readOfferAnswers(off)).toEqual({ dated: false, followups: true });
-    // a write of the user's drops them for good, and turning it on records the moment
-    await updateSettings(off, { dated: { enabled: true } }, 77);
-    expect((off.raw() as { dated: unknown }).dated).toEqual({ enabled: true, enabledAt: 77 });
+    // a write of the user's keeps them in the row, unshown (Codex code review, round 2): an upgrade that failed reads them
+    // again; and turning it on records the moment
+    await updateSettings(off, { dated: { enabled: true }, followups: { enabled: true } }, 77);
+    expect((await readSettings(off)).dated).toEqual({ enabled: true, enabledAt: 77 });
+    expect(await readOfferAnswers(off)).toEqual({ dated: false, followups: true });
   });
 });

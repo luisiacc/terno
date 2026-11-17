@@ -142,10 +142,12 @@ export function migrateAgents(s: StoredSettings, fresh: boolean): StoredSettings
 }
 
 /**
- * Plan 211: the offers are gone, and their answers with them: an install's answers are carried over once, at startup, as
- * the accounts already checked (`upgradeChecks`, which reads them before this drops them). Pure, like the others.
+ * Plan 211: the offers are gone, and their answers aren't shown: an install's answers are carried over once, at startup,
+ * as the accounts already checked (`upgradeChecks`). They stay in the row as written (Codex code review, round 2: dropped
+ * on a write, an upgrade that failed and ran again after a settings change would read no answer and check what was
+ * declined); only what's read leaves them out.
  */
-export function migrateOffers(s: StoredSettings): StoredSettings {
+export function withoutOffers(s: StoredSettings): StoredSettings {
   const dated = s.dated as (StoredSettings["dated"] & { scanAnswered?: unknown; offerDismissed?: unknown }) | undefined;
   const followups = s.followups as (StoredSettings["followups"] & { scanAnswered?: unknown }) | undefined;
   if (!(dated && ("scanAnswered" in dated || "offerDismissed" in dated)) && !(followups && "scanAnswered" in followups)) return s;
@@ -170,7 +172,7 @@ export async function readOfferAnswers(store: Pick<SettingsStore, "settings">): 
 /** Every read-time migration, in order. */
 function migrate(s: StoredSettings): StoredSettings {
   const fresh = Object.keys(s).length === 0;
-  return migrateOffers(migrateAgents(migrateLocalMail(migrateErrorReports(migrateRemoteImages(migrateAppearance(s, fresh)))), fresh));
+  return migrateAgents(migrateLocalMail(migrateErrorReports(migrateRemoteImages(migrateAppearance(s, fresh)))), fresh);
 }
 
 export const DEFAULT_SETTINGS: General = {
@@ -592,7 +594,7 @@ export async function readSettings(store: SettingsStore): Promise<AppSettings> {
 
 /** The user's own settings, for what writes them down or works out what they were: an export never records the overlay. */
 export async function readStoredSettings(store: SettingsStore): Promise<AppSettings> {
-  const s = await stored(store);
+  const s = withoutOffers(await stored(store));
   const { aiProvider: _p, aiModel: _m, ai: _ai, appearanceVersion: _v, remoteImagesVersion: _r, errorReportsVersion: _e, localMailVersion: _l, smartCategorizeVersion: _c, gmailClientId: _g, agentsVersion: _av, allowAgentSend: _as, ...general } = s;
   const { provider, profiles, capabilities } = aiState(s, s.aiProvider === undefined && !s.ai?.provider && (await store.secrets.has(keySecretName("anthropic"))));
   const profile = profiles[provider] ?? { model: "" };

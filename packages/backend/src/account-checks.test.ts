@@ -375,6 +375,23 @@ describe("in the backend (scripted providers)", () => {
     expect((await again.checked(DATED_CHECKED_KEY)).sort()).toEqual([a, b].sort());
   });
 
+  it("Codex code review, round 2: an account off at the upgrade owes what came since it went off, not what was declined", async () => {
+    const t = await setup({
+      accounts: [{ email: "a@example.com", prefs: { ai: false, aiOffAt: NOW - 2 * DAY } }],
+      before: async (backend) => {
+        const app = await backend.store.settings.get<Record<string, unknown>>("app", {});
+        await backend.store.settings.set("app", { ...app, dated: { enabled: true, enabledAt: NOW - 30 * DAY, scanAnswered: true, offerDismissed: false } });
+      },
+    });
+    const [a] = t.ids;
+    t.scripts("a@example.com").first.push(t.received(a!, "declined", 5), t.received(a!, "while-off", 1));
+    await t.backend.start();
+    await expect.poll(() => t.state(a!).lastSyncAt).not.toBeNull();
+    await t.client.call("accounts.update", { id: a!, ai: true });
+    await expect.poll(() => t.datedQueued.length).toBe(1);
+    expect(t.datedQueued[0]).toEqual([t.id("while-off")]);
+  });
+
   it("revision 10: an install that never answered checks each of its accounts", async () => {
     const t = await setup({
       before: async (backend) => {

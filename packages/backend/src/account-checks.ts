@@ -1,3 +1,4 @@
+import type { AccountPrefs } from "@terno/core";
 import type { MailStore } from "@terno/store";
 import { readOfferAnswers } from "./settings";
 
@@ -143,18 +144,25 @@ export async function upgradeChecks(store: Pick<MailStore, "settings" | "account
   if ((await store.settings.get<number>(CHECKS_VERSION_KEY, 0)) >= CHECKS_VERSION) return;
   const answered = await readOfferAnswers(store);
   if (answered.dated || answered.followups) {
-    const all = everyAccount(await store.accounts.list(), now);
-    if (answered.dated) await store.settings.set(DATED_CHECKED_KEY, all);
-    if (answered.followups) await store.settings.set(FOLLOWUPS_CHECKED_KEY, all);
+    const accounts = await store.accounts.list();
+    const prefs = new Map(await Promise.all(accounts.map(async (a) => [a.id, (await store.accounts.config<AccountPrefs>(a.id))?.config ?? {}] as const)));
+    // one already off owes what came since it went off (Codex code review, round 2): live mail wasn't read then, and it
+    // isn't what was declined
+    const record = (followups: boolean): Checked =>
+      Object.fromEntries(accounts.map((a) => {
+        const p = prefs.get(a.id)!;
+        const off = [p.ai === false ? (p.aiOffAt ?? now) : null, p.feed === false ? (p.feedOffAt ?? now) : null, followups && p.followups === false ? now : null].filter((t): t is number => t !== null);
+        return [a.id, off.length ? { at: now, gap: Math.min(...off) } : { at: now }];
+      }));
+    if (answered.dated) await store.settings.set(DATED_CHECKED_KEY, record(false));
+    if (answered.followups) await store.settings.set(FOLLOWUPS_CHECKED_KEY, record(true));
   }
   await store.settings.set(CHECKS_VERSION_KEY, CHECKS_VERSION);
 }
 
 /** A made-up mailbox (the demo's) counts as checked: thousands of a model's reads of nothing, at every start, otherwise. */
 export async function countAsChecked(store: Pick<MailStore, "settings" | "accounts">, now: number): Promise<void> {
-  const all = everyAccount(await store.accounts.list(), now);
+  const all: Checked = Object.fromEntries((await store.accounts.list()).map((a) => [a.id, { at: now }]));
   await store.settings.set(DATED_CHECKED_KEY, all);
   await store.settings.set(FOLLOWUPS_CHECKED_KEY, all);
 }
-
-const everyAccount = (accounts: readonly { id: number }[], now: number): Checked => Object.fromEntries(accounts.map((a) => [a.id, { at: now }]));

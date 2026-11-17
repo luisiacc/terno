@@ -115,10 +115,13 @@ export function pruneSentMarks(c: Ctx, now: number): number {
  */
 export function followupScanCandidates(c: Ctx, since: number, limit: number, accountId: number): number[] {
   const followups = T(c, "followups");
+  // once a conversation (Codex code review, round 2: a long one's rows were read again for each message you sent in it)
+  const tracked = new Map<number, Set<number>>();
+  const trackedIn = (threadId: number) => tracked.get(threadId) ?? tracked.set(threadId, new Set(followups.by("fk_thread_id", threadId).map((r) => r.message_id as number))).get(threadId)!;
   const out: R[] = [];
   for (const m of T(c, "messages").by("sent", accountId)) {
     if (m.is_spam || m.is_trash || m.date < since || m.list_id != null || m.is_bulk || unconfirmed(m)) continue;
-    if (!followups.by("fk_thread_id", m.thread_id).some((r) => r.message_id === m.id)) out.push(m);
+    if (!trackedIn(m.thread_id).has(m.id)) out.push(m);
   }
   return out.sort((a, b) => b.date - a.date || b.id - a.id).slice(0, limit).map((m) => m.id);
 }
