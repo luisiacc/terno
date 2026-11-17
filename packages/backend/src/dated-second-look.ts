@@ -1,7 +1,7 @@
 import { DATED_AGAIN_CHARS, DATED_AGAIN_SENTENCES, fitDates, type DatedInput, type DatedResult } from "@terno/ai";
 import { DATED_KINDS, datedGroup, dayEnd, missedUntil, namesDayFrom, partOfDayIn, saysClock, saysDay, type DatedKind } from "@terno/core";
 import { handledItself } from "./dated-automatic";
-import { namesOtherThan, namesSpecifically, norm, otherAmounts, otherIds, otherPeriod, paragraphsOf, proposedIn, scamPressure, sentencesOf, sentencesWith, settlesKind, type Sentences } from "./dated-evidence";
+import { namesOtherThan, namesSpecifically, norm, otherAmounts, otherIds, otherPeriod, paragraphsOf, proposedIn, scamPressure, sentencesOf, sentencesWith, settlesKind, startClock, type Sentences } from "./dated-evidence";
 
 /**
  * Plan 210 (iteration 5, revision 3, the owner's "a second look at a dated sentence that got no item"): a sentence of a read
@@ -158,11 +158,13 @@ export function lookAt(i: LookInput): string[] {
   const covered = new Set<number>();
   // a returned item's day covers a sentence that says it of the same thing: the model read that day (a statement's "Payment
   // due date: November 25" beside the balance it quoted), never another obligation's on that day
-  // round 18 (Theo's flight, quoted by its day's line alone and given no time): an untimed item that never saw the clock (its
-  // quote states none) covers no moment whose clock is on a line of its own
-  const cover = (x: { text?: string | null; quote?: string | null }, due?: string | null, untimed = false) => {
+  // round 18 (Theo's flight, quoted by its day's line alone and given no time): an untimed item covers no moment whose clock
+  // is on a line of its own. Round 19 (Diego's outbound, quoted with its clock's line, "21:35 → Madrid (MAD T4) 15:10 (+1)",
+  // and still given none): seeing the clock isn't taking it; only an event whose quote states one start, which `checkDates`
+  // gives it (`startClock`), took the clock. A trip's leaving is on its place's clock, which only the look reads
+  const cover = (x: { kind?: string; text?: string | null; quote?: string | null }, due?: string | null, untimed = false) => {
     const item = { text: x.text ?? "", quote: x.quote?.trim() ?? "" };
-    const sawClock = !untimed || saysClock(item.quote);
+    const sawClock = !untimed || (x.kind === "event" && !!startClock(item.quote));
     const at = item.quote ? sentencesWith(item.quote, sentences) : [];
     for (const n of at) if (sawClock || !joined(n)) covered.add(n);
     if (!due) return;

@@ -375,9 +375,9 @@ describe("round 18's faults: a day's line and its clock's line under it are one 
 
   it("the untimed flight's moment is asked about, its day's line and its clock's line as one; the timed return's never", () => {
     expect(flight([out, back])).toEqual([OUT_LINE]);
-    // a time read, or a quote that saw the clock, covers it as before
+    // a time read covers it as before; round 19: a quote that saw the trip's clocks and took none doesn't
     expect(flight([{ ...out, time: "08:15" }, back])).toEqual([]);
-    expect(flight([{ ...out, quote: "San Francisco (SFO) 8:15 AM → Austin (AUS) 1:52 PM" }, back])).toEqual([]);
+    expect(flight([{ ...out, quote: "San Francisco (SFO) 8:15 AM → Austin (AUS) 1:52 PM" }, back])).toEqual([OUT_LINE]);
     // the clock on the line after a label, en and es
     expect(look("Your booking\nMonday, November 16\nDeparts\n8:15 AM", { automated: true, first: { ...none, items: [{ ...out, quote: "Monday, November 16" }] } })).toEqual(["Monday, November 16 Departs 8:15 AM"]);
     expect(look("Tu reserva\nlunes 16 de noviembre\nSale:\n08:15", { automated: true, first: { ...none, items: [{ ...out, quote: "lunes 16 de noviembre" }] } })).toEqual(["lunes 16 de noviembre Sale: 08:15"]);
@@ -401,6 +401,41 @@ describe("round 18's faults: a day's line and its clock's line under it are one 
     expect(timedByTwins([out], [{ ...twin, text: "Skyway return flight from Austin" }], SKYWAY)).toEqual([out]);
     // nor the return's own line, in another paragraph
     expect(timedByTwins([out], [{ ...twin, text: "Skyway flight from Austin to San Francisco", quote: "Austin (AUS) 5:05 PM → San Francisco (SFO) 6:58 PM", time: "17:05" }], SKYWAY)).toEqual([out]);
+  });
+});
+
+describe("round 19's faults: an untimed item covers a moment only by the clock it took (Diego's outbound flight)", () => {
+  const AERO = "AEROPACÍFICO\n\nHola, DIEGO RAMIREZ CASTANEDA:\n\nGracias por volar con nosotros. Esta es la confirmación de tu itinerario.\n\nClave de reservación: KQ7RTM\n\nIDA — Martes 24 de noviembre de 2026\nAP 0017 · Ciudad de México (MEX T1) 21:35 → Madrid (MAD T4) 15:10 (+1)\nEmbarque: 20:50 · Puerta: se informa en el aeropuerto\nClase: Turista · Equipaje: 1 pieza de 23 kg\n\nREGRESO — Martes 1 de diciembre de 2026\nAP 0018 · Madrid (MAD T4) 17:45 → Ciudad de México (MEX T1) 21:20\nEmbarque: 17:00\n\nTotal pagado: $21,874.00 MXN\n\nDocumentos: pasaporte vigente por la duración del viaje. Check-in en línea disponible 24 horas antes de la salida.\n\naeropacifico.com.mx · Este correo es informativo; no respondas a esta dirección.";
+  const IDA_LINE = "IDA — Martes 24 de noviembre de 2026 AP 0017 · Ciudad de México (MEX T1) 21:35 → Madrid (MAD T4) 15:10 (+1)";
+  // the panel's reading (#21): the outbound quoted with both its lines and given no time; the return on Madrid's clock
+  const ida = { kind: "event" as const, text: "Vuelo de Ciudad de México a Madrid", quote: "IDA — Martes 24 de noviembre de 2026\nAP 0017 · Ciudad de México (MEX T1) 21:35 → Madrid (MAD T4) 15:10 (+1)", due: "2026-11-24", time: null };
+  const regreso = { kind: "event" as const, text: "Vuelo de Madrid a Ciudad de México", quote: "REGRESO — Martes 1 de diciembre de 2026\nAP 0018 · Madrid (MAD T4) 17:45 → Ciudad de México (MEX T1) 21:20", due: "2026-12-01", time: "10:45" };
+  const trip = (items: DatedResult["items"]) => look(AERO, { subject: "Confirmación de compra · Ciudad de México – Madrid · Clave KQ7RTM", automated: true, first: { ...none, items } });
+
+  it("the outbound, quoted with its clock's line and given no time, is asked about; the timed return never", () => {
+    expect(trip([ida, regreso])).toEqual([IDA_LINE]);
+    // timed, it covers its moment
+    expect(trip([{ ...ida, time: "21:35" }, regreso])).toEqual([]);
+  });
+
+  it("an event whose quote states one start took that clock (checkDates gives it), and covers it; a request that only saw a clock doesn't", () => {
+    const BOOKING = "Your booking\nMonday, November 16\nDeparts 8:15 AM from Gate 4";
+    const event = { kind: "event" as const, text: "Train to Portland", quote: "Monday, November 16\nDeparts 8:15 AM from Gate 4", due: "2026-11-16", time: null };
+    expect(look(BOOKING, { automated: true, first: { ...none, items: [event] } })).toEqual([]);
+    const ES = "Tu reserva\nlunes 16 de noviembre\nSale a las 08:15 del andén 4";
+    expect(look(ES, { automated: true, first: { ...none, items: [{ ...event, quote: "lunes 16 de noviembre\nSale a las 08:15 del andén 4" }] } })).toEqual([]);
+    const FORM = "Registration\nMonday, November 16\nCloses 5:00 PM";
+    expect(look(FORM, { automated: true, first: { ...none, items: [{ kind: "respond", text: "Register", quote: "Monday, November 16\nCloses 5:00 PM", due: "2026-11-16", time: null }] } })).toEqual(["Monday, November 16 Closes 5:00 PM"]);
+  });
+
+  it("the look's twin gives the outbound 21:35 and stays one row, the return untouched (round 17's twin rules)", async () => {
+    const input: DatedInput = { text: AERO, subject: "Confirmación de compra", from: { name: "AeroPacífico", automated: true }, reader: { name: "Diego Ramírez Castañeda", addressed: "to" }, to: [], cc: [], receivedAt: "x", zone: "America/Mexico_City", open: [], language: "es" };
+    const twin = { kind: "event" as const, text: "Vuelo AP 0017 de Ciudad de México a Madrid", quote: "AP 0017 · Ciudad de México (MEX T1) 21:35 → Madrid (MAD T4) 15:10 (+1)", due: "2026-11-24", time: "21:35" };
+    const r = await secondLook({ ...none, items: [ida, regreso] }, { text: AERO, subject: input.subject, arrivedAt: NOW, automated: true, shown: [], now: NOW, from: "AeroPacífico", input, promptChars: Infinity }, { recheck: async () => "go", claim: async () => true, read: async (i) => (expect(i.again).toEqual([IDA_LINE]), { ...none, items: [twin] }), aborted: () => false });
+    if (typeof r === "string") throw new Error(r);
+    expect(r.result.items).toEqual([{ ...ida, time: "21:35" }, regreso]);
+    // the return's flight lends nothing to the outbound
+    expect(timedByTwins([ida], [{ ...twin, text: "Vuelo AP 0018 de Madrid a Ciudad de México", quote: "AP 0018 · Madrid (MAD T4) 17:45 → Ciudad de México (MEX T1) 21:20", time: "17:45" }], AERO)).toEqual([ida]);
   });
 });
 
