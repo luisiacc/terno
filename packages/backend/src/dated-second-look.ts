@@ -17,6 +17,17 @@ const CLOSING = /\b(?:clos(?:e|es|ing)|deadline|due|expir(?:e|es|ing)|last day|c
 const NOT_A_DAY = /[$€£]\s?\d[\d.,]*|\d[\d.,]*\s?(?:€|£|\b(?:usd|eur|mxn|gbp|cad)\b)|\b\d{1,3}(?:st|nd|rd|th)\s+(?:st|street|ave|avenue|av|blvd|rd|road|floor|fl)\b/giu;
 /** a schedule, not a moment: "runs every Monday at 6:00 AM", "cada lunes" */
 const RECURRING = /\b(?:every|each|weekly|daily|cada|todos los|todas las)\b/u;
+/**
+ * The claims ledger's third batch (Diego's workshop Fer still asks about, Carla's gift box he hasn't taken on): a mail that
+ * asks whether the reader will take something on proposes it, and its days are the proposal's. A question that asks it
+ * ("would you like to…?", "are you up for…?", "do you have time…?", "¿te animas…?", "¿te late?", "¿te da tiempo…?"), or words
+ * that wait on the reader's yes anywhere ("if you're in", "if you accept", "si aceptas", "si te late", "propuesta"), as
+ * `norm` reads them.
+ */
+const PROPOSES_ASKED = /\b(?:would you (?:like|want|be (?:up for|willing|interested|open|keen)|consider)|are you (?:up for|in|interested|willing|open to|keen)|(?:do|would) you have (?:the )?(?:time|bandwidth|capacity|room)|(?:can|could|would) you take (?:it|this|that) on|up for (?:it|this|that)|interested in|te animas|se animan|te late|les late|te interesa|te da tiempo|tienes tiempo|te gustaria|te apuntas|te sumas|estarias dispuest\w*|aceptas|aceptarias|te lo avientas)\b/u;
+const PROPOSES = /\b(?:if you(?: re| are) (?:in|up for it|interested|keen)|if you accept|if you agree|if you say yes|if you take (?:it|this|the job)|si (?:aceptas|te late|te interesa|te animas|te da tiempo|dices que si|lo tomas|le entras)|propuesta|proposal)\b/u;
+const proposes = (sentences: Sentences): boolean => sentences.some((s) => (/[?¿]/u.test(s.said) && PROPOSES_ASKED.test(s.read)) || PROPOSES.test(s.read));
+
 /** a list's line ("- RevOps Live — Thursday, Dec 3, 1 PM ET", "• Dec 3 — Summit", "1) …") */
 const LISTED = /^\s*(?:[-–—•·*▪]|\d{1,2}[.)])\s/u;
 
@@ -95,7 +106,8 @@ export interface LookInput {
  * item, a move or an open item it was shown has, when the sentence is about that same thing (iteration 5's code review,
  * point 3: it names it apart, or, in a returned item's own paragraph, names nothing else), or by a local rejection; a scam's
  * pressure anywhere in the mail rejects all of it. An automated mail with more moments than the bound, or one on a list's
- * line, is a listing (a newsletter's calendar), never asked about; nor is a list's post the reader isn't named on.
+ * line, is a listing (a newsletter's calendar), never asked about; nor is a list's post the reader isn't named on, nor a
+ * proposal the reader hasn't accepted (the claims ledger's third batch).
  */
 export function lookAt(i: LookInput): string[] {
   if (i.listed && i.addressed === "none") return [];
@@ -106,6 +118,9 @@ export function lookAt(i: LookInput): string[] {
   // first reading's whole job: its one item there, or none
   if (i.automated && (moments.length > DATED_AGAIN_SENTENCES || moments.some((n) => LISTED.test(sentences[n]!.said)))) return [];
   if (scamPressure(`${i.subject}\n${i.text}`)) return [];
+  // a proposal the reader hasn't accepted adds no plan or deadline; their own word for it (a promise of theirs it names,
+  // shown with it) is an acceptance, and its days are read again as any
+  if (proposes(sentences) && !i.shown.some((o) => o.kind === "promise" && !!o.text && namesSpecifically({ text: o.text, quote: "" }, i.text, i.from))) return [];
   const paragraphs = paragraphsOf(i.text);
   const paragraphOf = (n: number) => paragraphs.findIndex((p) => p.read.includes(sentences[n]!.read));
   // iteration 5's code review (point 2): a bill or a renewal by itself only as the checks read it of this sentence's own

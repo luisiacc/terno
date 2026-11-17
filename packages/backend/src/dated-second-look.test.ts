@@ -82,6 +82,24 @@ describe("which sentences get a second look", () => {
     expect(look(newsletter)).toEqual(["The holiday market opens Saturday, November 21 at 10:00 AM.", "The book swap is Tuesday, November 24 at 7 PM at the library."]);
   });
 
+  it("the claims ledger's third batch: a proposal the reader hasn't accepted adds no plan or deadline (Diego's workshop, Carla's gift box)", () => {
+    const FER = "¡Hola Diego!\n\nTe escribo por lo que platicamos en la cocina 😄 ¿Siempre sí te animas a dar el taller \"Identidad para negocios pequeños\" el jueves 19 a las 18:00 en la sala grande?\n\nNecesito que me confirmes antes del lunes para meterlo al newsletter de la comunidad y abrir el registro. Si te late, mándame también un título final y dos líneas de descripción.\n\nGracias!!\nFer";
+    const confirm = { kind: "respond" as const, text: "Confirmarle a Fer si darás el taller", quote: "Necesito que me confirmes antes del lunes para meterlo al newsletter de la comunidad y abrir el registro.", due: "2026-11-15", time: null };
+    expect(look(FER, { first: { ...none, items: [confirm] } })).toEqual([]);
+    const CARLA = "Hola Diego,\n\nQueremos sacar una caja de regalo para Navidad con el ensamble y el espadín. La imprenta necesita los archivos a más tardar el 4 de diciembre para entregarnos el 15.\n\n¿Me confirmas antes del viernes 20 si te da tiempo de hacerla? Si no, buscamos otra opción.\n\nCarla";
+    const answer = { kind: "respond" as const, text: "Responder a Carla sobre la caja navideña", quote: "¿Me confirmas antes del viernes 20 si te da tiempo de hacerla?", due: "2026-11-19", time: null };
+    expect(look(CARLA, { first: { ...none, items: [answer] } })).toEqual([]);
+    // en, a question or a yes waited on anywhere
+    expect(look("Would you be up for leading the onboarding workshop on Thursday, November 19 at 3:00 PM?")).toEqual([]);
+    expect(look("The print shop needs the files by December 4 at 5 PM. If you're in, I'll send the brief.")).toEqual([]);
+    // the reader's own word for it (a promise of theirs the mail names) is an acceptance: its days are read again
+    const promised = { kind: "promise", text: "send Carla the gift box files", due: null };
+    expect(look(CARLA, { first: { ...none, items: [answer] }, shown: [promised] })).toEqual(["La imprenta necesita los archivos a más tardar el 4 de diciembre para entregarnos el 15."]);
+    // a request with a day is no proposal ("could you … by"), nor a question asking whether they can host (the book club)
+    expect(look("Could you send me the deck? The board meets Tuesday, November 17 at 9:00 AM.")).toEqual(["The board meets Tuesday, November 17 at 9:00 AM."]);
+    expect(look(BOOK_CLUB, { first: { ...none, items: [HOST] } })).toEqual([MEETING]);
+  });
+
   it("at most two sentences and 1,000 characters, each whole", () => {
     const long = `We meet Tuesday, November 17 at 7:00 to go over ${"the long list of things ".repeat(36)}.`;
     expect(long.length).toBeGreaterThan(DATED_AGAIN_CHARS - 200);
