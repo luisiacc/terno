@@ -3144,6 +3144,7 @@ No contiene tu correo, tus contactos, tus ajustes ni tus claves.
   "dated.mute.kinds.ask": "preguntas",
   "dated.mute.offerPair": "No mostrar {kind} de {sender}",
   "dated.mute.offerSender": "No mostrar nada de {sender}",
+  "dated.mute.calendarName": "Calendario de {domain}",
   "dated.mute.pairName": "{kind} de {sender}",
   "dated.mute.pairDone": "Ya no verás {kind} de {sender} en Lo importante",
   "dated.mute.showPair": "Volver a mostrar {kind} de {sender} en Lo importante",

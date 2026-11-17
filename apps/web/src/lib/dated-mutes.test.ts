@@ -50,8 +50,11 @@ describe("Mute (plan 210, iteration 4)", () => {
     expect(muteAddress({ on: "pair", key: "delivery|track@parcelo.test", name: "" })).toBeNull();
     expect(muteAddress({ on: "kind", key: "pay", name: "" })).toBeNull();
     expect(about({ on: "pair", key: "delivery|track@parcelo.test", name: "Parcelo" }, "done")).toBe("You won’t see deliveries from Parcelo in What matters");
+    // the claims ledger's second batch: a calendar service's invitations by the service, never the person they're from
+    expect(offerLabel({ on: "pair", key: "event|calendar-noreply@halvorsen.edu", kind: "event", name: "halvorsen.edu", service: "halvorsen.edu" })).toBe("Don’t show events from halvorsen.edu Calendar");
     setLocale("es", es);
     try {
+      expect(offerLabel({ on: "pair", key: "event|calendar@uni.edu", kind: "event", name: "uni.edu", service: "uni.edu" })).toBe("No mostrar eventos de Calendario de uni.edu");
       expect(offerLabel({ on: "pair", key: "delivery|track@parcelo.test", kind: "delivery", name: "Parcelo" })).toBe("No mostrar entregas de Parcelo");
       expect(offerLabel({ on: "sender", key: "track@parcelo.test", name: "Parcelo" })).toBe("No mostrar nada de Parcelo");
       expect(muteName({ on: "kind", key: "event", name: "" })).toBe("Eventos");

@@ -35,7 +35,11 @@ export interface DatedMute {
  * What Remove's snack offers to mute (once each): that kind from that sender, or the sender alone with positive evidence
  * they're a machine; never anything of someone the user has written to. A whole kind is only Settings' to hide.
  */
-export type MuteOffer = { on: "pair"; key: string; kind: DatedKind; name: string } | { on: "sender"; key: string; name: string };
+/**
+ * `service`: a calendar service's domain (`calendarService`), its invitations' name ("pingwire.dev Calendar", as the app's
+ * language says it), never the person they were sent in the name of; `name` is then that domain.
+ */
+export type MuteOffer = { on: "pair"; key: string; kind: DatedKind; name: string; service?: string } | { on: "sender"; key: string; name: string; service?: string };
 
 /** What the reader and the feed test against, read once from the list. */
 export interface DatedMuted {
@@ -102,6 +106,18 @@ export const anyMuted = (m: DatedMuted): boolean => m.senders.size > 0 || m.kind
  * a person's request of them (`ask`, `respond`): one wrong choice mustn't hide every request.
  */
 export const WHOLE_MUTE_KINDS: readonly DatedKind[] = ["pay", "renew", "expire", "alert", "event", "delivery"];
+
+/**
+ * The claims ledger's second batch (Theo's all-hands, Sam's lab meeting): a calendar service's address sending invitations
+ * in a person's name ("Priya Raman" <calendar-notification@pingwire.dev>, "Ingrid Vasquez-Lund (via Calendar)"
+ * <calendar-noreply@halvorsen.edu>). Muting it hides every invitation from that address, so it's named by the service (its
+ * domain), never by the person, whom the reader may write to. Its domain, by the address alone; null for anyone else's
+ * (an invitation sent from the organizer's own address, "via Google Calendar" or not, is theirs and named as they are).
+ */
+export function calendarService(src: { fromEmail: string }): string | null {
+  const [local = "", domain = ""] = src.fromEmail.trim().toLowerCase().split("@");
+  return domain && /calendar|calendario/u.test(local) ? domain : null;
+}
 
 /**
  * Positive evidence a sender is a machine, which offering them alone needs: list or bulk headers on their mail, or a

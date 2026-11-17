@@ -6,7 +6,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createAi, DATED_PROMPT_VERSION, DATED_TEXT_CHARS, promptText, type AiOptions, type Completion, type CompletionRequest, type ProviderConfig } from "@terno/ai";
-import { dayKeyOf, type DatedRow, type HistoryKey } from "@terno/core";
+import { calendarService, dayKeyOf, type DatedRow, type HistoryKey } from "@terno/core";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { demoRegistry } from "@terno/mail";
 import { msg, threadOf } from "@terno/store/conformance";
@@ -3229,6 +3229,25 @@ describe("plan 210 (iteration 5): Remove's narrow offer, a kind from one sender 
     expect(await remove(deliveries[1]!)).toEqual({ on: "sender", key: "track@parcelo.test", name: "Parcelo" });
     expect(await remove(deliveries[2]!)).toBeNull();
     expect(await remove(items.find((r) => r.kind === "pay")!)).toEqual({ on: "pair", key: "pay|track@parcelo.test", kind: "pay", name: "Parcelo" });
+  });
+
+  it("the claims ledger's second batch: a calendar service's invitation in a person's name is named by the service, never that person (Theo's Priya, Sam's Ingrid)", async () => {
+    const { backend, client, model, receive, read } = await setup();
+    const allHands: Item = { kind: "event", text: "Pingwire all-hands", quote: "Mon Nov 16, 2026 4pm", due: "2026-11-16", time: "16:00" };
+    model.answer = () => reply([allHands]);
+    await receive({ from: { name: "Priya Raman", email: "calendar-notification@pingwire.dev" }, subject: "Invitation: Pingwire all-hands @ Mon Nov 16, 2026 4pm", bodyText: "Pingwire all-hands\nMon Nov 16, 2026 4pm – 5pm (PST)", providerThreadId: "invite" });
+    await receive({ from: { name: "Ingrid Vasquez-Lund (via Calendar)", email: "calendar-noreply@halvorsen.edu" }, subject: "Invitation: Lab meeting", bodyText: "Lab meeting\nMon Nov 16, 2026 4pm – 5pm", providerThreadId: "lab" });
+    await read();
+    // Priya is someone Theo writes to; the invitation's address isn't
+    await receive({ from: me, to: [{ name: "Priya Raman", email: "priya@pingwire.dev" }], isSent: true, inInbox: false, isRead: true, subject: "Deck", bodyText: "Here it is.", providerThreadId: "out" });
+    const remove = removing(client);
+    const [priya, ingrid] = (await backend.store.dated.active()).sort((a, b) => a.id - b.id);
+    expect(await remove(priya!)).toEqual({ on: "pair", key: "event|calendar-notification@pingwire.dev", kind: "event", name: "pingwire.dev", service: "pingwire.dev" });
+    expect(await remove(ingrid!)).toEqual({ on: "pair", key: "event|calendar-noreply@halvorsen.edu", kind: "event", name: "halvorsen.edu", service: "halvorsen.edu" });
+    // an invitation from the organizer's own address is theirs, named as they are; a "Calendar" in a person's name isn't a service
+    expect(calendarService({ fromEmail: "dana@clinic.test" })).toBeNull();
+    expect(calendarService({ fromEmail: "ana@gmail.com" })).toBeNull();
+    expect(calendarService({ fromEmail: "calendario@colmenacowork.mx" })).toBe("colmenacowork.mx");
   });
 
   it("a person is offered their kind, never themselves alone; someone you've written to is offered nothing", async () => {

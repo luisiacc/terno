@@ -1,4 +1,4 @@
-import { anyMuted, automatedSender, DATED_MUTE_PAIRS_MAX, DATED_MUTES_MAX, isMuted, muteKey, mutedOf, pairKey, pairOf, type DatedKind, type DatedMute, type DatedMuteOn, type DatedMuted, type MuteOffer } from "@terno/core";
+import { anyMuted, automatedSender, calendarService, DATED_MUTE_PAIRS_MAX, DATED_MUTES_MAX, isMuted, muteKey, mutedOf, pairKey, pairOf, type DatedKind, type DatedMute, type DatedMuteOn, type DatedMuted, type MuteOffer } from "@terno/core";
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import type { MailStore } from "@terno/store";
@@ -57,7 +57,8 @@ export class DatedMutes {
    * first time it's removed; else the sender alone, the first time theirs is, only with positive evidence they're a
    * machine (`automatedSender`). Nothing at all for someone the user has written to (checked here and again on taking
    * it), and never a whole kind (Settings' to hide). Each is offered once, ever; nothing already muted is offered. Null:
-   * nothing to offer.
+   * nothing to offer. The claims ledger's second batch: a calendar service's invitation is named by the service, never by
+   * the person it was sent in the name of (`calendarService`).
    */
   async offer(id: number): Promise<MuteOffer | null> {
     const { store } = this.host;
@@ -68,12 +69,14 @@ export class DatedMutes {
     const pair = pairKey(row.kind, row.senderKey);
     const alone = !!src && src.senderKey === row.senderKey && automatedSender(src);
     const sent = from.get(row.messageId);
-    const name = sent?.name.trim() || sent?.email.trim() || row.senderKey;
+    const service = calendarService({ fromEmail: row.senderKey });
+    const name = service ?? (sent?.name.trim() || sent?.email.trim() || row.senderKey);
+    const named = service ? { name, service } : { name };
     return store.settings.update<string[], MuteOffer | null>(OFFERED_KEY, [], (offered) => {
       const said = new Set(offered);
       const pick: MuteOffer | null =
-        !muted.kinds.has(row.kind) && !muted.pairs.has(pair) && !said.has(`pair:${pair}`) ? { on: "pair", key: pair, kind: row.kind, name }
-        : alone && !said.has(`sender:${row.senderKey}`) ? { on: "sender", key: row.senderKey, name }
+        !muted.kinds.has(row.kind) && !muted.pairs.has(pair) && !said.has(`pair:${pair}`) ? { on: "pair", key: pair, kind: row.kind, ...named }
+        : alone && !said.has(`sender:${row.senderKey}`) ? { on: "sender", key: row.senderKey, ...named }
         : null;
       if (!pick) return { value: offered, result: null };
       return { value: [...offered, `${pick.on}:${pick.key}`].slice(-OFFERED_MAX), result: pick };

@@ -53,9 +53,15 @@ export const about = (m: Muting, act: "show" | "unmuted" | "hide" | "done"): str
   return t(act === "done" ? "dated.mute.pairDone" : `dated.mute.${act}Pair`, { kind: kindWords(p.kind), sender: p.sender });
 };
 
+/**
+ * Whom an offer names: a calendar service by the service ("pingwire.dev Calendar"; the claims ledger's second batch: never
+ * the person its invitations are in the name of), else its sender's name. What a mute keeps as its name too.
+ */
+const offerName = (o: MuteOffer): string => (o.service ? t("dated.mute.calendarName", { domain: o.service }) : o.name);
+
 /** "Don't show deliveries from Parcelo", "Don't show anything from Parcelo". */
 export const offerLabel = (o: MuteOffer): string =>
-  o.on === "pair" ? t("dated.mute.offerPair", { kind: kindWords(o.kind), sender: cut(o.name || pairWords({ ...o }).address) }) : t("dated.mute.offerSender", { sender: cut(o.name || o.key) });
+  o.on === "pair" ? t("dated.mute.offerPair", { kind: kindWords(o.kind), sender: cut(offerName(o) || pairWords({ ...o }).address) }) : t("dated.mute.offerSender", { sender: cut(offerName(o) || o.key) });
 
 /** The kinds Settings can still hide whole (iteration 5: never offered by Remove), in the catalog's order. */
 export const wholeKindsLeft = (mutes: readonly Muting[] | null): DatedKind[] => {
@@ -81,8 +87,9 @@ export async function muteOfferAction(id: number): Promise<SnackAction | undefin
 /** Mute what was offered (or a whole kind, from Settings), saying so with Undo (an Unmute). */
 export async function mute(o: MuteOffer | { on: "kind"; key: DatedKind }): Promise<void> {
   try {
-    const { mute: m } = await client.call("dated.mute", o.on === "kind" ? { on: "kind", key: o.key } : { on: o.on, key: o.key, name: o.name });
-    const said = about({ on: o.on, key: o.key, name: o.on === "kind" ? "" : o.name }, "done");
+    const name = o.on === "kind" ? "" : offerName(o);
+    const { mute: m } = await client.call("dated.mute", o.on === "kind" ? { on: "kind", key: o.key } : { on: o.on, key: o.key, name });
+    const said = about({ on: o.on, key: o.key, name }, "done");
     // muted already (another window): said the same, nothing to undo
     const undo = m ? registerUndo(() => client.call("dated.unmute", { on: m.on, key: m.key }).then(() => undefined)) : null;
     snack.success(said, undo ? { action: undoing(undo, about(m!, "show")) } : {});

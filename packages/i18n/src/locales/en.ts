@@ -3186,6 +3186,8 @@ It contains none of your mail, contacts, settings or keys.
   // plan 210 (iteration 5): Remove offers that kind from that sender, or an automated sender alone; whole kinds are Settings'
   "dated.mute.offerPair": "Don’t show {kind} from {sender}",
   "dated.mute.offerSender": "Don’t show anything from {sender}",
+  // the claims ledger's second batch: a calendar service's invitations, by the service, never the person they're in the name of
+  "dated.mute.calendarName": "{domain} Calendar",
   "dated.mute.pairName": "{kind} from {sender}",
   "dated.mute.pairDone": "You won’t see {kind} from {sender} in What matters",
   "dated.mute.showPair": "Show {kind} from {sender} in What matters again",
