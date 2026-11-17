@@ -33,8 +33,19 @@ const NEGATION = /\b(?:not|no|never|won t|will not|isn t|aren t|don t|doesn t|wi
  */
 const FAILURE =
   /\b(?:otherwise|or else|unless|fail(?:s|ure)? to|missed|overdue|late|after (?:the|that|this|which) (?:cutoff|deadline|date|day)|to keep|keep your|or (?:your|the|we|it|you|they)|not (?:received|paid|submitted|returned|renewed|registered|completed)|don t hear|do not hear|de lo contrario|a menos que|si no|despues del? (?:cierre|plazo|limite)|para (?:conservar|mantener|no perder)|en caso de no|falta de)\b|\b(?:if|si)\b(?: \S+){0,8} (?:not|no|never|don t|doesn t|nunca)\b|^(?:no|sin) \p{L}+ (?:no|sin)\b/u;
-/** "to keep your coverage without a lapse": a "without" that says what keeping it avoids, never a denial of the lapse */
-const KEEP_WITHOUT = /\b(?:to keep|keep your|para (?:conservar|mantener))\b/u;
+/**
+ * "to keep your coverage without a lapse": a "without" right before the consequence, in a sentence that says what keeping it
+ * takes, says what keeping it avoids, never a denial of the lapse. Its code review: only that construction ("but your
+ * coverage will not lapse if you pay late" still denies it).
+ */
+const KEEP = /\b(?:to keep|keep your|para (?:conservar|mantener))\b/u;
+const WITHOUT_A = /\b(?:without|sin)(?: (?:a|an|any|un|una|ningun|ninguna))?$/u;
+const keptWithout = (before: string, sentence: string) => WITHOUT_A.test(before) && KEEP.test(sentence);
+/**
+ * Its code review: a failure sentence that points back to the item's own deadline ("otherwise", "after the cutoff", "No
+ * form = no hotel room" is read by naming), so the sentence before it may name the item.
+ */
+const BACK = /\b(?:otherwise|or else|after (?:the|that|this|which) (?:cutoff|deadline|date|day)|de lo contrario|si no (?:lo|la|los|las)|despues del? (?:cierre|plazo|limite))\b/u;
 /** "para no perder tu dominio", "so as not to lose": a negation that states the condition, not a denial */
 const NOT_TO = /\b(?:para no|para que no|so as not to|in order not to|to not|to avoid)$/u;
 const MONEY = /[$€£]\s?\d|\d[\d.,]*\s?(?:€|£|%|\b(?:usd|eur|mxn|gbp|cad)\b)|\d\s?%/iu;
@@ -61,15 +72,29 @@ const objectOf = (read: string) => (!OR_CLAUSE.test(read) ? [] : content(read)).
  * funding" for the mail's "to keep full-time status and funding", its "or coverage lapses Dec 1" for "to keep your coverage
  * without a lapse"): one sentence about the reader not acting (`FAILURE`) names every word of its object, and its numbers are
  * the mail's. The consequence's own verb may be the mail's opposite ("keep", "lose") or another ("lapses", "will end").
+ * Its code review: that sentence is about not doing this item (`action`, the item's words outside its brackets, roots): it
+ * names one of them beyond the object ("register", "reports", "No form = …"), or points back ("otherwise", "after the
+ * cutoff") from a sentence that does. "If you have not booked a hotel room, contact the travel desk" beside "Complete the
+ * registration form" is another failure.
  */
-function objectNamed(read: string, sentences: readonly string[]): boolean {
+function objectNamed(read: string, sentences: readonly string[], action: readonly string[]): boolean {
   const object = objectOf(read);
   if (!object.length || !numbersIn(read).every((n) => sentences.some((s) => s.split(" ").includes(n)))) return false;
-  return sentences.some((s) => {
-    if (!FAILURE.test(s)) return false;
+  const names = (ws: readonly string[], r: string) => ws.some((w) => root(w).startsWith(r) || w.startsWith(r));
+  const mine = action.filter((a) => !object.includes(a));
+  const aboutItem = (s: string | undefined) => !!s && mine.some((a) => names(s.split(" "), a));
+  return sentences.some((s, k) => {
+    if (!FAILURE.test(s) || !(aboutItem(s) || (BACK.test(s) && aboutItem(sentences[k - 1])))) return false;
     const ws = s.split(" ");
-    return object.every((o) => ws.some((w) => root(w).startsWith(o) || w.startsWith(o)));
+    return object.every((o) => names(ws, o));
   });
+}
+
+/** The item's own words (its action and what it's on), outside its brackets, as roots: its verb and its naming words. */
+function actionOf(text: string): string[] {
+  const words = plain(text.replace(/\([^)]*\)/gu, " "));
+  const verb = words.split(" ")[0] ?? "";
+  return [...new Set([...(verb.length >= 3 ? [verb] : []), ...content(words)].map(root))];
 }
 
 /** The mail's sentences, as `plain` reads them. */
@@ -79,14 +104,14 @@ const sentencesOf = (mail: string) => mail.split(/(?<=[.!?;])\s+|\n+/u).map(plai
  * Whether a clause of a bracket holds as the mail says it (above). `conditioned`: an earlier clause of its bracket gave the
  * condition ("if unpaid, policy ends Dec 1").
  */
-function clauseHolds(clause: string, sentences: readonly string[], conditioned: boolean): boolean {
+function clauseHolds(clause: string, sentences: readonly string[], conditioned: boolean, action: readonly string[]): boolean {
   const read = plain(clause);
   if (!read || MONEY.test(clause)) return true;
   const said = CONSEQUENCE.exec(read);
   const without = WITHOUT.test(read);
   // the claims ledger's second batch: a condition's consequence in words of its own ("or procurement treats it as a new
   // evaluation", "or no hotel room") holds when the mail says it in substance; a bare condition ("if unpaid") or a detail as before
-  if (!said && !without) return !objectOf(read).length || objectNamed(read, sentences);
+  if (!said && !without) return !objectOf(read).length || objectNamed(read, sentences, action);
   // the mail's sentences that say this consequence: its word's root, and another word of the clause when it has one; a clause
   // that carries its condition may say it in other words ("or the parcel leaves the plan" for "will remove the parcel"): a
   // sentence that says something happens to what it names
@@ -101,7 +126,7 @@ function clauseHolds(clause: string, sentences: readonly string[], conditioned: 
     if (at < 0 || (others.length && !others.some((o) => has(ws, o)))) return false;
     // "we won't suspend it", "no late fee": a mail that denies it doesn't say it ("para no perder" states its condition)
     const before = ws.slice(Math.max(0, at - 3), at).join(" ");
-    return without || !NEGATION.test(before) || NOT_TO.test(before) || KEEP_WITHOUT.test(s);
+    return without || !NEGATION.test(before) || NOT_TO.test(before) || keptWithout(before, s);
   });
   // said as a condition: the mail says this consequence, or (an English mail read for a Spanish reader says it in other
   // words) one sentence says something happens on a condition with the clause's own numbers ("ends Dec 1": a "1"), and the
@@ -109,7 +134,7 @@ function clauseHolds(clause: string, sentences: readonly string[], conditioned: 
   // questions, call us" is no "or policy ends Dec 1")
   // (with the sentence after it: "…will end at 12:01 a.m. on December 1" is read as two)
   // the claims ledger's second batch: or the mail says it in substance, its object named where it says what not acting does
-  if (conditional) return support.length > 0 || ((sentences.some((s, k) => SENTENCE_CONDITION.test(s) && CONSEQUENCE.test(s) && numbersIn(read).every((n) => `${s} ${sentences[k + 1] ?? ""}`.split(" ").includes(n))) || objectNamed(read, sentences)) && !denied(anchors, sentences));
+  if (conditional) return support.length > 0 || ((sentences.some((s, k) => SENTENCE_CONDITION.test(s) && CONSEQUENCE.test(s) && numbersIn(read).every((n) => `${s} ${sentences[k + 1] ?? ""}`.split(" ").includes(n))) || objectNamed(read, sentences, action)) && !denied(anchors, sentences));
   return support.length > 0 && support.every((s) => !SENTENCE_CONDITION.test(s));
 }
 
@@ -123,7 +148,7 @@ function denied(anchors: readonly string[], sentences: readonly string[]): boole
     const at = ws.findIndex((w) => anchors.some((a) => root(w).startsWith(a) || w.startsWith(a)));
     if (at < 0) return false;
     const before = ws.slice(Math.max(0, at - 3), at).join(" ");
-    return NEGATION.test(before) && !NOT_TO.test(before) && !KEEP_WITHOUT.test(s);
+    return NEGATION.test(before) && !NOT_TO.test(before) && !keptWithout(before, s);
   });
 }
 
@@ -138,6 +163,7 @@ const CLAUSES = /\s*(?:;|,(?!\s?\d))\s*/u;
 export function heldStake(kind: string, text: string, mail: string): string {
   if (!STAKED.has(kind) || !text.includes("(")) return text;
   const sentences = sentencesOf(mail);
+  const action = actionOf(text);
   let out = "";
   let depth = 0;
   let open = -1;
@@ -152,7 +178,7 @@ export function heldStake(kind: string, text: string, mail: string): string {
       const parts = inside.split(CLAUSES);
       const seps = inside.match(new RegExp(CLAUSES.source, "gu")) ?? [];
       // a condition said in an earlier clause holds for those after it
-      const held = parts.map((p, j) => clauseHolds(p, sentences, parts.slice(0, j).some((q) => CLAUSE_CONDITION.test(plain(q)))));
+      const held = parts.map((p, j) => clauseHolds(p, sentences, parts.slice(0, j).some((q) => CLAUSE_CONDITION.test(plain(q))), action));
       const kept = parts.flatMap((p, j) => (held[j] ? [`${j ? seps[j - 1] : ""}${p}`] : []));
       // a condition left without what happens says nothing ("(si no)", "(or)"): the bracket goes whole
       // (the claims ledger's second batch: one that names what happens in words of its own says it: "or no hotel room")

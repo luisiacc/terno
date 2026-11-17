@@ -98,6 +98,20 @@ describe("the claims ledger's second batch: a stake the mail supports in substan
     // es: the condition about something else
     expect(heldStake("respond", "Inscribirte en el portal (o pierdes la beca)", "Inscríbete antes del miércoles 9. Si tienes dudas sobre tu beca, escríbenos.")).toBe("Inscribirte en el portal");
   });
+
+  it("its code review: the failure the mail speaks of is not doing this item", () => {
+    // another failure ("if you have not booked a hotel room"), not the form's (en, es)
+    expect(heldStake("respond", "Complete the form (or no hotel room)", "Complete the registration form by Friday. If you have not booked a hotel room, contact the travel desk.")).toBe("Complete the form");
+    expect(heldStake("respond", "Llenar el formulario (o sin cuarto de hotel)", "Llena el formulario de registro antes del viernes. Si no has reservado cuarto de hotel, escribe a la agencia.")).toBe("Llenar el formulario");
+  });
+
+  it("its code review: \"to keep\" excuses only \"without a lapse\"; a stated denial still cuts it", () => {
+    // "to keep" beside a denial: "will not lapse" (en), "no se suspenderá" (es)
+    expect(heldStake("pay", "Pay the premium (or coverage lapses)", "To keep your coverage, pay by Friday, but your coverage will not lapse if you pay late.")).toBe("Pay the premium");
+    expect(heldStake("pay", "Pagar la prima (o se suspende la cobertura)", "Para conservar tu cobertura, paga antes del viernes; tu cobertura no se suspenderá si pagas tarde.")).toBe("Pagar la prima");
+    // "without a lapse" with "to keep" still says it (Margaret's)
+    expect(heldStake("pay", "Pay the premium (or coverage lapses)", "To keep your coverage without a lapse, please pay the premium by November 25.")).toBe("Pay the premium (or coverage lapses)");
+  });
 });
 
 describe("plan 210 (iteration 5): a renewal's own \"before\" a day", () => {
