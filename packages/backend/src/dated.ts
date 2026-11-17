@@ -86,7 +86,9 @@ const KINDS: ReadonlySet<string> = new Set(DATED_KINDS);
  */
 // plan 210 (iteration 3): a renewal and an expiry on one day are one thing (Haiku gave a domain "Renew …" as both, 1 in 5)
 const itemKey = (kind: string, t: { dueDay: string; dueAt: number; timed: boolean }) => `${kind === "renew" ? "expire" : kind}:${t.dueDay}:${t.timed ? t.dueAt : ""}`;
-const TWO_A_DAY: ReadonlySet<string> = new Set(["respond", "event", "delivery"]);
+// the claims ledger's second batch: and two undated questions of one mail (an ask's day is its mail's), unless their words
+// say they're one (Sam's Mom: a ride from the airport, and which room)
+const TWO_A_DAY: ReadonlySet<string> = new Set(["respond", "ask", "event", "delivery"]);
 /** the kinds a scam's pressure makes (`scamPressure`): a bill, a booking or a parcel keep their own checks */
 const PRESSED: ReadonlySet<string> = new Set(["alert", "respond", "expire", "ask"]);
 
@@ -743,8 +745,30 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
   // COO at 3pm Central"). Iteration 5 (revision 8): never one that asks something of its own ("can you bring the tamales?",
   // dropped beside Elena's head count in round 13), unless its quote is in the request's own sentence or list
   const sender = nameWords(input.from ?? "");
+  const senderNaming = namingWords(input.from ?? "");
   const replyTo = (text: string) => REPLY_TO.test(norm(text)) && sender.some((w) => ` ${norm(text)} `.includes(` ${w} `));
   const partOf = (r: { quote: string }, x: { quote: string }) => partOfRequest(r.quote, x.quote, sentences, paragraphs);
+  /**
+   * The claims ledger's second batch (Jordan's Lena): the line of the mail a request's words name, its own sentence or list
+   * line: the one holding the most of its naming words, at least two, and no other as many; -1 when none is.
+   */
+  const lineWords = sentences.map((s) => namingWords(s.said));
+  const ownLine = (text: string): number => {
+    const words = [...namingWords(text)].filter((w) => !senderNaming.has(w));
+    const counts = lineWords.map((ws) => words.filter((w) => ws.has(w)).length);
+    const most = Math.max(0, ...counts);
+    return most >= 2 && counts.filter((n) => n === most).length === 1 ? counts.indexOf(most) : -1;
+  };
+  /**
+   * Two requests of one mail that quote one sentence (the deadline "If I can have both by Tuesday" after a list) are two
+   * when their words name two things, each on a line of its own, neither line in the request the shared quote makes (a list
+   * it introduces: Karin's "a reply from you today with:").
+   */
+  const apart = (a: { text: string; quote: string }, b: { text: string; quote: string }) => {
+    if (sameObject(a.text, b.text)) return false;
+    const [la, lb] = [ownLine(a.text), ownLine(b.text)];
+    return la >= 0 && lb >= 0 && la !== lb && !partOf(a, { quote: sentences[la]!.said }) && !partOf(b, { quote: sentences[lb]!.said });
+  };
   const requested = (ask: { text: string; quote: string }) => requests.some((r) => sameThing(r, ask) || partOf(r, ask) || (replyTo(r.text) && replyTo(ask.text) && !asksDirectly(contextOf(ask.quote, sentences))));
   // the fourth panel read: a person who says no answer is needed ("No need to reply now") asks nothing
   const noReply = saysNoReplyNeeded(input.text);
@@ -800,7 +824,10 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     if (movedKeys.has(key)) continue;
     // plan 210 (iteration 4): two replies to the sender on one day are the one reply (Haiku split Karin's numbered list, 1 in 5);
     // iteration 5 (revision 8): when one's quote is in the other's own sentence or list
-    if (rows.some((r) => itemKey(r.kind, r) === key && (!TWO_A_DAY.has(kind) || sameThing(r, item) || (kind === "respond" && replyTo(r.text) && replyTo(item.text) && (partOf(r, item) || partOf(item, r)))))) continue;
+    // the claims ledger's second batch: two things asked that share a quote are two when their words name two lines (`apart`);
+    // two questions, when neither's quote is in the other's sentence or list
+    const request = kind === "respond" || kind === "ask";
+    if (rows.some((r) => itemKey(r.kind, r) === key && (!TWO_A_DAY.has(kind) || (sameThing(r, item) && !(request && apart(r, item))) || (kind === "respond" && replyTo(r.text) && replyTo(item.text) && (partOf(r, item) || partOf(item, r))) || (kind === "ask" && (partOf(r, item) || partOf(item, r)))))) continue;
     // plan 210 (iteration 3, revision 11): facts from the mail's words, never the item's; iteration 4, the paragraphs tied to it
     const words = `${tiedWords(item.quote).slice(0, FACT_WORDS_MAX)}\n${item.quote}`;
     // plan 210 (iteration 5, revision 1): a plan that renews by itself and a bill paid by itself or already, in its own words,

@@ -1202,6 +1202,37 @@ describe("plan 210 (iteration 5): the reading", () => {
     expect(checkDates({ items: [reply, eta], settled: [] }, { ...base, text: KARIN, subject: "Outage", from: "Karin Halvorsen", ...person }).rows.map((r) => r.kind)).toEqual(["respond"]);
   });
 
+  it("the claims ledger's second batch: two things one person asks in one mail stay two, a shared deadline sentence or no day (Jordan's Lena, Sam's Mom)", () => {
+    // Jordan's Lena: both quote the deadline sentence after the list; each names its own line of it
+    const LENA = "Jordan,\n\nThanks for lunch.\n\nTwo things before our clinical informatics group meets on Wednesday:\n1. Could you send me the Citrix VDI performance numbers for the endpoint agent (CPU and login-time impact) you mentioned?\n2. A reference I could call at a health system running Sentinel on shared nursing-station workstations.\n\nIf I can have both by Tuesday, I'll put them in front of the group.\n\nThanks,\nLena";
+    const both = "If I can have both by Tuesday, I'll put them in front of the group.";
+    const vdi = { kind: "respond", text: "Send Lena the Citrix VDI performance numbers (CPU and login-time impact)", quote: both, due: "2026-11-17", time: null };
+    const reference = { kind: "respond", text: "Send Lena a reference at a health system running Sentinel on shared nursing-station workstations", quote: both, due: "2026-11-17", time: null };
+    const lena = { ...base, text: LENA, subject: "Thanks for lunch + two things", from: "Lena Brooks", ...person };
+    expect(checkDates({ items: [vdi, reference], settled: [] }, lena).rows.map((r) => r.text)).toEqual([vdi.text, reference.text]);
+    // one request quoted twice in other words is still one
+    expect(checkDates({ items: [vdi, { ...vdi, text: "Send Lena the VDI performance numbers" }], settled: [] }, lena).rows).toHaveLength(1);
+    // a list its quote introduces is one request (Karin's "a reply from you today with:")
+    const KARIN = "Maria,\n\nI need a reply from you today with:\n1. An ETA for restore,\n2. What happened, and\n3. How you'll handle credits.\n\nThanks";
+    const intro = "I need a reply from you today with:";
+    const eta = { kind: "respond", text: "Send Karin an ETA for restore", quote: intro, due: "2026-11-10", time: null };
+    const cause = { kind: "respond", text: "Send Karin what happened in the outage", quote: intro, due: "2026-11-10", time: null };
+    expect(checkDates({ items: [eta, cause], settled: [] }, { ...base, text: KARIN, subject: "Outage", from: "Karin Halvorsen", ...person }).rows).toHaveLength(1);
+    // Sam's Mom: two undated questions in two sentences
+    const MOM = "Hi sweetheart,\n\nYour dad wants to know if you need a ride from the airport on the 25th or if Ade is getting you. And do you want your old room or the basement? Ade's bringing his new girlfriend so I'm trying to figure out beds.\n\nLove,\nMom";
+    const ride = { kind: "ask", text: "Answer Dad about a ride from the airport", quote: "Your dad wants to know if you need a ride from the airport on the 25th or if Ade is getting you.", due: null, time: null };
+    const room = { kind: "ask", text: "Answer Mom about which room you want", quote: "And do you want your old room or the basement?", due: null, time: null };
+    const mom = { ...base, text: MOM, subject: "Thanksgiving", from: "Grace Okafor", ...person };
+    expect(checkDates({ items: [ride, room], settled: [] }, mom).rows.map((r) => r.text)).toEqual([ride.text, room.text]);
+    // es: "¿Me confirmas si vienes el 25? ¿Y quieres tu cuarto de antes o el sótano?"
+    const MAMA = "Hola mijo,\n\n¿Me confirmas si necesitas que vayamos por ti al aeropuerto el 25? ¿Y quieres tu cuarto de antes o el sótano?\n\nTe quiere,\nMamá";
+    const recoger = { kind: "ask", text: "Responder a mamá si necesitas que vayan por ti al aeropuerto", quote: "¿Me confirmas si necesitas que vayamos por ti al aeropuerto el 25?", due: null, time: null };
+    const cuarto = { kind: "ask", text: "Responder a mamá qué cuarto quieres", quote: "¿Y quieres tu cuarto de antes o el sótano?", due: null, time: null };
+    expect(checkDates({ items: [recoger, cuarto], settled: [] }, { ...mom, text: MAMA, subject: "Navidad", from: "Mamá" }).rows).toHaveLength(2);
+    // the same question asked twice is one
+    expect(checkDates({ items: [room, { ...room, text: "Tell Mom which room you want" }], settled: [] }, mom).rows).toHaveLength(1);
+  });
+
   it("V2: an event's one start time in its quote, given none, is its time; a bare 7:00, two times, or a place's clock leave it untimed", () => {
     const text = "Book club: we're meeting Tuesday the 17th at 7:30 PM at my house.";
     const club = { kind: "event", text: "Book club", quote: "we're meeting Tuesday the 17th at 7:30 PM at my house", due: "2026-11-17", time: null };
