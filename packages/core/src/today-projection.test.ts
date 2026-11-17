@@ -182,6 +182,20 @@ describe("one reply, one row (plan 210, iteration 4)", () => {
     expect(projectToday(facts({ promises: [b!, a!] })).rows.map((r) => r.id)).toEqual([`promise:${a!.id}`]);
   });
 
+  it("round 17's faults (Priya's Karin): a dated Also before an undated one said before it, soonest first, so the cut line never hides a day", () => {
+    const [keep, credit, rootCause, call] = reply([
+      { text: "keep an engineer on Karin's account", dueAt: at(2026, 11, 22, 9) },
+      { text: "credit Karin 25% of her November fees on the December invoice", dated: false, dueAt: NOW - 1 },
+      { text: "send Karin the full written root cause", dueAt: at(2026, 11, 24, 9) },
+      { text: "call Karin", dueAt: at(2026, 11, 23, 9) },
+    ]);
+    const [row] = projectToday(facts({ promises: [keep!, credit!, rootCause!, call!] })).rows;
+    expect(row!.id).toBe(`promise:${keep!.id}`);
+    expect(row!.also!.map((a) => a.text)).toEqual(["call Karin", "send Karin the full written root cause", credit!.text]);
+    // the acts name the same promises, in the same order
+    expect(row!.why.with!.map((w) => w.id)).toEqual([call!.id, rootCause!.id, credit!.id]);
+  });
+
   it("a promise that only holds a request (Margaret's \"I'll get back to you\") is never a row, nor its reply's Also: the request is the row", () => {
     const ask = dated("respond", "2026-11-23", { threadId: 1, text: "Tell Valeria whether you can host in December" });
     const [hold, send] = reply([{ text: "check your calendar and get back to Valeria", dated: false, dueAt: NOW - 1, holds: ask.id }, { text: "email Valeria the questions" }]);

@@ -217,7 +217,7 @@ interface Placed extends ProjectedRow {
 export interface PlacedItem {
   item: Logical;
   at: TaskPlace;
-  /** plan 210 (iteration 4): the other promises of its reply to its person (`replyKey`), in their order: its Also lines */
+  /** plan 210 (iteration 4): the other promises of its reply to its person (`replyKey`), dated first by day, then in the reply's order: its Also lines */
   with?: Logical[];
 }
 
@@ -265,11 +265,17 @@ function byReply(placed: readonly PlacedItem[], hidden: readonly Logical[]): Pla
   const leads = new Map<PlacedItem, Logical[]>();
   const folded = new Set<Logical>();
   const said = (a: Logical, b: Logical) => a.lead.row.item - b.lead.row.item || a.lead.row.id - b.lead.row.id;
+  // round 17's faults (Priya's Karin, Saturday): the Also line is one line, cut at the row's width, so what has a day comes
+  // first, soonest first, and an undated promise (the credit) never pushes a dated one (Tuesday's written root cause) out of it
+  const byDay = (a: Logical, b: Logical) => {
+    const [x, y] = [a.lead.row as FollowupRow, b.lead.row as FollowupRow];
+    return Number(y.dated) - Number(x.dated) || (x.dated && y.dated ? x.dueAt - y.dueAt : 0);
+  };
   for (const g of groups.values()) {
     if (g.all.length < 2 || !g.placed.length) continue;
     const shows = [...g.placed].sort((a, b) => said(a.item, b.item));
     const lead = shows.find((p) => (p.item.lead.row as FollowupRow).dated) ?? shows[0]!;
-    const others = g.all.filter((l) => l !== lead.item).sort(said);
+    const others = g.all.filter((l) => l !== lead.item).sort((a, b) => byDay(a, b) || said(a, b));
     leads.set(lead, others);
     for (const l of others) folded.add(l);
   }
