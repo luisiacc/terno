@@ -164,8 +164,10 @@ function whenOf(item: Pick<TodayItem, "thread" | "why">, now: number): { text: s
   };
   // plan 210 (iteration 5): missed after this morning's noon, the day still today: "Was due this morning"
   const wasPart = (day: number, part: PartOfDay | null | undefined): string | null => (part && datedDay(day, now).near === "today" ? t("today.due.wasPart", { when: partInSentence(partDay(day, part, now).text) }) : null);
-  // mid-phrase, "Yesterday" is a word like any other: "since yesterday", "desde ayer"
-  const day = listDate(thread.lastDate, now);
+  // mid-phrase, "Yesterday" is a word like any other: "since yesterday", "desde ayer". Round 15's second morning: since the
+  // item's own moment (the ask's mail, your promise's), never the conversation's last message: your own holding reply or
+  // their thanks made a Nov 8 ask "since yesterday"; a conversation waiting on you, since its last message
+  const day = listDate((why.kind === "dated" ? why.came : why.kind === "promise" ? why.sentAt : undefined) ?? thread.lastDate, now);
   const came = { text: t("whatMatters.since", { day: day === t("date.yesterday") ? day.toLocaleLowerCase(getLocale()) : day }), tone: "none" as const };
   if (why.kind === "reminder" && why.dueAt !== undefined) return { text: dueShort(why.dueAt, true, now), tone: "none" };
   if (why.kind === "dated" && why.item) {

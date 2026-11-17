@@ -87,6 +87,19 @@ describe("todayWhen: the briefing's column, in the list's words, and how pressin
     expect(todayWhen(yesterday, NOW).text).toBe("since yesterday");
   });
 
+  it("round 15's second morning: an ask says since its own mail, never since the conversation's last message (your own holding reply, their thanks); a promise since you said it", () => {
+    // Theo's Marcus: asked Nov 8, Theo's holding reply yesterday at 4:30 PM
+    const replied = { ...thread, lastDate: at(12, 16, 30) };
+    const marcus = dated("ask", "Answer Marcus Lee about a call", 8, { dated: false });
+    expect(todayWhen({ ...marcus, why: { ...marcus.why, came: at(8, 9) }, thread: replied }, NOW)).toEqual({ text: "since Nov 8", tone: "none" });
+    const alert = dated("alert", "Card frozen", 10, { dated: false });
+    expect(todayWhen({ ...alert, why: { ...alert.why, came: at(10, 7) }, thread: replied }, NOW).text).toBe("since Nov 10");
+    const draft = promise("send the draft");
+    expect(todayWhen({ ...draft, why: { ...draft.why, sentAt: at(9, 18) }, thread: replied }, NOW).text).toBe("since Nov 9");
+    // a conversation waiting on you: since its last message, as before
+    expect(todayWhen({ ...item({ kind: "waiting" }), thread: replied }, NOW).text).toBe("since yesterday");
+  });
+
   it("a promise: its day, Missed, or none when it named none", () => {
     expect(todayWhen(promise("call Marcus", 13), NOW)).toEqual({ text: "Today", tone: "today" });
     expect(todayWhen(promise("send the slip", 11, true), NOW)).toEqual({ text: "Was due Wed", tone: "missed" });

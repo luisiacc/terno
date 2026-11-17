@@ -162,6 +162,7 @@ function datedWhy(row: DatedRow, missed: boolean, early: boolean, members: ItemR
     kind: "dated",
     text: others.length ? withMembersDetails(split.text, others) : split.text,
     dueAt: row.dueAt,
+    came: row.arrivedAt,
     ...(missed ? { missed } : {}),
     item: { id: row.id, revision: row.revision, kind: row.kind, dueDay: row.dueDay, timed: row.timed, dated: row.dated, ...(early ? { early } : {}), ...(split.note ? { note: split.note } : {}), ...(row.before ? { before: row.before } : {}), ...(row.timed && row.wall?.place ? { travel: { day: row.wall.day, time: row.wall.time, place: row.wall.place } } : {}), ...(!row.timed && row.partOfDay ? { part: row.partOfDay } : {}) },
     ...(members.length > 1 ? { members } : {}),

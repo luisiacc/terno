@@ -48,6 +48,11 @@ export interface TodayWhy {
   /** the fourth panel round (revision 9): a promise's person, whom its row names and pictures */
   personEmail?: string | null;
   sentAt?: number;
+  /**
+   * round 15's second morning: a dated item's own arrival (the asker's message), what "since …" says for one with no day,
+   * never the conversation's last message (your own holding reply, their thanks)
+   */
+  came?: number;
   /** a waiting row: you've written in this conversation (else it's new, from someone you write to: `needsYou`'s two reasons) */
   wrote?: boolean;
   /** plan 204: its day is over and nothing was done (a dated item, or a dated promise of yours) */
