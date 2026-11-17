@@ -45,7 +45,8 @@ const keptWithout = (before: string, sentence: string) => WITHOUT_A.test(before)
  * Its code review: a failure sentence that points back to the item's own deadline ("otherwise", "after the cutoff", "No
  * form = no hotel room" is read by naming), so the sentence before it may name the item.
  */
-const BACK = /\b(?:otherwise|or else|after (?:the|that|this|which) (?:cutoff|deadline|date|day)|de lo contrario|si no (?:lo|la|los|las)|despues del? (?:cierre|plazo|limite))\b/u;
+// (round two: and a reply not given, "if we don't hear from you"; what's still missing, "anything missing", "lo que falte")
+const BACK = /\b(?:otherwise|or else|after (?:the|that|this|which) (?:cutoff|deadline|date|day)|(?:don t|do not|doesn t) hear|no (?:reply|response|answer)|anything (?:missing|left)|de lo contrario|si no (?:lo|la|los|las)|despues del? (?:cierre|plazo|limite)|lo que falte|sin respuesta|no (?:recibimos|tenemos) (?:respuesta|noticias))\b/u;
 /** "para no perder tu dominio", "so as not to lose": a negation that states the condition, not a denial */
 const NOT_TO = /\b(?:para no|para que no|so as not to|in order not to|to not|to avoid)$/u;
 const MONEY = /[$€£]\s?\d|\d[\d.,]*\s?(?:€|£|%|\b(?:usd|eur|mxn|gbp|cad)\b)|\d\s?%/iu;
@@ -57,7 +58,7 @@ const content = (words: string) => words.split(" ").filter((w) => w.length >= 4 
  * A word's root for matching a paraphrase ("deploys" and "deployments", "shown" and "showing", "removed" and "remove"); a
  * Spanish stem that changes is read as one ("pierden" and "perder", "cuesta" and "costar").
  */
-const root = (w: string) => w.replace(/^pierd/u, "perd").replace(/^cuest/u, "cost").slice(0, Math.max(3, Math.min(5, w.length - 1)));
+const root = (w: string) => w.replace(/^pierd/u, "perd").replace(/^cuest/u, "cost").replace(/^renuev/u, "renov").slice(0, Math.max(3, Math.min(5, w.length - 1)));
 
 /**
  * The claims ledger's second batch: what an "or" clause's consequence happens to, its own words ("coverage", "December
@@ -80,21 +81,47 @@ const objectOf = (read: string) => (!OR_CLAUSE.test(read) ? [] : content(read)).
 function objectNamed(read: string, sentences: readonly string[], action: readonly string[]): boolean {
   const object = objectOf(read);
   if (!object.length || !numbersIn(read).every((n) => sentences.some((s) => s.split(" ").includes(n)))) return false;
-  const names = (ws: readonly string[], r: string) => ws.some((w) => root(w).startsWith(r) || w.startsWith(r));
-  const mine = action.filter((a) => !object.includes(a));
-  const aboutItem = (s: string | undefined) => !!s && mine.some((a) => names(s.split(" "), a));
-  return sentences.some((s, k) => {
-    if (!FAILURE.test(s) || !(aboutItem(s) || (BACK.test(s) && aboutItem(sentences[k - 1])))) return false;
-    const ws = s.split(" ");
-    return object.every((o) => names(ws, o));
-  });
+  return sentences.some((s, k) => FAILURE.test(s) && aboutItem(sentences, k, action, object) && object.every((o) => names(s.split(" "), o)));
 }
 
-/** The item's own words (its action and what it's on), outside its brackets, as roots: its verb and its naming words. */
+const names = (ws: readonly string[], r: string) => ws.some((w) => root(w).startsWith(r) || w.startsWith(r));
+/**
+ * Its code review: whether sentence `k` is about not doing this item: it names the item's own words (`action`) beyond the
+ * stake's (`stake`, never a tie: "hotel room" in "your hotel room will be released"), or points back (`BACK`) from a
+ * sentence that does. Round two: on every path a conditional stake holds by.
+ */
+function aboutItem(sentences: readonly string[], k: number, action: readonly string[], stake: readonly string[]): boolean {
+  const mine = action.filter((a) => !stake.includes(a));
+  const says = (s: string | undefined) => !!s && mine.some((a) => names(s.split(" "), a));
+  return says(sentences[k]) || (BACK.test(sentences[k] ?? "") && says(sentences[k - 1]));
+}
+
+/**
+ * An action's words in both languages, by its verb's root (round two: "Pagar la prima" on an English mail's "If payment is
+ * not received"): a mail and its item may be in two.
+ */
+const SAME_ACTION: readonly (readonly string[])[] = [
+  ["pay", "paga", "pago", "pague"],
+  ["regis", "inscr"],
+  ["submi", "envi", "entre", "mand"],
+  ["send", "envi", "mand"],
+  ["renew", "renov"],
+  ["compl", "llen", "fill"],
+  ["sign", "firm"],
+  ["retur", "devol", "regre"],
+  ["uploa", "subi", "sube", "carg"],
+  ["book", "reser"],
+  ["confi"],
+  ["reply", "respo", "conte", "answe"],
+  ["updat", "actua"],
+];
+
+/** The item's own words (its action and what it's on), outside its brackets, as roots: its verb (in both languages) and its naming words. */
 function actionOf(text: string): string[] {
   const words = plain(text.replace(/\([^)]*\)/gu, " "));
   const verb = words.split(" ")[0] ?? "";
-  return [...new Set([...(verb.length >= 3 ? [verb] : []), ...content(words)].map(root))];
+  const same = verb.length >= 3 ? (SAME_ACTION.find((g) => g.some((r) => root(verb).startsWith(r) || r.startsWith(root(verb)))) ?? []) : [];
+  return [...new Set([...(verb.length >= 3 ? [root(verb)] : []), ...same, ...content(words).map(root)])];
 }
 
 /** The mail's sentences, as `plain` reads them. */
@@ -119,7 +146,11 @@ function clauseHolds(clause: string, sentences: readonly string[], conditioned: 
   const anchors = said ? [root(said[0])] : content(read.replace(/^(?:no|sin)\s+/u, "")).map(root);
   const others = content(read).map(root).filter((r) => !anchors.includes(r));
   const has = (ws: readonly string[], r: string) => ws.some((w) => root(w).startsWith(r) || w.startsWith(r));
-  const support = sentences.filter((s) => {
+  // round two: a conditional stake's sentence is about not doing this item, on every path (`aboutItem`)
+  const stake = [...anchors, ...others];
+  const tied = (k: number) => !conditional || aboutItem(sentences, k, action, stake);
+  const support = sentences.filter((s, k) => {
+    if (!tied(k)) return false;
     const ws = s.split(" ");
     let at = ws.findIndex((w) => anchors.some((a) => root(w).startsWith(a) || w.startsWith(a)));
     if (at < 0 && conditional && said && others.some((o) => has(ws, o))) at = ws.findIndex((w) => CONSEQUENCE.test(w));
@@ -134,7 +165,7 @@ function clauseHolds(clause: string, sentences: readonly string[], conditioned: 
   // questions, call us" is no "or policy ends Dec 1")
   // (with the sentence after it: "…will end at 12:01 a.m. on December 1" is read as two)
   // the claims ledger's second batch: or the mail says it in substance, its object named where it says what not acting does
-  if (conditional) return support.length > 0 || ((sentences.some((s, k) => SENTENCE_CONDITION.test(s) && CONSEQUENCE.test(s) && numbersIn(read).every((n) => `${s} ${sentences[k + 1] ?? ""}`.split(" ").includes(n))) || objectNamed(read, sentences, action)) && !denied(anchors, sentences));
+  if (conditional) return support.length > 0 || ((sentences.some((s, k) => tied(k) && SENTENCE_CONDITION.test(s) && CONSEQUENCE.test(s) && numbersIn(read).every((n) => `${s} ${sentences[k + 1] ?? ""}`.split(" ").includes(n))) || objectNamed(read, sentences, action)) && !denied(anchors, sentences));
   return support.length > 0 && support.every((s) => !SENTENCE_CONDITION.test(s));
 }
 

@@ -103,6 +103,13 @@ describe("the claims ledger's second batch: a stake the mail supports in substan
     // another failure ("if you have not booked a hotel room"), not the form's (en, es)
     expect(heldStake("respond", "Complete the form (or no hotel room)", "Complete the registration form by Friday. If you have not booked a hotel room, contact the travel desk.")).toBe("Complete the form");
     expect(heldStake("respond", "Llenar el formulario (o sin cuarto de hotel)", "Llena el formulario de registro antes del viernes. Si no has reservado cuarto de hotel, escribe a la agencia.")).toBe("Llenar el formulario");
+    // round two: on every path, a consequence said of another failure (a payment's) isn't the form's (en, es)
+    const RELEASED = "Complete the registration form by Friday. If your payment is not received, your hotel room will be released.";
+    expect(heldStake("respond", "Complete the registration form (or hotel room released)", RELEASED)).toBe("Complete the registration form");
+    expect(heldStake("respond", "Complete the registration form (hotel room released if not done)", RELEASED)).toBe("Complete the registration form");
+    expect(heldStake("respond", "Llenar el formulario (o se libera el cuarto)", "Llena el formulario antes del viernes. Si no recibimos tu pago, se libera tu cuarto de hotel.")).toBe("Llenar el formulario");
+    // and the payment's own stake still holds, in either language
+    expect(heldStake("pay", "Pay the hotel deposit (or hotel room released)", "Please pay the hotel deposit by Friday. If your payment is not received, your hotel room will be released.")).toBe("Pay the hotel deposit (or hotel room released)");
   });
 
   it("its code review: \"to keep\" excuses only \"without a lapse\"; a stated denial still cuts it", () => {
