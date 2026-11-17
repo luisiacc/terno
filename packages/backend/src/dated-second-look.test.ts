@@ -232,7 +232,9 @@ describe("iteration 5's code review", () => {
       expect(await run(CASA, { first: [estancia], answer: [{ kind: "event", text: "Salida de Casa Malasaña (antes de las 11:00)", quote: "Salida: martes 1 de diciembre, antes de las 11:00", due: "2026-12-01", time: null }] })).toEqual([]);
       const TRIP = "DEPART — Saturday, 05 Dec 2026\nPC 7 · SFO 11:55 PM → BLR 6:05 AM (Mon 07 Dec) via SIN\n\nRETURN — Saturday, 12 Dec 2026\nPC 8 · BLR 1:30 AM → SFO 4:40 PM";
       const out = { kind: "event" as const, text: "Flight from San Francisco to Bengaluru (arrives Mon 07 Dec)", quote: "DEPART — Saturday, 05 Dec 2026", due: "2026-12-05", time: "23:55" };
-      expect(await run(TRIP, { first: [out], answer: [{ ...out, quote: "PC 7 · SFO 11:55 PM → BLR 6:05 AM (Mon 07 Dec) via SIN" }] })).toEqual([]);
+      // (round 18: the return, its day's line over its clock's, is a moment too: read with its time, it's covered)
+      const back = { kind: "event" as const, text: "Flight from Bengaluru to San Francisco", quote: "RETURN — Saturday, 12 Dec 2026", due: "2026-12-12", time: "01:30" };
+      expect(await run(TRIP, { first: [out, back], answer: [{ ...out, quote: "PC 7 · SFO 11:55 PM → BLR 6:05 AM (Mon 07 Dec) via SIN" }] })).toEqual([]);
     });
 
     it("an open item of its conversation or sender named on the same day; something else that day is kept", async () => {
@@ -357,6 +359,45 @@ describe("iteration 5's code review", () => {
         expect(timedByTwins([out], [twin, { ...twin, time: "22:00" }], TOGETHER)).toEqual([out]);
       });
     });
+  });
+});
+
+describe("round 18's faults: a day's line and its clock's line under it are one moment (Theo's Skyway flight)", () => {
+  const SKYWAY = "Thanks for flying Skyway, THEO MARSH.\n\nConfirmation code: QX7R4M\n\nFlight SW 1182\nMon, 16 Nov 2026\nSan Francisco (SFO) 8:15 AM → Austin (AUS) 1:52 PM\nBoarding 7:40 AM · Gate assigned at check-in · Seat 3C (Comfort+)\n\nReturn: SW 1907\nWed, 18 Nov 2026\nAustin (AUS) 5:05 PM → San Francisco (SFO) 6:58 PM · Seat 4A\n\nCheck in opens 24 hours before departure in the Skyway app.\nBooked by: Shipfast Summit Travel (on behalf of the passenger)\n\nSkyway Airlines · Customer care 1-800-555-0144";
+  const OUT_LINE = "Mon, 16 Nov 2026 San Francisco (SFO) 8:15 AM → Austin (AUS) 1:52 PM";
+  // the panel's reading (#18): the outbound quoted by its day's line, no time; the return timed
+  const out = { kind: "event" as const, text: "Skyway flight SW 1182 from San Francisco to Austin", quote: "Mon, 16 Nov 2026", due: "2026-11-16", time: null };
+  const back = { kind: "event" as const, text: "Skyway flight SW 1907 from Austin to San Francisco", quote: "Wed, 18 Nov 2026", due: "2026-11-18", time: "17:05" };
+  const flight = (first: DatedResult["items"], text = SKYWAY) => look(text, { automated: true, first: { ...none, items: first } });
+
+  it("the untimed flight's moment is asked about, its day's line and its clock's line as one; the timed return's never", () => {
+    expect(flight([out, back])).toEqual([OUT_LINE]);
+    // a time read, or a quote that saw the clock, covers it as before
+    expect(flight([{ ...out, time: "08:15" }, back])).toEqual([]);
+    expect(flight([{ ...out, quote: "San Francisco (SFO) 8:15 AM → Austin (AUS) 1:52 PM" }, back])).toEqual([]);
+    // the clock on the line after a label, en and es
+    expect(look("Your booking\nMonday, November 16\nDeparts\n8:15 AM", { automated: true, first: { ...none, items: [{ ...out, quote: "Monday, November 16" }] } })).toEqual(["Monday, November 16 Departs 8:15 AM"]);
+    expect(look("Tu reserva\nlunes 16 de noviembre\nSale:\n08:15", { automated: true, first: { ...none, items: [{ ...out, quote: "lunes 16 de noviembre" }] } })).toEqual(["lunes 16 de noviembre Sale: 08:15"]);
+    // never across a paragraph, nor a day's line that ends a sentence, nor a clock's line with a day of its own
+    expect(look("Your booking\nMonday, November 16\n\n8:15 AM", { first: { ...none, items: [{ ...out, quote: "Monday, November 16" }] } })).toEqual([]);
+    expect(look("Your appointment is on Monday, November 16.\nPlease come in at 8:15 AM.", { first: { ...none, items: [{ ...out, quote: "Your appointment is on Monday, November 16." }] } })).toEqual([]);
+  });
+
+  it("the look's twin gives the outbound its 8:15 and stays one row; the twin rules of round 17's code review hold", async () => {
+    const input: DatedInput = { text: SKYWAY, subject: "Your trip confirmation – SFO to AUS", from: { name: "Skyway Airlines", automated: true }, reader: { name: "Theo Marsh", addressed: "to" }, to: [], cc: [], receivedAt: "x", zone: "UTC", open: [], language: "en" };
+    const looked = async (answer: DatedResult["items"]) => {
+      const r = await secondLook({ ...none, items: [out, back] }, { text: SKYWAY, subject: input.subject, arrivedAt: NOW, automated: true, shown: [], now: NOW, from: "Skyway Airlines", input, promptChars: Infinity }, { recheck: async () => "go", claim: async () => true, read: async (i) => (expect(i.again).toEqual([OUT_LINE]), { ...none, items: answer }), aborted: () => false });
+      if (typeof r === "string") throw new Error(r);
+      return r.result.items;
+    };
+    const wall = { day: "2026-11-16", time: "08:15", zone: "America/Los_Angeles", place: "San Francisco" };
+    const twin = { kind: "event" as const, text: "Skyway flight SW 1182 from San Francisco to Austin", quote: "San Francisco (SFO) 8:15 AM → Austin (AUS) 1:52 PM", due: "2026-11-16", time: "08:15", wall, at: Date.UTC(2026, 10, 16, 16, 15) };
+    expect(await looked([twin])).toEqual([{ ...out, time: "08:15", wall, at: twin.at }, back]);
+    // another flight number, or the return's way, lends nothing
+    expect(timedByTwins([out], [{ ...twin, text: "Skyway flight SW 1907" }], SKYWAY)).toEqual([out]);
+    expect(timedByTwins([out], [{ ...twin, text: "Skyway return flight from Austin" }], SKYWAY)).toEqual([out]);
+    // nor the return's own line, in another paragraph
+    expect(timedByTwins([out], [{ ...twin, text: "Skyway flight from Austin to San Francisco", quote: "Austin (AUS) 5:05 PM → San Francisco (SFO) 6:58 PM", time: "17:05" }], SKYWAY)).toEqual([out]);
   });
 });
 

@@ -26,6 +26,38 @@ export function holdsMoment(sentence: string, arrivedAt: number): boolean {
   return namesDayFrom(said, arrivedAt) && (saysClock(said) || CLOSING.test(norm(said))) && !RECURRING.test(norm(said));
 }
 
+/** a label on a line of its own, before what it labels ("Departs", "Sale:", "Hora de salida"): a few words, no figures */
+const LABEL = /^[\p{L}][\p{L}'’ -]{0,28}:?$/u;
+const label = (line: string): boolean => LABEL.test(line) && line.split(/\s+/u).length <= 3;
+
+/**
+ * Round 18 (Theo's Skyway flight, both mornings): a booking that writes the day on one line ("Mon, 16 Nov 2026") and the
+ * clock on the next ("San Francisco (SFO) 8:15 AM → Austin (AUS) 1:52 PM"), or on the one after a label ("Departs"),
+ * holds one moment across them, which no line of it holds alone. Those lines are read as one sentence; never a day's line
+ * that ends a sentence ("…on Monday, November 16."). `joined`: each such sentence as `norm` reads it, and its day and clock
+ * without the label (a label is no sale: "Sale:" is es for "Departs").
+ */
+export function splitMoments(text: string, arrivedAt: number): { text: string; joined: { read: string; bare: string }[] } {
+  const lines = text.split("\n");
+  const joined: { read: string; bare: string }[] = [];
+  const out: string[] = [];
+  const day = (line: string) => namesDayFrom(line.replace(NOT_A_DAY, " "), arrivedAt);
+  const clock = (line: string) => saysClock(line.replace(NOT_A_DAY, " ")) && !day(line);
+  for (let n = 0; n < lines.length; n++) {
+    const line = lines[n]!.trim();
+    const next = lines[n + 1]?.trim() ?? "";
+    const at = next && label(next) ? n + 2 : n + 1;
+    const said = lines[at]?.trim() ?? "";
+    if (line && !/[.!?]$/u.test(line) && day(line) && !saysClock(line.replace(NOT_A_DAY, " ")) && said && clock(said)) {
+      const whole = lines.slice(n, at + 1).map((l) => l.trim()).join(" ");
+      out.push(whole);
+      joined.push({ read: norm(whole), bare: `${line} ${said}` });
+      n = at;
+    } else out.push(lines[n]!);
+  }
+  return { text: out.join("\n"), joined };
+}
+
 /**
  * What the checks would never keep, read here so it's never asked about (the revision's "local rejections"), as `norm` reads
  * it: something already done (a receipt, a charge made, an order placed), a bill or renewal that the mail says happens by
@@ -100,7 +132,11 @@ export interface LookInput {
  */
 export function lookAt(i: LookInput): string[] {
   if (i.listed && i.addressed === "none") return [];
-  const sentences: Sentences = sentencesOf(i.text);
+  // round 18: a day's line and its clock's line under it are one sentence, one moment
+  const split = splitMoments(i.text, i.arrivedAt);
+  const sentences: Sentences = sentencesOf(split.text);
+  const joinedAt = (n: number) => split.joined.find((j) => j.read === sentences[n]!.read);
+  const joined = (n: number) => !!joinedAt(n);
   const moments = sentences.flatMap((s, at) => (holdsMoment(s.said, i.arrivedAt) ? [at] : []));
   if (!moments.length) return [];
   // an automated mail's list of moments (a newsletter's calendar, a booking's check-in, check-out and cancellation) was the
@@ -122,15 +158,18 @@ export function lookAt(i: LookInput): string[] {
   const covered = new Set<number>();
   // a returned item's day covers a sentence that says it of the same thing: the model read that day (a statement's "Payment
   // due date: November 25" beside the balance it quoted), never another obligation's on that day
-  const cover = (x: { text?: string | null; quote?: string | null }, due?: string | null) => {
+  // round 18 (Theo's flight, quoted by its day's line alone and given no time): an untimed item that never saw the clock (its
+  // quote states none) covers no moment whose clock is on a line of its own
+  const cover = (x: { text?: string | null; quote?: string | null }, due?: string | null, untimed = false) => {
     const item = { text: x.text ?? "", quote: x.quote?.trim() ?? "" };
+    const sawClock = !untimed || saysClock(item.quote);
     const at = item.quote ? sentencesWith(item.quote, sentences) : [];
-    for (const n of at) covered.add(n);
+    for (const n of at) if (sawClock || !joined(n)) covered.add(n);
     if (!due) return;
     const near = new Set(at.map(paragraphOf));
-    for (const n of moments) if (onDay(sentences[n]!.said, due, item.quote, i.arrivedAt) && sameThing(item, sentences[n]!, near.has(paragraphOf(n)))) covered.add(n);
+    for (const n of moments) if ((sawClock || !joined(n)) && onDay(sentences[n]!.said, due, item.quote, i.arrivedAt) && sameThing(item, sentences[n]!, near.has(paragraphOf(n)))) covered.add(n);
   };
-  for (const x of i.first.items) cover(x, x.due);
+  for (const x of i.first.items) cover(x, x.due, untimed(x));
   for (const x of i.first.settled) cover({ quote: x.evidence });
   for (const x of i.first.moved) {
     cover({ quote: x.evidence, text: x.text }, x.due);
@@ -139,7 +178,11 @@ export function lookAt(i: LookInput): string[] {
   for (const x of i.first.replaced) cover({ quote: x.evidence });
   // an open item's day (a reminder of it): only a sentence that names it
   for (const o of i.shown) if (o.due && o.text) cover({ text: o.text }, o.due);
-  const left = moments.filter((n) => !covered.has(n) && !rejected(sentences[n]!) && !proposed(n));
+  const bare = (n: number) => {
+    const j = joinedAt(n);
+    return j ? { said: j.bare, read: norm(j.bare) } : sentences[n]!;
+  };
+  const left = moments.filter((n) => !covered.has(n) && !rejected(bare(n)) && !proposed(n));
   const asked: string[] = [];
   let room = DATED_AGAIN_CHARS;
   for (const n of left) {
