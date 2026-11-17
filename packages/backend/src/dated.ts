@@ -154,10 +154,35 @@ function askAllowed(quote: string, said: string, text: string, o: { sender?: { p
 const CANCELS = /\b(?:cancel(?:l)?ed|cancel(?:l)?ation|cancels|called off|calls off|cancelad[oa]s?|cancelacion|cancelamos|cancelo|anulad[oa]s?|anulacion|se cancela|se suspende|suspendid[oa]s?)\b/u;
 const ARRIVES = /\b(?:delivered|arrived|picked up|signed for|left at (?:your|the) (?:door|front|porch|mailbox)|entregad[oa]s?|se entrego|entregamos|llego|llegaron|recogid[oa]s?)\b/u;
 const PAID_WORDS = /\b(?:paid|payment (?:received|processed|went through)|received (?:your )?payment|charged|pagad[oa]|pago recibido|recibimos (?:tu|su) pago|cobramos|cobrado)\b/u;
-export function settledHow(kind: string, evidence: string): SettledHow | null {
-  const read = norm(evidence);
-  if (CANCELS.test(read) && !(kind === "pay" && PAID_WORDS.test(read))) return "cancelled";
-  return kind === "delivery" && ARRIVES.test(read) ? "arrived" : null;
+// its code review: a word said of it, never denied just before ("wasn't cancelled", "no fue cancelado")
+const DENIED_BEFORE = /\b(?:not|never|wasn t|weren t|isn t|hasn t|haven t|no|nunca)(?: \S+){0,2}$/u;
+const says = (re: RegExp, read: string) => [...read.matchAll(new RegExp(re.source, "gu"))].some((m) => !DENIED_BEFORE.test(read.slice(0, m.index).trim()));
+/** a clause's edge inside a sentence: a comma (never a figure's), a semicolon, or a word that starts another ("while", "mientras") */
+const CLAUSE_EDGE = /,(?!\d)|;|\s(?:while|whereas|but|although|though|however|mientras|pero|aunque|sin embargo)\s/iu;
+/**
+ * The evidence's own clauses of its sentence: those it overlaps (its code review: "Your Blue cotton tees were delivered,
+ * while your separate order was cancelled" is the tees' "delivered" alone). `sentence` absent: the evidence alone.
+ */
+function ownClause(evidence: string, sentence = ""): string {
+  const e = norm(evidence);
+  const clauses = sentence.split(CLAUSE_EDGE).map(norm).filter(Boolean);
+  const whole = clauses.join(" ");
+  const at = e ? whole.indexOf(e) : -1;
+  if (at < 0) return e;
+  let start = 0;
+  // the clauses its words span ("Your reservation for Saturday, November 14 … has been cancelled": both its halves)
+  const own = clauses.filter((c) => {
+    const [from, to] = [start, start + c.length];
+    start = to + 1;
+    return from < at + e.length && to > at;
+  });
+  return own.join(" ");
+}
+export function settledHow(kind: string, evidence: string, sentence?: string): SettledHow | null {
+  const read = ownClause(evidence, sentence);
+  // a parcel's arrival in its own clause wins
+  if (kind === "delivery" && says(ARRIVES, read)) return "arrived";
+  return says(CANCELS, read) && !(kind === "pay" && PAID_WORDS.test(read)) ? "cancelled" : null;
 }
 
 /** a greeting's words before the reader's name ("¡Hola Diego!", "Hi Diego,", "Dear Diego") */
@@ -643,7 +668,7 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     const row = input.open.get(s.label);
     if (!row || !tiedTo(row, s.evidence, null)) return [];
     // the claims ledger's second batch: what its mail says happened, for Earlier's word ("Cancelled Mon", "Arrived Tue")
-    const how = settledHow(row.kind, `${s.evidence}\n${contextOf(s.evidence, sentences)}`);
+    const how = settledHow(row.kind, s.evidence, contextOf(s.evidence, sentences));
     return [{ id: row.id, revision: row.revision, ...(how ? { how } : {}) }];
   });
   // after the panel: a new day for an open item, quoted, from this message's own day; one it settles isn't moved

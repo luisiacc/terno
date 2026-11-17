@@ -1831,6 +1831,15 @@ describe("the claims ledger's second batch: what its mail said happened (Earlier
     expect(settledHow("delivery", "Your parcel is out for delivery today.")).toBeNull();
     // an arrival is a parcel's word only
     expect(settledHow("event", "The speakers arrived and the venue is set.")).toBeNull();
+    // its code review: the evidence's own clause, never another's, and never a denial (en, es)
+    const tees = "Your Blue cotton tees were delivered, while your separate order was cancelled.";
+    expect(settledHow("delivery", "Blue cotton tees were delivered", tees)).toBe("arrived");
+    expect(settledHow("event", "Your table for Friday is confirmed", "Your table for Friday is confirmed, but the brunch booking was cancelled.")).toBeNull();
+    expect(settledHow("event", "Your appointment was not cancelled; it has been completed.")).toBeNull();
+    expect(settledHow("event", "Tu reserva no fue cancelada, quedó confirmada.")).toBeNull();
+    expect(settledHow("delivery", "Tu paquete fue entregado", "Tu paquete fue entregado, mientras que tu otro pedido fue cancelado.")).toBe("arrived");
+    // evidence across a comma reads both its clauses
+    expect(settledHow("event", "Your reservation for Saturday, November 14", "Your reservation for Saturday, November 14 at 7:30 PM has been cancelled as requested.")).toBe("cancelled");
   });
 
   it("checkDates carries it with the settlement, from the evidence's sentence", () => {
@@ -1838,6 +1847,9 @@ describe("the claims ledger's second batch: what its mail said happened (Earlier
     const text = "Good news! Your order has been delivered! It was signed for by H. Ito.";
     const out = checkDates({ items: [], settled: [{ label: "o1", evidence: "Your order has been delivered!" }] }, { text, subject: "Delivered", arrivedAt: NOW, open: new Map([["o1", parcel]]), fromScan: false, now: NOW, threadId: 1 });
     expect(out.settled).toEqual([{ id: 4, revision: 1, how: "arrived" }]);
+    // its code review: another order's cancellation in the same sentence isn't this parcel's
+    const both = "Your Blue cotton tees were delivered, while your separate order was cancelled.";
+    expect(checkDates({ items: [], settled: [{ label: "o1", evidence: "Blue cotton tees were delivered" }] }, { text: both, subject: "Your orders", arrivedAt: NOW, open: new Map([["o1", { ...parcel, text: "Blue cotton tees arriving" }]]), fromScan: false, now: NOW, threadId: 1 }).settled).toEqual([{ id: 4, revision: 1, how: "arrived" }]);
   });
 });
 
