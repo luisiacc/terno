@@ -185,6 +185,9 @@ export function settledHow(kind: string, evidence: string, sentence?: string): S
   return says(CANCELS, read) && !(kind === "pay" && PAID_WORDS.test(read)) ? "cancelled" : null;
 }
 
+/** a sentence that says again what another said ("I mean…", "that is…", "i.e.", "o sea…", "es decir…"), as `norm` reads it */
+const RESTATES = /\b(?:i mean|that is|i e|ie|in other words|to be clear|namely|o sea|osea|es decir|quiero decir|mejor dicho)\b/u;
+
 /** a greeting's words before the reader's name ("¡Hola Diego!", "Hi Diego,", "Dear Diego") */
 const GREETING = /^(?:(?:hi|hello|hey|dear|good (?:morning|afternoon|evening)|hola|buenas|buenos dias|buenas tardes|buenas noches|querid[oa]|estimad[oa]|que tal)\s+)?/u;
 
@@ -827,10 +830,12 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
    * when their words name two things, each on a line of its own, neither line in the request the shared quote makes (a list
    * it introduces: Karin's "a reply from you today with:").
    */
+  // its code review: never a line that restates the other ("I mean the countersigned supplier agreement", "o sea…")
   const apart = (a: { text: string; quote: string }, b: { text: string; quote: string }) => {
     if (sameObject(a.text, b.text)) return false;
     const [la, lb] = [ownLine(a.text), ownLine(b.text)];
-    return la >= 0 && lb >= 0 && la !== lb && !partOf(a, { quote: sentences[la]!.said }) && !partOf(b, { quote: sentences[lb]!.said });
+    if (la < 0 || lb < 0 || la === lb || [la, lb].some((l) => RESTATES.test(sentences[l]!.read))) return false;
+    return !partOf(a, { quote: sentences[la]!.said }) && !partOf(b, { quote: sentences[lb]!.said });
   };
   const requested = (ask: { text: string; quote: string }) => requests.some((r) => sameThing(r, ask) || partOf(r, ask) || (replyTo(r.text) && replyTo(ask.text) && !asksDirectly(contextOf(ask.quote, sentences))));
   // the fourth panel read: a person who says no answer is needed ("No need to reply now") asks nothing

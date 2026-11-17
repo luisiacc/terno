@@ -1231,6 +1231,15 @@ describe("plan 210 (iteration 5): the reading", () => {
     expect(checkDates({ items: [recoger, cuarto], settled: [] }, { ...mom, text: MAMA, subject: "Navidad", from: "Mamá" }).rows).toHaveLength(2);
     // the same question asked twice is one
     expect(checkDates({ items: [room, { ...room, text: "Tell Mom which room you want" }], settled: [] }, mom).rows).toHaveLength(1);
+    // its code review: a restatement is the same request ("I mean…", es "o sea…")
+    const CONTRACT = "Could you send me the signed vendor contract? I mean the countersigned supplier agreement. Please get it to me by Friday.";
+    const deadline = "Please get it to me by Friday.";
+    const vendor = { kind: "respond", text: "Send Lena the signed vendor contract", quote: deadline, due: "2026-11-13", time: null };
+    const supplier = { kind: "respond", text: "Send Lena the countersigned supplier agreement", quote: deadline, due: "2026-11-13", time: null };
+    expect(checkDates({ items: [vendor, supplier], settled: [] }, { ...lena, text: CONTRACT, subject: "Contract" }).rows).toHaveLength(1);
+    const CONTRATO = "¿Me mandas el contrato firmado del proveedor? O sea, el acuerdo de suministro contrafirmado. Lo necesito para el viernes.";
+    const plazo = "Lo necesito para el viernes.";
+    expect(checkDates({ items: [{ ...vendor, text: "Mandarle a Lena el contrato firmado del proveedor", quote: plazo }, { ...supplier, text: "Mandarle a Lena el acuerdo de suministro contrafirmado", quote: plazo }], settled: [] }, { ...lena, text: CONTRATO, subject: "Contrato" }).rows).toHaveLength(1);
   });
 
   it("V2: an event's one start time in its quote, given none, is its time; a bare 7:00, two times, or a place's clock leave it untimed", () => {
