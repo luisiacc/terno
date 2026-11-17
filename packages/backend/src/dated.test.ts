@@ -762,6 +762,22 @@ describe("plan 210 (iteration 3)", () => {
       expect(checkDates({ items: [ask("Send David the papers", "If the scanner is a hassle, please send me photos instead and let me know.")], settled: [] }, person("If the scanner is a hassle, please send me photos instead and let me know.")).rows).toHaveLength(1);
       expect(checkDates({ items: [ask("Answer David", "If the scanner is a hassle, can you tell me which day works?")], settled: [] }, person("If the scanner is a hassle, can you tell me which day works?")).rows).toHaveLength(1);
     });
+    it("round 15's second morning (Margaret): an offer of theirs that's an open ask is settled by their own mail taking it back, though the reading settled nothing (en, es); never another's, another conversation's, or one they don't take back", () => {
+      const david = "david@kowalczyk.test";
+      const offer = { id: 31, revision: 1, threadId: 4, senderKey: david, kind: "ask", text: "Tell David if the library scanner is a hassle", quote: "If the scanner at the library is a hassle I can come by on the weekend, just tell me.", dueDay: "2026-11-06", dueAt: at(2026, 11, 6, 12), timed: false } as DatedRow;
+      const thanks = "Hi Mom,\n\nGot them both, and they came through clear. I sent them on to Ms. Greer's office this afternoon, so she has everything she needs.\n\nThank you for doing it. No need for me to come by tomorrow then, I'll take Owen to his lesson instead.\n\nLove,\nDavid";
+      const read = (text: string, row: DatedRow = offer, o: { senderKey?: string; threadId?: number } = {}) => checkDates({ items: [], settled: [] }, { ...person(text), open: new Map([["o2", row]]), senderKey: o.senderKey ?? david, threadId: o.threadId ?? 4 }).settled;
+      expect(read(thanks)).toEqual([{ id: 31, revision: 1 }]);
+      const paso = { ...offer, text: "Decirle a Ana si se le complica", quote: "Si se te complica, paso yo el sábado, nada más avísame." } as DatedRow;
+      expect(read("¡Ya me llegaron! Ya no hace falta que pase el sábado.", paso)).toEqual([{ id: 31, revision: 1 }]);
+      // someone else's mail, another conversation, a question, or something else they don't need
+      expect(read(thanks, offer, { senderKey: "ruth@kowalczyk.test" })).toEqual([]);
+      expect(read(thanks, offer, { threadId: 5 })).toEqual([]);
+      expect(read("No need for me to come by tomorrow then?")).toEqual([]);
+      expect(read("Got them. No need to send the originals.")).toEqual([]);
+      // an ask that isn't an offer of theirs stays
+      expect(read(thanks, { ...offer, text: "Answer David about Thanksgiving", quote: "Are you coming for Thanksgiving?" } as DatedRow)).toEqual([]);
+    });
     it("only copied to know about it, a task said of the reader isn't theirs; one that speaks to them by name still is", () => {
       const carla = "Hola Ana Sofía,\n\nAna, ¿nos mandas las ilustraciones finales el lunes 16? Diego las monta en las etiquetas esa misma semana.\n\nDiego, te copio para que estés al tanto; cuando Ana las entregue te las reenvío.\n\nCarla";
       const mount = { kind: "respond", text: "Montar las ilustraciones finales en las etiquetas", quote: "Diego las monta en las etiquetas esa misma semana.", due: "2026-11-20", time: null };

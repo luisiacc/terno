@@ -283,6 +283,22 @@ function offerOnly(sentences: string, paragraph: string): boolean {
 }
 
 /**
+ * Plan 210 (round 15's second morning, Margaret's David): an offer of the sender's that's an open ask ("I can come by on the
+ * weekend, just tell me") is settled by their own later mail in that conversation taking it back ("No need for me to come by
+ * tomorrow then", "ya no hace falta que pase"): the reading listed it and settled nothing. Only their offer (the sender's
+ * "I can …" in its quote), from them, in its conversation, and only when what they no longer need to do is what they offered
+ * (the verb's stem in the offer's words).
+ */
+const WITHDRAWS = /\b(?:no need (?:for (?:me|us) )?to|(?:i|we) (?:won t|will not|don t|do not) need to|no (?:hace|hara) falta que|ya no (?:hace falta|es necesario) que|no es necesario que) (\p{L}+)/gu;
+function offerWithdrawn(row: Pick<DatedRow, "quote" | "senderKey" | "threadId">, input: { senderKey?: string; threadId?: number }, sentences: Sentences): boolean {
+  if (input.senderKey === undefined || row.senderKey !== input.senderKey || (input.threadId !== undefined && row.threadId !== input.threadId)) return false;
+  const offered = norm(row.quote);
+  if (!OFFERS.test(offered)) return false;
+  const stems = new Set(offered.split(" ").filter((w) => w.length >= 3).map((w) => w.slice(0, 3)));
+  return sentences.some((s) => !/[?¿]/u.test(s.said) && [...s.read.matchAll(WITHDRAWS)].some((m) => stems.has(m[1]!.slice(0, 3))));
+}
+
+/**
  * Plan 210 (iteration 3): the sender saying what they can do, with nothing to answer ("Can you set that up? I can prep the
  * usage story": the request is the reader's, the offer is no ask), unlike an offer that waits on the reader's yes ("…just
  * let me know"). Haiku took Nina's 1 in 1 after v13 named concrete offers as asks.
@@ -569,6 +585,12 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
   });
   // after the panel: a new day for an open item, quoted, from this message's own day; one it settles isn't moved
   const settledIds = new Set(settled.map((s) => s.id));
+  // round 15's second morning: an offer of theirs read as an ask, which they now take back themselves
+  for (const row of input.open.values()) {
+    if (row.kind !== "ask" || settledIds.has(row.id) || !offerWithdrawn(row, input, sentences)) continue;
+    settled.push({ id: row.id, revision: row.revision });
+    settledIds.add(row.id);
+  }
   // Codex code review (round 4): a day for an open ask ("I need it by Friday") makes it the request it now is: the ask is
   // settled and a `respond` with its words and that day is this message's
   const answered: DatedResult["items"] = [];
