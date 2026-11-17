@@ -158,6 +158,18 @@ describe("a reply's checked verdict (the Codex review of iteration 3, revision 1
     expect(one("I can't make Friday. Send it to Ana instead", declined)).toHaveLength(1);
   });
 
+  it("the second morning (Diego's adjustments): a request this reply does keeps the promise of yours that answers it, given no kept of its own", () => {
+    const ownText = "Here's the permission form you asked for, signed.";
+    const open = new Map([["p1", { id: 3, revision: 1, kind: "promise", answers: 7 } as never], ["p2", { id: 4, revision: 0, kind: "promise", answers: 8 } as never], ["p3", { id: 5, revision: 0, kind: "promise", answers: null } as never]]);
+    const one = (verdict: "fulfilled" | "holding" | "promise", kept: SentMailResult["kept"] = []) => checkSentMail({ promises: [], expectsReply: false, awaiting: [], kept, answers: [{ label: "q1", verdict, evidence: "Here's the permission form" }] }, { ...base, ownText, open });
+    // q1 (request 7) done: the promise answering it is kept, not the one answering request 8, nor one answering none
+    expect(one("fulfilled").kept).toEqual([{ id: 3, revision: 1 }]);
+    // kept once, when the model kept it too
+    expect(one("fulfilled", [{ label: "p1", evidence: "Here's the permission form" }]).kept).toEqual([{ id: 3, revision: 1 }]);
+    // a request not done keeps nothing
+    expect(one("holding").kept).toEqual([]);
+  });
+
   it("a promise that only holds it holds it, whatever the model called it (iteration 4); a \"done\" that's a promise's words is that promise", () => {
     const ownText = "Let me check my calendar and get back to you. I'll send it Wednesday.";
     const holding = { text: "check and get back to Ms. Greer", quote: "Let me check my calendar and get back to you", to: "r1", due: null };
@@ -220,6 +232,14 @@ describe("a promise that answers a request keeps its deadline (iteration 3)", ()
     expect(await backend.store.followups.get(promise!.id)).toMatchObject({ state: "due" });
     expect(await backend.store.dated.get(req!.id)).toMatchObject({ state: "open", closedReason: null });
     expect((await rows()).map((r) => r.id)).toEqual([`promise:${promise!.id}`]);
+    // the second morning (Diego's adjustments): Friday's mail sends it, the model saying the request is done but keeping no
+    // promise: the promise answering it is kept too, never a Missed row beside a settled request
+    model.sent = () => sent({ answers: [{ label: "q1", verdict: "fulfilled", evidence: "Here's the signed slip" }] });
+    await reply(asked, "Here's the signed slip.");
+    await followupsDone();
+    expect(await backend.store.dated.get(req!.id)).toMatchObject({ state: "settled" });
+    expect(await backend.store.followups.get(promise!.id)).toMatchObject({ state: "done" });
+    expect(await rows()).toEqual([]);
   });
 
   it("Codex code review: Done on the promise settles every reading of the request it answers (one item), and its Undo brings them all back", async () => {

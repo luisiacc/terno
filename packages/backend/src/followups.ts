@@ -238,12 +238,6 @@ export function checkSentMail(result: SentMailResult, input: { ownText: string; 
     const row = input.open.get(k.label);
     return row && ownPieces(k.evidence, input.ownText) ? [{ id: row.id, revision: row.revision }] : [];
   });
-  // plan 210 (round 14's faults, the second morning): a promise said again is the older one's, never a row beside it
-  const keptIds = new Set(kept.map((k) => k.id));
-  for (const r of rows) {
-    const renews = renewedPromise(r, input.open.values(), { kept: keptIds, sentAt: input.sentAt });
-    if (renews) r.renews = renews;
-  }
   /**
    * Plan 210 (iteration 3, the Codex review's revision 1): a verdict on a request it was shown, evidence-checked like the rest:
    * their words, two or more, never words to the app. Done now settles it; a concrete promise kept above links it (one
@@ -264,6 +258,20 @@ export function checkSentMail(result: SentMailResult, input: { ownText: string; 
     if (promise) return a.verdict === "holding" ? [] : [{ request: shown, verdict: "promise" as const, item: promise.item }];
     return a.verdict === "fulfilled" ? [{ request: shown, verdict: "fulfilled" as const }] : [];
   });
+  // plan 210 (the second morning, Diego's adjustments): a request this reply does is done, and so is the promise of yours
+  // that answers it (shown above): it was to do what the request asked, never a Missed row beside a settled request
+  for (const v of verdicts) {
+    if (v.verdict !== "fulfilled") continue;
+    for (const row of input.open.values()) {
+      if (row.kind === "promise" && row.answers === v.request.id && !kept.some((k) => k.id === row.id)) kept.push({ id: row.id, revision: row.revision });
+    }
+  }
+  // plan 210 (round 14's faults, the second morning): a promise said again is the older one's, never a row beside it
+  const keptIds = new Set(kept.map((k) => k.id));
+  for (const r of rows) {
+    const renews = renewedPromise(r, input.open.values(), { kept: keptIds, sentAt: input.sentAt });
+    if (renews) r.renews = renews;
+  }
   return { rows, kept, verdicts };
 }
 
