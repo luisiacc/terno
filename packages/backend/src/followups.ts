@@ -6,7 +6,7 @@ import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
 import { AWAITING_ITEM, HELD_REQUEST_CLOSED, type FollowupFinish, type FollowupSnapshot, type FollowupSource, type FollowupWrite, type MailStore, type SentMark } from "@terno/store";
 import { DailyLimitError, MonthlyLimitError } from "./ai-limiter";
 import { UI_LOCALE_KEY } from "./forwarding";
-import { contextOf, namingWords, norm as plain, paidSaid, plainEvidence, sameObject, sentencesOf, sentencesWith } from "./dated-evidence";
+import { contextOf, directsReader, namingWords, norm as plain, paidSaid, plainEvidence, saidClauses, sameObject, sentencesOf, sentencesWith } from "./dated-evidence";
 import { promiseMoment } from "./promise-time";
 
 const MAX_DELAY = 2 ** 31 - 1;
@@ -76,9 +76,13 @@ type Verdict = NonNullable<FollowupFinish["verdicts"]>[number];
 
 export const onlyHolds = (quote: string): boolean => HOLDS.test(normalizeText(quote).toLowerCase()) && !DELIVERS.test(normalizeText(quote).toLowerCase());
 
-/** Round 19: whether your words ask the person something back (a question, "could you", "let me know", "¿me dices…?"), as `plain` reads them. */
-const ASKS_BACK = /\b(?:could you|can you|would you|will you|do you|are you|please|let me know|tell me|need you to|want you to|por favor|puedes|podrias|me (?:dices|avisas|confirmas|mandas|envias)|avisame|dime|confirmame|necesito que)\b/u;
-const asksBack = (text: string): boolean => /[?¿]/u.test(text) || ASKS_BACK.test(plain(text));
+/**
+ * Round 19: whether your words ask the person something back (a question, "could you", "let me know", "¿me dices…?"), as
+ * `plain` reads them. Its code review: or tell them to do something, a clause that starts on its verb ("Send me the
+ * available shifts in the meantime", "mándame los turnos", "pásame la lista").
+ */
+const ASKS_BACK = /\b(?:could you|can you|would you|will you|do you|are you|please|let me know|tell me|need you to|want you to|por favor|puedes|podrias|me (?:dices|avisas|confirmas|mandas|envias|pasas)|avisame|dime|confirmame|necesito que)\b/u;
+const asksBack = (text: string): boolean => /[?¿]/u.test(text) || ASKS_BACK.test(plain(text)) || saidClauses(text).some(directsReader);
 
 /**
  * Plan 210 (iteration 4): a promise's text is said to you, so your things are "your", never "my" (prompt v11's rule, which

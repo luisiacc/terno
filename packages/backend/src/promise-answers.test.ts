@@ -283,6 +283,11 @@ describe("a reply's checked verdict (the Codex review of iteration 3, revision 1
     // a question back, or a "let me know", still waits on her
     expect(read("Hi Jessica!\n\nLet me check with Chris and I'll get back to you. Is Thursday still open too?\n\nMaria", "Let me check with Chris and I'll get back to you.")).toHaveLength(1);
     expect(read("Hola Jessica:\n\nLo veo con Chris y te aviso. Avísame si el jueves sigue libre.\n\nMaría", "Lo veo con Chris y te aviso.")).toHaveLength(1);
+    // its code review: so does a plain imperative to her, en and es
+    expect(read("Hi Jessica!\n\nLet me check with Chris and I'll get back to you. Send me the available shifts in the meantime.\n\nMaria", "Let me check with Chris and I'll get back to you.")).toHaveLength(1);
+    expect(read("Hi Jessica!\n\nLet me check with Chris and I'll get back to you — forward me the sign-up sheet too.\n\nMaria", "Let me check with Chris and I'll get back to you")).toHaveLength(1);
+    expect(read("Hola Jessica:\n\nLo veo con Chris y te aviso. Mientras, mándame los turnos que quedan.\n\nMaría", "Lo veo con Chris y te aviso.")).toHaveLength(1);
+    expect(read("Hola Jessica:\n\nLo veo con Chris y te aviso, y pásame la lista.\n\nMaría", "Lo veo con Chris y te aviso")).toHaveLength(1);
     // nothing of hers held (no verdict, or another person's request): as the reading said
     expect(read(MARIA, quote, { verdict: "unknown" })).toHaveLength(1);
     expect(read(MARIA, quote, { requests: new Map([["q1", { ...shift.get("q1")!, senderKey: "chris@home.test" }]]) })).toHaveLength(1);

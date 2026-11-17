@@ -3573,4 +3573,25 @@ describe("round 19's faults", () => {
       expect(checkDates({ items: [ask("Answer Keisha", said)], settled: [] }, person(`Hi!\n\n${said}\n\nK`)).rows, said).toHaveLength(1);
     }
   });
+
+  it("its code review: a task about a get-together, or a request in another clause however it's joined, is still asked (en, es)", () => {
+    for (const said of [
+      "We need you to book a dinner venue for the offsite.",
+      "We need to book a dinner for the offsite.",
+      "We need a dinner venue for the offsite.",
+      "Tenemos que reservar una cena para el equipo.",
+      "Necesitamos que reserves un lugar para la cena.",
+      "We should grab lunch soon, and send me your schedule.",
+      "We should grab lunch soon — send me your schedule.",
+      "We should grab lunch soon and forward me the list.",
+      "Tenemos que ir por un café pronto y mándame los turnos.",
+      "Hay que vernos pronto — pásame tu horario.",
+    ]) {
+      expect(checkDates({ items: [ask("Answer Keisha", said)], settled: [] }, person(`Hi!\n\n${said}\n\nK`)), said).toMatchObject({ asked: true, rows: [{ kind: "ask" }] });
+    }
+    // the suggestion alone, however it's joined, still asks nothing
+    for (const said of ["We should totally grab lunch soon — I miss you.", "Hay que tomarnos un café pronto y ponernos al día."]) {
+      expect(checkDates({ items: [ask("Answer Keisha", said)], settled: [] }, person(`Hi!\n\n${said}\n\nK`)), said).toMatchObject({ rows: [], asked: false });
+    }
+  });
 });

@@ -30,6 +30,25 @@ export function paragraphsOf(text: string): Sentences {
     .filter((s) => s.read);
 }
 
+/**
+ * Round 19's code review: some words' clauses, as written then as `norm` reads each, split before normalizing removes their
+ * bounds: at a stop, a comma, a semicolon, a colon, a dash, and "and"/"y" ("We should grab lunch soon — send me your
+ * schedule", "…, and send me your schedule"). A clause's leading connector ("and", "then", "also", "y", "luego") goes too.
+ */
+const CONNECTOR = /^(?:(?:and|then|also|so|but|plus|just|y|e|luego|tambien|pero|entonces|nada mas|solo|asi que) )+/u;
+export function saidClauses(words: string): string[] {
+  return words
+    .split(/[,;:.!?¿¡\n—–]+|\s-\s|\s(?:and|y)\s/iu)
+    .map((c) => norm(c).replace(CONNECTOR, ""))
+    .filter(Boolean);
+}
+/**
+ * Round 19's code review: a clause that tells the reader to do something, starting on its verb ("send me your schedule",
+ * "forward me the list", "share the shifts", "mándame los turnos", "pásame la lista", "dime qué día"), as `saidClauses` reads it.
+ */
+const DIRECTS = /^(?:send|forward|share|give|text|email|e mail|call|phone|tell|show|ping|message|remind|pass|bring|book|sign|review|check|confirm|reply|answer|approve|fill|submit|pay|update|add|attach|upload|pick|drop|let me know|(?:manda|envia|reenvia|pasa|da|di|avisa|confirma|escribe|llama|comparte|cuenta|explica|ayuda|marca|recuerda|muestra|ensena)(?:me|nos)|dime|dame|manda|envia|pasa|comparte|firma|revisa|confirma|responde|llena|trae|paga|reserva|agenda|sube|adjunta)\b/u;
+export const directsReader = (clause: string): boolean => DIRECTS.test(clause);
+
 /** Which of the mail's sentences a quote is in: the one it's inside, or the ones inside it (a quote across two). */
 export function sentencesWith(quote: string, sentences: Sentences): number[] {
   const q = norm(quote);

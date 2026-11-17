@@ -9,7 +9,7 @@ import { silenced, silenceOf, withoutMuted } from "./dated-mutes";
 import { secondLook } from "./dated-second-look";
 import { UI_LOCALE_KEY } from "./forwarding";
 import { handledItself } from "./dated-automatic";
-import { amountsOf, bareDayAhead, contextOf, giftCardScam, insideQuotes, quoteSpan, type Sentences, namesApart, namesItem, namingWords, negatedReceipt, norm, otherAmounts, otherIds, monthEndDay, namesSpecifically, paragraphsOf, plainEvidence, proposedIn, replacesPlainly, sameObject, sameParcel, sameThing, saysReplaced, saysWhen, scamPressure, sentencesOf, sentencesWith, settlesKind, startClock, zeroNamesItem, zeroOnly } from "./dated-evidence";
+import { amountsOf, bareDayAhead, contextOf, directsReader, giftCardScam, insideQuotes, quoteSpan, saidClauses, type Sentences, namesApart, namesItem, namingWords, negatedReceipt, norm, otherAmounts, otherIds, monthEndDay, namesSpecifically, paragraphsOf, plainEvidence, proposedIn, replacesPlainly, sameObject, sameParcel, sameThing, saysReplaced, saysWhen, scamPressure, sentencesOf, sentencesWith, settlesKind, startClock, zeroNamesItem, zeroOnly } from "./dated-evidence";
 import { mayRelay, relayedAsk, relays, type Relay } from "./dated-relay";
 import { untrustedSenders, withoutUntrusted } from "./suspicious-sender";
 import { sameEvent } from "./today-links";
@@ -365,16 +365,25 @@ export function wellWishOnly(sentence: string): boolean {
  * lunch Thursday"), or a request beside it ("we need a coffee soon, and please bring the forms") is read as any. The
  * sentence as `norm` reads it, en and es; the meal or drink with an article or a verb, so "we need coffee for the meeting"
  * is no get-together.
+ * Its code review: only a collective suggestion, the get-together right after it (a going verb at most: "ir por", "go
+ * out for", "tomarnos"), never a task about one ("We need you to book a dinner venue", "we need to book a dinner", "a
+ * dinner venue"); and nothing asked in any clause, split as written ("…, and send me your schedule", "… — send me…").
  */
-const SUGGESTS = String.raw`(?:we (?:really |totally |definitely |so |still |seriously )?(?:need|should|have to|gotta|got to|must|ought to)(?: to)?|let s|lets|(?:tenemos|tendriamos) que|hay que|deberiamos|a ver (?:cuando|si))`;
-const MEAL = String.raw`(?:coffee|lunch|dinner|drinks?|beers?|brunch|breakfast|catch up)`;
-const GATHERING = String.raw`(?:(?:a|an|some|grab|get|have|do|go for|go out for|go get)\s+(?:\p{L}+\s+)?${MEAL}|catch up|get together|hang out|(?:un|unos|unas)\s+(?:cafe|cafecito|trago|tragos|chelas|cervezas|cerveza)|vernos|juntarnos|nos (?:vemos|juntamos)|ponernos al dia|ir a (?:comer|cenar|desayunar))`;
-const GET_TOGETHER = new RegExp(String.raw`\b(?:${SUGGESTS}\s+(?:\p{L}+\s+){0,4}?${GATHERING}|we re (?:long |so )?(?:overdue|due) for (?:a |an |some )?${MEAL})\b`, "u");
+const SUGGESTS = String.raw`(?:we (?:really |totally |definitely |so |still |seriously )?(?:need|should|have to|gotta|got to|must|ought to)(?: to)?(?: (?:really|totally|definitely|seriously|just|all))?|let s|lets|(?:tenemos|tendriamos) que|hay que|deberiamos|a ver (?:cuando|si))`;
+/** what makes a meal the thing to arrange, never the meeting: "a dinner venue", "lunch order", "coffee machine" */
+const ARRANGED = String.raw`(?!\s+(?:venue|venues|reservations?|order|orders|menu|budget|plans?|meeting|place|spot|break|machine|bill|run|options?|catering|invites?|invitations?|list|tickets?|table))`;
+const MEAL = String.raw`(?:coffee|lunch|dinner|drinks?|beers?|brunch|breakfast|catch up)${ARRANGED}`;
+const GOING = String.raw`(?:go|go out|ir por|ir a tomar(?:nos)?|tomar(?:nos)?|echar(?:nos)?|nos tomamos|nos echamos)`;
+const GATHERING = String.raw`(?:(?:a|an|some|grab|get|have|do|go for|go out for|go get)\s+(?:(?!(?:you|your|u)\b)\p{L}+\s+)?${MEAL}|catch up|get together|hang out|(?:un|unos|unas)\s+(?:cafe|cafecito|trago|tragos|chelas|cervezas|cerveza)\b${ARRANGED}|vernos|juntarnos|nos (?:vemos|juntamos)|ponernos al dia|ir a (?:comer|cenar|desayunar))`;
+const GET_TOGETHER = new RegExp(String.raw`\b(?:${SUGGESTS}\s+(?:${GOING}\s+)?${GATHERING}|we re (?:long |so )?(?:overdue|due) for (?:a |an |some )?${MEAL})\b`, "u");
 export function getTogetherOnly(sentence: string, arrivedAt: number): boolean {
   if (/[?¿]/u.test(sentence) || saysClock(sentence) || namesDayFrom(sentence, arrivedAt)) return false;
   if (!GET_TOGETHER.test(norm(sentence))) return false;
-  // nothing else asked, clause by clause, the suggestion set aside ("we need a coffee soon, send me the forms" asks)
-  return sentence.split(/[,;:.!\n]/u).every((clause) => !asksDirectly(norm(clause).replace(GET_TOGETHER, " ")));
+  // nothing else asked, clause by clause as written, the suggestion set aside ("we need a coffee soon, send me the forms" asks)
+  return saidClauses(sentence).every((clause) => {
+    const rest = clause.replace(GET_TOGETHER, " ").trim();
+    return !directsReader(rest) && !asksDirectly(rest);
+  });
 }
 
 /**
