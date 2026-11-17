@@ -227,15 +227,22 @@ export function finishFollowups(c: Ctx, w: FollowupFinish): FollowupFinishOutcom
   // plan 210 (iteration 3): only a reply that's yours for certain decides anything about a request
   const yours = mark.confirmed === 1 || trustedSend(T(c, "messages").get(w.messageId) ?? {});
   const dated = T(c, "dated_items");
-  const settle = (r: R, revision: number) => {
-    if (r.revision === revision) dated.update(r, { state: "settled", closed_reason: "answered", closed_at: w.now, settled_by: w.messageId, settled_at: src.date, revision: r.revision + 1 });
+  const settle = (r: R, revision: number): boolean => {
+    if (r.revision !== revision || r.state !== "open") return false;
+    dated.update(r, { state: "settled", closed_reason: "answered", closed_at: w.now, settled_by: w.messageId, settled_at: src.date, revision: r.revision + 1 });
+    return true;
   };
   for (const v of yours ? (w.verdicts ?? []) : []) {
     const r = answerable(c, v.request.id, src);
     // as SQL's: either verdict only on the request as it was shown
     if (!r || r.revision !== v.request.revision) continue;
     if (v.verdict === "fulfilled") {
-      settle(r, r.revision);
+      // as SQL's (the second morning and its code review): the promises that answer it kept with it, once the verdict passed
+      if (settle(r, r.revision)) {
+        for (const p of rows.by("fk_thread_id", src.threadId)) {
+          if (p.answers === r.id && p.kind === "promise" && live(p) && p.sent_at < src.date && p.message_id !== w.messageId) rows.update(p, { state: "done", closed_reason: "kept", closed_at: w.now, settled_by: w.messageId, settled_at: src.date, inbox_state: "none", revision: p.revision + 1 });
+        }
+      }
       continue;
     }
     // plan 210 (iteration 4): a promise that only holds it is stored with it, once (no revision moves)

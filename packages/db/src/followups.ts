@@ -258,7 +258,11 @@ export function finishFollowups(db: Db, w: FollowupFinish): FollowupFinishOutcom
       // either verdict only on the request as it was shown: one put off (Later) or moved meanwhile isn't decided by it
       if (!r || r.revision !== v.request.revision) continue;
       if (v.verdict === "fulfilled") {
-        settle(r.id, r.revision);
+        // the second morning (Diego's adjustments) and its code review: the promises of yours that answer it are kept with
+        // it, only once the verdict has passed the request's revision
+        if (settle(r.id, r.revision).changes) {
+          db.run("UPDATE followups SET state = 'done', closed_reason = 'kept', closed_at = ?, settled_by = ?, settled_at = ?, inbox_state = 'none', revision = revision + 1 WHERE thread_id = ? AND answers = ? AND kind = 'promise' AND state IN ('open','due') AND sent_at < ? AND message_id <> ?", w.now, w.messageId, src.date, src.threadId, r.id, src.date, w.messageId);
+        }
         continue;
       }
       // the promise this reply made (its own row, or the older one it said again), an open one, linked once

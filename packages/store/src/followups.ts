@@ -85,7 +85,9 @@ export interface FollowupFinish {
   /**
    * Plan 210 (iteration 3, the Codex review's revision 1): this reply's checked verdict on the conversation's requests it
    * was shown (dated `ask`/`respond` items), the only authority over them a reply has. `fulfilled`: the request is settled
-   * (`answered`), at the revision shown; `promise`: this message's promise `item` answers it (`FollowupRow.answers`), the
+   * (`answered`), at the revision shown, and in that commit the open promises of yours in its conversation, from before this
+   * reply, that answer it (`FollowupRow.answers`) are kept with it (the second morning, Diego's adjustments; its code review:
+   * never when the request has changed since, so a stale verdict keeps nothing); `promise`: this message's promise `item` answers it (`FollowupRow.answers`), the
    * request open, its day carried; `holding` (plan 210, iteration 4): this message's promise `item` only holds it ("let me
    * check and get back to you", `FollowupRow.holds`), the request open, the row its. No verdict leaves it as it is. Applied only to an open request of this
    * reply's conversation that came before it, and only when the reply is yours for certain (Gmail's SENT label, or Terno's

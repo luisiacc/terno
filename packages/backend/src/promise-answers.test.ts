@@ -158,16 +158,17 @@ describe("a reply's checked verdict (the Codex review of iteration 3, revision 1
     expect(one("I can't make Friday. Send it to Ana instead", declined)).toHaveLength(1);
   });
 
-  it("the second morning (Diego's adjustments): a request this reply does keeps the promise of yours that answers it, given no kept of its own", () => {
-    const ownText = "Here's the permission form you asked for, signed.";
-    const open = new Map([["p1", { id: 3, revision: 1, kind: "promise", answers: 7 } as never], ["p2", { id: 4, revision: 0, kind: "promise", answers: 8 } as never], ["p3", { id: 5, revision: 0, kind: "promise", answers: null } as never]]);
-    const one = (verdict: "fulfilled" | "holding" | "promise", kept: SentMailResult["kept"] = []) => checkSentMail({ promises: [], expectsReply: false, awaiting: [], kept, answers: [{ label: "q1", verdict, evidence: "Here's the permission form" }] }, { ...base, ownText, open });
-    // q1 (request 7) done: the promise answering it is kept, not the one answering request 8, nor one answering none
-    expect(one("fulfilled").kept).toEqual([{ id: 3, revision: 1 }]);
-    // kept once, when the model kept it too
-    expect(one("fulfilled", [{ label: "p1", evidence: "Here's the permission form" }]).kept).toEqual([{ id: 3, revision: 1 }]);
-    // a request not done keeps nothing
-    expect(one("holding").kept).toEqual([]);
+  it("the second morning (Diego's adjustments) and its code review: a request this reply does is its verdict alone, the promise answering it kept by the store with it (never here, past the request's revision), and renewed by nothing", () => {
+    const ownText = "Here's the permission form you asked for, signed. I'll send the bank the signed form Friday.";
+    const open = new Map([["p1", { id: 3, revision: 1, kind: "promise", answers: 7, text: "send the bank the signed form", personEmail: school.email, dated: true, dueAt: NOW, sentAt: NOW - 1000 } as never]]);
+    const again = { text: "send the bank the signed form", quote: "I'll send the bank the signed form Friday", to: "r1", due: "2026-11-13" };
+    const one = (verdict: "fulfilled" | "holding") => checkSentMail({ promises: [again], expectsReply: false, awaiting: [], kept: [], answers: [{ label: "q1", verdict, evidence: "Here's the permission form" }] }, { ...base, ownText, open });
+    const done = one("fulfilled");
+    expect(done.verdicts).toEqual([{ request: { id: 7, revision: 2 }, verdict: "fulfilled" }]);
+    expect(done.kept).toEqual([]);
+    expect(done.rows[0]!.renews).toBeUndefined();
+    // a request not done: the promise said again is the older one's, as before
+    expect(one("holding").rows[0]!.renews).toMatchObject({ id: 3, revision: 1 });
   });
 
   it("the second morning (Priya's offsite): a reply that holds the question never does it, whatever part of it the model quoted as done", () => {

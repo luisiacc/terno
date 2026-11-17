@@ -280,16 +280,11 @@ export function checkSentMail(result: SentMailResult, input: { ownText: string; 
     verdicts[i] = { request: v.request, verdict: "holding", item: held.item };
     holding.splice(holding.indexOf(held), 1);
   }
-  // plan 210 (the second morning, Diego's adjustments): a request this reply does is done, and so is the promise of yours
-  // that answers it (shown above): it was to do what the request asked, never a Missed row beside a settled request
-  for (const v of verdicts) {
-    if (v.verdict !== "fulfilled") continue;
-    for (const row of input.open.values()) {
-      if (row.kind === "promise" && row.answers === v.request.id && !kept.some((k) => k.id === row.id)) kept.push({ id: row.id, revision: row.revision });
-    }
-  }
-  // plan 210 (round 14's faults, the second morning): a promise said again is the older one's, never a row beside it
-  const keptIds = new Set(kept.map((k) => k.id));
+  // plan 210 (round 14's faults, the second morning): a promise said again is the older one's, never a row beside it. One
+  // answering a request this reply does is kept with it by the store (the second morning, Diego's adjustments; its code
+  // review: only once that verdict passes the request's revision), so it's renewed by nothing here either
+  const done = new Set(verdicts.flatMap((v) => (v.verdict === "fulfilled" ? [v.request.id] : [])));
+  const keptIds = new Set([...kept.map((k) => k.id), ...[...input.open.values()].flatMap((p) => (p.answers != null && done.has(p.answers) ? [p.id] : []))]);
   for (const r of rows) {
     const renews = renewedPromise(r, input.open.values(), { kept: keptIds, sentAt: input.sentAt });
     if (renews) r.renews = renews;

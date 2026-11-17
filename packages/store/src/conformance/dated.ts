@@ -1116,6 +1116,27 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
         expect((await store.followups.active()).some((p) => p.messageId === next.id)).toBe(true);
       });
 
+      it("the second morning's code review: a done verdict keeps the promise answering its request in its commit, only once it passes the request's revision", async () => {
+        const { store, request, reply, read, promise } = await talk();
+        const first = await reply();
+        await read(first, { rows: [promise()], verdicts: [{ request: { id: request.id, revision: request.revision }, verdict: "promise", item: 0 }] });
+        const sends = (await store.followups.ofThread(first.thread)).find((p) => p.kind === "promise")!;
+        expect(sends.answers).toBe(request.id);
+        // put off while the reply was read: its stale verdict settles nothing, and keeps nothing
+        const shown = { id: request.id, revision: request.revision };
+        await store.dated.update(request.id, request.revision, { deferredUntil: NOW + DAY });
+        const done = await reply();
+        await read(done, { verdicts: [{ request: shown, verdict: "fulfilled" }] });
+        expect(await store.dated.get(request.id)).toMatchObject({ state: "open", revision: request.revision + 1 });
+        expect(await store.followups.get(sends.id)).toMatchObject({ state: "open", revision: sends.revision });
+        // read again at the revision it has now: the request answered, the promise kept with it, by this reply
+        const now = (await store.dated.get(request.id))!;
+        await store.followups.marks.queueScan([done.id], NOW);
+        await read(done, { verdicts: [{ request: { id: now.id, revision: now.revision }, verdict: "fulfilled" }] });
+        expect(await store.dated.get(request.id)).toMatchObject({ state: "settled", closedReason: "answered", settledBy: done.id });
+        expect(await store.followups.get(sends.id)).toMatchObject({ state: "done", closedReason: "kept", settledBy: done.id, revision: sends.revision + 1 });
+      });
+
       it("Codex code review: either verdict only at the revision the request was shown at; one put off meanwhile isn't linked nor settled", async () => {
         const { store, request, reply, read, promise } = await talk();
         const shown = { id: request.id, revision: request.revision };
