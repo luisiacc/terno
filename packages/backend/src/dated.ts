@@ -1,5 +1,5 @@
 import { AiError, DATED_PROMPT_VERSION, DATED_SUBJECT_CHARS, DATED_TEXT_CHARS, costAt, datedBudget, fitDates, inZone, priceOf, wallHolds, type AiTasks, type DatedResult } from "@terno/ai";
-import { addressKey, mutedOf, canLapse, saysDay, withEventEnds, lapsesUnlessRenewed, localDay, needsPresence, saysNoReplyNeeded, DATED_ITEMS_MAX, DATED_KINDS, DATED_OPEN_SHOWN, followupDue, validFollowupDate, type FollowupRow, DATED_SCAN_DAYS, DATED_SCAN_MAX, datedOver, dayKeyOf, datedTiming, dayEnd, dueCutoff, hasTimeCue, partMoment, partOfDayIn, type PartOfDay, normalizeText, withoutQuotes, type AiErrorKind, type DatedKind, type DatedRow, type DatedTiming, type DatedWall } from "@terno/core";
+import { addressKey, mutedOf, canLapse, saysClock, saysDay, withEventEnds, lapsesUnlessRenewed, localDay, needsPresence, saysNoReplyNeeded, DATED_ITEMS_MAX, DATED_KINDS, DATED_OPEN_SHOWN, followupDue, validFollowupDate, type FollowupRow, DATED_SCAN_DAYS, DATED_SCAN_MAX, datedOver, dayKeyOf, datedTiming, dayEnd, dueCutoff, hasTimeCue, partMoment, partOfDayIn, type PartOfDay, normalizeText, withoutQuotes, type AiErrorKind, type DatedKind, type DatedRow, type DatedTiming, type DatedWall } from "@terno/core";
 import { captureError } from "@terno/core/diag";
 import type { AppSettings } from "@terno/core/rpc";
 import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
@@ -199,6 +199,18 @@ export function courtesyOnly(sentence: string): boolean {
   if (/[?¿]/u.test(sentence)) return false;
   const read = norm(sentence);
   return COURTESY_IF.test(read) && LET_KNOW.test(read) && !ASKS_MORE.test(read.replace(COURTESY_IF, " ").replace(LET_KNOW, " ")) && sentence.split(/[.,;:!\n]/u).every((clause) => noticeOnly(norm(clause)));
+}
+
+/**
+ * Plan 210 (the second morning, María's d08): a person wishing the reader well for something of theirs ("Good luck at the
+ * game this morning, tell Sofia her tía says score one for me!", "¡Suerte en el partido!", "have fun at the party") tells
+ * them nothing about it, so it's never an event: a thanks mail made "Sofia's game (tell her Elena says score one)" a second
+ * row beside the game the reader already had. One that gives the time ("good luck at the 10:00 game, Field 3") is news, and
+ * read as any event. The sentence as `norm` reads it, en and es.
+ */
+const WELL_WISH = /\b(?:good luck|best of luck|break a leg|have (?:fun|a (?:great|good|wonderful|lovely|blast))|enjoy|hope (?:it|the \p{L}+|you) (?:goes|go|went) (?:well|great)|fingers crossed|(?:buena |mucha )?suerte|que (?:te|les|le) vaya (?:bien|super)|que (?:te|se) (?:diviertas|diviertan)|disfrut(?:a|en|alo|enlo)|exito en)\b/u;
+export function wellWishOnly(sentence: string): boolean {
+  return WELL_WISH.test(norm(sentence)) && !saysClock(sentence);
 }
 
 /**
@@ -657,6 +669,8 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     // plan 210 (iteration 3): an offer is its own question, never hidden by a request about the same papers
     const around = `${item.quote}\n${contextOf(item.quote, sentences)}`;
     if (kind === "ask" && ((requested(item) && !offerOnly(around, contextOf(item.quote, paragraphs))) || noReply || onlyTells(item.quote) || onlyTells(contextOf(item.quote, sentences)) || courtesyOnly(around) || selfOffer(around, contextOf(item.quote, paragraphs)) || yourOwnWord(contextOf(item.quote, sentences)) || !(askAllowed(item.quote, said, input.text, input) || rebooks(item)))) continue;
+    // plan 210 (the second morning): a person's good wishes for something of the reader's are no plan of theirs
+    if (kind === "event" && input.sender?.person && wellWishOnly(contextOf(item.quote, sentences))) continue;
     // plan 210 (iteration 4's code review): what a scam says happened or demands is no item, an alert, a request or an
     // expiry (prompt v15, and this backstop); never "something asked" either
     if (PRESSED.has(kind) && scamPressure(`${input.subject}\n${tiedWords(item.quote).slice(0, FACT_WORDS_MAX)}\n${item.quote}`)) continue;
