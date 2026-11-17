@@ -1415,6 +1415,7 @@ export class BackendCore {
       if (before.ai && before.feed && !(after.ai && after.feed)) {
         this.followups.accountOff(accountId);
         this.dated.accountOff(accountId);
+        this.today.accountOff(accountId);
       }
     }
     // either way: what's built across accounts is built again from those allowed now

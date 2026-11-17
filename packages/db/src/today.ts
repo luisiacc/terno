@@ -171,8 +171,8 @@ export function digestFacts(db: Db, messageIds: readonly number[]): { facts: Dig
   const ids = JSON.stringify(messageIds);
   const oldest = db.get<{ at: number | null }>("SELECT min(created_at) AS at FROM messages WHERE id IN (SELECT value FROM json_each(?))", ids)?.at ?? null;
   const facts = db
-    .all<{ thread_id: number; message_id: number; created_at: number; last_date: number; message_count: number; from_name: string; from_email: string; subject: string; snippet: string }>(
-      `SELECT t.id AS thread_id, m.id AS message_id, m.created_at, t.last_date, t.message_count, m.from_name, m.from_email, m.subject, m.snippet
+    .all<{ thread_id: number; message_id: number; account_id: number; created_at: number; last_date: number; message_count: number; from_name: string; from_email: string; subject: string; snippet: string }>(
+      `SELECT t.id AS thread_id, m.id AS message_id, t.account_id, m.created_at, t.last_date, t.message_count, m.from_name, m.from_email, m.subject, m.snippet
        FROM messages m JOIN threads t ON t.id = m.thread_id
        WHERE m.id IN (SELECT value FROM json_each(?))
          AND m.is_read = 0 AND m.is_sent = 0 AND m.is_draft = 0 AND m.is_spam = 0 AND m.is_trash = 0
@@ -183,7 +183,7 @@ export function digestFacts(db: Db, messageIds: readonly number[]): { facts: Dig
        ORDER BY m.id DESC`,
       ids,
     )
-    .map((r) => ({ threadId: r.thread_id, messageId: r.message_id, arrivedAt: r.created_at, lastDate: r.last_date, messageCount: r.message_count, from: r.from_name || r.from_email, fromEmail: r.from_email, subject: r.subject, snippet: r.snippet }));
+    .map((r) => ({ threadId: r.thread_id, messageId: r.message_id, accountId: r.account_id, arrivedAt: r.created_at, lastDate: r.last_date, messageCount: r.message_count, from: r.from_name || r.from_email, fromEmail: r.from_email, subject: r.subject, snippet: r.snippet }));
   return { facts, oldest };
 }
 

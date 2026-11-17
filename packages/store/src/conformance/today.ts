@@ -40,6 +40,8 @@ export function defineTodayConformance(fresh: () => Promise<MailStore>): void {
       const letter = await put({ from: { name: "Stratechery", email: "Email@Stratechery.test" } });
       const { facts } = await store.today.digestFacts([letter.message]);
       expect(facts.map((f) => [f.from, f.fromEmail])).toEqual([["Stratechery", "email@stratechery.test"]]);
+      // plan 211: and its account, for an account's AI and What matters switches
+      expect(facts[0]!.accountId).toBe(accountId_());
       // stored as ingest keeps it (lowercased); any message, a candidate or not (a person's, a read one), and nothing for an id not stored
       const person = await put({ listId: null, isRead: true, from: { name: "Ana", email: "ana@x.test" } });
       const found = await store.today.senders([letter.message, person.message, 987_654]);

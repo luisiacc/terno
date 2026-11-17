@@ -55,6 +55,8 @@ export interface DigestStored {
 export interface DigestFact {
   threadId: number;
   messageId: number;
+  /** plan 211: an account whose AI or What matters is off gives the digest nothing */
+  accountId: number;
   arrivedAt: number;
   lastDate: number;
   messageCount: number;

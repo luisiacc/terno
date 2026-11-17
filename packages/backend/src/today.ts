@@ -228,6 +228,40 @@ export class TodayService {
     if ((await this.stillListed(leaving.items)).length !== leaving.items.length) leaving.stop.abort();
   }
 
+  /**
+   * Plan 211: an account's AI or What matters went off: a digest batch on its way that carries its mail stops (the next one
+   * goes without it), and the automated list is read again. `changed()` (the caller's) redraws the rest.
+   */
+  accountOff(_accountId: number): void {
+    if (this.automated) this.automated = { ...this.automated, at: 0 };
+    void this.holdingUp().catch((error: unknown) => captureError(error, { code: "ai.failed" }));
+  }
+
+  /**
+   * Plan 211: of these, those whose thread's account `keep` lets in. Read (one batched read of the threads) only while
+   * some account is out (`any`): none, the usual case, reads nothing. A thread gone keeps its row: its other checks drop it.
+   */
+  private async ofAccounts<T>(items: readonly T[], threadOf: (item: T) => number, keep: (accountId: number) => boolean, any: boolean): Promise<T[]> {
+    if (!any || !items.length) return [...items];
+    const accounts = new Map((await this.b.store.filters.actionFacts([...new Set(items.map(threadOf))])).map((f) => [f.id, f.accountId]));
+    return items.filter((item) => {
+      const account = accounts.get(threadOf(item));
+      return account === undefined || keep(account);
+    });
+  }
+
+  /** Plan 211: what the AI made (dated items, promises, the digest's lines) shows only where the account's AI and feed are on. */
+  private aiMade<T extends { threadId: number }>(items: readonly T[]): Promise<T[]> {
+    const { gate } = this.b;
+    return this.ofAccounts(items, (i) => i.threadId, (a) => gate.reads(a), gate.readsOff.length > 0);
+  }
+
+  /** Plan 211: what's local (Needs you, your reminders, the automated list) follows the account's What matters switch alone. */
+  private local<T>(items: readonly T[], threadOf: (item: T) => number): Promise<T[]> {
+    const { gate } = this.b;
+    return this.ofAccounts(items, threadOf, (a) => gate.feed(a), gate.feedOff.length > 0);
+  }
+
   /** The digest off, or AI gone: what's underway stops and writes nothing. */
   settingsChanged(): void {
     this.paused = false;
@@ -254,8 +288,11 @@ export class TodayService {
 
   // ─── candidates ──────────────────────────────────────────────────────────
 
-  /** By arrival, newest first, within its bound: an empty result can't walk the mailbox (revision 11). */
-  private async candidates(since: { at: number; id: number } | null): Promise<Candidates> {
+  /**
+   * By arrival, newest first, within its bound: an empty result can't walk the mailbox (revision 11). Plan 211: only of
+   * accounts `keep` lets in (the digest's AI: AI and What matters on; the automated list: What matters on).
+   */
+  private async candidates(since: { at: number; id: number } | null, keep: (accountId: number) => boolean): Promise<Candidates> {
     const { store } = this.b;
     const now = this.b.now();
     const floor = Math.max(now - DIGEST_WINDOW_MS, since?.at ?? 0);
@@ -277,7 +314,7 @@ export class TodayService {
       }
       const { facts, oldest } = await store.today.digestFacts(page);
       for (const f of facts) {
-        if (f.arrivedAt < floor || (since && f.messageId <= since.id) || seen.has(f.threadId)) continue;
+        if (f.arrivedAt < floor || (since && f.messageId <= since.id) || seen.has(f.threadId) || !keep(f.accountId)) continue;
         // a sign-in code isn't reading, and it isn't something to archive unread
         if (findCode(f.subject, f.snippet)) continue;
         // after the fourth panel round: a sender named like a security desk is no newsletter to skim, nor a model's to read
@@ -296,7 +333,7 @@ export class TodayService {
     const { digest } = this.b.store.today;
     const generation = digest.clearGeneration();
     const previous = await digest.latest(day);
-    const { items, watermark } = await this.candidates(previous?.watermark.id ? previous.watermark : null);
+    const { items, watermark } = await this.candidates(previous?.watermark.id ? previous.watermark : null, (a) => this.b.gate.reads(a));
     // a day with nothing writes nothing and sends nothing
     if (items.length) await digest.begin(day, watermark, items, generation);
     await digest.prune(dayBefore(day, DIGEST_KEEP_DAYS));
@@ -423,7 +460,8 @@ export class TodayService {
     return items.filter((i) => {
       const f = facts.get(i.threadId);
       const key = addressKey(i.fromEmail ?? "");
-      return f && !f.inSpam && !f.inTrash && f.lastDate === i.lastDate && f.messageCount === i.messageCount && !excluded.has(key) && !untrusted.has(key);
+      // plan 211: and an account whose AI or What matters went off since it was listed
+      return f && !f.inSpam && !f.inTrash && f.lastDate === i.lastDate && f.messageCount === i.messageCount && !excluded.has(key) && !untrusted.has(key) && this.b.gate.reads(f.accountId);
     });
   }
 
@@ -575,14 +613,17 @@ export class TodayService {
       this.datedGeneration++;
       [dated, promises] = await read();
     }
-    const items = this.placed(dated, await this.needs(dated, promises), now, o.count === true);
+    // plan 211: a promise of an account with AI or What matters off isn't shown nor counted (the dated rows' cache did theirs)
+    const items = this.placed(dated, await this.needs(dated, await this.aiMade(promises)), now, o.count === true);
     const endOfDay = new Date(now);
     endOfDay.setHours(23, 59, 59, 999);
     // plan 210 (iteration 4, revision 8): your reminders due today are Today's to do, drawn and counted alike; the count reads
     // them as stored (a few, at most `REMINDERS_MAX`), the list as the reminders' own look has them (answered ones ended)
-    const reminders = (o.count ? await store.reminders.list() : (await this.b.reminders.refresh()).reminders).filter((r) => r.dueAt <= endOfDay.getTime()).map((r) => ({ threadId: r.threadId, dueAt: r.dueAt }));
+    const due = (o.count ? await store.reminders.list() : (await this.b.reminders.refresh()).reminders).filter((r) => r.dueAt <= endOfDay.getTime()).map((r) => ({ threadId: r.threadId, dueAt: r.dueAt }));
+    // plan 211: your reminders and what's waiting on you are local: they follow the account's What matters switch alone
+    const reminders = await this.local(due, (r) => r.threadId);
     const ids = [...placedThreads(items), ...reminders.map((r) => r.threadId)];
-    const waiting = await store.today.waitingPage({ now, after: null, limit: NEEDS_WALK });
+    const waiting = await this.local(await store.today.waitingPage({ now, after: null, limit: NEEDS_WALK }), (w) => w.id);
     // (the zone's read only for the rows' words: an Intl formatter is dear on every count)
     const fact = { now, waiting, reminders, zone: o.count ? "" : readerZone() };
     if (o.count) {
@@ -647,8 +688,9 @@ export class TodayService {
     // (iteration 4): nor one of a muted sender or kind (hidden, not closed: Unmute brings it back), the mutes read once here
     const [open, muted] = await Promise.all([dated.active(), this.b.mutes.muted()]);
     // an ask's event is found among every open item before any is hidden: muting events never ends their "Reply C to
-    // confirm" (Codex's code review of iteration 4)
-    const rows = await withoutUntrusted(withoutMuted(withEventEnds(open), muted), (keys) => dated.written(keys));
+    // confirm" (Codex's code review of iteration 4); plan 211: an account with AI or What matters off shows none (its
+    // switch moving bumps the generation)
+    const rows = await this.aiMade(await withoutUntrusted(withoutMuted(withEventEnds(open), muted), (keys) => dated.written(keys)));
     if (generation === this.datedGeneration) this.datedCache = { generation, rows };
     return rows;
   }
@@ -669,7 +711,9 @@ export class TodayService {
     const settings = await readSettings(store);
     // plan 210 (the owner): finished items hidden, no history is read at all
     if (!(await this.available(settings)) || settings.today?.finished === false) return { items: [], next: null };
-    return historyPage(store, { now, after: o.after, through: o.through ?? null, limit: o.limit ?? HISTORY_PAGE, held: new Set(o.held), dated: settings.dated?.enabled === true, promises: settings.followups?.enabled === true, changed: await this.changedItems(settings), yieldTurn: () => this.b.yieldTurn(), sliceMs: this.b.options.sliceBudgetMs });
+    // plan 211: every history line is an item the AI made: an account with AI or What matters off has none
+    const { gate } = this.b;
+    return historyPage(store, { now, after: o.after, through: o.through ?? null, limit: o.limit ?? HISTORY_PAGE, held: new Set(o.held), dated: settings.dated?.enabled === true, promises: settings.followups?.enabled === true, changed: await this.changedItems(settings), shows: (accountId) => gate.reads(accountId), yieldTurn: () => this.b.yieldTurn(), sliceMs: this.b.options.sliceBudgetMs });
   }
 
   /**
@@ -728,7 +772,8 @@ export class TodayService {
     const row = await store.aiSummaries.get(threadId);
     if (!row || row.state !== "ready" || !row.bodyJson) return {};
     const sources = await store.aiSummaries.sources(threadId);
-    if (!sources || sources.stamp !== row.sourceStamp) return {};
+    // plan 211: a summary isn't shown for an account with AI off
+    if (!sources || sources.stamp !== row.sourceStamp || !this.b.gate.ai(sources.accountId)) return {};
     const body = JSON.parse(row.bodyJson) as { summary?: string };
     return body.summary ? { summary: firstSentence(body.summary) } : {};
   }
@@ -747,7 +792,8 @@ export class TodayService {
     };
     if (!s.digest) {
       if (!this.automated || this.b.now() - this.automated.at > AUTOMATED_FRESH_MS) this.refreshAutomated();
-      const items = await allowed(this.automated?.candidates.items ?? []);
+      // plan 211: filtered at read too (a list scanned before a switch moved shows none of that account for a moment)
+      const items = await this.local(await allowed(this.automated?.candidates.items ?? []), (i) => i.threadId);
       if (!items.length) return null;
       return { day, state: "ready", items: newestFirst(items), automated: true, ...(await this.states(items)) };
     }
@@ -758,7 +804,7 @@ export class TodayService {
     const here = new Set(await store.today.messagesHere(shown.items.map((i) => i.messageId)));
     const kept = shown.items.filter((i) => here.has(i.messageId));
     if (kept.length !== shown.items.length) void this.purgeGone().catch((error: unknown) => captureError(error, { code: "ai.failed" }));
-    const items = await allowed(await this.withSenders(kept));
+    const items = await this.aiMade(await allowed(await this.withSenders(kept)));
     const paused = row?.state === "pending" && row.errorKind !== null && this.paused;
     return { day: row?.state === "pending" ? day : shown.day, state: paused ? "failed" : (row?.state ?? shown.state), items: newestFirst(items), automated: false, ...(await this.states(items)), errorKind: paused ? row!.errorKind : shown.errorKind, model: shown.model, provider: shown.provider };
   }
@@ -774,7 +820,7 @@ export class TodayService {
     if (this.refreshing) return;
     const before = this.automated?.candidates.items.map((i) => i.threadId).join();
     const exclusions = this.exclusions;
-    this.refreshing = this.candidates(null)
+    this.refreshing = this.candidates(null, (a) => this.b.gate.feed(a))
       .then((candidates) => {
         // plan 166: begun before a sender was left out (or let back in): not kept, and the next read scans again
         if (exclusions !== this.exclusions) return;

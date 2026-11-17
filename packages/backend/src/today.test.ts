@@ -669,17 +669,17 @@ describe("the digest", () => {
       await t.client.call("today.notNewsletter", { email: "news@acmestore.test", name: "Acme Store" });
       expect((await t.client.call("today.digest", {}))!.items.map((i) => i.from)).toEqual(["Other Shop"]);
       // a scan underway when the list changes isn't kept: it was read with the list as it was
-      const service = t.backend.today as unknown as { candidates(since: null): Promise<unknown>; automated: { at: number; candidates: { items: { from: string }[] } } | null };
+      const service = t.backend.today as unknown as { candidates(since: null, keep: (accountId: number) => boolean): Promise<unknown>; automated: { at: number; candidates: { items: { from: string }[] } } | null };
       const idle = () => vi.waitFor(() => expect((t.backend.today as unknown as { refreshing: unknown }).refreshing).toBeNull());
       await idle();
       const real = service.candidates.bind(service);
       let release!: () => void;
       let started!: () => void;
       const scanning = new Promise<void>((r) => (started = r));
-      service.candidates = async (since) => {
+      service.candidates = async (since, keep) => {
         // only the first scan waits
         service.candidates = real;
-        const found = await real(since);
+        const found = await real(since, keep);
         started();
         await new Promise<void>((r) => (release = r));
         return found;
@@ -749,5 +749,90 @@ describe("the digest", () => {
     await none.client.call("settings.update", { today: { notify: true, prepareAt: "08:30" } });
     await none.backend.today.tick();
     expect(quiet).not.toHaveBeenCalled();
+  });
+});
+
+describe("plan 211: an account's switches in What matters", () => {
+  /** in one account: a conversation waiting on you and your reminder (local), a bill and a promise (the AI's), and a closed bill's history line */
+  async function feed() {
+    const t = await setup();
+    const { backend, client, account, put, clock } = t;
+    await client.call("settings.update", { followups: { enabled: true } });
+    const waiting = await put();
+    const reminded = await put({ from: { name: "Bo", email: "bo@people.test" } }, false);
+    await client.call("reminders.set", { threadIds: [reminded], dueAt: clock.now + 3_600_000, kind: "always" });
+    const sent = msg({ accountId: account.id, from: { name: "Me", email: account.email }, to: [{ name: "Tom", email: "tom@acme.test" }], isSent: true, inInbox: true, date: clock.now - 86_400_000, providerMsgId: "s-promise", subject: "The contract" });
+    const s = await backend.store.sync.ingest([sent], { applyFilters: false, now: clock.now, classifier: null, liveSent: { wanted: true } });
+    await backend.store.followups.finish({ messageId: s.inserted[0]!, threadId: await threadOf(backend.store, "s-promise"), fromScan: false, now: clock.now, kept: [], model: "m", provider: "p", promptVersion: 1, clearGeneration: backend.store.followups.clearGeneration(), rows: [{ kind: "promise", item: 0, text: "send the contract", quote: "I'll send it", personName: "Tom", personEmail: "tom@acme.test", dueAt: clock.now - 1000, dated: false }] });
+    const bill = (id: string) => msg({ accountId: account.id, from: { name: "Power Co", email: "billing@power.test" }, to: [{ name: "Me", email: account.email }], date: clock.now - 60_000, providerMsgId: id, subject: `Bill ${id}` });
+    const item = { kind: "pay" as const, item: 0, text: "Pay the electricity bill", quote: "due today", dueDay: todayKey(clock.now), dueAt: clock.now + 2 * 3_600_000, timed: false, dated: true, actAt: clock.now - 1000 };
+    for (const id of ["b-open", "b-done"]) {
+      const r = await backend.store.sync.ingest([bill(id)], { applyFilters: false, now: clock.now, classifier: null, datedMail: { since: null } });
+      await backend.store.dated.finish({ messageId: r.inserted[0]!, threadId: await threadOf(backend.store, id), fromScan: false, rows: [item], settled: [], now: clock.now, model: "m", provider: "p", promptVersion: 1, clearGeneration: backend.store.dated.clearGeneration() });
+    }
+    const done = (await backend.store.dated.ofThread(await threadOf(backend.store, "b-done")))[0]!;
+    await backend.store.dated.update(done.id, done.revision, { state: "done", closedReason: "user", closedAt: clock.now });
+    await client.call("settings.update", { dated: { enabled: true } });
+    const shown = async () => {
+      const list = await client.call("today.list", { held: [], history: { through: null } });
+      return { kinds: list.sections.flatMap((x) => x.items.map((i) => i.why.kind)).sort(), history: list.history!.items.length, count: (await client.call("counts.get", {})).today };
+    };
+    return { ...t, waiting, shown };
+  }
+
+  it("Show in What matters off: nothing of the account, AI-made or local, nor its history; its other AI runs on", async () => {
+    const { client, account, shown } = await feed();
+    expect(await shown()).toEqual({ kinds: ["dated", "promise", "reminder", "waiting"], history: 1, count: 4 });
+    let told = 0;
+    client.on("todayChanged", () => told++);
+    await client.call("accounts.update", { id: account.id, feed: false });
+    await vi.waitFor(() => expect(told).toBeGreaterThan(0));
+    expect(await shown()).toEqual({ kinds: [], history: 0, count: 0 });
+    await client.call("accounts.update", { id: account.id, feed: true });
+    expect(await shown()).toEqual({ kinds: ["dated", "promise", "reminder", "waiting"], history: 1, count: 4 });
+  });
+
+  it("Use AI off: what the AI made goes (a summary line too), what's local stays", async () => {
+    const { client, account, shown } = await feed();
+    await client.call("accounts.update", { id: account.id, ai: false });
+    expect(await shown()).toEqual({ kinds: ["reminder", "waiting"], history: 0, count: 2 });
+    await client.call("accounts.update", { id: account.id, ai: true });
+    expect((await shown()).kinds).toEqual(["dated", "promise", "reminder", "waiting"]);
+  });
+});
+
+describe("plan 211: the digest and an account's switches", () => {
+  const day = () => todayKey(NOW);
+  it("an account with AI off gives the digest nothing to read, and what it gave before isn't shown", async () => {
+    const t = await setup();
+    const other = (await t.backend.store.accounts.create({ kind: "imap", email: "b@terno.test", displayName: "B", color: "brown", now: 0 })).account;
+    await t.letter("Stratechery");
+    const before = await t.letter("Before", { accountId: other.id });
+    await t.client.call("settings.update", { today: { digest: true, prepareAt: "08:00" } });
+    await vi.waitFor(async () => expect((await t.backend.store.today.digest.get(day()))?.state).toBe("ready"));
+    expect((await t.client.call("today.digest", {}))!.items.map((i) => i.threadId)).toContain(before);
+    await t.client.call("accounts.update", { id: other.id, ai: false });
+    expect((await t.client.call("today.digest", {}))!.items.map((i) => i.from)).toEqual(["Stratechery"]);
+    // a new day's digest reads none of its mail
+    await t.backend.store.today.digest.clear();
+    t.model.reqs.length = 0;
+    await t.letter("After", { accountId: other.id });
+    await t.backend.today.tick();
+    await vi.waitFor(async () => expect((await t.backend.store.today.digest.get(day()))?.state).toBe("ready"));
+    const sent = t.model.reqs.map((r) => promptText(r.messages[0]!.content)).join("\n");
+    expect(sent).toContain("BODY-CANARY of Stratechery");
+    expect(sent).not.toContain("BODY-CANARY of After");
+    expect(sent).not.toContain("BODY-CANARY of Before");
+  });
+
+  it("with the digest off, the automated list leaves out an account out of What matters", async () => {
+    const t = await setup();
+    const other = (await t.backend.store.accounts.create({ kind: "imap", email: "b@terno.test", displayName: "B", color: "brown", now: 0 })).account;
+    await t.letter("Stratechery");
+    await t.letter("Elsewhere", { accountId: other.id });
+    await t.client.call("today.list", { held: [] });
+    await vi.waitFor(async () => expect((await t.client.call("today.digest", {}))?.items).toHaveLength(2));
+    await t.client.call("accounts.update", { id: other.id, feed: false });
+    expect((await t.client.call("today.digest", {}))!.items.map((i) => i.from)).toEqual(["Stratechery"]);
   });
 });

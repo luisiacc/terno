@@ -40,6 +40,8 @@ export interface HistoryAsk {
    * bounds), each a "Changed" line at the moment of its change while it's open. Absent: none
    */
   changed?: { dated: readonly DatedRow[]; promises: readonly FollowupRow[] };
+  /** plan 211: an account whose lines show (AI and What matters on); absent: every account's */
+  shows?: (accountId: number) => boolean;
   /** Codex code review: a walk past many left-out rows gives the event loop back between reads, within the slice's budget */
   yieldTurn: () => Promise<void>;
   sliceMs: number;
@@ -82,6 +84,8 @@ function changedLines(o: Pick<HistoryAsk, "changed" | "after">, since: number): 
 
 export async function historyPage(store: MailStore, o: HistoryAsk): Promise<TodayHistoryPage> {
   const since = o.now - DATED_CLOSED_KEEP_MS;
+  // plan 211: a conversation whose line may show: here, in neither Spam nor Trash, of an account that's in
+  const visible = (t: ThreadSummary | null | undefined): t is ThreadSummary => !!t && !t.inSpam && !t.inTrash && (!o.shows || o.shows(t.accountId));
   // an item from an untrusted sender isn't shown (as in the open part, Codex's second pass of plan 204)
   const trusted = (rows: DatedRow[]) => withoutUntrusted(rows, (keys) => store.dated.written(keys));
   // each table strictly after the key, translated: at the key's moment a dated item comes before a promise
@@ -119,10 +123,7 @@ export async function historyPage(store: MailStore, o: HistoryAsk): Promise<Toda
       const alone = !!r && r.sameAs == null && ![...members.dated, ...members.promises].some((m) => m.sameAs === key && open(m));
       requests.set(id, r && o.dated && trustedIds.has(id) && alone && r.closedAt != null && r.closedAt >= since && !o.held.has(key) ? r : null);
     }
-    const shows = (m: Row) => {
-      const t = threads.get(m.threadId);
-      return !!t && !t.inSpam && !t.inTrash && (m.src === 1 || trustedIds.has(m.id));
-    };
+    const shows = (m: Row) => visible(threads.get(m.threadId)) && (m.src === 1 || trustedIds.has(m.id));
     for (const k of keys) groups.set(k, { open: false, newest: null });
     const all: Row[] = [...members.dated.map((r) => ({ ...r, src: 0 as const })), ...members.promises.map((r) => ({ ...r, src: 1 as const }))];
     for (const m of all) {
@@ -180,7 +181,7 @@ export async function historyPage(store: MailStore, o: HistoryAsk): Promise<Toda
       }
       const { row } = changes.shift()!;
       const thread = threads.get(row.threadId);
-      if (!thread || thread.inSpam || thread.inTrash) continue;
+      if (!visible(thread)) continue;
       items.push({ id: changeLineId(keyOf(row)), item: { source: sourceOf(row.src), id: row.id }, thread, key: head.key, outcome: "changed", kind: row.src === 2 ? row.kind : "promise", text: row.text });
       if (!o.through && items.length >= o.limit) {
         next = head.key;
@@ -199,7 +200,7 @@ export async function historyPage(store: MailStore, o: HistoryAsk): Promise<Toda
     const id = keyOf(row);
     const group = groups.get(id);
     // a merged item's line is its newest closing's, and it has none while any of it is open
-    if (!thread || thread.inSpam || thread.inTrash || o.held.has(id) || !group || group.open || !group.newest || historyOrder(group.newest, head.key) !== 0) continue;
+    if (!visible(thread) || o.held.has(id) || !group || group.open || !group.newest || historyOrder(group.newest, head.key) !== 0) continue;
     // plan 210 (iteration 3): a request finished with the promise that answered it is that promise's line
     if (row.src === 0 && row.closedReason === ANSWERED_WITH_PROMISE) continue;
     // the claims ledger's third batch: an ask its person asked again with a day lives on as the request that mail made

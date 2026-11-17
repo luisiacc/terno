@@ -189,7 +189,7 @@ export function digestFacts(c: Ctx, messageIds: readonly number[]): { facts: Dig
     if (m.list_id === null && !m.is_bulk) continue;
     if (m.date !== t.last_date || t.in_inbox !== 1 || t.tab === 2 || t.person !== 0 || t.is_starred || t.has_sent || t.in_spam || t.in_trash) continue;
     if (typeof m.gmail_labels === "string" && m.gmail_labels.includes("CATEGORY_UPDATES")) continue;
-    facts.push({ threadId: t.id, messageId: id, arrivedAt: m.created_at, lastDate: t.last_date, messageCount: t.message_count, from: m.from_name || m.from_email, fromEmail: String(m.from_email ?? ""), subject: m.subject, snippet: m.snippet });
+    facts.push({ threadId: t.id, messageId: id, accountId: t.account_id, arrivedAt: m.created_at, lastDate: t.last_date, messageCount: t.message_count, from: m.from_name || m.from_email, fromEmail: String(m.from_email ?? ""), subject: m.subject, snippet: m.snippet });
   }
   return { facts, oldest };
 }
