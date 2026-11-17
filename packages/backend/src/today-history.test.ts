@@ -155,4 +155,13 @@ describe("historyPage", () => {
     const { items } = await historyPage(store, ask({}));
     expect(items.map((i) => [i.id, i.outcome, i.key.at, i.on])).toEqual([["dated:13", "over", NOW - MIN, friday], ["dated:14", "over", NOW - 2 * MIN, undefined]]);
   });
+
+  it("the claims ledger's third batch: an ask asked again with a day has no line; the request it became has its own", async () => {
+    // Jordan's Owen: the undated ask (dated:10) closed by his follow-up, which made the request with a day (dated:21)
+    const { store } = fakeStore([
+      { id: 21, threadId: 19, closedAt: NOW - MIN, state: "settled", closedReason: "answered", settledBy: 75 },
+      { id: 10, threadId: 19, closedAt: NOW - 2 * MIN, state: "settled", closedReason: "reasked", settledBy: 64 },
+    ]);
+    expect((await historyPage(store, ask({}))).items.map((i) => [i.id, i.reason])).toEqual([["dated:21", "answered"]]);
+  });
 });

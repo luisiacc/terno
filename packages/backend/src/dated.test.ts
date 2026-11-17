@@ -195,7 +195,8 @@ describe("the local checks (plan 204 §3)", () => {
       // plan 210 (revision 2): the sentence that gives it a day says the day
       const out = checkDates({ items: [], settled: [], moved: [{ label: "o1", due: "2026-11-13", time: null, evidence: "can you send me a quote" }] }, { ...from(true, "to"), text: "Hi Lucía, can you send me a quote for the rebranding by Friday?", open });
       expect(out.moved).toEqual([]);
-      expect(out.settled).toEqual([{ id: 4, revision: 2 }]);
+      // the claims ledger's third batch (Jordan's SOC 2 report): asked again, never "settled", so Earlier gives it no line
+      expect(out.settled).toEqual([{ id: 4, revision: 2, how: "reasked" }]);
       expect(out.rows).toEqual([expect.objectContaining({ kind: "respond", text: "Answer Mariana about a rebranding quote", quote: "can you send me a quote", dueDay: "2026-11-13", dated: true })]);
       // and the words have to be the mail's
       expect(checkDates({ items: [], settled: [], moved: [{ label: "o1", due: "2026-11-13", time: null, evidence: "by Friday please" }] }, { ...from(true, "to"), open }).rows).toEqual([]);
@@ -266,7 +267,7 @@ describe("the local checks (plan 204 §3)", () => {
         const text = "Oren, can you send it by Friday? Nora, Friday works for the contract too.";
         const move = (evidence: string) => checkDates({ items: [], settled: [], moved: [{ label: "o1", due: "2026-11-13", time: null, evidence }] }, { ...base, text, open, sender: { person: true }, reader: nora, others: ["Oren Vale"] });
         expect(move("can you send it by Friday")).toMatchObject({ rows: [], settled: [], moved: [] });
-        expect(move("Friday works for the contract too").settled).toEqual([{ id: 4, revision: 2 }]);
+        expect(move("Friday works for the contract too").settled).toEqual([{ id: 4, revision: 2, how: "reasked" }]);
       });
     });
     describe("never for credentials or an ID (the seventh panel round, revision 7)", () => {
@@ -331,7 +332,7 @@ describe("the local checks (plan 204 §3)", () => {
         expect(out).toMatchObject({ rows: [], settled: [], moved: [] });
         // and an ordinary day still does
         const fine = checkDates({ items: [], settled: [], moved: [{ label: "o1", due: "2026-11-13", time: null, evidence: "Friday works for the refund" }] }, { ...input, text: "Hi, Friday works for the refund. Thanks!", open });
-        expect(fine.settled).toEqual([{ id: 4, revision: 2 }]);
+        expect(fine.settled).toEqual([{ id: 4, revision: 2, how: "reasked" }]);
       });
     });
   });

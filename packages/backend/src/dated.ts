@@ -742,7 +742,8 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     // revision 7: a request for credentials or an ID neither becomes one nor answers the ask, which stays as it was; nor
     // does one the mail addresses to another of its recipients (the seventh panel round)
     if (refused(request)) continue;
-    settled.push({ id: row.id, revision: row.revision });
+    // the claims ledger's third batch (Jordan's SOC 2 report): asked again, not settled; the new request carries it on
+    settled.push({ id: row.id, revision: row.revision, how: "reasked" });
     settledIds.add(row.id);
     answered.push(request);
   }

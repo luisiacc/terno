@@ -74,9 +74,10 @@ export const DATED_SCAN_MAX = 300;
 /**
  * The claims ledger's second batch: how a mail settled an item when it says more than "settled", its `closedReason` (Earlier
  * says it: "Cancelled Mon", "Arrived Tue"): a plan the mail cancels, a parcel it says arrived. A bill paid keeps "settled"
- * (its kind says "Paid").
+ * (its kind says "Paid"). The third batch: an ask the same person asked again with a day (`reasked`), which the request that
+ * mail made carries on: nothing was settled, so it has no history line of its own.
  */
-export type SettledHow = "cancelled" | "arrived";
+export type SettledHow = "cancelled" | "arrived" | "reasked";
 
 export interface DatedRow {
   id: number;

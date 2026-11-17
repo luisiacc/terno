@@ -1,4 +1,4 @@
-import { changeLineId, DATED_CLOSED_KEEP_MS, datedGroup, HANDED, historyAfter, historyOrder, refKey, type HistorySource, type DatedRow, type FeedRowId, type FollowupRow, type HistoryKey, type HistoryOutcome, type ItemRef, type ThreadSummary, type TodayHistoryItem, type TodayHistoryPage } from "@terno/core";
+import { changeLineId, DATED_CLOSED_KEEP_MS, datedGroup, HANDED, historyAfter, historyOrder, refKey, type HistorySource, type DatedRow, type FeedRowId, type FollowupRow, type HistoryKey, type HistoryOutcome, type ItemRef, type SettledHow, type ThreadSummary, type TodayHistoryItem, type TodayHistoryPage } from "@terno/core";
 import { ANSWERED_WITH_PROMISE, HELD_REQUEST_CLOSED, type ClosedAt, type MailStore } from "@terno/store";
 import { withoutUntrusted } from "./suspicious-sender";
 
@@ -54,6 +54,7 @@ type Changed = (DatedRow & { src: 2 }) | (FollowupRow & { src: 3 });
 const sourceOf = (src: HistorySource): ItemRef["source"] => (src % 2 === 0 ? "dated" : "promise");
 const keyOf = (r: Row | Changed): string => r.sameAs ?? refKey({ source: sourceOf(r.src), id: r.id });
 const closingOf = (r: Row): HistoryKey => ({ at: r.closedAt!, src: r.src, id: r.id });
+const REASKED: SettledHow = "reasked";
 const open = (r: { state: string }): boolean => r.state === "open" || r.state === "due";
 /** the claims ledger's third batch: the request a promise answers, settled by the very mail that kept the promise */
 const answeredWith = (p: FollowupRow, r: DatedRow | null | undefined): boolean => !!r && r.state === "settled" && r.settledBy != null && r.settledBy === p.settledBy && r.threadId === p.threadId;
@@ -186,6 +187,8 @@ export async function historyPage(store: MailStore, o: HistoryAsk): Promise<Toda
     if (!thread || thread.inSpam || thread.inTrash || o.held.has(id) || !group || group.open || !group.newest || historyOrder(group.newest, head.key) !== 0) continue;
     // plan 210 (iteration 3): a request finished with the promise that answered it is that promise's line
     if (row.src === 0 && row.closedReason === ANSWERED_WITH_PROMISE) continue;
+    // the claims ledger's third batch: an ask its person asked again with a day lives on as the request that mail made
+    if (row.src === 0 && row.closedReason === REASKED) continue;
     // iteration 4: a promise that only held a request closed with it: the request's line says it
     if (row.src === 1 && row.closedReason === HELD_REQUEST_CLOSED) continue;
     // the claims ledger's third batch (Theo's script, Margaret's papers): a promise the mail that answered its request also
