@@ -1,5 +1,7 @@
+import { SCAN_DAYS, SCAN_MESSAGES_MAX } from "@terno/core";
 import { expect } from "vitest";
 import { AWAITING_ITEM, FOLLOWUPS_ACTIVE_MAX, type FollowupWrite } from "../followups";
+import { SCAN_MS, SMALL, smallAccount } from "./dated-perf";
 import { msg } from "./fixtures";
 import { expectMailbox, type WorkloadMailbox } from "./perf";
 
@@ -40,7 +42,16 @@ export async function measureFollowups(o: WorkloadMailbox): Promise<void> {
   const waits = active.filter((r) => r.kind === "awaiting").map((r) => r.id);
   const chunk = await timed(5, (i) => store.followups.closeAnswered(waits.slice(i * 50, i * 50 + 50), o.now));
   const off = await timed(5, () => store.sync.ingest([], { applyFilters: false, now: o.now, classifier: null }));
-  o.log(`Follow-ups: the active list ${list.toFixed(2)} ms, the timer's probe ${probe.toFixed(2)} ms, a thread's ${thread.toFixed(2)} ms, 50 replies' check ${chunk.toFixed(2)} ms, an empty ingest ${off.toFixed(2)} ms`);
+  // plan 211 (revision 11): the 30-day check, one account's: the mailbox's (its thousand sent just now), and a small one's
+  const since = o.now - SCAN_DAYS * 86_400_000;
+  const small = await smallAccount(o, (i) => ({ from: { name: "Me", email: "small@perf.test" }, to: [tom], isSent: true, subject: `Small ${i}` }));
+  const scan = await timed(5, () => store.followups.scanCandidates(since, SCAN_MESSAGES_MAX, accountId));
+  const scanSmall = await timed(5, () => store.followups.scanCandidates(since, SCAN_MESSAGES_MAX, small.id));
+  expect(await store.followups.scanCandidates(since, SCAN_MESSAGES_MAX, small.id)).toHaveLength(SMALL);
+  await store.accounts.remove(small.id);
+  o.log(`Follow-ups: the active list ${list.toFixed(2)} ms, the timer's probe ${probe.toFixed(2)} ms, a thread's ${thread.toFixed(2)} ms, 50 replies' check ${chunk.toFixed(2)} ms, an empty ingest ${off.toFixed(2)} ms, the check's candidates ${scan.toFixed(2)} ms (a small account's ${scanSmall.toFixed(2)} ms)`);
+  expect(scan).toBeLessThanOrEqual(SCAN_MS * o.budget);
+  expect(scanSmall).toBeLessThanOrEqual(SCAN_MS * o.budget);
   expect(list).toBeLessThanOrEqual(5 * o.budget * 3);
   expect(probe).toBeLessThanOrEqual(5 * o.budget);
   expect(thread).toBeLessThanOrEqual(5 * o.budget);

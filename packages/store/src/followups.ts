@@ -132,15 +132,15 @@ export interface FollowupStore {
   marks: {
     page(after: { sentAt: number; messageId: number } | null, limit: number): Promise<SentMark[]>;
     count(): Promise<number>;
-    /** the 30-day check: what the user agreed to */
+    /** the 30-day check (plan 211: the backend's, per account) */
     queueScan(messageIds: readonly number[], now: number): Promise<number>;
     /** read and found nothing to do, or never to be read */
     consume(messageId: number): Promise<void>;
     clear(): Promise<void>;
     prune(now: number): Promise<number>;
   };
-  /** sent mail in a span that a check could read: templates and bulk are left to the worker */
-  scanCandidates(since: number, limit: number): Promise<number[]>;
+  /** an account's sent mail in a span that a check could read, newest first: templates and bulk are left to the worker (plan 211: per account) */
+  scanCandidates(since: number, limit: number, accountId: number): Promise<number[]>;
   source(messageId: number): Promise<FollowupSource | null>;
   /** Results, closures and consuming the mark, in one commit: a crash can't redo or lose it. */
   finish(write: FollowupFinish): Promise<FollowupFinishOutcome>;

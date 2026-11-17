@@ -60,6 +60,8 @@ async function setup(o: { enabled?: boolean | "default"; provider?: "fake" | "no
   const client = connect("renderer", "renderer");
   const mcp = connect("mcp", "mcp");
   const { account } = await backend.store.accounts.create({ kind: "gmail", email: "me@terno.test", displayName: "Me", color: "brown", now: 0 });
+  // plan 211: What matters' readers are on by default too; these count summaries' requests alone
+  await client.call("settings.update", { dated: { enabled: false }, followups: { enabled: false } });
   if ((o.provider ?? "fake") === "fake") await client.call("settings.update", { ai: { provider: "fake" } });
   // "default": nobody touched the switch. A later launch of the same profile keeps what it saved.
   if (o.enabled !== "default" && !(o.enabled === false && o.dir)) await client.call("settings.update", { summaries: { enabled: o.enabled ?? true } });

@@ -1161,7 +1161,7 @@ export class SqlMailStore implements MailStore {
       clear: async () => void this.db.run("DELETE FROM ai_sent_mail"),
       prune: async (now) => pruneSentMarks(this.db, now),
     },
-    scanCandidates: async (since, limit) => followupScanCandidates(this.db, since, limit),
+    scanCandidates: async (since, limit, accountId) => followupScanCandidates(this.db, since, limit, accountId),
     source: async (id) => followupSource(this.db, id),
     finish: async (w) => (w.clearGeneration === this.followupClears ? finishFollowups(this.db, w) : "gone"),
     active: async () => activeFollowups(this.db),
@@ -1200,7 +1200,7 @@ export class SqlMailStore implements MailStore {
       pendingOn: async (threadId, before) => datedPendingOn(this.db, threadId, before),
       claimLook: async (id, now) => claimDatedLook(this.db, id, now),
     },
-    scanCandidates: async (since, limit) => datedScanCandidates(this.db, since, limit),
+    scanCandidates: async (since, limit, accountId) => datedScanCandidates(this.db, since, limit, accountId),
     source: async (id) => datedSource(this.db, id),
     openFor: async (o) => openDatedFor(this.db, o),
     // the generation's check and the write are one synchronous step

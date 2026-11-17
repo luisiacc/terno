@@ -18,7 +18,7 @@ export function defineFollowupsConformance(fresh: () => Promise<MailStore>, reop
   describe("Follow-ups (plan 142)", () => {
     async function setup() {
       const store = await fresh();
-      const [accountId] = await withAccounts(store, 1);
+      const [accountId, other] = await withAccounts(store, 2);
       const sent = async (over: Partial<IncomingMessage> = {}, liveSent: { wanted: boolean } | null = { wanted: true }, at = NOW) => {
         const m = msg({ accountId: accountId!, from: me, to: [tom], isSent: true, inInbox: false, date: at - 60_000, ...over });
         const r = await store.sync.ingest([m], { applyFilters: false, now: at, classifier: null, ...(liveSent ? { liveSent } : {}) });
@@ -27,7 +27,7 @@ export function defineFollowupsConformance(fresh: () => Promise<MailStore>, reop
       const promise = (over: Partial<FollowupWrite> = {}): FollowupWrite => ({ kind: "promise", item: 0, text: "send the contract", quote: "I'll send the contract", personName: "Tom", personEmail: tom.email, dueAt: NOW + DAY, dated: false, ...over });
       const wait = (over: Partial<FollowupWrite> = {}): FollowupWrite => ({ kind: "awaiting", item: AWAITING_ITEM, text: "", quote: null, personName: "Tom", personEmail: tom.email, dueAt: NOW + 5 * DAY, dated: false, ...over });
       const finish = (messageId: number, threadId: number, over: Partial<FollowupFinish> = {}) => store.followups.finish({ messageId, threadId, fromScan: false, rows: [], kept: [], now: NOW, model: "m", provider: "p", promptVersion: 1, clearGeneration: store.followups.clearGeneration(), ...over });
-      return { store, accountId: accountId!, sent, promise, wait, finish };
+      return { store, accountId: accountId!, other: other!, sent, promise, wait, finish };
     }
 
     describe("the marker", () => {
@@ -66,13 +66,29 @@ export function defineFollowupsConformance(fresh: () => Promise<MailStore>, reop
       });
 
       it("a check never takes what isn't confirmed sent: a queued or failed copy may never have gone", async () => {
-        const { store, sent } = await setup();
+        const { store, accountId, sent } = await setup();
         const real = await sent({ providerMsgId: "real" }, null, NOW);
         const local = await sent({ providerMsgId: "local:abc" }, null, NOW);
-        const found = await store.followups.scanCandidates(NOW - 30 * DAY, 10);
+        const found = await store.followups.scanCandidates(NOW - 30 * DAY, 10, accountId);
         expect(found).toContain(real.id);
         expect(found).not.toContain(local.id);
         expect(await store.followups.marks.queueScan([local.id], NOW)).toBe(0);
+      });
+
+      it("plan 211: a check takes one account's sent mail in its span, newest first, at most the limit; not what's tracked", async () => {
+        const { store, accountId, other, sent, promise, finish } = await setup();
+        const older = await sent({ date: NOW - 20 * DAY }, null);
+        const newer = await sent({ date: NOW - 2 * DAY }, null);
+        await sent({ date: NOW - 40 * DAY }, null);
+        await sent({ date: NOW - DAY, isTrash: true }, null);
+        const tracked = await sent({ date: NOW - 3 * DAY }, null);
+        await store.followups.marks.queueScan([tracked.id], NOW);
+        await finish(tracked.id, tracked.thread, { rows: [promise()], fromScan: true });
+        const elsewhere = await sent({ date: NOW - DAY, accountId: other, from: { name: "Me", email: "me1@example.com" } }, null);
+        expect(await store.followups.scanCandidates(NOW - 30 * DAY, 10, accountId)).toEqual([newer.id, older.id]);
+        expect(await store.followups.scanCandidates(NOW - 30 * DAY, 1, accountId)).toEqual([newer.id]);
+        expect(await store.followups.scanCandidates(NOW - 10 * DAY, 10, accountId)).toEqual([newer.id]);
+        expect(await store.followups.scanCandidates(NOW - 30 * DAY, 10, other)).toEqual([elsewhere.id]);
       });
 
       it("what a reply answers is what it says it answers, not the newest message", async () => {

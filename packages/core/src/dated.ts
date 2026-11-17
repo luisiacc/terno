@@ -193,7 +193,10 @@ export const readWall = (w: unknown): DatedWall | null => {
 
 export interface DatedSetting {
   enabled: boolean;
-  /** the moment it went on: mail from before it is never read without a yes */
+  /**
+   * the moment it was turned on: mail from before it is the check's (plan 211: the backend's, per account), never read live;
+   * null while it's on by default
+   */
   enabledAt: number | null;
   /** the one-time check was answered (yes or no) */
   scanAnswered: boolean;
@@ -201,7 +204,8 @@ export interface DatedSetting {
   offerDismissed: boolean;
 }
 
-export const DEFAULT_DATED: DatedSetting = { enabled: false, enabledAt: null, scanAnswered: false, offerDismissed: false };
+/** Plan 211: on by default wherever AI runs (the AI gate still decides whether anything is read); a stored false stays off. */
+export const DEFAULT_DATED: DatedSetting = { enabled: true, enabledAt: null, scanAnswered: false, offerDismissed: false };
 
 const startOfDay = (ms: number): number => {
   const d = new Date(ms);

@@ -20,6 +20,7 @@ import { Connectivity, type ConnectivityOptions, type NetReason } from "./connec
 import { QuickChecks, type QuickCheckOptions } from "./quick-checks";
 import { AGENT_ARRIVALS_MAX, AgentMailWaits, AgentWaitBusyError, type AgentWaitMatch, type AgentWaitResult } from "./agent-mail-waits";
 import { AiAssist } from "./ai-assist";
+import { upgradeChecks } from "./account-checks";
 import { AccountGate, type GateChange } from "./account-gate";
 import { ActionsService } from "./actions";
 import { ReplyService } from "./replies";
@@ -388,6 +389,7 @@ export class BackendCore {
       // plan 211: and the account's AI and What matters switches
       accountWanted: async (accountId) => this.gate.reads(accountId) && (await this.store.accounts.config<AccountPrefs>(accountId))?.config.followups !== false,
       inFeed: (accountId) => this.gate.reads(accountId),
+      allowed: async (settings) => aiFeaturesAvailable(settings) && (await aiAllowed(this.store)),
       signature: async (accountId) => (await this.store.accounts.get(accountId))?.signature ?? "",
       templated: (accountId) => this.writing.learner.templatedIn(accountId),
       emit: (snapshot) => {
@@ -738,6 +740,12 @@ export class BackendCore {
       captureError(error, { code: "forward.failed" });
       this.log("warn", "forwards couldn't start", error instanceof Error ? error.message : error);
     });
+    // plan 211 (revision 10): the offers' answers become the accounts already checked, once, before either worker starts
+    await upgradeChecks(this.store, this.now()).catch((error: unknown) => {
+      captureError(error, { code: "ai.failed" });
+      this.log("warn", "the checks' upgrade failed; it is retried on the next start", error instanceof Error ? error.name : "error");
+    });
+    if (this.stopped) return;
     // plan 132: summaries a quit left queued; awaited (one settings read): no sync may start before ingest knows it's on
     await this.followups.start().catch((error: unknown) => {
       captureError(error, { code: "ai.failed" });
@@ -1417,6 +1425,11 @@ export class BackendCore {
         this.followups.accountOff(accountId);
         this.dated.accountOff(accountId);
       }
+      // back on: its mail already here is checked, never checked before (the window) or since a switch went off
+      if (!(before.ai && before.feed) && after.ai && after.feed) {
+        void this.followups.checkAccounts([accountId]);
+        void this.dated.checkAccounts([accountId]);
+      }
     }
     // either way: what's built across accounts is built again from those allowed now, and What matters (its digest too)
     // reads again
@@ -1989,7 +2002,19 @@ export class BackendCore {
     this.backfillTimers.set(accountId, timer);
   }
 
+  /**
+   * Plan 211 (revision 9): a pass ended with the account synced: the workers check its mail already here once it is, and
+   * after that it's a lookup in memory. Every pass, not only a first sync's end: one can end offline, or while a worker is off.
+   */
+  private mailHere(accountId: number): void {
+    void this.dated.synced(accountId);
+    void this.followups.synced(accountId);
+  }
+
   accountRemoved(accountId: number): void {
+    // plan 211: its checks are forgotten: its id may come back as another account's
+    void this.dated.accountRemoved(accountId);
+    void this.followups.accountRemoved(accountId);
     const backfill = this.backfillTimers.get(accountId);
     if (backfill) clearTimeout(backfill);
     this.backfillTimers.delete(accountId);
@@ -2269,6 +2294,8 @@ export class BackendCore {
           // and it keeps its probe (succeeded() just cleared it; nothing else would try it again)
           // plan 102 (Codex review): a first sync paused between chunks stays one here too (no "synced at" yet)
           await setState({ status: "offline", ...(!(more && before?.syncState.lastSyncAt === null) && { lastSyncAt: this.now() }), connection: { state: "offline", retryAt: this.connectivity.probeLater(accountId) } });
+          // plan 211 (revision 9): a first sync that ended offline is synced too
+          this.mailHere(accountId);
           return;
         }
         const finished = await this.accountRead(life, () => this.store.accounts.get(accountId));
@@ -2281,6 +2308,7 @@ export class BackendCore {
         // plan 176: a quick check only ever runs on a synced, healthy account, which it leaves as it found it
         if (o.quick) await statusRun.end({ status: "idle", lastError: null, lastErrorI18n: null, connection: null });
         else await statusRun.end({ ...(firstChunk ? { status: "syncing" as const } : { status: "idle" as const, lastSyncAt: this.now() }), lastError: null, lastErrorI18n: null, connection: null, progress: kept });
+        if (!firstChunk) this.mailHere(accountId);
         // the card hears the end too (a sync done: nothing left to show)
         // (only an account that showed some: a regular poll sends nothing)
         if (progress !== null || before?.syncState.progress) this.server.emit("syncProgress", { accountId, progress: kept });

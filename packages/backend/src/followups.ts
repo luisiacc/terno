@@ -1,9 +1,10 @@
-import { AiError, FOLLOWUP_ANSWERING_CHARS, FOLLOWUP_OPEN_MAX, FOLLOWUP_OWN_CHARS, FOLLOWUP_PROMPT_VERSION, FOLLOWUP_REQUESTS_MAX, fitSentMail, followupBudget, costAt, priceOf, type AiTasks, type SentMailResult } from "@terno/ai";
+import { AiError, FOLLOWUP_ANSWERING_CHARS, FOLLOWUP_OPEN_MAX, FOLLOWUP_OWN_CHARS, FOLLOWUP_PROMPT_VERSION, FOLLOWUP_REQUESTS_MAX, fitSentMail, followupBudget, type AiTasks, type SentMailResult } from "@terno/ai";
 import { addressKey, automatedLevel, dayKeyOf, dueCutoff, byUrgency, followupDue, NUDGE_DEFAULT, followupWakeAt, normalizeText, promiseOver, readCorpus, refKey, replyAnswers, replyRecipients, SCAN_DAYS, SCAN_MESSAGES_MAX, SCAN_PROMISE_OVERDUE_MS, SCAN_WAIT_STALE_MS, validFollowupDate, withNeeds, withoutQuotes, followupNotice, type AiErrorKind, type DatedRow, type FollowupRow, type FollowupsSnapshot, type MailNotice, type ThreadSummary } from "@terno/core";
 import { captureError } from "@terno/core/diag";
 import { RpcError, type AppSettings } from "@terno/core/rpc";
 import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
 import { AWAITING_ITEM, HELD_REQUEST_CLOSED, type FollowupFinish, type FollowupSnapshot, type FollowupSource, type FollowupWrite, type MailStore, type SentMark } from "@terno/store";
+import { AccountChecks, FOLLOWUPS_CHECKED_KEY } from "./account-checks";
 import { DailyLimitError, MonthlyLimitError } from "./ai-limiter";
 import { UI_LOCALE_KEY } from "./forwarding";
 import { contextOf, directsReader, namingWords, norm as plain, paidSaid, plainEvidence, saidClauses, sameObject, sentencesOf, sentencesWith } from "./dated-evidence";
@@ -17,8 +18,11 @@ const RETRY_WAIT_MS = 60_000;
 const NOTIFY_WINDOW_MS = 24 * 60 * 60 * 1000;
 const TOUCH_EVERY_MS = 1000;
 const UNDO_KEPT = 50;
-/** what a message costs to read, for the offer's estimate: ~600 tokens in, ~150 out */
-const SCAN_TOKENS = { inputTokens: 600, outputTokens: 150 };
+/**
+ * Plan 211: on by default there's no moment it went on: what was sent before the check's window is never read live (the
+ * check of mail already here reads that window, per account). Turned on by hand, from that moment, as before.
+ */
+const liveSince = (enabledAt: number | null, now: number): number => enabledAt ?? now - SCAN_DAYS * 86_400_000;
 
 export interface FollowupHost {
   readonly store: MailStore;
@@ -31,6 +35,8 @@ export interface FollowupHost {
   begin(requestId: string, clientId: string): { signal: AbortSignal; release: () => void };
   /** the account's own switch */
   accountWanted(accountId: number): Promise<boolean>;
+  /** the gate (plans 147, 150): AI can run at all */
+  allowed(settings: AppSettings): Promise<boolean>;
   signature(accountId: number): Promise<string>;
   templated(accountId: number): Promise<ReadonlySet<number>>;
   emit(snapshot: FollowupsSnapshot): void;
@@ -439,14 +445,28 @@ export class FollowupWorker {
   private undoSeq = 0;
   private prunedDay: string | null = null;
 
-  constructor(private readonly host: FollowupHost) {}
+  /** plan 211: the check of what you sent, the backend's, one account at a time */
+  private readonly checks: AccountChecks;
+
+  constructor(private readonly host: FollowupHost) {
+    this.checks = new AccountChecks({
+      store: host.store,
+      key: FOLLOWUPS_CHECKED_KEY,
+      now: () => host.now(),
+      active: async () => this.isActive && (await host.allowed(await host.settings())),
+      allowed: (accountId) => host.inFeed(accountId),
+      wanted: (accountId) => host.accountWanted(accountId),
+      check: (accountId, since) => this.checkAccount(accountId, since),
+      log: (level, message, extra) => host.log(level, message, extra),
+    });
+  }
 
   get isActive(): boolean {
     return this.active && !this.stopped;
   }
-  /** the moment it went on: what was sent before it isn't marked (revision of §2) */
-  get since(): number | null {
-    return this.enabledAt;
+  /** the moment it went on: what was sent before it isn't marked (revision of §2); on by default, the check's window (plan 211) */
+  get since(): number {
+    return liveSince(this.enabledAt, this.host.now());
   }
   /** plan 210 (iteration 4): when a wait comes due, as set (a handed forward's own wait is seeded with it) */
   get nudgeAfterDays(): number {
@@ -471,6 +491,8 @@ export class FollowupWorker {
     if (this.stopped) return;
     await this.look();
     if (this.active) this.wake();
+    // plan 211: accounts synced and never checked (or owed a gap), in the background, while it's on
+    void this.checks.start();
   }
 
   stop(): void {
@@ -492,6 +514,21 @@ export class FollowupWorker {
   accountOff(accountId: number): void {
     if (this.reading?.accountId === accountId) this.reading.controller.abort();
     this.wake();
+  }
+
+  /** Plan 211 (revision 9): an account's sync pass ended with it synced: checked once, a lookup after. */
+  synced(accountId: number): Promise<void> {
+    return this.isActive ? this.checks.synced(accountId) : Promise.resolve();
+  }
+
+  /** Plan 211: an account's switches (or its own) came back on: what it's owed (never checked: the window; checked: since one went off). */
+  checkAccounts(accountIds: readonly number[]): Promise<void> {
+    return this.isActive ? this.checks.reconcile(accountIds) : Promise.resolve();
+  }
+
+  /** Plan 211: an account removed is forgotten (its id may come back). */
+  accountRemoved(accountId: number): Promise<void> {
+    return this.checks.forget(accountId);
   }
 
   /** New mail, a confirmed send, a body. A no-op when off, paused, or for a minute after a provider failed. */
@@ -531,6 +568,8 @@ export class FollowupWorker {
     }
     void this.look().catch(() => {});
     this.wake();
+    // plan 211: turned on, or AI available: accounts not checked yet are
+    if (on) void this.checks.reconcile();
   }
 
   private async drain(): Promise<void> {
@@ -544,7 +583,9 @@ export class FollowupWorker {
         this.again = false;
         await this.bounds();
         await this.pass(this.generation);
-      } while (this.again && this.isActive && !this.paused && !this.limited);
+        // a wake while a provider was failing waits its minute like any other (plan 211: the dated reader, on by default, wakes
+        // this one each time it catches up)
+      } while (this.again && this.isActive && !this.paused && !this.limited && this.host.now() >= this.heldUntil);
     } finally {
       this.running = false;
     }
@@ -616,8 +657,8 @@ export class FollowupWorker {
     const mine = { accountId: src.accountId, controller: new AbortController() };
     this.reading = mine;
     const left = () => this.reading === mine && (this.reading = null);
-    // what was sent before it went on is read only with a yes: the check's own marks are that yes
-    if (mark.source === "live" && settings.followups.enabledAt !== null && src.date < settings.followups.enabledAt) return drop();
+    // what was sent before it went on is the check's: its own marks are; on by default, its window (plan 211)
+    if (mark.source === "live" && src.date < liveSince(settings.followups.enabledAt, this.host.now())) return drop();
     if (!(await this.host.accountWanted(src.accountId))) {
       left();
       return drop();
@@ -893,21 +934,29 @@ export class FollowupWorker {
     });
   }
 
-  // ─── §8: the one-time check ──────────────────────────────────────────────
+  // ─── §8: the check of what you sent (plan 211: the backend's, one account at a time) ─────
 
+  /**
+   * Plan 211: one account's check, queued: its last 30 days, at most `SCAN_MESSAGES_MAX`; from `since` when it's a gap's (a
+   * switch off, then on again: revisions 7 and 8), still within the 30 days. `queueScan` ignores what's marked.
+   */
+  private async checkAccount(accountId: number, since: number | null): Promise<number> {
+    const now = this.host.now();
+    const from = Math.max(now - SCAN_DAYS * 86_400_000, since ?? -Infinity);
+    const ids = await this.host.store.followups.scanCandidates(from, SCAN_MESSAGES_MAX, accountId);
+    if (!this.isActive || !this.host.inFeed(accountId)) return 0;
+    const queued = await this.host.store.followups.marks.queueScan(ids, now);
+    if (queued) this.wake();
+    return queued;
+  }
+
+  /** Plan 211: the offer is gone; the backend checks each account by itself (Settings' offer stays quiet until it goes). */
   async scanOffer(): Promise<{ count: number; usd: number | null }> {
-    const ids = await this.host.store.followups.scanCandidates(this.host.now() - SCAN_DAYS * 86_400_000, SCAN_MESSAGES_MAX);
-    const ai = await this.host.forTask().catch(() => null);
-    const price = ai && !ai.local ? priceOf(ai.model) : null;
-    return { count: ids.length, usd: ai?.local ? 0 : price ? costAt(price, SCAN_TOKENS) * ids.length : null };
+    return { count: 0, usd: null };
   }
 
   async scan(): Promise<number> {
-    const now = this.host.now();
-    const ids = await this.host.store.followups.scanCandidates(now - SCAN_DAYS * 86_400_000, SCAN_MESSAGES_MAX);
-    const queued = await this.host.store.followups.marks.queueScan(ids, now);
-    this.wake();
-    return queued;
+    return 0;
   }
 
   status(): { blockedBy: { kind: AiErrorKind; message: string } | null } {

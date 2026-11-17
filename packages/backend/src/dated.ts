@@ -1,4 +1,4 @@
-import { AiError, DATED_PROMPT_VERSION, DATED_SUBJECT_CHARS, DATED_TEXT_CHARS, costAt, datedBudget, fitDates, inZone, priceOf, wallHolds, type AiTasks, type DatedResult } from "@terno/ai";
+import { AiError, DATED_PROMPT_VERSION, DATED_SUBJECT_CHARS, DATED_TEXT_CHARS, datedBudget, fitDates, inZone, wallHolds, type AiTasks, type DatedResult } from "@terno/ai";
 import { addressKey, automatedSender, mutedOf, canLapse, namesDayFrom, saysClock, saysDay, withEventEnds, lapsesUnlessRenewed, localDay, needsPresence, saysNoReplyNeeded, DATED_ITEMS_MAX, DATED_KINDS, DATED_OPEN_SHOWN, followupDue, validFollowupDate, type FollowupRow, DATED_SCAN_DAYS, DATED_SCAN_MAX, datedOver, dayKeyOf, datedTiming, dayEnd, dueCutoff, hasTimeCue, partMoment, partOfDayIn, type PartOfDay, normalizeText, withoutQuotes, type SettledHow, type AiErrorKind, type DatedKind, type DatedRow, type DatedTiming, type DatedWall } from "@terno/core";
 import { captureError } from "@terno/core/diag";
 import type { AppSettings } from "@terno/core/rpc";
@@ -14,6 +14,7 @@ import { mayRelay, relayedAsk, relays, type Relay } from "./dated-relay";
 import { untrustedSenders, withoutUntrusted } from "./suspicious-sender";
 import { sameEvent } from "./today-links";
 import type { AccountGate } from "./account-gate";
+import { AccountChecks, DATED_CHECKED_KEY } from "./account-checks";
 
 /**
  * Plan 204 §3: the dated reader. Reads live mail the user got (and, with a yes, the last 14 days), oldest first, and keeps
@@ -25,7 +26,6 @@ const PAGE = 50;
 const MAX_ATTEMPTS = 3;
 const RETRY_WAIT_MS = 60_000;
 /** what a message costs to read, for the check's estimate: ~600 tokens in, ~100 out */
-const SCAN_TOKENS = { inputTokens: 600, outputTokens: 100 };
 /** the 14-day check walks this many received messages at most, to find the `DATED_SCAN_MAX` worth reading (Codex code review) */
 const SCAN_WALK = 3000;
 
@@ -1099,7 +1099,20 @@ export class DatedWorker {
   /** the request on its way out: checked again as it leaves the limiter, repairs included (revision 3) */
   private leaving: { messageId: number; threadId: number; accountId: number; senderKey: string; date: number; open: readonly number[]; stop: AbortController } | null = null;
 
-  constructor(private readonly host: DatedHost) {}
+  /** plan 211: the check of mail already here, the backend's, one account at a time */
+  private readonly checks: AccountChecks;
+
+  constructor(private readonly host: DatedHost) {
+    this.checks = new AccountChecks({
+      store: host.store,
+      key: DATED_CHECKED_KEY,
+      now: () => host.now(),
+      active: async () => this.isActive && (await host.allowed(await host.settings())),
+      allowed: (accountId) => host.gate.reads(accountId),
+      check: (accountId, since) => this.checkAccount(accountId, since),
+      log: (level, message, extra) => host.log(level, message, extra),
+    });
+  }
 
   get isActive(): boolean {
     return this.active && !this.stopped;
@@ -1124,6 +1137,8 @@ export class DatedWorker {
     this.active = settings.dated.enabled;
     if (this.stopped) return;
     if (this.active) this.wake();
+    // plan 211: accounts synced and never checked (or owed a gap), in the background, while it's on
+    void this.checks.start();
   }
 
   /** Once a day with nothing to read too: the day's bounds, and what's over retired. */
@@ -1180,6 +1195,23 @@ export class DatedWorker {
     }
     this.host.changed();
     this.wake();
+    // plan 211: turned on, or AI available: accounts not checked yet are
+    if (on) void this.checks.reconcile();
+  }
+
+  /** Plan 211 (revision 9): an account's sync pass ended with it synced: checked once, a lookup after. */
+  synced(accountId: number): Promise<void> {
+    return this.isActive ? this.checks.synced(accountId) : Promise.resolve();
+  }
+
+  /** Plan 211: an account's switches came back on: what it's owed (never checked: the window; checked: since a switch went off). */
+  checkAccounts(accountIds: readonly number[]): Promise<void> {
+    return this.isActive ? this.checks.reconcile(accountIds) : Promise.resolve();
+  }
+
+  /** Plan 211: an account removed is forgotten (its id may come back). */
+  accountRemoved(accountId: number): Promise<void> {
+    return this.checks.forget(accountId);
   }
 
   /** Called as a dated request is about to leave, after any wait: Spam, Trash or a moved message stop it there (revision 3). */
@@ -1483,15 +1515,16 @@ export class DatedWorker {
     return [...(await withoutUntrusted(shown, (keys) => dated.written(keys)))];
   }
 
-  // ─── §6: the one-time check ──────────────────────────────────────────────
+  // ─── §6: the check of mail already here (plan 211: the backend's, one account at a time) ─────
 
   /**
    * Codex code review: the check's messages are those the reader would ask about, chosen before its bound: newest first,
-   * not Spam, Trash, Promotions or Social, and automated mail only with a time cue. Walked in the backend's slices.
+   * not Spam, Trash, Promotions or Social, and automated mail only with a time cue. Walked in the backend's slices. Plan 211:
+   * one account's, from `from` (the window's start, or later for a gap).
    */
-  private async scanPicks(now: number): Promise<number[]> {
+  private async scanPicks(accountId: number, from: number): Promise<number[]> {
     const { store } = this.host;
-    const walked = await store.dated.scanCandidates(now - DATED_SCAN_DAYS * 86_400_000, SCAN_WALK);
+    const walked = await store.dated.scanCandidates(from, SCAN_WALK, accountId);
     // plan 210 (iteration 4): a muted sender's mail is neither counted nor read, nor what came before their Unmute
     const silence = await silenceOf(store);
     const readers = new Map((await store.accounts.list()).map((a) => [a.id, a.displayName ?? ""]));
@@ -1519,21 +1552,27 @@ export class DatedWorker {
     return seen.filter(({ s, worth }) => worth || settles(s)).slice(0, DATED_SCAN_MAX).map(({ s }) => s.id);
   }
 
-  async scanOffer(): Promise<{ count: number; usd: number | null }> {
-    const ids = await this.scanPicks(this.host.now());
-    const ai = await this.host.forTask().catch(() => null);
-    const price = ai && !ai.local ? priceOf(ai.model) : null;
-    return { count: ids.length, usd: ai?.local ? 0 : price ? costAt(price, SCAN_TOKENS) * ids.length : null };
+  /**
+   * Plan 211: one account's check, queued: its last 14 days, at most `DATED_SCAN_MAX`, by the same picks; from `since` when it's
+   * a gap's (a switch off, then on again: revisions 7 and 8), still within the 14 days. `queueScan` ignores what's marked.
+   */
+  private async checkAccount(accountId: number, since: number | null): Promise<number> {
+    const now = this.host.now();
+    const from = Math.max(now - DATED_SCAN_DAYS * 86_400_000, since ?? -Infinity);
+    const ids = await this.scanPicks(accountId, from);
+    if (!this.isActive || !this.host.gate.reads(accountId)) return 0;
+    const queued = await this.host.store.dated.marks.queueScan(ids, now);
+    if (queued) this.wake();
+    return queued;
   }
 
-  /** Once: the offer's answer (`scanAnswered`, written by the window that asked) ends it, so nothing is read twice. */
+  /** Plan 211: the offer is gone; the backend checks each account by itself (the window's offer stays quiet until it goes). */
+  async scanOffer(): Promise<{ count: number; usd: number | null }> {
+    return { count: 0, usd: null };
+  }
+
   async scan(): Promise<number> {
-    if (!this.isActive || (await this.host.settings()).dated.scanAnswered) return 0;
-    const now = this.host.now();
-    const ids = await this.scanPicks(now);
-    const queued = await this.host.store.dated.marks.queueScan(ids, now);
-    this.wake();
-    return queued;
+    return 0;
   }
 
   status(): { blockedBy: { kind: AiErrorKind; message: string } | null } {

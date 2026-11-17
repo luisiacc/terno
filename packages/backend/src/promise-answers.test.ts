@@ -61,6 +61,8 @@ async function setup(o: { dated?: boolean; followups?: boolean } = {}) {
   const client = new RpcClient(c);
   const { account } = await backend.store.accounts.create({ kind: "gmail", email: me.email, displayName: "Me", color: "brown", now: 0 });
   await client.call("settings.update", { ai: { provider: "fake", model: "demo" } });
+  // plan 211: on by default (with no moment they went on): turned on here, at this moment, or off
+  await client.call("settings.update", { dated: { enabled: false }, followups: { enabled: false } });
   if (o.dated ?? true) await client.call("settings.update", { dated: { enabled: true } });
   if (o.followups ?? true) await client.call("settings.update", { followups: { enabled: true } });
   clock.now += 120_000;
@@ -89,7 +91,13 @@ async function setup(o: { dated?: boolean; followups?: boolean } = {}) {
   };
   const rows = async (): Promise<(TodayItem & { section: string })[]> => (await client.call("today.list", { held: [] })).sections.flatMap((x) => x.items.map((i) => ({ ...i, section: x.day ? `${x.kind}:${x.day}` : x.part ? `${x.kind}:${x.part}` : x.kind })));
   const sentPrompts = () => model.requests.filter((r) => r.schema?.name === "sent_mail").map((r) => promptText(r.messages[0]!.content));
-  return { backend, client, model, clock, ingest, request, reply, datedDone, followupsDone, rows, sentPrompts };
+  /** plan 211: the account's first sync done, the backend's check of its mail already here */
+  const check = async () => {
+    await backend.store.accounts.setSyncState(account.id, { lastSyncAt: clock.now });
+    await backend.dated.start();
+    await backend.dated.checkAccounts([account.id]);
+  };
+  return { backend, client, model, clock, ingest, request, reply, datedDone, followupsDone, rows, sentPrompts, check };
 }
 
 describe("a reply's checked verdict (the Codex review of iteration 3, revision 1)", () => {
@@ -550,7 +558,7 @@ describe("whichever reader finishes first (revision 1)", () => {
   });
 
   it("a request read after your reply (the dated reader off then, its 14-day check now): the reply is read again for its verdict", async () => {
-    const { backend, client, model, request, reply, datedDone, followupsDone, sentPrompts } = await setup({ dated: false });
+    const { backend, client, model, request, reply, datedDone, followupsDone, sentPrompts, check } = await setup({ dated: false });
     const asked = await request();
     model.sent = () => sent({ answers: [{ label: "q1", verdict: "fulfilled", evidence: "Here's the signed slip" }] });
     await reply(asked, "Here's the signed slip.");
@@ -559,7 +567,7 @@ describe("whichever reader finishes first (revision 1)", () => {
     expect(sentPrompts()[0]).not.toContain("<requests>");
     await client.call("settings.update", { dated: { enabled: true } });
     model.dated = () => dated([slip]);
-    await client.call("dated.scan", {});
+    await check();
     await datedDone();
     await followupsDone();
     expect(sentPrompts()).toHaveLength(2);
@@ -573,7 +581,7 @@ describe("an ask you already answered (the second morning: round 15's Hannah and
   const joined = () => sent({ answers: [{ label: "q1", verdict: "fulfilled", evidence: "We've used Calder Valuation for our last two. Yes, I'd use them again." }] });
   for (const order of ["the request read first", "your reply read first", "the request read after your reply"] as const) {
     it(`${order}: the answer joined from their lines settles it`, async () => {
-      const { backend, client, model, request, reply, datedDone, followupsDone, sentPrompts } = await setup({ dated: order !== "the request read after your reply" });
+      const { backend, client, model, request, reply, datedDone, followupsDone, sentPrompts, check } = await setup({ dated: order !== "the request read after your reply" });
       let open!: () => void;
       if (order === "your reply read first") model.datedGate = new Promise((resolve) => (open = resolve));
       model.dated = () => dated([slip]);
@@ -590,7 +598,7 @@ describe("an ask you already answered (the second morning: round 15's Hannah and
       await followupsDone();
       if (order === "the request read after your reply") {
         await client.call("settings.update", { dated: { enabled: true } });
-        await client.call("dated.scan", {});
+        await check();
         await datedDone();
         await followupsDone();
       }

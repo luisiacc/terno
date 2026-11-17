@@ -5,6 +5,20 @@ import { msg } from "./fixtures";
 import { expectMailbox, type WorkloadMailbox } from "./perf";
 
 const SENDERS = 10;
+/** plan 211: a check's candidates, one account's (once an account, never on a hot path: the backend's slice budget) */
+export const SCAN_MS = 25;
+/** plan 211: the small account's mail in the window */
+export const SMALL = 40;
+
+/**
+ * Plan 211 (revision 11): a small account beside the mailbox's, with `SMALL` messages of its own in the last days, as `over`
+ * says; removed by the caller once measured, so the mailbox is left as it was.
+ */
+export async function smallAccount(o: WorkloadMailbox, over: (i: number) => Partial<Parameters<typeof msg>[0]>): Promise<{ id: number; ids: number[] }> {
+  const { account } = await o.store.accounts.create({ kind: "imap", email: "small@perf.test", displayName: "Small", color: "brown", now: o.now });
+  const r = await o.store.sync.ingest(Array.from({ length: SMALL }, (_, i) => msg({ accountId: account.id, inInbox: false, providerMsgId: `small-${i}`, date: o.now - 3_600_000 - i * 3_600_000, bodyText: "x", ...over(i) })), { applyFilters: false, now: o.now, classifier: null });
+  return { id: account.id, ids: r.inserted };
+}
 /** plan 210: the history's first read after a bulk change, at twenty thousand closed rows (IndexedDB sorts them once) */
 const COLD_MS = 8;
 
@@ -61,12 +75,22 @@ export async function measureDated(o: WorkloadMailbox): Promise<void> {
   const openFor = await timed(40, (i) => store.dated.openFor({ threadId: sources[i]!.thread, senderKey: sources[i]!.senderKey, before: o.now, limit: DATED_OPEN_SHOWN }));
   const thread = await timed(40, (i) => store.dated.ofThread(sources[i]!.thread));
   const source = await timed(40, (i) => store.dated.source(sources[i]!.id));
-  const scan = await timed(5, () => store.dated.scanCandidates(o.now - DATED_SCAN_DAYS * 86_400_000, DATED_SCAN_MAX));
-  o.log(`Dated: active ${active.toFixed(2)} ms, openFor ${openFor.toFixed(2)} ms, a thread's ${thread.toFixed(2)} ms, a source ${source.toFixed(2)} ms, the 14-day check's candidates ${scan.toFixed(2)} ms`);
+  // plan 211 (revision 11): the check is one account's at a time. The mailbox's account, with the thousand just written in
+  // its window; and a small one beside it, most of the mail in the other: its read never pays for the mailbox's
+  const window = o.now - DATED_SCAN_DAYS * 86_400_000;
+  const small = await smallAccount(o, (i) => ({ from: { name: "Shop", email: `shop${i}@perf.test` }, to: [{ name: "Me", email: "small@perf.test" }], subject: `Order ${i}` }));
+  const scan = await timed(5, () => store.dated.scanCandidates(window, DATED_SCAN_MAX, o.accountId));
+  const scanSmall = await timed(5, () => store.dated.scanCandidates(window, DATED_SCAN_MAX, small.id));
+  expect(await store.dated.scanCandidates(window, DATED_SCAN_MAX, small.id)).toHaveLength(SMALL);
+  expect(await store.dated.scanCandidates(window, DATED_SCAN_MAX, o.accountId)).not.toContain(small.ids[0]);
+  await store.accounts.remove(small.id);
+  o.log(`Dated: active ${active.toFixed(2)} ms, openFor ${openFor.toFixed(2)} ms, a thread's ${thread.toFixed(2)} ms, a source ${source.toFixed(2)} ms, the 14-day check's candidates ${scan.toFixed(2)} ms (a small account's ${scanSmall.toFixed(2)} ms)`);
   expect(active).toBeLessThanOrEqual(5 * o.budget);
   expect(openFor).toBeLessThanOrEqual(5 * o.budget);
   expect(thread).toBeLessThanOrEqual(5 * o.budget);
   expect(source).toBeLessThanOrEqual(5 * o.budget);
+  expect(scan).toBeLessThanOrEqual(SCAN_MS * o.budget);
+  expect(scanSmall).toBeLessThanOrEqual(SCAN_MS * o.budget);
 
   // plan 210: What matters' history pages through the closed rows by closing time. Twenty thousand closed within the keep
   // (the thousand open, closed, twenty times: far past a heavy quarter, each on its own conversation): its first page, a

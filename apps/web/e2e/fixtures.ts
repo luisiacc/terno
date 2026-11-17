@@ -225,7 +225,8 @@ export const test = base.extend<Fixtures>({
     if (!siteIcons) await server.backend.server.invoke("settings.update", { senderIcons: false }, { clientId: "setup", origin: "dev" as const });
     if (!today) await server.backend.server.invoke("settings.update", { today: { show: false } }, { clientId: "setup", origin: "dev" as const });
     // plan 158: Send's five seconds would be every send's, in every test: a test about them turns it on
-    await server.backend.server.invoke("settings.update", { undoSend: false }, { clientId: "setup", origin: "dev" as const });
+    // plan 211: and What matters' readers (on by default with the demo's AI) would read every test's new and sent mail
+    await server.backend.server.invoke("settings.update", { undoSend: false, dated: { enabled: false }, followups: { enabled: false } }, { clientId: "setup", origin: "dev" as const });
     await use(Object.assign(server, { smtp: capture?.received ?? [], net, icons, unsubscribes }));
     // Backend.stop() doesn't wait for an in-flight ops batch; let it settle first.
     const b = server.backend as unknown as { workerRunning: boolean };

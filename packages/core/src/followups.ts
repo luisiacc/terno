@@ -91,7 +91,10 @@ export interface FollowupRow {
 
 export interface FollowupsSetting {
   enabled: boolean;
-  /** the moment it went on: mail from before it is never read without a yes */
+  /**
+   * the moment it was turned on: what was sent before it is the check's (plan 211: the backend's, per account), never read
+   * live; null while it's on by default
+   */
   enabledAt: number | null;
   nudgeAfterDays: number;
   /** the one-time offer was answered */

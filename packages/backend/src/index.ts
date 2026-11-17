@@ -2,6 +2,7 @@ export * from "./backend";
 export * from "./attention";
 export * from "./ai-service";
 export * from "./settings";
+export { countAsChecked } from "./account-checks";
 export * from "./transports";
 export * from "./agent-socket";
 export * from "./agent-connector";

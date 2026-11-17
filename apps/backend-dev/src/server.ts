@@ -1,7 +1,7 @@
 import { mkdirSync, rmSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { join } from "node:path";
-import { AGENTS_VERSION, APPEARANCE_VERSION, Backend, plaintextCipher, seedDemo, webSocketTransport, type AiFactory, type BackendOptions, type LookupAll } from "@terno/backend";
+import { AGENTS_VERSION, APPEARANCE_VERSION, Backend, countAsChecked, plaintextCipher, seedDemo, webSocketTransport, type AiFactory, type BackendOptions, type LookupAll } from "@terno/backend";
 import type { DevAiKeys } from "@terno/core";
 import { demoRegistry, type ProviderRegistry } from "@terno/mail";
 export { sqlDb } from "@terno/db";
@@ -84,6 +84,8 @@ export async function startDevServer(o: DevServerOptions): Promise<DevServer> {
     // a new install's settings (plan 98: its appearance is the new defaults, not an older profile's)
     // plan 183: and agents as a new install has them (off, at read)
     await backend.store.settings.set("app", { ai: { provider: "fake" }, appearanceVersion: APPEARANCE_VERSION, agentsVersion: AGENTS_VERSION });
+    // plan 211: the made-up mailbox counts as checked (What matters and Follow-ups read its new mail, not thousands of old)
+    await countAsChecked(backend.store, (o.now ?? Date.now)());
     // warm model from the seeded categories (persisted on close, so E2E copies start ready)
     await backend.categorizer.rebuildNow();
   }

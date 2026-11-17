@@ -57,6 +57,8 @@ async function setup(o: { enabled?: boolean } = {}) {
   const client = new RpcClient(c);
   const { account } = await backend.store.accounts.create({ kind: "gmail", email: me.email, displayName: "Me", color: "brown", now: 0 });
   await client.call("settings.update", { ai: { provider: "fake", model: "demo" } });
+  // plan 211: on by default (with no moment it went on): turned on here, at this moment, or off
+  await client.call("settings.update", { dated: { enabled: false } });
   if (o.enabled ?? true) await client.call("settings.update", { dated: { enabled: true } });
   // mail from here on: it went on a while ago
   clock.now += 120_000;
@@ -77,9 +79,22 @@ async function setup(o: { enabled?: boolean } = {}) {
     backend.dated.wake();
     await drained();
   };
+  /**
+   * plan 211: the account's first sync done, the backend's check of its mail already here (once an account): what it queued.
+   * The worker's start opens its checks, as the backend's does.
+   */
+  const check = async (accountId = account.id) => {
+    const queueScan = vi.spyOn(backend.store.dated.marks, "queueScan");
+    await backend.store.accounts.setSyncState(accountId, { lastSyncAt: clock.now });
+    await backend.dated.start();
+    await backend.dated.checkAccounts([accountId]);
+    const queued = (await Promise.all(queueScan.mock.results.map((r) => r.value as Promise<number>))).reduce((n, v) => n + v, 0);
+    queueScan.mockRestore();
+    return queued;
+  };
   // a group's rows together, a day of its own's and Coming up's whatever days they're under (plan 210)
   const sections = async () => (await client.call("today.list", { held: [] })).sections.reduce<Record<string, number[]>>((o, x) => ({ ...o, [x.kind]: [...(o[x.kind] ?? []), ...x.items.map((i) => i.thread.id)] }), {});
-  return { backend, client, model, clock, receive, read, sections, raw, account };
+  return { backend, client, model, clock, receive, read, sections, raw, account, check };
 }
 
 describe("the local checks (plan 204 §3)", () => {
@@ -1344,7 +1359,7 @@ describe("plan 210 (iteration 5): the reading", () => {
 });
 
 describe("the reader", () => {
-  it("off (the default): nothing is marked and nothing is asked", async () => {
+  it("off: nothing is marked and nothing is asked", async () => {
     const { backend, model, receive } = await setup({ enabled: false });
     await receive();
     backend.dated.wake();
@@ -1422,34 +1437,31 @@ describe("the reader", () => {
     expect(model.requests).toHaveLength(1);
   });
 
-  it("mail from before it went on is read only with the check's yes, and the check keeps nothing already over", async () => {
-    const { backend, client, model, receive, read, clock } = await setup();
+  it("mail from before it went on is read only by the check of mail already here, once, and the check keeps nothing already over", async () => {
+    const { backend, model, receive, read, clock, check } = await setup();
     model.answer = (req) => (promptText(req.messages[0]!.content).includes("old bill") ? reply([{ ...bill, quote: "old bill", due: "2026-11-05" }]) : reply([bill]));
     // arrived before it was turned on: not live, so never marked
     await receive({ date: clock.now - 6 * DAY, bodyText: `${BILL_TEXT} old bill` }, false);
     await receive({ date: clock.now - 5 * DAY }, false);
     await read();
     expect(model.requests).toHaveLength(0);
-    expect((await client.call("dated.scanOffer", {})).count).toBe(2);
-    expect((await client.call("dated.scan", {})).queued).toBe(2);
-    await client.call("settings.update", { dated: { scanAnswered: true } });
+    expect(await check()).toBe(2);
     await read();
     expect(readings(model.requests)).toHaveLength(2);
     expect((await backend.store.dated.active()).map((r) => r.dueDay)).toEqual(["2026-11-20"]);
-    // answered: it's once, so nothing is read twice
-    expect((await client.call("dated.scan", {})).queued).toBe(0);
+    // once an account: nothing is read twice
+    expect(await check()).toBe(0);
   });
 
   it("plan 210 (Codex code review of iteration 2, round 2): a request the check drops as already over still means something was asked, and a subject past what's sent says nothing either way", async () => {
-    const { backend, client, model, receive, read, raw, clock } = await setup();
+    const { backend, client, model, receive, read, raw, clock, check } = await setup();
     const kim = { name: "Kim Ito", email: "kim@people.test" };
     model.answer = (req) => (promptText(req.messages[0]!.content).includes("the forms") ? reply([{ kind: "respond", text: "Send Kim the forms", quote: "send me the forms by Thursday", due: "2026-11-05", time: null }]) : reply());
     // before it went on: read only by the 14-day check, after its day
     const overdue = await receive({ from: kim, subject: "Re: forms", bodyText: "Hi! Could you send me the forms by Thursday?\n\nKim", providerThreadId: "kim", date: clock.now - 6 * DAY }, false);
     // a short mail whose question is in a subject longer than the reader is sent
     const subject = await receive({ from: { name: "Lea Park", email: "lea@people.test" }, subject: `${"Re: the shared drive and the archive move, ".repeat(6)}can you approve the budget?`, bodyText: "As in the subject line, when you have a minute.", providerThreadId: "lea" });
-    await client.call("dated.scan", {});
-    await client.call("settings.update", { dated: { scanAnswered: true } });
+    await check();
     await read();
     expect(await backend.store.dated.active()).toEqual([]);
     raw.run("UPDATE threads SET waiting_since = ?, has_sent = 1 WHERE id IN (?, ?)", clock.now - 60_000, overdue, subject);
@@ -1642,18 +1654,17 @@ describe("the Codex code review", () => {
   });
 
   it("#3: the 14-day check picks what the reader would ask about before its bound", async () => {
-    const { client, receive, clock } = await setup();
+    const { receive, clock, check } = await setup();
     await receive({ date: clock.now - 3 * DAY, gmailLabels: ["INBOX", "CATEGORY_PROMOTIONS"] }, false);
     await receive({ date: clock.now - 3 * DAY, listId: "news.power.test", subject: "Photos", bodyText: "Here are the photos from our team offsite." }, false);
     await receive({ date: clock.now - 3 * DAY, isSpam: true }, false);
     await receive({ date: clock.now - 3 * DAY }, false);
     await receive({ date: clock.now - 3 * DAY, from: { name: "Ana", email: "ana@people.test" }, subject: "Lunch", bodyText: "Thanks, that sounds great!" }, false);
-    expect((await client.call("dated.scanOffer", {})).count).toBe(2);
-    expect((await client.call("dated.scan", {})).queued).toBe(2);
+    expect(await check()).toBe(2);
   });
 
   it("round 2: the check also reads a later message that may settle one it reads, and one whose body isn't here yet", async () => {
-    const { client, receive, clock } = await setup();
+    const { receive, clock, check } = await setup();
     await receive({ date: clock.now - 4 * DAY }, false);
     // the biller's receipt, no time cue in it: read, since it may settle the bill
     await receive({ date: clock.now - 2 * DAY, listId: "billing.power.test", subject: "Thanks", bodyText: "Paid in full. Your balance is now zero." }, false);
@@ -1661,7 +1672,7 @@ describe("the Codex code review", () => {
     await receive({ date: clock.now - 2 * DAY, from: { name: "Shop", email: "news@shop.test" }, listId: "news.shop.test", subject: "Hello", bodyText: "Here are the photos from our team offsite." }, false);
     // an automated notice whose body hasn't come: can't be judged, so read
     await receive({ date: clock.now - 1 * DAY, from: { name: "Bank", email: "alerts@bank.test" }, listId: "alerts.bank.test", subject: "Account notice", bodyText: null, bodyState: "none" }, false);
-    expect((await client.call("dated.scanOffer", {})).count).toBe(3);
+    expect(await check()).toBe(3);
   });
 
   it("#4: a dated promise past Missed's days isn't Needs you's again", async () => {
@@ -3129,7 +3140,7 @@ describe("plan 210 (iteration 4): Mute this kind or sender (the Codex review's r
   const shown = async (client: RpcClient) => (await client.call("today.list", { held: [] })).sections.flatMap((x) => x.items.map((i) => i.id));
 
   it("a muted sender's mail reaches no model and isn't read later; their items hide (never closed) and come back on Unmute", async () => {
-    const { backend, client, model, clock, receive, read } = await setup();
+    const { backend, client, model, clock, receive, read, check } = await setup();
     model.answer = () => reply([bill]);
     const thread = await receive();
     await read();
@@ -3148,20 +3159,21 @@ describe("plan 210 (iteration 4): Mute this kind or sender (the Codex review's r
     await read();
     expect(model.requests).toHaveLength(2);
     expect(JSON.stringify(model.requests[1]!.messages)).not.toContain("power.test");
-    // the 14-day check counts none of theirs either, nor once they're unmuted: their reminder, consumed unread while muted,
-    // never comes back to be read (Codex's code review of iteration 4)
-    const offered = (await client.call("dated.scanOffer", {})).count;
+    // the 14-day check takes none of theirs either once they're unmuted: their reminder, consumed unread while muted, never
+    // comes back to be read (Codex's code review of iteration 4)
     expect((await client.call("dated.unmute", { on: "sender", key: "BILLING@power.test" })).mute).toMatchObject({ key: "billing@power.test" });
-    expect((await client.call("dated.scanOffer", {})).count).toBe(offered);
+    // (plan 211: the account's check, once; it takes the other sender's mail, which gave nothing, never theirs)
+    expect(await check()).toBe(1);
     expect(await shown(client)).toContain(`dated:${item!.id}`);
     // what came while muted isn't read now: Unmute is for mail from then on
     await read();
-    expect(model.requests).toHaveLength(2);
+    expect(model.requests).toHaveLength(3);
+    expect(JSON.stringify(model.requests[2]!.messages)).toContain("Shipped");
     model.answer = () => reply([bill]);
     clock.now += 120_000;
     await receive({ subject: "Final notice", bodyText: "Final notice: your bill is due on November 20." });
     await read();
-    expect(model.requests).toHaveLength(3);
+    expect(model.requests).toHaveLength(4);
   });
 
   it("a muted sender's mail still queued when they're unmuted is never read (Codex's code review of iteration 4)", async () => {
@@ -3632,16 +3644,19 @@ describe("plan 211: an account's AI and What matters switches", () => {
     expect(sent()).not.toContain("Pay the water bill");
   });
 
-  it("the check of mail already here leaves out an account with AI or What matters off", async () => {
-    const { backend, client, receive, account } = await setup();
+  it("the check of mail already here is each account's, and leaves out an account with AI or What matters off", async () => {
+    const { backend, client, receive, account, check } = await setup();
     const other = (await backend.store.accounts.create({ kind: "imap", email: "b@terno.test", displayName: "B", color: "brown", now: 0 })).account;
+    const third = (await backend.store.accounts.create({ kind: "imap", email: "c@terno.test", displayName: "C", color: "brown", now: 0 })).account;
+    await receive({}, false);
     await receive({}, false);
     await receive({ accountId: other.id, to: [{ name: "B", email: "b@terno.test" }] }, false);
-    expect((await backend.dated.scanOffer()).count).toBe(2);
+    await receive({ accountId: third.id, to: [{ name: "C", email: "c@terno.test" }] }, false);
     await client.call("accounts.update", { id: other.id, ai: false });
-    expect((await backend.dated.scanOffer()).count).toBe(1);
-    await client.call("accounts.update", { id: account.id, feed: false });
-    expect((await backend.dated.scanOffer()).count).toBe(0);
+    await client.call("accounts.update", { id: third.id, feed: false });
+    expect(await check(account.id)).toBe(2);
+    expect(await check(other.id)).toBe(0);
+    expect(await check(third.id)).toBe(0);
   });
 });
 

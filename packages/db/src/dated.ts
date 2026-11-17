@@ -87,8 +87,9 @@ export function pruneDatedMarks(db: Db, now: number): number {
   return Number(db.run("DELETE FROM ai_dated_mail WHERE (source = 'live' AND queued_at < ?) OR (source = 'scan' AND queued_at < ?)", now - DATED_MARK_MS, now - DATED_SCAN_MARK_MS).changes);
 }
 
-export function datedScanCandidates(db: Db, since: number, limit: number): number[] {
-  return db.all<{ id: number }>(`SELECT m.id FROM messages m WHERE m.date >= ? AND ${RECEIVED_SQL} AND ${UNREAD_SQL} ORDER BY m.date DESC, m.id DESC LIMIT ?`, since, limit).map((r) => r.id);
+/** Plan 211: one account's, through the date index (the window, newest first): never the mailbox. */
+export function datedScanCandidates(db: Db, since: number, limit: number, accountId: number): number[] {
+  return db.all<{ id: number }>(`SELECT m.id FROM messages m INDEXED BY messages_date WHERE m.date >= ? AND m.account_id = ? AND ${RECEIVED_SQL} AND ${UNREAD_SQL} ORDER BY m.date DESC, m.id DESC LIMIT ?`, since, accountId, limit).map((r) => r.id);
 }
 
 export function datedSource(db: Db, messageId: number): DatedSource | null {

@@ -141,6 +141,12 @@ export function migrateAgents(s: StoredSettings, fresh: boolean): StoredSettings
   return { ...rest, agents: { enabled: false, access }, agentsVersion: AGENTS_VERSION };
 }
 
+/** Plan 211 (revision 10): whether the stored install answered each check's offer (yes or no), from the row as written. */
+export async function readOfferAnswers(store: Pick<SettingsStore, "settings">): Promise<{ dated: boolean; followups: boolean }> {
+  const raw = await store.settings.get<{ dated?: { scanAnswered?: unknown }; followups?: { scanAnswered?: unknown } }>("app", {});
+  return { dated: raw.dated?.scanAnswered === true, followups: raw.followups?.scanAnswered === true };
+}
+
 /** Every read-time migration, in order. */
 function migrate(s: StoredSettings): StoredSettings {
   const fresh = Object.keys(s).length === 0;
@@ -179,8 +185,9 @@ export const DEFAULT_SETTINGS: General = {
   ask: { enabled: true },
   replies: { enabled: false },
   today: DEFAULT_TODAY,
-  followups: { enabled: false, enabledAt: null, nudgeAfterDays: NUDGE_DEFAULT, scanAnswered: false },
-  // plan 204: off by default (the owner, 2026-11-13); Today's header offers it
+  // plan 211: on by default wherever AI runs (the workers read the AI gate, so this alone sends nothing); a stored false stays
+  followups: { enabled: true, enabledAt: null, nudgeAfterDays: NUDGE_DEFAULT, scanAnswered: false },
+  // plan 211: on by default too (plan 204 had it off, with Today's header offering it)
   dated: DEFAULT_DATED,
   errorReports: "ask",
   // new installs follow the system: English unless it's a language Terno ships
@@ -628,13 +635,13 @@ function patchedSettings(s: StoredSettings, patch: SettingsPatch, hasLegacyKey: 
   if (followupsPatch) {
     const was = s.followups ?? DEFAULT_SETTINGS.followups;
     const enabled = followupsPatch.enabled ?? was.enabled;
-    // the moment it went on: what was sent before it is read only with a yes
+    // the moment it went on: what was sent before it is the check's, never a live read
     general.followups = { ...was, ...followupsPatch, enabled, enabledAt: !enabled ? null : was.enabled ? was.enabledAt : now };
   }
   if (datedPatch) {
     const was = { ...DEFAULT_DATED, ...s.dated };
     const enabled = datedPatch.enabled ?? was.enabled;
-    // the moment it went on: mail from before it is read only with the 14-day check's yes
+    // the moment it went on: mail from before it is the 14-day check's, never a live read
     general.dated = { ...was, ...datedPatch, enabled, enabledAt: !enabled ? null : was.enabled ? was.enabledAt : now };
   }
   if (todayPatch) general.today = { ...DEFAULT_TODAY, ...s.today, ...todayPatch };

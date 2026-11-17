@@ -108,10 +108,11 @@ export function pruneSentMarks(c: Ctx, now: number): number {
   return old.length;
 }
 
-export function followupScanCandidates(c: Ctx, since: number, limit: number): number[] {
+/** Plan 211 (revision 11): one account's, through its sent mail (the `sent` index), only the window's sorted. */
+export function followupScanCandidates(c: Ctx, since: number, limit: number, accountId: number): number[] {
   const tracked = new Set([...T(c, "followups").all()].map((r) => r.message_id));
   const out: R[] = [];
-  for (const m of T(c, "messages").all()) if (m.is_sent && !m.is_draft && !m.is_spam && !m.is_trash && m.date >= since && m.list_id == null && !m.is_bulk && !unconfirmed(m) && !tracked.has(m.id)) out.push(m);
+  for (const m of T(c, "messages").by("sent", accountId)) if (!m.is_spam && !m.is_trash && m.date >= since && m.list_id == null && !m.is_bulk && !unconfirmed(m) && !tracked.has(m.id)) out.push(m);
   return out.sort((a, b) => b.date - a.date || b.id - a.id).slice(0, limit).map((m) => m.id);
 }
 

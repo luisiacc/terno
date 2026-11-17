@@ -237,7 +237,7 @@ export interface DatedStore {
     /** oldest first, by the message's date */
     page(after: { arrivedAt: number; messageId: number } | null, limit: number): Promise<DatedMark[]>;
     count(): Promise<number>;
-    /** the 14-day check: what the user agreed to; idempotent on the message */
+    /** the 14-day check (plan 211: the backend's, per account); idempotent on the message */
     queueScan(messageIds: readonly number[], now: number): Promise<number>;
     /** read and found nothing to do, or never to be read */
     consume(messageId: number): Promise<void>;
@@ -256,8 +256,11 @@ export interface DatedStore {
      */
     claimLook(messageId: number, now: number): Promise<boolean>;
   };
-  /** received mail since then a check could read, newest first: inbound, not a draft, sent, spam or trash, not from the user, not already marked or read */
-  scanCandidates(since: number, limit: number): Promise<number[]>;
+  /**
+   * an account's received mail since then a check could read, newest first: inbound, not a draft, sent, spam or trash, not
+   * from the user, not already marked or read (plan 211: one account at a time, read through its own mail, never the box's)
+   */
+  scanCandidates(since: number, limit: number, accountId: number): Promise<number[]>;
   source(messageId: number): Promise<DatedSource | null>;
   /**
    * open items a message could settle: its thread's and its sender's (a delivery or an ask only its thread's: the sixth panel

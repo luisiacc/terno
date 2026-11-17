@@ -11,7 +11,7 @@ import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { demoRegistry } from "@terno/mail";
 import { msg } from "@terno/store/conformance";
 import type { IncomingMessage } from "@terno/store";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { DAILY_REQUESTS } from "./ai-limiter";
 import { Backend, plaintextCipher } from "./backend";
 import { checkSentMail, scanKeeps } from "./followups";
@@ -45,6 +45,8 @@ async function setup(o: { enabled?: boolean } = {}) {
   const client = new RpcClient(c);
   const { account } = await backend.store.accounts.create({ kind: "gmail", email: me.email, displayName: "Me", color: "brown", now: 0 });
   await client.call("settings.update", { ai: { provider: "fake", model: "demo" } });
+  // plan 211: on by default (with no moment it went on): turned on here, at this moment, or off
+  await client.call("settings.update", { followups: { enabled: false } });
   if (o.enabled ?? true) await client.call("settings.update", { followups: { enabled: true } });
   // mail sent from here on: it went on a while ago
   clock.now += 120_000;
@@ -59,7 +61,17 @@ async function setup(o: { enabled?: boolean } = {}) {
     return { id: inserted[0]!, m };
   };
   const drained = () => expect.poll(() => backend.store.followups.marks.count()).toBe(0);
-  return { backend, client, model, clock, send, drained, notices, account };
+  /** plan 211: the account's first sync done, the backend's check of what you sent from it (once an account): what it queued */
+  const check = async () => {
+    const queueScan = vi.spyOn(backend.store.followups.marks, "queueScan");
+    await backend.store.accounts.setSyncState(account.id, { lastSyncAt: clock.now });
+    await backend.followups.start();
+    await backend.followups.checkAccounts([account.id]);
+    const queued = (await Promise.all(queueScan.mock.results.map((r) => r.value as Promise<number>))).reduce((n, v) => n + v, 0);
+    queueScan.mockRestore();
+    return queued;
+  };
+  return { backend, client, model, clock, send, drained, notices, account, check };
 }
 
 describe("the local checks (plan 142 §3)", () => {
@@ -477,19 +489,18 @@ describe("what you do", () => {
   });
 });
 
-describe("the one-time check", () => {
-  it("counts first, sends nothing without a yes, and what it finds stays off the top and silent", async () => {
-    const { backend, client, model, send, drained, clock, notices } = await setup();
+describe("the check of what you sent (plan 211: the backend's, per account)", () => {
+  it("its 30 days, once; what it finds stays off the top and silent", async () => {
+    const { backend, model, send, drained, clock, notices, check } = await setup();
+    model.answer = () => reply(says);
     await send({ date: NOW - 10 * DAY, providerMsgId: "old-1", bodyText: "I'll send the contract." }, false);
     await send({ date: NOW - 40 * DAY, providerMsgId: "old-2" }, false);
     await send({ date: NOW - 3 * DAY, providerMsgId: "old-3", listId: "a.b" }, false);
-    const offer = await client.call("followups.scanOffer", {});
-    expect(offer.count).toBe(1);
     expect(model.requests).toEqual([]);
-    model.answer = () => reply(says);
-    expect((await client.call("followups.scan", {})).queued).toBe(1);
+    expect(await check()).toBe(1);
     await drained();
     expect(model.requests).toHaveLength(1);
+    expect(await check()).toBe(0);
     clock.now += 10 * DAY;
     await backend.followups.look();
     const [row] = await backend.store.followups.active();

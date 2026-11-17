@@ -93,7 +93,8 @@ describe("the gate in the backend (plan 211)", () => {
     const live = (accountId: number) => backend.ingestSliced([msg({ accountId, date: NOW - 1000 })], true, undefined, undefined, undefined, undefined, { accountId, pass: 1 }, true);
     const asked = () => ingest.mock.calls.at(-1)![1];
     await live(a.id);
-    expect(asked()).toMatchObject({ newMail: { summary: true }, liveSent: { wanted: true }, datedMail: { since: expect.any(Number) } });
+    // (on by default: no moment it went on)
+    expect(asked()).toMatchObject({ newMail: { summary: true }, liveSent: { wanted: true }, datedMail: { since: null } });
     await client.call("accounts.update", { id: a.id, ai: false });
     await live(a.id);
     expect(asked().newMail).toBeUndefined();

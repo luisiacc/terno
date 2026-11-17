@@ -1392,6 +1392,8 @@ export function createHandlers(b: Backend): Handlers {
       // plan 86: what the Inbox shows changed (lists reload, the counts and the Dock follow)
       if (patch.separateTabs !== undefined) b.notifyChanged([]);
       if (patch.followups === false) b.followups.accountOff(id);
+      // plan 211: its own switch back on: what you sent from it is checked, if it never was
+      if (patch.followups === true) void b.followups.checkAccounts([id]);
       return (await b.accountViews([result]))[0]!;
     },
 

@@ -107,10 +107,12 @@ export function pruneSentMarks(db: Db, now: number): number {
   return Number(db.run("DELETE FROM ai_sent_mail WHERE (source = 'live' AND queued_at < ?) OR (source = 'scan' AND queued_at < ?)", now - SENT_MARK_MS, now - SCAN_MARK_MS).changes);
 }
 
-export function followupScanCandidates(db: Db, since: number, limit: number): number[] {
+/** Plan 211: one account's, through its sent mail by date (`messages_sent_date`): never the mailbox. */
+export function followupScanCandidates(db: Db, since: number, limit: number, accountId: number): number[] {
   return db.all<{ id: number }>(
-    `SELECT m.id FROM messages m WHERE m.is_sent = 1 AND m.is_draft = 0 AND m.is_spam = 0 AND m.is_trash = 0 AND m.date >= ? AND m.list_id IS NULL AND m.is_bulk = 0 AND coalesce(m.provider_msg_id, 'local:') NOT LIKE 'local:%'
+    `SELECT m.id FROM messages m INDEXED BY messages_sent_date WHERE m.account_id = ? AND m.is_sent = 1 AND m.is_draft = 0 AND m.is_spam = 0 AND m.is_trash = 0 AND m.date >= ? AND m.list_id IS NULL AND m.is_bulk = 0 AND coalesce(m.provider_msg_id, 'local:') NOT LIKE 'local:%'
        AND m.id NOT IN (SELECT message_id FROM followups) ORDER BY m.date DESC, m.id DESC LIMIT ?`,
+    accountId,
     since,
     limit,
   ).map((r) => r.id);
