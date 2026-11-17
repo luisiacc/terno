@@ -4,7 +4,7 @@ import { Checkbox } from "@terno/ui/components/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@terno/ui/components/dialog";
 import { cn } from "@terno/ui/lib/utils";
 import { useId, useRef, useState } from "react";
-import { changeItem, changeStart, changeTo, closeChange, useChangePick, type ChangeTarget, type ChangeTo } from "~/lib/change";
+import { changeItem, changeSaid, changeStart, changeTo, closeChange, useChangePick, type ChangeTarget, type ChangeTo } from "~/lib/change";
 import { midnight, useWhen, WhenFields } from "./when-fields";
 
 /**
@@ -54,12 +54,14 @@ export function ChangeForm({ target, onSet, testPrefix, className }: { target: P
 /** The form from the row's menu and the palette, for the item as it was when it opened (`openChange`). */
 export function TodayChangeDialog() {
   const target = useChangePick((s) => s.target);
+  // the claims ledger's second batch: a promise as its row says it, "You said you'd…"; a sentence that long gets a third line
+  const said = target && changeSaid(target);
   return (
     <Dialog open={target !== null} onOpenChange={(o) => !o && closeChange()}>
       <DialogContent className="sm:max-w-xs" data-testid="today-change-dialog">
         <DialogHeader>
           <DialogTitle>{t("dated.changeTitle")}</DialogTitle>
-          {target?.text && <DialogDescription className="line-clamp-2" data-testid="today-change-text">{target.text}</DialogDescription>}
+          {said && <DialogDescription className="line-clamp-3" title={said} data-testid="today-change-text">{said}</DialogDescription>}
         </DialogHeader>
         {target && (
           <ChangeForm

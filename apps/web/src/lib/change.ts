@@ -4,6 +4,7 @@ import { create } from "zustand";
 import type { TodayTask } from "~/lib/dated";
 import type { ReaderItem } from "~/lib/reader-items";
 import { registerUndo, snack } from "~/lib/snack";
+import { promiseSentence } from "~/lib/today-sentence";
 import { dueShort, dueTimeLeft } from "~/lib/when";
 import { client } from "~/rpc/connection";
 import { setApp } from "~/state/app";
@@ -26,6 +27,15 @@ export interface ChangeTarget {
   dueAt: number;
   timed: boolean;
 }
+
+/**
+ * What the form names it by (the claims ledger's second batch): a promise as its row says it ("You said you'd send Jess the
+ * script."), never its stored words alone ("send Jess the script"); a dated item's own words. Null: nothing to name.
+ */
+export const changeSaid = (target: Pick<ChangeTarget, "source" | "text">): string | null => {
+  const text = target.text?.trim();
+  return !text ? null : target.source === "promise" ? promiseSentence(text) : text;
+};
 
 /** What the form gives: a local day, and a time ("HH:MM") or none. */
 export interface ChangeTo {

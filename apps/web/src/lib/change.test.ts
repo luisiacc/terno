@@ -25,7 +25,7 @@ vi.mock("~/rpc/connection", () => ({
   },
 }));
 
-const { changeItem, changeOfItem, changeOfTask, changeStart, changeTo, closeChange, openChange, proposalSaid, useChangePick, whenSaid } = await import("./change");
+const { changeItem, changeOfItem, changeOfTask, changeSaid, changeStart, changeTo, closeChange, openChange, proposalSaid, useChangePick, whenSaid } = await import("./change");
 const { getApp } = await import("~/state/app");
 const { resetSnacks, runUndo, useSnack } = await import("~/lib/snack");
 
@@ -56,6 +56,15 @@ describe("what Change… acts on", () => {
     expect(changeOfItem(reader(row(), false))).toBeNull();
     expect(changeOfItem(reader(row({ kind: "ask" })))).toBeNull();
     expect(changeOfItem(reader(promise({ dated: false })))).toMatchObject({ source: "promise", dueAt: 0 });
+  });
+
+  it("the claims ledger's second batch: the form names a promise as its row says it, a dated item by its words (en, es)", () => {
+    expect(changeSaid({ source: "promise", text: "send Jess the Railyard x Pingwire script" })).toBe("You said you'd send Jess the Railyard x Pingwire script.");
+    expect(changeSaid({ source: "promise", text: "Email the discussion questions to everyone" })).toBe("You said you'd email the discussion questions to everyone.");
+    expect(changeSaid({ source: "dated", text: "Pay the Lumen invoice" })).toBe("Pay the Lumen invoice");
+    expect(changeSaid({ source: "promise", text: "  " })).toBeNull();
+    setLocale("es", es);
+    expect(changeSaid({ source: "promise", text: "enviarle a Megan los archivos" })).toBe("Dijiste que ibas a enviarle a Megan los archivos.");
   });
 
   it("the form starts on the item's day and time; a day over or none, tomorrow", () => {

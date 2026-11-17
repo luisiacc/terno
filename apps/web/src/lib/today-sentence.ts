@@ -38,6 +38,9 @@ const verbFirst = (s: string): string => (/^\p{Lu}\p{Ll}+\b/u.test(s) ? s.charAt
  */
 export const attendsLine = (text: string): string => t("whatMatters.also.attends", { text: verbFirst(bare(text)) });
 
+/** A promise of yours as its row says it: "You said you'd send Jess the deck." */
+export const promiseSentence = (text: string): string => tidy(t("whatMatters.say.promise", { text: verbFirst(bare(text)) }));
+
 /** The sentence for a Today item, in the app's language. */
 export function todaySentence(item: Pick<TodayItem, "thread" | "why" | "summary">): string {
   const { thread, why } = item;
@@ -48,10 +51,7 @@ export function todaySentence(item: Pick<TodayItem, "thread" | "why" | "summary"
     // an alert is what the mail says happened, never a fact of ours (plan 204, the fourth round): it says whose word it is
     return ended(why.item?.kind === "alert" ? alertSays(text) : text);
   }
-  if (why.kind === "promise") {
-    const text = verbFirst(bare(why.text ?? ""));
-    return text ? tidy(t("whatMatters.say.promise", { text })) : ended(subject);
-  }
+  if (why.kind === "promise") return bare(why.text ?? "") ? promiseSentence(why.text!) : ended(subject);
   if (why.kind === "reminder") return t("whatMatters.say.reminder", { subject });
   // waiting on you: the summary's first sentence where there's one, else who wrote and about what
   const summary = item.summary?.trim();
@@ -219,7 +219,7 @@ function whenOf(item: Pick<TodayItem, "thread" | "why">, now: number): { text: s
 export function historySentence(line: Pick<TodayHistoryItem, "kind" | "text" | "thread">): string {
   const text = bare(line.text);
   if (!text) return ended(line.thread.subject?.trim() || t("common.noSubject"));
-  if (line.kind === "promise") return tidy(t("whatMatters.say.promise", { text: verbFirst(text) }));
+  if (line.kind === "promise") return promiseSentence(text);
   return ended(line.kind === "alert" ? alertSays(text) : text);
 }
 
