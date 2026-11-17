@@ -184,6 +184,11 @@ describe("a reply's checked verdict (the Codex review of iteration 3, revision 1
     expect(checkSentMail({ promises: [getBack], expectsReply: false, awaiting: [], kept: [], answers: [{ label: "q1", verdict: "fulfilled", evidence: "My gut says Sonoma too" }, { label: "q2", verdict: "holding", evidence: "I'll get back to you" }] }, input([q1, ["q2", { id: 8, revision: 0, senderKey: "daniel@lumora.io" }]])).verdicts).toEqual([{ request: { id: 7, revision: 2 }, verdict: "fulfilled" }, { request: { id: 8, revision: 0 }, verdict: "holding", item: 0 }]);
     // no promise that only holds: done is done
     expect(checkSentMail({ promises: [], expectsReply: false, awaiting: [], kept: [], answers: [{ label: "q1", verdict: "fulfilled", evidence: "My gut says Sonoma too" }] }, input([q1])).verdicts).toEqual([{ request: { id: 7, revision: 2 }, verdict: "fulfilled" }]);
+    // the replay's María: the head count given in its own paragraph is done; "I'll let you know Monday if I'm working
+    // Thursday", another paragraph's, holds nothing of it
+    const maria = "Hey E,\n\nOk numbers: me, Chris, Sofia, Mateo, and yes Chris's mom is coming this year. So 5 of us.\n\nThe new schedule posts Monday, so I'll let you know Monday if I'm working Thursday.\n\nMaria";
+    const monday = { text: "let Elena know whether you're working Thursday", quote: "The new schedule posts Monday, so I'll let you know Monday if I'm working Thursday.", to: "r1", due: "2026-11-16" };
+    expect(checkSentMail({ promises: [monday], expectsReply: false, awaiting: [], kept: [], answers: [{ label: "q1", verdict: "fulfilled", evidence: "me, Chris, Sofia, Mateo, and yes Chris's mom is coming this year." }] }, { ...base, ownText: maria, recipients: [{ label: "r1", name: "Elena Ruiz", email: "elena@ruiz.test" }], requests: new Map([["q1", { id: 7, revision: 2, senderKey: "elena@ruiz.test" }]]) }).verdicts).toEqual([{ request: { id: 7, revision: 2 }, verdict: "fulfilled" }]);
   });
 
   it("a promise that only holds it holds it, whatever the model called it (iteration 4); a \"done\" that's a promise's words is that promise", () => {

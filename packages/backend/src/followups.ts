@@ -6,7 +6,7 @@ import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
 import { AWAITING_ITEM, HELD_REQUEST_CLOSED, type FollowupFinish, type FollowupSnapshot, type FollowupSource, type FollowupWrite, type MailStore, type SentMark } from "@terno/store";
 import { DailyLimitError, MonthlyLimitError } from "./ai-limiter";
 import { UI_LOCALE_KEY } from "./forwarding";
-import { contextOf, plainEvidence, sameObject, sentencesOf } from "./dated-evidence";
+import { contextOf, paragraphsOf, plainEvidence, sameObject, sentencesOf, sentencesWith } from "./dated-evidence";
 import { promiseMoment } from "./promise-time";
 
 const MAX_DELAY = 2 ** 31 - 1;
@@ -245,6 +245,9 @@ export function checkSentMail(result: SentMailResult, input: { ownText: string; 
    * that promise; anything else leaves it.
    */
   const sentences = sentencesOf(input.ownText);
+  // a done verdict's paragraphs, by its request (the second morning: where a holding promise in them holds it instead)
+  const paragraphs = paragraphsOf(input.ownText);
+  const doneIn = new Map<number, Set<number>>();
   const verdicts = (result.answers ?? []).flatMap((a): Verdict[] => {
     const request = input.requests?.get(a.label);
     if (!request || a.verdict === "unknown") return [];
@@ -256,20 +259,23 @@ export function checkSentMail(result: SentMailResult, input: { ownText: string; 
     // model called it ("holding" kept, no longer dropped); a "holding" whose words also send or sign something links nothing
     if (promise && onlyHolds(promise.quote!)) return [{ request: shown, verdict: "holding" as const, item: promise.item }];
     if (promise) return a.verdict === "holding" ? [] : [{ request: shown, verdict: "promise" as const, item: promise.item }];
-    return a.verdict === "fulfilled" ? [{ request: shown, verdict: "fulfilled" as const }] : [];
+    if (a.verdict !== "fulfilled") return [];
+    doneIn.set(request.id, new Set(pieces.flatMap((p) => sentencesWith(p, paragraphs))));
+    return [{ request: shown, verdict: "fulfilled" as const }];
   });
   /**
-   * Plan 210 (the second morning, Priya's offsite): a reply that holds the question ("My gut says Sonoma too, but let me
-   * check … I'll get back to you") never does it, whatever part of it the model quoted as done: a "done" on a request from
-   * the person this reply's holding promise is to, a promise no other verdict holds a request with, is that holding. Two
-   * requests from them, one done and one held by its own verdict, stay as the model said.
+   * Plan 210 (the second morning, Priya's offsite): a reply that holds the question in the words it was "done" with ("My gut
+   * says Sonoma too, but let me check … I'll get back to you") never does it: a "done" on a request from the person this
+   * reply's holding promise is to, the promise in a paragraph of that evidence and holding no other request, is that holding.
+   * One said apart ("…and yes, Chris's mom is coming. … I'll let you know Monday if I'm working Thursday") stays done.
    */
   const holding = rows.filter((r) => r.kind === "promise" && r.quote && onlyHolds(r.quote) && !verdicts.some((v) => v.verdict !== "fulfilled" && v.item === r.item));
   const senders = new Map([...(input.requests?.values() ?? [])].map((r) => [r.id, r.senderKey]));
   for (const [i, v] of verdicts.entries()) {
     if (v.verdict !== "fulfilled") continue;
     const from = senders.get(v.request.id);
-    const held = holding.find((r) => from === undefined || (r.personEmail != null && addressKey(r.personEmail) === from));
+    const said = doneIn.get(v.request.id);
+    const held = holding.find((r) => (from === undefined || (r.personEmail != null && addressKey(r.personEmail) === from)) && sentencesWith(r.quote!, paragraphs).some((n) => said?.has(n)));
     if (!held) continue;
     verdicts[i] = { request: v.request, verdict: "holding", item: held.item };
     holding.splice(holding.indexOf(held), 1);
