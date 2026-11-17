@@ -80,7 +80,13 @@ describe("the line", () => {
     // a word that only starts like one stays ("young", "youth", "tutor", "turno"), nor one inside another ("thank-you")
     expect(handOffLine("Send Ms. Greer a thank-you note", { dueAt: null }, NOW)).toBe("Could you take care of this: send Ms. Greer a thank-you note?");
     expect(handOffLine("Pay the youth league fee", { dueAt: null }, NOW)).toBe("Could you take care of this: pay the youth league fee?");
+    // its code review: what's quoted, a name, and "thank you" / "see you" stay as they are
+    expect(handOffLine(`Reply "Thank you" to Alex`, { dueAt: null }, NOW)).toBe(`Could you take care of this: reply "Thank you" to Alex?`);
+    expect(handOffLine("Tell Dana you'll see you there", { dueAt: null }, NOW)).toBe("Could you take care of this: tell Dana I'll see you there?");
+    expect(handOffLine("Send Ana a thank you card for your gift", { dueAt: null }, NOW)).toBe("Could you take care of this: send Ana a thank you card for my gift?");
     setLocale("es", es);
+    expect(handOffLine("Send Tu Nguyen the signed contract", { dueAt: null }, NOW)).toBe("¿Puedes encargarte de esto: send Tu Nguyen the signed contract?");
+    expect(handOffLine("Responder «tu pedido llegó» a Ana con tu número", { dueAt: null }, NOW)).toBe("¿Puedes encargarte de esto: responder «tu pedido llegó» a Ana con mi número?");
     expect(handOffLine("Mandarle a Jess tu borrador de la presentación", { dueAt: at(17) }, NOW)).toBe("¿Puedes encargarte de esto: mandarle a Jess mi borrador de la presentación (para el mar)?");
     expect(handOffLine("Confirmar tus turnos con el tutor y si el libro es tuyo", { dueAt: null }, NOW)).toBe("¿Puedes encargarte de esto: confirmar mis turnos con el tutor y si el libro es mío?");
   });

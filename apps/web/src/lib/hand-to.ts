@@ -29,24 +29,28 @@ function words(text: string): string {
  * your board meeting deck draft", "which shift you can take"); in a line to someone else they're the reader's own, or the
  * receiver is asked for theirs: "my deck draft", "which shift I can take" (es "tu" → "mi", "tus" → "mis", "contigo" →
  * "conmigo"). A "you" after a verb or a preposition is "me" ("send you the form" → "send me the form"). Only this line.
+ * Its code review: only the lower-case words (a capitalised "Tu" is a name: "Send Tu Nguyen the contract"), never in what's
+ * quoted (`Reply "Thank you" to Alex`), and never the idioms "thank you" and "see you".
  */
-const FROM = String.raw`(?<![\p{L}\p{N}'’-])`;
+const FROM = String.raw`(?<![\p{L}\p{N}'’-])(?<!\b(?:thank|see) )`;
 const UPTO = String.raw`(?![\p{L}\p{N}'’-])`;
 const MINE: readonly [RegExp, string][] = [
-  [new RegExp(`${FROM}yourself${UPTO}`, "giu"), "myself"],
-  [new RegExp(`${FROM}yours${UPTO}`, "giu"), "mine"],
-  [new RegExp(`${FROM}your${UPTO}`, "giu"), "my"],
-  [new RegExp(`${FROM}you(?:['’]re| are)${UPTO}`, "giu"), "I'm"],
-  [new RegExp(`${FROM}you were${UPTO}`, "giu"), "I was"],
-  [new RegExp(`${FROM}you['’](ve|ll|d)${UPTO}`, "giu"), "I'$1"],
-  [new RegExp(`${FROM}(to|for|with|from|at|about|on|by|of|send|give|tell|meet|remind|ask|call|email|text|cc|let|help|thank|show|pay|owe|join|invite|see|reach|pick) +you${UPTO}`, "giu"), "$1 me"],
-  [new RegExp(`${FROM}you${UPTO}`, "giu"), "I"],
-  [new RegExp(`${FROM}tus${UPTO}`, "giu"), "mis"],
-  [new RegExp(`${FROM}tu${UPTO}`, "giu"), "mi"],
-  [new RegExp(`${FROM}tuy([oa]s?)${UPTO}`, "giu"), "mí$1"],
-  [new RegExp(`${FROM}contigo${UPTO}`, "giu"), "conmigo"],
+  [new RegExp(`${FROM}yourself${UPTO}`, "gu"), "myself"],
+  [new RegExp(`${FROM}yours${UPTO}`, "gu"), "mine"],
+  [new RegExp(`${FROM}your${UPTO}`, "gu"), "my"],
+  [new RegExp(`${FROM}you(?:['’]re| are)${UPTO}`, "gu"), "I'm"],
+  [new RegExp(`${FROM}you were${UPTO}`, "gu"), "I was"],
+  [new RegExp(`${FROM}you['’](ve|ll|d)${UPTO}`, "gu"), "I'$1"],
+  [new RegExp(`${FROM}(to|for|with|from|at|about|on|by|of|send|give|tell|meet|remind|ask|call|email|text|cc|let|help|show|pay|owe|join|invite|reach|pick) +you${UPTO}`, "gu"), "$1 me"],
+  [new RegExp(`${FROM}you${UPTO}`, "gu"), "I"],
+  [new RegExp(`${FROM}tus${UPTO}`, "gu"), "mis"],
+  [new RegExp(`${FROM}tu${UPTO}`, "gu"), "mi"],
+  [new RegExp(`${FROM}tuy([oa]s?)${UPTO}`, "gu"), "mí$1"],
+  [new RegExp(`${FROM}contigo${UPTO}`, "gu"), "conmigo"],
 ];
-const asMine = (text: string): string => MINE.reduce((s, [re, to]) => s.replace(re, to), text);
+/** a quoted span ("…", “…”, «…», '…' around words): the words of someone else, kept as they are */
+const QUOTED = /("[^"]*"|“[^”]*”|«[^»]*»|‘[^’]*’)/u;
+const asMine = (text: string): string => text.split(QUOTED).map((part, i) => (i % 2 ? part : MINE.reduce((s, [re, to]) => s.replace(re, to), part))).join("");
 
 /** When a handed item is due: its moment, and whether that's a clock time or a part of its day (neither: the whole day). */
 export interface HandOffWhen {
