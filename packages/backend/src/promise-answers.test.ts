@@ -156,6 +156,13 @@ describe("a reply's checked verdict (the Codex review of iteration 3, revision 1
     expect(one("I can send it to Ana instead", declined)).toEqual([]);
     expect(one("I can't make Friday. she has the files", declined)).toEqual([]);
     expect(one("I can't make Friday. Send it to Ana instead", declined)).toHaveLength(1);
+    // round 17 (Theo's audio setup again): list lines clipped at a comma and joined with "; ", their markers left out
+    expect(one("mic: a dynamic broadcast mic on a boom arm; interface: Audiomesh Duo; walls: six cheap acoustic panels behind me and a big rug", rafa)).toHaveLength(1);
+    expect(one("Chiapas: subí el bloque de notas de cata 3 mm; Veracruz: aclaré el verde y lo calibré con el perfil de la imprenta", diego)).toHaveLength(1);
+    // never a line clipped before what qualifies it, nor runs out of their order
+    const hedged = "Hi Ana,\n\n- I can send the deck, but not until next week.\n- Thursday works for the call.\n\nT";
+    expect(one("I can send the deck; Thursday works for the call", hedged)).toEqual([]);
+    expect(one("interface: Audiomesh Duo; mic: a dynamic broadcast mic on a boom arm", rafa)).toEqual([]);
     // round 16 (Theo's notes for Kai): a list's one-word lead-in joins a line of the list, a bullet skipped (en, es)
     const theo = "kai. v2 is the one. notes:\n\n- intro music: \"a bit much\" is exactly right, keep it\n- 3:05 the zoom on the error log is too slow, punch it in\n- thumbnail: perfect. it hurts. ship it\n\nt";
     expect(one("notes: - 3:05 the zoom on the error log is too slow, punch it in", theo)).toHaveLength(1);

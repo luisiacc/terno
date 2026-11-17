@@ -159,13 +159,24 @@ function joinedLines(evidence: string, ownText: string): string[] | null {
     next += u.length + 1;
   }
   const ends = new Set(units.map((u, i) => starts[i]! + u.length));
+  // round 17 (Theo's audio setup, "mic: a dynamic broadcast mic on a boom arm; interface: Audiomesh Duo; walls: …"): a list
+  // line's words begin after its marker ("- ", "• ", "1. "), and a run may end at a comma inside a line of theirs when the
+  // rest of that line qualifies nothing ("…boom arm, about 4 inches from my face"; never "…, but not before Friday")
+  const lineStarts = starts.flatMap((x) => {
+    const marker = /^(?:[-•*–]|\d{1,2}[.)]) /u.exec(own.slice(x));
+    return marker ? [x, x + marker[0].length] : [x];
+  });
+  const unitEnd = (x: number) => Math.min(...[...ends].filter((e) => e >= x));
+  const QUALIFIES = /\b(?:but|not|no|never|unless|except|only if|until|pero|sin|nunca|salvo|excepto|a menos que|hasta que|solo si)\b/u;
+  // (or right before the stop that ends one of their sentences, "…3 mm." quoted as "…3 mm;")
+  const clauseEnd = (x: number) => (own[x] === "," && !QUALIFIES.test(own.slice(x, unitEnd(x)))) || (/[.!?;:]/u.test(own[x] ?? "") && ends.has(x + 1));
   const wordEnd = (x: number) => x === own.length || !WORD_CHAR.test(own[x]!) || !WORD_CHAR.test(own[x - 1]!);
   const first = [...own].flatMap((c, i) => (c === evidence[0] && (i === 0 || !WORD_CHAR.test(c) || !WORD_CHAR.test(own[i - 1]!)) ? [i] : []));
   const failed = new Set<string>();
   const search = (p: number, after: number, runs: string[]): string[] | null => {
     const key = `${p}:${after}`;
     if (failed.has(key)) return null;
-    for (const s of runs.length ? starts.filter((x) => x >= after) : first) {
+    for (const s of runs.length ? lineStarts.filter((x) => x >= after) : first) {
       let length = 0;
       while (p + length < evidence.length && s + length < own.length && evidence[p + length] === own[s + length]) length++;
       // the answer's last run, ending at a word's end
@@ -174,11 +185,14 @@ function joinedLines(evidence: string, ownText: string): string[] | null {
         if (all.length > 1 && all.every((r, i) => wordCount(r) >= 2 || (i < all.length - 1 && leadIn(r)))) return all;
       }
       // or a run to the end of one of their sentences or lines, the answer going on with another
-      for (let k = length; k > 0; k--) {
-        if (!ends.has(s + k) || evidence[p + k] !== " ") continue;
+      for (let k = length; k >= 0; k--) {
+        if (!(ends.has(s + k) || clauseEnd(s + k))) continue;
+        // joined with a space, or with "; " or ", " of the answer's own
+        const sep = /^[;,]? /u.exec(evidence.slice(p + k));
+        if (!sep || k === 0) continue;
         const run = own.slice(s, s + k);
         if (wordCount(run) < 2 && !leadIn(run)) continue;
-        const found = search(p + k + 1, s + k + 1, [...runs, run]);
+        const found = search(p + k + sep[0].length, s + k + 1, [...runs, run]);
         if (found) return found;
       }
     }
