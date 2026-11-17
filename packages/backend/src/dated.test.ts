@@ -654,6 +654,25 @@ describe("plan 210 (iteration 3)", () => {
       }
       expect(checkDates({ items: [ask("Tell Sofia to bring her cleats", "tell Sofia to bring her cleats")], settled: [] }, mail("Good luck at the game, tell Sofia to bring her cleats!")).rows).toHaveLength(1);
     });
+    it("the second morning's code review (round 15's Diego): a gathering a list's post offers to whoever on it is no event when the post isn't to the reader (en, es); their own part in it, a post to them, or the team's own schedule still is", () => {
+      const hector = "Gracias Renata, y gracias a los que me escribieron por fuera. Me quedo con la 1.\n\nY ya que estamos: para quien ande en CDMX, la reunión mensual de la lista es el jueves 19 a las 20:00 en la Cantina La Imprenta (Santa María la Ribera). Sin registro, cada quien lo suyo.\n\nSaludos,\nHéctor";
+      const meetup = { kind: "event", text: "Reunión mensual de Tipógrafos MX", quote: "la reunión mensual de la lista es el jueves 19 a las 20:00", due: "2026-11-19", time: "20:00" };
+      const post = (text: string, o: { addressed?: "to" | "none"; listed?: boolean; reader?: string } = {}) => ({ ...base, text, subject: "Re: [tipografos-mx] Acentos en versales", from: "Héctor Galindo", sender: { person: true }, reader: { name: o.reader ?? "Diego Ramírez Castañeda", addressed: o.addressed ?? ("none" as const) }, listed: o.listed ?? true });
+      const rows = (item: typeof meetup, mail: ReturnType<typeof post>) => checkDates({ items: [item], settled: [] }, mail).rows;
+      expect(rows(meetup, post(hector))).toEqual([]);
+      const bay = "Thanks all for the feedback on the kerning.\n\nFor anyone in the Bay Area, the list's monthly meetup is Thursday the 19th at 8 PM at The Tap Room. All welcome.";
+      const english = { ...meetup, text: "The list's monthly meetup", quote: "the list's monthly meetup is Thursday the 19th at 8 PM" };
+      expect(rows(english, post(bay))).toEqual([]);
+      // addressed to the reader, by name in it, their own part, or no list: an event as any
+      expect(rows(meetup, post(hector, { addressed: "to" }))).toHaveLength(1);
+      expect(rows(meetup, post(hector, { listed: false }))).toHaveLength(1);
+      expect(rows(meetup, post(hector.replace("Sin registro", "Diego, te guardé lugar junto a la ventana. Sin registro")))).toHaveLength(1);
+      expect(rows(english, post(bay.replace("All welcome.", "All welcome, and you're registered already.")))).toHaveLength(1);
+      // a list's mail about the reader's own arrangement, with no offer to whoever: the team's schedule
+      const comets = "Hi Comets families!\n\nHere's November. Same as always unless I say otherwise:\n\nGames (Saturdays):\n  Nov 14 - vs Rattlers, 10:00 (arrive 9:30)\n  Nov 21 - vs Blue Thunder, 9:00\n\nCoach Ray";
+      const game = { kind: "event", text: "Comets U9 vs Rattlers", quote: "Nov 14 - vs Rattlers, 10:00 (arrive 9:30)", due: "2026-11-14", time: "10:00" };
+      expect(rows(game, { ...post(comets, { reader: "Maria Delgado" }), subject: "Comets U9 - November schedule", from: "Ray Castellanos" })).toHaveLength(1);
+    });
     it("a 'let me know' after the visit's condition that asks for something concrete is an ask; one asking only for notice isn't (en, es; the code review of iteration 3)", () => {
       for (const [text, quote] of ([["When you're back, let me know what you think of the draft.", "When you're back, let me know what you think of the draft"], ["Cuando regreses, dime qué opinas del borrador.", "Cuando regreses, dime qué opinas del borrador"], ["Cuando vengas, avísame qué día te queda mejor.", "Cuando vengas, avísame qué día te queda mejor"]] as const)) {
         expect(checkDates({ items: [ask("Answer Sergio", quote)], settled: [] }, person(text)), text).toMatchObject({ rows: [{ kind: "ask" }], asked: true });

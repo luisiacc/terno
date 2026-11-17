@@ -229,6 +229,38 @@ export function wellWishOnly(sentence: string): boolean {
 }
 
 /**
+ * Plan 210 (the second morning's code review, round 15's Diego): a gathering a mailing list's post offers to whoever on it
+ * wants it ("para quien ande en CDMX, la reunión mensual de la lista es el jueves 19 a las 20:00", "all welcome", "the list's
+ * meetup") is no plan of the reader's, when the post isn't addressed to them (the prompt's listing rule, which the reading
+ * breaks now and then): an event or a delivery from it is dropped unless its paragraph names the reader or their own part
+ * ("your spot", "you're registered", "tu lugar"). A list's mail about the reader's own arrangement, with no offer to whoever
+ * (the team's schedule, the game moved), is read as any; the paragraph as `norm` reads it, en and es.
+ */
+const OFFERED_TO_ANYONE = new RegExp(
+  [
+    String.raw`\b(?:anyone|anybody|whoever|those of you|any of you|folks|people) (?:who|in|around|near|nearby|free|interested|local)\b`,
+    String.raw`\b(?:all|everyone|everybody) (?:are |is |s )?(?:welcome|invited)\b`,
+    String.raw`\bopen to (?:all|everyone|anyone|the public)\b`,
+    String.raw`\bif (?:anyone|anybody) (?:is |s )?(?:around|in town|free|interested|nearby)\b`,
+    String.raw`\bthe list s (?:meetup|meet up|meeting|gathering|get together|dinner|drinks)\b`,
+    String.raw`\blist (?:meetup|meet up|members meetup)\b`,
+    String.raw`\bpara (?:quien|quienes|los que|las que|todos los que|todas las que) (?:ande|anden|este|esten|viva|vivan|quiera|quieran|pueda|puedan|guste|gusten)\b`,
+    String.raw`\b(?:quien|quienes) (?:quiera|quieran|guste|gusten|pueda|puedan) (?:venir|ir|llegar|caer|unirse|acompanar)`,
+    String.raw`\b(?:todos|todas|todo el mundo) (?:son |estan |esta )?(?:bienvenid\w*|invitad\w*)`,
+    String.raw`\babiert\w* a (?:todos|todas|todo el mundo|cualquiera)\b`,
+    String.raw`\bsi alguien (?:anda|esta|quiere|puede)\b`,
+    String.raw`\b(?:reunion|junta|comida|cena|carne asada|quedada) (?:mensual |semanal |anual )?de la lista\b`,
+  ].join("|"),
+  "u",
+);
+const OWN_PART = /\b(?:your (?:spot|seat|ticket|tickets|booking|reservation|registration|rsvp|place|order|table)|you(?: re| are) (?:registered|confirmed|signed up|booked|on the list)|we (?:saved|have|ve got) (?:you|your)|tu (?:lugar|boleto|boletos|reserva|reservacion|registro|asiento|mesa|pedido)|(?:estas|quedaste) (?:inscrit\w*|registrad\w*|confirmad\w*|apuntad\w*)|te (?:guarde|guardamos|apartamos|aparte))\b/u;
+function offeredToTheList(paragraph: string, reader: { name: string } | undefined): boolean {
+  const read = ` ${norm(paragraph)} `;
+  if (!OFFERED_TO_ANYONE.test(read) || OWN_PART.test(read)) return false;
+  return !nameWords(reader?.name ?? "").some((w) => w.length >= 3 && read.includes(` ${w} `));
+}
+
+/**
  * Plan 210 (iteration 3, point 7): the sender's own offer that waits on the reader's yes ("If it's easier, I can swing by
  * Saturday morning and take pictures of them. Just let me know.", "paso el sábado y les tomo fotos, nada más avísame") is an
  * ask with no day: the day is the offer's, not one the reader must meet (Luna made it a request due the Friday, 1 in 5).
@@ -462,7 +494,7 @@ function movedPromise(p: { dueAt?: number; dated?: boolean; timed?: boolean; par
  * day or, for a timed item, a new moment, and its new words only with the mail's own. Plan 210 (the Codex review of iteration
  * 1, revision 2): a settlement or a move rests on evidence tied to that item (`tiedTo`). Pure.
  */
-export function checkDates(result: { items: readonly (Omit<DatedResult["items"][number], "kind"> & { kind: string })[]; settled: DatedResult["settled"]; moved?: readonly Move[]; replaced?: DatedResult["replaced"] }, input: { text: string; subject: string; arrivedAt: number; open: ReadonlyMap<string, DatedRow>; promises?: ReadonlyMap<string, Pick<FollowupRow, "id" | "revision"> & Partial<Pick<FollowupRow, "text" | "dueAt" | "dated" | "timed" | "partOfDay">>>; fromScan: boolean; now: number; sender?: { person: boolean }; reader?: { name: string; addressed: "to" | "cc" | "none" }; others?: readonly string[]; threadId?: number; senderKey?: string; from?: string; paysInThread?: number; relay?: Relay | null }): { rows: DatedWrite[]; settled: { id: number; revision: number }[]; moved: { id: number; dueDay: string; dueAt: number; timed: boolean; actAt: number; text?: string; before?: string | null; wall?: DatedWall | null; partOfDay?: PartOfDay }[]; movedPromises: { id: number; revision: number; dueAt: number; timed: boolean; brokenDueAt: number | null; before?: string | null; partOfDay?: PartOfDay }[]; replaced: { id: number; revision: number; item: number }[]; asked: boolean } {
+export function checkDates(result: { items: readonly (Omit<DatedResult["items"][number], "kind"> & { kind: string })[]; settled: DatedResult["settled"]; moved?: readonly Move[]; replaced?: DatedResult["replaced"] }, input: { text: string; subject: string; arrivedAt: number; open: ReadonlyMap<string, DatedRow>; promises?: ReadonlyMap<string, Pick<FollowupRow, "id" | "revision"> & Partial<Pick<FollowupRow, "text" | "dueAt" | "dated" | "timed" | "partOfDay">>>; fromScan: boolean; now: number; sender?: { person: boolean }; reader?: { name: string; addressed: "to" | "cc" | "none" }; others?: readonly string[]; threadId?: number; senderKey?: string; from?: string; paysInThread?: number; relay?: Relay | null; listed?: boolean }): { rows: DatedWrite[]; settled: { id: number; revision: number }[]; moved: { id: number; dueDay: string; dueAt: number; timed: boolean; actAt: number; text?: string; before?: string | null; wall?: DatedWall | null; partOfDay?: PartOfDay }[]; movedPromises: { id: number; revision: number; dueAt: number; timed: boolean; brokenDueAt: number | null; before?: string | null; partOfDay?: PartOfDay }[]; replaced: { id: number; revision: number; item: number }[]; asked: boolean } {
   const said = `${norm(input.subject)}\n${norm(input.text)}`;
   const quoted = (words: string) => {
     const w = norm(words);
@@ -688,6 +720,8 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     if (kind === "ask" && ((requested(item) && !offerOnly(around, contextOf(item.quote, paragraphs))) || noReply || onlyTells(item.quote) || onlyTells(contextOf(item.quote, sentences)) || courtesyOnly(around) || selfOffer(around, contextOf(item.quote, paragraphs)) || yourOwnWord(contextOf(item.quote, sentences)) || !(askAllowed(item.quote, said, input.text, input) || rebooks(item)))) continue;
     // plan 210 (the second morning): a person's good wishes for something of the reader's are no plan of theirs, nor an ask
     if ((kind === "event" || kind === "ask") && input.sender?.person && wellWishOnly(contextOf(item.quote, sentences))) continue;
+    // the second morning's code review: a gathering a list's post offers to whoever on it, the reader not addressed
+    if ((kind === "event" || kind === "delivery") && input.listed && input.reader?.addressed === "none" && offeredToTheList(contextOf(item.quote, paragraphs), input.reader)) continue;
     // plan 210 (iteration 4's code review): what a scam says happened or demands is no item, an alert, a request or an
     // expiry (prompt v15, and this backstop); never "something asked" either
     if (PRESSED.has(kind) && scamPressure(`${input.subject}\n${tiedWords(item.quote).slice(0, FACT_WORDS_MAX)}\n${item.quote}`)) continue;
@@ -1029,7 +1063,7 @@ export class DatedWorker {
       // plan 210 (iteration 3, revision 5): a receipt's one bill is counted in the store, never among the labels sent; read
       // only when the model settled something
       const paysInThread = result.settled.length ? (await store.dated.ofThread(src.threadId)).filter((r) => r.kind === "pay").length : 0;
-      const checked = checkDates(result, { text, subject: src.subject, arrivedAt: src.date, open: new Map([...labels].filter(([l]) => sent.has(l))), promises: new Map([...promises].filter(([l]) => sent.has(l))), fromScan, now, sender: { person: src.person }, reader, others, threadId: src.threadId, senderKey: src.senderKey, from: input.from.name, paysInThread, relay });
+      const checked = checkDates(result, { text, subject: src.subject, arrivedAt: src.date, open: new Map([...labels].filter(([l]) => sent.has(l))), promises: new Map([...promises].filter(([l]) => sent.has(l))), fromScan, now, sender: { person: src.person }, reader, others, threadId: src.threadId, senderKey: src.senderKey, from: input.from.name, paysInThread, relay, listed: src.automated });
       // plan 210 (iteration 2, the Codex code review): "nothing asked" only of a message the model saw all of (never one cut
       // to the window or the reader's limit, nor a subject past what's sent), and in which the checks found no request at all;
       // iteration 5 (revision 3): nor while a second look it needed is incomplete (claimed before, or failed)
