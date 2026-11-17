@@ -3128,9 +3128,9 @@ It contains none of your mail, contacts, settings or keys.
   "palette.goFollowups": "Follow-ups",
   // plan 211
   "account.ai": "Use AI with this account",
-  "account.ai.hint": "Its mail is never sent to the AI provider.",
+  "account.ai.hint": "Off: its mail is never sent to the AI provider.",
   "account.feed": "Show in What matters",
-  "account.feed.hint": "Nothing from this account appears in What matters.",
+  "account.feed.hint": "Off: nothing from this account appears in What matters.",
   "account.followups": "Track follow-ups in this account",
   "account.followups.hint": "When Follow-ups is on, read what you send from this account.",
   "ai.followups.switch": "Keep track of what I promise and who owes me a reply",
