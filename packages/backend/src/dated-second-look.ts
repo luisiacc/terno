@@ -1,5 +1,5 @@
 import { DATED_AGAIN_CHARS, DATED_AGAIN_SENTENCES, fitDates, type DatedInput, type DatedResult } from "@terno/ai";
-import { DATED_KINDS, datedGroup, dayEnd, missedUntil, namesDayFrom, saysClock, saysDay, type DatedKind } from "@terno/core";
+import { DATED_KINDS, datedGroup, dayEnd, missedUntil, namesDayFrom, partOfDayIn, saysClock, saysDay, type DatedKind } from "@terno/core";
 import { handledItself } from "./dated-automatic";
 import { namesOtherThan, namesSpecifically, norm, otherAmounts, otherIds, otherPeriod, paragraphsOf, scamPressure, sentencesOf, sentencesWith, settlesKind, type Sentences } from "./dated-evidence";
 
@@ -253,7 +253,33 @@ export async function secondLook(first: DatedResult, o: Omit<LookInput, "first">
     const q = norm(quote);
     return !!q && read.some((s) => s.includes(q) || q.includes(s));
   };
-  const there = [...first.items, ...o.shown.map((x) => ({ kind: x.kind, text: x.text ?? "", quote: "", due: x.due }))];
-  const found = again.items.filter((x) => inAsked(x.quote) && !repeats(x, there, o));
-  return { result: { ...first, items: [...first.items, ...found] }, asked: sentences.length, complete: true };
+  const asked = again.items.filter((x) => inAsked(x.quote));
+  const items = timedByTwins(first.items, asked, o.from);
+  const there = [...items, ...o.shown.map((x) => ({ kind: x.kind, text: x.text ?? "", quote: "", due: x.due }))];
+  const found = asked.filter((x) => !repeats(x, there, o));
+  return { result: { ...first, items: [...items, ...found] }, asked: sentences.length, complete: true };
+}
+
+type Item = DatedResult["items"][number];
+/** a request's part of the day, read from its quote as `checkDates` reads it ("by Saturday morning"); a clock wins over it */
+const partOf = (x: Item): boolean => x.kind === "respond" && !!partOfDayIn(x.quote);
+const untimed = (x: Item): boolean => x.time === null && !partOf(x);
+
+/**
+ * Round 17's faults (Priya's Bengaluru flight, both mornings): the first reading quoted the day's heading ("DEPART —
+ * Saturday, 05 Dec 2026") and gave no time; the look, asked about the line with it, returned the same flight at 23:55, which
+ * `repeats` dropped whole, its time with it. A look's twin of a first item (its kind and day, naming it) that has the time,
+ * or a request's part of the day, the first item lacks gives it that time: the same item, timed, never a second row. A first
+ * item already timed keeps its own, whatever the twin says; the twin is dropped as a repeat either way.
+ */
+function timedByTwins(first: readonly Item[], looked: readonly Item[], from?: string): Item[] {
+  return first.map((e) => {
+    if (!e.due || !untimed(e)) return e;
+    const twin = looked.find((x) => x.kind === e.kind && x.due === e.due && !untimed(x) && namesSpecifically(e, `${x.text}\n${x.quote}`, from));
+    if (!twin) return e;
+    // a part of the day lives in its quote; a time in its own fields, the first's quote kept
+    if (twin.time === null) return { ...e, quote: twin.quote };
+    const { wall, at } = twin;
+    return { ...e, time: twin.time, ...(wall !== undefined ? { wall } : {}), ...(at !== undefined ? { at } : {}) };
+  });
 }

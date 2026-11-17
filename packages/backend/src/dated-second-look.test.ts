@@ -285,6 +285,43 @@ describe("iteration 5's code review", () => {
       expect(await run(RFP, { ...o, now: at(2026, 11, 12, 9) })).toEqual([questions.text]);
     });
   });
+
+  describe("round 17's faults: a twin that adds a time gives it to the first item (Priya's Bengaluru flight)", () => {
+    const TRIP = "DEPART — Saturday, 05 Dec 2026\nPC 7 · SFO 11:55 PM → BLR 6:05 AM (Mon 07 Dec) via SIN\nBoarding 11:10 PM\n\nRETURN — Saturday, 12 Dec 2026\nPC 8 · BLR 1:30 AM → SFO 4:40 PM";
+    const LINE = "PC 7 · SFO 11:55 PM → BLR 6:05 AM (Mon 07 Dec) via SIN";
+    const items = async (text: string, first: DatedResult["items"], answer: DatedResult["items"]) => {
+      const input: DatedInput = { text, subject: "", from: { name: "Pacific Crest Airlines", automated: true }, reader: { name: "Priya", addressed: "to" }, to: [], cc: [], receivedAt: "x", zone: "UTC", open: [], language: "en" };
+      const r = await secondLook({ ...none, items: first }, { text, subject: "", arrivedAt: NOW, automated: true, shown: [], now: NOW, input, promptChars: Infinity }, { recheck: async () => "go", claim: async () => true, read: async () => ({ ...none, items: answer }), aborted: () => false });
+      if (typeof r === "string") throw new Error(r);
+      return r.result.items;
+    };
+    // the panel's own reading (#34) and its look (#35)
+    const out = { kind: "event" as const, text: "Flight to Bengaluru via SIN (arrives Mon 07 Dec)", quote: "DEPART — Saturday, 05 Dec 2026", due: "2026-12-05", time: null };
+    const back = { kind: "event" as const, text: "Flight from Bengaluru to San Francisco", quote: "RETURN — Saturday, 12 Dec 2026", due: "2026-12-12", time: "01:30" };
+    const wall = { day: "2026-12-05", time: "23:55", zone: "America/Los_Angeles", place: "San Francisco" };
+    const twin = { kind: "event" as const, text: "Flight to Bengaluru (arrives Mon 07 Dec)", quote: LINE, due: "2026-12-05", time: "23:55", wall, at: Date.UTC(2026, 11, 6, 7, 55) };
+
+    it("the untimed flight takes the look's time, its clock and instant, and stays one row; the timed return is untouched", async () => {
+      expect(await items(TRIP, [out, back], [twin])).toEqual([{ ...out, time: "23:55", wall, at: twin.at }, back]);
+    });
+
+    it("a twin that disagrees with a time the first already has changes nothing; one on another day or of another kind lends nothing", async () => {
+      const timed = { ...out, time: "22:00" };
+      expect(await items(TRIP, [timed], [twin])).toEqual([timed]);
+      // the arrival's day is another moment of the flight: dropped as a repeat, and no time of its own for the departure
+      expect(await items(TRIP, [out], [{ ...twin, due: "2026-12-07", time: "06:05" }])).toEqual([out]);
+      // something else on that day keeps its own row, and lends nothing
+      const other = { kind: "respond" as const, text: "Send the visa papers to Halvorsen travel", quote: LINE, due: "2026-12-05", time: "23:55" };
+      expect(await items(TRIP, [out], [other])).toEqual([out, other]);
+    });
+
+    it("a request's part of the day comes with the twin's quote, where checkDates reads it", async () => {
+      const NOTES = "Hi Priya,\n\nCould you send me your notes for the board deck, which goes out Saturday, December 5?\n\nMy deadline for them is that Saturday morning.\n\nDaniel";
+      const req = { kind: "respond" as const, text: "Send Daniel your notes for the board deck", quote: "Could you send me your notes for the board deck, which goes out Saturday, December 5?", due: "2026-12-05", time: null };
+      const morning = { ...req, quote: "My deadline for them is that Saturday morning." };
+      expect(await items(NOTES, [req], [morning])).toEqual([morning]);
+    });
+  });
 });
 
 // ─── the worker ─────────────────────────────────────────────────────────────
