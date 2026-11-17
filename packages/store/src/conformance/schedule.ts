@@ -72,6 +72,18 @@ export function defineScheduleConformance(fresh: () => Promise<MailStore>, reope
       expect(await store.today.unschedule(snapshots!)).toBe(false);
     });
 
+    it("round 17: a change given the mail's schedule keeps it as changed_from, not the user's earlier day; its Undo puts that back", async () => {
+      const { store, dated } = await setup();
+      const slip = await dated("slip");
+      const mail = { dueDay: "2026-11-20", dueAt: NOW + 7 * DAY, timed: false, dated: true };
+      await store.today.schedule({ at: NOW, dated: [{ id: slip.row.id, revision: slip.row.revision, to: { dueDay: "2026-11-19", dueAt: NOW + 6 * DAY, timed: false, actAt: NOW + 3 * DAY }, from: mail }], promises: [] });
+      const once = (await store.dated.get(slip.row.id))!;
+      const again = await store.today.schedule({ at: NOW + 1, dated: [{ id: slip.row.id, revision: once.revision, to: { dueDay: "2026-11-18", dueAt: NOW + 5 * DAY, timed: false, actAt: NOW + 2 * DAY }, from: mail }], promises: [] });
+      expect(await store.dated.get(slip.row.id)).toMatchObject({ dueDay: "2026-11-18", changedAt: NOW + 1, changedFrom: mail });
+      expect(await store.today.unschedule(again!)).toBe(true);
+      expect(await store.dated.get(slip.row.id)).toEqual({ ...once, revision: once.revision + 2 });
+    });
+
     it("a stale revision or a closed item changes nothing, all or none; an Undo after another change since restores nothing", async () => {
       const { store, dated, promise } = await setup();
       const slip = await dated("slip");

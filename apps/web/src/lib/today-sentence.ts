@@ -73,7 +73,9 @@ export type TodayTone = "missed" | "today" | "later" | "none";
  * own date) and Coming up's rows (`ahead`) quiet.
  */
 export function todayWhen(item: Pick<TodayItem, "thread" | "why">, now = Date.now(), group?: FeedGroupKind, ahead = false): { text: string | null; tone: TodayTone } {
-  const when = whenOf(item, now);
+  const own = whenOf(item, now);
+  const mail = item.why.kind === "dated" ? item.why.item?.mailDay : undefined;
+  const when = own.text && mail ? { ...own, text: withMailDay(own.text, mail, now) } : own;
   // plan 210 (iteration 1): a plan or a delivery sits under the day's tasks, drawn as quietly as a day ahead's
   const plan = item.why.kind === "dated" && item.why.item !== undefined && datedGroup(item.why.item.kind) === "plans";
   // (a promise broken and given a new day keeps the late mark wherever it sits: plan 210, iteration 2)
@@ -131,6 +133,21 @@ function needed(when: string, day: number, now: number, before?: string | null, 
   if (near === "today") return t("whatMatters.neededToday", { when });
   if (near === "tomorrow") return t("whatMatters.neededTomorrow", { when });
   return t("whatMatters.needed", { when, day: dueShort(day, false, now) });
+}
+
+/**
+ * Round 17 (`CHANGED-DAY-READS-AS-DEADLINE`): a deadline moved with Change… says the mail's own day after the user's, as a
+ * promise says the day it's needed ("Mon · due Tue", "Due Monday · due Tuesday", es "lun · vence el mar"); a day gone,
+ * "was due Sun". The feed's column, the reader's line and the screen reader's words say it alike.
+ */
+export function withMailDay(when: string, mailDay: string | null | undefined, now: number): string {
+  const day = mailDay ? localDay(mailDay)?.getTime() : undefined;
+  if (day === undefined) return when;
+  const near = datedDay(day, now).near;
+  if (near === "today") return t("whatMatters.mailDueToday", { when });
+  if (near === "tomorrow") return t("whatMatters.mailDueTomorrow", { when });
+  if (near === "yesterday") return t("whatMatters.mailWasDueYesterday", { when });
+  return day < now ? t("whatMatters.mailWasDue", { when, day: pastDay(day, now) }) : t("whatMatters.mailDue", { when, day: dueShort(day, false, now) });
 }
 
 /**

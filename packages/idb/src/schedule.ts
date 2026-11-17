@@ -36,11 +36,11 @@ export function scheduleItems(c: Ctx, s: ScheduleChanges): ScheduleSnapshots | n
   const promises = s.promises.map((x) => promiseRows.get(x.id)).map((r, i) => (r && r.revision === s.promises[i]!.revision && r.kind === "promise" && (r.state === "open" || r.state === "due") ? r : undefined));
   if (dated.some((r) => !r) || promises.some((r) => !r)) return null;
   const before = { dated: dated.map((r) => datedSnapshot(r!)), promises: promises.map((r) => promiseSnapshot(r!)) };
-  s.dated.forEach(({ to }, i) => {
+  s.dated.forEach(({ to, from }, i) => {
     const r = dated[i]!;
     datedRows.update(r, {
       due_day: to.dueDay, due_at: to.dueAt, timed: to.timed ? 1 : 0, dated: 1, act_at: to.actAt, ...(to.text ? { text: to.text } : {}), before_day: to.before ?? null, wall: wallRecord(to.wall), part_of_day: to.partOfDay ?? null, deferred_until: null,
-      changed_at: s.at, changed_from: scheduleJson({ dueDay: r.due_day, dueAt: r.due_at, timed: r.timed === 1, dated: r.dated === 1 }), proposal: null, revision: r.revision + 1,
+      changed_at: s.at, changed_from: scheduleJson(from ?? { dueDay: r.due_day, dueAt: r.due_at, timed: r.timed === 1, dated: r.dated === 1 }), proposal: null, revision: r.revision + 1,
     });
   });
   s.promises.forEach(({ to }, i) => {

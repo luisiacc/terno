@@ -2,6 +2,7 @@ import { ANSWERED_KINDS, datedGroup, datedGroupAt, dayKeyOf, displayBucket, prom
 import type { FollowupRow } from "./followups";
 import type { PartOfDay } from "./part-of-day";
 import { addressKey } from "./people";
+import { mailDay } from "./schedule";
 import { normalizeText } from "./text";
 import { sortInDay, sortToday, waitsOnYou, type TodayAlso, type TodayCounts, type TodayPart, type TodayWhy } from "./today";
 import { clockHolds, refKey, reminderRowId, splitZoneNote, statedClock, waitingRowId, type FeedRowId, type ItemRef, type ItemSeen } from "./today-items";
@@ -158,13 +159,14 @@ export function withMembersDetails(text: string, others: readonly DatedRow[]): s
 
 function datedWhy(row: DatedRow, missed: boolean, early: boolean, members: ItemRef[], others: readonly DatedRow[] = []): TodayWhy {
   const split = wordsOf(row);
+  const mail = mailDay(row);
   return {
     kind: "dated",
     text: others.length ? withMembersDetails(split.text, others) : split.text,
     dueAt: row.dueAt,
     came: row.arrivedAt,
     ...(missed ? { missed } : {}),
-    item: { id: row.id, revision: row.revision, kind: row.kind, dueDay: row.dueDay, timed: row.timed, dated: row.dated, ...(early ? { early } : {}), ...(split.note ? { note: split.note } : {}), ...(row.before ? { before: row.before } : {}), ...(row.timed && row.wall?.place ? { travel: { day: row.wall.day, time: row.wall.time, place: row.wall.place } } : {}), ...(!row.timed && row.partOfDay ? { part: row.partOfDay } : {}) },
+    item: { id: row.id, revision: row.revision, kind: row.kind, dueDay: row.dueDay, timed: row.timed, dated: row.dated, ...(early ? { early } : {}), ...(split.note ? { note: split.note } : {}), ...(row.before ? { before: row.before } : {}), ...(row.timed && row.wall?.place ? { travel: { day: row.wall.day, time: row.wall.time, place: row.wall.place } } : {}), ...(!row.timed && row.partOfDay ? { part: row.partOfDay } : {}), ...(mail ? { mailDay: mail } : {}) },
     ...(members.length > 1 ? { members } : {}),
   };
 }

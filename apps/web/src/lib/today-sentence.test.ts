@@ -236,6 +236,26 @@ describe("plan 210 (iteration 2): one time per row, a request shown early, a bro
     expect(todayWhen(tomorrow, NOW, "today").text).toBe("3:00 PM\u00a0·\u00a0needed tomorrow");
   });
 
+  it("round 17: a deadline moved with Change… says the mail's own day beside the user's, in each of the column's forms, en and es", () => {
+    const moved = (day: number, mailDay: string, o: { early?: boolean; timed?: boolean; missed?: boolean } = {}) =>
+      item({ kind: "dated", text: "x", dueAt: o.timed ? at(day, 10) : at(day, 9), missed: o.missed, item: { id: 1, revision: 0, kind: "pay", dueDay: `2026-11-${String(day).padStart(2, "0")}`, timed: !!o.timed, dated: true, mailDay, ...(o.early ? { early: true } : {}) } });
+    // Diego's taxes, payable until Tue 17, moved to Mon 16
+    expect(todayWhen(moved(16, "2026-11-17"), NOW, "day:2026-11-16")).toEqual({ text: "Mon · due Tue", tone: "later" });
+    // Margaret's prescription moved to today 10:00 from tomorrow; Jordan's numbers among the people, "by Wed" from Thu
+    expect(todayWhen(moved(13, "2026-11-14", { timed: true }), NOW, "today").text).toBe("10:00 AM · due tomorrow");
+    expect(todayWhen(moved(18, "2026-11-19", { early: true }), NOW, "waiting").text).toBe("by Wed · due Thu");
+    // moved later than the mail's day: on the mail's day "due today", after it "was due"
+    expect(todayWhen(moved(17, "2026-11-13"), NOW, "day:2026-11-17").text).toBe("Tue · due today");
+    expect(todayWhen(moved(17, "2026-11-12"), NOW, "day:2026-11-17").text).toBe("Tue · was due yesterday");
+    expect(todayWhen(moved(17, "2026-11-10"), NOW, "day:2026-11-17").text).toBe("Tue · was due Tue 10");
+    // the user's day gone, the mail's still ahead: Missed says both
+    expect(todayWhen(moved(12, "2026-11-17", { missed: true }), NOW, "missed")).toEqual({ text: "Was due yesterday · due Tue", tone: "missed" });
+    setLocale("es", es);
+    expect(todayWhen(moved(16, "2026-11-17"), NOW, "day:2026-11-16").text).toBe("lun · vence el mar");
+    expect(todayWhen(moved(13, "2026-11-14", { timed: true }), NOW, "today").text).toBe("10:00 · vence mañana");
+    expect(todayWhen(moved(17, "2026-11-12"), NOW, "day:2026-11-17").text).toBe("mar · venció ayer");
+  });
+
   it("plan 210 (iteration 4, revision 11): a day the mail asked for it before is said as the mail said it, never the day it sorts under", () => {
     // Jordan's SOC 2 report: Owen moved it "before then", the Monday, after Tuesday the 10th passed
     const owen = item({ kind: "promise", text: "x", dueAt: at(15, 9), promise: { id: 2, revision: 0, dated: true, said: at(10, 9), needed: at(15, 9), neededBefore: "2026-11-16" } });

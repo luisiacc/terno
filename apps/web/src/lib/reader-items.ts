@@ -1,4 +1,4 @@
-import { dayKeyOf, dueCutoff, promiseDay, refKey, withNeeds, withoutAnswered, type DatedRow, type FollowupRow, type ItemRef, type NeedingPromise } from "@terno/core";
+import { dayKeyOf, dueCutoff, mailDay, promiseDay, refKey, withNeeds, withoutAnswered, type DatedRow, type FollowupRow, type ItemRef, type NeedingPromise } from "@terno/core";
 import { t } from "@terno/i18n";
 import { conversationItem, datedLine, datedText, promiseWhen } from "~/lib/dated";
 import { followupLine } from "~/lib/followups";
@@ -102,7 +102,7 @@ export function readerItems({ dated, followups, target, chosen, now }: ReaderInp
 
 /** The line's words: "Due Friday · Pay the electricity bill", "Due today · You told Jess you'd send the script". */
 export function readerLine(item: ReaderItem, now = Date.now()): string {
-  if (item.source === "dated") return item.open ? datedLine(item.row, item.missed, now) : datedText(item.row);
+  if (item.source === "dated") return item.open ? datedLine({ ...item.row, mailDay: mailDay(item.row) }, item.missed, now) : datedText(item.row);
   const words = followupLine(item.row, now, { short: true });
   const when = item.open ? promiseLineWhen(item.row, item.missed, now) : null;
   return when ? t("today.why.line", { when, text: words }) : words;

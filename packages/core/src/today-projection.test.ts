@@ -79,6 +79,17 @@ describe("a row per item", () => {
     expect(projectToday(facts({ dated: [due], waiting: waiting.slice(0, 1) })).rows.map((r) => r.id)).toEqual([`dated:${due.id}`]);
   });
 
+  it("round 17: a deadline moved with Change… carries the mail's own day to its row; on that day, never changed, a plan or an ask, none", () => {
+    const changedFrom = { dueDay: "2026-11-24", dueAt: at(2026, 11, 24, 9), timed: false, dated: true };
+    const taxes = dated("pay", "2026-11-23", { changedAt: NOW - 1, changedFrom });
+    const item = (r: DatedRow) => projectToday(facts({ dated: [r] })).rows[0]!.why.item!;
+    expect(item(taxes).mailDay).toBe("2026-11-24");
+    expect(item({ ...taxes, changedFrom: { ...changedFrom, dueDay: "2026-11-23" } })).not.toHaveProperty("mailDay");
+    expect(item({ ...taxes, changedAt: null })).not.toHaveProperty("mailDay");
+    expect(item({ ...taxes, kind: "event" })).not.toHaveProperty("mailDay");
+    expect(item({ ...taxes, changedFrom: { ...changedFrom, dated: false } })).not.toHaveProperty("mailDay");
+  });
+
   it("an item in Spam or Trash has no row, and isn't counted", () => {
     const bill = dated("pay", "2026-11-18", { threadId: 9 });
     const { rows, counts } = projectToday(facts({ dated: [bill], live: (id) => id !== 9 }));

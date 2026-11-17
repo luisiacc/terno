@@ -46,11 +46,11 @@ export function scheduleItems(db: Db, c: ScheduleChanges): ScheduleSnapshots | n
     const dated = c.dated.map((x) => db.get<DatedRaw>("SELECT * FROM dated_items WHERE id = ? AND revision = ? AND state = 'open'", x.id, x.revision));
     const promises = c.promises.map((x) => db.get<PromiseRaw>("SELECT * FROM followups WHERE id = ? AND revision = ? AND kind = 'promise' AND state IN ('open','due')", x.id, x.revision));
     if (dated.some((r) => !r) || promises.some((r) => !r)) return null;
-    c.dated.forEach(({ id, to }, i) => {
+    c.dated.forEach(({ id, to, from }, i) => {
       const r = dated[i]!;
       db.run(
         "UPDATE dated_items SET due_day = ?, due_at = ?, timed = ?, dated = 1, act_at = ?, text = coalesce(?, text), before_day = ?, wall = ?, part_of_day = ?, deferred_until = NULL, changed_at = ?, changed_from = ?, proposal = NULL, revision = revision + 1 WHERE id = ?",
-        to.dueDay, to.dueAt, to.timed ? 1 : 0, to.actAt, to.text ?? null, to.before ?? null, wallJson(to.wall), to.partOfDay ?? null, c.at, scheduleJson({ dueDay: r.due_day, dueAt: r.due_at, timed: r.timed === 1, dated: r.dated === 1 }), id,
+        to.dueDay, to.dueAt, to.timed ? 1 : 0, to.actAt, to.text ?? null, to.before ?? null, wallJson(to.wall), to.partOfDay ?? null, c.at, scheduleJson(from ?? { dueDay: r.due_day, dueAt: r.due_at, timed: r.timed === 1, dated: r.dated === 1 }), id,
       );
     });
     c.promises.forEach(({ id, to }, i) => {

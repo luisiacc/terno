@@ -2712,6 +2712,12 @@ It contains none of your mail, contacts, settings or keys.
   // plan 210 (iteration 4, revision 11): a day the mail asked for it before, said as it said it
   "whatMatters.neededBefore": "{when}\u00a0·\u00a0needed before {day}",
   "whatMatters.neededBeforeTomorrow": "{when}\u00a0·\u00a0needed before tomorrow",
+  // round 17: a deadline moved with Change… says the mail's own day after the user's
+  "whatMatters.mailDue": "{when}\u00a0·\u00a0due {day}",
+  "whatMatters.mailDueToday": "{when}\u00a0·\u00a0due today",
+  "whatMatters.mailDueTomorrow": "{when}\u00a0·\u00a0due tomorrow",
+  "whatMatters.mailWasDue": "{when}\u00a0·\u00a0was due {day}",
+  "whatMatters.mailWasDueYesterday": "{when}\u00a0·\u00a0was due yesterday",
   "whatMatters.before": "before {day}",
   "whatMatters.beforeTomorrow": "before tomorrow",
   // plan 210 (iteration 4, revision 10): an event away from the reader, in the place's time: "Mon 4:00 PM Austin"

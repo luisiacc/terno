@@ -69,6 +69,16 @@ describe("the reader's one line (plan 210, iteration 3, Codex revision 10)", () 
     expect(keys(read({ followups: [owed] }))).toEqual(["dated:2", "dated:1"]);
   });
 
+  it("round 17: a deadline moved with Change… says the mail's own day after the user's, as the feed's column does; a plan moved says its day alone", () => {
+    const moved = dated({ id: 1, kind: "pay", text: "Pay the taxes", dueDay: "2026-10-26", dueAt: at(26), changedAt: NOW - 1, changedFrom: { dueDay: "2026-10-27", dueAt: at(27), timed: false, dated: true } });
+    expect(readerLine(read({ dated: [moved], target: [{ source: "dated", id: 1 }] }).top!, NOW)).toBe("Due Monday · due Tue · Pay the taxes");
+    // the mail's own day, or never changed: as before
+    const same = { ...moved, changedFrom: { ...moved.changedFrom!, dueDay: "2026-10-26" } };
+    expect(readerLine(read({ dated: [same], target: [{ source: "dated", id: 1 }] }).top!, NOW)).toBe("Due Monday · Pay the taxes");
+    const party = dated({ id: 1, kind: "event", text: "Party", dueDay: "2026-10-26", dueAt: at(26), changedAt: NOW - 1, changedFrom: moved.changedFrom });
+    expect(readerLine(read({ dated: [party], target: [{ source: "dated", id: 1 }] }).top!, NOW)).toBe("Monday · Party");
+  });
+
   it("a history line's closed item leads, saying it's closed; the open ones are under it; closed ones never otherwise", () => {
     const done = dated({ id: 5, text: "Pay the electricity bill", state: "done", closedAt: at(21) });
     const r = read({ dated: [draft, board, done], target: [{ source: "dated", id: 5 }] });

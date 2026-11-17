@@ -12,7 +12,17 @@ import type { DatedFinish, DatedSource } from "./dated";
 export interface ScheduleChanges {
   /** the act's moment: `changedAt` */
   at: number;
-  dated: readonly { id: number; revision: number; to: { dueDay: string; dueAt: number; timed: boolean; actAt: number; /** an accepted proposal's new words */ text?: string; /** the day asked before and the mail's clock: an accepted proposal's; absent, none */ before?: string | null; wall?: DatedWall | null; /** plan 210 (iteration 5): the part of its day, an accepted proposal's; absent, none (a change of the user's is a day) */ partOfDay?: PartOfDay | null } }[];
+  dated: readonly {
+    id: number;
+    revision: number;
+    to: { dueDay: string; dueAt: number; timed: boolean; actAt: number; /** an accepted proposal's new words */ text?: string; /** the day asked before and the mail's clock: an accepted proposal's; absent, none */ before?: string | null; wall?: DatedWall | null; /** plan 210 (iteration 5): the part of its day, an accepted proposal's; absent, none (a change of the user's is a day) */ partOfDay?: PartOfDay | null };
+    /**
+     * Round 17 (a row moved with Change… says the mail's own day beside the user's, "Mon · due Fri"): the mail's schedule,
+     * kept as `changed_from` (the backend's: the row's own at its first change, its `changedFrom` at a later one, an
+     * accepted proposal's day once taken). Absent: its schedule as it was.
+     */
+    from?: ItemSchedule;
+  }[];
   promises: readonly { id: number; revision: number; to: { dueAt: number; timed: boolean; /** open when its new moment is ahead, else due */ state: FollowupState; /** an accepted proposal's day asked before; absent, none */ before?: string | null; /** plan 210 (iteration 5): an accepted proposal's part of its day; absent, none */ partOfDay?: PartOfDay | null } }[];
 }
 

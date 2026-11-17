@@ -1,4 +1,4 @@
-import { readWall, type DatedWall } from "./dated";
+import { datedGroup, readWall, type DatedKind, type DatedWall } from "./dated";
 import { isPartOfDay, type PartOfDay } from "./part-of-day";
 
 /**
@@ -53,6 +53,18 @@ const record = (json: string | null | undefined): Record<string, unknown> | null
 
 const isDay = (v: unknown): v is string => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v);
 const isMoment = (v: unknown): v is number => typeof v === "number" && Number.isSafeInteger(v);
+
+/**
+ * Round 17 (`CHANGED-DAY-READS-AS-DEADLINE`: Diego's taxes payable until Tue 17 moved to Mon, Jordan's numbers due Thu moved
+ * to Wed): the day the mail gave a deadline the user moved to another with Change… (`changedFrom`, the mail's schedule), which
+ * its row and line say beside the user's ("Mon · due Tue"); null on the mail's own day, never changed, or what isn't a
+ * deadline (an ask has no day; a plan's day is when it happens, the user's once moved).
+ */
+export function mailDay(r: { kind: DatedKind; dueDay: string; changedAt?: number | null; changedFrom?: ItemSchedule | null }): string | null {
+  const from = r.changedAt != null ? r.changedFrom : null;
+  if (!from?.dated || from.dueDay === r.dueDay || r.kind === "ask" || datedGroup(r.kind) === "plans") return null;
+  return from.dueDay;
+}
 
 export const scheduleJson = (s: ItemSchedule): string => JSON.stringify({ dueDay: s.dueDay, dueAt: s.dueAt, timed: s.timed, dated: s.dated });
 

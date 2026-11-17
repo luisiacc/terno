@@ -132,6 +132,12 @@ test("plan 210 (iteration 4): Change… from the row's menu, the reader's line a
     await expect(snack(page)).toContainText("Pay the Lumen invoice");
     await expect.poll(async () => (await itemOf(lumen)).dueDay).toBe(dayKey(5));
     expect(await itemOf(lumen)).toMatchObject({ dueAt: moment(5, 16), timed: true, revision: before.revision + 1 });
+    // round 17: the row says the mail's own day beside the user's, as a promise says the day it's needed
+    await reach(page, "Pay the Lumen invoice");
+    await expect(openLine(page, "Pay the Lumen invoice").getByTestId("wm-when")).toHaveText(/ 4:00 PM\u00a0·\u00a0due tomorrow$/);
+    await openLine(page, "Pay the Lumen invoice").evaluate((el) => el.scrollIntoView({ block: "center" }));
+    await shot(page, "change-mail-day-en");
+    await shot(page, "change-mail-day-row-en", openLine(page, "Pay the Lumen invoice"));
     // Earlier: "Still open · changed today" (round 15's second morning: a change is no finish), the item still open above
     await reach(page, "Pay the Lumen invoice", historyLine);
     await expect(historyLine(page, "Pay the Lumen invoice")).toContainText("Still open · changed today");
@@ -185,12 +191,17 @@ test("plan 210 (iteration 4): Change… from the row's menu, the reader's line a
     await expect.poll(async () => (await itemOf(slipThread)).dueDay).toBe(dayKey(6));
     expect((await itemOf(slipThread)).proposal).toBeNull();
     await expect(page.getByTestId("thread-dated-proposal")).toHaveCount(0);
+    // round 17: Elena's day taken is the mail's own: the row says it alone
+    const slipWhen = openLine(page, "Return the signed field trip slip").getByTestId("wm-when");
+    await expect(slipWhen).not.toContainText("due");
     // its Undo: back on the user's day, the proposal offered again
     await focusList(page);
     await page.keyboard.press("z");
     await expect.poll(async () => (await itemOf(slipThread)).dueDay).toBe(dayKey(4));
     expect((await itemOf(slipThread)).proposal).toMatchObject({ dueDay: dayKey(6) });
     await expect(page.getByTestId("thread-dated-proposal")).toBeVisible();
+    // back on the user's day: the mail's own (the first mail's, day 3) beside it again
+    await expect(slipWhen).toHaveText(/\u00a0·\u00a0due \S+$/);
   });
 
   await scenario("the palette: Change day and time… for the open item opens the same form; Esc leaves it as it was", async () => {
@@ -214,6 +225,10 @@ test("plan 210 (iteration 4): Change… from the row's menu, the reader's line a
     await expect(proposal.getByTestId("thread-dated-proposal-text")).toHaveText(/^Elena ahora dice .+$/);
     await expect(proposal.getByTestId("thread-dated-proposal-use")).toHaveText("Usar");
     await expect(page.getByTestId("thread-dated-change")).toHaveText("Cambiar…");
+    await expect(openLine(page, "Return the signed field trip slip").getByTestId("wm-when")).toHaveText(/\u00a0·\u00a0vence el \S+$/);
+    await openLine(page, "Return the signed field trip slip").evaluate((el) => el.scrollIntoView({ block: "center" }));
+    await shot(page, "change-mail-day-es");
+    await shot(page, "change-mail-day-row-es", openLine(page, "Return the signed field trip slip"));
     await shot(page, "change-proposal-es", page.getByTestId("thread-dated"));
     await page.getByTestId("thread-dated-change").click();
     await expect(page.getByTestId("thread-dated-change-timed")).toHaveText("A una hora");

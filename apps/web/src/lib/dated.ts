@@ -6,7 +6,7 @@ import type { LeftRows } from "~/lib/actions";
 import { muteOfferAction } from "~/lib/dated-mutes";
 import { registerUndo, snack, type SnackAction } from "~/lib/snack";
 import { client } from "~/rpc/connection";
-import { alertSays, attendsLine, placeClock } from "~/lib/today-sentence";
+import { alertSays, attendsLine, placeClock, withMailDay } from "~/lib/today-sentence";
 import { datedDay, dueShort, partDay, partInSentence, reminderTime } from "~/lib/when";
 
 /** Plan 204: a dated item as Today's row carries it, what Done and Later act on. */
@@ -29,6 +29,8 @@ export interface DatedFacts {
    */
   wall?: DatedWall | null;
   travel?: { day: string; time: string; place: string } | null;
+  /** round 17 (core's `mailDay`): the mail's own day for a deadline the user moved with Change…, said after theirs */
+  mailDay?: string | null;
 }
 
 /**
@@ -91,13 +93,13 @@ export function datedWhen(o: Omit<DatedFacts, "text">, missed: boolean, now = Da
   const place = placeWhen(o);
   const time = place ? place.time : o.timed ? reminderTime(o.dueAt) : null;
   const day = place ? place.day : dayOf(o);
-  if (missed) return wasDue(day, now, time, o.partOfDay);
+  if (missed) return withMailDay(wasDue(day, now, time, o.partOfDay), o.mailDay, now);
   if (datedGroup(o.kind) === "plans") {
     const d = datedDay(day, now);
     const when = d.near === "today" ? t("today.when.today") : d.near === "tomorrow" ? t("today.when.tomorrow") : capital(d.text);
     return time ? `${when} ${time}` : when;
   }
-  return dueOn(day, time, now, o.partOfDay);
+  return withMailDay(dueOn(day, time, now, o.partOfDay), o.mailDay, now);
 }
 
 /**

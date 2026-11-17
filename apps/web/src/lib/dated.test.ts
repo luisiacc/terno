@@ -231,6 +231,12 @@ describe("the conversation's line keeps the whole wording (plan 204, after the s
     expect(taskOf({ ...why, item: { ...item, dated: true } }, now)).toMatchObject({ when: "Tomorrow", due: "Due tomorrow" });
     expect(taskOf({ ...why, item: { ...item, dated: true } }, now)!.noDay).toBeUndefined();
   });
+  it("round 17: a deadline moved with Change… is heard with the mail's own day, as the column shows it", async () => {
+    const { taskOf } = await import("./dated");
+    const now = new Date(2026, 10, 12, 10, 0).getTime();
+    const item = { id: 3, revision: 0, kind: "pay" as const, dueDay: "2026-11-16", timed: false, dated: true, mailDay: "2026-11-17" };
+    expect(taskOf({ kind: "dated", text: "Pay the taxes", dueAt: new Date(2026, 10, 16, 9).getTime(), item }, now)).toMatchObject({ when: "Mon", due: "Due Monday · due Tue" });
+  });
   it("iteration 5's code review: a promise's task carries the part of its day, for Remind me's limit", async () => {
     const { taskOf } = await import("./dated");
     const now = new Date(2026, 10, 12, 10, 0).getTime();

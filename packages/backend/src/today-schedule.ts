@@ -1,4 +1,4 @@
-import { datedTiming, dayEnd, localDay, REMIND_MORNING, type DatedRow, type FollowupRow, type ItemSeen, type ScheduleProposal } from "@terno/core";
+import { datedTiming, dayEnd, localDay, REMIND_MORNING, type DatedRow, type FollowupRow, type ItemSchedule, type ItemSeen, type ScheduleProposal } from "@terno/core";
 import { RpcError } from "@terno/core/rpc";
 import { L } from "@terno/i18n";
 import type { ScheduleChanges } from "@terno/store";
@@ -30,6 +30,13 @@ function momentOf(day: string, time: string | null): number {
   return d.getTime();
 }
 
+/**
+ * Round 17 (Diego's taxes, Jordan's numbers, Margaret's prescription, Priya's receipts): the schedule the mail gave a dated
+ * item, which its row says beside the user's day ("Mon · due Fri"): its own until the user first changes it, its
+ * `changedFrom` after (a second change never makes the first one's day the mail's); an accepted proposal's is the mail's.
+ */
+const mailSchedule = (r: DatedRow): ItemSchedule => (r.changedAt != null && r.changedFrom ? r.changedFrom : { dueDay: r.dueDay, dueAt: r.dueAt, timed: r.timed, dated: r.dated });
+
 const stale = (source: ItemSeen["source"]) => new RpcError("STALE", L(source === "promise" ? "errors.followups.changed" : "errors.dated.changed"));
 
 /**
@@ -60,7 +67,8 @@ export function scheduleChanges(seen: ItemSeen, named: DatedRow | FollowupRow, m
     // the named one as it was seen; the others while they're open, and never an ask (it has no day to change)
     if (!mine && (r.state !== "open" || r.kind === "ask")) continue;
     if (mine && accepted) {
-      dated.push({ id: r.id, revision: seen.revision, to: { dueDay: accepted.dueDay, dueAt: accepted.dueAt, timed: accepted.timed, actAt: accepted.actAt ?? r.actAt, ...(accepted.text ? { text: accepted.text } : {}), before: accepted.before ?? null, wall: accepted.wall ?? null, partOfDay: accepted.partOfDay ?? null } });
+      const to = { dueDay: accepted.dueDay, dueAt: accepted.dueAt, timed: accepted.timed };
+      dated.push({ id: r.id, revision: seen.revision, to: { ...to, actAt: accepted.actAt ?? r.actAt, ...(accepted.text ? { text: accepted.text } : {}), before: accepted.before ?? null, wall: accepted.wall ?? null, partOfDay: accepted.partOfDay ?? null }, from: { ...to, dated: true } });
       continue;
     }
     // as a mail arriving now would place it: shown within its kind's lead of the new day, never more than a year ahead
@@ -71,7 +79,8 @@ export function scheduleChanges(seen: ItemSeen, named: DatedRow | FollowupRow, m
     }
     // the day asked before, the mail's clock and the part of its day (iteration 5) were the mail's words about its day: the
     // user's own day has none
-    dated.push({ id: r.id, revision: mine ? seen.revision : r.revision, to: { dueDay: timing.dueDay, dueAt: timing.dueAt, timed: timing.timed, actAt: timing.actAt, before: null, wall: null, partOfDay: null } });
+    const to = { dueDay: timing.dueDay, dueAt: timing.dueAt, timed: timing.timed, actAt: timing.actAt, before: null, wall: null, partOfDay: null };
+    dated.push({ id: r.id, revision: mine ? seen.revision : r.revision, to, from: accepted ? { dueDay: to.dueDay, dueAt: to.dueAt, timed: to.timed, dated: true } : mailSchedule(r) });
   }
   const promises: ScheduleChanges["promises"][number][] = [];
   for (const r of members.promises) {
