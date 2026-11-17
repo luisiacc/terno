@@ -205,7 +205,7 @@ export function renewedPromise(p: FollowupWrite, open: Iterable<FollowupRow>, o:
   return undefined;
 }
 
-export function checkSentMail(result: SentMailResult, input: { ownText: string; recipients: readonly { label: string; name: string; email: string }[]; open: ReadonlyMap<string, FollowupRow>; requests?: ReadonlyMap<string, Pick<DatedRow, "id" | "revision">>; sentAt: number; nudgeAfterDays: number }): { rows: FollowupWrite[]; kept: { id: number; revision: number }[]; verdicts: Verdict[] } {
+export function checkSentMail(result: SentMailResult, input: { ownText: string; recipients: readonly { label: string; name: string; email: string }[]; open: ReadonlyMap<string, FollowupRow>; requests?: ReadonlyMap<string, Pick<DatedRow, "id" | "revision"> & Partial<Pick<DatedRow, "senderKey">>>; sentAt: number; nudgeAfterDays: number }): { rows: FollowupWrite[]; kept: { id: number; revision: number }[]; verdicts: Verdict[] } {
   const own = norm(input.ownText);
   const byLabel = new Map(input.recipients.map((r) => [r.label, r]));
   // plan 161, real models: Haiku names who it means ("Arjun Ramírez") where the prompt asks for a label ("r1"). A name
@@ -258,6 +258,22 @@ export function checkSentMail(result: SentMailResult, input: { ownText: string; 
     if (promise) return a.verdict === "holding" ? [] : [{ request: shown, verdict: "promise" as const, item: promise.item }];
     return a.verdict === "fulfilled" ? [{ request: shown, verdict: "fulfilled" as const }] : [];
   });
+  /**
+   * Plan 210 (the second morning, Priya's offsite): a reply that holds the question ("My gut says Sonoma too, but let me
+   * check … I'll get back to you") never does it, whatever part of it the model quoted as done: a "done" on a request from
+   * the person this reply's holding promise is to, a promise no other verdict holds a request with, is that holding. Two
+   * requests from them, one done and one held by its own verdict, stay as the model said.
+   */
+  const holding = rows.filter((r) => r.kind === "promise" && r.quote && onlyHolds(r.quote) && !verdicts.some((v) => v.verdict !== "fulfilled" && v.item === r.item));
+  const senders = new Map([...(input.requests?.values() ?? [])].map((r) => [r.id, r.senderKey]));
+  for (const [i, v] of verdicts.entries()) {
+    if (v.verdict !== "fulfilled") continue;
+    const from = senders.get(v.request.id);
+    const held = holding.find((r) => from === undefined || (r.personEmail != null && addressKey(r.personEmail) === from));
+    if (!held) continue;
+    verdicts[i] = { request: v.request, verdict: "holding", item: held.item };
+    holding.splice(holding.indexOf(held), 1);
+  }
   // plan 210 (the second morning, Diego's adjustments): a request this reply does is done, and so is the promise of yours
   // that answers it (shown above): it was to do what the request asked, never a Missed row beside a settled request
   for (const v of verdicts) {

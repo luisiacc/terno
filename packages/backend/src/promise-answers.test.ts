@@ -170,6 +170,22 @@ describe("a reply's checked verdict (the Codex review of iteration 3, revision 1
     expect(one("holding").kept).toEqual([]);
   });
 
+  it("the second morning (Priya's offsite): a reply that holds the question never does it, whatever part of it the model quoted as done", () => {
+    const ownText = "D,\n\nMy gut says Sonoma too, but let me check the Q1 cash plan with Rae and the January board calendar before Jess holds anything. I'll get back to you.\n\nP";
+    const daniel = { label: "r1", name: "Daniel Okafor", email: "daniel@lumora.io" };
+    const getBack = { text: "check the Q1 cash plan with Rae and get back to Daniel", quote: "let me check the Q1 cash plan with Rae and the January board calendar before Jess holds anything. I'll get back to you.", to: "r1", due: null };
+    const input = (requests: [string, { id: number; revision: number; senderKey: string }][]) => ({ ...base, ownText, recipients: [daniel], requests: new Map(requests) });
+    const q1 = ["q1", { id: 7, revision: 2, senderKey: "daniel@lumora.io" }] as [string, { id: number; revision: number; senderKey: string }];
+    // the panel's answer: "fulfilled" on "My gut says Sonoma too": held by the promise, not done
+    expect(checkSentMail({ promises: [getBack], expectsReply: false, awaiting: [], kept: [], answers: [{ label: "q1", verdict: "fulfilled", evidence: "My gut says Sonoma too" }] }, input([q1])).verdicts).toEqual([{ request: { id: 7, revision: 2 }, verdict: "holding", item: 0 }]);
+    // someone else's request is theirs to answer: done stays done
+    expect(checkSentMail({ promises: [getBack], expectsReply: false, awaiting: [], kept: [], answers: [{ label: "q1", verdict: "fulfilled", evidence: "My gut says Sonoma too" }] }, input([["q1", { id: 7, revision: 2, senderKey: "rae@lumora.io" }]])).verdicts).toEqual([{ request: { id: 7, revision: 2 }, verdict: "fulfilled" }]);
+    // two of Daniel's: one done, the other held by its own verdict, as the model said
+    expect(checkSentMail({ promises: [getBack], expectsReply: false, awaiting: [], kept: [], answers: [{ label: "q1", verdict: "fulfilled", evidence: "My gut says Sonoma too" }, { label: "q2", verdict: "holding", evidence: "I'll get back to you" }] }, input([q1, ["q2", { id: 8, revision: 0, senderKey: "daniel@lumora.io" }]])).verdicts).toEqual([{ request: { id: 7, revision: 2 }, verdict: "fulfilled" }, { request: { id: 8, revision: 0 }, verdict: "holding", item: 0 }]);
+    // no promise that only holds: done is done
+    expect(checkSentMail({ promises: [], expectsReply: false, awaiting: [], kept: [], answers: [{ label: "q1", verdict: "fulfilled", evidence: "My gut says Sonoma too" }] }, input([q1])).verdicts).toEqual([{ request: { id: 7, revision: 2 }, verdict: "fulfilled" }]);
+  });
+
   it("a promise that only holds it holds it, whatever the model called it (iteration 4); a \"done\" that's a promise's words is that promise", () => {
     const ownText = "Let me check my calendar and get back to you. I'll send it Wednesday.";
     const holding = { text: "check and get back to Ms. Greer", quote: "Let me check my calendar and get back to you", to: "r1", due: null };
