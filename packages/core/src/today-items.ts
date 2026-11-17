@@ -37,9 +37,21 @@ export interface ItemSeen extends ItemRef {
 /**
  * An item's words ending in the mail's own time and zone, as the dated reader writes them (prompt v10): "(4:00 PM PT)",
  * "(18:00 hora de Ciudad de México)", "(5:00 PM Eastern)". Shared with `@terno/ai`, which keeps the note in step with a move.
+ * Round 19 (Sam's "(9 credits minimum; or lose full-time status and funding)", read as the clock "9" in the zone "…full-time…"):
+ * a note is a clock and a zone's name, never any words that hold "time": an abbreviation ("PT", "CET", "UTC+2"), a region's
+ * ("Eastern", "Pacific Time"), a name ending in "Time" ("Central European Time") or "hora"/"horario" and its place ("hora del
+ * centro"). A stake the reader wrote before it in the same bracket ("(late responses not considered; 5:00 PM Eastern)") is
+ * `stake`, and stays with the words.
  */
 export const ZONE_NOTE =
-  /\s*\((\d{1,2}(?::\d{2})?)(\s*[AaPp]\.?\s?[Mm]\.?)?\s+((?:[A-Z]{2,5}(?:[+-]\d{1,2})?)|(?:Eastern|Pacific|Central|Mountain|Atlantic)(?:\s+(?:Standard|Daylight))?(?:\s+[Tt]ime)?|[^()]*\b(?:[Tt]ime|hora|horario)\b[^()]*)\)\s*$/u;
+  /\s*\((?:(?<stake>[^()]*?)[;,]\s*)?(?<clock>\d{1,2}(?::\d{2})?)(?<meridiem>\s*[AaPp]\.?\s?[Mm]\.?)?\s+(?<zone>[A-Z]{2,5}(?:[+-]\d{1,2})?|(?:Eastern|Pacific|Central|Mountain|Atlantic)(?:\s+(?:Standard|Daylight))?(?:\s+[Tt]ime)?|(?:\p{Lu}[\p{L}.'’-]*\s+){1,3}[Tt]ime|(?:hora|horario)(?:\s+[^\s();,][^();,]*)?)\)\s*$/u;
+
+/** Words with a matched note taken off, a stake before it kept in its own bracket ("Submit the RFP (late responses not considered)"). */
+export const withoutZoneNote = (text: string, m: RegExpExecArray): string => {
+  const bare = text.slice(0, m.index).trimEnd();
+  const stake = m.groups?.stake?.trim();
+  return stake ? `${bare} (${stake})` : bare;
+};
 
 /**
  * Plan 210 (iteration 2, one time per row): an item's words and the mail's own time in its zone, apart. The row's when column
@@ -48,7 +60,8 @@ export const ZONE_NOTE =
 export function splitZoneNote(text: string): { text: string; note: string | null } {
   const m = ZONE_NOTE.exec(text);
   if (!m) return { text, note: null };
-  return { text: text.slice(0, m.index).trimEnd(), note: `${m[1]}${m[2] ?? ""} ${m[3]}`.replace(/\s+/gu, " ").trim() };
+  const g = m.groups!;
+  return { text: withoutZoneNote(text, m), note: `${g.clock}${g.meridiem ?? ""} ${g.zone}`.replace(/\s+/gu, " ").trim() };
 }
 
 /** Zones a promise's words may name that read one way only (IST, CST and the like don't): their places. */

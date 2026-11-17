@@ -490,6 +490,11 @@ describe("reading dates in mail you got (plan 204)", () => {
     // words without a zone note are left to the move, as before
     expect(read([{ ...call, text: "Blood test (12 hours fasting)" }], { moved: [move({})] }).moved[0]).toMatchObject({ text: null });
     expect(read([{ ...call, text: "Sofia's cleaning (reply C to confirm)" }], { moved: [move({})] }).moved[0]).toMatchObject({ text: null });
+    // round 19: a stake before the note in its bracket stays with the words, moved or dropped; a stake alone is no note
+    const rfp = { ...call, text: "Submit the RFP response (late responses not considered; 11:00 PM PT)" };
+    expect(read([rfp], { moved: [move({})] }).moved[0]).toMatchObject({ text: "Submit the RFP response (late responses not considered; 10:00 PM PT)" });
+    expect(read([rfp], { moved: [move({ time: "09:00", evidence: "let's do 9 AM your time" })] }).moved[0]).toMatchObject({ text: "Submit the RFP response (late responses not considered)" });
+    expect(read([{ ...call, text: "Register for Spring 2027 (9 credits minimum; or lose full-time status and funding)" }], { moved: [move({})] }).moved[0]).toMatchObject({ text: null });
   });
 
   describe("Codex code review of the seventh round, second pass", () => {

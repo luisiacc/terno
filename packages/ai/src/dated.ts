@@ -1,4 +1,4 @@
-import { DATED_ITEMS_MAX, DATED_KINDS, DATED_OPEN_SHOWN, saysDay, ZONE_NOTE, type DatedKind, type DatedWall } from "@terno/core";
+import { DATED_ITEMS_MAX, DATED_KINDS, DATED_OPEN_SHOWN, saysDay, withoutZoneNote, ZONE_NOTE, type DatedKind, type DatedWall } from "@terno/core";
 import { z } from "zod";
 import { CONSEQUENCE, heldStake, orphanedConsequence } from "./dated-stake";
 import type { StructuredTask } from "./ladder";
@@ -550,18 +550,18 @@ export function movedInZone(at: { due: string; time: string }, from: string, to:
 export function withZoneNote(text: string, time: string | null): string | null {
   const note = ZONE_NOTE.exec(text);
   if (!note) return null;
-  const bare = text.slice(0, note.index).trimEnd();
-  if (!time) return bare;
+  // round 19: a stake before the note in its bracket stays ("(late responses not considered; 5:00 PM Eastern)")
+  if (!time) return withoutZoneNote(text, note);
+  const { clock: was, meridiem, zone, stake } = note.groups!;
   const [h, m] = time.split(":").map(Number) as [number, number];
-  const meridiem = note[2];
   let clock: string;
   if (meridiem) {
     const pm = h >= 12;
     // the note's own way of writing it: "PM", "p. m.", "pm"
     const marker = meridiem.replace(/[ap]/i, (c) => (c === c.toUpperCase() ? (pm ? "P" : "A") : pm ? "p" : "a"));
-    clock = `${h % 12 || 12}${m || note[1]!.includes(":") ? `:${String(m).padStart(2, "0")}` : ""}${marker}`;
-  } else clock = `${note[1]!.startsWith("0") ? String(h).padStart(2, "0") : h}:${String(m).padStart(2, "0")}`;
-  return `${bare} (${clock} ${note[3]})`;
+    clock = `${h % 12 || 12}${m || was!.includes(":") ? `:${String(m).padStart(2, "0")}` : ""}${marker}`;
+  } else clock = `${was!.startsWith("0") ? String(h).padStart(2, "0") : h}:${String(m).padStart(2, "0")}`;
+  return `${text.slice(0, note.index).trimEnd()} (${stake?.trim() ? `${stake.trim()}; ` : ""}${clock} ${zone})`;
 }
 
 const WEEKDAY: Record<string, number> = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6, domingo: 0, lunes: 1, martes: 2, miercoles: 3, jueves: 4, viernes: 5, sabado: 6 };

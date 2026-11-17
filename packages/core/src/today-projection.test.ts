@@ -628,6 +628,25 @@ describe("words and clocks", () => {
     expect(splitZoneNote("Pay the bill ($54.20)")).toEqual({ text: "Pay the bill ($54.20)", note: null });
   });
 
+  it("round 19: a note is a clock and a zone's name, never a stake that holds a number and \"time\"; a stake before the clock stays with the words", () => {
+    // Sam's registration: "9" and "full-time" were read as the mail's clock and zone, and the when column printed the stake
+    const sam = "Register for Spring 2027 (9 credits minimum; or lose full-time status and funding)";
+    expect(splitZoneNote(sam)).toEqual({ text: sam, note: null });
+    expect(splitZoneNote("Renew the lease (12 months; part-time rate ends)")).toEqual({ text: "Renew the lease (12 months; part-time rate ends)", note: null });
+    expect(splitZoneNote("Inscribirte (12 créditos; o pierdes el tiempo completo)")).toEqual({ text: "Inscribirte (12 créditos; o pierdes el tiempo completo)", note: null });
+    expect(splitZoneNote("Trabajar (8 horas de turno)")).toEqual({ text: "Trabajar (8 horas de turno)", note: null });
+    // Jordan's RFP: the clock and zone go to the column, the stake stays in the sentence
+    expect(splitZoneNote("Submit the DLP RFP response (late responses not considered; 5:00 PM Eastern)")).toEqual({ text: "Submit the DLP RFP response (late responses not considered)", note: "5:00 PM Eastern" });
+    expect(splitZoneNote("Entregar la propuesta (o queda fuera; 17:00 hora del centro)")).toEqual({ text: "Entregar la propuesta (o queda fuera)", note: "17:00 hora del centro" });
+    // every zone's name still reads
+    expect(splitZoneNote("Call (17:00 CET)").note).toBe("17:00 CET");
+    expect(splitZoneNote("Call (10:00 UTC+2)").note).toBe("10:00 UTC+2");
+    expect(splitZoneNote("Call (9:00 AM Pacific Time)").note).toBe("9:00 AM Pacific Time");
+    expect(splitZoneNote("Call (9:00 Central European Time)").note).toBe("9:00 Central European Time");
+    expect(splitZoneNote("Call (4 p. m. Eastern Standard Time)").note).toBe("4 p. m. Eastern Standard Time");
+    expect(splitZoneNote("Llamada (18:00 hora de Ciudad de México)")).toEqual({ text: "Llamada", note: "18:00 hora de Ciudad de México" });
+  });
+
   it("a promise's stated clock, never a bare number", () => {
     expect(statedClock("call Marcus at 4:00 PM PT")).toMatchObject({ time: "16:00", zone: "America/Los_Angeles", note: "4:00 PM PT", rest: "call Marcus" });
     expect(statedClock("llamar a Ana a las 16:30")).toMatchObject({ time: "16:30", zone: null, rest: "llamar a Ana" });
