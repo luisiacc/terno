@@ -9,7 +9,7 @@ import { silenced, silenceOf, withoutMuted } from "./dated-mutes";
 import { secondLook } from "./dated-second-look";
 import { UI_LOCALE_KEY } from "./forwarding";
 import { handledItself } from "./dated-automatic";
-import { amountsOf, bareDayAhead, contextOf, giftCardScam, insideQuotes, quoteSpan, type Sentences, namesApart, namesItem, namingWords, negatedReceipt, norm, otherAmounts, otherIds, paragraphsOf, plainEvidence, replacesPlainly, sameObject, sameParcel, sameThing, saysReplaced, saysWhen, scamPressure, sentencesOf, sentencesWith, settlesKind, startClock, zeroNamesItem, zeroOnly } from "./dated-evidence";
+import { amountsOf, bareDayAhead, contextOf, giftCardScam, insideQuotes, quoteSpan, type Sentences, namesApart, namesItem, namingWords, negatedReceipt, norm, otherAmounts, otherIds, monthEndDay, paragraphsOf, plainEvidence, replacesPlainly, sameObject, sameParcel, sameThing, saysReplaced, saysWhen, scamPressure, sentencesOf, sentencesWith, settlesKind, startClock, zeroNamesItem, zeroOnly } from "./dated-evidence";
 import { mayRelay, relayedAsk, relays, type Relay } from "./dated-relay";
 import { untrustedSenders, withoutUntrusted } from "./suspicious-sender";
 import { sameEvent } from "./today-links";
@@ -974,9 +974,12 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     // over in a scan, a duplicate, past the bound): never "nothing asked"
     if (kind === "ask" || kind === "respond") asked = true;
     // plan 210 (iteration 3, revision 11): a deadline's bare day of the month read into the past is the next one
-    const due = item.due && (kind === "respond" || kind === "pay") ? bareDayAhead(item.due, contextOf(item.quote, paragraphs), dayKeyOf(input.arrivedAt)) : item.due;
-    // plan 210 (iteration 4, revision 11): the day it was asked before, rolled with a bare day read forward
-    const before = due && item.before ? askedBefore(due === item.due ? item.before : nextDay(due), due) : null;
+    const ahead = item.due && (kind === "respond" || kind === "pay") ? bareDayAhead(item.due, contextOf(item.quote, paragraphs), dayKeyOf(input.arrivedAt)) : item.due;
+    // round 18 (Jordan's Tallis call, Diego's cowork renewal): a month's end its quote says is that month's last day, never
+    // the day before it
+    const due = ahead ? monthEndDay(ahead, item.quote, dayKeyOf(input.arrivedAt)) : ahead;
+    // plan 210 (iteration 4, revision 11): the day it was asked before, rolled with a bare day read forward; none at a month's end
+    const before = due && item.before && due === ahead ? askedBefore(due === item.due ? item.before : nextDay(due), due) : null;
     // plan 210 (iteration 5, V2): an event its quote gives one start time for, given none, takes it (on the reader's clock);
     // never one the model put on a place's clock (travel: the quote's time is that place's)
     const time = item.time ?? (kind === "event" && due && !item.wall ? startOf(item.quote, due) : null);

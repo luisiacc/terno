@@ -447,6 +447,45 @@ export function bareDayAhead(due: string, said: string, arrived: string): string
   return due;
 }
 
+/** a month's name, en and es, as `norm` reads it, to its index (0: January) */
+const MONTH_INDEX: Readonly<Record<string, number>> = Object.fromEntries(
+  ["january february march april may june july august september october november december", "enero febrero marzo abril mayo junio julio agosto septiembre octubre noviembre diciembre"].flatMap((names) => names.split(" ").map((m, i) => [m, i] as const)).concat([["setiembre", 8]]),
+);
+const MONTH_NAME = Object.keys(MONTH_INDEX).join("|");
+/** which month: this one ("the month", "mes"), the next, or one by name */
+const WHICH_MONTH = String.raw`(next month|proximo mes|mes (?:que viene|proximo|siguiente)|month|mes|${MONTH_NAME})`;
+/**
+ * Round 18 (Jordan's Tallis call, "before end of the month"; Diego's cowork renewal, "vence a fin de mes, el lunes 30 de
+ * noviembre"): a month's end, as `norm` reads it, en and es: "(by/before) the end of the month", "end of November", "the
+ * month's end", "before the month is out", "the last day of the month", "a fin de mes", "fin del mes", "antes de que termine
+ * el mes". Never "finales de mes" (late in it, no day).
+ */
+const MONTH_END = new RegExp(
+  String.raw`\b(?:(?:end|last day) of (?:the |this )?|(?:fin|final|ultimo dia) del? (?:este |el )?|antes de que (?:se )?(?:termine|acabe|finalice) (?:el |este )?)${WHICH_MONTH}\b|\b(?:the |this )?${WHICH_MONTH} s end\b|\b${WHICH_MONTH} end\b|\bbefore (?:the |this )?${WHICH_MONTH} (?:ends|is out|is over)\b`,
+  "gu",
+);
+
+/**
+ * Round 18: a deadline the mail states as a month's end is that month's last day. A reading that gave the day before it
+ * (the prompt's "before a day is the day before", applied to "before end of the month") is moved to the last day, when its
+ * quote says that month's end and never the day it gave. The month: the one named, the next ("end of next month"), or the
+ * mail's own. Anything else is left as it came. `arrived`: the mail's own day, YYYY-MM-DD.
+ */
+export function monthEndDay(due: string, quote: string, arrived: string): string {
+  const d = /^(\d{4})-(\d{2})-(\d{2})$/u.exec(due);
+  const a = /^(\d{4})-(\d{2})$/u.exec(arrived.slice(0, 7));
+  if (!d || !a || saysDay(quote, due, { weekdays: false })) return due;
+  for (const m of norm(quote).matchAll(MONTH_END)) {
+    const which = m.slice(1).find((x) => x !== undefined)!;
+    const [year, month] = [Number(a[1]), Number(a[2]) - 1];
+    const named = MONTH_INDEX[which];
+    const target = named === undefined ? month + (/^(?:next|proximo)|que viene|proximo|siguiente/u.test(which) ? 1 : 0) : named < month ? named + 12 : named;
+    // the day before the target month's last is the one corrected
+    if (dayOf(year, target + 1, -1) === due) return dayOf(year, target + 1, 0);
+  }
+  return due;
+}
+
 /**
  * The Codex code review of v11 (point 3): a move's evidence, in its paragraph, says the day it moves to ("Friday at the latest
  * works", "moved to the 24th", "meets Monday the 16th… before then", a day either side for "before" and another zone), or,

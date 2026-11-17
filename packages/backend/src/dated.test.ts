@@ -3472,3 +3472,32 @@ describe("round 16 (Priya's board meeting): one occasion read twice moves togeth
     expect(read(new Map([["o5", own], ["o6", dinner]]))).toEqual([]);
   });
 });
+
+describe("round 18's faults", () => {
+  const person = (text: string, o: { arrivedAt?: number; reader?: string; from?: string } = {}) => ({ text, subject: "Re: hola", arrivedAt: o.arrivedAt ?? NOW, open: new Map<string, DatedRow>(), fromScan: false, now: o.arrivedAt ?? NOW, sender: { person: true }, reader: { name: o.reader ?? "Jordan Ellis", addressed: "to" as const }, from: o.from ?? "Nina Alvarez" });
+  const days = (r: ReturnType<typeof checkDates>) => r.rows.map((x) => x.dueDay);
+
+  it("a month's end the mail states is that month's last day, never the day before it (Jordan's Tallis call, Diego's renewal; en, es)", () => {
+    const TALLIS = "Jordan,\n\nHeads up — Tallis is wobbling. Usage is down 38% since September and their renewal ($410k ARR) is December 15.\n\nI think we need an exec-to-exec call (our CRO with their new CIO) before end of the month, otherwise procurement will treat this as a new evaluation. Can you set that up? I can prep the usage story.\n\nNina Alvarez";
+    const call = { kind: "respond", text: "Set up a Tallis Foods exec call (or procurement starts new evaluation)", quote: "before end of the month, otherwise procurement will treat this as a new evaluation. Can you set that up?", due: "2026-11-29", time: null };
+    const nov11 = at(2026, 11, 11, 14, 2);
+    expect(days(checkDates({ items: [call], settled: [] }, person(TALLIS, { arrivedAt: nov11 })))).toEqual(["2026-11-30"]);
+    const COLMENA = "Hola Diego 🐝\n\nTe recordamos que tu membresía de Escritorio Fijo (escritorio 14, segundo piso) vence a fin de mes, el lunes 30 de noviembre.\n\nPara conservar tu lugar en diciembre, renueva antes de esa fecha desde la app o en recepción. Renovación mensual: $3,900 + IVA.\n\nSi no renuevas, el escritorio se libera el 1 de diciembre y tendríamos que mover tus cosas a lockers.\n\nAndrea · Membresías";
+    const renew = { kind: "renew", text: "Renovar la membresía de Escritorio Fijo (o liberan el escritorio el 1 dic)", quote: "vence a fin de mes, el lunes 30 de noviembre.", due: "2026-11-29", time: null };
+    const colmena = { ...person(COLMENA, { arrivedAt: at(2026, 11, 10, 11, 15), reader: "Diego Ramírez Castañeda", from: "Colmena Cowork" }), subject: "Tu membresía de Escritorio Fijo vence a fin de mes", sender: { person: false } };
+    expect(days(checkDates({ items: [renew], settled: [] }, colmena))).toEqual(["2026-11-30"]);
+    // the other ways to say it, en and es: by name, "antes de que termine el mes", "fin de mes", the last day, the next month's
+    const ask = (quote: string, due: string) => days(checkDates({ items: [{ ...call, quote, due }], settled: [] }, person(`Could you set up the call? ${quote}`, { arrivedAt: nov11 })))[0];
+    expect(ask("I need it by the end of November.", "2026-11-29")).toBe("2026-11-30");
+    expect(ask("Envíamelo antes de que termine el mes, porfa.", "2026-11-29")).toBe("2026-11-30");
+    expect(ask("Mándalo antes de fin de mes.", "2026-11-29")).toBe("2026-11-30");
+    expect(ask("Please have it in by the last day of the month.", "2026-11-29")).toBe("2026-11-30");
+    expect(ask("We need it before the end of next month.", "2026-12-30")).toBe("2026-12-31");
+    // anything else as it came: the day the quote names, another day, another month's end, "a finales de mes", a plain "before"
+    expect(ask("By Sunday, November 29, before the end of the month.", "2026-11-29")).toBe("2026-11-29");
+    expect(ask("I need it before the end of the month.", "2026-11-27")).toBe("2026-11-27");
+    expect(ask("I need it by the end of December.", "2026-11-29")).toBe("2026-11-29");
+    expect(ask("Envíamelo a finales de mes.", "2026-11-29")).toBe("2026-11-29");
+    expect(ask("I need it before Monday the 30th.", "2026-11-29")).toBe("2026-11-29");
+  });
+});
