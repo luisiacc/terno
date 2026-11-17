@@ -1,5 +1,5 @@
 import { AiError, DATED_PROMPT_VERSION, DATED_SUBJECT_CHARS, DATED_TEXT_CHARS, costAt, datedBudget, fitDates, inZone, priceOf, wallHolds, type AiTasks, type DatedResult } from "@terno/ai";
-import { addressKey, automatedSender, mutedOf, canLapse, saysClock, saysDay, withEventEnds, lapsesUnlessRenewed, localDay, needsPresence, saysNoReplyNeeded, DATED_ITEMS_MAX, DATED_KINDS, DATED_OPEN_SHOWN, followupDue, validFollowupDate, type FollowupRow, DATED_SCAN_DAYS, DATED_SCAN_MAX, datedOver, dayKeyOf, datedTiming, dayEnd, dueCutoff, hasTimeCue, partMoment, partOfDayIn, type PartOfDay, normalizeText, withoutQuotes, type AiErrorKind, type DatedKind, type DatedRow, type DatedTiming, type DatedWall } from "@terno/core";
+import { addressKey, automatedSender, mutedOf, canLapse, saysClock, saysDay, withEventEnds, lapsesUnlessRenewed, localDay, needsPresence, saysNoReplyNeeded, DATED_ITEMS_MAX, DATED_KINDS, DATED_OPEN_SHOWN, followupDue, validFollowupDate, type FollowupRow, DATED_SCAN_DAYS, DATED_SCAN_MAX, datedOver, dayKeyOf, datedTiming, dayEnd, dueCutoff, hasTimeCue, partMoment, partOfDayIn, type PartOfDay, normalizeText, withoutQuotes, type SettledHow, type AiErrorKind, type DatedKind, type DatedRow, type DatedTiming, type DatedWall } from "@terno/core";
 import { captureError } from "@terno/core/diag";
 import type { AppSettings } from "@terno/core/rpc";
 import { DEFAULT_LOCALE, isLocaleId, L, type LocaleId } from "@terno/i18n";
@@ -143,6 +143,21 @@ function askAllowed(quote: string, said: string, text: string, o: { sender?: { p
   const at = said.indexOf(q);
   const where = ` ${at < 0 ? q : said.slice(Math.max(0, at - NAMED_BEFORE_CHARS), at + q.length)} `;
   return nameWords(o.reader.name).some((w) => where.includes(` ${w} `));
+}
+
+/**
+ * The claims ledger's second batch: Earlier said "Settled" for a dinner, a flight, an appointment and a hotel the mail
+ * cancelled, and for a parcel it said arrived. How a mail settles an item, by its evidence's words (en, es): a cancellation,
+ * of anything but a bill paid ("Payment received; the late fee was cancelled" is paid); a delivery's arrival. Else none:
+ * "settled", which a bill's kind says as "Paid".
+ */
+const CANCELS = /\b(?:cancel(?:l)?ed|cancel(?:l)?ation|cancels|called off|calls off|cancelad[oa]s?|cancelacion|cancelamos|cancelo|anulad[oa]s?|anulacion|se cancela|se suspende|suspendid[oa]s?)\b/u;
+const ARRIVES = /\b(?:delivered|arrived|picked up|signed for|left at (?:your|the) (?:door|front|porch|mailbox)|entregad[oa]s?|se entrego|entregamos|llego|llegaron|recogid[oa]s?)\b/u;
+const PAID_WORDS = /\b(?:paid|payment (?:received|processed|went through)|received (?:your )?payment|charged|pagad[oa]|pago recibido|recibimos (?:tu|su) pago|cobramos|cobrado)\b/u;
+export function settledHow(kind: string, evidence: string): SettledHow | null {
+  const read = norm(evidence);
+  if (CANCELS.test(read) && !(kind === "pay" && PAID_WORDS.test(read))) return "cancelled";
+  return kind === "delivery" && ARRIVES.test(read) ? "arrived" : null;
 }
 
 /** a greeting's words before the reader's name ("¡Hola Diego!", "Hi Diego,", "Dear Diego") */
@@ -563,7 +578,7 @@ function movedPromise(p: { dueAt?: number; dated?: boolean; timed?: boolean; par
  * day or, for a timed item, a new moment, and its new words only with the mail's own. Plan 210 (the Codex review of iteration
  * 1, revision 2): a settlement or a move rests on evidence tied to that item (`tiedTo`). Pure.
  */
-export function checkDates(result: { items: readonly (Omit<DatedResult["items"][number], "kind"> & { kind: string })[]; settled: DatedResult["settled"]; moved?: readonly Move[]; replaced?: DatedResult["replaced"] }, input: { text: string; subject: string; arrivedAt: number; open: ReadonlyMap<string, DatedRow>; promises?: ReadonlyMap<string, Pick<FollowupRow, "id" | "revision"> & Partial<Pick<FollowupRow, "text" | "dueAt" | "dated" | "timed" | "partOfDay">>>; fromScan: boolean; now: number; sender?: { person: boolean }; reader?: { name: string; addressed: "to" | "cc" | "none" }; others?: readonly string[]; threadId?: number; senderKey?: string; from?: string; paysInThread?: number; relay?: Relay | null; listed?: boolean }): { rows: DatedWrite[]; settled: { id: number; revision: number }[]; moved: { id: number; dueDay: string; dueAt: number; timed: boolean; actAt: number; text?: string; before?: string | null; wall?: DatedWall | null; partOfDay?: PartOfDay }[]; movedPromises: { id: number; revision: number; dueAt: number; timed: boolean; brokenDueAt: number | null; before?: string | null; partOfDay?: PartOfDay }[]; replaced: { id: number; revision: number; item: number }[]; asked: boolean } {
+export function checkDates(result: { items: readonly (Omit<DatedResult["items"][number], "kind"> & { kind: string })[]; settled: DatedResult["settled"]; moved?: readonly Move[]; replaced?: DatedResult["replaced"] }, input: { text: string; subject: string; arrivedAt: number; open: ReadonlyMap<string, DatedRow>; promises?: ReadonlyMap<string, Pick<FollowupRow, "id" | "revision"> & Partial<Pick<FollowupRow, "text" | "dueAt" | "dated" | "timed" | "partOfDay">>>; fromScan: boolean; now: number; sender?: { person: boolean }; reader?: { name: string; addressed: "to" | "cc" | "none" }; others?: readonly string[]; threadId?: number; senderKey?: string; from?: string; paysInThread?: number; relay?: Relay | null; listed?: boolean }): { rows: DatedWrite[]; settled: { id: number; revision: number; how?: SettledHow }[]; moved: { id: number; dueDay: string; dueAt: number; timed: boolean; actAt: number; text?: string; before?: string | null; wall?: DatedWall | null; partOfDay?: PartOfDay }[]; movedPromises: { id: number; revision: number; dueAt: number; timed: boolean; brokenDueAt: number | null; before?: string | null; partOfDay?: PartOfDay }[]; replaced: { id: number; revision: number; item: number }[]; asked: boolean } {
   const said = `${norm(input.subject)}\n${norm(input.text)}`;
   const quoted = (words: string) => {
     const w = norm(words);
@@ -624,9 +639,12 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
   }
   const allMoved: readonly Move[] = [...(result.moved ?? []), ...[...parcelMoves].map(([label, i]) => ({ label, due: i.due!, time: i.time, evidence: i.quote, text: i.text, textEvidence: i.quote, ...(i.at !== undefined ? { at: i.at } : {}), ...(i.wall ? { wall: i.wall } : {}) }))];
   const asParcels = new Set(parcelMoves.values());
-  const settled = result.settled.flatMap((s) => {
+  const settled: { id: number; revision: number; how?: SettledHow }[] = result.settled.flatMap((s) => {
     const row = input.open.get(s.label);
-    return row && tiedTo(row, s.evidence, null) ? [{ id: row.id, revision: row.revision }] : [];
+    if (!row || !tiedTo(row, s.evidence, null)) return [];
+    // the claims ledger's second batch: what its mail says happened, for Earlier's word ("Cancelled Mon", "Arrived Tue")
+    const how = settledHow(row.kind, `${s.evidence}\n${contextOf(s.evidence, sentences)}`);
+    return [{ id: row.id, revision: row.revision, ...(how ? { how } : {}) }];
   });
   // after the panel: a new day for an open item, quoted, from this message's own day; one it settles isn't moved
   const settledIds = new Set(settled.map((s) => s.id));

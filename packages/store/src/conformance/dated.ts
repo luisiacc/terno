@@ -260,6 +260,13 @@ export function defineDatedConformance(fresh: () => Promise<MailStore>, reopen: 
         await finish(r.inserted[0]!, bill.thread, { settled: [{ id: renew.id, revision: renew.revision }] });
         expect((await store.dated.get(renew.id))!.state).toBe("settled");
         expect(await store.dated.active()).toEqual([]);
+        // the claims ledger's second batch: how its mail settled it, when it says (a plan cancelled, a parcel arrived)
+        const plans = await got({ rfcMessageId: "p0@x", subject: "Plans", date: NOW - 4500 });
+        await finish(plans.id, plans.thread, { rows: [item({ kind: "event", text: "Dinner at Lark & Oak", dueDay: "2026-12-05" }), item({ item: 1, kind: "delivery", text: "Parcel arriving", dueDay: "2026-12-06" })] });
+        const [dinner, parcel] = (await store.dated.ofThread(plans.thread)).sort((x, y) => x.item - y.item);
+        const told = await store.sync.ingest([msg({ accountId, from: bank, to: [me], inReplyTo: "p0@x", references: ["p0@x"], subject: "Re: Plans", date: NOW - 4000 })], { applyFilters: false, now: NOW, classifier: null, datedMail: { since: null } });
+        await finish(told.inserted[0]!, plans.thread, { settled: [{ id: dinner!.id, revision: dinner!.revision, how: "cancelled" }, { id: parcel!.id, revision: parcel!.revision, how: "arrived" }] });
+        expect([(await store.dated.get(dinner!.id))!.closedReason, (await store.dated.get(parcel!.id))!.closedReason]).toEqual(["cancelled", "arrived"]);
       });
 
       it("past the bound, the furthest act-at isn't added: a sooner item takes its place, a later one doesn't come in", async () => {

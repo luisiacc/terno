@@ -215,8 +215,8 @@ export function finishDated(db: Db, w: DatedFinish): DatedFinishOutcome {
     for (const s of w.settled) {
       db.run(
         // plan 210 (iteration 4, revision 7): the settling mail and its date beside the closing
-        `UPDATE dated_items SET state = 'settled', closed_reason = 'settled', closed_at = ?, settled_by = ?, settled_at = ?, revision = revision + 1 WHERE id = ? AND revision = ? AND state = 'open' AND (thread_id = ? OR (sender_key = ? AND ${SENDER_REACHES_SQL}))`,
-        w.now, w.messageId, src.date, s.id, s.revision, src.threadId, src.senderKey,
+        `UPDATE dated_items SET state = 'settled', closed_reason = ?, closed_at = ?, settled_by = ?, settled_at = ?, revision = revision + 1 WHERE id = ? AND revision = ? AND state = 'open' AND (thread_id = ? OR (sender_key = ? AND ${SENDER_REACHES_SQL}))`,
+        s.how ?? "settled", w.now, w.messageId, src.date, s.id, s.revision, src.threadId, src.senderKey,
       );
     }
     // plan 210 (iteration 3, revision 4): a promise its person replaced, closed with the request that replaces it

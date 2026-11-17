@@ -226,7 +226,8 @@ export function historySentence(line: Pick<TodayHistoryItem, "kind" | "text" | "
 /**
  * Plan 210: the history's right-hand column, what happened and when: "Done today", "Removed Wed", "Over Nov 2" (es "Hecho
  * el mié"). Iteration 4 (revision 7): settled by mail, the day that mail came ("Paid Mon", "Answered Tue"), never the day
- * it was read; a bill it settled is paid, a request your reply settled is answered.
+ * it was read; a bill it settled is paid, a request your reply settled is answered. The claims ledger's second batch: a plan
+ * its mail cancelled is cancelled, a parcel it said arrived arrived (`SettledHow`, its `reason`), never "Settled".
  */
 export function historyWhen(line: Pick<TodayHistoryItem, "outcome" | "kind" | "key" | "on" | "reason" | "handedTo">, now = Date.now()): string {
   const at = line.on ?? line.key.at;
@@ -234,7 +235,7 @@ export function historyWhen(line: Pick<TodayHistoryItem, "outcome" | "kind" | "k
   const day = near ? t(`today.also.${near}`) : t("today.also.on", { day: dueShort(at, false, now) });
   // plan 210 (iteration 4): handed on, to whom ("Handed to Jess Tue"), by first name as the reader's line says people
   if (line.outcome === "handed") return line.handedTo ? t("whatMatters.history.handed", { name: firstName(line.handedTo), day }) : t("whatMatters.history.done", { day });
-  const settled = line.outcome !== "settled" ? null : line.reason === "answered" ? "answered" : line.kind === "pay" ? "paid" : "settled";
+  const settled = line.outcome !== "settled" ? null : line.reason === "answered" || line.reason === "cancelled" || line.reason === "arrived" ? line.reason : line.kind === "pay" ? "paid" : "settled";
   // plan 210 (iteration 1, the owner): "Not a task" is "Remove", for an item and a promise alike
   return t(`whatMatters.history.${settled ?? (line.outcome === "dismissed" ? "removed" : line.outcome)}`, { day });
 }

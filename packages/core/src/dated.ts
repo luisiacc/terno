@@ -55,6 +55,13 @@ export const DATED_CLOSED_KEEP_MS = 90 * 86_400_000;
 export const DATED_SCAN_DAYS = 14;
 export const DATED_SCAN_MAX = 300;
 
+/**
+ * The claims ledger's second batch: how a mail settled an item when it says more than "settled", its `closedReason` (Earlier
+ * says it: "Cancelled Mon", "Arrived Tue"): a plan the mail cancels, a parcel it says arrived. A bill paid keeps "settled"
+ * (its kind says "Paid").
+ */
+export type SettledHow = "cancelled" | "arrived";
+
 export interface DatedRow {
   id: number;
   threadId: number;
@@ -80,6 +87,7 @@ export interface DatedRow {
   deferredUntil: number | null;
   arrivedAt: number;
   state: DatedState;
+  /** how it closed: "user", "expired", "answered" (your reply), "settled" by mail, or how mail settled it (`SettledHow`) … */
   closedReason: string | null;
   closedAt: number | null;
   fromScan: boolean;

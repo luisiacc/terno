@@ -2654,6 +2654,9 @@ It contains none of your mail, contacts, settings or keys.
   // plan 210 (iteration 4, revision 7): settled by mail, the day that mail came
   "whatMatters.history.paid": "Paid {day}",
   "whatMatters.history.answered": "Answered {day}",
+  // the claims ledger's second batch: what its mail said happened, a plan cancelled, a parcel arrived
+  "whatMatters.history.cancelled": "Cancelled {day}",
+  "whatMatters.history.arrived": "Arrived {day}",
   "whatMatters.history.over": "Over {day}",
   "whatMatters.history.replaced": "Replaced {day}",
   // round 15's second morning: a change isn't a finish; the line says the item is still open

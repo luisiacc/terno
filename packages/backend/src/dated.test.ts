@@ -13,7 +13,7 @@ import { msg, threadOf } from "@terno/store/conformance";
 import { DATED_NOTHING_ASKED_SINCE, type IncomingMessage } from "@terno/store";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { Backend, plaintextCipher } from "./backend";
-import { checkDates } from "./dated";
+import { checkDates, settledHow } from "./dated";
 import { relayedAsk } from "./dated-relay";
 
 const at = (y: number, m: number, d: number, h = 0, min = 0) => new Date(y, m - 1, d, h, min).getTime();
@@ -491,7 +491,7 @@ describe("the local checks (plan 204 §3)", () => {
       expect(checkDates({ items: [], settled: [{ label: "o1", evidence: "Payment received for your invoice" }] }, { ...mail("Payment received for your invoice."), open }).settled).toEqual([]);
       // two of the same thing on different days: its own day names it (the eval's swim class)
       const swim = new Map([["o1", item({ kind: "event", text: "Leo's swim class", quote: "swim class", dueDay: "2026-11-19" })], ["o2", item({ id: 10, kind: "event", text: "Leo's swim class", quote: "swim class", dueDay: "2026-11-26" })]]);
-      expect(checkDates({ items: [], settled: [{ label: "o1", evidence: "class (November 19, 5:00 PM) is cancelled" }] }, { ...mail("Thursday's swim class (November 19, 5:00 PM) is cancelled."), open: swim }).settled).toEqual([{ id: 9, revision: 2 }]);
+      expect(checkDates({ items: [], settled: [{ label: "o1", evidence: "class (November 19, 5:00 PM) is cancelled" }] }, { ...mail("Thursday's swim class (November 19, 5:00 PM) is cancelled."), open: swim }).settled).toEqual([{ id: 9, revision: 2, how: "cancelled" }]);
     });
     it("3: a move's words say the day it moves to, or a clock time on its own day; a date's word alone doesn't", () => {
       const open = new Map([["o1", item({ kind: "event", text: "Dentist appointment", quote: "appointment on November 20", timed: true, dueAt: at(2026, 11, 20, 9) })]]);
@@ -836,7 +836,7 @@ describe("plan 210 (iteration 3)", () => {
       const bulk = (text: string, addressed: "to" | "cc" = "to") => ({ ...base, text, subject: "Your appointment has been cancelled", sender: { person: false }, reader: { name: "Margaret Kowalczyk", addressed } });
       const appointment = { id: 9, revision: 2, threadId: 1, kind: "event", text: "Brightway Dental appointment with Dr. Steven Kline", quote: "Thursday, November 12, 2026 at 9:00 AM", dueDay: "2026-11-12", dueAt: at(2026, 11, 12, 9), timed: true } as DatedRow;
       const out = checkDates({ items: [call], settled: [{ label: "o1", evidence: "has been cancelled because Dr. Kline is out of the office" }] }, { ...bulk(dental), open: new Map([["o1", appointment]]) });
-      expect(out.settled).toEqual([{ id: 9, revision: 2 }]);
+      expect(out.settled).toEqual([{ id: 9, revision: 2, how: "cancelled" }]);
       expect(out.rows.map((r) => [r.kind, r.text])).toEqual([["ask", "Call Brightway Dental to choose a new time"]]);
       // said cancelled in the mail, the appointment not open here
       expect(checkDates({ items: [call], settled: [] }, bulk(dental)).rows).toHaveLength(1);
@@ -1806,6 +1806,38 @@ describe("a later message moves a day (after the panel)", () => {
     const list = await client.call("today.list", { held: [] });
     expect(list.sections.map((x) => x.kind)).toEqual(["today"]);
     expect(list.sections[0]!.items[0]).toMatchObject({ thread: { id: thread }, why: { item: { early: true, dueDay: "2026-11-13" } } });
+  });
+});
+
+describe("the claims ledger's second batch: what its mail said happened (Earlier's \"Cancelled\", \"Arrived\")", () => {
+  it("the panel's settlements: a plan cancelled, a parcel arrived; a bill paid and anything else stay \"settled\"", () => {
+    // Theo's dinner, Jordan's flights, Margaret's dentist, Sam's session, Priya's hotel, Diego's booking (es)
+    for (const [kind, evidence] of [
+      ["event", "Your reservation for Saturday, November 14 at 7:30 PM (party of 9) has been cancelled as requested."],
+      ["event", "has been cancelled at your request."],
+      ["event", "Your appointment on Thursday, November 12, 2026 at 9:00 AM with Dr. Steven Kline has been cancelled"],
+      ["event", "your appointment on Tuesday, November 10 at 4:00 PM is cancelled"],
+      ["event", "Your booking has been cancelled."],
+      ["event", "Confirmamos la cancelación de tu reserva."],
+      ["delivery", "Your order was cancelled and refunded."],
+    ] as const) expect(settledHow(kind, evidence), evidence).toBe("cancelled");
+    // Theo's tees, María's package (en, es)
+    for (const evidence of ["Your order has been delivered!", "Your package was delivered.", "Tu paquete fue entregado.", "Tu pedido ya llegó."]) expect(settledHow("delivery", evidence), evidence).toBe("arrived");
+    // a bill paid, even beside a fee called off; an answer; a card updated; a delivery's other news
+    expect(settledHow("pay", "We received your payment. The late fee was cancelled.")).toBeNull();
+    expect(settledHow("pay", "We've received your payment of $612.00 for invoice BB-20931.")).toBeNull();
+    expect(settledHow("respond", "That's everything I need.")).toBeNull();
+    expect(settledHow("expire", "your card has been updated")).toBeNull();
+    expect(settledHow("delivery", "Your parcel is out for delivery today.")).toBeNull();
+    // an arrival is a parcel's word only
+    expect(settledHow("event", "The speakers arrived and the venue is set.")).toBeNull();
+  });
+
+  it("checkDates carries it with the settlement, from the evidence's sentence", () => {
+    const parcel = { id: 4, revision: 1, threadId: 1, kind: "delivery", text: "Pingwire tees arriving", quote: "Expected: Friday", dueDay: "2026-11-13", dueAt: NOW, timed: false, dated: true } as DatedRow;
+    const text = "Good news! Your order has been delivered! It was signed for by H. Ito.";
+    const out = checkDates({ items: [], settled: [{ label: "o1", evidence: "Your order has been delivered!" }] }, { text, subject: "Delivered", arrivedAt: NOW, open: new Map([["o1", parcel]]), fromScan: false, now: NOW, threadId: 1 });
+    expect(out.settled).toEqual([{ id: 4, revision: 1, how: "arrived" }]);
   });
 });
 

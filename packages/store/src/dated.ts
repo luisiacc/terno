@@ -1,4 +1,4 @@
-import { addressKey, ANSWERED_KINDS, tabOfCode, type DatedKind, type DatedMute, type DatedMuteOn, type DatedRow, type DatedState, type DatedWall, type PartOfDay } from "@terno/core";
+import { addressKey, ANSWERED_KINDS, tabOfCode, type SettledHow, type DatedKind, type DatedMute, type DatedMuteOn, type DatedRow, type DatedState, type DatedWall, type PartOfDay } from "@terno/core";
 
 /**
  * Plan 204: dated items, from mail the user got.
@@ -121,9 +121,10 @@ export interface DatedFinish {
   rows: readonly DatedWrite[];
   /**
    * open items this message settled: only the exact row it was shown, at the revision it was shown, of its thread or its
-   * sender (the sixth panel round: a delivery or an ask only of its thread, `THREAD_SCOPED_KINDS`)
+   * sender (the sixth panel round: a delivery or an ask only of its thread, `THREAD_SCOPED_KINDS`); `how`, what its mail
+   * said happened (the claims ledger's second batch: "cancelled", "arrived"), its `closedReason`, else "settled"
    */
-  settled: readonly { id: number; revision: number }[];
+  settled: readonly { id: number; revision: number; how?: SettledHow }[];
   /**
    * After the panel: open items this message gives a new day. Applied to an open row it may reach (as `settled`) whatever its
    * revision (Codex review of the fixes: a Later meanwhile mustn't lose the mail's new day); it keeps its deferral. `text`:

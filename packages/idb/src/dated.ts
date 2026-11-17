@@ -232,7 +232,7 @@ export function finishDated(c: Ctx, w: DatedFinish): DatedFinishOutcome {
   }
   for (const s of w.settled) {
     const r = rows.get(s.id);
-    if (r && r.revision === s.revision && r.state === "open" && reaches(r, src)) rows.update(r, { state: "settled", closed_reason: "settled", closed_at: w.now, settled_by: w.messageId, settled_at: src.date, revision: r.revision + 1 });
+    if (r && r.revision === s.revision && r.state === "open" && reaches(r, src)) rows.update(r, { state: "settled", closed_reason: s.how ?? "settled", closed_at: w.now, settled_by: w.messageId, settled_at: src.date, revision: r.revision + 1 });
   }
   const followups = T(c, "followups");
   // plan 210 (iteration 3, revision 4): as SQL's, a promise its person replaced, closed with the request that replaces it
