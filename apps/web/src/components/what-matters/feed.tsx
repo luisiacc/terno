@@ -424,7 +424,7 @@ const WHEN_INK: Record<TodayTone, string> = {
 };
 
 /**
- * An item: one plain sentence (two lines at most, the rest in its name and title), who under it, and when in a column of its
+ * An item: one plain sentence (three lines at most, the open one whole, the rest in its title), who under it, and when in a column of its
  * own on the right, in the list's words. The whole item opens its conversation, the list staying where it is. Done and
  * Later, in words, on hover, on focus and on the open item, over the second line's end (they take no room while hidden);
  * D and the right-click menu as on the list.
@@ -438,8 +438,11 @@ function Item({ row, sentence, meta, when, tone, task, open, cursor = false, lat
           most a third (its words wrap there); in a narrow feed (the reader open beside it) it goes under the sentence, on a
           line of its own above who, so "You said you'd…" is never crushed beside it */}
       <button type="button" data-testid="wm-item-open" title={`${sentence}\n${meta}`} aria-expanded={open} onClick={() => openItem(row)} className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-4 rounded-lg px-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring @max-[30rem]:grid-cols-1">
-        {/* plan 210 (iteration 3): Coming up's sentences in the row ink, not a fade (its column stays quiet) */}
-        <span id={textId} data-testid="wm-sentence" className={cn("col-start-1 row-start-1 line-clamp-2 text-base text-pretty group-data-open/item:text-row-selected-foreground", past ? "text-muted-foreground" : SENTENCE_INK[tone])}>
+        {/* plan 210 (iteration 3): Coming up's sentences in the row ink, not a fade (its column stays quiet). The claims
+            ledger's second batch: three lines at most, the open item's whole (two cut an alert's ", the email says" and a
+            promise's second deliverable, worst beside the reader); the whole sentence is the button's title and, unclamped in
+            the DOM, what a screen reader reads */}
+        <span id={textId} data-testid="wm-sentence" className={cn("col-start-1 row-start-1 line-clamp-3 text-base text-pretty group-data-open/item:line-clamp-none group-data-open/item:text-row-selected-foreground", past ? "text-muted-foreground" : SENTENCE_INK[tone])}>
           {sentence}
         </span>
         {when && (

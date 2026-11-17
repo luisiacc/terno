@@ -663,6 +663,8 @@ async function promised(server: DevServerFixture, key: string, who: { name: stri
   return m.thread_id;
 }
 
+const LONG = "Send Megan Cole the revised logo files with the ligature version and both mockups (the coaster and the shop window), the color guide for the printer, and the signage drafts for both branches";
+
 test("plan 210 (iteration 4): 'to do today'; a broken promise first in Waiting on you; Coming up the last heading, out of j/k while closed; the sentence keeps its width beside the reader; the palette with nothing selected; the menu's More", async ({ app: page, server }) => {
   await server.backend.server.invoke("settings.update", { ai: { provider: "fake", model: "demo" }, dated: { enabled: true, scanAnswered: true }, followups: { enabled: true } }, dev);
   await dated(server, "water", "City Water", { kind: "pay", text: "Pay the water bill", days: -2 });
@@ -674,6 +676,8 @@ test("plan 210 (iteration 4): 'to do today'; a broken promise first in Waiting o
   await dated(server, "dues", "Rowing Club", { kind: "pay", text: "Pay the club dues", days: 10 });
   await dated(server, "passport", "Passport Office", { kind: "pay", text: "Pay the passport renewal fee", days: 40 });
   await promised(server, "script", { name: "Jess Okafor", email: "jess@railyard.test" }, "send Jess the full Railyard integration script for brand and legal review", { days: 3, brokenDays: -2 });
+  // the claims ledger's second batch: a request long enough for three lines beside the reader (Diego's Megan)
+  await dated(server, "megan", "Megan Cole", { kind: "respond", text: LONG, days: 6, early: true });
   server.backend.today.changed();
   await page.evaluate(() => localStorage.removeItem("terno.today.comingUp"));
   await fresh(page);
@@ -720,6 +724,42 @@ test("plan 210 (iteration 4): 'to do today'; a broken promise first in Waiting o
     expect((await box("wm-meta")).top).toBeGreaterThanOrEqual((await box("wm-when")).bottom - 1);
     expect((await box("wm-sentence")).width).toBeGreaterThanOrEqual((await whole()) * 0.9);
     await expect(row.getByTestId("wm-sentence")).toContainText("You said you'd send Jess the full");
+  });
+
+  await scenario("the claims ledger's second batch: a long sentence is three lines at most, whole in its title; the open one whole", async () => {
+    // (the reader still open beside the feed: the narrowest the sentence gets)
+    await expect(page.getByTestId("reader")).toBeVisible();
+    await reach(page, "Send Megan Cole");
+    const megan = openLine(page, "Send Megan Cole");
+    const sentence = megan.getByTestId("wm-sentence");
+    const clamp = () => sentence.evaluate((el) => ({ lines: getComputedStyle(el).webkitLineClamp, cut: el.scrollHeight > el.clientHeight + 1, height: el.clientHeight, line: parseFloat(getComputedStyle(el).lineHeight) }));
+    const closed = await clamp();
+    expect(closed.lines).toBe("3");
+    // long enough to be cut here: three lines shown, the rest in the title and to a screen reader (the text is whole)
+    expect(closed.cut).toBe(true);
+    expect(Math.round(closed.height / closed.line)).toBe(3);
+    await expect(megan.getByTestId("wm-item-open")).toHaveAttribute("title", new RegExp(`^${LONG.replace(/[()]/g, "\\$&")}\\.\n`));
+    await expect(sentence).toHaveText(`${LONG}.`);
+    const shoot = async (name: string) => {
+      if (!process.env.WM_CLAMP_SHOTS) return;
+      for (const mode of ["light", "dark"] as const) {
+        await page.emulateMedia({ colorScheme: mode });
+        await page.screenshot({ path: `${process.env.WM_CLAMP_SHOTS}/${name}-${mode}.png` });
+      }
+      await page.emulateMedia({ colorScheme: "light" });
+    };
+    await shoot("feed-closed-long");
+    // open, it's whole
+    await megan.getByTestId("wm-item-open").click();
+    await expect(megan).toHaveAttribute("data-open", "true");
+    await expect.poll(async () => (await clamp()).cut).toBe(false);
+    expect((await clamp()).lines).toBe("none");
+    await shoot("feed-open-long");
+    // put it away again (the scenarios after start with the reader closed by their own clicks)
+    await megan.getByTestId("wm-item-open").click();
+    await reach(page, "send Jess the full");
+    await openLine(page, "send Jess the full").getByTestId("wm-item-open").click();
+    await expect(openLine(page, "send Jess the full")).toHaveAttribute("data-open", "true");
   });
 
   await scenario("the menu: What matters' own and Reply; the mail's under More", async () => {
