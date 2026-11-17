@@ -354,6 +354,18 @@ export function wellWishOnly(sentence: string): boolean {
 }
 
 /**
+ * The claims ledger's third batch (Diego's client Tomás: "queremos abrir la sucursal de Narvarte el 21", read as an event):
+ * what the sender's own business does on a day (an opening, a launch, a release) is theirs, never a plan of the reader's,
+ * unless the paragraph invites the reader or counts on them there (the prompt's event is a flight, a booking, a meeting of
+ * the reader's). The sentence and the paragraph as `norm` reads them, en and es.
+ */
+const THEIR_OWN = /\b(?:we(?: re| are| ll| will| want to| plan to| hope to| d like to| re going to| are going to)? (?:open|opening|launch|launching|release|releasing|relaunch|relaunching|unveil|unveiling)|our (?:grand )?(?:opening|launch|release|relaunch)|(?:queremos|vamos a|pensamos|planeamos|esperamos) (?:abrir|inaugurar|lanzar|estrenar|reabrir)|abrimos|inauguramos|lanzamos|estrenamos|reabrimos|nuestra (?:apertura|inauguracion|reapertura)|nuestro (?:lanzamiento|estreno))\b/u;
+const INVITES_READER = /\b(?:you re invited|you are invited|invite you|join us|come by|come to|you can come|can you come|will you come|we d love (?:to see you|to have you|you there)|hope (?:you can|to see you)|see you there|rsvp|save the date|your (?:spot|seat|ticket|invitation)|te invit\w*|los invit\w*|acompan\w*|vienes|ven a|vengan|te esperamos|nos encantaria (?:verte|que vinieras)|nos vemos|cuento contigo|contamos contigo|tu lugar)\b/u;
+function theirsOnly(sentence: string, paragraph: string): boolean {
+  return THEIR_OWN.test(norm(sentence)) && !INVITES_READER.test(norm(paragraph));
+}
+
+/**
  * Plan 210 (the second morning's code review, round 15's Diego): a gathering a mailing list's post offers to whoever on it
  * wants it ("para quien ande en CDMX, la reunión mensual de la lista es el jueves 19 a las 20:00", "all welcome", "the list's
  * meetup") is no plan of the reader's, when the post isn't addressed to them (the prompt's listing rule, which the reading
@@ -900,6 +912,8 @@ export function checkDates(result: { items: readonly (Omit<DatedResult["items"][
     if (kind === "ask" && ((requested(item) && !offerOnly(around, contextOf(item.quote, paragraphs))) || noReply || onlyTells(item.quote) || onlyTells(contextOf(item.quote, sentences)) || courtesyOnly(around) || selfOffer(around, contextOf(item.quote, paragraphs)) || yourOwnWord(contextOf(item.quote, sentences)) || !(askAllowed(item.quote, said, input.text, input) || rebooks(item)))) continue;
     // plan 210 (the second morning): a person's good wishes for something of the reader's are no plan of theirs, nor an ask
     if ((kind === "event" || kind === "ask") && input.sender?.person && wellWishOnly(contextOf(item.quote, sentences))) continue;
+    // the claims ledger's third batch: the sender's own opening or launch, the reader not invited, is no plan of theirs
+    if (kind === "event" && theirsOnly(contextOf(item.quote, sentences), contextOf(item.quote, paragraphs))) continue;
     // the second morning's code review: a gathering a list's post offers to whoever on it, the reader not addressed
     if ((kind === "event" || kind === "delivery") && input.listed && input.reader?.addressed === "none" && offeredToTheList(contextOf(item.quote, paragraphs), input.reader)) continue;
     // plan 210 (iteration 4's code review): what a scam says happened or demands is no item, an alert, a request or an

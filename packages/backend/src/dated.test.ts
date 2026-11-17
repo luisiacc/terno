@@ -638,6 +638,20 @@ describe("plan 210 (iteration 3)", () => {
       expect(checkDates({ items: [game("Sofia's game (Field 3)", "Good luck at the 10:00 game on Field 3!")], settled: [] }, mail("Good luck at the 10:00 game on Field 3!")).rows).toHaveLength(1);
       expect(checkDates({ items: [game("Sofia's game", "The game is today at Field 3")], settled: [] }, mail("The game is today at Field 3.")).rows).toHaveLength(1);
     });
+    it("the claims ledger's third batch (Diego's Tomás): the sender's own opening or launch is no plan of the reader's (en, es); one they're invited to is", () => {
+      const TOMAS = "Diego qué tal\n\nCómo vamos con el menú nuevo y las etiquetas de los panes de caja? Mi socio ya me está apurando porque queremos abrir la sucursal de Narvarte el 21 y tenemos que mandar a imprimir.\n\nAvisame porfa\n\nTomás";
+      const opening = { kind: "event", text: "Apertura de la sucursal de Narvarte", quote: "queremos abrir la sucursal de Narvarte el 21", due: "2026-11-21", time: null };
+      const labels = { kind: "ask", text: "Responder a Tomás sobre el menú nuevo y las etiquetas", quote: "Cómo vamos con el menú nuevo y las etiquetas de los panes de caja?", due: null, time: null };
+      expect(checkDates({ items: [labels, opening], settled: [] }, person(TOMAS)).rows.map((r) => r.kind)).toEqual(["ask"]);
+      const launch = "We're launching the new app on Thursday, November 19, so the store listing has to be final by then.";
+      expect(checkDates({ items: [{ ...opening, text: "App launch", quote: "We're launching the new app on Thursday, November 19", due: "2026-11-19" }], settled: [] }, person(launch)).rows).toEqual([]);
+      // invited, or counted on there: theirs and the reader's
+      for (const text of ["Queremos abrir la sucursal de Narvarte el 21 y nos encantaría verte ahí.", "We're opening the new studio on Saturday, November 21 at 6 PM. Join us!"]) {
+        expect(checkDates({ items: [{ ...opening, quote: text.split(/(?<=[.!])\s/u)[0]!.replace(/[.!]$/u, "") }], settled: [] }, person(text)).rows, text).toHaveLength(1);
+      }
+      // a meeting of theirs with the reader is no business's own: "we meet", "we're moving the call"
+      expect(checkDates({ items: [{ ...opening, text: "Kickoff call", quote: "We meet Thursday at 10 for the kickoff" }], settled: [] }, person("We meet Thursday at 10 for the kickoff.")).rows).toHaveLength(1);
+    });
     it("the Codex code review of the second morning (point 2): a wish's sentence keeps the request and the news beside it (en, es); a wish passed on stays none", () => {
       const mail = (text: string) => ({ ...person(text), arrivedAt: at(2026, 11, 14, 7, 52), now: at(2026, 11, 14, 7, 52) });
       const event = (text: string, quote: string) => ({ kind: "event", text, quote, due: "2026-11-15", time: null });
